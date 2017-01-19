@@ -109,7 +109,7 @@ template <> inline void cublasgemm<double>(char TransA, char TransB, int M, int 
 #define V(i, j) V_[(i) * dim[1] + (j)]
 //#define SVD_DEBUG
 
-template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, const Long dim[2], Long m, ValueType a, ValueType b) {
+template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, StaticArray<Long,2>& dim, Long m, ValueType a, ValueType b) {
   ValueType r = pvfmm::sqrt<ValueType>(a * a + b * b);
   ValueType c = a / r;
   ValueType s = -b / r;
@@ -126,7 +126,7 @@ template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, co
   }
 }
 
-template <class ValueType> static inline void GivensR(Iterator<ValueType> S_, const Long dim[2], Long m, ValueType a, ValueType b) {
+template <class ValueType> static inline void GivensR(Iterator<ValueType> S_, StaticArray<Long,2>& dim, Long m, ValueType a, ValueType b) {
   ValueType r = pvfmm::sqrt<ValueType>(a * a + b * b);
   ValueType c = a / r;
   ValueType s = -b / r;
@@ -143,7 +143,7 @@ template <class ValueType> static inline void GivensR(Iterator<ValueType> S_, co
   }
 }
 
-template <class ValueType> static inline void SVD(const Long dim[2], Iterator<ValueType> U_, Iterator<ValueType> S_, Iterator<ValueType> V_, ValueType eps = -1) {
+template <class ValueType> static inline void SVD(StaticArray<Long,2>& dim, Iterator<ValueType> U_, Iterator<ValueType> S_, Iterator<ValueType> V_, ValueType eps = -1) {
   assert(dim[0] >= dim[1]);
 #ifdef SVD_DEBUG
   Matrix<ValueType> M0(dim[0], dim[1], S_);

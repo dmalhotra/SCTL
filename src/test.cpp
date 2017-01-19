@@ -1,7 +1,7 @@
 #include "pvfmm.hpp"
 
 void ProfileMemgr(){
-  long N=1e9;
+  long N=5e5;
   { // Without memory manager
     pvfmm::Profile::Tic("No-Memgr");
 

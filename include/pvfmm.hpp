@@ -11,7 +11,7 @@
 
 // Parameters for memory manager
 #define PVFMM_MEM_ALIGN 64
-#define PVFMM_GLOBAL_MEM_BUFF 1024LL * 20LL  // in MB
+#define PVFMM_GLOBAL_MEM_BUFF 1024LL * 5LL  // in MB
 #ifndef NDEBUG
 #define PVFMM_MEMDEBUG // Enable memory checks.
 #endif
