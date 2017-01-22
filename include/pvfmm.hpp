@@ -13,14 +13,12 @@
 #define PVFMM_MEM_ALIGN 64
 #define PVFMM_GLOBAL_MEM_BUFF 1024LL * 5LL  // in MB
 #ifndef NDEBUG
-#define PVFMM_MEMDEBUG // Enable memory checks.
+#define PVFMM_MEMDEBUG  // Enable memory checks.
 #endif
 
 // Profiling parameters
-#define PVFMM_PROFILE 5 // Granularity level
+#define PVFMM_PROFILE 5  // Granularity level
 #define PVFMM_VERBOSE
-
-
 
 // MPI Wrapper
 #include <pvfmm/comm.hpp>
@@ -45,6 +43,6 @@
 
 // Print stack trace
 #include <pvfmm/stacktrace.h>
-const int sgh = pvfmm::SetSigHandler(); // Set signal handler
+const int sgh = pvfmm::SetSigHandler();  // Set signal handler
 
-#endif //_PVFMM_HPP_
+#endif  //_PVFMM_HPP_

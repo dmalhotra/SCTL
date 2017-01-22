@@ -6,7 +6,6 @@
 #define NULL 0
 #endif
 
-
 #include <stdint.h>
 namespace pvfmm {
 typedef long Integer;  // bounded numbers < 32k

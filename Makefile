@@ -2,12 +2,12 @@
 CXX=icpc
 CXXFLAGS = -std=c++11 -fopenmp -O3 # need C++11 and OpenMP
 
-# Optional flags
+#Optional flags
 CXXFLAGS += -DNDEBUG # release build
 CXXFLAGS += -g -rdynamic # for stack trace
 CXXFLAGS += -mkl -DPVFMM_HAVE_BLAS # use BLAS
 CXXFLAGS += -mkl -DPVFMM_HAVE_LAPACK # use LAPACK
-#CXXFLAGS += -DPVFMM_HAVE_MPI # use MPI
+#CXXFLAGS += -DPVFMM_HAVE_MPI #use MPI
 
 
 RM = rm -f
@@ -34,4 +34,3 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*
 	$(RM) *~ */*~
-

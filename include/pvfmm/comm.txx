@@ -102,8 +102,10 @@ template <class SType> void* Comm::Isend(ConstIterator<SType> sbuf, Long scount,
   return &request;
 #else
   auto it = recv_req.find(tag);
-  if (it == recv_req.end()) send_req.insert(std::pair<Integer,ConstIterator<char>>(tag,(ConstIterator<char>)sbuf));
-  else pvfmm::memcopy(it->second, (ConstIterator<char>)sbuf, scount * sizeof(SType));
+  if (it == recv_req.end())
+    send_req.insert(std::pair<Integer, ConstIterator<char>>(tag, (ConstIterator<char>)sbuf));
+  else
+    pvfmm::memcopy(it->second, (ConstIterator<char>)sbuf, scount * sizeof(SType));
   return NULL;
 #endif
 }
@@ -120,8 +122,10 @@ template <class RType> void* Comm::Irecv(Iterator<RType> rbuf, Long rcount, Inte
   return &request;
 #else
   auto it = send_req.find(tag);
-  if (it == send_req.end()) recv_req.insert(std::pair<Integer,Iterator<char>>(tag,(Iterator<char>)rbuf));
-  else pvfmm::memcopy((Iterator<char>)rbuf, it->second, rcount * sizeof(RType));
+  if (it == send_req.end())
+    recv_req.insert(std::pair<Integer, Iterator<char>>(tag, (Iterator<char>)rbuf));
+  else
+    pvfmm::memcopy((Iterator<char>)rbuf, it->second, rcount * sizeof(RType));
   return NULL;
 #endif
 }
@@ -222,7 +226,7 @@ template <class SType, class RType> void* Comm::Ialltoallv_sparse(ConstIterator<
   }
   return &request;
 #else
-  pvfmm::memcopy((Iterator<char>)(rbuf+rdispls[0]), (ConstIterator<char>)(sbuf+sdispls[0]), scounts[0] * sizeof(SType));
+  pvfmm::memcopy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)(sbuf + sdispls[0]), scounts[0] * sizeof(SType));
   return NULL;
 #endif
 }
@@ -266,9 +270,9 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     //#endif
   }
 
-  // TODO: implement hypercube scheme
+// TODO: implement hypercube scheme
 #else
-  pvfmm::memcopy((Iterator<char>)(rbuf+rdispls[0]), (ConstIterator<char>)(sbuf+sdispls[0]), scounts[0] * sizeof(Type));
+  pvfmm::memcopy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)(sbuf + sdispls[0]), scounts[0] * sizeof(Type));
 #endif
 }
 

@@ -77,7 +77,6 @@ class Comm {
   template <class Type> void ScatterReverse(Vector<Type>& data_, const Vector<Long>& scatter_index_, Long loc_size_ = 0) const;
 
  private:
-
   template <typename A, typename B> struct SortPair {
     int operator<(const SortPair<A, B>& p1) const { return key < p1.key; }
     A key;
