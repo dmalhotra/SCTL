@@ -239,8 +239,9 @@ template <class ValueType, Long DIM> class StaticArray : public Iterator<ValueTy
 
   ~StaticArray();
 
-  StaticArray(const ValueType(&arr_)[DIM]) : StaticArray() {
-    for (Long i = 0; i < DIM; i++) arr[i] = arr_[i];
+  StaticArray(std::initializer_list<ValueType> arr_) : StaticArray() {
+    // static_assert(arr_.size() == DIM); // allowed in C++14
+    for (Long i = 0; i < DIM; i++) arr[i] = arr_.begin()[i];
   }
 
  private:
