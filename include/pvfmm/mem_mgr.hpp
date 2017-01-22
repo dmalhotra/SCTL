@@ -239,6 +239,10 @@ template <class ValueType, Long DIM> class StaticArray : public Iterator<ValueTy
 
   ~StaticArray();
 
+  StaticArray(const ValueType(&arr_)[DIM]) : StaticArray() {
+    for (Long i = 0; i < DIM; i++) arr[i] = arr_[i];
+  }
+
  private:
   StaticArray(const StaticArray&);
   StaticArray& operator=(const StaticArray&);
