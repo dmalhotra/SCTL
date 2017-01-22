@@ -240,7 +240,8 @@ template <class ValueType, Long DIM> class StaticArray : public Iterator<ValueTy
   ~StaticArray();
 
   StaticArray(std::initializer_list<ValueType> arr_) : StaticArray() {
-    // static_assert(arr_.size() == DIM); // allowed in C++14
+    // static_assert(arr_.size() <= DIM, "too many initializer values"); // allowed in C++14
+    PVFMM_ASSERT_MSG(arr_.size() <= DIM, "too many initializer values");
     for (Long i = 0; i < DIM; i++) arr[i] = arr_.begin()[i];
   }
 
