@@ -1,7 +1,7 @@
 #ifndef _PVFMM_MATRIX_HPP_
 #define _PVFMM_MATRIX_HPP_
 
-#include <stdint.h>
+#include <cstdint>
 #include <cstdlib>
 
 #include <pvfmm/common.hpp>
@@ -90,7 +90,6 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
  * perm := [p1 p2 ... pn] is the permutation vector,
  * scal := [s1 s2 ... sn] is the scaling vector.
  */
-#define PERM_INT_T Long
 template <class ValueType> class Permutation {
 
  public:
@@ -110,7 +109,7 @@ template <class ValueType> class Permutation {
 
   Matrix<ValueType> operator*(const Matrix<ValueType>& M);
 
-  Vector<PERM_INT_T> perm;
+  Vector<Long> perm;
   Vector<ValueType> scal;
 };
 

@@ -139,16 +139,23 @@ inline void Profile::print(const Comm* comm_) {
   size_t level = 0;
   if (!rank && prof.e_log.size() > 0) {
     std::cout << "\n" << std::setw(width * 3 - 2 * level) << " ";
-    std::cout << "  " << std::setw(width) << "t_min";
-    std::cout << "  " << std::setw(width) << "t_avg";
-    std::cout << "  " << std::setw(width) << "t_max";
-    std::cout << "  " << std::setw(width) << "f_min";
-    std::cout << "  " << std::setw(width) << "f_avg";
-    std::cout << "  " << std::setw(width) << "f_max";
+    if (np == 1) {
+      std::cout << "  " << std::setw(width) << "t";
+      std::cout << "  " << std::setw(width) << "f";
+      std::cout << "  " << std::setw(width) << "f/s";
+    } else {
+      std::cout << "  " << std::setw(width) << "t_min";
+      std::cout << "  " << std::setw(width) << "t_avg";
+      std::cout << "  " << std::setw(width) << "t_max";
 
-    std::cout << "  " << std::setw(width) << "f/s_min";
-    std::cout << "  " << std::setw(width) << "f/s_max";
-    std::cout << "  " << std::setw(width) << "f/s_total";
+      std::cout << "  " << std::setw(width) << "f_min";
+      std::cout << "  " << std::setw(width) << "f_avg";
+      std::cout << "  " << std::setw(width) << "f_max";
+
+      std::cout << "  " << std::setw(width) << "f/s_min";
+      std::cout << "  " << std::setw(width) << "f/s_max";
+      std::cout << "  " << std::setw(width) << "f/s_total";
+    }
 
     std::cout << "  " << std::setw(width) << "m_init";
     std::cout << "  " << std::setw(width) << "m_max";
@@ -221,18 +228,24 @@ inline void Profile::print(const Comm* comm_) {
         ss << "+-";
         ss << std::setw(width * 3 - 2 * level) << prof.n_log[i];
         ss << std::setiosflags(std::ios::right);
-        ss << "  " << std::setw(width) << t_min;
-        ss << "  " << std::setw(width) << t_avg;
-        ss << "  " << std::setw(width) << t_max;
+        if (np == 1) {
+          ss << "  " << std::setw(width) << t_avg;
+          ss << "  " << std::setw(width) << f_avg;
+          ss << "  " << std::setw(width) << fs_sum;
+        } else {
+          ss << "  " << std::setw(width) << t_min;
+          ss << "  " << std::setw(width) << t_avg;
+          ss << "  " << std::setw(width) << t_max;
 
-        ss << "  " << std::setw(width) << f_min;
-        ss << "  " << std::setw(width) << f_avg;
-        ss << "  " << std::setw(width) << f_max;
+          ss << "  " << std::setw(width) << f_min;
+          ss << "  " << std::setw(width) << f_avg;
+          ss << "  " << std::setw(width) << f_max;
 
-        ss << "  " << std::setw(width) << fs_min;
-        // ss<<"  "<<std::setw(width)<<fs_avg;
-        ss << "  " << std::setw(width) << fs_max;
-        ss << "  " << std::setw(width) << fs_sum;
+          ss << "  " << std::setw(width) << fs_min;
+          // ss<<"  "<<std::setw(width)<<fs_avg;
+          ss << "  " << std::setw(width) << fs_max;
+          ss << "  " << std::setw(width) << fs_sum;
+        }
 
         ss << "  " << std::setw(width) << m_init;
         ss << "  " << std::setw(width) << m_max;

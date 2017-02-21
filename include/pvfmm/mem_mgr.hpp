@@ -1,10 +1,9 @@
-// TODO: Implement fast stack allocation.
 #ifndef _PVFMM_MEM_MGR_HPP_
 #define _PVFMM_MEM_MGR_HPP_
 
 #include <omp.h>
 #include <cstdlib>
-#include <stdint.h>
+#include <cstdint>
 #include <cassert>
 #include <vector>
 #include <stack>
@@ -24,6 +23,8 @@ template <class ValueType> class ConstIterator {
   template <typename T> friend class ConstIterator;
 
   template <typename T> friend class Iterator;
+
+  void IteratorAssertChecks(Long j = 0) const;
 
  public:
   typedef std::random_access_iterator_tag iterator_category;
@@ -250,6 +251,7 @@ template <class ValueType, Long DIM> class StaticArray : public Iterator<ValueTy
   StaticArray& operator=(const StaticArray&);
 
   Iterator<ValueType> arr;
+  // ValueType arr_[DIM];
 };
 
 #define PVFMM_PTR2ITR(type, ptr, len) pvfmm::Iterator<type>((type*)ptr, len)

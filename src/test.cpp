@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
   {  // Test out-of-bound writes
     pvfmm::Iterator<char> A = pvfmm::aligned_new<char>(10);
     A[9];
-    A[10];  // Should print stack tace here (in debug mode).
+    A[10];  // Should print stack trace here (in debug mode).
     // pvfmm::aligned_delete(A); // Show memory leak warning when commented
   }
 

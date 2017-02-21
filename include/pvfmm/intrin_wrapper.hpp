@@ -1,6 +1,10 @@
 #ifndef _PVFMM_INTRIN_WRAPPER_HPP_
 #define _PVFMM_INTRIN_WRAPPER_HPP_
 
+#include <pvfmm/math_utils.hpp>
+#include <pvfmm/common.hpp>
+#include <cstdint>
+
 #ifdef __SSE__
 #include <xmmintrin.h>
 #endif

@@ -388,7 +388,7 @@ template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Ma
   wssize = (wssize > wssize1 ? wssize : wssize1);
 
   Iterator<ValueType> wsbuf = aligned_new<ValueType>(wssize);
-  pvfmm::mat::svd(&JOBU, &JOBVT, &m, &n, &M[0][0], &m, &tS[0][0], &tVT[0][0], &m, &tU[0][0], &k, wsbuf, &wssize, &INFO);
+  pvfmm::mat::svd(&JOBU, &JOBVT, &m, &n, M.Begin(), &m, tS.Begin(), tVT.Begin(), &m, tU.Begin(), &k, wsbuf, &wssize, &INFO);
   aligned_delete<ValueType>(wsbuf);
 
   if (INFO != 0) std::cout << INFO << '\n';
@@ -460,7 +460,7 @@ template <class ValueType> Permutation<ValueType> Permutation<ValueType>::Transp
   Long size = perm.Dim();
   Permutation<ValueType> P_r(size);
 
-  Vector<PERM_INT_T>& perm_r = P_r.perm;
+  Vector<Long>& perm_r = P_r.perm;
   Vector<ValueType>& scal_r = P_r.scal;
   for (Long i = 0; i < size; i++) {
     perm_r[perm[i]] = i;
@@ -474,7 +474,7 @@ template <class ValueType> Permutation<ValueType> Permutation<ValueType>::operat
   assert(P.Dim() == size);
 
   Permutation<ValueType> P_r(size);
-  Vector<PERM_INT_T>& perm_r = P_r.perm;
+  Vector<Long>& perm_r = P_r.perm;
   Vector<ValueType>& scal_r = P_r.scal;
   for (Long i = 0; i < size; i++) {
     perm_r[i] = perm[P.perm[i]];
@@ -507,7 +507,7 @@ template <class ValueType> Matrix<ValueType> operator*(const Matrix<ValueType>& 
 
   Matrix<ValueType> M_r(d0, d1, NULL);
   for (Long i = 0; i < d0; i++) {
-    ConstIterator<PERM_INT_T> perm_ = P.perm.Begin();
+    ConstIterator<Long> perm_ = P.perm.Begin();
     ConstIterator<ValueType> scal_ = P.scal.Begin();
     ConstIterator<ValueType> M_ = M[i];
     Iterator<ValueType> M_r_ = M_r[i];

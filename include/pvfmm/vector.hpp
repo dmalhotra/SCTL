@@ -5,7 +5,7 @@
 
 #include <vector>
 #include <cstdlib>
-#include <stdint.h>
+#include <cstdint>
 
 namespace pvfmm {
 

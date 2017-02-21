@@ -22,7 +22,14 @@ template <class ValueType> inline ConstIterator<ValueType>::ConstIterator(const 
     mem_head = NULL;
 }
 
-template <class ValueType> inline static void IteratorAssertChecks(Long offset, Long len, void* mem_head, Long alloc_ctr) {
+template <class ValueType> inline void ConstIterator<ValueType>::IteratorAssertChecks(Long j) const {
+  const auto& base = this->base;
+  const auto& offset = this->offset + j * (Long)sizeof(ValueType);
+  const auto& len = this->len;
+  const auto& mem_head = this->mem_head;
+  const auto& alloc_ctr = this->alloc_ctr;
+
+  if (*this == NULL) PVFMM_WARN("dereferencing a NULL pointer is undefined.");
   PVFMM_ASSERT_MSG(offset >= 0 && offset + (Long)sizeof(ValueType) <= len, "access to pointer [B" << (offset < 0 ? "" : "+") << offset << ",B" << (offset + (Long)sizeof(ValueType) < 0 ? "" : "+") << offset + (Long)sizeof(ValueType) << ") is outside of the range [B,B+" << len << ").");
   if (mem_head) {
     MemoryManager::MemHead& mh = *(MemoryManager::MemHead*)(mem_head);
@@ -31,37 +38,38 @@ template <class ValueType> inline static void IteratorAssertChecks(Long offset, 
 }
 
 template <class ValueType> inline typename ConstIterator<ValueType>::reference ConstIterator<ValueType>::operator*() const {
-  IteratorAssertChecks<ValueType>(this->offset, this->len, this->mem_head, this->alloc_ctr);
+  this->IteratorAssertChecks();
   return *(ValueType*)(base + offset);
 }
 
 template <class ValueType> inline const typename ConstIterator<ValueType>::value_type* ConstIterator<ValueType>::operator->() const {
-  IteratorAssertChecks<ValueType>(this->offset, this->len, this->mem_head, this->alloc_ctr);
+  this->IteratorAssertChecks();
   return (ValueType*)(base + offset);
 }
 
 template <class ValueType> inline typename ConstIterator<ValueType>::reference ConstIterator<ValueType>::operator[](difference_type j) const {
-  IteratorAssertChecks<ValueType>(this->offset + j * (Long)sizeof(ValueType), this->len, this->mem_head, this->alloc_ctr);
+  this->IteratorAssertChecks(j);
   return *(ValueType*)(base + offset + j * (Long)sizeof(ValueType));
 }
 
 template <class ValueType> inline typename Iterator<ValueType>::reference Iterator<ValueType>::operator*() const {
-  IteratorAssertChecks<ValueType>(this->offset, this->len, this->mem_head, this->alloc_ctr);
+  this->IteratorAssertChecks();
   return *(ValueType*)(this->base + this->offset);
 }
 
 template <class ValueType> inline typename Iterator<ValueType>::value_type* Iterator<ValueType>::operator->() const {
-  IteratorAssertChecks<ValueType>(this->offset, this->len, this->mem_head, this->alloc_ctr);
+  this->IteratorAssertChecks();
   return (ValueType*)(this->base + this->offset);
 }
 
 template <class ValueType> inline typename Iterator<ValueType>::reference Iterator<ValueType>::operator[](difference_type j) const {
-  IteratorAssertChecks<ValueType>(this->offset + j * (Long)sizeof(ValueType), this->len, this->mem_head, this->alloc_ctr);
+  this->IteratorAssertChecks(j);
   return *(ValueType*)(this->base + this->offset + j * (Long)sizeof(ValueType));
 }
 
 template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>::StaticArray() {
   arr = aligned_new<ValueType>(DIM);
+  // arr = PVFMM_PTR2ITR(ValueType, arr_, DIM);
   Iterator<ValueType>::operator=(arr);
 }
 
@@ -69,6 +77,7 @@ template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>::~Static
 
 template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>::StaticArray(const StaticArray& I) {
   arr = aligned_new<ValueType>(DIM);
+  // arr = PVFMM_PTR2ITR(ValueType, arr_, DIM);
   Iterator<ValueType>::operator=(arr);
   for (Long i = 0; i < DIM; i++) (*this)[i] = I[i];
 }

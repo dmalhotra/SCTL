@@ -6,7 +6,8 @@
 #define NULL 0
 #endif
 
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 namespace pvfmm {
 typedef long Integer;  // bounded numbers < 32k
 typedef int64_t Long;  // problem size

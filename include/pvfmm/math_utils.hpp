@@ -1,6 +1,8 @@
 #ifndef _MATH_UTILS_
 #define _MATH_UTILS_
 
+#include <pvfmm/common.hpp>
+
 #include <cmath>
 #include <ostream>
 
