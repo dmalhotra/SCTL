@@ -259,7 +259,8 @@ template <class ValueType> static inline void SVD(StaticArray<Long, 2> &dim, Ite
     iter++;
 
     ValueType S_max = 0.0;
-    for (Long i = 0; i < dim[1]; i++) S_max = (S_max > S(i, i) ? S_max : S(i, i));
+    for (Long i = 0; i < dim[1]; i++) S_max = (S_max > pvfmm::fabs<ValueType>(S(i, i)) ? S_max : pvfmm::fabs<ValueType>(S(i, i)));
+    for (Long i = 0; i < dim[1] - 1; i++) S_max = (S_max > pvfmm::fabs<ValueType>(S(i, i + 1)) ? S_max : pvfmm::fabs<ValueType>(S(i, i + 1)));
 
     // while(k0<dim[1]-1 && pvfmm::fabs<ValueType>(S(k0,k0+1))<=eps*(pvfmm::fabs<ValueType>(S(k0,k0))+pvfmm::fabs<ValueType>(S(k0+1,k0+1)))) k0++;
     while (k0 < dim[1] - 1 && pvfmm::fabs<ValueType>(S(k0, k0 + 1)) <= eps * S_max) k0++;
@@ -271,7 +272,7 @@ template <class ValueType> static inline void SVD(StaticArray<Long, 2> &dim, Ite
 
     ValueType alpha = 0;
     ValueType beta = 0;
-    if (n - k0 == 2 && S(k0, k0) == 0 && S(k0 + 1, k0 + 1) == 0) { // Compute mu
+    if (n - k0 == 2 && pvfmm::fabs<ValueType>(S(k0, k0)) < eps * S_max && pvfmm::fabs<ValueType>(S(k0 + 1, k0 + 1)) < eps * S_max) {  // Compute mu
       alpha=0;
       beta=1;
     } else {
