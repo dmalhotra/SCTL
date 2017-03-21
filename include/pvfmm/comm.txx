@@ -3,19 +3,19 @@
 
 namespace pvfmm {
 
-Comm::Comm() {
+inline Comm::Comm() {
 #ifdef PVFMM_HAVE_MPI
   Init(MPI_COMM_SELF);
 #endif
 }
 
-Comm::Comm(const Comm& c) {
+inline Comm::Comm(const Comm& c) {
 #ifdef PVFMM_HAVE_MPI
   Init(c.mpi_comm_);
 #endif
 }
 
-Comm Comm::Self() {
+inline Comm Comm::Self() {
 #ifdef PVFMM_HAVE_MPI
   Comm comm_self(MPI_COMM_SELF);
   return comm_self;
@@ -25,7 +25,7 @@ Comm Comm::Self() {
 #endif
 }
 
-Comm Comm::World() {
+inline Comm Comm::World() {
 #ifdef PVFMM_HAVE_MPI
   Comm comm_world(MPI_COMM_WORLD);
   return comm_world;
@@ -35,13 +35,13 @@ Comm Comm::World() {
 #endif
 }
 
-Comm& Comm::operator=(const Comm& c) {
+inline Comm& Comm::operator=(const Comm& c) {
 #ifdef PVFMM_HAVE_MPI
   Init(c.mpi_comm_);
 #endif
 }
 
-Comm::~Comm() {
+inline Comm::~Comm() {
 #ifdef PVFMM_HAVE_MPI
   while (!req.empty()) {
     delete (Vector<MPI_Request>*)req.top();
@@ -51,7 +51,7 @@ Comm::~Comm() {
 #endif
 }
 
-Comm Comm::Split(Integer clr) const {
+inline Comm Comm::Split(Integer clr) const {
 #ifdef PVFMM_HAVE_MPI
   MPI_Comm new_comm;
   MPI_Comm_split(mpi_comm_, clr, mpi_rank_, &new_comm);
@@ -64,7 +64,7 @@ Comm Comm::Split(Integer clr) const {
 #endif
 }
 
-Integer Comm::Rank() const {
+inline Integer Comm::Rank() const {
 #ifdef PVFMM_HAVE_MPI
   return mpi_rank_;
 #else
@@ -72,7 +72,7 @@ Integer Comm::Rank() const {
 #endif
 }
 
-Integer Comm::Size() const {
+inline Integer Comm::Size() const {
 #ifdef PVFMM_HAVE_MPI
   return mpi_size_;
 #else
@@ -80,7 +80,7 @@ Integer Comm::Size() const {
 #endif
 }
 
-void Comm::Barrier() const {
+inline void Comm::Barrier() const {
 #ifdef PVFMM_HAVE_MPI
   MPI_Barrier(mpi_comm_);
 #endif
@@ -130,7 +130,7 @@ template <class RType> void* Comm::Irecv(Iterator<RType> rbuf, Long rcount, Inte
 #endif
 }
 
-void Comm::Wait(void* req_ptr) const {
+inline void Comm::Wait(void* req_ptr) const {
 #ifdef PVFMM_HAVE_MPI
   if (req_ptr == NULL) return;
   Vector<MPI_Request>& request = *(Vector<MPI_Request>*)req_ptr;
@@ -903,14 +903,14 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
 }
 
 #ifdef PVFMM_HAVE_MPI
-Vector<MPI_Request>* Comm::NewReq() const {
+inline Vector<MPI_Request>* Comm::NewReq() const {
   if (req.empty()) req.push(new Vector<MPI_Request>);
   Vector<MPI_Request>& request = *(Vector<MPI_Request>*)req.top();
   req.pop();
   return &request;
 }
 
-void Comm::DelReq(Vector<MPI_Request>* req_ptr) const {
+inline void Comm::DelReq(Vector<MPI_Request>* req_ptr) const {
   if (req_ptr) req.push(req_ptr);
 }
 
