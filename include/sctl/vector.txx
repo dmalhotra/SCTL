@@ -7,15 +7,6 @@
 
 namespace SCTL_NAMESPACE {
 
-template <class ValueType> std::ostream& operator<<(std::ostream& output, const Vector<ValueType>& V) {
-  std::ios::fmtflags f(std::cout.flags());
-  output << std::fixed << std::setprecision(4) << std::setiosflags(std::ios::left);
-  for (Long i = 0; i < V.Dim(); i++) output << std::setw(10) << V[i] << ' ';
-  output << ";\n";
-  std::cout.flags(f);
-  return output;
-}
-
 template <class ValueType> Vector<ValueType>::Vector() {
   dim = 0;
   capacity = 0;
@@ -159,14 +150,19 @@ template <class ValueType> void Vector<ValueType>::PushBack(const ValueType& x) 
   }
 }
 
-template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const Vector<ValueType>& V) {
-  if (this != &V) {
-    if (capacity < V.dim) ReInit(V.dim);
-    dim = V.dim;
-    memcopy(data_ptr, V.data_ptr, dim);
-  }
-  return *this;
+// Element access
+
+template <class ValueType> inline ValueType& Vector<ValueType>::operator[](Long j) {
+  assert(j >= 0 && j < dim);
+  return data_ptr[j];
 }
+
+template <class ValueType> inline const ValueType& Vector<ValueType>::operator[](Long j) const {
+  assert(j >= 0 && j < dim);
+  return data_ptr[j];
+}
+
+// Vector-Vector operations
 
 template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const std::vector<ValueType>& V) {
   {
@@ -177,14 +173,173 @@ template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const
   return *this;
 }
 
-template <class ValueType> inline ValueType& Vector<ValueType>::operator[](Long j) {
-  assert(j >= 0 && j < dim);
-  return data_ptr[j];
+template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const Vector<ValueType>& V) {
+  if (this != &V) {
+    if (capacity < V.dim) ReInit(V.dim);
+    dim = V.dim;
+    memcopy(data_ptr, V.data_ptr, dim);
+  }
+  return *this;
 }
 
-template <class ValueType> inline const ValueType& Vector<ValueType>::operator[](Long j) const {
-  assert(j >= 0 && j < dim);
-  return data_ptr[j];
+template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator+=(const Vector<ValueType>& V) {
+  SCTL_ASSERT(V.Dim() == dim);
+  for (Long i = 0; i < dim; i++) data_ptr[i] += V[i];
+  Profile::Add_FLOP(dim);
+  return *this;
+}
+
+template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator-=(const Vector<ValueType>& V) {
+  SCTL_ASSERT(V.Dim() == dim);
+  for (Long i = 0; i < dim; i++) data_ptr[i] -= V[i];
+  Profile::Add_FLOP(dim);
+  return *this;
+}
+
+template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator*=(const Vector<ValueType>& V) {
+  SCTL_ASSERT(V.Dim() == dim);
+  for (Long i = 0; i < dim; i++) data_ptr[i] *= V[i];
+  Profile::Add_FLOP(dim);
+  return *this;
+}
+
+template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator/=(const Vector<ValueType>& V) {
+  SCTL_ASSERT(V.Dim() == dim);
+  for (Long i = 0; i < dim; i++) data_ptr[i] /= V[i];
+  Profile::Add_FLOP(dim);
+  return *this;
+}
+
+template <class ValueType> Vector<ValueType> Vector<ValueType>::operator+(const Vector<ValueType>& V) const {
+  Vector<ValueType> Vr(dim);
+  SCTL_ASSERT(V.Dim() == dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] + V[i];
+  Profile::Add_FLOP(dim);
+  return Vr;
+}
+
+template <class ValueType> Vector<ValueType> Vector<ValueType>::operator-(const Vector<ValueType>& V) const {
+  Vector<ValueType> Vr(dim);
+  SCTL_ASSERT(V.Dim() == dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] - V[i];
+  Profile::Add_FLOP(dim);
+  return Vr;
+}
+
+template <class ValueType> Vector<ValueType> Vector<ValueType>::operator*(const Vector<ValueType>& V) const {
+  Vector<ValueType> Vr(dim);
+  SCTL_ASSERT(V.Dim() == dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] * V[i];
+  Profile::Add_FLOP(dim);
+  return Vr;
+}
+
+template <class ValueType> Vector<ValueType> Vector<ValueType>::operator/(const Vector<ValueType>& V) const {
+  Vector<ValueType> Vr(dim);
+  SCTL_ASSERT(V.Dim() == dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] / V[i];
+  Profile::Add_FLOP(dim);
+  return Vr;
+}
+
+// Vector-Scalar operations
+
+template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(ValueType s) {
+  for (Long i = 0; i < dim; i++) data_ptr[i] = s;
+  return *this;
+}
+
+template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator+=(ValueType s) {
+  for (Long i = 0; i < dim; i++) data_ptr[i] += s;
+  Profile::Add_FLOP(dim);
+  return *this;
+}
+
+template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator-=(ValueType s) {
+  for (Long i = 0; i < dim; i++) data_ptr[i] -= s;
+  Profile::Add_FLOP(dim);
+  return *this;
+}
+
+template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator*=(ValueType s) {
+  for (Long i = 0; i < dim; i++) data_ptr[i] *= s;
+  Profile::Add_FLOP(dim);
+  return *this;
+}
+
+template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator/=(ValueType s) {
+  for (Long i = 0; i < dim; i++) data_ptr[i] /= s;
+  Profile::Add_FLOP(dim);
+  return *this;
+}
+
+template <class ValueType> Vector<ValueType> Vector<ValueType>::operator+(ValueType s) const {
+  Vector<ValueType> Vr(dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] + s;
+  Profile::Add_FLOP(dim);
+  return Vr;
+}
+
+template <class ValueType> Vector<ValueType> Vector<ValueType>::operator-(ValueType s) const {
+  Vector<ValueType> Vr(dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] - s;
+  Profile::Add_FLOP(dim);
+  return Vr;
+}
+
+template <class ValueType> Vector<ValueType> Vector<ValueType>::operator*(ValueType s) const {
+  Vector<ValueType> Vr(dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] * s;
+  Profile::Add_FLOP(dim);
+  return Vr;
+}
+
+template <class ValueType> Vector<ValueType> Vector<ValueType>::operator/(ValueType s) const {
+  Vector<ValueType> Vr(dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] / s;
+  Profile::Add_FLOP(dim);
+  return Vr;
+}
+
+template <class ValueType> Vector<ValueType> operator+(ValueType s, const Vector<ValueType>& V) {
+  Long dim = V.Dim();
+  Vector<ValueType> Vr(dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = s + V[i];
+  Profile::Add_FLOP(dim);
+  return Vr;
+}
+
+template <class ValueType> Vector<ValueType> operator-(ValueType s, const Vector<ValueType>& V) {
+  Long dim = V.Dim();
+  Vector<ValueType> Vr(dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = s - V[i];
+  Profile::Add_FLOP(dim);
+  return Vr;
+}
+
+template <class ValueType> Vector<ValueType> operator*(ValueType s, const Vector<ValueType>& V) {
+  Long dim = V.Dim();
+  Vector<ValueType> Vr(dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = s * V[i];
+  Profile::Add_FLOP(dim);
+  return Vr;
+}
+
+template <class ValueType> Vector<ValueType> operator/(ValueType s, const Vector<ValueType>& V) {
+  Long dim = V.Dim();
+  Vector<ValueType> Vr(dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = s / V[i];
+  Profile::Add_FLOP(dim);
+  return Vr;
+}
+
+template <class ValueType> std::ostream& operator<<(std::ostream& output, const Vector<ValueType>& V) {
+  std::ios::fmtflags f(std::cout.flags());
+  output << std::fixed << std::setprecision(4) << std::setiosflags(std::ios::left);
+  for (Long i = 0; i < V.Dim(); i++) output << std::setw(10) << V[i] << ' ';
+  output << ";\n";
+  std::cout.flags(f);
+  return output;
 }
 
 }  // end namespace

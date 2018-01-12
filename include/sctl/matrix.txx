@@ -299,6 +299,20 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator-=(Valu
   return *this;
 }
 
+template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator*=(ValueType s) {
+  Long N = dim[0] * dim[1];
+  for (Long i = 0; i < N; i++) data_ptr[i] *= s;
+  Profile::Add_FLOP(N);
+  return *this;
+}
+
+template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator/=(ValueType s) {
+  Long N = dim[0] * dim[1];
+  for (Long i = 0; i < N; i++) data_ptr[i] /= s;
+  Profile::Add_FLOP(N);
+  return *this;
+}
+
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator+(ValueType s) const {
   Long N = dim[0] * dim[1];
   Matrix<ValueType> M_r(dim(0), dim(1));

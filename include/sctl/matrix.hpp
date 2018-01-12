@@ -70,6 +70,10 @@ template <class ValueType> class Matrix {
 
   Matrix<ValueType>& operator-=(ValueType s);
 
+  Matrix<ValueType>& operator*=(ValueType s);
+
+  Matrix<ValueType>& operator/=(ValueType s);
+
   Matrix<ValueType> operator+(ValueType s) const;
 
   Matrix<ValueType> operator-(ValueType s) const;

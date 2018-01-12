@@ -44,13 +44,53 @@ template <class ValueType> class Vector {
 
   void PushBack(const ValueType& x);
 
-  Vector& operator=(const Vector& V);
-
-  Vector& operator=(const std::vector<ValueType>& V);
+  // Element access
 
   ValueType& operator[](Long j);
 
   const ValueType& operator[](Long j) const;
+
+  // Vector-Vector operations
+
+  Vector& operator=(const std::vector<ValueType>& V);
+
+  Vector& operator=(const Vector& V);
+
+  Vector& operator+=(const Vector& V);
+
+  Vector& operator-=(const Vector& V);
+
+  Vector& operator*=(const Vector& V);
+
+  Vector& operator/=(const Vector& V);
+
+  Vector operator+(const Vector& V) const ;
+
+  Vector operator-(const Vector& V) const ;
+
+  Vector operator*(const Vector& V) const ;
+
+  Vector operator/(const Vector& V) const ;
+
+  // Vector-Scalar operations
+
+  Vector& operator=(ValueType s);
+
+  Vector& operator+=(ValueType s);
+
+  Vector& operator-=(ValueType s);
+
+  Vector& operator*=(ValueType s);
+
+  Vector& operator/=(ValueType s);
+
+  Vector operator+(ValueType s) const ;
+
+  Vector operator-(ValueType s) const ;
+
+  Vector operator*(ValueType s) const ;
+
+  Vector operator/(ValueType s) const ;
 
  private:
   Long dim;
@@ -58,6 +98,14 @@ template <class ValueType> class Vector {
   Iterator<ValueType> data_ptr;
   bool own_data;
 };
+
+template <class ValueType> Vector<ValueType> operator+(ValueType s, const Vector<ValueType>& V);
+
+template <class ValueType> Vector<ValueType> operator-(ValueType s, const Vector<ValueType>& V);
+
+template <class ValueType> Vector<ValueType> operator*(ValueType s, const Vector<ValueType>& V);
+
+template <class ValueType> Vector<ValueType> operator/(ValueType s, const Vector<ValueType>& V);
 
 template <class ValueType> std::ostream& operator<<(std::ostream& output, const Vector<ValueType>& V);
 
