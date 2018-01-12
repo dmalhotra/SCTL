@@ -1,5 +1,5 @@
-#ifndef _PVFMM_STACKTRACE_H_
-#define _PVFMM_STACKTRACE_H_
+#ifndef _SCTL_STACKTRACE_H_
+#define _SCTL_STACKTRACE_H_
 
 #include <unistd.h>
 #include <signal.h>
@@ -8,7 +8,7 @@
 #include <execinfo.h>
 #include <cxxabi.h>
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
   // Get addresses
@@ -28,7 +28,7 @@ inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
   for (int i = skip; i < addrlen; i++) {
     // Get command
     char cmd[10240];
-    sprintf(cmd, "addr2line -f -C -i -e  %s  %016p", fname, addrlist[i]);
+    sprintf(cmd, "addr2line -f -C -i -e  %s  %016p 2> /dev/null", fname, addrlist[i]);
 
     // Execute command
     FILE* pipe = popen(cmd, "r");
@@ -46,7 +46,7 @@ inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
     pclose(pipe);
 
     // Print output
-    if (buffer0[0] != '?') {
+    if (buffer0[0] != '?' && buffer0[0] != '\0') {
       fprintf(out, "[%d] %s: %s\n", i - skip, buffer1, buffer0);
     } else {
       fprintf(out, "[%d] %016p: %s\n", i - skip, addrlist[i], symbollist[i]);
@@ -110,4 +110,4 @@ inline int SetSigHandler() {
 
 }  // end namespace
 
-#endif  // _PVFMM_STACKTRACE_H_
+#endif  // _SCTL_STACKTRACE_H_

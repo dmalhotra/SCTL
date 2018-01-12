@@ -1,9 +1,9 @@
-#ifndef _PVFMM_MAT_UTILS_
-#define _PVFMM_MAT_UTILS_
+#ifndef _SCTL_MAT_UTILS_
+#define _SCTL_MAT_UTILS_
 
-#include <pvfmm/common.hpp>
+#include SCTL_INCLUDE(common.hpp)
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 namespace mat {
 
 template <class T> void gemm(char TransA, char TransB, int M, int N, int K, T alpha, T *A, int lda, T *B, int ldb, T beta, T *C, int ldc);
@@ -19,8 +19,8 @@ template <class T> void svd(char *JOBU, char *JOBVT, int *M, int *N, Iterator<T>
 template <class T> void pinv(Iterator<T> M, int n1, int n2, T eps, Iterator<T> M_);
 
 }  // end namespace mat
-}  // end namespace pvfmm
+}  // end namespace SCTL_NAMESPACE
 
-#include <pvfmm/mat_utils.txx>
+#include SCTL_INCLUDE(mat_utils.txx)
 
-#endif  //_PVFMM_MAT_UTILS_
+#endif  //_SCTL_MAT_UTILS_

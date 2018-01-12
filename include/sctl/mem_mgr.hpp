@@ -1,5 +1,6 @@
-#ifndef _PVFMM_MEM_MGR_HPP_
-#define _PVFMM_MEM_MGR_HPP_
+// TODO: Implement fast stack allocation.
+#ifndef _SCTL_MEM_MGR_HPP_
+#define _SCTL_MEM_MGR_HPP_
 
 #include <omp.h>
 #include <cstdlib>
@@ -10,13 +11,13 @@
 #include <map>
 #include <set>
 
-#include <pvfmm/common.hpp>
+#include SCTL_INCLUDE(common.hpp)
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 class MemoryManager;
 
-#ifdef PVFMM_MEMDEBUG
+#ifdef SCTL_MEMDEBUG
 
 template <class ValueType> class ConstIterator {
 
@@ -49,9 +50,9 @@ template <class ValueType> class ConstIterator {
     mem_head = NULL;
   }
 
-  template <size_t LENGTH> ConstIterator(ValueType (&base_)[LENGTH]) {  // DEPRECATED
-    PVFMM_ASSERT(false);
-  }
+  // template <size_t LENGTH> ConstIterator(ValueType (&base_)[LENGTH]) {  // DEPRECATED
+  //   SCTL_ASSERT(false);
+  // }
 
   ConstIterator(const ValueType* base_, difference_type len_, bool dynamic_alloc = false);
 
@@ -59,7 +60,7 @@ template <class ValueType> class ConstIterator {
     this->base = I.base;
     this->len = I.len;
     this->offset = I.offset;
-    PVFMM_ASSERT_MSG((uintptr_t)(this->base + this->offset) % alignof(ValueType) == 0, "invalid alignment during pointer type conversion.");
+    SCTL_ASSERT_MSG((uintptr_t)(this->base + this->offset) % alignof(ValueType) == 0, "invalid alignment during pointer type conversion.");
     this->alloc_ctr = I.alloc_ctr;
     this->mem_head = I.mem_head;
   }
@@ -120,9 +121,9 @@ template <class ValueType> class ConstIterator {
   }
 
   difference_type operator-(const ConstIterator& I) const {
-    if (base != I.base) PVFMM_WARN("comparing two unrelated memory addresses.");
+    // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
     Long diff = ((ValueType*)(base + offset)) - ((ValueType*)(I.base + I.offset));
-    PVFMM_ASSERT_MSG(I.base + I.offset + diff * (Long)sizeof(ValueType) == base + offset, "invalid memory address alignment.");
+    SCTL_ASSERT_MSG(I.base + I.offset + diff * (Long)sizeof(ValueType) == base + offset, "invalid memory address alignment.");
     return diff;
   }
 
@@ -132,22 +133,22 @@ template <class ValueType> class ConstIterator {
   bool operator!=(const ConstIterator& I) const { return !(*this == I); }
 
   bool operator<(const ConstIterator& I) const {
-    if (base != I.base) PVFMM_WARN("comparing two unrelated memory addresses.");
+    // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
     return (base + offset) < (I.base + I.offset);
   }
 
   bool operator<=(const ConstIterator& I) const {
-    if (base != I.base) PVFMM_WARN("comparing two unrelated memory addresses.");
+    // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
     return (base + offset) <= (I.base + I.offset);
   }
 
   bool operator>(const ConstIterator& I) const {
-    if (base != I.base) PVFMM_WARN("comparing two unrelated memory addresses.");
+    // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
     return (base + offset) > (I.base + I.offset);
   }
 
   bool operator>=(const ConstIterator& I) const {
-    if (base != I.base) PVFMM_WARN("comparing two unrelated memory addresses.");
+    // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
     return (base + offset) >= (I.base + I.offset);
   }
 
@@ -238,29 +239,31 @@ template <class ValueType, Long DIM> class StaticArray : public Iterator<ValueTy
  public:
   StaticArray();
 
+  StaticArray(const StaticArray&);
+
+  StaticArray& operator=(const StaticArray&);
+
   ~StaticArray();
 
   StaticArray(std::initializer_list<ValueType> arr_) : StaticArray() {
     // static_assert(arr_.size() <= DIM, "too many initializer values"); // allowed in C++14
-    PVFMM_ASSERT_MSG(arr_.size() <= DIM, "too many initializer values");
+    SCTL_ASSERT_MSG(arr_.size() <= DIM, "too many initializer values");
     for (Long i = 0; i < arr_.size(); i++) arr[i] = arr_.begin()[i];
   }
 
  private:
-  StaticArray(const StaticArray&);
-  StaticArray& operator=(const StaticArray&);
 
   Iterator<ValueType> arr;
-  // ValueType arr_[DIM];
+  ValueType arr_[DIM];
 };
 
-#define PVFMM_PTR2ITR(type, ptr, len) pvfmm::Iterator<type>((type*)ptr, len)
-#define PVFMM_PTR2CONSTITR(type, ptr, len) pvfmm::ConstIterator<type>((const type*)ptr, len)
+template <class ValueType> Iterator<ValueType> Ptr2Itr(void* ptr, Long len) { return Iterator<ValueType>((ValueType*)ptr, len); }
+template <class ValueType> ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len) { return ConstIterator<ValueType>((ValueType*)ptr, len); }
 
 #else
 
-#define PVFMM_PTR2ITR(type, ptr, len) (type*) ptr
-#define PVFMM_PTR2CONSTITR(type, ptr, len) (const type*) ptr
+template <class ValueType> ValueType* Ptr2Itr(void* ptr, Long len) { return (ValueType*) ptr; }
+template <class ValueType> const ValueType* Ptr2ConstItr(const void* ptr, Long len) { return (const ValueType*) ptr; }
 
 #endif
 
@@ -322,7 +325,7 @@ class MemoryManager {
 
   // A global MemoryManager object. This is the default for aligned_new and aligned_free
   static MemoryManager& glbMemMgr() {
-    static MemoryManager m(PVFMM_GLOBAL_MEM_BUFF * 1024LL * 1024LL);
+    static MemoryManager m(SCTL_GLOBAL_MEM_BUFF * 1024LL * 1024LL);
     return m;
   }
 
@@ -369,7 +372,7 @@ class MemoryManager {
 };
 
 inline uintptr_t align_ptr(uintptr_t ptr) {
-  const uintptr_t ALIGN_MINUS_ONE = PVFMM_MEM_ALIGN - 1;
+  const uintptr_t ALIGN_MINUS_ONE = SCTL_MEM_ALIGN - 1;
   const uintptr_t NOT_ALIGN_MINUS_ONE = ~ALIGN_MINUS_ONE;
   return ((ptr + ALIGN_MINUS_ONE) & NOT_ALIGN_MINUS_ONE);
 }
@@ -395,8 +398,8 @@ template <class ValueType> Iterator<ValueType> memcopy(Iterator<ValueType> desti
 
 template <class ValueType> Iterator<ValueType> memset(Iterator<ValueType> ptr, int value, Long num);
 
-}  // end namespace pvfmm
+}  // end namespace SCTL_NAMESPACE
 
-#include <pvfmm/mem_mgr.txx>
+#include SCTL_INCLUDE(mem_mgr.txx)
 
-#endif  //_PVFMM_MEM_MGR_HPP_
+#endif  //_SCTL_MEM_MGR_HPP_

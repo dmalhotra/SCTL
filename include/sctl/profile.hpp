@@ -1,17 +1,17 @@
-#ifndef _PVFMM_PROFILE_HPP_
-#define _PVFMM_PROFILE_HPP_
+#ifndef _SCTL_PROFILE_HPP_
+#define _SCTL_PROFILE_HPP_
 
 #include <string>
 #include <vector>
 #include <stack>
 
-#include <pvfmm/common.hpp>
+#include SCTL_INCLUDE(common.hpp)
 
-#ifndef PVFMM_PROFILE
-#define PVFMM_PROFILE -1
+#ifndef SCTL_PROFILE
+#define SCTL_PROFILE -1
 #endif
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 class Comm;
 
@@ -67,6 +67,6 @@ class Profile {
 
 }  // end namespace
 
-#include <pvfmm/profile.txx>
+#include SCTL_INCLUDE(profile.txx)
 
-#endif  //_PVFMM_PROFILE_HPP_
+#endif  //_SCTL_PROFILE_HPP_

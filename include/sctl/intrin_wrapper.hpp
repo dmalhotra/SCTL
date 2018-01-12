@@ -1,8 +1,8 @@
-#ifndef _PVFMM_INTRIN_WRAPPER_HPP_
-#define _PVFMM_INTRIN_WRAPPER_HPP_
+#ifndef _SCTL_INTRIN_WRAPPER_HPP_
+#define _SCTL_INTRIN_WRAPPER_HPP_
 
-#include <pvfmm/math_utils.hpp>
-#include <pvfmm/common.hpp>
+#include SCTL_INCLUDE(math_utils.hpp)
+#include SCTL_INCLUDE(common.hpp)
 #include <cstdint>
 
 #ifdef __SSE__
@@ -21,7 +21,7 @@
 #include <immintrin.h>
 #endif
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 template <class T> inline T zero_intrin() { return (T)0; }
 
@@ -57,14 +57,14 @@ template <class T> inline T and_intrin(const T& a, const T& b) {
 }
 
 template <class T> inline T rsqrt_approx_intrin(const T& r2) {
-  if (r2 != 0) return 1.0 / pvfmm::sqrt<T>(r2);
+  if (r2 != 0) return 1.0 / sqrt<T>(r2);
   return 0;
 }
 
 template <class T, class Real> inline void rsqrt_newton_intrin(T& rinv, const T& r2, const Real& nwtn_const) { rinv = rinv * (nwtn_const - r2 * rinv * rinv); }
 
 template <class T> inline T rsqrt_single_intrin(const T& r2) {
-  if (r2 != 0) return 1.0 / pvfmm::sqrt<T>(r2);
+  if (r2 != 0) return 1.0 / sqrt<T>(r2);
   return 0;
 }
 
@@ -82,9 +82,9 @@ template <class T> inline T min_intrin(const T& a, const T& b) {
     return a;
 }
 
-template <class T> inline T sin_intrin(const T& t) { return pvfmm::sin<T>(t); }
+template <class T> inline T sin_intrin(const T& t) { return sin<T>(t); }
 
-template <class T> inline T cos_intrin(const T& t) { return pvfmm::cos<T>(t); }
+template <class T> inline T cos_intrin(const T& t) { return cos<T>(t); }
 
 #ifdef __SSE3__
 template <> inline __m128 zero_intrin() { return _mm_setzero_ps(); }
@@ -190,7 +190,7 @@ template <> inline __m128 min_intrin(const __m128& a, const __m128& b) { return 
 
 template <> inline __m128d min_intrin(const __m128d& a, const __m128d& b) { return _mm_min_pd(a, b); }
 
-#ifdef PVFMM_HAVE_INTEL_SVML
+#ifdef SCTL_HAVE_INTEL_SVML
 template <> inline __m128 sin_intrin(const __m128& t) { return _mm_sin_ps(t); }
 
 template <> inline __m128 cos_intrin(const __m128& t) { return _mm_cos_ps(t); }
@@ -205,7 +205,7 @@ template <> inline __m128 sin_intrin(const __m128& t_) {
     __m128 d;
   } t;
   store_intrin(t.e, t_);
-  return _mm_set_ps(pvfmm::sin<float>(t.e[3]), pvfmm::sin<float>(t.e[2]), pvfmm::sin<float>(t.e[1]), pvfmm::sin<float>(t.e[0]));
+  return _mm_set_ps(sin<float>(t.e[3]), sin<float>(t.e[2]), sin<float>(t.e[1]), sin<float>(t.e[0]));
 }
 
 template <> inline __m128 cos_intrin(const __m128& t_) {
@@ -214,7 +214,7 @@ template <> inline __m128 cos_intrin(const __m128& t_) {
     __m128 d;
   } t;
   store_intrin(t.e, t_);
-  return _mm_set_ps(pvfmm::cos<float>(t.e[3]), pvfmm::cos<float>(t.e[2]), pvfmm::cos<float>(t.e[1]), pvfmm::cos<float>(t.e[0]));
+  return _mm_set_ps(cos<float>(t.e[3]), cos<float>(t.e[2]), cos<float>(t.e[1]), cos<float>(t.e[0]));
 }
 
 template <> inline __m128d sin_intrin(const __m128d& t_) {
@@ -223,7 +223,7 @@ template <> inline __m128d sin_intrin(const __m128d& t_) {
     __m128d d;
   } t;
   store_intrin(t.e, t_);
-  return _mm_set_pd(pvfmm::sin<double>(t.e[1]), pvfmm::sin<double>(t.e[0]));
+  return _mm_set_pd(sin<double>(t.e[1]), sin<double>(t.e[0]));
 }
 
 template <> inline __m128d cos_intrin(const __m128d& t_) {
@@ -232,7 +232,7 @@ template <> inline __m128d cos_intrin(const __m128d& t_) {
     __m128d d;
   } t;
   store_intrin(t.e, t_);
-  return _mm_set_pd(pvfmm::cos<double>(t.e[1]), pvfmm::cos<double>(t.e[0]));
+  return _mm_set_pd(cos<double>(t.e[1]), cos<double>(t.e[0]));
 }
 #endif
 #endif
@@ -341,7 +341,7 @@ template <> inline __m256 min_intrin(const __m256& a, const __m256& b) { return 
 
 template <> inline __m256d min_intrin(const __m256d& a, const __m256d& b) { return _mm256_min_pd(a, b); }
 
-#ifdef PVFMM_HAVE_INTEL_SVML
+#ifdef SCTL_HAVE_INTEL_SVML
 template <> inline __m256 sin_intrin(const __m256& t) { return _mm256_sin_ps(t); }
 
 template <> inline __m256 cos_intrin(const __m256& t) { return _mm256_cos_ps(t); }
@@ -356,7 +356,7 @@ template <> inline __m256 sin_intrin(const __m256& t_) {
     __m256 d;
   } t;
   store_intrin(t.e, t_);  // t.d=t_;
-  return _mm256_set_ps(pvfmm::sin<float>(t.e[7]), pvfmm::sin<float>(t.e[6]), pvfmm::sin<float>(t.e[5]), pvfmm::sin<float>(t.e[4]), pvfmm::sin<float>(t.e[3]), pvfmm::sin<float>(t.e[2]), pvfmm::sin<float>(t.e[1]), pvfmm::sin<float>(t.e[0]));
+  return _mm256_set_ps(sin<float>(t.e[7]), sin<float>(t.e[6]), sin<float>(t.e[5]), sin<float>(t.e[4]), sin<float>(t.e[3]), sin<float>(t.e[2]), sin<float>(t.e[1]), sin<float>(t.e[0]));
 }
 
 template <> inline __m256 cos_intrin(const __m256& t_) {
@@ -365,7 +365,7 @@ template <> inline __m256 cos_intrin(const __m256& t_) {
     __m256 d;
   } t;
   store_intrin(t.e, t_);  // t.d=t_;
-  return _mm256_set_ps(pvfmm::cos<float>(t.e[7]), pvfmm::cos<float>(t.e[6]), pvfmm::cos<float>(t.e[5]), pvfmm::cos<float>(t.e[4]), pvfmm::cos<float>(t.e[3]), pvfmm::cos<float>(t.e[2]), pvfmm::cos<float>(t.e[1]), pvfmm::cos<float>(t.e[0]));
+  return _mm256_set_ps(cos<float>(t.e[7]), cos<float>(t.e[6]), cos<float>(t.e[5]), cos<float>(t.e[4]), cos<float>(t.e[3]), cos<float>(t.e[2]), cos<float>(t.e[1]), cos<float>(t.e[0]));
 }
 
 template <> inline __m256d sin_intrin(const __m256d& t_) {
@@ -374,7 +374,7 @@ template <> inline __m256d sin_intrin(const __m256d& t_) {
     __m256d d;
   } t;
   store_intrin(t.e, t_);  // t.d=t_;
-  return _mm256_set_pd(pvfmm::sin<double>(t.e[3]), pvfmm::sin<double>(t.e[2]), pvfmm::sin<double>(t.e[1]), pvfmm::sin<double>(t.e[0]));
+  return _mm256_set_pd(sin<double>(t.e[3]), sin<double>(t.e[2]), sin<double>(t.e[1]), sin<double>(t.e[0]));
 }
 
 template <> inline __m256d cos_intrin(const __m256d& t_) {
@@ -383,7 +383,7 @@ template <> inline __m256d cos_intrin(const __m256d& t_) {
     __m256d d;
   } t;
   store_intrin(t.e, t_);  // t.d=t_;
-  return _mm256_set_pd(pvfmm::cos<double>(t.e[3]), pvfmm::cos<double>(t.e[2]), pvfmm::cos<double>(t.e[1]), pvfmm::cos<double>(t.e[0]));
+  return _mm256_set_pd(cos<double>(t.e[3]), cos<double>(t.e[2]), cos<double>(t.e[1]), cos<double>(t.e[0]));
 }
 #endif
 #endif
@@ -539,4 +539,4 @@ template <class VEC, class Real> inline VEC rsqrt_intrin3(VEC r2) {
 }
 }
 
-#endif  //_PVFMM_INTRIN_WRAPPER_HPP_
+#endif  //_SCTL_INTRIN_WRAPPER_HPP_

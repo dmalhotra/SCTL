@@ -1,12 +1,13 @@
-#ifndef _PVFMM_MATRIX_HPP_
-#define _PVFMM_MATRIX_HPP_
+#ifndef _SCTL_MATRIX_HPP_
+#define _SCTL_MATRIX_HPP_
 
 #include <cstdint>
 #include <cstdlib>
 
-#include <pvfmm/common.hpp>
+#include SCTL_INCLUDE(vector.hpp)
+#include SCTL_INCLUDE(common.hpp)
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 template <class ValueType> class Vector;
 template <class ValueType> class Permutation;
@@ -38,6 +39,8 @@ template <class ValueType> class Matrix {
 
   ConstIterator<ValueType> Begin() const;
 
+  // Matrix-Matrix operations
+
   Matrix<ValueType>& operator=(const Matrix<ValueType>& M);
 
   Matrix<ValueType>& operator+=(const Matrix<ValueType>& M);
@@ -48,6 +51,35 @@ template <class ValueType> class Matrix {
 
   Matrix<ValueType> operator-(const Matrix<ValueType>& M2) const;
 
+  Matrix<ValueType> operator*(const Matrix<ValueType>& M) const;
+
+  static void GEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta = 0.0);
+
+  static void GEMM(Matrix<ValueType>& M_r, const Permutation<ValueType>& P, const Matrix<ValueType>& M, ValueType beta = 0.0);
+
+  static void GEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& M, const Permutation<ValueType>& P, ValueType beta = 0.0);
+
+  // cublasgemm wrapper
+  static void CUBLASGEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta = 0.0);
+
+  // Matrix-Scalar operations
+
+  Matrix<ValueType>& operator=(ValueType s);
+
+  Matrix<ValueType>& operator+=(ValueType s);
+
+  Matrix<ValueType>& operator-=(ValueType s);
+
+  Matrix<ValueType> operator+(ValueType s) const;
+
+  Matrix<ValueType> operator-(ValueType s) const;
+
+  Matrix<ValueType> operator*(ValueType s) const;
+
+  Matrix<ValueType> operator/(ValueType s) const;
+
+  // Element access
+
   ValueType& operator()(Long i, Long j);
 
   const ValueType& operator()(Long i, Long j) const;
@@ -55,13 +87,6 @@ template <class ValueType> class Matrix {
   Iterator<ValueType> operator[](Long i);
 
   ConstIterator<ValueType> operator[](Long i) const;
-
-  Matrix<ValueType> operator*(const Matrix<ValueType>& M) const;
-
-  static void GEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta = 0.0);
-
-  // cublasgemm wrapper
-  static void CUBLASGEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta = 0.0);
 
   void RowPerm(const Permutation<ValueType>& P);
   void ColPerm(const Permutation<ValueType>& P);
@@ -84,6 +109,10 @@ template <class ValueType> class Matrix {
 
 template <class ValueType> std::ostream& operator<<(std::ostream& output, const Matrix<ValueType>& M);
 
+template <class ValueType> Matrix<ValueType> operator+(ValueType s, const Matrix<ValueType>& M) { return M + s; }
+template <class ValueType> Matrix<ValueType> operator-(ValueType s, const Matrix<ValueType>& M) { return s + (-1.0 * M); }
+template <class ValueType> Matrix<ValueType> operator*(ValueType s, const Matrix<ValueType>& M) { return M * s; }
+
 /**
  * /brief P=[e(p1)*s1 e(p2)*s2 ... e(pn)*sn],
  * where e(k) is the kth unit vector,
@@ -105,13 +134,23 @@ template <class ValueType> class Permutation {
 
   Permutation<ValueType> Transpose();
 
-  Permutation<ValueType> operator*(const Permutation<ValueType>& P);
+  Permutation<ValueType>& operator*=(ValueType s);
 
-  Matrix<ValueType> operator*(const Matrix<ValueType>& M);
+  Permutation<ValueType>& operator/=(ValueType s);
+
+  Permutation<ValueType> operator*(ValueType s) const;
+
+  Permutation<ValueType> operator/(ValueType s) const;
+
+  Permutation<ValueType> operator*(const Permutation<ValueType>& P) const;
+
+  Matrix<ValueType> operator*(const Matrix<ValueType>& M) const;
 
   Vector<Long> perm;
   Vector<ValueType> scal;
 };
+
+template <class ValueType> Permutation<ValueType> operator*(ValueType s, const Permutation<ValueType>& P) { return P * s; }
 
 template <class ValueType> Matrix<ValueType> operator*(const Matrix<ValueType>& M, const Permutation<ValueType>& P);
 
@@ -119,6 +158,6 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
 
 }  // end namespace
 
-#include <pvfmm/matrix.txx>
+#include SCTL_INCLUDE(matrix.txx)
 
-#endif  //_PVFMM_MATRIX_HPP_
+#endif  //_SCTL_MATRIX_HPP_

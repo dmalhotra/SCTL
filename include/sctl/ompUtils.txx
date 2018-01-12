@@ -1,10 +1,10 @@
 #include <omp.h>
 #include <cstring>
 #include <algorithm>
-#include <pvfmm/vector.hpp>
-#include <pvfmm/mem_mgr.hpp>
+#include SCTL_INCLUDE(vector.hpp)
+#include SCTL_INCLUDE(mem_mgr.hpp)
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inline void omp_par::merge(ConstIter A_, ConstIter A_last, ConstIter B_, ConstIter B_last, Iter C_, Int p, StrictWeakOrdering comp) {
   typedef typename std::iterator_traits<Iter>::difference_type _DiffType;
@@ -28,9 +28,9 @@ template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inli
   // Split both arrays ( A and B ) into n equal parts.
   // Find the position of each split in the final merged array.
   int n = 10;
-  pvfmm::Vector<_ValType> split;
+  Vector<_ValType> split;
   split.ReInit(p * n * 2);
-  pvfmm::Vector<_DiffType> split_size;
+  Vector<_DiffType> split_size;
   split_size.ReInit(p * n * 2);
 #pragma omp parallel for
   for (int i = 0; i < p; i++) {
@@ -49,9 +49,9 @@ template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inli
 
   // Find the closest split position for each thread that will
   // divide the final array equally between the threads.
-  pvfmm::Vector<_DiffType> split_indx_A;
+  Vector<_DiffType> split_indx_A;
   split_indx_A.ReInit(p + 1);
-  pvfmm::Vector<_DiffType> split_indx_B;
+  Vector<_DiffType> split_indx_B;
   split_indx_B.ReInit(p + 1);
   split_indx_A[0] = 0;
   split_indx_B[0] = 0;
@@ -99,7 +99,7 @@ template <class T, class StrictWeakOrdering> inline void omp_par::merge_sort(T A
   A[N - 1];
 
   // Split the array A into p equal parts.
-  pvfmm::Vector<_DiffType> split;
+  Vector<_DiffType> split;
   split.ReInit(p + 1);
   split[p] = N;
 #pragma omp parallel for schedule(static)
@@ -114,10 +114,10 @@ template <class T, class StrictWeakOrdering> inline void omp_par::merge_sort(T A
   }
 
   // Merge two parts at a time.
-  pvfmm::Vector<_ValType> B;
+  Vector<_ValType> B;
   B.ReInit(N);
-  pvfmm::Iterator<_ValType> A_ = PVFMM_PTR2ITR(_ValType, &A[0], N);
-  pvfmm::Iterator<_ValType> B_ = B.Begin();
+  Iterator<_ValType> A_ = Ptr2Itr<_ValType>(&A[0], N);
+  Iterator<_ValType> B_ = B.Begin();
   for (int j = 1; j < p; j = j * 2) {
     for (int i = 0; i < p; i = i + 2 * j) {
       if (i + j < p) {
@@ -127,13 +127,13 @@ template <class T, class StrictWeakOrdering> inline void omp_par::merge_sort(T A
         for (int k = split[i]; k < split[p]; k++) B_[k] = A_[k];
       }
     }
-    pvfmm::Iterator<_ValType> tmp_swap = A_;
+    Iterator<_ValType> tmp_swap = A_;
     A_ = B_;
     B_ = tmp_swap;
   }
 
   // The final result should be in A.
-  if (A_ != A) {
+  if (A_ != Ptr2Itr<_ValType>(&A[0], N)) {
 #pragma omp parallel for
     for (int i = 0; i < N; i++) A[i] = A_[i];
   }
@@ -172,7 +172,7 @@ template <class ConstIter, class Iter, class Int> void omp_par::scan(ConstIter A
     for (Int j = (Int)start + 1; j < (Int)end; j++) B[j] = B[j - 1] + A[j - 1];
   }
 
-  pvfmm::Vector<ValueType> sum(p);
+  Vector<ValueType> sum(p);
   sum[0] = 0;
   for (Integer i = 1; i < p; i++) sum[i] = sum[i - 1] + B[i * step_size - 1] + A[i * step_size - 1];
 

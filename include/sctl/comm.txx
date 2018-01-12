@@ -1,22 +1,22 @@
-#include <pvfmm/ompUtils.hpp>
-#include <pvfmm/vector.hpp>
+#include SCTL_INCLUDE(ompUtils.hpp)
+#include SCTL_INCLUDE(vector.hpp)
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 inline Comm::Comm() {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   Init(MPI_COMM_SELF);
 #endif
 }
 
 inline Comm::Comm(const Comm& c) {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   Init(c.mpi_comm_);
 #endif
 }
 
 inline Comm Comm::Self() {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   Comm comm_self(MPI_COMM_SELF);
   return comm_self;
 #else
@@ -26,7 +26,7 @@ inline Comm Comm::Self() {
 }
 
 inline Comm Comm::World() {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   Comm comm_world(MPI_COMM_WORLD);
   return comm_world;
 #else
@@ -36,13 +36,13 @@ inline Comm Comm::World() {
 }
 
 inline Comm& Comm::operator=(const Comm& c) {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   Init(c.mpi_comm_);
 #endif
 }
 
 inline Comm::~Comm() {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   while (!req.empty()) {
     delete (Vector<MPI_Request>*)req.top();
     req.pop();
@@ -52,7 +52,7 @@ inline Comm::~Comm() {
 }
 
 inline Comm Comm::Split(Integer clr) const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   MPI_Comm new_comm;
   MPI_Comm_split(mpi_comm_, clr, mpi_rank_, &new_comm);
   Comm c(new_comm);
@@ -65,7 +65,7 @@ inline Comm Comm::Split(Integer clr) const {
 }
 
 inline Integer Comm::Rank() const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   return mpi_rank_;
 #else
   return 0;
@@ -73,7 +73,7 @@ inline Integer Comm::Rank() const {
 }
 
 inline Integer Comm::Size() const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   return mpi_size_;
 #else
   return 1;
@@ -81,13 +81,13 @@ inline Integer Comm::Size() const {
 }
 
 inline void Comm::Barrier() const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   MPI_Barrier(mpi_comm_);
 #endif
 }
 
 template <class SType> void* Comm::Isend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag) const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   if (!scount) return NULL;
   Vector<MPI_Request>& request = *NewReq();
   request.ReInit(1);
@@ -105,13 +105,13 @@ template <class SType> void* Comm::Isend(ConstIterator<SType> sbuf, Long scount,
   if (it == recv_req.end())
     send_req.insert(std::pair<Integer, ConstIterator<char>>(tag, (ConstIterator<char>)sbuf));
   else
-    pvfmm::memcopy(it->second, (ConstIterator<char>)sbuf, scount * sizeof(SType));
+    memcopy(it->second, (ConstIterator<char>)sbuf, scount * sizeof(SType));
   return NULL;
 #endif
 }
 
 template <class RType> void* Comm::Irecv(Iterator<RType> rbuf, Long rcount, Integer source, Integer tag) const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   if (!rcount) return NULL;
   Vector<MPI_Request>& request = *NewReq();
   request.ReInit(1);
@@ -125,13 +125,13 @@ template <class RType> void* Comm::Irecv(Iterator<RType> rbuf, Long rcount, Inte
   if (it == send_req.end())
     recv_req.insert(std::pair<Integer, Iterator<char>>(tag, (Iterator<char>)rbuf));
   else
-    pvfmm::memcopy((Iterator<char>)rbuf, it->second, rcount * sizeof(RType));
+    memcopy((Iterator<char>)rbuf, it->second, rcount * sizeof(RType));
   return NULL;
 #endif
 }
 
 inline void Comm::Wait(void* req_ptr) const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   if (req_ptr == NULL) return;
   Vector<MPI_Request>& request = *(Vector<MPI_Request>*)req_ptr;
   // std::vector<MPI_Status> status(request.Dim());
@@ -141,7 +141,7 @@ inline void Comm::Wait(void* req_ptr) const {
 }
 
 template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   if (scount) {
     sbuf[0];
     sbuf[scount - 1];
@@ -152,12 +152,12 @@ template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sb
   }
   MPI_Allgather((scount ? &sbuf[0] : NULL), scount, CommDatatype<SType>::value(), (rcount ? &rbuf[0] : NULL), rcount, CommDatatype<RType>::value(), mpi_comm_);
 #else
-  pvfmm::memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, scount * sizeof(SType));
+  memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, scount * sizeof(SType));
 #endif
 }
 
 template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   Vector<int> rcounts_(mpi_size_), rdispls_(mpi_size_);
   Long rcount_sum = 0;
 #pragma omp parallel for schedule(static) reduction(+ : rcount_sum)
@@ -176,12 +176,12 @@ template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> s
   }
   MPI_Allgatherv((scount ? &sbuf[0] : NULL), scount, CommDatatype<SType>::value(), (rcount_sum ? &rbuf[0] : NULL), &rcounts_.Begin()[0], &rdispls_.Begin()[0], CommDatatype<RType>::value(), mpi_comm_);
 #else
-  pvfmm::memcopy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)sbuf, scount * sizeof(SType));
+  memcopy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)sbuf, scount * sizeof(SType));
 #endif
 }
 
 template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   if (scount) {
     sbuf[0];
     sbuf[scount * Size() - 1];
@@ -192,12 +192,12 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
   }
   MPI_Alltoall((scount ? &sbuf[0] : NULL), scount, CommDatatype<SType>::value(), (rcount ? &rbuf[0] : NULL), rcount, CommDatatype<RType>::value(), mpi_comm_);
 #else
-  pvfmm::memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, scount * sizeof(SType));
+  memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, scount * sizeof(SType));
 #endif
 }
 
 template <class SType, class RType> void* Comm::Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag) const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   Integer request_count = 0;
   for (Integer i = 0; i < mpi_size_; i++) {
     if (rcounts[i]) request_count++;
@@ -226,20 +226,20 @@ template <class SType, class RType> void* Comm::Ialltoallv_sparse(ConstIterator<
   }
   return &request;
 #else
-  pvfmm::memcopy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)(sbuf + sdispls[0]), scounts[0] * sizeof(SType));
+  memcopy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)(sbuf + sdispls[0]), scounts[0] * sizeof(SType));
   return NULL;
 #endif
 }
 
 template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<Type> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   {  // Use Alltoallv_sparse of average connectivity<64
     Long connectivity = 0, glb_connectivity = 0;
 #pragma omp parallel for schedule(static) reduction(+ : connectivity)
     for (Integer i = 0; i < mpi_size_; i++) {
       if (rcounts[i]) connectivity++;
     }
-    Allreduce(PVFMM_PTR2CONSTITR(Long, &connectivity, 1), PVFMM_PTR2ITR(Long, &glb_connectivity, 1), 1, CommOp::SUM);
+    Allreduce(Ptr2ConstItr<Long>(&connectivity, 1), Ptr2Itr<Long>(&glb_connectivity, 1), 1, CommOp::SUM);
     if (glb_connectivity < 64 * Size()) {
       void* mpi_req = Ialltoallv_sparse(sbuf, scounts, sdispls, rbuf, rcounts, rdispls, 0);
       Wait(mpi_req);
@@ -272,12 +272,12 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
 
 // TODO: implement hypercube scheme
 #else
-  pvfmm::memcopy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)(sbuf + sdispls[0]), scounts[0] * sizeof(Type));
+  memcopy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)(sbuf + sdispls[0]), scounts[0] * sizeof(Type));
 #endif
 }
 
 template <class Type> void Comm::Allreduce(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, CommOp op) const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   if (!count) return;
   MPI_Op mpi_op;
   switch (op) {
@@ -300,12 +300,12 @@ template <class Type> void Comm::Allreduce(ConstIterator<Type> sbuf, Iterator<Ty
   rbuf[count - 1];
   MPI_Allreduce(&sbuf[0], &rbuf[0], count, CommDatatype<Type>::value(), mpi_op, mpi_comm_);
 #else
-  pvfmm::memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));
+  memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));
 #endif
 }
 
 template <class Type> void Comm::Scan(ConstIterator<Type> sbuf, Iterator<Type> rbuf, int count, CommOp op) const {
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   if (!count) return;
   MPI_Op mpi_op;
   switch (op) {
@@ -328,7 +328,7 @@ template <class Type> void Comm::Scan(ConstIterator<Type> sbuf, Iterator<Type> r
   rbuf[count - 1];
   MPI_Scan(&sbuf[0], &rbuf[0], count, CommDatatype<Type>::value(), mpi_op, mpi_comm_);
 #else
-  pvfmm::memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));
+  memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));
 #endif
 }
 
@@ -356,8 +356,8 @@ template <class Type> void Comm::PartitionW(Vector<Type>& nodeList, const Vector
 
   Long off1 = 0, off2 = 0, totalWt = 0;
   {  // compute the total weight of the problem ...
-    Allreduce<Long>(PVFMM_PTR2CONSTITR(Long, &localWt, 1), PVFMM_PTR2ITR(Long, &totalWt, 1), 1, CommOp::SUM);
-    Scan<Long>(PVFMM_PTR2CONSTITR(Long, &localWt, 1), PVFMM_PTR2ITR(Long, &off2, 1), 1, CommOp::SUM);
+    Allreduce<Long>(Ptr2ConstItr<Long>(&localWt, 1), Ptr2Itr<Long>(&totalWt, 1), 1, CommOp::SUM);
+    Scan<Long>(Ptr2ConstItr<Long>(&localWt, 1), Ptr2Itr<Long>(&off2, 1), 1, CommOp::SUM);
     off1 = off2 - localWt;
   }
 
@@ -426,19 +426,19 @@ template <class Type> void Comm::PartitionN(Vector<Type>& v, Long N) const {
   {  // Set v_cnt, v_dsp
     v_dsp[0] = 0;
     Long cnt = v.Dim();
-    Allgather(PVFMM_PTR2CONSTITR(Long, &cnt, 1), 1, v_cnt.Begin(), 1);
+    Allgather(Ptr2ConstItr<Long>(&cnt, 1), 1, v_cnt.Begin(), 1);
     omp_par::scan(v_cnt.Begin(), v_dsp.Begin(), np);
     v_dsp[np] = v_cnt[np - 1] + v_dsp[np - 1];
   }
   {  // Set N_cnt, N_dsp
     N_dsp[0] = 0;
     Long cnt = N;
-    Allgather(PVFMM_PTR2CONSTITR(Long, &cnt, 1), 1, N_cnt.Begin(), 1);
+    Allgather(Ptr2ConstItr<Long>(&cnt, 1), 1, N_cnt.Begin(), 1);
     omp_par::scan(N_cnt.Begin(), N_dsp.Begin(), np);
     N_dsp[np] = N_cnt[np - 1] + N_dsp[np - 1];
   }
   {  // Adjust for dof
-    Long dof = v_dsp[np] / N_dsp[np];
+    Long dof = (N_dsp[np] ? v_dsp[np] / N_dsp[np] : 0);
     assert(dof * N_dsp[np] == v_dsp[np]);
     if (dof == 0) return;
 
@@ -491,7 +491,7 @@ template <class Type> void Comm::PartitionS(Vector<Type>& nodeList, const Type& 
   if (npes == 1) return;
 
   Vector<Type> mins(npes);
-  Allgather(PVFMM_PTR2CONSTITR(Type, &splitter, 1), 1, mins.Begin(), 1);
+  Allgather(Ptr2ConstItr<Type>(&splitter, 1), 1, mins.Begin(), 1);
 
   Vector<Long> scnt(npes), sdsp(npes);
   Vector<Long> rcnt(npes), rdsp(npes);
@@ -527,7 +527,7 @@ template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vecto
   {  // Build global index.
     Long glb_dsp = 0;
     Long loc_size = key.Dim();
-    Scan(PVFMM_PTR2CONSTITR(Long, &loc_size, 1), PVFMM_PTR2ITR(Long, &glb_dsp, 1), 1, CommOp::SUM);
+    Scan(Ptr2ConstItr<Long>(&loc_size, 1), Ptr2Itr<Long>(&glb_dsp, 1), 1, CommOp::SUM);
     glb_dsp -= loc_size;
 #pragma omp parallel for schedule(static)
     for (Long i = 0; i < loc_size; i++) {
@@ -541,7 +541,7 @@ template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vecto
 
   if (npes > 1 && split_key_ != NULL) {  // Partition data
     Vector<Type> split_key(npes);
-    Allgather(PVFMM_PTR2CONSTITR(Type, split_key_, 1), 1, split_key.Begin(), 1);
+    Allgather(Ptr2ConstItr<Type>(split_key_, 1), 1, split_key.Begin(), 1);
 
     Vector<Long> sendSz(npes);
     Vector<Long> recvSz(npes);
@@ -615,7 +615,7 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
     Allreduce(loc_size, glb_size, 2, CommOp::SUM);
     if (glb_size[0] == 0 || glb_size[1] == 0) return;  // Nothing to be done.
     data_dim = glb_size[0] / glb_size[1];
-    PVFMM_ASSERT(glb_size[0] == data_dim * glb_size[1]);
+    SCTL_ASSERT(glb_size[0] == data_dim * glb_size[1]);
     send_size = data_.Dim() / data_dim;
   }
 
@@ -636,9 +636,9 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
   {  // Global scan of data size.
     glb_scan.ReInit(npes);
     Long glb_rank = 0;
-    Scan(PVFMM_PTR2CONSTITR(Long, &send_size, 1), PVFMM_PTR2ITR(Long, &glb_rank, 1), 1, CommOp::SUM);
+    Scan(Ptr2ConstItr<Long>(&send_size, 1), Ptr2Itr<Long>(&glb_rank, 1), 1, CommOp::SUM);
     glb_rank -= send_size;
-    Allgather(PVFMM_PTR2CONSTITR(Long, &glb_rank, 1), 1, glb_scan.Begin(), 1);
+    Allgather(Ptr2ConstItr<Long>(&glb_rank, 1), 1, glb_scan.Begin(), 1);
   }
 
   Vector<Pair_t> psorted;
@@ -740,10 +740,10 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     Allreduce(loc_size, glb_size, 3, CommOp::SUM);
     if (glb_size[0] == 0 || glb_size[1] == 0) return;  // Nothing to be done.
 
-    PVFMM_ASSERT(glb_size[0] % glb_size[1] == 0);
+    SCTL_ASSERT(glb_size[0] % glb_size[1] == 0);
     data_dim = glb_size[0] / glb_size[1];
 
-    PVFMM_ASSERT(loc_size[0] % data_dim == 0);
+    SCTL_ASSERT(loc_size[0] % data_dim == 0);
     send_size = loc_size[0] / data_dim;
 
     if (glb_size[0] != glb_size[2] * data_dim) {
@@ -773,7 +773,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     loc_size[1] = scatter_index_.Dim();
     Scan(loc_size, glb_rank, 2, CommOp::SUM);
     Allreduce(loc_size, glb_size, 2, CommOp::SUM);
-    PVFMM_ASSERT(glb_size[0] == glb_size[1]);
+    SCTL_ASSERT(glb_size[0] == glb_size[1]);
     glb_rank[0] -= loc_size[0];
     glb_rank[1] -= loc_size[1];
 
@@ -816,9 +816,9 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
   Vector<Long> glb_scan(npes);
   {  // Global data size.
     Long glb_rank = 0;
-    Scan(PVFMM_PTR2CONSTITR(Long, &recv_size, 1), PVFMM_PTR2ITR(Long, &glb_rank, 1), 1, CommOp::SUM);
+    Scan(Ptr2ConstItr<Long>(&recv_size, 1), Ptr2Itr<Long>(&glb_rank, 1), 1, CommOp::SUM);
     glb_rank -= recv_size;
-    Allgather(PVFMM_PTR2CONSTITR(Long, &glb_rank, 1), 1, glb_scan.Begin(), 1);
+    Allgather(Ptr2ConstItr<Long>(&glb_rank, 1), 1, glb_scan.Begin(), 1);
   }
 
   Vector<Pair_t> psorted(send_size);
@@ -902,7 +902,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
   }
 }
 
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
 inline Vector<MPI_Request>* Comm::NewReq() const {
   if (req.empty()) req.push(new Vector<MPI_Request>);
   Vector<MPI_Request>& request = *(Vector<MPI_Request>*)req.top();
@@ -939,7 +939,7 @@ HS_MPIDATATYPE(unsigned char, MPI_UNSIGNED_CHAR);
 #endif
 
 template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem) const {  // O( ((N/p)+log(p))*(log(N/p)+log(p)) )
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   Integer npes, myrank, omp_p;
   {  // Get comm size and rank.
     npes = Size();
@@ -951,7 +951,7 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
   Long totSize, nelem = arr_.Dim();
   {                 // Local and global sizes. O(log p)
     assert(nelem);  // TODO: Check if this is needed.
-    Allreduce<Long>(PVFMM_PTR2CONSTITR(Long, &nelem, 1), PVFMM_PTR2ITR(Long, &totSize, 1), 1, CommOp::SUM);
+    Allreduce<Long>(Ptr2ConstItr<Long>(&nelem, 1), Ptr2Itr<Long>(&totSize, 1), 1, CommOp::SUM);
   }
 
   if (npes == 1) {  // SortedElem <--- local_sort(arr_)
@@ -996,7 +996,7 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
           glb_splt_disp[0] = 0;
           omp_par::scan(glb_splt_cnts.Begin(), glb_splt_disp.Begin(), npes);
           glb_splt_count = glb_splt_cnts[npes - 1] + glb_splt_disp[npes - 1];
-          PVFMM_ASSERT(glb_splt_count);
+          SCTL_ASSERT(glb_splt_count);
         }
 
         {  // Gather all splitters. O( log(p) )
@@ -1039,7 +1039,7 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
           totSize_new = totSize - split_disp[0];
 
         // double err=(((double)*split_disp)/(totSize/2))-1.0;
-        // if(pvfmm::fabs<double>(err)<0.01 || npes<=16) break;
+        // if(fabs<double>(err)<0.01 || npes<=16) break;
         // else if(!myrank) std::cout<<err<<'\n';
       }
     }

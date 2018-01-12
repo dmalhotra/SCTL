@@ -2,10 +2,10 @@
 #include <iostream>
 #include <iomanip>
 
-#include <pvfmm/mem_mgr.hpp>
-#include <pvfmm/profile.hpp>
+#include SCTL_INCLUDE(mem_mgr.hpp)
+#include SCTL_INCLUDE(profile.hpp)
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 template <class ValueType> std::ostream& operator<<(std::ostream& output, const Vector<ValueType>& V) {
   std::ios::fmtflags f(std::cout.flags());
@@ -56,7 +56,7 @@ template <class ValueType> Vector<ValueType>::Vector(const std::vector<ValueType
   own_data = true;
   if (dim > 0) {
     data_ptr = aligned_new<ValueType>(capacity);
-    memcopy(data_ptr, PVFMM_PTR2CONSTITR(ValueType, &V[0], V.size()), dim);
+    memcopy(data_ptr, Ptr2ConstItr<ValueType>(&V[0], V.size()), dim);
   } else
     data_ptr = NULL;
 }
@@ -108,10 +108,26 @@ template <class ValueType> void Vector<ValueType>::Write(const char* fname) cons
     return;
   }
   StaticArray<uint64_t, 2> dim_;
-  dim_[0] = (uint64_t)dim;
-  dim_[1] = 0;
+  dim_[0] = (uint64_t)Dim();
+  dim_[1] = 1;
   fwrite(&dim_[0], sizeof(uint64_t), 2, f1);
-  fwrite(data_ptr, sizeof(ValueType), dim, f1);
+  if (dim_[0] * dim_[1]) fwrite(&data_ptr[0], sizeof(ValueType), dim_[0] * dim_[1], f1);
+  fclose(f1);
+}
+
+template <class ValueType> void Vector<ValueType>::Read(const char* fname) {
+  FILE* f1 = fopen(fname, "r");
+  if (f1 == NULL) {
+    std::cout << "Unable to open file for reading:" << fname << '\n';
+    return;
+  }
+  StaticArray<uint64_t, 2> dim_;
+  Long readlen = fread(&dim_[0], sizeof(uint64_t), 2, f1);
+  assert(readlen == 2);
+
+  if (Dim() != dim_[0] * dim_[1]) ReInit(dim_[0] * dim_[1]);
+  if (dim_[0] * dim_[1]) readlen = fread(&data_ptr[0], sizeof(ValueType), dim_[0] * dim_[1], f1);
+  assert(readlen == dim_[0] * dim_[1]);
   fclose(f1);
 }
 
@@ -120,7 +136,7 @@ template <class ValueType> inline Long Vector<ValueType>::Dim() const { return d
 template <class ValueType> inline Long Vector<ValueType>::Capacity() const { return capacity; }
 
 template <class ValueType> void Vector<ValueType>::SetZero() {
-  if (dim > 0) pvfmm::memset(data_ptr, 0, dim);
+  if (dim > 0) memset<ValueType>(data_ptr, 0, dim);
 }
 
 template <class ValueType> Iterator<ValueType> Vector<ValueType>::Begin() { return data_ptr; }
@@ -156,7 +172,7 @@ template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const
   {
     if (capacity < V.size()) ReInit(V.size());
     dim = V.size();
-    memcopy(data_ptr, PVFMM_PTR2CONSTITR(ValueType, &V[0], V.size()), dim);
+    memcopy(data_ptr, Ptr2ConstItr<ValueType>(&V[0], V.size()), dim);
   }
   return *this;
 }

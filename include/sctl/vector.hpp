@@ -1,13 +1,13 @@
-#ifndef _PVFMM_VECTOR_HPP_
-#define _PVFMM_VECTOR_HPP_
+#ifndef _SCTL_VECTOR_HPP_
+#define _SCTL_VECTOR_HPP_
 
-#include <pvfmm/common.hpp>
+#include SCTL_INCLUDE(common.hpp)
 
 #include <vector>
 #include <cstdlib>
 #include <cstdint>
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 template <class ValueType> class Vector {
 
@@ -29,6 +29,8 @@ template <class ValueType> class Vector {
   void ReInit(Long dim_, Iterator<ValueType> data_ = NULL, bool own_data_ = true);
 
   void Write(const char* fname) const;
+
+  void Read(const char* fname);
 
   Long Dim() const;
 
@@ -61,6 +63,6 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
 
 }  // end namespace
 
-#include <pvfmm/vector.txx>
+#include SCTL_INCLUDE(vector.txx)
 
-#endif  //_PVFMM_VECTOR_HPP_
+#endif  //_SCTL_VECTOR_HPP_

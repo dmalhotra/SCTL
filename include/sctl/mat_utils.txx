@@ -1,16 +1,16 @@
 
-#include <pvfmm/matrix.hpp>
+#include SCTL_INCLUDE(matrix.hpp)
 
-#if defined(PVFMM_HAVE_CUDA)
+#if defined(SCTL_HAVE_CUDA)
 #include <cuda_runtime_api.h>
 #include <cublas_v2.h>
 #endif
 
-#if defined(PVFMM_HAVE_BLAS)
-#include <pvfmm/blas.h>
+#if defined(SCTL_HAVE_BLAS)
+#include SCTL_INCLUDE(blas.h)
 #endif
-#if defined(PVFMM_HAVE_LAPACK)
-#include <pvfmm/lapack.h>
+#if defined(SCTL_HAVE_LAPACK)
+#include SCTL_INCLUDE(lapack.h)
 #endif
 
 #include <omp.h>
@@ -21,7 +21,7 @@
 #include <iostream>
 #include <vector>
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 namespace mat {
 
 template <class ValueType> inline void gemm(char TransA, char TransB, int M, int N, int K, ValueType alpha, Iterator<ValueType> A, int lda, Iterator<ValueType> B, int ldb, ValueType beta, Iterator<ValueType> C, int ldc) {
@@ -68,13 +68,13 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
   }
 }
 
-#if defined(PVFMM_HAVE_BLAS)
+#if defined(SCTL_HAVE_BLAS)
 template <> inline void gemm<float>(char TransA, char TransB, int M, int N, int K, float alpha, Iterator<float> A, int lda, Iterator<float> B, int ldb, float beta, Iterator<float> C, int ldc) { sgemm_(&TransA, &TransB, &M, &N, &K, &alpha, &A[0], &lda, &B[0], &ldb, &beta, &C[0], &ldc); }
 
 template <> inline void gemm<double>(char TransA, char TransB, int M, int N, int K, double alpha, Iterator<double> A, int lda, Iterator<double> B, int ldb, double beta, Iterator<double> C, int ldc) { dgemm_(&TransA, &TransB, &M, &N, &K, &alpha, &A[0], &lda, &B[0], &ldb, &beta, &C[0], &ldc); }
 #endif
 
-#if defined(PVFMM_HAVE_CUDA)
+#if defined(SCTL_HAVE_CUDA)
 template <> inline void cublasgemm<float>(char TransA, char TransB, int M, int N, int K, float alpha, Iterator<float> A, int lda, Iterator<float> B, int ldb, float beta, Iterator<float> C, int ldc) {
   cublasOperation_t cublasTransA, cublasTransB;
   cublasHandle_t *handle = CUDA_Lock::acquire_handle();
@@ -110,7 +110,7 @@ template <> inline void cublasgemm<double>(char TransA, char TransB, int M, int 
 //#define SVD_DEBUG
 
 template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, StaticArray<Long, 2> &dim, Long m, ValueType a, ValueType b) {
-  ValueType r = pvfmm::sqrt<ValueType>(a * a + b * b);
+  ValueType r = sqrt<ValueType>(a * a + b * b);
   if (r == 0) return;
   ValueType c = a / r;
   ValueType s = -b / r;
@@ -128,7 +128,7 @@ template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, St
 }
 
 template <class ValueType> static inline void GivensR(Iterator<ValueType> S_, StaticArray<Long, 2> &dim, Long m, ValueType a, ValueType b) {
-  ValueType r = pvfmm::sqrt<ValueType>(a * a + b * b);
+  ValueType r = sqrt<ValueType>(a * a + b * b);
   if (r == 0) return;
   ValueType c = a / r;
   ValueType s = -b / r;
@@ -164,9 +164,9 @@ template <class ValueType> static inline void SVD(StaticArray<Long, 2> &dim, Ite
         for (Long j = i; j < dim[0]; j++) {
           x_inv_norm += S(j, i) * S(j, i);
         }
-        if (x_inv_norm > 0) x_inv_norm = 1 / pvfmm::sqrt<ValueType>(x_inv_norm);
+        if (x_inv_norm > 0) x_inv_norm = 1 / sqrt<ValueType>(x_inv_norm);
 
-        ValueType alpha = pvfmm::sqrt<ValueType>(1 + x1 * x_inv_norm);
+        ValueType alpha = sqrt<ValueType>(1 + x1 * x_inv_norm);
         ValueType beta = x_inv_norm / alpha;
         if (x_inv_norm == 0) alpha = 0; // nothing to do
 
@@ -210,9 +210,9 @@ template <class ValueType> static inline void SVD(StaticArray<Long, 2> &dim, Ite
         for (Long j = i + 1; j < dim[1]; j++) {
           x_inv_norm += S(i, j) * S(i, j);
         }
-        if (x_inv_norm > 0) x_inv_norm = 1 / pvfmm::sqrt<ValueType>(x_inv_norm);
+        if (x_inv_norm > 0) x_inv_norm = 1 / sqrt<ValueType>(x_inv_norm);
 
-        ValueType alpha = pvfmm::sqrt<ValueType>(1 + x1 * x_inv_norm);
+        ValueType alpha = sqrt<ValueType>(1 + x1 * x_inv_norm);
         ValueType beta = x_inv_norm / alpha;
         if (x_inv_norm == 0) alpha = 0; // nothing to do
 
@@ -259,20 +259,20 @@ template <class ValueType> static inline void SVD(StaticArray<Long, 2> &dim, Ite
     iter++;
 
     ValueType S_max = 0.0;
-    for (Long i = 0; i < dim[1]; i++) S_max = (S_max > pvfmm::fabs<ValueType>(S(i, i)) ? S_max : pvfmm::fabs<ValueType>(S(i, i)));
-    for (Long i = 0; i < dim[1] - 1; i++) S_max = (S_max > pvfmm::fabs<ValueType>(S(i, i + 1)) ? S_max : pvfmm::fabs<ValueType>(S(i, i + 1)));
+    for (Long i = 0; i < dim[1]; i++) S_max = (S_max > fabs<ValueType>(S(i, i)) ? S_max : fabs<ValueType>(S(i, i)));
+    for (Long i = 0; i < dim[1] - 1; i++) S_max = (S_max > fabs<ValueType>(S(i, i + 1)) ? S_max : fabs<ValueType>(S(i, i + 1)));
 
-    // while(k0<dim[1]-1 && pvfmm::fabs<ValueType>(S(k0,k0+1))<=eps*(pvfmm::fabs<ValueType>(S(k0,k0))+pvfmm::fabs<ValueType>(S(k0+1,k0+1)))) k0++;
-    while (k0 < dim[1] - 1 && pvfmm::fabs<ValueType>(S(k0, k0 + 1)) <= eps * S_max) k0++;
+    // while(k0<dim[1]-1 && fabs<ValueType>(S(k0,k0+1))<=eps*(fabs<ValueType>(S(k0,k0))+fabs<ValueType>(S(k0+1,k0+1)))) k0++;
+    while (k0 < dim[1] - 1 && fabs<ValueType>(S(k0, k0 + 1)) <= eps * S_max) k0++;
     if (k0 == dim[1] - 1) continue;
 
     Long n = k0 + 2;
-    // while(n<dim[1] && pvfmm::fabs<ValueType>(S(n-1,n))>eps*(pvfmm::fabs<ValueType>(S(n-1,n-1))+pvfmm::fabs<ValueType>(S(n,n)))) n++;
-    while (n < dim[1] && pvfmm::fabs<ValueType>(S(n - 1, n)) > eps * S_max) n++;
+    // while(n<dim[1] && fabs<ValueType>(S(n-1,n))>eps*(fabs<ValueType>(S(n-1,n-1))+fabs<ValueType>(S(n,n)))) n++;
+    while (n < dim[1] && fabs<ValueType>(S(n - 1, n)) > eps * S_max) n++;
 
     ValueType alpha = 0;
     ValueType beta = 0;
-    if (n - k0 == 2 && pvfmm::fabs<ValueType>(S(k0, k0)) < eps * S_max && pvfmm::fabs<ValueType>(S(k0 + 1, k0 + 1)) < eps * S_max) {  // Compute mu
+    if (n - k0 == 2 && fabs<ValueType>(S(k0, k0)) < eps * S_max && fabs<ValueType>(S(k0 + 1, k0 + 1)) < eps * S_max) {  // Compute mu
       alpha=0;
       beta=1;
     } else {
@@ -287,11 +287,11 @@ template <class ValueType> static inline void SVD(StaticArray<Long, 2> &dim, Ite
       ValueType c = C[0 * 2 + 0] * C[1 * 2 + 1] - C[0 * 2 + 1] * C[1 * 2 + 0];
       ValueType d = 0;
       if (b * b - c > 0)
-        d = pvfmm::sqrt<ValueType>(b * b - c);
+        d = sqrt<ValueType>(b * b - c);
       else {
         ValueType b = (C[0 * 2 + 0] - C[1 * 2 + 1]) / 2;
         ValueType c = -C[0 * 2 + 1] * C[1 * 2 + 0];
-        if (b * b - c > 0) d = pvfmm::sqrt<ValueType>(b * b - c);
+        if (b * b - c > 0) d = sqrt<ValueType>(b * b - c);
       }
 
       ValueType lambda1 = -b + d;
@@ -338,7 +338,7 @@ template <class ValueType> static inline void SVD(StaticArray<Long, 2> &dim, Ite
         }
       }
       for (Long i = 0; i < dim[1] - 1; i++) {
-        if (pvfmm::fabs<ValueType>(S(i, i + 1)) <= eps * S_max) {
+        if (fabs<ValueType>(S(i, i + 1)) <= eps * S_max) {
           S(i, i + 1) = 0;
         }
       }
@@ -357,9 +357,9 @@ template <class ValueType> static inline void SVD(StaticArray<Long, 2> &dim, Ite
     ValueType max_nondiag1 = 0;
     for (Long i = 0; i < E.Dim(0); i++)
       for (Long j = 0; j < E.Dim(1); j++) {
-        if (max_err < pvfmm::fabs<ValueType>(E[i][j])) max_err = pvfmm::fabs<ValueType>(E[i][j]);
-        if ((i > j + 0 || i + 0 < j) && max_nondiag0 < pvfmm::fabs<ValueType>(S0[i][j])) max_nondiag0 = pvfmm::fabs<ValueType>(S0[i][j]);
-        if ((i > j + 1 || i + 1 < j) && max_nondiag1 < pvfmm::fabs<ValueType>(S0[i][j])) max_nondiag1 = pvfmm::fabs<ValueType>(S0[i][j]);
+        if (max_err < fabs<ValueType>(E[i][j])) max_err = fabs<ValueType>(E[i][j]);
+        if ((i > j + 0 || i + 0 < j) && max_nondiag0 < fabs<ValueType>(S0[i][j])) max_nondiag0 = fabs<ValueType>(S0[i][j]);
+        if ((i > j + 1 || i + 1 < j) && max_nondiag1 < fabs<ValueType>(S0[i][j])) max_nondiag1 = fabs<ValueType>(S0[i][j]);
       }
     std::cout << max_err << '\n';
     std::cout << max_nondiag0 << '\n';
@@ -472,7 +472,7 @@ template <class ValueType> inline void svd(char *JOBU, char *JOBVT, int *M, int 
   }
 }
 
-#if defined(PVFMM_HAVE_LAPACK)
+#if defined(SCTL_HAVE_LAPACK)
 template <> inline void svd<float>(char *JOBU, char *JOBVT, int *M, int *N, Iterator<float> A, int *LDA, Iterator<float> S, Iterator<float> U, int *LDU, Iterator<float> VT, int *LDVT, Iterator<float> WORK, int *LWORK, int *INFO) { sgesvd_(JOBU, JOBVT, M, N, &A[0], LDA, &S[0], &U[0], LDU, &VT[0], LDVT, &WORK[0], LWORK, INFO); }
 
 template <> inline void svd<double>(char *JOBU, char *JOBVT, int *M, int *N, Iterator<double> A, int *LDA, Iterator<double> S, Iterator<double> U, int *LDU, Iterator<double> VT, int *LDVT, Iterator<double> WORK, int *LWORK, int *INFO) { dgesvd_(JOBU, JOBVT, M, N, &A[0], LDA, &S[0], &U[0], LDU, &VT[0], LDVT, &WORK[0], LWORK, INFO); }
@@ -529,4 +529,4 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, int n1, int n
 }
 
 }  // end namespace mat
-}  // end namespace pvfmm
+}  // end namespace SCTL_NAMESPACE

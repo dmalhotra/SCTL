@@ -1,9 +1,9 @@
-#ifndef _PVFMM_OMP_UTILS_H_
-#define _PVFMM_OMP_UTILS_H_
+#ifndef _SCTL_OMP_UTILS_H_
+#define _SCTL_OMP_UTILS_H_
 
 #include <iterator>
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 namespace omp_par {
 
 template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> void merge(ConstIter A_, ConstIter A_last, ConstIter B_, ConstIter B_last, Iter C_, Int p, StrictWeakOrdering comp);
@@ -17,8 +17,8 @@ template <class ConstIter, class Int> typename std::iterator_traits<ConstIter>::
 template <class ConstIter, class Iter, class Int> void scan(ConstIter A, Iter B, Int cnt);
 
 }  // end namespace omp_par
-}  // end namespace pvfmm
+}  // end namespace SCTL_NAMESPACE
 
-#include "pvfmm/ompUtils.txx"
+#include SCTL_INCLUDE(ompUtils.txx)
 
-#endif  //_PVFMM_OMP_UTILS_H_
+#endif  //_SCTL_OMP_UTILS_H_

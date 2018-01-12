@@ -5,7 +5,7 @@
 #include <iomanip>
 #include <vector>
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 template <> inline unsigned int pow(const unsigned int b, const unsigned int e) {
   unsigned int r = 1;
@@ -14,9 +14,9 @@ template <> inline unsigned int pow(const unsigned int b, const unsigned int e) 
 }
 }
 
-#ifdef PVFMM_QUAD_T
+#ifdef SCTL_QUAD_T
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 template <> inline QuadReal const_pi<QuadReal>() {
   static QuadReal pi = atoquad("3.1415926535897932384626433832795028841");
@@ -64,7 +64,7 @@ template <> inline QuadReal sin(const QuadReal a) {
       cosval[N - 1] = 1.0 - sinval[N - 1] * sinval[N - 1] / 2;
       for (int i = N - 2; i >= 0; i--) {
         sinval[i] = 2.0 * sinval[i + 1] * cosval[i + 1];
-        cosval[i] = pvfmm::sqrt<QuadReal>(1.0 - sinval[i] * sinval[i]);
+        cosval[i] = sqrt<QuadReal>(1.0 - sinval[i] * sinval[i]);
       }
     }
   }
@@ -106,7 +106,7 @@ template <> inline QuadReal cos(const QuadReal a) {
       cosval[N - 1] = 1.0 - sinval[N - 1] * sinval[N - 1] / 2;
       for (int i = N - 2; i >= 0; i--) {
         sinval[i] = 2.0 * sinval[i + 1] * cosval[i + 1];
-        cosval[i] = pvfmm::sqrt<QuadReal>(1.0 - sinval[i] * sinval[i]);
+        cosval[i] = sqrt<QuadReal>(1.0 - sinval[i] * sinval[i]);
       }
     }
   }
@@ -147,7 +147,7 @@ template <> inline QuadReal exp(const QuadReal a) {
       for (int i = 1; i < N; i++) {
         theta0[i] = theta0[i - 1] * 0.5;
         theta1[i] = theta1[i - 1] * 2.0;
-        expval0[i] = pvfmm::sqrt<QuadReal>(expval0[i - 1]);
+        expval0[i] = sqrt<QuadReal>(expval0[i - 1]);
         expval1[i] = expval1[i - 1] * expval1[i - 1];
       }
     }
@@ -173,14 +173,14 @@ template <> inline QuadReal exp(const QuadReal a) {
 
 template <> inline QuadReal log(const QuadReal a) {
   QuadReal y0 = ::log((double)a);
-  y0 = y0 + (a / pvfmm::exp<QuadReal>(y0) - 1.0);
-  y0 = y0 + (a / pvfmm::exp<QuadReal>(y0) - 1.0);
+  y0 = y0 + (a / exp<QuadReal>(y0) - 1.0);
+  y0 = y0 + (a / exp<QuadReal>(y0) - 1.0);
   return y0;
 }
 
 template <> inline QuadReal pow(const QuadReal b, const QuadReal e) {
   if (b == 0) return 1;
-  return pvfmm::exp<QuadReal>(pvfmm::log<QuadReal>(b) * e);
+  return exp<QuadReal>(log<QuadReal>(b) * e);
 }
 
 inline QuadReal atoquad(const char* str) {
@@ -218,13 +218,11 @@ inline QuadReal atoquad(const char* str) {
   return sign * val;
 }
 
-}  // end namespace
-
-inline std::ostream& operator<<(std::ostream& output, const pvfmm::QuadReal q_) {
+inline std::ostream& operator<<(std::ostream& output, const QuadReal q_) {
   // int width=output.width();
   output << std::setw(1);
 
-  pvfmm::QuadReal q = q_;
+  QuadReal q = q_;
   if (q < 0.0) {
     output << "-";
     q = -q;
@@ -237,7 +235,7 @@ inline std::ostream& operator<<(std::ostream& output, const pvfmm::QuadReal q_) 
   }
 
   int exp = 0;
-  static const pvfmm::QuadReal ONETENTH = (pvfmm::QuadReal)1 / 10;
+  static const QuadReal ONETENTH = (QuadReal)1 / 10;
   while (q < 1.0 && abs(exp) < 10000) {
     q = q * 10;
     exp--;
@@ -263,4 +261,6 @@ inline std::ostream& operator<<(std::ostream& output, const pvfmm::QuadReal q_) 
   return output;
 }
 
-#endif  // PVFMM_QUAD_T
+}  // end namespace
+
+#endif  // SCTL_QUAD_T

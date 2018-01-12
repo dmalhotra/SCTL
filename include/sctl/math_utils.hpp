@@ -1,12 +1,12 @@
 #ifndef _MATH_UTILS_
 #define _MATH_UTILS_
 
-#include <pvfmm/common.hpp>
+#include SCTL_INCLUDE(common.hpp)
 
 #include <cmath>
 #include <ostream>
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 template <class Real> inline Real const_pi() { return 3.1415926535897932384626433832795028841; }
 
@@ -30,19 +30,19 @@ template <Integer N, class T> constexpr T pow(const T& x) { return N > 1 ? x * p
 
 }  // end namespace
 
-#ifdef PVFMM_QUAD_T
+#ifdef SCTL_QUAD_T
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
-typedef PVFMM_QUAD_T QuadReal;
+typedef SCTL_QUAD_T QuadReal;
 
 QuadReal atoquad(const char* str);
+
+std::ostream& operator<<(std::ostream& output, const QuadReal q_);
 }
 
-std::ostream& operator<<(std::ostream& output, const pvfmm::QuadReal q_);
+#endif  // SCTL_QUAD_T
 
-#endif  // PVFMM_QUAD_T
-
-#include <pvfmm/math_utils.txx>
+#include SCTL_INCLUDE(math_utils.txx)
 
 #endif  //_MATH_UTILS_HPP_

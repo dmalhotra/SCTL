@@ -1,4 +1,4 @@
-#include <pvfmm/comm.hpp>
+#include SCTL_INCLUDE(comm.hpp)
 
 #include <omp.h>
 #include <iostream>
@@ -7,12 +7,12 @@
 #include <cassert>
 #include <cstdlib>
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 inline Long Profile::Add_FLOP(Long inc) {
   Long& FLOP = ProfData().FLOP;
   Long orig_val = FLOP;
-#if PVFMM_PROFILE >= 0
+#if SCTL_PROFILE >= 0
 #pragma omp atomic update
   FLOP += inc;
 #endif
@@ -23,7 +23,7 @@ inline Long Profile::Add_MEM(Long inc) {
   std::vector<Long>& max_mem = ProfData().max_mem;
   Long& MEM = ProfData().MEM;
   Long orig_val = MEM;
-#if PVFMM_PROFILE >= 0
+#if SCTL_PROFILE >= 0
 #pragma omp atomic update
   MEM += inc;
   for (size_t i = 0; i < max_mem.size(); i++) {
@@ -36,20 +36,20 @@ inline Long Profile::Add_MEM(Long inc) {
 inline bool Profile::Enable(bool state) {
   bool& enable_state = ProfData().enable_state;
   bool orig_val = enable_state;
-#if PVFMM_PROFILE >= 0
+#if SCTL_PROFILE >= 0
   enable_state = state;
 #endif
   return orig_val;
 }
 
 inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integer verbose) {
-#if PVFMM_PROFILE >= 0
+#if SCTL_PROFILE >= 0
   ProfileData& prof = ProfData();
   // sync_=true;
   if (!prof.enable_state) return;
-  if (verbose <= PVFMM_PROFILE && prof.verb_level.size() == prof.enable_depth) {
+  if (verbose <= SCTL_PROFILE && prof.verb_level.size() == prof.enable_depth) {
     if (comm_ != NULL && sync_) comm_->Barrier();
-#ifdef PVFMM_VERBOSE
+#ifdef SCTL_VERBOSE
     Integer rank = 0;
     if (comm_ != NULL) rank = comm_->Rank();
     if (!rank) {
@@ -77,12 +77,12 @@ inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integ
 }
 
 inline void Profile::Toc() {
-#if PVFMM_PROFILE >= 0
+#if SCTL_PROFILE >= 0
   ProfileData& prof = ProfData();
   if (!prof.enable_state) return;
-  PVFMM_ASSERT_MSG(!prof.verb_level.empty(), "Unbalanced extra Toc()");
-  if (prof.verb_level.top() <= PVFMM_PROFILE && prof.verb_level.size() == prof.enable_depth) {
-    PVFMM_ASSERT_MSG(!prof.name.empty() && !prof.comm.empty() && !prof.sync.empty() && !prof.max_mem.empty(), "Unbalanced extra Toc()");
+  SCTL_ASSERT_MSG(!prof.verb_level.empty(), "Unbalanced extra Toc()");
+  if (prof.verb_level.top() <= SCTL_PROFILE && prof.verb_level.size() == prof.enable_depth) {
+    SCTL_ASSERT_MSG(!prof.name.empty() && !prof.comm.empty() && !prof.sync.empty() && !prof.max_mem.empty(), "Unbalanced extra Toc()");
     std::string name_ = prof.name.top();
     const Comm* comm_ = prof.comm.top();
     bool sync_ = prof.sync.top();
@@ -105,7 +105,7 @@ inline void Profile::Toc() {
     prof.sync.pop();
     prof.max_mem.pop_back();
 
-#ifdef PVFMM_VERBOSE
+#ifdef SCTL_VERBOSE
     Integer rank = 0;
     if (comm_ != NULL) rank = comm_->Rank();
     if (!rank) {
@@ -120,9 +120,9 @@ inline void Profile::Toc() {
 }
 
 inline void Profile::print(const Comm* comm_) {
-#if PVFMM_PROFILE >= 0
+#if SCTL_PROFILE >= 0
   ProfileData& prof = ProfData();
-  PVFMM_ASSERT_MSG(prof.name.empty(), "Missing balancing Toc()");
+  SCTL_ASSERT_MSG(prof.name.empty(), "Missing balancing Toc()");
 
   Comm c_self = Comm::Self();
   if (comm_ == NULL) comm_ = &c_self;
@@ -184,16 +184,16 @@ inline void Profile::print(const Comm* comm_) {
       double f_max, f_min, f_sum, f_avg;
       double fs_max, fs_min, fs_sum;  //, fs_avg;
       double m_init, m_max, m_final;
-      comm_->Allreduce(PVFMM_PTR2CONSTITR(double, &t0, 1), PVFMM_PTR2ITR(double, &t_max, 1), 1, Comm::CommOp::MAX);
-      comm_->Allreduce(PVFMM_PTR2CONSTITR(double, &f0, 1), PVFMM_PTR2ITR(double, &f_max, 1), 1, Comm::CommOp::MAX);
-      comm_->Allreduce(PVFMM_PTR2CONSTITR(double, &fs0, 1), PVFMM_PTR2ITR(double, &fs_max, 1), 1, Comm::CommOp::MAX);
+      comm_->Allreduce(Ptr2ConstItr<double>(&t0, 1), Ptr2Itr<double>(&t_max, 1), 1, Comm::CommOp::MAX);
+      comm_->Allreduce(Ptr2ConstItr<double>(&f0, 1), Ptr2Itr<double>(&f_max, 1), 1, Comm::CommOp::MAX);
+      comm_->Allreduce(Ptr2ConstItr<double>(&fs0, 1), Ptr2Itr<double>(&fs_max, 1), 1, Comm::CommOp::MAX);
 
-      comm_->Allreduce(PVFMM_PTR2CONSTITR(double, &t0, 1), PVFMM_PTR2ITR(double, &t_min, 1), 1, Comm::CommOp::MIN);
-      comm_->Allreduce(PVFMM_PTR2CONSTITR(double, &f0, 1), PVFMM_PTR2ITR(double, &f_min, 1), 1, Comm::CommOp::MIN);
-      comm_->Allreduce(PVFMM_PTR2CONSTITR(double, &fs0, 1), PVFMM_PTR2ITR(double, &fs_min, 1), 1, Comm::CommOp::MIN);
+      comm_->Allreduce(Ptr2ConstItr<double>(&t0, 1), Ptr2Itr<double>(&t_min, 1), 1, Comm::CommOp::MIN);
+      comm_->Allreduce(Ptr2ConstItr<double>(&f0, 1), Ptr2Itr<double>(&f_min, 1), 1, Comm::CommOp::MIN);
+      comm_->Allreduce(Ptr2ConstItr<double>(&fs0, 1), Ptr2Itr<double>(&fs_min, 1), 1, Comm::CommOp::MIN);
 
-      comm_->Allreduce(PVFMM_PTR2CONSTITR(double, &t0, 1), PVFMM_PTR2ITR(double, &t_sum, 1), 1, Comm::CommOp::SUM);
-      comm_->Allreduce(PVFMM_PTR2CONSTITR(double, &f0, 1), PVFMM_PTR2ITR(double, &f_sum, 1), 1, Comm::CommOp::SUM);
+      comm_->Allreduce(Ptr2ConstItr<double>(&t0, 1), Ptr2Itr<double>(&t_sum, 1), 1, Comm::CommOp::SUM);
+      comm_->Allreduce(Ptr2ConstItr<double>(&f0, 1), Ptr2Itr<double>(&f_sum, 1), 1, Comm::CommOp::SUM);
 
       m_final = (double)prof.m_log[i] * 1e-9;
       m_init = (double)mm.top() * 1e-9;

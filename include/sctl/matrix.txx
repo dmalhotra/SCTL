@@ -5,11 +5,11 @@
 #include <iostream>
 #include <iomanip>
 
-#include <pvfmm/mat_utils.hpp>
-#include <pvfmm/mem_mgr.hpp>
-#include <pvfmm/profile.hpp>
+#include SCTL_INCLUDE(mat_utils.hpp)
+#include SCTL_INCLUDE(mem_mgr.hpp)
+#include SCTL_INCLUDE(profile.hpp)
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 template <class ValueType> std::ostream& operator<<(std::ostream& output, const Matrix<ValueType>& M) {
   std::ios::fmtflags f(std::cout.flags());
@@ -17,7 +17,7 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
   for (Long i = 0; i < M.Dim(0); i++) {
     for (Long j = 0; j < M.Dim(1); j++) {
       float f = ((float)M(i, j));
-      if (pvfmm::fabs<ValueType>(f) < 1e-25) f = 0;
+      if (fabs<ValueType>(f) < 1e-25) f = 0;
       output << std::setw(10) << ((double)f) << ' ';
     }
     output << ";\n";
@@ -109,10 +109,10 @@ template <class ValueType> void Matrix<ValueType>::Write(const char* fname) cons
     return;
   }
   StaticArray<uint64_t, 2> dim_;
-  dim_[0] = (uint64_t)dim[0];
-  dim_[1] = (uint64_t)dim[1];
+  dim_[0] = (uint64_t)Dim(0);
+  dim_[1] = (uint64_t)Dim(1);
   fwrite(&dim_[0], sizeof(uint64_t), 2, f1);
-  fwrite(data_ptr, sizeof(ValueType), dim[0] * dim[1], f1);
+  if (Dim(0) * Dim(1)) fwrite(&data_ptr[0], sizeof(ValueType), Dim(0) * Dim(1), f1);
   fclose(f1);
 }
 
@@ -126,21 +126,23 @@ template <class ValueType> void Matrix<ValueType>::Read(const char* fname) {
   Long readlen = fread(&dim_[0], sizeof(uint64_t), 2, f1);
   assert(readlen == 2);
 
-  ReInit(dim_[0], dim_[1]);
-  readlen = fread(data_ptr, sizeof(ValueType), dim[0] * dim[1], f1);
-  assert(readlen == dim[0] * dim[1]);
+  if (Dim(0)!=dim_[0] || Dim(1)!=dim_[1]) ReInit(dim_[0], dim_[1]);
+  if (dim_[0] * dim_[1]) readlen = fread(&data_ptr[0], sizeof(ValueType), dim_[0] * dim_[1], f1);
+  assert(readlen == dim_[0] * dim_[1]);
   fclose(f1);
 }
 
 template <class ValueType> Long Matrix<ValueType>::Dim(Long i) const { return dim[i]; }
 
 template <class ValueType> void Matrix<ValueType>::SetZero() {
-  if (dim[0] * dim[1]) pvfmm::memset(data_ptr, 0, dim[0] * dim[1]);
+  if (dim[0] * dim[1]) memset(data_ptr, 0, dim[0] * dim[1]);
 }
 
 template <class ValueType> Iterator<ValueType> Matrix<ValueType>::Begin() { return data_ptr; }
 
 template <class ValueType> ConstIterator<ValueType> Matrix<ValueType>::Begin() const { return data_ptr; }
+
+// Matrix-Matrix operations
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(const Matrix<ValueType>& M) {
   if (this != &M) {
@@ -155,7 +157,7 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(const
 }
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator+=(const Matrix<ValueType>& M) {
-  assert(M.Dim(0) == Dim(0) && M.Dim(1) == Dim(1));
+  SCTL_ASSERT(M.Dim(0) == Dim(0) && M.Dim(1) == Dim(1));
   Profile::Add_FLOP(dim[0] * dim[1]);
 
   for (Long i = 0; i < M.Dim(0) * M.Dim(1); i++) data_ptr[i] += M.data_ptr[i];
@@ -163,7 +165,7 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator+=(cons
 }
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator-=(const Matrix<ValueType>& M) {
-  assert(M.Dim(0) == Dim(0) && M.Dim(1) == Dim(1));
+  SCTL_ASSERT(M.Dim(0) == Dim(0) && M.Dim(1) == Dim(1));
   Profile::Add_FLOP(dim[0] * dim[1]);
 
   for (Long i = 0; i < M.Dim(0) * M.Dim(1); i++) data_ptr[i] -= M.data_ptr[i];
@@ -172,7 +174,7 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator-=(cons
 
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator+(const Matrix<ValueType>& M2) const {
   const Matrix<ValueType>& M1 = *this;
-  assert(M2.Dim(0) == M1.Dim(0) && M2.Dim(1) == M1.Dim(1));
+  SCTL_ASSERT(M2.Dim(0) == M1.Dim(0) && M2.Dim(1) == M1.Dim(1));
   Profile::Add_FLOP(dim[0] * dim[1]);
 
   Matrix<ValueType> M_r(M1.Dim(0), M1.Dim(1), NULL);
@@ -182,13 +184,150 @@ template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator+(const 
 
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator-(const Matrix<ValueType>& M2) const {
   const Matrix<ValueType>& M1 = *this;
-  assert(M2.Dim(0) == M1.Dim(0) && M2.Dim(1) == M1.Dim(1));
+  SCTL_ASSERT(M2.Dim(0) == M1.Dim(0) && M2.Dim(1) == M1.Dim(1));
   Profile::Add_FLOP(dim[0] * dim[1]);
 
   Matrix<ValueType> M_r(M1.Dim(0), M1.Dim(1), NULL);
   for (Long i = 0; i < M1.Dim(0) * M1.Dim(1); i++) M_r[0][i] = M1[0][i] - M2[0][i];
   return M_r;
 }
+
+template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator*(const Matrix<ValueType>& M) const {
+  SCTL_ASSERT(dim[1] == M.dim[0]);
+  Profile::Add_FLOP(2 * (((Long)dim[0]) * dim[1]) * M.dim[1]);
+
+  Matrix<ValueType> M_r(dim[0], M.dim[1], NULL);
+  if (M.Dim(0) * M.Dim(1) == 0 || this->Dim(0) * this->Dim(1) == 0) return M_r;
+  mat::gemm<ValueType>('N', 'N', M.dim[1], dim[0], dim[1], 1.0, M.data_ptr, M.dim[1], data_ptr, dim[1], 0.0, M_r.data_ptr, M_r.dim[1]);
+  return M_r;
+}
+
+template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta) {
+  assert(A.dim[1] == B.dim[0]);
+  assert(M_r.dim[0] == A.dim[0]);
+  assert(M_r.dim[1] == B.dim[1]);
+  if (A.Dim(0) * A.Dim(1) == 0 || B.Dim(0) * B.Dim(1) == 0) return;
+  Profile::Add_FLOP(2 * (((Long)A.dim[0]) * A.dim[1]) * B.dim[1]);
+  mat::gemm<ValueType>('N', 'N', B.dim[1], A.dim[0], A.dim[1], 1.0, B.data_ptr, B.dim[1], A.data_ptr, A.dim[1], beta, M_r.data_ptr, M_r.dim[1]);
+}
+
+template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, const Permutation<ValueType>& P, const Matrix<ValueType>& M, ValueType beta) {
+  Long d0 = M.Dim(0);
+  Long d1 = M.Dim(1);
+
+  assert(P.Dim() == d0);
+  assert(M_r.Dim(0) == d0);
+  assert(M_r.Dim(1) == d1);
+  if (P.Dim() == 0 || d0 * d1 == 0) return;
+
+  if (beta == 0) {
+    for (Long i = 0; i < d0; i++) {
+      const ValueType s = P.scal[i];
+      ConstIterator<ValueType> M_ = M[i];
+      Iterator<ValueType> M_r_ = M_r[P.perm[i]];
+      for (Long j = 0; j < d1; j++) M_r_[j] = M_[j] * s;
+    }
+  } else {
+    for (Long i = 0; i < d0; i++) {
+      const ValueType s = P.scal[i];
+      ConstIterator<ValueType> M_ = M[i];
+      Iterator<ValueType> M_r_ = M_r[P.perm[i]];
+      for (Long j = 0; j < d1; j++) M_r_[j] = M_[j] * s + M_r_[j] * beta;
+    }
+  }
+}
+
+template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& M, const Permutation<ValueType>& P, ValueType beta) {
+  Long d0 = M.Dim(0);
+  Long d1 = M.Dim(1);
+
+  assert(P.Dim() == d1);
+  assert(M_r.Dim(0) == d0);
+  assert(M_r.Dim(1) == d1);
+  if (P.Dim() == 0 || d0 * d1 == 0) return;
+
+  if (beta == 0) {
+    for (Long i = 0; i < d0; i++) {
+      ConstIterator<Long> perm_ = P.perm.Begin();
+      ConstIterator<ValueType> scal_ = P.scal.Begin();
+      ConstIterator<ValueType> M_ = M[i];
+      Iterator<ValueType> M_r_ = M_r[i];
+      for (Long j = 0; j < d1; j++) M_r_[j] = M_[perm_[j]] * scal_[j];
+    }
+  } else {
+    for (Long i = 0; i < d0; i++) {
+      ConstIterator<Long> perm_ = P.perm.Begin();
+      ConstIterator<ValueType> scal_ = P.scal.Begin();
+      ConstIterator<ValueType> M_ = M[i];
+      Iterator<ValueType> M_r_ = M_r[i];
+      for (Long j = 0; j < d1; j++) M_r_[j] = M_[perm_[j]] * scal_[j] + M_r_[j] * beta;
+    }
+  }
+}
+
+// cublasgemm wrapper
+#if defined(SCTL_HAVE_CUDA)
+template <class ValueType> void Matrix<ValueType>::CUBLASGEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta) {
+  if (A.Dim(0) * A.Dim(1) == 0 || B.Dim(0) * B.Dim(1) == 0) return;
+  assert(A.dim[1] == B.dim[0]);
+  assert(M_r.dim[0] == A.dim[0]);
+  assert(M_r.dim[1] == B.dim[1]);
+  Profile::Add_FLOP(2 * (((Long)A.dim[0]) * A.dim[1]) * B.dim[1]);
+  mat::cublasgemm('N', 'N', B.dim[1], A.dim[0], A.dim[1], (ValueType)1.0, B.data_ptr, B.dim[1], A.data_ptr, A.dim[1], beta, M_r.data_ptr, M_r.dim[1]);
+}
+#endif
+
+// Matrix-Scalar operations
+
+template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(ValueType s) {
+  Long N = dim[0] * dim[1];
+  for (Long i = 0; i < N; i++) data_ptr[i] = s;
+  return *this;
+}
+
+template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator+=(ValueType s) {
+  Long N = dim[0] * dim[1];
+  for (Long i = 0; i < N; i++) data_ptr[i] += s;
+  Profile::Add_FLOP(N);
+  return *this;
+}
+
+template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator-=(ValueType s) {
+  Long N = dim[0] * dim[1];
+  for (Long i = 0; i < N; i++) data_ptr[i] -= s;
+  Profile::Add_FLOP(N);
+  return *this;
+}
+
+template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator+(ValueType s) const {
+  Long N = dim[0] * dim[1];
+  Matrix<ValueType> M_r(dim(0), dim(1));
+  for (Long i = 0; i < N; i++) M_r.data_ptr[i] = data_ptr[i] + s;
+  return M_r;
+}
+
+template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator-(ValueType s) const {
+  Long N = dim[0] * dim[1];
+  Matrix<ValueType> M_r(dim(0), dim(1));
+  for (Long i = 0; i < N; i++) M_r.data_ptr[i] = data_ptr[i] - s;
+  return M_r;
+}
+
+template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator*(ValueType s) const {
+  Long N = dim[0] * dim[1];
+  Matrix<ValueType> M_r(dim(0), dim(1));
+  for (Long i = 0; i < N; i++) M_r.data_ptr[i] = data_ptr[i] * s;
+  return M_r;
+}
+
+template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator/(ValueType s) const {
+  Long N = dim[0] * dim[1];
+  Matrix<ValueType> M_r(dim(0), dim(1));
+  for (Long i = 0; i < N; i++) M_r.data_ptr[i] = data_ptr[i] / s;
+  return M_r;
+}
+
+// Element access
 
 template <class ValueType> inline ValueType& Matrix<ValueType>::operator()(Long i, Long j) {
   assert(i < dim[0] && j < dim[1]);
@@ -210,37 +349,6 @@ template <class ValueType> inline ConstIterator<ValueType> Matrix<ValueType>::op
   return (data_ptr + i * dim[1]);
 }
 
-template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator*(const Matrix<ValueType>& M) const {
-  assert(dim[1] == M.dim[0]);
-  Profile::Add_FLOP(2 * (((Long)dim[0]) * dim[1]) * M.dim[1]);
-
-  Matrix<ValueType> M_r(dim[0], M.dim[1], NULL);
-  if (M.Dim(0) * M.Dim(1) == 0 || this->Dim(0) * this->Dim(1) == 0) return M_r;
-  mat::gemm<ValueType>('N', 'N', M.dim[1], dim[0], dim[1], 1.0, M.data_ptr, M.dim[1], data_ptr, dim[1], 0.0, M_r.data_ptr, M_r.dim[1]);
-  return M_r;
-}
-
-template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta) {
-  assert(A.dim[1] == B.dim[0]);
-  assert(M_r.dim[0] == A.dim[0]);
-  assert(M_r.dim[1] == B.dim[1]);
-  if (A.Dim(0) * A.Dim(1) == 0 || B.Dim(0) * B.Dim(1) == 0) return;
-  Profile::Add_FLOP(2 * (((Long)A.dim[0]) * A.dim[1]) * B.dim[1]);
-  mat::gemm<ValueType>('N', 'N', B.dim[1], A.dim[0], A.dim[1], 1.0, B.data_ptr, B.dim[1], A.data_ptr, A.dim[1], beta, M_r.data_ptr, M_r.dim[1]);
-}
-
-// cublasgemm wrapper
-#if defined(PVFMM_HAVE_CUDA)
-template <class ValueType> void Matrix<ValueType>::CUBLASGEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta) {
-  if (A.Dim(0) * A.Dim(1) == 0 || B.Dim(0) * B.Dim(1) == 0) return;
-  assert(A.dim[1] == B.dim[0]);
-  assert(M_r.dim[0] == A.dim[0]);
-  assert(M_r.dim[1] == B.dim[1]);
-  Profile::Add_FLOP(2 * (((Long)A.dim[0]) * A.dim[1]) * B.dim[1]);
-  mat::cublasgemm('N', 'N', B.dim[1], A.dim[0], A.dim[1], (ValueType)1.0, B.data_ptr, B.dim[1], A.data_ptr, A.dim[1], beta, M_r.data_ptr, M_r.dim[1]);
-}
-#endif
-
 #define myswap(t, a, b) \
   {                     \
     t c = a;            \
@@ -254,23 +362,31 @@ template <class ValueType> void Matrix<ValueType>::RowPerm(const Permutation<Val
   Long d0 = M.Dim(0);
   Long d1 = M.Dim(1);
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(static)
   for (Long i = 0; i < d0; i++) {
     Iterator<ValueType> M_ = M[i];
     const ValueType s = P.scal[i];
     for (Long j = 0; j < d1; j++) M_[j] *= s;
   }
 
-  Permutation<ValueType> P_ = P;
-  for (Long i = 0; i < d0; i++)
-    while (P_.perm[i] != i) {
-      Long a = P_.perm[i];
-      Long b = i;
-      Iterator<ValueType> M_a = M[a];
-      Iterator<ValueType> M_b = M[b];
-      myswap(Long, P_.perm[a], P_.perm[b]);
-      for (Long j = 0; j < d1; j++) myswap(ValueType, M_a[j], M_b[j]);
+  Integer omp_p = omp_get_max_threads();
+#pragma omp parallel for schedule(static)
+  for (Integer tid = 0; tid < omp_p; tid++) {
+    Long a = d1 * (tid + 0) / omp_p;
+    Long b = d1 * (tid + 1) / omp_p;
+    Permutation<ValueType> P_ = P;
+    for (Long i = 0; i < d0; i++) {
+      Long j = i;
+      if (P_.perm[i] == i) continue;
+      while (j < d0 && P_.perm[j] != i) { j++; }
+      SCTL_ASSERT_MSG(j < d0, "Matrix::RowPerm(Permutation P) ==> Invalid permutation vector P.");
+
+      Iterator<ValueType> Mi = M[i];
+      Iterator<ValueType> Mj = M[j];
+      myswap(Long, P_.perm[i], P_.perm[j]);
+      for (Long k = a; k < b; k++) Mi[k]=tid;
     }
+  }
 }
 
 template <class ValueType> void Matrix<ValueType>::ColPerm(const Permutation<ValueType>& P) {
@@ -285,7 +401,7 @@ template <class ValueType> void Matrix<ValueType>::ColPerm(const Permutation<Val
 
   ConstIterator<Long> perm_ = P.perm.Begin();
   ConstIterator<ValueType> scal_ = P.scal.Begin();
-#pragma omp parallel for
+#pragma omp parallel for schedule(static)
   for (Long i = 0; i < d0; i++) {
     Integer pid = omp_get_thread_num();
     Iterator<ValueType> buff = M_buff[pid];
@@ -365,8 +481,8 @@ template <class ValueType> void Matrix<ValueType>::Transpose(Matrix<ValueType>& 
 #undef B1
 
 template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Matrix<ValueType>& tS, Matrix<ValueType>& tVT) {
-  pvfmm::Matrix<ValueType>& M = *this;
-  pvfmm::Matrix<ValueType> M_ = M;
+  Matrix<ValueType>& M = *this;
+  Matrix<ValueType> M_ = M;
   int n = M.Dim(0);
   int m = M.Dim(1);
 
@@ -388,7 +504,7 @@ template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Ma
   wssize = (wssize > wssize1 ? wssize : wssize1);
 
   Iterator<ValueType> wsbuf = aligned_new<ValueType>(wssize);
-  pvfmm::mat::svd(&JOBU, &JOBVT, &m, &n, M.Begin(), &m, tS.Begin(), tVT.Begin(), &m, tU.Begin(), &k, wsbuf, &wssize, &INFO);
+  mat::svd(&JOBU, &JOBVT, &m, &n, M.Begin(), &m, tS.Begin(), tVT.Begin(), &m, tU.Begin(), &k, wsbuf, &wssize, &INFO);
   aligned_delete<ValueType>(wsbuf);
 
   if (INFO != 0) std::cout << INFO << '\n';
@@ -405,7 +521,7 @@ template <class ValueType> Matrix<ValueType> Matrix<ValueType>::pinv(ValueType e
   if (eps < 0) {
     eps = 1.0;
     while (eps + (ValueType)1.0 > 1.0) eps *= 0.5;
-    eps = pvfmm::sqrt<ValueType>(eps);
+    eps = sqrt<ValueType>(eps);
   }
   Matrix<ValueType> M_r(dim[1], dim[0]);
   mat::pinv(data_ptr, dim[0], dim[1], eps, M_r.data_ptr);
@@ -469,9 +585,31 @@ template <class ValueType> Permutation<ValueType> Permutation<ValueType>::Transp
   return P_r;
 }
 
-template <class ValueType> Permutation<ValueType> Permutation<ValueType>::operator*(const Permutation<ValueType>& P) {
+template <class ValueType> Permutation<ValueType>& Permutation<ValueType>::operator*=(ValueType s) {
+  for (Long i = 0; i < scal.Dim(); i++) scal[i] *= s;
+  return *this;
+}
+
+template <class ValueType> Permutation<ValueType>& Permutation<ValueType>::operator/=(ValueType s) {
+  for (Long i = 0; i < scal.Dim(); i++) scal[i] /= s;
+  return *this;
+}
+
+template <class ValueType> Permutation<ValueType> Permutation<ValueType>::operator*(ValueType s) const {
+  Permutation<ValueType> P = *this;
+  P *= s;
+  return P;
+}
+
+template <class ValueType> Permutation<ValueType> Permutation<ValueType>::operator/(ValueType s) const {
+  Permutation<ValueType> P = *this;
+  P /= s;
+  return P;
+}
+
+template <class ValueType> Permutation<ValueType> Permutation<ValueType>::operator*(const Permutation<ValueType>& P) const {
   Long size = perm.Dim();
-  assert(P.Dim() == size);
+  SCTL_ASSERT(P.Dim() == size);
 
   Permutation<ValueType> P_r(size);
   Vector<Long>& perm_r = P_r.perm;
@@ -483,9 +621,9 @@ template <class ValueType> Permutation<ValueType> Permutation<ValueType>::operat
   return P_r;
 }
 
-template <class ValueType> Matrix<ValueType> Permutation<ValueType>::operator*(const Matrix<ValueType>& M) {
+template <class ValueType> Matrix<ValueType> Permutation<ValueType>::operator*(const Matrix<ValueType>& M) const {
   if (Dim() == 0) return M;
-  assert(M.Dim(0) == Dim());
+  SCTL_ASSERT(M.Dim(0) == Dim());
   Long d0 = M.Dim(0);
   Long d1 = M.Dim(1);
 
@@ -501,7 +639,7 @@ template <class ValueType> Matrix<ValueType> Permutation<ValueType>::operator*(c
 
 template <class ValueType> Matrix<ValueType> operator*(const Matrix<ValueType>& M, const Permutation<ValueType>& P) {
   if (P.Dim() == 0) return M;
-  assert(M.Dim(1) == P.Dim());
+  SCTL_ASSERT(M.Dim(1) == P.Dim());
   Long d0 = M.Dim(0);
   Long d1 = M.Dim(1);
 

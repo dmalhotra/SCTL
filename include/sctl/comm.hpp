@@ -1,15 +1,15 @@
-#ifndef _PVFMM_COMM_HPP_
-#define _PVFMM_COMM_HPP_
+#ifndef _SCTL_COMM_HPP_
+#define _SCTL_COMM_HPP_
 
-#include <pvfmm/common.hpp>
+#include SCTL_INCLUDE(common.hpp)
 
 #include <map>
 #include <stack>
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
 #include <mpi.h>
 #endif
 
-namespace pvfmm {
+namespace SCTL_NAMESPACE {
 
 template <class ValueType> class Vector;
 
@@ -83,7 +83,7 @@ class Comm {
     B data;
   };
 
-#ifdef PVFMM_HAVE_MPI
+#ifdef SCTL_HAVE_MPI
   Comm(const MPI_Comm mpi_comm) { Init(mpi_comm); }
 
   void Init(const MPI_Comm mpi_comm) {
@@ -197,6 +197,6 @@ class Comm {
 
 }  // end namespace
 
-#include <pvfmm/comm.txx>
+#include SCTL_INCLUDE(comm.txx)
 
-#endif  //_PVFMM_COMM_HPP_
+#endif  //_SCTL_COMM_HPP_
