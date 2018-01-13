@@ -44,8 +44,14 @@
 // OpenMP merge-sort and scan
 #include SCTL_INCLUDE(ompUtils.hpp)
 
+// Parallel solver
+#include SCTL_INCLUDE(parallel_solver.hpp)
+
 // ChebBasis
 #include SCTL_INCLUDE(cheb_utils.hpp)
+
+// Morton
+#include SCTL_INCLUDE(morton.hpp)
 
 #include SCTL_INCLUDE(fft_wrapper.hpp)
 
