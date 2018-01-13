@@ -138,9 +138,13 @@ template <class ValueType> void Matrix<ValueType>::SetZero() {
   if (dim[0] * dim[1]) memset(data_ptr, 0, dim[0] * dim[1]);
 }
 
-template <class ValueType> Iterator<ValueType> Matrix<ValueType>::Begin() { return data_ptr; }
+template <class ValueType> Iterator<ValueType> Matrix<ValueType>::begin() { return data_ptr; }
 
-template <class ValueType> ConstIterator<ValueType> Matrix<ValueType>::Begin() const { return data_ptr; }
+template <class ValueType> ConstIterator<ValueType> Matrix<ValueType>::begin() const { return data_ptr; }
+
+template <class ValueType> Iterator<ValueType> Matrix<ValueType>::end() { return data_ptr + dim[0] * dim[1]; }
+
+template <class ValueType> ConstIterator<ValueType> Matrix<ValueType>::end() const { return data_ptr + dim[0] * dim[1]; }
 
 // Matrix-Matrix operations
 
@@ -248,16 +252,16 @@ template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, 
 
   if (beta == 0) {
     for (Long i = 0; i < d0; i++) {
-      ConstIterator<Long> perm_ = P.perm.Begin();
-      ConstIterator<ValueType> scal_ = P.scal.Begin();
+      ConstIterator<Long> perm_ = P.perm.begin();
+      ConstIterator<ValueType> scal_ = P.scal.begin();
       ConstIterator<ValueType> M_ = M[i];
       Iterator<ValueType> M_r_ = M_r[i];
       for (Long j = 0; j < d1; j++) M_r_[j] = M_[perm_[j]] * scal_[j];
     }
   } else {
     for (Long i = 0; i < d0; i++) {
-      ConstIterator<Long> perm_ = P.perm.Begin();
-      ConstIterator<ValueType> scal_ = P.scal.Begin();
+      ConstIterator<Long> perm_ = P.perm.begin();
+      ConstIterator<ValueType> scal_ = P.scal.begin();
       ConstIterator<ValueType> M_ = M[i];
       Iterator<ValueType> M_r_ = M_r[i];
       for (Long j = 0; j < d1; j++) M_r_[j] = M_[perm_[j]] * scal_[j] + M_r_[j] * beta;
@@ -413,8 +417,8 @@ template <class ValueType> void Matrix<ValueType>::ColPerm(const Permutation<Val
   Integer omp_p = omp_get_max_threads();
   Matrix<ValueType> M_buff(omp_p, d1);
 
-  ConstIterator<Long> perm_ = P.perm.Begin();
-  ConstIterator<ValueType> scal_ = P.scal.Begin();
+  ConstIterator<Long> perm_ = P.perm.begin();
+  ConstIterator<ValueType> scal_ = P.scal.begin();
 #pragma omp parallel for schedule(static)
   for (Long i = 0; i < d0; i++) {
     Integer pid = omp_get_thread_num();
@@ -518,7 +522,7 @@ template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Ma
   wssize = (wssize > wssize1 ? wssize : wssize1);
 
   Iterator<ValueType> wsbuf = aligned_new<ValueType>(wssize);
-  mat::svd(&JOBU, &JOBVT, &m, &n, M.Begin(), &m, tS.Begin(), tVT.Begin(), &m, tU.Begin(), &k, wsbuf, &wssize, &INFO);
+  mat::svd(&JOBU, &JOBVT, &m, &n, M.begin(), &m, tS.begin(), tVT.begin(), &m, tU.begin(), &k, wsbuf, &wssize, &INFO);
   aligned_delete<ValueType>(wsbuf);
 
   if (INFO != 0) std::cout << INFO << '\n';
@@ -659,8 +663,8 @@ template <class ValueType> Matrix<ValueType> operator*(const Matrix<ValueType>& 
 
   Matrix<ValueType> M_r(d0, d1, NULL);
   for (Long i = 0; i < d0; i++) {
-    ConstIterator<Long> perm_ = P.perm.Begin();
-    ConstIterator<ValueType> scal_ = P.scal.Begin();
+    ConstIterator<Long> perm_ = P.perm.begin();
+    ConstIterator<ValueType> scal_ = P.scal.begin();
     ConstIterator<ValueType> M_ = M[i];
     Iterator<ValueType> M_r_ = M_r[i];
     for (Long j = 0; j < d1; j++) M_r_[j] = M_[perm_[j]] * scal_[j];

@@ -145,32 +145,32 @@ template <class ValueType> class FFT {
 
     if (plan.fft_type == FFT_Type::C2R) {
       const Matrix<ValueType>& M = plan.M[rank - 1];
-      transpose<ComplexType>(buff0.Begin(), in.Begin(), N / M.Dim(0), M.Dim(0) / 2);
+      transpose<ComplexType>(buff0.begin(), in.begin(), N / M.Dim(0), M.Dim(0) / 2);
 
       for (Long i = 0; i < rank - 1; i++) {
         const Matrix<ValueType>& M = plan.M[i];
-        Matrix<ValueType> vi(N / M.Dim(0), M.Dim(0), buff0.Begin(), false);
-        Matrix<ValueType> vo(N / M.Dim(0), M.Dim(1), buff1.Begin(), false);
+        Matrix<ValueType> vi(N / M.Dim(0), M.Dim(0), buff0.begin(), false);
+        Matrix<ValueType> vo(N / M.Dim(0), M.Dim(1), buff1.begin(), false);
         Matrix<ValueType>::GEMM(vo, vi, M);
         N = N * M.Dim(1) / M.Dim(0);
-        transpose<ComplexType>(buff0.Begin(), buff1.Begin(), N / M.Dim(1), M.Dim(1) / 2);
+        transpose<ComplexType>(buff0.begin(), buff1.begin(), N / M.Dim(1), M.Dim(1) / 2);
       }
-      transpose<ComplexType>(buff1.Begin(), buff0.Begin(), N / howmany / 2, howmany);
+      transpose<ComplexType>(buff1.begin(), buff0.begin(), N / howmany / 2, howmany);
 
-      Matrix<ValueType> vi(N / M.Dim(0), M.Dim(0), buff1.Begin(), false);
-      Matrix<ValueType> vo(N / M.Dim(0), M.Dim(1), out.Begin(), false);
+      Matrix<ValueType> vi(N / M.Dim(0), M.Dim(0), buff1.begin(), false);
+      Matrix<ValueType> vo(N / M.Dim(0), M.Dim(1), out.begin(), false);
       Matrix<ValueType>::GEMM(vo, vi, M);
     } else {
-      memcopy(buff0.Begin(), in.Begin(), in.Dim());
+      memcopy(buff0.begin(), in.begin(), in.Dim());
       for (Long i = 0; i < rank; i++) {
         const Matrix<ValueType>& M = plan.M[i];
-        Matrix<ValueType> vi(N / M.Dim(0), M.Dim(0), buff0.Begin(), false);
-        Matrix<ValueType> vo(N / M.Dim(0), M.Dim(1), buff1.Begin(), false);
+        Matrix<ValueType> vi(N / M.Dim(0), M.Dim(0), buff0.begin(), false);
+        Matrix<ValueType> vo(N / M.Dim(0), M.Dim(1), buff1.begin(), false);
         Matrix<ValueType>::GEMM(vo, vi, M);
         N = N * M.Dim(1) / M.Dim(0);
-        transpose<ComplexType>(buff0.Begin(), buff1.Begin(), N / M.Dim(1), M.Dim(1) / 2);
+        transpose<ComplexType>(buff0.begin(), buff1.begin(), N / M.Dim(1), M.Dim(1) / 2);
       }
-      transpose<ComplexType>(out.Begin(), buff0.Begin(), N / howmany / 2, howmany);
+      transpose<ComplexType>(out.begin(), buff0.begin(), N / howmany / 2, howmany);
     }
   }
 
@@ -244,11 +244,12 @@ template <class ValueType> class FFT {
     ValueType s = 1.0 / sqrt<ValueType>(N0);
     Long N1 = (N0 / 2 + 1);
     Matrix<ValueType> M(2 * N1, N0);
-    for (Long i = 0; i < N1; i++)
+    for (Long i = 0; i < N1; i++) {
       for (Long j = 0; j < N0; j++) {
         M[2 * i + 0][j] = 2 * cos<ValueType>(j * i * (1.0 / N0) * 2.0 * const_pi<ValueType>())*s;
         M[2 * i + 1][j] = 2 * sin<ValueType>(j * i * (1.0 / N0) * 2.0 * const_pi<ValueType>())*s;
       }
+    }
     if (N1 > 0) {
       for (Long j = 0; j < N0; j++) {
         M[0][j] = M[0][j] * 0.5;

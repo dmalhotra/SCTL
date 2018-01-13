@@ -61,11 +61,11 @@ template <class ValueType, class Derived> class BasisInterface {
           Vector<ValueType> x, p;
           Derived::Nodes1D(order, x);
           Derived::EvalBasis1D(order, x, p);
-          Matrix<ValueType> Mp1(order, order, p.Begin(), false);
+          Matrix<ValueType> Mp1(order, order, p.begin(), false);
           Mp1.pinv().Swap(precomp[order]);
         }
       }
-      Mp.ReInit(precomp[order].Dim(0), precomp[order].Dim(1), precomp[order].Begin(), false);
+      Mp.ReInit(precomp[order].Dim(0), precomp[order].Dim(1), precomp[order].begin(), false);
     }
 
     Integer order_DIM = pow<Integer>(order, DIM);
@@ -76,12 +76,12 @@ template <class ValueType, class Derived> class BasisInterface {
     // Create work buffers
     Long buff_size = dof * order_DIM;
     Vector<ValueType> buff(2 * buff_size);
-    Iterator<ValueType> buff1 = buff.Begin() + buff_size * 0;
-    Iterator<ValueType> buff2 = buff.Begin() + buff_size * 1;
+    Iterator<ValueType> buff1 = buff.begin() + buff_size * 0;
+    Iterator<ValueType> buff2 = buff.begin() + buff_size * 1;
 
-    Vector<ValueType> fn(order_DIM * dof, (Iterator<ValueType>)fn_v.Begin(), false);
+    Vector<ValueType> fn(order_DIM * dof, (Iterator<ValueType>)fn_v.begin(), false);
     for (Integer k = 0; k < DIM; k++) {  // Apply Mp along k-dimension
-      Matrix<ValueType> Mi(dof * order_DIM_, order, fn.Begin(), false);
+      Matrix<ValueType> Mi(dof * order_DIM_, order, fn.begin(), false);
       Matrix<ValueType> Mo(dof * order_DIM_, order, buff2, false);
       Matrix<ValueType>::GEMM(Mo, Mi, Mp);
 
@@ -112,11 +112,11 @@ template <class ValueType, class Derived> class BasisInterface {
           Derived::Nodes1D(order, x);
           for (Integer i = 0; i < order; i++) x[i] = (x[i] - 0.5) * scale + 0.5;
           Derived::EvalBasis1D(order, x, p);
-          Matrix<ValueType> Mp1(order, order, p.Begin(), false);
+          Matrix<ValueType> Mp1(order, order, p.begin(), false);
           Mp1.pinv().Swap(precomp[order]);
         }
       }
-      Mp.ReInit(precomp[order].Dim(0), precomp[order].Dim(1), precomp[order].Begin(), false);
+      Mp.ReInit(precomp[order].Dim(0), precomp[order].Dim(1), precomp[order].begin(), false);
     }
 
     Integer order_DIM = pow<Integer>(order, DIM);
@@ -127,12 +127,12 @@ template <class ValueType, class Derived> class BasisInterface {
     // Create work buffers
     Long buff_size = dof * order_DIM;
     Vector<ValueType> buff(2 * buff_size);
-    Iterator<ValueType> buff1 = buff.Begin() + buff_size * 0;
-    Iterator<ValueType> buff2 = buff.Begin() + buff_size * 1;
+    Iterator<ValueType> buff1 = buff.begin() + buff_size * 0;
+    Iterator<ValueType> buff2 = buff.begin() + buff_size * 1;
 
-    Vector<ValueType> fn(order_DIM * dof, (Iterator<ValueType>)fn_v.Begin(), false);
+    Vector<ValueType> fn(order_DIM * dof, (Iterator<ValueType>)fn_v.begin(), false);
     for (Integer k = 0; k < DIM; k++) {  // Apply Mp along k-dimension
-      Matrix<ValueType> Mi(dof * order_DIM_, order, fn.Begin(), false);
+      Matrix<ValueType> Mi(dof * order_DIM_, order, fn.begin(), false);
       Matrix<ValueType> Mo(dof * order_DIM_, order, buff2, false);
       Matrix<ValueType>::GEMM(Mo, Mi, Mp);
 
@@ -172,15 +172,15 @@ template <class ValueType, class Derived> class BasisInterface {
       Integer n = in_x[i].Dim();
       if (!n) return;
       Mp[i].ReInit(order, n);
-      Vector<ValueType> p(order * n, Mp[i].Begin(), false);
+      Vector<ValueType> p(order * n, Mp[i].begin(), false);
       Derived::EvalBasis1D(order, in_x[i], p);
       buff_size *= std::max(order, n);
     }
 
     // Create work buffers
     Vector<ValueType> buff(2 * buff_size);
-    Iterator<ValueType> buff1 = buff.Begin() + buff_size * 0;
-    Iterator<ValueType> buff2 = buff.Begin() + buff_size * 1;
+    Iterator<ValueType> buff1 = buff.begin() + buff_size * 0;
+    Iterator<ValueType> buff2 = buff.begin() + buff_size * 1;
 
     {  // Rearrange coefficients into a tensor.
       Vector<ValueType> tensor(dof * pow<Integer>(order, DIM), buff1, false);
@@ -202,7 +202,7 @@ template <class ValueType, class Derived> class BasisInterface {
       Matrix<ValueType>::GEMM(Mo, Mi, Mp[k]);
 
       Matrix<ValueType> Mo_t(in_x[k].Dim(), dof * order_DIM, buff1, false);
-      if (k == DIM - 1) Mo_t.ReInit(in_x[k].Dim(), dof * order_DIM, out.Begin(), false);
+      if (k == DIM - 1) Mo_t.ReInit(in_x[k].Dim(), dof * order_DIM, out.begin(), false);
       for (Long i = 0; i < Mo.Dim(0); i++) {
         for (Long j = 0; j < Mo.Dim(1); j++) {
           Mo_t[j][i] = Mo[i][j];
@@ -280,16 +280,16 @@ template <class ValueType, class Derived> class BasisInterface {
           M.Swap(precomp[order]);
         }
       }
-      Mdiff.ReInit(precomp[order].Dim(0), precomp[order].Dim(1), precomp[order].Begin(), false);
+      Mdiff.ReInit(precomp[order].Dim(0), precomp[order].Dim(1), precomp[order].begin(), false);
     }
 
     // Create work buffers
     Long buff_size = dof * pow<Integer>(order, DIM);
     Vector<ValueType> buff((3 + DIM) * buff_size);
-    Vector<ValueType> buff0(buff_size * 1, buff.Begin() + buff_size * 0, false);
-    Vector<ValueType> buff1(buff_size * 1, buff.Begin() + buff_size * 1, false);
-    Vector<ValueType> buff2(buff_size * 1, buff.Begin() + buff_size * 2, false);
-    Vector<ValueType> buff3(buff_size * DIM, buff.Begin() + buff_size * 3, false);
+    Vector<ValueType> buff0(buff_size * 1, buff.begin() + buff_size * 0, false);
+    Vector<ValueType> buff1(buff_size * 1, buff.begin() + buff_size * 1, false);
+    Vector<ValueType> buff2(buff_size * 1, buff.begin() + buff_size * 2, false);
+    Vector<ValueType> buff3(buff_size * DIM, buff.begin() + buff_size * 3, false);
 
     {  // buff0 <-- coeff2tensor(coeff_in);
       coeff2tensor<DIM>(order, coeff_in, buff0);
@@ -311,8 +311,8 @@ template <class ValueType, class Derived> class BasisInterface {
       }
 
       {  // buff2 <-- buff1 * Mdiff
-        Matrix<ValueType> Mi(dof * N0 * N2, N1, buff1.Begin(), false);
-        Matrix<ValueType> Mo(dof * N0 * N2, N1, buff2.Begin(), false);
+        Matrix<ValueType> Mi(dof * N0 * N2, N1, buff1.begin(), false);
+        Matrix<ValueType> Mo(dof * N0 * N2, N1, buff2.begin(), false);
         Matrix<ValueType>::GEMM(Mo, Mi, Mdiff);
       }
 
@@ -521,7 +521,7 @@ template <class ValueType, class Derived> class BasisInterface {
         M_diff.SetZero();
         StaticArray<Vector<ValueType>, DIM> nodes_;
         for (Integer i = 0; i < DIM; i++) { // Set nodes_
-          nodes_[i].ReInit(nodes.Dim(), nodes.Begin(), false);
+          nodes_[i].ReInit(nodes.Dim(), nodes.begin(), false);
         }
         Vector<ValueType> nodes0, nodes1;
         nodes0.PushBack(0);
@@ -533,15 +533,15 @@ template <class ValueType, class Derived> class BasisInterface {
         for (Integer i = 0; i < Ncoeff; i++) {
           coeff[i]=0.5;
           value.ReInit(Ngrid, M_diff[i + Ncoeff * 0], false);
-          nodes_[dir0/2].ReInit(1, (dir0 & 1 ? nodes1.Begin() : nodes0.Begin()), false);
+          nodes_[dir0/2].ReInit(1, (dir0 & 1 ? nodes1.begin() : nodes0.begin()), false);
           Eval<DIM>(order, coeff, nodes_, value);
-          nodes_[dir0/2].ReInit(nodes.Dim(), nodes.Begin(), false);
+          nodes_[dir0/2].ReInit(nodes.Dim(), nodes.begin(), false);
 
           coeff[i]=-0.5;
           value.ReInit(Ngrid, M_diff[i + Ncoeff * 1], false);
-          nodes_[dir1/2].ReInit(1, (dir1 & 1 ? nodes1.Begin() : nodes0.Begin()), false);
+          nodes_[dir1/2].ReInit(1, (dir1 & 1 ? nodes1.begin() : nodes0.begin()), false);
           Eval<DIM>(order, coeff, nodes_, value);
-          nodes_[dir1/2].ReInit(nodes.Dim(), nodes.Begin(), false);
+          nodes_[dir1/2].ReInit(nodes.Dim(), nodes.begin(), false);
 
           coeff[i]=0;
         }
@@ -660,7 +660,7 @@ template <class ValueType, class Derived> class BasisInterface {
       //{ // Set Mgrid2coeff
       //  StaticArray<Vector<ValueType>, DIM> nodes_;
       //  for (Integer i = 0; i < DIM; i++) { // Set nodes_
-      //    nodes_[i].ReInit(nodes.Dim(), nodes.Begin(), false);
+      //    nodes_[i].ReInit(nodes.Dim(), nodes.begin(), false);
       //  }
 
       //  Integer Ngrid = pow<Integer>(order, DIM);
@@ -693,7 +693,7 @@ template <class ValueType, class Derived> class BasisInterface {
       //  Matrix<ValueType> M1_(Ngrid, 2 * Ngrid0, MM[2 * Ngrid0 + Ngrid * 1], false); M1_ = (Mgrid2coeff * M_grad * M_diff).Transpose();
       //  for (Long i=0;i<2*Ngrid*2*Ngrid0;i++) MM[0][2*Ngrid0*2*Ngrid0 +i] *= 10000;
       //  MM = MM.Transpose().pinv();
-      //  M[dir].ReInit(2 * Ngrid0, 2 * Ngrid0, MM.Begin());
+      //  M[dir].ReInit(2 * Ngrid0, 2 * Ngrid0, MM.begin());
       //  M[dir] = Mcoeff2grid * M[dir] * Mgrid2coeff;
       //} else {
       //  SCTL_ASSERT(DIM==2);
@@ -830,7 +830,7 @@ template <class ValueType, class Derived> class BasisInterface {
         M_diff.SetZero();
         StaticArray<Vector<ValueType>, DIM> nodes_;
         for (Integer i = 0; i < DIM; i++) { // Set nodes_
-          nodes_[i].ReInit(nodes.Dim(), nodes.Begin(), false);
+          nodes_[i].ReInit(nodes.Dim(), nodes.begin(), false);
         }
         Vector<ValueType> nodes0, nodes1;
         nodes0.PushBack(0);
@@ -842,15 +842,15 @@ template <class ValueType, class Derived> class BasisInterface {
         for (Integer i = 0; i < Ncoeff; i++) {
           coeff[i]=0.5;
           value.ReInit(Ngrid, M_diff[i + Ncoeff * 0], false);
-          nodes_[dir0/2].ReInit(1, (dir0 & 1 ? nodes1.Begin() : nodes0.Begin()), false);
+          nodes_[dir0/2].ReInit(1, (dir0 & 1 ? nodes1.begin() : nodes0.begin()), false);
           Eval<DIM>(order, coeff, nodes_, value);
-          nodes_[dir0/2].ReInit(nodes.Dim(), nodes.Begin(), false);
+          nodes_[dir0/2].ReInit(nodes.Dim(), nodes.begin(), false);
 
           coeff[i]=-0.5;
           value.ReInit(Ngrid, M_diff[i + Ncoeff * 1], false);
-          nodes_[dir1/2].ReInit(1, (dir1 & 1 ? nodes1.Begin() : nodes0.Begin()), false);
+          nodes_[dir1/2].ReInit(1, (dir1 & 1 ? nodes1.begin() : nodes0.begin()), false);
           Eval<DIM>(order, coeff, nodes_, value);
-          nodes_[dir1/2].ReInit(nodes.Dim(), nodes.Begin(), false);
+          nodes_[dir1/2].ReInit(nodes.Dim(), nodes.begin(), false);
 
           coeff[i]=0;
         }
@@ -1078,7 +1078,7 @@ template <class ValueType, class Derived> class BasisInterface {
       Vector<ValueType> V_cheb(order * order);
       cheb_basis_1d(order, x_, V_cheb);
       for (size_t i = 0; i < order; i++) V_cheb[i] /= 2.0;
-      Matrix<ValueType> M(order, order, V_cheb.Begin());
+      Matrix<ValueType> M(order, order, V_cheb.begin());
 
       Vector<ValueType> w_sample(order);
       w_sample.SetZero();
@@ -1146,7 +1146,7 @@ template <class ValueType, class Derived> class BasisInterface {
         r_.PushBack(fabs(trg[i] - 0.0));
         r_.PushBack(fabs(trg[i] - side));
       }
-      std::sort(r_.Begin(), r_.Begin() + r_.Dim());
+      std::sort(r_.begin(), r_.begin() + r_.Dim());
 
       ValueType r0, r1 = r_[r_.Dim() - 1];
       r0 = (r1 > side ? r1 - side : 0.0);
@@ -1296,14 +1296,14 @@ template <class ValueType, class Derived> class BasisInterface {
             for (Integer j = 0; j < kdim[0]; j++) {  // Evaluate ker
               for (Integer k = 0; k < kdim[0]; k++) v_src[k] = 0.0;
               v_src[j] = 1.0;
-              Vector<ValueType> ker_value(N * kdim[1], kern_value.Begin() + j * N * kdim[1], false);
+              Vector<ValueType> ker_value(N * kdim[1], kern_value.begin() + j * N * kdim[1], false);
               ker(r_src, n_src, v_src, eval_coord, ker_value);
             }
             {  // Transpose
               v0.ReInit(kern_value.Dim());
               for (Integer k = 0; k < v0.Dim(); k++) v0[k] = kern_value[k];
-              Matrix<ValueType> M0(kdim[0], N * kdim[1], v0.Begin(), false);
-              Matrix<ValueType> M1(N * kdim[1], kdim[0], kern_value.Begin(), false);
+              Matrix<ValueType> M0(kdim[0], N * kdim[1], v0.begin(), false);
+              Matrix<ValueType> M1(N * kdim[1], kdim[0], kern_value.begin(), false);
               for (Integer l0 = 0; l0 < M1.Dim(0); l0++) {  // Transpose
                 for (Integer l1 = 0; l1 < M1.Dim(1); l1++) {
                   M1[l0][l1] = M0[l1][l0];
@@ -1312,16 +1312,16 @@ template <class ValueType, class Derived> class BasisInterface {
             }
           }
           {  // Set Update M
-            Matrix<ValueType> Mkern(eval_mesh[SUBDIM - 1].Dim(), kern_value.Dim() / eval_mesh[SUBDIM - 1].Dim(), kern_value.Begin(), false);
+            Matrix<ValueType> Mkern(eval_mesh[SUBDIM - 1].Dim(), kern_value.Dim() / eval_mesh[SUBDIM - 1].Dim(), kern_value.begin(), false);
             for (Integer k = SUBDIM - 1; k >= 0; k--) {  // Compute v0
-              Matrix<ValueType> Mpoly(order, eval_mesh[k].Dim(), eval_poly[k].Begin(), false);
+              Matrix<ValueType> Mpoly(order, eval_mesh[k].Dim(), eval_poly[k].begin(), false);
 
               v1.ReInit(Mpoly.Dim(0) * Mkern.Dim(1));
-              Matrix<ValueType> Mcoef(Mpoly.Dim(0), Mkern.Dim(1), v1.Begin(), false);
+              Matrix<ValueType> Mcoef(Mpoly.Dim(0), Mkern.Dim(1), v1.begin(), false);
               Matrix<ValueType>::GEMM(Mcoef, Mpoly, Mkern);
 
               v0.ReInit(v1.Dim());
-              Matrix<ValueType> Mt(Mkern.Dim(1), Mpoly.Dim(0), v0.Begin(), false);
+              Matrix<ValueType> Mt(Mkern.Dim(1), Mpoly.Dim(0), v0.begin(), false);
               for (Integer l0 = 0; l0 < Mt.Dim(0); l0++) {  // Transpose
                 for (Integer l1 = 0; l1 < Mt.Dim(1); l1++) {
                   Mt[l0][l1] = Mcoef[l1][l0];
@@ -1329,7 +1329,7 @@ template <class ValueType, class Derived> class BasisInterface {
               }
 
               if (k > 0) {  // Reinit Mkern
-                Mkern.ReInit(eval_mesh[k - 1].Dim(), v0.Dim() / eval_mesh[k - 1].Dim(), v0.Begin(), false);
+                Mkern.ReInit(eval_mesh[k - 1].Dim(), v0.Dim() / eval_mesh[k - 1].Dim(), v0.begin(), false);
               }
             }
 
@@ -1348,8 +1348,8 @@ template <class ValueType, class Derived> class BasisInterface {
       if (Mcoeff.Dim(0) != kdim[1] || Mcoeff.Dim(1) != kdim[0] * Ncoeff) {
         Mcoeff.ReInit(kdim[1], kdim[0] * Ncoeff);
       }
-      Vector<ValueType> Mtensor_(Mtensor.Dim(0) * Mtensor.Dim(1), Mtensor.Begin(), false);
-      Vector<ValueType> Mcoeff_(Mcoeff.Dim(0) * Mcoeff.Dim(1), Mcoeff.Begin(), false);
+      Vector<ValueType> Mtensor_(Mtensor.Dim(0) * Mtensor.Dim(1), Mtensor.begin(), false);
+      Vector<ValueType> Mcoeff_(Mcoeff.Dim(0) * Mcoeff.Dim(1), Mcoeff.begin(), false);
       tensor2coeff<SUBDIM>(order, Mtensor_, Mcoeff_);
     }
   }
@@ -1383,12 +1383,12 @@ template <class ValueType, class Derived> class BasisInterface {
 
     Vector<ValueType> p;
     Derived::EvalBasis1D(order, nodes, p);
-    Matrix<ValueType> Mp(order, N, p.Begin(), false);
+    Matrix<ValueType> Mp(order, N, p.begin(), false);
     M0 = Mp * M0;
 
     Vector<ValueType> coeff;
-    Approx<1>(order, Vector<ValueType>(M0.Dim(0) * M0.Dim(1), M0.Begin(), false), coeff);
-    (*M) = Matrix<ValueType>(M0.Dim(0), coeff.Dim() / M0.Dim(0), coeff.Begin(), false);
+    Approx<1>(order, Vector<ValueType>(M0.Dim(0) * M0.Dim(1), M0.begin(), false), coeff);
+    (*M) = Matrix<ValueType>(M0.Dim(0), coeff.Dim() / M0.Dim(0), coeff.begin(), false);
   }
 
   friend Derived;

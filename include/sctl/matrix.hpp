@@ -35,9 +35,13 @@ template <class ValueType> class Matrix {
 
   void SetZero();
 
-  Iterator<ValueType> Begin();
+  Iterator<ValueType> begin();
 
-  ConstIterator<ValueType> Begin() const;
+  ConstIterator<ValueType> begin() const;
+
+  Iterator<ValueType> end();
+
+  ConstIterator<ValueType> end() const;
 
   // Matrix-Matrix operations
 
@@ -114,7 +118,7 @@ template <class ValueType> class Matrix {
 template <class ValueType> std::ostream& operator<<(std::ostream& output, const Matrix<ValueType>& M);
 
 template <class ValueType> Matrix<ValueType> operator+(ValueType s, const Matrix<ValueType>& M) { return M + s; }
-template <class ValueType> Matrix<ValueType> operator-(ValueType s, const Matrix<ValueType>& M) { return s + (-1.0 * M); }
+template <class ValueType> Matrix<ValueType> operator-(ValueType s, const Matrix<ValueType>& M) { return s + (M * -1.0); }
 template <class ValueType> Matrix<ValueType> operator*(ValueType s, const Matrix<ValueType>& M) { return M * s; }
 
 /**

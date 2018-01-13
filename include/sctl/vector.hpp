@@ -12,7 +12,6 @@ namespace SCTL_NAMESPACE {
 template <class ValueType> class Vector {
 
  public:
-  typedef ValueType ValType;
 
   Vector();
 
@@ -38,9 +37,13 @@ template <class ValueType> class Vector {
 
   void SetZero();
 
-  Iterator<ValueType> Begin();
+  Iterator<ValueType> begin();
 
-  ConstIterator<ValueType> Begin() const;
+  ConstIterator<ValueType> begin() const;
+
+  Iterator<ValueType> end();
+
+  ConstIterator<ValueType> end() const;
 
   void PushBack(const ValueType& x);
 
@@ -64,13 +67,13 @@ template <class ValueType> class Vector {
 
   Vector& operator/=(const Vector& V);
 
-  Vector operator+(const Vector& V) const ;
+  Vector operator+(const Vector& V) const;
 
-  Vector operator-(const Vector& V) const ;
+  Vector operator-(const Vector& V) const;
 
-  Vector operator*(const Vector& V) const ;
+  Vector operator*(const Vector& V) const;
 
-  Vector operator/(const Vector& V) const ;
+  Vector operator/(const Vector& V) const;
 
   // Vector-Scalar operations
 
@@ -84,13 +87,13 @@ template <class ValueType> class Vector {
 
   Vector& operator/=(ValueType s);
 
-  Vector operator+(ValueType s) const ;
+  Vector operator+(ValueType s) const;
 
-  Vector operator-(ValueType s) const ;
+  Vector operator-(ValueType s) const;
 
-  Vector operator*(ValueType s) const ;
+  Vector operator*(ValueType s) const;
 
-  Vector operator/(ValueType s) const ;
+  Vector operator/(ValueType s) const;
 
  private:
   Long dim;

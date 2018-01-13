@@ -130,9 +130,13 @@ template <class ValueType> void Vector<ValueType>::SetZero() {
   if (dim > 0) memset<ValueType>(data_ptr, 0, dim);
 }
 
-template <class ValueType> Iterator<ValueType> Vector<ValueType>::Begin() { return data_ptr; }
+template <class ValueType> Iterator<ValueType> Vector<ValueType>::begin() { return data_ptr; }
 
-template <class ValueType> ConstIterator<ValueType> Vector<ValueType>::Begin() const { return ConstIterator<ValueType>(data_ptr); }
+template <class ValueType> ConstIterator<ValueType> Vector<ValueType>::begin() const { return data_ptr; }
+
+template <class ValueType> Iterator<ValueType> Vector<ValueType>::end() { return data_ptr + dim; }
+
+template <class ValueType> ConstIterator<ValueType> Vector<ValueType>::end() const { return data_ptr + dim; }
 
 template <class ValueType> void Vector<ValueType>::PushBack(const ValueType& x) {
   if (capacity > dim) {

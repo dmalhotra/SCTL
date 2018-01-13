@@ -61,12 +61,12 @@ template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inli
   for (int i = 1; i < p; i++) {
     _DiffType req_size = (i * (N1 + N2)) / p;
 
-    int j = std::lower_bound(split_size.Begin(), split_size.Begin() + p * n, req_size, std::less<_DiffType>()) - split_size.Begin();
+    int j = std::lower_bound(split_size.begin(), split_size.begin() + p * n, req_size, std::less<_DiffType>()) - split_size.begin();
     if (j >= p * n) j = p * n - 1;
     _ValType split1 = split[j];
     _DiffType split_size1 = split_size[j];
 
-    j = (std::lower_bound(split_size.Begin() + p * n, split_size.Begin() + p * n * 2, req_size, std::less<_DiffType>()) - split_size.Begin() + p * n) + p * n;
+    j = (std::lower_bound(split_size.begin() + p * n, split_size.begin() + p * n * 2, req_size, std::less<_DiffType>()) - split_size.begin() + p * n) + p * n;
     if (j >= 2 * p * n) j = 2 * p * n - 1;
     if (abs(split_size[j] - req_size) < abs(split_size1 - req_size)) {
       split1 = split[j];
@@ -117,7 +117,7 @@ template <class T, class StrictWeakOrdering> inline void omp_par::merge_sort(T A
   Vector<_ValType> B;
   B.ReInit(N);
   Iterator<_ValType> A_ = Ptr2Itr<_ValType>(&A[0], N);
-  Iterator<_ValType> B_ = B.Begin();
+  Iterator<_ValType> B_ = B.begin();
   for (int j = 1; j < p; j = j * 2) {
     for (int i = 0; i < p; i = i + 2 * j) {
       if (i + j < p) {
