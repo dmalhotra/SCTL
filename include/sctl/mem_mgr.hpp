@@ -234,7 +234,7 @@ template <class ValueType> class Iterator : public ConstIterator<ValueType> {
   difference_type operator-(const ConstIterator<ValueType>& I) const { return static_cast<const ConstIterator<ValueType>&>(*this) - I; }
 };
 
-template <class ValueType, Long DIM> class StaticArray : public Iterator<ValueType> {
+template <class ValueType, Long DIM> class StaticArray : public Iterator<ValueType> { // Warning: objects are not byte-copyable
 
  public:
   StaticArray();

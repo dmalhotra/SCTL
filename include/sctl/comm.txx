@@ -1,3 +1,4 @@
+#include <type_traits>
 #include SCTL_INCLUDE(ompUtils.hpp)
 #include SCTL_INCLUDE(vector.hpp)
 
@@ -87,6 +88,7 @@ inline void Comm::Barrier() const {
 }
 
 template <class SType> void* Comm::Isend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag) const {
+  static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (!scount) return NULL;
   Vector<MPI_Request>& request = *NewReq();
@@ -111,6 +113,7 @@ template <class SType> void* Comm::Isend(ConstIterator<SType> sbuf, Long scount,
 }
 
 template <class RType> void* Comm::Irecv(Iterator<RType> rbuf, Long rcount, Integer source, Integer tag) const {
+  static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (!rcount) return NULL;
   Vector<MPI_Request>& request = *NewReq();
@@ -141,6 +144,8 @@ inline void Comm::Wait(void* req_ptr) const {
 }
 
 template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const {
+  static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
+  static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (scount) {
     sbuf[0];
@@ -157,6 +162,8 @@ template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sb
 }
 
 template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
+  static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
+  static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   Vector<int> rcounts_(mpi_size_), rdispls_(mpi_size_);
   Long rcount_sum = 0;
@@ -181,6 +188,8 @@ template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> s
 }
 
 template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const {
+  static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
+  static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (scount) {
     sbuf[0];
@@ -197,6 +206,8 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
 }
 
 template <class SType, class RType> void* Comm::Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag) const {
+  static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
+  static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   Integer request_count = 0;
   for (Integer i = 0; i < mpi_size_; i++) {
@@ -232,6 +243,7 @@ template <class SType, class RType> void* Comm::Ialltoallv_sparse(ConstIterator<
 }
 
 template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<Type> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   {  // Use Alltoallv_sparse of average connectivity<64
     Long connectivity = 0, glb_connectivity = 0;
@@ -277,6 +289,7 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
 }
 
 template <class Type> void Comm::Allreduce(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, CommOp op) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (!count) return;
   MPI_Op mpi_op;
@@ -305,6 +318,7 @@ template <class Type> void Comm::Allreduce(ConstIterator<Type> sbuf, Iterator<Ty
 }
 
 template <class Type> void Comm::Scan(ConstIterator<Type> sbuf, Iterator<Type> rbuf, int count, CommOp op) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (!count) return;
   MPI_Op mpi_op;
@@ -333,6 +347,7 @@ template <class Type> void Comm::Scan(ConstIterator<Type> sbuf, Iterator<Type> r
 }
 
 template <class Type> void Comm::PartitionW(Vector<Type>& nodeList, const Vector<Long>* wts_) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
   Integer npes = Size();
   if (npes == 1) return;
   Long nlSize = nodeList.Dim();
@@ -417,6 +432,7 @@ template <class Type> void Comm::PartitionW(Vector<Type>& nodeList, const Vector
 }
 
 template <class Type> void Comm::PartitionN(Vector<Type>& v, Long N) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
   Integer rank = Rank();
   Integer np = Size();
   if (np == 1) return;
@@ -487,6 +503,7 @@ template <class Type> void Comm::PartitionN(Vector<Type>& v, Long N) const {
 }
 
 template <class Type> void Comm::PartitionS(Vector<Type>& nodeList, const Type& splitter) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
   Integer npes = Size();
   if (npes == 1) return;
 
@@ -520,6 +537,7 @@ template <class Type> void Comm::PartitionS(Vector<Type>& nodeList, const Type& 
 }
 
 template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vector<Long>& scatter_index, const Type* split_key_) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
   typedef SortPair<Type, Long> Pair_t;
   Integer npes = Size(), rank = Rank();
 
@@ -600,6 +618,7 @@ template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vecto
 }
 
 template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vector<Long>& scatter_index) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
   typedef SortPair<Long, Long> Pair_t;
   Integer npes = Size(), rank = Rank();
 
@@ -724,6 +743,7 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
 }
 
 template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vector<Long>& scatter_index_, Long loc_size_) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
   typedef SortPair<Long, Long> Pair_t;
   Integer npes = Size(), rank = Rank();
 
@@ -939,6 +959,7 @@ HS_MPIDATATYPE(unsigned char, MPI_UNSIGNED_CHAR);
 #endif
 
 template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem) const {  // O( ((N/p)+log(p))*(log(N/p)+log(p)) )
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   Integer npes, myrank, omp_p;
   {  // Get comm size and rank.

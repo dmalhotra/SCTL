@@ -219,7 +219,7 @@ template <Integer DIM = 3> class Morton {
   }
 
  private:
-  static const UINT_T maxCoord = ((UINT_T)1) << (MAX_DEPTH);
+  static constexpr UINT_T maxCoord = ((UINT_T)1) << (MAX_DEPTH);
 
   // StaticArray<UINT_T,DIM> x;
   UINT_T x[DIM];

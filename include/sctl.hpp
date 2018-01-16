@@ -17,7 +17,7 @@
 
 // Parameters for memory manager
 #define SCTL_MEM_ALIGN 64
-#define SCTL_GLOBAL_MEM_BUFF 1024LL * 6LL  // in MB
+#define SCTL_GLOBAL_MEM_BUFF 1024LL * 1LL  // in MB
 #ifndef NDEBUG
 #define SCTL_MEMDEBUG // Enable memory checks.
 #endif

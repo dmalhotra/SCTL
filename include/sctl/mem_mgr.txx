@@ -1,7 +1,8 @@
 #include <omp.h>
-#include <algorithm>
 #include <cstring>
 #include <cassert>
+#include <algorithm>
+#include <type_traits>
 
 #include SCTL_INCLUDE(profile.hpp)
 
@@ -546,6 +547,7 @@ template <class ValueType> inline void aligned_delete(Iterator<ValueType> A, con
 }
 
 template <class ValueType> inline Iterator<ValueType> memcopy(Iterator<ValueType> destination, ConstIterator<ValueType> source, Long num) {
+  static_assert(std::is_trivially_copyable<ValueType>::value, "Data is not trivially copyable!");
   if (destination != source && num) {
 #ifdef SCTL_MEMDEBUG
     destination[num - 1];
