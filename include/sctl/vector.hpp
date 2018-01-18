@@ -10,12 +10,18 @@
 namespace SCTL_NAMESPACE {
 
 template <class ValueType> class Vector {
-
  public:
+  typedef ValueType value_type;
+  typedef ValueType& reference;
+  typedef const ValueType& const_reference;
+  typedef Iterator<ValueType> iterator;
+  typedef ConstIterator<ValueType> const_iterator;
+  typedef Long difference_type;
+  typedef Long size_type;
 
   Vector();
 
-  Vector(Long dim_, Iterator<ValueType> data_ = Iterator<ValueType>(NULL), bool own_data_ = true);
+  Vector(Long dim_, Iterator<ValueType> data_ = nullptr, bool own_data_ = true);
 
   Vector(const Vector& V);
 
@@ -25,7 +31,7 @@ template <class ValueType> class Vector {
 
   void Swap(Vector<ValueType>& v1);
 
-  void ReInit(Long dim_, Iterator<ValueType> data_ = NULL, bool own_data_ = true);
+  void ReInit(Long dim_, Iterator<ValueType> data_ = nullptr, bool own_data_ = true);
 
   void Write(const char* fname) const;
 

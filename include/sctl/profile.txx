@@ -48,10 +48,10 @@ inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integ
   // sync_=true;
   if (!prof.enable_state) return;
   if (verbose <= SCTL_PROFILE && prof.verb_level.size() == prof.enable_depth) {
-    if (comm_ != NULL && sync_) comm_->Barrier();
+    if (comm_ != nullptr && sync_) comm_->Barrier();
 #ifdef SCTL_VERBOSE
     Integer rank = 0;
-    if (comm_ != NULL) rank = comm_->Rank();
+    if (comm_ != nullptr) rank = comm_->Rank();
     if (!rank) {
       for (size_t i = 0; i < prof.name.size(); i++) std::cout << "    ";
       std::cout << "\033[1;31m" << name_ << "\033[0m {\n";
@@ -98,7 +98,7 @@ inline void Profile::Toc() {
     prof.max_m_log.push_back(prof.max_mem.back());
 
 #ifndef NDEBUG
-    if (comm_ != NULL && sync_) comm_->Barrier();
+    if (comm_ != nullptr && sync_) comm_->Barrier();
 #endif
     prof.name.pop();
     prof.comm.pop();
@@ -107,7 +107,7 @@ inline void Profile::Toc() {
 
 #ifdef SCTL_VERBOSE
     Integer rank = 0;
-    if (comm_ != NULL) rank = comm_->Rank();
+    if (comm_ != nullptr) rank = comm_->Rank();
     if (!rank) {
       for (size_t i = 0; i < prof.name.size(); i++) std::cout << "    ";
       std::cout << "}\n";
@@ -125,7 +125,7 @@ inline void Profile::print(const Comm* comm_) {
   SCTL_ASSERT_MSG(prof.name.empty(), "Missing balancing Toc()");
 
   Comm c_self = Comm::Self();
-  if (comm_ == NULL) comm_ = &c_self;
+  if (comm_ == nullptr) comm_ = &c_self;
   comm_->Barrier();
 
   Integer np, rank;

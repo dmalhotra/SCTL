@@ -13,11 +13,18 @@ template <class ValueType> class Vector;
 template <class ValueType> class Permutation;
 
 template <class ValueType> class Matrix {
-
  public:
+  typedef ValueType value_type;
+  typedef ValueType& reference;
+  typedef const ValueType& const_reference;
+  typedef Iterator<ValueType> iterator;
+  typedef ConstIterator<ValueType> const_iterator;
+  typedef Long difference_type;
+  typedef Long size_type;
+
   Matrix();
 
-  Matrix(Long dim1, Long dim2, Iterator<ValueType> data_ = NULL, bool own_data_ = true);
+  Matrix(Long dim1, Long dim2, Iterator<ValueType> data_ = nullptr, bool own_data_ = true);
 
   Matrix(const Matrix<ValueType>& M);
 
@@ -25,7 +32,7 @@ template <class ValueType> class Matrix {
 
   void Swap(Matrix<ValueType>& M);
 
-  void ReInit(Long dim1, Long dim2, Iterator<ValueType> data_ = NULL, bool own_data_ = true);
+  void ReInit(Long dim1, Long dim2, Iterator<ValueType> data_ = nullptr, bool own_data_ = true);
 
   void Write(const char* fname) const;
 

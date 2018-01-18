@@ -63,7 +63,7 @@ inline void abortHandler(int signum, siginfo_t* si, void* unused) {
 #pragma omp critical(STACK_TRACE)
   if (first_time) {
     first_time = false;
-    const char* name = NULL;
+    const char* name = nullptr;
     switch (signum) {
       case SIGABRT:
         name = "SIGABRT";
@@ -98,12 +98,12 @@ inline int SetSigHandler() {
   sa.sa_sigaction = abortHandler;
   sigemptyset(&sa.sa_mask);
 
-  sigaction(SIGABRT, &sa, NULL);
-  sigaction(SIGSEGV, &sa, NULL);
-  sigaction(SIGBUS, &sa, NULL);
-  sigaction(SIGILL, &sa, NULL);
-  sigaction(SIGFPE, &sa, NULL);
-  sigaction(SIGPIPE, &sa, NULL);
+  sigaction(SIGABRT, &sa, nullptr);
+  sigaction(SIGSEGV, &sa, nullptr);
+  sigaction(SIGBUS, &sa, nullptr);
+  sigaction(SIGILL, &sa, nullptr);
+  sigaction(SIGFPE, &sa, nullptr);
+  sigaction(SIGPIPE, &sa, nullptr);
 
   return 0;
 }

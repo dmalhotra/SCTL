@@ -23,11 +23,11 @@ class Profile {
 
   static bool Enable(bool state);
 
-  static void Tic(const char* name_, const Comm* comm_ = NULL, bool sync_ = false, Integer level = 0);
+  static void Tic(const char* name_, const Comm* comm_ = nullptr, bool sync_ = false, Integer level = 0);
 
   static void Toc();
 
-  static void print(const Comm* comm_ = NULL);
+  static void print(const Comm* comm_ = nullptr);
 
   static void reset();
 

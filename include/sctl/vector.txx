@@ -11,7 +11,7 @@ template <class ValueType> Vector<ValueType>::Vector() {
   dim = 0;
   capacity = 0;
   own_data = true;
-  data_ptr = NULL;
+  data_ptr = nullptr;
 }
 
 template <class ValueType> Vector<ValueType>::Vector(Long dim_, Iterator<ValueType> data_, bool own_data_) {
@@ -21,11 +21,11 @@ template <class ValueType> Vector<ValueType>::Vector(Long dim_, Iterator<ValueTy
   if (own_data) {
     if (dim > 0) {
       data_ptr = aligned_new<ValueType>(capacity);
-      if (data_ != NULL) {
+      if (data_ != nullptr) {
         memcopy(data_ptr, data_, dim);
       }
     } else
-      data_ptr = NULL;
+      data_ptr = nullptr;
   } else
     data_ptr = data_;
 }
@@ -38,7 +38,7 @@ template <class ValueType> Vector<ValueType>::Vector(const Vector<ValueType>& V)
     data_ptr = aligned_new<ValueType>(capacity);
     memcopy(data_ptr, V.data_ptr, dim);
   } else
-    data_ptr = NULL;
+    data_ptr = nullptr;
 }
 
 template <class ValueType> Vector<ValueType>::Vector(const std::vector<ValueType>& V) {
@@ -49,16 +49,16 @@ template <class ValueType> Vector<ValueType>::Vector(const std::vector<ValueType
     data_ptr = aligned_new<ValueType>(capacity);
     memcopy(data_ptr, Ptr2ConstItr<ValueType>(&V[0], V.size()), dim);
   } else
-    data_ptr = NULL;
+    data_ptr = nullptr;
 }
 
 template <class ValueType> Vector<ValueType>::~Vector() {
   if (own_data) {
-    if (data_ptr != NULL) {
+    if (data_ptr != nullptr) {
       aligned_delete(data_ptr);
     }
   }
-  data_ptr = NULL;
+  data_ptr = nullptr;
   capacity = 0;
   dim = 0;
 }
@@ -83,7 +83,7 @@ template <class ValueType> void Vector<ValueType>::Swap(Vector<ValueType>& v1) {
 template <class ValueType> void Vector<ValueType>::ReInit(Long dim_, Iterator<ValueType> data_, bool own_data_) {
   if (own_data_ && own_data && dim_ <= capacity) {
     dim = dim_;
-    if (data_ != NULL) {
+    if (data_ != nullptr) {
       memcopy(data_ptr, data_, dim);
     }
   } else {
@@ -94,7 +94,7 @@ template <class ValueType> void Vector<ValueType>::ReInit(Long dim_, Iterator<Va
 
 template <class ValueType> void Vector<ValueType>::Write(const char* fname) const {
   FILE* f1 = fopen(fname, "wb+");
-  if (f1 == NULL) {
+  if (f1 == nullptr) {
     std::cout << "Unable to open file for writing:" << fname << '\n';
     return;
   }
@@ -108,7 +108,7 @@ template <class ValueType> void Vector<ValueType>::Write(const char* fname) cons
 
 template <class ValueType> void Vector<ValueType>::Read(const char* fname) {
   FILE* f1 = fopen(fname, "r");
-  if (f1 == NULL) {
+  if (f1 == nullptr) {
     std::cout << "Unable to open file for reading:" << fname << '\n';
     return;
   }

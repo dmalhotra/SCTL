@@ -38,7 +38,7 @@ template <class Real> int ParallelSolverMatVec(Mat M_, Vec x_, Vec Mx_) {
   VecGetLocalSize(Mx_, &N_);
   SCTL_ASSERT(N == N_);
 
-  void* data = NULL;
+  void* data = nullptr;
   MatShellGetContext(M_, &data);
   auto& M = dynamic_cast<const typename ParallelSolver<Real>::ParallelOp&>(*(typename ParallelSolver<Real>::ParallelOp*)data);
 
@@ -101,7 +101,7 @@ template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>*
   KSPSetType(ksp, KSPGMRES);
   KSPSetNormType(ksp, KSP_NORM_UNPRECONDITIONED);
   KSPSetTolerances(ksp, tol, PETSC_DEFAULT, PETSC_DEFAULT, max_iter);
-  if (verbose_) KSPMonitorSet(ksp, KSPMonitorDefault, NULL, NULL);
+  if (verbose_) KSPMonitorSet(ksp, KSPMonitorDefault, nullptr, nullptr);
   KSPGMRESSetRestart(ksp, max_iter);
   ierr = KSPSetFromOptions(ksp);
   CHKERRABORT(comm, ierr);
@@ -152,7 +152,7 @@ template <class Real> static Real inner_prod(const Vector<Real>& x, const Vector
   for (Long i = 0; i < N; i++) x_dot_y += x[i] * y[i];
 
   Real x_dot_y_glb = 0;
-  comm.Allreduce(SCTL_PTR2CONSTITR(Real, &x_dot_y, 1), SCTL_PTR2ITR(Real, &x_dot_y_glb, 1), 1, Comm::CommOp::SUM);
+  comm.Allreduce(Ptr2ConstItr<Real>(&x_dot_y, 1), Ptr2Itr<Real>(&x_dot_y_glb, 1), 1, Comm::CommOp::SUM);
 
   return x_dot_y_glb;
 }

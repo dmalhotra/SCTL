@@ -30,7 +30,7 @@ template <class ValueType> Matrix<ValueType>::Matrix() {
   dim[0] = 0;
   dim[1] = 0;
   own_data = true;
-  data_ptr = NULL;
+  data_ptr = nullptr;
 }
 
 template <class ValueType> Matrix<ValueType>::Matrix(Long dim1, Long dim2, Iterator<ValueType> data_, bool own_data_) {
@@ -40,11 +40,11 @@ template <class ValueType> Matrix<ValueType>::Matrix(Long dim1, Long dim2, Itera
   if (own_data) {
     if (dim[0] * dim[1] > 0) {
       data_ptr = aligned_new<ValueType>(dim[0] * dim[1]);
-      if (data_ != NULL) {
+      if (data_ != nullptr) {
         memcopy(data_ptr, data_, dim[0] * dim[1]);
       }
     } else
-      data_ptr = NULL;
+      data_ptr = nullptr;
   } else
     data_ptr = data_;
 }
@@ -57,16 +57,16 @@ template <class ValueType> Matrix<ValueType>::Matrix(const Matrix<ValueType>& M)
     data_ptr = aligned_new<ValueType>(dim[0] * dim[1]);
     memcopy(data_ptr, M.data_ptr, dim[0] * dim[1]);
   } else
-    data_ptr = NULL;
+    data_ptr = nullptr;
 }
 
 template <class ValueType> Matrix<ValueType>::~Matrix() {
   if (own_data) {
-    if (data_ptr != NULL) {
+    if (data_ptr != nullptr) {
       aligned_delete(data_ptr);
     }
   }
-  data_ptr = NULL;
+  data_ptr = nullptr;
   dim[0] = 0;
   dim[1] = 0;
 }
@@ -93,7 +93,7 @@ template <class ValueType> void Matrix<ValueType>::ReInit(Long dim1, Long dim2, 
   if (own_data_ && own_data && dim[0] * dim[1] >= dim1 * dim2) {
     dim[0] = dim1;
     dim[1] = dim2;
-    if (data_ != NULL) {
+    if (data_ != nullptr) {
       memcopy(data_ptr, data_, dim[0] * dim[1]);
     }
   } else {
@@ -104,7 +104,7 @@ template <class ValueType> void Matrix<ValueType>::ReInit(Long dim1, Long dim2, 
 
 template <class ValueType> void Matrix<ValueType>::Write(const char* fname) const {
   FILE* f1 = fopen(fname, "wb+");
-  if (f1 == NULL) {
+  if (f1 == nullptr) {
     std::cout << "Unable to open file for writing:" << fname << '\n';
     return;
   }
@@ -118,7 +118,7 @@ template <class ValueType> void Matrix<ValueType>::Write(const char* fname) cons
 
 template <class ValueType> void Matrix<ValueType>::Read(const char* fname) {
   FILE* f1 = fopen(fname, "r");
-  if (f1 == NULL) {
+  if (f1 == nullptr) {
     std::cout << "Unable to open file for reading:" << fname << '\n';
     return;
   }
@@ -181,7 +181,7 @@ template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator+(const 
   SCTL_ASSERT(M2.Dim(0) == M1.Dim(0) && M2.Dim(1) == M1.Dim(1));
   Profile::Add_FLOP(dim[0] * dim[1]);
 
-  Matrix<ValueType> M_r(M1.Dim(0), M1.Dim(1), NULL);
+  Matrix<ValueType> M_r(M1.Dim(0), M1.Dim(1));
   for (Long i = 0; i < M1.Dim(0) * M1.Dim(1); i++) M_r[0][i] = M1[0][i] + M2[0][i];
   return M_r;
 }
@@ -191,7 +191,7 @@ template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator-(const 
   SCTL_ASSERT(M2.Dim(0) == M1.Dim(0) && M2.Dim(1) == M1.Dim(1));
   Profile::Add_FLOP(dim[0] * dim[1]);
 
-  Matrix<ValueType> M_r(M1.Dim(0), M1.Dim(1), NULL);
+  Matrix<ValueType> M_r(M1.Dim(0), M1.Dim(1));
   for (Long i = 0; i < M1.Dim(0) * M1.Dim(1); i++) M_r[0][i] = M1[0][i] - M2[0][i];
   return M_r;
 }
@@ -200,7 +200,7 @@ template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator*(const 
   SCTL_ASSERT(dim[1] == M.dim[0]);
   Profile::Add_FLOP(2 * (((Long)dim[0]) * dim[1]) * M.dim[1]);
 
-  Matrix<ValueType> M_r(dim[0], M.dim[1], NULL);
+  Matrix<ValueType> M_r(dim[0], M.dim[1]);
   if (M.Dim(0) * M.Dim(1) == 0 || this->Dim(0) * this->Dim(1) == 0) return M_r;
   mat::gemm<ValueType>('N', 'N', M.dim[1], dim[0], dim[1], 1.0, M.data_ptr, M.dim[1], data_ptr, dim[1], 0.0, M_r.data_ptr, M_r.dim[1]);
   return M_r;
@@ -319,28 +319,28 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator/=(Valu
 
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator+(ValueType s) const {
   Long N = dim[0] * dim[1];
-  Matrix<ValueType> M_r(dim(0), dim(1));
+  Matrix<ValueType> M_r(dim[0], dim[1]);
   for (Long i = 0; i < N; i++) M_r.data_ptr[i] = data_ptr[i] + s;
   return M_r;
 }
 
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator-(ValueType s) const {
   Long N = dim[0] * dim[1];
-  Matrix<ValueType> M_r(dim(0), dim(1));
+  Matrix<ValueType> M_r(dim[0], dim[1]);
   for (Long i = 0; i < N; i++) M_r.data_ptr[i] = data_ptr[i] - s;
   return M_r;
 }
 
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator*(ValueType s) const {
   Long N = dim[0] * dim[1];
-  Matrix<ValueType> M_r(dim(0), dim(1));
+  Matrix<ValueType> M_r(dim[0], dim[1]);
   for (Long i = 0; i < N; i++) M_r.data_ptr[i] = data_ptr[i] * s;
   return M_r;
 }
 
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator/(ValueType s) const {
   Long N = dim[0] * dim[1];
-  Matrix<ValueType> M_r(dim(0), dim(1));
+  Matrix<ValueType> M_r(dim[0], dim[1]);
   for (Long i = 0; i < N; i++) M_r.data_ptr[i] = data_ptr[i] / s;
   return M_r;
 }
@@ -582,7 +582,7 @@ template <class ValueType> Permutation<ValueType> Permutation<ValueType>::RandPe
 
 template <class ValueType> Matrix<ValueType> Permutation<ValueType>::GetMatrix() const {
   Long size = perm.Dim();
-  Matrix<ValueType> M_r(size, size, NULL);
+  Matrix<ValueType> M_r(size, size);
   for (Long i = 0; i < size; i++)
     for (Long j = 0; j < size; j++) M_r[i][j] = (perm[j] == i ? scal[j] : 0.0);
   return M_r;
@@ -645,7 +645,7 @@ template <class ValueType> Matrix<ValueType> Permutation<ValueType>::operator*(c
   Long d0 = M.Dim(0);
   Long d1 = M.Dim(1);
 
-  Matrix<ValueType> M_r(d0, d1, NULL);
+  Matrix<ValueType> M_r(d0, d1);
   for (Long i = 0; i < d0; i++) {
     const ValueType s = scal[i];
     ConstIterator<ValueType> M_ = M[i];
@@ -661,7 +661,7 @@ template <class ValueType> Matrix<ValueType> operator*(const Matrix<ValueType>& 
   Long d0 = M.Dim(0);
   Long d1 = M.Dim(1);
 
-  Matrix<ValueType> M_r(d0, d1, NULL);
+  Matrix<ValueType> M_r(d0, d1);
   for (Long i = 0; i < d0; i++) {
     ConstIterator<Long> perm_ = P.perm.begin();
     ConstIterator<ValueType> scal_ = P.scal.begin();

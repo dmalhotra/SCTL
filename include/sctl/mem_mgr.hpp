@@ -28,11 +28,11 @@ template <class ValueType> class ConstIterator {
   void IteratorAssertChecks(Long j = 0) const;
 
  public:
-  typedef std::random_access_iterator_tag iterator_category;
-  typedef const ValueType& reference;
   typedef Long difference_type;
   typedef ValueType value_type;
   typedef const ValueType* pointer;
+  typedef const ValueType& reference;
+  typedef std::random_access_iterator_tag iterator_category;
 
  protected:
   char* base;
@@ -42,12 +42,12 @@ template <class ValueType> class ConstIterator {
   static const Long ValueSize = sizeof(ValueType);
 
  public:
-  ConstIterator(void* base_ = NULL) {
+  ConstIterator(void* base_ = nullptr) {
     base = (char*)base_;
     len = 0;
     offset = 0;
     alloc_ctr = 0;
-    mem_head = NULL;
+    mem_head = nullptr;
   }
 
   // template <size_t LENGTH> ConstIterator(ValueType (&base_)[LENGTH]) {  // DEPRECATED
@@ -161,14 +161,14 @@ template <class ValueType> class ConstIterator {
 template <class ValueType> class Iterator : public ConstIterator<ValueType> {
 
  public:
-  typedef std::random_access_iterator_tag iterator_category;
-  typedef ValueType& reference;
   typedef Long difference_type;
   typedef ValueType value_type;
   typedef ValueType* pointer;
+  typedef ValueType& reference;
+  typedef std::random_access_iterator_tag iterator_category;
 
  public:
-  Iterator(void* base_ = NULL) : ConstIterator<ValueType>(base_) {}
+  Iterator(void* base_ = nullptr) : ConstIterator<ValueType>(base_) {}
 
   template <size_t LENGTH> Iterator(ValueType (&base_)[LENGTH]) : ConstIterator<ValueType>(base_) {}
 
@@ -274,8 +274,6 @@ template <class T> class TypeTraits {
 
  public:
   static uintptr_t ID();
-
-  static bool IsPOD();
 };
 
 /**

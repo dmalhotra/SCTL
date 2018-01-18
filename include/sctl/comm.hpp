@@ -24,6 +24,10 @@ class Comm {
 
   Comm();
 
+#ifdef SCTL_HAVE_MPI
+  Comm(const MPI_Comm mpi_comm) { Init(mpi_comm); }
+#endif
+
   Comm(const Comm& c);
 
   static Comm Self();
@@ -62,7 +66,7 @@ class Comm {
 
   template <class Type> void Scan(ConstIterator<Type> sbuf, Iterator<Type> rbuf, int count, CommOp op) const;
 
-  template <class Type> void PartitionW(Vector<Type>& nodeList, const Vector<Long>* wts_ = NULL) const;
+  template <class Type> void PartitionW(Vector<Type>& nodeList, const Vector<Long>* wts_ = nullptr) const;
 
   template <class Type> void PartitionN(Vector<Type>& v, Long N) const;
 
@@ -70,7 +74,7 @@ class Comm {
 
   template <class Type> void HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem) const;
 
-  template <class Type> void SortScatterIndex(const Vector<Type>& key, Vector<Long>& scatter_index, const Type* split_key_ = NULL) const;
+  template <class Type> void SortScatterIndex(const Vector<Type>& key, Vector<Long>& scatter_index, const Type* split_key_ = nullptr) const;
 
   template <class Type> void ScatterForward(Vector<Type>& data_, const Vector<Long>& scatter_index) const;
 
@@ -84,8 +88,6 @@ class Comm {
   };
 
 #ifdef SCTL_HAVE_MPI
-  Comm(const MPI_Comm mpi_comm) { Init(mpi_comm); }
-
   void Init(const MPI_Comm mpi_comm) {
     MPI_Comm_dup(mpi_comm, &mpi_comm_);
     MPI_Comm_rank(mpi_comm_, &mpi_rank_);

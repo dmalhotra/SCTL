@@ -90,7 +90,7 @@ inline void Comm::Barrier() const {
 template <class SType> void* Comm::Isend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag) const {
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
-  if (!scount) return NULL;
+  if (!scount) return nullptr;
   Vector<MPI_Request>& request = *NewReq();
   request.ReInit(1);
 
@@ -108,14 +108,14 @@ template <class SType> void* Comm::Isend(ConstIterator<SType> sbuf, Long scount,
     send_req.insert(std::pair<Integer, ConstIterator<char>>(tag, (ConstIterator<char>)sbuf));
   else
     memcopy(it->second, (ConstIterator<char>)sbuf, scount * sizeof(SType));
-  return NULL;
+  return nullptr;
 #endif
 }
 
 template <class RType> void* Comm::Irecv(Iterator<RType> rbuf, Long rcount, Integer source, Integer tag) const {
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
-  if (!rcount) return NULL;
+  if (!rcount) return nullptr;
   Vector<MPI_Request>& request = *NewReq();
   request.ReInit(1);
 
@@ -129,13 +129,13 @@ template <class RType> void* Comm::Irecv(Iterator<RType> rbuf, Long rcount, Inte
     recv_req.insert(std::pair<Integer, Iterator<char>>(tag, (Iterator<char>)rbuf));
   else
     memcopy((Iterator<char>)rbuf, it->second, rcount * sizeof(RType));
-  return NULL;
+  return nullptr;
 #endif
 }
 
 inline void Comm::Wait(void* req_ptr) const {
 #ifdef SCTL_HAVE_MPI
-  if (req_ptr == NULL) return;
+  if (req_ptr == nullptr) return;
   Vector<MPI_Request>& request = *(Vector<MPI_Request>*)req_ptr;
   // std::vector<MPI_Status> status(request.Dim());
   if (request.Dim()) MPI_Waitall(request.Dim(), &request[0], MPI_STATUSES_IGNORE);  //&status[0]);
@@ -155,7 +155,7 @@ template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sb
     rbuf[0];
     rbuf[rcount * Size() - 1];
   }
-  MPI_Allgather((scount ? &sbuf[0] : NULL), scount, CommDatatype<SType>::value(), (rcount ? &rbuf[0] : NULL), rcount, CommDatatype<RType>::value(), mpi_comm_);
+  MPI_Allgather((scount ? &sbuf[0] : nullptr), scount, CommDatatype<SType>::value(), (rcount ? &rbuf[0] : nullptr), rcount, CommDatatype<RType>::value(), mpi_comm_);
 #else
   memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, scount * sizeof(SType));
 #endif
@@ -181,7 +181,7 @@ template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> s
     rbuf[0];
     rbuf[rcount_sum - 1];
   }
-  MPI_Allgatherv((scount ? &sbuf[0] : NULL), scount, CommDatatype<SType>::value(), (rcount_sum ? &rbuf[0] : NULL), &rcounts_.begin()[0], &rdispls_.begin()[0], CommDatatype<RType>::value(), mpi_comm_);
+  MPI_Allgatherv((scount ? &sbuf[0] : nullptr), scount, CommDatatype<SType>::value(), (rcount_sum ? &rbuf[0] : nullptr), &rcounts_.begin()[0], &rdispls_.begin()[0], CommDatatype<RType>::value(), mpi_comm_);
 #else
   memcopy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)sbuf, scount * sizeof(SType));
 #endif
@@ -199,7 +199,7 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
     rbuf[0];
     rbuf[rcount * Size() - 1];
   }
-  MPI_Alltoall((scount ? &sbuf[0] : NULL), scount, CommDatatype<SType>::value(), (rcount ? &rbuf[0] : NULL), rcount, CommDatatype<RType>::value(), mpi_comm_);
+  MPI_Alltoall((scount ? &sbuf[0] : nullptr), scount, CommDatatype<SType>::value(), (rcount ? &rbuf[0] : nullptr), rcount, CommDatatype<RType>::value(), mpi_comm_);
 #else
   memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, scount * sizeof(SType));
 #endif
@@ -214,7 +214,7 @@ template <class SType, class RType> void* Comm::Ialltoallv_sparse(ConstIterator<
     if (rcounts[i]) request_count++;
     if (scounts[i]) request_count++;
   }
-  if (!request_count) return NULL;
+  if (!request_count) return nullptr;
   Vector<MPI_Request>& request = *NewReq();
   request.ReInit(request_count);
   Integer request_iter = 0;
@@ -238,7 +238,7 @@ template <class SType, class RType> void* Comm::Ialltoallv_sparse(ConstIterator<
   return &request;
 #else
   memcopy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)(sbuf + sdispls[0]), scounts[0] * sizeof(SType));
-  return NULL;
+  return nullptr;
 #endif
 }
 
@@ -277,7 +277,7 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
       rtotal += rcounts[i];
     }
 
-    MPI_Alltoallv((stotal ? &sbuf[0] : NULL), &scnt[0], &sdsp[0], CommDatatype<Type>::value(), (rtotal ? &rbuf[0] : NULL), &rcnt[0], &rdsp[0], CommDatatype<Type>::value(), mpi_comm_);
+    MPI_Alltoallv((stotal ? &sbuf[0] : nullptr), &scnt[0], &sdsp[0], CommDatatype<Type>::value(), (rtotal ? &rbuf[0] : nullptr), &rcnt[0], &rdsp[0], CommDatatype<Type>::value(), mpi_comm_);
     return;
     //#endif
   }
@@ -354,7 +354,7 @@ template <class Type> void Comm::PartitionW(Vector<Type>& nodeList, const Vector
 
   Vector<Long> wts;
   Long localWt = 0;
-  if (wts_ == NULL) {  // Construct arrays of wts.
+  if (wts_ == nullptr) {  // Construct arrays of wts.
     wts.ReInit(nlSize);
 #pragma omp parallel for schedule(static)
     for (Long i = 0; i < nlSize; i++) {
@@ -557,7 +557,7 @@ template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vecto
   Vector<Pair_t> psorted;
   HyperQuickSort(parray, psorted);
 
-  if (npes > 1 && split_key_ != NULL) {  // Partition data
+  if (npes > 1 && split_key_ != nullptr) {  // Partition data
     Vector<Type> split_key(npes);
     Allgather(Ptr2ConstItr<Type>(split_key_, 1), 1, split_key.begin(), 1);
 
@@ -1027,7 +1027,7 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
             glb_splt_cnts_[i] = glb_splt_cnts[i];
             glb_splt_disp_[i] = glb_splt_disp[i];
           }
-          MPI_Allgatherv((splt_count ? &splitters[0] : NULL), splt_count, CommDatatype<Type>::value(), &glb_splitters[0], &glb_splt_cnts_[0], &glb_splt_disp_[0], CommDatatype<Type>::value(), comm);
+          MPI_Allgatherv((splt_count ? &splitters[0] : nullptr), splt_count, CommDatatype<Type>::value(), &glb_splitters[0], &glb_splt_cnts_[0], &glb_splt_disp_[0], CommDatatype<Type>::value(), comm);
         }
       }
 
@@ -1100,8 +1100,8 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
         rbuff.ReInit(rsize);
         rbuff_ext.ReInit(ext_rsize);
         MPI_Status status;
-        MPI_Sendrecv((ssize ? &sbuff[0] : NULL), ssize, CommDatatype<Type>::value(), partner, 0, (rsize ? &rbuff[0] : NULL), rsize, CommDatatype<Type>::value(), partner, 0, comm, &status);
-        if (extra_partner) MPI_Sendrecv(NULL, 0, CommDatatype<Type>::value(), split_id, 0, (ext_rsize ? &rbuff_ext[0] : NULL), ext_rsize, CommDatatype<Type>::value(), split_id, 0, comm, &status);
+        MPI_Sendrecv((ssize ? &sbuff[0] : nullptr), ssize, CommDatatype<Type>::value(), partner, 0, (rsize ? &rbuff[0] : nullptr), rsize, CommDatatype<Type>::value(), partner, 0, comm, &status);
+        if (extra_partner) MPI_Sendrecv(nullptr, 0, CommDatatype<Type>::value(), split_id, 0, (ext_rsize ? &rbuff_ext[0] : nullptr), ext_rsize, CommDatatype<Type>::value(), split_id, 0, comm, &status);
       }
 
       Long nbuff_size = lsize + rsize + ext_rsize;

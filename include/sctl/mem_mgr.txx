@@ -20,7 +20,7 @@ template <class ValueType> inline ConstIterator<ValueType>::ConstIterator(const 
     alloc_ctr = mh.alloc_ctr;
     mem_head = &mh;
   } else
-    mem_head = NULL;
+    mem_head = nullptr;
 }
 
 template <class ValueType> inline void ConstIterator<ValueType>::IteratorAssertChecks(Long j) const {
@@ -30,7 +30,7 @@ template <class ValueType> inline void ConstIterator<ValueType>::IteratorAssertC
   const auto& mem_head = this->mem_head;
   const auto& alloc_ctr = this->alloc_ctr;
 
-  if (*this == NULL) SCTL_WARN("dereferencing a NULL pointer is undefined.");
+  if (*this == nullptr) SCTL_WARN("dereferencing a nullptr is undefined.");
   SCTL_ASSERT_MSG(offset >= 0 && offset + (Long)sizeof(ValueType) <= len, "access to pointer [B" << (offset < 0 ? "" : "+") << offset << ",B" << (offset + (Long)sizeof(ValueType) < 0 ? "" : "+") << offset + (Long)sizeof(ValueType) << ") is outside of the range [B,B+" << len << ").");
   if (mem_head) {
     MemoryManager::MemHead& mh = *(MemoryManager::MemHead*)(mem_head);
@@ -94,23 +94,6 @@ template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>& StaticA
 
 template <class T> inline uintptr_t TypeTraits<T>::ID() { return (uintptr_t) & ID; }
 
-template <class T> inline bool TypeTraits<T>::IsPOD() { return false; }
-
-#define SCTLDefinePOD(type)                          \
-  template <> bool inline TypeTraits<type>::IsPOD() { \
-    return true;                                      \
-  };
-SCTLDefinePOD(char);
-SCTLDefinePOD(float);
-SCTLDefinePOD(double);
-SCTLDefinePOD(int);
-SCTLDefinePOD(long long);
-SCTLDefinePOD(unsigned long);
-SCTLDefinePOD(char*);
-SCTLDefinePOD(float*);
-SCTLDefinePOD(double*);
-#undef SCTLDefinePOD
-
 inline MemoryManager::MemoryManager(Long N) {
   buff_size = N;
   {  // Allocate buff
@@ -167,7 +150,7 @@ inline MemoryManager::~MemoryManager() {
 }
 
 inline MemoryManager::MemHead& MemoryManager::GetMemHead(char* I) {
-  SCTL_ASSERT_MSG(I != NULL, "NULL pointer exception.");
+  SCTL_ASSERT_MSG(I != nullptr, "nullptr exception.");
   static uintptr_t alignment = SCTL_MEM_ALIGN - 1;
   static uintptr_t header_size = (uintptr_t)(sizeof(MemHead) + alignment) & ~(uintptr_t)alignment;
   return *(MemHead*)(((char*)I) - header_size);
@@ -187,13 +170,13 @@ inline void MemoryManager::CheckMemHead(const MemHead& mem_head) {  // Verify he
 }
 
 inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_size, const uintptr_t type_id) const {
-  if (!n_elem) return NULL;
+  if (!n_elem) return nullptr;
   static uintptr_t alignment = SCTL_MEM_ALIGN - 1;
   static uintptr_t header_size = (uintptr_t)(sizeof(MemHead) + alignment) & ~(uintptr_t)alignment;
 
   Long size = n_elem * type_size + header_size;
   size = (uintptr_t)(size + alignment) & ~(uintptr_t)alignment;
-  char* base = NULL;
+  char* base = nullptr;
 
   omp_set_lock(&omp_lock);
   static Long alloc_ctr = 0;
@@ -292,7 +275,7 @@ inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_s
 }
 
 inline void MemoryManager::free(Iterator<char> p) const {
-  if (p == NULL) return;
+  if (p == nullptr) return;
   static uintptr_t alignment = SCTL_MEM_ALIGN - 1;
   static uintptr_t header_size = (uintptr_t)(sizeof(MemHead) + alignment) & ~(uintptr_t)alignment;
 
@@ -411,7 +394,7 @@ inline void MemoryManager::test() {
 
     for (Integer j = 0; j < 3; j++) {
       tmp = (Iterator<double>)memgr.malloc(M * sizeof(double));
-      SCTL_ASSERT(tmp != NULL);
+      SCTL_ASSERT(tmp != nullptr);
       tt = omp_get_wtime();
 #pragma omp parallel for
       for (Long i = 0; i < M; i += 64) tmp[i] = (double)i;
@@ -428,7 +411,7 @@ inline void MemoryManager::test() {
     std::cout << "Without memory manager: ";
     for (Integer j = 0; j < 3; j++) {
       tmp = (double*)::malloc(M * sizeof(double));
-      SCTL_ASSERT(tmp != NULL);
+      SCTL_ASSERT(tmp != nullptr);
       tt = omp_get_wtime();
 #pragma omp parallel for
       for (Long i = 0; i < M; i += 64) tmp[i] = (double)i;
@@ -479,19 +462,19 @@ inline void MemoryManager::delete_node(Long indx) const {
   n.size = 0;
   n.prev = 0;
   n.next = 0;
-  n.mem_ptr = NULL;
+  n.mem_ptr = nullptr;
   node_stack.push(indx);
 }
 
 template <class ValueType> inline Iterator<ValueType> aligned_new(Long n_elem, const MemoryManager* mem_mgr) {
-  if (!n_elem) return NULL;
+  if (!n_elem) return nullptr;
 
   static MemoryManager def_mem_mgr(0);
   if (!mem_mgr) mem_mgr = &def_mem_mgr;
   Iterator<ValueType> A = (Iterator<ValueType>)mem_mgr->malloc(n_elem, sizeof(ValueType));
-  SCTL_ASSERT_MSG(A != NULL, "memory allocation failed.");
+  SCTL_ASSERT_MSG(A != nullptr, "memory allocation failed.");
 
-  if (!TypeTraits<ValueType>::IsPOD()) {  // Call constructors
+  if (!std::is_trivial<ValueType>::value) {  // Call constructors
                                           // printf("%s\n", __PRETTY_FUNCTION__);
 #pragma omp parallel for schedule(static)
     for (Long i = 0; i < n_elem; i++) {
@@ -514,9 +497,9 @@ template <class ValueType> inline Iterator<ValueType> aligned_new(Long n_elem, c
 }
 
 template <class ValueType> inline void aligned_delete(Iterator<ValueType> A, const MemoryManager* mem_mgr) {
-  if (A == NULL) return;
+  if (A == nullptr) return;
 
-  if (!TypeTraits<ValueType>::IsPOD()) {  // Call destructors
+  if (!std::is_trivial<ValueType>::value) {  // Call destructors
     // printf("%s\n", __PRETTY_FUNCTION__);
     MemoryManager::MemHead& mem_head = MemoryManager::GetMemHead((char*)&A[0]);
 #ifdef SCTL_MEMDEBUG
@@ -547,13 +530,12 @@ template <class ValueType> inline void aligned_delete(Iterator<ValueType> A, con
 }
 
 template <class ValueType> inline Iterator<ValueType> memcopy(Iterator<ValueType> destination, ConstIterator<ValueType> source, Long num) {
-  static_assert(std::is_trivially_copyable<ValueType>::value, "Data is not trivially copyable!");
   if (destination != source && num) {
 #ifdef SCTL_MEMDEBUG
     destination[num - 1];
     source[num - 1];
 #endif
-    if (TypeTraits<ValueType>::IsPOD()) {
+    if (std::is_trivially_copyable<ValueType>::value) {
       memcpy(&destination[0], &source[0], num * sizeof(ValueType));
     } else {
       for (Long i = 0; i < num; i++) destination[i] = source[i];

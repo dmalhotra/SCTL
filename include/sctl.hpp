@@ -1,3 +1,5 @@
+// Scientific Computing Template Library
+
 #ifndef _SCTL_HPP_
 #define _SCTL_HPP_
 
@@ -10,17 +12,10 @@
 // Have MPI
 //#define SCTL_HAVE_MPI
 
-// Disable assert checks.
-//#ifndef NDEBUG
-//#define NDEBUG
-//#endif
-
 // Parameters for memory manager
 #define SCTL_MEM_ALIGN 64
-#define SCTL_GLOBAL_MEM_BUFF 1024LL * 1LL  // in MB
-#ifndef NDEBUG
-#define SCTL_MEMDEBUG // Enable memory checks.
-#endif
+#define SCTL_GLOBAL_MEM_BUFF 1024LL * 0LL  // in MB
+//#define SCTL_MEMDEBUG // Enable memory checks.
 
 // Profiling parameters
 #define SCTL_PROFILE 5 // Granularity level
