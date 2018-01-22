@@ -1,13 +1,24 @@
 
-CXX=icpc
-CXXFLAGS = -std=c++11 -fopenmp -O3 # need C++11 and OpenMP
+CXX=mpic++
+CXXFLAGS = -std=c++11 -fopenmp # need C++11 and OpenMP
 
 #Optional flags
-CXXFLAGS += -DNDEBUG # release build
-CXXFLAGS += -g -rdynamic # for stack trace
-CXXFLAGS += -mkl -DPVFMM_HAVE_BLAS # use BLAS
-CXXFLAGS += -mkl -DPVFMM_HAVE_LAPACK # use LAPACK
-#CXXFLAGS += -DPVFMM_HAVE_MPI #use MPI
+CXXFLAGS += -O0 # debug build
+#CXXFLAGS += -O3 -DNDEBUG # release build
+
+ifeq ($(shell uname -s),Darwin)
+	CXXFLAGS += -g -rdynamic -Wl,-no_pie # for stack trace (on Mac)
+else
+	CXXFLAGS += -g -rdynamic # for stack trace
+endif
+
+CXXFLAGS += -DSCTL_MEMDEBUG # Enable memory checks
+
+CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
+CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
+#CXXFLAGS += -mkl -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK
+
+#CXXFLAGS += -DSCTL_HAVE_MPI #use MPI
 
 
 RM = rm -f

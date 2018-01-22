@@ -7,6 +7,9 @@
 #include <stdlib.h>
 #include <execinfo.h>
 #include <cxxabi.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 namespace SCTL_NAMESPACE {
 
@@ -21,14 +24,23 @@ inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
 
   // Get filename
   char fname[10240];
+#ifdef __APPLE__
+  uint32_t size = sizeof(fname);
+  _NSGetExecutablePath(fname, &size);
+#elif __linux__
   ssize_t fname_len = ::readlink("/proc/self/exe", fname, sizeof(fname) - 1);
   fname[fname_len] = '\0';
+#endif
 
   // Print
   for (int i = skip; i < addrlen; i++) {
     // Get command
     char cmd[10240];
+#ifdef __APPLE__
+    sprintf(cmd, "atos -o %s %016p 2> /dev/null", fname, addrlist[i]); // on mac
+#elif __linux__
     sprintf(cmd, "addr2line -f -C -i -e  %s  %016p 2> /dev/null", fname, addrlist[i]);
+#endif
 
     // Execute command
     FILE* pipe = popen(cmd, "r");
