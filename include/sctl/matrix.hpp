@@ -117,6 +117,8 @@ template <class ValueType> class Matrix {
   Matrix<ValueType> pinv(ValueType eps = -1);
 
  private:
+  void Init(Long dim1, Long dim2, Iterator<ValueType> data_ = nullptr, bool own_data_ = true);
+
   StaticArray<Long, 2> dim;
   Iterator<ValueType> data_ptr;
   bool own_data;

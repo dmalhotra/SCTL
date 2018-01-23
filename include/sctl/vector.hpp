@@ -102,6 +102,8 @@ template <class ValueType> class Vector {
   Vector operator/(ValueType s) const;
 
  private:
+  void Init(Long dim_, Iterator<ValueType> data_ = nullptr, bool own_data_ = true);
+
   Long dim;
   Long capacity;
   Iterator<ValueType> data_ptr;

@@ -7,14 +7,7 @@
 
 namespace SCTL_NAMESPACE {
 
-template <class ValueType> Vector<ValueType>::Vector() {
-  dim = 0;
-  capacity = 0;
-  own_data = true;
-  data_ptr = nullptr;
-}
-
-template <class ValueType> Vector<ValueType>::Vector(Long dim_, Iterator<ValueType> data_, bool own_data_) {
+template <class ValueType> void Vector<ValueType>::Init(Long dim_, Iterator<ValueType> data_, bool own_data_) {
   dim = dim_;
   capacity = dim;
   own_data = own_data_;
@@ -30,26 +23,20 @@ template <class ValueType> Vector<ValueType>::Vector(Long dim_, Iterator<ValueTy
     data_ptr = data_;
 }
 
+template <class ValueType> Vector<ValueType>::Vector() {
+  Init(0);
+}
+
+template <class ValueType> Vector<ValueType>::Vector(Long dim_, Iterator<ValueType> data_, bool own_data_) {
+  Init(dim_, data_, own_data_);
+}
+
 template <class ValueType> Vector<ValueType>::Vector(const Vector<ValueType>& V) {
-  dim = V.dim;
-  capacity = dim;
-  own_data = true;
-  if (dim > 0) {
-    data_ptr = aligned_new<ValueType>(capacity);
-    memcopy(data_ptr, V.data_ptr, dim);
-  } else
-    data_ptr = nullptr;
+  Init(V.Dim(), (Iterator<ValueType>)V.begin());
 }
 
 template <class ValueType> Vector<ValueType>::Vector(const std::vector<ValueType>& V) {
-  dim = V.size();
-  capacity = dim;
-  own_data = true;
-  if (dim > 0) {
-    data_ptr = aligned_new<ValueType>(capacity);
-    memcopy(data_ptr, Ptr2ConstItr<ValueType>(&V[0], V.size()), dim);
-  } else
-    data_ptr = nullptr;
+  Init(V.Dim(), Ptr2ConstItr<ValueType>(&V[0], V.size()));
 }
 
 template <class ValueType> Vector<ValueType>::~Vector() {

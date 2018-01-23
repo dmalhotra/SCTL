@@ -26,14 +26,7 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
   return output;
 }
 
-template <class ValueType> Matrix<ValueType>::Matrix() {
-  dim[0] = 0;
-  dim[1] = 0;
-  own_data = true;
-  data_ptr = nullptr;
-}
-
-template <class ValueType> Matrix<ValueType>::Matrix(Long dim1, Long dim2, Iterator<ValueType> data_, bool own_data_) {
+template <class ValueType> void Matrix<ValueType>::Init(Long dim1, Long dim2, Iterator<ValueType> data_, bool own_data_) {
   dim[0] = dim1;
   dim[1] = dim2;
   own_data = own_data_;
@@ -49,15 +42,16 @@ template <class ValueType> Matrix<ValueType>::Matrix(Long dim1, Long dim2, Itera
     data_ptr = data_;
 }
 
+template <class ValueType> Matrix<ValueType>::Matrix() {
+  Init(0, 0);
+}
+
+template <class ValueType> Matrix<ValueType>::Matrix(Long dim1, Long dim2, Iterator<ValueType> data_, bool own_data_) {
+  Init(dim1, dim2, data_, own_data_);
+}
+
 template <class ValueType> Matrix<ValueType>::Matrix(const Matrix<ValueType>& M) {
-  dim[0] = M.dim[0];
-  dim[1] = M.dim[1];
-  own_data = true;
-  if (dim[0] * dim[1] > 0) {
-    data_ptr = aligned_new<ValueType>(dim[0] * dim[1]);
-    memcopy(data_ptr, M.data_ptr, dim[0] * dim[1]);
-  } else
-    data_ptr = nullptr;
+  Init(M.Dim(0), M.Dim(1), (Iterator<ValueType>)M.begin());
 }
 
 template <class ValueType> Matrix<ValueType>::~Matrix() {
