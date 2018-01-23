@@ -218,11 +218,13 @@ inline QuadReal atoquad(const char* str) {
   return sign * val;
 }
 
-inline std::ostream& operator<<(std::ostream& output, const QuadReal q_) {
+}  // end namespace
+
+inline std::ostream& operator<<(std::ostream& output, const SCTL_NAMESPACE::QuadReal q_) {
   // int width=output.width();
   output << std::setw(1);
 
-  QuadReal q = q_;
+  SCTL_NAMESPACE::QuadReal q = q_;
   if (q < 0.0) {
     output << "-";
     q = -q;
@@ -235,7 +237,7 @@ inline std::ostream& operator<<(std::ostream& output, const QuadReal q_) {
   }
 
   int exp = 0;
-  static const QuadReal ONETENTH = (QuadReal)1 / 10;
+  static const SCTL_NAMESPACE::QuadReal ONETENTH = (SCTL_NAMESPACE::QuadReal)1 / 10;
   while (q < 1.0 && abs(exp) < 10000) {
     q = q * 10;
     exp--;
@@ -260,7 +262,5 @@ inline std::ostream& operator<<(std::ostream& output, const QuadReal q_) {
 
   return output;
 }
-
-}  // end namespace
 
 #endif  // SCTL_QUAD_T

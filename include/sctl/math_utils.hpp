@@ -38,8 +38,9 @@ typedef SCTL_QUAD_T QuadReal;
 
 QuadReal atoquad(const char* str);
 
-std::ostream& operator<<(std::ostream& output, const QuadReal q_);
 }
+
+inline std::ostream& operator<<(std::ostream& output, const sctl::QuadReal q_);
 
 #endif  // SCTL_QUAD_T
 
