@@ -385,7 +385,7 @@ inline void MemoryManager::print() const {
 inline void MemoryManager::test() {
   Long M = 2000000000;
   {  // With memory manager
-    Long N = M * sizeof(double) * 1.1;
+    Long N = (Long)(M * sizeof(double) * 1.1);
     double tt;
     Iterator<double> tmp;
 

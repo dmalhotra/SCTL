@@ -7,46 +7,72 @@
 
 namespace SCTL_NAMESPACE {
 
-template <> inline unsigned int pow(const unsigned int b, const unsigned int e) {
-  unsigned int r = 1;
-  for (unsigned int i = 0; i < e; i++) r *= b;
-  return r;
+template <class Real> inline Real atoreal(const char* str) { // Warning: does not do correct rounding
+  int i = 0;
+  Real sign = 1.0;
+  for (; str[i] != '\0'; i++) {
+    char c = str[i];
+    if (c == '-') sign = -sign;
+    if (c >= '0' && c <= '9') break;
+  }
+
+  Real val = 0.0;
+  for (; str[i] != '\0'; i++) {
+    char c = str[i];
+    if (c >= '0' && c <= '9')
+      val = val * 10 + (c - '0');
+    else
+      break;
+  }
+
+  if (str[i] == '.') {
+    i++;
+    Real exp = 1.0;
+    exp /= 10;
+    for (; str[i] != '\0'; i++) {
+      char c = str[i];
+      if (c >= '0' && c <= '9')
+        val = val + (c - '0') * exp;
+      else
+        break;
+      exp /= 10;
+    }
+  }
+
+  return sign * val;
 }
-}
 
-#ifdef SCTL_QUAD_T
-
-namespace SCTL_NAMESPACE {
-
-template <> inline QuadReal const_pi<QuadReal>() {
-  static QuadReal pi = atoquad("3.1415926535897932384626433832795028841");
+template <class Real> inline Real const_pi_generic() {
+  static Real pi = atoreal<Real>("3.1415926535897932384626433832795028841");
   return pi;
 }
 
-template <> inline QuadReal const_e<QuadReal>() {
-  static QuadReal e = atoquad("2.7182818284590452353602874713526624977");
+template <class Real> inline Real const_e_generic() {
+  static Real e = atoreal<Real>("2.7182818284590452353602874713526624977");
   return e;
 }
 
-template <> inline QuadReal fabs(const QuadReal f) {
-  if (f >= 0.0)
-    return f;
+template <class Real> inline Real fabs_generic(const Real a) {
+  if (a >= 0.0)
+    return a;
   else
-    return -f;
+    return -a;
 }
 
-template <> inline QuadReal sqrt(const QuadReal a) {
-  QuadReal b = ::sqrt((double)a);
-  b = (b + a / b) * 0.5;
-  b = (b + a / b) * 0.5;
+template <class Real> inline Real sqrt_generic(const Real a) {
+  Real b = ::sqrt((double)a);
+  if (a > 0) {
+    b = (b + a / b) * 0.5;
+    b = (b + a / b) * 0.5;
+  }
   return b;
 }
 
-template <> inline QuadReal sin(const QuadReal a) {
+template <class Real> inline Real sin_generic(const Real a) {
   const int N = 200;
-  static std::vector<QuadReal> theta;
-  static std::vector<QuadReal> sinval;
-  static std::vector<QuadReal> cosval;
+  static std::vector<Real> theta;
+  static std::vector<Real> sinval;
+  static std::vector<Real> cosval;
   if (theta.size() == 0) {
 #pragma omp critical(QUAD_SIN)
     if (theta.size() == 0) {
@@ -54,7 +80,7 @@ template <> inline QuadReal sin(const QuadReal a) {
       sinval.resize(N);
       cosval.resize(N);
 
-      QuadReal t = 1.0;
+      Real t = 1.0;
       for (int i = 0; i < N; i++) {
         theta[i] = t;
         t = t * 0.5;
@@ -64,18 +90,18 @@ template <> inline QuadReal sin(const QuadReal a) {
       cosval[N - 1] = 1.0 - sinval[N - 1] * sinval[N - 1] / 2;
       for (int i = N - 2; i >= 0; i--) {
         sinval[i] = 2.0 * sinval[i + 1] * cosval[i + 1];
-        cosval[i] = sqrt<QuadReal>(1.0 - sinval[i] * sinval[i]);
+        cosval[i] = sqrt<Real>(1.0 - sinval[i] * sinval[i]);
       }
     }
   }
 
-  QuadReal t = (a < 0.0 ? -a : a);
-  QuadReal sval = 0.0;
-  QuadReal cval = 1.0;
+  Real t = (a < 0.0 ? -a : a);
+  Real sval = 0.0;
+  Real cval = 1.0;
   for (int i = 0; i < N; i++) {
     while (theta[i] <= t) {
-      QuadReal sval_ = sval * cosval[i] + cval * sinval[i];
-      QuadReal cval_ = cval * cosval[i] - sval * sinval[i];
+      Real sval_ = sval * cosval[i] + cval * sinval[i];
+      Real cval_ = cval * cosval[i] - sval * sinval[i];
       sval = sval_;
       cval = cval_;
       t = t - theta[i];
@@ -84,11 +110,11 @@ template <> inline QuadReal sin(const QuadReal a) {
   return (a < 0.0 ? -sval : sval);
 }
 
-template <> inline QuadReal cos(const QuadReal a) {
+template <class Real> inline Real cos_generic(const Real a) {
   const int N = 200;
-  static std::vector<QuadReal> theta;
-  static std::vector<QuadReal> sinval;
-  static std::vector<QuadReal> cosval;
+  static std::vector<Real> theta;
+  static std::vector<Real> sinval;
+  static std::vector<Real> cosval;
   if (theta.size() == 0) {
 #pragma omp critical(QUAD_COS)
     if (theta.size() == 0) {
@@ -96,7 +122,7 @@ template <> inline QuadReal cos(const QuadReal a) {
       sinval.resize(N);
       cosval.resize(N);
 
-      QuadReal t = 1.0;
+      Real t = 1.0;
       for (int i = 0; i < N; i++) {
         theta[i] = t;
         t = t * 0.5;
@@ -106,18 +132,18 @@ template <> inline QuadReal cos(const QuadReal a) {
       cosval[N - 1] = 1.0 - sinval[N - 1] * sinval[N - 1] / 2;
       for (int i = N - 2; i >= 0; i--) {
         sinval[i] = 2.0 * sinval[i + 1] * cosval[i + 1];
-        cosval[i] = sqrt<QuadReal>(1.0 - sinval[i] * sinval[i]);
+        cosval[i] = sqrt<Real>(1.0 - sinval[i] * sinval[i]);
       }
     }
   }
 
-  QuadReal t = (a < 0.0 ? -a : a);
-  QuadReal sval = 0.0;
-  QuadReal cval = 1.0;
+  Real t = (a < 0.0 ? -a : a);
+  Real sval = 0.0;
+  Real cval = 1.0;
   for (int i = 0; i < N; i++) {
     while (theta[i] <= t) {
-      QuadReal sval_ = sval * cosval[i] + cval * sinval[i];
-      QuadReal cval_ = cval * cosval[i] - sval * sinval[i];
+      Real sval_ = sval * cosval[i] + cval * sinval[i];
+      Real cval_ = cval * cosval[i] - sval * sinval[i];
       sval = sval_;
       cval = cval_;
       t = t - theta[i];
@@ -126,12 +152,12 @@ template <> inline QuadReal cos(const QuadReal a) {
   return cval;
 }
 
-template <> inline QuadReal exp(const QuadReal a) {
+template <class Real> inline Real exp_generic(const Real a) {
   const int N = 200;
-  static std::vector<QuadReal> theta0;
-  static std::vector<QuadReal> theta1;
-  static std::vector<QuadReal> expval0;
-  static std::vector<QuadReal> expval1;
+  static std::vector<Real> theta0;
+  static std::vector<Real> theta1;
+  static std::vector<Real> expval0;
+  static std::vector<Real> expval1;
   if (theta0.size() == 0) {
 #pragma omp critical(QUAD_EXP)
     if (theta0.size() == 0) {
@@ -142,19 +168,19 @@ template <> inline QuadReal exp(const QuadReal a) {
 
       theta0[0] = 1.0;
       theta1[0] = 1.0;
-      expval0[0] = const_e<QuadReal>();
-      expval1[0] = const_e<QuadReal>();
+      expval0[0] = const_e<Real>();
+      expval1[0] = const_e<Real>();
       for (int i = 1; i < N; i++) {
         theta0[i] = theta0[i - 1] * 0.5;
         theta1[i] = theta1[i - 1] * 2.0;
-        expval0[i] = sqrt<QuadReal>(expval0[i - 1]);
+        expval0[i] = sqrt<Real>(expval0[i - 1]);
         expval1[i] = expval1[i - 1] * expval1[i - 1];
       }
     }
   }
 
-  QuadReal t = (a < 0.0 ? -a : a);
-  QuadReal eval = 1.0;
+  Real t = (a < 0.0 ? -a : a);
+  Real eval = 1.0;
   for (int i = N - 1; i > 0; i--) {
     while (theta1[i] <= t) {
       eval = eval * expval1[i];
@@ -171,60 +197,23 @@ template <> inline QuadReal exp(const QuadReal a) {
   return (a < 0.0 ? 1.0 / eval : eval);
 }
 
-template <> inline QuadReal log(const QuadReal a) {
-  QuadReal y0 = ::log((double)a);
-  y0 = y0 + (a / exp<QuadReal>(y0) - 1.0);
-  y0 = y0 + (a / exp<QuadReal>(y0) - 1.0);
+template <class Real> inline Real log_generic(const Real a) {
+  Real y0 = ::log((double)a);
+  y0 = y0 + (a / exp<Real>(y0) - 1.0);
+  y0 = y0 + (a / exp<Real>(y0) - 1.0);
   return y0;
 }
 
-template <> inline QuadReal pow(const QuadReal b, const QuadReal e) {
+template <class Real> inline Real pow_generic(const Real b, const Real e) {
   if (b == 0) return 1;
-  return exp<QuadReal>(log<QuadReal>(b) * e);
+  return exp<Real>(log<Real>(b) * e);
 }
 
-inline QuadReal atoquad(const char* str) {
-  int i = 0;
-  QuadReal sign = 1.0;
-  for (; str[i] != '\0'; i++) {
-    char c = str[i];
-    if (c == '-') sign = -sign;
-    if (c >= '0' && c <= '9') break;
-  }
-
-  QuadReal val = 0.0;
-  for (; str[i] != '\0'; i++) {
-    char c = str[i];
-    if (c >= '0' && c <= '9')
-      val = val * 10 + (c - '0');
-    else
-      break;
-  }
-
-  if (str[i] == '.') {
-    i++;
-    QuadReal exp = 1.0;
-    exp /= 10;
-    for (; str[i] != '\0'; i++) {
-      char c = str[i];
-      if (c >= '0' && c <= '9')
-        val = val + (c - '0') * exp;
-      else
-        break;
-      exp /= 10;
-    }
-  }
-
-  return sign * val;
-}
-
-}  // end namespace
-
-inline std::ostream& operator<<(std::ostream& output, const SCTL_NAMESPACE::QuadReal q_) {
+template <class Real> inline std::ostream& ostream_insertion_generic(std::ostream& output, const Real q_) {
   // int width=output.width();
   output << std::setw(1);
 
-  SCTL_NAMESPACE::QuadReal q = q_;
+  Real q = q_;
   if (q < 0.0) {
     output << "-";
     q = -q;
@@ -237,7 +226,7 @@ inline std::ostream& operator<<(std::ostream& output, const SCTL_NAMESPACE::Quad
   }
 
   int exp = 0;
-  static const SCTL_NAMESPACE::QuadReal ONETENTH = (SCTL_NAMESPACE::QuadReal)1 / 10;
+  static const Real ONETENTH = (Real)1 / 10;
   while (q < 1.0 && abs(exp) < 10000) {
     q = q * 10;
     exp--;
@@ -263,4 +252,68 @@ inline std::ostream& operator<<(std::ostream& output, const SCTL_NAMESPACE::Quad
   return output;
 }
 
+}  // end namespace
+
+namespace SCTL_NAMESPACE {
+
+//template <> inline long double const_pi<long double>() { return const_pi_generic<long double>(); }
+
+//template <> inline long double const_e<long double>() { return const_e_generic<long double>(); }
+
+template <> inline long double fabs<long double>(const long double a) { return fabs_generic(a); }
+
+template <> inline long double sqrt<long double>(const long double a) { return sqrt_generic(a); }
+
+template <> inline long double sin<long double>(const long double a) { return sin_generic(a); }
+
+template <> inline long double cos<long double>(const long double a) { return cos_generic(a); }
+
+template <> inline long double exp<long double>(const long double a) { return exp_generic(a); }
+
+//template <> inline long double log<long double>(const long double a) { return log_generic(a); }
+
+//template <> inline long double pow<long double>(const long double b, const long double e) { return pow_generic(b, e); }
+
+}  // end namespace
+
+#ifdef SCTL_QUAD_T
+
+namespace SCTL_NAMESPACE {
+
+template <> inline QuadReal const_pi<QuadReal>() { return const_pi_generic<QuadReal>(); }
+
+template <> inline QuadReal const_e<QuadReal>() { return const_e_generic<QuadReal>(); }
+
+template <> inline QuadReal fabs<QuadReal>(const QuadReal a) { return fabs_generic(a); }
+
+template <> inline QuadReal sqrt<QuadReal>(const QuadReal a) { return sqrt_generic(a); }
+
+template <> inline QuadReal sin<QuadReal>(const QuadReal a) { return sin_generic(a); }
+
+template <> inline QuadReal cos<QuadReal>(const QuadReal a) { return cos_generic(a); }
+
+template <> inline QuadReal exp<QuadReal>(const QuadReal a) { return exp_generic(a); }
+
+template <> inline QuadReal log<QuadReal>(const QuadReal a) { return log_generic(a); }
+
+template <> inline QuadReal pow<QuadReal>(const QuadReal b, const QuadReal e) { return pow_generic(b, e); }
+
+inline std::ostream& operator<<(std::ostream& output, const QuadReal q) { ostream_insertion_generic(output, q); }
+
+}  // end namespace
+
+inline std::ostream& operator<<(std::ostream& output, const SCTL_QUAD_T q) { SCTL_NAMESPACE::ostream_insertion_generic(output, q); }
+
 #endif  // SCTL_QUAD_T
+
+
+
+
+
+//namespace SCTL_NAMESPACE {
+//template <class Real> inline unsigned int pow(const unsigned int b, const unsigned int e) {
+//  unsigned int r = 1;
+//  for (unsigned int i = 0; i < e; i++) r *= b;
+//  return r;
+//}
+//}

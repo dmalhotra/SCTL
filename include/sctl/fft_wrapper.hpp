@@ -125,15 +125,17 @@ template <class ValueType> class FFT {
     }
   }
 
+  Long Dim(Integer i) const {
+    Long N = plan.howmany * 2;
+    for (const auto M : plan.M) N = N * M.Dim(i) / 2;
+    return N;
+  }
+
   void Execute(const Vector<ValueType>& in, Vector<ValueType>& out) const {
 
     Long howmany = plan.howmany;
-    Long N0 = howmany * 2;
-    Long N1 = howmany * 2;
-    for (const auto M : plan.M) {
-      N0 = N0 * M.Dim(0) / 2;
-      N1 = N1 * M.Dim(1) / 2;
-    }
+    Long N0 = Dim(0);
+    Long N1 = Dim(1);
     SCTL_ASSERT_MSG(in.Dim() == N0, "FFT: Wrong input size.");
     if (out.Dim() != N1) out.ReInit(N1);
 
@@ -181,10 +183,10 @@ template <class ValueType> class FFT {
     fft_dim.PushBack(3);
 
     if (1){ // R2C, C2R
-      Vector<ValueType> v0, v1, v2;
       FFT<ValueType> myfft0, myfft1;
-      myfft0.Setup(FFT_Type::R2C, 1, fft_dim, v0, v1);
-      myfft1.Setup(FFT_Type::C2R, 1, fft_dim, v1, v2);
+      myfft0.Setup(FFT_Type::R2C, 1, fft_dim);
+      myfft1.Setup(FFT_Type::C2R, 1, fft_dim);
+      Vector<ValueType> v0(myfft0.Dim(0)), v1, v2;
       for (int i = 0; i < v0.Dim(); i++) v0[i] = 1 + i;
       myfft0.Execute(v0, v1);
       myfft1.Execute(v1, v2);
@@ -197,10 +199,10 @@ template <class ValueType> class FFT {
     }
     std::cout<<'\n';
     { // C2C, C2C_INV
-      Vector<ValueType> v0, v1, v2;
       FFT<ValueType> myfft0, myfft1;
-      myfft0.Setup(FFT_Type::C2C, 1, fft_dim, v0, v1);
-      myfft1.Setup(FFT_Type::C2C_INV, 1, fft_dim, v1, v2);
+      myfft0.Setup(FFT_Type::C2C, 1, fft_dim);
+      myfft1.Setup(FFT_Type::C2C_INV, 1, fft_dim);
+      Vector<ValueType> v0(myfft0.Dim(0)), v1, v2;
       for (int i = 0; i < v0.Dim(); i++) v0[i] = 1 + i;
       myfft0.Execute(v0, v1);
       myfft1.Execute(v1, v2);
@@ -216,50 +218,50 @@ template <class ValueType> class FFT {
  private:
 
   static Matrix<ValueType> fft_r2c(Long N0) {
-    ValueType s = 1.0 / sqrt<ValueType>(N0);
+    ValueType s = 1 / sqrt<ValueType>(N0);
     Long N1 = (N0 / 2 + 1);
     Matrix<ValueType> M(N0, 2 * N1);
     for (Long j = 0; j < N0; j++)
       for (Long i = 0; i < N1; i++) {
-        M[j][2 * i + 0] = cos<ValueType>(j * i * (1.0 / N0) * 2.0 * const_pi<ValueType>())*s;
-        M[j][2 * i + 1] = sin<ValueType>(j * i * (1.0 / N0) * 2.0 * const_pi<ValueType>())*s;
+        M[j][2 * i + 0] = cos<ValueType>(2 * const_pi<ValueType>() * j * i / N0)*s;
+        M[j][2 * i + 1] = sin<ValueType>(2 * const_pi<ValueType>() * j * i / N0)*s;
       }
     return M;
   }
 
   static Matrix<ValueType> fft_c2c(Long N0) {
-    ValueType s = 1.0 / sqrt<ValueType>(N0);
+    ValueType s = 1 / sqrt<ValueType>(N0);
     Matrix<ValueType> M(2 * N0, 2 * N0);
     for (Long i = 0; i < N0; i++)
       for (Long j = 0; j < N0; j++) {
-        M[2 * i + 0][2 * j + 0] = cos<ValueType>(j * i * (1.0 / N0) * 2.0 * const_pi<ValueType>())*s;
-        M[2 * i + 1][2 * j + 0] = sin<ValueType>(j * i * (1.0 / N0) * 2.0 * const_pi<ValueType>())*s;
-        M[2 * i + 0][2 * j + 1] = -sin<ValueType>(j * i * (1.0 / N0) * 2.0 * const_pi<ValueType>())*s;
-        M[2 * i + 1][2 * j + 1] = cos<ValueType>(j * i * (1.0 / N0) * 2.0 * const_pi<ValueType>())*s;
+        M[2 * i + 0][2 * j + 0] =  cos<ValueType>(2 * const_pi<ValueType>() * j * i / N0)*s;
+        M[2 * i + 1][2 * j + 0] =  sin<ValueType>(2 * const_pi<ValueType>() * j * i / N0)*s;
+        M[2 * i + 0][2 * j + 1] = -sin<ValueType>(2 * const_pi<ValueType>() * j * i / N0)*s;
+        M[2 * i + 1][2 * j + 1] =  cos<ValueType>(2 * const_pi<ValueType>() * j * i / N0)*s;
       }
     return M;
   }
 
   static Matrix<ValueType> fft_c2r(Long N0) {
-    ValueType s = 1.0 / sqrt<ValueType>(N0);
+    ValueType s = 1 / sqrt<ValueType>(N0);
     Long N1 = (N0 / 2 + 1);
     Matrix<ValueType> M(2 * N1, N0);
     for (Long i = 0; i < N1; i++) {
       for (Long j = 0; j < N0; j++) {
-        M[2 * i + 0][j] = 2 * cos<ValueType>(j * i * (1.0 / N0) * 2.0 * const_pi<ValueType>())*s;
-        M[2 * i + 1][j] = 2 * sin<ValueType>(j * i * (1.0 / N0) * 2.0 * const_pi<ValueType>())*s;
+        M[2 * i + 0][j] = 2 * cos<ValueType>(2 * const_pi<ValueType>() * j * i / N0)*s;
+        M[2 * i + 1][j] = 2 * sin<ValueType>(2 * const_pi<ValueType>() * j * i / N0)*s;
       }
     }
     if (N1 > 0) {
       for (Long j = 0; j < N0; j++) {
-        M[0][j] = M[0][j] * 0.5;
-        M[1][j] = M[1][j] * 0.5;
+        M[0][j] = M[0][j] * (ValueType)0.5;
+        M[1][j] = M[1][j] * (ValueType)0.5;
       }
     }
     if (N0 % 2 == 0) {
       for (Long j = 0; j < N0; j++) {
-        M[2 * N1 - 2][j] = M[2 * N1 - 2][j] * 0.5;
-        M[2 * N1 - 1][j] = M[2 * N1 - 1][j] * 0.5;
+        M[2 * N1 - 2][j] = M[2 * N1 - 2][j] * (ValueType)0.5;
+        M[2 * N1 - 1][j] = M[2 * N1 - 1][j] * (ValueType)0.5;
       }
     }
     return M;
@@ -273,6 +275,8 @@ template <class ValueType> class FFT {
 
   FFTPlan plan;
 };
+
+
 
 }  // end namespace
 

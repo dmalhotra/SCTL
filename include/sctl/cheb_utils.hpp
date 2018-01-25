@@ -1003,7 +1003,6 @@ template <class ValueType, class Derived> class BasisInterface {
     }
   }
 
-
  private:
   BasisInterface() {
     void (*EvalBasis1D)(Integer, const Vector<ValueType>&, Vector<ValueType>&) = Derived::EvalBasis1D;
@@ -1013,7 +1012,7 @@ template <class ValueType, class Derived> class BasisInterface {
   static void cheb_nodes_1d(Integer order, Vector<ValueType>& nodes) {
     if (nodes.Dim() != order) nodes.ReInit(order);
     for (Integer i = 0; i < order; i++) {
-      nodes[i] = -cos<ValueType>((i + (ValueType)0.5) * const_pi<ValueType>() / order) * 0.5 + 0.5;
+      nodes[i] = -cos<ValueType>((i + (ValueType)0.5) * const_pi<ValueType>() / order) * (ValueType)0.5 + (ValueType)0.5;
     }
   }
 
@@ -1028,7 +1027,7 @@ template <class ValueType, class Derived> class BasisInterface {
     }
     if (order > 1) {
       for (Long i = 0; i < n; i++) {
-        y[i + n] = x[i] * 2.0 - 1.0;
+        y[i + n] = x[i] * 2 - 1;
       }
     }
     for (Integer i = 2; i < order; i++) {
@@ -1045,6 +1044,7 @@ template <class ValueType, class Derived> class BasisInterface {
 
     if (x.Dim() != order) x.ReInit(order);
     if (w.Dim() != order) w.ReInit(order);
+    if (!order) return;
 
     bool done = false;
     #pragma omp critical(QUAD_RULE)
@@ -1068,8 +1068,8 @@ template <class ValueType, class Derived> class BasisInterface {
       double alpha = 0.0, beta = 0.0, a = -1.0, b = 1.0;
       cgqf(order, kind, (double)alpha, (double)beta, (double)a, (double)b, &xd[0], &wd[0]);
       for (Integer i = 0; i < order; i++) {
-        x_[i] = 0.5 * xd[i] + 0.5;
-        w_[i] = 0.5 * wd[i];
+        x_[i] = (ValueType)(0.5 * xd[i] + 0.5);
+        w_[i] = (ValueType)(0.5 * wd[i]);
       }
     } else {  // Chebyshev quadrature nodes and weights
       cheb_nodes_1d(order, x_);

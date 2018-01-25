@@ -130,7 +130,7 @@ template <class ValueType> void Vector<ValueType>::PushBack(const ValueType& x) 
     data_ptr[dim] = x;
     dim++;
   } else {
-    Vector<ValueType> v(capacity * 1.6 + 1);
+    Vector<ValueType> v((Long)(capacity * 1.6) + 1);
     memcopy(v.data_ptr, data_ptr, dim);
     v.dim = dim;
     Swap(v);
