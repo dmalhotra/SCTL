@@ -276,6 +276,7 @@ inline void MemoryManager::free(Iterator<char> p) const {
   if (p == nullptr) return;
   static uintptr_t alignment = SCTL_MEM_ALIGN - 1;
   static uintptr_t header_size = (uintptr_t)(sizeof(MemHead) + alignment) & ~(uintptr_t)alignment;
+  SCTL_UNUSED(header_size);
 
   MemHead& mem_head = GetMemHead(&p[0]);
   Long n_indx = mem_head.n_indx;
@@ -478,7 +479,7 @@ template <class ValueType> inline Iterator<ValueType> aligned_new(Long n_elem, c
     for (Long i = 0; i < n_elem; i++) {
       ValueType* Ai = new (&A[i]) ValueType();
       assert(Ai == (&A[i]));
-      UNUSED(Ai);
+      SCTL_UNUSED(Ai);
     }
   } else {
 #ifdef SCTL_MEMDEBUG

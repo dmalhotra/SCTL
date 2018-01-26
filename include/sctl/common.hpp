@@ -39,7 +39,7 @@ typedef int64_t Long;  // problem size
     }                                                                                                           \
   } while (0)
 
-#define UNUSED(x) (void)(x)  // to ignore unused variable warning.
+#define SCTL_UNUSED(x) (void)(x)  // to ignore unused variable warning.
 
 namespace SCTL_NAMESPACE {
 #ifdef SCTL_MEMDEBUG
