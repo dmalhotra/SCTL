@@ -158,7 +158,7 @@ inline void MemoryManager::CheckMemHead(const MemHead& mem_head) {  // Verify he
 #ifdef SCTL_MEMDEBUG
   Long check_sum = 0;
   const unsigned char* base_ = (const unsigned char*)&mem_head;
-  for (Integer i = 0; i < sizeof(MemHead); i++) {
+  for (Integer i = 0; i < (Integer)sizeof(MemHead); i++) {
     check_sum += base_[i];
   }
   check_sum -= mem_head.check_sum;
@@ -225,7 +225,7 @@ inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_s
     }
     {  // set p[*] to init_mem_val
 #pragma omp parallel for
-      for (Long i = 0; i < size + 2 + alignment + end_padding; i++) p[i] = init_mem_val;
+      for (Long i = 0; i < (Long)(size + 2 + alignment + end_padding); i++) p[i] = init_mem_val;
     }
 #endif
     {  // base <-- align(p)
@@ -246,7 +246,7 @@ inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_s
   MemHead& mem_head = *(MemHead*)base;
   {  // Set mem_head
 #ifdef SCTL_MEMDEBUG
-    for (Integer i = 0; i < sizeof(MemHead); i++) base[i] = init_mem_val;
+    for (Integer i = 0; i < (Integer)sizeof(MemHead); i++) base[i] = init_mem_val;
 #endif
     mem_head.n_indx = n_indx;
     mem_head.n_elem = n_elem;
@@ -259,7 +259,7 @@ inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_s
     Long check_sum = 0;
     unsigned char* base_ = (unsigned char*)base;
     mem_head.check_sum = 0;
-    for (Integer i = 0; i < sizeof(MemHead); i++) check_sum += base_[i];
+    for (Integer i = 0; i < (Integer)sizeof(MemHead); i++) check_sum += base_[i];
     check_sum = check_sum & ((1UL << (8 * sizeof(mem_head.check_sum))) - 1);
     mem_head.check_sum = check_sum;
 #endif
@@ -289,7 +289,7 @@ inline void MemoryManager::free(Iterator<char> p) const {
     Long size = mem_head.n_elem * mem_head.type_size;
 #pragma omp parallel for
     for (Long i = 0; i < size; i++) p[i] = init_mem_val;
-    for (Integer i = 0; i < sizeof(MemHead); i++) base[i] = init_mem_val;
+    for (Integer i = 0; i < (Integer)sizeof(MemHead); i++) base[i] = init_mem_val;
 #endif
   }
 
@@ -308,7 +308,7 @@ inline void MemoryManager::free(Iterator<char> p) const {
       size = (uintptr_t)(size + alignment) & ~(uintptr_t)alignment;
       Long end_padding = 8;  // to check for out-of-bound writes
 #pragma omp parallel for
-      for (Long i = 0; i < size + 2 + alignment + end_padding; i++) {
+      for (Long i = 0; i < (Long)(size + 2 + alignment + end_padding); i++) {
         SCTL_ASSERT_MSG(p_[i] == init_mem_val, "memory corruption detected.");
       }
     }
@@ -320,7 +320,7 @@ inline void MemoryManager::free(Iterator<char> p) const {
 #endif
     ::free(p_);
   } else {
-    assert(n_indx <= node_buff.size());
+    assert(n_indx <= (Long)node_buff.size());
     omp_set_lock(&omp_lock);
     MemNode& n = node_buff[n_indx - 1];
     assert(!n.free && n.size > 0 && n.mem_ptr == base);
@@ -454,7 +454,7 @@ inline Long MemoryManager::new_node() const {
 
 inline void MemoryManager::delete_node(Long indx) const {
   assert(indx);
-  assert(indx <= node_buff.size());
+  assert(indx <= (Long)node_buff.size());
   MemNode& n = node_buff[indx - 1];
   n.free = false;
   n.size = 0;

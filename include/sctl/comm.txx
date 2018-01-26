@@ -40,6 +40,7 @@ inline Comm& Comm::operator=(const Comm& c) {
 #ifdef SCTL_HAVE_MPI
   Init(c.mpi_comm_);
 #endif
+  return *this;
 }
 
 inline Comm::~Comm() {

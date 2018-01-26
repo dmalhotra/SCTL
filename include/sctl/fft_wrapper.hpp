@@ -296,10 +296,10 @@ template <> class FFT<double> : public FFT_Generic<double, FFT<double>> {
 
  public:
 
-  ~FFT() { if (this->Dim(0) * this->Dim(1)) fftw_destroy_plan(plan); }
+  ~FFT() { if (this->Dim(0) && this->Dim(1)) fftw_destroy_plan(plan); }
 
   void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec) {
-    if (Dim(0) * Dim(1)) fftw_destroy_plan(plan);
+    if (Dim(0) && Dim(1)) fftw_destroy_plan(plan);
     Long rank = dim_vec.Dim();
     this->fft_type = fft_type_;
     this->howmany = howmany_;
@@ -323,7 +323,7 @@ template <> class FFT<double> : public FFT_Generic<double, FFT<double>> {
       this->dim[0] = N0;
       this->dim[1] = N1;
     }
-    if (!N0 * N1) return;
+    if (!N0 || !N1) return;
 
     in .ReInit(N0);
     out.ReInit(N1);
@@ -344,7 +344,7 @@ template <> class FFT<double> : public FFT_Generic<double, FFT<double>> {
   void Execute(const Vector<ValueType>& in, Vector<ValueType>& out) const {
     Long N0 = this->Dim(0);
     Long N1 = this->Dim(1);
-    if (!N0 * N1) return;
+    if (!N0 || !N1) return;
     SCTL_ASSERT_MSG(in.Dim() == N0, "FFT: Wrong input size.");
     if (out.Dim() != N1) out.ReInit(N1);
 
@@ -379,10 +379,10 @@ template <> class FFT<float> : public FFT_Generic<float, FFT<float>> {
 
  public:
 
-  ~FFT() { if (this->Dim(0) * this->Dim(1)) fftwf_destroy_plan(plan); }
+  ~FFT() { if (this->Dim(0) && this->Dim(1)) fftwf_destroy_plan(plan); }
 
   void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec) {
-    if (Dim(0) * Dim(1)) fftwf_destroy_plan(plan);
+    if (Dim(0) && Dim(1)) fftwf_destroy_plan(plan);
     Long rank = dim_vec.Dim();
     this->fft_type = fft_type_;
     this->howmany = howmany_;
@@ -406,7 +406,7 @@ template <> class FFT<float> : public FFT_Generic<float, FFT<float>> {
       this->dim[0] = N0;
       this->dim[1] = N1;
     }
-    if (!N0 * N1) return;
+    if (!N0 || !N1) return;
 
     in .ReInit(N0);
     out.ReInit(N1);
@@ -427,7 +427,7 @@ template <> class FFT<float> : public FFT_Generic<float, FFT<float>> {
   void Execute(const Vector<ValueType>& in, Vector<ValueType>& out) const {
     Long N0 = this->Dim(0);
     Long N1 = this->Dim(1);
-    if (!N0 * N1) return;
+    if (!N0 || !N1) return;
     SCTL_ASSERT_MSG(in.Dim() == N0, "FFT: Wrong input size.");
     if (out.Dim() != N1) out.ReInit(N1);
 
@@ -462,10 +462,10 @@ template <> class FFT<long double> : public FFT_Generic<long double, FFT<long do
 
  public:
 
-  ~FFT() { if (this->Dim(0) * this->Dim(1)) fftwl_destroy_plan(plan); }
+  ~FFT() { if (this->Dim(0) && this->Dim(1)) fftwl_destroy_plan(plan); }
 
   void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec) {
-    if (Dim(0) * Dim(1)) fftwl_destroy_plan(plan);
+    if (Dim(0) && Dim(1)) fftwl_destroy_plan(plan);
     Long rank = dim_vec.Dim();
     this->fft_type = fft_type_;
     this->howmany = howmany_;
@@ -489,7 +489,7 @@ template <> class FFT<long double> : public FFT_Generic<long double, FFT<long do
       this->dim[0] = N0;
       this->dim[1] = N1;
     }
-    if (!N0 * N1) return;
+    if (!N0 || !N1) return;
 
     in .ReInit(N0);
     out.ReInit(N1);
@@ -510,7 +510,7 @@ template <> class FFT<long double> : public FFT_Generic<long double, FFT<long do
   void Execute(const Vector<ValueType>& in, Vector<ValueType>& out) const {
     Long N0 = this->Dim(0);
     Long N1 = this->Dim(1);
-    if (!N0 * N1) return;
+    if (!N0 || !N1) return;
     SCTL_ASSERT_MSG(in.Dim() == N0, "FFT: Wrong input size.");
     if (out.Dim() != N1) out.ReInit(N1);
 

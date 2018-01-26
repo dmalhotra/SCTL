@@ -40,7 +40,7 @@ inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integ
   ProfileData& prof = ProfData();
   if (!prof.enable_state) return;
   // sync_=true;
-  if (verbose <= SCTL_PROFILE && prof.verb_level.size() == prof.enable_depth) {
+  if (verbose <= SCTL_PROFILE && (Integer)prof.verb_level.size() == prof.enable_depth) {
     if (comm_ != nullptr && sync_) comm_->Barrier();
 #ifdef SCTL_VERBOSE
     Integer rank = 0;
@@ -72,7 +72,7 @@ inline void Profile::Toc() {
   ProfileData& prof = ProfData();
   if (!prof.enable_state) return;
   SCTL_ASSERT_MSG(!prof.verb_level.empty(), "Unbalanced extra Toc()");
-  if (prof.verb_level.top() <= SCTL_PROFILE && prof.verb_level.size() == prof.enable_depth) {
+  if (prof.verb_level.top() <= SCTL_PROFILE && (Integer)prof.verb_level.size() == prof.enable_depth) {
     SCTL_ASSERT_MSG(!prof.name.empty() && !prof.comm.empty() && !prof.sync.empty() && !prof.max_mem.empty(), "Unbalanced extra Toc()");
     std::string name_ = prof.name.top();
     const Comm* comm_ = prof.comm.top();

@@ -37,9 +37,9 @@ inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
     // Get command
     char cmd[10240];
 #ifdef __APPLE__
-    sprintf(cmd, "atos -o %s %016p 2> /dev/null", fname, addrlist[i]); // on mac
+    sprintf(cmd, "atos -o %s %p 2> /dev/null", fname, addrlist[i]); // on mac
 #elif __linux__
-    sprintf(cmd, "addr2line -f -C -i -e  %s  %016p 2> /dev/null", fname, addrlist[i]);
+    sprintf(cmd, "addr2line -f -C -i -e  %s  %p 2> /dev/null", fname, addrlist[i]);
 #endif
 
     // Execute command
@@ -49,10 +49,10 @@ inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
     char buffer1[10240];
     fgets(buffer0, sizeof(buffer0) - 1, pipe);
     fgets(buffer1, sizeof(buffer1) - 1, pipe);
-    for (int j = 0; j < sizeof(buffer0) - 1; j++) {
+    for (int j = 0; j < (int)sizeof(buffer0) - 1; j++) {
       if (buffer0[j] == '\n') buffer0[j] = ' ';
     }
-    for (int j = 0; j < sizeof(buffer1) - 1; j++) {
+    for (int j = 0; j < (int)sizeof(buffer1) - 1; j++) {
       if (buffer1[j] == '\n') buffer1[j] = ' ';
     }
     pclose(pipe);
@@ -61,7 +61,7 @@ inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
     if (buffer0[0] != '?' && buffer0[0] != '\0') {
       fprintf(out, "[%d] %s: %s\n", i - skip, buffer1, buffer0);
     } else {
-      fprintf(out, "[%d] %016p: %s\n", i - skip, addrlist[i], symbollist[i]);
+      fprintf(out, "[%d] %p: %s\n", i - skip, addrlist[i], symbollist[i]);
     }
   }
   fprintf(stderr, "\n");
