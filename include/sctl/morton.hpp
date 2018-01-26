@@ -17,16 +17,12 @@ template <Integer DIM = 3> class Morton {
  public:
   #if SCTL_MAX_DEPTH < 7
   typedef uint8_t UINT_T;
-  typedef int8_t INT_T;
   #elif SCTL_MAX_DEPTH < 15
   typedef uint16_t UINT_T;
-  typedef int16_t INT_T;
   #elif SCTL_MAX_DEPTH < 31
   typedef uint32_t UINT_T;
-  typedef int32_t INT_T;
   #elif SCTL_MAX_DEPTH < 63
   typedef uint64_t UINT_T;
-  typedef int64_t INT_T;
   #endif
 
   static const Integer MAX_DEPTH = SCTL_MAX_DEPTH;
@@ -101,16 +97,12 @@ template <Integer DIM = 3> class Morton {
       for (Integer i = 0; i < DIM; i++) {
         for (Integer j = 0; j < k; j++) {
           m = nlst[j];
-          INT_T xi = (INT_T)m.x[i] + (INT_T)mask;
-          if (xi >= maxCoord) xi -= maxCoord;
-          m.x[i] = xi;
+          m.x[i] = (m.x[i] + mask) & (maxCoord - 1);
           nlst.PushBack(m);
         }
         for (Integer j = 0; j < k; j++) {
           m = nlst[j];
-          INT_T xi = (INT_T)m.x[i] - (INT_T)mask;
-          if (xi < 0) xi += maxCoord;
-          m.x[i] = xi;
+          m.x[i] = (m.x[i] - mask) & (maxCoord - 1);
           nlst.PushBack(m);
         }
         k = nlst.Dim();
@@ -119,15 +111,17 @@ template <Integer DIM = 3> class Morton {
       for (Integer i = 0; i < DIM; i++) {
         for (Integer j = 0; j < k; j++) {
           m = nlst[j];
-          INT_T xi = (INT_T)m.x[i] + (INT_T)mask;
-          m.x[i] = xi;
-          if (xi < maxCoord) nlst.PushBack(m);
+          if (m.x[i] + mask < maxCoord) {
+            m.x[i] += mask;
+            nlst.PushBack(m);
+          }
         }
         for (Integer j = 0; j < k; j++) {
           m = nlst[j];
-          INT_T xi = (INT_T)m.x[i] - (INT_T)mask;
-          m.x[i] = xi;
-          if (xi >= 0) nlst.PushBack(m);
+          if (m.x[i] >= mask) {
+            m.x[i] -= mask;
+            nlst.PushBack(m);
+          }
         }
         k = nlst.Dim();
       }

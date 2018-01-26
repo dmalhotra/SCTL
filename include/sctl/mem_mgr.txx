@@ -95,7 +95,7 @@ template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>& StaticA
 inline MemoryManager::MemoryManager(Long N) {
   buff_size = N;
   {  // Allocate buff
-    assert(SCTL_MEM_ALIGN <= 0x8000);
+    SCTL_ASSERT(SCTL_MEM_ALIGN <= 0x8000);
     Long alignment = SCTL_MEM_ALIGN - 1;
     char* base_ptr = (char*)::malloc(N + 2 + alignment);
     SCTL_ASSERT_MSG(base_ptr, "memory allocation failed.");
@@ -120,7 +120,7 @@ inline MemoryManager::MemoryManager(Long N) {
   n_dummy.prev = 0;
   n_dummy.next = n_indx;
   n_dummy.mem_ptr = &buff[0];
-  assert(n_indx);
+  SCTL_ASSERT(n_indx);
 
   n.size = N;
   n.free = true;
@@ -142,7 +142,7 @@ inline MemoryManager::~MemoryManager() {
   omp_destroy_lock(&omp_lock);
 
   {  // free buff
-    assert(buff);
+    SCTL_ASSERT(buff);
     ::free(buff - ((uint16_t*)buff)[-1]);
   }
 }
@@ -478,6 +478,7 @@ template <class ValueType> inline Iterator<ValueType> aligned_new(Long n_elem, c
     for (Long i = 0; i < n_elem; i++) {
       ValueType* Ai = new (&A[i]) ValueType();
       assert(Ai == (&A[i]));
+      UNUSED(Ai);
     }
   } else {
 #ifdef SCTL_MEMDEBUG
