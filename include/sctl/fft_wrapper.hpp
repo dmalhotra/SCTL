@@ -303,7 +303,7 @@ template <> class FFT<double> : public FFT_Generic<double, FFT<double>> {
     Long rank = dim_vec.Dim();
     this->fft_type = fft_type_;
     this->howmany = howmany_;
-    Long N0, N1;
+    Long N0 = 0, N1 = 0;
     { // Set N0, N1
       Long N = howmany;
       for (auto ni : dim_vec) N *= ni;

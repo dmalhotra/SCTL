@@ -95,8 +95,8 @@ template <class SType> void* Comm::Isend(ConstIterator<SType> sbuf, Long scount,
   Vector<MPI_Request>& request = *NewReq();
   request.ReInit(1);
 
-  sbuf[0];
-  sbuf[scount - 1];
+  SCTL_UNUSED(sbuf[0]         );
+  SCTL_UNUSED(sbuf[scount - 1]);
 #ifndef NDEBUG
   MPI_Issend(&sbuf[0], scount, CommDatatype<SType>::value(), dest, tag, mpi_comm_, &request[0]);
 #else
@@ -120,8 +120,8 @@ template <class RType> void* Comm::Irecv(Iterator<RType> rbuf, Long rcount, Inte
   Vector<MPI_Request>& request = *NewReq();
   request.ReInit(1);
 
-  rbuf[0];
-  rbuf[rcount - 1];
+  SCTL_UNUSED(rbuf[0]         );
+  SCTL_UNUSED(rbuf[rcount - 1]);
   MPI_Irecv(&rbuf[0], rcount, CommDatatype<RType>::value(), source, tag, mpi_comm_, &request[0]);
   return &request;
 #else
@@ -149,12 +149,12 @@ template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sb
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (scount) {
-    sbuf[0];
-    sbuf[scount - 1];
+    SCTL_UNUSED(sbuf[0]         );
+    SCTL_UNUSED(sbuf[scount - 1]);
   }
   if (rcount) {
-    rbuf[0];
-    rbuf[rcount * Size() - 1];
+    SCTL_UNUSED(rbuf[0]                  );
+    SCTL_UNUSED(rbuf[rcount * Size() - 1]);
   }
   MPI_Allgather((scount ? &sbuf[0] : nullptr), scount, CommDatatype<SType>::value(), (rcount ? &rbuf[0] : nullptr), rcount, CommDatatype<RType>::value(), mpi_comm_);
 #else
@@ -175,12 +175,12 @@ template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> s
     rcount_sum += rcounts[i];
   }
   if (scount) {
-    sbuf[0];
-    sbuf[scount - 1];
+    SCTL_UNUSED(sbuf[0]         );
+    SCTL_UNUSED(sbuf[scount - 1]);
   }
   if (rcount_sum) {
-    rbuf[0];
-    rbuf[rcount_sum - 1];
+    SCTL_UNUSED(rbuf[0]             );
+    SCTL_UNUSED(rbuf[rcount_sum - 1]);
   }
   MPI_Allgatherv((scount ? &sbuf[0] : nullptr), scount, CommDatatype<SType>::value(), (rcount_sum ? &rbuf[0] : nullptr), &rcounts_.begin()[0], &rdispls_.begin()[0], CommDatatype<RType>::value(), mpi_comm_);
 #else
@@ -193,12 +193,12 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (scount) {
-    sbuf[0];
-    sbuf[scount * Size() - 1];
+    SCTL_UNUSED(sbuf[0]                  );
+    SCTL_UNUSED(sbuf[scount * Size() - 1]);
   }
   if (rcount) {
-    rbuf[0];
-    rbuf[rcount * Size() - 1];
+    SCTL_UNUSED(rbuf[0]                  );
+    SCTL_UNUSED(rbuf[rcount * Size() - 1]);
   }
   MPI_Alltoall((scount ? &sbuf[0] : nullptr), scount, CommDatatype<SType>::value(), (rcount ? &rbuf[0] : nullptr), rcount, CommDatatype<RType>::value(), mpi_comm_);
 #else
@@ -308,10 +308,10 @@ template <class Type> void Comm::Allreduce(ConstIterator<Type> sbuf, Iterator<Ty
       mpi_op = MPI_OP_NULL;
       break;
   }
-  sbuf[0];
-  sbuf[count - 1];
-  rbuf[0];
-  rbuf[count - 1];
+  SCTL_UNUSED(sbuf[0]        );
+  SCTL_UNUSED(sbuf[count - 1]);
+  SCTL_UNUSED(rbuf[0]        );
+  SCTL_UNUSED(rbuf[count - 1]);
   MPI_Allreduce(&sbuf[0], &rbuf[0], count, CommDatatype<Type>::value(), mpi_op, mpi_comm_);
 #else
   memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));
@@ -337,10 +337,10 @@ template <class Type> void Comm::Scan(ConstIterator<Type> sbuf, Iterator<Type> r
       mpi_op = MPI_OP_NULL;
       break;
   }
-  sbuf[0];
-  sbuf[count - 1];
-  rbuf[0];
-  rbuf[count - 1];
+  SCTL_UNUSED(sbuf[0]        );
+  SCTL_UNUSED(sbuf[count - 1]);
+  SCTL_UNUSED(rbuf[0]        );
+  SCTL_UNUSED(rbuf[count - 1]);
   MPI_Scan(&sbuf[0], &rbuf[0], count, CommDatatype<Type>::value(), mpi_op, mpi_comm_);
 #else
   memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));

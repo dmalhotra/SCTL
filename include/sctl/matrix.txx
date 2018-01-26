@@ -118,18 +118,20 @@ template <class ValueType> void Matrix<ValueType>::Read(const char* fname) {
   }
   StaticArray<uint64_t, 2> dim_;
   Long readlen = fread(&dim_[0], sizeof(uint64_t), 2, f1);
-  assert(readlen == 2);
+  SCTL_ASSERT(readlen == 2);
 
-  if (Dim(0)!=dim_[0] || Dim(1)!=dim_[1]) ReInit(dim_[0], dim_[1]);
-  if (dim_[0] * dim_[1]) readlen = fread(&data_ptr[0], sizeof(ValueType), dim_[0] * dim_[1], f1);
-  assert(readlen == dim_[0] * dim_[1]);
+  if (Dim(0) != (Long)dim_[0] || Dim(1) != (Long)dim_[1]) ReInit(dim_[0], dim_[1]);
+  if (dim_[0] && dim_[1]) {
+    readlen = fread(&data_ptr[0], sizeof(ValueType), dim_[0] * dim_[1], f1);
+    SCTL_ASSERT(readlen == (Long)(dim_[0] * dim_[1]));
+  }
   fclose(f1);
 }
 
 template <class ValueType> Long Matrix<ValueType>::Dim(Long i) const { return dim[i]; }
 
 template <class ValueType> void Matrix<ValueType>::SetZero() {
-  if (dim[0] * dim[1]) memset(data_ptr, 0, dim[0] * dim[1]);
+  if (dim[0] && dim[1]) memset(data_ptr, 0, dim[0] * dim[1]);
 }
 
 template <class ValueType> Iterator<ValueType> Matrix<ValueType>::begin() { return data_ptr; }

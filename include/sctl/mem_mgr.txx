@@ -532,8 +532,8 @@ template <class ValueType> inline void aligned_delete(Iterator<ValueType> A, con
 template <class ValueType> inline Iterator<ValueType> memcopy(Iterator<ValueType> destination, ConstIterator<ValueType> source, Long num) {
   if (destination != source && num) {
 #ifdef SCTL_MEMDEBUG
-    destination[num - 1];
-    source[num - 1];
+    SCTL_UNUSED(destination[num - 1]);
+    SCTL_UNUSED(source[num - 1]     );
 #endif
     if (std::is_trivially_copyable<ValueType>::value) {
       memcpy(&destination[0], &source[0], num * sizeof(ValueType));
@@ -547,8 +547,8 @@ template <class ValueType> inline Iterator<ValueType> memcopy(Iterator<ValueType
 template <class ValueType> inline Iterator<ValueType> memset(Iterator<ValueType> ptr, int value, Long num) {
   if (num) {
 #ifdef SCTL_MEMDEBUG
-    ptr[0];
-    ptr[num - 1];
+    SCTL_UNUSED(ptr[0]      );
+    SCTL_UNUSED(ptr[num - 1]);
 #endif
     ::memset(&ptr[0], value, num * sizeof(ValueType));
   }
