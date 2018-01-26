@@ -3,6 +3,7 @@
 #define _SCTL_MEM_MGR_HPP_
 
 #include <omp.h>
+#include <typeinfo>
 #include <cstdlib>
 #include <cstdint>
 #include <cassert>

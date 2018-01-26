@@ -24,7 +24,7 @@ template <class ValueType> inline ConstIterator<ValueType>::ConstIterator(const 
 }
 
 template <class ValueType> inline void ConstIterator<ValueType>::IteratorAssertChecks(Long j) const {
-  const auto& base = this->base;
+  //const auto& base = this->base;
   const auto& offset = this->offset + j * (Long)sizeof(ValueType);
   const auto& len = this->len;
   const auto& mem_head = this->mem_head;
@@ -485,7 +485,7 @@ template <class ValueType> inline Iterator<ValueType> aligned_new(Long n_elem, c
     static Long random_init_val = 1;
     Iterator<char> A_ = (Iterator<char>)A;
 #pragma omp parallel for schedule(static)
-    for (Long i = 0; i < n_elem * sizeof(ValueType); i++) {
+    for (Long i = 0; i < n_elem * (Long)sizeof(ValueType); i++) {
       A_[i] = random_init_val + i;
     }
     random_init_val += n_elem * sizeof(ValueType);
