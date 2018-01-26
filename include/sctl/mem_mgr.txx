@@ -92,8 +92,6 @@ template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>& StaticA
 
 #endif
 
-template <class T> inline uintptr_t TypeTraits<T>::ID() { return (uintptr_t) & ID; }
-
 inline MemoryManager::MemoryManager(Long N) {
   buff_size = N;
   {  // Allocate buff
@@ -169,7 +167,7 @@ inline void MemoryManager::CheckMemHead(const MemHead& mem_head) {  // Verify he
 #endif
 }
 
-inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_size, const uintptr_t type_id) const {
+inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_size, const MemHead::TypeID type_id) const {
   if (!n_elem) return nullptr;
   static uintptr_t alignment = SCTL_MEM_ALIGN - 1;
   static uintptr_t header_size = (uintptr_t)(sizeof(MemHead) + alignment) & ~(uintptr_t)alignment;
@@ -471,7 +469,7 @@ template <class ValueType> inline Iterator<ValueType> aligned_new(Long n_elem, c
 
   static MemoryManager def_mem_mgr(0);
   if (!mem_mgr) mem_mgr = &def_mem_mgr;
-  Iterator<ValueType> A = (Iterator<ValueType>)mem_mgr->malloc(n_elem, sizeof(ValueType));
+  Iterator<ValueType> A = (Iterator<ValueType>)mem_mgr->malloc(n_elem, sizeof(ValueType), typeid(ValueType).hash_code());
   SCTL_ASSERT_MSG(A != nullptr, "memory allocation failed.");
 
   if (!std::is_trivial<ValueType>::value) {  // Call constructors
@@ -504,7 +502,7 @@ template <class ValueType> inline void aligned_delete(Iterator<ValueType> A, con
     MemoryManager::MemHead& mem_head = MemoryManager::GetMemHead((char*)&A[0]);
 #ifdef SCTL_MEMDEBUG
     MemoryManager::CheckMemHead(mem_head);
-// SCTL_ASSERT_MSG(mem_head.n_elem==1 || mem_head.type_id==TypeTraits<ValueType>::ID(), "pointer to aligned_delete has different type than what was used in aligned_new.");
+    SCTL_ASSERT_MSG(mem_head.type_id==typeid(ValueType).hash_code(), "pointer to aligned_delete has different type than what was used in aligned_new.");
 #endif
     Long n_elem = mem_head.n_elem;
     for (Long i = 0; i < n_elem; i++) {
@@ -514,7 +512,7 @@ template <class ValueType> inline void aligned_delete(Iterator<ValueType> A, con
 #ifdef SCTL_MEMDEBUG
     MemoryManager::MemHead& mem_head = MemoryManager::GetMemHead((char*)&A[0]);
     MemoryManager::CheckMemHead(mem_head);
-    // SCTL_ASSERT_MSG(mem_head.type_id==TypeTraits<ValueType>::ID(), "pointer to aligned_delete has different type than what was used in aligned_new.");
+    SCTL_ASSERT_MSG(mem_head.type_id==typeid(ValueType).hash_code(), "pointer to aligned_delete has different type than what was used in aligned_new.");
     Long size = mem_head.n_elem * mem_head.type_size;
     Iterator<char> A_ = (Iterator<char>)A;
 #pragma omp parallel for

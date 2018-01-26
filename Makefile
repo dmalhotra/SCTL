@@ -13,8 +13,9 @@ else
 endif
 
 CXXFLAGS += -DSCTL_MEMDEBUG # Enable memory checks
+CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB
 
-CXXFLAGS += -DSCTL_QUAD_T=__float128 -Wfloat-conversion
+CXXFLAGS += -DSCTL_QUAD_T=__float128 -Wfloat-conversion # Enable quadruple precision
 
 #CXXFLAGS += -DSCTL_HAVE_MPI #use MPI
 
@@ -25,6 +26,8 @@ CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
 CXXFLAGS += -lfftw3 -DSCTL_HAVE_FFTW
 CXXFLAGS += -lfftw3f -DSCTL_HAVE_FFTWF
 CXXFLAGS += -lfftw3l -DSCTL_HAVE_FFTWL
+
+CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
 
 
 RM = rm -f
@@ -50,4 +53,4 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*
-	$(RM) *~ */*~
+	$(RM) *~ */*~ */*/*~

@@ -268,15 +268,6 @@ template <class ValueType> const ValueType* Ptr2ConstItr(const void* ptr, Long l
 #endif
 
 /**
- * \brief Identify each type uniquely.
- */
-template <class T> class TypeTraits {
-
- public:
-  static uintptr_t ID();
-};
-
-/**
  * \brief MemoryManager class declaration.
  */
 class MemoryManager {
@@ -288,11 +279,12 @@ class MemoryManager {
    * \brief Header data for each memory block.
    */
   struct MemHead {
+    typedef decltype(typeid(char).hash_code()) TypeID;
     Long n_indx;
     Long n_elem;
     Long type_size;
     Long alloc_ctr;
-    uintptr_t type_id;
+    TypeID type_id;
     unsigned char check_sum;
   };
 
@@ -310,7 +302,7 @@ class MemoryManager {
 
   static void CheckMemHead(const MemHead& p);
 
-  Iterator<char> malloc(const Long n_elem = 1, const Long type_size = sizeof(char), const uintptr_t type_id = TypeTraits<char>::ID()) const;
+  Iterator<char> malloc(const Long n_elem, const Long type_size = sizeof(char), const MemHead::TypeID type_id = typeid(char).hash_code()) const;
 
   void free(Iterator<char> p) const;
 
@@ -383,8 +375,7 @@ template <class ValueType> Iterator<ValueType> aligned_new(Long n_elem = 1, cons
 
 /**
  * \brief Aligned de-allocation as an alternative to delete. Calls the object
- * destructors. Not sure which destructor is called for virtual classes, this
- * is why we also match the TypeTraits<T>::ID()
+ * destructor.
  */
 template <class ValueType> void aligned_delete(Iterator<ValueType> A, const MemoryManager* mem_mgr = &MemoryManager::glbMemMgr());
 

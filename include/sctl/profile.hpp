@@ -51,6 +51,7 @@ class Profile {
     std::vector<Long> f_log;
     std::vector<Long> m_log;
     std::vector<Long> max_m_log;
+
     ProfileData() {
       FLOP = 0;
       MEM = 0;
