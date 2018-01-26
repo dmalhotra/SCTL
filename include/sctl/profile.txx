@@ -9,13 +9,13 @@
 
 namespace SCTL_NAMESPACE {
 
+#if SCTL_PROFILE >= 0
+
 inline Long Profile::Add_FLOP(Long inc) {
   Long& FLOP = ProfData().FLOP;
   Long orig_val = FLOP;
-#if SCTL_PROFILE >= 0
 #pragma omp atomic update
   FLOP += inc;
-#endif
   return orig_val;
 }
 
@@ -23,30 +23,23 @@ inline Long Profile::Add_MEM(Long inc) {
   std::vector<Long>& max_mem = ProfData().max_mem;
   Long& MEM = ProfData().MEM;
   Long orig_val = MEM;
-#if SCTL_PROFILE >= 0
 #pragma omp atomic update
   MEM += inc;
-  for (size_t i = 0; i < max_mem.size(); i++) {
-    if (max_mem[i] < MEM) max_mem[i] = MEM;
-  }
-#endif
+  for (Integer i = max_mem.size() - 1; i >= 0 && max_mem[i] < MEM; i--) max_mem[i] = MEM;
   return orig_val;
 }
 
 inline bool Profile::Enable(bool state) {
   bool& enable_state = ProfData().enable_state;
   bool orig_val = enable_state;
-#if SCTL_PROFILE >= 0
   enable_state = state;
-#endif
   return orig_val;
 }
 
 inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integer verbose) {
-#if SCTL_PROFILE >= 0
   ProfileData& prof = ProfData();
-  // sync_=true;
   if (!prof.enable_state) return;
+  // sync_=true;
   if (verbose <= SCTL_PROFILE && prof.verb_level.size() == prof.enable_depth) {
     if (comm_ != nullptr && sync_) comm_->Barrier();
 #ifdef SCTL_VERBOSE
@@ -73,11 +66,9 @@ inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integ
     prof.enable_depth++;
   }
   prof.verb_level.push(verbose);
-#endif
 }
 
 inline void Profile::Toc() {
-#if SCTL_PROFILE >= 0
   ProfileData& prof = ProfData();
   if (!prof.enable_state) return;
   SCTL_ASSERT_MSG(!prof.verb_level.empty(), "Unbalanced extra Toc()");
@@ -116,11 +107,9 @@ inline void Profile::Toc() {
     prof.enable_depth--;
   }
   prof.verb_level.pop();
-#endif
 }
 
 inline void Profile::print(const Comm* comm_) {
-#if SCTL_PROFILE >= 0
   ProfileData& prof = ProfData();
   SCTL_ASSERT_MSG(prof.name.empty(), "Missing balancing Toc()");
 
@@ -275,7 +264,6 @@ inline void Profile::print(const Comm* comm_) {
   if (!rank) std::cout << out_stack.top() << '\n';
 
   reset();
-#endif
 }
 
 inline void Profile::reset() {
@@ -294,5 +282,23 @@ inline void Profile::reset() {
   prof.m_log.clear();
   prof.max_m_log.clear();
 }
+
+#else
+
+inline Long Profile::Add_FLOP(Long inc) { return 0; }
+
+inline Long Profile::Add_MEM(Long inc) { return 0; }
+
+inline bool Profile::Enable(bool state) { return false; }
+
+inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integer verbose) { }
+
+inline void Profile::Toc() { }
+
+inline void Profile::print(const Comm* comm_) { }
+
+inline void Profile::reset() { }
+
+#endif
 
 }  // end namespace

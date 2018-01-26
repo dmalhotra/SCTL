@@ -298,11 +298,11 @@ template <> inline QuadReal log<QuadReal>(const QuadReal a) { return log_generic
 
 template <> inline QuadReal pow<QuadReal>(const QuadReal b, const QuadReal e) { return pow_generic(b, e); }
 
-inline std::ostream& operator<<(std::ostream& output, const QuadReal q) { ostream_insertion_generic(output, q); }
+inline std::ostream& operator<<(std::ostream& output, const QuadReal q) { return ostream_insertion_generic(output, q); }
 
 }  // end namespace
 
-inline std::ostream& operator<<(std::ostream& output, const SCTL_QUAD_T q) { SCTL_NAMESPACE::ostream_insertion_generic(output, q); }
+inline std::ostream& operator<<(std::ostream& output, const SCTL_QUAD_T q) { return SCTL_NAMESPACE::ostream_insertion_generic(output, q); }
 
 #endif  // SCTL_QUAD_T
 

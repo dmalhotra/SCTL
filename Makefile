@@ -1,6 +1,6 @@
 
 CXX=mpic++
-CXXFLAGS = -std=c++11 -fopenmp # need C++11 and OpenMP
+CXXFLAGS = -std=c++11 -fopenmp -Wall -Wfloat-conversion # need C++11 and OpenMP
 
 #Optional flags
 CXXFLAGS += -O0 # debug build
@@ -15,7 +15,9 @@ endif
 CXXFLAGS += -DSCTL_MEMDEBUG # Enable memory checks
 CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB
 
-CXXFLAGS += -DSCTL_QUAD_T=__float128 -Wfloat-conversion # Enable quadruple precision
+CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
+
+CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
 
 #CXXFLAGS += -DSCTL_HAVE_MPI #use MPI
 
@@ -26,8 +28,6 @@ CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
 CXXFLAGS += -lfftw3 -DSCTL_HAVE_FFTW
 CXXFLAGS += -lfftw3f -DSCTL_HAVE_FFTWF
 CXXFLAGS += -lfftw3l -DSCTL_HAVE_FFTWL
-
-CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
 
 
 RM = rm -f
