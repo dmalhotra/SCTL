@@ -36,7 +36,7 @@ template <class ValueType> Vector<ValueType>::Vector(const Vector<ValueType>& V)
 }
 
 template <class ValueType> Vector<ValueType>::Vector(const std::vector<ValueType>& V) {
-  Init(V.Dim(), Ptr2ConstItr<ValueType>(&V[0], V.size()));
+  Init(V.size(), Ptr2Itr<ValueType>((ValueType*)(V.size()?&V[0]:nullptr), V.size()));
 }
 
 template <class ValueType> Vector<ValueType>::~Vector() {
