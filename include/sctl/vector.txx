@@ -14,11 +14,11 @@ template <class ValueType> void Vector<ValueType>::Init(Long dim_, Iterator<Valu
   if (own_data) {
     if (dim > 0) {
       data_ptr = aligned_new<ValueType>(capacity);
-      if (data_ != nullptr) {
+      if (data_ != NullIterator<ValueType>()) {
         memcopy(data_ptr, data_, dim);
       }
     } else
-      data_ptr = nullptr;
+      data_ptr = NullIterator<ValueType>();
   } else
     data_ptr = data_;
 }
@@ -41,11 +41,11 @@ template <class ValueType> Vector<ValueType>::Vector(const std::vector<ValueType
 
 template <class ValueType> Vector<ValueType>::~Vector() {
   if (own_data) {
-    if (data_ptr != nullptr) {
+    if (data_ptr != NullIterator<ValueType>()) {
       aligned_delete(data_ptr);
     }
   }
-  data_ptr = nullptr;
+  data_ptr = NullIterator<ValueType>();
   capacity = 0;
   dim = 0;
 }
@@ -70,7 +70,7 @@ template <class ValueType> void Vector<ValueType>::Swap(Vector<ValueType>& v1) {
 template <class ValueType> void Vector<ValueType>::ReInit(Long dim_, Iterator<ValueType> data_, bool own_data_) {
   if (own_data_ && own_data && dim_ <= capacity) {
     dim = dim_;
-    if (data_ != nullptr) {
+    if (data_ != NullIterator<ValueType>()) {
       memcopy(data_ptr, data_, dim);
     }
   } else {

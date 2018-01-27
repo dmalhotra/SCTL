@@ -30,7 +30,7 @@ template <class ValueType> inline void ConstIterator<ValueType>::IteratorAssertC
   const auto& mem_head = this->mem_head;
   const auto& alloc_ctr = this->alloc_ctr;
 
-  if (*this == nullptr) SCTL_WARN("dereferencing a nullptr is undefined.");
+  if (*this == NullIterator<ValueType>()) SCTL_WARN("dereferencing a nullptr is undefined.");
   SCTL_ASSERT_MSG(offset >= 0 && offset + (Long)sizeof(ValueType) <= len, "access to pointer [B" << (offset < 0 ? "" : "+") << offset << ",B" << (offset + (Long)sizeof(ValueType) < 0 ? "" : "+") << offset + (Long)sizeof(ValueType) << ") is outside of the range [B,B+" << len << ").");
   if (mem_head) {
     MemoryManager::MemHead& mh = *(MemoryManager::MemHead*)(mem_head);
@@ -168,7 +168,7 @@ inline void MemoryManager::CheckMemHead(const MemHead& mem_head) {  // Verify he
 }
 
 inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_size, const MemHead::TypeID type_id) const {
-  if (!n_elem) return nullptr;
+  if (!n_elem) return NullIterator<char>();
   static uintptr_t alignment = SCTL_MEM_ALIGN - 1;
   static uintptr_t header_size = (uintptr_t)(sizeof(MemHead) + alignment) & ~(uintptr_t)alignment;
 
@@ -273,7 +273,7 @@ inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_s
 }
 
 inline void MemoryManager::free(Iterator<char> p) const {
-  if (p == nullptr) return;
+  if (p == NullIterator<char>()) return;
   static uintptr_t alignment = SCTL_MEM_ALIGN - 1;
   static uintptr_t header_size = (uintptr_t)(sizeof(MemHead) + alignment) & ~(uintptr_t)alignment;
   SCTL_UNUSED(header_size);
@@ -393,7 +393,7 @@ inline void MemoryManager::test() {
 
     for (Integer j = 0; j < 3; j++) {
       tmp = (Iterator<double>)memgr.malloc(M * sizeof(double));
-      SCTL_ASSERT(tmp != nullptr);
+      SCTL_ASSERT(tmp != NullIterator<double>());
       tt = omp_get_wtime();
 #pragma omp parallel for
       for (Long i = 0; i < M; i += 64) tmp[i] = (double)i;
@@ -466,12 +466,12 @@ inline void MemoryManager::delete_node(Long indx) const {
 }
 
 template <class ValueType> inline Iterator<ValueType> aligned_new(Long n_elem, const MemoryManager* mem_mgr) {
-  if (!n_elem) return nullptr;
+  if (!n_elem) return NullIterator<ValueType>();
 
   static MemoryManager def_mem_mgr(0);
   if (!mem_mgr) mem_mgr = &def_mem_mgr;
   Iterator<ValueType> A = (Iterator<ValueType>)mem_mgr->malloc(n_elem, sizeof(ValueType), typeid(ValueType).hash_code());
-  SCTL_ASSERT_MSG(A != nullptr, "memory allocation failed.");
+  SCTL_ASSERT_MSG(A != NullIterator<ValueType>(), "memory allocation failed.");
 
   if (!std::is_trivial<ValueType>::value) {  // Call constructors
                                           // printf("%s\n", __PRETTY_FUNCTION__);
@@ -497,7 +497,7 @@ template <class ValueType> inline Iterator<ValueType> aligned_new(Long n_elem, c
 }
 
 template <class ValueType> inline void aligned_delete(Iterator<ValueType> A, const MemoryManager* mem_mgr) {
-  if (A == nullptr) return;
+  if (A == NullIterator<ValueType>()) return;
 
   if (!std::is_trivial<ValueType>::value) {  // Call destructors
     // printf("%s\n", __PRETTY_FUNCTION__);

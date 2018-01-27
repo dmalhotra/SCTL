@@ -33,11 +33,11 @@ template <class ValueType> void Matrix<ValueType>::Init(Long dim1, Long dim2, It
   if (own_data) {
     if (dim[0] * dim[1] > 0) {
       data_ptr = aligned_new<ValueType>(dim[0] * dim[1]);
-      if (data_ != nullptr) {
+      if (data_ != NullIterator<ValueType>()) {
         memcopy(data_ptr, data_, dim[0] * dim[1]);
       }
     } else
-      data_ptr = nullptr;
+      data_ptr = NullIterator<ValueType>();
   } else
     data_ptr = data_;
 }
@@ -56,11 +56,11 @@ template <class ValueType> Matrix<ValueType>::Matrix(const Matrix<ValueType>& M)
 
 template <class ValueType> Matrix<ValueType>::~Matrix() {
   if (own_data) {
-    if (data_ptr != nullptr) {
+    if (data_ptr != NullIterator<ValueType>()) {
       aligned_delete(data_ptr);
     }
   }
-  data_ptr = nullptr;
+  data_ptr = NullIterator<ValueType>();
   dim[0] = 0;
   dim[1] = 0;
 }
@@ -87,7 +87,7 @@ template <class ValueType> void Matrix<ValueType>::ReInit(Long dim1, Long dim2, 
   if (own_data_ && own_data && dim[0] * dim[1] >= dim1 * dim2) {
     dim[0] = dim1;
     dim[1] = dim2;
-    if (data_ != nullptr) {
+    if (data_ != NullIterator<ValueType>()) {
       memcopy(data_ptr, data_, dim[0] * dim[1]);
     }
   } else {

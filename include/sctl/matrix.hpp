@@ -24,7 +24,7 @@ template <class ValueType> class Matrix {
 
   Matrix();
 
-  Matrix(Long dim1, Long dim2, Iterator<ValueType> data_ = nullptr, bool own_data_ = true);
+  Matrix(Long dim1, Long dim2, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
 
   Matrix(const Matrix<ValueType>& M);
 
@@ -32,7 +32,7 @@ template <class ValueType> class Matrix {
 
   void Swap(Matrix<ValueType>& M);
 
-  void ReInit(Long dim1, Long dim2, Iterator<ValueType> data_ = nullptr, bool own_data_ = true);
+  void ReInit(Long dim1, Long dim2, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
 
   void Write(const char* fname) const;
 
@@ -117,7 +117,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType> pinv(ValueType eps = -1);
 
  private:
-  void Init(Long dim1, Long dim2, Iterator<ValueType> data_ = nullptr, bool own_data_ = true);
+  void Init(Long dim1, Long dim2, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
 
   StaticArray<Long, 2> dim;
   Iterator<ValueType> data_ptr;

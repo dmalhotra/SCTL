@@ -1,6 +1,7 @@
 #ifndef _SCTL_VECTOR_HPP_
 #define _SCTL_VECTOR_HPP_
 
+#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(common.hpp)
 
 #include <vector>
@@ -21,7 +22,7 @@ template <class ValueType> class Vector {
 
   Vector();
 
-  Vector(Long dim_, Iterator<ValueType> data_ = nullptr, bool own_data_ = true);
+  Vector(Long dim_, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
 
   Vector(const Vector& V);
 
@@ -31,7 +32,7 @@ template <class ValueType> class Vector {
 
   void Swap(Vector<ValueType>& v1);
 
-  void ReInit(Long dim_, Iterator<ValueType> data_ = nullptr, bool own_data_ = true);
+  void ReInit(Long dim_, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
 
   void Write(const char* fname) const;
 
@@ -102,7 +103,7 @@ template <class ValueType> class Vector {
   Vector operator/(ValueType s) const;
 
  private:
-  void Init(Long dim_, Iterator<ValueType> data_ = nullptr, bool own_data_ = true);
+  void Init(Long dim_, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
 
   Long dim;
   Long capacity;

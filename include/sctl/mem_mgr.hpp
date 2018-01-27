@@ -43,15 +43,15 @@ template <class ValueType> class ConstIterator {
   static const Long ValueSize = sizeof(ValueType);
 
  public:
-  ConstIterator(void* base_ = nullptr) {
-    base = (char*)base_;
+  ConstIterator() {
+    base = nullptr;
     len = 0;
     offset = 0;
     alloc_ctr = 0;
     mem_head = nullptr;
   }
 
-  // template <size_t LENGTH> ConstIterator(ValueType (&base_)[LENGTH]) {  // DEPRECATED
+  // template <size_t LENGTH> ConstIterator(ValueType (&base_)[LENGTH]) {  // DEPRECATED (because mem_head cannot be stored)
   //   SCTL_ASSERT(false);
   // }
 
@@ -169,7 +169,7 @@ template <class ValueType> class Iterator : public ConstIterator<ValueType> {
   typedef std::random_access_iterator_tag iterator_category;
 
  public:
-  Iterator(void* base_ = nullptr) : ConstIterator<ValueType>(base_) {}
+  Iterator() : ConstIterator<ValueType>() {}
 
   template <size_t LENGTH> Iterator(ValueType (&base_)[LENGTH]) : ConstIterator<ValueType>(base_) {}
 
@@ -263,10 +263,12 @@ template <class ValueType> ConstIterator<ValueType> Ptr2ConstItr(const void* ptr
 
 #else
 
-template <class ValueType> ValueType* Ptr2Itr(void* ptr, Long len) { return (ValueType*) ptr; }
-template <class ValueType> const ValueType* Ptr2ConstItr(const void* ptr, Long len) { return (const ValueType*) ptr; }
+template <class ValueType> Iterator<ValueType> Ptr2Itr(void* ptr, Long len) { return (Iterator<ValueType>) ptr; }
+template <class ValueType> ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len) { return (ConstIterator<ValueType>) ptr; }
 
 #endif
+
+template <class ValueType> Iterator<ValueType> NullIterator() { return Ptr2Itr<ValueType>(nullptr, 0); }
 
 /**
  * \brief MemoryManager class declaration.
