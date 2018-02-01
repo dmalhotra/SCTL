@@ -68,6 +68,10 @@ template <class ValueType> void Vector<ValueType>::Swap(Vector<ValueType>& v1) {
 }
 
 template <class ValueType> void Vector<ValueType>::ReInit(Long dim_, Iterator<ValueType> data_, bool own_data_) {
+#ifdef SCTL_MEMDEBUG
+  Vector<ValueType> tmp(dim_, data_, own_data_);
+  this->Swap(tmp);
+#else
   if (own_data_ && own_data && dim_ <= capacity) {
     dim = dim_;
     if (data_ != NullIterator<ValueType>()) {
@@ -77,6 +81,7 @@ template <class ValueType> void Vector<ValueType>::ReInit(Long dim_, Iterator<Va
     Vector<ValueType> tmp(dim_, data_, own_data_);
     this->Swap(tmp);
   }
+#endif
 }
 
 template <class ValueType> void Vector<ValueType>::Write(const char* fname) const {
@@ -111,7 +116,7 @@ template <class ValueType> void Vector<ValueType>::Read(const char* fname) {
 
 template <class ValueType> inline Long Vector<ValueType>::Dim() const { return dim; }
 
-template <class ValueType> inline Long Vector<ValueType>::Capacity() const { return capacity; }
+//template <class ValueType> inline Long Vector<ValueType>::Capacity() const { return capacity; }
 
 template <class ValueType> void Vector<ValueType>::SetZero() {
   if (dim > 0) memset<ValueType>(data_ptr, 0, dim);
@@ -156,18 +161,14 @@ template <class ValueType> inline const ValueType& Vector<ValueType>::operator[]
 // Vector-Vector operations
 
 template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const std::vector<ValueType>& V) {
-  {
-    if (capacity < V.size()) ReInit(V.size());
-    dim = V.size();
-    memcopy(data_ptr, Ptr2ConstItr<ValueType>(&V[0], V.size()), dim);
-  }
+  if (dim != V.size()) ReInit(V.size());
+  memcopy(data_ptr, Ptr2ConstItr<ValueType>(&V[0], V.size()), dim);
   return *this;
 }
 
 template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const Vector<ValueType>& V) {
   if (this != &V) {
-    if (capacity < V.dim) ReInit(V.dim);
-    dim = V.dim;
+    if (dim != V.dim) ReInit(V.dim);
     memcopy(data_ptr, V.data_ptr, dim);
   }
   return *this;
