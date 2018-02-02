@@ -779,7 +779,6 @@ template <class Real> void SphericalHarmonics<Real>::LegPoly(Vector<Real>& poly_
 
 template <class Real> const Vector<Real>& SphericalHarmonics<Real>::LegendreNodes(Long p){
   assert(p<SCTL_SHMAXDEG);
-  assert(MatrixStore().Qx_.size() == SCTL_SHMAXDEG);
   Vector<Real>& Qx=MatrixStore().Qx_[p];
   if(!Qx.Dim()){
     Vector<double> qx1(p+1);
@@ -794,7 +793,6 @@ template <class Real> const Vector<Real>& SphericalHarmonics<Real>::LegendreNode
 
 template <class Real> const Vector<Real>& SphericalHarmonics<Real>::LegendreWeights(Long p){
   assert(p<SCTL_SHMAXDEG);
-  assert(MatrixStore().Qw_.size() == SCTL_SHMAXDEG);
   Vector<Real>& Qw=MatrixStore().Qw_[p];
   if(!Qw.Dim()){
     Vector<double> qx1(p+1);
@@ -809,7 +807,6 @@ template <class Real> const Vector<Real>& SphericalHarmonics<Real>::LegendreWeig
 
 template <class Real> const Vector<Real>& SphericalHarmonics<Real>::SingularWeights(Long p1){
   assert(p1<SCTL_SHMAXDEG);
-  assert(MatrixStore().Sw_.size() == SCTL_SHMAXDEG);
   Vector<Real>& Sw=MatrixStore().Sw_[p1];
   if(!Sw.Dim()){
     const Vector<Real>& qx1 = LegendreNodes(p1);
@@ -841,7 +838,6 @@ template <class Real> const Vector<Real>& SphericalHarmonics<Real>::SingularWeig
 
 template <class Real> const Matrix<Real>& SphericalHarmonics<Real>::MatFourier(Long p0, Long p1){
   assert(p0<SCTL_SHMAXDEG && p1<SCTL_SHMAXDEG);
-  assert(MatrixStore().Mf_ .size() == SCTL_SHMAXDEG*SCTL_SHMAXDEG);
   Matrix<Real>& Mf =MatrixStore().Mf_ [p0*SCTL_SHMAXDEG+p1];
   if(!Mf.Dim(0)){
     const Real SQRT2PI=sqrt(2*M_PI);
@@ -863,7 +859,6 @@ template <class Real> const Matrix<Real>& SphericalHarmonics<Real>::MatFourier(L
 
 template <class Real> const Matrix<Real>& SphericalHarmonics<Real>::MatFourierInv(Long p0, Long p1){
   assert(p0<SCTL_SHMAXDEG && p1<SCTL_SHMAXDEG);
-  assert(MatrixStore().Mfinv_ .size() == SCTL_SHMAXDEG*SCTL_SHMAXDEG);
   Matrix<Real>& Mf =MatrixStore().Mfinv_ [p0*SCTL_SHMAXDEG+p1];
   if(!Mf.Dim(0)){
     const Real INVSQRT2PI=1.0/sqrt(2*M_PI)/p0;
@@ -908,7 +903,6 @@ template <class Real> const FFT<Real>& SphericalHarmonics<Real>::OpFourierInv(Lo
 
 template <class Real> const Matrix<Real>& SphericalHarmonics<Real>::MatFourierGrad(Long p0, Long p1){
   assert(p0<SCTL_SHMAXDEG && p1<SCTL_SHMAXDEG);
-  assert(MatrixStore().Mdf_.size() == SCTL_SHMAXDEG*SCTL_SHMAXDEG);
   Matrix<Real>& Mdf=MatrixStore().Mdf_[p0*SCTL_SHMAXDEG+p1];
   if(!Mdf.Dim(0)){
     const Real SQRT2PI=sqrt(2*M_PI);
@@ -930,7 +924,6 @@ template <class Real> const Matrix<Real>& SphericalHarmonics<Real>::MatFourierGr
 
 template <class Real> const std::vector<Matrix<Real>>& SphericalHarmonics<Real>::MatLegendre(Long p0, Long p1){
   assert(p0<SCTL_SHMAXDEG && p1<SCTL_SHMAXDEG);
-  assert(MatrixStore().Ml_ .size() == SCTL_SHMAXDEG*SCTL_SHMAXDEG);
   std::vector<Matrix<Real>>& Ml =MatrixStore().Ml_ [p0*SCTL_SHMAXDEG+p1];
   if(!Ml.size()){
     const Vector<Real>& qx1 = LegendreNodes(p1);
@@ -949,7 +942,6 @@ template <class Real> const std::vector<Matrix<Real>>& SphericalHarmonics<Real>:
 
 template <class Real> const std::vector<Matrix<Real>>& SphericalHarmonics<Real>::MatLegendreInv(Long p0, Long p1){
   assert(p0<SCTL_SHMAXDEG && p1<SCTL_SHMAXDEG);
-  assert(MatrixStore().Mlinv_ .size() == SCTL_SHMAXDEG*SCTL_SHMAXDEG);
   std::vector<Matrix<Real>>& Ml =MatrixStore().Mlinv_ [p0*SCTL_SHMAXDEG+p1];
   if(!Ml.size()){
     const Vector<Real>& qx1 = LegendreNodes(p0);
@@ -975,7 +967,6 @@ template <class Real> const std::vector<Matrix<Real>>& SphericalHarmonics<Real>:
 
 template <class Real> const std::vector<Matrix<Real>>& SphericalHarmonics<Real>::MatLegendreGrad(Long p0, Long p1){
   assert(p0<SCTL_SHMAXDEG && p1<SCTL_SHMAXDEG);
-  assert(MatrixStore().Mdl_.size() == SCTL_SHMAXDEG*SCTL_SHMAXDEG);
   std::vector<Matrix<Real>>& Mdl=MatrixStore().Mdl_[p0*SCTL_SHMAXDEG+p1];
   if(!Mdl.size()){
     const Vector<Real>& qx1 = LegendreNodes(p1);
@@ -1007,7 +998,6 @@ template <class Real> const std::vector<Matrix<Real>>& SphericalHarmonics<Real>:
   }
 
   assert(p0<SCTL_SHMAXDEG);
-  assert(MatrixStore().Mr_.size() == SCTL_SHMAXDEG);
   std::vector<Matrix<Real>>& Mr=MatrixStore().Mr_[p0];
   if(!Mr.size()){
     const Real SQRT2PI=sqrt(2*M_PI);

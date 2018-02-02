@@ -43,7 +43,7 @@ template <class ValueType> inline typename ConstIterator<ValueType>::reference C
   return *(ValueType*)(base + offset);
 }
 
-template <class ValueType> inline const typename ConstIterator<ValueType>::value_type* ConstIterator<ValueType>::operator->() const {
+template <class ValueType> inline typename ConstIterator<ValueType>::pointer ConstIterator<ValueType>::operator->() const {
   this->IteratorAssertChecks();
   return (ValueType*)(base + offset);
 }
@@ -69,19 +69,17 @@ template <class ValueType> inline typename Iterator<ValueType>::reference Iterat
 }
 
 template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>::StaticArray() {
-  // arr = aligned_new<ValueType>(DIM);
-  arr = Ptr2Itr<ValueType>(arr_, DIM);
-  Iterator<ValueType>::operator=(arr);
+  //Iterator<ValueType>::operator=(aligned_new<ValueType>(DIM));
+  Iterator<ValueType>::operator=(Ptr2Itr<ValueType>(arr_, DIM));
 }
 
 template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>::~StaticArray() {
-  // aligned_delete<ValueType>(arr);
+  // aligned_delete<ValueType>(*this);
 }
 
 template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>::StaticArray(const StaticArray& I) {
-  // arr = aligned_new<ValueType>(DIM);
-  arr = Ptr2Itr<ValueType>(arr_, DIM);
-  Iterator<ValueType>::operator=(arr);
+  //Iterator<ValueType>::operator=(aligned_new<ValueType>(DIM));
+  Iterator<ValueType>::operator=(Ptr2Itr<ValueType>(arr_, DIM));
   for (Long i = 0; i < DIM; i++) (*this)[i] = I[i];
 }
 

@@ -55,7 +55,7 @@ template <class ValueType> class ConstIterator {
   //   SCTL_ASSERT(false);
   // }
 
-  ConstIterator(const ValueType* base_, difference_type len_, bool dynamic_alloc = false);
+  ConstIterator(pointer base_, difference_type len_, bool dynamic_alloc = false);
 
   template <class AnotherType> explicit ConstIterator(const ConstIterator<AnotherType>& I) {
     this->base = I.base;
@@ -69,7 +69,7 @@ template <class ValueType> class ConstIterator {
   // value_type* like operators
   reference operator*() const;
 
-  const value_type* operator->() const;
+  pointer operator->() const;
 
   reference operator[](difference_type off) const;
 
@@ -123,7 +123,7 @@ template <class ValueType> class ConstIterator {
 
   difference_type operator-(const ConstIterator& I) const {
     // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
-    Long diff = ((ValueType*)(base + offset)) - ((ValueType*)(I.base + I.offset));
+    Long diff = ((pointer)(base + offset)) - ((pointer)(I.base + I.offset));
     SCTL_ASSERT_MSG(I.base + I.offset + diff * (Long)sizeof(ValueType) == base + offset, "invalid memory address alignment.");
     return diff;
   }
@@ -171,9 +171,9 @@ template <class ValueType> class Iterator : public ConstIterator<ValueType> {
  public:
   Iterator() : ConstIterator<ValueType>() {}
 
-  template <size_t LENGTH> Iterator(ValueType (&base_)[LENGTH]) : ConstIterator<ValueType>(base_) {}
+  //template <size_t LENGTH> Iterator(ValueType (&base_)[LENGTH]) : ConstIterator<ValueType>(base_) {}
 
-  Iterator(ValueType* base_, difference_type len_, bool dynamic_alloc = false) : ConstIterator<ValueType>(base_, len_, dynamic_alloc) {}
+  Iterator(pointer base_, difference_type len_, bool dynamic_alloc = false) : ConstIterator<ValueType>(base_, len_, dynamic_alloc) {}
 
   template <class AnotherType> explicit Iterator(const ConstIterator<AnotherType>& I) : ConstIterator<ValueType>(I) {}
 
@@ -235,7 +235,7 @@ template <class ValueType> class Iterator : public ConstIterator<ValueType> {
   difference_type operator-(const ConstIterator<ValueType>& I) const { return static_cast<const ConstIterator<ValueType>&>(*this) - I; }
 };
 
-template <class ValueType, Long DIM> class StaticArray : public Iterator<ValueType> { // Warning: objects are not byte-copyable
+template <class ValueType, Long DIM> class StaticArray : public Iterator<ValueType> { // Warning: objects are not byte-copyable // TODO: Can be made by copyable by not inheriting Iterator and can also add memory header and padding to detect additional memory errors
 
  public:
   StaticArray();
@@ -249,12 +249,11 @@ template <class ValueType, Long DIM> class StaticArray : public Iterator<ValueTy
   StaticArray(std::initializer_list<ValueType> arr_) : StaticArray() {
     // static_assert(arr_.size() <= DIM, "too many initializer values"); // allowed in C++14
     SCTL_ASSERT_MSG(arr_.size() <= DIM, "too many initializer values");
-    for (Long i = 0; i < (Long)arr_.size(); i++) arr[i] = arr_.begin()[i];
+    for (Long i = 0; i < (Long)arr_.size(); i++) (*this)[i] = arr_.begin()[i];
   }
 
  private:
 
-  Iterator<ValueType> arr;
   ValueType arr_[DIM];
 };
 
