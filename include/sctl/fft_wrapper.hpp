@@ -104,8 +104,17 @@ template <class ValueType, class FFT_Derived> class FFT_Generic {
     dim[0] = 0;
     dim[1] = 0;
   }
-  FFT_Generic(const FFT_Generic&) = delete;
-  FFT_Generic& operator=(const FFT_Generic&) = delete;
+
+  FFT_Generic(const FFT_Generic&) {
+    dim[0]=0;
+    dim[1]=0;
+  }
+
+  FFT_Generic& operator=(const FFT_Generic&) {
+    dim[0]=0;
+    dim[1]=0;
+    return *this;
+  };
 
   Long Dim(Integer i) const {
     return dim[i];

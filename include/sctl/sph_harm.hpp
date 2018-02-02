@@ -63,6 +63,8 @@ template <class Real> class SphericalHarmonics{
       SphericalHarmonics<Real>::WriteVTK("test", nullptr, &Xcoeff, sctl::SHCArrange::ROW_MAJOR, p, 32);
     }
 
+    static void Clear() { MatrixStore().Resize(0); }
+
   private:
 
     // Probably don't work anymore, need to be updated :(
@@ -106,6 +108,10 @@ template <class Real> class SphericalHarmonics{
     struct MatrixStorage{
       MatrixStorage(){
         const Long size = SCTL_SHMAXDEG;
+        Resize(size);
+      }
+
+      void Resize(Long size){
         Qx_ .resize(size);
         Qw_ .resize(size);
         Sw_ .resize(size);
@@ -116,7 +122,11 @@ template <class Real> class SphericalHarmonics{
         Mr_ .resize(size);
         Mfinv_ .resize(size*size);
         Mlinv_ .resize(size*size);
+
+        Mfft_.resize(size);
+        Mfftinv_.resize(size);
       }
+
       std::vector<Vector<Real>> Qx_;
       std::vector<Vector<Real>> Qw_;
       std::vector<Vector<Real>> Sw_;
@@ -128,14 +138,16 @@ template <class Real> class SphericalHarmonics{
       std::vector<Matrix<Real>> Mfinv_ ;
       std::vector<std::vector<Matrix<Real>>> Mlinv_ ;
 
-      StaticArray<FFT<Real>, SCTL_SHMAXDEG> Mfft_ ;
-      StaticArray<FFT<Real>, SCTL_SHMAXDEG> Mfftinv_ ;
+      std::vector<FFT<Real>> Mfft_;
+      std::vector<FFT<Real>> Mfftinv_;
     };
     static MatrixStorage& MatrixStore(){
       static MatrixStorage storage;
       return storage;
     }
 };
+
+template class SphericalHarmonics<double>;
 
 }  // end namespace
 
