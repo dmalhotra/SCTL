@@ -885,7 +885,7 @@ template <class Real> const FFT<Real>& SphericalHarmonics<Real>::OpFourier(Long 
   assert(Np<SCTL_SHMAXDEG);
   auto& Mf =MatrixStore().Mfftinv_ [Np];
   if(!Mf.Dim(0)){
-    #pragma omp critical SCTL_FFT_PLAN0
+    #pragma omp critical (SCTL_FFT_PLAN0)
     if(!Mf.Dim(0)){
       StaticArray<Long,1> fft_dim = {Np};
       Mf.Setup(FFT_Type::C2R, 1, Vector<Long>(1,fft_dim,false));
@@ -898,7 +898,7 @@ template <class Real> const FFT<Real>& SphericalHarmonics<Real>::OpFourierInv(Lo
   assert(Np<SCTL_SHMAXDEG);
   auto& Mf =MatrixStore().Mfft_ [Np];
   if(!Mf.Dim(0)){
-    #pragma omp critical SCTL_FFT_PLAN1
+    #pragma omp critical (SCTL_FFT_PLAN1)
     if(!Mf.Dim(0)){
       StaticArray<Long,1> fft_dim = {Np};
       Mf.Setup(FFT_Type::R2C, 1, Vector<Long>(1,fft_dim,false));
