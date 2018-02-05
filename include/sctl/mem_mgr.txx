@@ -68,26 +68,6 @@ template <class ValueType> inline typename Iterator<ValueType>::reference Iterat
   return *(ValueType*)(this->base + this->offset + j * (Long)sizeof(ValueType));
 }
 
-template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>::StaticArray() {
-  //Iterator<ValueType>::operator=(aligned_new<ValueType>(DIM));
-  Iterator<ValueType>::operator=(Ptr2Itr<ValueType>(arr_, DIM));
-}
-
-template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>::~StaticArray() {
-  // aligned_delete<ValueType>(*this);
-}
-
-template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>::StaticArray(const StaticArray& I) {
-  //Iterator<ValueType>::operator=(aligned_new<ValueType>(DIM));
-  Iterator<ValueType>::operator=(Ptr2Itr<ValueType>(arr_, DIM));
-  for (Long i = 0; i < DIM; i++) (*this)[i] = I[i];
-}
-
-template <class ValueType, Long DIM> inline StaticArray<ValueType, DIM>& StaticArray<ValueType, DIM>::operator=(const StaticArray& I) {
-  for (Long i = 0; i < DIM; i++) (*this)[i] = I[i];
-  return *this;
-}
-
 #endif
 
 inline MemoryManager::MemoryManager(Long N) {

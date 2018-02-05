@@ -177,9 +177,11 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid(const Vector<Real>
 
   Long M, N;
   { // Set M, N
+    M = 0;
     if (arrange == SHCArrange::ALL) M = 2*(p0+1)*(p0+1);
     if (arrange == SHCArrange::ROW_MAJOR) M = (p0+1)*(p0+2);
     if (arrange == SHCArrange::COL_MAJOR_NONZERO) M = (p0+1)*(p0+1);
+    if (M == 0) return;
     N = S.Dim() / M;
     assert(S.Dim() == N * M);
   }
@@ -414,9 +416,11 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Pole(const Vector<Real>
 
   Long M, N;
   { // Set M, N
+    M = 0;
     if (arrange == SHCArrange::ALL) M = 2*(p0+1)*(p0+1);
     if (arrange == SHCArrange::ROW_MAJOR) M = (p0+1)*(p0+2);
     if (arrange == SHCArrange::COL_MAJOR_NONZERO) M = (p0+1)*(p0+1);
+    if (M == 0) return;
     N = S.Dim() / M;
     assert(S.Dim() == N * M);
   }

@@ -235,22 +235,68 @@ template <class ValueType> class Iterator : public ConstIterator<ValueType> {
   difference_type operator-(const ConstIterator<ValueType>& I) const { return static_cast<const ConstIterator<ValueType>&>(*this) - I; }
 };
 
-template <class ValueType, Long DIM> class StaticArray : public Iterator<ValueType> { // Warning: objects are not byte-copyable // TODO: Can be made by copyable by not inheriting Iterator and can also add memory header and padding to detect additional memory errors
+template <class ValueType, Long DIM> class StaticArray { // Warning: objects are not byte-copyable // TODO: Can be made by copyable by not inheriting Iterator and can also add memory header and padding to detect additional memory errors
+  typedef Long difference_type;
 
  public:
-  StaticArray();
+  StaticArray() = default;
 
-  StaticArray(const StaticArray&);
+  StaticArray(const StaticArray&) = default;
 
-  StaticArray& operator=(const StaticArray&);
-
-  ~StaticArray();
+  StaticArray& operator=(const StaticArray&) = default;
 
   StaticArray(std::initializer_list<ValueType> arr_) : StaticArray() {
     // static_assert(arr_.size() <= DIM, "too many initializer values"); // allowed in C++14
     SCTL_ASSERT_MSG(arr_.size() <= DIM, "too many initializer values");
     for (Long i = 0; i < (Long)arr_.size(); i++) (*this)[i] = arr_.begin()[i];
   }
+
+  ~StaticArray() = default;
+
+  // value_type* like operators
+  const ValueType& operator*() const { return *arr_; }
+
+  ValueType& operator*() { return *arr_; }
+
+  const ValueType* operator->() const { return arr_; }
+
+  ValueType* operator->() { return arr_; }
+
+  const ValueType& operator[](difference_type off) const { return arr_[off]; }
+
+  ValueType& operator[](difference_type off) { return arr_[off]; }
+
+  operator ConstIterator<ValueType>() const { return Iterator<ValueType>(arr_, DIM); }
+
+  operator Iterator<ValueType>() { return Iterator<ValueType>(arr_, DIM); }
+
+  // Arithmetic
+  ConstIterator<ValueType> operator+(difference_type i) const { return (ConstIterator<ValueType>)*this + i; }
+
+  Iterator<ValueType> operator+(difference_type i) { return (Iterator<ValueType>)*this + i; }
+
+  friend ConstIterator<ValueType> operator+(difference_type i, const StaticArray& right) { return i + (ConstIterator<ValueType>)right; }
+
+  friend Iterator<ValueType> operator+(difference_type i, StaticArray& right) { return i + (Iterator<ValueType>)right; }
+
+  ConstIterator<ValueType> operator-(difference_type i) const { return (ConstIterator<ValueType>)*this - i; }
+
+  Iterator<ValueType> operator-(difference_type i) { return (Iterator<ValueType>)*this - i; }
+
+  difference_type operator-(const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this - (ConstIterator<ValueType>)I; }
+
+  // Comparison operators
+  bool operator==(const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this == I; }
+
+  bool operator!=(const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this != I; }
+
+  bool operator< (const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this <  I; }
+
+  bool operator<=(const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this <= I; }
+
+  bool operator> (const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this >  I; }
+
+  bool operator>=(const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this >= I; }
 
  private:
 

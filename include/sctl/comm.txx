@@ -632,7 +632,7 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
     StaticArray<Long, 2> loc_size;
     loc_size[0] = data_.Dim();
     loc_size[1] = recv_size;
-    Allreduce(loc_size, glb_size, 2, CommOp::SUM);
+    Allreduce<Long>(loc_size, glb_size, 2, CommOp::SUM);
     if (glb_size[0] == 0 || glb_size[1] == 0) return;  // Nothing to be done.
     data_dim = glb_size[0] / glb_size[1];
     SCTL_ASSERT(glb_size[0] == data_dim * glb_size[1]);
@@ -758,7 +758,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     loc_size[0] = data_.Dim();
     loc_size[1] = scatter_index_.Dim();
     loc_size[2] = recv_size;
-    Allreduce(loc_size, glb_size, 3, CommOp::SUM);
+    Allreduce<Long>(loc_size, glb_size, 3, CommOp::SUM);
     if (glb_size[0] == 0 || glb_size[1] == 0) return;  // Nothing to be done.
 
     SCTL_ASSERT(glb_size[0] % glb_size[1] == 0);
@@ -792,16 +792,16 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     StaticArray<Long, 2> loc_size;
     loc_size[0] = data_.Dim() / data_dim;
     loc_size[1] = scatter_index_.Dim();
-    Scan(loc_size, glb_rank, 2, CommOp::SUM);
-    Allreduce(loc_size, glb_size, 2, CommOp::SUM);
+    Scan<Long>(loc_size, glb_rank, 2, CommOp::SUM);
+    Allreduce<Long>(loc_size, glb_size, 2, CommOp::SUM);
     SCTL_ASSERT(glb_size[0] == glb_size[1]);
     glb_rank[0] -= loc_size[0];
     glb_rank[1] -= loc_size[1];
 
     Vector<Long> glb_scan0(npes + 1);
     Vector<Long> glb_scan1(npes + 1);
-    Allgather(glb_rank + 0, 1, glb_scan0.begin(), 1);
-    Allgather(glb_rank + 1, 1, glb_scan1.begin(), 1);
+    Allgather<Long>(glb_rank + 0, 1, glb_scan0.begin(), 1);
+    Allgather<Long>(glb_rank + 1, 1, glb_scan1.begin(), 1);
     glb_scan0[npes] = glb_size[0];
     glb_scan1[npes] = glb_size[1];
 
