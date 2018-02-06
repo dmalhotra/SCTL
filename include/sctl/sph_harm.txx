@@ -5,6 +5,16 @@
 namespace SCTL_NAMESPACE {
 
 template <class Real> void SphericalHarmonics<Real>::Grid2SHC(const Vector<Real>& X, Long Nt, Long Np, Long p1, Vector<Real>& S, SHCArrange arrange){
+  Long N = X.Dim() / (Np*Nt);
+  assert(X.Dim() == N*Np*Nt);
+
+  Vector<Real> B1(N*(p1+1)*(p1+1));
+  Grid2SHC_(X, Nt, Np, p1, B1);
+
+  SHCTranspose(B1, p1, S, arrange);
+}
+
+template <class Real> void SphericalHarmonics<Real>::Grid2SHC_(const Vector<Real>& X, Long Nt, Long Np, Long p1, Vector<Real>& B1){
   const auto& Mf = OpFourierInv(Np);
   assert(Mf.Dim(0) == Np);
 
@@ -13,6 +23,7 @@ template <class Real> void SphericalHarmonics<Real>::Grid2SHC(const Vector<Real>
 
   Long N = X.Dim() / (Np*Nt);
   assert(X.Dim() == N*Np*Nt);
+  assert(B1.Dim() == N*(p1+1)*(p1+1));
 
   Vector<Real> B0((2*p1+1) * N*Nt);
   #pragma omp parallel
@@ -39,7 +50,6 @@ template <class Real> void SphericalHarmonics<Real>::Grid2SHC(const Vector<Real>
     }
   }
 
-  Vector<Real> B1(N*(p1+1)*(p1+1));
   #pragma omp parallel
   { // Evaluate Legendre polynomial
     Integer tid=omp_get_thread_num();
@@ -68,6 +78,12 @@ template <class Real> void SphericalHarmonics<Real>::Grid2SHC(const Vector<Real>
   }
 
   B1 *= 1 / sqrt<Real>(4 * const_pi<Real>() * Np); // Scaling to match Zydrunas Fortran code.
+}
+
+template <class Real> void SphericalHarmonics<Real>::SHCTranspose(const Vector<Real>& B1, Long p1, Vector<Real>& S, SHCArrange arrange){
+  Long M = (p1+1)*(p1+1);
+  Long N = B1.Dim() / M;
+  assert(B1.Dim() == N*M);
   if (arrange == SHCArrange::ALL) { // S <-- Rearrange(B1)
     Long M = 2*(p1+1)*(p1+1);
     if(S.Dim() != N * M) S.ReInit(N * M);
@@ -706,78 +722,110 @@ template <class Real> void SphericalHarmonics<Real>::WriteVTK(const char* fname,
   pvtufile.close();
 }
 
+template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Real>& X, Long Nt, Long Np, Long p, Vector<Real>& S, SHCArrange arrange) {
+  Long N = X.Dim() / (Np*Nt);
+  assert(X.Dim() == N*Np*Nt);
+  assert(N % COORD_DIM == 0);
 
-
-template <class Real> void SphericalHarmonics<Real>::LegPolyDeriv(Vector<Real>& poly_val, const Vector<Real>& X, Long degree){
-  Long N = X.Dim();
-  Long Npoly = (degree + 1) * (degree + 2) / 2;
-  if (poly_val.Dim() != N * Npoly) {
-    poly_val.ReInit(N * Npoly);
-  }
-
-  Vector<Real> leg_poly(Npoly * N);
-  LegPoly(leg_poly, X, degree);
-
-  for(Long m=0;m<=degree;m++){
-    for(Long n=0;n<=degree;n++) if(m<=n){
-      const Real* Pn =&leg_poly[0];
-      const Real* Pn_=&leg_poly[0];
-      if((m+0)<=(n+0)) Pn =&leg_poly[N*(((degree*2-abs(m+0)+1)*abs(m+0))/2+(n+0))];
-      if((m+1)<=(n+0)) Pn_=&leg_poly[N*(((degree*2-abs(m+1)+1)*abs(m+1))/2+(n+0))];
-      Real*            Hn =&poly_val[N*(((degree*2-abs(m+0)+1)*abs(m+0))/2+(n+0))];
-
-      Real c1=(abs(m+0)<=(n+0)?1.0:0)*m;
-      Real c2=(abs(m+1)<=(n+0)?1.0:0)*sqrt(n+m+1)*sqrt(n>m?n-m:1);
-      for(Long i=0;i<N;i++){
-        Hn[i]=-(c1*X[i]*Pn[i]+c2*sqrt(1-X[i]*X[i])*Pn_[i])/sqrt(1-X[i]*X[i]);
+  Vector<Real> B0(N*Nt*Np);
+  { // Set B0
+    B0 = X;
+    const auto& X = LegendreNodes(Nt - 1);
+    assert(X.Dim() == Nt);
+    for (Long k = 0; k < N; k++) {
+      if (k % COORD_DIM) {
+        for (Long i = 0; i < Nt; i++) {
+          Real s = 1 / sqrt<Real>(1 - X[i]*X[i]);
+          for (Long j = 0; j < Np; j++) {
+            B0[(k*Nt+i)*Np+j] *= s;
+          }
+        }
       }
     }
   }
+
+  Vector<Real> B1(N*(p+1)*(p+1));
+  Grid2SHC_(B0, Nt, Np, p, B1);
+
+  const auto& coeff_idx = [](Long& idx_real, Long& idx_imag, Long N, Long p, Long i, Long m) {
+    idx_real = ((2*p-m+3)*m - (m?p+1:0))*N + (p+1-m)*i - m;
+    idx_imag = idx_real + (p+1-m)*N;
+  };
+  for (Long i=0; i<N; i+=COORD_DIM) {
+    for (Long m=0; m<=p; m++) {
+      for (Long n=m; n<=p; n++) {
+        Long idx0, idx1;
+        coeff_idx(idx0, idx1, N, p, i+0, m);
+      }
+    }
+  }
+
+  SHCTranspose(B1, p, S, arrange);
 }
+
+
 
 template <class Real> void SphericalHarmonics<Real>::LegPoly(Vector<Real>& poly_val, const Vector<Real>& X, Long degree){
   Long N = X.Dim();
   Long Npoly = (degree + 1) * (degree + 2) / 2;
-  if (poly_val.Dim() != Npoly * N) {
-    poly_val.ReInit(Npoly * N);
-  }
+  if (poly_val.Dim() != Npoly * N) poly_val.ReInit(Npoly * N);
 
-  Real fact=1.0/(Real)sqrt(4*M_PI);
-  std::vector<Real> u(N);
-  for(Long n=0;n<N;n++){
-    u[n]=sqrt(1-X[n]*X[n]);
-    if(X[n]*X[n]>1.0) u[n]=0;
-    poly_val[n]=fact;
+  Real fact = 1 / sqrt<Real>(4 * const_pi<Real>());
+  Vector<Real> u(N);
+  for (Long n = 0; n < N; n++) {
+    u[n] = (X[n]*X[n]<1 ? sqrt<Real>(1-X[n]*X[n]) : 0);
+    poly_val[n] = fact;
   }
 
   Long idx = 0;
   Long idx_nxt = 0;
-  for(Long i=1;i<=degree;i++){
+  for (Long i = 1; i <= degree; i++) {
     idx_nxt += N*(degree-i+2);
-    Real c=(i==1?sqrt(3.0/2.0):1);
-    if(i>1)c*=sqrt((Real)(2*i+1)/(2*i));
-    for(Long n=0;n<N;n++){
-      poly_val[idx_nxt+n]=-poly_val[idx+n]*u[n]*c;
+    Real c = sqrt<Real>((2*i+1)/(Real)(2*i));
+    for (Long n = 0; n < N; n++) {
+      poly_val[idx_nxt+n] = -poly_val[idx+n] * u[n] * c;
     }
     idx = idx_nxt;
   }
 
   idx = 0;
-  for(Long m=0;m<degree;m++){
-    for(Long n=0;n<N;n++){
-      Real pmm=0;
-      Real pmmp1=poly_val[idx+n];
-      Real pll;
-      for(Long ll=m+1;ll<=degree;ll++){
-        Real a=sqrt(((Real)(2*ll-1)*(2*ll+1))/((ll-m)*(ll+m)));
-        Real b=sqrt(((Real)(2*ll+1)*(ll+m-1)*(ll-m-1))/((ll-m)*(ll+m)*(2*ll-3)));
-        pll=X[n]*a*pmmp1-b*pmm;
-        pmm=pmmp1;
-        pmmp1=pll;
-        poly_val[idx+N*(ll-m)+n]=pll;
+  for (Long m = 0; m < degree; m++) {
+    for (Long n = 0; n < N; n++) {
+      Real pmm = 0;
+      Real pmmp1 = poly_val[idx+n];
+      for (Long ll = m + 1; ll <= degree; ll++) {
+        Real a = sqrt<Real>(((2*ll-1)*(2*ll+1)         ) / (Real)((ll-m)*(ll+m)         ));
+        Real b = sqrt<Real>(((2*ll+1)*(ll+m-1)*(ll-m-1)) / (Real)((ll-m)*(ll+m)*(2*ll-3)));
+        Real pll = X[n]*a*pmmp1 - b*pmm;
+        pmm = pmmp1;
+        pmmp1 = pll;
+        poly_val[idx + N*(ll-m) + n] = pll;
       }
     }
-    idx+=N*(degree-m+1);
+    idx += N * (degree - m + 1);
+  }
+}
+
+template <class Real> void SphericalHarmonics<Real>::LegPolyDeriv(Vector<Real>& poly_val, const Vector<Real>& X, Long degree){
+  Long N = X.Dim();
+  Long Npoly = (degree + 1) * (degree + 2) / 2;
+  if (poly_val.Dim() != N * Npoly) poly_val.ReInit(N * Npoly);
+
+  Vector<Real> leg_poly(Npoly * N);
+  LegPoly(leg_poly, X, degree);
+
+  for (Long m = 0; m <= degree; m++) {
+    for (Long n = m; n <= degree; n++) {
+      ConstIterator<Real> Pn  = leg_poly.begin() + N * ((degree * 2 - m + 1) * (m + 0) / 2 + n);
+      ConstIterator<Real> Pn_ = leg_poly.begin() + N * ((degree * 2 - m + 0) * (m + 1) / 2 + n) * (m < n);
+      Iterator     <Real> Hn  = poly_val.begin() + N * ((degree * 2 - m + 1) * (m + 0) / 2 + n);
+
+      Real c2 = sqrt<Real>(m<n ? (n+m+1)*(n-m) : 0);
+      for (Long i = 0; i < N; i++) {
+        Real c1 = (X[i]*X[i]<1 ? m/sqrt<Real>(1-X[i]*X[i]) : 0);
+        Hn[i] = -c1*X[i]*Pn[i] - c2*Pn_[i];
+      }
+    }
   }
 }
 
