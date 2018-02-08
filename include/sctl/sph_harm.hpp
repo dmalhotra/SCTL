@@ -39,9 +39,9 @@ template <class Real> class SphericalHarmonics{
 
     static void WriteVTK(const char* fname, const Vector<Real>* S, const Vector<Real>* f_val, SHCArrange arrange, Long p_in, Long p_out, Real period=0, const Comm& comm = Comm::World());
 
-    static void Grid2VecSHC(const Vector<Real>& X_in, Long Nt_in, Long Np_in, Long p_out, Vector<Real>& S_out); // ROW_MAJOR arrangement
+    static void Grid2VecSHC(const Vector<Real>& X_in, Long Nt_in, Long Np_in, Long p_out, Vector<Real>& S_out, SHCArrange arrange_out);
 
-    static void VecSHC2Grid(const Vector<Real>& S_in, Long p_in, Long Nt_out, Long Np_out, Vector<Real>& X_out); // ROW_MAJOR arrangement
+    static void VecSHC2Grid(const Vector<Real>& S_in, SHCArrange arrange_in, Long p_in, Long Nt_out, Long Np_out, Vector<Real>& X_out);
 
 
     static void test() {
