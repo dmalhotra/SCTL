@@ -235,7 +235,7 @@ template <class ValueType> class Iterator : public ConstIterator<ValueType> {
   difference_type operator-(const ConstIterator<ValueType>& I) const { return static_cast<const ConstIterator<ValueType>&>(*this) - I; }
 };
 
-template <class ValueType, Long DIM> class StaticArray { // Warning: objects are not byte-copyable // TODO: Can be made by copyable by not inheriting Iterator and can also add memory header and padding to detect additional memory errors
+template <class ValueType, Long DIM> class StaticArray {
   typedef Long difference_type;
 
  public:
@@ -254,19 +254,19 @@ template <class ValueType, Long DIM> class StaticArray { // Warning: objects are
   ~StaticArray() = default;
 
   // value_type* like operators
-  const ValueType& operator*() const { return *arr_; }
+  const ValueType& operator*() const { return *(ConstIterator<ValueType>)*this; }
 
-  ValueType& operator*() { return *arr_; }
+  ValueType& operator*() { return *(Iterator<ValueType>)*this; }
 
-  const ValueType* operator->() const { return arr_; }
+  const ValueType* operator->() const { return (ConstIterator<ValueType>)*this; }
 
-  ValueType* operator->() { return arr_; }
+  ValueType* operator->() { return (Iterator<ValueType>)*this; }
 
-  const ValueType& operator[](difference_type off) const { return arr_[off]; }
+  const ValueType& operator[](difference_type off) const { return ((ConstIterator<ValueType>)*this)[off]; }
 
-  ValueType& operator[](difference_type off) { return arr_[off]; }
+  ValueType& operator[](difference_type off) { return ((Iterator<ValueType>)*this)[off]; }
 
-  operator ConstIterator<ValueType>() const { return Iterator<ValueType>(arr_, DIM); }
+  operator ConstIterator<ValueType>() const { return ConstIterator<ValueType>(arr_, DIM); }
 
   operator Iterator<ValueType>() { return Iterator<ValueType>(arr_, DIM); }
 

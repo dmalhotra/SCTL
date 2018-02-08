@@ -20,46 +20,61 @@ namespace SCTL_NAMESPACE {
 
 template <class ValueType> class Complex {
   public:
+    Complex<ValueType>(ValueType r=0, ValueType i=0) : real(r), imag(i) {}
 
-    Complex<ValueType> operator*(const Complex<ValueType>& x){
+    Complex<ValueType> operator*(const Complex<ValueType>& x) const {
       Complex<ValueType> z;
       z.real = real * x.real - imag * x.imag;
-      z.imag = imag * x.real - real * x.imag;
+      z.imag = imag * x.real + real * x.imag;
       return z;
     }
 
-    Complex<ValueType> operator*(const ValueType& x){
+    Complex<ValueType> operator*(const ValueType& x) const {
       Complex<ValueType> z;
       z.real = real * x;
       z.imag = imag * x;
       return z;
     }
 
-    Complex<ValueType> operator+(const Complex<ValueType>& x){
+    Complex<ValueType> operator+(const Complex<ValueType>& x) const {
       Complex<ValueType> z;
       z.real = real + x.real;
       z.imag = imag + x.imag;
       return z;
     }
 
-    Complex<ValueType> operator+(const ValueType& x){
+    Complex<ValueType> operator+(const ValueType& x) const {
       Complex<ValueType> z;
       z.real = real + x;
       z.imag = imag;
       return z;
     }
 
-    Complex<ValueType> operator-(const Complex<ValueType>& x){
+    Complex<ValueType> operator-(const Complex<ValueType>& x) const {
       Complex<ValueType> z;
       z.real = real - x.real;
       z.imag = imag - x.imag;
       return z;
     }
 
-    Complex<ValueType> operator-(const ValueType& x){
+    Complex<ValueType> operator-(const ValueType& x) const {
       Complex<ValueType> z;
       z.real = real - x;
       z.imag = imag;
+      return z;
+    }
+
+    Complex<ValueType> operator-() const {
+      Complex<ValueType> z;
+      z.real = -real;
+      z.imag = -imag;
+      return z;
+    }
+
+    Complex<ValueType> conj() const {
+      Complex<ValueType> z;
+      z.real = real;
+      z.imag = -imag;
       return z;
     }
 
