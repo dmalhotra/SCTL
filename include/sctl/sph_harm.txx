@@ -731,7 +731,7 @@ template <class Real> void SphericalHarmonics<Real>::WriteVTK(const char* fname,
   pvtufile.close();
 }
 
-template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Real>& X, Long Nt, Long Np, Long p, Vector<Real>& S, SHCArrange arrange) {
+template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Real>& X, Long Nt, Long Np, Long p0, Vector<Real>& S, SHCArrange arrange) {
   Long N = X.Dim() / (Np*Nt);
   assert(X.Dim() == N*Np*Nt);
   assert(N % COORD_DIM == 0);
@@ -753,16 +753,18 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
     }
   }
 
-  Long M = (p+1)*(p+1);
-  Vector<Real> B1(N*M);
-  Grid2SHC_(B0, Nt, Np, p, B1);
+  Long p_ = p0 + 1;
+  Long M0 = (p0+1)*(p0+1);
+  Long M_ = (p_+1)*(p_+1);
+  Vector<Real> B1(N*M_);
+  Grid2SHC_(B0, Nt, Np, p_, B1);
   B1 *= 1 / sqrt<Real>(4 * const_pi<Real>() * Np); // Scaling to match Zydrunas Fortran code.
 
-  Vector<Real> B2(N*M);
+  Vector<Real> B2(N*M0);
   const Complex<Real> imag(0,1);
   for (Long i=0; i<N; i+=COORD_DIM) {
-    for (Long m=0; m<=p; m++) {
-      for (Long n=m; n<=p; n++) {
+    for (Long m=0; m<=p0; m++) {
+      for (Long n=m; n<=p0; n++) {
         auto read_coeff = [&](const Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
           Complex<Real> c;
           if (0<=m && m<=n && n<=p) {
@@ -782,14 +784,14 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
           }
         };
 
-        auto gr = [&](Long n, Long m) { return read_coeff(B1, i+0, p, n, m); };
-        auto gt = [&](Long n, Long m) { return read_coeff(B1, i+1, p, n, m); };
-        auto gp = [&](Long n, Long m) { return read_coeff(B1, i+2, p, n, m); };
+        auto gr = [&](Long n, Long m) { return read_coeff(B1, i+0, p_, n, m); };
+        auto gt = [&](Long n, Long m) { return read_coeff(B1, i+1, p_, n, m); };
+        auto gp = [&](Long n, Long m) { return read_coeff(B1, i+2, p_, n, m); };
 
         Complex<Real> phiY, phiG, phiX;
         { // (phiG, phiX) <-- (gt, gp)
-          auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
-          auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
+          auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
+          auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
           phiY = gr(n,m);
           phiG = (gt(n+1,m)*A(n,m) - gt(n-1,m)*B(n,m) - imag*m*gp(n,m)) * (1/(Real)(std::max<Long>(n,1)*(n+1)));
           phiX = (gp(n+1,m)*A(n,m) - gp(n-1,m)*B(n,m) + imag*m*gt(n,m)) * (1/(Real)(std::max<Long>(n,1)*(n+1)));
@@ -797,30 +799,37 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
 
         auto phiV = (phiG * (n + 0) - phiY) * (1/(Real)(2*n + 1));
         auto phiW = (phiG * (n + 1) + phiY) * (1/(Real)(2*n + 1));
-        write_coeff(phiV, B2, i+0, p, n, m);
-        write_coeff(phiW, B2, i+1, p, n, m);
-        write_coeff(phiX, B2, i+2, p, n, m);
+
+        if (n==0) {
+          phiW = 0;
+          phiX = 0;
+        }
+        write_coeff(phiV, B2, i+0, p0, n, m);
+        write_coeff(phiW, B2, i+1, p0, n, m);
+        write_coeff(phiX, B2, i+2, p0, n, m);
       }
     }
   }
 
-  SHCArrange0(B2, p, S, arrange);
+  SHCArrange0(B2, p0, S, arrange);
 }
 
-template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p, Long Nt, Long Np, Vector<Real>& X) {
+template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p0, Long Nt, Long Np, Vector<Real>& X) {
   Vector<Real> B0;
-  SHCArrange1(S, arrange, p, B0);
+  SHCArrange1(S, arrange, p0, B0);
 
-  Long M = (p+1)*(p+1);
-  Long N = B0.Dim() / M;
-  assert(B0.Dim() == N*M);
+  Long p_ = p0 + 1;
+  Long M0 = (p0+1)*(p0+1);
+  Long M_ = (p_+1)*(p_+1);
+  Long N = B0.Dim() / M0;
+  assert(B0.Dim() == N*M0);
   assert(N % COORD_DIM == 0);
 
-  Vector<Real> B1(N*M);
+  Vector<Real> B1(N*M_);
   const Complex<Real> imag(0,1);
   for (Long i=0; i<N; i+=COORD_DIM) {
-    for (Long n=0; n<=p; n++) {
-      for (Long m=0; m<=n; m++) {
+    for (Long m=0; m<=p_; m++) {
+      for (Long n=m; n<=p_; n++) {
         auto read_coeff = [&](const Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
           Complex<Real> c;
           if (0<=m && m<=n && n<=p) {
@@ -841,37 +850,37 @@ template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Re
         };
 
         auto phiG = [&](Long n, Long m) {
-          auto phiV = read_coeff(B0, i+0, p, n, m);
-          auto phiW = read_coeff(B0, i+1, p, n, m);
+          auto phiV = read_coeff(B0, i+0, p0, n, m);
+          auto phiW = read_coeff(B0, i+1, p0, n, m);
           return phiV + phiW;
         };
         auto phiY = [&](Long n, Long m) {
-          auto phiV = read_coeff(B0, i+0, p, n, m);
-          auto phiW = read_coeff(B0, i+1, p, n, m);
+          auto phiV = read_coeff(B0, i+0, p0, n, m);
+          auto phiW = read_coeff(B0, i+1, p0, n, m);
           return -phiV * (n + 1) + phiW * n;
         };
         auto phiX = [&](Long n, Long m) {
-          return read_coeff(B0, i+2, p, n, m);
+          return read_coeff(B0, i+2, p0, n, m);
         };
 
         Complex<Real> gr, gt, gp;
         { // (gt, gp) <-- (phiG, phiX)
-          auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
-          auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
+          auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
+          auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
           gr = phiY(n,m);
           gt = phiG(n-1,m)*A(n-1,m) - phiG(n+1,m)*B(n+1,m) - imag*m*phiX(n,m);
           gp = phiX(n-1,m)*A(n-1,m) - phiX(n+1,m)*B(n+1,m) + imag*m*phiG(n,m);
         }
 
-        write_coeff(gr, B1, i+0, p, n, m);
-        write_coeff(gt, B1, i+1, p, n, m);
-        write_coeff(gp, B1, i+2, p, n, m);
+        write_coeff(gr, B1, i+0, p_, n, m);
+        write_coeff(gt, B1, i+1, p_, n, m);
+        write_coeff(gp, B1, i+2, p_, n, m);
       }
     }
   }
 
   B1 *= sqrt<Real>(4 * const_pi<Real>() * Np); // Scaling to match Zydrunas Fortran code.
-  SHC2Grid_(B1, p, Nt, Np, &X);
+  SHC2Grid_(B1, p_, Nt, Np, &X);
 
   { // Set X
     const auto& Y = LegendreNodes(Nt - 1);
