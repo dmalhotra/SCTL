@@ -35,6 +35,8 @@ template <class Real> class SphericalHarmonics{
 
     static void SHC2Grid(const Vector<Real>& S_in, SHCArrange arrange_in, Long p_in, Long Nt_out, Long Np_out, Vector<Real>* X_out, Vector<Real>* X_theta_out=nullptr, Vector<Real>* X_phi_out=nullptr);
 
+    static void SHCEval(const Vector<Real>& S_in, SHCArrange arrange_in, Long p_in, const Vector<Real>& theta_phi_in, Vector<Real>& X_out);
+
     static void SHC2Pole(const Vector<Real>& S_in, SHCArrange arrange_in, Long p_in, Vector<Real>& P_out);
 
     static void WriteVTK(const char* fname, const Vector<Real>* S, const Vector<Real>* f_val, SHCArrange arrange, Long p_in, Long p_out, Real period=0, const Comm& comm = Comm::World());
@@ -47,25 +49,30 @@ template <class Real> class SphericalHarmonics{
     static void test() {
       int p = 3;
       int dof = 2;
+      int Nt = p+1, Np = 2*p+1;
+
+      auto print_coeff = [&](Vector<Real> S) {
+        Long idx=0;
+        for (Long k=0;k<dof;k++) {
+          for (Long n=0;n<=p;n++) {
+            std::cout<<Vector<Real>(2*n+2, S.begin()+idx);
+            idx+=2*n+2;
+          }
+        }
+        std::cout<<'\n';
+      };
 
       int Ncoeff = (p + 1) * (p + 1);
       Vector<Real> Xcoeff(dof * Ncoeff);
       for (int i=0;i<Xcoeff.Dim();i++) Xcoeff[i]=i;
 
       Vector<Real> Xgrid;
-      int Nt = p+1, Np = 2*p+1;
       SHC2Grid(Xcoeff, sctl::SHCArrange::COL_MAJOR_NONZERO, p, Nt, Np, &Xgrid);
       Grid2SHC(Xgrid, Nt, Np, p, Xcoeff, sctl::SHCArrange::ROW_MAJOR);
-
-      int indx=0;
-      for (int i=0;i<dof;i++) {
-        for (int n=0;n<=p;n++){
-          std::cout<<Vector<Real>(2*n+2,Xcoeff.begin()+indx);
-          indx+=2*n+2;
-        }
-      }
+      print_coeff(Xcoeff);
 
       SphericalHarmonics<Real>::WriteVTK("test", nullptr, &Xcoeff, sctl::SHCArrange::ROW_MAJOR, p, 32);
+      Clear();
     }
 
     static void Clear() { MatrixStore().Resize(0); }
@@ -111,6 +118,9 @@ template <class Real> class SphericalHarmonics{
     static const std::vector<Matrix<Real>>& MatLegendre(Long p0, Long p1);
     static const std::vector<Matrix<Real>>& MatLegendreInv(Long p0, Long p1);
     static const std::vector<Matrix<Real>>& MatLegendreGrad(Long p0, Long p1);
+
+    // Evaluate all Spherical Harmonic basis functions up to order p at (theta, phi) coordinates.
+    static void SHBasisEval(Long p, const Vector<Real>& cos_theta_phi, Matrix<Real>& M);
 
     static const std::vector<Matrix<Real>>& MatRotate(Long p0);
 
