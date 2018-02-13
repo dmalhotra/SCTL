@@ -41,14 +41,17 @@ template <class Real> class SphericalHarmonics{
 
     static void WriteVTK(const char* fname, const Vector<Real>* S, const Vector<Real>* f_val, SHCArrange arrange, Long p_in, Long p_out, Real period=0, const Comm& comm = Comm::World());
 
+
     static void Grid2VecSHC(const Vector<Real>& X_in, Long Nt_in, Long Np_in, Long p_out, Vector<Real>& S_out, SHCArrange arrange_out);
 
-    static void VecSHC2Grid(const Vector<Real>& S_in, SHCArrange arrange_in, Long p_in, Long Nt_out, Long Np_out, Vector<Real>& X_out);
+    static void VecSHC2Grid(const Vector<Real>& S_in, SHCArrange arrange_in, Long p_in, Long Nt_out, Long Np_out, Vector<Real>* X_out);
+
+    static void VecSHCEval(const Vector<Real>& S_in, SHCArrange arrange_in, Long p_in, const Vector<Real>& theta_phi_in, Vector<Real>& X_out);
 
 
     static void test() {
-      int p = 3;
-      int dof = 2;
+      int p = 4;
+      int dof = 3;
       int Nt = p+1, Np = 2*p+1;
 
       auto print_coeff = [&](Vector<Real> S) {
@@ -62,16 +65,34 @@ template <class Real> class SphericalHarmonics{
         std::cout<<'\n';
       };
 
-      int Ncoeff = (p + 1) * (p + 1);
-      Vector<Real> Xcoeff(dof * Ncoeff);
-      for (int i=0;i<Xcoeff.Dim();i++) Xcoeff[i]=i;
+      Vector<Real> theta_phi;
+      { // Set theta_phi
+        Vector<Real> leg_nodes = LegendreNodes(Nt-1);
+        for (Long i=0;i<Nt;i++) {
+          for (Long j=0;j<Np;j++) {
+            theta_phi.PushBack(leg_nodes[i]);
+            theta_phi.PushBack(j * 2 * const_pi<Real>() / Np);
+          }
+        }
+      }
 
-      Vector<Real> Xgrid;
-      SHC2Grid(Xcoeff, sctl::SHCArrange::COL_MAJOR_NONZERO, p, Nt, Np, &Xgrid);
-      Grid2SHC(Xgrid, Nt, Np, p, Xcoeff, sctl::SHCArrange::ROW_MAJOR);
+      int Ncoeff = (p + 1) * (p + 1);
+      Vector<Real> Xcoeff(dof * Ncoeff), Xgrid;
+      for (int i=0;i<Xcoeff.Dim();i++) Xcoeff[i]=i+1;
+      VecSHC2Grid(Xcoeff, sctl::SHCArrange::COL_MAJOR_NONZERO, p, Nt, Np, &Xgrid);
+      std::cout<<Matrix<Real>(Nt*dof, Np, Xgrid.begin())<<'\n';
+
+      {
+        Vector<Real> val;
+        SHCEval(Xcoeff, sctl::SHCArrange::COL_MAJOR_NONZERO, p, theta_phi, val);
+        Matrix<Real>(dof, val.Dim()/dof, val.begin(), false) = Matrix<Real>(val.Dim()/dof, dof, val.begin()).Transpose();
+        std::cout<<Matrix<Real>(val.Dim()/Np, Np, val.begin()) - Matrix<Real>(Nt*dof, Np, Xgrid.begin())<<'\n';
+      }
+
+      Grid2VecSHC(Xgrid, Nt, Np, p, Xcoeff, sctl::SHCArrange::ROW_MAJOR);
       print_coeff(Xcoeff);
 
-      SphericalHarmonics<Real>::WriteVTK("test", nullptr, &Xcoeff, sctl::SHCArrange::ROW_MAJOR, p, 32);
+      //SphericalHarmonics<Real>::WriteVTK("test", nullptr, &Xcoeff, sctl::SHCArrange::ROW_MAJOR, p, 32);
       Clear();
     }
 
@@ -121,6 +142,7 @@ template <class Real> class SphericalHarmonics{
 
     // Evaluate all Spherical Harmonic basis functions up to order p at (theta, phi) coordinates.
     static void SHBasisEval(Long p, const Vector<Real>& cos_theta_phi, Matrix<Real>& M);
+    static void VecSHBasisEval(Long p, const Vector<Real>& cos_theta_phi, Matrix<Real>& M);
 
     static const std::vector<Matrix<Real>>& MatRotate(Long p0);
 

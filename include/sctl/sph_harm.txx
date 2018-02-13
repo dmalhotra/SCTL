@@ -10,14 +10,12 @@ template <class Real> void SphericalHarmonics<Real>::Grid2SHC(const Vector<Real>
 
   Vector<Real> B1(N*(p1+1)*(p1+1));
   Grid2SHC_(X, Nt, Np, p1, B1);
-  B1 *= 1 / sqrt<Real>(4 * const_pi<Real>() * Np); // Scaling to match Zydrunas Fortran code.
   SHCArrange0(B1, p1, S, arrange);
 }
 
 template <class Real> void SphericalHarmonics<Real>::SHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p0, Long Nt, Long Np, Vector<Real>* X, Vector<Real>* X_phi, Vector<Real>* X_theta){
   Vector<Real> B0;
   SHCArrange1(S, arrange, p0, B0);
-  B0 *= sqrt<Real>(4 * const_pi<Real>() * Np); // Scaling to match Zydrunas Fortran code.
   SHC2Grid_(B0, p0, Nt, Np, X, X_phi, X_theta);
 }
 
@@ -44,8 +42,8 @@ template <class Real> void SphericalHarmonics<Real>::SHCEval(const Vector<Real>&
   assert(SHBasis.Dim(1) == M);
   Long N = SHBasis.Dim(0);
 
-  if (X.Dim() != N*dof) X.ReInit(N * dof);
   { // Set X
+    if (X.Dim() != N*dof) X.ReInit(N * dof);
     for (Long k0 = 0; k0 < N; k0++) {
       for (Long k1 = 0; k1 < dof; k1++) {
         Real X_ = 0;
@@ -361,6 +359,7 @@ template <class Real> void SphericalHarmonics<Real>::WriteVTK(const char* fname,
   pvtufile.close();
 }
 
+
 template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Real>& X, Long Nt, Long Np, Long p0, Vector<Real>& S, SHCArrange arrange) {
   Long N = X.Dim() / (Np*Nt);
   assert(X.Dim() == N*Np*Nt);
@@ -388,7 +387,6 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
   Long M_ = (p_+1)*(p_+1);
   Vector<Real> B1(N*M_);
   Grid2SHC_(B0, Nt, Np, p_, B1);
-  B1 *= 1 / sqrt<Real>(4 * const_pi<Real>() * Np); // Scaling to match Zydrunas Fortran code.
 
   Vector<Real> B2(N*M0);
   const Complex<Real> imag(0,1);
@@ -444,7 +442,7 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
   SHCArrange0(B2, p0, S, arrange);
 }
 
-template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p0, Long Nt, Long Np, Vector<Real>& X) {
+template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p0, Long Nt, Long Np, Vector<Real>* X) {
   Vector<Real> B0;
   SHCArrange1(S, arrange, p0, B0);
 
@@ -509,10 +507,10 @@ template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Re
     }
   }
 
-  B1 *= sqrt<Real>(4 * const_pi<Real>() * Np); // Scaling to match Zydrunas Fortran code.
-  SHC2Grid_(B1, p_, Nt, Np, &X);
 
-  { // Set X
+  if (X) { // Set X
+    SHC2Grid_(B1, p_, Nt, Np, X);
+
     const auto& Y = LegendreNodes(Nt - 1);
     assert(Y.Dim() == Nt);
     for (Long k = 0; k < N; k++) {
@@ -520,9 +518,44 @@ template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Re
         for (Long i = 0; i < Nt; i++) {
           Real s = 1/sqrt<Real>(1 - Y[i]*Y[i]);
           for (Long j = 0; j < Np; j++) {
-            X[(k*Nt+i)*Np+j] *= s;
+            (*X)[(k*Nt+i)*Np+j] *= s;
           }
         }
+      }
+    }
+  }
+}
+
+template <class Real> void SphericalHarmonics<Real>::VecSHCEval(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& cos_theta_phi, Vector<Real>& X) {
+  Long M = (p0+1) * (p0+1);
+
+  Long dof;
+  Matrix<Real> B1;
+  { // Set B1, dof
+    Vector<Real> B0;
+    SHCArrange1(S, arrange, p0, B0);
+    dof = B0.Dim() / M / COORD_DIM;
+    assert(B0.Dim() == dof * COORD_DIM * M);
+
+    B1.ReInit(dof, COORD_DIM * M);
+    Vector<Real> B1_(B1.Dim(0) * B1.Dim(1), B1.begin(), false);
+    SHCArrange0(B0, p0, B1_, SHCArrange::COL_MAJOR_NONZERO);
+  }
+  assert(B1.Dim(1) == COORD_DIM * M);
+  assert(B1.Dim(0) == dof);
+
+  Matrix<Real> SHBasis;
+  VecSHBasisEval(p0, cos_theta_phi, SHBasis);
+  assert(SHBasis.Dim(1) == COORD_DIM * M);
+  Long N = SHBasis.Dim(0);
+
+  { // Set X
+    if (X.Dim() != N*dof) X.ReInit(N * dof);
+    for (Long k0 = 0; k0 < N; k0++) {
+      for (Long k1 = 0; k1 < dof * COORD_DIM; k1++) {
+        Real X_ = 0;
+        for (Long i = 0; i < COORD_DIM * M; i++) X_ += B1[k1][i] * SHBasis[k0][i];
+        X[k0 * dof * COORD_DIM + k1] = X_;
       }
     }
   }
@@ -595,6 +628,7 @@ template <class Real> void SphericalHarmonics<Real>::Grid2SHC_(const Vector<Real
     assert(offset0 == B0.Dim());
     assert(offset1 == B1.Dim());
   }
+  B1 *= 1 / sqrt<Real>(4 * const_pi<Real>() * Np); // Scaling to match Zydrunas Fortran code.
 }
 template <class Real> void SphericalHarmonics<Real>::SHCArrange0(const Vector<Real>& B1, Long p1, Vector<Real>& S, SHCArrange arrange){
   Long M = (p1+1)*(p1+1);
@@ -838,6 +872,7 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
         offset1+=Mout.Dim(0)*Mout.Dim(1);
       }
     }
+    B1 *= sqrt<Real>(4 * const_pi<Real>() * Np); // Scaling to match Zydrunas Fortran code.
 
     #pragma omp parallel
     { // Transpose and evaluate Fourier
@@ -908,6 +943,7 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
         offset1+=Mout.Dim(0)*Mout.Dim(1);
       }
     }
+    B1 *= sqrt<Real>(4 * const_pi<Real>() * Np); // Scaling to match Zydrunas Fortran code.
 
     #pragma omp parallel
     { // Transpose and evaluate Fourier
@@ -1001,6 +1037,7 @@ template <class Real> void SphericalHarmonics<Real>::LegPolyDeriv(Vector<Real>& 
   }
 }
 
+
 template <class Real> const Vector<Real>& SphericalHarmonics<Real>::LegendreNodes(Long p){
   assert(p<SCTL_SHMAXDEG);
   Vector<Real>& Qx=MatrixStore().Qx_[p];
@@ -1060,6 +1097,7 @@ template <class Real> const Vector<Real>& SphericalHarmonics<Real>::SingularWeig
   return Sw;
 }
 
+
 template <class Real> const Matrix<Real>& SphericalHarmonics<Real>::MatFourier(Long p0, Long p1){
   assert(p0<SCTL_SHMAXDEG && p1<SCTL_SHMAXDEG);
   Matrix<Real>& Mf =MatrixStore().Mf_ [p0*SCTL_SHMAXDEG+p1];
@@ -1105,6 +1143,28 @@ template <class Real> const Matrix<Real>& SphericalHarmonics<Real>::MatFourierIn
   return Mf;
 }
 
+template <class Real> const Matrix<Real>& SphericalHarmonics<Real>::MatFourierGrad(Long p0, Long p1){
+  assert(p0<SCTL_SHMAXDEG && p1<SCTL_SHMAXDEG);
+  Matrix<Real>& Mdf=MatrixStore().Mdf_[p0*SCTL_SHMAXDEG+p1];
+  if(!Mdf.Dim(0)){
+    const Real SQRT2PI=sqrt(2*M_PI);
+    { // Set Mdf_
+      Matrix<Real> M(2*p0,2*p1);
+      for(Long j=0;j<2*p1;j++){
+        M[0][j]=SQRT2PI*0.0;
+        for(Long k=1;k<p0;k++){
+          M[2*k-1][j]=-SQRT2PI*k*sin(j*k*M_PI/p1);
+          M[2*k-0][j]= SQRT2PI*k*cos(j*k*M_PI/p1);
+        }
+        M[2*p0-1][j]=-SQRT2PI*p0*sin(j*p0*M_PI/p1);
+      }
+      Mdf=M;
+    }
+  }
+  return Mdf;
+}
+
+
 template <class Real> const FFT<Real>& SphericalHarmonics<Real>::OpFourier(Long Np){
   assert(Np<SCTL_SHMAXDEG);
   auto& Mf =MatrixStore().Mfftinv_ [Np];
@@ -1127,26 +1187,6 @@ template <class Real> const FFT<Real>& SphericalHarmonics<Real>::OpFourierInv(Lo
   return Mf;
 }
 
-template <class Real> const Matrix<Real>& SphericalHarmonics<Real>::MatFourierGrad(Long p0, Long p1){
-  assert(p0<SCTL_SHMAXDEG && p1<SCTL_SHMAXDEG);
-  Matrix<Real>& Mdf=MatrixStore().Mdf_[p0*SCTL_SHMAXDEG+p1];
-  if(!Mdf.Dim(0)){
-    const Real SQRT2PI=sqrt(2*M_PI);
-    { // Set Mdf_
-      Matrix<Real> M(2*p0,2*p1);
-      for(Long j=0;j<2*p1;j++){
-        M[0][j]=SQRT2PI*0.0;
-        for(Long k=1;k<p0;k++){
-          M[2*k-1][j]=-SQRT2PI*k*sin(j*k*M_PI/p1);
-          M[2*k-0][j]= SQRT2PI*k*cos(j*k*M_PI/p1);
-        }
-        M[2*p0-1][j]=-SQRT2PI*p0*sin(j*p0*M_PI/p1);
-      }
-      Mdf=M;
-    }
-  }
-  return Mdf;
-}
 
 template <class Real> const std::vector<Matrix<Real>>& SphericalHarmonics<Real>::MatLegendre(Long p0, Long p1){
   assert(p0<SCTL_SHMAXDEG && p1<SCTL_SHMAXDEG);
@@ -1209,6 +1249,7 @@ template <class Real> const std::vector<Matrix<Real>>& SphericalHarmonics<Real>:
   return Mdl;
 }
 
+
 template <class Real> void SphericalHarmonics<Real>::SHBasisEval(Long p0, const Vector<Real>& cos_theta_phi, Matrix<Real>& SHBasis) {
   Long M = (p0+1) * (p0+1);
   Long N = cos_theta_phi.Dim() / 2;
@@ -1253,6 +1294,52 @@ template <class Real> void SphericalHarmonics<Real>::SHBasisEval(Long p0, const 
   assert(SHBasis.Dim(0) == N);
   assert(SHBasis.Dim(1) == M);
 }
+
+template <class Real> void SphericalHarmonics<Real>::VecSHBasisEval(Long p0, const Vector<Real>& cos_theta_phi, Matrix<Real>& SHBasis) {
+  Long M = (p0+1) * (p0+1);
+  Long N = cos_theta_phi.Dim() / 2;
+  assert(cos_theta_phi.Dim() == N * 2);
+
+  Vector<Complex<Real>> exp_phi(N);
+  Matrix<Real> LegP((p0+1)*(p0+2)/2, N);
+  { // Set exp_phi, LegP
+    Vector<Real> cos_theta(N);
+    for (Long i = 0; i < N; i++) { // Set cos_theta, exp_phi
+      cos_theta[i] = cos_theta_phi[i*2+0];
+      exp_phi[i].real = cos(cos_theta_phi[i*2+1]);
+      exp_phi[i].imag = sin(cos_theta_phi[i*2+1]);
+    }
+
+    Vector<Real> alp(LegP.Dim(0) * LegP.Dim(1), LegP.begin(), false);
+    LegPoly(alp, cos_theta, p0);
+  }
+
+  { // Set SHBasis
+    SHBasis.ReInit(N, M);
+    Real s = 4 * sqrt<Real>(const_pi<Real>());
+    for (Long k0 = 0; k0 < N; k0++) {
+      Complex<Real> exp_phi_ = 1;
+      Complex<Real> exp_phi1 = exp_phi[k0];
+      for (Long m = 0; m <= p0; m++) {
+        for (Long n = m; n <= p0; n++) {
+          Long poly_idx = (2 * p0 - m + 1) * m / 2 + n;
+          Long basis_idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
+          SHBasis[k0][basis_idx] = LegP[poly_idx][k0] * exp_phi_.real * s;
+          if (m) { // imaginary part
+            basis_idx += (p0+1-m);
+            SHBasis[k0][basis_idx] = -LegP[poly_idx][k0] * exp_phi_.imag * s;
+          } else {
+            SHBasis[k0][basis_idx] = SHBasis[k0][basis_idx] * 0.5;
+          }
+        }
+        exp_phi_ = exp_phi_ * exp_phi1;
+      }
+    }
+  }
+  assert(SHBasis.Dim(0) == N);
+  assert(SHBasis.Dim(1) == M);
+}
+
 
 template <class Real> const std::vector<Matrix<Real>>& SphericalHarmonics<Real>::MatRotate(Long p0){
   std::vector<std::vector<Long>> coeff_perm(p0+1);
