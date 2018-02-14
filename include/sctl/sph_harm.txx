@@ -546,15 +546,17 @@ template <class Real> void SphericalHarmonics<Real>::VecSHCEval(const Vector<Rea
   Matrix<Real> SHBasis;
   VecSHBasisEval(p0, cos_theta_phi, SHBasis);
   assert(SHBasis.Dim(1) == COORD_DIM * M);
-  Long N = SHBasis.Dim(0);
+  Long N = SHBasis.Dim(0) / COORD_DIM;
 
   { // Set X
-    if (X.Dim() != N*dof) X.ReInit(N * dof);
+    if (X.Dim() != N * dof * COORD_DIM) X.ReInit(N * dof * COORD_DIM);
     for (Long k0 = 0; k0 < N; k0++) {
       for (Long k1 = 0; k1 < dof; k1++) {
-        Real X_ = 0;
-        for (Long i = 0; i < COORD_DIM * M; i++) X_ += B1[k1][i] * SHBasis[k0][i];
-        X[k0 * dof + k1] = X_;
+        for (Long j = 0; j < COORD_DIM; j++) {
+          Real X_ = 0;
+          for (Long i = 0; i < COORD_DIM * M; i++) X_ += B1[k1][i] * SHBasis[k0 * COORD_DIM + j][i];
+          X[(k0 * dof + k1) * COORD_DIM + j] = X_;
+        }
       }
     }
   }
