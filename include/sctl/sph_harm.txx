@@ -421,8 +421,8 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
           auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
           auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
           phiY = gr(n,m);
-          phiG = (gt(n+1,m)*A(n,m) - gt(n-1,m)*B(n,m) - imag*m*gp(n,m)) * (1/(Real)(std::max<Long>(n,1)*(n+1)));
-          phiX = (gp(n+1,m)*A(n,m) - gp(n-1,m)*B(n,m) + imag*m*gt(n,m)) * (1/(Real)(std::max<Long>(n,1)*(n+1)));
+          phiG = (gt(n+1,m)*A(n,m) - gt(n-1,m)*B(n,m) + imag*m*gp(n,m)) * (1/(Real)(std::max<Long>(n,1)*(n+1)));
+          phiX = (gp(n+1,m)*A(n,m) - gp(n-1,m)*B(n,m) - imag*m*gt(n,m)) * (1/(Real)(std::max<Long>(n,1)*(n+1)));
         }
 
         auto phiV = (phiG * (n + 0) - phiY) * (1/(Real)(2*n + 1));
@@ -496,8 +496,8 @@ template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Re
           auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
           auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
           gr = phiY(n,m);
-          gt = phiG(n-1,m)*A(n-1,m) - phiG(n+1,m)*B(n+1,m) - imag*m*phiX(n,m);
-          gp = phiX(n-1,m)*A(n-1,m) - phiX(n+1,m)*B(n+1,m) + imag*m*phiG(n,m);
+          gt = phiG(n-1,m)*A(n-1,m) - phiG(n+1,m)*B(n+1,m) + imag*m*phiX(n,m);
+          gp = phiX(n-1,m)*A(n-1,m) - phiX(n+1,m)*B(n+1,m) - imag*m*phiG(n,m);
         }
 
         write_coeff(gr, B1, i+0, p_, n, m);
@@ -506,7 +506,6 @@ template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Re
       }
     }
   }
-
 
   if (X) { // Set X
     SHC2Grid_(B1, p_, Nt, Np, X);
@@ -552,10 +551,10 @@ template <class Real> void SphericalHarmonics<Real>::VecSHCEval(const Vector<Rea
   { // Set X
     if (X.Dim() != N*dof) X.ReInit(N * dof);
     for (Long k0 = 0; k0 < N; k0++) {
-      for (Long k1 = 0; k1 < dof * COORD_DIM; k1++) {
+      for (Long k1 = 0; k1 < dof; k1++) {
         Real X_ = 0;
         for (Long i = 0; i < COORD_DIM * M; i++) X_ += B1[k1][i] * SHBasis[k0][i];
-        X[k0 * dof * COORD_DIM + k1] = X_;
+        X[k0 * dof + k1] = X_;
       }
     }
   }
@@ -1300,44 +1299,80 @@ template <class Real> void SphericalHarmonics<Real>::VecSHBasisEval(Long p0, con
   Long N = cos_theta_phi.Dim() / 2;
   assert(cos_theta_phi.Dim() == N * 2);
 
-  Vector<Complex<Real>> exp_phi(N);
-  Matrix<Real> LegP((p0+1)*(p0+2)/2, N);
-  { // Set exp_phi, LegP
-    Vector<Real> cos_theta(N);
-    for (Long i = 0; i < N; i++) { // Set cos_theta, exp_phi
-      cos_theta[i] = cos_theta_phi[i*2+0];
-      exp_phi[i].real = cos(cos_theta_phi[i*2+1]);
-      exp_phi[i].imag = sin(cos_theta_phi[i*2+1]);
-    }
+  Long p_ = p0 + 1;
+  Long M_ = (p_+1) * (p_+1);
+  Matrix<Real> Ynm(N, M_);
+  SHBasisEval(p_, cos_theta_phi, Ynm);
 
-    Vector<Real> alp(LegP.Dim(0) * LegP.Dim(1), LegP.begin(), false);
-    LegPoly(alp, cos_theta, p0);
+  Vector<Real> cos_theta(N);
+  for (Long i = 0; i < N; i++) { // Set cos_theta
+    cos_theta[i] = cos_theta_phi[i*2+0];
   }
 
   { // Set SHBasis
-    SHBasis.ReInit(N, M);
-    Real s = 4 * sqrt<Real>(const_pi<Real>());
-    for (Long k0 = 0; k0 < N; k0++) {
-      Complex<Real> exp_phi_ = 1;
-      Complex<Real> exp_phi1 = exp_phi[k0];
+    SHBasis.ReInit(N * COORD_DIM, COORD_DIM * M);
+    SHBasis = 0;
+    const Complex<Real> imag(0,1);
+    for (Long i = 0; i < N; i++) {
+      Real s = 1 / sqrt<Real>(1 - cos_theta[i] * cos_theta[i]);
       for (Long m = 0; m <= p0; m++) {
         for (Long n = m; n <= p0; n++) {
-          Long poly_idx = (2 * p0 - m + 1) * m / 2 + n;
-          Long basis_idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
-          SHBasis[k0][basis_idx] = LegP[poly_idx][k0] * exp_phi_.real * s;
-          if (m) { // imaginary part
-            basis_idx += (p0+1-m);
-            SHBasis[k0][basis_idx] = -LegP[poly_idx][k0] * exp_phi_.imag * s;
-          } else {
-            SHBasis[k0][basis_idx] = SHBasis[k0][basis_idx] * 0.5;
-          }
+          auto Y = [&](Long n, Long m) {
+            Complex<Real> c;
+            if (0 <= m && m <= n && n <= p_) {
+              Long idx = (2 * p_ - m + 2) * m - (m ? p_+1 : 0) + n;
+              c.real = Ynm[i][idx];
+              if (m) {
+                idx += (p_+1-m);
+                c.imag = Ynm[i][idx];
+              }
+            }
+            return c;
+          };
+          auto write_coeff = [&](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
+            if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
+              Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
+              SHBasis[i * COORD_DIM + k1][k0 * M + idx] = c.real;
+              if (m) {
+                idx += (p0+1-m);
+                SHBasis[i * COORD_DIM + k1][k0 * M + idx] = c.imag;
+              }
+            }
+          };
+
+          auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p0 ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
+          auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p0 ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
+          Complex<Real> AYBY = A(n,m) * Y(n+1,m) - B(n,m) * Y(n-1,m);
+
+          Complex<Real> Fv2r = Y(n,m) * (-n-1);
+          Complex<Real> Fw2r = Y(n,m) * n;
+          Complex<Real> Fx2r = 0;
+
+          Complex<Real> Fv2t = AYBY * s;
+          Complex<Real> Fw2t = AYBY * s;
+          Complex<Real> Fx2t = -imag * m * Y(n,m) * s;
+
+          Complex<Real> Fv2p = imag * m * Y(n,m) * s;
+          Complex<Real> Fw2p = imag * m * Y(n,m) * s;
+          Complex<Real> Fx2p = AYBY * s;
+
+          write_coeff(Fv2r, n, m, 0, 0);
+          write_coeff(Fw2r, n, m, 1, 0);
+          write_coeff(Fx2r, n, m, 2, 0);
+
+          write_coeff(Fv2t, n, m, 0, 1);
+          write_coeff(Fw2t, n, m, 1, 1);
+          write_coeff(Fx2t, n, m, 2, 1);
+
+          write_coeff(Fv2p, n, m, 0, 2);
+          write_coeff(Fw2p, n, m, 1, 2);
+          write_coeff(Fx2p, n, m, 2, 2);
         }
-        exp_phi_ = exp_phi_ * exp_phi1;
       }
     }
   }
-  assert(SHBasis.Dim(0) == N);
-  assert(SHBasis.Dim(1) == M);
+  assert(SHBasis.Dim(0) == N * COORD_DIM);
+  assert(SHBasis.Dim(1) == COORD_DIM * M);
 }
 
 
