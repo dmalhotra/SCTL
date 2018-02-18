@@ -390,7 +390,7 @@ template <> class FFT<double> : public FFT_Generic<double, FFT<double>> {
     if (out.Dim() != N1) out.ReInit(N1);
 
     ValueType s = 0;
-    Iterator<Real> in_ptr = in.begin();
+    auto in_ptr = in.begin();
     if (tmp.Dim()) { // Save input
       assert(tmp.Dim() == N0);
       in_ptr = tmp.begin();
@@ -496,7 +496,7 @@ template <> class FFT<float> : public FFT_Generic<float, FFT<float>> {
     if (out.Dim() != N1) out.ReInit(N1);
 
     ValueType s = 0;
-    Iterator<Real> in_ptr = in.begin();
+    auto in_ptr = in.begin();
     if (tmp.Dim()) { // Save input
       assert(tmp.Dim() == N0);
       in_ptr = tmp.begin();
@@ -577,13 +577,13 @@ template <> class FFT<long double> : public FFT_Generic<long double, FFT<long do
     }
     if (!plan) { // Build plan without FFTW_PRESERVE_INPUT
       if (fft_type == FFT_Type::R2C) {
-        plan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], howmany_, &in[0], NULL, 1, N0 / howmany, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_ESTIMATE | FFTW_PRESERVE);
+        plan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], howmany_, &in[0], NULL, 1, N0 / howmany, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C) {
-        plan = fftwl_plan_many_dft(rank, &dim_vec_[0], howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE);
+        plan = fftwl_plan_many_dft(rank, &dim_vec_[0], howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_FORWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C_INV) {
-        plan = fftwl_plan_many_dft(rank, &dim_vec_[0], howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE);
+        plan = fftwl_plan_many_dft(rank, &dim_vec_[0], howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_BACKWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2R) {
-        plan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / howmany, &out[0], NULL, 1, N1 / howmany, FFTW_ESTIMATE | FFTW_PRESERVE);
+        plan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / howmany, &out[0], NULL, 1, N1 / howmany, FFTW_ESTIMATE);
       }
       tmp.Swap(in);
     } else {
@@ -600,7 +600,7 @@ template <> class FFT<long double> : public FFT_Generic<long double, FFT<long do
     if (out.Dim() != N1) out.ReInit(N1);
 
     ValueType s = 0;
-    Iterator<Real> in_ptr = in.begin();
+    auto in_ptr = in.begin();
     if (tmp.Dim()) { // Save input
       assert(tmp.Dim() == N0);
       in_ptr = tmp.begin();
