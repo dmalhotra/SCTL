@@ -615,7 +615,7 @@ template <class Real> void SphericalHarmonics<Real>::VecSHCEval(const Vector<Rea
   }
 }
 
-template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& r_cos_theta_phi, Vector<Real>& X) {
+template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& coord, Vector<Real>& X) {
   Long M = (p0+1) * (p0+1);
 
   Long dof;
@@ -634,18 +634,19 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
   assert(B1.Dim(0) == dof);
 
   Long N;
-  Vector<Real> R;
   Matrix<Real> SHBasis;
+  Vector<Real> R, cos_theta_phi;
   { // Set N, R, SHBasis
-    N = r_cos_theta_phi.Dim() / COORD_DIM;
-    assert(r_cos_theta_phi.Dim() == N * COORD_DIM);
+    N = coord.Dim() / COORD_DIM;
+    assert(coord.Dim() == N * COORD_DIM);
 
     R.ReInit(N);
-    Vector<Real> cos_theta_phi(2 * N);
+    cos_theta_phi.ReInit(2 * N);
     for (Long i = 0; i < N; i++) { // Set R, cos_theta_phi
-      R[i] = r_cos_theta_phi[i * COORD_DIM + 0];
-      cos_theta_phi[i * 2 + 0] = r_cos_theta_phi[i * COORD_DIM + 1];
-      cos_theta_phi[i * 2 + 1] = r_cos_theta_phi[i * COORD_DIM + 2];
+      ConstIterator<Real> x = coord.begin() + i * COORD_DIM;
+      R[i] = sqrt<Real>(x[0]*x[0] + x[1]*x[1] + x[2]*x[2]);
+      cos_theta_phi[i * 2 + 0] = x[2] / R[i];
+      cos_theta_phi[i * 2 + 1] = atan2(x[1], x[0]); // TODO: works only for float and double
     }
     VecSHBasisEval(p0, cos_theta_phi, SHBasis);
     assert(SHBasis.Dim(1) == COORD_DIM * M);
@@ -729,17 +730,32 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
     if (X.Dim() != N * dof * COORD_DIM) X.ReInit(N * dof * COORD_DIM);
     for (Long k0 = 0; k0 < N; k0++) {
       for (Long k1 = 0; k1 < dof; k1++) {
+        StaticArray<Real,COORD_DIM> in;
         for (Long j = 0; j < COORD_DIM; j++) {
-          Real X_ = 0;
-          for (Long i = 0; i < COORD_DIM * M; i++) X_ += B1[k1][i] * StokesOp[k0 * COORD_DIM + j][i];
-          X[(k0 * dof + k1) * COORD_DIM + j] = X_;
+          in[j] = 0;
+          for (Long i = 0; i < COORD_DIM * M; i++) {
+            in[j] += B1[k1][i] * StokesOp[k0 * COORD_DIM + j][i];
+          }
         }
+
+        StaticArray<Real,9> M;
+        Real cos_theta = cos_theta_phi[k0 * 2 + 0];
+        Real sin_theta = sqrt<Real>(1 - cos_theta * cos_theta);
+        Real cos_phi = cos(cos_theta_phi[k0 * 2 + 1]);
+        Real sin_phi = sin(cos_theta_phi[k0 * 2 + 1]);
+        M[0] = sin_theta*cos_phi; M[1] = sin_theta*sin_phi; M[2] = cos_theta;
+        M[3] = cos_theta*cos_phi; M[4] = cos_theta*sin_phi; M[5] =-sin_theta;
+        M[6] =          -sin_phi; M[7] =           cos_phi; M[8] =         0;
+
+        X[(k0 * dof + k1) * COORD_DIM + 0] = M[0] * in[0] + M[3] * in[1] + M[6] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 1] = M[1] * in[0] + M[4] * in[1] + M[7] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 2] = M[2] * in[0] + M[5] * in[1] + M[8] * in[2];
       }
     }
   }
 }
 
-template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& r_cos_theta_phi, Vector<Real>& X) {
+template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& coord, Vector<Real>& X) {
   Long M = (p0+1) * (p0+1);
 
   Long dof;
@@ -758,18 +774,19 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
   assert(B1.Dim(0) == dof);
 
   Long N;
-  Vector<Real> R;
   Matrix<Real> SHBasis;
+  Vector<Real> R, cos_theta_phi;
   { // Set N, R, SHBasis
-    N = r_cos_theta_phi.Dim() / COORD_DIM;
-    assert(r_cos_theta_phi.Dim() == N * COORD_DIM);
+    N = coord.Dim() / COORD_DIM;
+    assert(coord.Dim() == N * COORD_DIM);
 
     R.ReInit(N);
-    Vector<Real> cos_theta_phi(2 * N);
+    cos_theta_phi.ReInit(2 * N);
     for (Long i = 0; i < N; i++) { // Set R, cos_theta_phi
-      R[i] = r_cos_theta_phi[i * COORD_DIM + 0];
-      cos_theta_phi[i * 2 + 0] = r_cos_theta_phi[i * COORD_DIM + 1];
-      cos_theta_phi[i * 2 + 1] = r_cos_theta_phi[i * COORD_DIM + 2];
+      ConstIterator<Real> x = coord.begin() + i * COORD_DIM;
+      R[i] = sqrt<Real>(x[0]*x[0] + x[1]*x[1] + x[2]*x[2]);
+      cos_theta_phi[i * 2 + 0] = x[2] / R[i];
+      cos_theta_phi[i * 2 + 1] = atan2(x[1], x[0]); // TODO: works only for float and double
     }
     VecSHBasisEval(p0, cos_theta_phi, SHBasis);
     assert(SHBasis.Dim(1) == COORD_DIM * M);
@@ -874,11 +891,26 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
     if (X.Dim() != N * dof * COORD_DIM) X.ReInit(N * dof * COORD_DIM);
     for (Long k0 = 0; k0 < N; k0++) {
       for (Long k1 = 0; k1 < dof; k1++) {
+        StaticArray<Real,COORD_DIM> in;
         for (Long j = 0; j < COORD_DIM; j++) {
-          Real X_ = 0;
-          for (Long i = 0; i < COORD_DIM * M; i++) X_ += B1[k1][i] * StokesOp[k0 * COORD_DIM + j][i];
-          X[(k0 * dof + k1) * COORD_DIM + j] = X_;
+          in[j] = 0;
+          for (Long i = 0; i < COORD_DIM * M; i++) {
+            in[j] += B1[k1][i] * StokesOp[k0 * COORD_DIM + j][i];
+          }
         }
+
+        StaticArray<Real,9> M;
+        Real cos_theta = cos_theta_phi[k0 * 2 + 0];
+        Real sin_theta = sqrt<Real>(1 - cos_theta * cos_theta);
+        Real cos_phi = cos(cos_theta_phi[k0 * 2 + 1]);
+        Real sin_phi = sin(cos_theta_phi[k0 * 2 + 1]);
+        M[0] = sin_theta*cos_phi; M[1] = sin_theta*sin_phi; M[2] = cos_theta;
+        M[3] = cos_theta*cos_phi; M[4] = cos_theta*sin_phi; M[5] =-sin_theta;
+        M[6] =          -sin_phi; M[7] =           cos_phi; M[8] =         0;
+
+        X[(k0 * dof + k1) * COORD_DIM + 0] = M[0] * in[0] + M[3] * in[1] + M[6] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 1] = M[1] * in[0] + M[4] * in[1] + M[7] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 2] = M[2] * in[0] + M[5] * in[1] + M[8] * in[2];
       }
     }
   }
@@ -1753,7 +1785,7 @@ template <class Real> const std::vector<Matrix<Real>>& SphericalHarmonics<Real>:
 
       Vector<Real> theta(Ngrid);
       for(Long i=0;i<theta.Dim();i++){ // Set theta
-        theta[i]=atan2(Mcoord1[1][i],Mcoord1[2][i]);
+        theta[i]=atan2(Mcoord1[1][i],Mcoord1[2][i]); // TODO: works only for float and double
       }
 
       Matrix<Real> Mcoef2grid(Ncoef, Ngrid);
