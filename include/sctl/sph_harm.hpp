@@ -46,17 +46,222 @@ template <class Real> class SphericalHarmonics{
     // Vector Spherical Harmonics
     static void Grid2VecSHC(const Vector<Real>& X_in, Long Nt_in, Long Np_in, Long p_out, Vector<Real>& S_out, SHCArrange arrange_out);
 
-    static void VecSHC2Grid(const Vector<Real>& S_in, SHCArrange arrange_in, Long p_in, Long Nt_out, Long Np_out, Vector<Real>* X_out);
+    static void VecSHC2Grid(const Vector<Real>& S_in, SHCArrange arrange_in, Long p_in, Long Nt_out, Long Np_out, Vector<Real>& X_out);
 
     static void VecSHCEval(const Vector<Real>& S_in, SHCArrange arrange_in, Long p_in, const Vector<Real>& theta_phi_in, Vector<Real>& X_out);
 
     static void StokesEvalSL(const Vector<Real>& S_in, SHCArrange arrange_in, Long p_in, const Vector<Real>& theta_phi_in, Vector<Real>& X_out);
 
+    static void StokesEvalDL(const Vector<Real>& S_in, SHCArrange arrange_in, Long p_in, const Vector<Real>& theta_phi_in, Vector<Real>& X_out);
+
+
+    static void test3() {
+      int k=0, n=1, m=0;
+      for (int k=0;k<3;k++) {
+        for (int n=0;n<3;n++) {
+          for (int m=0;m<=n;m++) {
+
+      int p=5;
+      int dof = 1;
+      int Nt = p+1;
+      int Np = 2*p+2;
+      int Ngrid = Nt * Np;
+      int Ncoeff = (p + 1) * (p + 2);
+      Vector<Real> sin_theta, cos_theta = LegendreNodes(Nt-1);
+      for (Long i=0;i<cos_theta.Dim();i++) sin_theta.PushBack(sqrt<Real>(1-cos_theta[i]*cos_theta[i]));
+
+      auto print_coeff = [&](Vector<Real> S) {
+        Long idx=0;
+        Long dof = S.Dim() / Ncoeff;
+        for (Long k=0;k<dof;k++) {
+          for (Long n=0;n<=p;n++) {
+            std::cout<<Vector<Real>(2*n+2, S.begin()+idx);
+            idx+=2*n+2;
+          }
+        }
+        std::cout<<'\n';
+      };
+
+      Vector<Real> coeff(dof*Ncoeff); coeff=0;
+      auto write_coeff = [&](Vector<Real>& coeff, Complex<Real> c, Long k, Long n, Long m) {
+        if (0 <= m && m <= n && n <= p) {
+          Long idx = k*Ncoeff + n*(n+1)+ 2*m;
+          coeff[idx+0] = c.real;
+          coeff[idx+1] = c.imag;
+        }
+      };
+      write_coeff(coeff, Complex<Real>(1,1.3),0,n,m);
+      //print_coeff(coeff);
+
+      Vector<Real> Y, Yt, Yp;
+      SHC2Grid(coeff, SHCArrange::ROW_MAJOR, p, Nt, Np, &Y, &Yt, &Yp);
+      //std::cout<<Matrix<Real>(Nt, Np, Y.begin())<<'\n';
+      //std::cout<<Matrix<Real>(Nt, Np, Yt.begin())<<'\n';
+      //std::cout<<Matrix<Real>(Nt, Np, Yp.begin())<<'\n';
+
+      Vector<Real> gradYt = Yt;
+      Vector<Real> gradYp = Yp;
+      for (Long i=0;i<Nt;i++) {
+        for (Long j=0;j<Np;j++) {
+          gradYp[i*Np+j] /= sin_theta[i];
+        }
+      }
+
+      Vector<Real> Vr, Vt, Vp;
+      Vector<Real> Wr, Wt, Wp;
+      Vector<Real> Xr, Xt, Xp;
+
+      Vr = Y*(-n-1);
+      Vt = gradYt;
+      Vp = gradYp;
+
+      Wr = Y*n;
+      Wt = gradYt;
+      Wp = gradYp;
+
+      Xr = Y*0;
+      Xt = gradYp;
+      Xp = gradYt * (-1);
+
+      Vector<Real> SS(COORD_DIM * Ngrid);
+      SS=0;
+      if (k == 0) {
+        Vector<Real>(Ngrid, SS.begin() + 0*Ngrid, false) = Vr;
+        Vector<Real>(Ngrid, SS.begin() + 1*Ngrid, false) = Vt;
+        Vector<Real>(Ngrid, SS.begin() + 2*Ngrid, false) = Vp;
+      }
+      if (k == 1) {
+        Vector<Real>(Ngrid, SS.begin() + 0*Ngrid, false) = Wr;
+        Vector<Real>(Ngrid, SS.begin() + 1*Ngrid, false) = Wt;
+        Vector<Real>(Ngrid, SS.begin() + 2*Ngrid, false) = Wp;
+      }
+      if (k == 2) {
+        Vector<Real>(Ngrid, SS.begin() + 0*Ngrid, false) = Xr;
+        Vector<Real>(Ngrid, SS.begin() + 1*Ngrid, false) = Xt;
+        Vector<Real>(Ngrid, SS.begin() + 2*Ngrid, false) = Xp;
+      }
+
+      Vector<Real> SSS;
+      {
+        Vector<Real> coeff(COORD_DIM*Ncoeff);
+        coeff=0;
+        write_coeff(coeff, Complex<Real>(1,1.3),k,n,m);
+        //print_coeff(coeff);
+        VecSHC2Grid(coeff, SHCArrange::ROW_MAJOR, p, Nt, Np, SSS);
+      }
+
+      //std::cout<<Matrix<Real>(COORD_DIM*Nt, Np, SS.begin())<<'\n';
+      //std::cout<<Matrix<Real>(COORD_DIM*Nt, Np, SSS.begin())<<'\n';
+      //std::cout<<Matrix<Real>(COORD_DIM*Nt, Np, SSS.begin()) - Matrix<Real>(COORD_DIM*Nt, Np, SS.begin())<<'\n';
+
+      auto err=SSS-SS;
+      Real max_err=0;
+      for (auto x:err) max_err=std::max(max_err, fabs(x));
+      std::cout<<max_err<<' ';
+
+          }
+          std::cout<<'\n';
+        }
+        std::cout<<'\n';
+      }
+
+      Clear();
+    }
+
+    static void test2() {
+      int p = 6;
+      int dof = 3;
+      int Nt = p+1, Np = 2*p+2;
+
+      auto print_coeff = [&](Vector<Real> S) {
+        Long idx=0;
+        for (Long k=0;k<dof;k++) {
+          for (Long n=0;n<=p;n++) {
+            std::cout<<Vector<Real>(2*n+2, S.begin()+idx);
+            idx+=2*n+2;
+          }
+        }
+        std::cout<<'\n';
+      };
+
+      Vector<Real> f(dof * Nt * Np);
+      { // Set f
+        Vector<Real> leg_nodes = LegendreNodes(Nt-1);
+        for (Long i = 0; i < Nt; i++) {
+          for (Long j = 0; j < Np; j++) {
+            Real cos_theta = leg_nodes[i];
+            Real sin_theta = sqrt<Real>(1-cos_theta*cos_theta);
+            Real phi = 2 * const_pi<Real>() * j / Np;
+            Real r = 1;
+
+            Real x = r * cos_theta;
+            Real y = r * sin_theta * cos<Real>(phi);
+            Real z = r * sin_theta * sin<Real>(phi);
+
+            // Unit vectors in polar coordinates
+            Real xr = cos_theta;
+            Real yr = sin_theta * cos<Real>(phi);
+            Real zr = sin_theta * sin<Real>(phi);
+
+            Real xt = - sin_theta;
+            Real yt = cos_theta * cos<Real>(phi);
+            Real zt = cos_theta * sin<Real>(phi);
+
+            Real xp = 0;
+            Real yp = - sin<Real>(phi);
+            Real zp = cos<Real>(phi);
+
+            ////////////////////////////////////
+
+            Real fx = 0;
+            Real fy = 0;
+            Real fz = 1;
+
+            f[(0 * Nt + i) * Np + j] = (fx * xr + fy * yr + fz * zr);
+            f[(1 * Nt + i) * Np + j] = (fx * xt + fy * yt + fz * zt);
+            f[(2 * Nt + i) * Np + j] = (fx * xp + fy * yp + fz * zp);
+
+            f[(0 * Nt + i) * Np + j] = 0; //sin(phi) * sin_theta;
+            f[(1 * Nt + i) * Np + j] = 1; //sin(phi) * cos_theta; // * sin_theta;
+            f[(2 * Nt + i) * Np + j] = 1; //cos(phi)            ; // * sin_theta;
+          }
+        }
+      }
+
+      Vector<Real> f_coeff;
+      Grid2VecSHC(f, Nt, Np, p, f_coeff, sctl::SHCArrange::ROW_MAJOR);
+
+      if(0){
+        Vector<Real> f_, f_coeff_, f__;
+        SHC2Grid(f_coeff, sctl::SHCArrange::ROW_MAJOR, p, Nt, Np, &f_);
+        Grid2SHC(f_, Nt, Np, p, f_coeff_, sctl::SHCArrange::ROW_MAJOR);
+        SHC2Grid(f_coeff_, sctl::SHCArrange::ROW_MAJOR, p, Nt, Np, &f__);
+        std::cout<<Matrix<Real>(dof*Nt, Np, f.begin())-Matrix<Real>(dof*Nt, Np, f_.begin())<<'\n';
+        std::cout<<Matrix<Real>(dof*Nt, Np, f_.begin())-Matrix<Real>(dof*Nt, Np, f__.begin())<<'\n';
+      }
+
+      if(0)
+      for (Long i = 0; i < 20; i++) { // Evaluate
+        Vector<Real> r_cos_theta_phi;
+        r_cos_theta_phi.PushBack(drand48() + (i<10?0:2)); // [1, inf)
+        r_cos_theta_phi.PushBack(drand48() * 2 - 1); // [-1, 1]
+        r_cos_theta_phi.PushBack(drand48() * 2 * const_pi<Real>()); // [0, 2*pi]
+
+        Vector<Real> Df;
+        StokesEvalDL(f_coeff, sctl::SHCArrange::ROW_MAJOR, p, r_cos_theta_phi, Df);
+        //VecSHCEval(f_coeff, sctl::SHCArrange::ROW_MAJOR, p, r_cos_theta_phi, Df);
+        //std::cout<<r_cos_theta_phi;
+        std::cout<<Df[0]*Df[0] + Df[1]*Df[1] + Df[2]*Df[2]<<'\n';
+      }
+
+      print_coeff(f_coeff);
+      Clear();
+    }
 
     static void test() {
       int p = 4;
-      int dof = 6;
-      int Nt = p+1, Np = 2*p+1;
+      int dof = 3;
+      int Nt = p+1, Np = 2*p;
 
       auto print_coeff = [&](Vector<Real> S) {
         Long idx=0;
@@ -86,14 +291,25 @@ template <class Real> class SphericalHarmonics{
       int Ncoeff = (p + 1) * (p + 1);
       Vector<Real> Xcoeff(dof * Ncoeff), Xgrid;
       for (int i=0;i<Xcoeff.Dim();i++) Xcoeff[i]=i+1;
-      VecSHC2Grid(Xcoeff, sctl::SHCArrange::COL_MAJOR_NONZERO, p, Nt, Np, &Xgrid);
-      std::cout<<Matrix<Real>(Nt*dof, Np, Xgrid.begin())<<'\n';
+      Xcoeff=0;
+      Xcoeff[0]=1;
+      //Xcoeff[12]=1;
+      //for (int i=0*Ncoeff;i<1*Ncoeff;i++) Xcoeff[i]=i+1;
 
-      {
+      VecSHC2Grid(Xcoeff, sctl::SHCArrange::COL_MAJOR_NONZERO, p, Nt, Np, Xgrid);
+      std::cout<<"Y0_=[\n";
+      std::cout<<Matrix<Real>(Nt, Np, Xgrid.begin()+Nt*Np*0)<<"];\n";
+      std::cout<<"Y1_=[\n";
+      std::cout<<Matrix<Real>(Nt, Np, Xgrid.begin()+Nt*Np*1)<<"];\n";
+      std::cout<<"Y2_=[\n";
+      std::cout<<Matrix<Real>(Nt, Np, Xgrid.begin()+Nt*Np*2)<<"];\n";
+
+      if (0) {
         Vector<Real> val;
         VecSHCEval(Xcoeff, sctl::SHCArrange::COL_MAJOR_NONZERO, p, theta_phi, val);
         //StokesEvalSL(Xcoeff, sctl::SHCArrange::COL_MAJOR_NONZERO, p, r_theta_phi, val);
         Matrix<Real>(dof, val.Dim()/dof, val.begin(), false) = Matrix<Real>(val.Dim()/dof, dof, val.begin()).Transpose();
+        std::cout<<Matrix<Real>(val.Dim()/Np, Np, val.begin())<<'\n';
         std::cout<<Matrix<Real>(val.Dim()/Np, Np, val.begin()) - Matrix<Real>(Nt*dof, Np, Xgrid.begin())<<'\n';
       }
 
