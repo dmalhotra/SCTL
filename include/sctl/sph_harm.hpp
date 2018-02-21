@@ -114,7 +114,7 @@ template <class Real> class SphericalHarmonics{
      * \param[in] Evaluation coordinates given as {x0,y0,z0, x1,y1,z1, ... }.
      * \param[out] U Evaluated values {Ux0,Uy0,Uz0, Ux1,Uy1,Uz1, ... }.
      */
-    static void StokesEvalSL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, Vector<Real>& U);
+    static void StokesEvalSL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
 
     /**
      * \brief Evaluate Stokes double-layer operator at point values from the vector spherical harmonic coefficients for the density.
@@ -124,14 +124,13 @@ template <class Real> class SphericalHarmonics{
      * \param[in] Evaluation coordinates given as {x0,y0,z0, x1,y1,z1, ... }.
      * \param[out] U Evaluated values {Ux0,Uy0,Uz0, Ux1,Uy1,Uz1, ... }.
      */
-    static void StokesEvalDL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, Vector<Real>& U);
+    static void StokesEvalDL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
 
 
-    static void test_stokes() {
-      int p = 4;
+    static void test() {
+      int p = 6;
       int dof = 3;
-      int Nt = p+1, Np = 2*p+1;
-
+      int Nt = 100, Np = 200;
       auto print_coeff = [&](Vector<Real> S) {
         Long idx=0;
         for (Long k=0;k<dof;k++) {
@@ -143,39 +142,127 @@ template <class Real> class SphericalHarmonics{
         std::cout<<'\n';
       };
 
-      Vector<Real> f(dof * Nt * Np);
-      { // Set f
-        for (Long i = 0; i < Nt; i++) {
-          for (Long j = 0; j < Np; j++) {
-            f[(0 * Nt + i) * Np + j] = 3;
-            f[(1 * Nt + i) * Np + j] = 2;
-            f[(2 * Nt + i) * Np + j] = 1;
+      Vector<Real> Fcoeff(dof*(p+1)*(p+2));
+      for (Long i=0;i<Fcoeff.Dim();i++) Fcoeff[i]=i+1;
+      print_coeff(Fcoeff);
+
+      Vector<Real> Fgrid;
+      VecSHC2Grid(Fcoeff, sctl::SHCArrange::ROW_MAJOR, p, Nt, Np, Fgrid);
+      Matrix<Real>(Fgrid.Dim()/3,3,Fgrid.begin(),false) = Matrix<Real>(3,Fgrid.Dim()/3,Fgrid.begin(),false).Transpose();
+
+      const Vector<Real> CosTheta = LegendreNodes(Nt-1);
+      const Vector<Real> LWeights = LegendreWeights(Nt-1);
+      auto stokes_evalSL = [&](const Vector<Real>& trg, Vector<Real>& Df) {
+        Df.ReInit(3);
+        Df=0;
+        Real s = 1/(8*const_pi<Real>());
+        for (Long i=0;i<Nt;i++) {
+          Real cos_theta = CosTheta[i];
+          Real sin_theta = sqrt(1-cos_theta*cos_theta);
+          for (Long j=0;j<Np;j++) {
+            Real cos_phi = cos(2*const_pi<Real>()*j/Np);
+            Real sin_phi = sin(2*const_pi<Real>()*j/Np);
+            Real qw = LWeights[i]*2*const_pi<Real>()/Np;
+
+            Real x[3], dr[3], f[3];
+            f[0] = Fgrid[(i*Np+j)*3+0];
+            f[1] = Fgrid[(i*Np+j)*3+1];
+            f[2] = Fgrid[(i*Np+j)*3+2];
+
+            x[0] = sin_theta*cos_phi;
+            x[1] = sin_theta*sin_phi;
+            x[2] = cos_theta;
+
+            dr[0] = x[0]-trg[0];
+            dr[1] = x[1]-trg[1];
+            dr[2] = x[2]-trg[2];
+
+            Real oor2 = 1/(dr[0]*dr[0] + dr[1]*dr[1] + dr[2]*dr[2]);
+            Real oor1 = sqrt(oor2);
+            Real oor3 = oor2*oor1;
+
+            Real rdotf = dr[0]*f[0]+dr[1]*f[1]+dr[2]*f[2];
+
+            Df[0] += s*(f[0]*oor1 + dr[0]*rdotf*oor3) * qw;
+            Df[1] += s*(f[1]*oor1 + dr[1]*rdotf*oor3) * qw;
+            Df[2] += s*(f[2]*oor1 + dr[2]*rdotf*oor3) * qw;
           }
         }
-      }
+      };
+      auto stokes_evalDL = [&](const Vector<Real>& trg, Vector<Real>& Df) {
+        Df.ReInit(3);
+        Df=0;
+        Real s = 6/(8*const_pi<Real>());
+        for (Long i=0;i<Nt;i++) {
+          Real cos_theta = CosTheta[i];
+          Real sin_theta = sqrt(1-cos_theta*cos_theta);
+          for (Long j=0;j<Np;j++) {
+            Real cos_phi = cos(2*const_pi<Real>()*j/Np);
+            Real sin_phi = sin(2*const_pi<Real>()*j/Np);
+            Real qw = LWeights[i]*2*const_pi<Real>()/Np;
 
-      Vector<Real> f_coeff;
-      Grid2VecSHC(f, Nt, Np, p, f_coeff, sctl::SHCArrange::ROW_MAJOR);
-      print_coeff(f_coeff);
+            Real x[3], dr[3], f[3], n[3];
+            f[0] = Fgrid[(i*Np+j)*3+0];
+            f[1] = Fgrid[(i*Np+j)*3+1];
+            f[2] = Fgrid[(i*Np+j)*3+2];
+
+            x[0] = sin_theta*cos_phi;
+            x[1] = sin_theta*sin_phi;
+            x[2] = cos_theta;
+
+            dr[0] = x[0]-trg[0];
+            dr[1] = x[1]-trg[1];
+            dr[2] = x[2]-trg[2];
+
+            n[0] = x[0];
+            n[1] = x[1];
+            n[2] = x[2];
+
+            Real oor2 = 1/(dr[0]*dr[0] + dr[1]*dr[1] + dr[2]*dr[2]);
+            Real oor5 = oor2*oor2*sqrt(oor2);
+
+            Real rdotn = dr[0]*n[0]+dr[1]*n[1]+dr[2]*n[2];
+            Real rdotf = dr[0]*f[0]+dr[1]*f[1]+dr[2]*f[2];
+
+            Df[0] += -s*dr[0]*rdotn*rdotf*oor5 * qw;
+            Df[1] += -s*dr[1]*rdotn*rdotf*oor5 * qw;
+            Df[2] += -s*dr[2]*rdotn*rdotf*oor5 * qw;
+          }
+        }
+      };
 
       for (Long i = 0; i < 20; i++) { // Evaluate
-        Vector<Real> Df;
-        Vector<Real> x(3);
-        x[0] = drand48();
-        x[1] = drand48();
-        x[2] = drand48();
-        Real R = sqrt<Real>(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-        x[0]/=R*(i+0.5)/10;
-        x[1]/=R*(i+0.5)/10;
-        x[2]/=R*(i+0.5)/10;
+        Real R0 = (1.01 + i/20.0);
 
-        StokesEvalDL(f_coeff, sctl::SHCArrange::ROW_MAJOR, p, x, Df);
-        std::cout<<Df+1e-10;
+        Vector<Real> x(3);
+        x[0] = drand48()-0.5;
+        x[1] = drand48()-0.5;
+        x[2] = drand48()-0.5;
+        Real R = sqrt<Real>(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
+        x[0] *= R0 / R;
+        x[1] *= R0 / R;
+        x[2] *= R0 / R;
+
+        Vector<Real> Sf, Sf_;
+        Vector<Real> Df, Df_;
+        StokesEvalSL(Fcoeff, sctl::SHCArrange::ROW_MAJOR, p, x, R0<1, Sf);
+        StokesEvalDL(Fcoeff, sctl::SHCArrange::ROW_MAJOR, p, x, R0<1, Df);
+        stokes_evalSL(x, Sf_);
+        stokes_evalDL(x, Df_);
+
+        auto errSL = (Sf-Sf_)/(Sf+0.01);
+        auto errDL = (Df-Df_)/(Df+0.01);
+        for (auto& x:errSL) x=log(fabs(x))/log(10);
+        for (auto& x:errDL) x=log(fabs(x))/log(10);
+        std::cout<<"R = "<<(0.01 + i/20.0)<<";   SL-error = ";
+        std::cout<<errSL;
+        std::cout<<"R = "<<(0.01 + i/20.0)<<";   DL-error = ";
+        std::cout<<errDL;
       }
       Clear();
     }
 
-    static void test() {
+    static void test_() {
       int p = 3;
       int dof = 1;
       int Nt = p+1, Np = 2*p+1;

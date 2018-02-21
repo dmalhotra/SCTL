@@ -615,147 +615,7 @@ template <class Real> void SphericalHarmonics<Real>::VecSHCEval(const Vector<Rea
   }
 }
 
-template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& coord, Vector<Real>& X) {
-  Long M = (p0+1) * (p0+1);
-
-  Long dof;
-  Matrix<Real> B1;
-  { // Set B1, dof
-    Vector<Real> B0;
-    SHCArrange1(S, arrange, p0, B0);
-    dof = B0.Dim() / M / COORD_DIM;
-    assert(B0.Dim() == dof * COORD_DIM * M);
-
-    B1.ReInit(dof, COORD_DIM * M);
-    Vector<Real> B1_(B1.Dim(0) * B1.Dim(1), B1.begin(), false);
-    SHCArrange0(B0, p0, B1_, SHCArrange::COL_MAJOR_NONZERO);
-  }
-  assert(B1.Dim(1) == COORD_DIM * M);
-  assert(B1.Dim(0) == dof);
-
-  Long N;
-  Matrix<Real> SHBasis;
-  Vector<Real> R, cos_theta_phi;
-  { // Set N, R, SHBasis
-    N = coord.Dim() / COORD_DIM;
-    assert(coord.Dim() == N * COORD_DIM);
-
-    R.ReInit(N);
-    cos_theta_phi.ReInit(2 * N);
-    for (Long i = 0; i < N; i++) { // Set R, cos_theta_phi
-      ConstIterator<Real> x = coord.begin() + i * COORD_DIM;
-      R[i] = sqrt<Real>(x[0]*x[0] + x[1]*x[1] + x[2]*x[2]);
-      cos_theta_phi[i * 2 + 0] = x[2] / R[i];
-      cos_theta_phi[i * 2 + 1] = atan2(x[1], x[0]); // TODO: works only for float and double
-    }
-    VecSHBasisEval(p0, cos_theta_phi, SHBasis);
-    assert(SHBasis.Dim(1) == COORD_DIM * M);
-    assert(SHBasis.Dim(0) == N * COORD_DIM);
-  }
-
-  Matrix<Real> StokesOp(SHBasis.Dim(0), SHBasis.Dim(1));
-  for (Long i = 0; i < N; i++) { // Set StokesOp
-    for (Long m = 0; m <= p0; m++) {
-      for (Long n = m; n <= p0; n++) {
-        auto read_coeff = [&](Long n, Long m, Long k0, Long k1) {
-          Complex<Real> c;
-          if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
-            Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
-            c.real = SHBasis[i * COORD_DIM + k1][k0 * M + idx];
-            if (m) {
-              idx += (p0+1-m);
-              c.imag = SHBasis[i * COORD_DIM + k1][k0 * M + idx];
-            }
-          }
-          return c;
-        };
-        auto write_coeff = [&](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
-          if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
-            Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
-            StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real;
-            if (m) {
-              idx += (p0+1-m);
-              StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.imag;
-            }
-          }
-        };
-
-        auto Vr = read_coeff(n, m, 0, 0);
-        auto Vt = read_coeff(n, m, 0, 1);
-        auto Vp = read_coeff(n, m, 0, 2);
-
-        auto Wr = read_coeff(n, m, 1, 0);
-        auto Wt = read_coeff(n, m, 1, 1);
-        auto Wp = read_coeff(n, m, 1, 2);
-
-        auto Xr = read_coeff(n, m, 2, 0);
-        auto Xt = read_coeff(n, m, 2, 1);
-        auto Xp = read_coeff(n, m, 2, 2);
-
-
-        Real a,b;
-        a = n / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], -n-2);
-        Complex<Real> SVr = a * Vr;
-        Complex<Real> SVt = a * Vt;
-        Complex<Real> SVp = a * Vp;
-
-        a = (n+1) / (Real)((2*n+1) * (2*n-1)) * pow<Real>(R[i], -n);
-        b = n / (Real)(4*n+2) * (pow<Real>(R[i], -n-2) - pow<Real>(R[i], -n));
-        Complex<Real> SWr = a * Wr + b * Vr;
-        Complex<Real> SWt = a * Wt + b * Vt;
-        Complex<Real> SWp = a * Wp + b * Vp;
-
-        a = 1 / (Real)(2*n+1) * pow<Real>(R[i], -n-1);
-        Complex<Real> SXr = a * Xr;
-        Complex<Real> SXt = a * Xt;
-        Complex<Real> SXp = a * Xp;
-
-
-        write_coeff(SVr, n, m, 0, 0);
-        write_coeff(SVt, n, m, 0, 1);
-        write_coeff(SVp, n, m, 0, 2);
-
-        write_coeff(SWr, n, m, 1, 0);
-        write_coeff(SWt, n, m, 1, 1);
-        write_coeff(SWp, n, m, 1, 2);
-
-        write_coeff(SXr, n, m, 2, 0);
-        write_coeff(SXt, n, m, 2, 1);
-        write_coeff(SXp, n, m, 2, 2);
-      }
-    }
-  }
-
-  { // Set X
-    if (X.Dim() != N * dof * COORD_DIM) X.ReInit(N * dof * COORD_DIM);
-    for (Long k0 = 0; k0 < N; k0++) {
-      for (Long k1 = 0; k1 < dof; k1++) {
-        StaticArray<Real,COORD_DIM> in;
-        for (Long j = 0; j < COORD_DIM; j++) {
-          in[j] = 0;
-          for (Long i = 0; i < COORD_DIM * M; i++) {
-            in[j] += B1[k1][i] * StokesOp[k0 * COORD_DIM + j][i];
-          }
-        }
-
-        StaticArray<Real,9> M;
-        Real cos_theta = cos_theta_phi[k0 * 2 + 0];
-        Real sin_theta = sqrt<Real>(1 - cos_theta * cos_theta);
-        Real cos_phi = cos(cos_theta_phi[k0 * 2 + 1]);
-        Real sin_phi = sin(cos_theta_phi[k0 * 2 + 1]);
-        M[0] = sin_theta*cos_phi; M[1] = sin_theta*sin_phi; M[2] = cos_theta;
-        M[3] = cos_theta*cos_phi; M[4] = cos_theta*sin_phi; M[5] =-sin_theta;
-        M[6] =          -sin_phi; M[7] =           cos_phi; M[8] =         0;
-
-        X[(k0 * dof + k1) * COORD_DIM + 0] = M[0] * in[0] + M[3] * in[1] + M[6] * in[2];
-        X[(k0 * dof + k1) * COORD_DIM + 1] = M[1] * in[0] + M[4] * in[1] + M[7] * in[2];
-        X[(k0 * dof + k1) * COORD_DIM + 2] = M[2] * in[0] + M[5] * in[1] + M[8] * in[2];
-      }
-    }
-  }
-}
-
-template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& coord, Vector<Real>& X) {
+template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& coord, bool interior, Vector<Real>& X) {
   Long M = (p0+1) * (p0+1);
 
   Long dof;
@@ -836,15 +696,176 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
         Complex<Real> SWr, SWt, SWp;
         Complex<Real> SXr, SXt, SXp;
 
-        if (R[i] < 1) {
+        if (interior) {
           Real a,b;
-          a = -2*n*(n+2) / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], n+1);
-          b = (n+1)*(n+2) / (Real)((2*n+1)) * (pow<Real>(R[i], n+1) - pow<Real>(R[i], n-1));
+          a = n / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], n+1);
+          b = (n+1) / (Real)(4*n+2) * (pow<Real>(R[i], n-1) - pow<Real>(R[i], n+1));
           SVr = a * Vr + b * Wr;
           SVt = a * Vt + b * Wt;
           SVp = a * Vp + b * Wp;
 
-          a = (-2*n*n+1) / (Real)((2*n+1) * (2*n-1)) * pow<Real>(R[i], n-1);
+          a = (n+1) / (Real)((2*n+1) * (2*n-1)) * pow<Real>(R[i], n-1);
+          SWr = a * Wr;
+          SWt = a * Wt;
+          SWp = a * Wp;
+
+          a = 1 / (Real)(2*n+1) * pow<Real>(R[i], n);
+          SXr = a * Xr;
+          SXt = a * Xt;
+          SXp = a * Xp;
+        } else {
+          Real a,b;
+          a = n / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], -n-2);
+          SVr = a * Vr;
+          SVt = a * Vt;
+          SVp = a * Vp;
+
+          a = (n+1) / (Real)((2*n+1) * (2*n-1)) * pow<Real>(R[i], -n);
+          b = n / (Real)(4*n+2) * (pow<Real>(R[i], -n-2) - pow<Real>(R[i], -n));
+          SWr = a * Wr + b * Vr;
+          SWt = a * Wt + b * Vt;
+          SWp = a * Wp + b * Vp;
+
+          a = 1 / (Real)(2*n+1) * pow<Real>(R[i], -n-1);
+          SXr = a * Xr;
+          SXt = a * Xt;
+          SXp = a * Xp;
+        }
+
+        write_coeff(SVr, n, m, 0, 0);
+        write_coeff(SVt, n, m, 0, 1);
+        write_coeff(SVp, n, m, 0, 2);
+
+        write_coeff(SWr, n, m, 1, 0);
+        write_coeff(SWt, n, m, 1, 1);
+        write_coeff(SWp, n, m, 1, 2);
+
+        write_coeff(SXr, n, m, 2, 0);
+        write_coeff(SXt, n, m, 2, 1);
+        write_coeff(SXp, n, m, 2, 2);
+      }
+    }
+  }
+
+  { // Set X
+    if (X.Dim() != N * dof * COORD_DIM) X.ReInit(N * dof * COORD_DIM);
+    for (Long k0 = 0; k0 < N; k0++) {
+      for (Long k1 = 0; k1 < dof; k1++) {
+        StaticArray<Real,COORD_DIM> in;
+        for (Long j = 0; j < COORD_DIM; j++) {
+          in[j] = 0;
+          for (Long i = 0; i < COORD_DIM * M; i++) {
+            in[j] += B1[k1][i] * StokesOp[k0 * COORD_DIM + j][i];
+          }
+        }
+
+        StaticArray<Real,9> M;
+        Real cos_theta = cos_theta_phi[k0 * 2 + 0];
+        Real sin_theta = sqrt<Real>(1 - cos_theta * cos_theta);
+        Real cos_phi = cos(cos_theta_phi[k0 * 2 + 1]);
+        Real sin_phi = sin(cos_theta_phi[k0 * 2 + 1]);
+        M[0] = sin_theta*cos_phi; M[1] = sin_theta*sin_phi; M[2] = cos_theta;
+        M[3] = cos_theta*cos_phi; M[4] = cos_theta*sin_phi; M[5] =-sin_theta;
+        M[6] =          -sin_phi; M[7] =           cos_phi; M[8] =         0;
+
+        X[(k0 * dof + k1) * COORD_DIM + 0] = M[0] * in[0] + M[3] * in[1] + M[6] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 1] = M[1] * in[0] + M[4] * in[1] + M[7] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 2] = M[2] * in[0] + M[5] * in[1] + M[8] * in[2];
+      }
+    }
+  }
+}
+
+template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& coord, bool interior, Vector<Real>& X) {
+  Long M = (p0+1) * (p0+1);
+
+  Long dof;
+  Matrix<Real> B1;
+  { // Set B1, dof
+    Vector<Real> B0;
+    SHCArrange1(S, arrange, p0, B0);
+    dof = B0.Dim() / M / COORD_DIM;
+    assert(B0.Dim() == dof * COORD_DIM * M);
+
+    B1.ReInit(dof, COORD_DIM * M);
+    Vector<Real> B1_(B1.Dim(0) * B1.Dim(1), B1.begin(), false);
+    SHCArrange0(B0, p0, B1_, SHCArrange::COL_MAJOR_NONZERO);
+  }
+  assert(B1.Dim(1) == COORD_DIM * M);
+  assert(B1.Dim(0) == dof);
+
+  Long N;
+  Matrix<Real> SHBasis;
+  Vector<Real> R, cos_theta_phi;
+  { // Set N, R, SHBasis
+    N = coord.Dim() / COORD_DIM;
+    assert(coord.Dim() == N * COORD_DIM);
+
+    R.ReInit(N);
+    cos_theta_phi.ReInit(2 * N);
+    for (Long i = 0; i < N; i++) { // Set R, cos_theta_phi
+      ConstIterator<Real> x = coord.begin() + i * COORD_DIM;
+      R[i] = sqrt<Real>(x[0]*x[0] + x[1]*x[1] + x[2]*x[2]);
+      cos_theta_phi[i * 2 + 0] = x[2] / R[i];
+      cos_theta_phi[i * 2 + 1] = atan2(x[1], x[0]); // TODO: works only for float and double
+    }
+    VecSHBasisEval(p0, cos_theta_phi, SHBasis);
+    assert(SHBasis.Dim(1) == COORD_DIM * M);
+    assert(SHBasis.Dim(0) == N * COORD_DIM);
+  }
+
+  Matrix<Real> StokesOp(SHBasis.Dim(0), SHBasis.Dim(1));
+  for (Long i = 0; i < N; i++) { // Set StokesOp
+    for (Long m = 0; m <= p0; m++) {
+      for (Long n = m; n <= p0; n++) {
+        auto read_coeff = [&](Long n, Long m, Long k0, Long k1) {
+          Complex<Real> c;
+          if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
+            Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
+            c.real = SHBasis[i * COORD_DIM + k1][k0 * M + idx];
+            if (m) {
+              idx += (p0+1-m);
+              c.imag = SHBasis[i * COORD_DIM + k1][k0 * M + idx];
+            }
+          }
+          return c;
+        };
+        auto write_coeff = [&](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
+          if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
+            Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
+            StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real;
+            if (m) {
+              idx += (p0+1-m);
+              StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.imag;
+            }
+          }
+        };
+
+        auto Vr = read_coeff(n, m, 0, 0);
+        auto Vt = read_coeff(n, m, 0, 1);
+        auto Vp = read_coeff(n, m, 0, 2);
+
+        auto Wr = read_coeff(n, m, 1, 0);
+        auto Wt = read_coeff(n, m, 1, 1);
+        auto Wp = read_coeff(n, m, 1, 2);
+
+        auto Xr = read_coeff(n, m, 2, 0);
+        auto Xt = read_coeff(n, m, 2, 1);
+        auto Xp = read_coeff(n, m, 2, 2);
+
+        Complex<Real> SVr, SVt, SVp;
+        Complex<Real> SWr, SWt, SWp;
+        Complex<Real> SXr, SXt, SXp;
+
+        if (interior) {
+          Real a,b;
+          a = -2*n*(n+2) / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], n+1);
+          b = (n+1)*(n+2) / (Real)(2*n+1) * (pow<Real>(R[i], n+1) - pow<Real>(R[i], n-1));
+          SVr = a * Vr + b * Wr;
+          SVt = a * Vt + b * Wt;
+          SVp = a * Vp + b * Wp;
+
+          a = -(2*n*n+1) / (Real)((2*n+1) * (2*n-1)) * pow<Real>(R[i], n-1);
           SWr = a * Wr;
           SWt = a * Wt;
           SWp = a * Wp;
