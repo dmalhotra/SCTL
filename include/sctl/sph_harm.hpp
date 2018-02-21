@@ -127,7 +127,7 @@ template <class Real> class SphericalHarmonics{
     static void StokesEvalDL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
 
 
-    static void test() {
+    static void test_stokes() {
       int p = 6;
       int dof = 3;
       int Nt = 100, Np = 200;
@@ -231,8 +231,8 @@ template <class Real> class SphericalHarmonics{
         }
       };
 
-      for (Long i = 0; i < 20; i++) { // Evaluate
-        Real R0 = (1.01 + i/20.0);
+      for (Long i = 0; i < 40; i++) { // Evaluate
+        Real R0 = (0.01 + i/20.0);
 
         Vector<Real> x(3);
         x[0] = drand48()-0.5;
@@ -262,7 +262,7 @@ template <class Real> class SphericalHarmonics{
       Clear();
     }
 
-    static void test_() {
+    static void test() {
       int p = 3;
       int dof = 1;
       int Nt = p+1, Np = 2*p+1;

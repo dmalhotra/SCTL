@@ -699,7 +699,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
         if (interior) {
           Real a,b;
           a = n / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], n+1);
-          b = (n+1) / (Real)(4*n+2) * (pow<Real>(R[i], n-1) - pow<Real>(R[i], n+1));
+          b = -(n+1) / (Real)(4*n+2) * (pow<Real>(R[i], n-1) - pow<Real>(R[i], n+1));
           SVr = a * Vr + b * Wr;
           SVt = a * Vt + b * Wt;
           SVp = a * Vp + b * Wp;
@@ -860,7 +860,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
         if (interior) {
           Real a,b;
           a = -2*n*(n+2) / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], n+1);
-          b = (n+1)*(n+2) / (Real)(2*n+1) * (pow<Real>(R[i], n+1) - pow<Real>(R[i], n-1));
+          b = -(n+1)*(n+2) / (Real)(2*n+1) * (pow<Real>(R[i], n+1) - pow<Real>(R[i], n-1));
           SVr = a * Vr + b * Wr;
           SVt = a * Vt + b * Wt;
           SVp = a * Vp + b * Wp;
