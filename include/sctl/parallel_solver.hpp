@@ -13,7 +13,7 @@ template <class Real> class ParallelSolver {
  public:
   using ParallelOp = std::function<void(Vector<Real>*, const Vector<Real>&)>;
 
-  ParallelSolver(const Comm& comm, bool verbose = true) : comm_(comm), verbose_(verbose) {}
+  ParallelSolver(const Comm& comm = Comm::Self(), bool verbose = true) : comm_(comm), verbose_(verbose) {}
 
   void operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter = -1);
 

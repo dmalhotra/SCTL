@@ -1,5 +1,5 @@
-#ifndef _MATH_UTILS_
-#define _MATH_UTILS_
+#ifndef _SCTL_MATH_UTILS_
+#define _SCTL_MATH_UTILS_
 
 #include SCTL_INCLUDE(common.hpp)
 
@@ -48,4 +48,4 @@ inline std::ostream& operator<<(std::ostream& output, const SCTL_QUAD_T q_);
 
 #include SCTL_INCLUDE(math_utils.txx)
 
-#endif  //_MATH_UTILS_HPP_
+#endif  //_SCTL_MATH_UTILS_HPP_

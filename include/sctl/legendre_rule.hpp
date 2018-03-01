@@ -1,5 +1,5 @@
-#ifndef _LEGENDRE_RULE_HPP_
-#define _LEGENDRE_RULE_HPP_
+#ifndef _SCTL_LEGENDRE_RULE_HPP_
+#define _SCTL_LEGENDRE_RULE_HPP_
 
 # include <cstdlib>
 # include <cmath>
