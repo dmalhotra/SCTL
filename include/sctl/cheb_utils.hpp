@@ -12,8 +12,6 @@
 
 namespace SCTL_NAMESPACE {
 
-template <class ValueType, Integer DIM> class KernelFunction;
-
 template <class ValueType, class Derived> class BasisInterface {
 
  public:
@@ -332,7 +330,7 @@ template <class ValueType, class Derived> class BasisInterface {
     }
   }
 
-  template <Integer DIM, Integer SUBDIM> static void Integ(Matrix<ValueType>& Mcoeff, Integer order, ConstIterator<ValueType> trg_, ValueType side, Integer src_face, const KernelFunction<ValueType, DIM>& ker, ValueType tol = -1, Integer Nq = 0) {
+  template <Integer DIM, Integer SUBDIM, class Kernel> static void Integ(Matrix<ValueType>& Mcoeff, Integer order, ConstIterator<ValueType> trg_, ValueType side, Integer src_face, const Kernel& ker, ValueType tol = -1, Integer Nq = 0) {
     if (!Nq) Nq = order;
     Integ_<DIM, SUBDIM>(Mcoeff, order, trg_, side, src_face, ker, Nq);
     if (tol < 0) tol = 1e-10; //machine_eps() * 256;
@@ -1077,7 +1075,7 @@ template <class ValueType, class Derived> class BasisInterface {
 
       Vector<ValueType> V_cheb(order * order);
       cheb_basis_1d(order, x_, V_cheb);
-      for (size_t i = 0; i < order; i++) V_cheb[i] /= 2.0;
+      for (Integer i = 0; i < order; i++) V_cheb[i] /= 2.0;
       Matrix<ValueType> M(order, order, V_cheb.begin());
 
       Vector<ValueType> w_sample(order);
@@ -1104,7 +1102,7 @@ template <class ValueType, class Derived> class BasisInterface {
     return eps;
   }
 
-  template <Integer DIM, Integer SUBDIM> static void Integ_(Matrix<ValueType>& Mcoeff, Integer order, ConstIterator<ValueType> trg_, ValueType side, Integer src_face, const KernelFunction<ValueType, DIM>& ker, Integer Nq = 0) {
+  template <Integer DIM, Integer SUBDIM, class Kernel> static void Integ_(Matrix<ValueType>& Mcoeff, Integer order, ConstIterator<ValueType> trg_, ValueType side, Integer src_face, const Kernel& ker, Integer Nq = 0) {
     static const ValueType eps = machine_eps() * 64;
     ValueType side_inv = 1.0 / side;
     if (!Nq) Nq = order;
