@@ -38,6 +38,10 @@ class Comm {
 
   ~Comm();
 
+#ifdef SCTL_HAVE_MPI
+  MPI_Comm GetMPI_Comm() { return mpi_comm_; }
+#endif
+
   Comm Split(Integer clr) const;
 
   Integer Rank() const;

@@ -101,7 +101,8 @@ template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>*
   KSPSetType(ksp, KSPGMRES);
   KSPSetNormType(ksp, KSP_NORM_UNPRECONDITIONED);
   KSPSetTolerances(ksp, tol, PETSC_DEFAULT, PETSC_DEFAULT, max_iter);
-  if (verbose_) KSPMonitorSet(ksp, KSPMonitorDefault, nullptr, nullptr);
+  KSPGMRESSetOrthogonalization(ksp, KSPGMRESModifiedGramSchmidtOrthogonalization);
+  //if (verbose_) KSPMonitorSet(ksp, KSPMonitorDefault, nullptr, nullptr); // Doesn't work for some versions of PETSc!! WTH!!
   KSPGMRESSetRestart(ksp, max_iter);
   ierr = KSPSetFromOptions(ksp);
   CHKERRABORT(comm, ierr);
