@@ -92,12 +92,7 @@ class Comm {
   };
 
 #ifdef SCTL_HAVE_MPI
-  void Init(const MPI_Comm mpi_comm) {
-    #pragma omp critical(SCTL_COMM_DUP)
-    MPI_Comm_dup(mpi_comm, &mpi_comm_);
-    MPI_Comm_rank(mpi_comm_, &mpi_rank_);
-    MPI_Comm_size(mpi_comm_, &mpi_size_);
-  }
+  void Init(const MPI_Comm mpi_comm);
 
   Vector<MPI_Request>* NewReq() const;
 

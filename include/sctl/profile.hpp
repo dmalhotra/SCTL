@@ -17,9 +17,9 @@ class Comm;
 
 class Profile {
  public:
-  static Long Add_FLOP(Long inc);
-
   static Long Add_MEM(Long inc);
+
+  static Long Add_FLOP(Long inc);
 
   static bool Enable(bool state);
 
@@ -53,8 +53,8 @@ class Profile {
     std::vector<Long> max_m_log;
 
     ProfileData() {
-      FLOP = 0;
       MEM = 0;
+      FLOP = 0;
       enable_state = false;
       enable_depth = 0;
     }

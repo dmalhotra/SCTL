@@ -38,6 +38,7 @@ inline Comm Comm::World() {
 
 inline Comm& Comm::operator=(const Comm& c) {
 #ifdef SCTL_HAVE_MPI
+  MPI_Comm_free(&mpi_comm_);
   Init(c.mpi_comm_);
 #endif
   return *this;
@@ -929,6 +930,13 @@ inline Vector<MPI_Request>* Comm::NewReq() const {
   Vector<MPI_Request>& request = *(Vector<MPI_Request>*)req.top();
   req.pop();
   return &request;
+}
+
+void Comm::Init(const MPI_Comm mpi_comm) {
+  #pragma omp critical(SCTL_COMM_DUP)
+  MPI_Comm_dup(mpi_comm, &mpi_comm_);
+  MPI_Comm_rank(mpi_comm_, &mpi_rank_);
+  MPI_Comm_size(mpi_comm_, &mpi_size_);
 }
 
 inline void Comm::DelReq(Vector<MPI_Request>* req_ptr) const {

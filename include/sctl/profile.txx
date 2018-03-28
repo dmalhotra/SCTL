@@ -11,14 +11,6 @@ namespace SCTL_NAMESPACE {
 
 #if SCTL_PROFILE >= 0
 
-inline Long Profile::Add_FLOP(Long inc) {
-  Long& FLOP = ProfData().FLOP;
-  Long orig_val = FLOP;
-#pragma omp atomic update
-  FLOP += inc;
-  return orig_val;
-}
-
 inline Long Profile::Add_MEM(Long inc) {
   std::vector<Long>& max_mem = ProfData().max_mem;
   Long& MEM = ProfData().MEM;
@@ -26,6 +18,14 @@ inline Long Profile::Add_MEM(Long inc) {
 #pragma omp atomic update
   MEM += inc;
   for (Integer i = max_mem.size() - 1; i >= 0 && max_mem[i] < MEM; i--) max_mem[i] = MEM;
+  return orig_val;
+}
+
+inline Long Profile::Add_FLOP(Long inc) {
+  Long& FLOP = ProfData().FLOP;
+  Long orig_val = FLOP;
+#pragma omp atomic update
+  FLOP += inc;
   return orig_val;
 }
 
