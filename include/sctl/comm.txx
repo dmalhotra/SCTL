@@ -980,7 +980,6 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
 
   Long totSize, nelem = arr_.Dim();
   {                 // Local and global sizes. O(log p)
-    assert(nelem);  // TODO: Check if this is needed.
     Allreduce<Long>(Ptr2ConstItr<Long>(&nelem, 1), Ptr2Itr<Long>(&totSize, 1), 1, CommOp::SUM);
   }
 

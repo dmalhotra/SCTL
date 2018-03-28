@@ -323,7 +323,7 @@ template <> class FFT<double> : public FFT_Generic<double, FFT<double>> {
   ~FFT() { if (this->Dim(0) && this->Dim(1)) fftw_destroy_plan(plan); }
 
   void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec) {
-    if (Dim(0) && Dim(1)) fftw_destroy_plan(plan);
+    if (Dim(0) && Dim(1)) fftw_destroy_plan(plan); plan = NULL;
     this->fft_type = fft_type_;
     this->howmany = howmany_;
 
@@ -383,6 +383,7 @@ template <> class FFT<double> : public FFT_Generic<double, FFT<double>> {
   }
 
   void Execute(const Vector<ValueType>& in, Vector<ValueType>& out) const {
+    // TODO: check alignment of in and out
     Long N0 = this->Dim(0);
     Long N1 = this->Dim(1);
     if (!N0 || !N1) return;
@@ -429,7 +430,7 @@ template <> class FFT<float> : public FFT_Generic<float, FFT<float>> {
   ~FFT() { if (this->Dim(0) && this->Dim(1)) fftwf_destroy_plan(plan); }
 
   void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec) {
-    if (Dim(0) && Dim(1)) fftwf_destroy_plan(plan);
+    if (Dim(0) && Dim(1)) fftwf_destroy_plan(plan); plan = NULL;
     this->fft_type = fft_type_;
     this->howmany = howmany_;
 
@@ -535,7 +536,7 @@ template <> class FFT<long double> : public FFT_Generic<long double, FFT<long do
   ~FFT() { if (this->Dim(0) && this->Dim(1)) fftwl_destroy_plan(plan); }
 
   void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec) {
-    if (Dim(0) && Dim(1)) fftwl_destroy_plan(plan);
+    if (Dim(0) && Dim(1)) fftwl_destroy_plan(plan); plan = NULL;
     this->fft_type = fft_type_;
     this->howmany = howmany_;
 
