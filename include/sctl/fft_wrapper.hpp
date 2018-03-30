@@ -168,6 +168,7 @@ template <class ValueType, class FFT_Derived> class FFT_Generic {
     Long N1 = Dim(1);
     SCTL_ASSERT_MSG(in.Dim() == N0, "FFT: Wrong input size.");
     if (out.Dim() != N1) out.ReInit(N1);
+    check_align(in, out);
 
     Vector<ValueType> buff0(N0 + N1);
     Vector<ValueType> buff1(N0 + N1);
@@ -305,6 +306,11 @@ template <class ValueType, class FFT_Derived> class FFT_Generic {
     M1 = M0.Transpose();
   }
 
+  static void check_align(const Vector<ValueType>& in, const Vector<ValueType>& out) {
+    SCTL_ASSERT_MSG((((uintptr_t)& in[0]) & ((uintptr_t)(SCTL_MEM_ALIGN - 1))) == 0, "sctl::FFT: Input vector not aligned to " <<SCTL_MEM_ALIGN<<" bits!");
+    SCTL_ASSERT_MSG((((uintptr_t)&out[0]) & ((uintptr_t)(SCTL_MEM_ALIGN - 1))) == 0, "sctl::FFT: Output vector not aligned to "<<SCTL_MEM_ALIGN<<" bits!");
+  }
+
   StaticArray<Long,2> dim;
   FFT_Type fft_type;
   Long howmany;
@@ -389,6 +395,7 @@ template <> class FFT<double> : public FFT_Generic<double, FFT<double>> {
     if (!N0 || !N1) return;
     SCTL_ASSERT_MSG(in.Dim() == N0, "FFT: Wrong input size.");
     if (out.Dim() != N1) out.ReInit(N1);
+    check_align(in, out);
 
     ValueType s = 0;
     auto in_ptr = in.begin();
@@ -495,6 +502,7 @@ template <> class FFT<float> : public FFT_Generic<float, FFT<float>> {
     if (!N0 || !N1) return;
     SCTL_ASSERT_MSG(in.Dim() == N0, "FFT: Wrong input size.");
     if (out.Dim() != N1) out.ReInit(N1);
+    check_align(in, out);
 
     ValueType s = 0;
     auto in_ptr = in.begin();
@@ -599,6 +607,7 @@ template <> class FFT<long double> : public FFT_Generic<long double, FFT<long do
     if (!N0 || !N1) return;
     SCTL_ASSERT_MSG(in.Dim() == N0, "FFT: Wrong input size.");
     if (out.Dim() != N1) out.ReInit(N1);
+    check_align(in, out);
 
     ValueType s = 0;
     auto in_ptr = in.begin();
