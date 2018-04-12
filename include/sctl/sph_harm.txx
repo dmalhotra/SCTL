@@ -1637,8 +1637,8 @@ template <class Real> void SphericalHarmonics<Real>::SHBasisEval(Long p0, const 
     Vector<Real> cos_theta(N);
     for (Long i = 0; i < N; i++) { // Set cos_theta, exp_phi
       cos_theta[i] = cos_theta_phi[i*2+0];
-      exp_phi[i].real = cos(cos_theta_phi[i*2+1]);
-      exp_phi[i].imag = sin(cos_theta_phi[i*2+1]);
+      exp_phi[i].real = cos<Real>(cos_theta_phi[i*2+1]);
+      exp_phi[i].imag = sin<Real>(cos_theta_phi[i*2+1]);
     }
 
     Vector<Real> alp(LegP.Dim(0) * LegP.Dim(1), LegP.begin(), false);
@@ -1691,59 +1691,108 @@ template <class Real> void SphericalHarmonics<Real>::VecSHBasisEval(Long p0, con
     SHBasis = 0;
     const Complex<Real> imag(0,1);
     for (Long i = 0; i < N; i++) {
+      auto Y = [p_, &Ynm, i](Long n, Long m) {
+        Complex<Real> c;
+        if (0 <= m && m <= n && n <= p_) {
+          Long idx = (2 * p_ - m + 2) * m - (m ? p_+1 : 0) + n;
+          c.real = Ynm[i][idx];
+          if (m) {
+            idx += (p_+1-m);
+            c.imag = Ynm[i][idx];
+          }
+        }
+        return c;
+      };
+      auto write_coeff = [p0, &SHBasis, i, M](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
+        if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
+          Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
+          SHBasis[i * COORD_DIM + k1][k0 * M + idx] = c.real;
+          if (m) {
+            idx += (p0+1-m);
+            SHBasis[i * COORD_DIM + k1][k0 * M + idx] = c.imag;
+          }
+        }
+      };
+      auto A = [p_](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
+      auto B = [p_](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
       Real s = 1 / sqrt<Real>(1 - cos_theta[i] * cos_theta[i]);
-      for (Long m = 0; m <= p0; m++) {
-        for (Long n = m; n <= p0; n++) {
-          auto Y = [&](Long n, Long m) {
-            Complex<Real> c;
-            if (0 <= m && m <= n && n <= p_) {
-              Long idx = (2 * p_ - m + 2) * m - (m ? p_+1 : 0) + n;
-              c.real = Ynm[i][idx];
-              if (m) {
-                idx += (p_+1-m);
-                c.imag = Ynm[i][idx];
-              }
+      if (fabs(cos_theta[i]) < 1) {
+        for (Long m = 0; m <= p0; m++) {
+          for (Long n = m; n <= p0; n++) {
+            Complex<Real> AYBY = A(n,m) * Y(n+1,m) - B(n,m) * Y(n-1,m);
+
+            Complex<Real> Fv2r = Y(n,m) * (-n-1);
+            Complex<Real> Fw2r = Y(n,m) * n;
+            Complex<Real> Fx2r = 0;
+
+            Complex<Real> Fv2t = AYBY * s;
+            Complex<Real> Fw2t = AYBY * s;
+            Complex<Real> Fx2t = imag * m * Y(n,m) * s;
+
+            Complex<Real> Fv2p = -imag * m * Y(n,m) * s;
+            Complex<Real> Fw2p = -imag * m * Y(n,m) * s;
+            Complex<Real> Fx2p = AYBY * s;
+
+            write_coeff(Fv2r, n, m, 0, 0);
+            write_coeff(Fw2r, n, m, 1, 0);
+            write_coeff(Fx2r, n, m, 2, 0);
+
+            write_coeff(Fv2t, n, m, 0, 1);
+            write_coeff(Fw2t, n, m, 1, 1);
+            write_coeff(Fx2t, n, m, 2, 1);
+
+            write_coeff(Fv2p, n, m, 0, 2);
+            write_coeff(Fw2p, n, m, 1, 2);
+            write_coeff(Fx2p, n, m, 2, 2);
+          }
+        }
+      } else {
+        Complex<Real> exp_phi;
+        exp_phi.real = cos<Real>(cos_theta_phi[i*2+1]);
+        exp_phi.imag = -sin<Real>(cos_theta_phi[i*2+1]);
+        for (Long m = 0; m <= p0; m++) {
+          for (Long n = m; n <= p0; n++) {
+
+            Complex<Real> Fv2r = 0;
+            Complex<Real> Fw2r = 0;
+            Complex<Real> Fx2r = 0;
+            Complex<Real> Fv2t = 0;
+            Complex<Real> Fw2t = 0;
+            Complex<Real> Fx2t = 0;
+            Complex<Real> Fv2p = 0;
+            Complex<Real> Fw2p = 0;
+            Complex<Real> Fx2p = 0;
+
+            if (m == 0) {
+              Fv2r = Y(n,m) * (-n-1);
+              Fw2r = Y(n,m) * n;
+              Fx2r = 0;
             }
-            return c;
-          };
-          auto write_coeff = [&](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
-            if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
-              Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
-              SHBasis[i * COORD_DIM + k1][k0 * M + idx] = c.real;
-              if (m) {
-                idx += (p0+1-m);
-                SHBasis[i * COORD_DIM + k1][k0 * M + idx] = c.imag;
-              }
+            if (m == 1) {
+              auto dY = [&cos_theta, i](Long n) { return -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta[i]<0) ? -1 : 1); };
+              Complex<Real> AYBY = A(n,m) * dY(n+1) - B(n,m) * dY(n-1);
+
+              Fv2t = AYBY             * exp_phi;
+              Fw2t = AYBY             * exp_phi;
+              Fx2t = imag * m * dY(n) * exp_phi;
+
+              Fv2p =-imag * m * dY(n) * exp_phi;
+              Fw2p =-imag * m * dY(n) * exp_phi;
+              Fx2p = AYBY             * exp_phi;
             }
-          };
 
-          auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
-          auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
-          Complex<Real> AYBY = A(n,m) * Y(n+1,m) - B(n,m) * Y(n-1,m);
+            write_coeff(Fv2r, n, m, 0, 0);
+            write_coeff(Fw2r, n, m, 1, 0);
+            write_coeff(Fx2r, n, m, 2, 0);
 
-          Complex<Real> Fv2r = Y(n,m) * (-n-1);
-          Complex<Real> Fw2r = Y(n,m) * n;
-          Complex<Real> Fx2r = 0;
+            write_coeff(Fv2t, n, m, 0, 1);
+            write_coeff(Fw2t, n, m, 1, 1);
+            write_coeff(Fx2t, n, m, 2, 1);
 
-          Complex<Real> Fv2t = AYBY * s;
-          Complex<Real> Fw2t = AYBY * s;
-          Complex<Real> Fx2t = imag * m * Y(n,m) * s;
-
-          Complex<Real> Fv2p = -imag * m * Y(n,m) * s;
-          Complex<Real> Fw2p = -imag * m * Y(n,m) * s;
-          Complex<Real> Fx2p = AYBY * s;
-
-          write_coeff(Fv2r, n, m, 0, 0);
-          write_coeff(Fw2r, n, m, 1, 0);
-          write_coeff(Fx2r, n, m, 2, 0);
-
-          write_coeff(Fv2t, n, m, 0, 1);
-          write_coeff(Fw2t, n, m, 1, 1);
-          write_coeff(Fx2t, n, m, 2, 1);
-
-          write_coeff(Fv2p, n, m, 0, 2);
-          write_coeff(Fw2p, n, m, 1, 2);
-          write_coeff(Fx2p, n, m, 2, 2);
+            write_coeff(Fv2p, n, m, 0, 2);
+            write_coeff(Fw2p, n, m, 1, 2);
+            write_coeff(Fx2p, n, m, 2, 2);
+          }
         }
       }
     }
