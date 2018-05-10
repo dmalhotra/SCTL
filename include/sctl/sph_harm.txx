@@ -747,10 +747,20 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
     }
   }
 
-  { // Set X
+  { // Set X <-- Q * StokesOp * B1
     if (X.Dim() != N * dof * COORD_DIM) X.ReInit(N * dof * COORD_DIM);
     for (Long k0 = 0; k0 < N; k0++) {
-      for (Long k1 = 0; k1 < dof; k1++) {
+      StaticArray<Real,9> Q;
+      { // Set Q
+        Real cos_theta = cos_theta_phi[k0 * 2 + 0];
+        Real sin_theta = sqrt<Real>(1 - cos_theta * cos_theta);
+        Real cos_phi = cos(cos_theta_phi[k0 * 2 + 1]);
+        Real sin_phi = sin(cos_theta_phi[k0 * 2 + 1]);
+        Q[0] = sin_theta*cos_phi; Q[1] = sin_theta*sin_phi; Q[2] = cos_theta;
+        Q[3] = cos_theta*cos_phi; Q[4] = cos_theta*sin_phi; Q[5] =-sin_theta;
+        Q[6] =          -sin_phi; Q[7] =           cos_phi; Q[8] =         0;
+      }
+      for (Long k1 = 0; k1 < dof; k1++) { // Set X <-- Q * StokesOp * B1
         StaticArray<Real,COORD_DIM> in;
         for (Long j = 0; j < COORD_DIM; j++) {
           in[j] = 0;
@@ -758,19 +768,9 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
             in[j] += B1[k1][i] * StokesOp[k0 * COORD_DIM + j][i];
           }
         }
-
-        StaticArray<Real,9> M;
-        Real cos_theta = cos_theta_phi[k0 * 2 + 0];
-        Real sin_theta = sqrt<Real>(1 - cos_theta * cos_theta);
-        Real cos_phi = cos(cos_theta_phi[k0 * 2 + 1]);
-        Real sin_phi = sin(cos_theta_phi[k0 * 2 + 1]);
-        M[0] = sin_theta*cos_phi; M[1] = sin_theta*sin_phi; M[2] = cos_theta;
-        M[3] = cos_theta*cos_phi; M[4] = cos_theta*sin_phi; M[5] =-sin_theta;
-        M[6] =          -sin_phi; M[7] =           cos_phi; M[8] =         0;
-
-        X[(k0 * dof + k1) * COORD_DIM + 0] = M[0] * in[0] + M[3] * in[1] + M[6] * in[2];
-        X[(k0 * dof + k1) * COORD_DIM + 1] = M[1] * in[0] + M[4] * in[1] + M[7] * in[2];
-        X[(k0 * dof + k1) * COORD_DIM + 2] = M[2] * in[0] + M[5] * in[1] + M[8] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 0] = Q[0] * in[0] + Q[3] * in[1] + Q[6] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 1] = Q[1] * in[0] + Q[4] * in[1] + Q[7] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 2] = Q[2] * in[0] + Q[5] * in[1] + Q[8] * in[2];
       }
     }
   }
@@ -908,10 +908,20 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
     }
   }
 
-  { // Set X
+  { // Set X <-- Q * StokesOp * B1
     if (X.Dim() != N * dof * COORD_DIM) X.ReInit(N * dof * COORD_DIM);
     for (Long k0 = 0; k0 < N; k0++) {
-      for (Long k1 = 0; k1 < dof; k1++) {
+      StaticArray<Real,9> Q;
+      { // Set Q
+        Real cos_theta = cos_theta_phi[k0 * 2 + 0];
+        Real sin_theta = sqrt<Real>(1 - cos_theta * cos_theta);
+        Real cos_phi = cos(cos_theta_phi[k0 * 2 + 1]);
+        Real sin_phi = sin(cos_theta_phi[k0 * 2 + 1]);
+        Q[0] = sin_theta*cos_phi; Q[1] = sin_theta*sin_phi; Q[2] = cos_theta;
+        Q[3] = cos_theta*cos_phi; Q[4] = cos_theta*sin_phi; Q[5] =-sin_theta;
+        Q[6] =          -sin_phi; Q[7] =           cos_phi; Q[8] =         0;
+      }
+      for (Long k1 = 0; k1 < dof; k1++) { // Set X <-- Q * StokesOp * B1
         StaticArray<Real,COORD_DIM> in;
         for (Long j = 0; j < COORD_DIM; j++) {
           in[j] = 0;
@@ -919,19 +929,9 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
             in[j] += B1[k1][i] * StokesOp[k0 * COORD_DIM + j][i];
           }
         }
-
-        StaticArray<Real,9> M;
-        Real cos_theta = cos_theta_phi[k0 * 2 + 0];
-        Real sin_theta = sqrt<Real>(1 - cos_theta * cos_theta);
-        Real cos_phi = cos(cos_theta_phi[k0 * 2 + 1]);
-        Real sin_phi = sin(cos_theta_phi[k0 * 2 + 1]);
-        M[0] = sin_theta*cos_phi; M[1] = sin_theta*sin_phi; M[2] = cos_theta;
-        M[3] = cos_theta*cos_phi; M[4] = cos_theta*sin_phi; M[5] =-sin_theta;
-        M[6] =          -sin_phi; M[7] =           cos_phi; M[8] =         0;
-
-        X[(k0 * dof + k1) * COORD_DIM + 0] = M[0] * in[0] + M[3] * in[1] + M[6] * in[2];
-        X[(k0 * dof + k1) * COORD_DIM + 1] = M[1] * in[0] + M[4] * in[1] + M[7] * in[2];
-        X[(k0 * dof + k1) * COORD_DIM + 2] = M[2] * in[0] + M[5] * in[1] + M[8] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 0] = Q[0] * in[0] + Q[3] * in[1] + Q[6] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 1] = Q[1] * in[0] + Q[4] * in[1] + Q[7] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 2] = Q[2] * in[0] + Q[5] * in[1] + Q[8] * in[2];
       }
     }
   }
