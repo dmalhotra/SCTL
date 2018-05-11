@@ -59,7 +59,7 @@ void TestMatrix() {
 
 int main(int argc, char** argv) {
   sctl::SphericalHarmonics<double>::test_stokes();
-  return;
+  return 0;
 
 #ifdef SCTL_HAVE_MPI
   MPI_Init(&argc, &argv);
