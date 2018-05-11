@@ -21,6 +21,9 @@
 #include <immintrin.h>
 #endif
 
+// TODO: Check alignment which SCTL_MEMDEBUG is defined
+// TODO: Replace pointers with iterators
+
 namespace SCTL_NAMESPACE {
 
 template <class T> inline T zero_intrin() { return (T)0; }
@@ -43,7 +46,7 @@ template <class T> inline T cmplt_intrin(const T& a, const T& b) {
   T r = 0;
   uint8_t* r_ = reinterpret_cast<uint8_t*>(&r);
   if (a < b)
-    for (int i = 0; i < sizeof(T); i++) r_[i] = ~(uint8_t)0;
+    for (int i = 0; i < (int)sizeof(T); i++) r_[i] = ~(uint8_t)0;
   return r;
 }
 
@@ -52,7 +55,7 @@ template <class T> inline T and_intrin(const T& a, const T& b) {
   const uint8_t* a_ = reinterpret_cast<const uint8_t*>(&a);
   const uint8_t* b_ = reinterpret_cast<const uint8_t*>(&b);
   uint8_t* r_ = reinterpret_cast<uint8_t*>(&r);
-  for (int i = 0; i < sizeof(T); i++) r_[i] = a_[i] & b_[i];
+  for (int i = 0; i < (int)sizeof(T); i++) r_[i] = a_[i] & b_[i];
   return r;
 }
 

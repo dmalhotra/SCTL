@@ -126,6 +126,8 @@ template <class Real> class SphericalHarmonics{
      */
     static void StokesEvalDL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
 
+    static void StokesEvalKL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, const Vector<Real>& norm, bool interior, Vector<Real>& U);
+
 
     static void test_stokes() {
       int p = 6;
@@ -144,6 +146,7 @@ template <class Real> class SphericalHarmonics{
 
       Vector<Real> Fcoeff(dof*(p+1)*(p+2));
       for (Long i=0;i<Fcoeff.Dim();i++) Fcoeff[i]=i+1;
+      Fcoeff = 0; Fcoeff[2] = 1;
       print_coeff(Fcoeff);
 
       Vector<Real> Fgrid;
@@ -152,9 +155,9 @@ template <class Real> class SphericalHarmonics{
 
       const Vector<Real> CosTheta = LegendreNodes(Nt-1);
       const Vector<Real> LWeights = LegendreWeights(Nt-1);
-      auto stokes_evalSL = [&](const Vector<Real>& trg, Vector<Real>& Df) {
-        Df.ReInit(3);
-        Df=0;
+      auto stokes_evalSL = [&](const Vector<Real>& trg, Vector<Real>& Sf) {
+        Sf.ReInit(3);
+        Sf=0;
         Real s = 1/(8*const_pi<Real>());
         for (Long i=0;i<Nt;i++) {
           Real cos_theta = CosTheta[i];
@@ -183,15 +186,15 @@ template <class Real> class SphericalHarmonics{
 
             Real rdotf = dr[0]*f[0]+dr[1]*f[1]+dr[2]*f[2];
 
-            Df[0] += s*(f[0]*oor1 + dr[0]*rdotf*oor3) * qw;
-            Df[1] += s*(f[1]*oor1 + dr[1]*rdotf*oor3) * qw;
-            Df[2] += s*(f[2]*oor1 + dr[2]*rdotf*oor3) * qw;
+            Sf[0] += s*(f[0]*oor1 + dr[0]*rdotf*oor3) * qw;
+            Sf[1] += s*(f[1]*oor1 + dr[1]*rdotf*oor3) * qw;
+            Sf[2] += s*(f[2]*oor1 + dr[2]*rdotf*oor3) * qw;
           }
         }
       };
-      auto stokes_evalDL = [&](const Vector<Real>& trg, Vector<Real>& Df) {
-        Df.ReInit(3);
-        Df=0;
+      auto stokes_evalDL = [&](const Vector<Real>& trg, Vector<Real>& Sf) {
+        Sf.ReInit(3);
+        Sf=0;
         Real s = 6/(8*const_pi<Real>());
         for (Long i=0;i<Nt;i++) {
           Real cos_theta = CosTheta[i];
@@ -224,9 +227,69 @@ template <class Real> class SphericalHarmonics{
             Real rdotn = dr[0]*n[0]+dr[1]*n[1]+dr[2]*n[2];
             Real rdotf = dr[0]*f[0]+dr[1]*f[1]+dr[2]*f[2];
 
-            Df[0] += -s*dr[0]*rdotn*rdotf*oor5 * qw;
-            Df[1] += -s*dr[1]*rdotn*rdotf*oor5 * qw;
-            Df[2] += -s*dr[2]*rdotn*rdotf*oor5 * qw;
+            Sf[0] += -s*dr[0]*rdotn*rdotf*oor5 * qw;
+            Sf[1] += -s*dr[1]*rdotn*rdotf*oor5 * qw;
+            Sf[2] += -s*dr[2]*rdotn*rdotf*oor5 * qw;
+          }
+        }
+      };
+      auto stokes_evalKL = [&](const Vector<Real>& trg, const Vector<Real>& nor, Vector<Real>& Sf) {
+        Sf.ReInit(3);
+        Sf=0;
+        Real scal = 1/(8*const_pi<Real>());
+        for (Long i=0;i<Nt;i++) {
+          Real cos_theta = CosTheta[i];
+          Real sin_theta = sqrt(1-cos_theta*cos_theta);
+          for (Long j=0;j<Np;j++) {
+            Real cos_phi = cos(2*const_pi<Real>()*j/Np);
+            Real sin_phi = sin(2*const_pi<Real>()*j/Np);
+            Real qw = LWeights[i]*2*const_pi<Real>()/Np; // quadrature weights * area-element
+
+            Real f[3]; // source density
+            f[0] = Fgrid[(i*Np+j)*3+0];
+            f[1] = Fgrid[(i*Np+j)*3+1];
+            f[2] = Fgrid[(i*Np+j)*3+2];
+
+            Real x[3]; // source coordinates
+            x[0] = sin_theta*cos_phi;
+            x[1] = sin_theta*sin_phi;
+            x[2] = cos_theta;
+
+            Real dr[3];
+            dr[0] = trg[0] - x[0];
+            dr[1] = trg[1] - x[1];
+            dr[2] = trg[2] - x[2];
+
+            Real invr = 1 / sqrt(dr[0]*dr[0] + dr[1]*dr[1] + dr[2]*dr[2]);
+            Real invr2 = invr*invr;
+            Real invr3 = invr2*invr;
+            Real invr5 = invr2*invr3;
+
+            Real fdotr = dr[0]*f[0]+dr[1]*f[1]+dr[2]*f[2];
+
+            Real du[9];
+            du[0] = (                  fdotr*invr3 - 3*dr[0]*dr[0]*fdotr*invr5) * scal;
+            du[1] = ((dr[0]*f[1]-dr[1]*f[0])*invr3 - 3*dr[0]*dr[1]*fdotr*invr5) * scal;
+            du[2] = ((dr[0]*f[2]-dr[2]*f[0])*invr3 - 3*dr[0]*dr[2]*fdotr*invr5) * scal;
+
+            du[3] = ((dr[1]*f[0]-dr[0]*f[1])*invr3 - 3*dr[1]*dr[0]*fdotr*invr5) * scal;
+            du[4] = (                  fdotr*invr3 - 3*dr[1]*dr[1]*fdotr*invr5) * scal;
+            du[5] = ((dr[1]*f[2]-dr[2]*f[1])*invr3 - 3*dr[1]*dr[2]*fdotr*invr5) * scal;
+
+            du[6] = ((dr[2]*f[0]-dr[0]*f[2])*invr3 - 3*dr[2]*dr[0]*fdotr*invr5) * scal;
+            du[7] = ((dr[2]*f[1]-dr[1]*f[2])*invr3 - 3*dr[2]*dr[1]*fdotr*invr5) * scal;
+            du[8] = (                  fdotr*invr3 - 3*dr[2]*dr[2]*fdotr*invr5) * scal;
+
+            Real p = (2*fdotr*invr3) * scal;
+
+            Real K[9];
+            K[0] = du[0] + du[0] - p; K[1] = du[1] + du[3] - 0; K[2] = du[2] + du[6] - 0;
+            K[3] = du[3] + du[1] - 0; K[4] = du[4] + du[4] - p; K[5] = du[5] + du[7] - 0;
+            K[6] = du[6] + du[2] - 0; K[7] = du[7] + du[5] - 0; K[8] = du[8] + du[8] - p;
+
+            Sf[0] += (K[0]*nor[0] + K[1]*nor[1] + K[2]*nor[2]) * qw;
+            Sf[1] += (K[3]*nor[0] + K[4]*nor[1] + K[5]*nor[2]) * qw;
+            Sf[2] += (K[6]*nor[0] + K[7]*nor[1] + K[8]*nor[2]) * qw;
           }
         }
       };
@@ -234,10 +297,13 @@ template <class Real> class SphericalHarmonics{
       for (Long i = 0; i < 40; i++) { // Evaluate
         Real R0 = (0.01 + i/20.0);
 
-        Vector<Real> x(3);
+        Vector<Real> x(3), n(3);
         x[0] = drand48()-0.5;
         x[1] = drand48()-0.5;
         x[2] = drand48()-0.5;
+        n[0] = drand48()-0.5;
+        n[1] = drand48()-0.5;
+        n[2] = drand48()-0.5;
         Real R = sqrt<Real>(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
         x[0] *= R0 / R;
         x[1] *= R0 / R;
@@ -245,19 +311,26 @@ template <class Real> class SphericalHarmonics{
 
         Vector<Real> Sf, Sf_;
         Vector<Real> Df, Df_;
+        Vector<Real> Kf, Kf_;
         StokesEvalSL(Fcoeff, sctl::SHCArrange::ROW_MAJOR, p, x, R0<1, Sf);
         StokesEvalDL(Fcoeff, sctl::SHCArrange::ROW_MAJOR, p, x, R0<1, Df);
+        StokesEvalKL(Fcoeff, sctl::SHCArrange::ROW_MAJOR, p, x, n, R0<1, Kf);
         stokes_evalSL(x, Sf_);
         stokes_evalDL(x, Df_);
+        stokes_evalKL(x, n, Kf_);
 
         auto errSL = (Sf-Sf_)/(Sf+0.01);
         auto errDL = (Df-Df_)/(Df+0.01);
+        auto errKL = (Kf-Kf_)/(Kf+0.01);
         for (auto& x:errSL) x=log(fabs(x))/log(10);
         for (auto& x:errDL) x=log(fabs(x))/log(10);
-        std::cout<<"R = "<<(0.01 + i/20.0)<<";   SL-error = ";
-        std::cout<<errSL;
-        std::cout<<"R = "<<(0.01 + i/20.0)<<";   DL-error = ";
-        std::cout<<errDL;
+        for (auto& x:errKL) x=log(fabs(x))/log(10);
+        //std::cout<<"R = "<<(0.01 + i/20.0)<<";   SL-error = ";
+        //std::cout<<errSL;
+        //std::cout<<"R = "<<(0.01 + i/20.0)<<";   DL-error = ";
+        //std::cout<<errDL;
+        std::cout<<"R = "<<(0.01 + i/20.0)<<";   KL-error = ";
+        std::cout<<errKL;
       }
       Clear();
     }

@@ -653,7 +653,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
     assert(SHBasis.Dim(0) == N * COORD_DIM);
   }
 
-  Matrix<Real> StokesOp(SHBasis.Dim(0), SHBasis.Dim(1));
+  Matrix<Real> StokesOp(N * COORD_DIM, COORD_DIM * M);
   for (Long i = 0; i < N; i++) { // Set StokesOp
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
@@ -814,7 +814,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
     assert(SHBasis.Dim(0) == N * COORD_DIM);
   }
 
-  Matrix<Real> StokesOp(SHBasis.Dim(0), SHBasis.Dim(1));
+  Matrix<Real> StokesOp(N * COORD_DIM, COORD_DIM * M);
   for (Long i = 0; i < N; i++) { // Set StokesOp
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
@@ -892,6 +892,237 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
           SXt = a * Xt;
           SXp = a * Xp;
         }
+
+        write_coeff(SVr, n, m, 0, 0);
+        write_coeff(SVt, n, m, 0, 1);
+        write_coeff(SVp, n, m, 0, 2);
+
+        write_coeff(SWr, n, m, 1, 0);
+        write_coeff(SWt, n, m, 1, 1);
+        write_coeff(SWp, n, m, 1, 2);
+
+        write_coeff(SXr, n, m, 2, 0);
+        write_coeff(SXt, n, m, 2, 1);
+        write_coeff(SXp, n, m, 2, 2);
+      }
+    }
+  }
+
+  { // Set X <-- Q * StokesOp * B1
+    if (X.Dim() != N * dof * COORD_DIM) X.ReInit(N * dof * COORD_DIM);
+    for (Long k0 = 0; k0 < N; k0++) {
+      StaticArray<Real,9> Q;
+      { // Set Q
+        Real cos_theta = cos_theta_phi[k0 * 2 + 0];
+        Real sin_theta = sqrt<Real>(1 - cos_theta * cos_theta);
+        Real cos_phi = cos(cos_theta_phi[k0 * 2 + 1]);
+        Real sin_phi = sin(cos_theta_phi[k0 * 2 + 1]);
+        Q[0] = sin_theta*cos_phi; Q[1] = sin_theta*sin_phi; Q[2] = cos_theta;
+        Q[3] = cos_theta*cos_phi; Q[4] = cos_theta*sin_phi; Q[5] =-sin_theta;
+        Q[6] =          -sin_phi; Q[7] =           cos_phi; Q[8] =         0;
+      }
+      for (Long k1 = 0; k1 < dof; k1++) { // Set X <-- Q * StokesOp * B1
+        StaticArray<Real,COORD_DIM> in;
+        for (Long j = 0; j < COORD_DIM; j++) {
+          in[j] = 0;
+          for (Long i = 0; i < COORD_DIM * M; i++) {
+            in[j] += B1[k1][i] * StokesOp[k0 * COORD_DIM + j][i];
+          }
+        }
+        X[(k0 * dof + k1) * COORD_DIM + 0] = Q[0] * in[0] + Q[3] * in[1] + Q[6] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 1] = Q[1] * in[0] + Q[4] * in[1] + Q[7] * in[2];
+        X[(k0 * dof + k1) * COORD_DIM + 2] = Q[2] * in[0] + Q[5] * in[1] + Q[8] * in[2];
+      }
+    }
+  }
+}
+
+template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& coord, const Vector<Real>& norm, bool interior, Vector<Real>& X) {
+  Long M = (p0+1) * (p0+1);
+
+  Long dof;
+  Matrix<Real> B1;
+  { // Set B1, dof
+    Vector<Real> B0;
+    SHCArrange1(S, arrange, p0, B0);
+    dof = B0.Dim() / M / COORD_DIM;
+    assert(B0.Dim() == dof * COORD_DIM * M);
+
+    B1.ReInit(dof, COORD_DIM * M);
+    Vector<Real> B1_(B1.Dim(0) * B1.Dim(1), B1.begin(), false);
+    SHCArrange0(B0, p0, B1_, SHCArrange::COL_MAJOR_NONZERO);
+  }
+  assert(B1.Dim(1) == COORD_DIM * M);
+  assert(B1.Dim(0) == dof);
+
+  Long N = coord.Dim() / COORD_DIM;
+  assert(coord.Dim() == N * COORD_DIM);
+
+  Matrix<Real> SHBasis;
+  Vector<Real> R, cos_theta_phi;
+  { // Set R, SHBasis
+    R.ReInit(N);
+    cos_theta_phi.ReInit(2 * N);
+    for (Long i = 0; i < N; i++) { // Set R, cos_theta_phi
+      ConstIterator<Real> x = coord.begin() + i * COORD_DIM;
+      R[i] = sqrt<Real>(x[0]*x[0] + x[1]*x[1] + x[2]*x[2]);
+      cos_theta_phi[i * 2 + 0] = x[2] / R[i];
+      cos_theta_phi[i * 2 + 1] = atan2(x[1], x[0]); // TODO: works only for float and double
+    }
+    SHBasisEval(p0, cos_theta_phi, SHBasis);
+    assert(SHBasis.Dim(1) == M);
+    assert(SHBasis.Dim(0) == N);
+  }
+
+  Matrix<Real> StokesOp(N * COORD_DIM, COORD_DIM * M);
+  for (Long i = 0; i < N; i++) { // Set StokesOp
+    StaticArray<Real, COORD_DIM> norm0;
+    Real cos_theta, sin_theta, cos_phi, sin_phi;
+    { // Set cos_theta, sin_theta, cos_phi, sin_phi
+      cos_theta = cos_theta_phi[i * 2 + 0];
+      sin_theta = sqrt<Real>(1 - cos_theta * cos_theta);
+      cos_phi = cos(cos_theta_phi[i * 2 + 1]);
+      sin_phi = sin(cos_theta_phi[i * 2 + 1]);
+    }
+    { // Set norm0 <-- Q^t * norm
+      StaticArray<Real,9> Q;
+      { // Set Q
+        Q[0] = sin_theta*cos_phi; Q[1] = sin_theta*sin_phi; Q[2] = cos_theta;
+        Q[3] = cos_theta*cos_phi; Q[4] = cos_theta*sin_phi; Q[5] =-sin_theta;
+        Q[6] =          -sin_phi; Q[7] =           cos_phi; Q[8] =         0;
+      }
+      StaticArray<Real,COORD_DIM> in;
+      in[0] = norm[i * COORD_DIM + 0];
+      in[1] = norm[i * COORD_DIM + 1];
+      in[2] = norm[i * COORD_DIM + 2];
+      norm0[0] = Q[0] * in[0] + Q[1] * in[1] + Q[2] * in[2];
+      norm0[1] = Q[3] * in[0] + Q[4] * in[1] + Q[5] * in[2];
+      norm0[2] = Q[6] * in[0] + Q[7] * in[1] + Q[8] * in[2];
+    }
+
+    Complex<Real> imag(0,1);
+    Complex<Real> exp_iphi(cos_phi, sin_phi);
+    Complex<Real> exp_iphi_conj(cos_phi, -sin_phi);
+    Real cot_theta = cos_theta / sin_theta;
+    Real csc_theta = 1 / sin_theta;
+    Real cos_2theta = 2 * cos_theta * cos_theta - 1;
+
+    for (Long m = 0; m <= p0; m++) {
+      for (Long n = m; n <= p0; n++) {
+        auto read_coeff = [&](Long n, Long m) {
+          Complex<Real> c;
+          if (0 <= m && m <= n && n <= p0) {
+            Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
+            c.real = SHBasis[i][idx];
+            if (m) {
+              idx += (p0+1-m);
+              c.imag = SHBasis[i][idx];
+            }
+          }
+          return c;
+        };
+        auto write_coeff = [&](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
+          if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
+            Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
+            StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real;
+            if (m) {
+              idx += (p0+1-m);
+              StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.imag;
+            }
+          }
+        };
+
+        auto Ynm0 = read_coeff(n, m + 0);
+        auto Ynm1 = read_coeff(n, m + 1);
+        auto Ynm2 = read_coeff(n, m + 2);
+
+        Complex<Real> KV[COORD_DIM][COORD_DIM];
+        Complex<Real> KW[COORD_DIM][COORD_DIM];
+        Complex<Real> KX[COORD_DIM][COORD_DIM];
+        if (interior) {
+          KV[0][0] = 0;
+          KV[0][1] = 0;
+          KV[0][2] = 0;
+          KV[1][0] = 0;
+          KV[1][1] = 0;
+          KV[1][2] = 0;
+          KV[2][0] = 0;
+          KV[2][1] = 0;
+          KV[2][2] = 0;
+
+          KW[0][0] = 0;
+          KW[0][1] = 0;
+          KW[0][2] = 0;
+          KW[1][0] = 0;
+          KW[1][1] = 0;
+          KW[1][2] = 0;
+          KW[2][0] = 0;
+          KW[2][1] = 0;
+          KW[2][2] = 0;
+
+          KX[0][0] = 0;
+          KX[0][1] = 0;
+          KX[0][2] = 0;
+          KX[1][0] = 0;
+          KX[1][1] = 0;
+          KX[1][2] = 0;
+          KX[2][0] = 0;
+          KX[2][1] = 0;
+          KX[2][2] = 0;
+        } else {
+          Real r = R[i];
+
+          KV[0][0] =  (2*n*(n*n+3*n+2)*pow<Real>(r,-n-3)*Ynm0) / (4*n*n+8*n+3);
+          KW[0][0] = -(n*pow<Real>(r,-n-3)*(2*n*n*n*(r*r-1) + n*n*(7*r*r-5) + n*(r*r-1) - r*r + 2)*Ynm0) / (4*n*n-1);
+          KX[0][0] =  0;
+
+          KV[0][1] = -(2*n*(n+2)*exp_iphi_conj*pow<Real>(r,-n-3)*(sqrt<Real>(-m*m-m+n*n+n)*Ynm1 + m*exp_iphi*cot_theta*Ynm0)) / (4*n*n+8*n+3);
+          KW[0][1] =  (exp_iphi_conj*pow<Real>(r,-n-3)*(2*n*n*n*(r*r-1) + n*n*(r*r-3) - 2*n*(r*r-1) - r*r))*(sqrt<Real>(-m*m-m+n*n+n)*Ynm1 + m*exp_iphi*cot_theta*Ynm0) / (4*n*n-1);
+          KX[0][1] =  (imag*m*(n+2)*pow<Real>(r,-n-2)*csc_theta*Ynm0) / (2*n+1);
+
+          KV[0][2] = -(2*imag*m*n*(n+2)*pow<Real>(r,-n-3)*csc_theta*Ynm0) / (4*n*n+8*n+3);
+          KW[0][2] =  (imag*m*pow<Real>(r,-n-3)*(2*n*n*n*(r*r-1) + n*n*(r*r-3) - 2*n*(r*r-1) - r*r)*csc_theta*Ynm0) / (4*n*n-1);
+          KX[0][2] =  (pow<Real>(r,-n-3)*(-m*(n+2)*r*cot_theta*Ynm0 - (n+2)*exp_iphi_conj*r*sqrt<Real>(-m*(m+1) + n*n + n)*Ynm1)) / (2*n+1);
+
+          KV[1][0] = -(2*n*(n+2)*exp_iphi_conj*pow<Real>(r,-n-3)*(sqrt<Real>(-m*m-m+n*n+n)*Ynm1 + m*exp_iphi*cot_theta*Ynm0)) / (4*n*n+8*n+3);
+          KW[1][0] =  (exp_iphi_conj*pow<Real>(r,-n-3)*(2*n*n*n*(r*r-1) + n*n*(r*r-3) - 2*n*(r*r-1) - r*r))*(sqrt<Real>(-m*m-m+n*n+n)*Ynm1 + m*exp_iphi*cot_theta*Ynm0) / (4*n*n-1);
+          KX[1][0] =  (imag*m*(n+2)*pow<Real>(r,-n-2)*csc_theta*Ynm0) / (2*n+1);
+
+          KV[1][1] =  (2*(2*m+1)*n*exp_iphi*sqrt<Real>(-m*m-m+n*n+n)*cot_theta*Ynm1 - 2*n*exp_iphi*exp_iphi*(-m*m*cot_theta*cot_theta+m*csc_theta*csc_theta+n+1)*Ynm0 + 2*n*sqrt<Real>(m*m*m*m + 4*m*m*m + m*m*(-2*n*n-2*n+5) + m*(-4*n*n-4*n+2) + n*(n*n*n+2*n*n-n-2))*Ynm2) * (exp_iphi_conj*exp_iphi_conj*pow<Real>(r,-n-3)) / (4*n*n+8*n+3);
+          KW[1][1] =  (Ynm0*((m-1)*m*exp_iphi*exp_iphi*(2*n*n-(n-2)*(2*n+1)*r*r-n)*csc_theta*csc_theta - exp_iphi*exp_iphi*((n-2)*(2*n+1)*r*r*(n-m*m)+n*(2*n-1)*(m*m+n+1))) + sqrt<Real>((m-n)*(m-n+1)*(m+n+1)*(m+n+2))*(2*n*n-(n-2)*(2*n+1)*r*r-n)*Ynm2 + (2*m+1)*exp_iphi*sqrt<Real>(-m*(m+1)+n*n+n)*(2*n*n-(n-2)*(2*n+1)*r*r-n)*cot_theta*Ynm1) * (exp_iphi_conj*exp_iphi_conj*pow<Real>(r,-n-3)) / (4*n*n-1);
+          KX[1][1] = -(sqrt<Real>(-m*m-m+n*n+n)*Ynm1 + (m-1)*exp_iphi*cot_theta*Ynm0)*(2*imag*m*exp_iphi_conj*pow<Real>(r,-n-2)*csc_theta) / (2*n+1);
+
+          KV[1][2] =  (2*imag*m*n*exp_iphi_conj*pow<Real>(r,-n-3)*csc_theta*(sqrt<Real>(-m*m-m+n*n+n)*Ynm1 + (m-1)*exp_iphi*cot_theta*Ynm0)) / (4*n*n+8*n+3);
+          KW[1][2] = -(imag*m*exp_iphi_conj*pow<Real>(r,-n-3)*(-2*n*n + (n-2)*(2*n+1)*r*r + n)*csc_theta)*(sqrt<Real>(-m*(m+1) + n*n + n)*Ynm1 + (m-1)*exp_iphi*cot_theta*Ynm0) / (4*n*n-1);
+          KX[1][2] =  (4*m*exp_iphi*sqrt<Real>(-m*(m+1)+n*n+n)*cot_theta*Ynm1 + 2*sqrt<Real>((m-n)*(m-n+1)*(m+n+1)*(m+n+2))*Ynm2 + (m-1)*m*exp_iphi*exp_iphi*(cos_2theta+3)*csc_theta*csc_theta*Ynm0)*(exp_iphi_conj*exp_iphi_conj*pow<Real>(r,-n-2)) / (2*(2*n+1));
+
+          KV[2][0] = -(2*imag*m*n*(n+2)*pow<Real>(r,-n-3)*csc_theta*Ynm0) / (4*n*n+8*n+3);
+          KW[2][0] =  (imag*m*pow<Real>(r,-n-3)*(2*n*n*n*(r*r-1) + n*n*(r*r-3) - 2*n*(r*r-1) - r*r)*csc_theta*Ynm0) / (4*n*n-1);
+          KX[2][0] =  (pow<Real>(r,-n-3)*(-m*(n+2)*r*cot_theta*Ynm0 - (n+2)*exp_iphi_conj*r*sqrt<Real>(-m*(m+1)+n*n+n)*Ynm1)) / (2*n+1);
+
+          KV[2][1] =  (2*imag*m*n*exp_iphi_conj*pow<Real>(r,-n-3)*csc_theta*(sqrt<Real>(-m*m-m+n*n+n)*Ynm1 + (m-1)*exp_iphi*cot_theta*Ynm0)) / (4*n*n+8*n+3);
+          KW[2][1] = -(imag*m*exp_iphi_conj*pow<Real>(r,-n-3)*(-2*n*n + (n-2)*(2*n+1)*r*r + n)*csc_theta)*(sqrt<Real>(-m*(m+1)+n*n+n)*Ynm1 + (m-1)*exp_iphi*cot_theta*Ynm0) / (4*n*n-1);
+          KX[2][1] =  (4*m*exp_iphi*sqrt<Real>(-m*(m+1)+n*n+n)*cot_theta*Ynm1 + 2*sqrt<Real>((m-n)*(m-n+1)*(m+n+1)*(m+n+2))*Ynm2 + (m-1)*m*exp_iphi*exp_iphi*(cos_2theta+3)*csc_theta*csc_theta*Ynm0)*(exp_iphi_conj*exp_iphi_conj*pow<Real>(r,-n-2)) / (2*(2*n+1));
+
+          KV[2][2] =  (2*n*sqrt<Real>(-m*m-m+n*n+n)*cot_theta*Ynm1 - 2*n*exp_iphi*(m*m*csc_theta*csc_theta-m*cot_theta*cot_theta+n+1)*Ynm0)*(exp_iphi_conj*pow<Real>(r,-n-3)) / (4*n*n+8*n+3);
+          KW[2][2] =  (-sqrt<Real>(-m*(m+1)+n*n+n)*(-2*n*n + (n-2)*(2*n+1)*r*r + n)*cot_theta*Ynm1 + Ynm0*(m*exp_iphi*(-2*n*n + (n-2)*(2*n+1)*r*r + n)*((m-1)*csc_theta*csc_theta+1) - n*exp_iphi*(2*n*n + (n-2)*(2*n+1)*r*r + n - 1)))*(exp_iphi_conj*pow<Real>(r,-n-3)) / (4*n*n-1);
+          KX[2][2] =  (sqrt<Real>(-m*(m+1)+n*n+n)*Ynm1 + (m-1)*exp_iphi*cot_theta*Ynm0)*(2*imag*m*exp_iphi_conj*pow<Real>(r,-n-2)*csc_theta) / (2*n+1);
+        }
+
+        Complex<Real> SVr, SVt, SVp;
+        SVr = KV[0][0] * norm0[0] + KV[0][1] * norm0[1] + KV[0][2] * norm0[2];
+        SVt = KV[1][0] * norm0[0] + KV[1][1] * norm0[1] + KV[1][2] * norm0[2];
+        SVp = KV[2][0] * norm0[0] + KV[2][1] * norm0[1] + KV[2][2] * norm0[2];
+
+        Complex<Real> SWr, SWt, SWp;
+        SWr = KW[0][0] * norm0[0] + KW[0][1] * norm0[1] + KW[0][2] * norm0[2];
+        SWt = KW[1][0] * norm0[0] + KW[1][1] * norm0[1] + KW[1][2] * norm0[2];
+        SWp = KW[2][0] * norm0[0] + KW[2][1] * norm0[1] + KW[2][2] * norm0[2];
+
+        Complex<Real> SXr, SXt, SXp;
+        SXr = KX[0][0] * norm0[0] + KX[0][1] * norm0[1] + KX[0][2] * norm0[2];
+        SXt = KX[1][0] * norm0[0] + KX[1][1] * norm0[1] + KX[1][2] * norm0[2];
+        SXp = KX[2][0] * norm0[0] + KX[2][1] * norm0[1] + KX[2][2] * norm0[2];
 
         write_coeff(SVr, n, m, 0, 0);
         write_coeff(SVt, n, m, 0, 1);
