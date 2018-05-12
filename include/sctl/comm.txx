@@ -932,7 +932,7 @@ inline Vector<MPI_Request>* Comm::NewReq() const {
   return &request;
 }
 
-void Comm::Init(const MPI_Comm mpi_comm) {
+inline void Comm::Init(const MPI_Comm mpi_comm) {
   #pragma omp critical(SCTL_COMM_DUP)
   MPI_Comm_dup(mpi_comm, &mpi_comm_);
   MPI_Comm_rank(mpi_comm_, &mpi_rank_);
@@ -1012,9 +1012,9 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
           splt_count = (100 * nelem) / totSize;
           if (npes > 100) splt_count = (drand48() * totSize) < (100 * nelem) ? 1 : 0;
           if (splt_count > nelem) splt_count = nelem;
-          MPI_Allreduce  (&splt_count, &glb_splt_count, 1, CommDatatype<Integer>::value(), CommDatatype<Integer>::sum(), mpi_comm_);
+          MPI_Allreduce  (&splt_count, &glb_splt_count, 1, CommDatatype<Integer>::value(), CommDatatype<Integer>::sum(), comm);
           if (!glb_splt_count) splt_count = std::min<Long>(1, nelem);
-          MPI_Allreduce  (&splt_count, &glb_splt_count, 1, CommDatatype<Integer>::value(), CommDatatype<Integer>::sum(), mpi_comm_);
+          MPI_Allreduce  (&splt_count, &glb_splt_count, 1, CommDatatype<Integer>::value(), CommDatatype<Integer>::sum(), comm);
           SCTL_ASSERT(glb_splt_count);
         }
 

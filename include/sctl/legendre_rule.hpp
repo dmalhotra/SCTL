@@ -281,7 +281,7 @@ inline void cdgqf ( int nt, int kind, double alpha, double beta, double t[],
 }
 //****************************************************************************80
 
-void cgqf ( int nt, int kind, double alpha, double beta, double a, double b,
+inline void cgqf ( int nt, int kind, double alpha, double beta, double a, double b,
   double t[], double wts[] )
 
 //****************************************************************************80
@@ -376,7 +376,7 @@ void cgqf ( int nt, int kind, double alpha, double beta, double a, double b,
 }
 //****************************************************************************80
 
-double class_matrix ( int kind, int m, double alpha, double beta, double aj[],
+inline double class_matrix ( int kind, int m, double alpha, double beta, double aj[],
   double bj[] )
 
 //****************************************************************************80
@@ -611,7 +611,7 @@ double class_matrix ( int kind, int m, double alpha, double beta, double aj[],
 }
 //****************************************************************************80
 
-void imtqlx ( int n, double d[], double e[], double z[] )
+inline void imtqlx ( int n, double d[], double e[], double z[] )
 
 //****************************************************************************80
 //
@@ -805,7 +805,7 @@ void imtqlx ( int n, double d[], double e[], double z[] )
 }
 //****************************************************************************80
 
-void parchk ( int kind, int m, double alpha, double beta )
+inline void parchk ( int kind, int m, double alpha, double beta )
 
 //****************************************************************************80
 //
@@ -900,7 +900,7 @@ void parchk ( int kind, int m, double alpha, double beta )
 }
 //****************************************************************************80
 
-double r8_abs ( double x )
+inline double r8_abs ( double x )
 
 //****************************************************************************80
 //
@@ -941,7 +941,7 @@ double r8_abs ( double x )
 }
 //****************************************************************************80
 
-double r8_epsilon ( )
+inline double r8_epsilon ( )
 
 //****************************************************************************80
 //
@@ -989,7 +989,7 @@ double r8_epsilon ( )
 }
 //****************************************************************************80
 
-double r8_sign ( double x )
+inline double r8_sign ( double x )
 
 //****************************************************************************80
 //
@@ -1030,7 +1030,7 @@ double r8_sign ( double x )
 }
 //****************************************************************************80
 
-void r8mat_write ( std::string output_filename, int m, int n, double table[] )
+inline void r8mat_write ( std::string output_filename, int m, int n, double table[] )
 
 //****************************************************************************80
 //
@@ -1096,7 +1096,7 @@ void r8mat_write ( std::string output_filename, int m, int n, double table[] )
 }
 //****************************************************************************80
 
-void rule_write ( int order, std::string filename, double x[], double w[],
+inline void rule_write ( int order, std::string filename, double x[], double w[],
   double r[] )
 
 //****************************************************************************80
@@ -1155,7 +1155,7 @@ void rule_write ( int order, std::string filename, double x[], double w[],
 }
 //****************************************************************************80
 
-void scqf ( int nt, double t[], int mlt[], double wts[], int nwts, int ndx[],
+inline void scqf ( int nt, double t[], int mlt[], double wts[], int nwts, int ndx[],
   double swts[], double st[], int kind, double alpha, double beta, double a,
   double b )
 
@@ -1394,7 +1394,7 @@ void scqf ( int nt, double t[], int mlt[], double wts[], int nwts, int ndx[],
 }
 //****************************************************************************80
 
-void sgqf ( int nt, double aj[], double bj[], double zemu, double t[],
+inline void sgqf ( int nt, double aj[], double bj[], double zemu, double t[],
   double wts[] )
 
 //****************************************************************************80
