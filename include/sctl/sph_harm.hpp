@@ -146,7 +146,7 @@ template <class Real> class SphericalHarmonics{
 
       Vector<Real> Fcoeff(dof*(p+1)*(p+2));
       for (Long i=0;i<Fcoeff.Dim();i++) Fcoeff[i]=i+1;
-      Fcoeff = 0; Fcoeff[2] = 1;
+      //Fcoeff = 0; Fcoeff[2] = 1;
       print_coeff(Fcoeff);
 
       Vector<Real> Fgrid;
@@ -319,16 +319,40 @@ template <class Real> class SphericalHarmonics{
         stokes_evalDL(x, Df_);
         stokes_evalKL(x, n, Kf_);
 
+        {
+          Vector<Real> dx(COORD_DIM);
+          if (0) {
+            dx = x;
+          } else {
+            auto cross_prod = [](Vector<Real>& x, Vector<Real>& y) {
+              Vector<Real> z(COORD_DIM);
+              z[0] = x[1] * y[2] - x[2] * y[1];
+              z[1] = x[2] * y[0] - x[0] * y[2];
+              z[2] = x[0] * y[1] - x[1] * y[0];
+              return z;
+            };
+            Vector<Real> z(COORD_DIM); z = 0; z[2] = 1;
+            dx = cross_prod(x,z);
+            dx = cross_prod(dx,x) * -1;
+          }
+
+          Vector<Real> v0, v1;
+          Real dr = sqrt<Real>(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]);
+          stokes_evalSL(x - dx * 1e-5 / dr, v0);
+          stokes_evalSL(x + dx * 1e-5 / dr, v1);
+          Kf_ = (v1 - v0) / 2e-5;
+        }
+
         auto errSL = (Sf-Sf_)/(Sf+0.01);
         auto errDL = (Df-Df_)/(Df+0.01);
         auto errKL = (Kf-Kf_)/(Kf+0.01);
         for (auto& x:errSL) x=log(fabs(x))/log(10);
         for (auto& x:errDL) x=log(fabs(x))/log(10);
         for (auto& x:errKL) x=log(fabs(x))/log(10);
-        //std::cout<<"R = "<<(0.01 + i/20.0)<<";   SL-error = ";
-        //std::cout<<errSL;
-        //std::cout<<"R = "<<(0.01 + i/20.0)<<";   DL-error = ";
-        //std::cout<<errDL;
+        std::cout<<"R = "<<(0.01 + i/20.0)<<";   SL-error = ";
+        std::cout<<errSL;
+        std::cout<<"R = "<<(0.01 + i/20.0)<<";   DL-error = ";
+        std::cout<<errDL;
         std::cout<<"R = "<<(0.01 + i/20.0)<<";   KL-error = ";
         std::cout<<errKL;
       }
