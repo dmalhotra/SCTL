@@ -1152,22 +1152,22 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
             Xt_t += ( Xr) / R[i];
           }
           { // Set Vr_p, Vt_p, Vp_p, Wr_p, Wt_p, Wp_p, Xr_p, Xt_p, Xp_p
-            auto C0 = Ynm_1p;
-            auto C1 = Ynm_1p * csc_theta;
-            auto C2 = (Anm * Ynm_2p - Bnm * Ynm_0p) * csc_theta;
+            auto C0 = -Ynm_1p;
+            auto C1 = -Ynm_1p * csc_theta;
+            auto C2 = -(Anm * Ynm_2p - Bnm * Ynm_0p) * csc_theta;
             SetVecSH(Vr_p, Vt_p, Vp_p, Wr_p, Wt_p, Wp_p, Xr_p, Xt_p, Xp_p, C0, C1, C2);
 
-            Vr_p -= (-sin_theta * Vp                 ) * csc_theta / R[i];
-            Vt_p -= (-cos_theta * Vp                 ) * csc_theta / R[i];
-            Vp_p -= ( sin_theta * Vr + cos_theta * Vt) * csc_theta / R[i];
+            Vr_p += (-sin_theta * Vp                 ) * csc_theta / R[i];
+            Vt_p += (-cos_theta * Vp                 ) * csc_theta / R[i];
+            Vp_p += ( sin_theta * Vr + cos_theta * Vt) * csc_theta / R[i];
 
-            Wr_p -= (-sin_theta * Wp                 ) * csc_theta / R[i];
-            Wt_p -= (-cos_theta * Wp                 ) * csc_theta / R[i];
-            Wp_p -= ( sin_theta * Wr + cos_theta * Wt) * csc_theta / R[i];
+            Wr_p += (-sin_theta * Wp                 ) * csc_theta / R[i];
+            Wt_p += (-cos_theta * Wp                 ) * csc_theta / R[i];
+            Wp_p += ( sin_theta * Wr + cos_theta * Wt) * csc_theta / R[i];
 
-            Xr_p -= (-sin_theta * Xp                 ) * csc_theta / R[i];
-            Xt_p -= (-cos_theta * Xp                 ) * csc_theta / R[i];
-            Xp_p -= ( sin_theta * Xr + cos_theta * Xt) * csc_theta / R[i];
+            Xr_p += (-sin_theta * Xp                 ) * csc_theta / R[i];
+            Xt_p += (-cos_theta * Xp                 ) * csc_theta / R[i];
+            Xp_p += ( sin_theta * Xr + cos_theta * Xt) * csc_theta / R[i];
           }
         }
 
@@ -1256,24 +1256,18 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
           SX[2][2] = a * Xp_p;
         }
 
-        { //////////////////////
-          norm0[0] = 0;
-          norm0[1] = 1;
-          norm0[2] = 0;
-        }
-
         Complex<Real> KV[COORD_DIM][COORD_DIM], KW[COORD_DIM][COORD_DIM], KX[COORD_DIM][COORD_DIM];
-        KV[0][0] = SV[0][0] + SV[0][0]*0;   KV[0][1] = SV[0][1] + SV[0][1]*0;   KV[0][2] = SV[0][2] + SV[0][2]*0;
-        KV[1][0] = SV[1][0] + SV[1][0]*0;   KV[1][1] = SV[1][1] + SV[1][1]*0;   KV[1][2] = SV[1][2] + SV[1][2]*0;
-        KV[2][0] = SV[2][0] + SV[2][0]*0;   KV[2][1] = SV[2][1] + SV[2][1]*0;   KV[2][2] = SV[2][2] + SV[2][2]*0;
+        KV[0][0] = SV[0][0] + SV[0][0];   KV[0][1] = SV[0][1] + SV[1][0];   KV[0][2] = SV[0][2] + SV[2][0];
+        KV[1][0] = SV[1][0] + SV[0][1];   KV[1][1] = SV[1][1] + SV[1][1];   KV[1][2] = SV[1][2] + SV[2][1];
+        KV[2][0] = SV[2][0] + SV[0][2];   KV[2][1] = SV[2][1] + SV[1][2];   KV[2][2] = SV[2][2] + SV[2][2];
 
-        KW[0][0] = SW[0][0] + SW[0][0]*0;   KW[0][1] = SW[0][1] + SW[0][1]*0;   KW[0][2] = SW[0][2] + SW[0][2]*0;
-        KW[1][0] = SW[1][0] + SW[1][0]*0;   KW[1][1] = SW[1][1] + SW[1][1]*0;   KW[1][2] = SW[1][2] + SW[1][2]*0;
-        KW[2][0] = SW[2][0] + SW[2][0]*0;   KW[2][1] = SW[2][1] + SW[2][1]*0;   KW[2][2] = SW[2][2] + SW[2][2]*0;
+        KW[0][0] = SW[0][0] + SW[0][0];   KW[0][1] = SW[0][1] + SW[1][0];   KW[0][2] = SW[0][2] + SW[2][0];
+        KW[1][0] = SW[1][0] + SW[0][1];   KW[1][1] = SW[1][1] + SW[1][1];   KW[1][2] = SW[1][2] + SW[2][1];
+        KW[2][0] = SW[2][0] + SW[0][2];   KW[2][1] = SW[2][1] + SW[1][2];   KW[2][2] = SW[2][2] + SW[2][2];
 
-        KX[0][0] = SX[0][0] + SX[0][0]*0;   KX[0][1] = SX[0][1] + SX[0][1]*0;   KX[0][2] = SX[0][2] + SX[0][2]*0;
-        KX[1][0] = SX[1][0] + SX[1][0]*0;   KX[1][1] = SX[1][1] + SX[1][1]*0;   KX[1][2] = SX[1][2] + SX[1][2]*0;
-        KX[2][0] = SX[2][0] + SX[2][0]*0;   KX[2][1] = SX[2][1] + SX[2][1]*0;   KX[2][2] = SX[2][2] + SX[2][2]*0;
+        KX[0][0] = SX[0][0] + SX[0][0];   KX[0][1] = SX[0][1] + SX[1][0];   KX[0][2] = SX[0][2] + SX[2][0];
+        KX[1][0] = SX[1][0] + SX[0][1];   KX[1][1] = SX[1][1] + SX[1][1];   KX[1][2] = SX[1][2] + SX[2][1];
+        KX[2][0] = SX[2][0] + SX[0][2];   KX[2][1] = SX[2][1] + SX[1][2];   KX[2][2] = SX[2][2] + SX[2][2];
 
 
         write_coeff(KV[0][0]*norm0[0] + KV[0][1]*norm0[1] + KV[0][2]*norm0[2], n, m, 0, 0);

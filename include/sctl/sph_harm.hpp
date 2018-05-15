@@ -280,7 +280,7 @@ template <class Real> class SphericalHarmonics{
             du[7] = ((dr[2]*f[1]-dr[1]*f[2])*invr3 - 3*dr[2]*dr[1]*fdotr*invr5) * scal;
             du[8] = (                  fdotr*invr3 - 3*dr[2]*dr[2]*fdotr*invr5) * scal;
 
-            Real p = (2*fdotr*invr3) * scal;
+            Real p = 0;//(2*fdotr*invr3) * scal;
 
             Real K[9];
             K[0] = du[0] + du[0] - p; K[1] = du[1] + du[3] - 0; K[2] = du[2] + du[6] - 0;
@@ -318,30 +318,6 @@ template <class Real> class SphericalHarmonics{
         stokes_evalSL(x, Sf_);
         stokes_evalDL(x, Df_);
         stokes_evalKL(x, n, Kf_);
-
-        {
-          Vector<Real> dx(COORD_DIM);
-          if (0) {
-            dx = x;
-          } else {
-            auto cross_prod = [](Vector<Real>& x, Vector<Real>& y) {
-              Vector<Real> z(COORD_DIM);
-              z[0] = x[1] * y[2] - x[2] * y[1];
-              z[1] = x[2] * y[0] - x[0] * y[2];
-              z[2] = x[0] * y[1] - x[1] * y[0];
-              return z;
-            };
-            Vector<Real> z(COORD_DIM); z = 0; z[2] = 1;
-            dx = cross_prod(x,z);
-            dx = cross_prod(dx,x) * -1;
-          }
-
-          Vector<Real> v0, v1;
-          Real dr = sqrt<Real>(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]);
-          stokes_evalSL(x - dx * 1e-5 / dr, v0);
-          stokes_evalSL(x + dx * 1e-5 / dr, v1);
-          Kf_ = (v1 - v0) / 2e-5;
-        }
 
         auto errSL = (Sf-Sf_)/(Sf+0.01);
         auto errDL = (Df-Df_)/(Df+0.01);
