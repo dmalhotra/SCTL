@@ -1079,6 +1079,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
           }
         };
 
+        Complex<Real> Ynm;
         Complex<Real> Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp;
         Complex<Real> Vr_t, Vt_t, Vp_t, Wr_t, Wt_t, Wp_t, Xr_t, Xt_t, Xp_t;
         Complex<Real> Vr_p, Vt_p, Vp_p, Wr_p, Wt_p, Wp_p, Xr_p, Xt_p, Xp_p;
@@ -1169,12 +1170,18 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
             Xt_p += (-cos_theta * Xp                 ) * csc_theta / R[i];
             Xp_p += ( sin_theta * Xr + cos_theta * Xt) * csc_theta / R[i];
           }
+          Ynm = Ynm_1;
         }
 
+        Complex<Real> PV, PW, PX;
         Complex<Real> SV[COORD_DIM][COORD_DIM];
         Complex<Real> SW[COORD_DIM][COORD_DIM];
         Complex<Real> SX[COORD_DIM][COORD_DIM];
         if (interior) {
+          PV = (n+1) * pow<Real>(R[i],n) * Ynm;
+          PW = 0;
+          PX = 0;
+
           Real a, b;
           Real a_r, b_r;
           a = n / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], n+1);
@@ -1215,6 +1222,10 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
           SX[1][2] = a * Xt_p;
           SX[2][2] = a * Xp_p;
         } else {
+          PV = 0;
+          PW = n * pow<Real>(R[i],-n-1) * Ynm;
+          PX = 0;
+
           Real a,b;
           Real a_r, b_r;
           a = n / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], -n-2);
@@ -1257,17 +1268,17 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
         }
 
         Complex<Real> KV[COORD_DIM][COORD_DIM], KW[COORD_DIM][COORD_DIM], KX[COORD_DIM][COORD_DIM];
-        KV[0][0] = SV[0][0] + SV[0][0];   KV[0][1] = SV[0][1] + SV[1][0];   KV[0][2] = SV[0][2] + SV[2][0];
-        KV[1][0] = SV[1][0] + SV[0][1];   KV[1][1] = SV[1][1] + SV[1][1];   KV[1][2] = SV[1][2] + SV[2][1];
-        KV[2][0] = SV[2][0] + SV[0][2];   KV[2][1] = SV[2][1] + SV[1][2];   KV[2][2] = SV[2][2] + SV[2][2];
+        KV[0][0] = SV[0][0] + SV[0][0] - PV;   KV[0][1] = SV[0][1] + SV[1][0]     ;   KV[0][2] = SV[0][2] + SV[2][0]     ;
+        KV[1][0] = SV[1][0] + SV[0][1]     ;   KV[1][1] = SV[1][1] + SV[1][1] - PV;   KV[1][2] = SV[1][2] + SV[2][1]     ;
+        KV[2][0] = SV[2][0] + SV[0][2]     ;   KV[2][1] = SV[2][1] + SV[1][2]     ;   KV[2][2] = SV[2][2] + SV[2][2] - PV;
 
-        KW[0][0] = SW[0][0] + SW[0][0];   KW[0][1] = SW[0][1] + SW[1][0];   KW[0][2] = SW[0][2] + SW[2][0];
-        KW[1][0] = SW[1][0] + SW[0][1];   KW[1][1] = SW[1][1] + SW[1][1];   KW[1][2] = SW[1][2] + SW[2][1];
-        KW[2][0] = SW[2][0] + SW[0][2];   KW[2][1] = SW[2][1] + SW[1][2];   KW[2][2] = SW[2][2] + SW[2][2];
+        KW[0][0] = SW[0][0] + SW[0][0] - PW;   KW[0][1] = SW[0][1] + SW[1][0]     ;   KW[0][2] = SW[0][2] + SW[2][0]     ;
+        KW[1][0] = SW[1][0] + SW[0][1]     ;   KW[1][1] = SW[1][1] + SW[1][1] - PW;   KW[1][2] = SW[1][2] + SW[2][1]     ;
+        KW[2][0] = SW[2][0] + SW[0][2]     ;   KW[2][1] = SW[2][1] + SW[1][2]     ;   KW[2][2] = SW[2][2] + SW[2][2] - PW;
 
-        KX[0][0] = SX[0][0] + SX[0][0];   KX[0][1] = SX[0][1] + SX[1][0];   KX[0][2] = SX[0][2] + SX[2][0];
-        KX[1][0] = SX[1][0] + SX[0][1];   KX[1][1] = SX[1][1] + SX[1][1];   KX[1][2] = SX[1][2] + SX[2][1];
-        KX[2][0] = SX[2][0] + SX[0][2];   KX[2][1] = SX[2][1] + SX[1][2];   KX[2][2] = SX[2][2] + SX[2][2];
+        KX[0][0] = SX[0][0] + SX[0][0] - PX;   KX[0][1] = SX[0][1] + SX[1][0]     ;   KX[0][2] = SX[0][2] + SX[2][0]     ;
+        KX[1][0] = SX[1][0] + SX[0][1]     ;   KX[1][1] = SX[1][1] + SX[1][1] - PX;   KX[1][2] = SX[1][2] + SX[2][1]     ;
+        KX[2][0] = SX[2][0] + SX[0][2]     ;   KX[2][1] = SX[2][1] + SX[1][2]     ;   KX[2][2] = SX[2][2] + SX[2][2] - PX;
 
 
         write_coeff(KV[0][0]*norm0[0] + KV[0][1]*norm0[1] + KV[0][2]*norm0[2], n, m, 0, 0);
