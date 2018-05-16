@@ -635,12 +635,12 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
   assert(B1.Dim(1) == COORD_DIM * M);
   assert(B1.Dim(0) == dof);
 
-  Long N, p_, M_;
+  Long N, p_;
   Matrix<Real> SHBasis;
   Vector<Real> R, cos_theta_phi;
-  { // Set N, p_, M_, R, SHBasis
-    p_ = p0+1;
-    M_ = (p_+1) * (p_+1);
+  { // Set N, p_, R, SHBasis
+    p_ = p0 + 1;
+    Real M_ = (p_+1) * (p_+1);
     N = coord.Dim() / COORD_DIM;
     assert(coord.Dim() == N * COORD_DIM);
 
@@ -655,6 +655,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
     SHBasisEval(p_, cos_theta_phi, SHBasis);
     assert(SHBasis.Dim(1) == M_);
     assert(SHBasis.Dim(0) == N);
+    SCTL_UNUSED(M_);
   }
 
   Matrix<Real> StokesOp(N * COORD_DIM, COORD_DIM * M);
@@ -824,12 +825,12 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
   assert(B1.Dim(1) == COORD_DIM * M);
   assert(B1.Dim(0) == dof);
 
-  Long N, p_, M_;
+  Long N, p_;
   Matrix<Real> SHBasis;
   Vector<Real> R, cos_theta_phi;
-  { // Set N, p_, M_, R, SHBasis
-    p_ = p0+1;
-    M_ = (p_+1) * (p_+1);
+  { // Set N, p_, R, SHBasis
+    p_ = p0 + 1;
+    Real M_ = (p_+1) * (p_+1);
     N = coord.Dim() / COORD_DIM;
     assert(coord.Dim() == N * COORD_DIM);
 
@@ -844,6 +845,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
     SHBasisEval(p_, cos_theta_phi, SHBasis);
     assert(SHBasis.Dim(1) == M_);
     assert(SHBasis.Dim(0) == N);
+    SCTL_UNUSED(M_);
   }
 
   Matrix<Real> StokesOp(N * COORD_DIM, COORD_DIM * M);
@@ -1013,12 +1015,12 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
   assert(B1.Dim(1) == COORD_DIM * M);
   assert(B1.Dim(0) == dof);
 
-  Long N, p_, M_;
+  Long N, p_;
   Matrix<Real> SHBasis;
   Vector<Real> R, cos_theta_phi;
-  { // Set N, p_, M_, R, SHBasis
-    p_ = p0+1;
-    M_ = (p_+1) * (p_+1);
+  { // Set N, p_, R, SHBasis
+    p_ = p0 + 1;
+    Real M_ = (p_+1) * (p_+1);
     N = coord.Dim() / COORD_DIM;
     assert(coord.Dim() == N * COORD_DIM);
 
@@ -1033,6 +1035,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
     SHBasisEval(p_, cos_theta_phi, SHBasis);
     assert(SHBasis.Dim(1) == M_);
     assert(SHBasis.Dim(0) == N);
+    SCTL_UNUSED(M_);
   }
 
   Matrix<Real> StokesOp(N * COORD_DIM, COORD_DIM * M);
