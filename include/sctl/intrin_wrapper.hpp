@@ -21,7 +21,7 @@
 #include <immintrin.h>
 #endif
 
-// TODO: Check alignment which SCTL_MEMDEBUG is defined
+// TODO: Check alignment when SCTL_MEMDEBUG is defined
 // TODO: Replace pointers with iterators
 
 namespace SCTL_NAMESPACE {
