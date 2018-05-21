@@ -661,13 +661,14 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
   Matrix<Real> StokesOp(N * COORD_DIM, COORD_DIM * M);
   for (Long i = 0; i < N; i++) { // Set StokesOp
 
-    Real csc_theta;
-    { // Set csc_theta
-      Real cos_theta = cos_theta_phi[i * 2 + 0];
-      Real sin_theta = sqrt<Real>(1 - cos_theta * cos_theta);
-      csc_theta = 1 / sin_theta;
+    Real cos_theta, csc_theta, cos_phi, sin_phi;
+    { // Set exp_phi, cos_theta, csc_theta, cos_phi, sin_phi
+      cos_theta = cos_theta_phi[i * 2 + 0];
+      csc_theta = 1 / sqrt<Real>(1 - cos_theta * cos_theta);
+      cos_phi = cos(cos_theta_phi[i * 2 + 1]);
+      sin_phi = sin(cos_theta_phi[i * 2 + 1]);
     }
-    Complex<Real> imag(0,1);
+    Complex<Real> imag(0,1), exp_phi(cos_phi, sin_phi);
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
@@ -696,9 +697,22 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
             }
             return c;
           };
-          Complex<Real> Ynm_0 = Y(n - 1, m);
-          Complex<Real> Ynm_1 = Y(n + 0, m);
-          Complex<Real> Ynm_2 = Y(n + 1, m);
+          Complex<Real> Y_0 = Y(n - 1, m);
+          Complex<Real> Y_1 = Y(n + 0, m);
+          Complex<Real> Y_2 = Y(n + 1, m);
+
+          Complex<Real> Ycsc_0 = Y_0 * csc_theta;
+          Complex<Real> Ycsc_1 = Y_1 * csc_theta;
+          Complex<Real> Ycsc_2 = Y_2 * csc_theta;
+          if (fabs(cos_theta) == 1) {
+            auto Y_csc0 = [exp_phi, cos_theta](Long n, Long m) {
+              if (m == 1) -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta<0) ? -1 : 1) * exp_phi;
+              return Complex<Real>(0, 0);
+            };
+            Ycsc_0 = Y_csc0(n - 1, m);
+            Ycsc_1 = Y_csc0(n + 0, m);
+            Ycsc_2 = Y_csc0(n + 1, m);
+          }
 
           auto Anm = (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0);
           auto Bnm = (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0);
@@ -717,9 +731,9 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
             Xp = C2;
           };
           { // Set Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp
-            auto C0 = Ynm_1;
-            auto C1 = Ynm_1 * csc_theta;
-            auto C2 = (Anm * Ynm_2 - Bnm * Ynm_0) * csc_theta;
+            auto C0 = Y_1;
+            auto C1 = Ycsc_1;
+            auto C2 = (Anm * Ycsc_2 - Bnm * Ycsc_0);
             SetVecSH(Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp, C0, C1, C2);
           }
         }
@@ -851,13 +865,14 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
   Matrix<Real> StokesOp(N * COORD_DIM, COORD_DIM * M);
   for (Long i = 0; i < N; i++) { // Set StokesOp
 
-    Real csc_theta;
-    { // Set csc_theta
-      Real cos_theta = cos_theta_phi[i * 2 + 0];
-      Real sin_theta = sqrt<Real>(1 - cos_theta * cos_theta);
-      csc_theta = 1 / sin_theta;
+    Real cos_theta, csc_theta, cos_phi, sin_phi;
+    { // Set exp_phi, cos_theta, csc_theta, cos_phi, sin_phi
+      cos_theta = cos_theta_phi[i * 2 + 0];
+      csc_theta = 1 / sqrt<Real>(1 - cos_theta * cos_theta);
+      cos_phi = cos(cos_theta_phi[i * 2 + 1]);
+      sin_phi = sin(cos_theta_phi[i * 2 + 1]);
     }
-    Complex<Real> imag(0,1);
+    Complex<Real> imag(0,1), exp_phi(cos_phi, sin_phi);
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
@@ -886,9 +901,22 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
             }
             return c;
           };
-          Complex<Real> Ynm_0 = Y(n - 1, m);
-          Complex<Real> Ynm_1 = Y(n + 0, m);
-          Complex<Real> Ynm_2 = Y(n + 1, m);
+          Complex<Real> Y_0 = Y(n - 1, m);
+          Complex<Real> Y_1 = Y(n + 0, m);
+          Complex<Real> Y_2 = Y(n + 1, m);
+
+          Complex<Real> Ycsc_0 = Y_0 * csc_theta;
+          Complex<Real> Ycsc_1 = Y_1 * csc_theta;
+          Complex<Real> Ycsc_2 = Y_2 * csc_theta;
+          if (fabs(cos_theta) == 1) {
+            auto Y_csc0 = [exp_phi, cos_theta](Long n, Long m) {
+              if (m == 1) -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta<0) ? -1 : 1) * exp_phi;
+              return Complex<Real>(0, 0);
+            };
+            Ycsc_0 = Y_csc0(n - 1, m);
+            Ycsc_1 = Y_csc0(n + 0, m);
+            Ycsc_2 = Y_csc0(n + 1, m);
+          }
 
           auto Anm = (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0);
           auto Bnm = (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0);
@@ -907,9 +935,9 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
             Xp = C2;
           };
           { // Set Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp
-            auto C0 = Ynm_1;
-            auto C1 = Ynm_1 * csc_theta;
-            auto C2 = (Anm * Ynm_2 - Bnm * Ynm_0) * csc_theta;
+            auto C0 = Y_1;
+            auto C1 = Ycsc_1;
+            auto C2 = (Anm * Ycsc_2 - Bnm * Ycsc_0);
             SetVecSH(Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp, C0, C1, C2);
           }
         }
@@ -1041,7 +1069,6 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
   Matrix<Real> StokesOp(N * COORD_DIM, COORD_DIM * M);
   for (Long i = 0; i < N; i++) { // Set StokesOp
 
-    Complex<Real> imag(0,1);
     Real cos_theta, sin_theta, csc_theta, cot_theta, cos_phi, sin_phi;
     { // Set cos_theta, sin_theta, cos_phi, sin_phi
       cos_theta = cos_theta_phi[i * 2 + 0];
@@ -1051,6 +1078,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
       cos_phi = cos(cos_theta_phi[i * 2 + 1]);
       sin_phi = sin(cos_theta_phi[i * 2 + 1]);
     }
+    Complex<Real> imag(0,1), exp_phi(cos_phi, sin_phi);
 
     StaticArray<Real, COORD_DIM> norm0;
     { // Set norm0 <-- Q^t * norm
@@ -1106,17 +1134,17 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
             return imag * m * Y(n, m) * csc_theta / R[i];
           };
 
-          Complex<Real> Ynm_0 = Y(n - 1, m);
-          Complex<Real> Ynm_1 = Y(n + 0, m);
-          Complex<Real> Ynm_2 = Y(n + 1, m);
+          Complex<Real> Y_0 = Y(n - 1, m);
+          Complex<Real> Y_1 = Y(n + 0, m);
+          Complex<Real> Y_2 = Y(n + 1, m);
 
-          Complex<Real> Ynm_0t = Yt(n - 1, m);
-          Complex<Real> Ynm_1t = Yt(n + 0, m);
-          Complex<Real> Ynm_2t = Yt(n + 1, m);
+          Complex<Real> Y_0t = Yt(n - 1, m);
+          Complex<Real> Y_1t = Yt(n + 0, m);
+          Complex<Real> Y_2t = Yt(n + 1, m);
 
-          Complex<Real> Ynm_0p = Yp(n - 1, m);
-          Complex<Real> Ynm_1p = Yp(n + 0, m);
-          Complex<Real> Ynm_2p = Yp(n + 1, m);
+          Complex<Real> Y_0p = Yp(n - 1, m);
+          Complex<Real> Y_1p = Yp(n + 0, m);
+          Complex<Real> Y_2p = Yp(n + 1, m);
 
           auto Anm = (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0);
           auto Bnm = (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0);
@@ -1135,15 +1163,15 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
             Xp = C2;
           };
           { // Set Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp
-            auto C0 = Ynm_1;
-            auto C1 = Ynm_1 * csc_theta;
-            auto C2 = (Anm * Ynm_2 - Bnm * Ynm_0) * csc_theta;
+            auto C0 = Y_1;
+            auto C1 = Y_1 * csc_theta;
+            auto C2 = (Anm * Y_2 - Bnm * Y_0) * csc_theta;
             SetVecSH(Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp, C0, C1, C2);
           }
           { // Set Vr_t, Vt_t, Vp_t, Wr_t, Wt_t, Wp_t, Xr_t, Xt_t, Xp_t
-            auto C0 = Ynm_1t;
-            auto C1 = Ynm_1t * csc_theta                        - Ynm_1 * csc_theta * cot_theta / R[i];
-            auto C2 = (Anm * Ynm_2t - Bnm * Ynm_0t) * csc_theta - (Anm * Ynm_2 - Bnm * Ynm_0) * csc_theta * cot_theta / R[i];
+            auto C0 = Y_1t;
+            auto C1 = (Y_1t                      -                    Y_1  * cot_theta / R[i]) * csc_theta;
+            auto C2 = ((Anm * Y_2t - Bnm * Y_0t) - (Anm * Y_2 - Bnm * Y_0) * cot_theta / R[i]) * csc_theta;
             SetVecSH(Vr_t, Vt_t, Vp_t, Wr_t, Wt_t, Wp_t, Xr_t, Xt_t, Xp_t, C0, C1, C2);
 
             Vr_t += (-Vt) / R[i];
@@ -1156,9 +1184,9 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
             Xt_t += ( Xr) / R[i];
           }
           { // Set Vr_p, Vt_p, Vp_p, Wr_p, Wt_p, Wp_p, Xr_p, Xt_p, Xp_p
-            auto C0 = -Ynm_1p;
-            auto C1 = -Ynm_1p * csc_theta;
-            auto C2 = -(Anm * Ynm_2p - Bnm * Ynm_0p) * csc_theta;
+            auto C0 = -Y_1p;
+            auto C1 = -Y_1p * csc_theta;
+            auto C2 = -(Anm * Y_2p - Bnm * Y_0p) * csc_theta;
             SetVecSH(Vr_p, Vt_p, Vp_p, Wr_p, Wt_p, Wp_p, Xr_p, Xt_p, Xp_p, C0, C1, C2);
 
             Vr_p += (-sin_theta * Vp                 ) * csc_theta / R[i];
@@ -1173,7 +1201,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
             Xt_p += (-cos_theta * Xp                 ) * csc_theta / R[i];
             Xp_p += ( sin_theta * Xr + cos_theta * Xt) * csc_theta / R[i];
           }
-          Ynm = Ynm_1;
+          Ynm = Y_1;
         }
 
         Complex<Real> PV, PW, PX;
@@ -2160,16 +2188,16 @@ template <class Real> void SphericalHarmonics<Real>::VecSHBasisEval(Long p0, con
               Fx2r = 0;
             }
             if (m == 1) {
-              auto dY = [&cos_theta, i](Long n) { return -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta[i]<0) ? -1 : 1); };
-              Complex<Real> AYBY = A(n,m) * dY(n+1) - B(n,m) * dY(n-1);
+              auto Ycsc = [&cos_theta, &exp_phi, i](Long n) { return -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta[i]<0) ? -1 : 1) * exp_phi; };
+              Complex<Real> AYBY = A(n,m) * Ycsc(n+1) - B(n,m) * Ycsc(n-1);
 
-              Fv2t = AYBY             * exp_phi;
-              Fw2t = AYBY             * exp_phi;
-              Fx2t = imag * m * dY(n) * exp_phi;
+              Fv2t = AYBY;
+              Fw2t = AYBY;
+              Fx2t = imag * m * Ycsc(n);
 
-              Fv2p =-imag * m * dY(n) * exp_phi;
-              Fw2p =-imag * m * dY(n) * exp_phi;
-              Fx2p = AYBY             * exp_phi;
+              Fv2p =-imag * m * Ycsc(n);
+              Fw2p =-imag * m * Ycsc(n);
+              Fx2p = AYBY;
             }
 
             write_coeff(Fv2r, n, m, 0, 0);
