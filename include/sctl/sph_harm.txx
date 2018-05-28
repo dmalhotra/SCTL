@@ -662,13 +662,13 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
   for (Long i = 0; i < N; i++) { // Set StokesOp
 
     Real cos_theta, csc_theta, cos_phi, sin_phi;
-    { // Set exp_phi, cos_theta, csc_theta, cos_phi, sin_phi
+    { // Set cos_theta, csc_theta, cos_phi, sin_phi
       cos_theta = cos_theta_phi[i * 2 + 0];
       csc_theta = 1 / sqrt<Real>(1 - cos_theta * cos_theta);
       cos_phi = cos(cos_theta_phi[i * 2 + 1]);
       sin_phi = sin(cos_theta_phi[i * 2 + 1]);
     }
-    Complex<Real> imag(0,1), exp_phi(cos_phi, sin_phi);
+    Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
@@ -706,7 +706,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
           Complex<Real> Ycsc_2 = Y_2 * csc_theta;
           if (fabs(cos_theta) == 1) {
             auto Y_csc0 = [exp_phi, cos_theta](Long n, Long m) {
-              if (m == 1) -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta<0) ? -1 : 1) * exp_phi;
+              if (m == 1) return -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta<0) ? -1 : 1) * exp_phi;
               return Complex<Real>(0, 0);
             };
             Ycsc_0 = Y_csc0(n - 1, m);
@@ -866,13 +866,13 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
   for (Long i = 0; i < N; i++) { // Set StokesOp
 
     Real cos_theta, csc_theta, cos_phi, sin_phi;
-    { // Set exp_phi, cos_theta, csc_theta, cos_phi, sin_phi
+    { // Set cos_theta, csc_theta, cos_phi, sin_phi
       cos_theta = cos_theta_phi[i * 2 + 0];
       csc_theta = 1 / sqrt<Real>(1 - cos_theta * cos_theta);
       cos_phi = cos(cos_theta_phi[i * 2 + 1]);
       sin_phi = sin(cos_theta_phi[i * 2 + 1]);
     }
-    Complex<Real> imag(0,1), exp_phi(cos_phi, sin_phi);
+    Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
@@ -910,7 +910,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
           Complex<Real> Ycsc_2 = Y_2 * csc_theta;
           if (fabs(cos_theta) == 1) {
             auto Y_csc0 = [exp_phi, cos_theta](Long n, Long m) {
-              if (m == 1) -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta<0) ? -1 : 1) * exp_phi;
+              if (m == 1) return -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta<0) ? -1 : 1) * exp_phi;
               return Complex<Real>(0, 0);
             };
             Ycsc_0 = Y_csc0(n - 1, m);
@@ -1078,7 +1078,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
       cos_phi = cos(cos_theta_phi[i * 2 + 1]);
       sin_phi = sin(cos_theta_phi[i * 2 + 1]);
     }
-    Complex<Real> imag(0,1), exp_phi(cos_phi, sin_phi);
+    Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     StaticArray<Real, COORD_DIM> norm0;
     { // Set norm0 <-- Q^t * norm

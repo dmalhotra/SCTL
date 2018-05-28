@@ -479,6 +479,7 @@ template <class Real> class SphericalHarmonics{
     };
     static MatrixStorage& MatrixStore(){
       static MatrixStorage storage;
+      if (!storage.Qx_.size()) storage.Resize(SCTL_SHMAXDEG);
       return storage;
     }
 };
