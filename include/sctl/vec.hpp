@@ -238,6 +238,11 @@ namespace SCTL_NAMESPACE {
         for (Integer i = 0; i < N; i++) os << in.v[i] << ' ';
         return os;
       }
+      friend Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x) {
+        Vec<ValueType,N> r;
+        for (int i = 0; i < N; i++) r.v[i] = 1.0 / sqrt(x.v[i]);
+        return r;
+      }
 
     private:
 
@@ -262,47 +267,6 @@ namespace SCTL_NAMESPACE {
   };
 
   // Other operators
-  template <class RealVec, class IntVec> RealVec ConvertInt2Real(const IntVec& x) {
-    typedef typename RealVec::ScalarType Real;
-    typedef typename IntVec::ScalarType Int;
-    assert(sizeof(RealVec) == sizeof(IntVec));
-    assert(sizeof(Real) == sizeof(Int));
-    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
-    union {
-      Int Cint = (1UL << (SigBits - 1)) + ((SigBits + ((1UL<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
-      Real Creal;
-    };
-    IntVec l(x + IntVec(Cint));
-    return *(RealVec*)&l - RealVec(Creal);
-  }
-  template <class IntVec, class RealVec> IntVec RoundReal2Int(const RealVec& x) {
-    typedef typename RealVec::ScalarType Real;
-    typedef typename IntVec::ScalarType Int;
-    assert(sizeof(RealVec) == sizeof(IntVec));
-    assert(sizeof(Real) == sizeof(Int));
-    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
-    union {
-      Int Cint = (1UL << (SigBits - 1)) + ((SigBits + ((1UL<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
-      Real Creal;
-    };
-    RealVec d(x + RealVec(Creal));
-    return *(IntVec*)&d - IntVec(Cint);
-  }
-  template <class Vec> Vec RoundReal2Real(const Vec& x) {
-    typedef typename Vec::ScalarType Real;
-    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
-    union {
-      int64_t Cint = (1UL << (SigBits - 1)) + ((SigBits + ((1UL<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
-      Real Creal;
-    };
-    Vec Vreal(Creal);
-    return (x + Vreal) - Vreal;
-  }
-  template <class ValueType, Integer N> Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x) {
-    Vec<ValueType,N> r;
-    for (int i = 0; i < N; i++) r.v[i] = 1.0 / sqrt(x.v[i]);
-    return r;
-  }
   template <class Vec, Integer ORDER = 13> void sincos_intrin(Vec& sinx, Vec& cosx, const Vec& x) {
     // ORDER    ERROR
     //     1 8.81e-02
@@ -410,6 +374,42 @@ namespace SCTL_NAMESPACE {
 
     sinx = s3;
     cosx = c3;
+  }
+  template <class RealVec, class IntVec> RealVec ConvertInt2Real(const IntVec& x) {
+    typedef typename RealVec::ScalarType Real;
+    typedef typename IntVec::ScalarType Int;
+    assert(sizeof(RealVec) == sizeof(IntVec));
+    assert(sizeof(Real) == sizeof(Int));
+    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+    union {
+      Int Cint = (1UL << (SigBits - 1)) + ((SigBits + ((1UL<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
+      Real Creal;
+    };
+    IntVec l(x + IntVec(Cint));
+    return *(RealVec*)&l - RealVec(Creal);
+  }
+  template <class IntVec, class RealVec> IntVec RoundReal2Int(const RealVec& x) {
+    typedef typename RealVec::ScalarType Real;
+    typedef typename IntVec::ScalarType Int;
+    assert(sizeof(RealVec) == sizeof(IntVec));
+    assert(sizeof(Real) == sizeof(Int));
+    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+    union {
+      Int Cint = (1UL << (SigBits - 1)) + ((SigBits + ((1UL<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
+      Real Creal;
+    };
+    RealVec d(x + RealVec(Creal));
+    return *(IntVec*)&d - IntVec(Cint);
+  }
+  template <class Vec> Vec RoundReal2Real(const Vec& x) {
+    typedef typename Vec::ScalarType Real;
+    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+    union {
+      int64_t Cint = (1UL << (SigBits - 1)) + ((SigBits + ((1UL<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
+      Real Creal;
+    };
+    Vec Vreal(Creal);
+    return (x + Vreal) - Vreal;
   }
 
 #ifdef __AVX__
