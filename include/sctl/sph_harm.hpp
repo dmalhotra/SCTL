@@ -62,10 +62,10 @@ template <class Real> class SphericalHarmonics{
      * \param[in] S Spherical harmonic coefficients.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[in] p Order of spherical harmonic expansion.
-     * \param[in] cos_theta_phi Evaluation coordinates given as {cos(t0),p0, cos(t1),p1, ... }.
+     * \param[in] theta_phi Evaluation coordinates given as {t0,p0, t1,p1, ... }.
      * \param[out] X Evaluated values {X0, X1, ... }.
      */
-    static void SHCEval(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& cos_theta_phi, Vector<Real>& X);
+    static void SHCEval(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& theta_phi, Vector<Real>& X);
 
     static void SHC2Pole(const Vector<Real>& S, SHCArrange arrange, Long p, Vector<Real>& P);
 
@@ -101,10 +101,10 @@ template <class Real> class SphericalHarmonics{
      * \param[in] S Vector spherical harmonic coefficients.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[in] p Order of spherical harmonic expansion.
-     * \param[in] cos_theta_phi Evaluation coordinates given as {cos(t0),p0, cos(t1),p1, ... }.
+     * \param[in] theta_phi Evaluation coordinates given as {t0,p0, t1,p1, ... }.
      * \param[out] X Evaluated values {X0,Y0,Z0, X1,Y1,Z1, ... }.
      */
-    static void VecSHCEval(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& cos_theta_phi, Vector<Real>& X);
+    static void VecSHCEval(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& theta_phi, Vector<Real>& X);
 
     /**
      * \brief Evaluate Stokes single-layer operator at point values from the vector spherical harmonic coefficients for the density.
@@ -319,9 +319,14 @@ template <class Real> class SphericalHarmonics{
         stokes_evalDL(x, Df_);
         stokes_evalKL(x, n, Kf_);
 
-        auto errSL = (Sf-Sf_)/(Sf+0.01);
-        auto errDL = (Df-Df_)/(Df+0.01);
-        auto errKL = (Kf-Kf_)/(Kf+0.01);
+        auto max_val = [](const Vector<Real>& v) {
+          Real max_v = 0;
+          for (auto& x : v) max_v = std::max(max_v, fabs(x));
+          return max_v;
+        };
+        auto errSL = (Sf-Sf_)/max_val(Sf+0.01);
+        auto errDL = (Df-Df_)/max_val(Df+0.01);
+        auto errKL = (Kf-Kf_)/max_val(Kf+0.01);
         for (auto& x:errSL) x=log(fabs(x))/log(10);
         for (auto& x:errDL) x=log(fabs(x))/log(10);
         for (auto& x:errKL) x=log(fabs(x))/log(10);
@@ -351,15 +356,12 @@ template <class Real> class SphericalHarmonics{
         std::cout<<'\n';
       };
 
-      Vector<Real> r_theta_phi, theta_phi;
-      { // Set r_theta_phi, theta_phi
+      Vector<Real> theta_phi;
+      { // Set theta_phi
         Vector<Real> leg_nodes = LegendreNodes(Nt-1);
         for (Long i=0;i<Nt;i++) {
           for (Long j=0;j<Np;j++) {
-            r_theta_phi.PushBack(1);
-            r_theta_phi.PushBack(leg_nodes[i]);
-            r_theta_phi.PushBack(j * 2 * const_pi<Real>() / Np);
-            theta_phi.PushBack(leg_nodes[i]);
+            theta_phi.PushBack(acos(leg_nodes[i]));
             theta_phi.PushBack(j * 2 * const_pi<Real>() / Np);
           }
         }
@@ -416,7 +418,9 @@ template <class Real> class SphericalHarmonics{
      * P(2,0)[0], ..., P(degree,0)[N-1], P(1,1)[0], ...,P(2,1)[0], ..., P(degree,degree)[N-1]}
      */
     static void LegPoly(Vector<Real>& poly_val, const Vector<Real>& X, Long degree);
+    static void LegPoly_(Vector<Real>& poly_val, const Vector<Real>& theta, Long degree);
     static void LegPolyDeriv(Vector<Real>& poly_val, const Vector<Real>& X, Long degree);
+    static void LegPolyDeriv_(Vector<Real>& poly_val, const Vector<Real>& X, Long degree);
 
     static const Vector<Real>& LegendreNodes(Long p1);
     static const Vector<Real>& LegendreWeights(Long p1);
@@ -434,8 +438,8 @@ template <class Real> class SphericalHarmonics{
     static const std::vector<Matrix<Real>>& MatLegendreGrad(Long p0, Long p1);
 
     // Evaluate all Spherical Harmonic basis functions up to order p at (theta, phi) coordinates.
-    static void SHBasisEval(Long p, const Vector<Real>& cos_theta_phi, Matrix<Real>& M);
-    static void VecSHBasisEval(Long p, const Vector<Real>& cos_theta_phi, Matrix<Real>& M);
+    static void SHBasisEval(Long p, const Vector<Real>& theta_phi, Matrix<Real>& M);
+    static void VecSHBasisEval(Long p, const Vector<Real>& theta_phi, Matrix<Real>& M);
 
     static const std::vector<Matrix<Real>>& MatRotate(Long p0);
 
