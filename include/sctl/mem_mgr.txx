@@ -192,7 +192,6 @@ inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_s
   }
   omp_unset_lock(&omp_lock);
   if (!base) {             // Use system malloc
-    Long end_padding = 8;  // to check for out-of-bound writes
     char* p = (char*)::malloc(size + 2 + alignment + end_padding);
     SCTL_ASSERT_MSG(p, "memory allocation failed.");
 #ifdef SCTL_MEMDEBUG
@@ -285,7 +284,6 @@ inline void MemoryManager::free(Iterator<char> p) const {
 
       Long size = n_elem * type_size + header_size;
       size = (uintptr_t)(size + alignment) & ~(uintptr_t)alignment;
-      Long end_padding = 8;  // to check for out-of-bound writes
 #pragma omp parallel for
       for (Long i = 0; i < (Long)(size + 2 + alignment + end_padding); i++) {
         SCTL_ASSERT_MSG(p_[i] == init_mem_val, "memory corruption detected.");
@@ -299,6 +297,16 @@ inline void MemoryManager::free(Iterator<char> p) const {
 #endif
     ::free(p_);
   } else {
+#ifdef SCTL_MEMDEBUG
+    {  // Check out-of-bounds write
+      MemNode& n = node_buff[n_indx - 1];
+      char* base = n.mem_ptr;
+#pragma omp parallel for
+      for (Long i = 0; i < n.size; i++) {
+        SCTL_ASSERT_MSG(base[i] == init_mem_val, "memory corruption detected.");
+      }
+    }
+#endif
     assert(n_indx <= (Long)node_buff.size());
     omp_set_lock(&omp_lock);
     MemNode& n = node_buff[n_indx - 1];

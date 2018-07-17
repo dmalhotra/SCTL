@@ -321,7 +321,8 @@ template <class ValueType> Iterator<ValueType> NullIterator() { return Ptr2Itr<V
 class MemoryManager {
 
  public:
-  static const char init_mem_val = 42;
+  static constexpr char init_mem_val = 42;
+  static constexpr Long end_padding = 64;
 
   /**
    * \brief Header data for each memory block.
