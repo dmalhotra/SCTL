@@ -35,7 +35,7 @@ inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
   // Print
   for (int i = skip; i < addrlen; i++) {
     // Get command
-    char cmd[10240];
+    char cmd[10240+256+43];
 #ifdef __APPLE__
     sprintf(cmd, "atos -o %s %p 2> /dev/null", fname, addrlist[i]); // on mac
 #elif __linux__
