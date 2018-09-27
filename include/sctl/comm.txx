@@ -223,16 +223,16 @@ template <class SType, class RType> void* Comm::Ialltoallv_sparse(ConstIterator<
 
   for (Integer i = 0; i < mpi_size_; i++) {
     if (rcounts[i]) {
-      rbuf[rdispls[i]];
-      rbuf[rdispls[i] + rcounts[i] - 1];
+      SCTL_UNUSED(rbuf[rdispls[i]]);
+      SCTL_UNUSED(rbuf[rdispls[i] + rcounts[i] - 1]);
       MPI_Irecv(&rbuf[rdispls[i]], rcounts[i], CommDatatype<RType>::value(), i, tag, mpi_comm_, &request[request_iter]);
       request_iter++;
     }
   }
   for (Integer i = 0; i < mpi_size_; i++) {
     if (scounts[i]) {
-      sbuf[sdispls[i]];
-      sbuf[sdispls[i] + scounts[i] - 1];
+      SCTL_UNUSED(sbuf[sdispls[i]]);
+      SCTL_UNUSED(sbuf[sdispls[i] + scounts[i] - 1]);
       MPI_Isend(&sbuf[sdispls[i]], scounts[i], CommDatatype<SType>::value(), i, tag, mpi_comm_, &request[request_iter]);
       request_iter++;
     }

@@ -95,8 +95,8 @@ template <class T, class StrictWeakOrdering> inline void omp_par::merge_sort(T A
     std::sort(A, A_last, comp);
     return;
   }
-  A[0];
-  A[N - 1];
+  SCTL_UNUSED(A[0]);
+  SCTL_UNUSED(A[N - 1]);
 
   // Split the array A into p equal parts.
   Vector<_DiffType> split;

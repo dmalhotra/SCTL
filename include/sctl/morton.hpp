@@ -160,6 +160,7 @@ template <Integer DIM = 3> class Morton {
     for (Integer i = DIM - 1; i >= 0; i--) {
       if (mask & (x[i] ^ m.x[i])) return x[i] < m.x[i];
     }
+    return false; // TODO: check
   }
 
   bool operator>(const Morton &m) const { return m < (*this); }
