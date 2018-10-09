@@ -596,6 +596,7 @@ namespace SCTL_NAMESPACE {
       }
 
       template <class Vec> friend Vec RoundReal2Real(const Vec& x);
+      template <class Vec> friend void sincos_intrin(Vec& sinx, Vec& cosx, const Vec& x);
 
     private:
 
