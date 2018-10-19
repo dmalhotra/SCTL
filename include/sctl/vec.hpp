@@ -603,14 +603,14 @@ namespace SCTL_NAMESPACE {
       VecType v;
   };
 
-  template <> Vec<double,4> RoundReal2Real(const Vec<double,4>& x) {
+  template <> inline Vec<double,4> RoundReal2Real(const Vec<double,4>& x) {
     Vec<double,4> r;
     r.v = _mm256_round_pd(x.v,_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC);
     return r;
   }
 
   #ifdef SCTL_HAVE_SVML
-  template <> void sincos_intrin(Vec<double,4>& sinx, Vec<double,4>& cosx, const Vec<double,4>& x) {
+  template <> inline void sincos_intrin(Vec<double,4>& sinx, Vec<double,4>& cosx, const Vec<double,4>& x) {
     sinx.v = _mm256_sin_pd(x.v);
     cosx.v = _mm256_cos_pd(x.v);
   }
