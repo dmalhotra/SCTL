@@ -214,7 +214,7 @@ namespace SCTL_NAMESPACE {
       Vec& operator|=(const Vec& rhs) {
         char* vo = (char*)this->v;
         const char* vi = (const char*)rhs.v;
-        for (Integer i = 0; i < (Integer)sizeof(ValueType)*N; i++) vo[i] != vi[i];
+        for (Integer i = 0; i < (Integer)sizeof(ValueType)*N; i++) vo[i] |= vi[i];
         return *this;
       }
 
