@@ -1001,40 +1001,6 @@ template <class ValueType, class Derived> class BasisInterface {
     }
   }
 
- private:
-  BasisInterface() {
-    void (*EvalBasis1D)(Integer, const Vector<ValueType>&, Vector<ValueType>&) = Derived::EvalBasis1D;
-    void (*Nodes1D)(Integer, Vector<ValueType>&) = Derived::Nodes1D;
-  }
-
-  static void cheb_nodes_1d(Integer order, Vector<ValueType>& nodes) {
-    if (nodes.Dim() != order) nodes.ReInit(order);
-    for (Integer i = 0; i < order; i++) {
-      nodes[i] = -cos<ValueType>((i + (ValueType)0.5) * const_pi<ValueType>() / order) * (ValueType)0.5 + (ValueType)0.5;
-    }
-  }
-
-  static void cheb_basis_1d(Integer order, const Vector<ValueType>& x, Vector<ValueType>& y) {
-    Integer n = x.Dim();
-    if (y.Dim() != order * n) y.ReInit(order * n);
-
-    if (order > 0) {
-      for (Long i = 0; i < n; i++) {
-        y[i] = 1.0;
-      }
-    }
-    if (order > 1) {
-      for (Long i = 0; i < n; i++) {
-        y[i + n] = x[i] * 2 - 1;
-      }
-    }
-    for (Integer i = 2; i < order; i++) {
-      for (Long j = 0; j < n; j++) {
-        y[i * n + j] = 2 * y[n + j] * y[i * n - 1 * n + j] - y[i * n - 2 * n + j];
-      }
-    }
-  }
-
   static void quad_rule(Integer order, Vector<ValueType>& x, Vector<ValueType>& w) {
     static Vector<Vector<ValueType>> x_lst(10000);
     static Vector<Vector<ValueType>> w_lst(x_lst.Dim());
@@ -1094,6 +1060,40 @@ template <class ValueType, class Derived> class BasisInterface {
       w_lst[order].Swap(w_);
     }
     quad_rule(order, x, w);
+  }
+
+ private:
+  BasisInterface() {
+    void (*EvalBasis1D)(Integer, const Vector<ValueType>&, Vector<ValueType>&) = Derived::EvalBasis1D;
+    void (*Nodes1D)(Integer, Vector<ValueType>&) = Derived::Nodes1D;
+  }
+
+  static void cheb_nodes_1d(Integer order, Vector<ValueType>& nodes) {
+    if (nodes.Dim() != order) nodes.ReInit(order);
+    for (Integer i = 0; i < order; i++) {
+      nodes[i] = -cos<ValueType>((i + (ValueType)0.5) * const_pi<ValueType>() / order) * (ValueType)0.5 + (ValueType)0.5;
+    }
+  }
+
+  static void cheb_basis_1d(Integer order, const Vector<ValueType>& x, Vector<ValueType>& y) {
+    Integer n = x.Dim();
+    if (y.Dim() != order * n) y.ReInit(order * n);
+
+    if (order > 0) {
+      for (Long i = 0; i < n; i++) {
+        y[i] = 1.0;
+      }
+    }
+    if (order > 1) {
+      for (Long i = 0; i < n; i++) {
+        y[i + n] = x[i] * 2 - 1;
+      }
+    }
+    for (Integer i = 2; i < order; i++) {
+      for (Long j = 0; j < n; j++) {
+        y[i * n + j] = 2 * y[n + j] * y[i * n - 1 * n + j] - y[i * n - 2 * n + j];
+      }
+    }
   }
 
   static ValueType machine_eps() {
