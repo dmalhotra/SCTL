@@ -192,7 +192,7 @@ template <class ValueType, class FFT_Derived> class FFT_Generic {
     return dim[i];
   }
 
-  void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec) {
+  void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads = 1) {
     Long rank = dim_vec.Dim();
     fft_type = fft_type_;
     howmany = howmany_;
@@ -377,6 +377,18 @@ template <class ValueType, class FFT_Derived> class FFT_Generic {
 
 template <class ValueType> class FFT : public FFT_Generic<ValueType, FFT<ValueType>> {};
 
+static inline void FFTWInitThreads(Integer Nthreads) {
+#ifdef SCTL_FFTW_THREADS
+  static bool first_time = true;
+  #pragma omp critical
+  if (first_time) {
+    fftw_init_threads();
+    first_time = false;
+  }
+  fftw_plan_with_nthreads(Nthreads);
+#endif
+}
+
 #ifdef SCTL_HAVE_FFTW
 template <> class FFT<double> : public FFT_Generic<double, FFT<double>> {
 
@@ -386,7 +398,8 @@ template <> class FFT<double> : public FFT_Generic<double, FFT<double>> {
 
   ~FFT() { if (this->Dim(0) && this->Dim(1)) fftw_destroy_plan(plan); }
 
-  void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec) {
+  void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads = 1) {
+    FFTWInitThreads(Nthreads);
     if (Dim(0) && Dim(1)) fftw_destroy_plan(plan);
     this->fft_type = fft_type_;
     this->howmany = howmany_;
@@ -497,7 +510,8 @@ template <> class FFT<float> : public FFT_Generic<float, FFT<float>> {
 
   ~FFT() { if (this->Dim(0) && this->Dim(1)) fftwf_destroy_plan(plan); }
 
-  void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec) {
+  void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads = 1) {
+    FFTWInitThreads(Nthreads);
     if (Dim(0) && Dim(1)) fftwf_destroy_plan(plan);
     this->fft_type = fft_type_;
     this->howmany = howmany_;
@@ -608,7 +622,8 @@ template <> class FFT<long double> : public FFT_Generic<long double, FFT<long do
 
   ~FFT() { if (this->Dim(0) && this->Dim(1)) fftwl_destroy_plan(plan); }
 
-  void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec) {
+  void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads = 1) {
+    FFTWInitThreads(Nthreads);
     if (Dim(0) && Dim(1)) fftwl_destroy_plan(plan);
     this->fft_type = fft_type_;
     this->howmany = howmany_;

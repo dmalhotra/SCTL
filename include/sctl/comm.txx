@@ -38,6 +38,7 @@ inline Comm Comm::World() {
 
 inline Comm& Comm::operator=(const Comm& c) {
 #ifdef SCTL_HAVE_MPI
+  #pragma omp critical(SCTL_COMM_DUP)
   MPI_Comm_free(&mpi_comm_);
   Init(c.mpi_comm_);
 #endif
@@ -50,6 +51,7 @@ inline Comm::~Comm() {
     delete (Vector<MPI_Request>*)req.top();
     req.pop();
   }
+  #pragma omp critical(SCTL_COMM_DUP)
   MPI_Comm_free(&mpi_comm_);
 #endif
 }
@@ -57,8 +59,10 @@ inline Comm::~Comm() {
 inline Comm Comm::Split(Integer clr) const {
 #ifdef SCTL_HAVE_MPI
   MPI_Comm new_comm;
+  #pragma omp critical(SCTL_COMM_DUP)
   MPI_Comm_split(mpi_comm_, clr, mpi_rank_, &new_comm);
   Comm c(new_comm);
+  #pragma omp critical(SCTL_COMM_DUP)
   MPI_Comm_free(&new_comm);
   return c;
 #else
@@ -1136,7 +1140,9 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
 
     {  // Split comm.  O( log(p) ) ??
       MPI_Comm scomm;
+      #pragma omp critical(SCTL_COMM_DUP)
       MPI_Comm_split(comm, myrank <= split_id, myrank, &scomm);
+      #pragma omp critical(SCTL_COMM_DUP)
       if (free_comm) MPI_Comm_free(&comm);
       comm = scomm;
       free_comm = true;
@@ -1145,6 +1151,7 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
       myrank = (myrank <= split_id ? myrank : myrank - split_id - 1);
     }
   }
+  #pragma omp critical(SCTL_COMM_DUP)
   if (free_comm) MPI_Comm_free(&comm);
 
   SortedElem = arr;

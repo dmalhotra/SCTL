@@ -15,7 +15,7 @@ template <class Real> class ParallelSolver {
 
   ParallelSolver(const Comm& comm = Comm::Self(), bool verbose = true) : comm_(comm), verbose_(verbose) {}
 
-  void operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter = -1);
+  void operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter = -1, bool use_abs_tol = false);
 
  private:
   Comm comm_;
@@ -62,7 +62,7 @@ template <class Real> int ParallelSolverMatVec(Mat M_, Vec x_, Vec Mx_) {
   return 0;
 }
 
-template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter) {
+template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter, bool use_abs_tol) {
   PetscInt N = b.Dim();
   if (max_iter < 0) max_iter = N;
   MPI_Comm comm = comm_.GetMPI_Comm();
@@ -100,7 +100,8 @@ template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>*
   // Set runtime options
   KSPSetType(ksp, KSPGMRES);
   KSPSetNormType(ksp, KSP_NORM_UNPRECONDITIONED);
-  KSPSetTolerances(ksp, tol, PETSC_DEFAULT, PETSC_DEFAULT, max_iter);
+  if (use_abs_tol) KSPSetTolerances(ksp, PETSC_DEFAULT, tol, PETSC_DEFAULT, max_iter);
+  else KSPSetTolerances(ksp, tol, PETSC_DEFAULT, PETSC_DEFAULT, max_iter);
   KSPGMRESSetOrthogonalization(ksp, KSPGMRESModifiedGramSchmidtOrthogonalization);
   //if (verbose_) KSPMonitorSet(ksp, KSPMonitorDefault, nullptr, nullptr); // Doesn't work for some versions of PETSc!! WTH!!
   KSPGMRESSetRestart(ksp, max_iter);
@@ -158,7 +159,7 @@ template <class Real> static Real inner_prod(const Vector<Real>& x, const Vector
   return x_dot_y_glb;
 }
 
-template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter) {
+template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter, bool use_abs_tol) {
   Long N = b.Dim();
   if (max_iter < 0) max_iter = N;
 
@@ -181,10 +182,11 @@ template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>*
 
   Matrix<Real> H_;
   Vector<Real> Aq(N), y, h, r = b;
+  Real abs_tol = tol * (use_abs_tol ? 1 : b_norm);
   while (1) {
     Real r_norm = sqrt(inner_prod(r, r, comm_));
     if (verbose_ && !comm_.Rank()) printf("%3lld KSP Residual norm %.12e\n", (long long)H.Dim(), r_norm);
-    if (r_norm < tol * b_norm || H.Dim() == max_iter) break;
+    if (r_norm < abs_tol || H.Dim() == max_iter) break;
 
     A(&Aq, q);
     q = Aq;
