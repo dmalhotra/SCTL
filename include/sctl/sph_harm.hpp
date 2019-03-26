@@ -128,6 +128,7 @@ template <class Real> class SphericalHarmonics{
 
     static void StokesEvalKL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, const Vector<Real>& norm, bool interior, Vector<Real>& U);
 
+    static void StokesEvalKSelf(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
 
     static void test_stokes() {
       int p = 6;
