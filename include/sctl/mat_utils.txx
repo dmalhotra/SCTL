@@ -104,12 +104,11 @@ template <> inline void cublasgemm<double>(char TransA, char TransB, int M, int 
 }
 #endif
 
-#define U(i, j) U_[(i) * dim[0] + (j)]
-#define S(i, j) S_[(i) * dim[1] + (j)]
-#define V(i, j) V_[(i) * dim[1] + (j)]
-//#define SVD_DEBUG
+//#define SCTL_SVD_DEBUG
 
 template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, StaticArray<Long, 2> &dim, Long m, ValueType a, ValueType b) {
+  auto S = [S_,dim](Long i, Long j){ return S_[(i) * dim[1] + (j)]; };
+
   ValueType r = sqrt<ValueType>(a * a + b * b);
   if (r == 0) return;
   ValueType c = a / r;
@@ -128,6 +127,8 @@ template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, St
 }
 
 template <class ValueType> static inline void GivensR(Iterator<ValueType> S_, StaticArray<Long, 2> &dim, Long m, ValueType a, ValueType b) {
+  auto S = [S_,dim](Long i, Long j){ return S_[(i) * dim[1] + (j)]; };
+
   ValueType r = sqrt<ValueType>(a * a + b * b);
   if (r == 0) return;
   ValueType c = a / r;
@@ -146,8 +147,12 @@ template <class ValueType> static inline void GivensR(Iterator<ValueType> S_, St
 }
 
 template <class ValueType> static inline void SVD(StaticArray<Long, 2> &dim, Iterator<ValueType> U_, Iterator<ValueType> S_, Iterator<ValueType> V_, ValueType eps = -1) {
+  auto U = [U_,dim](Long i, Long j){ return U_[(i) * dim[0] + (j)]; };
+  auto S = [S_,dim](Long i, Long j){ return S_[(i) * dim[1] + (j)]; };
+  auto V = [V_,dim](Long i, Long j){ return V_[(i) * dim[1] + (j)]; };
+
   assert(dim[0] >= dim[1]);
-#ifdef SVD_DEBUG
+#ifdef SCTL_SVD_DEBUG
   Matrix<ValueType> M0(dim[0], dim[1], S_);
 #endif
 
@@ -347,7 +352,7 @@ template <class ValueType> static inline void SVD(StaticArray<Long, 2> &dim, Ite
   }
 
   {  // Check Error
-#ifdef SVD_DEBUG
+#ifdef SCTL_SVD_DEBUG
     Matrix<ValueType> U0(dim[0], dim[0], U_);
     Matrix<ValueType> S0(dim[0], dim[1], S_);
     Matrix<ValueType> V0(dim[1], dim[1], V_);
@@ -368,10 +373,7 @@ template <class ValueType> static inline void SVD(StaticArray<Long, 2> &dim, Ite
   }
 }
 
-#undef U
-#undef S
-#undef V
-#undef SVD_DEBUG
+#undef SCTL_SVD_DEBUG
 
 template <class ValueType> inline void svd(char *JOBU, char *JOBVT, int *M, int *N, Iterator<ValueType> A, int *LDA, Iterator<ValueType> S, Iterator<ValueType> U, int *LDU, Iterator<ValueType> VT, int *LDVT, Iterator<ValueType> WORK, int *LWORK, int *INFO) {
   StaticArray<Long, 2> dim;

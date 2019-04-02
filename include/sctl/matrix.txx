@@ -363,12 +363,6 @@ template <class ValueType> inline ConstIterator<ValueType> Matrix<ValueType>::op
   return (data_ptr + i * dim[1]);
 }
 
-#define myswap(t, a, b) \
-  {                     \
-    t c = a;            \
-    a = b;              \
-    b = c;              \
-  }
 template <class ValueType> void Matrix<ValueType>::RowPerm(const Permutation<ValueType>& P) {
   Matrix<ValueType>& M = *this;
   if (P.Dim() == 0) return;
@@ -397,7 +391,7 @@ template <class ValueType> void Matrix<ValueType>::RowPerm(const Permutation<Val
 
       Iterator<ValueType> Mi = M[i];
       Iterator<ValueType> Mj = M[j];
-      myswap(Long, P_.perm[i], P_.perm[j]);
+      std::swap<Long>(P_.perm[i], P_.perm[j]);
       for (Long k = a; k < b; k++) Mi[k]=tid;
     }
   }
@@ -426,32 +420,31 @@ template <class ValueType> void Matrix<ValueType>::ColPerm(const Permutation<Val
     }
   }
 }
-#undef myswap
 
-#define B1 128
-#define B2 32
+#define SCTL_B1 128
+#define SCTL_B2 32
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::Transpose() const {
   const Matrix<ValueType>& M = *this;
   Long d0 = M.dim[0];
   Long d1 = M.dim[1];
   Matrix<ValueType> M_r(d1, d0);
 
-  const Long blk0 = ((d0 + B1 - 1) / B1);
-  const Long blk1 = ((d1 + B1 - 1) / B1);
+  const Long blk0 = ((d0 + SCTL_B1 - 1) / SCTL_B1);
+  const Long blk1 = ((d1 + SCTL_B1 - 1) / SCTL_B1);
   const Long blks = blk0 * blk1;
 #pragma omp parallel for
   for (Long k = 0; k < blks; k++) {
-    Long i = (k % blk0) * B1;
-    Long j = (k / blk0) * B1;
-    Long d0_ = i + B1;
+    Long i = (k % blk0) * SCTL_B1;
+    Long j = (k / blk0) * SCTL_B1;
+    Long d0_ = i + SCTL_B1;
     if (d0_ >= d0) d0_ = d0;
-    Long d1_ = j + B1;
+    Long d1_ = j + SCTL_B1;
     if (d1_ >= d1) d1_ = d1;
-    for (Long ii = i; ii < d0_; ii += B2)
-      for (Long jj = j; jj < d1_; jj += B2) {
-        Long d0__ = ii + B2;
+    for (Long ii = i; ii < d0_; ii += SCTL_B2)
+      for (Long jj = j; jj < d1_; jj += SCTL_B2) {
+        Long d0__ = ii + SCTL_B2;
         if (d0__ >= d0) d0__ = d0;
-        Long d1__ = jj + B2;
+        Long d1__ = jj + SCTL_B2;
         if (d1__ >= d1) d1__ = d1;
         for (Long iii = ii; iii < d0__; iii++)
           for (Long jjj = jj; jjj < d1__; jjj++) {
@@ -467,22 +460,22 @@ template <class ValueType> void Matrix<ValueType>::Transpose(Matrix<ValueType>& 
   Long d1 = M.dim[1];
   if (M_r.dim[0] != d1 || M_r.dim[1] != d0) M_r.ReInit(d1, d0);
 
-  const Long blk0 = ((d0 + B1 - 1) / B1);
-  const Long blk1 = ((d1 + B1 - 1) / B1);
+  const Long blk0 = ((d0 + SCTL_B1 - 1) / SCTL_B1);
+  const Long blk1 = ((d1 + SCTL_B1 - 1) / SCTL_B1);
   const Long blks = blk0 * blk1;
 #pragma omp parallel for
   for (Long k = 0; k < blks; k++) {
-    Long i = (k % blk0) * B1;
-    Long j = (k / blk0) * B1;
-    Long d0_ = i + B1;
+    Long i = (k % blk0) * SCTL_B1;
+    Long j = (k / blk0) * SCTL_B1;
+    Long d0_ = i + SCTL_B1;
     if (d0_ >= d0) d0_ = d0;
-    Long d1_ = j + B1;
+    Long d1_ = j + SCTL_B1;
     if (d1_ >= d1) d1_ = d1;
-    for (Long ii = i; ii < d0_; ii += B2)
-      for (Long jj = j; jj < d1_; jj += B2) {
-        Long d0__ = ii + B2;
+    for (Long ii = i; ii < d0_; ii += SCTL_B2)
+      for (Long jj = j; jj < d1_; jj += SCTL_B2) {
+        Long d0__ = ii + SCTL_B2;
         if (d0__ >= d0) d0__ = d0;
-        Long d1__ = jj + B2;
+        Long d1__ = jj + SCTL_B2;
         if (d1__ >= d1) d1__ = d1;
         for (Long iii = ii; iii < d0__; iii++)
           for (Long jjj = jj; jjj < d1__; jjj++) {
@@ -491,8 +484,8 @@ template <class ValueType> void Matrix<ValueType>::Transpose(Matrix<ValueType>& 
       }
   }
 }
-#undef B2
-#undef B1
+#undef SCTL_B2
+#undef SCTL_B1
 
 template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Matrix<ValueType>& tS, Matrix<ValueType>& tVT) {
   Matrix<ValueType>& M = *this;

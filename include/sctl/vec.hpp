@@ -15,6 +15,9 @@
 #ifdef __SSE3__
 #include <pmmintrin.h>
 #endif
+#ifdef __SSE4_2__
+#include <smmintrin.h>
+#endif
 #ifdef __AVX__
 #include <immintrin.h>
 #endif
@@ -123,6 +126,10 @@ namespace SCTL_NAMESPACE {
       friend Vec operator-(Vec lhs, const Vec& rhs) {
         for (Integer i = 0; i < N; i++) lhs.v[i] -= rhs.v[i];
         return lhs;
+      }
+      friend Vec FMA(Vec a, const Vec& b, const Vec& c) {
+        for (Integer i = 0; i < N; i++) a.v[i] = a.v[i] * b.v[i] + c.v[i];
+        return a;
       }
 
       // Comparison operators
@@ -497,6 +504,14 @@ namespace SCTL_NAMESPACE {
       friend Vec operator-(Vec lhs, const Vec& rhs) {
         lhs.v = _mm256_sub_pd(lhs.v, rhs.v);
         return lhs;
+      }
+      friend Vec FMA(Vec a, const Vec& b, const Vec& c) {
+        #ifdef __FMA__
+        a.v = _mm256_fmadd_pd(a.v, b.v, c.v);
+        #else
+        a.v = _mm256_add_pd(_mm256_mul_pd(a.v, b.v), c.v);
+        #endif
+        return a;
       }
 
       // Comparison operators

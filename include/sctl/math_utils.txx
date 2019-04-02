@@ -76,22 +76,23 @@ template <class Real> inline Real sin_generic(const Real a) {
   if (theta.size() == 0) {
 #pragma omp critical(QUAD_SIN)
     if (theta.size() == 0) {
-      theta.resize(N);
       sinval.resize(N);
       cosval.resize(N);
 
       Real t = 1.0;
+      std::vector<Real> theta_(N);
       for (int i = 0; i < N; i++) {
-        theta[i] = t;
+        theta_[i] = t;
         t = t * 0.5;
       }
 
-      sinval[N - 1] = theta[N - 1];
+      sinval[N - 1] = theta_[N - 1];
       cosval[N - 1] = 1.0 - sinval[N - 1] * sinval[N - 1] / 2;
       for (int i = N - 2; i >= 0; i--) {
         sinval[i] = 2.0 * sinval[i + 1] * cosval[i + 1];
         cosval[i] = sqrt<Real>(1.0 - sinval[i] * sinval[i]);
       }
+      theta_.swap(theta);
     }
   }
 
@@ -118,22 +119,24 @@ template <class Real> inline Real cos_generic(const Real a) {
   if (theta.size() == 0) {
 #pragma omp critical(QUAD_COS)
     if (theta.size() == 0) {
-      theta.resize(N);
       sinval.resize(N);
       cosval.resize(N);
 
       Real t = 1.0;
+      std::vector<Real> theta_(N);
       for (int i = 0; i < N; i++) {
-        theta[i] = t;
+        theta_[i] = t;
         t = t * 0.5;
       }
 
-      sinval[N - 1] = theta[N - 1];
+      sinval[N - 1] = theta_[N - 1];
       cosval[N - 1] = 1.0 - sinval[N - 1] * sinval[N - 1] / 2;
       for (int i = N - 2; i >= 0; i--) {
         sinval[i] = 2.0 * sinval[i + 1] * cosval[i + 1];
         cosval[i] = sqrt<Real>(1.0 - sinval[i] * sinval[i]);
       }
+
+      theta_.swap(theta);
     }
   }
 
@@ -161,21 +164,22 @@ template <class Real> inline Real exp_generic(const Real a) {
   if (theta0.size() == 0) {
 #pragma omp critical(QUAD_EXP)
     if (theta0.size() == 0) {
-      theta0.resize(N);
+      std::vector<Real> theta0_(N);
       theta1.resize(N);
       expval0.resize(N);
       expval1.resize(N);
 
-      theta0[0] = 1.0;
+      theta0_[0] = 1.0;
       theta1[0] = 1.0;
       expval0[0] = const_e<Real>();
       expval1[0] = const_e<Real>();
       for (int i = 1; i < N; i++) {
-        theta0[i] = theta0[i - 1] * 0.5;
+        theta0_[i] = theta0_[i - 1] * 0.5;
         theta1[i] = theta1[i - 1] * 2.0;
         expval0[i] = sqrt<Real>(expval0[i - 1]);
         expval1[i] = expval1[i - 1] * expval1[i - 1];
       }
+      theta0.swap(theta0_);
     }
   }
 
@@ -205,7 +209,13 @@ template <class Real> inline Real log_generic(const Real a) {
 }
 
 template <class Real> inline Real pow_generic(const Real b, const Real e) {
-  if (b == 0) return 1;
+  if (e == 0) return 1;
+  if (b == 0) return 0;
+  if (b < 0) {
+    Long e_ = (Long)e;
+    SCTL_ASSERT(e == (Real)e_);
+    return exp<Real>(log<Real>(-b) * e) * (e_ % 2 ? (Real)-1 : (Real)1.0);
+  }
   return exp<Real>(log<Real>(b) * e);
 }
 
