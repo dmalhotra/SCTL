@@ -947,7 +947,7 @@ inline void Comm::DelReq(Vector<MPI_Request>* req_ptr) const {
   if (req_ptr) req.push(req_ptr);
 }
 
-#define HS_MPIDATATYPE(CTYPE, MPITYPE)              \
+#define SCTL_HS_MPIDATATYPE(CTYPE, MPITYPE)              \
   template <> class Comm::CommDatatype<CTYPE> {     \
    public:                                          \
     static MPI_Datatype value() { return MPITYPE; } \
@@ -956,19 +956,19 @@ inline void Comm::DelReq(Vector<MPI_Request>* req_ptr) const {
     static MPI_Op max() { return MPI_MAX; }         \
   }
 
-HS_MPIDATATYPE(short, MPI_SHORT);
-HS_MPIDATATYPE(int, MPI_INT);
-HS_MPIDATATYPE(long, MPI_LONG);
-HS_MPIDATATYPE(unsigned short, MPI_UNSIGNED_SHORT);
-HS_MPIDATATYPE(unsigned int, MPI_UNSIGNED);
-HS_MPIDATATYPE(unsigned long, MPI_UNSIGNED_LONG);
-HS_MPIDATATYPE(float, MPI_FLOAT);
-HS_MPIDATATYPE(double, MPI_DOUBLE);
-HS_MPIDATATYPE(long double, MPI_LONG_DOUBLE);
-HS_MPIDATATYPE(long long, MPI_LONG_LONG_INT);
-HS_MPIDATATYPE(char, MPI_CHAR);
-HS_MPIDATATYPE(unsigned char, MPI_UNSIGNED_CHAR);
-#undef HS_MPIDATATYPE
+SCTL_HS_MPIDATATYPE(short, MPI_SHORT);
+SCTL_HS_MPIDATATYPE(int, MPI_INT);
+SCTL_HS_MPIDATATYPE(long, MPI_LONG);
+SCTL_HS_MPIDATATYPE(unsigned short, MPI_UNSIGNED_SHORT);
+SCTL_HS_MPIDATATYPE(unsigned int, MPI_UNSIGNED);
+SCTL_HS_MPIDATATYPE(unsigned long, MPI_UNSIGNED_LONG);
+SCTL_HS_MPIDATATYPE(float, MPI_FLOAT);
+SCTL_HS_MPIDATATYPE(double, MPI_DOUBLE);
+SCTL_HS_MPIDATATYPE(long double, MPI_LONG_DOUBLE);
+SCTL_HS_MPIDATATYPE(long long, MPI_LONG_LONG_INT);
+SCTL_HS_MPIDATATYPE(char, MPI_CHAR);
+SCTL_HS_MPIDATATYPE(unsigned char, MPI_UNSIGNED_CHAR);
+#undef SCTL_HS_MPIDATATYPE
 #endif
 
 template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem) const {  // O( ((N/p)+log(p))*(log(N/p)+log(p)) )
