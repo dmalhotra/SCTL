@@ -26,9 +26,11 @@ template <class Real> inline Real exp(const Real a) { return (Real)::exp(a); }
 
 template <class Real> inline Real log(const Real a) { return (Real)::log(a); }
 
-template <class Real> inline Real pow(const Real b, const Real e) { return (Real)::pow(b, e); }
+template <class Real, class ExpType> inline constexpr Real pow(const Real b, const ExpType e) { return (Real)std::pow(b, e); }
 
-template <Integer N, class T> constexpr T pow(const T& x) { return N > 1 ? x * pow<(N - 1) * (N > 1)>(x) : N < 0 ? T(1) / pow<(-N) * (N < 0)>(x) : N == 1 ? x : T(1); }
+template <Integer e, class Real> inline constexpr Real pow(Real b);
+
+template <class Real> inline constexpr Real pow(Real b, Integer e);
 
 }  // end namespace
 

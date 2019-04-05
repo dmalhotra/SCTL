@@ -247,7 +247,7 @@ namespace SCTL_NAMESPACE {
       }
       friend Vec approx_rsqrt(const Vec& x) {
         Vec r;
-        for (int i = 0; i < N; i++) r.v[i] = 1.0 / sqrt(x.v[i]);
+        for (int i = 0; i < N; i++) r.v[i] = 1 / sqrt<ValueType>(x.v[i]);
         return r;
       }
 
