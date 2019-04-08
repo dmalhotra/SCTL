@@ -671,6 +671,18 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
     }
     Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
+    const Real radius = R[i];
+    Vector<Real> rpow;
+    rpow.ReInit(p0 + 4);
+    if (interior) {
+      rpow[0] = 1 / radius;
+      for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * radius;  // rpow[n] = r^(n-1)
+    } else {
+      rpow[0] = 1;
+      const Real rinv = 1 / radius;
+      for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * rinv;  // rpow[n] = r^(-n)
+    }
+
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
         auto write_coeff = [&](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
@@ -740,36 +752,36 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
         Complex<Real> SWr, SWt, SWp;
         Complex<Real> SXr, SXt, SXp;
         if (interior) {
-          Real a,b;
-          a = n / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], n+1);
-          b = -(n+1) / (Real)(4*n+2) * (pow<Real>(R[i], n-1) - pow<Real>(R[i], n+1));
+          Real a, b;
+          a = n / (Real)((2 * n + 1) * (2 * n + 3)) * rpow[n + 2];
+          b = -(n + 1) / (Real)(4 * n + 2) * (rpow[n] - rpow[n + 2]);
           SVr = a * Vr + b * Wr;
           SVt = a * Vt + b * Wt;
           SVp = a * Vp + b * Wp;
 
-          a = (n+1) / (Real)((2*n+1) * (2*n-1)) * pow<Real>(R[i], n-1);
+          a = (n + 1) / (Real)((2 * n + 1) * (2 * n - 1)) * rpow[n];
           SWr = a * Wr;
           SWt = a * Wt;
           SWp = a * Wp;
 
-          a = 1 / (Real)(2*n+1) * pow<Real>(R[i], n);
+          a = 1 / (Real)(2 * n + 1) * rpow[n + 1];
           SXr = a * Xr;
           SXt = a * Xt;
           SXp = a * Xp;
         } else {
-          Real a,b;
-          a = n / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], -n-2);
+          Real a, b;
+          a = n / (Real)((2 * n + 1) * (2 * n + 3)) * rpow[n + 2];
           SVr = a * Vr;
           SVt = a * Vt;
           SVp = a * Vp;
 
-          a = (n+1) / (Real)((2*n+1) * (2*n-1)) * pow<Real>(R[i], -n);
-          b = n / (Real)(4*n+2) * (pow<Real>(R[i], -n-2) - pow<Real>(R[i], -n));
+          a = (n + 1) / (Real)((2 * n + 1) * (2 * n - 1)) * rpow[n];
+          b = n / (Real)(4 * n + 2) * (rpow[n + 2] - rpow[n]);
           SWr = a * Wr + b * Vr;
           SWt = a * Wt + b * Vt;
           SWp = a * Wp + b * Vp;
 
-          a = 1 / (Real)(2*n+1) * pow<Real>(R[i], -n-1);
+          a = 1 / (Real)(2 * n + 1) * rpow[n + 1];
           SXr = a * Xr;
           SXt = a * Xt;
           SXp = a * Xp;
@@ -873,6 +885,18 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
     }
     Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
+    const Real radius = R[i];
+    Vector<Real> rpow;
+    rpow.ReInit(p0 + 4);
+    if (interior) {
+      rpow[0] = 1 / radius;
+      for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * radius;  // rpow[n] = r^(n-1)
+    } else {
+      rpow[0] = 1;
+      const Real rinv = 1 / radius;
+      for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * rinv;  // rpow[n] = r^(-n)
+    }
+
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
         auto write_coeff = [&](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
@@ -942,36 +966,36 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
         Complex<Real> SWr, SWt, SWp;
         Complex<Real> SXr, SXt, SXp;
         if (interior) {
-          Real a,b;
-          a = -2*n*(n+2) / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], n+1);
-          b = -(n+1)*(n+2) / (Real)(2*n+1) * (pow<Real>(R[i], n+1) - pow<Real>(R[i], n-1));
+          Real a, b;
+          a = -2 * n * (n + 2) / (Real)((2 * n + 1) * (2 * n + 3)) * rpow[n + 2];  // pow<Real>(R[i], n+1);
+          b = -(n + 1) * (n + 2) / (Real)(2 * n + 1) * (rpow[n + 2] - rpow[n]);    //(pow<Real>(R[i], n+1) - pow<Real>(R[i], n-1));
           SVr = a * Vr + b * Wr;
           SVt = a * Vt + b * Wt;
           SVp = a * Vp + b * Wp;
 
-          a = -(2*n*n+1) / (Real)((2*n+1) * (2*n-1)) * pow<Real>(R[i], n-1);
+          a = -(2 * n * n + 1) / (Real)((2 * n + 1) * (2 * n - 1)) * rpow[n];  // pow<Real>(R[i], n-1);
           SWr = a * Wr;
           SWt = a * Wt;
           SWp = a * Wp;
 
-          a = -(n+2) / (Real)(2*n+1) * pow<Real>(R[i], n);
+          a = -(n + 2) / (Real)(2 * n + 1) * rpow[n + 1];  // pow<Real>(R[i], n);
           SXr = a * Xr;
           SXt = a * Xt;
           SXp = a * Xp;
         } else {
-          Real a,b;
-          a = (2*n*n+4*n+3) / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], -n-2);
+          Real a, b;
+          a = (2 * n * n + 4 * n + 3) / (Real)((2 * n + 1) * (2 * n + 3)) * rpow[n + 2];  // pow<Real>(R[i], -n-2);
           SVr = a * Vr;
           SVt = a * Vt;
           SVp = a * Vp;
 
-          a = 2*(n+1)*(n-1) / (Real)((2*n+1) * (2*n-1)) * pow<Real>(R[i], -n);
-          b = 2*n*(n-1) / (Real)(4*n+2) * (pow<Real>(R[i], -n-2) - pow<Real>(R[i], -n));
+          a = 2 * (n + 1) * (n - 1) / (Real)((2 * n + 1) * (2 * n - 1)) * rpow[n];  // pow<Real>(R[i], -n);
+          b = 2 * n * (n - 1) / (Real)(4 * n + 2) * (rpow[n + 2] - rpow[n]);        // (pow<Real>(R[i], -n-2) - pow<Real>(R[i], -n));
           SWr = a * Wr + b * Vr;
           SWt = a * Wt + b * Vt;
           SWp = a * Wp + b * Vp;
 
-          a = (n-1) / (Real)(2*n+1) * pow<Real>(R[i], -n-1);
+          a = (n - 1) / (Real)(2 * n + 1) * rpow[n + 1];  // pow<Real>(R[i], -n-1);
           SXr = a * Xr;
           SXt = a * Xt;
           SXp = a * Xp;
@@ -1075,6 +1099,18 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
       sin_phi = sin(theta_phi[i * 2 + 1]);
     }
     Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
+
+    const Real radius = R[i];
+    Vector<Real> rpow;
+    rpow.ReInit(p0 + 4);
+    if (interior) {
+      rpow[0] = 1 / (radius * radius);
+      for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * radius;  // rpow[n] = r^(n-2)
+    } else {
+      rpow[0] = 1;
+      const Real rinv = 1 / radius;
+      for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * rinv;  // rpow[n] = r^(-n)
+    }
 
     StaticArray<Real, COORD_DIM> norm0;
     { // Set norm0 <-- Q^t * norm
@@ -1259,16 +1295,16 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
         Complex<Real> SW[COORD_DIM][COORD_DIM];
         Complex<Real> SX[COORD_DIM][COORD_DIM];
         if (interior) {
-          PV = (n+1) * pow<Real>(R[i],n) * Ynm;
+          PV = (n + 1) * Ynm * rpow[n + 2];
           PW = 0;
           PX = 0;
 
           Real a, b;
           Real a_r, b_r;
-          a = n / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], n+1);
-          b = -(n+1) / (Real)(4*n+2) * (pow<Real>(R[i], n-1) - pow<Real>(R[i], n+1));
-          a_r = n / (Real)((2*n+1) * (2*n+3)) * (n+1) * pow<Real>(R[i], n);
-          b_r = -(n+1) / (Real)(4*n+2) * ((n-1) * pow<Real>(R[i], n-2) - (n+1) * pow<Real>(R[i], n));
+          a = n / (Real)((2 * n + 1) * (2 * n + 3)) * rpow[n + 3];                           // pow<Real>(R[i], n+1);
+          b = -(n + 1) / (Real)(4 * n + 2) * (rpow[n + 1] - rpow[n + 3]);                    // (pow<Real>(R[i], n-1) - pow<Real>(R[i], n+1));
+          a_r = n / (Real)((2 * n + 1) * (2 * n + 3)) * (n + 1) * rpow[n + 2];               // pow<Real>(R[i], n);
+          b_r = -(n + 1) / (Real)(4 * n + 2) * ((n - 1) * rpow[n] - (n + 1) * rpow[n + 2]);  // ((n-1) * pow<Real>(R[i], n-2) - (n+1) * pow<Real>(R[i], n));
           SV[0][0] = a_r * Vr + b_r * Wr;
           SV[1][0] = a_r * Vt + b_r * Wt;
           SV[2][0] = a_r * Vp + b_r * Wp;
@@ -1279,8 +1315,8 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
           SV[1][2] = a * Vt_p + b * Wt_p;
           SV[2][2] = a * Vp_p + b * Wp_p;
 
-          a = (n+1) / (Real)((2*n+1) * (2*n-1)) * pow<Real>(R[i], n-1);
-          a_r = (n+1) / (Real)((2*n+1) * (2*n-1)) * (n-1) * pow<Real>(R[i], n-2);
+          a = (n + 1) / (Real)((2 * n + 1) * (2 * n - 1)) * rpow[n + 1];          // pow<Real>(R[i], n-1);
+          a_r = (n + 1) / (Real)((2 * n + 1) * (2 * n - 1)) * (n - 1) * rpow[n];  // pow<Real>(R[i], n-2);
           SW[0][0] = a_r * Wr;
           SW[1][0] = a_r * Wt;
           SW[2][0] = a_r * Wp;
@@ -1291,8 +1327,8 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
           SW[1][2] = a * Wt_p;
           SW[2][2] = a * Wp_p;
 
-          a = 1 / (Real)(2*n+1) * pow<Real>(R[i], n);
-          a_r = 1 / (Real)(2*n+1) * (n) * pow<Real>(R[i], n-1);
+          a = 1 / (Real)(2 * n + 1) * rpow[n + 2];        // pow<Real>(R[i], n);
+          a_r = 1 / (Real)(2 * n + 1) * (n)*rpow[n + 1];  // pow<Real>(R[i], n-1);
           SX[0][0] = a_r * Xr;
           SX[1][0] = a_r * Xt;
           SX[2][0] = a_r * Xp;
@@ -1304,13 +1340,13 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
           SX[2][2] = a * Xp_p;
         } else {
           PV = 0;
-          PW = n * pow<Real>(R[i],-n-1) * Ynm;
+          PW = n * Ynm * rpow[n + 1];
           PX = 0;
 
-          Real a,b;
+          Real a, b;
           Real a_r, b_r;
-          a = n / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], -n-2);
-          a_r = n / (Real)((2*n+1) * (2*n+3)) * (-n-2) * pow<Real>(R[i], -n-3);
+          a = n / (Real)((2 * n + 1) * (2 * n + 3)) * rpow[n + 2];               // pow<Real>(R[i], -n-2);
+          a_r = n / (Real)((2 * n + 1) * (2 * n + 3)) * (-n - 2) * rpow[n + 3];  // pow<Real>(R[i], -n-3);
           SV[0][0] = a_r * Vr;
           SV[1][0] = a_r * Vt;
           SV[2][0] = a_r * Vp;
@@ -1321,10 +1357,10 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
           SV[1][2] = a * Vt_p;
           SV[2][2] = a * Vp_p;
 
-          a = (n+1) / (Real)((2*n+1) * (2*n-1)) * pow<Real>(R[i], -n);
-          b = n / (Real)(4*n+2) * (pow<Real>(R[i], -n-2) - pow<Real>(R[i], -n));
-          a_r = (n+1) / (Real)((2*n+1) * (2*n-1)) * (-n) * pow<Real>(R[i], -n-1);
-          b_r = n / (Real)(4*n+2) * ((-n-2)*pow<Real>(R[i], -n-3) - (-n)*pow<Real>(R[i], -n-1));
+          a = (n + 1) / (Real)((2 * n + 1) * (2 * n - 1)) * rpow[n];                    // pow<Real>(R[i], -n);
+          b = n / (Real)(4 * n + 2) * (rpow[n + 2] - rpow[n]);                          //(pow<Real>(R[i], -n-2) - pow<Real>(R[i], -n));
+          a_r = (n + 1) / (Real)((2 * n + 1) * (2 * n - 1)) * (-n) * rpow[n + 1];       // pow<Real>(R[i], -n-1);
+          b_r = n / (Real)(4 * n + 2) * ((-n - 2) * rpow[n + 3] - (-n) * rpow[n + 1]);  // ((-n-2)*pow<Real>(R[i], -n-3) - (-n)*pow<Real>(R[i], -n-1));
           SW[0][0] = a_r * Wr + b_r * Vr;
           SW[1][0] = a_r * Wt + b_r * Vt;
           SW[2][0] = a_r * Wp + b_r * Vp;
@@ -1335,8 +1371,8 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
           SW[1][2] = a * Wt_p + b * Vt_p;
           SW[2][2] = a * Wp_p + b * Vp_p;
 
-          a = 1 / (Real)(2*n+1) * pow<Real>(R[i], -n-1);
-          a_r = 1 / (Real)(2*n+1) * (-n-1) * pow<Real>(R[i], -n-2);
+          a = 1 / (Real)(2 * n + 1) * rpow[n + 1];               // pow<Real>(R[i], -n-1);
+          a_r = 1 / (Real)(2 * n + 1) * (-n - 1) * rpow[n + 2];  // pow<Real>(R[i], -n-2);
           SX[0][0] = a_r * Xr;
           SX[1][0] = a_r * Xt;
           SX[2][0] = a_r * Xp;
@@ -1461,6 +1497,18 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKSelf(const Vecto
     }
     Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
+    const Real radius = R[i];
+    Vector<Real> rpow;
+    rpow.ReInit(p0 + 4);
+    if (interior) {
+      rpow[0] = 1 / (radius * radius);
+      for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * radius;  // rpow[n] = r^(n-2)
+    } else {
+      rpow[0] = 1;
+      const Real rinv = 1 / radius;
+      for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * rinv;  // rpow[n] = r^(-n)
+    }
+
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
         auto write_coeff = [&](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
@@ -1529,37 +1577,37 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKSelf(const Vecto
         Complex<Real> SVr, SVt, SVp;
         Complex<Real> SWr, SWt, SWp;
         Complex<Real> SXr, SXt, SXp;
-  if (interior) {
-          Real a,b;
-          a = ((2*n*n+4*n+3) / (Real)((2*n+1) *(2*n+3)) )*pow<Real>(R[i],n);
-          b = ((n+1)*(n-1) / (Real) (2*n+1) )*(pow<Real>(R[i],n) - pow<Real>(R[i],n-2));
+        if (interior) {
+          Real a, b;
+          a = ((2 * n * n + 4 * n + 3) / (Real)((2 * n + 1) * (2 * n + 3))) * rpow[n + 2];  // pow<Real>(R[i], n);
+          b = ((n + 1) * (n - 1) / (Real)(2 * n + 1)) * (rpow[n + 2] - rpow[n]);            //(pow<Real>(R[i], n) - pow<Real>(R[i], n - 2));
           SVr = a * Vr + b * Wr;
           SVt = a * Vt + b * Wt;
           SVp = a * Vp + b * Wp;
 
-          a = (2*(n+1)*(n-1) / (Real)((2*n+1) * (2*n-1))) * pow<Real>(R[i], n-2);
+          a = (2 * (n + 1) * (n - 1) / (Real)((2 * n + 1) * (2 * n - 1))) * rpow[n];  // * pow<Real>(R[i], n - 2);
           SWr = a * Wr;
           SWt = a * Wt;
           SWp = a * Wp;
 
-          a = ((n-1) / (Real)(2*n+1)) * pow<Real>(R[i], n-1);
+          a = ((n - 1) / (Real)(2 * n + 1)) * rpow[n + 1];  // pow<Real>(R[i], n - 1);
           SXr = a * Xr;
           SXt = a * Xt;
           SXp = a * Xp;
         } else {
-          Real a,b;
-          a = -2*n*(n+2) / (Real)((2*n+1) * (2*n+3)) * pow<Real>(R[i], -n-3);
+          Real a, b;
+          a = -2 * n * (n + 2) / (Real)((2 * n + 1) * (2 * n + 3)) * rpow[n + 3];  // pow<Real>(R[i], -n - 3);
           SVr = a * Vr;
           SVt = a * Vt;
           SVp = a * Vp;
 
-          a = -(2*n*n+1) / (Real)((2*n+1) * (2*n-1)) * pow<Real>(R[i], -n-1);
-          b = n*(n+2) / (Real)(2*n+1) * (pow<Real>(R[i], -n-1) - pow<Real>(R[i], -n-3));
+          a = -(2 * n * n + 1) / (Real)((2 * n + 1) * (2 * n - 1)) * rpow[n + 1];  // pow<Real>(R[i], -n - 1);
+          b = n * (n + 2) / (Real)(2 * n + 1) * (rpow[n + 1] - rpow[n + 3]);       //(pow<Real>(R[i], -n - 1) - pow<Real>(R[i], -n - 3));
           SWr = a * Wr + b * Vr;
           SWt = a * Wt + b * Vt;
           SWp = a * Wp + b * Vp;
 
-          a = -(n+2) / (Real)(2*n+1) * pow<Real>(R[i], -n-2);
+          a = -(n + 2) / (Real)(2 * n + 1) * rpow[n + 2];  // pow<Real>(R[i], -n - 2);
           SXr = a * Xr;
           SXt = a * Xt;
           SXp = a * Xp;
