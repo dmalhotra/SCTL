@@ -107,7 +107,7 @@ template <> inline void cublasgemm<double>(char TransA, char TransB, int M, int 
 //#define SCTL_SVD_DEBUG
 
 template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, StaticArray<Long, 2> &dim, Long m, ValueType a, ValueType b) {
-  auto S = [S_,dim](Long i, Long j){ return S_[(i) * dim[1] + (j)]; };
+  auto S = [S_,dim](Long i, Long j) -> ValueType& { return S_[(i) * dim[1] + (j)]; };
 
   ValueType r = sqrt<ValueType>(a * a + b * b);
   if (r == 0) return;
@@ -127,7 +127,7 @@ template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, St
 }
 
 template <class ValueType> static inline void GivensR(Iterator<ValueType> S_, StaticArray<Long, 2> &dim, Long m, ValueType a, ValueType b) {
-  auto S = [S_,dim](Long i, Long j){ return S_[(i) * dim[1] + (j)]; };
+  auto S = [S_,dim](Long i, Long j) -> ValueType& { return S_[(i) * dim[1] + (j)]; };
 
   ValueType r = sqrt<ValueType>(a * a + b * b);
   if (r == 0) return;
@@ -147,9 +147,9 @@ template <class ValueType> static inline void GivensR(Iterator<ValueType> S_, St
 }
 
 template <class ValueType> static inline void SVD(StaticArray<Long, 2> &dim, Iterator<ValueType> U_, Iterator<ValueType> S_, Iterator<ValueType> V_, ValueType eps = -1) {
-  auto U = [U_,dim](Long i, Long j){ return U_[(i) * dim[0] + (j)]; };
-  auto S = [S_,dim](Long i, Long j){ return S_[(i) * dim[1] + (j)]; };
-  auto V = [V_,dim](Long i, Long j){ return V_[(i) * dim[1] + (j)]; };
+  auto U = [U_,dim](Long i, Long j) -> ValueType& { return U_[(i) * dim[0] + (j)]; };
+  auto S = [S_,dim](Long i, Long j) -> ValueType& { return S_[(i) * dim[1] + (j)]; };
+  auto V = [V_,dim](Long i, Long j) -> ValueType& { return V_[(i) * dim[1] + (j)]; };
 
   assert(dim[0] >= dim[1]);
 #ifdef SCTL_SVD_DEBUG

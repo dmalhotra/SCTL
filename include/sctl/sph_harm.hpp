@@ -36,8 +36,8 @@ template <class Real> class SphericalHarmonics{
     /**
      * \brief Compute spherical harmonic coefficients from grid values.
      * \param[in] X Grid values {X(t0,p0), X(t0,p1), ... , X(t1,p0), X(t1,p1), ... }, where, {cos(t0), cos(t1), ... } are the Gauss-Legendre nodes of order (Nt-1) in the interval [-1,1] and {p0, p1, ... } are equispaced in [0, 2*pi].
-     * \param[in] Nt Number of grid points \theta \in (1,pi).
-     * \param[in] Np Number of grid points \phi \in (1,2*pi).
+     * \param[in] Nt Number of grid points \theta \in (0,pi).
+     * \param[in] Np Number of grid points \phi \in (0,2*pi).
      * \param[in] p Order of spherical harmonic expansion.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[out] S Spherical harmonic coefficients.
@@ -49,8 +49,8 @@ template <class Real> class SphericalHarmonics{
      * \param[in] S Spherical harmonic coefficients.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[in] p Order of spherical harmonic expansion.
-     * \param[in] Nt Number of grid points \theta \in (1,pi).
-     * \param[in] Np Number of grid points \phi \in (1,2*pi).
+     * \param[in] Nt Number of grid points \theta \in (0,pi).
+     * \param[in] Np Number of grid points \phi \in (0,2*pi).
      * \param[out] X Grid values {X(t0,p0), X(t0,p1), ... , X(t1,p0), X(t1,p1), ... }, where, {cos(t0), cos(t1), ... } are the Gauss-Legendre nodes of order (Nt-1) in the interval [-1,1] and {p0, p1, ... } are equispaced in [0, 2*pi].
      * \param[out] X_theta \theta derivative of X evaluated at grid points.
      * \param[out] X_phi \phi derivative of X evaluated at grid points.
@@ -77,8 +77,8 @@ template <class Real> class SphericalHarmonics{
     /**
      * \brief Compute vector spherical harmonic coefficients from grid values.
      * \param[in] X Grid values {X(t0,p0), X(t0,p1), ... , X(t1,p0), ... , Y(t0,p0), ... , Z(t0,p0), ... }, where, {cos(t0), cos(t1), ... } are the Gauss-Legendre nodes of order (Nt-1) in the interval [-1,1] and {p0, p1, ... } are equispaced in [0, 2*pi].
-     * \param[in] Nt Number of grid points \theta \in (1,pi).
-     * \param[in] Np Number of grid points \phi \in (1,2*pi).
+     * \param[in] Nt Number of grid points \theta \in (0,pi).
+     * \param[in] Np Number of grid points \phi \in (0,2*pi).
      * \param[in] p Order of spherical harmonic expansion.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[out] S Vector spherical harmonic coefficients.
@@ -90,8 +90,8 @@ template <class Real> class SphericalHarmonics{
      * \param[in] S Vector spherical harmonic coefficients.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[in] p Order of spherical harmonic expansion.
-     * \param[in] Nt Number of grid points \theta \in (1,pi).
-     * \param[in] Np Number of grid points \phi \in (1,2*pi).
+     * \param[in] Nt Number of grid points \theta \in (0,pi).
+     * \param[in] Np Number of grid points \phi \in (0,2*pi).
      * \param[out] X Grid values {X(t0,p0), X(t0,p1), ... , X(t1,p0), X(t1,p1), ... , Y(t0,p0), ... , Z(t0,p0), ... }, where, {cos(t0), cos(t1), ... } are the Gauss-Legendre nodes of order (Nt-1) in the interval [-1,1] and {p0, p1, ... } are equispaced in [0, 2*pi].
      */
     static void VecSHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p, Long Nt, Long Np, Vector<Real>& X);
@@ -129,6 +129,12 @@ template <class Real> class SphericalHarmonics{
     static void StokesEvalKL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, const Vector<Real>& norm, bool interior, Vector<Real>& U);
 
     static void StokesEvalKSelf(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
+
+    /**
+     * \brief Nodes and weights for Gauss-Legendre quadrature rule
+     */
+    static const Vector<Real>& LegendreNodes(Long p1);
+    static const Vector<Real>& LegendreWeights(Long p1);
 
     static void test_stokes() {
       int p = 6;
@@ -423,8 +429,6 @@ template <class Real> class SphericalHarmonics{
     static void LegPolyDeriv(Vector<Real>& poly_val, const Vector<Real>& X, Long degree);
     static void LegPolyDeriv_(Vector<Real>& poly_val, const Vector<Real>& X, Long degree);
 
-    static const Vector<Real>& LegendreNodes(Long p1);
-    static const Vector<Real>& LegendreWeights(Long p1);
     static const Vector<Real>& SingularWeights(Long p1);
 
     static const Matrix<Real>& MatFourier(Long p0, Long p1);

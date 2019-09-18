@@ -205,7 +205,7 @@ template <class Real> void SphericalHarmonics<Real>::WriteVTK(const char* fname,
     }
 
     if(v_ptr) {
-      Long data__dof = V.Dim() / (2*p1*(p1+1));
+      Long data__dof = V.Dim() / (N_ves * 2*p1*(p1+1));
       for(Long k=0;k<N_ves;k++){ // Set point_value
         for(Long i=0;i<p1+1;i++){
           for(Long j=0;j<2*p1;j++){

@@ -17,7 +17,7 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
   for (Long i = 0; i < M.Dim(0); i++) {
     for (Long j = 0; j < M.Dim(1); j++) {
       float f = ((float)M(i, j));
-      if (fabs<ValueType>(f) < 1e-25) f = 0;
+      if (fabs<float>(f) < 1e-25) f = 0;
       output << std::setw(10) << ((double)f) << ' ';
     }
     output << ";\n";
