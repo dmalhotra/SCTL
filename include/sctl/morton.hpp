@@ -25,7 +25,7 @@ template <Integer DIM = 3> class Morton {
   typedef uint64_t UINT_T;
   #endif
 
-  static const Integer MAX_DEPTH = SCTL_MAX_DEPTH;
+  static constexpr Integer MAX_DEPTH = SCTL_MAX_DEPTH;
 
   Morton() {
     depth = 0;
@@ -34,7 +34,7 @@ template <Integer DIM = 3> class Morton {
 
   template <class T> Morton(ConstIterator<T> coord, uint8_t depth_ = MAX_DEPTH) {
     depth = depth_;
-    assert(depth <= MAX_DEPTH);
+    SCTL_ASSERT(depth <= MAX_DEPTH);
     UINT_T mask = ~((((UINT_T)1) << (MAX_DEPTH - depth)) - 1);
     for (Integer i = 0; i < DIM; i++) x[i] = mask & (UINT_T)floor(coord[i] * maxCoord);
   }

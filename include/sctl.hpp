@@ -20,6 +20,9 @@
 #define SCTL_QUOTEME_1(x) #x
 #define SCTL_INCLUDE(x) SCTL_QUOTEME(SCTL_NAMESPACE/x)
 
+// Tree
+#include SCTL_INCLUDE(tree.hpp)
+
 // MPI Wrapper
 #include SCTL_INCLUDE(comm.hpp)
 

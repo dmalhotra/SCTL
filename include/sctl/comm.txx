@@ -152,7 +152,6 @@ inline void Comm::Wait(void* req_ptr) const {
 template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const {
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
-#ifdef SCTL_HAVE_MPI
   if (scount) {
     SCTL_UNUSED(sbuf[0]         );
     SCTL_UNUSED(sbuf[scount - 1]);
@@ -161,6 +160,7 @@ template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sb
     SCTL_UNUSED(rbuf[0]                  );
     SCTL_UNUSED(rbuf[rcount * Size() - 1]);
   }
+#ifdef SCTL_HAVE_MPI
   MPI_Allgather((scount ? &sbuf[0] : nullptr), scount, CommDatatype<SType>::value(), (rcount ? &rbuf[0] : nullptr), rcount, CommDatatype<RType>::value(), mpi_comm_);
 #else
   memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, scount * sizeof(SType));
@@ -545,7 +545,7 @@ template <class Type> void Comm::PartitionS(Vector<Type>& nodeList, const Type& 
 template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vector<Long>& scatter_index, const Type* split_key_) const {
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
   typedef SortPair<Type, Long> Pair_t;
-  Integer npes = Size(), rank = Rank();
+  Integer npes = Size();
 
   Vector<Pair_t> parray(key.Dim());
   {  // Build global index.

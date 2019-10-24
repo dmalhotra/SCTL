@@ -262,19 +262,19 @@ template <class Real> inline std::ostream& ostream_insertion_generic(std::ostrea
   return output;
 }
 
-template <Integer e, class Real> static inline constexpr Real pow_helper(Real b) {
-  return (e > 0) ? ((e & 1) ? b : Real(1)) * pow_helper<(e>>1),Real>(b*b) : Real(1);
+template <Integer e, class ValueType> static inline constexpr ValueType pow_helper(ValueType b) {
+  return (e > 0) ? ((e & 1) ? b : ValueType(1)) * pow_helper<(e>>1),ValueType>(b*b) : ValueType(1);
 }
 
-template <Integer e, class Real> inline constexpr Real pow(Real b) {
-  return (e > 0) ? pow_helper<e,Real>(b) : 1/pow_helper<-e,Real>(b);
+template <Integer e, class ValueType> inline constexpr ValueType pow(ValueType b) {
+  return (e > 0) ? pow_helper<e,ValueType>(b) : 1/pow_helper<-e,ValueType>(b);
 }
 
-template <class Real> static inline constexpr Real pow_helper(Real b, Integer e) {
-  return (e > 0) ? ((e & 1) ? b : Real(1)) * pow_helper(b*b, e>>1) : Real(1);
+template <class ValueType> static inline constexpr ValueType pow_helper(ValueType b, Integer e) {
+  return (e > 0) ? ((e & 1) ? b : ValueType(1)) * pow_helper(b*b, e>>1) : ValueType(1);
 }
 
-template <class Real> inline constexpr Real pow(Real b, Integer e) {
+template <class ValueType> inline constexpr ValueType pow(ValueType b, Integer e) {
   return (e > 0) ? pow_helper(b, e) : 1/pow_helper(b, -e);
 }
 

@@ -28,9 +28,9 @@ template <class Real> inline Real log(const Real a) { return (Real)::log(a); }
 
 template <class Real, class ExpType> inline constexpr Real pow(const Real b, const ExpType e) { return (Real)std::pow(b, e); }
 
-template <Integer e, class Real> inline constexpr Real pow(Real b);
+template <Integer e, class ValueType> inline constexpr ValueType pow(ValueType b);
 
-template <class Real> inline constexpr Real pow(Real b, Integer e);
+template <class ValueType> inline constexpr ValueType pow(ValueType b, Integer e);
 
 }  // end namespace
 

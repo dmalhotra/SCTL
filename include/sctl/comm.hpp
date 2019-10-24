@@ -22,6 +22,22 @@ class Comm {
     MAX
   };
 
+  static void MPI_Init(int* argc, char*** argv) {
+#ifdef SCTL_HAVE_PETSC
+    PetscInitialize(argc, argv, NULL, NULL);
+#elif defined(SCTL_HAVE_MPI)
+    ::MPI_Init(argc, argv);
+#endif
+  }
+
+  static void MPI_Finalize() {
+#ifdef SCTL_HAVE_PETSC
+    PetscFinalize();
+#elif defined(SCTL_HAVE_MPI)
+    ::MPI_Finalize();
+#endif
+  }
+
   Comm();
 
 #ifdef SCTL_HAVE_MPI

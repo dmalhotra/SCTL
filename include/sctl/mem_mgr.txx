@@ -122,6 +122,7 @@ inline MemoryManager::~MemoryManager() {
   {  // free buff
     SCTL_ASSERT(buff);
     ::free(buff - ((uint16_t*)buff)[-1]);
+    buff = nullptr;
   }
 }
 
@@ -289,7 +290,7 @@ inline void MemoryManager::free(Iterator<char> p) const {
         SCTL_ASSERT_MSG(p_[i] == init_mem_val, "memory corruption detected.");
       }
     }
-    {  // system_malloc.erase(p_)
+    if (buff != nullptr) {  // system_malloc.erase(p_)
       omp_set_lock(&omp_lock);
       SCTL_ASSERT_MSG(system_malloc.erase(p_) == 1, "double free or corruption.");
       omp_unset_lock(&omp_lock);
