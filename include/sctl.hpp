@@ -20,6 +20,9 @@
 #define SCTL_QUOTEME_1(x) #x
 #define SCTL_INCLUDE(x) SCTL_QUOTEME(SCTL_NAMESPACE/x)
 
+// Tensor
+#include SCTL_INCLUDE(tensor.hpp)
+
 // Tree
 #include SCTL_INCLUDE(tree.hpp)
 

@@ -27,6 +27,10 @@ template <Integer DIM = 3> class Morton {
 
   static constexpr Integer MAX_DEPTH = SCTL_MAX_DEPTH;
 
+  static constexpr Integer MaxDepth() {
+    return MAX_DEPTH;
+  }
+
   Morton() {
     depth = 0;
     for (Integer i = 0; i < DIM; i++) x[i] = 0;
@@ -85,10 +89,14 @@ template <Integer DIM = 3> class Morton {
   }
 
   void NbrList(Vector<Morton> &nlst, uint8_t level, bool periodic) const {
-    nlst.ReInit(1);
+    static constexpr Integer MAX_NBRS = sctl::pow<DIM,Integer>(3);
+    StaticArray<Morton<DIM>,MAX_NBRS> nbrs;
+    Integer Nnbrs = 0;
+
     UINT_T mask = ~((((UINT_T)1) << (MAX_DEPTH - level)) - 1);
-    for (Integer i = 0; i < DIM; i++) nlst[0].x[i] = x[i] & mask;
-    nlst[0].depth = level;
+    for (Integer i = 0; i < DIM; i++) nbrs[0].x[i] = x[i] & mask;
+    nbrs[0].depth = level;
+    Nnbrs++;
 
     Morton m;
     Integer k = 1;
@@ -96,34 +104,45 @@ template <Integer DIM = 3> class Morton {
     if (periodic) {
       for (Integer i = 0; i < DIM; i++) {
         for (Integer j = 0; j < k; j++) {
-          m = nlst[j];
+          m = nbrs[j];
           m.x[i] = (m.x[i] + mask) & (maxCoord - 1);
-          nlst.PushBack(m);
+          nbrs[Nnbrs] = m;
+          Nnbrs++;
         }
         for (Integer j = 0; j < k; j++) {
-          m = nlst[j];
+          m = nbrs[j];
           m.x[i] = (m.x[i] - mask) & (maxCoord - 1);
-          nlst.PushBack(m);
+          nbrs[Nnbrs] = m;
+          Nnbrs++;
         }
-        k = nlst.Dim();
+        k = Nnbrs;
       }
     } else {
       for (Integer i = 0; i < DIM; i++) {
         for (Integer j = 0; j < k; j++) {
-          m = nlst[j];
+          m = nbrs[j];
           if (m.x[i] + mask < maxCoord) {
             m.x[i] += mask;
-            nlst.PushBack(m);
+            nbrs[Nnbrs] = m;
+            Nnbrs++;
           }
         }
         for (Integer j = 0; j < k; j++) {
-          m = nlst[j];
+          m = nbrs[j];
           if (m.x[i] >= mask) {
             m.x[i] -= mask;
-            nlst.PushBack(m);
+            nbrs[Nnbrs] = m;
+            Nnbrs++;
           }
         }
-        k = nlst.Dim();
+        k = Nnbrs;
+      }
+    }
+    if (nlst.Dim() != Nnbrs) {
+      nlst.ReInit(Nnbrs, nbrs);
+    } else {
+      for (Integer i = 0; i < Nnbrs; i++) {
+        nlst[i] = nbrs[i];
       }
     }
   }

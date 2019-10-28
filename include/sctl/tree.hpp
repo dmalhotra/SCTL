@@ -4,6 +4,7 @@
 #include SCTL_INCLUDE(common.hpp)
 #include SCTL_INCLUDE(morton.hpp)
 #include SCTL_INCLUDE(comm.hpp)
+#include SCTL_INCLUDE(matrix.hpp) // TODO: fix issues when this is before #Include <comm.hpp>
 
 #include <fstream>
 #include <algorithm>
@@ -22,18 +23,14 @@ struct VTUData {
   Vector<int32_t> offset;
   Vector<uint8_t> types;
 
-  void WriteVTK(const std::string& fname, Comm comm = Comm::Self()) const {
+  void WriteVTK(const std::string& fname, const Comm& comm = Comm::Self()) const {
     typedef typename VTUData::VTKReal VTKReal;
-
-    Integer rank = comm.Rank();
-    Integer np = comm.Size();
-
     Long value_dof = 0;
     {  // Write vtu file.
       std::ofstream vtufile;
       {  // Open file for writing.
         std::stringstream vtufname;
-        vtufname << fname << std::setfill('0') << std::setw(6) << rank << ".vtu";
+        vtufname << fname << std::setfill('0') << std::setw(6) << comm.Rank() << ".vtu";
         vtufile.open(vtufname.str().c_str());
         if (vtufile.fail()) return;
       }
@@ -44,7 +41,7 @@ struct VTUData {
 
         Vector<int32_t> mpi_rank;
         {  // Set  mpi_rank
-          Integer new_myrank = rank;
+          Integer new_myrank = comm.Rank();
           mpi_rank.ReInit(pt_cnt);
           for (Long i = 0; i < mpi_rank.Dim(); i++) mpi_rank[i] = new_myrank;
         }
@@ -86,7 +83,7 @@ struct VTUData {
         vtufile << "        <DataArray type=\"Int32\" Name=\"offsets\" format=\"appended\" offset=\"" << data_size << "\" />\n";
         data_size += sizeof(uint32_t) + offset.Dim() * sizeof(int32_t);
         vtufile << "        <DataArray type=\"UInt8\" Name=\"types\" format=\"appended\" offset=\"" << data_size << "\" />\n";
-        data_size += sizeof(uint32_t) + types.Dim() * sizeof(uint8_t);
+        //data_size += sizeof(uint32_t) + types.Dim() * sizeof(uint8_t);
         vtufile << "      </Cells>\n";
         //---------------------------------------------------------------------------
         vtufile << "    </Piece>\n";
@@ -134,7 +131,7 @@ struct VTUData {
       }
       vtufile.close();  // close file
     }
-    if (!rank) {  // Write pvtu file
+    if (!comm.Rank()) {  // Write pvtu file
       std::ofstream pvtufile;
       {  // Open file for writing
         std::stringstream pvtufname;
@@ -166,7 +163,7 @@ struct VTUData {
           // char *fname_ = (char*)strrchr(vtupath.str().c_str(), '/') + 1;
           // std::string fname_ =
           // boost::filesystem::path(fname).filename().string().
-          for (Integer i = 0; i < np; i++) pvtufile << "      <Piece Source=\"" << fname_ << std::setfill('0') << std::setw(6) << i << ".vtu\"/>\n";
+          for (Integer i = 0; i < comm.Size(); i++) pvtufile << "      <Piece Source=\"" << fname_ << std::setfill('0') << std::setw(6) << i << ".vtu\"/>\n";
         }
         pvtufile << "  </PUnstructuredGrid>\n";
         pvtufile << "</VTKFile>\n";
@@ -174,9 +171,106 @@ struct VTUData {
       pvtufile.close();  // close file
     }
   };
+
+  template <class ElemLst> void AddElems(const ElemLst elem_lst, Integer order, const Comm& comm = Comm::Self()) {
+    constexpr Integer COORD_DIM = ElemLst::CoordDim();
+    constexpr Integer ElemDim = ElemLst::ElemDim();
+    using CoordBasis = typename ElemLst::CoordBasis;
+    using CoordType = typename ElemLst::CoordType;
+    Long N0 = coord.Dim() / COORD_DIM;
+    Long NElem = elem_lst.NElem();
+
+    Matrix<CoordType> nodes = VTK_Nodes<CoordType, ElemDim>(order);
+    Integer Nnodes = sctl::pow<ElemDim,Integer>(order);
+    SCTL_ASSERT(nodes.Dim(0) == ElemDim);
+    SCTL_ASSERT(nodes.Dim(1) == Nnodes);
+    { // Set coord
+      Matrix<CoordType> vtk_coord;
+      auto M = CoordBasis::SetupEval(nodes);
+      CoordBasis::Eval(vtk_coord, elem_lst.ElemVector(), M);
+      for (Long k = 0; k < NElem; k++) {
+        for (Integer i = 0; i < Nnodes; i++) {
+          constexpr Integer dim = (COORD_DIM < 3 ? COORD_DIM : 3);
+          for (Integer j = 0; j < dim; j++) {
+            coord.PushBack((VTUData::VTKReal)vtk_coord[k*COORD_DIM+j][i]);
+          }
+          for (Integer j = dim; j < 3; j++) {
+            coord.PushBack((VTUData::VTKReal)0);
+          }
+        }
+      }
+    }
+
+    if (ElemLst::ElemDim() == 2) {
+      for (Long k = 0; k < NElem; k++) {
+        for (Integer i = 0; i < order-1; i++) {
+          for (Integer j = 0; j < order-1; j++) {
+            Long idx = k*Nnodes + i*order + j;
+            connect.PushBack(N0+idx);
+            connect.PushBack(N0+idx+1);
+            connect.PushBack(N0+idx+order+1);
+            connect.PushBack(N0+idx+order);
+            offset.PushBack(connect.Dim());
+            types.PushBack(9);
+          }
+        }
+      }
+    } else {
+      // TODO
+      SCTL_ASSERT(false);
+    }
+  }
+  template <class ElemLst, class ValueBasis> void AddElems(const ElemLst elem_lst, const Vector<ValueBasis>& elem_value, Integer order, const Comm& comm = Comm::Self()) {
+    constexpr Integer ElemDim = ElemLst::ElemDim();
+    using ValueType = typename ValueBasis::ValueType;
+    Long NElem = elem_lst.NElem();
+
+    Integer dof = (NElem==0 ? 0 : elem_value.Dim() / NElem);
+    SCTL_ASSERT(elem_value.Dim() == NElem * dof);
+    AddElems(elem_lst, order, comm);
+
+    Matrix<ValueType> nodes = VTK_Nodes<ValueType, ElemDim>(order);
+    Integer Nnodes = sctl::pow<ElemDim,Integer>(order);
+    SCTL_ASSERT(nodes.Dim(0) == ElemDim);
+    SCTL_ASSERT(nodes.Dim(1) == Nnodes);
+
+    { // Set value
+      Matrix<ValueType> vtk_value;
+      auto M = ValueBasis::SetupEval(nodes);
+      ValueBasis::Eval(vtk_value, elem_value, M);
+      for (Long k = 0; k < NElem; k++) {
+        for (Integer i = 0; i < Nnodes; i++) {
+          for (Integer j = 0; j < dof; j++) {
+            value.PushBack((VTUData::VTKReal)vtk_value[k*dof+j][i]);
+          }
+        }
+      }
+    }
+  }
+
+  private:
+    template <class CoordType, Integer ELEM_DIM> static Matrix<CoordType> VTK_Nodes(Integer order) {
+      Matrix<CoordType> nodes;
+      if (ELEM_DIM == 2) {
+        Integer Nnodes = order*order;
+        nodes.ReInit(ELEM_DIM, Nnodes);
+        for (Integer i = 0; i < order; i++) {
+          for (Integer j = 0; j < order; j++) {
+            //nodes[0][i*order+j] = i / (CoordType)(order-1);
+            //nodes[1][i*order+j] = j / (CoordType)(order-1);
+            nodes[0][i*order+j] = 0.5 - 0.5 * sctl::cos<CoordType>((2*i+1) * const_pi<CoordType>() / (2*order));
+            nodes[1][i*order+j] = 0.5 - 0.5 * sctl::cos<CoordType>((2*j+1) * const_pi<CoordType>() / (2*order));
+          }
+        }
+      } else {
+        // TODO
+        SCTL_ASSERT(false);
+      }
+      return nodes;
+    }
 };
 
-template <class Real, Integer DIM> class Tree {
+template <Integer DIM> class Tree {
   public:
 
     struct NodeAttr {
@@ -194,12 +288,11 @@ template <class Real, Integer DIM> class Tree {
       return DIM;
     }
 
-    Tree(const Comm& comm_ = Comm::Self()) {
-      comm = comm_;
+    Tree(const Comm& comm_ = Comm::Self()) : comm(comm_) {
       Integer rank = comm.Rank();
       Integer np = comm.Size();
 
-      Vector<Real> coord;
+      Vector<double> coord;
       { // Set coord
         Long N0 = 1;
         while (sctl::pow<DIM,Long>(N0) < np) N0++;
@@ -210,7 +303,7 @@ template <class Real, Integer DIM> class Tree {
         for (Long i = start; i < end; i++) {
           Long  idx = i;
           for (Integer k = 0; k < DIM; k++) {
-            coord[(i-start)*DIM+k] = (idx % N0) / (Real)N0;
+            coord[(i-start)*DIM+k] = (idx % N0) / (double)N0;
             idx /= N0;
           }
         }
@@ -242,7 +335,7 @@ template <class Real, Integer DIM> class Tree {
       return comm;
     }
 
-    void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, bool periodic = 0) {
+    template <class Real> void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, bool periodic = 0) {
       Integer np = comm.Size();
       Integer rank = comm.Rank();
 
@@ -552,14 +645,14 @@ template <class Real, Integer DIM> class Tree {
         }
 
         Vector<Long> cnt_tmp;
-        Vector<Real> data_tmp;
+        Vector<char> data_tmp;
         for (const auto& pair : node_data) {
           const std::string& data_name = pair.first;
 
           Long dof;
-          Iterator<Vector<Real>> data_;
+          Iterator<Vector<char>> data_;
           Iterator<Vector<Long>> cnt_;
-          GetData(data_, cnt_, data_name);
+          GetData_(data_, cnt_, data_name);
           { // Set dof
             StaticArray<Long,2> Nl, Ng;
             Nl[0] = data_->Dim();
@@ -595,7 +688,7 @@ template <class Real, Integer DIM> class Tree {
       }
     }
 
-    void AddData(const std::string& name, const Vector<Real>& data, const Vector<Long>& cnt) {
+    template <class ValueType> void AddData(const std::string& name, const Vector<ValueType>& data, const Vector<Long>& cnt) {
       Long dof;
       { // Check dof
         StaticArray<Long,2> Nl, Ng;
@@ -609,36 +702,29 @@ template <class Real, Integer DIM> class Tree {
       if (dof) SCTL_ASSERT(cnt.Dim() == node_mid.Dim());
 
       SCTL_ASSERT(node_data.find(name) == node_data.end());
-      node_data[name] = data;
-      node_cnt [name] =  cnt;
+      node_data[name].ReInit(data.Dim()*sizeof(ValueType), (Iterator<char>)data.begin(), true);
+      node_cnt [name] = cnt;
     }
 
-    void GetData(Iterator<Vector<Real>>& data, ConstIterator<Vector<Long>>& cnt, const std::string& name) {
-      auto data_ = node_data.find(name);
-      const auto cnt_ = node_cnt.find(name);
-      SCTL_ASSERT(data_ != node_data.end());
-      SCTL_ASSERT( cnt_ != node_cnt .end());
-      data = Ptr2Itr<Vector<Real>>(&data_->second,1);
-      cnt  = Ptr2ConstItr<Vector<Long>>(& cnt_->second,1);
-    }
-    void GetData(ConstIterator<Vector<Real>>& data, ConstIterator<Vector<Long>>& cnt, const std::string& name) const {
+    template <class ValueType> void GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name) const {
       const auto data_ = node_data.find(name);
       const auto cnt_ = node_cnt.find(name);
       SCTL_ASSERT(data_ != node_data.end());
       SCTL_ASSERT( cnt_ != node_cnt .end());
-      data = Ptr2ConstItr<Vector<Real>>(&data_->second,1);
-      cnt  = Ptr2ConstItr<Vector<Long>>(& cnt_->second,1);
+      data.ReInit(data_->second.Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->second.begin(), false);
+      SCTL_ASSERT(data.Dim()*(Long)sizeof(ValueType) == data_->second.Dim());
+      cnt .ReInit( cnt_->second.Dim(), (Iterator<Long>)cnt_->second.begin(), false);
     }
 
-    void ReduceBroadcast(const std::string& name) {
+    template <class ValueType> void ReduceBroadcast(const std::string& name) {
       Integer np = comm.Size();
       Integer rank = comm.Rank();
 
       Vector<Long> dsp;
-      Iterator<Vector<Real>> data_;
+      Iterator<Vector<char>> data_;
       Iterator<Vector<Long>> cnt_;
-      GetData(data_, cnt_, name);
-      Vector<Real>& data = *data_;
+      GetData_(data_, cnt_, name);
+      Vector<ValueType> data(data_->Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->begin(), false);
       Vector<Long>& cnt = *cnt_;
       scan(dsp, cnt);
 
@@ -693,7 +779,7 @@ template <class Real, Integer DIM> class Tree {
           scan(recv_data_dsp, recv_data_cnt);
         }
 
-        Vector<Real> send_buff, recv_buff;
+        Vector<ValueType> send_buff, recv_buff;
         Vector<Long> send_buff_cnt(np), send_buff_dsp(np);
         Vector<Long> recv_buff_cnt(np), recv_buff_dsp(np);
         { // Set send_buff, send_buff_cnt, send_buff_dsp, recv_buff, recv_buff_cnt, recv_buff_dsp
@@ -747,6 +833,32 @@ template <class Real, Integer DIM> class Tree {
         }
       }
 
+      Broadcast<ValueType>(name);
+    }
+
+    template <class ValueType> void Broadcast(const std::string& name) {
+      Integer np = comm.Size();
+      Integer rank = comm.Rank();
+
+      Vector<Long> dsp;
+      Iterator<Vector<char>> data_;
+      Iterator<Vector<Long>> cnt_;
+      GetData_(data_, cnt_, name);
+      Vector<ValueType> data(data_->Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->begin(), false);
+      Vector<Long>& cnt = *cnt_;
+      scan(dsp, cnt);
+
+      Long dof;
+      { // Set dof
+        StaticArray<Long,2> Nl, Ng;
+        Nl[0] = data.Dim();
+        Nl[1] = omp_par::reduce(cnt.begin(), cnt.Dim());
+        comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, Comm::CommOp::SUM);
+        dof = Ng[0] / std::max<Long>(Ng[1],1);
+        SCTL_ASSERT(Nl[0] == Nl[1] * dof);
+        SCTL_ASSERT(Ng[0] == Ng[1] * dof);
+      }
+
       { // Broadcast
         const Vector<Morton<DIM>>& send_mid = user_mid;
         const Vector<Long>& send_node_cnt = user_cnt;
@@ -782,7 +894,7 @@ template <class Real, Integer DIM> class Tree {
           scan(recv_data_dsp, recv_data_cnt);
         }
 
-        Vector<Real> send_buff, recv_buff;
+        Vector<ValueType> send_buff, recv_buff;
         Vector<Long> send_buff_cnt(np), send_buff_dsp(np);
         Vector<Long> recv_buff_cnt(np), recv_buff_dsp(np);
         { // Set send_buff, send_buff_cnt, send_buff_dsp, recv_buff, recv_buff_cnt, recv_buff_dsp
@@ -837,9 +949,10 @@ template <class Real, Integer DIM> class Tree {
           Long N1 = (end_idx ? dsp[end_idx-1] + cnt[end_idx-1] : 0) * dof;
           Long Ns = (Nsplit ? recv_data_dsp[Nsplit-1] + recv_data_cnt[Nsplit-1] : 0) * dof;
           if (N0 != Ns || recv_buff.Dim() != N0+data.Dim()-N1) { // resize data and preserve non-ghost data
-            Vector<Real> data_new(recv_buff.Dim() + N1-N0);
-            memcopy(data_new.begin() + Ns, data.begin() + N0, N1-N0);
-            data.Swap(data_new);
+            Vector<char> data_new((recv_buff.Dim() + N1-N0) * sizeof(ValueType));
+            memcopy(data_new.begin() + Ns * sizeof(ValueType), data_->begin() + N0 * sizeof(ValueType), (N1-N0) * sizeof(ValueType));
+            data_->Swap(data_new);
+            data.ReInit(data_->Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->begin(), false);
           }
 
           memcopy(cnt.begin(), recv_data_cnt.begin(), start_idx);
@@ -903,12 +1016,12 @@ template <class Real, Integer DIM> class Tree {
 
   protected:
 
-    void GetData(Iterator<Vector<Real>>& data, Iterator<Vector<Long>>& cnt, const std::string& name) {
+    void GetData_(Iterator<Vector<char>>& data, Iterator<Vector<Long>>& cnt, const std::string& name) {
       auto data_ = node_data.find(name);
       const auto cnt_ = node_cnt.find(name);
       SCTL_ASSERT(data_ != node_data.end());
       SCTL_ASSERT( cnt_ != node_cnt .end());
-      data = Ptr2Itr<Vector<Real>>(&data_->second,1);
+      data = Ptr2Itr<Vector<char>>(&data_->second,1);
       cnt  = Ptr2Itr<Vector<Long>>(& cnt_->second,1);
     }
 
@@ -931,7 +1044,7 @@ template <class Real, Integer DIM> class Tree {
     Vector<NodeAttr> node_attr;
     Vector<NodeLists> node_lst;
 
-    std::map<std::string, Vector<Real>> node_data;
+    std::map<std::string, Vector<char>> node_data;
     std::map<std::string, Vector<Long>> node_cnt;
 
     Vector<Morton<DIM>> user_mid;
@@ -940,7 +1053,7 @@ template <class Real, Integer DIM> class Tree {
     Comm comm;
 };
 
-template <class Real, Integer DIM, class BaseTree = Tree<Real,DIM>> class PtTree : public BaseTree {
+template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : public BaseTree {
   public:
 
     PtTree(const Comm& comm = Comm::Self()) : BaseTree(comm) {}
@@ -948,8 +1061,8 @@ template <class Real, Integer DIM, class BaseTree = Tree<Real,DIM>> class PtTree
     ~PtTree() {
       #ifdef SCTL_MEMDEBUG
       for (auto& pair : data_pt_name) {
-        ConstIterator<Vector<Real>> data;
-        ConstIterator<Vector<Long>> cnt;
+        Vector<Real> data;
+        Vector<Long> cnt;
         this->GetData(data, cnt, pair.second);
         SCTL_ASSERT(scatter_idx.find(pair.second) != scatter_idx.end());
       }
@@ -992,9 +1105,9 @@ template <class Real, Integer DIM, class BaseTree = Tree<Real,DIM>> class PtTree
           if (pair.second == pt_name) {
             const auto& data_name = pair.first;
 
-            Iterator<Vector<Real>> data;
+            Iterator<Vector<char>> data;
             Iterator<Vector<Long>> cnt;
-            this->GetData(data, cnt, data_name);
+            this->GetData_(data, cnt, data_name);
 
             { // Update data
               Long dof = 0;
@@ -1014,7 +1127,7 @@ template <class Real, Integer DIM, class BaseTree = Tree<Real,DIM>> class PtTree
               offset *= dof;
               count *= dof;
 
-              Vector<Real> data_(count, data->begin() + offset);
+              Vector<char> data_(count, data->begin() + offset);
               comm.PartitionN(data_, pt_mid_.Dim());
               data->Swap(data_);
             }
@@ -1046,9 +1159,9 @@ template <class Real, Integer DIM, class BaseTree = Tree<Real,DIM>> class PtTree
       AddParticleData(name, name, coord);
 
       { // Set node_cnt
-        Iterator<Vector<Real>> data_;
+        Iterator<Vector<char>> data_;
         Iterator<Vector<Long>> cnt_;
-        this->GetData(data_,cnt_,name);
+        this->GetData_(data_,cnt_,name);
         cnt_[0].ReInit(node_mid.Dim());
         for (Long i = 0; i < node_mid.Dim(); i++) {
           Long start = std::lower_bound(pt_mid_.begin(), pt_mid_.end(), node_mid[i]) - pt_mid_.begin();
@@ -1065,19 +1178,19 @@ template <class Real, Integer DIM, class BaseTree = Tree<Real,DIM>> class PtTree
       SCTL_ASSERT(data_pt_name.find(data_name) == data_pt_name.end());
       data_pt_name[data_name] = particle_name;
 
-      Iterator<Vector<Real>> data_;
+      Iterator<Vector<char>> data_;
       Iterator<Vector<Long>> cnt_;
       this->AddData(data_name, Vector<Real>(), Vector<Long>());
-      this->GetData(data_,cnt_,data_name);
+      this->GetData_(data_,cnt_,data_name);
       { // Set data_[0]
-        data_[0] = data;
+        data_[0].ReInit(data.Dim()*sizeof(Real), (Iterator<char>)data.begin(), true);
         this->GetComm().ScatterForward(data_[0], scatter_idx[particle_name]);
       }
       if (data_name != particle_name) { // Set cnt_[0]
-        Iterator<Vector<Real>> pt_coord;
-        Iterator<Vector<Long>> pt_cnt;
+        Vector<Real> pt_coord;
+        Vector<Long> pt_cnt;
         this->GetData(pt_coord, pt_cnt, particle_name);
-        cnt_[0] = pt_cnt[0];
+        cnt_[0] = pt_cnt;
       }
     }
 
@@ -1094,14 +1207,14 @@ template <class Real, Integer DIM, class BaseTree = Tree<Real,DIM>> class PtTree
 
       Long dof;
       Vector<Long> dsp;
-      ConstIterator<Vector<Long>> cnt_;
-      ConstIterator<Vector<Real>> data_;
+      Vector<Long> cnt_;
+      Vector<Real> data_;
       this->GetData(data_, cnt_, data_name);
-      SCTL_ASSERT(cnt_->Dim() == node_mid.Dim());
-      BaseTree::scan(dsp, cnt_[0]);
+      SCTL_ASSERT(cnt_.Dim() == node_mid.Dim());
+      BaseTree::scan(dsp, cnt_);
       { // Set dof
         Long Nn = node_mid.Dim();
-        StaticArray<Long,2> Ng, Nl = {data_->Dim(), dsp[Nn-1]+cnt_[0][Nn-1]};
+        StaticArray<Long,2> Ng, Nl = {data_.Dim(), dsp[Nn-1]+cnt_[Nn-1]};
         comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, Comm::CommOp::SUM);
         dof = Ng[0] / std::max<Long>(Ng[1],1);
       }
@@ -1111,8 +1224,8 @@ template <class Real, Integer DIM, class BaseTree = Tree<Real,DIM>> class PtTree
         Long N0 = std::lower_bound(node_mid.begin(), node_mid.end(), mins[rank]) - node_mid.begin();
         Long N1 = std::lower_bound(node_mid.begin(), node_mid.end(), (rank+1==np ? Morton<DIM>().Next() : mins[rank+1])) - node_mid.begin();
         Long start = dsp[N0] * dof;
-        Long end = (N1<dsp.Dim() ? dsp[N1] : dsp[N1-1]+cnt_[0][N1-1]) * dof;
-        data.ReInit(end-start, (Iterator<Real>)data_->begin()+start, true);
+        Long end = (N1<dsp.Dim() ? dsp[N1] : dsp[N1-1]+cnt_[N1-1]) * dof;
+        data.ReInit(end-start, data_.begin()+start, true);
         comm.ScatterReverse(data, scatter_idx_, Nlocal_ * dof);
       }
     }
@@ -1148,20 +1261,20 @@ template <class Real, Integer DIM, class BaseTree = Tree<Real,DIM>> class PtTree
         SCTL_ASSERT(data_pt_name.find(data_name) != data_pt_name.end());
         std::string particle_name = data_pt_name.find(data_name)->second;
 
-        ConstIterator<Vector<Real>> pt_coord = NullIterator<Vector<Real>>();
-        ConstIterator<Vector<Real>> pt_value = NullIterator<Vector<Real>>();
-        ConstIterator<Vector<Long>> pt_cnt = NullIterator<Vector<Long>>();
+        Vector<Real> pt_coord;
+        Vector<Real> pt_value;
+        Vector<Long> pt_cnt;
         Vector<Long> pt_dsp;
         Long value_dof = 0;
         { // Set pt_coord, pt_cnt, pt_dsp
           this->GetData(pt_coord, pt_cnt, particle_name);
-          Tree<Real,DIM>::scan(pt_dsp, pt_cnt[0]);
+          Tree<DIM>::scan(pt_dsp, pt_cnt);
         }
         if (particle_name != data_name) { // Set pt_value, value_dof
-          ConstIterator<Vector<Long>> pt_cnt = NullIterator<Vector<Long>>();
+          Vector<Long> pt_cnt;
           this->GetData(pt_value, pt_cnt, data_name);
-          Long Npt = omp_par::reduce(pt_cnt->begin(), pt_cnt->Dim());
-          value_dof = pt_value->Dim() / std::max<Long>(Npt,1);
+          Long Npt = omp_par::reduce(pt_cnt.begin(), pt_cnt.Dim());
+          value_dof = pt_value.Dim() / std::max<Long>(Npt,1);
         }
 
         Vector<VTKReal> &coord = vtu_data.coord;
@@ -1177,14 +1290,14 @@ template <class Real, Integer DIM, class BaseTree = Tree<Real,DIM>> class PtTree
         value.SetZero();
 
         SCTL_ASSERT(node_mid.Dim() == node_attr.Dim());
-        SCTL_ASSERT(node_mid.Dim() == pt_cnt->Dim());
+        SCTL_ASSERT(node_mid.Dim() == pt_cnt.Dim());
         for (Long i = 0; i < node_mid.Dim(); i++) {
           if (!show_ghost && node_attr[i].Ghost) continue;
           if (!node_attr[i].Leaf) continue;
 
-          for (Long j = 0; j < pt_cnt[0][i]; j++) {
-            ConstIterator<Real> pt_coord_ = pt_coord->begin() + (pt_dsp[i] + j) * DIM;
-            ConstIterator<Real> pt_value_ = (value_dof ? pt_value->begin() + (pt_dsp[i] + j) * value_dof : NullIterator<Real>());
+          for (Long j = 0; j < pt_cnt[i]; j++) {
+            ConstIterator<Real> pt_coord_ = pt_coord.begin() + (pt_dsp[i] + j) * DIM;
+            ConstIterator<Real> pt_value_ = (value_dof ? pt_value.begin() + (pt_dsp[i] + j) * value_dof : NullIterator<Real>());
 
             for (Integer k = 0; k < DIM; k++) coord.PushBack((VTKReal)pt_coord_[k]);
             for (Integer k = DIM; k < 3; k++) coord.PushBack(0);

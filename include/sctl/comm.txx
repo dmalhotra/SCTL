@@ -982,21 +982,22 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
   }
   srand(myrank);
 
-  Long totSize, nelem = arr_.Dim();
+  Long totSize;
   {                 // Local and global sizes. O(log p)
+    Long nelem = arr_.Dim();
     Allreduce<Long>(Ptr2ConstItr<Long>(&nelem, 1), Ptr2Itr<Long>(&totSize, 1), 1, CommOp::SUM);
   }
 
   if (npes == 1) {  // SortedElem <--- local_sort(arr_)
     SortedElem = arr_;
-    omp_par::merge_sort(SortedElem.begin(), SortedElem.begin() + nelem);
+    omp_par::merge_sort(SortedElem.begin(), SortedElem.end());
     return;
   }
 
   Vector<Type> arr;
   {  // arr <-- local_sort(arr_)
     arr = arr_;
-    omp_par::merge_sort(arr.begin(), arr.begin() + nelem);
+    omp_par::merge_sort(arr.begin(), arr.end());
   }
 
   Vector<Type> nbuff, nbuff_ext, rbuff, rbuff_ext;  // Allocate memory.
@@ -1012,6 +1013,7 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
       Vector<Type> glb_splitters;
       {  // Take random splitters. glb_splt_count = const = 100~1000
         Integer splt_count;
+        Long nelem = arr.Dim();
         {  // Set splt_coun. O( 1 ) -- Let p * splt_count = t
           splt_count = (100 * nelem) / totSize;
           if (npes > 100) splt_count = (drand48() * totSize) < (100 * nelem) ? 1 : 0;
@@ -1051,7 +1053,7 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
       {  // Compute local rank
 #pragma omp parallel for schedule(static)
         for (Integer i = 0; i < glb_splt_count; i++) {
-          lrank[i] = std::lower_bound(arr.begin(), arr.begin() + nelem, glb_splitters[i]) - arr.begin();
+          lrank[i] = std::lower_bound(arr.begin(), arr.end(), glb_splitters[i]) - arr.begin();
         }
       }
 
@@ -1061,20 +1063,20 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
       }
 
       {  // Determine split_key, totSize_new
-        ConstIterator<Long> split_disp = grank.begin();
+        Integer splitter_idx = 0;
         for (Integer i = 0; i < glb_splt_count; i++) {
-          if (labs(grank[i] - totSize / 2) < labs(*split_disp - totSize / 2)) {
-            split_disp = grank.begin() + i;
+          if (labs(grank[i] - totSize / 2) < labs(grank[splitter_idx] - totSize / 2)) {
+            splitter_idx = i;
           }
         }
-        split_key = glb_splitters[split_disp - grank.begin()];
+        split_key = glb_splitters[splitter_idx];
 
         if (myrank <= (npes - 1) / 2)
-          totSize_new = split_disp[0];
+          totSize_new = grank[splitter_idx];
         else
-          totSize_new = totSize - split_disp[0];
+          totSize_new = totSize - grank[splitter_idx];
 
-        // double err=(((double)*split_disp)/(totSize/2))-1.0;
+        // double err=(((double)grank[splitter_idx])/(totSize/2))-1.0;
         // if(fabs<double>(err)<0.01 || npes<=16) break;
         // else if(!myrank) std::cout<<err<<'\n';
       }
@@ -1082,24 +1084,21 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
 
     Integer split_id = (npes - 1) / 2;
     {  // Split problem into two. O( N/p )
-      Integer new_p0 = (myrank <= split_id ? 0 : split_id + 1);
-      Integer cmp_p0 = (myrank > split_id ? 0 : split_id + 1);
-
       Integer partner;
       {  // Set partner
-        partner = myrank + cmp_p0 - new_p0;
+        partner = myrank + (split_id+1) * (myrank<=split_id ? 1 : -1);
         if (partner >= npes) partner = npes - 1;
         assert(partner >= 0);
       }
-      bool extra_partner = (npes % 2 == 1 && npes - 1 == myrank);
+      bool extra_partner = (npes % 2 == 1 && myrank == npes - 1);
 
       Long ssize = 0, lsize = 0;
       ConstIterator<Type> sbuff, lbuff;
       {  // Set ssize, lsize, sbuff, lbuff
-        Long split_indx = std::lower_bound(arr.begin(), arr.begin() + nelem, split_key) - arr.begin();
-        ssize = (myrank > split_id ? split_indx : nelem - split_indx);
+        Long split_indx = std::lower_bound(arr.begin(), arr.end(), split_key) - arr.begin();
+        ssize = (myrank > split_id ? split_indx : arr.Dim() - split_indx);
         sbuff = (myrank > split_id ? arr.begin() : arr.begin() + split_indx);
-        lsize = (myrank <= split_id ? split_indx : nelem - split_indx);
+        lsize = (myrank <= split_id ? split_indx : arr.Dim() - split_indx);
         lbuff = (myrank <= split_id ? arr.begin() : arr.begin() + split_indx);
       }
 
@@ -1119,23 +1118,24 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
         if (extra_partner) MPI_Sendrecv(nullptr, 0, CommDatatype<Type>::value(), split_id, 0, (ext_rsize ? &rbuff_ext[0] : nullptr), ext_rsize, CommDatatype<Type>::value(), split_id, 0, comm, &status);
       }
 
-      Long nbuff_size = lsize + rsize + ext_rsize;
       {  // nbuff <-- merge(lbuff, rbuff, rbuff_ext)
         nbuff.ReInit(lsize + rsize);
         omp_par::merge<ConstIterator<Type>>(lbuff, (lbuff + lsize), rbuff.begin(), rbuff.begin() + rsize, nbuff.begin(), omp_p, std::less<Type>());
-        if (ext_rsize > 0 && nbuff.Dim() > 0) {
-          nbuff_ext.ReInit(nbuff_size);
-          omp_par::merge(nbuff.begin(), nbuff.begin() + (lsize + rsize), rbuff_ext.begin(), rbuff_ext.begin() + ext_rsize, nbuff_ext.begin(), omp_p, std::less<Type>());
-          nbuff.Swap(nbuff_ext);
-          nbuff_ext.ReInit(0);
+        if (ext_rsize > 0) {
+          if (nbuff.Dim() > 0) {
+            nbuff_ext.ReInit(lsize + rsize + ext_rsize);
+            omp_par::merge(nbuff.begin(), nbuff.begin() + (lsize + rsize), rbuff_ext.begin(), rbuff_ext.begin() + ext_rsize, nbuff_ext.begin(), omp_p, std::less<Type>());
+            nbuff.Swap(nbuff_ext);
+            nbuff_ext.ReInit(0);
+          } else {
+            nbuff.Swap(rbuff_ext);
+          }
         }
       }
 
       // Copy new data.
       totSize = totSize_new;
-      nelem = nbuff_size;
       arr.Swap(nbuff);
-      nbuff.ReInit(0);
     }
 
     {  // Split comm.  O( log(p) ) ??

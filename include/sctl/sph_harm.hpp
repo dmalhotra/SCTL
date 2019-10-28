@@ -493,7 +493,7 @@ template <class Real> class SphericalHarmonics{
     }
 };
 
-template class SphericalHarmonics<double>;
+//template class SphericalHarmonics<double>;
 
 }  // end namespace
 
