@@ -4,7 +4,7 @@ CXXFLAGS = -std=c++11 -fopenmp -Wall -Wfloat-conversion # need C++11 and OpenMP
 
 #Optional flags
 CXXFLAGS += -O0 # debug build
-#CXXFLAGS += -O3 -DNDEBUG # release build
+#CXXFLAGS += -O3 -march=native -DNDEBUG # release build
 
 ifeq ($(shell uname -s),Darwin)
 	CXXFLAGS += -g -rdynamic -Wl,-no_pie # for stack trace (on Mac)

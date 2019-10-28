@@ -70,4 +70,8 @@
 #include SCTL_INCLUDE(stacktrace.h)
 const int sgh = SCTL_NAMESPACE::SetSigHandler(); // Set signal handler
 
+// Boundary quadrature, Kernel functions
+#include SCTL_INCLUDE(kernel_functions.hpp)
+#include SCTL_INCLUDE(boundary_quadrature.hpp)
+
 #endif //_SCTL_HPP_
