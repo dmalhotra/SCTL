@@ -1,7 +1,6 @@
 #ifndef _SCTL_VECTOR_HPP_
 #define _SCTL_VECTOR_HPP_
 
-#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(common.hpp)
 
 #include <vector>
@@ -9,6 +8,8 @@
 #include <cstdint>
 
 namespace SCTL_NAMESPACE {
+
+template <class ValueType> Iterator<ValueType> NullIterator();
 
 template <class ValueType> class Vector {
  public:

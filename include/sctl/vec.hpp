@@ -3,6 +3,7 @@
 
 #include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(common.hpp)
+#include <cassert>
 #include <cstdint>
 #include <ostream>
 

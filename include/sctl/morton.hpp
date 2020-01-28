@@ -1,6 +1,7 @@
 #ifndef _SCTL_MORTON_
 #define _SCTL_MORTON_
 
+#include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(common.hpp)
 #include <cstdint>
 

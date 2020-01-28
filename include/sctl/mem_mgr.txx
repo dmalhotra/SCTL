@@ -1,4 +1,5 @@
 #include <omp.h>
+#include <cmath>
 #include <cstring>
 #include <cassert>
 #include <algorithm>

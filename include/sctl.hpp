@@ -77,4 +77,7 @@ const int sgh = SCTL_NAMESPACE::SetSigHandler(); // Set signal handler
 #include SCTL_INCLUDE(kernel_functions.hpp)
 #include SCTL_INCLUDE(boundary_quadrature.hpp)
 
+// Math utilities
+#include SCTL_INCLUDE(math_utils.hpp)
+
 #endif //_SCTL_HPP_

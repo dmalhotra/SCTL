@@ -1,5 +1,5 @@
-
 #include SCTL_INCLUDE(matrix.hpp)
+#include SCTL_INCLUDE(math_utils.hpp)
 
 #if defined(SCTL_HAVE_CUDA)
 #include <cuda_runtime_api.h>

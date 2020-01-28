@@ -1,6 +1,11 @@
 #ifndef _SCTL_KERNEL_FUNCTIONS_HPP_
 #define _SCTL_KERNEL_FUNCTIONS_HPP_
 
+#include SCTL_INCLUDE(matrix.hpp)
+#include SCTL_INCLUDE(vector.hpp)
+#include SCTL_INCLUDE(math_utils.hpp)
+#include SCTL_INCLUDE(common.hpp)
+
 namespace SCTL_NAMESPACE {
 
 struct Laplace3D_FxU {

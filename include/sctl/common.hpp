@@ -53,6 +53,4 @@ template <typename ValueType, Long DIM> using StaticArray = ValueType[DIM];
 #endif
 }
 
-#include SCTL_INCLUDE(math_utils.hpp)
-
 #endif  //_SCTL_COMMON_HPP_

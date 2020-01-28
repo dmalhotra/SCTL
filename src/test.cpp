@@ -61,9 +61,7 @@ int main(int argc, char** argv) {
   sctl::SphericalHarmonics<double>::test_stokes();
   return 0;
 
-#ifdef SCTL_HAVE_MPI
-  MPI_Init(&argc, &argv);
-#endif
+  sctl::Comm::MPI_Init(&argc, &argv);
 
   // Dry run (profiling disabled)
   ProfileMemgr();
@@ -84,8 +82,6 @@ int main(int argc, char** argv) {
     // sctl::aligned_delete(A); // Show memory leak warning when commented
   }
 
-#ifdef SCTL_HAVE_MPI
-    MPI_Finalize();
-#endif
+  sctl::Comm::MPI_Finalize();
   return 0;
 }

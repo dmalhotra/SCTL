@@ -1,6 +1,8 @@
 #ifndef _SCTL_PARALLEL_SOLVER_HPP_
 #define _SCTL_PARALLEL_SOLVER_HPP_
 
+#include SCTL_INCLUDE(math_utils.hpp)
+#include SCTL_INCLUDE(matrix.hpp)
 #include SCTL_INCLUDE(vector.hpp)
 #include SCTL_INCLUDE(comm.hpp)
 

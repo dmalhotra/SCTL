@@ -1,9 +1,19 @@
 #ifndef _SCTL_BOUNDARY_QUADRATURE_HPP_
 #define _SCTL_BOUNDARY_QUADRATURE_HPP_
 
+#include SCTL_INCLUDE(tree.hpp)
+#include SCTL_INCLUDE(tensor.hpp)
+#include SCTL_INCLUDE(morton.hpp)
+#include SCTL_INCLUDE(matrix.hpp)
+#include SCTL_INCLUDE(vector.hpp)
+#include SCTL_INCLUDE(common.hpp)
+#include SCTL_INCLUDE(cheb_utils.hpp)
+#include SCTL_INCLUDE(kernel_functions.hpp)
+
 #include <mutex>
 #include <atomic>
 #include <tuple>
+#include <functional>
 
 namespace SCTL_NAMESPACE {
 
@@ -1727,7 +1737,7 @@ template <class Real> class Quadrature {
       }
     }
 
-    template <int CoordDim, int FnDim, class Real, class FnBasis, class ElemList> static void DiscretizeSurfaceFn(Vector<FnBasis>& U, const ElemList& elements, std::function<void(Real*,Real*,Real*)> fn) {
+    template <int CoordDim, int FnDim, class FnBasis, class ElemList> static void DiscretizeSurfaceFn(Vector<FnBasis>& U, const ElemList& elements, std::function<void(Real*,Real*,Real*)> fn) {
       using CoordBasis = typename ElemList::CoordBasis;
       const long Nelem = elements.NElem();
       U.ReInit(Nelem * FnDim);
