@@ -106,7 +106,7 @@ template <class ValueType> void Matrix<ValueType>::Write(const char* fname) cons
   dim_[0] = (uint64_t)Dim(0);
   dim_[1] = (uint64_t)Dim(1);
   fwrite(&dim_[0], sizeof(uint64_t), 2, f1);
-  if (Dim(0) * Dim(1)) fwrite(&data_ptr[0], sizeof(ValueType), Dim(0) * Dim(1), f1);
+  if (Dim(0) && Dim(1)) fwrite(&data_ptr[0], sizeof(ValueType), Dim(0) * Dim(1), f1);
   fclose(f1);
 }
 
