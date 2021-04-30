@@ -1096,10 +1096,10 @@ namespace SCTL_NAMESPACE {
         Matrix<ValueType> M(N,K);
         for (Long j = 0; j < N; j++) {
           for (Long i = 0; i < K/2; i++) {
-            M[j][i] = pow<ValueType>(nds[j],i);
+            M[j][i] = pow<ValueType,Long>(nds[j],i);
           }
           for (Long i = K/2; i < K; i++) {
-            M[j][i] = pow<ValueType>(nds[j],K-i-1) * log<ValueType>(nds[j]);
+            M[j][i] = pow<ValueType,Long>(nds[j],K-i-1) * log<ValueType>(nds[j]);
           }
         }
         return M;
@@ -1450,10 +1450,10 @@ namespace SCTL_NAMESPACE {
               ValueType sum = 0;
               Long Nsplit = coeff.Dim()/2;
               for (Long i = 0; i < Nsplit; i++) {
-                sum += coeff[i] * sctl::pow<ValueType>(x,i);
+                sum += coeff[i] * sctl::pow<ValueType,Long>(x,i);
               }
               for (Long i = Nsplit; i < coeff.Dim(); i++) {
-                sum += coeff[i] * log(x) * sctl::pow<ValueType>(x,coeff.Dim()-1-i);
+                sum += coeff[i] * log(x) * sctl::pow<ValueType,Long>(x,coeff.Dim()-1-i);
               }
               return sum;
             }
@@ -2798,11 +2798,11 @@ namespace SCTL_NAMESPACE {
                   }
                 }
               };
-              ValueType dist = 4*const_pi<ValueType>()*pow<ValueType>(0.5,idx); // distance of target points from the source loop (which is a unit circle)
+              ValueType dist = 4*const_pi<ValueType>()*pow<ValueType,Long>(0.5,idx); // distance of target points from the source loop (which is a unit circle)
               discretize_basis_functions(Mintegrands, nds, wts, dist, LegendreQuadRule<ValueType,45>()); // TODO: adaptively select Legendre order
 
               Vector<ValueType> eps_vec;
-              for (Long k = 0; k < max_digits; k++) eps_vec.PushBack(pow<ValueType>(0.1,k));
+              for (Long k = 0; k < max_digits; k++) eps_vec.PushBack(pow<ValueType,Long>(0.1,k));
               auto cond_num_vec = InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, eps_vec);
             }
             for (Integer digits = 0; digits < max_digits; digits++) {
@@ -2819,7 +2819,7 @@ namespace SCTL_NAMESPACE {
         }
         for (Integer idx = 0; idx < crossover_adap_depth; idx++) { // Use trapezoidal rule up to crossover_adap_depth
           for (Integer digits = 0; digits < max_digits; digits++) {
-            Long N = std::max<Long>(digits*pow<Integer>(2,idx), Nmodes); // TODO: determine optimal order by testing error or adaptively
+            Long N = std::max<Long>(digits*pow<Long,Long>(2,idx), Nmodes); // TODO: determine optimal order by testing error or adaptively
             data[idx*max_digits+digits].ReInit(3*N);
             for (Long i = 0; i < N; i++) {
               ValueType quad_nds = i/(ValueType)N;
@@ -3182,7 +3182,7 @@ namespace SCTL_NAMESPACE {
         { // Set nds_wts
           Vector<ValueType> eps_vec;
           Vector<Vector<ValueType>> quad_nds, quad_wts;
-          for (Long k = 0; k < max_digits; k++) eps_vec.PushBack(pow<ValueType>(0.1,k));
+          for (Long k = 0; k < max_digits; k++) eps_vec.PushBack(pow<ValueType,Long>(0.1,k));
           InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, eps_vec);
           SCTL_ASSERT(quad_nds.Dim() == max_digits);
           SCTL_ASSERT(quad_wts.Dim() == max_digits);

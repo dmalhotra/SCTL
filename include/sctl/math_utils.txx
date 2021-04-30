@@ -229,6 +229,29 @@ template <class Real> inline Real pow_generic(const Real b, const Real e) {
   return exp<Real>(log<Real>(b) * e);
 }
 
+template <class ValueType> static inline constexpr ValueType pow_integer_exp(ValueType b, Long e) {
+  return (e > 0) ? ((e & 1) ? b : ValueType(1)) * pow_integer_exp(b*b, e>>1) : ValueType(1);
+}
+template <class Real, class ExpType> class pow_wrapper {
+  public:
+    static constexpr Real pow(Real b, ExpType e) {
+      return std::pow(b, e);
+    }
+};
+template <class Real> class pow_wrapper<Real,Long> {
+  public:
+    static constexpr Real pow(Real b, Long e) {
+      return (e > 0) ? pow_integer_exp(b, e) : 1/pow_integer_exp(b, -e);
+    }
+};
+
+template <Long e, class ValueType> static inline constexpr ValueType pow_integer_exp(ValueType b) {
+  return (e > 0) ? ((e & 1) ? b : ValueType(1)) * pow_integer_exp<(e>>1),ValueType>(b*b) : ValueType(1);
+}
+template <Long e, class ValueType> inline constexpr ValueType pow(ValueType b) {
+  return (e > 0) ? pow_integer_exp<e,ValueType>(b) : 1/pow_integer_exp<-e,ValueType>(b);
+}
+
 template <class Real> inline std::ostream& ostream_insertion_generic(std::ostream& output, const Real q_) {
   // int width=output.width();
   output << std::setw(1);
@@ -270,22 +293,6 @@ template <class Real> inline std::ostream& ostream_insertion_generic(std::ostrea
   }
 
   return output;
-}
-
-template <Long e, class ValueType> static inline constexpr ValueType pow_helper(ValueType b) {
-  return (e > 0) ? ((e & 1) ? b : ValueType(1)) * pow_helper<(e>>1),ValueType>(b*b) : ValueType(1);
-}
-
-template <Long e, class ValueType> inline constexpr ValueType pow(ValueType b) {
-  return (e > 0) ? pow_helper<e,ValueType>(b) : 1/pow_helper<-e,ValueType>(b);
-}
-
-template <class ValueType> static inline constexpr ValueType pow_helper(ValueType b, Long e) {
-  return (e > 0) ? ((e & 1) ? b : ValueType(1)) * pow_helper(b*b, e>>1) : ValueType(1);
-}
-
-template <class ValueType> inline constexpr ValueType pow(ValueType b, Long e) {
-  return (e > 0) ? pow_helper(b, e) : 1/pow_helper(b, -e);
 }
 
 }  // end namespace
@@ -332,7 +339,20 @@ template <> inline QuadReal exp<QuadReal>(const QuadReal a) { return exp_generic
 
 template <> inline QuadReal log<QuadReal>(const QuadReal a) { return log_generic(a); }
 
-template <> inline QuadReal pow<QuadReal>(const QuadReal b, const QuadReal e) { return pow_generic(b, e); }
+//template <class ExpType> inline QuadReal pow(const QuadReal b, const ExpType e) { return pow_generic<QuadReal>(b, (QuadReal)e); }
+
+template <class ExpType> class pow_wrapper<QuadReal,ExpType> {
+  public:
+    static constexpr QuadReal pow(QuadReal b, ExpType e) {
+      return pow_generic<QuadReal>(b, (QuadReal)e);
+    }
+};
+template <> class pow_wrapper<QuadReal,Long> {
+  public:
+    static constexpr QuadReal pow(QuadReal b, Long e) {
+      return (e > 0) ? pow_integer_exp(b, e) : 1/pow_integer_exp(b, -e);
+    }
+};
 
 inline std::ostream& operator<<(std::ostream& output, const QuadReal q) { return ostream_insertion_generic(output, q); }
 
@@ -342,6 +362,11 @@ inline std::ostream& operator<<(std::ostream& output, const SCTL_QUAD_T q) { ret
 
 #endif  // SCTL_QUAD_T
 
+namespace SCTL_NAMESPACE {
+  template <class Real, class ExpType> inline Real pow(const Real b, const ExpType e) {
+    return pow_wrapper<Real,ExpType>::pow(b, e);
+  }
+} // end namespace
 
 
 
