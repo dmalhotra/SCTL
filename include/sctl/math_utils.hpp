@@ -30,9 +30,11 @@ template <class Real> inline constexpr Real log(const Real a) { return (Real)::l
 
 template <class Real, class ExpType> inline constexpr Real pow(const Real b, const ExpType e) { return (Real)std::pow(b, e); }
 
-template <Integer e, class ValueType> inline constexpr ValueType pow(ValueType b);
+template <Long e, class ValueType> inline constexpr ValueType pow(ValueType b);
 
-template <class ValueType> inline constexpr ValueType pow(ValueType b, Integer e);
+template <class ValueType> inline constexpr ValueType pow(ValueType b, Long e);
+
+template <class ValueType> inline constexpr ValueType pow(ValueType b, Integer e) { return pow<ValueType>(b,(Long)e); }
 
 }  // end namespace
 
