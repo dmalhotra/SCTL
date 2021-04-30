@@ -90,9 +90,17 @@ class Comm {
 
   template <class Type> void PartitionN(Vector<Type>& v, Long N) const;
 
-  template <class Type> void PartitionS(Vector<Type>& nodeList, const Type& splitter) const;
+  template <class Type, class Compare> void PartitionS(Vector<Type>& nodeList, const Type& splitter, Compare comp) const;
 
-  template <class Type> void HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem) const;
+  template <class Type> void PartitionS(Vector<Type>& nodeList, const Type& splitter) const {
+    PartitionS(nodeList, splitter, std::less<Type>());
+  }
+
+  template <class Type, class Compare> void HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem, Compare comp) const;
+
+  template <class Type> void HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem) const {
+    HyperQuickSort(arr_, SortedElem, std::less<Type>());
+  }
 
   template <class Type> void SortScatterIndex(const Vector<Type>& key, Vector<Long>& scatter_index, const Type* split_key_ = nullptr) const;
 
