@@ -177,16 +177,8 @@ template <class ValueType, class FFT_Derived> class FFT_Generic {
     dim[1] = 0;
   }
 
-  FFT_Generic(const FFT_Generic&) {
-    dim[0]=0;
-    dim[1]=0;
-  }
-
-  FFT_Generic& operator=(const FFT_Generic&) {
-    dim[0]=0;
-    dim[1]=0;
-    return *this;
-  };
+  FFT_Generic (const FFT_Generic&) = delete;
+  FFT_Generic& operator= (const FFT_Generic&) = delete;
 
   Long Dim(Integer i) const {
     return dim[i];
@@ -396,6 +388,10 @@ template <> class FFT<double> : public FFT_Generic<double, FFT<double>> {
 
  public:
 
+  FFT() = default;
+  FFT(const FFT&) = delete;
+  FFT& operator=(const FFT&) = delete;
+
   ~FFT() { if (this->Dim(0) && this->Dim(1)) fftw_destroy_plan(plan); }
 
   void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads = 1) {
@@ -508,6 +504,10 @@ template <> class FFT<float> : public FFT_Generic<float, FFT<float>> {
 
  public:
 
+  FFT() = default;
+  FFT(const FFT&) = delete;
+  FFT& operator=(const FFT&) = delete;
+
   ~FFT() { if (this->Dim(0) && this->Dim(1)) fftwf_destroy_plan(plan); }
 
   void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads = 1) {
@@ -619,6 +619,10 @@ template <> class FFT<long double> : public FFT_Generic<long double, FFT<long do
   typedef long double ValueType;
 
  public:
+
+  FFT() = default;
+  FFT(const FFT&) = delete;
+  FFT& operator=(const FFT&) = delete;
 
   ~FFT() { if (this->Dim(0) && this->Dim(1)) fftwl_destroy_plan(plan); }
 
