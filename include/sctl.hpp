@@ -20,6 +20,10 @@
 #define SCTL_QUOTEME_1(x) #x
 #define SCTL_INCLUDE(x) SCTL_QUOTEME(SCTL_NAMESPACE/x)
 
+// Boundary Integrals
+#include SCTL_INCLUDE(boundary_integral.hpp)
+#include SCTL_INCLUDE(quadrule.hpp)
+
 // ODE solver
 #include SCTL_INCLUDE(ode-solver.hpp)
 
