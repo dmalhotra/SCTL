@@ -14,7 +14,7 @@ struct Laplace3D_FxU {
   }
   template <class Real> static void Eval(Real (&u)[1][1], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
     Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
-    Real rinv = (r2>1e-16 ? 1/sqrt<Real>(r2) : 0);
+    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
     u[0][0] = rinv;
   }
 };
@@ -24,7 +24,7 @@ struct Laplace3D_DxU {
   }
   template <class Real> static void Eval(Real (&u)[1][1], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
     Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
-    Real rinv = (r2>1e-16 ? 1/sqrt<Real>(r2) : 0);
+    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
     Real rdotn = r[0]*n[0] + r[1]*n[1] + r[2]*n[2];
     Real rinv3 = rinv * rinv * rinv;
     u[0][0] = rdotn * rinv3;
@@ -36,7 +36,7 @@ struct Laplace3D_FxdU{
   }
   template <class Real> static void Eval(Real (&u)[1][3], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
     Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
-    Real rinv = (r2>1e-16 ? 1/sqrt<Real>(r2) : 0);
+    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
     Real rinv3 = rinv * rinv * rinv;
     u[0][0] = -r[0] * rinv3;
     u[0][1] = -r[1] * rinv3;
@@ -56,6 +56,8 @@ template <class uKernel> class GenericKernel {
 
   public:
 
+    GenericKernel() : ctx_ptr(nullptr) {}
+
     static constexpr Integer CoordDim() {
       return DIM;
     }
@@ -71,7 +73,7 @@ template <class uKernel> class GenericKernel {
 
     template <class Real, Integer DOF> void uKernelEval(Iterator<Real> u, ConstIterator<Real> r, ConstIterator<Real> n, ConstIterator<Real> f) const {
       Real M[KDIM0][KDIM1];
-      uKernel::Eval(M, *(Real (*)[DIM])r, *(Real (*)[DIM])n, ctx_ptr);
+      uKernel::Eval(M, *(Real (*)[DIM])&r[0], *(Real (*)[DIM])&n[0], ctx_ptr);
       for (Integer i = 0; i < DOF; i++) {
         for (Integer k0 = 0; k0 < KDIM0; k0++) {
           for (Integer k1 = 0; k1 < KDIM1; k1++) {
