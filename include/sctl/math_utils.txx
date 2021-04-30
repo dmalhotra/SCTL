@@ -7,6 +7,16 @@
 
 namespace SCTL_NAMESPACE {
 
+template <class Real> inline Real machine_eps() {
+  auto compute_machine_eps = [](){
+    Real eps = (Real)1;
+    while (eps + (Real)1.0 > 1.0) eps *= 0.5;
+    return eps;
+  };
+  static const Real eps = compute_machine_eps();
+  return eps;
+}
+
 template <class Real> inline Real atoreal(const char* str) { // Warning: does not do correct rounding
   int i = 0;
   Real sign = 1.0;

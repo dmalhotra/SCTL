@@ -8,23 +8,25 @@
 
 namespace SCTL_NAMESPACE {
 
+template <class Real> Real machine_eps();
+
 template <class Real> Real atoreal(const char* str);
 
-template <class Real> inline Real const_pi() { return (Real)3.1415926535897932384626433832795028841L; }
+template <class Real> inline constexpr Real const_pi() { return (Real)3.1415926535897932384626433832795028841L; }
 
-template <class Real> inline Real const_e() { return (Real)2.7182818284590452353602874713526624977L; }
+template <class Real> inline constexpr Real const_e() { return (Real)2.7182818284590452353602874713526624977L; }
 
-template <class Real> inline Real fabs(const Real a) { return (Real)::fabs(a); }
+template <class Real> inline constexpr Real fabs(const Real a) { return (Real)::fabs(a); }
 
-template <class Real> inline Real sqrt(const Real a) { return (Real)::sqrt(a); }
+template <class Real> inline constexpr Real sqrt(const Real a) { return (Real)::sqrt(a); }
 
-template <class Real> inline Real sin(const Real a) { return (Real)::sin(a); }
+template <class Real> inline constexpr Real sin(const Real a) { return (Real)::sin(a); }
 
-template <class Real> inline Real cos(const Real a) { return (Real)::cos(a); }
+template <class Real> inline constexpr Real cos(const Real a) { return (Real)::cos(a); }
 
-template <class Real> inline Real exp(const Real a) { return (Real)::exp(a); }
+template <class Real> inline constexpr Real exp(const Real a) { return (Real)::exp(a); }
 
-template <class Real> inline Real log(const Real a) { return (Real)::log(a); }
+template <class Real> inline constexpr Real log(const Real a) { return (Real)::log(a); }
 
 template <class Real, class ExpType> inline constexpr Real pow(const Real b, const ExpType e) { return (Real)std::pow(b, e); }
 
