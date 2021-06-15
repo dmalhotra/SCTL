@@ -1639,8 +1639,8 @@ template <class Real> class Quadrature {
         }
       }
 
-      GenericKernel<Laplace3D_DxU> Laplace_DxU;
-      GenericKernel<Laplace3D_FxU> Laplace_FxU;
+      Laplace3D_DxU Laplace_DxU;
+      Laplace3D_FxU Laplace_FxU;
 
       Profile::Enable(true);
       if (1) { // Greeen's identity test (Laplace, on-surface)

@@ -8,102 +8,27 @@
 
 namespace SCTL_NAMESPACE {
 
-struct Laplace3D_FxU {
-  template <class Real> static constexpr Real ScaleFactor() {
-    return 1 / (4 * const_pi<Real>());
-  }
-  template <class Real> static void Eval(Real (&u)[1][1], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
-    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
-    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
-    u[0][0] = rinv;
-  }
-};
-struct Laplace3D_DxU {
-  template <class Real> static constexpr Real ScaleFactor() {
-    return 1 / (4 * const_pi<Real>());
-  }
-  template <class Real> static void Eval(Real (&u)[1][1], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
-    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
-    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
-    Real rdotn = r[0]*n[0] + r[1]*n[1] + r[2]*n[2];
-    Real rinv3 = rinv * rinv * rinv;
-    u[0][0] = -rdotn * rinv3;
-  }
-};
-struct Laplace3D_FxdU{
-  template <class Real> static constexpr Real ScaleFactor() {
-    return 1 / (4 * const_pi<Real>());
-  }
-  template <class Real> static void Eval(Real (&u)[1][3], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
-    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
-    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
-    Real rinv3 = rinv * rinv * rinv;
-    u[0][0] = -r[0] * rinv3;
-    u[0][1] = -r[1] * rinv3;
-    u[0][2] = -r[2] * rinv3;
-  }
-};
-
-struct Stokes3D_FxU {
-  template <class Real> static constexpr Real ScaleFactor() {
-    return 1 / (8 * const_pi<Real>());
-  }
-  template <class Real> static void Eval(Real (&u)[3][3], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
-    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
-    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
-    Real rinv3 = rinv*rinv*rinv;
-    for (Integer i = 0; i < 3; i++) {
-      for (Integer j = 0; j < 3; j++) {
-        u[i][j] = (i==j ? rinv : 0) + r[i]*r[j]*rinv3;
-      }
-    }
-  }
-};
-struct Stokes3D_DxU {
-  template <class Real> static constexpr Real ScaleFactor() {
-    return -3 / (4 * const_pi<Real>());
-  }
-  template <class Real> static void Eval(Real (&u)[3][3], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
-    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
-    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
-    Real rinv2 = rinv*rinv;
-    Real rinv5 = rinv2*rinv2*rinv;
-    Real rdotn = r[0]*n[0] + r[1]*n[1] + r[2]*n[2];
-    for (Integer i = 0; i < 3; i++) {
-      for (Integer j = 0; j < 3; j++) {
-        u[i][j] = r[i]*r[j]*rdotn*rinv5;
-      }
-    }
-  }
-};
-struct Stokes3D_FxT {
-  template <class Real> static constexpr Real ScaleFactor() {
-    return -3 / (4 * const_pi<Real>());
-  }
-  template <class Real> static void Eval(Real (&u)[3][9], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
-    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
-    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
-    Real rinv2 = rinv*rinv;
-    Real rinv5 = rinv2*rinv2*rinv;
-    for (Integer i = 0; i < 3; i++) {
-      for (Integer j = 0; j < 3; j++) {
-        for (Integer k = 0; k < 3; k++) {
-          u[i][j*3+k] = r[i]*r[j]*r[k]*rinv5;
-        }
-      }
-    }
-  }
-};
-
 template <class uKernel> class GenericKernel {
 
     template <class Real, Integer D, Integer K0, Integer K1> static constexpr Integer get_DIM  (void (*uKer)(Real (&u)[K0][K1], const Real (&r)[D], const Real (&n)[D], void* ctx_ptr)) { return D; }
     template <class Real, Integer D, Integer K0, Integer K1> static constexpr Integer get_KDIM0(void (*uKer)(Real (&u)[K0][K1], const Real (&r)[D], const Real (&n)[D], void* ctx_ptr)) { return K0; }
     template <class Real, Integer D, Integer K0, Integer K1> static constexpr Integer get_KDIM1(void (*uKer)(Real (&u)[K0][K1], const Real (&r)[D], const Real (&n)[D], void* ctx_ptr)) { return K1; }
 
-    static constexpr Integer DIM   = get_DIM  (uKernel::template Eval<double>);
-    static constexpr Integer KDIM0 = get_KDIM0(uKernel::template Eval<double>);
-    static constexpr Integer KDIM1 = get_KDIM1(uKernel::template Eval<double>);
+    static constexpr Integer DIM   = get_DIM  (uKernel::template uKerMatrix<double>);
+    static constexpr Integer KDIM0 = get_KDIM0(uKernel::template uKerMatrix<double>);
+    static constexpr Integer KDIM1 = get_KDIM1(uKernel::template uKerMatrix<double>);
+
+    template <class Real, Integer DOF> void uKernelEval(Iterator<Real> u, ConstIterator<Real> r, ConstIterator<Real> n, ConstIterator<Real> f) const {
+      Real M[KDIM0][KDIM1];
+      uKernel::uKerMatrix(M, *(Real (*)[DIM])&r[0], *(Real (*)[DIM])&n[0], ctx_ptr);
+      for (Integer i = 0; i < DOF; i++) {
+        for (Integer k0 = 0; k0 < KDIM0; k0++) {
+          for (Integer k1 = 0; k1 < KDIM1; k1++) {
+            u[i*KDIM1+k1] += M[k0][k1] * f[i*KDIM0+k0];
+          }
+        }
+      }
+    }
 
   public:
 
@@ -117,21 +42,6 @@ template <class uKernel> class GenericKernel {
     }
     static constexpr Integer TrgDim() {
       return KDIM1;
-    }
-    template <class Real> static constexpr Real ScaleFactor() {
-      return uKernel::template ScaleFactor<Real>();
-    }
-
-    template <class Real, Integer DOF> void uKernelEval(Iterator<Real> u, ConstIterator<Real> r, ConstIterator<Real> n, ConstIterator<Real> f) const {
-      Real M[KDIM0][KDIM1];
-      uKernel::Eval(M, *(Real (*)[DIM])&r[0], *(Real (*)[DIM])&n[0], ctx_ptr);
-      for (Integer i = 0; i < DOF; i++) {
-        for (Integer k0 = 0; k0 < KDIM0; k0++) {
-          for (Integer k1 = 0; k1 < KDIM1; k1++) {
-            u[i*KDIM1+k1] += M[k0][k1] * f[i*KDIM0+k0];
-          }
-        }
-      }
     }
 
     template <class Real, Integer DOF_ = 0> void Eval(Vector<Real>& U, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn, const Vector<Real>& F) const {
@@ -229,6 +139,94 @@ template <class uKernel> class GenericKernel {
   private:
     void* ctx_ptr;
 };
+
+struct Laplace3D_FxU : public GenericKernel<Laplace3D_FxU> {
+  template <class Real> static constexpr Real ScaleFactor() {
+    return 1 / (4 * const_pi<Real>());
+  }
+  template <class Real> static void uKerMatrix(Real (&u)[1][1], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
+    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
+    u[0][0] = rinv;
+  }
+};
+struct Laplace3D_DxU : public GenericKernel<Laplace3D_DxU> {
+  template <class Real> static constexpr Real ScaleFactor() {
+    return 1 / (4 * const_pi<Real>());
+  }
+  template <class Real> static void uKerMatrix(Real (&u)[1][1], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
+    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
+    Real rdotn = r[0]*n[0] + r[1]*n[1] + r[2]*n[2];
+    Real rinv3 = rinv * rinv * rinv;
+    u[0][0] = -rdotn * rinv3;
+  }
+};
+struct Laplace3D_FxdU : public GenericKernel<Laplace3D_FxdU> {
+  template <class Real> static constexpr Real ScaleFactor() {
+    return 1 / (4 * const_pi<Real>());
+  }
+  template <class Real> static void uKerMatrix(Real (&u)[1][3], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
+    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
+    Real rinv3 = rinv * rinv * rinv;
+    u[0][0] = -r[0] * rinv3;
+    u[0][1] = -r[1] * rinv3;
+    u[0][2] = -r[2] * rinv3;
+  }
+};
+
+struct Stokes3D_FxU : public GenericKernel<Stokes3D_FxU> {
+  template <class Real> static constexpr Real ScaleFactor() {
+    return 1 / (8 * const_pi<Real>());
+  }
+  template <class Real> static void uKerMatrix(Real (&u)[3][3], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
+    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
+    Real rinv3 = rinv*rinv*rinv;
+    for (Integer i = 0; i < 3; i++) {
+      for (Integer j = 0; j < 3; j++) {
+        u[i][j] = (i==j ? rinv : 0) + r[i]*r[j]*rinv3;
+      }
+    }
+  }
+};
+struct Stokes3D_DxU : public GenericKernel<Stokes3D_DxU> {
+  template <class Real> static constexpr Real ScaleFactor() {
+    return -3 / (4 * const_pi<Real>());
+  }
+  template <class Real> static void uKerMatrix(Real (&u)[3][3], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
+    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
+    Real rinv2 = rinv*rinv;
+    Real rinv5 = rinv2*rinv2*rinv;
+    Real rdotn = r[0]*n[0] + r[1]*n[1] + r[2]*n[2];
+    for (Integer i = 0; i < 3; i++) {
+      for (Integer j = 0; j < 3; j++) {
+        u[i][j] = r[i]*r[j]*rdotn*rinv5;
+      }
+    }
+  }
+};
+struct Stokes3D_FxT : public GenericKernel<Stokes3D_FxT> {
+  template <class Real> static constexpr Real ScaleFactor() {
+    return -3 / (4 * const_pi<Real>());
+  }
+  template <class Real> static void uKerMatrix(Real (&u)[3][9], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
+    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
+    Real rinv2 = rinv*rinv;
+    Real rinv5 = rinv2*rinv2*rinv;
+    for (Integer i = 0; i < 3; i++) {
+      for (Integer j = 0; j < 3; j++) {
+        for (Integer k = 0; k < 3; k++) {
+          u[i][j*3+k] = r[i]*r[j]*r[k]*rinv5;
+        }
+      }
+    }
+  }
+};
+
 
 template <class Real, Integer DIM> class ParticleFMM {
   public:

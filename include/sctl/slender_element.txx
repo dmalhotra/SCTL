@@ -921,8 +921,8 @@ namespace SCTL_NAMESPACE {
             }
 
             Matrix<ValueType> Mker_sl, Mker_dl;
-            GenericKernel<Laplace3D_FxU> laplace_sl;
-            GenericKernel<Laplace3D_DxU> laplace_dl;
+            Laplace3D_FxU laplace_sl;
+            Laplace3D_DxU laplace_dl;
             laplace_sl.KernelMatrix(Mker_sl, Xtrg, Xsrc, Xsrc);
             laplace_dl.KernelMatrix(Mker_dl, Xtrg, Xsrc, Xsrc);
             SCTL_ASSERT(Mker_sl.Dim(0) == Nnds);
@@ -1307,8 +1307,8 @@ namespace SCTL_NAMESPACE {
     constexpr Integer max_digits = 19;
     Integer depth = (Integer)(log<ValueType>(elem_length)/log<ValueType>(2)+4);
 
-    GenericKernel<Laplace3D_FxU> laplace_sl; // TODO
-    GenericKernel<Laplace3D_DxU> laplace_dl; // TODO
+    Laplace3D_FxU laplace_sl; // TODO
+    Laplace3D_DxU laplace_dl; // TODO
 
     Vector<ValueType> nds, wts;
     Matrix<ValueType> Mintegrands;
@@ -2205,8 +2205,8 @@ namespace SCTL_NAMESPACE {
       elem_lst0.Init(cheb_order, fourier_order, coord, radius);
     }
 
-    GenericKernel<sctl::Laplace3D_DxU> laplace_dl;
-    BoundaryIntegralOp<Real,GenericKernel<sctl::Laplace3D_DxU>> LapDL(laplace_dl);
+    Laplace3D_DxU laplace_dl;
+    BoundaryIntegralOp<Real,Laplace3D_DxU> LapDL(laplace_dl);
     LapDL.AddElemList(elem_lst0);
 
     // Warm-up run
@@ -2302,11 +2302,11 @@ namespace SCTL_NAMESPACE {
       elem_lst1.Init(cheb_order1, fourier_order1, coord1, radius1);
     }
 
-    GenericKernel<sctl::Laplace3D_FxU> laplace_sl;
-    GenericKernel<sctl::Laplace3D_DxU> laplace_dl;
-    GenericKernel<sctl::Laplace3D_FxdU> laplace_grad;
-    BoundaryIntegralOp<Real,GenericKernel<sctl::Laplace3D_FxU>> LapSL(laplace_sl, comm);
-    BoundaryIntegralOp<Real,GenericKernel<sctl::Laplace3D_DxU>> LapDL(laplace_dl, comm);
+    Laplace3D_FxU laplace_sl;
+    Laplace3D_DxU laplace_dl;
+    Laplace3D_FxdU laplace_grad;
+    BoundaryIntegralOp<Real,Laplace3D_FxU> LapSL(laplace_sl, comm);
+    BoundaryIntegralOp<Real,Laplace3D_DxU> LapDL(laplace_dl, comm);
     LapSL.AddElemList(elem_lst0, "elem_lst0");
     LapSL.AddElemList(elem_lst1, "elem_lst1");
     LapDL.AddElemList(elem_lst0, "elem_lst0");
