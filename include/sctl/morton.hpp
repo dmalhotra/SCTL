@@ -41,14 +41,14 @@ template <Integer DIM = 3> class Morton {
     depth = depth_;
     SCTL_ASSERT(depth <= MAX_DEPTH);
     UINT_T mask = ~((((UINT_T)1) << (MAX_DEPTH - depth)) - 1);
-    for (Integer i = 0; i < DIM; i++) x[i] = mask & (UINT_T)floor(coord[i] * maxCoord);
+    for (Integer i = 0; i < DIM; i++) x[i] = mask & (UINT_T)floor((double)coord[i] * maxCoord);
   }
 
   uint8_t Depth() const { return depth; }
 
   template <class T> void Coord(Iterator<T> coord) const {
     static const T s = 1.0 / ((T)maxCoord);
-    for (Integer i = 0; i < DIM; i++) coord[i] = x[i] * s;
+    for (Integer i = 0; i < DIM; i++) coord[i] = (T)x[i] * s;
   }
 
   Morton Next() const {
