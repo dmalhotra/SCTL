@@ -427,6 +427,10 @@ namespace SCTL_NAMESPACE {
     ClearSetup();
   }
 
+  template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetTargetCoord(const Vector<Real>& Xtrg) {
+    Xt = Xtrg;
+  }
+
   template <class Real, class Kernel> template <class ElemLstType> void BoundaryIntegralOp<Real,Kernel>::DeleteElemList() {
     DeleteElemList(std::to_string(typeid(ElemLstType).hash_code()));
   }
@@ -508,7 +512,11 @@ namespace SCTL_NAMESPACE {
       omp_par::scan(elem_nds_cnt.begin(), elem_nds_dsp.begin(), Nelem);
       SCTL_ASSERT(Nelem == (Nlst ? elem_lst_dsp[Nlst-1] + elem_lst_cnt[Nlst-1] : 0));
     }
-    Xtrg = Xsurf; // TODO: allow off-surf trgs
+    if (Xt.Dim()) { // Set Xtrg
+      Xtrg = Xt;
+    } else {
+      Xtrg = Xsurf;
+    }
 
     setup_flag = true;
   }
@@ -568,6 +576,7 @@ namespace SCTL_NAMESPACE {
     Profile::Toc();
 
     setup_self_flag = true;
+    // TODO: skip SetupSelf when no on-surface targets.
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetupNear() const {
@@ -686,7 +695,7 @@ namespace SCTL_NAMESPACE {
               }
             }
             elem_lst->FarFieldDensityOperatorTranspose(K_direct, Mker, j);
-            K_near_ -= K_direct;
+            K_near_ -= K_direct * ker_.template ScaleFactor<Real>();
           }
         }
       }

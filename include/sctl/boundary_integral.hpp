@@ -35,7 +35,7 @@ namespace SCTL_NAMESPACE {
        * @param[out] Xn the normal vectors of the node points in
        * array-of-struct order: {nx_1, ny_1, nz_1, nx_2, ..., nx_n, ny_n, nz_n}
        *
-       * @parameter[out] element_wise_node_cnt the number of node points
+       * @param[out] element_wise_node_cnt the number of node points
        * belonging to each element.
        */
       virtual void GetNodeCoord(Vector<Real>* X, Vector<Real>* Xn, Vector<Long>* element_wise_node_cnt) = 0;
@@ -58,10 +58,10 @@ namespace SCTL_NAMESPACE {
        * such that quadrature rule will be accurate to the specified tolerance
        * for target points further away than this distance.
        *
-       * @parameter[out] element_wise_node_cnt the number of quadrature node
+       * @param[out] element_wise_node_cnt the number of quadrature node
        * points belonging to each element.
        *
-       * @parameter[in] tol the accuracy tolerance.
+       * @param[in] tol the accuracy tolerance.
        */
       virtual void GetFarFieldNodes(Vector<Real>& X, Vector<Real>& Xn, Vector<Real>& wts, Vector<Real>& dist_far, Vector<Long>& element_wise_node_cnt, const Real tol)  = 0;
 
@@ -69,23 +69,26 @@ namespace SCTL_NAMESPACE {
        * Interpolates the density from surface node points to far-field
        * quadrature node points.
        *
-       * @parameter[out] Fout the interpolated density at far-field quadrature
+       * @param[out] Fout the interpolated density at far-field quadrature
        * nodes in array-of-struct order.
        *
-       * @parameter[in] Fin the input density at surface node points in
+       * @param[in] Fin the input density at surface node points in
        * array-of-struct order.
        */
       virtual void GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) = 0;
 
       /**
-       * Apply the transpose of the GetFarFieldDensity() operator applied to
-       * the column-vectors of Min and the result is returned in Mout.
+       * Apply the transpose of the GetFarFieldDensity() operator for a single
+       * element applied to the column-vectors of Min and the result is
+       * returned in Mout.
        *
        * @param[out] Mout the output matrix where the column-vectors are the
        * result of the application of the transpose operator.
        *
        * @param[in] Min the input matrix whose column-vectors are
        * multiplied by the transpose operator.
+       *
+       * @param[in] elem_idx the index of the element.
        */
       virtual void FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) = 0;
 
@@ -176,6 +179,14 @@ namespace SCTL_NAMESPACE {
       template <class ElemLstType> void DeleteElemList();
 
       /**
+       * Set target point coordinates.
+       *
+       * @param[in] Xtrg the coordinates of target points in array-of-struct
+       * order: {x_1, y_1, z_1, x_2, ..., x_n, y_n, z_n}
+       */
+      void SetTargetCoord(const Vector<Real>& Xtrg);
+
+      /**
        * Get dimension of the boundary integral operator. Dim(0) is the input
        * dimension and Dim(1) is the output dimension.
        */
@@ -212,6 +223,7 @@ namespace SCTL_NAMESPACE {
       };
       std::map<std::string,ElementListBase<Real>*> elem_lst_map;
       std::map<std::string,ElemLstData> elem_data_map;
+      Vector<Real> Xt; // User specified position of target points
       Real tol_;
       Kernel ker_;
       Comm comm_;
