@@ -162,6 +162,16 @@ namespace SCTL_NAMESPACE {
       static const Vector<Real>& CenterlineNodes(Integer Order);
 
       /**
+       * Write elements to file.
+       */
+      void Write(const std::string& fname);
+
+      /**
+       * Read elements from file.
+       */
+      void Read(const std::string& fname);
+
+      /**
        * Get the VTU (Visualization Toolkit for Unstructured grids) data for
        * one or all elements.
        */
@@ -204,10 +214,3 @@ namespace SCTL_NAMESPACE {
 
 #endif //_SCTL_SLENDER_ELEMENT_HPP_
 
-// TODO:
-// const scaling of potential
-// kernel vectorization
-// driver reading from file
-// separate in to .hpp and .txx
-// off-surface target points
-// diagnostics

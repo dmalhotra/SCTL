@@ -117,10 +117,10 @@ namespace SCTL_NAMESPACE {
   }
 
   template <class Real, Integer Nm, Integer Nr, Integer Nt> template <class Kernel> void ToroidalGreensFn<Real,Nm,Nr,Nt>::BuildOperatorModal(Matrix<Real>& M, const Real x0, const Real x1, const Real x2, const Kernel& ker) const {
-    static constexpr Integer KDIM0 = Kernel::SrcDim();
-    static constexpr Integer KDIM1 = Kernel::TrgDim();
-    static constexpr Integer Nmm = (Nm/2+1)*2;
-    static constexpr Integer Ntt = (Nt/2+1)*2;
+    constexpr Integer KDIM0 = Kernel::SrcDim();
+    constexpr Integer KDIM1 = Kernel::TrgDim();
+    constexpr Integer Nmm = (Nm/2+1)*2;
+    constexpr Integer Ntt = (Nt/2+1)*2;
 
     StaticArray<Real,2*Nr> buff0;
     StaticArray<Real,Ntt> buff1;
@@ -278,10 +278,10 @@ namespace SCTL_NAMESPACE {
 
   template <class Real, Integer Nm, Integer Nr, Integer Nt> template <class ValueType, class Kernel> void ToroidalGreensFn<Real,Nm,Nr,Nt>::PrecompToroidalGreensFn(const Kernel& ker, ValueType R0) {
     SCTL_ASSERT(ker.CoordDim() == COORD_DIM);
-    static constexpr Integer KDIM0 = Kernel::SrcDim();
-    static constexpr Integer KDIM1 = Kernel::TrgDim();
-    static constexpr Long Nmm = (Nm/2+1)*2;
-    static constexpr Long Ntt = (Nt/2+1)*2;
+    constexpr Integer KDIM0 = Kernel::SrcDim();
+    constexpr Integer KDIM1 = Kernel::TrgDim();
+    constexpr Long Nmm = (Nm/2+1)*2;
+    constexpr Long Ntt = (Nt/2+1)*2;
     R0_ = (Real)R0;
 
     const auto& nds = BasisFn<ValueType>::nds(Nr);
@@ -389,7 +389,7 @@ namespace SCTL_NAMESPACE {
   }
 
   template <class Real, Integer Nm, Integer Nr, Integer Nt> template <class ValueType, class Kernel> void ToroidalGreensFn<Real,Nm,Nr,Nt>::ComputePotential(Vector<ValueType>& U, const Vector<ValueType>& Xtrg, ValueType R0, const Vector<ValueType>& F_, const Kernel& ker, ValueType tol) {
-    static constexpr Integer KDIM0 = Kernel::SrcDim();
+   constexpr Integer KDIM0 = Kernel::SrcDim();
     Vector<ValueType> F_fourier_coeff;
     const Long Nt_ = F_.Dim() / KDIM0; // number of Fourier modes
     SCTL_ASSERT(F_.Dim() == Nt_ * KDIM0);
@@ -425,7 +425,7 @@ namespace SCTL_NAMESPACE {
       }
     };
 
-    static constexpr Integer QuadOrder = 18;
+    constexpr Integer QuadOrder = 18;
     std::function<Vector<ValueType>(ValueType,ValueType,ValueType)>  compute_potential = [&](ValueType a, ValueType b, ValueType tol) -> Vector<ValueType> {
       auto GetGeomCircle = [&R0] (Vector<ValueType>& Xsrc, Vector<ValueType>& Nsrc, const Vector<ValueType>& nds) {
         Long N = nds.Dim();
@@ -486,9 +486,9 @@ namespace SCTL_NAMESPACE {
   };
 
   template <class Real, Integer Nm, Integer Nr, Integer Nt> template <Integer Nnds, class Kernel> void ToroidalGreensFn<Real,Nm,Nr,Nt>::BuildOperatorModalDirect(Matrix<Real>& M, const Real x0, const Real x1, const Real x2, const Kernel& ker) const {
-    static constexpr Integer KDIM0 = Kernel::SrcDim();
-    static constexpr Integer KDIM1 = Kernel::TrgDim();
-    static constexpr Integer Nmm = (Nm/2+1)*2;
+    constexpr Integer KDIM0 = Kernel::SrcDim();
+    constexpr Integer KDIM1 = Kernel::TrgDim();
+    constexpr Integer Nmm = (Nm/2+1)*2;
 
     auto get_sin_theta = [](Long N){
       Vector<Real> sin_theta(N);
@@ -513,7 +513,7 @@ namespace SCTL_NAMESPACE {
       }
       return X;
     };
-    static Real scal = 2/sqrt<Real>(Nm);
+    constexpr Real scal = 2/sqrt<Real>(Nm);
 
     static const Vector<Real> sin_nds = get_sin_theta(Nnds);
     static const Vector<Real> cos_nds = get_cos_theta(Nnds);
@@ -731,6 +731,22 @@ namespace SCTL_NAMESPACE {
     SCTL_ASSERT(Nnodes < MaxOrder && Nmodes < MaxOrder);
     return Mall[Nnodes][Nmodes];
   }
+  template <class Real> static const Matrix<Real>& fourier_matrix_inv_transpose(Integer Nnodes, Integer Nmodes) {
+    constexpr Integer MaxOrder = 50;
+    auto compute_all = []() {
+      Matrix<Matrix<Real>> Mall(MaxOrder, MaxOrder);
+      for (Long i = 0; i < MaxOrder; i++) {
+        for (Long j = 0; j < MaxOrder; j++) {
+          Mall[i][j] = fourier_matrix_inv<Real>(i,j).Transpose();
+        }
+      }
+      return Mall;
+    };
+    static const Matrix<Matrix<Real>> Mall = compute_all();
+
+    SCTL_ASSERT(Nnodes < MaxOrder && Nmodes < MaxOrder);
+    return Mall[Nnodes][Nmodes];
+  }
 
   template <class ValueType> static const std::pair<Vector<ValueType>,Vector<ValueType>>& LegendreQuadRule(Integer ORDER) {
     constexpr Integer max_order = 50;
@@ -765,7 +781,7 @@ namespace SCTL_NAMESPACE {
     constexpr Integer MaxOrder = 50;
     auto compute_nds_wts_lst = []() {
       Vector<Vector<QuadReal>> data;
-      ReadFile<QuadReal>(data, "log_quad");
+      ReadFile<QuadReal>(data, "data/log_quad");
       if (data.Dim() != MaxOrder*2) {
         data.ReInit(MaxOrder*2);
         #pragma omp parallel for
@@ -786,7 +802,7 @@ namespace SCTL_NAMESPACE {
           };
           InterpQuadRule<QuadReal>::Build(data[order*2+0], data[order*2+1], integrands, 1e-20, order, 2e-4, 0.9998); // TODO: diagnose accuracy issues
         }
-        WriteFile<QuadReal>(data, "log_quad");
+        WriteFile<QuadReal>(data, "data/log_quad");
       }
 
       Vector<std::pair<Vector<ValueType>,Vector<ValueType>>> nds_wts_lst(MaxOrder);
@@ -819,7 +835,7 @@ namespace SCTL_NAMESPACE {
 
     using ValueType = QuadReal;
     Vector<Vector<ValueType>> data;
-    const std::string fname = std::string("toroidal_quad_rule_m") + std::to_string(Nmodes);
+    const std::string fname = std::string("data/toroidal_quad_rule_m") + std::to_string(Nmodes);
     ReadFile(data, fname);
     if (data.Dim() != max_adap_depth*max_digits) { // If file is not-found then compute quadrature rule and write to file
       data.ReInit(max_adap_depth * max_digits);
@@ -1360,7 +1376,7 @@ namespace SCTL_NAMESPACE {
 
     auto one_sided_rule = [&ChebOrder,&LogSingularQuadOrder,&LegQuadOrder,&digits](Real radius, Real length) -> std::pair<Vector<Real>,Vector<Real>> {
       auto load_special_quad_rule = [](const Integer ChebOrder){
-        const std::string fname = std::string(("special_quad_q")+std::to_string(ChebOrder));
+        const std::string fname = std::string(("data/special_quad_q")+std::to_string(ChebOrder));
         using ValueType = QuadReal;
 
         Vector<Vector<ValueType>> data;
@@ -1757,7 +1773,7 @@ namespace SCTL_NAMESPACE {
 
     if (M_lst.Dim() != Nelem) M_lst.ReInit(Nelem);
     for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) {
-      M_lst[elem_idx] = elem_lst.template SelfInteracHelper<Kernel>(ker, elem_idx, tol);
+      M_lst[elem_idx] = elem_lst.template SelfInteracHelper<Kernel>(ker, elem_idx, tol) * ker.template ScaleFactor<Real>();
     }
   }
   template <class Real> template <class Kernel> void SlenderElemList<Real>::NearInterac(Matrix<Real>& M, const Vector<Real>& Xtrg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
@@ -1770,7 +1786,7 @@ namespace SCTL_NAMESPACE {
     const Integer FourierOrder = elem_lst.fourier_order[elem_idx];
     const Integer FourierModes = FourierOrder/2+1;
     const Integer digits = (Integer)(log(tol)/log(0.1)+0.5);
-    const Matrix<Real> M_fourier_inv = fourier_matrix_inv<Real>(FourierOrder,FourierModes).Transpose(); // TODO: precompute
+    const Matrix<Real> M_fourier_inv = fourier_matrix_inv_transpose<Real>(FourierOrder,FourierModes);
 
     const Vector<Real>  coord(COORD_DIM*ChebOrder,(Iterator<Real>)elem_lst. coord.begin()+COORD_DIM*elem_lst.elem_dsp[elem_idx],false);
     const Vector<Real>     dx(COORD_DIM*ChebOrder,(Iterator<Real>)elem_lst.    dx.begin()+COORD_DIM*elem_lst.elem_dsp[elem_idx],false);
@@ -2008,7 +2024,7 @@ namespace SCTL_NAMESPACE {
         for (Integer i0 = 0; i0 < Nnds; i0++) {
           for (Integer i1 = 0; i1 < KDIM0; i1++) {
             for (Integer j1 = 0; j1 < KDIM1; j1++) {
-              M[i0*KDIM0+i1][i*KDIM1+j1] = Mt_[j1][i1*Nnds+i0];
+              M[i0*KDIM0+i1][i*KDIM1+j1] = Mt_[j1][i1*Nnds+i0] * ker.template ScaleFactor<Real>();
             }
           }
         }
@@ -2018,6 +2034,108 @@ namespace SCTL_NAMESPACE {
 
   template <class Real> const Vector<Real>& SlenderElemList<Real>::CenterlineNodes(Integer Order) {
     return ChebQuadRule<Real>::nds(Order);
+  }
+
+  template <class Real> void SlenderElemList<Real>::Write(const std::string& fname) {
+    const Integer precision = 10, width = 18;
+    std::ofstream file;
+    file.open(fname, std::ofstream::out | std::ofstream::trunc);
+    if (!file.good()) {
+      std::cout << "Unable to open file for writing:" << fname << '\n';
+    }
+
+    // Header
+    file<<"#";
+    file<<std::setw(width-1)<<"X";
+    file<<std::setw(width)<<"Y";
+    file<<std::setw(width)<<"Z";
+    file<<std::setw(width)<<"r";
+    file<<std::setw(width)<<"orient-x";
+    file<<std::setw(width)<<"orient-y";
+    file<<std::setw(width)<<"orient-z";
+    file<<std::setw(width)<<"ChebOrder";
+    file<<std::setw(width)<<"FourierOrder";
+    file<<'\n';
+
+    file<<std::scientific<<std::setprecision(precision);
+    for (Long i = 0; i < cheb_order.Dim(); i++) {
+      for (Long j = 0; j < cheb_order[i]; j++) {
+        for (Integer k = 0; k < COORD_DIM; k++) {
+          file<<std::setw(width)<<coord[elem_dsp[i]*COORD_DIM + k*cheb_order[i]+j];
+        }
+        file<<std::setw(width)<<radius[elem_dsp[i] + j];
+        for (Integer k = 0; k < COORD_DIM; k++) {
+          file<<std::setw(width)<<e1[elem_dsp[i]*COORD_DIM + k*cheb_order[i]+j];
+        }
+        if (!j) {
+          file<<std::setw(width)<<cheb_order[i];
+          file<<std::setw(width)<<fourier_order[i];
+        }
+        file<<"\n";
+      }
+    }
+    file.close();
+  }
+  template <class Real> void SlenderElemList<Real>::Read(const std::string& fname) {
+    std::ifstream file;
+    file.open(fname, std::ifstream::in);
+    if (!file.good()) {
+      std::cout << "Unable to open file for reading:" << fname << '\n';
+    }
+
+    std::string line;
+    Vector<Real> coord_, radius_, e1_;
+    Vector<Integer> cheb_order_, fourier_order_;
+    while (std::getline(file, line)) { // Set coord_, radius_, e1_, cheb_order_, fourier_order_
+      size_t first_char_pos = line.find_first_not_of(' ');
+      if (first_char_pos == std::string::npos || line[first_char_pos] == '#') continue;
+
+      std::istringstream iss(line);
+      for (Integer k = 0; k < COORD_DIM; k++) { // read coord_
+        Real a;
+        iss>>a;
+        SCTL_ASSERT(!iss.fail());
+        coord_.PushBack(a);
+      }
+      { // read radius_
+        Real a;
+        iss>>a;
+        SCTL_ASSERT(!iss.fail());
+        radius_.PushBack(a);
+      }
+      for (Integer k = 0; k < COORD_DIM; k++) { // read e1_
+        Real a;
+        iss>>a;
+        SCTL_ASSERT(!iss.fail());
+        e1.PushBack(a);
+      }
+
+      Integer ChebOrder = -1, FourierOrder = -1;
+      if (!iss.eof()) {
+        iss>>ChebOrder>>FourierOrder;
+        SCTL_ASSERT(!iss.fail());
+      }
+      cheb_order_.PushBack(ChebOrder);
+      fourier_order_.PushBack(FourierOrder);
+
+      SCTL_ASSERT(iss.eof());
+    }
+    file.close();
+
+    Long offset = 0;
+    Vector<Integer> cheb_order__, fourier_order__;
+    while (offset < cheb_order_.Dim()) { // Set cheb_order__, fourier_order__
+      Integer ChebOrder = cheb_order_[offset];
+      Integer FourierOrder = fourier_order_[offset];
+      for (Integer j = 1; j < ChebOrder; j++) {
+        SCTL_ASSERT(cheb_order_[offset+j] == ChebOrder || cheb_order_[offset+j] == -1);
+        SCTL_ASSERT(fourier_order_[offset+j] == FourierOrder || fourier_order_[offset+j] == -1);
+      }
+      cheb_order__.PushBack(ChebOrder);
+      fourier_order__.PushBack(FourierOrder);
+      offset += ChebOrder;
+    }
+    Init(cheb_order__, fourier_order__, coord_, radius_, e1_);
   }
 
   template <class Real> void SlenderElemList<Real>::GetVTUData(VTUData& vtu_data, const Vector<Real>& F, const Long elem_idx) const {
@@ -2106,7 +2224,7 @@ namespace SCTL_NAMESPACE {
     LapDL.ComputePotential(U,F);
     Profile::Toc();
 
-    Vector<Real> Uerr = U*(1/(4*const_pi<Real>())) + 0.5;
+    Vector<Real> Uerr = U + 0.5;
     elem_lst0.WriteVTK("Uerr", Uerr); // Write VTK
     { // Print error
       Real max_err = 0;
@@ -2239,7 +2357,7 @@ namespace SCTL_NAMESPACE {
     Profile::Toc();
 
     { // Write VTK
-      Vector<Real> Uerr = Fd*0.5 + (Us - Ud)*(1/(4*const_pi<Real>())) - Uref;
+      Vector<Real> Uerr = Fd*0.5 + (Us - Ud) - Uref;
 
       Vector<Vector<Real>> X_(2);
       elem_lst0.GetNodeCoord(&X_[0], nullptr, nullptr);
@@ -2393,7 +2511,7 @@ namespace SCTL_NAMESPACE {
     SCTL_ASSERT(FourierOrder == FOURIER_ORDER);
     const Integer FourierModes = FourierOrder/2+1;
     const Integer digits = (Integer)(log(tol)/log(0.1)+0.5);
-    const Matrix<Real> M_fourier_inv = fourier_matrix_inv<Real>(FourierOrder,FourierModes).Transpose(); // TODO: precompute
+    const Matrix<Real> M_fourier_inv = fourier_matrix_inv_transpose<Real>(FourierOrder,FourierModes);
 
     const Vector<Real>  coord(COORD_DIM*ChebOrder,(Iterator<Real>)this-> coord.begin()+COORD_DIM*elem_dsp[elem_idx],false);
     const Vector<Real>     dx(COORD_DIM*ChebOrder,(Iterator<Real>)this->    dx.begin()+COORD_DIM*elem_dsp[elem_idx],false);
@@ -2603,7 +2721,7 @@ namespace SCTL_NAMESPACE {
     const Integer FourierOrder = fourier_order[elem_idx];
     const Integer FourierModes = FourierOrder/2+1;
     const Integer digits = (Integer)(log(tol)/log(0.1)+0.5);
-    const Matrix<Real> M_fourier_inv = fourier_matrix_inv<Real>(FourierOrder,FourierModes).Transpose(); // TODO: precompute
+    const Matrix<Real> M_fourier_inv = fourier_matrix_inv_transpose<Real>(FourierOrder,FourierModes);
 
     const Vector<Real>  coord(COORD_DIM*ChebOrder,(Iterator<Real>)this-> coord.begin()+COORD_DIM*elem_dsp[elem_idx],false);
     const Vector<Real>     dx(COORD_DIM*ChebOrder,(Iterator<Real>)this->    dx.begin()+COORD_DIM*elem_dsp[elem_idx],false);
