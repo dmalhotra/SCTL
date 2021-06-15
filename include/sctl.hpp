@@ -46,9 +46,6 @@
 // Matrix, Permutation operators
 #include SCTL_INCLUDE(matrix.hpp)
 
-// Template vector intrinsics
-#include SCTL_INCLUDE(intrin_wrapper.hpp)
-
 // Template vector intrinsics (new)
 #include SCTL_INCLUDE(vec.hpp)
 
