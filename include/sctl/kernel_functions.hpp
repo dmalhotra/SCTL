@@ -197,11 +197,8 @@ template <class Real, Integer DIM> class ParticleFMM {
       const Long dof = F.Dim() / (Ns * KDIM0);
       SCTL_ASSERT(Ns && F.Dim() == Ns * dof * KDIM0);
 
-      Vector<Real> Xs_, Xn_, F_;
-      if (U.Dim() != Nt * dof * KDIM1) {
-        U.ReInit(Nt * dof * KDIM1);
-        U.SetZero();
-      }
+      Vector<Real> Xs_, Xn_, F_, U_(Nt * dof * KDIM1);
+      U_.SetZero();
       for (Long i = 0; i < np; i++) {
         auto send_recv_vec = [comm,rank,np](Vector<Real>& X_, const Vector<Real>& X, Integer offset){
           Integer send_partner = (rank + offset) % np;
@@ -222,8 +219,14 @@ template <class Real, Integer DIM> class ParticleFMM {
         send_recv_vec(Xs_, Xs, i);
         send_recv_vec(Xn_, Xn, i);
         send_recv_vec(F_ , F , i);
-        kernel.Eval(U, Xt, Xs_, Xn_, F_);
+        kernel.Eval(U_, Xt, Xs_, Xn_, F_);
       }
+
+      if (U.Dim() != Nt * dof * KDIM1) {
+        U.ReInit(Nt * dof * KDIM1);
+        U.SetZero();
+      }
+      U += U_ * kernel.template ScaleFactor<Real>();
       #endif
     }
 
