@@ -27,7 +27,7 @@ struct Laplace3D_DxU {
     Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
     Real rdotn = r[0]*n[0] + r[1]*n[1] + r[2]*n[2];
     Real rinv3 = rinv * rinv * rinv;
-    u[0][0] = rdotn * rinv3;
+    u[0][0] = -rdotn * rinv3;
   }
 };
 struct Laplace3D_FxdU{

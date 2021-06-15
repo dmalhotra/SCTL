@@ -22,6 +22,7 @@
 
 // Boundary Integrals
 #include SCTL_INCLUDE(boundary_integral.hpp)
+#include SCTL_INCLUDE(slender_element.hpp)
 #include SCTL_INCLUDE(quadrule.hpp)
 
 // ODE solver
