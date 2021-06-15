@@ -44,6 +44,57 @@ struct Laplace3D_FxdU{
   }
 };
 
+struct Stokes3D_FxU {
+  template <class Real> static constexpr Real ScaleFactor() {
+    return 1 / (8 * const_pi<Real>());
+  }
+  template <class Real> static void Eval(Real (&u)[3][3], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
+    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
+    Real rinv3 = rinv*rinv*rinv;
+    for (Integer i = 0; i < 3; i++) {
+      for (Integer j = 0; j < 3; j++) {
+        u[i][j] = (i==j ? rinv : 0) + r[i]*r[j]*rinv3;
+      }
+    }
+  }
+};
+struct Stokes3D_DxU {
+  template <class Real> static constexpr Real ScaleFactor() {
+    return -3 / (4 * const_pi<Real>());
+  }
+  template <class Real> static void Eval(Real (&u)[3][3], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
+    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
+    Real rinv2 = rinv*rinv;
+    Real rinv5 = rinv2*rinv2*rinv;
+    Real rdotn = r[0]*n[0] + r[1]*n[1] + r[2]*n[2];
+    for (Integer i = 0; i < 3; i++) {
+      for (Integer j = 0; j < 3; j++) {
+        u[i][j] = r[i]*r[j]*rdotn*rinv5;
+      }
+    }
+  }
+};
+struct Stokes3D_FxT {
+  template <class Real> static constexpr Real ScaleFactor() {
+    return -3 / (4 * const_pi<Real>());
+  }
+  template <class Real> static void Eval(Real (&u)[3][9], const Real (&r)[3], const Real (&n)[3], void* ctx_ptr) {
+    Real r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+    Real rinv = (r2>0 ? 1/sqrt<Real>(r2) : 0);
+    Real rinv2 = rinv*rinv;
+    Real rinv5 = rinv2*rinv2*rinv;
+    for (Integer i = 0; i < 3; i++) {
+      for (Integer j = 0; j < 3; j++) {
+        for (Integer k = 0; k < 3; k++) {
+          u[i][j*3+k] = r[i]*r[j]*r[k]*rinv5;
+        }
+      }
+    }
+  }
+};
+
 template <class uKernel> class GenericKernel {
 
     template <class Real, Integer D, Integer K0, Integer K1> static constexpr Integer get_DIM  (void (*uKer)(Real (&u)[K0][K1], const Real (&r)[D], const Real (&n)[D], void* ctx_ptr)) { return D; }
