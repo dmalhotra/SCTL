@@ -248,9 +248,9 @@ template <class ValueType, Long DIM> class StaticArray {
   ~StaticArray() = default;
 
   // value_type* like operators
-  const ValueType& operator*() const { return *(ConstIterator<ValueType>)*this; }
+  const ValueType& operator*() const { return (*this)[0]; }
 
-  ValueType& operator*() { return *(Iterator<ValueType>)*this; }
+  ValueType& operator*() { return (*this)[0]; }
 
   const ValueType* operator->() const { return (ConstIterator<ValueType>)*this; }
 
@@ -328,7 +328,9 @@ class MemoryManager {
     Long type_size;
     Long alloc_ctr;
     TypeID type_id;
+    #ifdef SCTL_MEMDEBUG
     unsigned char check_sum;
+    #endif
   };
 
   /**

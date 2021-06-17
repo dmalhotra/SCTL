@@ -37,6 +37,7 @@ template <Long e, class ValueType> inline constexpr ValueType pow(ValueType b);
 
 #ifdef SCTL_QUAD_T
 class QuadReal {
+  typedef SCTL_QUAD_T QuadRealType;
   public:
 
     QuadReal() = default;
@@ -44,7 +45,7 @@ class QuadReal {
     QuadReal& operator=(const QuadReal&) = default;
     ~QuadReal() = default;
 
-    template <class ValueType> constexpr QuadReal(ValueType v) : val((SCTL_QUAD_T)v) {}
+    template <class ValueType> constexpr QuadReal(ValueType v) : val((QuadRealType)v) {}
     template <class ValueType> explicit operator ValueType() const { return (ValueType)val; }
 
 
@@ -68,20 +69,20 @@ class QuadReal {
     bool operator>=(const QuadReal &x) const { return val >= x.val; }
 
 
-    friend QuadReal operator+(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) + b; }
-    friend QuadReal operator-(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) - b; }
-    friend QuadReal operator*(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) * b; }
-    friend QuadReal operator/(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) / b; }
+    friend QuadReal operator+(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) + b; }
+    friend QuadReal operator-(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) - b; }
+    friend QuadReal operator*(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) * b; }
+    friend QuadReal operator/(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) / b; }
 
-    friend bool operator< (const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) <  b; }
-    friend bool operator> (const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) >  b; }
-    friend bool operator!=(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) != b; }
-    friend bool operator==(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) == b; }
-    friend bool operator<=(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) <= b; }
-    friend bool operator>=(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) >= b; }
+    friend bool operator< (const QuadRealType& a, const QuadReal& b) { return QuadReal(a) <  b; }
+    friend bool operator> (const QuadRealType& a, const QuadReal& b) { return QuadReal(a) >  b; }
+    friend bool operator!=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) != b; }
+    friend bool operator==(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) == b; }
+    friend bool operator<=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) <= b; }
+    friend bool operator>=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) >= b; }
 
   private:
-    SCTL_QUAD_T val;
+    QuadRealType val;
 };
 
 inline std::ostream& operator<<(std::ostream& output, const QuadReal& x);

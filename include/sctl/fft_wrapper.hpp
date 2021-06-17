@@ -166,12 +166,7 @@ template <class ValueType, class FFT_Derived> class FFT_Base {
 
  public:
 
-  FFT_Base() {
-    dim[0] = 0;
-    dim[1] = 0;
-    howmany = 0;
-    fft_type = FFT_Type::R2C;
-  }
+  FFT_Base() : dim{0,0}, fft_type(FFT_Type::R2C), howmany(0) {}
 
   Long Dim(Integer i) const {
     return dim[i];
@@ -370,8 +365,8 @@ template <class ValueType> class FFT : public FFT_Base<ValueType, FFT<ValueType>
   }
 
   template <class T> static void transpose(Iterator<ValueType> out, ConstIterator<ValueType> in, Long N0, Long N1) {
-    Matrix<T> M0(N0, N1, (Iterator<T>)in, false);
-    Matrix<T> M1(N1, N0, (Iterator<T>)out, false);
+    const Matrix<T> M0(N0, N1, (Iterator<T>)in, false);
+    Matrix<T> M1(N1, N0, out, false);
     M1 = M0.Transpose();
   }
 
