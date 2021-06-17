@@ -1,6 +1,7 @@
 #ifndef _SCTL_QUADRULE_HPP_
 #define _SCTL_QUADRULE_HPP_
 
+#include SCTL_INCLUDE(legendre_rule.hpp)
 #include SCTL_INCLUDE(common.hpp)
 #include SCTL_INCLUDE(vector.hpp)
 #include SCTL_INCLUDE(matrix.hpp)
@@ -9,129 +10,48 @@ namespace SCTL_NAMESPACE {
 
   template <class Real> class ChebQuadRule { // p(x)
     public:
-      static const Vector<Real>& nds(Integer ChebOrder) {
-        if (ChebOrder > 50) SCTL_ASSERT(false);
-        if (ChebOrder ==  1) return nds< 1>();
-        if (ChebOrder ==  2) return nds< 2>();
-        if (ChebOrder ==  3) return nds< 3>();
-        if (ChebOrder ==  4) return nds< 4>();
-        if (ChebOrder ==  5) return nds< 5>();
-        if (ChebOrder ==  6) return nds< 6>();
-        if (ChebOrder ==  7) return nds< 7>();
-        if (ChebOrder ==  8) return nds< 8>();
-        if (ChebOrder ==  9) return nds< 9>();
-        if (ChebOrder == 10) return nds<10>();
-        if (ChebOrder == 11) return nds<11>();
-        if (ChebOrder == 12) return nds<12>();
-        if (ChebOrder == 13) return nds<13>();
-        if (ChebOrder == 14) return nds<14>();
-        if (ChebOrder == 15) return nds<15>();
-        if (ChebOrder == 16) return nds<16>();
-        if (ChebOrder == 17) return nds<17>();
-        if (ChebOrder == 18) return nds<18>();
-        if (ChebOrder == 19) return nds<19>();
-        if (ChebOrder == 20) return nds<20>();
-        if (ChebOrder == 21) return nds<21>();
-        if (ChebOrder == 22) return nds<22>();
-        if (ChebOrder == 23) return nds<23>();
-        if (ChebOrder == 24) return nds<24>();
-        if (ChebOrder == 25) return nds<25>();
-        if (ChebOrder == 26) return nds<26>();
-        if (ChebOrder == 27) return nds<27>();
-        if (ChebOrder == 28) return nds<28>();
-        if (ChebOrder == 29) return nds<29>();
-        if (ChebOrder == 30) return nds<30>();
-        if (ChebOrder == 31) return nds<31>();
-        if (ChebOrder == 32) return nds<32>();
-        if (ChebOrder == 33) return nds<33>();
-        if (ChebOrder == 34) return nds<34>();
-        if (ChebOrder == 35) return nds<35>();
-        if (ChebOrder == 36) return nds<36>();
-        if (ChebOrder == 37) return nds<37>();
-        if (ChebOrder == 38) return nds<38>();
-        if (ChebOrder == 39) return nds<39>();
-        if (ChebOrder == 40) return nds<40>();
-        if (ChebOrder == 41) return nds<41>();
-        if (ChebOrder == 42) return nds<42>();
-        if (ChebOrder == 43) return nds<43>();
-        if (ChebOrder == 44) return nds<44>();
-        if (ChebOrder == 45) return nds<45>();
-        if (ChebOrder == 46) return nds<46>();
-        if (ChebOrder == 47) return nds<47>();
-        if (ChebOrder == 48) return nds<48>();
-        if (ChebOrder == 49) return nds<49>();
-        return nds<50>();
+      template <Integer MAX_ORDER=50> static const Vector<Real>& nds(Integer ChebOrder) {
+        SCTL_ASSERT(ChebOrder < MAX_ORDER);
+        auto compute_all = [](){
+          Vector<Vector<Real>> nds(MAX_ORDER);
+          for (Long i = 0; i < MAX_ORDER; i++) {
+            nds[i] = ComputeNds(i);
+          }
+          return nds;
+        };
+        static const Vector<Vector<Real>> all_nds = compute_all();
+        return all_nds[ChebOrder];
       }
-      static const Vector<Real>& wts(Integer ChebOrder) {
-        if (ChebOrder > 50) SCTL_ASSERT(false);
-        if (ChebOrder ==  1) return wts< 1>();
-        if (ChebOrder ==  2) return wts< 2>();
-        if (ChebOrder ==  3) return wts< 3>();
-        if (ChebOrder ==  4) return wts< 4>();
-        if (ChebOrder ==  5) return wts< 5>();
-        if (ChebOrder ==  6) return wts< 6>();
-        if (ChebOrder ==  7) return wts< 7>();
-        if (ChebOrder ==  8) return wts< 8>();
-        if (ChebOrder ==  9) return wts< 9>();
-        if (ChebOrder == 10) return wts<10>();
-        if (ChebOrder == 11) return wts<11>();
-        if (ChebOrder == 12) return wts<12>();
-        if (ChebOrder == 13) return wts<13>();
-        if (ChebOrder == 14) return wts<14>();
-        if (ChebOrder == 15) return wts<15>();
-        if (ChebOrder == 16) return wts<16>();
-        if (ChebOrder == 17) return wts<17>();
-        if (ChebOrder == 18) return wts<18>();
-        if (ChebOrder == 19) return wts<19>();
-        if (ChebOrder == 20) return wts<20>();
-        if (ChebOrder == 21) return wts<21>();
-        if (ChebOrder == 22) return wts<22>();
-        if (ChebOrder == 23) return wts<23>();
-        if (ChebOrder == 24) return wts<24>();
-        if (ChebOrder == 25) return wts<25>();
-        if (ChebOrder == 26) return wts<26>();
-        if (ChebOrder == 27) return wts<27>();
-        if (ChebOrder == 28) return wts<28>();
-        if (ChebOrder == 29) return wts<29>();
-        if (ChebOrder == 30) return wts<30>();
-        if (ChebOrder == 31) return wts<31>();
-        if (ChebOrder == 32) return wts<32>();
-        if (ChebOrder == 33) return wts<33>();
-        if (ChebOrder == 34) return wts<34>();
-        if (ChebOrder == 35) return wts<35>();
-        if (ChebOrder == 36) return wts<36>();
-        if (ChebOrder == 37) return wts<37>();
-        if (ChebOrder == 38) return wts<38>();
-        if (ChebOrder == 39) return wts<39>();
-        if (ChebOrder == 40) return wts<40>();
-        if (ChebOrder == 41) return wts<41>();
-        if (ChebOrder == 42) return wts<42>();
-        if (ChebOrder == 43) return wts<43>();
-        if (ChebOrder == 44) return wts<44>();
-        if (ChebOrder == 45) return wts<45>();
-        if (ChebOrder == 46) return wts<46>();
-        if (ChebOrder == 47) return wts<47>();
-        if (ChebOrder == 48) return wts<48>();
-        if (ChebOrder == 49) return wts<49>();
-        return wts<50>();
+      template <Integer MAX_ORDER=50> static const Vector<Real>& wts(Integer ChebOrder) {
+        SCTL_ASSERT(ChebOrder < MAX_ORDER);
+        auto compute_all = [](){
+          Vector<Vector<Real>> wts(MAX_ORDER);
+          for (Long i = 0; i < MAX_ORDER; i++) {
+            wts[i] = ComputeWts(i);
+          }
+          return wts;
+        };
+        static const Vector<Vector<Real>> all_wts = compute_all();
+        return all_wts[ChebOrder];
       }
+
       template <Integer ChebOrder> static const Vector<Real>& nds() {
-        static Vector<Real> nds = get_cheb_nds(ChebOrder);
+        static Vector<Real> nds = ComputeNds(ChebOrder);
         return nds;
       }
       template <Integer ChebOrder> static const Vector<Real>& wts() {
-        static const Vector<Real> wts = get_cheb_wts(ChebOrder);
+        static const Vector<Real> wts = ComputeWts(ChebOrder);
         return wts;
       }
-    private:
-      static Vector<Real> get_cheb_nds(Integer ChebOrder){
+
+      static Vector<Real> ComputeNds(Integer ChebOrder){
         Vector<Real> nds(ChebOrder);
         for (Long i = 0; i < ChebOrder; i++) {
           nds[i] = 0.5 - cos<Real>((2*i+1)*const_pi<Real>()/(2*ChebOrder)) * 0.5;
         }
         return nds;
       }
-      static Vector<Real> get_cheb_wts(Integer ChebOrder){
+      static Vector<Real> ComputeWts(Integer ChebOrder){
         Matrix<Real> M_cheb(ChebOrder, ChebOrder);
         { // Set M_cheb
           for (Long i = 0; i < ChebOrder; i++) {
@@ -156,6 +76,179 @@ namespace SCTL_NAMESPACE {
           }
         }
         return wts;
+      }
+  };
+
+  template <class Real> class LegQuadRule {
+    public:
+
+      template <Integer MAX_ORDER=25> static const Vector<Real>& nds(Integer Order) {
+        SCTL_ASSERT(Order < MAX_ORDER);
+        auto compute_all = [](){
+          Vector<Vector<Real>> nds(MAX_ORDER);
+          for (Long i = 1; i < MAX_ORDER; i++) {
+            nds[i] = ComputeNds<MAX_ORDER>(i);
+          }
+          return nds;
+        };
+        static const Vector<Vector<Real>> all_nds = compute_all();
+        return all_nds[Order];
+      }
+      template <Integer MAX_ORDER=25> static const Vector<Real>& wts(Integer Order) {
+        SCTL_ASSERT(Order < MAX_ORDER);
+        auto compute_all = [](){
+          Vector<Vector<Real>> wts(MAX_ORDER);
+          for (Long i = 1; i < MAX_ORDER; i++) {
+            wts[i] = ComputeWts<MAX_ORDER>(nds(i));
+          }
+          return wts;
+        };
+        static const Vector<Vector<Real>> all_wts = compute_all();
+        return all_wts[Order];
+      }
+
+      template <Integer Order> static const Vector<Real>& nds() {
+        static Vector<Real> nds = ComputeNds(Order);
+        return nds;
+      }
+      template <Integer Order> static const Vector<Real>& wts() {
+        static const Vector<Real> wts = ComputeWts(nds<Order>());
+        return wts;
+      }
+
+      static Vector<Real> ComputeNds(Integer order) {
+        Vector<Real> nds, wts;
+        gauss_legendre_approx(nds, wts, order);
+        nds = nds*2-1;
+
+        auto EvalLegPoly = [](Vector<Real>& Pn, Vector<Real>& dPn, const Vector<Real>& nds, Long n) {
+          Vector<Real> P, dP;
+          LegPoly(P, nds, n);
+          LegPolyDeriv(dP, nds, n);
+
+          const Long M = nds.Dim();
+          if (Pn.Dim() != M) Pn.ReInit(M);
+          if (dPn.Dim() != M) dPn.ReInit(M);
+          Pn = Vector<Real>(M, P.begin() + n*M, false);
+          dPn = Vector<Real>(M, dP.begin() + n*M, false);
+          for (Long i = 0; i < M; i++) dPn[i] = -dPn[i] / sqrt<Real>(1-nds[i]*nds[i]);
+        };
+        Vector<Real> Pn, dPn; // Newton iterations
+        EvalLegPoly(Pn, dPn, nds, order); nds -= Pn/dPn;
+        EvalLegPoly(Pn, dPn, nds, order); nds -= Pn/dPn;
+        EvalLegPoly(Pn, dPn, nds, order); nds -= Pn/dPn;
+        return (nds+1)/2;
+      }
+      static Vector<Real> ComputeWts(const Vector<Real>& nds) {
+        const Long order = nds.Dim();
+        Vector<Real> cheb_nds = ChebQuadRule<Real>::ComputeNds(2*order-1)*2-1;
+        Vector<Real> cheb_wts = ChebQuadRule<Real>::ComputeWts(2*order-1)*2;
+
+        auto EvalLegPoly = [](const Vector<Real>& nds, Long n) {
+          Vector<Real> P;
+          LegPoly(P, nds, n);
+          const Long M = nds.Dim();
+          return Matrix<Real>(n, M, P.begin());
+        };
+        Matrix<Real> b =  EvalLegPoly(cheb_nds, 2*order-1) * Matrix<Real>(cheb_wts.Dim(), 1, cheb_wts.begin(), false);
+        Matrix<Real> M = EvalLegPoly(nds*2-1, 2*order-1);
+        Matrix<Real> wts = Matrix<Real>(M).pinv() * b;
+        return Vector<Real>(wts.Dim(0), wts.begin())/2;
+      }
+
+    private:
+
+      static void LegPoly(Vector<Real>& poly_val, const Vector<Real>& X, Long degree){
+        Vector<Real> theta(X.Dim());
+        for (Long i = 0; i < X.Dim(); i++) theta[i] = acos<Real>(X[i]);
+        LegPoly_(poly_val, theta, degree);
+      }
+      static void LegPoly_(Vector<Real>& poly_val, const Vector<Real>& theta, Long degree){
+        Long N = theta.Dim();
+        Long Npoly = (degree + 1) * (degree + 2) / 2;
+        if (poly_val.Dim() != Npoly * N) poly_val.ReInit(Npoly * N);
+
+        Real fact = 1 / sqrt<Real>(4 * const_pi<Real>());
+        Vector<Real> cos_theta(N), sin_theta(N);
+        for (Long n = 0; n < N; n++) {
+          cos_theta[n] = cos(theta[n]);
+          sin_theta[n] = sin(theta[n]);
+          poly_val[n] = fact;
+        }
+
+        Long idx = 0;
+        Long idx_nxt = 0;
+        for (Long i = 1; i <= degree; i++) {
+          idx_nxt += N*(degree-i+2);
+          Real c = sqrt<Real>((2*i+1)/(Real)(2*i));
+          for (Long n = 0; n < N; n++) {
+            poly_val[idx_nxt+n] = -poly_val[idx+n] * sin_theta[n] * c;
+          }
+          idx = idx_nxt;
+        }
+
+        idx = 0;
+        for (Long m = 0; m < degree; m++) {
+          for (Long n = 0; n < N; n++) {
+            Real pmm = 0;
+            Real pmmp1 = poly_val[idx+n];
+            for (Long ll = m + 1; ll <= degree; ll++) {
+              Real a = sqrt<Real>(((2*ll-1)*(2*ll+1)         ) / (Real)((ll-m)*(ll+m)         ));
+              Real b = sqrt<Real>(((2*ll+1)*(ll+m-1)*(ll-m-1)) / (Real)((ll-m)*(ll+m)*(2*ll-3)));
+              Real pll = cos_theta[n]*a*pmmp1 - b*pmm;
+              pmm = pmmp1;
+              pmmp1 = pll;
+              poly_val[idx + N*(ll-m) + n] = pll;
+            }
+          }
+          idx += N * (degree - m + 1);
+        }
+      }
+      static void LegPolyDeriv(Vector<Real>& poly_val, const Vector<Real>& X, Long degree){
+        Vector<Real> theta(X.Dim());
+        for (Long i = 0; i < X.Dim(); i++) theta[i] = acos<Real>(X[i]);
+        LegPolyDeriv_(poly_val, theta, degree);
+      }
+      static void LegPolyDeriv_(Vector<Real>& poly_val, const Vector<Real>& theta, Long degree){
+        Long N = theta.Dim();
+        Long Npoly = (degree + 1) * (degree + 2) / 2;
+        if (poly_val.Dim() != N * Npoly) poly_val.ReInit(N * Npoly);
+
+        Vector<Real> cos_theta(N), sin_theta(N);
+        for (Long i = 0; i < N; i++) {
+          cos_theta[i] = cos(theta[i]);
+          sin_theta[i] = sin(theta[i]);
+        }
+
+        Vector<Real> leg_poly(Npoly * N);
+        LegPoly_(leg_poly, theta, degree);
+
+        for (Long m = 0; m <= degree; m++) {
+          for (Long n = m; n <= degree; n++) {
+            ConstIterator<Real> Pn  = leg_poly.begin() + N * ((degree * 2 - m + 1) * (m + 0) / 2 + n);
+            ConstIterator<Real> Pn_ = leg_poly.begin() + N * ((degree * 2 - m + 0) * (m + 1) / 2 + n) * (m < n);
+            Iterator     <Real> Hn  = poly_val.begin() + N * ((degree * 2 - m + 1) * (m + 0) / 2 + n);
+
+            Real c2 = sqrt<Real>(m<n ? (n+m+1)*(n-m) : 0);
+            for (Long i = 0; i < N; i++) {
+              Real c1 = (sin_theta[i]>0 ? m/sin_theta[i] : 0);
+              Hn[i] = c1*cos_theta[i]*Pn[i] + c2*Pn_[i];
+            }
+          }
+        }
+      }
+      static void gauss_legendre_approx(Vector<Real>& nds, Vector<Real>& wts, Integer order) {
+        Vector<double> xd(order), wd(order);
+        int kind = 1;
+        double alpha = 0.0, beta = 0.0, a = 0.0, b = 1.0;
+        cgqf(order, kind, (double)alpha, (double)beta, (double)a, (double)b, &xd[0], &wd[0]);
+
+        if (nds.Dim()!=order) nds.ReInit(order);
+        if (wts.Dim()!=order) wts.ReInit(order);
+        for (Long i = 0; i < order; i++) {
+          nds[i] = (Real)xd[i];
+          wts[i] = (Real)wd[i];
+        }
       }
   };
 

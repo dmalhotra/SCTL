@@ -755,20 +755,8 @@ namespace SCTL_NAMESPACE {
       for (Integer order = 1; order < max_order; order++) {
         auto& x_ = nds_wts[order].first;
         auto& w_ = nds_wts[order].second;
-        if (std::is_same<double,ValueType>::value || std::is_same<float,ValueType>::value) {
-          Vector<double> xd(order);
-          Vector<double> wd(order);
-          int kind = 1;
-          double alpha = 0.0, beta = 0.0, a = 0.0, b = 1.0;
-          cgqf(order, kind, (double)alpha, (double)beta, (double)a, (double)b, &xd[0], &wd[0]);
-          for (Integer i = 0; i < order; i++) {
-            x_.PushBack((ValueType)xd[i]);
-            w_.PushBack((ValueType)wd[i]);
-          }
-        } else {
-          x_ = ChebQuadRule<ValueType>::nds(order);
-          w_ = ChebQuadRule<ValueType>::wts(order);
-        }
+        x_ = LegQuadRule<ValueType>::ComputeNds(order);
+        w_ = LegQuadRule<ValueType>::ComputeWts(x_);
       }
       return nds_wts;
     };
@@ -1874,7 +1862,7 @@ namespace SCTL_NAMESPACE {
                 return sqrt<Real>(dR*dR + dz*dz);
               };
               StaticArray<Real,2> dist;
-              StaticArray<Real,2> s_val = {0,1};
+              StaticArray<Real,2> s_val{0,1};
               dist[0] = get_dist(x_trg, s_val[0]);
               dist[1] = get_dist(x_trg, s_val[1]);
               for (Long i = 0; i < 20; i++) { // Binary search: set dist, s_val
