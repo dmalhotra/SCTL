@@ -24,6 +24,8 @@ template <class Real> inline Real sin(const Real a) { return (Real)::sin(a); }
 
 template <class Real> inline Real cos(const Real a) { return (Real)::cos(a); }
 
+template <class Real> inline Real acos(const Real a) { return (Real)::acos(a); }
+
 template <class Real> inline Real exp(const Real a) { return (Real)::exp(a); }
 
 template <class Real> inline Real log(const Real a) { return (Real)::log(a); }
@@ -34,16 +36,59 @@ template <Long e, class ValueType> inline constexpr ValueType pow(ValueType b);
 
 
 #ifdef SCTL_QUAD_T
-typedef SCTL_QUAD_T QuadReal;
+class QuadReal {
+  public:
+
+    QuadReal() = default;
+    constexpr QuadReal(const QuadReal& v) = default;
+    QuadReal& operator=(const QuadReal&) = default;
+    ~QuadReal() = default;
+
+    template <class ValueType> constexpr QuadReal(ValueType v) : val((SCTL_QUAD_T)v) {}
+    template <class ValueType> explicit operator ValueType() const { return (ValueType)val; }
+
+
+    QuadReal& operator+=(const QuadReal& x) { val += x.val; return *this; }
+    QuadReal& operator-=(const QuadReal& x) { val -= x.val; return *this; }
+    QuadReal& operator*=(const QuadReal& x) { val *= x.val; return *this; }
+    QuadReal& operator/=(const QuadReal& x) { val /= x.val; return *this; }
+
+    QuadReal operator+(const QuadReal& x) const { return QuadReal(val + x.val); }
+    QuadReal operator-(const QuadReal& x) const { return QuadReal(val - x.val); }
+    QuadReal operator*(const QuadReal& x) const { return QuadReal(val * x.val); }
+    QuadReal operator/(const QuadReal& x) const { return QuadReal(val / x.val); }
+
+    QuadReal operator-() const { return QuadReal(-val); }
+
+    bool operator< (const QuadReal &x) const { return val <  x.val; }
+    bool operator> (const QuadReal &x) const { return val >  x.val; }
+    bool operator!=(const QuadReal &x) const { return val != x.val; }
+    bool operator==(const QuadReal &x) const { return val == x.val; }
+    bool operator<=(const QuadReal &x) const { return val <= x.val; }
+    bool operator>=(const QuadReal &x) const { return val >= x.val; }
+
+
+    friend QuadReal operator+(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) + b; }
+    friend QuadReal operator-(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) - b; }
+    friend QuadReal operator*(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) * b; }
+    friend QuadReal operator/(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) / b; }
+
+    friend bool operator< (const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) <  b; }
+    friend bool operator> (const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) >  b; }
+    friend bool operator!=(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) != b; }
+    friend bool operator==(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) == b; }
+    friend bool operator<=(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) <= b; }
+    friend bool operator>=(const SCTL_QUAD_T& a, const QuadReal& b) { return QuadReal(a) >= b; }
+
+  private:
+    SCTL_QUAD_T val;
+};
 
 inline std::ostream& operator<<(std::ostream& output, const QuadReal& x);
+inline std::istream& operator>>(std::istream& inputstream, QuadReal& x);
 #endif
 
 }  // end namespace
-
-#ifdef SCTL_QUAD_T
-inline std::ostream& operator<<(std::ostream& output, const SCTL_NAMESPACE::QuadReal& x);
-#endif
 
 #include SCTL_INCLUDE(math_utils.txx)
 

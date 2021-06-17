@@ -160,6 +160,15 @@ template <class Real> static inline Real cos_generic(const Real a) {
   return cval;
 }
 
+template <class Real> static inline Real acos_generic(const Real a) {
+  Real b = ::acos((double)a);
+  if (b > 0) { // Newton iterations for greater accuracy
+    b += (cos<Real>(b)-a)/sin<Real>(b);
+    b += (cos<Real>(b)-a)/sin<Real>(b);
+  }
+  return b;
+}
+
 template <class Real> static inline Real exp_generic(const Real a) {
   const int N = 200;
   static std::vector<Real> theta0;
@@ -207,6 +216,7 @@ template <class Real> static inline Real exp_generic(const Real a) {
 }
 
 template <class Real> static inline Real log_generic(const Real a) {
+  if (a == 0) return (Real)NAN;
   Real y0 = ::log((double)a);
   { // Newton iterations
     y0 = y0 + (a / exp<Real>(y0) - 1.0);
@@ -299,6 +309,8 @@ template <> inline long double sin<long double>(const long double a) { return ::
 
 template <> inline long double cos<long double>(const long double a) { return ::cosl(a); }
 
+template <> inline long double acos<long double>(const long double a) { return ::acosl(a); }
+
 template <> inline long double exp<long double>(const long double a) { return ::expl(a); }
 
 template <> inline long double log<long double>(const long double a) { return ::logl(a); }
@@ -321,6 +333,8 @@ template <> inline QuadReal sin<QuadReal>(const QuadReal a) { return sin_generic
 
 template <> inline QuadReal cos<QuadReal>(const QuadReal a) { return cos_generic(a); }
 
+template <> inline QuadReal acos<QuadReal>(const QuadReal a) { return acos_generic(a); }
+
 template <> inline QuadReal exp<QuadReal>(const QuadReal a) { return exp_generic(a); }
 
 template <> inline QuadReal log<QuadReal>(const QuadReal a) { return log_generic(a); }
@@ -339,6 +353,12 @@ template <> class pow_wrapper<QuadReal,Long> {
 };
 
 inline std::ostream& operator<<(std::ostream& output, const QuadReal& q) { return ostream_insertion_generic(output, q); }
+inline std::istream& operator>>(std::istream& inputstream, QuadReal& x) {
+  long double x_;
+  inputstream>>x_;
+  x = x_;
+  return inputstream;
+}
 #endif
 
 
@@ -348,10 +368,4 @@ template <class Real, class ExpType> inline Real pow(const Real b, const ExpType
 }
 
 } // end namespace
-
-
-
-#ifdef SCTL_QUAD_T
-inline std::ostream& operator<<(std::ostream& output, const SCTL_NAMESPACE::QuadReal& q) { return SCTL_NAMESPACE::ostream_insertion_generic(output, q); }
-#endif
 
