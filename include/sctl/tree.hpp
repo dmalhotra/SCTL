@@ -996,7 +996,7 @@ template <Integer DIM> class Tree {
           mid.Coord((Iterator<VTKReal>)c);
           VTKReal s = sctl::pow<VTKReal>(0.5, mid.Depth());
           for (Integer j = 0; j < Ncorner; j++) {
-            for (Integer i = 0; i < DIM; i++) coord.PushBack(c[i] + (j & (1u << i) ? 1 : 0) * s);
+            for (Integer i = 0; i < DIM; i++) coord.PushBack(c[i] + ((j & (1u << i)) ? 1 : 0) * s);
             for (Integer i = DIM; i < 3; i++) coord.PushBack(0);
             connect.PushBack(point_cnt);
             connect_cnt++;

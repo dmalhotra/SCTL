@@ -43,13 +43,7 @@ template <class ValueType> class ConstIterator {
   static const Long ValueSize = sizeof(ValueType);
 
  public:
-  ConstIterator() {
-    base = nullptr;
-    len = 0;
-    offset = 0;
-    alloc_ctr = 0;
-    mem_head = nullptr;
-  }
+  ConstIterator() : base(nullptr), len(0), offset(0), alloc_ctr(0), mem_head(nullptr) {}
 
   // template <size_t LENGTH> ConstIterator(ValueType (&base_)[LENGTH]) {  // DEPRECATED (because mem_head cannot be stored)
   //   SCTL_ASSERT(false);
@@ -245,7 +239,7 @@ template <class ValueType, Long DIM> class StaticArray {
 
   StaticArray& operator=(const StaticArray&) = default;
 
-  StaticArray(std::initializer_list<ValueType> arr_) : StaticArray() {
+  explicit StaticArray(std::initializer_list<ValueType> arr_) : StaticArray() {
     // static_assert(arr_.size() <= DIM, "too many initializer values"); // allowed in C++14
     SCTL_ASSERT_MSG(arr_.size() <= DIM, "too many initializer values");
     for (Long i = 0; i < (Long)arr_.size(); i++) (*this)[i] = arr_.begin()[i];
@@ -340,7 +334,7 @@ class MemoryManager {
   /**
    * \brief Constructor for MemoryManager.
    */
-  MemoryManager(Long N);
+  explicit MemoryManager(Long N);
 
   /**
    * \brief Constructor for MemoryManager.

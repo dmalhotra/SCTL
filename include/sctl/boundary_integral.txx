@@ -58,7 +58,7 @@ namespace SCTL_NAMESPACE {
 
     Long trg_offset, src_offset, elem_offset;
     { // set trg_offset, src_offset, elem_offset
-      StaticArray<Long,3> send_buff={Ntrg, Nsrc, Nelem}, recv_buff={0,0,0};
+      StaticArray<Long,3> send_buff{Ntrg, Nsrc, Nelem}, recv_buff{0,0,0};
       comm.Scan((ConstIterator<Long>)send_buff, (Iterator<Long>)recv_buff, 3, Comm::CommOp::SUM);
       trg_offset  = recv_buff[0] - send_buff[0];
       src_offset  = recv_buff[1] - send_buff[1];
@@ -439,7 +439,7 @@ namespace SCTL_NAMESPACE {
     SetupBasic();
     if (k == 0) {
       const Long Nelem = elem_nds_cnt.Dim();
-      return (elem_nds_dsp[Nelem-1] + elem_nds_cnt[Nelem-1]) * KDIM0;
+      return (Nelem ? (elem_nds_dsp[Nelem-1] + elem_nds_cnt[Nelem-1]) * KDIM0 : 0);
     }
     if (k == 1) {
       return (Xtrg.Dim()/COORD_DIM) * KDIM1;

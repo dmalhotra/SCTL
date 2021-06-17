@@ -52,12 +52,7 @@ class Profile {
     std::vector<Long> m_log;
     std::vector<Long> max_m_log;
 
-    ProfileData() {
-      MEM = 0;
-      FLOP = 0;
-      enable_state = false;
-      enable_depth = 0;
-    }
+    ProfileData() : MEM(0), FLOP(0), enable_state(false), enable_depth(0) {}
   };
 
   static inline ProfileData& ProfData() {

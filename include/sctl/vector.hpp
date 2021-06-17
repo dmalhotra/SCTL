@@ -24,13 +24,13 @@ template <class ValueType> class Vector {
 
   Vector();
 
-  Vector(Long dim_, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
+  explicit Vector(Long dim_, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
 
   Vector(const Vector& V);
 
-  Vector(const std::vector<ValueType>& V);
+  explicit Vector(const std::vector<ValueType>& V);
 
-  Vector(std::initializer_list<ValueType> V);
+  explicit Vector(std::initializer_list<ValueType> V);
 
   ~Vector();
 

@@ -146,7 +146,7 @@ namespace SCTL_NAMESPACE {
        *
        * @param[in] comm the MPI communicator.
        */
-      BoundaryIntegralOp(const Kernel& ker, const Comm& comm = Comm::Self());
+      explicit BoundaryIntegralOp(const Kernel& ker, const Comm& comm = Comm::Self());
 
       /**
        * Destructor

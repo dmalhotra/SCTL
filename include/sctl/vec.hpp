@@ -74,6 +74,14 @@ namespace SCTL_NAMESPACE { // Traits
       static constexpr Integer Size = sizeof(double);
       static constexpr Integer SigBits = 52;
   };
+#ifdef SCTL_QUAD_T
+  template <> class TypeTraits<QuadReal> {
+    public:
+      static constexpr DataType Type = DataType::Real;
+      static constexpr Integer Size = sizeof(QuadReal);
+      static constexpr Integer SigBits = 112;
+  };
+#endif
 
   template <Integer N> struct IntegerType {};
   template <> struct IntegerType<1> { using value = int8_t;  };
@@ -84,6 +92,9 @@ namespace SCTL_NAMESPACE { // Traits
   template <Integer N> struct RealType {};
   template <> struct RealType<4> { using value = float; };
   template <> struct RealType<8> { using value = double; };
+#ifdef SCTL_QUAD_T
+  template <> struct RealType<16> { using value = QuadReal; };
+#endif
 }
 
 namespace SCTL_NAMESPACE { // Generic

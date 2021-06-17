@@ -41,7 +41,7 @@ class Comm {
   Comm();
 
 #ifdef SCTL_HAVE_MPI
-  Comm(const MPI_Comm mpi_comm) { Init(mpi_comm); }
+  explicit Comm(const MPI_Comm mpi_comm) { Init(mpi_comm); }
 #endif
 
   Comm(const Comm& c);

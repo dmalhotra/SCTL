@@ -141,7 +141,7 @@ template <class ValueType> class Permutation {
  public:
   Permutation() {}
 
-  Permutation(Long size);
+  explicit Permutation(Long size);
 
   static Permutation<ValueType> RandPerm(Long size);
 
