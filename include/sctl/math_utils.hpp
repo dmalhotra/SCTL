@@ -18,6 +18,8 @@ template <class Real> inline constexpr Real const_e() { return (Real)2.718281828
 
 template <class Real> inline Real fabs(const Real a) { return (Real)::fabs(a); }
 
+template <class Real> inline Real round(const Real a) { return (Real)::round(a); }
+
 template <class Real> inline Real sqrt(const Real a) { return (Real)::sqrt(a); }
 
 template <class Real> inline Real sin(const Real a) { return (Real)::sin(a); }
@@ -46,7 +48,7 @@ class QuadReal {
     ~QuadReal() = default;
 
     template <class ValueType> constexpr QuadReal(ValueType v) : val((QuadRealType)v) {}
-    template <class ValueType> explicit operator ValueType() const { return (ValueType)val; }
+    template <class ValueType> explicit constexpr operator ValueType() const { return (ValueType)val; }
 
 
     QuadReal& operator+=(const QuadReal& x) { val += x.val; return *this; }
@@ -54,32 +56,40 @@ class QuadReal {
     QuadReal& operator*=(const QuadReal& x) { val *= x.val; return *this; }
     QuadReal& operator/=(const QuadReal& x) { val /= x.val; return *this; }
 
-    QuadReal operator+(const QuadReal& x) const { return QuadReal(val + x.val); }
-    QuadReal operator-(const QuadReal& x) const { return QuadReal(val - x.val); }
-    QuadReal operator*(const QuadReal& x) const { return QuadReal(val * x.val); }
-    QuadReal operator/(const QuadReal& x) const { return QuadReal(val / x.val); }
+    constexpr QuadReal operator+(const QuadReal& x) const { return QuadReal(val + x.val); }
+    constexpr QuadReal operator-(const QuadReal& x) const { return QuadReal(val - x.val); }
+    constexpr QuadReal operator*(const QuadReal& x) const { return QuadReal(val * x.val); }
+    constexpr QuadReal operator/(const QuadReal& x) const { return QuadReal(val / x.val); }
 
-    QuadReal operator-() const { return QuadReal(-val); }
+    constexpr QuadReal operator-() const { return QuadReal(-val); }
 
-    bool operator< (const QuadReal &x) const { return val <  x.val; }
-    bool operator> (const QuadReal &x) const { return val >  x.val; }
-    bool operator!=(const QuadReal &x) const { return val != x.val; }
-    bool operator==(const QuadReal &x) const { return val == x.val; }
-    bool operator<=(const QuadReal &x) const { return val <= x.val; }
-    bool operator>=(const QuadReal &x) const { return val >= x.val; }
+    constexpr bool operator< (const QuadReal& x) const { return val <  x.val; }
+    constexpr bool operator> (const QuadReal& x) const { return val >  x.val; }
+    constexpr bool operator!=(const QuadReal& x) const { return val != x.val; }
+    constexpr bool operator==(const QuadReal& x) const { return val == x.val; }
+    constexpr bool operator<=(const QuadReal& x) const { return val <= x.val; }
+    constexpr bool operator>=(const QuadReal& x) const { return val >= x.val; }
 
 
-    friend QuadReal operator+(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) + b; }
-    friend QuadReal operator-(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) - b; }
-    friend QuadReal operator*(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) * b; }
-    friend QuadReal operator/(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) / b; }
+    constexpr friend QuadReal operator+(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) + b; }
+    constexpr friend QuadReal operator-(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) - b; }
+    constexpr friend QuadReal operator*(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) * b; }
+    constexpr friend QuadReal operator/(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) / b; }
 
-    friend bool operator< (const QuadRealType& a, const QuadReal& b) { return QuadReal(a) <  b; }
-    friend bool operator> (const QuadRealType& a, const QuadReal& b) { return QuadReal(a) >  b; }
-    friend bool operator!=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) != b; }
-    friend bool operator==(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) == b; }
-    friend bool operator<=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) <= b; }
-    friend bool operator>=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) >= b; }
+    constexpr friend bool operator< (const QuadRealType& a, const QuadReal& b) { return QuadReal(a) <  b; }
+    constexpr friend bool operator> (const QuadRealType& a, const QuadReal& b) { return QuadReal(a) >  b; }
+    constexpr friend bool operator!=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) != b; }
+    constexpr friend bool operator==(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) == b; }
+    constexpr friend bool operator<=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) <= b; }
+    constexpr friend bool operator>=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) >= b; }
+
+    friend QuadReal round(const QuadReal& x) {
+      #ifdef __SIZEOF_INT128__
+      return (__int128)((x+(0.5-(x<0))).val);
+      #else
+      return (int64_t)((x+(0.5-(x<0))).val);
+      #endif
+    }
 
   private:
     QuadRealType val;

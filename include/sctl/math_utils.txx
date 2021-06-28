@@ -303,6 +303,8 @@ template <class Real> inline std::ostream& ostream_insertion_generic(std::ostrea
 
 template <> inline long double fabs<long double>(const long double a) { return ::fabsl(a); }
 
+template <> inline long double round<long double>(const long double a) { return ::roundl(a); }
+
 template <> inline long double sqrt<long double>(const long double a) { return ::sqrtl(a); }
 
 template <> inline long double sin<long double>(const long double a) { return ::sinl(a); }
