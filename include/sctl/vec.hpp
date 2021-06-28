@@ -1,6 +1,7 @@
 #ifndef _SCTL_VEC_WRAPPER_HPP_
 #define _SCTL_VEC_WRAPPER_HPP_
 
+#include SCTL_INCLUDE(vector.hpp)
 #include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(common.hpp)
 #include <cassert>
@@ -62,6 +63,26 @@ namespace SCTL_NAMESPACE { // Traits
       static constexpr Integer Size = sizeof(int64_t);
       static constexpr Integer SigBits = Size * 8 - 1;
   };
+#ifdef __SIZEOF_INT128__
+  template <> class TypeTraits<__int128> {
+    public:
+      static constexpr DataType Type = DataType::Integer;
+      static constexpr Integer Size = sizeof(__int128);
+      static constexpr Integer SigBits = Size * 16 - 1;
+  };
+#endif
+
+  template <class Real, Integer bits = sizeof(Real)*8> struct GetSigBits {
+    static constexpr Integer value() {
+      return (pow<bits>((Real)0.5)+1 == (Real)1 ? GetSigBits<Real,bits-1>::value() : bits);
+    }
+  };
+  template <class Real> struct GetSigBits<Real,0> {
+    static constexpr Integer value() {
+      return 0;
+    }
+  };
+
   template <> class TypeTraits<float> {
     public:
       static constexpr DataType Type = DataType::Real;
@@ -74,6 +95,12 @@ namespace SCTL_NAMESPACE { // Traits
       static constexpr Integer Size = sizeof(double);
       static constexpr Integer SigBits = 52;
   };
+  template <> class TypeTraits<long double> {
+    public:
+      static constexpr DataType Type = DataType::Real;
+      static constexpr Integer Size = sizeof(long double);
+      static constexpr Integer SigBits = GetSigBits<long double>::value();
+  };
 #ifdef SCTL_QUAD_T
   template <> class TypeTraits<QuadReal> {
     public:
@@ -84,32 +111,18 @@ namespace SCTL_NAMESPACE { // Traits
 #endif
 
   template <Integer N> struct IntegerType {};
-  template <> struct IntegerType<1> { using value = int8_t;  };
-  template <> struct IntegerType<2> { using value = int16_t; };
-  template <> struct IntegerType<4> { using value = int32_t; };
-  template <> struct IntegerType<8> { using value = int64_t; };
-
-  template <Integer N> struct RealType {};
-  template <> struct RealType<4> { using value = float; };
-  template <> struct RealType<8> { using value = double; };
-#ifdef SCTL_QUAD_T
-  template <> struct RealType<16> { using value = QuadReal; };
+  template <> struct IntegerType<sizeof( int8_t)> { using value =  int8_t; };
+  template <> struct IntegerType<sizeof(int16_t)> { using value = int16_t; };
+  template <> struct IntegerType<sizeof(int32_t)> { using value = int32_t; };
+  template <> struct IntegerType<sizeof(int64_t)> { using value = int64_t; };
+#ifdef __SIZEOF_INT128__
+  template <> struct IntegerType<sizeof(__int128)> { using value = __int128; };
 #endif
 }
 
 namespace SCTL_NAMESPACE { // Generic
 
-  #if defined(__AVX512__) || defined(__AVX512F__)
-    #define SCTL_MAX_ALIGN_BYTES 64
-  #elif defined(__AVX__)
-    #define SCTL_MAX_ALIGN_BYTES 32
-  #elif defined(__SSE__)
-    #define SCTL_MAX_ALIGN_BYTES 16
-  #else
-    #define SCTL_MAX_ALIGN_BYTES 8
-  #endif
-
-  template <class ValueType, Integer N> struct alignas(sizeof(ValueType)*N>SCTL_MAX_ALIGN_BYTES?SCTL_MAX_ALIGN_BYTES:sizeof(ValueType)*N) VecData {
+  template <class ValueType, Integer N> struct alignas(sizeof(ValueType)*N>SCTL_ALIGN_BYTES?SCTL_ALIGN_BYTES:sizeof(ValueType)*N) VecData {
     using ScalarType = ValueType;
     static constexpr Integer Size = N;
     ScalarType v[N];
@@ -354,7 +367,7 @@ namespace SCTL_NAMESPACE { // Generic
 
     static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
     union {
-      Int Cint = (1UL << (SigBits - 1)) + ((SigBits + ((1UL<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
+      Int Cint = (((Int)1) << (SigBits - 1)) + ((SigBits + ((((Int)1)<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
       Real Creal;
     };
     IntVec l(add_intrin(x, set1_intrin<IntVec>(Cint)));
@@ -369,7 +382,7 @@ namespace SCTL_NAMESPACE { // Generic
 
     static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
     union {
-      Int Cint = (1UL << (SigBits - 1)) + ((SigBits + ((1UL<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
+      Int Cint = (((Int)1) << (SigBits - 1)) + ((SigBits + ((((Int)1)<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
       Real Creal;
     };
     RealVec d(add_intrin(x, set1_intrin<RealVec>(Creal)));
@@ -382,7 +395,7 @@ namespace SCTL_NAMESPACE { // Generic
 
     static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
     union {
-      Int Cint = (1UL << (SigBits - 1)) + ((SigBits + ((1UL<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
+      Int Cint = (((Int)1) << (SigBits - 1)) + ((SigBits + ((((Int)1)<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
       Real Creal;
     };
     VData Vreal(set1_intrin<VData>(Creal));
@@ -482,14 +495,44 @@ namespace SCTL_NAMESPACE { // Generic
   }
 
   // Special funtions
-  template <class VData> inline VData rsqrt_approx_intrin(const VData& a) {
-    union {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    } a_ = {a};
-    for (Integer i = 0; i < VData::Size; i++) a_.x[i] = 1/sqrt<typename VData::ScalarType>(a_.x[i]);
-    return a_.v;
+  template <Integer MAX_ITER, Integer ITER, class VData> struct rsqrt_newton_iter {
+    static VData eval(const VData& y, const VData& x) {
+      using ValueType = typename VData::ScalarType;
+      constexpr ValueType c1 = 3 * pow<pow<MAX_ITER-ITER>(3)-1,ValueType>(2);
+      return rsqrt_newton_iter<MAX_ITER,ITER-1,VData>::eval(mul_intrin(y, sub_intrin(set1_intrin<VData>(c1), mul_intrin(x,mul_intrin(y,y)))), x);
+    }
+  };
+  template <Integer MAX_ITER, class VData> struct rsqrt_newton_iter<MAX_ITER,1,VData> {
+    static VData eval(const VData& y, const VData& x) {
+      using ValueType = typename VData::ScalarType;
+      constexpr ValueType c1 = 3 * pow<pow<MAX_ITER-1>(3)-1,ValueType>(2);
+      constexpr ValueType c2 = pow<(pow<MAX_ITER-1>(3)-1)*3/2+1,ValueType>(0.5);
+      return mul_intrin(mul_intrin(y, sub_intrin(set1_intrin<VData>(c1), mul_intrin(x,mul_intrin(y,y)))), set1_intrin<VData>(c2));
+    }
+  };
+  template <class VData> struct rsqrt_newton_iter<0,0,VData> {
+    static VData eval(const VData& y, const VData& x) {
+      return y;
+    }
+  };
+  static constexpr Integer mylog2(Integer x) {
+    return ((x<1) ? 0 : 1+mylog2(x/2));
   }
+  template <Integer digits, class VData> struct rsqrt_approx_intrin {
+    static inline VData eval(const VData& a) {
+      union {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      } a_ = {a}, b_;
+      for (Integer i = 0; i < VData::Size; i++) b_.x[i] = (typename VData::ScalarType)1/sqrt<float>((float)a_.x[i]);
+
+      constexpr Integer newton_iter = mylog2((Integer)(digits/7.2247198959));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VData>::eval(b_.v, a);
+    }
+    static inline VData eval(const VData& a, const Mask<VData>& m) {
+      return and_intrin(rsqrt_approx_intrin<digits,VData>::eval(a), convert_mask2vec_intrin(m));
+    }
+  };
 
   template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0) {
     return set1_intrin<VData>(c0);
@@ -601,13 +644,13 @@ namespace SCTL_NAMESPACE { // Generic
     static constexpr Real coeff13 =  1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13);
     static constexpr Real coeff15 = -1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13*14*15);
     static constexpr Real coeff17 =  1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13*14*15*16*17);
-    static constexpr Real coeff19 = -1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13*14*15*16*17*18*19);
+    static constexpr Real coeff19 = -1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13*14*15*16*17*18*19); // err = 2^-72.7991
     static constexpr Real pi_over_2 = const_pi<Real>()/2;
     static constexpr Real neg_pi_over_2 = -const_pi<Real>()/2;
     static constexpr Real inv_pi_over_2 = 1 / pi_over_2;
 
     union {
-      Int Cint = 0 + (1UL << (SigBits - 1)) + ((SigBits + ((1UL<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
+      Int Cint = 0 + (((Int)1) << (SigBits - 1)) + ((SigBits + ((((Int)1)<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
       Real Creal;
     };
     VData real_offset(set1_intrin<VData>(Creal));
@@ -630,36 +673,7 @@ namespace SCTL_NAMESPACE { // Generic
     else                  s1 = mul_intrin(EvalPolynomial(x2, coeff1), x1);
 
     VData cos_squared = sub_intrin(set1_intrin<VData>(1), mul_intrin(s1, s1));
-    VData inv_cos = rsqrt_approx_intrin(cos_squared);
-    if (ORDER < 5) {
-    } else if (ORDER < 9) {
-      constexpr Real c0 = 3;
-      constexpr Real c1 = 0.5;
-
-      //inv_cos *= (c0 - cos_squared * inv_cos * inv_cos) * c1;
-      inv_cos = mul_intrin(inv_cos, mul_intrin(sub_intrin(set1_intrin<VData>(c0), mul_intrin(cos_squared, mul_intrin(inv_cos, inv_cos))), set1_intrin<VData>(c1)));
-    } else if (ORDER < 15) {
-      constexpr Real c0 = 3;
-      constexpr Real c1 = 3 * pow<pow<0>(3)*3-1,Real>(2);
-      constexpr Real c2 = (pow<(pow<0>(3)*3-1)*3/2+1,Real>(0.5));
-
-      //inv_cos *= (c0 - cos_squared * inv_cos * inv_cos);
-      //inv_cos *= (c1 - cos_squared * inv_cos * inv_cos) * c2;
-      inv_cos = mul_intrin(inv_cos,            sub_intrin(set1_intrin<VData>(c0), mul_intrin(cos_squared, mul_intrin(inv_cos, inv_cos))));
-      inv_cos = mul_intrin(inv_cos, mul_intrin(sub_intrin(set1_intrin<VData>(c1), mul_intrin(cos_squared, mul_intrin(inv_cos, inv_cos))), set1_intrin<VData>(c2)));
-    } else {
-      constexpr Real c0 = 3;
-      constexpr Real c1 = 3 * pow<pow<0>(3)*3-1,Real>(2);
-      constexpr Real c2 = 3 * pow<pow<1>(3)*3-1,Real>(2);
-      constexpr Real c3 = pow<(pow<1>(3)*3-1)*3/2+1,Real>(0.5);
-
-      //inv_cos *= (c0 - cos_squared * inv_cos * inv_cos);
-      //inv_cos *= (c1 - cos_squared * inv_cos * inv_cos);
-      //inv_cos *= (c2 - cos_squared * inv_cos * inv_cos) * c3;
-      inv_cos = mul_intrin(inv_cos,            sub_intrin(set1_intrin<VData>(c0), mul_intrin(cos_squared, mul_intrin(inv_cos, inv_cos))));
-      inv_cos = mul_intrin(inv_cos,            sub_intrin(set1_intrin<VData>(c1), mul_intrin(cos_squared, mul_intrin(inv_cos, inv_cos))));
-      inv_cos = mul_intrin(inv_cos, mul_intrin(sub_intrin(set1_intrin<VData>(c2), mul_intrin(cos_squared, mul_intrin(inv_cos, inv_cos))), set1_intrin<VData>(c3)));
-    }
+    VData inv_cos = rsqrt_approx_intrin<ORDER,VData>::eval(cos_squared, comp_intrin<ComparisonType::ne>(cos_squared,zero_intrin<VData>()));
     VData c1 = mul_intrin(cos_squared, inv_cos);
 
     IntVec vec_zero(zero_intrin<IntVec>());
@@ -672,7 +686,17 @@ namespace SCTL_NAMESPACE { // Generic
     cosx = select_intrin(xAnd2, c2, unary_minus_intrin(c2));
   }
   template <class VData> void sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
-    approx_sincos_intrin<(Integer)(TypeTraits<typename VData::ScalarType>::SigBits/3.2)>(sinx, cosx, x);
+    union U {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    };
+    U sinx_, cosx_, x_ = {x};
+    for (Integer i = 0; i < VData::Size; i++) {
+      sinx_.x[i] = sin(x_.x[i]);
+      cosx_.x[i] = cos(x_.x[i]);
+    }
+    sinx = sinx_.v;
+    cosx = cosx_.v;
   }
 
   template <Integer ORDER, class VData> VData approx_exp_intrin(const VData& x) {
@@ -693,7 +717,7 @@ namespace SCTL_NAMESPACE { // Generic
     static constexpr Real coeff10 = 1/(((Real)2)*3*4*5*6*7*8*9*10);
     static constexpr Real coeff11 = 1/(((Real)2)*3*4*5*6*7*8*9*10*11);
     static constexpr Real coeff12 = 1/(((Real)2)*3*4*5*6*7*8*9*10*11*12);
-    static constexpr Real coeff13 = 1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13);
+    static constexpr Real coeff13 = 1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13); // err = 2^-57.2759
     static constexpr Real x0 = -(Real)0.693147180559945309417232121458l; // -ln(2)
     static constexpr Real invx0 = -1 / x0; // 1/ln(2)
 
@@ -726,14 +750,20 @@ namespace SCTL_NAMESPACE { // Generic
       IntVec int_e2 = add_intrin(set1_intrin<IntVec>(int_one), bitshiftleft_intrin(int_x_, SigBits));
 
       // Handle underflow
-      static constexpr Int max_exp = -(Int)(1UL<<((sizeof(Real)*8-SigBits-2)));
+      static constexpr Int max_exp = -(Int)(((Int)1)<<((sizeof(Real)*8-SigBits-2)));
       e2 = reinterpret_intrin<VData>(select_intrin(comp_intrin<ComparisonType::gt>(int_x_, set1_intrin<IntVec>(max_exp)) , int_e2, zero_intrin<IntVec>()));
     }
 
     return mul_intrin(e1, e2);
   }
   template <class VData> VData exp_intrin(const VData& x) {
-    return approx_exp_intrin<(Integer)(TypeTraits<typename VData::ScalarType>::SigBits/3.8)>(x);
+    union U {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    };
+    U expx_, x_ = {x};
+    for (Integer i = 0; i < VData::Size; i++) expx_.x[i] = exp(x_.x[i]);
+    return expx_.v;
   }
 
 }
@@ -1372,20 +1402,46 @@ namespace SCTL_NAMESPACE { // SSE
 
 
   // Special functions
-  template <> VecData<float,4> rsqrt_approx_intrin<VecData<float,4>>(const VecData<float,4>& a) {
-    #if defined(__AVX512F__) || defined(__AVX512VL__)
-    return _mm_maskz_rsqrt14_ps(~__mmask8(0), a.v);
-    #else
-    return _mm_rsqrt_ps(a.v);
-    #endif
-  }
-  template <> VecData<double,2> rsqrt_approx_intrin<VecData<double,2>>(const VecData<double,2>& a) {
-    #if defined(__AVX512F__) || defined(__AVX512VL__)
-    return _mm_maskz_rsqrt14_pd(~__mmask8(0), a.v);
-    #else
-    return _mm_cvtps_pd(_mm_rsqrt_ps(_mm_cvtpd_ps(a.v)));
-    #endif
-  }
+  template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,4>> {
+    static VecData<float,4> eval(const VecData<float,4>& a) {
+      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,4>>::eval(_mm_maskz_rsqrt14_ps(~__mmask8(0), a.v), a.v);
+      #else
+      constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,4>>::eval(_mm_rsqrt_ps(a.v), a.v);
+      #endif
+    }
+    static VecData<float,4> eval(const VecData<float,4>& a, const Mask<VecData<float,4>>& m) {
+      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,4>>::eval(_mm_maskz_rsqrt14_ps(_mm_movepi32_mask(_mm_castps_si128(m.v)), a.v), a.v);
+      #else
+      constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,4>>::eval(and_intrin(VecData<float,4>(_mm_rsqrt_ps(a.v)), convert_mask2vec_intrin(m)), a.v);
+      #endif
+    }
+  };
+  template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<double,2>> {
+    static VecData<double,2> eval(const VecData<double,2>& a) {
+      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(_mm_maskz_rsqrt14_pd(~__mmask8(0), a.v), a.v);
+      #else
+      constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(_mm_cvtps_pd(_mm_rsqrt_ps(_mm_cvtpd_ps(a.v))), a.v);
+      #endif
+    }
+    static VecData<double,2> eval(const VecData<double,2>& a, const Mask<VecData<double,2>>& m) {
+      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(_mm_maskz_rsqrt14_pd(_mm_movepi64_mask(_mm_castpd_si128(m.v)), a.v), a.v);
+      #else
+      constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(and_intrin(VecData<double,2>(_mm_cvtps_pd(_mm_rsqrt_ps(_mm_cvtpd_ps(a.v)))), convert_mask2vec_intrin(m)), a.v);
+      #endif
+    }
+  };
 
   #ifdef SCTL_HAVE_SVML
   template <> void sincos_intrin<VecData<float ,4>>(VecData<float ,4>& sinx, VecData<float ,4>& cosx, const VecData<float ,4>& x) { sinx = _mm_sincos_ps(&cosx.v, x.v); }
@@ -1393,6 +1449,20 @@ namespace SCTL_NAMESPACE { // SSE
 
   template <> VecData<float ,4> exp_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_exp_ps(x.v); }
   template <> VecData<double,2> exp_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_exp_pd(x.v); }
+  #else
+  template <> void sincos_intrin<VecData<float ,4>>(VecData<float ,4>& sinx, VecData<float ,4>& cosx, const VecData<float ,4>& x) {
+    approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+  }
+  template <> void sincos_intrin<VecData<double,2>>(VecData<double,2>& sinx, VecData<double,2>& cosx, const VecData<double,2>& x) {
+    approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+  }
+
+  template <> VecData<float ,4> exp_intrin<VecData<float ,4>>(const VecData<float ,4>& x) {
+    return approx_exp_intrin<(Integer)(TypeTraits<float>::SigBits/3.8)>(x); // TODO: determine constants more precisely
+  }
+  template <> VecData<double,2> exp_intrin<VecData<double,2>>(const VecData<double,2>& x) {
+    return approx_exp_intrin<(Integer)(TypeTraits<double>::SigBits/3.8)>(x); // TODO: determine constants more precisely
+  }
   #endif
 
 
@@ -2041,20 +2111,46 @@ namespace SCTL_NAMESPACE { // AVX
 
 
   // Special functions
-  template <> VecData<float,8> rsqrt_approx_intrin<VecData<float,8>>(const VecData<float,8>& a) {
-    #if defined(__AVX512F__) || defined(__AVX512VL__)
-    return _mm256_maskz_rsqrt14_ps(~__mmask8(0), a.v);
-    #else
-    return _mm256_rsqrt_ps(a.v);
-    #endif
-  }
-  template <> VecData<double,4> rsqrt_approx_intrin<VecData<double,4>>(const VecData<double,4>& a) {
-    #if defined(__AVX512F__) || defined(__AVX512VL__)
-    return _mm256_maskz_rsqrt14_pd(~__mmask8(0), a.v);
-    #else
-    return _mm256_cvtps_pd(_mm_rsqrt_ps(_mm256_cvtpd_ps(a.v)));
-    #endif
-  }
+  template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,8>> {
+    static VecData<float,8> eval(const VecData<float,8>& a) {
+      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,8>>::eval(_mm256_maskz_rsqrt14_ps(~__mmask8(0), a.v), a.v);
+      #else
+      constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,8>>::eval(_mm256_rsqrt_ps(a.v), a.v);
+      #endif
+    }
+    static VecData<float,8> eval(const VecData<float,8>& a, const Mask<VecData<float,8>>& m) {
+      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,8>>::eval(_mm256_maskz_rsqrt14_ps(_mm256_movepi32_mask(_mm256_castps_si256(m.v)), a.v), a.v);
+      #else
+      constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,8>>::eval(and_intrin(VecData<float,8>(_mm256_rsqrt_ps(a.v)), convert_mask2vec_intrin(m)), a.v);
+      #endif
+    }
+  };
+  template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<double,4>> {
+    static VecData<double,4> eval(const VecData<double,4>& a) {
+      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_maskz_rsqrt14_pd(~__mmask8(0), a.v), a.v);
+      #else
+      constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_cvtps_pd(_mm_rsqrt_ps(_mm256_cvtpd_ps(a.v))), a.v);
+      #endif
+    }
+    static VecData<double,4> eval(const VecData<double,4>& a, const Mask<VecData<double,4>>& m) {
+      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_maskz_rsqrt14_pd(_mm256_movepi32_mask(_mm256_castpd_si256(m.v)), a.v), a.v);
+      #else
+      constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(and_intrin(VecData<double,4>(_mm256_cvtps_pd(_mm_rsqrt_ps(_mm256_cvtpd_ps(a.v)))), convert_mask2vec_intrin(m)), a.v);
+      #endif
+    }
+  };
 
   #ifdef SCTL_HAVE_SVML
   template <> void sincos_intrin<VecData<float ,8>>(VecData<float ,8>& sinx, VecData<float ,8>& cosx, const VecData<float ,8>& x) { sinx = _mm256_sincos_ps(&cosx.v, x.v); }
@@ -2062,6 +2158,20 @@ namespace SCTL_NAMESPACE { // AVX
 
   template <> VecData<float ,8> exp_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_exp_ps(x.v); }
   template <> VecData<double,4> exp_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_exp_pd(x.v); }
+  #else
+  template <> void sincos_intrin<VecData<float ,8>>(VecData<float ,8>& sinx, VecData<float ,8>& cosx, const VecData<float ,8>& x) {
+    approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+  }
+  template <> void sincos_intrin<VecData<double,4>>(VecData<double,4>& sinx, VecData<double,4>& cosx, const VecData<double,4>& x) {
+    approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+  }
+
+  template <> VecData<float ,8> exp_intrin<VecData<float ,8>>(const VecData<float ,8>& x) {
+    return approx_exp_intrin<(Integer)(TypeTraits<float>::SigBits/3.8)>(x); // TODO: determine constants more precisely
+  }
+  template <> VecData<double,4> exp_intrin<VecData<double,4>>(const VecData<double,4>& x) {
+    return approx_exp_intrin<(Integer)(TypeTraits<double>::SigBits/3.8)>(x); // TODO: determine constants more precisely
+  }
   #endif
 
 
@@ -2748,12 +2858,24 @@ namespace SCTL_NAMESPACE { // AVX512
 
 
   // Special functions
-  template <> VecData<float,16> rsqrt_approx_intrin<VecData<float,16>>(const VecData<float,16>& a) {
-    return _mm512_rsqrt14_ps(a.v);
-  }
-  template <> VecData<double,8> rsqrt_approx_intrin<VecData<double,8>>(const VecData<double,8>& a) {
-    return _mm512_rsqrt14_pd(a.v);
-  }
+  template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,16>> {
+    static constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
+    static VecData<float,16> eval(const VecData<float,16>& a) {
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,16>>::eval(_mm512_rsqrt14_ps(a.v), a.v);
+    }
+    static VecData<float,16> eval(const VecData<float,16>& a, const Mask<VecData<float,16>>& m) {
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,16>>::eval(_mm512_maskz_rsqrt14_ps(m.v, a.v), a.v);
+    }
+  };
+  template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<double,8>> {
+    static constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
+    static VecData<double,8> eval(const VecData<double,8>& a) {
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,8>>::eval(_mm512_rsqrt14_pd(a.v), a.v);
+    }
+    static VecData<double,8> eval(const VecData<double,8>& a, const Mask<VecData<double,8>>& m) {
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,8>>::eval(_mm512_maskz_rsqrt14_pd(m.v, a.v), a.v);
+    }
+  };
 
   #ifdef SCTL_HAVE_SVML
   template <> void sincos_intrin<VecData<float,16>>(VecData<float,16>& sinx, VecData<float,16>& cosx, const VecData<float,16>& x) { sinx = _mm512_sincos_ps(&cosx.v, x.v); }
@@ -2761,12 +2883,40 @@ namespace SCTL_NAMESPACE { // AVX512
 
   template <> VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_exp_ps(x.v); }
   template <> VecData<double,8> exp_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_exp_pd(x.v); }
+  #else
+  template <> void sincos_intrin<VecData<float,16>>(VecData<float,16>& sinx, VecData<float,16>& cosx, const VecData<float,16>& x) {
+    approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+  }
+  template <> void sincos_intrin<VecData<double,8>>(VecData<double,8>& sinx, VecData<double,8>& cosx, const VecData<double,8>& x) {
+    approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+  }
+
+  template <> VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) {
+    return approx_exp_intrin<(Integer)(TypeTraits<float>::SigBits/3.8)>(x); // TODO: determine constants more precisely
+  }
+  template <> VecData<double,8> exp_intrin<VecData<double,8>>(const VecData<double,8>& x) {
+    return approx_exp_intrin<(Integer)(TypeTraits<double>::SigBits/3.8)>(x); // TODO: determine constants more precisely
+  }
   #endif
 
 #endif
 }
 
 namespace SCTL_NAMESPACE { // Vec
+
+  #if defined(__AVX512__) || defined(__AVX512F__)
+  static_assert(SCTL_ALIGN_BYTES >= 64);
+  template <class ScalarType> constexpr Integer DefaultVecLen() { return 64/sizeof(ScalarType); }
+  #elif defined(__AVX__)
+  static_assert(SCTL_ALIGN_BYTES >= 32);
+  template <class ScalarType> constexpr Integer DefaultVecLen() { return 32/sizeof(ScalarType); }
+  #elif defined(__SSE4_2__)
+  static_assert(SCTL_ALIGN_BYTES >= 16);
+  template <class ScalarType> constexpr Integer DefaultVecLen() { return 16/sizeof(ScalarType); }
+  #else
+  static_assert(SCTL_ALIGN_BYTES >= 8);
+  template <class ScalarType> constexpr Integer DefaultVecLen() { return 1; }
+  #endif
 
   template <class ValueType, Integer N> class alignas(sizeof(ValueType) * N) Vec {
     public:
@@ -2941,9 +3091,8 @@ namespace SCTL_NAMESPACE { // Vec
       }
 
       // Special functions
-      friend Vec approx_rsqrt(const Vec& x) {
-        return rsqrt_approx_intrin(x.v);
-      }
+      template <Integer digits, class RealVec> friend RealVec approx_rsqrt(const RealVec& x);
+      template <Integer digits, class RealVec> friend RealVec approx_rsqrt(const RealVec& x, const typename RealVec::MaskType& m);
 
       friend void sincos(Vec& sinx, Vec& cosx, const Vec& x) {
         sincos_intrin(sinx.v, cosx.v, x.v);
@@ -2990,6 +3139,14 @@ namespace SCTL_NAMESPACE { // Vec
     return convert_mask2vec_intrin(a);
   }
 
+  // Special functions
+  template <Integer digits, class RealVec> RealVec approx_rsqrt(const RealVec& x) {
+    return rsqrt_approx_intrin<digits, typename RealVec::VData>::eval(x.v);
+  }
+  template <Integer digits, class RealVec> RealVec approx_rsqrt(const RealVec& x, const typename RealVec::MaskType& m) {
+    return rsqrt_approx_intrin<digits, typename RealVec::VData>::eval(x.v, m);
+  }
+
   // Other operators
   template <class ValueType> void printb(const ValueType& x) { // print binary
     union {
@@ -3029,27 +3186,36 @@ namespace SCTL_NAMESPACE { // Vec
         VecTest<int16_t,N>::test_all();
         VecTest<int32_t,N>::test_all();
         VecTest<int64_t,N>::test_all();
-        VecTest<  float,N>::test_all();
-        VecTest< double,N>::test_all();
 
-        VecTest< float,N>::test_reals();
+        VecTest<float,N>::test_all();
+        VecTest<float,N>::test_reals();
+
+        VecTest<double,N>::test_all();
         VecTest<double,N>::test_reals();
+
+        //VecTest<long double,N>::test_all();
+        //VecTest<long double,N>::test_reals();
+
+        #ifdef SCTL_QUAD_T
+        VecTest<QuadReal,N>::test_all();
+        VecTest<QuadReal,N>::test_reals();
+        #endif
       }
 
       static void test_all() {
         if (N*sizeof(ScalarType)*8<=512) {
           test_init();
-          test_bitwise();
+          test_bitwise(); // TODO: fails for 'long double'
           test_arithmetic();
           test_maxmin();
-          test_mask();
-          test_comparison();
+          test_mask(); // TODO: fails for 'long double'
+          test_comparison(); // TODO: fails for 'long double'
         }
       }
 
       static void test_reals() {
         if (N*sizeof(ScalarType)*8<=512) {
-          test_reals_convert();
+          test_reals_convert(); // TODO: fails for 'long double'
           test_reals_specialfunc();
           test_reals_rsqrt();
         }
@@ -3312,24 +3478,32 @@ namespace SCTL_NAMESPACE { // Vec
         sincos(v1, v2, v0);
         v3 = exp(v0);
         for (Integer i = 0; i < N; i++) {
-          SCTL_ASSERT(fabs(v1[i] - sin<ScalarType>(v0[i])) < (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5)));
-          SCTL_ASSERT(fabs(v2[i] - cos<ScalarType>(v0[i])) < (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5)));
-          SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i]))/fabs(exp<ScalarType>(v0[i])) < (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5)));
+          ScalarType err_tol = std::max<ScalarType>((ScalarType)1.77e-15, (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5))); // TODO: fix for accuracy greater than 1.77e-15
+          SCTL_ASSERT(fabs(v1[i] - sin<ScalarType>(v0[i])) < err_tol);
+          SCTL_ASSERT(fabs(v2[i] - cos<ScalarType>(v0[i])) < err_tol);
+          SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i]))/fabs(exp<ScalarType>(v0[i])) < err_tol);
         }
       }
 
       static void test_reals_rsqrt() {
-        UnionType u1, u2;
+        UnionType u1, u2, u3;
         for (Integer i = 0; i < N; i++) {
           u1.x[i] = (ScalarType)rand();
         }
 
-        u2.v = approx_rsqrt(u1.v);
+        u2.v = approx_rsqrt<4>(u1.v);
+        u3.v = approx_rsqrt<7>(u1.v);
         for (Integer i = 0; i < N; i++) {
           ScalarType err = fabs(u2.x[i] - 1/sqrt<ScalarType>(u1.x[i]));
           ScalarType max_val = fabs(1/sqrt<ScalarType>(u1.x[i]));
           ScalarType rel_err = err / max_val;
           SCTL_ASSERT(rel_err < (pow<11,ScalarType>((ScalarType)0.5)));
+        }
+        for (Integer i = 0; i < N; i++) {
+          ScalarType err = fabs((ScalarType)(u3.x[i] - 1/sqrt((double)u1.x[i]))); // float is not accurate enough to compute reference solution with 7-digits
+          ScalarType max_val = fabs(1/sqrt<ScalarType>(u1.x[i]));
+          ScalarType rel_err = err / max_val;
+          SCTL_ASSERT(rel_err < (pow<22,ScalarType>((ScalarType)0.5)));
         }
       }
 

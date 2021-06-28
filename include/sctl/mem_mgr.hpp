@@ -302,6 +302,8 @@ template <class ValueType> ConstIterator<ValueType> Ptr2ConstItr(const void* ptr
 
 #else
 
+// StaticArray - forward declared in common.hpp
+
 template <class ValueType> Iterator<ValueType> Ptr2Itr(void* ptr, Long len) { return (Iterator<ValueType>) ptr; }
 template <class ValueType> ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len) { return (ConstIterator<ValueType>) ptr; }
 

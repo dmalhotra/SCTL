@@ -41,6 +41,16 @@ typedef int64_t Long;  // problem size
 
 #define SCTL_UNUSED(x) (void)(x)  // to ignore unused variable warning.
 
+#if defined(__AVX512__) || defined(__AVX512F__)
+  #define SCTL_ALIGN_BYTES 64
+#elif defined(__AVX__)
+  #define SCTL_ALIGN_BYTES 32
+#elif defined(__SSE__)
+  #define SCTL_ALIGN_BYTES 16
+#else
+  #define SCTL_ALIGN_BYTES 8
+#endif
+
 namespace SCTL_NAMESPACE {
 #ifdef SCTL_MEMDEBUG
 template <class ValueType> class ConstIterator;
