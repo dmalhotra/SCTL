@@ -86,6 +86,8 @@ namespace SCTL_NAMESPACE {
       static constexpr Integer FARFIELD_UPSAMPLE = 1;
       static constexpr Integer COORD_DIM = 3;
 
+      static constexpr Integer ModalUpsample = 1; // toroidal quadrature order is FourierModes+ModalUpsample
+
     public:
 
       /**
@@ -200,7 +202,9 @@ namespace SCTL_NAMESPACE {
       void GetGeom(Vector<Real>* X, Vector<Real>* Xn, Vector<Real>* Xa, Vector<Real>* dX_ds, Vector<Real>* dX_dt, const Vector<Real>& s_param, const Vector<Real>& sin_theta_, const Vector<Real>& cos_theta_, const Long elem_idx) const;
 
       template <class Kernel> Matrix<Real> SelfInteracHelper_(const Kernel& ker, const Long elem_idx, const Real tol) const; // constant radius
-      template <class Kernel> Matrix<Real> SelfInteracHelper(const Kernel& ker, const Long elem_idx, const Real tol) const;
+      template <Integer digits, class Kernel> Matrix<Real> SelfInteracHelper(const Kernel& ker, const Long elem_idx) const;
+
+      template <Integer digits, class Kernel> void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xtrg, const Kernel& ker, const Long elem_idx) const;
 
       Vector<Real> radius, coord, e1;
       Vector<Long> cheb_order, fourier_order, elem_dsp;
@@ -213,4 +217,3 @@ namespace SCTL_NAMESPACE {
 #include SCTL_INCLUDE(slender_element.txx)
 
 #endif //_SCTL_SLENDER_ELEMENT_HPP_
-

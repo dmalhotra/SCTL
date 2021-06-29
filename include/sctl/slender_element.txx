@@ -10,18 +10,47 @@
 namespace SCTL_NAMESPACE {
 
   template <class Real> void LagrangeInterp<Real>::Interpolate(Vector<Real>& wts, const Vector<Real>& src_nds, const Vector<Real>& trg_nds) {
+    static constexpr Integer digits = (Integer)(TypeTraits<Real>::SigBits*0.3010299957);
+    static constexpr Integer VecLen = DefaultVecLen<Real>();
+    using VecType = Vec<Real, VecLen>;
+    VecType vec_one((Real)1);
+
     if (1) {
-      Long Nsrc = src_nds.Dim();
-      Long Ntrg = trg_nds.Dim();
+      const Long Nsrc = src_nds.Dim();
+      const Long Ntrg = trg_nds.Dim();
+      const Long Ntrg_ = (Ntrg/VecLen)*VecLen;
       if (wts.Dim() != Nsrc*Ntrg) wts.ReInit(Nsrc*Ntrg);
 
       Matrix<Real> M(Nsrc, Ntrg, wts.begin(), false);
-      for (Long i1 = 0; i1 < Ntrg; i1++) {
+      for (Long i1 = 0; i1 < Ntrg_; i1+=VecLen) {
+        VecType x = VecType::Load(&trg_nds[i1]);
+        for (Integer j = 0; j < Nsrc; j++) {
+          VecType y(vec_one);
+          VecType src_nds_j(src_nds[j]);
+          for (Integer k = 0; k < j; k++) {
+            VecType src_nds_k(src_nds[k]);
+            VecType src_nds_kj = src_nds_k - src_nds_j;
+            VecType src_nds_kj_inv = approx_rsqrt<digits>(src_nds_kj*src_nds_kj);
+            y *= (src_nds_k - x) * src_nds_kj * src_nds_kj_inv * src_nds_kj_inv;
+          }
+          for (Integer k = j+1; k < Nsrc; k++) {
+            VecType src_nds_k(src_nds[k]);
+            VecType src_nds_kj = src_nds_k - src_nds_j;
+            VecType src_nds_kj_inv = approx_rsqrt<digits>(src_nds_kj*src_nds_kj);
+            y *= (src_nds_k - x) * src_nds_kj * src_nds_kj_inv * src_nds_kj_inv;
+          }
+          y.Store(&M[j][i1]);
+        }
+      }
+      for (Long i1 = Ntrg_; i1 < Ntrg; i1++) {
         Real x = trg_nds[i1];
         for (Integer j = 0; j < Nsrc; j++) {
           Real y = 1;
-          for (Integer k = 0; k < Nsrc; k++) {
-            y *= (j==k ? 1 : (src_nds[k] - x) / (src_nds[k] - src_nds[j]));
+          for (Integer k = 0; k < j; k++) {
+            y *= (src_nds[k] - x) / (src_nds[k] - src_nds[j]);
+          }
+          for (Integer k = j+1; k < Nsrc; k++) {
+            y *= (src_nds[k] - x) / (src_nds[k] - src_nds[j]);
           }
           M[j][i1] = y;
         }
@@ -981,10 +1010,10 @@ namespace SCTL_NAMESPACE {
     }
     return quad_rule_lst;
   }
-  template <class RealType> static Complex<RealType> ToroidalSpecialQuadRule(Matrix<RealType>& Mfourier, Vector<Complex<RealType>>& nds, Vector<RealType>& wts, const Integer Nmodes, const Tensor<RealType,true,3,1>& Xt_X0, const Tensor<RealType,true,3,1>& e1, const Tensor<RealType,true,3,1>& e2, const Tensor<RealType,true,3,1>& e1xe2, RealType R0, Integer digits) {
-    constexpr Integer max_adap_depth = 30; // build quadrature rules for points up to 2*pi*0.5^max_adap_depth from source loop
-    constexpr Integer crossover_adap_depth = 3;
-    constexpr Integer max_digits = 20;
+  template <class RealType, Integer VecLen, Integer ModalUpsample> static Complex<RealType> ToroidalSpecialQuadRule(Matrix<RealType>& Mfourier, Vector<RealType>& nds_cos_theta, Vector<RealType>& nds_sin_theta, Vector<RealType>& wts, const Integer Nmodes, const Tensor<RealType,true,3,1>& Xt_X0, const Tensor<RealType,true,3,1>& e1, const Tensor<RealType,true,3,1>& e2, const Tensor<RealType,true,3,1>& e1xe2, RealType R0, Integer digits) {
+    static constexpr Integer max_adap_depth = 30; // build quadrature rules for points up to 2*pi*0.5^max_adap_depth from source loop
+    static constexpr Integer crossover_adap_depth = 3;
+    static constexpr Integer max_digits = 20;
     SCTL_ASSERT(digits<max_digits);
 
     const RealType XX = dot_prod(Xt_X0, e1);
@@ -1002,69 +1031,88 @@ namespace SCTL_NAMESPACE {
 
     SCTL_ASSERT(Nmodes < 100);
     static Vector<Vector<Matrix<RealType>>> all_fourier_basis(100);
-    static Vector<Vector<Vector<Complex<RealType>>>> all_quad_nds(100);
+    static Vector<Vector<Vector<RealType>>> all_quad_nds_cos_theta(100);
+    static Vector<Vector<Vector<RealType>>> all_quad_nds_sin_theta(100);
     static Vector<Vector<Vector<RealType>>> all_quad_wts(100);
     #pragma omp critical
-    if (all_quad_nds[Nmodes].Dim() == 0) {
+    if (all_quad_wts[Nmodes].Dim() == 0) {
       auto quad_rules = BuildToroidalSpecialQuadRules<RealType>(Nmodes);
       const Long Nrules = quad_rules.Dim()/3;
 
       Vector<Matrix<RealType>> fourier_basis(Nrules);
-      Vector<Vector<Complex<RealType>>> quad_nds(Nrules);
+      Vector<Vector<RealType>> quad_nds_cos_theta(Nrules);
+      Vector<Vector<RealType>> quad_nds_sin_theta(Nrules);
       Vector<Vector<RealType>> quad_wts(Nrules);
-      for (Long i = 0; i < Nrules; i++) { // Set quad_nds, quad_wts, fourier_basis
-        const Integer Nnds = quad_rules[i*3+0].Dim();
+      for (Long i = 0; i < Nrules; i++) { // Set quad_nds_cos_theta, quad_nds_sin_theta, quad_wts, fourier_basis
+        const Integer Nnds_ = quad_rules[i*3+0].Dim();
+        const Integer Nnds = ((Nnds_+VecLen-1)/VecLen)*VecLen;
         Vector<Complex<RealType>> exp_itheta(Nnds);
         Vector<Complex<RealType>> exp_iktheta(Nnds);
-        for (Integer j = 0; j < Nnds; j++) {
-          exp_itheta[j].real = quad_rules[i*3+0][j];
-          exp_itheta[j].imag = quad_rules[i*3+1][j];
+        quad_nds_cos_theta[i].ReInit(Nnds);
+        quad_nds_sin_theta[i].ReInit(Nnds);
+        quad_wts[i].ReInit(Nnds);
+        Integer j;
+        for (j = 0; j < Nnds_; j++) {
+          exp_itheta[j].real = quad_nds_cos_theta[i][j] = quad_rules[i*3+0][j];
+          exp_itheta[j].imag = quad_nds_sin_theta[i][j] = quad_rules[i*3+1][j];
+          quad_wts[i][j] = quad_rules[i*3+2][j];
           exp_iktheta[j].real = 1;
           exp_iktheta[j].imag = 0;
         }
-        quad_wts[i] = quad_rules[i*3+2];
-        quad_nds[i] = exp_itheta;
+        for (; j < Nnds; j++) {
+          exp_itheta[j].real = quad_nds_cos_theta[i][j] = quad_rules[i*3+0][0];
+          exp_itheta[j].imag = quad_nds_sin_theta[i][j] = quad_rules[i*3+1][0];
+          quad_wts[i][j] = 0;
+          exp_iktheta[j].real = 1;
+          exp_iktheta[j].imag = 0;
+        }
 
         auto& Mexp_iktheta = fourier_basis[i];
-        Mexp_iktheta.ReInit(Nmodes*2, Nnds);
-        for (Integer k = 0; k < Nmodes; k++) {
+        Mexp_iktheta.ReInit(Nnds, (Nmodes-ModalUpsample)*2);
+        for (Integer k = 0; k < Nmodes-ModalUpsample; k++) {
           for (Integer j = 0; j < Nnds; j++) {
-            Mexp_iktheta[k*2+0][j] = exp_iktheta[j].real;
-            Mexp_iktheta[k*2+1][j] = exp_iktheta[j].imag;
+            Mexp_iktheta[j][k*2+0] = exp_iktheta[j].real;
+            Mexp_iktheta[j][k*2+1] = exp_iktheta[j].imag;
           }
           exp_iktheta *= exp_itheta;
         }
       }
       all_fourier_basis[Nmodes].Swap(fourier_basis);
+      all_quad_nds_cos_theta[Nmodes].Swap(quad_nds_cos_theta);
+      all_quad_nds_sin_theta[Nmodes].Swap(quad_nds_sin_theta);
       all_quad_wts[Nmodes].Swap(quad_wts);
-      all_quad_nds[Nmodes].Swap(quad_nds);
     }
 
-    { // Set Mfourier, nds, wts
+    { // Set Mfourier, nds_cos_theta, nds_sin_theta, wts
       const Long quad_idx = adap_depth*max_digits+digits;
       const auto& Mfourier0 = all_fourier_basis[Nmodes][quad_idx];
-      const auto& nds0 = all_quad_nds[Nmodes][quad_idx];
+      const auto& nds0_cos_theta = all_quad_nds_cos_theta[Nmodes][quad_idx];
+      const auto& nds0_sin_theta = all_quad_nds_sin_theta[Nmodes][quad_idx];
       const auto& wts0 = all_quad_wts[Nmodes][quad_idx];
       const Long N = wts0.Dim();
 
       Mfourier.ReInit(Mfourier0.Dim(0), Mfourier0.Dim(1), (Iterator<RealType>)Mfourier0.begin(), false);
-      nds.ReInit(N, (Iterator<Complex<RealType>>)nds0.begin(), false);
+      nds_cos_theta.ReInit(N, (Iterator<RealType>)nds0_cos_theta.begin(), false);
+      nds_sin_theta.ReInit(N, (Iterator<RealType>)nds0_sin_theta.begin(), false);
       wts.ReInit(N, (Iterator<RealType>)wts0.begin(), false);
 
       if (adap_depth >= crossover_adap_depth) return exp_theta0;
       else return Complex<RealType>(1,0);
     }
   }
-  template <class RealType, class Kernel> static void toroidal_greens_fn_batched(Matrix<RealType>& M, const Tensor<RealType,true,3,1>& y_trg, const Matrix<RealType>& x_src, const Matrix<RealType>& dx_src, const Matrix<RealType>& d2x_src, const Matrix<RealType>& r_src, const Matrix<RealType>& dr_src, const Matrix<RealType>& e1_src, const Matrix<RealType>& e2_src, const Matrix<RealType>& de1_src, const Matrix<RealType>& de2_src, const Kernel& ker, const Integer FourierModes, const Integer digits) {
-    constexpr Integer KDIM0 = Kernel::SrcDim();
-    constexpr Integer KDIM1 = Kernel::TrgDim();
-    constexpr Integer Nbuff = 10000; // TODO
+  template <Integer digits, Integer ModalUpsample, class RealType, class Kernel> static void toroidal_greens_fn_batched(Matrix<RealType>& M, const Tensor<RealType,true,3,1>& y_trg, const Matrix<RealType>& x_src, const Matrix<RealType>& dx_src, const Matrix<RealType>& d2x_src, const Matrix<RealType>& r_src, const Matrix<RealType>& dr_src, const Matrix<RealType>& e1_src, const Matrix<RealType>& e2_src, const Matrix<RealType>& de1_src, const Matrix<RealType>& de2_src, const Kernel& ker, const Integer FourierModes) {
+    static constexpr Integer VecLen = DefaultVecLen<RealType>();
+    using VecType = Vec<RealType, VecLen>;
+
+    static constexpr Integer KDIM0 = Kernel::SrcDim();
+    static constexpr Integer KDIM1 = Kernel::TrgDim();
+    static constexpr Integer Nbuff = 10000; // TODO
 
     constexpr Integer COORD_DIM = 3;
     using Vec3 = Tensor<RealType,true,COORD_DIM,1>;
 
     const Long BatchSize = M.Dim(0);
-    SCTL_ASSERT(M.Dim(1) == FourierModes*2*KDIM0 * KDIM1);
+    SCTL_ASSERT(M.Dim(1) == KDIM0*KDIM1*FourierModes*2);
     SCTL_ASSERT(  x_src.Dim(1) == BatchSize &&   x_src.Dim(0) == COORD_DIM);
     SCTL_ASSERT( dx_src.Dim(1) == BatchSize &&  dx_src.Dim(0) == COORD_DIM);
     SCTL_ASSERT(d2x_src.Dim(1) == BatchSize && d2x_src.Dim(0) == COORD_DIM);
@@ -1089,75 +1137,93 @@ namespace SCTL_NAMESPACE {
         }
       }
 
-      auto toroidal_greens_fn = [&ker,&FourierModes,&digits](Matrix<RealType>& M, const Vec3& Xt, const Vec3& x, const Vec3& dx, const Vec3& d2x, const Vec3& e1, const Vec3& e2, const Vec3& de1, const Vec3& de2, const RealType r, const RealType dr) {
-        SCTL_ASSERT(M.Dim(0) == FourierModes*2*KDIM0);
-        SCTL_ASSERT(M.Dim(1) ==                KDIM1);
+      auto toroidal_greens_fn = [&ker](Matrix<RealType>& M, const Vec3& Xt, const Vec3& x, const Vec3& dx, const Vec3& d2x, const Vec3& e1, const Vec3& e2, const Vec3& de1, const Vec3& de2, const RealType r, const RealType dr, const Integer FourierModes) {
+        SCTL_ASSERT(M.Dim(0) ==    KDIM0*KDIM1);
+        SCTL_ASSERT(M.Dim(1) == FourierModes*2);
 
         Matrix<RealType> Mexp_iktheta;
-        Vector<Complex<RealType>> nds;
-        Vector<RealType> wts;
-        const auto exp_theta = ToroidalSpecialQuadRule<RealType>(Mexp_iktheta, nds, wts, FourierModes+1, Xt-x, e1, e2, cross_prod(e1,e2), r, digits);
+        Vector<RealType> nds_cos_theta, nds_sin_theta, wts;
+        const auto exp_theta = ToroidalSpecialQuadRule<RealType,VecLen,ModalUpsample>(Mexp_iktheta, nds_cos_theta, nds_sin_theta, wts, FourierModes+ModalUpsample, Xt-x, e1, e2, cross_prod(e1,e2), r, digits);
         const Long Nnds = wts.Dim();
         SCTL_ASSERT(Nnds < Nbuff);
 
-        StaticArray<RealType,(COORD_DIM*2+1)*Nbuff> mem_buff1;
-        Vector<RealType> y(Nnds*COORD_DIM, mem_buff1+0*COORD_DIM*Nbuff, false);
-        Vector<RealType> n(Nnds*COORD_DIM, mem_buff1+1*COORD_DIM*Nbuff, false);
-        Vector<RealType> da(         Nnds, mem_buff1+2*COORD_DIM*Nbuff, false);
-        for (Integer j = 0; j < Nnds; j++) { // Set x, n, da
-          auto nds_ = nds[j] * exp_theta; // rotate
-          RealType cost = nds_.real;
-          RealType sint = nds_.imag;
+        { // Set M
+          const VecType exp_theta_real(exp_theta.real);
+          const VecType exp_theta_imag(exp_theta.imag);
+          const VecType vec_dx[3] = {VecType(dx(0,0)), VecType(dx(1,0)), VecType(dx(2,0))};
 
-          Vec3 dy_ds = dx + e1*(dr*cost) + e2*(dr*sint) + de1*(r*cost) + de2*(r*sint);
-          Vec3 dy_dt = e1*(-r*sint) + e2*(r*cost);
+          const VecType vec_dy0[3] = {x(0,0)-Xt(0,0), x(1,0)-Xt(1,0), x(2,0)-Xt(2,0)};
+          const VecType vec_dy1[3] = {e1(0,0)*r, e1(1,0)*r, e1(2,0)*r};
+          const VecType vec_dy2[3] = {e2(0,0)*r, e2(1,0)*r, e2(2,0)*r};
 
-          Vec3 y_ = x + e1*(r*cost) + e2*(r*sint);
-          Vec3 n_ = cross_prod(dy_ds, dy_dt);
-          RealType da_ = sqrt<RealType>(dot_prod(n_,n_));
-          n_ = n_ * (1/da_);
+          const VecType vec_dy_ds1[3] = {e1(0,0)*dr+de1(0,0)*r, e1(1,0)*dr+de1(1,0)*r, e1(2,0)*dr+de1(2,0)*r};
+          const VecType vec_dy_ds2[3] = {e2(0,0)*dr+de2(0,0)*r, e2(1,0)*dr+de2(1,0)*r, e2(2,0)*dr+de2(2,0)*r};
+          const VecType vec_dy_dt1[3] = {e2(0,0)*r, e2(1,0)*r, e2(2,0)*r};
+          const VecType vec_dy_dt2[3] = {e1(0,0)*r, e1(1,0)*r, e1(2,0)*r};
 
-          for (Integer k = 0; k < COORD_DIM; k++) {
-            y[j*COORD_DIM+k] = y_(k,0);
-            n[j*COORD_DIM+k] = n_(k,0);
-          }
-          da[j] = da_;
-        }
+          StaticArray<RealType,KDIM0*KDIM1*Nbuff> mem_buff;
+          Matrix<RealType> Mker_da(KDIM0*KDIM1, Nnds, mem_buff, false);
+          for (Integer j = 0; j < Nnds; j+=VecLen) { // Set Mker_da
+            VecType dy[3], n[3], da;
+            { // Set dy, n, da
+              VecType nds_cos_theta_j = VecType::LoadAligned(&nds_cos_theta[j]);
+              VecType nds_sin_theta_j = VecType::LoadAligned(&nds_sin_theta[j]);
+              VecType cost = nds_cos_theta_j*exp_theta_real - nds_sin_theta_j*exp_theta_imag;
+              VecType sint = nds_cos_theta_j*exp_theta_imag + nds_sin_theta_j*exp_theta_real;
 
-        StaticArray<RealType,KDIM0*KDIM1*Nbuff> mem_buff2;
-        Matrix<RealType> Mker(Nnds*KDIM0, KDIM1, mem_buff2, false);
-        ker.KernelMatrix(Mker, Vector<RealType>(COORD_DIM,(Iterator<RealType>)Xt.begin(),false), y, n);
+              dy[0] = vec_dy0[0] + vec_dy1[0]*cost + vec_dy2[0]*sint;
+              dy[1] = vec_dy0[1] + vec_dy1[1]*cost + vec_dy2[1]*sint;
+              dy[2] = vec_dy0[2] + vec_dy1[2]*cost + vec_dy2[2]*sint;
 
-        { // Set M <-- Mexp_iktheta * diag(wts*da) * Mker
-          Matrix<RealType> Mker_da(Nnds, KDIM0*KDIM1, Mker.begin(), false);
-          for (Integer j = 0; j < Nnds; j++) {
-            for (Integer k = 0; k < KDIM0*KDIM1; k++) {
-              Mker_da[j][k] *= da[j] * wts[j];
+              VecType dy_ds[3], dy_dt[3];
+              dy_ds[0] = vec_dx[0] + vec_dy_ds1[0]*cost + vec_dy_ds2[0]*sint;
+              dy_ds[1] = vec_dx[1] + vec_dy_ds1[1]*cost + vec_dy_ds2[1]*sint;
+              dy_ds[2] = vec_dx[2] + vec_dy_ds1[2]*cost + vec_dy_ds2[2]*sint;
+              dy_dt[0] = vec_dy_dt1[0]*cost - vec_dy_dt2[0]*sint;
+              dy_dt[1] = vec_dy_dt1[1]*cost - vec_dy_dt2[1]*sint;
+              dy_dt[2] = vec_dy_dt1[2]*cost - vec_dy_dt2[2]*sint;
+              n[0] = dy_ds[1] * dy_dt[2] - dy_ds[2] * dy_dt[1];
+              n[1] = dy_ds[2] * dy_dt[0] - dy_ds[0] * dy_dt[2];
+              n[2] = dy_ds[0] * dy_dt[1] - dy_ds[1] * dy_dt[0];
+
+              VecType da2 = n[0]*n[0] + n[1]*n[1] + n[2]*n[2];
+              VecType inv_da = approx_rsqrt<digits>(da2);
+              da = da2 * inv_da;
+
+              n[0] = n[0] * inv_da;
+              n[1] = n[1] * inv_da;
+              n[2] = n[2] * inv_da;
+            }
+
+            VecType Mker_da_[KDIM0][KDIM1];
+            ker.template uKerMatrix<VecType, digits>(Mker_da_, dy, n, ker.GetCtxPtr());
+            VecType da_wts = VecType::LoadAligned(&wts[j]) * da;
+            for (Integer k0 = 0; k0 < KDIM0; k0++) {
+              for (Integer k1 = 0; k1 < KDIM1; k1++) {
+                (Mker_da_[k0][k1]*da_wts).StoreAligned(&Mker_da[k0*KDIM1+k1][j]);
+              }
             }
           }
-
-          const Matrix<RealType> Mexp_iktheta_(FourierModes*2, Nnds, Mexp_iktheta.begin(), false);
-          Matrix<RealType> M_(FourierModes*2, KDIM0*KDIM1, M.begin(), false);
-          Matrix<RealType>::GEMM(M_, Mexp_iktheta_, Mker_da);
+          Matrix<RealType>::GEMM(M, Mker_da, Mexp_iktheta);
 
           Complex<RealType> exp_iktheta(1,0);
           for (Integer j = 0; j < FourierModes; j++) {
             for (Integer k = 0; k < KDIM0*KDIM1; k++) {
-              Complex<RealType> Mjk(M_[j*2+0][k],M_[j*2+1][k]);
+              Complex<RealType> Mjk(M[k][j*2+0],M[k][j*2+1]);
               Mjk *= exp_iktheta;
-              M_[j*2+0][k] = Mjk.real;
-              M_[j*2+1][k] = Mjk.imag;
+              M[k][j*2+0] = Mjk.real;
+              M[k][j*2+1] = Mjk.imag;
             }
             exp_iktheta *= exp_theta;
           }
         }
       };
-      Matrix<RealType> M_toroidal_greens_fn(FourierModes*2*KDIM0, KDIM1, M[ii], false);
-      toroidal_greens_fn(M_toroidal_greens_fn, y_trg, x, dx, d2x, e1, e2, de1, de2, r, dr);
+      Matrix<RealType> M_toroidal_greens_fn(KDIM0*KDIM1, FourierModes*2, M[ii], false);
+      toroidal_greens_fn(M_toroidal_greens_fn, y_trg, x, dx, d2x, e1, e2, de1, de2, r, dr, FourierModes);
     }
   }
 
-  template <class ValueType, class Kernel> static void SpecialQuadBuildBasisMatrix(Matrix<ValueType>& M, Vector<ValueType>& quad_nds, Vector<ValueType>& quad_wts, const Integer Ncheb, const Integer FourierModes, const Integer max_digits, const ValueType elem_length, const Integer RefLevels, const Kernel& ker) {
+  template <Integer ModalUpsample, class ValueType, class Kernel> static void SpecialQuadBuildBasisMatrix(Matrix<ValueType>& M, Vector<ValueType>& quad_nds, Vector<ValueType>& quad_wts, const Integer Ncheb, const Integer FourierModes, const Integer max_digits, const ValueType elem_length, const Integer RefLevels, const Kernel& ker) {
     // TODO: cleanup
     constexpr Integer COORD_DIM = 3;
     using Vec3 = Tensor<ValueType,true,COORD_DIM,1>;
@@ -1278,19 +1344,19 @@ namespace SCTL_NAMESPACE {
       }
     }
 
-    Matrix<ValueType> M_tor(quad_nds.Dim(), FourierModes*2*KDIM0*KDIM1);
-    toroidal_greens_fn_batched(M_tor, y_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes, max_digits);
+    Matrix<ValueType> M_tor(quad_nds.Dim(), KDIM0*KDIM1*FourierModes*2);
+    toroidal_greens_fn_batched<(Integer)(TypeTraits<ValueType>::SigBits*0.3010299957),ModalUpsample>(M_tor, y_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes);
 
     M.ReInit(quad_nds.Dim(), Ncheb*FourierModes*2*KDIM0*KDIM1);
     for (Long i = 0; i < quad_nds.Dim(); i++) {
       for (Long j = 0; j < Ncheb; j++) {
-        for (Long k = 0; k < FourierModes*2*KDIM0*KDIM1; k++) {
-          M[i][j*FourierModes*2*KDIM0*KDIM1+k] = Minterp_quad_nds[j][i] * M_tor[i][k];
+        for (Long k = 0; k < KDIM0*KDIM1*FourierModes*2; k++) {
+          M[i][j*KDIM0*KDIM1*FourierModes*2+k] = Minterp_quad_nds[j][i] * M_tor[i][k];
         }
       }
     }
   }
-  template <class ValueType> static Vector<Vector<ValueType>> BuildSpecialQuadRules(const Integer Ncheb, const Integer FourierModes, const ValueType elem_length) {
+  template <Integer ModalUpsample, class ValueType> static Vector<Vector<ValueType>> BuildSpecialQuadRules(const Integer Ncheb, const Integer FourierModes, const ValueType elem_length) {
     constexpr Integer Nlen = 10; // number of length samples in [elem_length/sqrt(2), elem_length*sqrt(2)]
     constexpr Integer max_digits = 19;
     Integer depth = (Integer)(log<ValueType>(elem_length)/log<ValueType>(2)+4);
@@ -1306,8 +1372,8 @@ namespace SCTL_NAMESPACE {
       #pragma omp parallel for schedule(static)
       for (Long k = 0; k < Nlen; k++) {
         ValueType length = elem_length/sqrt<ValueType>(2.0)*k/(Nlen-1) + elem_length*sqrt<ValueType>(2.0)*(Nlen-k-1)/(Nlen-1);
-        SpecialQuadBuildBasisMatrix(Msl[k], nds_[k], wts_[k], Ncheb,FourierModes, max_digits, length, depth, laplace_sl);
-        SpecialQuadBuildBasisMatrix(Mdl[k], nds_[k], wts_[k], Ncheb,FourierModes, max_digits, length, depth, laplace_dl);
+        SpecialQuadBuildBasisMatrix<ModalUpsample>(Msl[k], nds_[k], wts_[k], Ncheb,FourierModes, max_digits, length, depth, laplace_sl);
+        SpecialQuadBuildBasisMatrix<ModalUpsample>(Mdl[k], nds_[k], wts_[k], Ncheb,FourierModes, max_digits, length, depth, laplace_dl);
       }
       nds = nds_[0];
       wts = wts_[0];
@@ -1353,7 +1419,7 @@ namespace SCTL_NAMESPACE {
     }
     return nds_wts;
   }
-  template <class Real, bool adap_quad=false> static void SpecialQuadRule(Vector<Real>& nds, Vector<Real>& wts, const Integer ChebOrder, const Real s, const Real elem_radius, const Real elem_length, const Integer digits) {
+  template <Integer ModalUpsample, class Real, bool adap_quad=false> static void SpecialQuadRule(Vector<Real>& nds, Vector<Real>& wts, const Integer ChebOrder, const Real s, const Real elem_radius, const Real elem_length, const Integer digits) {
     constexpr Integer max_adap_depth = 15; // TODO
     constexpr Integer MaxFourierModes = 8; // TODO
     constexpr Integer MaxChebOrder = 100;
@@ -1373,7 +1439,7 @@ namespace SCTL_NAMESPACE {
           data.ReInit(max_adap_depth*max_digits*2);
           ValueType length = 960.0; // TODO
           for (Integer i = 0; i < max_adap_depth; i++) {
-            auto nds_wts = BuildSpecialQuadRules<ValueType>(ChebOrder, MaxFourierModes, length);
+            auto nds_wts = BuildSpecialQuadRules<ModalUpsample,ValueType>(ChebOrder, MaxFourierModes, length);
             for (Long j = 0; j < max_digits; j++) {
               data[(i*max_digits+j)*2+0] = nds_wts[j*2+0];
               data[(i*max_digits+j)*2+1] = nds_wts[j*2+1];
@@ -1736,7 +1802,7 @@ namespace SCTL_NAMESPACE {
 
     Matrix<Real> Mtmp(ChebOrder*FARFIELD_UPSAMPLE, FourierOrder*density_dof*N);
     const Matrix<Real> Min_(ChebOrder*FARFIELD_UPSAMPLE, FourierOrder*FARFIELD_UPSAMPLE*density_dof*N, (Iterator<Real>)Min.begin(), false);
-    { // Appyl Mfourier
+    if (FARFIELD_UPSAMPLE != 1) { // Appyl Mfourier // TODO: optimize
       const auto& Mfourier_ = Mfourier[FourierOrder];
       for (Long l = 0; l < ChebOrder*FARFIELD_UPSAMPLE; l++) {
         for (Long j0 = 0; j0 < FourierOrder; j0++) {
@@ -1749,6 +1815,8 @@ namespace SCTL_NAMESPACE {
           }
         }
       }
+    }else{
+      Mtmp.ReInit(ChebOrder*FARFIELD_UPSAMPLE, FourierOrder*density_dof*N, (Iterator<Real>)Min.begin(), false);
     }
 
     Matrix<Real> Mout_(ChebOrder, FourierOrder*density_dof*N, Mout.begin(), false);
@@ -1761,27 +1829,61 @@ namespace SCTL_NAMESPACE {
 
     if (M_lst.Dim() != Nelem) M_lst.ReInit(Nelem);
     for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) {
-      M_lst[elem_idx] = elem_lst.template SelfInteracHelper<Kernel>(ker, elem_idx, tol) * ker.template ScaleFactor<Real>();
+      if      (tol <= pow<15,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper<15,Kernel>(ker, elem_idx);
+      else if (tol <= pow<14,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper<14,Kernel>(ker, elem_idx);
+      else if (tol <= pow<13,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper<13,Kernel>(ker, elem_idx);
+      else if (tol <= pow<12,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper<12,Kernel>(ker, elem_idx);
+      else if (tol <= pow<11,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper<11,Kernel>(ker, elem_idx);
+      else if (tol <= pow<10,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper<10,Kernel>(ker, elem_idx);
+      else if (tol <= pow< 9,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper< 9,Kernel>(ker, elem_idx);
+      else if (tol <= pow< 8,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper< 8,Kernel>(ker, elem_idx);
+      else if (tol <= pow< 7,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper< 7,Kernel>(ker, elem_idx);
+      else if (tol <= pow< 6,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper< 6,Kernel>(ker, elem_idx);
+      else if (tol <= pow< 5,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper< 5,Kernel>(ker, elem_idx);
+      else if (tol <= pow< 4,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper< 4,Kernel>(ker, elem_idx);
+      else if (tol <= pow< 3,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper< 3,Kernel>(ker, elem_idx);
+      else if (tol <= pow< 2,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper< 2,Kernel>(ker, elem_idx);
+      else if (tol <= pow< 1,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper< 1,Kernel>(ker, elem_idx);
+      else                                     M_lst[elem_idx] = elem_lst.template SelfInteracHelper< 0,Kernel>(ker, elem_idx);
     }
   }
   template <class Real> template <class Kernel> void SlenderElemList<Real>::NearInterac(Matrix<Real>& M, const Vector<Real>& Xtrg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
-    using Vec3 = Tensor<Real,true,COORD_DIM,1>;
-    constexpr Integer KDIM0 = Kernel::SrcDim();
-    constexpr Integer KDIM1 = Kernel::TrgDim();
-
     const auto& elem_lst = *dynamic_cast<const SlenderElemList*>(self);
-    const Integer ChebOrder = elem_lst.cheb_order[elem_idx];
-    const Integer FourierOrder = elem_lst.fourier_order[elem_idx];
+    if      (tol <= pow<15,Real>((Real)0.1)) elem_lst.template NearInteracHelper<15,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow<14,Real>((Real)0.1)) elem_lst.template NearInteracHelper<14,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow<13,Real>((Real)0.1)) elem_lst.template NearInteracHelper<13,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow<12,Real>((Real)0.1)) elem_lst.template NearInteracHelper<12,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow<11,Real>((Real)0.1)) elem_lst.template NearInteracHelper<11,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow<10,Real>((Real)0.1)) elem_lst.template NearInteracHelper<10,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow< 9,Real>((Real)0.1)) elem_lst.template NearInteracHelper< 9,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow< 8,Real>((Real)0.1)) elem_lst.template NearInteracHelper< 8,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow< 7,Real>((Real)0.1)) elem_lst.template NearInteracHelper< 7,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow< 6,Real>((Real)0.1)) elem_lst.template NearInteracHelper< 6,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow< 5,Real>((Real)0.1)) elem_lst.template NearInteracHelper< 5,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow< 4,Real>((Real)0.1)) elem_lst.template NearInteracHelper< 4,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow< 3,Real>((Real)0.1)) elem_lst.template NearInteracHelper< 3,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow< 2,Real>((Real)0.1)) elem_lst.template NearInteracHelper< 2,Kernel>(M, Xtrg, ker, elem_idx);
+    else if (tol <= pow< 1,Real>((Real)0.1)) elem_lst.template NearInteracHelper< 1,Kernel>(M, Xtrg, ker, elem_idx);
+    else                                     elem_lst.template NearInteracHelper< 0,Kernel>(M, Xtrg, ker, elem_idx);
+  }
+  template <class Real> template <Integer digits, class Kernel> void SlenderElemList<Real>::NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xtrg, const Kernel& ker, const Long elem_idx) const {
+    using Vec3 = Tensor<Real,true,COORD_DIM,1>;
+    static constexpr Integer KDIM0 = Kernel::SrcDim();
+    static constexpr Integer KDIM1 = Kernel::TrgDim();
+    //const Integer digits = (Integer)(log(tol)/log(0.1)+0.5);
+    static constexpr Real tol = pow<digits,Real>((Real)0.1);
+
+    const Integer ChebOrder = cheb_order[elem_idx];
+    const Integer FourierOrder = fourier_order[elem_idx];
     const Integer FourierModes = FourierOrder/2+1;
-    const Integer digits = (Integer)(log(tol)/log(0.1)+0.5);
     const Matrix<Real> M_fourier_inv = fourier_matrix_inv_transpose<Real>(FourierOrder,FourierModes);
 
-    const Vector<Real>  coord(COORD_DIM*ChebOrder,(Iterator<Real>)elem_lst. coord.begin()+COORD_DIM*elem_lst.elem_dsp[elem_idx],false);
-    const Vector<Real>     dx(COORD_DIM*ChebOrder,(Iterator<Real>)elem_lst.    dx.begin()+COORD_DIM*elem_lst.elem_dsp[elem_idx],false);
-    const Vector<Real>    d2x(COORD_DIM*ChebOrder,(Iterator<Real>)elem_lst.   d2x.begin()+COORD_DIM*elem_lst.elem_dsp[elem_idx],false);
-    const Vector<Real> radius(        1*ChebOrder,(Iterator<Real>)elem_lst.radius.begin()+          elem_lst.elem_dsp[elem_idx],false);
-    const Vector<Real>     dr(        1*ChebOrder,(Iterator<Real>)elem_lst.    dr.begin()+          elem_lst.elem_dsp[elem_idx],false);
-    const Vector<Real>     e1(COORD_DIM*ChebOrder,(Iterator<Real>)elem_lst.    e1.begin()+COORD_DIM*elem_lst.elem_dsp[elem_idx],false);
+    const Vector<Real>  coord(COORD_DIM*ChebOrder,(Iterator<Real>)this-> coord.begin()+COORD_DIM*elem_dsp[elem_idx],false);
+    const Vector<Real>     dx(COORD_DIM*ChebOrder,(Iterator<Real>)this->    dx.begin()+COORD_DIM*elem_dsp[elem_idx],false);
+    const Vector<Real>    d2x(COORD_DIM*ChebOrder,(Iterator<Real>)this->   d2x.begin()+COORD_DIM*elem_dsp[elem_idx],false);
+    const Vector<Real> radius(        1*ChebOrder,(Iterator<Real>)this->radius.begin()+          elem_dsp[elem_idx],false);
+    const Vector<Real>     dr(        1*ChebOrder,(Iterator<Real>)this->    dr.begin()+          elem_dsp[elem_idx],false);
+    const Vector<Real>     e1(COORD_DIM*ChebOrder,(Iterator<Real>)this->    e1.begin()+COORD_DIM*elem_dsp[elem_idx],false);
 
     const Long Ntrg = Xtrg.Dim() / COORD_DIM;
     if (M.Dim(0) != ChebOrder*FourierOrder*KDIM0 || M.Dim(1) != Ntrg*KDIM1) {
@@ -1790,11 +1892,10 @@ namespace SCTL_NAMESPACE {
 
     for (Long i = 0; i < Ntrg; i++) {
       const Vec3 Xt((Iterator<Real>)Xtrg.begin()+i*COORD_DIM);
-
-      Matrix<Real> Mt(KDIM1, KDIM0*ChebOrder*FourierModes*2);
-      { // Set Mt
+      Matrix<Real> M_modal(ChebOrder, KDIM0*KDIM1*FourierModes*2);
+      { // Set M_modal
         Vector<Real> quad_nds, quad_wts; // Quadrature rule in s
-        auto adap_quad_rule = [&tol,&ChebOrder,&radius,&coord,&dx](Vector<Real>& quad_nds, Vector<Real>& quad_wts, const Vec3& x_trg) {
+        auto adap_quad_rule = [&ChebOrder,&radius,&coord,&dx](Vector<Real>& quad_nds, Vector<Real>& quad_wts, const Vec3& x_trg) {
           const Long LegQuadOrder = 1*ChebOrder;
           const auto& leg_nds = LegendreQuadRule<Real>(LegQuadOrder).first;
           const auto& leg_wts = LegendreQuadRule<Real>(LegQuadOrder).second;
@@ -1980,39 +2081,31 @@ namespace SCTL_NAMESPACE {
         }
 
         const Vec3 y_trg = x_trg;
-        Matrix<Real> M_tor(quad_nds.Dim(), FourierModes*2*KDIM0*KDIM1); // TODO: pre-allocate
-        toroidal_greens_fn_batched(M_tor, y_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes, digits);
+        Matrix<Real> M_tor(quad_nds.Dim(), KDIM0*KDIM1*FourierModes*2); // TODO: pre-allocate
+        toroidal_greens_fn_batched<digits,ModalUpsample>(M_tor, y_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes);
 
         for (Long ii = 0; ii < M_tor.Dim(0); ii++) {
-          for (Long jj = 0; jj < FourierModes*2*KDIM0*KDIM1; jj++) {
+          for (Long jj = 0; jj < M_tor.Dim(1); jj++) {
             M_tor[ii][jj] *= quad_wts[ii];
           }
         }
-        Matrix<Real> M_(ChebOrder, FourierModes*2*KDIM0*KDIM1); // TODO: pre-allocate
-        Matrix<Real>::GEMM(M_, Minterp_quad_nds, M_tor);
-
-        for (Long ii = 0; ii < ChebOrder*FourierModes*2; ii++) { // Mt <-- M_
-          for (Long k0 = 0; k0 < KDIM0; k0++) {
-            for (Long k1 = 0; k1 < KDIM1; k1++) {
-              Mt[k1][k0*ChebOrder*FourierModes*2+ii] = M_[0][(ii*KDIM0+k0)*KDIM1+k1];
-            }
-          }
-        }
+        Matrix<Real>::GEMM(M_modal, Minterp_quad_nds, M_tor);
       }
 
-      Matrix<Real> Mt_(KDIM1, KDIM0*ChebOrder*FourierOrder);
-      { // Set Mt_
-        Matrix<Real> M_nodal(KDIM1*KDIM0*ChebOrder, FourierOrder, Mt_.begin(), false);
-        Matrix<Real> M_modal(KDIM1*KDIM0*ChebOrder, FourierModes*2, Mt.begin(), false);
-        Matrix<Real>::GEMM(M_nodal, M_modal, M_fourier_inv);
+      Matrix<Real> M_nodal(ChebOrder, KDIM0*KDIM1*FourierOrder);
+      { // Set M_nodal
+        Matrix<Real> M_nodal_(ChebOrder*KDIM0*KDIM1, FourierOrder, M_nodal.begin(), false);
+        const Matrix<Real> M_modal_(ChebOrder*KDIM0*KDIM1, FourierModes*2, M_modal.begin(), false);
+        Matrix<Real>::GEMM(M_nodal_, M_modal_, M_fourier_inv);
       }
 
       { // Set M
-        const Integer Nnds = ChebOrder*FourierOrder;
-        for (Integer i0 = 0; i0 < Nnds; i0++) {
-          for (Integer i1 = 0; i1 < KDIM0; i1++) {
-            for (Integer j1 = 0; j1 < KDIM1; j1++) {
-              M[i0*KDIM0+i1][i*KDIM1+j1] = Mt_[j1][i1*Nnds+i0] * ker.template ScaleFactor<Real>();
+        for (Integer i0 = 0; i0 < ChebOrder; i0++) {
+          for (Integer i1 = 0; i1 < FourierOrder; i1++) {
+            for (Integer k0 = 0; k0 < KDIM0; k0++) {
+              for (Integer k1 = 0; k1 < KDIM1; k1++) {
+                M[(i0*FourierOrder+i1)*KDIM0+k0][i*KDIM1+k1] = M_nodal[i0][(k0*KDIM1+k1)*FourierOrder+i1] * ker.template ScaleFactor<Real>();
+              }
             }
           }
         }
@@ -2527,7 +2620,7 @@ namespace SCTL_NAMESPACE {
       }
 
       Vector<Real> quad_nds, quad_wts; // Quadrature rule in s
-      SpecialQuadRule(quad_nds, quad_wts, ChebOrder, s_trg, r_trg, sqrt<Real>(dot_prod(dx_trg, dx_trg)), digits);
+      SpecialQuadRule<ModalUpsample>(quad_nds, quad_wts, ChebOrder, s_trg, r_trg, sqrt<Real>(dot_prod(dx_trg, dx_trg)), digits);
 
       Matrix<Real> Minterp_quad_nds;
       { // Set Minterp_quad_nds
@@ -2692,7 +2785,7 @@ namespace SCTL_NAMESPACE {
         for (Integer i1 = 0; i1 < KDIM0; i1++) {
           for (Integer j0 = 0; j0 < Nnds; j0++) {
             for (Integer j1 = 0; j1 < KDIM1; j1++) {
-              M[i0*KDIM0+i1][j0*KDIM1+j1] = Mt_[j1*Nnds+j0][i1*Nnds+i0];
+              M[i0*KDIM0+i1][j0*KDIM1+j1] = Mt_[j1*Nnds+j0][i1*Nnds+i0] * ker.template ScaleFactor<Real>();
             }
           }
         }
@@ -2700,15 +2793,15 @@ namespace SCTL_NAMESPACE {
     }
     return M;
   }
-  template <class Real> template <class Kernel> Matrix<Real> SlenderElemList<Real>::SelfInteracHelper(const Kernel& ker, const Long elem_idx, const Real tol) const {
+  template <class Real> template <Integer digits, class Kernel> Matrix<Real> SlenderElemList<Real>::SelfInteracHelper(const Kernel& ker, const Long elem_idx) const {
     using Vec3 = Tensor<Real,true,COORD_DIM,1>;
-    constexpr Integer KDIM0 = Kernel::SrcDim();
-    constexpr Integer KDIM1 = Kernel::TrgDim();
+    static constexpr Integer KDIM0 = Kernel::SrcDim();
+    static constexpr Integer KDIM1 = Kernel::TrgDim();
+    //const Integer digits = (Integer)(log(tol)/log(0.1)+0.5);
 
     const Integer ChebOrder = cheb_order[elem_idx];
     const Integer FourierOrder = fourier_order[elem_idx];
     const Integer FourierModes = FourierOrder/2+1;
-    const Integer digits = (Integer)(log(tol)/log(0.1)+0.5);
     const Matrix<Real> M_fourier_inv = fourier_matrix_inv_transpose<Real>(FourierOrder,FourierModes);
 
     const Vector<Real>  coord(COORD_DIM*ChebOrder,(Iterator<Real>)this-> coord.begin()+COORD_DIM*elem_dsp[elem_idx],false);
@@ -2721,7 +2814,7 @@ namespace SCTL_NAMESPACE {
     const Real dtheta = 2*const_pi<Real>()/FourierOrder;
     const Complex<Real> exp_dtheta(cos<Real>(dtheta), sin<Real>(dtheta));
 
-    Matrix<Real> Mt(KDIM1*ChebOrder*FourierOrder, KDIM0*ChebOrder*FourierModes*2);
+    Matrix<Real> M_modal(ChebOrder*FourierOrder, ChebOrder*KDIM0*KDIM1*FourierModes*2);
     for (Long i = 0; i < ChebOrder; i++) {
       Real r_trg = radius[i];
       Real s_trg = CenterlineNodes(ChebOrder)[i];
@@ -2741,7 +2834,7 @@ namespace SCTL_NAMESPACE {
       }
 
       Vector<Real> quad_nds, quad_wts; // Quadrature rule in s
-      SpecialQuadRule(quad_nds, quad_wts, ChebOrder, s_trg, r_trg, sqrt<Real>(dot_prod(dx_trg, dx_trg)), digits);
+      SpecialQuadRule<ModalUpsample>(quad_nds, quad_wts, ChebOrder, s_trg, r_trg, sqrt<Real>(dot_prod(dx_trg, dx_trg)), digits);
 
       Matrix<Real> Minterp_quad_nds;
       { // Set Minterp_quad_nds
@@ -2805,43 +2898,37 @@ namespace SCTL_NAMESPACE {
       for (Long j = 0; j < FourierOrder; j++) {
         const Vec3 y_trg = x_trg + e1_trg*r_trg*exp_theta_trg.real + e2_trg*r_trg*exp_theta_trg.imag;
 
-        Matrix<Real> M_tor(quad_nds.Dim(), FourierModes*2*KDIM0*KDIM1); // TODO: pre-allocate
-        toroidal_greens_fn_batched(M_tor, y_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes, digits);
+        Matrix<Real> M_tor(quad_nds.Dim(), KDIM0*KDIM1*FourierModes*2); // TODO: pre-allocate
+        toroidal_greens_fn_batched<digits,ModalUpsample>(M_tor, y_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes);
 
         for (Long ii = 0; ii < M_tor.Dim(0); ii++) {
-          for (Long jj = 0; jj < FourierModes*2*KDIM0*KDIM1; jj++) {
+          for (Long jj = 0; jj < M_tor.Dim(1); jj++) {
             M_tor[ii][jj] *= quad_wts[ii];
           }
         }
-        Matrix<Real> M_(ChebOrder, FourierModes*2*KDIM0*KDIM1); // TODO: pre-allocate
-        Matrix<Real>::GEMM(M_, Minterp_quad_nds, M_tor);
-
-        for (Long ii = 0; ii < ChebOrder*FourierModes*2; ii++) { // Mt <-- M_
-          for (Long k0 = 0; k0 < KDIM0; k0++) {
-            for (Long k1 = 0; k1 < KDIM1; k1++) {
-              Mt[(k1*ChebOrder+i)*FourierOrder+j][k0*ChebOrder*FourierModes*2+ii] = M_[0][(ii*KDIM0+k0)*KDIM1+k1];
-            }
-          }
-        }
+        Matrix<Real> M_modal_(ChebOrder, KDIM0*KDIM1*FourierModes*2, M_modal[i*FourierOrder+j], false);
+        Matrix<Real>::GEMM(M_modal_, Minterp_quad_nds, M_tor);
         exp_theta_trg *= exp_dtheta;
       }
     }
 
-    Matrix<Real> Mt_(KDIM1*ChebOrder*FourierOrder, KDIM0*ChebOrder*FourierOrder);
-    { // Set Mt_
-      const Matrix<Real> M_modal(KDIM1*ChebOrder*FourierOrder*KDIM0*ChebOrder, FourierModes*2, Mt.begin(), false);
-      Matrix<Real> M_nodal(KDIM1*ChebOrder*FourierOrder*KDIM0*ChebOrder, FourierOrder, Mt_.begin(), false);
-      Matrix<Real>::GEMM(M_nodal, M_modal, M_fourier_inv);
+    Matrix<Real> M_nodal(ChebOrder*FourierOrder, ChebOrder*KDIM0*KDIM1*FourierOrder);
+    { // Set M_nodal
+      const Matrix<Real> M_modal_(ChebOrder*FourierOrder * ChebOrder*KDIM0*KDIM1, FourierModes*2, M_modal.begin(), false);
+      Matrix<Real> M_nodal_(ChebOrder*FourierOrder * ChebOrder*KDIM0*KDIM1, FourierOrder, M_nodal.begin(), false);
+      Matrix<Real>::GEMM(M_nodal_, M_modal_, M_fourier_inv);
     }
 
     Matrix<Real> M(ChebOrder*FourierOrder*KDIM0, ChebOrder*FourierOrder*KDIM1);
     { // Set M
       const Integer Nnds = ChebOrder*FourierOrder;
-      for (Integer i0 = 0; i0 < Nnds; i0++) {
-        for (Integer i1 = 0; i1 < KDIM0; i1++) {
-          for (Integer j0 = 0; j0 < Nnds; j0++) {
-            for (Integer j1 = 0; j1 < KDIM1; j1++) {
-              M[i0*KDIM0+i1][j0*KDIM1+j1] = Mt_[j1*Nnds+j0][i1*Nnds+i0];
+      for (Integer i = 0; i < Nnds; i++) {
+        for (Integer j0 = 0; j0 < ChebOrder; j0++) {
+          for (Integer k0 = 0; k0 < KDIM0; k0++) {
+            for (Integer k1 = 0; k1 < KDIM1; k1++) {
+              for (Integer j1 = 0; j1 < FourierOrder; j1++) {
+                M[(j0*FourierOrder+j1)*KDIM0+k0][i*KDIM1+k1] = M_nodal[i][((j0*KDIM0+k0)*KDIM1+k1)*FourierOrder+j1] * ker.template ScaleFactor<Real>();
+              }
             }
           }
         }
