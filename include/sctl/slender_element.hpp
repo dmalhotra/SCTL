@@ -182,17 +182,17 @@ namespace SCTL_NAMESPACE {
       /**
        * Write VTU data to file.
        */
-      void WriteVTK(std::string fname, const Vector<Real>& F = Vector<Real>(), const Comm& comm = Comm::Self()) const;
+      void WriteVTK(const std::string& fname, const Vector<Real>& F = Vector<Real>(), const Comm& comm = Comm::Self()) const;
 
       /**
        * Test example for Laplace double-layer kernel.
        */
-      static void test();
+      template <class Kernel> static void test(const Comm& comm = Comm::Self(), Real tol = 1e-10);
 
       /**
        * Test example for Green's identity with Laplace kernel.
        */
-      static void test_greens_identity();
+      static void test_greens_identity(const Comm& comm = Comm::Self(), Real tol = 1e-10);
 
     private:
 

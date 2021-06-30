@@ -847,7 +847,7 @@ namespace SCTL_NAMESPACE {
   template <class RealType> static Vector<Vector<RealType>> BuildToroidalSpecialQuadRules(Integer Nmodes) {
     constexpr Integer COORD_DIM = 3;
     constexpr Integer max_adap_depth = 30; // build quadrature rules for points up to 2*pi*0.5^max_adap_depth from source loop
-    constexpr Integer crossover_adap_depth = 3;
+    constexpr Integer crossover_adap_depth = 2;
     constexpr Integer max_digits = 20;
 
     using ValueType = QuadReal;
@@ -1012,7 +1012,7 @@ namespace SCTL_NAMESPACE {
   }
   template <class RealType, Integer VecLen, Integer ModalUpsample> static Complex<RealType> ToroidalSpecialQuadRule(Matrix<RealType>& Mfourier, Vector<RealType>& nds_cos_theta, Vector<RealType>& nds_sin_theta, Vector<RealType>& wts, const Integer Nmodes, const Tensor<RealType,true,3,1>& Xt_X0, const Tensor<RealType,true,3,1>& e1, const Tensor<RealType,true,3,1>& e2, const Tensor<RealType,true,3,1>& e1xe2, RealType R0, Integer digits) {
     static constexpr Integer max_adap_depth = 30; // build quadrature rules for points up to 2*pi*0.5^max_adap_depth from source loop
-    static constexpr Integer crossover_adap_depth = 3;
+    static constexpr Integer crossover_adap_depth = 2;
     static constexpr Integer max_digits = 20;
     SCTL_ASSERT(digits<max_digits);
 
@@ -1565,7 +1565,8 @@ namespace SCTL_NAMESPACE {
 
     cheb_order = cheb_order0;
     fourier_order = fourier_order0;
-    elem_dsp.ReInit(Nelem); elem_dsp[0] = 0;
+    elem_dsp.ReInit(Nelem);
+    if (Nelem) elem_dsp[0] = 0;
     omp_par::scan(cheb_order.begin(), elem_dsp.begin(), Nelem);
 
     const Long Nnodes = (Nelem ? cheb_order[Nelem-1]+elem_dsp[Nelem-1] : 0);
@@ -1733,7 +1734,7 @@ namespace SCTL_NAMESPACE {
     }
 
     const Long Nnodes = (Nelem ? node_dsp[Nelem-1]+node_cnt[Nelem-1] : 0);
-    const Long density_dof = Fin.Dim() / Nnodes;
+    const Long density_dof = (Nnodes ? Fin.Dim() / Nnodes : 0);
     SCTL_ASSERT(Fin.Dim() == Nnodes * density_dof);
 
     if (Fout.Dim() != Nnodes*(FARFIELD_UPSAMPLE*FARFIELD_UPSAMPLE) * density_dof) {
@@ -1828,6 +1829,7 @@ namespace SCTL_NAMESPACE {
     const Long Nelem = elem_lst.cheb_order.Dim();
 
     if (M_lst.Dim() != Nelem) M_lst.ReInit(Nelem);
+    //#pragma omp parallel for schedule(static)
     for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) {
       if      (tol <= pow<15,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper<15,Kernel>(ker, elem_idx);
       else if (tol <= pow<14,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper<14,Kernel>(ker, elem_idx);
@@ -2256,23 +2258,32 @@ namespace SCTL_NAMESPACE {
       vtu_data.types.PushBack(6);
     }
   }
-  template <class Real> void SlenderElemList<Real>::WriteVTK(std::string fname, const Vector<Real>& F, const Comm& comm) const {
+  template <class Real> void SlenderElemList<Real>::WriteVTK(const std::string& fname, const Vector<Real>& F, const Comm& comm) const {
     VTUData vtu_data;
     GetVTUData(vtu_data, F);
     vtu_data.WriteVTK(fname, comm);
   }
 
-  template <class Real> void SlenderElemList<Real>::test() {
-    if (Comm::World().Rank()) return; // execute on one MPI process
+  template <class Real> template <class Kernel> void SlenderElemList<Real>::test(const Comm& comm, Real tol) {
     sctl::Profile::Enable(false);
+    const Long pid = comm.Rank();
+    const Long Np = comm.Size();
 
-    SlenderElemList elem_lst0;
-    { // Set elem_lst0
+    SlenderElemList<Real> elem_lst0;
+    //elem_lst0.Read("data/geom.data"); // Read geometry from file
+    if (1) { // Initialize elem_lst0 in code
+      const Long Nelem = 16;
+      const Long ChebOrder = 10;
+      const Long FourierOrder = 8;
+
       Vector<Real> coord, radius;
       Vector<Long> cheb_order, fourier_order;
-      const Long Nelem = 16, ChebOrder = 10, FourierOrder = 8;
-      for (Long k = 0; k < Nelem; k++) { // Set cheb_order, fourier_order, coord, radius
-        const auto& nds = CenterlineNodes(ChebOrder);
+      const Long k0 = (Nelem*(pid+0))/Np;
+      const Long k1 = (Nelem*(pid+1))/Np;
+      for (Long k = k0; k < k1; k++) {
+        cheb_order.PushBack(ChebOrder);
+        fourier_order.PushBack(FourierOrder);
+        const auto& nds = SlenderElemList<Real>::CenterlineNodes(ChebOrder);
         for (Long i = 0; i < nds.Dim(); i++) {
           Real theta = 2*const_pi<Real>()*(k+nds[i])/Nelem;
           coord.PushBack(cos<Real>(theta));
@@ -2280,42 +2291,42 @@ namespace SCTL_NAMESPACE {
           coord.PushBack(0.1*sin<Real>(2*theta));
           radius.PushBack(0.01*(2+sin<Real>(theta+sqrt<Real>(2))));
         }
-        cheb_order.PushBack(ChebOrder);
-        fourier_order.PushBack(FourierOrder);
       }
       elem_lst0.Init(cheb_order, fourier_order, coord, radius);
     }
 
-    Laplace3D_DxU laplace_dl;
-    BoundaryIntegralOp<Real,Laplace3D_DxU> LapDL(laplace_dl);
-    LapDL.AddElemList(elem_lst0);
+    Kernel ker_fn;
+    BoundaryIntegralOp<Real,Kernel> BIOp(ker_fn, comm);
+    BIOp.AddElemList(elem_lst0);
+    BIOp.SetAccuracy(tol);
 
     // Warm-up run
-    Vector<Real> F(LapDL.Dim(0)), U; F = 1;
-    LapDL.ComputePotential(U,F);
-    LapDL.ClearSetup();
-
-    sctl::Profile::Enable(true);
-    Profile::Tic("Setup+Eval");
-    LapDL.ComputePotential(U,F);
-    Profile::Toc();
-
+    Vector<Real> F(BIOp.Dim(0)), U; F = 1;
+    BIOp.ComputePotential(U,F);
+    BIOp.ClearSetup();
     U = 0;
-    Profile::Tic("Eval");
-    LapDL.ComputePotential(U,F);
+
+    Profile::Enable(true);
+    Profile::Tic("Setup+Eval", &comm, true);
+    BIOp.ComputePotential(U,F);
     Profile::Toc();
 
     Vector<Real> Uerr = U + 0.5;
-    elem_lst0.WriteVTK("Uerr", Uerr); // Write VTK
+    elem_lst0.WriteVTK("Uerr_", Uerr, comm); // Write VTK
     { // Print error
-      Real max_err = 0;
-      for (auto x : Uerr) max_err = std::max<Real>(max_err, fabs(x));
-      std::cout<<"Error = "<<max_err<<'\n';
+      StaticArray<Real,2> max_err{0,0};
+      for (auto x : Uerr) max_err[0] = std::max<Real>(max_err[0], fabs(x));
+      comm.Allreduce(max_err+0, max_err+1, 1, Comm::CommOp::MAX);
+      if (!pid) std::cout<<"Error = "<<max_err[1]<<'\n';
     }
-    sctl::Profile::Enable(false);
-    sctl::Profile::print();
+    Profile::Enable(false);
+    Profile::print(&comm);
   }
-  template <class Real> void SlenderElemList<Real>::test_greens_identity() {
+  template <class Real> void SlenderElemList<Real>::test_greens_identity(const Comm& comm, Real tol) {
+    using KerSL = Laplace3D_FxU;
+    using KerDL = Laplace3D_DxU;
+    using KerGrad = Laplace3D_FxdU;
+
     const auto concat_vecs = [](Vector<Real>& v, const Vector<Vector<Real>>& vec_lst) {
       const Long N = vec_lst.Dim();
       Vector<Long> dsp(N+1); dsp[0] = 0;
@@ -2334,17 +2345,16 @@ namespace SCTL_NAMESPACE {
       z = 0.1*sin<Real>(theta-sqrt<Real>(2));
       r = 0.01*(2+sin<Real>(theta+sqrt<Real>(2)));
     };
-    const Comm comm = Comm::World();
     sctl::Profile::Enable(false);
+    const Long pid = comm.Rank();
+    const Long Np = comm.Size();
 
     SlenderElemList elem_lst0;
     SlenderElemList elem_lst1;
     { // Set elem_lst0, elem_lst1
       const Long Nelem = 16;
-      const Long Np = comm.Size();
-      const Long rank = comm.Rank();
-      const Long idx0 = Nelem*(rank+0)/Np;
-      const Long idx1 = Nelem*(rank+1)/Np;
+      const Long idx0 = Nelem*(pid+0)/Np;
+      const Long idx1 = Nelem*(pid+1)/Np;
 
       Vector<Real> coord0, radius0;
       Vector<Long> cheb_order0, fourier_order0;
@@ -2383,15 +2393,17 @@ namespace SCTL_NAMESPACE {
       elem_lst1.Init(cheb_order1, fourier_order1, coord1, radius1);
     }
 
-    Laplace3D_FxU laplace_sl;
-    Laplace3D_DxU laplace_dl;
-    Laplace3D_FxdU laplace_grad;
-    BoundaryIntegralOp<Real,Laplace3D_FxU> LapSL(laplace_sl, comm);
-    BoundaryIntegralOp<Real,Laplace3D_DxU> LapDL(laplace_dl, comm);
-    LapSL.AddElemList(elem_lst0, "elem_lst0");
-    LapSL.AddElemList(elem_lst1, "elem_lst1");
-    LapDL.AddElemList(elem_lst0, "elem_lst0");
-    LapDL.AddElemList(elem_lst1, "elem_lst1");
+    KerSL kernel_sl;
+    KerDL kernel_dl;
+    KerGrad kernel_grad;
+    BoundaryIntegralOp<Real,KerSL> BIOpSL(kernel_sl, comm);
+    BoundaryIntegralOp<Real,KerDL> BIOpDL(kernel_dl, comm);
+    BIOpSL.AddElemList(elem_lst0, "elem_lst0");
+    BIOpSL.AddElemList(elem_lst1, "elem_lst1");
+    BIOpDL.AddElemList(elem_lst0, "elem_lst0");
+    BIOpDL.AddElemList(elem_lst1, "elem_lst1");
+    BIOpSL.SetAccuracy(tol);
+    BIOpDL.SetAccuracy(tol);
 
     Vector<Real> X, Xn, Fs, Fd, Uref, Us, Ud;
     { // Get X, Xn
@@ -2403,8 +2415,8 @@ namespace SCTL_NAMESPACE {
     }
     { // Set Fs, Fd, Uref
       Vector<Real> X0{0.3,0.6,0.2}, Xn0{0,0,0}, F0{1}, dU;
-      laplace_sl.Eval(Uref, X, X0, Xn0, F0);
-      laplace_grad.Eval(dU, X, X0, Xn0, F0);
+      kernel_sl.Eval(Uref, X, X0, Xn0, F0);
+      kernel_grad.Eval(dU, X, X0, Xn0, F0);
 
       Fd = Uref;
       { // Set Fs <-- -dot_prod(dU, Xn)
@@ -2420,26 +2432,20 @@ namespace SCTL_NAMESPACE {
     }
 
     // Warm-up run
-    LapSL.ComputePotential(Us,Fs);
-    LapDL.ComputePotential(Ud,Fd);
-    LapSL.ClearSetup();
-    LapDL.ClearSetup();
+    BIOpSL.ComputePotential(Us,Fs);
+    BIOpDL.ComputePotential(Ud,Fd);
+    BIOpSL.ClearSetup();
+    BIOpDL.ClearSetup();
+    Us = 0; Ud = 0;
 
     sctl::Profile::Enable(true);
     Profile::Tic("Setup+Eval", &comm);
-    LapSL.ComputePotential(Us,Fs);
-    LapDL.ComputePotential(Ud,Fd);
+    BIOpSL.ComputePotential(Us,Fs);
+    BIOpDL.ComputePotential(Ud,Fd);
     Profile::Toc();
 
-    Us = 0; Ud = 0;
-    Profile::Tic("Eval", &comm);
-    LapSL.ComputePotential(Us,Fs);
-    LapDL.ComputePotential(Ud,Fd);
-    Profile::Toc();
-
+    Vector<Real> Uerr = Fd*0.5 + (Us - Ud) - Uref;
     { // Write VTK
-      Vector<Real> Uerr = Fd*0.5 + (Us - Ud) - Uref;
-
       Vector<Vector<Real>> X_(2);
       elem_lst0.GetNodeCoord(&X_[0], nullptr, nullptr);
       elem_lst1.GetNodeCoord(&X_[1], nullptr, nullptr);
@@ -2447,12 +2453,15 @@ namespace SCTL_NAMESPACE {
       const Long N1 = X_[1].Dim()/COORD_DIM;
       elem_lst0.WriteVTK("Uerr0", Vector<Real>(N0,Uerr.begin()+ 0,false), comm);
       elem_lst1.WriteVTK("Uerr1", Vector<Real>(N1,Uerr.begin()+N0,false), comm);
-      { // Print error
-        Real max_err = 0, max_val = 0;
-        for (auto x : Uerr) max_err = std::max<Real>(max_err, fabs(x));
-        for (auto x : Uref) max_val = std::max<Real>(max_val, fabs(x));
-        std::cout<<"Error = "<<max_err/max_val<<'\n';
-      }
+    }
+    { // Print error
+      StaticArray<Real,2> max_err{0,0};
+      StaticArray<Real,2> max_val{0,0};
+      for (auto x : Uerr) max_err[0] = std::max<Real>(max_err[0], fabs(x));
+      for (auto x : Uref) max_val[0] = std::max<Real>(max_val[0], fabs(x));
+      comm.Allreduce(max_err+0, max_err+1, 1, Comm::CommOp::MAX);
+      comm.Allreduce(max_val+0, max_val+1, 1, Comm::CommOp::MAX);
+      if (!pid) std::cout<<"Error = "<<max_err[1]/max_val[1]<<'\n';
     }
 
     sctl::Profile::print(&comm);

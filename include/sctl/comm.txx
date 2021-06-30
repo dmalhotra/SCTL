@@ -153,6 +153,16 @@ inline void Comm::Wait(void* req_ptr) const {
 #endif
 }
 
+template <class Type> void Comm::Bcast(Iterator<Type> buf, Long count, Long root) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
+#ifdef SCTL_HAVE_MPI
+  if (!count) return;
+  SCTL_UNUSED(buf[0]        );
+  SCTL_UNUSED(buf[count - 1]);
+  MPI_Bcast(&buf[0], count, CommDatatype<Type>::value(), root, mpi_comm_);
+#endif
+}
+
 template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const {
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");

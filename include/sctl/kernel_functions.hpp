@@ -169,7 +169,7 @@ template <class uKernel> class GenericKernel {
             }
           }
           for (Long k = 0; k < DIM; k++) { // Set vec_dX
-            vec_dX[k] = vec_Xt[k] - VecType::LoadAligned(&Xs_[k][0]);
+            vec_dX[k] = VecType::LoadAligned(&Xs_[k][0]) - vec_Xt[k];
           }
           if (N_DIM) { // Set vec_Xn
             for (Long i1 = 0; i1 < Ns_; i1++) { // Set Xn_
@@ -191,7 +191,7 @@ template <class uKernel> class GenericKernel {
           for (Long i1 = 0; i1 < Ns_; i1++) { // Set M
             for (Integer k0 = 0; k0 < KDIM0; k0++) {
               for (Integer k1 = 0; k1 < KDIM1; k1++) {
-                M[(i0+i1)*KDIM0+k0][k1] = -M_[k0*KDIM1+k1][i1];
+                M[(i0+i1)*KDIM0+k0][k1] = M_[k0*KDIM1+k1][i1];
               }
             }
           }
@@ -216,7 +216,7 @@ template <class uKernel> class GenericKernel {
             }
           }
           for (Long k = 0; k < DIM; k++) { // Set vec_dX
-            vec_dX[k] = VecType::LoadAligned(&Xt_[k][0]) - vec_Xs[k];
+            vec_dX[k] = vec_Xs[k] - VecType::LoadAligned(&Xt_[k][0]);
           }
 
           uKernel::template uKerMatrix<VecType,digits_>(vec_M, vec_dX, vec_Xn, ctx_ptr);
@@ -228,7 +228,7 @@ template <class uKernel> class GenericKernel {
           for (Long i1 = 0; i1 < Nt_; i1++) { // Set M
             for (Integer k0 = 0; k0 < KDIM0; k0++) {
               for (Integer k1 = 0; k1 < KDIM1; k1++) {
-                M[k0][(i0+i1)*KDIM1+k1] = -M_[k0*KDIM1+k1][i1];
+                M[k0][(i0+i1)*KDIM1+k1] = M_[k0*KDIM1+k1][i1];
               }
             }
           }
@@ -303,7 +303,7 @@ struct Stokes3D_FxU : public GenericKernel<Stokes3D_FxU> {
     VecType rinv3 = rinv*rinv*rinv;
     for (Integer i = 0; i < 3; i++) {
       for (Integer j = 0; j < 3; j++) {
-        u[i][j] = (i==j ? rinv : 0) + r[i]*r[j]*rinv3;
+        u[i][j] = (i==j ? rinv : VecType(0)) + r[i]*r[j]*rinv3;
       }
     }
   }
@@ -360,8 +360,8 @@ template <class Real, Integer DIM> class ParticleFMM {
       const Long Nt = Xt.Dim() / DIM;
       SCTL_ASSERT(Xt.Dim() == Nt * DIM);
 
-      const Long dof = F.Dim() / (Ns * KDIM0);
-      SCTL_ASSERT(Ns && F.Dim() == Ns * dof * KDIM0);
+      const Long dof = (Ns ? F.Dim() / (Ns * KDIM0) : 0);
+      SCTL_ASSERT(F.Dim() == Ns * dof * KDIM0);
 
       Vector<Real> Xs_, Xn_, F_, U_(Nt * dof * KDIM1);
       U_.SetZero();

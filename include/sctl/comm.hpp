@@ -72,6 +72,8 @@ class Comm {
 
   void Wait(void* req_ptr) const;
 
+  template <class Type> void Bcast(Iterator<Type> buf, Long count, Long root) const;
+
   template <class SType, class RType> void Allgather(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const;
 
   template <class SType, class RType> void Allgatherv(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;

@@ -55,11 +55,13 @@ namespace SCTL_NAMESPACE {
     const Long Ntrg = Xtrg.Dim()/COORD_DIM;
     const Long Nsrc = Xsrc.Dim()/COORD_DIM;
     const Long Nelem = src_elem_nds_cnt.Dim();
+    Comm comm_ = comm.Split(Nsrc || Ntrg);
+    if (!Nsrc && !Ntrg) return;
 
     Long trg_offset, src_offset, elem_offset;
     { // set trg_offset, src_offset, elem_offset
       StaticArray<Long,3> send_buff{Ntrg, Nsrc, Nelem}, recv_buff{0,0,0};
-      comm.Scan((ConstIterator<Long>)send_buff, (Iterator<Long>)recv_buff, 3, Comm::CommOp::SUM);
+      comm_.Scan((ConstIterator<Long>)send_buff, (Iterator<Long>)recv_buff, 3, Comm::CommOp::SUM);
       trg_offset  = recv_buff[0] - send_buff[0];
       src_offset  = recv_buff[1] - send_buff[1];
       elem_offset = recv_buff[2] - send_buff[2];
@@ -71,7 +73,7 @@ namespace SCTL_NAMESPACE {
       StaticArray<Real,COORD_DIM> BBX0;
       { // Determine bounding-box
         StaticArray<Real,COORD_DIM> X0_local;
-        if (Ntrg) {
+        if (Ntrg) { // Init X0_local
           for (Long k = 0; k < COORD_DIM; k++) {
             X0_local[k] = Xtrg[k];
           }
@@ -79,8 +81,6 @@ namespace SCTL_NAMESPACE {
           for (Long k = 0; k < COORD_DIM; k++) {
             X0_local[k] = Xsrc[k];
           }
-        } else {
-          SCTL_ASSERT_MSG(false, "Local source and target vectors cannot both be empty!");
         }
         for (Long i = 0; i < Ntrg; i++) {
           for (Long k = 0; k < COORD_DIM; k++) {
@@ -92,7 +92,7 @@ namespace SCTL_NAMESPACE {
             X0_local[k] = std::min<Real>(X0_local[k], Xsrc[i*COORD_DIM+k]);
           }
         }
-        comm.Allreduce<Real>(X0_local, BBX0, COORD_DIM, Comm::CommOp::MIN);
+        comm_.Allreduce<Real>(X0_local, BBX0, COORD_DIM, Comm::CommOp::MIN);
 
         Real BBlen, len_local = 0;
         for (Long i = 0; i < Ntrg; i++) {
@@ -105,7 +105,7 @@ namespace SCTL_NAMESPACE {
             len_local = std::max<Real>(len_local, Xsrc[i*COORD_DIM+k]-BBX0[k]);
           }
         }
-        comm.Allreduce<Real>(Ptr2ConstItr<Real>(&len_local,1), Ptr2Itr<Real>(&BBlen,1), 1, Comm::CommOp::MAX);
+        comm_.Allreduce<Real>(Ptr2ConstItr<Real>(&len_local,1), Ptr2Itr<Real>(&BBlen,1), 1, Comm::CommOp::MAX);
         BBlen_inv = 1/BBlen;
       }
       { // Expand bounding-box so that no points are on the boundary
@@ -125,7 +125,7 @@ namespace SCTL_NAMESPACE {
         }
         trg_nodes[i].mid = Morton<COORD_DIM>((ConstIterator<Real>)Xmid);
         trg_nodes[i].elem_idx = 0;
-        trg_nodes[i].pid = comm.Rank();
+        trg_nodes[i].pid = comm_.Rank();
       }
       for (Long i = 0; i < Nsrc; i++) { // Set src_nodes
         Integer depth = (Integer)(log(src_radius[i]*BBlen_inv)/log(0.5));
@@ -137,7 +137,7 @@ namespace SCTL_NAMESPACE {
           Xmid[k] = (Xsrc[i*COORD_DIM+k]-BBX0[k]) * BBlen_inv;
         }
         src_nodes[i].mid = Morton<COORD_DIM>((ConstIterator<Real>)Xmid, depth);
-        src_nodes[i].pid = comm.Rank();
+        src_nodes[i].pid = comm_.Rank();
       }
       for (Long i = 0; i < Nelem; i++) { // Set src_nodes.elem_idx
         for (Long j = 0; j < src_elem_nds_cnt[i]; j++) {
@@ -146,26 +146,26 @@ namespace SCTL_NAMESPACE {
       }
     }
 
-    Vector<NodeData> trg_nodes0, src_nodes0, splitter_nodes(comm.Size());
+    Vector<NodeData> trg_nodes0, src_nodes0, splitter_nodes(comm_.Size());
     { // Set trg_nodes0 <- sort(trg_nodes), src_nodes0 <- sort(src_nodes)
-      comm.HyperQuickSort(src_nodes, src_nodes0, comp_node_mid);
-      comm.HyperQuickSort(trg_nodes, trg_nodes0, comp_node_mid);
+      comm_.HyperQuickSort(src_nodes, src_nodes0, comp_node_mid);
+      comm_.HyperQuickSort(trg_nodes, trg_nodes0, comp_node_mid);
 
       SCTL_ASSERT(src_nodes.Dim());
-      comm.Allgather(src_nodes.begin(), 1, splitter_nodes.begin(), 1);
-      comm.PartitionS(trg_nodes0, src_nodes0[0], comp_node_mid);
+      comm_.Allgather(src_nodes.begin(), 1, splitter_nodes.begin(), 1);
+      comm_.PartitionS(trg_nodes0, src_nodes0[0], comp_node_mid);
     }
 
     Vector<NodeData> src_nodes1;
-    { // Set src_nodes1 <- src_nodes0 + halo // TODO: replace allgather with halo-exchange
-      const Long Np = comm.Size();
+    { // Set src_nodes1 <- src_nodes0 + halo // TODO: replace allgather with halo-exchange // TODO
+      const Long Np = comm_.Size();
       Vector<Long> cnt0(1), cnt(Np), dsp(Np);
       cnt0[0] = src_nodes0.Dim(); dsp[0] = 0;
-      comm.Allgather(cnt0.begin(), 1, cnt.begin(), 1);
+      comm_.Allgather(cnt0.begin(), 1, cnt.begin(), 1);
       omp_par::scan(cnt.begin(), dsp.begin(), Np);
 
       src_nodes1.ReInit(dsp[Np-1] + cnt[Np-1]);
-      comm.Allgatherv(src_nodes0.begin(), src_nodes0.Dim(), src_nodes1.begin(), cnt.begin(), dsp.begin());
+      comm_.Allgatherv(src_nodes0.begin(), src_nodes0.Dim(), src_nodes1.begin(), cnt.begin(), dsp.begin());
     }
 
     Vector<NodeData> near_lst;
@@ -282,8 +282,8 @@ namespace SCTL_NAMESPACE {
         NodeData split_node;
         split_node.idx=0;
         split_node.elem_idx=elem_offset;
-        comm.HyperQuickSort(near_lst, near_lst0, comp_node_eid_idx);
-        comm.PartitionS(near_lst0, split_node, comp_node_eid_idx);
+        comm_.HyperQuickSort(near_lst, near_lst0, comp_node_eid_idx);
+        comm_.PartitionS(near_lst0, split_node, comp_node_eid_idx);
       }
       if (near_lst0.Dim()) { // near_lst <-- remove_duplicates(near_lst0)
         const Long N0 = near_lst0.Dim();
@@ -357,8 +357,8 @@ namespace SCTL_NAMESPACE {
       for (Long i = 0; i < trg_idx.Dim(); i++) {
         trg_idx[i] = near_lst[i].idx;
       }
-      comm.SortScatterIndex(trg_idx, near_scatter_index, &trg_offset);
-      comm.ScatterForward(trg_idx, near_scatter_index);
+      comm_.SortScatterIndex(trg_idx, near_scatter_index, &trg_offset);
+      comm_.ScatterForward(trg_idx, near_scatter_index);
 
       near_trg_cnt.ReInit(Ntrg);
       near_trg_dsp.ReInit(Ntrg);
@@ -450,7 +450,7 @@ namespace SCTL_NAMESPACE {
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::Setup() const {
     if (setup_flag && setup_far_flag && setup_self_flag && setup_near_flag) return;
-    Profile::Tic("Setup", &comm_);
+    Profile::Tic("Setup", &comm_, true, 5);
     SetupBasic();
     SetupFar();
     SetupSelf();
@@ -467,7 +467,7 @@ namespace SCTL_NAMESPACE {
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::ComputePotential(Vector<Real>& U, const Vector<Real>& F) const {
     Setup();
-    Profile::Tic("Eval", &comm_);
+    Profile::Tic("Eval", &comm_, true, 5);
     ComputeFarField(U, F);
     ComputeNearInterac(U, F);
     Profile::Toc();
@@ -531,7 +531,7 @@ namespace SCTL_NAMESPACE {
     elem_nds_dsp_far.ReInit(0);
     SetupBasic();
 
-    Profile::Tic("SetupFarField", &comm_);
+    Profile::Tic("SetupFarField", &comm_, false, 6);
     const Long Nlst = elem_lst_map.size();
     Vector<Vector<Real>> X_far_(Nlst);
     Vector<Vector<Real>> Xn_far_(Nlst);
@@ -563,7 +563,7 @@ namespace SCTL_NAMESPACE {
     K_self.ReInit(0);
     SetupBasic();
 
-    Profile::Tic("SetupSingular", &comm_);
+    Profile::Tic("SetupSingular", &comm_, false, 6);
     const Long Nlst = elem_lst_map.size();
     Vector<Vector<Matrix<Real>>> K_self_(Nlst);
     for (Long i = 0; i < Nlst; i++) {
@@ -594,8 +594,10 @@ namespace SCTL_NAMESPACE {
     SetupFar();
     SetupSelf();
 
-    Profile::Tic("SetupNear", &comm_);
+    Profile::Tic("SetupNear", &comm_, true, 6);
+    Profile::Tic("BuildNearLst", &comm_, true, 7);
     BuildNearList(Xtrg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt, near_trg_dsp, Xtrg, X_far, dist_far, elem_nds_cnt_far, elem_nds_dsp_far, comm_);
+    Profile::Toc();
     { // Set K_near_cnt, K_near_dsp, K_near
       const Long Nlst = elem_lst_map.size();
       const Long Nelem = near_elem_cnt.Dim();
@@ -615,6 +617,7 @@ namespace SCTL_NAMESPACE {
           const auto& name = elem_lst_name[i];
           const auto& elem_lst = elem_lst_map.at(name);
           const auto& elem_data = elem_data_map.at(name);
+          //#pragma omp parallel for
           for (Long j = 0; j < elem_lst_cnt[i]; j++) {
             const Long elem_idx = elem_lst_dsp[i]+j;
             const Long Ntrg = near_elem_cnt[elem_idx];
@@ -669,6 +672,7 @@ namespace SCTL_NAMESPACE {
 
       for (Long i = 0; i < Nlst; i++) { // Subtract direct-interaction part from K_near
         const auto& elem_lst = elem_lst_map.at(elem_lst_name[i]);
+        //#pragma omp parallel for
         for (Long j = 0; j < elem_lst_cnt[i]; j++) { // subtract direct sum
           const Long elem_idx = elem_lst_dsp[i]+j;
           const Long trg_cnt = near_elem_cnt[elem_idx];
@@ -706,6 +710,7 @@ namespace SCTL_NAMESPACE {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::ComputeFarField(Vector<Real>& U, const Vector<Real>& F) const {
+    Profile::Tic("EvalFar", &comm_, true, 6);
     const Long Nsrc = X_far.Dim()/COORD_DIM;
     const Long Ntrg = Xtrg.Dim()/COORD_DIM;
 
@@ -715,12 +720,12 @@ namespace SCTL_NAMESPACE {
       for (Long i = 0; i < Nlst; i++) { // Init F_far
         Long elem_idx0 = elem_lst_dsp[i];
         Long elem_idx1 = elem_lst_dsp[i]+elem_lst_cnt[i];
-        Long offset0 = elem_nds_dsp[elem_idx0];
-        Long offset1 = elem_nds_dsp[elem_idx1-1] + elem_nds_cnt[elem_idx1-1];
+        Long offset0 = (!elem_lst_cnt[i] ? 0 : elem_nds_dsp[elem_idx0]);
+        Long offset1 = (!elem_lst_cnt[i] ? 0 : elem_nds_dsp[elem_idx1-1] + elem_nds_cnt[elem_idx1-1]);
         const Vector<Real> F_((offset1-offset0)*KDIM0, (Iterator<Real>)F.begin() + offset0*KDIM0, false);
 
-        Long offset0_far = elem_nds_dsp_far[elem_idx0];
-        Long offset1_far = elem_nds_dsp_far[elem_idx1-1] + elem_nds_cnt_far[elem_idx1-1];
+        Long offset0_far = (!elem_lst_cnt[i] ? 0 : elem_nds_dsp_far[elem_idx0]);
+        Long offset1_far = (!elem_lst_cnt[i] ? 0 : elem_nds_dsp_far[elem_idx1-1] + elem_nds_cnt_far[elem_idx1-1]);
         Vector<Real> F_far_((offset1_far-offset0_far)*KDIM0, F_far.begin() + offset0_far*KDIM0, false);
 
         elem_lst_map.at(elem_lst_name[i])->GetFarFieldDensity(F_far_, F_);
@@ -736,9 +741,11 @@ namespace SCTL_NAMESPACE {
       U.SetZero();
     }
     fmm.Eval(U, Xtrg, X_far, Xn_far, F_far, ker_, comm_);
+    Profile::Toc();
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::ComputeNearInterac(Vector<Real>& U, const Vector<Real>& F) const {
+    Profile::Tic("EvalNear", &comm_, true, 6);
     const Long Ntrg = Xtrg.Dim()/COORD_DIM;
     const Long Nelem = near_elem_cnt.Dim();
     if (U.Dim() != Ntrg*KDIM1) {
@@ -746,7 +753,7 @@ namespace SCTL_NAMESPACE {
       U.SetZero();
     }
 
-    Vector<Real> U_near((near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1);
+    Vector<Real> U_near(Nelem ? (near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1 : 0);
     for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) { // compute near-interactions
       const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
       const Long trg_dof = near_elem_cnt[elem_idx]*KDIM1;
@@ -757,7 +764,9 @@ namespace SCTL_NAMESPACE {
     }
 
     SCTL_ASSERT(near_trg_cnt.Dim() == Ntrg);
+    Profile::Tic("Comm", &comm_, true, 7);
     comm_.ScatterForward(U_near, near_scatter_index);
+    Profile::Toc();
     #pragma omp parallel for schedule(static)
     for (Long i = 0; i < Ntrg; i++) { // Accumulate result to U
       Long near_cnt = near_trg_cnt[i];
@@ -768,6 +777,7 @@ namespace SCTL_NAMESPACE {
         }
       }
     }
+    Profile::Toc();
   }
 
 }
