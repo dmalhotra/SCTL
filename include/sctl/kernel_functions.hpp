@@ -46,7 +46,7 @@ template <class uKernel> class GenericKernel {
 
       auto uKerEval = [this](RealVec (&vt)[KDIM1], const RealVec (&xt)[DIM], const RealVec (&xs)[DIM], const RealVec (&ns)[DIM], const RealVec (&vs)[KDIM0]) {
         RealVec dX[DIM], U[KDIM0][KDIM1];
-        for (Integer i = 0; i < DIM; i++) dX[i] = xs[i] - xt[i];
+        for (Integer i = 0; i < DIM; i++) dX[i] = xt[i] - xs[i];
         uKernel::template uKerMatrix<RealVec,digits_>(U, dX, ns, ctx_ptr);
         for (Integer k0 = 0; k0 < KDIM0; k0++) {
           for (Integer k1 = 0; k1 < KDIM1; k1++) {
@@ -169,7 +169,7 @@ template <class uKernel> class GenericKernel {
             }
           }
           for (Long k = 0; k < DIM; k++) { // Set vec_dX
-            vec_dX[k] = VecType::LoadAligned(&Xs_[k][0]) - vec_Xt[k];
+            vec_dX[k] = vec_Xt[k] - VecType::LoadAligned(&Xs_[k][0]);
           }
           if (N_DIM) { // Set vec_Xn
             for (Long i1 = 0; i1 < Ns_; i1++) { // Set Xn_
@@ -216,7 +216,7 @@ template <class uKernel> class GenericKernel {
             }
           }
           for (Long k = 0; k < DIM; k++) { // Set vec_dX
-            vec_dX[k] = vec_Xs[k] - VecType::LoadAligned(&Xt_[k][0]);
+            vec_dX[k] = VecType::LoadAligned(&Xt_[k][0]) - vec_Xs[k];
           }
 
           uKernel::template uKerMatrix<VecType,digits_>(vec_M, vec_dX, vec_Xn, ctx_ptr);
@@ -276,20 +276,20 @@ struct Laplace3D_DxU : public GenericKernel<Laplace3D_DxU> {
     VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
     VecType rdotn = r[0]*n[0] + r[1]*n[1] + r[2]*n[2];
     VecType rinv3 = rinv * rinv * rinv;
-    u[0][0] = -rdotn * rinv3;
+    u[0][0] = rdotn * rinv3;
   }
 };
 struct Laplace3D_FxdU : public GenericKernel<Laplace3D_FxdU> {
   template <class Real> static constexpr Real ScaleFactor() {
-    return 1 / (4 * const_pi<Real>());
+    return -1 / (4 * const_pi<Real>());
   }
   template <class VecType, Integer digits> static void uKerMatrix(VecType (&u)[1][3], const VecType (&r)[3], const VecType (&n)[3], const void* ctx_ptr) {
     VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
     VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
     VecType rinv3 = rinv * rinv * rinv;
-    u[0][0] = -r[0] * rinv3;
-    u[0][1] = -r[1] * rinv3;
-    u[0][2] = -r[2] * rinv3;
+    u[0][0] = r[0] * rinv3;
+    u[0][1] = r[1] * rinv3;
+    u[0][2] = r[2] * rinv3;
   }
 };
 
@@ -303,14 +303,14 @@ struct Stokes3D_FxU : public GenericKernel<Stokes3D_FxU> {
     VecType rinv3 = rinv*rinv*rinv;
     for (Integer i = 0; i < 3; i++) {
       for (Integer j = 0; j < 3; j++) {
-        u[i][j] = (i==j ? rinv : VecType(0)) + r[i]*r[j]*rinv3;
+        u[i][j] = (i==j ? rinv : VecType((typename VecType::ScalarType)0)) + r[i]*r[j]*rinv3;
       }
     }
   }
 };
 struct Stokes3D_DxU : public GenericKernel<Stokes3D_DxU> {
   template <class Real> static constexpr Real ScaleFactor() {
-    return -3 / (4 * const_pi<Real>());
+    return 3 / (4 * const_pi<Real>());
   }
   template <class VecType, Integer digits> static void uKerMatrix(VecType (&u)[3][3], const VecType (&r)[3], const VecType (&n)[3], const void* ctx_ptr) {
     VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];

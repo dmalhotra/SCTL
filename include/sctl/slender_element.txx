@@ -1152,9 +1152,9 @@ namespace SCTL_NAMESPACE {
           const VecType exp_theta_imag(exp_theta.imag);
           const VecType vec_dx[3] = {VecType(dx(0,0)), VecType(dx(1,0)), VecType(dx(2,0))};
 
-          const VecType vec_dy0[3] = {x(0,0)-Xt(0,0), x(1,0)-Xt(1,0), x(2,0)-Xt(2,0)};
-          const VecType vec_dy1[3] = {e1(0,0)*r, e1(1,0)*r, e1(2,0)*r};
-          const VecType vec_dy2[3] = {e2(0,0)*r, e2(1,0)*r, e2(2,0)*r};
+          const VecType vec_dy0[3] = {Xt(0,0)-x(0,0), Xt(1,0)-x(1,0), Xt(2,0)-x(2,0)};
+          const VecType vec_dy1[3] = {-e1(0,0)*r, -e1(1,0)*r, -e1(2,0)*r};
+          const VecType vec_dy2[3] = {-e2(0,0)*r, -e2(1,0)*r, -e2(2,0)*r};
 
           const VecType vec_dy_ds1[3] = {e1(0,0)*dr+de1(0,0)*r, e1(1,0)*dr+de1(1,0)*r, e1(2,0)*dr+de1(2,0)*r};
           const VecType vec_dy_ds2[3] = {e2(0,0)*dr+de2(0,0)*r, e2(1,0)*dr+de2(1,0)*r, e2(2,0)*dr+de2(2,0)*r};
