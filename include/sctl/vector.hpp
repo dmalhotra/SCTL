@@ -86,6 +86,8 @@ template <class ValueType> class Vector {
 
   Vector operator/(const Vector& V) const;
 
+  Vector operator-() const ;
+
   // Vector-Scalar operations
 
   template <class VType> Vector& operator=(VType s);

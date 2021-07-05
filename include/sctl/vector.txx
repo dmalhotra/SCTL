@@ -239,6 +239,12 @@ template <class ValueType> Vector<ValueType> Vector<ValueType>::operator/(const 
   return Vr;
 }
 
+template <class ValueType> Vector<ValueType> Vector<ValueType>::operator-() const {
+  Vector<ValueType> Vr(dim);
+  for (Long i = 0; i < dim; i++) Vr[i] = -data_ptr[i];
+  return Vr;
+}
+
 // Vector-Scalar operations
 
 template <class ValueType> template <class VType> Vector<ValueType>& Vector<ValueType>::operator=(VType s) {

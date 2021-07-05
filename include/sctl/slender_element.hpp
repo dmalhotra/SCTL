@@ -174,6 +174,11 @@ namespace SCTL_NAMESPACE {
       void Read(const std::string& fname);
 
       /**
+       * Get geometry data for an element.
+       */
+      void GetGeom(Vector<Real>* X, Vector<Real>* Xn, Vector<Real>* Xa, Vector<Real>* dX_ds, Vector<Real>* dX_dt, const Vector<Real>& s_param, const Vector<Real>& sin_theta_, const Vector<Real>& cos_theta_, const Long elem_idx) const;
+
+      /**
        * Get the VTU (Visualization Toolkit for Unstructured grids) data for
        * one or all elements.
        */
@@ -195,11 +200,6 @@ namespace SCTL_NAMESPACE {
       static void test_greens_identity(const Comm& comm = Comm::Self(), Real tol = 1e-10);
 
     private:
-
-      /**
-       * Get geometry data for an element.
-       */
-      void GetGeom(Vector<Real>* X, Vector<Real>* Xn, Vector<Real>* Xa, Vector<Real>* dX_ds, Vector<Real>* dX_dt, const Vector<Real>& s_param, const Vector<Real>& sin_theta_, const Vector<Real>& cos_theta_, const Long elem_idx) const;
 
       template <class Kernel> Matrix<Real> SelfInteracHelper_(const Kernel& ker, const Long elem_idx, const Real tol) const; // constant radius
       template <Integer digits, class Kernel> Matrix<Real> SelfInteracHelper(const Kernel& ker, const Long elem_idx) const;

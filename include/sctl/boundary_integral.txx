@@ -429,6 +429,9 @@ namespace SCTL_NAMESPACE {
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetTargetCoord(const Vector<Real>& Xtrg) {
     Xt = Xtrg;
+    setup_flag = false;
+    setup_far_flag = false;
+    setup_near_flag = false;
   }
 
   template <class Real, class Kernel> template <class ElemLstType> void BoundaryIntegralOp<Real,Kernel>::DeleteElemList() {
@@ -767,7 +770,7 @@ namespace SCTL_NAMESPACE {
     Profile::Tic("Comm", &comm_, true, 7);
     comm_.ScatterForward(U_near, near_scatter_index);
     Profile::Toc();
-    #pragma omp parallel for schedule(static)
+    //#pragma omp parallel for schedule(static)
     for (Long i = 0; i < Ntrg; i++) { // Accumulate result to U
       Long near_cnt = near_trg_cnt[i];
       Long near_dsp = near_trg_dsp[i];

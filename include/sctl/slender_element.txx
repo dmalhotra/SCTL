@@ -1161,7 +1161,7 @@ namespace SCTL_NAMESPACE {
           const VecType vec_dy_dt1[3] = {e2(0,0)*r, e2(1,0)*r, e2(2,0)*r};
           const VecType vec_dy_dt2[3] = {e1(0,0)*r, e1(1,0)*r, e1(2,0)*r};
 
-          StaticArray<RealType,KDIM0*KDIM1*Nbuff> mem_buff;
+          alignas(sizeof(VecType)) StaticArray<RealType,KDIM0*KDIM1*Nbuff> mem_buff;
           Matrix<RealType> Mker_da(KDIM0*KDIM1, Nnds, mem_buff, false);
           for (Integer j = 0; j < Nnds; j+=VecLen) { // Set Mker_da
             VecType dy[3], n[3], da;
