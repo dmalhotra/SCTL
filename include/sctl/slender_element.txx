@@ -817,7 +817,7 @@ namespace SCTL_NAMESPACE {
             }
             return M;
           };
-          InterpQuadRule<QuadReal>::Build(data[order*2+0], data[order*2+1], integrands, 1e-20, order, 2e-4, 0.9998); // TODO: diagnose accuracy issues
+          InterpQuadRule<QuadReal>::Build(data[order*2+0], data[order*2+1], integrands, false, 1e-20, order, 2e-4, 0.9998); // TODO: diagnose accuracy issues
         }
         WriteFile<QuadReal>(data, "data/log_quad");
       }
@@ -891,32 +891,18 @@ namespace SCTL_NAMESPACE {
               ValueType l = 0.5;
               nds.ReInit(N*leg_nds.Dim());
               wts.ReInit(N*leg_nds.Dim());
-              for (Integer idx = 0; idx < levels-1; idx++) {
-                l *= 0.5;
-                Vector<ValueType> nds0(leg_nds.Dim(), nds.begin()+(idx*2+0)*leg_nds.Dim(), false);
-                Vector<ValueType> nds1(leg_nds.Dim(), nds.begin()+(idx*2+1)*leg_nds.Dim(), false);
-                Vector<ValueType> wts0(leg_wts.Dim(), wts.begin()+(idx*2+0)*leg_wts.Dim(), false);
-                Vector<ValueType> wts1(leg_wts.Dim(), wts.begin()+(idx*2+1)*leg_wts.Dim(), false);
+              for (Integer idx = 0; idx < levels; idx++) {
+                l *= (idx<levels-1 ? 0.5 : 1.0);
+                Vector<ValueType> nds0(leg_nds.Dim(), nds.begin()+(  idx  )*leg_nds.Dim(), false);
+                Vector<ValueType> nds1(leg_nds.Dim(), nds.begin()+(N-idx-1)*leg_nds.Dim(), false);
+                Vector<ValueType> wts0(leg_wts.Dim(), wts.begin()+(  idx  )*leg_wts.Dim(), false);
+                Vector<ValueType> wts1(leg_wts.Dim(), wts.begin()+(N-idx-1)*leg_wts.Dim(), false);
                 for (Long i = 0; i < leg_nds.Dim(); i++) {
-                  ValueType s = leg_nds[i]*l + l;
-                  nds0[i] = s;
-                  nds1[i] = 1-s;
-                  wts0[i] = leg_wts[i]*l;
-                  wts1[i] = wts0[i];
-                }
-              }
-              { // set nds, wts
-                Long idx = levels-1;
-                Vector<ValueType> nds0(leg_nds.Dim(), nds.begin()+(idx*2+0)*leg_nds.Dim(), false);
-                Vector<ValueType> nds1(leg_nds.Dim(), nds.begin()+(idx*2+1)*leg_nds.Dim(), false);
-                Vector<ValueType> wts0(leg_wts.Dim(), wts.begin()+(idx*2+0)*leg_wts.Dim(), false);
-                Vector<ValueType> wts1(leg_wts.Dim(), wts.begin()+(idx*2+1)*leg_wts.Dim(), false);
-                for (Long i = 0; i < leg_nds.Dim(); i++) {
-                  ValueType s = leg_nds[i]*l;
-                  nds0[i] = s;
-                  nds1[i] = 1-s;
-                  wts0[i] = leg_wts[i]*l;
-                  wts1[i] = wts0[i];
+                  ValueType s = leg_nds[i]*l + (idx<levels-1 ? l : 0);
+                  nds0[                i] = s;
+                  nds1[leg_nds.Dim()-1-i] = 1-s;
+                  wts0[                i] = leg_wts[i]*l;
+                  wts1[leg_nds.Dim()-1-i] = wts0[i];
                 }
               }
             };
@@ -967,7 +953,8 @@ namespace SCTL_NAMESPACE {
 
           Vector<ValueType> eps_vec;
           for (Long k = 0; k < max_digits; k++) eps_vec.PushBack(pow<ValueType,Long>(0.1,k));
-          auto cond_num_vec = InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, eps_vec);
+          std::cout<<"Level = "<<idx<<" of "<<max_adap_depth<<'\n';
+          auto cond_num_vec = InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, true, eps_vec);
         }
         for (Integer digits = 0; digits < max_digits; digits++) {
           Long N = quad_nds[digits].Dim();
@@ -1409,7 +1396,7 @@ namespace SCTL_NAMESPACE {
       Vector<ValueType> eps_vec;
       Vector<Vector<ValueType>> quad_nds, quad_wts;
       for (Long k = 0; k < max_digits; k++) eps_vec.PushBack(pow<ValueType,Long>(0.1,k));
-      InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, eps_vec);
+      InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, false, eps_vec);
       SCTL_ASSERT(quad_nds.Dim() == max_digits);
       SCTL_ASSERT(quad_wts.Dim() == max_digits);
       for (Long k = 0; k < max_digits; k++) {

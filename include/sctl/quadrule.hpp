@@ -254,14 +254,14 @@ namespace SCTL_NAMESPACE {
 
   template <class Real> class InterpQuadRule {
     public:
-      template <class BasisObj> static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const BasisObj& integrands, Real eps = 1e-16, Long ORDER = 0, Real nds_start = 0, Real nds_end = 1) {
+      template <class BasisObj> static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const BasisObj& integrands, bool symmetric = false, Real eps = 1e-16, Long ORDER = 0, Real nds_start = 0, Real nds_end = 1) {
         Vector<Real> nds, wts;
         adap_quad_rule(nds, wts, integrands, 0, 1, eps);
         Matrix<Real> M = integrands(nds);
-        return Build(quad_nds, quad_wts, M, nds, wts, eps, ORDER, nds_start, nds_end);
+        return Build(quad_nds, quad_wts, M, nds, wts, symmetric, eps, ORDER, nds_start, nds_end);
       }
 
-      static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, Matrix<Real> M, const Vector<Real>& nds, const Vector<Real>& wts, Real eps = 1e-16, Long ORDER = 0, Real nds_start = 0, Real nds_end = 1) {
+      static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, Matrix<Real> M, const Vector<Real>& nds, const Vector<Real>& wts, bool symmetric = false, Real eps = 1e-16, Long ORDER = 0, Real nds_start = 0, Real nds_end = 1) {
         Vector<Real> eps_vec;
         Vector<Long> ORDER_vec;
         if (ORDER) {
@@ -272,7 +272,7 @@ namespace SCTL_NAMESPACE {
 
         Vector<Vector<Real>> quad_nds_;
         Vector<Vector<Real>> quad_wts_;
-        Vector<Real> cond_num_vec = Build(quad_nds_, quad_wts_, M, nds, wts, eps_vec, ORDER_vec, nds_start, nds_end);
+        Vector<Real> cond_num_vec = Build(quad_nds_, quad_wts_, M, nds, wts, symmetric, eps_vec, ORDER_vec, nds_start, nds_end);
         if (quad_nds_.Dim() &&  quad_wts_.Dim()) {
           quad_nds = quad_nds_[0];
           quad_wts = quad_wts_[0];
@@ -281,7 +281,75 @@ namespace SCTL_NAMESPACE {
         return -1;
       }
 
-      static Vector<Real> Build(Vector<Vector<Real>>& quad_nds, Vector<Vector<Real>>& quad_wts, Matrix<Real> M, const Vector<Real>& nds, const Vector<Real>& wts, Vector<Real> eps_vec = Vector<Real>(), Vector<Long> ORDER_vec = Vector<Long>(), Real nds_start = 0, Real nds_end = 1) {
+      static Vector<Real> Build(Vector<Vector<Real>>& quad_nds, Vector<Vector<Real>>& quad_wts, const Matrix<Real>& M, const Vector<Real>& nds, const Vector<Real>& wts, bool symmetric = false, const Vector<Real>& eps_vec = Vector<Real>(), const Vector<Long>& ORDER_vec = Vector<Long>(), Real nds_start = 0, Real nds_end = 1) {
+        Vector<Real> ret_vec;
+        if (symmetric) {
+          const Long N0 = M.Dim(0);
+          const Long N1 = M.Dim(1);
+
+          Matrix<Real> M_;
+          M_.ReInit(N0, N1);
+          for (Long i = 0; i < N0; i++) {
+            for (Long j = 0; j < N1; j++) {
+              M_[i][j] = M[i][j] + M[N0-1-i][j];
+            }
+          }
+
+          Vector<Long> ORDER_vec_;
+          for (const auto& x : ORDER_vec) ORDER_vec_.PushBack((x+1)/2);
+
+          Vector<Vector<Real>> quad_nds_, quad_wts_;
+          Real nds_mid_point = (nds_end+nds_start)/2;
+          ret_vec = Build_helper(quad_nds_, quad_wts_, M_, nds, wts, eps_vec, ORDER_vec_, nds_start, nds_mid_point);
+          const Long Nrules = quad_nds_.Dim();
+
+          quad_nds.ReInit(Nrules);
+          quad_wts.ReInit(Nrules);
+          for (Long i = 0; i < Nrules; i++) {
+            const Long N = quad_nds_[i].Dim();
+            quad_nds[i].ReInit(2*N);
+            quad_wts[i].ReInit(2*N);
+            for (Long j = 0; j < N; j++) {
+              quad_nds[i][j] = quad_nds_[i][j];
+              quad_wts[i][j] = quad_wts_[i][j] / 2;
+
+              quad_nds[i][2*N-1-j] = 2*nds_mid_point - quad_nds_[i][j];
+              quad_wts[i][2*N-1-j] = quad_wts_[i][j] / 2;
+            }
+          }
+        } else {
+          ret_vec = Build_helper(quad_nds, quad_wts, M, nds, wts, eps_vec, ORDER_vec, nds_start, nds_end);
+        }
+        return ret_vec;
+      }
+
+      static void test() {
+        const Integer ORDER = 28;
+        auto integrands = [ORDER](const Vector<Real>& nds) {
+          Integer K = ORDER;
+          Long N = nds.Dim();
+          Matrix<Real> M(N,K);
+          for (Long j = 0; j < N; j++) {
+            //for (Long i = 0; i < K; i++) {
+            //  M[j][i] = pow<Real>(nds[j],i);
+            //}
+            for (Long i = 0; i < K/2; i++) {
+              M[j][i] = pow<Real>(nds[j],i);
+            }
+            for (Long i = K/2; i < K; i++) {
+              M[j][i] = pow<Real>(nds[j],K-i-1) * log<Real>(nds[j]);
+            }
+          }
+          return M;
+        };
+
+        Vector<Real> nds, wts;
+        Real cond_num = InterpQuadRule::Build(nds, wts, integrands);
+        std::cout<<cond_num<<'\n';
+      }
+
+    private:
+      static Vector<Real> Build_helper(Vector<Vector<Real>>& quad_nds, Vector<Vector<Real>>& quad_wts, Matrix<Real> M, const Vector<Real>& nds, const Vector<Real>& wts, Vector<Real> eps_vec = Vector<Real>(), Vector<Long> ORDER_vec = Vector<Long>(), Real nds_start = 0, Real nds_end = 1) {
         if (M.Dim(0) * M.Dim(1) == 0) return Vector<Real>();
 
         Vector<Real> sqrt_wts(wts.Dim());
@@ -364,13 +432,16 @@ namespace SCTL_NAMESPACE {
               Matrix<Real> P = Vt.Transpose() * Vt;
               return M - M * P;
             };
+
             Vector<Long> pivot_rows;
             if (quad_nds.Dim() != ORDER) quad_nds.ReInit(ORDER);
             for (Long i = 0; i < ORDER; i++) {
-              pivot_rows.PushBack(find_largest_row(orthogonalize_rows(M, pivot_rows)));
-              quad_nds[i] = nds[pivot_rows[i]];
+              Long pivot_row = find_largest_row(orthogonalize_rows(M, pivot_rows));
+              pivot_rows.PushBack(pivot_row);
+              quad_nds[i] = nds[pivot_row];
             }
             std::sort(quad_nds.begin(), quad_nds.end());
+
             if (0) { // print spectrum of the sub-matrix
               Matrix<Real> MM(ORDER,ORDER);
               for (Long i = 0; i < ORDER; i++) {
@@ -420,11 +491,13 @@ namespace SCTL_NAMESPACE {
           return cond_num;
         };
         for (Long i = 0; i < ORDER_vec.Dim(); i++) {
-          Matrix<Real> MM(M.Dim(0), ORDER_vec[i]);
-          for (Long j0 = 0; j0 < MM.Dim(0); j0++) {
-            for (Long j1 = 0; j1 < MM.Dim(1); j1++) {
-              MM[j0][j1] = M[j0][j1];
-            }
+          const Long N0 = M.Dim(0);
+          const Long N1 = ORDER_vec[i];
+          const Long N1_ = std::min(ORDER_vec[i],M.Dim(1));
+          Matrix<Real> MM(N0, N1);
+          for (Long j0 = 0; j0 < N0; j0++) {
+            for (Long j1 =   0; j1 < N1_; j1++) MM[j0][j1] = M[j0][j1];
+            for (Long j1 = N1_; j1 < N1 ; j1++) MM[j0][j1] = 0;
           }
           Real cond_num = build_quad_rule(quad_nds[i], quad_wts[i], MM, sqrt_wts);
           cond_num_vec.PushBack(cond_num);
@@ -432,32 +505,6 @@ namespace SCTL_NAMESPACE {
         return cond_num_vec;
       }
 
-      static void test() {
-        const Integer ORDER = 28;
-        auto integrands = [ORDER](const Vector<Real>& nds) {
-          Integer K = ORDER;
-          Long N = nds.Dim();
-          Matrix<Real> M(N,K);
-          for (Long j = 0; j < N; j++) {
-            //for (Long i = 0; i < K; i++) {
-            //  M[j][i] = pow<Real>(nds[j],i);
-            //}
-            for (Long i = 0; i < K/2; i++) {
-              M[j][i] = pow<Real>(nds[j],i);
-            }
-            for (Long i = K/2; i < K; i++) {
-              M[j][i] = pow<Real>(nds[j],K-i-1) * log<Real>(nds[j]);
-            }
-          }
-          return M;
-        };
-
-        Vector<Real> nds, wts;
-        Real cond_num = InterpQuadRule::Build(nds, wts, integrands);
-        std::cout<<cond_num<<'\n';
-      }
-
-    private:
       template <class FnObj> static void adap_quad_rule(Vector<Real>& nds, Vector<Real>& wts, const FnObj& fn, Real a, Real b, Real tol) {
         const auto& nds0 = ChebQuadRule<Real>::template nds<40>();
         const auto& wts0 = ChebQuadRule<Real>::template wts<40>();
