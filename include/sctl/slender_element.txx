@@ -799,7 +799,7 @@ namespace SCTL_NAMESPACE {
     auto compute_nds_wts_lst = []() {
       Vector<Vector<QuadReal>> data;
       ReadFile<QuadReal>(data, "data/log_quad");
-      if (data.Dim() != MaxOrder*2) {
+      if (data.Dim() < MaxOrder*2) {
         data.ReInit(MaxOrder*2);
         #pragma omp parallel for
         for (Integer order = 1; order < MaxOrder; order++) {
@@ -1616,6 +1616,10 @@ namespace SCTL_NAMESPACE {
     }
   }
 
+  template <class Real> Long SlenderElemList<Real>::Size() const {
+    return cheb_order.Dim();
+  }
+
   template <class Real> void SlenderElemList<Real>::GetNodeCoord(Vector<Real>* X, Vector<Real>* Xn, Vector<Long>* element_wise_node_cnt) {
     const Long Nelem = cheb_order.Dim();
     Vector<Long> node_cnt(Nelem), node_dsp(Nelem);
@@ -1678,8 +1682,9 @@ namespace SCTL_NAMESPACE {
       for (Long i = 0; i < node_cnt[elem_idx]; i++) { // Set dist_far
         Real dxds = sqrt<Real>(dX_ds[i*COORD_DIM+0]*dX_ds[i*COORD_DIM+0] + dX_ds[i*COORD_DIM+1]*dX_ds[i*COORD_DIM+1] + dX_ds[i*COORD_DIM+2]*dX_ds[i*COORD_DIM+2])*const_pi<Real>()/2;
         Real dxdt = sqrt<Real>(dX_dt[i*COORD_DIM+0]*dX_dt[i*COORD_DIM+0] + dX_dt[i*COORD_DIM+1]*dX_dt[i*COORD_DIM+1] + dX_dt[i*COORD_DIM+2]*dX_dt[i*COORD_DIM+2])*const_pi<Real>()*2;
-        Real h = std::max<Real>(dxds/(ChebOrder*FARFIELD_UPSAMPLE), dxdt/(FourierOrder*FARFIELD_UPSAMPLE));
-        dist_far_[i] = -0.15 * log(tol)*h; // TODO: use better estimate
+        Real h_s = dxds/(ChebOrder*FARFIELD_UPSAMPLE-2);
+        Real h_t = dxdt/(FourierOrder*FARFIELD_UPSAMPLE-2);
+        dist_far_[i] = -log(tol) * std::max(0.15*h_s, 0.30*h_t); // TODO: use better estimate
       }
     }
   }
@@ -1885,7 +1890,7 @@ namespace SCTL_NAMESPACE {
       { // Set M_modal
         Vector<Real> quad_nds, quad_wts; // Quadrature rule in s
         auto adap_quad_rule = [&ChebOrder,&radius,&coord,&dx](Vector<Real>& quad_nds, Vector<Real>& quad_wts, const Vec3& x_trg) {
-          const Long LegQuadOrder = 1*ChebOrder;
+          const Long LegQuadOrder = (Long)(-0.24*log(tol)*const_pi<Real>()/2)+1;
           const auto& leg_nds = LegendreQuadRule<Real>(LegQuadOrder).first;
           const auto& leg_wts = LegendreQuadRule<Real>(LegQuadOrder).second;
           auto adap_ref = [&LegQuadOrder,&leg_nds,&leg_wts](Vector<Real>& nds, Vector<Real>& wts, Real a, Real b, Integer levels) {
@@ -1989,10 +1994,10 @@ namespace SCTL_NAMESPACE {
                 dxds = sqrt<Real>(dot_prod(dxds_vec,dxds_vec))*const_pi<Real>()/2;
               }
             }
-            Real h0 =   (s_min)*dxds/LegQuadOrder;
-            Real h1 = (1-s_min)*dxds/LegQuadOrder;
-            Real dist_far0 = -0.15 * log(tol)*h0; // TODO: use better estimate
-            Real dist_far1 = -0.15 * log(tol)*h1; // TODO: use better estimate
+            Real h0 =   (s_min)*dxds/(LegQuadOrder-1);
+            Real h1 = (1-s_min)*dxds/(LegQuadOrder-1);
+            Real dist_far0 = -0.25 * log(tol)*h0; // TODO: use better estimate
+            Real dist_far1 = -0.25 * log(tol)*h1; // TODO: use better estimate
             Integer adap_levels0 = (s_min==0 ? 0 : std::max<Integer>(0,(Integer)(log(dist_far0/dist_min)/log(2.0)+0.5))+1);
             Integer adap_levels1 = (s_min==1 ? 0 : std::max<Integer>(0,(Integer)(log(dist_far1/dist_min)/log(2.0)+0.5))+1);
 
@@ -2106,8 +2111,42 @@ namespace SCTL_NAMESPACE {
     return ChebQuadRule<Real>::nds(Order);
   }
 
-  template <class Real> void SlenderElemList<Real>::Write(const std::string& fname) {
-    const Integer precision = 10, width = 18;
+  template <class Real> void SlenderElemList<Real>::Write(const std::string& fname, const Comm& comm) {
+    auto allgather = [&comm](Vector<Real>& v_out, const Vector<Real>& v_in) {
+      const Long Nproc = comm.Size();
+      StaticArray<Long,1> len{v_in.Dim()};
+      Vector<Long> cnt(Nproc), dsp(Nproc);
+      comm.Allgather(len+0, 1, cnt.begin(), 1); dsp = 0;
+      omp_par::scan(cnt.begin(), dsp.begin(), Nproc);
+
+      v_out.ReInit(dsp[Nproc-1]+cnt[Nproc-1]);
+      comm.Allgatherv(v_in.begin(), v_in.Dim(), v_out.begin(), cnt.begin(), dsp.begin());
+    };
+    auto allgatherl = [&comm](Vector<Long>& v_out, const Vector<Long>& v_in) {
+      const Long Nproc = comm.Size();
+      StaticArray<Long,1> len{v_in.Dim()};
+      Vector<Long> cnt(Nproc), dsp(Nproc);
+      comm.Allgather(len+0, 1, cnt.begin(), 1); dsp = 0;
+      omp_par::scan(cnt.begin(), dsp.begin(), Nproc);
+
+      v_out.ReInit(dsp[Nproc-1]+cnt[Nproc-1]);
+      comm.Allgatherv(v_in.begin(), v_in.Dim(), v_out.begin(), cnt.begin(), dsp.begin());
+    };
+
+    Vector<Real> radius_, coord_, e1_;
+    allgather(radius_, radius);
+    allgather( coord_,  coord);
+    allgather(    e1_,     e1);
+
+    Vector<Long> cheb_order_, elem_dsp_, fourier_order_;
+    allgatherl(   cheb_order_, cheb_order   );
+    allgatherl(fourier_order_, fourier_order);
+    elem_dsp_.ReInit(cheb_order_.Dim()); elem_dsp_ = 0;
+    omp_par::scan(cheb_order_.begin(), elem_dsp_.begin(), cheb_order_.Dim());
+
+
+    if (!comm.Rank()) return;
+    const Integer precision = 18, width = 26;
     std::ofstream file;
     file.open(fname, std::ofstream::out | std::ofstream::trunc);
     if (!file.good()) {
@@ -2128,25 +2167,25 @@ namespace SCTL_NAMESPACE {
     file<<'\n';
 
     file<<std::scientific<<std::setprecision(precision);
-    for (Long i = 0; i < cheb_order.Dim(); i++) {
-      for (Long j = 0; j < cheb_order[i]; j++) {
+    for (Long i = 0; i < cheb_order_.Dim(); i++) {
+      for (Long j = 0; j < cheb_order_[i]; j++) {
         for (Integer k = 0; k < COORD_DIM; k++) {
-          file<<std::setw(width)<<coord[elem_dsp[i]*COORD_DIM + k*cheb_order[i]+j];
+          file<<std::setw(width)<<coord_[elem_dsp_[i]*COORD_DIM + k*cheb_order_[i]+j];
         }
-        file<<std::setw(width)<<radius[elem_dsp[i] + j];
+        file<<std::setw(width)<<radius_[elem_dsp_[i] + j];
         for (Integer k = 0; k < COORD_DIM; k++) {
-          file<<std::setw(width)<<e1[elem_dsp[i]*COORD_DIM + k*cheb_order[i]+j];
+          file<<std::setw(width)<<e1_[elem_dsp_[i]*COORD_DIM + k*cheb_order_[i]+j];
         }
         if (!j) {
-          file<<std::setw(width)<<cheb_order[i];
-          file<<std::setw(width)<<fourier_order[i];
+          file<<std::setw(width)<<cheb_order_[i];
+          file<<std::setw(width)<<fourier_order_[i];
         }
         file<<"\n";
       }
     }
     file.close();
   }
-  template <class Real> void SlenderElemList<Real>::Read(const std::string& fname) {
+  template <class Real> void SlenderElemList<Real>::Read(const std::string& fname, const Comm& comm) {
     std::ifstream file;
     file.open(fname, std::ifstream::in);
     if (!file.good()) {
@@ -2205,7 +2244,31 @@ namespace SCTL_NAMESPACE {
       fourier_order__.PushBack(FourierOrder);
       offset += ChebOrder;
     }
-    Init(cheb_order__, fourier_order__, coord_, radius_, e1_);
+    { // Distribute across processes and init SlenderElemList
+      const Long Np = comm.Size();
+      const Long pid = comm.Rank();
+      const Long Nelem = cheb_order__.Dim();
+
+      const Long i0 = Nelem*(pid+0)/Np;
+      const Long i1 = Nelem*(pid+1)/Np;
+
+      Vector<Integer> cheb_order, fourier_order;
+      cheb_order.ReInit(i1-i0, cheb_order__.begin()+i0, false);
+      fourier_order.ReInit(i1-i0, fourier_order__.begin()+i0, false);
+
+      Vector<Integer> elem_offset(Nelem+1); elem_offset = 0;
+      omp_par::scan(cheb_order__.begin(), elem_offset.begin(), Nelem);
+      elem_offset[Nelem] = (Nelem ? elem_offset[Nelem-1] + cheb_order__[Nelem-1] : 0);
+      const Long j0 = elem_offset[i0];
+      const Long j1 = elem_offset[i1];
+
+      Vector<Real> radius, coord, e1;
+      radius.ReInit((j1-j0), radius_.begin()+j0, false);
+      coord.ReInit((j1-j0)*COORD_DIM, coord_.begin()+j0*COORD_DIM, false);
+      if (e1_.Dim()) e1.ReInit((j1-j0)*COORD_DIM, e1_.begin()+j0*COORD_DIM, false);
+
+      Init(cheb_order, fourier_order, coord, radius, e1);
+    }
   }
 
   template <class Real> void SlenderElemList<Real>::GetVTUData(VTUData& vtu_data, const Vector<Real>& F, const Long elem_idx) const {
@@ -2456,6 +2519,7 @@ namespace SCTL_NAMESPACE {
   }
 
   template <class Real> void SlenderElemList<Real>::GetGeom(Vector<Real>* X, Vector<Real>* Xn, Vector<Real>* Xa, Vector<Real>* dX_ds, Vector<Real>* dX_dt, const Vector<Real>& s_param, const Vector<Real>& sin_theta_, const Vector<Real>& cos_theta_, const Long elem_idx) const {
+    SCTL_ASSERT_MSG(elem_idx < Size(), "element index is greater than number of elements in the list!");
     using Vec3 = Tensor<Real,true,COORD_DIM,1>;
     const Integer ChebOrder = cheb_order[elem_idx];
     const Long Nt = sin_theta_.Dim();
@@ -2895,7 +2959,7 @@ namespace SCTL_NAMESPACE {
         const Vec3 y_trg = x_trg + e1_trg*r_trg*exp_theta_trg.real + e2_trg*r_trg*exp_theta_trg.imag;
 
         Matrix<Real> M_tor(quad_nds.Dim(), KDIM0*KDIM1*FourierModes*2); // TODO: pre-allocate
-        toroidal_greens_fn_batched<digits,ModalUpsample>(M_tor, y_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes);
+        toroidal_greens_fn_batched<digits+2,ModalUpsample>(M_tor, y_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes);
 
         for (Long ii = 0; ii < M_tor.Dim(0); ii++) {
           for (Long jj = 0; jj < M_tor.Dim(1); jj++) {

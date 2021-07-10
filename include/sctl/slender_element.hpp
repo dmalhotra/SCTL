@@ -111,6 +111,11 @@ namespace SCTL_NAMESPACE {
       virtual ~SlenderElemList() {}
 
       /**
+       * Return the number of elements in the list.
+       */
+      Long Size() const;
+
+      /**
        * Returns the position and normals of the surface nodal points for each
        * element.
        *
@@ -166,12 +171,12 @@ namespace SCTL_NAMESPACE {
       /**
        * Write elements to file.
        */
-      void Write(const std::string& fname);
+      void Write(const std::string& fname, const Comm& comm = Comm::Self());
 
       /**
        * Read elements from file.
        */
-      void Read(const std::string& fname);
+      void Read(const std::string& fname, const Comm& comm = Comm::Self());
 
       /**
        * Get geometry data for an element.

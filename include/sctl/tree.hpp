@@ -37,7 +37,13 @@ struct VTUData {
       {  // Write to file.
         Long pt_cnt = coord.Dim() / 3;
         Long cell_cnt = types.Dim();
-        value_dof = (pt_cnt ? value.Dim() / pt_cnt : 0);
+        { // Set value_dof
+          StaticArray<Long,2> pts_cnt{pt_cnt,0};
+          StaticArray<Long,2> val_cnt{value.Dim(),0};
+          comm.Allreduce(pts_cnt+0, pts_cnt+1, 1, Comm::CommOp::SUM);
+          comm.Allreduce(val_cnt+0, val_cnt+1, 1, Comm::CommOp::SUM);
+          value_dof = (pts_cnt[1] ? val_cnt[1] / pts_cnt[1] : 0);
+        }
 
         Vector<int32_t> mpi_rank;
         {  // Set  mpi_rank

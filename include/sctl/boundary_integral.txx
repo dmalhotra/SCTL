@@ -129,6 +129,7 @@ namespace SCTL_NAMESPACE {
       }
       for (Long i = 0; i < Nsrc; i++) { // Set src_nodes
         Integer depth = (Integer)(log(src_radius[i]*BBlen_inv)/log(0.5));
+        depth = std::min(Morton<COORD_DIM>::MaxDepth(), std::max<Integer>(depth,0));
         StaticArray<Real,COORD_DIM> Xmid;
         src_nodes[i].idx = src_offset + i;
         src_nodes[i].rad = src_radius[i];
