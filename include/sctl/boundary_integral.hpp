@@ -38,7 +38,7 @@ namespace SCTL_NAMESPACE {
        * @param[out] element_wise_node_cnt the number of node points
        * belonging to each element.
        */
-      virtual void GetNodeCoord(Vector<Real>* X, Vector<Real>* Xn, Vector<Long>* element_wise_node_cnt) = 0;
+      virtual void GetNodeCoord(Vector<Real>* X, Vector<Real>* Xn, Vector<Long>* element_wise_node_cnt) const = 0;
 
       /**
        * Given an accuracy tolerance, returns the quadrature node positions,
@@ -63,7 +63,7 @@ namespace SCTL_NAMESPACE {
        *
        * @param[in] tol the accuracy tolerance.
        */
-      virtual void GetFarFieldNodes(Vector<Real>& X, Vector<Real>& Xn, Vector<Real>& wts, Vector<Real>& dist_far, Vector<Long>& element_wise_node_cnt, const Real tol)  = 0;
+      virtual void GetFarFieldNodes(Vector<Real>& X, Vector<Real>& Xn, Vector<Real>& wts, Vector<Real>& dist_far, Vector<Long>& element_wise_node_cnt, const Real tol) const = 0;
 
       /**
        * Interpolates the density from surface node points to far-field
@@ -75,7 +75,7 @@ namespace SCTL_NAMESPACE {
        * @param[in] Fin the input density at surface node points in
        * array-of-struct order.
        */
-      virtual void GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) = 0;
+      virtual void GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) const = 0;
 
       /**
        * Apply the transpose of the GetFarFieldDensity() operator for a single
@@ -90,7 +90,7 @@ namespace SCTL_NAMESPACE {
        *
        * @param[in] elem_idx the index of the element.
        */
-      virtual void FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) = 0;
+      virtual void FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) const = 0;
 
       /**
        * Compute self-interaction operator for each element.

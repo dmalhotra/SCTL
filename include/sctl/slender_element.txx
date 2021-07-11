@@ -862,12 +862,12 @@ namespace SCTL_NAMESPACE {
           Vector<ValueType> nds, wts;
           Matrix<ValueType> Mintegrands;
           auto discretize_basis_functions = [Nmodes](Matrix<ValueType>& Mintegrands, Vector<ValueType>& nds, Vector<ValueType>& wts, ValueType dist, const std::pair<Vector<ValueType>,Vector<ValueType>>& panel_quad_nds_wts) {
-            auto trg_coord = [Nmodes](ValueType dist) {
-              Vector<ValueType> Xtrg; //(2*Nmodes*2*Nmodes*COORD_DIM);
-              for (Long i = 0; i < 2*Nmodes; i++) {
-                for (Long j = 0; j < 2*Nmodes; j++) {
-                  ValueType theta = i*2*const_pi<ValueType>()/(2*Nmodes);
-                  ValueType r = (0.5 + i*0.5/(2*Nmodes)) * dist;
+            auto trg_coord = [](ValueType dist, Long M) {
+              Vector<ValueType> Xtrg; //(M*M*COORD_DIM);
+              for (Long i = 0; i < M; i++) {
+                for (Long j = 0; j < M; j++) {
+                  ValueType theta = i*2*const_pi<ValueType>()/(M);
+                  ValueType r = (0.5 + i*0.5/(M)) * dist;
                   ValueType x0 = r*cos<ValueType>(theta)+1;
                   ValueType x1 = 0;
                   ValueType x2 = r*sin<ValueType>(theta);
@@ -880,7 +880,7 @@ namespace SCTL_NAMESPACE {
               }
               return Xtrg;
             };
-            Vector<ValueType> Xtrg = trg_coord(dist);
+            Vector<ValueType> Xtrg = trg_coord(dist, 2*Nmodes);
             Long Ntrg = Xtrg.Dim()/COORD_DIM;
 
             auto adap_nds_wts = [&panel_quad_nds_wts](Vector<ValueType>& nds, Vector<ValueType>& wts, Integer levels){
@@ -1620,7 +1620,7 @@ namespace SCTL_NAMESPACE {
     return cheb_order.Dim();
   }
 
-  template <class Real> void SlenderElemList<Real>::GetNodeCoord(Vector<Real>* X, Vector<Real>* Xn, Vector<Long>* element_wise_node_cnt) {
+  template <class Real> void SlenderElemList<Real>::GetNodeCoord(Vector<Real>* X, Vector<Real>* Xn, Vector<Long>* element_wise_node_cnt) const {
     const Long Nelem = cheb_order.Dim();
     Vector<Long> node_cnt(Nelem), node_dsp(Nelem);
     { // Set node_cnt, node_dsp
@@ -1642,7 +1642,7 @@ namespace SCTL_NAMESPACE {
       GetGeom((X==nullptr?nullptr:&X_), (Xn==nullptr?nullptr:&Xn_), nullptr,nullptr,nullptr, CenterlineNodes(cheb_order[i]), sin_theta<Real>(fourier_order[i]), cos_theta<Real>(fourier_order[i]), i);
     }
   }
-  template <class Real> void SlenderElemList<Real>::GetFarFieldNodes(Vector<Real>& X, Vector<Real>& Xn, Vector<Real>& wts, Vector<Real>& dist_far, Vector<Long>& element_wise_node_cnt, const Real tol) {
+  template <class Real> void SlenderElemList<Real>::GetFarFieldNodes(Vector<Real>& X, Vector<Real>& Xn, Vector<Real>& wts, Vector<Real>& dist_far, Vector<Long>& element_wise_node_cnt, const Real tol) const {
     const Long Nelem = cheb_order.Dim();
     Vector<Long> node_cnt(Nelem), node_dsp(Nelem);
     { // Set node_cnt, node_dsp
@@ -1688,7 +1688,7 @@ namespace SCTL_NAMESPACE {
       }
     }
   }
-  template <class Real> void SlenderElemList<Real>::GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) {
+  template <class Real> void SlenderElemList<Real>::GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) const {
     constexpr Integer MaxOrder = 50/FARFIELD_UPSAMPLE;
     auto compute_Mfourier_upsample_transpose = []() {
       Vector<Matrix<Real>> M_lst(MaxOrder);
@@ -1755,7 +1755,7 @@ namespace SCTL_NAMESPACE {
       Matrix<Real>::GEMM(Fout_, Mcheb_transpose[ChebOrder], F0_);
     }
   }
-  template <class Real> void SlenderElemList<Real>::FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) {
+  template <class Real> void SlenderElemList<Real>::FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) const {
     constexpr Integer MaxOrder = 50/FARFIELD_UPSAMPLE;
     auto compute_Mfourier_upsample = []() {
       Vector<Matrix<Real>> M_lst(MaxOrder);
@@ -2111,7 +2111,7 @@ namespace SCTL_NAMESPACE {
     return ChebQuadRule<Real>::nds(Order);
   }
 
-  template <class Real> void SlenderElemList<Real>::Write(const std::string& fname, const Comm& comm) {
+  template <class Real> void SlenderElemList<Real>::Write(const std::string& fname, const Comm& comm) const {
     auto allgather = [&comm](Vector<Real>& v_out, const Vector<Real>& v_in) {
       const Long Nproc = comm.Size();
       StaticArray<Long,1> len{v_in.Dim()};

@@ -121,7 +121,7 @@ namespace SCTL_NAMESPACE {
        *
        * @see ElementListBase::GetNodeCoord()
        */
-      void GetNodeCoord(Vector<Real>* X, Vector<Real>* Xn, Vector<Long>* element_wise_node_cnt) override;
+      void GetNodeCoord(Vector<Real>* X, Vector<Real>* Xn, Vector<Long>* element_wise_node_cnt) const override;
 
       /**
        * Given an accuracy tolerance, returns the quadrature node positions,
@@ -131,7 +131,7 @@ namespace SCTL_NAMESPACE {
        *
        * @see ElementListBase::GetFarFieldNodes()
        */
-      void GetFarFieldNodes(Vector<Real>& X, Vector<Real>& Xn, Vector<Real>& wts, Vector<Real>& dist_far, Vector<Long>& element_wise_node_cnt, const Real tol) override;
+      void GetFarFieldNodes(Vector<Real>& X, Vector<Real>& Xn, Vector<Real>& wts, Vector<Real>& dist_far, Vector<Long>& element_wise_node_cnt, const Real tol) const override;
 
       /**
        * Interpolates the density from surface node points to far-field
@@ -139,7 +139,7 @@ namespace SCTL_NAMESPACE {
        *
        * @see ElementListBase::GetFarFieldDensity()
        */
-      void GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) override;
+      void GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) const override;
 
       /**
        * Apply the transpose of the GetFarFieldDensity() operator applied to
@@ -147,7 +147,7 @@ namespace SCTL_NAMESPACE {
        *
        * @see ElementListBase::FarFieldDensityOperatorTranspose()
        */
-      void FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) override;
+      void FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) const override;
 
       /**
        * Compute self-interaction operator for each element.
@@ -171,7 +171,7 @@ namespace SCTL_NAMESPACE {
       /**
        * Write elements to file.
        */
-      void Write(const std::string& fname, const Comm& comm = Comm::Self());
+      void Write(const std::string& fname, const Comm& comm = Comm::Self()) const;
 
       /**
        * Read elements from file.
