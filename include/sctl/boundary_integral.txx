@@ -152,8 +152,8 @@ namespace SCTL_NAMESPACE {
       comm_.HyperQuickSort(src_nodes, src_nodes0, comp_node_mid);
       comm_.HyperQuickSort(trg_nodes, trg_nodes0, comp_node_mid);
 
-      SCTL_ASSERT(src_nodes.Dim());
-      comm_.Allgather(src_nodes.begin(), 1, splitter_nodes.begin(), 1);
+      SCTL_ASSERT(src_nodes0.Dim());
+      comm_.Allgather(src_nodes0.begin(), 1, splitter_nodes.begin(), 1);
       comm_.PartitionS(trg_nodes0, src_nodes0[0], comp_node_mid);
     }
 

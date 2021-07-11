@@ -360,8 +360,9 @@ template <class Real, Integer DIM> class ParticleFMM {
       const Long Nt = Xt.Dim() / DIM;
       SCTL_ASSERT(Xt.Dim() == Nt * DIM);
 
-      const Long dof = (Ns ? F.Dim() / (Ns * KDIM0) : 0);
+      const Long dof = (Ns ? F.Dim() / (Ns * KDIM0) : 1);
       SCTL_ASSERT(F.Dim() == Ns * dof * KDIM0);
+      SCTL_ASSERT(dof == 1); // TODO
 
       Vector<Real> Xs_, Xn_, F_, U_(Nt * dof * KDIM1);
       U_.SetZero();

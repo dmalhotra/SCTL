@@ -163,7 +163,11 @@ template <class Real> static Real inner_prod(const Vector<Real>& x, const Vector
 
 template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter, bool use_abs_tol) {
   Long N = b.Dim();
-  if (max_iter < 0) max_iter = N;
+  if (max_iter < 0) { // set max_iter
+    StaticArray<Long,2> NN{N,0};
+    comm_.Allreduce(NN+0, NN+1, 1, Comm::CommOp::SUM);
+    max_iter = NN[1];
+  }
 
   { // Initialize x
     if (x->Dim() != N) x->ReInit(N);
