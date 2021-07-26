@@ -829,224 +829,224 @@ namespace SCTL_NAMESPACE { // SSE
   }
 
 
-  template <> VecData<int8_t,16> zero_intrin<VecData<int8_t,16>>() {
+  template <> inline VecData<int8_t,16> zero_intrin<VecData<int8_t,16>>() {
     return _mm_setzero_si128();
   }
-  template <> VecData<int16_t,8> zero_intrin<VecData<int16_t,8>>() {
+  template <> inline VecData<int16_t,8> zero_intrin<VecData<int16_t,8>>() {
     return _mm_setzero_si128();
   }
-  template <> VecData<int32_t,4> zero_intrin<VecData<int32_t,4>>() {
+  template <> inline VecData<int32_t,4> zero_intrin<VecData<int32_t,4>>() {
     return _mm_setzero_si128();
   }
-  template <> VecData<int64_t,2> zero_intrin<VecData<int64_t,2>>() {
+  template <> inline VecData<int64_t,2> zero_intrin<VecData<int64_t,2>>() {
     return _mm_setzero_si128();
   }
-  template <> VecData<float,4> zero_intrin<VecData<float,4>>() {
+  template <> inline VecData<float,4> zero_intrin<VecData<float,4>>() {
     return _mm_setzero_ps();
   }
-  template <> VecData<double,2> zero_intrin<VecData<double,2>>() {
+  template <> inline VecData<double,2> zero_intrin<VecData<double,2>>() {
     return _mm_setzero_pd();
   }
 
-  template <> VecData<int8_t,16> set1_intrin<VecData<int8_t,16>>(int8_t a) {
+  template <> inline VecData<int8_t,16> set1_intrin<VecData<int8_t,16>>(int8_t a) {
     return _mm_set1_epi8(a);
   }
-  template <> VecData<int16_t,8> set1_intrin<VecData<int16_t,8>>(int16_t a) {
+  template <> inline VecData<int16_t,8> set1_intrin<VecData<int16_t,8>>(int16_t a) {
     return _mm_set1_epi16(a);
   }
-  template <> VecData<int32_t,4> set1_intrin<VecData<int32_t,4>>(int32_t a) {
+  template <> inline VecData<int32_t,4> set1_intrin<VecData<int32_t,4>>(int32_t a) {
     return _mm_set1_epi32(a);
   }
-  template <> VecData<int64_t,2> set1_intrin<VecData<int64_t,2>>(int64_t a) {
+  template <> inline VecData<int64_t,2> set1_intrin<VecData<int64_t,2>>(int64_t a) {
     return _mm_set1_epi64x(a);
   }
-  template <> VecData<float,4> set1_intrin<VecData<float,4>>(float a) {
+  template <> inline VecData<float,4> set1_intrin<VecData<float,4>>(float a) {
     return _mm_set1_ps(a);
   }
-  template <> VecData<double,2> set1_intrin<VecData<double,2>>(double a) {
+  template <> inline VecData<double,2> set1_intrin<VecData<double,2>>(double a) {
     return _mm_set1_pd(a);
   }
 
-  template <> VecData<int8_t,16> set_intrin<VecData<int8_t,16>,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t>(int8_t v1, int8_t v2, int8_t v3, int8_t v4, int8_t v5, int8_t v6, int8_t v7, int8_t v8, int8_t v9, int8_t v10, int8_t v11, int8_t v12, int8_t v13, int8_t v14, int8_t v15, int8_t v16) {
+  template <> inline VecData<int8_t,16> set_intrin<VecData<int8_t,16>,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t>(int8_t v1, int8_t v2, int8_t v3, int8_t v4, int8_t v5, int8_t v6, int8_t v7, int8_t v8, int8_t v9, int8_t v10, int8_t v11, int8_t v12, int8_t v13, int8_t v14, int8_t v15, int8_t v16) {
     return _mm_set_epi8(v16,v15,v14,v13,v12,v11,v10,v9,v8,v7,v6,v5,v4,v3,v2,v1);
   }
-  template <> VecData<int16_t,8> set_intrin<VecData<int16_t,8>,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t>(int16_t v1, int16_t v2, int16_t v3, int16_t v4, int16_t v5, int16_t v6, int16_t v7, int16_t v8) {
+  template <> inline VecData<int16_t,8> set_intrin<VecData<int16_t,8>,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t>(int16_t v1, int16_t v2, int16_t v3, int16_t v4, int16_t v5, int16_t v6, int16_t v7, int16_t v8) {
     return _mm_set_epi16(v8,v7,v6,v5,v4,v3,v2,v1);
   }
-  template <> VecData<int32_t,4> set_intrin<VecData<int32_t,4>,int32_t,int32_t,int32_t,int32_t>(int32_t v1, int32_t v2, int32_t v3, int32_t v4) {
+  template <> inline VecData<int32_t,4> set_intrin<VecData<int32_t,4>,int32_t,int32_t,int32_t,int32_t>(int32_t v1, int32_t v2, int32_t v3, int32_t v4) {
     return _mm_set_epi32(v4,v3,v2,v1);
   }
-  template <> VecData<int64_t,2> set_intrin<VecData<int64_t,2>,int64_t,int64_t>(int64_t v1, int64_t v2) {
+  template <> inline VecData<int64_t,2> set_intrin<VecData<int64_t,2>,int64_t,int64_t>(int64_t v1, int64_t v2) {
     return _mm_set_epi64x(v2,v1);
   }
-  template <> VecData<float,4> set_intrin<VecData<float,4>,float,float,float,float>(float v1, float v2, float v3, float v4) {
+  template <> inline VecData<float,4> set_intrin<VecData<float,4>,float,float,float,float>(float v1, float v2, float v3, float v4) {
     return _mm_set_ps(v4,v3,v2,v1);
   }
-  template <> VecData<double,2> set_intrin<VecData<double,2>,double,double>(double v1, double v2) {
+  template <> inline VecData<double,2> set_intrin<VecData<double,2>,double,double>(double v1, double v2) {
     return _mm_set_pd(v2,v1);
   }
 
-  template <> VecData<int8_t,16> load1_intrin<VecData<int8_t,16>>(int8_t const* p) {
+  template <> inline VecData<int8_t,16> load1_intrin<VecData<int8_t,16>>(int8_t const* p) {
     return _mm_set1_epi8(p[0]);
   }
-  template <> VecData<int16_t,8> load1_intrin<VecData<int16_t,8>>(int16_t const* p) {
+  template <> inline VecData<int16_t,8> load1_intrin<VecData<int16_t,8>>(int16_t const* p) {
     return _mm_set1_epi16(p[0]);
   }
-  template <> VecData<int32_t,4> load1_intrin<VecData<int32_t,4>>(int32_t const* p) {
+  template <> inline VecData<int32_t,4> load1_intrin<VecData<int32_t,4>>(int32_t const* p) {
     return _mm_set1_epi32(p[0]);
   }
-  template <> VecData<int64_t,2> load1_intrin<VecData<int64_t,2>>(int64_t const* p) {
+  template <> inline VecData<int64_t,2> load1_intrin<VecData<int64_t,2>>(int64_t const* p) {
     return _mm_set1_epi64x(p[0]);
   }
-  template <> VecData<float,4> load1_intrin<VecData<float,4>>(float const* p) {
+  template <> inline VecData<float,4> load1_intrin<VecData<float,4>>(float const* p) {
     return _mm_load1_ps(p);
   }
-  template <> VecData<double,2> load1_intrin<VecData<double,2>>(double const* p) {
+  template <> inline VecData<double,2> load1_intrin<VecData<double,2>>(double const* p) {
     return _mm_load1_pd(p);
   }
 
-  template <> VecData<int8_t,16> loadu_intrin<VecData<int8_t,16>>(int8_t const* p) {
+  template <> inline VecData<int8_t,16> loadu_intrin<VecData<int8_t,16>>(int8_t const* p) {
     return _mm_loadu_si128((__m128i const*)p);
   }
-  template <> VecData<int16_t,8> loadu_intrin<VecData<int16_t,8>>(int16_t const* p) {
+  template <> inline VecData<int16_t,8> loadu_intrin<VecData<int16_t,8>>(int16_t const* p) {
     return _mm_loadu_si128((__m128i const*)p);
   }
-  template <> VecData<int32_t,4> loadu_intrin<VecData<int32_t,4>>(int32_t const* p) {
+  template <> inline VecData<int32_t,4> loadu_intrin<VecData<int32_t,4>>(int32_t const* p) {
     return _mm_loadu_si128((__m128i const*)p);
   }
-  template <> VecData<int64_t,2> loadu_intrin<VecData<int64_t,2>>(int64_t const* p) {
+  template <> inline VecData<int64_t,2> loadu_intrin<VecData<int64_t,2>>(int64_t const* p) {
     return _mm_loadu_si128((__m128i const*)p);
   }
-  template <> VecData<float,4> loadu_intrin<VecData<float,4>>(float const* p) {
+  template <> inline VecData<float,4> loadu_intrin<VecData<float,4>>(float const* p) {
     return _mm_loadu_ps(p);
   }
-  template <> VecData<double,2> loadu_intrin<VecData<double,2>>(double const* p) {
+  template <> inline VecData<double,2> loadu_intrin<VecData<double,2>>(double const* p) {
     return _mm_loadu_pd(p);
   }
 
-  template <> VecData<int8_t,16> load_intrin<VecData<int8_t,16>>(int8_t const* p) {
+  template <> inline VecData<int8_t,16> load_intrin<VecData<int8_t,16>>(int8_t const* p) {
     return _mm_load_si128((__m128i const*)p);
   }
-  template <> VecData<int16_t,8> load_intrin<VecData<int16_t,8>>(int16_t const* p) {
+  template <> inline VecData<int16_t,8> load_intrin<VecData<int16_t,8>>(int16_t const* p) {
     return _mm_load_si128((__m128i const*)p);
   }
-  template <> VecData<int32_t,4> load_intrin<VecData<int32_t,4>>(int32_t const* p) {
+  template <> inline VecData<int32_t,4> load_intrin<VecData<int32_t,4>>(int32_t const* p) {
     return _mm_load_si128((__m128i const*)p);
   }
-  template <> VecData<int64_t,2> load_intrin<VecData<int64_t,2>>(int64_t const* p) {
+  template <> inline VecData<int64_t,2> load_intrin<VecData<int64_t,2>>(int64_t const* p) {
     return _mm_load_si128((__m128i const*)p);
   }
-  template <> VecData<float,4> load_intrin<VecData<float,4>>(float const* p) {
+  template <> inline VecData<float,4> load_intrin<VecData<float,4>>(float const* p) {
     return _mm_load_ps(p);
   }
-  template <> VecData<double,2> load_intrin<VecData<double,2>>(double const* p) {
+  template <> inline VecData<double,2> load_intrin<VecData<double,2>>(double const* p) {
     return _mm_load_pd(p);
   }
 
-  template <> void storeu_intrin<VecData<int8_t,16>>(int8_t* p, VecData<int8_t,16> vec) {
+  template <> inline void storeu_intrin<VecData<int8_t,16>>(int8_t* p, VecData<int8_t,16> vec) {
     _mm_storeu_si128((__m128i*)p, vec.v);
   }
-  template <> void storeu_intrin<VecData<int16_t,8>>(int16_t* p, VecData<int16_t,8> vec) {
+  template <> inline void storeu_intrin<VecData<int16_t,8>>(int16_t* p, VecData<int16_t,8> vec) {
     _mm_storeu_si128((__m128i*)p, vec.v);
   }
-  template <> void storeu_intrin<VecData<int32_t,4>>(int32_t* p, VecData<int32_t,4> vec) {
+  template <> inline void storeu_intrin<VecData<int32_t,4>>(int32_t* p, VecData<int32_t,4> vec) {
     _mm_storeu_si128((__m128i*)p, vec.v);
   }
-  template <> void storeu_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec) {
+  template <> inline void storeu_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec) {
     _mm_storeu_si128((__m128i*)p, vec.v);
   }
-  template <> void storeu_intrin<VecData<float,4>>(float* p, VecData<float,4> vec) {
+  template <> inline void storeu_intrin<VecData<float,4>>(float* p, VecData<float,4> vec) {
     _mm_storeu_ps(p, vec.v);
   }
-  template <> void storeu_intrin<VecData<double,2>>(double* p, VecData<double,2> vec) {
+  template <> inline void storeu_intrin<VecData<double,2>>(double* p, VecData<double,2> vec) {
     _mm_storeu_pd(p, vec.v);
   }
 
-  template <> void store_intrin<VecData<int8_t,16>>(int8_t* p, VecData<int8_t,16> vec) {
+  template <> inline void store_intrin<VecData<int8_t,16>>(int8_t* p, VecData<int8_t,16> vec) {
     _mm_storeu_si128((__m128i*)p, vec.v);
   }
-  template <> void store_intrin<VecData<int16_t,8>>(int16_t* p, VecData<int16_t,8> vec) {
+  template <> inline void store_intrin<VecData<int16_t,8>>(int16_t* p, VecData<int16_t,8> vec) {
     _mm_store_si128((__m128i*)p, vec.v);
   }
-  template <> void store_intrin<VecData<int32_t,4>>(int32_t* p, VecData<int32_t,4> vec) {
+  template <> inline void store_intrin<VecData<int32_t,4>>(int32_t* p, VecData<int32_t,4> vec) {
     _mm_store_si128((__m128i*)p, vec.v);
   }
-  template <> void store_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec) {
+  template <> inline void store_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec) {
     _mm_store_si128((__m128i*)p, vec.v);
   }
-  template <> void store_intrin<VecData<float,4>>(float* p, VecData<float,4> vec) {
+  template <> inline void store_intrin<VecData<float,4>>(float* p, VecData<float,4> vec) {
     _mm_store_ps(p, vec.v);
   }
-  template <> void store_intrin<VecData<double,2>>(double* p, VecData<double,2> vec) {
+  template <> inline void store_intrin<VecData<double,2>>(double* p, VecData<double,2> vec) {
     _mm_store_pd(p, vec.v);
   }
 
 #if defined(__AVX512VBMI2__)
-  template <> int8_t extract_intrin<VecData<int8_t,16>>(VecData<int8_t,16> vec, Integer i) {
+  template <> inline int8_t extract_intrin<VecData<int8_t,16>>(VecData<int8_t,16> vec, Integer i) {
     __m128i x = _mm_maskz_compress_epi8(__mmask16(1u<<i), vec.v);
     return (int8_t)_mm_cvtsi128_si32(x);
   }
-  template <> int16_t extract_intrin<VecData<int16_t,8>>(VecData<int16_t,8> vec, Integer i) {
+  template <> inline int16_t extract_intrin<VecData<int16_t,8>>(VecData<int16_t,8> vec, Integer i) {
     __m128i x = _mm_maskz_compress_epi16(__mmask8(1u<<i), vec.v);
     return (int16_t)_mm_cvtsi128_si32(x);
   }
-  template <> int32_t extract_intrin<VecData<int32_t,4>>(VecData<int32_t,4> vec, Integer i) {
+  template <> inline int32_t extract_intrin<VecData<int32_t,4>>(VecData<int32_t,4> vec, Integer i) {
     __m128i x = _mm_maskz_compress_epi32(__mmask8(1u<<i), vec.v);
     return (int32_t)_mm_cvtsi128_si32(x);
   }
-  //template <> int64_t extract_intrin<VecData<int64_t,2>>(VecData<int64_t,2> vec, Integer i) {}
-  template <> float extract_intrin<VecData<float,4>>(VecData<float,4> vec, Integer i) {
+  //template <> inline int64_t extract_intrin<VecData<int64_t,2>>(VecData<int64_t,2> vec, Integer i) {}
+  template <> inline float extract_intrin<VecData<float,4>>(VecData<float,4> vec, Integer i) {
     __m128 x = _mm_maskz_compress_ps(__mmask8(1u<<i), vec.v);
     return _mm_cvtss_f32(x);
   }
-  template <> double extract_intrin<VecData<double,2>>(VecData<double,2> vec, Integer i) {
+  template <> inline double extract_intrin<VecData<double,2>>(VecData<double,2> vec, Integer i) {
     __m128d x = _mm_mask_unpackhi_pd(vec.v, __mmask8(i), vec.v, vec.v);
     return _mm_cvtsd_f64(x);
   }
 #endif
 
 #if defined(__AVX512BW__)
-  template <> void insert_intrin<VecData<int8_t,16>>(VecData<int8_t,16>& vec, Integer i, int8_t value) {
+  template <> inline void insert_intrin<VecData<int8_t,16>>(VecData<int8_t,16>& vec, Integer i, int8_t value) {
     vec.v = _mm_mask_set1_epi8(vec.v, __mmask16(1u<<i), value);
   }
-  template <> void insert_intrin<VecData<int16_t,8>>(VecData<int16_t,8>& vec, Integer i, int16_t value) {
+  template <> inline void insert_intrin<VecData<int16_t,8>>(VecData<int16_t,8>& vec, Integer i, int16_t value) {
     vec.v = _mm_mask_set1_epi16(vec.v, __mmask8(1u<<i), value);
   }
-  template <> void insert_intrin<VecData<int32_t,4>>(VecData<int32_t,4>& vec, Integer i, int32_t value) {
+  template <> inline void insert_intrin<VecData<int32_t,4>>(VecData<int32_t,4>& vec, Integer i, int32_t value) {
     vec.v = _mm_mask_set1_epi32(vec.v, __mmask8(1u<<i), value);
   }
-  template <> void insert_intrin<VecData<int64_t,2>>(VecData<int64_t,2>& vec, Integer i, int64_t value) {
+  template <> inline void insert_intrin<VecData<int64_t,2>>(VecData<int64_t,2>& vec, Integer i, int64_t value) {
     vec.v = _mm_mask_set1_epi64(vec.v, __mmask8(1u<<i), value);
   }
-  template <> void insert_intrin<VecData<float,4>>(VecData<float,4>& vec, Integer i, float value) {
+  template <> inline void insert_intrin<VecData<float,4>>(VecData<float,4>& vec, Integer i, float value) {
     vec.v = _mm_mask_broadcastss_ps(vec.v, __mmask8(1u<<i), _mm_set_ss(value));
   }
-  template <> void insert_intrin<VecData<double,2>>(VecData<double,2>& vec, Integer i, double value) {
+  template <> inline void insert_intrin<VecData<double,2>>(VecData<double,2>& vec, Integer i, double value) {
     vec.v = _mm_mask_movedup_pd(vec.v, __mmask8(1u<<i), _mm_set_sd(value));
   }
 #endif
 
   // Arithmetic operators
-  template <> VecData<int8_t,16> unary_minus_intrin<VecData<int8_t,16>>(const VecData<int8_t,16>& a) {
+  template <> inline VecData<int8_t,16> unary_minus_intrin<VecData<int8_t,16>>(const VecData<int8_t,16>& a) {
     return _mm_sub_epi8(_mm_setzero_si128(), a.v);
   }
-  template <> VecData<int16_t,8> unary_minus_intrin<VecData<int16_t,8>>(const VecData<int16_t,8>& a) {
+  template <> inline VecData<int16_t,8> unary_minus_intrin<VecData<int16_t,8>>(const VecData<int16_t,8>& a) {
     return _mm_sub_epi16(_mm_setzero_si128(), a.v);
   }
-  template <> VecData<int32_t,4> unary_minus_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a) {
+  template <> inline VecData<int32_t,4> unary_minus_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a) {
     return _mm_sub_epi32(_mm_setzero_si128(), a.v);
   }
-  template <> VecData<int64_t,2> unary_minus_intrin<VecData<int64_t,2>>(const VecData<int64_t,2>& a) {
+  template <> inline VecData<int64_t,2> unary_minus_intrin<VecData<int64_t,2>>(const VecData<int64_t,2>& a) {
     return _mm_sub_epi64(_mm_setzero_si128(), a.v);
   }
-  template <> VecData<float,4> unary_minus_intrin<VecData<float,4>>(const VecData<float,4>& a) {
+  template <> inline VecData<float,4> unary_minus_intrin<VecData<float,4>>(const VecData<float,4>& a) {
     return _mm_xor_ps(a.v, _mm_castsi128_ps(_mm_set1_epi32(0x80000000)));
   }
-  template <> VecData<double,2> unary_minus_intrin<VecData<double,2>>(const VecData<double,2>& a) {
+  template <> inline VecData<double,2> unary_minus_intrin<VecData<double,2>>(const VecData<double,2>& a) {
     return _mm_xor_pd(a.v, _mm_castsi128_pd(_mm_setr_epi32(0,0x80000000,0,0x80000000)));
   }
 
-  template <> VecData<int8_t,16> mul_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
+  template <> inline VecData<int8_t,16> mul_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
     // There is no 8-bit multiply in SSE2. Split into two 16-bit multiplies
     __m128i aodd    = _mm_srli_epi16(a.v,8);               // odd numbered elements of a
     __m128i bodd    = _mm_srli_epi16(b.v,8);               // odd numbered elements of b
@@ -1060,10 +1060,10 @@ namespace SCTL_NAMESPACE { // SSE
     return selectb(mask,muleven,mulodd);                   // interleave even and odd
     #endif
   }
-  template <> VecData<int16_t,8> mul_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
+  template <> inline VecData<int16_t,8> mul_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
     return _mm_mullo_epi16(a.v, b.v);
   }
-  template <> VecData<int32_t,4> mul_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
+  template <> inline VecData<int32_t,4> mul_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
     #if defined(__SSE4_1__)
     return _mm_mullo_epi32(a.v, b.v);
     #else
@@ -1076,7 +1076,7 @@ namespace SCTL_NAMESPACE { // SSE
     return           _mm_unpacklo_epi64(prod01,prod23);   // (ab3,ab2,ab1,ab0)
     #endif
   }
-  template <> VecData<int64_t,2> mul_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
+  template <> inline VecData<int64_t,2> mul_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
     #if defined(__AVX512DQ__) && defined(__AVX512VL__)
     return _mm_mullo_epi64(a.v, b.v);
     #elif defined(__SSE4_1__)
@@ -1100,56 +1100,56 @@ namespace SCTL_NAMESPACE { // SSE
     return a_.v;
     #endif
   }
-  template <> VecData<float,4> mul_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
+  template <> inline VecData<float,4> mul_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
     return _mm_mul_ps(a.v, b.v);
   }
-  template <> VecData<double,2> mul_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
+  template <> inline VecData<double,2> mul_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
     return _mm_mul_pd(a.v, b.v);
   }
 
-  template <> VecData<int8_t,16> add_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
+  template <> inline VecData<int8_t,16> add_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
     return _mm_add_epi8(a.v, b.v);
   }
-  template <> VecData<int16_t,8> add_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
+  template <> inline VecData<int16_t,8> add_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
     return _mm_add_epi16(a.v, b.v);
   }
-  template <> VecData<int32_t,4> add_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
+  template <> inline VecData<int32_t,4> add_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
     return _mm_add_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,2> add_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
+  template <> inline VecData<int64_t,2> add_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
     return _mm_add_epi64(a.v, b.v);
   }
-  template <> VecData<float,4> add_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
+  template <> inline VecData<float,4> add_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
     return _mm_add_ps(a.v, b.v);
   }
-  template <> VecData<double,2> add_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
+  template <> inline VecData<double,2> add_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
     return _mm_add_pd(a.v, b.v);
   }
 
-  template <> VecData<int8_t,16> sub_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
+  template <> inline VecData<int8_t,16> sub_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
     return _mm_sub_epi8(a.v, b.v);
   }
-  template <> VecData<int16_t,8> sub_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
+  template <> inline VecData<int16_t,8> sub_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
     return _mm_sub_epi16(a.v, b.v);
   }
-  template <> VecData<int32_t,4> sub_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
+  template <> inline VecData<int32_t,4> sub_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
     return _mm_sub_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,2> sub_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
+  template <> inline VecData<int64_t,2> sub_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
     return _mm_sub_epi64(a.v, b.v);
   }
-  template <> VecData<float,4> sub_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
+  template <> inline VecData<float,4> sub_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
     return _mm_sub_ps(a.v, b.v);
   }
-  template <> VecData<double,2> sub_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
+  template <> inline VecData<double,2> sub_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
     return _mm_sub_pd(a.v, b.v);
   }
 
-  //template <> VecData<int8_t,16> fma_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b, const VecData<int8_t,16>& c) {}
-  //template <> VecData<int16_t,8> fma_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b, const VecData<int16_t,8>& c) {}
-  //template <> VecData<int32_t,4> sub_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b, const VecData<int32_t,4>& c) {}
-  //template <> VecData<int64_t,2> sub_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b, const VecData<int64_t,2>& c) {}
-  template <> VecData<float,4> fma_intrin(const VecData<float,4>& a, const VecData<float,4>& b, const VecData<float,4>& c) {
+  //template <> inline VecData<int8_t,16> fma_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b, const VecData<int8_t,16>& c) {}
+  //template <> inline VecData<int16_t,8> fma_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b, const VecData<int16_t,8>& c) {}
+  //template <> inline VecData<int32_t,4> sub_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b, const VecData<int32_t,4>& c) {}
+  //template <> inline VecData<int64_t,2> sub_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b, const VecData<int64_t,2>& c) {}
+  template <> inline VecData<float,4> fma_intrin(const VecData<float,4>& a, const VecData<float,4>& b, const VecData<float,4>& c) {
     #ifdef __FMA__
     return _mm_fmadd_ps(a.v, b.v, c.v);
     #elif defined(__FMA4__)
@@ -1158,7 +1158,7 @@ namespace SCTL_NAMESPACE { // SSE
     return add_intrin(mul_intrin(a,b), c);
     #endif
   }
-  template <> VecData<double,2> fma_intrin(const VecData<double,2>& a, const VecData<double,2>& b, const VecData<double,2>& c) {
+  template <> inline VecData<double,2> fma_intrin(const VecData<double,2>& a, const VecData<double,2>& b, const VecData<double,2>& c) {
     #ifdef __FMA__
     return _mm_fmadd_pd(a.v, b.v, c.v);
     #elif defined(__FMA4__)
@@ -1169,98 +1169,98 @@ namespace SCTL_NAMESPACE { // SSE
   }
 
   // Bitwise operators
-  template <> VecData<int8_t,16> not_intrin<VecData<int8_t,16>>(const VecData<int8_t,16>& a) {
+  template <> inline VecData<int8_t,16> not_intrin<VecData<int8_t,16>>(const VecData<int8_t,16>& a) {
     return _mm_xor_si128(a.v, _mm_set1_epi32(-1));
   }
-  template <> VecData<int16_t,8> not_intrin<VecData<int16_t,8>>(const VecData<int16_t,8>& a) {
+  template <> inline VecData<int16_t,8> not_intrin<VecData<int16_t,8>>(const VecData<int16_t,8>& a) {
     return _mm_xor_si128(a.v, _mm_set1_epi32(-1));
   }
-  template <> VecData<int32_t,4> not_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a) {
+  template <> inline VecData<int32_t,4> not_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a) {
     return _mm_xor_si128(a.v, _mm_set1_epi32(-1));
   }
-  template <> VecData<int64_t,2> not_intrin<VecData<int64_t,2>>(const VecData<int64_t,2>& a) {
+  template <> inline VecData<int64_t,2> not_intrin<VecData<int64_t,2>>(const VecData<int64_t,2>& a) {
     return _mm_xor_si128(a.v, _mm_set1_epi32(-1));
   }
-  template <> VecData<float,4> not_intrin<VecData<float,4>>(const VecData<float,4>& a) {
+  template <> inline VecData<float,4> not_intrin<VecData<float,4>>(const VecData<float,4>& a) {
     return _mm_xor_ps(a.v, _mm_castsi128_ps(_mm_set1_epi32(-1)));
   }
-  template <> VecData<double,2> not_intrin<VecData<double,2>>(const VecData<double,2>& a) {
+  template <> inline VecData<double,2> not_intrin<VecData<double,2>>(const VecData<double,2>& a) {
     return _mm_xor_pd(a.v, _mm_castsi128_pd(_mm_set1_epi32(-1)));
   }
 
-  template <> VecData<int8_t,16> and_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
+  template <> inline VecData<int8_t,16> and_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
     return _mm_and_si128(a.v, b.v);
   }
-  template <> VecData<int16_t,8> and_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
+  template <> inline VecData<int16_t,8> and_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
     return _mm_and_si128(a.v, b.v);
   }
-  template <> VecData<int32_t,4> and_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
+  template <> inline VecData<int32_t,4> and_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
     return _mm_and_si128(a.v, b.v);
   }
-  template <> VecData<int64_t,2> and_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
+  template <> inline VecData<int64_t,2> and_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
     return _mm_and_si128(a.v, b.v);
   }
-  template <> VecData<float,4> and_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
+  template <> inline VecData<float,4> and_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
     return _mm_and_ps(a.v, b.v);
   }
-  template <> VecData<double,2> and_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
+  template <> inline VecData<double,2> and_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
     return _mm_and_pd(a.v, b.v);
   }
 
-  template <> VecData<int8_t,16> xor_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
+  template <> inline VecData<int8_t,16> xor_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
     return _mm_xor_si128(a.v, b.v);
   }
-  template <> VecData<int16_t,8> xor_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
+  template <> inline VecData<int16_t,8> xor_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
     return _mm_xor_si128(a.v, b.v);
   }
-  template <> VecData<int32_t,4> xor_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
+  template <> inline VecData<int32_t,4> xor_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
     return _mm_xor_si128(a.v, b.v);
   }
-  template <> VecData<int64_t,2> xor_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
+  template <> inline VecData<int64_t,2> xor_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
     return _mm_xor_si128(a.v, b.v);
   }
-  template <> VecData<float,4> xor_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
+  template <> inline VecData<float,4> xor_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
     return _mm_xor_ps(a.v, b.v);
   }
-  template <> VecData<double,2> xor_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
+  template <> inline VecData<double,2> xor_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
     return _mm_xor_pd(a.v, b.v);
   }
 
-  template <> VecData<int8_t,16> or_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
+  template <> inline VecData<int8_t,16> or_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
     return _mm_or_si128(a.v, b.v);
   }
-  template <> VecData<int16_t,8> or_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
+  template <> inline VecData<int16_t,8> or_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
     return _mm_or_si128(a.v, b.v);
   }
-  template <> VecData<int32_t,4> or_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
+  template <> inline VecData<int32_t,4> or_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
     return _mm_or_si128(a.v, b.v);
   }
-  template <> VecData<int64_t,2> or_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
+  template <> inline VecData<int64_t,2> or_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
     return _mm_or_si128(a.v, b.v);
   }
-  template <> VecData<float,4> or_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
+  template <> inline VecData<float,4> or_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
     return _mm_or_ps(a.v, b.v);
   }
-  template <> VecData<double,2> or_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
+  template <> inline VecData<double,2> or_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
     return _mm_or_pd(a.v, b.v);
   }
 
-  template <> VecData<int8_t,16> andnot_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
+  template <> inline VecData<int8_t,16> andnot_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
     return _mm_andnot_si128(b.v, a.v);
   }
-  template <> VecData<int16_t,8> andnot_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
+  template <> inline VecData<int16_t,8> andnot_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
     return _mm_andnot_si128(b.v, a.v);
   }
-  template <> VecData<int32_t,4> andnot_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
+  template <> inline VecData<int32_t,4> andnot_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
     return _mm_andnot_si128(b.v, a.v);
   }
-  template <> VecData<int64_t,2> andnot_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
+  template <> inline VecData<int64_t,2> andnot_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
     return _mm_andnot_si128(b.v, a.v);
   }
-  template <> VecData<float,4> andnot_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
+  template <> inline VecData<float,4> andnot_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
     return _mm_andnot_ps(b.v, a.v);
   }
-  template <> VecData<double,2> andnot_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
+  template <> inline VecData<double,2> andnot_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
     return _mm_andnot_pd(b.v, a.v);
   }
 
@@ -1280,62 +1280,62 @@ namespace SCTL_NAMESPACE { // SSE
   template <> inline VecData<double ,2> bitshiftright_intrin<VecData<double ,2>>(const VecData<double ,2>& a, const Integer& rhs) { return _mm_castsi128_pd(_mm_srli_epi64(_mm_castpd_si128(a.v), rhs)); }
 
   // Other functions
-  template <> VecData<int8_t,16> max_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
+  template <> inline VecData<int8_t,16> max_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
     return _mm_max_epi8(a.v, b.v);
   }
-  template <> VecData<int16_t,8> max_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
+  template <> inline VecData<int16_t,8> max_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
     return _mm_max_epi16(a.v, b.v);
   }
-  template <> VecData<int32_t,4> max_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
+  template <> inline VecData<int32_t,4> max_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
     return _mm_max_epi32(a.v, b.v);
   }
   #if defined(__AVX512F__) || defined(__AVX512VL__)
-  template <> VecData<int64_t,2> max_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
+  template <> inline VecData<int64_t,2> max_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
     return _mm_max_epi64(a.v, b.v);
   }
   #endif
-  template <> VecData<float,4> max_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
+  template <> inline VecData<float,4> max_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
     return _mm_max_ps(a.v, b.v);
   }
-  template <> VecData<double,2> max_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
+  template <> inline VecData<double,2> max_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
     return _mm_max_pd(a.v, b.v);
   }
 
-  template <> VecData<int8_t,16> min_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
+  template <> inline VecData<int8_t,16> min_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
     return _mm_min_epi8(a.v, b.v);
   }
-  template <> VecData<int16_t,8> min_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
+  template <> inline VecData<int16_t,8> min_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) {
     return _mm_min_epi16(a.v, b.v);
   }
-  template <> VecData<int32_t,4> min_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
+  template <> inline VecData<int32_t,4> min_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
     return _mm_min_epi32(a.v, b.v);
   }
   #if defined(__AVX512F__) || defined(__AVX512VL__)
-  template <> VecData<int64_t,2> min_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
+  template <> inline VecData<int64_t,2> min_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
     return _mm_min_epi64(a.v, b.v);
   }
   #endif
-  template <> VecData<float,4> min_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
+  template <> inline VecData<float,4> min_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
     return _mm_min_ps(a.v, b.v);
   }
-  template <> VecData<double,2> min_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
+  template <> inline VecData<double,2> min_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
     return _mm_min_pd(a.v, b.v);
   }
 
   // Conversion operators
-  template <> VecData<float ,4> convert_int2real_intrin<VecData<float ,4>,VecData<int32_t,4>>(const VecData<int32_t,4>& x) {
+  template <> inline VecData<float ,4> convert_int2real_intrin<VecData<float ,4>,VecData<int32_t,4>>(const VecData<int32_t,4>& x) {
     return _mm_cvtepi32_ps(x.v);
   }
   #if defined(__AVX512F__) || defined(__AVX512VL__)
-  template <> VecData<double,2> convert_int2real_intrin<VecData<double,2>,VecData<int64_t,2>>(const VecData<int64_t,2>& x) {
+  template <> inline VecData<double,2> convert_int2real_intrin<VecData<double,2>,VecData<int64_t,2>>(const VecData<int64_t,2>& x) {
     return _mm_cvtepi64_pd(x.v);
   }
   #endif
 
-  template <> VecData<int32_t,4> round_real2int_intrin<VecData<int32_t,4>,VecData<float ,4>>(const VecData<float ,4>& x) {
+  template <> inline VecData<int32_t,4> round_real2int_intrin<VecData<int32_t,4>,VecData<float ,4>>(const VecData<float ,4>& x) {
     return _mm_cvtps_epi32(x.v);
   }
-  template <> VecData<int64_t,2> round_real2int_intrin<VecData<int64_t,2>,VecData<double,2>>(const VecData<double,2>& x) {
+  template <> inline VecData<int64_t,2> round_real2int_intrin<VecData<int64_t,2>,VecData<double,2>>(const VecData<double,2>& x) {
   #if defined(__AVX512F__) || defined(__AVX512VL__)
     return _mm_cvtpd_epi64(x.v);
   #else
@@ -1343,62 +1343,62 @@ namespace SCTL_NAMESPACE { // SSE
   #endif
   }
 
-  template <> VecData<float ,4> round_real2real_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_round_ps(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
-  template <> VecData<double,2> round_real2real_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_round_pd(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
+  template <> inline VecData<float ,4> round_real2real_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_round_ps(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
+  template <> inline VecData<double,2> round_real2real_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_round_pd(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
 
 
   /////////////////////////////////////////////////////////////////////////////
   /////////////////////////////////////////////////////////////////////////////
 
   // Comparison operators
-  template <> Mask<VecData<int8_t,16>> comp_intrin<ComparisonType::lt>(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return Mask<VecData<int8_t,16>>(_mm_cmplt_epi8(a.v,b.v)); }
-  template <> Mask<VecData<int8_t,16>> comp_intrin<ComparisonType::le>(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));           }
-  template <> Mask<VecData<int8_t,16>> comp_intrin<ComparisonType::gt>(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return Mask<VecData<int8_t,16>>(_mm_cmpgt_epi8(a.v,b.v)); }
-  template <> Mask<VecData<int8_t,16>> comp_intrin<ComparisonType::ge>(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));           }
-  template <> Mask<VecData<int8_t,16>> comp_intrin<ComparisonType::eq>(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return Mask<VecData<int8_t,16>>(_mm_cmpeq_epi8(a.v,b.v)); }
-  template <> Mask<VecData<int8_t,16>> comp_intrin<ComparisonType::ne>(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));           }
+  template <> inline Mask<VecData<int8_t,16>> comp_intrin<ComparisonType::lt>(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return Mask<VecData<int8_t,16>>(_mm_cmplt_epi8(a.v,b.v)); }
+  template <> inline Mask<VecData<int8_t,16>> comp_intrin<ComparisonType::le>(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));           }
+  template <> inline Mask<VecData<int8_t,16>> comp_intrin<ComparisonType::gt>(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return Mask<VecData<int8_t,16>>(_mm_cmpgt_epi8(a.v,b.v)); }
+  template <> inline Mask<VecData<int8_t,16>> comp_intrin<ComparisonType::ge>(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));           }
+  template <> inline Mask<VecData<int8_t,16>> comp_intrin<ComparisonType::eq>(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return Mask<VecData<int8_t,16>>(_mm_cmpeq_epi8(a.v,b.v)); }
+  template <> inline Mask<VecData<int8_t,16>> comp_intrin<ComparisonType::ne>(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));           }
 
-  template <> Mask<VecData<int16_t,8>> comp_intrin<ComparisonType::lt>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return Mask<VecData<int16_t,8>>(_mm_cmplt_epi16(a.v,b.v));}
-  template <> Mask<VecData<int16_t,8>> comp_intrin<ComparisonType::le>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));           }
-  template <> Mask<VecData<int16_t,8>> comp_intrin<ComparisonType::gt>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return Mask<VecData<int16_t,8>>(_mm_cmpgt_epi16(a.v,b.v));}
-  template <> Mask<VecData<int16_t,8>> comp_intrin<ComparisonType::ge>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));           }
-  template <> Mask<VecData<int16_t,8>> comp_intrin<ComparisonType::eq>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return Mask<VecData<int16_t,8>>(_mm_cmpeq_epi16(a.v,b.v));}
-  template <> Mask<VecData<int16_t,8>> comp_intrin<ComparisonType::ne>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));           }
+  template <> inline Mask<VecData<int16_t,8>> comp_intrin<ComparisonType::lt>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return Mask<VecData<int16_t,8>>(_mm_cmplt_epi16(a.v,b.v));}
+  template <> inline Mask<VecData<int16_t,8>> comp_intrin<ComparisonType::le>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));           }
+  template <> inline Mask<VecData<int16_t,8>> comp_intrin<ComparisonType::gt>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return Mask<VecData<int16_t,8>>(_mm_cmpgt_epi16(a.v,b.v));}
+  template <> inline Mask<VecData<int16_t,8>> comp_intrin<ComparisonType::ge>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));           }
+  template <> inline Mask<VecData<int16_t,8>> comp_intrin<ComparisonType::eq>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return Mask<VecData<int16_t,8>>(_mm_cmpeq_epi16(a.v,b.v));}
+  template <> inline Mask<VecData<int16_t,8>> comp_intrin<ComparisonType::ne>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));           }
 
-  template <> Mask<VecData<int32_t,4>> comp_intrin<ComparisonType::lt>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return Mask<VecData<int32_t,4>>(_mm_cmplt_epi32(a.v,b.v));}
-  template <> Mask<VecData<int32_t,4>> comp_intrin<ComparisonType::le>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));           }
-  template <> Mask<VecData<int32_t,4>> comp_intrin<ComparisonType::gt>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return Mask<VecData<int32_t,4>>(_mm_cmpgt_epi32(a.v,b.v));}
-  template <> Mask<VecData<int32_t,4>> comp_intrin<ComparisonType::ge>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));           }
-  template <> Mask<VecData<int32_t,4>> comp_intrin<ComparisonType::eq>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return Mask<VecData<int32_t,4>>(_mm_cmpeq_epi32(a.v,b.v));}
-  template <> Mask<VecData<int32_t,4>> comp_intrin<ComparisonType::ne>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));           }
+  template <> inline Mask<VecData<int32_t,4>> comp_intrin<ComparisonType::lt>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return Mask<VecData<int32_t,4>>(_mm_cmplt_epi32(a.v,b.v));}
+  template <> inline Mask<VecData<int32_t,4>> comp_intrin<ComparisonType::le>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));           }
+  template <> inline Mask<VecData<int32_t,4>> comp_intrin<ComparisonType::gt>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return Mask<VecData<int32_t,4>>(_mm_cmpgt_epi32(a.v,b.v));}
+  template <> inline Mask<VecData<int32_t,4>> comp_intrin<ComparisonType::ge>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));           }
+  template <> inline Mask<VecData<int32_t,4>> comp_intrin<ComparisonType::eq>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return Mask<VecData<int32_t,4>>(_mm_cmpeq_epi32(a.v,b.v));}
+  template <> inline Mask<VecData<int32_t,4>> comp_intrin<ComparisonType::ne>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));           }
 
-  template <> Mask<VecData<int64_t,2>> comp_intrin<ComparisonType::lt>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return Mask<VecData<int64_t,2>>(_mm_cmpgt_epi64(b.v,a.v));}
-  template <> Mask<VecData<int64_t,2>> comp_intrin<ComparisonType::le>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));           }
-  template <> Mask<VecData<int64_t,2>> comp_intrin<ComparisonType::gt>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return Mask<VecData<int64_t,2>>(_mm_cmpgt_epi64(a.v,b.v));}
-  template <> Mask<VecData<int64_t,2>> comp_intrin<ComparisonType::ge>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));           }
-  template <> Mask<VecData<int64_t,2>> comp_intrin<ComparisonType::eq>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return Mask<VecData<int64_t,2>>(_mm_cmpeq_epi64(a.v,b.v));}
-  template <> Mask<VecData<int64_t,2>> comp_intrin<ComparisonType::ne>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));           }
+  template <> inline Mask<VecData<int64_t,2>> comp_intrin<ComparisonType::lt>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return Mask<VecData<int64_t,2>>(_mm_cmpgt_epi64(b.v,a.v));}
+  template <> inline Mask<VecData<int64_t,2>> comp_intrin<ComparisonType::le>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));           }
+  template <> inline Mask<VecData<int64_t,2>> comp_intrin<ComparisonType::gt>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return Mask<VecData<int64_t,2>>(_mm_cmpgt_epi64(a.v,b.v));}
+  template <> inline Mask<VecData<int64_t,2>> comp_intrin<ComparisonType::ge>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));           }
+  template <> inline Mask<VecData<int64_t,2>> comp_intrin<ComparisonType::eq>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return Mask<VecData<int64_t,2>>(_mm_cmpeq_epi64(a.v,b.v));}
+  template <> inline Mask<VecData<int64_t,2>> comp_intrin<ComparisonType::ne>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));           }
 
-  template <> Mask<VecData<float,4>> comp_intrin<ComparisonType::lt>(const VecData<float,4>& a, const VecData<float,4>& b) { return Mask<VecData<float,4>>(_mm_cmplt_ps(a.v,b.v)); }
-  template <> Mask<VecData<float,4>> comp_intrin<ComparisonType::le>(const VecData<float,4>& a, const VecData<float,4>& b) { return Mask<VecData<float,4>>(_mm_cmple_ps(a.v,b.v)); }
-  template <> Mask<VecData<float,4>> comp_intrin<ComparisonType::gt>(const VecData<float,4>& a, const VecData<float,4>& b) { return Mask<VecData<float,4>>(_mm_cmpgt_ps(a.v,b.v)); }
-  template <> Mask<VecData<float,4>> comp_intrin<ComparisonType::ge>(const VecData<float,4>& a, const VecData<float,4>& b) { return Mask<VecData<float,4>>(_mm_cmpge_ps(a.v,b.v)); }
-  template <> Mask<VecData<float,4>> comp_intrin<ComparisonType::eq>(const VecData<float,4>& a, const VecData<float,4>& b) { return Mask<VecData<float,4>>(_mm_cmpeq_ps(a.v,b.v)); }
-  template <> Mask<VecData<float,4>> comp_intrin<ComparisonType::ne>(const VecData<float,4>& a, const VecData<float,4>& b) { return Mask<VecData<float,4>>(_mm_cmpneq_ps(a.v,b.v));}
+  template <> inline Mask<VecData<float,4>> comp_intrin<ComparisonType::lt>(const VecData<float,4>& a, const VecData<float,4>& b) { return Mask<VecData<float,4>>(_mm_cmplt_ps(a.v,b.v)); }
+  template <> inline Mask<VecData<float,4>> comp_intrin<ComparisonType::le>(const VecData<float,4>& a, const VecData<float,4>& b) { return Mask<VecData<float,4>>(_mm_cmple_ps(a.v,b.v)); }
+  template <> inline Mask<VecData<float,4>> comp_intrin<ComparisonType::gt>(const VecData<float,4>& a, const VecData<float,4>& b) { return Mask<VecData<float,4>>(_mm_cmpgt_ps(a.v,b.v)); }
+  template <> inline Mask<VecData<float,4>> comp_intrin<ComparisonType::ge>(const VecData<float,4>& a, const VecData<float,4>& b) { return Mask<VecData<float,4>>(_mm_cmpge_ps(a.v,b.v)); }
+  template <> inline Mask<VecData<float,4>> comp_intrin<ComparisonType::eq>(const VecData<float,4>& a, const VecData<float,4>& b) { return Mask<VecData<float,4>>(_mm_cmpeq_ps(a.v,b.v)); }
+  template <> inline Mask<VecData<float,4>> comp_intrin<ComparisonType::ne>(const VecData<float,4>& a, const VecData<float,4>& b) { return Mask<VecData<float,4>>(_mm_cmpneq_ps(a.v,b.v));}
 
-  template <> Mask<VecData<double,2>> comp_intrin<ComparisonType::lt>(const VecData<double,2>& a, const VecData<double,2>& b) { return Mask<VecData<double,2>>(_mm_cmplt_pd(a.v,b.v)); }
-  template <> Mask<VecData<double,2>> comp_intrin<ComparisonType::le>(const VecData<double,2>& a, const VecData<double,2>& b) { return Mask<VecData<double,2>>(_mm_cmple_pd(a.v,b.v)); }
-  template <> Mask<VecData<double,2>> comp_intrin<ComparisonType::gt>(const VecData<double,2>& a, const VecData<double,2>& b) { return Mask<VecData<double,2>>(_mm_cmpgt_pd(a.v,b.v)); }
-  template <> Mask<VecData<double,2>> comp_intrin<ComparisonType::ge>(const VecData<double,2>& a, const VecData<double,2>& b) { return Mask<VecData<double,2>>(_mm_cmpge_pd(a.v,b.v)); }
-  template <> Mask<VecData<double,2>> comp_intrin<ComparisonType::eq>(const VecData<double,2>& a, const VecData<double,2>& b) { return Mask<VecData<double,2>>(_mm_cmpeq_pd(a.v,b.v)); }
-  template <> Mask<VecData<double,2>> comp_intrin<ComparisonType::ne>(const VecData<double,2>& a, const VecData<double,2>& b) { return Mask<VecData<double,2>>(_mm_cmpneq_pd(a.v,b.v));}
+  template <> inline Mask<VecData<double,2>> comp_intrin<ComparisonType::lt>(const VecData<double,2>& a, const VecData<double,2>& b) { return Mask<VecData<double,2>>(_mm_cmplt_pd(a.v,b.v)); }
+  template <> inline Mask<VecData<double,2>> comp_intrin<ComparisonType::le>(const VecData<double,2>& a, const VecData<double,2>& b) { return Mask<VecData<double,2>>(_mm_cmple_pd(a.v,b.v)); }
+  template <> inline Mask<VecData<double,2>> comp_intrin<ComparisonType::gt>(const VecData<double,2>& a, const VecData<double,2>& b) { return Mask<VecData<double,2>>(_mm_cmpgt_pd(a.v,b.v)); }
+  template <> inline Mask<VecData<double,2>> comp_intrin<ComparisonType::ge>(const VecData<double,2>& a, const VecData<double,2>& b) { return Mask<VecData<double,2>>(_mm_cmpge_pd(a.v,b.v)); }
+  template <> inline Mask<VecData<double,2>> comp_intrin<ComparisonType::eq>(const VecData<double,2>& a, const VecData<double,2>& b) { return Mask<VecData<double,2>>(_mm_cmpeq_pd(a.v,b.v)); }
+  template <> inline Mask<VecData<double,2>> comp_intrin<ComparisonType::ne>(const VecData<double,2>& a, const VecData<double,2>& b) { return Mask<VecData<double,2>>(_mm_cmpneq_pd(a.v,b.v));}
 
-  template <> VecData<int8_t,16> select_intrin(const Mask<VecData<int8_t,16>>& s, const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return _mm_blendv_epi8(b.v, a.v, s.v); }
-  template <> VecData<int16_t,8> select_intrin(const Mask<VecData<int16_t,8>>& s, const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return _mm_blendv_epi8(b.v, a.v, s.v); }
-  template <> VecData<int32_t,4> select_intrin(const Mask<VecData<int32_t,4>>& s, const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return _mm_blendv_epi8(b.v, a.v, s.v); }
-  template <> VecData<int64_t,2> select_intrin(const Mask<VecData<int64_t,2>>& s, const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return _mm_blendv_epi8(b.v, a.v, s.v); }
-  template <> VecData<float  ,4> select_intrin(const Mask<VecData<float  ,4>>& s, const VecData<float  ,4>& a, const VecData<float  ,4>& b) { return _mm_blendv_ps  (b.v, a.v, s.v); }
-  template <> VecData<double ,2> select_intrin(const Mask<VecData<double ,2>>& s, const VecData<double ,2>& a, const VecData<double ,2>& b) { return _mm_blendv_pd  (b.v, a.v, s.v); }
+  template <> inline VecData<int8_t,16> select_intrin(const Mask<VecData<int8_t,16>>& s, const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { return _mm_blendv_epi8(b.v, a.v, s.v); }
+  template <> inline VecData<int16_t,8> select_intrin(const Mask<VecData<int16_t,8>>& s, const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { return _mm_blendv_epi8(b.v, a.v, s.v); }
+  template <> inline VecData<int32_t,4> select_intrin(const Mask<VecData<int32_t,4>>& s, const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return _mm_blendv_epi8(b.v, a.v, s.v); }
+  template <> inline VecData<int64_t,2> select_intrin(const Mask<VecData<int64_t,2>>& s, const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return _mm_blendv_epi8(b.v, a.v, s.v); }
+  template <> inline VecData<float  ,4> select_intrin(const Mask<VecData<float  ,4>>& s, const VecData<float  ,4>& a, const VecData<float  ,4>& b) { return _mm_blendv_ps  (b.v, a.v, s.v); }
+  template <> inline VecData<double ,2> select_intrin(const Mask<VecData<double ,2>>& s, const VecData<double ,2>& a, const VecData<double ,2>& b) { return _mm_blendv_pd  (b.v, a.v, s.v); }
 
 
   // Special functions
@@ -1444,23 +1444,23 @@ namespace SCTL_NAMESPACE { // SSE
   };
 
   #ifdef SCTL_HAVE_SVML
-  template <> void sincos_intrin<VecData<float ,4>>(VecData<float ,4>& sinx, VecData<float ,4>& cosx, const VecData<float ,4>& x) { sinx = _mm_sincos_ps(&cosx.v, x.v); }
-  template <> void sincos_intrin<VecData<double,2>>(VecData<double,2>& sinx, VecData<double,2>& cosx, const VecData<double,2>& x) { sinx = _mm_sincos_pd(&cosx.v, x.v); }
+  template <> inline void sincos_intrin<VecData<float ,4>>(VecData<float ,4>& sinx, VecData<float ,4>& cosx, const VecData<float ,4>& x) { sinx = _mm_sincos_ps(&cosx.v, x.v); }
+  template <> inline void sincos_intrin<VecData<double,2>>(VecData<double,2>& sinx, VecData<double,2>& cosx, const VecData<double,2>& x) { sinx = _mm_sincos_pd(&cosx.v, x.v); }
 
-  template <> VecData<float ,4> exp_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_exp_ps(x.v); }
-  template <> VecData<double,2> exp_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_exp_pd(x.v); }
+  template <> inline VecData<float ,4> exp_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_exp_ps(x.v); }
+  template <> inline VecData<double,2> exp_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_exp_pd(x.v); }
   #else
-  template <> void sincos_intrin<VecData<float ,4>>(VecData<float ,4>& sinx, VecData<float ,4>& cosx, const VecData<float ,4>& x) {
+  template <> inline void sincos_intrin<VecData<float ,4>>(VecData<float ,4>& sinx, VecData<float ,4>& cosx, const VecData<float ,4>& x) {
     approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
   }
-  template <> void sincos_intrin<VecData<double,2>>(VecData<double,2>& sinx, VecData<double,2>& cosx, const VecData<double,2>& x) {
+  template <> inline void sincos_intrin<VecData<double,2>>(VecData<double,2>& sinx, VecData<double,2>& cosx, const VecData<double,2>& x) {
     approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
   }
 
-  template <> VecData<float ,4> exp_intrin<VecData<float ,4>>(const VecData<float ,4>& x) {
+  template <> inline VecData<float ,4> exp_intrin<VecData<float ,4>>(const VecData<float ,4>& x) {
     return approx_exp_intrin<(Integer)(TypeTraits<float>::SigBits/3.8)>(x); // TODO: determine constants more precisely
   }
-  template <> VecData<double,2> exp_intrin<VecData<double,2>>(const VecData<double,2>& x) {
+  template <> inline VecData<double,2> exp_intrin<VecData<double,2>>(const VecData<double,2>& x) {
     return approx_exp_intrin<(Integer)(TypeTraits<double>::SigBits/3.8)>(x); // TODO: determine constants more precisely
   }
   #endif
@@ -1538,191 +1538,191 @@ namespace SCTL_NAMESPACE { // AVX
   #endif
 
 
-  template <> VecData<int8_t,32> zero_intrin<VecData<int8_t,32>>() {
+  template <> inline VecData<int8_t,32> zero_intrin<VecData<int8_t,32>>() {
     return _mm256_setzero_si256();
   }
-  template <> VecData<int16_t,16> zero_intrin<VecData<int16_t,16>>() {
+  template <> inline VecData<int16_t,16> zero_intrin<VecData<int16_t,16>>() {
     return _mm256_setzero_si256();
   }
-  template <> VecData<int32_t,8> zero_intrin<VecData<int32_t,8>>() {
+  template <> inline VecData<int32_t,8> zero_intrin<VecData<int32_t,8>>() {
     return _mm256_setzero_si256();
   }
-  template <> VecData<int64_t,4> zero_intrin<VecData<int64_t,4>>() {
+  template <> inline VecData<int64_t,4> zero_intrin<VecData<int64_t,4>>() {
     return _mm256_setzero_si256();
   }
-  template <> VecData<float,8> zero_intrin<VecData<float,8>>() {
+  template <> inline VecData<float,8> zero_intrin<VecData<float,8>>() {
     return _mm256_setzero_ps();
   }
-  template <> VecData<double,4> zero_intrin<VecData<double,4>>() {
+  template <> inline VecData<double,4> zero_intrin<VecData<double,4>>() {
     return _mm256_setzero_pd();
   }
 
-  template <> VecData<int8_t,32> set1_intrin<VecData<int8_t,32>>(int8_t a) {
+  template <> inline VecData<int8_t,32> set1_intrin<VecData<int8_t,32>>(int8_t a) {
     return _mm256_set1_epi8(a);
   }
-  template <> VecData<int16_t,16> set1_intrin<VecData<int16_t,16>>(int16_t a) {
+  template <> inline VecData<int16_t,16> set1_intrin<VecData<int16_t,16>>(int16_t a) {
     return _mm256_set1_epi16(a);
   }
-  template <> VecData<int32_t,8> set1_intrin<VecData<int32_t,8>>(int32_t a) {
+  template <> inline VecData<int32_t,8> set1_intrin<VecData<int32_t,8>>(int32_t a) {
     return _mm256_set1_epi32(a);
   }
-  template <> VecData<int64_t,4> set1_intrin<VecData<int64_t,4>>(int64_t a) {
+  template <> inline VecData<int64_t,4> set1_intrin<VecData<int64_t,4>>(int64_t a) {
     return _mm256_set1_epi64x(a);
   }
-  template <> VecData<float,8> set1_intrin<VecData<float,8>>(float a) {
+  template <> inline VecData<float,8> set1_intrin<VecData<float,8>>(float a) {
     return _mm256_set1_ps(a);
   }
-  template <> VecData<double,4> set1_intrin<VecData<double,4>>(double a) {
+  template <> inline VecData<double,4> set1_intrin<VecData<double,4>>(double a) {
     return _mm256_set1_pd(a);
   }
 
-  template <> VecData<int8_t,32> set_intrin<VecData<int8_t,32>,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t>(int8_t v1, int8_t v2, int8_t v3, int8_t v4, int8_t v5, int8_t v6, int8_t v7, int8_t v8, int8_t v9, int8_t v10, int8_t v11, int8_t v12, int8_t v13, int8_t v14, int8_t v15, int8_t v16, int8_t v17, int8_t v18, int8_t v19, int8_t v20, int8_t v21, int8_t v22, int8_t v23, int8_t v24, int8_t v25, int8_t v26, int8_t v27, int8_t v28, int8_t v29, int8_t v30, int8_t v31, int8_t v32) {
+  template <> inline VecData<int8_t,32> set_intrin<VecData<int8_t,32>,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t>(int8_t v1, int8_t v2, int8_t v3, int8_t v4, int8_t v5, int8_t v6, int8_t v7, int8_t v8, int8_t v9, int8_t v10, int8_t v11, int8_t v12, int8_t v13, int8_t v14, int8_t v15, int8_t v16, int8_t v17, int8_t v18, int8_t v19, int8_t v20, int8_t v21, int8_t v22, int8_t v23, int8_t v24, int8_t v25, int8_t v26, int8_t v27, int8_t v28, int8_t v29, int8_t v30, int8_t v31, int8_t v32) {
     return _mm256_set_epi8(v32,v31,v30,v29,v28,v27,v26,v25,v24,v23,v22,v21,v20,v19,v18,v17,v16,v15,v14,v13,v12,v11,v10,v9,v8,v7,v6,v5,v4,v3,v2,v1);
   }
-  template <> VecData<int16_t,16> set_intrin<VecData<int16_t,16>,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t>(int16_t v1, int16_t v2, int16_t v3, int16_t v4, int16_t v5, int16_t v6, int16_t v7, int16_t v8, int16_t v9, int16_t v10, int16_t v11, int16_t v12, int16_t v13, int16_t v14, int16_t v15, int16_t v16) {
+  template <> inline VecData<int16_t,16> set_intrin<VecData<int16_t,16>,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t>(int16_t v1, int16_t v2, int16_t v3, int16_t v4, int16_t v5, int16_t v6, int16_t v7, int16_t v8, int16_t v9, int16_t v10, int16_t v11, int16_t v12, int16_t v13, int16_t v14, int16_t v15, int16_t v16) {
     return _mm256_set_epi16(v16,v15,v14,v13,v12,v11,v10,v9,v8,v7,v6,v5,v4,v3,v2,v1);
   }
-  template <> VecData<int32_t,8> set_intrin<VecData<int32_t,8>,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t>(int32_t v1, int32_t v2, int32_t v3, int32_t v4, int32_t v5, int32_t v6, int32_t v7, int32_t v8) {
+  template <> inline VecData<int32_t,8> set_intrin<VecData<int32_t,8>,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t>(int32_t v1, int32_t v2, int32_t v3, int32_t v4, int32_t v5, int32_t v6, int32_t v7, int32_t v8) {
     return _mm256_set_epi32(v8,v7,v6,v5,v4,v3,v2,v1);
   }
-  template <> VecData<int64_t,4> set_intrin<VecData<int64_t,4>,int64_t,int64_t,int64_t,int64_t>(int64_t v1, int64_t v2, int64_t v3, int64_t v4) {
+  template <> inline VecData<int64_t,4> set_intrin<VecData<int64_t,4>,int64_t,int64_t,int64_t,int64_t>(int64_t v1, int64_t v2, int64_t v3, int64_t v4) {
     return _mm256_set_epi64x(v4,v3,v2,v1);
   }
-  template <> VecData<float,8> set_intrin<VecData<float,8>,float,float,float,float,float,float,float,float>(float v1, float v2, float v3, float v4, float v5, float v6, float v7, float v8) {
+  template <> inline VecData<float,8> set_intrin<VecData<float,8>,float,float,float,float,float,float,float,float>(float v1, float v2, float v3, float v4, float v5, float v6, float v7, float v8) {
     return _mm256_set_ps(v8,v7,v6,v5,v4,v3,v2,v1);
   }
-  template <> VecData<double,4> set_intrin<VecData<double,4>,double,double,double,double>(double v1, double v2, double v3, double v4) {
+  template <> inline VecData<double,4> set_intrin<VecData<double,4>,double,double,double,double>(double v1, double v2, double v3, double v4) {
     return _mm256_set_pd(v4,v3,v2,v1);
   }
 
-  template <> VecData<int8_t,32> load1_intrin<VecData<int8_t,32>>(int8_t const* p) {
+  template <> inline VecData<int8_t,32> load1_intrin<VecData<int8_t,32>>(int8_t const* p) {
     return _mm256_set1_epi8(p[0]);
   }
-  template <> VecData<int16_t,16> load1_intrin<VecData<int16_t,16>>(int16_t const* p) {
+  template <> inline VecData<int16_t,16> load1_intrin<VecData<int16_t,16>>(int16_t const* p) {
     return _mm256_set1_epi16(p[0]);
   }
-  template <> VecData<int32_t,8> load1_intrin<VecData<int32_t,8>>(int32_t const* p) {
+  template <> inline VecData<int32_t,8> load1_intrin<VecData<int32_t,8>>(int32_t const* p) {
     return _mm256_set1_epi32(p[0]);
   }
-  template <> VecData<int64_t,4> load1_intrin<VecData<int64_t,4>>(int64_t const* p) {
+  template <> inline VecData<int64_t,4> load1_intrin<VecData<int64_t,4>>(int64_t const* p) {
     return _mm256_set1_epi64x(p[0]);
   }
-  template <> VecData<float,8> load1_intrin<VecData<float,8>>(float const* p) {
+  template <> inline VecData<float,8> load1_intrin<VecData<float,8>>(float const* p) {
     return _mm256_broadcast_ss(p);
   }
-  template <> VecData<double,4> load1_intrin<VecData<double,4>>(double const* p) {
+  template <> inline VecData<double,4> load1_intrin<VecData<double,4>>(double const* p) {
     return _mm256_broadcast_sd(p);
   }
 
-  template <> VecData<int8_t,32> loadu_intrin<VecData<int8_t,32>>(int8_t const* p) {
+  template <> inline VecData<int8_t,32> loadu_intrin<VecData<int8_t,32>>(int8_t const* p) {
     return _mm256_loadu_si256((__m256i const*)p);
   }
-  template <> VecData<int16_t,16> loadu_intrin<VecData<int16_t,16>>(int16_t const* p) {
+  template <> inline VecData<int16_t,16> loadu_intrin<VecData<int16_t,16>>(int16_t const* p) {
     return _mm256_loadu_si256((__m256i const*)p);
   }
-  template <> VecData<int32_t,8> loadu_intrin<VecData<int32_t,8>>(int32_t const* p) {
+  template <> inline VecData<int32_t,8> loadu_intrin<VecData<int32_t,8>>(int32_t const* p) {
     return _mm256_loadu_si256((__m256i const*)p);
   }
-  template <> VecData<int64_t,4> loadu_intrin<VecData<int64_t,4>>(int64_t const* p) {
+  template <> inline VecData<int64_t,4> loadu_intrin<VecData<int64_t,4>>(int64_t const* p) {
     return _mm256_loadu_si256((__m256i const*)p);
   }
-  template <> VecData<float,8> loadu_intrin<VecData<float,8>>(float const* p) {
+  template <> inline VecData<float,8> loadu_intrin<VecData<float,8>>(float const* p) {
     return _mm256_loadu_ps(p);
   }
-  template <> VecData<double,4> loadu_intrin<VecData<double,4>>(double const* p) {
+  template <> inline VecData<double,4> loadu_intrin<VecData<double,4>>(double const* p) {
     return _mm256_loadu_pd(p);
   }
 
-  template <> VecData<int8_t,32> load_intrin<VecData<int8_t,32>>(int8_t const* p) {
+  template <> inline VecData<int8_t,32> load_intrin<VecData<int8_t,32>>(int8_t const* p) {
     return _mm256_load_si256((__m256i const*)p);
   }
-  template <> VecData<int16_t,16> load_intrin<VecData<int16_t,16>>(int16_t const* p) {
+  template <> inline VecData<int16_t,16> load_intrin<VecData<int16_t,16>>(int16_t const* p) {
     return _mm256_load_si256((__m256i const*)p);
   }
-  template <> VecData<int32_t,8> load_intrin<VecData<int32_t,8>>(int32_t const* p) {
+  template <> inline VecData<int32_t,8> load_intrin<VecData<int32_t,8>>(int32_t const* p) {
     return _mm256_load_si256((__m256i const*)p);
   }
-  template <> VecData<int64_t,4> load_intrin<VecData<int64_t,4>>(int64_t const* p) {
+  template <> inline VecData<int64_t,4> load_intrin<VecData<int64_t,4>>(int64_t const* p) {
     return _mm256_load_si256((__m256i const*)p);
   }
-  template <> VecData<float,8> load_intrin<VecData<float,8>>(float const* p) {
+  template <> inline VecData<float,8> load_intrin<VecData<float,8>>(float const* p) {
     return _mm256_load_ps(p);
   }
-  template <> VecData<double,4> load_intrin<VecData<double,4>>(double const* p) {
+  template <> inline VecData<double,4> load_intrin<VecData<double,4>>(double const* p) {
     return _mm256_load_pd(p);
   }
 
-  template <> void storeu_intrin<VecData<int8_t,32>>(int8_t* p, VecData<int8_t,32> vec) {
+  template <> inline void storeu_intrin<VecData<int8_t,32>>(int8_t* p, VecData<int8_t,32> vec) {
     _mm256_storeu_si256((__m256i*)p, vec.v);
   }
-  template <> void storeu_intrin<VecData<int16_t,16>>(int16_t* p, VecData<int16_t,16> vec) {
+  template <> inline void storeu_intrin<VecData<int16_t,16>>(int16_t* p, VecData<int16_t,16> vec) {
     _mm256_storeu_si256((__m256i*)p, vec.v);
   }
-  template <> void storeu_intrin<VecData<int32_t,8>>(int32_t* p, VecData<int32_t,8> vec) {
+  template <> inline void storeu_intrin<VecData<int32_t,8>>(int32_t* p, VecData<int32_t,8> vec) {
     _mm256_storeu_si256((__m256i*)p, vec.v);
   }
-  template <> void storeu_intrin<VecData<int64_t,4>>(int64_t* p, VecData<int64_t,4> vec) {
+  template <> inline void storeu_intrin<VecData<int64_t,4>>(int64_t* p, VecData<int64_t,4> vec) {
     _mm256_storeu_si256((__m256i*)p, vec.v);
   }
-  template <> void storeu_intrin<VecData<float,8>>(float* p, VecData<float,8> vec) {
+  template <> inline void storeu_intrin<VecData<float,8>>(float* p, VecData<float,8> vec) {
     _mm256_storeu_ps(p, vec.v);
   }
-  template <> void storeu_intrin<VecData<double,4>>(double* p, VecData<double,4> vec) {
+  template <> inline void storeu_intrin<VecData<double,4>>(double* p, VecData<double,4> vec) {
     _mm256_storeu_pd(p, vec.v);
   }
 
-  template <> void store_intrin<VecData<int8_t,32>>(int8_t* p, VecData<int8_t,32> vec) {
+  template <> inline void store_intrin<VecData<int8_t,32>>(int8_t* p, VecData<int8_t,32> vec) {
     _mm256_store_si256((__m256i*)p, vec.v);
   }
-  template <> void store_intrin<VecData<int16_t,16>>(int16_t* p, VecData<int16_t,16> vec) {
+  template <> inline void store_intrin<VecData<int16_t,16>>(int16_t* p, VecData<int16_t,16> vec) {
     _mm256_store_si256((__m256i*)p, vec.v);
   }
-  template <> void store_intrin<VecData<int32_t,8>>(int32_t* p, VecData<int32_t,8> vec) {
+  template <> inline void store_intrin<VecData<int32_t,8>>(int32_t* p, VecData<int32_t,8> vec) {
     _mm256_store_si256((__m256i*)p, vec.v);
   }
-  template <> void store_intrin<VecData<int64_t,4>>(int64_t* p, VecData<int64_t,4> vec) {
+  template <> inline void store_intrin<VecData<int64_t,4>>(int64_t* p, VecData<int64_t,4> vec) {
     _mm256_store_si256((__m256i*)p, vec.v);
   }
-  template <> void store_intrin<VecData<float,8>>(float* p, VecData<float,8> vec) {
+  template <> inline void store_intrin<VecData<float,8>>(float* p, VecData<float,8> vec) {
     _mm256_store_ps(p, vec.v);
   }
-  template <> void store_intrin<VecData<double,4>>(double* p, VecData<double,4> vec) {
+  template <> inline void store_intrin<VecData<double,4>>(double* p, VecData<double,4> vec) {
     _mm256_store_pd(p, vec.v);
   }
 
-  //template <> int8_t extract_intrin<VecData<int8_t,32>>(VecData<int8_t,32> vec, Integer i) {}
-  //template <> int16_t extract_intrin<VecData<int16_t,16>>(VecData<int16_t,16> vec, Integer i) {}
-  //template <> int32_t extract_intrin<VecData<int32_t,8>>(VecData<int32_t,8> vec, Integer i) {}
-  //template <> int64_t extract_intrin<VecData<int64_t,4>>(VecData<int64_t,4> vec, Integer i) {}
-  //template <> float extract_intrin<VecData<float,8>>(VecData<float,8> vec, Integer i) {}
-  //template <> double extract_intrin<VecData<double,4>>(VecData<double,4> vec, Integer i) {}
+  //template <> inline int8_t extract_intrin<VecData<int8_t,32>>(VecData<int8_t,32> vec, Integer i) {}
+  //template <> inline int16_t extract_intrin<VecData<int16_t,16>>(VecData<int16_t,16> vec, Integer i) {}
+  //template <> inline int32_t extract_intrin<VecData<int32_t,8>>(VecData<int32_t,8> vec, Integer i) {}
+  //template <> inline int64_t extract_intrin<VecData<int64_t,4>>(VecData<int64_t,4> vec, Integer i) {}
+  //template <> inline float extract_intrin<VecData<float,8>>(VecData<float,8> vec, Integer i) {}
+  //template <> inline double extract_intrin<VecData<double,4>>(VecData<double,4> vec, Integer i) {}
 
-  //template <> void insert_intrin<VecData<int8_t,32>>(VecData<int8_t,32>& vec, Integer i, int8_t value) {}
-  //template <> void insert_intrin<VecData<int16_t,16>>(VecData<int16_t,16>& vec, Integer i, int16_t value) {}
-  //template <> void insert_intrin<VecData<int32_t,8>>(VecData<int32_t,8>& vec, Integer i, int32_t value) {}
-  //template <> void insert_intrin<VecData<int64_t,4>>(VecData<int64_t,4>& vec, Integer i, int64_t value) {}
-  //template <> void insert_intrin<VecData<float,8>>(VecData<float,8>& vec, Integer i, float value) {}
-  //template <> void insert_intrin<VecData<double,4>>(VecData<double,4>& vec, Integer i, double value) {}
+  //template <> inline void insert_intrin<VecData<int8_t,32>>(VecData<int8_t,32>& vec, Integer i, int8_t value) {}
+  //template <> inline void insert_intrin<VecData<int16_t,16>>(VecData<int16_t,16>& vec, Integer i, int16_t value) {}
+  //template <> inline void insert_intrin<VecData<int32_t,8>>(VecData<int32_t,8>& vec, Integer i, int32_t value) {}
+  //template <> inline void insert_intrin<VecData<int64_t,4>>(VecData<int64_t,4>& vec, Integer i, int64_t value) {}
+  //template <> inline void insert_intrin<VecData<float,8>>(VecData<float,8>& vec, Integer i, float value) {}
+  //template <> inline void insert_intrin<VecData<double,4>>(VecData<double,4>& vec, Integer i, double value) {}
 
   // Arithmetic operators
   #ifdef __AVX2__
-  template <> VecData<int8_t,32> unary_minus_intrin<VecData<int8_t,32>>(const VecData<int8_t,32>& a) {
+  template <> inline VecData<int8_t,32> unary_minus_intrin<VecData<int8_t,32>>(const VecData<int8_t,32>& a) {
     return _mm256_sub_epi8(_mm256_setzero_si256(), a.v);
   }
-  template <> VecData<int16_t,16> unary_minus_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a) {
+  template <> inline VecData<int16_t,16> unary_minus_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a) {
     return _mm256_sub_epi16(_mm256_setzero_si256(), a.v);
   }
-  template <> VecData<int32_t,8> unary_minus_intrin<VecData<int32_t,8>>(const VecData<int32_t,8>& a) {
+  template <> inline VecData<int32_t,8> unary_minus_intrin<VecData<int32_t,8>>(const VecData<int32_t,8>& a) {
     return _mm256_sub_epi32(_mm256_setzero_si256(), a.v);
   }
-  template <> VecData<int64_t,4> unary_minus_intrin<VecData<int64_t,4>>(const VecData<int64_t,4>& a) {
+  template <> inline VecData<int64_t,4> unary_minus_intrin<VecData<int64_t,4>>(const VecData<int64_t,4>& a) {
     return _mm256_sub_epi64(_mm256_setzero_si256(), a.v);
   }
   #endif
-  template <> VecData<float,8> unary_minus_intrin<VecData<float,8>>(const VecData<float,8>& a) {
+  template <> inline VecData<float,8> unary_minus_intrin<VecData<float,8>>(const VecData<float,8>& a) {
     return _mm256_xor_ps(a.v, _mm256_set1_ps(-0.0f));
   }
-  template <> VecData<double,4> unary_minus_intrin<VecData<double,4>>(const VecData<double,4>& a) {
+  template <> inline VecData<double,4> unary_minus_intrin<VecData<double,4>>(const VecData<double,4>& a) {
     static constexpr union {
       int32_t i[8];
       __m256  ymm;
@@ -1731,7 +1731,7 @@ namespace SCTL_NAMESPACE { // AVX
   }
 
   #ifdef __AVX2__
-  template <> VecData<int8_t,32> mul_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
+  template <> inline VecData<int8_t,32> mul_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
     // There is no 8-bit multiply in SSE2. Split into two 16-bit multiplies
     __m256i aodd    = _mm256_srli_epi16(a.v,8);               // odd numbered elements of a
     __m256i bodd    = _mm256_srli_epi16(b.v,8);               // odd numbered elements of b
@@ -1746,13 +1746,13 @@ namespace SCTL_NAMESPACE { // AVX
     return product;
     #endif
   }
-  template <> VecData<int16_t,16> mul_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
+  template <> inline VecData<int16_t,16> mul_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
     return _mm256_mullo_epi16(a.v, b.v);
   }
-  template <> VecData<int32_t,8> mul_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
+  template <> inline VecData<int32_t,8> mul_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_mullo_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,4> mul_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
+  template <> inline VecData<int64_t,4> mul_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     #if defined(__AVX512DQ__) && defined(__AVX512VL__)
     return _mm256_mullo_epi64(a.v, b.v);
     #else
@@ -1768,60 +1768,60 @@ namespace SCTL_NAMESPACE { // AVX
     #endif
   }
   #endif
-  template <> VecData<float,8> mul_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
+  template <> inline VecData<float,8> mul_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_mul_ps(a.v, b.v);
   }
-  template <> VecData<double,4> mul_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
+  template <> inline VecData<double,4> mul_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
     return _mm256_mul_pd(a.v, b.v);
   }
 
   #ifdef __AVX2__
-  template <> VecData<int8_t,32> add_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
+  template <> inline VecData<int8_t,32> add_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
     return _mm256_add_epi8(a.v, b.v);
   }
-  template <> VecData<int16_t,16> add_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
+  template <> inline VecData<int16_t,16> add_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
     return _mm256_add_epi16(a.v, b.v);
   }
-  template <> VecData<int32_t,8> add_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
+  template <> inline VecData<int32_t,8> add_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_add_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,4> add_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
+  template <> inline VecData<int64_t,4> add_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_add_epi64(a.v, b.v);
   }
   #endif
-  template <> VecData<float,8> add_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
+  template <> inline VecData<float,8> add_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_add_ps(a.v, b.v);
   }
-  template <> VecData<double,4> add_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
+  template <> inline VecData<double,4> add_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
     return _mm256_add_pd(a.v, b.v);
   }
 
   #ifdef __AVX2__
-  template <> VecData<int8_t,32> sub_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
+  template <> inline VecData<int8_t,32> sub_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
     return _mm256_sub_epi8(a.v, b.v);
   }
-  template <> VecData<int16_t,16> sub_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
+  template <> inline VecData<int16_t,16> sub_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
     return _mm256_sub_epi16(a.v, b.v);
   }
-  template <> VecData<int32_t,8> sub_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
+  template <> inline VecData<int32_t,8> sub_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_sub_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,4> sub_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
+  template <> inline VecData<int64_t,4> sub_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_sub_epi64(a.v, b.v);
   }
   #endif
-  template <> VecData<float,8> sub_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
+  template <> inline VecData<float,8> sub_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_sub_ps(a.v, b.v);
   }
-  template <> VecData<double,4> sub_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
+  template <> inline VecData<double,4> sub_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
     return _mm256_sub_pd(a.v, b.v);
   }
 
-  //template <> VecData<int8_t,32> fma_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b, const VecData<int8_t,32>& c) {}
-  //template <> VecData<int16_t,16> fma_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b, const VecData<int16_t,16>& c) {}
-  //template <> VecData<int32_t,8> sub_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b, const VecData<int32_t,8>& c) {}
-  //template <> VecData<int64_t,4> sub_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b, const VecData<int64_t,4>& c) {}
-  template <> VecData<float,8> fma_intrin(const VecData<float,8>& a, const VecData<float,8>& b, const VecData<float,8>& c) {
+  //template <> inline VecData<int8_t,32> fma_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b, const VecData<int8_t,32>& c) {}
+  //template <> inline VecData<int16_t,16> fma_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b, const VecData<int16_t,16>& c) {}
+  //template <> inline VecData<int32_t,8> sub_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b, const VecData<int32_t,8>& c) {}
+  //template <> inline VecData<int64_t,4> sub_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b, const VecData<int64_t,4>& c) {}
+  template <> inline VecData<float,8> fma_intrin(const VecData<float,8>& a, const VecData<float,8>& b, const VecData<float,8>& c) {
     #ifdef __FMA__
     return _mm256_fmadd_ps(a.v, b.v, c.v);
     #elif defined(__FMA4__)
@@ -1830,7 +1830,7 @@ namespace SCTL_NAMESPACE { // AVX
     return add_intrin(mul_intrin(a,b), c);
     #endif
   }
-  template <> VecData<double,4> fma_intrin(const VecData<double,4>& a, const VecData<double,4>& b, const VecData<double,4>& c) {
+  template <> inline VecData<double,4> fma_intrin(const VecData<double,4>& a, const VecData<double,4>& b, const VecData<double,4>& c) {
     #ifdef __FMA__
     return _mm256_fmadd_pd(a.v, b.v, c.v);
     #elif defined(__FMA4__)
@@ -1841,122 +1841,122 @@ namespace SCTL_NAMESPACE { // AVX
   }
 
   // Bitwise operators
-  template <> VecData<int8_t,32> not_intrin<VecData<int8_t,32>>(const VecData<int8_t,32>& a) {
+  template <> inline VecData<int8_t,32> not_intrin<VecData<int8_t,32>>(const VecData<int8_t,32>& a) {
     #ifdef __AVX2__
     return _mm256_xor_si256(a.v, _mm256_set1_epi32(-1));
     #else
     return _mm256_castpd_si256(_mm256_xor_pd(_mm256_castsi256_pd(a.v), _mm256_castsi256_pd(_mm256_set1_epi32(-1))));
     #endif
   }
-  template <> VecData<int16_t,16> not_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a) {
+  template <> inline VecData<int16_t,16> not_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a) {
     #ifdef __AVX2__
     return _mm256_xor_si256(a.v, _mm256_set1_epi32(-1));
     #else
     return _mm256_castpd_si256(_mm256_xor_pd(_mm256_castsi256_pd(a.v), _mm256_castsi256_pd(_mm256_set1_epi32(-1))));
     #endif
   }
-  template <> VecData<int32_t,8> not_intrin<VecData<int32_t,8>>(const VecData<int32_t,8>& a) {
+  template <> inline VecData<int32_t,8> not_intrin<VecData<int32_t,8>>(const VecData<int32_t,8>& a) {
     #ifdef __AVX2__
     return _mm256_xor_si256(a.v, _mm256_set1_epi32(-1));
     #else
     return _mm256_castpd_si256(_mm256_xor_pd(_mm256_castsi256_pd(a.v), _mm256_castsi256_pd(_mm256_set1_epi32(-1))));
     #endif
   }
-  template <> VecData<int64_t,4> not_intrin<VecData<int64_t,4>>(const VecData<int64_t,4>& a) {
+  template <> inline VecData<int64_t,4> not_intrin<VecData<int64_t,4>>(const VecData<int64_t,4>& a) {
     #ifdef __AVX2__
     return _mm256_xor_si256(a.v, _mm256_set1_epi32(-1));
     #else
     return _mm256_castpd_si256(_mm256_xor_pd(_mm256_castsi256_pd(a.v), _mm256_castsi256_pd(_mm256_set1_epi32(-1))));
     #endif
   }
-  template <> VecData<float,8> not_intrin<VecData<float,8>>(const VecData<float,8>& a) {
+  template <> inline VecData<float,8> not_intrin<VecData<float,8>>(const VecData<float,8>& a) {
     return _mm256_xor_ps(a.v, _mm256_castsi256_ps(_mm256_set1_epi32(-1)));
   }
-  template <> VecData<double,4> not_intrin<VecData<double,4>>(const VecData<double,4>& a) {
+  template <> inline VecData<double,4> not_intrin<VecData<double,4>>(const VecData<double,4>& a) {
     return _mm256_xor_pd(a.v, _mm256_castsi256_pd(_mm256_set1_epi32(-1)));
   }
 
   #ifdef __AVX2__
-  template <> VecData<int8_t,32> and_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
+  template <> inline VecData<int8_t,32> and_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
     return _mm256_and_si256(a.v, b.v);
   }
-  template <> VecData<int16_t,16> and_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
+  template <> inline VecData<int16_t,16> and_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
     return _mm256_and_si256(a.v, b.v);
   }
-  template <> VecData<int32_t,8> and_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
+  template <> inline VecData<int32_t,8> and_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_and_si256(a.v, b.v);
   }
-  template <> VecData<int64_t,4> and_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
+  template <> inline VecData<int64_t,4> and_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_and_si256(a.v, b.v);
   }
   #endif
-  template <> VecData<float,8> and_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
+  template <> inline VecData<float,8> and_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_and_ps(a.v, b.v);
   }
-  template <> VecData<double,4> and_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
+  template <> inline VecData<double,4> and_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
     return _mm256_and_pd(a.v, b.v);
   }
 
   #ifdef __AVX2__
-  template <> VecData<int8_t,32> xor_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
+  template <> inline VecData<int8_t,32> xor_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
     return _mm256_xor_si256(a.v, b.v);
   }
-  template <> VecData<int16_t,16> xor_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
+  template <> inline VecData<int16_t,16> xor_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
     return _mm256_xor_si256(a.v, b.v);
   }
-  template <> VecData<int32_t,8> xor_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
+  template <> inline VecData<int32_t,8> xor_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_xor_si256(a.v, b.v);
   }
-  template <> VecData<int64_t,4> xor_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
+  template <> inline VecData<int64_t,4> xor_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_xor_si256(a.v, b.v);
   }
   #endif
-  template <> VecData<float,8> xor_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
+  template <> inline VecData<float,8> xor_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_xor_ps(a.v, b.v);
   }
-  template <> VecData<double,4> xor_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
+  template <> inline VecData<double,4> xor_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
     return _mm256_xor_pd(a.v, b.v);
   }
 
   #ifdef __AVX2__
-  template <> VecData<int8_t,32> or_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
+  template <> inline VecData<int8_t,32> or_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
     return _mm256_or_si256(a.v, b.v);
   }
-  template <> VecData<int16_t,16> or_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
+  template <> inline VecData<int16_t,16> or_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
     return _mm256_or_si256(a.v, b.v);
   }
-  template <> VecData<int32_t,8> or_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
+  template <> inline VecData<int32_t,8> or_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_or_si256(a.v, b.v);
   }
-  template <> VecData<int64_t,4> or_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
+  template <> inline VecData<int64_t,4> or_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_or_si256(a.v, b.v);
   }
   #endif
-  template <> VecData<float,8> or_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
+  template <> inline VecData<float,8> or_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_or_ps(a.v, b.v);
   }
-  template <> VecData<double,4> or_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
+  template <> inline VecData<double,4> or_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
     return _mm256_or_pd(a.v, b.v);
   }
 
   #ifdef __AVX2__
-  template <> VecData<int8_t,32> andnot_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
+  template <> inline VecData<int8_t,32> andnot_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
     return _mm256_andnot_si256(b.v, a.v);
   }
-  template <> VecData<int16_t,16> andnot_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
+  template <> inline VecData<int16_t,16> andnot_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
     return _mm256_andnot_si256(b.v, a.v);
   }
-  template <> VecData<int32_t,8> andnot_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
+  template <> inline VecData<int32_t,8> andnot_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_andnot_si256(b.v, a.v);
   }
-  template <> VecData<int64_t,4> andnot_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
+  template <> inline VecData<int64_t,4> andnot_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_andnot_si256(b.v, a.v);
   }
   #endif
-  template <> VecData<float,8> andnot_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
+  template <> inline VecData<float,8> andnot_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_andnot_ps(b.v, a.v);
   }
-  template <> VecData<double,4> andnot_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
+  template <> inline VecData<double,4> andnot_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
     return _mm256_andnot_pd(b.v, a.v);
   }
 
@@ -1979,76 +1979,76 @@ namespace SCTL_NAMESPACE { // AVX
 
   // Other functions
   #ifdef __AVX2__
-  template <> VecData<int8_t,32> max_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
+  template <> inline VecData<int8_t,32> max_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
     return _mm256_max_epi8(a.v, b.v);
   }
-  template <> VecData<int16_t,16> max_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
+  template <> inline VecData<int16_t,16> max_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
     return _mm256_max_epi16(a.v, b.v);
   }
-  template <> VecData<int32_t,8> max_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
+  template <> inline VecData<int32_t,8> max_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_max_epi32(a.v, b.v);
   }
   #endif
   #if defined(__AVX512F__) || defined(__AVX512VL__)
-  template <> VecData<int64_t,4> max_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
+  template <> inline VecData<int64_t,4> max_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_max_epi64(a.v, b.v);
   }
   #endif
-  template <> VecData<float,8> max_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
+  template <> inline VecData<float,8> max_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_max_ps(a.v, b.v);
   }
-  template <> VecData<double,4> max_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
+  template <> inline VecData<double,4> max_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
     return _mm256_max_pd(a.v, b.v);
   }
 
   #ifdef __AVX2__
-  template <> VecData<int8_t,32> min_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
+  template <> inline VecData<int8_t,32> min_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
     return _mm256_min_epi8(a.v, b.v);
   }
-  template <> VecData<int16_t,16> min_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
+  template <> inline VecData<int16_t,16> min_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) {
     return _mm256_min_epi16(a.v, b.v);
   }
-  template <> VecData<int32_t,8> min_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
+  template <> inline VecData<int32_t,8> min_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_min_epi32(a.v, b.v);
   }
   #endif
   #if defined(__AVX512F__) || defined(__AVX512VL__)
-  template <> VecData<int64_t,4> min_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
+  template <> inline VecData<int64_t,4> min_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_min_epi64(a.v, b.v);
   }
   #endif
-  template <> VecData<float,8> min_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
+  template <> inline VecData<float,8> min_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_min_ps(a.v, b.v);
   }
-  template <> VecData<double,4> min_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
+  template <> inline VecData<double,4> min_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
     return _mm256_min_pd(a.v, b.v);
   }
 
   // Conversion operators
-  template <> VecData<float ,8> convert_int2real_intrin<VecData<float ,8>,VecData<int32_t,8>>(const VecData<int32_t,8>& x) {
+  template <> inline VecData<float ,8> convert_int2real_intrin<VecData<float ,8>,VecData<int32_t,8>>(const VecData<int32_t,8>& x) {
     return _mm256_cvtepi32_ps(x.v);
   }
   #if defined(__AVX512F__) || defined(__AVX512VL__)
-  template <> VecData<double,4> convert_int2real_intrin<VecData<double,4>,VecData<int64_t,4>>(const VecData<int64_t,4>& x) {
+  template <> inline VecData<double,4> convert_int2real_intrin<VecData<double,4>,VecData<int64_t,4>>(const VecData<int64_t,4>& x) {
     return _mm256_cvtepi64_pd(x.v);
   }
   #endif
 
-  template <> VecData<int32_t,8> round_real2int_intrin<VecData<int32_t,8>,VecData<float ,8>>(const VecData<float ,8>& x) {
+  template <> inline VecData<int32_t,8> round_real2int_intrin<VecData<int32_t,8>,VecData<float ,8>>(const VecData<float ,8>& x) {
     return _mm256_cvtps_epi32(x.v);
   }
   #if defined(__AVX512F__) || defined(__AVX512VL__)
-  template <> VecData<int64_t,4> round_real2int_intrin<VecData<int64_t,4>,VecData<double,4>>(const VecData<double,4>& x) {
+  template <> inline VecData<int64_t,4> round_real2int_intrin<VecData<int64_t,4>,VecData<double,4>>(const VecData<double,4>& x) {
     return _mm256_cvtpd_epi64(x.v);
   }
   #elif defined(__AVX2__)
-  template <> VecData<int64_t,4> round_real2int_intrin<VecData<int64_t,4>,VecData<double,4>>(const VecData<double,4>& x) {
+  template <> inline VecData<int64_t,4> round_real2int_intrin<VecData<int64_t,4>,VecData<double,4>>(const VecData<double,4>& x) {
     return _mm256_cvtepi32_epi64(_mm256_cvtpd_epi32(x.v));
   }
   #endif
 
-  template <> VecData<float ,8> round_real2real_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_round_ps(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
-  template <> VecData<double,4> round_real2real_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_round_pd(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
+  template <> inline VecData<float ,8> round_real2real_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_round_ps(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
+  template <> inline VecData<double,4> round_real2real_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_round_pd(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
 
 
   /////////////////////////////////////////////////////////////////////////////
@@ -2056,57 +2056,57 @@ namespace SCTL_NAMESPACE { // AVX
 
   // Comparison operators
   #ifdef __AVX2__
-  template <> Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::lt>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return Mask<VecData<int8_t,32>>(_mm256_cmpgt_epi8(b.v,a.v));}
-  template <> Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::le>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));             }
-  template <> Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::gt>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return Mask<VecData<int8_t,32>>(_mm256_cmpgt_epi8(a.v,b.v));}
-  template <> Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::ge>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));             }
-  template <> Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::eq>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return Mask<VecData<int8_t,32>>(_mm256_cmpeq_epi8(a.v,b.v));}
-  template <> Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::ne>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));             }
+  template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::lt>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return Mask<VecData<int8_t,32>>(_mm256_cmpgt_epi8(b.v,a.v));}
+  template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::le>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));             }
+  template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::gt>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return Mask<VecData<int8_t,32>>(_mm256_cmpgt_epi8(a.v,b.v));}
+  template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::ge>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));             }
+  template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::eq>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return Mask<VecData<int8_t,32>>(_mm256_cmpeq_epi8(a.v,b.v));}
+  template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::ne>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));             }
 
-  template <> Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::lt>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return Mask<VecData<int16_t,16>>(_mm256_cmpgt_epi16(b.v,a.v));}
-  template <> Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::le>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));               }
-  template <> Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::gt>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return Mask<VecData<int16_t,16>>(_mm256_cmpgt_epi16(a.v,b.v));}
-  template <> Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::ge>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));               }
-  template <> Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::eq>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return Mask<VecData<int16_t,16>>(_mm256_cmpeq_epi16(a.v,b.v));}
-  template <> Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::ne>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));               }
+  template <> inline Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::lt>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return Mask<VecData<int16_t,16>>(_mm256_cmpgt_epi16(b.v,a.v));}
+  template <> inline Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::le>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));               }
+  template <> inline Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::gt>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return Mask<VecData<int16_t,16>>(_mm256_cmpgt_epi16(a.v,b.v));}
+  template <> inline Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::ge>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));               }
+  template <> inline Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::eq>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return Mask<VecData<int16_t,16>>(_mm256_cmpeq_epi16(a.v,b.v));}
+  template <> inline Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::ne>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));               }
 
-  template <> Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::lt>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return Mask<VecData<int32_t,8>>(_mm256_cmpgt_epi32(b.v,a.v));}
-  template <> Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::le>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));              }
-  template <> Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::gt>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return Mask<VecData<int32_t,8>>(_mm256_cmpgt_epi32(a.v,b.v));}
-  template <> Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::ge>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));              }
-  template <> Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::eq>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return Mask<VecData<int32_t,8>>(_mm256_cmpeq_epi32(a.v,b.v));}
-  template <> Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::ne>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));              }
+  template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::lt>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return Mask<VecData<int32_t,8>>(_mm256_cmpgt_epi32(b.v,a.v));}
+  template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::le>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));              }
+  template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::gt>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return Mask<VecData<int32_t,8>>(_mm256_cmpgt_epi32(a.v,b.v));}
+  template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::ge>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));              }
+  template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::eq>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return Mask<VecData<int32_t,8>>(_mm256_cmpeq_epi32(a.v,b.v));}
+  template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::ne>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));              }
 
-  template <> Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::lt>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(_mm256_cmpgt_epi64(b.v,a.v));}
-  template <> Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::le>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));              }
-  template <> Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::gt>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(_mm256_cmpgt_epi64(a.v,b.v));}
-  template <> Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::ge>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));              }
-  template <> Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::eq>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(_mm256_cmpeq_epi64(a.v,b.v));}
-  template <> Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::ne>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));              }
+  template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::lt>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(_mm256_cmpgt_epi64(b.v,a.v));}
+  template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::le>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a));              }
+  template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::gt>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(_mm256_cmpgt_epi64(a.v,b.v));}
+  template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::ge>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));              }
+  template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::eq>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(_mm256_cmpeq_epi64(a.v,b.v));}
+  template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::ne>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));              }
   #endif
 
-  template <> Mask<VecData<float,8>> comp_intrin<ComparisonType::lt>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_LT_OS)); }
-  template <> Mask<VecData<float,8>> comp_intrin<ComparisonType::le>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_LE_OS)); }
-  template <> Mask<VecData<float,8>> comp_intrin<ComparisonType::gt>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_GT_OS)); }
-  template <> Mask<VecData<float,8>> comp_intrin<ComparisonType::ge>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_GE_OS)); }
-  template <> Mask<VecData<float,8>> comp_intrin<ComparisonType::eq>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_EQ_OS)); }
-  template <> Mask<VecData<float,8>> comp_intrin<ComparisonType::ne>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_NEQ_OS));}
+  template <> inline Mask<VecData<float,8>> comp_intrin<ComparisonType::lt>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_LT_OS)); }
+  template <> inline Mask<VecData<float,8>> comp_intrin<ComparisonType::le>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_LE_OS)); }
+  template <> inline Mask<VecData<float,8>> comp_intrin<ComparisonType::gt>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_GT_OS)); }
+  template <> inline Mask<VecData<float,8>> comp_intrin<ComparisonType::ge>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_GE_OS)); }
+  template <> inline Mask<VecData<float,8>> comp_intrin<ComparisonType::eq>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_EQ_OS)); }
+  template <> inline Mask<VecData<float,8>> comp_intrin<ComparisonType::ne>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_NEQ_OS));}
 
-  template <> Mask<VecData<double,4>> comp_intrin<ComparisonType::lt>(const VecData<double,4>& a, const VecData<double,4>& b) { return Mask<VecData<double,4>>(_mm256_cmp_pd(a.v, b.v, _CMP_LT_OS)); }
-  template <> Mask<VecData<double,4>> comp_intrin<ComparisonType::le>(const VecData<double,4>& a, const VecData<double,4>& b) { return Mask<VecData<double,4>>(_mm256_cmp_pd(a.v, b.v, _CMP_LE_OS)); }
-  template <> Mask<VecData<double,4>> comp_intrin<ComparisonType::gt>(const VecData<double,4>& a, const VecData<double,4>& b) { return Mask<VecData<double,4>>(_mm256_cmp_pd(a.v, b.v, _CMP_GT_OS)); }
-  template <> Mask<VecData<double,4>> comp_intrin<ComparisonType::ge>(const VecData<double,4>& a, const VecData<double,4>& b) { return Mask<VecData<double,4>>(_mm256_cmp_pd(a.v, b.v, _CMP_GE_OS)); }
-  template <> Mask<VecData<double,4>> comp_intrin<ComparisonType::eq>(const VecData<double,4>& a, const VecData<double,4>& b) { return Mask<VecData<double,4>>(_mm256_cmp_pd(a.v, b.v, _CMP_EQ_OS)); }
-  template <> Mask<VecData<double,4>> comp_intrin<ComparisonType::ne>(const VecData<double,4>& a, const VecData<double,4>& b) { return Mask<VecData<double,4>>(_mm256_cmp_pd(a.v, b.v, _CMP_NEQ_OS));}
+  template <> inline Mask<VecData<double,4>> comp_intrin<ComparisonType::lt>(const VecData<double,4>& a, const VecData<double,4>& b) { return Mask<VecData<double,4>>(_mm256_cmp_pd(a.v, b.v, _CMP_LT_OS)); }
+  template <> inline Mask<VecData<double,4>> comp_intrin<ComparisonType::le>(const VecData<double,4>& a, const VecData<double,4>& b) { return Mask<VecData<double,4>>(_mm256_cmp_pd(a.v, b.v, _CMP_LE_OS)); }
+  template <> inline Mask<VecData<double,4>> comp_intrin<ComparisonType::gt>(const VecData<double,4>& a, const VecData<double,4>& b) { return Mask<VecData<double,4>>(_mm256_cmp_pd(a.v, b.v, _CMP_GT_OS)); }
+  template <> inline Mask<VecData<double,4>> comp_intrin<ComparisonType::ge>(const VecData<double,4>& a, const VecData<double,4>& b) { return Mask<VecData<double,4>>(_mm256_cmp_pd(a.v, b.v, _CMP_GE_OS)); }
+  template <> inline Mask<VecData<double,4>> comp_intrin<ComparisonType::eq>(const VecData<double,4>& a, const VecData<double,4>& b) { return Mask<VecData<double,4>>(_mm256_cmp_pd(a.v, b.v, _CMP_EQ_OS)); }
+  template <> inline Mask<VecData<double,4>> comp_intrin<ComparisonType::ne>(const VecData<double,4>& a, const VecData<double,4>& b) { return Mask<VecData<double,4>>(_mm256_cmp_pd(a.v, b.v, _CMP_NEQ_OS));}
 
   #if defined(__AVX2__)
-  template <> VecData<int8_t ,32> select_intrin(const Mask<VecData<int8_t ,32>>& s, const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return _mm256_blendv_epi8(b.v, a.v, s.v); }
-  template <> VecData<int16_t,16> select_intrin(const Mask<VecData<int16_t,16>>& s, const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return _mm256_blendv_epi8(b.v, a.v, s.v); }
-  template <> VecData<int32_t ,8> select_intrin(const Mask<VecData<int32_t ,8>>& s, const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& b) { return _mm256_blendv_epi8(b.v, a.v, s.v); }
-  template <> VecData<int64_t ,4> select_intrin(const Mask<VecData<int64_t ,4>>& s, const VecData<int64_t ,4>& a, const VecData<int64_t ,4>& b) { return _mm256_blendv_epi8(b.v, a.v, s.v); }
+  template <> inline VecData<int8_t ,32> select_intrin(const Mask<VecData<int8_t ,32>>& s, const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return _mm256_blendv_epi8(b.v, a.v, s.v); }
+  template <> inline VecData<int16_t,16> select_intrin(const Mask<VecData<int16_t,16>>& s, const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return _mm256_blendv_epi8(b.v, a.v, s.v); }
+  template <> inline VecData<int32_t ,8> select_intrin(const Mask<VecData<int32_t ,8>>& s, const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& b) { return _mm256_blendv_epi8(b.v, a.v, s.v); }
+  template <> inline VecData<int64_t ,4> select_intrin(const Mask<VecData<int64_t ,4>>& s, const VecData<int64_t ,4>& a, const VecData<int64_t ,4>& b) { return _mm256_blendv_epi8(b.v, a.v, s.v); }
   #endif
-  template <> VecData<float   ,8> select_intrin(const Mask<VecData<float   ,8>>& s, const VecData<float   ,8>& a, const VecData<float   ,8>& b) { return _mm256_blendv_ps  (b.v, a.v, s.v); }
-  template <> VecData<double  ,4> select_intrin(const Mask<VecData<double  ,4>>& s, const VecData<double  ,4>& a, const VecData<double  ,4>& b) { return _mm256_blendv_pd  (b.v, a.v, s.v); }
+  template <> inline VecData<float   ,8> select_intrin(const Mask<VecData<float   ,8>>& s, const VecData<float   ,8>& a, const VecData<float   ,8>& b) { return _mm256_blendv_ps  (b.v, a.v, s.v); }
+  template <> inline VecData<double  ,4> select_intrin(const Mask<VecData<double  ,4>>& s, const VecData<double  ,4>& a, const VecData<double  ,4>& b) { return _mm256_blendv_pd  (b.v, a.v, s.v); }
 
 
 
@@ -2153,23 +2153,23 @@ namespace SCTL_NAMESPACE { // AVX
   };
 
   #ifdef SCTL_HAVE_SVML
-  template <> void sincos_intrin<VecData<float ,8>>(VecData<float ,8>& sinx, VecData<float ,8>& cosx, const VecData<float ,8>& x) { sinx = _mm256_sincos_ps(&cosx.v, x.v); }
-  template <> void sincos_intrin<VecData<double,4>>(VecData<double,4>& sinx, VecData<double,4>& cosx, const VecData<double,4>& x) { sinx = _mm256_sincos_pd(&cosx.v, x.v); }
+  template <> inline void sincos_intrin<VecData<float ,8>>(VecData<float ,8>& sinx, VecData<float ,8>& cosx, const VecData<float ,8>& x) { sinx = _mm256_sincos_ps(&cosx.v, x.v); }
+  template <> inline void sincos_intrin<VecData<double,4>>(VecData<double,4>& sinx, VecData<double,4>& cosx, const VecData<double,4>& x) { sinx = _mm256_sincos_pd(&cosx.v, x.v); }
 
-  template <> VecData<float ,8> exp_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_exp_ps(x.v); }
-  template <> VecData<double,4> exp_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_exp_pd(x.v); }
+  template <> inline VecData<float ,8> exp_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_exp_ps(x.v); }
+  template <> inline VecData<double,4> exp_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_exp_pd(x.v); }
   #else
-  template <> void sincos_intrin<VecData<float ,8>>(VecData<float ,8>& sinx, VecData<float ,8>& cosx, const VecData<float ,8>& x) {
+  template <> inline void sincos_intrin<VecData<float ,8>>(VecData<float ,8>& sinx, VecData<float ,8>& cosx, const VecData<float ,8>& x) {
     approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
   }
-  template <> void sincos_intrin<VecData<double,4>>(VecData<double,4>& sinx, VecData<double,4>& cosx, const VecData<double,4>& x) {
+  template <> inline void sincos_intrin<VecData<double,4>>(VecData<double,4>& sinx, VecData<double,4>& cosx, const VecData<double,4>& x) {
     approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
   }
 
-  template <> VecData<float ,8> exp_intrin<VecData<float ,8>>(const VecData<float ,8>& x) {
+  template <> inline VecData<float ,8> exp_intrin<VecData<float ,8>>(const VecData<float ,8>& x) {
     return approx_exp_intrin<(Integer)(TypeTraits<float>::SigBits/3.8)>(x); // TODO: determine constants more precisely
   }
-  template <> VecData<double,4> exp_intrin<VecData<double,4>>(const VecData<double,4>& x) {
+  template <> inline VecData<double,4> exp_intrin<VecData<double,4>>(const VecData<double,4>& x) {
     return approx_exp_intrin<(Integer)(TypeTraits<double>::SigBits/3.8)>(x); // TODO: determine constants more precisely
   }
   #endif
@@ -2225,194 +2225,194 @@ namespace SCTL_NAMESPACE { // AVX512
 
 
 
-  template <> VecData<int8_t,64> zero_intrin<VecData<int8_t,64>>() {
+  template <> inline VecData<int8_t,64> zero_intrin<VecData<int8_t,64>>() {
     return _mm512_setzero_si512();
   }
-  template <> VecData<int16_t,32> zero_intrin<VecData<int16_t,32>>() {
+  template <> inline VecData<int16_t,32> zero_intrin<VecData<int16_t,32>>() {
     return _mm512_setzero_si512();
   }
-  template <> VecData<int32_t,16> zero_intrin<VecData<int32_t,16>>() {
+  template <> inline VecData<int32_t,16> zero_intrin<VecData<int32_t,16>>() {
     return _mm512_setzero_si512();
   }
-  template <> VecData<int64_t,8> zero_intrin<VecData<int64_t,8>>() {
+  template <> inline VecData<int64_t,8> zero_intrin<VecData<int64_t,8>>() {
     return _mm512_setzero_si512();
   }
-  template <> VecData<float,16> zero_intrin<VecData<float,16>>() {
+  template <> inline VecData<float,16> zero_intrin<VecData<float,16>>() {
     return _mm512_setzero_ps();
   }
-  template <> VecData<double,8> zero_intrin<VecData<double,8>>() {
+  template <> inline VecData<double,8> zero_intrin<VecData<double,8>>() {
     return _mm512_setzero_pd();
   }
 
-  template <> VecData<int8_t,64> set1_intrin<VecData<int8_t,64>>(int8_t a) {
+  template <> inline VecData<int8_t,64> set1_intrin<VecData<int8_t,64>>(int8_t a) {
     return _mm512_set1_epi8(a);
   }
-  template <> VecData<int16_t,32> set1_intrin<VecData<int16_t,32>>(int16_t a) {
+  template <> inline VecData<int16_t,32> set1_intrin<VecData<int16_t,32>>(int16_t a) {
     return _mm512_set1_epi16(a);
   }
-  template <> VecData<int32_t,16> set1_intrin<VecData<int32_t,16>>(int32_t a) {
+  template <> inline VecData<int32_t,16> set1_intrin<VecData<int32_t,16>>(int32_t a) {
     return _mm512_set1_epi32(a);
   }
-  template <> VecData<int64_t,8> set1_intrin<VecData<int64_t,8>>(int64_t a) {
+  template <> inline VecData<int64_t,8> set1_intrin<VecData<int64_t,8>>(int64_t a) {
     return _mm512_set1_epi64(a);
   }
-  template <> VecData<float,16> set1_intrin<VecData<float,16>>(float a) {
+  template <> inline VecData<float,16> set1_intrin<VecData<float,16>>(float a) {
     return _mm512_set1_ps(a);
   }
-  template <> VecData<double,8> set1_intrin<VecData<double,8>>(double a) {
+  template <> inline VecData<double,8> set1_intrin<VecData<double,8>>(double a) {
     return _mm512_set1_pd(a);
   }
 
-  template <> VecData<int8_t,64> set_intrin<VecData<int8_t,64>,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t>(int8_t v1, int8_t v2, int8_t v3, int8_t v4, int8_t v5, int8_t v6, int8_t v7, int8_t v8, int8_t v9, int8_t v10, int8_t v11, int8_t v12, int8_t v13, int8_t v14, int8_t v15, int8_t v16, int8_t v17, int8_t v18, int8_t v19, int8_t v20, int8_t v21, int8_t v22, int8_t v23, int8_t v24, int8_t v25, int8_t v26, int8_t v27, int8_t v28, int8_t v29, int8_t v30, int8_t v31, int8_t v32, int8_t v33, int8_t v34, int8_t v35, int8_t v36, int8_t v37, int8_t v38, int8_t v39, int8_t v40, int8_t v41, int8_t v42, int8_t v43, int8_t v44, int8_t v45, int8_t v46, int8_t v47, int8_t v48, int8_t v49, int8_t v50, int8_t v51, int8_t v52, int8_t v53, int8_t v54, int8_t v55, int8_t v56, int8_t v57, int8_t v58, int8_t v59, int8_t v60, int8_t v61, int8_t v62, int8_t v63, int8_t v64) {
+  template <> inline VecData<int8_t,64> set_intrin<VecData<int8_t,64>,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t,int8_t>(int8_t v1, int8_t v2, int8_t v3, int8_t v4, int8_t v5, int8_t v6, int8_t v7, int8_t v8, int8_t v9, int8_t v10, int8_t v11, int8_t v12, int8_t v13, int8_t v14, int8_t v15, int8_t v16, int8_t v17, int8_t v18, int8_t v19, int8_t v20, int8_t v21, int8_t v22, int8_t v23, int8_t v24, int8_t v25, int8_t v26, int8_t v27, int8_t v28, int8_t v29, int8_t v30, int8_t v31, int8_t v32, int8_t v33, int8_t v34, int8_t v35, int8_t v36, int8_t v37, int8_t v38, int8_t v39, int8_t v40, int8_t v41, int8_t v42, int8_t v43, int8_t v44, int8_t v45, int8_t v46, int8_t v47, int8_t v48, int8_t v49, int8_t v50, int8_t v51, int8_t v52, int8_t v53, int8_t v54, int8_t v55, int8_t v56, int8_t v57, int8_t v58, int8_t v59, int8_t v60, int8_t v61, int8_t v62, int8_t v63, int8_t v64) {
     return _mm512_set_epi8(v64,v63,v62,v61,v60,v59,v58,v57,v56,v55,v54,v53,v52,v51,v50,v49,v48,v47,v46,v45,v44,v43,v42,v41,v40,v39,v38,v37,v36,v35,v34,v33,v32,v31,v30,v29,v28,v27,v26,v25,v24,v23,v22,v21,v20,v19,v18,v17,v16,v15,v14,v13,v12,v11,v10,v9,v8,v7,v6,v5,v4,v3,v2,v1);
   }
-  template <> VecData<int16_t,32> set_intrin<VecData<int16_t,32>,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t>(int16_t v1, int16_t v2, int16_t v3, int16_t v4, int16_t v5, int16_t v6, int16_t v7, int16_t v8, int16_t v9, int16_t v10, int16_t v11, int16_t v12, int16_t v13, int16_t v14, int16_t v15, int16_t v16, int16_t v17, int16_t v18, int16_t v19, int16_t v20, int16_t v21, int16_t v22, int16_t v23, int16_t v24, int16_t v25, int16_t v26, int16_t v27, int16_t v28, int16_t v29, int16_t v30, int16_t v31, int16_t v32) {
+  template <> inline VecData<int16_t,32> set_intrin<VecData<int16_t,32>,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t,int16_t>(int16_t v1, int16_t v2, int16_t v3, int16_t v4, int16_t v5, int16_t v6, int16_t v7, int16_t v8, int16_t v9, int16_t v10, int16_t v11, int16_t v12, int16_t v13, int16_t v14, int16_t v15, int16_t v16, int16_t v17, int16_t v18, int16_t v19, int16_t v20, int16_t v21, int16_t v22, int16_t v23, int16_t v24, int16_t v25, int16_t v26, int16_t v27, int16_t v28, int16_t v29, int16_t v30, int16_t v31, int16_t v32) {
     return _mm512_set_epi16(v32,v31,v30,v29,v28,v27,v26,v25,v24,v23,v22,v21,v20,v19,v18,v17,v16,v15,v14,v13,v12,v11,v10,v9,v8,v7,v6,v5,v4,v3,v2,v1);
   }
-  template <> VecData<int32_t,16> set_intrin<VecData<int32_t,16>,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t>(int32_t v1, int32_t v2, int32_t v3, int32_t v4, int32_t v5, int32_t v6, int32_t v7, int32_t v8, int32_t v9, int32_t v10, int32_t v11, int32_t v12, int32_t v13, int32_t v14, int32_t v15, int32_t v16) {
+  template <> inline VecData<int32_t,16> set_intrin<VecData<int32_t,16>,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t,int32_t>(int32_t v1, int32_t v2, int32_t v3, int32_t v4, int32_t v5, int32_t v6, int32_t v7, int32_t v8, int32_t v9, int32_t v10, int32_t v11, int32_t v12, int32_t v13, int32_t v14, int32_t v15, int32_t v16) {
     return _mm512_set_epi32(v16,v15,v14,v13,v12,v11,v10,v9,v8,v7,v6,v5,v4,v3,v2,v1);
   }
-  template <> VecData<int64_t,8> set_intrin<VecData<int64_t,8>,int64_t,int64_t,int64_t,int64_t,int64_t,int64_t,int64_t,int64_t>(int64_t v1, int64_t v2, int64_t v3, int64_t v4, int64_t v5, int64_t v6, int64_t v7, int64_t v8) {
+  template <> inline VecData<int64_t,8> set_intrin<VecData<int64_t,8>,int64_t,int64_t,int64_t,int64_t,int64_t,int64_t,int64_t,int64_t>(int64_t v1, int64_t v2, int64_t v3, int64_t v4, int64_t v5, int64_t v6, int64_t v7, int64_t v8) {
     return _mm512_set_epi64(v8,v7,v6,v5,v4,v3,v2,v1);
   }
-  template <> VecData<float,16> set_intrin<VecData<float,16>,float,float,float,float,float,float,float,float,float,float,float,float,float,float,float,float>(float v1, float v2, float v3, float v4, float v5, float v6, float v7, float v8, float v9, float v10, float v11, float v12, float v13, float v14, float v15, float v16) {
+  template <> inline VecData<float,16> set_intrin<VecData<float,16>,float,float,float,float,float,float,float,float,float,float,float,float,float,float,float,float>(float v1, float v2, float v3, float v4, float v5, float v6, float v7, float v8, float v9, float v10, float v11, float v12, float v13, float v14, float v15, float v16) {
     return _mm512_set_ps(v16,v15,v14,v13,v12,v11,v10,v9,v8,v7,v6,v5,v4,v3,v2,v1);
   }
-  template <> VecData<double,8> set_intrin<VecData<double,8>,double,double,double,double,double,double,double,double>(double v1, double v2, double v3, double v4, double v5, double v6, double v7, double v8) {
+  template <> inline VecData<double,8> set_intrin<VecData<double,8>,double,double,double,double,double,double,double,double>(double v1, double v2, double v3, double v4, double v5, double v6, double v7, double v8) {
     return _mm512_set_pd(v8,v7,v6,v5,v4,v3,v2,v1);
   }
 
-  template <> VecData<int8_t,64> load1_intrin<VecData<int8_t,64>>(int8_t const* p) {
+  template <> inline VecData<int8_t,64> load1_intrin<VecData<int8_t,64>>(int8_t const* p) {
     return _mm512_set1_epi8(p[0]);
   }
-  template <> VecData<int16_t,32> load1_intrin<VecData<int16_t,32>>(int16_t const* p) {
+  template <> inline VecData<int16_t,32> load1_intrin<VecData<int16_t,32>>(int16_t const* p) {
     return _mm512_set1_epi16(p[0]);
   }
-  template <> VecData<int32_t,16> load1_intrin<VecData<int32_t,16>>(int32_t const* p) {
+  template <> inline VecData<int32_t,16> load1_intrin<VecData<int32_t,16>>(int32_t const* p) {
     return _mm512_set1_epi32(p[0]);
   }
-  template <> VecData<int64_t,8> load1_intrin<VecData<int64_t,8>>(int64_t const* p) {
+  template <> inline VecData<int64_t,8> load1_intrin<VecData<int64_t,8>>(int64_t const* p) {
     return _mm512_set1_epi64(p[0]);
   }
-  template <> VecData<float,16> load1_intrin<VecData<float,16>>(float const* p) {
+  template <> inline VecData<float,16> load1_intrin<VecData<float,16>>(float const* p) {
     return _mm512_set1_ps(p[0]);
   }
-  template <> VecData<double,8> load1_intrin<VecData<double,8>>(double const* p) {
+  template <> inline VecData<double,8> load1_intrin<VecData<double,8>>(double const* p) {
     return _mm512_set1_pd(p[0]);
   }
 
-  template <> VecData<int8_t,64> loadu_intrin<VecData<int8_t,64>>(int8_t const* p) {
+  template <> inline VecData<int8_t,64> loadu_intrin<VecData<int8_t,64>>(int8_t const* p) {
     return _mm512_loadu_si512((__m512i const*)p);
   }
-  template <> VecData<int16_t,32> loadu_intrin<VecData<int16_t,32>>(int16_t const* p) {
+  template <> inline VecData<int16_t,32> loadu_intrin<VecData<int16_t,32>>(int16_t const* p) {
     return _mm512_loadu_si512((__m512i const*)p);
   }
-  template <> VecData<int32_t,16> loadu_intrin<VecData<int32_t,16>>(int32_t const* p) {
+  template <> inline VecData<int32_t,16> loadu_intrin<VecData<int32_t,16>>(int32_t const* p) {
     return _mm512_loadu_si512((__m512i const*)p);
   }
-  template <> VecData<int64_t,8> loadu_intrin<VecData<int64_t,8>>(int64_t const* p) {
+  template <> inline VecData<int64_t,8> loadu_intrin<VecData<int64_t,8>>(int64_t const* p) {
     return _mm512_loadu_si512((__m512i const*)p);
   }
-  template <> VecData<float,16> loadu_intrin<VecData<float,16>>(float const* p) {
+  template <> inline VecData<float,16> loadu_intrin<VecData<float,16>>(float const* p) {
     return _mm512_loadu_ps(p);
   }
-  template <> VecData<double,8> loadu_intrin<VecData<double,8>>(double const* p) {
+  template <> inline VecData<double,8> loadu_intrin<VecData<double,8>>(double const* p) {
     return _mm512_loadu_pd(p);
   }
 
-  template <> VecData<int8_t,64> load_intrin<VecData<int8_t,64>>(int8_t const* p) {
+  template <> inline VecData<int8_t,64> load_intrin<VecData<int8_t,64>>(int8_t const* p) {
     return _mm512_load_si512((__m512i const*)p);
   }
-  template <> VecData<int16_t,32> load_intrin<VecData<int16_t,32>>(int16_t const* p) {
+  template <> inline VecData<int16_t,32> load_intrin<VecData<int16_t,32>>(int16_t const* p) {
     return _mm512_load_si512((__m512i const*)p);
   }
-  template <> VecData<int32_t,16> load_intrin<VecData<int32_t,16>>(int32_t const* p) {
+  template <> inline VecData<int32_t,16> load_intrin<VecData<int32_t,16>>(int32_t const* p) {
     return _mm512_load_si512((__m512i const*)p);
   }
-  template <> VecData<int64_t,8> load_intrin<VecData<int64_t,8>>(int64_t const* p) {
+  template <> inline VecData<int64_t,8> load_intrin<VecData<int64_t,8>>(int64_t const* p) {
     return _mm512_load_si512((__m512i const*)p);
   }
-  template <> VecData<float,16> load_intrin<VecData<float,16>>(float const* p) {
+  template <> inline VecData<float,16> load_intrin<VecData<float,16>>(float const* p) {
     return _mm512_load_ps(p);
   }
-  template <> VecData<double,8> load_intrin<VecData<double,8>>(double const* p) {
+  template <> inline VecData<double,8> load_intrin<VecData<double,8>>(double const* p) {
     return _mm512_load_pd(p);
   }
 
-  template <> void storeu_intrin<VecData<int8_t,64>>(int8_t* p, VecData<int8_t,64> vec) {
+  template <> inline void storeu_intrin<VecData<int8_t,64>>(int8_t* p, VecData<int8_t,64> vec) {
     _mm512_storeu_si512((__m512i*)p, vec.v);
   }
-  template <> void storeu_intrin<VecData<int16_t,32>>(int16_t* p, VecData<int16_t,32> vec) {
+  template <> inline void storeu_intrin<VecData<int16_t,32>>(int16_t* p, VecData<int16_t,32> vec) {
     _mm512_storeu_si512((__m512i*)p, vec.v);
   }
-  template <> void storeu_intrin<VecData<int32_t,16>>(int32_t* p, VecData<int32_t,16> vec) {
+  template <> inline void storeu_intrin<VecData<int32_t,16>>(int32_t* p, VecData<int32_t,16> vec) {
     _mm512_storeu_si512((__m512i*)p, vec.v);
   }
-  template <> void storeu_intrin<VecData<int64_t,8>>(int64_t* p, VecData<int64_t,8> vec) {
+  template <> inline void storeu_intrin<VecData<int64_t,8>>(int64_t* p, VecData<int64_t,8> vec) {
     _mm512_storeu_si512((__m512i*)p, vec.v);
   }
-  template <> void storeu_intrin<VecData<float,16>>(float* p, VecData<float,16> vec) {
+  template <> inline void storeu_intrin<VecData<float,16>>(float* p, VecData<float,16> vec) {
     _mm512_storeu_ps(p, vec.v);
   }
-  template <> void storeu_intrin<VecData<double,8>>(double* p, VecData<double,8> vec) {
+  template <> inline void storeu_intrin<VecData<double,8>>(double* p, VecData<double,8> vec) {
     _mm512_storeu_pd(p, vec.v);
   }
 
-  template <> void store_intrin<VecData<int8_t,64>>(int8_t* p, VecData<int8_t,64> vec) {
+  template <> inline void store_intrin<VecData<int8_t,64>>(int8_t* p, VecData<int8_t,64> vec) {
     _mm512_store_si512((__m512i*)p, vec.v);
   }
-  template <> void store_intrin<VecData<int16_t,32>>(int16_t* p, VecData<int16_t,32> vec) {
+  template <> inline void store_intrin<VecData<int16_t,32>>(int16_t* p, VecData<int16_t,32> vec) {
     _mm512_store_si512((__m512i*)p, vec.v);
   }
-  template <> void store_intrin<VecData<int32_t,16>>(int32_t* p, VecData<int32_t,16> vec) {
+  template <> inline void store_intrin<VecData<int32_t,16>>(int32_t* p, VecData<int32_t,16> vec) {
     _mm512_store_si512((__m512i*)p, vec.v);
   }
-  template <> void store_intrin<VecData<int64_t,8>>(int64_t* p, VecData<int64_t,8> vec) {
+  template <> inline void store_intrin<VecData<int64_t,8>>(int64_t* p, VecData<int64_t,8> vec) {
     _mm512_store_si512((__m512i*)p, vec.v);
   }
-  template <> void store_intrin<VecData<float,16>>(float* p, VecData<float,16> vec) {
+  template <> inline void store_intrin<VecData<float,16>>(float* p, VecData<float,16> vec) {
     _mm512_store_ps(p, vec.v);
   }
-  template <> void store_intrin<VecData<double,8>>(double* p, VecData<double,8> vec) {
+  template <> inline void store_intrin<VecData<double,8>>(double* p, VecData<double,8> vec) {
     _mm512_store_pd(p, vec.v);
   }
 
-  //template <> int8_t extract_intrin<VecData<int8_t,64>>(VecData<int8_t,64> vec, Integer i) {}
-  //template <> int16_t extract_intrin<VecData<int16_t,32>>(VecData<int16_t,32> vec, Integer i) {}
-  //template <> int32_t extract_intrin<VecData<int32_t,16>>(VecData<int32_t,16> vec, Integer i) {}
-  //template <> int64_t extract_intrin<VecData<int64_t,8>>(VecData<int64_t,8> vec, Integer i) {}
-  //template <> float extract_intrin<VecData<float,16>>(VecData<float,16> vec, Integer i) {}
-  //template <> double extract_intrin<VecData<double,8>>(VecData<double,8> vec, Integer i) {}
+  //template <> inline int8_t extract_intrin<VecData<int8_t,64>>(VecData<int8_t,64> vec, Integer i) {}
+  //template <> inline int16_t extract_intrin<VecData<int16_t,32>>(VecData<int16_t,32> vec, Integer i) {}
+  //template <> inline int32_t extract_intrin<VecData<int32_t,16>>(VecData<int32_t,16> vec, Integer i) {}
+  //template <> inline int64_t extract_intrin<VecData<int64_t,8>>(VecData<int64_t,8> vec, Integer i) {}
+  //template <> inline float extract_intrin<VecData<float,16>>(VecData<float,16> vec, Integer i) {}
+  //template <> inline double extract_intrin<VecData<double,8>>(VecData<double,8> vec, Integer i) {}
 
-  //template <> void insert_intrin<VecData<int8_t,64>>(VecData<int8_t,64>& vec, Integer i, int8_t value) {}
-  //template <> void insert_intrin<VecData<int16_t,32>>(VecData<int16_t,32>& vec, Integer i, int16_t value) {}
-  //template <> void insert_intrin<VecData<int32_t,16>>(VecData<int32_t,16>& vec, Integer i, int32_t value) {}
-  //template <> void insert_intrin<VecData<int64_t,8>>(VecData<int64_t,8>& vec, Integer i, int64_t value) {}
-  //template <> void insert_intrin<VecData<float,16>>(VecData<float,16>& vec, Integer i, float value) {}
-  //template <> void insert_intrin<VecData<double,8>>(VecData<double,8>& vec, Integer i, double value) {}
+  //template <> inline void insert_intrin<VecData<int8_t,64>>(VecData<int8_t,64>& vec, Integer i, int8_t value) {}
+  //template <> inline void insert_intrin<VecData<int16_t,32>>(VecData<int16_t,32>& vec, Integer i, int16_t value) {}
+  //template <> inline void insert_intrin<VecData<int32_t,16>>(VecData<int32_t,16>& vec, Integer i, int32_t value) {}
+  //template <> inline void insert_intrin<VecData<int64_t,8>>(VecData<int64_t,8>& vec, Integer i, int64_t value) {}
+  //template <> inline void insert_intrin<VecData<float,16>>(VecData<float,16>& vec, Integer i, float value) {}
+  //template <> inline void insert_intrin<VecData<double,8>>(VecData<double,8>& vec, Integer i, double value) {}
 
   // Arithmetic operators
-  //template <> VecData<int8_t,64> unary_minus_intrin<VecData<int8_t,64>>(const VecData<int8_t,64>& a) {}
-  //template <> VecData<int16_t,32> unary_minus_intrin<VecData<int16_t,32>>(const VecData<int16_t,32>& a) {}
-  template <> VecData<int32_t,16> unary_minus_intrin<VecData<int32_t,16>>(const VecData<int32_t,16>& a) {
+  //template <> inline VecData<int8_t,64> unary_minus_intrin<VecData<int8_t,64>>(const VecData<int8_t,64>& a) {}
+  //template <> inline VecData<int16_t,32> unary_minus_intrin<VecData<int16_t,32>>(const VecData<int16_t,32>& a) {}
+  template <> inline VecData<int32_t,16> unary_minus_intrin<VecData<int32_t,16>>(const VecData<int32_t,16>& a) {
     return _mm512_sub_epi32(_mm512_setzero_epi32(), a.v);
   }
-  template <> VecData<int64_t,8> unary_minus_intrin<VecData<int64_t,8>>(const VecData<int64_t,8>& a) {
+  template <> inline VecData<int64_t,8> unary_minus_intrin<VecData<int64_t,8>>(const VecData<int64_t,8>& a) {
     return _mm512_sub_epi64(_mm512_setzero_epi32(), a.v);
   }
-  template <> VecData<float,16> unary_minus_intrin<VecData<float,16>>(const VecData<float,16>& a) {
+  template <> inline VecData<float,16> unary_minus_intrin<VecData<float,16>>(const VecData<float,16>& a) {
     return _mm512_xor_ps(a.v, _mm512_castsi512_ps(_mm512_set1_epi32(0x80000000)));
   }
-  template <> VecData<double,8> unary_minus_intrin<VecData<double,8>>(const VecData<double,8>& a) {
+  template <> inline VecData<double,8> unary_minus_intrin<VecData<double,8>>(const VecData<double,8>& a) {
     return _mm512_xor_pd(a.v, _mm512_castsi512_pd(_mm512_set1_epi64(0x8000000000000000)));
   }
 
-  //template <> VecData<int8_t,64> mul_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {}
-  //template <> VecData<int16_t,32> mul_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {}
-  template <> VecData<int32_t,16> mul_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
+  //template <> inline VecData<int8_t,64> mul_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {}
+  //template <> inline VecData<int16_t,32> mul_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {}
+  template <> inline VecData<int32_t,16> mul_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
     return _mm512_mullo_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,8> mul_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
+  template <> inline VecData<int64_t,8> mul_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
     #if defined(__AVX512DQ__)
     return _mm512_mullo_epi64(a.v, b.v);
     #elif defined (__INTEL_COMPILER)
@@ -2431,75 +2431,75 @@ namespace SCTL_NAMESPACE { // AVX512
     return  prod;
     #endif
   }
-  template <> VecData<float,16> mul_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+  template <> inline VecData<float,16> mul_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
     return _mm512_mul_ps(a.v, b.v);
   }
-  template <> VecData<double,8> mul_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+  template <> inline VecData<double,8> mul_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
     return _mm512_mul_pd(a.v, b.v);
   }
 
-  //template <> VecData<int8_t,64> add_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {}
-  //template <> VecData<int16_t,32> add_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {}
-  template <> VecData<int32_t,16> add_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
+  //template <> inline VecData<int8_t,64> add_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {}
+  //template <> inline VecData<int16_t,32> add_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {}
+  template <> inline VecData<int32_t,16> add_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
     return _mm512_add_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,8> add_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
+  template <> inline VecData<int64_t,8> add_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
     return _mm512_add_epi64(a.v, b.v);
   }
-  template <> VecData<float,16> add_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+  template <> inline VecData<float,16> add_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
     return _mm512_add_ps(a.v, b.v);
   }
-  template <> VecData<double,8> add_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+  template <> inline VecData<double,8> add_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
     return _mm512_add_pd(a.v, b.v);
   }
 
-  //template <> VecData<int8_t,64> sub_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {}
-  //template <> VecData<int16_t,32> sub_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {}
-  template <> VecData<int32_t,16> sub_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
+  //template <> inline VecData<int8_t,64> sub_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {}
+  //template <> inline VecData<int16_t,32> sub_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {}
+  template <> inline VecData<int32_t,16> sub_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
     return _mm512_sub_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,8> sub_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
+  template <> inline VecData<int64_t,8> sub_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
     return _mm512_sub_epi64(a.v, b.v);
   }
-  template <> VecData<float,16> sub_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+  template <> inline VecData<float,16> sub_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
     return _mm512_sub_ps(a.v, b.v);
   }
-  template <> VecData<double,8> sub_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+  template <> inline VecData<double,8> sub_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
     return _mm512_sub_pd(a.v, b.v);
   }
 
-  //template <> VecData<int8_t,64> fma_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b, const VecData<int8_t,64>& c) {}
-  //template <> VecData<int16_t,32> fma_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b, const VecData<int16_t,32>& c) {}
-  //template <> VecData<int32_t,16> sub_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b, const VecData<int32_t,16>& c) {}
-  //template <> VecData<int64_t,8> sub_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b, const VecData<int64_t,8>& c) {}
-  template <> VecData<float,16> fma_intrin(const VecData<float,16>& a, const VecData<float,16>& b, const VecData<float,16>& c) {
+  //template <> inline VecData<int8_t,64> fma_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b, const VecData<int8_t,64>& c) {}
+  //template <> inline VecData<int16_t,32> fma_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b, const VecData<int16_t,32>& c) {}
+  //template <> inline VecData<int32_t,16> sub_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b, const VecData<int32_t,16>& c) {}
+  //template <> inline VecData<int64_t,8> sub_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b, const VecData<int64_t,8>& c) {}
+  template <> inline VecData<float,16> fma_intrin(const VecData<float,16>& a, const VecData<float,16>& b, const VecData<float,16>& c) {
     return _mm512_fmadd_ps(a.v, b.v, c.v);
   }
-  template <> VecData<double,8> fma_intrin(const VecData<double,8>& a, const VecData<double,8>& b, const VecData<double,8>& c) {
+  template <> inline VecData<double,8> fma_intrin(const VecData<double,8>& a, const VecData<double,8>& b, const VecData<double,8>& c) {
     return _mm512_fmadd_pd(a.v, b.v, c.v);
   }
 
   // Bitwise operators
-  template <> VecData<int8_t,64> not_intrin<VecData<int8_t,64>>(const VecData<int8_t,64>& a) {
+  template <> inline VecData<int8_t,64> not_intrin<VecData<int8_t,64>>(const VecData<int8_t,64>& a) {
     return _mm512_xor_si512(a.v, _mm512_set1_epi32(-1));
   }
-  template <> VecData<int16_t,32> not_intrin<VecData<int16_t,32>>(const VecData<int16_t,32>& a) {
+  template <> inline VecData<int16_t,32> not_intrin<VecData<int16_t,32>>(const VecData<int16_t,32>& a) {
     return _mm512_xor_si512(a.v, _mm512_set1_epi32(-1));
   }
-  template <> VecData<int32_t,16> not_intrin<VecData<int32_t,16>>(const VecData<int32_t,16>& a) {
+  template <> inline VecData<int32_t,16> not_intrin<VecData<int32_t,16>>(const VecData<int32_t,16>& a) {
     return _mm512_xor_si512(a.v, _mm512_set1_epi32(-1));
   }
-  template <> VecData<int64_t,8> not_intrin<VecData<int64_t,8>>(const VecData<int64_t,8>& a) {
+  template <> inline VecData<int64_t,8> not_intrin<VecData<int64_t,8>>(const VecData<int64_t,8>& a) {
     return _mm512_xor_si512(a.v, _mm512_set1_epi32(-1));
   }
-  template <> VecData<float,16> not_intrin<VecData<float,16>>(const VecData<float,16>& a) {
+  template <> inline VecData<float,16> not_intrin<VecData<float,16>>(const VecData<float,16>& a) {
     #ifdef __AVX512DQ__
     return _mm512_xor_ps(a.v, _mm512_castsi512_ps(_mm512_set1_epi32(-1)));
     #else
     return _mm512_castsi512_ps(_mm512_xor_si512(_mm512_castps_si512(a.v), _mm512_set1_epi32(-1)));
     #endif
   }
-  template <> VecData<double,8> not_intrin<VecData<double,8>>(const VecData<double,8>& a) {
+  template <> inline VecData<double,8> not_intrin<VecData<double,8>>(const VecData<double,8>& a) {
     #ifdef __AVX512DQ__
     return _mm512_xor_pd(a.v, _mm512_castsi512_pd(_mm512_set1_epi32(-1)));
     #else
@@ -2507,79 +2507,79 @@ namespace SCTL_NAMESPACE { // AVX512
     #endif
   }
 
-  template <> VecData<int8_t,64> and_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
+  template <> inline VecData<int8_t,64> and_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
     return _mm512_and_epi32(a.v, b.v);
   }
-  template <> VecData<int16_t,32> and_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
+  template <> inline VecData<int16_t,32> and_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
     return _mm512_and_epi32(a.v, b.v);
   }
-  template <> VecData<int32_t,16> and_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
+  template <> inline VecData<int32_t,16> and_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
     return _mm512_and_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,8> and_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
+  template <> inline VecData<int64_t,8> and_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
     return _mm512_and_epi32(a.v, b.v);
   }
-  template <> VecData<float,16> and_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+  template <> inline VecData<float,16> and_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
     return _mm512_and_ps(a.v, b.v);
   }
-  template <> VecData<double,8> and_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+  template <> inline VecData<double,8> and_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
     return _mm512_and_pd(a.v, b.v);
   }
 
-  template <> VecData<int8_t,64> xor_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
+  template <> inline VecData<int8_t,64> xor_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
     return _mm512_xor_epi32(a.v, b.v);
   }
-  template <> VecData<int16_t,32> xor_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
+  template <> inline VecData<int16_t,32> xor_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
     return _mm512_xor_epi32(a.v, b.v);
   }
-  template <> VecData<int32_t,16> xor_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
+  template <> inline VecData<int32_t,16> xor_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
     return _mm512_xor_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,8> xor_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
+  template <> inline VecData<int64_t,8> xor_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
     return _mm512_xor_epi32(a.v, b.v);
   }
-  template <> VecData<float,16> xor_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+  template <> inline VecData<float,16> xor_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
     return _mm512_xor_ps(a.v, b.v);
   }
-  template <> VecData<double,8> xor_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+  template <> inline VecData<double,8> xor_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
     return _mm512_xor_pd(a.v, b.v);
   }
 
-  template <> VecData<int8_t,64> or_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
+  template <> inline VecData<int8_t,64> or_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
     return _mm512_or_epi32(a.v, b.v);
   }
-  template <> VecData<int16_t,32> or_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
+  template <> inline VecData<int16_t,32> or_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
     return _mm512_or_epi32(a.v, b.v);
   }
-  template <> VecData<int32_t,16> or_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
+  template <> inline VecData<int32_t,16> or_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
     return _mm512_or_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,8> or_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
+  template <> inline VecData<int64_t,8> or_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
     return _mm512_or_epi32(a.v, b.v);
   }
-  template <> VecData<float,16> or_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+  template <> inline VecData<float,16> or_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
     return _mm512_or_ps(a.v, b.v);
   }
-  template <> VecData<double,8> or_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+  template <> inline VecData<double,8> or_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
     return _mm512_or_pd(a.v, b.v);
   }
 
-  template <> VecData<int8_t,64> andnot_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
+  template <> inline VecData<int8_t,64> andnot_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
     return _mm512_andnot_epi32(b.v, a.v);
   }
-  template <> VecData<int16_t,32> andnot_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
+  template <> inline VecData<int16_t,32> andnot_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
     return _mm512_andnot_epi32(b.v, a.v);
   }
-  template <> VecData<int32_t,16> andnot_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
+  template <> inline VecData<int32_t,16> andnot_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
     return _mm512_andnot_epi32(b.v, a.v);
   }
-  template <> VecData<int64_t,8> andnot_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
+  template <> inline VecData<int64_t,8> andnot_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
     return _mm512_andnot_epi32(b.v, a.v);
   }
-  template <> VecData<float,16> andnot_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+  template <> inline VecData<float,16> andnot_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
     return _mm512_andnot_ps(b.v, a.v);
   }
-  template <> VecData<double,8> andnot_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+  template <> inline VecData<double,8> andnot_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
     return _mm512_andnot_pd(b.v, a.v);
   }
 
@@ -2599,51 +2599,51 @@ namespace SCTL_NAMESPACE { // AVX512
   template <> inline VecData<double  ,8> bitshiftright_intrin<VecData<double  ,8>>(const VecData<double  ,8>& a, const Integer& rhs) { return _mm512_castsi512_pd(_mm512_srli_epi64(_mm512_castpd_si512(a.v), rhs)); }
 
   // Other functions
-  template <> VecData<int8_t,64> max_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
+  template <> inline VecData<int8_t,64> max_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
     return _mm512_max_epi8(a.v, b.v);
   }
-  template <> VecData<int16_t,32> max_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
+  template <> inline VecData<int16_t,32> max_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
     return _mm512_max_epi16(a.v, b.v);
   }
-  template <> VecData<int32_t,16> max_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
+  template <> inline VecData<int32_t,16> max_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
     return _mm512_max_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,8> max_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
+  template <> inline VecData<int64_t,8> max_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
     return _mm512_max_epi64(a.v, b.v);
   }
-  template <> VecData<float,16> max_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+  template <> inline VecData<float,16> max_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
     return _mm512_max_ps(a.v, b.v);
   }
-  template <> VecData<double,8> max_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+  template <> inline VecData<double,8> max_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
     return _mm512_max_pd(a.v, b.v);
   }
 
-  template <> VecData<int8_t,64> min_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
+  template <> inline VecData<int8_t,64> min_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
     return _mm512_min_epi8(a.v, b.v);
   }
-  template <> VecData<int16_t,32> min_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
+  template <> inline VecData<int16_t,32> min_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
     return _mm512_min_epi16(a.v, b.v);
   }
-  template <> VecData<int32_t,16> min_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
+  template <> inline VecData<int32_t,16> min_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
     return _mm512_min_epi32(a.v, b.v);
   }
-  template <> VecData<int64_t,8> min_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
+  template <> inline VecData<int64_t,8> min_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
     return _mm512_min_epi64(a.v, b.v);
   }
-  template <> VecData<float,16> min_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+  template <> inline VecData<float,16> min_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
     return _mm512_min_ps(a.v, b.v);
   }
-  template <> VecData<double,8> min_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+  template <> inline VecData<double,8> min_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
     return _mm512_min_pd(a.v, b.v);
   }
 
   // Conversion operators
-  template <> VecData<float,16> convert_int2real_intrin<VecData<float,16>,VecData<int32_t,16>>(const VecData<int32_t,16>& x) { return _mm512_cvtepi32_ps(x.v); }
-  template <> VecData<double,8> convert_int2real_intrin<VecData<double,8>,VecData<int64_t, 8>>(const VecData<int64_t, 8>& x) { return _mm512_cvtepi64_pd(x.v); }
-  template <> VecData<int32_t,16> round_real2int_intrin<VecData<int32_t,16>,VecData<float,16>>(const VecData<float,16>& x) { return _mm512_cvtps_epi32(x.v); }
-  template <> VecData<int64_t, 8> round_real2int_intrin<VecData<int64_t, 8>,VecData<double,8>>(const VecData<double,8>& x) { return _mm512_cvtpd_epi64(x.v); }
-  template <> VecData<float,16> round_real2real_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_roundscale_ps(x.v, _MM_FROUND_TO_NEAREST_INT); }
-  template <> VecData<double,8> round_real2real_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_roundscale_pd(x.v, _MM_FROUND_TO_NEAREST_INT); }
+  template <> inline VecData<float,16> convert_int2real_intrin<VecData<float,16>,VecData<int32_t,16>>(const VecData<int32_t,16>& x) { return _mm512_cvtepi32_ps(x.v); }
+  template <> inline VecData<double,8> convert_int2real_intrin<VecData<double,8>,VecData<int64_t, 8>>(const VecData<int64_t, 8>& x) { return _mm512_cvtepi64_pd(x.v); }
+  template <> inline VecData<int32_t,16> round_real2int_intrin<VecData<int32_t,16>,VecData<float,16>>(const VecData<float,16>& x) { return _mm512_cvtps_epi32(x.v); }
+  template <> inline VecData<int64_t, 8> round_real2int_intrin<VecData<int64_t, 8>,VecData<double,8>>(const VecData<double,8>& x) { return _mm512_cvtpd_epi64(x.v); }
+  template <> inline VecData<float,16> round_real2real_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_roundscale_ps(x.v, _MM_FROUND_TO_NEAREST_INT); }
+  template <> inline VecData<double,8> round_real2real_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_roundscale_pd(x.v, _MM_FROUND_TO_NEAREST_INT); }
 
 
   /////////////////////////////////////////////////////////////////////////////
@@ -2807,54 +2807,54 @@ namespace SCTL_NAMESPACE { // AVX512
   /////////////////////////////////////////////////////////////////////////////
 
   // Comparison operators
-  template <> Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::lt>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_LT)); }
-  template <> Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::le>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_LE)); }
-  template <> Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::gt>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_NLE));}
-  template <> Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::ge>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_NLT));}
-  template <> Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::eq>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_EQ)); }
-  template <> Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::ne>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_NE)); }
+  template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::lt>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_LT)); }
+  template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::le>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_LE)); }
+  template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::gt>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_NLE));}
+  template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::ge>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_NLT));}
+  template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::eq>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_EQ)); }
+  template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::ne>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_NE)); }
 
-  template <> Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::lt>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_LT)); }
-  template <> Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::le>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_LE)); }
-  template <> Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::gt>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_NLE));}
-  template <> Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::ge>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_NLT));}
-  template <> Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::eq>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_EQ)); }
-  template <> Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::ne>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_NE)); }
+  template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::lt>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_LT)); }
+  template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::le>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_LE)); }
+  template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::gt>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_NLE));}
+  template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::ge>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_NLT));}
+  template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::eq>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_EQ)); }
+  template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::ne>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_NE)); }
 
-  template <> Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::lt>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_LT)); }
-  template <> Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::le>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_LE)); }
-  template <> Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::gt>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_NLE));}
-  template <> Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::ge>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_NLT));}
-  template <> Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::eq>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_EQ)); }
-  template <> Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::ne>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_NE)); }
+  template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::lt>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_LT)); }
+  template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::le>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_LE)); }
+  template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::gt>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_NLE));}
+  template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::ge>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_NLT));}
+  template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::eq>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_EQ)); }
+  template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::ne>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_NE)); }
 
-  template <> Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::lt>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_LT)); }
-  template <> Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::le>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_LE)); }
-  template <> Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::gt>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_NLE));}
-  template <> Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::ge>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_NLT));}
-  template <> Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::eq>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_EQ)); }
-  template <> Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::ne>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_NE)); }
+  template <> inline Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::lt>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_LT)); }
+  template <> inline Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::le>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_LE)); }
+  template <> inline Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::gt>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_NLE));}
+  template <> inline Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::ge>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_NLT));}
+  template <> inline Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::eq>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_EQ)); }
+  template <> inline Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::ne>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_NE)); }
 
-  template <> Mask<VecData<float,16>> comp_intrin<ComparisonType::lt>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_LT_OS)); }
-  template <> Mask<VecData<float,16>> comp_intrin<ComparisonType::le>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_LE_OS)); }
-  template <> Mask<VecData<float,16>> comp_intrin<ComparisonType::gt>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_GT_OS)); }
-  template <> Mask<VecData<float,16>> comp_intrin<ComparisonType::ge>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_GE_OS)); }
-  template <> Mask<VecData<float,16>> comp_intrin<ComparisonType::eq>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_EQ_OS)); }
-  template <> Mask<VecData<float,16>> comp_intrin<ComparisonType::ne>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_NEQ_OS));}
+  template <> inline Mask<VecData<float,16>> comp_intrin<ComparisonType::lt>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_LT_OS)); }
+  template <> inline Mask<VecData<float,16>> comp_intrin<ComparisonType::le>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_LE_OS)); }
+  template <> inline Mask<VecData<float,16>> comp_intrin<ComparisonType::gt>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_GT_OS)); }
+  template <> inline Mask<VecData<float,16>> comp_intrin<ComparisonType::ge>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_GE_OS)); }
+  template <> inline Mask<VecData<float,16>> comp_intrin<ComparisonType::eq>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_EQ_OS)); }
+  template <> inline Mask<VecData<float,16>> comp_intrin<ComparisonType::ne>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_NEQ_OS));}
 
-  template <> Mask<VecData<double,8>> comp_intrin<ComparisonType::lt>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_LT_OS)); }
-  template <> Mask<VecData<double,8>> comp_intrin<ComparisonType::le>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_LE_OS)); }
-  template <> Mask<VecData<double,8>> comp_intrin<ComparisonType::gt>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_GT_OS)); }
-  template <> Mask<VecData<double,8>> comp_intrin<ComparisonType::ge>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_GE_OS)); }
-  template <> Mask<VecData<double,8>> comp_intrin<ComparisonType::eq>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_EQ_OS)); }
-  template <> Mask<VecData<double,8>> comp_intrin<ComparisonType::ne>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_NEQ_OS));}
+  template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::lt>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_LT_OS)); }
+  template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::le>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_LE_OS)); }
+  template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::gt>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_GT_OS)); }
+  template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::ge>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_GE_OS)); }
+  template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::eq>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_EQ_OS)); }
+  template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::ne>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_NEQ_OS));}
 
-  template <> VecData<int8_t ,64> select_intrin(const Mask<VecData<int8_t ,64>>& s, const VecData<int8_t ,64>& a, const VecData<int8_t ,64>& b) { return _mm512_mask_blend_epi8 (s.v, b.v, a.v); }
-  template <> VecData<int16_t,32> select_intrin(const Mask<VecData<int16_t,32>>& s, const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return _mm512_mask_blend_epi16(s.v, b.v, a.v); }
-  template <> VecData<int32_t,16> select_intrin(const Mask<VecData<int32_t,16>>& s, const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return _mm512_mask_blend_epi32(s.v, b.v, a.v); }
-  template <> VecData<int64_t ,8> select_intrin(const Mask<VecData<int64_t ,8>>& s, const VecData<int64_t ,8>& a, const VecData<int64_t ,8>& b) { return _mm512_mask_blend_epi64(s.v, b.v, a.v); }
-  template <> VecData<float  ,16> select_intrin(const Mask<VecData<float  ,16>>& s, const VecData<float  ,16>& a, const VecData<float  ,16>& b) { return _mm512_mask_blend_ps   (s.v, b.v, a.v); }
-  template <> VecData<double  ,8> select_intrin(const Mask<VecData<double  ,8>>& s, const VecData<double  ,8>& a, const VecData<double  ,8>& b) { return _mm512_mask_blend_pd   (s.v, b.v, a.v); }
+  template <> inline VecData<int8_t ,64> select_intrin(const Mask<VecData<int8_t ,64>>& s, const VecData<int8_t ,64>& a, const VecData<int8_t ,64>& b) { return _mm512_mask_blend_epi8 (s.v, b.v, a.v); }
+  template <> inline VecData<int16_t,32> select_intrin(const Mask<VecData<int16_t,32>>& s, const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return _mm512_mask_blend_epi16(s.v, b.v, a.v); }
+  template <> inline VecData<int32_t,16> select_intrin(const Mask<VecData<int32_t,16>>& s, const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return _mm512_mask_blend_epi32(s.v, b.v, a.v); }
+  template <> inline VecData<int64_t ,8> select_intrin(const Mask<VecData<int64_t ,8>>& s, const VecData<int64_t ,8>& a, const VecData<int64_t ,8>& b) { return _mm512_mask_blend_epi64(s.v, b.v, a.v); }
+  template <> inline VecData<float  ,16> select_intrin(const Mask<VecData<float  ,16>>& s, const VecData<float  ,16>& a, const VecData<float  ,16>& b) { return _mm512_mask_blend_ps   (s.v, b.v, a.v); }
+  template <> inline VecData<double  ,8> select_intrin(const Mask<VecData<double  ,8>>& s, const VecData<double  ,8>& a, const VecData<double  ,8>& b) { return _mm512_mask_blend_pd   (s.v, b.v, a.v); }
 
 
   // Special functions
@@ -2878,23 +2878,23 @@ namespace SCTL_NAMESPACE { // AVX512
   };
 
   #ifdef SCTL_HAVE_SVML
-  template <> void sincos_intrin<VecData<float,16>>(VecData<float,16>& sinx, VecData<float,16>& cosx, const VecData<float,16>& x) { sinx = _mm512_sincos_ps(&cosx.v, x.v); }
-  template <> void sincos_intrin<VecData<double,8>>(VecData<double,8>& sinx, VecData<double,8>& cosx, const VecData<double,8>& x) { sinx = _mm512_sincos_pd(&cosx.v, x.v); }
+  template <> inline void sincos_intrin<VecData<float,16>>(VecData<float,16>& sinx, VecData<float,16>& cosx, const VecData<float,16>& x) { sinx = _mm512_sincos_ps(&cosx.v, x.v); }
+  template <> inline void sincos_intrin<VecData<double,8>>(VecData<double,8>& sinx, VecData<double,8>& cosx, const VecData<double,8>& x) { sinx = _mm512_sincos_pd(&cosx.v, x.v); }
 
-  template <> VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_exp_ps(x.v); }
-  template <> VecData<double,8> exp_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_exp_pd(x.v); }
+  template <> inline VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_exp_ps(x.v); }
+  template <> inline VecData<double,8> exp_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_exp_pd(x.v); }
   #else
-  template <> void sincos_intrin<VecData<float,16>>(VecData<float,16>& sinx, VecData<float,16>& cosx, const VecData<float,16>& x) {
+  template <> inline void sincos_intrin<VecData<float,16>>(VecData<float,16>& sinx, VecData<float,16>& cosx, const VecData<float,16>& x) {
     approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
   }
-  template <> void sincos_intrin<VecData<double,8>>(VecData<double,8>& sinx, VecData<double,8>& cosx, const VecData<double,8>& x) {
+  template <> inline void sincos_intrin<VecData<double,8>>(VecData<double,8>& sinx, VecData<double,8>& cosx, const VecData<double,8>& x) {
     approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
   }
 
-  template <> VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) {
+  template <> inline VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) {
     return approx_exp_intrin<(Integer)(TypeTraits<float>::SigBits/3.8)>(x); // TODO: determine constants more precisely
   }
-  template <> VecData<double,8> exp_intrin<VecData<double,8>>(const VecData<double,8>& x) {
+  template <> inline VecData<double,8> exp_intrin<VecData<double,8>>(const VecData<double,8>& x) {
     return approx_exp_intrin<(Integer)(TypeTraits<double>::SigBits/3.8)>(x); // TODO: determine constants more precisely
   }
   #endif
