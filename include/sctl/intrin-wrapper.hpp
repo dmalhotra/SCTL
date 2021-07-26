@@ -2899,4 +2899,8 @@ namespace SCTL_NAMESPACE { // AVX512
 #endif
 }
 
+namespace SCTL_NAMESPACE { // ARM-SVE
+  // TODO
+}
+
 #endif  //_SCTL_INTRIN_WRAPPER_HPP_
