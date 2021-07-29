@@ -10,8 +10,9 @@
 #include <ostream>
 
 namespace SCTL_NAMESPACE { // Vec
-
-  #if defined(__AVX512__) || defined(__AVX512F__)
+  #if defined(__ARM_FEATURE_SVE)
+  template <class ScalarType> constexpr Integer DefaultVecLen() { return SCTL_SVE_SIZE/sizeof(ScalarType)/8; }
+  #elif defined(__AVX512__) || defined(__AVX512F__)
   static_assert(SCTL_ALIGN_BYTES >= 64);
   template <class ScalarType> constexpr Integer DefaultVecLen() { return 64/sizeof(ScalarType); }
   #elif defined(__AVX__)

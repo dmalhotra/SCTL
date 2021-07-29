@@ -19,6 +19,9 @@
 #ifdef __AVX__
 #include <immintrin.h>
 #endif
+#ifdef __ARM_FEATURE_SVE
+#include <arm_sve.h>
+#endif
 #if defined(__MIC__)
 #include <immintrin.h>
 #endif
@@ -2899,8 +2902,537 @@ namespace SCTL_NAMESPACE { // AVX512
 #endif
 }
 
-namespace SCTL_NAMESPACE { // ARM-SVE
-  // TODO
-}
+namespace SCTL_NAMESPACE {  // ARM-SVE
+// TODO
+#ifdef __ARM_FEATURE_SVE
+#define SVE_COUNT(thesize) ((SCTL_SVE_SIZE) / (thesize))
+
+using predicate_t = svbool_t __attribute__((arm_sve_vector_bits(SCTL_SVE_SIZE)));
+
+template <typename ScalarType> struct alignas(SCTL_ALIGN_BYTES) PG {
+  predicate_t pg;
+  PG() {
+    switch (sizeof(ScalarType)) {
+      case 8: {
+        pg = svptrue_b8();
+        break;
+      }
+      case 16: {
+        pg = svptrue_b16();
+        break;
+      }
+      case 32: {
+        pg = svptrue_b32();
+        break;
+      }
+      case 64: {
+        pg = svptrue_b64();
+        break;
+      }
+      default: {
+        break;
+      }
+    }
+  };
+};
+
+template <> struct alignas(SCTL_ALIGN_BYTES) VecData<int8_t, SVE_COUNT(8)> {
+  using ScalarType = int8_t;
+  using VectorType = svint8_t __attribute__((arm_sve_vector_bits(SCTL_SVE_SIZE)));
+  static constexpr Integer Size = SVE_COUNT(8);
+  static const PG<ScalarType> pg_data;
+  VecData() = default;
+  VecData(VectorType v_) : v(v_) {}
+  VectorType v;
+  static inline const predicate_t& pg() { return pg_data.pg; }
+  inline ScalarType* as_array() { return (ScalarType*)&v; };
+};
+template <> struct alignas(SCTL_ALIGN_BYTES) VecData<int16_t, SVE_COUNT(16)> {
+  using ScalarType = int16_t;
+  using VectorType = svint16_t __attribute__((arm_sve_vector_bits(SCTL_SVE_SIZE)));
+  static constexpr Integer Size = SVE_COUNT(16);
+  static const PG<ScalarType> pg_data;
+  VecData() = default;
+  VecData(VectorType v_) : v(v_) {}
+  VectorType v;
+  static inline const predicate_t& pg() { return pg_data.pg; }
+  inline ScalarType* as_array() { return (ScalarType*)&v; };
+};
+template <> struct alignas(SCTL_ALIGN_BYTES) VecData<int32_t, SVE_COUNT(32)> {
+  using ScalarType = int32_t;
+  using VectorType = svint32_t __attribute__((arm_sve_vector_bits(SCTL_SVE_SIZE)));
+  static constexpr Integer Size = SVE_COUNT(32);
+  static const PG<ScalarType> pg_data;
+  VecData() = default;
+  VecData(VectorType v_) : v(v_) {}
+  VectorType v;
+  static inline const predicate_t& pg() { return pg_data.pg; }
+  inline ScalarType* as_array() { return (ScalarType*)&v; };
+};
+template <> struct alignas(SCTL_ALIGN_BYTES) VecData<int64_t, SVE_COUNT(64)> {
+  using ScalarType = int64_t;
+  using VectorType = svint64_t __attribute__((arm_sve_vector_bits(SCTL_SVE_SIZE)));
+  static constexpr Integer Size = SVE_COUNT(64);
+  static const PG<ScalarType> pg_data;
+  VecData() = default;
+  VecData(VectorType v_) : v(v_) {}
+  VectorType v;
+  static inline const predicate_t& pg() { return pg_data.pg; }
+  inline ScalarType* as_array() { return (ScalarType*)&v; };
+};
+template <> struct alignas(SCTL_ALIGN_BYTES) VecData<float, SVE_COUNT(32)> {
+  using ScalarType = float;
+  using VectorType = svfloat32_t __attribute__((arm_sve_vector_bits(SCTL_SVE_SIZE)));
+  static constexpr Integer Size = SVE_COUNT(32);
+  static const PG<ScalarType> pg_data;
+  VecData() = default;
+  VecData(VectorType v_) : v(v_) {}
+  VectorType v;
+  static inline const predicate_t& pg() { return pg_data.pg; }
+  inline ScalarType* as_array() { return (ScalarType*)&v; };
+};
+
+template <> struct alignas(SCTL_ALIGN_BYTES) VecData<double, SVE_COUNT(64)> {
+  using ScalarType = double;
+  using VectorType = svfloat64_t __attribute__((arm_sve_vector_bits(SCTL_SVE_SIZE)));
+  static constexpr Integer Size = SVE_COUNT(64);
+  static const PG<ScalarType> pg_data;
+  VecData() = default;
+  VecData(VectorType v_) : v(v_) {}
+  VectorType v;
+  static inline const predicate_t& pg() { return pg_data.pg; }
+  inline ScalarType* as_array() { return (double*)&v; }
+};
+const PG<double> VecData<double, SVE_COUNT(64)>::pg_data = PG<double>();
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> zero_intrin<VecData<int8_t, SVE_COUNT(8)>>() { return svdup_s8(0); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> zero_intrin<VecData<int16_t, SVE_COUNT(16)>>() { return svdup_s16(0); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> zero_intrin<VecData<int32_t, SVE_COUNT(32)>>() { return svdup_s32(0); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> zero_intrin<VecData<int64_t, SVE_COUNT(64)>>() { return svdup_s64(0); }
+template <> inline VecData<float, SVE_COUNT(32)> zero_intrin<VecData<float, SVE_COUNT(32)>>() { return svdup_f32(0.); }
+template <> inline VecData<double, SVE_COUNT(64)> zero_intrin<VecData<double, SVE_COUNT(64)>>() { return svdup_f64(0.); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> set1_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t a) { return svdup_s8(a); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> set1_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t a) { return svdup_s16(a); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> set1_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t a) { return svdup_s32(a); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> set1_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t a) { return svdup_s64(a); }
+template <> inline VecData<float, SVE_COUNT(32)> set1_intrin<VecData<float, SVE_COUNT(32)>>(float a) { return svdup_f32(a); }
+template <> inline VecData<double, SVE_COUNT(64)> set1_intrin<VecData<double, SVE_COUNT(64)>>(double a) { return svdup_f64(a); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> load1_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t const* p) { return svdup_s8(p[0]); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> load1_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t const* p) { return svdup_s16(p[0]); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> load1_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t const* p) { return svdup_s32(p[0]); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> load1_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t const* p) { return svdup_s64(p[0]); }
+template <> inline VecData<float, SVE_COUNT(32)> load1_intrin<VecData<float, SVE_COUNT(32)>>(float const* p) { return svdup_f32(p[0]); }
+template <> inline VecData<double, SVE_COUNT(64)> load1_intrin<VecData<double, SVE_COUNT(64)>>(double const* p) { return svdup_f64(p[0]); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> loadu_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t const* p) { return svld1(VecData<int8_t, SVE_COUNT(8)>::pg(), p); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> loadu_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t const* p) { return svld1(VecData<int16_t, SVE_COUNT(16)>::pg(), p); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> loadu_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t const* p) { return svld1(VecData<int32_t, SVE_COUNT(32)>::pg(), p); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> loadu_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t const* p) { return svld1(VecData<int64_t, SVE_COUNT(64)>::pg(), p); }
+template <> inline VecData<float, SVE_COUNT(32)> loadu_intrin<VecData<float, SVE_COUNT(32)>>(float const* p) { return svld1(VecData<float, SVE_COUNT(32)>::pg(), p); }
+template <> inline VecData<double, SVE_COUNT(64)> loadu_intrin<VecData<double, SVE_COUNT(64)>>(double const* p) { return svld1(VecData<double, SVE_COUNT(64)>::pg(), p); }
+
+template <> inline void storeu_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t* p, VecData<int8_t, SVE_COUNT(8)> vec) { svst1(VecData<int8_t, SVE_COUNT(8)>::pg(), p, vec.v); }
+template <> inline void storeu_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t* p, VecData<int16_t, SVE_COUNT(16)> vec) { svst1(VecData<int16_t, SVE_COUNT(16)>::pg(), p, vec.v); }
+template <> inline void storeu_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t* p, VecData<int32_t, SVE_COUNT(32)> vec) { svst1(VecData<int32_t, SVE_COUNT(32)>::pg(), p, vec.v); }
+template <> inline void storeu_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t* p, VecData<int64_t, SVE_COUNT(64)> vec) { svst1(VecData<int64_t, SVE_COUNT(64)>::pg(), p, vec.v); }
+template <> inline void storeu_intrin<VecData<float, SVE_COUNT(32)>>(float* p, VecData<float, SVE_COUNT(32)> vec) { svst1(VecData<float, SVE_COUNT(32)>::pg(), p, vec.v); }
+template <> inline void storeu_intrin<VecData<double, SVE_COUNT(64)>>(double* p, VecData<double, SVE_COUNT(64)> vec) { svst1(VecData<double, SVE_COUNT(64)>::pg(), p, vec.v); }
+
+template <> inline void store_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t* p, VecData<int8_t, SVE_COUNT(8)> vec) { svst1(VecData<int8_t, SVE_COUNT(8)>::pg(), p, vec.v); }
+template <> inline void store_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t* p, VecData<int16_t, SVE_COUNT(16)> vec) { svst1(VecData<int16_t, SVE_COUNT(16)>::pg(), p, vec.v); }
+template <> inline void store_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t* p, VecData<int32_t, SVE_COUNT(32)> vec) { svst1(VecData<int32_t, SVE_COUNT(32)>::pg(), p, vec.v); }
+template <> inline void store_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t* p, VecData<int64_t, SVE_COUNT(64)> vec) { svst1(VecData<int64_t, SVE_COUNT(64)>::pg(), p, vec.v); }
+template <> inline void store_intrin<VecData<float, SVE_COUNT(32)>>(float* p, VecData<float, SVE_COUNT(32)> vec) { svst1(VecData<float, SVE_COUNT(32)>::pg(), p, vec.v); }
+template <> inline void store_intrin<VecData<double, SVE_COUNT(64)>>(double* p, VecData<double, SVE_COUNT(64)> vec) { svst1(VecData<double, SVE_COUNT(64)>::pg(), p, vec.v); }
+
+// Arithmetic operators
+template <> inline VecData<int8_t, SVE_COUNT(8)> unary_minus_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a) { return svsub_x(VecData<int8_t, SVE_COUNT(8)>::pg(), svdup_s8(0), a.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> unary_minus_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a) { return svsub_x(VecData<int16_t, SVE_COUNT(16)>::pg(), svdup_s16(0), a.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> unary_minus_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a) { return svsub_x(VecData<int32_t, SVE_COUNT(32)>::pg(), svdup_s32(0), a.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> unary_minus_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a) { return svsub_x(VecData<int64_t, SVE_COUNT(64)>::pg(), svdup_s64(0), a.v); }
+template <> inline VecData<float, SVE_COUNT(32)> unary_minus_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a) { return svsub_x(VecData<float, SVE_COUNT(32)>::pg(), svdup_f32(0.), a.v); }
+template <> inline VecData<double, SVE_COUNT(64)> unary_minus_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a) { return svsub_x(VecData<double, SVE_COUNT(64)>::pg(), svdup_f64(0.), a.v); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> mul_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svmul_s8_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> mul_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svmul_s16_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> mul_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svmul_s32_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> mul_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svmul_s64_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> mul_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svmul_f32_x(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v); }
+template <> inline VecData<double, SVE_COUNT(64)> mul_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svmul_f64_x(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> add_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svadd_s8_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> add_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svadd_s16_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> add_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svadd_s32_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> add_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svadd_s64_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> add_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svadd_f32_x(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v); }
+template <> inline VecData<double, SVE_COUNT(64)> add_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svadd_f64_x(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> sub_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svsub_s8_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> sub_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svsub_s16_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> sub_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svsub_s32_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> sub_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svsub_s64_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> sub_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svsub_f32_x(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v); }
+template <> inline VecData<double, SVE_COUNT(64)> sub_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svsub_f64_x(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> fma_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b, const VecData<int8_t, SVE_COUNT(8)>& c) { return svmad_s8_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v, c.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> fma_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b, const VecData<int16_t, SVE_COUNT(16)>& c) { return svmad_s16_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v, c.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> fma_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b, const VecData<int32_t, SVE_COUNT(32)>& c) { return svmad_s32_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v, c.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> fma_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b, const VecData<int64_t, SVE_COUNT(64)>& c) { return svmad_s64_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v, c.v); }
+template <> inline VecData<float, SVE_COUNT(32)> fma_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b, const VecData<float, SVE_COUNT(32)>& c) { return svmad_f32_x(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v, c.v); }
+template <> inline VecData<double, SVE_COUNT(64)> fma_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b, const VecData<double, SVE_COUNT(64)>& c) { return svmad_f64_x(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v, c.v); }
+
+// Bitwise operators
+template <> inline VecData<int8_t, SVE_COUNT(8)> not_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a) { return svnot_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> not_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a) { return svnot_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> not_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a) { return svnot_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> not_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a) { return svnot_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v); }
+template <> inline VecData<float, SVE_COUNT(32)> not_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a) { return svreinterpret_f32(svnot_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_s32(a.v))); }
+template <> inline VecData<double, SVE_COUNT(64)> not_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a) { return svreinterpret_f64(svnot_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_s64(a.v))); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> and_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svand_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> and_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svand_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> and_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svand_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> and_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svand_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> and_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svreinterpret_f32(svand_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_s32(a.v), svreinterpret_s32(a.v))); }
+template <> inline VecData<double, SVE_COUNT(64)> and_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svreinterpret_f64(svand_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_s64(a.v), svreinterpret_s64(b.v))); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> xor_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return sveor_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> xor_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return sveor_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> xor_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return sveor_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> xor_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return sveor_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> xor_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svreinterpret_f32(sveor_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_s32(a.v), svreinterpret_s32(a.v))); }
+template <> inline VecData<double, SVE_COUNT(64)> xor_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svreinterpret_f64(sveor_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_s64(a.v), svreinterpret_s64(b.v))); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> or_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svorr_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> or_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svorr_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> or_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svorr_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> or_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svorr_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> or_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svreinterpret_f32(svorr_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_s32(a.v), svreinterpret_s32(a.v))); }
+template <> inline VecData<double, SVE_COUNT(64)> or_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svreinterpret_f64(svorr_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_s64(a.v), svreinterpret_s64(b.v))); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> andnot_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svbic_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> andnot_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svbic_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> andnot_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svbic_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> andnot_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svbic_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> andnot_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svreinterpret_f32(svbic_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_s32(a.v), svreinterpret_s32(a.v))); }
+template <> inline VecData<double, SVE_COUNT(64)> andnot_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svreinterpret_f64(svbic_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_s64(a.v), svreinterpret_s64(b.v))); }
+
+// Bitshift
+template <> inline VecData<int8_t, SVE_COUNT(8)> bitshiftleft_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const Integer& rhs) { return svlsl_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, (uint8_t)rhs); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> bitshiftleft_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const Integer& rhs) { return svlsl_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, (uint16_t)rhs); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> bitshiftleft_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const Integer& rhs) { return svlsl_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, (uint32_t)rhs); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> bitshiftleft_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const Integer& rhs) { return svlsl_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, (uint64_t)rhs); }
+template <> inline VecData<float, SVE_COUNT(32)> bitshiftleft_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const Integer& rhs) { return svreinterpret_f32(svlsl_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_u32(a.v), (uint32_t)rhs)); }
+template <> inline VecData<double, SVE_COUNT(64)> bitshiftleft_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const Integer& rhs) { return svreinterpret_f64(svlsl_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_u64(a.v), (uint64_t)rhs)); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> bitshiftright_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const Integer& rhs) { return svreinterpret_s8(svlsr_x(VecData<int8_t, SVE_COUNT(8)>::pg(), svreinterpret_u8(a.v), (uint8_t)rhs)); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> bitshiftright_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const Integer& rhs) { return svreinterpret_s16(svlsr_x(VecData<int16_t, SVE_COUNT(16)>::pg(), svreinterpret_u16(a.v), (uint16_t)rhs)); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> bitshiftright_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const Integer& rhs) { return svreinterpret_s32(svlsr_x(VecData<int32_t, SVE_COUNT(32)>::pg(), svreinterpret_u32(a.v), (uint32_t)rhs)); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> bitshiftright_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const Integer& rhs) { return svreinterpret_s64(svlsr_x(VecData<int64_t, SVE_COUNT(64)>::pg(), svreinterpret_u64(a.v), (uint64_t)rhs)); }
+template <> inline VecData<float, SVE_COUNT(32)> bitshiftright_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const Integer& rhs) { return svreinterpret_f32(svlsr_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_u32(a.v), (uint32_t)rhs)); }
+template <> inline VecData<double, SVE_COUNT(64)> bitshiftright_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const Integer& rhs) { return svreinterpret_f64(svlsr_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_u64(a.v), (uint64_t)rhs)); }
+
+// // Other functions
+// template <> inline VecData<int8_t,64> max_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
+//   return _mm512_max_epi8(a.v, b.v);
+// }
+// template <> inline VecData<int16_t,32> max_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
+//   return _mm512_max_epi16(a.v, b.v);
+// }
+// template <> inline VecData<int32_t,16> max_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
+//   return _mm512_max_epi32(a.v, b.v);
+// }
+// template <> inline VecData<int64_t,8> max_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
+//   return _mm512_max_epi64(a.v, b.v);
+// }
+// template <> inline VecData<float,16> max_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+//   return _mm512_max_ps(a.v, b.v);
+// }
+// template <> inline VecData<double,8> max_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+//   return _mm512_max_pd(a.v, b.v);
+// }
+
+// template <> inline VecData<int8_t,64> min_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
+//   return _mm512_min_epi8(a.v, b.v);
+// }
+// template <> inline VecData<int16_t,32> min_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
+//   return _mm512_min_epi16(a.v, b.v);
+// }
+// template <> inline VecData<int32_t,16> min_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
+//   return _mm512_min_epi32(a.v, b.v);
+// }
+// template <> inline VecData<int64_t,8> min_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) {
+//   return _mm512_min_epi64(a.v, b.v);
+// }
+// template <> inline VecData<float,16> min_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+//   return _mm512_min_ps(a.v, b.v);
+// }
+// template <> inline VecData<double,8> min_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+//   return _mm512_min_pd(a.v, b.v);
+// }
+
+// // Conversion operators
+// template <> inline VecData<float,16> convert_int2real_intrin<VecData<float,16>,VecData<int32_t,16>>(const VecData<int32_t,16>& x) { return _mm512_cvtepi32_ps(x.v); }
+// template <> inline VecData<double,8> convert_int2real_intrin<VecData<double,8>,VecData<int64_t, 8>>(const VecData<int64_t, 8>& x) { return _mm512_cvtepi64_pd(x.v); }
+// template <> inline VecData<int32_t,16> round_real2int_intrin<VecData<int32_t,16>,VecData<float,16>>(const VecData<float,16>& x) { return _mm512_cvtps_epi32(x.v); }
+// template <> inline VecData<int64_t, 8> round_real2int_intrin<VecData<int64_t, 8>,VecData<double,8>>(const VecData<double,8>& x) { return _mm512_cvtpd_epi64(x.v); }
+// template <> inline VecData<float,16> round_real2real_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_roundscale_ps(x.v, _MM_FROUND_TO_NEAREST_INT); }
+// template <> inline VecData<double,8> round_real2real_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_roundscale_pd(x.v, _MM_FROUND_TO_NEAREST_INT); }
+
+// /////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////
+
+// template <> struct Mask<VecData<int8_t ,64>> {
+//   using ScalarType = int8_t;
+//   static constexpr Integer Size = 64;
+
+//   static Mask Zero() {
+//     return Mask(0);
+//   }
+
+//   Mask() = default;
+//   Mask(const Mask&) = default;
+//   Mask& operator=(const Mask&) = default;
+//   ~Mask() = default;
+
+//   explicit Mask(const __mmask64& v_) : v(v_) {}
+
+//   __mmask64 v;
+// };
+// template <> struct Mask<VecData<int16_t,32>> {
+//   using ScalarType = int16_t;
+//   static constexpr Integer Size = 32;
+
+//   static Mask Zero() {
+//     return Mask(0);
+//   }
+
+//   Mask() = default;
+//   Mask(const Mask&) = default;
+//   Mask& operator=(const Mask&) = default;
+//   ~Mask() = default;
+
+//   explicit Mask(const __mmask32& v_) : v(v_) {}
+
+//   __mmask32 v;
+// };
+// template <> struct Mask<VecData<int32_t,16>> {
+//   using ScalarType = int32_t;
+//   static constexpr Integer Size = 16;
+
+//   static Mask Zero() {
+//     return Mask(0);
+//   }
+
+//   Mask() = default;
+//   Mask(const Mask&) = default;
+//   Mask& operator=(const Mask&) = default;
+//   ~Mask() = default;
+
+//   explicit Mask(const __mmask16& v_) : v(v_) {}
+
+//   __mmask16 v;
+// };
+// template <> struct Mask<VecData<int64_t ,8>> {
+//   using ScalarType = int64_t;
+//   static constexpr Integer Size = 8;
+
+//   static Mask Zero() {
+//     return Mask(0);
+//   }
+
+//   Mask() = default;
+//   Mask(const Mask&) = default;
+//   Mask& operator=(const Mask&) = default;
+//   ~Mask() = default;
+
+//   explicit Mask(const __mmask8& v_) : v(v_) {}
+
+//   __mmask8  v;
+// };
+// template <> struct Mask<VecData<float  ,16>> {
+//   using ScalarType = float;
+//   static constexpr Integer Size = 16;
+
+//   static Mask Zero() {
+//     return Mask(0);
+//   }
+
+//   Mask() = default;
+//   Mask(const Mask&) = default;
+//   Mask& operator=(const Mask&) = default;
+//   ~Mask() = default;
+
+//   explicit Mask(const __mmask16& v_) : v(v_) {}
+
+//   __mmask16 v;
+// };
+// template <> struct Mask<VecData<double  ,8>> {
+//   using ScalarType = double;
+//   static constexpr Integer Size = 8;
+
+//   static Mask Zero() {
+//     return Mask(0);
+//   }
+
+//   Mask() = default;
+//   Mask(const Mask&) = default;
+//   Mask& operator=(const Mask&) = default;
+//   ~Mask() = default;
+
+//   explicit Mask(const __mmask8& v_) : v(v_) {}
+
+//   __mmask8  v;
+// };
+
+// // Bitwise operators
+// template <> inline Mask<VecData<int8_t ,64>> operator~<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& vec) { return Mask<VecData<int8_t ,64>>(_knot_mask64(vec.v)); }
+// template <> inline Mask<VecData<int16_t,32>> operator~<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& vec) { return Mask<VecData<int16_t,32>>(_knot_mask32(vec.v)); }
+// template <> inline Mask<VecData<int32_t,16>> operator~<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& vec) { return Mask<VecData<int32_t,16>>(_knot_mask16(vec.v)); }
+// template <> inline Mask<VecData<int64_t ,8>> operator~<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& vec) { return Mask<VecData<int64_t ,8>>(_knot_mask8 (vec.v)); }
+// template <> inline Mask<VecData<float  ,16>> operator~<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& vec) { return Mask<VecData<float  ,16>>(_knot_mask16(vec.v)); }
+// template <> inline Mask<VecData<double  ,8>> operator~<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& vec) { return Mask<VecData<double  ,8>>(_knot_mask8 (vec.v)); }
+
+// template <> inline Mask<VecData<int8_t ,64>> operator&<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a, const Mask<VecData<int8_t ,64>>& b) { return Mask<VecData<int8_t ,64>>(_kand_mask64(a.v,b.v)); }
+// template <> inline Mask<VecData<int16_t,32>> operator&<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a, const Mask<VecData<int16_t,32>>& b) { return Mask<VecData<int16_t,32>>(_kand_mask32(a.v,b.v)); }
+// template <> inline Mask<VecData<int32_t,16>> operator&<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& a, const Mask<VecData<int32_t,16>>& b) { return Mask<VecData<int32_t,16>>(_kand_mask16(a.v,b.v)); }
+// template <> inline Mask<VecData<int64_t ,8>> operator&<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& a, const Mask<VecData<int64_t ,8>>& b) { return Mask<VecData<int64_t ,8>>(_kand_mask8 (a.v,b.v)); }
+// template <> inline Mask<VecData<float  ,16>> operator&<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& a, const Mask<VecData<float  ,16>>& b) { return Mask<VecData<float  ,16>>(_kand_mask16(a.v,b.v)); }
+// template <> inline Mask<VecData<double  ,8>> operator&<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& a, const Mask<VecData<double  ,8>>& b) { return Mask<VecData<double  ,8>>(_kand_mask8 (a.v,b.v)); }
+
+// template <> inline Mask<VecData<int8_t ,64>> operator^<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a, const Mask<VecData<int8_t ,64>>& b) { return Mask<VecData<int8_t ,64>>(_kxor_mask64(a.v,b.v)); }
+// template <> inline Mask<VecData<int16_t,32>> operator^<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a, const Mask<VecData<int16_t,32>>& b) { return Mask<VecData<int16_t,32>>(_kxor_mask32(a.v,b.v)); }
+// template <> inline Mask<VecData<int32_t,16>> operator^<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& a, const Mask<VecData<int32_t,16>>& b) { return Mask<VecData<int32_t,16>>(_kxor_mask16(a.v,b.v)); }
+// template <> inline Mask<VecData<int64_t ,8>> operator^<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& a, const Mask<VecData<int64_t ,8>>& b) { return Mask<VecData<int64_t ,8>>(_kxor_mask8 (a.v,b.v)); }
+// template <> inline Mask<VecData<float  ,16>> operator^<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& a, const Mask<VecData<float  ,16>>& b) { return Mask<VecData<float  ,16>>(_kxor_mask16(a.v,b.v)); }
+// template <> inline Mask<VecData<double  ,8>> operator^<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& a, const Mask<VecData<double  ,8>>& b) { return Mask<VecData<double  ,8>>(_kxor_mask8 (a.v,b.v)); }
+
+// template <> inline Mask<VecData<int8_t ,64>> operator|<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a, const Mask<VecData<int8_t ,64>>& b) { return Mask<VecData<int8_t ,64>>(_kor_mask64(a.v,b.v)); }
+// template <> inline Mask<VecData<int16_t,32>> operator|<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a, const Mask<VecData<int16_t,32>>& b) { return Mask<VecData<int16_t,32>>(_kor_mask32(a.v,b.v)); }
+// template <> inline Mask<VecData<int32_t,16>> operator|<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& a, const Mask<VecData<int32_t,16>>& b) { return Mask<VecData<int32_t,16>>(_kor_mask16(a.v,b.v)); }
+// template <> inline Mask<VecData<int64_t ,8>> operator|<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& a, const Mask<VecData<int64_t ,8>>& b) { return Mask<VecData<int64_t ,8>>(_kor_mask8 (a.v,b.v)); }
+// template <> inline Mask<VecData<float  ,16>> operator|<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& a, const Mask<VecData<float  ,16>>& b) { return Mask<VecData<float  ,16>>(_kor_mask16(a.v,b.v)); }
+// template <> inline Mask<VecData<double  ,8>> operator|<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& a, const Mask<VecData<double  ,8>>& b) { return Mask<VecData<double  ,8>>(_kor_mask8 (a.v,b.v)); }
+
+// template <> inline Mask<VecData<int8_t ,64>> AndNot   <VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a, const Mask<VecData<int8_t ,64>>& b) { return Mask<VecData<int8_t ,64>>(_kandn_mask64(b.v,a.v)); }
+// template <> inline Mask<VecData<int16_t,32>> AndNot   <VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a, const Mask<VecData<int16_t,32>>& b) { return Mask<VecData<int16_t,32>>(_kandn_mask32(b.v,a.v)); }
+// template <> inline Mask<VecData<int32_t,16>> AndNot   <VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& a, const Mask<VecData<int32_t,16>>& b) { return Mask<VecData<int32_t,16>>(_kandn_mask16(b.v,a.v)); }
+// template <> inline Mask<VecData<int64_t ,8>> AndNot   <VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& a, const Mask<VecData<int64_t ,8>>& b) { return Mask<VecData<int64_t ,8>>(_kandn_mask8 (b.v,a.v)); }
+// template <> inline Mask<VecData<float  ,16>> AndNot   <VecData<float  ,16>>(const Mask<VecData<float  ,16>>& a, const Mask<VecData<float  ,16>>& b) { return Mask<VecData<float  ,16>>(_kandn_mask16(b.v,a.v)); }
+// template <> inline Mask<VecData<double  ,8>> AndNot   <VecData<double  ,8>>(const Mask<VecData<double  ,8>>& a, const Mask<VecData<double  ,8>>& b) { return Mask<VecData<double  ,8>>(_kandn_mask8 (b.v,a.v)); }
+
+// template <> inline VecData<int8_t ,64> convert_mask2vec_intrin<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a) { return _mm512_movm_epi8 (a.v); }
+// template <> inline VecData<int16_t,32> convert_mask2vec_intrin<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a) { return _mm512_movm_epi16(a.v); }
+// template <> inline VecData<int32_t,16> convert_mask2vec_intrin<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& a) { return _mm512_movm_epi32(a.v); }
+// template <> inline VecData<int64_t ,8> convert_mask2vec_intrin<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& a) { return _mm512_movm_epi64(a.v); }
+// template <> inline VecData<float  ,16> convert_mask2vec_intrin<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& a) { return _mm512_castsi512_ps(_mm512_movm_epi32(a.v)); }
+// template <> inline VecData<double  ,8> convert_mask2vec_intrin<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& a) { return _mm512_castsi512_pd(_mm512_movm_epi64(a.v)); }
+
+// template <> inline Mask<VecData<int8_t ,64>> convert_vec2mask_intrin<VecData<int8_t ,64>>(const VecData<int8_t ,64>& a) { return Mask<VecData<int8_t ,64>>(_mm512_movepi8_mask (a.v)); }
+// template <> inline Mask<VecData<int16_t,32>> convert_vec2mask_intrin<VecData<int16_t,32>>(const VecData<int16_t,32>& a) { return Mask<VecData<int16_t,32>>(_mm512_movepi16_mask(a.v)); }
+// template <> inline Mask<VecData<int32_t,16>> convert_vec2mask_intrin<VecData<int32_t,16>>(const VecData<int32_t,16>& a) { return Mask<VecData<int32_t,16>>(_mm512_movepi32_mask(a.v)); }
+// template <> inline Mask<VecData<int64_t ,8>> convert_vec2mask_intrin<VecData<int64_t ,8>>(const VecData<int64_t ,8>& a) { return Mask<VecData<int64_t ,8>>(_mm512_movepi64_mask(a.v)); }
+// template <> inline Mask<VecData<float  ,16>> convert_vec2mask_intrin<VecData<float  ,16>>(const VecData<float  ,16>& a) { return Mask<VecData<float  ,16>>(_mm512_movepi32_mask(_mm512_castps_si512(a.v))); }
+// template <> inline Mask<VecData<double  ,8>> convert_vec2mask_intrin<VecData<double  ,8>>(const VecData<double  ,8>& a) { return Mask<VecData<double  ,8>>(_mm512_movepi64_mask(_mm512_castpd_si512(a.v))); }
+
+// /////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////
+
+// // Comparison operators
+// template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::lt>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_LT)); }
+// template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::le>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_LE)); }
+// template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::gt>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_NLE));}
+// template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::ge>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_NLT));}
+// template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::eq>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_EQ)); }
+// template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::ne>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_NE)); }
+
+// template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::lt>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_LT)); }
+// template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::le>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_LE)); }
+// template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::gt>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_NLE));}
+// template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::ge>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_NLT));}
+// template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::eq>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_EQ)); }
+// template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::ne>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_NE)); }
+
+// template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::lt>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_LT)); }
+// template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::le>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_LE)); }
+// template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::gt>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_NLE));}
+// template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::ge>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_NLT));}
+// template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::eq>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_EQ)); }
+// template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::ne>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_NE)); }
+
+// template <> inline Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::lt>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_LT)); }
+// template <> inline Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::le>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_LE)); }
+// template <> inline Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::gt>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_NLE));}
+// template <> inline Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::ge>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_NLT));}
+// template <> inline Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::eq>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_EQ)); }
+// template <> inline Mask<VecData<int64_t,8>> comp_intrin<ComparisonType::ne>(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return Mask<VecData<int64_t,8>>(_mm512_cmp_epi64_mask(a.v, b.v, _MM_CMPINT_NE)); }
+
+// template <> inline Mask<VecData<float,16>> comp_intrin<ComparisonType::lt>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_LT_OS)); }
+// template <> inline Mask<VecData<float,16>> comp_intrin<ComparisonType::le>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_LE_OS)); }
+// template <> inline Mask<VecData<float,16>> comp_intrin<ComparisonType::gt>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_GT_OS)); }
+// template <> inline Mask<VecData<float,16>> comp_intrin<ComparisonType::ge>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_GE_OS)); }
+// template <> inline Mask<VecData<float,16>> comp_intrin<ComparisonType::eq>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_EQ_OS)); }
+// template <> inline Mask<VecData<float,16>> comp_intrin<ComparisonType::ne>(const VecData<float,16>& a, const VecData<float,16>& b) { return Mask<VecData<float,16>>(_mm512_cmp_ps_mask(a.v, b.v, _CMP_NEQ_OS));}
+
+// template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::lt>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_LT_OS)); }
+// template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::le>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_LE_OS)); }
+// template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::gt>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_GT_OS)); }
+// template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::ge>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_GE_OS)); }
+// template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::eq>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_EQ_OS)); }
+// template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::ne>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_NEQ_OS));}
+
+// template <> inline VecData<int8_t ,64> select_intrin(const Mask<VecData<int8_t ,64>>& s, const VecData<int8_t ,64>& a, const VecData<int8_t ,64>& b) { return _mm512_mask_blend_epi8 (s.v, b.v, a.v); }
+// template <> inline VecData<int16_t,32> select_intrin(const Mask<VecData<int16_t,32>>& s, const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return _mm512_mask_blend_epi16(s.v, b.v, a.v); }
+// template <> inline VecData<int32_t,16> select_intrin(const Mask<VecData<int32_t,16>>& s, const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return _mm512_mask_blend_epi32(s.v, b.v, a.v); }
+// template <> inline VecData<int64_t ,8> select_intrin(const Mask<VecData<int64_t ,8>>& s, const VecData<int64_t ,8>& a, const VecData<int64_t ,8>& b) { return _mm512_mask_blend_epi64(s.v, b.v, a.v); }
+// template <> inline VecData<float  ,16> select_intrin(const Mask<VecData<float  ,16>>& s, const VecData<float  ,16>& a, const VecData<float  ,16>& b) { return _mm512_mask_blend_ps   (s.v, b.v, a.v); }
+// template <> inline VecData<double  ,8> select_intrin(const Mask<VecData<double  ,8>>& s, const VecData<double  ,8>& a, const VecData<double  ,8>& b) { return _mm512_mask_blend_pd   (s.v, b.v, a.v); }
+
+// Special functions
+template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float, 16>> {
+  // approximating 10 bits of precision
+  static constexpr Integer newton_iter = mylog2((Integer)(digits / 3.0102999566398));
+
+  static VecData<float, 16> eval(const VecData<float, 16>& a) { return rsqrt_newton_iter<newton_iter, newton_iter, VecData<float, 16>>::eval(svrsqrte_f32(a.v), a.v); }
+  // static VecData<float,16> eval(const VecData<float,16>& a, const Mask<VecData<float,16>>& m) {
+  //   return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,16>>::eval(_mm512_maskz_rsqrt14_ps(m.v, a.v), a.v);
+  // }
+};
+template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<double, 8>> {
+  // approximating 10 bits of precision
+  static constexpr Integer newton_iter = mylog2((Integer)(digits / 3.0102999566398));
+  static VecData<double, 8> eval(const VecData<double, 8>& a) { return rsqrt_newton_iter<newton_iter, newton_iter, VecData<double, 8>>::eval(svrsqrte_f64(a.v), a.v); }
+  // static VecData<double,8> eval(const VecData<double,8>& a, const Mask<VecData<double,8>>& m) {
+  //   return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,8>>::eval(_mm512_maskz_rsqrt14_pd(m.v, a.v), a.v);
+  // }
+};
+
+// #ifdef SCTL_HAVE_SVML
+// template <> inline void sincos_intrin<VecData<float,16>>(VecData<float,16>& sinx, VecData<float,16>& cosx, const VecData<float,16>& x) { sinx = _mm512_sincos_ps(&cosx.v, x.v); }
+// template <> inline void sincos_intrin<VecData<double,8>>(VecData<double,8>& sinx, VecData<double,8>& cosx, const VecData<double,8>& x) { sinx = _mm512_sincos_pd(&cosx.v, x.v); }
+
+// template <> inline VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_exp_ps(x.v); }
+// template <> inline VecData<double,8> exp_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_exp_pd(x.v); }
+// #else
+// template <> inline void sincos_intrin<VecData<float,16>>(VecData<float,16>& sinx, VecData<float,16>& cosx, const VecData<float,16>& x) {
+//   approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+// }
+// template <> inline void sincos_intrin<VecData<double,8>>(VecData<double,8>& sinx, VecData<double,8>& cosx, const VecData<double,8>& x) {
+//   approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+// }
+
+// template <> inline VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) {
+//   return approx_exp_intrin<(Integer)(TypeTraits<float>::SigBits/3.8)>(x); // TODO: determine constants more precisely
+// }
+// template <> inline VecData<double,8> exp_intrin<VecData<double,8>>(const VecData<double,8>& x) {
+//   return approx_exp_intrin<(Integer)(TypeTraits<double>::SigBits/3.8)>(x); // TODO: determine constants more precisely
+// }
+// #endif
+
+#undef SVE_COUNT
+#endif
+}  // namespace SCTL_NAMESPACE
 
 #endif  //_SCTL_INTRIN_WRAPPER_HPP_

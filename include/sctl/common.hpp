@@ -40,8 +40,12 @@ typedef int64_t Long;  // problem size
   } while (0)
 
 #define SCTL_UNUSED(x) (void)(x)  // to ignore unused variable warning.
-
-#if defined(__AVX512__) || defined(__AVX512F__)
+#if defined(__ARM_FEATURE_SVE)
+  #ifndef SCTL_SVE_SIZE
+  #error "Must define SCTL_SVE_SIZE (bit length of SVE register for target hardware) when using Arm SVE instructions."
+  #endif
+  #define SCTL_ALIGN_BYTES ((SCTL_SVE_SIZE) / 8)
+#elif defined(__AVX512__) || defined(__AVX512F__)
   #define SCTL_ALIGN_BYTES 64
 #elif defined(__AVX__)
   #define SCTL_ALIGN_BYTES 32
