@@ -479,8 +479,7 @@ namespace SCTL_NAMESPACE { // Vec
             static const ScalarType eps = machine_eps();
             ScalarType err = myabs(u8.x[i] - (ScalarType)(u1.x[i]*u2.x[i] + u3.x[i]));
             ScalarType max_val = myabs(u1.x[i]*u2.x[i]) + myabs(u3.x[i]);
-            ScalarType rel_err = err / max_val;
-            SCTL_ASSERT(rel_err < eps);
+            SCTL_ASSERT(err <= eps * max_val);
           }
         }
       }
@@ -501,38 +500,77 @@ namespace SCTL_NAMESPACE { // Vec
         }
       }
 
-      static void test_mask() {
-        union {
-          MaskType v;
-          int8_t c[sizeof(MaskType)];
-        } u1, u2, u3, u4, u5, u6, u7;
-        for (Integer i = 0; i < (Integer)sizeof(MaskType); i++) {
-          u1.c[i] = rand();
-          u2.c[i] = rand();
+      static void test_mask() { // mask-bitwise, select, convert2vec, convert2mask
+        UnionType a, b, c, d;
+        for (Integer i = 0; i < N; i++) {
+          a.x[i] = (ScalarType)rand();
+          b.x[i] = (ScalarType)rand();
+          c.x[i] = (ScalarType)rand();
+          d.x[i] = (ScalarType)rand();
         }
 
-        u3.v = ~u1.v;
-        u4.v = u1.v & u2.v;
-        u5.v = u1.v ^ u2.v;
-        u6.v = u1.v | u2.v;
-        u7.v = AndNot(u1.v, u2.v);
+        MaskType u1, u2, u3, u4, u5, u6, u7, u8;
+        u1 = (a.v < b.v);
+        u2 = (c.v < d.v);
+        u3 = ~u1;
+        u4 = u1 & u2;
+        u5 = u1 ^ u2;
+        u6 = u1 | u2;
+        u7 = AndNot(u1, u2);
+        u8 = convert2mask(convert2vec(u1));
 
-        for (Integer i = 0; i < (Integer)sizeof(MaskType); i++) {
-          SCTL_ASSERT(u3.c[i] == (int8_t)~u1.c[i]);
-          SCTL_ASSERT(u4.c[i] == (int8_t)(u1.c[i] & u2.c[i]));
-          SCTL_ASSERT(u5.c[i] == (int8_t)(u1.c[i] ^ u2.c[i]));
-          SCTL_ASSERT(u6.c[i] == (int8_t)(u1.c[i] | u2.c[i]));
-          SCTL_ASSERT(u7.c[i] == (int8_t)(u1.c[i] & (~u2.c[i])));
+        VecType u1_, u2_, u3_, u4_, u5_, u6_, u7_, u8_;
+        u1_ = select(u1, a.v, b.v);
+        u2_ = select(u2, a.v, b.v);
+        u3_ = select(u3, a.v, b.v);
+        u4_ = select(u4, a.v, b.v);
+        u5_ = select(u5, a.v, b.v);
+        u6_ = select(u6, a.v, b.v);
+        u7_ = select(u7, a.v, b.v);
+        u8_ = select(u8, a.v, b.v);
+
+        VecType v1, v2, v3, v4, v5, v6, v7, v8;
+        v1 = select(u1, ~VecType::Zero(), VecType::Zero());
+        v2 = convert2vec(u2);
+        v3 = ~v1;
+        v4 = v1 & v2;
+        v5 = v1 ^ v2;
+        v6 = v1 | v2;
+        v7 = AndNot(v1, v2);
+        v8 = v1;
+
+        VecType v1_, v2_, v3_, v4_, v5_, v6_, v7_, v8_;
+        v1_ = (a.v & v1) | AndNot(b.v, v1);
+        v2_ = (a.v & v2) | AndNot(b.v, v2);
+        v3_ = (a.v & v3) | AndNot(b.v, v3);
+        v4_ = (a.v & v4) | AndNot(b.v, v4);
+        v5_ = (a.v & v5) | AndNot(b.v, v5);
+        v6_ = (a.v & v6) | AndNot(b.v, v6);
+        v7_ = (a.v & v7) | AndNot(b.v, v7);
+        v8_ = (a.v & v8) | AndNot(b.v, v8);
+
+        for (Integer i = 0; i < N; i++) {
+          SCTL_ASSERT(v1_[i] == (a.x[i] <  b.x[i] ? a.x[i] : b.x[i]));
+          SCTL_ASSERT(v2_[i] == (c.x[i] <  d.x[i] ? a.x[i] : b.x[i]));
+
+          SCTL_ASSERT(v1_[i] == u1_[i]);
+          SCTL_ASSERT(v2_[i] == u2_[i]);
+          SCTL_ASSERT(v3_[i] == u3_[i]);
+          SCTL_ASSERT(v4_[i] == u4_[i]);
+          SCTL_ASSERT(v5_[i] == u5_[i]);
+          SCTL_ASSERT(v6_[i] == u6_[i]);
+          SCTL_ASSERT(v7_[i] == u7_[i]);
+          SCTL_ASSERT(v8_[i] == u8_[i]);
         }
       }
 
       static void test_comparison() {
         UnionType u1, u2, u3, u4, u5, u6, u7, u8, u9, u10;
-        for (Integer i = 0; i < SizeBytes; i++) {
-          u1.c[i] = rand()%4;
-          u2.c[i] = rand()%4;
-          u3.c[i] = rand()%4;
-          u4.c[i] = rand()%4;
+        for (Integer i = 0; i < N; i++) {
+          u1.x[i] = (ScalarType)rand();
+          u2.x[i] = (ScalarType)rand();
+          u3.x[i] = (ScalarType)rand();
+          u4.x[i] = (ScalarType)rand();
         }
 
         u5 .v = select((u1.v <  u2.v), u3.v, u4.v);
@@ -548,16 +586,6 @@ namespace SCTL_NAMESPACE { // Vec
           SCTL_ASSERT(u8 .x[i] == (u1.x[i] >= u2.x[i] ? u3.x[i] : u4.x[i]));
           SCTL_ASSERT(u9 .x[i] == (u1.x[i] == u2.x[i] ? u3.x[i] : u4.x[i]));
           SCTL_ASSERT(u10.x[i] == (u1.x[i] != u2.x[i] ? u3.x[i] : u4.x[i]));
-        }
-
-        MaskType m0 = (u1.v < u2.v);
-        VecType v1 = convert2vec(m0);
-        MaskType m1 = convert2mask(v1);
-        VecType v2 = select(m1, u3.v, u4.v);
-        VecType v3 = (u3.v & v1) | AndNot(u4.v, v1);
-        for (Integer i = 0; i < N; i++) {
-          SCTL_ASSERT(v2[i] == (u1.x[i] <  u2.x[i] ? u3.x[i] : u4.x[i]));
-          SCTL_ASSERT(v3[i] == (u1.x[i] <  u2.x[i] ? u3.x[i] : u4.x[i]));
         }
       }
 
@@ -589,30 +617,31 @@ namespace SCTL_NAMESPACE { // Vec
           ScalarType err_tol = std::max<ScalarType>((ScalarType)1.77e-15, (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5))); // TODO: fix for accuracy greater than 1.77e-15
           SCTL_ASSERT(fabs(v1[i] - sin<ScalarType>(v0[i])) < err_tol);
           SCTL_ASSERT(fabs(v2[i] - cos<ScalarType>(v0[i])) < err_tol);
-          SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i]))/fabs(exp<ScalarType>(v0[i])) < err_tol);
+          SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i])) < err_tol * fabs(exp<ScalarType>(v0[i])));
         }
       }
 
       static void test_reals_rsqrt() {
+        static constexpr double log_2_10 = 3.3219280949; // log_2(10)
+        static constexpr Integer SigBits = TypeTraits<ScalarType>::SigBits;
+        static constexpr Integer digits0 = (Integer)(SigBits*0.4/log_2_10);
+        static constexpr Integer digits1 = (Integer)(SigBits*0.8/log_2_10);
+
         UnionType u1, u2, u3;
         for (Integer i = 0; i < N; i++) {
           u1.x[i] = (ScalarType)rand();
         }
 
-        u2.v = approx_rsqrt<4>(u1.v);
-        u3.v = approx_rsqrt<7>(u1.v);
+        u2.v = approx_rsqrt<digits0>(u1.v);
+        u3.v = approx_rsqrt<digits1>(u1.v);
         for (Integer i = 0; i < N; i++) {
-          ScalarType err = fabs(u2.x[i] - 1/sqrt<ScalarType>(u1.x[i]));
-          ScalarType max_val = fabs(1/sqrt<ScalarType>(u1.x[i]));
-          ScalarType rel_err = err / max_val;
-          SCTL_ASSERT(rel_err < (pow<11,ScalarType>((ScalarType)0.5)));
+          SCTL_ASSERT(fabs(u2.x[i] * sqrt<ScalarType>(u1.x[i]) - 1) < pow<digits0>((ScalarType)0.1));
+          SCTL_ASSERT(fabs(u3.x[i] * sqrt<ScalarType>(u1.x[i]) - 1) < pow<digits1>((ScalarType)0.1));
         }
-        for (Integer i = 0; i < N; i++) {
-          ScalarType err = fabs((ScalarType)(u3.x[i] - 1/sqrt((double)u1.x[i]))); // float is not accurate enough to compute reference solution with 7-digits
-          ScalarType max_val = fabs(1/sqrt<ScalarType>(u1.x[i]));
-          ScalarType rel_err = err / max_val;
-          SCTL_ASSERT(rel_err < (pow<22,ScalarType>((ScalarType)0.5)));
-        }
+      }
+
+      static void test_bitshift() {
+        // TODO
       }
 
 

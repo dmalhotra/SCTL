@@ -58,7 +58,7 @@ void TestMatrix() {
 }
 
 int main(int argc, char** argv) {
-  sctl::SphericalHarmonics<double>::test_stokes();
+  sctl::VecTest<>::test();
   return 0;
 
   sctl::Comm::MPI_Init(&argc, &argv);
