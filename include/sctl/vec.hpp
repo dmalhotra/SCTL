@@ -641,14 +641,17 @@ namespace SCTL_NAMESPACE { // Vec
           return;
         }
 
-        UnionType u1, u2;
+        UnionType u1, u2, u3, u4;
         for (Integer i = 0; i < N; i++) {
           u1.x[i] = (ScalarType)rand();
+          u2.x[i] = (ScalarType)0;
         }
 
-        u2.v = approx_rsqrt<digits>(u1.v);
+        u3.v = approx_rsqrt<digits>(u1.v);
+        u4.v = approx_rsqrt<digits>(u2.v, u2.v > u2.v);
         for (Integer i = 0; i < N; i++) {
-          SCTL_ASSERT(fabs(u2.x[i] * sqrt<ScalarType>(u1.x[i]) - 1) < pow<digits>((ScalarType)0.1));
+          SCTL_ASSERT(fabs(u3.x[i] * sqrt<ScalarType>(u1.x[i]) - 1) < pow<digits>((ScalarType)0.1));
+          SCTL_ASSERT(u4.x[i] == 0);
         }
       }
 

@@ -3377,13 +3377,13 @@ template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float, SVE_
   static constexpr Integer newton_iter = mylog2((Integer)(digits / 2.5));
 
   static VecData<float, SVE_COUNT(32)> eval(const VecData<float, SVE_COUNT(32)>& a) { return rsqrt_newton_iter<newton_iter, newton_iter, VecData<float, SVE_COUNT(32)>>::eval(svrsqrte_f32(a.v), a.v); }
-  static VecData<float, SVE_COUNT(32)> eval(const VecData<float, SVE_COUNT(32)>& a, const Mask<VecData<float, SVE_COUNT(32)>>& m) { return rsqrt_newton_iter<newton_iter, newton_iter, VecData<float, SVE_COUNT(32)>>::eval(svrsqrte_f32(svsel(m.v, a.v, svdup_f32(0.0))), a.v); }
+  static VecData<float, SVE_COUNT(32)> eval(const VecData<float, SVE_COUNT(32)>& a, const Mask<VecData<float, SVE_COUNT(32)>>& m) { return rsqrt_newton_iter<newton_iter, newton_iter, VecData<float, SVE_COUNT(32)>>::eval(svsel(m.v, svrsqrte_f32(a.v), svdup_f32(0.0)), a.v); }
 };
 template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<double, SVE_COUNT(64)>> {
   // approximating 10 bits of precision
   static constexpr Integer newton_iter = mylog2((Integer)(digits / 2.5));
   static VecData<double, SVE_COUNT(64)> eval(const VecData<double, SVE_COUNT(64)>& a) { return rsqrt_newton_iter<newton_iter, newton_iter, VecData<double, SVE_COUNT(64)>>::eval(svrsqrte_f64(a.v), a.v); }
-  static VecData<double, SVE_COUNT(64)> eval(const VecData<double, SVE_COUNT(64)>& a, const Mask<VecData<double, SVE_COUNT(64)>>& m) { return rsqrt_newton_iter<newton_iter, newton_iter, VecData<double, SVE_COUNT(64)>>::eval(svrsqrte_f64(svsel(m.v, a.v, svdup_f64(0.0))), a.v); }
+  static VecData<double, SVE_COUNT(64)> eval(const VecData<double, SVE_COUNT(64)>& a, const Mask<VecData<double, SVE_COUNT(64)>>& m) { return rsqrt_newton_iter<newton_iter, newton_iter, VecData<double, SVE_COUNT(64)>>::eval(svsel(m.v, svrsqrte_f64(a.v), svdup_f64(0.0)), a.v); }
 };
 
 // #ifdef SCTL_HAVE_SVML
