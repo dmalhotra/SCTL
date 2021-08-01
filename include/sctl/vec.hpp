@@ -621,22 +621,34 @@ namespace SCTL_NAMESPACE { // Vec
         }
       }
 
-      static void test_reals_rsqrt() {
-        static constexpr double log_2_10 = 3.3219280949; // log_2(10)
-        static constexpr Integer SigBits = TypeTraits<ScalarType>::SigBits;
-        static constexpr Integer digits0 = (Integer)(SigBits*0.4/log_2_10);
-        static constexpr Integer digits1 = (Integer)(SigBits*0.8/log_2_10);
+      template <Integer digits = -1> static void test_reals_rsqrt() {
+        if (digits == -1) {
+          constexpr double log_2_10 = 3.3219280949; // log_2(10)
+          constexpr Integer max_digits = (Integer)(TypeTraits<ScalarType>::SigBits*0.9/log_2_10);
+          if ( 1 < max_digits) test_reals_rsqrt< 1>();
+          if ( 2 < max_digits) test_reals_rsqrt< 2>();
+          if ( 3 < max_digits) test_reals_rsqrt< 3>();
+          if ( 4 < max_digits) test_reals_rsqrt< 4>();
+          if ( 5 < max_digits) test_reals_rsqrt< 5>();
+          if ( 6 < max_digits) test_reals_rsqrt< 6>();
+          if ( 7 < max_digits) test_reals_rsqrt< 7>();
+          if ( 8 < max_digits) test_reals_rsqrt< 8>();
+          if ( 9 < max_digits) test_reals_rsqrt< 9>();
+          if (10 < max_digits) test_reals_rsqrt<10>();
+          if (11 < max_digits) test_reals_rsqrt<11>();
+          if (12 < max_digits) test_reals_rsqrt<12>();
+          if (13 < max_digits) test_reals_rsqrt<13>();
+          return;
+        }
 
-        UnionType u1, u2, u3;
+        UnionType u1, u2;
         for (Integer i = 0; i < N; i++) {
           u1.x[i] = (ScalarType)rand();
         }
 
-        u2.v = approx_rsqrt<digits0>(u1.v);
-        u3.v = approx_rsqrt<digits1>(u1.v);
+        u2.v = approx_rsqrt<digits>(u1.v);
         for (Integer i = 0; i < N; i++) {
-          SCTL_ASSERT(fabs(u2.x[i] * sqrt<ScalarType>(u1.x[i]) - 1) < pow<digits0>((ScalarType)0.1));
-          SCTL_ASSERT(fabs(u3.x[i] * sqrt<ScalarType>(u1.x[i]) - 1) < pow<digits1>((ScalarType)0.1));
+          SCTL_ASSERT(fabs(u2.x[i] * sqrt<ScalarType>(u1.x[i]) - 1) < pow<digits>((ScalarType)0.1));
         }
       }
 
