@@ -2916,10 +2916,6 @@ template <> struct alignas(SCTL_ALIGN_BYTES) VecData<int8_t, SVE_COUNT(8)> {
   VecData() = default;
   VecData(VectorType v_) : v(v_) {}
   VectorType v;
-  static inline const predicate_t& pg() {
-    static const predicate_t pg = svptrue_b8();
-    return pg;
-  }
   inline ScalarType* as_array() { return (ScalarType*)&v; };
 };
 template <> struct alignas(SCTL_ALIGN_BYTES) VecData<int16_t, SVE_COUNT(16)> {
@@ -2929,10 +2925,6 @@ template <> struct alignas(SCTL_ALIGN_BYTES) VecData<int16_t, SVE_COUNT(16)> {
   VecData() = default;
   VecData(VectorType v_) : v(v_) {}
   VectorType v;
-  static inline const predicate_t& pg() {
-    static const predicate_t pg = svptrue_b16();
-    return pg;
-  }
   inline ScalarType* as_array() { return (ScalarType*)&v; };
 };
 template <> struct alignas(SCTL_ALIGN_BYTES) VecData<int32_t, SVE_COUNT(32)> {
@@ -2942,10 +2934,6 @@ template <> struct alignas(SCTL_ALIGN_BYTES) VecData<int32_t, SVE_COUNT(32)> {
   VecData() = default;
   VecData(VectorType v_) : v(v_) {}
   VectorType v;
-  static inline const predicate_t& pg() {
-    static const predicate_t pg = svptrue_b32();
-    return pg;
-  }
   inline ScalarType* as_array() { return (ScalarType*)&v; };
 };
 template <> struct alignas(SCTL_ALIGN_BYTES) VecData<int64_t, SVE_COUNT(64)> {
@@ -2955,10 +2943,6 @@ template <> struct alignas(SCTL_ALIGN_BYTES) VecData<int64_t, SVE_COUNT(64)> {
   VecData() = default;
   VecData(VectorType v_) : v(v_) {}
   VectorType v;
-  static inline const predicate_t& pg() {
-    static const predicate_t pg = svptrue_b64();
-    return pg;
-  }
   inline ScalarType* as_array() { return (ScalarType*)&v; };
 };
 template <> struct alignas(SCTL_ALIGN_BYTES) VecData<float, SVE_COUNT(32)> {
@@ -2968,13 +2952,8 @@ template <> struct alignas(SCTL_ALIGN_BYTES) VecData<float, SVE_COUNT(32)> {
   VecData() = default;
   VecData(VectorType v_) : v(v_) {}
   VectorType v;
-  static inline const predicate_t& pg() {
-    static const predicate_t pg = svptrue_b32();
-    return pg;
-  }
   inline ScalarType* as_array() { return (ScalarType*)&v; };
 };
-
 template <> struct alignas(SCTL_ALIGN_BYTES) VecData<double, SVE_COUNT(64)> {
   using ScalarType = double;
   using VectorType = svfloat64_t __attribute__((arm_sve_vector_bits(SCTL_SVE_SIZE)));
@@ -2982,10 +2961,6 @@ template <> struct alignas(SCTL_ALIGN_BYTES) VecData<double, SVE_COUNT(64)> {
   VecData() = default;
   VecData(VectorType v_) : v(v_) {}
   VectorType v;
-  static inline const predicate_t& pg() {
-    static const predicate_t pg = svptrue_b64();
-    return pg;
-  }
   inline ScalarType* as_array() { return (double*)&v; }
 };
 
@@ -3010,120 +2985,120 @@ template <> inline VecData<int64_t, SVE_COUNT(64)> load1_intrin<VecData<int64_t,
 template <> inline VecData<float, SVE_COUNT(32)> load1_intrin<VecData<float, SVE_COUNT(32)>>(float const* p) { return svdup_f32(p[0]); }
 template <> inline VecData<double, SVE_COUNT(64)> load1_intrin<VecData<double, SVE_COUNT(64)>>(double const* p) { return svdup_f64(p[0]); }
 
-template <> inline VecData<int8_t, SVE_COUNT(8)> loadu_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t const* p) { return svld1(VecData<int8_t, SVE_COUNT(8)>::pg(), p); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> loadu_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t const* p) { return svld1(VecData<int16_t, SVE_COUNT(16)>::pg(), p); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> loadu_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t const* p) { return svld1(VecData<int32_t, SVE_COUNT(32)>::pg(), p); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> loadu_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t const* p) { return svld1(VecData<int64_t, SVE_COUNT(64)>::pg(), p); }
-template <> inline VecData<float, SVE_COUNT(32)> loadu_intrin<VecData<float, SVE_COUNT(32)>>(float const* p) { return svld1(VecData<float, SVE_COUNT(32)>::pg(), p); }
-template <> inline VecData<double, SVE_COUNT(64)> loadu_intrin<VecData<double, SVE_COUNT(64)>>(double const* p) { return svld1(VecData<double, SVE_COUNT(64)>::pg(), p); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> loadu_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t const* p) { return svld1(svptrue_b8(), p); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> loadu_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t const* p) { return svld1(svptrue_b16(), p); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> loadu_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t const* p) { return svld1(svptrue_b32(), p); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> loadu_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t const* p) { return svld1(svptrue_b64(), p); }
+template <> inline VecData<float, SVE_COUNT(32)> loadu_intrin<VecData<float, SVE_COUNT(32)>>(float const* p) { return svld1(svptrue_b32(), p); }
+template <> inline VecData<double, SVE_COUNT(64)> loadu_intrin<VecData<double, SVE_COUNT(64)>>(double const* p) { return svld1(svptrue_b64(), p); }
 
-template <> inline VecData<int8_t, SVE_COUNT(8)> load_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t const* p) { return svld1(VecData<int8_t, SVE_COUNT(8)>::pg(), p); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> load_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t const* p) { return svld1(VecData<int16_t, SVE_COUNT(16)>::pg(), p); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> load_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t const* p) { return svld1(VecData<int32_t, SVE_COUNT(32)>::pg(), p); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> load_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t const* p) { return svld1(VecData<int64_t, SVE_COUNT(64)>::pg(), p); }
-template <> inline VecData<float, SVE_COUNT(32)> load_intrin<VecData<float, SVE_COUNT(32)>>(float const* p) { return svld1(VecData<float, SVE_COUNT(32)>::pg(), p); }
-template <> inline VecData<double, SVE_COUNT(64)> load_intrin<VecData<double, SVE_COUNT(64)>>(double const* p) { return svld1(VecData<double, SVE_COUNT(64)>::pg(), p); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> load_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t const* p) { return svld1(svptrue_b8(), p); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> load_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t const* p) { return svld1(svptrue_b16(), p); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> load_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t const* p) { return svld1(svptrue_b32(), p); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> load_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t const* p) { return svld1(svptrue_b64(), p); }
+template <> inline VecData<float, SVE_COUNT(32)> load_intrin<VecData<float, SVE_COUNT(32)>>(float const* p) { return svld1(svptrue_b32(), p); }
+template <> inline VecData<double, SVE_COUNT(64)> load_intrin<VecData<double, SVE_COUNT(64)>>(double const* p) { return svld1(svptrue_b64(), p); }
 
-template <> inline void storeu_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t* p, VecData<int8_t, SVE_COUNT(8)> vec) { svst1(VecData<int8_t, SVE_COUNT(8)>::pg(), p, vec.v); }
-template <> inline void storeu_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t* p, VecData<int16_t, SVE_COUNT(16)> vec) { svst1(VecData<int16_t, SVE_COUNT(16)>::pg(), p, vec.v); }
-template <> inline void storeu_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t* p, VecData<int32_t, SVE_COUNT(32)> vec) { svst1(VecData<int32_t, SVE_COUNT(32)>::pg(), p, vec.v); }
-template <> inline void storeu_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t* p, VecData<int64_t, SVE_COUNT(64)> vec) { svst1(VecData<int64_t, SVE_COUNT(64)>::pg(), p, vec.v); }
-template <> inline void storeu_intrin<VecData<float, SVE_COUNT(32)>>(float* p, VecData<float, SVE_COUNT(32)> vec) { svst1(VecData<float, SVE_COUNT(32)>::pg(), p, vec.v); }
-template <> inline void storeu_intrin<VecData<double, SVE_COUNT(64)>>(double* p, VecData<double, SVE_COUNT(64)> vec) { svst1(VecData<double, SVE_COUNT(64)>::pg(), p, vec.v); }
+template <> inline void storeu_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t* p, VecData<int8_t, SVE_COUNT(8)> vec) { svst1(svptrue_b8(), p, vec.v); }
+template <> inline void storeu_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t* p, VecData<int16_t, SVE_COUNT(16)> vec) { svst1(svptrue_b16(), p, vec.v); }
+template <> inline void storeu_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t* p, VecData<int32_t, SVE_COUNT(32)> vec) { svst1(svptrue_b32(), p, vec.v); }
+template <> inline void storeu_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t* p, VecData<int64_t, SVE_COUNT(64)> vec) { svst1(svptrue_b64(), p, vec.v); }
+template <> inline void storeu_intrin<VecData<float, SVE_COUNT(32)>>(float* p, VecData<float, SVE_COUNT(32)> vec) { svst1(svptrue_b32(), p, vec.v); }
+template <> inline void storeu_intrin<VecData<double, SVE_COUNT(64)>>(double* p, VecData<double, SVE_COUNT(64)> vec) { svst1(svptrue_b64(), p, vec.v); }
 
-template <> inline void store_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t* p, VecData<int8_t, SVE_COUNT(8)> vec) { svst1(VecData<int8_t, SVE_COUNT(8)>::pg(), p, vec.v); }
-template <> inline void store_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t* p, VecData<int16_t, SVE_COUNT(16)> vec) { svst1(VecData<int16_t, SVE_COUNT(16)>::pg(), p, vec.v); }
-template <> inline void store_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t* p, VecData<int32_t, SVE_COUNT(32)> vec) { svst1(VecData<int32_t, SVE_COUNT(32)>::pg(), p, vec.v); }
-template <> inline void store_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t* p, VecData<int64_t, SVE_COUNT(64)> vec) { svst1(VecData<int64_t, SVE_COUNT(64)>::pg(), p, vec.v); }
-template <> inline void store_intrin<VecData<float, SVE_COUNT(32)>>(float* p, VecData<float, SVE_COUNT(32)> vec) { svst1(VecData<float, SVE_COUNT(32)>::pg(), p, vec.v); }
-template <> inline void store_intrin<VecData<double, SVE_COUNT(64)>>(double* p, VecData<double, SVE_COUNT(64)> vec) { svst1(VecData<double, SVE_COUNT(64)>::pg(), p, vec.v); }
+template <> inline void store_intrin<VecData<int8_t, SVE_COUNT(8)>>(int8_t* p, VecData<int8_t, SVE_COUNT(8)> vec) { svst1(svptrue_b8(), p, vec.v); }
+template <> inline void store_intrin<VecData<int16_t, SVE_COUNT(16)>>(int16_t* p, VecData<int16_t, SVE_COUNT(16)> vec) { svst1(svptrue_b16(), p, vec.v); }
+template <> inline void store_intrin<VecData<int32_t, SVE_COUNT(32)>>(int32_t* p, VecData<int32_t, SVE_COUNT(32)> vec) { svst1(svptrue_b32(), p, vec.v); }
+template <> inline void store_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t* p, VecData<int64_t, SVE_COUNT(64)> vec) { svst1(svptrue_b64(), p, vec.v); }
+template <> inline void store_intrin<VecData<float, SVE_COUNT(32)>>(float* p, VecData<float, SVE_COUNT(32)> vec) { svst1(svptrue_b32(), p, vec.v); }
+template <> inline void store_intrin<VecData<double, SVE_COUNT(64)>>(double* p, VecData<double, SVE_COUNT(64)> vec) { svst1(svptrue_b64(), p, vec.v); }
 
 // Arithmetic operators
-template <> inline VecData<int8_t, SVE_COUNT(8)> unary_minus_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a) { return svsub_x(VecData<int8_t, SVE_COUNT(8)>::pg(), svdup_s8(0), a.v); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> unary_minus_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a) { return svsub_x(VecData<int16_t, SVE_COUNT(16)>::pg(), svdup_s16(0), a.v); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> unary_minus_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a) { return svsub_x(VecData<int32_t, SVE_COUNT(32)>::pg(), svdup_s32(0), a.v); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> unary_minus_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a) { return svsub_x(VecData<int64_t, SVE_COUNT(64)>::pg(), svdup_s64(0), a.v); }
-template <> inline VecData<float, SVE_COUNT(32)> unary_minus_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a) { return svsub_x(VecData<float, SVE_COUNT(32)>::pg(), svdup_f32(0.), a.v); }
-template <> inline VecData<double, SVE_COUNT(64)> unary_minus_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a) { return svsub_x(VecData<double, SVE_COUNT(64)>::pg(), svdup_f64(0.), a.v); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> unary_minus_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a) { return svsub_x(svptrue_b8(), svdup_s8(0), a.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> unary_minus_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a) { return svsub_x(svptrue_b16(), svdup_s16(0), a.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> unary_minus_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a) { return svsub_x(svptrue_b32(), svdup_s32(0), a.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> unary_minus_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a) { return svsub_x(svptrue_b64(), svdup_s64(0), a.v); }
+template <> inline VecData<float, SVE_COUNT(32)> unary_minus_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a) { return svsub_x(svptrue_b32(), svdup_f32(0.), a.v); }
+template <> inline VecData<double, SVE_COUNT(64)> unary_minus_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a) { return svsub_x(svptrue_b64(), svdup_f64(0.), a.v); }
 
-template <> inline VecData<int8_t, SVE_COUNT(8)> mul_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svmul_s8_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> mul_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svmul_s16_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> mul_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svmul_s32_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> mul_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svmul_s64_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
-template <> inline VecData<float, SVE_COUNT(32)> mul_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svmul_f32_x(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v); }
-template <> inline VecData<double, SVE_COUNT(64)> mul_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svmul_f64_x(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> mul_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svmul_s8_x(svptrue_b8(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> mul_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svmul_s16_x(svptrue_b16(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> mul_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svmul_s32_x(svptrue_b32(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> mul_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svmul_s64_x(svptrue_b64(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> mul_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svmul_f32_x(svptrue_b32(), a.v, b.v); }
+    template <> inline VecData<double, SVE_COUNT(64)> mul_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svmul_f64_x(svptrue_b64(), a.v, b.v); }
 
-template <> inline VecData<int8_t, SVE_COUNT(8)> add_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svadd_s8_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> add_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svadd_s16_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> add_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svadd_s32_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> add_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svadd_s64_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
-template <> inline VecData<float, SVE_COUNT(32)> add_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svadd_f32_x(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v); }
-template <> inline VecData<double, SVE_COUNT(64)> add_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svadd_f64_x(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> add_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svadd_s8_x(svptrue_b8(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> add_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svadd_s16_x(svptrue_b16(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> add_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svadd_s32_x(svptrue_b32(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> add_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svadd_s64_x(svptrue_b64(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> add_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svadd_f32_x(svptrue_b32(), a.v, b.v); }
+template <> inline VecData<double, SVE_COUNT(64)> add_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svadd_f64_x(svptrue_b64(), a.v, b.v); }
 
-template <> inline VecData<int8_t, SVE_COUNT(8)> sub_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svsub_s8_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> sub_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svsub_s16_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> sub_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svsub_s32_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> sub_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svsub_s64_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
-template <> inline VecData<float, SVE_COUNT(32)> sub_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svsub_f32_x(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v); }
-template <> inline VecData<double, SVE_COUNT(64)> sub_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svsub_f64_x(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> sub_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svsub_s8_x(svptrue_b8(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> sub_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svsub_s16_x(svptrue_b16(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> sub_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svsub_s32_x(svptrue_b32(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> sub_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svsub_s64_x(svptrue_b64(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> sub_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svsub_f32_x(svptrue_b32(), a.v, b.v); }
+template <> inline VecData<double, SVE_COUNT(64)> sub_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svsub_f64_x(svptrue_b64(), a.v, b.v); }
 
-template <> inline VecData<int8_t, SVE_COUNT(8)> fma_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b, const VecData<int8_t, SVE_COUNT(8)>& c) { return svmad_s8_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v, c.v); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> fma_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b, const VecData<int16_t, SVE_COUNT(16)>& c) { return svmad_s16_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v, c.v); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> fma_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b, const VecData<int32_t, SVE_COUNT(32)>& c) { return svmad_s32_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v, c.v); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> fma_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b, const VecData<int64_t, SVE_COUNT(64)>& c) { return svmad_s64_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v, c.v); }
-template <> inline VecData<float, SVE_COUNT(32)> fma_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b, const VecData<float, SVE_COUNT(32)>& c) { return svmad_f32_x(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v, c.v); }
-template <> inline VecData<double, SVE_COUNT(64)> fma_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b, const VecData<double, SVE_COUNT(64)>& c) { return svmad_f64_x(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v, c.v); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> fma_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b, const VecData<int8_t, SVE_COUNT(8)>& c) { return svmad_s8_x(svptrue_b8(), a.v, b.v, c.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> fma_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b, const VecData<int16_t, SVE_COUNT(16)>& c) { return svmad_s16_x(svptrue_b16(), a.v, b.v, c.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> fma_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b, const VecData<int32_t, SVE_COUNT(32)>& c) { return svmad_s32_x(svptrue_b32(), a.v, b.v, c.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> fma_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b, const VecData<int64_t, SVE_COUNT(64)>& c) { return svmad_s64_x(svptrue_b64(), a.v, b.v, c.v); }
+template <> inline VecData<float, SVE_COUNT(32)> fma_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b, const VecData<float, SVE_COUNT(32)>& c) { return svmad_f32_x(svptrue_b32(), a.v, b.v, c.v); }
+template <> inline VecData<double, SVE_COUNT(64)> fma_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b, const VecData<double, SVE_COUNT(64)>& c) { return svmad_f64_x(svptrue_b64(), a.v, b.v, c.v); }
 
 // Bitwise operators
-template <> inline VecData<int8_t, SVE_COUNT(8)> not_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a) { return svnot_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> not_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a) { return svnot_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> not_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a) { return svnot_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> not_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a) { return svnot_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v); }
-template <> inline VecData<float, SVE_COUNT(32)> not_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a) { return svreinterpret_f32(svnot_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_s32(a.v))); }
-template <> inline VecData<double, SVE_COUNT(64)> not_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a) { return svreinterpret_f64(svnot_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_s64(a.v))); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> not_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a) { return svnot_x(svptrue_b8(), a.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> not_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a) { return svnot_x(svptrue_b16(), a.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> not_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a) { return svnot_x(svptrue_b32(), a.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> not_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a) { return svnot_x(svptrue_b64(), a.v); }
+template <> inline VecData<float, SVE_COUNT(32)> not_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a) { return svreinterpret_f32(svnot_x(svptrue_b32(), svreinterpret_s32(a.v))); }
+template <> inline VecData<double, SVE_COUNT(64)> not_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a) { return svreinterpret_f64(svnot_x(svptrue_b64(), svreinterpret_s64(a.v))); }
 
-template <> inline VecData<int8_t, SVE_COUNT(8)> and_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svand_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> and_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svand_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> and_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svand_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> and_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svand_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
-template <> inline VecData<float, SVE_COUNT(32)> and_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svreinterpret_f32(svand_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_s32(a.v), svreinterpret_s32(b.v))); }
-template <> inline VecData<double, SVE_COUNT(64)> and_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svreinterpret_f64(svand_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_s64(a.v), svreinterpret_s64(b.v))); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> and_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svand_x(svptrue_b8(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> and_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svand_x(svptrue_b16(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> and_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svand_x(svptrue_b32(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> and_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svand_x(svptrue_b64(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> and_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svreinterpret_f32(svand_x(svptrue_b32(), svreinterpret_s32(a.v), svreinterpret_s32(b.v))); }
+template <> inline VecData<double, SVE_COUNT(64)> and_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svreinterpret_f64(svand_x(svptrue_b64(), svreinterpret_s64(a.v), svreinterpret_s64(b.v))); }
 
-template <> inline VecData<int8_t, SVE_COUNT(8)> xor_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return sveor_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> xor_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return sveor_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> xor_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return sveor_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> xor_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return sveor_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
-template <> inline VecData<float, SVE_COUNT(32)> xor_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svreinterpret_f32(sveor_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_s32(a.v), svreinterpret_s32(b.v))); }
-template <> inline VecData<double, SVE_COUNT(64)> xor_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svreinterpret_f64(sveor_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_s64(a.v), svreinterpret_s64(b.v))); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> xor_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return sveor_x(svptrue_b8(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> xor_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return sveor_x(svptrue_b16(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> xor_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return sveor_x(svptrue_b32(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> xor_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return sveor_x(svptrue_b64(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> xor_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svreinterpret_f32(sveor_x(svptrue_b32(), svreinterpret_s32(a.v), svreinterpret_s32(b.v))); }
+template <> inline VecData<double, SVE_COUNT(64)> xor_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svreinterpret_f64(sveor_x(svptrue_b64(), svreinterpret_s64(a.v), svreinterpret_s64(b.v))); }
 
-template <> inline VecData<int8_t, SVE_COUNT(8)> or_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svorr_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> or_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svorr_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> or_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svorr_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> or_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svorr_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
-template <> inline VecData<float, SVE_COUNT(32)> or_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svreinterpret_f32(svorr_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_s32(a.v), svreinterpret_s32(b.v))); }
-template <> inline VecData<double, SVE_COUNT(64)> or_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svreinterpret_f64(svorr_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_s64(a.v), svreinterpret_s64(b.v))); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> or_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svorr_x(svptrue_b8(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> or_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svorr_x(svptrue_b16(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> or_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svorr_x(svptrue_b32(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> or_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svorr_x(svptrue_b64(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> or_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svreinterpret_f32(svorr_x(svptrue_b32(), svreinterpret_s32(a.v), svreinterpret_s32(b.v))); }
+template <> inline VecData<double, SVE_COUNT(64)> or_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svreinterpret_f64(svorr_x(svptrue_b64(), svreinterpret_s64(a.v), svreinterpret_s64(b.v))); }
 
-template <> inline VecData<int8_t, SVE_COUNT(8)> andnot_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svbic_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> andnot_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svbic_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> andnot_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svbic_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> andnot_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svbic_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v); }
-template <> inline VecData<float, SVE_COUNT(32)> andnot_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svreinterpret_f32(svbic_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_s32(a.v), svreinterpret_s32(b.v))); }
-template <> inline VecData<double, SVE_COUNT(64)> andnot_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svreinterpret_f64(svbic_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_s64(a.v), svreinterpret_s64(b.v))); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> andnot_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svbic_x(svptrue_b8(), a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> andnot_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svbic_x(svptrue_b16(), a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> andnot_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svbic_x(svptrue_b32(), a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> andnot_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svbic_x(svptrue_b64(), a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> andnot_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svreinterpret_f32(svbic_x(svptrue_b32(), svreinterpret_s32(a.v), svreinterpret_s32(b.v))); }
+template <> inline VecData<double, SVE_COUNT(64)> andnot_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svreinterpret_f64(svbic_x(svptrue_b64(), svreinterpret_s64(a.v), svreinterpret_s64(b.v))); }
 
 // Bitshift
-template <> inline VecData<int8_t, SVE_COUNT(8)> bitshiftleft_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const Integer& rhs) { return svlsl_x(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, (uint8_t)rhs); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> bitshiftleft_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const Integer& rhs) { return svlsl_x(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, (uint16_t)rhs); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> bitshiftleft_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const Integer& rhs) { return svlsl_x(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, (uint32_t)rhs); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> bitshiftleft_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const Integer& rhs) { return svlsl_x(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, (uint64_t)rhs); }
-template <> inline VecData<float, SVE_COUNT(32)> bitshiftleft_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const Integer& rhs) { return svreinterpret_f32(svlsl_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_u32(a.v), (uint32_t)rhs)); }
-template <> inline VecData<double, SVE_COUNT(64)> bitshiftleft_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const Integer& rhs) { return svreinterpret_f64(svlsl_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_u64(a.v), (uint64_t)rhs)); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> bitshiftleft_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const Integer& rhs) { return svlsl_x(svptrue_b8(), a.v, (uint8_t)rhs); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> bitshiftleft_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const Integer& rhs) { return svlsl_x(svptrue_b16(), a.v, (uint16_t)rhs); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> bitshiftleft_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const Integer& rhs) { return svlsl_x(svptrue_b32(), a.v, (uint32_t)rhs); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> bitshiftleft_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const Integer& rhs) { return svlsl_x(svptrue_b64(), a.v, (uint64_t)rhs); }
+template <> inline VecData<float, SVE_COUNT(32)> bitshiftleft_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const Integer& rhs) { return svreinterpret_f32(svlsl_x(svptrue_b32(), svreinterpret_u32(a.v), (uint32_t)rhs)); }
+template <> inline VecData<double, SVE_COUNT(64)> bitshiftleft_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const Integer& rhs) { return svreinterpret_f64(svlsl_x(svptrue_b64(), svreinterpret_u64(a.v), (uint64_t)rhs)); }
 
-template <> inline VecData<int8_t, SVE_COUNT(8)> bitshiftright_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const Integer& rhs) { return svreinterpret_s8(svlsr_x(VecData<int8_t, SVE_COUNT(8)>::pg(), svreinterpret_u8(a.v), (uint8_t)rhs)); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> bitshiftright_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const Integer& rhs) { return svreinterpret_s16(svlsr_x(VecData<int16_t, SVE_COUNT(16)>::pg(), svreinterpret_u16(a.v), (uint16_t)rhs)); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> bitshiftright_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const Integer& rhs) { return svreinterpret_s32(svlsr_x(VecData<int32_t, SVE_COUNT(32)>::pg(), svreinterpret_u32(a.v), (uint32_t)rhs)); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> bitshiftright_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const Integer& rhs) { return svreinterpret_s64(svlsr_x(VecData<int64_t, SVE_COUNT(64)>::pg(), svreinterpret_u64(a.v), (uint64_t)rhs)); }
-template <> inline VecData<float, SVE_COUNT(32)> bitshiftright_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const Integer& rhs) { return svreinterpret_f32(svlsr_x(VecData<float, SVE_COUNT(32)>::pg(), svreinterpret_u32(a.v), (uint32_t)rhs)); }
-template <> inline VecData<double, SVE_COUNT(64)> bitshiftright_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const Integer& rhs) { return svreinterpret_f64(svlsr_x(VecData<double, SVE_COUNT(64)>::pg(), svreinterpret_u64(a.v), (uint64_t)rhs)); }
+template <> inline VecData<int8_t, SVE_COUNT(8)> bitshiftright_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a, const Integer& rhs) { return svreinterpret_s8(svlsr_x(svptrue_b8(), svreinterpret_u8(a.v), (uint8_t)rhs)); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> bitshiftright_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a, const Integer& rhs) { return svreinterpret_s16(svlsr_x(svptrue_b16(), svreinterpret_u16(a.v), (uint16_t)rhs)); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> bitshiftright_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a, const Integer& rhs) { return svreinterpret_s32(svlsr_x(svptrue_b32(), svreinterpret_u32(a.v), (uint32_t)rhs)); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> bitshiftright_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a, const Integer& rhs) { return svreinterpret_s64(svlsr_x(svptrue_b64(), svreinterpret_u64(a.v), (uint64_t)rhs)); }
+template <> inline VecData<float, SVE_COUNT(32)> bitshiftright_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a, const Integer& rhs) { return svreinterpret_f32(svlsr_x(svptrue_b32(), svreinterpret_u32(a.v), (uint32_t)rhs)); }
+template <> inline VecData<double, SVE_COUNT(64)> bitshiftright_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a, const Integer& rhs) { return svreinterpret_f64(svlsr_x(svptrue_b64(), svreinterpret_u64(a.v), (uint64_t)rhs)); }
 
 // // Other functions
 // template <> inline VecData<int8_t,64> max_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
@@ -3267,102 +3242,102 @@ template <> struct Mask<VecData<double, SVE_COUNT(64)>> {
 };
 
 // Bitwise operators
-template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> operator~<VecData<int8_t, SVE_COUNT(8)>>(const Mask<VecData<int8_t, SVE_COUNT(8)>>& vec) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svnot_z(VecData<int8_t, SVE_COUNT(8)>::pg(), vec.v)); }
-template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> operator~<VecData<int16_t, SVE_COUNT(16)>>(const Mask<VecData<int16_t, SVE_COUNT(16)>>& vec) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svnot_z(VecData<int16_t, SVE_COUNT(16)>::pg(), vec.v)); }
-template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> operator~<VecData<int32_t, SVE_COUNT(32)>>(const Mask<VecData<int32_t, SVE_COUNT(32)>>& vec) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svnot_z(VecData<int32_t, SVE_COUNT(32)>::pg(), vec.v)); }
-template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> operator~<VecData<int64_t, SVE_COUNT(64)>>(const Mask<VecData<int64_t, SVE_COUNT(64)>>& vec) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svnot_z(VecData<int64_t, SVE_COUNT(64)>::pg(), vec.v)); }
-template <> inline Mask<VecData<float, SVE_COUNT(32)>> operator~<VecData<float, SVE_COUNT(32)>>(const Mask<VecData<float, SVE_COUNT(32)>>& vec) { return Mask<VecData<float, SVE_COUNT(32)>>(svnot_z(VecData<float, SVE_COUNT(32)>::pg(), vec.v)); }
-template <> inline Mask<VecData<double, SVE_COUNT(64)>> operator~<VecData<double, SVE_COUNT(64)>>(const Mask<VecData<double, SVE_COUNT(64)>>& vec) { return Mask<VecData<double, SVE_COUNT(64)>>(svnot_z(VecData<double, SVE_COUNT(64)>::pg(), vec.v)); }
+template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> operator~<VecData<int8_t, SVE_COUNT(8)>>(const Mask<VecData<int8_t, SVE_COUNT(8)>>& vec) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svnot_z(svptrue_b8(), vec.v)); }
+template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> operator~<VecData<int16_t, SVE_COUNT(16)>>(const Mask<VecData<int16_t, SVE_COUNT(16)>>& vec) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svnot_z(svptrue_b16(), vec.v)); }
+template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> operator~<VecData<int32_t, SVE_COUNT(32)>>(const Mask<VecData<int32_t, SVE_COUNT(32)>>& vec) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svnot_z(svptrue_b32(), vec.v)); }
+template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> operator~<VecData<int64_t, SVE_COUNT(64)>>(const Mask<VecData<int64_t, SVE_COUNT(64)>>& vec) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svnot_z(svptrue_b64(), vec.v)); }
+template <> inline Mask<VecData<float, SVE_COUNT(32)>> operator~<VecData<float, SVE_COUNT(32)>>(const Mask<VecData<float, SVE_COUNT(32)>>& vec) { return Mask<VecData<float, SVE_COUNT(32)>>(svnot_z(svptrue_b32(), vec.v)); }
+template <> inline Mask<VecData<double, SVE_COUNT(64)>> operator~<VecData<double, SVE_COUNT(64)>>(const Mask<VecData<double, SVE_COUNT(64)>>& vec) { return Mask<VecData<double, SVE_COUNT(64)>>(svnot_z(svptrue_b64(), vec.v)); }
 
-template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> operator&<VecData<int8_t, SVE_COUNT(8)>>(const Mask<VecData<int8_t, SVE_COUNT(8)>>& a, const Mask<VecData<int8_t, SVE_COUNT(8)>>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svand_z(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> operator&<VecData<int16_t, SVE_COUNT(16)>>(const Mask<VecData<int16_t, SVE_COUNT(16)>>& a, const Mask<VecData<int16_t, SVE_COUNT(16)>>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svand_z(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> operator&<VecData<int32_t, SVE_COUNT(32)>>(const Mask<VecData<int32_t, SVE_COUNT(32)>>& a, const Mask<VecData<int32_t, SVE_COUNT(32)>>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svand_z(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> operator&<VecData<int64_t, SVE_COUNT(64)>>(const Mask<VecData<int64_t, SVE_COUNT(64)>>& a, const Mask<VecData<int64_t, SVE_COUNT(64)>>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svand_z(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<float, SVE_COUNT(32)>> operator&<VecData<float, SVE_COUNT(32)>>(const Mask<VecData<float, SVE_COUNT(32)>>& a, const Mask<VecData<float, SVE_COUNT(32)>>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svand_z(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<double, SVE_COUNT(64)>> operator&<VecData<double, SVE_COUNT(64)>>(const Mask<VecData<double, SVE_COUNT(64)>>& a, const Mask<VecData<double, SVE_COUNT(64)>>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svand_z(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v)); }
+template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> operator&<VecData<int8_t, SVE_COUNT(8)>>(const Mask<VecData<int8_t, SVE_COUNT(8)>>& a, const Mask<VecData<int8_t, SVE_COUNT(8)>>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svand_z(svptrue_b8(), a.v, b.v)); }
+template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> operator&<VecData<int16_t, SVE_COUNT(16)>>(const Mask<VecData<int16_t, SVE_COUNT(16)>>& a, const Mask<VecData<int16_t, SVE_COUNT(16)>>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svand_z(svptrue_b16(), a.v, b.v)); }
+template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> operator&<VecData<int32_t, SVE_COUNT(32)>>(const Mask<VecData<int32_t, SVE_COUNT(32)>>& a, const Mask<VecData<int32_t, SVE_COUNT(32)>>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svand_z(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> operator&<VecData<int64_t, SVE_COUNT(64)>>(const Mask<VecData<int64_t, SVE_COUNT(64)>>& a, const Mask<VecData<int64_t, SVE_COUNT(64)>>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svand_z(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<float, SVE_COUNT(32)>> operator&<VecData<float, SVE_COUNT(32)>>(const Mask<VecData<float, SVE_COUNT(32)>>& a, const Mask<VecData<float, SVE_COUNT(32)>>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svand_z(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<double, SVE_COUNT(64)>> operator&<VecData<double, SVE_COUNT(64)>>(const Mask<VecData<double, SVE_COUNT(64)>>& a, const Mask<VecData<double, SVE_COUNT(64)>>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svand_z(svptrue_b64(), a.v, b.v)); }
 
-template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> operator^<VecData<int8_t, SVE_COUNT(8)>>(const Mask<VecData<int8_t, SVE_COUNT(8)>>& a, const Mask<VecData<int8_t, SVE_COUNT(8)>>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(sveor_z(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> operator^<VecData<int16_t, SVE_COUNT(16)>>(const Mask<VecData<int16_t, SVE_COUNT(16)>>& a, const Mask<VecData<int16_t, SVE_COUNT(16)>>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(sveor_z(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> operator^<VecData<int32_t, SVE_COUNT(32)>>(const Mask<VecData<int32_t, SVE_COUNT(32)>>& a, const Mask<VecData<int32_t, SVE_COUNT(32)>>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(sveor_z(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> operator^<VecData<int64_t, SVE_COUNT(64)>>(const Mask<VecData<int64_t, SVE_COUNT(64)>>& a, const Mask<VecData<int64_t, SVE_COUNT(64)>>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(sveor_z(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<float, SVE_COUNT(32)>> operator^<VecData<float, SVE_COUNT(32)>>(const Mask<VecData<float, SVE_COUNT(32)>>& a, const Mask<VecData<float, SVE_COUNT(32)>>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(sveor_z(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<double, SVE_COUNT(64)>> operator^<VecData<double, SVE_COUNT(64)>>(const Mask<VecData<double, SVE_COUNT(64)>>& a, const Mask<VecData<double, SVE_COUNT(64)>>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(sveor_z(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-
-
-template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> operator|<VecData<int8_t, SVE_COUNT(8)>>(const Mask<VecData<int8_t, SVE_COUNT(8)>>& a, const Mask<VecData<int8_t, SVE_COUNT(8)>>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svorr_z(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> operator|<VecData<int16_t, SVE_COUNT(16)>>(const Mask<VecData<int16_t, SVE_COUNT(16)>>& a, const Mask<VecData<int16_t, SVE_COUNT(16)>>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svorr_z(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> operator|<VecData<int32_t, SVE_COUNT(32)>>(const Mask<VecData<int32_t, SVE_COUNT(32)>>& a, const Mask<VecData<int32_t, SVE_COUNT(32)>>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svorr_z(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> operator|<VecData<int64_t, SVE_COUNT(64)>>(const Mask<VecData<int64_t, SVE_COUNT(64)>>& a, const Mask<VecData<int64_t, SVE_COUNT(64)>>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svorr_z(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<float, SVE_COUNT(32)>> operator|<VecData<float, SVE_COUNT(32)>>(const Mask<VecData<float, SVE_COUNT(32)>>& a, const Mask<VecData<float, SVE_COUNT(32)>>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svorr_z(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<double, SVE_COUNT(64)>> operator|<VecData<double, SVE_COUNT(64)>>(const Mask<VecData<double, SVE_COUNT(64)>>& a, const Mask<VecData<double, SVE_COUNT(64)>>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svorr_z(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v)); }
+template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> operator^<VecData<int8_t, SVE_COUNT(8)>>(const Mask<VecData<int8_t, SVE_COUNT(8)>>& a, const Mask<VecData<int8_t, SVE_COUNT(8)>>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(sveor_z(svptrue_b8(), a.v, b.v)); }
+template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> operator^<VecData<int16_t, SVE_COUNT(16)>>(const Mask<VecData<int16_t, SVE_COUNT(16)>>& a, const Mask<VecData<int16_t, SVE_COUNT(16)>>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(sveor_z(svptrue_b16(), a.v, b.v)); }
+template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> operator^<VecData<int32_t, SVE_COUNT(32)>>(const Mask<VecData<int32_t, SVE_COUNT(32)>>& a, const Mask<VecData<int32_t, SVE_COUNT(32)>>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(sveor_z(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> operator^<VecData<int64_t, SVE_COUNT(64)>>(const Mask<VecData<int64_t, SVE_COUNT(64)>>& a, const Mask<VecData<int64_t, SVE_COUNT(64)>>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(sveor_z(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<float, SVE_COUNT(32)>> operator^<VecData<float, SVE_COUNT(32)>>(const Mask<VecData<float, SVE_COUNT(32)>>& a, const Mask<VecData<float, SVE_COUNT(32)>>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(sveor_z(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<double, SVE_COUNT(64)>> operator^<VecData<double, SVE_COUNT(64)>>(const Mask<VecData<double, SVE_COUNT(64)>>& a, const Mask<VecData<double, SVE_COUNT(64)>>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(sveor_z(svptrue_b64(), a.v, b.v)); }
 
 
-template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> AndNot<VecData<int8_t, SVE_COUNT(8)>>(const Mask<VecData<int8_t, SVE_COUNT(8)>>& a, const Mask<VecData<int8_t, SVE_COUNT(8)>>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svbic_z(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> AndNot<VecData<int16_t, SVE_COUNT(16)>>(const Mask<VecData<int16_t, SVE_COUNT(16)>>& a, const Mask<VecData<int16_t, SVE_COUNT(16)>>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svbic_z(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> AndNot<VecData<int32_t, SVE_COUNT(32)>>(const Mask<VecData<int32_t, SVE_COUNT(32)>>& a, const Mask<VecData<int32_t, SVE_COUNT(32)>>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svbic_z(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> AndNot<VecData<int64_t, SVE_COUNT(64)>>(const Mask<VecData<int64_t, SVE_COUNT(64)>>& a, const Mask<VecData<int64_t, SVE_COUNT(64)>>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svbic_z(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<float, SVE_COUNT(32)>> AndNot<VecData<float, SVE_COUNT(32)>>(const Mask<VecData<float, SVE_COUNT(32)>>& a, const Mask<VecData<float, SVE_COUNT(32)>>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svbic_z(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<double, SVE_COUNT(64)>> AndNot<VecData<double, SVE_COUNT(64)>>(const Mask<VecData<double, SVE_COUNT(64)>>& a, const Mask<VecData<double, SVE_COUNT(64)>>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svbic_z(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v)); }
+template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> operator|<VecData<int8_t, SVE_COUNT(8)>>(const Mask<VecData<int8_t, SVE_COUNT(8)>>& a, const Mask<VecData<int8_t, SVE_COUNT(8)>>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svorr_z(svptrue_b8(), a.v, b.v)); }
+template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> operator|<VecData<int16_t, SVE_COUNT(16)>>(const Mask<VecData<int16_t, SVE_COUNT(16)>>& a, const Mask<VecData<int16_t, SVE_COUNT(16)>>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svorr_z(svptrue_b16(), a.v, b.v)); }
+template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> operator|<VecData<int32_t, SVE_COUNT(32)>>(const Mask<VecData<int32_t, SVE_COUNT(32)>>& a, const Mask<VecData<int32_t, SVE_COUNT(32)>>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svorr_z(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> operator|<VecData<int64_t, SVE_COUNT(64)>>(const Mask<VecData<int64_t, SVE_COUNT(64)>>& a, const Mask<VecData<int64_t, SVE_COUNT(64)>>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svorr_z(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<float, SVE_COUNT(32)>> operator|<VecData<float, SVE_COUNT(32)>>(const Mask<VecData<float, SVE_COUNT(32)>>& a, const Mask<VecData<float, SVE_COUNT(32)>>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svorr_z(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<double, SVE_COUNT(64)>> operator|<VecData<double, SVE_COUNT(64)>>(const Mask<VecData<double, SVE_COUNT(64)>>& a, const Mask<VecData<double, SVE_COUNT(64)>>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svorr_z(svptrue_b64(), a.v, b.v)); }
 
-template <> inline VecData<int8_t, SVE_COUNT(8)> convert_mask2vec_intrin<VecData<int8_t, SVE_COUNT(8)>>(const Mask<VecData<int8_t, SVE_COUNT(8)>>& a) { return svsel(a.v, svnot_x(VecData<int8_t, SVE_COUNT(8)>::pg(), svdup_s8(0)), svdup_s8(0)); }
-template <> inline VecData<int16_t, SVE_COUNT(16)> convert_mask2vec_intrin<VecData<int16_t, SVE_COUNT(16)>>(const Mask<VecData<int16_t, SVE_COUNT(16)>>& a) { return svsel(a.v, svnot_x(VecData<int16_t, SVE_COUNT(16)>::pg(), svdup_s16(0)), svdup_s16(0)); }
-template <> inline VecData<int32_t, SVE_COUNT(32)> convert_mask2vec_intrin<VecData<int32_t, SVE_COUNT(32)>>(const Mask<VecData<int32_t, SVE_COUNT(32)>>& a) { return svsel(a.v, svnot_x(VecData<int32_t, SVE_COUNT(32)>::pg(), svdup_s32(0)), svdup_s32(0)); }
-template <> inline VecData<int64_t, SVE_COUNT(64)> convert_mask2vec_intrin<VecData<int64_t, SVE_COUNT(64)>>(const Mask<VecData<int64_t, SVE_COUNT(64)>>& a) { return svsel(a.v, svnot_x(VecData<int64_t, SVE_COUNT(64)>::pg(), svdup_s64(0)), svdup_s64(0)); }
-template <> inline VecData<float, SVE_COUNT(32)> convert_mask2vec_intrin<VecData<float, SVE_COUNT(32)>>(const Mask<VecData<float, SVE_COUNT(32)>>& a) { return svsel(a.v, svreinterpret_f32(svnot_x(VecData<float, SVE_COUNT(32)>::pg(), svdup_s32(0.0))), svdup_f32(0.0)); }
-template <> inline VecData<double, SVE_COUNT(64)> convert_mask2vec_intrin<VecData<double, SVE_COUNT(64)>>(const Mask<VecData<double, SVE_COUNT(64)>>& a) { return svsel(a.v, svreinterpret_f64(svnot_x(VecData<double, SVE_COUNT(64)>::pg(), svdup_s64(0.0))), svdup_f64(0.0)); }
 
-template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> convert_vec2mask_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmpne_s8(VecData<int8_t, SVE_COUNT(8)>::pg(), svdup_s8(0), a.v)); }
-template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> convert_vec2mask_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmpne_s16(VecData<int16_t, SVE_COUNT(16)>::pg(), svdup_s16(0), a.v)); }
-template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> convert_vec2mask_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmpne_s32(VecData<int32_t, SVE_COUNT(32)>::pg(), svdup_s32(0), a.v)); }
-template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> convert_vec2mask_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmpne_s64(VecData<int64_t, SVE_COUNT(64)>::pg(), svdup_s64(0), a.v)); }
-template <> inline Mask<VecData<float, SVE_COUNT(32)>> convert_vec2mask_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmpne_f32(VecData<float, SVE_COUNT(32)>::pg(), svdup_f32(0.), a.v)); }
-template <> inline Mask<VecData<double, SVE_COUNT(64)>> convert_vec2mask_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmpne_f64(VecData<double, SVE_COUNT(64)>::pg(), svdup_f64(0.), a.v)); }
+template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> AndNot<VecData<int8_t, SVE_COUNT(8)>>(const Mask<VecData<int8_t, SVE_COUNT(8)>>& a, const Mask<VecData<int8_t, SVE_COUNT(8)>>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svbic_z(svptrue_b8(), a.v, b.v)); }
+template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> AndNot<VecData<int16_t, SVE_COUNT(16)>>(const Mask<VecData<int16_t, SVE_COUNT(16)>>& a, const Mask<VecData<int16_t, SVE_COUNT(16)>>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svbic_z(svptrue_b16(), a.v, b.v)); }
+template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> AndNot<VecData<int32_t, SVE_COUNT(32)>>(const Mask<VecData<int32_t, SVE_COUNT(32)>>& a, const Mask<VecData<int32_t, SVE_COUNT(32)>>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svbic_z(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> AndNot<VecData<int64_t, SVE_COUNT(64)>>(const Mask<VecData<int64_t, SVE_COUNT(64)>>& a, const Mask<VecData<int64_t, SVE_COUNT(64)>>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svbic_z(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<float, SVE_COUNT(32)>> AndNot<VecData<float, SVE_COUNT(32)>>(const Mask<VecData<float, SVE_COUNT(32)>>& a, const Mask<VecData<float, SVE_COUNT(32)>>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svbic_z(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<double, SVE_COUNT(64)>> AndNot<VecData<double, SVE_COUNT(64)>>(const Mask<VecData<double, SVE_COUNT(64)>>& a, const Mask<VecData<double, SVE_COUNT(64)>>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svbic_z(svptrue_b64(), a.v, b.v)); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> convert_mask2vec_intrin<VecData<int8_t, SVE_COUNT(8)>>(const Mask<VecData<int8_t, SVE_COUNT(8)>>& a) { return svsel(a.v, svnot_x(svptrue_b8(), svdup_s8(0)), svdup_s8(0)); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> convert_mask2vec_intrin<VecData<int16_t, SVE_COUNT(16)>>(const Mask<VecData<int16_t, SVE_COUNT(16)>>& a) { return svsel(a.v, svnot_x(svptrue_b16(), svdup_s16(0)), svdup_s16(0)); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> convert_mask2vec_intrin<VecData<int32_t, SVE_COUNT(32)>>(const Mask<VecData<int32_t, SVE_COUNT(32)>>& a) { return svsel(a.v, svnot_x(svptrue_b32(), svdup_s32(0)), svdup_s32(0)); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> convert_mask2vec_intrin<VecData<int64_t, SVE_COUNT(64)>>(const Mask<VecData<int64_t, SVE_COUNT(64)>>& a) { return svsel(a.v, svnot_x(svptrue_b64(), svdup_s64(0)), svdup_s64(0)); }
+template <> inline VecData<float, SVE_COUNT(32)> convert_mask2vec_intrin<VecData<float, SVE_COUNT(32)>>(const Mask<VecData<float, SVE_COUNT(32)>>& a) { return svsel(a.v, svreinterpret_f32(svnot_x(svptrue_b32(), svdup_s32(0.0))), svdup_f32(0.0)); }
+template <> inline VecData<double, SVE_COUNT(64)> convert_mask2vec_intrin<VecData<double, SVE_COUNT(64)>>(const Mask<VecData<double, SVE_COUNT(64)>>& a) { return svsel(a.v, svreinterpret_f64(svnot_x(svptrue_b64(), svdup_s64(0.0))), svdup_f64(0.0)); }
+
+template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> convert_vec2mask_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmpne_s8(svptrue_b8(), svdup_s8(0), a.v)); }
+template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> convert_vec2mask_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmpne_s16(svptrue_b16(), svdup_s16(0), a.v)); }
+template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> convert_vec2mask_intrin<VecData<int32_t, SVE_COUNT(32)>>(const VecData<int32_t, SVE_COUNT(32)>& a) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmpne_s32(svptrue_b32(), svdup_s32(0), a.v)); }
+template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> convert_vec2mask_intrin<VecData<int64_t, SVE_COUNT(64)>>(const VecData<int64_t, SVE_COUNT(64)>& a) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmpne_s64(svptrue_b64(), svdup_s64(0), a.v)); }
+template <> inline Mask<VecData<float, SVE_COUNT(32)>> convert_vec2mask_intrin<VecData<float, SVE_COUNT(32)>>(const VecData<float, SVE_COUNT(32)>& a) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmpne_f32(svptrue_b32(), svdup_f32(0.), a.v)); }
+template <> inline Mask<VecData<double, SVE_COUNT(64)>> convert_vec2mask_intrin<VecData<double, SVE_COUNT(64)>>(const VecData<double, SVE_COUNT(64)>& a) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmpne_f64(svptrue_b64(), svdup_f64(0.), a.v)); }
 
 // /////////////////////////////////////////////////////////////////////////////
 // /////////////////////////////////////////////////////////////////////////////
 
 // Comparison operators
-template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> comp_intrin<ComparisonType::lt>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmplt(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> comp_intrin<ComparisonType::le>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmple(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> comp_intrin<ComparisonType::gt>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmpgt(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> comp_intrin<ComparisonType::ge>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmpge(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> comp_intrin<ComparisonType::eq>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmpeq(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> comp_intrin<ComparisonType::ne>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmpne(VecData<int8_t, SVE_COUNT(8)>::pg(), a.v, b.v)); }
+template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> comp_intrin<ComparisonType::lt>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmplt(svptrue_b8(), a.v, b.v)); }
+template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> comp_intrin<ComparisonType::le>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmple(svptrue_b8(), a.v, b.v)); }
+template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> comp_intrin<ComparisonType::gt>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmpgt(svptrue_b8(), a.v, b.v)); }
+template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> comp_intrin<ComparisonType::ge>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmpge(svptrue_b8(), a.v, b.v)); }
+template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> comp_intrin<ComparisonType::eq>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmpeq(svptrue_b8(), a.v, b.v)); }
+template <> inline Mask<VecData<int8_t, SVE_COUNT(8)>> comp_intrin<ComparisonType::ne>(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return Mask<VecData<int8_t, SVE_COUNT(8)>>(svcmpne(svptrue_b8(), a.v, b.v)); }
 
-template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> comp_intrin<ComparisonType::lt>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmplt(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> comp_intrin<ComparisonType::le>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmple(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> comp_intrin<ComparisonType::gt>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmpgt(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> comp_intrin<ComparisonType::ge>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmpge(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> comp_intrin<ComparisonType::eq>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmpeq(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> comp_intrin<ComparisonType::ne>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmpne(VecData<int16_t, SVE_COUNT(16)>::pg(), a.v, b.v)); }
+template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> comp_intrin<ComparisonType::lt>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmplt(svptrue_b16(), a.v, b.v)); }
+template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> comp_intrin<ComparisonType::le>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmple(svptrue_b16(), a.v, b.v)); }
+template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> comp_intrin<ComparisonType::gt>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmpgt(svptrue_b16(), a.v, b.v)); }
+template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> comp_intrin<ComparisonType::ge>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmpge(svptrue_b16(), a.v, b.v)); }
+template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> comp_intrin<ComparisonType::eq>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmpeq(svptrue_b16(), a.v, b.v)); }
+template <> inline Mask<VecData<int16_t, SVE_COUNT(16)>> comp_intrin<ComparisonType::ne>(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return Mask<VecData<int16_t, SVE_COUNT(16)>>(svcmpne(svptrue_b16(), a.v, b.v)); }
 
-template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> comp_intrin<ComparisonType::lt>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmplt(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> comp_intrin<ComparisonType::le>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmple(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> comp_intrin<ComparisonType::gt>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmpgt(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> comp_intrin<ComparisonType::ge>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmpge(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> comp_intrin<ComparisonType::eq>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmpeq(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> comp_intrin<ComparisonType::ne>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmpne(VecData<int32_t, SVE_COUNT(32)>::pg(), a.v, b.v)); }
+template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> comp_intrin<ComparisonType::lt>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmplt(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> comp_intrin<ComparisonType::le>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmple(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> comp_intrin<ComparisonType::gt>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmpgt(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> comp_intrin<ComparisonType::ge>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmpge(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> comp_intrin<ComparisonType::eq>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmpeq(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<int32_t, SVE_COUNT(32)>> comp_intrin<ComparisonType::ne>(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return Mask<VecData<int32_t, SVE_COUNT(32)>>(svcmpne(svptrue_b32(), a.v, b.v)); }
 
-template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> comp_intrin<ComparisonType::lt>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmplt(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> comp_intrin<ComparisonType::le>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmple(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> comp_intrin<ComparisonType::gt>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmpgt(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> comp_intrin<ComparisonType::ge>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmpge(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> comp_intrin<ComparisonType::eq>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmpeq(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> comp_intrin<ComparisonType::ne>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmpne(VecData<int64_t, SVE_COUNT(64)>::pg(), a.v, b.v)); }
+template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> comp_intrin<ComparisonType::lt>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmplt(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> comp_intrin<ComparisonType::le>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmple(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> comp_intrin<ComparisonType::gt>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmpgt(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> comp_intrin<ComparisonType::ge>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmpge(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> comp_intrin<ComparisonType::eq>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmpeq(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<int64_t, SVE_COUNT(64)>> comp_intrin<ComparisonType::ne>(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return Mask<VecData<int64_t, SVE_COUNT(64)>>(svcmpne(svptrue_b64(), a.v, b.v)); }
 
-template <> inline Mask<VecData<float, SVE_COUNT(32)>> comp_intrin<ComparisonType::lt>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmplt(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<float, SVE_COUNT(32)>> comp_intrin<ComparisonType::le>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmple(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<float, SVE_COUNT(32)>> comp_intrin<ComparisonType::gt>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmpgt(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<float, SVE_COUNT(32)>> comp_intrin<ComparisonType::ge>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmpge(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<float, SVE_COUNT(32)>> comp_intrin<ComparisonType::eq>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmpeq(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<float, SVE_COUNT(32)>> comp_intrin<ComparisonType::ne>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmpne(VecData<float, SVE_COUNT(32)>::pg(), a.v, b.v)); }
+template <> inline Mask<VecData<float, SVE_COUNT(32)>> comp_intrin<ComparisonType::lt>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmplt(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<float, SVE_COUNT(32)>> comp_intrin<ComparisonType::le>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmple(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<float, SVE_COUNT(32)>> comp_intrin<ComparisonType::gt>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmpgt(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<float, SVE_COUNT(32)>> comp_intrin<ComparisonType::ge>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmpge(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<float, SVE_COUNT(32)>> comp_intrin<ComparisonType::eq>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmpeq(svptrue_b32(), a.v, b.v)); }
+template <> inline Mask<VecData<float, SVE_COUNT(32)>> comp_intrin<ComparisonType::ne>(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return Mask<VecData<float, SVE_COUNT(32)>>(svcmpne(svptrue_b32(), a.v, b.v)); }
 
-template <> inline Mask<VecData<double, SVE_COUNT(64)>> comp_intrin<ComparisonType::lt>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmplt(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<double, SVE_COUNT(64)>> comp_intrin<ComparisonType::le>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmple(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<double, SVE_COUNT(64)>> comp_intrin<ComparisonType::gt>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmpgt(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<double, SVE_COUNT(64)>> comp_intrin<ComparisonType::ge>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmpge(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<double, SVE_COUNT(64)>> comp_intrin<ComparisonType::eq>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmpeq(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v)); }
-template <> inline Mask<VecData<double, SVE_COUNT(64)>> comp_intrin<ComparisonType::ne>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmpne(VecData<double, SVE_COUNT(64)>::pg(), a.v, b.v)); }
+template <> inline Mask<VecData<double, SVE_COUNT(64)>> comp_intrin<ComparisonType::lt>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmplt(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<double, SVE_COUNT(64)>> comp_intrin<ComparisonType::le>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmple(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<double, SVE_COUNT(64)>> comp_intrin<ComparisonType::gt>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmpgt(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<double, SVE_COUNT(64)>> comp_intrin<ComparisonType::ge>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmpge(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<double, SVE_COUNT(64)>> comp_intrin<ComparisonType::eq>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmpeq(svptrue_b64(), a.v, b.v)); }
+template <> inline Mask<VecData<double, SVE_COUNT(64)>> comp_intrin<ComparisonType::ne>(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return Mask<VecData<double, SVE_COUNT(64)>>(svcmpne(svptrue_b64(), a.v, b.v)); }
 
 template <> inline VecData<int8_t, SVE_COUNT(8)> select_intrin(const Mask<VecData<int8_t, SVE_COUNT(8)>>& s, const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svsel_s8(s.v, a.v, b.v); }
 template <> inline VecData<int16_t, SVE_COUNT(16)> select_intrin(const Mask<VecData<int16_t, SVE_COUNT(16)>>& s, const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svsel_s16(s.v, a.v, b.v); }
