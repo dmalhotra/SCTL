@@ -3346,6 +3346,32 @@ template <> inline VecData<int64_t, SVE_COUNT(64)> select_intrin(const Mask<VecD
 template <> inline VecData<float, SVE_COUNT(32)> select_intrin(const Mask<VecData<float, SVE_COUNT(32)>>& s, const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svsel_f32(s.v, a.v, b.v); }
 template <> inline VecData<double, SVE_COUNT(64)> select_intrin(const Mask<VecData<double, SVE_COUNT(64)>>& s, const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svsel_f64(s.v, a.v, b.v); }
 
+// Specialize the rsqrt_newton_iters to use the slightly faster Arm RSQRTS steps
+template <Integer MAX_ITER, Integer ITER> struct rsqrt_newton_iter<MAX_ITER, ITER, VecData<float, SVE_COUNT(32)>> {
+    using VData = VecData<float, SVE_COUNT(32)>;
+    static VData eval(const VData& y, const VData& x) { return rsqrt_newton_iter<MAX_ITER, ITER - 1, VData>::eval(svmul_f32_x(svptrue_b32(), y.v, svrsqrts_f32(svmul_f32_x(svptrue_b32(), y.v, y.v), x.v)), x); }
+};
+template <Integer MAX_ITER> struct rsqrt_newton_iter<MAX_ITER, 1, VecData<float, SVE_COUNT(32)>> {
+    using VData = VecData<float, SVE_COUNT(32)>;
+    static VData eval(const VData& y, const VData& x) { return svmul_f32_x(svptrue_b32(), y.v, svrsqrts_f32(svmul_f32_x(svptrue_b32(), y.v, y.v), x.v)); }
+};
+template <> struct rsqrt_newton_iter<0, 0, VecData<float, SVE_COUNT(32)>> {
+    using VData = VecData<float, SVE_COUNT(32)>;
+    static VData eval(const VData& y, const VData& x) { return y; }
+};
+template <Integer MAX_ITER, Integer ITER> struct rsqrt_newton_iter<MAX_ITER, ITER, VecData<double, SVE_COUNT(64)>> {
+    using VData = VecData<double, SVE_COUNT(64)>;
+    static VData eval(const VData& y, const VData& x) { return rsqrt_newton_iter<MAX_ITER, ITER - 1, VData>::eval(svmul_f64_x(svptrue_b64(), y.v, svrsqrts_f64(svmul_f64_x(svptrue_b64(), y.v, y.v), x.v)), x); }
+};
+template <Integer MAX_ITER> struct rsqrt_newton_iter<MAX_ITER, 1, VecData<double, SVE_COUNT(64)>> {
+    using VData = VecData<double, SVE_COUNT(64)>;
+    static VData eval(const VData& y, const VData& x) { return svmul_f64_x(svptrue_b64(), y.v, svrsqrts_f64(svmul_f64_x(svptrue_b64(), y.v, y.v), x.v)); }
+};
+template <> struct rsqrt_newton_iter<0, 0, VecData<double, SVE_COUNT(64)>> {
+    using VData = VecData<double, SVE_COUNT(64)>;
+    static VData eval(const VData& y, const VData& x) { return y; }
+};
+
 // Special functions
 template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float, SVE_COUNT(32)>> {
   // approximating 10 bits of precision
