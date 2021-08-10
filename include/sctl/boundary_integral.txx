@@ -153,8 +153,11 @@ namespace SCTL_NAMESPACE {
       comm_.HyperQuickSort(trg_nodes, trg_nodes0, comp_node_mid);
 
       SCTL_ASSERT(src_nodes0.Dim());
-      comm_.Allgather(src_nodes0.begin(), 1, splitter_nodes.begin(), 1);
-      comm_.PartitionS(trg_nodes0, src_nodes0[0], comp_node_mid);
+      StaticArray<NodeData,1> splitter_node{src_nodes0[0]};
+      if (!comm_.Rank()) splitter_node[0].mid = Morton<COORD_DIM>();
+
+      comm_.Allgather(splitter_node+0, 1, splitter_nodes.begin(), 1);
+      comm_.PartitionS(trg_nodes0, splitter_node[0], comp_node_mid);
     }
 
     Vector<NodeData> src_nodes1;
@@ -277,7 +280,7 @@ namespace SCTL_NAMESPACE {
         }
       }
     }
-    { // sort and partition by elem-ID, remove duplicates
+    { // sort and partition by elem-ID
       Vector<NodeData> near_lst0;
       { // near_lst0 <-- partition(dist_sort(near_lst), elem_offset)
         NodeData split_node;
@@ -286,30 +289,7 @@ namespace SCTL_NAMESPACE {
         comm_.HyperQuickSort(near_lst, near_lst0, comp_node_eid_idx);
         comm_.PartitionS(near_lst0, split_node, comp_node_eid_idx);
       }
-      if (near_lst0.Dim()) { // near_lst <-- remove_duplicates(near_lst0)
-        const Long N0 = near_lst0.Dim();
-        Vector<Long> cnt(N0), dsp(N0); dsp[0] = 0;
-        #pragma omp parallel for schedule(static)
-        for (Long i = 0; i < N0; i++) {
-          if (i==0 || near_lst0[i-1].elem_idx!=near_lst0[i].elem_idx || near_lst0[i-1].idx!=near_lst0[i].idx) {
-            cnt[i] = 1;
-          } else {
-            cnt[i] = 0;
-          }
-        }
-        omp_par::scan(cnt.begin(), dsp.begin(), N0);
-
-        const Long N1 = dsp[N0-1] + cnt[N0-1];
-        near_lst.ReInit(N1);
-        #pragma omp parallel for schedule(static)
-        for (Long i = 0; i < N1; i++) {
-          if(cnt[i]) {
-            near_lst[i] = near_lst0[i];
-          }
-        }
-      } else {
-        near_lst.ReInit(0);
-      }
+      near_lst.Swap(near_lst0);
     }
 
     { // Set Xtrg_near
@@ -344,12 +324,13 @@ namespace SCTL_NAMESPACE {
           idx1 = std::lower_bound(near_lst.begin(), near_lst.end(), srch_node1, comp_node_eid_idx) - near_lst.begin();
         }
         for (Long i = idx0; i < idx1;) {
-          Long elem_idx_ = near_lst[i].elem_idx, dsp = i, cnt = 0;
+          Long elem_idx_ = near_lst[i].elem_idx, cnt = 0; //, dsp = i;
           for (; i<idx1 && near_lst[i].elem_idx==elem_idx_; i++) cnt++;
-          near_elem_dsp[elem_idx_-elem_offset] = dsp;
+          //near_elem_dsp[elem_idx_-elem_offset] = dsp; // skips for elements with cnt == 0
           near_elem_cnt[elem_idx_-elem_offset] = cnt;
         }
       }
+      omp_par::scan(near_elem_cnt.begin(), near_elem_dsp.begin(), Nelem);
     }
 
     { // Set scatter_index, near_trg_cnt, near_trg_dsp
@@ -761,6 +742,7 @@ namespace SCTL_NAMESPACE {
     for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) { // compute near-interactions
       const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
       const Long trg_dof = near_elem_cnt[elem_idx]*KDIM1;
+      if (src_dof==0 || trg_dof == 0) continue;
       const Matrix<Real> K_near_(src_dof, trg_dof, K_near.begin() + K_near_dsp[elem_idx]*KDIM0*KDIM1, false);
       const Matrix<Real> F_(1, src_dof, (Iterator<Real>)F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
       Matrix<Real> U_(1, trg_dof, U_near.begin() + near_elem_dsp[elem_idx]*KDIM1, false);

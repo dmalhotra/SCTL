@@ -191,7 +191,7 @@ template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>*
   Real abs_tol = tol * (use_abs_tol ? 1 : b_norm);
   while (1) {
     Real r_norm = sqrt(inner_prod(r, r, comm_));
-    if (verbose_ && !comm_.Rank()) printf("%3lld KSP Residual norm %.12e\n", (long long)H.Dim(), r_norm);
+    if (verbose_ && !comm_.Rank()) printf("%3lld KSP Residual norm %.12e\n", (long long)H.Dim(), (double)r_norm);
     if (r_norm < abs_tol || H.Dim() == max_iter) break;
 
     A(&Aq, q);

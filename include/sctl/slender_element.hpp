@@ -204,6 +204,8 @@ namespace SCTL_NAMESPACE {
        */
       static void test_greens_identity(const Comm& comm = Comm::Self(), Real tol = 1e-10);
 
+      template <class ValueType> void Copy(SlenderElemList<ValueType>& elem_lst) const;
+
     private:
 
       template <class Kernel> Matrix<Real> SelfInteracHelper_(const Kernel& ker, const Long elem_idx, const Real tol) const; // constant radius

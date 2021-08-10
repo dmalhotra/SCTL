@@ -71,9 +71,10 @@ template <class uKernel> class GenericKernel {
         RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[DIM], vs[KDIM0];
         for (Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
         for (Integer k = 0; k < DIM; k++) {
-          StaticArray<Real,VecLen> Xt;
+          alignas(sizeof(RealVec)) StaticArray<Real,VecLen> Xt;
+          RealVec::Zero().StoreAligned(Xt);
           for (Integer i = 0; i < Nt; i++) Xt[i] = r_trg[i*DIM+k];
-          xt[k] = RealVec::Load(&Xt[0]);
+          xt[k] = RealVec::LoadAligned(&Xt[0]);
         }
         for (Long s = 0; s < Ns; s++) {
           for (Integer k = 0; k < DIM; k++) xs[k] = RealVec::Load1(&r_src[s*DIM+k]);
@@ -82,7 +83,7 @@ template <class uKernel> class GenericKernel {
           uKerEval(vt, xt, xs, ns, vs);
         }
         for (Integer k = 0; k < KDIM1; k++) {
-          alignas(sizeof(RealVec)) Real out[VecLen];
+          alignas(sizeof(RealVec)) StaticArray<Real,VecLen> out;
           vt[k].StoreAligned(&out[0]);
           for (Long t = 0; t < Nt; t++) {
             v_trg[t*KDIM1+k] += out[t];

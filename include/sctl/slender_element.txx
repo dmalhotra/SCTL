@@ -661,7 +661,7 @@ namespace SCTL_NAMESPACE {
   }
 
   template <class Real> static const Vector<Real>& sin_theta(const Integer ORDER) {
-    constexpr Integer MaxOrder = 100;
+    constexpr Integer MaxOrder = 256;
     auto compute_sin_theta = [](){
       Vector<Vector<Real>> sin_theta_lst(MaxOrder);
       for (Long k = 0; k < MaxOrder; k++) {
@@ -678,7 +678,7 @@ namespace SCTL_NAMESPACE {
     return sin_theta_lst[ORDER];
   }
   template <class Real> static const Vector<Real>& cos_theta(const Integer ORDER) {
-    constexpr Integer MaxOrder = 100;
+    constexpr Integer MaxOrder = 256;
     auto compute_cos_theta = [](){
       Vector<Vector<Real>> cos_theta_lst(MaxOrder);
       for (Long k = 0; k < MaxOrder; k++) {
@@ -695,7 +695,7 @@ namespace SCTL_NAMESPACE {
     return cos_theta_lst[ORDER];
   }
   template <class Real> static const Matrix<Real>& fourier_matrix(Integer Nmodes, Integer Nnodes) {
-    constexpr Integer MaxOrder = 50;
+    constexpr Integer MaxOrder = 128;
     auto compute_fourier_matrix = [](Integer Nmodes, Integer Nnodes) {
       if (Nnodes == 0 || Nmodes == 0) return Matrix<Real>();
       Matrix<Real> M_fourier(2*Nmodes,Nnodes);
@@ -723,7 +723,7 @@ namespace SCTL_NAMESPACE {
     return Mall[Nmodes][Nnodes];
   }
   template <class Real> static const Matrix<Real>& fourier_matrix_inv(Integer Nnodes, Integer Nmodes) {
-    constexpr Integer MaxOrder = 50;
+    constexpr Integer MaxOrder = 128;
     auto compute_fourier_matrix_inv = [](Integer Nnodes, Integer Nmodes) {
       if (Nmodes > Nnodes/2+1 || Nnodes == 0 || Nmodes == 0) return Matrix<Real>();
       const Real scal = 2/(Real)Nnodes;
@@ -761,7 +761,7 @@ namespace SCTL_NAMESPACE {
     return Mall[Nnodes][Nmodes];
   }
   template <class Real> static const Matrix<Real>& fourier_matrix_inv_transpose(Integer Nnodes, Integer Nmodes) {
-    constexpr Integer MaxOrder = 50;
+    constexpr Integer MaxOrder = 128;
     auto compute_all = []() {
       Matrix<Matrix<Real>> Mall(MaxOrder, MaxOrder);
       for (Long i = 0; i < MaxOrder; i++) {
@@ -880,7 +880,7 @@ namespace SCTL_NAMESPACE {
               }
               return Xtrg;
             };
-            Vector<ValueType> Xtrg = trg_coord(dist, 2*Nmodes);
+            Vector<ValueType> Xtrg = trg_coord(dist, 10); // TODO: determine optimal sample count
             Long Ntrg = Xtrg.Dim()/COORD_DIM;
 
             auto adap_nds_wts = [&panel_quad_nds_wts](Vector<ValueType>& nds, Vector<ValueType>& wts, Integer levels){
@@ -1689,10 +1689,11 @@ namespace SCTL_NAMESPACE {
     }
   }
   template <class Real> void SlenderElemList<Real>::GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) const {
-    constexpr Integer MaxOrder = 50/FARFIELD_UPSAMPLE;
+    constexpr Integer MaxOrderFourier = 128/FARFIELD_UPSAMPLE;
+    constexpr Integer MaxOrderCheb = 50/FARFIELD_UPSAMPLE;
     auto compute_Mfourier_upsample_transpose = []() {
-      Vector<Matrix<Real>> M_lst(MaxOrder);
-      for (Long k = 1; k < MaxOrder; k++) {
+      Vector<Matrix<Real>> M_lst(MaxOrderFourier);
+      for (Long k = 1; k < MaxOrderFourier; k++) {
         const Integer FourierOrder = k;
         const Integer FourierModes = FourierOrder/2+1;
         const Matrix<Real>& Mfourier_inv = fourier_matrix_inv<Real>(FourierOrder,FourierModes);
@@ -1702,8 +1703,8 @@ namespace SCTL_NAMESPACE {
       return M_lst;
     };
     auto compute_Mcheb_upsample_transpose = []() {
-      Vector<Matrix<Real>> M_lst(MaxOrder);
-      for (Long k = 0; k < MaxOrder; k++) {
+      Vector<Matrix<Real>> M_lst(MaxOrderCheb);
+      for (Long k = 0; k < MaxOrderCheb; k++) {
         const Integer ChebOrder = k;
         Matrix<Real> Minterp(ChebOrder, ChebOrder*FARFIELD_UPSAMPLE);
         Vector<Real> Vinterp(ChebOrder*ChebOrder*FARFIELD_UPSAMPLE, Minterp.begin(), false);
@@ -1756,10 +1757,11 @@ namespace SCTL_NAMESPACE {
     }
   }
   template <class Real> void SlenderElemList<Real>::FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) const {
-    constexpr Integer MaxOrder = 50/FARFIELD_UPSAMPLE;
+    constexpr Integer MaxOrderFourier = 128/FARFIELD_UPSAMPLE;
+    constexpr Integer MaxOrderCheb = 50/FARFIELD_UPSAMPLE;
     auto compute_Mfourier_upsample = []() {
-      Vector<Matrix<Real>> M_lst(MaxOrder);
-      for (Long k = 1; k < MaxOrder; k++) {
+      Vector<Matrix<Real>> M_lst(MaxOrderFourier);
+      for (Long k = 1; k < MaxOrderFourier; k++) {
         const Integer FourierOrder = k;
         const Integer FourierModes = FourierOrder/2+1;
         const Matrix<Real>& Mfourier_inv = fourier_matrix_inv<Real>(FourierOrder,FourierModes);
@@ -1769,8 +1771,8 @@ namespace SCTL_NAMESPACE {
       return M_lst;
     };
     auto compute_Mcheb_upsample = []() {
-      Vector<Matrix<Real>> M_lst(MaxOrder);
-      for (Long k = 0; k < MaxOrder; k++) {
+      Vector<Matrix<Real>> M_lst(MaxOrderCheb);
+      for (Long k = 0; k < MaxOrderCheb; k++) {
         const Integer ChebOrder = k;
         Matrix<Real> Minterp(ChebOrder, ChebOrder*FARFIELD_UPSAMPLE);
         Vector<Real> Vinterp(ChebOrder*ChebOrder*FARFIELD_UPSAMPLE, Minterp.begin(), false);
@@ -1960,7 +1962,7 @@ namespace SCTL_NAMESPACE {
               StaticArray<Real,2> s_val{0,1};
               dist[0] = get_dist(x_trg, s_val[0]);
               dist[1] = get_dist(x_trg, s_val[1]);
-              for (Long i = 0; i < 20; i++) { // Binary search: set dist, s_val
+              for (Long i = 0; i < 20; i++) { // Binary search: set dist, s_val // TODO: use Netwon's method
                 Real ss = (s_val[0] + s_val[1]) * 0.5;
                 Real dd = get_dist(x_trg, ss);
                 if (dist[0] > dist[1]) {
@@ -2997,5 +2999,21 @@ namespace SCTL_NAMESPACE {
     return M;
   }
 
+  template <class Real> template <class ValueType> void SlenderElemList<Real>::Copy(SlenderElemList<ValueType>& elem_lst) const {
+    const Long N = radius.Dim();
+    Vector<ValueType> radius_(N), coord_(N*COORD_DIM), e1_(N*COORD_DIM);
+    for (Long i = 0; i < cheb_order.Dim(); i++) {
+      for (Long j = 0; j < cheb_order[i]; j++) {
+        radius_[elem_dsp[i]+j] = (ValueType)radius[elem_dsp[i]+j];
+        for (Integer k = 0; k < COORD_DIM; k++) {
+          Long idx_ = elem_dsp[i]*COORD_DIM+j*COORD_DIM+k;
+          Long idx = elem_dsp[i]*COORD_DIM+k*cheb_order[i]+j;
+          coord_[idx_] = (ValueType)coord[idx];
+          e1_[idx_] = (ValueType)e1[idx];
+        }
+      }
+    }
+    elem_lst.Init(cheb_order, fourier_order, coord_, radius_, e1_);
+  }
 }
 
