@@ -844,7 +844,7 @@ namespace SCTL_NAMESPACE {
     return nds_wts_lst[ORDER];
   }
 
-  template <class RealType> static Vector<Vector<RealType>> BuildToroidalSpecialQuadRules(Integer Nmodes) {
+  template <class RealType, class Kernel> static Vector<Vector<RealType>> BuildToroidalSpecialQuadRules(Integer Nmodes) {
     constexpr Integer COORD_DIM = 3;
     constexpr Integer max_adap_depth = 30; // build quadrature rules for points up to 2*pi*0.5^max_adap_depth from source loop
     constexpr Integer crossover_adap_depth = 2;
@@ -852,7 +852,7 @@ namespace SCTL_NAMESPACE {
 
     using ValueType = QuadReal;
     Vector<Vector<ValueType>> data;
-    const std::string fname = std::string("data/toroidal_quad_rule_m") + std::to_string(Nmodes);
+    const std::string fname = std::string("data/toroidal_quad_rule_m") + std::to_string(Nmodes) + "_" + Kernel::QuadRuleName();
     ReadFile(data, fname);
     if (data.Dim() != max_adap_depth*max_digits) { // If file is not-found then compute quadrature rule and write to file
       data.ReInit(max_adap_depth * max_digits);
@@ -923,24 +923,22 @@ namespace SCTL_NAMESPACE {
               Xsrc[i*COORD_DIM+2] = 0;
             }
 
-            Matrix<ValueType> Mker_sl, Mker_dl;
-            Laplace3D_FxU laplace_sl;
-            Laplace3D_DxU laplace_dl;
-            laplace_sl.KernelMatrix(Mker_sl, Xtrg, Xsrc, Xsrc);
-            laplace_dl.KernelMatrix(Mker_dl, Xtrg, Xsrc, Xsrc);
-            SCTL_ASSERT(Mker_sl.Dim(0) == Nnds);
-            SCTL_ASSERT(Mker_sl.Dim(1) == Ntrg);
-            SCTL_ASSERT(Mker_dl.Dim(0) == Nnds);
-            SCTL_ASSERT(Mker_dl.Dim(1) == Ntrg);
+            Kernel ker;
+            Matrix<ValueType> Mker;
+            ker.KernelMatrix(Mker, Xtrg, Xsrc, Xsrc);
+            SCTL_ASSERT(Mker.Dim(0) == Nnds * Kernel::SrcDim());
+            SCTL_ASSERT(Mker.Dim(1) == Ntrg * Kernel::TrgDim());
 
-            Mintegrands.ReInit(Nnds, (Nmodes*2) * 2 * Ntrg);
+            Mintegrands.ReInit(Nnds, (Nmodes*2)*Kernel::SrcDim() * Ntrg*Kernel::TrgDim());
             for (Long k = 0; k < Nmodes; k++) {
               for (Long i = 0; i < Nnds; i++) {
                 for (Long j = 0; j < Ntrg; j++) {
-                  Mintegrands[i][((k*2+0)*2+0)*Ntrg+j] = Mker_sl[i][j] * exp_iktheta[i].real;
-                  Mintegrands[i][((k*2+1)*2+0)*Ntrg+j] = Mker_sl[i][j] * exp_iktheta[i].imag;
-                  Mintegrands[i][((k*2+0)*2+1)*Ntrg+j] = Mker_dl[i][j] * exp_iktheta[i].real;
-                  Mintegrands[i][((k*2+1)*2+1)*Ntrg+j] = Mker_dl[i][j] * exp_iktheta[i].imag;
+                  for (Long k0 = 0; k0 < Kernel::SrcDim(); k0++) {
+                    for (Long k1 = 0; k1 < Kernel::TrgDim(); k1++) {
+                      Mintegrands[i][(((k*2+0)*Kernel::SrcDim()+k0) *Ntrg+j)*Kernel::TrgDim()+k1] = Mker[i*Kernel::SrcDim()+k0][j*Kernel::TrgDim()+k1] * exp_iktheta[i].real;
+                      Mintegrands[i][(((k*2+1)*Kernel::SrcDim()+k0) *Ntrg+j)*Kernel::TrgDim()+k1] = Mker[i*Kernel::SrcDim()+k0][j*Kernel::TrgDim()+k1] * exp_iktheta[i].imag;
+                    }
+                  }
                 }
               }
               for (Long i = 0; i < Nnds; i++) {
@@ -997,7 +995,7 @@ namespace SCTL_NAMESPACE {
     }
     return quad_rule_lst;
   }
-  template <class RealType, Integer VecLen, Integer ModalUpsample> static Complex<RealType> ToroidalSpecialQuadRule(Matrix<RealType>& Mfourier, Vector<RealType>& nds_cos_theta, Vector<RealType>& nds_sin_theta, Vector<RealType>& wts, const Integer Nmodes, const Tensor<RealType,true,3,1>& Xt_X0, const Tensor<RealType,true,3,1>& e1, const Tensor<RealType,true,3,1>& e2, const Tensor<RealType,true,3,1>& e1xe2, RealType R0, Integer digits) {
+  template <class RealType, Integer VecLen, Integer ModalUpsample, class Kernel> static Complex<RealType> ToroidalSpecialQuadRule(Matrix<RealType>& Mfourier, Vector<RealType>& nds_cos_theta, Vector<RealType>& nds_sin_theta, Vector<RealType>& wts, const Integer Nmodes, const Tensor<RealType,true,3,1>& Xt_X0, const Tensor<RealType,true,3,1>& e1, const Tensor<RealType,true,3,1>& e2, const Tensor<RealType,true,3,1>& e1xe2, RealType R0, Integer digits) {
     static constexpr Integer max_adap_depth = 30; // build quadrature rules for points up to 2*pi*0.5^max_adap_depth from source loop
     static constexpr Integer crossover_adap_depth = 2;
     static constexpr Integer max_digits = 20;
@@ -1013,7 +1011,10 @@ namespace SCTL_NAMESPACE {
     Long adap_depth = 0;
     { // Set adap_depth
       for (RealType s = dtheta; s<2*const_pi<RealType>(); s*=2) adap_depth++;
-      SCTL_ASSERT(adap_depth < max_adap_depth);
+      if (adap_depth >= max_adap_depth) {
+        SCTL_WARN("Toroidal quadrature evaluation is outside of the range of precomputed quadratures; accuracy may be sverely degraded.");
+        adap_depth = max_adap_depth-1;
+      }
     }
 
     SCTL_ASSERT(Nmodes < 100);
@@ -1021,9 +1022,9 @@ namespace SCTL_NAMESPACE {
     static Vector<Vector<Vector<RealType>>> all_quad_nds_cos_theta(100);
     static Vector<Vector<Vector<RealType>>> all_quad_nds_sin_theta(100);
     static Vector<Vector<Vector<RealType>>> all_quad_wts(100);
-    #pragma omp critical
+    #pragma omp critical (ToroidalSpecialQuadRule)
     if (all_quad_wts[Nmodes].Dim() == 0) {
-      auto quad_rules = BuildToroidalSpecialQuadRules<RealType>(Nmodes);
+      auto quad_rules = BuildToroidalSpecialQuadRules<RealType,Kernel>(Nmodes);
       const Long Nrules = quad_rules.Dim()/3;
 
       Vector<Matrix<RealType>> fourier_basis(Nrules);
@@ -1130,7 +1131,7 @@ namespace SCTL_NAMESPACE {
 
         Matrix<RealType> Mexp_iktheta;
         Vector<RealType> nds_cos_theta, nds_sin_theta, wts;
-        const auto exp_theta = ToroidalSpecialQuadRule<RealType,VecLen,ModalUpsample>(Mexp_iktheta, nds_cos_theta, nds_sin_theta, wts, FourierModes+ModalUpsample, Xt-x, e1, e2, cross_prod(e1,e2), r, digits);
+        const auto exp_theta = ToroidalSpecialQuadRule<RealType,VecLen,ModalUpsample,Kernel>(Mexp_iktheta, nds_cos_theta, nds_sin_theta, wts, FourierModes+ModalUpsample, Xt-x, e1, e2, cross_prod(e1,e2), r, digits);
         const Long Nnds = wts.Dim();
         SCTL_ASSERT(Nnds < Nbuff);
 
@@ -1210,7 +1211,7 @@ namespace SCTL_NAMESPACE {
     }
   }
 
-  template <Integer ModalUpsample, class ValueType, class Kernel> static void SpecialQuadBuildBasisMatrix(Matrix<ValueType>& M, Vector<ValueType>& quad_nds, Vector<ValueType>& quad_wts, const Integer Ncheb, const Integer FourierModes, const Integer max_digits, const ValueType elem_length, const Integer RefLevels, const Kernel& ker) {
+  template <Integer ModalUpsample, class ValueType, class Kernel> static void SpecialQuadBuildBasisMatrix(Matrix<ValueType>& M, Vector<ValueType>& quad_nds, Vector<ValueType>& quad_wts, const Integer Ncheb, const Integer FourierModes, const ValueType s_trg, const Integer max_digits, const ValueType elem_length, const Integer RefLevels, const Kernel& ker) {
     // TODO: cleanup
     constexpr Integer COORD_DIM = 3;
     using Vec3 = Tensor<ValueType,true,COORD_DIM,1>;
@@ -1224,7 +1225,7 @@ namespace SCTL_NAMESPACE {
     Vec3 y_trg;
     y_trg(0,0) = 1;
     y_trg(1,0) = 0;
-    y_trg(2,0) = 0;
+    y_trg(2,0) = s_trg * elem_length;
 
     Vector<ValueType> radius(          Ncheb);
     Vector<ValueType> coord (COORD_DIM*Ncheb);
@@ -1253,37 +1254,63 @@ namespace SCTL_NAMESPACE {
       e1[2*Ncheb+i] = 0;
     }
 
-    auto adap_ref = [&LegQuadOrder](Vector<ValueType>& nds, Vector<ValueType>& wts, ValueType a, ValueType b, Integer levels) {
+    auto adap_ref = [&LegQuadOrder](Vector<ValueType>& nds_, Vector<ValueType>& wts_, const ValueType s, const Integer levels) {
       const auto& log_quad_nds = LogSingularityQuadRule<ValueType>(LogQuadOrder).first;
       const auto& log_quad_wts = LogSingularityQuadRule<ValueType>(LogQuadOrder).second;
       const auto& leg_nds = LegendreQuadRule<ValueType>(LegQuadOrder).first;
       const auto& leg_wts = LegendreQuadRule<ValueType>(LegQuadOrder).second;
+      Vector<ValueType> nds;
+      Vector<ValueType> wts;
 
-      Long N = std::max<Integer>(levels-1,0)*LegQuadOrder + LogQuadOrder;
-      if (nds.Dim() != N) nds.ReInit(N);
-      if (wts.Dim() != N) wts.ReInit(N);
+      ValueType len0 = std::min(pow<ValueType>(0.5,levels), std::min(s, (1-s)));
+      ValueType len1 = std::min<ValueType>(s, 1-s);
+      ValueType len2 = std::max<ValueType>(s, 1-s);
 
-      Vector<ValueType> nds_(nds.Dim(), nds.begin(), false);
-      Vector<ValueType> wts_(wts.Dim(), wts.begin(), false);
-      while (levels>1) {
-        Vector<ValueType> nds0(LegQuadOrder, nds_.begin(), false);
-        Vector<ValueType> wts0(LegQuadOrder, wts_.begin(), false);
-        Vector<ValueType> nds1(nds_.Dim()-LegQuadOrder, nds_.begin()+LegQuadOrder, false);
-        Vector<ValueType> wts1(wts_.Dim()-LegQuadOrder, wts_.begin()+LegQuadOrder, false);
-
-        ValueType end_point = (a+b)/2;
-        nds0 = leg_nds * (a-end_point) + end_point;
-        wts0 = leg_wts * fabs<ValueType>(a-end_point);
-
-        nds_.Swap(nds1);
-        wts_.Swap(wts1);
-        a = end_point;
-        levels--;
+      for (Long i = 0; i < log_quad_nds.Dim(); i++) {
+        nds.PushBack(s + len0*log_quad_nds[i]);
+        nds.PushBack(s - len0*log_quad_nds[i]);
+        wts.PushBack(len0*log_quad_wts[i]);
+        wts.PushBack(len0*log_quad_wts[i]);
       }
-      nds_ = log_quad_nds * (a-b) + b;
-      wts_ = log_quad_wts * fabs<ValueType>(a-b);
+
+      for (ValueType start = len0; start < len1; start*=2) {
+        ValueType step_ = std::min(start, len1-start);
+        for (Long i = 0; i < leg_nds.Dim(); i++) {
+          nds.PushBack(s + start + step_*leg_nds[i]);
+          nds.PushBack(s - start - step_*leg_nds[i]);
+          wts.PushBack(step_*leg_wts[i]);
+          wts.PushBack(step_*leg_wts[i]);
+        }
+      }
+
+      for (ValueType start = len1; start < len2; start*=2) {
+        ValueType step_ = std::min(start, len2-start);
+        for (Long i = 0; i < leg_nds.Dim(); i++) {
+          if (s + start + step_*leg_nds[i] <= 1.0) {
+            nds.PushBack(s + start + step_*leg_nds[i]);
+            wts.PushBack(step_*leg_wts[i]);
+          }
+          if (s - start - step_*leg_nds[i] >= 0.0) {
+            nds.PushBack(s - start - step_*leg_nds[i]);
+            wts.PushBack(step_*leg_wts[i]);
+          }
+        }
+      }
+
+      nds_.ReInit(nds.Dim());
+      wts_.ReInit(wts.Dim());
+      Vector<std::pair<ValueType,Long>> sort_pair;
+      for (Long i = 0; i < nds.Dim(); i++) {
+        sort_pair.PushBack(std::pair<ValueType,Long>{nds[i], i});
+      }
+      std::sort(sort_pair.begin(), sort_pair.end());
+      for (Long i = 0; i < nds.Dim(); i++) {
+        const Long idx = sort_pair[i].second;
+        nds_[i] = nds[idx];
+        wts_[i] = wts[idx];
+      }
     };
-    adap_ref(quad_nds, quad_wts, (ValueType)1, (ValueType)0, RefLevels); // adaptive quadrature rule
+    adap_ref(quad_nds, quad_wts, s_trg, RefLevels); // adaptive quadrature rule
 
     Matrix<ValueType> Minterp_quad_nds;
     { // Set Minterp_quad_nds
@@ -1332,7 +1359,8 @@ namespace SCTL_NAMESPACE {
     }
 
     Matrix<ValueType> M_tor(quad_nds.Dim(), KDIM0*KDIM1*FourierModes*2);
-    toroidal_greens_fn_batched<(Integer)(TypeTraits<ValueType>::SigBits*0.3010299957),ModalUpsample>(M_tor, y_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes);
+    constexpr Integer TorGreensFnDigits = (Integer)(TypeTraits<ValueType>::SigBits*0.3010299957);
+    toroidal_greens_fn_batched<TorGreensFnDigits,ModalUpsample>(M_tor, y_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes);
 
     M.ReInit(quad_nds.Dim(), Ncheb*FourierModes*2*KDIM0*KDIM1);
     for (Long i = 0; i < quad_nds.Dim(); i++) {
@@ -1343,50 +1371,85 @@ namespace SCTL_NAMESPACE {
       }
     }
   }
-  template <Integer ModalUpsample, class ValueType> static Vector<Vector<ValueType>> BuildSpecialQuadRules(const Integer Ncheb, const Integer FourierModes, const ValueType elem_length) {
+  template <Integer ModalUpsample, class ValueType, class Kernel> static Vector<Vector<ValueType>> BuildSpecialQuadRules(const Integer Ncheb, const Integer FourierModes, const Integer trg_node_idx, const ValueType elem_length) {
     constexpr Integer Nlen = 10; // number of length samples in [elem_length/sqrt(2), elem_length*sqrt(2)]
     constexpr Integer max_digits = 19;
-    Integer depth = (Integer)(log<ValueType>(elem_length)/log<ValueType>(2)+4);
+    const ValueType s_trg = ChebQuadRule<ValueType>::nds(Ncheb)[trg_node_idx];
+    const Integer adap_depth = (Integer)(log<ValueType>(elem_length)/log<ValueType>(2)+4);
+    const ValueType eps = 8*machine_eps<ValueType>();
 
-    Laplace3D_FxU laplace_sl; // TODO
-    Laplace3D_DxU laplace_dl; // TODO
-
+    Kernel ker;
     Vector<ValueType> nds, wts;
     Matrix<ValueType> Mintegrands;
     { // Set nds, wts, Mintegrands
-      Vector<Matrix<ValueType>> Msl(Nlen), Mdl(Nlen);
+      Vector<Matrix<ValueType>> Mker(Nlen);
       Vector<Vector<ValueType>> nds_(Nlen), wts_(Nlen);
-      #pragma omp parallel for schedule(static)
+      //#pragma omp parallel for schedule(static) // TODO: prevents parallelization of precomputation of toroidal quadrature rule
       for (Long k = 0; k < Nlen; k++) {
         ValueType length = elem_length/sqrt<ValueType>(2.0)*k/(Nlen-1) + elem_length*sqrt<ValueType>(2.0)*(Nlen-k-1)/(Nlen-1);
-        SpecialQuadBuildBasisMatrix<ModalUpsample>(Msl[k], nds_[k], wts_[k], Ncheb,FourierModes, max_digits, length, depth, laplace_sl);
-        SpecialQuadBuildBasisMatrix<ModalUpsample>(Mdl[k], nds_[k], wts_[k], Ncheb,FourierModes, max_digits, length, depth, laplace_dl);
+        SpecialQuadBuildBasisMatrix<ModalUpsample>(Mker[k], nds_[k], wts_[k], Ncheb, FourierModes, s_trg, max_digits, length, adap_depth, ker);
       }
-      nds = nds_[0];
-      wts = wts_[0];
+      const Long N0 = nds_[0].Dim();
 
-      const Long N0 = nds.Dim();
-      Vector<Long> cnt(Nlen*2), dsp(Nlen*2); dsp[0] = 0;
+      Vector<Long> cnt(Nlen), dsp(Nlen); dsp[0] = 0;
       for (Long k = 0; k < Nlen; k++) {
-        SCTL_ASSERT(Msl[k].Dim(0) == N0);
-        SCTL_ASSERT(Mdl[k].Dim(0) == N0);
-        cnt[k*2+0] = Msl[k].Dim(1);
-        cnt[k*2+1] = Mdl[k].Dim(1);
+        cnt[k] = Mker[k].Dim(1);
       }
       omp_par::scan(cnt.begin(), dsp.begin(), cnt.Dim());
 
-      Mintegrands.ReInit(N0, dsp[Nlen*2-1] + cnt[Nlen*2-1]);
-      #pragma omp parallel for schedule(static)
-      for (Long k = 0; k < Nlen; k++) {
-        for (Long i = 0; i < N0; i++) {
-          for (Long j = 0; j < cnt[k*2+0]; j++) {
-            Mintegrands[i][dsp[k*2+0]+j] = Msl[k][i][j];
+      const Long Nsplit = std::lower_bound(nds_[0].begin(), nds_[0].end(), s_trg) - nds_[0].begin();
+      const Long N = std::max<Long>(N0 - Nsplit, Nsplit);
+
+      nds.ReInit(N);
+      wts.ReInit(N);
+      Mintegrands.ReInit(N, dsp[Nlen-1] + cnt[Nlen-1]);
+      if (N == Nsplit) {
+        #pragma omp parallel for schedule(static)
+        for (Long k = 0; k < Nlen; k++) {
+          for (Long i = 0; i < Nsplit; i++) {
+            for (Long j = 0; j < cnt[k]; j++) {
+              Mintegrands[i][dsp[k]+j] = Mker[k][i][j];
+            }
+          }
+
+          for (Long i = Nsplit; i < N0; i++) {
+            for (Long j = 0; j < cnt[k]; j++) {
+              Mintegrands[2*Nsplit-i-1][dsp[k]+j] += Mker[k][i][j];
+            }
           }
         }
-        for (Long i = 0; i < N0; i++) {
-          for (Long j = 0; j < cnt[k*2+1]; j++) {
-            Mintegrands[i][dsp[k*2+1]+j] = Mdl[k][i][j];
+
+        for (Long i = 0; i < Nsplit; i++) {
+          nds[i] = nds_[0][i];
+          wts[i] = wts_[0][i];
+        }
+        for (Long i = Nsplit; i < N0; i++) {
+          SCTL_ASSERT(fabs(nds[2*Nsplit-i-1] + nds_[0][i] - 2*s_trg) < eps);
+          SCTL_ASSERT(fabs(wts[2*Nsplit-i-1] - wts_[0][i]) < eps);
+        }
+      } else {
+        #pragma omp parallel for schedule(static)
+        for (Long k = 0; k < Nlen; k++) {
+          for (Long i = Nsplit; i < N0; i++) {
+            for (Long j = 0; j < cnt[k]; j++) {
+              Mintegrands[i-Nsplit][dsp[k]+j] = Mker[k][i][j];
+            }
           }
+
+          for (Long i = 0; i < Nsplit; i++) {
+            for (Long j = 0; j < cnt[k]; j++) {
+              Mintegrands[Nsplit-i-1][dsp[k]+j] += Mker[k][i][j];
+            }
+          }
+        }
+
+        for (Long i = Nsplit; i < N0; i++) {
+          nds[i-Nsplit] = nds_[0][i];
+          wts[i-Nsplit] = wts_[0][i];
+        }
+        for (Long i = 0; i < Nsplit; i++) {
+          SCTL_ASSERT(fabs(nds[Nsplit-i-1] + nds_[0][i] - 2*s_trg) < eps);
+          SCTL_ASSERT(fabs(wts[Nsplit-i-1] - wts_[0][i]) < eps);
         }
       }
     }
@@ -1400,143 +1463,143 @@ namespace SCTL_NAMESPACE {
       SCTL_ASSERT(quad_nds.Dim() == max_digits);
       SCTL_ASSERT(quad_wts.Dim() == max_digits);
       for (Long k = 0; k < max_digits; k++) {
-        nds_wts[k*2+0] = quad_nds[k];
-        nds_wts[k*2+1] = quad_wts[k];
+        for (Long i = 0; i < quad_nds[k].Dim(); i++) {
+          const ValueType qx0 = quad_nds[k][i];
+          const ValueType qx1 = 2*s_trg - qx0;
+          const ValueType qw = quad_wts[k][i];
+
+          nds_wts[k*2+0].PushBack(qx0);
+          nds_wts[k*2+1].PushBack(qw);
+
+          if (0 <= qx1 && qx1 <= (ValueType)1) {
+            nds_wts[k*2+0].PushBack(qx1);
+            nds_wts[k*2+1].PushBack(qw);
+          }
+        }
       }
     }
     return nds_wts;
   }
-  template <Integer ModalUpsample, class Real, bool adap_quad=false> static void SpecialQuadRule(Vector<Real>& nds, Vector<Real>& wts, const Integer ChebOrder, const Real s, const Real elem_radius, const Real elem_length, const Integer digits) {
-    constexpr Integer max_adap_depth = 15; // TODO
+  template <Integer ModalUpsample, class Real, class Kernel, bool adap_quad=false> static void SpecialQuadRule(Vector<Real>& nds, Vector<Real>& wts, const Integer ChebOrder, const Integer trg_node_idx, const Real elem_radius, const Real elem_length, const Integer digits) {
+    constexpr Integer max_adap_depth = 23; // TODO
     constexpr Integer MaxFourierModes = 8; // TODO
     constexpr Integer MaxChebOrder = 100;
     constexpr Integer max_digits = 19;
 
     auto LogSingularQuadOrder = [](Integer digits) { return 2*digits; }; // TODO: determine optimal order
-    auto LegQuadOrder = [](Integer digits) { return 2*digits; }; // TODO: determine optimal order
+    auto LegQuadOrder = [](Integer digits) { return digits; }; // TODO: determine optimal order
 
-    auto one_sided_rule = [&ChebOrder,&LogSingularQuadOrder,&LegQuadOrder,&digits](Real radius, Real length) -> std::pair<Vector<Real>,Vector<Real>> {
-      auto load_special_quad_rule = [](const Integer ChebOrder){
-        const std::string fname = std::string(("data/special_quad_q")+std::to_string(ChebOrder));
-        using ValueType = QuadReal;
+    if (!adap_quad) {
+      auto quad_rule = [&ChebOrder,&digits,&max_adap_depth](Real radius, Real length, const Integer trg_node_idx) -> std::pair<Vector<Real>,Vector<Real>> {
+        auto load_special_quad_rule = [&max_adap_depth](const Integer ChebOrder){
+          const std::string fname = std::string("data/special_quad_q") + std::to_string(ChebOrder) + "_" + Kernel::QuadRuleName();
+          using ValueType = QuadReal;
 
-        Vector<Vector<ValueType>> data;
-        ReadFile(data, fname);
-        if (data.Dim() != max_adap_depth*max_digits*2) { // build quadrature rules
-          data.ReInit(max_adap_depth*max_digits*2);
-          ValueType length = 960.0; // TODO
-          for (Integer i = 0; i < max_adap_depth; i++) {
-            auto nds_wts = BuildSpecialQuadRules<ModalUpsample,ValueType>(ChebOrder, MaxFourierModes, length);
-            for (Long j = 0; j < max_digits; j++) {
-              data[(i*max_digits+j)*2+0] = nds_wts[j*2+0];
-              data[(i*max_digits+j)*2+1] = nds_wts[j*2+1];
+          Vector<Vector<ValueType>> data;
+          ReadFile(data, fname);
+          if (data.Dim() != max_adap_depth*ChebOrder*max_digits*2) { // build quadrature rules
+            data.ReInit(max_adap_depth*ChebOrder*max_digits*2);
+            ValueType length = 64*1024;
+            for (Integer i = 0; i < max_adap_depth; i++) {
+              std::cout<<"length = "<<length<<'\n';
+              for (Integer trg_node_idx = 0; trg_node_idx < ChebOrder; trg_node_idx++) {
+                auto nds_wts = BuildSpecialQuadRules<ModalUpsample,ValueType,Kernel>(ChebOrder, MaxFourierModes, trg_node_idx, length);
+                for (Long j = 0; j < max_digits; j++) {
+                  data[((i*ChebOrder+trg_node_idx) * max_digits+j)*2+0] = nds_wts[j*2+0];
+                  data[((i*ChebOrder+trg_node_idx) * max_digits+j)*2+1] = nds_wts[j*2+1];
+                }
+              }
+              length *= (ValueType)0.5;
             }
-            length *= (ValueType)0.5;
+            WriteFile(data, fname);
           }
-          WriteFile(data, fname);
-        }
 
-        Vector<std::pair<Vector<Real>,Vector<Real>>> nds_wts_lst(max_adap_depth*max_digits);
-        for (Long i = 0; i < max_adap_depth*max_digits; i++) { // Set nds_wts_lst
-          const auto& nds_ = data[i*2+0];
-          const auto& wts_ = data[i*2+1];
-          nds_wts_lst[i]. first.ReInit(nds_.Dim());
-          nds_wts_lst[i].second.ReInit(wts_.Dim());
-          for (Long j = 0; j < nds_.Dim(); j++) {
-            nds_wts_lst[i]. first[j] = (Real)nds_[j];
-            nds_wts_lst[i].second[j] = (Real)wts_[j];
-          }
-        }
-        return nds_wts_lst;
-      };
-      const auto& log_sing_nds_wts = LogSingularityQuadRule<Real>(LogSingularQuadOrder(digits));
-      const auto& leg_nds_wts = LegendreQuadRule<Real>(LegQuadOrder(digits));
-      const auto& leg_nds = leg_nds_wts.first;
-      const auto& leg_wts = leg_nds_wts.second;
-
-      std::pair<Vector<Real>,Vector<Real>> nds_wts;
-      if (adap_quad) {
-        if (length < 0.8*radius) { // log-singular quadrature
-          nds_wts = log_sing_nds_wts;
-        } else { // adaptive with scale-dependent quadrature
-          Real s = 1.0;
-          while (length*s>0.8*radius) {
-            s*=0.5;
-            for (Long i = 0; i < leg_nds.Dim(); i++) {
-              nds_wts.first.PushBack(leg_nds[i]*s+s);
-              nds_wts.second.PushBack(leg_wts[i]*s);
+          Vector<std::pair<Vector<Real>,Vector<Real>>> nds_wts_lst(max_adap_depth*ChebOrder*max_digits);
+          for (Long i = 0; i < max_adap_depth*ChebOrder*max_digits; i++) { // Set nds_wts_lst
+            const auto& nds_ = data[i*2+0];
+            const auto& wts_ = data[i*2+1];
+            nds_wts_lst[i]. first.ReInit(nds_.Dim());
+            nds_wts_lst[i].second.ReInit(wts_.Dim());
+            for (Long j = 0; j < nds_.Dim(); j++) {
+              nds_wts_lst[i]. first[j] = (Real)nds_[j];
+              nds_wts_lst[i].second[j] = (Real)wts_[j];
             }
           }
-          { // add rule for singular part
-            const auto& sing_nds = log_sing_nds_wts.first;
-            const auto& sing_wts = log_sing_nds_wts.second;
-            for (Long i = 0; i < sing_nds.Dim(); i++) {
-              nds_wts.first.PushBack(sing_nds[i]*s);
-              nds_wts.second.PushBack(sing_wts[i]*s);
-            }
-          }
-        }
-      } else {
+          return nds_wts_lst;
+        };
         static Vector<Vector<std::pair<Vector<Real>,Vector<Real>>>> nds_wts_lst(MaxChebOrder);
         SCTL_ASSERT(ChebOrder < MaxChebOrder);
-        #pragma omp critical
+        #pragma omp critical (SpecialQuadRule)
         if (!nds_wts_lst[ChebOrder].Dim()) {
           auto nds_wts_lst0 = load_special_quad_rule(ChebOrder);
           nds_wts_lst[ChebOrder].Swap(nds_wts_lst0);
         }
-        if (length < 0.8*radius) { // log-singular quadrature
-          nds_wts = log_sing_nds_wts;
-        } else if (length < 1280*radius) { // scale-dependent quadrature
-          Long quad_idx = 0;
-          { // Set quad_idx
-            Real min_dist = 1e10;
-            Real l_over_r = 1280;
-            Real length_over_radius = length/radius;
-            for (Integer i = 0; i < max_adap_depth; i++) {
-              if (min_dist > fabs(l_over_r - length_over_radius)) {
-                min_dist = fabs(l_over_r - length_over_radius);
-                quad_idx = i;
-              }
-              l_over_r *= 0.5;
-            }
+
+        std::pair<Vector<Real>,Vector<Real>> nds_wts;
+        { // scale-dependent quadrature
+          Long quad_idx = (Long)(16 - log2((double)(length/radius*sqrt<Real>(0.5))));
+          if (quad_idx < 0 || quad_idx > max_adap_depth-1) {
+            SCTL_WARN("Slender element aspect-ratio is outside of the range of precomputed quadratures; accuracy may be sverely degraded.");
           }
-          nds_wts = nds_wts_lst[ChebOrder][quad_idx*max_digits+digits];
-        } else { // adaptive with scale-dependent quadrature
-          Real s = 1.0;
-          while (length*s>1280*radius) {
-            s*=0.5;
-            for (Long i = 0; i < leg_nds.Dim(); i++) {
-              nds_wts.first.PushBack(leg_nds[i]*s+s);
-              nds_wts.second.PushBack(leg_wts[i]*s);
-            }
-          }
-          { // add rule for singular part
-            const auto& sing_nds = nds_wts_lst[ChebOrder][0*max_digits+digits].first;
-            const auto& sing_wts = nds_wts_lst[ChebOrder][0*max_digits+digits].second;
-            for (Long i = 0; i < sing_nds.Dim(); i++) {
-              nds_wts.first.PushBack(sing_nds[i]*s);
-              nds_wts.second.PushBack(sing_wts[i]*s);
-            }
+          quad_idx = std::max<Integer>(0, std::min<Integer>(max_adap_depth-1, quad_idx));
+          nds_wts = nds_wts_lst[ChebOrder][(quad_idx*ChebOrder+trg_node_idx) * max_digits+digits];
+        }
+        return nds_wts;
+      };
+      const auto& nds_wts = quad_rule(elem_radius, elem_length, trg_node_idx);
+      nds = nds_wts.first;
+      wts = nds_wts.second;
+    } else {
+      const auto& log_sing_nds_wts = LogSingularityQuadRule<Real>(LogSingularQuadOrder(digits));
+      const auto& leg_nds_wts = LegendreQuadRule<Real>(LegQuadOrder(digits));
+      const auto& sing_nds = log_sing_nds_wts.first;
+      const auto& sing_wts = log_sing_nds_wts.second;
+      const auto& leg_nds = leg_nds_wts.first;
+      const auto& leg_wts = leg_nds_wts.second;
+      nds.ReInit(0);
+      wts.ReInit(0);
+
+      const Real s_trg = ChebQuadRule<Real>::nds(ChebOrder)[trg_node_idx];
+      const Real sing_quad_len = std::min(0.8*elem_radius/elem_length, std::min(s_trg, (1-s_trg)));
+      for (Long i = 0; i < sing_nds.Dim(); i++) {
+        nds.PushBack(s_trg + sing_quad_len*sing_nds[i]);
+        nds.PushBack(s_trg - sing_quad_len*sing_nds[i]);
+        wts.PushBack(sing_quad_len*sing_wts[i]);
+        wts.PushBack(sing_quad_len*sing_wts[i]);
+      }
+
+      Real a = s_trg - sing_quad_len;
+      for (Real step = sing_quad_len; step < 2; step*=2) {
+        Real a_ = a;
+        Real b_ = a - step;
+        b_ = std::min<Real>(b_, 1.0);
+        b_ = std::max<Real>(b_, 0.0);
+        Real len = fabs(a_ - b_);
+        if (len > 0) {
+          for (Long i = 0; i < leg_nds.Dim(); i++) {
+            nds.PushBack(a_*leg_nds[i] + b_*(1-leg_nds[i]));
+            wts.PushBack(len * leg_wts[i]);
           }
         }
+        a = b_;
       }
-      return nds_wts;
-    };
-    const auto& nds_wts0 = one_sided_rule(elem_radius, elem_length*s);
-    const auto& nds_wts1 = one_sided_rule(elem_radius, elem_length*(1-s));
-    const Long N0 = nds_wts0.first.Dim();
-    const Long N1 = nds_wts1.first.Dim();
 
-    nds.ReInit(N0 + N1);
-    wts.ReInit(N0 + N1);
-    Vector<Real> nds0(N0, nds.begin() + 0*N0, false);
-    Vector<Real> wts0(N0, wts.begin() + 0*N0, false);
-    Vector<Real> nds1(N1, nds.begin() + 1*N0, false);
-    Vector<Real> wts1(N1, wts.begin() + 1*N0, false);
-    nds0 = (nds_wts0.first*(-1)+1)*s;
-    wts0 = (nds_wts0.second      )*s;
-    nds1 = (nds_wts1.first )*(1-s)+s;
-    wts1 = (nds_wts1.second)*(1-s);
+      a = s_trg + sing_quad_len;
+      for (Real step = sing_quad_len; step < 2; step*=2) {
+        Real a_ = a;
+        Real b_ = a_ + step;
+        b_ = std::min<Real>(b_, 1.0);
+        b_ = std::max<Real>(b_, 0.0);
+        Real len = fabs(a_ - b_);
+        if (len > 0) {
+          for (Long i = 0; i < leg_nds.Dim(); i++) {
+            nds.PushBack(a_*leg_nds[i] + b_*(1-leg_nds[i]));
+            wts.PushBack(len * leg_wts[i]);
+          }
+        }
+        a = b_;
+      }
+    }
   }
 
 
@@ -1919,7 +1982,7 @@ namespace SCTL_NAMESPACE {
           };
 
           // TODO: develop special quadrature rule instead of adaptive integration
-          if (0) { // adaptive/dyadic refinement
+          if (0) { // adaptive/dyadic refinement on element ends
             const Integer levels = 6;
             quad_nds.ReInit(2*levels*LegQuadOrder);
             quad_wts.ReInit(2*levels*LegQuadOrder);
@@ -1929,7 +1992,7 @@ namespace SCTL_NAMESPACE {
             Vector<Real> wts1(levels*LegQuadOrder,quad_wts.begin()+levels*LegQuadOrder,false);
             adap_ref(nds0, wts0, 0.5, 0.0, levels);
             adap_ref(nds1, wts1, 0.5, 1.0, levels);
-          } else {
+          } else { // dyadic refinement near target point
             Real dist_min, s_min, dxds;
             { // Set dist_min, s_min, dxds
               auto get_dist = [&ChebOrder,&radius,&coord,&dx] (const Vec3& x_trg, Real s) -> Real {
@@ -2642,7 +2705,7 @@ namespace SCTL_NAMESPACE {
     static ToroidalGreensFn<Real,FOURIER_ORDER> tor_greens_fn;
     { // Setup tor_greens_fn
       static bool first_time = true;
-      #pragma omp critical
+      #pragma omp critical (ToroidalGreensFnSetup)
       if (first_time) {
         tor_greens_fn.Setup(ker,1.0);
         first_time = false;
@@ -2682,7 +2745,7 @@ namespace SCTL_NAMESPACE {
       }
 
       Vector<Real> quad_nds, quad_wts; // Quadrature rule in s
-      SpecialQuadRule<ModalUpsample>(quad_nds, quad_wts, ChebOrder, s_trg, r_trg, sqrt<Real>(dot_prod(dx_trg, dx_trg)), digits);
+      SpecialQuadRule<ModalUpsample,Real,Kernel>(quad_nds, quad_wts, ChebOrder, s_trg, r_trg, sqrt<Real>(dot_prod(dx_trg, dx_trg)), digits);
 
       Matrix<Real> Minterp_quad_nds;
       { // Set Minterp_quad_nds
@@ -2879,7 +2942,6 @@ namespace SCTL_NAMESPACE {
     Matrix<Real> M_modal(ChebOrder*FourierOrder, ChebOrder*KDIM0*KDIM1*FourierModes*2);
     for (Long i = 0; i < ChebOrder; i++) {
       Real r_trg = radius[i];
-      Real s_trg = CenterlineNodes(ChebOrder)[i];
       Vec3 x_trg, dx_trg, e1_trg, e2_trg;
       { // Set x_trg, e1_trg, e2_trg
         for (Integer k = 0; k < COORD_DIM; k++) {
@@ -2896,7 +2958,7 @@ namespace SCTL_NAMESPACE {
       }
 
       Vector<Real> quad_nds, quad_wts; // Quadrature rule in s
-      SpecialQuadRule<ModalUpsample>(quad_nds, quad_wts, ChebOrder, s_trg, r_trg, sqrt<Real>(dot_prod(dx_trg, dx_trg)), digits);
+      SpecialQuadRule<ModalUpsample,Real,Kernel>(quad_nds, quad_wts, ChebOrder, i, r_trg, sqrt<Real>(dot_prod(dx_trg, dx_trg)), digits);
 
       Matrix<Real> Minterp_quad_nds;
       { // Set Minterp_quad_nds
