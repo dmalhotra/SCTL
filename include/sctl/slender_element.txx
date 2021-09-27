@@ -999,7 +999,8 @@ namespace SCTL_NAMESPACE {
     static constexpr Integer max_adap_depth = 30; // build quadrature rules for points up to 2*pi*0.5^max_adap_depth from source loop
     static constexpr Integer crossover_adap_depth = 2;
     static constexpr Integer max_digits = 20;
-    SCTL_ASSERT(digits<max_digits);
+    if (digits >= max_digits) digits = max_digits-1;
+    //SCTL_ASSERT(digits<max_digits);
 
     const RealType XX = dot_prod(Xt_X0, e1);
     const RealType YY = dot_prod(Xt_X0, e2);
