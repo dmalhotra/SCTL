@@ -25,14 +25,15 @@ namespace SCTL_NAMESPACE {
     }
   }
 
-  template <class Real, Integer COORD_DIM=3> static void BuildNearList(Vector<Real>& Xtrg_near, Vector<Long>& near_elem_cnt, Vector<Long>& near_elem_dsp, Vector<Long>& near_scatter_index, Vector<Long>& near_trg_cnt, Vector<Long>& near_trg_dsp, const Vector<Real>& Xtrg, const Vector<Real>& Xsrc, const Vector<Real>& src_radius, const Vector<Long>& src_elem_nds_cnt, const Vector<Long>& src_elem_nds_dsp, const Comm& comm) {
-    // Input: Xtrg, Xsrc, src_radius, src_elem_nds_cnt, src_elem_nds_dsp, comm
-    // Output: Xtrg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt, near_trg_dsp
+  template <class Real, Integer COORD_DIM=3> static void BuildNearList(Vector<Real>& Xtrg_near, Vector<Real>& Xn_trg_near, Vector<Long>& near_elem_cnt, Vector<Long>& near_elem_dsp, Vector<Long>& near_scatter_index, Vector<Long>& near_trg_cnt, Vector<Long>& near_trg_dsp, const Vector<Real>& Xtrg, const Vector<Real>& Xn_trg, const Vector<Real>& Xsrc, const Vector<Real>& src_radius, const Vector<Long>& src_elem_nds_cnt, const Vector<Long>& src_elem_nds_dsp, const Comm& comm) {
+    // Input: Xtrg, Xn_trg, Xsrc, src_radius, src_elem_nds_cnt, src_elem_nds_dsp, comm
+    // Output: Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt, near_trg_dsp
 
     struct NodeData {
       Long idx;
       Real rad;
       StaticArray<Real,COORD_DIM> X;
+      StaticArray<Real,COORD_DIM> Xn;
       Morton<COORD_DIM> mid;
       Long elem_idx;
       Long pid;
@@ -51,6 +52,14 @@ namespace SCTL_NAMESPACE {
       }
       return dist2;
     };
+
+    bool have_trg_normal;
+    { // Set have_trg_normal
+      StaticArray<Long,1> Nloc{Xn_trg.Dim()}, Nglb{0};
+      comm.Allreduce<Long>(Nloc, Nglb, 1, Comm::CommOp::SUM);
+      have_trg_normal = (Nglb[0] > 0);
+      SCTL_ASSERT(!have_trg_normal || (Xn_trg.Dim() == Xtrg.Dim()));
+    }
 
     const Long Ntrg = Xtrg.Dim()/COORD_DIM;
     const Long Nsrc = Xsrc.Dim()/COORD_DIM;
@@ -121,6 +130,7 @@ namespace SCTL_NAMESPACE {
         trg_nodes[i].rad = 0;
         for (Long k = 0; k < COORD_DIM; k++) {
           trg_nodes[i].X[k] = Xtrg[i*COORD_DIM+k];
+          trg_nodes[i].Xn[k] = (have_trg_normal ? Xn_trg[i*COORD_DIM+k] : 0);
           Xmid[k] = (Xtrg[i*COORD_DIM+k]-BBX0[k]) * BBlen_inv;
         }
         trg_nodes[i].mid = Morton<COORD_DIM>((ConstIterator<Real>)Xmid);
@@ -301,6 +311,15 @@ namespace SCTL_NAMESPACE {
         }
       }
     }
+    if (have_trg_normal) { // Set Xn_trg_near
+      Xn_trg_near.ReInit(near_lst.Dim()*COORD_DIM);
+      #pragma omp parallel for schedule(static)
+      for (Long i = 0; i < near_lst.Dim(); i++) {
+        for (Long k = 0; k < COORD_DIM; k++) {
+          Xn_trg_near[i*COORD_DIM+k] = near_lst[i].Xn[k];
+        }
+      }
+    }
     { // Set near_elem_cnt, near_elem_dsp
       near_elem_cnt.ReInit(Nelem);
       near_elem_dsp.ReInit(Nelem);
@@ -368,7 +387,8 @@ namespace SCTL_NAMESPACE {
   }
 
 
-  template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::BoundaryIntegralOp(const Kernel& ker, const Comm& comm) : tol_(1e-10), ker_(ker), comm_(comm) {
+  template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::BoundaryIntegralOp(const Kernel& ker, bool trg_normal_dot_prod, const Comm& comm) : tol_(1e-10), ker_(ker), trg_normal_dot_prod_(trg_normal_dot_prod), comm_(comm) {
+    SCTL_ASSERT(!trg_normal_dot_prod_ || (KDIM1 % COORD_DIM == 0));
     ClearSetup();
   }
 
@@ -415,6 +435,11 @@ namespace SCTL_NAMESPACE {
     setup_far_flag = false;
     setup_near_flag = false;
   }
+  template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetTargetNormal(const Vector<Real>& Xn_trg) {
+    Xnt = Xn_trg;
+    setup_flag = false;
+    setup_near_flag = false;
+  }
 
   template <class Real, class Kernel> template <class ElemLstType> void BoundaryIntegralOp<Real,Kernel>::DeleteElemList() {
     DeleteElemList(std::to_string(typeid(ElemLstType).hash_code()));
@@ -427,7 +452,7 @@ namespace SCTL_NAMESPACE {
       return (Nelem ? (elem_nds_dsp[Nelem-1] + elem_nds_cnt[Nelem-1]) * KDIM0 : 0);
     }
     if (k == 1) {
-      return (Xtrg.Dim()/COORD_DIM) * KDIM1;
+      return (Xtrg.Dim()/COORD_DIM) * (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
     }
     SCTL_ASSERT(false);
     return -1;
@@ -468,6 +493,7 @@ namespace SCTL_NAMESPACE {
     elem_nds_dsp.ReInit(0);
     Xsurf.ReInit(0);
     Xtrg.ReInit(0);
+    Xn_trg.ReInit(0);
 
     const Long Nlst = elem_lst_map.size();
     { // Set elem_lst_name
@@ -479,13 +505,15 @@ namespace SCTL_NAMESPACE {
     { // Set elem_lst_cnt, elem_nds_cnt, Xsurf
       elem_lst_cnt .ReInit(Nlst);
       Vector<Vector<Real>> Xsurf_(Nlst);
+      Vector<Vector<Real>> Xn_surf_(Nlst);
       Vector<Vector<Long>> elem_nds_cnt_(Nlst);
       for (Long i = 0; i < Nlst; i++) {
-        elem_lst_map.at(elem_lst_name[i])->GetNodeCoord(&Xsurf_[i], nullptr, &elem_nds_cnt_[i]);
+        elem_lst_map.at(elem_lst_name[i])->GetNodeCoord(&Xsurf_[i], &Xn_surf_[i], &elem_nds_cnt_[i]);
         elem_lst_cnt[i] = elem_nds_cnt_[i].Dim();
       }
-      concat_vecs(elem_nds_cnt, elem_nds_cnt_);
       concat_vecs(Xsurf, Xsurf_);
+      concat_vecs(Xn_surf, Xn_surf_);
+      concat_vecs(elem_nds_cnt, elem_nds_cnt_);
     }
     { // Set elem_lst_dsp, elem_nds_dsp
       const Long Nelem = elem_nds_cnt.Dim();
@@ -501,6 +529,14 @@ namespace SCTL_NAMESPACE {
       Xtrg = Xt;
     } else {
       Xtrg = Xsurf;
+    }
+    if (trg_normal_dot_prod_) {
+      if (Xnt.Dim()) {
+        Xn_trg = Xnt;
+        SCTL_ASSERT_MSG(Xn_trg.Dim() == Xtrg.Dim(), "Invalid normal vector at targets.");
+      } else {
+        Xn_trg = Xn_surf;
+      }
     }
 
     setup_flag = true;
@@ -555,7 +591,7 @@ namespace SCTL_NAMESPACE {
       const auto& name = elem_lst_name[i];
       const auto& elem_lst = elem_lst_map.at(name);
       const auto& elem_data = elem_data_map.at(name);
-      elem_data.SelfInterac(K_self_[i], ker_, tol_, elem_lst);
+      elem_data.SelfInterac(K_self_[i], ker_, tol_, trg_normal_dot_prod_, elem_lst);
     }
     concat_vecs(K_self, K_self_);
     Profile::Toc();
@@ -581,9 +617,10 @@ namespace SCTL_NAMESPACE {
 
     Profile::Tic("SetupNear", &comm_, true, 6);
     Profile::Tic("BuildNearLst", &comm_, true, 7);
-    BuildNearList(Xtrg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt, near_trg_dsp, Xtrg, X_far, dist_far, elem_nds_cnt_far, elem_nds_dsp_far, comm_);
+    BuildNearList(Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt, near_trg_dsp, Xtrg, Xn_trg, X_far, dist_far, elem_nds_cnt_far, elem_nds_dsp_far, comm_);
     Profile::Toc();
     { // Set K_near_cnt, K_near_dsp, K_near
+      const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
       const Long Nlst = elem_lst_map.size();
       const Long Nelem = near_elem_cnt.Dim();
       SCTL_ASSERT(Nelem == elem_nds_cnt.Dim());
@@ -597,7 +634,7 @@ namespace SCTL_NAMESPACE {
         omp_par::scan(K_near_cnt.begin(), K_near_dsp.begin(), Nelem);
       }
       if (Nelem) { // Set K_near
-        K_near.ReInit((K_near_dsp[Nelem-1]+K_near_cnt[Nelem-1])*KDIM0*KDIM1);
+        K_near.ReInit((K_near_dsp[Nelem-1]+K_near_cnt[Nelem-1])*KDIM0*KDIM1_);
         for (Long i = 0; i < Nlst; i++) {
           const auto& name = elem_lst_name[i];
           const auto& elem_lst = elem_lst_map.at(name);
@@ -607,10 +644,11 @@ namespace SCTL_NAMESPACE {
             const Long elem_idx = elem_lst_dsp[i]+j;
             const Long Ntrg = near_elem_cnt[elem_idx];
             const Vector<Real> Xsurf_(elem_nds_cnt[elem_idx]*COORD_DIM, Xsurf.begin()+elem_nds_dsp[elem_idx]*COORD_DIM, false);
-            Matrix<Real> K_near_(elem_nds_cnt[elem_idx]*KDIM0,near_elem_cnt[elem_idx]*KDIM1, K_near.begin()+K_near_dsp[elem_idx]*KDIM0*KDIM1, false);
+            Matrix<Real> K_near_(elem_nds_cnt[elem_idx]*KDIM0,near_elem_cnt[elem_idx]*KDIM1_, K_near.begin()+K_near_dsp[elem_idx]*KDIM0*KDIM1_, false);
             for (Long k = 0; k < Ntrg; k++) {
               Long min_Xt = -1, min_Xsurf = -1;
               const Vector<Real> Xt(COORD_DIM, Xtrg_near.begin()+(near_elem_dsp[elem_idx]+k)*COORD_DIM, false);
+              const Vector<Real> Xn((trg_normal_dot_prod_ ? COORD_DIM : 0), Xn_trg_near.begin()+(near_elem_dsp[elem_idx]+k)*COORD_DIM, false);
               auto compute_min_dist2 = [](Long& min_idx, Long& min_idy, const Vector<Real>& X, const Vector<Real>& Y) {
                 const Long Nx = X.Dim() / COORD_DIM;
                 const Long Ny = Y.Dim() / COORD_DIM;
@@ -637,16 +675,16 @@ namespace SCTL_NAMESPACE {
               if (trg_elem_dist2 == 0) { // Set K_near0
                 Matrix<Real> K_near0(K_self[elem_idx].Dim(0),K_self[elem_idx].Dim(1), K_self[elem_idx].begin(), false);
                 for (Long l = 0; l < K_near0.Dim(0); l++) {
-                  for (Long k1 = 0; k1 < KDIM1; k1++) {
-                    K_near_[l][k*KDIM1+k1] = K_near0[l][min_Xsurf*KDIM1+k1];
+                  for (Long k1 = 0; k1 < KDIM1_; k1++) {
+                    K_near_[l][k*KDIM1_+k1] = K_near0[l][min_Xsurf*KDIM1_+k1];
                   }
                 }
               } else {
                 Matrix<Real> K_near0;
-                elem_data.NearInterac(K_near0, Xt, ker_, tol_, j, elem_lst);
+                elem_data.NearInterac(K_near0, Xt, Xn, ker_, tol_, j, elem_lst);
                 for (Long l = 0; l < K_near0.Dim(0); l++) {
-                  for (Long k1 = 0; k1 < KDIM1; k1++) {
-                    K_near_[l][k*KDIM1+k1] = K_near0[l][k1];
+                  for (Long k1 = 0; k1 < KDIM1_; k1++) {
+                    K_near_[l][k*KDIM1_+k1] = K_near0[l][k1];
                   }
                 }
               }
@@ -663,6 +701,7 @@ namespace SCTL_NAMESPACE {
           const Long trg_cnt = near_elem_cnt[elem_idx];
           const Long trg_dsp = near_elem_dsp[elem_idx];
           const Vector<Real> Xtrg_near_(trg_cnt*COORD_DIM, Xtrg_near.begin()+trg_dsp*COORD_DIM, false);
+          const Vector<Real> Xn_trg_near_((trg_normal_dot_prod_ ? trg_cnt*COORD_DIM : 0), Xn_trg_near.begin()+trg_dsp*COORD_DIM, false);
           if (!trg_cnt) continue;
 
           const Long far_src_cnt = elem_nds_cnt_far[elem_idx];
@@ -672,17 +711,39 @@ namespace SCTL_NAMESPACE {
           const Vector<Real> wts(far_src_cnt, wts_far.begin() + far_src_dsp, false);
 
           SCTL_ASSERT(K_near_cnt[elem_idx] == elem_nds_cnt[elem_idx]*trg_cnt);
-          Matrix<Real> K_near_(elem_nds_cnt[elem_idx]*KDIM0, trg_cnt*KDIM1, K_near.begin()+K_near_dsp[elem_idx]*KDIM0*KDIM1, false);
+          Matrix<Real> K_near_(elem_nds_cnt[elem_idx]*KDIM0, trg_cnt*KDIM1_, K_near.begin()+K_near_dsp[elem_idx]*KDIM0*KDIM1_, false);
           { // Set K_near_
-            Matrix<Real> Mker, K_direct;
-            ker_.KernelMatrix(Mker, Xtrg_near_, X, Xn);
-            for (Long k0 = 0; k0 < far_src_cnt; k0++) {
-              for (Long k1 = 0; k1 < KDIM0; k1++) {
-                for (Long l = 0; l < trg_cnt*KDIM1; l++) {
-                  Mker[k0*KDIM0+k1][l] *= wts[k0];
+            Matrix<Real> Mker(far_src_cnt*KDIM0, trg_cnt*KDIM1_);
+            if (trg_normal_dot_prod_) {
+              Matrix<Real> Mker_;
+              constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
+              ker_.KernelMatrix(Mker_, Xtrg_near_, X, Xn);
+              for (Long s = 0; s < far_src_cnt; s++) {
+                for (Long k0 = 0; k0 < KDIM0; k0++) {
+                  for (Long t = 0; t < trg_cnt; t++) {
+                    for (Long k1 = 0; k1 < KDIM1_; k1++) {
+                      Mker[s*KDIM0+k0][t*KDIM1_+k1] = 0;
+                      for (Long l = 0; l < COORD_DIM; l++) {
+                        Mker[s*KDIM0+k0][t*KDIM1_+k1] += Mker_[s*KDIM0+k0][(t*KDIM1_+k1)*COORD_DIM+l] * wts[s] * Xn_trg_near_[t*COORD_DIM+l];
+                      }
+                    }
+                  }
+                }
+              }
+            } else {
+              ker_.KernelMatrix(Mker, Xtrg_near_, X, Xn);
+              for (Long s = 0; s < far_src_cnt; s++) {
+                for (Long k0 = 0; k0 < KDIM0; k0++) {
+                  for (Long t = 0; t < trg_cnt; t++) {
+                    for (Long k1 = 0; k1 < KDIM1; k1++) {
+                      Mker[s*KDIM0+k0][t*KDIM1+k1] *= wts[s];
+                    }
+                  }
                 }
               }
             }
+
+            Matrix<Real> K_direct;
             elem_lst->FarFieldDensityOperatorTranspose(K_direct, Mker, j);
             K_near_ -= K_direct * ker_.template ScaleFactor<Real>();
           }
@@ -721,31 +782,50 @@ namespace SCTL_NAMESPACE {
         }
       }
     }
-    if (U.Dim() != Ntrg*KDIM1) {
-      U.ReInit(Ntrg*KDIM1);
+
+    const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
+    if (U.Dim() != Ntrg*KDIM1_) {
+      U.ReInit(Ntrg*KDIM1_);
       U.SetZero();
     }
-    fmm.Eval(U, Xtrg, X_far, Xn_far, F_far, ker_, comm_);
+
+    if (trg_normal_dot_prod_) {
+      constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
+      Vector<Real> U_(Ntrg * KDIM1); U_.SetZero();
+      fmm.Eval(U_, Xtrg, X_far, Xn_far, F_far, ker_, comm_);
+      for (Long i = 0; i < Ntrg; i++) {
+        for (Long k = 0; k < KDIM1_; k++) {
+          for (Long l = 0; l < COORD_DIM; l++) {
+            U[i*KDIM1_+k] += U_[(i*KDIM1_+k)*COORD_DIM+l] * Xn_trg[i*COORD_DIM+l];
+          }
+        }
+      }
+    } else {
+      fmm.Eval(U, Xtrg, X_far, Xn_far, F_far, ker_, comm_);
+    }
+
     Profile::Toc();
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::ComputeNearInterac(Vector<Real>& U, const Vector<Real>& F) const {
+    const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
+
     Profile::Tic("EvalNear", &comm_, true, 6);
     const Long Ntrg = Xtrg.Dim()/COORD_DIM;
     const Long Nelem = near_elem_cnt.Dim();
-    if (U.Dim() != Ntrg*KDIM1) {
-      U.ReInit(Ntrg*KDIM1);
+    if (U.Dim() != Ntrg*KDIM1_) {
+      U.ReInit(Ntrg*KDIM1_);
       U.SetZero();
     }
 
-    Vector<Real> U_near(Nelem ? (near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1 : 0);
+    Vector<Real> U_near(Nelem ? (near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1_ : 0);
     for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) { // compute near-interactions
       const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
-      const Long trg_dof = near_elem_cnt[elem_idx]*KDIM1;
+      const Long trg_dof = near_elem_cnt[elem_idx]*KDIM1_;
       if (src_dof==0 || trg_dof == 0) continue;
-      const Matrix<Real> K_near_(src_dof, trg_dof, K_near.begin() + K_near_dsp[elem_idx]*KDIM0*KDIM1, false);
+      const Matrix<Real> K_near_(src_dof, trg_dof, K_near.begin() + K_near_dsp[elem_idx]*KDIM0*KDIM1_, false);
       const Matrix<Real> F_(1, src_dof, (Iterator<Real>)F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
-      Matrix<Real> U_(1, trg_dof, U_near.begin() + near_elem_dsp[elem_idx]*KDIM1, false);
+      Matrix<Real> U_(1, trg_dof, U_near.begin() + near_elem_dsp[elem_idx]*KDIM1_, false);
       Matrix<Real>::GEMM(U_, F_, K_near_);
     }
 
@@ -758,8 +838,8 @@ namespace SCTL_NAMESPACE {
       Long near_cnt = near_trg_cnt[i];
       Long near_dsp = near_trg_dsp[i];
       for (Long j = 0; j < near_cnt; j++) {
-        for (Long k = 0; k < KDIM1; k++) {
-          U[i*KDIM1+k] += U_near[(near_dsp+j)*KDIM1+k];
+        for (Long k = 0; k < KDIM1_; k++) {
+          U[i*KDIM1_+k] += U_near[(near_dsp+j)*KDIM1_+k];
         }
       }
     }

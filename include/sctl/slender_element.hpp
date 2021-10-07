@@ -154,14 +154,14 @@ namespace SCTL_NAMESPACE {
        *
        * @see ElementListBase::SelfInterac()
        */
-      template <class Kernel> static void SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, const ElementListBase<Real>* self);
+      template <class Kernel> static void SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self);
 
       /**
        * Compute near-interaction operator for a given element-idx and each each target.
        *
        * @see ElementListBase::NearInterac()
        */
-      template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xtrg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
+      template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
 
       /**
        * Returns the Chebyshev node points for a given order.
@@ -209,9 +209,9 @@ namespace SCTL_NAMESPACE {
     private:
 
       template <class Kernel> Matrix<Real> SelfInteracHelper_(const Kernel& ker, const Long elem_idx, const Real tol) const; // constant radius
-      template <Integer digits, class Kernel> Matrix<Real> SelfInteracHelper(const Kernel& ker, const Long elem_idx) const;
+      template <Integer digits, bool trg_dot_prod, class Kernel> Matrix<Real> SelfInteracHelper(const Kernel& ker, const Long elem_idx) const;
 
-      template <Integer digits, class Kernel> void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xtrg, const Kernel& ker, const Long elem_idx) const;
+      template <Integer digits, bool trg_dot_prod, class Kernel> void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx) const;
 
       Vector<Real> radius, coord, e1;
       Vector<Long> cheb_order, fourier_order, elem_dsp;
