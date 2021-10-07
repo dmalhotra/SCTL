@@ -164,7 +164,7 @@ template <class uKernel> class GenericKernel {
           vec_Xt[k] = VecType::Load1(&Xt[k]);
         }
         for (Long i0 = 0; i0 < Ns; i0+=VecLen) {
-          const Integer Ns_ = std::min(VecLen, Ns-i0);
+          const Long Ns_ = std::min<Long>(VecLen, Ns-i0);
 
           for (Long i1 = 0; i1 < Ns_; i1++) { // Set Xs_
             for (Long k = 0; k < DIM; k++) {
@@ -212,7 +212,7 @@ template <class uKernel> class GenericKernel {
           vec_Xn[k] = VecType::Load1(&Xn[k]);
         }
         for (Long i0 = 0; i0 < Nt; i0+=VecLen) {
-          const Integer Nt_ = std::min(VecLen, Nt-i0);
+          const Long Nt_ = std::min<Long>(VecLen, Nt-i0);
 
           for (Long i1 = 0; i1 < Nt_; i1++) { // Set Xt_
             for (Long k = 0; k < DIM; k++) {

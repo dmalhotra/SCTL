@@ -225,6 +225,16 @@ namespace SCTL_NAMESPACE { // Generic
     for (Integer i = 0; i < VData::Size; i++) a_.x[i] *= b_.x[i];
     return a_.v;
   }
+  template <class VData> inline VData div_intrin(const VData& a, const VData& b) {
+    union U {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    };
+    U a_ = {a};
+    U b_ = {b};
+    for (Integer i = 0; i < VData::Size; i++) a_.x[i] /= b_.x[i];
+    return a_.v;
+  }
   template <class VData> inline VData add_intrin(const VData& a, const VData& b) {
     union U {
       VData v;
@@ -1104,6 +1114,13 @@ namespace SCTL_NAMESPACE { // SSE
     return _mm_mul_pd(a.v, b.v);
   }
 
+  template <> inline VecData<float,4> div_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
+    return _mm_div_ps(a.v, b.v);
+  }
+  template <> inline VecData<double,2> div_intrin(const VecData<double,2>& a, const VecData<double,2>& b) {
+    return _mm_div_pd(a.v, b.v);
+  }
+
   template <> inline VecData<int8_t,16> add_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
     return _mm_add_epi8(a.v, b.v);
   }
@@ -1772,6 +1789,13 @@ namespace SCTL_NAMESPACE { // AVX
     return _mm256_mul_pd(a.v, b.v);
   }
 
+  template <> inline VecData<float,8> div_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
+    return _mm256_div_ps(a.v, b.v);
+  }
+  template <> inline VecData<double,4> div_intrin(const VecData<double,4>& a, const VecData<double,4>& b) {
+    return _mm256_div_pd(a.v, b.v);
+  }
+
   #ifdef __AVX2__
   template <> inline VecData<int8_t,32> add_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) {
     return _mm256_add_epi8(a.v, b.v);
@@ -2433,6 +2457,13 @@ namespace SCTL_NAMESPACE { // AVX512
   }
   template <> inline VecData<double,8> mul_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
     return _mm512_mul_pd(a.v, b.v);
+  }
+
+  template <> inline VecData<float,16> div_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+    return _mm512_div_ps(a.v, b.v);
+  }
+  template <> inline VecData<double,8> div_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+    return _mm512_div_pd(a.v, b.v);
   }
 
   //template <> inline VecData<int8_t,64> add_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {}

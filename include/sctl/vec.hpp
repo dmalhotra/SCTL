@@ -25,7 +25,7 @@ namespace SCTL_NAMESPACE { // Vec
   template <class ScalarType> constexpr Integer DefaultVecLen() { return 1; }
   #endif
 
-  template <class ValueType, Integer N> class alignas(sizeof(ValueType) * N) Vec {
+  template <class ValueType, Integer N = DefaultVecLen<ValueType>> class alignas(sizeof(ValueType) * N) Vec {
     public:
       using ScalarType = ValueType;
       using VData = VecData<ScalarType,N>;
@@ -101,6 +101,9 @@ namespace SCTL_NAMESPACE { // Vec
       friend Vec operator*(const Vec& a, const Vec& b) {
         return mul_intrin(a.v, b.v);
       }
+      friend Vec operator/(const Vec& a, const Vec& b) {
+        return div_intrin(a.v, b.v);
+      }
       friend Vec operator+(const Vec& a, const Vec& b) {
         return add_intrin(a.v, b.v);
       }
@@ -166,6 +169,10 @@ namespace SCTL_NAMESPACE { // Vec
       }
       Vec& operator*=(const Vec& rhs) {
         v = mul_intrin(v, rhs.v);
+        return *this;
+      }
+      Vec& operator/=(const Vec& rhs) {
+        v = div_intrin(v, rhs.v);
         return *this;
       }
       Vec& operator+=(const Vec& rhs) {
@@ -427,43 +434,49 @@ namespace SCTL_NAMESPACE { // Vec
       }
 
       static void test_arithmetic() {
-        UnionType u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14;
+        UnionType u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17;
         for (Integer i = 0; i < N; i++) {
-          u1.x[i] = (ScalarType)rand();
-          u2.x[i] = (ScalarType)rand();
-          u3.x[i] = (ScalarType)rand();
+          u1.x[i] = (ScalarType)(rand()%100)+1;
+          u2.x[i] = (ScalarType)(rand()%100)+2;
+          u3.x[i] = (ScalarType)(rand()%100)+5;
         }
 
         u4.v = -u1.v;
         u5.v = u1.v + u2.v;
         u6.v = u1.v - u2.v;
         u7.v = u1.v * u2.v;
-        u8.v = FMA(u1.v, u2.v, u3.v);
+        u8.v = u1.v / u2.v;
+        u9.v = FMA(u1.v, u2.v, u3.v);
 
-        u9 .v = u1.v; u9 .v += u2.v;
-        u10.v = u1.v; u10.v -= u2.v;
-        u11.v = u1.v; u11.v *= u2.v;
+        u10.v = u1.v; u10.v += u2.v;
+        u11.v = u1.v; u11.v -= u2.v;
+        u12.v = u1.v; u12.v *= u2.v;
+        u13.v = u1.v; u13.v /= u2.v;
 
-        u12.v = u1.v; u12.v += u2.v[0];
-        u13.v = u1.v; u13.v -= u2.v[0];
-        u14.v = u1.v; u14.v *= u2.v[0];
+        u14.v = u1.v; u14.v += u2.v[0];
+        u15.v = u1.v; u15.v -= u2.v[0];
+        u16.v = u1.v; u16.v *= u2.v[0];
+        u17.v = u1.v; u17.v /= u2.v[0];
 
         for (Integer i = 0; i < N; i++) {
           SCTL_ASSERT(u4.x[i] == (ScalarType)-u1.x[i]);
           SCTL_ASSERT(u5.x[i] == (ScalarType)(u1.x[i] + u2.x[i]));
           SCTL_ASSERT(u6.x[i] == (ScalarType)(u1.x[i] - u2.x[i]));
           SCTL_ASSERT(u7.x[i] == (ScalarType)(u1.x[i] * u2.x[i]));
+          SCTL_ASSERT(u8.x[i] == (ScalarType)(u1.x[i] / u2.x[i]));
 
-          SCTL_ASSERT(u9 .x[i] == (ScalarType)(u1.x[i] + u2.x[i]));
-          SCTL_ASSERT(u10.x[i] == (ScalarType)(u1.x[i] - u2.x[i]));
-          SCTL_ASSERT(u11.x[i] == (ScalarType)(u1.x[i] * u2.x[i]));
+          SCTL_ASSERT(u10.x[i] == (ScalarType)(u1.x[i] + u2.x[i]));
+          SCTL_ASSERT(u11.x[i] == (ScalarType)(u1.x[i] - u2.x[i]));
+          SCTL_ASSERT(u12.x[i] == (ScalarType)(u1.x[i] * u2.x[i]));
+          SCTL_ASSERT(u13.x[i] == (ScalarType)(u1.x[i] / u2.x[i]));
 
-          SCTL_ASSERT(u12.x[i] == (ScalarType)(u1.x[i] + u2.x[0]));
-          SCTL_ASSERT(u13.x[i] == (ScalarType)(u1.x[i] - u2.x[0]));
-          SCTL_ASSERT(u14.x[i] == (ScalarType)(u1.x[i] * u2.x[0]));
+          SCTL_ASSERT(u14.x[i] == (ScalarType)(u1.x[i] + u2.x[0]));
+          SCTL_ASSERT(u15.x[i] == (ScalarType)(u1.x[i] - u2.x[0]));
+          SCTL_ASSERT(u16.x[i] == (ScalarType)(u1.x[i] * u2.x[0]));
+          SCTL_ASSERT(u17.x[i] == (ScalarType)(u1.x[i] / u2.x[0]));
 
           if (TypeTraits<ScalarType>::Type == DataType::Integer) {
-            SCTL_ASSERT(u8.x[i] == (ScalarType)(u1.x[i]*u2.x[i] + u3.x[i]));
+            SCTL_ASSERT(u9.x[i] == (ScalarType)(u1.x[i]*u2.x[i] + u3.x[i]));
           } else {
             auto myabs = [](ScalarType a) {
               return (a < 0 ? -a : a);
@@ -476,7 +489,7 @@ namespace SCTL_NAMESPACE { // Vec
               return eps;
             };
             static const ScalarType eps = machine_eps();
-            ScalarType err = myabs(u8.x[i] - (ScalarType)(u1.x[i]*u2.x[i] + u3.x[i]));
+            ScalarType err = myabs(u9.x[i] - (ScalarType)(u1.x[i]*u2.x[i] + u3.x[i]));
             ScalarType max_val = myabs(u1.x[i]*u2.x[i]) + myabs(u3.x[i]);
             ScalarType rel_err = err / max_val;
             SCTL_ASSERT(rel_err < eps);
