@@ -25,7 +25,7 @@ namespace SCTL_NAMESPACE { // Vec
   template <class ScalarType> constexpr Integer DefaultVecLen() { return 1; }
   #endif
 
-  template <class ValueType, Integer N = DefaultVecLen<ValueType>> class alignas(sizeof(ValueType) * N) Vec {
+  template <class ValueType, Integer N = DefaultVecLen<ValueType>()> class alignas(sizeof(ValueType) * N) Vec {
     public:
       using ScalarType = ValueType;
       using VData = VecData<ScalarType,N>;
