@@ -349,7 +349,7 @@ namespace SCTL_NAMESPACE {
       }
 
     private:
-      static Vector<Real> Build_helper(Vector<Vector<Real>>& quad_nds, Vector<Vector<Real>>& quad_wts, Matrix<Real> M, const Vector<Real>& nds, const Vector<Real>& wts, Vector<Real> eps_vec = Vector<Real>(), Vector<Long> ORDER_vec = Vector<Long>(), Real nds_start = 0, Real nds_end = 1) {
+      static Vector<Real> Build_helper(Vector<Vector<Real>>& quad_nds, Vector<Vector<Real>>& quad_wts, Matrix<Real> M, Vector<Real> nds, Vector<Real> wts, Vector<Real> eps_vec = Vector<Real>(), Vector<Long> ORDER_vec = Vector<Long>(), Real nds_start = 0, Real nds_end = 1) {
         if (M.Dim(0) * M.Dim(1) == 0) return Vector<Real>();
 
         Vector<Real> sqrt_wts(wts.Dim());
@@ -365,7 +365,58 @@ namespace SCTL_NAMESPACE {
         }
 
         Vector<Real> S_vec;
-        { // orthonormalize M and get singular values S_vec
+        auto modified_gram_schmidt = [](Matrix<Real>& Q, Vector<Real>& S, Vector<Long>& pivot, Matrix<Real> M, Real tol, Long max_rows, bool verbose) { // orthogonalize rows
+          const Long N0 = M.Dim(0), N1 = M.Dim(1);
+          if (N0*N1 == 0) return;
+
+          S.ReInit(max_rows); S.SetZero();
+          pivot.ReInit(max_rows); pivot = -1;
+          Q.ReInit(max_rows, N1); Q.SetZero();
+          for (Long i = 0; i < max_rows; i++) {
+            Long pivot_idx = 0;
+            Real pivot_norm = 0;
+            for (Long j = 0; j < N0; j++) { // determine pivot
+              Real col_norm = 0;
+              for (Long k = 0; k < N1; k++) {
+                col_norm += M[j][k]*M[j][k];
+              }
+              col_norm = sqrt<Real>(col_norm);
+              if (col_norm > pivot_norm) {
+                pivot_norm = col_norm;
+                pivot_idx = j;
+              }
+            }
+
+            for (Long k = 0; k < N1; k++) Q[i][k] = M[pivot_idx][k] / pivot_norm;
+            pivot[i] = pivot_idx;
+            S[i] = pivot_norm;
+
+            for (Long j = 0; j < N0; j++) { // orthonormalize
+              Real dot_prod = 0;
+              for (Long k = 0; k < N1; k++) dot_prod += M[j][k] * Q[i][k];
+              for (Long k = 0; k < N1; k++) M[j][k] -= Q[i][k] * dot_prod;
+            }
+            if (verbose) std::cout<<pivot_norm/S[0]<<'\n';
+            if (pivot_norm/S[0] < tol) break;
+          }
+        };
+        if (1) { // orthonormalize M and get truncation errors S_vec
+          Matrix<Real> Q;
+          Vector<Long> pivot;
+          Real eps = (eps_vec.Dim() ? eps_vec[eps_vec.Dim()-1] : machine_eps<Real>());
+          modified_gram_schmidt(Q, S_vec, pivot, M.Transpose(), eps, M.Dim(1), false);
+
+          if (1) {
+            M = Q.Transpose();
+          } else {
+            M.ReInit(Q.Dim(1), Q.Dim(0));
+            for (Long i = 0; i < Q.Dim(1); i++) {
+              for (Long j = 0; j < Q.Dim(0); j++) {
+                M[i][j] = Q[j][i] * S_vec[j];
+              }
+            }
+          }
+        } else { // orthonormalize M and get singular values S_vec
           Matrix<Real> U, S, Vt;
           M.SVD(U,S,Vt);
 
@@ -400,45 +451,30 @@ namespace SCTL_NAMESPACE {
         Vector<Real> cond_num_vec;
         quad_nds.ReInit(ORDER_vec.Dim());
         quad_wts.ReInit(ORDER_vec.Dim());
-        auto build_quad_rule = [&nds_start, &nds_end, &nds](Vector<Real>& quad_nds, Vector<Real>& quad_wts, Matrix<Real> M, const Vector<Real>& sqrt_wts) {
-          const Long ORDER = M.Dim(1);
-          { // Set quad_nds
-            auto find_largest_row = [&nds_start, &nds_end, &nds](const Matrix<Real>& M) {
-              Long max_row = 0;
-              Real max_norm = 0;
-              for (Long i = 0; i < M.Dim(0); i++) {
-                if (nds[i] < nds_start || nds[i] > nds_end) continue;
-                Real norm = 0;
-                for (Long j = 0; j < M.Dim(1); j++) {
-                  norm += M[i][j]*M[i][j];
-                }
-                if (norm > max_norm) {
-                  max_norm = norm;
-                  max_row = i;
-                }
-              }
-              return max_row;
-            };
-            auto orthogonalize_rows = [](Matrix<Real>& M, Vector<Long> pivot_rows) { // TODO: optimize
-              if (!pivot_rows.Dim()) return M;
-              Matrix<Real> MM(pivot_rows.Dim(), M.Dim(1));
-              for (Long i = 0; i < MM.Dim(0); i++) {
-                for (Long j = 0; j < MM.Dim(1); j++) {
-                  MM[i][j] = M[pivot_rows[i]][j];
-                }
-              }
-              Matrix<Real> U, S, Vt;
-              MM.SVD(U,S,Vt);
-              Matrix<Real> P = Vt.Transpose() * Vt;
-              return M - M * P;
-            };
+        auto build_quad_rule = [&nds_start, &nds_end, &nds, &modified_gram_schmidt](Vector<Real>& quad_nds, Vector<Real>& quad_wts, Matrix<Real> M, const Vector<Real>& sqrt_wts) {
+          const Long idx0 = std::lower_bound(nds.begin(), nds.end(), nds_start) - nds.begin();
+          const Long idx1 = std::lower_bound(nds.begin(), nds.end(), nds_end  ) - nds.begin();
+          const Long N = M.Dim(0), ORDER = M.Dim(1);
 
+          { // Set quad_nds
+            Matrix<Real> M_(N, ORDER);
+            for (Long i = 0; i < idx0*ORDER; i++) M_[0][i] = 0;
+            for (Long i = idx1*ORDER; i < N*ORDER; i++) M_[0][i] = 0;
+            for (Long i = idx0; i < idx1; i++) {
+              for (Long j = 0; j < ORDER; j++) {
+                M_[i][j] = M[i][j] / sqrt_wts[i];
+              }
+            }
+
+            Matrix<Real> Q;
+            Vector<Real> S;
             Vector<Long> pivot_rows;
-            if (quad_nds.Dim() != ORDER) quad_nds.ReInit(ORDER);
+            modified_gram_schmidt(Q, S, pivot_rows, M_, machine_eps<Real>(), ORDER, false);
+
+            quad_nds.ReInit(ORDER);
             for (Long i = 0; i < ORDER; i++) {
-              Long pivot_row = find_largest_row(orthogonalize_rows(M, pivot_rows));
-              pivot_rows.PushBack(pivot_row);
-              quad_nds[i] = nds[pivot_row];
+              SCTL_ASSERT(0<=pivot_rows[i] && pivot_rows[i]<N);
+              quad_nds[i] = nds[pivot_rows[i]];
             }
             std::sort(quad_nds.begin(), quad_nds.end());
 
@@ -455,24 +491,27 @@ namespace SCTL_NAMESPACE {
             }
           }
 
-          Real cond_num;
+          Real cond_num, smallest_wt = 1;
           { // Set quad_wts, cond_num
-            Vector<std::pair<Real,Long>> sorted_nds(nds.Dim());
-            for (Long i = 0; i < nds.Dim(); i++) {
-              sorted_nds[i].first = nds[i];
-              sorted_nds[i].second = i;
-            }
-            std::sort(sorted_nds.begin(), sorted_nds.end());
+            const Matrix<Real> b = Matrix<Real>(1, sqrt_wts.Dim(), (Iterator<Real>)sqrt_wts.begin()) * M;
 
             Matrix<Real> MM(ORDER,ORDER);
-            for (Long i = 0; i < ORDER; i++) { // Set MM <-- M[quad_nds][:]
-              Long row_id = std::lower_bound(sorted_nds.begin(), sorted_nds.end(), std::pair<Real,Long>(quad_nds[i],0))->second;
-              Real inv_sqrt_wts = 1/sqrt_wts[row_id];
-              for (Long j = 0; j < ORDER; j++) {
-                MM[i][j] = M[row_id][j] * inv_sqrt_wts;
+            { // Set MM <-- M[quad_nds][:] / sqrt_wts
+              Vector<std::pair<Real,Long>> sorted_nds(nds.Dim());
+              for (Long i = 0; i < nds.Dim(); i++) {
+                sorted_nds[i].first = nds[i];
+                sorted_nds[i].second = i;
+              }
+              std::sort(sorted_nds.begin(), sorted_nds.end());
+              for (Long i = 0; i < ORDER; i++) { // Set MM <-- M[quad_nds][:] / sqrt_wts
+                Long row_id = std::lower_bound(sorted_nds.begin(), sorted_nds.end(), std::pair<Real,Long>(quad_nds[i],0))->second;
+                Real inv_sqrt_wts = 1/sqrt_wts[row_id];
+                for (Long j = 0; j < ORDER; j++) {
+                  MM[i][j] = M[row_id][j] * inv_sqrt_wts;
+                }
               }
             }
-            Matrix<Real> b = Matrix<Real>(1, sqrt_wts.Dim(), (Iterator<Real>)sqrt_wts.begin()) * M;
+
             { // set quad_wts <-- b * MM.pinv()
               Matrix<Real> U, S, Vt;
               MM.SVD(U,S,Vt);
@@ -484,10 +523,11 @@ namespace SCTL_NAMESPACE {
               cond_num = Smax / Smin;
               auto quad_wts_ = (b * Vt.Transpose()) * S.pinv(machine_eps<Real>()) * U.Transpose();
               quad_wts = Vector<Real>(ORDER, quad_wts_.begin(), false);
+              for (const auto& a : quad_wts) smallest_wt = std::min<Real>(smallest_wt, a);
             }
             //std::cout<<(Matrix<Real>(1,ORDER,quad_wts.begin())*(Matrix<Real>(ORDER,1)*0+1))[0][0]-1<<'\n';
           }
-          std::cout<<"condition number = "<<cond_num<<"   nodes = "<<ORDER<<'\n';
+          std::cout<<"condition number = "<<cond_num<<"   nodes = "<<ORDER<<"   smallest_wt = "<<smallest_wt<<'\n';
           return cond_num;
         };
         for (Long i = 0; i < ORDER_vec.Dim(); i++) {
@@ -502,6 +542,7 @@ namespace SCTL_NAMESPACE {
           Real cond_num = build_quad_rule(quad_nds[i], quad_wts[i], MM, sqrt_wts);
           cond_num_vec.PushBack(cond_num);
         }
+
         return cond_num_vec;
       }
 

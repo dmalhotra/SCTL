@@ -808,16 +808,16 @@ namespace SCTL_NAMESPACE {
             const Long N = nds.Dim();
             Matrix<QuadReal> M(N,K);
             for (Long j = 0; j < N; j++) {
-              for (Long i = 0; i < K/2; i++) {
+              for (Long i = 0; i < (K+1)/2; i++) {
                 M[j][i] = pow<QuadReal,Long>(nds[j],i);
               }
-              for (Long i = K/2; i < K; i++) {
-                M[j][i] = pow<QuadReal,Long>(nds[j],K-i-1) * log<QuadReal>(nds[j]);
+              for (Long i = (K+1)/2; i < K; i++) {
+                M[j][i] = pow<QuadReal,Long>(nds[j],i-(K+1)/2) * log<QuadReal>(nds[j]);
               }
             }
             return M;
           };
-          InterpQuadRule<QuadReal>::Build(data[order*2+0], data[order*2+1], integrands, false, 1e-20, order, 2e-4, 0.9998); // TODO: diagnose accuracy issues
+          InterpQuadRule<QuadReal>::Build(data[order*2+0], data[order*2+1], integrands, false, 1e-20, order, 2e-4, 1.0); // TODO: diagnose accuracy issues
         }
         WriteFile<QuadReal>(data, "data/log_quad");
       }
@@ -1225,7 +1225,7 @@ namespace SCTL_NAMESPACE {
     using Vec3 = Tensor<ValueType,true,COORD_DIM,1>;
 
     const Long LegQuadOrder = 2*max_digits;
-    constexpr Long LogQuadOrder = 18; // this has non-negative weights
+    constexpr Long LogQuadOrder = 16; // this has non-negative weights
 
     constexpr Integer KDIM0 = Kernel::SrcDim();
     constexpr Integer KDIM1 = Kernel::TrgDim() / (trg_dot_prod ? COORD_DIM : 1);
@@ -2869,7 +2869,8 @@ namespace SCTL_NAMESPACE {
           n_trg(0,0) = dy_ds(1,0) * dy_dt(2,0) - dy_ds(2,0) * dy_dt(1,0);
           n_trg(1,0) = dy_ds(2,0) * dy_dt(0,0) - dy_ds(0,0) * dy_dt(2,0);
           n_trg(2,0) = dy_ds(0,0) * dy_dt(1,0) - dy_ds(1,0) * dy_dt(0,0);
-          return n_trg;
+          Real scale = 1/sqrt<Real>(n_trg(0,0)*n_trg(0,0) + n_trg(1,0)*n_trg(1,0) + n_trg(2,0)*n_trg(2,0));
+          return n_trg*scale;
         };
         const Vec3 y_trg = x_trg + e1_trg*r_trg*exp_theta_trg.real + e2_trg*r_trg*exp_theta_trg.imag;
         const Vec3 n_trg(trg_dot_prod ? compute_Xn_trg() : Vec3((Real)0));
