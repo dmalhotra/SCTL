@@ -1118,7 +1118,7 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
             { // Update data
               Long dof = 0;
               { // Set dof
-                StaticArray<Long,2> Nl = {0, 0}, Ng;
+                StaticArray<Long,2> Nl {0, 0}, Ng;
                 Nl[0] = data->Dim();
                 for (Long i = 0; i < cnt->Dim(); i++) Nl[1] += cnt[0][i];
                 comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, Comm::CommOp::SUM);

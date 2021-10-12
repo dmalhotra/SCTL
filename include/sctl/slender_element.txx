@@ -662,7 +662,7 @@ namespace SCTL_NAMESPACE {
 
   template <class Real> static const Vector<Real>& sin_theta(const Integer ORDER) {
     constexpr Integer MaxOrder = 256;
-    auto compute_sin_theta = [](){
+    auto compute_sin_theta = [MaxOrder](){
       Vector<Vector<Real>> sin_theta_lst(MaxOrder);
       for (Long k = 0; k < MaxOrder; k++) {
         sin_theta_lst[k].ReInit(k);
@@ -679,7 +679,7 @@ namespace SCTL_NAMESPACE {
   }
   template <class Real> static const Vector<Real>& cos_theta(const Integer ORDER) {
     constexpr Integer MaxOrder = 256;
-    auto compute_cos_theta = [](){
+    auto compute_cos_theta = [MaxOrder](){
       Vector<Vector<Real>> cos_theta_lst(MaxOrder);
       for (Long k = 0; k < MaxOrder; k++) {
         cos_theta_lst[k].ReInit(k);
@@ -696,7 +696,7 @@ namespace SCTL_NAMESPACE {
   }
   template <class Real> static const Matrix<Real>& fourier_matrix(Integer Nmodes, Integer Nnodes) {
     constexpr Integer MaxOrder = 128;
-    auto compute_fourier_matrix = [](Integer Nmodes, Integer Nnodes) {
+    auto compute_fourier_matrix = [MaxOrder](Integer Nmodes, Integer Nnodes) {
       if (Nnodes == 0 || Nmodes == 0) return Matrix<Real>();
       Matrix<Real> M_fourier(2*Nmodes,Nnodes);
       for (Long i = 0; i < Nnodes; i++) {
@@ -708,7 +708,7 @@ namespace SCTL_NAMESPACE {
       }
       return M_fourier;
     };
-    auto compute_all = [&compute_fourier_matrix]() {
+    auto compute_all = [&compute_fourier_matrix, MaxOrder]() {
       Matrix<Matrix<Real>> Mall(MaxOrder, MaxOrder);
       for (Long i = 0; i < MaxOrder; i++) {
         for (Long j = 0; j < MaxOrder; j++) {
@@ -724,7 +724,7 @@ namespace SCTL_NAMESPACE {
   }
   template <class Real> static const Matrix<Real>& fourier_matrix_inv(Integer Nnodes, Integer Nmodes) {
     constexpr Integer MaxOrder = 128;
-    auto compute_fourier_matrix_inv = [](Integer Nnodes, Integer Nmodes) {
+    auto compute_fourier_matrix_inv = [MaxOrder](Integer Nnodes, Integer Nmodes) {
       if (Nmodes > Nnodes/2+1 || Nnodes == 0 || Nmodes == 0) return Matrix<Real>();
       const Real scal = 2/(Real)Nnodes;
 
@@ -746,7 +746,7 @@ namespace SCTL_NAMESPACE {
       }
       return M_fourier_inv;
     };
-    auto compute_all = [&compute_fourier_matrix_inv]() {
+    auto compute_all = [&compute_fourier_matrix_inv, MaxOrder]() {
       Matrix<Matrix<Real>> Mall(MaxOrder, MaxOrder);
       for (Long i = 0; i < MaxOrder; i++) {
         for (Long j = 0; j < MaxOrder; j++) {
@@ -762,7 +762,7 @@ namespace SCTL_NAMESPACE {
   }
   template <class Real> static const Matrix<Real>& fourier_matrix_inv_transpose(Integer Nnodes, Integer Nmodes) {
     constexpr Integer MaxOrder = 128;
-    auto compute_all = []() {
+    auto compute_all = [MaxOrder]() {
       Matrix<Matrix<Real>> Mall(MaxOrder, MaxOrder);
       for (Long i = 0; i < MaxOrder; i++) {
         for (Long j = 0; j < MaxOrder; j++) {
@@ -779,7 +779,7 @@ namespace SCTL_NAMESPACE {
 
   template <class ValueType> static const std::pair<Vector<ValueType>,Vector<ValueType>>& LegendreQuadRule(Integer ORDER) {
     constexpr Integer max_order = 50;
-    auto compute_nds_wts = []() {
+    auto compute_nds_wts = [max_order]() {
       Vector<std::pair<Vector<ValueType>,Vector<ValueType>>> nds_wts(max_order);
       for (Integer order = 1; order < max_order; order++) {
         auto& x_ = nds_wts[order].first;
@@ -796,7 +796,7 @@ namespace SCTL_NAMESPACE {
   }
   template <class ValueType> static const std::pair<Vector<ValueType>,Vector<ValueType>>& LogSingularityQuadRule(Integer ORDER) {
     constexpr Integer MaxOrder = 50;
-    auto compute_nds_wts_lst = []() {
+    auto compute_nds_wts_lst = [MaxOrder]() {
       Vector<Vector<QuadReal>> data;
       ReadFile<QuadReal>(data, "data/log_quad");
       if (data.Dim() < MaxOrder*2) {
@@ -1501,7 +1501,7 @@ namespace SCTL_NAMESPACE {
     auto LegQuadOrder = [](Integer digits) { return digits; }; // TODO: determine optimal order
 
     if (!adap_quad) {
-      auto quad_rule = [&ChebOrder,&digits,&max_adap_depth](Real radius, Real length, const Integer trg_node_idx) -> std::pair<Vector<Real>,Vector<Real>> {
+      auto quad_rule = [&ChebOrder,&digits,&max_adap_depth,MaxChebOrder](Real radius, Real length, const Integer trg_node_idx) -> std::pair<Vector<Real>,Vector<Real>> {
         auto load_special_quad_rule = [&max_adap_depth](const Integer ChebOrder){
           const std::string fname = std::string("data/special_quad_q") + std::to_string(ChebOrder) + "_" + Kernel::QuadRuleName() + (trg_dot_prod ? "_dotXn" : "");
           using ValueType = QuadReal;
@@ -1765,7 +1765,7 @@ namespace SCTL_NAMESPACE {
   template <class Real> void SlenderElemList<Real>::GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) const {
     constexpr Integer MaxOrderFourier = 128/FARFIELD_UPSAMPLE;
     constexpr Integer MaxOrderCheb = 50/FARFIELD_UPSAMPLE;
-    auto compute_Mfourier_upsample_transpose = []() {
+    auto compute_Mfourier_upsample_transpose = [MaxOrderFourier]() {
       Vector<Matrix<Real>> M_lst(MaxOrderFourier);
       for (Long k = 1; k < MaxOrderFourier; k++) {
         const Integer FourierOrder = k;
@@ -1776,7 +1776,7 @@ namespace SCTL_NAMESPACE {
       }
       return M_lst;
     };
-    auto compute_Mcheb_upsample_transpose = []() {
+    auto compute_Mcheb_upsample_transpose = [MaxOrderCheb]() {
       Vector<Matrix<Real>> M_lst(MaxOrderCheb);
       for (Long k = 0; k < MaxOrderCheb; k++) {
         const Integer ChebOrder = k;
@@ -1833,7 +1833,7 @@ namespace SCTL_NAMESPACE {
   template <class Real> void SlenderElemList<Real>::FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) const {
     constexpr Integer MaxOrderFourier = 128/FARFIELD_UPSAMPLE;
     constexpr Integer MaxOrderCheb = 50/FARFIELD_UPSAMPLE;
-    auto compute_Mfourier_upsample = []() {
+    auto compute_Mfourier_upsample = [MaxOrderFourier]() {
       Vector<Matrix<Real>> M_lst(MaxOrderFourier);
       for (Long k = 1; k < MaxOrderFourier; k++) {
         const Integer FourierOrder = k;
@@ -1844,7 +1844,7 @@ namespace SCTL_NAMESPACE {
       }
       return M_lst;
     };
-    auto compute_Mcheb_upsample = []() {
+    auto compute_Mcheb_upsample = [MaxOrderCheb]() {
       Vector<Matrix<Real>> M_lst(MaxOrderCheb);
       for (Long k = 0; k < MaxOrderCheb; k++) {
         const Integer ChebOrder = k;
