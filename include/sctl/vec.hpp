@@ -12,16 +12,16 @@
 namespace SCTL_NAMESPACE { // Vec
 
   #if defined(__AVX512__) || defined(__AVX512F__)
-  static_assert(SCTL_ALIGN_BYTES >= 64);
+  static_assert(SCTL_ALIGN_BYTES >= 64, "Insufficient memory alignment for SIMD vector types");
   template <class ScalarType> constexpr Integer DefaultVecLen() { return 64/sizeof(ScalarType); }
   #elif defined(__AVX__)
-  static_assert(SCTL_ALIGN_BYTES >= 32);
+  static_assert(SCTL_ALIGN_BYTES >= 32, "Insufficient memory alignment for SIMD vector types");
   template <class ScalarType> constexpr Integer DefaultVecLen() { return 32/sizeof(ScalarType); }
   #elif defined(__SSE4_2__)
-  static_assert(SCTL_ALIGN_BYTES >= 16);
+  static_assert(SCTL_ALIGN_BYTES >= 16, "Insufficient memory alignment for SIMD vector types");
   template <class ScalarType> constexpr Integer DefaultVecLen() { return 16/sizeof(ScalarType); }
   #else
-  static_assert(SCTL_ALIGN_BYTES >= 8);
+  static_assert(SCTL_ALIGN_BYTES >= 8, "Insufficient memory alignment for SIMD vector types");
   template <class ScalarType> constexpr Integer DefaultVecLen() { return 1; }
   #endif
 

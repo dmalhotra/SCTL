@@ -17,7 +17,7 @@ template <class Real> inline Real machine_eps() {
   return eps;
 }
 
-template <class Real> static inline Real atoreal(const char* str) { // Warning: does not do correct rounding
+template <class Real> inline Real atoreal(const char* str) { // Warning: does not do correct rounding
   int i = 0;
   Real sign = 1.0;
   for (; str[i] != '\0'; i++) {

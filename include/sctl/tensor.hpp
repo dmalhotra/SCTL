@@ -66,7 +66,7 @@ template <class ValueType, bool own_data, Long... Args> class Tensor {
     }
 
     Tensor(const ValueType& v) {
-      static_assert(own_data || Size() == 0);
+      static_assert(own_data || Size() == 0, "Memory pointer must be provided to initialize Tensor types with own_data=false");
       Init(NullIterator<ValueType>());
       for (auto& x : *this) x = v;
     }

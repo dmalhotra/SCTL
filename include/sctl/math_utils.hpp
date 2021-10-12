@@ -10,7 +10,7 @@ namespace SCTL_NAMESPACE {
 
 template <class Real> Real machine_eps();
 
-template <class Real> static Real atoreal(const char* str);
+template <class Real> Real atoreal(const char* str);
 
 template <class Real> inline constexpr Real const_pi() { return (Real)3.1415926535897932384626433832795028841L; }
 

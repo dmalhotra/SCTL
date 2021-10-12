@@ -358,7 +358,7 @@ namespace SCTL_NAMESPACE { // Generic
 
   // Conversion operators
   template <class RetType, class ValueType, Integer N> RetType reinterpret_intrin(const VecData<ValueType,N>& v){
-    static_assert(sizeof(RetType) == sizeof(VecData<ValueType,N>));
+    static_assert(sizeof(RetType) == sizeof(VecData<ValueType,N>), "Illegal type cast -- size of types does not match.");
     union {
       VecData<ValueType,N> v;
       RetType r;
@@ -429,7 +429,7 @@ namespace SCTL_NAMESPACE { // Generic
   };
 
   template <class RetType, class VData> RetType reinterpret_mask(const Mask<VData>& v){
-    static_assert(sizeof(RetType) == sizeof(Mask<VData>));
+    static_assert(sizeof(RetType) == sizeof(Mask<VData>), "Illegal type cast -- size of types does not match.");
     union {
       Mask<VData> v;
       RetType r;

@@ -9,7 +9,7 @@
 
 namespace SCTL_NAMESPACE {
 
-template <class uKernel> class GenericKernel {
+template <class uKernel> class GenericKernel : public uKernel {
 
     template <class VecType, Integer D, Integer ND, Integer K0, Integer K1> static constexpr Integer get_DIM  (void (*uKer)(VecType (&u)[K0][K1], const VecType (&r)[D], const VecType (&n)[ND], const void* ctx_ptr)) { return D; }
     template <class VecType, Integer D, Integer ND, Integer K0, Integer K1> static constexpr Integer get_KDIM0(void (*uKer)(VecType (&u)[K0][K1], const VecType (&r)[D], const VecType (&n)[ND], const void* ctx_ptr)) { return K0; }

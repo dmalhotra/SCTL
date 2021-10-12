@@ -696,7 +696,7 @@ namespace SCTL_NAMESPACE {
   }
   template <class Real> static const Matrix<Real>& fourier_matrix(Integer Nmodes, Integer Nnodes) {
     constexpr Integer MaxOrder = 128;
-    auto compute_fourier_matrix = [MaxOrder](Integer Nmodes, Integer Nnodes) {
+    auto compute_fourier_matrix = [](Integer Nmodes, Integer Nnodes) {
       if (Nnodes == 0 || Nmodes == 0) return Matrix<Real>();
       Matrix<Real> M_fourier(2*Nmodes,Nnodes);
       for (Long i = 0; i < Nnodes; i++) {
@@ -724,7 +724,7 @@ namespace SCTL_NAMESPACE {
   }
   template <class Real> static const Matrix<Real>& fourier_matrix_inv(Integer Nnodes, Integer Nmodes) {
     constexpr Integer MaxOrder = 128;
-    auto compute_fourier_matrix_inv = [MaxOrder](Integer Nnodes, Integer Nmodes) {
+    auto compute_fourier_matrix_inv = [](Integer Nnodes, Integer Nmodes) {
       if (Nmodes > Nnodes/2+1 || Nnodes == 0 || Nmodes == 0) return Matrix<Real>();
       const Real scal = 2/(Real)Nnodes;
 

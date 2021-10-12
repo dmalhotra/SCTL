@@ -49,7 +49,7 @@ template <class Real> class ParallelSolver {
   }
 
  private:
-  void GenericGMRES(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, const Integer max_iter, const bool use_abs_tol);
+  void GenericGMRES(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, Integer max_iter, const bool use_abs_tol);
 
   Comm comm_;
   bool verbose_;
@@ -96,7 +96,7 @@ template <class Real> inline void ParallelSolver<Real>::GenericGMRES(Vector<Real
     }
     return Q_mat.begin() + idx;
   };
-  auto Q = [N,&Q_row](Long i, Long j) -> Real& {
+  auto Q = [&Q_row](Long i, Long j) -> Real& {
     return Q_row(i)[j];
   };
   auto H_row = [&H_mat,&ResizeVector](Long i) -> Iterator<Real> {
@@ -104,7 +104,7 @@ template <class Real> inline void ParallelSolver<Real>::GenericGMRES(Vector<Real
     if (H_mat.Dim() <= idx+i+1) ResizeVector(H_mat, (Long)((idx+i+1)*ARRAY_RESIZE_FACTOR));
     return H_mat.begin() + idx;
   };
-  auto H = [N,&H_row](Long i, Long j) -> Real& {
+  auto H = [&H_row](Long i, Long j) -> Real& {
     return H_row(i)[j];
   };
 
