@@ -261,7 +261,8 @@ template <class uKernel> class GenericKernel {
     void* ctx_ptr;
 };
 
-struct Laplace3D_FxU_impl {
+namespace kernel_impl {
+struct Laplace3D_FxU {
   static const std::string& QuadRuleName() {
     static const std::string name = "Laplace3D-FxU";
     return name;
@@ -275,9 +276,7 @@ struct Laplace3D_FxU_impl {
     u[0][0] = rinv;
   }
 };
-struct Laplace3D_FxU : public GenericKernel<Laplace3D_FxU_impl> {};
-
-struct Laplace3D_DxU_impl {
+struct Laplace3D_DxU {
   static const std::string& QuadRuleName() {
     static const std::string name = "Laplace3D-DxU";
     return name;
@@ -293,9 +292,7 @@ struct Laplace3D_DxU_impl {
     u[0][0] = rdotn * rinv3;
   }
 };
-struct Laplace3D_DxU : public GenericKernel<Laplace3D_DxU_impl> {};
-
-struct Laplace3D_FxdU_impl {
+struct Laplace3D_FxdU {
   static const std::string& QuadRuleName() {
     static const std::string name = "Laplace3D-FxdU";
     return name;
@@ -312,9 +309,7 @@ struct Laplace3D_FxdU_impl {
     u[0][2] = r[2] * rinv3;
   }
 };
-struct Laplace3D_FxdU : public GenericKernel<Laplace3D_FxdU_impl>{};
-
-struct Stokes3D_FxU_impl {
+struct Stokes3D_FxU {
   static const std::string& QuadRuleName() {
     static const std::string name = "Stokes3D-FxU";
     return name;
@@ -333,9 +328,7 @@ struct Stokes3D_FxU_impl {
     }
   }
 };
-struct Stokes3D_FxU : public GenericKernel<Stokes3D_FxU_impl> {};
-
-struct Stokes3D_DxU_impl {
+struct Stokes3D_DxU {
   static const std::string& QuadRuleName() {
     static const std::string name = "Stokes3D-DxU";
     return name;
@@ -356,9 +349,7 @@ struct Stokes3D_DxU_impl {
     }
   }
 };
-struct Stokes3D_DxU : public GenericKernel<Stokes3D_DxU_impl> {};
-
-struct Stokes3D_FxT_impl {
+struct Stokes3D_FxT {
   static const std::string& QuadRuleName() {
     static const std::string name = "Stokes3D-FxT";
     return name;
@@ -380,7 +371,14 @@ struct Stokes3D_FxT_impl {
     }
   }
 };
-struct Stokes3D_FxT : public GenericKernel<Stokes3D_FxT_impl> {};
+}  // namespace kernel_impl
+
+struct Laplace3D_FxU : public GenericKernel<kernel_impl::Laplace3D_FxU> {};
+struct Laplace3D_DxU : public GenericKernel<kernel_impl::Laplace3D_DxU> {};
+struct Laplace3D_FxdU : public GenericKernel<kernel_impl::Laplace3D_FxdU>{};
+struct Stokes3D_FxU : public GenericKernel<kernel_impl::Stokes3D_FxU> {};
+struct Stokes3D_DxU : public GenericKernel<kernel_impl::Stokes3D_DxU> {};
+struct Stokes3D_FxT : public GenericKernel<kernel_impl::Stokes3D_FxT> {};
 
 template <class Real, Integer DIM> class ParticleFMM {
   public:
