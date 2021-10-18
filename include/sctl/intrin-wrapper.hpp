@@ -206,6 +206,36 @@ namespace SCTL_NAMESPACE { // Generic
     vec = vec_.v;
   }
 
+  template <class VData> inline VData unpack_low_intrin(const VData& a, const VData& b) {
+    union U {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    };
+    U a_ = {a};
+    U b_ = {b};
+    U vec;
+    for (Integer i = 0; i < VData::Size / 2; i++) {
+      vec.x[2 * i] = a_.x[i];
+      vec.x[2 * i + 1] = b_.x[i];
+    }
+    return vec;
+  }
+
+  template <class VData> inline VData unpack_high_intrin(const VData& a, const VData& b) {
+    union U {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    };
+    U a_ = {a};
+    U b_ = {b};
+    U vec;
+    for (Integer i = VData::Size / 2; i < VData::Size; i++) {
+      vec.x[2 * i] = a_.x[i];
+      vec.x[2 * i + 1] = b_.x[i];
+    }
+    return vec;
+  }
+
   // Arithmetic operators
   template <class VData> inline VData unary_minus_intrin(const VData& vec) {
     union {
@@ -988,6 +1018,45 @@ namespace SCTL_NAMESPACE { // SSE
     _mm_store_pd(p, vec.v);
   }
 
+  template <> inline VecData<int8_t, 16> unpack_low_intrin(const VecData<int8_t, 16>& a, const VecData<int8_t, 16>& b) {
+      return _mm_unpacklo_epi8(a.v, b.v);
+  }
+  template <> inline VecData<int16_t, 8> unpack_low_intrin(const VecData<int16_t, 8>& a, const VecData<int16_t, 8>& b) {
+      return _mm_unpacklo_epi16(a.v, b.v);
+  }
+  template <> inline VecData<int32_t, 4> unpack_low_intrin(const VecData<int32_t, 4>& a, const VecData<int32_t, 4>& b) {
+      return _mm_unpacklo_epi32(a.v, b.v);
+  }
+  template <> inline VecData<int64_t, 2> unpack_low_intrin(const VecData<int64_t, 2>& a, const VecData<int64_t, 2>& b) {
+      return _mm_unpacklo_epi64(a.v, b.v);
+  }
+  template <> inline VecData<float, 4> unpack_low_intrin(const VecData<float, 4>& a, const VecData<float, 4>& b) {
+      return _mm_unpacklo_ps(a.v, b.v);
+  }
+  template <> inline VecData<double, 2> unpack_low_intrin(const VecData<double, 2>& a, const VecData<double, 2>& b) {
+      return _mm_unpacklo_pd(a.v, b.v);
+  }
+
+  template <> inline VecData<int8_t, 16> unpack_high_intrin(const VecData<int8_t, 16>& a, const VecData<int8_t, 16>& b) {
+      return _mm_unpackhi_epi8(a.v, b.v);
+  }
+  template <> inline VecData<int16_t, 8> unpack_high_intrin(const VecData<int16_t, 8>& a, const VecData<int16_t, 8>& b) {
+      return _mm_unpackhi_epi16(a.v, b.v);
+  }
+  template <> inline VecData<int32_t, 4> unpack_high_intrin(const VecData<int32_t, 4>& a, const VecData<int32_t, 4>& b) {
+      return _mm_unpackhi_epi32(a.v, b.v);
+  }
+  template <> inline VecData<int64_t, 2> unpack_high_intrin(const VecData<int64_t, 2>& a, const VecData<int64_t, 2>& b) {
+      return _mm_unpackhi_epi64(a.v, b.v);
+  }
+  template <> inline VecData<float, 4> unpack_high_intrin(const VecData<float, 4>& a, const VecData<float, 4>& b) {
+      return _mm_unpackhi_ps(a.v, b.v);
+  }
+  template <> inline VecData<double, 2> unpack_high_intrin(const VecData<double, 2>& a, const VecData<double, 2>& b) {
+      return _mm_unpackhi_pd(a.v, b.v);
+  }
+
+
 #if defined(__AVX512VBMI2__)
   template <> inline int8_t extract_intrin<VecData<int8_t,16>>(VecData<int8_t,16> vec, Integer i) {
     __m128i x = _mm_maskz_compress_epi8(__mmask16(1u<<i), vec.v);
@@ -1704,6 +1773,45 @@ namespace SCTL_NAMESPACE { // AVX
     _mm256_store_pd(p, vec.v);
   }
 
+  template <> inline VecData<int8_t, 32> unpack_low_intrin(const VecData<int8_t, 32>& a, const VecData<int8_t, 32>& b) {
+      return _mm256_unpacklo_epi8(a.v, b.v);
+  }
+  template <> inline VecData<int16_t, 16> unpack_low_intrin(const VecData<int16_t, 16>& a, const VecData<int16_t, 16>& b) {
+      return _mm256_unpacklo_epi16(a.v, b.v);
+  }
+  template <> inline VecData<int32_t, 8> unpack_low_intrin(const VecData<int32_t, 8>& a, const VecData<int32_t, 8>& b) {
+      return _mm256_unpacklo_epi32(a.v, b.v);
+  }
+  template <> inline VecData<int64_t, 4> unpack_low_intrin(const VecData<int64_t, 4>& a, const VecData<int64_t, 4>& b) {
+      return _mm256_unpacklo_epi64(a.v, b.v);
+  }
+  template <> inline VecData<float, 8> unpack_low_intrin(const VecData<float, 8>& a, const VecData<float, 8>& b) {
+      return _mm256_unpacklo_ps(a.v, b.v);
+  }
+  template <> inline VecData<double, 4> unpack_low_intrin(const VecData<double, 4>& a, const VecData<double, 4>& b) {
+      return _mm256_unpacklo_pd(a.v, b.v);
+  }
+
+  template <> inline VecData<int8_t, 32> unpack_high_intrin(const VecData<int8_t, 32>& a, const VecData<int8_t, 32>& b) {
+      return _mm256_unpackhi_epi8(a.v, b.v);
+  }
+  template <> inline VecData<int16_t, 16> unpack_high_intrin(const VecData<int16_t, 16>& a, const VecData<int16_t, 16>& b) {
+      return _mm256_unpackhi_epi16(a.v, b.v);
+  }
+  template <> inline VecData<int32_t, 8> unpack_high_intrin(const VecData<int32_t, 8>& a, const VecData<int32_t, 8>& b) {
+      return _mm256_unpackhi_epi32(a.v, b.v);
+  }
+  template <> inline VecData<int64_t, 4> unpack_high_intrin(const VecData<int64_t, 4>& a, const VecData<int64_t, 4>& b) {
+      return _mm256_unpackhi_epi64(a.v, b.v);
+  }
+  template <> inline VecData<float, 8> unpack_high_intrin(const VecData<float, 8>& a, const VecData<float, 8>& b) {
+      return _mm256_unpackhi_ps(a.v, b.v);
+  }
+  template <> inline VecData<double, 4> unpack_high_intrin(const VecData<double, 4>& a, const VecData<double, 4>& b) {
+      return _mm256_unpackhi_pd(a.v, b.v);
+  }
+
+
   //template <> inline int8_t extract_intrin<VecData<int8_t,32>>(VecData<int8_t,32> vec, Integer i) {}
   //template <> inline int16_t extract_intrin<VecData<int16_t,16>>(VecData<int16_t,16> vec, Integer i) {}
   //template <> inline int32_t extract_intrin<VecData<int32_t,8>>(VecData<int32_t,8> vec, Integer i) {}
@@ -2396,6 +2504,44 @@ namespace SCTL_NAMESPACE { // AVX512
   }
   template <> inline void store_intrin<VecData<double,8>>(double* p, VecData<double,8> vec) {
     _mm512_store_pd(p, vec.v);
+  }
+
+  template <> inline VecData<int8_t, 64> unpack_low_intrin(const VecData<int8_t, 64>& a, const VecData<int8_t, 64>& b) {
+      return _mm512_unpacklo_epi8(a.v, b.v);
+  }
+  template <> inline VecData<int16_t, 32> unpack_low_intrin(const VecData<int16_t, 32>& a, const VecData<int16_t, 32>& b) {
+      return _mm512_unpacklo_epi16(a.v, b.v);
+  }
+  template <> inline VecData<int32_t, 16> unpack_low_intrin(const VecData<int32_t,16>& a, const VecData<int32_t, 16>& b) {
+      return _mm512_unpacklo_epi32(a.v, b.v);
+  }
+  template <> inline VecData<int64_t, 8> unpack_low_intrin(const VecData<int64_t, 8>& a, const VecData<int64_t, 8>& b) {
+      return _mm512_unpacklo_epi64(a.v, b.v);
+  }
+  template <> inline VecData<float, 16> unpack_low_intrin(const VecData<float, 16>& a, const VecData<float, 16>& b) {
+      return _mm512_unpacklo_ps(a.v, b.v);
+  }
+  template <> inline VecData<double, 8> unpack_low_intrin(const VecData<double, 8>& a, const VecData<double, 8>& b) {
+      return _mm512_unpacklo_pd(a.v, b.v);
+  }
+
+  template <> inline VecData<int8_t, 64> unpack_high_intrin(const VecData<int8_t, 64>& a, const VecData<int8_t, 64>& b) {
+      return _mm512_unpackhi_epi8(a.v, b.v);
+  }
+  template <> inline VecData<int16_t, 32> unpack_high_intrin(const VecData<int16_t, 32>& a, const VecData<int16_t, 32>& b) {
+      return _mm512_unpackhi_epi16(a.v, b.v);
+  }
+  template <> inline VecData<int32_t, 16> unpack_high_intrin(const VecData<int32_t,16>& a, const VecData<int32_t, 16>& b) {
+      return _mm512_unpackhi_epi32(a.v, b.v);
+  }
+  template <> inline VecData<int64_t, 8> unpack_high_intrin(const VecData<int64_t, 8>& a, const VecData<int64_t, 8>& b) {
+      return _mm512_unpackhi_epi64(a.v, b.v);
+  }
+  template <> inline VecData<float, 16> unpack_high_intrin(const VecData<float, 16>& a, const VecData<float, 16>& b) {
+      return _mm512_unpackhi_ps(a.v, b.v);
+  }
+  template <> inline VecData<double, 8> unpack_high_intrin(const VecData<double, 8>& a, const VecData<double, 8>& b) {
+      return _mm512_unpackhi_pd(a.v, b.v);
   }
 
   //template <> inline int8_t extract_intrin<VecData<int8_t,64>>(VecData<int8_t,64> vec, Integer i) {}
