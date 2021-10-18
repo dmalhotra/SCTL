@@ -102,9 +102,11 @@ namespace SCTL_NAMESPACE {
        *
        * @param[in] tol the accuracy tolerance.
        *
+       * @param[in] trg_dot_prod whether to compute dot product of the potential with the target-normal vector.
+       *
        * @param[in] self pointer to element-list object.
        */
-      template <class Kernel> static void SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, const ElementListBase<Real>* self);
+      template <class Kernel> static void SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self);
 
       /**
        * Compute near-interaction operator for a given element-idx and each each target.
@@ -114,6 +116,9 @@ namespace SCTL_NAMESPACE {
        * @param[in] Xt the position of the target points in array-of-structure
        * order: {x_1, y_1, z_1, x_2, ..., x_n, y_n, z_n}
        *
+       * @param[in] normal_trg the normal at the target points in array-of-structure
+       * order: {nx_1, ny_1, nz_1, nx_2, ..., nx_n, ny_n, nz_n}
+       *
        * @param[in] ker the kernel object.
        *
        * @param[in] tol the accuracy tolerance.
@@ -122,7 +127,7 @@ namespace SCTL_NAMESPACE {
        *
        * @param[in] self pointer to element-list object.
        */
-      template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
+      template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
   };
 
   /**
@@ -146,7 +151,7 @@ namespace SCTL_NAMESPACE {
        *
        * @param[in] comm the MPI communicator.
        */
-      explicit BoundaryIntegralOp(const Kernel& ker, const Comm& comm = Comm::Self());
+      explicit BoundaryIntegralOp(const Kernel& ker, bool trg_normal_dot_prod = false, const Comm& comm = Comm::Self());
 
       /**
        * Destructor
@@ -187,6 +192,14 @@ namespace SCTL_NAMESPACE {
       void SetTargetCoord(const Vector<Real>& Xtrg);
 
       /**
+       * Set target point normals.
+       *
+       * @param[in] Xn_trg the coordinates of target points in array-of-struct
+       * order: {nx_1, ny_1, nz_1, nx_2, ..., nx_n, ny_n, nz_n}
+       */
+      void SetTargetNormal(const Vector<Real>& Xn_trg);
+
+      /**
        * Get dimension of the boundary integral operator. Dim(0) is the input
        * dimension and Dim(1) is the output dimension.
        */
@@ -218,14 +231,16 @@ namespace SCTL_NAMESPACE {
       void ComputeNearInterac(Vector<Real>& U, const Vector<Real>& F) const;
 
       struct ElemLstData {
-        void (*SelfInterac)(Vector<Matrix<Real>>&, const Kernel&, Real, const ElementListBase<Real>*);
-        void (*NearInterac)(Matrix<Real>&, const Vector<Real>&, const Kernel&, Real, const Long, const ElementListBase<Real>*);
+        void (*SelfInterac)(Vector<Matrix<Real>>&, const Kernel&, Real, bool, const ElementListBase<Real>*);
+        void (*NearInterac)(Matrix<Real>&, const Vector<Real>&, const Vector<Real>&, const Kernel&, Real, const Long, const ElementListBase<Real>*);
       };
       std::map<std::string,ElementListBase<Real>*> elem_lst_map;
       std::map<std::string,ElemLstData> elem_data_map;
       Vector<Real> Xt; // User specified position of target points
+      Vector<Real> Xnt; // User specified normal at target points
       Real tol_;
       Kernel ker_;
+      bool trg_normal_dot_prod_;
       Comm comm_;
 
       mutable bool setup_flag;
@@ -233,7 +248,9 @@ namespace SCTL_NAMESPACE {
       mutable Vector<Long> elem_lst_cnt, elem_lst_dsp; // cnt and dsp of elements for each elem_lst (size=Nlst)
       mutable Vector<Long> elem_nds_cnt, elem_nds_dsp; // cnt and dsp of nodes for each element (size=Nelem)
       mutable Vector<Real> Xsurf; // Position of surface node points (target points for on-surface evaluation)
+      mutable Vector<Real> Xn_surf; // Normal at surface node points (normal vector for on-surface evaluation)
       mutable Vector<Real> Xtrg; // Position of target points
+      mutable Vector<Real> Xn_trg; // Normal vector at target points
 
       mutable bool setup_far_flag;
       mutable ParticleFMM<Real,COORD_DIM> fmm;
@@ -244,6 +261,7 @@ namespace SCTL_NAMESPACE {
 
       mutable bool setup_near_flag;
       mutable Vector<Real> Xtrg_near; // position of near-interaction target points sorted by element (size=Nnear*COORD_DIM)
+      mutable Vector<Real> Xn_trg_near; // normal at near-interaction target points sorted by element (size=Nnear*COORD_DIM)
       mutable Vector<Long> near_scatter_index; // prmutation vector that takes near-interactions sorted by elem-idx to sorted by trg-idx (size=Nnear)
       mutable Vector<Long> near_trg_cnt, near_trg_dsp; // cnt and dsp of near-interactions for each target (size=Ntrg)
       mutable Vector<Long> near_elem_cnt, near_elem_dsp; // cnt and dsp of near-interaction for each element (size=Nelem)

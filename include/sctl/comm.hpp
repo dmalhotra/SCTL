@@ -8,6 +8,9 @@
 #ifdef SCTL_HAVE_MPI
 #include <mpi.h>
 #endif
+#ifdef SCTL_HAVE_PETSC
+#include <petscsys.h>
+#endif
 
 namespace SCTL_NAMESPACE {
 
@@ -56,6 +59,7 @@ class Comm {
 
 #ifdef SCTL_HAVE_MPI
   MPI_Comm GetMPI_Comm() { return mpi_comm_; }
+  const MPI_Comm GetMPI_Comm() const { return mpi_comm_; }
 #endif
 
   Comm Split(Integer clr) const;

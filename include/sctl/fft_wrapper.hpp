@@ -366,7 +366,7 @@ template <class ValueType> class FFT : public FFT_Base<ValueType, FFT<ValueType>
 
   template <class T> static void transpose(Iterator<ValueType> out, ConstIterator<ValueType> in, Long N0, Long N1) {
     const Matrix<T> M0(N0, N1, (Iterator<T>)in, false);
-    Matrix<T> M1(N1, N0, out, false);
+    Matrix<T> M1(N1, N0, (Iterator<T>)out, false);
     M1 = M0.Transpose();
   }
 

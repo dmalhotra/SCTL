@@ -16,9 +16,9 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
   output << std::fixed << std::setprecision(4) << std::setiosflags(std::ios::left);
   for (Long i = 0; i < M.Dim(0); i++) {
     for (Long j = 0; j < M.Dim(1); j++) {
-      float f = ((float)M(i, j));
-      if (fabs<float>(f) < 1e-25) f = 0;
-      output << std::setw(10) << ((double)f) << ' ';
+      double f = ((double)M(i, j));
+      if (fabs(f) < 1e-25) f = 0;
+      output << std::setw(10) << f << ' ';
     }
     output << ";\n";
   }

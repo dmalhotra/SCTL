@@ -71,9 +71,10 @@ template <class uKernel> class GenericKernel {
         RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[DIM], vs[KDIM0];
         for (Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
         for (Integer k = 0; k < DIM; k++) {
-          StaticArray<Real,VecLen> Xt;
+          alignas(sizeof(RealVec)) StaticArray<Real,VecLen> Xt;
+          RealVec::Zero().StoreAligned(&Xt[0]);
           for (Integer i = 0; i < Nt; i++) Xt[i] = r_trg[i*DIM+k];
-          xt[k] = RealVec::Load(&Xt[0]);
+          xt[k] = RealVec::LoadAligned(&Xt[0]);
         }
         for (Long s = 0; s < Ns; s++) {
           for (Integer k = 0; k < DIM; k++) xs[k] = RealVec::Load1(&r_src[s*DIM+k]);
@@ -82,7 +83,7 @@ template <class uKernel> class GenericKernel {
           uKerEval(vt, xt, xs, ns, vs);
         }
         for (Integer k = 0; k < KDIM1; k++) {
-          alignas(sizeof(RealVec)) Real out[VecLen];
+          alignas(sizeof(RealVec)) StaticArray<Real,VecLen> out;
           vt[k].StoreAligned(&out[0]);
           for (Long t = 0; t < Nt; t++) {
             v_trg[t*KDIM1+k] += out[t];
@@ -155,13 +156,15 @@ template <class uKernel> class GenericKernel {
         alignas(sizeof(VecType)) StaticArray<Real,VecLen> Xs_[DIM];
         alignas(sizeof(VecType)) StaticArray<Real,VecLen> Xn_[N_DIM];
         alignas(sizeof(VecType)) StaticArray<Real,VecLen> M_[KDIM0*KDIM1];
+        for (Integer k = 0; k < DIM; k++) VecType::Zero().StoreAligned(&Xs_[k][0]);
+        for (Integer k = 0; k < N_DIM; k++) VecType::Zero().StoreAligned(&Xn_[k][0]);
 
         VecType vec_Xt[DIM], vec_dX[DIM], vec_Xn[N_DIM], vec_M[KDIM0][KDIM1];
         for (Integer k = 0; k < DIM; k++) { // Set vec_Xt
           vec_Xt[k] = VecType::Load1(&Xt[k]);
         }
         for (Long i0 = 0; i0 < Ns; i0+=VecLen) {
-          const Integer Ns_ = std::min(VecLen, Ns-i0);
+          const Long Ns_ = std::min<Long>(VecLen, Ns-i0);
 
           for (Long i1 = 0; i1 < Ns_; i1++) { // Set Xs_
             for (Long k = 0; k < DIM; k++) {
@@ -199,6 +202,7 @@ template <class uKernel> class GenericKernel {
       } else if (Xs.Dim() == DIM) {
         alignas(sizeof(VecType)) StaticArray<Real,VecLen> Xt_[DIM];
         alignas(sizeof(VecType)) StaticArray<Real,VecLen> M_[KDIM0*KDIM1];
+        for (Integer k = 0; k < DIM; k++) VecType::Zero().StoreAligned(&Xt_[k][0]);
 
         VecType vec_Xs[DIM], vec_dX[DIM], vec_Xn[N_DIM], vec_M[KDIM0][KDIM1];
         for (Integer k = 0; k < DIM; k++) { // Set vec_Xs
@@ -208,7 +212,7 @@ template <class uKernel> class GenericKernel {
           vec_Xn[k] = VecType::Load1(&Xn[k]);
         }
         for (Long i0 = 0; i0 < Nt; i0+=VecLen) {
-          const Integer Nt_ = std::min(VecLen, Nt-i0);
+          const Long Nt_ = std::min<Long>(VecLen, Nt-i0);
 
           for (Long i1 = 0; i1 < Nt_; i1++) { // Set Xt_
             for (Long k = 0; k < DIM; k++) {
@@ -257,7 +261,12 @@ template <class uKernel> class GenericKernel {
     void* ctx_ptr;
 };
 
-struct Laplace3D_FxU : public GenericKernel<Laplace3D_FxU> {
+namespace kernel_impl {
+struct Laplace3D_FxU {
+  static const std::string& QuadRuleName() {
+    static const std::string name = "Laplace3D-FxU";
+    return name;
+  }
   template <class Real> static constexpr Real ScaleFactor() {
     return 1 / (4 * const_pi<Real>());
   }
@@ -267,7 +276,11 @@ struct Laplace3D_FxU : public GenericKernel<Laplace3D_FxU> {
     u[0][0] = rinv;
   }
 };
-struct Laplace3D_DxU : public GenericKernel<Laplace3D_DxU> {
+struct Laplace3D_DxU {
+  static const std::string& QuadRuleName() {
+    static const std::string name = "Laplace3D-DxU";
+    return name;
+  }
   template <class Real> static constexpr Real ScaleFactor() {
     return 1 / (4 * const_pi<Real>());
   }
@@ -279,7 +292,11 @@ struct Laplace3D_DxU : public GenericKernel<Laplace3D_DxU> {
     u[0][0] = rdotn * rinv3;
   }
 };
-struct Laplace3D_FxdU : public GenericKernel<Laplace3D_FxdU> {
+struct Laplace3D_FxdU {
+  static const std::string& QuadRuleName() {
+    static const std::string name = "Laplace3D-FxdU";
+    return name;
+  }
   template <class Real> static constexpr Real ScaleFactor() {
     return -1 / (4 * const_pi<Real>());
   }
@@ -292,8 +309,11 @@ struct Laplace3D_FxdU : public GenericKernel<Laplace3D_FxdU> {
     u[0][2] = r[2] * rinv3;
   }
 };
-
-struct Stokes3D_FxU : public GenericKernel<Stokes3D_FxU> {
+struct Stokes3D_FxU {
+  static const std::string& QuadRuleName() {
+    static const std::string name = "Stokes3D-FxU";
+    return name;
+  }
   template <class Real> static constexpr Real ScaleFactor() {
     return 1 / (8 * const_pi<Real>());
   }
@@ -308,7 +328,11 @@ struct Stokes3D_FxU : public GenericKernel<Stokes3D_FxU> {
     }
   }
 };
-struct Stokes3D_DxU : public GenericKernel<Stokes3D_DxU> {
+struct Stokes3D_DxU {
+  static const std::string& QuadRuleName() {
+    static const std::string name = "Stokes3D-DxU";
+    return name;
+  }
   template <class Real> static constexpr Real ScaleFactor() {
     return 3 / (4 * const_pi<Real>());
   }
@@ -325,7 +349,11 @@ struct Stokes3D_DxU : public GenericKernel<Stokes3D_DxU> {
     }
   }
 };
-struct Stokes3D_FxT : public GenericKernel<Stokes3D_FxT> {
+struct Stokes3D_FxT {
+  static const std::string& QuadRuleName() {
+    static const std::string name = "Stokes3D-FxT";
+    return name;
+  }
   template <class Real> static constexpr Real ScaleFactor() {
     return -3 / (4 * const_pi<Real>());
   }
@@ -343,7 +371,14 @@ struct Stokes3D_FxT : public GenericKernel<Stokes3D_FxT> {
     }
   }
 };
+}  // namespace kernel_impl
 
+struct Laplace3D_FxU : public GenericKernel<kernel_impl::Laplace3D_FxU> {};
+struct Laplace3D_DxU : public GenericKernel<kernel_impl::Laplace3D_DxU> {};
+struct Laplace3D_FxdU : public GenericKernel<kernel_impl::Laplace3D_FxdU>{};
+struct Stokes3D_FxU : public GenericKernel<kernel_impl::Stokes3D_FxU> {};
+struct Stokes3D_DxU : public GenericKernel<kernel_impl::Stokes3D_DxU> {};
+struct Stokes3D_FxT : public GenericKernel<kernel_impl::Stokes3D_FxT> {};
 
 template <class Real, Integer DIM> class ParticleFMM {
   public:

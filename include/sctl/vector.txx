@@ -78,7 +78,7 @@ template <class ValueType> void Vector<ValueType>::ReInit(Long dim_, Iterator<Va
 #else
   if (own_data_ && own_data && dim_ <= capacity) {
     dim = dim_;
-    if (data_ != NullIterator<ValueType>()) {
+    if (dim && (data_ptr != NullIterator<ValueType>()) && (data_ != NullIterator<ValueType>())) {
       memcopy(data_ptr, data_, dim);
     }
   } else {
