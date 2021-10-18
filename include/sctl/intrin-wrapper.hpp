@@ -3190,6 +3190,20 @@ template <> inline void store_intrin<VecData<int64_t, SVE_COUNT(64)>>(int64_t* p
 template <> inline void store_intrin<VecData<float, SVE_COUNT(32)>>(float* p, VecData<float, SVE_COUNT(32)> vec) { svst1(svptrue_b32(), p, vec.v); }
 template <> inline void store_intrin<VecData<double, SVE_COUNT(64)>>(double* p, VecData<double, SVE_COUNT(64)> vec) { svst1(svptrue_b64(), p, vec.v); }
 
+template <> inline VecData<int8_t, SVE_COUNT(8)> unpack_low_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svzip1(a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> unpack_low_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svzip1(a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> unpack_low_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svzip1(a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> unpack_low_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svzip1(a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> unpack_low_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svzip1(a.v, b.v); }
+template <> inline VecData<double, SVE_COUNT(64)> unpack_low_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svzip1(a.v, b.v); }
+
+template <> inline VecData<int8_t, SVE_COUNT(8)> unpack_high_intrin(const VecData<int8_t, SVE_COUNT(8)>& a, const VecData<int8_t, SVE_COUNT(8)>& b) { return svzip2(a.v, b.v); }
+template <> inline VecData<int16_t, SVE_COUNT(16)> unpack_high_intrin(const VecData<int16_t, SVE_COUNT(16)>& a, const VecData<int16_t, SVE_COUNT(16)>& b) { return svzip2(a.v, b.v); }
+template <> inline VecData<int32_t, SVE_COUNT(32)> unpack_high_intrin(const VecData<int32_t, SVE_COUNT(32)>& a, const VecData<int32_t, SVE_COUNT(32)>& b) { return svzip2(a.v, b.v); }
+template <> inline VecData<int64_t, SVE_COUNT(64)> unpack_high_intrin(const VecData<int64_t, SVE_COUNT(64)>& a, const VecData<int64_t, SVE_COUNT(64)>& b) { return svzip2(a.v, b.v); }
+template <> inline VecData<float, SVE_COUNT(32)> unpack_high_intrin(const VecData<float, SVE_COUNT(32)>& a, const VecData<float, SVE_COUNT(32)>& b) { return svzip2(a.v, b.v); }
+template <> inline VecData<double, SVE_COUNT(64)> unpack_high_intrin(const VecData<double, SVE_COUNT(64)>& a, const VecData<double, SVE_COUNT(64)>& b) { return svzip2(a.v, b.v); }
+
 // Arithmetic operators
 template <> inline VecData<int8_t, SVE_COUNT(8)> unary_minus_intrin<VecData<int8_t, SVE_COUNT(8)>>(const VecData<int8_t, SVE_COUNT(8)>& a) { return svsub_x(svptrue_b8(), svdup_s8(0), a.v); }
 template <> inline VecData<int16_t, SVE_COUNT(16)> unary_minus_intrin<VecData<int16_t, SVE_COUNT(16)>>(const VecData<int16_t, SVE_COUNT(16)>& a) { return svsub_x(svptrue_b16(), svdup_s16(0), a.v); }
