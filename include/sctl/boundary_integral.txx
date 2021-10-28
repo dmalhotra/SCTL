@@ -387,10 +387,17 @@ namespace SCTL_NAMESPACE {
   }
 
 
-  template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::BoundaryIntegralOp(const Kernel& ker, bool trg_normal_dot_prod, const Comm& comm) : tol_(1e-10), ker_(ker), trg_normal_dot_prod_(trg_normal_dot_prod), comm_(comm) {
+  template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::BoundaryIntegralOp(const Kernel& ker, bool trg_normal_dot_prod, const Comm& comm) : tol_(1e-10), ker_(ker), trg_normal_dot_prod_(trg_normal_dot_prod), comm_(comm), fmm(comm) {
     SCTL_ASSERT(!trg_normal_dot_prod_ || (KDIM1 % COORD_DIM == 0));
     ClearSetup();
+
+    fmm.SetKernels(ker, ker, ker);
+    fmm.AddSrc("Src", ker, ker);
+    fmm.AddTrg("Trg", ker, ker);
+    fmm.SetKernelS2T("Src", "Trg", ker);
   }
+
+
 
   template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::~BoundaryIntegralOp() {
     Vector<std::string> elem_lst_name;
@@ -403,6 +410,17 @@ namespace SCTL_NAMESPACE {
     setup_self_flag = false;
     setup_near_flag = false;
     tol_ = tol;
+    fmm.SetAccuracy((Integer)(log(tol)/log(0.1))+1);
+  }
+
+  template <class Real, class Kernel> template <class KerS2M, class KerS2L, class KerS2T, class KerM2M, class KerM2L, class KerM2T, class KerL2L, class KerL2T> void BoundaryIntegralOp<Real,Kernel>::SetFMMKer(const KerS2M& k_s2m, const KerS2L& k_s2l, const KerS2T& k_s2t, const KerM2M& k_m2m, const KerM2L& k_m2l, const KerM2T& k_m2t, const KerL2L& k_l2l, const KerL2T& k_l2t) {
+    fmm.DeleteSrc("Src");
+    fmm.DeleteTrg("Trg");
+
+    fmm.SetKernels(k_m2m, k_m2l, k_l2l);
+    fmm.AddSrc("Src", k_s2m, k_s2l);
+    fmm.AddTrg("Trg", k_m2t, k_l2t);
+    fmm.SetKernelS2T("Src", "Trg", k_s2t);
   }
 
   template <class Real, class Kernel> template <class ElemLstType> void BoundaryIntegralOp<Real,Kernel>::AddElemList(const ElemLstType& elem_lst, const std::string& name) {
@@ -574,6 +592,9 @@ namespace SCTL_NAMESPACE {
       if (Nelem) elem_nds_dsp_far[0] = 0;
       omp_par::scan(elem_nds_cnt_far.begin(), elem_nds_dsp_far.begin(), Nelem);
     }
+
+    fmm.SetSrcCoord("Src", X_far, Xn_far);
+    fmm.SetTrgCoord("Trg", Xtrg);
     Profile::Toc();
 
     setup_far_flag = true;
@@ -745,7 +766,7 @@ namespace SCTL_NAMESPACE {
 
             Matrix<Real> K_direct;
             elem_lst->FarFieldDensityOperatorTranspose(K_direct, Mker, j);
-            K_near_ -= K_direct * ker_.template ScaleFactor<Real>();
+            K_near_ -= K_direct;
           }
         }
       }
@@ -782,6 +803,7 @@ namespace SCTL_NAMESPACE {
         }
       }
     }
+    fmm.SetSrcDensity("Src", F_far);
 
     const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
     if (U.Dim() != Ntrg*KDIM1_) {
@@ -792,7 +814,7 @@ namespace SCTL_NAMESPACE {
     if (trg_normal_dot_prod_) {
       constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
       Vector<Real> U_(Ntrg * KDIM1); U_.SetZero();
-      fmm.Eval(U_, Xtrg, X_far, Xn_far, F_far, ker_, comm_);
+      fmm.Eval(U_, "Trg");
       for (Long i = 0; i < Ntrg; i++) {
         for (Long k = 0; k < KDIM1_; k++) {
           for (Long l = 0; l < COORD_DIM; l++) {
@@ -801,7 +823,7 @@ namespace SCTL_NAMESPACE {
         }
       }
     } else {
-      fmm.Eval(U, Xtrg, X_far, Xn_far, F_far, ker_, comm_);
+      fmm.Eval(U, "Trg");
     }
 
     Profile::Toc();

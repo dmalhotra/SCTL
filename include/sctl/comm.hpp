@@ -58,8 +58,8 @@ class Comm {
   ~Comm();
 
 #ifdef SCTL_HAVE_MPI
-  MPI_Comm GetMPI_Comm() { return mpi_comm_; }
-  const MPI_Comm GetMPI_Comm() const { return mpi_comm_; }
+  MPI_Comm& GetMPI_Comm() { return mpi_comm_; }
+  const MPI_Comm& GetMPI_Comm() const { return mpi_comm_; }
 #endif
 
   Comm Split(Integer clr) const;

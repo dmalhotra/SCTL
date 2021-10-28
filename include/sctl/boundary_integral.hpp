@@ -164,6 +164,11 @@ namespace SCTL_NAMESPACE {
       void SetAccuracy(Real tol);
 
       /**
+       * Set kernel functions for FMM translation operators
+       */
+      template <class KerS2M, class KerS2L, class KerS2T, class KerM2M, class KerM2L, class KerM2T, class KerL2L, class KerL2T> void SetFMMKer(const KerS2M& k_s2m, const KerS2L& k_s2l, const KerS2T& k_s2t, const KerM2M& k_m2m, const KerM2L& k_m2l, const KerM2T& k_m2t, const KerL2L& k_l2l, const KerL2T& k_l2t);
+
+      /**
        * Add an element-list.
        */
       template <class ElemLstType> void AddElemList(const ElemLstType& elem_lst, const std::string& name = std::to_string(typeid(ElemLstType).hash_code()));

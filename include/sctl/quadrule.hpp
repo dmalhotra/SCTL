@@ -254,14 +254,14 @@ namespace SCTL_NAMESPACE {
 
   template <class Real> class InterpQuadRule {
     public:
-      template <class BasisObj> static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const BasisObj& integrands, bool symmetric = false, Real eps = 1e-16, Long ORDER = 0, Real nds_start = 0, Real nds_end = 1) {
+      template <class BasisObj> static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const BasisObj& integrands, bool symmetric = false, Real eps = 1e-16, Long ORDER = 0, Real nds_start = -1, Real nds_end = 1) {
         Vector<Real> nds, wts;
         adap_quad_rule(nds, wts, integrands, 0, 1, eps);
         Matrix<Real> M = integrands(nds);
         return Build(quad_nds, quad_wts, M, nds, wts, symmetric, eps, ORDER, nds_start, nds_end);
       }
 
-      static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, Matrix<Real> M, const Vector<Real>& nds, const Vector<Real>& wts, bool symmetric = false, Real eps = 1e-16, Long ORDER = 0, Real nds_start = 0, Real nds_end = 1) {
+      static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, Matrix<Real> M, const Vector<Real>& nds, const Vector<Real>& wts, bool symmetric = false, Real eps = 1e-16, Long ORDER = 0, Real nds_start = -1, Real nds_end = 1) {
         Vector<Real> eps_vec;
         Vector<Long> ORDER_vec;
         if (ORDER) {
@@ -281,7 +281,7 @@ namespace SCTL_NAMESPACE {
         return -1;
       }
 
-      static Vector<Real> Build(Vector<Vector<Real>>& quad_nds, Vector<Vector<Real>>& quad_wts, const Matrix<Real>& M, const Vector<Real>& nds, const Vector<Real>& wts, bool symmetric = false, const Vector<Real>& eps_vec = Vector<Real>(), const Vector<Long>& ORDER_vec = Vector<Long>(), Real nds_start = 0, Real nds_end = 1) {
+      static Vector<Real> Build(Vector<Vector<Real>>& quad_nds, Vector<Vector<Real>>& quad_wts, const Matrix<Real>& M, const Vector<Real>& nds, const Vector<Real>& wts, bool symmetric = false, const Vector<Real>& eps_vec = Vector<Real>(), const Vector<Long>& ORDER_vec = Vector<Long>(), Real nds_start = -1, Real nds_end = 1) {
         Vector<Real> ret_vec;
         if (symmetric) {
           const Long N0 = M.Dim(0);
@@ -369,33 +369,41 @@ namespace SCTL_NAMESPACE {
           const Long N0 = M.Dim(0), N1 = M.Dim(1);
           if (N0*N1 == 0) return;
 
+          Vector<Real> row_norm(N0);
           S.ReInit(max_rows); S.SetZero();
           pivot.ReInit(max_rows); pivot = -1;
           Q.ReInit(max_rows, N1); Q.SetZero();
           for (Long i = 0; i < max_rows; i++) {
+            #pragma omp parallel for schedule(static)
+            for (Long j = 0; j < N0; j++) { // compute row_norm
+              Real row_norm2 = 0;
+              for (Long k = 0; k < N1; k++) {
+                row_norm2 += M[j][k]*M[j][k];
+              }
+              row_norm[j] = sqrt<Real>(row_norm2);
+            }
+
             Long pivot_idx = 0;
             Real pivot_norm = 0;
             for (Long j = 0; j < N0; j++) { // determine pivot
-              Real col_norm = 0;
-              for (Long k = 0; k < N1; k++) {
-                col_norm += M[j][k]*M[j][k];
-              }
-              col_norm = sqrt<Real>(col_norm);
-              if (col_norm > pivot_norm) {
-                pivot_norm = col_norm;
+              if (row_norm[j] > pivot_norm) {
+                pivot_norm = row_norm[j];
                 pivot_idx = j;
               }
             }
-
-            for (Long k = 0; k < N1; k++) Q[i][k] = M[pivot_idx][k] / pivot_norm;
             pivot[i] = pivot_idx;
             S[i] = pivot_norm;
 
+            #pragma omp parallel for schedule(static)
+            for (Long k = 0; k < N1; k++) Q[i][k] = M[pivot_idx][k] / pivot_norm;
+
+            #pragma omp parallel for schedule(static)
             for (Long j = 0; j < N0; j++) { // orthonormalize
               Real dot_prod = 0;
               for (Long k = 0; k < N1; k++) dot_prod += M[j][k] * Q[i][k];
               for (Long k = 0; k < N1; k++) M[j][k] -= Q[i][k] * dot_prod;
             }
+
             if (verbose) std::cout<<pivot_norm/S[0]<<'\n';
             if (pivot_norm/S[0] < tol) break;
           }

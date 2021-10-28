@@ -852,7 +852,7 @@ namespace SCTL_NAMESPACE {
 
     using ValueType = QuadReal;
     Vector<Vector<ValueType>> data;
-    const std::string fname = std::string("data/toroidal_quad_rule_m") + std::to_string(Nmodes) + "_" + Kernel::QuadRuleName();
+    const std::string fname = std::string("data/toroidal_quad_rule_m") + std::to_string(Nmodes) + "_" + Kernel::Name();
     ReadFile(data, fname);
     if (data.Dim() != max_adap_depth*max_digits) { // If file is not-found then compute quadrature rule and write to file
       data.ReInit(max_adap_depth * max_digits);
@@ -868,7 +868,7 @@ namespace SCTL_NAMESPACE {
                 for (Long j = 0; j < M; j++) {
                   ValueType theta = i*2*const_pi<ValueType>()/(M);
                   ValueType r = (0.5 + i*0.5/(M)) * dist;
-                  ValueType x0 = r*cos<ValueType>(theta)+1;
+                  ValueType x0 = r*cos<ValueType>(theta);
                   ValueType x1 = 0;
                   ValueType x2 = r*sin<ValueType>(theta);
                   if (x0 > 0) {
@@ -880,10 +880,10 @@ namespace SCTL_NAMESPACE {
               }
               return Xtrg;
             };
-            Vector<ValueType> Xtrg = trg_coord(dist, 10); // TODO: determine optimal sample count
+            Vector<ValueType> Xtrg = trg_coord(dist, 15); // TODO: determine optimal sample count
             Long Ntrg = Xtrg.Dim()/COORD_DIM;
 
-            auto adap_nds_wts = [&panel_quad_nds_wts](Vector<ValueType>& nds, Vector<ValueType>& wts, Integer levels){
+            auto adap_nds_wts = [&panel_quad_nds_wts](Vector<ValueType>& nds, Vector<ValueType>& wts, Integer levels){ // discretization in interval [-0.5,0.5]
               const auto& leg_nds = panel_quad_nds_wts.first;
               const auto& leg_wts = panel_quad_nds_wts.second;
               SCTL_ASSERT(levels);
@@ -900,7 +900,7 @@ namespace SCTL_NAMESPACE {
                 for (Long i = 0; i < leg_nds.Dim(); i++) {
                   ValueType s = leg_nds[i]*l + (idx<levels-1 ? l : 0);
                   nds0[                i] = s;
-                  nds1[leg_nds.Dim()-1-i] = 1-s;
+                  nds1[leg_nds.Dim()-1-i] =-s;
                   wts0[                i] = leg_wts[i]*l;
                   wts1[leg_nds.Dim()-1-i] = wts0[i];
                 }
@@ -912,14 +912,12 @@ namespace SCTL_NAMESPACE {
             Vector<Complex<ValueType>> exp_itheta(Nnds), exp_iktheta(Nnds);
             Vector<ValueType> Xsrc(Nnds*COORD_DIM);
             for (Long i = 0; i < Nnds; i++) {
-              ValueType cos_i = cos(2*const_pi<ValueType>()*nds[i]);
-              ValueType sin_i = sin(2*const_pi<ValueType>()*nds[i]);
-              exp_itheta[i].real = cos_i;
-              exp_itheta[i].imag = sin_i;
+              exp_itheta[i].real = cos(2*const_pi<ValueType>()*nds[i]);
+              exp_itheta[i].imag = sin(2*const_pi<ValueType>()*nds[i]);
               exp_iktheta[i].real = 1;
               exp_iktheta[i].imag = 0;
-              Xsrc[i*COORD_DIM+0] = cos_i;
-              Xsrc[i*COORD_DIM+1] = sin_i;
+              Xsrc[i*COORD_DIM+0] = -2*sin(const_pi<ValueType>()*nds[i])*sin(const_pi<ValueType>()*nds[i]);
+              Xsrc[i*COORD_DIM+1] = sin(2*const_pi<ValueType>()*nds[i]);
               Xsrc[i*COORD_DIM+2] = 0;
             }
 
@@ -946,8 +944,25 @@ namespace SCTL_NAMESPACE {
               }
             }
           };
+          std::pair<Vector<ValueType>,Vector<ValueType>> panel_quad;
+          { // Set panel_quad_rule
+            auto leg_quad = LegendreQuadRule<ValueType>(45);
+            const auto& leg_nds = leg_quad.first;
+            const auto& leg_wts = leg_quad.second;
+            auto& panel_nds = panel_quad.first;
+            auto& panel_wts = panel_quad.second;
+
+            const Long rep = 1;
+            const ValueType scal = 1/(ValueType)rep;
+            for (Long i = 0; i < rep; i++) {
+              for (Long j = 0; j < leg_nds.Dim(); j++) {
+                panel_nds.PushBack(leg_nds[j]*scal + i*scal);
+                panel_wts.PushBack(leg_wts[j]*scal);
+              }
+            }
+          }
           ValueType dist = 4*const_pi<ValueType>()*pow<ValueType,Long>(0.5,idx); // distance of target points from the source loop (which is a unit circle)
-          discretize_basis_functions(Mintegrands, nds, wts, dist, LegendreQuadRule<ValueType>(45)); // TODO: adaptively select Legendre order
+          discretize_basis_functions(Mintegrands, nds, wts, dist, panel_quad); // TODO: adaptively select Legendre order
 
           Vector<ValueType> eps_vec;
           for (Long k = 0; k < max_digits; k++) eps_vec.PushBack(pow<ValueType,Long>(0.1,k));
@@ -1007,10 +1022,10 @@ namespace SCTL_NAMESPACE {
     const RealType ZZ = dot_prod(Xt_X0, e1xe2);
     const RealType R = sqrt<RealType>(XX*XX+YY*YY);
     const RealType Rinv = 1/R;
-    const RealType dtheta = sqrt<RealType>((R-R0)*(R-R0) + ZZ*ZZ)/R0;
     const Complex<RealType> exp_theta0(XX*Rinv, YY*Rinv);
     Long adap_depth = 0;
     { // Set adap_depth
+      const RealType dtheta = sqrt<RealType>((R-R0)*(R-R0) + ZZ*ZZ)/R0;
       for (RealType s = dtheta; s<2*const_pi<RealType>(); s*=2) adap_depth++;
       if (adap_depth >= max_adap_depth) {
         SCTL_WARN("Toroidal quadrature evaluation is outside of the range of precomputed quadratures; accuracy may be sverely degraded.");
@@ -1185,7 +1200,7 @@ namespace SCTL_NAMESPACE {
             }
 
             VecType Mker[KDIM0][Kernel::TrgDim()];
-            ker.template uKerMatrix<VecType, digits>(Mker, dy, n, ker.GetCtxPtr());
+            ker.template uKerMatrix<digits, VecType>(Mker, dy, n, ker.GetCtxPtr());
             VecType da_wts = VecType::LoadAligned(&wts[j]) * da;
             for (Integer k0 = 0; k0 < KDIM0; k0++) {
               for (Integer k1 = 0; k1 < KDIM1; k1++) {
@@ -1503,7 +1518,7 @@ namespace SCTL_NAMESPACE {
     if (!adap_quad) {
       auto quad_rule = [&ChebOrder,&digits,&max_adap_depth,MaxChebOrder](Real radius, Real length, const Integer trg_node_idx) -> std::pair<Vector<Real>,Vector<Real>> {
         auto load_special_quad_rule = [&max_adap_depth](const Integer ChebOrder){
-          const std::string fname = std::string("data/special_quad_q") + std::to_string(ChebOrder) + "_" + Kernel::QuadRuleName() + (trg_dot_prod ? "_dotXn" : "");
+          const std::string fname = std::string("data/special_quad_q") + std::to_string(ChebOrder) + "_" + Kernel::Name() + (trg_dot_prod ? "_dotXn" : "");
           using ValueType = QuadReal;
 
           Vector<Vector<ValueType>> data;
@@ -2216,7 +2231,7 @@ namespace SCTL_NAMESPACE {
           for (Integer i1 = 0; i1 < FourierOrder; i1++) {
             for (Integer k0 = 0; k0 < KDIM0; k0++) {
               for (Integer k1 = 0; k1 < KDIM1; k1++) {
-                M[(i0*FourierOrder+i1)*KDIM0+k0][i*KDIM1+k1] = M_nodal[i0][(k0*KDIM1+k1)*FourierOrder+i1] * ker.template ScaleFactor<Real>();
+                M[(i0*FourierOrder+i1)*KDIM0+k0][i*KDIM1+k1] = M_nodal[i0][(k0*KDIM1+k1)*FourierOrder+i1] * ker.template uKerScaleFactor<Real>();
               }
             }
           }
@@ -2464,7 +2479,7 @@ namespace SCTL_NAMESPACE {
     }
 
     Kernel ker_fn;
-    BoundaryIntegralOp<Real,Kernel> BIOp(ker_fn, comm);
+    BoundaryIntegralOp<Real,Kernel> BIOp(ker_fn, false, comm);
     BIOp.AddElemList(elem_lst0);
     BIOp.SetAccuracy(tol);
 
@@ -2564,8 +2579,8 @@ namespace SCTL_NAMESPACE {
     KerSL kernel_sl;
     KerDL kernel_dl;
     KerGrad kernel_grad;
-    BoundaryIntegralOp<Real,KerSL> BIOpSL(kernel_sl, comm);
-    BoundaryIntegralOp<Real,KerDL> BIOpDL(kernel_dl, comm);
+    BoundaryIntegralOp<Real,KerSL> BIOpSL(kernel_sl, false, comm);
+    BoundaryIntegralOp<Real,KerDL> BIOpDL(kernel_dl, false, comm);
     BIOpSL.AddElemList(elem_lst0, "elem_lst0");
     BIOpSL.AddElemList(elem_lst1, "elem_lst1");
     BIOpDL.AddElemList(elem_lst0, "elem_lst0");
@@ -2904,7 +2919,7 @@ namespace SCTL_NAMESPACE {
           for (Integer k0 = 0; k0 < KDIM0; k0++) {
             for (Integer k1 = 0; k1 < KDIM1; k1++) {
               for (Integer j1 = 0; j1 < FourierOrder; j1++) {
-                M[(j0*FourierOrder+j1)*KDIM0+k0][i*KDIM1+k1] = M_nodal[i][((j0*KDIM0+k0)*KDIM1+k1)*FourierOrder+j1] * ker.template ScaleFactor<Real>();
+                M[(j0*FourierOrder+j1)*KDIM0+k0][i*KDIM1+k1] = M_nodal[i][((j0*KDIM0+k0)*KDIM1+k1)*FourierOrder+j1] * ker.template uKerScaleFactor<Real>();
               }
             }
           }
