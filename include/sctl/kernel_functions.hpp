@@ -9,13 +9,13 @@
 
 namespace SCTL_NAMESPACE {
 
-template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM, Integer N_DIM> struct uKerMat {
-  template <Integer digits, class VecType> static void Eval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const VecType (&n)[N_DIM], const void* ctx_ptr) {
+template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM, Integer N_DIM> struct uKerHelper {
+  template <Integer digits, class VecType> static void MatEval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const VecType (&n)[N_DIM], const void* ctx_ptr) {
     uKernel::template uKerMatrix<digits>(u, r, n, ctx_ptr);
   }
 };
-template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM> struct uKerMat<uKernel,KDIM0,KDIM1,DIM,0> {
-  template <Integer digits, class VecType> static void Eval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const VecType* n, const void* ctx_ptr) {
+template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM> struct uKerHelper<uKernel,KDIM0,KDIM1,DIM,0> {
+  template <Integer digits, class VecType, class NormalType> static void MatEval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const NormalType& n, const void* ctx_ptr) {
     uKernel::template uKerMatrix<digits>(u, r, ctx_ptr);
   }
 };
@@ -41,6 +41,7 @@ template <class uKernel> class GenericKernel : public uKernel {
 
     static constexpr Integer ARGCNT = argcount(uKernel::template uKerMatrix<0,Vec<double,1>>);
     static constexpr Integer N_DIM = (ARGCNT > 3 ? argsize<2>(uKernel::template uKerMatrix<0,Vec<double,1>>)/sizeof(Vec<double,1>) : 0);
+    static constexpr Integer N_DIM_ = (N_DIM?N_DIM:1); // non-zero
 
   public:
 
@@ -98,7 +99,7 @@ template <class uKernel> class GenericKernel : public uKernel {
       static constexpr Integer VecLen = DefaultVecLen<Real>();
       using RealVec = Vec<Real, VecLen>;
 
-      auto uKerEval = [this](RealVec (&vt)[KDIM1], const RealVec (&xt)[DIM], const RealVec (&xs)[DIM], const RealVec (&ns)[N_DIM], const RealVec (&vs)[KDIM0]) {
+      auto uKerEval = [this](RealVec (&vt)[KDIM1], const RealVec (&xt)[DIM], const RealVec (&xs)[DIM], const RealVec (&ns)[N_DIM_], const RealVec (&vs)[KDIM0]) {
         RealVec dX[DIM], U[KDIM0][KDIM1];
         for (Integer i = 0; i < DIM; i++) dX[i] = xt[i] - xs[i];
         uKerMatrix<digits_>(U, dX, ns, ctx_ptr);
@@ -122,7 +123,7 @@ template <class uKernel> class GenericKernel : public uKernel {
 
       const Long NNt = ((Nt + VecLen - 1) / VecLen) * VecLen;
       if (NNt == VecLen) {
-        RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM], vs[KDIM0];
+        RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM_], vs[KDIM0];
         for (Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
         for (Integer k = 0; k < DIM; k++) {
           alignas(sizeof(RealVec)) StaticArray<Real,VecLen> Xt;
@@ -160,7 +161,7 @@ template <class uKernel> class GenericKernel : public uKernel {
         if (enable_openmp) { // Compute Vt_
           #pragma omp parallel for schedule(static)
           for (Long t = 0; t < NNt; t += VecLen) {
-            RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM], vs[KDIM0];
+            RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM_], vs[KDIM0];
             for (Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
             for (Integer k = 0; k < DIM; k++) xt[k] = RealVec::LoadAligned(&Xt_[k][t]);
             for (Long s = 0; s < Ns; s++) {
@@ -173,7 +174,7 @@ template <class uKernel> class GenericKernel : public uKernel {
           }
         } else {
           for (Long t = 0; t < NNt; t += VecLen) {
-            RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM], vs[KDIM0];
+            RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM_], vs[KDIM0];
             for (Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
             for (Integer k = 0; k < DIM; k++) xt[k] = RealVec::LoadAligned(&Xt_[k][t]);
             for (Long s = 0; s < Ns; s++) {
@@ -208,12 +209,12 @@ template <class uKernel> class GenericKernel : public uKernel {
 
       if (Xt.Dim() == DIM) {
         alignas(sizeof(VecType)) StaticArray<Real,VecLen> Xs_[DIM];
-        alignas(sizeof(VecType)) StaticArray<Real,VecLen> Xn_[N_DIM];
+        alignas(sizeof(VecType)) StaticArray<Real,VecLen> Xn_[N_DIM_];
         alignas(sizeof(VecType)) StaticArray<Real,VecLen> M_[KDIM0*KDIM1];
         for (Integer k = 0; k < DIM; k++) VecType::Zero().StoreAligned(&Xs_[k][0]);
         for (Integer k = 0; k < N_DIM; k++) VecType::Zero().StoreAligned(&Xn_[k][0]);
 
-        VecType vec_Xt[DIM], vec_dX[DIM], vec_Xn[N_DIM], vec_M[KDIM0][KDIM1];
+        VecType vec_Xt[DIM], vec_dX[DIM], vec_Xn[N_DIM_], vec_M[KDIM0][KDIM1];
         for (Integer k = 0; k < DIM; k++) { // Set vec_Xt
           vec_Xt[k] = VecType::Load1(&Xt[k]);
         }
@@ -258,7 +259,7 @@ template <class uKernel> class GenericKernel : public uKernel {
         alignas(sizeof(VecType)) StaticArray<Real,VecLen> M_[KDIM0*KDIM1];
         for (Integer k = 0; k < DIM; k++) VecType::Zero().StoreAligned(&Xt_[k][0]);
 
-        VecType vec_Xs[DIM], vec_dX[DIM], vec_Xn[N_DIM], vec_M[KDIM0][KDIM1];
+        VecType vec_Xs[DIM], vec_dX[DIM], vec_Xn[N_DIM_], vec_M[KDIM0][KDIM1];
         for (Integer k = 0; k < DIM; k++) { // Set vec_Xs
           vec_Xs[k] = VecType::Load1(&Xs[k]);
         }
@@ -311,8 +312,8 @@ template <class uKernel> class GenericKernel : public uKernel {
       }
     }
 
-    template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const VecType* n, const void* ctx_ptr) {
-      uKerMat<uKernel,KDIM0,KDIM1,DIM,N_DIM>::template Eval<digits>(u, r, n, ctx_ptr);
+    template <Integer digits, class VecType, class NormalType> static void uKerMatrix(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const NormalType& n, const void* ctx_ptr) {
+      uKerHelper<uKernel,KDIM0,KDIM1,DIM,N_DIM>::template MatEval<digits>(u, r, n, ctx_ptr);
     };
 
   private:
@@ -666,7 +667,7 @@ template <class Real, Integer DIM> class ParticleFMM {
             Integer send_partner = (rank + offset) % np;
             Integer recv_partner = (rank + np - offset) % np;
 
-            Long send_cnt = X.Dim(), recv_cnt;
+            Long send_cnt = X.Dim(), recv_cnt = 0;
             void* recv_req = comm_.Irecv(     Ptr2Itr<Long>(&recv_cnt,1), 1, recv_partner, offset);
             void* send_req = comm_.Isend(Ptr2ConstItr<Long>(&send_cnt,1), 1, send_partner, offset);
             comm_.Wait(recv_req);
@@ -687,37 +688,43 @@ template <class Real, Integer DIM> class ParticleFMM {
     }
 
     static void test(const Comm& comm) {
-      Laplace3D_FxU kernel_fn;
+      Laplace3D_FxU kernel_sl;
+      Laplace3D_DxU kernel_dl;
 
       // Create target and source vectors.
       Vector<Real> trg_coord(5000*DIM);
       Vector<Real>  sl_coord(5000*DIM);
-      Vector<Real>  dl_coord(0*DIM);
+      Vector<Real>  dl_coord(5000*DIM);
+      Vector<Real>  dl_norml(5000*DIM);
       for (auto& a : trg_coord) a = drand48();
       for (auto& a :  sl_coord) a = drand48();
       for (auto& a :  dl_coord) a = drand48();
-      Long n_trg = trg_coord.Dim()/DIM;
+      for (auto& a :  dl_norml) a = drand48();
       Long n_sl  =  sl_coord.Dim()/DIM;
       Long n_dl  =  dl_coord.Dim()/DIM;
 
       // Set source charges.
-      Vector<Real> sl_den(n_sl* kernel_fn.SrcDim());
-      Vector<Real> dl_den(n_dl*(kernel_fn.SrcDim()+DIM));
+      Vector<Real> sl_den(n_sl*kernel_sl.SrcDim());
+      Vector<Real> dl_den(n_dl*kernel_dl.SrcDim());
       for (auto& a : sl_den) a = drand48() - 0.5;
       for (auto& a : dl_den) a = drand48() - 0.5;
-      dl_den = 0;
 
       ParticleFMM fmm(comm);
-      fmm.SetKernels(kernel_fn, kernel_fn, kernel_fn);
-      fmm.AddSrc("LaplaceSL", kernel_fn, kernel_fn);
-      fmm.AddTrg("LaplacePoten", kernel_fn, kernel_fn);
-      fmm.SetKernelS2T("LaplaceSL", "LaplacePoten",kernel_fn);
-
-      fmm.SetSrcCoord("LaplaceSL", sl_coord, sl_coord);
+      fmm.SetKernels(kernel_sl, kernel_sl, kernel_sl);
+      fmm.AddTrg("LaplacePoten", kernel_sl, kernel_sl);
       fmm.SetTrgCoord("LaplacePoten", trg_coord);
-      fmm.SetSrcDensity("LaplaceSL", sl_den);
+
+      fmm.AddSrc("LaplaceSL", kernel_sl, kernel_sl);
+      fmm.SetKernelS2T("LaplaceSL", "LaplacePoten",kernel_sl);
+      fmm.SetSrcCoord("LaplaceSL", sl_coord);
+
+      fmm.AddSrc("LaplaceDL", kernel_dl, kernel_dl);
+      fmm.SetKernelS2T("LaplaceDL", "LaplacePoten",kernel_dl);
+      fmm.SetSrcCoord("LaplaceDL", dl_coord, dl_norml);
 
       Vector<Real> Ufmm, Uref;
+      fmm.SetSrcDensity("LaplaceSL", sl_den);
+      fmm.SetSrcDensity("LaplaceDL", dl_den);
       fmm.Eval(Ufmm, "LaplacePoten");
       fmm.EvalDirect(Uref, "LaplacePoten");
 
@@ -726,8 +733,7 @@ template <class Real, Integer DIM> class ParticleFMM {
         StaticArray<Real,2> loc_err{0,0}, glb_err{0,0};
         for (const auto& a : Uerr) loc_err[0] = std::max<Real>(loc_err[0], fabs(a));
         for (const auto& a : Uref) loc_err[1] = std::max<Real>(loc_err[1], fabs(a));
-        comm.Allreduce(loc_err, glb_err, 2, Comm::CommOp::MAX);
-
+        comm.Allreduce<Real>(loc_err, glb_err, 2, Comm::CommOp::MAX);
         if (!comm.Rank()) std::cout<<loc_err[0]/loc_err[1]<<'\n';
       }
     }
