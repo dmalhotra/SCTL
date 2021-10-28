@@ -241,12 +241,12 @@ template <class ValueType> static inline constexpr ValueType pow_integer_exp(Val
 template <class Real, class ExpType> class pow_wrapper {
   public:
     static Real pow(Real b, ExpType e) {
-      return std::pow(b, e);
+      return (Real)std::pow(b, e);
     }
 };
-template <class Real> class pow_wrapper<Real,Long> {
+template <class ValueType> class pow_wrapper<ValueType,Long> {
   public:
-    static constexpr Real pow(Real b, Long e) {
+    static constexpr ValueType pow(ValueType b, Long e) {
       return (e > 0) ? pow_integer_exp(b, e) : 1/pow_integer_exp(b, -e);
     }
 };
@@ -297,28 +297,6 @@ template <class Real> inline std::ostream& ostream_insertion_generic(std::ostrea
 
   return output;
 }
-
-
-
-
-template <> inline long double fabs<long double>(const long double a) { return ::fabsl(a); }
-
-template <> inline long double round<long double>(const long double a) { return ::roundl(a); }
-
-template <> inline long double sqrt<long double>(const long double a) { return ::sqrtl(a); }
-
-template <> inline long double sin<long double>(const long double a) { return ::sinl(a); }
-
-template <> inline long double cos<long double>(const long double a) { return ::cosl(a); }
-
-template <> inline long double acos<long double>(const long double a) { return ::acosl(a); }
-
-template <> inline long double exp<long double>(const long double a) { return ::expl(a); }
-
-template <> inline long double log<long double>(const long double a) { return ::logl(a); }
-
-template <> inline long double pow<long double>(const long double b, const long double e) { return ::powl(b, e); }
-
 
 
 

@@ -16,21 +16,21 @@ template <class Real> inline constexpr Real const_pi() { return (Real)3.14159265
 
 template <class Real> inline constexpr Real const_e() { return (Real)2.7182818284590452353602874713526624977L; }
 
-template <class Real> inline Real fabs(const Real a) { return (Real)::fabs(a); }
+template <class Real> inline Real fabs(const Real a) { return (Real)std::fabs(a); }
 
-template <class Real> inline Real round(const Real a) { return (Real)::round(a); }
+template <class Real> inline Real round(const Real a) { return (Real)std::round(a); }
 
-template <class Real> inline Real sqrt(const Real a) { return (Real)::sqrt(a); }
+template <class Real> inline Real sqrt(const Real a) { return (Real)std::sqrt(a); }
 
-template <class Real> inline Real sin(const Real a) { return (Real)::sin(a); }
+template <class Real> inline Real sin(const Real a) { return (Real)std::sin(a); }
 
-template <class Real> inline Real cos(const Real a) { return (Real)::cos(a); }
+template <class Real> inline Real cos(const Real a) { return (Real)std::cos(a); }
 
-template <class Real> inline Real acos(const Real a) { return (Real)::acos(a); }
+template <class Real> inline Real acos(const Real a) { return (Real)std::acos(a); }
 
-template <class Real> inline Real exp(const Real a) { return (Real)::exp(a); }
+template <class Real> inline Real exp(const Real a) { return (Real)std::exp(a); }
 
-template <class Real> inline Real log(const Real a) { return (Real)::log(a); }
+template <class Real> inline Real log(const Real a) { return (Real)std::log(a); }
 
 template <class Real, class ExpType> inline Real pow(const Real b, const ExpType e);
 
