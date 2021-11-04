@@ -1,19 +1,18 @@
 #ifndef _SCTL_BOUNDARY_INTEGRAL_HPP_
 #define _SCTL_BOUNDARY_INTEGRAL_HPP_
 
-#include SCTL_INCLUDE(kernel_functions.hpp)
-#include SCTL_INCLUDE(matrix.hpp)
-#include SCTL_INCLUDE(ompUtils.hpp)
-#include SCTL_INCLUDE(morton.hpp)
-#include SCTL_INCLUDE(profile.hpp)
-#include SCTL_INCLUDE(vector.hpp)
 #include SCTL_INCLUDE(comm.hpp)
+#include SCTL_INCLUDE(mem_mgr.hpp)
+#include SCTL_INCLUDE(vector.hpp)
 #include SCTL_INCLUDE(common.hpp)
 
 #include <map>
 #include <set>
 
 namespace SCTL_NAMESPACE {
+
+  template <class ValueType> class Matrix;
+  template <class Real, Integer DIM> class ParticleFMM;
 
   /**
    * Abstract base class for an element-list. In addition to the functions

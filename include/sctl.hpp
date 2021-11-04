@@ -47,6 +47,7 @@
 
 // Tree
 #include SCTL_INCLUDE(tree.hpp)
+#include SCTL_INCLUDE(vtudata.hpp)
 
 // MPI Wrapper
 #include SCTL_INCLUDE(comm.hpp)
@@ -62,6 +63,7 @@
 
 // Template vector intrinsics (new)
 #include SCTL_INCLUDE(vec.hpp)
+#include SCTL_INCLUDE(vec-test.hpp)
 
 // OpenMP merge-sort and scan
 #include SCTL_INCLUDE(ompUtils.hpp)

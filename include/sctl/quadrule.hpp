@@ -1,10 +1,12 @@
 #ifndef _SCTL_QUADRULE_HPP_
 #define _SCTL_QUADRULE_HPP_
 
+#include SCTL_INCLUDE(matrix.hpp)
+#include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(legendre_rule.hpp)
 #include SCTL_INCLUDE(common.hpp)
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(matrix.hpp)
+
+#include <algorithm>
 
 namespace SCTL_NAMESPACE {
 

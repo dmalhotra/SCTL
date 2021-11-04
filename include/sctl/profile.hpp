@@ -1,11 +1,11 @@
 #ifndef _SCTL_PROFILE_HPP_
 #define _SCTL_PROFILE_HPP_
 
+#include SCTL_INCLUDE(common.hpp)
+
 #include <string>
 #include <vector>
 #include <stack>
-
-#include SCTL_INCLUDE(common.hpp)
 
 #ifndef SCTL_PROFILE
 #define SCTL_PROFILE -1

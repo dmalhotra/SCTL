@@ -1,13 +1,19 @@
 #ifndef _SCTL_SLENDER_ELEMENT_HPP_
 #define _SCTL_SLENDER_ELEMENT_HPP_
 
-#include SCTL_INCLUDE(fft_wrapper.hpp)
-#include SCTL_INCLUDE(tree.hpp)
-#include SCTL_INCLUDE(matrix.hpp)
+#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(vector.hpp)
 #include SCTL_INCLUDE(common.hpp)
 
 namespace SCTL_NAMESPACE {
+
+  class Comm;
+  class VTUData;
+  template <class Real> class FFT;
+  template <class ValueType> class Vector;
+  template <class ValueType> class Matrix;
+  template <class Real> class ElementListBase;
+  template <class Real, class Kernel> class BoundaryIntegralOp;
 
   template <class Real> class LagrangeInterp {
     public:

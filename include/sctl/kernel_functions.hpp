@@ -2,12 +2,13 @@
 #define _SCTL_KERNEL_FUNCTIONS_HPP_
 
 #include SCTL_INCLUDE(vec.hpp)
-#include SCTL_INCLUDE(matrix.hpp)
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(math_utils.hpp)
+#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(common.hpp)
 
 namespace SCTL_NAMESPACE {
+
+template <class ValueType> class Matrix;
+template <class ValueType> class Vector;
 
 template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM, Integer N_DIM> struct uKerHelper {
   template <Integer digits, class VecType> static void MatEval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const VecType (&n)[N_DIM], const void* ctx_ptr) {
@@ -382,7 +383,7 @@ struct Stokes3D_FxU {
     VecType rinv3 = rinv*rinv*rinv;
     for (Integer i = 0; i < 3; i++) {
       for (Integer j = 0; j < 3; j++) {
-        u[i][j] = (i==j ? rinv : VecType((typename VecType::ScalarType)0)) + r[i]*r[j]*rinv3;
+        u[i][j] = (i==j ? rinv : VecType::Zero()) + r[i]*r[j]*rinv3;
       }
     }
   }
@@ -430,6 +431,28 @@ struct Stokes3D_FxT {
     }
   }
 };
+struct Stokes3D_FSxU {
+  static const std::string& Name() {
+    static const std::string name = "Stokes3D-FSxU";
+    return name;
+  }
+  template <class Real> static constexpr Real uKerScaleFactor() {
+    return 1 / (8 * const_pi<Real>());
+  }
+  template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[4][3], const VecType (&r)[3], const void* ctx_ptr) {
+    VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+    VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
+    VecType rinv3 = rinv*rinv*rinv;
+    for (Integer i = 0; i < 3; i++) {
+      for (Integer j = 0; j < 3; j++) {
+        u[i][j] = (i==j ? rinv : VecType::Zero()) + r[i]*r[j]*rinv3;
+      }
+    }
+    for (Integer j = 0; j < 3; j++) {
+      u[3][j] = r[j]*rinv3;
+    }
+  }
+};
 }  // namespace kernel_impl
 
 struct Laplace3D_FxU : public GenericKernel<kernel_impl::Laplace3D_FxU> {};
@@ -438,6 +461,7 @@ struct Laplace3D_FxdU : public GenericKernel<kernel_impl::Laplace3D_FxdU>{};
 struct Stokes3D_FxU : public GenericKernel<kernel_impl::Stokes3D_FxU> {};
 struct Stokes3D_DxU : public GenericKernel<kernel_impl::Stokes3D_DxU> {};
 struct Stokes3D_FxT : public GenericKernel<kernel_impl::Stokes3D_FxT> {};
+struct Stokes3D_FSxU : public GenericKernel<kernel_impl::Stokes3D_FSxU> {}; // for FMM translations - M2M, M2L, M2T
 
 }  // end namespace
 

@@ -12,9 +12,9 @@
 #endif
 #endif
 
-#include SCTL_INCLUDE(common.hpp)
-#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(matrix.hpp)
+#include SCTL_INCLUDE(math_utils.hpp)
+#include SCTL_INCLUDE(common.hpp)
 
 namespace SCTL_NAMESPACE {
 

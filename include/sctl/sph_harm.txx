@@ -1,4 +1,7 @@
+#include SCTL_INCLUDE(fft_wrapper.hpp)
 #include SCTL_INCLUDE(legendre_rule.hpp)
+
+#include <fstream>
 
 // TODO: Replace work vectors with dynamic-arrays
 

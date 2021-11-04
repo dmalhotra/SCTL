@@ -3,11 +3,18 @@
 
 #define SCTL_SHMAXDEG 1024
 
-#include SCTL_INCLUDE(matrix.hpp)
-#include SCTL_INCLUDE(fft_wrapper.hpp)
+#include SCTL_INCLUDE(math_utils.hpp)
+#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(common.hpp)
 
+#include <vector>
+
 namespace SCTL_NAMESPACE {
+
+class Comm;
+template <class ValueType> class Vector;
+template <class ValueType> class Matrix;
+template <class ValueType> class FFT;
 
 enum class SHCArrange {
   // (p+1) x (p+1) complex elements in row-major order.

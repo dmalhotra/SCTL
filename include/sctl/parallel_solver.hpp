@@ -1,14 +1,17 @@
 #ifndef _SCTL_PARALLEL_SOLVER_HPP_
 #define _SCTL_PARALLEL_SOLVER_HPP_
 
-#include SCTL_INCLUDE(math_utils.hpp)
-#include SCTL_INCLUDE(matrix.hpp)
-#include SCTL_INCLUDE(vector.hpp)
 #include SCTL_INCLUDE(comm.hpp)
+#include SCTL_INCLUDE(mem_mgr.hpp)
+#include SCTL_INCLUDE(math_utils.hpp)
+#include SCTL_INCLUDE(common.hpp)
 
 #include <functional>
 
 namespace SCTL_NAMESPACE {
+
+template <class ValueType> class Vector;
+template <class ValueType> class Matrix;
 
 template <class Real> class ParallelSolver {
 

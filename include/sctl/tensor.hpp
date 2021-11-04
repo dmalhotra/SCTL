@@ -6,6 +6,7 @@
 #include SCTL_INCLUDE(common.hpp)
 
 #include <iostream>
+#include <iomanip>
 
 namespace SCTL_NAMESPACE {
 

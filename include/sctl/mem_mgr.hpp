@@ -2,6 +2,8 @@
 #ifndef _SCTL_MEM_MGR_HPP_
 #define _SCTL_MEM_MGR_HPP_
 
+#include SCTL_INCLUDE(common.hpp)
+
 #include <omp.h>
 #include <typeinfo>
 #include <cstdlib>
@@ -11,8 +13,6 @@
 #include <stack>
 #include <map>
 #include <set>
-
-#include SCTL_INCLUDE(common.hpp)
 
 namespace SCTL_NAMESPACE {
 

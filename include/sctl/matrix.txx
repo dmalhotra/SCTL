@@ -5,6 +5,7 @@
 #include <iostream>
 #include <iomanip>
 
+#include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(mat_utils.hpp)
 #include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(profile.hpp)

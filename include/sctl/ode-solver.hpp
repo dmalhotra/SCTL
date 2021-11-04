@@ -1,13 +1,15 @@
 #ifndef _SCTL_ODE_SOLVER_
 #define _SCTL_ODE_SOLVER_
 
+#include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(common.hpp)
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(matrix.hpp)
 
 #include <functional>
 
 namespace SCTL_NAMESPACE {
+
+template <class ValueType> class Vector;
+template <class ValueType> class Matrix;
 
 template <class Real, Integer ORDER> class SDC {
   public:

@@ -4,6 +4,8 @@
 #include SCTL_INCLUDE(ompUtils.hpp)
 #include SCTL_INCLUDE(profile.hpp)
 #include SCTL_INCLUDE(legendre_rule.hpp)
+#include SCTL_INCLUDE(fft_wrapper.hpp)
+#include SCTL_INCLUDE(vtudata.hpp)
 
 #include <functional>
 
