@@ -8,7 +8,7 @@
 namespace SCTL_NAMESPACE {
 
   class Comm;
-  class VTUData;
+  struct VTUData;
   template <class Real> class FFT;
   template <class ValueType> class Vector;
   template <class ValueType> class Matrix;
