@@ -53,7 +53,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& 
   Ufmm = 0;
 
   Profile::Enable(true);
-  Profile::Tic("FMM", &comm);
+  Profile::Tic("FMM-Eval", &comm);
   fmm.Eval(Ufmm, "Potential");
   Profile::Toc();
   Profile::Tic("Direct", &comm);
@@ -67,7 +67,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& 
     for (const auto& a : Uerr) loc_err[0] = std::max<Real>(loc_err[0], fabs(a));
     for (const auto& a : Uref) loc_err[1] = std::max<Real>(loc_err[1], fabs(a));
     comm.Allreduce<Real>(loc_err, glb_err, 2, Comm::CommOp::MAX);
-    if (!comm.Rank()) std::cout<<glb_err[0]/glb_err[1]<<'\n';
+    if (!comm.Rank()) std::cout<<"Maximum relative error: "<<glb_err[0]/glb_err[1]<<'\n';
   }
 }
 

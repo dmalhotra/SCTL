@@ -4,7 +4,7 @@
 
 namespace SCTL_NAMESPACE {
 
-void VTUData::WriteVTK(const std::string& fname, const Comm& comm = Comm::Self()) const {
+inline void VTUData::WriteVTK(const std::string& fname, const Comm& comm = Comm::Self()) const {
   typedef typename VTUData::VTKReal VTKReal;
   Long value_dof = 0;
   {  // Write vtu file.
@@ -159,7 +159,7 @@ void VTUData::WriteVTK(const std::string& fname, const Comm& comm = Comm::Self()
   }
 };
 
-template <class ElemLst> void VTUData::AddElems(const ElemLst elem_lst, Integer order, const Comm& comm) {
+template <class ElemLst> inline void VTUData::AddElems(const ElemLst elem_lst, Integer order, const Comm& comm) {
   constexpr Integer COORD_DIM = ElemLst::CoordDim();
   constexpr Integer ElemDim = ElemLst::ElemDim();
   using CoordBasis = typename ElemLst::CoordBasis;
@@ -207,7 +207,7 @@ template <class ElemLst> void VTUData::AddElems(const ElemLst elem_lst, Integer 
     SCTL_ASSERT(false);
   }
 }
-template <class ElemLst, class ValueBasis> void VTUData::AddElems(const ElemLst elem_lst, const Vector<ValueBasis>& elem_value, Integer order, const Comm& comm) {
+template <class ElemLst, class ValueBasis> inline void VTUData::AddElems(const ElemLst elem_lst, const Vector<ValueBasis>& elem_value, Integer order, const Comm& comm) {
   constexpr Integer ElemDim = ElemLst::ElemDim();
   using ValueType = typename ValueBasis::ValueType;
   Long NElem = elem_lst.NElem();
@@ -235,7 +235,7 @@ template <class ElemLst, class ValueBasis> void VTUData::AddElems(const ElemLst 
   }
 }
 
-template <class CoordType, Integer ELEM_DIM> Matrix<CoordType> VTUData::VTK_Nodes(Integer order) {
+template <class CoordType, Integer ELEM_DIM> inline Matrix<CoordType> VTUData::VTK_Nodes(Integer order) {
   Matrix<CoordType> nodes;
   if (ELEM_DIM == 2) {
     Integer Nnodes = order*order;
