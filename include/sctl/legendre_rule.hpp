@@ -10,6 +10,8 @@
 # include <cstring>
 # include <cassert>
 
+namespace SCTL_NAMESPACE {
+
 void cdgqf(int nt, int kind, double alpha, double beta, double t[], double wts[]);
 void cgqf(int nt, int kind, double alpha, double beta, double a, double b, double t[], double wts[]);
 double class_matrix(int kind, int m, double alpha, double beta, double aj[], double bj[]);
@@ -1482,5 +1484,7 @@ inline void sgqf ( int nt, double aj[], double bj[], double zemu, double t[],
   return;
 }
 //****************************************************************************80
+
+} // end namespace
 
 #endif

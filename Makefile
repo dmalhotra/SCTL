@@ -29,6 +29,11 @@ CXXFLAGS += -lfftw3 -DSCTL_HAVE_FFTW
 CXXFLAGS += -lfftw3f -DSCTL_HAVE_FFTWF
 CXXFLAGS += -lfftw3l -DSCTL_HAVE_FFTWL
 
+#PVFMM_INC_DIR = ../include
+#PVFMM_LIB_DIR = ../lib/.libs
+#CXXFLAGS += -DSCTL_HAVE_PVFMM -I$(PVFMM_INC_DIR)
+#LDLIBS += -L$(PVFMM_LIB_DIR) -lpvfmm
+
 
 RM = rm -f
 MKDIRS = mkdir -p

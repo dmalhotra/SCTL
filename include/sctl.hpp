@@ -20,6 +20,20 @@
 #define SCTL_QUOTEME_1(x) #x
 #define SCTL_INCLUDE(x) SCTL_QUOTEME(SCTL_NAMESPACE/x)
 
+// Import PVFMM preprocessor macro definitions
+#ifdef SCTL_HAVE_PVFMM
+#ifndef SCTL_HAVE_MPI
+#define SCTL_HAVE_MPI
+#endif
+#include "pvfmm_config.h"
+#ifndef SCTL_QUAD_T
+#define SCTL_QUAD_T PVFMM_QUAD_T
+#endif
+#endif
+
+// FMM wrapper
+#include SCTL_INCLUDE(fmm-wrapper.hpp)
+
 // Boundary Integrals
 #include SCTL_INCLUDE(boundary_integral.hpp)
 #include SCTL_INCLUDE(slender_element.hpp)
