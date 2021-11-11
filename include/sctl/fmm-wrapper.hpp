@@ -25,10 +25,7 @@ namespace SCTL_NAMESPACE {
 
 template <class ValueType> class Vector;
 
-// TODO: bounding-box/scaling
 template <class Real, Integer DIM> class ParticleFMM {
-    static_assert(DIM==3, "Only DIM=3 is supported.");
-
   public:
 
     ParticleFMM(const ParticleFMM&) = delete;
@@ -61,16 +58,6 @@ template <class Real, Integer DIM> class ParticleFMM {
     static void test(const Comm& comm);
 
   private:
-
-    template <class Ker> static void DeleteKer(Iterator<char> ker);
-
-    void CheckKernelDims() const;
-
-    #ifdef SCTL_HAVE_PVFMM
-    template <class SCTLKernel, bool use_dummy_normal=false> struct PVFMMKernelFn; // construct PVFMMKernel from SCTLKernel
-
-    void EvalPVFMM(Vector<Real>& U, const std::string& trg_name) const;
-    #endif
 
     struct FMMKernels {
       Iterator<char> ker_m2m, ker_m2l, ker_l2l;
@@ -105,6 +92,7 @@ template <class Real, Integer DIM> class ParticleFMM {
       #ifdef SCTL_HAVE_PVFMM
       pvfmm::Kernel<Real> pvfmm_ker_s2m;
       pvfmm::Kernel<Real> pvfmm_ker_s2l;
+      StaticArray<Real, DIM*2> bbox;
       #endif
     };
     struct TrgData {
@@ -121,6 +109,7 @@ template <class Real, Integer DIM> class ParticleFMM {
       #ifdef SCTL_HAVE_PVFMM
       pvfmm::Kernel<Real> pvfmm_ker_m2t;
       pvfmm::Kernel<Real> pvfmm_ker_l2t;
+      StaticArray<Real, DIM*2> bbox;
       #endif
     };
     struct S2TData {
@@ -133,6 +122,10 @@ template <class Real, Integer DIM> class ParticleFMM {
       void (*delete_ker_s2t)(Iterator<char> ker);
 
       #ifdef SCTL_HAVE_PVFMM
+      mutable Real bbox_scale;
+      mutable StaticArray<Real,DIM> bbox_offset;
+      mutable Vector<Real> src_scal_exp, trg_scal_exp;
+      mutable Vector<Real> src_scal, trg_scal;
       mutable pvfmm::Kernel<Real> pvfmm_ker_s2t;
       mutable pvfmm::PtFMM_Tree<Real>* tree_ptr;
       mutable pvfmm::PtFMM<Real> fmm_ctx;
@@ -140,6 +133,18 @@ template <class Real, Integer DIM> class ParticleFMM {
       mutable bool setup_ker;
       #endif
     };
+
+    static void BuildSrcTrgScal(const S2TData& s2t_data);
+
+    template <class Ker> static void DeleteKer(Iterator<char> ker);
+
+    void CheckKernelDims() const;
+
+    #ifdef SCTL_HAVE_PVFMM
+    template <class SCTLKernel, bool use_dummy_normal=false> struct PVFMMKernelFn; // construct PVFMMKernel from SCTLKernel
+
+    void EvalPVFMM(Vector<Real>& U, const std::string& trg_name) const;
+    #endif
 
     FMMKernels fmm_ker;
     std::map<std::string, SrcData> src_map;

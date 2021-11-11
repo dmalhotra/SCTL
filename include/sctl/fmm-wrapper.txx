@@ -1,5 +1,6 @@
 #include SCTL_INCLUDE(kernel_functions.hpp)
 #include SCTL_INCLUDE(vector.hpp)
+#include SCTL_INCLUDE(matrix.hpp)
 
 #ifdef SCTL_HAVE_PVFMM
 #include <pvfmm.hpp>
@@ -8,6 +9,8 @@
 namespace SCTL_NAMESPACE {
 
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& comm) {
+  if (DIM != 3) return ParticleFMM<Real,3>::test(comm);
+
   Stokes3D_FSxU kernel_m2l;
   Stokes3D_FxU kernel_sl;
   Stokes3D_DxU kernel_dl;
@@ -19,10 +22,10 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& 
   Vector<Real>  sl_coord(N*DIM);
   Vector<Real>  dl_coord(N*DIM);
   Vector<Real>  dl_norml(N*DIM);
-  for (auto& a : trg_coord) a = drand48();
-  for (auto& a :  sl_coord) a = drand48();
-  for (auto& a :  dl_coord) a = drand48();
-  for (auto& a :  dl_norml) a = drand48();
+  for (auto& a : trg_coord) a = drand48()-0.5;
+  for (auto& a :  sl_coord) a = drand48()-0.5;
+  for (auto& a :  dl_coord) a = drand48()-0.5;
+  for (auto& a :  dl_norml) a = drand48()-0.5;
   Long n_sl  =  sl_coord.Dim()/DIM;
   Long n_dl  =  dl_coord.Dim()/DIM;
 
@@ -71,6 +74,35 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& 
   }
 }
 
+template <Integer DIM, class Real> void BoundingBox(StaticArray<Real,DIM*2>& bbox, const Vector<Real>& X, const Comm& comm) {
+  const Long N = X.Dim()/DIM;
+  SCTL_ASSERT(X.Dim() == N * DIM);
+  if (!N) {
+    for (Integer k = 0; k < DIM*2; k++) bbox[k] = 0;
+    return;
+  }
+
+  StaticArray<Real, DIM> bbox0, bbox1;
+  for (Integer k = 0; k < DIM; k++) {
+    bbox0[k] = X[k];
+    bbox1[k] = X[k];
+  }
+  for (Long i = 0; i < N; i++) {
+    for (Integer k = 0; k < DIM; k++) {
+      bbox0[k] = std::min<Real>(bbox0[k], X[i*DIM+k]);
+      bbox1[k] = std::max<Real>(bbox1[k], X[i*DIM+k]);
+    }
+  }
+
+  StaticArray<Real, DIM> bbox0_glb, bbox1_glb;
+  comm.Allreduce((ConstIterator<Real>)bbox0, (Iterator<Real>)bbox0_glb, DIM, Comm::CommOp::MIN);
+  comm.Allreduce((ConstIterator<Real>)bbox1, (Iterator<Real>)bbox1_glb, DIM, Comm::CommOp::MAX);
+  for (Integer k = 0; k < DIM; k++) {
+    bbox[k*2+0] = bbox0_glb[k];
+    bbox[k*2+1] = bbox1_glb[k];
+  }
+}
+
 template <class Real, Integer DIM> ParticleFMM<Real,DIM>::ParticleFMM(const Comm& comm) : comm_(comm), digits_(10) {
   fmm_ker.ker_m2m = NullIterator<char>();
   fmm_ker.ker_m2l = NullIterator<char>();
@@ -95,18 +127,24 @@ template <class Real, Integer DIM> ParticleFMM<Real,DIM>::~ParticleFMM() {
 
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetComm(const Comm& comm) {
   comm_ = comm;
-  for (auto& it : s2t_map) {
-    it.second.setup_ker = true;
-    it.second.setup_tree = true;
+  #ifdef SCTL_HAVE_PVFMM
+  if (DIM == 3) {
+    for (auto& it : s2t_map) {
+      it.second.setup_ker = true;
+      it.second.setup_tree = true;
+    }
   }
+  #endif
 }
 
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetAccuracy(Integer digits) {
   digits_ = digits;
   #ifdef SCTL_HAVE_PVFMM
-  for (auto& it : s2t_map) {
-    it.second.setup_ker = true;
-    it.second.setup_tree = true;
+  if (DIM == 3) {
+    for (auto& it : s2t_map) {
+      it.second.setup_ker = true;
+      it.second.setup_tree = true;
+    }
   }
   #endif
 }
@@ -142,12 +180,14 @@ template <class Real, Integer DIM> template <class KerM2M, class KerM2L, class K
   fmm_ker.delete_ker_l2l = DeleteKer<KerL2L>;
 
   #ifdef SCTL_HAVE_PVFMM
-  fmm_ker.pvfmm_ker_m2m = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2M>::template Eval<Real>>(ker_m2m.Name().c_str(), DIM, std::pair<int,int>(ker_m2m.SrcDim(), ker_m2m.TrgDim()));
-  fmm_ker.pvfmm_ker_m2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2L>::template Eval<Real>>(ker_m2l.Name().c_str(), DIM, std::pair<int,int>(ker_m2l.SrcDim(), ker_m2l.TrgDim()));
-  fmm_ker.pvfmm_ker_l2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerL2L>::template Eval<Real>>(ker_l2l.Name().c_str(), DIM, std::pair<int,int>(ker_l2l.SrcDim(), ker_l2l.TrgDim()));
-  for (auto& it : s2t_map) {
-    it.second.setup_ker = true;
-    it.second.setup_tree = true;
+  if (DIM == 3) {
+    fmm_ker.pvfmm_ker_m2m = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2M>::template Eval<Real>>(ker_m2m.Name().c_str(), DIM, std::pair<int,int>(ker_m2m.SrcDim(), ker_m2m.TrgDim()));
+    fmm_ker.pvfmm_ker_m2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2L>::template Eval<Real>>(ker_m2l.Name().c_str(), DIM, std::pair<int,int>(ker_m2l.SrcDim(), ker_m2l.TrgDim()));
+    fmm_ker.pvfmm_ker_l2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerL2L>::template Eval<Real>>(ker_l2l.Name().c_str(), DIM, std::pair<int,int>(ker_l2l.SrcDim(), ker_l2l.TrgDim()));
+    for (auto& it : s2t_map) {
+      it.second.setup_ker = true;
+      it.second.setup_tree = true;
+    }
   }
   #endif
 }
@@ -178,17 +218,19 @@ template <class Real, Integer DIM> template <class KerS2M, class KerS2L> void Pa
   data.delete_ker_s2l = DeleteKer<KerS2L>;
 
   #ifdef SCTL_HAVE_PVFMM
-  if (data.dim_normal) {
-    data.pvfmm_ker_s2m = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2M,true>::template Eval<Real>, PVFMMKernelFn<KerS2M>::template Eval<Real>>(ker_s2m.Name().c_str(), DIM, std::pair<int,int>(ker_s2m.SrcDim(), ker_s2m.TrgDim()));
-    data.pvfmm_ker_s2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2L,true>::template Eval<Real>, PVFMMKernelFn<KerS2L>::template Eval<Real>>(ker_s2l.Name().c_str(), DIM, std::pair<int,int>(ker_s2l.SrcDim(), ker_s2l.TrgDim()));
-  } else {
-    data.pvfmm_ker_s2m = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2M>::template Eval<Real>>(ker_s2m.Name().c_str(), DIM, std::pair<int,int>(ker_s2m.SrcDim(), ker_s2m.TrgDim()));
-    data.pvfmm_ker_s2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2L>::template Eval<Real>>(ker_s2l.Name().c_str(), DIM, std::pair<int,int>(ker_s2l.SrcDim(), ker_s2l.TrgDim()));
-  }
-  for (auto& it : s2t_map) {
-    if (it.first.first != name) continue;
-    it.second.setup_ker = true;
-    it.second.setup_tree = true;
+  if (DIM == 3) {
+    if (data.dim_normal) {
+      data.pvfmm_ker_s2m = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2M,true>::template Eval<Real>, PVFMMKernelFn<KerS2M>::template Eval<Real>>(ker_s2m.Name().c_str(), DIM, std::pair<int,int>(ker_s2m.SrcDim(), ker_s2m.TrgDim()));
+      data.pvfmm_ker_s2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2L,true>::template Eval<Real>, PVFMMKernelFn<KerS2L>::template Eval<Real>>(ker_s2l.Name().c_str(), DIM, std::pair<int,int>(ker_s2l.SrcDim(), ker_s2l.TrgDim()));
+    } else {
+      data.pvfmm_ker_s2m = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2M>::template Eval<Real>>(ker_s2m.Name().c_str(), DIM, std::pair<int,int>(ker_s2m.SrcDim(), ker_s2m.TrgDim()));
+      data.pvfmm_ker_s2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2L>::template Eval<Real>>(ker_s2l.Name().c_str(), DIM, std::pair<int,int>(ker_s2l.SrcDim(), ker_s2l.TrgDim()));
+    }
+    for (auto& it : s2t_map) {
+      if (it.first.first != name) continue;
+      it.second.setup_ker = true;
+      it.second.setup_tree = true;
+    }
   }
   #endif
 }
@@ -217,12 +259,14 @@ template <class Real, Integer DIM> template <class KerM2T, class KerL2T> void Pa
   data.delete_ker_l2t = DeleteKer<KerL2T>;
 
   #ifdef SCTL_HAVE_PVFMM
-  data.pvfmm_ker_m2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2T>::template Eval<Real>>(ker_m2t.Name().c_str(), DIM, std::pair<int,int>(ker_m2t.SrcDim(), ker_m2t.TrgDim()));
-  data.pvfmm_ker_l2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerL2T>::template Eval<Real>>(ker_l2t.Name().c_str(), DIM, std::pair<int,int>(ker_l2t.SrcDim(), ker_l2t.TrgDim()));
-  for (auto& it : s2t_map) {
-    if (it.first.second != name) continue;
-    it.second.setup_ker = true;
-    it.second.setup_tree = true;
+  if (DIM == 3) {
+    data.pvfmm_ker_m2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2T>::template Eval<Real>>(ker_m2t.Name().c_str(), DIM, std::pair<int,int>(ker_m2t.SrcDim(), ker_m2t.TrgDim()));
+    data.pvfmm_ker_l2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerL2T>::template Eval<Real>>(ker_l2t.Name().c_str(), DIM, std::pair<int,int>(ker_l2t.SrcDim(), ker_l2t.TrgDim()));
+    for (auto& it : s2t_map) {
+      if (it.first.second != name) continue;
+      it.second.setup_ker = true;
+      it.second.setup_tree = true;
+    }
   }
   #endif
 }
@@ -245,10 +289,13 @@ template <class Real, Integer DIM> template <class KerS2T> void ParticleFMM<Real
   data.delete_ker_s2t = DeleteKer<KerS2T>;
 
   #ifdef SCTL_HAVE_PVFMM
-  if (data.dim_normal) {
-    data.pvfmm_ker_s2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2T,true>::template Eval<Real>, PVFMMKernelFn<KerS2T>::template Eval<Real>>(ker_s2t.Name().c_str(), DIM, std::pair<int,int>(ker_s2t.SrcDim(), ker_s2t.TrgDim()));
-  } else {
-    data.pvfmm_ker_s2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2T>::template Eval<Real>>(ker_s2t.Name().c_str(), DIM, std::pair<int,int>(ker_s2t.SrcDim(), ker_s2t.TrgDim()));
+  if (DIM == 3) {
+    BuildSrcTrgScal(data);
+    if (data.dim_normal) {
+      data.pvfmm_ker_s2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2T,true>::template Eval<Real>, PVFMMKernelFn<KerS2T>::template Eval<Real>>(ker_s2t.Name().c_str(), DIM, std::pair<int,int>(ker_s2t.SrcDim(), ker_s2t.TrgDim()));
+    } else {
+      data.pvfmm_ker_s2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2T>::template Eval<Real>>(ker_s2t.Name().c_str(), DIM, std::pair<int,int>(ker_s2t.SrcDim(), ker_s2t.TrgDim()));
+    }
   }
   data.tree_ptr = nullptr;
   data.setup_ker = true;
@@ -292,9 +339,12 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetSrcCoord(const
   data.Xn = src_normal;
 
   #ifdef SCTL_HAVE_PVFMM
-  for (auto& it : s2t_map) {
-    if (it.first.first != name) continue;
-    it.second.setup_tree = true;
+  if (DIM == 3) {
+    BoundingBox<DIM>(data.bbox, src_coord, comm_);
+    for (auto& it : s2t_map) {
+      if (it.first.first != name) continue;
+      it.second.setup_tree = true;
+    }
   }
   #endif
 }
@@ -309,9 +359,12 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetTrgCoord(const
   data.X = trg_coord;
 
   #ifdef SCTL_HAVE_PVFMM
-  for (auto& it : s2t_map) {
-    if (it.first.second != name) continue;
-    it.second.setup_tree = true;
+  if (DIM == 3) {
+    BoundingBox<DIM>(data.bbox, trg_coord, comm_);
+    for (auto& it : s2t_map) {
+      if (it.first.second != name) continue;
+      it.second.setup_tree = true;
+    }
   }
   #endif
 }
@@ -329,7 +382,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
   const Integer rank = comm_.Rank();
   const Integer np = comm_.Size();
 
-  SCTL_ASSERT_MSG(trg_map.find(trg_name) != trg_map.end(), "Source name does not exist.");
+  SCTL_ASSERT_MSG(trg_map.find(trg_name) != trg_map.end(), "Target name does not exist.");
   const auto& trg_data = trg_map.at(trg_name);
   const Integer TrgDim = trg_data.dim_trg;
   const auto& Xt = trg_data.X;
@@ -422,6 +475,155 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::CheckKernelDims()
   }
 }
 
+template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(const S2TData& data) {
+  const StaticArray<Integer,2> kdim{data.dim_src, data.dim_trg};
+  const Integer dim_normal = data.dim_normal;
+  const Real eps=machine_eps<Real>();
+
+  auto BuildMatrix = [&data,&kdim,&dim_normal](Matrix<Real>& M, const Vector<Real>& src_X, const Vector<Real>& src_Xn, const Vector<Real>& trg_X) {
+    const Long N = trg_X.Dim() / DIM;
+    SCTL_ASSERT(trg_X.Dim() == N * DIM);
+    SCTL_ASSERT(src_X.Dim() == DIM);
+    SCTL_ASSERT(src_Xn.Dim() == dim_normal);
+
+    M.ReInit(N, kdim[0]*kdim[1]);
+    Vector<Real> F(kdim[0]), U(N*kdim[1]); F = 0;
+    for (Integer k0 = 0; k0 < kdim[0]; k0++) {
+      U = 0;
+      F[k0] = 1;
+      data.ker_s2t_eval(U, trg_X, src_X, src_Xn, F, -1, data.ker_s2t);
+      for (Long i = 0; i < N; i++) {
+        for (Integer k1 = 0; k1 < kdim[1]; k1++) {
+          M[i][k0*kdim[1]+k1] = U[i*kdim[1]+k1];
+        }
+      }
+      F[k0] = 0;
+    }
+  };
+
+  Vector<Real>& src_scal_exp = data.src_scal_exp;
+  Vector<Real>& trg_scal_exp = data.trg_scal_exp;
+  src_scal_exp.ReInit(kdim[0]); src_scal_exp.SetZero();
+  trg_scal_exp.ReInit(kdim[1]); trg_scal_exp.SetZero();
+
+  Real scal=1.0;
+  bool scale_invar = true;
+  if (kdim[0]*kdim[1] > 0) { // Determine scaling
+    Long N = 1024;
+    Real eps_ = N * eps;
+
+    Matrix<Real> M1(N, kdim[0]*kdim[1]);
+    Vector<Real> src_coord(DIM), src_normal(dim_normal), trg_coord1(N*DIM);
+    for (Integer i = 0; i < dim_normal; i++) src_normal[i] = drand48() - 0.5;
+    for (Integer i = 0; i < DIM; i++) src_coord[i] = 0;
+    while (true) {
+      Real inv_scal = 1/scal, abs_sum = 0;
+      for (Long i = 0; i < N/2; i++) {
+        for (Integer j = 0; j < DIM; j++) {
+          trg_coord1[i*DIM+j] = (drand48()-0.5) * scal;
+        }
+      }
+      for (Long i = N/2; i < N; i++) {
+        for (Integer j = 0; j < DIM; j++) {
+          trg_coord1[i*DIM+j] = (drand48()-0.5) * inv_scal;
+        }
+      }
+      BuildMatrix(M1, src_coord, src_normal, trg_coord1);
+      for (const auto& a : M1) abs_sum += fabs<Real>(a);
+      if (abs_sum > sqrt<Real>(eps) || scal < eps) break;
+      scal = scal * 0.5;
+    }
+
+    Vector<Real> trg_coord2 = trg_coord1*(Real)0.5;
+    Matrix<Real> M2(N,kdim[0]*kdim[1]);
+    BuildMatrix(M2, src_coord, src_normal, trg_coord2);
+
+    Real max_val = 0;
+    Matrix<Real> M_scal(kdim[0], kdim[1]);
+    for (Integer i = 0; i < kdim[0]*kdim[1]; i++) {
+      Real dot11 = 0, dot22 = 0;
+      for(Long j = 0; j < N; j++) {
+        dot11 += M1[j][i] * M1[j][i];
+        dot22 += M2[j][i] * M2[j][i];
+      }
+      max_val = std::max<Real>(max_val, dot11);
+      max_val = std::max<Real>(max_val, dot22);
+    }
+    for (Integer i = 0; i < kdim[0]*kdim[1]; i++) {
+      Real dot11 = 0, dot12 = 0, dot22 = 0;
+      for (Long j = 0; j < N; j++) {
+        dot11 += M1[j][i] * M1[j][i];
+        dot12 += M1[j][i] * M2[j][i];
+        dot22 += M2[j][i] * M2[j][i];
+      }
+      if (dot11>max_val*eps && dot22>max_val*eps) {
+        Real s = dot12 / dot11;
+        M_scal[0][i] = log<Real>(s) / log<Real>(2.0);
+        Real err = sqrt<Real>(0.5*(dot22/dot11)/(s*s) - 0.5);
+        if (err > eps_) {
+          scale_invar = false;
+          M_scal[0][i] = 0.0;
+        }
+        //assert(M_scal[0][i]>=0.0); // Kernel function must decay
+      }else if(dot11>max_val*eps || dot22>max_val*eps) {
+        scale_invar = false;
+        M_scal[0][i] = 0.0;
+      }else{
+        M_scal[0][i] = -1;
+      }
+    }
+
+    if (scale_invar) {
+      Matrix<Real> b(kdim[0]*kdim[1]+1,1); b.SetZero();
+      for (Integer i = 0; i < kdim[0]*kdim[1]; i++) b[i][0] = M_scal[0][i];
+
+      Matrix<Real> M(kdim[0]*kdim[1]+1, kdim[0]+kdim[1]); M.SetZero();
+      M[kdim[0]*kdim[1]][0] = 1;
+      for (Integer i0 = 0; i0 < kdim[0]; i0++) {
+        for (Integer i1 = 0; i1 < kdim[1]; i1++) {
+          Integer j = i0*kdim[1] + i1;
+          if (b[j][0] > 0) {
+            M[j][ 0+        i0] = 1;
+            M[j][i1+kdim[0]] = 1;
+          }
+        }
+      }
+
+      Matrix<Real> x = M.pinv() * b;
+      for (Integer i = 0; i < kdim[0]; i++) { // Set src_scal_exp
+        src_scal_exp[i] = x[i][0];
+      }
+      for (Integer i = 0; i < kdim[1]; i++) { // Set src_scal_exp
+        trg_scal_exp[i] = x[kdim[0]+i][0];
+      }
+      for (Integer i0 = 0; i0 < kdim[0]; i0++) { // Verify
+        for (Integer i1 = 0; i1 < kdim[1]; i1++) {
+          if (M_scal[i0][i1] >= 0) {
+            if (fabs<Real>(src_scal_exp[i0] + trg_scal_exp[i1] - M_scal[i0][i1]) > eps_) {
+              scale_invar = false;
+            }
+          }
+        }
+      }
+    }
+    if (!scale_invar) {
+      src_scal_exp.SetZero();
+      trg_scal_exp.SetZero();
+    }
+  }
+
+  #ifdef SCTL_VERBOSE
+  if (scale_invar && kdim[0]*kdim[1] > 0) {
+    std::cout<<"Scaling Matrix :\n";
+    Matrix<Real> Src(kdim[0],1);
+    Matrix<Real> Trg(1,kdim[1]);
+    for(size_t i=0;i<kdim[0];i++) Src[i][0]=pow<Real>(2.0,src_scal_exp[i]);
+    for(size_t i=0;i<kdim[1];i++) Trg[0][i]=pow<Real>(2.0,trg_scal_exp[i]);
+    std::cout<<Src*Trg;
+  }
+  #endif
+}
+
 #ifdef SCTL_HAVE_PVFMM
 template <class Real, Integer DIM> template <class SCTLKernel, bool use_dummy_normal> struct ParticleFMM<Real,DIM>::PVFMMKernelFn : public pvfmm::GenericKernel<PVFMMKernelFn<SCTLKernel, use_dummy_normal>> {
   static const int FLOPS = 0;
@@ -454,10 +656,13 @@ template <class Real, Integer DIM> template <class SCTLKernel, bool use_dummy_no
 }
 
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<Real>& U, const std::string& trg_name) const {
+  if (DIM != 3) return EvalDirect(U, trg_name); // PVFMM only supports 3D
+
   SCTL_ASSERT_MSG(trg_map.find(trg_name) != trg_map.end(), "Target name does not exist.");
   const auto& trg_data = trg_map.at(trg_name);
   const Integer TrgDim = trg_data.dim_trg;
   const auto& Xt = trg_data.X;
+
   const Long Nt = Xt.Dim() / DIM;
   SCTL_ASSERT(Xt.Dim() == Nt * DIM);
   { // User EvalDirect for small problems
@@ -465,11 +670,11 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
     comm_.Allreduce<Long>(cnt+0, cnt+1, 1, Comm::CommOp::MAX);
     if (cnt[1] < 40000) return EvalDirect(U, trg_name);
   }
-
   if (U.Dim() != Nt * TrgDim) {
     U.ReInit(Nt * TrgDim);
     U.SetZero();
   }
+
   for (auto& it : s2t_map) {
     if (it.first.second != trg_name) continue;
     const std::string src_name = it.first.first;
@@ -508,38 +713,90 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
         s2t_data.setup_ker = false;
       }
 
-      std::vector<Real> sl_coord_, sl_den_, dl_coord_, dl_den_, trg_coord_;
-      if (NorDim) { // Set sl_coord_, sl_den_, dl_coord_, dl_den_
-        dl_coord_ .assign(Xs.begin(), Xs.end());
-        dl_den_.resize(Ns * (SrcDim+NorDim));
-        for (Long i = 0; i < Ns; i++) {
-          for (Long j = 0; j < SrcDim; j++) {
-            dl_den_[i*(SrcDim+NorDim) + j] = F[i*SrcDim+j];
+      std::vector<Real> sl_den_, dl_den_;
+      Vector<Real>& src_scal = s2t_data.src_scal;
+      Vector<Real>& trg_scal = s2t_data.trg_scal;
+      pvfmm::PtFMM_Tree<Real>*& tree_ptr = s2t_data.tree_ptr;
+      if (s2t_data.setup_tree) { // Setup tree_ptr, src_scal, trg_scal
+        auto& bbox_scale = s2t_data.bbox_scale;
+        auto& bbox_offset = s2t_data.bbox_offset;
+        { // Set bbox_scale, bbox_offset
+          StaticArray<Real,DIM*2> bbox;
+          for (Integer k = 0; k < DIM; k++) {
+            bbox[k*2+0] = std::min<Real>(src_data.bbox[k*2+0], trg_data.bbox[k*2+0]);
+            bbox[k*2+1] = std::max<Real>(src_data.bbox[k*2+1], trg_data.bbox[k*2+1]);
           }
-          for (Long j = 0; j < NorDim; j++) {
-            dl_den_[i*(SrcDim+NorDim) + SrcDim+j] = Xn[i*NorDim+j];
+
+          Real bbox_len = 0;
+          for (Integer k = 0; k < DIM; k++) {
+            bbox_offset[k] = (bbox[k*2+0] + bbox[k*2+1])/2;
+            bbox_len = std::max<Real>(bbox_len, bbox[k*2+1]-bbox[k*2+0]);
+          }
+
+          bbox_scale = 1/(bbox_len*1.1); // extra 5% padding so that points are not on boundary
+          for (Integer k = 0; k < DIM; k++) {
+            bbox_offset[k] -= 0.5/bbox_scale;
           }
         }
-      } else {
-        sl_coord_ .assign(Xs.begin(), Xs.end());
-        sl_den_   .assign(F .begin(), F .end());
-      }
-      trg_coord_.assign(Xt.begin(), Xt.end());
+        { // Set src_scal, trg_scal
+          src_scal.ReInit(SrcDim);
+          trg_scal.ReInit(TrgDim);
+          const Vector<Real>& src_scal_exp = s2t_data.src_scal_exp;
+          const Vector<Real>& trg_scal_exp = s2t_data.trg_scal_exp;
+          for (Integer i = 0; i < SrcDim; i++) src_scal[i] = pow<Real>(bbox_scale, src_scal_exp[i]);
+          for (Integer i = 0; i < TrgDim; i++) trg_scal[i] = pow<Real>(bbox_scale, trg_scal_exp[i]);
+        }
 
-      pvfmm::PtFMM_Tree<Real>*& tree_ptr = s2t_data.tree_ptr;
-      if (s2t_data.setup_tree) { // Setup tree_ptr
+        std::vector<Real> sl_coord_, dl_coord_, trg_coord_(Nt*DIM);
+        auto& src_coord = (NorDim ? dl_coord_ : sl_coord_);
+        src_coord.resize(Ns * DIM);
+        for (Long i = 0; i < Ns; i++) {
+          for (Integer k = 0; k < DIM; k++) {
+            src_coord[i*DIM+k] = (Xs[i*DIM+k] - bbox_offset[k]) * bbox_scale;
+          }
+        }
+        for (Long i = 0; i < Nt; i++) {
+          for (Integer k = 0; k < DIM; k++) {
+            trg_coord_[i*DIM+k] = (Xt[i*DIM+k] - bbox_offset[k]) * bbox_scale;
+          }
+        }
+
         if (tree_ptr) delete tree_ptr;
+        sl_den_.resize(NorDim ? 0 : Ns*SrcDim);
+        dl_den_.resize(NorDim ? Ns*(SrcDim+NorDim) : 0);
         tree_ptr = PtFMM_CreateTree(sl_coord_, sl_den_, dl_coord_, dl_den_, trg_coord_, comm_.GetMPI_Comm(), max_pts, pvfmm::FreeSpace);
         tree_ptr->SetupFMM(&fmm_ctx);
         s2t_data.setup_tree = false;
       } else {
         tree_ptr->ClearFMMData();
       }
+      if (NorDim) { // Set sl_den_, dl_den_
+        dl_den_.resize(Ns*(SrcDim+NorDim));
+        for (Long i = 0; i < Ns; i++) {
+          for (Long j = 0; j < SrcDim; j++) {
+            dl_den_[i*(SrcDim+NorDim) + j] = F[i*SrcDim+j] * src_scal[j];
+          }
+          for (Long j = 0; j < NorDim; j++) {
+            dl_den_[i*(SrcDim+NorDim) + SrcDim+j] = Xn[i*NorDim+j];
+          }
+        }
+      } else {
+        sl_den_.resize(Ns*SrcDim);
+        for (Long i = 0; i < Ns; i++) {
+          for (Long j = 0; j < SrcDim; j++) {
+            sl_den_[i*SrcDim+j] = F[i*SrcDim+j] * src_scal[j];
+          }
+        }
+      }
 
       std::vector<Real> trg_value;
       PtFMM_Evaluate(tree_ptr, trg_value, Nt, &sl_den_, &dl_den_);
       SCTL_ASSERT(trg_value.size() == Nt * TrgDim);
-      U += Vector<Real>(trg_value);
+      for (Long i = 0; i < Nt; i++) {
+        for (Long j = 0; j < TrgDim; j++) {
+          U[i*TrgDim+j] += trg_value[i*TrgDim+j] * trg_scal[j];
+        }
+      }
     }
   }
 }

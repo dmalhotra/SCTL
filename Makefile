@@ -23,7 +23,8 @@ CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
 
 CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
 CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
-#CXXFLAGS += -mkl -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK
+#CXXFLAGS += -mkl -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK (Intel compiler)
+#CXXFLAGS += -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK (non-Intel compiler)
 
 CXXFLAGS += -lfftw3 -DSCTL_HAVE_FFTW
 CXXFLAGS += -lfftw3f -DSCTL_HAVE_FFTWF
@@ -32,7 +33,7 @@ CXXFLAGS += -lfftw3l -DSCTL_HAVE_FFTWL
 #PVFMM_INC_DIR = ../include
 #PVFMM_LIB_DIR = ../lib/.libs
 #CXXFLAGS += -DSCTL_HAVE_PVFMM -I$(PVFMM_INC_DIR)
-#LDLIBS += -L$(PVFMM_LIB_DIR) -lpvfmm
+#LDLIBS += $(PVFMM_LIB_DIR)/libpvfmm.a
 
 
 RM = rm -f
