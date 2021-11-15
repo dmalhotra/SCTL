@@ -526,11 +526,7 @@ template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Ma
 }
 
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::pinv(ValueType eps) {
-  if (eps < 0) {
-    eps = 1.0;
-    while (eps + (ValueType)1.0 > 1.0) eps *= 0.5;
-    eps = sqrt<ValueType>(eps);
-  }
+  if (eps < 0) eps = sqrt<ValueType>(machine_eps<ValueType>());
   Matrix<ValueType> M_r(dim[1], dim[0]);
   mat::pinv(data_ptr, dim[0], dim[1], eps, M_r.data_ptr);
   this->ReInit(0, 0);

@@ -26,10 +26,13 @@
 #define SCTL_HAVE_MPI
 #endif
 #include "pvfmm_config.h"
-#ifndef SCTL_QUAD_T
+#if defined(PVFMM_QUAD_T) && !defined(SCTL_QUAD_T)
 #define SCTL_QUAD_T PVFMM_QUAD_T
 #endif
 #endif
+
+// Math utilities
+#include SCTL_INCLUDE(math_utils.hpp)
 
 // FMM wrapper
 #include SCTL_INCLUDE(fmm-wrapper.hpp)
@@ -94,8 +97,5 @@ const int sgh = SCTL_NAMESPACE::SetSigHandler(); // Set signal handler
 // Boundary quadrature, Kernel functions
 #include SCTL_INCLUDE(kernel_functions.hpp)
 #include SCTL_INCLUDE(boundary_quadrature.hpp)
-
-// Math utilities
-#include SCTL_INCLUDE(math_utils.hpp)
 
 #endif //_SCTL_HPP_

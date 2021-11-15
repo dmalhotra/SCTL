@@ -20,6 +20,8 @@ template <class Real> inline Real fabs(const Real a) { return (Real)std::fabs(a)
 
 template <class Real> inline Real round(const Real a) { return (Real)std::round(a); }
 
+template <class Real> inline Real floor(const Real a) { return (Real)std::floor(a); }
+
 template <class Real> inline Real sqrt(const Real a) { return (Real)std::sqrt(a); }
 
 template <class Real> inline Real sin(const Real a) { return (Real)std::sin(a); }
@@ -85,9 +87,17 @@ class QuadReal {
 
     friend QuadReal round(const QuadReal& x) {
       #ifdef __SIZEOF_INT128__
-      return (__int128)((x+(0.5-(x<0))).val);
+      return (__int128)((x+0.5).val)-(x<0);
       #else
-      return (int64_t)((x+(0.5-(x<0))).val);
+      return (int64_t)((x+0.5).val)-(x<0);
+      #endif
+    }
+
+    friend QuadReal floor(const QuadReal& x) {
+      #ifdef __SIZEOF_INT128__
+      return (__int128)(x.val)-(x<0);
+      #else
+      return (int64_t)(x.val)-(x<0);
       #endif
     }
 

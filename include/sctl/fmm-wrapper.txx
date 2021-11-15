@@ -22,18 +22,18 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& 
   Vector<Real>  sl_coord(N*DIM);
   Vector<Real>  dl_coord(N*DIM);
   Vector<Real>  dl_norml(N*DIM);
-  for (auto& a : trg_coord) a = drand48()-0.5;
-  for (auto& a :  sl_coord) a = drand48()-0.5;
-  for (auto& a :  dl_coord) a = drand48()-0.5;
-  for (auto& a :  dl_norml) a = drand48()-0.5;
+  for (auto& a : trg_coord) a = (Real)(drand48()-0.5);
+  for (auto& a :  sl_coord) a = (Real)(drand48()-0.5);
+  for (auto& a :  dl_coord) a = (Real)(drand48()-0.5);
+  for (auto& a :  dl_norml) a = (Real)(drand48()-0.5);
   Long n_sl  =  sl_coord.Dim()/DIM;
   Long n_dl  =  dl_coord.Dim()/DIM;
 
   // Set source charges.
   Vector<Real> sl_den(n_sl*kernel_sl.SrcDim());
   Vector<Real> dl_den(n_dl*kernel_dl.SrcDim());
-  for (auto& a : sl_den) a = drand48() - 0.5;
-  for (auto& a : dl_den) a = drand48() - 0.5;
+  for (auto& a : sl_den) a = (Real)(drand48() - 0.5);
+  for (auto& a : dl_den) a = (Real)(drand48() - 0.5);
 
   ParticleFMM fmm(comm);
   fmm.SetAccuracy(10);
@@ -514,24 +514,24 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(c
 
     Matrix<Real> M1(N, kdim[0]*kdim[1]);
     Vector<Real> src_coord(DIM), src_normal(dim_normal), trg_coord1(N*DIM);
-    for (Integer i = 0; i < dim_normal; i++) src_normal[i] = drand48() - 0.5;
+    for (Integer i = 0; i < dim_normal; i++) src_normal[i] = (Real)(drand48() - 0.5);
     for (Integer i = 0; i < DIM; i++) src_coord[i] = 0;
     while (true) {
       Real inv_scal = 1/scal, abs_sum = 0;
       for (Long i = 0; i < N/2; i++) {
         for (Integer j = 0; j < DIM; j++) {
-          trg_coord1[i*DIM+j] = (drand48()-0.5) * scal;
+          trg_coord1[i*DIM+j] = (Real)(drand48()-0.5) * scal;
         }
       }
       for (Long i = N/2; i < N; i++) {
         for (Integer j = 0; j < DIM; j++) {
-          trg_coord1[i*DIM+j] = (drand48()-0.5) * inv_scal;
+          trg_coord1[i*DIM+j] = (Real)(drand48()-0.5) * inv_scal;
         }
       }
       BuildMatrix(M1, src_coord, src_normal, trg_coord1);
       for (const auto& a : M1) abs_sum += fabs<Real>(a);
       if (abs_sum > sqrt<Real>(eps) || scal < eps) break;
-      scal = scal * 0.5;
+      scal = scal * (Real)0.5;
     }
 
     Vector<Real> trg_coord2 = trg_coord1*(Real)0.5;
@@ -559,7 +559,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(c
       if (dot11>max_val*eps && dot22>max_val*eps) {
         Real s = dot12 / dot11;
         M_scal[0][i] = log<Real>(s) / log<Real>(2.0);
-        Real err = sqrt<Real>(0.5*(dot22/dot11)/(s*s) - 0.5);
+        Real err = sqrt<Real>((Real)0.5*(dot22/dot11)/(s*s) - (Real)0.5);
         if (err > eps_) {
           scale_invar = false;
           M_scal[0][i] = 0.0;
@@ -617,8 +617,8 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(c
     std::cout<<"Scaling Matrix :\n";
     Matrix<Real> Src(kdim[0],1);
     Matrix<Real> Trg(1,kdim[1]);
-    for(size_t i=0;i<kdim[0];i++) Src[i][0]=pow<Real>(2.0,src_scal_exp[i]);
-    for(size_t i=0;i<kdim[1];i++) Trg[0][i]=pow<Real>(2.0,trg_scal_exp[i]);
+    for(Integer i=0;i<kdim[0];i++) Src[i][0]=pow<Real>(2.0,src_scal_exp[i]);
+    for(Integer i=0;i<kdim[1];i++) Trg[0][i]=pow<Real>(2.0,trg_scal_exp[i]);
     std::cout<<Src*Trg;
   }
   #endif
@@ -733,9 +733,9 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
             bbox_len = std::max<Real>(bbox_len, bbox[k*2+1]-bbox[k*2+0]);
           }
 
-          bbox_scale = 1/(bbox_len*1.1); // extra 5% padding so that points are not on boundary
+          bbox_scale = 1/(bbox_len*(Real)1.1); // extra 5% padding so that points are not on boundary
           for (Integer k = 0; k < DIM; k++) {
-            bbox_offset[k] -= 0.5/bbox_scale;
+            bbox_offset[k] -= 1/(2*bbox_scale);
           }
         }
         { // Set src_scal, trg_scal
@@ -791,7 +791,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
 
       std::vector<Real> trg_value;
       PtFMM_Evaluate(tree_ptr, trg_value, Nt, &sl_den_, &dl_den_);
-      SCTL_ASSERT(trg_value.size() == Nt * TrgDim);
+      SCTL_ASSERT(trg_value.size() == (size_t)(Nt*TrgDim));
       for (Long i = 0; i < Nt; i++) {
         for (Long j = 0; j < TrgDim; j++) {
           U[i*TrgDim+j] += trg_value[i*TrgDim+j] * trg_scal[j];

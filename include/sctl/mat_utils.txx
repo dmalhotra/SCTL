@@ -516,7 +516,7 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, int n1, int n
     if (tS[i] < eps_)
       tS[i] = 0;
     else
-      tS[i] = 1.0 / tS[i];
+      tS[i] = 1 / tS[i];
 
   for (int i = 0; i < m; i++) {
     for (int j = 0; j < k; j++) {
