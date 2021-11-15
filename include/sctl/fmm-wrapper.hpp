@@ -46,7 +46,6 @@ template <class Real, Integer DIM> class ParticleFMM {
 
     void DeleteSrc(const std::string& name);
     void DeleteTrg(const std::string& name);
-    void DeleteS2T(const std::string& src_name, const std::string& trg_name);
 
     void SetSrcCoord(const std::string& name, const Vector<Real>& src_coord, const Vector<Real>& src_normal = Vector<Real>());
     void SetSrcDensity(const std::string& name, const Vector<Real>& src_density);
@@ -139,6 +138,8 @@ template <class Real, Integer DIM> class ParticleFMM {
     template <class Ker> static void DeleteKer(Iterator<char> ker);
 
     void CheckKernelDims() const;
+
+    void DeleteS2T(const std::string& src_name, const std::string& trg_name);
 
     #ifdef SCTL_HAVE_PVFMM
     template <class SCTLKernel, bool use_dummy_normal=false> struct PVFMMKernelFn; // construct PVFMMKernel from SCTLKernel

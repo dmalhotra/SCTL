@@ -111,13 +111,13 @@ template <class Real, Integer DIM> ParticleFMM<Real,DIM>::ParticleFMM(const Comm
 
 template <class Real, Integer DIM> ParticleFMM<Real,DIM>::~ParticleFMM() {
   Vector<std::string> src_lst, trg_lst;
-  Vector<std::pair<std::string,std::string>> s2t_lst;
   for (auto& it : src_map) src_lst.PushBack(it.first);
   for (auto& it : trg_map) trg_lst.PushBack(it.first);
-  for (auto& it : s2t_map) s2t_lst.PushBack(it.first);
-
   for (const auto& name : src_lst) DeleteSrc(name);
   for (const auto& name : trg_lst) DeleteTrg(name);
+
+  Vector<std::pair<std::string,std::string>> s2t_lst;
+  for (auto& it : s2t_map) s2t_lst.PushBack(it.first);
   for (const auto& name : s2t_lst) DeleteS2T(name.first, name.second);
 
   if (fmm_ker.ker_m2m != NullIterator<char>()) fmm_ker.delete_ker_m2m(fmm_ker.ker_m2m);
@@ -271,8 +271,11 @@ template <class Real, Integer DIM> template <class KerM2T, class KerL2T> void Pa
   #endif
 }
 template <class Real, Integer DIM> template <class KerS2T> void ParticleFMM<Real,DIM>::SetKernelS2T(const std::string& src_name, const std::string& trg_name, const KerS2T& ker_s2t) {
+  SCTL_ASSERT_MSG(src_map.find(src_name) != src_map.end(), "Source name does not exists.");
+  SCTL_ASSERT_MSG(trg_map.find(trg_name) != trg_map.end(), "Target name does not exists.");
+
   const auto name = std::make_pair(src_name, trg_name);
-  SCTL_ASSERT_MSG(s2t_map.find(name) == s2t_map.end(), "S2T name already exists.");
+  if (s2t_map.find(name) != s2t_map.end()) DeleteS2T(src_name, trg_name);
   s2t_map[name] = S2TData();
   auto& data = s2t_map[name];
 
@@ -310,6 +313,10 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::DeleteSrc(const s
   data.delete_ker_s2m(data.ker_s2m);
   data.delete_ker_s2l(data.ker_s2l);
   src_map.erase(name);
+
+  Vector<std::pair<std::string,std::string>> s2t_lst;
+  for (auto& it : s2t_map) if (it.first.first == name) s2t_lst.PushBack(it.first);
+  for (const auto& name : s2t_lst) DeleteS2T(name.first, name.second);
 }
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::DeleteTrg(const std::string& name) {
   SCTL_ASSERT_MSG(trg_map.find(name) != trg_map.end(), "Target name does not exist.");
@@ -318,10 +325,14 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::DeleteTrg(const s
   data.delete_ker_m2t(data.ker_m2t);
   data.delete_ker_l2t(data.ker_l2t);
   trg_map.erase(name);
+
+  Vector<std::pair<std::string,std::string>> s2t_lst;
+  for (auto& it : s2t_map) if (it.first.second == name) s2t_lst.PushBack(it.first);
+  for (const auto& name : s2t_lst) DeleteS2T(name.first, name.second);
 }
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::DeleteS2T(const std::string& src_name, const std::string& trg_name) {
   const auto name = std::make_pair(src_name, trg_name);
-  SCTL_ASSERT_MSG(s2t_map.find(name) != s2t_map.end(), "S2T name does not exist.");
+  SCTL_ASSERT_MSG(s2t_map.find(name) != s2t_map.end(), "S2T kernel does not exist.");
   auto& data = s2t_map[name];
 
   #ifdef SCTL_HAVE_PVFMM
@@ -451,6 +462,13 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::CheckKernelDims()
   const Integer DimMulCh = fmm_ker.dim_mul_ch;
   const Integer DimLocEq = fmm_ker.dim_loc_eq;
   const Integer DimLocCh = fmm_ker.dim_loc_ch;
+
+  for (auto& src_it : src_map) {
+    for (auto& trg_it : trg_map) {
+      const auto name = std::make_pair(src_it.first, trg_it.first);
+      SCTL_ASSERT_MSG(s2t_map.find(name) != s2t_map.end(), "S2T kernel for " + name.first + "-" + name.second + " was not provided.");
+    }
+  }
 
   for (auto& it : s2t_map) {
     const auto& src_name = it.first.first;
@@ -619,7 +637,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(c
     Matrix<Real> Trg(1,kdim[1]);
     for(Integer i=0;i<kdim[0];i++) Src[i][0]=pow<Real>(2.0,src_scal_exp[i]);
     for(Integer i=0;i<kdim[1];i++) Trg[0][i]=pow<Real>(2.0,trg_scal_exp[i]);
-    std::cout<<Src*Trg;
+    std::cout<<Src*Trg<<'\n';
   }
   #endif
 }
