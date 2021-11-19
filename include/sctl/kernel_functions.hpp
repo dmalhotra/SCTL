@@ -453,6 +453,26 @@ struct Stokes3D_FSxU {
     }
   }
 };
+struct Stokes3D_FxUP {
+  static const std::string& Name() {
+    static const std::string name = "Stokes3D-FxUP";
+    return name;
+  }
+  template <class Real> static constexpr Real uKerScaleFactor() {
+    return 1 / (8 * const_pi<Real>());
+  }
+  template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[3][4], const VecType (&r)[3], const void* ctx_ptr) {
+    VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+    VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
+    VecType rinv3 = rinv*rinv*rinv;
+    for (Integer i = 0; i < 3; i++) {
+      for (Integer j = 0; j < 3; j++) {
+        u[i][j] = (i==j ? rinv : VecType::Zero()) + r[i]*r[j]*rinv3;
+      }
+    }
+    for (Integer i = 0; i < 3; i++) u[i][3] = r[i]*rinv3;
+  }
+};
 }  // namespace kernel_impl
 
 struct Laplace3D_FxU : public GenericKernel<kernel_impl::Laplace3D_FxU> {};
@@ -462,6 +482,7 @@ struct Stokes3D_FxU : public GenericKernel<kernel_impl::Stokes3D_FxU> {};
 struct Stokes3D_DxU : public GenericKernel<kernel_impl::Stokes3D_DxU> {};
 struct Stokes3D_FxT : public GenericKernel<kernel_impl::Stokes3D_FxT> {};
 struct Stokes3D_FSxU : public GenericKernel<kernel_impl::Stokes3D_FSxU> {}; // for FMM translations - M2M, M2L, M2T
+struct Stokes3D_FxUP : public GenericKernel<kernel_impl::Stokes3D_FxUP> {};
 
 }  // end namespace
 

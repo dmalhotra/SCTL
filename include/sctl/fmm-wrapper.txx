@@ -77,15 +77,20 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& 
 template <Integer DIM, class Real> void BoundingBox(StaticArray<Real,DIM*2>& bbox, const Vector<Real>& X, const Comm& comm) {
   const Long N = X.Dim()/DIM;
   SCTL_ASSERT(X.Dim() == N * DIM);
-  if (!N) {
-    for (Integer k = 0; k < DIM*2; k++) bbox[k] = 0;
-    return;
-  }
 
   StaticArray<Real, DIM> bbox0, bbox1;
-  for (Integer k = 0; k < DIM; k++) {
-    bbox0[k] = X[k];
-    bbox1[k] = X[k];
+  { // Init bbox0, bbox1
+    for (Integer k = 0; k < DIM; k++) {
+      bbox0[k] = bbox1[k] = (N ? X[k] : (Real)0);
+    }
+
+    // Handle (N == 0) case
+    StaticArray<Real, DIM> bbox0_glb, bbox1_glb;
+    comm.Allreduce((ConstIterator<Real>)bbox0, (Iterator<Real>)bbox0_glb, DIM, Comm::CommOp::MIN);
+    comm.Allreduce((ConstIterator<Real>)bbox1, (Iterator<Real>)bbox1_glb, DIM, Comm::CommOp::MAX);
+    for (Integer k = 0; k < DIM; k++) {
+      bbox0[k] = bbox1[k] = (fabs(bbox0_glb[k]) > fabs(bbox1_glb[k]) ? bbox0_glb[k] : bbox1_glb[k]);
+    }
   }
   for (Long i = 0; i < N; i++) {
     for (Integer k = 0; k < DIM; k++) {
@@ -293,7 +298,7 @@ template <class Real, Integer DIM> template <class KerS2T> void ParticleFMM<Real
 
   #ifdef SCTL_HAVE_PVFMM
   if (DIM == 3) {
-    BuildSrcTrgScal(data);
+    BuildSrcTrgScal(data, !comm_.Rank());
     if (data.dim_normal) {
       data.pvfmm_ker_s2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerS2T,true>::template Eval<Real>, PVFMMKernelFn<KerS2T>::template Eval<Real>>(ker_s2t.Name().c_str(), DIM, std::pair<int,int>(ker_s2t.SrcDim(), ker_s2t.TrgDim()));
     } else {
@@ -493,7 +498,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::CheckKernelDims()
   }
 }
 
-template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(const S2TData& data) {
+template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(const S2TData& data, bool verbose) {
   const StaticArray<Integer,2> kdim{data.dim_src, data.dim_trg};
   const Integer dim_normal = data.dim_normal;
   const Real eps=machine_eps<Real>();
@@ -631,7 +636,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(c
   }
 
   #ifdef SCTL_VERBOSE
-  if (scale_invar && kdim[0]*kdim[1] > 0) {
+  if (verbose && scale_invar && kdim[0]*kdim[1] > 0) {
     std::cout<<"Scaling Matrix :\n";
     Matrix<Real> Src(kdim[0],1);
     Matrix<Real> Trg(1,kdim[1]);

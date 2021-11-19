@@ -133,7 +133,7 @@ template <class Real, Integer DIM> class ParticleFMM {
       #endif
     };
 
-    static void BuildSrcTrgScal(const S2TData& s2t_data);
+    static void BuildSrcTrgScal(const S2TData& s2t_data, bool verbose);
 
     template <class Ker> static void DeleteKer(Iterator<char> ker);
 
