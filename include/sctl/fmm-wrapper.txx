@@ -143,15 +143,15 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetComm(const Com
 }
 
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetAccuracy(Integer digits) {
-  digits_ = digits;
   #ifdef SCTL_HAVE_PVFMM
-  if (DIM == 3) {
+  if (DIM == 3 && digits != digits_) {
     for (auto& it : s2t_map) {
       it.second.setup_ker = true;
       it.second.setup_tree = true;
     }
   }
   #endif
+  digits_ = digits;
 }
 
 template <class Real, Integer DIM> template <class KerM2M, class KerM2L, class KerL2L> void ParticleFMM<Real,DIM>::SetKernels(const KerM2M& ker_m2m, const KerM2L& ker_m2l, const KerL2L& ker_l2l) {
@@ -690,7 +690,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
   SCTL_ASSERT(Xt.Dim() == Nt * DIM);
   { // User EvalDirect for small problems
     StaticArray<Long,2> cnt{Nt,0};
-    comm_.Allreduce<Long>(cnt+0, cnt+1, 1, Comm::CommOp::MAX);
+    comm_.Allreduce<Long>(cnt+0, cnt+1, 1, Comm::CommOp::SUM);
     if (cnt[1] < 40000) return EvalDirect(U, trg_name);
   }
   if (U.Dim() != Nt * TrgDim) {
@@ -720,7 +720,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
     if (!Ns) continue;
 
     { // Run FMM
-      const Integer max_pts=500, mult_order = ((Integer)(digits_*0.55))*2; // TODO: use better estimates
+      const Integer max_pts=3000, mult_order = ((Integer)(digits_*0.55))*2; // TODO: use better estimates
 
       pvfmm::PtFMM<Real>& fmm_ctx = s2t_data.fmm_ctx;
       if (s2t_data.setup_ker) { // Setup fmm_ctx
@@ -814,6 +814,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
 
       std::vector<Real> trg_value;
       PtFMM_Evaluate(tree_ptr, trg_value, Nt, &sl_den_, &dl_den_);
+      //pvfmm::Profile::print(&comm_.GetMPI_Comm());
       SCTL_ASSERT(trg_value.size() == (size_t)(Nt*TrgDim));
       for (Long i = 0; i < Nt; i++) {
         for (Long j = 0; j < TrgDim; j++) {
