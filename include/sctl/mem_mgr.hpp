@@ -2,7 +2,7 @@
 #ifndef _SCTL_MEM_MGR_HPP_
 #define _SCTL_MEM_MGR_HPP_
 
-#include <mutex>
+//#include <mutex>
 
 #include SCTL_INCLUDE(common.hpp)
 
@@ -407,7 +407,7 @@ class MemoryManager {
   mutable std::stack<Long> node_stack;         // stack of available free MemNodes from node_buff.
   mutable std::multimap<Long, Long> free_map;  // pair (MemNode.size, MemNode_id) for all free MemNodes.
   //mutable omp_lock_t omp_lock;                 // openmp lock to prevent concurrent changes.
-  mutable std::mutex mutex_lock;
+  //mutable std::mutex mutex_lock;
   mutable std::set<void*> system_malloc;       // track pointers allocated using system malloc.
 };
 

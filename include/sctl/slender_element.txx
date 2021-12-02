@@ -1040,7 +1040,7 @@ namespace SCTL_NAMESPACE {
     static Vector<Vector<Vector<RealType>>> all_quad_nds_cos_theta(100);
     static Vector<Vector<Vector<RealType>>> all_quad_nds_sin_theta(100);
     static Vector<Vector<Vector<RealType>>> all_quad_wts(100);
-    #pragma omp critical (ToroidalSpecialQuadRule)
+    #pragma omp critical(SCTL_ToroidalSpecialQuadRule)
     if (all_quad_wts[Nmodes].Dim() == 0) {
       auto quad_rules = BuildToroidalSpecialQuadRules<RealType,Kernel>(Nmodes);
       const Long Nrules = quad_rules.Dim()/3;
@@ -1557,7 +1557,7 @@ namespace SCTL_NAMESPACE {
         };
         static Vector<Vector<std::pair<Vector<Real>,Vector<Real>>>> nds_wts_lst(MaxChebOrder);
         SCTL_ASSERT(ChebOrder < MaxChebOrder);
-        #pragma omp critical (SpecialQuadRule)
+        #pragma omp critical(SCTL_SpecialQuadRule)
         if (!nds_wts_lst[ChebOrder].Dim()) {
           auto nds_wts_lst0 = load_special_quad_rule(ChebOrder);
           nds_wts_lst[ChebOrder].Swap(nds_wts_lst0);

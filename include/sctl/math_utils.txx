@@ -79,7 +79,7 @@ template <class Real> static inline Real sin_generic(const Real a) {
   static std::vector<Real> sinval;
   static std::vector<Real> cosval;
   if (theta.size() == 0) {
-#pragma omp critical(QUAD_SIN)
+#pragma omp critical(SCTL_QUAD_SIN)
     if (theta.size() == 0) {
       sinval.resize(N);
       cosval.resize(N);
@@ -122,7 +122,7 @@ template <class Real> static inline Real cos_generic(const Real a) {
   static std::vector<Real> sinval;
   static std::vector<Real> cosval;
   if (theta.size() == 0) {
-#pragma omp critical(QUAD_COS)
+#pragma omp critical(SCTL_QUAD_COS)
     if (theta.size() == 0) {
       sinval.resize(N);
       cosval.resize(N);
@@ -176,7 +176,7 @@ template <class Real> static inline Real exp_generic(const Real a) {
   static std::vector<Real> expval0;
   static std::vector<Real> expval1;
   if (theta0.size() == 0) {
-#pragma omp critical(QUAD_EXP)
+#pragma omp critical(SCTL_QUAD_EXP)
     if (theta0.size() == 0) {
       std::vector<Real> theta0_(N);
       theta1.resize(N);

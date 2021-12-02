@@ -376,7 +376,7 @@ template <class ValueType> class FFT : public FFT_Base<ValueType, FFT<ValueType>
 static inline void FFTWInitThreads(Integer Nthreads) {
 #ifdef SCTL_FFTW_THREADS
   static bool first_time = true;
-  #pragma omp critical
+  #pragma omp critical(SCTL_FFTW_INIT_THREADS)
   if (first_time) {
     fftw_init_threads();
     first_time = false;

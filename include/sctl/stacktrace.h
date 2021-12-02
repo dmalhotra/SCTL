@@ -74,7 +74,7 @@ inline void abortHandler(int signum, siginfo_t* si, void* unused) {
   SCTL_UNUSED(unused);
   SCTL_UNUSED(si);
 
-#pragma omp critical(STACK_TRACE)
+#pragma omp critical(SCTL_STACK_TRACE)
   if (first_time) {
     first_time = false;
     const char* name = nullptr;
