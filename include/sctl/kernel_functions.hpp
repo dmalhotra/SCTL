@@ -327,6 +327,9 @@ struct Laplace3D_FxU {
     static const std::string name = "Laplace3D-FxU";
     return name;
   }
+  static constexpr Integer FLOPS() {
+    return 6;
+  }
   template <class Real> static constexpr Real uKerScaleFactor() {
     return 1 / (4 * const_pi<Real>());
   }
@@ -340,6 +343,9 @@ struct Laplace3D_DxU {
   static const std::string& Name() {
     static const std::string name = "Laplace3D-DxU";
     return name;
+  }
+  static constexpr Integer FLOPS() {
+    return 14;
   }
   template <class Real> static constexpr Real uKerScaleFactor() {
     return 1 / (4 * const_pi<Real>());
@@ -357,6 +363,9 @@ struct Laplace3D_FxdU {
     static const std::string name = "Laplace3D-FxdU";
     return name;
   }
+  static constexpr Integer FLOPS() {
+    return 11;
+  }
   template <class Real> static constexpr Real uKerScaleFactor() {
     return -1 / (4 * const_pi<Real>());
   }
@@ -373,6 +382,9 @@ struct Stokes3D_FxU {
   static const std::string& Name() {
     static const std::string name = "Stokes3D-FxU";
     return name;
+  }
+  static constexpr Integer FLOPS() {
+    return 23;
   }
   template <class Real> static constexpr Real uKerScaleFactor() {
     return 1 / (8 * const_pi<Real>());
@@ -393,6 +405,9 @@ struct Stokes3D_DxU {
     static const std::string name = "Stokes3D-DxU";
     return name;
   }
+  static constexpr Integer FLOPS() {
+    return 26;
+  }
   template <class Real> static constexpr Real uKerScaleFactor() {
     return 3 / (4 * const_pi<Real>());
   }
@@ -401,10 +416,10 @@ struct Stokes3D_DxU {
     VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
     VecType rinv2 = rinv*rinv;
     VecType rinv5 = rinv2*rinv2*rinv;
-    VecType rdotn = r[0]*n[0] + r[1]*n[1] + r[2]*n[2];
+    VecType rdotn_rinv5 = (r[0]*n[0] + r[1]*n[1] + r[2]*n[2])*rinv5;
     for (Integer i = 0; i < 3; i++) {
       for (Integer j = 0; j < 3; j++) {
-        u[i][j] = r[i]*r[j]*rdotn*rinv5;
+        u[i][j] = r[i]*r[j]*rdotn_rinv5;
       }
     }
   }
@@ -413,6 +428,9 @@ struct Stokes3D_FxT {
   static const std::string& Name() {
     static const std::string name = "Stokes3D-FxT";
     return name;
+  }
+  static constexpr Integer FLOPS() {
+    return 39;
   }
   template <class Real> static constexpr Real uKerScaleFactor() {
     return -3 / (4 * const_pi<Real>());
@@ -436,6 +454,9 @@ struct Stokes3D_FSxU {
     static const std::string name = "Stokes3D-FSxU";
     return name;
   }
+  static constexpr Integer FLOPS() {
+    return 26;
+  }
   template <class Real> static constexpr Real uKerScaleFactor() {
     return 1 / (8 * const_pi<Real>());
   }
@@ -458,6 +479,9 @@ struct Stokes3D_FxUP {
     static const std::string name = "Stokes3D-FxUP";
     return name;
   }
+  static constexpr Integer FLOPS() {
+    return 26;
+  }
   template <class Real> static constexpr Real uKerScaleFactor() {
     return 1 / (8 * const_pi<Real>());
   }
@@ -470,7 +494,9 @@ struct Stokes3D_FxUP {
         u[i][j] = (i==j ? rinv : VecType::Zero()) + r[i]*r[j]*rinv3;
       }
     }
-    for (Integer i = 0; i < 3; i++) u[i][3] = r[i]*rinv3;
+    for (Integer i = 0; i < 3; i++) {
+      u[i][3] = r[i]*rinv3;
+    }
   }
 };
 }  // namespace kernel_impl

@@ -649,7 +649,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(c
 
 #ifdef SCTL_HAVE_PVFMM
 template <class Real, Integer DIM> template <class SCTLKernel, bool use_dummy_normal> struct ParticleFMM<Real,DIM>::PVFMMKernelFn : public pvfmm::GenericKernel<PVFMMKernelFn<SCTLKernel, use_dummy_normal>> {
-  static const int FLOPS = 0;
+  static const int FLOPS = SCTLKernel::FLOPS() + 2*SCTLKernel::SrcDim()*SCTLKernel::TrgDim();;
 
   template <class ValueType> static ValueType ScaleFactor();
 
