@@ -2165,7 +2165,7 @@ namespace SCTL_NAMESPACE { // AVX
     static VecData<double,4> eval(const VecData<double,4>& a, const Mask<VecData<double,4>>& m) {
       #if defined(__AVX512F__) || defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
-      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_maskz_rsqrt14_pd(_mm256_movepi32_mask(_mm256_castpd_si256(m.v)), a.v), a.v);
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_maskz_rsqrt14_pd(_mm256_movepi64_mask(_mm256_castpd_si256(m.v)), a.v), a.v);
       #else
       constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(and_intrin(VecData<double,4>(_mm256_cvtps_pd(_mm_rsqrt_ps(_mm256_cvtpd_ps(a.v)))), convert_mask2vec_intrin(m)), a.v);

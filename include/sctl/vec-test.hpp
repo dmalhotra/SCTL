@@ -341,24 +341,30 @@ namespace SCTL_NAMESPACE {
       }
 
       static void test_reals_rsqrt() {
-        UnionType u1, u2, u3;
+        UnionType u1, b1, b2, u2, u3, u4, u5;
         for (Integer i = 0; i < N; i++) {
           u1.x[i] = (ScalarType)rand();
+          b1.x[i] = (ScalarType)rand();
+          b2.x[i] = (ScalarType)rand();
         }
 
         u2.v = approx_rsqrt<4>(u1.v);
         u3.v = approx_rsqrt<7>(u1.v);
+        u4.v = approx_rsqrt<4>(u1.v, b1.v>b2.v);
+        u5.v = approx_rsqrt<7>(u1.v, b1.v>b2.v);
         for (Integer i = 0; i < N; i++) {
           ScalarType err = fabs(u2.x[i] - 1/sqrt<ScalarType>(u1.x[i]));
           ScalarType max_val = fabs(1/sqrt<ScalarType>(u1.x[i]));
           ScalarType rel_err = err / max_val;
           SCTL_ASSERT(rel_err < (pow<11,ScalarType>((ScalarType)0.5)));
+          SCTL_ASSERT(u4.x[i] == (b1.x[i]>b2.x[i] ? u2.x[i] : 0));
         }
         for (Integer i = 0; i < N; i++) {
           ScalarType err = fabs((ScalarType)(u3.x[i] - 1/sqrt((double)u1.x[i]))); // float is not accurate enough to compute reference solution with 7-digits
           ScalarType max_val = fabs(1/sqrt<ScalarType>(u1.x[i]));
           ScalarType rel_err = err / max_val;
           SCTL_ASSERT(rel_err < (pow<22,ScalarType>((ScalarType)0.5)));
+          SCTL_ASSERT(u5.x[i] == (b1.x[i]>b2.x[i] ? u3.x[i] : 0));
         }
       }
 

@@ -87,9 +87,9 @@ class QuadReal {
 
     friend QuadReal round(const QuadReal& x) {
       #ifdef __SIZEOF_INT128__
-      return (__int128)((x+0.5).val)-(x<0);
+      return (__int128)((x+(QuadReal)0.5).val)-(x<(QuadReal)-0.5);
       #else
-      return (int64_t)((x+0.5).val)-(x<0);
+      return (int64_t)((x+(QuadReal)0.5).val)-(x<(QuadReal)-0.5);
       #endif
     }
 
