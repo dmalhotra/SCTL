@@ -144,7 +144,12 @@ namespace SCTL_NAMESPACE {
 
 
   template <class Real, Integer Nm, Integer Nr, Integer Nt> template <class Kernel> void ToroidalGreensFn<Real,Nm,Nr,Nt>::Setup(const Kernel& ker, Real R0) {
-    PrecompToroidalGreensFn<QuadReal>(ker, R0);
+    #ifdef SCTL_QUAD_T
+    using ValueType = QuadReal;
+    #else
+    using ValueType = long double;
+    #endif
+    PrecompToroidalGreensFn<ValueType>(ker, R0);
   }
 
   template <class Real, Integer Nm, Integer Nr, Integer Nt> template <class Kernel> void ToroidalGreensFn<Real,Nm,Nr,Nt>::BuildOperatorModal(Matrix<Real>& M, const Real x0, const Real x1, const Real x2, const Kernel& ker) const {
@@ -799,29 +804,34 @@ namespace SCTL_NAMESPACE {
   template <class ValueType> static const std::pair<Vector<ValueType>,Vector<ValueType>>& LogSingularityQuadRule(Integer ORDER) {
     constexpr Integer MaxOrder = 50;
     auto compute_nds_wts_lst = [MaxOrder]() {
-      Vector<Vector<QuadReal>> data;
-      ReadFile<QuadReal>(data, "data/log_quad");
+      #ifdef SCTL_QUAD_T
+      using RealType = QuadReal;
+      #else
+      using RealType = long double;
+      #endif
+      Vector<Vector<RealType>> data;
+      ReadFile<RealType>(data, "data/log_quad");
       if (data.Dim() < MaxOrder*2) {
         data.ReInit(MaxOrder*2);
         #pragma omp parallel for
         for (Integer order = 1; order < MaxOrder; order++) {
-          auto integrands = [order](const Vector<QuadReal>& nds) {
+          auto integrands = [order](const Vector<RealType>& nds) {
             const Integer K = order;
             const Long N = nds.Dim();
-            Matrix<QuadReal> M(N,K);
+            Matrix<RealType> M(N,K);
             for (Long j = 0; j < N; j++) {
               for (Long i = 0; i < (K+1)/2; i++) {
-                M[j][i] = pow<QuadReal,Long>(nds[j],i);
+                M[j][i] = pow<RealType,Long>(nds[j],i);
               }
               for (Long i = (K+1)/2; i < K; i++) {
-                M[j][i] = pow<QuadReal,Long>(nds[j],i-(K+1)/2) * log<QuadReal>(nds[j]);
+                M[j][i] = pow<RealType,Long>(nds[j],i-(K+1)/2) * log<RealType>(nds[j]);
               }
             }
             return M;
           };
-          InterpQuadRule<QuadReal>::Build(data[order*2+0], data[order*2+1], integrands, false, 1e-20, order, 2e-4, 1.0); // TODO: diagnose accuracy issues
+          InterpQuadRule<RealType>::Build(data[order*2+0], data[order*2+1], integrands, false, 1e-20, order, 2e-4, 1.0); // TODO: diagnose accuracy issues
         }
-        WriteFile<QuadReal>(data, "data/log_quad");
+        WriteFile<RealType>(data, "data/log_quad");
       }
 
       Vector<std::pair<Vector<ValueType>,Vector<ValueType>>> nds_wts_lst(MaxOrder);
@@ -852,7 +862,11 @@ namespace SCTL_NAMESPACE {
     constexpr Integer crossover_adap_depth = 2;
     constexpr Integer max_digits = 20;
 
+    #ifdef SCTL_QUAD_T
     using ValueType = QuadReal;
+    #else
+    using ValueType = long double;
+    #endif
     Vector<Vector<ValueType>> data;
     const std::string fname = std::string("data/toroidal_quad_rule_m") + std::to_string(Nmodes) + "_" + Kernel::Name();
     ReadFile(data, fname);
@@ -1520,8 +1534,12 @@ namespace SCTL_NAMESPACE {
     if (!adap_quad) {
       auto quad_rule = [&ChebOrder,&digits,&max_adap_depth,MaxChebOrder](Real radius, Real length, const Integer trg_node_idx) -> std::pair<Vector<Real>,Vector<Real>> {
         auto load_special_quad_rule = [&max_adap_depth](const Integer ChebOrder){
-          const std::string fname = std::string("data/special_quad_q") + std::to_string(ChebOrder) + "_" + Kernel::Name() + (trg_dot_prod ? "_dotXn" : "");
+          #ifdef SCTL_QUAD_T
           using ValueType = QuadReal;
+          #else
+          using ValueType = long double;
+          #endif
+          const std::string fname = std::string("data/special_quad_q") + std::to_string(ChebOrder) + "_" + Kernel::Name() + (trg_dot_prod ? "_dotXn" : "");
 
           Vector<Vector<ValueType>> data;
           ReadFile(data, fname);
