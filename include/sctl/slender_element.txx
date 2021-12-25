@@ -529,22 +529,22 @@ namespace SCTL_NAMESPACE {
     auto get_sin_theta = [](Long N){
       Vector<Real> sin_theta(N);
       for (Long i = 0; i < N; i++) {
-        sin_theta[i] = sin(2*const_pi<Real>()*i/N);
+        sin_theta[i] = sin<Real>(2*const_pi<Real>()*i/N);
       }
       return sin_theta;
     };
     auto get_cos_theta = [](Long N){
       Vector<Real> cos_theta(N);
       for (Long i = 0; i < N; i++) {
-        cos_theta[i] = cos(2*const_pi<Real>()*i/N);
+        cos_theta[i] = cos<Real>(2*const_pi<Real>()*i/N);
       }
       return cos_theta;
     };
     auto get_circle_coord = [](Long N, Real R0){
       Vector<Real> X(N*COORD_DIM);
       for (Long i = 0; i < N; i++) {
-        X[i*COORD_DIM+0] = R0*cos(2*const_pi<Real>()*i/N);
-        X[i*COORD_DIM+1] = R0*sin(2*const_pi<Real>()*i/N);
+        X[i*COORD_DIM+0] = R0*cos<Real>(2*const_pi<Real>()*i/N);
+        X[i*COORD_DIM+1] = R0*sin<Real>(2*const_pi<Real>()*i/N);
         X[i*COORD_DIM+2] = 0;
       }
       return X;
@@ -709,8 +709,8 @@ namespace SCTL_NAMESPACE {
       for (Long i = 0; i < Nnodes; i++) {
         Real theta = 2*const_pi<Real>()*i/Nnodes;
         for (Long k = 0; k < Nmodes; k++) {
-          M_fourier[k*2+0][i] = cos(k*theta);
-          M_fourier[k*2+1][i] = sin(k*theta);
+          M_fourier[k*2+0][i] = cos<Real>(k*theta);
+          M_fourier[k*2+1][i] = sin<Real>(k*theta);
         }
       }
       return M_fourier;
@@ -739,8 +739,8 @@ namespace SCTL_NAMESPACE {
       for (Long i = 0; i < Nnodes; i++) {
         Real theta = 2*const_pi<Real>()*i/Nnodes;
         for (Long k = 0; k < Nmodes; k++) {
-          M_fourier_inv[i][k*2+0] = cos(k*theta)*scal;
-          M_fourier_inv[i][k*2+1] = sin(k*theta)*scal;
+          M_fourier_inv[i][k*2+0] = cos<Real>(k*theta)*scal;
+          M_fourier_inv[i][k*2+1] = sin<Real>(k*theta)*scal;
         }
       }
       for (Long i = 0; i < Nnodes; i++) {
@@ -926,20 +926,25 @@ namespace SCTL_NAMESPACE {
 
             Long Nnds = nds.Dim();
             Vector<Complex<ValueType>> exp_itheta(Nnds), exp_iktheta(Nnds);
-            Vector<ValueType> Xsrc(Nnds*COORD_DIM);
+            Vector<ValueType> Xsrc(Nnds*COORD_DIM), Xn(Nnds*COORD_DIM);
             for (Long i = 0; i < Nnds; i++) {
-              exp_itheta[i].real = cos(2*const_pi<ValueType>()*nds[i]);
-              exp_itheta[i].imag = sin(2*const_pi<ValueType>()*nds[i]);
+              const ValueType cos_t = cos<ValueType>(2*const_pi<ValueType>()*nds[i]);
+              const ValueType sin_t = sin<ValueType>(2*const_pi<ValueType>()*nds[i]);
               exp_iktheta[i].real = 1;
               exp_iktheta[i].imag = 0;
-              Xsrc[i*COORD_DIM+0] = -2*sin(const_pi<ValueType>()*nds[i])*sin(const_pi<ValueType>()*nds[i]);
-              Xsrc[i*COORD_DIM+1] = sin(2*const_pi<ValueType>()*nds[i]);
+              exp_itheta[i].real = cos_t;
+              exp_itheta[i].imag = sin_t;
+              Xsrc[i*COORD_DIM+0] = -2*sin<ValueType>(const_pi<ValueType>()*nds[i])*sin<ValueType>(const_pi<ValueType>()*nds[i]); // == cos_t - 1
+              Xsrc[i*COORD_DIM+1] = sin_t;
               Xsrc[i*COORD_DIM+2] = 0;
+              Xn[i*COORD_DIM+0] = cos_t;
+              Xn[i*COORD_DIM+1] = sin_t;
+              Xn[i*COORD_DIM+2] = 0;
             }
 
             Kernel ker;
             Matrix<ValueType> Mker;
-            ker.KernelMatrix(Mker, Xtrg, Xsrc, Xsrc);
+            ker.KernelMatrix(Mker, Xtrg, Xsrc, Xn);
             SCTL_ASSERT(Mker.Dim(0) == Nnds * Kernel::SrcDim());
             SCTL_ASSERT(Mker.Dim(1) == Ntrg * Kernel::TrgDim());
 
