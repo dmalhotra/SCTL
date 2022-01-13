@@ -2377,15 +2377,14 @@ namespace SCTL_NAMESPACE {
         e1.PushBack(a);
       }
 
-      Integer ChebOrder = -1, FourierOrder = -1;
-      if (!iss.eof()) {
-        iss>>ChebOrder>>FourierOrder;
-        SCTL_ASSERT(!iss.fail());
+      Integer ChebOrder, FourierOrder;
+      if (iss>>ChebOrder>>FourierOrder) {
+        cheb_order_.PushBack(ChebOrder);
+        fourier_order_.PushBack(FourierOrder);
+      } else {
+        cheb_order_.PushBack(-1);
+        fourier_order_.PushBack(-1);
       }
-      cheb_order_.PushBack(ChebOrder);
-      fourier_order_.PushBack(FourierOrder);
-
-      SCTL_ASSERT(iss.eof());
     }
     file.close();
 
