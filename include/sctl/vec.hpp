@@ -228,7 +228,8 @@ namespace SCTL_NAMESPACE {
         return os;
       }
 
-      VData& get() { return v; }
+      void set(const VData& v_) { v = v_; }
+      const VData& get() const { return v; }
 
     private:
 
