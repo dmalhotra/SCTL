@@ -228,6 +228,8 @@ namespace SCTL_NAMESPACE {
         return os;
       }
 
+      VData& get() { return v; }
+
     private:
 
       template <class T, class... T2> struct InitVec {
