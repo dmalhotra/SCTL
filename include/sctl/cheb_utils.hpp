@@ -1,10 +1,10 @@
 #ifndef _SCTL_CHEB_UTILS_HPP_
 #define _SCTL_CHEB_UTILS_HPP_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(matrix.hpp)
 #include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(legendre_rule.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 #include <type_traits>
 #include <functional>

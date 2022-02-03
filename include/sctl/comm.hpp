@@ -1,7 +1,7 @@
 #ifndef _SCTL_COMM_HPP_
 #define _SCTL_COMM_HPP_
 
-#include SCTL_INCLUDE(common.hpp)
+#include <sctl/common.hpp>
 
 #include <map>
 #include <stack>

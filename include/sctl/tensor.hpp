@@ -1,9 +1,9 @@
 #ifndef _SCTL_TENSOR_HPP_
 #define _SCTL_TENSOR_HPP_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(math_utils.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 #include <iostream>
 #include <iomanip>

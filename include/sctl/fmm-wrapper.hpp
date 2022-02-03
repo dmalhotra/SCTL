@@ -1,9 +1,9 @@
 #ifndef _SCTL_FMM_WRAPPER_HPP_
 #define _SCTL_FMM_WRAPPER_HPP_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(comm.hpp)
 #include SCTL_INCLUDE(mem_mgr.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 #include <map>
 #include <string>

@@ -3,22 +3,7 @@
 #ifndef _SCTL_HPP_
 #define _SCTL_HPP_
 
-#define SCTL_NAMESPACE sctl
-
-// Profiling parameters
-#ifndef SCTL_PROFILE
-#define SCTL_PROFILE -1 // Granularity level
-#endif
-
-// Parameters for memory manager
-#define SCTL_MEM_ALIGN 64
-#ifndef SCTL_GLOBAL_MEM_BUFF
-#define SCTL_GLOBAL_MEM_BUFF 1024LL * 0LL  // in MB
-#endif
-
-#define SCTL_QUOTEME(x) SCTL_QUOTEME_1(x)
-#define SCTL_QUOTEME_1(x) #x
-#define SCTL_INCLUDE(x) SCTL_QUOTEME(SCTL_NAMESPACE/x)
+#include <sctl/common.hpp>
 
 // Import PVFMM preprocessor macro definitions
 #ifdef SCTL_HAVE_PVFMM

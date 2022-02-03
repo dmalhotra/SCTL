@@ -1,8 +1,8 @@
 #ifndef _SCTL_ODE_SOLVER_
 #define _SCTL_ODE_SOLVER_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(math_utils.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 #include <functional>
 

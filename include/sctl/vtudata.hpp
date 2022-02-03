@@ -1,10 +1,10 @@
 #ifndef _SCTL_VTUDATA_
 #define _SCTL_VTUDATA_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(comm.hpp)
 #include SCTL_INCLUDE(vector.hpp)
 #include SCTL_INCLUDE(mem_mgr.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 namespace SCTL_NAMESPACE {
 

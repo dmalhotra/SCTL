@@ -1,8 +1,8 @@
 #ifndef _SCTL_INTRIN_WRAPPER_HPP_
 #define _SCTL_INTRIN_WRAPPER_HPP_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(math_utils.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 #ifdef __SSE__
 #include <xmmintrin.h>

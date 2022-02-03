@@ -1,11 +1,11 @@
 #ifndef _SCTL_TREE_
 #define _SCTL_TREE_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(comm.hpp)
 #include SCTL_INCLUDE(morton.hpp)
 #include SCTL_INCLUDE(vtudata.hpp)
 #include SCTL_INCLUDE(ompUtils.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 #include <string>
 #include <vector>

@@ -1,7 +1,7 @@
 #ifndef _SCTL_VECTOR_HPP_
 #define _SCTL_VECTOR_HPP_
 
-#include SCTL_INCLUDE(common.hpp)
+#include <sctl/common.hpp>
 
 #include <vector>
 #include <cstdlib>

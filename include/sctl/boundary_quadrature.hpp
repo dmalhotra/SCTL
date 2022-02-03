@@ -1,13 +1,13 @@
 #ifndef _SCTL_BOUNDARY_QUADRATURE_HPP_
 #define _SCTL_BOUNDARY_QUADRATURE_HPP_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(kernel_functions.hpp)
 #include SCTL_INCLUDE(tree.hpp)
 #include SCTL_INCLUDE(cheb_utils.hpp)
 #include SCTL_INCLUDE(fmm-wrapper.hpp)
 #include SCTL_INCLUDE(tensor.hpp)
 #include SCTL_INCLUDE(profile.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 #include <mutex>
 #include <atomic>

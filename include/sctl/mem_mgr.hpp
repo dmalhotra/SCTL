@@ -4,7 +4,7 @@
 
 //#include <mutex>
 
-#include SCTL_INCLUDE(common.hpp)
+#include <sctl/common.hpp>
 
 #include <omp.h>
 #include <typeinfo>

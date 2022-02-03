@@ -1,8 +1,8 @@
 #ifndef _SCTL_MORTON_
 #define _SCTL_MORTON_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(math_utils.hpp)
-#include SCTL_INCLUDE(common.hpp)
 #include <cstdint>
 
 #ifndef SCTL_MAX_DEPTH

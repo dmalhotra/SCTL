@@ -1,9 +1,9 @@
 #ifndef _SCTL_VEC_TEST_HPP_
 #define _SCTL_VEC_TEST_HPP_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(vec.hpp)
 #include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 #include <cassert>
 #include <cstdint>
@@ -334,6 +334,44 @@ namespace SCTL_NAMESPACE {
         v3 = exp(v0);
         for (Integer i = 0; i < N; i++) {
           ScalarType err_tol = std::max<ScalarType>((ScalarType)1.77e-15, (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5))); // TODO: fix for accuracy greater than 1.77e-15
+          SCTL_ASSERT(fabs(v1[i] - sin<ScalarType>(v0[i])) < err_tol);
+          SCTL_ASSERT(fabs(v2[i] - cos<ScalarType>(v0[i])) < err_tol);
+          SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i]))/fabs(exp<ScalarType>(v0[i])) < err_tol);
+        }
+
+        approx_sincos<3>(v1, v2, v0);
+        v3 = approx_exp<3>(v0);
+        for (Integer i = 0; i < N; i++) {
+          ScalarType err_tol = (ScalarType)1e-3;
+          SCTL_ASSERT(fabs(v1[i] - sin<ScalarType>(v0[i])) < err_tol);
+          SCTL_ASSERT(fabs(v2[i] - cos<ScalarType>(v0[i])) < err_tol);
+          SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i]))/fabs(exp<ScalarType>(v0[i])) < err_tol);
+        }
+
+        approx_sincos<5>(v1, v2, v0);
+        v3 = approx_exp<5>(v0);
+        for (Integer i = 0; i < N; i++) {
+          ScalarType err_tol = (ScalarType)1e-5;
+          SCTL_ASSERT(fabs(v1[i] - sin<ScalarType>(v0[i])) < err_tol);
+          SCTL_ASSERT(fabs(v2[i] - cos<ScalarType>(v0[i])) < err_tol);
+          SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i]))/fabs(exp<ScalarType>(v0[i])) < err_tol);
+        }
+
+        if (sizeof(ScalarType) < 16) return;
+
+        approx_sincos<8>(v1, v2, v0);
+        v3 = approx_exp<8>(v0);
+        for (Integer i = 0; i < N; i++) {
+          ScalarType err_tol = (ScalarType)1e-8;
+          SCTL_ASSERT(fabs(v1[i] - sin<ScalarType>(v0[i])) < err_tol);
+          SCTL_ASSERT(fabs(v2[i] - cos<ScalarType>(v0[i])) < err_tol);
+          SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i]))/fabs(exp<ScalarType>(v0[i])) < err_tol);
+        }
+
+        approx_sincos<12>(v1, v2, v0);
+        v3 = approx_exp<12>(v0);
+        for (Integer i = 0; i < N; i++) {
+          ScalarType err_tol = (ScalarType)1e-12;
           SCTL_ASSERT(fabs(v1[i] - sin<ScalarType>(v0[i])) < err_tol);
           SCTL_ASSERT(fabs(v2[i] - cos<ScalarType>(v0[i])) < err_tol);
           SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i]))/fabs(exp<ScalarType>(v0[i])) < err_tol);

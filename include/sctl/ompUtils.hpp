@@ -1,7 +1,7 @@
 #ifndef _SCTL_OMP_UTILS_H_
 #define _SCTL_OMP_UTILS_H_
 
-#include SCTL_INCLUDE(common.hpp)
+#include <sctl/common.hpp>
 
 #include <iterator>
 

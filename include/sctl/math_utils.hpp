@@ -1,7 +1,7 @@
 #ifndef _SCTL_MATH_UTILS_
 #define _SCTL_MATH_UTILS_
 
-#include SCTL_INCLUDE(common.hpp)
+#include <sctl/common.hpp>
 
 #include <cmath>
 #include <ostream>

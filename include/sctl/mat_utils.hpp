@@ -1,7 +1,7 @@
 #ifndef _SCTL_MAT_UTILS_
 #define _SCTL_MAT_UTILS_
 
-#include SCTL_INCLUDE(common.hpp)
+#include <sctl/common.hpp>
 
 namespace SCTL_NAMESPACE {
 namespace mat {

@@ -1,7 +1,7 @@
 #ifndef _SCTL_STACKTRACE_H_
 #define _SCTL_STACKTRACE_H_
 
-#include SCTL_INCLUDE(common.hpp)
+#include <sctl/common.hpp>
 
 #include <unistd.h>
 #include <signal.h>

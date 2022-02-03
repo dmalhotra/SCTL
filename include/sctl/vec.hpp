@@ -1,8 +1,8 @@
 #ifndef _SCTL_VEC_WRAPPER_HPP_
 #define _SCTL_VEC_WRAPPER_HPP_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(intrin-wrapper.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 #include <cassert>
 #include <cstdint>
@@ -210,9 +210,12 @@ namespace SCTL_NAMESPACE {
       friend void sincos(Vec& sinx, Vec& cosx, const Vec& x) {
         sincos_intrin(sinx.v, cosx.v, x.v);
       }
+      template <Integer digits, class RealVec> friend void approx_sincos(RealVec& sinx, RealVec& cosx, const RealVec& x);
+
       friend Vec exp(const Vec& x) {
         return exp_intrin(x.v);
       }
+      template <Integer digits, class RealVec> friend RealVec approx_exp(const RealVec& x);
 
 
       //template <class Vec1, class Vec2> friend Vec1 reinterpret(const Vec2& x);
@@ -254,10 +257,24 @@ namespace SCTL_NAMESPACE {
 
   // Special functions
   template <Integer digits, class RealVec> RealVec approx_rsqrt(const RealVec& x) {
-    return rsqrt_approx_intrin<digits, typename RealVec::VData>::eval(x.v);
+    static constexpr Integer digits_ = (digits==-1 ? (Integer)(TypeTraits<typename RealVec::ScalarType>::SigBits*0.3010299957) : digits);
+    return rsqrt_approx_intrin<digits_, typename RealVec::VData>::eval(x.v);
   }
   template <Integer digits, class RealVec> RealVec approx_rsqrt(const RealVec& x, const typename RealVec::MaskType& m) {
-    return rsqrt_approx_intrin<digits, typename RealVec::VData>::eval(x.v, m);
+    static constexpr Integer digits_ = (digits==-1 ? (Integer)(TypeTraits<typename RealVec::ScalarType>::SigBits*0.3010299957) : digits);
+    return rsqrt_approx_intrin<digits_, typename RealVec::VData>::eval(x.v, m);
+  }
+
+  template <Integer digits, class RealVec> void approx_sincos(RealVec& sinx, RealVec& cosx, const RealVec& x) {
+    constexpr Integer ORDER = (digits>1?digits>9?digits>14?digits>17?digits-1:digits:digits+1:digits+2:1);
+    if (digits == -1 || ORDER > 20) sincos(sinx, cosx, x);
+    else approx_sincos_intrin<ORDER>(sinx.v, cosx.v, x.v);
+  }
+
+  template <Integer digits, class RealVec> RealVec approx_exp(const RealVec& x) {
+    constexpr Integer ORDER = digits;
+    if (digits == -1 || ORDER > 13) return exp(x);
+    else return approx_exp_intrin<ORDER>(x.v);
   }
 
   // Other operators

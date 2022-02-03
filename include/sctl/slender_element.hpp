@@ -1,9 +1,9 @@
 #ifndef _SCTL_SLENDER_ELEMENT_HPP_
 #define _SCTL_SLENDER_ELEMENT_HPP_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 namespace SCTL_NAMESPACE {
 
