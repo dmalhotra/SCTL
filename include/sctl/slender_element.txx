@@ -12,73 +12,63 @@
 namespace SCTL_NAMESPACE {
 
   template <class Real> void LagrangeInterp<Real>::Interpolate(Vector<Real>& wts, const Vector<Real>& src_nds, const Vector<Real>& trg_nds) {
-    static constexpr Integer digits = (Integer)(TypeTraits<Real>::SigBits*0.3010299957);
     static constexpr Integer VecLen = DefaultVecLen<Real>();
     using VecType = Vec<Real, VecLen>;
     VecType vec_one((Real)1);
 
-    if (1) {
-      const Long Nsrc = src_nds.Dim();
-      const Long Ntrg = trg_nds.Dim();
-      const Long Ntrg_ = (Ntrg/VecLen)*VecLen;
-      if (wts.Dim() != Nsrc*Ntrg) wts.ReInit(Nsrc*Ntrg);
+    const Long Nsrc = src_nds.Dim();
+    const Long Ntrg = trg_nds.Dim();
+    const Long Ntrg_ = (Ntrg/VecLen)*VecLen;
+    if (wts.Dim() != Nsrc*Ntrg) wts.ReInit(Nsrc*Ntrg);
+    Matrix<Real> M(Nsrc, Ntrg, wts.begin(), false);
 
-      Matrix<Real> M(Nsrc, Ntrg, wts.begin(), false);
+    StaticArray<Real,50> w_buff;
+    Vector<Real> w(Nsrc, (Nsrc>=50?NullIterator<Real>():w_buff), (Nsrc>=50));
+    for (Integer j = 0; j < Nsrc; j++) {
+      Real w_inv = 1;
+      Real src_nds_j(src_nds[j]);
+      for (Integer k =   0; k <    j; k++) w_inv *= src_nds[k] - src_nds_j;
+      for (Integer k = j+1; k < Nsrc; k++) w_inv *= src_nds[k] - src_nds_j;
+      w[j] = 1/w_inv;
+    }
+
+    if (0) {
       for (Long i1 = 0; i1 < Ntrg_; i1+=VecLen) {
         VecType x = VecType::Load(&trg_nds[i1]);
         for (Integer j = 0; j < Nsrc; j++) {
-          VecType y(vec_one);
-          VecType src_nds_j(src_nds[j]);
-          for (Integer k = 0; k < j; k++) {
-            VecType src_nds_k(src_nds[k]);
-            VecType src_nds_kj = src_nds_k - src_nds_j;
-            VecType src_nds_kj_inv = approx_rsqrt<digits>(src_nds_kj*src_nds_kj);
-            y *= (src_nds_k - x) * src_nds_kj * src_nds_kj_inv * src_nds_kj_inv;
-          }
-          for (Integer k = j+1; k < Nsrc; k++) {
-            VecType src_nds_k(src_nds[k]);
-            VecType src_nds_kj = src_nds_k - src_nds_j;
-            VecType src_nds_kj_inv = approx_rsqrt<digits>(src_nds_kj*src_nds_kj);
-            y *= (src_nds_k - x) * src_nds_kj * src_nds_kj_inv * src_nds_kj_inv;
-          }
+          VecType y0(vec_one);
+          for (Integer k =   0; k <    j; k++) y0 *= VecType(src_nds[k]) - x;
+          for (Integer k = j+1; k < Nsrc; k++) y0 *= VecType(src_nds[k]) - x;
+          VecType y = y0 * w[j];
           y.Store(&M[j][i1]);
         }
       }
       for (Long i1 = Ntrg_; i1 < Ntrg; i1++) {
         Real x = trg_nds[i1];
         for (Integer j = 0; j < Nsrc; j++) {
-          Real y = 1;
-          for (Integer k = 0; k < j; k++) {
-            y *= (src_nds[k] - x) / (src_nds[k] - src_nds[j]);
-          }
-          for (Integer k = j+1; k < Nsrc; k++) {
-            y *= (src_nds[k] - x) / (src_nds[k] - src_nds[j]);
-          }
-          M[j][i1] = y;
+          Real y0 = 1;
+          for (Integer k =   0; k <    j; k++) y0 *= src_nds[k] - x;
+          for (Integer k = j+1; k < Nsrc; k++) y0 *= src_nds[k] - x;
+          M[j][i1] = y0 * w[j];
         }
       }
     }
-    if (0) { // Barycentric, numerically unstable (TODO: diagnose)
-      Long Nsrc = src_nds.Dim();
-      Long Ntrg = trg_nds.Dim();
-      if (wts.Dim() != Nsrc*Ntrg) wts.ReInit(Nsrc*Ntrg);
-      if (!wts.Dim()) return;
-      for (Long t = 0; t < Ntrg; t++) {
+    if (1) { // Barycentric // TODO: vectorize
+      //static constexpr Integer digits = (Integer)(TypeTraits<Real>::SigBits*0.3010299957);
+      for (Long t = 0; t< Ntrg; t++) {
+        Long s_ = -1;
         Real scal = 0;
-        Long overlap = -1;
         for (Long s = 0; s < Nsrc; s++) {
-          if (src_nds[s] == trg_nds[t]) overlap = s;
-          scal += 1.0/(src_nds[s]-trg_nds[t]) * (s%2?1.0:-1.0) * ((s==0)||(s==Nsrc-1)?0.5:1.0);
+          if (trg_nds[t] == src_nds[s]) s_ = s;
+          M[s][t] = w[s] / (trg_nds[t] - src_nds[s]);
+          scal += M[s][t];
         }
-        scal = 1.0 / scal;
-
-        if (overlap == -1) {
-          for (Long s = 0; s < Nsrc; s++) {
-            wts[s*Ntrg+t] = 1.0/(src_nds[s]-trg_nds[t]) * (s%2?1.0:-1.0) * ((s==0)||(s==Nsrc-1)?0.5:1.0) * scal;
-          }
+        if (s_ == -1) {
+          scal = 1/scal;
+          for (Long s = 0; s < Nsrc; s++) M[s][t] *= scal;
         } else {
-          for (Long s = 0; s < Nsrc; s++) wts[s*Ntrg+t] = 0;
-          wts[overlap*Ntrg+t] = 1;
+          for (Long s = 0; s < Nsrc; s++) M[s][t] = 0;
+          M[s_][t] = 1;
         }
       }
     }
@@ -1286,7 +1276,7 @@ namespace SCTL_NAMESPACE {
 
       coord[0*Ncheb+i] = 0;
       coord[1*Ncheb+i] = 0;
-      coord[2*Ncheb+i] = ChebQuadRule<ValueType>::nds(Ncheb)[i] * elem_length;
+      coord[2*Ncheb+i] = SlenderElemList<ValueType>::CenterlineNodes(Ncheb)[i] * elem_length;
 
       dx[0*Ncheb+i] = 0;
       dx[1*Ncheb+i] = 0;
@@ -1363,7 +1353,7 @@ namespace SCTL_NAMESPACE {
     { // Set Minterp_quad_nds
       Minterp_quad_nds.ReInit(Ncheb, quad_nds.Dim());
       Vector<ValueType> Vinterp_quad_nds(Ncheb*quad_nds.Dim(), Minterp_quad_nds.begin(), false);
-      LagrangeInterp<ValueType>::Interpolate(Vinterp_quad_nds, ChebQuadRule<ValueType>::nds(Ncheb), quad_nds);
+      LagrangeInterp<ValueType>::Interpolate(Vinterp_quad_nds, SlenderElemList<ValueType>::CenterlineNodes(Ncheb), quad_nds);
     }
 
     Matrix<ValueType> r_src, dr_src, x_src, dx_src, d2x_src, e1_src, e2_src, de1_src, de2_src;
@@ -1418,10 +1408,10 @@ namespace SCTL_NAMESPACE {
       }
     }
   }
-  template <Integer ModalUpsample, class ValueType, class Kernel, bool trg_dot_prod, bool symmetric=false/*must be set true for hypersingular kernels*/> static Vector<Vector<ValueType>> BuildSpecialQuadRules(const Integer Ncheb, const Integer FourierModes, const Integer trg_node_idx, const ValueType elem_length) {
-    constexpr Integer Nlen = 10; // number of length samples in [elem_length/sqrt(2), elem_length*sqrt(2)]
+  template <Integer ModalUpsample, class ValueType, class Kernel, bool trg_dot_prod, bool symmetric=true/*must be set true for hypersingular kernels*/> static Vector<Vector<ValueType>> BuildSpecialQuadRules(const Integer Ncheb, const Integer FourierModes, const Integer trg_node_idx, const ValueType elem_length) {
+    constexpr Integer Nlen = 20; // number of length samples in [elem_length/sqrt(2), elem_length*sqrt(2)]
     constexpr Integer max_digits = 19;
-    const ValueType s_trg = ChebQuadRule<ValueType>::nds(Ncheb)[trg_node_idx];
+    const ValueType s_trg = SlenderElemList<ValueType>::CenterlineNodes(Ncheb)[trg_node_idx];
     const Integer adap_depth = (Integer)(log<ValueType>(elem_length)/log<ValueType>(2)+4);
     const ValueType eps = 8*machine_eps<ValueType>();
 
@@ -1527,8 +1517,8 @@ namespace SCTL_NAMESPACE {
     }
     return nds_wts;
   }
-  template <Integer ModalUpsample, class Real, class Kernel, bool trg_dot_prod, bool adap_quad=false> static void SpecialQuadRule(Vector<Real>& nds, Vector<Real>& wts, Matrix<Real>& Minterp, const Integer ChebOrder, const Integer trg_node_idx, const Real elem_radius, const Real elem_length, const Integer digits) {
-    constexpr Integer max_adap_depth = 23; // TODO
+  template <Integer ModalUpsample, class Real, class Kernel, bool trg_dot_prod, bool adap_quad=false> static void SpecialQuadRule(Vector<Real>& nds, Vector<Real>& wts, const Integer ChebOrder, const Integer trg_node_idx, const Real elem_radius, const Real elem_length, const Integer digits) {
+    constexpr Integer max_adap_depth = 30+7; // TODO
     constexpr Integer MaxFourierModes = 8; // TODO
     constexpr Integer MaxChebOrder = 100;
     constexpr Integer max_digits = 19;
@@ -1537,19 +1527,20 @@ namespace SCTL_NAMESPACE {
     auto LegQuadOrder = [](Integer digits) { return digits; }; // TODO: determine optimal order
 
     if (!adap_quad) {
-      auto load_special_quad_rule = [&max_adap_depth](Vector<Vector<Real>>& nds_lst, Vector<Vector<Real>>& wts_lst, Vector<Matrix<Real>>& interp_mat_lst, const Integer ChebOrder){
+      auto load_special_quad_rule = [&max_adap_depth](Vector<Vector<Real>>& nds_lst, Vector<Vector<Real>>& wts_lst, const Integer ChebOrder){
         #ifdef SCTL_QUAD_T
         using ValueType = QuadReal;
         #else
         using ValueType = long double;
         #endif
         const std::string fname = std::string("data/special_quad_q") + std::to_string(ChebOrder) + "_" + Kernel::Name() + (trg_dot_prod ? "_dotXn" : "");
+        const auto cheb_nds_ = SlenderElemList<ValueType>::CenterlineNodes(ChebOrder);
 
         Vector<Vector<ValueType>> data;
         ReadFile(data, fname);
         if (data.Dim() != max_adap_depth*ChebOrder*max_digits*2) { // build quadrature rules
           data.ReInit(max_adap_depth*ChebOrder*max_digits*2);
-          ValueType length = 64*1024;
+          ValueType length = pow<max_adap_depth-7,ValueType>((ValueType)2);
           for (Integer i = 0; i < max_adap_depth; i++) {
             std::cout<<"length = "<<length<<'\n';
             for (Integer trg_node_idx = 0; trg_node_idx < ChebOrder; trg_node_idx++) {
@@ -1566,45 +1557,38 @@ namespace SCTL_NAMESPACE {
 
         nds_lst.ReInit(max_adap_depth*ChebOrder*max_digits);
         wts_lst.ReInit(max_adap_depth*ChebOrder*max_digits);
-        interp_mat_lst.ReInit(max_adap_depth*ChebOrder*max_digits);
         for (Long i = 0; i < max_adap_depth*ChebOrder*max_digits; i++) { // Set nds_wts_lst
+          const Long trg_node_idx = (i/max_digits)%ChebOrder;
           const auto& nds_ = data[i*2+0];
           const auto& wts_ = data[i*2+1];
+          const Long Nnds = wts_.Dim();
 
-          nds_lst[i].ReInit(nds_.Dim());
-          wts_lst[i].ReInit(wts_.Dim());
-          for (Long j = 0; j < nds_.Dim(); j++) {
-            nds_lst[i][j] = (Real)nds_[j];
+          nds_lst[i].ReInit(Nnds);
+          wts_lst[i].ReInit(Nnds);
+          for (Long j = 0; j < Nnds; j++) {
+            nds_lst[i][j] = (Real)(nds_[j] - cheb_nds_[trg_node_idx]);
             wts_lst[i][j] = (Real)wts_[j];
           }
-
-          Matrix<ValueType> Minterp(ChebOrder, nds_.Dim());
-          Vector<ValueType> Vinterp(ChebOrder*nds_.Dim(), Minterp.begin(), false);
-          LagrangeInterp<ValueType>::Interpolate(Vinterp, ChebQuadRule<ValueType>::nds(ChebOrder), nds_);
-
-          interp_mat_lst[i].ReInit(ChebOrder, nds_.Dim());
-          for (Long j = 0; j < ChebOrder*nds_.Dim(); j++) interp_mat_lst[i][0][j] = (Real)Minterp[0][j];
         }
       };
       static Vector<Vector<Vector<Real>>> nds_lst(MaxChebOrder);
       static Vector<Vector<Vector<Real>>> wts_lst(MaxChebOrder);
-      static Vector<Vector<Matrix<Real>>> interp_mat_lst(MaxChebOrder);
       SCTL_ASSERT(ChebOrder < MaxChebOrder);
       #pragma omp critical(SCTL_SpecialQuadRule)
-      if (!nds_lst[ChebOrder].Dim()) {
-        load_special_quad_rule(nds_lst[ChebOrder], wts_lst[ChebOrder], interp_mat_lst[ChebOrder], ChebOrder);
+      if (!wts_lst[ChebOrder].Dim()) {
+        load_special_quad_rule(nds_lst[ChebOrder], wts_lst[ChebOrder], ChebOrder);
       }
 
-      Long quad_idx = (Long)(16 - log2((double)(elem_length/elem_radius*sqrt<Real>(0.5))));
+      Long quad_idx = (Long)((max_adap_depth-7) - log2((double)(elem_length/elem_radius*sqrt<Real>(0.5))));
       if (quad_idx < 0 || quad_idx > max_adap_depth-1) {
         SCTL_WARN("Slender element aspect-ratio is outside of the range of precomputed quadratures; accuracy may be sverely degraded.");
       }
       quad_idx = std::max<Integer>(0, std::min<Integer>(max_adap_depth-1, quad_idx));
 
-      nds = nds_lst[ChebOrder][(quad_idx*ChebOrder+trg_node_idx) * max_digits+digits];
       wts = wts_lst[ChebOrder][(quad_idx*ChebOrder+trg_node_idx) * max_digits+digits];
-      Minterp = interp_mat_lst[ChebOrder][(quad_idx*ChebOrder+trg_node_idx) * max_digits+digits];
+      nds = nds_lst[ChebOrder][(quad_idx*ChebOrder+trg_node_idx) * max_digits+digits];
     } else {
+      const auto& cheb_nds = SlenderElemList<Real>::CenterlineNodes(ChebOrder);
       const auto& log_sing_nds_wts = LogSingularityQuadRule<Real>(LogSingularQuadOrder(digits));
       const auto& leg_nds_wts = LegendreQuadRule<Real>(LegQuadOrder(digits));
       const auto& sing_nds = log_sing_nds_wts.first;
@@ -1614,21 +1598,21 @@ namespace SCTL_NAMESPACE {
       nds.ReInit(0);
       wts.ReInit(0);
 
-      const Real s_trg = ChebQuadRule<Real>::nds(ChebOrder)[trg_node_idx];
+      const Real s_trg = cheb_nds[trg_node_idx];
       const Real sing_quad_len = std::min(0.8*elem_radius/elem_length, std::min(s_trg, (1-s_trg)));
       for (Long i = 0; i < sing_nds.Dim(); i++) {
-        nds.PushBack(s_trg + sing_quad_len*sing_nds[i]);
-        nds.PushBack(s_trg - sing_quad_len*sing_nds[i]);
+        nds.PushBack( sing_quad_len*sing_nds[i]);
+        nds.PushBack(-sing_quad_len*sing_nds[i]);
         wts.PushBack(sing_quad_len*sing_wts[i]);
         wts.PushBack(sing_quad_len*sing_wts[i]);
       }
 
-      Real a = s_trg - sing_quad_len;
+      Real a = -sing_quad_len;
       for (Real step = sing_quad_len; step < 2; step*=2) {
         Real a_ = a;
         Real b_ = a - step;
-        b_ = std::min<Real>(b_, 1.0);
-        b_ = std::max<Real>(b_, 0.0);
+        b_ = std::min<Real>(b_, 1.0 - s_trg);
+        b_ = std::max<Real>(b_, 0.0 - s_trg);
         Real len = fabs(a_ - b_);
         if (len > 0) {
           for (Long i = 0; i < leg_nds.Dim(); i++) {
@@ -1639,12 +1623,12 @@ namespace SCTL_NAMESPACE {
         a = b_;
       }
 
-      a = s_trg + sing_quad_len;
+      a = sing_quad_len;
       for (Real step = sing_quad_len; step < 2; step*=2) {
         Real a_ = a;
         Real b_ = a_ + step;
-        b_ = std::min<Real>(b_, 1.0);
-        b_ = std::max<Real>(b_, 0.0);
+        b_ = std::min<Real>(b_, 1.0 - s_trg);
+        b_ = std::max<Real>(b_, 0.0 - s_trg);
         Real len = fabs(a_ - b_);
         if (len > 0) {
           for (Long i = 0; i < leg_nds.Dim(); i++) {
@@ -1654,11 +1638,6 @@ namespace SCTL_NAMESPACE {
         }
         a = b_;
       }
-
-      // TODO: this should be done in higher precision
-      Minterp.ReInit(ChebOrder, nds.Dim());
-      Vector<Real> Vinterp(ChebOrder*nds.Dim(), Minterp.begin(), false);
-      LagrangeInterp<Real>::Interpolate(Vinterp, ChebQuadRule<Real>::nds(ChebOrder), nds);
     }
   }
 
@@ -1945,6 +1924,28 @@ namespace SCTL_NAMESPACE {
     const auto& elem_lst = *dynamic_cast<const SlenderElemList*>(self);
     const Long Nelem = elem_lst.cheb_order.Dim();
 
+    for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) { // Initialize quadrature tables
+      const Integer ChebOrder = elem_lst.cheb_order[elem_idx];
+      const Integer FourierOrder = elem_lst.fourier_order[elem_idx];
+      const Integer FourierModes = FourierOrder/2+1;
+
+      Matrix<Real> Mfourier;
+      Vector<Real> nds_cos, nds_sin, wts;
+      Tensor<Real,true,3,1> Xt_X0((Real)1);
+      Tensor<Real,true,3,1> e1((Real)0); e1(0,0) = 1;
+      Tensor<Real,true,3,1> e2((Real)0); e2(1,0) = 1;
+      Tensor<Real,true,3,1> e1xe2((Real)0); e1xe2(2,0) = 1;
+      ToroidalSpecialQuadRule<Real,DefaultVecLen<Real>(),ModalUpsample,Kernel>(Mfourier, nds_cos, nds_sin, wts, FourierModes+ModalUpsample, Xt_X0, e1, e2, e1xe2, (Real)1, 1);
+
+      Vector<Real> quad_nds, quad_wts;
+      Matrix<Real> Minterp_quad_nds;
+      if (trg_dot_prod) {
+        SpecialQuadRule<ModalUpsample,Real,Kernel,true>(quad_nds, quad_wts, ChebOrder, 0, (Real)1, (Real)1, 1);
+      } else {
+        SpecialQuadRule<ModalUpsample,Real,Kernel,false>(quad_nds, quad_wts, ChebOrder, 0, (Real)1, (Real)1, 1);
+      }
+    }
+
     if (M_lst.Dim() != Nelem) M_lst.ReInit(Nelem);
     if (trg_dot_prod) {
       //#pragma omp parallel for schedule(static)
@@ -2050,6 +2051,7 @@ namespace SCTL_NAMESPACE {
       M.ReInit(ChebOrder*FourierOrder*KDIM0, Ntrg*KDIM1);
     }
 
+    #pragma omp parallel for
     for (Long i = 0; i < Ntrg; i++) {
       const Vec3 Xt((Iterator<Real>)Xtrg.begin()+i*COORD_DIM);
       const Vec3 n_trg = (trg_dot_prod ? Vec3((Iterator<Real>)normal_trg.begin()+i*COORD_DIM) : Vec3((Real)0));
@@ -2311,8 +2313,7 @@ namespace SCTL_NAMESPACE {
     elem_dsp_.ReInit(cheb_order_.Dim()); elem_dsp_ = 0;
     omp_par::scan(cheb_order_.begin(), elem_dsp_.begin(), cheb_order_.Dim());
 
-
-    if (!comm.Rank()) return;
+    if (comm.Rank()) return;
     const Integer precision = 18, width = 26;
     std::ofstream file;
     file.open(fname, std::ofstream::out | std::ofstream::trunc);
@@ -2499,7 +2500,7 @@ namespace SCTL_NAMESPACE {
       for (Long k = k0; k < k1; k++) {
         cheb_order.PushBack(ChebOrder);
         fourier_order.PushBack(FourierOrder);
-        const auto& nds = SlenderElemList<Real>::CenterlineNodes(ChebOrder);
+        const auto& nds = CenterlineNodes(ChebOrder);
         for (Long i = 0; i < nds.Dim(); i++) {
           Real theta = 2*const_pi<Real>()*(k+nds[i])/Nelem;
           coord.PushBack(cos<Real>(theta));
@@ -2806,6 +2807,7 @@ namespace SCTL_NAMESPACE {
     const Integer FourierOrder = fourier_order[elem_idx];
     const Integer FourierModes = FourierOrder/2+1;
     const Matrix<Real> M_fourier_inv = fourier_matrix_inv_transpose<Real>(FourierOrder,FourierModes);
+    const auto& cheb_nds = SlenderElemList<Real>::CenterlineNodes(ChebOrder);
 
     const Vector<Real>  coord(COORD_DIM*ChebOrder,(Iterator<Real>)this-> coord.begin()+COORD_DIM*elem_dsp[elem_idx],false);
     const Vector<Real>     dx(COORD_DIM*ChebOrder,(Iterator<Real>)this->    dx.begin()+COORD_DIM*elem_dsp[elem_idx],false);
@@ -2818,6 +2820,7 @@ namespace SCTL_NAMESPACE {
     const Complex<Real> exp_dtheta(cos<Real>(dtheta), sin<Real>(dtheta));
 
     Matrix<Real> M_modal(ChebOrder*FourierOrder, ChebOrder*KDIM0*KDIM1*FourierModes*2);
+    #pragma omp parallel for
     for (Long i = 0; i < ChebOrder; i++) {
       Real r_trg = radius[i];
       Real dr_trg = dr[i];
@@ -2841,10 +2844,16 @@ namespace SCTL_NAMESPACE {
         de2_trg = dx_trg*(-dot_prod(e2_trg,d2x_trg) * inv_dx2);
       }
 
+      Vector<Real> quad_nds, quad_wts; // Quadrature rule in s
+      SpecialQuadRule<ModalUpsample,Real,Kernel,trg_dot_prod>(quad_nds, quad_wts, ChebOrder, i, r_trg, sqrt<Real>(dot_prod(dx_trg, dx_trg)), digits);
+      const Long Nq = quad_nds.Dim();
+
       Matrix<Real> Minterp_quad_nds;
-      Vector<Real> vec_tmp, quad_wts; // Quadrature rule in s
-      SpecialQuadRule<ModalUpsample,Real,Kernel,trg_dot_prod>(vec_tmp, quad_wts, Minterp_quad_nds, ChebOrder, i, r_trg, sqrt<Real>(dot_prod(dx_trg, dx_trg)), digits);
-      const Long Nq = Minterp_quad_nds.Dim(1);
+      { // Set Minterp_quad_nds
+        Minterp_quad_nds.ReInit(ChebOrder, Nq);
+        Vector<Real> Vinterp_quad_nds(ChebOrder*Nq, Minterp_quad_nds.begin(), false);
+        LagrangeInterp<Real>::Interpolate(Vinterp_quad_nds, cheb_nds-cheb_nds[i], quad_nds);
+      }
 
       Matrix<Real> r_src, dr_src, x_src, dx_src, d2x_src, e1_src, e2_src, de1_src, de2_src;
       r_src  .ReInit(        1, Nq);
@@ -2921,8 +2930,8 @@ namespace SCTL_NAMESPACE {
         Matrix<Real> M_tor(Nq, KDIM0*KDIM1*FourierModes*2); // TODO: pre-allocate
         toroidal_greens_fn_batched<digits+2,ModalUpsample,trg_dot_prod>(M_tor, y_trg, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes);
 
-        for (Long ii = 0; ii < M_tor.Dim(0); ii++) {
-          for (Long jj = 0; jj < M_tor.Dim(1); jj++) {
+        for (Long ii = 0; ii < Nq; ii++) {
+          for (Long jj = 0; jj < KDIM0*KDIM1*FourierModes*2; jj++) {
             M_tor[ii][jj] *= quad_wts[ii];
           }
         }

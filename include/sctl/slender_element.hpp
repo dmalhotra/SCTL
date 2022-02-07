@@ -172,7 +172,7 @@ namespace SCTL_NAMESPACE {
       /**
        * Returns the Chebyshev node points for a given order.
        */
-      static const Vector<Real>& CenterlineNodes(Integer Order);
+      static const Vector<Real>& CenterlineNodes(const Integer Order);
 
       /**
        * Write elements to file.
