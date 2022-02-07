@@ -73,6 +73,7 @@ template <class ValueType, bool own_data, Long... Args> class Tensor {
     }
 
     template <bool own_data_> Tensor(const Tensor<ValueType,own_data_,Args...> &M) {
+      static_assert(Size() <= M.Size());
       Init((Iterator<ValueType>)M.begin());
     }
 
@@ -142,12 +143,32 @@ template <class ValueType, bool own_data, Long... Args> class Tensor {
     }
 
 
+    Tensor<ValueType, true, Args...> operator-() const {
+      Tensor<ValueType, true, Args...> M0;
+      const auto &M1 = *this;
+
+      for (Long i = 0; i < Size(); i++) {
+          M0.begin()[i] = -M1.begin()[i];
+      }
+      return M0;
+    }
+
     Tensor<ValueType, true, Args...> operator*(const ValueType &s) const {
       Tensor<ValueType, true, Args...> M0;
       const auto &M1 = *this;
 
       for (Long i = 0; i < Size(); i++) {
           M0.begin()[i] = M1.begin()[i]*s;
+      }
+      return M0;
+    }
+
+    Tensor<ValueType, true, Args...> operator/(const ValueType &s) const {
+      Tensor<ValueType, true, Args...> M0;
+      const auto &M1 = *this;
+
+      for (Long i = 0; i < Size(); i++) {
+          M0.begin()[i] = M1.begin()[i]/s;
       }
       return M0;
     }
