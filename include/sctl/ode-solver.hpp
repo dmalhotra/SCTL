@@ -21,7 +21,7 @@ template <class Real> class SDC {
      *
      * @param[in] Order the order of the method.
      */
-    SDC(const Integer Order);
+    explicit SDC(const Integer Order);
 
     /**
      * Apply one step of spectral deferred correction (SDC).
