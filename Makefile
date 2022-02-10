@@ -50,7 +50,8 @@ OBJDIR = ./obj
 INCDIR = ./include
 
 TARGET_BIN = \
-       $(BINDIR)/test
+       $(BINDIR)/test-ode-solver \
+       $(BINDIR)/test-pt-tree
 
 all : $(TARGET_BIN)
 
