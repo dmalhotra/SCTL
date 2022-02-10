@@ -166,7 +166,7 @@ template <class ValueType, class FFT_Derived> class FFT_Base {
 
  public:
 
-  FFT_Base() : dim{0,0}, fft_type(FFT_Type::R2C), howmany(0) {}
+  FFT_Base() : dim{0,0}, fft_type(FFT_Type::R2C), howmany_(0) {}
 
   Long Dim(Integer i) const {
     return dim[i];
@@ -223,7 +223,7 @@ template <class ValueType, class FFT_Derived> class FFT_Base {
 
   StaticArray<Long,2> dim;
   FFT_Type fft_type;
-  Long howmany;
+  Long howmany_;
 };
 
 template <class ValueType> class FFT : public FFT_Base<ValueType, FFT<ValueType>> {
@@ -243,7 +243,7 @@ template <class ValueType> class FFT : public FFT_Base<ValueType, FFT<ValueType>
   void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads = 1) {
     Long rank = dim_vec.Dim();
     this->fft_type = fft_type_;
-    this->howmany = howmany_;
+    this->howmany_ = howmany_;
     plan.M.resize(0);
 
     if (this->fft_type == FFT_Type::R2C) {
@@ -258,9 +258,9 @@ template <class ValueType> class FFT : public FFT_Base<ValueType, FFT<ValueType>
       plan.M.push_back(fft_c2r(dim_vec[rank - 1]));
     }
 
-    Long N0 = this->howmany * 2;
-    Long N1 = this->howmany * 2;
-    for (const auto M : plan.M) {
+    Long N0 = this->howmany_ * 2;
+    Long N1 = this->howmany_ * 2;
+    for (const auto& M : plan.M) {
       N0 = N0 * M.Dim(0) / 2;
       N1 = N1 * M.Dim(1) / 2;
     }
@@ -293,7 +293,7 @@ template <class ValueType> class FFT : public FFT_Base<ValueType, FFT<ValueType>
         N = N * M.Dim(1) / M.Dim(0);
         transpose<ComplexType>(buff0.begin(), buff1.begin(), N / M.Dim(1), M.Dim(1) / 2);
       }
-      transpose<ComplexType>(buff1.begin(), buff0.begin(), N / this->howmany / 2, this->howmany);
+      transpose<ComplexType>(buff1.begin(), buff0.begin(), N / this->howmany_ / 2, this->howmany_);
 
       Matrix<ValueType> vi(N / M.Dim(0), M.Dim(0), buff1.begin(), false);
       Matrix<ValueType> vo(N / M.Dim(0), M.Dim(1), out.begin(), false);
@@ -308,7 +308,7 @@ template <class ValueType> class FFT : public FFT_Base<ValueType, FFT<ValueType>
         N = N * M.Dim(1) / M.Dim(0);
         transpose<ComplexType>(buff0.begin(), buff1.begin(), N / M.Dim(1), M.Dim(1) / 2);
       }
-      transpose<ComplexType>(out.begin(), buff0.begin(), N / this->howmany / 2, this->howmany);
+      transpose<ComplexType>(out.begin(), buff0.begin(), N / this->howmany_ / 2, this->howmany_);
     }
   }
 
@@ -402,7 +402,7 @@ template <> class FFT<double> : public FFT_Base<double, FFT<double>> {
     FFTWInitThreads(Nthreads);
     if (Dim(0) && Dim(1)) fftw_destroy_plan(plan);
     fft_type = fft_type_;
-    howmany = howmany_;
+    this->howmany_ = howmany_;
     copy_input = false;
     plan = NULL;
 
@@ -414,7 +414,7 @@ template <> class FFT<double> : public FFT_Base<double, FFT<double>> {
 
     Long N0 = 0, N1 = 0;
     { // Set N0, N1
-      Long N = howmany;
+      Long N = this->howmany_;
       for (auto ni : dim_vec) N *= ni;
       if (fft_type == FFT_Type::R2C) {
         N0 = N;
@@ -439,23 +439,23 @@ template <> class FFT<double> : public FFT_Base<double, FFT<double>> {
     Vector<ValueType> in(N0), out(N1);
 
     if (fft_type == FFT_Type::R2C) {
-      plan = fftw_plan_many_dft_r2c(rank, &dim_vec_[0], howmany, &in[0], NULL, 1, N0 / howmany, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan = fftw_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], NULL, 1, N0 / this->howmany_, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2C) {
-      plan = fftw_plan_many_dft(rank, &dim_vec_[0], howmany, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2C_INV) {
-      plan = fftw_plan_many_dft(rank, &dim_vec_[0], howmany, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2R) {
-      plan = fftw_plan_many_dft_c2r(rank, &dim_vec_[0], howmany, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / howmany, &out[0], NULL, 1, N1 / howmany, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan = fftw_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, &out[0], NULL, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     }
     if (!plan) { // Build plan without FFTW_PRESERVE_INPUT
       if (fft_type == FFT_Type::R2C) {
-        plan = fftw_plan_many_dft_r2c(rank, &dim_vec_[0], howmany, &in[0], NULL, 1, N0 / howmany, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_ESTIMATE);
+        plan = fftw_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], NULL, 1, N0 / this->howmany_, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C) {
-        plan = fftw_plan_many_dft(rank, &dim_vec_[0], howmany, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_FORWARD, FFTW_ESTIMATE);
+        plan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C_INV) {
-        plan = fftw_plan_many_dft(rank, &dim_vec_[0], howmany, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_BACKWARD, FFTW_ESTIMATE);
+        plan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2R) {
-        plan = fftw_plan_many_dft_c2r(rank, &dim_vec_[0], howmany, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / howmany, &out[0], NULL, 1, N1 / howmany, FFTW_ESTIMATE);
+        plan = fftw_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, &out[0], NULL, 1, N1 / this->howmany_, FFTW_ESTIMATE);
       }
       copy_input = true;
     }
@@ -479,16 +479,16 @@ template <> class FFT<double> : public FFT_Base<double, FFT<double>> {
       tmp = in;
     }
     if (fft_type == FFT_Type::R2C) {
-      s = 1 / sqrt<ValueType>(N0 / howmany);
+      s = 1 / sqrt<ValueType>(N0 / this->howmany_);
       fftw_execute_dft_r2c(plan, (double*)&in_ptr[0], (fftw_complex*)&out[0]);
     } else if (fft_type == FFT_Type::C2C) {
-      s = 1 / sqrt<ValueType>(N0 / howmany * (ValueType)0.5);
+      s = 1 / sqrt<ValueType>(N0 / this->howmany_ * (ValueType)0.5);
       fftw_execute_dft(plan, (fftw_complex*)&in_ptr[0], (fftw_complex*)&out[0]);
     } else if (fft_type == FFT_Type::C2C_INV) {
-      s = 1 / sqrt<ValueType>(N1 / howmany * (ValueType)0.5);
+      s = 1 / sqrt<ValueType>(N1 / this->howmany_ * (ValueType)0.5);
       fftw_execute_dft(plan, (fftw_complex*)&in_ptr[0], (fftw_complex*)&out[0]);
     } else if (fft_type == FFT_Type::C2R) {
-      s = 1 / sqrt<ValueType>(N1 / howmany);
+      s = 1 / sqrt<ValueType>(N1 / this->howmany_);
       fftw_execute_dft_c2r(plan, (fftw_complex*)&in_ptr[0], (double*)&out[0]);
     }
     for (auto& x : out) x *= s;
@@ -518,7 +518,7 @@ template <> class FFT<float> : public FFT_Base<float, FFT<float>> {
     FFTWInitThreads(Nthreads);
     if (Dim(0) && Dim(1)) fftwf_destroy_plan(plan);
     fft_type = fft_type_;
-    howmany = howmany_;
+    this->howmany_ = howmany_;
     copy_input = false;
     plan = NULL;
 
@@ -530,7 +530,7 @@ template <> class FFT<float> : public FFT_Base<float, FFT<float>> {
 
     Long N0, N1;
     { // Set N0, N1
-      Long N = howmany;
+      Long N = this->howmany_;
       for (auto ni : dim_vec) N *= ni;
       if (fft_type == FFT_Type::R2C) {
         N0 = N;
@@ -555,23 +555,23 @@ template <> class FFT<float> : public FFT_Base<float, FFT<float>> {
     Vector<ValueType> in (N0), out(N1);
 
     if (fft_type == FFT_Type::R2C) {
-      plan = fftwf_plan_many_dft_r2c(rank, &dim_vec_[0], howmany, &in[0], NULL, 1, N0 / howmany, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan = fftwf_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], NULL, 1, N0 / this->howmany_, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2C) {
-      plan = fftwf_plan_many_dft(rank, &dim_vec_[0], howmany, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2C_INV) {
-      plan = fftwf_plan_many_dft(rank, &dim_vec_[0], howmany, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2R) {
-      plan = fftwf_plan_many_dft_c2r(rank, &dim_vec_[0], howmany, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / howmany, &out[0], NULL, 1, N1 / howmany, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan = fftwf_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, &out[0], NULL, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     }
     if (!plan) { // Build plan without FFTW_PRESERVE_INPUT
       if (fft_type == FFT_Type::R2C) {
-        plan = fftwf_plan_many_dft_r2c(rank, &dim_vec_[0], howmany, &in[0], NULL, 1, N0 / howmany, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_ESTIMATE);
+        plan = fftwf_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], NULL, 1, N0 / this->howmany_, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C) {
-        plan = fftwf_plan_many_dft(rank, &dim_vec_[0], howmany, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_FORWARD, FFTW_ESTIMATE);
+        plan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C_INV) {
-        plan = fftwf_plan_many_dft(rank, &dim_vec_[0], howmany, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_BACKWARD, FFTW_ESTIMATE);
+        plan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2R) {
-        plan = fftwf_plan_many_dft_c2r(rank, &dim_vec_[0], howmany, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / howmany, &out[0], NULL, 1, N1 / howmany, FFTW_ESTIMATE);
+        plan = fftwf_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, &out[0], NULL, 1, N1 / this->howmany_, FFTW_ESTIMATE);
       }
       copy_input = true;
     }
@@ -595,16 +595,16 @@ template <> class FFT<float> : public FFT_Base<float, FFT<float>> {
       tmp = in;
     }
     if (fft_type == FFT_Type::R2C) {
-      s = 1 / sqrt<ValueType>(N0 / howmany);
+      s = 1 / sqrt<ValueType>(N0 / this->howmany_);
       fftwf_execute_dft_r2c(plan, (float*)&in_ptr[0], (fftwf_complex*)&out[0]);
     } else if (fft_type == FFT_Type::C2C) {
-      s = 1 / sqrt<ValueType>(N0 / howmany * (ValueType)0.5);
+      s = 1 / sqrt<ValueType>(N0 / this->howmany_ * (ValueType)0.5);
       fftwf_execute_dft(plan, (fftwf_complex*)&in_ptr[0], (fftwf_complex*)&out[0]);
     } else if (fft_type == FFT_Type::C2C_INV) {
-      s = 1 / sqrt<ValueType>(N1 / howmany * (ValueType)0.5);
+      s = 1 / sqrt<ValueType>(N1 / this->howmany_ * (ValueType)0.5);
       fftwf_execute_dft(plan, (fftwf_complex*)&in_ptr[0], (fftwf_complex*)&out[0]);
     } else if (fft_type == FFT_Type::C2R) {
-      s = 1 / sqrt<ValueType>(N1 / howmany);
+      s = 1 / sqrt<ValueType>(N1 / this->howmany_);
       fftwf_execute_dft_c2r(plan, (fftwf_complex*)&in_ptr[0], (float*)&out[0]);
     }
     for (auto& x : out) x *= s;
@@ -634,7 +634,7 @@ template <> class FFT<long double> : public FFT_Base<long double, FFT<long doubl
     FFTWInitThreads(Nthreads);
     if (Dim(0) && Dim(1)) fftwl_destroy_plan(plan);
     fft_type = fft_type_;
-    howmany = howmany_;
+    this->howmany_ = howmany_;
     copy_input = false;
     plan = NULL;
 
@@ -644,7 +644,7 @@ template <> class FFT<long double> : public FFT_Base<long double, FFT<long doubl
 
     Long N0, N1;
     { // Set N0, N1
-      Long N = howmany;
+      Long N = this->howmany_;
       for (auto ni : dim_vec) N *= ni;
       if (fft_type == FFT_Type::R2C) {
         N0 = N;
@@ -669,23 +669,23 @@ template <> class FFT<long double> : public FFT_Base<long double, FFT<long doubl
     Vector<ValueType> in (N0), out(N1);
 
     if (fft_type == FFT_Type::R2C) {
-      plan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], howmany, &in[0], NULL, 1, N0 / howmany, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], NULL, 1, N0 / this->howmany_, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2C) {
-      plan = fftwl_plan_many_dft(rank, &dim_vec_[0], howmany, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2C_INV) {
-      plan = fftwl_plan_many_dft(rank, &dim_vec_[0], howmany, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2R) {
-      plan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], howmany, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / howmany, &out[0], NULL, 1, N1 / howmany, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, &out[0], NULL, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     }
     if (!plan) { // Build plan without FFTW_PRESERVE_INPUT
       if (fft_type == FFT_Type::R2C) {
-        plan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], howmany, &in[0], NULL, 1, N0 / howmany, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_ESTIMATE);
+        plan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], NULL, 1, N0 / this->howmany_, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C) {
-        plan = fftwl_plan_many_dft(rank, &dim_vec_[0], howmany, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_FORWARD, FFTW_ESTIMATE);
+        plan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C_INV) {
-        plan = fftwl_plan_many_dft(rank, &dim_vec_[0], howmany, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / howmany, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / howmany, FFTW_BACKWARD, FFTW_ESTIMATE);
+        plan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2R) {
-        plan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], howmany, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / howmany, &out[0], NULL, 1, N1 / howmany, FFTW_ESTIMATE);
+        plan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, &out[0], NULL, 1, N1 / this->howmany_, FFTW_ESTIMATE);
       }
       copy_input = true;
     }
@@ -709,16 +709,16 @@ template <> class FFT<long double> : public FFT_Base<long double, FFT<long doubl
       tmp = in;
     }
     if (fft_type == FFT_Type::R2C) {
-      s = 1 / sqrt<ValueType>(N0 / howmany);
+      s = 1 / sqrt<ValueType>(N0 / this->howmany_);
       fftwl_execute_dft_r2c(plan, (long double*)&in_ptr[0], (fftwl_complex*)&out[0]);
     } else if (fft_type == FFT_Type::C2C) {
-      s = 1 / sqrt<ValueType>(N0 / howmany * (ValueType)0.5);
+      s = 1 / sqrt<ValueType>(N0 / this->howmany_ * (ValueType)0.5);
       fftwl_execute_dft(plan, (fftwl_complex*)&in_ptr[0], (fftwl_complex*)&out[0]);
     } else if (fft_type == FFT_Type::C2C_INV) {
-      s = 1 / sqrt<ValueType>(N1 / howmany * (ValueType)0.5);
+      s = 1 / sqrt<ValueType>(N1 / this->howmany_ * (ValueType)0.5);
       fftwl_execute_dft(plan, (fftwl_complex*)&in_ptr[0], (fftwl_complex*)&out[0]);
     } else if (fft_type == FFT_Type::C2R) {
-      s = 1 / sqrt<ValueType>(N1 / howmany);
+      s = 1 / sqrt<ValueType>(N1 / this->howmany_);
       fftwl_execute_dft_c2r(plan, (fftwl_complex*)&in_ptr[0], (long double*)&out[0]);
     }
     for (auto& x : out) x *= s;
