@@ -846,7 +846,8 @@ namespace SCTL_NAMESPACE {
     return nds_wts_lst[ORDER];
   }
 
-  template <class RealType, class Kernel> static Vector<Vector<RealType>> BuildToroidalSpecialQuadRules(Integer Nmodes) {
+  template <class RealType, class Kernel, Integer adap> static Vector<Vector<RealType>> BuildToroidalSpecialQuadRules(Integer Nmodes, Integer VecLen) {
+    const std::string fname = std::string("data/toroidal_quad_rule_m") + std::to_string(Nmodes) + "_" + Kernel::Name();
     constexpr Integer COORD_DIM = 3;
     constexpr Integer max_adap_depth = 30; // build quadrature rules for points up to 2*pi*0.5^max_adap_depth from source loop
     constexpr Integer crossover_adap_depth = 2;
@@ -857,17 +858,77 @@ namespace SCTL_NAMESPACE {
     #else
     using ValueType = long double;
     #endif
+
+    auto DyadicPanelQuadRule = [](Vector<ValueType>& nds, Vector<ValueType>& wts, const Integer depth, const Integer LegOrder, const Integer PanelRepeat) {
+      Vector<ValueType> panel_nds, panel_wts;
+      { // Set panel_nds, panel_wts
+        auto leg_quad = LegendreQuadRule<ValueType>(LegOrder);
+        const auto& leg_nds = leg_quad.first;
+        const auto& leg_wts = leg_quad.second;
+
+        const Long rep = PanelRepeat;
+        const ValueType scal = 1/(ValueType)rep;
+        for (Long i = 0; i < rep; i++) {
+          for (Long j = 0; j < leg_nds.Dim(); j++) {
+            panel_nds.PushBack(leg_nds[j]*scal + i*scal);
+            panel_wts.PushBack(leg_wts[j]*scal);
+          }
+        }
+      }
+
+      SCTL_ASSERT(depth);
+      Long N = 2*depth;
+      ValueType l = 0.5;
+      nds.ReInit(N*panel_nds.Dim());
+      wts.ReInit(N*panel_nds.Dim());
+      for (Integer idx = 0; idx < depth; idx++) {
+        l *= (idx<depth-1 ? 0.5 : 1.0);
+        Vector<ValueType> nds0(panel_nds.Dim(), nds.begin()+(  idx  )*panel_nds.Dim(), false);
+        Vector<ValueType> nds1(panel_nds.Dim(), nds.begin()+(N-idx-1)*panel_nds.Dim(), false);
+        Vector<ValueType> wts0(panel_wts.Dim(), wts.begin()+(  idx  )*panel_wts.Dim(), false);
+        Vector<ValueType> wts1(panel_wts.Dim(), wts.begin()+(N-idx-1)*panel_wts.Dim(), false);
+        for (Long i = 0; i < panel_nds.Dim(); i++) {
+          ValueType s = panel_nds[i]*l + (idx<depth-1 ? l : 0);
+          nds0[                  i] = s;
+          nds1[panel_nds.Dim()-1-i] =-s;
+          wts0[                  i] = panel_wts[i]*l;
+          wts1[panel_nds.Dim()-1-i] = wts0[i];
+        }
+      }
+    };
+
     Vector<Vector<ValueType>> data;
-    const std::string fname = std::string("data/toroidal_quad_rule_m") + std::to_string(Nmodes) + "_" + Kernel::Name();
-    ReadFile(data, fname);
-    if (data.Dim() != max_adap_depth*max_digits) { // If file is not-found then compute quadrature rule and write to file
+    if (!adap) { // read from file
+      ReadFile(data, fname);
+    } else { // use dyadically refined panel quadrature rules
+      data.ReInit(max_adap_depth * max_digits);
+      for (Integer idx = 0; idx < max_adap_depth; idx++) {
+        const ValueType dist = 4*const_pi<ValueType>()*pow<ValueType,Long>(0.5,idx);
+        const Integer DyadicRefDepth = std::max<Integer>(1,(Integer)(log(dist/2/const_pi<ValueType>())/log(0.5)+0.5));
+
+        Vector<ValueType> quad_nds, quad_wts;
+        for (Integer digits = 0; digits < max_digits; digits++) {
+          const Integer LegOrder = (Integer)(digits*1.5);
+          DyadicPanelQuadRule(quad_nds, quad_wts, DyadicRefDepth, LegOrder, adap);
+
+          const Long N = quad_nds.Dim();
+          data[idx*max_digits+digits].ReInit(3*N);
+          for (Long i = 0; i < N; i++) {
+            data[idx*max_digits+digits][i*3+0] = cos<ValueType>(2*const_pi<ValueType>()*quad_nds[i]);
+            data[idx*max_digits+digits][i*3+1] = sin<ValueType>(2*const_pi<ValueType>()*quad_nds[i]);
+            data[idx*max_digits+digits][i*3+2] = (2*const_pi<ValueType>()*quad_wts[i]);
+          }
+        }
+      }
+    }
+    if (!adap && data.Dim() != max_adap_depth*max_digits) { // If file is not-found then compute quadrature rule and write to file
       data.ReInit(max_adap_depth * max_digits);
       for (Integer idx = 0; idx < max_adap_depth; idx++) {
         Vector<Vector<ValueType>> quad_nds,  quad_wts;
         { // generate special quadrature rule
           Vector<ValueType> nds, wts;
           Matrix<ValueType> Mintegrands;
-          auto discretize_basis_functions = [Nmodes](Matrix<ValueType>& Mintegrands, Vector<ValueType>& nds, Vector<ValueType>& wts, ValueType dist, const std::pair<Vector<ValueType>,Vector<ValueType>>& panel_quad_nds_wts) {
+          auto discretize_basis_functions = [Nmodes,&DyadicPanelQuadRule](Matrix<ValueType>& Mintegrands, Vector<ValueType>& nds, Vector<ValueType>& wts, const ValueType dist, const Integer LegOrder) {
             auto trg_coord = [](ValueType dist, Long M) {
               Vector<ValueType> Xtrg; //(M*M*COORD_DIM);
               for (Long i = 0; i < M; i++) {
@@ -886,35 +947,13 @@ namespace SCTL_NAMESPACE {
               }
               return Xtrg;
             };
-            Vector<ValueType> Xtrg = trg_coord(dist, 15); // TODO: determine optimal sample count
-            Long Ntrg = Xtrg.Dim()/COORD_DIM;
+            const Vector<ValueType> Xtrg = trg_coord(dist, 25); // TODO: determine optimal sample count
+            const Long Ntrg = Xtrg.Dim()/COORD_DIM;
 
-            auto adap_nds_wts = [&panel_quad_nds_wts](Vector<ValueType>& nds, Vector<ValueType>& wts, Integer levels){ // discretization in interval [-0.5,0.5]
-              const auto& leg_nds = panel_quad_nds_wts.first;
-              const auto& leg_wts = panel_quad_nds_wts.second;
-              SCTL_ASSERT(levels);
-              Long N = 2*levels;
-              ValueType l = 0.5;
-              nds.ReInit(N*leg_nds.Dim());
-              wts.ReInit(N*leg_nds.Dim());
-              for (Integer idx = 0; idx < levels; idx++) {
-                l *= (idx<levels-1 ? 0.5 : 1.0);
-                Vector<ValueType> nds0(leg_nds.Dim(), nds.begin()+(  idx  )*leg_nds.Dim(), false);
-                Vector<ValueType> nds1(leg_nds.Dim(), nds.begin()+(N-idx-1)*leg_nds.Dim(), false);
-                Vector<ValueType> wts0(leg_wts.Dim(), wts.begin()+(  idx  )*leg_wts.Dim(), false);
-                Vector<ValueType> wts1(leg_wts.Dim(), wts.begin()+(N-idx-1)*leg_wts.Dim(), false);
-                for (Long i = 0; i < leg_nds.Dim(); i++) {
-                  ValueType s = leg_nds[i]*l + (idx<levels-1 ? l : 0);
-                  nds0[                i] = s;
-                  nds1[leg_nds.Dim()-1-i] =-s;
-                  wts0[                i] = leg_wts[i]*l;
-                  wts1[leg_nds.Dim()-1-i] = wts0[i];
-                }
-              }
-            };
-            adap_nds_wts(nds, wts, std::max<Integer>(1,(Integer)(log(dist/2/const_pi<ValueType>())/log(0.5)+0.5)));
+            const Integer DyadicRefDepth = std::max<Integer>(1,(Integer)(log(dist/2/const_pi<ValueType>())/log(0.5)+0.5));
+            DyadicPanelQuadRule(nds, wts, DyadicRefDepth, LegOrder, 1);
 
-            Long Nnds = nds.Dim();
+            const Long Nnds = nds.Dim();
             Vector<Complex<ValueType>> exp_itheta(Nnds), exp_iktheta(Nnds);
             Vector<ValueType> Xsrc(Nnds*COORD_DIM), Xn(Nnds*COORD_DIM);
             for (Long i = 0; i < Nnds; i++) {
@@ -955,30 +994,13 @@ namespace SCTL_NAMESPACE {
               }
             }
           };
-          std::pair<Vector<ValueType>,Vector<ValueType>> panel_quad;
-          { // Set panel_quad_rule
-            auto leg_quad = LegendreQuadRule<ValueType>(45);
-            const auto& leg_nds = leg_quad.first;
-            const auto& leg_wts = leg_quad.second;
-            auto& panel_nds = panel_quad.first;
-            auto& panel_wts = panel_quad.second;
-
-            const Long rep = 1;
-            const ValueType scal = 1/(ValueType)rep;
-            for (Long i = 0; i < rep; i++) {
-              for (Long j = 0; j < leg_nds.Dim(); j++) {
-                panel_nds.PushBack(leg_nds[j]*scal + i*scal);
-                panel_wts.PushBack(leg_wts[j]*scal);
-              }
-            }
-          }
-          ValueType dist = 4*const_pi<ValueType>()*pow<ValueType,Long>(0.5,idx); // distance of target points from the source loop (which is a unit circle)
-          discretize_basis_functions(Mintegrands, nds, wts, dist, panel_quad); // TODO: adaptively select Legendre order
+          const ValueType dist = 4*const_pi<ValueType>()*pow<ValueType,Long>(0.5,idx); // distance of target points from the source loop (which is a unit circle)
+          discretize_basis_functions(Mintegrands, nds, wts, dist, 35); // TODO: adaptively select Legendre order
 
           Vector<ValueType> eps_vec;
           for (Long k = 0; k < max_digits; k++) eps_vec.PushBack(pow<ValueType,Long>(0.1,k));
           std::cout<<"Level = "<<idx<<" of "<<max_adap_depth<<'\n';
-          auto cond_num_vec = InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, false, eps_vec);
+          auto cond_num_vec = InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, true, eps_vec);
         }
         for (Integer digits = 0; digits < max_digits; digits++) {
           Long N = quad_nds[digits].Dim();
@@ -1007,41 +1029,42 @@ namespace SCTL_NAMESPACE {
     }
 
     Vector<Vector<RealType>> quad_rule_lst;
-    quad_rule_lst.ReInit(data.Dim()*3);
+    quad_rule_lst.ReInit(data.Dim()*4);
     for (Integer i = 0; i < data.Dim(); i++) {
-      uint64_t data_len = data[i].Dim()/3;
-      quad_rule_lst[i*3+0].ReInit(data_len);
-      quad_rule_lst[i*3+1].ReInit(data_len);
-      quad_rule_lst[i*3+2].ReInit(data_len);
-      for (Long j = 0; j < (Long)data_len; j++) {
-        quad_rule_lst[i*3+0][j] = (RealType)data[i][j*3+0];
-        quad_rule_lst[i*3+1][j] = (RealType)data[i][j*3+1];
-        quad_rule_lst[i*3+2][j] = (RealType)data[i][j*3+2];
+      const Long Nnds_ = data[i].Dim()/3;
+      const Integer Nnds = ((Nnds_+VecLen-1)/VecLen)*VecLen;
+      quad_rule_lst[i*4+0].ReInit(Nnds); quad_rule_lst[i*4+0].SetZero();
+      quad_rule_lst[i*4+1].ReInit(Nnds); quad_rule_lst[i*4+1].SetZero();
+      quad_rule_lst[i*4+2].ReInit(Nnds); quad_rule_lst[i*4+2].SetZero();
+      quad_rule_lst[i*4+3].ReInit(Nmodes*2*Nnds); quad_rule_lst[i*4+3].SetZero();
+      for (Long j = 0; j < Nnds_; j++) {
+        Complex<ValueType> exp_itheta(data[i][j*3+0], data[i][j*3+1]);
+        quad_rule_lst[i*4+0][j] = (RealType)(exp_itheta.real-1);
+        quad_rule_lst[i*4+1][j] = (RealType)(exp_itheta.imag);
+        quad_rule_lst[i*4+2][j] = (RealType)data[i][j*3+2];
+
+        Complex<ValueType> exp_iktheta(1,0);
+        for (Long k = 0; k < Nmodes; k++) {
+          quad_rule_lst[i*4+3][(k*2+0)*Nnds+j] = (RealType)exp_iktheta.real;
+          quad_rule_lst[i*4+3][(k*2+1)*Nnds+j] = (RealType)exp_iktheta.imag;
+          exp_iktheta *= exp_itheta;
+        }
       }
     }
     return quad_rule_lst;
   }
-  template <class RealType, Integer VecLen, Integer ModalUpsample, class Kernel> static Complex<RealType> ToroidalSpecialQuadRule(Matrix<RealType>& Mfourier, Vector<RealType>& nds_cos_theta, Vector<RealType>& nds_sin_theta, Vector<RealType>& wts, const Integer Nmodes, const Tensor<RealType,true,3,1>& Xt_X0, const Tensor<RealType,true,3,1>& e1, const Tensor<RealType,true,3,1>& e2, const Tensor<RealType,true,3,1>& e1xe2, RealType R0, Integer digits) {
+  template <class RealType, Integer VecLen, Integer ModalUpsample, class Kernel, Integer adap> static bool ToroidalSpecialQuadRule(Matrix<RealType>& Mfourier, Vector<RealType>& nds_cos_theta, Vector<RealType>& nds_sin_theta, Vector<RealType>& wts, const Integer Nmodes, RealType r_R0, Integer digits) {
     static constexpr Integer max_adap_depth = 30; // build quadrature rules for points up to 2*pi*0.5^max_adap_depth from source loop
     static constexpr Integer crossover_adap_depth = 2;
     static constexpr Integer max_digits = 20;
     if (digits >= max_digits) digits = max_digits-1;
     //SCTL_ASSERT(digits<max_digits);
 
-    const RealType XX = dot_prod(Xt_X0, e1);
-    const RealType YY = dot_prod(Xt_X0, e2);
-    const RealType ZZ = dot_prod(Xt_X0, e1xe2);
-    const RealType R = sqrt<RealType>(XX*XX+YY*YY);
-    const RealType Rinv = 1/R;
-    const Complex<RealType> exp_theta0(XX*Rinv, YY*Rinv);
     Long adap_depth = 0;
-    { // Set adap_depth
-      const RealType dtheta = sqrt<RealType>((R-R0)*(R-R0) + ZZ*ZZ)/R0;
-      for (RealType s = dtheta; s<2*const_pi<RealType>(); s*=2) adap_depth++;
-      if (adap_depth >= max_adap_depth) {
-        SCTL_WARN("Toroidal quadrature evaluation is outside of the range of precomputed quadratures; accuracy may be sverely degraded.");
-        adap_depth = max_adap_depth-1;
-      }
+    for (RealType s = r_R0; s<2*const_pi<RealType>(); s*=2) adap_depth++;
+    if (adap_depth >= max_adap_depth) {
+      SCTL_WARN("Toroidal quadrature evaluation is outside of the range of precomputed quadratures; accuracy may be sverely degraded.");
+      adap_depth = max_adap_depth-1;
     }
 
     SCTL_ASSERT(Nmodes < 100);
@@ -1051,46 +1074,20 @@ namespace SCTL_NAMESPACE {
     static Vector<Vector<Vector<RealType>>> all_quad_wts(100);
     #pragma omp critical(SCTL_ToroidalSpecialQuadRule)
     if (all_quad_wts[Nmodes].Dim() == 0) {
-      auto quad_rules = BuildToroidalSpecialQuadRules<RealType,Kernel>(Nmodes);
-      const Long Nrules = quad_rules.Dim()/3;
+      auto quad_rules = BuildToroidalSpecialQuadRules<RealType,Kernel,adap>(Nmodes, VecLen);
+      const Long Nrules = quad_rules.Dim()/4;
 
       Vector<Matrix<RealType>> fourier_basis(Nrules);
       Vector<Vector<RealType>> quad_nds_cos_theta(Nrules);
       Vector<Vector<RealType>> quad_nds_sin_theta(Nrules);
       Vector<Vector<RealType>> quad_wts(Nrules);
       for (Long i = 0; i < Nrules; i++) { // Set quad_nds_cos_theta, quad_nds_sin_theta, quad_wts, fourier_basis
-        const Integer Nnds_ = quad_rules[i*3+0].Dim();
-        const Integer Nnds = ((Nnds_+VecLen-1)/VecLen)*VecLen;
-        Vector<Complex<RealType>> exp_itheta(Nnds);
-        Vector<Complex<RealType>> exp_iktheta(Nnds);
-        quad_nds_cos_theta[i].ReInit(Nnds);
-        quad_nds_sin_theta[i].ReInit(Nnds);
-        quad_wts[i].ReInit(Nnds);
-        Integer j;
-        for (j = 0; j < Nnds_; j++) {
-          exp_itheta[j].real = quad_nds_cos_theta[i][j] = quad_rules[i*3+0][j];
-          exp_itheta[j].imag = quad_nds_sin_theta[i][j] = quad_rules[i*3+1][j];
-          quad_wts[i][j] = quad_rules[i*3+2][j];
-          exp_iktheta[j].real = 1;
-          exp_iktheta[j].imag = 0;
-        }
-        for (; j < Nnds; j++) {
-          exp_itheta[j].real = quad_nds_cos_theta[i][j] = quad_rules[i*3+0][0];
-          exp_itheta[j].imag = quad_nds_sin_theta[i][j] = quad_rules[i*3+1][0];
-          quad_wts[i][j] = 0;
-          exp_iktheta[j].real = 1;
-          exp_iktheta[j].imag = 0;
-        }
-
-        auto& Mexp_iktheta = fourier_basis[i];
-        Mexp_iktheta.ReInit(Nnds, (Nmodes-ModalUpsample)*2);
-        for (Integer k = 0; k < Nmodes-ModalUpsample; k++) {
-          for (Integer j = 0; j < Nnds; j++) {
-            Mexp_iktheta[j][k*2+0] = exp_iktheta[j].real;
-            Mexp_iktheta[j][k*2+1] = exp_iktheta[j].imag;
-          }
-          exp_iktheta *= exp_itheta;
-        }
+        const Integer Nnds = quad_rules[i*4+0].Dim();
+        SCTL_ASSERT(Nnds%VecLen == 0);
+        quad_wts[i] = quad_rules[i*4+2];
+        quad_nds_cos_theta[i] = quad_rules[i*4+0];
+        quad_nds_sin_theta[i] = quad_rules[i*4+1];
+        fourier_basis[i] = Matrix<RealType>((Nmodes-ModalUpsample)*2, Nnds, quad_rules[i*4+3].begin()).Transpose();
       }
       all_fourier_basis[Nmodes].Swap(fourier_basis);
       all_quad_nds_cos_theta[Nmodes].Swap(quad_nds_cos_theta);
@@ -1110,12 +1107,12 @@ namespace SCTL_NAMESPACE {
       nds_cos_theta.ReInit(N, (Iterator<RealType>)nds0_cos_theta.begin(), false);
       nds_sin_theta.ReInit(N, (Iterator<RealType>)nds0_sin_theta.begin(), false);
       wts.ReInit(N, (Iterator<RealType>)wts0.begin(), false);
-
-      if (adap_depth >= crossover_adap_depth) return exp_theta0;
-      else return Complex<RealType>(1,0);
     }
+
+    // return whether an adaptive quadrature rule has been used
+    return (adap_depth >= crossover_adap_depth);
   }
-  template <Integer digits, Integer ModalUpsample, bool trg_dot_prod, class RealType, class Kernel> static void toroidal_greens_fn_batched(Matrix<RealType>& M, const Tensor<RealType,true,3,1>& y_trg, const Tensor<RealType,true,3,1>& n_trg, const Matrix<RealType>& x_src, const Matrix<RealType>& dx_src, const Matrix<RealType>& d2x_src, const Matrix<RealType>& r_src, const Matrix<RealType>& dr_src, const Matrix<RealType>& e1_src, const Matrix<RealType>& e2_src, const Matrix<RealType>& de1_src, const Matrix<RealType>& de2_src, const Kernel& ker, const Integer FourierModes) {
+  template <Integer digits, Integer ModalUpsample, bool trg_dot_prod, class RealType, class Kernel, Integer adap=false> static void toroidal_greens_fn_batched(Matrix<RealType>& M, const Tensor<RealType,true,3,1>& x_trg, const Tensor<RealType,true,3,1>& e_trg, const RealType r_trg, const Tensor<RealType,true,3,1>& n_trg, const Matrix<RealType>& x_src, const Matrix<RealType>& dx_src, const Matrix<RealType>& d2x_src, const Matrix<RealType>& r_src, const Matrix<RealType>& dr_src, const Matrix<RealType>& e1_src, const Kernel& ker, const Integer FourierModes) {
     static constexpr Integer VecLen = DefaultVecLen<RealType>();
     using VecType = Vec<RealType, VecLen>;
 
@@ -1133,81 +1130,81 @@ namespace SCTL_NAMESPACE {
     SCTL_ASSERT(  r_src.Dim(1) == BatchSize &&   r_src.Dim(0) ==         1);
     SCTL_ASSERT( dr_src.Dim(1) == BatchSize &&  dr_src.Dim(0) ==         1);
     SCTL_ASSERT( e1_src.Dim(1) == BatchSize &&  e1_src.Dim(0) == COORD_DIM);
-    SCTL_ASSERT( e2_src.Dim(1) == BatchSize &&  e2_src.Dim(0) == COORD_DIM);
-    SCTL_ASSERT(de1_src.Dim(1) == BatchSize && de1_src.Dim(0) == COORD_DIM);
-    SCTL_ASSERT(de2_src.Dim(1) == BatchSize && de2_src.Dim(0) == COORD_DIM);
-    VecType n_trg_[COORD_DIM] = {n_trg(0,0),n_trg(1,0),n_trg(2,0)};
+    const VecType n_trg_[COORD_DIM] = {n_trg(0,0),n_trg(1,0),n_trg(2,0)};
+    const Vec3 y_trg = x_trg + e_trg*r_trg;
     for (Long ii = 0; ii < BatchSize; ii++) {
       RealType r = r_src[0][ii], dr = dr_src[0][ii];
-      Vec3 x, dx, d2x, e1, e2, de1, de2;
-      { // Set x, dx, d2x, e1, e2, de1, de2
-        for (Integer k = 0; k < COORD_DIM; k++) {
-          x  (k,0) =   x_src[k][ii];
-          dx (k,0) =  dx_src[k][ii];
-          d2x(k,0) = d2x_src[k][ii];
-          e1 (k,0) =  e1_src[k][ii];
-          e2 (k,0) =  e2_src[k][ii];
-          de1(k,0) = de1_src[k][ii];
-          de2(k,0) = de2_src[k][ii];
-        }
+      Vec3 x, dx, d2x, e1;
+      for (Integer k = 0; k < COORD_DIM; k++) { // Set x, dx, d2x, e1
+        x  (k,0) =   x_src[k][ii];
+        dx (k,0) =  dx_src[k][ii];
+        d2x(k,0) = d2x_src[k][ii];
+        e1 (k,0) =  e1_src[k][ii];
       }
 
-      auto toroidal_greens_fn = [&ker,&n_trg_](Matrix<RealType>& M, const Vec3& Xt, const Vec3& x, const Vec3& dx, const Vec3& d2x, const Vec3& e1, const Vec3& e2, const Vec3& de1, const Vec3& de2, const RealType r, const RealType dr, const Integer FourierModes) {
+      auto toroidal_greens_fn = [&ker,&n_trg_](Matrix<RealType>& M, const Vec3& Xt, const Vec3& x, const Vec3& dx, const Vec3& d2x, const Vec3& e1_, const RealType r, const RealType dr, const Integer FourierModes) {
         SCTL_ASSERT(M.Dim(0) ==    KDIM0*KDIM1);
         SCTL_ASSERT(M.Dim(1) == FourierModes*2);
+        const auto Xt_X0 = Xt-x;
+
+        RealType dist;
+        Vec3 e1, e2, e3;
+        { // Set dist, e1, e2, e3
+          e3 = dx*(-1/sqrt<RealType>(dot_prod(dx,dx)));
+          e1 = Xt_X0 - e3 * dot_prod(Xt_X0,e3);
+          if (dot_prod(e1,e1) == 0) e1 = e1_;
+          e1 = e1 * (1/sqrt<RealType>(dot_prod(e1,e1)));
+          e2 = cross_prod(e3, e1);
+          e2 = e2 * (1/sqrt<RealType>(dot_prod(e2,e2)));
+
+          RealType dist0 = dot_prod(Xt_X0, e1) - r;
+          RealType dist1 = dot_prod(Xt_X0, e3);
+          dist = sqrt<RealType>(dist0*dist0 + dist1*dist1);
+        }
+        const auto exp_theta = Complex<RealType>(dot_prod(e1,e1_), -dot_prod(e2,e1_));
 
         Matrix<RealType> Mexp_iktheta;
         Vector<RealType> nds_cos_theta, nds_sin_theta, wts;
-        const auto exp_theta = ToroidalSpecialQuadRule<RealType,VecLen,ModalUpsample,Kernel>(Mexp_iktheta, nds_cos_theta, nds_sin_theta, wts, FourierModes+ModalUpsample, Xt-x, e1, e2, cross_prod(e1,e2), r, digits);
+        ToroidalSpecialQuadRule<RealType,VecLen,ModalUpsample,Kernel,adap>(Mexp_iktheta, nds_cos_theta, nds_sin_theta, wts, FourierModes+ModalUpsample, dist/r, digits);
         const Long Nnds = wts.Dim();
         SCTL_ASSERT(Nnds < Nbuff);
 
         { // Set M
-          const VecType exp_theta_real(exp_theta.real);
-          const VecType exp_theta_imag(exp_theta.imag);
-          const VecType vec_dx[3] = {VecType(dx(0,0)), VecType(dx(1,0)), VecType(dx(2,0))};
+          const RealType d2x_dot_e1 = e1(0,0)*d2x(0,0) + e1(1,0)*d2x(1,0) + e1(2,0)*d2x(2,0);
+          const RealType d2x_dot_e2 = e2(0,0)*d2x(0,0) + e2(1,0)*d2x(1,0) + e2(2,0)*d2x(2,0);
+          const RealType norm_dx_ = sqrt<RealType>(dot_prod(dx,dx));
+          const RealType inv_norm_dx = 1/norm_dx_;
+          const VecType norm_dx(norm_dx_);
 
+          const VecType vec_dx[3] = {dx(0,0), dx(1,0), dx(2,0)};
           const VecType vec_dy0[3] = {Xt(0,0)-x(0,0), Xt(1,0)-x(1,0), Xt(2,0)-x(2,0)};
-          const VecType vec_dy1[3] = {-e1(0,0)*r, -e1(1,0)*r, -e1(2,0)*r};
-          const VecType vec_dy2[3] = {-e2(0,0)*r, -e2(1,0)*r, -e2(2,0)*r};
-
-          const VecType vec_dy_ds1[3] = {e1(0,0)*dr+de1(0,0)*r, e1(1,0)*dr+de1(1,0)*r, e1(2,0)*dr+de1(2,0)*r};
-          const VecType vec_dy_ds2[3] = {e2(0,0)*dr+de2(0,0)*r, e2(1,0)*dr+de2(1,0)*r, e2(2,0)*dr+de2(2,0)*r};
-          const VecType vec_dy_dt1[3] = {e2(0,0)*r, e2(1,0)*r, e2(2,0)*r};
-          const VecType vec_dy_dt2[3] = {e1(0,0)*r, e1(1,0)*r, e1(2,0)*r};
 
           alignas(sizeof(VecType)) StaticArray<RealType,KDIM0*KDIM1*Nbuff> mem_buff;
           Matrix<RealType> Mker_da(KDIM0*KDIM1, Nnds, mem_buff, false);
           for (Integer j = 0; j < Nnds; j+=VecLen) { // Set Mker_da
             VecType dy[3], n[3], da;
             { // Set dy, n, da
-              VecType nds_cos_theta_j = VecType::LoadAligned(&nds_cos_theta[j]);
-              VecType nds_sin_theta_j = VecType::LoadAligned(&nds_sin_theta[j]);
-              VecType cost = nds_cos_theta_j*exp_theta_real - nds_sin_theta_j*exp_theta_imag;
-              VecType sint = nds_cos_theta_j*exp_theta_imag + nds_sin_theta_j*exp_theta_real;
+              VecType cost = VecType::LoadAligned(&nds_cos_theta[j])+(RealType)1;
+              VecType sint = VecType::LoadAligned(&nds_sin_theta[j]);
 
-              dy[0] = vec_dy0[0] + vec_dy1[0]*cost + vec_dy2[0]*sint;
-              dy[1] = vec_dy0[1] + vec_dy1[1]*cost + vec_dy2[1]*sint;
-              dy[2] = vec_dy0[2] + vec_dy1[2]*cost + vec_dy2[2]*sint;
+              dy[0] = vec_dy0[0] - cost*(r*e1(0,0)) - sint*(r*e2(0,0));
+              dy[1] = vec_dy0[1] - cost*(r*e1(1,0)) - sint*(r*e2(1,0));
+              dy[2] = vec_dy0[2] - cost*(r*e1(2,0)) - sint*(r*e2(2,0));
 
-              VecType dy_ds[3], dy_dt[3];
-              dy_ds[0] = vec_dx[0] + vec_dy_ds1[0]*cost + vec_dy_ds2[0]*sint;
-              dy_ds[1] = vec_dx[1] + vec_dy_ds1[1]*cost + vec_dy_ds2[1]*sint;
-              dy_ds[2] = vec_dx[2] + vec_dy_ds1[2]*cost + vec_dy_ds2[2]*sint;
-              dy_dt[0] = vec_dy_dt1[0]*cost - vec_dy_dt2[0]*sint;
-              dy_dt[1] = vec_dy_dt1[1]*cost - vec_dy_dt2[1]*sint;
-              dy_dt[2] = vec_dy_dt1[2]*cost - vec_dy_dt2[2]*sint;
-              n[0] = dy_ds[1] * dy_dt[2] - dy_ds[2] * dy_dt[1];
-              n[1] = dy_ds[2] * dy_dt[0] - dy_ds[0] * dy_dt[2];
-              n[2] = dy_ds[0] * dy_dt[1] - dy_ds[1] * dy_dt[0];
+              VecType norm_dy = norm_dx - (cost*d2x_dot_e1 + sint*d2x_dot_e2) * (r*inv_norm_dx);
+              n[0] = cost*e1(0,0)*norm_dy + sint*e2(0,0)*norm_dy - vec_dx[0]*(dr*inv_norm_dx);
+              n[1] = cost*e1(1,0)*norm_dy + sint*e2(1,0)*norm_dy - vec_dx[1]*(dr*inv_norm_dx);
+              n[2] = cost*e1(2,0)*norm_dy + sint*e2(2,0)*norm_dy - vec_dx[2]*(dr*inv_norm_dx);
 
               VecType da2 = n[0]*n[0] + n[1]*n[1] + n[2]*n[2];
               VecType inv_da = approx_rsqrt<digits>(da2);
-              da = da2 * inv_da;
+              da = da2 * inv_da * r;
 
               n[0] = n[0] * inv_da;
               n[1] = n[1] * inv_da;
               n[2] = n[2] * inv_da;
+
+              //da = norm_dx*r - (n[0]*vec_d2x[0]+n[1]*vec_d2x[1]+n[2]*vec_d2x[2])*(r*r*inv_norm_dx); // dr == 0
             }
 
             VecType Mker[KDIM0][Kernel::TrgDim()];
@@ -1241,10 +1238,119 @@ namespace SCTL_NAMESPACE {
         }
       };
       Matrix<RealType> M_toroidal_greens_fn(KDIM0*KDIM1, FourierModes*2, M[ii], false);
-      toroidal_greens_fn(M_toroidal_greens_fn, y_trg, x, dx, d2x, e1, e2, de1, de2, r, dr, FourierModes);
+      toroidal_greens_fn(M_toroidal_greens_fn, y_trg, x, dx, d2x, e1, r, dr, FourierModes);
+    }
+
+    return;
+    if (adap==0) { // Print toroidal quadrature error
+      using ValueType = RealType;
+      auto copy_matrix = [](Matrix<ValueType>& M_, const Matrix<RealType>& M) {
+        M_.ReInit(M.Dim(0), M.Dim(1));
+        for (Long i = 0; i < M.Dim(0)*M.Dim(1); i++) {
+          M_[0][i] = (ValueType)M[0][i];
+        }
+      };
+      Matrix<ValueType> M_;
+      Tensor<ValueType,true,3,1> x_trg_;
+      Tensor<ValueType,true,3,1> e_trg_;
+      Tensor<ValueType,true,3,1> n_trg_;
+      for (Long i = 0; i < 3; i++) {
+        x_trg_(i,0) = (ValueType)x_trg(i,0);
+        e_trg_(i,0) = (ValueType)e_trg(i,0);
+        n_trg_(i,0) = (ValueType)n_trg(i,0);
+      }
+      Matrix<ValueType> x_src_  ;
+      Matrix<ValueType> dx_src_ ;
+      Matrix<ValueType> d2x_src_;
+      Matrix<ValueType> r_src_  ;
+      Matrix<ValueType> dr_src_ ;
+      Matrix<ValueType> e1_src_ ;
+      copy_matrix(M_  , M);
+      copy_matrix(x_src_  , x_src);
+      copy_matrix(dx_src_ , dx_src);
+      copy_matrix(d2x_src_, d2x_src);
+      copy_matrix(r_src_  , r_src);
+      copy_matrix(dr_src_ , dr_src);
+      copy_matrix(e1_src_ , e1_src);
+
+      toroidal_greens_fn_batched<(digits<32?digits+1:digits), ModalUpsample, trg_dot_prod, ValueType, Kernel, 2>(M_, x_trg_, e_trg_/sqrt<ValueType>(dot_prod(e_trg_,e_trg_)), (ValueType)r_trg, n_trg_, x_src_, dx_src_, d2x_src_, r_src_, dr_src_, e1_src_, ker, FourierModes);
+
+      static RealType max_rel_err = 0;
+      RealType max_err = 0, max_val = 0;
+      for (Long i = 0; i < BatchSize*KDIM0*KDIM1; i++) {
+        RealType err = fabs(M[0][i*FourierModes*2] - (RealType)M_[0][i*FourierModes*2]);
+        RealType val = fabs(M[0][i*FourierModes*2]);
+        if (err > max_err) max_err = err;
+        if (val > max_val) max_val = val;
+      }
+      if (max_val>0 && max_err/max_val > max_rel_err) {
+        max_rel_err = max_err/max_val;
+        std::cout<<max_rel_err<<' '<<max_err<<'\n';
+      }
+
+      for (Long i = 0; i < M.Dim(0)*M.Dim(1); i++) {
+        M[0][i] = (RealType)M_[0][i];
+      }
     }
   }
 
+  template <class ValueType> static void DyadicQuad_s(Vector<ValueType>& nds, Vector<ValueType>& wts, const Integer LegQuadOrder, const Integer LogQuadOrder, const ValueType s, const Integer levels, bool sort) {
+    const auto& log_quad_nds = LogSingularityQuadRule<ValueType>(LogQuadOrder).first;
+    const auto& log_quad_wts = LogSingularityQuadRule<ValueType>(LogQuadOrder).second;
+    const auto& leg_nds = LegendreQuadRule<ValueType>(LegQuadOrder).first;
+    const auto& leg_wts = LegendreQuadRule<ValueType>(LegQuadOrder).second;
+
+    ValueType len0 = std::min(pow<ValueType>(0.5,levels), std::min(s, (1-s)));
+    ValueType len1 = std::min<ValueType>(s, 1-s);
+    ValueType len2 = std::max<ValueType>(s, 1-s);
+
+    for (Long i = 0; i < log_quad_nds.Dim(); i++) {
+      nds.PushBack( len0*log_quad_nds[i]);
+      nds.PushBack(-len0*log_quad_nds[i]);
+      wts.PushBack(len0*log_quad_wts[i]);
+      wts.PushBack(len0*log_quad_wts[i]);
+    }
+
+    for (ValueType start = len0; start < len1; start*=2) {
+      ValueType step_ = std::min(start, len1-start);
+      for (Long i = 0; i < leg_nds.Dim(); i++) {
+        nds.PushBack( start + step_*leg_nds[i]);
+        nds.PushBack(-start - step_*leg_nds[i]);
+        wts.PushBack(step_*leg_wts[i]);
+        wts.PushBack(step_*leg_wts[i]);
+      }
+    }
+
+    for (ValueType start = len1; start < len2; start*=2) {
+      ValueType step_ = std::min(start, len2-start);
+      for (Long i = 0; i < leg_nds.Dim(); i++) {
+        if (s + start + step_*leg_nds[i] <= 1.0) {
+          nds.PushBack( start + step_*leg_nds[i]);
+          wts.PushBack(step_*leg_wts[i]);
+        }
+        if (s - start - step_*leg_nds[i] >= 0.0) {
+          nds.PushBack(-start - step_*leg_nds[i]);
+          wts.PushBack(step_*leg_wts[i]);
+        }
+      }
+    }
+
+    if (!sort) return;
+    Vector<ValueType> nds_(nds.Dim());
+    Vector<ValueType> wts_(wts.Dim());
+    Vector<std::pair<ValueType,Long>> sort_pair;
+    for (Long i = 0; i < nds.Dim(); i++) {
+      sort_pair.PushBack(std::pair<ValueType,Long>{nds[i], i});
+    }
+    std::sort(sort_pair.begin(), sort_pair.end());
+    for (Long i = 0; i < nds.Dim(); i++) {
+      const Long idx = sort_pair[i].second;
+      nds_[i] = nds[idx];
+      wts_[i] = wts[idx];
+    }
+    nds = nds_;
+    wts = wts_;
+  };
   template <Integer ModalUpsample, class ValueType, class Kernel, bool trg_dot_prod> static void SpecialQuadBuildBasisMatrix(Matrix<ValueType>& M, Vector<ValueType>& quad_nds, Vector<ValueType>& quad_wts, const Integer Ncheb, const Integer FourierModes, const ValueType s_trg, const Integer max_digits, const ValueType elem_length, const Integer RefLevels, const Kernel& ker) {
     // TODO: cleanup
     constexpr Integer COORD_DIM = 3;
@@ -1256,10 +1362,24 @@ namespace SCTL_NAMESPACE {
     constexpr Integer KDIM0 = Kernel::SrcDim();
     constexpr Integer KDIM1 = Kernel::TrgDim() / (trg_dot_prod ? COORD_DIM : 1);
 
-    Vec3 y_trg, n_trg;
-    y_trg(0,0) = 1;
-    y_trg(1,0) = 0;
-    y_trg(2,0) = s_trg * elem_length;
+    // Adaptive quadrature rule
+    DyadicQuad_s(quad_nds, quad_wts, LegQuadOrder, LogQuadOrder, s_trg, RefLevels, true);
+    quad_nds += s_trg; // TODO: remove this
+
+    Matrix<ValueType> Minterp_quad_nds;
+    { // Set Minterp_quad_nds
+      Minterp_quad_nds.ReInit(Ncheb, quad_nds.Dim());
+      Vector<ValueType> Vinterp_quad_nds(Ncheb*quad_nds.Dim(), Minterp_quad_nds.begin(), false);
+      LagrangeInterp<ValueType>::Interpolate(Vinterp_quad_nds, SlenderElemList<ValueType>::CenterlineNodes(Ncheb), quad_nds);
+    }
+
+    Vec3 x_trg, e_trg, n_trg;
+    x_trg(0,0) = 0;
+    x_trg(1,0) = 0;
+    x_trg(2,0) = 0;
+    e_trg(0,0) = 1;
+    e_trg(1,0) = 0;
+    e_trg(2,0) = 0;
     n_trg(0,0) = 1;
     n_trg(1,0) = 0;
     n_trg(2,0) = 0;
@@ -1276,7 +1396,7 @@ namespace SCTL_NAMESPACE {
 
       coord[0*Ncheb+i] = 0;
       coord[1*Ncheb+i] = 0;
-      coord[2*Ncheb+i] = SlenderElemList<ValueType>::CenterlineNodes(Ncheb)[i] * elem_length;
+      coord[2*Ncheb+i] = SlenderElemList<ValueType>::CenterlineNodes(Ncheb)[i] * elem_length - s_trg * elem_length;
 
       dx[0*Ncheb+i] = 0;
       dx[1*Ncheb+i] = 0;
@@ -1291,81 +1411,13 @@ namespace SCTL_NAMESPACE {
       e1[2*Ncheb+i] = 0;
     }
 
-    auto adap_ref = [&LegQuadOrder](Vector<ValueType>& nds_, Vector<ValueType>& wts_, const ValueType s, const Integer levels) {
-      const auto& log_quad_nds = LogSingularityQuadRule<ValueType>(LogQuadOrder).first;
-      const auto& log_quad_wts = LogSingularityQuadRule<ValueType>(LogQuadOrder).second;
-      const auto& leg_nds = LegendreQuadRule<ValueType>(LegQuadOrder).first;
-      const auto& leg_wts = LegendreQuadRule<ValueType>(LegQuadOrder).second;
-      Vector<ValueType> nds;
-      Vector<ValueType> wts;
-
-      ValueType len0 = std::min(pow<ValueType>(0.5,levels), std::min(s, (1-s)));
-      ValueType len1 = std::min<ValueType>(s, 1-s);
-      ValueType len2 = std::max<ValueType>(s, 1-s);
-
-      for (Long i = 0; i < log_quad_nds.Dim(); i++) {
-        nds.PushBack(s + len0*log_quad_nds[i]);
-        nds.PushBack(s - len0*log_quad_nds[i]);
-        wts.PushBack(len0*log_quad_wts[i]);
-        wts.PushBack(len0*log_quad_wts[i]);
-      }
-
-      for (ValueType start = len0; start < len1; start*=2) {
-        ValueType step_ = std::min(start, len1-start);
-        for (Long i = 0; i < leg_nds.Dim(); i++) {
-          nds.PushBack(s + start + step_*leg_nds[i]);
-          nds.PushBack(s - start - step_*leg_nds[i]);
-          wts.PushBack(step_*leg_wts[i]);
-          wts.PushBack(step_*leg_wts[i]);
-        }
-      }
-
-      for (ValueType start = len1; start < len2; start*=2) {
-        ValueType step_ = std::min(start, len2-start);
-        for (Long i = 0; i < leg_nds.Dim(); i++) {
-          if (s + start + step_*leg_nds[i] <= 1.0) {
-            nds.PushBack(s + start + step_*leg_nds[i]);
-            wts.PushBack(step_*leg_wts[i]);
-          }
-          if (s - start - step_*leg_nds[i] >= 0.0) {
-            nds.PushBack(s - start - step_*leg_nds[i]);
-            wts.PushBack(step_*leg_wts[i]);
-          }
-        }
-      }
-
-      nds_.ReInit(nds.Dim());
-      wts_.ReInit(wts.Dim());
-      Vector<std::pair<ValueType,Long>> sort_pair;
-      for (Long i = 0; i < nds.Dim(); i++) {
-        sort_pair.PushBack(std::pair<ValueType,Long>{nds[i], i});
-      }
-      std::sort(sort_pair.begin(), sort_pair.end());
-      for (Long i = 0; i < nds.Dim(); i++) {
-        const Long idx = sort_pair[i].second;
-        nds_[i] = nds[idx];
-        wts_[i] = wts[idx];
-      }
-    };
-    adap_ref(quad_nds, quad_wts, s_trg, RefLevels); // adaptive quadrature rule
-
-    Matrix<ValueType> Minterp_quad_nds;
-    { // Set Minterp_quad_nds
-      Minterp_quad_nds.ReInit(Ncheb, quad_nds.Dim());
-      Vector<ValueType> Vinterp_quad_nds(Ncheb*quad_nds.Dim(), Minterp_quad_nds.begin(), false);
-      LagrangeInterp<ValueType>::Interpolate(Vinterp_quad_nds, SlenderElemList<ValueType>::CenterlineNodes(Ncheb), quad_nds);
-    }
-
-    Matrix<ValueType> r_src, dr_src, x_src, dx_src, d2x_src, e1_src, e2_src, de1_src, de2_src;
+    Matrix<ValueType> r_src, dr_src, x_src, dx_src, d2x_src, e1_src;
     r_src  .ReInit(        1,quad_nds.Dim());
     dr_src .ReInit(        1,quad_nds.Dim());
     x_src  .ReInit(COORD_DIM,quad_nds.Dim());
     dx_src .ReInit(COORD_DIM,quad_nds.Dim());
     d2x_src.ReInit(COORD_DIM,quad_nds.Dim());
     e1_src .ReInit(COORD_DIM,quad_nds.Dim());
-    e2_src .ReInit(COORD_DIM,quad_nds.Dim());
-    de1_src.ReInit(COORD_DIM,quad_nds.Dim());
-    de2_src.ReInit(COORD_DIM,quad_nds.Dim());
     Matrix<ValueType>::GEMM(  x_src, Matrix<ValueType>(COORD_DIM,Ncheb, coord.begin(),false), Minterp_quad_nds);
     Matrix<ValueType>::GEMM( dx_src, Matrix<ValueType>(COORD_DIM,Ncheb,    dx.begin(),false), Minterp_quad_nds);
     Matrix<ValueType>::GEMM(d2x_src, Matrix<ValueType>(COORD_DIM,Ncheb,   d2x.begin(),false), Minterp_quad_nds);
@@ -1373,31 +1425,22 @@ namespace SCTL_NAMESPACE {
     Matrix<ValueType>::GEMM( dr_src, Matrix<ValueType>(        1,Ncheb,    dr.begin(),false), Minterp_quad_nds);
     Matrix<ValueType>::GEMM( e1_src, Matrix<ValueType>(COORD_DIM,Ncheb,    e1.begin(),false), Minterp_quad_nds);
     for (Long j = 0; j < quad_nds.Dim(); j++) { // Set e2_src
-      Vec3 e1, dx, d2x;
+      Vec3 e1, dx;
       for (Integer k = 0; k < COORD_DIM; k++) {
         e1(k,0) = e1_src[k][j];
         dx(k,0) = dx_src[k][j];
-        d2x(k,0) = d2x_src[k][j];
       }
-      ValueType inv_dx2 = 1/dot_prod(dx,dx);
-      e1 = e1 - dx * dot_prod(e1, dx) * inv_dx2;
+      e1 = e1 - dx * dot_prod(e1, dx) * (1/dot_prod(dx,dx));
       e1 = e1 * (1/sqrt<ValueType>(dot_prod(e1,e1)));
 
-      Vec3 e2 = cross_prod(e1, dx);
-      e2 = e2 * (1/sqrt<ValueType>(dot_prod(e2,e2)));
-      Vec3 de1 = dx*(-dot_prod(e1,d2x) * inv_dx2);
-      Vec3 de2 = dx*(-dot_prod(e2,d2x) * inv_dx2);
       for (Integer k = 0; k < COORD_DIM; k++) {
         e1_src[k][j] = e1(k,0);
-        e2_src[k][j] = e2(k,0);
-        de1_src[k][j] = de1(k,0);
-        de2_src[k][j] = de2(k,0);
       }
     }
 
     Matrix<ValueType> M_tor(quad_nds.Dim(), KDIM0*KDIM1*FourierModes*2);
     constexpr Integer TorGreensFnDigits = (Integer)(TypeTraits<ValueType>::SigBits*0.3010299957);
-    toroidal_greens_fn_batched<TorGreensFnDigits,ModalUpsample,trg_dot_prod>(M_tor, y_trg, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes);
+    toroidal_greens_fn_batched<TorGreensFnDigits,ModalUpsample,trg_dot_prod,ValueType,Kernel,1>(M_tor, x_trg, e_trg, (ValueType)1, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, ker, FourierModes);
 
     M.ReInit(quad_nds.Dim(), Ncheb*FourierModes*2*KDIM0*KDIM1);
     for (Long i = 0; i < quad_nds.Dim(); i++) {
@@ -1413,6 +1456,7 @@ namespace SCTL_NAMESPACE {
     constexpr Integer max_digits = 19;
     const ValueType s_trg = SlenderElemList<ValueType>::CenterlineNodes(Ncheb)[trg_node_idx];
     const Integer adap_depth = (Integer)(log<ValueType>(elem_length)/log<ValueType>(2)+4);
+    const ValueType eps_buffer = std::min<ValueType>(3e-2/elem_length, 3e-4); // distance of closest node points to s_trg
     const ValueType eps = 8*machine_eps<ValueType>();
 
     Kernel ker;
@@ -1496,7 +1540,9 @@ namespace SCTL_NAMESPACE {
       Vector<ValueType> eps_vec;
       Vector<Vector<ValueType>> quad_nds, quad_wts;
       for (Long k = 0; k < max_digits; k++) eps_vec.PushBack(pow<ValueType,Long>(0.1,k));
-      InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, false, eps_vec);
+      ValueType range0 = s_trg>=0.5 ? 0 : s_trg+eps_buffer;
+      ValueType range1 = s_trg>=0.5 ? s_trg-eps_buffer : 1;
+      InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, false, eps_vec, Vector<Long>(), range0, range1);
       SCTL_ASSERT(quad_nds.Dim() == max_digits);
       SCTL_ASSERT(quad_wts.Dim() == max_digits);
       for (Long k = 0; k < max_digits; k++) {
@@ -1526,13 +1572,35 @@ namespace SCTL_NAMESPACE {
     auto LogSingularQuadOrder = [](Integer digits) { return 2*digits; }; // TODO: determine optimal order
     auto LegQuadOrder = [](Integer digits) { return digits; }; // TODO: determine optimal order
 
+    #ifdef SCTL_QUAD_T
+    using ValueType = QuadReal;
+    #else
+    using ValueType = long double;
+    #endif
+    if (0) { // Compute quadratures on-the-fly
+      static ValueType aspect_ratio = 0;
+      static Vector<Vector<Vector<ValueType>>> nds_wts;
+      #pragma omp critical(mytest)
+      if (elem_length/elem_radius < aspect_ratio/1.42 || aspect_ratio*1.42 < elem_length/elem_radius) {
+        nds_wts.ReInit(ChebOrder);
+        for (Long i = 0; i < ChebOrder; i++) {
+          nds_wts[i] = BuildSpecialQuadRules<ModalUpsample,ValueType,Kernel,trg_dot_prod>(ChebOrder, MaxFourierModes, i, elem_length/elem_radius);
+        }
+        aspect_ratio = elem_length/elem_radius;
+      }
+      const Long Nnds = nds_wts[trg_node_idx][digits*2+0].Dim();
+      nds.ReInit(Nnds);
+      wts.ReInit(Nnds);
+      for (Long i = 0; i < Nnds; i++) {
+        static const auto cheb_nds_ = SlenderElemList<ValueType>::CenterlineNodes(ChebOrder);
+        nds[i] = (Real)(nds_wts[trg_node_idx][digits*2+0][i] - cheb_nds_[trg_node_idx]);
+        wts[i] = (Real)nds_wts[trg_node_idx][digits*2+1][i];
+      }
+      return;
+    }
+
     if (!adap_quad) {
       auto load_special_quad_rule = [&max_adap_depth](Vector<Vector<Real>>& nds_lst, Vector<Vector<Real>>& wts_lst, const Integer ChebOrder){
-        #ifdef SCTL_QUAD_T
-        using ValueType = QuadReal;
-        #else
-        using ValueType = long double;
-        #endif
         const std::string fname = std::string("data/special_quad_q") + std::to_string(ChebOrder) + "_" + Kernel::Name() + (trg_dot_prod ? "_dotXn" : "");
         const auto cheb_nds_ = SlenderElemList<ValueType>::CenterlineNodes(ChebOrder);
 
@@ -1588,56 +1656,10 @@ namespace SCTL_NAMESPACE {
       wts = wts_lst[ChebOrder][(quad_idx*ChebOrder+trg_node_idx) * max_digits+digits];
       nds = nds_lst[ChebOrder][(quad_idx*ChebOrder+trg_node_idx) * max_digits+digits];
     } else {
+      const Integer RefLevels = (Integer)(log<Real>(elem_length/elem_radius)/log<Real>(2)-1);
       const auto& cheb_nds = SlenderElemList<Real>::CenterlineNodes(ChebOrder);
-      const auto& log_sing_nds_wts = LogSingularityQuadRule<Real>(LogSingularQuadOrder(digits));
-      const auto& leg_nds_wts = LegendreQuadRule<Real>(LegQuadOrder(digits));
-      const auto& sing_nds = log_sing_nds_wts.first;
-      const auto& sing_wts = log_sing_nds_wts.second;
-      const auto& leg_nds = leg_nds_wts.first;
-      const auto& leg_wts = leg_nds_wts.second;
-      nds.ReInit(0);
-      wts.ReInit(0);
-
       const Real s_trg = cheb_nds[trg_node_idx];
-      const Real sing_quad_len = std::min(0.8*elem_radius/elem_length, std::min(s_trg, (1-s_trg)));
-      for (Long i = 0; i < sing_nds.Dim(); i++) {
-        nds.PushBack( sing_quad_len*sing_nds[i]);
-        nds.PushBack(-sing_quad_len*sing_nds[i]);
-        wts.PushBack(sing_quad_len*sing_wts[i]);
-        wts.PushBack(sing_quad_len*sing_wts[i]);
-      }
-
-      Real a = -sing_quad_len;
-      for (Real step = sing_quad_len; step < 2; step*=2) {
-        Real a_ = a;
-        Real b_ = a - step;
-        b_ = std::min<Real>(b_, 1.0 - s_trg);
-        b_ = std::max<Real>(b_, 0.0 - s_trg);
-        Real len = fabs(a_ - b_);
-        if (len > 0) {
-          for (Long i = 0; i < leg_nds.Dim(); i++) {
-            nds.PushBack(a_*leg_nds[i] + b_*(1-leg_nds[i]));
-            wts.PushBack(len * leg_wts[i]);
-          }
-        }
-        a = b_;
-      }
-
-      a = sing_quad_len;
-      for (Real step = sing_quad_len; step < 2; step*=2) {
-        Real a_ = a;
-        Real b_ = a_ + step;
-        b_ = std::min<Real>(b_, 1.0 - s_trg);
-        b_ = std::max<Real>(b_, 0.0 - s_trg);
-        Real len = fabs(a_ - b_);
-        if (len > 0) {
-          for (Long i = 0; i < leg_nds.Dim(); i++) {
-            nds.PushBack(a_*leg_nds[i] + b_*(1-leg_nds[i]));
-            wts.PushBack(len * leg_wts[i]);
-          }
-        }
-        a = b_;
-      }
+      DyadicQuad_s(nds, wts, LegQuadOrder(digits), LogSingularQuadOrder(digits), s_trg, RefLevels, false);
     }
   }
 
@@ -1931,11 +1953,7 @@ namespace SCTL_NAMESPACE {
 
       Matrix<Real> Mfourier;
       Vector<Real> nds_cos, nds_sin, wts;
-      Tensor<Real,true,3,1> Xt_X0((Real)1);
-      Tensor<Real,true,3,1> e1((Real)0); e1(0,0) = 1;
-      Tensor<Real,true,3,1> e2((Real)0); e2(1,0) = 1;
-      Tensor<Real,true,3,1> e1xe2((Real)0); e1xe2(2,0) = 1;
-      ToroidalSpecialQuadRule<Real,DefaultVecLen<Real>(),ModalUpsample,Kernel>(Mfourier, nds_cos, nds_sin, wts, FourierModes+ModalUpsample, Xt_X0, e1, e2, e1xe2, (Real)1, 1);
+      ToroidalSpecialQuadRule<Real,DefaultVecLen<Real>(),ModalUpsample,Kernel,false>(Mfourier, nds_cos, nds_sin, wts, FourierModes+ModalUpsample, (Real)1, 1);
 
       Vector<Real> quad_nds, quad_wts;
       Matrix<Real> Minterp_quad_nds;
@@ -2192,16 +2210,13 @@ namespace SCTL_NAMESPACE {
         }
 
         Vec3 x_trg = Xt;
-        Matrix<Real> r_src, dr_src, x_src, dx_src, d2x_src, e1_src, e2_src, de1_src, de2_src;
+        Matrix<Real> r_src, dr_src, x_src, dx_src, d2x_src, e1_src;
         r_src  .ReInit(        1,quad_nds.Dim());
         dr_src .ReInit(        1,quad_nds.Dim());
         x_src  .ReInit(COORD_DIM,quad_nds.Dim());
         dx_src .ReInit(COORD_DIM,quad_nds.Dim());
         d2x_src.ReInit(COORD_DIM,quad_nds.Dim());
         e1_src .ReInit(COORD_DIM,quad_nds.Dim());
-        e2_src .ReInit(COORD_DIM,quad_nds.Dim());
-        de1_src.ReInit(COORD_DIM,quad_nds.Dim());
-        de2_src.ReInit(COORD_DIM,quad_nds.Dim());
         { // Set x_src, x_trg (improve numerical stability)
           Matrix<Real> x_nodes(COORD_DIM,ChebOrder, (Iterator<Real>)coord.begin(), true);
           for (Long j = 0; j < ChebOrder; j++) {
@@ -2221,31 +2236,22 @@ namespace SCTL_NAMESPACE {
         Matrix<Real>::GEMM( dr_src, Matrix<Real>(        1,ChebOrder,(Iterator<Real>)    dr.begin(),false), Minterp_quad_nds);
         Matrix<Real>::GEMM( e1_src, Matrix<Real>(COORD_DIM,ChebOrder,(Iterator<Real>)    e1.begin(),false), Minterp_quad_nds);
         for (Long j = 0; j < quad_nds.Dim(); j++) { // Set e2_src
-          Vec3 e1, dx, d2x;
+          Vec3 e1, dx;
           for (Integer k = 0; k < COORD_DIM; k++) {
             e1(k,0) = e1_src[k][j];
             dx(k,0) = dx_src[k][j];
-            d2x(k,0) = d2x_src[k][j];
           }
-          Real inv_dx2 = 1/dot_prod(dx,dx);
-          e1 = e1 - dx * dot_prod(e1, dx) * inv_dx2;
+          e1 = e1 - dx * dot_prod(e1, dx) * (1/dot_prod(dx,dx));
           e1 = e1 * (1/sqrt<Real>(dot_prod(e1,e1)));
 
-          Vec3 e2 = cross_prod(e1, dx);
-          e2 = e2 * (1/sqrt<Real>(dot_prod(e2,e2)));
-          Vec3 de1 = dx*(-dot_prod(e1,d2x) * inv_dx2);
-          Vec3 de2 = dx*(-dot_prod(e2,d2x) * inv_dx2);
           for (Integer k = 0; k < COORD_DIM; k++) {
             e1_src[k][j] = e1(k,0);
-            e2_src[k][j] = e2(k,0);
-            de1_src[k][j] = de1(k,0);
-            de2_src[k][j] = de2(k,0);
           }
         }
 
         const Vec3 y_trg = x_trg;
         Matrix<Real> M_tor(quad_nds.Dim(), KDIM0*KDIM1*FourierModes*2); // TODO: pre-allocate
-        toroidal_greens_fn_batched<digits,ModalUpsample,trg_dot_prod>(M_tor, y_trg, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes);
+        toroidal_greens_fn_batched<digits,ModalUpsample,trg_dot_prod>(M_tor, y_trg, Vec3((Real)1), (Real)0, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, ker, FourierModes);
 
         for (Long ii = 0; ii < M_tor.Dim(0); ii++) {
           for (Long jj = 0; jj < M_tor.Dim(1); jj++) {
@@ -2824,9 +2830,8 @@ namespace SCTL_NAMESPACE {
     for (Long i = 0; i < ChebOrder; i++) {
       Real r_trg = radius[i];
       Real dr_trg = dr[i];
-      Vec3 x_trg, dx_trg, e1_trg, e2_trg, de1_trg, de2_trg;
-      { // Set x_trg, e1_trg, e2_trg
-        Vec3 d2x_trg;
+      Vec3 x_trg, dx_trg, d2x_trg, e1_trg, e2_trg;
+      { // Set x_trg, dx_trg, d2x_trg, e1_trg
         for (Integer k = 0; k < COORD_DIM; k++) {
           x_trg (k,0) = coord[k*ChebOrder+i];
           e1_trg(k,0) = e1[k*ChebOrder+i];
@@ -2839,10 +2844,9 @@ namespace SCTL_NAMESPACE {
 
         e2_trg = cross_prod(e1_trg, dx_trg);
         e2_trg = e2_trg * (1/sqrt<Real>(dot_prod(e2_trg,e2_trg)));
-
-        de1_trg = dx_trg*(-dot_prod(e1_trg,d2x_trg) * inv_dx2);
-        de2_trg = dx_trg*(-dot_prod(e2_trg,d2x_trg) * inv_dx2);
       }
+      const Real norm_dx_trg = sqrt<Real>(dot_prod(dx_trg,dx_trg));
+      const Real inv_norm_dx_trg = 1/norm_dx_trg;
 
       Vector<Real> quad_nds, quad_wts; // Quadrature rule in s
       SpecialQuadRule<ModalUpsample,Real,Kernel,trg_dot_prod>(quad_nds, quad_wts, ChebOrder, i, r_trg, sqrt<Real>(dot_prod(dx_trg, dx_trg)), digits);
@@ -2855,16 +2859,13 @@ namespace SCTL_NAMESPACE {
         LagrangeInterp<Real>::Interpolate(Vinterp_quad_nds, cheb_nds-cheb_nds[i], quad_nds);
       }
 
-      Matrix<Real> r_src, dr_src, x_src, dx_src, d2x_src, e1_src, e2_src, de1_src, de2_src;
+      Matrix<Real> r_src, dr_src, x_src, dx_src, d2x_src, e1_src;
       r_src  .ReInit(        1, Nq);
       dr_src .ReInit(        1, Nq);
       x_src  .ReInit(COORD_DIM, Nq);
       dx_src .ReInit(COORD_DIM, Nq);
       d2x_src.ReInit(COORD_DIM, Nq);
       e1_src .ReInit(COORD_DIM, Nq);
-      e2_src .ReInit(COORD_DIM, Nq);
-      de1_src.ReInit(COORD_DIM, Nq);
-      de2_src.ReInit(COORD_DIM, Nq);
       { // Set x_src, x_trg (improve numerical stability)
         Matrix<Real> x_nodes(COORD_DIM,ChebOrder, (Iterator<Real>)coord.begin(), true);
         for (Long j = 0; j < ChebOrder; j++) {
@@ -2883,52 +2884,43 @@ namespace SCTL_NAMESPACE {
       Matrix<Real>::GEMM(  r_src, Matrix<Real>(        1,ChebOrder,(Iterator<Real>)radius.begin(),false), Minterp_quad_nds);
       Matrix<Real>::GEMM( dr_src, Matrix<Real>(        1,ChebOrder,(Iterator<Real>)    dr.begin(),false), Minterp_quad_nds);
       Matrix<Real>::GEMM( e1_src, Matrix<Real>(COORD_DIM,ChebOrder,(Iterator<Real>)    e1.begin(),false), Minterp_quad_nds);
-      for (Long j = 0; j < Nq; j++) { // Set e2_src
-        Vec3 e1, dx, d2x;
+      for (Long j = 0; j < Nq; j++) { // Set e1_src
+        Vec3 e1, dx;
         for (Integer k = 0; k < COORD_DIM; k++) {
           e1(k,0) = e1_src[k][j];
           dx(k,0) = dx_src[k][j];
-          d2x(k,0) = d2x_src[k][j];
         }
-        Real inv_dx2 = 1/dot_prod(dx,dx);
-        e1 = e1 - dx * dot_prod(e1, dx) * inv_dx2;
+        e1 = e1 - dx * dot_prod(e1, dx) * (1/dot_prod(dx,dx));
         e1 = e1 * (1/sqrt<Real>(dot_prod(e1,e1)));
 
-        Vec3 e2 = cross_prod(e1, dx);
-        e2 = e2 * (1/sqrt<Real>(dot_prod(e2,e2)));
-        Vec3 de1 = dx*(-dot_prod(e1,d2x) * inv_dx2);
-        Vec3 de2 = dx*(-dot_prod(e2,d2x) * inv_dx2);
         for (Integer k = 0; k < COORD_DIM; k++) {
           e1_src[k][j] = e1(k,0);
-          e2_src[k][j] = e2(k,0);
-          de1_src[k][j] = de1(k,0);
-          de2_src[k][j] = de2(k,0);
         }
       }
 
       Complex<Real> exp_theta_trg(1,0);
       for (Long j = 0; j < FourierOrder; j++) {
-        auto compute_Xn_trg = [&exp_theta_trg,&dx_trg,&e1_trg,&e2_trg,&de1_trg,&de2_trg,&r_trg,&dr_trg]() { // Set n_trg
-          const Vec3 dy_ds1 = e1_trg * dr_trg + de1_trg * r_trg;
-          const Vec3 dy_ds2 = e2_trg * dr_trg + de2_trg * r_trg;
-          const Vec3 dy_dt1 = e2_trg * r_trg;
-          const Vec3 dy_dt2 = e1_trg * r_trg;
+        auto compute_Xn_trg = [&exp_theta_trg,&dx_trg,&d2x_trg,&e1_trg,&e2_trg,&r_trg,&dr_trg,&norm_dx_trg,&inv_norm_dx_trg]() { // Set n_trg
+          Real cost = exp_theta_trg.real;
+          Real sint = exp_theta_trg.imag;
 
-          const Vec3 dy_ds = dx_trg + dy_ds1 * exp_theta_trg.real + dy_ds2 * exp_theta_trg.imag;
-          const Vec3 dy_dt =          dy_dt1 * exp_theta_trg.real - dy_dt2 * exp_theta_trg.imag;
+          Real d2x_dot_e1 = dot_prod(d2x_trg, e1_trg);
+          Real d2x_dot_e2 = dot_prod(d2x_trg, e2_trg);
 
           Vec3 n_trg;
-          n_trg(0,0) = dy_ds(1,0) * dy_dt(2,0) - dy_ds(2,0) * dy_dt(1,0);
-          n_trg(1,0) = dy_ds(2,0) * dy_dt(0,0) - dy_ds(0,0) * dy_dt(2,0);
-          n_trg(2,0) = dy_ds(0,0) * dy_dt(1,0) - dy_ds(1,0) * dy_dt(0,0);
-          Real scale = 1/sqrt<Real>(n_trg(0,0)*n_trg(0,0) + n_trg(1,0)*n_trg(1,0) + n_trg(2,0)*n_trg(2,0));
+          Real norm_dy = norm_dx_trg - (cost*d2x_dot_e1 + sint*d2x_dot_e2) * (r_trg*inv_norm_dx_trg);
+          n_trg(0,0) = e1_trg(0,0)*norm_dy*cost + e2_trg(0,0)*norm_dy*sint - dx_trg(0,0)*(dr_trg*inv_norm_dx_trg);
+          n_trg(1,0) = e1_trg(1,0)*norm_dy*cost + e2_trg(1,0)*norm_dy*sint - dx_trg(1,0)*(dr_trg*inv_norm_dx_trg);
+          n_trg(2,0) = e1_trg(2,0)*norm_dy*cost + e2_trg(2,0)*norm_dy*sint - dx_trg(2,0)*(dr_trg*inv_norm_dx_trg);
+          Real scale = 1/sqrt<Real>(dot_prod(n_trg,n_trg));
           return n_trg*scale;
         };
-        const Vec3 y_trg = x_trg + e1_trg*r_trg*exp_theta_trg.real + e2_trg*r_trg*exp_theta_trg.imag;
+        //const Vec3 y_trg = x_trg + e1_trg*r_trg*exp_theta_trg.real + e2_trg*r_trg*exp_theta_trg.imag;
+        const Vec3 e_trg = e1_trg*exp_theta_trg.real + e2_trg*exp_theta_trg.imag;
         const Vec3 n_trg(trg_dot_prod ? compute_Xn_trg() : Vec3((Real)0));
 
         Matrix<Real> M_tor(Nq, KDIM0*KDIM1*FourierModes*2); // TODO: pre-allocate
-        toroidal_greens_fn_batched<digits+2,ModalUpsample,trg_dot_prod>(M_tor, y_trg, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, e2_src, de1_src, de2_src, ker, FourierModes);
+        toroidal_greens_fn_batched<digits+2,ModalUpsample,trg_dot_prod>(M_tor, x_trg, e_trg, r_trg, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, ker, FourierModes);
 
         for (Long ii = 0; ii < Nq; ii++) {
           for (Long jj = 0; jj < KDIM0*KDIM1*FourierModes*2; jj++) {
