@@ -173,6 +173,7 @@ template <class ValueType, class FFT_Derived> class FFT_Base {
   }
 
   static void test() {
+    static constexpr ValueType eps = machine_eps<ValueType>() * 64;
     Vector<Long> fft_dim;
     fft_dim.PushBack(2);
     fft_dim.PushBack(5);
@@ -184,7 +185,7 @@ template <class ValueType, class FFT_Derived> class FFT_Base {
       myfft0.Setup(FFT_Type::R2C, howmany, fft_dim);
       myfft1.Setup(FFT_Type::C2R, howmany, fft_dim);
       Vector<ValueType> v0(myfft0.Dim(0)), v1, v2;
-      for (int i = 0; i < v0.Dim(); i++) v0[i] = 1 + i;
+      for (int i = 0; i < v0.Dim(); i++) v0[i] = (1 + i) / (ValueType)v0.Dim();
       myfft0.Execute(v0, v1);
       myfft1.Execute(v1, v2);
       { // Print error
@@ -192,6 +193,7 @@ template <class ValueType, class FFT_Derived> class FFT_Base {
         SCTL_ASSERT(v0.Dim() == v2.Dim());
         for (Long i = 0; i < v0.Dim(); i++) err = std::max(err, fabs(v0[i] - v2[i]));
         std::cout<<"Error : "<<err<<'\n';
+        SCTL_ASSERT(err < eps);
       }
     }
     std::cout<<'\n';
@@ -200,7 +202,7 @@ template <class ValueType, class FFT_Derived> class FFT_Base {
       myfft0.Setup(FFT_Type::C2C, howmany, fft_dim);
       myfft1.Setup(FFT_Type::C2C_INV, howmany, fft_dim);
       Vector<ValueType> v0(myfft0.Dim(0)), v1, v2;
-      for (int i = 0; i < v0.Dim(); i++) v0[i] = 1 + i;
+      for (int i = 0; i < v0.Dim(); i++) v0[i] = (1 + i) / (ValueType)v0.Dim();
       myfft0.Execute(v0, v1);
       myfft1.Execute(v1, v2);
       { // Print error
@@ -208,6 +210,7 @@ template <class ValueType, class FFT_Derived> class FFT_Base {
         SCTL_ASSERT(v0.Dim() == v2.Dim());
         for (Long i = 0; i < v0.Dim(); i++) err = std::max(err, fabs(v0[i] - v2[i]));
         std::cout<<"Error : "<<err<<'\n';
+        SCTL_ASSERT(err < eps);
       }
     }
     std::cout<<'\n';
