@@ -26,6 +26,7 @@ namespace mat {
 
 template <class ValueType> inline void gemm(char TransA, char TransB, int M, int N, int K, ValueType alpha, Iterator<ValueType> A, int lda, Iterator<ValueType> B, int ldb, ValueType beta, Iterator<ValueType> C, int ldc) {
   if ((TransA == 'N' || TransA == 'n') && (TransB == 'N' || TransB == 'n')) {
+    #pragma omp parallel for schedule(static)
     for (Long n = 0; n < N; n++) {    // Columns of C
       for (Long m = 0; m < M; m++) {  // Rows of C
         ValueType AxB = 0;
@@ -36,6 +37,7 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
       }
     }
   } else if (TransA == 'N' || TransA == 'n') {
+    #pragma omp parallel for schedule(static)
     for (Long n = 0; n < N; n++) {    // Columns of C
       for (Long m = 0; m < M; m++) {  // Rows of C
         ValueType AxB = 0;
@@ -46,6 +48,7 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
       }
     }
   } else if (TransB == 'N' || TransB == 'n') {
+    #pragma omp parallel for schedule(static)
     for (Long n = 0; n < N; n++) {    // Columns of C
       for (Long m = 0; m < M; m++) {  // Rows of C
         ValueType AxB = 0;
@@ -56,6 +59,7 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
       }
     }
   } else {
+    #pragma omp parallel for schedule(static)
     for (Long n = 0; n < N; n++) {    // Columns of C
       for (Long m = 0; m < M; m++) {  // Rows of C
         ValueType AxB = 0;
