@@ -58,9 +58,6 @@ void TestMatrix() {
 }
 
 int main(int argc, char** argv) {
-  sctl::SphericalHarmonics<double>::test_stokes();
-  return 0;
-
   sctl::Comm::MPI_Init(&argc, &argv);
 
   // Dry run (profiling disabled)
@@ -78,8 +75,8 @@ int main(int argc, char** argv) {
   {  // Test out-of-bound writes
     sctl::Iterator<char> A = sctl::aligned_new<char>(10);
     A[9];
-    A[10];  // Should print stack trace here (in debug mode).
-    // sctl::aligned_delete(A); // Show memory leak warning when commented
+    //A[10];  // Should print stack trace here (in debug mode).
+    sctl::aligned_delete(A); // Show memory leak warning when commented
   }
 
   sctl::Comm::MPI_Finalize();

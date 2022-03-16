@@ -1,10 +1,9 @@
-
 CXX=mpic++
 CXXFLAGS = -std=c++11 -fopenmp -Wall -Wfloat-conversion # need C++11 and OpenMP
 
 #Optional flags
-CXXFLAGS += -O0 # debug build
-#CXXFLAGS += -O3 -march=native -DNDEBUG # release build
+#CXXFLAGS += -O0 # debug build
+CXXFLAGS += -O3 -march=native -DNDEBUG # release build
 
 ifeq ($(shell uname -s),Darwin)
 	CXXFLAGS += -g -rdynamic -Wl,-no_pie # for stack trace (on Mac)
@@ -12,7 +11,7 @@ else
 	CXXFLAGS += -g -rdynamic # for stack trace
 endif
 
-CXXFLAGS += -DSCTL_MEMDEBUG # Enable memory checks
+#CXXFLAGS += -DSCTL_MEMDEBUG # Enable memory checks
 CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB
 
 CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
@@ -50,8 +49,13 @@ OBJDIR = ./obj
 INCDIR = ./include
 
 TARGET_BIN = \
+       $(BINDIR)/test \
+       $(BINDIR)/test-fft \
+       $(BINDIR)/test-fmm \
        $(BINDIR)/test-ode-solver \
-       $(BINDIR)/test-pt-tree
+       $(BINDIR)/test-pt-tree \
+       $(BINDIR)/test-sph-harm \
+       $(BINDIR)/test-vec
 
 all : $(TARGET_BIN)
 
@@ -62,6 +66,17 @@ $(BINDIR)/%: $(OBJDIR)/%.o
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)
 	$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $^ -o $@
+
+.PHONY: all check clean
+
+test: $(TARGET_BIN)
+	./$(BINDIR)/test
+	./$(BINDIR)/test-fft
+	./$(BINDIR)/test-fmm
+	./$(BINDIR)/test-ode-solver
+	./$(BINDIR)/test-pt-tree
+	./$(BINDIR)/test-sph-harm
+	./$(BINDIR)/test-vec
 
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*
