@@ -7,14 +7,22 @@
 
 namespace SCTL_NAMESPACE {
 
-template <class Real> inline Real machine_eps() {
-  auto compute_machine_eps = [](){
-    Real eps = (Real)1;
-    while (eps + (Real)1 > 1) eps *= (Real)0.5;
-    return eps;
-  };
-  static const Real eps = compute_machine_eps();
-  return eps;
+template <class Real, Integer bits = sizeof(Real)*8> struct GetSigBits {
+  static constexpr Integer value() {
+    return (pow<bits>((Real)0.5)+1 == (Real)1 ? GetSigBits<Real,bits-1>::value() : bits);
+  }
+};
+template <class Real> struct GetSigBits<Real,0> {
+  static constexpr Integer value() {
+    return 0;
+  }
+};
+template <class Real> inline constexpr Integer significant_bits() {
+  return GetSigBits<Real>::value();
+}
+
+template <class Real> inline constexpr Real machine_eps() {
+  return pow<-GetSigBits<Real>::value()-1,Real>(2);
 }
 
 template <class Real> inline Real atoreal(const char* str) { // Warning: does not do correct rounding
@@ -95,7 +103,10 @@ template <class Real> static inline Real sin_generic(const Real a) {
       cosval[N - 1] = 1.0 - sinval[N - 1] * sinval[N - 1] / 2;
       for (int i = N - 2; i >= 0; i--) {
         sinval[i] = 2.0 * sinval[i + 1] * cosval[i + 1];
-        cosval[i] = sqrt<Real>(1.0 - sinval[i] * sinval[i]);
+        cosval[i] = cosval[i + 1] * cosval[i + 1] - sinval[i + 1] * sinval[i + 1];
+        Real s = 1 / sqrt<Real>(cosval[i] * cosval[i] + sinval[i] * sinval[i]);
+        sinval[i] *= s;
+        cosval[i] *= s;
       }
       theta_.swap(theta);
     }
@@ -138,7 +149,10 @@ template <class Real> static inline Real cos_generic(const Real a) {
       cosval[N - 1] = 1.0 - sinval[N - 1] * sinval[N - 1] / 2;
       for (int i = N - 2; i >= 0; i--) {
         sinval[i] = 2.0 * sinval[i + 1] * cosval[i + 1];
-        cosval[i] = sqrt<Real>(1.0 - sinval[i] * sinval[i]);
+        cosval[i] = cosval[i + 1] * cosval[i + 1] - sinval[i + 1] * sinval[i + 1];
+        Real s = 1 / sqrt<Real>(cosval[i] * cosval[i] + sinval[i] * sinval[i]);
+        sinval[i] *= s;
+        cosval[i] *= s;
       }
 
       theta_.swap(theta);

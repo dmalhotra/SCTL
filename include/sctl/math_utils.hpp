@@ -8,7 +8,9 @@
 
 namespace SCTL_NAMESPACE {
 
-template <class Real> Real machine_eps();
+template <class Real> inline constexpr Integer significant_bits();
+
+template <class Real> inline constexpr Real machine_eps();
 
 template <class Real> Real atoreal(const char* str);
 

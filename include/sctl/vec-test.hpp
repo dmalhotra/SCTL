@@ -395,14 +395,22 @@ namespace SCTL_NAMESPACE {
           ScalarType max_val = fabs(1/sqrt<ScalarType>(u1.x[i]));
           ScalarType rel_err = err / max_val;
           SCTL_ASSERT(rel_err < (pow<11,ScalarType>((ScalarType)0.5)));
-          SCTL_ASSERT(u4.x[i] == (b1.x[i]>b2.x[i] ? u2.x[i] : 0));
+
+          err = u4.x[i] - (b1.x[i]>b2.x[i] ? u2.x[i] : 0);
+          rel_err = err / max_val;
+          SCTL_ASSERT(rel_err < (pow<11,ScalarType>((ScalarType)0.5)));
+          SCTL_ASSERT(b1.x[i]>b2.x[i] || (u4.x[i]==0));
         }
         for (Integer i = 0; i < N; i++) {
           ScalarType err = fabs((ScalarType)(u3.x[i] - 1/sqrt((double)u1.x[i]))); // float is not accurate enough to compute reference solution with 7-digits
           ScalarType max_val = fabs(1/sqrt<ScalarType>(u1.x[i]));
           ScalarType rel_err = err / max_val;
           SCTL_ASSERT(rel_err < (pow<22,ScalarType>((ScalarType)0.5)));
-          SCTL_ASSERT(u5.x[i] == (b1.x[i]>b2.x[i] ? u3.x[i] : 0));
+
+          err = u5.x[i] - (b1.x[i]>b2.x[i] ? u3.x[i] : 0);
+          rel_err = err / max_val;
+          SCTL_ASSERT(rel_err < (pow<22,ScalarType>((ScalarType)0.5)));
+          SCTL_ASSERT(b1.x[i]>b2.x[i] || (u5.x[i]==0));
         }
       }
 

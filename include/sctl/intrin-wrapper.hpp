@@ -69,17 +69,6 @@ namespace SCTL_NAMESPACE { // Traits
   };
 #endif
 
-  template <class Real, Integer bits = sizeof(Real)*8> struct GetSigBits {
-    static constexpr Integer value() {
-      return (pow<bits>((Real)0.5)+1 == (Real)1 ? GetSigBits<Real,bits-1>::value() : bits);
-    }
-  };
-  template <class Real> struct GetSigBits<Real,0> {
-    static constexpr Integer value() {
-      return 0;
-    }
-  };
-
   template <> class TypeTraits<float> {
     public:
       static constexpr DataType Type = DataType::Real;
@@ -96,7 +85,7 @@ namespace SCTL_NAMESPACE { // Traits
     public:
       static constexpr DataType Type = DataType::Real;
       static constexpr Integer Size = sizeof(long double);
-      static constexpr Integer SigBits = GetSigBits<long double>::value();
+      static constexpr Integer SigBits = significant_bits<long double>();
   };
 #ifdef SCTL_QUAD_T
   template <> class TypeTraits<QuadReal> {
@@ -1012,13 +1001,15 @@ namespace SCTL_NAMESPACE { // SSE
   }
 #endif
 
-#if defined(__AVX512BW__)
+#if defined(__AVX512BW__) && defined(__AVX512VL__)
   template <> inline void insert_intrin<VecData<int8_t,16>>(VecData<int8_t,16>& vec, Integer i, int8_t value) {
     vec.v = _mm_mask_set1_epi8(vec.v, __mmask16(1u<<i), value);
   }
   template <> inline void insert_intrin<VecData<int16_t,8>>(VecData<int16_t,8>& vec, Integer i, int16_t value) {
     vec.v = _mm_mask_set1_epi16(vec.v, __mmask8(1u<<i), value);
   }
+#endif
+#if defined(__AVX512F__) && defined(__AVX512VL__)
   template <> inline void insert_intrin<VecData<int32_t,4>>(VecData<int32_t,4>& vec, Integer i, int32_t value) {
     vec.v = _mm_mask_set1_epi32(vec.v, __mmask8(1u<<i), value);
   }
@@ -1303,7 +1294,7 @@ namespace SCTL_NAMESPACE { // SSE
   template <> inline VecData<int32_t,4> max_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
     return _mm_max_epi32(a.v, b.v);
   }
-  #if defined(__AVX512F__) || defined(__AVX512VL__)
+  #if defined(__AVX512F__) && defined(__AVX512VL__)
   template <> inline VecData<int64_t,2> max_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
     return _mm_max_epi64(a.v, b.v);
   }
@@ -1324,7 +1315,7 @@ namespace SCTL_NAMESPACE { // SSE
   template <> inline VecData<int32_t,4> min_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) {
     return _mm_min_epi32(a.v, b.v);
   }
-  #if defined(__AVX512F__) || defined(__AVX512VL__)
+  #if defined(__AVX512F__) && defined(__AVX512VL__)
   template <> inline VecData<int64_t,2> min_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) {
     return _mm_min_epi64(a.v, b.v);
   }
@@ -1340,7 +1331,7 @@ namespace SCTL_NAMESPACE { // SSE
   template <> inline VecData<float ,4> convert_int2real_intrin<VecData<float ,4>,VecData<int32_t,4>>(const VecData<int32_t,4>& x) {
     return _mm_cvtepi32_ps(x.v);
   }
-  #if defined(__AVX512F__) || defined(__AVX512VL__)
+  #if defined(__AVX512DQ__) && defined(__AVX512VL__)
   template <> inline VecData<double,2> convert_int2real_intrin<VecData<double,2>,VecData<int64_t,2>>(const VecData<int64_t,2>& x) {
     return _mm_cvtepi64_pd(x.v);
   }
@@ -1350,7 +1341,7 @@ namespace SCTL_NAMESPACE { // SSE
     return _mm_cvtps_epi32(x.v);
   }
   template <> inline VecData<int64_t,2> round_real2int_intrin<VecData<int64_t,2>,VecData<double,2>>(const VecData<double,2>& x) {
-  #if defined(__AVX512F__) || defined(__AVX512VL__)
+  #if defined(__AVX512DQ__) && defined(__AVX512VL__)
     return _mm_cvtpd_epi64(x.v);
   #else
     return _mm_cvtepi32_epi64(_mm_cvtpd_epi32(x.v));
@@ -1418,7 +1409,7 @@ namespace SCTL_NAMESPACE { // SSE
   // Special functions
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,4>> {
     static VecData<float,4> eval(const VecData<float,4>& a) {
-      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      #if defined(__AVX512F__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,4>>::eval(_mm_maskz_rsqrt14_ps(~__mmask8(0), a.v), a.v);
       #else
@@ -1427,7 +1418,7 @@ namespace SCTL_NAMESPACE { // SSE
       #endif
     }
     static VecData<float,4> eval(const VecData<float,4>& a, const Mask<VecData<float,4>>& m) {
-      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      #if defined(__AVX512DQ__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,4>>::eval(_mm_maskz_rsqrt14_ps(_mm_movepi32_mask(_mm_castps_si128(m.v)), a.v), a.v);
       #else
@@ -1438,7 +1429,7 @@ namespace SCTL_NAMESPACE { // SSE
   };
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<double,2>> {
     static VecData<double,2> eval(const VecData<double,2>& a) {
-      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      #if defined(__AVX512F__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(_mm_maskz_rsqrt14_pd(~__mmask8(0), a.v), a.v);
       #else
@@ -1447,7 +1438,7 @@ namespace SCTL_NAMESPACE { // SSE
       #endif
     }
     static VecData<double,2> eval(const VecData<double,2>& a, const Mask<VecData<double,2>>& m) {
-      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      #if defined(__AVX51DQ__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(_mm_maskz_rsqrt14_pd(_mm_movepi64_mask(_mm_castpd_si128(m.v)), a.v), a.v);
       #else
@@ -2010,7 +2001,7 @@ namespace SCTL_NAMESPACE { // AVX
     return _mm256_max_epi32(a.v, b.v);
   }
   #endif
-  #if defined(__AVX512F__) || defined(__AVX512VL__)
+  #if defined(__AVX512F__) && defined(__AVX512VL__)
   template <> inline VecData<int64_t,4> max_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_max_epi64(a.v, b.v);
   }
@@ -2033,7 +2024,7 @@ namespace SCTL_NAMESPACE { // AVX
     return _mm256_min_epi32(a.v, b.v);
   }
   #endif
-  #if defined(__AVX512F__) || defined(__AVX512VL__)
+  #if defined(__AVX512F__) && defined(__AVX512VL__)
   template <> inline VecData<int64_t,4> min_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_min_epi64(a.v, b.v);
   }
@@ -2049,7 +2040,7 @@ namespace SCTL_NAMESPACE { // AVX
   template <> inline VecData<float ,8> convert_int2real_intrin<VecData<float ,8>,VecData<int32_t,8>>(const VecData<int32_t,8>& x) {
     return _mm256_cvtepi32_ps(x.v);
   }
-  #if defined(__AVX512F__) || defined(__AVX512VL__)
+  #if defined(__AVX512DQ__) && defined(__AVX512VL__)
   template <> inline VecData<double,4> convert_int2real_intrin<VecData<double,4>,VecData<int64_t,4>>(const VecData<int64_t,4>& x) {
     return _mm256_cvtepi64_pd(x.v);
   }
@@ -2058,7 +2049,7 @@ namespace SCTL_NAMESPACE { // AVX
   template <> inline VecData<int32_t,8> round_real2int_intrin<VecData<int32_t,8>,VecData<float ,8>>(const VecData<float ,8>& x) {
     return _mm256_cvtps_epi32(x.v);
   }
-  #if defined(__AVX512F__) || defined(__AVX512VL__)
+  #if defined(__AVX512DQ__) && defined(__AVX512VL__)
   template <> inline VecData<int64_t,4> round_real2int_intrin<VecData<int64_t,4>,VecData<double,4>>(const VecData<double,4>& x) {
     return _mm256_cvtpd_epi64(x.v);
   }
@@ -2134,7 +2125,7 @@ namespace SCTL_NAMESPACE { // AVX
   // Special functions
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,8>> {
     static VecData<float,8> eval(const VecData<float,8>& a) {
-      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      #if defined(__AVX512F__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,8>>::eval(_mm256_maskz_rsqrt14_ps(~__mmask8(0), a.v), a.v);
       #else
@@ -2143,7 +2134,7 @@ namespace SCTL_NAMESPACE { // AVX
       #endif
     }
     static VecData<float,8> eval(const VecData<float,8>& a, const Mask<VecData<float,8>>& m) {
-      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      #if defined(__AVX512DQ__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,8>>::eval(_mm256_maskz_rsqrt14_ps(_mm256_movepi32_mask(_mm256_castps_si256(m.v)), a.v), a.v);
       #else
@@ -2154,7 +2145,7 @@ namespace SCTL_NAMESPACE { // AVX
   };
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<double,4>> {
     static VecData<double,4> eval(const VecData<double,4>& a) {
-      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      #if defined(__AVX512F__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_maskz_rsqrt14_pd(~__mmask8(0), a.v), a.v);
       #else
@@ -2163,7 +2154,7 @@ namespace SCTL_NAMESPACE { // AVX
       #endif
     }
     static VecData<double,4> eval(const VecData<double,4>& a, const Mask<VecData<double,4>>& m) {
-      #if defined(__AVX512F__) || defined(__AVX512VL__)
+      #if defined(__AVX512DQ__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_maskz_rsqrt14_pd(_mm256_movepi64_mask(_mm256_castpd_si256(m.v)), a.v), a.v);
       #else
@@ -2200,7 +2191,7 @@ namespace SCTL_NAMESPACE { // AVX
 }
 
 namespace SCTL_NAMESPACE { // AVX512
-#if defined(__AVX512__) || defined(__AVX512F__)
+#if defined(__AVX512F__)
   template <> struct alignas(sizeof(int8_t) * 64) VecData<int8_t,64> {
     using ScalarType = int8_t;
     static constexpr Integer Size = 64;
@@ -2422,10 +2413,18 @@ namespace SCTL_NAMESPACE { // AVX512
     return _mm512_sub_epi64(_mm512_setzero_epi32(), a.v);
   }
   template <> inline VecData<float,16> unary_minus_intrin<VecData<float,16>>(const VecData<float,16>& a) {
+    #ifdef __AVX512DQ__
     return _mm512_xor_ps(a.v, _mm512_castsi512_ps(_mm512_set1_epi32(0x80000000)));
+    #else
+    return _mm512_castsi512_ps(_mm512_xor_si512(_mm512_castps_si512(a.v), _mm512_set1_epi32(0x80000000)));
+    #endif
   }
   template <> inline VecData<double,8> unary_minus_intrin<VecData<double,8>>(const VecData<double,8>& a) {
+    #ifdef __AVX512DQ__
     return _mm512_xor_pd(a.v, _mm512_castsi512_pd(_mm512_set1_epi64(0x8000000000000000)));
+    #else
+    return _mm512_castsi512_pd(_mm512_xor_si512(_mm512_castpd_si512(a.v), _mm512_set1_epi64(0x8000000000000000)));
+    #endif
   }
 
   //template <> inline VecData<int8_t,64> mul_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {}
@@ -2548,10 +2547,18 @@ namespace SCTL_NAMESPACE { // AVX512
     return _mm512_and_epi32(a.v, b.v);
   }
   template <> inline VecData<float,16> and_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+    #ifdef __AVX512DQ__
     return _mm512_and_ps(a.v, b.v);
+    #else
+    return _mm512_castsi512_ps(_mm512_and_si512(_mm512_castps_si512(a.v), _mm512_castps_si512(b.v)));
+    #endif
   }
   template <> inline VecData<double,8> and_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+    #ifdef __AVX512DQ__
     return _mm512_and_pd(a.v, b.v);
+    #else
+    return _mm512_castsi512_pd(_mm512_and_si512(_mm512_castpd_si512(a.v), _mm512_castpd_si512(b.v)));
+    #endif
   }
 
   template <> inline VecData<int8_t,64> xor_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
@@ -2567,10 +2574,18 @@ namespace SCTL_NAMESPACE { // AVX512
     return _mm512_xor_epi32(a.v, b.v);
   }
   template <> inline VecData<float,16> xor_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+    #ifdef __AVX512DQ__
     return _mm512_xor_ps(a.v, b.v);
+    #else
+    return _mm512_castsi512_ps(_mm512_xor_si512(_mm512_castps_si512(a.v), _mm512_castps_si512(b.v)));
+    #endif
   }
   template <> inline VecData<double,8> xor_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+    #ifdef __AVX512DQ__
     return _mm512_xor_pd(a.v, b.v);
+    #else
+    return _mm512_castsi512_pd(_mm512_xor_si512(_mm512_castpd_si512(a.v), _mm512_castpd_si512(b.v)));
+    #endif
   }
 
   template <> inline VecData<int8_t,64> or_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
@@ -2586,10 +2601,18 @@ namespace SCTL_NAMESPACE { // AVX512
     return _mm512_or_epi32(a.v, b.v);
   }
   template <> inline VecData<float,16> or_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+    #ifdef __AVX512DQ__
     return _mm512_or_ps(a.v, b.v);
+    #else
+    return _mm512_castsi512_ps(_mm512_or_si512(_mm512_castps_si512(a.v), _mm512_castps_si512(b.v)));
+    #endif
   }
   template <> inline VecData<double,8> or_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+    #ifdef __AVX512DQ__
     return _mm512_or_pd(a.v, b.v);
+    #else
+    return _mm512_castsi512_pd(_mm512_or_si512(_mm512_castpd_si512(a.v), _mm512_castpd_si512(b.v)));
+    #endif
   }
 
   template <> inline VecData<int8_t,64> andnot_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
@@ -2605,10 +2628,18 @@ namespace SCTL_NAMESPACE { // AVX512
     return _mm512_andnot_epi32(b.v, a.v);
   }
   template <> inline VecData<float,16> andnot_intrin(const VecData<float,16>& a, const VecData<float,16>& b) {
+    #ifdef __AVX512DQ__
     return _mm512_andnot_ps(b.v, a.v);
+    #else
+    return _mm512_castsi512_ps(_mm512_andnot_si512(_mm512_castps_si512(b.v), _mm512_castps_si512(a.v)));
+    #endif
   }
   template <> inline VecData<double,8> andnot_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
+    #ifdef __AVX512DQ__
     return _mm512_andnot_pd(b.v, a.v);
+    #else
+    return _mm512_castsi512_pd(_mm512_andnot_si512(_mm512_castpd_si512(b.v), _mm512_castpd_si512(a.v)));
+    #endif
   }
 
   // Bitshift
@@ -2627,12 +2658,14 @@ namespace SCTL_NAMESPACE { // AVX512
   template <> inline VecData<double  ,8> bitshiftright_intrin<VecData<double  ,8>>(const VecData<double  ,8>& a, const Integer& rhs) { return _mm512_castsi512_pd(_mm512_srli_epi64(_mm512_castpd_si512(a.v), rhs)); }
 
   // Other functions
+#if defined(__AVX512BW__)
   template <> inline VecData<int8_t,64> max_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
     return _mm512_max_epi8(a.v, b.v);
   }
   template <> inline VecData<int16_t,32> max_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
     return _mm512_max_epi16(a.v, b.v);
   }
+#endif
   template <> inline VecData<int32_t,16> max_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
     return _mm512_max_epi32(a.v, b.v);
   }
@@ -2646,12 +2679,14 @@ namespace SCTL_NAMESPACE { // AVX512
     return _mm512_max_pd(a.v, b.v);
   }
 
+#if defined(__AVX512BW__)
   template <> inline VecData<int8_t,64> min_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) {
     return _mm512_min_epi8(a.v, b.v);
   }
   template <> inline VecData<int16_t,32> min_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) {
     return _mm512_min_epi16(a.v, b.v);
   }
+#endif
   template <> inline VecData<int32_t,16> min_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) {
     return _mm512_min_epi32(a.v, b.v);
   }
@@ -2666,10 +2701,12 @@ namespace SCTL_NAMESPACE { // AVX512
   }
 
   // Conversion operators
+#if defined(__AVX512DQ__)
   template <> inline VecData<float,16> convert_int2real_intrin<VecData<float,16>,VecData<int32_t,16>>(const VecData<int32_t,16>& x) { return _mm512_cvtepi32_ps(x.v); }
   template <> inline VecData<double,8> convert_int2real_intrin<VecData<double,8>,VecData<int64_t, 8>>(const VecData<int64_t, 8>& x) { return _mm512_cvtepi64_pd(x.v); }
   template <> inline VecData<int32_t,16> round_real2int_intrin<VecData<int32_t,16>,VecData<float,16>>(const VecData<float,16>& x) { return _mm512_cvtps_epi32(x.v); }
   template <> inline VecData<int64_t, 8> round_real2int_intrin<VecData<int64_t, 8>,VecData<double,8>>(const VecData<double,8>& x) { return _mm512_cvtpd_epi64(x.v); }
+#endif
   template <> inline VecData<float,16> round_real2real_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_roundscale_ps(x.v, _MM_FROUND_TO_NEAREST_INT); }
   template <> inline VecData<double,8> round_real2real_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_roundscale_pd(x.v, _MM_FROUND_TO_NEAREST_INT); }
 
@@ -2677,6 +2714,7 @@ namespace SCTL_NAMESPACE { // AVX512
   /////////////////////////////////////////////////////////////////////////////
   /////////////////////////////////////////////////////////////////////////////
 
+#if defined(__AVX512BW__)
   template <> struct Mask<VecData<int8_t ,64>> {
     using ScalarType = int8_t;
     static constexpr Integer Size = 64;
@@ -2711,6 +2749,9 @@ namespace SCTL_NAMESPACE { // AVX512
 
     __mmask32 v;
   };
+#endif
+
+#if defined(__AVX512DQ__)
   template <> struct Mask<VecData<int32_t,16>> {
     using ScalarType = int32_t;
     static constexpr Integer Size = 16;
@@ -2779,62 +2820,74 @@ namespace SCTL_NAMESPACE { // AVX512
 
     __mmask8  v;
   };
+#endif
 
   // Bitwise operators
+#if defined(__AVX512BW__)
   template <> inline Mask<VecData<int8_t ,64>> operator~<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& vec) { return Mask<VecData<int8_t ,64>>(_knot_mask64(vec.v)); }
   template <> inline Mask<VecData<int16_t,32>> operator~<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& vec) { return Mask<VecData<int16_t,32>>(_knot_mask32(vec.v)); }
+
+  template <> inline Mask<VecData<int8_t ,64>> operator&<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a, const Mask<VecData<int8_t ,64>>& b) { return Mask<VecData<int8_t ,64>>(_kand_mask64(a.v,b.v)); }
+  template <> inline Mask<VecData<int16_t,32>> operator&<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a, const Mask<VecData<int16_t,32>>& b) { return Mask<VecData<int16_t,32>>(_kand_mask32(a.v,b.v)); }
+
+  template <> inline Mask<VecData<int8_t ,64>> operator^<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a, const Mask<VecData<int8_t ,64>>& b) { return Mask<VecData<int8_t ,64>>(_kxor_mask64(a.v,b.v)); }
+  template <> inline Mask<VecData<int16_t,32>> operator^<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a, const Mask<VecData<int16_t,32>>& b) { return Mask<VecData<int16_t,32>>(_kxor_mask32(a.v,b.v)); }
+
+  template <> inline Mask<VecData<int8_t ,64>> operator|<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a, const Mask<VecData<int8_t ,64>>& b) { return Mask<VecData<int8_t ,64>>(_kor_mask64(a.v,b.v)); }
+  template <> inline Mask<VecData<int16_t,32>> operator|<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a, const Mask<VecData<int16_t,32>>& b) { return Mask<VecData<int16_t,32>>(_kor_mask32(a.v,b.v)); }
+
+  template <> inline Mask<VecData<int8_t ,64>> AndNot   <VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a, const Mask<VecData<int8_t ,64>>& b) { return Mask<VecData<int8_t ,64>>(_kandn_mask64(b.v,a.v)); }
+  template <> inline Mask<VecData<int16_t,32>> AndNot   <VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a, const Mask<VecData<int16_t,32>>& b) { return Mask<VecData<int16_t,32>>(_kandn_mask32(b.v,a.v)); }
+
+  template <> inline VecData<int8_t ,64> convert_mask2vec_intrin<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a) { return _mm512_movm_epi8 (a.v); }
+  template <> inline VecData<int16_t,32> convert_mask2vec_intrin<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a) { return _mm512_movm_epi16(a.v); }
+
+  template <> inline Mask<VecData<int8_t ,64>> convert_vec2mask_intrin<VecData<int8_t ,64>>(const VecData<int8_t ,64>& a) { return Mask<VecData<int8_t ,64>>(_mm512_movepi8_mask (a.v)); }
+  template <> inline Mask<VecData<int16_t,32>> convert_vec2mask_intrin<VecData<int16_t,32>>(const VecData<int16_t,32>& a) { return Mask<VecData<int16_t,32>>(_mm512_movepi16_mask(a.v)); }
+#endif
+
+#if defined(__AVX512DQ__)
   template <> inline Mask<VecData<int32_t,16>> operator~<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& vec) { return Mask<VecData<int32_t,16>>(_knot_mask16(vec.v)); }
   template <> inline Mask<VecData<int64_t ,8>> operator~<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& vec) { return Mask<VecData<int64_t ,8>>(_knot_mask8 (vec.v)); }
   template <> inline Mask<VecData<float  ,16>> operator~<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& vec) { return Mask<VecData<float  ,16>>(_knot_mask16(vec.v)); }
   template <> inline Mask<VecData<double  ,8>> operator~<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& vec) { return Mask<VecData<double  ,8>>(_knot_mask8 (vec.v)); }
 
-  template <> inline Mask<VecData<int8_t ,64>> operator&<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a, const Mask<VecData<int8_t ,64>>& b) { return Mask<VecData<int8_t ,64>>(_kand_mask64(a.v,b.v)); }
-  template <> inline Mask<VecData<int16_t,32>> operator&<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a, const Mask<VecData<int16_t,32>>& b) { return Mask<VecData<int16_t,32>>(_kand_mask32(a.v,b.v)); }
   template <> inline Mask<VecData<int32_t,16>> operator&<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& a, const Mask<VecData<int32_t,16>>& b) { return Mask<VecData<int32_t,16>>(_kand_mask16(a.v,b.v)); }
   template <> inline Mask<VecData<int64_t ,8>> operator&<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& a, const Mask<VecData<int64_t ,8>>& b) { return Mask<VecData<int64_t ,8>>(_kand_mask8 (a.v,b.v)); }
   template <> inline Mask<VecData<float  ,16>> operator&<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& a, const Mask<VecData<float  ,16>>& b) { return Mask<VecData<float  ,16>>(_kand_mask16(a.v,b.v)); }
   template <> inline Mask<VecData<double  ,8>> operator&<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& a, const Mask<VecData<double  ,8>>& b) { return Mask<VecData<double  ,8>>(_kand_mask8 (a.v,b.v)); }
 
-  template <> inline Mask<VecData<int8_t ,64>> operator^<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a, const Mask<VecData<int8_t ,64>>& b) { return Mask<VecData<int8_t ,64>>(_kxor_mask64(a.v,b.v)); }
-  template <> inline Mask<VecData<int16_t,32>> operator^<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a, const Mask<VecData<int16_t,32>>& b) { return Mask<VecData<int16_t,32>>(_kxor_mask32(a.v,b.v)); }
   template <> inline Mask<VecData<int32_t,16>> operator^<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& a, const Mask<VecData<int32_t,16>>& b) { return Mask<VecData<int32_t,16>>(_kxor_mask16(a.v,b.v)); }
   template <> inline Mask<VecData<int64_t ,8>> operator^<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& a, const Mask<VecData<int64_t ,8>>& b) { return Mask<VecData<int64_t ,8>>(_kxor_mask8 (a.v,b.v)); }
   template <> inline Mask<VecData<float  ,16>> operator^<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& a, const Mask<VecData<float  ,16>>& b) { return Mask<VecData<float  ,16>>(_kxor_mask16(a.v,b.v)); }
   template <> inline Mask<VecData<double  ,8>> operator^<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& a, const Mask<VecData<double  ,8>>& b) { return Mask<VecData<double  ,8>>(_kxor_mask8 (a.v,b.v)); }
 
-  template <> inline Mask<VecData<int8_t ,64>> operator|<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a, const Mask<VecData<int8_t ,64>>& b) { return Mask<VecData<int8_t ,64>>(_kor_mask64(a.v,b.v)); }
-  template <> inline Mask<VecData<int16_t,32>> operator|<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a, const Mask<VecData<int16_t,32>>& b) { return Mask<VecData<int16_t,32>>(_kor_mask32(a.v,b.v)); }
   template <> inline Mask<VecData<int32_t,16>> operator|<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& a, const Mask<VecData<int32_t,16>>& b) { return Mask<VecData<int32_t,16>>(_kor_mask16(a.v,b.v)); }
   template <> inline Mask<VecData<int64_t ,8>> operator|<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& a, const Mask<VecData<int64_t ,8>>& b) { return Mask<VecData<int64_t ,8>>(_kor_mask8 (a.v,b.v)); }
   template <> inline Mask<VecData<float  ,16>> operator|<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& a, const Mask<VecData<float  ,16>>& b) { return Mask<VecData<float  ,16>>(_kor_mask16(a.v,b.v)); }
   template <> inline Mask<VecData<double  ,8>> operator|<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& a, const Mask<VecData<double  ,8>>& b) { return Mask<VecData<double  ,8>>(_kor_mask8 (a.v,b.v)); }
 
-  template <> inline Mask<VecData<int8_t ,64>> AndNot   <VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a, const Mask<VecData<int8_t ,64>>& b) { return Mask<VecData<int8_t ,64>>(_kandn_mask64(b.v,a.v)); }
-  template <> inline Mask<VecData<int16_t,32>> AndNot   <VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a, const Mask<VecData<int16_t,32>>& b) { return Mask<VecData<int16_t,32>>(_kandn_mask32(b.v,a.v)); }
   template <> inline Mask<VecData<int32_t,16>> AndNot   <VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& a, const Mask<VecData<int32_t,16>>& b) { return Mask<VecData<int32_t,16>>(_kandn_mask16(b.v,a.v)); }
   template <> inline Mask<VecData<int64_t ,8>> AndNot   <VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& a, const Mask<VecData<int64_t ,8>>& b) { return Mask<VecData<int64_t ,8>>(_kandn_mask8 (b.v,a.v)); }
   template <> inline Mask<VecData<float  ,16>> AndNot   <VecData<float  ,16>>(const Mask<VecData<float  ,16>>& a, const Mask<VecData<float  ,16>>& b) { return Mask<VecData<float  ,16>>(_kandn_mask16(b.v,a.v)); }
   template <> inline Mask<VecData<double  ,8>> AndNot   <VecData<double  ,8>>(const Mask<VecData<double  ,8>>& a, const Mask<VecData<double  ,8>>& b) { return Mask<VecData<double  ,8>>(_kandn_mask8 (b.v,a.v)); }
 
-
-  template <> inline VecData<int8_t ,64> convert_mask2vec_intrin<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& a) { return _mm512_movm_epi8 (a.v); }
-  template <> inline VecData<int16_t,32> convert_mask2vec_intrin<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& a) { return _mm512_movm_epi16(a.v); }
   template <> inline VecData<int32_t,16> convert_mask2vec_intrin<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& a) { return _mm512_movm_epi32(a.v); }
   template <> inline VecData<int64_t ,8> convert_mask2vec_intrin<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& a) { return _mm512_movm_epi64(a.v); }
   template <> inline VecData<float  ,16> convert_mask2vec_intrin<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& a) { return _mm512_castsi512_ps(_mm512_movm_epi32(a.v)); }
   template <> inline VecData<double  ,8> convert_mask2vec_intrin<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& a) { return _mm512_castsi512_pd(_mm512_movm_epi64(a.v)); }
 
-  template <> inline Mask<VecData<int8_t ,64>> convert_vec2mask_intrin<VecData<int8_t ,64>>(const VecData<int8_t ,64>& a) { return Mask<VecData<int8_t ,64>>(_mm512_movepi8_mask (a.v)); }
-  template <> inline Mask<VecData<int16_t,32>> convert_vec2mask_intrin<VecData<int16_t,32>>(const VecData<int16_t,32>& a) { return Mask<VecData<int16_t,32>>(_mm512_movepi16_mask(a.v)); }
   template <> inline Mask<VecData<int32_t,16>> convert_vec2mask_intrin<VecData<int32_t,16>>(const VecData<int32_t,16>& a) { return Mask<VecData<int32_t,16>>(_mm512_movepi32_mask(a.v)); }
   template <> inline Mask<VecData<int64_t ,8>> convert_vec2mask_intrin<VecData<int64_t ,8>>(const VecData<int64_t ,8>& a) { return Mask<VecData<int64_t ,8>>(_mm512_movepi64_mask(a.v)); }
   template <> inline Mask<VecData<float  ,16>> convert_vec2mask_intrin<VecData<float  ,16>>(const VecData<float  ,16>& a) { return Mask<VecData<float  ,16>>(_mm512_movepi32_mask(_mm512_castps_si512(a.v))); }
   template <> inline Mask<VecData<double  ,8>> convert_vec2mask_intrin<VecData<double  ,8>>(const VecData<double  ,8>& a) { return Mask<VecData<double  ,8>>(_mm512_movepi64_mask(_mm512_castpd_si512(a.v))); }
+#endif
 
   /////////////////////////////////////////////////////////////////////////////
   /////////////////////////////////////////////////////////////////////////////
 
   // Comparison operators
+#if defined(__AVX512BW__)
   template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::lt>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_LT)); }
   template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::le>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_LE)); }
   template <> inline Mask<VecData<int8_t,64>> comp_intrin<ComparisonType::gt>(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { return Mask<VecData<int8_t,64>>(_mm512_cmp_epi8_mask(a.v, b.v, _MM_CMPINT_NLE));}
@@ -2848,7 +2901,9 @@ namespace SCTL_NAMESPACE { // AVX512
   template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::ge>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_NLT));}
   template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::eq>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_EQ)); }
   template <> inline Mask<VecData<int16_t,32>> comp_intrin<ComparisonType::ne>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return Mask<VecData<int16_t,32>>(_mm512_cmp_epi16_mask(a.v, b.v, _MM_CMPINT_NE)); }
+#endif
 
+#if defined(__AVX512DQ__)
   template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::lt>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_LT)); }
   template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::le>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_LE)); }
   template <> inline Mask<VecData<int32_t,16>> comp_intrin<ComparisonType::gt>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return Mask<VecData<int32_t,16>>(_mm512_cmp_epi32_mask(a.v, b.v, _MM_CMPINT_NLE));}
@@ -2876,13 +2931,18 @@ namespace SCTL_NAMESPACE { // AVX512
   template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::ge>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_GE_OS)); }
   template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::eq>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_EQ_OS)); }
   template <> inline Mask<VecData<double,8>> comp_intrin<ComparisonType::ne>(const VecData<double,8>& a, const VecData<double,8>& b) { return Mask<VecData<double,8>>(_mm512_cmp_pd_mask(a.v, b.v, _CMP_NEQ_OS));}
+#endif
 
+#if defined(__AVX512BW__)
   template <> inline VecData<int8_t ,64> select_intrin(const Mask<VecData<int8_t ,64>>& s, const VecData<int8_t ,64>& a, const VecData<int8_t ,64>& b) { return _mm512_mask_blend_epi8 (s.v, b.v, a.v); }
   template <> inline VecData<int16_t,32> select_intrin(const Mask<VecData<int16_t,32>>& s, const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { return _mm512_mask_blend_epi16(s.v, b.v, a.v); }
+#endif
+#if defined(__AVX512DQ__)
   template <> inline VecData<int32_t,16> select_intrin(const Mask<VecData<int32_t,16>>& s, const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return _mm512_mask_blend_epi32(s.v, b.v, a.v); }
   template <> inline VecData<int64_t ,8> select_intrin(const Mask<VecData<int64_t ,8>>& s, const VecData<int64_t ,8>& a, const VecData<int64_t ,8>& b) { return _mm512_mask_blend_epi64(s.v, b.v, a.v); }
   template <> inline VecData<float  ,16> select_intrin(const Mask<VecData<float  ,16>>& s, const VecData<float  ,16>& a, const VecData<float  ,16>& b) { return _mm512_mask_blend_ps   (s.v, b.v, a.v); }
   template <> inline VecData<double  ,8> select_intrin(const Mask<VecData<double  ,8>>& s, const VecData<double  ,8>& a, const VecData<double  ,8>& b) { return _mm512_mask_blend_pd   (s.v, b.v, a.v); }
+#endif
 
 
   // Special functions
@@ -2892,7 +2952,11 @@ namespace SCTL_NAMESPACE { // AVX512
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,16>>::eval(_mm512_rsqrt14_ps(a.v), a.v);
     }
     static VecData<float,16> eval(const VecData<float,16>& a, const Mask<VecData<float,16>>& m) {
+      #if defined(__AVX512DQ__)
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,16>>::eval(_mm512_maskz_rsqrt14_ps(m.v, a.v), a.v);
+      #else
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,16>>::eval(and_intrin(VecData<float,16>(_mm512_rsqrt14_ps(a.v)), convert_mask2vec_intrin(m)), a.v);
+      #endif
     }
   };
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<double,8>> {
@@ -2901,7 +2965,11 @@ namespace SCTL_NAMESPACE { // AVX512
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,8>>::eval(_mm512_rsqrt14_pd(a.v), a.v);
     }
     static VecData<double,8> eval(const VecData<double,8>& a, const Mask<VecData<double,8>>& m) {
+      #if defined(__AVX512DQ__)
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,8>>::eval(_mm512_maskz_rsqrt14_pd(m.v, a.v), a.v);
+      #else
+      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,8>>::eval(and_intrin(VecData<double,8>(_mm512_rsqrt14_pd(a.v)), convert_mask2vec_intrin(m)), a.v);
+      #endif
     }
   };
 
