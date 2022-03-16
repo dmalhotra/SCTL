@@ -965,9 +965,9 @@ template <class Real> class Quadrature {
     }
 
     template <class DensityBasis, class ElemList, class Kernel> static void SetupNearSingular(Matrix<Real>& M_near_singular, Vector<Pair<Long,Long>>& pair_lst, const Vector<Real>& Xt_, const Vector<Long>& trg_surf, const ElemList& elem_lst, const Kernel& kernel, Integer order_singular, Integer order_direct, Real period_length, const Comm& comm) {
-      static_assert(std::is_same<Real,typename DensityBasis::ValueType>::value);
-      static_assert(std::is_same<Real,typename ElemList::CoordType>::value);
-      static_assert(DensityBasis::Dim() == ElemList::ElemDim());
+      static_assert(std::is_same<Real,typename DensityBasis::ValueType>::value, "Density basis must have the same precision as the boundary quadrature.");
+      static_assert(std::is_same<Real,typename ElemList::CoordType>::value, "Surface coordinates must have the same precision as the boundary quadrature.");
+      static_assert(DensityBasis::Dim() == ElemList::ElemDim(), "Density basis must have the same dimension as the surface.");
       using CoordBasis = typename ElemList::CoordBasis;
       using CoordEvalOpType = typename CoordBasis::EvalOpType;
       using DensityEvalOpType = typename DensityBasis::EvalOpType;
@@ -1433,9 +1433,9 @@ template <class Real> class Quadrature {
       comm_ = comm;
 
       Profile::Tic("Setup", &comm_);
-      static_assert(std::is_same<Real,typename DensityBasis::ValueType>::value);
-      static_assert(std::is_same<Real,typename ElemList::CoordType>::value);
-      static_assert(DensityBasis::Dim() == ElemList::ElemDim());
+      static_assert(std::is_same<Real,typename DensityBasis::ValueType>::value, "Density basis must have the same precision as the boundary quadrature.");
+      static_assert(std::is_same<Real,typename ElemList::CoordType>::value, "Surface coordinates must have the same precision as the boundary quadrature.");
+      static_assert(DensityBasis::Dim() == ElemList::ElemDim(), "Density basis must match the surface dimension.");
 
       Xt_ = Xt;
       M_singular.ReInit(0,0);
@@ -1453,11 +1453,11 @@ template <class Real> class Quadrature {
       comm_ = comm;
 
       Profile::Tic("Setup", &comm_);
-      static_assert(std::is_same<Real,typename PotentialBasis::ValueType>::value);
-      static_assert(std::is_same<Real,typename DensityBasis::ValueType>::value);
-      static_assert(std::is_same<Real,typename ElemList::CoordType>::value);
-      static_assert(PotentialBasis::Dim() == ElemList::ElemDim());
-      static_assert(DensityBasis::Dim() == ElemList::ElemDim());
+      static_assert(std::is_same<Real,typename PotentialBasis::ValueType>::value, "Potential basis must have the same precision as the boundary quadrature.");
+      static_assert(std::is_same<Real,typename DensityBasis::ValueType>::value, "Density basis must have the same precision as the boundary quadrature.");
+      static_assert(std::is_same<Real,typename ElemList::CoordType>::value, "Surface coordinates must have the same precision as the boundary quadrature.");
+      static_assert(PotentialBasis::Dim() == ElemList::ElemDim(), "Potential basis dimension must match the surface dimension.");
+      static_assert(DensityBasis::Dim() == ElemList::ElemDim(), "Density basis dimension must match the surface dimension.");
 
       Vector<Long> trg_surf;
       { // Set Xt_

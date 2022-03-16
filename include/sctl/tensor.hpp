@@ -73,7 +73,7 @@ template <class ValueType, bool own_data, Long... Args> class Tensor {
     }
 
     template <bool own_data_> Tensor(const Tensor<ValueType,own_data_,Args...> &M) {
-      static_assert(Size() <= M.Size());
+      static_assert(Size() <= M.Size(), "Initializer must be at least the size of the object.");
       Init((Iterator<ValueType>)M.begin());
     }
 
