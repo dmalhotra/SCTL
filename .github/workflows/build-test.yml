@@ -1,0 +1,32 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest]
+        compiler: [g++-10, clang++]
+        vecflag: [-march=native]
+        memdbgflag: ["", -DSCTL_MEMDEBUG]
+        optflag: [-O0, -O3]
+        exclude:
+          - os: macOS-latest
+            compiler: clang++
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@main
+
+    - name: Build
+      run: make -j CXX="${{matrix.compiler}}" CXXFLAGS="-std=c++11 ${{matrix.optflag}} -g -rdynamic -fopenmp ${{matrix.vecflag}} ${{matrix.memdbgflag}} -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_QUAD_T=__float128 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -fsanitize=address"
+
+    - name: Test
+      run: make test

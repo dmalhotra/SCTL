@@ -1,0 +1,22 @@
+name: Codecov
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@main
+
+    - name: compile
+      env:
+        CXX: 
+      run: make -j CXX="$CXX" CXXFLAGS="-std=c++11 -O0 -g -rdynamic -fopenmp -march=native -DSCTL_MEMDEBUG -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_QUAD_T=__float128 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -fprofile-arcs -ftest-coverage -lgcov"
+
+    - name: run tests
+      run: make test
+
+    - name: after success
+      run: curl -s https://codecov.io/bash | bash -s -- -t ${{ secrets.CODECOV_TOKEN }}
