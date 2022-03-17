@@ -17,7 +17,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& 
   srand48(comm.Rank());
 
   // Create target and source vectors.
-  const Long N = 50000/comm.Size();
+  const Long N = 5000/comm.Size();
   Vector<Real> trg_coord(N*DIM);
   Vector<Real>  sl_coord(N*DIM);
   Vector<Real>  dl_coord(N*DIM);
