@@ -648,19 +648,20 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(c
 }
 
 #ifdef SCTL_HAVE_PVFMM
-template <class Real, Integer DIM> template <class SCTLKernel, bool use_dummy_normal> struct ParticleFMM<Real,DIM>::PVFMMKernelFn : public pvfmm::GenericKernel<PVFMMKernelFn<SCTLKernel, use_dummy_normal>> {
+template <class SCTLKernel, bool use_dummy_normal> struct PVFMMKernelFn_ {
   static const int FLOPS = SCTLKernel::FLOPS() + 2*SCTLKernel::SrcDim()*SCTLKernel::TrgDim();;
 
   template <class ValueType> static ValueType ScaleFactor();
 
   template <class VecType, int digits> static void uKerEval(VecType (&u)[SCTLKernel::TrgDim()], const VecType (&r)[SCTLKernel::CoordDim()], const VecType (&f)[SCTLKernel::SrcDim()+(use_dummy_normal?0:SCTLKernel::NormalDim())], const void* ctx_ptr);
 };
+template <class Real, Integer DIM> template <class SCTLKernel, bool use_dummy_normal> struct ParticleFMM<Real,DIM>::PVFMMKernelFn : public pvfmm::GenericKernel<PVFMMKernelFn_<SCTLKernel,use_dummy_normal>> {};
 
-template <class Real, Integer DIM> template <class SCTLKernel, bool use_dummy_normal> template <class ValueType> ValueType ParticleFMM<Real,DIM>::PVFMMKernelFn<SCTLKernel,use_dummy_normal>::ScaleFactor() {
+template <class SCTLKernel, bool use_dummy_normal> template <class ValueType> ValueType PVFMMKernelFn_<SCTLKernel,use_dummy_normal>::ScaleFactor() {
   return SCTLKernel::template uKerScaleFactor<ValueType>();
 }
 
-template <class Real, Integer DIM> template <class SCTLKernel, bool use_dummy_normal> template <class VecType, int digits> void ParticleFMM<Real,DIM>::PVFMMKernelFn<SCTLKernel,use_dummy_normal>::uKerEval(VecType (&u)[SCTLKernel::TrgDim()], const VecType (&r)[SCTLKernel::CoordDim()], const VecType (&f)[SCTLKernel::SrcDim()+(use_dummy_normal?0:SCTLKernel::NormalDim())], const void* ctx_ptr) {
+template <class SCTLKernel, bool use_dummy_normal> template <class VecType, int digits> void PVFMMKernelFn_<SCTLKernel,use_dummy_normal>::uKerEval(VecType (&u)[SCTLKernel::TrgDim()], const VecType (&r)[SCTLKernel::CoordDim()], const VecType (&f)[SCTLKernel::SrcDim()+(use_dummy_normal?0:SCTLKernel::NormalDim())], const void* ctx_ptr) {
   constexpr Integer KDIM0 = SCTLKernel::SrcDim();
   constexpr Integer KDIM1 = SCTLKernel::TrgDim();
   constexpr Integer N_DIM = SCTLKernel::NormalDim();

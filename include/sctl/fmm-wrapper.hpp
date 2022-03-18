@@ -10,7 +10,7 @@
 
 #ifdef SCTL_HAVE_PVFMM
 namespace pvfmm {
-  template <class Real> class Kernel;
+  template <class Real> struct Kernel;
   template <class Real> class MPI_Node;
   template <class Node> class FMM_Node;
   template <class FMM_Node> class FMM_Pts;
