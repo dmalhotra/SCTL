@@ -166,7 +166,7 @@ template <class ValueType> inline const ValueType& Vector<ValueType>::operator[]
 // Vector-Vector operations
 
 template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const std::vector<ValueType>& V) {
-  if (dim != V.size()) ReInit(V.size());
+  if (dim != (Long)V.size()) ReInit(V.size());
   memcopy(data_ptr, Ptr2ConstItr<ValueType>(&V[0], V.size()), dim);
   return *this;
 }
