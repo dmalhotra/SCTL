@@ -254,7 +254,7 @@ namespace SCTL_NAMESPACE {
       }
   };
 
-  template <class Real> class InterpQuadRule {
+  template <class Real, bool UseGramSchmidtOrtho=false> class InterpQuadRule {
     public:
       template <class BasisObj> static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const BasisObj& integrands, bool symmetric = false, Real eps = 1e-16, Long ORDER = 0, Real nds_start = -1, Real nds_end = 1) {
         Vector<Real> nds, wts;
@@ -410,7 +410,7 @@ namespace SCTL_NAMESPACE {
             if (pivot_norm/S[0] < tol) break;
           }
         };
-        if (0) { // orthonormalize M and get truncation errors S_vec
+        if (UseGramSchmidtOrtho) { // orthonormalize M and get truncation errors S_vec (using modified Gradm-Schmidt)
           Matrix<Real> Q;
           Vector<Long> pivot;
           Real eps = (eps_vec.Dim() ? eps_vec[eps_vec.Dim()-1] : machine_eps<Real>());
@@ -426,7 +426,8 @@ namespace SCTL_NAMESPACE {
               }
             }
           }
-        } else { // orthonormalize M and get singular values S_vec
+        } else { // using SVD
+          // TODO: try M = W * M where W is a random matrix to reduce number of rows in M
           Matrix<Real> U, S, Vt;
           M.SVD(U,S,Vt);
 
@@ -557,10 +558,10 @@ namespace SCTL_NAMESPACE {
       }
 
       template <class FnObj> static void adap_quad_rule(Vector<Real>& nds, Vector<Real>& wts, const FnObj& fn, Real a, Real b, Real tol) {
-        const auto& nds0 = ChebQuadRule<Real>::template nds<40>();
-        const auto& wts0 = ChebQuadRule<Real>::template wts<40>();
-        const auto& nds1 = ChebQuadRule<Real>::template nds<20>();
-        const auto& wts1 = ChebQuadRule<Real>::template wts<20>();
+        const auto& nds0 = LegQuadRule<Real>::template nds<25>();
+        const auto& wts0 = LegQuadRule<Real>::template wts<25>();
+        const auto& nds1 = LegQuadRule<Real>::template nds<50>();
+        const auto& wts1 = LegQuadRule<Real>::template wts<50>();
 
         auto concat_vec = [](const Vector<Real>& v0, const Vector<Real>& v1) {
           Long N0 = v0.Dim();

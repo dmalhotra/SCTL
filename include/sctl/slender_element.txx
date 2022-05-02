@@ -819,7 +819,7 @@ namespace SCTL_NAMESPACE {
             }
             return M;
           };
-          InterpQuadRule<RealType>::Build(data[order*2+0], data[order*2+1], integrands, false, 1e-20, order, 2e-4, 1.0); // TODO: diagnose accuracy issues
+          InterpQuadRule<RealType, true>::Build(data[order*2+0], data[order*2+1], integrands, false, machine_eps<ValueType>(), order, 2e-4, 1.0);
         }
         WriteFile<RealType>(data, "data/log_quad");
       }
