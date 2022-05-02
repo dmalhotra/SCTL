@@ -1,5 +1,6 @@
 #include <omp.h>
 #include <cmath>
+#include <cstring>
 #include <cstdlib>
 #include <iostream>
 #include <iomanip>
@@ -26,38 +27,45 @@ template <class Real> inline constexpr Real machine_eps() {
 }
 
 template <class Real> inline Real atoreal(const char* str) { // Warning: does not do correct rounding
-  int i = 0;
-  Real sign = 1.0;
-  for (; str[i] != '\0'; i++) {
-    char c = str[i];
-    if (c == '-') sign = -sign;
-    if (c >= '0' && c <= '9') break;
-  }
-
-  Real val = 0.0;
-  for (; str[i] != '\0'; i++) {
-    char c = str[i];
-    if (c >= '0' && c <= '9')
-      val = val * 10 + (c - '0');
-    else
-      break;
-  }
-
-  if (str[i] == '.') {
-    i++;
-    Real exp = 1.0;
-    exp /= 10;
-    for (; str[i] != '\0'; i++) {
+  const auto get_num = [](const char* str, int& end) {
+    Real val = 0, exp = 1;
+    for (int i = end-1; i >= 0; i--) {
       char c = str[i];
-      if (c >= '0' && c <= '9')
-        val = val + (c - '0') * exp;
-      else
+      if ('0' <= c && c <= '9') {
+        val += (c - '0') * exp;
+        exp *= 10;
+      } else if (c == '.') {
+        val /= exp;
+        exp = 1;
+      } else if (c == '-') {
+        val = -val;
+        end = i - 1;
         break;
-      exp /= 10;
+      } else if (c == '+') {
+        end = i - 1;
+        break;
+      } else {
+        end = i;
+        break;
+      }
     }
-  }
+    return val;
+  };
 
-  return sign * val;
+  Real val = 0;
+  int i = std::strlen(str);
+  for (; i > 0; i--) { // ignore trailing non-numeric characters
+    if ('0' <= str[i-1] && str[i-1] <= '9') break;
+  }
+  val = get_num(str, i);
+  if (i>0 && (str[i] == 'e' || str[i] == 'E')) {
+    i--;
+    val = get_num(str, i) * sctl::pow<Real,Real>((Real)10, val);
+  }
+  for (; i >= 0; i--) { // ignore leading whitespace
+    SCTL_ASSERT(str[i] == ' ');
+  }
+  return val;
 }
 
 template <class Real> static inline constexpr Real const_pi_generic() {
