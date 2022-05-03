@@ -762,6 +762,26 @@ namespace SCTL_NAMESPACE { // Generic
     return expx_.v;
   }
 
+  template <Integer ORDER, class VData> VData approx_sin_intrin(const VData& x) {
+    VData sinx, cosx;
+    approx_sincos_intrin<ORDER>(sinx, cosx, x);
+    return sinx;
+  }
+  template <Integer ORDER, class VData> VData approx_cos_intrin(const VData& x) {
+    VData sinx, cosx;
+    approx_sincos_intrin<ORDER>(sinx, cosx, x);
+    return cosx;
+  }
+  template <Integer ORDER, class VData> VData approx_tan_intrin(const VData& x) {
+    constexpr Integer digits = ORDER;
+    VData sinx, cosx;
+    approx_sincos_intrin<ORDER>(sinx, cosx, x);
+    return div_intrin(sinx, cosx);
+    //VData cos2_x = mul_intrin(cosx, cosx);
+    //VData cos4_x = mul_intrin(cos2_x, cos2_x);
+    //VData sec2_x = rsqrt_approx_intrin<digits,VData>::eval(cos4_x);
+    //return mul_intrin(sinx, mul_intrin(cosx, sec2_x));
+  }
 }
 
 namespace SCTL_NAMESPACE { // SSE
