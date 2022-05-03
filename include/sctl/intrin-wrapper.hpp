@@ -494,16 +494,16 @@ namespace SCTL_NAMESPACE { // Generic
   template <Integer MAX_ITER, Integer ITER, class VData> struct rsqrt_newton_iter {
     static VData eval(const VData& y, const VData& x) {
       using ValueType = typename VData::ScalarType;
-      constexpr ValueType c1 = 3 * pow<pow<MAX_ITER-ITER>(3)-1,ValueType>(2);
-      return rsqrt_newton_iter<MAX_ITER,ITER-1,VData>::eval(mul_intrin(y, sub_intrin(set1_intrin<VData>(c1), mul_intrin(x,mul_intrin(y,y)))), x);
+      constexpr ValueType c1 = -3 * pow<pow<MAX_ITER-ITER>(3)-1,ValueType>(2);
+      return rsqrt_newton_iter<MAX_ITER,ITER-1,VData>::eval(mul_intrin(y, fma_intrin(x,mul_intrin(y,y),set1_intrin<VData>(c1))), x);
     }
   };
   template <Integer MAX_ITER, class VData> struct rsqrt_newton_iter<MAX_ITER,1,VData> {
     static VData eval(const VData& y, const VData& x) {
       using ValueType = typename VData::ScalarType;
-      constexpr ValueType c1 = 3 * pow<pow<MAX_ITER-1>(3)-1,ValueType>(2);
-      constexpr ValueType c2 = pow<(pow<MAX_ITER-1>(3)-1)*3/2+1,ValueType>(0.5);
-      return mul_intrin(mul_intrin(y, sub_intrin(set1_intrin<VData>(c1), mul_intrin(x,mul_intrin(y,y)))), set1_intrin<VData>(c2));
+      constexpr ValueType c1 = -3 * pow<pow<MAX_ITER-1>(3)-1,ValueType>(2);
+      constexpr ValueType c2 = pow<(pow<MAX_ITER-1>(3)-1)*3/2+1,ValueType>(-0.5);
+      return mul_intrin(mul_intrin(y, fma_intrin(x,mul_intrin(y,y),set1_intrin<VData>(c1))), set1_intrin<VData>(c2));
     }
   };
   template <class VData> struct rsqrt_newton_iter<0,0,VData> {
