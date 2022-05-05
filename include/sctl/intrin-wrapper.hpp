@@ -346,7 +346,7 @@ namespace SCTL_NAMESPACE { // Generic
   }
 
   // Conversion operators
-  template <class RetType, class ValueType, Integer N> RetType reinterpret_intrin(const VecData<ValueType,N>& v){
+  template <class RetType, class ValueType, Integer N> inline RetType reinterpret_intrin(const VecData<ValueType,N>& v) {
     static_assert(sizeof(RetType) == sizeof(VecData<ValueType,N>), "Illegal type cast -- size of types does not match.");
     union {
       VecData<ValueType,N> v;
@@ -354,7 +354,7 @@ namespace SCTL_NAMESPACE { // Generic
     } u = {v};
     return u.r;
   }
-  template <class RealVec, class IntVec> RealVec convert_int2real_intrin(const IntVec& x) {
+  template <class RealVec, class IntVec> inline RealVec convert_int2real_intrin(const IntVec& x) {
     using Real = typename RealVec::ScalarType;
     using Int = typename IntVec::ScalarType;
     static_assert(TypeTraits<Real>::Type == DataType::Real, "Expected real type!");
@@ -369,7 +369,7 @@ namespace SCTL_NAMESPACE { // Generic
     IntVec l(add_intrin(x, set1_intrin<IntVec>(Cint)));
     return sub_intrin(reinterpret_intrin<RealVec>(l), set1_intrin<RealVec>(Creal));
   }
-  template <class IntVec, class RealVec> IntVec round_real2int_intrin(const RealVec& x) {
+  template <class IntVec, class RealVec> inline IntVec round_real2int_intrin(const RealVec& x) {
     using Int = typename IntVec::ScalarType;
     using Real = typename RealVec::ScalarType;
     static_assert(TypeTraits<Real>::Type == DataType::Real, "Expected real type!");
@@ -384,7 +384,7 @@ namespace SCTL_NAMESPACE { // Generic
     RealVec d(add_intrin(x, set1_intrin<RealVec>(Creal)));
     return sub_intrin(reinterpret_intrin<IntVec>(d), set1_intrin<IntVec>(Cint));
   }
-  template <class VData> VData round_real2real_intrin(const VData& x) {
+  template <class VData> inline VData round_real2real_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
     static_assert(TypeTraits<Real>::Type == DataType::Real, "Expected real type!");
@@ -405,7 +405,7 @@ namespace SCTL_NAMESPACE { // Generic
   template <class VData> struct Mask : public VData {
     using VDataType = VData;
 
-    static Mask Zero() {
+    static inline Mask Zero() {
       return Mask<VData>(zero_intrin<VDataType>());
     }
 
@@ -414,10 +414,10 @@ namespace SCTL_NAMESPACE { // Generic
     Mask& operator=(const Mask&) = default;
     ~Mask() = default;
 
-    explicit Mask(const VData& v) : VData(v) {}
+    inline explicit Mask(const VData& v) : VData(v) {}
   };
 
-  template <class RetType, class VData> RetType reinterpret_mask(const Mask<VData>& v){
+  template <class RetType, class VData> inline RetType reinterpret_mask(const Mask<VData>& v) {
     static_assert(sizeof(RetType) == sizeof(Mask<VData>), "Illegal type cast -- size of types does not match.");
     union {
       Mask<VData> v;
@@ -455,7 +455,7 @@ namespace SCTL_NAMESPACE { // Generic
 
   // Comparison operators
   enum class ComparisonType { lt, le, gt, ge, eq, ne};
-  template <ComparisonType TYPE, class VData> Mask<VData> comp_intrin(const VData& a, const VData& b) {
+  template <ComparisonType TYPE, class VData> inline Mask<VData> comp_intrin(const VData& a, const VData& b) {
     static_assert(sizeof(Mask<VData>) == sizeof(VData), "Invalid operation on Mask");
     using ScalarType = typename VData::ScalarType;
     using IntType = typename IntegerType<sizeof(ScalarType)>::value;
@@ -481,7 +481,7 @@ namespace SCTL_NAMESPACE { // Generic
     return c_.m;
   }
 
-  template <class VData> VData select_intrin(const Mask<VData>& s, const VData& a, const VData& b) {
+  template <class VData> inline VData select_intrin(const Mask<VData>& s, const VData& a, const VData& b) {
     static_assert(sizeof(Mask<VData>) == sizeof(VData), "Invalid operation on Mask");
     union U {
       Mask<VData> m;
@@ -492,14 +492,14 @@ namespace SCTL_NAMESPACE { // Generic
 
   // Special funtions
   template <Integer MAX_ITER, Integer ITER, class VData> struct rsqrt_newton_iter {
-    static VData eval(const VData& y, const VData& x) {
+    static inline VData eval(const VData& y, const VData& x) {
       using ValueType = typename VData::ScalarType;
       constexpr ValueType c1 = -3 * pow<pow<MAX_ITER-ITER>(3)-1,ValueType>(2);
       return rsqrt_newton_iter<MAX_ITER,ITER-1,VData>::eval(mul_intrin(y, fma_intrin(x,mul_intrin(y,y),set1_intrin<VData>(c1))), x);
     }
   };
   template <Integer MAX_ITER, class VData> struct rsqrt_newton_iter<MAX_ITER,1,VData> {
-    static VData eval(const VData& y, const VData& x) {
+    static inline VData eval(const VData& y, const VData& x) {
       using ValueType = typename VData::ScalarType;
       constexpr ValueType c1 = -3 * pow<pow<MAX_ITER-1>(3)-1,ValueType>(2);
       constexpr ValueType c2 = pow<(pow<MAX_ITER-1>(3)-1)*3/2+1,ValueType>(-0.5);
@@ -507,11 +507,11 @@ namespace SCTL_NAMESPACE { // Generic
     }
   };
   template <class VData> struct rsqrt_newton_iter<0,0,VData> {
-    static VData eval(const VData& y, const VData& x) {
+    static inline VData eval(const VData& y, const VData& x) {
       return y;
     }
   };
-  static constexpr Integer mylog2(Integer x) {
+  static inline constexpr Integer mylog2(Integer x) {
     return ((x<1) ? 0 : 1+mylog2(x/2));
   }
   template <Integer digits, class VData> struct rsqrt_approx_intrin {
@@ -530,90 +530,90 @@ namespace SCTL_NAMESPACE { // Generic
     }
   };
 
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0) {
     return set1_intrin<VData>(c0);
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1) {
     return fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2) {
     VData x2(mul_intrin<VData>(x1,x1));
     return fma_intrin(x2, set1_intrin<VData>(c2), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3) {
     VData x2(mul_intrin<VData>(x1,x1));
     return fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4) {
     VData x2(mul_intrin<VData>(x1,x1));
     VData x4(mul_intrin<VData>(x2,x2));
     return fma_intrin(x4, set1_intrin<VData>(c4), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0))));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5) {
     VData x2(mul_intrin<VData>(x1,x1));
     VData x4(mul_intrin<VData>(x2,x2));
     return fma_intrin(x4, fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4)), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0))));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6) {
     VData x2(mul_intrin<VData>(x1,x1));
     VData x4(mul_intrin<VData>(x2,x2));
     return fma_intrin(x4, fma_intrin(x2, set1_intrin<VData>(c6), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0))));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7) {
     VData x2(mul_intrin<VData>(x1,x1));
     VData x4(mul_intrin<VData>(x2,x2));
     return fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c7), set1_intrin<VData>(c6)), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0))));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8) {
     VData x2(mul_intrin<VData>(x1,x1));
     VData x4(mul_intrin<VData>(x2,x2));
     VData x8(mul_intrin<VData>(x4,x4));
     return fma_intrin(x8, set1_intrin<VData>(c8), fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c7), set1_intrin<VData>(c6)), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)))));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9) {
     VData x2(mul_intrin<VData>(x1,x1));
     VData x4(mul_intrin<VData>(x2,x2));
     VData x8(mul_intrin<VData>(x4,x4));
     return fma_intrin(x8, fma_intrin(x1, set1_intrin<VData>(c9), set1_intrin<VData>(c8)), fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c7), set1_intrin<VData>(c6)), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)))));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9, const CType& c10) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9, const CType& c10) {
     VData x2(mul_intrin<VData>(x1,x1));
     VData x4(mul_intrin<VData>(x2,x2));
     VData x8(mul_intrin<VData>(x4,x4));
     return fma_intrin(x8, fma_intrin(x2, set1_intrin<VData>(c10), fma_intrin(x1, set1_intrin<VData>(c9), set1_intrin<VData>(c8))), fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c7), set1_intrin<VData>(c6)), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)))));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9, const CType& c10, const CType& c11) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9, const CType& c10, const CType& c11) {
     VData x2(mul_intrin<VData>(x1,x1));
     VData x4(mul_intrin<VData>(x2,x2));
     VData x8(mul_intrin<VData>(x4,x4));
     return fma_intrin(x8, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c11), set1_intrin<VData>(c10)), fma_intrin(x1, set1_intrin<VData>(c9), set1_intrin<VData>(c8))), fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c7), set1_intrin<VData>(c6)), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)))));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9, const CType& c10, const CType& c11, const CType& c12) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9, const CType& c10, const CType& c11, const CType& c12) {
     VData x2(mul_intrin<VData>(x1,x1));
     VData x4(mul_intrin<VData>(x2,x2));
     VData x8(mul_intrin<VData>(x4,x4));
     return fma_intrin(x8, fma_intrin(x4, set1_intrin<VData>(c12) , fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c11), set1_intrin<VData>(c10)), fma_intrin(x1, set1_intrin<VData>(c9), set1_intrin<VData>(c8)))), fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c7), set1_intrin<VData>(c6)), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)))));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9, const CType& c10, const CType& c11, const CType& c12, const CType& c13) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9, const CType& c10, const CType& c11, const CType& c12, const CType& c13) {
     VData x2(mul_intrin<VData>(x1,x1));
     VData x4(mul_intrin<VData>(x2,x2));
     VData x8(mul_intrin<VData>(x4,x4));
     return fma_intrin(x8, fma_intrin(x4, fma_intrin(x1, set1_intrin<VData>(c13), set1_intrin<VData>(c12)) , fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c11), set1_intrin<VData>(c10)), fma_intrin(x1, set1_intrin<VData>(c9), set1_intrin<VData>(c8)))), fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c7), set1_intrin<VData>(c6)), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)))));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9, const CType& c10, const CType& c11, const CType& c12, const CType& c13, const CType& c14) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9, const CType& c10, const CType& c11, const CType& c12, const CType& c13, const CType& c14) {
     VData x2(mul_intrin<VData>(x1,x1));
     VData x4(mul_intrin<VData>(x2,x2));
     VData x8(mul_intrin<VData>(x4,x4));
     return fma_intrin(x8, fma_intrin(x4, fma_intrin(x2, set1_intrin<VData>(c14), fma_intrin(x1, set1_intrin<VData>(c13), set1_intrin<VData>(c12))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c11), set1_intrin<VData>(c10)), fma_intrin(x1, set1_intrin<VData>(c9), set1_intrin<VData>(c8)))), fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c7), set1_intrin<VData>(c6)), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)))));
   }
-  template <class VData, class CType> VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9, const CType& c10, const CType& c11, const CType& c12, const CType& c13, const CType& c14, const CType& c15) {
+  template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1, const CType& c2, const CType& c3, const CType& c4, const CType& c5, const CType& c6, const CType& c7, const CType& c8, const CType& c9, const CType& c10, const CType& c11, const CType& c12, const CType& c13, const CType& c14, const CType& c15) {
     VData x2(mul_intrin<VData>(x1,x1));
     VData x4(mul_intrin<VData>(x2,x2));
     VData x8(mul_intrin<VData>(x4,x4));
     return fma_intrin(x8, fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c15), set1_intrin<VData>(c14)), fma_intrin(x1, set1_intrin<VData>(c13), set1_intrin<VData>(c12))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c11), set1_intrin<VData>(c10)), fma_intrin(x1, set1_intrin<VData>(c9), set1_intrin<VData>(c8)))), fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c7), set1_intrin<VData>(c6)), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)))));
   }
 
-  template <Integer ORDER, class VData> void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
+  template <Integer ORDER, class VData> inline void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
     // ORDER    ERROR
     //     1 8.81e-02
     //     3 2.45e-03
@@ -681,7 +681,7 @@ namespace SCTL_NAMESPACE { // Generic
     sinx = select_intrin(xAnd2, s2, unary_minus_intrin(s2));
     cosx = select_intrin(xAnd2, c2, unary_minus_intrin(c2));
   }
-  template <class VData> void sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
+  template <class VData> inline void sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
     union U {
       VData v;
       typename VData::ScalarType x[VData::Size];
@@ -695,7 +695,7 @@ namespace SCTL_NAMESPACE { // Generic
     cosx = cosx_.v;
   }
 
-  template <Integer ORDER, class VData> VData approx_exp_intrin(const VData& x) {
+  template <Integer ORDER, class VData> inline VData approx_exp_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
     using IntVec = VecData<Int, VData::Size>;
@@ -752,7 +752,7 @@ namespace SCTL_NAMESPACE { // Generic
 
     return mul_intrin(e1, e2);
   }
-  template <class VData> VData exp_intrin(const VData& x) {
+  template <class VData> inline VData exp_intrin(const VData& x) {
     union U {
       VData v;
       typename VData::ScalarType x[VData::Size];
@@ -762,17 +762,17 @@ namespace SCTL_NAMESPACE { // Generic
     return expx_.v;
   }
 
-  template <Integer ORDER, class VData> VData approx_sin_intrin(const VData& x) {
+  template <Integer ORDER, class VData> inline VData approx_sin_intrin(const VData& x) {
     VData sinx, cosx;
     approx_sincos_intrin<ORDER>(sinx, cosx, x);
     return sinx;
   }
-  template <Integer ORDER, class VData> VData approx_cos_intrin(const VData& x) {
+  template <Integer ORDER, class VData> inline VData approx_cos_intrin(const VData& x) {
     VData sinx, cosx;
     approx_sincos_intrin<ORDER>(sinx, cosx, x);
     return cosx;
   }
-  template <Integer ORDER, class VData> VData approx_tan_intrin(const VData& x) {
+  template <Integer ORDER, class VData> inline VData approx_tan_intrin(const VData& x) {
     constexpr Integer digits = ORDER;
     VData sinx, cosx;
     approx_sincos_intrin<ORDER>(sinx, cosx, x);
@@ -790,42 +790,42 @@ namespace SCTL_NAMESPACE { // SSE
     using ScalarType = int8_t;
     static constexpr Integer Size = 16;
     VecData() = default;
-    VecData(__m128i v_) : v(v_) {}
+    inline VecData(__m128i v_) : v(v_) {}
     __m128i v;
   };
   template <> struct alignas(sizeof(int16_t) * 8) VecData<int16_t,8> {
     using ScalarType = int16_t;
     static constexpr Integer Size = 8;
     VecData() = default;
-    VecData(__m128i v_) : v(v_) {}
+    inline VecData(__m128i v_) : v(v_) {}
     __m128i v;
   };
   template <> struct alignas(sizeof(int32_t) * 4) VecData<int32_t,4> {
     using ScalarType = int32_t;
     static constexpr Integer Size = 4;
     VecData() = default;
-    VecData(__m128i v_) : v(v_) {}
+    inline VecData(__m128i v_) : v(v_) {}
     __m128i v;
   };
   template <> struct alignas(sizeof(int64_t) * 2) VecData<int64_t,2> {
     using ScalarType = int64_t;
     static constexpr Integer Size = 2;
     VecData() = default;
-    VecData(__m128i v_) : v(v_) {}
+    inline VecData(__m128i v_) : v(v_) {}
     __m128i v;
   };
   template <> struct alignas(sizeof(float) * 4) VecData<float,4> {
     using ScalarType = float;
     static constexpr Integer Size = 4;
     VecData() = default;
-    VecData(__m128 v_) : v(v_) {}
+    inline VecData(__m128 v_) : v(v_) {}
     __m128 v;
   };
   template <> struct alignas(sizeof(double) * 2) VecData<double,2> {
     using ScalarType = double;
     static constexpr Integer Size = 2;
     VecData() = default;
-    VecData(__m128d v_) : v(v_) {}
+    inline VecData(__m128d v_) : v(v_) {}
     __m128d v;
   };
 
@@ -1428,7 +1428,7 @@ namespace SCTL_NAMESPACE { // SSE
 
   // Special functions
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,4>> {
-    static VecData<float,4> eval(const VecData<float,4>& a) {
+    static inline VecData<float,4> eval(const VecData<float,4>& a) {
       #if defined(__AVX512F__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,4>>::eval(_mm_maskz_rsqrt14_ps(~__mmask8(0), a.v), a.v);
@@ -1437,7 +1437,7 @@ namespace SCTL_NAMESPACE { // SSE
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,4>>::eval(_mm_rsqrt_ps(a.v), a.v);
       #endif
     }
-    static VecData<float,4> eval(const VecData<float,4>& a, const Mask<VecData<float,4>>& m) {
+    static inline VecData<float,4> eval(const VecData<float,4>& a, const Mask<VecData<float,4>>& m) {
       #if defined(__AVX512DQ__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,4>>::eval(_mm_maskz_rsqrt14_ps(_mm_movepi32_mask(_mm_castps_si128(m.v)), a.v), a.v);
@@ -1448,7 +1448,7 @@ namespace SCTL_NAMESPACE { // SSE
     }
   };
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<double,2>> {
-    static VecData<double,2> eval(const VecData<double,2>& a) {
+    static inline VecData<double,2> eval(const VecData<double,2>& a) {
       #if defined(__AVX512F__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(_mm_maskz_rsqrt14_pd(~__mmask8(0), a.v), a.v);
@@ -1457,7 +1457,7 @@ namespace SCTL_NAMESPACE { // SSE
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(_mm_cvtps_pd(_mm_rsqrt_ps(_mm_cvtpd_ps(a.v))), a.v);
       #endif
     }
-    static VecData<double,2> eval(const VecData<double,2>& a, const Mask<VecData<double,2>>& m) {
+    static inline VecData<double,2> eval(const VecData<double,2>& a, const Mask<VecData<double,2>>& m) {
       #if defined(__AVX51DQ__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(_mm_maskz_rsqrt14_pd(_mm_movepi64_mask(_mm_castpd_si128(m.v)), a.v), a.v);
@@ -1500,42 +1500,42 @@ namespace SCTL_NAMESPACE { // AVX
     using ScalarType = int8_t;
     static constexpr Integer Size = 32;
     VecData() = default;
-    VecData(__m256i v_) : v(v_) {}
+    inline VecData(__m256i v_) : v(v_) {}
     __m256i v;
   };
   template <> struct alignas(sizeof(int16_t) * 16) VecData<int16_t,16> {
     using ScalarType = int16_t;
     static constexpr Integer Size = 16;
     VecData() = default;
-    VecData(__m256i v_) : v(v_) {}
+    inline VecData(__m256i v_) : v(v_) {}
     __m256i v;
   };
   template <> struct alignas(sizeof(int32_t) * 8) VecData<int32_t,8> {
     using ScalarType = int32_t;
     static constexpr Integer Size = 8;
     VecData() = default;
-    VecData(__m256i v_) : v(v_) {}
+    inline VecData(__m256i v_) : v(v_) {}
     __m256i v;
   };
   template <> struct alignas(sizeof(int64_t) * 4) VecData<int64_t,4> {
     using ScalarType = int64_t;
     static constexpr Integer Size = 4;
     VecData() = default;
-    VecData(__m256i v_) : v(v_) {}
+    inline VecData(__m256i v_) : v(v_) {}
     __m256i v;
   };
   template <> struct alignas(sizeof(float) * 8) VecData<float,8> {
     using ScalarType = float;
     static constexpr Integer Size = 8;
     VecData() = default;
-    VecData(__m256 v_) : v(v_) {}
+    inline VecData(__m256 v_) : v(v_) {}
     __m256 v;
   };
   template <> struct alignas(sizeof(double) * 4) VecData<double,4> {
     using ScalarType = double;
     static constexpr Integer Size = 4;
     VecData() = default;
-    VecData(__m256d v_) : v(v_) {}
+    inline VecData(__m256d v_) : v(v_) {}
     __m256d v;
   };
 
@@ -2144,7 +2144,7 @@ namespace SCTL_NAMESPACE { // AVX
 
   // Special functions
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,8>> {
-    static VecData<float,8> eval(const VecData<float,8>& a) {
+    static inline VecData<float,8> eval(const VecData<float,8>& a) {
       #if defined(__AVX512F__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,8>>::eval(_mm256_maskz_rsqrt14_ps(~__mmask8(0), a.v), a.v);
@@ -2153,7 +2153,7 @@ namespace SCTL_NAMESPACE { // AVX
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,8>>::eval(_mm256_rsqrt_ps(a.v), a.v);
       #endif
     }
-    static VecData<float,8> eval(const VecData<float,8>& a, const Mask<VecData<float,8>>& m) {
+    static inline VecData<float,8> eval(const VecData<float,8>& a, const Mask<VecData<float,8>>& m) {
       #if defined(__AVX512DQ__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,8>>::eval(_mm256_maskz_rsqrt14_ps(_mm256_movepi32_mask(_mm256_castps_si256(m.v)), a.v), a.v);
@@ -2164,7 +2164,7 @@ namespace SCTL_NAMESPACE { // AVX
     }
   };
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<double,4>> {
-    static VecData<double,4> eval(const VecData<double,4>& a) {
+    static inline VecData<double,4> eval(const VecData<double,4>& a) {
       #if defined(__AVX512F__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_maskz_rsqrt14_pd(~__mmask8(0), a.v), a.v);
@@ -2173,7 +2173,7 @@ namespace SCTL_NAMESPACE { // AVX
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_cvtps_pd(_mm_rsqrt_ps(_mm256_cvtpd_ps(a.v))), a.v);
       #endif
     }
-    static VecData<double,4> eval(const VecData<double,4>& a, const Mask<VecData<double,4>>& m) {
+    static inline VecData<double,4> eval(const VecData<double,4>& a, const Mask<VecData<double,4>>& m) {
       #if defined(__AVX512DQ__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_maskz_rsqrt14_pd(_mm256_movepi64_mask(_mm256_castpd_si256(m.v)), a.v), a.v);
@@ -2216,41 +2216,41 @@ namespace SCTL_NAMESPACE { // AVX512
     using ScalarType = int8_t;
     static constexpr Integer Size = 64;
     VecData() = default;
-    VecData(__m512i v_) : v(v_) {}
+    inline VecData(__m512i v_) : v(v_) {}
     __m512i v;
   };
   template <> struct alignas(sizeof(int16_t) * 32) VecData<int16_t,32> {
     using ScalarType = int16_t;
     static constexpr Integer Size = 32;
     VecData() = default;
-    VecData(__m512i v_) : v(v_) {}
+    inline VecData(__m512i v_) : v(v_) {}
     __m512i v;
   };
   template <> struct alignas(sizeof(int32_t) * 16) VecData<int32_t,16> {
     using ScalarType = int32_t;
     static constexpr Integer Size = 16;
     VecData() = default;
-    VecData(__m512i v_) : v(v_) {}
+    inline VecData(__m512i v_) : v(v_) {}
     __m512i v;
   };
   template <> struct alignas(sizeof(int64_t) * 8) VecData<int64_t,8> {
     using ScalarType = int64_t;
     static constexpr Integer Size = 8;
     VecData() = default;
-    VecData(__m512i v_) : v(v_) {}
+    inline VecData(__m512i v_) : v(v_) {}
     __m512i v;
   };
   template <> struct alignas(sizeof(float) * 16) VecData<float,16> {
     using ScalarType = float;
     static constexpr Integer Size = 16;
     VecData() = default;
-    VecData(__m512 v_) : v(v_) {}
+    inline VecData(__m512 v_) : v(v_) {}
     __m512 v;
   };
   template <> struct alignas(sizeof(double) * 8) VecData<double,8> {
     using ScalarType = double;
     static constexpr Integer Size = 8;
-    VecData(__m512d v_) : v(v_) {}
+    inline VecData(__m512d v_) : v(v_) {}
     VecData() = default;
     __m512d v;
   };
@@ -2739,7 +2739,7 @@ namespace SCTL_NAMESPACE { // AVX512
     using ScalarType = int8_t;
     static constexpr Integer Size = 64;
 
-    static Mask Zero() {
+    static inline Mask Zero() {
       return Mask(0);
     }
 
@@ -2748,7 +2748,7 @@ namespace SCTL_NAMESPACE { // AVX512
     Mask& operator=(const Mask&) = default;
     ~Mask() = default;
 
-    explicit Mask(const __mmask64& v_) : v(v_) {}
+    inline explicit Mask(const __mmask64& v_) : v(v_) {}
 
     __mmask64 v;
   };
@@ -2756,7 +2756,7 @@ namespace SCTL_NAMESPACE { // AVX512
     using ScalarType = int16_t;
     static constexpr Integer Size = 32;
 
-    static Mask Zero() {
+    static inline Mask Zero() {
       return Mask(0);
     }
 
@@ -2765,7 +2765,7 @@ namespace SCTL_NAMESPACE { // AVX512
     Mask& operator=(const Mask&) = default;
     ~Mask() = default;
 
-    explicit Mask(const __mmask32& v_) : v(v_) {}
+    inline explicit Mask(const __mmask32& v_) : v(v_) {}
 
     __mmask32 v;
   };
@@ -2776,7 +2776,7 @@ namespace SCTL_NAMESPACE { // AVX512
     using ScalarType = int32_t;
     static constexpr Integer Size = 16;
 
-    static Mask Zero() {
+    static inline Mask Zero() {
       return Mask(0);
     }
 
@@ -2785,7 +2785,7 @@ namespace SCTL_NAMESPACE { // AVX512
     Mask& operator=(const Mask&) = default;
     ~Mask() = default;
 
-    explicit Mask(const __mmask16& v_) : v(v_) {}
+    inline explicit Mask(const __mmask16& v_) : v(v_) {}
 
     __mmask16 v;
   };
@@ -2793,7 +2793,7 @@ namespace SCTL_NAMESPACE { // AVX512
     using ScalarType = int64_t;
     static constexpr Integer Size = 8;
 
-    static Mask Zero() {
+    static inline Mask Zero() {
       return Mask(0);
     }
 
@@ -2802,7 +2802,7 @@ namespace SCTL_NAMESPACE { // AVX512
     Mask& operator=(const Mask&) = default;
     ~Mask() = default;
 
-    explicit Mask(const __mmask8& v_) : v(v_) {}
+    inline explicit Mask(const __mmask8& v_) : v(v_) {}
 
     __mmask8  v;
   };
@@ -2810,7 +2810,7 @@ namespace SCTL_NAMESPACE { // AVX512
     using ScalarType = float;
     static constexpr Integer Size = 16;
 
-    static Mask Zero() {
+    static inline Mask Zero() {
       return Mask(0);
     }
 
@@ -2819,7 +2819,7 @@ namespace SCTL_NAMESPACE { // AVX512
     Mask& operator=(const Mask&) = default;
     ~Mask() = default;
 
-    explicit Mask(const __mmask16& v_) : v(v_) {}
+    inline explicit Mask(const __mmask16& v_) : v(v_) {}
 
     __mmask16 v;
   };
@@ -2827,7 +2827,7 @@ namespace SCTL_NAMESPACE { // AVX512
     using ScalarType = double;
     static constexpr Integer Size = 8;
 
-    static Mask Zero() {
+    static inline Mask Zero() {
       return Mask(0);
     }
 
@@ -2836,7 +2836,7 @@ namespace SCTL_NAMESPACE { // AVX512
     Mask& operator=(const Mask&) = default;
     ~Mask() = default;
 
-    explicit Mask(const __mmask8& v_) : v(v_) {}
+    inline explicit Mask(const __mmask8& v_) : v(v_) {}
 
     __mmask8  v;
   };
@@ -2968,10 +2968,10 @@ namespace SCTL_NAMESPACE { // AVX512
   // Special functions
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,16>> {
     static constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
-    static VecData<float,16> eval(const VecData<float,16>& a) {
+    static inline VecData<float,16> eval(const VecData<float,16>& a) {
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,16>>::eval(_mm512_rsqrt14_ps(a.v), a.v);
     }
-    static VecData<float,16> eval(const VecData<float,16>& a, const Mask<VecData<float,16>>& m) {
+    static inline VecData<float,16> eval(const VecData<float,16>& a, const Mask<VecData<float,16>>& m) {
       #if defined(__AVX512DQ__)
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<float,16>>::eval(_mm512_maskz_rsqrt14_ps(m.v, a.v), a.v);
       #else
@@ -2981,10 +2981,10 @@ namespace SCTL_NAMESPACE { // AVX512
   };
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<double,8>> {
     static constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
-    static VecData<double,8> eval(const VecData<double,8>& a) {
+    static inline VecData<double,8> eval(const VecData<double,8>& a) {
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,8>>::eval(_mm512_rsqrt14_pd(a.v), a.v);
     }
-    static VecData<double,8> eval(const VecData<double,8>& a, const Mask<VecData<double,8>>& m) {
+    static inline VecData<double,8> eval(const VecData<double,8>& a, const Mask<VecData<double,8>>& m) {
       #if defined(__AVX512DQ__)
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,8>>::eval(_mm512_maskz_rsqrt14_pd(m.v, a.v), a.v);
       #else
