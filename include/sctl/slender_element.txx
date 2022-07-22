@@ -1564,7 +1564,7 @@ namespace SCTL_NAMESPACE {
     return nds_wts;
   }
   template <Integer ModalUpsample, class Real, class Kernel, bool trg_dot_prod, bool adap_quad=false> static void SpecialQuadRule(Vector<Real>& nds, Vector<Real>& wts, const Integer ChebOrder, const Integer trg_node_idx, const Real elem_radius, const Real elem_length, const Integer digits) {
-    constexpr Integer max_adap_depth = 30+7; // TODO
+    static constexpr Integer max_adap_depth = 30+7; // TODO
     constexpr Integer MaxFourierModes = 8; // TODO
     constexpr Integer MaxChebOrder = 100;
     constexpr Integer max_digits = 19;
@@ -1600,7 +1600,7 @@ namespace SCTL_NAMESPACE {
     }
 
     if (!adap_quad) {
-      auto load_special_quad_rule = [&max_adap_depth](Vector<Vector<Real>>& nds_lst, Vector<Vector<Real>>& wts_lst, const Integer ChebOrder){
+      auto load_special_quad_rule = [](Vector<Vector<Real>>& nds_lst, Vector<Vector<Real>>& wts_lst, const Integer ChebOrder){
         const std::string fname = std::string("data/special_quad_q") + std::to_string(ChebOrder) + "_" + Kernel::Name() + (trg_dot_prod ? "_dotXn" : "");
         const auto cheb_nds_ = SlenderElemList<ValueType>::CenterlineNodes(ChebOrder);
 

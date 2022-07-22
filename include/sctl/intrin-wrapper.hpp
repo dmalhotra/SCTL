@@ -773,7 +773,7 @@ namespace SCTL_NAMESPACE { // Generic
     return cosx;
   }
   template <Integer ORDER, class VData> inline VData approx_tan_intrin(const VData& x) {
-    constexpr Integer digits = ORDER;
+    //constexpr Integer digits = ORDER;
     VData sinx, cosx;
     approx_sincos_intrin<ORDER>(sinx, cosx, x);
     return div_intrin(sinx, cosx);

@@ -1173,7 +1173,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
           auto Ypt = [&Yt, &imag](Long n, Long m) {
             return imag * m * Yt(n, m);
           };
-          auto Ytt = [sin_theta, exp_phi, &Yt, &R, i](Long n, Long m) {
+          auto Ytt = [exp_phi, &Yt](Long n, Long m) {
             auto A = (0<=n && m<=n ? 0.5 * sqrt<Real>((n+m)*(n-m+1)) * (m-1==0?2.0:1.0) : 0);
             auto B = (0<=n && m<=n ? 0.5 * sqrt<Real>((n-m)*(n+m+1)) * (m+1==0?2.0:1.0) : 0);
             return (n==0 ? 0 : (B / exp_phi * Yt(n, m + 1) - A * exp_phi * Yt(n, m - 1)));
