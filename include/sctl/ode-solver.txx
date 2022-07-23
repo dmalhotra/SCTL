@@ -135,7 +135,7 @@ namespace SCTL_NAMESPACE {
       Real error_interp, error_picard, norm_dudt;
       (*this)(&u_, dt, u0_, F, 2*Order, tol*dt*pow<Real>(0.9,Order), &error_interp, &error_picard, &norm_dudt);
 
-      Real tol_ = std::max<Real>(tol, (tol-error_)/(T-t));
+      Real tol_ = std::max<Real>(tol/T, (tol-error_)/(T-t));
       Real max_err = std::max<Real>(error_interp, error_picard);
       //std::cout<<t<<' '<<dt<<' '<<error_interp/dt<<' '<<error_picard/dt<<' '<<max_err/norm_dudt/eps<<'\n';
       if (max_err < tol_*dt || (continue_with_errors && max_err/norm_dudt < 2*eps)) { // Accept solution
