@@ -15,15 +15,6 @@ namespace SCTL_NAMESPACE {
   template <class Real> class ElementListBase;
   template <class Real, class Kernel> class BoundaryIntegralOp;
 
-  template <class Real> class LagrangeInterp {
-    public:
-      static void Interpolate(Vector<Real>& wts, const Vector<Real>& src_nds, const Vector<Real>& trg_nds);
-
-      static void Derivative(Vector<Real>& df, const Vector<Real>& f, const Vector<Real>& nds);
-
-      static void test();
-  };
-
   template <class Real, Integer Nm = 12, Integer Nr = 20, Integer Nt = 16> class ToroidalGreensFn {
       static constexpr Integer COORD_DIM = 3;
       static constexpr Real min_dist = 0.0;

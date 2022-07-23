@@ -26,6 +26,7 @@
 #include SCTL_INCLUDE(boundary_integral.hpp)
 #include SCTL_INCLUDE(slender_element.hpp)
 #include SCTL_INCLUDE(quadrule.hpp)
+#include SCTL_INCLUDE(lagrange-interp.hpp)
 
 // ODE solver
 #include SCTL_INCLUDE(ode-solver.hpp)
