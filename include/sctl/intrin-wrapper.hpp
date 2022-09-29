@@ -4,23 +4,10 @@
 #include <sctl/common.hpp>
 #include SCTL_INCLUDE(math_utils.hpp)
 
-#ifdef __SSE__
-#include <xmmintrin.h>
-#endif
-#ifdef __SSE2__
-#include <emmintrin.h>
-#endif
-#ifdef __SSE3__
-#include <pmmintrin.h>
-#endif
-#ifdef __SSE4_2__
-#include <smmintrin.h>
-#endif
-#ifdef __AVX__
-#include <immintrin.h>
-#endif
-#if defined(__MIC__)
-#include <immintrin.h>
+#ifdef _MSC_VER
+#include <intrin.h>
+#else
+#include <x86intrin.h>
 #endif
 
 // TODO: Check alignment when SCTL_MEMDEBUG is defined
