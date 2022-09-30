@@ -2976,10 +2976,7 @@ template <class Real> template <bool SLayer, bool DLayer> void SphericalHarmonic
     const Real scal_const_dl = 3.0/(4.0*M_PI);
     const Real scal_const_sl = 1.0/(8.0*M_PI);
     static Real eps=-1;
-    if(eps<0){
-      eps=1;
-      while(eps*(Real)0.5+(Real)1.0>1.0) eps*=0.5;
-    }
+    if(eps<0) eps=machine_eps<Real>();
 
     #pragma omp parallel
     {

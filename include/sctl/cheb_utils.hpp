@@ -333,7 +333,7 @@ template <class ValueType, class Derived> class BasisInterface {
   template <Integer DIM, Integer SUBDIM, class Kernel> static void Integ(Matrix<ValueType>& Mcoeff, Integer order, ConstIterator<ValueType> trg_, ValueType side, Integer src_face, const Kernel& ker, ValueType tol = -1, Integer Nq = 0) {
     if (!Nq) Nq = order;
     Integ_<DIM, SUBDIM>(Mcoeff, order, trg_, side, src_face, ker, Nq);
-    if (tol < 0) tol = 1e-10; //machine_eps() * 256;
+    if (tol < 0) tol = machine_eps<ValueType>() * 256;
     ValueType err = tol + 1;
     Matrix<ValueType> Mtmp;
     while (err > tol) {
@@ -1096,14 +1096,8 @@ template <class ValueType, class Derived> class BasisInterface {
     }
   }
 
-  static ValueType machine_eps() {
-    ValueType eps = 1.0;
-    while (eps + (ValueType)1.0 > 1.0) eps *= 0.5;
-    return eps;
-  }
-
   template <Integer DIM, Integer SUBDIM, class Kernel> static void Integ_(Matrix<ValueType>& Mcoeff, Integer order, ConstIterator<ValueType> trg_, ValueType side, Integer src_face, const Kernel& ker, Integer Nq = 0) {
-    static const ValueType eps = machine_eps() * 64;
+    constexpr ValueType eps = machine_eps<ValueType>() * 64;
     ValueType side_inv = 1.0 / side;
     if (!Nq) Nq = order;
 

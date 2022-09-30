@@ -246,15 +246,9 @@ template <Integer COORD_DIM, class Basis> class ElemList {
 
 template <class Real> class Quadrature {
 
-    static Real machine_epsilon() {
-      Real eps=1;
-      while(eps*(Real)0.5+(Real)1.0>1.0) eps*=0.5;
-      return eps;
-    }
-
     template <Integer DIM> static void DuffyQuad(Matrix<Real>& nodes, Vector<Real>& weights, const Vector<Real>& coord, Integer order, Real adapt = -1.0) {
       SCTL_ASSERT(coord.Dim() == DIM);
-      static Real eps = machine_epsilon()*16;
+      constexpr Real eps = machine_eps<Real>()*16;
 
       Matrix<Real> qx;
       Vector<Real> qw;

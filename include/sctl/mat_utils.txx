@@ -259,11 +259,7 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
 
   Long k0 = 0;
   Long iter = 0;
-  if (eps < 0) {
-    eps = 1.0;
-    while (eps + (ValueType)1.0 > 1.0) eps *= 0.5;
-    eps *= 64.0;
-  }
+  if (eps < 0) eps = 64.0 * machine_eps<ValueType>();
   while (k0 < dim[1] - 1) {  // Diagonalization
     iter++;
 

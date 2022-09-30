@@ -10,7 +10,7 @@ namespace SCTL_NAMESPACE {
 
 template <class Real, Integer bits = sizeof(Real)*8> struct GetSigBits {
   static constexpr Integer value() {
-    return (pow<bits>((Real)0.5)+1 == (Real)1 ? GetSigBits<Real,bits-1>::value() : bits);
+    return ((Real)(pow<bits>((Real)0.5)+1) == (Real)1 ? GetSigBits<Real,bits-1>::value() : bits);
   }
 };
 template <class Real> struct GetSigBits<Real,0> {
