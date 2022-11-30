@@ -4,10 +4,20 @@
 #include <sctl/common.hpp>
 #include SCTL_INCLUDE(math_utils.hpp)
 
-#ifdef _MSC_VER
-#include <intrin.h>
-#else
-#include <x86intrin.h>
+#if defined(__ARM_NEON)
+#  include SCTL_INCLUDE(sse2neon.h)
+#  define __SSE__
+#  define __SSE2__
+#  define __SSE3__
+#  define __SSE4__
+#  define __SSE4_1__
+#  define __SSE4_2__
+#elif defined(__SSE4_2__) || defined(__AVX__) || defined(__AVX512F__)
+#  ifdef _MSC_VER
+#    include <intrin.h>
+#  else
+#    include <x86intrin.h>
+#  endif
 #endif
 
 // TODO: Check alignment when SCTL_MEMDEBUG is defined

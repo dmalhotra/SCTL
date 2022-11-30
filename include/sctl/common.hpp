@@ -17,7 +17,7 @@
   #define SCTL_ALIGN_BYTES 64
 #elif defined(__AVX__)
   #define SCTL_ALIGN_BYTES 32
-#elif defined(__SSE__)
+#elif defined(__SSE__) || defined(__ARM_NEON)
   #define SCTL_ALIGN_BYTES 16
 #else
   #define SCTL_ALIGN_BYTES 8
