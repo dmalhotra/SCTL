@@ -266,18 +266,6 @@ template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, 
   }
 }
 
-// cublasgemm wrapper
-#if defined(SCTL_HAVE_CUDA)
-template <class ValueType> void Matrix<ValueType>::CUBLASGEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta) {
-  if (A.Dim(0) * A.Dim(1) == 0 || B.Dim(0) * B.Dim(1) == 0) return;
-  assert(A.dim[1] == B.dim[0]);
-  assert(M_r.dim[0] == A.dim[0]);
-  assert(M_r.dim[1] == B.dim[1]);
-  Profile::Add_FLOP(2 * (((Long)A.dim[0]) * A.dim[1]) * B.dim[1]);
-  mat::cublasgemm('N', 'N', B.dim[1], A.dim[0], A.dim[1], (ValueType)1.0, B.data_ptr, B.dim[1], A.data_ptr, A.dim[1], beta, M_r.data_ptr, M_r.dim[1]);
-}
-#endif
-
 // Matrix-Scalar operations
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(ValueType s) {

@@ -1,11 +1,6 @@
 #include SCTL_INCLUDE(matrix.hpp)
 #include SCTL_INCLUDE(math_utils.hpp)
 
-#if defined(SCTL_HAVE_CUDA)
-#include <cuda_runtime_api.h>
-#include <cublas_v2.h>
-#endif
-
 #if defined(SCTL_HAVE_BLAS)
 #include SCTL_INCLUDE(blas.h)
 #endif
@@ -76,36 +71,6 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
 template <> inline void gemm<float>(char TransA, char TransB, int M, int N, int K, float alpha, Iterator<float> A, int lda, Iterator<float> B, int ldb, float beta, Iterator<float> C, int ldc) { sgemm_(&TransA, &TransB, &M, &N, &K, &alpha, &A[0], &lda, &B[0], &ldb, &beta, &C[0], &ldc); }
 
 template <> inline void gemm<double>(char TransA, char TransB, int M, int N, int K, double alpha, Iterator<double> A, int lda, Iterator<double> B, int ldb, double beta, Iterator<double> C, int ldc) { dgemm_(&TransA, &TransB, &M, &N, &K, &alpha, &A[0], &lda, &B[0], &ldb, &beta, &C[0], &ldc); }
-#endif
-
-#if defined(SCTL_HAVE_CUDA)
-template <> inline void cublasgemm<float>(char TransA, char TransB, int M, int N, int K, float alpha, Iterator<float> A, int lda, Iterator<float> B, int ldb, float beta, Iterator<float> C, int ldc) {
-  cublasOperation_t cublasTransA, cublasTransB;
-  cublasHandle_t *handle = CUDA_Lock::acquire_handle();
-  if (TransA == 'T' || TransA == 't')
-    cublasTransA = CUBLAS_OP_T;
-  else if (TransA == 'N' || TransA == 'n')
-    cublasTransA = CUBLAS_OP_N;
-  if (TransB == 'T' || TransB == 't')
-    cublasTransB = CUBLAS_OP_T;
-  else if (TransB == 'N' || TransB == 'n')
-    cublasTransB = CUBLAS_OP_N;
-  cublasStatus_t status = cublasSgemm(*handle, cublasTransA, cublasTransB, M, N, K, &alpha, A, lda, B, ldb, &beta, C, ldc);
-}
-
-template <> inline void cublasgemm<double>(char TransA, char TransB, int M, int N, int K, double alpha, Iterator<double> A, int lda, Iterator<double> B, int ldb, double beta, Iterator<double> C, int ldc) {
-  cublasOperation_t cublasTransA, cublasTransB;
-  cublasHandle_t *handle = CUDA_Lock::acquire_handle();
-  if (TransA == 'T' || TransA == 't')
-    cublasTransA = CUBLAS_OP_T;
-  else if (TransA == 'N' || TransA == 'n')
-    cublasTransA = CUBLAS_OP_N;
-  if (TransB == 'T' || TransB == 't')
-    cublasTransB = CUBLAS_OP_T;
-  else if (TransB == 'N' || TransB == 'n')
-    cublasTransB = CUBLAS_OP_N;
-  cublasStatus_t status = cublasDgemm(*handle, cublasTransA, cublasTransB, M, N, K, &alpha, A, lda, B, ldb, &beta, C, ldc);
-}
 #endif
 
 //#define SCTL_SVD_DEBUG

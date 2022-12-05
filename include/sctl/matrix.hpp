@@ -71,9 +71,6 @@ template <class ValueType> class Matrix {
 
   static void GEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& M, const Permutation<ValueType>& P, ValueType beta = 0.0);
 
-  // cublasgemm wrapper
-  static void CUBLASGEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta = 0.0);
-
   // Matrix-Scalar operations
 
   Matrix<ValueType>& operator=(ValueType s);
