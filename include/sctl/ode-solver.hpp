@@ -14,7 +14,7 @@ template <class ValueType> class Matrix;
 template <class Real> class SDC {
   public:
 
-    using Fn = std::function<void(Vector<Real>* dudt, const Vector<Real>& u)>;
+    // using Fn = std::function<void(Vector<Real>* dudt, const Vector<Real>& u)>;
     using MonitorFn = std::function<void(Real t, Real dt, const Vector<Real>& u)>;
 
     /**
@@ -38,7 +38,7 @@ template <class Real> class SDC {
      * @param[out] error_picard the picard iteration error
      * @param[out] norm_dudt maximum norm of du/dt
      */
-    void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Real* norm_dudt = nullptr) const;
+    template <class Fn> void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, Fn&& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Real* norm_dudt = nullptr) const;
 
     /**
      * Solve ODE adaptively to required tolerance.
@@ -56,7 +56,7 @@ template <class Real> class SDC {
      *
      * @return the final time (should equal T if no errors)
      */
-    Real AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, const Fn& F, Real tol, const MonitorFn* monitor_callback = nullptr, bool continue_with_errors = false, Real* error = nullptr) const;
+    template <class Fn> Real AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, Fn&& F, Real tol, const MonitorFn* monitor_callback = nullptr, bool continue_with_errors = false, Real* error = nullptr) const;
 
     static void test_one_step(const Integer Order = 5) {
       auto ref_sol = [](Real t) { return cos<Real>(-t); };
@@ -109,6 +109,7 @@ template <class Real> class SDC {
 
   private:
     Matrix<Real> M_time_step, M_error;
+    Vector<Real> nds;
     Integer Order;
     Comm comm;
 };
