@@ -12,7 +12,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04, macOS-latest]
-        compiler: [g++-10, clang++]
+        compiler: [g++-11, clang++]
         vecflag: [-march=native]
         memdbgflag: ["", -DSCTL_MEMDEBUG]
         optflag: [-O0, -O3]
@@ -24,6 +24,14 @@ jobs:
     
     steps:
     - uses: actions/checkout@main
+
+    - name: Setup Linux
+      if: runner.os == 'Linux'
+      run: sudo apt-get install -y gcc-11 g++-11
+
+    - name: Configure macOS
+      if: runner.os == 'macOS'
+      run: brew install gcc@11
 
     - name: Build
       run: make -j CXX="${{matrix.compiler}}" CXXFLAGS="-std=c++11 ${{matrix.optflag}} -g -rdynamic -fopenmp ${{matrix.vecflag}} ${{matrix.memdbgflag}} -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_QUAD_T=__float128 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -fsanitize=address"
