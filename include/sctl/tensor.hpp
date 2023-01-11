@@ -57,12 +57,15 @@ template <class ValueType, bool own_data, Long... Args> class Tensor {
       return DimHelper<k,Args...>();
     }
 
+    Tensor() {
+      Init(NullIterator<ValueType>());
+    }
 
-    Tensor(Iterator<ValueType> src_iter = NullIterator<ValueType>()) {
+    explicit Tensor(Iterator<ValueType> src_iter) {
       Init(src_iter);
     }
 
-    Tensor(ConstIterator<ValueType> src_iter) {
+    explicit Tensor(ConstIterator<ValueType> src_iter) {
       static_assert(own_data || !Size(), "Cannot use ConstIterator as storage for Tensor.");
       Init((Iterator<ValueType>)src_iter);
     }
