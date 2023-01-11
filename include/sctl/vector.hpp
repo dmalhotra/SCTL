@@ -44,7 +44,7 @@ template <class ValueType> class Vector {
 
   Long Dim() const;
 
-  Long Capacity() const;
+  //Long Capacity() const;
 
   void SetZero();
 

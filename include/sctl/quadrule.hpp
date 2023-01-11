@@ -462,7 +462,7 @@ namespace SCTL_NAMESPACE {
         Vector<Real> cond_num_vec;
         quad_nds.ReInit(ORDER_vec.Dim());
         quad_wts.ReInit(ORDER_vec.Dim());
-        auto build_quad_rule = [&nds_start, &nds_end, &nds, &modified_gram_schmidt](Vector<Real>& quad_nds, Vector<Real>& quad_wts, Matrix<Real> M, const Vector<Real>& sqrt_wts) {
+        auto build_quad_rule = [&nds_start, &nds_end, &nds, &modified_gram_schmidt](Vector<Real>& quad_nds, Vector<Real>& quad_wts, const Matrix<Real>& M, const Vector<Real>& sqrt_wts) {
           const Long idx0 = std::lower_bound(nds.begin(), nds.end(), nds_start) - nds.begin();
           const Long idx1 = std::lower_bound(nds.begin(), nds.end(), nds_end  ) - nds.begin();
           const Long N = M.Dim(0), ORDER = M.Dim(1);
@@ -543,12 +543,10 @@ namespace SCTL_NAMESPACE {
         };
         for (Long i = 0; i < ORDER_vec.Dim(); i++) {
           const Long N0 = M.Dim(0);
-          const Long N1 = ORDER_vec[i];
           const Long N1_ = std::min(ORDER_vec[i],M.Dim(1));
-          Matrix<Real> MM(N0, N1);
+          Matrix<Real> MM(N0, N1_);
           for (Long j0 = 0; j0 < N0; j0++) {
             for (Long j1 =   0; j1 < N1_; j1++) MM[j0][j1] = M[j0][j1];
-            for (Long j1 = N1_; j1 < N1 ; j1++) MM[j0][j1] = 0;
           }
           Real cond_num = build_quad_rule(quad_nds[i], quad_wts[i], MM, sqrt_wts);
           cond_num_vec.PushBack(cond_num);

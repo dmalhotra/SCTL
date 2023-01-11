@@ -51,7 +51,7 @@ template <class ValueType> class ConstIterator {
   //   SCTL_ASSERT(false);
   // }
 
-  ConstIterator(pointer base_, difference_type len_, bool dynamic_alloc = false);
+  explicit ConstIterator(pointer base_, difference_type len_, bool dynamic_alloc = false);
 
   template <class AnotherType> explicit ConstIterator(const ConstIterator<AnotherType>& I) {
     this->base = I.base;
@@ -169,7 +169,7 @@ template <class ValueType> class Iterator : public ConstIterator<ValueType> {
 
   //template <size_t LENGTH> Iterator(ValueType (&base_)[LENGTH]) : ConstIterator<ValueType>(base_) {}
 
-  Iterator(pointer base_, difference_type len_, bool dynamic_alloc = false) : ConstIterator<ValueType>(base_, len_, dynamic_alloc) {}
+  explicit Iterator(pointer base_, difference_type len_, bool dynamic_alloc = false) : ConstIterator<ValueType>(base_, len_, dynamic_alloc) {}
 
   template <class AnotherType> explicit Iterator(const ConstIterator<AnotherType>& I) : ConstIterator<ValueType>(I) {}
 
@@ -244,7 +244,7 @@ template <class ValueType, Long DIM> class StaticArray {
   explicit StaticArray(std::initializer_list<ValueType> arr_) : StaticArray() {
     // static_assert(arr_.size() <= DIM, "too many initializer values"); // allowed in C++14
     SCTL_ASSERT_MSG(arr_.size() <= DIM, "too many initializer values");
-    for (Long i = 0; i < (Long)arr_.size(); i++) (*this)[i] = arr_.begin()[i];
+    for (Long i = 0; i < (Long)arr_.size(); i++) this->arr_[i] = arr_.begin()[i];
   }
 
   ~StaticArray() = default;

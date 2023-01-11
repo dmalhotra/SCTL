@@ -476,7 +476,12 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, int n1, int n
   assert(INFO == 0);
   aligned_delete<ValueType>(wsbuf);
 
-  ValueType eps_ = tS[0] * eps;
+  ValueType max_S = 0;
+  for (Long i = 0; i < k; i++) { // TODO: since our SVD implementation does not return sorted singular values
+    max_S = std::max<ValueType>(max_S, fabs<ValueType>(tS[i]));
+  }
+
+  ValueType eps_ = max_S * eps;
   for (int i = 0; i < k; i++)
     if (tS[i] < eps_)
       tS[i] = 0;

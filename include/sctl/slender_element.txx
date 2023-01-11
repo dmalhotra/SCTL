@@ -1013,6 +1013,7 @@ namespace SCTL_NAMESPACE {
     const Vec3 y_trg = x_trg + e_trg*r_trg;
     for (Long ii = 0; ii < BatchSize; ii++) {
       RealType r = r_src[0][ii], dr = dr_src[0][ii];
+      if (r < 0) r = 0;
       Vec3 x, dx, d2x, e1;
       for (Integer k = 0; k < COORD_DIM; k++) { // Set x, dx, d2x, e1
         x  (k,0) =   x_src[k][ii];
@@ -1058,8 +1059,8 @@ namespace SCTL_NAMESPACE {
           const VecType vec_dx[3] = {dx(0,0), dx(1,0), dx(2,0)};
           const VecType vec_dy0[3] = {Xt(0,0)-x(0,0), Xt(1,0)-x(1,0), Xt(2,0)-x(2,0)};
 
-          alignas(sizeof(VecType)) StaticArray<RealType,KDIM0*KDIM1*Nbuff> mem_buff;
-          Matrix<RealType> Mker_da(KDIM0*KDIM1, Nnds, mem_buff, false);
+          alignas(sizeof(VecType)) StaticArray<char,KDIM0*KDIM1*Nbuff*sizeof(RealType)> mem_buff;
+          Matrix<RealType> Mker_da(KDIM0*KDIM1, Nnds, (Iterator<RealType>)(Iterator<char>)mem_buff, false);
           for (Integer j = 0; j < Nnds; j+=VecLen) { // Set Mker_da
             VecType dy[3], n[3], da;
             { // Set dy, n, da
@@ -1528,7 +1529,7 @@ namespace SCTL_NAMESPACE {
 
       Long quad_idx = (Long)((max_adap_depth-7) - log2((double)(elem_length/elem_radius*sqrt<Real>(0.5))));
       if (quad_idx < 0 || quad_idx > max_adap_depth-1) {
-        SCTL_WARN("Slender element aspect-ratio is outside of the range of precomputed quadratures; accuracy may be sverely degraded.");
+        SCTL_WARN("Slender element aspect-ratio is outside of the range of precomputed quadratures; accuracy may be severely degraded.");
       }
       quad_idx = std::max<Integer>(0, std::min<Integer>(max_adap_depth-1, quad_idx));
 
@@ -1832,7 +1833,7 @@ namespace SCTL_NAMESPACE {
 
       Matrix<Real> Mfourier;
       Vector<Real> nds_cos, nds_sin, wts;
-      ToroidalSpecialQuadRule<Real,DefaultVecLen<Real>(),ModalUpsample,Kernel,false>(Mfourier, nds_cos, nds_sin, wts, FourierModes+ModalUpsample, (Real)1, 1);
+      ToroidalSpecialQuadRule<Real,DefaultVecLen<Real>(),ModalUpsample,Kernel,false>(Mfourier, nds_cos, nds_sin, wts, FourierModes+ModalUpsample, (Real)1, 1); // TODO: replace by toroidal_greens_fn_batched
 
       Vector<Real> quad_nds, quad_wts;
       Matrix<Real> Minterp_quad_nds;
@@ -2343,15 +2344,29 @@ namespace SCTL_NAMESPACE {
       return;
     }
 
-    Vector<Real> X;
     const Integer ChebOrder = cheb_order[elem_idx];
     const Integer FourierOrder = fourier_order[elem_idx];
-    GetGeom(&X,nullptr,nullptr,nullptr,nullptr, CenterlineNodes(ChebOrder), sin_theta<Real>(FourierOrder), cos_theta<Real>(FourierOrder), elem_idx);
+    Vector<Real> X, s_nodes(ChebOrder+2);
+    s_nodes[0] = 0;
+    s_nodes[ChebOrder+1] = 1;
+    Vector<Real>(ChebOrder, s_nodes.begin()+1, false) = CenterlineNodes(ChebOrder);
+    GetGeom(&X,nullptr,nullptr,nullptr,nullptr, s_nodes, sin_theta<Real>(FourierOrder), cos_theta<Real>(FourierOrder), elem_idx);
+
+    Vector<Real> F_(F.Dim()/ChebOrder*s_nodes.Dim());
+    if (F.Dim()) {
+      Matrix<Real> M(ChebOrder, s_nodes.Dim());
+      Vector<Real> M_(ChebOrder*s_nodes.Dim(), M.begin(), false);
+      LagrangeInterp<Real>::Interpolate(M_, CenterlineNodes(ChebOrder), s_nodes);
+
+      const Matrix<Real> Mf(ChebOrder, F.Dim()/ChebOrder, (Iterator<Real>)F.begin(), false);
+      Matrix<Real> Mf_(s_nodes.Dim(), F_.Dim()/s_nodes.Dim(), F_.begin(), false);
+      Mf_ = M.Transpose() * Mf;
+    }
 
     Long point_offset = vtu_data.coord.Dim() / COORD_DIM;
     for (const auto& x : X) vtu_data.coord.PushBack((VTUData::VTKReal)x);
-    for (const auto& f : F) vtu_data.value.PushBack((VTUData::VTKReal)f);
-    for (Long i = 0; i < ChebOrder-1; i++) {
+    for (const auto& f : F_) vtu_data.value.PushBack((VTUData::VTKReal)f);
+    for (Long i = 0; i < s_nodes.Dim()-1; i++) {
       for (Long j = 0; j <= FourierOrder; j++) {
         vtu_data.connect.PushBack(point_offset + (i+0)*FourierOrder+(j%FourierOrder));
         vtu_data.connect.PushBack(point_offset + (i+1)*FourierOrder+(j%FourierOrder));

@@ -88,7 +88,7 @@ template <class ValueType> void Matrix<ValueType>::ReInit(Long dim1, Long dim2, 
   if (own_data_ && own_data && dim[0] * dim[1] >= dim1 * dim2) {
     dim[0] = dim1;
     dim[1] = dim2;
-    if (data_ != NullIterator<ValueType>()) {
+    if (data_ptr != NullIterator<ValueType>() && data_ != NullIterator<ValueType>()) {
       memcopy(data_ptr, data_, dim[0] * dim[1]);
     }
   } else {

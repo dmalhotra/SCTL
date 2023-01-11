@@ -114,8 +114,10 @@ template <class ValueType> void Vector<ValueType>::Read(const char* fname) {
   SCTL_UNUSED(readlen);
 
   if (Dim() != (Long)(dim_[0] * dim_[1])) ReInit(dim_[0] * dim_[1]);
-  if (dim_[0] && dim_[1]) readlen = fread(&data_ptr[0], sizeof(ValueType), dim_[0] * dim_[1], f1);
-  assert(readlen == (Long)(dim_[0] * dim_[1]));
+  if (dim_[0] && dim_[1]) {
+    readlen = fread(&data_ptr[0], sizeof(ValueType), dim_[0] * dim_[1], f1);
+    assert(readlen == (Long)(dim_[0] * dim_[1]));
+  }
   fclose(f1);
 }
 
@@ -140,7 +142,11 @@ template <class ValueType> void Vector<ValueType>::PushBack(const ValueType& x) 
     data_ptr[dim] = x;
     dim++;
   } else {
+#ifdef SCTL_MEMDEBUG
+    Vector<ValueType> v((Long)capacity + 1);
+#else
     Vector<ValueType> v((Long)(capacity * 1.6) + 1);
+#endif
     memcopy(v.data_ptr, data_ptr, dim);
     v.dim = dim;
     Swap(v);

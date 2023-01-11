@@ -62,6 +62,11 @@ template <class ValueType, bool own_data, Long... Args> class Tensor {
       Init(src_iter);
     }
 
+    Tensor(ConstIterator<ValueType> src_iter) {
+      static_assert(own_data || !Size(), "Cannot use ConstIterator as storage for Tensor.");
+      Init((Iterator<ValueType>)src_iter);
+    }
+
     Tensor(const Tensor &M) {
       Init((Iterator<ValueType>)M.begin());
     }

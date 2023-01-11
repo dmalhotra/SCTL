@@ -20,7 +20,7 @@ template <class Real> class ParallelSolver {
 
   ParallelSolver(const Comm& comm = Comm::Self(), bool verbose = true) : comm_(comm), verbose_(verbose) {}
 
-  void operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, const Integer max_iter = -1, const bool use_abs_tol = false);
+  void operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, const Integer max_iter = -1, const bool use_abs_tol = false, Long* solve_iter=nullptr);
 
   static void test(Long N = 15) {
     srand48(0);
@@ -39,8 +39,9 @@ template <class Real> class ParallelSolver {
       Ax_ = A * Matrix<Real>(N, 1, (Iterator<Real>)x.begin(), false);
     };
 
+    Long solve_iter;
     ParallelSolver<Real> solver;
-    solver(&x, LinOp, b, 1e-10, -1, false);
+    solver(&x, LinOp, b, 1e-10, -1, false, &solve_iter);
 
     auto print_error = [N,&A,&b](const Vector<Real>& x) {
       Real max_err = 0;
@@ -49,10 +50,11 @@ template <class Real> class ParallelSolver {
       std::cout<<"Maximum error = "<<max_err<<'\n';
     };
     print_error(x);
+    std::cout<<"GMRES iterations = "<<solve_iter<<'\n';
   }
 
  private:
-  void GenericGMRES(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, Integer max_iter, const bool use_abs_tol);
+  void GenericGMRES(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, Integer max_iter, const bool use_abs_tol, Long* solve_iter);
 
   Comm comm_;
   bool verbose_;
@@ -74,7 +76,7 @@ template <class Real> static Real inner_prod(const Vector<Real>& x, const Vector
   return x_dot_y_glb;
 }
 
-template <class Real> inline void ParallelSolver<Real>::GenericGMRES(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter, bool use_abs_tol) {
+template <class Real> inline void ParallelSolver<Real>::GenericGMRES(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter, bool use_abs_tol, Long* solve_iter) {
   const Long N = b.Dim();
   if (max_iter < 0) { // set max_iter
     StaticArray<Long,2> NN{N,0};
@@ -193,10 +195,12 @@ template <class Real> inline void ParallelSolver<Real>::GenericGMRES(Vector<Real
       (*x)[i] += beta[j] * Q(j,i);
     }
   }
+
+  if (solve_iter) (*solve_iter) = k;
 }
 
-template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, const Integer max_iter, const bool use_abs_tol) {
-  GenericGMRES(x, A, b, tol, max_iter, use_abs_tol);
+template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, const Integer max_iter, const bool use_abs_tol, Long* solve_iter) {
+  GenericGMRES(x, A, b, tol, max_iter, use_abs_tol, solve_iter);
 }
 
 }  // end namespace
@@ -251,7 +255,7 @@ PetscErrorCode MyKSPMonitor(KSP ksp, PetscInt n, PetscReal rnorm, void *dummy) {
   return 0;
 }
 
-template <class Real> inline void PETScGMRES(Vector<Real>* x, const typename ParallelSolver<Real>::ParallelOp& A, const Vector<Real>& b, const Real tol, Integer max_iter, const bool use_abs_tol, const bool verbose_, const Comm& comm_) {
+template <class Real> inline void PETScGMRES(Vector<Real>* x, const typename ParallelSolver<Real>::ParallelOp& A, const Vector<Real>& b, const Real tol, Integer max_iter, const bool use_abs_tol, const bool verbose_, const Comm& comm_, Long* solve_iter) {
   PetscInt N = b.Dim();
   if (max_iter < 0) { // set max_iter
     StaticArray<Long,2> NN{N,0};
@@ -311,8 +315,8 @@ template <class Real> inline void PETScGMRES(Vector<Real>* x, const typename Par
   // KSPView(ksp,PETSC_VIEWER_STDOUT_WORLD); CHKERRABORT(comm, ierr);
 
   // Iterations
-  // PetscInt its;
-  // ierr = KSPGetIterationNumber(ksp,&its); CHKERRABORT(comm, ierr);
+  PetscInt its;
+  ierr = KSPGetIterationNumber(ksp,&its); CHKERRABORT(comm, ierr);
   // ierr = PetscPrintf(PETSC_COMM_WORLD,"Iterations %D\n",its); CHKERRABORT(comm, ierr);
 
   {  // Set x
@@ -332,14 +336,16 @@ template <class Real> inline void PETScGMRES(Vector<Real>* x, const typename Par
   CHKERRABORT(comm, ierr);
   ierr = VecDestroy(&Petsc_b);
   CHKERRABORT(comm, ierr);
+
+  if (solve_iter) (*solve_iter) = its;
 }
 
-template <> inline void ParallelSolver<double>::operator()(Vector<double>* x, const ParallelOp& A, const Vector<double>& b, const double tol, const Integer max_iter, const bool use_abs_tol) {
-  PETScGMRES(x, A, b, tol, max_iter, use_abs_tol, verbose_, comm_);
+template <> inline void ParallelSolver<double>::operator()(Vector<double>* x, const ParallelOp& A, const Vector<double>& b, const double tol, const Integer max_iter, const bool use_abs_tol, Long* solve_iter) {
+  PETScGMRES(x, A, b, tol, max_iter, use_abs_tol, verbose_, comm_, solve_iter);
 }
 
-template <> inline void ParallelSolver<float>::operator()(Vector<float>* x, const ParallelOp& A, const Vector<float>& b, const float tol, const Integer max_iter, const bool use_abs_tol) {
-  PETScGMRES(x, A, b, tol, max_iter, use_abs_tol, verbose_, comm_);
+template <> inline void ParallelSolver<float>::operator()(Vector<float>* x, const ParallelOp& A, const Vector<float>& b, const float tol, const Integer max_iter, const bool use_abs_tol, Long* solve_iter) {
+  PETScGMRES(x, A, b, tol, max_iter, use_abs_tol, verbose_, comm_, solve_iter);
 }
 
 }  // end namespace
