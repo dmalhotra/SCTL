@@ -142,11 +142,11 @@ template <class ValueType> void Vector<ValueType>::PushBack(const ValueType& x) 
     data_ptr[dim] = x;
     dim++;
   } else {
-#ifdef SCTL_MEMDEBUG
-    Vector<ValueType> v((Long)capacity + 1);
-#else
+//#ifdef SCTL_MEMDEBUG
+//    Vector<ValueType> v((Long)capacity + 1); // TODO: this is slow but required to catch memory errors
+//#else
     Vector<ValueType> v((Long)(capacity * 1.6) + 1);
-#endif
+//#endif
     memcopy(v.data_ptr, data_ptr, dim);
     v.dim = dim;
     Swap(v);
