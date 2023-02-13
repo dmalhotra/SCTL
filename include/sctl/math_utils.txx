@@ -39,15 +39,12 @@ template <class Real> inline Real atoreal(const char* str) { // Warning: does no
         exp = 1;
       } else if (c == '-') {
         val = -val;
-        end = i - 1;
-        break;
       } else if (c == '+') {
-        end = i - 1;
-        break;
       } else {
         end = i;
         break;
       }
+      end = i - 1;
     }
     return val;
   };

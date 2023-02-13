@@ -50,7 +50,10 @@ namespace SCTL_NAMESPACE {
         Long s_ = -1;
         Real scal = 0;
         for (Long s = 0; s < Nsrc; s++) {
-          if (trg_nds[t] == src_nds[s]) s_ = s;
+          if (trg_nds[t] == src_nds[s]) {
+            s_ = s;
+            break;
+          }
           M[s][t] = w[s] / (trg_nds[t] - src_nds[s]);
           scal += M[s][t];
         }

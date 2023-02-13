@@ -166,7 +166,7 @@ namespace SCTL_NAMESPACE {
       StaticArray<NodeData,1> splitter_node{src_nodes0[0]};
       if (!comm_.Rank()) splitter_node[0].mid = Morton<COORD_DIM>();
 
-      comm_.Allgather(splitter_node+0, 1, splitter_nodes.begin(), 1);
+      comm_.Allgather((ConstIterator<NodeData>)splitter_node, 1, splitter_nodes.begin(), 1);
       comm_.PartitionS(trg_nodes0, splitter_node[0], comp_node_mid);
     }
 
@@ -543,10 +543,14 @@ namespace SCTL_NAMESPACE {
       omp_par::scan(elem_nds_cnt.begin(), elem_nds_dsp.begin(), Nelem);
       SCTL_ASSERT(Nelem == (Nlst ? elem_lst_dsp[Nlst-1] + elem_lst_cnt[Nlst-1] : 0));
     }
-    if (Xt.Dim()) { // Set Xtrg
-      Xtrg = Xt;
-    } else {
-      Xtrg = Xsurf;
+    { // Set Xtrg
+      StaticArray<Long,2> Xt_size{Xt.Dim(),0};
+      comm_.Allreduce(Xt_size, Xt_size+1, 1, Comm::CommOp::SUM);
+      if (Xt_size[1]) { // Set Xtrg
+        Xtrg = Xt;
+      } else {
+        Xtrg = Xsurf;
+      }
     }
     if (trg_normal_dot_prod_) {
       if (Xnt.Dim()) {

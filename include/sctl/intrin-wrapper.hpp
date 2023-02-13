@@ -517,7 +517,7 @@ namespace SCTL_NAMESPACE { // Generic
         VData v;
         typename VData::ScalarType x[VData::Size];
       } a_ = {a}, b_;
-      for (Integer i = 0; i < VData::Size; i++) b_.x[i] = (typename VData::ScalarType)1/sqrt<float>((float)a_.x[i]);
+      for (Integer i = 0; i < VData::Size; i++) b_.x[i] = (a_.x[i]==0 ? 0 : (typename VData::ScalarType)1/sqrt<float>((float)a_.x[i]));
 
       constexpr Integer newton_iter = mylog2((Integer)(digits/7.2247198959));
       return rsqrt_newton_iter<newton_iter,newton_iter,VData>::eval(b_.v, a);
