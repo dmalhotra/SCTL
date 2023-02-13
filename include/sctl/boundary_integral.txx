@@ -545,7 +545,7 @@ namespace SCTL_NAMESPACE {
     }
     { // Set Xtrg
       StaticArray<Long,2> Xt_size{Xt.Dim(),0};
-      comm_.Allreduce(Xt_size, Xt_size+1, 1, Comm::CommOp::SUM);
+      comm_.Allreduce(Xt_size+0, Xt_size+1, 1, Comm::CommOp::SUM);
       if (Xt_size[1]) { // Set Xtrg
         Xtrg = Xt;
       } else {
