@@ -718,7 +718,6 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
     SCTL_ASSERT(Xs.Dim() == Ns * DIM);
     SCTL_ASSERT(F.Dim() == Ns * SrcDim);
     SCTL_ASSERT(Xn.Dim() == Ns * NorDim);
-    if (!Ns) continue;
 
     { // Run FMM
       const Integer max_pts=3000, mult_order = ((Integer)(digits_*0.55))*2; // TODO: use better estimates

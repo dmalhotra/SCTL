@@ -3,6 +3,8 @@
 namespace SCTL_NAMESPACE {
 
   template <class Real> SDC<Real>::SDC(const Integer Order_, const Comm& comm_) : Order(Order_), comm(comm_) {
+    SCTL_ASSERT(Order >= 2); // TODO: use explicit Euler if Order == 1
+
     #ifdef SCTL_QUAD_T
     using ValueType = QuadReal;
     #else
