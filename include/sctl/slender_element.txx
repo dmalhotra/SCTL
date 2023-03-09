@@ -2027,7 +2027,7 @@ namespace SCTL_NAMESPACE {
               StaticArray<Real,2> s_val{0,1};
               dist[0] = get_dist(x_trg, s_val[0]);
               dist[1] = get_dist(x_trg, s_val[1]);
-              for (Long i = 0; i < 20; i++) { // Binary search: set dist, s_val // TODO: use Netwon's method
+              for (Long i = 0; i < 60; i++) { // Binary search: set dist, s_val // TODO: use Newton's method
                 Real ss = (s_val[0] + s_val[1]) * 0.5;
                 Real dd = get_dist(x_trg, ss);
                 if (dist[0] > dist[1]) {
@@ -2615,7 +2615,7 @@ namespace SCTL_NAMESPACE {
     Matrix<Real>::GEMM( dx_, Matrix<Real>(COORD_DIM,ChebOrder,(Iterator<Real>)    dx.begin()+COORD_DIM*elem_dsp[elem_idx],false), M_lagrange_interp);
     Matrix<Real>::GEMM(  r_, Matrix<Real>(        1,ChebOrder,(Iterator<Real>)radius.begin()+          elem_dsp[elem_idx],false), M_lagrange_interp);
     Matrix<Real>::GEMM( e1_, Matrix<Real>(COORD_DIM,ChebOrder,(Iterator<Real>)    e1.begin()+COORD_DIM*elem_dsp[elem_idx],false), M_lagrange_interp);
-    if (Xn || Xa) { // Set dr_, d2x_
+    if (Xn || Xa || dX_ds || dX_dt) { // Set dr_, d2x_
       dr_ .ReInit(        1,Ns);
       d2x_.ReInit(COORD_DIM,Ns);
       Matrix<Real>::GEMM(d2x_, Matrix<Real>(COORD_DIM,ChebOrder,(Iterator<Real>)   d2x.begin()+COORD_DIM*elem_dsp[elem_idx],false), M_lagrange_interp);

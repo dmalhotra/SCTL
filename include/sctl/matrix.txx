@@ -100,7 +100,7 @@ template <class ValueType> void Matrix<ValueType>::ReInit(Long dim1, Long dim2, 
 template <class ValueType> void Matrix<ValueType>::Write(const char* fname) const {
   FILE* f1 = fopen(fname, "wb+");
   if (f1 == nullptr) {
-    std::cout << "Unable to open file for writing:" << fname << '\n';
+    std::cout << "Unable to open file for writing: " << fname << '\n';
     return;
   }
   StaticArray<uint64_t, 2> dim_;
@@ -114,7 +114,7 @@ template <class ValueType> void Matrix<ValueType>::Write(const char* fname) cons
 template <class ValueType> void Matrix<ValueType>::Read(const char* fname) {
   FILE* f1 = fopen(fname, "r");
   if (f1 == nullptr) {
-    std::cout << "Unable to open file for reading:" << fname << '\n';
+    std::cout << "Unable to open file for reading: " << fname << '\n';
     return;
   }
   StaticArray<uint64_t, 2> dim_;
