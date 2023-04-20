@@ -5,6 +5,7 @@
 #include <iostream>
 #include <iomanip>
 #include <vector>
+#include <locale>
 
 namespace SCTL_NAMESPACE {
 
@@ -275,18 +276,18 @@ template <Long e, class ValueType> inline constexpr ValueType pow(ValueType b) {
 }
 
 template <class Real> inline std::ostream& ostream_insertion_generic(std::ostream& output, const Real q_) {
-  // int width=output.width();
-  output << std::setw(1);
+  int precision=output.precision();
 
   Real q = q_;
+  std::string ss;
   if (q < 0.0) {
-    output << "-";
+    ss += "-";
     q = -q;
   } else if (q > 0) {
-    output << " ";
+    ss += " ";
   } else {
-    output << " ";
-    output << "0.0";
+    ss += " 0";
+    output << ss;
     return output;
   }
 
@@ -301,19 +302,18 @@ template <class Real> inline std::ostream& ostream_insertion_generic(std::ostrea
     exp++;
   }
 
-  for (int i = 0; i < 34; i++) {
-    output << (int)q;
-    if (i == 0) output << ".";
+  for (int i = 0; i < std::max(1,precision); i++) {
+    if (i == 1) ss += ".";
+    ss += ('0' + int(q));
     q = (q - int(q)) * 10;
     if (q == 0 && i > 0) break;
   }
 
-  if (exp > 0) {
-    std::cout << "e+" << exp;
-  } else if (exp < 0) {
-    std::cout << "e" << exp;
-  }
+  if (exp < 0) ss += "e";
+  if (exp >= 0) ss += "e+";
+  ss += std::to_string(exp);
 
+  output << ss;
   return output;
 }
 
@@ -353,9 +353,24 @@ template <> class pow_wrapper<QuadReal,Long> {
 
 inline std::ostream& operator<<(std::ostream& output, const QuadReal& q) { return ostream_insertion_generic(output, q); }
 inline std::istream& operator>>(std::istream& inputstream, QuadReal& x) {
-  long double x_;
-  inputstream>>x_;
-  x = x_;
+  std::string str;
+  inputstream >> std::ws;
+  std::istream::sentry s(inputstream);
+  if (s) while (inputstream.good()) {
+    char c = inputstream.peek();
+    if (std::isspace(c,inputstream.getloc()) || inputstream.eof()) {
+      if (str.size()) {
+        x = atoreal<QuadReal>(str.c_str());
+        break;
+      }
+    }
+    if (('0' <= c && c <= '9') || c == '.'  || c == '-' || c == '+'|| c == 'e' || c == 'E') {
+      str += c;
+      inputstream.get();
+    } else {
+      inputstream.setstate(std::istream::failbit);
+    }
+  }
   return inputstream;
 }
 #endif

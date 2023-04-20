@@ -13,8 +13,8 @@ namespace SCTL_NAMESPACE {
     if (wts.Dim() != Nsrc*Ntrg) wts.ReInit(Nsrc*Ntrg);
     Matrix<Real> M(Nsrc, Ntrg, wts.begin(), false);
 
-    StaticArray<Real,50> w_buff;
-    Vector<Real> w(Nsrc, (Nsrc>=50?NullIterator<Real>():w_buff), (Nsrc>=50));
+    StaticArray<Real,200> w_buff;
+    Vector<Real> w(Nsrc, (Nsrc>=200?NullIterator<Real>():w_buff), (Nsrc>=200));
     for (Integer j = 0; j < Nsrc; j++) {
       Real w_inv = 1;
       Real src_nds_j(src_nds[j]);
@@ -97,7 +97,7 @@ namespace SCTL_NAMESPACE {
       for (Long i = 0; i < N; i++) {
         Real df_ = 0;
         for (Long j = 0; j < N; j++) {
-          df_ += f[k*N+j] * dp(nds[i],j);
+          df_ += (f[k*N+j]-f[k*N+i]) * dp(nds[i],j);
         }
         df[k*N+i] = df_;
       }

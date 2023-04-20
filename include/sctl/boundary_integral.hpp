@@ -25,6 +25,11 @@ namespace SCTL_NAMESPACE {
       virtual ~ElementListBase() {}
 
       /**
+       * Return the number of elements in the list.
+       */
+      virtual Long Size() const = 0;
+
+      /**
        * Returns the position and normals of the surface nodal points for each
        * element.
        *

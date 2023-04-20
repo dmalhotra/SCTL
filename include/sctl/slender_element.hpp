@@ -95,12 +95,12 @@ namespace SCTL_NAMESPACE {
       /**
        * Constructor
        */
-      SlenderElemList(const Vector<Long>& cheb_order0, const Vector<Long>& fourier_order0, const Vector<Real>& coord0, const Vector<Real>& radius0, const Vector<Real>& orientation0 = Vector<Real>());
+      template <class ValueType> SlenderElemList(const Vector<Long>& cheb_order0, const Vector<Long>& fourier_order0, const Vector<ValueType>& coord0, const Vector<ValueType>& radius0, const Vector<ValueType>& orientation0 = Vector<ValueType>());
 
       /**
        * Initialize list of elements
        */
-      void Init(const Vector<Long>& cheb_order0, const Vector<Long>& fourier_order0, const Vector<Real>& coord0, const Vector<Real>& radius0, const Vector<Real>& orientation0 = Vector<Real>());
+      template <class ValueType> void Init(const Vector<Long>& cheb_order0, const Vector<Long>& fourier_order0, const Vector<ValueType>& coord0, const Vector<ValueType>& radius0, const Vector<ValueType>& orientation0 = Vector<ValueType>());
 
       /**
        * Destructor
@@ -110,7 +110,7 @@ namespace SCTL_NAMESPACE {
       /**
        * Return the number of elements in the list.
        */
-      Long Size() const;
+      Long Size() const override;
 
       /**
        * Returns the position and normals of the surface nodal points for each
@@ -173,7 +173,7 @@ namespace SCTL_NAMESPACE {
       /**
        * Read elements from file.
        */
-      void Read(const std::string& fname, const Comm& comm = Comm::Self());
+      template <class ValueType> void Read(const std::string& fname, const Comm& comm = Comm::Self());
 
       /**
        * Get geometry data for an element.
@@ -202,6 +202,8 @@ namespace SCTL_NAMESPACE {
       static void test_greens_identity(const Comm& comm = Comm::Self(), Real tol = 1e-10);
 
       template <class ValueType> void Copy(SlenderElemList<ValueType>& elem_lst) const;
+
+      template<typename> friend class SlenderElemList;
 
     private:
 

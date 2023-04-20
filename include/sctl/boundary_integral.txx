@@ -395,9 +395,8 @@ namespace SCTL_NAMESPACE {
     fmm.AddSrc("Src", ker, ker);
     fmm.AddTrg("Trg", ker, ker);
     fmm.SetKernelS2T("Src", "Trg", ker);
+    fmm.SetAccuracy((Integer)(log(tol_)/log(0.1))+1);
   }
-
-
 
   template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::~BoundaryIntegralOp() {
     Vector<std::string> elem_lst_name;
@@ -410,7 +409,7 @@ namespace SCTL_NAMESPACE {
     setup_self_flag = false;
     setup_near_flag = false;
     tol_ = tol;
-    fmm.SetAccuracy((Integer)(log(tol)/log(0.1))+1);
+    fmm.SetAccuracy((Integer)(log(tol_)/log(0.1))+1);
   }
 
   template <class Real, class Kernel> template <class KerS2M, class KerS2L, class KerS2T, class KerM2M, class KerM2L, class KerM2T, class KerL2L, class KerL2T> void BoundaryIntegralOp<Real,Kernel>::SetFMMKer(const KerS2M& k_s2m, const KerS2L& k_s2l, const KerS2T& k_s2t, const KerM2M& k_m2m, const KerM2L& k_m2l, const KerM2T& k_m2t, const KerL2L& k_l2l, const KerL2T& k_l2t) {
@@ -605,24 +604,34 @@ namespace SCTL_NAMESPACE {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetupSelf() const {
+    // TODO: skip SetupSelf when no on-surface targets.
     if (setup_self_flag) return;
-    K_self.ReInit(0);
     SetupBasic();
 
     Profile::Tic("SetupSingular", &comm_, false, 6);
-    const Long Nlst = elem_lst_map.size();
-    Vector<Vector<Matrix<Real>>> K_self_(Nlst);
-    for (Long i = 0; i < Nlst; i++) {
-      const auto& name = elem_lst_name[i];
-      const auto& elem_lst = elem_lst_map.at(name);
-      const auto& elem_data = elem_data_map.at(name);
-      elem_data.SelfInterac(K_self_[i], ker_, tol_, trg_normal_dot_prod_, elem_lst);
+    { // Set K_self
+      const Long Nlst = elem_lst_map.size();
+      Vector<Long> elem_cnt(Nlst), elem_dsp(Nlst);
+      for (Long i = 0; i < Nlst; i++) {
+        const auto& name = elem_lst_name[i];
+        const auto& elem_lst = elem_lst_map.at(name);
+        elem_cnt[i] = elem_lst->Size();
+        elem_dsp[i] = (i==0?0:elem_dsp[i-1]+elem_cnt[i-1]);
+      }
+
+      if (K_self.Dim() != elem_dsp[Nlst-1]+elem_cnt[Nlst-1]) K_self.ReInit(elem_dsp[Nlst-1]+elem_cnt[Nlst-1]);
+      // TODO: also pre-allocate elements of K_self from a memory pool.
+      for (Long i = 0; i < Nlst; i++) {
+        const auto& name = elem_lst_name[i];
+        const auto& elem_lst = elem_lst_map.at(name);
+        const auto& elem_data = elem_data_map.at(name);
+        Vector<Matrix<Real>> K_self_(elem_cnt[i], K_self.begin() + elem_dsp[i], false);
+        elem_data.SelfInterac(K_self_, ker_, tol_, trg_normal_dot_prod_, elem_lst);
+      }
     }
-    concat_vecs(K_self, K_self_);
     Profile::Toc();
 
     setup_self_flag = true;
-    // TODO: skip SetupSelf when no on-surface targets.
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetupNear() const {
@@ -664,7 +673,7 @@ namespace SCTL_NAMESPACE {
           const auto& name = elem_lst_name[i];
           const auto& elem_lst = elem_lst_map.at(name);
           const auto& elem_data = elem_data_map.at(name);
-          //#pragma omp parallel for
+          #pragma omp parallel for // schedule(dynamic) // TODO: why is this slower?
           for (Long j = 0; j < elem_lst_cnt[i]; j++) {
             const Long elem_idx = elem_lst_dsp[i]+j;
             const Long Ntrg = near_elem_cnt[elem_idx];
@@ -705,8 +714,11 @@ namespace SCTL_NAMESPACE {
                   }
                 }
               } else {
-                Matrix<Real> K_near0;
+                StaticArray<Real,10000> buff0;
+                const Long N = elem_nds_cnt[elem_idx]*KDIM0 * KDIM1_;
+                Matrix<Real> K_near0(elem_nds_cnt[elem_idx]*KDIM0, KDIM1_, (N>10000?NullIterator<Real>():buff0), (N>10000));
                 elem_data.NearInterac(K_near0, Xt, Xn, ker_, tol_, j, elem_lst);
+
                 for (Long l = 0; l < K_near0.Dim(0); l++) {
                   for (Long k1 = 0; k1 < KDIM1_; k1++) {
                     K_near_[l][k*KDIM1_+k1] = K_near0[l][k1];
@@ -720,7 +732,7 @@ namespace SCTL_NAMESPACE {
 
       for (Long i = 0; i < Nlst; i++) { // Subtract direct-interaction part from K_near
         const auto& elem_lst = elem_lst_map.at(elem_lst_name[i]);
-        //#pragma omp parallel for
+        #pragma omp parallel for
         for (Long j = 0; j < elem_lst_cnt[i]; j++) { // subtract direct sum
           const Long elem_idx = elem_lst_dsp[i]+j;
           const Long trg_cnt = near_elem_cnt[elem_idx];
@@ -845,6 +857,7 @@ namespace SCTL_NAMESPACE {
     }
 
     Vector<Real> U_near(Nelem ? (near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1_ : 0);
+    #pragma omp parallel for // schedule(static)
     for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) { // compute near-interactions
       const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
       const Long trg_dof = near_elem_cnt[elem_idx]*KDIM1_;
@@ -859,7 +872,7 @@ namespace SCTL_NAMESPACE {
     Profile::Tic("Comm", &comm_, true, 7);
     comm_.ScatterForward(U_near, near_scatter_index);
     Profile::Toc();
-    //#pragma omp parallel for schedule(static)
+    #pragma omp parallel for // schedule(static)
     for (Long i = 0; i < Ntrg; i++) { // Accumulate result to U
       Long near_cnt = near_trg_cnt[i];
       Long near_dsp = near_trg_dsp[i];

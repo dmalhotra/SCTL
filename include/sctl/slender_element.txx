@@ -1533,8 +1533,10 @@ namespace SCTL_NAMESPACE {
       }
       quad_idx = std::max<Integer>(0, std::min<Integer>(max_adap_depth-1, quad_idx));
 
-      wts = wts_lst[ChebOrder][(quad_idx*ChebOrder+trg_node_idx) * max_digits+digits];
-      nds = nds_lst[ChebOrder][(quad_idx*ChebOrder+trg_node_idx) * max_digits+digits];
+      const auto& wts0 = wts_lst[ChebOrder][(quad_idx*ChebOrder+trg_node_idx) * max_digits+digits];
+      const auto& nds0 = nds_lst[ChebOrder][(quad_idx*ChebOrder+trg_node_idx) * max_digits+digits];
+      wts.ReInit(wts0.Dim(), (Iterator<Real>)wts0.begin(), false);
+      nds.ReInit(nds0.Dim(), (Iterator<Real>)nds0.begin(), false);
     } else {
       const Integer RefLevels = (Integer)(log<Real>(elem_length/elem_radius)/log<Real>(2)-1);
       const auto& cheb_nds = SlenderElemList<Real>::CenterlineNodes(ChebOrder);
@@ -1546,11 +1548,10 @@ namespace SCTL_NAMESPACE {
 
 
 
-  template <class Real> SlenderElemList<Real>::SlenderElemList(const Vector<Long>& cheb_order0, const Vector<Long>& fourier_order0, const Vector<Real>& coord0, const Vector<Real>& radius0, const Vector<Real>& orientation0) {
+  template <class Real> template <class ValueType> SlenderElemList<Real>::SlenderElemList(const Vector<Long>& cheb_order0, const Vector<Long>& fourier_order0, const Vector<ValueType>& coord0, const Vector<ValueType>& radius0, const Vector<ValueType>& orientation0) {
     Init(cheb_order0, fourier_order0, coord0, radius0, orientation0);
   }
-  template <class Real> void SlenderElemList<Real>::Init(const Vector<Long>& cheb_order0, const Vector<Long>& fourier_order0, const Vector<Real>& coord0, const Vector<Real>& radius0, const Vector<Real>& orientation0) {
-    using Vec3 = Tensor<Real,true,COORD_DIM,1>;
+  template <class Real> template <class ValueType> void SlenderElemList<Real>::Init(const Vector<Long>& cheb_order0, const Vector<Long>& fourier_order0, const Vector<ValueType>& coord0, const Vector<ValueType>& radius0, const Vector<ValueType>& orientation0) {
     const Long Nelem = cheb_order0.Dim();
     SCTL_ASSERT(fourier_order0.Dim() == Nelem);
 
@@ -1564,58 +1565,78 @@ namespace SCTL_NAMESPACE {
     SCTL_ASSERT_MSG(coord0.Dim() == Nnodes * COORD_DIM, "Length of the coordinate vector does not match the number of nodes.");
     SCTL_ASSERT_MSG(radius0.Dim() == Nnodes, "Length of the radius vector does not match the number of nodes.");
 
-    radius = radius0;
-    coord.ReInit(COORD_DIM*Nnodes);
-    e1   .ReInit(COORD_DIM*Nnodes);
-    dr   .ReInit(          Nnodes);
-    dx   .ReInit(COORD_DIM*Nnodes);
-    d2x  .ReInit(COORD_DIM*Nnodes);
+    radius.ReInit(          Nnodes);
+    coord .ReInit(COORD_DIM*Nnodes);
+    e1    .ReInit(COORD_DIM*Nnodes);
+    dr    .ReInit(          Nnodes);
+    dx    .ReInit(COORD_DIM*Nnodes);
+    d2x   .ReInit(COORD_DIM*Nnodes);
     for (Long i = 0; i < Nelem; i++) { // Set coord, radius, dr, ds, d2s
       const Long Ncheb = cheb_order[i];
+      const Vector<ValueType> radius0_(          Ncheb, (Iterator<ValueType>)radius0.begin()+elem_dsp[i]          , false);
+      const Vector<ValueType> coord0_ (COORD_DIM*Ncheb, (Iterator<ValueType>) coord0.begin()+elem_dsp[i]*COORD_DIM, false);
+
+      const auto&      radius__ = radius0_;
+      Vector<ValueType> coord__(COORD_DIM*Ncheb);
+      Vector<ValueType>    e1__(COORD_DIM*Ncheb);
+      Vector<ValueType>    dr__(          Ncheb);
+      Vector<ValueType>    dx__(COORD_DIM*Ncheb);
+      Vector<ValueType>   d2x__(COORD_DIM*Ncheb);
+      for (Long j = 0; j < Ncheb; j++) { // Set coord__
+        for (Long k = 0; k < COORD_DIM; k++) {
+          coord__[k*Ncheb+j] = coord0_[j*COORD_DIM+k];
+        }
+      }
+      LagrangeInterp<ValueType>::Derivative( dr__, radius__, SlenderElemList<ValueType>::CenterlineNodes(Ncheb));
+      LagrangeInterp<ValueType>::Derivative( dx__,  coord__, SlenderElemList<ValueType>::CenterlineNodes(Ncheb));
+      LagrangeInterp<ValueType>::Derivative(d2x__,     dx__, SlenderElemList<ValueType>::CenterlineNodes(Ncheb));
+
+      if (orientation0.Dim()) { // Set e1__
+        SCTL_ASSERT(orientation0.Dim() == Nnodes*COORD_DIM);
+        const Vector<ValueType> orientation0_(COORD_DIM*Ncheb, (Iterator<ValueType>)orientation0.begin()+elem_dsp[i]*COORD_DIM, false);
+        for (Long j = 0; j < Ncheb; j++) {
+          for (Integer k = 0; k < COORD_DIM; k++) {
+            e1__[k*Ncheb+j] = orientation0_[j*COORD_DIM+k];
+          }
+        }
+      } else {
+        using Vec3 = Tensor<ValueType,true,COORD_DIM,1>;
+        Vec3 e1_vec((ValueType)0), dx_vec;
+        { // Set e1_vec
+          Integer orient_dir = 0;
+          for (Integer k = 0; k < COORD_DIM; k++) {
+            if (fabs(dx__[k*Ncheb+0]) < fabs(dx__[orient_dir*Ncheb+0])) orient_dir = k;
+          }
+          e1_vec(orient_dir,0) = 1;
+        }
+
+        for (Long j = 0; j < Ncheb; j++) {
+          for (Integer k = 0; k < COORD_DIM; k++) {
+            dx_vec(k,0) = dx__[k*Ncheb+j];
+          }
+          e1_vec = e1_vec - dx_vec*(dot_prod(dx_vec,e1_vec)/dot_prod(dx_vec,dx_vec));
+          const ValueType scal = (1.0/sqrt<ValueType>(dot_prod(e1_vec,e1_vec)));
+          for (Integer k = 0; k < COORD_DIM; k++) {
+            e1__[k*Ncheb+j] = e1_vec(k,0) * scal;
+          }
+        }
+      }
+
       Vector<Real> radius_(          Ncheb, radius.begin()+          elem_dsp[i], false);
       Vector<Real>  coord_(COORD_DIM*Ncheb,  coord.begin()+COORD_DIM*elem_dsp[i], false);
       Vector<Real>     e1_(COORD_DIM*Ncheb,     e1.begin()+COORD_DIM*elem_dsp[i], false);
       Vector<Real>     dr_(          Ncheb,     dr.begin()+          elem_dsp[i], false);
       Vector<Real>     dx_(COORD_DIM*Ncheb,     dx.begin()+COORD_DIM*elem_dsp[i], false);
       Vector<Real>    d2x_(COORD_DIM*Ncheb,    d2x.begin()+COORD_DIM*elem_dsp[i], false);
-
-      const Vector<Real> coord__(COORD_DIM*Ncheb, (Iterator<Real>)coord0.begin()+elem_dsp[i]*COORD_DIM, false);
-      for (Long j = 0; j < Ncheb; j++) { // Set coord_
-        for (Long k = 0; k < COORD_DIM; k++) {
-          coord_[k*Ncheb+j] = coord__[j*COORD_DIM+k];
-        }
+      for (Long j = 0; j < COORD_DIM*Ncheb; j++) {
+        coord_[j] = (Real)coord__[j];
+        e1_   [j] = (Real)e1__   [j];
+        dx_   [j] = (Real)dx__   [j];
+        d2x_  [j] = (Real)d2x__  [j];
       }
-
-      LagrangeInterp<Real>::Derivative( dr_, radius_, CenterlineNodes(Ncheb));
-      LagrangeInterp<Real>::Derivative( dx_,  coord_, CenterlineNodes(Ncheb));
-      LagrangeInterp<Real>::Derivative(d2x_,     dx_, CenterlineNodes(Ncheb));
-      if (orientation0.Dim()) { // Set e1_
-        SCTL_ASSERT(orientation0.Dim() == Nnodes*COORD_DIM);
-        const Vector<Real> orientation__(COORD_DIM*Ncheb, (Iterator<Real>)orientation0.begin()+elem_dsp[i]*COORD_DIM, false);
-        for (Long j = 0; j < Ncheb; j++) {
-          for (Integer k = 0; k < COORD_DIM; k++) {
-            e1_[k*Ncheb+j] = orientation__[j*COORD_DIM+k];
-          }
-        }
-      } else {
-        Integer orient_dir = 0;
-        for (Integer k = 0; k < COORD_DIM; k++) {
-          e1_[k*Ncheb+0] = 0;
-          if (fabs(dx_[k*Ncheb+0]) < fabs(dx_[orient_dir*Ncheb+0])) orient_dir = k;
-        }
-        e1_[orient_dir*Ncheb+0] = 1;
-        for (Long j = 0; j < Ncheb; j++) {
-          Vec3 e1_vec, dx_vec;
-          for (Integer k = 0; k < COORD_DIM; k++) {
-            e1_vec(k,0) = (j==0 ? e1_[k*Ncheb] : e1_[k*Ncheb+j-1]);
-            dx_vec(k,0) = dx_[k*Ncheb+j];
-          }
-          e1_vec = e1_vec - dx_vec*(dot_prod(dx_vec,e1_vec)/dot_prod(dx_vec,dx_vec));
-          Real scal = (1.0/sqrt<Real>(dot_prod(e1_vec,e1_vec)));
-          for (Integer k = 0; k < COORD_DIM; k++) {
-            e1_[k*Ncheb+j] = e1_vec(k,0) * scal;
-          }
-        }
+      for (Long j = 0; j < Ncheb; j++) {
+        radius_[j] = (Real)radius__[j];
+        dr_    [j] = (Real)dr__    [j];
       }
     }
   }
@@ -1657,6 +1678,9 @@ namespace SCTL_NAMESPACE {
       omp_par::scan(node_cnt.begin(), node_dsp.begin(), Nelem);
     }
 
+    StaticArray<Real,6000> static_buff;
+    Vector<Real> buff(6000, static_buff, false);
+
     element_wise_node_cnt = node_cnt;
     const Long Nnodes = (Nelem ? node_dsp[Nelem-1]+node_cnt[Nelem-1] : 0);
     if (X       .Dim() != Nnodes*COORD_DIM) X       .ReInit(Nnodes*COORD_DIM);
@@ -1669,12 +1693,35 @@ namespace SCTL_NAMESPACE {
       Vector<Real>      wts_(node_cnt[elem_idx]          ,      wts.begin()+node_dsp[elem_idx]          , false);
       Vector<Real> dist_far_(node_cnt[elem_idx]          , dist_far.begin()+node_dsp[elem_idx]          , false);
 
-      Vector<Real> dX_ds, dX_dt; // TODO: pre-allocate
       const Long ChebOrder = cheb_order[elem_idx];
       const Long FourierOrder = fourier_order[elem_idx];
+      SCTL_ASSERT(node_cnt[elem_idx] == ChebOrder*FARFIELD_UPSAMPLE * FourierOrder*FARFIELD_UPSAMPLE);
+
+      Vector<Real> dX_ds, dX_dt;
+      const Long Nnds = ChebOrder*FARFIELD_UPSAMPLE*FourierOrder*FARFIELD_UPSAMPLE;
+      if (buff.Dim() < 2*Nnds*COORD_DIM) {
+        buff.ReInit(2*Nnds*COORD_DIM);
+      } else {
+        dX_ds.ReInit(Nnds*COORD_DIM, buff.begin(), false);
+        dX_dt.ReInit(Nnds*COORD_DIM, buff.begin()+Nnds*COORD_DIM, false);
+      }
+
       const auto& leg_nds = LegendreQuadRule<Real>(ChebOrder*FARFIELD_UPSAMPLE).first;
       const auto& leg_wts = LegendreQuadRule<Real>(ChebOrder*FARFIELD_UPSAMPLE).second;
       GetGeom(&X_, &Xn_, &wts_, &dX_ds, &dX_dt, leg_nds, sin_theta<Real>(FourierOrder*FARFIELD_UPSAMPLE), cos_theta<Real>(FourierOrder*FARFIELD_UPSAMPLE), elem_idx);
+
+      Vector<Real> dist_far_gauss(ChebOrder*FARFIELD_UPSAMPLE);
+      for (Long i = 0; i < ChebOrder*FARFIELD_UPSAMPLE; i++) { // Set dist_far_gauss
+        const Real rho=pow<Real>((64/(15*tol)), (1/(Real)(2*ChebOrder*FARFIELD_UPSAMPLE)));
+        const Real a = (rho-1/rho)/4;
+        const Real b = (rho+1/rho)/4;
+        const Real c = 0.5;
+
+        dist_far_gauss[i] = b - fabs(leg_nds[i]-0.5);
+        const Real cos_t = b * (leg_nds[i]-0.5) / (c*c);
+        if (fabs(cos_t) <= 1) dist_far_gauss[i] = a * sqrt<Real>(1 + ((a*a)/(b*b)-1) * cos_t*cos_t);
+      }
+      const Real dist_far_trapezoidal = (pow<Real>(4*const_pi<Real>()/tol+1, 1/(Real)(FourierOrder*FARFIELD_UPSAMPLE)) - 1); // from theorem 2.2 in doi:10.1137/130932132
 
       const Real theta_quad_wt = 2*const_pi<Real>()/(FourierOrder*FARFIELD_UPSAMPLE);
       for (Long i = 0; i < ChebOrder*FARFIELD_UPSAMPLE; i++) { // Set wts *= leg_wts * theta_quad_wt
@@ -1683,12 +1730,13 @@ namespace SCTL_NAMESPACE {
           wts_[i*FourierOrder*FARFIELD_UPSAMPLE+j] *= quad_wt;
         }
       }
-      for (Long i = 0; i < node_cnt[elem_idx]; i++) { // Set dist_far
-        Real dxds = sqrt<Real>(dX_ds[i*COORD_DIM+0]*dX_ds[i*COORD_DIM+0] + dX_ds[i*COORD_DIM+1]*dX_ds[i*COORD_DIM+1] + dX_ds[i*COORD_DIM+2]*dX_ds[i*COORD_DIM+2])*const_pi<Real>()/2;
-        Real dxdt = sqrt<Real>(dX_dt[i*COORD_DIM+0]*dX_dt[i*COORD_DIM+0] + dX_dt[i*COORD_DIM+1]*dX_dt[i*COORD_DIM+1] + dX_dt[i*COORD_DIM+2]*dX_dt[i*COORD_DIM+2])*const_pi<Real>()*2;
-        Real h_s = dxds/(ChebOrder*FARFIELD_UPSAMPLE-2);
-        Real h_t = dxdt/(FourierOrder*FARFIELD_UPSAMPLE-2);
-        dist_far_[i] = -log(tol) * std::max(0.15*h_s, 0.30*h_t); // TODO: use better estimate
+      for (Long i = 0; i < ChebOrder*FARFIELD_UPSAMPLE; i++) { // Set dist_far
+        for (Long j = 0; j < FourierOrder*FARFIELD_UPSAMPLE; j++) {
+          const Long node_idx = i*FourierOrder*FARFIELD_UPSAMPLE + j;
+          Real dxdt = sqrt<Real>(dX_dt[node_idx*COORD_DIM+0]*dX_dt[node_idx*COORD_DIM+0] + dX_dt[node_idx*COORD_DIM+1]*dX_dt[node_idx*COORD_DIM+1] + dX_dt[node_idx*COORD_DIM+2]*dX_dt[node_idx*COORD_DIM+2]);
+          Real dxds = sqrt<Real>(dX_ds[node_idx*COORD_DIM+0]*dX_ds[node_idx*COORD_DIM+0] + dX_ds[node_idx*COORD_DIM+1]*dX_ds[node_idx*COORD_DIM+1] + dX_ds[node_idx*COORD_DIM+2]*dX_ds[node_idx*COORD_DIM+2]);
+          dist_far_[node_idx] = std::max(dist_far_gauss[i] * dxds, dist_far_trapezoidal * dxdt);
+        }
       }
     }
   }
@@ -1846,7 +1894,7 @@ namespace SCTL_NAMESPACE {
 
     if (M_lst.Dim() != Nelem) M_lst.ReInit(Nelem);
     if (trg_dot_prod) {
-      //#pragma omp parallel for schedule(static)
+      #pragma omp parallel for //schedule(static)
       for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) {
         if      (tol <= pow<15,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper<15,true,Kernel>(ker, elem_idx);
         else if (tol <= pow<14,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper<14,true,Kernel>(ker, elem_idx);
@@ -1866,7 +1914,7 @@ namespace SCTL_NAMESPACE {
         else                                     M_lst[elem_idx] = elem_lst.template SelfInteracHelper< 0,true,Kernel>(ker, elem_idx);
       }
     } else {
-      //#pragma omp parallel for schedule(static)
+      #pragma omp parallel for //schedule(static)
       for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) {
         if      (tol <= pow<15,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper<15,false,Kernel>(ker, elem_idx);
         else if (tol <= pow<14,Real>((Real)0.1)) M_lst[elem_idx] = elem_lst.template SelfInteracHelper<14,false,Kernel>(ker, elem_idx);
@@ -1926,16 +1974,25 @@ namespace SCTL_NAMESPACE {
     }
   }
   template <class Real> template <Integer digits, bool trg_dot_prod, class Kernel> void SlenderElemList<Real>::NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx) const {
+    constexpr Integer MAX_THREADS=1000;
+    constexpr Integer MAX_BUFF_SIZE=10000000;
+    SCTL_ASSERT(omp_get_num_threads() < MAX_THREADS);
+    static Vector<Vector<Real>> buff_(MAX_THREADS);
+    Vector<Real>& buff = buff_[omp_get_thread_num()];
+    if (buff.Dim() == 0) buff.ReInit(MAX_BUFF_SIZE);
+
     using Vec3 = Tensor<Real,true,COORD_DIM,1>;
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1 = Kernel::TrgDim()/(trg_dot_prod?COORD_DIM:1);
+
+    constexpr double rho = (double)2.5;
     //const Integer digits = (Integer)(log(tol)/log(0.1)+0.5);
-    static constexpr Real tol = pow<digits,Real>((Real)0.1);
+    static const Integer LegQuadOrder = (Integer)ceil(-log(((15.0*(rho*rho-1))/64.0)*(double)pow<digits,Real>((Real)0.1))/log(rho)*0.5+1);
 
     const Integer ChebOrder = cheb_order[elem_idx];
     const Integer FourierOrder = fourier_order[elem_idx];
     const Integer FourierModes = FourierOrder/2+1;
-    const Matrix<Real> M_fourier_inv = fourier_matrix_inv_transpose<Real>(FourierOrder,FourierModes);
+    const Matrix<Real>& M_fourier_inv = fourier_matrix_inv_transpose<Real>(FourierOrder,FourierModes);
 
     const Vector<Real>  coord(COORD_DIM*ChebOrder,(Iterator<Real>)this-> coord.begin()+COORD_DIM*elem_dsp[elem_idx],false);
     const Vector<Real>     dx(COORD_DIM*ChebOrder,(Iterator<Real>)this->    dx.begin()+COORD_DIM*elem_dsp[elem_idx],false);
@@ -1943,24 +2000,43 @@ namespace SCTL_NAMESPACE {
     const Vector<Real> radius(        1*ChebOrder,(Iterator<Real>)this->radius.begin()+          elem_dsp[elem_idx],false);
     const Vector<Real>     dr(        1*ChebOrder,(Iterator<Real>)this->    dr.begin()+          elem_dsp[elem_idx],false);
     const Vector<Real>     e1(COORD_DIM*ChebOrder,(Iterator<Real>)this->    e1.begin()+COORD_DIM*elem_dsp[elem_idx],false);
+    const Real dx_max = [&dx,&ChebOrder](){
+      Real dx2_max = 0;
+      for (Long i = 0; i < ChebOrder; i++) {
+        Real dx2 = 0;
+        for (Integer k = 0; k < COORD_DIM; k++) {
+          const Real dx_ = dx[k*ChebOrder+i];
+          dx2 += dx_*dx_;
+        }
+        if (dx2 > dx2_max) dx2_max = dx2;
+      }
+      return sqrt<Real>(dx2_max);
+    }();
 
     const Long Ntrg = Xtrg.Dim() / COORD_DIM;
     if (M.Dim(0) != ChebOrder*FourierOrder*KDIM0 || M.Dim(1) != Ntrg*KDIM1) {
       M.ReInit(ChebOrder*FourierOrder*KDIM0, Ntrg*KDIM1);
     }
 
-    #pragma omp parallel for
+    //#pragma omp parallel for
     for (Long i = 0; i < Ntrg; i++) {
+      Long buff_offset = 0;
       const Vec3 Xt((Iterator<Real>)Xtrg.begin()+i*COORD_DIM);
       const Vec3 n_trg = (trg_dot_prod ? Vec3((Iterator<Real>)normal_trg.begin()+i*COORD_DIM) : Vec3((Real)0));
-      Matrix<Real> M_modal(ChebOrder, KDIM0*KDIM1*FourierModes*2);
+
+      Matrix<Real> M_modal;
+      if (MAX_BUFF_SIZE-buff_offset >= ChebOrder * KDIM0*KDIM1*FourierModes*2) {
+        M_modal.ReInit(ChebOrder, KDIM0*KDIM1*FourierModes*2, buff.begin()+buff_offset, false);
+        buff_offset += ChebOrder * KDIM0*KDIM1*FourierModes*2;
+      } else {
+        M_modal.ReInit(ChebOrder, KDIM0*KDIM1*FourierModes*2);
+      }
       { // Set M_modal
         Vector<Real> quad_nds, quad_wts; // Quadrature rule in s
-        auto adap_quad_rule = [&ChebOrder,&radius,&coord,&dx](Vector<Real>& quad_nds, Vector<Real>& quad_wts, const Vec3& x_trg) {
-          const Long LegQuadOrder = (Long)(-0.24*log(tol)*const_pi<Real>()/2)+1;
+        auto adap_quad_rule = [&ChebOrder,&radius,&dr,&coord,&dx,&d2x,&dx_max,&buff,&buff_offset,&MAX_BUFF_SIZE](Vector<Real>& quad_nds, Vector<Real>& quad_wts, const Vec3& x_trg) {
           const auto& leg_nds = LegendreQuadRule<Real>(LegQuadOrder).first;
           const auto& leg_wts = LegendreQuadRule<Real>(LegQuadOrder).second;
-          auto adap_ref = [&LegQuadOrder,&leg_nds,&leg_wts](Vector<Real>& nds, Vector<Real>& wts, Real a, Real b, Integer levels) {
+          auto adap_ref = [&leg_nds,&leg_wts](Vector<Real>& nds, Vector<Real>& wts, Real a, Real b, Integer levels) {
             if (nds.Dim() != levels * LegQuadOrder) nds.ReInit(levels*LegQuadOrder);
             if (wts.Dim() != levels * LegQuadOrder) wts.ReInit(levels*LegQuadOrder);
             Vector<Real> nds_(nds.Dim(), nds.begin(), false);
@@ -1972,9 +2048,13 @@ namespace SCTL_NAMESPACE {
               Vector<Real> nds1((levels-1)*LegQuadOrder, nds_.begin()+LegQuadOrder, false);
               Vector<Real> wts1((levels-1)*LegQuadOrder, wts_.begin()+LegQuadOrder, false);
 
-              Real end_point = (levels==1 ? b : (a+b)*0.5);
-              nds0 = leg_nds * (end_point-a) + a;
-              wts0 = leg_wts * fabs<Real>(end_point-a);
+              const Real end_point = (levels==1 ? b : (a+b)*0.5);
+              const Real panel_scal = (end_point-a);
+              const Real panel_scal_abs = fabs<Real>(end_point-a);
+              for (Long i = 0; i < LegQuadOrder; i++) {
+                nds0[i] = leg_nds[i] * panel_scal + a;
+                wts0[i] = leg_wts[i] * panel_scal_abs;
+              }
 
               nds_.Swap(nds1);
               wts_.Swap(wts1);
@@ -1984,7 +2064,7 @@ namespace SCTL_NAMESPACE {
           };
 
           // TODO: develop special quadrature rule instead of adaptive integration
-          if (0) { // adaptive/dyadic refinement on element ends
+          if (0) { // dyadic refinement on element ends
             const Integer levels = 6;
             quad_nds.ReInit(2*levels*LegQuadOrder);
             quad_wts.ReInit(2*levels*LegQuadOrder);
@@ -1994,11 +2074,14 @@ namespace SCTL_NAMESPACE {
             Vector<Real> wts1(levels*LegQuadOrder,quad_wts.begin()+levels*LegQuadOrder,false);
             adap_ref(nds0, wts0, 0.5, 0.0, levels);
             adap_ref(nds1, wts1, 0.5, 1.0, levels);
-          } else { // dyadic refinement near target point
+          }
+          if (0) { // dyadic refinement near target point
             Real dist_min, s_min, dxds;
             { // Set dist_min, s_min, dxds
               auto get_dist = [&ChebOrder,&radius,&coord,&dx] (const Vec3& x_trg, Real s) -> Real {
-                Vector<Real> interp_wts(ChebOrder); // TODO: pre-allocate
+                StaticArray<Real,20> buff;
+                Vector<Real> interp_wts(ChebOrder, buff, false);
+                if (ChebOrder > 20) interp_wts.ReInit(ChebOrder);
                 LagrangeInterp<Real>::Interpolate(interp_wts, CenterlineNodes(ChebOrder), Vector<Real>(1,Ptr2Itr<Real>(&s,1),false));
 
                 Real r0 = 0;
@@ -2023,30 +2106,141 @@ namespace SCTL_NAMESPACE {
                 Real dR = sqrt<Real>(dot_prod(dr,dr)) - r0;
                 return sqrt<Real>(dR*dR + dz*dz);
               };
-              StaticArray<Real,2> dist;
-              StaticArray<Real,2> s_val{0,1};
-              dist[0] = get_dist(x_trg, s_val[0]);
-              dist[1] = get_dist(x_trg, s_val[1]);
-              for (Long i = 0; i < 60; i++) { // Binary search: set dist, s_val // TODO: use Newton's method
-                Real ss = (s_val[0] + s_val[1]) * 0.5;
-                Real dd = get_dist(x_trg, ss);
-                if (dist[0] > dist[1]) {
-                  dist[0] = dd;
-                  s_val[0] = ss;
-                } else {
-                  dist[1] = dd;
-                  s_val[1] = ss;
+              const auto bin_search = [&get_dist](Real& s_min, Real& dist_min, const Vec3& x_trg) {
+                StaticArray<Real,2> dist;
+                StaticArray<Real,2> s_val{0,1};
+                dist[0] = get_dist(x_trg, s_val[0]);
+                dist[1] = get_dist(x_trg, s_val[1]);
+                for (Long i = 0; i < 90; i++) { // Binary search: set dist, s_val
+                  Real ss0 = (s_val[0]*2 + s_val[1])/3;
+                  Real ss1 = (s_val[0] + s_val[1]*2)/3;
+                  Real dd0 = get_dist(x_trg, ss0);
+                  Real dd1 = get_dist(x_trg, ss1);
+                  if (dd0 > dd1) {
+                    dist[0] = dd0;
+                    s_val[0] = ss0;
+                  } else {
+                    dist[1] = dd1;
+                    s_val[1] = ss1;
+                  }
                 }
-              }
-              if (dist[0] < dist[1]) { // Set dis_min, s_min
-                dist_min = dist[0];
-                s_min = s_val[0];
-              } else {
-                dist_min = dist[1];
-                s_min = s_val[1];
-              }
+                if (dist[0] < dist[1]) { // Set dis_min, s_min
+                  dist_min = dist[0];
+                  s_min = s_val[0];
+                } else {
+                  dist_min = dist[1];
+                  s_min = s_val[1];
+                }
+              };
+
+              const auto newton_iter_step = [&ChebOrder,&radius,&dr,&coord,&dx,&d2x](Real& ds, Real& dist2, Real& dyds2, const Real s, const Vec3& x_trg) {
+                StaticArray<Real,20> buff;
+                Vector<Real> interp_wts(ChebOrder, buff, false);
+                if (ChebOrder > 20) interp_wts.ReInit(ChebOrder);
+                LagrangeInterp<Real>::Interpolate(interp_wts, CenterlineNodes(ChebOrder), Vector<Real>(1,(Iterator<Real>)Ptr2ConstItr<Real>(&s,1),false));
+
+                Vec3 x0, dx0, d2x0;
+                Real r0 = 0, dr0 = 0;
+                for (Long i = 0; i < COORD_DIM; i++) {
+                  x0(i,0) = 0;
+                  dx0(i,0) = 0;
+                  d2x0(i,0) = 0;
+                }
+                for (Long i = 0; i < ChebOrder; i++) {
+                  x0(0,0) += coord[0*ChebOrder+i] * interp_wts[i];
+                  x0(1,0) += coord[1*ChebOrder+i] * interp_wts[i];
+                  x0(2,0) += coord[2*ChebOrder+i] * interp_wts[i];
+                  dx0(0,0) += dx[0*ChebOrder+i] * interp_wts[i];
+                  dx0(1,0) += dx[1*ChebOrder+i] * interp_wts[i];
+                  dx0(2,0) += dx[2*ChebOrder+i] * interp_wts[i];
+                  d2x0(0,0) += d2x[0*ChebOrder+i] * interp_wts[i];
+                  d2x0(1,0) += d2x[1*ChebOrder+i] * interp_wts[i];
+                  d2x0(2,0) += d2x[2*ChebOrder+i] * interp_wts[i];
+                  r0 += radius[i] * interp_wts[i];
+                  dr0 += dr[i] * interp_wts[i];
+                }
+
+                Vec3 n0, dy;
+                { // Set n0, dy
+                  const Vec3 Xt_X0 = x_trg - x0;
+                  n0 = -cross_prod(cross_prod(Xt_X0, dx0), dx0);
+                  Real scal = (1/sqrt<Real>(dot_prod(n0,n0)));
+                  n0 = n0 * scal;
+                  Vec3 dn0 = -(cross_prod(cross_prod(Xt_X0, d2x0), dx0) + cross_prod(cross_prod(Xt_X0, dx0), d2x0)) * scal;
+                  dn0 = dn0 - n0 * dot_prod(dn0,n0);
+                  dy = dx0 + n0 * dr0 + dn0 * r0;
+                }
+
+                const Vec3 y_Xt = x0 + n0 * r0 - x_trg;
+                dyds2 = dot_prod(dy, dy);
+                dist2 = dot_prod(y_Xt, y_Xt);
+                ds = dot_prod(y_Xt,dy)/dot_prod(dy,dy);
+              };
+              const auto newton_iter = [&newton_iter_step,&bin_search](Real& s0, Real& dist0, const Vec3& x_trg) {
+                static const Real eps_sqrt = sqrt<Real>(machine_eps<Real>());
+                constexpr Integer max_iter = 100;
+                const Real tol2 = 1e-4;
+
+                Real dyds2;
+                Real d2, d2_;
+                Real ds, ds_;
+                newton_iter_step(ds_, d2_, dyds2, 0, x_trg);
+                newton_iter_step(ds, d2, dyds2, 1, x_trg);
+                if (d2_ < d2) {
+                  if (ds_ > 0) {
+                    s0 = 0;
+                    dist0 = sqrt<Real>(d2_);
+                    return;
+                  }
+                } else {
+                  if (ds < 0) {
+                    s0 = 1;
+                    dist0 = sqrt<Real>(d2);
+                    return;
+                  }
+                }
+
+                Real s, s_ = (Real)0.5;
+                Real s_min = (Real)0, s_max = (Real)1;
+                newton_iter_step(ds_, d2_, dyds2, s_, x_trg);
+                s = std::min(s_max, std::max<Real>(s_min, s_ - ds_));
+                for (Integer iter = 0; iter < max_iter; iter++) {
+                  newton_iter_step(ds, d2, dyds2, s, x_trg);
+                  if ((ds*ds)*dyds2 < tol2*d2 || (s==0 && ds>0) || (s==1 && ds<0)) break;
+                  if (d2 < d2_ || (d2 < d2_*(1+eps_sqrt) && fabs(ds)<fabs(ds_))) {
+                    if (ds > 0) s_max = s;
+                    else s_min = s;
+                    SCTL_ASSERT(s_min < s_max);
+
+                    Real scal = std::min<Real>((Real)10.0, (ds!=ds_ ? (s-s_)/(ds-ds_) : (Real)1));
+                    if (scal <= 0.1) scal = (Real)1;
+                    Real s__ = s - ds * scal;
+
+                    ds_ = ds;
+                    d2_ = d2;
+                    s_ = s;
+
+                    s = std::min((Real)1, std::max<Real>((Real)0, s__));
+                    if (s < s_min || s > s_max) s = (s_min + s_max) * (Real)0.5;
+                  } else {
+                    s = (s+s_)*0.5;
+                  }
+                  if (iter == max_iter-1) {
+                    SCTL_WARN("Newton iterations failed to converge");
+                    bin_search(s0, dist0, x_trg);
+                  }
+                }
+
+                s0 = s;
+                dist0 = sqrt<Real>(d2);
+              };
+              newton_iter(s_min, dist_min, x_trg);
+              //bin_search(s_min, dist_min, x_trg);
+
               { // Set dx_ds;
-                Vector<Real> interp_wts(ChebOrder); // TODO: pre-allocate
+                StaticArray<Real,20> buff;
+                Vector<Real> interp_wts(ChebOrder, buff, false);
+                if (ChebOrder > 20) interp_wts.ReInit(ChebOrder);
                 LagrangeInterp<Real>::Interpolate(interp_wts, CenterlineNodes(ChebOrder), Vector<Real>(1,Ptr2Itr<Real>(&s_min,1),false));
 
                 Vec3 dxds_vec;
@@ -2061,17 +2255,23 @@ namespace SCTL_NAMESPACE {
                 dxds = sqrt<Real>(dot_prod(dxds_vec,dxds_vec))*const_pi<Real>()/2;
               }
             }
-            Real h0 =   (s_min)*dxds/(LegQuadOrder-1);
-            Real h1 = (1-s_min)*dxds/(LegQuadOrder-1);
-            Real dist_far0 = -0.25 * log(tol)*h0; // TODO: use better estimate
-            Real dist_far1 = -0.25 * log(tol)*h1; // TODO: use better estimate
-            Integer adap_levels0 = (s_min==0 ? 0 : std::max<Integer>(0,(Integer)(log(dist_far0/dist_min)/log(2.0)+0.5))+1);
-            Integer adap_levels1 = (s_min==1 ? 0 : std::max<Integer>(0,(Integer)(log(dist_far1/dist_min)/log(2.0)+0.5))+1);
+
+            const Real h0 =   (s_min)*dxds;
+            const Real h1 = (1-s_min)*dxds;
+            static const double log2_inv = 1/log(2.0);
+            const Integer adap_levels0 = (s_min==0 ? 0 : std::max<Integer>(0,(Integer)ceil(log((double)(h0/dist_min))*log2_inv))+1);
+            const Integer adap_levels1 = (s_min==1 ? 0 : std::max<Integer>(0,(Integer)ceil(log((double)(h1/dist_min))*log2_inv))+1);
 
             Long N0 = adap_levels0 * LegQuadOrder;
             Long N1 = adap_levels1 * LegQuadOrder;
-            quad_nds.ReInit(N0+N1);
-            quad_wts.ReInit(N0+N1);
+            if (MAX_BUFF_SIZE-buff_offset >= 2*(N0+N1)) {
+              quad_nds.ReInit(N0+N1, buff.begin()+buff_offset+0*(N0+N1), false);
+              quad_wts.ReInit(N0+N1, buff.begin()+buff_offset+1*(N0+N1), false);
+              buff_offset += 2*(N0+N1);
+            } else {
+              quad_nds.ReInit(N0+N1);
+              quad_wts.ReInit(N0+N1);
+            }
             Vector<Real> nds0(N0, quad_nds.begin(), false);
             Vector<Real> wts0(N0, quad_wts.begin(), false);
             Vector<Real> nds1(N1, quad_nds.begin()+N0, false);
@@ -2079,29 +2279,162 @@ namespace SCTL_NAMESPACE {
             adap_ref(nds0, wts0, 0, s_min, adap_levels0);
             adap_ref(nds1, wts1, 1, s_min, adap_levels1);
           }
+          if (1) { // adaptive refinement
+            Long Npanel = 0;
+            Vector<Real> s_vec;
+            { // Set s_vec, Npanel (7% - 15% of near interaction time)
+              const auto get_geom = [&ChebOrder,&radius,&dr,&coord,&dx,&d2x](Vec3& y, Real& dist, Real& dyds, const Real s, const Vec3& x_trg) {
+                StaticArray<Real,20> buff;
+                Vector<Real> interp_wts(ChebOrder, buff, false);
+                if (ChebOrder > 20) interp_wts.ReInit(ChebOrder);
+                LagrangeInterp<Real>::Interpolate(interp_wts, CenterlineNodes(ChebOrder), Vector<Real>(1,(Iterator<Real>)Ptr2ConstItr<Real>(&s,1),false));
+
+                Vec3 x0, dx0, d2x0;
+                Real r0 = 0, dr0 = 0;
+                for (Long i = 0; i < COORD_DIM; i++) {
+                  x0(i,0) = 0;
+                  dx0(i,0) = 0;
+                  d2x0(i,0) = 0;
+                }
+                for (Long i = 0; i < ChebOrder; i++) {
+                  x0(0,0) += coord[0*ChebOrder+i] * interp_wts[i];
+                  x0(1,0) += coord[1*ChebOrder+i] * interp_wts[i];
+                  x0(2,0) += coord[2*ChebOrder+i] * interp_wts[i];
+                  dx0(0,0) += dx[0*ChebOrder+i] * interp_wts[i];
+                  dx0(1,0) += dx[1*ChebOrder+i] * interp_wts[i];
+                  dx0(2,0) += dx[2*ChebOrder+i] * interp_wts[i];
+                  d2x0(0,0) += d2x[0*ChebOrder+i] * interp_wts[i];
+                  d2x0(1,0) += d2x[1*ChebOrder+i] * interp_wts[i];
+                  d2x0(2,0) += d2x[2*ChebOrder+i] * interp_wts[i];
+                  r0 += radius[i] * interp_wts[i];
+                  dr0 += dr[i] * interp_wts[i];
+                }
+
+                Vec3 n0, dy;
+                { // Set n0, dy
+                  const Vec3 Xt_X0 = x_trg - x0;
+                  n0 = -cross_prod(cross_prod(Xt_X0, dx0), dx0);
+                  Real scal = (1/sqrt<Real>(dot_prod(n0,n0)));
+                  n0 = n0 * scal;
+                  Vec3 dn0 = -(cross_prod(cross_prod(Xt_X0, d2x0), dx0) + cross_prod(cross_prod(Xt_X0, dx0), d2x0)) * scal;
+                  dn0 = dn0 - n0 * dot_prod(dn0,n0);
+                  dy = dx0 + n0 * dr0 + dn0 * r0;
+                }
+
+                y = x0 + n0 * r0;
+                const Vec3 y_Xt = y - x_trg;
+                //ds = dot_prod(y_Xt,dy)/dot_prod(dy,dy);
+                dist = sqrt<Real>(dot_prod(y_Xt, y_Xt));
+                dyds = sqrt<Real>(dot_prod(dy, dy));
+              };
+
+              constexpr Long MaxPanels = 1000, max_iter = 2000;
+              if (MAX_BUFF_SIZE-buff_offset >= MaxPanels+1) { // Allocate s_vec
+                s_vec.ReInit(MaxPanels+1, buff.begin()+buff_offset, false);
+                buff_offset += MaxPanels+1;
+              } else {
+                s_vec.ReInit(MaxPanels+1);
+              }
+
+              Vec3 y_;
+              s_vec[0] = 0;
+              Real dist_, dyds_, s_ = 0;
+              get_geom(y_, dist_, dyds_, s_, x_trg);
+              Real step_size = (2/(rho+1/rho))*(3*dist_/std::max<Real>(dyds_,dx_max));
+              for (Long iter = 0; iter < max_iter; iter++) {
+                Vec3 y;
+                Real dist, dyds;
+                const Real s = std::min<Real>(1, s_+step_size);
+                get_geom(y, dist, dyds, s, x_trg);
+                const Real panel_len = sqrt<Real>(dot_prod(y_-y_, y-y_));
+                if (dist+dist_ > ((rho+1/rho)/2) * std::max<Real>(std::max<Real>(dx_max,std::max<Real>(dyds,dyds_))*step_size, panel_len)) {
+                  Npanel++;
+                  SCTL_ASSERT(Npanel <= MaxPanels);
+                  s_vec[Npanel] = s;
+
+                  s_ = s;
+                  dist_ = dist;
+                  dyds_ = dyds;
+                  step_size = (2/(rho+1/rho))*(3*dist_/std::max<Real>(dyds_,dx_max));
+                } else {
+                  step_size *= 0.9 * (dist+dist_)*(2/(rho+1/rho))/std::max<Real>(std::max<Real>(dx_max,std::max<Real>(dyds,dyds_))*step_size, panel_len);
+                }
+                if (s_ == 1) {
+                  //if (1) { // display iteration count
+                  //  static Long max_iter = 0;
+                  //  if (iter > max_iter) {
+                  //    std::cout<<iter<<' '<<Npanel<<'\n';
+                  //    max_iter = iter;
+                  //  }
+                  //}
+                  break;
+                }
+              }
+              if (s_vec[Npanel] < 1) {
+                SCTL_WARN("Adaptive refinement failed");
+              }
+            }
+
+            const Long N = Npanel * LegQuadOrder;
+            if (MAX_BUFF_SIZE-buff_offset >= 2*N) { // Allocate quad_nds, quad_wts
+              quad_nds.ReInit(N, buff.begin()+buff_offset+0*N, false);
+              quad_wts.ReInit(N, buff.begin()+buff_offset+1*N, false);
+              buff_offset += 2*N;
+            } else {
+              quad_nds.ReInit(N);
+              quad_wts.ReInit(N);
+            }
+            for (Long j = 0; j < Npanel; j++) { // Set quad_nds, quad_wts
+              for (Long k = 0; k < LegQuadOrder; k++) {
+                quad_nds[j*LegQuadOrder+k] = s_vec[j] + (s_vec[j+1]-s_vec[j]) * leg_nds[k];
+                quad_wts[j*LegQuadOrder+k] = (s_vec[j+1]-s_vec[j]) * leg_wts[k];
+              }
+            }
+          }
         };
         adap_quad_rule(quad_nds, quad_wts, Xt);
 
         Matrix<Real> Minterp_quad_nds;
         { // Set Minterp_quad_nds
-          Minterp_quad_nds.ReInit(ChebOrder, quad_nds.Dim());
+          if (MAX_BUFF_SIZE-buff_offset >= ChebOrder*quad_nds.Dim()) {
+            Minterp_quad_nds.ReInit(ChebOrder, quad_nds.Dim(), buff.begin()+buff_offset, false);
+            buff_offset += ChebOrder*quad_nds.Dim();
+          } else {
+            Minterp_quad_nds.ReInit(ChebOrder, quad_nds.Dim());
+          }
           Vector<Real> Vinterp_quad_nds(ChebOrder*quad_nds.Dim(), Minterp_quad_nds.begin(), false);
           LagrangeInterp<Real>::Interpolate(Vinterp_quad_nds, CenterlineNodes(ChebOrder), quad_nds);
         }
 
         Vec3 x_trg = Xt;
         Matrix<Real> r_src, dr_src, x_src, dx_src, d2x_src, e1_src;
-        r_src  .ReInit(        1,quad_nds.Dim());
-        dr_src .ReInit(        1,quad_nds.Dim());
-        x_src  .ReInit(COORD_DIM,quad_nds.Dim());
-        dx_src .ReInit(COORD_DIM,quad_nds.Dim());
-        d2x_src.ReInit(COORD_DIM,quad_nds.Dim());
-        e1_src .ReInit(COORD_DIM,quad_nds.Dim());
+        if (MAX_BUFF_SIZE-buff_offset >= 14*quad_nds.Dim()) {
+          r_src  .ReInit(        1,quad_nds.Dim(), buff.begin()+buff_offset+ 0*quad_nds.Dim(), false);
+          dr_src .ReInit(        1,quad_nds.Dim(), buff.begin()+buff_offset+ 1*quad_nds.Dim(), false);
+          x_src  .ReInit(COORD_DIM,quad_nds.Dim(), buff.begin()+buff_offset+ 2*quad_nds.Dim(), false);
+          dx_src .ReInit(COORD_DIM,quad_nds.Dim(), buff.begin()+buff_offset+ 5*quad_nds.Dim(), false);
+          d2x_src.ReInit(COORD_DIM,quad_nds.Dim(), buff.begin()+buff_offset+ 8*quad_nds.Dim(), false);
+          e1_src .ReInit(COORD_DIM,quad_nds.Dim(), buff.begin()+buff_offset+11*quad_nds.Dim(), false);
+          buff_offset += 14*quad_nds.Dim();
+        } else {
+          r_src  .ReInit(        1,quad_nds.Dim());
+          dr_src .ReInit(        1,quad_nds.Dim());
+          x_src  .ReInit(COORD_DIM,quad_nds.Dim());
+          dx_src .ReInit(COORD_DIM,quad_nds.Dim());
+          d2x_src.ReInit(COORD_DIM,quad_nds.Dim());
+          e1_src .ReInit(COORD_DIM,quad_nds.Dim());
+        }
         { // Set x_src, x_trg (improve numerical stability)
-          Matrix<Real> x_nodes(COORD_DIM,ChebOrder, (Iterator<Real>)coord.begin(), true);
-          for (Long j = 0; j < ChebOrder; j++) {
-            for (Integer k = 0; k < COORD_DIM; k++) {
-              x_nodes[k][j] -= x_trg(k,0);
+          Matrix<Real> x_nodes;
+          StaticArray<Real,30> buff;
+          if (COORD_DIM*ChebOrder <= 30) {
+            x_nodes.ReInit(COORD_DIM,ChebOrder, buff, false);
+          } else {
+            x_nodes.ReInit(COORD_DIM,ChebOrder);
+          }
+          for (Integer k = 0; k < COORD_DIM; k++) {
+            for (Long j = 0; j < ChebOrder; j++) {
+              x_nodes[k][j] = coord[k*ChebOrder+j] - x_trg(k,0);
             }
           }
           Matrix<Real>::GEMM(  x_src, x_nodes, Minterp_quad_nds);
@@ -2130,8 +2463,14 @@ namespace SCTL_NAMESPACE {
         }
 
         const Vec3 y_trg = x_trg;
-        Matrix<Real> M_tor(quad_nds.Dim(), KDIM0*KDIM1*FourierModes*2); // TODO: pre-allocate
-        toroidal_greens_fn_batched<digits,ModalUpsample,trg_dot_prod>(M_tor, y_trg, Vec3((Real)1), (Real)0, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, ker, FourierModes);
+        Matrix<Real> M_tor;
+        if (MAX_BUFF_SIZE-buff_offset >= quad_nds.Dim()*KDIM0*KDIM1*FourierModes*2) {
+          M_tor.ReInit(quad_nds.Dim(), KDIM0*KDIM1*FourierModes*2, buff.begin()+buff_offset, false);
+          buff_offset += quad_nds.Dim()*KDIM0*KDIM1*FourierModes*2;
+        } else {
+          M_tor.ReInit(quad_nds.Dim(), KDIM0*KDIM1*FourierModes*2);
+        }
+        toroidal_greens_fn_batched<digits+1,ModalUpsample,trg_dot_prod>(M_tor, y_trg, Vec3((Real)1), (Real)0, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, ker, FourierModes);
 
         for (Long ii = 0; ii < M_tor.Dim(0); ii++) {
           for (Long jj = 0; jj < M_tor.Dim(1); jj++) {
@@ -2141,7 +2480,13 @@ namespace SCTL_NAMESPACE {
         Matrix<Real>::GEMM(M_modal, Minterp_quad_nds, M_tor);
       }
 
-      Matrix<Real> M_nodal(ChebOrder, KDIM0*KDIM1*FourierOrder);
+      Matrix<Real> M_nodal;
+      if (MAX_BUFF_SIZE-buff_offset >= ChebOrder * KDIM0*KDIM1*FourierOrder) {
+        M_nodal.ReInit(ChebOrder, KDIM0*KDIM1*FourierOrder, buff.begin()+buff_offset, false);
+        buff_offset += ChebOrder * KDIM0*KDIM1*FourierOrder;
+      } else {
+        M_nodal.ReInit(ChebOrder, KDIM0*KDIM1*FourierOrder);
+      }
       { // Set M_nodal
         Matrix<Real> M_nodal_(ChebOrder*KDIM0*KDIM1, FourierOrder, M_nodal.begin(), false);
         const Matrix<Real> M_modal_(ChebOrder*KDIM0*KDIM1, FourierModes*2, M_modal.begin(), false);
@@ -2200,7 +2545,8 @@ namespace SCTL_NAMESPACE {
     omp_par::scan(cheb_order_.begin(), elem_dsp_.begin(), cheb_order_.Dim());
 
     if (comm.Rank()) return;
-    const Integer precision = 18, width = 26;
+    const Integer precision = (Integer)ceil(-log((double)machine_eps<Real>())/log((double)10));
+    const Integer width = precision + 8;
     std::ofstream file;
     file.open(fname, std::ofstream::out | std::ofstream::trunc);
     if (!file.good()) {
@@ -2239,7 +2585,7 @@ namespace SCTL_NAMESPACE {
     }
     file.close();
   }
-  template <class Real> void SlenderElemList<Real>::Read(const std::string& fname, const Comm& comm) {
+  template <class Real> template <class ValueType> void SlenderElemList<Real>::Read(const std::string& fname, const Comm& comm) {
     std::ifstream file;
     file.open(fname, std::ifstream::in);
     if (!file.good()) {
@@ -2247,7 +2593,7 @@ namespace SCTL_NAMESPACE {
     }
 
     std::string line;
-    Vector<Real> coord_, radius_, e1_;
+    Vector<ValueType> coord_, radius_, e1_;
     Vector<Integer> cheb_order_, fourier_order_;
     while (std::getline(file, line)) { // Set coord_, radius_, e1_, cheb_order_, fourier_order_
       size_t first_char_pos = line.find_first_not_of(' ');
@@ -2255,22 +2601,22 @@ namespace SCTL_NAMESPACE {
 
       std::istringstream iss(line);
       for (Integer k = 0; k < COORD_DIM; k++) { // read coord_
-        Real a;
+        ValueType a;
         iss>>a;
         SCTL_ASSERT(!iss.fail());
         coord_.PushBack(a);
       }
       { // read radius_
-        Real a;
+        ValueType a;
         iss>>a;
         SCTL_ASSERT(!iss.fail());
         radius_.PushBack(a);
       }
       for (Integer k = 0; k < COORD_DIM; k++) { // read e1_
-        Real a;
+        ValueType a;
         iss>>a;
         SCTL_ASSERT(!iss.fail());
-        e1.PushBack(a);
+        e1_.PushBack(a);
       }
 
       Integer ChebOrder, FourierOrder;
@@ -2315,12 +2661,12 @@ namespace SCTL_NAMESPACE {
       const Long j0 = elem_offset[i0];
       const Long j1 = elem_offset[i1];
 
-      Vector<Real> radius, coord, e1;
+      Vector<ValueType> radius, coord, e1;
       radius.ReInit((j1-j0), radius_.begin()+j0, false);
       coord.ReInit((j1-j0)*COORD_DIM, coord_.begin()+j0*COORD_DIM, false);
       if (e1_.Dim()) e1.ReInit((j1-j0)*COORD_DIM, e1_.begin()+j0*COORD_DIM, false);
 
-      Init(cheb_order, fourier_order, coord, radius, e1);
+      Init<ValueType>(cheb_order, fourier_order, coord, radius, e1);
     }
   }
 
@@ -2698,6 +3044,14 @@ namespace SCTL_NAMESPACE {
   }
 
   template <class Real> template <Integer digits, bool trg_dot_prod, class Kernel> Matrix<Real> SlenderElemList<Real>::SelfInteracHelper(const Kernel& ker, const Long elem_idx) const {
+    constexpr Integer MAX_THREADS=1000;
+    constexpr Integer MAX_BUFF_SIZE=10000000;
+    SCTL_ASSERT(omp_get_num_threads() < MAX_THREADS);
+    static Vector<Vector<Real>> buff_(MAX_THREADS);
+    Vector<Real>& buff = buff_[omp_get_thread_num()];
+    if (buff.Dim() == 0) buff.ReInit(MAX_BUFF_SIZE);
+    Long buff_offset = 0;
+
     using Vec3 = Tensor<Real,true,COORD_DIM,1>;
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1 = Kernel::TrgDim()/(trg_dot_prod?COORD_DIM:1);
@@ -2706,7 +3060,7 @@ namespace SCTL_NAMESPACE {
     const Integer ChebOrder = cheb_order[elem_idx];
     const Integer FourierOrder = fourier_order[elem_idx];
     const Integer FourierModes = FourierOrder/2+1;
-    const Matrix<Real> M_fourier_inv = fourier_matrix_inv_transpose<Real>(FourierOrder,FourierModes);
+    const Matrix<Real>& M_fourier_inv = fourier_matrix_inv_transpose<Real>(FourierOrder,FourierModes);
     const auto& cheb_nds = SlenderElemList<Real>::CenterlineNodes(ChebOrder);
 
     const Vector<Real>  coord(COORD_DIM*ChebOrder,(Iterator<Real>)this-> coord.begin()+COORD_DIM*elem_dsp[elem_idx],false);
@@ -2719,9 +3073,17 @@ namespace SCTL_NAMESPACE {
     const Real dtheta = 2*const_pi<Real>()/FourierOrder;
     const Complex<Real> exp_dtheta(cos<Real>(dtheta), sin<Real>(dtheta));
 
-    Matrix<Real> M_modal(ChebOrder*FourierOrder, ChebOrder*KDIM0*KDIM1*FourierModes*2);
-    #pragma omp parallel for
+    Matrix<Real> M_modal;
+    if (MAX_BUFF_SIZE-buff_offset >= ChebOrder*FourierOrder * ChebOrder*KDIM0*KDIM1*FourierModes*2) {
+      M_modal.ReInit(ChebOrder*FourierOrder, ChebOrder*KDIM0*KDIM1*FourierModes*2, buff.begin()+buff_offset, false);
+      buff_offset += ChebOrder*FourierOrder * ChebOrder*KDIM0*KDIM1*FourierModes*2;
+    } else {
+      M_modal.ReInit(ChebOrder*FourierOrder, ChebOrder*KDIM0*KDIM1*FourierModes*2);
+    }
+    //#pragma omp parallel for
     for (Long i = 0; i < ChebOrder; i++) {
+      Long buff_offset0 = buff_offset;
+
       Real r_trg = radius[i];
       Real dr_trg = dr[i];
       Vec3 x_trg, dx_trg, d2x_trg, e1_trg, e2_trg;
@@ -2748,23 +3110,48 @@ namespace SCTL_NAMESPACE {
 
       Matrix<Real> Minterp_quad_nds;
       { // Set Minterp_quad_nds
-        Minterp_quad_nds.ReInit(ChebOrder, Nq);
+        if (MAX_BUFF_SIZE-buff_offset0 >= ChebOrder*Nq) {
+          Minterp_quad_nds.ReInit(ChebOrder, Nq, buff.begin()+buff_offset0, false);
+          buff_offset0 += ChebOrder*Nq;
+        } else {
+          Minterp_quad_nds.ReInit(ChebOrder, Nq);
+        }
         Vector<Real> Vinterp_quad_nds(ChebOrder*Nq, Minterp_quad_nds.begin(), false);
-        LagrangeInterp<Real>::Interpolate(Vinterp_quad_nds, cheb_nds-cheb_nds[i], quad_nds);
+
+        StaticArray<Real,20> buff0;
+        Vector<Real> cheb_nds0(ChebOrder, (ChebOrder>20?NullIterator<Real>():buff0), (ChebOrder>20));
+        for (Long j = 0; j < ChebOrder; j++) cheb_nds0[j] = cheb_nds[j] - cheb_nds[i];
+        LagrangeInterp<Real>::Interpolate(Vinterp_quad_nds, cheb_nds0, quad_nds);
       }
 
       Matrix<Real> r_src, dr_src, x_src, dx_src, d2x_src, e1_src;
-      r_src  .ReInit(        1, Nq);
-      dr_src .ReInit(        1, Nq);
-      x_src  .ReInit(COORD_DIM, Nq);
-      dx_src .ReInit(COORD_DIM, Nq);
-      d2x_src.ReInit(COORD_DIM, Nq);
-      e1_src .ReInit(COORD_DIM, Nq);
+      if (MAX_BUFF_SIZE-buff_offset0 >= 14*Nq) {
+        r_src  .ReInit(        1, Nq, buff.begin()+buff_offset0+ 0*Nq, false);
+        dr_src .ReInit(        1, Nq, buff.begin()+buff_offset0+ 1*Nq, false);
+        x_src  .ReInit(COORD_DIM, Nq, buff.begin()+buff_offset0+ 2*Nq, false);
+        dx_src .ReInit(COORD_DIM, Nq, buff.begin()+buff_offset0+ 5*Nq, false);
+        d2x_src.ReInit(COORD_DIM, Nq, buff.begin()+buff_offset0+ 8*Nq, false);
+        e1_src .ReInit(COORD_DIM, Nq, buff.begin()+buff_offset0+11*Nq, false);
+        buff_offset0 += 14*Nq;
+      } else {
+        r_src  .ReInit(        1, Nq);
+        dr_src .ReInit(        1, Nq);
+        x_src  .ReInit(COORD_DIM, Nq);
+        dx_src .ReInit(COORD_DIM, Nq);
+        d2x_src.ReInit(COORD_DIM, Nq);
+        e1_src .ReInit(COORD_DIM, Nq);
+      }
       { // Set x_src, x_trg (improve numerical stability)
-        Matrix<Real> x_nodes(COORD_DIM,ChebOrder, (Iterator<Real>)coord.begin(), true);
-        for (Long j = 0; j < ChebOrder; j++) {
-          for (Integer k = 0; k < COORD_DIM; k++) {
-            x_nodes[k][j] -= x_trg(k,0);
+        Matrix<Real> x_nodes;
+        StaticArray<Real,30> buff;
+        if (COORD_DIM*ChebOrder <= 30) {
+          x_nodes.ReInit(COORD_DIM,ChebOrder, buff, false);
+        } else {
+          x_nodes.ReInit(COORD_DIM,ChebOrder);
+        }
+        for (Integer k = 0; k < COORD_DIM; k++) {
+          for (Long j = 0; j < ChebOrder; j++) {
+            x_nodes[k][j] = coord[k*ChebOrder+j] - x_trg(k,0);
           }
         }
         Matrix<Real>::GEMM(  x_src, x_nodes, Minterp_quad_nds);
@@ -2792,8 +3179,16 @@ namespace SCTL_NAMESPACE {
         }
       }
 
+
       Complex<Real> exp_theta_trg(1,0);
+      for (Long j = 0; j < ChebOrder; j++) { // Minterp_quad_nds *= quad_wts
+        for (Long k = 0; k < Nq; k++) {
+          Minterp_quad_nds[j][k] *= quad_wts[k];
+        }
+      }
       for (Long j = 0; j < FourierOrder; j++) {
+        Long buff_offset1 = buff_offset0;
+
         auto compute_Xn_trg = [&exp_theta_trg,&dx_trg,&d2x_trg,&e1_trg,&e2_trg,&r_trg,&dr_trg,&norm_dx_trg,&inv_norm_dx_trg]() { // Set n_trg
           Real cost = exp_theta_trg.real;
           Real sint = exp_theta_trg.imag;
@@ -2813,28 +3208,35 @@ namespace SCTL_NAMESPACE {
         const Vec3 e_trg = e1_trg*exp_theta_trg.real + e2_trg*exp_theta_trg.imag;
         const Vec3 n_trg(trg_dot_prod ? compute_Xn_trg() : Vec3((Real)0));
 
-        Matrix<Real> M_tor(Nq, KDIM0*KDIM1*FourierModes*2); // TODO: pre-allocate
-        toroidal_greens_fn_batched<digits+2,ModalUpsample,trg_dot_prod>(M_tor, x_trg, e_trg, r_trg, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, ker, FourierModes);
-
-        for (Long ii = 0; ii < Nq; ii++) {
-          for (Long jj = 0; jj < KDIM0*KDIM1*FourierModes*2; jj++) {
-            M_tor[ii][jj] *= quad_wts[ii];
-          }
+        Matrix<Real> M_tor;
+        if (MAX_BUFF_SIZE-buff_offset1 >= Nq * KDIM0*KDIM1*FourierModes*2) {
+          M_tor.ReInit(Nq, KDIM0*KDIM1*FourierModes*2, buff.begin()+buff_offset1, false);
+          buff_offset1 += Nq * KDIM0*KDIM1*FourierModes*2;
+        } else {
+          M_tor.ReInit(Nq, KDIM0*KDIM1*FourierModes*2);
         }
+        toroidal_greens_fn_batched<digits+1,ModalUpsample,trg_dot_prod>(M_tor, x_trg, e_trg, r_trg, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, ker, FourierModes);
+
         Matrix<Real> M_modal_(ChebOrder, KDIM0*KDIM1*FourierModes*2, M_modal[i*FourierOrder+j], false);
         Matrix<Real>::GEMM(M_modal_, Minterp_quad_nds, M_tor);
         exp_theta_trg *= exp_dtheta;
       }
     }
 
-    Matrix<Real> M_nodal(ChebOrder*FourierOrder, ChebOrder*KDIM0*KDIM1*FourierOrder);
+    Matrix<Real> M_nodal;
+    if (MAX_BUFF_SIZE-buff_offset >= ChebOrder*FourierOrder * ChebOrder*KDIM0*KDIM1*FourierOrder) {
+      M_nodal.ReInit(ChebOrder*FourierOrder, ChebOrder*KDIM0*KDIM1*FourierOrder, buff.begin()+buff_offset, false);
+      buff_offset += ChebOrder*FourierOrder * ChebOrder*KDIM0*KDIM1*FourierOrder;
+    } else {
+      M_nodal.ReInit(ChebOrder*FourierOrder, ChebOrder*KDIM0*KDIM1*FourierOrder);
+    }
     { // Set M_nodal
       const Matrix<Real> M_modal_(ChebOrder*FourierOrder * ChebOrder*KDIM0*KDIM1, FourierModes*2, M_modal.begin(), false);
       Matrix<Real> M_nodal_(ChebOrder*FourierOrder * ChebOrder*KDIM0*KDIM1, FourierOrder, M_nodal.begin(), false);
       Matrix<Real>::GEMM(M_nodal_, M_modal_, M_fourier_inv);
     }
 
-    Matrix<Real> M(ChebOrder*FourierOrder*KDIM0, ChebOrder*FourierOrder*KDIM1);
+    Matrix<Real> M(ChebOrder*FourierOrder*KDIM0, ChebOrder*FourierOrder*KDIM1); // TODO: pass M by reference
     { // Set M
       const Integer Nnds = ChebOrder*FourierOrder;
       for (Integer i = 0; i < Nnds; i++) {
@@ -2853,20 +3255,21 @@ namespace SCTL_NAMESPACE {
   }
 
   template <class Real> template <class ValueType> void SlenderElemList<Real>::Copy(SlenderElemList<ValueType>& elem_lst) const {
-    const Long N = radius.Dim();
-    Vector<ValueType> radius_(N), coord_(N*COORD_DIM), e1_(N*COORD_DIM);
-    for (Long i = 0; i < cheb_order.Dim(); i++) {
-      for (Long j = 0; j < cheb_order[i]; j++) {
-        radius_[elem_dsp[i]+j] = (ValueType)radius[elem_dsp[i]+j];
-        for (Integer k = 0; k < COORD_DIM; k++) {
-          Long idx_ = elem_dsp[i]*COORD_DIM+j*COORD_DIM+k;
-          Long idx = elem_dsp[i]*COORD_DIM+k*cheb_order[i]+j;
-          coord_[idx_] = (ValueType)coord[idx];
-          e1_[idx_] = (ValueType)e1[idx];
-        }
-      }
-    }
-    elem_lst.Init(cheb_order, fourier_order, coord_, radius_, e1_);
+    elem_lst.radius.ReInit(radius.Dim());
+    elem_lst. coord.ReInit( coord.Dim());
+    elem_lst.    e1.ReInit(    e1.Dim());
+    elem_lst.    dr.ReInit(    dr.Dim());
+    elem_lst.    dx.ReInit(    dx.Dim());
+    elem_lst.   d2x.ReInit(   d2x.Dim());
+    for (Long i = 0; i < radius.Dim(); i++) elem_lst.radius[i] = (ValueType)radius[i];
+    for (Long i = 0; i <  coord.Dim(); i++) elem_lst. coord[i] = (ValueType) coord[i];
+    for (Long i = 0; i <     e1.Dim(); i++) elem_lst.    e1[i] = (ValueType)    e1[i];
+    for (Long i = 0; i <     dr.Dim(); i++) elem_lst.    dr[i] = (ValueType)    dr[i];
+    for (Long i = 0; i <     dx.Dim(); i++) elem_lst.    dx[i] = (ValueType)    dx[i];
+    for (Long i = 0; i <    d2x.Dim(); i++) elem_lst.   d2x[i] = (ValueType)   d2x[i];
+    elem_lst.   cheb_order =    cheb_order;
+    elem_lst.fourier_order = fourier_order;
+    elem_lst.     elem_dsp =      elem_dsp;
   }
 }
 
