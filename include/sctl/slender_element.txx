@@ -991,7 +991,7 @@ namespace SCTL_NAMESPACE {
     // return whether an adaptive quadrature rule has been used
     return (adap_depth >= crossover_adap_depth);
   }
-  template <Integer digits, Integer ModalUpsample, bool trg_dot_prod, class RealType, class Kernel, Integer adap=false> static void toroidal_greens_fn_batched(Matrix<RealType>& M, const Tensor<RealType,true,3,1>& x_trg, const Tensor<RealType,true,3,1>& e_trg, const RealType r_trg, const Tensor<RealType,true,3,1>& n_trg, const Matrix<RealType>& x_src, const Matrix<RealType>& dx_src, const Matrix<RealType>& d2x_src, const Matrix<RealType>& r_src, const Matrix<RealType>& dr_src, const Matrix<RealType>& e1_src, const Kernel& ker, const Integer FourierModes) {
+  template <Integer digits, Integer ModalUpsample, bool trg_dot_prod, class RealType, class Kernel, Integer adap=(sizeof(RealType)>sizeof(double))> static void toroidal_greens_fn_batched(Matrix<RealType>& M, const Tensor<RealType,true,3,1>& x_trg, const Tensor<RealType,true,3,1>& e_trg, const RealType r_trg, const Tensor<RealType,true,3,1>& n_trg, const Matrix<RealType>& x_src, const Matrix<RealType>& dx_src, const Matrix<RealType>& d2x_src, const Matrix<RealType>& r_src, const Matrix<RealType>& dr_src, const Matrix<RealType>& e1_src, const Kernel& ker, const Integer FourierModes) {
     static constexpr Integer VecLen = DefaultVecLen<RealType>();
     using VecType = Vec<RealType, VecLen>;
 
