@@ -147,8 +147,11 @@ inline void Comm::Wait(void* req_ptr) const {
 #ifdef SCTL_HAVE_MPI
   if (req_ptr == nullptr) return;
   Vector<MPI_Request>& request = *(Vector<MPI_Request>*)req_ptr;
-  // std::vector<MPI_Status> status(request.Dim());
-  if (request.Dim()) MPI_Waitall(request.Dim(), &request[0], MPI_STATUSES_IGNORE);  //&status[0]);
+  if (request.Dim()) {
+    // std::vector<MPI_Status> status(request.Dim());
+    int err = MPI_Waitall(request.Dim(), &request[0], MPI_STATUSES_IGNORE);  //&status[0]);
+    SCTL_ASSERT(err == MPI_SUCCESS);
+  }
   DelReq(&request);
 #endif
 }
@@ -275,6 +278,32 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     if (glb_connectivity < 64 * Size()) {
       void* mpi_req = Ialltoallv_sparse(sbuf, scounts, sdispls, rbuf, rcounts, rdispls, 0);
       Wait(mpi_req);
+      { // Verify
+        #ifdef SCTL_MEMDEBUG
+        for (long i = 0; i < mpi_size_-1; i++) {
+          SCTL_ASSERT(sdispls[i+1]-sdispls[i] == scounts[i]);
+          SCTL_ASSERT(rdispls[i+1]-rdispls[i] == rcounts[i]);
+        }
+        SCTL_ASSERT(sdispls[0] == 0);
+        SCTL_ASSERT(rdispls[0] == 0);
+
+        const Long Nsend = sdispls[mpi_size_-1] + scounts[mpi_size_-1];
+        Vector<Type> sbuf_verify(Nsend);
+        mpi_req = Ialltoallv_sparse(rbuf, rcounts, rdispls, sbuf_verify.begin(), scounts, sdispls, 1);
+        Wait(mpi_req);
+
+        for (long p = 0; p < mpi_size_; p++) {
+          for (long j = 0; j < scounts[p]*(long)sizeof(Type); j++) {
+            long i = sdispls[p]*(long)sizeof(Type) + j;
+            if (((char*)&sbuf_verify[0])[i] != ((char*)&sbuf[0])[i]) {
+              std::cout<<Rank()<<' '<<p<<'\n';
+            }
+            SCTL_ASSERT(((char*)&sbuf_verify[0])[i] == ((char*)&sbuf[0])[i]);
+          }
+        }
+        Barrier();
+        #endif
+      }
       return;
     }
   }

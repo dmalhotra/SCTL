@@ -29,7 +29,9 @@ class Comm {
 #ifdef SCTL_HAVE_PETSC
     PetscInitialize(argc, argv, NULL, NULL);
 #elif defined(SCTL_HAVE_MPI)
-    ::MPI_Init(argc, argv);
+    int provided;
+    ::MPI_Init_thread(argc, argv, MPI_THREAD_SERIALIZED, &provided);
+    if (provided != MPI_THREAD_SERIALIZED) SCTL_WARN("MPI implementation does not support MPI_THREAD_SERIALIZED.");
 #endif
   }
 
