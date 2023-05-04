@@ -254,7 +254,7 @@ namespace SCTL_NAMESPACE {
               src_mid_lst[i].NbrList(nbr_lst, src_mid_lst[i].Depth(), false);
               for (const auto& mid : nbr_lst) {
                 Long j = std::upper_bound(trg_mid_lst.begin(), trg_mid_lst.end(), mid) - trg_mid_lst.begin() - 1;
-                if (j>=0 && trg_mid_lst[j].isAncestor(mid.DFD())) {
+                if (j>=0 && mid.Ancestor(trg_mid_lst[j].Depth()) == trg_mid_lst[j]) {
                   trg_src_near_mid.PushBack(std::pair<Long,Long>(j,i));
                 }
               }
