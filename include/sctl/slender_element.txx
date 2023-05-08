@@ -2325,7 +2325,8 @@ namespace SCTL_NAMESPACE {
                 dist_xt = sqrt<Real>(dot_prod(y, y));
                 dyds = sqrt<Real>(dot_prod(dy, dy));
 
-                const Vec3 y_yy = (x0-yy) + cross_prod(cross_prod(x0-yy, dx0), dx0) * r0;
+                const Vec3 nn = cross_prod(cross_prod(x0-yy, dx0), dx0);
+                const Vec3 y_yy = (x0-yy) +  nn * ((1/sqrt<Real>(dot_prod(nn,nn))) * r0);
                 return sqrt<Real>(dot_prod(y_yy, y_yy));
               };
 
