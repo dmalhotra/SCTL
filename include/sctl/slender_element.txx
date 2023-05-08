@@ -2283,7 +2283,7 @@ namespace SCTL_NAMESPACE {
             Long Npanel = 0;
             Vector<Real> s_vec;
             { // Set s_vec, Npanel (7% - 15% of near interaction time)
-              const auto get_geom = [&ChebOrder,&radius,&dr,&coord,&dx,&d2x](Vec3& y, Real& dist, Real& dyds, const Real s, const Vec3& x_trg) {
+              const auto get_geom = [&ChebOrder,&radius,&dr,&coord,&dx,&d2x](Vec3& y, Real& dist_xt, Real& dyds, const Real s, const Vec3& x_trg, const Vec3& yy) {
                 StaticArray<Real,20> buff;
                 Vector<Real> interp_wts(ChebOrder, buff, false);
                 if (ChebOrder > 20) interp_wts.ReInit(ChebOrder);
@@ -2292,7 +2292,7 @@ namespace SCTL_NAMESPACE {
                 Vec3 x0, dx0, d2x0;
                 Real r0 = 0, dr0 = 0;
                 for (Long i = 0; i < COORD_DIM; i++) {
-                  x0(i,0) = 0;
+                  x0(i,0) = -x_trg(i,0);
                   dx0(i,0) = 0;
                   d2x0(i,0) = 0;
                 }
@@ -2312,20 +2312,21 @@ namespace SCTL_NAMESPACE {
 
                 Vec3 n0, dy;
                 { // Set n0, dy
-                  const Vec3 Xt_X0 = x_trg - x0;
-                  n0 = -cross_prod(cross_prod(Xt_X0, dx0), dx0);
+                  n0 = cross_prod(cross_prod(x0, dx0), dx0);
                   Real scal = (1/sqrt<Real>(dot_prod(n0,n0)));
                   n0 = n0 * scal;
-                  Vec3 dn0 = -(cross_prod(cross_prod(Xt_X0, d2x0), dx0) + cross_prod(cross_prod(Xt_X0, dx0), d2x0)) * scal;
+                  Vec3 dn0 = (cross_prod(cross_prod(x0, d2x0), dx0) + cross_prod(cross_prod(x0, dx0), d2x0)) * scal;
                   dn0 = dn0 - n0 * dot_prod(dn0,n0);
                   dy = dx0 + n0 * dr0 + dn0 * r0;
                 }
 
                 y = x0 + n0 * r0;
-                const Vec3 y_Xt = y - x_trg;
-                //ds = dot_prod(y_Xt,dy)/dot_prod(dy,dy);
-                dist = sqrt<Real>(dot_prod(y_Xt, y_Xt));
+                //ds = dot_prod(y,dy)/dot_prod(dy,dy);
+                dist_xt = sqrt<Real>(dot_prod(y, y));
                 dyds = sqrt<Real>(dot_prod(dy, dy));
+
+                const Vec3 y_yy = (x0-yy) + cross_prod(cross_prod(x0-yy, dx0), dx0) * r0;
+                return sqrt<Real>(dot_prod(y_yy, y_yy));
               };
 
               constexpr Long MaxPanels = 1000, max_iter = 2000;
@@ -2339,25 +2340,25 @@ namespace SCTL_NAMESPACE {
               Vec3 y_;
               s_vec[0] = 0;
               Real dist_, dyds_, s_ = 0;
-              get_geom(y_, dist_, dyds_, s_, x_trg);
+              get_geom(y_, dist_, dyds_, s_, x_trg, x_trg);
               Real step_size = (2/(rho+1/rho))*(3*dist_/std::max<Real>(dyds_,dx_max));
               for (Long iter = 0; iter < max_iter; iter++) {
                 Vec3 y;
                 Real dist, dyds;
                 const Real s = std::min<Real>(1, s_+step_size);
-                get_geom(y, dist, dyds, s, x_trg);
-                const Real panel_len = sqrt<Real>(dot_prod(y_-y_, y-y_));
-                if (dist+dist_ > ((rho+1/rho)/2) * std::max<Real>(std::max<Real>(dx_max,std::max<Real>(dyds,dyds_))*step_size, panel_len)) {
+                const Real panel_len = get_geom(y, dist, dyds, s, x_trg, y_);
+                if (dist+dist_ > ((rho+1/rho)/2) * std::max<Real>(std::max<Real>(dx_max,std::max<Real>(dyds,dyds_))*(s-s_), panel_len)) {
                   Npanel++;
                   SCTL_ASSERT(Npanel <= MaxPanels);
                   s_vec[Npanel] = s;
 
                   s_ = s;
+                  y_ = y;
                   dist_ = dist;
                   dyds_ = dyds;
                   step_size = (2/(rho+1/rho))*(3*dist_/std::max<Real>(dyds_,dx_max));
                 } else {
-                  step_size *= 0.9 * (dist+dist_)*(2/(rho+1/rho))/std::max<Real>(std::max<Real>(dx_max,std::max<Real>(dyds,dyds_))*step_size, panel_len);
+                  step_size = (s-s_) * std::max<Real>(0.5, 0.9 * (dist+dist_)*(2/(rho+1/rho))/std::max<Real>(std::max<Real>(dx_max,std::max<Real>(dyds,dyds_))*(s-s_), panel_len));
                 }
                 if (s_ == 1) {
                   //if (1) { // display iteration count
