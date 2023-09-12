@@ -942,7 +942,7 @@ namespace SCTL_NAMESPACE {
     Long adap_depth = 0;
     for (RealType s = r_R0; s<2*const_pi<RealType>(); s*=2) adap_depth++;
     if (adap_depth >= max_adap_depth) {
-      SCTL_WARN("Toroidal quadrature evaluation is outside of the range of precomputed quadratures; accuracy may be sverely degraded.");
+      SCTL_WARN("Toroidal quadrature evaluation is outside of the range of precomputed quadratures; accuracy may be severely degraded.");
       adap_depth = max_adap_depth-1;
     }
 
@@ -1750,7 +1750,7 @@ namespace SCTL_NAMESPACE {
         const Integer FourierModes = FourierOrder/2+1;
         const Matrix<Real>& Mfourier_inv = fourier_matrix_inv<Real>(FourierOrder,FourierModes);
         const Matrix<Real>& Mfourier = fourier_matrix<Real>(FourierModes,FourierOrder*FARFIELD_UPSAMPLE);
-        M_lst[k] = (Mfourier_inv * Mfourier).Transpose();
+        M_lst[k] = (FARFIELD_UPSAMPLE != 1 ? (Mfourier_inv * Mfourier).Transpose() : Matrix<Real>(0,0));
       }
       return M_lst;
     };
@@ -1785,24 +1785,28 @@ namespace SCTL_NAMESPACE {
     if (Fout.Dim() != Nnodes*(FARFIELD_UPSAMPLE*FARFIELD_UPSAMPLE) * density_dof) {
       Fout.ReInit(Nnodes*(FARFIELD_UPSAMPLE*FARFIELD_UPSAMPLE) * density_dof);
     }
-    for (Long i = 0; i < Nelem; i++) {
+    Matrix<Real> F0; // pre-allocate
+    for (Long i = 0; i < Nelem; i++) { // TODO: parallelize
       const Integer ChebOrder = cheb_order[i];
       const Integer FourierOrder = fourier_order[i];
 
       const auto& Mfourier_ = Mfourier_transpose[FourierOrder];
       const Matrix<Real> Fin_(ChebOrder, FourierOrder*density_dof, (Iterator<Real>)Fin.begin()+node_dsp[i]*density_dof, false);
-      Matrix<Real> F0_(ChebOrder, FourierOrder*FARFIELD_UPSAMPLE*density_dof);
-      for (Long l = 0; l < ChebOrder; l++) { // Set F0
-        for (Long j0 = 0; j0 < FourierOrder*FARFIELD_UPSAMPLE; j0++) {
-          for (Long k = 0; k < density_dof; k++) {
-            Real f = 0;
-            for (Long j1 = 0; j1 < FourierOrder; j1++) {
-              f += Fin_[l][j1*density_dof+k] * Mfourier_[j0][j1];
+      if (Mfourier_.Dim(0) && Mfourier_.Dim(1)) {
+        F0.ReInit(ChebOrder, FourierOrder*FARFIELD_UPSAMPLE*density_dof);
+        for (Long l = 0; l < ChebOrder; l++) { // Set F0
+          for (Long j0 = 0; j0 < FourierOrder*FARFIELD_UPSAMPLE; j0++) {
+            for (Long k = 0; k < density_dof; k++) {
+              Real f = 0;
+              for (Long j1 = 0; j1 < FourierOrder; j1++) {
+                f += Fin_[l][j1*density_dof+k] * Mfourier_[j0][j1];
+              }
+              F0[l][j0*density_dof+k] = f;
             }
-            F0_[l][j0*density_dof+k] = f;
           }
         }
       }
+      const auto& F0_ = (Mfourier_.Dim(0) && Mfourier_.Dim(1) ? F0 : Fin_);
 
       Matrix<Real> Fout_(ChebOrder*FARFIELD_UPSAMPLE, FourierOrder*FARFIELD_UPSAMPLE*density_dof, Fout.begin()+node_dsp[i]*FARFIELD_UPSAMPLE*FARFIELD_UPSAMPLE*density_dof, false);
       Matrix<Real>::GEMM(Fout_, Mcheb_transpose[ChebOrder], F0_);
