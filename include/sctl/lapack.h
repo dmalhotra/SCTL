@@ -21,7 +21,7 @@ Software Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
 
 // EXTERN_C_BEGIN
 extern "C" {
-void sgesvd_(const char* JOBU, const char* JOBVT, const int* M, const int* N, float* A, const int* LDA, float* S, float* U, const int* LDU, float* VT, const int* LDVT, float* WORK, const int* LWORK, int* INFO);
+void sgesvd_(const char* JOBU, const char* JOBVT, const int* M, const int* N, float* A, const int* LDA, float* S, float* U, const int* LDU, float* VT, const int* LDVT, float* WORK, const int* LWORK, int* INFO) noexcept;
 /*!    DGESVD computes the singular value decomposition (SVD) of a real
  *  M-by-N matrix A, optionally computing the left and/or right singular
  *  vectors. The SVD is written
@@ -37,7 +37,7 @@ void sgesvd_(const char* JOBU, const char* JOBVT, const int* M, const int* N, fl
  *
  * See http://www.netlib.org/lapack/double/dgesvd.f for more information
  */
-void dgesvd_(const char* JOBU, const char* JOBVT, const int* M, const int* N, double* A, const int* LDA, double* S, double* U, const int* LDU, double* VT, const int* LDVT, double* WORK, const int* LWORK, int* INFO);
+void dgesvd_(const char* JOBU, const char* JOBVT, const int* M, const int* N, double* A, const int* LDA, double* S, double* U, const int* LDU, double* VT, const int* LDVT, double* WORK, const int* LWORK, int* INFO) noexcept;
 }
 // EXTERN_C_END
 

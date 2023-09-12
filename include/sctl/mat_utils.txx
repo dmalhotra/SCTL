@@ -465,16 +465,20 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, int n1, int n
   char JOBVT = 'S';
 
   // int wssize = max(3*min(m,n)+max(m,n), 5*min(m,n));
-  int wssize = 3 * (m < n ? m : n) + (m > n ? m : n);
-  int wssize1 = 5 * (m < n ? m : n);
-  wssize = (wssize > wssize1 ? wssize : wssize1);
+  // int wssize = 3 * (m < n ? m : n) + (m > n ? m : n);
+  // int wssize1 = 5 * (m < n ? m : n);
+  // wssize = (wssize > wssize1 ? wssize : wssize1);
+  int wssize = -1;
+  StaticArray<ValueType,1> wkopt = {0};
+  svd(&JOBU, &JOBVT, &m, &n, M, &m, tS, tU, &m, tVT, &k, wkopt+0, &wssize, &INFO);
+  wssize = (int)wkopt[0];
 
   Iterator<ValueType> wsbuf = aligned_new<ValueType>(wssize);
-
   svd(&JOBU, &JOBVT, &m, &n, M, &m, tS, tU, &m, tVT, &k, wsbuf, &wssize, &INFO);
+  aligned_delete<ValueType>(wsbuf);
+
   if (INFO != 0) std::cout << INFO << '\n';
   assert(INFO == 0);
-  aligned_delete<ValueType>(wsbuf);
 
   ValueType max_S = 0;
   for (Long i = 0; i < k; i++) { // TODO: since our SVD implementation does not return sorted singular values
