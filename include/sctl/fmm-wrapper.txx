@@ -394,22 +394,32 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::Eval(Vector<Real>
   EvalDirect(U, trg_name);
   #endif
 }
-template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector<Real>& U, const std::string& trg_name) const {
+template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector<Real>& U_, const std::string& trg_name) const {
   const Integer rank = comm_.Rank();
   const Integer np = comm_.Size();
 
   SCTL_ASSERT_MSG(trg_map.find(trg_name) != trg_map.end(), "Target name does not exist.");
   const auto& trg_data = trg_map.at(trg_name);
   const Integer TrgDim = trg_data.dim_trg;
-  const auto& Xt = trg_data.X;
+  const auto& Xt_ = trg_data.X;
 
-  const Long Nt = Xt.Dim() / DIM;
-  SCTL_ASSERT(Xt.Dim() == Nt * DIM);
-  if (U.Dim() != Nt * TrgDim) {
-    U.ReInit(Nt * TrgDim);
-    U.SetZero();
+  const Long Nt = Xt_.Dim() / DIM;
+  SCTL_ASSERT(Xt_.Dim() == Nt * DIM);
+  if (U_.Dim() != Nt * TrgDim) {
+    U_.ReInit(Nt * TrgDim);
+    U_.SetZero();
   }
 
+  auto partition = [this](Vector<Real>& X, const Long dof) {
+    StaticArray<Long,2> cnt = {X.Dim()/dof, 0};
+    comm_.Allreduce<Long>(cnt+0, cnt+1, 1, Comm::CommOp::SUM);
+    comm_.PartitionN(X, cnt[1]*(comm_.Rank()+1)/comm_.Size() - cnt[1]*comm_.Rank()/comm_.Size());
+  };
+  Vector<Real> Xt = Xt_;
+  partition(Xt, DIM);
+
+  Vector<Real> U(Xt.Dim()/DIM * TrgDim);
+  U.SetZero();
   for (auto& it : s2t_map) {
     if (it.first.second != trg_name) continue;
     const std::string src_name = it.first.first;
@@ -418,11 +428,14 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
     const auto& src_data = src_map.at(src_name);
     const Integer SrcDim = src_data.dim_src;
     const Integer NorDim = src_data.dim_normal;
-    const auto& Xs = src_data.X;
-    const auto& F = src_data.F;
 
-    const Vector<Real> Xn_dummy;
-    const auto& Xn = (NorDim ? src_data.Xn : Xn_dummy);
+    auto Xs = src_data.X;
+    auto F = src_data.F;
+    auto Xn = (NorDim ? src_data.Xn : Vector<Real>());
+
+    partition(Xs, DIM);
+    partition(F, SrcDim);
+    partition(Xn, (NorDim?NorDim:1));
 
     const Long Ns = Xs.Dim() / DIM;
     SCTL_ASSERT(Xs.Dim() == Ns * DIM);
@@ -453,6 +466,8 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
       it.second.ker_s2t_eval_omp(U, Xt, Xs_, Xn_, F_, digits_, it.second.ker_s2t);
     }
   }
+  comm_.PartitionN(U, U_.Dim());
+  U_ += U;
 }
 
 template <class Real, Integer DIM> template <class Ker> void ParticleFMM<Real,DIM>::DeleteKer(Iterator<char> ker) {
@@ -699,6 +714,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
     U.SetZero();
   }
 
+  if (digits_ <= 0) return;
   for (auto& it : s2t_map) {
     if (it.first.second != trg_name) continue;
     const std::string src_name = it.first.first;
