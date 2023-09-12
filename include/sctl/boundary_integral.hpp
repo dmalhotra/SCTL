@@ -229,6 +229,18 @@ namespace SCTL_NAMESPACE {
        */
       void ComputePotential(Vector<Real>& U, const Vector<Real>& F) const;
 
+      /**
+       * Scale input vector by sqrt of the area of the element.
+       * TODO: replace by sqrt of surface quadrature weights (not sure if it makes a difference though)
+       */
+      void SqrtScaling(Vector<Real>& U) const;
+
+      /**
+       * Scale input vector by inv-sqrt of the area of the element.
+       * TODO: replace by inv-sqrt of surface quadrature weights (not sure if it makes a difference though)
+       */
+      void InvSqrtScaling(Vector<Real>& U) const;
+
     private:
 
       void SetupBasic() const;

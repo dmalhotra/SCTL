@@ -20,7 +20,8 @@ template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inli
     for (int i = 0; i < p; i++) {
       _DiffType indx1 = (i * N) / p;
       _DiffType indx2 = ((i + 1) * N) / p;
-      if (indx2 - indx1 > 0) memcpy(&C_[indx1], &A[indx1], (indx2 - indx1) * sizeof(_ValType));
+      if (indx2 - indx1 > 0) std::copy(A+indx1, A+indx2, C_+indx1);
+      //if (indx2 - indx1 > 0) memcpy(&C_[indx1], &A[indx1], (indx2 - indx1) * sizeof(_ValType));
     }
     return;
   }

@@ -42,7 +42,7 @@ namespace SCTL_NAMESPACE {
       return A.mid < B.mid;
     };
     auto comp_node_eid_idx = [](const NodeData& A, const NodeData& B) {
-      return A.elem_idx<B.elem_idx || (A.elem_idx==B.elem_idx && A.idx<B.idx);
+      return (A.elem_idx<B.elem_idx) || (A.elem_idx==B.elem_idx && A.idx<B.idx);
     };
     auto node_dist2 = [](const NodeData& A, const NodeData& B) {
       Real dist2 = 0;
@@ -66,6 +66,8 @@ namespace SCTL_NAMESPACE {
     const Long Nelem = src_elem_nds_cnt.Dim();
     Comm comm_ = comm.Split(Nsrc || Ntrg);
     if (!Nsrc && !Ntrg) return;
+    const Long np = comm_.Size();
+    const Long rank = comm_.Rank();
 
     Long trg_offset, src_offset, elem_offset;
     { // set trg_offset, src_offset, elem_offset
@@ -135,7 +137,7 @@ namespace SCTL_NAMESPACE {
         }
         trg_nodes[i].mid = Morton<COORD_DIM>((ConstIterator<Real>)Xmid);
         trg_nodes[i].elem_idx = 0;
-        trg_nodes[i].pid = comm_.Rank();
+        trg_nodes[i].pid = rank;
       }
       for (Long i = 0; i < Nsrc; i++) { // Set src_nodes
         Integer depth = (Integer)(log(src_radius[i]*BBlen_inv)/log(0.5));
@@ -148,7 +150,7 @@ namespace SCTL_NAMESPACE {
           Xmid[k] = (Xsrc[i*COORD_DIM+k]-BBX0[k]) * BBlen_inv;
         }
         src_nodes[i].mid = Morton<COORD_DIM>((ConstIterator<Real>)Xmid, depth);
-        src_nodes[i].pid = comm_.Rank();
+        src_nodes[i].pid = rank;
       }
       for (Long i = 0; i < Nelem; i++) { // Set src_nodes.elem_idx
         for (Long j = 0; j < src_elem_nds_cnt[i]; j++) {
@@ -164,14 +166,74 @@ namespace SCTL_NAMESPACE {
 
       SCTL_ASSERT(src_nodes0.Dim());
       StaticArray<NodeData,1> splitter_node{src_nodes0[0]};
-      if (!comm_.Rank()) splitter_node[0].mid = Morton<COORD_DIM>();
+      if (!rank) splitter_node[0].mid = Morton<COORD_DIM>();
+      while (splitter_node[0].mid.Depth()) { // find coarsest ancestor with same coordinates
+        auto& mid = splitter_node[0].mid;
+        const Long depth = mid.Depth();
+        if (mid == mid.Ancestor(depth-1).Ancestor(depth)) {
+          mid = mid.Ancestor(depth-1);
+        } else break;
+      }
 
       comm_.Allgather((ConstIterator<NodeData>)splitter_node, 1, splitter_nodes.begin(), 1);
+      comm_.PartitionS(src_nodes0, splitter_node[0], comp_node_mid);
       comm_.PartitionS(trg_nodes0, splitter_node[0], comp_node_mid);
     }
 
     Vector<NodeData> src_nodes1;
-    { // Set src_nodes1 <- src_nodes0 + halo // TODO: replace allgather with halo-exchange // TODO
+    if (1) { // Set src_nodes1 <- src_nodes0 + halo
+      Vector<std::pair<Long,Long>> proc_srcidx_lst;
+      std::set<Long> user_proc_set; // tmp
+      Vector<Morton<COORD_DIM>> nbr_lst; // tmp
+      for (Long i = 0; i < src_nodes0.Dim(); i++) {
+        user_proc_set.clear();
+        src_nodes0[i].mid.NbrList(nbr_lst, src_nodes0[i].mid.Depth(), false);
+        for (long j = 0; j < nbr_lst.Dim(); j++) {
+          const auto proc_split_srch = [&splitter_nodes,&comp_node_mid](const Morton<COORD_DIM>& m) {
+            NodeData srch_node; srch_node.mid = m;
+            return  std::lower_bound(splitter_nodes.begin(), splitter_nodes.end(), srch_node, comp_node_mid) - splitter_nodes.begin();
+          };
+          Long p0 = proc_split_srch(nbr_lst[j]);
+          Long p1 = proc_split_srch(nbr_lst[j].Next());
+          if (p1 < comm_.Size() && splitter_nodes[p1].mid < nbr_lst[j].Next()) p1++;
+          for (Long k = p0; k < p1; k++) {
+            if (k != rank) user_proc_set.insert(k);
+          }
+        }
+        for (const auto& p : user_proc_set) {
+          proc_srcidx_lst.PushBack(std::make_pair(p, i));
+        }
+      }
+      omp_par::merge_sort(proc_srcidx_lst.begin(), proc_srcidx_lst.end());
+
+      Vector<Long> scnt(np), sdsp(np); scnt = 0; sdsp = 0;
+      Vector<Long> rcnt(np), rdsp(np); rcnt = 0; rdsp = 0;
+      Vector<NodeData> sbuff(proc_srcidx_lst.Dim());
+      for (Long i = 0; i < sbuff.Dim(); i++) {
+        sbuff[i] = src_nodes0[proc_srcidx_lst[i].second];
+        scnt[proc_srcidx_lst[i].first]++;
+      }
+      omp_par::scan(scnt.begin(), sdsp.begin(), np);
+      comm_.Alltoall<Long>(scnt.begin(), 1, rcnt.begin(), 1);
+      omp_par::scan(rcnt.begin(), rdsp.begin(), np);
+
+      // Exchange data
+      Vector<NodeData> rbuff(rdsp[np-1] + rcnt[np-1]);
+      void* req_ptr = comm_.Ialltoallv_sparse(sbuff.begin(), scnt.begin(), sdsp.begin(), rbuff.begin(), rcnt.begin(), rdsp.begin());
+
+      // Set src_nodes1
+      src_nodes1.ReInit(rbuff.Dim() + src_nodes0.Dim());
+      for (Long i = 0; i < src_nodes0.Dim(); i++) {
+        src_nodes1[rdsp[rank]+i] = src_nodes0[i];
+      }
+      comm_.Wait(req_ptr);
+      for (Long i = 0; i < rdsp[rank]; i++) {
+        src_nodes1[i] = rbuff[i];
+      }
+      for (Long i = rdsp[rank]; i < rbuff.Dim(); i++) {
+        src_nodes1[src_nodes0.Dim()+i] = rbuff[i];
+      }
+    } else { // src_nodes1 <- Allgather(src_nodes0)
       const Long Np = comm_.Size();
       Vector<Long> cnt0(1), cnt(Np), dsp(Np);
       cnt0[0] = src_nodes0.Dim(); dsp[0] = 0;
@@ -207,12 +269,12 @@ namespace SCTL_NAMESPACE {
           src_idx1 = std::upper_bound(src_nodes1.begin(), src_nodes1.end(), srch_node, [](const NodeData& A, const NodeData& B){return A.elem_idx<B.elem_idx;}) - src_nodes1.begin();
         }
         { // build near-list for element eid
-          trg_src_near_mid.ReInit(0);
-          src_mid_lst.ReInit(0);
-          trg_mid_lst.ReInit(0);
-          src_range.ReInit(0);
-          trg_range.ReInit(0);
-          trg_mid_set.clear();
+          trg_src_near_mid.ReInit(0); // list of neighbor pairs from (trg_mid_lst x src_mid_lst), sorted by trg-mid first and then src-mid
+          src_mid_lst.ReInit(0); // unique covering nodes of element-eid
+          trg_mid_lst.ReInit(0); // unique neighbor nodes of src_mid_lst
+          src_range.ReInit(0); // range of src-spheres (src_nodes1) contained in each src_mid_lst
+          trg_range.ReInit(0); // range of trg-points (trg_nodes0) contained in each trg_mid_lst
+          trg_mid_set.clear(); // tmp
           { // build src_mid_lst, src_range
             Long src_idx = src_idx0;
             while (src_idx < src_idx1) {
@@ -499,6 +561,71 @@ namespace SCTL_NAMESPACE {
     ComputeNearInterac(U, F);
     Profile::Toc();
   }
+
+  template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SqrtScaling(Vector<Real>& U) const {
+    const Long Nsrc = (elem_nds_cnt.Dim() ? elem_nds_dsp.end()[-1] + elem_nds_cnt.end()[-1] : 0);
+    const Long dof = (Nsrc ? U.Dim() / Nsrc : 0);
+    SCTL_ASSERT(U.Dim() == Nsrc * dof);
+
+    const Long Nlst = elem_lst_map.size();
+    for (Long i = 0; i < Nlst; i++) { // Init F_far
+      const Long elem_idx0 = elem_lst_dsp[i];
+      const Long elem_idx1 = elem_lst_dsp[i]+elem_lst_cnt[i];
+
+      Vector<Real> X, Xn, wts, dist_far;
+      Vector<Long> element_wise_node_cnt, element_wise_node_dsp(elem_idx1-elem_idx0); element_wise_node_dsp = 0;
+      elem_lst_map.at(elem_lst_name[i])->GetFarFieldNodes(X, Xn, wts, dist_far, element_wise_node_cnt, 1);
+      SCTL_ASSERT(element_wise_node_cnt.Dim() == elem_lst_cnt[i]);
+      for (Long j = 1; j < element_wise_node_cnt.Dim(); j++) {
+        element_wise_node_dsp[j] = element_wise_node_dsp[j-1] + element_wise_node_cnt[j-1];
+      }
+
+      for (Long elem = elem_idx0; elem < elem_idx1; elem++) {
+        const Long j0 = elem_nds_dsp[elem];
+        const Long j1 = elem_nds_dsp[elem] + elem_nds_cnt[elem];
+        Vector<Real> U_((j1-j0)*dof, U.begin() + j0*dof, false);
+
+        Real area = 0;
+        for (Long j = 0; j < element_wise_node_cnt[elem-elem_idx0]; j++) {
+          area += wts[element_wise_node_dsp[elem-elem_idx0]+j];
+        }
+        U_ *= sqrt<Real>(area);
+      }
+    }
+  }
+
+  template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::InvSqrtScaling(Vector<Real>& U) const {
+    const Long Nsrc = (elem_nds_cnt.Dim() ? elem_nds_dsp.end()[-1] + elem_nds_cnt.end()[-1] : 0);
+    const Long dof = (Nsrc ? U.Dim() / Nsrc : 0);
+    SCTL_ASSERT(U.Dim() == Nsrc * dof);
+
+    const Long Nlst = elem_lst_map.size();
+    for (Long i = 0; i < Nlst; i++) { // Init F_far
+      const Long elem_idx0 = elem_lst_dsp[i];
+      const Long elem_idx1 = elem_lst_dsp[i]+elem_lst_cnt[i];
+
+      Vector<Real> X, Xn, wts, dist_far;
+      Vector<Long> element_wise_node_cnt, element_wise_node_dsp(elem_idx1-elem_idx0); element_wise_node_dsp = 0;
+      elem_lst_map.at(elem_lst_name[i])->GetFarFieldNodes(X, Xn, wts, dist_far, element_wise_node_cnt, 1);
+      SCTL_ASSERT(element_wise_node_cnt.Dim() == elem_lst_cnt[i]);
+      for (Long j = 1; j < element_wise_node_cnt.Dim(); j++) {
+        element_wise_node_dsp[j] = element_wise_node_dsp[j-1] + element_wise_node_cnt[j-1];
+      }
+
+      for (Long elem = elem_idx0; elem < elem_idx1; elem++) {
+        const Long j0 = elem_nds_dsp[elem];
+        const Long j1 = elem_nds_dsp[elem] + elem_nds_cnt[elem];
+        Vector<Real> U_((j1-j0)*dof, U.begin() + j0*dof, false);
+
+        Real area = 0;
+        for (Long j = 0; j < element_wise_node_cnt[elem-elem_idx0]; j++) {
+          area += wts[element_wise_node_dsp[elem-elem_idx0]+j];
+        }
+        U_ *= 1/sqrt<Real>(area);
+      }
+    }
+  }
+
 
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetupBasic() const {

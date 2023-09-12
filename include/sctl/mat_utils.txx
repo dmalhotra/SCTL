@@ -469,7 +469,7 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, int n1, int n
   // int wssize1 = 5 * (m < n ? m : n);
   // wssize = (wssize > wssize1 ? wssize : wssize1);
   int wssize = -1;
-  StaticArray<ValueType,1> wkopt = {0};
+  StaticArray<ValueType,1> wkopt{0};
   svd(&JOBU, &JOBVT, &m, &n, M, &m, tS, tU, &m, tVT, &k, wkopt+0, &wssize, &INFO);
   wssize = (int)wkopt[0];
 

@@ -499,7 +499,7 @@ template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Ma
   //int wssize1 = 5 * (m < n ? m : n);
   //wssize = (wssize > wssize1 ? wssize : wssize1);
   int wssize = -1;
-  StaticArray<ValueType,1> wkopt = {0};
+  StaticArray<ValueType,1> wkopt{0};
   mat::svd(&JOBU, &JOBVT, &m, &n, M.begin(), &m, tS.begin(), tVT.begin(), &m, tU.begin(), &k, wkopt+0, &wssize, &INFO);
   wssize = (int)wkopt[0];
 

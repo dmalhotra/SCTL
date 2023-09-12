@@ -411,7 +411,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
   }
 
   auto partition = [this](Vector<Real>& X, const Long dof) {
-    StaticArray<Long,2> cnt = {X.Dim()/dof, 0};
+    StaticArray<Long,2> cnt{X.Dim()/dof, 0};
     comm_.Allreduce<Long>(cnt+0, cnt+1, 1, Comm::CommOp::SUM);
     comm_.PartitionN(X, cnt[1]*(comm_.Rank()+1)/comm_.Size() - cnt[1]*comm_.Rank()/comm_.Size());
   };
