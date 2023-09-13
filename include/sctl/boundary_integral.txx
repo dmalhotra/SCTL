@@ -191,7 +191,7 @@ namespace SCTL_NAMESPACE {
         for (long j = 0; j < nbr_lst.Dim(); j++) {
           const auto proc_split_srch = [&splitter_nodes,&comp_node_mid](const Morton<COORD_DIM>& m) {
             NodeData srch_node; srch_node.mid = m;
-            return  std::lower_bound(splitter_nodes.begin(), splitter_nodes.end(), srch_node, comp_node_mid) - splitter_nodes.begin();
+            return  std::upper_bound(splitter_nodes.begin(), splitter_nodes.end(), srch_node, comp_node_mid) - splitter_nodes.begin() - 1;
           };
           Long p0 = proc_split_srch(nbr_lst[j]);
           Long p1 = proc_split_srch(nbr_lst[j].Next());
