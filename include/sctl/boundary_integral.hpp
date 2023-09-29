@@ -153,6 +153,9 @@ namespace SCTL_NAMESPACE {
        *
        * @param[in] ker the kernel object.
        *
+       * @param[in] trg_normal_dot_prod whether to compute dot-product of the
+       * potential with the target normal vector.
+       *
        * @param[in] comm the MPI communicator.
        */
       explicit BoundaryIntegralOp(const Kernel& ker, bool trg_normal_dot_prod = false, const Comm& comm = Comm::Self());
@@ -163,27 +166,50 @@ namespace SCTL_NAMESPACE {
       ~BoundaryIntegralOp();
 
       /**
-       * Specify accuracy tolerance.
+       * Specify quadrature accuracy tolerance.
+       *
+       * @param[in] tol quadrature accuracy.
        */
       void SetAccuracy(Real tol);
 
       /**
-       * Set kernel functions for FMM translation operators
+       * Set kernel functions for FMM translation operators (@see pvfmm.org).
+       *
+       * @param[in] k_s2m source-to-multipole kernel.
+       * @param[in] k_s2l source-to-local kernel.
+       * @param[in] k_s2t source-to-target kernel.
+       * @param[in] k_m2m multipole-to-multipole kernel.
+       * @param[in] k_m2l multipole-to-local kernel.
+       * @param[in] k_m2t multipole-to-target kernel.
+       * @param[in] k_l2l local-to-local keenel.
+       * @param[in] k_l2t local-to-target kernel.
        */
       template <class KerS2M, class KerS2L, class KerS2T, class KerM2M, class KerM2L, class KerM2T, class KerL2L, class KerL2T> void SetFMMKer(const KerS2M& k_s2m, const KerS2L& k_s2l, const KerS2T& k_s2t, const KerM2M& k_m2m, const KerM2L& k_m2l, const KerM2T& k_m2t, const KerL2L& k_l2l, const KerL2T& k_l2t);
 
       /**
        * Add an element-list.
+       *
+       * @param[in] elem_lst an object (of type ElemLstType, derived from the
+       * base class ElementListBase) that contains the description of a list of
+       * elements.
+       *
+       * @param[in] name a string name for this element list.
        */
       template <class ElemLstType> void AddElemList(const ElemLstType& elem_lst, const std::string& name = std::to_string(typeid(ElemLstType).hash_code()));
 
       /**
        * Get const reference to an element-list.
+       *
+       * @param[in] name name of the element-list to return.
+       *
+       * @return const reference to the element-list.
        */
       template <class ElemLstType> const ElemLstType& GetElemList(const std::string& name = std::to_string(typeid(ElemLstType).hash_code())) const;
 
       /**
        * Delete an element-list.
+       *
+       * @param[in] name name of the element-list to return.
        */
       void DeleteElemList(const std::string& name);
 
@@ -209,8 +235,8 @@ namespace SCTL_NAMESPACE {
       void SetTargetNormal(const Vector<Real>& Xn_trg);
 
       /**
-       * Get dimension of the boundary integral operator. Dim(0) is the input
-       * dimension and Dim(1) is the output dimension.
+       * Get local dimension of the boundary integral operator. Dim(0) is the
+       * input dimension and Dim(1) is the output dimension.
        */
       Long Dim(Integer k) const;
 
@@ -226,6 +252,12 @@ namespace SCTL_NAMESPACE {
 
       /**
        * Evaluate the boundary integral operator.
+       *
+       * @param[out] U the potential computed at each target point in
+       * array-of-struct order.
+       *
+       * @param[in] F the charge density at each surface discretization node in
+       * array-of-struct order.
        */
       void ComputePotential(Vector<Real>& U, const Vector<Real>& F) const;
 

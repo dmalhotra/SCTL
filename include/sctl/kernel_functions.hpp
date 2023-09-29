@@ -501,14 +501,19 @@ struct Stokes3D_FxUP {
 };
 }  // namespace kernel_impl
 
+// Notation:
+// F = single-layer source
+// D = double-layer source
+// U = potential
+// dU = grad potential
 struct Laplace3D_FxU : public GenericKernel<kernel_impl::Laplace3D_FxU> {};
 struct Laplace3D_DxU : public GenericKernel<kernel_impl::Laplace3D_DxU> {};
 struct Laplace3D_FxdU : public GenericKernel<kernel_impl::Laplace3D_FxdU>{};
 struct Stokes3D_FxU : public GenericKernel<kernel_impl::Stokes3D_FxU> {};
 struct Stokes3D_DxU : public GenericKernel<kernel_impl::Stokes3D_DxU> {};
-struct Stokes3D_FxT : public GenericKernel<kernel_impl::Stokes3D_FxT> {};
-struct Stokes3D_FSxU : public GenericKernel<kernel_impl::Stokes3D_FSxU> {}; // for FMM translations - M2M, M2L, M2T
-struct Stokes3D_FxUP : public GenericKernel<kernel_impl::Stokes3D_FxUP> {};
+struct Stokes3D_FxT : public GenericKernel<kernel_impl::Stokes3D_FxT> {}; // single-layer source ---> traction-tensor
+struct Stokes3D_FSxU : public GenericKernel<kernel_impl::Stokes3D_FSxU> {}; // single-layer + source/sink ---> velocity (required for FMM translations involving double-layer - M2M, M2L, M2T)
+struct Stokes3D_FxUP : public GenericKernel<kernel_impl::Stokes3D_FxUP> {}; // single-layer source ---> velocity + pressure
 
 }  // end namespace
 
