@@ -7,10 +7,71 @@
 #include SCTL_INCLUDE(fft_wrapper.hpp)
 #include SCTL_INCLUDE(vtudata.hpp)
 #include SCTL_INCLUDE(lagrange-interp.hpp)
+#include SCTL_INCLUDE(ode-solver.hpp)
+#include SCTL_INCLUDE(boundary_integral.hpp)
 
 #include <functional>
 
 namespace SCTL_NAMESPACE {
+
+
+  template <class Real, Integer Nm = 12, Integer Nr = 20, Integer Nt = 16> class ToroidalGreensFn { // deprecated
+      static constexpr Integer COORD_DIM = 3;
+      static constexpr Real min_dist = 0.0;
+      static constexpr Real max_dist = 0.2;
+
+    public:
+
+      /**
+       * Constructor
+       */
+      ToroidalGreensFn() {}
+
+      /**
+       * Precompute tables for modal Green's funcation
+       */
+      template <class Kernel> void Setup(const Kernel& ker, Real R0);
+
+      /**
+       * Build modal Green's function operator for a given target point
+       * (x0,x1,x2).
+       */
+      template <class Kernel> void BuildOperatorModal(Matrix<Real>& M, const Real x0, const Real x1, const Real x2, const Kernel& ker) const;
+
+    private:
+
+      /**
+       * Basis functions in which to represent the potential.
+       */
+      template <class ValueType> class BasisFn { // p(x) log(x) + q(x) + 1/x
+        public:
+          static ValueType Eval(const Vector<ValueType>& coeff, ValueType x);
+          static void EvalBasis(Vector<ValueType>& f, ValueType x);
+          static const Vector<ValueType>& nds(Integer ORDER);
+      };
+
+      /**
+       * Precompute tables for modal Green's funcation
+       */
+      template <class ValueType, class Kernel> void PrecompToroidalGreensFn(const Kernel& ker, ValueType R0);
+
+      /**
+       * Compute reference potential using adaptive integration.
+       */
+      template <class ValueType, class Kernel> static void ComputePotential(Vector<ValueType>& U, const Vector<ValueType>& Xtrg, ValueType R0, const Vector<ValueType>& F_, const Kernel& ker, ValueType tol = 1e-18);
+
+      /**
+       * Compute modal Green's function operator using trapezoidal quadrature
+       * rule (for distant target points).
+       */
+      template <Integer Nnds, class Kernel> void BuildOperatorModalDirect(Matrix<Real>& M, const Real x0, const Real x1, const Real x2, const Kernel& ker) const;
+
+      Real R0_;
+      FFT<Real> fft_Nm_R2C, fft_Nm_C2R;
+      Matrix<Real> Mnds2coeff0, Mnds2coeff1;
+      Vector<Real> U; // KDIM0*Nmm*KDIM1*Nr*Ntt
+      Vector<Real> Ut; // Nr*Ntt*KDIM0*Nmm*KDIM1
+  };
 
   template <class Real, Integer Nm, Integer Nr, Integer Nt> template <class Kernel> void ToroidalGreensFn<Real,Nm,Nr,Nt>::Setup(const Kernel& ker, Real R0) {
     #ifdef SCTL_QUAD_T
@@ -679,7 +740,7 @@ namespace SCTL_NAMESPACE {
       using RealType = long double;
       #endif
       Vector<Vector<RealType>> data;
-      ReadFile<RealType>(data, "data/log_quad");
+      ReadFile<RealType>(data, std::string(SCTL_QUOTEME(SCTL_DATA_PATH)) + "/log_quad");
       if (data.Dim() < MaxOrder*2) {
         data.ReInit(MaxOrder*2);
         #pragma omp parallel for
@@ -700,7 +761,7 @@ namespace SCTL_NAMESPACE {
           };
           InterpQuadRule<RealType, true>::Build(data[order*2+0], data[order*2+1], integrands, false, machine_eps<ValueType>(), order, 2e-4, 1.0);
         }
-        WriteFile<RealType>(data, "data/log_quad");
+        WriteFile<RealType>(data, std::string(SCTL_QUOTEME(SCTL_DATA_PATH)) + "/log_quad");
       }
 
       Vector<std::pair<Vector<ValueType>,Vector<ValueType>>> nds_wts_lst(MaxOrder);
@@ -726,7 +787,7 @@ namespace SCTL_NAMESPACE {
   }
 
   template <class RealType, class Kernel, Integer adap> static Vector<Vector<RealType>> BuildToroidalSpecialQuadRules(Integer Nmodes, Integer VecLen) {
-    const std::string fname = std::string("data/toroidal_quad_rule_m") + std::to_string(Nmodes) + "_" + Kernel::Name();
+    const std::string fname = std::string(SCTL_QUOTEME(SCTL_DATA_PATH)) + std::string("/toroidal_quad_rule_m") + std::to_string(Nmodes) + "_" + Kernel::Name();
     constexpr Integer COORD_DIM = 3;
     constexpr Integer max_adap_depth = 30; // build quadrature rules for points up to 2*pi*0.5^max_adap_depth from source loop
     constexpr Integer crossover_adap_depth = 2;
@@ -1481,7 +1542,7 @@ namespace SCTL_NAMESPACE {
 
     if (!adap_quad) {
       auto load_special_quad_rule = [](Vector<Vector<Real>>& nds_lst, Vector<Vector<Real>>& wts_lst, const Integer ChebOrder){
-        const std::string fname = std::string("data/special_quad_q") + std::to_string(ChebOrder) + "_" + Kernel::Name() + (trg_dot_prod ? "_dotXn" : "");
+        const std::string fname = std::string(SCTL_QUOTEME(SCTL_DATA_PATH)) + std::string("/special_quad_q") + std::to_string(ChebOrder) + "_" + Kernel::Name() + (trg_dot_prod ? "_dotXn" : "");
         const auto cheb_nds_ = SlenderElemList<ValueType>::CenterlineNodes(ChebOrder);
 
         Vector<Vector<ValueType>> data;
@@ -1601,7 +1662,14 @@ namespace SCTL_NAMESPACE {
         }
       } else {
         using Vec3 = Tensor<ValueType,true,COORD_DIM,1>;
-        Vec3 e1_vec((ValueType)0), dx_vec;
+        const auto orthonormalize = [&Ncheb,&dx__](Vec3& e1_vec, const Integer j) { // orthonormalize
+          Vec3 dx_vec;
+          for (Integer k = 0; k < COORD_DIM; k++) dx_vec(k,0) = dx__[k*Ncheb+j];
+          e1_vec = e1_vec - dx_vec*(dot_prod(dx_vec,e1_vec)/dot_prod(dx_vec,dx_vec));
+          e1_vec = e1_vec * (1.0/sqrt<ValueType>(dot_prod(e1_vec,e1_vec)));
+        };
+
+        Vec3 e1_vec((ValueType)0);
         { // Set e1_vec
           Integer orient_dir = 0;
           for (Integer k = 0; k < COORD_DIM; k++) {
@@ -1610,14 +1678,104 @@ namespace SCTL_NAMESPACE {
           e1_vec(orient_dir,0) = 1;
         }
 
-        for (Long j = 0; j < Ncheb; j++) {
+        if (0) for (Long j = 0; j < Ncheb; j++) { // first-order method using orthonormal projections
+          orthonormalize(e1_vec, j);
           for (Integer k = 0; k < COORD_DIM; k++) {
-            dx_vec(k,0) = dx__[k*Ncheb+j];
+            e1__[k*Ncheb+j] = e1_vec(k,0);
           }
-          e1_vec = e1_vec - dx_vec*(dot_prod(dx_vec,e1_vec)/dot_prod(dx_vec,dx_vec));
-          const ValueType scal = (1.0/sqrt<ValueType>(dot_prod(e1_vec,e1_vec)));
-          for (Integer k = 0; k < COORD_DIM; k++) {
-            e1__[k*Ncheb+j] = e1_vec(k,0) * scal;
+        }
+
+        if (0) { // Solve de = e x (d2x x dx) / (dx.dx), using spectral deferred correction
+          const auto& nodes = SlenderElemList<ValueType>::CenterlineNodes(Ncheb);
+          const SDC<ValueType> ode_solve(10, Comm::Self());
+          const ValueType tol = std::max((ValueType)1e-10, sqrt<ValueType>(machine_eps<ValueType>()));
+          constexpr bool continue_with_errors = true;
+
+          Vector<ValueType> e1_0(4), e1_j(4); e1_0 = 0;
+          const auto fn_de1 = [this,&Ncheb,&d2x__,&dx__,&nodes](Vector<ValueType>* de_, const Vector<ValueType>& e_) {
+            Vec3 e, dx, d2x, de;
+            Vector<ValueType> interp_wts;
+            LagrangeInterp<ValueType>::Interpolate(interp_wts, nodes, Vector<ValueType>(1, (Iterator<ValueType>)e_.begin()+COORD_DIM, false));
+            for (Long k = 0; k < COORD_DIM; k++) {
+              dx(k,0) = 0;
+              d2x(k,0) = 0;
+              e(k,0) = e_[k];
+              for (Long i = 0; i < Ncheb; i++) {
+                d2x(k,0) += interp_wts[i] * d2x__[k*Ncheb+i];
+                dx(k,0) += interp_wts[i] * dx__[k*Ncheb+i];
+              }
+            }
+
+            de = cross_prod(e, cross_prod(d2x, dx)) / dot_prod(dx,dx);
+            for (Long k = 0; k < COORD_DIM; k++) (*de_)[k] = de(k,0);
+            (*de_)[COORD_DIM] = 1;
+          };
+          for (Long j = 0; j < Ncheb; j++) { // ODE solve
+            orthonormalize(e1_vec, j);
+            for (Integer k = 0; k < COORD_DIM; k++) { // e1_0, e1__ <-- e1_vec
+              e1__[k*Ncheb+j] = e1_vec(k,0);
+              e1_0[k] = e1_vec(k,0);
+            }
+            e1_0[COORD_DIM] = nodes[j];
+
+            ValueType error = 0;
+            const ValueType T = (j+1<Ncheb ? nodes[j+1] : (ValueType)1) - nodes[j];
+            ode_solve.AdaptiveSolve(&e1_j, T/10, T, e1_0, fn_de1, tol, nullptr, continue_with_errors, &error);
+            for (Integer k = 0; k < COORD_DIM; k++) e1_vec(k,0) = e1_j[k];
+          }
+        }
+
+        if (1) { // Solve de = e x (d2x x dx) / (dx.dx), by building Chebyshev spectral operators
+          const auto& nodes = SlenderElemList<ValueType>::CenterlineNodes(Ncheb);
+          orthonormalize(e1_vec, 0);
+
+          Matrix<ValueType> M1(Ncheb*COORD_DIM, (Ncheb+1)*COORD_DIM); M1 = 0;
+          for (Long i = 0; i < Ncheb; i++) { // M <-- operator( . x (d2x x dx) / (dx.dx) )
+            Vec3 dx, d2x;
+            for (Long k = 0; k < COORD_DIM; k++) {
+              dx(k,0) = dx__[k*Ncheb+i];
+              d2x(k,0) = d2x__[k*Ncheb+i];
+            }
+            const Vec3 v = cross_prod(d2x, dx) / dot_prod(dx,dx);
+            M1[i*COORD_DIM+0][i*COORD_DIM+1] =-v(0,2);
+            M1[i*COORD_DIM+0][i*COORD_DIM+2] = v(0,1);
+            M1[i*COORD_DIM+1][i*COORD_DIM+0] = v(0,2);
+            M1[i*COORD_DIM+1][i*COORD_DIM+2] =-v(0,0);
+            M1[i*COORD_DIM+2][i*COORD_DIM+0] =-v(0,1);
+            M1[i*COORD_DIM+2][i*COORD_DIM+1] = v(0,0);
+          }
+
+          Matrix<ValueType> M2(Ncheb*COORD_DIM, (Ncheb+1)*COORD_DIM); M2 = 0;
+          for (Long i = 0; i < Ncheb; i++) { // differentiation matrix
+            Vector<ValueType> dx(Ncheb), x(Ncheb); x = 0; x[i] = 1;
+            LagrangeInterp<ValueType>::Derivative(dx, x, nodes);
+            for (Long j = 0; j < Ncheb; j++) {
+              for (Long k = 0; k < COORD_DIM; k++) {
+                M2[i*COORD_DIM+k][j*COORD_DIM+k] = dx[j];
+              }
+            }
+          }
+
+          Matrix<ValueType> A = M2 - M1;
+          A[0][Ncheb*COORD_DIM+0] = 1; // Add boundary conditions
+          A[1][Ncheb*COORD_DIM+1] = 1;
+          A[2][Ncheb*COORD_DIM+2] = 1;
+
+          Matrix<ValueType> b(1, (Ncheb+1)*COORD_DIM); b = 0;
+          b[0][Ncheb*COORD_DIM+0] = e1_vec(0,0);
+          b[0][Ncheb*COORD_DIM+1] = e1_vec(0,1);
+          b[0][Ncheb*COORD_DIM+2] = e1_vec(0,2);
+          Matrix<ValueType> e1 = b * A.pinv();
+
+          for (Long i = 0; i < Ncheb; i++) {
+            Vec3 e1_;
+            for (Integer k = 0; k < COORD_DIM; k++) {
+              e1_(0,k) = e1[0][i*COORD_DIM+k];
+            }
+            orthonormalize(e1_, i);
+            for (Integer k = 0; k < COORD_DIM; k++) {
+              e1__[k*Ncheb+i] = e1_(0,k);
+            }
           }
         }
       }

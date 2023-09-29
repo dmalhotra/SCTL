@@ -13,68 +13,9 @@ namespace SCTL_NAMESPACE {
   template <class ValueType> class Vector;
   template <class ValueType> class Matrix;
   template <class Real> class ElementListBase;
-  template <class Real, class Kernel> class BoundaryIntegralOp;
-
-  template <class Real, Integer Nm = 12, Integer Nr = 20, Integer Nt = 16> class ToroidalGreensFn {
-      static constexpr Integer COORD_DIM = 3;
-      static constexpr Real min_dist = 0.0;
-      static constexpr Real max_dist = 0.2;
-
-    public:
-
-      /**
-       * Constructor
-       */
-      ToroidalGreensFn() {}
-
-      /**
-       * Precompute tables for modal Green's funcation
-       */
-      template <class Kernel> void Setup(const Kernel& ker, Real R0);
-
-      /**
-       * Build modal Green's function operator for a given target point
-       * (x0,x1,x2).
-       */
-      template <class Kernel> void BuildOperatorModal(Matrix<Real>& M, const Real x0, const Real x1, const Real x2, const Kernel& ker) const;
-
-    private:
-
-      /**
-       * Basis functions in which to represent the potential.
-       */
-      template <class ValueType> class BasisFn { // p(x) log(x) + q(x) + 1/x
-        public:
-          static ValueType Eval(const Vector<ValueType>& coeff, ValueType x);
-          static void EvalBasis(Vector<ValueType>& f, ValueType x);
-          static const Vector<ValueType>& nds(Integer ORDER);
-      };
-
-      /**
-       * Precompute tables for modal Green's funcation
-       */
-      template <class ValueType, class Kernel> void PrecompToroidalGreensFn(const Kernel& ker, ValueType R0);
-
-      /**
-       * Compute reference potential using adaptive integration.
-       */
-      template <class ValueType, class Kernel> static void ComputePotential(Vector<ValueType>& U, const Vector<ValueType>& Xtrg, ValueType R0, const Vector<ValueType>& F_, const Kernel& ker, ValueType tol = 1e-18);
-
-      /**
-       * Compute modal Green's function operator using trapezoidal quadrature
-       * rule (for distant target points).
-       */
-      template <Integer Nnds, class Kernel> void BuildOperatorModalDirect(Matrix<Real>& M, const Real x0, const Real x1, const Real x2, const Kernel& ker) const;
-
-      Real R0_;
-      FFT<Real> fft_Nm_R2C, fft_Nm_C2R;
-      Matrix<Real> Mnds2coeff0, Mnds2coeff1;
-      Vector<Real> U; // KDIM0*Nmm*KDIM1*Nr*Ntt
-      Vector<Real> Ut; // Nr*Ntt*KDIM0*Nmm*KDIM1
-  };
 
   /**
-   * Implements the abstract class ElementListBase for slender boundary
+   * Implements the abstract class ElementListBase for list of slender boundary
    * elements with circular cross-section.
    *
    * @see ElementListBase
@@ -93,14 +34,42 @@ namespace SCTL_NAMESPACE {
       SlenderElemList() {}
 
       /**
-       * Constructor
+       * Construct the element list from centerline coordinates and
+       * cross-sectional radius evaluated the panel discretization nodes.
+       *
+       * @param[in] cheb_order vector of Chebyshev order of the elements.
+       *
+       * @param[in] fourier_order vector of Fourier order of the elements.
+       *
+       * @param[in] coord coordinates of the centerline discretization nodes in
+       * the order {x1,y1,z1,...,zn,yn,zn}.
+       *
+       * @param[in] radius cross-sectional radius at the centerline
+       * discretization nodes.
+       *
+       * @param[in] orientation optional orientation vector at the centerline
+       * discretization nodes in the order {ex1,ey1,ez1,...,ezn,eyn,ezn}.
        */
-      template <class ValueType> SlenderElemList(const Vector<Long>& cheb_order0, const Vector<Long>& fourier_order0, const Vector<ValueType>& coord0, const Vector<ValueType>& radius0, const Vector<ValueType>& orientation0 = Vector<ValueType>());
+      template <class ValueType> SlenderElemList(const Vector<Long>& cheb_order, const Vector<Long>& fourier_order, const Vector<ValueType>& coord, const Vector<ValueType>& radius, const Vector<ValueType>& orientation = Vector<ValueType>());
 
       /**
-       * Initialize list of elements
+       * Initialize list of elements from centerline coordinates and
+       * cross-sectional radius evaluated the panel discretization nodes.
+       *
+       * @param[in] cheb_order vector of Chebyshev order of the elements.
+       *
+       * @param[in] fourier_order vector of Fourier order of the elements.
+       *
+       * @param[in] coord coordinates of the centerline discretization nodes in
+       * the order {x1,y1,z1,...,zn,yn,zn}.
+       *
+       * @param[in] radius cross-sectional radius at the centerline
+       * discretization nodes.
+       *
+       * @param[in] orientation optional orientation vector at the centerline
+       * discretization nodes in the order {ex1,ey1,ez1,...,ezn,eyn,ezn}.
        */
-      template <class ValueType> void Init(const Vector<Long>& cheb_order0, const Vector<Long>& fourier_order0, const Vector<ValueType>& coord0, const Vector<ValueType>& radius0, const Vector<ValueType>& orientation0 = Vector<ValueType>());
+      template <class ValueType> void Init(const Vector<Long>& cheb_order, const Vector<Long>& fourier_order, const Vector<ValueType>& coord, const Vector<ValueType>& radius, const Vector<ValueType>& orientation = Vector<ValueType>());
 
       /**
        * Destructor
@@ -162,23 +131,55 @@ namespace SCTL_NAMESPACE {
 
       /**
        * Returns the Chebyshev node points for a given order.
+       *
+       * @param[in] the Chebyshev order of the panel.
+       *
+       * @return the location of the discretization nodes for a panel in the
+       * interval [0,1].
        */
       static const Vector<Real>& CenterlineNodes(const Integer Order);
 
       /**
        * Write elements to file.
+       *
+       * @param[in] fname the filename.
+       *
+       * @param[in] comm the communicator.
        */
       void Write(const std::string& fname, const Comm& comm = Comm::Self()) const;
 
       /**
        * Read elements from file.
+       *
+       * @param[in] fname the filename.
+       *
+       * @param[in] comm the communicator.
        */
       template <class ValueType> void Read(const std::string& fname, const Comm& comm = Comm::Self());
 
       /**
-       * Get geometry data for an element.
+       * Get geometry data for an element on a tensor-product grid of parameter
+       * values 's' and 'theta'.
+       *
+       * @param[out] X (optional) coordinates of the surface points in AoS order.
+       *
+       * @param[out] Xn (optional) surface normal of the points in AoS order.
+       *
+       * @param[out] Xa (optional) differential area-element at the surface points.
+       *
+       * @param[out] dX_ds (optional) the surface-gradient in 's'-direction (AoS order).
+       *
+       * @param[out] dX_dt (optional) the surface-gradient in 'theta'-direction (AoS order).
+       *
+       * @param[in] s_param vector of 's' values (in the range [0-1]).
+       *
+       * @param[in] sin_theta vector of sin(theta) values.
+       *
+       * @param[in] cos_theta vector of cos(theta) values.
+       *
+       * @param[in] elem_idx index of the element whose geometry is requested.
        */
-      void GetGeom(Vector<Real>* X, Vector<Real>* Xn, Vector<Real>* Xa, Vector<Real>* dX_ds, Vector<Real>* dX_dt, const Vector<Real>& s_param, const Vector<Real>& sin_theta_, const Vector<Real>& cos_theta_, const Long elem_idx) const;
+      void GetGeom(Vector<Real>* X, Vector<Real>* Xn, Vector<Real>* Xa, Vector<Real>* dX_ds, Vector<Real>* dX_dt, const Vector<Real>& s_param, const Vector<Real>& sin_theta, const Vector<Real>& cos_theta, const Long elem_idx) const;
 
       /**
        * Get the VTU (Visualization Toolkit for Unstructured grids) data for
@@ -188,6 +189,13 @@ namespace SCTL_NAMESPACE {
 
       /**
        * Write VTU data to file.
+       *
+       * @param[in] fname the filename.
+       *
+       * @param[in] F the data values at each surface discretization node in
+       * the order AoS order {Ux1,Uy1,Uz1,...,Uxn,Uyn,Uzn}.
+       *
+       * @param[in] comm the communicator.
        */
       void WriteVTK(const std::string& fname, const Vector<Real>& F = Vector<Real>(), const Comm& comm = Comm::Self()) const;
 
@@ -201,6 +209,12 @@ namespace SCTL_NAMESPACE {
        */
       static void test_greens_identity(const Comm& comm = Comm::Self(), Real tol = 1e-10);
 
+      /**
+       * Create a copy of the element-list possibly from a different a
+       * different precision (ValueType).
+       *
+       * @param[in] elem_lst input element-list
+       */
       template <class ValueType> void Copy(SlenderElemList<ValueType>& elem_lst) const;
 
       template<typename> friend class SlenderElemList;
