@@ -89,7 +89,7 @@ namespace SCTL_NAMESPACE {
         auto compute_all = [](){
           Vector<Vector<Real>> nds(MAX_ORDER);
           for (Long i = 1; i < MAX_ORDER; i++) {
-            nds[i] = ComputeNds<MAX_ORDER>(i);
+            nds[i] = ComputeNds(i);
           }
           return nds;
         };
@@ -101,7 +101,7 @@ namespace SCTL_NAMESPACE {
         auto compute_all = [](){
           Vector<Vector<Real>> wts(MAX_ORDER);
           for (Long i = 1; i < MAX_ORDER; i++) {
-            wts[i] = ComputeWts<MAX_ORDER>(nds(i));
+            wts[i] = ComputeWts(nds(i));
           }
           return wts;
         };

@@ -30,7 +30,7 @@ template <class Real> inline constexpr Real machine_eps() {
 template <class Real> inline Real atoreal(const char* str) { // Warning: does not do correct rounding
   const auto get_num = [](const char* str, int& end) {
     Real val = 0, exp = 1;
-    for (int i = end-1; i >= 0; i--) {
+    for (int i = end; i >= 0; i--) {
       char c = str[i];
       if ('0' <= c && c <= '9') {
         val += (c - '0') * exp;
@@ -51,9 +51,9 @@ template <class Real> inline Real atoreal(const char* str) { // Warning: does no
   };
 
   Real val = 0;
-  int i = std::strlen(str);
-  for (; i > 0; i--) { // ignore trailing non-numeric characters
-    if ('0' <= str[i-1] && str[i-1] <= '9') break;
+  int i = std::strlen(str)-1;
+  for (; i >= 0; i--) { // ignore trailing non-numeric characters
+    if ('0' <= str[i] && str[i] <= '9') break;
   }
   val = get_num(str, i);
   if (i>0 && (str[i] == 'e' || str[i] == 'E')) {

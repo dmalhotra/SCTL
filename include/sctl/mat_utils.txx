@@ -223,10 +223,10 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
   }
 
   Long k0 = 0;
-  Long iter = 0;
+  //Long iter = 0;
   if (eps < 0) eps = 64.0 * machine_eps<ValueType>();
   while (k0 < dim[1] - 1) {  // Diagonalization
-    iter++;
+    //iter++;
 
     ValueType S_max = 0.0;
     for (Long i = 0; i < dim[1]; i++) S_max = (S_max > fabs<ValueType>(S(i, i)) ? S_max : fabs<ValueType>(S(i, i)));

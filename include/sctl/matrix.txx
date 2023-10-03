@@ -111,6 +111,14 @@ template <class ValueType> void Matrix<ValueType>::Write(const char* fname) cons
   fclose(f1);
 }
 
+template <class ValueType> template <class Type> void Matrix<ValueType>::Write(const char* fname) const {
+  Matrix<Type> M(Dim(0), Dim(1));
+  for (Long i = 0; i < Dim(0)*Dim(1); i++) {
+    M[0][i] = (Type)(*this)[0][i];
+  }
+  M.Write(fname);
+}
+
 template <class ValueType> void Matrix<ValueType>::Read(const char* fname) {
   FILE* f1 = fopen(fname, "r");
   if (f1 == nullptr) {
@@ -128,6 +136,18 @@ template <class ValueType> void Matrix<ValueType>::Read(const char* fname) {
   }
   fclose(f1);
 }
+
+template <class ValueType> template <class Type> void Matrix<ValueType>::Read(const char* fname) {
+  Matrix<Type> M;
+  M.Read(fname);
+  if (Dim(0)!=M.Dim(0) || Dim(1)!=M.Dim(1)) {
+    ReInit(M.Dim(0), M.Dim(1));
+  }
+  for (Long i = 0; i < Dim(0)*Dim(1); i++) {
+    (*this)[0][i] = (ValueType)M[0][i];
+  }
+}
+
 
 template <class ValueType> Long Matrix<ValueType>::Dim(Long i) const { return dim[i]; }
 

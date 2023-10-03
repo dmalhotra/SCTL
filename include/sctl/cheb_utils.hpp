@@ -227,7 +227,7 @@ template <class ValueType, class Derived> class BasisInterface {
       Long offset0 = l * Ncoeff;
 
       Integer indx0 = 0;
-      Integer indx1 = 0;
+      //Integer indx1 = 0;
       StaticArray<Integer, DIM + 1> i0;
       for (Integer i = 0; i <= DIM; i++) i0[i] = 0;
 
@@ -237,7 +237,7 @@ template <class ValueType, class Derived> class BasisInterface {
           if (sum == order - 1) err += fabs<ValueType>(coeff[offset0 + indx0]);
           indx0++;
         }
-        indx1++;
+        //indx1++;
         sum++;
 
         i0[0]++;
