@@ -60,7 +60,9 @@ inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
     pclose(pipe);
 
     // Print output
-    if (fgets_ret0 != nullptr && fgets_ret1 != nullptr && buffer0[0] != '?' && buffer0[0] != '\0') {
+    if (fgets_ret0 != nullptr && fgets_ret1 == nullptr && buffer0[0] != '?' && buffer0[0] != '\0' && buffer0[0] != '0') {
+      fprintf(out, "[%d] %s\n", i - skip, buffer0);
+    } else if (fgets_ret0 != nullptr && fgets_ret1 != nullptr && buffer0[0] != '?' && buffer0[0] != '\0') {
       fprintf(out, "[%d] %s: %s\n", i - skip, buffer1, buffer0);
     } else {
       fprintf(out, "[%d] %p: %s\n", i - skip, addrlist[i], symbollist[i]);

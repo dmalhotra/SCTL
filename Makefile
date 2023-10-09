@@ -5,7 +5,8 @@ CXXFLAGS = -std=c++11 -fopenmp -Wall -Wfloat-conversion # need C++11 and OpenMP
 #CXXFLAGS += -O0 # debug build
 CXXFLAGS += -O3 -march=native -DNDEBUG # release build
 
-ifeq ($(shell uname -s),Darwin)
+OS = $(shell uname -s)
+ifeq "$(OS)" "Darwin"
 	CXXFLAGS += -g -rdynamic -Wl,-no_pie # for stack trace (on Mac)
 else
 	CXXFLAGS += -g -rdynamic # for stack trace
@@ -62,6 +63,9 @@ all : $(TARGET_BIN)
 $(BINDIR)/%: $(OBJDIR)/%.o
 	-@$(MKDIRS) $(dir $@)
 	$(CXX) $^ $(CXXFLAGS) $(LDLIBS) -o $@
+ifeq "$(OS)" "Darwin"
+	/usr/bin/dsymutil $@ -o $@.dSYM
+endif
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)
