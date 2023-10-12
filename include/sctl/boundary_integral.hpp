@@ -140,7 +140,7 @@ namespace SCTL_NAMESPACE {
   template <class Real, class Kernel> class BoundaryIntegralOp {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer KDIM1 = Kernel::TrgDim();
-      static constexpr Integer COORD_DIM = 3;
+      static constexpr Integer COORD_DIM = Kernel::CoordDim();
 
     public:
 

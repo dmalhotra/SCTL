@@ -778,7 +778,7 @@ namespace SCTL_NAMESPACE {
 
     Profile::Tic("SetupNear", &comm_, true, 6);
     Profile::Tic("BuildNearLst", &comm_, true, 7);
-    BuildNearList(Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt, near_trg_dsp, Xtrg, Xn_trg, X_far, dist_far, elem_nds_cnt_far, elem_nds_dsp_far, comm_);
+    BuildNearList<Real,COORD_DIM>(Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt, near_trg_dsp, Xtrg, Xn_trg, X_far, dist_far, elem_nds_cnt_far, elem_nds_dsp_far, comm_);
     Profile::Toc();
     { // Set K_near_cnt, K_near_dsp, K_near
       const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
