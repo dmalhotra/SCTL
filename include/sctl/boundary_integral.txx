@@ -88,7 +88,8 @@ namespace SCTL_NAMESPACE {
           for (Long k = 0; k < COORD_DIM; k++) {
             X0_local[k] = Xtrg[k];
           }
-        } else if (Nsrc) {
+        } else {
+          SCTL_ASSERT(Nsrc);
           for (Long k = 0; k < COORD_DIM; k++) {
             X0_local[k] = Xsrc[k];
           }
