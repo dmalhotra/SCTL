@@ -2,17 +2,21 @@ CXX=g++ # requires g++-8 or newer / icpc (with gcc compatibility 7.5 or newer) /
 CXXFLAGS = -std=c++11 -fopenmp -Wall -Wfloat-conversion # need C++11 and OpenMP
 
 #Optional flags
-#CXXFLAGS += -O0 # debug build
-CXXFLAGS += -O3 -march=native -DNDEBUG # release build
+DEBUG ?= 0
+ifeq ($(DEBUG), 1)
+	CXXFLAGS += -O0 -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract,float-divide-by-zero,float-cast-overflow -fno-sanitize-recover=all -fstack-protector # debug build
+	CXXFLAGS += -DSCTL_MEMDEBUG # Enable memory checks
+else
+	CXXFLAGS += -O3 -march=native -DNDEBUG # release build
+endif
 
 OS = $(shell uname -s)
 ifeq "$(OS)" "Darwin"
 	CXXFLAGS += -g -rdynamic -Wl,-no_pie # for stack trace (on Mac)
 else
-	CXXFLAGS += -g -rdynamic # for stack trace
+	CXXFLAGS += -gdwarf-4 -g -rdynamic # for stack trace
 endif
 
-#CXXFLAGS += -DSCTL_MEMDEBUG # Enable memory checks
 CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB
 
 CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
