@@ -312,6 +312,7 @@ inline void MemoryManager::free(Iterator<char> p) const {
     ::free(p_);
   } else {
 #ifdef SCTL_MEMDEBUG
+    #pragma omp critical(SCTL_MEM_MGR_CRIT)
     {  // Check out-of-bounds write
       MemNode& n = node_buff[n_indx - 1];
       char* base = n.mem_ptr;

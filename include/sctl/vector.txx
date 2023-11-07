@@ -102,6 +102,14 @@ template <class ValueType> void Vector<ValueType>::Write(const char* fname) cons
   fclose(f1);
 }
 
+template <class ValueType> template <class Type> void Vector<ValueType>::Write(const char* fname) const {
+  Vector<Type> V(Dim());
+  for (Long i = 0; i < Dim(); i++) {
+    V[i] = (Type)(*this)[i];
+  }
+  V.Write(fname);
+}
+
 template <class ValueType> void Vector<ValueType>::Read(const char* fname) {
   FILE* f1 = fopen(fname, "r");
   if (f1 == nullptr) {
@@ -119,6 +127,17 @@ template <class ValueType> void Vector<ValueType>::Read(const char* fname) {
     assert(readlen == (Long)(dim_[0] * dim_[1]));
   }
   fclose(f1);
+}
+
+template <class ValueType> template <class Type> void Vector<ValueType>::Read(const char* fname) {
+  Vector<Type> V;
+  V.Read(fname);
+  if (Dim()!=V.Dim()) {
+    ReInit(V.Dim());
+  }
+  for (Long i = 0; i < Dim(); i++) {
+    (*this)[i] = (ValueType)V[i];
+  }
 }
 
 template <class ValueType> inline Long Vector<ValueType>::Dim() const { return dim; }

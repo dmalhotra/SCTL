@@ -102,11 +102,7 @@ template <class SType> void* Comm::Isend(ConstIterator<SType> sbuf, Long scount,
 
   SCTL_UNUSED(sbuf[0]         );
   SCTL_UNUSED(sbuf[scount - 1]);
-#ifndef NDEBUG
-  MPI_Issend(&sbuf[0], scount, CommDatatype<SType>::value(), dest, tag, mpi_comm_, &request[0]);
-#else
   MPI_Isend(&sbuf[0], scount, CommDatatype<SType>::value(), dest, tag, mpi_comm_, &request[0]);
-#endif
   return &request;
 #else
   auto it = recv_req.find(tag);

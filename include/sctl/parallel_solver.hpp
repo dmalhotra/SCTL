@@ -300,7 +300,7 @@ template <class Real> inline void PETScGMRES(Vector<Real>* x, const typename Par
   if (use_abs_tol) KSPSetTolerances(ksp, PETSC_DEFAULT, tol, PETSC_DEFAULT, max_iter);
   else KSPSetTolerances(ksp, tol, PETSC_DEFAULT, PETSC_DEFAULT, max_iter);
   KSPGMRESSetOrthogonalization(ksp, KSPGMRESModifiedGramSchmidtOrthogonalization);
-  if (verbose_) KSPMonitorSet(ksp, MyKSPMonitor, (MPI_Comm)&comm_, nullptr);
+  if (verbose_) KSPMonitorSet(ksp, MyKSPMonitor, comm, nullptr);
   KSPGMRESSetRestart(ksp, max_iter);
   ierr = KSPSetFromOptions(ksp);
   CHKERRABORT(comm, ierr);

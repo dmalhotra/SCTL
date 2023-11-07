@@ -113,7 +113,7 @@ namespace SCTL_NAMESPACE {
       template <class Kernel> static void SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self);
 
       /**
-       * Compute near-interaction operator for a given element-idx and each each target.
+       * Compute near-interaction operator for a given element-idx and each target.
        *
        * @param[out] M the near-interaction matrix (in row-major format).
        *

@@ -40,7 +40,11 @@ template <class ValueType> class Vector {
 
   void Write(const char* fname) const;
 
+  template <class Type> void Write(const char* fname) const;
+
   void Read(const char* fname);
+
+  template <class Type> void Read(const char* fname);
 
   Long Dim() const;
 

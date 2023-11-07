@@ -487,7 +487,8 @@ namespace SCTL_NAMESPACE {
 
   template <class Real, class Kernel> template <class ElemLstType> void BoundaryIntegralOp<Real,Kernel>::AddElemList(const ElemLstType& elem_lst, const std::string& name) {
     static_assert(std::is_copy_constructible<ElemLstType>::value, "ElemeType must be copy-constructible.");
-    SCTL_ASSERT_MSG(elem_lst_map.find(name) == elem_lst_map.end(), "Element list already exists.");
+    //SCTL_ASSERT_MSG(elem_lst_map.find(name) == elem_lst_map.end(), "Element list already exists.");
+    if (elem_lst_map.find(name) != elem_lst_map.end()) DeleteElemList(name);
 
     elem_lst_map[name] = dynamic_cast<ElementListBase<Real>*>(new ElemLstType(elem_lst));
     elem_data_map[name].SelfInterac = ElemLstType::template SelfInterac<Kernel>;
@@ -501,7 +502,8 @@ namespace SCTL_NAMESPACE {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::DeleteElemList(const std::string& name) {
-    SCTL_ASSERT_MSG(elem_lst_map.find(name) != elem_lst_map.end(), "Element list does not exist.");
+    //SCTL_ASSERT_MSG(elem_lst_map.find(name) != elem_lst_map.end(), "Element list does not exist.");
+    if (elem_lst_map.find(name) == elem_lst_map.end()) return;
 
     delete (ElementListBase<Real>*)elem_lst_map[name];
     elem_data_map.erase(name);
