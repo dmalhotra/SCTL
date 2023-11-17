@@ -20,9 +20,13 @@ template <class Real> inline constexpr Real const_e() { return (Real)2.718281828
 
 template <class Real> inline Real fabs(const Real a) { return (Real)std::fabs(a); }
 
+template <class Real> inline Real trunc(const Real a) { return (Real)std::trunc(a); }
+
 template <class Real> inline Real round(const Real a) { return (Real)std::round(a); }
 
 template <class Real> inline Real floor(const Real a) { return (Real)std::floor(a); }
+
+template <class Real> inline Real ceil(const Real a) { return (Real)std::ceil(a); }
 
 template <class Real> inline Real sqrt(const Real a) { return (Real)std::sqrt(a); }
 
@@ -30,11 +34,23 @@ template <class Real> inline Real sin(const Real a) { return (Real)std::sin(a); 
 
 template <class Real> inline Real cos(const Real a) { return (Real)std::cos(a); }
 
+template <class Real> inline Real tan(const Real a) { return (Real)std::tan(a); }
+
+template <class Real> inline Real asin(const Real a) { return (Real)std::asin(a); }
+
 template <class Real> inline Real acos(const Real a) { return (Real)std::acos(a); }
+
+template <class Real> inline Real atan(const Real a) { return (Real)std::atan(a); }
+
+template <class Real> inline Real atan2(const Real a, const Real b) { return (Real)std::atan2(a, b); }
+
+template <class Real> inline Real fmod(const Real a, const Real b) { return (Real)std::fmod(a, b); }
 
 template <class Real> inline Real exp(const Real a) { return (Real)std::exp(a); }
 
 template <class Real> inline Real log(const Real a) { return (Real)std::log(a); }
+
+template <class Real> inline Real log2(const Real a) { return (Real)std::log2(a); }
 
 template <class Real, class ExpType> inline Real pow(const Real b, const ExpType e);
 
@@ -87,21 +103,7 @@ class QuadReal {
     constexpr friend bool operator<=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) <= b; }
     constexpr friend bool operator>=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) >= b; }
 
-    friend QuadReal round(const QuadReal& x) {
-      #ifdef __SIZEOF_INT128__
-      return (__int128)((x+(QuadReal)0.5).val)-(x<(QuadReal)-0.5);
-      #else
-      return (int64_t)((x+(QuadReal)0.5).val)-(x<(QuadReal)-0.5);
-      #endif
-    }
-
-    friend QuadReal floor(const QuadReal& x) {
-      #ifdef __SIZEOF_INT128__
-      return (__int128)(x.val)-(x<0);
-      #else
-      return (int64_t)(x.val)-(x<0);
-      #endif
-    }
+    friend QuadReal trunc<QuadReal>(const QuadReal);
 
   private:
     QuadRealType val;

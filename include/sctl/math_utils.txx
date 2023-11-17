@@ -78,6 +78,19 @@ template <class Real> static inline constexpr Real fabs_generic(const Real a) {
   return (a<0?-a:a);
 }
 
+template <class Real> static inline Real round_generic(const Real& x) {
+  return trunc(x+(Real)0.5) - (x<(Real)-0.5);
+}
+
+template <class Real> static inline Real floor_generic(const Real& x) {
+  return trunc(x) - (x<0);
+}
+
+template <class Real> static inline Real ceil_generic(const Real& a) {
+  const auto trunc_a = trunc(a);
+  return (trunc_a == a ? trunc_a : trunc_a + (a>0));
+}
+
 template <class Real> static inline Real sqrt_generic(const Real a) {
   Real b = ::sqrt((double)a);
   if (a > 0) { // Newton iterations for greater accuracy
@@ -180,13 +193,54 @@ template <class Real> static inline Real cos_generic(const Real a) {
   return cval;
 }
 
+template <class Real> static inline Real tan_generic(const Real a) {
+  return sin(a) / cos(a);
+}
+
+template <class Real> static inline Real asin_generic(const Real a) {
+  Real b = ::asin((double)a);
+  if (!(b!=b)) { // Newton iterations for greater accuracy
+    b += (a-sin<Real>(b))/cos<Real>(b);
+    b += (a-sin<Real>(b))/cos<Real>(b);
+  }
+  return b;
+}
+
 template <class Real> static inline Real acos_generic(const Real a) {
   Real b = ::acos((double)a);
-  if (b > 0) { // Newton iterations for greater accuracy
+  if (!(b!=b)) { // Newton iterations for greater accuracy
     b += (cos<Real>(b)-a)/sin<Real>(b);
     b += (cos<Real>(b)-a)/sin<Real>(b);
   }
   return b;
+}
+
+template <class Real> static inline Real atan_generic(const Real a) {
+  Real b = ::atan((double)a);
+  if (!(b!=b)) { // Newton iterations for greater accuracy
+    const auto cos_b0 = cos<Real>(b);
+    b += (a-tan<Real>(b)) * cos_b0 * cos_b0;
+    const auto cos_b1 = cos<Real>(b);
+    b += (a-tan<Real>(b)) * cos_b1 * cos_b1;
+  }
+  return b;
+}
+
+template <class Real> static inline Real atan2_generic(const Real y, const Real x) {
+  if (x + y > 0) {
+    if (x - y > 0) return atan(y/x);
+    else return atan(-x/y) + const_pi<Real>()/2;
+  } else {
+    if (x - y > 0) return -atan(x/y) - const_pi<Real>()/2;
+    else {
+      if (y >= 0) return atan(y/x) + const_pi<Real>();
+      else return atan(y/x) - const_pi<Real>();
+    }
+  }
+}
+
+template <class Real> static inline Real fmod_generic(const Real a, const Real b) {
+  return a - trunc<Real>(a/b) * b;
 }
 
 template <class Real> static inline Real exp_generic(const Real a) {
@@ -243,6 +297,11 @@ template <class Real> static inline Real log_generic(const Real a) {
     y0 = y0 + (a / exp<Real>(y0) - 1.0);
   }
   return y0;
+}
+
+template <class Real> static inline Real log2_generic(const Real a) {
+  static const Real recip_log2 = 1/log<Real>((Real)2);
+  return log<Real>(a) * recip_log2;
 }
 
 template <class Real> static inline Real pow_generic(const Real b, const Real e) {
@@ -326,17 +385,43 @@ template <> inline constexpr QuadReal const_e<QuadReal>() { return const_e_gener
 
 template <> inline QuadReal fabs<QuadReal>(const QuadReal a) { return fabs_generic(a); }
 
+template <> inline QuadReal round<QuadReal>(const QuadReal a) { return round_generic(a); }
+
+template <> inline QuadReal floor<QuadReal>(const QuadReal a) { return floor_generic(a); }
+
+template <> inline QuadReal ceil<QuadReal>(const QuadReal a) { return ceil_generic(a); }
+
+template <> inline QuadReal trunc<QuadReal>(const QuadReal x) {
+  #ifdef __SIZEOF_INT128__
+  return (QuadReal)(__int128)(x.val);
+  #else
+  return (QuadReal)(int64_t)(x.val);
+  #endif
+}
+
 template <> inline QuadReal sqrt<QuadReal>(const QuadReal a) { return sqrt_generic(a); }
 
 template <> inline QuadReal sin<QuadReal>(const QuadReal a) { return sin_generic(a); }
 
 template <> inline QuadReal cos<QuadReal>(const QuadReal a) { return cos_generic(a); }
 
+template <> inline QuadReal tan<QuadReal>(const QuadReal a) { return tan_generic(a); }
+
+template <> inline QuadReal asin<QuadReal>(const QuadReal a) { return asin_generic(a); }
+
 template <> inline QuadReal acos<QuadReal>(const QuadReal a) { return acos_generic(a); }
+
+template <> inline QuadReal atan<QuadReal>(const QuadReal a) { return atan_generic(a); }
+
+template <> inline QuadReal atan2<QuadReal>(const QuadReal a, const QuadReal b) { return atan2_generic(a, b); }
+
+template <> inline QuadReal fmod<QuadReal>(const QuadReal a, const QuadReal b) { return fmod_generic(a, b); }
 
 template <> inline QuadReal exp<QuadReal>(const QuadReal a) { return exp_generic(a); }
 
 template <> inline QuadReal log<QuadReal>(const QuadReal a) { return log_generic(a); }
+
+template <> inline QuadReal log2<QuadReal>(const QuadReal a) { return log2_generic(a); }
 
 template <class ExpType> class pow_wrapper<QuadReal,ExpType> {
   public:
