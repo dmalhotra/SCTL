@@ -1,0 +1,17 @@
+cc_test(
+  name = "test-fft",
+  srcs = ["test-fft.cpp"],
+  deps = [
+    "//include:sctl",
+  ],
+  includes = ["include"],
+)
+
+cc_test(
+  name = "test-fmm",
+  srcs = ["test-fmm.cpp"],
+  deps = [
+    "//include:sctl",
+  ],
+  includes = ["include"],
+)

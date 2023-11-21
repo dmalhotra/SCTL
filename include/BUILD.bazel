@@ -1,0 +1,21 @@
+cc_library(
+  name = "sctl",
+  hdrs = [
+    "sctl.hpp",
+    "sctl/blas.h", "sctl/boundary_quadrature.hpp", "sctl/common.hpp",
+    "sctl/fmm-wrapper.hpp", "sctl/kernel_functions.hpp", "sctl/lapack.h",
+    "sctl/math_utils.txx", "sctl/mat_utils.hpp", "sctl/mem_mgr.txx",
+    "sctl/ode-solver.txx", "sctl/parallel_solver.hpp", "sctl/quadrule.hpp",
+    "sctl/sph_harm.hpp", "sctl/stacktrace.h", "sctl/tree.txx", "sctl/vector.hpp", "sctl/vtudata.txx",
+    "sctl/boundary_integral.hpp", "sctl/cheb_utils.hpp", "sctl/comm.txx", "sctl/fmm-wrapper.txx",
+    "sctl/lagrange-interp.hpp", "sctl/legendre_rule.hpp", "sctl/matrix.hpp", "sctl/mat_utils.txx",
+    "sctl/morton.hpp", "sctl/ompUtils.hpp", "sctl/profile.hpp", "sctl/slender_element.hpp",
+    "sctl/sph_harm.txx", "sctl/tensor.hpp", "sctl/vec.hpp", "sctl/vector.txx",
+    "sctl/boundary_integral.txx", "sctl/comm.hpp", "sctl/fft_wrapper.hpp", "sctl/intrin-wrapper.hpp",
+    "sctl/lagrange-interp.txx", "sctl/math_utils.hpp", "sctl/matrix.txx", "sctl/mem_mgr.hpp",
+    "sctl/ode-solver.hpp", "sctl/ompUtils.txx", "sctl/profile.txx", "sctl/slender_element.txx",
+    "sctl/sse2neon.h", "sctl/tree.hpp", "sctl/vec-test.hpp", "sctl/vtudata.hpp",
+  ],
+  visibility = ["//visibility:public"],
+  includes = ["."],
+)
