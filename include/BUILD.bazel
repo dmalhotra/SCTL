@@ -24,10 +24,14 @@ cc_library(
     "-DSCTL_HAVE_BLAS",
     "-DSCTL_HAVE_LAPACK",
     "-DSCTL_HAVE_FFTW",
+    "-DSCTL_HAVE_FFTWF",
+    "-DSCTL_HAVE_FFTWL",
   ],
   linkopts = [
     "-lblas",
     "-llapack",
     "-lfftw3",
+    "-lfftw3f",
+    "-lfftw3l",
   ],
 )
