@@ -20,7 +20,7 @@ namespace SCTL_NAMESPACE {
 
 template <class ValueType> class Complex {
   public:
-    Complex<ValueType>(ValueType r=0, ValueType i=0) : real(r), imag(i) {}
+    Complex(ValueType r=0, ValueType i=0) : real(r), imag(i) {}
 
     Complex<ValueType> operator-() const {
       Complex<ValueType> z;
