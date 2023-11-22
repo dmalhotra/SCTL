@@ -18,4 +18,16 @@ cc_library(
   ],
   visibility = ["//visibility:public"],
   includes = ["."],
+  copts = [
+    "-DSCTL_GLOBAL_MEM_BUFF=0",
+    "-DSCTL_QUAD_T=__float128",
+    "-DSCTL_HAVE_BLAS",
+    "-DSCTL_HAVE_LAPACK",
+    "-DSCTL_HAVE_FFTW",
+  ],
+  linkopts = [
+    "-lblas",
+    "-llapack",
+    "-lfftw3",
+  ],
 )
