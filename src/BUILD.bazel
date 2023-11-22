@@ -15,3 +15,48 @@ cc_test(
   ],
   includes = ["include"],
 )
+
+cc_test(
+  name = "test-ode-solver",
+  srcs = ["test-ode-solver.cpp"],
+  deps = [
+    "//include:sctl",
+  ],
+  includes = ["include"],
+)
+
+cc_test(
+  name = "test-profile",
+  srcs = ["test-profile.cpp"],
+  deps = [
+    "//include:sctl",
+  ],
+  includes = ["include"],
+)
+
+cc_test(
+  name = "test-pt-tree",
+  srcs = ["test-pt-tree.cpp"],
+  deps = [
+    "//include:sctl",
+  ],
+  includes = ["include"],
+)
+
+cc_test(
+  name = "test-sph-harm",
+  srcs = ["test-sph-harm.cpp"],
+  deps = [
+    "//include:sctl",
+  ],
+  includes = ["include"],
+)
+
+cc_test(
+  name = "test-vec",
+  srcs = ["test-vec.cpp"],
+  deps = [
+    "//include:sctl",
+  ],
+  includes = ["include"],
+)
