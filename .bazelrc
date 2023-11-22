@@ -1,0 +1,1 @@
+build --copt="-fopenmp" --linkopt="-fopenmp"
