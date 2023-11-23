@@ -271,6 +271,11 @@ template <class Real> inline void PETScGMRES(Vector<Real>* x, const typename Par
     MatShellSetOperation(PetscA, MATOP_MULT, (void (*)(void))ParallelSolverMatVec<Real>);
   }
 
+  // Create linear solver context
+  KSP ksp;
+  ierr = KSPCreate(comm, &ksp);
+  CHKERRABORT(comm, ierr);
+
   ::Vec Petsc_x, Petsc_b;
   {  // Create vectors
     VecCreateMPI(comm, N, PETSC_DETERMINE, &Petsc_b);
@@ -282,12 +287,20 @@ template <class Real> inline void PETScGMRES(Vector<Real>* x, const typename Par
     for (long i = 0; i < N; i++) b_ptr[i] = b[i];
     ierr = VecRestoreArray(Petsc_b, &b_ptr);
     CHKERRABORT(comm, ierr);
-  }
 
-  // Create linear solver context
-  KSP ksp;
-  ierr = KSPCreate(comm, &ksp);
-  CHKERRABORT(comm, ierr);
+    if (x->Dim() != N) {
+      x->ReInit(N);
+    } else {
+      PetscScalar* x_ptr;
+      ierr = VecGetArray(Petsc_x, &x_ptr);
+      CHKERRABORT(comm, ierr);
+      for (long i = 0; i < N; i++) x_ptr[i] = (*x)[i];
+      ierr = VecRestoreArray(Petsc_x, &x_ptr);
+      CHKERRABORT(comm, ierr);
+
+      ierr = KSPSetInitialGuessNonzero(ksp, PETSC_TRUE);
+    }
+  }
 
   // Set operators. Here the matrix that defines the linear system
   // also serves as the preconditioning matrix.
@@ -324,7 +337,6 @@ template <class Real> inline void PETScGMRES(Vector<Real>* x, const typename Par
     ierr = VecGetArrayRead(Petsc_x, &x_ptr);
     CHKERRABORT(comm, ierr);
 
-    if (x->Dim() != N) x->ReInit(N);
     for (long i = 0; i < N; i++) (*x)[i] = (Real)x_ptr[i];
   }
 
