@@ -44,7 +44,7 @@ template <Integer DIM = 3> class Morton {
     for (Integer i = 0; i < DIM; i++) x[i] = mask & (UINT_T)floor((double)coord[i] * maxCoord);
   }
 
-  uint8_t Depth() const { return depth; }
+  int8_t Depth() const { return depth; }
 
   template <class T> void Coord(Iterator<T> coord) const {
     static const T s = 1.0 / ((T)maxCoord);
@@ -89,61 +89,56 @@ template <Integer DIM = 3> class Morton {
     return m;
   }
 
-  void NbrList(Vector<Morton> &nlst, uint8_t level, bool periodic) const {
+  /**
+   * Return 3^DIM neighbor Morton IDs. If a neighbor doesn't exist then the
+   * returned Morton ID has negative depth.
+   */
+  void NbrList(Vector<Morton>& nbrs, uint8_t level, bool periodic) const {
     static constexpr Integer MAX_NBRS = sctl::pow<DIM,Integer>(3);
-    StaticArray<Morton<DIM>,MAX_NBRS> nbrs;
-    Integer Nnbrs = 0;
+    if (nbrs.Dim() != MAX_NBRS) nbrs.ReInit(MAX_NBRS);
 
-    UINT_T mask = ~((((UINT_T)1) << (MAX_DEPTH - level)) - 1);
+    const UINT_T box_size = (((UINT_T)1) << (MAX_DEPTH - level));
+    const UINT_T mask = ~(box_size - 1);
+
     for (Integer i = 0; i < DIM; i++) nbrs[0].x[i] = x[i] & mask;
     nbrs[0].depth = level;
-    Nnbrs++;
+    Integer Nnbrs = 1;
 
-    Morton m;
-    Integer k = 1;
-    mask = (((UINT_T)1) << (MAX_DEPTH - level));
     if (periodic) {
+      constexpr UINT_T mask0 = (maxCoord - 1);
       for (Integer i = 0; i < DIM; i++) {
-        for (Integer j = 0; j < k; j++) {
-          m = nbrs[j];
-          m.x[i] = (m.x[i] + mask) & (maxCoord - 1);
-          nbrs[Nnbrs] = m;
-          Nnbrs++;
+        for (Integer j = 0; j < Nnbrs; j++) {
+          const auto m0 = nbrs[j];
+          auto& m1 = nbrs[0*Nnbrs+j];
+          auto& m2 = nbrs[1*Nnbrs+j];
+          auto& m3 = nbrs[2*Nnbrs+j];
+          m1 = m0;
+          m2 = m0;
+          m3 = m0;
+          m1.x[i] = (m0.x[i] - box_size) & mask0;
+          m2.x[i] = (m0.x[i]           ) & mask0;
+          m3.x[i] = (m0.x[i] + box_size) & mask0;
         }
-        for (Integer j = 0; j < k; j++) {
-          m = nbrs[j];
-          m.x[i] = (m.x[i] - mask) & (maxCoord - 1);
-          nbrs[Nnbrs] = m;
-          Nnbrs++;
-        }
-        k = Nnbrs;
+        Nnbrs *= 3;
       }
     } else {
+      constexpr UINT_T mask0 = (maxCoord - 1);
       for (Integer i = 0; i < DIM; i++) {
-        for (Integer j = 0; j < k; j++) {
-          m = nbrs[j];
-          if (m.x[i] + mask < maxCoord) {
-            m.x[i] += mask;
-            nbrs[Nnbrs] = m;
-            Nnbrs++;
-          }
+        for (Integer j = 0; j < Nnbrs; j++) {
+          const auto m0 = nbrs[j];
+          auto& m1 = nbrs[0*Nnbrs+j];
+          auto& m2 = nbrs[1*Nnbrs+j];
+          auto& m3 = nbrs[2*Nnbrs+j];
+          m1 = m0;
+          m2 = m0;
+          m3 = m0;
+          m1.x[i] = (m0.x[i] - box_size) & mask0;
+          m2.x[i] = (m0.x[i]           ) & mask0;
+          m3.x[i] = (m0.x[i] + box_size) & mask0;
+          if (m0.x[i] < box_size) m1.depth = -1;
+          if (m0.x[i] + box_size >= maxCoord) m3.depth = -1;
         }
-        for (Integer j = 0; j < k; j++) {
-          m = nbrs[j];
-          if (m.x[i] >= mask) {
-            m.x[i] -= mask;
-            nbrs[Nnbrs] = m;
-            Nnbrs++;
-          }
-        }
-        k = Nnbrs;
-      }
-    }
-    if (nlst.Dim() != Nnbrs) {
-      nlst.ReInit(Nnbrs, nbrs);
-    } else {
-      for (Integer i = 0; i < Nnbrs; i++) {
-        nlst[i] = nbrs[i];
+        Nnbrs *= 3;
       }
     }
   }
@@ -238,7 +233,7 @@ template <Integer DIM = 3> class Morton {
 
   // StaticArray<UINT_T,DIM> x;
   UINT_T x[DIM];
-  uint8_t depth;
+  int8_t depth;
 };
 }
 

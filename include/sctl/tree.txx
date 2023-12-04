@@ -143,18 +143,20 @@ namespace SCTL_NAMESPACE {
       comm.Allgather(Ptr2ConstItr<Morton<DIM>>(&m0,1), 1, mins.begin(), 1);
     }
     if (balance21) { // 2:1 balance refinement // TODO: optimize
+      // TODO: fix bug, over-refines
       Vector<Morton<DIM>> parent_mid;
       { // add balancing Morton IDs
         Vector<std::set<Morton<DIM>>> parent_mid_set(Morton<DIM>::MAX_DEPTH+1);
         Vector<Morton<DIM>> nlst;
         for (const auto& m0 : node_mid) {
           Integer d0 = m0.Depth();
-          parent_mid_set[m0.Depth()].insert(m0.Ancestor(d0-1));
+          if (d0 > 0) parent_mid_set[m0.Depth()].insert(m0.Ancestor(d0-1));
         }
         for (Integer d = Morton<DIM>::MAX_DEPTH; d > 0; d--) {
           for (const auto& m : parent_mid_set[d]) {
             m.NbrList(nlst, d-1, periodic);
-            parent_mid_set[d-1].insert(nlst.begin(), nlst.end());
+            for (const auto& nbr : nlst) if (nbr.Depth() >= 0) parent_mid_set[d-1].insert(nbr);
+            //parent_mid_set[d-1].insert(nlst.begin(), nlst.end());
             parent_mid.PushBack(m);
           }
         }
@@ -213,15 +215,17 @@ namespace SCTL_NAMESPACE {
           m0.NbrList(nlst, std::max<Integer>(d0-2,0), periodic);
           user_procs.clear();
           for (const auto& m : nlst) {
-            Morton<DIM> m_start = m.DFD();
-            Morton<DIM> m_end = m.Next();
-            Integer p_start = std::lower_bound(mins.begin(), mins.end(), m_start) - mins.begin() - 1;
-            Integer p_end   = std::lower_bound(mins.begin(), mins.end(), m_end  ) - mins.begin();
-            SCTL_ASSERT(0 <= p_start);
-            SCTL_ASSERT(p_start < p_end);
-            SCTL_ASSERT(p_end <= np);
-            for (Long p = p_start; p < p_end; p++) {
-              if (p != rank) user_procs.insert(p);
+            if (m.Depth() >= 0) {
+              Morton<DIM> m_start = m.DFD();
+              Morton<DIM> m_end = m.Next();
+              Integer p_start = std::lower_bound(mins.begin(), mins.end(), m_start) - mins.begin() - 1;
+              Integer p_end   = std::lower_bound(mins.begin(), mins.end(), m_end  ) - mins.begin();
+              SCTL_ASSERT(0 <= p_start);
+              SCTL_ASSERT(p_start < p_end);
+              SCTL_ASSERT(p_end <= np);
+              for (Long p = p_start; p < p_end; p++) {
+                if (p != rank) user_procs.insert(p);
+              }
             }
           }
           for (const auto p : user_procs) {
@@ -315,9 +319,9 @@ namespace SCTL_NAMESPACE {
         if (depth) {
           Long p = ancestors[depth-1];
           Long& c = child_cnt[depth-1];
-          node_lst[i].parent = p;
           node_lst[p].child[c] = i;
-          node_lst[p].p2n = c;
+          node_lst[i].parent = p;
+          node_lst[i].p2n = c;
           c++;
         }
       }
@@ -325,8 +329,10 @@ namespace SCTL_NAMESPACE {
       for (Long i = 0; i < Nnodes; i++) { // Set nbr-list // TODO: optimize this
         node_mid[i].NbrList(nlst, node_mid[i].Depth(), periodic);
         for (Long k = 0; k < nlst.Dim(); k++) {
-          Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), nlst[k]) - node_mid.begin();
-          if (idx < node_mid.Dim() && node_mid[idx] == nlst[k]) node_lst[i].nbr[k] = idx;
+          if (nlst[k].Depth() >= 0) {
+            Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), nlst[k]) - node_mid.begin();
+            if (idx < node_mid.Dim() && node_mid[idx] == nlst[k]) node_lst[i].nbr[k] = idx;
+          }
         }
       }
     }
@@ -891,6 +897,13 @@ namespace SCTL_NAMESPACE {
       Vector<Long> pt_cnt;
       this->GetData(pt_coord, pt_cnt, particle_name);
       cnt_[0] = pt_cnt;
+
+      const auto& node_attr = this->GetNodeAttr();
+      SCTL_ASSERT(node_attr.Dim() == cnt_[0].Dim());
+      for (Long i = 0; i < node_attr.Dim(); i++) {
+        if (node_attr[i].Ghost) cnt_[0][i] = 0;
+        SCTL_ASSERT(node_attr[i].Leaf || !cnt_[0][i]);
+      }
     }
   }
 
@@ -922,9 +935,9 @@ namespace SCTL_NAMESPACE {
       Integer np = comm.Size();
       Integer rank = comm.Rank();
       Long N0 = std::lower_bound(node_mid.begin(), node_mid.end(), mins[rank]) - node_mid.begin();
-      Long N1 = std::lower_bound(node_mid.begin(), node_mid.end(), (rank+1==np ? Morton<DIM>().Next() : mins[rank+1])) - node_mid.begin();
+      Long N1 = std::lower_bound(node_mid.begin(), node_mid.end(), (rank==np-1 ? Morton<DIM>().Next() : mins[rank+1])) - node_mid.begin();
       Long start = dsp[N0] * dof;
-      Long end = (N1<dsp.Dim() ? dsp[N1] : dsp[N1-1]+cnt_[N1-1]) * dof;
+      Long end = (N1 ? (dsp[N1-1]+cnt_[N1-1])*dof : start);
       data.ReInit(end-start, data_.begin()+start, true);
       comm.ScatterReverse(data, scatter_idx_, Nlocal_ * dof);
     }

@@ -189,14 +189,14 @@ namespace SCTL_NAMESPACE {
       for (Long i = 0; i < src_nodes0.Dim(); i++) {
         user_proc_set.clear();
         src_nodes0[i].mid.NbrList(nbr_lst, src_nodes0[i].mid.Depth(), false);
-        for (long j = 0; j < nbr_lst.Dim(); j++) {
+        for (const auto nbr : nbr_lst) if (nbr.Depth() >= 0) {
           const auto proc_split_srch = [&splitter_nodes,&comp_node_mid](const Morton<COORD_DIM>& m) {
             NodeData srch_node; srch_node.mid = m;
             return  std::upper_bound(splitter_nodes.begin(), splitter_nodes.end(), srch_node, comp_node_mid) - splitter_nodes.begin() - 1;
           };
-          Long p0 = proc_split_srch(nbr_lst[j]);
-          Long p1 = proc_split_srch(nbr_lst[j].Next());
-          if (p1 < comm_.Size() && splitter_nodes[p1].mid < nbr_lst[j].Next()) p1++;
+          Long p0 = proc_split_srch(nbr);
+          Long p1 = proc_split_srch(nbr.Next());
+          if (p1 < comm_.Size() && splitter_nodes[p1].mid < nbr.Next()) p1++;
           for (Long k = p0; k < p1; k++) {
             if (k != rank) user_proc_set.insert(k);
           }
@@ -292,7 +292,7 @@ namespace SCTL_NAMESPACE {
             Morton<COORD_DIM> nxt_node;
             for (const auto& src_mid : src_mid_lst) {
               src_mid.NbrList(nbr_lst, src_mid.Depth(), false);
-              for (const auto& mid : nbr_lst) {
+              for (const auto& mid : nbr_lst) if (mid.Depth() >= 0) {
                 trg_mid_set.insert(mid);
               }
             }
@@ -315,7 +315,7 @@ namespace SCTL_NAMESPACE {
           { // build interaction list trg_src_near_mid
             for (Long i = 0; i < src_mid_lst.Dim(); i++) {
               src_mid_lst[i].NbrList(nbr_lst, src_mid_lst[i].Depth(), false);
-              for (const auto& mid : nbr_lst) {
+              for (const auto& mid : nbr_lst) if (mid.Depth() >= 0) {
                 Long j = std::upper_bound(trg_mid_lst.begin(), trg_mid_lst.end(), mid) - trg_mid_lst.begin() - 1;
                 if (j>=0 && mid.Ancestor(trg_mid_lst[j].Depth()) == trg_mid_lst[j]) {
                   trg_src_near_mid.PushBack(std::pair<Long,Long>(j,i));

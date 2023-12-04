@@ -21,36 +21,116 @@ template <Integer DIM> class Tree {
     };
 
     struct NodeLists {
-      Long p2n;
-      Long parent;
-      Long child[1 << DIM];
-      Long nbr[sctl::pow<DIM,Integer>(3)];
+      Long p2n;                             // path-to-node: id among the siblings
+      Long parent;                          // index of the parent node
+      Long child[1 << DIM];                 // index of the children
+      Long nbr[sctl::pow<DIM,Integer>(3)];  // index of the neighbors at the same level
     };
 
+    /**
+     * @return the number of spatial dimensions.
+     */
     static constexpr Integer Dim();
 
     Tree(const Comm& comm_ = Comm::Self());
 
     ~Tree();
 
+    /**
+     * @return vector of Morton IDs partitioning the processor domains.
+     */
     const Vector<Morton<DIM>>& GetPartitionMID() const;
+
+    /**
+     * @return vector of Morton IDs of tree nodes.
+     */
     const Vector<Morton<DIM>>& GetNodeMID() const;
+
+    /**
+     * @return vector of attributes of tree nodes.
+     */
     const Vector<NodeAttr>& GetNodeAttr() const;
+
+    /**
+     * @return vector of node-lists of tree nodes.
+     */
     const Vector<NodeLists>& GetNodeLists() const;
+
+    /**
+     * @return the communicator.
+     */
     const Comm& GetComm() const;
 
+    /**
+     * Update tree refinement and repartition node data among the new tree nodes.
+     *
+     * @param[in] coord particle coordinates (in [0,1]^dim stored in AoS order) that describe the new tree refinement.
+     *
+     * @param[in] M maximum number of particles per tree node.
+     *
+     * @param[in] balance21 whether to do level-restriction (2:1 balance refinement).
+     *
+     * @param[in] periodic whether the tree is periodic across the faces of the cube.
+     *
+     * @note this is a collective operation.
+     */
     template <class Real> void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, bool periodic = 0);
 
+    /**
+     * Add named data to the tree nodes.
+     *
+     * @param[in] name name for the data.
+     *
+     * @param[in] data vector containing the contiguous data for all nodes.
+     *
+     * @param[in] cnt vector of length equal to number of tree nodes, giving the number of data elements per node.
+     *
+     * @note this is a collective operation.
+     */
     template <class ValueType> void AddData(const std::string& name, const Vector<ValueType>& data, const Vector<Long>& cnt);
 
+    /**
+     * Get node data.
+     *
+     * @param[out] data vector containing the contiguous data of all nodes. The vector does not own the memory, and
+     * therefore must not be modified or resized. (Technically, data may be modified in-place, but it violates const
+     * correctness).
+     *
+     * @param[out] cnt vector of length equal to number of tree nodes, giving the number of data elements per node.  The
+     * vector does not own the memory and must not be modified.
+     *
+     * @param[in] name name of the data
+     */
     template <class ValueType> void GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name) const;
 
+    /**
+     * @note this is a collective operation.
+     */
     template <class ValueType> void ReduceBroadcast(const std::string& name);
 
+    /**
+     * @note this is a collective operation.
+     */
     template <class ValueType> void Broadcast(const std::string& name);
 
+    /**
+     * Delete data from the tree nodes.
+     *
+     * @param[in] name name of the data.
+     *
+     * @note this is a collective operation.
+     */
     void DeleteData(const std::string& name);
 
+    /**
+     * Write VTK visualization.
+     *
+     * @param[in] fname filename for the output.
+     *
+     * @param[in] show_ghost whether to show ghost nodes.
+     *
+     * @note this is a collective operation.
+     */
     void WriteTreeVTK(std::string fname, bool show_ghost = false) const;
 
   protected:
@@ -88,16 +168,34 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
 
     ~PtTree();
 
+    /**
+     * @note this is a collective operation.
+     */
     void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, bool periodic = 0);
 
+    /**
+     * @note this is a collective operation.
+     */
     void AddParticles(const std::string& name, const Vector<Real>& coord);
 
+    /**
+     * @note this is a collective operation.
+     */
     void AddParticleData(const std::string& data_name, const std::string& particle_name, const Vector<Real>& data);
 
+    /**
+     * @note this is a collective operation.
+     */
     void GetParticleData(Vector<Real>& data, const std::string& data_name) const;
 
+    /**
+     * @note this is a collective operation.
+     */
     void DeleteParticleData(const std::string& data_name);
 
+    /**
+     * @note this is a collective operation.
+     */
     void WriteParticleVTK(std::string fname, std::string data_name, bool show_ghost = false) const;
 
     static void test() {
