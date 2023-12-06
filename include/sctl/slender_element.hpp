@@ -2,6 +2,7 @@
 #define _SCTL_SLENDER_ELEMENT_HPP_
 
 #include <sctl/common.hpp>
+#include SCTL_INCLUDE(comm.hpp)
 #include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(vector.hpp)
 

@@ -1,6 +1,7 @@
 #include "sctl/ode-solver.hpp"
 
 #include SCTL_INCLUDE(lagrange-interp.hpp)
+#include SCTL_INCLUDE(quadrule.hpp)
 
 namespace SCTL_NAMESPACE {
 

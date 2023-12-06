@@ -1,5 +1,6 @@
 #include "sctl/sph_harm.hpp"
 
+#include SCTL_INCLUDE(profile.hpp)
 #include SCTL_INCLUDE(fft_wrapper.hpp)
 #include SCTL_INCLUDE(legendre_rule.hpp)
 

@@ -4,6 +4,7 @@
 #define SCTL_SHMAXDEG 1024
 
 #include <sctl/common.hpp>
+#include SCTL_INCLUDE(comm.hpp)
 #include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(mem_mgr.hpp)
 

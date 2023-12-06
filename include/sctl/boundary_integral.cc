@@ -11,6 +11,7 @@
 
 #include <map>
 #include <set>
+#include <algorithm>
 
 namespace SCTL_NAMESPACE {
 

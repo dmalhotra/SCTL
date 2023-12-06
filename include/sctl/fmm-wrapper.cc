@@ -1,5 +1,6 @@
 #include "sctl/fmm-wrapper.hpp"
 
+#include SCTL_INCLUDE(profile.hpp)
 #include SCTL_INCLUDE(kernel_functions.hpp)
 #include SCTL_INCLUDE(vector.hpp)
 #include SCTL_INCLUDE(matrix.hpp)

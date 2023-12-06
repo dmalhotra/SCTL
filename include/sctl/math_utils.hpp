@@ -115,4 +115,6 @@ inline std::istream& operator>>(std::istream& inputstream, QuadReal& x);
 
 }  // end namespace
 
+#include SCTL_INCLUDE(math_utils.txx)
+
 #endif  //_SCTL_MATH_UTILS_HPP_

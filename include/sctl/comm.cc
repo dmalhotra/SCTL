@@ -1,8 +1,11 @@
 #include "sctl/comm.hpp"
 
 #include <type_traits>
+#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(ompUtils.hpp)
 #include SCTL_INCLUDE(vector.hpp)
+
+#include <algorithm>
 
 namespace SCTL_NAMESPACE {
 
