@@ -1,3 +1,5 @@
+#include "sctl/ompUtils.hpp"
+
 #include <omp.h>
 #include <cstring>
 #include <algorithm>

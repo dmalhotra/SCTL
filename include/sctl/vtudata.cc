@@ -1,3 +1,5 @@
+#include "sctl/vtudata.hpp"
+
 #include <fstream>
 
 #include SCTL_INCLUDE(math_utils.hpp)

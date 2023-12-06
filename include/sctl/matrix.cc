@@ -1,3 +1,5 @@
+#include "sctl/matrix.hpp"
+
 #include <omp.h>
 #include <cmath>
 #include <cstdlib>

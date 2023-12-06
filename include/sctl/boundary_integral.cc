@@ -1,3 +1,5 @@
+#include "sctl/boundary_integral.hpp"
+
 #include SCTL_INCLUDE(kernel_functions.hpp)
 #include SCTL_INCLUDE(matrix.hpp)
 #include SCTL_INCLUDE(ompUtils.hpp)

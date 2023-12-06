@@ -439,6 +439,4 @@ template <class ValueType> Iterator<ValueType> memset(Iterator<ValueType> ptr, i
 
 }  // end namespace SCTL_NAMESPACE
 
-#include SCTL_INCLUDE(mem_mgr.txx)
-
 #endif  //_SCTL_MEM_MGR_HPP_

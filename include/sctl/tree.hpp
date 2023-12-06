@@ -163,6 +163,4 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
 
 }
 
-#include SCTL_INCLUDE(tree.txx)
-
 #endif //_SCTL_TREE_

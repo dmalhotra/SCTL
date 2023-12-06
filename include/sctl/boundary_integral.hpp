@@ -327,6 +327,4 @@ namespace SCTL_NAMESPACE {
 
 }
 
-#include SCTL_INCLUDE(boundary_integral.txx)
-
 #endif //_SCTL_BOUNDARY_INTEGRAL_HPP_

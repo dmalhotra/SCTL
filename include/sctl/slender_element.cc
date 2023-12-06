@@ -1,3 +1,5 @@
+#include "sctl/slender_element.hpp"
+
 #include SCTL_INCLUDE(kernel_functions.hpp)
 #include SCTL_INCLUDE(tensor.hpp)
 #include SCTL_INCLUDE(quadrule.hpp)

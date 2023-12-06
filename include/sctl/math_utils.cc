@@ -1,3 +1,5 @@
+#include "sctl/math_utils.hpp"
+
 #include <omp.h>
 #include <cmath>
 #include <cstring>

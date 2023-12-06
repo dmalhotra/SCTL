@@ -1,3 +1,5 @@
+#include "sctl/vector.hpp"
+
 #include <cassert>
 #include <iostream>
 #include <iomanip>

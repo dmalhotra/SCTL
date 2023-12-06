@@ -231,6 +231,4 @@ class Comm {
 
 }  // end namespace
 
-#include SCTL_INCLUDE(comm.txx)
-
 #endif  //_SCTL_COMM_HPP_

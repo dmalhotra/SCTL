@@ -30,6 +30,4 @@ namespace SCTL_NAMESPACE {
 
 }
 
-#include SCTL_INCLUDE(lagrange-interp.txx)
-
 #endif //_SCTL_LAGRANGE_INTERP_HPP_

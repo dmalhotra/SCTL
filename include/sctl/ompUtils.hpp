@@ -21,6 +21,4 @@ template <class ConstIter, class Iter, class Int> void scan(ConstIter A, Iter B,
 }  // end namespace omp_par
 }  // end namespace SCTL_NAMESPACE
 
-#include SCTL_INCLUDE(ompUtils.txx)
-
 #endif  //_SCTL_OMP_UTILS_H_

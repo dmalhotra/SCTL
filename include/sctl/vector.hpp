@@ -133,6 +133,4 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
 
 }  // end namespace
 
-#include SCTL_INCLUDE(vector.txx)
-
 #endif  //_SCTL_VECTOR_HPP_

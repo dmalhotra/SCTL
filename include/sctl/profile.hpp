@@ -63,6 +63,4 @@ class Profile {
 
 }  // end namespace
 
-#include SCTL_INCLUDE(profile.txx)
-
 #endif  //_SCTL_PROFILE_HPP_

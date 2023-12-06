@@ -1,3 +1,5 @@
+#include "sctl/mat_utils.hpp"
+
 #include SCTL_INCLUDE(matrix.hpp)
 #include SCTL_INCLUDE(math_utils.hpp)
 

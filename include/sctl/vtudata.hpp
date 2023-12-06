@@ -35,6 +35,4 @@ struct VTUData {
 
 }
 
-#include SCTL_INCLUDE(vtudata.txx)
-
 #endif //_SCTL_VTUDATA_

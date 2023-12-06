@@ -515,7 +515,5 @@ template <class Real> class SphericalHarmonics{
 
 }  // end namespace
 
-#include SCTL_INCLUDE(sph_harm.txx)
-
 #endif // _SCTL_SPH_HARM_HPP_
 

@@ -158,6 +158,4 @@ template <class Real, Integer DIM> class ParticleFMM {
 
 }  // end namespace
 
-#include SCTL_INCLUDE(fmm-wrapper.txx)
-
 #endif  //_SCTL_FMM_WRAPPER_HPP_

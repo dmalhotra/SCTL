@@ -19,6 +19,4 @@ template <class ValueType> void pinv(Iterator<ValueType> M, int n1, int n2, Valu
 }  // end namespace mat
 }  // end namespace SCTL_NAMESPACE
 
-#include SCTL_INCLUDE(mat_utils.txx)
-
 #endif  //_SCTL_MAT_UTILS_

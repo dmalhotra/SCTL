@@ -234,6 +234,4 @@ namespace SCTL_NAMESPACE {
 
 }
 
-#include SCTL_INCLUDE(slender_element.txx)
-
 #endif //_SCTL_SLENDER_ELEMENT_HPP_

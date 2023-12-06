@@ -1,3 +1,5 @@
+#include "sctl/profile.hpp"
+
 #include SCTL_INCLUDE(comm.hpp)
 
 #include <omp.h>

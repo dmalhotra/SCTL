@@ -177,6 +177,4 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
 
 }  // end namespace
 
-#include SCTL_INCLUDE(matrix.txx)
-
 #endif  //_SCTL_MATRIX_HPP_

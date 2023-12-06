@@ -1,3 +1,5 @@
+#include "sctl/tree.hpp"
+
 #include <vector>
 
 namespace SCTL_NAMESPACE {
