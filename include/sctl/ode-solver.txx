@@ -43,8 +43,8 @@ namespace SCTL_NAMESPACE {
       for (Long i = 0; i < Order*Order; i++) M_error[0][i] = (Real)M_error_[0][i];
     }
     { // Set M_time_step
-      const auto qx = ChebQuadRule<ValueType>::ComputeNds(Order);
-      const auto qw = ChebQuadRule<ValueType>::ComputeWts(Order);
+      Vector<ValueType> qx, qw;
+      ChebQuadRule<ValueType>::ComputeNdsWts(&qx, &qw, Order);
       const Matrix<ValueType> Mw(Order, 1, (Iterator<ValueType>)qw.begin(), false);
       SCTL_ASSERT(qw.Dim() == Order);
       SCTL_ASSERT(qx.Dim() == Order);

@@ -75,8 +75,6 @@
 
 #include SCTL_INCLUDE(fft_wrapper.hpp)
 
-#include SCTL_INCLUDE(legendre_rule.hpp)
-
 // Profiler
 #include SCTL_INCLUDE(profile.hpp)
 

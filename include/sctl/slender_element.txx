@@ -3,7 +3,6 @@
 #include SCTL_INCLUDE(quadrule.hpp)
 #include SCTL_INCLUDE(ompUtils.hpp)
 #include SCTL_INCLUDE(profile.hpp)
-#include SCTL_INCLUDE(legendre_rule.hpp)
 #include SCTL_INCLUDE(fft_wrapper.hpp)
 #include SCTL_INCLUDE(vtudata.hpp)
 #include SCTL_INCLUDE(lagrange-interp.hpp)
@@ -235,7 +234,7 @@ namespace SCTL_NAMESPACE {
         }
         return M;
       };
-      InterpQuadRule<ValueType>::Build(nds, wts, integrands, sqrt(machine_eps<ValueType>()), ORDER);
+      InterpQuadRule<ValueType>::Build(nds, wts, integrands, 0, 1, sqrt(machine_eps<ValueType>()), ORDER);
       return nds*(fn_end-fn_start)+fn_start;
     };
     static Vector<ValueType> nds = compute_nds();
@@ -407,10 +406,9 @@ namespace SCTL_NAMESPACE {
         }
       };
 
-      const auto& nds0 = ChebQuadRule<ValueType>::nds(QuadOrder+1);
-      const auto& wts0 = ChebQuadRule<ValueType>::wts(QuadOrder+1);
-      const auto& nds1 = ChebQuadRule<ValueType>::nds(QuadOrder+0);
-      const auto& wts1 = ChebQuadRule<ValueType>::wts(QuadOrder+0);
+      Vector<ValueType> nds0, nds1, wts0, wts1;
+      ChebQuadRule<ValueType>::ComputeNdsWts(&nds0, &wts0, QuadOrder+1);
+      ChebQuadRule<ValueType>::ComputeNdsWts(&nds1, &wts1, QuadOrder+0);
 
       Vector<ValueType> U0;
       Vector<ValueType> Xsrc, Nsrc, Fsrc;
@@ -721,8 +719,7 @@ namespace SCTL_NAMESPACE {
       for (Integer order = 1; order < max_order; order++) {
         auto& x_ = nds_wts[order].first;
         auto& w_ = nds_wts[order].second;
-        x_ = LegQuadRule<ValueType>::ComputeNds(order);
-        w_ = LegQuadRule<ValueType>::ComputeWts(x_);
+        LegQuadRule<ValueType>::ComputeNdsWts(&x_, &w_, order);
       }
       return nds_wts;
     };
@@ -759,7 +756,7 @@ namespace SCTL_NAMESPACE {
             }
             return M;
           };
-          InterpQuadRule<RealType, true>::Build(data[order*2+0], data[order*2+1], integrands, false, machine_eps<ValueType>(), order, 2e-4, 1.0);
+          InterpQuadRule<RealType, false>::Build(data[order*2+0], data[order*2+1], integrands, 0, 1, machine_eps<ValueType>(), order, 2e-4, 1.0);
         }
         WriteFile<RealType>(data, std::string(SCTL_QUOTEME(SCTL_DATA_PATH)) + "/log_quad");
       }
@@ -940,7 +937,7 @@ namespace SCTL_NAMESPACE {
           Vector<ValueType> eps_vec;
           for (Long k = 0; k < max_digits; k++) eps_vec.PushBack(pow<ValueType,Long>(0.1,k));
           std::cout<<"Level = "<<idx<<" of "<<max_adap_depth<<'\n';
-          auto cond_num_vec = InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, true, eps_vec);
+          auto cond_num_vec = InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, eps_vec);
         }
         for (Integer digits = 0; digits < max_digits; digits++) {
           Long N = quad_nds[digits].Dim();
@@ -1483,7 +1480,7 @@ namespace SCTL_NAMESPACE {
       for (Long k = 0; k < max_digits; k++) eps_vec.PushBack(pow<ValueType,Long>(0.1,k));
       ValueType range0 = s_trg>=0.5 ? 0 : s_trg+eps_buffer;
       ValueType range1 = s_trg>=0.5 ? s_trg-eps_buffer : 1;
-      InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, false, eps_vec, Vector<Long>(), range0, range1);
+      InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, eps_vec, Vector<Long>(), range0, range1);
       SCTL_ASSERT(quad_nds.Dim() == max_digits);
       SCTL_ASSERT(quad_wts.Dim() == max_digits);
       for (Long k = 0; k < max_digits; k++) {

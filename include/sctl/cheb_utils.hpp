@@ -4,7 +4,6 @@
 #include <sctl/common.hpp>
 #include SCTL_INCLUDE(matrix.hpp)
 #include SCTL_INCLUDE(math_utils.hpp)
-#include SCTL_INCLUDE(legendre_rule.hpp)
 
 #include <type_traits>
 #include <functional>
@@ -60,7 +59,7 @@ template <class ValueType, class Derived> class BasisInterface {
           Derived::Nodes1D(order, x);
           Derived::EvalBasis1D(order, x, p);
           Matrix<ValueType> Mp1(order, order, p.begin(), false);
-          Mp1.pinv().Swap(precomp[order]);
+          Mp1.pinv(machine_eps<ValueType>()).Swap(precomp[order]);
         }
       }
       Mp.ReInit(precomp[order].Dim(0), precomp[order].Dim(1), precomp[order].begin(), false);
@@ -111,7 +110,7 @@ template <class ValueType, class Derived> class BasisInterface {
           for (Integer i = 0; i < order; i++) x[i] = (x[i] - 0.5) * scale + 0.5;
           Derived::EvalBasis1D(order, x, p);
           Matrix<ValueType> Mp1(order, order, p.begin(), false);
-          Mp1.pinv().Swap(precomp[order]);
+          Mp1.pinv(machine_eps<ValueType>()).Swap(precomp[order]);
         }
       }
       Mp.ReInit(precomp[order].Dim(0), precomp[order].Dim(1), precomp[order].begin(), false);
@@ -1023,37 +1022,8 @@ template <class ValueType, class Derived> class BasisInterface {
     }
     if (done) return;
 
-    Vector<ValueType> x_(order);
-    Vector<ValueType> w_(order);
-    if (std::is_same<ValueType, double>::value || std::is_same<ValueType, float>::value) {  // Gauss-Legendre quadrature nodes and weights
-      Vector<double> xd(order);
-      Vector<double> wd(order);
-      int kind = 1;
-      double alpha = 0.0, beta = 0.0, a = -1.0, b = 1.0;
-      cgqf(order, kind, (double)alpha, (double)beta, (double)a, (double)b, &xd[0], &wd[0]);
-      for (Integer i = 0; i < order; i++) {
-        x_[i] = (ValueType)(0.5 * xd[i] + 0.5);
-        w_[i] = (ValueType)(0.5 * wd[i]);
-      }
-    } else {  // Chebyshev quadrature nodes and weights
-      cheb_nodes_1d(order, x_);
-      for (Integer i = 0; i < order; i++) w_[i] = 0;
-
-      Vector<ValueType> V_cheb(order * order);
-      cheb_basis_1d(order, x_, V_cheb);
-      for (Integer i = 0; i < order; i++) V_cheb[i] /= 2.0;
-      Matrix<ValueType> M(order, order, V_cheb.begin());
-
-      Vector<ValueType> w_sample(order);
-      w_sample.SetZero();
-      for (Integer i = 0; i < order; i += 2) w_sample[i] = -((ValueType)2.0 / (i + 1) / (i - 1));
-
-      for (Integer i = 0; i < order; i++) {
-        for (Integer j = 0; j < order; j++) {
-          w_[j] += M[i][j] * w_sample[i] / order;
-        }
-      }
-    }
+    Vector<ValueType> x_, w_;
+    LegQuadRule<ValueType>::ComputeNdsWts(&x_, &w_, order);
     #pragma omp critical(SCTL_QUAD_RULE)
     if (!x_lst[order].Dim()) {  // Set x_lst, w_lst
       x_lst[order].Swap(x_);

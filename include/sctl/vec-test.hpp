@@ -216,14 +216,7 @@ namespace SCTL_NAMESPACE {
             auto myabs = [](ScalarType a) {
               return (a < 0 ? -a : a);
             };
-            auto machine_eps = [](){
-              ScalarType eps = 1;
-              while ((ScalarType)(1+eps/2) > 1) {
-                eps = eps/2;
-              }
-              return eps;
-            };
-            static const ScalarType eps = machine_eps();
+            static const ScalarType eps = machine_eps<ScalarType>();
             ScalarType err = myabs(u9.x[i] - (ScalarType)(u1.x[i]*u2.x[i] + u3.x[i]));
             ScalarType max_val = myabs(u1.x[i]*u2.x[i]) + myabs(u3.x[i]);
             ScalarType rel_err = err / max_val;

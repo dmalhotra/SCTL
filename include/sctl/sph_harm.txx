@@ -1,5 +1,4 @@
 #include SCTL_INCLUDE(fft_wrapper.hpp)
-#include SCTL_INCLUDE(legendre_rule.hpp)
 
 #include <fstream>
 
@@ -2158,12 +2157,8 @@ template <class Real> const Vector<Real>& SphericalHarmonics<Real>::LegendreNode
   Vector<Real>& Qx=MatrixStore().Qx_[p];
   #pragma omp critical (SCTL_LEGNODES)
   if(!Qx.Dim()){
-    Vector<double> qx1(p+1);
-    Vector<double> qw1(p+1);
-    cgqf(p+1, 1, 0.0, 0.0, -1.0, 1.0, &qx1[0], &qw1[0]);
-    assert(typeid(Real) == typeid(double) || typeid(Real) == typeid(float)); // TODO: works only for float and double
-    if (Qx.Dim() != p+1) Qx.ReInit(p+1);
-    for (Long i = 0; i < p + 1; i++) Qx[i] = -qx1[i];
+    LegQuadRule<Real>::ComputeNdsWts(&Qx, nullptr, p+1);
+    for (auto& x : Qx) x = 1-x*2;
   }
   return Qx;
 }
@@ -2173,12 +2168,8 @@ template <class Real> const Vector<Real>& SphericalHarmonics<Real>::LegendreWeig
   Vector<Real>& Qw=MatrixStore().Qw_[p];
   #pragma omp critical (SCTL_LEGWEIGHTS)
   if(!Qw.Dim()){
-    Vector<double> qx1(p+1);
-    Vector<double> qw1(p+1);
-    cgqf(p+1, 1, 0.0, 0.0, -1.0, 1.0, &qx1[0], &qw1[0]);
-    assert(typeid(Real) == typeid(double) || typeid(Real) == typeid(float)); // TODO: works only for float and double
-    if (Qw.Dim() != p+1) Qw.ReInit(p+1);
-    for (Long i = 0; i < p + 1; i++) Qw[i] = qw1[i];
+    LegQuadRule<Real>::ComputeNdsWts(nullptr, &Qw, p+1);
+    for (auto& w : Qw) w = w*2;
   }
   return Qw;
 }
