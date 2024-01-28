@@ -756,7 +756,7 @@ namespace SCTL_NAMESPACE {
             }
             return M;
           };
-          InterpQuadRule<RealType, false>::Build(data[order*2+0], data[order*2+1], integrands, 0, 1, machine_eps<ValueType>(), order, 2e-4, 1.0);
+          InterpQuadRule<RealType, false>::Build(data[order*2+0], data[order*2+1], integrands, 0, 1, machine_eps<RealType>(), order, 2e-4, 1.0);
         }
         WriteFile<RealType>(data, std::string(SCTL_QUOTEME(SCTL_DATA_PATH)) + "/log_quad");
       }
@@ -826,10 +826,10 @@ namespace SCTL_NAMESPACE {
         Vector<ValueType> wts1(panel_wts.Dim(), wts.begin()+(N-idx-1)*panel_wts.Dim(), false);
         for (Long i = 0; i < panel_nds.Dim(); i++) {
           ValueType s = panel_nds[i]*l + (idx<depth-1 ? l : 0);
-          nds0[                  i] = s;
-          nds1[panel_nds.Dim()-1-i] =-s;
-          wts0[                  i] = panel_wts[i]*l;
-          wts1[panel_nds.Dim()-1-i] = wts0[i];
+          nds0[panel_nds.Dim()-1-i] =-s;
+          nds1[                  i] = s;
+          wts0[panel_nds.Dim()-1-i] = panel_wts[i]*l;
+          wts1[                  i] = panel_wts[i]*l;
         }
       }
     };
@@ -910,7 +910,7 @@ namespace SCTL_NAMESPACE {
 
             Kernel ker;
             Matrix<ValueType> Mker;
-            ker.KernelMatrix(Mker, Xtrg, Xsrc, Xn);
+            ker.template KernelMatrix<ValueType,true>(Mker, Xtrg, Xsrc, Xn);
             SCTL_ASSERT(Mker.Dim(0) == Nnds * Kernel::SrcDim());
             SCTL_ASSERT(Mker.Dim(1) == Ntrg * Kernel::TrgDim());
 
@@ -937,7 +937,35 @@ namespace SCTL_NAMESPACE {
           Vector<ValueType> eps_vec;
           for (Long k = 0; k < max_digits; k++) eps_vec.PushBack(pow<ValueType,Long>(0.1,k));
           std::cout<<"Level = "<<idx<<" of "<<max_adap_depth<<'\n';
-          auto cond_num_vec = InterpQuadRule<ValueType>::Build(quad_nds, quad_wts,  Mintegrands, nds, wts, eps_vec);
+          if (1) { // make symmetric quadrature rules
+            const Long Nnds = Mintegrands.Dim(0), Nint = Mintegrands.Dim(1);
+            #pragma omp parallel for schedule(static)
+            for (Long i = 0; i < Nnds/2; i++) { // make integrands symmetric
+              for (Long j = 0; j < Nint; j++) {
+                Mintegrands[i][j] += Mintegrands[Nnds-1-i][j];
+              }
+            }
+            const Matrix<ValueType> Mintegrands_(Nnds/2, Nint, Mintegrands.begin(), false);
+            const Vector<ValueType> nds_(Nnds/2, nds.begin(), false);
+            const Vector<ValueType> wts_(Nnds/2, wts.begin(), false);
+            Vector<Vector<ValueType>> quad_nds_, quad_wts_;
+            auto cond_num_vec = InterpQuadRule<ValueType>::Build(quad_nds_, quad_wts_, Mintegrands_, nds_, wts_, eps_vec);
+            quad_nds.ReInit(quad_nds_.Dim());
+            quad_wts.ReInit(quad_wts_.Dim());
+            for (Long i = 0; i < quad_nds.Dim(); i++) {
+              const Long N = quad_nds_[i].Dim();
+              quad_nds[i].ReInit(2*N);
+              quad_wts[i].ReInit(2*N);
+              for (Long j = 0; j < N; j++) {
+                quad_nds[i][      j] = quad_nds_[i][j];
+                quad_nds[i][2*N-1-j] =-quad_nds_[i][j];
+                quad_wts[i][      j] = quad_wts_[i][j];
+                quad_wts[i][2*N-1-j] = quad_wts_[i][j];
+              }
+            }
+          } else {
+            auto cond_num_vec = InterpQuadRule<ValueType>::Build(quad_nds, quad_wts, Mintegrands, nds, wts, eps_vec);
+          }
         }
         for (Integer digits = 0; digits < max_digits; digits++) {
           Long N = quad_nds[digits].Dim();
@@ -1378,7 +1406,8 @@ namespace SCTL_NAMESPACE {
 
     Matrix<ValueType> M_tor(quad_nds.Dim(), KDIM0*KDIM1*FourierModes*2);
     constexpr Integer TorGreensFnDigits = (Integer)(TypeTraits<ValueType>::SigBits*0.3010299957);
-    toroidal_greens_fn_batched<TorGreensFnDigits,ModalUpsample,trg_dot_prod,ValueType,Kernel,1>(M_tor, x_trg, e_trg, (ValueType)1, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, ker, FourierModes);
+    constexpr Integer adap_tor_greens_fn = 1;
+    toroidal_greens_fn_batched<TorGreensFnDigits,ModalUpsample,trg_dot_prod,ValueType,Kernel,adap_tor_greens_fn>(M_tor, x_trg, e_trg, (ValueType)1, n_trg, x_src, dx_src, d2x_src, r_src, dr_src, e1_src, ker, FourierModes);
 
     M.ReInit(quad_nds.Dim(), Ncheb*FourierModes*2*KDIM0*KDIM1);
     for (Long i = 0; i < quad_nds.Dim(); i++) {
@@ -1403,7 +1432,7 @@ namespace SCTL_NAMESPACE {
     { // Set nds, wts, Mintegrands
       Vector<Matrix<ValueType>> Mker(Nlen);
       Vector<Vector<ValueType>> nds_(Nlen), wts_(Nlen);
-      //#pragma omp parallel for schedule(static) // TODO: prevents parallelization of precomputation of toroidal quadrature rule
+      #pragma omp parallel for schedule(static)
       for (Long k = 0; k < Nlen; k++) {
         ValueType length = elem_length/sqrt<ValueType>(2.0)*k/(Nlen-1) + elem_length*sqrt<ValueType>(2.0)*(Nlen-k-1)/(Nlen-1);
         SpecialQuadBuildBasisMatrix<ModalUpsample,ValueType,Kernel,trg_dot_prod>(Mker[k], nds_[k], wts_[k], Ncheb, FourierModes, s_trg, max_digits, length, adap_depth, ker);
@@ -2037,6 +2066,8 @@ namespace SCTL_NAMESPACE {
       const Integer ChebOrder = elem_lst.cheb_order[elem_idx];
       const Integer FourierOrder = elem_lst.fourier_order[elem_idx];
       const Integer FourierModes = FourierOrder/2+1;
+
+      LogSingularityQuadRule<Real>(0);
 
       Matrix<Real> Mfourier;
       Vector<Real> nds_cos, nds_sin, wts;
@@ -2755,7 +2786,7 @@ namespace SCTL_NAMESPACE {
 
     std::string line;
     Vector<ValueType> coord_, radius_, e1_;
-    Vector<Integer> cheb_order_, fourier_order_;
+    Vector<Long> cheb_order_, fourier_order_;
     while (std::getline(file, line)) { // Set coord_, radius_, e1_, cheb_order_, fourier_order_
       size_t first_char_pos = line.find_first_not_of(' ');
       if (first_char_pos == std::string::npos || line[first_char_pos] == '#') continue;
@@ -2792,7 +2823,7 @@ namespace SCTL_NAMESPACE {
     file.close();
 
     Long offset = 0;
-    Vector<Integer> cheb_order__, fourier_order__;
+    Vector<Long> cheb_order__, fourier_order__;
     while (offset < cheb_order_.Dim()) { // Set cheb_order__, fourier_order__
       Integer ChebOrder = cheb_order_[offset];
       Integer FourierOrder = fourier_order_[offset];
@@ -2812,11 +2843,11 @@ namespace SCTL_NAMESPACE {
       const Long i0 = Nelem*(pid+0)/Np;
       const Long i1 = Nelem*(pid+1)/Np;
 
-      Vector<Integer> cheb_order, fourier_order;
+      Vector<Long> cheb_order, fourier_order;
       cheb_order.ReInit(i1-i0, cheb_order__.begin()+i0, false);
       fourier_order.ReInit(i1-i0, fourier_order__.begin()+i0, false);
 
-      Vector<Integer> elem_offset(Nelem+1); elem_offset = 0;
+      Vector<Long> elem_offset(Nelem+1); elem_offset = 0;
       omp_par::scan(cheb_order__.begin(), elem_offset.begin(), Nelem);
       elem_offset[Nelem] = (Nelem ? elem_offset[Nelem-1] + cheb_order__[Nelem-1] : 0);
       const Long j0 = elem_offset[i0];
