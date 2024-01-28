@@ -1,5 +1,7 @@
 #include <algorithm>
 
+#include SCTL_INCLUDE(lagrange-interp.hpp)
+
 namespace SCTL_NAMESPACE {
 
   template <class Real> template <Integer MAX_ORDER, class ValueType> const Vector<Real>& ChebQuadRule<Real>::nds(Integer N) {
@@ -438,10 +440,18 @@ namespace SCTL_NAMESPACE {
   }
 
   template <class Real, bool UseSVD> template <class FnObj> void InterpQuadRule<Real,UseSVD>::adap_quad_rule(Vector<Real>& nds, Vector<Real>& wts, const FnObj& fn, const Real a, const Real b, const Real tol) {
-    static const auto& nds0 = LegQuadRule<Real>::template nds<50>();
-    static const auto& wts0 = LegQuadRule<Real>::template wts<50>();
-    static const auto& nds1 = LegQuadRule<Real>::template nds<25>();
-    static const auto& wts1 = LegQuadRule<Real>::template wts<25>();
+    static constexpr Integer LegOrder = 25;
+    static const Real eps = machine_eps<Real>();
+    static const Real sqrt_eps = sqrt<Real>(machine_eps<Real>());
+    static const auto& nds0 = LegQuadRule<Real>::template nds<2*LegOrder>();
+    static const auto& wts0 = LegQuadRule<Real>::template wts<2*LegOrder>();
+    static const auto& nds1 = LegQuadRule<Real>::template nds<1*LegOrder>();
+    static const auto Minterp = []() {
+      Matrix<Real> M(nds1.Dim(), nds0.Dim());
+      Vector<Real> wts(M.Dim(0)*M.Dim(1), M.begin(), false);
+      LagrangeInterp<Real>::Interpolate(wts, nds1, nds0);
+      return M;
+    }();
 
     auto concat_vec = [](const Vector<Real>& v0, const Vector<Real>& v1) {
       Long N0 = v0.Dim();
@@ -451,37 +461,44 @@ namespace SCTL_NAMESPACE {
       for (Long i = 0; i < N1; i++) v[N0+i] = v1[i];
       return v;
     };
-    auto integration_error = [&fn](Real a, Real b) {
+    auto interp_error = [&fn](Real a, Real b) {
       const Matrix<Real> M0 = fn(nds0*(b-a)+a);
       const Matrix<Real> M1 = fn(nds1*(b-a)+a);
-      const Long dof = M0.Dim(1);
-      SCTL_ASSERT(M0.Dim(0) == nds0.Dim());
-      SCTL_ASSERT(M1.Dim(0) == nds1.Dim());
-      SCTL_ASSERT(M1.Dim(1) == dof);
-      Real max_err = 0;
-      for (Long i = 0; i < dof; i++) {
-        Real I0 = 0, I1 = 0;
-        for (Long j = 0; j < nds0.Dim(); j++) {
-          I0 += M0[j][i] * wts0[j] * (b-a);
-        }
-        for (Long j = 0; j < nds1.Dim(); j++) {
-          I1 += M1[j][i] * wts1[j] * (b-a);
-        }
-        max_err = std::max(max_err, fabs(I1-I0));
-      }
-      return max_err;
+      const auto err = M1.Transpose() * Minterp - M0.Transpose();
+
+      Real max_err = 0, max_val = 0;
+      for (const auto x : M0 ) max_val = std::max<Real>(max_val, fabs(x));
+      for (const auto x : err) max_err = std::max<Real>(max_err, fabs(x));
+      return std::make_tuple(max_err, max_val);
     };
-    Real err = integration_error(a, b);
-    if (err < tol || fabs(b-a) < machine_eps<Real>()) {
-      //std::cout<<a<<"      "<<b<<"      "<<err<<'\n';
+
+    Real max_err, max_val;
+    std::tie(max_err , max_val ) = interp_error(a, b);
+
+    if (max_err/max_val < std::max(eps,tol)               /* relative interpolation-error of smooth part < tol */
+        || max_val*fabs(b-a) < tol                        /* estimated magnitude of singular part < tol */
+        || fabs(b-a)/std::max(fabs(a),fabs(b)) <= eps ) { /* not enough spatial resolution */
       nds = nds0 * (b-a) + a;
       wts = wts0 * (b-a);
+      //std::cout<<"Converged; "<<a<<"      "<<b<<"      "<<max_err/max_val<<'\n';
     } else {
-      Vector<Real>  nds0_, wts0_, nds1_, wts1_;
-      adap_quad_rule(nds0_, wts0_, fn, a, (a+b)/2, tol*0.5);
-      adap_quad_rule(nds1_, wts1_, fn, (a+b)/2, b, tol*0.5);
-      nds = concat_vec(nds0_, nds1_);
-      wts = concat_vec(wts0_, wts1_);
+      Real max_err1, max_val1;
+      Real max_err2, max_val2;
+      std::tie(max_err1, max_val1) = interp_error(a, (a+b)/2);
+      std::tie(max_err2, max_val2) = interp_error((a+b)/2, b);
+      const Real sqrt_tol = std::max(sqrt_eps, sqrt<Real>(tol));
+      if (std::min(max_err1,max_err2) < 0.5*max_err   /* still converging */
+          || max_err/max_val > sqrt_tol) {            /* not in asymptototic part  */
+        Vector<Real>  nds0_, wts0_, nds1_, wts1_;
+        adap_quad_rule(nds0_, wts0_, fn, a, (a+b)/2, tol);
+        adap_quad_rule(nds1_, wts1_, fn, (a+b)/2, b, tol);
+        nds = concat_vec(nds0_, nds1_);
+        wts = concat_vec(wts0_, wts1_);
+      } else { /* not converging - stop */
+        nds = nds0 * (b-a) + a;
+        wts = wts0 * (b-a);
+        //std::cout<<"Stagnated: "<<a<<"      "<<b<<"      "<<max_err/max_val<<'\n';
+      }
     }
   }
 
