@@ -83,8 +83,10 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test
 	./$(BINDIR)/test-fft
 	./$(BINDIR)/test-fmm
+	./$(BINDIR)/test-gmres
 	./$(BINDIR)/test-ode-solver
 	./$(BINDIR)/test-pt-tree
+	./$(BINDIR)/test-quadrule
 	./$(BINDIR)/test-sph-harm
 	./$(BINDIR)/test-vec
 
