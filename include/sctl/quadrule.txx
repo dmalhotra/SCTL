@@ -202,25 +202,22 @@ namespace SCTL_NAMESPACE {
 
 
 
-  template <class Real, bool UseSVD> template <class BasisObj> Real InterpQuadRule<Real,UseSVD>::Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const BasisObj& integrands, const Real interval_start, const Real interval_end, const Real eps, const Long ORDER, const Real nds_interval_start, const Real nds_interval_end) {
+  template <class Real> template <class BasisObj> Real InterpQuadRule<Real>::Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const BasisObj& integrands, const Real interval_start, const Real interval_end, const Real eps, const Long ORDER, const Real nds_interval_start, const Real nds_interval_end, const bool UseSVD) {
     Vector<Real> nds, wts;
     adap_quad_rule(nds, wts, integrands, interval_start, interval_end, eps);
     Matrix<Real> M = integrands(nds);
-    return Build(quad_nds, quad_wts, M, nds, wts, eps, ORDER, nds_interval_start, nds_interval_end);
+    return Build(quad_nds, quad_wts, M, nds, wts, eps, ORDER, nds_interval_start, nds_interval_end, UseSVD);
   }
 
-  template <class Real, bool UseSVD> Real InterpQuadRule<Real,UseSVD>::Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const Matrix<Real> M, const Vector<Real>& nds, const Vector<Real>& wts, const Real eps, const Long ORDER, const Real nds_interval_start, const Real nds_interval_end) {
-    Vector<Real> eps_vec;
-    Vector<Long> ORDER_vec;
-    if (ORDER) {
-      ORDER_vec.PushBack(ORDER);
-    } else {
-      eps_vec.PushBack(eps);
-    }
+  template <class Real> Real InterpQuadRule<Real>::Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const Matrix<Real> M, const Vector<Real>& nds, const Vector<Real>& wts, const Real eps, const Long ORDER, const Real nds_interval_start, const Real nds_interval_end, const bool UseSVD) {
+    Vector<Real> eps_vec(1);
+    Vector<Long> ORDER_vec(1);
+    ORDER_vec[0] = ORDER;
+    eps_vec[0] = eps;
 
     Vector<Vector<Real>> quad_nds_;
     Vector<Vector<Real>> quad_wts_;
-    Vector<Real> cond_num_vec = Build(quad_nds_, quad_wts_, M, nds, wts, eps_vec, ORDER_vec, nds_interval_start, nds_interval_end);
+    Vector<Real> cond_num_vec = Build(quad_nds_, quad_wts_, M, nds, wts, eps_vec, ORDER_vec, nds_interval_start, nds_interval_end, UseSVD);
     if (quad_nds_.Dim() &&  quad_wts_.Dim()) {
       quad_nds = quad_nds_[0];
       quad_wts = quad_wts_[0];
@@ -229,10 +226,37 @@ namespace SCTL_NAMESPACE {
     return -1;
   }
 
-  template <class Real, bool UseSVD> Vector<Real> InterpQuadRule<Real,UseSVD>::Build(Vector<Vector<Real>>& quad_nds, Vector<Vector<Real>>& quad_wts, const Matrix<Real>& M0, const Vector<Real>& nds, const Vector<Real>& wts, const Vector<Real>& eps_vec, const Vector<Long>& ORDER_vec_, const Real nds_interval_start, const Real nds_interval_end) {
-    if (M0.Dim(0) * M0.Dim(1) == 0) return Vector<Real>();
-    Vector<Long> ORDER_vec = ORDER_vec_;
+  template <class Real> Vector<Real> InterpQuadRule<Real>::Build(Vector<Vector<Real>>& quad_nds, Vector<Vector<Real>>& quad_wts, const Matrix<Real>& M0, const Vector<Real>& nds, const Vector<Real>& wts, const Vector<Real>& eps_vec_, const Vector<Long>& ORDER_vec_, const Real nds_interval_start, const Real nds_interval_end, const bool UseSVD) {
+    const Long N_rules = std::max(eps_vec_.Dim(), ORDER_vec_.Dim());
+    if (M0.Dim(0) * M0.Dim(1) == 0 || N_rules == 0) return Vector<Real>();
     Matrix<Real> M = M0;
+
+    Real min_eps;
+    Long max_ORDER;
+    Vector<Real> eps_vec;
+    Vector<Long> ORDER_vec;
+    { // Set eps_vec, ORDER_vec, min_eps, max_ORDER
+      eps_vec = eps_vec_;
+      ORDER_vec = ORDER_vec_;
+      SCTL_ASSERT(eps_vec.Dim() == N_rules || eps_vec.Dim() == 0);
+      SCTL_ASSERT(ORDER_vec.Dim() == N_rules || ORDER_vec.Dim() == 0);
+
+      if (!eps_vec.Dim()) {
+        eps_vec.ReInit(N_rules);
+        eps_vec = machine_eps<Real>();
+      }
+      if (!ORDER_vec.Dim()) {
+        ORDER_vec.ReInit(N_rules);
+        ORDER_vec = M.Dim(1);
+      }
+      for (auto& x : eps_vec) x = std::max(x, machine_eps<Real>());
+      for (auto& x : ORDER_vec) x = ( x<=0 ? M.Dim(1) : std::min(x, M.Dim(1)) );
+
+      min_eps = eps_vec[0];
+      max_ORDER = ORDER_vec[0];
+      for (const auto& e : eps_vec) min_eps = std::min(min_eps, fabs(e));
+      for (const auto k : ORDER_vec) max_ORDER = std::max(max_ORDER, k);
+    }
 
     Vector<Real> sqrt_wts(wts.Dim());
     for (Long i = 0; i < sqrt_wts.Dim(); i++) { // Set sqrt_wts
@@ -247,10 +271,13 @@ namespace SCTL_NAMESPACE {
     }
 
     Vector<Real> S_vec;
-    auto modified_gram_schmidt = [](Matrix<Real>& Q, Vector<Real>& S, Vector<Long>& pivot, Matrix<Real> M, Real tol, Long max_rows, bool verbose) { // orthogonalize rows
-      const Long N0 = M.Dim(0), N1 = M.Dim(1);
+    auto modified_gram_schmidt = [](Matrix<Real>& Q, Vector<Real>& S, Vector<Long>& pivot, const Matrix<Real>& M_, const Real tol_, const Long max_rows_, const bool verbose) { // orthogonalize rows
+      const Long max_rows = std::min(max_rows_, std::min(M_.Dim(0), M_.Dim(1)));
+      const Real tol = std::max(tol_, machine_eps<Real>());
+      const Long N0 = M_.Dim(0), N1 = M_.Dim(1);
       if (N0*N1 == 0) return;
 
+      Matrix<Real> M = M_;
       Vector<Real> row_norm(N0);
       S.ReInit(max_rows); S.SetZero();
       pivot.ReInit(max_rows); pivot = -1;
@@ -287,13 +314,35 @@ namespace SCTL_NAMESPACE {
         }
 
         if (verbose) std::cout<<pivot_norm/S[0]<<'\n';
-        if (pivot_norm/S[0] < tol) break;
+        if (pivot_norm/S[0] < tol) {
+          pivot[i] = -1;
+          S[i] = 0;
+          break;
+        }
       }
+    };
+    auto approx_SVD = [&modified_gram_schmidt](Matrix<Real>& U, Matrix<Real>& S, Matrix<Real>& Vt, const Matrix<Real>& M, const Real tol, const Long N){
+      Vector<Real> S_;
+      Matrix<Real> Q_;
+      Vector<Long> pivot;
+      modified_gram_schmidt(Q_, S_, pivot, M, tol*0.1, (Long)(N*1.1), false);
+
+      Long k = 0;
+      while (k < S_.Dim() && S_[k] > 0) k++;
+      modified_gram_schmidt(Q_, S_, pivot, Matrix<Real>(k, Q_.Dim(1), Q_.begin()), 0, k, false);
+      Matrix<Real> Q(k, Q_.Dim(1), Q_.begin(), false);
+
+      Matrix<Real> R(M.Dim(0), k);
+      Matrix<Real>::GEMM(R, M, Q.Transpose());
+
+      R.SVD(U, S, Vt);
+      Vt = Vt * Q;
     };
     if (UseSVD) { // orthonormalize M and get truncation errors S_vec (using SVD)
       // TODO: try M = W * M where W is a random matrix to reduce number of rows in M
       Matrix<Real> U, S, Vt;
-      M.SVD(U,S,Vt);
+      approx_SVD(U, S, Vt, M, min_eps, max_ORDER); // faster than full SVD
+      //M.SVD(U,S,Vt);
 
       Long N = S.Dim(0);
       S_vec.ReInit(N);
@@ -316,9 +365,7 @@ namespace SCTL_NAMESPACE {
     } else { // orthonormalize M and get truncation errors S_vec (using modified Gradm-Schmidt)
       Matrix<Real> Q;
       Vector<Long> pivot;
-      Real eps = machine_eps<Real>();
-      for (const auto& e : eps_vec) eps = std::min<Real>(eps, fabs(e));
-      modified_gram_schmidt(Q, S_vec, pivot, M.Transpose(), eps, M.Dim(1), false);
+      modified_gram_schmidt(Q, S_vec, pivot, M.Transpose(), min_eps, max_ORDER, false);
 
       if (1) {
         M = Q.Transpose();
@@ -331,13 +378,10 @@ namespace SCTL_NAMESPACE {
         }
       }
     }
-    if (eps_vec.Dim()) { //  Set ORDER_vec
-      SCTL_ASSERT(!ORDER_vec.Dim());
-      ORDER_vec.ReInit(eps_vec.Dim());
-      for (Long i = 0; i < eps_vec.Dim(); i++) {
-        ORDER_vec[i] = std::lower_bound(S_vec.begin(), S_vec.end(), eps_vec[i]*S_vec[0], std::greater<Real>()) - S_vec.begin();
-        ORDER_vec[i] = std::min(std::max<Long>(ORDER_vec[i],1), S_vec.Dim());
-      }
+    for (Long i = 0; i < N_rules; i++) {
+      Long ORDER = std::lower_bound(S_vec.begin(), S_vec.end(), eps_vec[i]*S_vec[0], std::greater<Real>()) - S_vec.begin();
+      ORDER = std::min(std::max<Long>(ORDER, 1), S_vec.Dim());
+      ORDER_vec[i] = std::min(ORDER_vec[i], ORDER);
     }
 
     Vector<Real> cond_num_vec;
@@ -435,11 +479,10 @@ namespace SCTL_NAMESPACE {
       Real cond_num = build_quad_rule(quad_nds[i], quad_wts[i], MM, sqrt_wts);
       cond_num_vec.PushBack(cond_num);
     }
-
     return cond_num_vec;
   }
 
-  template <class Real, bool UseSVD> template <class FnObj> void InterpQuadRule<Real,UseSVD>::adap_quad_rule(Vector<Real>& nds, Vector<Real>& wts, const FnObj& fn, const Real a, const Real b, const Real tol) {
+  template <class Real> template <class FnObj> void InterpQuadRule<Real>::adap_quad_rule(Vector<Real>& nds, Vector<Real>& wts, const FnObj& fn, const Real a, const Real b, const Real tol) {
     static constexpr Integer LegOrder = 25;
     static const Real eps = machine_eps<Real>();
     static const Real sqrt_eps = sqrt<Real>(machine_eps<Real>());

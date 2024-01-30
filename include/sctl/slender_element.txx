@@ -756,7 +756,7 @@ namespace SCTL_NAMESPACE {
             }
             return M;
           };
-          InterpQuadRule<RealType, false>::Build(data[order*2+0], data[order*2+1], integrands, 0, 1, machine_eps<RealType>(), order, 2e-4, 1.0);
+          InterpQuadRule<RealType>::Build(data[order*2+0], data[order*2+1], integrands, 0, 1, machine_eps<RealType>(), order, 2e-4, 1.0, false);
         }
         WriteFile<RealType>(data, std::string(SCTL_QUOTEME(SCTL_DATA_PATH)) + "/log_quad");
       }
@@ -875,7 +875,7 @@ namespace SCTL_NAMESPACE {
                   ValueType x0 = r*cos<ValueType>(theta);
                   ValueType x1 = 0;
                   ValueType x2 = r*sin<ValueType>(theta);
-                  if (x0 > 0) {
+                  if (x0 > -1) {
                     Xtrg.PushBack(x0);
                     Xtrg.PushBack(x1);
                     Xtrg.PushBack(x2);

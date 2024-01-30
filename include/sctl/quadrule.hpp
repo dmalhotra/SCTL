@@ -105,10 +105,8 @@ namespace SCTL_NAMESPACE {
    * using either column pivoted QR or SVD. Then finding a set of stable interpolation nodes that serve as the
    * quadrature nodes. The quadrature weights are then computed by solving a least-squares problem. (see
    * DOI:10.1137/080737046 for algorithm details).
-   *
-   * @tparam UseSVD use SVD to orthonormalize the set of integrands.
    */
-  template <class Real, bool UseSVD=true> class InterpQuadRule {
+  template <class Real> class InterpQuadRule {
     public:
 
       /**
@@ -126,13 +124,16 @@ namespace SCTL_NAMESPACE {
        * @param[in] eps (optional,default=1e-16) accuracy tolerance for discretizing the integrand functions and
        * determining the number of output quadrature nodes (i.e. truncation tolerance after orthogonalization).
        *
-       * @param[in] order (optional) number of output quadrature nodes to use (overrides \p eps).
+       * @param[in] order (optional) number of output quadrature nodes to use.  If both eps and order are specified then
+       * the number of nodes is the minimum determined by each parameter.
        *
        * @param[in] nds_interval_start, nds_interval_stop (optional) interval in which to pick the quadrature nodes.
        *
+       * @param[in] UseSVD use SVD to orthonormalize the set of integrands.
+       *
        * @return condition number of the interpolation matrix.
        */
-      template <class BasisObj> static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const BasisObj& integrands, const Real interval_start, const Real interval_end, const Real eps = 1e-16, const Long order = 0, const Real nds_interval_start = 0, const Real nds_interval_end = 0);
+      template <class BasisObj> static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const BasisObj& integrands, const Real interval_start, const Real interval_end, const Real eps = 1e-16, const Long order = 0, const Real nds_interval_start = 0, const Real nds_interval_end = 0, const bool UseSVD = true);
 
       /**
        * @brief Build quadrature rule from a discretization of the integrand functions.
@@ -147,13 +148,16 @@ namespace SCTL_NAMESPACE {
        * @param[in] eps (optional,default=1e-16) accuracy tolerance which determines the number of output quadrature
        * nodes (i.e. truncation tolerance after orthogonalization).
        *
-       * @param[in] order (optional) number of output quadrature nodes to use (overrides \p eps).
+       * @param[in] order (optional) number of output quadrature nodes to use.  If both eps and order are specified then
+       * the number of nodes is the minimum determined by each parameter.
        *
        * @param[in] nds_interval_start, nds_interval_stop (optional) interval in which to pick the quadrature nodes.
        *
+       * @param[in] UseSVD use SVD to orthonormalize the set of integrands.
+       *
        * @return condition number of the interpolation matrix.
        */
-      static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const Matrix<Real> M, const Vector<Real>& nds, const Vector<Real>& wts, const Real eps = 1e-16, const Long order = 0, const Real nds_interval_start = 0, const Real nds_interval_end = 0);
+      static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const Matrix<Real> M, const Vector<Real>& nds, const Vector<Real>& wts, const Real eps = 1e-16, const Long order = 0, const Real nds_interval_start = 0, const Real nds_interval_end = 0, const bool UseSVD = true);
 
       /**
        * @brief Build a set of quadrature rules for different accuracies from a discretization of the integrand
@@ -170,13 +174,16 @@ namespace SCTL_NAMESPACE {
        * for each output quadrature rule that is generated.
        *
        * @param[in] order_vec (optional) vector of number of output quadrature nodes for each quadrature rule that is
-       * generated (overrides \p eps_vec).
+       * generated. If both eps_vec and order_vec are specified then the number of nodes is the minimum determined by
+       * each parameter.
        *
        * @param[in] nds_interval_start, nds_interval_stop (optional) interval in which to pick the quadrature nodes.
        *
+       * @param[in] UseSVD use SVD to orthonormalize the set of integrands.
+       *
        * @return vector of condition numbers of the interpolation matrix for each quadrature rule.
        */
-      static Vector<Real> Build(Vector<Vector<Real>>& quad_nds, Vector<Vector<Real>>& quad_wts, const Matrix<Real>& M, const Vector<Real>& nds, const Vector<Real>& wts, const Vector<Real>& eps_vec = Vector<Real>(), const Vector<Long>& order_vec = Vector<Long>(), const Real nds_interval_start = 0, const Real nds_interval_end = 0);
+      static Vector<Real> Build(Vector<Vector<Real>>& quad_nds, Vector<Vector<Real>>& quad_wts, const Matrix<Real>& M, const Vector<Real>& nds, const Vector<Real>& wts, const Vector<Real>& eps_vec = Vector<Real>(), const Vector<Long>& order_vec = Vector<Long>(), const Real nds_interval_start = 0, const Real nds_interval_end = 0, const bool UseSVD = true);
 
       static void test() {
         const Integer order = 16;
@@ -195,7 +202,7 @@ namespace SCTL_NAMESPACE {
         };
 
         Vector<Real> nds, wts;
-        InterpQuadRule::Build(nds, wts, integrands, 0.0, 1.0, 1e-16, 0, 1e-4, 1);
+        InterpQuadRule::Build(nds, wts, integrands, 0.0, 1.0, 1e-16, 0, 1e-4, 1, false);
         for (Integer i = 0; i < nds.Dim(); i++) {
           std::cout<<std::scientific<<std::setprecision(20);
           std::cout<<std::setw(27)<<nds[i]<<' '<<std::setw(27)<<wts[i]<<'\n';
