@@ -215,6 +215,11 @@ namespace SCTL_NAMESPACE {
       friend inline Vec exp(const Vec& x) {
         return exp_intrin(x.v);
       }
+#if defined(SCTL_HAVE_SVML) || defined(SCTL_HAVE_LIBMVEC)
+      friend inline Vec log(const Vec& x) {
+        return log_intrin(x.v);
+      }
+#endif
       template <Integer digits, class RealVec> friend RealVec approx_exp(const RealVec& x);
 
 

@@ -19,6 +19,22 @@
 #    include <x86intrin.h>
 #  endif
 #endif
+#if defined(SCTL_HAVE_LIBMVEC)
+  #if defined(SCTL_HAVE_SVML)
+    #error "SCTL_HAVE_LIBMVEC defined with mutually exclusive SCTL_HAVE_SVML"
+  #endif
+  // https://sourceware.org/glibc/wiki/libmvec?action=AttachFile&do=view&target=VectorABI.txt
+  extern "C" {
+    __m128  _ZGVbN4v_logf(__m128);
+    __m128d _ZGVbN2v_log(__m128d);
+    __m256 _ZGVcN8v_logf(__m256);
+    __m256d _ZGVcN4v_log(__m256d);
+    __m256 _ZGVdN8v_logf(__m256);
+    __m256d _ZGVdN4v_log(__m256d);
+    __m512 _ZGVeN16v_logf(__m512);
+    __m512d _ZGVeN8v_log(__m512d);
+  }
+#endif
 
 // TODO: Check alignment when SCTL_MEMDEBUG is defined
 // TODO: Replace pointers with iterators
@@ -758,6 +774,17 @@ namespace SCTL_NAMESPACE { // Generic
     for (Integer i = 0; i < VData::Size; i++) expx_.x[i] = exp(x_.x[i]);
     return expx_.v;
   }
+#if defined(SCTL_HAVE_SVML) || defined(SCTL_HAVE_LIBMVEC)
+  template <class VData> inline VData log_intrin(const VData& x) {
+    union U {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    };
+    U logx_, x_ = {x};
+    for (Integer i = 0; i < VData::Size; i++) logx_.x[i] = log(x_.x[i]);
+    return logx_.v;
+  }
+#endif
 
   template <Integer ORDER, class VData> inline VData approx_sin_intrin(const VData& x) {
     VData sinx, cosx;
@@ -1469,6 +1496,9 @@ namespace SCTL_NAMESPACE { // SSE
   template <> inline void sincos_intrin<VecData<float ,4>>(VecData<float ,4>& sinx, VecData<float ,4>& cosx, const VecData<float ,4>& x) { sinx = _mm_sincos_ps(&cosx.v, x.v); }
   template <> inline void sincos_intrin<VecData<double,2>>(VecData<double,2>& sinx, VecData<double,2>& cosx, const VecData<double,2>& x) { sinx = _mm_sincos_pd(&cosx.v, x.v); }
 
+  template <> inline VecData<float ,4> log_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_log_ps(x.v); }
+  template <> inline VecData<double,2> log_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_log_pd(x.v); }
+
   template <> inline VecData<float ,4> exp_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_exp_ps(x.v); }
   template <> inline VecData<double,2> exp_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_exp_pd(x.v); }
   #else
@@ -1478,6 +1508,11 @@ namespace SCTL_NAMESPACE { // SSE
   template <> inline void sincos_intrin<VecData<double,2>>(VecData<double,2>& sinx, VecData<double,2>& cosx, const VecData<double,2>& x) {
     approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
   }
+
+#ifdef SCTL_HAVE_LIBMVEC
+  template <> inline VecData<float, 4> log_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _ZGVbN4v_logf(x.v); }
+  template <> inline VecData<double,2> log_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _ZGVbN2v_log(x.v); }
+#endif
 
   template <> inline VecData<float ,4> exp_intrin<VecData<float ,4>>(const VecData<float ,4>& x) {
     return approx_exp_intrin<(Integer)(TypeTraits<float>::SigBits/3.8)>(x); // TODO: determine constants more precisely
@@ -2185,6 +2220,9 @@ namespace SCTL_NAMESPACE { // AVX
   template <> inline void sincos_intrin<VecData<float ,8>>(VecData<float ,8>& sinx, VecData<float ,8>& cosx, const VecData<float ,8>& x) { sinx = _mm256_sincos_ps(&cosx.v, x.v); }
   template <> inline void sincos_intrin<VecData<double,4>>(VecData<double,4>& sinx, VecData<double,4>& cosx, const VecData<double,4>& x) { sinx = _mm256_sincos_pd(&cosx.v, x.v); }
 
+  template <> inline VecData<float ,8> log_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_log_ps(x.v); }
+  template <> inline VecData<double,4> log_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_log_pd(x.v); }
+
   template <> inline VecData<float ,8> exp_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_exp_ps(x.v); }
   template <> inline VecData<double,4> exp_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_exp_pd(x.v); }
   #else
@@ -2194,6 +2232,16 @@ namespace SCTL_NAMESPACE { // AVX
   template <> inline void sincos_intrin<VecData<double,4>>(VecData<double,4>& sinx, VecData<double,4>& cosx, const VecData<double,4>& x) {
     approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
   }
+
+#ifdef SCTL_HAVE_LIBMVEC
+#ifdef __AVX2__
+  template <> inline VecData<float ,8> log_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _ZGVdN8v_logf(x.v); }
+  template <> inline VecData<double,4> log_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _ZGVdN4v_log(x.v); }
+#else
+  template <> inline VecData<float ,8> log_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _ZGVcN8v_logf(x.v); }
+  template <> inline VecData<double,4> log_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _ZGVcN4v_log(x.v); }
+#endif
+#endif
 
   template <> inline VecData<float ,8> exp_intrin<VecData<float ,8>>(const VecData<float ,8>& x) {
     return approx_exp_intrin<(Integer)(TypeTraits<float>::SigBits/3.8)>(x); // TODO: determine constants more precisely
@@ -2994,6 +3042,9 @@ namespace SCTL_NAMESPACE { // AVX512
   template <> inline void sincos_intrin<VecData<float,16>>(VecData<float,16>& sinx, VecData<float,16>& cosx, const VecData<float,16>& x) { sinx = _mm512_sincos_ps(&cosx.v, x.v); }
   template <> inline void sincos_intrin<VecData<double,8>>(VecData<double,8>& sinx, VecData<double,8>& cosx, const VecData<double,8>& x) { sinx = _mm512_sincos_pd(&cosx.v, x.v); }
 
+  template <> inline VecData<float,16> log_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_log_ps(x.v); }
+  template <> inline VecData<double,8> log_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_log_pd(x.v); }
+
   template <> inline VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_exp_ps(x.v); }
   template <> inline VecData<double,8> exp_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_exp_pd(x.v); }
   #else
@@ -3003,6 +3054,11 @@ namespace SCTL_NAMESPACE { // AVX512
   template <> inline void sincos_intrin<VecData<double,8>>(VecData<double,8>& sinx, VecData<double,8>& cosx, const VecData<double,8>& x) {
     approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
   }
+
+#ifdef SCTL_HAVE_LIBMVEC
+  template <> inline VecData<float ,16> log_intrin<VecData<float ,16>>(const VecData<float ,16>& x) { return _ZGVeN16v_logf(x.v); }
+  template <> inline VecData<double,8> log_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _ZGVeN8v_log(x.v); }
+#endif
 
   template <> inline VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) {
     return approx_exp_intrin<(Integer)(TypeTraits<float>::SigBits/3.8)>(x); // TODO: determine constants more precisely

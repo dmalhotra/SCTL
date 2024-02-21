@@ -319,17 +319,23 @@ namespace SCTL_NAMESPACE {
       }
 
       static void test_reals_specialfunc() {
-        VecType v0 = VecType::Zero(), v1, v2, v3;
+        VecType v0 = VecType::Zero(), v1, v2, v3, v4;
         for (Integer i = 0; i < N; i++) {
           v0.insert(i, (ScalarType)(drand48()-0.5)*4*const_pi<ScalarType>());
         }
         sincos(v1, v2, v0);
         v3 = exp(v0);
+#if defined(SCTL_HAVE_SVML) || defined(SCTL_HAVE_LIBMVEC)
+        v4 = log(v0 + ScalarType(2.01) * const_pi<ScalarType>());
+#endif
         for (Integer i = 0; i < N; i++) {
           ScalarType err_tol = std::max<ScalarType>((ScalarType)1.77e-15, (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5))); // TODO: fix for accuracy greater than 1.77e-15
           SCTL_ASSERT(fabs(v1[i] - sin<ScalarType>(v0[i])) < err_tol);
           SCTL_ASSERT(fabs(v2[i] - cos<ScalarType>(v0[i])) < err_tol);
           SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i]))/fabs(exp<ScalarType>(v0[i])) < err_tol);
+#if defined(SCTL_HAVE_SVML) || defined(SCTL_HAVE_LIBMVEC)
+          SCTL_ASSERT(fabs(v4[i] - log<ScalarType>(v0[i] + ScalarType(2.01) * const_pi<ScalarType>())) < err_tol);
+#endif
         }
 
         approx_sincos<3>(v1, v2, v0);
