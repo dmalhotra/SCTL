@@ -25,7 +25,7 @@ namespace SCTL_NAMESPACE {
     }
   }
 
-  template <class Real, Integer COORD_DIM=3> static void BuildNearList(Vector<Real>& Xtrg_near, Vector<Real>& Xn_trg_near, Vector<Long>& near_elem_cnt, Vector<Long>& near_elem_dsp, Vector<Long>& near_scatter_index, Vector<Long>& near_trg_cnt, Vector<Long>& near_trg_dsp, const Vector<Real>& Xtrg, const Vector<Real>& Xn_trg, const Vector<Real>& Xsrc, const Vector<Real>& src_radius, const Vector<Long>& src_elem_nds_cnt, const Vector<Long>& src_elem_nds_dsp, const Comm& comm) {
+  template <class Real, Integer COORD_DIM> void BuildNearList(Vector<Real>& Xtrg_near, Vector<Real>& Xn_trg_near, Vector<Long>& near_elem_cnt, Vector<Long>& near_elem_dsp, Vector<Long>& near_scatter_index, Vector<Long>& near_trg_cnt, Vector<Long>& near_trg_dsp, const Vector<Real>& Xtrg, const Vector<Real>& Xn_trg, const Vector<Real>& Xsrc, const Vector<Real>& src_radius, const Vector<Long>& src_elem_nds_cnt, const Vector<Long>& src_elem_nds_dsp, const Comm& comm) {
     // Input: Xtrg, Xn_trg, Xsrc, src_radius, src_elem_nds_cnt, src_elem_nds_dsp, comm
     // Output: Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt, near_trg_dsp
 

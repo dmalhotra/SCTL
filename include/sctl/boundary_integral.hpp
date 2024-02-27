@@ -15,6 +15,50 @@ namespace SCTL_NAMESPACE {
   template <class Real, Integer DIM> class ParticleFMM;
 
   /**
+   * @brief Find the near target points (coordinates and normals) for each element.
+   *
+   * Given N target points and K elements (each made of a set of source nodes with given radius that describes its near
+   * region), return vectors containing the set of near targets (coordinates and normals) for each element.
+   *
+   * @param[in] Xtrg vector of length N*DIM, containing the target coordinates in AoS order {x1,y1,z1,..., xn,,yn,zn}.
+   *
+   * @param[in] Xn_trg vector of target normals in AoS order (can be empty).
+   *
+   * @param[in] Xsrc vector of all source node coordinates in AoS order.
+   *
+   * @param[in] src_radius vector of all source node radii.
+   *
+   * @param[in] src_elem_nds_cnt vector of length K, containing the number of source nodes in each element.
+   *
+   * @param[in] src_elem_nds_dsp vector of length K, containing the offset to the first source node of each element.
+   *
+   * @param[in] comm MPI communicator.
+   *
+   *
+   * @param[out] Xtrg_near vector containing the target coordinates near each element (in AoS order).
+   *
+   * @param[out] Xn_trg_near vector containing the target coordinates near each element (in AoS order).
+   *
+   * @param[out] near_elem_cnt vector of length K, containing the number of near target points (in Xtrg_near) for each
+   * element.
+   *
+   * @param[out] near_elem_dsp vector of length K, containing the offset of the first near target point (in Xtrg_near)
+   * for each element.
+   *
+   * @param[out] near_scatter_index the permutation map from the target points in the near list (Xtrg_near) to the
+   * orgiinal ordering of the targets (Xtrg). Once the near potential has been computed for each pair of element and
+   * its near targets, Comm::ScatterForward() can be used to reorder the potentials to the original ordering of the
+   * targets.
+   *
+   * @param[out] near_trg_cnt, near_trg_dsp vectors of length N.  After permuting the potential for element-target pairs
+   * with near_scatter_index, the potential at the i-th target is given by summing over near_trg_cnt[i] array elements
+   * starting at index near_trg_dsp[i].
+   *
+   * @note this is a collective operation.
+   */
+  template <class Real, Integer COORD_DIM=3> void BuildNearList(Vector<Real>& Xtrg_near, Vector<Real>& Xn_trg_near, Vector<Long>& near_elem_cnt, Vector<Long>& near_elem_dsp, Vector<Long>& near_scatter_index, Vector<Long>& near_trg_cnt, Vector<Long>& near_trg_dsp, const Vector<Real>& Xtrg, const Vector<Real>& Xn_trg, const Vector<Real>& Xsrc, const Vector<Real>& src_radius, const Vector<Long>& src_elem_nds_cnt, const Vector<Long>& src_elem_nds_dsp, const Comm& comm);
+
+  /**
    * Abstract base class for an element-list. In addition to the functions
    * declared in this base class, the derived class must be copy-constructible.
    */
