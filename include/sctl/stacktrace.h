@@ -124,6 +124,11 @@ inline int SetSigHandler() {
   return 0;
 }
 
+
+#ifdef SCTL_SIG_HANDLER
+int sgh = SCTL_NAMESPACE::SetSigHandler(); // Set signal handler
+#endif
+
 }  // end namespace
 
 #endif  // _SCTL_STACKTRACE_H_

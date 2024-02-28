@@ -25,14 +25,20 @@
   #endif
   // https://sourceware.org/glibc/wiki/libmvec?action=AttachFile&do=view&target=VectorABI.txt
   extern "C" {
+    #ifdef __SSE4_2__
     __m128  _ZGVbN4v_logf(__m128);
     __m128d _ZGVbN2v_log(__m128d);
+    #endif
+    #ifdef __AVX__
     __m256 _ZGVcN8v_logf(__m256);
     __m256d _ZGVcN4v_log(__m256d);
     __m256 _ZGVdN8v_logf(__m256);
     __m256d _ZGVdN4v_log(__m256d);
+    #endif
+    #if defined(__AVX512F__)
     __m512 _ZGVeN16v_logf(__m512);
     __m512d _ZGVeN8v_log(__m512d);
+    #endif
   }
 #endif
 

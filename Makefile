@@ -20,6 +20,7 @@ endif
 CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB
 
 CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
+CXXFLAGS += -DSCTL_SIG_HANDLER
 
 CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
 

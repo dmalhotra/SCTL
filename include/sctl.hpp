@@ -80,7 +80,6 @@
 
 // Print stack trace
 #include SCTL_INCLUDE(stacktrace.h)
-const int sgh = SCTL_NAMESPACE::SetSigHandler(); // Set signal handler
 
 // Boundary quadrature, Kernel functions
 #include SCTL_INCLUDE(kernel_functions.hpp)
