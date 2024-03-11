@@ -252,7 +252,8 @@ inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_s
     mem_head.check_sum = check_sum;
 #endif
   }
-  Profile::Add_MEM(n_elem * type_size);
+  Profile::IncrementCounter(ProfileCounter::HEAP_ALLOC_BYTES, n_elem * type_size);
+  Profile::IncrementCounter(ProfileCounter::HEAP_ALLOC_COUNT, 1);
 #ifdef SCTL_MEMDEBUG
   return Iterator<char>(base + header_size, n_elem * type_size, true);
 #else
@@ -360,7 +361,8 @@ inline void MemoryManager::free(Iterator<char> p) const {
     //mutex_lock.unlock();
     }
   }
-  Profile::Add_MEM(-n_elem * type_size);
+  Profile::IncrementCounter(ProfileCounter::HEAP_FREE_BYTES, n_elem * type_size);
+  Profile::IncrementCounter(ProfileCounter::HEAP_FREE_COUNT, 1);
 }
 
 inline void MemoryManager::print() const {

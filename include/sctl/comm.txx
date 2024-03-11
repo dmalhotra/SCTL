@@ -102,6 +102,8 @@ template <class SType> void* Comm::Isend(ConstIterator<SType> sbuf, Long scount,
 
   SCTL_UNUSED(sbuf[0]         );
   SCTL_UNUSED(sbuf[scount - 1]);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COUNT, 1);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_BYTES, scount*sizeof(SType));
   MPI_Isend(&sbuf[0], scount, CommDatatype<SType>::value(), dest, tag, mpi_comm_, &request[0]);
   return &request;
 #else
@@ -125,6 +127,8 @@ template <class RType> void* Comm::Irecv(Iterator<RType> rbuf, Long rcount, Inte
 
   SCTL_UNUSED(rbuf[0]         );
   SCTL_UNUSED(rbuf[rcount - 1]);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COUNT, 1);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_BYTES, rcount*sizeof(RType));
   MPI_Irecv(&rbuf[0], rcount, CommDatatype<RType>::value(), source, tag, mpi_comm_, &request[0]);
   return &request;
 #else
@@ -158,6 +162,8 @@ template <class Type> void Comm::Bcast(Iterator<Type> buf, Long count, Long root
   if (!count) return;
   SCTL_UNUSED(buf[0]        );
   SCTL_UNUSED(buf[count - 1]);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_COUNT, 1);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_BYTES, count*sizeof(Type));
   MPI_Bcast(&buf[0], count, CommDatatype<Type>::value(), root, mpi_comm_);
 #endif
 }
@@ -174,6 +180,8 @@ template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sb
     SCTL_UNUSED(rbuf[rcount * Size() - 1]);
   }
 #ifdef SCTL_HAVE_MPI
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_COUNT, 1);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_BYTES, scount*sizeof(SType) + rcount*sizeof(RType));
   MPI_Allgather((scount ? &sbuf[0] : nullptr), scount, CommDatatype<SType>::value(), (rcount ? &rbuf[0] : nullptr), rcount, CommDatatype<RType>::value(), mpi_comm_);
 #else
   memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, scount * sizeof(SType));
@@ -200,6 +208,8 @@ template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> s
     SCTL_UNUSED(rbuf[0]             );
     SCTL_UNUSED(rbuf[rcount_sum - 1]);
   }
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_COUNT, 1);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_BYTES, scount*sizeof(SType) + rcount_sum*sizeof(RType));
   MPI_Allgatherv((scount ? &sbuf[0] : nullptr), scount, CommDatatype<SType>::value(), (rcount_sum ? &rbuf[0] : nullptr), &rcounts_.begin()[0], &rdispls_.begin()[0], CommDatatype<RType>::value(), mpi_comm_);
 #else
   memcopy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)sbuf, scount * sizeof(SType));
@@ -218,6 +228,8 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
     SCTL_UNUSED(rbuf[0]                  );
     SCTL_UNUSED(rbuf[rcount * Size() - 1]);
   }
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_COUNT, 1);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_BYTES, scount*sizeof(SType) + rcount*sizeof(RType));
   MPI_Alltoall((scount ? &sbuf[0] : nullptr), scount, CommDatatype<SType>::value(), (rcount ? &rbuf[0] : nullptr), rcount, CommDatatype<RType>::value(), mpi_comm_);
 #else
   memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, scount * sizeof(SType));
@@ -242,6 +254,8 @@ template <class SType, class RType> void* Comm::Ialltoallv_sparse(ConstIterator<
     if (rcounts[i]) {
       SCTL_UNUSED(rbuf[rdispls[i]]);
       SCTL_UNUSED(rbuf[rdispls[i] + rcounts[i] - 1]);
+      Profile::IncrementCounter(ProfileCounter::PROF_MPI_COUNT, 1);
+      Profile::IncrementCounter(ProfileCounter::PROF_MPI_BYTES, rcounts[i]*sizeof(RType));
       MPI_Irecv(&rbuf[rdispls[i]], rcounts[i], CommDatatype<RType>::value(), i, tag, mpi_comm_, &request[request_iter]);
       request_iter++;
     }
@@ -250,6 +264,8 @@ template <class SType, class RType> void* Comm::Ialltoallv_sparse(ConstIterator<
     if (scounts[i]) {
       SCTL_UNUSED(sbuf[sdispls[i]]);
       SCTL_UNUSED(sbuf[sdispls[i] + scounts[i] - 1]);
+      Profile::IncrementCounter(ProfileCounter::PROF_MPI_COUNT, 1);
+      Profile::IncrementCounter(ProfileCounter::PROF_MPI_BYTES, scounts[i]*sizeof(SType));
       MPI_Isend(&sbuf[sdispls[i]], scounts[i], CommDatatype<SType>::value(), i, tag, mpi_comm_, &request[request_iter]);
       request_iter++;
     }
@@ -322,6 +338,8 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
       rtotal += rcounts[i];
     }
 
+    Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_COUNT, 1);
+    Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_BYTES, stotal*sizeof(Type) + rtotal*sizeof(Type));
     MPI_Alltoallv((stotal ? &sbuf[0] : nullptr), &scnt[0], &sdsp[0], CommDatatype<Type>::value(), (rtotal ? &rbuf[0] : nullptr), &rcnt[0], &rdsp[0], CommDatatype<Type>::value(), mpi_comm_);
     return;
     //#endif
@@ -356,6 +374,8 @@ template <class Type> void Comm::Allreduce(ConstIterator<Type> sbuf, Iterator<Ty
   SCTL_UNUSED(sbuf[count - 1]);
   SCTL_UNUSED(rbuf[0]        );
   SCTL_UNUSED(rbuf[count - 1]);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_COUNT, 1);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_BYTES, count*sizeof(Type));
   MPI_Allreduce(&sbuf[0], &rbuf[0], count, CommDatatype<Type>::value(), mpi_op, mpi_comm_);
 #else
   memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));
@@ -385,6 +405,8 @@ template <class Type> void Comm::Scan(ConstIterator<Type> sbuf, Iterator<Type> r
   SCTL_UNUSED(sbuf[count - 1]);
   SCTL_UNUSED(rbuf[0]        );
   SCTL_UNUSED(rbuf[count - 1]);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_COUNT, 1);
+  Profile::IncrementCounter(ProfileCounter::PROF_MPI_COLLECTIVE_BYTES, count*sizeof(Type));
   MPI_Scan(&sbuf[0], &rbuf[0], count, CommDatatype<Type>::value(), mpi_op, mpi_comm_);
 #else
   memcopy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));

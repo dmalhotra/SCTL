@@ -9,295 +9,517 @@
 
 namespace SCTL_NAMESPACE {
 
-#if SCTL_PROFILE >= 0
+  template <class E> class Profile::ExprWrapper {
+    public:
 
-inline Long Profile::Add_MEM(Long inc) {
-  std::vector<Long>& max_mem = ProfData().max_mem;
-  Long& MEM = ProfData().MEM;
-  Long orig_val = MEM;
-#pragma omp atomic update
-  MEM += inc;
-  for (Integer i = max_mem.size() - 1; i >= 0 && max_mem[i] < MEM; i--) max_mem[i] = MEM;
-  return orig_val;
-}
+      std::vector<double> operator()(const std::vector<double>& counters, const Comm* comm) const {
+        return ((const E*)this)->operator()(counters, comm);
+      }
 
-inline Long Profile::Add_FLOP(Long inc) {
-  Long& FLOP = ProfData().FLOP;
-  Long orig_val = FLOP;
-#pragma omp atomic update
-  FLOP += inc;
-  return orig_val;
-}
+      static void* CopyInstance(const void* self) {
+        E* expr = new E(*(E*)self);
+        return expr;
+      }
 
-inline bool Profile::Enable(bool state) {
-  bool& enable_state = ProfData().enable_state;
-  bool orig_val = enable_state;
-  enable_state = state;
-  return orig_val;
-}
+      static std::vector<double> Eval(const std::vector<double>& counters, const Comm* comm, const void* self) {
+        return ((const E*)self)->operator()(counters, comm);
+      }
 
-inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integer verbose) {
-  ProfileData& prof = ProfData();
-  if (!prof.enable_state) return;
-  // sync_=true;
-  if (verbose <= SCTL_PROFILE && (Integer)prof.verb_level.size() == prof.enable_depth) {
-    if (comm_ != nullptr && sync_) comm_->Barrier();
-#ifdef SCTL_VERBOSE
-    Integer rank = 0;
-    if (comm_ != nullptr) rank = comm_->Rank();
-    if (!rank) {
-      for (size_t i = 0; i < prof.name.size(); i++) std::cout << "    ";
-      std::cout << "\033[1;31m" << name_ << "\033[0m {\n";
-    }
-#endif
-    prof.name.push(name_);
-    prof.comm.push(comm_);
-    prof.sync.push(sync_);
-    prof.max_mem.push_back(prof.MEM);
+      static void DeleteInstance(void** self_ptr) {
+        SCTL_ASSERT(self_ptr);
+        if (!*self_ptr) return;
+        delete (E*)(*self_ptr);
+        (*self_ptr) = nullptr;
+      }
+  };
 
-    prof.e_log.push_back(true);
-    prof.s_log.push_back(sync_);
-    prof.n_log.push_back(prof.name.top());
-    prof.t_log.push_back(omp_get_wtime());
-    prof.f_log.push_back(prof.FLOP);
+  template <> class Profile::ExprWrapper<void> {
+    public:
 
-    prof.m_log.push_back(prof.MEM);
-    prof.max_m_log.push_back(prof.MEM);
-    prof.enable_depth++;
+      ExprWrapper() : instance(nullptr) {}
+
+      template <class E> ExprWrapper(const ExprWrapper<E>& e) : instance(nullptr) {
+        Copy(e);
+      }
+
+      ExprWrapper(const ExprWrapper<void>& e) : instance(nullptr) {
+        Copy(e);
+      }
+
+      template <class E> ExprWrapper<void>& operator=(const ExprWrapper<E>& e) {
+        Copy(e);
+        return *this;
+      }
+
+      ExprWrapper<void>& operator=(const ExprWrapper<void>& e) {
+        Copy(e);
+        return *this;
+      }
+
+      ~ExprWrapper() {
+        del_fn(&instance);
+      }
+
+
+      std::vector<double> operator()(const std::vector<double>& counters, const Comm* comm) const {
+        return eval_fn(counters, comm, instance);
+      }
+
+      static void* CopyInstance(const void* self) {
+        ExprWrapper<void>* instance_ptr = new ExprWrapper<void>;
+        const auto self_ = (ExprWrapper<void>*)self;
+        instance_ptr->copy_fn = self_->copy_fn;
+        instance_ptr->eval_fn = self_->eval_fn;
+        instance_ptr->del_fn = self_->del_fn;
+        instance_ptr->instance = self_->copy_fn(self_->instance);
+        return instance_ptr;
+      }
+
+      static std::vector<double> Eval(const std::vector<double>& counters, const Comm* comm, const void* self) {
+        const auto self_ = (ExprWrapper<void>*)self;
+        return self_->eval_fn(counters, comm, self_->instance);
+      }
+
+      static void DeleteInstance(void** self_ptr) {
+        SCTL_ASSERT(self_ptr);
+        if (!*self_ptr) return;
+        delete (ExprWrapper<void>*)*self_ptr;
+        (*self_ptr) = nullptr;
+      }
+
+    private:
+
+      template <class Expr> void Copy(const Expr& e) {
+        if (instance) del_fn(&instance);
+        copy_fn = Expr::CopyInstance;
+        eval_fn = Expr::Eval;
+        del_fn = Expr::DeleteInstance;
+        instance = copy_fn(&e);
+      }
+
+      void Copy(const ExprWrapper<void>& e) {
+        if (instance) del_fn(&instance);
+        copy_fn = e.copy_fn;
+        eval_fn = e.eval_fn;
+        del_fn = e.del_fn;
+        instance = copy_fn(e.instance);
+      }
+
+      void* (*copy_fn)(const void*);
+      std::vector<double> (*eval_fn)(const std::vector<double>&, const Comm*, const void*);
+      void (*del_fn)(void**);
+      void* instance;
+  };
+
+  class Profile::ExprScalar : public Profile::ExprWrapper<ExprScalar> {
+    public:
+
+      ExprScalar() = default;
+
+      ExprScalar(ProfileCounter field) : field_((Long)field), value_(0) {}
+
+      ExprScalar(double value) : field_((Long)ProfileCounter::FIELD_COUNT), value_(value) {}
+
+      std::vector<double> operator()(const std::vector<double>& counters, const Comm* comm) const {
+        const Long Nfield = (Long)ProfileCounter::FIELD_COUNT;
+        const Long N = counters.size() / Nfield;
+        std::vector<double> val_vec(N);
+        if (field_ == Nfield) {
+          for (Long i = 0; i < N; i++) {
+            val_vec[i] = value_;
+          }
+        } else {
+          for (Long i = 0; i < N; i++) {
+            val_vec[i] = counters[i*Nfield + field_];
+          }
+        }
+        return val_vec;
+      }
+
+    private:
+      Long field_;
+      double value_;
+  };
+
+  template <class UnaryOp> class Profile::ExprUnary : public Profile::ExprWrapper<ExprUnary<UnaryOp>> {
+    public:
+
+      ExprUnary() = default;
+
+      ExprUnary(const ExprWrapper<void>& e1, const UnaryOp& op) : e1_(e1), op_(op) {}
+
+      std::vector<double> operator()(const std::vector<double>& counters, const Comm* comm) const {
+        return op_(e1_(counters, comm), comm);
+      }
+
+    private:
+      ExprWrapper<void> e1_;
+      UnaryOp op_;
+  };
+
+  template <class BinaryOp> class Profile::ExprBinary : public Profile::ExprWrapper<ExprBinary<BinaryOp>> {
+    public:
+
+      ExprBinary() = default;
+
+      ExprBinary(const ExprWrapper<void>& e1, const ExprWrapper<void>& e2, const BinaryOp& op) : e1_(e1), e2_(e2), op_(op) {}
+
+      std::vector<double> operator()(const std::vector<double>& counters, const Comm* comm) const {
+        return op_(e1_(counters, comm), e2_(counters, comm), comm);
+      }
+
+    private:
+      ExprWrapper<void> e1_, e2_;
+      BinaryOp op_;
+  };
+
+
+
+  Profile::ProfExpr operator+(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
+    const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
+      SCTL_ASSERT(x.size() == y.size());
+      for (Long i = 0; i < (Long)x.size(); i++) x[i] += y[i];
+      return x;
+    };
+    return Profile::ExprBinary<decltype(op)>(u, v, op);
   }
-  prof.verb_level.push(verbose);
-}
 
-inline void Profile::Toc() {
-  ProfileData& prof = ProfData();
-  if (!prof.enable_state) return;
-  SCTL_ASSERT_MSG(!prof.verb_level.empty(), "Unbalanced extra Toc()");
-  if (prof.verb_level.top() <= SCTL_PROFILE && (Integer)prof.verb_level.size() == prof.enable_depth) {
-    SCTL_ASSERT_MSG(!prof.name.empty() && !prof.comm.empty() && !prof.sync.empty() && !prof.max_mem.empty(), "Unbalanced extra Toc()");
-    std::string name_ = prof.name.top();
-    const Comm* comm_ = prof.comm.top();
-    bool sync_ = prof.sync.top();
+  Profile::ProfExpr operator-(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
+    const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
+      SCTL_ASSERT(x.size() == y.size());
+      for (Long i = 0; i < (Long)x.size(); i++) x[i] -= y[i];
+      return x;
+    };
+    return Profile::ExprBinary<decltype(op)>(u, v, op);
+  }
+
+  Profile::ProfExpr operator*(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
+    const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
+      SCTL_ASSERT(x.size() == y.size());
+      for (Long i = 0; i < (Long)x.size(); i++) x[i] *= y[i];
+      return x;
+    };
+    return Profile::ExprBinary<decltype(op)>(u, v, op);
+  }
+
+  Profile::ProfExpr operator/(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
+    const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
+      SCTL_ASSERT(x.size() == y.size());
+      for (Long i = 0; i < (Long)x.size(); i++) x[i] /= y[i];
+      return x;
+    };
+    return Profile::ExprBinary<decltype(op)>(u, v, op);
+  }
+
+  Profile::ProfExpr operator*(const Profile::ProfExpr& u, const double a) {
+    const auto op = [a](std::vector<double> x, const Comm* comm) {
+      for (Long i = 0; i < (Long)x.size(); i++) x[i] *= a;
+      return x;
+    };
+    return Profile::ExprUnary<decltype(op)>(u, op);
+  }
+
+
+
+  struct Profile::ProfileData {
+    const double t0;
+    bool enable_state;
+
+    std::stack<int> verb;
+    std::stack<bool> sync;
+    std::stack<std::string> name;
+    std::stack<const Comm*> comm;
+
+    std::vector<bool> e_log;
+    std::vector<std::string> n_log;
+    std::vector<double> counter_log;
+
+    std::array<std::atomic<Long>, Nfield+1> counters;
+    std::map<std::string, ProfExpr> prof_fields;
+
+    ProfileData() : t0(omp_get_wtime()), enable_state(false) {
+      constexpr double gb_scale = (1./1024/1024/1024);
+      for (auto& x : counters) x = 0;
+
+      prof_fields["0"]  = ExprScalar(0.);
+      prof_fields["t"]  = ExprScalar(ProfileCounter::TIME) * 1e-9;
+      prof_fields["f"] = ExprScalar(ProfileCounter::FLOP) * 1e-9;
+      prof_fields["f/s"] = prof_fields["f"] / prof_fields["t"];
+
+      prof_fields["alloc_count"] = ExprScalar(ProfileCounter::HEAP_ALLOC_COUNT);
+      prof_fields["alloc_m"]     = ExprScalar(ProfileCounter::HEAP_ALLOC_BYTES) * gb_scale;
+      prof_fields["free_count"]  = ExprScalar(ProfileCounter::HEAP_FREE_COUNT);
+      prof_fields["free_m" ]     = ExprScalar(ProfileCounter::HEAP_FREE_BYTES) * gb_scale;
+      prof_fields["m"]           = prof_fields["alloc_m"] - prof_fields["free_m"];
+
+      prof_fields["comm_count"]      = ExprScalar(ProfileCounter::PROF_MPI_COUNT);
+      prof_fields["comm_m"]          = ExprScalar(ProfileCounter::PROF_MPI_BYTES) * gb_scale;
+      prof_fields["comm_coll_m"]     = ExprScalar(ProfileCounter::PROF_MPI_COLLECTIVE_BYTES) * gb_scale;
+      prof_fields["comm_coll_count"] = ExprScalar(ProfileCounter::PROF_MPI_COLLECTIVE_COUNT);
+
+      prof_fields["custom1"] = ExprScalar(ProfileCounter::CUSTOM1);
+      prof_fields["custom2"] = ExprScalar(ProfileCounter::CUSTOM2);
+      prof_fields["custom3"] = ExprScalar(ProfileCounter::CUSTOM3);
+      prof_fields["custom4"] = ExprScalar(ProfileCounter::CUSTOM4);
+      prof_fields["custom5"] = ExprScalar(ProfileCounter::CUSTOM5);
+
+      const auto comm_size_fn = [](std::vector<double> v, const Comm* comm) {
+        const Long np = (comm ? comm->Size() : 1);
+        for (auto& x : v) x = (double)np;
+        return v;
+      };
+      prof_fields["comm_size"] = Profile::ExprUnary<decltype(comm_size_fn)>(ExprScalar(0.), comm_size_fn);
+
+      prof_fields["t_max"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::MIN);
+      prof_fields["t_max"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::MAX);
+      prof_fields["t_avg"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::SUM) / prof_fields["comm_size"];
+
+      prof_fields["f_max"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::MIN);
+      prof_fields["f_max"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::MAX);
+      prof_fields["f_avg"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::SUM) / prof_fields["comm_size"];
+
+      prof_fields["f/s_min"] = Profile::CommReduceExpr(prof_fields["f"] / prof_fields["t"], Comm::CommOp::MIN);
+      prof_fields["f/s_max"] = Profile::CommReduceExpr(prof_fields["f"] / prof_fields["t"], Comm::CommOp::MAX);
+      prof_fields["f/s_avg"] = Profile::CommReduceExpr(prof_fields["f"] / prof_fields["t"], Comm::CommOp::SUM) / prof_fields["comm_size"];
+
+      prof_fields["m_min"] = Profile::CommReduceExpr(prof_fields["m"], Comm::CommOp::MIN);
+      prof_fields["m_max"] = Profile::CommReduceExpr(prof_fields["m"], Comm::CommOp::MAX);
+      prof_fields["m_avg"] = Profile::CommReduceExpr(prof_fields["m"], Comm::CommOp::SUM) / prof_fields["comm_size"];
+    }
+  };
+
+  inline Profile::ProfileData& Profile::GetProfData() {
+    static ProfileData p;
+    return p;
+  }
+
+
+
+  const Profile::ProfExpr Profile::GetProfField(const std::string& name) {
+    if (!GetProfData().prof_fields.count(name)) {
+      SCTL_WARN("Unknown profile field name ignored:"<<name);
+      return ExprScalar(0.);
+    }
+    return GetProfData().prof_fields[name];
+  }
+
+  void Profile::SetProfField(const std::string& name, const Profile::ProfExpr& expr) {
+    GetProfData().prof_fields[name] = expr;
+  }
+
+  template <class UnaryOp> Profile::ProfExpr Profile::UnaryExpr(const Profile::ProfExpr& e1, const UnaryOp& op) {
+    return Profile::ExprUnary<decltype(op)>(e1, op);
+  }
+
+  template <class BinaryOp> Profile::ProfExpr Profile::BinaryExpr(const Profile::ProfExpr& e1, const Profile::ProfExpr& e2, const BinaryOp& op) {
+    return Profile::ExprBinary<decltype(op)>(e1, e2, op);
+  }
+
+  Profile::ProfExpr Profile::CommReduceExpr(const Profile::ProfExpr& u, const Comm::CommOp comm_op) {
+    const auto op = [comm_op](std::vector<double> x, const Comm* comm) {
+      const Long N = (Long)x.size();
+      if (!comm || !N) return x;
+      std::vector<double> y(N);
+      comm->Allreduce(Ptr2ConstItr<double>(&x[0],N), Ptr2Itr<double>(&y[0],N), N, comm_op);
+      return y;
+    };
+    return Profile::ExprUnary<decltype(op)>(u, op);
+  }
+
+
+
+
+  inline bool Profile::Enable(bool state) {
+    const bool orig_val = GetProfData().enable_state;
+    GetProfData().enable_state = state;
+    return orig_val;
+  }
+
+  inline void Profile::print(const Comm* comm_, std::vector<std::string> field_lst, std::vector<std::string> format_lst) {
+    if (!field_lst.size()) {
+      if (!comm_ || comm_->Size()==1) field_lst = {"t", "f", "f/s", "m"};
+      else field_lst = {"t_avg", "t_max", "f_avg", "f_max", "f/s_min", "f/s_avg", "m_max"};
+    }
+    if (format_lst.size() != field_lst.size()) {
+      const Long N = field_lst.size() - format_lst.size();
+      for (Long i = 0; i < N; i++) format_lst.push_back("%.4f");
+    }
+    const Long Ncolumn = field_lst.size();
+
+    std::vector<std::string> name; // row label
+    std::vector<Integer> depth; // nesting depth
+    std::vector<double> counter; // data counters
+    Long name_max_length = 0; // max length of name-column (first column)
+    { // name, name_max_length, depth, counter
+      std::stack<Long> idx_stack;
+      ProfileData& prof = GetProfData();
+      for (Long i = prof.e_log.size()-1; i >= 0; i--) {
+        if (prof.e_log[i]==0) {
+          idx_stack.push(i);
+        } else {
+          if (!idx_stack.size()) {
+            //prof.e_log.resize(i+1);
+            //prof.n_log.resize(i+1);
+            //prof.counter_log.resize((i+1)*Nfield);
+            break;
+          }
+          const Long i0 = idx_stack.top();
+
+          const auto name_ = prof.n_log[i];
+          const auto depth_ = idx_stack.size()-1;
+          name.push_back(name_);
+          depth.push_back(depth_);
+          name_max_length = std::max<Long>(name_max_length, name_.size() + depth_*2 + 2);
+          for (Long k = 0; k < Nfield; k++) {
+            counter.push_back(prof.counter_log[i0*Nfield+k] - prof.counter_log[i*Nfield+k]);
+          }
+
+          idx_stack.pop();
+        }
+      }
+    }
+    if (!name.size()) return;
+
+    std::vector<Long> column_width(Ncolumn);
+    std::vector<std::vector<std::string>> column_lst(Ncolumn);
+    for (Long i = 0; i < Ncolumn; i++) { // Set column_lst, column_width
+      const auto column = GetProfField(field_lst[i])(counter, comm_);
+      Long max_width = field_lst[i].size();
+
+      const Long N = column.size();
+      std::vector<std::string> column_str(N);
+      for (Long j = 0; j < N; j++) {
+        char buffer[100];
+        sprintf(buffer, format_lst[i].c_str(), column[j]);
+        column_str[j] = std::string(buffer);
+        max_width = std::max(max_width, (Long)column_str[j].size());
+      }
+      column_lst[i] = column_str;
+      column_width[i] = max_width;
+    }
+
+    std::string out_str;
+    std::string tree_str;
+    for (Long i = 0; i < (Long)name.size(); i++) { // build table bottom up
+      // Set tree_str (the tree structure)
+      for (Long k = tree_str.size()/2; k < depth[i]; k++) tree_str = tree_str + "  ";
+      if (i > 0 && depth[i] > depth[i-1]) tree_str[depth[i-1]*2] = '|';
+      tree_str.resize(depth[i]*2);
+
+      std::stringstream row_ss(std::stringstream::in | std::stringstream::out);
+      row_ss << tree_str << "+-" << std::setw(name_max_length-tree_str.size()-2) << std::left << name[i]; // print name
+      for (Long j = 0; j < Ncolumn; j++) row_ss << "  " << std::setw(column_width[j]) << std::right << column_lst[j][i]; // print values
+      row_ss << '\n';
+
+      if (i > 0 && depth[i-1] < depth[i]) row_ss << tree_str << '\n'; // add separator row
+      out_str = row_ss.str() + out_str; // prepend row_ss to out_str
+    }
+    { // Print column headers
+      std::stringstream ss(std::stringstream::in | std::stringstream::out);
+      ss << std::string(name_max_length, ' ');
+      for (Long j = 0; j < Ncolumn; j++) ss << "  " << std::setw(column_width[j]) << field_lst[j];
+      out_str = ss.str() + '\n' + out_str;
+    }
+    if (comm_==nullptr || !comm_->Rank()) std::cout<<out_str<<'\n';
+  }
+
+  inline void Profile::reset() {
+    ProfileData& prof = GetProfData();
+    while (!prof.verb.empty()) prof.verb.pop();
+    while (!prof.sync.empty()) prof.sync.pop();
+    while (!prof.name.empty()) prof.name.pop();
+    while (!prof.comm.empty()) prof.comm.pop();
+
+    prof.e_log.clear();
+    prof.n_log.clear();
+    prof.counter_log.clear();
+  }
+
+
+  #if SCTL_PROFILE >= 0
+
+  inline Long Profile::IncrementCounter(const ProfileCounter prof_field, const Long x) {
+    return GetProfData().counters[(Long)prof_field].fetch_add(x,std::memory_order_relaxed);
+  }
+
+  inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integer verbose) {
+    ProfileData& prof = GetProfData();
+    if (!prof.enable_state) return;
     // sync_=true;
 
-    prof.e_log.push_back(false);
-    prof.s_log.push_back(sync_);
-    prof.n_log.push_back(name_);
-    prof.t_log.push_back(omp_get_wtime());
-    prof.f_log.push_back(prof.FLOP);
-
-    prof.m_log.push_back(prof.MEM);
-    prof.max_m_log.push_back(prof.max_mem.back());
-
-#ifndef NDEBUG
-    if (comm_ != nullptr && sync_) comm_->Barrier();
-#endif
-    prof.name.pop();
-    prof.comm.pop();
-    prof.sync.pop();
-    prof.max_mem.pop_back();
-
-#ifdef SCTL_VERBOSE
-    Integer rank = 0;
-    if (comm_ != nullptr) rank = comm_->Rank();
-    if (!rank) {
-      for (size_t i = 0; i < prof.name.size(); i++) std::cout << "    ";
-      std::cout << "}\n";
-    }
-#endif
-    prof.enable_depth--;
-  }
-  prof.verb_level.pop();
-}
-
-inline void Profile::print(const Comm* comm_) {
-  ProfileData& prof = ProfData();
-  SCTL_ASSERT_MSG(prof.name.empty(), "Missing balancing Toc()");
-
-  Comm c_self = Comm::Self();
-  if (comm_ == nullptr) comm_ = &c_self;
-  comm_->Barrier();
-
-  Integer np, rank;
-  np = comm_->Size();
-  rank = comm_->Rank();
-
-  std::stack<double> tt;
-  std::stack<Long> ff;
-  std::stack<Long> mm;
-  Integer width = 10;
-  size_t level = 0;
-  if (!rank && prof.e_log.size() > 0) {
-    std::cout << "\n" << std::setw(width * 3 - 2 * level) << " ";
-    if (np == 1) {
-      std::cout << "  " << std::setw(width) << "t";
-      std::cout << "  " << std::setw(width) << "f";
-      std::cout << "  " << std::setw(width) << "f/s";
-    } else {
-      std::cout << "  " << std::setw(width) << "t_min";
-      std::cout << "  " << std::setw(width) << "t_avg";
-      std::cout << "  " << std::setw(width) << "t_max";
-
-      std::cout << "  " << std::setw(width) << "f_min";
-      std::cout << "  " << std::setw(width) << "f_avg";
-      std::cout << "  " << std::setw(width) << "f_max";
-
-      std::cout << "  " << std::setw(width) << "f/s_min";
-      std::cout << "  " << std::setw(width) << "f/s_max";
-      std::cout << "  " << std::setw(width) << "f/s_total";
-    }
-
-    std::cout << "  " << std::setw(width) << "m_init";
-    std::cout << "  " << std::setw(width) << "m_max";
-    std::cout << "  " << std::setw(width) << "m_final" << '\n';
-  }
-
-  std::stack<std::string> out_stack;
-  std::string s;
-  out_stack.push(s);
-  for (size_t i = 0; i < prof.e_log.size(); i++) {
-    if (prof.e_log[i]) {
-      level++;
-      tt.push(prof.t_log[i]);
-      ff.push(prof.f_log[i]);
-      mm.push(prof.m_log[i]);
-
-      std::string ss;
-      out_stack.push(ss);
-    } else {
-      double t0 = prof.t_log[i] - tt.top();
-      tt.pop();
-      double f0 = (double)(prof.f_log[i] - ff.top()) * 1e-9;
-      ff.pop();
-      double fs0 = f0 / t0;
-      double t_max, t_min, t_sum, t_avg;
-      double f_max, f_min, f_sum, f_avg;
-      double fs_max, fs_min, fs_sum;  //, fs_avg;
-      double m_init, m_max, m_final;
-      comm_->Allreduce(Ptr2ConstItr<double>(&t0, 1), Ptr2Itr<double>(&t_max, 1), 1, Comm::CommOp::MAX);
-      comm_->Allreduce(Ptr2ConstItr<double>(&f0, 1), Ptr2Itr<double>(&f_max, 1), 1, Comm::CommOp::MAX);
-      comm_->Allreduce(Ptr2ConstItr<double>(&fs0, 1), Ptr2Itr<double>(&fs_max, 1), 1, Comm::CommOp::MAX);
-
-      comm_->Allreduce(Ptr2ConstItr<double>(&t0, 1), Ptr2Itr<double>(&t_min, 1), 1, Comm::CommOp::MIN);
-      comm_->Allreduce(Ptr2ConstItr<double>(&f0, 1), Ptr2Itr<double>(&f_min, 1), 1, Comm::CommOp::MIN);
-      comm_->Allreduce(Ptr2ConstItr<double>(&fs0, 1), Ptr2Itr<double>(&fs_min, 1), 1, Comm::CommOp::MIN);
-
-      comm_->Allreduce(Ptr2ConstItr<double>(&t0, 1), Ptr2Itr<double>(&t_sum, 1), 1, Comm::CommOp::SUM);
-      comm_->Allreduce(Ptr2ConstItr<double>(&f0, 1), Ptr2Itr<double>(&f_sum, 1), 1, Comm::CommOp::SUM);
-
-      m_final = (double)prof.m_log[i] * 1e-9;
-      m_init = (double)mm.top() * 1e-9;
-      mm.pop();
-      m_max = (double)prof.max_m_log[i] * 1e-9;
-
-      t_avg = t_sum / np;
-      f_avg = f_sum / np;
-      // fs_avg=f_avg/t_max;
-      fs_sum = f_sum / t_max;
-
-      if (!rank) {
-        std::string s0 = out_stack.top();
-        out_stack.pop();
-        std::string s1 = out_stack.top();
-        out_stack.pop();
-        std::stringstream ss(std::stringstream::in | std::stringstream::out);
-        ss << std::setiosflags(std::ios::fixed) << std::setprecision(4) << std::setiosflags(std::ios::left);
-
-        for (size_t j = 0; j < level - 1; j++) {
-          size_t l = i + 1;
-          size_t k = level - 1;
-          while (k > j && l < prof.e_log.size()) {
-            k += (prof.e_log[l] ? 1 : -1);
-            l++;
-          }
-          if (l < prof.e_log.size() ? prof.e_log[l] : false)
-            ss << "| ";
-          else
-            ss << "  ";
-        }
-        ss << "+-";
-        ss << std::setw(width * 3 - 2 * level) << prof.n_log[i];
-        ss << std::setiosflags(std::ios::right);
-        if (np == 1) {
-          ss << "  " << std::setw(width) << t_avg;
-          ss << "  " << std::setw(width) << f_avg;
-          ss << "  " << std::setw(width) << fs_sum;
-        } else {
-          ss << "  " << std::setw(width) << t_min;
-          ss << "  " << std::setw(width) << t_avg;
-          ss << "  " << std::setw(width) << t_max;
-
-          ss << "  " << std::setw(width) << f_min;
-          ss << "  " << std::setw(width) << f_avg;
-          ss << "  " << std::setw(width) << f_max;
-
-          ss << "  " << std::setw(width) << fs_min;
-          // ss<<"  "<<std::setw(width)<<fs_avg;
-          ss << "  " << std::setw(width) << fs_max;
-          ss << "  " << std::setw(width) << fs_sum;
-        }
-
-        ss << "  " << std::setw(width) << m_init;
-        ss << "  " << std::setw(width) << m_max;
-        ss << "  " << std::setw(width) << m_final << '\n';
-
-        s1 += ss.str() + s0;
-        if (!s0.empty() && (i + 1 < prof.e_log.size() ? prof.e_log[i + 1] : false)) {
-          for (size_t j = 0; j < level; j++) {
-            size_t l = i + 1;
-            size_t k = level - 1;
-            while (k > j && l < prof.e_log.size()) {
-              k += (prof.e_log[l] ? 1 : -1);
-              l++;
-            }
-            if (l < prof.e_log.size() ? prof.e_log[l] : false)
-              s1 += "| ";
-            else
-              s1 += "  ";
-          }
-          s1 += "\n";
-        }  // */
-        out_stack.push(s1);
+    prof.verb.push((prof.verb.size()?prof.verb.top():0) + verbose);
+    if (prof.verb.top() <= SCTL_PROFILE) {
+      if (comm_ != nullptr && sync_) comm_->Barrier();
+  #ifdef SCTL_VERBOSE
+      if (comm_?!comm_->Rank():1) {
+        for (size_t i = 0; i < prof.name.size(); i++) std::cout << "    ";
+        std::cout << "\033[1;31m" << name_ << "\033[0m {\n";
       }
-      level--;
+  #endif
+      prof.name.push(name_);
+      prof.comm.push(comm_);
+      prof.sync.push(sync_);
+
+      prof.e_log.push_back(true);
+      prof.n_log.push_back(prof.name.top());
+      prof.counters[(Long)ProfileCounter::TIME].store((Long)((omp_get_wtime()-prof.t0)*1e9),std::memory_order_relaxed);
+      for (Long i = 0; i < Nfield; i++) prof.counter_log.push_back(prof.counters[i]);
     }
   }
-  if (!rank) std::cout << out_stack.top() << '\n';
 
-  reset();
-}
+  inline void Profile::Toc() {
+    ProfileData& prof = GetProfData();
+    if (!prof.enable_state) return;
+    SCTL_ASSERT_MSG(!prof.verb.empty(), "Unbalanced extra Toc()");
 
-inline void Profile::reset() {
-  ProfileData& prof = ProfData();
-  prof.FLOP = 0;
-  while (!prof.sync.empty()) prof.sync.pop();
-  while (!prof.name.empty()) prof.name.pop();
-  while (!prof.comm.empty()) prof.comm.pop();
+    if (prof.verb.top() <= SCTL_PROFILE) {
+      SCTL_ASSERT_MSG(!prof.name.empty(), "Unbalanced extra Toc()");
 
-  prof.e_log.clear();
-  prof.s_log.clear();
-  prof.n_log.clear();
-  prof.t_log.clear();
-  prof.f_log.clear();
-  prof.m_log.clear();
-  prof.max_m_log.clear();
-}
+      const std::string& name_ = prof.name.top();
+      const Comm* comm_ = prof.comm.top();
+      const bool sync_ = prof.sync.top();
+      SCTL_UNUSED(sync_);
 
-#else
+      prof.e_log.push_back(false);
+      prof.n_log.push_back(name_);
+      prof.counters[(Long)ProfileCounter::TIME].store((Long)((omp_get_wtime()-prof.t0)*1e9),std::memory_order_relaxed);
+      for (Long i = 0; i < Nfield; i++) prof.counter_log.push_back(prof.counters[i]);
 
-inline Long Profile::Add_FLOP(Long inc) { return 0; }
+  #ifndef NDEBUG
+      if (comm_ != nullptr && sync_) comm_->Barrier();
+  #endif
+      prof.name.pop();
+      prof.comm.pop();
+      prof.sync.pop();
 
-inline Long Profile::Add_MEM(Long inc) { return 0; }
+  #ifdef SCTL_VERBOSE
+      if (comm_?!comm_->Rank():1) {
+        for (size_t i = 0; i < prof.name.size(); i++) std::cout << "    ";
+        std::cout << "}\n";
+      }
+  #endif
+    }
+    prof.verb.pop();
+  }
 
-inline bool Profile::Enable(bool state) { return false; }
+  #else
 
-inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integer verbose) { }
+  inline Long Profile::IncrementCounter(const ProfileCounter prof_field, const Long x) {}
 
-inline void Profile::Toc() { }
+  inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integer verbose) {}
 
-inline void Profile::print(const Comm* comm_) { }
+  inline void Profile::Toc() {}
 
-inline void Profile::reset() { }
+  #endif
 
-#endif
+  Profile::Scoped::Scoped(const char* name_, const Comm* comm_, bool sync_, Integer verbose) {
+    Profile::Tic(name_, comm_, sync_, verbose);
+  }
+
+  Profile::Scoped::~Scoped() {
+    Profile::Toc();
+  }
+
 
 }  // end namespace
+

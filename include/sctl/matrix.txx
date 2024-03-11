@@ -5,6 +5,7 @@
 #include <iostream>
 #include <iomanip>
 
+#include SCTL_INCLUDE(vector.hpp)
 #include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(mat_utils.hpp)
 #include SCTL_INCLUDE(mem_mgr.hpp)
@@ -179,7 +180,7 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(const
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator+=(const Matrix<ValueType>& M) {
   SCTL_ASSERT(M.Dim(0) == Dim(0) && M.Dim(1) == Dim(1));
-  Profile::Add_FLOP(dim[0] * dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim[0] * dim[1]);
 
   for (Long i = 0; i < M.Dim(0) * M.Dim(1); i++) data_ptr[i] += M.data_ptr[i];
   return *this;
@@ -187,7 +188,7 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator+=(cons
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator-=(const Matrix<ValueType>& M) {
   SCTL_ASSERT(M.Dim(0) == Dim(0) && M.Dim(1) == Dim(1));
-  Profile::Add_FLOP(dim[0] * dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim[0] * dim[1]);
 
   for (Long i = 0; i < M.Dim(0) * M.Dim(1); i++) data_ptr[i] -= M.data_ptr[i];
   return *this;
@@ -196,7 +197,7 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator-=(cons
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator+(const Matrix<ValueType>& M2) const {
   const Matrix<ValueType>& M1 = *this;
   SCTL_ASSERT(M2.Dim(0) == M1.Dim(0) && M2.Dim(1) == M1.Dim(1));
-  Profile::Add_FLOP(dim[0] * dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim[0] * dim[1]);
 
   Matrix<ValueType> M_r(M1.Dim(0), M1.Dim(1));
   for (Long i = 0; i < M1.Dim(0) * M1.Dim(1); i++) M_r[0][i] = M1[0][i] + M2[0][i];
@@ -206,7 +207,7 @@ template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator+(const 
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator-(const Matrix<ValueType>& M2) const {
   const Matrix<ValueType>& M1 = *this;
   SCTL_ASSERT(M2.Dim(0) == M1.Dim(0) && M2.Dim(1) == M1.Dim(1));
-  Profile::Add_FLOP(dim[0] * dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim[0] * dim[1]);
 
   Matrix<ValueType> M_r(M1.Dim(0), M1.Dim(1));
   for (Long i = 0; i < M1.Dim(0) * M1.Dim(1); i++) M_r[0][i] = M1[0][i] - M2[0][i];
@@ -215,7 +216,7 @@ template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator-(const 
 
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator*(const Matrix<ValueType>& M) const {
   SCTL_ASSERT(dim[1] == M.dim[0]);
-  Profile::Add_FLOP(2 * (((Long)dim[0]) * dim[1]) * M.dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, 2 * (((Long)dim[0]) * dim[1]) * M.dim[1]);
 
   Matrix<ValueType> M_r(dim[0], M.dim[1]);
   if (M.Dim(0) * M.Dim(1) == 0 || this->Dim(0) * this->Dim(1) == 0) return M_r;
@@ -228,7 +229,7 @@ template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, 
   SCTL_ASSERT(M_r.dim[0] == A.dim[0]);
   SCTL_ASSERT(M_r.dim[1] == B.dim[1]);
   if (A.Dim(0) * A.Dim(1) == 0 || B.Dim(0) * B.Dim(1) == 0) return;
-  Profile::Add_FLOP(2 * (((Long)A.dim[0]) * A.dim[1]) * B.dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, 2 * (((Long)A.dim[0]) * A.dim[1]) * B.dim[1]);
   mat::gemm<ValueType>('N', 'N', B.dim[1], A.dim[0], A.dim[1], 1.0, B.data_ptr, B.dim[1], A.data_ptr, A.dim[1], beta, M_r.data_ptr, M_r.dim[1]);
 }
 
@@ -297,28 +298,28 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(Value
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator+=(ValueType s) {
   Long N = dim[0] * dim[1];
   for (Long i = 0; i < N; i++) data_ptr[i] += s;
-  Profile::Add_FLOP(N);
+  Profile::IncrementCounter(ProfileCounter::FLOP, N);
   return *this;
 }
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator-=(ValueType s) {
   Long N = dim[0] * dim[1];
   for (Long i = 0; i < N; i++) data_ptr[i] -= s;
-  Profile::Add_FLOP(N);
+  Profile::IncrementCounter(ProfileCounter::FLOP, N);
   return *this;
 }
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator*=(ValueType s) {
   Long N = dim[0] * dim[1];
   for (Long i = 0; i < N; i++) data_ptr[i] *= s;
-  Profile::Add_FLOP(N);
+  Profile::IncrementCounter(ProfileCounter::FLOP, N);
   return *this;
 }
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator/=(ValueType s) {
   Long N = dim[0] * dim[1];
   for (Long i = 0; i < N; i++) data_ptr[i] /= s;
-  Profile::Add_FLOP(N);
+  Profile::IncrementCounter(ProfileCounter::FLOP, N);
   return *this;
 }
 

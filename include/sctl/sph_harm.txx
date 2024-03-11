@@ -3049,9 +3049,9 @@ template <class Real> template <bool SLayer, bool DLayer> void SphericalHarmonic
         }
       }
     }
-    Profile::Add_FLOP(20*(2*p1)*(p1+1)*2*N);
-    if(SLayer) Profile::Add_FLOP((19+6)*(2*p1)*(p1+1)*2*N);
-    if(DLayer) Profile::Add_FLOP( 22   *(2*p1)*(p1+1)*2*N);
+    Profile::IncrementCounter(ProfileCounter::FLOP, 20*(2*p1)*(p1+1)*2*N);
+    if(SLayer) Profile::IncrementCounter(ProfileCounter::FLOP, (19+6)*(2*p1)*(p1+1)*2*N);
+    if(DLayer) Profile::IncrementCounter(ProfileCounter::FLOP,  22   *(2*p1)*(p1+1)*2*N);
   }
   Profile::Toc();
 

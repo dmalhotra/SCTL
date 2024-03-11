@@ -207,28 +207,28 @@ template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const
 template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator+=(const Vector<ValueType>& V) {
   SCTL_ASSERT(V.Dim() == dim);
   for (Long i = 0; i < dim; i++) data_ptr[i] += V[i];
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return *this;
 }
 
 template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator-=(const Vector<ValueType>& V) {
   SCTL_ASSERT(V.Dim() == dim);
   for (Long i = 0; i < dim; i++) data_ptr[i] -= V[i];
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return *this;
 }
 
 template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator*=(const Vector<ValueType>& V) {
   SCTL_ASSERT(V.Dim() == dim);
   for (Long i = 0; i < dim; i++) data_ptr[i] *= V[i];
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return *this;
 }
 
 template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator/=(const Vector<ValueType>& V) {
   SCTL_ASSERT(V.Dim() == dim);
   for (Long i = 0; i < dim; i++) data_ptr[i] /= V[i];
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return *this;
 }
 
@@ -236,7 +236,7 @@ template <class ValueType> Vector<ValueType> Vector<ValueType>::operator+(const 
   Vector<ValueType> Vr(dim);
   SCTL_ASSERT(V.Dim() == dim);
   for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] + V[i];
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return Vr;
 }
 
@@ -244,7 +244,7 @@ template <class ValueType> Vector<ValueType> Vector<ValueType>::operator-(const 
   Vector<ValueType> Vr(dim);
   SCTL_ASSERT(V.Dim() == dim);
   for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] - V[i];
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return Vr;
 }
 
@@ -252,7 +252,7 @@ template <class ValueType> Vector<ValueType> Vector<ValueType>::operator*(const 
   Vector<ValueType> Vr(dim);
   SCTL_ASSERT(V.Dim() == dim);
   for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] * V[i];
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return Vr;
 }
 
@@ -260,7 +260,7 @@ template <class ValueType> Vector<ValueType> Vector<ValueType>::operator/(const 
   Vector<ValueType> Vr(dim);
   SCTL_ASSERT(V.Dim() == dim);
   for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] / V[i];
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return Vr;
 }
 
@@ -279,53 +279,53 @@ template <class ValueType> template <class VType> Vector<ValueType>& Vector<Valu
 
 template <class ValueType> template <class VType> Vector<ValueType>& Vector<ValueType>::operator+=(VType s) {
   for (Long i = 0; i < dim; i++) data_ptr[i] += s;
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return *this;
 }
 
 template <class ValueType> template <class VType> Vector<ValueType>& Vector<ValueType>::operator-=(VType s) {
   for (Long i = 0; i < dim; i++) data_ptr[i] -= s;
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return *this;
 }
 
 template <class ValueType> template <class VType> Vector<ValueType>& Vector<ValueType>::operator*=(VType s) {
   for (Long i = 0; i < dim; i++) data_ptr[i] *= s;
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return *this;
 }
 
 template <class ValueType> template <class VType> Vector<ValueType>& Vector<ValueType>::operator/=(VType s) {
   for (Long i = 0; i < dim; i++) data_ptr[i] /= s;
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return *this;
 }
 
 template <class ValueType> template <class VType> Vector<ValueType> Vector<ValueType>::operator+(VType s) const {
   Vector<ValueType> Vr(dim);
   for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] + s;
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return Vr;
 }
 
 template <class ValueType> template <class VType> Vector<ValueType> Vector<ValueType>::operator-(VType s) const {
   Vector<ValueType> Vr(dim);
   for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] - s;
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return Vr;
 }
 
 template <class ValueType> template <class VType> Vector<ValueType> Vector<ValueType>::operator*(VType s) const {
   Vector<ValueType> Vr(dim);
   for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] * s;
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return Vr;
 }
 
 template <class ValueType> template <class VType> Vector<ValueType> Vector<ValueType>::operator/(VType s) const {
   Vector<ValueType> Vr(dim);
   for (Long i = 0; i < dim; i++) Vr[i] = data_ptr[i] / s;
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return Vr;
 }
 
@@ -333,7 +333,7 @@ template <class VType, class ValueType> Vector<ValueType> operator+(VType s, con
   Long dim = V.Dim();
   Vector<ValueType> Vr(dim);
   for (Long i = 0; i < dim; i++) Vr[i] = s + V[i];
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return Vr;
 }
 
@@ -341,7 +341,7 @@ template <class VType, class ValueType> Vector<ValueType> operator-(VType s, con
   Long dim = V.Dim();
   Vector<ValueType> Vr(dim);
   for (Long i = 0; i < dim; i++) Vr[i] = s - V[i];
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return Vr;
 }
 
@@ -349,7 +349,7 @@ template <class VType, class ValueType> Vector<ValueType> operator*(VType s, con
   Long dim = V.Dim();
   Vector<ValueType> Vr(dim);
   for (Long i = 0; i < dim; i++) Vr[i] = s * V[i];
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return Vr;
 }
 
@@ -357,7 +357,7 @@ template <class VType, class ValueType> Vector<ValueType> operator/(VType s, con
   Long dim = V.Dim();
   Vector<ValueType> Vr(dim);
   for (Long i = 0; i < dim; i++) Vr[i] = s / V[i];
-  Profile::Add_FLOP(dim);
+  Profile::IncrementCounter(ProfileCounter::FLOP, dim);
   return Vr;
 }
 
