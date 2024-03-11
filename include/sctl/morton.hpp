@@ -228,6 +228,14 @@ template <Integer DIM = 3> class Morton {
     return out;
   }
 
+  template <typename Real>
+  std::array<Real, DIM> origin() const {
+    constexpr Real factor = 1.0 / Real{maxCoord};
+    std::array<Real, DIM> x_real;
+    for (int i = 0; i < DIM; ++i) x_real[i] = x[i] * factor;
+    return x_real;
+  }
+
  private:
   static constexpr UINT_T maxCoord = ((UINT_T)1) << (MAX_DEPTH);
 
