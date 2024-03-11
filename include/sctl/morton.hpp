@@ -46,9 +46,18 @@ template <Integer DIM = 3> class Morton {
 
   int8_t Depth() const { return depth; }
 
-  template <class T> void Coord(Iterator<T> coord) const {
-    static const T s = 1.0 / ((T)maxCoord);
-    for (Integer i = 0; i < DIM; i++) coord[i] = (T)x[i] * s;
+  /**
+   * Gives the ccoordinates of the origin of a Morton box.
+   */
+  template <class ArrayType> void Coord(ArrayType&& coord) const {
+    using Real = typename std::remove_reference<decltype(coord[0])>::type;
+    static const Real factor = 1.0 / (Real)maxCoord;
+    for (Integer i = 0; i < DIM; i++) coord[i] = (Real)x[i] * factor;
+  }
+  template <class Real> std::array<Real,DIM> Coord() const {
+    std::array<Real,DIM> x_real;
+    Coord(x_real);
+    return x_real;
   }
 
   Morton Next() const {
@@ -226,14 +235,6 @@ template <Integer DIM = 3> class Morton {
     }
     out << (int)mid.depth << "," << a << ")";
     return out;
-  }
-
-  template <typename Real>
-  std::array<Real, DIM> origin() const {
-    constexpr Real factor = 1.0 / Real{maxCoord};
-    std::array<Real, DIM> x_real;
-    for (int i = 0; i < DIM; ++i) x_real[i] = x[i] * factor;
-    return x_real;
   }
 
  private:
