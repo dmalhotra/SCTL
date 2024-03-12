@@ -36,13 +36,13 @@ namespace SCTL_NAMESPACE {
   template <> class Profile::ExprWrapper<void> {
     public:
 
-      ExprWrapper() : instance(nullptr) {}
+      inline ExprWrapper() : instance(nullptr) {}
 
       template <class E> ExprWrapper(const ExprWrapper<E>& e) : instance(nullptr) {
         Copy(e);
       }
 
-      ExprWrapper(const ExprWrapper<void>& e) : instance(nullptr) {
+      inline ExprWrapper(const ExprWrapper<void>& e) : instance(nullptr) {
         Copy(e);
       }
 
@@ -51,21 +51,21 @@ namespace SCTL_NAMESPACE {
         return *this;
       }
 
-      ExprWrapper<void>& operator=(const ExprWrapper<void>& e) {
+      inline ExprWrapper<void>& operator=(const ExprWrapper<void>& e) {
         Copy(e);
         return *this;
       }
 
-      ~ExprWrapper() {
+      inline ~ExprWrapper() {
         del_fn(&instance);
       }
 
 
-      std::vector<double> operator()(const std::vector<double>& counters, const Comm* comm) const {
+      inline std::vector<double> operator()(const std::vector<double>& counters, const Comm* comm) const {
         return eval_fn(counters, comm, instance);
       }
 
-      static void* CopyInstance(const void* self) {
+      inline static void* CopyInstance(const void* self) {
         ExprWrapper<void>* instance_ptr = new ExprWrapper<void>;
         const auto self_ = (ExprWrapper<void>*)self;
         instance_ptr->copy_fn = self_->copy_fn;
@@ -75,12 +75,12 @@ namespace SCTL_NAMESPACE {
         return instance_ptr;
       }
 
-      static std::vector<double> Eval(const std::vector<double>& counters, const Comm* comm, const void* self) {
+      inline static std::vector<double> Eval(const std::vector<double>& counters, const Comm* comm, const void* self) {
         const auto self_ = (ExprWrapper<void>*)self;
         return self_->eval_fn(counters, comm, self_->instance);
       }
 
-      static void DeleteInstance(void** self_ptr) {
+      inline static void DeleteInstance(void** self_ptr) {
         SCTL_ASSERT(self_ptr);
         if (!*self_ptr) return;
         delete (ExprWrapper<void>*)*self_ptr;
@@ -97,7 +97,7 @@ namespace SCTL_NAMESPACE {
         instance = copy_fn(&e);
       }
 
-      void Copy(const ExprWrapper<void>& e) {
+      inline void Copy(const ExprWrapper<void>& e) {
         if (instance) del_fn(&instance);
         copy_fn = e.copy_fn;
         eval_fn = e.eval_fn;
@@ -116,11 +116,11 @@ namespace SCTL_NAMESPACE {
 
       ExprScalar() = default;
 
-      ExprScalar(ProfileCounter field) : field_((Long)field), value_(0) {}
+      inline ExprScalar(ProfileCounter field) : field_((Long)field), value_(0) {}
 
-      ExprScalar(double value) : field_((Long)ProfileCounter::FIELD_COUNT), value_(value) {}
+      inline ExprScalar(double value) : field_((Long)ProfileCounter::FIELD_COUNT), value_(value) {}
 
-      std::vector<double> operator()(const std::vector<double>& counters, const Comm* comm) const {
+      inline std::vector<double> operator()(const std::vector<double>& counters, const Comm* comm) const {
         const Long Nfield = (Long)ProfileCounter::FIELD_COUNT;
         const Long N = counters.size() / Nfield;
         std::vector<double> val_vec(N);
@@ -175,7 +175,7 @@ namespace SCTL_NAMESPACE {
 
 
 
-  Profile::ProfExpr operator+(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
+  inline Profile::ProfExpr operator+(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
     const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
       SCTL_ASSERT(x.size() == y.size());
       for (Long i = 0; i < (Long)x.size(); i++) x[i] += y[i];
@@ -184,7 +184,7 @@ namespace SCTL_NAMESPACE {
     return Profile::ExprBinary<decltype(op)>(u, v, op);
   }
 
-  Profile::ProfExpr operator-(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
+  inline Profile::ProfExpr operator-(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
     const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
       SCTL_ASSERT(x.size() == y.size());
       for (Long i = 0; i < (Long)x.size(); i++) x[i] -= y[i];
@@ -193,7 +193,7 @@ namespace SCTL_NAMESPACE {
     return Profile::ExprBinary<decltype(op)>(u, v, op);
   }
 
-  Profile::ProfExpr operator*(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
+  inline Profile::ProfExpr operator*(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
     const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
       SCTL_ASSERT(x.size() == y.size());
       for (Long i = 0; i < (Long)x.size(); i++) x[i] *= y[i];
@@ -202,7 +202,7 @@ namespace SCTL_NAMESPACE {
     return Profile::ExprBinary<decltype(op)>(u, v, op);
   }
 
-  Profile::ProfExpr operator/(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
+  inline Profile::ProfExpr operator/(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
     const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
       SCTL_ASSERT(x.size() == y.size());
       for (Long i = 0; i < (Long)x.size(); i++) x[i] /= y[i];
@@ -211,7 +211,7 @@ namespace SCTL_NAMESPACE {
     return Profile::ExprBinary<decltype(op)>(u, v, op);
   }
 
-  Profile::ProfExpr operator*(const Profile::ProfExpr& u, const double a) {
+  inline Profile::ProfExpr operator*(const Profile::ProfExpr& u, const double a) {
     const auto op = [a](std::vector<double> x, const Comm* comm) {
       for (Long i = 0; i < (Long)x.size(); i++) x[i] *= a;
       return x;
@@ -237,7 +237,7 @@ namespace SCTL_NAMESPACE {
     std::array<std::atomic<Long>, Nfield+1> counters;
     std::map<std::string, ProfExpr> prof_fields;
 
-    ProfileData() : t0(omp_get_wtime()), enable_state(false) {
+    inline ProfileData() : t0(omp_get_wtime()), enable_state(false) {
       constexpr double gb_scale = (1./1024/1024/1024);
       for (auto& x : counters) x = 0;
 
@@ -295,7 +295,7 @@ namespace SCTL_NAMESPACE {
 
 
 
-  const Profile::ProfExpr Profile::GetProfField(const std::string& name) {
+  inline const Profile::ProfExpr Profile::GetProfField(const std::string& name) {
     if (!GetProfData().prof_fields.count(name)) {
       SCTL_WARN("Unknown profile field name ignored:"<<name);
       return ExprScalar(0.);
@@ -303,7 +303,7 @@ namespace SCTL_NAMESPACE {
     return GetProfData().prof_fields[name];
   }
 
-  void Profile::SetProfField(const std::string& name, const Profile::ProfExpr& expr) {
+  inline void Profile::SetProfField(const std::string& name, const Profile::ProfExpr& expr) {
     GetProfData().prof_fields[name] = expr;
   }
 
@@ -315,7 +315,7 @@ namespace SCTL_NAMESPACE {
     return Profile::ExprBinary<decltype(op)>(e1, e2, op);
   }
 
-  Profile::ProfExpr Profile::CommReduceExpr(const Profile::ProfExpr& u, const Comm::CommOp comm_op) {
+  inline Profile::ProfExpr Profile::CommReduceExpr(const Profile::ProfExpr& u, const Comm::CommOp comm_op) {
     const auto op = [comm_op](std::vector<double> x, const Comm* comm) {
       const Long N = (Long)x.size();
       if (!comm || !N) return x;
@@ -504,7 +504,7 @@ namespace SCTL_NAMESPACE {
 
   #else
 
-  inline Long Profile::IncrementCounter(const ProfileCounter prof_field, const Long x) {}
+  inline Long Profile::IncrementCounter(const ProfileCounter prof_field, const Long x) { return 0; }
 
   inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integer verbose) {}
 
@@ -512,11 +512,11 @@ namespace SCTL_NAMESPACE {
 
   #endif
 
-  Profile::Scoped::Scoped(const char* name_, const Comm* comm_, bool sync_, Integer verbose) {
+  inline Profile::Scoped::Scoped(const char* name_, const Comm* comm_, bool sync_, Integer verbose) {
     Profile::Tic(name_, comm_, sync_, verbose);
   }
 
-  Profile::Scoped::~Scoped() {
+  inline Profile::Scoped::~Scoped() {
     Profile::Toc();
   }
 
