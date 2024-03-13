@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <stack>
+#include <array>
 #include <atomic>
 
 #ifndef SCTL_PROFILE
