@@ -270,17 +270,19 @@ namespace SCTL_NAMESPACE {
       };
       prof_fields["comm_size"] = Profile::ExprUnary<decltype(comm_size_fn)>(ExprScalar(0.), comm_size_fn);
 
-      prof_fields["t_max"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::MIN);
-      prof_fields["t_max"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::MAX);
-      prof_fields["t_avg"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::SUM) / prof_fields["comm_size"];
+      prof_fields["t_min"] = Profile::CommReduceExpr(prof_fields["t"], Comm::CommOp::MIN);
+      prof_fields["t_max"] = Profile::CommReduceExpr(prof_fields["t"], Comm::CommOp::MAX);
+      prof_fields["t_avg"] = Profile::CommReduceExpr(prof_fields["t"], Comm::CommOp::SUM) / prof_fields["comm_size"];
 
-      prof_fields["f_max"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::MIN);
+      prof_fields["f_min"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::MIN);
       prof_fields["f_max"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::MAX);
       prof_fields["f_avg"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::SUM) / prof_fields["comm_size"];
+      prof_fields["f_total"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::SUM);
 
       prof_fields["f/s_min"] = Profile::CommReduceExpr(prof_fields["f"] / prof_fields["t"], Comm::CommOp::MIN);
       prof_fields["f/s_max"] = Profile::CommReduceExpr(prof_fields["f"] / prof_fields["t"], Comm::CommOp::MAX);
       prof_fields["f/s_avg"] = Profile::CommReduceExpr(prof_fields["f"] / prof_fields["t"], Comm::CommOp::SUM) / prof_fields["comm_size"];
+      prof_fields["f/s_total"] = prof_fields["f_total"] / prof_fields["t_max"];
 
       prof_fields["m_min"] = Profile::CommReduceExpr(prof_fields["m"], Comm::CommOp::MIN);
       prof_fields["m_max"] = Profile::CommReduceExpr(prof_fields["m"], Comm::CommOp::MAX);
@@ -338,7 +340,7 @@ namespace SCTL_NAMESPACE {
   inline void Profile::print(const Comm* comm_, std::vector<std::string> field_lst, std::vector<std::string> format_lst) {
     if (!field_lst.size()) {
       if (!comm_ || comm_->Size()==1) field_lst = {"t", "f", "f/s", "m"};
-      else field_lst = {"t_avg", "t_max", "f_avg", "f_max", "f/s_min", "f/s_avg", "m_max"};
+      else field_lst = {"t_avg", "t_max", "f_avg", "f_max", "f/s_min", "f/s_avg", "f/s_total", "m_max"};
     }
     if (format_lst.size() != field_lst.size()) {
       const Long N = field_lst.size() - format_lst.size();
