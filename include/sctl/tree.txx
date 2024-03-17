@@ -54,8 +54,8 @@ namespace SCTL_NAMESPACE {
   }
 
   template <Integer DIM> template <class Real> void Tree<DIM>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, bool periodic) {
-    Integer np = comm.Size();
-    Integer rank = comm.Rank();
+    const Integer np = comm.Size();
+    const Integer rank = comm.Rank();
 
     Vector<Morton<DIM>> node_mid_orig;
     Long start_idx_orig, end_idx_orig;
@@ -76,6 +76,19 @@ namespace SCTL_NAMESPACE {
         if (md.Ancestor(d0) == m0) break;
       }
       return md;
+    };
+    const auto complete_tree = [](Vector<Morton<DIM>>& mid_lst, const Morton<DIM>& mid_begin, const Morton<DIM>& mid_end) {
+      // Fill in the nodes for a completed tree in the interval
+      // [mid_begin, mid_end) and append to mid_lst.
+      // Returns mid_end.
+      SCTL_ASSERT(mid_begin <= mid_end);
+      Morton<DIM> mid_iter = mid_begin;
+      while (mid_iter != mid_end) {
+        mid_lst.PushBack(mid_iter);
+        if (mid_iter.isAncestor(mid_end)) mid_iter = mid_iter.Ancestor(mid_iter.Depth()+1);
+        else mid_iter = mid_iter.Next();
+      }
+      return mid_end;
     };
 
     Morton<DIM> pt_mid0;
@@ -121,7 +134,7 @@ namespace SCTL_NAMESPACE {
       node_mid.ReInit(0);
       Long idx = 0;
       Morton<DIM> m0;
-      Morton<DIM> mend = Morton<DIM>().Next();
+      const Morton<DIM> mend = Morton<DIM>().Next();
       while (m0 < mend) {
         Integer d = m0.Depth();
         Morton<DIM> m1 = (idx + M < pt_mid.Dim() ? pt_mid[idx+M] : Morton<DIM>().Next());
@@ -143,60 +156,62 @@ namespace SCTL_NAMESPACE {
       comm.Allgather(Ptr2ConstItr<Morton<DIM>>(&m0,1), 1, mins.begin(), 1);
     }
     if (balance21) { // 2:1 balance refinement // TODO: optimize
-      // TODO: fix bug, over-refines
       Vector<Morton<DIM>> parent_mid;
       { // add balancing Morton IDs
         Vector<std::set<Morton<DIM>>> parent_mid_set(Morton<DIM>::MAX_DEPTH+1);
         Vector<Morton<DIM>> nlst;
         for (const auto& m0 : node_mid) {
-          Integer d0 = m0.Depth();
-          if (d0 > 0) parent_mid_set[m0.Depth()].insert(m0.Ancestor(d0-1));
+          const Integer d0 = m0.Depth();
+          if (d0 > 0) parent_mid_set[d0-1].insert(m0.Ancestor(d0-1));
         }
         for (Integer d = Morton<DIM>::MAX_DEPTH; d > 0; d--) {
           for (const auto& m : parent_mid_set[d]) {
-            m.NbrList(nlst, d-1, periodic);
-            for (const auto& nbr : nlst) if (nbr.Depth() >= 0) parent_mid_set[d-1].insert(nbr);
-            //parent_mid_set[d-1].insert(nlst.begin(), nlst.end());
-            parent_mid.PushBack(m);
+            m.NbrList(nlst, d, periodic);
+            for (const auto& nbr : nlst) if (nbr.Depth() >= 0) parent_mid_set[d-1].insert(nbr.Ancestor(d-1));
+            const Long idx = std::lower_bound(mins.begin(), mins.end(), m) - mins.begin();
+            if (idx>=np || !m.isAncestor(mins[idx])) // exclude ancestors of all mins to reduce communication
+              parent_mid.PushBack(m);
           }
         }
       }
 
-      Vector<Morton<DIM>> parent_mid_sorted;
-      { // sort and repartition
+      { // global_sort parent_mid and remove duplicates
+        Vector<Morton<DIM>> parent_mid_sorted;
         comm.HyperQuickSort(parent_mid, parent_mid_sorted);
         comm.PartitionS(parent_mid_sorted, mins[comm.Rank()]);
-      }
 
-      Vector<Morton<DIM>> tmp_mid;
-      { // add children
-        Vector<Morton<DIM>> clst;
-        tmp_mid.PushBack(Morton<DIM>()); // include root node
-        for (Long i = 0; i < parent_mid_sorted.Dim(); i++) {
-          if (i+1 == parent_mid_sorted.Dim() || parent_mid_sorted[i] != parent_mid_sorted[i+1]) {
-            const auto& m = parent_mid_sorted[i];
-            tmp_mid.PushBack(m);
-            m.Children(clst);
-            for (const auto& c : clst) tmp_mid.PushBack(c);
+        parent_mid.ReInit(0);
+        for (Long i = 0; i < parent_mid_sorted.Dim(); i++) { // remove duplicates
+          if (i==0 || parent_mid_sorted[i]!=parent_mid_sorted[i-1]) {
+            parent_mid.PushBack(parent_mid_sorted[i]);
           }
         }
-        auto insert_ancestor_children = [](Vector<Morton<DIM>>& mvec, const Morton<DIM>& m0) {
-          Integer d0 = m0.Depth();
-          Vector<Morton<DIM>> clst;
-          for (Integer d = 0; d < d0; d++) {
-            m0.Ancestor(d).Children(clst);
-            for (const auto& m : clst) mvec.PushBack(m);
-          }
-        };
-        insert_ancestor_children(tmp_mid, mins[rank]);
-        omp_par::merge_sort(tmp_mid.begin(), tmp_mid.end());
       }
 
-      node_mid.ReInit(0);
-      for (Long i = 0; i < tmp_mid.Dim(); i++) { // remove duplicates
-        if (i+1 == tmp_mid.Dim() || tmp_mid[i] != tmp_mid[i+1]) {
-          node_mid.PushBack(tmp_mid[i]);
+      if (parent_mid.Dim()) { // add children of parent_mid
+        Vector<Morton<DIM>> clst; // child list
+        std::set<Morton<DIM>> mid_set;
+        for (Integer d = 0; d < mins[rank].Depth(); d++) {
+          mins[rank].Ancestor(d).Children(clst);
+          mid_set.insert(clst.begin(), clst.end());
         }
+        if (rank+1 < np) for (Integer d = 0; d < mins[rank+1].Depth(); d++) {
+          mins[rank+1].Ancestor(d).Children(clst);
+          mid_set.insert(clst.begin(), clst.end());
+        }
+        mid_set.insert(Morton<DIM>());
+
+        node_mid.ReInit(0);
+        for (const auto m0 : parent_mid) {
+          auto it = mid_set.begin();
+          for (; it != mid_set.end() && *it <= m0; it++) node_mid.PushBack(*it);
+          if (node_mid.Dim()==0 || *(node_mid.end()-1) != m0) node_mid.PushBack(m0);
+          mid_set.erase(mid_set.begin(), it);
+
+          m0.Children(clst);
+          mid_set.insert(clst.begin(), clst.end());
+        }
+        for (const auto& m : mid_set) node_mid.PushBack(m);
       }
     }
     { // Add place-holder for ghost nodes
@@ -273,21 +288,25 @@ namespace SCTL_NAMESPACE {
       }
 
       { // Update node_mid <-- ghost_mid + node_mid
-        Vector<Morton<DIM>> new_mid(end_idx-start_idx + ghost_mid.Dim());
-        Long Nsplit = std::lower_bound(ghost_mid.begin(), ghost_mid.end(), mins[rank]) - ghost_mid.begin();
+        const Long Nsplit = std::lower_bound(ghost_mid.begin(), ghost_mid.end(), mins[rank]) - ghost_mid.begin();
+        Vector<Morton<DIM>> mid_lst = node_mid;
+        node_mid.ReInit(0);
+        Morton<DIM> m;
         for (Long i = 0; i < Nsplit; i++) {
-          new_mid[i] = ghost_mid[i];
+          m = complete_tree(node_mid, m, ghost_mid[i]);
         }
-        for (Long i = 0; i < end_idx - start_idx; i++) {
-          new_mid[Nsplit + i] = node_mid[start_idx + i];
+        if (start_idx < end_idx) {
+          complete_tree(node_mid, m, mid_lst[start_idx]);
+          for (Long i = start_idx; i < end_idx-1; i++) node_mid.PushBack(mid_lst[i]);
+          m = mid_lst[end_idx-1];
         }
         for (Long i = Nsplit; i < ghost_mid.Dim(); i++) {
-          new_mid[end_idx - start_idx + i] = ghost_mid[i];
+          m = complete_tree(node_mid, m, ghost_mid[i]);
         }
-        node_mid.Swap(new_mid);
+        complete_tree(node_mid, m, Morton<DIM>().Next());
       }
     }
-    { // Set node_mid, node_attr
+    { // Set node_attr
       Morton<DIM> m0 = (rank      ? mins[rank]   : Morton<DIM>()       );
       Morton<DIM> m1 = (rank+1<np ? mins[rank+1] : Morton<DIM>().Next());
       Long Nnodes = node_mid.Dim();
@@ -300,11 +319,11 @@ namespace SCTL_NAMESPACE {
     { // Set node_lst
       static constexpr Integer MAX_CHILD = (1u << DIM);
       static constexpr Integer MAX_NBRS = sctl::pow<DIM,Integer>(3);
-      Long Nnodes = node_mid.Dim();
+      const Long Nnodes = node_mid.Dim();
       node_lst.ReInit(Nnodes);
 
-      Vector<Long> ancestors(Morton<DIM>::MAX_DEPTH);
-      Vector<Long> child_cnt(Morton<DIM>::MAX_DEPTH);
+      Vector<Long> ancestors(Morton<DIM>::MAX_DEPTH+1);
+      Vector<Long> child_cnt(Morton<DIM>::MAX_DEPTH+1);
       #pragma omp parallel for schedule(static)
       for (Long i = 0; i < Nnodes; i++) {
         node_lst[i].p2n = -1;
@@ -312,12 +331,12 @@ namespace SCTL_NAMESPACE {
         for (Integer j = 0; j < MAX_CHILD; j++) node_lst[i].child[j] = -1;
         for (Integer j = 0; j < MAX_NBRS; j++) node_lst[i].nbr[j] = -1;
       }
-      for (Long i = 0; i < Nnodes; i++) { // Set parent_lst, child_lst_
-        Integer depth = node_mid[i].Depth();
+      for (Long i = 0; i < Nnodes; i++) { // Set node_lst // TODO; parallelize
+        const Integer depth = node_mid[i].Depth();
         ancestors[depth] = i;
         child_cnt[depth] = 0;
         if (depth) {
-          Long p = ancestors[depth-1];
+          const Long p = ancestors[depth-1];
           Long& c = child_cnt[depth-1];
           node_lst[p].child[c] = i;
           node_lst[i].parent = p;
