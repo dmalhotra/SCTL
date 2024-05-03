@@ -234,12 +234,17 @@ namespace SCTL_NAMESPACE {
     std::vector<std::string> n_log;
     std::vector<double> counter_log;
 
-    std::array<std::atomic<Long>, Nfield+1> counters;
+    std::array<std::atomic<Long>, Nfield> counters;
     std::map<std::string, ProfExpr> prof_fields;
 
     inline ProfileData() : t0(omp_get_wtime()), enable_state(false) {
       constexpr double gb_scale = (1./1024/1024/1024);
       for (auto& x : counters) x = 0;
+
+      e_log.reserve(1e5);
+      n_log.reserve(1e5);
+      for (auto& name : n_log) name.reserve(20);
+      counter_log.reserve(1e5 * Nfield);
 
       prof_fields["0"]  = ExprScalar(0.);
       prof_fields["t"]  = ExprScalar(ProfileCounter::TIME) * 1e-9;

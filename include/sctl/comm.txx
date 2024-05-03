@@ -4,6 +4,115 @@
 
 namespace SCTL_NAMESPACE {
 
+#ifdef SCTL_HAVE_MPI
+/**
+ * \class CommDatatype
+ * \brief An abstract class used for communicating messages using user-defined
+ * datatypes. The user must implement the static member function "value()" that
+ * returns the MPI_Datatype corresponding to this user-defined datatype.
+ * \author Hari Sundar, hsundar@gmail.com
+ */
+template <class Type> class Comm::CommDatatype {
+ public:
+  static MPI_Datatype value() {
+    static bool first = true;
+    static MPI_Datatype datatype;
+    if (first) {
+      first = false;
+      MPI_Type_contiguous(sizeof(Type), MPI_BYTE, &datatype);
+      MPI_Type_commit(&datatype);
+    }
+    return datatype;
+  }
+
+  static MPI_Op sum() {
+    static bool first = true;
+    static MPI_Op myop;
+
+    if (first) {
+      first = false;
+      int commune = 1;
+      MPI_Op_create(sum_fn, commune, &myop);
+    }
+
+    return myop;
+  }
+
+  static MPI_Op min() {
+    static bool first = true;
+    static MPI_Op myop;
+
+    if (first) {
+      first = false;
+      int commune = 1;
+      MPI_Op_create(min_fn, commune, &myop);
+    }
+
+    return myop;
+  }
+
+  static MPI_Op max() {
+    static bool first = true;
+    static MPI_Op myop;
+
+    if (first) {
+      first = false;
+      int commune = 1;
+      MPI_Op_create(max_fn, commune, &myop);
+    }
+
+    return myop;
+  }
+
+ private:
+  static void sum_fn(void* a_, void* b_, int* len_, MPI_Datatype* datatype) {
+    Type* a = (Type*)a_;
+    Type* b = (Type*)b_;
+    int len = *len_;
+    for (int i = 0; i < len; i++) {
+      b[i] = a[i] + b[i];
+    }
+  }
+
+  static void min_fn(void* a_, void* b_, int* len_, MPI_Datatype* datatype) {
+    Type* a = (Type*)a_;
+    Type* b = (Type*)b_;
+    int len = *len_;
+    for (int i = 0; i < len; i++) {
+      if (a[i] < b[i]) b[i] = a[i];
+    }
+  }
+
+  static void max_fn(void* a_, void* b_, int* len_, MPI_Datatype* datatype) {
+    Type* a = (Type*)a_;
+    Type* b = (Type*)b_;
+    int len = *len_;
+    for (int i = 0; i < len; i++) {
+      if (a[i] > b[i]) b[i] = a[i];
+    }
+  }
+};
+#endif
+
+inline void Comm::MPI_Init(int* argc, char*** argv) {
+#ifdef SCTL_HAVE_PETSC
+  PetscInitialize(argc, argv, NULL, NULL);
+#elif defined(SCTL_HAVE_MPI)
+  int provided;
+  ::MPI_Init_thread(argc, argv, MPI_THREAD_SERIALIZED, &provided);
+  if (provided != MPI_THREAD_SERIALIZED) SCTL_WARN("MPI implementation does not support MPI_THREAD_SERIALIZED.");
+#endif
+}
+
+inline void Comm::MPI_Finalize() {
+#ifdef SCTL_HAVE_PETSC
+  PetscFinalize();
+#elif defined(SCTL_HAVE_MPI)
+  ::MPI_Finalize();
+#endif
+}
+
+
 inline Comm::Comm() {
 #ifdef SCTL_HAVE_MPI
   Init(MPI_COMM_SELF);

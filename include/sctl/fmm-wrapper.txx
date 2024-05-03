@@ -1,4 +1,3 @@
-#include SCTL_INCLUDE(kernel_functions.hpp)
 #include SCTL_INCLUDE(vector.hpp)
 #include SCTL_INCLUDE(matrix.hpp)
 
@@ -8,71 +7,80 @@
 
 namespace SCTL_NAMESPACE {
 
-template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& comm) {
-  if (DIM != 3) return ParticleFMM<Real,3>::test(comm);
+template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::FMMKernels {
+  Iterator<char> ker_m2m, ker_m2l, ker_l2l;
+  Integer dim_mul_ch, dim_mul_eq;
+  Integer dim_loc_ch, dim_loc_eq;
 
-  Stokes3D_FSxU kernel_m2l;
-  Stokes3D_FxU kernel_sl;
-  Stokes3D_DxU kernel_dl;
-  srand48(comm.Rank());
+  void (*ker_m2m_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
+  void (*ker_m2l_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
+  void (*ker_l2l_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
 
-  // Create target and source vectors.
-  const Long N = 5000/comm.Size();
-  Vector<Real> trg_coord(N*DIM);
-  Vector<Real>  sl_coord(N*DIM);
-  Vector<Real>  dl_coord(N*DIM);
-  Vector<Real>  dl_norml(N*DIM);
-  for (auto& a : trg_coord) a = (Real)(drand48()-0.5);
-  for (auto& a :  sl_coord) a = (Real)(drand48()-0.5);
-  for (auto& a :  dl_coord) a = (Real)(drand48()-0.5);
-  for (auto& a :  dl_norml) a = (Real)(drand48()-0.5);
-  Long n_sl  =  sl_coord.Dim()/DIM;
-  Long n_dl  =  dl_coord.Dim()/DIM;
+  void (*delete_ker_m2m)(Iterator<char> ker);
+  void (*delete_ker_m2l)(Iterator<char> ker);
+  void (*delete_ker_l2l)(Iterator<char> ker);
 
-  // Set source charges.
-  Vector<Real> sl_den(n_sl*kernel_sl.SrcDim());
-  Vector<Real> dl_den(n_dl*kernel_dl.SrcDim());
-  for (auto& a : sl_den) a = (Real)(drand48() - 0.5);
-  for (auto& a : dl_den) a = (Real)(drand48() - 0.5);
+  #ifdef SCTL_HAVE_PVFMM
+  pvfmm::Kernel<Real> pvfmm_ker_m2m;
+  pvfmm::Kernel<Real> pvfmm_ker_m2l;
+  pvfmm::Kernel<Real> pvfmm_ker_l2l;
+  #endif
+};
+template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::SrcData {
+  Vector<Real> X, Xn, F;
+  Iterator<char> ker_s2m, ker_s2l;
+  Integer dim_src, dim_mul_ch, dim_loc_ch, dim_normal;
 
-  ParticleFMM fmm(comm);
-  fmm.SetAccuracy(10);
-  fmm.SetKernels(kernel_m2l, kernel_m2l, kernel_sl);
-  fmm.AddTrg("Potential", kernel_m2l, kernel_sl);
-  fmm.AddSrc("SingleLayer", kernel_sl, kernel_sl);
-  fmm.AddSrc("DoubleLayer", kernel_dl, kernel_dl);
-  fmm.SetKernelS2T("SingleLayer", "Potential",kernel_sl);
-  fmm.SetKernelS2T("DoubleLayer", "Potential",kernel_dl);
+  void (*ker_s2m_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
+  void (*ker_s2l_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
 
-  fmm.SetTrgCoord("Potential", trg_coord);
-  fmm.SetSrcCoord("SingleLayer", sl_coord);
-  fmm.SetSrcCoord("DoubleLayer", dl_coord, dl_norml);
+  void (*delete_ker_s2m)(Iterator<char> ker);
+  void (*delete_ker_s2l)(Iterator<char> ker);
 
-  fmm.SetSrcDensity("SingleLayer", sl_den);
-  fmm.SetSrcDensity("DoubleLayer", dl_den);
+  #ifdef SCTL_HAVE_PVFMM
+  pvfmm::Kernel<Real> pvfmm_ker_s2m;
+  pvfmm::Kernel<Real> pvfmm_ker_s2l;
+  StaticArray<Real, DIM*2> bbox;
+  #endif
+};
+template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::TrgData {
+  Vector<Real> X, U;
+  Iterator<char> ker_m2t, ker_l2t;
+  Integer dim_mul_eq, dim_loc_eq, dim_trg;
 
-  Vector<Real> Ufmm, Uref;
-  fmm.Eval(Ufmm, "Potential"); // Warm-up run
-  Ufmm = 0;
+  void (*ker_m2t_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
+  void (*ker_l2t_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
 
-  Profile::Enable(true);
-  Profile::Tic("FMM-Eval", &comm);
-  fmm.Eval(Ufmm, "Potential");
-  Profile::Toc();
-  Profile::Tic("Direct", &comm);
-  fmm.EvalDirect(Uref, "Potential");
-  Profile::Toc();
-  Profile::print(&comm);
+  void (*delete_ker_m2t)(Iterator<char> ker);
+  void (*delete_ker_l2t)(Iterator<char> ker);
 
-  Vector<Real> Uerr = Uref - Ufmm;
-  { // Print error
-    StaticArray<Real,2> loc_err{0,0}, glb_err{0,0};
-    for (const auto& a : Uerr) loc_err[0] = std::max<Real>(loc_err[0], fabs(a));
-    for (const auto& a : Uref) loc_err[1] = std::max<Real>(loc_err[1], fabs(a));
-    comm.Allreduce<Real>(loc_err, glb_err, 2, Comm::CommOp::MAX);
-    if (!comm.Rank()) std::cout<<"Maximum relative error: "<<glb_err[0]/glb_err[1]<<'\n';
-  }
-}
+  #ifdef SCTL_HAVE_PVFMM
+  pvfmm::Kernel<Real> pvfmm_ker_m2t;
+  pvfmm::Kernel<Real> pvfmm_ker_l2t;
+  StaticArray<Real, DIM*2> bbox;
+  #endif
+};
+template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::S2TData {
+  Iterator<char> ker_s2t;
+  Integer dim_src, dim_trg, dim_normal;
+
+  void (*ker_s2t_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
+  void (*ker_s2t_eval_omp)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
+
+  void (*delete_ker_s2t)(Iterator<char> ker);
+
+  #ifdef SCTL_HAVE_PVFMM
+  mutable Real bbox_scale;
+  mutable StaticArray<Real,DIM> bbox_offset;
+  mutable Vector<Real> src_scal_exp, trg_scal_exp;
+  mutable Vector<Real> src_scal, trg_scal;
+  mutable pvfmm::Kernel<Real> pvfmm_ker_s2t;
+  mutable pvfmm::PtFMM_Tree<Real>* tree_ptr;
+  mutable pvfmm::PtFMM<Real> fmm_ctx;
+  mutable bool setup_tree;
+  mutable bool setup_ker;
+  #endif
+};
 
 template <Integer DIM, class Real> void BoundingBox(StaticArray<Real,DIM*2>& bbox, const Vector<Real>& X, const Comm& comm) {
   const Long N = X.Dim()/DIM;

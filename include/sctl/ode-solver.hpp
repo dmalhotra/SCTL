@@ -14,7 +14,8 @@ template <class ValueType> class Matrix;
 template <class Real> class SDC {
   public:
 
-    // using Fn = std::function<void(Vector<Real>* dudt, const Vector<Real>& u)>;
+    using Fn1 = std::function<void(Vector<Real>* dudt, const Vector<Real>& u)>;
+    using Fn0 = std::function<void(Vector<Real>* dudt, const Vector<Real>& u, const Integer correction_idx, const Integer substep_idx)>;
     using MonitorFn = std::function<void(Real t, Real dt, const Vector<Real>& u)>;
 
     /**
@@ -23,6 +24,11 @@ template <class Real> class SDC {
      * @param[in] Order the order of the method.
      */
     explicit SDC(const Integer Order, const Comm& comm = Comm::Self());
+
+    /**
+     * @return order of the method.
+     */
+    Integer Order() const;
 
     /**
      * Apply one step of spectral deferred correction (SDC).
@@ -38,7 +44,13 @@ template <class Real> class SDC {
      * @param[out] error_picard the picard iteration error
      * @param[out] norm_dudt maximum norm of du/dt
      */
-    template <class Fn> void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, Fn&& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Real* norm_dudt = nullptr) const;
+    void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, Fn0&& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Real* norm_dudt = nullptr) const;
+    void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, Fn1&& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Real* norm_dudt = nullptr) const {
+      const auto fn = [&F](Vector<Real>* dudt, const Vector<Real>& u, const Integer correction_idx, const Integer substep_idx) {
+        F(dudt, u);
+      };
+      this->operator()(u, dt, u0, fn, N_picard, tol_picard, error_interp, error_picard, norm_dudt);
+    }
 
     /**
      * Solve ODE adaptively to required tolerance.
@@ -56,7 +68,13 @@ template <class Real> class SDC {
      *
      * @return the final time (should equal T if no errors)
      */
-    template <class Fn> Real AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, Fn&& F, Real tol, const MonitorFn* monitor_callback = nullptr, bool continue_with_errors = false, Real* error = nullptr) const;
+    Real AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, Fn0&& F, Real tol, const MonitorFn* monitor_callback = nullptr, bool continue_with_errors = false, Real* error = nullptr) const;
+    Real AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, Fn1&& F, Real tol, const MonitorFn* monitor_callback = nullptr, bool continue_with_errors = false, Real* error = nullptr) const {
+      const auto fn = [&F](Vector<Real>* dudt, const Vector<Real>& u, const Integer correction_idx, const Integer substep_idx) {
+        F(dudt, u);
+      };
+      return AdaptiveSolve(u, dt, T, u0, fn, tol, monitor_callback, continue_with_errors, error);
+    }
 
     static void test_one_step(const Integer Order = 5) {
       auto ref_sol = [](Real t) { return cos<Real>(-t); };
@@ -64,7 +82,6 @@ template <class Real> class SDC {
         (*dudt)[0] = -u[1];
         (*dudt)[1] = u[0];
       };
-      std::function<void(Vector<Real>*, const Vector<Real>&)> F(fn);
 
       const SDC<Real> ode_solver(Order);
       Real t = 0.0, dt = 1.0e-1;
@@ -73,7 +90,7 @@ template <class Real> class SDC {
       u0[1] = 0.0;
       while (t < 10.0) {
         Real error_interp, error_picard;
-        ode_solver(&u, dt, u0, F, -1, 0.0, &error_interp, &error_picard);
+        ode_solver(&u, dt, u0, fn, -1, 0.0, &error_interp, &error_picard);
         { // Accept solution
           u0 = u;
           t = t + dt;
@@ -92,14 +109,13 @@ template <class Real> class SDC {
         (*dudt)[0] = -u[1];
         (*dudt)[1] = u[0];
       };
-      std::function<void(Vector<Real>*, const Vector<Real>&)> F(fn);
 
       Vector<Real> u, u0(2);
       u0[0] = 1.0; u0[1] = 0.0;
       Real T = 10.0, dt = 1.0e-1;
 
       SDC<Real> ode_solver(Order);
-      Real t = ode_solver.AdaptiveSolve(&u, dt, T, u0, F, tol);
+      Real t = ode_solver.AdaptiveSolve(&u, dt, T, u0, fn, tol);
 
       if (t == T) {
         printf("u = %e;  ", u[0]);
@@ -110,7 +126,7 @@ template <class Real> class SDC {
   private:
     Matrix<Real> M_time_step, M_error;
     Vector<Real> nds;
-    Integer Order;
+    Integer order;
     Comm comm;
 };
 
