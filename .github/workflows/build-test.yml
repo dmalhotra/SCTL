@@ -11,13 +11,13 @@ jobs:
     
     strategy:
       matrix:
-        os: [ubuntu-20.04, macOS-latest]
+        os: [ubuntu-20.04, macos-12]
         compiler: [g++-11, clang++]
         vecflag: [-march=native]
         memdbgflag: ["", -DSCTL_MEMDEBUG]
         optflag: [-O0, -O3]
         exclude:
-          - os: macOS-latest
+          - os: macos-12
             compiler: clang++
     
     runs-on: ${{ matrix.os }}
