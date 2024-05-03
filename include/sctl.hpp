@@ -61,8 +61,8 @@
 // OpenMP merge-sort and scan
 #include SCTL_INCLUDE(ompUtils.hpp)
 
-// Parallel solver
-#include SCTL_INCLUDE(parallel_solver.hpp)
+// Linear solver
+#include SCTL_INCLUDE(lin-solve.hpp)
 
 // Chebyshev basis
 #include SCTL_INCLUDE(cheb_utils.hpp)
@@ -82,6 +82,7 @@
 #include SCTL_INCLUDE(stacktrace.h)
 
 // Boundary quadrature, Kernel functions
+#include SCTL_INCLUDE(generic-kernel.hpp)
 #include SCTL_INCLUDE(kernel_functions.hpp)
 #include SCTL_INCLUDE(boundary_quadrature.hpp)
 

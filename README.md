@@ -19,7 +19,7 @@ An example/test code is also provided for most classes.
 
 #### Numerical Methods:
 1) [SDC (Spectral Deferred Correction ODE solver)](include/sctl/ode-solver.hpp)
-2) [ParallelSolver](include/sctl/parallel_solver.hpp): distributed memory GMRES (wrapper to PETSc when available)
+2) [LinearSolver](include/sctl/lin-solve.hpp): distributed memory GMRES (wrapper to PETSc when available)
 3) [LagrangeInterp](include/sctl/lagrange-interp.hpp)
 4) [InterpQuadRule, ChebQuadRule, LegQuadRule](include/sctl/quadrule.hpp): generalized Chebyshev quadrature, Clenshaw-Curtis quadrature, Gauss-Legendre quadrature
 5) [SphericalHarmonics](include/sctl/sph_harm.hpp)
@@ -30,9 +30,9 @@ An example/test code is also provided for most classes.
 
 
 #### Boundary integral methods:
-1) [BoundaryIntegralOp, BoundaryIntegralOp](include/sctl/boundary_integral.hpp): generic boundary integral method
+1) [BoundaryIntegralOp](include/sctl/boundary_integral.hpp): generic boundary integral method
 2) [SlenderElemList](include/sctl/slender_element.hpp)
-3) [n-body kernel functions](include/sctl/kernel_functions.hpp)
+3) [Kernel functions](include/sctl/kernel_functions.hpp)
 4) [Boundary quadrature](include/sctl/boundary_quadrature.hpp): generic boundary integral method based on quad-patches and hedgehog quadrature (unmaintained)
 
 
@@ -43,7 +43,7 @@ An example/test code is also provided for most classes.
 4) [Profile](include/sctl/profile.hpp)
 
 
-#### Misceleneous
+#### Miscellaneous
 1) [MemoryManager, Iterator, ConstIterator](include/sctl/mem_mgr.hpp)
 2) [Stacktrace utility](include/sctl/stacktrace.h)
 3) [VTUData](include/sctl/vtudata.hpp): write unstructured VTK files
