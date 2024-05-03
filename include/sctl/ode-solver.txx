@@ -173,7 +173,7 @@ namespace SCTL_NAMESPACE {
       (*u)[k] = Mu[order - 1][k];
     }
     if (error_picard != nullptr) {
-      (*error_picard) = picard_err[picard_iter-1];
+      (*error_picard) = picard_err[std::min<Long>(picard_iter, N_picard-1)];
     }
     if (error_interp != nullptr) {
       Matrix<Real>& err = Mv_change; // reuse memory
@@ -200,7 +200,7 @@ namespace SCTL_NAMESPACE {
       // time-step size can be increased by d 1/0.8.
 
       Real max_err = std::max<Real>(error_interp, error_picard);
-      std::cout<<"Adaptive time-step: "<<t<<' '<<dt<<' '<<error_interp/dt<<' '<<error_picard/dt<<' '<<max_err/norm_dudt/eps<<'\n';
+      //std::cout<<"Adaptive time-step: "<<t<<' '<<dt<<' '<<error_interp/dt<<' '<<error_picard/dt<<' '<<max_err/norm_dudt/eps<<'\n';
       if (max_err < tol_*dt || (continue_with_errors && max_err/norm_dudt < 2*eps)) { // Accept solution
         u0_.Swap(u_);
         t = t + dt;
