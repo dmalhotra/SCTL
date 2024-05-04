@@ -329,7 +329,7 @@ namespace SCTL_NAMESPACE { // Generic
       VData v;
       typename VData::ScalarType x[N];
     } a_ = {a};
-    for (Integer i = 0; i < N; i++) a_.x[i] = a_.x[i] << rhs;
+    for (Integer i = 0; i < N; i++) a_.x[i] = (a_.x[i] < 0 ? -((-a_.x[i]) << rhs) : (a_.x[i] << rhs));
     return a_.v;
   }
   template <class VData> inline VData bitshiftright_intrin(const VData& a, const Integer& rhs) {
