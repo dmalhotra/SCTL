@@ -152,7 +152,7 @@ template <class uKernel> class GenericKernel : public uKernel {
 
         Matrix<Real> Xt_, Vt_;
         constexpr Integer Nbuff = 16*1024;
-        StaticArray<Real,Nbuff> buff;
+        alignas(sizeof(RealVec)) StaticArray<Real,Nbuff> buff;
         if (DIM*NNt < Nbuff) {
           Xt_.ReInit(DIM, NNt, buff, false);
         } else {
