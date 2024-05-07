@@ -42,7 +42,6 @@
   }
 #endif
 
-// TODO: Check alignment when SCTL_MEMDEBUG is defined
 // TODO: Replace pointers with iterators
 
 
@@ -539,10 +538,12 @@ namespace SCTL_NAMESPACE { // Generic
         VData v;
         typename VData::ScalarType x[VData::Size];
       } a_ = {a}, b_;
-      for (Integer i = 0; i < VData::Size; i++) b_.x[i] = (a_.x[i]==0 ? 0 : (typename VData::ScalarType)1/sqrt<float>((float)a_.x[i]));
+      for (Integer i = 0; i < VData::Size; i++) b_.x[i] = (a_.x[i]==0 ? 0 : 1/sqrt<typename VData::ScalarType>((typename VData::ScalarType)a_.x[i]));
+      return b_.v;
 
-      constexpr Integer newton_iter = mylog2((Integer)(digits/7.2247198959));
-      return rsqrt_newton_iter<newton_iter,newton_iter,VData>::eval(b_.v, a);
+      //for (Integer i = 0; i < VData::Size; i++) b_.x[i] = (a_.x[i]==0 ? 0 : (typename VData::ScalarType)1/sqrt<float>((float)a_.x[i])); // converting to float results in overflow / underflow
+      //constexpr Integer newton_iter = mylog2((Integer)(digits/7.2247198959));
+      //return rsqrt_newton_iter<newton_iter,newton_iter,VData>::eval(b_.v, a);
     }
     static inline VData eval(const VData& a, const Mask<VData>& m) {
       return and_intrin(rsqrt_approx_intrin<digits,VData>::eval(a), convert_mask2vec_intrin(m));

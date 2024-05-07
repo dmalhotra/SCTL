@@ -38,6 +38,9 @@ namespace SCTL_NAMESPACE {
     return r;
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> Vec<ValueType,N>::LoadAligned(ScalarType const* p) {
+    #ifdef SCTL_MEMDEBUG
+    SCTL_ASSERT(((uintptr_t)p) % (sizeof(ValueType)*N) == 0);
+    #endif
     Vec<ValueType,N> r;
     r.v = load_intrin<VData>(p);
     return r;
@@ -52,6 +55,9 @@ namespace SCTL_NAMESPACE {
     storeu_intrin(p,v);
   }
   template <class ValueType, Integer N> inline void Vec<ValueType,N>::StoreAligned(ScalarType* p) const {
+    #ifdef SCTL_MEMDEBUG
+    SCTL_ASSERT(((uintptr_t)p) % (sizeof(ValueType)*N) == 0);
+    #endif
     store_intrin(p,v);
   }
 
@@ -66,7 +72,7 @@ namespace SCTL_NAMESPACE {
     return *this;
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> Vec<ValueType,N>::operator-() const {
-    return unary_minus_intrin(v); // Zero() - (*this);
+    return unary_minus_intrin(v);
   }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> Vec<ValueType,N>::operator~() const {
