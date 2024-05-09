@@ -201,13 +201,13 @@ namespace SCTL_NAMESPACE {
     double a = 0;
     double s = 1u << DIM;
     for (Integer j = Morton<DIM>::MAX_DEPTH; j >= 0; j--) {
-      for (Integer i = Morton<DIM>::DIM - 1; i >= 0; i--) {
+      for (Integer i = DIM - 1; i >= 0; i--) {
         s = s * 0.5;
         if (mid.x[i] & (((typename Morton<DIM>::UINT_T)1) << j)) a += s;
       }
     }
     out << "(";
-    for (Integer i = 0; i < Morton<DIM>::DIM; i++) {
+    for (Integer i = 0; i < DIM; i++) {
       out << mid.x[i] * 1.0 / Morton<DIM>::maxCoord << ",";
     }
     out << (int)mid.depth << "," << a << ")";
