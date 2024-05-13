@@ -132,7 +132,7 @@ template <class ValueType> Matrix<ValueType> operator-(ValueType s, const Matrix
 template <class ValueType> Matrix<ValueType> operator*(ValueType s, const Matrix<ValueType>& M) { return M * s; }
 
 /**
- * /brief P=[e(p1)*s1 e(p2)*s2 ... e(pn)*sn],
+ * P=[e(p1)*s1 e(p2)*s2 ... e(pn)*sn],
  * where e(k) is the kth unit vector,
  * perm := [p1 p2 ... pn] is the permutation vector,
  * scal := [s1 s2 ... sn] is the scaling vector.

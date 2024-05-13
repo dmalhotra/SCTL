@@ -198,6 +198,9 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
      */
     void WriteParticleVTK(std::string fname, std::string data_name, bool show_ghost = false) const;
 
+    /**
+     * This is an example showing how to use the PtTree class.
+     */
     static void test() {
       Long N = 100000;
       Vector<Real> X(N*DIM), f(N);

@@ -11,19 +11,26 @@ namespace SCTL_NAMESPACE {
 template <class ValueType> class Vector;
 template <class ValueType> class Matrix;
 
+/**
+ * Implements spectral deferred correction (SDC) solver for ordinary differential equations (ODEs).
+ */
 template <class Real> class SDC {
   public:
 
-    using Fn1 = std::function<void(Vector<Real>* dudt, const Vector<Real>& u)>;
+    /// The function type to specify the RHS of the ODE.
     using Fn0 = std::function<void(Vector<Real>* dudt, const Vector<Real>& u, const Integer correction_idx, const Integer substep_idx)>;
+    using Fn1 = std::function<void(Vector<Real>* dudt, const Vector<Real>& u)>;
+
+    /// Callback function type.
     using MonitorFn = std::function<void(Real t, Real dt, const Vector<Real>& u)>;
 
     /**
      * Constructor
      *
-     * @param[in] Order the order of the method.
+     * @param[in] order the order of the method.
+     * @param[in] comm the communicator.
      */
-    explicit SDC(const Integer Order, const Comm& comm = Comm::Self());
+    explicit SDC(const Integer order, const Comm& comm = Comm::Self());
 
     /**
      * @return order of the method.
@@ -32,7 +39,7 @@ template <class Real> class SDC {
 
     /**
      * Apply one step of spectral deferred correction (SDC).
-     * Compute: u = u0 + \int_0^{dt} F(u)
+     * Compute: \f$ u = u_0 + \int_0^{dt} F(u) \f$
      *
      * @param[out] u the solution
      * @param[in] dt the step size
@@ -54,7 +61,7 @@ template <class Real> class SDC {
 
     /**
      * Solve ODE adaptively to required tolerance.
-     * Compute: u = u0 + \int_0^{T} F(u)
+     * Compute: \f$ u = u_0 + \int_0^{T} F(u) \f$
      *
      * @param[out] u the final solution
      * @param[in] dt the initial step size guess
@@ -76,6 +83,9 @@ template <class Real> class SDC {
       return AdaptiveSolve(u, dt, T, u0, fn, tol, monitor_callback, continue_with_errors, error);
     }
 
+    /**
+     * This is an example for how to use the SDC class.
+     */
     static void test_one_step(const Integer Order = 5) {
       auto ref_sol = [](Real t) { return cos<Real>(-t); };
       auto fn = [](Vector<Real>* dudt, const Vector<Real>& u) {

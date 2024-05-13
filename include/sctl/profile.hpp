@@ -17,6 +17,9 @@ namespace SCTL_NAMESPACE {
 
 class Comm;
 
+/**
+ * Counters available to use with the Profile class.
+ */
 enum class ProfileCounter: Long {
   TIME,
   FLOP,
@@ -36,6 +39,11 @@ enum class ProfileCounter: Long {
   FIELD_COUNT
 };
 
+/**
+ * This class allows for manual instrumentation of code. It allows the user to define profiling blocks. It then reports
+ * the change in values of various counters (time, flops, memory allocations, etc) between the start and end of each
+ * profiling block.
+ */
 class Profile {
   static constexpr Long Nfield = (Long)ProfileCounter::FIELD_COUNT;
 
@@ -107,7 +115,7 @@ class Profile {
    * Returns a profiling expression identified by a string name.
    *
    * @param[in] name string identifier for a profiling expression.
-   * Predefined string values corresponsing to each ProfileCounter are:
+   * Predefined string values corresponding to each ProfileCounter are:
    * t : TIME (in s)
    * f : FLOP (in GFLOPs)
    * alloc_count : number of heap allocations
@@ -166,7 +174,7 @@ class Profile {
   static void print(const Comm* comm_ptr = nullptr, std::vector<std::string> fields = {}, std::vector<std::string> format = {});
 
   /**
-   * Clear all profling data.
+   * Clear all profiling data.
    */
   static void reset();
 
