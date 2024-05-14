@@ -12,62 +12,272 @@ namespace SCTL_NAMESPACE {
 
   template <class ScalarType> constexpr Integer DefaultVecLen();
 
+  /**
+   * @brief Class template representing a SIMD (Single Instruction, Multiple Data) vector.
+   *
+   * This class template provides functionality for working with SIMD vectors, enabling
+   * efficient parallelization of computations on multiple data elements simultaneously.
+   *
+   * @tparam ValueType Data type of the vector elements.
+   * @tparam N Number of elements in the vector. Defaults to DefaultVecLen<ValueType>().
+   */
   template <class ValueType, Integer N = DefaultVecLen<ValueType>()> class alignas(sizeof(ValueType) * N) Vec {
     public:
+      /**
+       * @brief Type alias for the scalar type of the vector elements.
+       */
       using ScalarType = ValueType;
+
+      /**
+       * @brief Type alias for the internal data representation of the vector.
+       */
       using VData = VecData<ScalarType,N>;
+
+      /**
+       * @brief Type alias for the mask type associated with the vector.
+       */
       using MaskType = Mask<VData>;
 
+      /**
+       * @brief Get the size of the vector.
+       *
+       * @return The size of the vector.
+       */
       static constexpr Integer Size();
 
+      /**
+       * @brief Create a vector initialized with all elements set to zero.
+       *
+       * @return Zero-initialized vector.
+       */
       static inline Vec Zero();
 
+      /**
+       * @brief Load a scalar value into all elements of the vector.
+       *
+       * @param p Pointer to the scalar value.
+       * @return Vector with all elements loaded with the scalar value.
+       */
       static inline Vec Load1(ScalarType const* p);
+
+      /**
+       * @brief Load a vector of scalar values from unaligned memory.
+       *
+       * @param p Pointer to the scalar values.
+       * @return Vector loaded with the scalar values.
+       */
       static inline Vec Load(ScalarType const* p);
+
+      /**
+       * @brief Load a vector of scalar values from aligned memory.
+       *
+       * @param p Pointer to the scalar values.
+       * @return Vector loaded with the scalar values from aligned memory.
+       */
       static inline Vec LoadAligned(ScalarType const* p);
 
+      /**
+       * @brief Default constructor.
+       */
       Vec() = default;
+
+      /**
+       * @brief Copy constructor.
+       *
+       * @param v_ Vector to copy from.
+       */
       Vec(const Vec&) = default;
+
+      /**
+       * @brief Copy assignment operator.
+       *
+       * @param v_ Vector to copy from.
+       * @return Reference to the assigned vector.
+       */
       Vec& operator=(const Vec&) = default;
+
+      /**
+       * @brief Destructor.
+       */
       ~Vec() = default;
 
+      /**
+       * @brief Constructor initializing vector with given data.
+       *
+       * @param v_ Vector data.
+       */
       inline Vec(const VData& v_);
+
+      /**
+       * @brief Constructor initializing vector with a scalar value.
+       *
+       * @param a Scalar value to initialize vector elements.
+       */
       inline Vec(const ScalarType& a);
+
+      /**
+       * @brief Constructor initializing vector with multiple scalar values.
+       *
+       * @tparam T Data type of scalar values.
+       * @tparam T1 Variadic template parameter pack for scalar values.
+       * @param x First scalar value.
+       * @param args Remaining scalar values.
+       */
       template <class T,class ...T1> inline Vec(T x, T1... args);
 
+      /**
+       * @brief Store the vector data into unaligned memory.
+       *
+       * @param p Pointer to the memory location to store the data.
+       */
       inline void Store(ScalarType* p) const;
+
+      /**
+       * @brief Store the vector data into aligned memory.
+       *
+       * @param p Pointer to the memory location to store the data.
+       */
       inline void StoreAligned(ScalarType* p) const;
 
       // Element access
+
+      /**
+       * @brief Access individual elements of the vector.
+       *
+       * @param i Index of the element to access.
+       * @return Value of the element at the specified index.
+       */
       inline ScalarType operator[](Integer i) const;
+
+      /**
+       * @brief Insert a value at the specified index in the vector.
+       *
+       * @param i Index at which to insert the value.
+       * @param value Value to insert.
+       */
       inline void insert(Integer i, ScalarType value);
 
       // Arithmetic operators
+
+      /**
+       * @brief Unary plus operator.
+       *
+       * @return The vector with all elements unchanged.
+       */
       inline Vec operator+() const;
+
+      /**
+       * @brief Unary minus operator.
+       *
+       * @return The negated vector.
+       */
       inline Vec operator-() const;
 
       // Bitwise operators
+
+      /**
+       * @brief Bitwise NOT operator.
+       *
+       * @return The bitwise complement of the vector.
+       */
       inline Vec operator~() const;
 
       // Assignment operators
+
+      /**
+       * @brief Assignment operator with a scalar value.
+       *
+       * @param a Scalar value to assign to all elements of the vector.
+       * @return Reference to the modified vector.
+       */
       inline Vec& operator=(const ScalarType& a);
+
+      /**
+       * @brief Multiplication assignment operator with another vector.
+       *
+       * @param rhs Vector to multiply with.
+       * @return Reference to the modified vector.
+       */
       inline Vec& operator*=(const Vec& rhs);
+
+      /**
+       * @brief Division assignment operator with another vector.
+       *
+       * @param rhs Vector to divide by.
+       * @return Reference to the modified vector.
+       */
       inline Vec& operator/=(const Vec& rhs);
+
+      /**
+       * @brief Addition assignment operator with another vector.
+       *
+       * @param rhs Vector to add.
+       * @return Reference to the modified vector.
+       */
       inline Vec& operator+=(const Vec& rhs);
+
+      /**
+       * @brief Subtraction assignment operator with another vector.
+       *
+       * @param rhs Vector to subtract.
+       * @return Reference to the modified vector.
+       */
       inline Vec& operator-=(const Vec& rhs);
+
+      /**
+       * @brief Bitwise AND assignment operator with another vector.
+       *
+       * @param rhs Vector for bitwise AND operation.
+       * @return Reference to the modified vector.
+       */
       inline Vec& operator&=(const Vec& rhs);
+
+      /**
+       * @brief Bitwise XOR assignment operator with another vector.
+       *
+       * @param rhs Vector for bitwise XOR operation.
+       * @return Reference to the modified vector.
+       */
       inline Vec& operator^=(const Vec& rhs);
+
+      /**
+       * @brief Bitwise OR assignment operator with another vector.
+       *
+       * @param rhs Vector for bitwise OR operation.
+       * @return Reference to the modified vector.
+       */
       inline Vec& operator|=(const Vec& rhs);
 
-      inline void set(const VData& v_) { v = v_; }
-      inline const VData& get() const { return v; }
-      inline VData& get() { return v; }
+      /**
+       * @brief Set the vector data.
+       *
+       * @param v_ Vector data to set.
+       */
+      inline void set(const VData& v_);
+
+      /**
+       * @brief Get the vector data.
+       *
+       * @return Reference to the vector data.
+       */
+      inline const VData& get() const;
+
+      /**
+       * @brief Get the vector data.
+       *
+       * @return Reference to the vector data.
+       */
+      inline VData& get();
 
     private:
-
+      /**
+       * @brief Helper struct for initializing vectors with multiple scalar values.
+       */
       template <class T, class... T2> struct InitVec;
-      //template <class T> struct InitVec<T>;
 
+      /**
+       * @brief Internal data representation of the vector.
+       */
       VData v;
   };
 

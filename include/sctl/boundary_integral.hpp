@@ -46,7 +46,7 @@ namespace SCTL_NAMESPACE {
    * for each element.
    *
    * @param[out] near_scatter_index the permutation map from the target points in the near list (Xtrg_near) to the
-   * orgiinal ordering of the targets (Xtrg). Once the near potential has been computed for each pair of element and
+   * original ordering of the targets (Xtrg). Once the near potential has been computed for each pair of element and
    * its near targets, Comm::ScatterForward() can be used to reorder the potentials to the original ordering of the
    * targets.
    *
@@ -66,6 +66,9 @@ namespace SCTL_NAMESPACE {
 
     public:
 
+      /**
+       * Virtual destructor.
+       */
       virtual ~ElementListBase() {}
 
       /**
@@ -225,7 +228,7 @@ namespace SCTL_NAMESPACE {
        * @param[in] k_m2m multipole-to-multipole kernel.
        * @param[in] k_m2l multipole-to-local kernel.
        * @param[in] k_m2t multipole-to-target kernel.
-       * @param[in] k_l2l local-to-local keenel.
+       * @param[in] k_l2l local-to-local kernel.
        * @param[in] k_l2t local-to-target kernel.
        */
       template <class KerS2M, class KerS2L, class KerS2T, class KerM2M, class KerM2L, class KerM2T, class KerL2L, class KerL2T> void SetFMMKer(const KerS2M& k_s2m, const KerS2L& k_s2l, const KerS2T& k_s2t, const KerM2M& k_m2m, const KerM2L& k_m2l, const KerM2T& k_m2t, const KerL2L& k_l2l, const KerL2T& k_l2t);
@@ -359,7 +362,7 @@ namespace SCTL_NAMESPACE {
       mutable bool setup_near_flag;
       mutable Vector<Real> Xtrg_near; // position of near-interaction target points sorted by element (size=Nnear*COORD_DIM)
       mutable Vector<Real> Xn_trg_near; // normal at near-interaction target points sorted by element (size=Nnear*COORD_DIM)
-      mutable Vector<Long> near_scatter_index; // prmutation vector that takes near-interactions sorted by elem-idx to sorted by trg-idx (size=Nnear)
+      mutable Vector<Long> near_scatter_index; // permutation vector that takes near-interactions sorted by elem-idx to sorted by trg-idx (size=Nnear)
       mutable Vector<Long> near_trg_cnt, near_trg_dsp; // cnt and dsp of near-interactions for each target (size=Ntrg)
       mutable Vector<Long> near_elem_cnt, near_elem_dsp; // cnt and dsp of near-interaction for each element (size=Nelem)
       mutable Vector<Long> K_near_cnt, K_near_dsp; // cnt and dsp of element wise near-interaction matrix (size=Nelem)

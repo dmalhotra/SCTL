@@ -72,7 +72,7 @@ template <Integer DIM> class Tree {
      *
      * @param[in] periodic whether the tree is periodic across the faces of the cube.
      *
-     * @note this is a collective operation.
+     * @note This is a collective operation and must be called from all processes in the communicator.
      */
     template <class Real> void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, bool periodic = 0);
 
@@ -85,7 +85,7 @@ template <Integer DIM> class Tree {
      *
      * @param[in] cnt vector of length equal to number of tree nodes, giving the number of data elements per node.
      *
-     * @note this is a collective operation.
+     * @note This is a collective operation and must be called from all processes in the communicator.
      */
     template <class ValueType> void AddData(const std::string& name, const Vector<ValueType>& data, const Vector<Long>& cnt);
 
@@ -104,12 +104,12 @@ template <Integer DIM> class Tree {
     template <class ValueType> void GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name) const;
 
     /**
-     * @note this is a collective operation.
+     * @note This is a collective operation and must be called from all processes in the communicator.
      */
     template <class ValueType> void ReduceBroadcast(const std::string& name);
 
     /**
-     * @note this is a collective operation.
+     * @note This is a collective operation and must be called from all processes in the communicator.
      */
     template <class ValueType> void Broadcast(const std::string& name);
 
@@ -118,7 +118,7 @@ template <Integer DIM> class Tree {
      *
      * @param[in] name name of the data.
      *
-     * @note this is a collective operation.
+     * @note This is a collective operation and must be called from all processes in the communicator.
      */
     void DeleteData(const std::string& name);
 
@@ -129,7 +129,7 @@ template <Integer DIM> class Tree {
      *
      * @param[in] show_ghost whether to show ghost nodes.
      *
-     * @note this is a collective operation.
+     * @note This is a collective operation and must be called from all processes in the communicator.
      */
     void WriteTreeVTK(std::string fname, bool show_ghost = false) const;
 
@@ -161,45 +161,97 @@ template <Integer DIM> class Tree {
     Comm comm;
 };
 
+/**
+ * @brief PtTree class template representing a point tree in a specified dimension.
+ *
+ * @tparam Real Data type for the coordinates and values of points.
+ * @tparam DIM Dimensionality of the point tree.
+ * @tparam BaseTree Base class for the point tree. Defaults to Tree<DIM>.
+ */
 template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : public BaseTree {
   public:
 
+    /**
+     * @brief Constructor for PtTree.
+     *
+     * @param comm Communication object for distributed computing. Defaults to Comm::Self().
+     */
     PtTree(const Comm& comm = Comm::Self());
 
+    /**
+     * @brief Destructor for PtTree.
+     */
     ~PtTree();
 
     /**
-     * @note this is a collective operation.
+     * @brief Update refinement of the point tree based on given coordinates.
+     *
+     * @param coord Coordinates of the points.
+     * @param M Maximum number of points per box for refinement.
+     * @param balance21 Flag indicating whether to construct a level-restricted
+     *        tree with neighboring boxes within one level of each other.
+     * @param periodic Flag indicating periodic boundary conditions.
+     *
+     * @note This is a collective operation and must be called from all processes in the communicator.
      */
     void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, bool periodic = 0);
 
     /**
-     * @note this is a collective operation.
+     * @brief Add particles to the point tree.
+     *
+     * @param name Name of the particle group.
+     * @param coord Coordinates of the particles.
+     *
+     * @note This is a collective operation and must be called from all processes in the communicator.
      */
     void AddParticles(const std::string& name, const Vector<Real>& coord);
 
     /**
-     * @note this is a collective operation.
+     * @brief Add particle data to the point tree.
+     *
+     * @param data_name Name of the data.
+     * @param particle_name Name of the particle group.
+     * @param data Data values associated with the particles.
+     *
+     * @note This is a collective operation and must be called from all processes in the communicator.
      */
     void AddParticleData(const std::string& data_name, const std::string& particle_name, const Vector<Real>& data);
 
     /**
-     * @note this is a collective operation.
+     * @brief Get particle data from the point tree. The data scattered back to
+     * the original ordering of the particles.
+     *
+     * @param data Vector to store the data values.
+     * @param data_name Name of the data.
+     *
+     * @note This is a collective operation and must be called from all processes in the communicator.
      */
     void GetParticleData(Vector<Real>& data, const std::string& data_name) const;
 
     /**
-     * @note this is a collective operation.
+     * @brief Delete particle data from the point tree.
+     *
+     * @param data_name Name of the data to delete.
+     *
+     * @note This is a collective operation and must be called from all processes in the communicator.
      */
     void DeleteParticleData(const std::string& data_name);
 
     /**
-     * @note this is a collective operation.
+     * @brief Write particle data to a VTK file.
+     *
+     * @param fname Filename for the VTK file.
+     * @param data_name Name of the data to write.
+     * @param show_ghost Flag indicating whether to include ghost particles in the visualization.
+     *
+     * @note This is a collective operation and must be called from all processes in the communicator.
      */
     void WriteParticleVTK(std::string fname, std::string data_name, bool show_ghost = false) const;
 
     /**
-     * This is an example showing how to use the PtTree class.
+     * @brief Example function demonstrating usage of the PtTree class.
+     *
+     * This function creates a PtTree object, adds particles, performs tree manipulation, and generates visualization.
      */
     static void test() {
       Long N = 100000;
@@ -256,10 +308,10 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
 
   private:
 
-    std::map<std::string, Long> Nlocal;
-    std::map<std::string, Vector<Morton<DIM>>> pt_mid;
-    std::map<std::string, Vector<Long>> scatter_idx;
-    std::map<std::string, std::string> data_pt_name;
+    std::map<std::string, Long> Nlocal;                    // Number of local particles for each group.
+    std::map<std::string, Vector<Morton<DIM>>> pt_mid;     // Morton indices for each particle group.
+    std::map<std::string, Vector<Long>> scatter_idx;       // Scatter indices for each particle group.
+    std::map<std::string, std::string> data_pt_name;       // Mapping of data name to particle name.
 };
 
 }

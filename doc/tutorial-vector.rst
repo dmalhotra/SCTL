@@ -10,14 +10,6 @@ The Vector class is a dynamically resizable array with various utility
 functions. It provides functionalities similar to std::vector with additional
 features and optimizations.
 
-..  Including the Header
-..  ---------------------
-..  To use the Vector class in your code, include the `sctl/vector.hpp` header file:
-.. 
-.. .. code-block:: cpp
-.. 
-..     #include <sctl/vector.hpp>
-
 Creating a Vector
 -----------------
 To create a Vector object, you can use one of the following constructors:

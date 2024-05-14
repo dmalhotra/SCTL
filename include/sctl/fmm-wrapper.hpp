@@ -153,6 +153,9 @@ template <class Real, Integer DIM> class ParticleFMM {
      */
     void EvalDirect(Vector<Real>& U, const std::string& trg_name) const;
 
+    /**
+     * Example code showing usage of class ParticleFMM.
+     */
     static void test(const Comm& comm) {
       if (DIM != 3) return ParticleFMM<Real,3>::test(comm);
 

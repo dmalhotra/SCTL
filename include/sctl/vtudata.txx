@@ -4,7 +4,7 @@
 
 namespace SCTL_NAMESPACE {
 
-inline void VTUData::WriteVTK(const std::string& fname, const Comm& comm = Comm::Self()) const {
+inline void VTUData::WriteVTK(const std::string& fname, const Comm& comm) const {
   typedef typename VTUData::VTKReal VTKReal;
   Long value_dof = 0;
   {  // Write vtu file.

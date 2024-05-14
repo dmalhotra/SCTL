@@ -156,7 +156,7 @@ Miscellaneous
 
 1. `MemoryManager, Iterator, ConstIterator <include/sctl/mem_mgr.hpp>`_
 2. `Stacktrace utility <include/sctl/stacktrace.h>`_
-3. `VTUData <include/sctl/vtudata.hpp>`_: write unstructured VTK files
+3. :ref:`VTUData <tutorial-vtudata>`: write unstructured VTK files
 4. `QuadReal, basic math functions, constants <include/sctl/math_utils.hpp>`_
 5. `GEMM, SVD (unoptimized) <include/sctl/mat_utils.hpp>`_
 

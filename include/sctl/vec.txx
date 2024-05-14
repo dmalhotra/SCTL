@@ -112,6 +112,18 @@ namespace SCTL_NAMESPACE {
     return *this;
   }
 
+
+  template <class ValueType, Integer N> inline void Vec<ValueType,N>::set(const VData& v_) {
+    v = v_;
+  }
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::VData& Vec<ValueType,N>::get() {
+    return v;
+  }
+  template <class ValueType, Integer N> inline const typename Vec<ValueType,N>::VData& Vec<ValueType,N>::get() const {
+    return v;
+  }
+
+
   template <class ValueType, Integer N> template <class T, class... T2> struct Vec<ValueType,N>::InitVec {
     template <class... T1> static inline VData apply(T1... start, T x, T2... rest) {
       return InitVec<T2...>::template apply<ScalarType, T1...>(start..., (ScalarType)x, rest...);

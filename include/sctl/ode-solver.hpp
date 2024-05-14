@@ -113,6 +113,9 @@ template <class Real> class SDC {
       }
     }
 
+    /**
+     * This example shows adaptive time-stepping with the SDC class.
+     */
     static void test_adaptive_solve(const Integer Order = 5, const Real tol = 1e-5) {
       auto ref_sol = [](Real t) { return cos(-t); };
       auto fn = [](Vector<Real>* dudt, const Vector<Real>& u) {

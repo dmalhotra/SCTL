@@ -74,6 +74,7 @@
 #include SCTL_INCLUDE(sph_harm.hpp)
 
 #include SCTL_INCLUDE(fft_wrapper.hpp)
+#include SCTL_INCLUDE(complex.hpp)
 
 // Profiler
 #include SCTL_INCLUDE(profile.hpp)

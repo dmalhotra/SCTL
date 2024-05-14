@@ -90,7 +90,7 @@ class Comm {
   /**
    * Split communicator.
    *
-   * @param[in] clr indentify different communicator groups.
+   * @param[in] clr identify different communicator groups.
    */
   Comm Split(Integer clr) const;
 
@@ -114,7 +114,7 @@ class Comm {
    *
    * @tparam SType type of the send-data.
    *
-   * @param[in] sbuf const-iterator to the send bufffer.
+   * @param[in] sbuf const-iterator to the send buffer.
    *
    * @param[in] scount number of elements to send.
    *
@@ -131,7 +131,7 @@ class Comm {
    *
    * @tparam RType type of the receive-data.
    *
-   * @param[out] rbuf iterator to the receive bufffer.
+   * @param[out] rbuf iterator to the receive buffer.
    *
    * @param[in] rcount number of elements to receive.
    *
@@ -157,7 +157,7 @@ class Comm {
    *
    * \param[in,out] buff send-buffer on the sending process, or the receive buffer on the receiving process.
    *
-   * \param[in] count number of elements in the mesage.
+   * \param[in] count number of elements in the message.
    *
    * \param[in] root rank of the sending process.
    */
@@ -372,7 +372,7 @@ class Comm {
    *
    * @param[out] scatter_index array of indices giving the original global-position of each element in the sorted array.
    *
-   * @param[in] split_key optional key to determine the paritioning of the sorted array between processes.
+   * @param[in] split_key optional key to determine the partitioning of the sorted array between processes.
    */
   template <class Type> void SortScatterIndex(const Vector<Type>& key, Vector<Long>& scatter_index, const Type* split_key = nullptr) const;
 

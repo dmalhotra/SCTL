@@ -1,10 +1,6 @@
 #ifndef _SCTL_FFT_WRAPPER_
 #define _SCTL_FFT_WRAPPER_
 
-#include <cmath>
-#include <cassert>
-#include <cstdlib>
-#include <vector>
 #if defined(SCTL_HAVE_FFTW) || defined(SCTL_HAVE_FFTWF)
 #include <fftw3.h>
 #ifdef SCTL_FFTW3_MKL
@@ -12,42 +8,15 @@
 #endif
 #endif
 
+#include <iostream>
+
 #include <sctl/common.hpp>
-#include SCTL_INCLUDE(matrix.hpp)
+#include SCTL_INCLUDE(complex.hpp)
 #include SCTL_INCLUDE(math_utils.hpp)
 
 namespace SCTL_NAMESPACE {
 
   template <class ValueType> struct FFTPlan;
-
-  template <class ValueType> class Complex {
-    public:
-      Complex<ValueType>(ValueType r = 0, ValueType i = 0);
-
-      Complex<ValueType> operator-() const;
-      Complex<ValueType> conj() const;
-
-      bool operator==(const Complex<ValueType>& x) const;
-      bool operator!=(const Complex<ValueType>& x) const;
-
-      template <class ScalarType> void operator+=(const Complex<ScalarType>& x);
-      template <class ScalarType> void operator-=(const Complex<ScalarType>& x);
-      template <class ScalarType> void operator*=(const Complex<ScalarType>& x);
-      template <class ScalarType> void operator/=(const Complex<ScalarType>& x);
-
-      template <class ScalarType> Complex<ValueType> operator+(const ScalarType& x) const;
-      template <class ScalarType> Complex<ValueType> operator-(const ScalarType& x) const;
-      template <class ScalarType> Complex<ValueType> operator*(const ScalarType& x) const;
-      template <class ScalarType> Complex<ValueType> operator/(const ScalarType& y) const;
-
-      Complex<ValueType> operator+(const Complex<ValueType>& x) const;
-      Complex<ValueType> operator-(const Complex<ValueType>& x) const;
-      Complex<ValueType> operator*(const Complex<ValueType>& x) const;
-      Complex<ValueType> operator/(const Complex<ValueType>& y) const;
-
-      ValueType real;
-      ValueType imag;
-  };
 
   /**
    * Enum class representing different types of FFT transformations.
@@ -82,15 +51,15 @@ namespace SCTL_NAMESPACE {
     /**
      * Setup the FFT operator.
      *
-     * @param[in] fft_type_ The type of transform.
+     * @param[in] fft_type The type of transform.
      *
-     * @param[in] howmany_ Number of transforms to compute.
+     * @param[in] howmany Number of transforms to compute.
      *
      * @param[in] dim_vec Dimensions of the input data.
      *
      * @param[in] Nthreads Number of threads (default is 1).
      */
-    void Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads = 1);
+    void Setup(FFT_Type fft_type, Long howmany, const Vector<Long>& dim_vec, Integer Nthreads = 1);
 
     /**
      * Execute the FFT transform.
