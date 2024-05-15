@@ -7,8 +7,6 @@ The `Matrix` class is a template class designed to represent and manipulate matr
 It provides various operations for matrix-matrix and matrix-scalar computations, as well as utilities for input/output, transposition, singular value decomposition (SVD), and pseudo-inverse computation.
 For more advanced usage and additional features, please refer to the :ref:`Matrix class documentation <matrix-dox>`.
 
-Using the Matrix Class
------------------------
 To use the `Matrix` class, follow these steps:
 
 1. **Instantiate the Class**: Instantiate an object of the `Matrix` class with the desired template parameter (`ValueType`).

@@ -1,12 +1,13 @@
-:orphan:
-
-.. _permutation-doc:
+.. _permutation-dox:
 
 class Permutation
 =================
 
-.. doxygenclass:: SCTL_NAMESPACE::Permutation
-   :members:
-   :undoc-members:
-   :outline:
+.. literalinclude:: ../include/sctl/permutation.hpp
+   :language: c++
+
+.. .. doxygenclass:: SCTL_NAMESPACE::Permutation
+..    :members:
+..    :undoc-members:
+..    :outline:
 

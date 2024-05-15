@@ -1,43 +1,3 @@
-
-
-
-..  .. autodoxygenindex::
-..     :project: SCTL
-
-..   .. autodoxygenindex::
-..      :project: SCTL
-..      :outline:
-..      :no-link:
-..      :allow-dot-graphs
-
-
-
-
-
-..  .. toctree::
-..     :maxdepth: 2
-..     :caption: Contents:
-
-.. :ref:`genindex`
-
-.. ##.. doxygenclass:: SCTL_NAMESPACE::Profile
-.. ##   :members:
-
-
-
-.. The header files contain the class declaration and doxygen style documentation of the interface. An example/test code is also provided for most classes.
-
-..  SCTL_MEMDEBUG
-..  SCTL_GLOBAL_MEM_BUFF
-..  SCTL_PROFILE
-..  SCTL_VERBOSE
-..  SCTL_SIG_HANDLER
-..  SCTL_QUAD_T
-
-
-
-
-
 .. _sctl_documentation:
 
 SCTL: Scientific Computing Template Library
@@ -112,6 +72,12 @@ SCTL can optionally use the following libraries if they are available:
 To enable support for any of these libraries, define the corresponding flag during compilation. For example, to enable MPI support, use ``-DSCTL_HAVE_MPI``.
 
 
+..  SCTL_MEMDEBUG
+..  SCTL_GLOBAL_MEM_BUFF
+..  SCTL_PROFILE
+..  SCTL_VERBOSE
+..  SCTL_SIG_HANDLER
+..  SCTL_QUAD_T
 
 
 
@@ -119,8 +85,9 @@ Containers
 ----------
 
 1. :ref:`Vector <tutorial-vector>`
-2. :ref:`Matrix <tutorial-matrix>`, :ref:`Permutation <permutation-doc>`
-3. :ref:`Tensor <tensor-doc>`
+2. :ref:`Matrix <tutorial-matrix>`
+3. :ref:`Permutation <tutorial-permutation>`
+4. :ref:`Tensor <tensor-doc>`
 
 Numerical Methods
 ------------------
@@ -133,7 +100,6 @@ Numerical Methods
 6. `Tree, PtTree <include/sctl/tree.hpp>`_, `Morton <include/sctl/morton.hpp>`_: Morton ordering based n-dimensional tree
 7. `FFT <include/sctl/fft_wrapper.hpp>`_: wrapper to FFT
 8. `FMM <include/sctl/fmm-wrapper.hpp>`_: wrapper to `PVFMM <http://pvfmm.org>`_
-9. `ChebBasis <include/sctl/cheb_utils.hpp>`_: general-dimension tensor product Chebyshev basis (unmaintained)
 
 Boundary integral methods
 --------------------------
@@ -141,7 +107,6 @@ Boundary integral methods
 1. `BoundaryIntegralOp <include/sctl/boundary_integral.hpp>`_: generic boundary integral method
 2. `SlenderElemList <include/sctl/slender_element.hpp>`_
 3. `Kernel functions <include/sctl/kernel_functions.hpp>`_
-4. `Boundary quadrature <include/sctl/boundary_quadrature.hpp>`_: generic boundary integral method based on quad-patches and hedgehog quadrature (unmaintained)
 
 HPC
 ---
@@ -159,4 +124,11 @@ Miscellaneous
 3. :ref:`VTUData <tutorial-vtudata>`: write unstructured VTK files
 4. `QuadReal, basic math functions, constants <include/sctl/math_utils.hpp>`_
 5. `GEMM, SVD (unoptimized) <include/sctl/mat_utils.hpp>`_
+
+Legacy (unmaintained)
+---------------------
+
+1. `Boundary quadrature <include/sctl/boundary_quadrature.hpp>`_: generic boundary integral method based on quad-patches and hedgehog quadrature
+2. `ChebBasis <include/sctl/cheb_utils.hpp>`_: general-dimension tensor product Chebyshev basis
+
 

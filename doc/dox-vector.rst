@@ -3,8 +3,11 @@
 Vector class
 ============
 
-.. doxygenclass:: SCTL_NAMESPACE::Vector
-   :members:
+.. literalinclude:: ../include/sctl/vector.hpp
+   :language: c++
+
+.. .. doxygenclass:: SCTL_NAMESPACE::Vector
+..    :members:
 
 ..   :members-only:
 

@@ -52,6 +52,7 @@
 #include SCTL_INCLUDE(vector.hpp)
 
 // Matrix, Permutation operators
+#include SCTL_INCLUDE(permutation.hpp)
 #include SCTL_INCLUDE(matrix.hpp)
 
 // Template vector intrinsics (new)
