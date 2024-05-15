@@ -24,7 +24,7 @@ An example/test code is also provided for most classes.
 4) [InterpQuadRule, ChebQuadRule, LegQuadRule](include/sctl/quadrule.hpp): generalized Chebyshev quadrature, Clenshaw-Curtis quadrature, Gauss-Legendre quadrature
 5) [SphericalHarmonics](include/sctl/sph_harm.hpp)
 6) [Tree, PtTree](include/sctl/tree.hpp), [Morton](include/sctl/morton.hpp): Morton ordering based n-dimensional tree
-7) [FFT](include/sctl/fft_wrapper.hpp): wrapper to FFT
+7) [FFT](include/sctl/fft_wrapper.hpp): wrapper to FFTW
 8) [FMM](include/sctl/fmm-wrapper.hpp): wrapper to [PVFMM](http://pvfmm.org)
 9) [ChebBasis](include/sctl/cheb_utils.hpp): general-dimension tensor product Chebyshev basis (unmaintained)
 

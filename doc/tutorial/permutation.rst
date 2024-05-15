@@ -50,9 +50,9 @@ The Permutation class overloads operators to facilitate operations with permutat
 Outputting Permutation Matrices
 -------------------------------
 
-You can output permutation matrices to the console or a file using the stream insertion operator `<<`:
+You can output permutation operator to the console or a file using the stream insertion operator `<<`:
 
 .. code-block:: cpp
 
-   std::cout << randPerm << std::endl;  // Output the permutation matrix to the console
+   std::cout << randPerm << std::endl;  // Output the permutation operator to the console
 

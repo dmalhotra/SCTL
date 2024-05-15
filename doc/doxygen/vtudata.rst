@@ -1,6 +1,6 @@
 .. _vtudata-dox:
 
-VTUData class
+class VTUData
 ==============
 
 .. doxygenclass:: SCTL_NAMESPACE::VTUData

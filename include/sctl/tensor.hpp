@@ -14,6 +14,7 @@ namespace SCTL_NAMESPACE {
 
   /**
    * @brief A template class representing a multidimensional tensor.
+   * The data is stored in row-major order.
    *
    * @tparam ValueType The type of the elements stored in the tensor.
    * @tparam own_data A boolean indicating whether the tensor owns its data.
@@ -186,16 +187,24 @@ namespace SCTL_NAMESPACE {
       template <class ...PackedLong> ValueType operator()(PackedLong... ii) const;
 
       /**
-       * @brief Rotate the tensor to the left.
+       * @brief Returns a new tensor obtained by rotating the dimensions of the current tensor to the left.
        *
-       * @return Rotated tensor.
+       * This operation shifts the dimensions of the tensor. If the original tensor has dimensions n1 x n2 x n3,
+       * then the left-rotated tensor will be of dimensions n2 x n3 x n1 and the data will be rearranged in a similar way.
+       * This operation is a generalization of the transpose operation for matrices.
+       *
+       * @return A new tensor with dimensions rotated to the left.
        */
       typename TensorRotateLeftType<ValueType, true, Args...>::Value RotateLeft() const;
 
       /**
-       * @brief Rotate the tensor to the right.
+       * @brief Returns a new tensor obtained by rotating the dimensions of the current tensor to the right.
        *
-       * @return Rotated tensor.
+       * This operation shifts the dimensions of the tensor. If the original tensor has dimensions n1 x n2 x n3,
+       * then the right-rotated tensor will be of dimensions n3 x n1 x n2 and the data will be rearranged accordingly.
+       * This operation is a generalization of the transpose operation for matrices.
+       *
+       * @return A new tensor with dimensions rotated to the right.
        */
       typename TensorRotateRightType<ValueType, true, Args...>::Value RotateRight() const;
 

@@ -47,32 +47,14 @@ Vector Operations
 -----------------
 The Vector class supports various vector operations such as addition, subtraction, multiplication, division, and element-wise operations.
 
-1. Addition:
-
 .. code-block:: cpp
 
-    sctl::Vector<double> result = vec1 + vec2;
+    sctl::Vector<double> result_add = vec1 + vec2;
+    sctl::Vector<double> result_sub = vec1 - vec2;
+    sctl::Vector<double> result_mul = vec1 * vec2;
+    sctl::Vector<double> result_div = vec1 / vec2;
 
-2. Subtraction:
-
-.. code-block:: cpp
-
-    sctl::Vector<double> result = vec1 - vec2;
-
-3. Multiplication:
-
-.. code-block:: cpp
-
-    sctl::Vector<double> result = vec1 * vec2;
-
-4. Division:
-
-.. code-block:: cpp
-
-    sctl::Vector<double> result = vec1 / vec2;
-
-5. Element-wise Operations:
-   The Vector class also supports element-wise addition, subtraction, multiplication, and division with scalars:
+The Vector class also supports element-wise addition, subtraction, multiplication, and division with scalars:
 
 .. code-block:: cpp
 

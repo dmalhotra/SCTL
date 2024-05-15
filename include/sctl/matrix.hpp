@@ -13,7 +13,7 @@ template <class ValueType> class Vector;
 template <class ValueType> class Permutation;
 
 /**
- * @brief Class representing a matrix.
+ * @brief Class representing a matrix. The data is stored in row-major order.
  *
  * @tparam ValueType The type of elements stored in the matrix.
  */

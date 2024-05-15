@@ -1,9 +1,9 @@
 .. _vector-dox:
 
-Vector class
+class Vector
 ============
 
-.. literalinclude:: ../include/sctl/vector.hpp
+.. literalinclude:: ../../include/sctl/vector.hpp
    :language: c++
 
 .. .. doxygenclass:: SCTL_NAMESPACE::Vector

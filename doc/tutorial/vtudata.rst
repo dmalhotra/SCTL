@@ -1,8 +1,8 @@
 .. _tutorial-vtudata:
 
 
-Using VTUDatal
-================
+Using VTUData
+=============
 
 This tutorial provided an overview of how to use the `VTUData` class to store and write data in the VTK unstructured mesh format.
 This format is commonly used in scientific computing for visualizing complex data sets.

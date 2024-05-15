@@ -1,17 +1,20 @@
 .. _sdc-dox:
 
-.. .. doxygenindex::
-..    :project: SCTL
-..    :no-link:
-
-Spectral Deferred Correction (SDC)
-==================================
+class SDC (Spectral Deferred Correction)
+========================================
 
 
 .. doxygenclass:: SCTL_NAMESPACE::SDC
    :members:  Fn0, Fn1, operator(), test_one_step, AdaptiveSolve, test_adaptive_solve
    :undoc-members:
    :no-link:
+
+
+
+.. .. doxygenindex::
+..    :project: SCTL
+..    :no-link:
+
 
 ..   :members-only:
 

@@ -1,7 +1,7 @@
 .. _tutorial-matrix:
 
-Using Matrix class
-==================
+Using the Matrix class
+======================
 
 The `Matrix` class is a template class designed to represent and manipulate matrices.
 It provides various operations for matrix-matrix and matrix-scalar computations, as well as utilities for input/output, transposition, singular value decomposition (SVD), and pseudo-inverse computation.

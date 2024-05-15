@@ -64,6 +64,7 @@ TARGET_BIN = \
        $(BINDIR)/test-pt-tree \
        $(BINDIR)/test-quadrule \
        $(BINDIR)/test-sph-harm \
+       $(BINDIR)/test-tensor \
        $(BINDIR)/test-vec
 
 all : $(TARGET_BIN)
@@ -90,6 +91,7 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-pt-tree
 	./$(BINDIR)/test-quadrule
 	./$(BINDIR)/test-sph-harm
+	./$(BINDIR)/test-tensor
 	./$(BINDIR)/test-vec
 
 clean:

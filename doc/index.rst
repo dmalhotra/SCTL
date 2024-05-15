@@ -1,5 +1,28 @@
 .. _sctl_documentation:
 
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+
+   Introduction <self>
+
+.. toctree::
+   :hidden:
+   :maxdepth: 3
+
+   tutorial/index
+ 
+.. toctree::
+   :hidden:
+   :caption: API Reference
+   :maxdepth: 1
+
+   doxygen/index
+
+
+
+
 SCTL: Scientific Computing Template Library
 ============================================
 
@@ -61,7 +84,7 @@ SCTL can optionally use the following libraries if they are available:
 
 - **LAPACK**: enable by defining ``SCTL_HAVE_LAPACK``.
 
-- **FFTW**: enable for double precision by defining ``SCTL_HAVE_FFTW``, single precision by defining ``SCTL_HAVE_FFTWF``, or long double precision by defining ``SCTL_HAVE_FFTWL``.
+- `FFTW <https://www.fftw.org>`_: enable for double precision by defining ``SCTL_HAVE_FFTW``, single precision by defining ``SCTL_HAVE_FFTWF``, or long double precision by defining ``SCTL_HAVE_FFTWL``.
 
 - **libmvec**: enable by defining ``SCTL_HAVE_LIBMVEC``.
 
@@ -81,25 +104,27 @@ To enable support for any of these libraries, define the corresponding flag duri
 
 
 
+
+
 Containers
 ----------
 
 1. :ref:`Vector <tutorial-vector>`
 2. :ref:`Matrix <tutorial-matrix>`
 3. :ref:`Permutation <tutorial-permutation>`
-4. :ref:`Tensor <tensor-doc>`
+4. :ref:`Tensor <tutorial-tensor>`
 
-Numerical Methods
-------------------
-
-1. :ref:`SDC (Spectral Deferred Correction ODE solver) <tutorial-sdc>`
-2. `LinearSolver <include/sctl/lin-solve.hpp>`_: distributed memory GMRES (wrapper to PETSc when available)
-3. `LagrangeInterp <include/sctl/lagrange-interp.hpp>`_
-4. `InterpQuadRule, ChebQuadRule, LegQuadRule <include/sctl/quadrule.hpp>`_: generalized Chebyshev quadrature, Clenshaw-Curtis quadrature, Gauss-Legendre quadrature
-5. `SphericalHarmonics <include/sctl/sph_harm.hpp>`_
-6. `Tree, PtTree <include/sctl/tree.hpp>`_, `Morton <include/sctl/morton.hpp>`_: Morton ordering based n-dimensional tree
-7. `FFT <include/sctl/fft_wrapper.hpp>`_: wrapper to FFT
-8. `FMM <include/sctl/fmm-wrapper.hpp>`_: wrapper to `PVFMM <http://pvfmm.org>`_
+..  Numerical Methods
+..  ------------------
+..  
+..  1. :ref:`SDC (Spectral Deferred Correction ODE solver) <tutorial-sdc>`
+..  2. `LinearSolver <include/sctl/lin-solve.hpp>`_: distributed memory GMRES (wrapper to PETSc when available)
+..  3. `LagrangeInterp <include/sctl/lagrange-interp.hpp>`_
+..  4. `InterpQuadRule, ChebQuadRule, LegQuadRule <include/sctl/quadrule.hpp>`_: generalized Chebyshev quadrature, Clenshaw-Curtis quadrature, Gauss-Legendre quadrature
+..  5. `SphericalHarmonics <include/sctl/sph_harm.hpp>`_
+..  6. `Tree, PtTree <include/sctl/tree.hpp>`_, `Morton <include/sctl/morton.hpp>`_: Morton ordering based n-dimensional tree
+..  7. `FFT <include/sctl/fft_wrapper.hpp>`_: wrapper to `FFTW <https://www.fftw.org>`_
+..  8. `FMM <include/sctl/fmm-wrapper.hpp>`_: wrapper to `PVFMM <http://pvfmm.org>`_
 
 Boundary integral methods
 --------------------------
@@ -130,5 +155,8 @@ Legacy (unmaintained)
 
 1. `Boundary quadrature <include/sctl/boundary_quadrature.hpp>`_: generic boundary integral method based on quad-patches and hedgehog quadrature
 2. `ChebBasis <include/sctl/cheb_utils.hpp>`_: general-dimension tensor product Chebyshev basis
+
+
+
 
 

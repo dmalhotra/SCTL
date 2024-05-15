@@ -7,8 +7,6 @@ The `SDC` (Spectral Deferred Correction) class is a template class designed to s
 It provides methods for applying one step of the SDC method and for solving ODEs adaptively to a required tolerance.
 For more advanced usage and additional features, please refer to the :ref:`SDC class documentation <sdc-dox>`.
 
-Using the SDC Class
---------------------
 To use the `SDC` class, follow these steps:
 
 1. **Instantiate the Class**: Instantiate an object of the `SDC` class with the desired template parameter (`double`).
