@@ -244,7 +244,7 @@ namespace SCTL_NAMESPACE {
       e_log.reserve(1e5);
       n_log.reserve(1e5);
       for (auto& name : n_log) name.reserve(20);
-      counter_log.reserve(1e5 * Nfield);
+      counter_log.reserve((Long)(1e5 * Nfield));
 
       prof_fields["0"]  = ExprScalar(0.);
       prof_fields["t"]  = ExprScalar(ProfileCounter::TIME) * 1e-9;

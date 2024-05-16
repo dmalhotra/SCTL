@@ -19,9 +19,8 @@ namespace SCTL_NAMESPACE {
 
   template <class Real> Long KrylovPrecond<Real>::Rank() const {
     Long rank = 0;
-    for (auto it = mat_lst.begin(); it != mat_lst.end(); it++) {
+    for (auto it = mat_lst.begin(); it != mat_lst.end(); std::advance(it,2)) {
       rank += it->Dim(1);
-      it++;
     }
     return rank;
   }

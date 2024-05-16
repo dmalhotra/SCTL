@@ -186,7 +186,7 @@ namespace SCTL_NAMESPACE {
       static Vector<Real> Build(Vector<Vector<Real>>& quad_nds, Vector<Vector<Real>>& quad_wts, const Matrix<Real>& M, const Vector<Real>& nds, const Vector<Real>& wts, const Vector<Real>& eps_vec = Vector<Real>(), const Vector<Long>& order_vec = Vector<Long>(), const Real nds_interval_start = 0, const Real nds_interval_end = 0, const bool UseSVD = true);
 
       static void test() {
-        const Integer order = 16;
+        Integer order = 16;
         auto integrands = [order](const Vector<Real>& nds) { // p(x) + q(x) log(x)
           const Long N = nds.Dim();
           Matrix<Real> M(N, order);
