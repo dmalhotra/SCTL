@@ -2,6 +2,59 @@
 
 namespace SCTL_NAMESPACE {
 
+  template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::test() {
+    Long N = 100000;
+    Vector<Real> X(N*DIM), f(N);
+    for (Long i = 0; i < N; i++) { // Set coordinates (X), and values (f)
+      f[i] = 0;
+      for (Integer k = 0; k < DIM; k++) {
+        X[i*DIM+k] = pow<3>(drand48()*2-1.0)*0.5+0.5;
+        f[i] += X[i*DIM+k]*k;
+      }
+    }
+
+    PtTree<Real,DIM> tree;
+    tree.AddParticles("pt", X);
+    tree.AddParticleData("pt-value", "pt", f);
+    tree.UpdateRefinement(X, 1000); // refine tree with max 1000 points per box.
+
+    { // manipulate tree node data
+      const auto& node_lst = tree.GetNodeLists(); // Get interaction lists
+      //const auto& node_mid = tree.GetNodeMID();
+      //const auto& node_attr = tree.GetNodeAttr();
+
+      // get point values and count for each node
+      Vector<Real> value;
+      Vector<Long> cnt, dsp;
+      tree.GetData(value, cnt, "pt-value");
+
+      // compute the dsp (the point offset) for each node
+      dsp.ReInit(cnt.Dim()); dsp = 0;
+      omp_par::scan(cnt.begin(), dsp.begin(), cnt.Dim());
+
+      Long node_idx = 0;
+      for (Long i = 0; i < cnt.Dim(); i++) { // find the tree node with maximum points
+        if (cnt[node_idx] < cnt[i]) node_idx = i;
+      }
+
+      for (Long j = 0; j < cnt[node_idx]; j++) { // for this node, set all pt-value to -1
+        value[dsp[node_idx]+j] = -1;
+      }
+
+      for (const Long nbr_idx : node_lst[node_idx].nbr) { // loop over the neighbors and set pt-value to 2
+        if (nbr_idx >= 0 && nbr_idx != node_idx) {
+          for (Long j = 0; j < cnt[nbr_idx]; j++) {
+            value[dsp[nbr_idx]+j] = 2;
+          }
+        }
+      }
+    }
+
+    // Generate visualization
+    tree.WriteParticleVTK("pt", "pt-value");
+    tree.WriteTreeVTK("tree");
+  }
+
   template <Integer DIM> constexpr Integer Tree<DIM>::Dim() {
     return DIM;
   }
@@ -107,8 +160,8 @@ namespace SCTL_NAMESPACE {
     }
     { // Update M = global_min(pt_mid.Dim(), M)
       Long M0, M1, Npt = pt_mid.Dim();
-      comm.Allreduce(Ptr2ConstItr<Long>(&M,1), Ptr2Itr<Long>(&M0,1), 1, Comm::CommOp::MIN);
-      comm.Allreduce(Ptr2ConstItr<Long>(&Npt,1), Ptr2Itr<Long>(&M1,1), 1, Comm::CommOp::MIN);
+      comm.Allreduce(Ptr2ConstItr<Long>(&M,1), Ptr2Itr<Long>(&M0,1), 1, CommOp::MIN);
+      comm.Allreduce(Ptr2ConstItr<Long>(&Npt,1), Ptr2Itr<Long>(&M1,1), 1, CommOp::MIN);
       M = std::min(M0,M1);
       SCTL_ASSERT(M > 0);
     }
@@ -407,7 +460,7 @@ namespace SCTL_NAMESPACE {
           StaticArray<Long,2> Nl, Ng;
           Nl[0] = data_->Dim();
           Nl[1] = omp_par::reduce(cnt_->begin(), cnt_->Dim());
-          comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, Comm::CommOp::SUM);
+          comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
           dof = Ng[0] / std::max<Long>(Ng[1],1);
           SCTL_ASSERT(Nl[0] == Nl[1] * dof);
           SCTL_ASSERT(Ng[0] == Ng[1] * dof);
@@ -444,7 +497,7 @@ namespace SCTL_NAMESPACE {
       StaticArray<Long,2> Nl, Ng;
       Nl[0] = data.Dim();
       Nl[1] = omp_par::reduce(cnt.begin(), cnt.Dim());
-      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, Comm::CommOp::SUM);
+      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
       dof = Ng[0] / std::max<Long>(Ng[1],1);
       SCTL_ASSERT(Nl[0] == Nl[1] * dof);
       SCTL_ASSERT(Ng[0] == Ng[1] * dof);
@@ -483,7 +536,7 @@ namespace SCTL_NAMESPACE {
       StaticArray<Long,2> Nl, Ng;
       Nl[0] = data.Dim();
       Nl[1] = omp_par::reduce(cnt.begin(), cnt.Dim());
-      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, Comm::CommOp::SUM);
+      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
       dof = Ng[0] / std::max<Long>(Ng[1],1);
       SCTL_ASSERT(Nl[0] == Nl[1] * dof);
       SCTL_ASSERT(Ng[0] == Ng[1] * dof);
@@ -603,7 +656,7 @@ namespace SCTL_NAMESPACE {
       StaticArray<Long,2> Nl, Ng;
       Nl[0] = data.Dim();
       Nl[1] = omp_par::reduce(cnt.begin(), cnt.Dim());
-      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, Comm::CommOp::SUM);
+      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
       dof = Ng[0] / std::max<Long>(Ng[1],1);
       SCTL_ASSERT(Nl[0] == Nl[1] * dof);
       SCTL_ASSERT(Ng[0] == Ng[1] * dof);
@@ -840,7 +893,7 @@ namespace SCTL_NAMESPACE {
               StaticArray<Long,2> Nl {0, 0}, Ng;
               Nl[0] = data->Dim();
               for (Long i = 0; i < cnt->Dim(); i++) Nl[1] += cnt[0][i];
-              comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, Comm::CommOp::SUM);
+              comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
               dof = Ng[0] / std::max<Long>(Ng[1],1);
             }
             Long offset = 0, count = 0;
@@ -947,7 +1000,7 @@ namespace SCTL_NAMESPACE {
     { // Set dof
       Long Nn = node_mid.Dim();
       StaticArray<Long,2> Ng, Nl = {data_.Dim(), dsp[Nn-1]+cnt_[Nn-1]};
-      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, Comm::CommOp::SUM);
+      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
       dof = Ng[0] / std::max<Long>(Ng[1],1);
     }
     { // Set data

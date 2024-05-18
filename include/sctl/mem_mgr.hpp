@@ -18,8 +18,6 @@
 
 namespace SCTL_NAMESPACE {
 
-class MemoryManager;
-
 #ifdef SCTL_MEMDEBUG
 
 template <class ValueType> class ConstIterator {
@@ -45,22 +43,11 @@ template <class ValueType> class ConstIterator {
   static const Long ValueSize = sizeof(ValueType);
 
  public:
-  ConstIterator() : base(nullptr), len(0), offset(0), alloc_ctr(0), mem_head(nullptr) {}
-
-  // template <size_t LENGTH> ConstIterator(ValueType (&base_)[LENGTH]) {  // DEPRECATED (because mem_head cannot be stored)
-  //   SCTL_ASSERT(false);
-  // }
+  ConstIterator();
 
   explicit ConstIterator(pointer base_, difference_type len_, bool dynamic_alloc = false);
 
-  template <class AnotherType> explicit ConstIterator(const ConstIterator<AnotherType>& I) {
-    this->base = I.base;
-    this->len = I.len;
-    this->offset = I.offset;
-    SCTL_ASSERT_MSG((uintptr_t)(this->base + this->offset) % alignof(ValueType) == 0, "invalid alignment during pointer type conversion.");
-    this->alloc_ctr = I.alloc_ctr;
-    this->mem_head = I.mem_head;
-  }
+  template <class AnotherType> explicit ConstIterator(const ConstIterator<AnotherType>& I);
 
   // value_type* like operators
   reference operator*() const;
@@ -70,84 +57,39 @@ template <class ValueType> class ConstIterator {
   reference operator[](difference_type off) const;
 
   // Increment / Decrement
-  ConstIterator& operator++() {
-    offset += (Long)sizeof(ValueType);
-    return *this;
-  }
+  ConstIterator& operator++();
 
-  ConstIterator operator++(int) {
-    ConstIterator<ValueType> tmp(*this);
-    ++*this;
-    return tmp;
-  }
+  ConstIterator operator++(int);
 
-  ConstIterator& operator--() {
-    offset -= (Long)sizeof(ValueType);
-    return *this;
-  }
+  ConstIterator& operator--();
 
-  ConstIterator operator--(int) {
-    ConstIterator<ValueType> tmp(*this);
-    --*this;
-    return tmp;
-  }
+  ConstIterator operator--(int);
 
   // Arithmetic
-  ConstIterator& operator+=(difference_type i) {
-    offset += i * (Long)sizeof(ValueType);
-    return *this;
-  }
+  ConstIterator& operator+=(difference_type i);
 
-  ConstIterator operator+(difference_type i) const {
-    ConstIterator<ValueType> tmp(*this);
-    tmp.offset += i * (Long)sizeof(ValueType);
-    return tmp;
-  }
+  ConstIterator operator+(difference_type i) const;
 
-  friend ConstIterator operator+(difference_type i, const ConstIterator& right) { return (right + i); }
+  template <class T> friend ConstIterator<T> operator+(typename ConstIterator<T>::difference_type i, const ConstIterator<T>& right);
 
-  ConstIterator& operator-=(difference_type i) {
-    offset -= i * (Long)sizeof(ValueType);
-    return *this;
-  }
+  ConstIterator& operator-=(difference_type i);
 
-  ConstIterator operator-(difference_type i) const {
-    ConstIterator<ValueType> tmp(*this);
-    tmp.offset -= i * (Long)sizeof(ValueType);
-    return tmp;
-  }
+  ConstIterator operator-(difference_type i) const;
 
-  difference_type operator-(const ConstIterator& I) const {
-    // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
-    Long diff = ((pointer)(base + offset)) - ((pointer)(I.base + I.offset));
-    SCTL_ASSERT_MSG(I.base + I.offset + diff * (Long)sizeof(ValueType) == base + offset, "invalid memory address alignment.");
-    return diff;
-  }
+  difference_type operator-(const ConstIterator& I) const;
 
   // Comparison operators
-  bool operator==(const ConstIterator& I) const { return (base + offset == I.base + I.offset); }
+  bool operator==(const ConstIterator& I) const;
 
-  bool operator!=(const ConstIterator& I) const { return !(*this == I); }
+  bool operator!=(const ConstIterator& I) const;
 
-  bool operator<(const ConstIterator& I) const {
-    // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
-    return (base + offset) < (I.base + I.offset);
-  }
+  bool operator<(const ConstIterator& I) const;
 
-  bool operator<=(const ConstIterator& I) const {
-    // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
-    return (base + offset) <= (I.base + I.offset);
-  }
+  bool operator<=(const ConstIterator& I) const;
 
-  bool operator>(const ConstIterator& I) const {
-    // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
-    return (base + offset) > (I.base + I.offset);
-  }
+  bool operator>(const ConstIterator& I) const;
 
-  bool operator>=(const ConstIterator& I) const {
-    // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
-    return (base + offset) >= (I.base + I.offset);
-  }
+  bool operator>=(const ConstIterator& I) const;
 
   friend std::ostream& operator<<(std::ostream& out, const ConstIterator& I) {
     out << "(" << (long long)I.base << "+" << I.offset << ":" << I.len << ")";
@@ -165,13 +107,11 @@ template <class ValueType> class Iterator : public ConstIterator<ValueType> {
   typedef std::random_access_iterator_tag iterator_category;
 
  public:
-  Iterator() : ConstIterator<ValueType>() {}
+  Iterator();
 
-  //template <size_t LENGTH> Iterator(ValueType (&base_)[LENGTH]) : ConstIterator<ValueType>(base_) {}
+  explicit Iterator(pointer base_, difference_type len_, bool dynamic_alloc = false);
 
-  explicit Iterator(pointer base_, difference_type len_, bool dynamic_alloc = false) : ConstIterator<ValueType>(base_, len_, dynamic_alloc) {}
-
-  template <class AnotherType> explicit Iterator(const ConstIterator<AnotherType>& I) : ConstIterator<ValueType>(I) {}
+  template <class AnotherType> explicit Iterator(const ConstIterator<AnotherType>& I);
 
   // value_type* like operators
   reference operator*() const;
@@ -181,54 +121,26 @@ template <class ValueType> class Iterator : public ConstIterator<ValueType> {
   reference operator[](difference_type off) const;
 
   // Increment / Decrement
-  Iterator& operator++() {
-    this->offset += (Long)sizeof(ValueType);
-    return *this;
-  }
+  Iterator& operator++();
 
-  Iterator operator++(int) {
-    Iterator<ValueType> tmp(*this);
-    ++*this;
-    return tmp;
-  }
+  Iterator operator++(int);
 
-  Iterator& operator--() {
-    this->offset -= (Long)sizeof(ValueType);
-    return *this;
-  }
+  Iterator& operator--();
 
-  Iterator operator--(int) {
-    Iterator<ValueType> tmp(*this);
-    --*this;
-    return tmp;
-  }
+  Iterator operator--(int);
 
   // Arithmetic
-  Iterator& operator+=(difference_type i) {
-    this->offset += i * (Long)sizeof(ValueType);
-    return *this;
-  }
+  Iterator& operator+=(difference_type i);
 
-  Iterator operator+(difference_type i) const {
-    Iterator<ValueType> tmp(*this);
-    tmp.offset += i * (Long)sizeof(ValueType);
-    return tmp;
-  }
+  Iterator operator+(difference_type i) const;
 
-  friend Iterator operator+(difference_type i, const Iterator& right) { return (right + i); }
+  template <class T> friend Iterator<T> operator+(typename Iterator<T>::difference_type i, const Iterator<T>& right);
 
-  Iterator& operator-=(difference_type i) {
-    this->offset -= i * (Long)sizeof(ValueType);
-    return *this;
-  }
+  Iterator& operator-=(difference_type i);
 
-  Iterator operator-(difference_type i) const {
-    Iterator<ValueType> tmp(*this);
-    tmp.offset -= i * (Long)sizeof(ValueType);
-    return tmp;
-  }
+  Iterator operator-(difference_type i) const;
 
-  difference_type operator-(const ConstIterator<ValueType>& I) const { return static_cast<const ConstIterator<ValueType>&>(*this) - I; }
+  difference_type operator-(const ConstIterator<ValueType>& I) const;
 };
 
 template <class ValueType, Long DIM> class StaticArray {
@@ -241,77 +153,65 @@ template <class ValueType, Long DIM> class StaticArray {
 
   StaticArray& operator=(const StaticArray&) = default;
 
-  explicit StaticArray(std::initializer_list<ValueType> arr_) : StaticArray() {
-    // static_assert(arr_.size() <= DIM, "too many initializer values"); // allowed in C++14
-    SCTL_ASSERT_MSG(arr_.size() <= DIM, "too many initializer values");
-    for (Long i = 0; i < (Long)arr_.size(); i++) this->arr_[i] = arr_.begin()[i];
-  }
+  explicit StaticArray(std::initializer_list<ValueType> arr_);
 
   ~StaticArray() = default;
 
   // value_type* like operators
-  const ValueType& operator*() const { return (*this)[0]; }
+  const ValueType& operator*() const;
 
-  ValueType& operator*() { return (*this)[0]; }
+  ValueType& operator*();
 
-  const ValueType* operator->() const { return (ConstIterator<ValueType>)*this; }
+  const ValueType* operator->() const;
 
-  ValueType* operator->() { return (Iterator<ValueType>)*this; }
+  ValueType* operator->();
 
-  const ValueType& operator[](difference_type off) const { return ((ConstIterator<ValueType>)*this)[off]; }
+  const ValueType& operator[](difference_type off) const;
 
-  ValueType& operator[](difference_type off) { return ((Iterator<ValueType>)*this)[off]; }
+  ValueType& operator[](difference_type off);
 
-  operator ConstIterator<ValueType>() const { return ConstIterator<ValueType>(arr_, DIM); }
+  operator ConstIterator<ValueType>() const;
 
-  operator Iterator<ValueType>() { return Iterator<ValueType>(arr_, DIM); }
+  operator Iterator<ValueType>();
 
   // Arithmetic
-  ConstIterator<ValueType> operator+(difference_type i) const { return (ConstIterator<ValueType>)*this + i; }
+  ConstIterator<ValueType> operator+(difference_type i) const;
 
-  Iterator<ValueType> operator+(difference_type i) { return (Iterator<ValueType>)*this + i; }
+  Iterator<ValueType> operator+(difference_type i);
 
-  friend ConstIterator<ValueType> operator+(difference_type i, const StaticArray& right) { return i + (ConstIterator<ValueType>)right; }
+  template <class T, Long d> friend ConstIterator<T> operator+(typename StaticArray<T,d>::difference_type i, const StaticArray<T,d>& right);
 
-  friend Iterator<ValueType> operator+(difference_type i, StaticArray& right) { return i + (Iterator<ValueType>)right; }
+  template <class T, Long d> friend Iterator<T> operator+(typename StaticArray<T,d>::difference_type i, StaticArray<T,d>& right);
 
-  ConstIterator<ValueType> operator-(difference_type i) const { return (ConstIterator<ValueType>)*this - i; }
+  ConstIterator<ValueType> operator-(difference_type i) const;
 
-  Iterator<ValueType> operator-(difference_type i) { return (Iterator<ValueType>)*this - i; }
+  Iterator<ValueType> operator-(difference_type i);
 
-  difference_type operator-(const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this - (ConstIterator<ValueType>)I; }
+  difference_type operator-(const ConstIterator<ValueType>& I) const;
 
   // Comparison operators
-  bool operator==(const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this == I; }
+  bool operator==(const ConstIterator<ValueType>& I) const;
 
-  bool operator!=(const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this != I; }
+  bool operator!=(const ConstIterator<ValueType>& I) const;
 
-  bool operator< (const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this <  I; }
+  bool operator< (const ConstIterator<ValueType>& I) const;
 
-  bool operator<=(const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this <= I; }
+  bool operator<=(const ConstIterator<ValueType>& I) const;
 
-  bool operator> (const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this >  I; }
+  bool operator> (const ConstIterator<ValueType>& I) const;
 
-  bool operator>=(const ConstIterator<ValueType>& I) const { return (ConstIterator<ValueType>)*this >= I; }
+  bool operator>=(const ConstIterator<ValueType>& I) const;
 
  private:
 
   ValueType arr_[DIM];
 };
 
-template <class ValueType> Iterator<ValueType> Ptr2Itr(void* ptr, Long len) { return Iterator<ValueType>((ValueType*)ptr, len); }
-template <class ValueType> ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len) { return ConstIterator<ValueType>((ValueType*)ptr, len); }
-
-#else
-
-// StaticArray - forward declared in common.hpp
-
-template <class ValueType> Iterator<ValueType> Ptr2Itr(void* ptr, Long len) { return (Iterator<ValueType>) ptr; }
-template <class ValueType> ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len) { return (ConstIterator<ValueType>) ptr; }
-
 #endif
 
-template <class ValueType> Iterator<ValueType> NullIterator() { return Ptr2Itr<ValueType>(nullptr, 0); }
+template <class ValueType> Iterator<ValueType> NullIterator();
+template <class ValueType> Iterator<ValueType> Ptr2Itr(void* ptr, Long len);
+template <class ValueType> ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len);
 
 /**
  * \brief MemoryManager class declaration.
@@ -410,12 +310,6 @@ class MemoryManager {
   //mutable std::mutex mutex_lock;
   mutable std::set<void*> system_malloc;       // track pointers allocated using system malloc.
 };
-
-inline uintptr_t align_ptr(uintptr_t ptr) {
-  const uintptr_t ALIGN_MINUS_ONE = SCTL_MEM_ALIGN - 1;
-  const uintptr_t NOT_ALIGN_MINUS_ONE = ~ALIGN_MINUS_ONE;
-  return ((ptr + ALIGN_MINUS_ONE) & NOT_ALIGN_MINUS_ONE);
-}
 
 /**
  * \brief Aligned allocation as an alternative to new. Uses placement new to

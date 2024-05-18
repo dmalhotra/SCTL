@@ -56,7 +56,7 @@ namespace SCTL_NAMESPACE {
     bool have_trg_normal;
     { // Set have_trg_normal
       StaticArray<Long,1> Nloc{Xn_trg.Dim()}, Nglb{0};
-      comm.Allreduce<Long>(Nloc, Nglb, 1, Comm::CommOp::SUM);
+      comm.Allreduce<Long>(Nloc, Nglb, 1, CommOp::SUM);
       have_trg_normal = (Nglb[0] > 0);
       SCTL_ASSERT(!have_trg_normal || (Xn_trg.Dim() == Xtrg.Dim()));
     }
@@ -72,7 +72,7 @@ namespace SCTL_NAMESPACE {
     Long trg_offset, src_offset, elem_offset;
     { // set trg_offset, src_offset, elem_offset
       StaticArray<Long,3> send_buff{Ntrg, Nsrc, Nelem}, recv_buff{0,0,0};
-      comm_.Scan((ConstIterator<Long>)send_buff, (Iterator<Long>)recv_buff, 3, Comm::CommOp::SUM);
+      comm_.Scan((ConstIterator<Long>)send_buff, (Iterator<Long>)recv_buff, 3, CommOp::SUM);
       trg_offset  = recv_buff[0] - send_buff[0];
       src_offset  = recv_buff[1] - send_buff[1];
       elem_offset = recv_buff[2] - send_buff[2];
@@ -104,7 +104,7 @@ namespace SCTL_NAMESPACE {
             X0_local[k] = std::min<Real>(X0_local[k], Xsrc[i*COORD_DIM+k]);
           }
         }
-        comm_.Allreduce<Real>(X0_local, BBX0, COORD_DIM, Comm::CommOp::MIN);
+        comm_.Allreduce<Real>(X0_local, BBX0, COORD_DIM, CommOp::MIN);
 
         Real BBlen, len_local = 0;
         for (Long i = 0; i < Ntrg; i++) {
@@ -117,7 +117,7 @@ namespace SCTL_NAMESPACE {
             len_local = std::max<Real>(len_local, Xsrc[i*COORD_DIM+k]-BBX0[k]);
           }
         }
-        comm_.Allreduce<Real>(Ptr2ConstItr<Real>(&len_local,1), Ptr2Itr<Real>(&BBlen,1), 1, Comm::CommOp::MAX);
+        comm_.Allreduce<Real>(Ptr2ConstItr<Real>(&len_local,1), Ptr2Itr<Real>(&BBlen,1), 1, CommOp::MAX);
         BBlen_inv = 1/BBlen;
       }
       { // Expand bounding-box so that no points are on the boundary
@@ -674,7 +674,7 @@ namespace SCTL_NAMESPACE {
     }
     { // Set Xtrg
       StaticArray<Long,2> Xt_size{Xt.Dim(),0};
-      comm_.Allreduce(Xt_size+0, Xt_size+1, 1, Comm::CommOp::SUM);
+      comm_.Allreduce(Xt_size+0, Xt_size+1, 1, CommOp::SUM);
       if (Xt_size[1]) { // Set Xtrg
         Xtrg = Xt;
       } else {

@@ -10,6 +10,9 @@
 namespace SCTL_NAMESPACE {
 
 #ifdef SCTL_MEMDEBUG
+
+template <class ValueType> ConstIterator<ValueType>::ConstIterator() : base(nullptr), len(0), offset(0), alloc_ctr(0), mem_head(nullptr) {}
+
 template <class ValueType> inline ConstIterator<ValueType>::ConstIterator(const ValueType* base_, difference_type len_, bool dynamic_alloc) {
   this->base = (char*)base_;
   this->len = len_ * (Long)sizeof(ValueType);
@@ -22,6 +25,15 @@ template <class ValueType> inline ConstIterator<ValueType>::ConstIterator(const 
     mem_head = &mh;
   } else
     mem_head = nullptr;
+}
+
+template <class ValueType> template <class AnotherType> inline ConstIterator<ValueType>::ConstIterator(const ConstIterator<AnotherType>& I) {
+  this->base = I.base;
+  this->len = I.len;
+  this->offset = I.offset;
+  SCTL_ASSERT_MSG((uintptr_t)(this->base + this->offset) % alignof(ValueType) == 0, "invalid alignment during pointer type conversion.");
+  this->alloc_ctr = I.alloc_ctr;
+  this->mem_head = I.mem_head;
 }
 
 template <class ValueType> inline void ConstIterator<ValueType>::IteratorAssertChecks(Long j) const {
@@ -54,6 +66,97 @@ template <class ValueType> inline typename ConstIterator<ValueType>::reference C
   return *(ValueType*)(base + offset + j * (Long)sizeof(ValueType));
 }
 
+template <class ValueType> inline ConstIterator<ValueType>& ConstIterator<ValueType>::operator++() {
+  offset += (Long)sizeof(ValueType);
+  return *this;
+}
+
+template <class ValueType> inline ConstIterator<ValueType> ConstIterator<ValueType>::operator++(int) {
+  ConstIterator<ValueType> tmp(*this);
+  ++*this;
+  return tmp;
+}
+
+template <class ValueType> inline ConstIterator<ValueType>& ConstIterator<ValueType>::operator--() {
+  offset -= (Long)sizeof(ValueType);
+  return *this;
+}
+
+template <class ValueType> inline ConstIterator<ValueType> ConstIterator<ValueType>::operator--(int) {
+  ConstIterator<ValueType> tmp(*this);
+  --*this;
+  return tmp;
+}
+
+template <class ValueType> inline ConstIterator<ValueType>& ConstIterator<ValueType>::operator+=(difference_type i) {
+  offset += i * (Long)sizeof(ValueType);
+  return *this;
+}
+
+template <class ValueType> inline ConstIterator<ValueType> ConstIterator<ValueType>::operator+(difference_type i) const {
+  ConstIterator<ValueType> tmp(*this);
+  tmp.offset += i * (Long)sizeof(ValueType);
+  return tmp;
+}
+
+template <class T> inline ConstIterator<T> operator+(typename ConstIterator<T>::difference_type i, const ConstIterator<T>& right) {
+  return (right + i);
+}
+
+template <class ValueType> inline ConstIterator<ValueType>& ConstIterator<ValueType>::operator-=(difference_type i) {
+  offset -= i * (Long)sizeof(ValueType);
+  return *this;
+}
+
+template <class ValueType> inline ConstIterator<ValueType> ConstIterator<ValueType>::operator-(difference_type i) const {
+  ConstIterator<ValueType> tmp(*this);
+  tmp.offset -= i * (Long)sizeof(ValueType);
+  return tmp;
+}
+
+template <class ValueType> inline typename ConstIterator<ValueType>::difference_type ConstIterator<ValueType>::operator-(const ConstIterator& I) const {
+  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
+  Long diff = ((pointer)(base + offset)) - ((pointer)(I.base + I.offset));
+  SCTL_ASSERT_MSG(I.base + I.offset + diff * (Long)sizeof(ValueType) == base + offset, "invalid memory address alignment.");
+  return diff;
+}
+
+template <class ValueType> inline bool ConstIterator<ValueType>::operator==(const ConstIterator& I) const {
+  return (base + offset == I.base + I.offset);
+}
+
+template <class ValueType> inline bool ConstIterator<ValueType>::operator!=(const ConstIterator& I) const {
+  return !(*this == I);
+}
+
+template <class ValueType> inline bool ConstIterator<ValueType>::operator<(const ConstIterator& I) const {
+  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
+  return (base + offset) < (I.base + I.offset);
+}
+
+template <class ValueType> inline bool ConstIterator<ValueType>::operator<=(const ConstIterator& I) const {
+  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
+  return (base + offset) <= (I.base + I.offset);
+}
+
+template <class ValueType> inline bool ConstIterator<ValueType>::operator>(const ConstIterator& I) const {
+  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
+  return (base + offset) > (I.base + I.offset);
+}
+
+template <class ValueType> inline bool ConstIterator<ValueType>::operator>=(const ConstIterator& I) const {
+  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
+  return (base + offset) >= (I.base + I.offset);
+}
+
+
+
+template <class ValueType> inline Iterator<ValueType>::Iterator() : ConstIterator<ValueType>() {}
+
+template <class ValueType> inline Iterator<ValueType>::Iterator(pointer base_, difference_type len_, bool dynamic_alloc) : ConstIterator<ValueType>(base_, len_, dynamic_alloc) {}
+
+template <class ValueType> template <class AnotherType> inline Iterator<ValueType>::Iterator(const ConstIterator<AnotherType>& I) : ConstIterator<ValueType>(I) {}
+
 template <class ValueType> inline typename Iterator<ValueType>::reference Iterator<ValueType>::operator*() const {
   this->IteratorAssertChecks();
   return *(ValueType*)(this->base + this->offset);
@@ -69,7 +172,173 @@ template <class ValueType> inline typename Iterator<ValueType>::reference Iterat
   return *(ValueType*)(this->base + this->offset + j * (Long)sizeof(ValueType));
 }
 
+template <class ValueType> inline Iterator<ValueType>& Iterator<ValueType>::operator++() {
+  this->offset += (Long)sizeof(ValueType);
+  return *this;
+}
+
+template <class ValueType> inline Iterator<ValueType> Iterator<ValueType>::operator++(int) {
+  Iterator<ValueType> tmp(*this);
+  ++*this;
+  return tmp;
+}
+
+template <class ValueType> inline Iterator<ValueType>& Iterator<ValueType>::operator--() {
+  this->offset -= (Long)sizeof(ValueType);
+  return *this;
+}
+
+template <class ValueType> inline Iterator<ValueType> Iterator<ValueType>::operator--(int) {
+  Iterator<ValueType> tmp(*this);
+  --*this;
+  return tmp;
+}
+
+template <class ValueType> inline Iterator<ValueType>& Iterator<ValueType>::operator+=(difference_type i) {
+  this->offset += i * (Long)sizeof(ValueType);
+  return *this;
+}
+
+template <class ValueType> inline Iterator<ValueType> Iterator<ValueType>::operator+(difference_type i) const {
+  Iterator<ValueType> tmp(*this);
+  tmp.offset += i * (Long)sizeof(ValueType);
+  return tmp;
+}
+
+template <class T> inline Iterator<T> operator+(typename Iterator<T>::difference_type i, const Iterator<T>& right) {
+  return (right + i);
+}
+
+template <class ValueType> inline Iterator<ValueType>& Iterator<ValueType>::operator-=(difference_type i) {
+  this->offset -= i * (Long)sizeof(ValueType);
+  return *this;
+}
+
+template <class ValueType> inline Iterator<ValueType> Iterator<ValueType>::operator-(difference_type i) const {
+  Iterator<ValueType> tmp(*this);
+  tmp.offset -= i * (Long)sizeof(ValueType);
+  return tmp;
+}
+
+template <class ValueType> inline typename Iterator<ValueType>::difference_type Iterator<ValueType>::operator-(const ConstIterator<ValueType>& I) const {
+  return static_cast<const ConstIterator<ValueType>&>(*this) - I;
+}
+
+
+
+template <class ValueType, Long DIM> inline StaticArray<ValueType,DIM>::StaticArray(std::initializer_list<ValueType> arr_) : StaticArray() {
+  // static_assert(arr_.size() <= DIM, "too many initializer values"); // allowed in C++14
+  SCTL_ASSERT_MSG(arr_.size() <= DIM, "too many initializer values");
+  for (Long i = 0; i < (Long)arr_.size(); i++) this->arr_[i] = arr_.begin()[i];
+}
+
+template <class ValueType, Long DIM> inline const ValueType& StaticArray<ValueType,DIM>::operator*() const {
+  return (*this)[0];
+}
+
+template <class ValueType, Long DIM> inline ValueType& StaticArray<ValueType,DIM>::operator*() {
+  return (*this)[0];
+}
+
+template <class ValueType, Long DIM> inline const ValueType* StaticArray<ValueType,DIM>::operator->() const {
+  return (ConstIterator<ValueType>)*this;
+}
+
+template <class ValueType, Long DIM> inline ValueType* StaticArray<ValueType,DIM>::operator->() {
+  return (Iterator<ValueType>)*this;
+}
+
+template <class ValueType, Long DIM> inline const ValueType& StaticArray<ValueType,DIM>::operator[](difference_type off) const {
+  return ((ConstIterator<ValueType>)*this)[off];
+}
+
+template <class ValueType, Long DIM> inline ValueType& StaticArray<ValueType,DIM>::operator[](difference_type off) {
+  return ((Iterator<ValueType>)*this)[off];
+}
+
+template <class ValueType, Long DIM> inline StaticArray<ValueType,DIM>::operator ConstIterator<ValueType>() const {
+  return ConstIterator<ValueType>(arr_, DIM);
+}
+
+template <class ValueType, Long DIM> inline StaticArray<ValueType,DIM>::operator Iterator<ValueType>() {
+  return Iterator<ValueType>(arr_, DIM);
+}
+
+template <class ValueType, Long DIM> inline ConstIterator<ValueType> StaticArray<ValueType,DIM>::operator+(difference_type i) const {
+  return (ConstIterator<ValueType>)*this + i;
+}
+
+template <class ValueType, Long DIM> inline Iterator<ValueType> StaticArray<ValueType,DIM>::operator+(difference_type i) {
+  return (Iterator<ValueType>)*this + i;
+}
+
+template <class T, Long d> inline ConstIterator<T> operator+(typename StaticArray<T,d>::difference_type i, const StaticArray<T,d>& right) {
+  return i + (ConstIterator<T>)right;
+}
+
+template <class T, Long d> inline Iterator<T> operator+(typename StaticArray<T,d>::difference_type i, StaticArray<T,d>& right) {
+  return i + (Iterator<T>)right;
+}
+
+template <class ValueType, Long DIM> inline ConstIterator<ValueType> StaticArray<ValueType,DIM>::operator-(difference_type i) const {
+  return (ConstIterator<ValueType>)*this - i;
+}
+
+template <class ValueType, Long DIM> inline Iterator<ValueType> StaticArray<ValueType,DIM>::operator-(difference_type i) {
+  return (Iterator<ValueType>)*this - i;
+}
+
+template <class ValueType, Long DIM> inline typename StaticArray<ValueType,DIM>::difference_type StaticArray<ValueType,DIM>::operator-(const ConstIterator<ValueType>& I) const {
+  return (ConstIterator<ValueType>)*this - (ConstIterator<ValueType>)I;
+}
+
+template <class ValueType, Long DIM> inline bool StaticArray<ValueType,DIM>::operator==(const ConstIterator<ValueType>& I) const {
+  return (ConstIterator<ValueType>)*this == I;
+}
+
+template <class ValueType, Long DIM> inline bool StaticArray<ValueType,DIM>::operator!=(const ConstIterator<ValueType>& I) const {
+  return (ConstIterator<ValueType>)*this != I;
+}
+
+template <class ValueType, Long DIM> inline bool StaticArray<ValueType,DIM>::operator< (const ConstIterator<ValueType>& I) const {
+  return (ConstIterator<ValueType>)*this <  I;
+}
+
+template <class ValueType, Long DIM> inline bool StaticArray<ValueType,DIM>::operator<=(const ConstIterator<ValueType>& I) const {
+  return (ConstIterator<ValueType>)*this <= I;
+}
+
+template <class ValueType, Long DIM> inline bool StaticArray<ValueType,DIM>::operator> (const ConstIterator<ValueType>& I) const {
+  return (ConstIterator<ValueType>)*this >  I;
+}
+
+template <class ValueType, Long DIM> inline bool StaticArray<ValueType,DIM>::operator>=(const ConstIterator<ValueType>& I) const {
+  return (ConstIterator<ValueType>)*this >= I;
+}
+
+
+
+template <class ValueType> inline Iterator<ValueType> Ptr2Itr(void* ptr, Long len) {
+  return Iterator<ValueType>((ValueType*)ptr, len);
+}
+template <class ValueType> inline ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len) {
+  return ConstIterator<ValueType>((ValueType*)ptr, len);
+}
+
+#else
+
+template <class ValueType> inline Iterator<ValueType> Ptr2Itr(void* ptr, Long len) {
+  return (Iterator<ValueType>) ptr;
+}
+template <class ValueType> inline ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len) {
+  return (ConstIterator<ValueType>) ptr;
+}
+
 #endif
+
+template <class ValueType> inline Iterator<ValueType> NullIterator() {
+  return Ptr2Itr<ValueType>(nullptr, 0);
+}
 
 inline MemoryManager::MemoryManager(Long N) {
   buff_size = N;

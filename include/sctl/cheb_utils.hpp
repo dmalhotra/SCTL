@@ -2,8 +2,10 @@
 #define _SCTL_CHEB_UTILS_HPP_
 
 #include <sctl/common.hpp>
-#include SCTL_INCLUDE(matrix.hpp)
+#include SCTL_INCLUDE(quadrule.hpp)
 #include SCTL_INCLUDE(math_utils.hpp)
+#include SCTL_INCLUDE(matrix.hpp)
+#include SCTL_INCLUDE(vector.hpp)
 
 #include <type_traits>
 #include <functional>

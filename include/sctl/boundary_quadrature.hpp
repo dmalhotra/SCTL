@@ -2,19 +2,30 @@
 #define _SCTL_BOUNDARY_QUADRATURE_HPP_
 
 #include <sctl/common.hpp>
+#include SCTL_INCLUDE(vtudata.hpp)
 #include SCTL_INCLUDE(kernel_functions.hpp)
-#include SCTL_INCLUDE(tree.hpp)
-#include SCTL_INCLUDE(cheb_utils.hpp)
-#include SCTL_INCLUDE(fmm-wrapper.hpp)
-#include SCTL_INCLUDE(tensor.hpp)
 #include SCTL_INCLUDE(profile.hpp)
+#include SCTL_INCLUDE(ompUtils.hpp)
+#include SCTL_INCLUDE(vector.hpp)
+#include SCTL_INCLUDE(mem_mgr.hpp)
+#include SCTL_INCLUDE(comm.hpp)
+#include SCTL_INCLUDE(math_utils.hpp)
 
 #include <mutex>
 #include <atomic>
 #include <tuple>
 #include <functional>
+#include <algorithm>
 
 namespace SCTL_NAMESPACE {
+
+template <Integer DIM> class Tree;
+template <Integer DIM> class Morton;
+template <class Real> class ChebBasis;
+template <class ValueType> class Matrix;
+template <class ValueType> class Vector;
+template <class Real, Integer DIM> class ParticleFMM;
+template <class ValueType, bool own_data, Long... Args> class Tensor;
 
 template <class Real, Integer DIM, Integer ORDER> class Basis {
   public:
@@ -614,8 +625,8 @@ template <class Real> class Quadrature {
             Xloc[1*CoordDim+k] = std::max<Real>(Xloc[1*CoordDim+k], Xt[i*CoordDim+k]);
           }
         }
-        comm.Allreduce((ConstIterator<Real>)Xloc+0*CoordDim, (Iterator<Real>)Xglb+0*CoordDim, CoordDim, Comm::CommOp::MIN);
-        comm.Allreduce((ConstIterator<Real>)Xloc+1*CoordDim, (Iterator<Real>)Xglb+1*CoordDim, CoordDim, Comm::CommOp::MAX);
+        comm.Allreduce((ConstIterator<Real>)Xloc+0*CoordDim, (Iterator<Real>)Xglb+0*CoordDim, CoordDim, CommOp::MIN);
+        comm.Allreduce((ConstIterator<Real>)Xloc+1*CoordDim, (Iterator<Real>)Xglb+1*CoordDim, CoordDim, CommOp::MAX);
         for (Integer k = 0; k < CoordDim; k++) {
           R0 = std::max(R0, Xglb[1*CoordDim+k]-Xglb[0*CoordDim+k]);
         }
@@ -653,8 +664,8 @@ template <class Real> class Quadrature {
 
         Long rank_offset, surf_rank_offset;
         { // Set rank_offset, surf_rank_offset
-          comm.Scan(Ptr2ConstItr<Long>(&N,1), Ptr2Itr<Long>(&rank_offset,1), 1, Comm::CommOp::SUM);
-          comm.Scan(Ptr2ConstItr<Long>(&Nelem,1), Ptr2Itr<Long>(&surf_rank_offset,1), 1, Comm::CommOp::SUM);
+          comm.Scan(Ptr2ConstItr<Long>(&N,1), Ptr2Itr<Long>(&rank_offset,1), 1, CommOp::SUM);
+          comm.Scan(Ptr2ConstItr<Long>(&Nelem,1), Ptr2Itr<Long>(&surf_rank_offset,1), 1, CommOp::SUM);
           surf_rank_offset -= Nelem;
           rank_offset -= N;
         }
@@ -714,7 +725,7 @@ template <class Real> class Quadrature {
 
         Long rank_offset;
         { // Set rank_offset
-          comm.Scan(Ptr2ConstItr<Long>(&N,1), Ptr2Itr<Long>(&rank_offset,1), 1, Comm::CommOp::SUM);
+          comm.Scan(Ptr2ConstItr<Long>(&N,1), Ptr2Itr<Long>(&rank_offset,1), 1, CommOp::SUM);
           rank_offset -= N;
         }
 
@@ -868,7 +879,7 @@ template <class Real> class Quadrature {
 
         Long surf_rank_offset;
         const Long Nelem = elem_lst.NElem();
-        comm.Scan(Ptr2ConstItr<Long>(&Nelem,1), Ptr2Itr<Long>(&surf_rank_offset,1), 1, Comm::CommOp::SUM);
+        comm.Scan(Ptr2ConstItr<Long>(&Nelem,1), Ptr2Itr<Long>(&surf_rank_offset,1), 1, CommOp::SUM);
         surf_rank_offset -= Nelem;
 
         comm.PartitionS(pair_lst_sorted, Pair<Long,Long>(surf_rank_offset,0));
@@ -1055,7 +1066,7 @@ template <class Real> class Quadrature {
 
       Long elem_rank_offset;
       { // Set elem_rank_offset
-        comm.Scan(Ptr2ConstItr<Long>(&Nelem,1), Ptr2Itr<Long>(&elem_rank_offset,1), 1, Comm::CommOp::SUM);
+        comm.Scan(Ptr2ConstItr<Long>(&Nelem,1), Ptr2Itr<Long>(&elem_rank_offset,1), 1, CommOp::SUM);
         elem_rank_offset -= Nelem;
       }
 
@@ -1243,7 +1254,7 @@ template <class Real> class Quadrature {
 
       Long elem_rank_offset;
       { // Set elem_rank_offset
-        comm.Scan(Ptr2ConstItr<Long>(&Nelem_,1), Ptr2Itr<Long>(&elem_rank_offset,1), 1, Comm::CommOp::SUM);
+        comm.Scan(Ptr2ConstItr<Long>(&Nelem_,1), Ptr2Itr<Long>(&elem_rank_offset,1), 1, CommOp::SUM);
         elem_rank_offset -= Nelem_;
       }
 
@@ -1465,7 +1476,7 @@ template <class Real> class Quadrature {
           const Long Nnds  = trg_nds.Dim(1);
           Long elem_offset;
           { // Set elem_offset
-            comm.Scan(Ptr2ConstItr<Long>(&Nelem,1), Ptr2Itr<Long>(&elem_offset,1), 1, Comm::CommOp::SUM);
+            comm.Scan(Ptr2ConstItr<Long>(&Nelem,1), Ptr2Itr<Long>(&elem_offset,1), 1, CommOp::SUM);
             elem_offset -= Nelem;
           }
           trg_surf.ReInit(elem_lst.NElem() * trg_nds.Dim(1));
@@ -1657,7 +1668,7 @@ template <class Real> class Quadrature {
         }
         { // Print error
           Real glb_err;
-          comm.Allreduce(Ptr2ConstItr<Real>(&max_err,1), Ptr2Itr<Real>(&glb_err,1), 1, Comm::CommOp::MAX);
+          comm.Allreduce(Ptr2ConstItr<Real>(&max_err,1), Ptr2Itr<Real>(&glb_err,1), 1, CommOp::MAX);
           if (!comm.Rank()) std::cout<<"Error = "<<glb_err<<'\n';
         }
         { // Write VTK output
@@ -1692,7 +1703,7 @@ template <class Real> class Quadrature {
         }
         { // Print error
           Real glb_err;
-          comm.Allreduce(Ptr2ConstItr<Real>(&max_err,1), Ptr2Itr<Real>(&glb_err,1), 1, Comm::CommOp::MAX);
+          comm.Allreduce(Ptr2ConstItr<Real>(&max_err,1), Ptr2Itr<Real>(&glb_err,1), 1, CommOp::MAX);
           if (!comm.Rank()) std::cout<<"Error = "<<glb_err<<'\n';
         }
         { // Write VTK output

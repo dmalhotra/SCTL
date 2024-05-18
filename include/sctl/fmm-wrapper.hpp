@@ -2,8 +2,6 @@
 #define _SCTL_FMM_WRAPPER_HPP_
 
 #include <sctl/common.hpp>
-#include SCTL_INCLUDE(comm.hpp)
-#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(kernel_functions.hpp)
 
 #include <map>
@@ -24,6 +22,7 @@ namespace pvfmm {
 
 namespace SCTL_NAMESPACE {
 
+class Comm;
 template <class ValueType> class Vector;
 
 /**
@@ -156,65 +155,7 @@ template <class Real, Integer DIM> class ParticleFMM {
     /**
      * Example code showing usage of class ParticleFMM.
      */
-    static void test(const Comm& comm) {
-      if (DIM != 3) return ParticleFMM<Real,3>::test(comm);
-
-      Stokes3D_FSxU kernel_m2l;
-      Stokes3D_FxU kernel_sl;
-      Stokes3D_DxU kernel_dl;
-      srand48(comm.Rank());
-
-      // Create target and source vectors.
-      const Long N = 5000/comm.Size();
-      Vector<Real> trg_coord(N*DIM);
-      Vector<Real>  dl_coord(N*DIM);
-      Vector<Real>  dl_norml(N*DIM);
-      for (auto& a : trg_coord) a = (Real)(drand48()-0.5);
-      for (auto& a :  dl_coord) a = (Real)(drand48()-0.5);
-      for (auto& a :  dl_norml) a = (Real)(drand48()-0.5);
-      Long n_dl  =  dl_coord.Dim()/DIM;
-
-      // Set source charges.
-      Vector<Real> dl_den(n_dl*kernel_dl.SrcDim());
-      for (auto& a : dl_den) a = (Real)(drand48() - 0.5);
-
-      ParticleFMM fmm(comm);
-      fmm.SetAccuracy(10);
-
-      // Set kernel functions
-      fmm.SetKernels(kernel_m2l, kernel_m2l, kernel_sl);
-      fmm.AddTrg("Velocity", kernel_m2l, kernel_sl);
-      fmm.AddSrc("DoubleLayer", kernel_dl, kernel_dl);
-      fmm.SetKernelS2T("DoubleLayer", "Velocity",kernel_dl);
-
-      // Set particle data
-      fmm.SetTrgCoord("Velocity", trg_coord);
-      fmm.SetSrcCoord("DoubleLayer", dl_coord, dl_norml);
-      fmm.SetSrcDensity("DoubleLayer", dl_den);
-
-      Vector<Real> Ufmm, Uref;
-      fmm.Eval(Ufmm, "Velocity"); // Warm-up run
-      Ufmm = 0;
-
-      Profile::Enable(true);
-      Profile::Tic("FMM-Eval", &comm);
-      fmm.Eval(Ufmm, "Velocity");
-      Profile::Toc();
-
-      Profile::Tic("Direct", &comm);
-      fmm.EvalDirect(Uref, "Velocity");
-      Profile::Toc();
-      Profile::print(&comm);
-
-      Vector<Real> Uerr = Uref - Ufmm;
-      { // Print error
-        StaticArray<Real,2> loc_err{0,0}, glb_err{0,0};
-        for (const auto& a : Uerr) loc_err[0] = std::max<Real>(loc_err[0], fabs(a));
-        for (const auto& a : Uref) loc_err[1] = std::max<Real>(loc_err[1], fabs(a));
-        comm.Allreduce<Real>(loc_err, glb_err, 2, Comm::CommOp::MAX);
-        if (!comm.Rank()) std::cout<<"Maximum relative error: "<<glb_err[0]/glb_err[1]<<'\n';
-      }
-    }
+    static void test(const Comm& comm);
 
   private:
 

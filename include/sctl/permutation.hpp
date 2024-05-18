@@ -5,11 +5,11 @@
 #include <cstdlib>
 
 #include <sctl/common.hpp>
-#include SCTL_INCLUDE(mem_mgr.hpp)
+#include SCTL_INCLUDE(vector.hpp)
 
 namespace SCTL_NAMESPACE {
 
-template <class ValueType> class Vector;
+template <class ValueType> class Matrix;
 
 /**
  * @brief Represents a permutation matrix P=[e(p1)*s1 e(p2)*s2 ... e(pn)*sn].

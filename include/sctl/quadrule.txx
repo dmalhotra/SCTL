@@ -545,5 +545,29 @@ namespace SCTL_NAMESPACE {
     }
   }
 
+  template <class Real> void InterpQuadRule<Real>::test() {
+    Integer order = 16;
+    auto integrands = [order](const Vector<Real>& nds) { // p(x) + q(x) log(x)
+      const Long N = nds.Dim();
+      Matrix<Real> M(N, order);
+      for (Long j = 0; j < N; j++) {
+        for (Long i = 0; i < order/2; i++) { // p(x)
+          M[j][i] = pow<Real>(nds[j],i);
+        }
+        for (Long i = order/2; i < order; i++) { // q(x) log(x)
+          M[j][i] = pow<Real>(nds[j],i-order/2) * log<Real>(nds[j]);
+        }
+      }
+      return M;
+    };
+
+    Vector<Real> nds, wts;
+    InterpQuadRule::Build(nds, wts, integrands, 0.0, 1.0, 1e-16, 0, 1e-4, 1, false);
+    for (Integer i = 0; i < nds.Dim(); i++) {
+      std::cout<<std::scientific<<std::setprecision(20);
+      std::cout<<std::setw(27)<<nds[i]<<' '<<std::setw(27)<<wts[i]<<'\n';
+    }
+    std::cout<<"\n";
+  }
 }
 

@@ -4,6 +4,30 @@
 
 namespace SCTL_NAMESPACE {
 
+void VTUData::test() {
+  VTUData vtu_data;
+
+  // Add 7-particles
+  for (long i = 0; i < 7; i++) { // particle i
+    for (long k = 0; k < 3; k++) { // coordinate k
+      vtu_data.coord.PushBack((VTKReal)drand48());
+    }
+    vtu_data.value.PushBack((VTKReal)drand48());
+  }
+
+  // Add tetrahedron
+  vtu_data.types.PushBack(10); // VTK_TETRA (=10)
+  for (long i = 0; i < 4; i++) vtu_data.connect.PushBack(i);
+  vtu_data.offset.PushBack(vtu_data.connect.Dim());
+
+  // Add triangle
+  vtu_data.types.PushBack(5); // VTK_TRIANGLE(=5)
+  for (long i = 4; i < 7; i++) vtu_data.connect.PushBack(i);
+  vtu_data.offset.PushBack(vtu_data.connect.Dim());
+
+  vtu_data.WriteVTK("vtudata-test");
+}
+
 inline void VTUData::WriteVTK(const std::string& fname, const Comm& comm) const {
   typedef typename VTUData::VTKReal VTKReal;
   Long value_dof = 0;
@@ -21,8 +45,8 @@ inline void VTUData::WriteVTK(const std::string& fname, const Comm& comm) const 
       { // Set value_dof
         StaticArray<Long,2> pts_cnt{pt_cnt,0};
         StaticArray<Long,2> val_cnt{value.Dim(),0};
-        comm.Allreduce(pts_cnt+0, pts_cnt+1, 1, Comm::CommOp::SUM);
-        comm.Allreduce(val_cnt+0, val_cnt+1, 1, Comm::CommOp::SUM);
+        comm.Allreduce(pts_cnt+0, pts_cnt+1, 1, CommOp::SUM);
+        comm.Allreduce(val_cnt+0, val_cnt+1, 1, CommOp::SUM);
         value_dof = (pts_cnt[1] ? val_cnt[1] / pts_cnt[1] : 0);
       }
 

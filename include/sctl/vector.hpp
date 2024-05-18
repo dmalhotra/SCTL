@@ -2,6 +2,7 @@
 #define _SCTL_VECTOR_HPP_
 
 #include <sctl/common.hpp>
+#include SCTL_INCLUDE(mem_mgr.hpp)
 
 #include <vector>
 #include <cstdlib>

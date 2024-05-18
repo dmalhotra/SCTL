@@ -2,13 +2,17 @@
 #define _SCTL_MORTON_
 
 #include <sctl/common.hpp>
+
 #include <cstdint>
+#include <array>
 
 #ifndef SCTL_MAX_DEPTH
 #define SCTL_MAX_DEPTH 15
 #endif
 
 namespace SCTL_NAMESPACE {
+
+template <class ValueType> class Vector;
 
 /**
  * @brief Morton class template representing a Morton index in a space-filling curve.

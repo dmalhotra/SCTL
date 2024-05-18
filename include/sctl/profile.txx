@@ -275,23 +275,23 @@ namespace SCTL_NAMESPACE {
       };
       prof_fields["comm_size"] = Profile::ExprUnary<decltype(comm_size_fn)>(ExprScalar(0.), comm_size_fn);
 
-      prof_fields["t_min"] = Profile::CommReduceExpr(prof_fields["t"], Comm::CommOp::MIN);
-      prof_fields["t_max"] = Profile::CommReduceExpr(prof_fields["t"], Comm::CommOp::MAX);
-      prof_fields["t_avg"] = Profile::CommReduceExpr(prof_fields["t"], Comm::CommOp::SUM) / prof_fields["comm_size"];
+      prof_fields["t_min"] = Profile::CommReduceExpr(prof_fields["t"], CommOp::MIN);
+      prof_fields["t_max"] = Profile::CommReduceExpr(prof_fields["t"], CommOp::MAX);
+      prof_fields["t_avg"] = Profile::CommReduceExpr(prof_fields["t"], CommOp::SUM) / prof_fields["comm_size"];
 
-      prof_fields["f_min"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::MIN);
-      prof_fields["f_max"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::MAX);
-      prof_fields["f_avg"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::SUM) / prof_fields["comm_size"];
-      prof_fields["f_total"] = Profile::CommReduceExpr(prof_fields["f"], Comm::CommOp::SUM);
+      prof_fields["f_min"] = Profile::CommReduceExpr(prof_fields["f"], CommOp::MIN);
+      prof_fields["f_max"] = Profile::CommReduceExpr(prof_fields["f"], CommOp::MAX);
+      prof_fields["f_avg"] = Profile::CommReduceExpr(prof_fields["f"], CommOp::SUM) / prof_fields["comm_size"];
+      prof_fields["f_total"] = Profile::CommReduceExpr(prof_fields["f"], CommOp::SUM);
 
-      prof_fields["f/s_min"] = Profile::CommReduceExpr(prof_fields["f"] / prof_fields["t"], Comm::CommOp::MIN);
-      prof_fields["f/s_max"] = Profile::CommReduceExpr(prof_fields["f"] / prof_fields["t"], Comm::CommOp::MAX);
-      prof_fields["f/s_avg"] = Profile::CommReduceExpr(prof_fields["f"] / prof_fields["t"], Comm::CommOp::SUM) / prof_fields["comm_size"];
+      prof_fields["f/s_min"] = Profile::CommReduceExpr(prof_fields["f"] / prof_fields["t"], CommOp::MIN);
+      prof_fields["f/s_max"] = Profile::CommReduceExpr(prof_fields["f"] / prof_fields["t"], CommOp::MAX);
+      prof_fields["f/s_avg"] = Profile::CommReduceExpr(prof_fields["f"] / prof_fields["t"], CommOp::SUM) / prof_fields["comm_size"];
       prof_fields["f/s_total"] = prof_fields["f_total"] / prof_fields["t_max"];
 
-      prof_fields["m_min"] = Profile::CommReduceExpr(prof_fields["m"], Comm::CommOp::MIN);
-      prof_fields["m_max"] = Profile::CommReduceExpr(prof_fields["m"], Comm::CommOp::MAX);
-      prof_fields["m_avg"] = Profile::CommReduceExpr(prof_fields["m"], Comm::CommOp::SUM) / prof_fields["comm_size"];
+      prof_fields["m_min"] = Profile::CommReduceExpr(prof_fields["m"], CommOp::MIN);
+      prof_fields["m_max"] = Profile::CommReduceExpr(prof_fields["m"], CommOp::MAX);
+      prof_fields["m_avg"] = Profile::CommReduceExpr(prof_fields["m"], CommOp::SUM) / prof_fields["comm_size"];
     }
   };
 
@@ -322,7 +322,7 @@ namespace SCTL_NAMESPACE {
     return Profile::ExprBinary<decltype(op)>(e1, e2, op);
   }
 
-  inline Profile::ProfExpr Profile::CommReduceExpr(const Profile::ProfExpr& u, const Comm::CommOp comm_op) {
+  inline Profile::ProfExpr Profile::CommReduceExpr(const Profile::ProfExpr& u, const CommOp comm_op) {
     const auto op = [comm_op](std::vector<double> x, const Comm* comm) {
       const Long N = (Long)x.size();
       if (!comm || !N) return x;

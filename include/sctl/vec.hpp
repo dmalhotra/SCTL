@@ -10,6 +10,9 @@
 
 namespace SCTL_NAMESPACE {
 
+  /**
+   * Returns the default SIMD vector length for the given scalar type.
+   */
   template <class ScalarType> constexpr Integer DefaultVecLen();
 
   /**

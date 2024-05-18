@@ -8,9 +8,6 @@
 
 namespace SCTL_NAMESPACE {
 
-  template <class ValueType> class Vector;
-  template <class ValueType> class Matrix;
-
   template <class Real> KrylovPrecond<Real>::KrylovPrecond() : N_(0) {}
 
   template <class Real> Long KrylovPrecond<Real>::Size() const {
@@ -62,7 +59,7 @@ namespace SCTL_NAMESPACE {
     for (Long i = 0; i < N; i++) x_dot_y += x[i] * y[i];
 
     Real x_dot_y_glb = 0;
-    comm.Allreduce(Ptr2ConstItr<Real>(&x_dot_y, 1), Ptr2Itr<Real>(&x_dot_y_glb, 1), 1, Comm::CommOp::SUM);
+    comm.Allreduce(Ptr2ConstItr<Real>(&x_dot_y, 1), Ptr2Itr<Real>(&x_dot_y_glb, 1), 1, CommOp::SUM);
 
     return x_dot_y_glb;
   }
@@ -71,7 +68,7 @@ namespace SCTL_NAMESPACE {
     const Long N = b.Dim();
     if (max_iter < 0) { // set max_iter
       StaticArray<Long,2> NN{N,0};
-      comm_.Allreduce(NN+0, NN+1, 1, Comm::CommOp::SUM);
+      comm_.Allreduce(NN+0, NN+1, 1, CommOp::SUM);
       max_iter = NN[1];
     }
     static constexpr Real ARRAY_RESIZE_FACTOR = 1.618;
@@ -240,8 +237,39 @@ namespace SCTL_NAMESPACE {
     GenericGMRES(x, A, b, tol, max_iter, use_abs_tol, solve_iter, krylov_precond);
   }
 
-}  // end namespace
+  template <class Real> void GMRES<Real>::test(Long N) {
+    srand48(0);
+    Matrix<Real> A(N, N);
+    Vector<Real> b(N), x;
+    for (Long i = 0; i < N; i++) {
+      b[i] = drand48();
+      for (Long j = 0; j < N; j++) {
+        A[i][j] = drand48();
+      }
+    }
 
+    auto LinOp = [&A](Vector<Real>* Ax, const Vector<Real>& x) {
+      const Long N = x.Dim();
+      Ax->ReInit(N);
+      Matrix<Real> Ax_(N, 1, Ax->begin(), false);
+      Ax_ = A * Matrix<Real>(N, 1, (Iterator<Real>)x.begin(), false);
+    };
+
+    Long solve_iter;
+    GMRES<Real> solver;
+    solver(&x, LinOp, b, 1e-10, -1, false, &solve_iter);
+
+    auto print_error = [N,&A,&b](const Vector<Real>& x) {
+      Real max_err = 0;
+      auto Merr = A*Matrix<Real>(N, 1, (Iterator<Real>)x.begin(), false) - Matrix<Real>(N, 1, b.begin(), false);
+      for (const auto& a : Merr) max_err = std::max(max_err, fabs(a));
+      std::cout<<"Maximum error = "<<max_err<<'\n';
+    };
+    print_error(x);
+    std::cout<<"GMRES iterations = "<<solve_iter<<'\n';
+  }
+
+}  // end namespace
 
 #ifdef SCTL_HAVE_PETSC
 
@@ -297,7 +325,7 @@ namespace SCTL_NAMESPACE {
     PetscInt N = b.Dim();
     if (max_iter < 0) { // set max_iter
       StaticArray<Long,2> NN{N,0};
-      comm_.Allreduce(NN+0, NN+1, 1, Comm::CommOp::SUM);
+      comm_.Allreduce(NN+0, NN+1, 1, CommOp::SUM);
       max_iter = NN[1];
     }
     const MPI_Comm comm = comm_.GetMPI_Comm();

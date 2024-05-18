@@ -2,9 +2,8 @@
 #define _SCTL_KERNEL_FUNCTIONS_HPP_
 
 #include <sctl/common.hpp>
-#include SCTL_INCLUDE(vec.hpp)
-#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(generic-kernel.hpp)
+#include SCTL_INCLUDE(vec.hpp)
 
 namespace SCTL_NAMESPACE {
 

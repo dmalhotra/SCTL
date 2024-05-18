@@ -49,26 +49,7 @@ namespace SCTL_NAMESPACE {
        * This function performs a simple test of Lagrange interpolation
        * and derivative computation.
        */
-      static void test() {
-        Vector<Real> src, trg; // source and target interpolation nodes
-        for (Long i = 0; i < 3; i++) src.PushBack(i);
-        for (Long i = 0; i < 11; i++) trg.PushBack(i*0.2);
-
-        Matrix<Real> f(1,3); // values at source nodes
-        f[0][0] = 0; f[0][1] = 1; f[0][2] = 0.5;
-
-        // Interpolate
-        Vector<Real> wts;
-        Interpolate(wts,src,trg);
-        Matrix<Real> Mwts(src.Dim(), trg.Dim(), wts.begin(), false);
-        Matrix<Real> ff = f * Mwts;
-        std::cout<<ff<<'\n';
-
-        // Compute derivative
-        Vector<Real> df;
-        Derivative(df, Vector<Real>(f.Dim(0)*f.Dim(1),f.begin()), src);
-        std::cout<<df<<'\n';
-      }
+      static void test();
 
   };
 

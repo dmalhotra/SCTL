@@ -2,7 +2,7 @@
 #define _SCTL_ODE_SOLVER_
 
 #include <sctl/common.hpp>
-#include SCTL_INCLUDE(math_utils.hpp)
+#include SCTL_INCLUDE(comm.hpp)
 
 #include <functional>
 
@@ -86,55 +86,12 @@ template <class Real> class SDC {
     /**
      * This is an example for how to use the SDC class.
      */
-    static void test_one_step(const Integer Order = 5) {
-      auto ref_sol = [](Real t) { return cos<Real>(-t); };
-      auto fn = [](Vector<Real>* dudt, const Vector<Real>& u) {
-        (*dudt)[0] = -u[1];
-        (*dudt)[1] = u[0];
-      };
-
-      const SDC<Real> ode_solver(Order);
-      Real t = 0.0, dt = 1.0e-1;
-      Vector<Real> u, u0(2);
-      u0[0] = 1.0;
-      u0[1] = 0.0;
-      while (t < 10.0) {
-        Real error_interp, error_picard;
-        ode_solver(&u, dt, u0, fn, -1, 0.0, &error_interp, &error_picard);
-        { // Accept solution
-          u0 = u;
-          t = t + dt;
-        }
-
-        printf("t = %e;  ", t);
-        printf("u = %e;  ", u0[0]);
-        printf("error = %e;  ", ref_sol(t) - u0[0]);
-        printf("time_step_error_estimate = %e;  \n", std::max(error_interp, error_picard));
-      }
-    }
+    static void test_one_step(const Integer Order = 5);
 
     /**
      * This example shows adaptive time-stepping with the SDC class.
      */
-    static void test_adaptive_solve(const Integer Order = 5, const Real tol = 1e-5) {
-      auto ref_sol = [](Real t) { return cos(-t); };
-      auto fn = [](Vector<Real>* dudt, const Vector<Real>& u) {
-        (*dudt)[0] = -u[1];
-        (*dudt)[1] = u[0];
-      };
-
-      Vector<Real> u, u0(2);
-      u0[0] = 1.0; u0[1] = 0.0;
-      Real T = 10.0, dt = 1.0e-1;
-
-      SDC<Real> ode_solver(Order);
-      Real t = ode_solver.AdaptiveSolve(&u, dt, T, u0, fn, tol);
-
-      if (t == T) {
-        printf("u = %e;  ", u[0]);
-        printf("error = %e;  \n", ref_sol(T) - u[0]);
-      }
-    }
+    static void test_adaptive_solve(const Integer Order = 5, const Real tol = 1e-5);
 
   private:
     Matrix<Real> M_time_step, M_error;

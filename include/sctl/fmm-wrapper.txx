@@ -7,6 +7,66 @@
 
 namespace SCTL_NAMESPACE {
 
+template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& comm) {
+  if (DIM != 3) return ParticleFMM<Real,3>::test(comm);
+
+  Stokes3D_FSxU kernel_m2l;
+  Stokes3D_FxU kernel_sl;
+  Stokes3D_DxU kernel_dl;
+  srand48(comm.Rank());
+
+  // Create target and source vectors.
+  const Long N = 5000/comm.Size();
+  Vector<Real> trg_coord(N*DIM);
+  Vector<Real>  dl_coord(N*DIM);
+  Vector<Real>  dl_norml(N*DIM);
+  for (auto& a : trg_coord) a = (Real)(drand48()-0.5);
+  for (auto& a :  dl_coord) a = (Real)(drand48()-0.5);
+  for (auto& a :  dl_norml) a = (Real)(drand48()-0.5);
+  Long n_dl  =  dl_coord.Dim()/DIM;
+
+  // Set source charges.
+  Vector<Real> dl_den(n_dl*kernel_dl.SrcDim());
+  for (auto& a : dl_den) a = (Real)(drand48() - 0.5);
+
+  ParticleFMM fmm(comm);
+  fmm.SetAccuracy(10);
+
+  // Set kernel functions
+  fmm.SetKernels(kernel_m2l, kernel_m2l, kernel_sl);
+  fmm.AddTrg("Velocity", kernel_m2l, kernel_sl);
+  fmm.AddSrc("DoubleLayer", kernel_dl, kernel_dl);
+  fmm.SetKernelS2T("DoubleLayer", "Velocity",kernel_dl);
+
+  // Set particle data
+  fmm.SetTrgCoord("Velocity", trg_coord);
+  fmm.SetSrcCoord("DoubleLayer", dl_coord, dl_norml);
+  fmm.SetSrcDensity("DoubleLayer", dl_den);
+
+  Vector<Real> Ufmm, Uref;
+  fmm.Eval(Ufmm, "Velocity"); // Warm-up run
+  Ufmm = 0;
+
+  Profile::Enable(true);
+  Profile::Tic("FMM-Eval", &comm);
+  fmm.Eval(Ufmm, "Velocity");
+  Profile::Toc();
+
+  Profile::Tic("Direct", &comm);
+  fmm.EvalDirect(Uref, "Velocity");
+  Profile::Toc();
+  Profile::print(&comm);
+
+  Vector<Real> Uerr = Uref - Ufmm;
+  { // Print error
+    StaticArray<Real,2> loc_err{0,0}, glb_err{0,0};
+    for (const auto& a : Uerr) loc_err[0] = std::max<Real>(loc_err[0], fabs(a));
+    for (const auto& a : Uref) loc_err[1] = std::max<Real>(loc_err[1], fabs(a));
+    comm.Allreduce<Real>(loc_err, glb_err, 2, CommOp::MAX);
+    if (!comm.Rank()) std::cout<<"Maximum relative error: "<<glb_err[0]/glb_err[1]<<'\n';
+  }
+}
+
 template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::FMMKernels {
   Iterator<char> ker_m2m, ker_m2l, ker_l2l;
   Integer dim_mul_ch, dim_mul_eq;
@@ -94,8 +154,8 @@ template <Integer DIM, class Real> void BoundingBox(StaticArray<Real,DIM*2>& bbo
 
     // Handle (N == 0) case
     StaticArray<Real, DIM> bbox0_glb, bbox1_glb;
-    comm.Allreduce((ConstIterator<Real>)bbox0, (Iterator<Real>)bbox0_glb, DIM, Comm::CommOp::MIN);
-    comm.Allreduce((ConstIterator<Real>)bbox1, (Iterator<Real>)bbox1_glb, DIM, Comm::CommOp::MAX);
+    comm.Allreduce((ConstIterator<Real>)bbox0, (Iterator<Real>)bbox0_glb, DIM, CommOp::MIN);
+    comm.Allreduce((ConstIterator<Real>)bbox1, (Iterator<Real>)bbox1_glb, DIM, CommOp::MAX);
     for (Integer k = 0; k < DIM; k++) {
       bbox0[k] = bbox1[k] = (fabs(bbox0_glb[k]) > fabs(bbox1_glb[k]) ? bbox0_glb[k] : bbox1_glb[k]);
     }
@@ -108,8 +168,8 @@ template <Integer DIM, class Real> void BoundingBox(StaticArray<Real,DIM*2>& bbo
   }
 
   StaticArray<Real, DIM> bbox0_glb, bbox1_glb;
-  comm.Allreduce((ConstIterator<Real>)bbox0, (Iterator<Real>)bbox0_glb, DIM, Comm::CommOp::MIN);
-  comm.Allreduce((ConstIterator<Real>)bbox1, (Iterator<Real>)bbox1_glb, DIM, Comm::CommOp::MAX);
+  comm.Allreduce((ConstIterator<Real>)bbox0, (Iterator<Real>)bbox0_glb, DIM, CommOp::MIN);
+  comm.Allreduce((ConstIterator<Real>)bbox1, (Iterator<Real>)bbox1_glb, DIM, CommOp::MAX);
   for (Integer k = 0; k < DIM; k++) {
     bbox[k*2+0] = bbox0_glb[k];
     bbox[k*2+1] = bbox1_glb[k];
@@ -420,7 +480,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
 
   auto partition = [this](Vector<Real>& X, const Long dof) {
     StaticArray<Long,2> cnt{X.Dim()/dof, 0};
-    comm_.Allreduce<Long>(cnt+0, cnt+1, 1, Comm::CommOp::SUM);
+    comm_.Allreduce<Long>(cnt+0, cnt+1, 1, CommOp::SUM);
     comm_.PartitionN(X, cnt[1]*(comm_.Rank()+1)/comm_.Size() - cnt[1]*comm_.Rank()/comm_.Size());
   };
   Vector<Real> Xt = Xt_;
@@ -714,7 +774,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
   SCTL_ASSERT(Xt.Dim() == Nt * DIM);
   { // User EvalDirect for small problems
     StaticArray<Long,2> cnt{Nt,0};
-    comm_.Allreduce<Long>(cnt+0, cnt+1, 1, Comm::CommOp::SUM);
+    comm_.Allreduce<Long>(cnt+0, cnt+1, 1, CommOp::SUM);
     if (cnt[1] < 40000) return EvalDirect(U, trg_name);
   }
   if (U.Dim() != Nt * TrgDim) {

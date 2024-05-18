@@ -6,6 +6,48 @@
 
 namespace SCTL_NAMESPACE {
 
+  template <class ValueType> void FFT<ValueType>::test() {
+    const auto inf_norm = [](const Vector<ValueType>& v) {
+      ValueType max_val = 0;
+      for (const auto& x : v) max_val = std::max<ValueType>(max_val, fabs(x));
+      return max_val;
+    };
+
+    Vector<Long> fft_dim;
+    fft_dim.PushBack(2);
+    fft_dim.PushBack(5);
+    fft_dim.PushBack(3);
+    Long howmany = 3;
+
+    { // R2C, C2R
+      FFT myfft0, myfft1;
+      myfft0.Setup(FFT_Type::R2C, howmany, fft_dim);
+      myfft1.Setup(FFT_Type::C2R, howmany, fft_dim);
+      Vector<ValueType> v0(myfft0.Dim(0)), v1, v2;
+      for (int i = 0; i < v0.Dim(); i++) v0[i] = (1 + i) / (ValueType)v0.Dim();
+      myfft0.Execute(v0, v1);
+      myfft1.Execute(v1, v2);
+
+      const auto err = inf_norm(v2-v0);
+      std::cout<<"Error : "<<err<<'\n';
+      SCTL_ASSERT(err < machine_eps<ValueType>() * 64);
+    }
+
+    { // C2C, C2C_INV
+      FFT myfft0, myfft1;
+      myfft0.Setup(FFT_Type::C2C, howmany, fft_dim);
+      myfft1.Setup(FFT_Type::C2C_INV, howmany, fft_dim);
+      Vector<ValueType> v0(myfft0.Dim(0)), v1, v2;
+      for (int i = 0; i < v0.Dim(); i++) v0[i] = (1 + i) / (ValueType)v0.Dim();
+      myfft0.Execute(v0, v1);
+      myfft1.Execute(v1, v2);
+
+      const auto err = inf_norm(v2-v0);
+      std::cout<<"Error : "<<inf_norm(v2-v0)<<'\n';
+      SCTL_ASSERT(err < machine_eps<ValueType>() * 64);
+    }
+  }
+
   //template <class ValueType> void FFT<ValueType>::check_align(const Vector<ValueType>& in, const Vector<ValueType>& out) {
   //  //SCTL_ASSERT_MSG((((uintptr_t)& in[0]) & ((uintptr_t)(SCTL_MEM_ALIGN - 1))) == 0, "sctl::FFT: Input vector not aligned to " <<SCTL_MEM_ALIGN<<" bytes!");
   //  //SCTL_ASSERT_MSG((((uintptr_t)&out[0]) & ((uintptr_t)(SCTL_MEM_ALIGN - 1))) == 0, "sctl::FFT: Output vector not aligned to "<<SCTL_MEM_ALIGN<<" bytes!");

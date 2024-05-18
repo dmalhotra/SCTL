@@ -2,15 +2,13 @@
 #define _SCTL_SLENDER_ELEMENT_HPP_
 
 #include <sctl/common.hpp>
-#include SCTL_INCLUDE(mem_mgr.hpp)
+#include SCTL_INCLUDE(comm.hpp)
 #include SCTL_INCLUDE(vector.hpp)
 
 namespace SCTL_NAMESPACE {
 
-  class Comm;
   class VTUData;
   template <class Real> class FFT;
-  template <class ValueType> class Vector;
   template <class ValueType> class Matrix;
   template <class Real> class ElementListBase;
 

@@ -16,6 +16,7 @@
 namespace SCTL_NAMESPACE {
 
 class Comm;
+enum class CommOp;
 
 /**
  * Counters available to use with the Profile class.
@@ -160,7 +161,7 @@ class Profile {
    * Construct a profiling expression by applying a distributed reduction
    * operation on the output of e1.
    */
-  static ProfExpr CommReduceExpr(const ProfExpr& e1, const Comm::CommOp comm_op);
+  static ProfExpr CommReduceExpr(const ProfExpr& e1, const CommOp comm_op);
 
   /**
    * Display the profiling output.

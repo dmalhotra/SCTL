@@ -2,6 +2,53 @@
 
 namespace SCTL_NAMESPACE {
 
+  template <class Real> void SDC<Real>::test_one_step(const Integer Order) {
+    auto ref_sol = [](Real t) { return cos<Real>(-t); };
+    auto fn = [](Vector<Real>* dudt, const Vector<Real>& u) {
+      (*dudt)[0] = -u[1];
+      (*dudt)[1] = u[0];
+    };
+
+    const SDC<Real> ode_solver(Order);
+    Real t = 0.0, dt = 1.0e-1;
+    Vector<Real> u, u0(2);
+    u0[0] = 1.0;
+    u0[1] = 0.0;
+    while (t < 10.0) {
+      Real error_interp, error_picard;
+      ode_solver(&u, dt, u0, fn, -1, 0.0, &error_interp, &error_picard);
+      { // Accept solution
+        u0 = u;
+        t = t + dt;
+      }
+
+      printf("t = %e;  ", t);
+      printf("u = %e;  ", u0[0]);
+      printf("error = %e;  ", ref_sol(t) - u0[0]);
+      printf("time_step_error_estimate = %e;  \n", std::max(error_interp, error_picard));
+    }
+  }
+
+  template <class Real> void SDC<Real>::test_adaptive_solve(const Integer Order, const Real tol) {
+    auto ref_sol = [](Real t) { return cos(-t); };
+    auto fn = [](Vector<Real>* dudt, const Vector<Real>& u) {
+      (*dudt)[0] = -u[1];
+      (*dudt)[1] = u[0];
+    };
+
+    Vector<Real> u, u0(2);
+    u0[0] = 1.0; u0[1] = 0.0;
+    Real T = 10.0, dt = 1.0e-1;
+
+    SDC<Real> ode_solver(Order);
+    Real t = ode_solver.AdaptiveSolve(&u, dt, T, u0, fn, tol);
+
+    if (t == T) {
+      printf("u = %e;  ", u[0]);
+      printf("error = %e;  \n", ref_sol(T) - u[0]);
+    }
+  }
+
   template <class Real> SDC<Real>::SDC(const Integer Order_, const Comm& comm_) : order(Order_), comm(comm_) {
     SCTL_ASSERT(order >= 2); // TODO: use explicit Euler if order == 1
 
@@ -79,7 +126,7 @@ namespace SCTL_NAMESPACE {
           max_val[0] = std::max<Real>(max_val[0], fabs(M[i][j]));
         }
       }
-      comm.Allreduce((ConstIterator<Real>)max_val, (Iterator<Real>)max_val+1, 1, Comm::CommOp::MAX);
+      comm.Allreduce((ConstIterator<Real>)max_val, (Iterator<Real>)max_val+1, 1, CommOp::MAX);
       return max_val[1];
     };
     if (N_picard < 0) N_picard = order;

@@ -4,6 +4,29 @@
 
 namespace SCTL_NAMESPACE {
 
+  template <class ValueType, bool own_data, Long... Args> void Tensor<ValueType, own_data, Args...>::test() {
+    // Define a tensor with dimensions 2x3
+    Tensor<ValueType, true, 2, 3> tensor;
+
+    // Initialize tensor elements with random values
+    for (auto& x : tensor) x = drand48();
+
+    // Output tensor multiplied by 10
+    std::cout << "Tensor multiplied by 10:\n" << tensor * 10 << std::endl;
+
+    // Output tensor multiplied by its right rotation
+    std::cout << "Tensor multiplied by its right rotation:\n" << tensor * tensor.RotateRight() << std::endl;
+
+    // Output tensor multiplied by its left rotation and then added 5
+    std::cout << "Tensor multiplied by its left rotation and then added 5:\n" << tensor * tensor.RotateLeft() + 5 << std::endl;
+
+    // Output tensor properties
+    std::cout << "Tensor Order: " << tensor.Order() << '\n';
+    std::cout << "Tensor Size: " << tensor.Size() << '\n';
+    std::cout << "Dimension 0: " << tensor.template Dim<0>() << '\n';
+    std::cout << "Dimension 1: " << tensor.template Dim<1>() << '\n';
+  }
+
   template <Long k> static constexpr Long TensorArgExtract() {
     return 1;
   }

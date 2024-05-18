@@ -17,21 +17,21 @@ namespace SCTL_NAMESPACE {
 template <class ValueType> class Vector;
 
 /**
+ * Operation types for Allreduce and Scan collective operations.
+ */
+enum class CommOp {
+  SUM,
+  MIN,
+  MAX
+};
+
+/**
  * Object oriented wrapper to MPI. It uses MPI when SCTL_HAVE_MPI is defined,
  * otherwise, it defaults to the *self* communicator.
  */
 class Comm {
 
  public:
-
-  /**
-   * Operation types for Allreduce and Scan collective operations.
-   */
-  enum class CommOp {
-    SUM,
-    MIN,
-    MAX
-  };
 
   /**
    * Initialize MPI.

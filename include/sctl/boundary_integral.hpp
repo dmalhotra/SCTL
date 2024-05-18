@@ -2,15 +2,15 @@
 #define _SCTL_BOUNDARY_INTEGRAL_HPP_
 
 #include <sctl/common.hpp>
-#include SCTL_INCLUDE(comm.hpp)
-#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(vector.hpp)
+#include SCTL_INCLUDE(comm.hpp)
 
 #include <map>
 #include <set>
 
 namespace SCTL_NAMESPACE {
 
+  template <class ValueType> class Vector;
   template <class ValueType> class Matrix;
   template <class Real, Integer DIM> class ParticleFMM;
 

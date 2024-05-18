@@ -1,3 +1,4 @@
+#include SCTL_INCLUDE(complex.hpp)
 #include SCTL_INCLUDE(kernel_functions.hpp)
 #include SCTL_INCLUDE(tensor.hpp)
 #include SCTL_INCLUDE(quadrule.hpp)
@@ -9,6 +10,7 @@
 #include SCTL_INCLUDE(ode-solver.hpp)
 #include SCTL_INCLUDE(boundary_integral.hpp)
 
+#include <fstream>
 #include <functional>
 
 namespace SCTL_NAMESPACE {
@@ -2971,7 +2973,7 @@ namespace SCTL_NAMESPACE {
     { // Print error
       StaticArray<Real,2> max_err{0,0};
       for (auto x : Uerr) max_err[0] = std::max<Real>(max_err[0], fabs(x));
-      comm.Allreduce(max_err+0, max_err+1, 1, Comm::CommOp::MAX);
+      comm.Allreduce(max_err+0, max_err+1, 1, CommOp::MAX);
       if (!pid) std::cout<<"Error = "<<max_err[1]<<'\n';
     }
     Profile::Enable(false);
@@ -3114,8 +3116,8 @@ namespace SCTL_NAMESPACE {
       StaticArray<Real,2> max_val{0,0};
       for (auto x : Uerr) max_err[0] = std::max<Real>(max_err[0], fabs(x));
       for (auto x : Uref) max_val[0] = std::max<Real>(max_val[0], fabs(x));
-      comm.Allreduce(max_err+0, max_err+1, 1, Comm::CommOp::MAX);
-      comm.Allreduce(max_val+0, max_val+1, 1, Comm::CommOp::MAX);
+      comm.Allreduce(max_err+0, max_err+1, 1, CommOp::MAX);
+      comm.Allreduce(max_val+0, max_val+1, 1, CommOp::MAX);
       if (!pid) std::cout<<"Error = "<<max_err[1]/max_val[1]<<'\n';
     }
 

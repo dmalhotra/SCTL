@@ -3,15 +3,17 @@
 
 #include <sctl/common.hpp>
 #include SCTL_INCLUDE(comm.hpp)
-#include SCTL_INCLUDE(morton.hpp)
-#include SCTL_INCLUDE(vtudata.hpp)
-#include SCTL_INCLUDE(ompUtils.hpp)
+#include SCTL_INCLUDE(vector.hpp)
+#include SCTL_INCLUDE(math_utils.hpp)
 
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <map>
 
 namespace SCTL_NAMESPACE {
+
+template <Integer DIM> class Morton;
 
 template <Integer DIM> class Tree {
   public:
@@ -253,58 +255,7 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
      *
      * This function creates a PtTree object, adds particles, performs tree manipulation, and generates visualization.
      */
-    static void test() {
-      Long N = 100000;
-      Vector<Real> X(N*DIM), f(N);
-      for (Long i = 0; i < N; i++) { // Set coordinates (X), and values (f)
-        f[i] = 0;
-        for (Integer k = 0; k < DIM; k++) {
-          X[i*DIM+k] = pow<3>(drand48()*2-1.0)*0.5+0.5;
-          f[i] += X[i*DIM+k]*k;
-        }
-      }
-
-      PtTree<Real,DIM> tree;
-      tree.AddParticles("pt", X);
-      tree.AddParticleData("pt-value", "pt", f);
-      tree.UpdateRefinement(X, 1000); // refine tree with max 1000 points per box.
-
-      { // manipulate tree node data
-        const auto& node_lst = tree.GetNodeLists(); // Get interaction lists
-        //const auto& node_mid = tree.GetNodeMID();
-        //const auto& node_attr = tree.GetNodeAttr();
-
-        // get point values and count for each node
-        Vector<Real> value;
-        Vector<Long> cnt, dsp;
-        tree.GetData(value, cnt, "pt-value");
-
-        // compute the dsp (the point offset) for each node
-        dsp.ReInit(cnt.Dim()); dsp = 0;
-        omp_par::scan(cnt.begin(), dsp.begin(), cnt.Dim());
-
-        Long node_idx = 0;
-        for (Long i = 0; i < cnt.Dim(); i++) { // find the tree node with maximum points
-          if (cnt[node_idx] < cnt[i]) node_idx = i;
-        }
-
-        for (Long j = 0; j < cnt[node_idx]; j++) { // for this node, set all pt-value to -1
-          value[dsp[node_idx]+j] = -1;
-        }
-
-        for (const Long nbr_idx : node_lst[node_idx].nbr) { // loop over the neighbors and set pt-value to 2
-          if (nbr_idx >= 0 && nbr_idx != node_idx) {
-            for (Long j = 0; j < cnt[nbr_idx]; j++) {
-              value[dsp[nbr_idx]+j] = 2;
-            }
-          }
-        }
-      }
-
-      // Generate visualization
-      tree.WriteParticleVTK("pt", "pt-value");
-      tree.WriteTreeVTK("tree");
-    }
+    static void test();
 
   private:
 

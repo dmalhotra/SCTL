@@ -3,7 +3,6 @@
 
 #include <sctl/common.hpp>
 #include SCTL_INCLUDE(comm.hpp)
-#include SCTL_INCLUDE(mem_mgr.hpp)
 
 #include <functional>
 #include <list>
@@ -106,37 +105,7 @@ template <class Real> class GMRES {
    *
    * @param[in] N Size of the test problem (default is 15).
    */
-  static void test(Long N = 15) {
-    srand48(0);
-    Matrix<Real> A(N, N);
-    Vector<Real> b(N), x;
-    for (Long i = 0; i < N; i++) {
-      b[i] = drand48();
-      for (Long j = 0; j < N; j++) {
-        A[i][j] = drand48();
-      }
-    }
-
-    auto LinOp = [&A](Vector<Real>* Ax, const Vector<Real>& x) {
-      const Long N = x.Dim();
-      Ax->ReInit(N);
-      Matrix<Real> Ax_(N, 1, Ax->begin(), false);
-      Ax_ = A * Matrix<Real>(N, 1, (Iterator<Real>)x.begin(), false);
-    };
-
-    Long solve_iter;
-    GMRES<Real> solver;
-    solver(&x, LinOp, b, 1e-10, -1, false, &solve_iter);
-
-    auto print_error = [N,&A,&b](const Vector<Real>& x) {
-      Real max_err = 0;
-      auto Merr = A*Matrix<Real>(N, 1, (Iterator<Real>)x.begin(), false) - Matrix<Real>(N, 1, b.begin(), false);
-      for (const auto& a : Merr) max_err = std::max(max_err, fabs(a));
-      std::cout<<"Maximum error = "<<max_err<<'\n';
-    };
-    print_error(x);
-    std::cout<<"GMRES iterations = "<<solve_iter<<'\n';
-  }
+  static void test(Long N = 15);
 
  private:
 
