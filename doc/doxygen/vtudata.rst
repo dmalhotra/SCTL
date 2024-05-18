@@ -1,8 +1,10 @@
-.. _vtudata-dox:
+.. _vtudata_hpp:
 
-class VTUData
-==============
+vtudata.hpp
+===========
 
 .. doxygenclass:: SCTL_NAMESPACE::VTUData
-   :members:
+
+.. literalinclude:: ../../include/sctl/vtudata.hpp
+   :language: c++
 

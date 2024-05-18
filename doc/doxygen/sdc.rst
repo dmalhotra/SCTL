@@ -1,4 +1,4 @@
-.. _sdc-dox:
+.. _sdc_hpp:
 
 class SDC (Spectral Deferred Correction)
 ========================================

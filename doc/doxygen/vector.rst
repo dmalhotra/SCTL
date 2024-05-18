@@ -1,7 +1,7 @@
-.. _vector-dox:
+.. _vector_hpp:
 
-class Vector
-============
+vector.hpp
+==========
 
 .. literalinclude:: ../../include/sctl/vector.hpp
    :language: c++

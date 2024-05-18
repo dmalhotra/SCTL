@@ -114,24 +114,24 @@ Containers
 3. :ref:`Permutation <tutorial-permutation>`
 4. :ref:`Tensor <tutorial-tensor>`
 
-..  Numerical Methods
-..  ------------------
-..  
-..  1. :ref:`SDC (Spectral Deferred Correction ODE solver) <tutorial-sdc>`
-..  2. `LinearSolver <include/sctl/lin-solve.hpp>`_: distributed memory GMRES (wrapper to PETSc when available)
-..  3. `LagrangeInterp <include/sctl/lagrange-interp.hpp>`_
-..  4. `InterpQuadRule, ChebQuadRule, LegQuadRule <include/sctl/quadrule.hpp>`_: generalized Chebyshev quadrature, Clenshaw-Curtis quadrature, Gauss-Legendre quadrature
-..  5. `SphericalHarmonics <include/sctl/sph_harm.hpp>`_
-..  6. `Tree, PtTree <include/sctl/tree.hpp>`_, `Morton <include/sctl/morton.hpp>`_: Morton ordering based n-dimensional tree
-..  7. `FFT <include/sctl/fft_wrapper.hpp>`_: wrapper to `FFTW <https://www.fftw.org>`_
-..  8. `FMM <include/sctl/fmm-wrapper.hpp>`_: wrapper to `PVFMM <http://pvfmm.org>`_
+Numerical Methods
+------------------
+
+1. :ref:`SDC (Spectral Deferred Correction ODE solver) <tutorial-sdc>`
+2. `LinearSolver <include/sctl/lin-solve.hpp>`_: distributed memory GMRES (wrapper to PETSc when available)
+3. `LagrangeInterp <include/sctl/lagrange-interp.hpp>`_
+4. `InterpQuadRule, ChebQuadRule, LegQuadRule <include/sctl/quadrule.hpp>`_: generalized Chebyshev quadrature, Clenshaw-Curtis quadrature, Gauss-Legendre quadrature
+5. `SphericalHarmonics <include/sctl/sph_harm.hpp>`_
+6. `Tree, PtTree <include/sctl/tree.hpp>`_, `Morton <include/sctl/morton.hpp>`_: Morton ordering based n-dimensional tree
+7. `FFT <include/sctl/fft_wrapper.hpp>`_: wrapper to `FFTW <https://www.fftw.org>`_
+8. `FMM <include/sctl/fmm-wrapper.hpp>`_: wrapper to `PVFMM <http://pvfmm.org>`_
+9. `Kernel functions <include/sctl/kernel_functions.hpp>`_
 
 Boundary integral methods
 --------------------------
 
 1. `BoundaryIntegralOp <include/sctl/boundary_integral.hpp>`_: generic boundary integral method
 2. `SlenderElemList <include/sctl/slender_element.hpp>`_
-3. `Kernel functions <include/sctl/kernel_functions.hpp>`_
 
 HPC
 ---

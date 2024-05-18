@@ -1,7 +1,7 @@
-.. _matrix-dox:
+.. _matrix_hpp:
 
-class Matrix
-============
+matrix.hpp
+==========
 
 .. literalinclude:: ../../include/sctl/matrix.hpp
    :language: c++

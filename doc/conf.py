@@ -111,6 +111,8 @@ if not on_rtd:  # only import and set the theme if we're building docs locally
     #
     # html_sidebars = {}
 
+html_sidebars = { '**': ['globaltoc.html', 'relations.html', 'sourcelink.html', 'searchbox.html'] }
+
 # otherwise, readthedocs.org uses their theme by default, so no need to specify it
 
 

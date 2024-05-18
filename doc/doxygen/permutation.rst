@@ -1,7 +1,7 @@
-.. _permutation-dox:
+.. _permutation_hpp:
 
-class Permutation
-=================
+permutation.hpp
+===============
 
 .. literalinclude:: ../../include/sctl/permutation.hpp
    :language: c++

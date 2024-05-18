@@ -1,7 +1,7 @@
-.. _tensor-dox:
+.. _tensor_hpp:
 
-class Tensor
-============
+tensor.hpp
+==========
 
 .. literalinclude:: ../../include/sctl/tensor.hpp
    :language: c++
