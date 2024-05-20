@@ -1,4 +1,16 @@
-#include SCTL_INCLUDE(vector.hpp)
+#ifndef _SCTL_LAGRANGE_INTERP_TXX_
+#define _SCTL_LAGRANGE_INTERP_TXX_
+
+#include <iostream>                  // for cout
+
+#include "sctl/common.hpp"           // for Long, Integer, SCTL_ASSERT, SCTL...
+#include SCTL_INCLUDE(lagrange-interp.hpp)  // for LagrangeInterp
+#include SCTL_INCLUDE(iterator.txx)         // for NullIterator
+#include SCTL_INCLUDE(matrix.hpp)           // for Matrix
+#include SCTL_INCLUDE(static-array.hpp)     // for StaticArray
+#include SCTL_INCLUDE(vec.hpp)              // for Vec
+#include SCTL_INCLUDE(vec.txx)              // for DefaultVecLen
+#include SCTL_INCLUDE(vector.hpp)           // for Vector
 
 namespace SCTL_NAMESPACE {
 
@@ -126,3 +138,5 @@ namespace SCTL_NAMESPACE {
   }
 
 }
+
+#endif // _SCTL_LAGRANGE_INTERP_TXX_

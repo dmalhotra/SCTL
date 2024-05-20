@@ -1,15 +1,19 @@
 #ifndef _SCTL_CHEB_UTILS_HPP_
 #define _SCTL_CHEB_UTILS_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(quadrule.hpp)
-#include SCTL_INCLUDE(math_utils.hpp)
-#include SCTL_INCLUDE(matrix.hpp)
-#include SCTL_INCLUDE(vector.hpp)
+#include <algorithm>              // for max, sort
+#include <cassert>                // for assert
+#include <functional>             // for function
 
-#include <type_traits>
-#include <functional>
-#include <algorithm>
+#include "sctl/common.hpp"        // for Integer, Long, SCTL_ASSERT, SCTL_NA...
+#include SCTL_INCLUDE(iterator.hpp)      // for ConstIterator, Iterator
+#include SCTL_INCLUDE(math_utils.hpp)    // for fabs, const_pi, cos
+#include SCTL_INCLUDE(math_utils.txx)    // for pow, machine_eps
+#include SCTL_INCLUDE(matrix.hpp)        // for Matrix
+#include SCTL_INCLUDE(quadrule.hpp)      // for LegQuadRule
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[]
+#include SCTL_INCLUDE(vector.hpp)        // for Vector
 
 namespace SCTL_NAMESPACE {
 
@@ -1377,4 +1381,4 @@ template <class ValueType> class ChebBasis : public BasisInterface<ValueType, Ch
 
 }  // end namespace
 
-#endif  //_SCTL_CHEB_UTILS_HPP_
+#endif // _SCTL_CHEB_UTILS_HPP_

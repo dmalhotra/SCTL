@@ -1,7 +1,7 @@
 #ifndef _SCTL_LAGRANGE_INTERP_HPP_
 #define _SCTL_LAGRANGE_INTERP_HPP_
 
-#include <sctl/common.hpp>
+#include "sctl/common.hpp"  // for SCTL_NAMESPACE
 
 namespace SCTL_NAMESPACE {
 
@@ -55,6 +55,4 @@ namespace SCTL_NAMESPACE {
 
 }
 
-#include SCTL_INCLUDE(lagrange-interp.txx)
-
-#endif //_SCTL_LAGRANGE_INTERP_HPP_
+#endif // _SCTL_LAGRANGE_INTERP_HPP_

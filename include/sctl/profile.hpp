@@ -1,13 +1,10 @@
 #ifndef _SCTL_PROFILE_HPP_
 #define _SCTL_PROFILE_HPP_
 
-#include <sctl/common.hpp>
+#include <string>            // for basic_string, string
+#include <vector>            // for vector
 
-#include <string>
-#include <vector>
-#include <stack>
-#include <array>
-#include <atomic>
+#include "sctl/common.hpp"   // for Long, Integer, SCTL_NAMESPACE
 
 #ifndef SCTL_PROFILE
 #define SCTL_PROFILE -1
@@ -206,6 +203,4 @@ class Profile {
 
 }  // end namespace
 
-#include SCTL_INCLUDE(profile.txx)
-
-#endif  //_SCTL_PROFILE_HPP_
+#endif // _SCTL_PROFILE_HPP_

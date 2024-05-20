@@ -1,31 +1,40 @@
 #ifndef _SCTL_BOUNDARY_QUADRATURE_HPP_
 #define _SCTL_BOUNDARY_QUADRATURE_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(vtudata.hpp)
-#include SCTL_INCLUDE(kernel_functions.hpp)
-#include SCTL_INCLUDE(profile.hpp)
-#include SCTL_INCLUDE(ompUtils.hpp)
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(mem_mgr.hpp)
-#include SCTL_INCLUDE(comm.hpp)
-#include SCTL_INCLUDE(math_utils.hpp)
+#include <algorithm>                  // for max, min, lower_bound, sort
+#include <atomic>                     // for atomic, memory_order, atomic_th...
+#include <functional>                 // for function
+#include <iostream>                   // for basic_ostream, operator<<, cout
+#include <mutex>                      // for mutex, lock_guard
+#include <set>                        // for set, __tree_const_iterator
+#include <string>                     // for basic_string
+#include <tuple>                      // for make_tuple, tie
+#include <type_traits>                // for is_same
 
-#include <mutex>
-#include <atomic>
-#include <tuple>
-#include <functional>
-#include <algorithm>
+#include "sctl/common.hpp"            // for Long, Integer, SCTL_ASSERT, SCT...
+#include SCTL_INCLUDE(cheb_utils.hpp)        // for ChebBasis
+#include SCTL_INCLUDE(comm.hpp)              // for Comm, CommOp
+#include SCTL_INCLUDE(comm.txx)              // for Comm::Scan, Comm::Rank, Comm::A...
+#include SCTL_INCLUDE(fmm-wrapper.hpp)       // for ParticleFMM
+#include SCTL_INCLUDE(iterator.hpp)          // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)          // for Iterator::Iterator<ValueType>
+#include SCTL_INCLUDE(kernel_functions.hpp)  // for Laplace3D_DxU, Laplace3D_FxU
+#include SCTL_INCLUDE(math_utils.hpp)        // for sqrt, fabs, const_pi, cos, sin
+#include SCTL_INCLUDE(math_utils.txx)        // for pow, machine_eps
+#include SCTL_INCLUDE(matrix.hpp)            // for Matrix
+#include SCTL_INCLUDE(morton.hpp)            // for Morton
+#include SCTL_INCLUDE(ompUtils.txx)          // for merge_sort, scan
+#include SCTL_INCLUDE(profile.hpp)           // for Profile
+#include SCTL_INCLUDE(profile.txx)           // for Profile::Tic, Profile::Toc, Pro...
+#include SCTL_INCLUDE(static-array.hpp)      // for StaticArray
+#include SCTL_INCLUDE(tensor.hpp)            // for Tensor
+#include SCTL_INCLUDE(tree.hpp)              // for Morton, Tree
+#include SCTL_INCLUDE(vector.hpp)            // for Vector
+#include SCTL_INCLUDE(vector.txx)            // for Vector::operator[], Vector::begin
+#include SCTL_INCLUDE(vtudata.hpp)           // for VTUData
+#include SCTL_INCLUDE(vtudata.txx)           // for VTUData::AddElems, VTUData::Wri...
 
 namespace SCTL_NAMESPACE {
-
-template <Integer DIM> class Tree;
-template <Integer DIM> class Morton;
-template <class Real> class ChebBasis;
-template <class ValueType> class Matrix;
-template <class ValueType> class Vector;
-template <class Real, Integer DIM> class ParticleFMM;
-template <class ValueType, bool own_data, Long... Args> class Tensor;
 
 template <class Real, Integer DIM, Integer ORDER> class Basis {
   public:
@@ -1800,4 +1809,4 @@ template <class Real> class Quadrature {
 
 }  // end namespace
 
-#endif  //_SCTL_BOUNDARY_QUADRATURE_HPP_
+#endif // _SCTL_BOUNDARY_QUADRATURE_HPP_

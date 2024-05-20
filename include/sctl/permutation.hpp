@@ -1,11 +1,10 @@
 #ifndef _SCTL_PERMUTATION_HPP_
 #define _SCTL_PERMUTATION_HPP_
 
-#include <cstdint>
-#include <cstdlib>
+#include <ostream>          // for ostream
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(vector.hpp)
+#include "sctl/common.hpp"  // for Long, SCTL_NAMESPACE
+#include SCTL_INCLUDE(vector.hpp)  // for Vector
 
 namespace SCTL_NAMESPACE {
 
@@ -151,6 +150,4 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
 
 }  // end namespace
 
-#include SCTL_INCLUDE(permutation.txx)
-
-#endif  //_SCTL_PERMUTATION_HPP_
+#endif // _SCTL_PERMUTATION_HPP_

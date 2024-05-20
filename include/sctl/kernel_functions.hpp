@@ -1,9 +1,12 @@
 #ifndef _SCTL_KERNEL_FUNCTIONS_HPP_
 #define _SCTL_KERNEL_FUNCTIONS_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(generic-kernel.hpp)
-#include SCTL_INCLUDE(vec.hpp)
+#include <string>                   // for basic_string, string
+
+#include "sctl/common.hpp"          // for Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(generic-kernel.hpp)  // for GenericKernel
+#include SCTL_INCLUDE(math_utils.hpp)      // for const_pi
+#include SCTL_INCLUDE(vec.txx)             // for operator*, operator+, Vec::Zero
 
 namespace SCTL_NAMESPACE {
 
@@ -212,4 +215,4 @@ namespace SCTL_NAMESPACE {
 
 }  // end namespace
 
-#endif  //_SCTL_KERNEL_FUNCTIONS_HPP_
+#endif // _SCTL_KERNEL_FUNCTIONS_HPP_

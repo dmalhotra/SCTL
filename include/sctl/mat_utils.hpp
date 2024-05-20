@@ -1,7 +1,7 @@
-#ifndef _SCTL_MAT_UTILS_
-#define _SCTL_MAT_UTILS_
+#ifndef _SCTL_MAT_UTILS_HPP_
+#define _SCTL_MAT_UTILS_HPP_
 
-#include <sctl/common.hpp>
+#include "sctl/common.hpp"  // for SCTL_NAMESPACE
 
 namespace SCTL_NAMESPACE {
 namespace mat {
@@ -19,6 +19,4 @@ template <class ValueType> void pinv(Iterator<ValueType> M, int n1, int n2, Valu
 }  // end namespace mat
 }  // end namespace SCTL_NAMESPACE
 
-#include SCTL_INCLUDE(mat_utils.txx)
-
-#endif  //_SCTL_MAT_UTILS_
+#endif // _SCTL_MAT_UTILS_HPP_

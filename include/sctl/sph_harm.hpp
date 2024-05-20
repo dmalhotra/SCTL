@@ -1,19 +1,22 @@
 #ifndef _SCTL_SPH_HARM_HPP_
 #define _SCTL_SPH_HARM_HPP_
 
+#include <vector>             // for vector
+
+#include "sctl/common.hpp"    // for Long, Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(comm.hpp)      // for Comm
+#include SCTL_INCLUDE(comm.txx)      // for Comm::World
+#include SCTL_INCLUDE(iterator.hpp)  // for Iterator
+#include SCTL_INCLUDE(iterator.txx)  // for NullIterator
+#include SCTL_INCLUDE(mem_mgr.txx)   // for aligned_delete, aligned_new
+
 #define SCTL_SHMAXDEG 1024
-
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(mem_mgr.hpp)
-#include SCTL_INCLUDE(comm.hpp)
-
-#include <vector>
 
 namespace SCTL_NAMESPACE {
 
+template <class ValueType> class FFT;
 template <class ValueType> class Vector;
 template <class ValueType> class Matrix;
-template <class ValueType> class FFT;
 
 enum class SHCArrange {
   // (p+1) x (p+1) complex elements in row-major order.
@@ -262,4 +265,3 @@ template <class Real> class SphericalHarmonics{
 #include SCTL_INCLUDE(sph_harm.txx)
 
 #endif // _SCTL_SPH_HARM_HPP_
-

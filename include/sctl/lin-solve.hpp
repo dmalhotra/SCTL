@@ -1,15 +1,16 @@
 #ifndef _SCTL_LIN_SOLVE_HPP_
 #define _SCTL_LIN_SOLVE_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(comm.hpp)
+#include <functional>       // for function
+#include <list>             // for list
 
-#include <functional>
-#include <list>
+#include "sctl/common.hpp"  // for Long, Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(comm.hpp)    // for Comm
+#include SCTL_INCLUDE(comm.txx)    // for Comm::Self, Comm::Comm
+#include SCTL_INCLUDE(vector.hpp)  // for Vector
 
 namespace SCTL_NAMESPACE {
 
-template <class ValueType> class Vector;
 template <class ValueType> class Matrix;
 
 /**
@@ -117,6 +118,4 @@ template <class Real> class GMRES {
 
 }  // end namespace
 
-#include SCTL_INCLUDE(lin-solve.txx)
-
-#endif  //_SCTL_LIN_SOLVE_HPP_
+#endif // _SCTL_LIN_SOLVE_HPP_

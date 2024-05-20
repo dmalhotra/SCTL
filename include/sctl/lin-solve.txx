@@ -1,10 +1,23 @@
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(comm.hpp)
-#include SCTL_INCLUDE(mem_mgr.hpp)
-#include SCTL_INCLUDE(math_utils.hpp)
+#ifndef _SCTL_LIN_SOLVE_TXX_
+#define _SCTL_LIN_SOLVE_TXX_
 
-#include <functional>
-#include <list>
+#include <stdio.h>                // for printf
+#include <stdlib.h>               // for drand48, srand48
+#include <algorithm>              // for max
+#include <iostream>               // for basic_ostream, char_traits, operator<<
+#include <iterator>               // for advance
+
+#include "sctl/common.hpp"        // for Long, SCTL_ASSERT, Integer, SCTL_NA...
+#include SCTL_INCLUDE(lin-solve.hpp)     // for KrylovPrecond, GMRES
+#include SCTL_INCLUDE(comm.hpp)          // for Comm, CommOp
+#include SCTL_INCLUDE(comm.txx)          // for Comm::Allreduce, Comm::Rank
+#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
+#include SCTL_INCLUDE(math_utils.hpp)    // for sqrt, fabs
+#include SCTL_INCLUDE(matrix.hpp)        // for Matrix
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator+, StaticArray...
+#include SCTL_INCLUDE(vector.hpp)        // for Vector
 
 namespace SCTL_NAMESPACE {
 
@@ -430,3 +443,4 @@ namespace SCTL_NAMESPACE {
 
 #endif
 
+#endif // _SCTL_LIN_SOLVE_TXX_

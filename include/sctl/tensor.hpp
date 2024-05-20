@@ -1,9 +1,10 @@
 #ifndef _SCTL_TENSOR_HPP_
 #define _SCTL_TENSOR_HPP_
 
-#include <sctl/common.hpp>
+#include <ostream>                // for ostream
 
-#include <iostream>
+#include "sctl/common.hpp"        // for Long, Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
 
 namespace SCTL_NAMESPACE {
 
@@ -279,6 +280,4 @@ namespace SCTL_NAMESPACE {
 
 }  // end namespace
 
-#include SCTL_INCLUDE(tensor.txx)
-
-#endif  //_SCTL_TENSOR_HPP_
+#endif // _SCTL_TENSOR_HPP_

@@ -1,15 +1,14 @@
-#ifndef _SCTL_TREE_
-#define _SCTL_TREE_
+#ifndef _SCTL_TREE_HPP_
+#define _SCTL_TREE_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(comm.hpp)
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(math_utils.hpp)
+#include <map>                  // for map
+#include <string>               // for basic_string, string
 
-#include <string>
-#include <vector>
-#include <algorithm>
-#include <map>
+#include "sctl/common.hpp"      // for Long, Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(comm.hpp)        // for Comm
+#include SCTL_INCLUDE(comm.txx)        // for Comm::Self
+#include SCTL_INCLUDE(math_utils.txx)  // for pow
+#include SCTL_INCLUDE(vector.hpp)      // for Vector
 
 namespace SCTL_NAMESPACE {
 
@@ -267,6 +266,4 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
 
 }
 
-#include SCTL_INCLUDE(tree.txx)
-
-#endif //_SCTL_TREE_
+#endif // _SCTL_TREE_HPP_

@@ -1,13 +1,17 @@
 #ifndef _SCTL_VEC_TEST_HPP_
 #define _SCTL_VEC_TEST_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(vec.hpp)
-#include SCTL_INCLUDE(vector.hpp)
+#include <stdlib.h>                 // for rand, drand48
+#include <algorithm>                // for max
+#include <cstdint>                  // for int8_t, int16_t, int32_t, int64_t
 
-#include <cassert>
-#include <cstdint>
-#include <ostream>
+#include "sctl/common.hpp"          // for SCTL_ASSERT, Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(intrin-wrapper.hpp)  // for IntegerType, TypeTraits, DataType
+#include SCTL_INCLUDE(math_utils.hpp)      // for fabs, cos, sin, sqrt, QuadReal (p...
+#include SCTL_INCLUDE(math_utils.txx)      // for pow, machine_eps
+#include SCTL_INCLUDE(vec.hpp)             // for Vec
+#include SCTL_INCLUDE(vec.txx)             // for select, approx_exp, approx_rsqrt
+#include SCTL_INCLUDE(vector.hpp)          // for Vector
 
 namespace SCTL_NAMESPACE {
 
@@ -435,4 +439,4 @@ namespace SCTL_NAMESPACE {
 
 }
 
-#endif  //_SCTL_VEC_TEST_HPP_
+#endif // _SCTL_VEC_TEST_HPP_

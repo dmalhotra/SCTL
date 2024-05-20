@@ -1,5 +1,30 @@
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(matrix.hpp)
+#ifndef _SCTL_FMM_WRAPPER_TXX_
+#define _SCTL_FMM_WRAPPER_TXX_
+
+#include <stdlib.h>                   // for drand48, srand48
+#include <algorithm>                  // for max, min
+#include <iostream>                   // for basic_ostream, operator<<, cout
+#include <map>                        // for map
+#include <string>                     // for basic_string, string
+#include <utility>                    // for pair, make_pair
+
+#include "sctl/common.hpp"            // for Integer, SCTL_ASSERT, Long, SCT...
+#include SCTL_INCLUDE(fmm-wrapper.hpp)       // for ParticleFMM
+#include SCTL_INCLUDE(comm.hpp)              // for Comm, CommOp
+#include SCTL_INCLUDE(comm.txx)              // for Comm::Allreduce, Comm::Rank
+#include SCTL_INCLUDE(iterator.hpp)          // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)          // for NullIterator, Iterator::operator*
+#include SCTL_INCLUDE(kernel_functions.hpp)  // for Stokes3D_DxU, Stokes3D_FSxU
+#include SCTL_INCLUDE(math_utils.hpp)        // for fabs, log, sqrt
+#include SCTL_INCLUDE(math_utils.txx)        // for pow, machine_eps
+#include SCTL_INCLUDE(matrix.hpp)            // for Matrix
+#include SCTL_INCLUDE(mem_mgr.txx)           // for aligned_new, aligned_delete
+#include SCTL_INCLUDE(profile.hpp)           // for Profile
+#include SCTL_INCLUDE(profile.txx)           // for Profile::Tic, Profile::Toc, Pro...
+#include SCTL_INCLUDE(static-array.hpp)      // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)      // for StaticArray::operator[], Static...
+#include SCTL_INCLUDE(vector.hpp)            // for Vector
+#include SCTL_INCLUDE(vector.txx)            // for Vector::PushBack, Vector::Vecto...
 
 #ifdef SCTL_HAVE_PVFMM
 #include <pvfmm.hpp>
@@ -912,3 +937,4 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
 
 }  // end namespace
 
+#endif // _SCTL_FMM_WRAPPER_TXX_

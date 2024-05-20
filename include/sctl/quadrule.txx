@@ -1,6 +1,24 @@
-#include <algorithm>
+#ifndef _SCTL_QUADRULE_TXX_
+#define _SCTL_QUADRULE_TXX_
 
-#include SCTL_INCLUDE(lagrange-interp.hpp)
+#include <algorithm>                 // for max, min, lower_bound, sort
+#include <functional>                // for greater
+#include <iomanip>                   // for operator<<, setw, setprecision
+#include <iostream>                  // for basic_ostream, cout, operator<<
+#include <tuple>                     // for tie, make_tuple
+#include <utility>                   // for pair
+
+#include "sctl/common.hpp"           // for Long, Integer, SCTL_ASSERT, SCTL...
+#include SCTL_INCLUDE(quadrule.hpp)         // for LegQuadRule, ChebQuadRule, Inter...
+#include SCTL_INCLUDE(iterator.hpp)         // for Iterator
+#include SCTL_INCLUDE(iterator.txx)         // for Iterator::Iterator<ValueType>
+#include SCTL_INCLUDE(lagrange-interp.hpp)  // for LagrangeInterp
+#include SCTL_INCLUDE(math_utils.hpp)       // for fabs, sqrt, const_pi, cos, log
+#include SCTL_INCLUDE(math_utils.txx)       // for machine_eps, pow
+#include SCTL_INCLUDE(matrix.hpp)           // for Matrix
+#include SCTL_INCLUDE(static-array.hpp)     // for StaticArray
+#include SCTL_INCLUDE(vector.hpp)           // for Vector
+#include SCTL_INCLUDE(vector.txx)           // for Vector::operator[], Vector::Dim
 
 namespace SCTL_NAMESPACE {
 
@@ -571,3 +589,4 @@ namespace SCTL_NAMESPACE {
   }
 }
 
+#endif // _SCTL_QUADRULE_TXX_

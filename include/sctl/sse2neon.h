@@ -101,8 +101,8 @@
 #define _sse2neon_const const
 #endif
 
-#include <stdint.h>
-#include <stdlib.h>
+//#include <stdint.h>
+//#include <stdlib.h>
 
 #if defined(_WIN32)
 /* Definitions for _mm_{malloc,free} are provided by <malloc.h>
@@ -113,7 +113,7 @@
 
 /* If using MSVC */
 #ifdef _MSC_VER
-#include <intrin.h>
+//#include <intrin.h>
 
 #if (defined(_M_AMD64) || defined(__x86_64__)) || \
     (defined(_M_ARM) || defined(__arm__))
@@ -154,16 +154,16 @@
 #endif
 #endif
 
-#include <arm_neon.h>
+//#include <arm_neon.h>
 #if !defined(__aarch64__) && (__ARM_ARCH == 8)
 #if defined __has_include && __has_include(<arm_acle.h>)
-#include <arm_acle.h>
+//#include <arm_acle.h>
 #endif
 #endif
 
 /* Rounding functions require either Aarch64 instructions or libm failback */
 #if !defined(__aarch64__)
-#include <math.h>
+//#include <math.h>
 #endif
 
 /* On ARMv7, some registers, such as PMUSERENR and PMCCNTR, are read-only
@@ -172,7 +172,7 @@
  * we have to perform syscall instead.
  */
 #if !defined(__aarch64__)
-#include <sys/time.h>
+//#include <sys/time.h>
 #endif
 
 /* "__has_builtin" can be used to query support for built-in functions

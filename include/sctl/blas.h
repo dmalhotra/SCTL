@@ -18,4 +18,4 @@ void sgemm_(const char* TRANSA, const char* TRANSB, const int* M, const int* N, 
 void dgemm_(const char* TRANSA, const char* TRANSB, const int* M, const int* N, const int* K, const double* ALPHA, const double* A, const int* LDA, const double* B, const int* LDB, const double* BETA, double* C, const int* LDC) noexcept;
 }
 
-#endif
+#endif // _SCTL_BLAS_H_

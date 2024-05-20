@@ -1,8 +1,16 @@
-#include <omp.h>
-#include <cstring>
-#include <algorithm>
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(mem_mgr.hpp)
+#ifndef _SCTL_OMPUTILS_TXX_
+#define _SCTL_OMPUTILS_TXX_
+
+#include <omp.h>              // for omp_get_max_threads
+#include <algorithm>          // for lower_bound, sort, merge
+#include <functional>         // for less
+#include <iterator>           // for iterator_traits
+
+#include "sctl/common.hpp"    // for Integer, SCTL_UNUSED, SCTL_NAMESPACE
+#include SCTL_INCLUDE(ompUtils.hpp)  // for merge_sort, merge, reduce, scan
+#include SCTL_INCLUDE(iterator.hpp)  // for Iterator
+#include SCTL_INCLUDE(iterator.txx)  // for Ptr2Itr
+#include SCTL_INCLUDE(vector.hpp)    // for Vector
 
 namespace SCTL_NAMESPACE {
 
@@ -188,3 +196,5 @@ template <class ConstIter, class Iter, class Int> void omp_par::scan(ConstIter A
 }
 
 }  // end namespace
+
+#endif // _SCTL_OMPUTILS_TXX_

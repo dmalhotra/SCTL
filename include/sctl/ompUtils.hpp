@@ -1,9 +1,9 @@
-#ifndef _SCTL_OMP_UTILS_H_
-#define _SCTL_OMP_UTILS_H_
+#ifndef _SCTL_OMPUTILS_HPP_
+#define _SCTL_OMPUTILS_HPP_
 
-#include <sctl/common.hpp>
+#include <iterator>         // for iterator_traits
 
-#include <iterator>
+#include "sctl/common.hpp"  // for SCTL_NAMESPACE
 
 namespace SCTL_NAMESPACE {
 namespace omp_par {
@@ -76,6 +76,4 @@ template <class ConstIter, class Iter, class Int> void scan(ConstIter A, Iter B,
 }  // end namespace omp_par
 }  // end namespace SCTL_NAMESPACE
 
-#include SCTL_INCLUDE(ompUtils.txx)
-
-#endif  //_SCTL_OMP_UTILS_H_
+#endif // _SCTL_OMPUTILS_HPP_

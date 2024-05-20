@@ -1,13 +1,12 @@
 #ifndef _SCTL_VECTOR_HPP_
 #define _SCTL_VECTOR_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(mem_mgr.hpp)
+#include <ostream>            // for ostream
+#include <initializer_list>   // for initializer_list
+#include <vector>             // for vector
 
-#include <vector>
-#include <cstdlib>
-#include <cstdint>
-#include <initializer_list>
+#include "sctl/common.hpp"    // for Long, SCTL_NAMESPACE
+#include SCTL_INCLUDE(iterator.hpp)  // for Iterator, ConstIterator
 
 namespace SCTL_NAMESPACE {
 
@@ -386,6 +385,4 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
 
 }  // end namespace
 
-#include SCTL_INCLUDE(vector.txx)
-
-#endif  //_SCTL_VECTOR_HPP_
+#endif // _SCTL_VECTOR_HPP_

@@ -1,6 +1,22 @@
-#include <type_traits>
-#include SCTL_INCLUDE(ompUtils.hpp)
-#include SCTL_INCLUDE(vector.hpp)
+#ifndef _SCTL_COMM_TXX_
+#define _SCTL_COMM_TXX_
+
+#include <algorithm>              // for lower_bound, max, min, sort, upper_...
+#include <cassert>                // for assert
+#include <functional>             // for less
+#include <map>                    // for multimap, __map_iterator, operator==
+#include <type_traits>            // for is_trivially_copyable
+#include <utility>                // for pair
+
+#include "sctl/common.hpp"        // for Long, Integer, SCTL_ASSERT, SCTL_UN...
+#include SCTL_INCLUDE(comm.hpp)          // for Comm, CommOp
+#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
+#include SCTL_INCLUDE(ompUtils.txx)      // for scan, merge_sort
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[], StaticArra...
+#include SCTL_INCLUDE(vector.hpp)        // for Vector
+#include SCTL_INCLUDE(vector.txx)        // for Vector::operator[], Vector::begin
 
 namespace SCTL_NAMESPACE {
 
@@ -1333,3 +1349,5 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
 }
 
 }  // end namespace
+
+#endif // _SCTL_COMM_TXX_

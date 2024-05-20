@@ -1,9 +1,9 @@
-#ifndef _SCTL_COMPLEX_
-#define _SCTL_COMPLEX_
+#ifndef _SCTL_COMPLEX_HPP_
+#define _SCTL_COMPLEX_HPP_
 
-#include <iostream>
+#include <ostream>          // for ostream
 
-#include <sctl/common.hpp>
+#include "sctl/common.hpp"  // for SCTL_NAMESPACE
 
 namespace SCTL_NAMESPACE {
 
@@ -25,7 +25,7 @@ namespace SCTL_NAMESPACE {
        * @param r The real part of the complex number.
        * @param i The imaginary part of the complex number.
        */
-      Complex<ValueType>(ValueType r = 0, ValueType i = 0);
+      Complex(ValueType r = 0, ValueType i = 0);
 
       /**
        * @brief Unary negation operator.
@@ -197,6 +197,4 @@ namespace SCTL_NAMESPACE {
 
 }  // end namespace
 
-#include SCTL_INCLUDE(complex.txx)
-
-#endif  //_SCTL_COMPLEX_
+#endif // _SCTL_COMPLEX_HPP_

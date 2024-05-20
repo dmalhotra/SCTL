@@ -1,4 +1,29 @@
-#include <vector>
+#ifndef _SCTL_TREE_TXX_
+#define _SCTL_TREE_TXX_
+
+#include <stdlib.h>               // for drand48
+#include <algorithm>              // for lower_bound, max, min, sort
+#include <cstdint>                // for int32_t, uint8_t
+#include <map>                    // for map, operator!=, __map_iterator
+#include <set>                    // for set, __tree_const_iterator
+#include <string>                 // for basic_string, allocator, string
+#include <vector>                 // for vector
+
+#include "sctl/common.hpp"        // for Long, Integer, SCTL_ASSERT, SCTL_NA...
+#include SCTL_INCLUDE(tree.hpp)          // for Tree, PtTree, Morton
+#include SCTL_INCLUDE(comm.hpp)          // for Comm, CommOp
+#include SCTL_INCLUDE(comm.txx)          // for Comm::Alltoallv, Comm::Allreduce
+#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
+#include SCTL_INCLUDE(math_utils.txx)    // for pow
+#include SCTL_INCLUDE(morton.hpp)        // for Morton
+#include SCTL_INCLUDE(ompUtils.txx)      // for reduce, scan, merge_sort
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[], StaticArra...
+#include SCTL_INCLUDE(vector.hpp)        // for Vector
+#include SCTL_INCLUDE(vector.txx)        // for Vector::operator[], Vector::begin
+#include SCTL_INCLUDE(vtudata.hpp)       // for VTUData
+#include SCTL_INCLUDE(vtudata.txx)       // for VTUData::WriteVTK
 
 namespace SCTL_NAMESPACE {
 
@@ -1102,3 +1127,4 @@ namespace SCTL_NAMESPACE {
 
 }
 
+#endif // _SCTL_TREE_TXX_

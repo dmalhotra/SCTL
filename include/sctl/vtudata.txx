@@ -1,6 +1,26 @@
-#include <fstream>
+#ifndef _SCTL_VTUDATA_TXX_
+#define _SCTL_VTUDATA_TXX_
 
-#include SCTL_INCLUDE(math_utils.hpp)
+#include <stdlib.h>               // for drand48
+#include <cstdint>                // for int32_t, uint32_t, uint8_t, uint16_t
+#include <fstream>                // for basic_ofstream, basic_ostream, oper...
+#include <iomanip>                // for operator<<, setfill, setw
+#include <sstream>                // for basic_stringstream
+#include <string>                 // for char_traits, allocator, basic_string
+
+#include "sctl/common.hpp"        // for Integer, Long, SCTL_ASSERT, SCTL_NA...
+#include SCTL_INCLUDE(vtudata.hpp)       // for VTUData
+#include SCTL_INCLUDE(comm.hpp)          // for Comm, CommOp
+#include SCTL_INCLUDE(comm.txx)          // for Comm::Rank, Comm::Allreduce, Comm::...
+#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
+#include SCTL_INCLUDE(math_utils.hpp)    // for const_pi, cos
+#include SCTL_INCLUDE(math_utils.txx)    // for pow
+#include SCTL_INCLUDE(matrix.hpp)        // for Matrix
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator+, StaticArray...
+#include SCTL_INCLUDE(vector.hpp)        // for Vector
+#include SCTL_INCLUDE(vector.txx)        // for Vector::Dim, Vector::PushBack, Vect...
 
 namespace SCTL_NAMESPACE {
 
@@ -281,3 +301,4 @@ template <class CoordType, Integer ELEM_DIM> inline Matrix<CoordType> VTUData::V
 
 }
 
+#endif // _SCTL_VTUDATA_TXX_

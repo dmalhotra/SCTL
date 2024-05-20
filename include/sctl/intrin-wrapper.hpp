@@ -1,8 +1,11 @@
 #ifndef _SCTL_INTRIN_WRAPPER_HPP_
 #define _SCTL_INTRIN_WRAPPER_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(math_utils.hpp)
+#include <stdint.h>             // for int8_t, int16_t, int32_t, int64_t
+
+#include "sctl/common.hpp"      // for Integer, SCTL_NAMESPACE, SCTL_ALIGN_B...
+#include SCTL_INCLUDE(math_utils.hpp)  // for const_pi, QuadReal, cos, exp, sin, sqrt
+#include SCTL_INCLUDE(math_utils.txx)  // for pow, significant_bits
 
 #if defined(__ARM_NEON)
 #  include SCTL_INCLUDE(sse2neon.h)
@@ -3078,4 +3081,4 @@ namespace SCTL_NAMESPACE { // AVX512
 #endif
 }
 
-#endif  //_SCTL_INTRIN_WRAPPER_HPP_
+#endif // _SCTL_INTRIN_WRAPPER_HPP_

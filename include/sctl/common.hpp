@@ -1,6 +1,15 @@
 #ifndef _SCTL_COMMON_HPP_
 #define _SCTL_COMMON_HPP_
 
+#include <stdio.h>   // for NULL, stderr
+#include <stdlib.h>  // for abort
+#include <cstdint>   // for int64_t
+#include <iostream>  // for char_traits, basic_ostream, operator<<, cerr
+
+#ifndef SCTL_DATA_PATH
+#  define SCTL_DATA_PATH ./data/
+#endif
+
 #ifndef SCTL_NAMESPACE
 #define SCTL_NAMESPACE sctl
 #endif
@@ -31,19 +40,10 @@
 #define SCTL_GLOBAL_MEM_BUFF 1024LL * 0LL  // in MB
 #endif
 
-// Define NULL
-#ifndef NULL
-#define NULL 0
-#endif
-
-#include <cstddef>
-#include <cstdint>
 namespace SCTL_NAMESPACE {
 typedef long Integer;  // bounded numbers < 32k
 typedef int64_t Long;  // problem size
 }
-
-#include <iostream>
 
 #define SCTL_WARN(msg)                                         \
   do {                                                          \
@@ -83,4 +83,4 @@ template <typename ValueType, Long DIM> using StaticArray = ValueType[DIM];
 #endif
 }
 
-#endif  //_SCTL_COMMON_HPP_
+#endif // _SCTL_COMMON_HPP_

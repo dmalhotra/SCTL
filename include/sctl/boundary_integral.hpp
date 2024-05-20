@@ -1,18 +1,19 @@
 #ifndef _SCTL_BOUNDARY_INTEGRAL_HPP_
 #define _SCTL_BOUNDARY_INTEGRAL_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(comm.hpp)
+#include <map>                   // for map
+#include <string>                // for basic_string, to_string, string
+#include <typeinfo>              // for type_info
 
-#include <map>
-#include <set>
+#include "sctl/common.hpp"       // for Long, Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(comm.hpp)         // for Comm
+#include SCTL_INCLUDE(comm.txx)         // for Comm::Self
+#include SCTL_INCLUDE(fmm-wrapper.hpp)  // for ParticleFMM
+#include SCTL_INCLUDE(vector.hpp)       // for Vector
 
 namespace SCTL_NAMESPACE {
 
-  template <class ValueType> class Vector;
   template <class ValueType> class Matrix;
-  template <class Real, Integer DIM> class ParticleFMM;
 
   /**
    * @brief Find the near target points (coordinates and normals) for each element.
@@ -374,6 +375,4 @@ namespace SCTL_NAMESPACE {
 
 }
 
-#include SCTL_INCLUDE(boundary_integral.txx)
-
-#endif //_SCTL_BOUNDARY_INTEGRAL_HPP_
+#endif // _SCTL_BOUNDARY_INTEGRAL_HPP_

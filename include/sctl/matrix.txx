@@ -1,15 +1,28 @@
-#include <omp.h>
-#include <cmath>
-#include <cstdlib>
-#include <cassert>
-#include <iostream>
-#include <iomanip>
+#ifndef _SCTL_MATRIX_TXX_
+#define _SCTL_MATRIX_TXX_
 
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(math_utils.hpp)
-#include SCTL_INCLUDE(mat_utils.hpp)
-#include SCTL_INCLUDE(mem_mgr.hpp)
-#include SCTL_INCLUDE(profile.hpp)
+#include <ios>                   // for ios
+#include <ostream>               // for ostream
+#include <omp.h>                  // for omp_get_max_threads, omp_get_thread...
+#include <stdio.h>                // for fclose, fopen, fread, fwrite, FILE
+#include <cassert>                // for assert
+#include <cstdint>                // for uint64_t
+#include <iomanip>                // for operator<<, setiosflags, setprecision
+#include <iostream>               // for basic_ostream, char_traits, operator<<
+
+#include "sctl/common.hpp"        // for Long, SCTL_ASSERT, Integer, SCTL_AS...
+#include SCTL_INCLUDE(matrix.hpp)        // for Matrix, operator<<
+#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
+#include SCTL_INCLUDE(mat_utils.txx)     // for gemm, svd, pinv
+#include SCTL_INCLUDE(math_utils.hpp)    // for fabs, sqrt
+#include SCTL_INCLUDE(math_utils.txx)    // for machine_eps
+#include SCTL_INCLUDE(mem_mgr.txx)       // for aligned_delete, aligned_new
+#include SCTL_INCLUDE(permutation.hpp)   // for Permutation
+#include SCTL_INCLUDE(profile.hpp)       // for Profile, ProfileCounter
+#include SCTL_INCLUDE(profile.txx)       // for Profile::IncrementCounter
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[]
 
 namespace SCTL_NAMESPACE {
 
@@ -547,3 +560,5 @@ template <class ValueType> Matrix<ValueType> Matrix<ValueType>::pinv(ValueType e
 }
 
 }  // end namespace
+
+#endif // _SCTL_MATRIX_TXX_

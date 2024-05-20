@@ -1,16 +1,19 @@
 #ifndef _SCTL_SLENDER_ELEMENT_HPP_
 #define _SCTL_SLENDER_ELEMENT_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(comm.hpp)
-#include SCTL_INCLUDE(vector.hpp)
+#include <string>                      // for string
+
+#include "sctl/common.hpp"             // for Long, Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(boundary_integral.hpp)  // for ElementListBase
+#include SCTL_INCLUDE(comm.hpp)               // for Comm
+#include SCTL_INCLUDE(comm.txx)               // for Comm::Self
+#include SCTL_INCLUDE(vector.hpp)             // for Vector
+#include SCTL_INCLUDE(vector.txx)             // for Vector::~Vector<ValueType>
 
 namespace SCTL_NAMESPACE {
 
   class VTUData;
-  template <class Real> class FFT;
   template <class ValueType> class Matrix;
-  template <class Real> class ElementListBase;
 
   /**
    * Implements the abstract class ElementListBase for list of slender boundary
@@ -232,6 +235,4 @@ namespace SCTL_NAMESPACE {
 
 }
 
-#include SCTL_INCLUDE(slender_element.txx)
-
-#endif //_SCTL_SLENDER_ELEMENT_HPP_
+#endif // _SCTL_SLENDER_ELEMENT_HPP_

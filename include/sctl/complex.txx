@@ -1,3 +1,10 @@
+#ifndef _SCTL_COMPLEX_TXX_
+#define _SCTL_COMPLEX_TXX_
+
+#include <ostream>           // for basic_ostream, operator<<
+
+#include "sctl/common.hpp"   // for SCTL_NAMESPACE
+#include SCTL_INCLUDE(complex.hpp)  // for Complex, operator<<
 
 namespace SCTL_NAMESPACE {
 
@@ -138,3 +145,4 @@ namespace SCTL_NAMESPACE {
 
 }  // end namespace
 
+#endif // _SCTL_COMPLEX_TXX_

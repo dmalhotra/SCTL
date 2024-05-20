@@ -1,8 +1,21 @@
-#include <vector>
+#ifndef _SCTL_FFT_WRAPPER_TXX_
+#define _SCTL_FFT_WRAPPER_TXX_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(matrix.hpp)
-#include SCTL_INCLUDE(math_utils.hpp)
+#include <algorithm>              // for max
+#include <iostream>               // for basic_ostream, operator<<, cout
+#include <vector>                 // for vector
+
+#include "sctl/common.hpp"        // for Long, Integer, SCTL_ASSERT, SCTL_AS...
+#include SCTL_INCLUDE(fft_wrapper.hpp)   // for FFT, FFT_Type
+#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
+#include SCTL_INCLUDE(math_utils.hpp)    // for const_pi, cos, sin, sqrt, fabs
+#include SCTL_INCLUDE(math_utils.txx)    // for machine_eps
+#include SCTL_INCLUDE(matrix.hpp)        // for Matrix
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[], StaticArra...
+#include SCTL_INCLUDE(vector.hpp)        // for Vector
+#include SCTL_INCLUDE(vector.txx)        // for Vector::operator[], Vector::PushBack
 
 namespace SCTL_NAMESPACE {
 
@@ -508,3 +521,4 @@ namespace SCTL_NAMESPACE {
 
 }  // end namespace
 
+#endif // _SCTL_FFT_WRAPPER_TXX_

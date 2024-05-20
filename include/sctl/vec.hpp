@@ -1,12 +1,10 @@
-#ifndef _SCTL_VEC_WRAPPER_HPP_
-#define _SCTL_VEC_WRAPPER_HPP_
+#ifndef _SCTL_VEC_HPP_
+#define _SCTL_VEC_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(intrin-wrapper.hpp)
+#include <ostream>                  // for ostream
 
-#include <cassert>
-#include <cstdint>
-#include <ostream>
+#include "sctl/common.hpp"          // for Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(intrin-wrapper.hpp)  // for Mask, VecData
 
 namespace SCTL_NAMESPACE {
 
@@ -398,6 +396,4 @@ namespace SCTL_NAMESPACE {
 
 }
 
-#include SCTL_INCLUDE(vec.txx)
-
-#endif  //_SCTL_VEC_WRAPPER_HPP_
+#endif // _SCTL_VEC_HPP_

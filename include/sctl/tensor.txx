@@ -1,6 +1,18 @@
-#include SCTL_INCLUDE(math_utils.hpp)
+#ifndef _SCTL_TENSOR_TXX_
+#define _SCTL_TENSOR_TXX_
 
-#include <iomanip>
+#include <ios>                    // for ios
+#include <ostream>                // for ostream
+#include <stdlib.h>               // for drand48
+#include <iomanip>                // for operator<<, setiosflags, setprecision
+#include <iostream>               // for basic_ostream, operator<<, cout
+
+#include "sctl/common.hpp"        // for Long, Integer, SCTL_UNUSED, SCTL_NA...
+#include SCTL_INCLUDE(tensor.hpp)        // for Tensor, TensorArgExtract, operator<<
+#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)      // for NullIterator, memcopy, Ptr2Itr
+#include SCTL_INCLUDE(math_utils.hpp)    // for fabs
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
 
 namespace SCTL_NAMESPACE {
 
@@ -304,3 +316,4 @@ namespace SCTL_NAMESPACE {
 
 }  // end namespace
 
+#endif // _SCTL_TENSOR_TXX_

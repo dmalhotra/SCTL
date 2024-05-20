@@ -1,9 +1,25 @@
-#include <cassert>
-#include <iostream>
-#include <iomanip>
+#ifndef _SCTL_VECTOR_TXX_
+#define _SCTL_VECTOR_TXX_
 
-#include SCTL_INCLUDE(mem_mgr.hpp)
-#include SCTL_INCLUDE(profile.hpp)
+#include <ios>                   // for ios
+#include <ostream>               // for ostream
+#include <stdio.h>                // for fclose, fopen, fread, fwrite, FILE
+#include <cassert>                // for assert
+#include <cstdint>                // for uint64_t
+#include <initializer_list>       // for initializer_list
+#include <iomanip>                // for operator<<, setiosflags, setprecision
+#include <iostream>               // for basic_ostream, char_traits, operator<<
+#include <vector>                 // for vector
+
+#include "sctl/common.hpp"        // for Long, SCTL_ASSERT, SCTL_NAMESPACE
+#include SCTL_INCLUDE(vector.hpp)        // for Vector, operator*, operator+, opera...
+#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)      // for NullIterator, memcopy, Ptr2Itr, Ptr...
+#include SCTL_INCLUDE(mem_mgr.txx)       // for aligned_delete, aligned_new
+#include SCTL_INCLUDE(profile.hpp)       // for Profile, ProfileCounter
+#include SCTL_INCLUDE(profile.txx)       // for Profile::IncrementCounter
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[]
 
 namespace SCTL_NAMESPACE {
 
@@ -371,3 +387,5 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
 }
 
 }  // end namespace
+
+#endif // _SCTL_VECTOR_TXX_

@@ -20,4 +20,4 @@ void sgesvd_(const char* JOBU, const char* JOBVT, const int* M, const int* N, fl
 void dgesvd_(const char* JOBU, const char* JOBVT, const int* M, const int* N, double* A, const int* LDA, double* S, double* U, const int* LDU, double* VT, const int* LDVT, double* WORK, const int* LWORK, int* INFO) noexcept;
 }
 
-#endif
+#endif // _SCTL_LAPACK_H_

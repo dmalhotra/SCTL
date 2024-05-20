@@ -1,5 +1,27 @@
+#ifndef _SCTL_VEC_TXX_
+#define _SCTL_VEC_TXX_
+
+#include <ostream>                  // for ostream
+#include <cstdint>                  // for uintptr_t, uint8_t
+#include <iostream>                 // for basic_ostream, cout, operator<<
+
+#include "sctl/common.hpp"          // for Integer, SCTL_ASSERT, SCTL_ALIGN_...
+#include SCTL_INCLUDE(vec.hpp)             // for Vec, AndNot, max, min, operator!=
+#include SCTL_INCLUDE(intrin-wrapper.hpp)  // for ComparisonType, comp_intrin, Type...
 
 namespace SCTL_NAMESPACE {
+
+  template <class ValueType, Integer N> template <class T, class... T2> struct Vec<ValueType,N>::InitVec {
+    template <class... T1> static inline VData apply(T1... start, T x, T2... rest) {
+      return InitVec<T2...>::template apply<ScalarType, T1...>(start..., (ScalarType)x, rest...);
+    }
+  };
+  template <class ValueType, Integer N> template <class T> struct Vec<ValueType,N>::InitVec<T> {
+    template <class... T1> static inline VData apply(T1... start, T x) {
+      return set_intrin<VData>(start..., (ScalarType)x);
+    }
+  };
+
 
   template <class ScalarType> constexpr Integer DefaultVecLen() {
     #if defined(__AVX512__) || defined(__AVX512F__)
@@ -122,18 +144,6 @@ namespace SCTL_NAMESPACE {
   template <class ValueType, Integer N> inline const typename Vec<ValueType,N>::VData& Vec<ValueType,N>::get() const {
     return v;
   }
-
-
-  template <class ValueType, Integer N> template <class T, class... T2> struct Vec<ValueType,N>::InitVec {
-    template <class... T1> static inline VData apply(T1... start, T x, T2... rest) {
-      return InitVec<T2...>::template apply<ScalarType, T1...>(start..., (ScalarType)x, rest...);
-    }
-  };
-  template <class ValueType, Integer N> template <class T> struct Vec<ValueType,N>::InitVec<T> {
-    template <class... T1> static inline VData apply(T1... start, T x) {
-      return set_intrin<VData>(start..., (ScalarType)x);
-    }
-  };
 
 
 
@@ -408,3 +418,5 @@ namespace SCTL_NAMESPACE {
   }
 
 }
+
+#endif // _SCTL_VEC_TXX_

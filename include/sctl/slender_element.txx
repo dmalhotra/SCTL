@@ -1,17 +1,53 @@
-#include SCTL_INCLUDE(complex.hpp)
-#include SCTL_INCLUDE(kernel_functions.hpp)
-#include SCTL_INCLUDE(tensor.hpp)
-#include SCTL_INCLUDE(quadrule.hpp)
-#include SCTL_INCLUDE(ompUtils.hpp)
-#include SCTL_INCLUDE(profile.hpp)
-#include SCTL_INCLUDE(fft_wrapper.hpp)
-#include SCTL_INCLUDE(vtudata.hpp)
-#include SCTL_INCLUDE(lagrange-interp.hpp)
-#include SCTL_INCLUDE(ode-solver.hpp)
-#include SCTL_INCLUDE(boundary_integral.hpp)
+#ifndef _SCTL_SLENDER_ELEMENT_TXX_
+#define _SCTL_SLENDER_ELEMENT_TXX_
 
-#include <fstream>
-#include <functional>
+#include <fstream>                       // for ofstream, ifstream
+#include <sstream>                       // for istringstream
+#include <omp.h>                       // for omp_get_num_threads, omp_get_t...
+#include <stdio.h>                     // for fread, fwrite, fclose, fopen
+#include <stdlib.h>                    // for exit
+#include <algorithm>                   // for max, min, lower_bound, sort
+#include <cstdint>                     // for uint64_t
+#include <fstream>                     // for basic_ostream, operator<<, bas...
+#include <functional>                  // for function
+#include <iomanip>                     // for operator<<, setw, setprecision
+#include <iostream>                    // for cout
+#include <sstream>                     // for basic_istringstream
+#include <string>                      // for char_traits, basic_string, all...
+#include <utility>                     // for pair
+
+#include "sctl/common.hpp"             // for Long, Integer, SCTL_ASSERT
+#include SCTL_INCLUDE(slender_element.hpp)    // for SlenderElemList
+#include SCTL_INCLUDE(boundary_integral.hpp)  // for BoundaryIntegralOp, ElementLis...
+#include SCTL_INCLUDE(comm.hpp)               // for Comm, CommOp
+#include SCTL_INCLUDE(comm.txx)               // for Comm::Size, Comm::Rank, Comm::...
+#include SCTL_INCLUDE(complex.hpp)            // for Complex
+#include SCTL_INCLUDE(complex.txx)            // for Complex::operator*=, Complex::...
+#include SCTL_INCLUDE(fft_wrapper.hpp)        // for FFT, FFT_Type
+#include SCTL_INCLUDE(intrin-wrapper.hpp)     // for TypeTraits
+#include SCTL_INCLUDE(iterator.hpp)           // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)           // for Iterator::Iterator<ValueType>
+#include SCTL_INCLUDE(kernel_functions.hpp)   // for Laplace3D_DxU, Laplace3D_FxU
+#include SCTL_INCLUDE(lagrange-interp.hpp)    // for LagrangeInterp
+#include SCTL_INCLUDE(math_utils.hpp)         // for QuadReal, sqrt, operator*, log
+#include SCTL_INCLUDE(math_utils.txx)         // for pow, const_pi, sin, cos, machi...
+#include SCTL_INCLUDE(matrix.hpp)             // for Matrix
+#include SCTL_INCLUDE(matrix.txx)             // for Matrix::operator[], Matrix::Dim
+#include SCTL_INCLUDE(ode-solver.hpp)         // for SDC
+#include SCTL_INCLUDE(ompUtils.txx)           // for scan
+#include SCTL_INCLUDE(profile.hpp)            // for Profile
+#include SCTL_INCLUDE(profile.txx)            // for Profile::Enable, Profile::Tic
+#include SCTL_INCLUDE(quadrule.hpp)           // for InterpQuadRule, ChebQuadRule
+#include SCTL_INCLUDE(quadrule.txx)           // for InterpQuadRule::Build
+#include SCTL_INCLUDE(static-array.hpp)       // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)       // for StaticArray::operator+, Static...
+#include SCTL_INCLUDE(tensor.hpp)             // for Tensor
+#include SCTL_INCLUDE(vec.hpp)                // for Vec
+#include SCTL_INCLUDE(vec.txx)                // for DefaultVecLen, FMA, approx_rsqrt
+#include SCTL_INCLUDE(vector.hpp)             // for Vector
+#include SCTL_INCLUDE(vector.txx)             // for Vector::operator[], Vector::~V...
+#include SCTL_INCLUDE(vtudata.hpp)            // for VTUData
+#include SCTL_INCLUDE(vtudata.txx)            // for VTUData::WriteVTK
 
 namespace SCTL_NAMESPACE {
 
@@ -3467,3 +3503,4 @@ namespace SCTL_NAMESPACE {
   }
 }
 
+#endif // _SCTL_SLENDER_ELEMENT_TXX_

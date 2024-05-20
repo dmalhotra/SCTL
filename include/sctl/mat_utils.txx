@@ -1,5 +1,21 @@
-#include SCTL_INCLUDE(matrix.hpp)
-#include SCTL_INCLUDE(math_utils.hpp)
+#ifndef _SCTL_MAT_UTILS_TXX_
+#define _SCTL_MAT_UTILS_TXX_
+
+#include <algorithm>              // for max, min
+#include <cassert>                // for assert
+#include <iostream>               // for basic_ostream, cout, operator<<
+#include <vector>                 // for vector
+
+#include "sctl/common.hpp"        // for Long, SCTL_NAMESPACE
+#include SCTL_INCLUDE(mat_utils.hpp)     // for gemm, pinv, svd
+#include SCTL_INCLUDE(iterator.hpp)      // for Iterator
+#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
+#include SCTL_INCLUDE(math_utils.hpp)    // for fabs, sqrt
+#include SCTL_INCLUDE(math_utils.txx)    // for machine_eps
+#include SCTL_INCLUDE(matrix.hpp)        // for Matrix
+#include SCTL_INCLUDE(mem_mgr.txx)       // for aligned_delete, aligned_new
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[]
 
 #if defined(SCTL_HAVE_BLAS)
 #include SCTL_INCLUDE(blas.h)
@@ -7,14 +23,6 @@
 #if defined(SCTL_HAVE_LAPACK)
 #include SCTL_INCLUDE(lapack.h)
 #endif
-
-#include <omp.h>
-#include <cmath>
-#include <cassert>
-#include <cstdlib>
-#include <algorithm>
-#include <iostream>
-#include <vector>
 
 namespace SCTL_NAMESPACE {
 namespace mat {
@@ -506,3 +514,5 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, int n1, int n
 
 }  // end namespace mat
 }  // end namespace SCTL_NAMESPACE
+
+#endif // _SCTL_MAT_UTILS_TXX_

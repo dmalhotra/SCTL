@@ -1,11 +1,14 @@
 #ifndef _SCTL_FMM_WRAPPER_HPP_
 #define _SCTL_FMM_WRAPPER_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(kernel_functions.hpp)
+#include <map>                   // for map
+#include <string>                // for basic_string, string
+#include <utility>               // for pair
 
-#include <map>
-#include <string>
+#include "sctl/common.hpp"       // for Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(comm.hpp)         // for Comm
+#include SCTL_INCLUDE(comm.txx)         // for Comm::Self
+#include SCTL_INCLUDE(vector.hpp)       // for Vector
 
 #ifdef SCTL_HAVE_PVFMM
 namespace pvfmm {
@@ -21,9 +24,6 @@ namespace pvfmm {
 #endif
 
 namespace SCTL_NAMESPACE {
-
-class Comm;
-template <class ValueType> class Vector;
 
 /**
  * Evaluate potentials from particle sources using PVFMM.
@@ -189,6 +189,4 @@ template <class Real, Integer DIM> class ParticleFMM {
 
 }  // end namespace
 
-#include SCTL_INCLUDE(fmm-wrapper.txx)
-
-#endif  //_SCTL_FMM_WRAPPER_HPP_
+#endif // _SCTL_FMM_WRAPPER_HPP_

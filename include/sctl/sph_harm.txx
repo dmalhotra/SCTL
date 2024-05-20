@@ -1,6 +1,38 @@
-#include SCTL_INCLUDE(fft_wrapper.hpp)
+#ifndef _SCTL_SPH_HARM_TXX_
+#define _SCTL_SPH_HARM_TXX_
 
-#include <fstream>
+#include <fstream>               // for ofstream
+#include <sstream>               // for stringstream
+#include <omp.h>                  // for omp_get_num_threads, omp_get_thread...
+#include <stdlib.h>               // for drand48
+#include <algorithm>              // for min, max
+#include <cassert>                // for assert
+#include <cmath>                  // for M_PI
+#include <cstdint>                // for int32_t, uint32_t, uint8_t, uint16_t
+#include <fstream>                // for basic_ostream, operator<<, basic_of...
+#include <iomanip>                // for operator<<, setfill, setw
+#include <iostream>               // for cout
+#include <sstream>                // for basic_stringstream
+#include <string>                 // for char_traits, allocator, basic_string
+#include <vector>                 // for vector
+
+#include "sctl/common.hpp"        // for Long, Integer, SCTL_UNUSED, SCTL_NA...
+#include SCTL_INCLUDE(sph_harm.hpp)      // for SphericalHarmonics, SHCArrange, SCT...
+#include SCTL_INCLUDE(comm.hpp)          // for Comm
+#include SCTL_INCLUDE(comm.txx)          // for Comm::Rank, Comm::Size
+#include SCTL_INCLUDE(complex.hpp)       // for Complex
+#include SCTL_INCLUDE(fft_wrapper.hpp)   // for FFT (ptr only), FFT_Type
+#include SCTL_INCLUDE(iterator.hpp)      // for ConstIterator, Iterator
+#include SCTL_INCLUDE(math_utils.hpp)    // for sqrt, cos, sin, const_pi, fabs, atan2
+#include SCTL_INCLUDE(math_utils.txx)    // for machine_eps
+#include SCTL_INCLUDE(matrix.hpp)        // for Matrix
+#include SCTL_INCLUDE(profile.hpp)       // for Profile, ProfileCounter
+#include SCTL_INCLUDE(profile.txx)       // for Profile::Tic, Profile::Toc, Profile...
+#include SCTL_INCLUDE(quadrule.hpp)      // for LegQuadRule
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::StaticArray<ValueType,...
+#include SCTL_INCLUDE(vector.hpp)        // for Vector
+#include SCTL_INCLUDE(vector.txx)        // for Vector::Vector<ValueType>, Vector::...
 
 // TODO: Replace work vectors with dynamic-arrays
 
@@ -3422,3 +3454,5 @@ template <class Real> template <bool SLayer, bool DLayer> void SphericalHarmonic
 }
 
 }  // end namespace
+
+#endif // _SCTL_SPH_HARM_TXX_

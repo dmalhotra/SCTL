@@ -1,15 +1,15 @@
-#ifndef _SCTL_ODE_SOLVER_
-#define _SCTL_ODE_SOLVER_
+#ifndef _SCTL_ODE_SOLVER_HPP_
+#define _SCTL_ODE_SOLVER_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(comm.hpp)
+#include <functional>       // for function
 
-#include <functional>
+#include "sctl/common.hpp"  // for Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(comm.hpp)    // for Comm
+#include SCTL_INCLUDE(comm.txx)    // for Comm::Self
+#include SCTL_INCLUDE(matrix.hpp)  // for Matrix
+#include SCTL_INCLUDE(vector.hpp)  // for Vector
 
 namespace SCTL_NAMESPACE {
-
-template <class ValueType> class Vector;
-template <class ValueType> class Matrix;
 
 /**
  * Implements spectral deferred correction (SDC) solver for ordinary differential equations (ODEs).
@@ -102,6 +102,4 @@ template <class Real> class SDC {
 
 }
 
-#include SCTL_INCLUDE(ode-solver.txx)
-
-#endif  //_SCTL_ODE_SOLVER_
+#endif // _SCTL_ODE_SOLVER_HPP_

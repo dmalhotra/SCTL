@@ -1,14 +1,32 @@
-#include SCTL_INCLUDE(kernel_functions.hpp)
-#include SCTL_INCLUDE(matrix.hpp)
-#include SCTL_INCLUDE(ompUtils.hpp)
-#include SCTL_INCLUDE(morton.hpp)
-#include SCTL_INCLUDE(profile.hpp)
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(comm.hpp)
-#include SCTL_INCLUDE(common.hpp)
+#ifndef _SCTL_BOUNDARY_INTEGRAL_TXX_
+#define _SCTL_BOUNDARY_INTEGRAL_TXX_
 
-#include <map>
-#include <set>
+#include <omp.h>                       // for omp_get_num_threads, omp_get_t...
+#include <algorithm>                   // for lower_bound, max, min, upper_b...
+#include <map>                         // for map
+#include <set>                         // for set, __tree_const_iterator
+#include <string>                      // for basic_string, string, to_string
+#include <type_traits>                 // for is_copy_constructible
+#include <typeinfo>                    // for type_info
+#include <utility>                     // for pair, make_pair
+
+#include "sctl/common.hpp"             // for Long, Integer, SCTL_ASSERT
+#include SCTL_INCLUDE(boundary_integral.hpp)  // for BoundaryIntegralOp, BuildNearList
+#include SCTL_INCLUDE(comm.hpp)               // for Comm, CommOp
+#include SCTL_INCLUDE(comm.txx)               // for Comm::Allreduce, Comm::Size
+#include SCTL_INCLUDE(iterator.hpp)           // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)           // for Iterator::Iterator<ValueType>
+#include SCTL_INCLUDE(math_utils.hpp)         // for log, sqrt
+#include SCTL_INCLUDE(matrix.hpp)             // for Matrix
+#include SCTL_INCLUDE(morton.hpp)             // for Morton
+#include SCTL_INCLUDE(ompUtils.txx)           // for scan, merge_sort
+#include SCTL_INCLUDE(profile.hpp)            // for Profile
+#include SCTL_INCLUDE(profile.txx)            // for Profile::Tic, Profile::Toc
+#include SCTL_INCLUDE(static-array.hpp)       // for StaticArray
+#include SCTL_INCLUDE(static-array.txx)       // for StaticArray::operator[], Stati...
+#include SCTL_INCLUDE(tree.hpp)               // for Morton
+#include SCTL_INCLUDE(vector.hpp)             // for Vector
+#include SCTL_INCLUDE(vector.txx)             // for Vector::operator[], Vector::begin
 
 namespace SCTL_NAMESPACE {
 
@@ -1017,3 +1035,4 @@ namespace SCTL_NAMESPACE {
 
 }
 
+#endif // _SCTL_BOUNDARY_INTEGRAL_TXX_

@@ -1,5 +1,21 @@
-#include SCTL_INCLUDE(math_utils.hpp)
-#include SCTL_INCLUDE(vector.hpp)
+#ifndef _SCTL_MORTON_TXX_
+#define _SCTL_MORTON_TXX_
+
+#include <ostream>              // for ostream
+#include <stdlib.h>             // for abs
+#include <algorithm>            // for max
+#include <array>                // for array
+#include <cstdint>              // for uint8_t, int8_t
+#include <ostream>              // for basic_ostream, char_traits, operator<<
+#include <type_traits>          // for remove_reference
+
+#include "sctl/common.hpp"      // for Integer, Long, SCTL_ASSERT, SCTL_NAME...
+#include SCTL_INCLUDE(morton.hpp)      // for Morton
+#include SCTL_INCLUDE(iterator.hpp)    // for ConstIterator
+#include SCTL_INCLUDE(math_utils.hpp)  // for floor
+#include SCTL_INCLUDE(math_utils.txx)  // for pow
+#include SCTL_INCLUDE(tree.hpp)        // for Morton
+#include SCTL_INCLUDE(vector.hpp)      // for Vector
 
 namespace SCTL_NAMESPACE {
 
@@ -216,3 +232,4 @@ namespace SCTL_NAMESPACE {
 
 }
 
+#endif // _SCTL_MORTON_TXX_

@@ -1,3 +1,19 @@
+#ifndef _SCTL_GENERIC_KERNEL_TXX_
+#define _SCTL_GENERIC_KERNEL_TXX_
+
+#include <algorithm>                // for min
+
+#include "sctl/common.hpp"          // for Integer, Long, SCTL_ASSERT, SCTL_...
+#include SCTL_INCLUDE(generic-kernel.hpp)  // for GenericKernel, uKerHelper
+#include SCTL_INCLUDE(intrin-wrapper.hpp)  // for TypeTraits
+#include SCTL_INCLUDE(iterator.hpp)        // for ConstIterator, Iterator
+#include SCTL_INCLUDE(matrix.hpp)          // for Matrix
+#include SCTL_INCLUDE(profile.hpp)         // for Profile, ProfileCounter
+#include SCTL_INCLUDE(profile.txx)         // for Profile::IncrementCounter
+#include SCTL_INCLUDE(static-array.hpp)    // for StaticArray
+#include SCTL_INCLUDE(vec.hpp)             // for Vec
+#include SCTL_INCLUDE(vec.txx)             // for DefaultVecLen, FMA
+#include SCTL_INCLUDE(vector.hpp)          // for Vector
 
 namespace SCTL_NAMESPACE {
 
@@ -270,3 +286,4 @@ namespace SCTL_NAMESPACE {
 
 }  // end namespace
 
+#endif // _SCTL_GENERIC_KERNEL_TXX_

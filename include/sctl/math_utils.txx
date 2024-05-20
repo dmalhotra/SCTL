@@ -1,11 +1,20 @@
-#include <omp.h>
-#include <cmath>
-#include <cstring>
-#include <cstdlib>
-#include <iostream>
-#include <iomanip>
-#include <vector>
-#include <locale>
+#ifndef _SCTL_MATH_UTILS_TXX_
+#define _SCTL_MATH_UTILS_TXX_
+
+#include <istream>              // for istream
+#include <ostream>              // for ostream
+#include <stdlib.h>             // for abs
+#include <ctype.h>              // for isspace
+#include <algorithm>            // for max
+#include <cmath>                // for acos, asin, atan, log, sqrt, NAN, pow
+#include <cstring>              // for strlen
+#include <istream>              // for basic_istream, ws
+#include <ostream>              // for basic_ostream, operator<<
+#include <string>               // for basic_string, string, to_string
+#include <vector>               // for vector
+
+#include "sctl/common.hpp"      // for Long, Integer, SCTL_ASSERT, SCTL_NAME...
+#include SCTL_INCLUDE(math_utils.hpp)  // for QuadReal, operator/, cos, operator*
 
 namespace SCTL_NAMESPACE {
 
@@ -468,3 +477,4 @@ template <class Real, class ExpType> inline Real pow(const Real b, const ExpType
 
 } // end namespace
 
+#endif // _SCTL_MATH_UTILS_TXX_

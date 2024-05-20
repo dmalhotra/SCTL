@@ -1,10 +1,11 @@
-#ifndef _SCTL_MATH_UTILS_
-#define _SCTL_MATH_UTILS_
+#ifndef _SCTL_MATH_UTILS_HPP_
+#define _SCTL_MATH_UTILS_HPP_
 
-#include <sctl/common.hpp>
+#include <istream>          // for istream
+#include <ostream>          // for ostream
+#include <cmath>            // for acos, asin, atan, atan2, ceil, cos, exp
 
-#include <cmath>
-#include <ostream>
+#include "sctl/common.hpp"  // for Integer, Long, SCTL_NAMESPACE
 
 namespace SCTL_NAMESPACE {
 
@@ -518,6 +519,4 @@ inline std::istream& operator>>(std::istream& inputstream, QuadReal& x);
 
 }  // end namespace
 
-#include SCTL_INCLUDE(math_utils.txx)
-
-#endif  //_SCTL_MATH_UTILS_HPP_
+#endif // _SCTL_MATH_UTILS_HPP_

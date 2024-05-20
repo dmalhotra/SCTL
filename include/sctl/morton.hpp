@@ -1,10 +1,11 @@
-#ifndef _SCTL_MORTON_
-#define _SCTL_MORTON_
+#ifndef _SCTL_MORTON_HPP_
+#define _SCTL_MORTON_HPP_
 
-#include <sctl/common.hpp>
+#include <ostream>          // for ostream
+#include <array>            // for array
+#include <cstdint>          // for uint8_t, int8_t, uint32_t
 
-#include <cstdint>
-#include <array>
+#include "sctl/common.hpp"  // for Integer, Long, SCTL_NAMESPACE
 
 #ifndef SCTL_MAX_DEPTH
 #define SCTL_MAX_DEPTH 15
@@ -219,6 +220,4 @@ template <Integer DIM = 3> class Morton {
 
 }
 
-#include SCTL_INCLUDE(morton.txx)
-
-#endif  //_SCTL_MORTON_
+#endif // _SCTL_MORTON_HPP_

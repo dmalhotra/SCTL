@@ -1,12 +1,15 @@
 #ifndef _SCTL_COMM_HPP_
 #define _SCTL_COMM_HPP_
 
-#include <sctl/common.hpp>
+#include <functional>         // for less
+#include <map>                // for multimap
 
-#include <map>
-#include <stack>
+#include "sctl/common.hpp"    // for Long, Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(iterator.hpp)  // for ConstIterator, Iterator
+
 #ifdef SCTL_HAVE_MPI
 #include <mpi.h>
+#include <stack>            // for stack
 #endif
 #ifdef SCTL_HAVE_PETSC
 #include <petscsys.h>
@@ -439,6 +442,4 @@ class Comm {
 
 }  // end namespace
 
-#include SCTL_INCLUDE(comm.txx)
-
-#endif  //_SCTL_COMM_HPP_
+#endif // _SCTL_COMM_HPP_

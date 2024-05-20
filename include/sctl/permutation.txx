@@ -1,13 +1,19 @@
-#include <omp.h>
-#include <cmath>
-#include <cstdlib>
-#include <iostream>
-#include <iomanip>
+#ifndef _SCTL_PERMUTATION_TXX_
+#define _SCTL_PERMUTATION_TXX_
 
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(math_utils.hpp)
-#include SCTL_INCLUDE(mem_mgr.hpp)
-#include SCTL_INCLUDE(profile.hpp)
+#include <ios>                   // for ios
+#include <ostream>               // for ostream
+#include <stdlib.h>              // for rand, RAND_MAX
+#include <iomanip>               // for operator<<, setw, setiosflags, setpr...
+#include <ostream>               // for basic_ostream, char_traits, operator<<
+
+#include "sctl/common.hpp"       // for Long, SCTL_ASSERT, SCTL_NAMESPACE
+#include SCTL_INCLUDE(permutation.hpp)  // for Permutation, operator*, operator<<
+#include SCTL_INCLUDE(iterator.hpp)     // for ConstIterator, Iterator
+#include SCTL_INCLUDE(iterator.txx)     // for ConstIterator::operator[]
+#include SCTL_INCLUDE(matrix.hpp)       // for Matrix
+#include SCTL_INCLUDE(vector.hpp)       // for Vector
+#include SCTL_INCLUDE(vector.txx)       // for Vector::operator[], Vector::Dim, Vec...
 
 namespace SCTL_NAMESPACE {
 
@@ -137,3 +143,5 @@ template <class ValueType> Matrix<ValueType> operator*(const Matrix<ValueType>& 
 }
 
 }  // end namespace
+
+#endif // _SCTL_PERMUTATION_TXX_

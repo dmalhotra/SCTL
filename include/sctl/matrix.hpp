@@ -1,15 +1,15 @@
 #ifndef _SCTL_MATRIX_HPP_
 #define _SCTL_MATRIX_HPP_
 
-#include <cstdint>
-#include <cstdlib>
+#include <ostream>                // for ostream
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(mem_mgr.hpp)
+#include "sctl/common.hpp"        // for Long, SCTL_NAMESPACE
+#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)      // for NullIterator
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
 
 namespace SCTL_NAMESPACE {
 
-template <class ValueType> class Vector;
 template <class ValueType> class Permutation;
 
 /**
@@ -428,6 +428,4 @@ template <class ValueType> Matrix<ValueType> operator*(ValueType s, const Matrix
 
 }  // end namespace
 
-#include SCTL_INCLUDE(matrix.txx)
-
-#endif  //_SCTL_MATRIX_HPP_
+#endif // _SCTL_MATRIX_HPP_

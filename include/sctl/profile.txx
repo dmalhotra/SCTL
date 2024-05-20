@@ -1,11 +1,26 @@
-#include SCTL_INCLUDE(comm.hpp)
+#ifndef _SCTL_PROFILE_TXX_
+#define _SCTL_PROFILE_TXX_
 
-#include <omp.h>
-#include <iostream>
-#include <sstream>
-#include <iomanip>
-#include <cassert>
-#include <cstdlib>
+#include <sstream>            // for stringstream
+#include <omp.h>              // for omp_get_wtime
+#include <stdio.h>            // for size_t, sprintf
+#include <algorithm>          // for max
+#include <array>              // for array
+#include <atomic>             // for atomic, memory_order
+#include <iomanip>            // for operator<<, setw
+#include <iostream>           // for basic_ostream, operator<<, cout, left
+#include <map>                // for map
+#include <sstream>            // for basic_stringstream
+#include <stack>              // for stack
+#include <string>             // for basic_string, allocator, char_traits
+#include <vector>             // for vector
+
+#include "sctl/common.hpp"    // for Long, SCTL_ASSERT, Integer, SCTL_ASSERT...
+#include SCTL_INCLUDE(profile.hpp)   // for Profile, ProfileCounter, operator*, ope...
+#include SCTL_INCLUDE(comm.hpp)      // for CommOp, Comm
+#include SCTL_INCLUDE(comm.txx)      // for Comm::Rank, Comm::Size, Comm::Allreduce
+#include SCTL_INCLUDE(iterator.hpp)  // for ConstIterator, Iterator
+#include SCTL_INCLUDE(iterator.txx)  // for Ptr2ConstItr, Ptr2Itr, ConstIterator::C...
 
 namespace SCTL_NAMESPACE {
 
@@ -57,7 +72,7 @@ namespace SCTL_NAMESPACE {
       }
 
       inline ~ExprWrapper() {
-        del_fn(&instance);
+        if (instance) del_fn(&instance);
       }
 
 
@@ -530,3 +545,4 @@ namespace SCTL_NAMESPACE {
 
 }  // end namespace
 
+#endif // _SCTL_PROFILE_TXX_

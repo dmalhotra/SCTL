@@ -1,4 +1,27 @@
-#include SCTL_INCLUDE(lagrange-interp.hpp)
+#ifndef _SCTL_ODE_SOLVER_TXX_
+#define _SCTL_ODE_SOLVER_TXX_
+
+#include <stdio.h>                   // for printf
+#include <algorithm>                 // for max, min
+#include <utility>                   // for forward
+
+#include "sctl/common.hpp"           // for Long, Integer, SCTL_ASSERT, SCTL...
+#include SCTL_INCLUDE(ode-solver.hpp)       // for SDC
+#include SCTL_INCLUDE(comm.hpp)             // for Comm (ptr only), CommOp
+#include SCTL_INCLUDE(comm.txx)             // for Comm::Allreduce, Comm::Comm
+#include SCTL_INCLUDE(iterator.hpp)         // for Iterator, ConstIterator
+#include SCTL_INCLUDE(iterator.txx)         // for Iterator::operator[]
+#include SCTL_INCLUDE(lagrange-interp.hpp)  // for LagrangeInterp
+#include SCTL_INCLUDE(lagrange-interp.txx)  // for LagrangeInterp::Interpolate
+#include SCTL_INCLUDE(math_utils.hpp)       // for QuadReal, cos, operator*, operator-
+#include SCTL_INCLUDE(math_utils.txx)       // for const_pi, cos, pow, machine_eps
+#include SCTL_INCLUDE(matrix.hpp)           // for Matrix
+#include SCTL_INCLUDE(matrix.txx)           // for Matrix::operator[], Matrix::Matr...
+#include SCTL_INCLUDE(quadrule.hpp)         // for ChebQuadRule
+#include SCTL_INCLUDE(quadrule.txx)         // for ChebQuadRule::ComputeNdsWts
+#include SCTL_INCLUDE(static-array.hpp)     // for StaticArray
+#include SCTL_INCLUDE(vector.hpp)           // for Vector
+#include SCTL_INCLUDE(vector.txx)           // for Vector::Vector<ValueType>, Vecto...
 
 namespace SCTL_NAMESPACE {
 
@@ -271,3 +294,4 @@ namespace SCTL_NAMESPACE {
 
 }
 
+#endif // _SCTL_ODE_SOLVER_TXX_

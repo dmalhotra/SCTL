@@ -1,5 +1,9 @@
-#ifndef _SCTL_FFT_WRAPPER_
-#define _SCTL_FFT_WRAPPER_
+#ifndef _SCTL_FFT_WRAPPER_HPP_
+#define _SCTL_FFT_WRAPPER_HPP_
+
+#include "sctl/common.hpp"        // for Long, Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(complex.hpp)       // for Complex
+#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
 
 #if defined(SCTL_HAVE_FFTW) || defined(SCTL_HAVE_FFTWF)
 #include <fftw3.h>
@@ -8,16 +12,9 @@
 #endif
 #endif
 
-#include <iostream>
-
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(mem_mgr.hpp)
-#include SCTL_INCLUDE(math_utils.hpp)
-
 namespace SCTL_NAMESPACE {
 
   template <class ValueType> class Vector;
-  template <class ValueType> class Complex;
 
   template <class ValueType> struct FFTPlan;
 
@@ -92,6 +89,4 @@ namespace SCTL_NAMESPACE {
 
 }  // end namespace
 
-#include SCTL_INCLUDE(fft_wrapper.txx)
-
-#endif  //_SCTL_FFT_WRAPPER_
+#endif // _SCTL_FFT_WRAPPER_HPP_

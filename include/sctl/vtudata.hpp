@@ -1,9 +1,14 @@
-#ifndef _SCTL_VTUDATA_
-#define _SCTL_VTUDATA_
+#ifndef _SCTL_VTUDATA_HPP_
+#define _SCTL_VTUDATA_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(comm.hpp)
-#include SCTL_INCLUDE(vector.hpp)
+#include <cstdint>            // for int32_t, uint8_t
+#include <string>             // for string
+
+#include "sctl/common.hpp"    // for Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(comm.hpp)      // for Comm
+#include SCTL_INCLUDE(comm.txx)      // for Comm::Self
+#include SCTL_INCLUDE(vector.hpp)    // for Vector
+#include SCTL_INCLUDE(vector.txx)    // for Vector::Vector<ValueType>, Vector::~Vec...
 
 namespace SCTL_NAMESPACE {
 
@@ -55,6 +60,4 @@ class VTUData {
 
 }
 
-#include SCTL_INCLUDE(vtudata.txx)
-
-#endif //_SCTL_VTUDATA_
+#endif // _SCTL_VTUDATA_HPP_

@@ -1,17 +1,18 @@
 #ifndef _SCTL_STACKTRACE_H_
 #define _SCTL_STACKTRACE_H_
 
-#include <sctl/common.hpp>
-
 #include <unistd.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <execinfo.h>
+#include <signal.h>         // for sigaction, SIGABRT, sigemptyset, siginfo_t
+#include <stdio.h>          // for fprintf, stderr, fgets, FILE, pclose, popen
+#include <stdlib.h>         // for exit
+#include <execinfo.h>       // for backtrace, backtrace_symbols
 #include <cxxabi.h>
 #ifdef __APPLE__
-#include <mach-o/dyld.h>
+#include <mach-o/dyld.h>    // for _NSGetExecutablePath
+#include <cstdint>          // for uint32_t
 #endif
+
+#include "sctl/common.hpp"  // for SCTL_UNUSED, SCTL_NAMESPACE
 
 namespace SCTL_NAMESPACE {
 
@@ -131,4 +132,4 @@ int sgh = SCTL_NAMESPACE::SetSigHandler(); // Set signal handler
 
 }  // end namespace
 
-#endif  // _SCTL_STACKTRACE_H_
+#endif // _SCTL_STACKTRACE_H_

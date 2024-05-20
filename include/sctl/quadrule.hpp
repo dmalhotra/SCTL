@@ -1,11 +1,12 @@
 #ifndef _SCTL_QUADRULE_HPP_
 #define _SCTL_QUADRULE_HPP_
 
-#include <sctl/common.hpp>
+#include "sctl/common.hpp"    // for Integer, Long, SCTL_NAMESPACE
+#include SCTL_INCLUDE(vector.hpp)    // for Vector
+#include SCTL_INCLUDE(vector.txx)    // for Vector::Vector<ValueType>, Vector::~Vec...
 
 namespace SCTL_NAMESPACE {
 
-  template <class ValueType> class Vector;
   template <class ValueType> class Matrix;
 
   /**
@@ -193,7 +194,5 @@ namespace SCTL_NAMESPACE {
       template <class FnObj> static void adap_quad_rule(Vector<Real>& nds, Vector<Real>& wts, const FnObj& fn, const Real a, const Real b, const Real tol);
   };
 }
-
-#include SCTL_INCLUDE(quadrule.txx)
 
 #endif // _SCTL_QUADRULE_HPP_

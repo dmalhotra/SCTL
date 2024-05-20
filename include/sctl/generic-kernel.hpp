@@ -1,9 +1,8 @@
 #ifndef _SCTL_GENERIC_KERNEL_HPP_
 #define _SCTL_GENERIC_KERNEL_HPP_
 
-#include <sctl/common.hpp>
-#include SCTL_INCLUDE(comm.hpp)
-#include SCTL_INCLUDE(vec.hpp)
+#include "sctl/common.hpp"  // for Integer, SCTL_NAMESPACE
+#include SCTL_INCLUDE(vec.hpp)     // for Vec
 
 namespace SCTL_NAMESPACE {
 
@@ -79,6 +78,4 @@ template <class uKernel> class GenericKernel : public uKernel {
 
 }  // end namespace
 
-#include SCTL_INCLUDE(generic-kernel.txx)
-
-#endif  //_SCTL_GENERIC_KERNEL_HPP_
+#endif // _SCTL_GENERIC_KERNEL_HPP_
