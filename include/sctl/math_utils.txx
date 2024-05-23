@@ -440,7 +440,7 @@ template <class ExpType> class pow_wrapper<QuadReal,ExpType> {
 };
 template <> class pow_wrapper<QuadReal,Long> {
   public:
-    static constexpr QuadReal pow(QuadReal b, Long e) {
+    static inline constexpr QuadReal pow(QuadReal b, Long e) {
       return (e > 0) ? pow_integer_exp(b, e) : 1/pow_integer_exp(b, -e);
     }
 };

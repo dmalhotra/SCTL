@@ -20,10 +20,6 @@
 #include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(math_utils.txx)
 
-// FMM wrapper
-#include SCTL_INCLUDE(fmm-wrapper.hpp)
-#include SCTL_INCLUDE(fmm-wrapper.txx)
-
 // Boundary Integrals
 #include SCTL_INCLUDE(boundary_integral.hpp)
 #include SCTL_INCLUDE(boundary_integral.txx)
@@ -117,5 +113,9 @@
 #include SCTL_INCLUDE(generic-kernel.txx)
 #include SCTL_INCLUDE(kernel_functions.hpp)
 #include SCTL_INCLUDE(boundary_quadrature.hpp)
+
+// FMM wrapper
+#include SCTL_INCLUDE(fmm-wrapper.hpp)
+#include SCTL_INCLUDE(fmm-wrapper.txx)
 
 #endif //_SCTL_HPP_

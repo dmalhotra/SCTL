@@ -24,7 +24,7 @@
 
 namespace SCTL_NAMESPACE {
 
-void VTUData::test() {
+inline void VTUData::test() {
   VTUData vtu_data;
 
   // Add 7-particles

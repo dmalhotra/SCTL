@@ -1136,10 +1136,10 @@ inline void Comm::DelReq(Vector<MPI_Request>* req_ptr) const {
 #define SCTL_HS_MPIDATATYPE(CTYPE, MPITYPE)              \
   template <> class Comm::CommDatatype<CTYPE> {     \
    public:                                          \
-    static MPI_Datatype value() { return MPITYPE; } \
-    static MPI_Op sum() { return MPI_SUM; }         \
-    static MPI_Op min() { return MPI_MIN; }         \
-    static MPI_Op max() { return MPI_MAX; }         \
+    static inline MPI_Datatype value() { return MPITYPE; } \
+    static inline MPI_Op sum() { return MPI_SUM; }         \
+    static inline MPI_Op min() { return MPI_MIN; }         \
+    static inline MPI_Op max() { return MPI_MAX; }         \
   }
 
 SCTL_HS_MPIDATATYPE(short, MPI_SHORT);

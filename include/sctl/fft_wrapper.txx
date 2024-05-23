@@ -214,9 +214,9 @@ namespace SCTL_NAMESPACE {
 #ifdef SCTL_HAVE_FFTW
   template <> struct FFTPlan<double> { fftw_plan fftwplan; };
 
-  template <> FFT<double>::~FFT() { if (Dim(0) && Dim(1)) fftw_destroy_plan(plan.fftwplan); }
+  template <> inline FFT<double>::~FFT() { if (Dim(0) && Dim(1)) fftw_destroy_plan(plan.fftwplan); }
 
-  template <> void FFT<double>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
+  template <> inline void FFT<double>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
     FFTWInitThreads(Nthreads);
     if (Dim(0) && Dim(1)) fftw_destroy_plan(plan.fftwplan);
     fft_type = fft_type_;
@@ -280,7 +280,7 @@ namespace SCTL_NAMESPACE {
     SCTL_ASSERT(plan.fftwplan);
   }
 
-  template <> void FFT<double>::Execute(const Vector<double>& in, Vector<double>& out) const {
+  template <> inline void FFT<double>::Execute(const Vector<double>& in, Vector<double>& out) const {
     using ValueType = double;
     Long N0 = Dim(0);
     Long N1 = Dim(1);
@@ -317,9 +317,9 @@ namespace SCTL_NAMESPACE {
 #ifdef SCTL_HAVE_FFTWF
   template <> struct FFTPlan<float> { fftwf_plan fftwplan; };
 
-  template <> FFT<float>::~FFT() { if (Dim(0) && Dim(1)) fftwf_destroy_plan(plan.fftwplan); }
+  template <> inline FFT<float>::~FFT() { if (Dim(0) && Dim(1)) fftwf_destroy_plan(plan.fftwplan); }
 
-  template <> void FFT<float>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
+  template <> inline void FFT<float>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
     FFTWInitThreads(Nthreads);
     if (Dim(0) && Dim(1)) fftwf_destroy_plan(plan.fftwplan);
     fft_type = fft_type_;
@@ -383,7 +383,7 @@ namespace SCTL_NAMESPACE {
     SCTL_ASSERT(plan.fftwplan);
   }
 
-  template <> void FFT<float>::Execute(const Vector<float>& in, Vector<float>& out) const {
+  template <> inline void FFT<float>::Execute(const Vector<float>& in, Vector<float>& out) const {
     using ValueType = float;
     Long N0 = Dim(0);
     Long N1 = Dim(1);
@@ -421,9 +421,9 @@ namespace SCTL_NAMESPACE {
 #ifdef SCTL_HAVE_FFTWL
   template <> struct FFTPlan<long double> { fftwl_plan fftwplan; };
 
-  template <> FFT<long double>::~FFT() { if (Dim(0) && Dim(1)) fftwl_destroy_plan(plan.fftwplan); }
+  template <> inline FFT<long double>::~FFT() { if (Dim(0) && Dim(1)) fftwl_destroy_plan(plan.fftwplan); }
 
-  template <> void FFT<long double>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
+  template <> inline void FFT<long double>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
     FFTWInitThreads(Nthreads);
     if (Dim(0) && Dim(1)) fftwl_destroy_plan(plan.fftwplan);
     fft_type = fft_type_;
@@ -485,7 +485,7 @@ namespace SCTL_NAMESPACE {
     SCTL_ASSERT(plan.fftwplan);
   }
 
-  template <> void FFT<long double>::Execute(const Vector<long double>& in, Vector<long double>& out) const {
+  template <> inline void FFT<long double>::Execute(const Vector<long double>& in, Vector<long double>& out) const {
     using ValueType = long double;
     Long N0 = Dim(0);
     Long N1 = Dim(1);
