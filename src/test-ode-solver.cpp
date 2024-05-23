@@ -21,11 +21,14 @@ template <class Real> void test_adaptive_solve(const int Order, const Real tol) 
 }
 
 int main(int argc, char** argv) {
+  sctl::Comm::MPI_Init(&argc, &argv);
+
   test_adaptive_solve<double>(5, 1e-5); // 5-th order scheme
   test_adaptive_solve<double>(12, 1e-12); // 12-th order scheme
 
   //test_adaptive_solve<double>(12, 1e-18);
 
+  sctl::Comm::MPI_Finalize();
   return 0;
 }
 

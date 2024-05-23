@@ -35,7 +35,7 @@ namespace SCTL_NAMESPACE {
 
     FFT();
 
-    ~FFT() = default;
+    ~FFT();
 
     // Delete copy constructor and assignment operator to prevent copying FFT objects
     FFT (const FFT&) = delete;

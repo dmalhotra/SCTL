@@ -69,6 +69,8 @@ namespace SCTL_NAMESPACE {
 
   template <class ValueType> struct FFTPlan { std::vector<Matrix<ValueType>> M; };
 
+  template <class ValueType> FFT<ValueType>::~FFT() {}
+
   template <class ValueType> FFT<ValueType>::FFT() : dim{0,0}, fft_type(FFT_Type::R2C), howmany_(0) {}
 
   template <class ValueType> Long FFT<ValueType>::Dim(Integer i) const { return dim[i]; }
