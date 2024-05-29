@@ -11,24 +11,24 @@
 #include <utility>                     // for pair, make_pair
 
 #include "sctl/common.hpp"             // for Long, Integer, SCTL_ASSERT
-#include SCTL_INCLUDE(boundary_integral.hpp)  // for BoundaryIntegralOp, BuildNearList
-#include SCTL_INCLUDE(comm.hpp)               // for Comm, CommOp
-#include SCTL_INCLUDE(comm.txx)               // for Comm::Allreduce, Comm::Size
-#include SCTL_INCLUDE(iterator.hpp)           // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)           // for Iterator::Iterator<ValueType>
-#include SCTL_INCLUDE(math_utils.hpp)         // for log, sqrt
-#include SCTL_INCLUDE(matrix.hpp)             // for Matrix
-#include SCTL_INCLUDE(morton.hpp)             // for Morton
-#include SCTL_INCLUDE(ompUtils.txx)           // for scan, merge_sort
-#include SCTL_INCLUDE(profile.hpp)            // for Profile
-#include SCTL_INCLUDE(profile.txx)            // for Profile::Tic, Profile::Toc
-#include SCTL_INCLUDE(static-array.hpp)       // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)       // for StaticArray::operator[], Stati...
-#include SCTL_INCLUDE(tree.hpp)               // for Morton
-#include SCTL_INCLUDE(vector.hpp)             // for Vector
-#include SCTL_INCLUDE(vector.txx)             // for Vector::operator[], Vector::begin
+#include "sctl/boundary_integral.hpp"  // for BoundaryIntegralOp, BuildNearList
+#include "sctl/comm.hpp"               // for Comm, CommOp
+#include "sctl/comm.txx"               // for Comm::Allreduce, Comm::Size
+#include "sctl/iterator.hpp"           // for Iterator, ConstIterator
+#include "sctl/iterator.txx"           // for Iterator::Iterator<ValueType>
+#include "sctl/math_utils.hpp"         // for log, sqrt
+#include "sctl/matrix.hpp"             // for Matrix
+#include "sctl/morton.hpp"             // for Morton
+#include "sctl/ompUtils.txx"           // for scan, merge_sort
+#include "sctl/profile.hpp"            // for Profile
+#include "sctl/profile.txx"            // for Profile::Tic, Profile::Toc
+#include "sctl/static-array.hpp"       // for StaticArray
+#include "sctl/static-array.txx"       // for StaticArray::operator[], Stati...
+#include "sctl/tree.hpp"               // for Morton
+#include "sctl/vector.hpp"             // for Vector
+#include "sctl/vector.txx"             // for Vector::operator[], Vector::begin
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class VType> static void concat_vecs(Vector<VType>& v, const Vector<Vector<VType>>& vec_lst) {
     const Long N = vec_lst.Dim();

@@ -9,28 +9,28 @@
 #include <utility>                    // for pair, make_pair
 
 #include "sctl/common.hpp"            // for Integer, SCTL_ASSERT, Long, SCT...
-#include SCTL_INCLUDE(fmm-wrapper.hpp)       // for ParticleFMM
-#include SCTL_INCLUDE(comm.hpp)              // for Comm, CommOp
-#include SCTL_INCLUDE(comm.txx)              // for Comm::Allreduce, Comm::Rank
-#include SCTL_INCLUDE(iterator.hpp)          // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)          // for NullIterator, Iterator::operator*
-#include SCTL_INCLUDE(kernel_functions.hpp)  // for Stokes3D_DxU, Stokes3D_FSxU
-#include SCTL_INCLUDE(math_utils.hpp)        // for fabs, log, sqrt
-#include SCTL_INCLUDE(math_utils.txx)        // for pow, machine_eps
-#include SCTL_INCLUDE(matrix.hpp)            // for Matrix
-#include SCTL_INCLUDE(mem_mgr.txx)           // for aligned_new, aligned_delete
-#include SCTL_INCLUDE(profile.hpp)           // for Profile
-#include SCTL_INCLUDE(profile.txx)           // for Profile::Tic, Profile::Toc, Pro...
-#include SCTL_INCLUDE(static-array.hpp)      // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)      // for StaticArray::operator[], Static...
-#include SCTL_INCLUDE(vector.hpp)            // for Vector
-#include SCTL_INCLUDE(vector.txx)            // for Vector::PushBack, Vector::Vecto...
+#include "sctl/fmm-wrapper.hpp"       // for ParticleFMM
+#include "sctl/comm.hpp"              // for Comm, CommOp
+#include "sctl/comm.txx"              // for Comm::Allreduce, Comm::Rank
+#include "sctl/iterator.hpp"          // for Iterator, ConstIterator
+#include "sctl/iterator.txx"          // for NullIterator, Iterator::operator*
+#include "sctl/kernel_functions.hpp"  // for Stokes3D_DxU, Stokes3D_FSxU
+#include "sctl/math_utils.hpp"        // for fabs, log, sqrt
+#include "sctl/math_utils.txx"        // for pow, machine_eps
+#include "sctl/matrix.hpp"            // for Matrix
+#include "sctl/mem_mgr.txx"           // for aligned_new, aligned_delete
+#include "sctl/profile.hpp"           // for Profile
+#include "sctl/profile.txx"           // for Profile::Tic, Profile::Toc, Pro...
+#include "sctl/static-array.hpp"      // for StaticArray
+#include "sctl/static-array.txx"      // for StaticArray::operator[], Static...
+#include "sctl/vector.hpp"            // for Vector
+#include "sctl/vector.txx"            // for Vector::PushBack, Vector::Vecto...
 
 #ifdef SCTL_HAVE_PVFMM
 #include <pvfmm.hpp>
 #endif
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& comm) {
   if (DIM != 3) return ParticleFMM<Real,3>::test(comm);

@@ -4,15 +4,15 @@
 #include <iostream>                  // for cout
 
 #include "sctl/common.hpp"           // for Long, Integer, SCTL_ASSERT, SCTL...
-#include SCTL_INCLUDE(lagrange-interp.hpp)  // for LagrangeInterp
-#include SCTL_INCLUDE(iterator.txx)         // for NullIterator
-#include SCTL_INCLUDE(matrix.hpp)           // for Matrix
-#include SCTL_INCLUDE(static-array.hpp)     // for StaticArray
-#include SCTL_INCLUDE(vec.hpp)              // for Vec
-#include SCTL_INCLUDE(vec.txx)              // for DefaultVecLen
-#include SCTL_INCLUDE(vector.hpp)           // for Vector
+#include "sctl/lagrange-interp.hpp"  // for LagrangeInterp
+#include "sctl/iterator.txx"         // for NullIterator
+#include "sctl/matrix.hpp"           // for Matrix
+#include "sctl/static-array.hpp"     // for StaticArray
+#include "sctl/vec.hpp"              // for Vec
+#include "sctl/vec.txx"              // for DefaultVecLen
+#include "sctl/vector.hpp"           // for Vector
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class Real> void LagrangeInterp<Real>::test() {
     Vector<Real> src, trg; // source and target interpolation nodes

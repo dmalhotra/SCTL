@@ -11,20 +11,20 @@
 #include <iostream>               // for basic_ostream, char_traits, operator<<
 
 #include "sctl/common.hpp"        // for Long, SCTL_ASSERT, Integer, SCTL_AS...
-#include SCTL_INCLUDE(matrix.hpp)        // for Matrix, operator<<
-#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
-#include SCTL_INCLUDE(mat_utils.txx)     // for gemm, svd, pinv
-#include SCTL_INCLUDE(math_utils.hpp)    // for fabs, sqrt
-#include SCTL_INCLUDE(math_utils.txx)    // for machine_eps
-#include SCTL_INCLUDE(mem_mgr.txx)       // for aligned_delete, aligned_new
-#include SCTL_INCLUDE(permutation.hpp)   // for Permutation
-#include SCTL_INCLUDE(profile.hpp)       // for Profile, ProfileCounter
-#include SCTL_INCLUDE(profile.txx)       // for Profile::IncrementCounter
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[]
+#include "sctl/matrix.hpp"        // for Matrix, operator<<
+#include "sctl/iterator.hpp"      // for Iterator, ConstIterator
+#include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
+#include "sctl/mat_utils.txx"     // for gemm, svd, pinv
+#include "sctl/math_utils.hpp"    // for fabs, sqrt
+#include "sctl/math_utils.txx"    // for machine_eps
+#include "sctl/mem_mgr.txx"       // for aligned_delete, aligned_new
+#include "sctl/permutation.hpp"   // for Permutation
+#include "sctl/profile.hpp"       // for Profile, ProfileCounter
+#include "sctl/profile.txx"       // for Profile::IncrementCounter
+#include "sctl/static-array.hpp"  // for StaticArray
+#include "sctl/static-array.txx"  // for StaticArray::operator[]
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class ValueType> std::ostream& operator<<(std::ostream& output, const Matrix<ValueType>& M) {
   std::ios::fmtflags f(std::cout.flags());

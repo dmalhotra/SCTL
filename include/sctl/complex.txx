@@ -3,10 +3,10 @@
 
 #include <ostream>           // for basic_ostream, operator<<
 
-#include "sctl/common.hpp"   // for SCTL_NAMESPACE
-#include SCTL_INCLUDE(complex.hpp)  // for Complex, operator<<
+#include "sctl/common.hpp"   // for sctl
+#include "sctl/complex.hpp"  // for Complex, operator<<
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class ValueType> Complex<ValueType>::Complex(ValueType r, ValueType i) : real(r), imag(i) {}
 

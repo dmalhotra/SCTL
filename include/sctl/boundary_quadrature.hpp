@@ -12,29 +12,29 @@
 #include <type_traits>                // for is_same
 
 #include "sctl/common.hpp"            // for Long, Integer, SCTL_ASSERT, SCT...
-#include SCTL_INCLUDE(cheb_utils.hpp)        // for ChebBasis
-#include SCTL_INCLUDE(comm.hpp)              // for Comm, CommOp
-#include SCTL_INCLUDE(comm.txx)              // for Comm::Scan, Comm::Rank, Comm::A...
-#include SCTL_INCLUDE(fmm-wrapper.hpp)       // for ParticleFMM
-#include SCTL_INCLUDE(iterator.hpp)          // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)          // for Iterator::Iterator<ValueType>
-#include SCTL_INCLUDE(kernel_functions.hpp)  // for Laplace3D_DxU, Laplace3D_FxU
-#include SCTL_INCLUDE(math_utils.hpp)        // for sqrt, fabs, const_pi, cos, sin
-#include SCTL_INCLUDE(math_utils.txx)        // for pow, machine_eps
-#include SCTL_INCLUDE(matrix.hpp)            // for Matrix
-#include SCTL_INCLUDE(morton.hpp)            // for Morton
-#include SCTL_INCLUDE(ompUtils.txx)          // for merge_sort, scan
-#include SCTL_INCLUDE(profile.hpp)           // for Profile
-#include SCTL_INCLUDE(profile.txx)           // for Profile::Tic, Profile::Toc, Pro...
-#include SCTL_INCLUDE(static-array.hpp)      // for StaticArray
-#include SCTL_INCLUDE(tensor.hpp)            // for Tensor
-#include SCTL_INCLUDE(tree.hpp)              // for Morton, Tree
-#include SCTL_INCLUDE(vector.hpp)            // for Vector
-#include SCTL_INCLUDE(vector.txx)            // for Vector::operator[], Vector::begin
-#include SCTL_INCLUDE(vtudata.hpp)           // for VTUData
-#include SCTL_INCLUDE(vtudata.txx)           // for VTUData::AddElems, VTUData::Wri...
+#include "sctl/cheb_utils.hpp"        // for ChebBasis
+#include "sctl/comm.hpp"              // for Comm, CommOp
+#include "sctl/comm.txx"              // for Comm::Scan, Comm::Rank, Comm::A...
+#include "sctl/fmm-wrapper.hpp"       // for ParticleFMM
+#include "sctl/iterator.hpp"          // for Iterator, ConstIterator
+#include "sctl/iterator.txx"          // for Iterator::Iterator<ValueType>
+#include "sctl/kernel_functions.hpp"  // for Laplace3D_DxU, Laplace3D_FxU
+#include "sctl/math_utils.hpp"        // for sqrt, fabs, const_pi, cos, sin
+#include "sctl/math_utils.txx"        // for pow, machine_eps
+#include "sctl/matrix.hpp"            // for Matrix
+#include "sctl/morton.hpp"            // for Morton
+#include "sctl/ompUtils.txx"          // for merge_sort, scan
+#include "sctl/profile.hpp"           // for Profile
+#include "sctl/profile.txx"           // for Profile::Tic, Profile::Toc, Pro...
+#include "sctl/static-array.hpp"      // for StaticArray
+#include "sctl/tensor.hpp"            // for Tensor
+#include "sctl/tree.hpp"              // for Morton, Tree
+#include "sctl/vector.hpp"            // for Vector
+#include "sctl/vector.txx"            // for Vector::operator[], Vector::begin
+#include "sctl/vtudata.hpp"           // for VTUData
+#include "sctl/vtudata.txx"           // for VTUData::AddElems, VTUData::Wri...
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class Real, Integer DIM, Integer ORDER> class Basis {
   public:

@@ -17,26 +17,26 @@
 #include <vector>                 // for vector
 
 #include "sctl/common.hpp"        // for Long, Integer, SCTL_UNUSED, SCTL_NA...
-#include SCTL_INCLUDE(sph_harm.hpp)      // for SphericalHarmonics, SHCArrange, SCT...
-#include SCTL_INCLUDE(comm.hpp)          // for Comm
-#include SCTL_INCLUDE(comm.txx)          // for Comm::Rank, Comm::Size
-#include SCTL_INCLUDE(complex.hpp)       // for Complex
-#include SCTL_INCLUDE(fft_wrapper.hpp)   // for FFT (ptr only), FFT_Type
-#include SCTL_INCLUDE(iterator.hpp)      // for ConstIterator, Iterator
-#include SCTL_INCLUDE(math_utils.hpp)    // for sqrt, cos, sin, const_pi, fabs, atan2
-#include SCTL_INCLUDE(math_utils.txx)    // for machine_eps
-#include SCTL_INCLUDE(matrix.hpp)        // for Matrix
-#include SCTL_INCLUDE(profile.hpp)       // for Profile, ProfileCounter
-#include SCTL_INCLUDE(profile.txx)       // for Profile::Tic, Profile::Toc, Profile...
-#include SCTL_INCLUDE(quadrule.hpp)      // for LegQuadRule
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::StaticArray<ValueType,...
-#include SCTL_INCLUDE(vector.hpp)        // for Vector
-#include SCTL_INCLUDE(vector.txx)        // for Vector::Vector<ValueType>, Vector::...
+#include "sctl/sph_harm.hpp"      // for SphericalHarmonics, SHCArrange, SCT...
+#include "sctl/comm.hpp"          // for Comm
+#include "sctl/comm.txx"          // for Comm::Rank, Comm::Size
+#include "sctl/complex.hpp"       // for Complex
+#include "sctl/fft_wrapper.hpp"   // for FFT (ptr only), FFT_Type
+#include "sctl/iterator.hpp"      // for ConstIterator, Iterator
+#include "sctl/math_utils.hpp"    // for sqrt, cos, sin, const_pi, fabs, atan2
+#include "sctl/math_utils.txx"    // for machine_eps
+#include "sctl/matrix.hpp"        // for Matrix
+#include "sctl/profile.hpp"       // for Profile, ProfileCounter
+#include "sctl/profile.txx"       // for Profile::Tic, Profile::Toc, Profile...
+#include "sctl/quadrule.hpp"      // for LegQuadRule
+#include "sctl/static-array.hpp"  // for StaticArray
+#include "sctl/static-array.txx"  // for StaticArray::StaticArray<ValueType,...
+#include "sctl/vector.hpp"        // for Vector
+#include "sctl/vector.txx"        // for Vector::Vector<ValueType>, Vector::...
 
 // TODO: Replace work vectors with dynamic-arrays
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class Real> void SphericalHarmonics<Real>::test_stokes() {
   int p = 6;

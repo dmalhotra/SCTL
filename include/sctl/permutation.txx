@@ -7,15 +7,15 @@
 #include <iomanip>               // for operator<<, setw, setiosflags, setpr...
 #include <ostream>               // for basic_ostream, char_traits, operator<<
 
-#include "sctl/common.hpp"       // for Long, SCTL_ASSERT, SCTL_NAMESPACE
-#include SCTL_INCLUDE(permutation.hpp)  // for Permutation, operator*, operator<<
-#include SCTL_INCLUDE(iterator.hpp)     // for ConstIterator, Iterator
-#include SCTL_INCLUDE(iterator.txx)     // for ConstIterator::operator[]
-#include SCTL_INCLUDE(matrix.hpp)       // for Matrix
-#include SCTL_INCLUDE(vector.hpp)       // for Vector
-#include SCTL_INCLUDE(vector.txx)       // for Vector::operator[], Vector::Dim, Vec...
+#include "sctl/common.hpp"       // for Long, SCTL_ASSERT, sctl
+#include "sctl/permutation.hpp"  // for Permutation, operator*, operator<<
+#include "sctl/iterator.hpp"     // for ConstIterator, Iterator
+#include "sctl/iterator.txx"     // for ConstIterator::operator[]
+#include "sctl/matrix.hpp"       // for Matrix
+#include "sctl/vector.hpp"       // for Vector
+#include "sctl/vector.txx"       // for Vector::operator[], Vector::Dim, Vec...
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class ValueType> std::ostream& operator<<(std::ostream& output, const Permutation<ValueType>& P) {
   output << std::setprecision(4) << std::setiosflags(std::ios::left);

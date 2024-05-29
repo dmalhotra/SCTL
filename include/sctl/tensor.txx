@@ -8,13 +8,13 @@
 #include <iostream>               // for basic_ostream, operator<<, cout
 
 #include "sctl/common.hpp"        // for Long, Integer, SCTL_UNUSED, SCTL_NA...
-#include SCTL_INCLUDE(tensor.hpp)        // for Tensor, TensorArgExtract, operator<<
-#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)      // for NullIterator, memcopy, Ptr2Itr
-#include SCTL_INCLUDE(math_utils.hpp)    // for fabs
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include "sctl/tensor.hpp"        // for Tensor, TensorArgExtract, operator<<
+#include "sctl/iterator.hpp"      // for Iterator, ConstIterator
+#include "sctl/iterator.txx"      // for NullIterator, memcopy, Ptr2Itr
+#include "sctl/math_utils.hpp"    // for fabs
+#include "sctl/static-array.hpp"  // for StaticArray
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class ValueType, bool own_data, Long... Args> void Tensor<ValueType, own_data, Args...>::test() {
     // Define a tensor with dimensions 2x3

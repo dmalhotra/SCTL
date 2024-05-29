@@ -3,16 +3,16 @@
 
 #include <vector>             // for vector
 
-#include "sctl/common.hpp"    // for Long, Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(comm.hpp)      // for Comm
-#include SCTL_INCLUDE(comm.txx)      // for Comm::World
-#include SCTL_INCLUDE(iterator.hpp)  // for Iterator
-#include SCTL_INCLUDE(iterator.txx)  // for NullIterator
-#include SCTL_INCLUDE(mem_mgr.txx)   // for aligned_delete, aligned_new
+#include "sctl/common.hpp"    // for Long, Integer, sctl
+#include "sctl/comm.hpp"      // for Comm
+#include "sctl/comm.txx"      // for Comm::World
+#include "sctl/iterator.hpp"  // for Iterator
+#include "sctl/iterator.txx"  // for NullIterator
+#include "sctl/mem_mgr.txx"   // for aligned_delete, aligned_new
 
 #define SCTL_SHMAXDEG 1024
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class ValueType> class FFT;
 template <class ValueType> class Vector;
@@ -43,7 +43,7 @@ template <class Real> class SphericalHarmonics{
     // Scalar Spherical Harmonics
 
     /**
-     * \brief Compute spherical harmonic coefficients from grid values.
+     * Compute spherical harmonic coefficients from grid values.
      * \param[in] X Grid values {X(t0,p0), X(t0,p1), ... , X(t1,p0), X(t1,p1), ... }, where, {cos(t0), cos(t1), ... } are the Gauss-Legendre nodes of order (Nt-1) in the interval [-1,1] and {p0, p1, ... } are equispaced in [0, 2*pi].
      * \param[in] Nt Number of grid points \theta \in (0,pi).
      * \param[in] Np Number of grid points \phi \in (0,2*pi).
@@ -54,7 +54,7 @@ template <class Real> class SphericalHarmonics{
     static void Grid2SHC(const Vector<Real>& X, Long Nt, Long Np, Long p, Vector<Real>& S, SHCArrange arrange);
 
     /**
-     * \brief Evaluate grid values from spherical harmonic coefficients.
+     * Evaluate grid values from spherical harmonic coefficients.
      * \param[in] S Spherical harmonic coefficients.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[in] p Order of spherical harmonic expansion.
@@ -67,7 +67,7 @@ template <class Real> class SphericalHarmonics{
     static void SHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p, Long Nt, Long Np, Vector<Real>* X, Vector<Real>* X_theta=nullptr, Vector<Real>* X_phi=nullptr);
 
     /**
-     * \brief Evaluate point values from spherical harmonic coefficients.
+     * Evaluate point values from spherical harmonic coefficients.
      * \param[in] S Spherical harmonic coefficients.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[in] p Order of spherical harmonic expansion.
@@ -84,7 +84,7 @@ template <class Real> class SphericalHarmonics{
     // Vector Spherical Harmonics
 
     /**
-     * \brief Compute vector spherical harmonic coefficients from grid values.
+     * Compute vector spherical harmonic coefficients from grid values.
      * \param[in] X Grid values {X(t0,p0), X(t0,p1), ... , X(t1,p0), ... , Y(t0,p0), ... , Z(t0,p0), ... }, where, {cos(t0), cos(t1), ... } are the Gauss-Legendre nodes of order (Nt-1) in the interval [-1,1] and {p0, p1, ... } are equispaced in [0, 2*pi].
      * \param[in] Nt Number of grid points \theta \in (0,pi).
      * \param[in] Np Number of grid points \phi \in (0,2*pi).
@@ -95,7 +95,7 @@ template <class Real> class SphericalHarmonics{
     static void Grid2VecSHC(const Vector<Real>& X, Long Nt, Long Np, Long p, Vector<Real>& S, SHCArrange arrange);
 
     /**
-     * \brief Evaluate grid values from vector spherical harmonic coefficients.
+     * Evaluate grid values from vector spherical harmonic coefficients.
      * \param[in] S Vector spherical harmonic coefficients.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[in] p Order of spherical harmonic expansion.
@@ -106,7 +106,7 @@ template <class Real> class SphericalHarmonics{
     static void VecSHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p, Long Nt, Long Np, Vector<Real>& X);
 
     /**
-     * \brief Evaluate point values from vector spherical harmonic coefficients.
+     * Evaluate point values from vector spherical harmonic coefficients.
      * \param[in] S Vector spherical harmonic coefficients.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[in] p Order of spherical harmonic expansion.
@@ -116,7 +116,7 @@ template <class Real> class SphericalHarmonics{
     static void VecSHCEval(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& theta_phi, Vector<Real>& X);
 
     /**
-     * \brief Evaluate Stokes single-layer operator at point values from the vector spherical harmonic coefficients for the density.
+     * Evaluate Stokes single-layer operator at point values from the vector spherical harmonic coefficients for the density.
      * \param[in] S Vector spherical harmonic coefficients.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[in] p Order of spherical harmonic expansion.
@@ -126,7 +126,7 @@ template <class Real> class SphericalHarmonics{
     static void StokesEvalSL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
 
     /**
-     * \brief Evaluate Stokes double-layer operator at point values from the vector spherical harmonic coefficients for the density.
+     * Evaluate Stokes double-layer operator at point values from the vector spherical harmonic coefficients for the density.
      * \param[in] S Vector spherical harmonic coefficients.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[in] p Order of spherical harmonic expansion.
@@ -140,7 +140,7 @@ template <class Real> class SphericalHarmonics{
     static void StokesEvalKSelf(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
 
     /**
-     * \brief Nodes and weights for Gauss-Legendre quadrature rule
+     * Nodes and weights for Gauss-Legendre quadrature rule
      */
     static const Vector<Real>& LegendreNodes(Long p1);
     static const Vector<Real>& LegendreWeights(Long p1);
@@ -150,7 +150,7 @@ template <class Real> class SphericalHarmonics{
     static void test();
 
     /**
-     * \brief Clear all precomputed data. This must be done before the program exits to avoid memory leaks.
+     * Clear all precomputed data. This must be done before the program exits to avoid memory leaks.
      */
     static void Clear() { MatrixStore().Resize(0); }
 
@@ -169,7 +169,7 @@ template <class Real> class SphericalHarmonics{
     static void SHCArrange1(const Vector<Real>& S_in, SHCArrange arrange_out, Long p, Vector<Real>& S_out);
 
     /**
-     * \brief Computes all the Associated Legendre Polynomials (normalized) up to the specified degree.
+     * Computes all the Associated Legendre Polynomials (normalized) up to the specified degree.
      * \param[in] degree The degree up to which the Legendre polynomials have to be computed.
      * \param[in] X The input values for which the polynomials have to be computed.
      * \param[in] N The number of input points.
@@ -261,7 +261,5 @@ template <class Real> class SphericalHarmonics{
 //template class SphericalHarmonics<double>;
 
 }  // end namespace
-
-#include SCTL_INCLUDE(sph_harm.txx)
 
 #endif // _SCTL_SPH_HARM_HPP_

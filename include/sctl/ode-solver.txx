@@ -6,24 +6,24 @@
 #include <utility>                   // for forward
 
 #include "sctl/common.hpp"           // for Long, Integer, SCTL_ASSERT, SCTL...
-#include SCTL_INCLUDE(ode-solver.hpp)       // for SDC
-#include SCTL_INCLUDE(comm.hpp)             // for Comm (ptr only), CommOp
-#include SCTL_INCLUDE(comm.txx)             // for Comm::Allreduce, Comm::Comm
-#include SCTL_INCLUDE(iterator.hpp)         // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)         // for Iterator::operator[]
-#include SCTL_INCLUDE(lagrange-interp.hpp)  // for LagrangeInterp
-#include SCTL_INCLUDE(lagrange-interp.txx)  // for LagrangeInterp::Interpolate
-#include SCTL_INCLUDE(math_utils.hpp)       // for QuadReal, cos, operator*, operator-
-#include SCTL_INCLUDE(math_utils.txx)       // for const_pi, cos, pow, machine_eps
-#include SCTL_INCLUDE(matrix.hpp)           // for Matrix
-#include SCTL_INCLUDE(matrix.txx)           // for Matrix::operator[], Matrix::Matr...
-#include SCTL_INCLUDE(quadrule.hpp)         // for ChebQuadRule
-#include SCTL_INCLUDE(quadrule.txx)         // for ChebQuadRule::ComputeNdsWts
-#include SCTL_INCLUDE(static-array.hpp)     // for StaticArray
-#include SCTL_INCLUDE(vector.hpp)           // for Vector
-#include SCTL_INCLUDE(vector.txx)           // for Vector::Vector<ValueType>, Vecto...
+#include "sctl/ode-solver.hpp"       // for SDC
+#include "sctl/comm.hpp"             // for Comm (ptr only), CommOp
+#include "sctl/comm.txx"             // for Comm::Allreduce, Comm::Comm
+#include "sctl/iterator.hpp"         // for Iterator, ConstIterator
+#include "sctl/iterator.txx"         // for Iterator::operator[]
+#include "sctl/lagrange-interp.hpp"  // for LagrangeInterp
+#include "sctl/lagrange-interp.txx"  // for LagrangeInterp::Interpolate
+#include "sctl/math_utils.hpp"       // for QuadReal, cos, operator*, operator-
+#include "sctl/math_utils.txx"       // for const_pi, cos, pow, machine_eps
+#include "sctl/matrix.hpp"           // for Matrix
+#include "sctl/matrix.txx"           // for Matrix::operator[], Matrix::Matr...
+#include "sctl/quadrule.hpp"         // for ChebQuadRule
+#include "sctl/quadrule.txx"         // for ChebQuadRule::ComputeNdsWts
+#include "sctl/static-array.hpp"     // for StaticArray
+#include "sctl/vector.hpp"           // for Vector
+#include "sctl/vector.txx"           // for Vector::Vector<ValueType>, Vecto...
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class Real> void SDC<Real>::test_one_step(const Integer Order) {
     auto ref_sol = [](Real t) { return cos<Real>(-t); };
@@ -255,6 +255,13 @@ namespace SCTL_NAMESPACE {
     }
   }
 
+  template <class Real> void SDC<Real>::operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, Fn1&& F, Integer N_picard, const Real tol_picard, Real* error_interp, Real* error_picard, Real* norm_dudt) const {
+    const auto fn = [&F](Vector<Real>* dudt, const Vector<Real>& u, const Integer correction_idx, const Integer substep_idx) {
+      F(dudt, u);
+    };
+    this->operator()(u, dt, u0, fn, N_picard, tol_picard, error_interp, error_picard, norm_dudt);
+  }
+
   template <class Real> Real SDC<Real>::AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, Fn0&& F, const Real tol, const MonitorFn* monitor_callback, bool continue_with_errors, Real* error) const {
     const Real eps = machine_eps<Real>();
     Vector<Real> u_, u0_ = u0;
@@ -290,6 +297,13 @@ namespace SCTL_NAMESPACE {
 
     (*u) = u0_;
     return t;
+  }
+
+  template <class Real> Real SDC<Real>::AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, Fn1&& F, Real tol, const MonitorFn* monitor_callback, bool continue_with_errors, Real* error) const {
+    const auto fn = [&F](Vector<Real>* dudt, const Vector<Real>& u, const Integer correction_idx, const Integer substep_idx) {
+      F(dudt, u);
+    };
+    return AdaptiveSolve(u, dt, T, u0, fn, tol, monitor_callback, continue_with_errors, error);
   }
 
 }

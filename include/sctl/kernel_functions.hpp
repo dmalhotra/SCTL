@@ -3,12 +3,12 @@
 
 #include <string>                   // for basic_string, string
 
-#include "sctl/common.hpp"          // for Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(generic-kernel.hpp)  // for GenericKernel
-#include SCTL_INCLUDE(math_utils.hpp)      // for const_pi
-#include SCTL_INCLUDE(vec.txx)             // for operator*, operator+, Vec::Zero
+#include "sctl/common.hpp"          // for Integer, sctl
+#include "sctl/generic-kernel.hpp"  // for GenericKernel
+#include "sctl/math_utils.hpp"      // for const_pi
+#include "sctl/vec.txx"             // for operator*, operator+, Vec::Zero
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   namespace kernel_impl {
 

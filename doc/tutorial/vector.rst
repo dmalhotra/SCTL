@@ -3,12 +3,14 @@
 Using the Vector class
 ===========================
 
-This tutorial provided a basic overview of how to use the Vector class.
-For more advanced usage and additional features, please refer to the :ref:`Vector class documentation <vector-dox>`.
-
 The Vector class is a dynamically resizable array with various utility
 functions. It provides functionalities similar to std::vector with additional
 features and optimizations.
+
+This tutorial provided a basic overview of how to use the Vector class.
+For more advanced usage and additional features, please refer to the Vector class API in :ref:`vector.hpp <vector_hpp>`.
+
+.. :ref:`Vector class documentation <vector-dox>`.
 
 Creating a Vector
 -----------------

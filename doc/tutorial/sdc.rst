@@ -5,7 +5,9 @@ Using the SDC class
 
 The `SDC` (Spectral Deferred Correction) class is a template class designed to solve ordinary differential equations (ODEs) using the Spectral Deferred Correction method.
 It provides methods for applying one step of the SDC method and for solving ODEs adaptively to a required tolerance.
-For more advanced usage and additional features, please refer to the :ref:`SDC class documentation <sdc-dox>`.
+For more advanced usage and additional features, please refer to the SDC class API in :ref:`ode-solver.hpp <ode-solver_hpp>`.
+
+.. :ref:`SDC class documentation <sdc-dox>`.
 
 To use the `SDC` class, follow these steps:
 

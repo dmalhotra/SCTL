@@ -3,13 +3,13 @@
 
 #include <iterator>         // for iterator_traits
 
-#include "sctl/common.hpp"  // for SCTL_NAMESPACE
+#include "sctl/common.hpp"  // for sctl
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 namespace omp_par {
 
 /**
- * @brief Merges two sorted ranges into a single sorted range.
+ * Merges two sorted ranges into a single sorted range.
  *
  * @tparam ConstIter Iterator type for the input ranges.
  * @tparam Iter Iterator type for the output range.
@@ -27,7 +27,7 @@ namespace omp_par {
 template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> void merge(ConstIter A_, ConstIter A_last, ConstIter B_, ConstIter B_last, Iter C_, Int p, StrictWeakOrdering comp);
 
 /**
- * @brief Performs merge sort on a range using a custom comparison function.
+ * Performs merge sort on a range using a custom comparison function.
  *
  * @tparam T Iterator type for the input range.
  * @tparam StrictWeakOrdering Functor type for comparing elements.
@@ -39,7 +39,7 @@ template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> void
 template <class T, class StrictWeakOrdering> void merge_sort(T A, T A_last, StrictWeakOrdering comp);
 
 /**
- * @brief Performs merge sort on a range.
+ * Performs merge sort on a range.
  *
  * @tparam T Iterator type for the input range.
  *
@@ -49,7 +49,7 @@ template <class T, class StrictWeakOrdering> void merge_sort(T A, T A_last, Stri
 template <class T> void merge_sort(T A, T A_last);
 
 /**
- * @brief Reduces the elements in a range to a single value.
+ * Reduces the elements in a range to a single value.
  *
  * @tparam ConstIter Iterator type for the input range.
  * @tparam Int Integer type for indexing.
@@ -61,7 +61,7 @@ template <class T> void merge_sort(T A, T A_last);
 template <class ConstIter, class Int> typename std::iterator_traits<ConstIter>::value_type reduce(ConstIter A, Int cnt);
 
 /**
- * @brief Performs a parallel prefix sum (scan) operation on a range.
+ * Performs a parallel prefix sum (scan) operation on a range.
  *
  * @tparam ConstIter Iterator type for the input range.
  * @tparam Iter Iterator type for the output range.
@@ -74,6 +74,6 @@ template <class ConstIter, class Int> typename std::iterator_traits<ConstIter>::
 template <class ConstIter, class Iter, class Int> void scan(ConstIter A, Iter B, Int cnt);
 
 }  // end namespace omp_par
-}  // end namespace SCTL_NAMESPACE
+}  // end namespace sctl
 
 #endif // _SCTL_OMPUTILS_HPP_

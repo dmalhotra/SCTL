@@ -8,18 +8,18 @@
 #include <iterator>               // for advance
 
 #include "sctl/common.hpp"        // for Long, SCTL_ASSERT, Integer, SCTL_NA...
-#include SCTL_INCLUDE(lin-solve.hpp)     // for KrylovPrecond, GMRES
-#include SCTL_INCLUDE(comm.hpp)          // for Comm, CommOp
-#include SCTL_INCLUDE(comm.txx)          // for Comm::Allreduce, Comm::Rank
-#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
-#include SCTL_INCLUDE(math_utils.hpp)    // for sqrt, fabs
-#include SCTL_INCLUDE(matrix.hpp)        // for Matrix
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator+, StaticArray...
-#include SCTL_INCLUDE(vector.hpp)        // for Vector
+#include "sctl/lin-solve.hpp"     // for KrylovPrecond, GMRES
+#include "sctl/comm.hpp"          // for Comm, CommOp
+#include "sctl/comm.txx"          // for Comm::Allreduce, Comm::Rank
+#include "sctl/iterator.hpp"      // for Iterator, ConstIterator
+#include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
+#include "sctl/math_utils.hpp"    // for sqrt, fabs
+#include "sctl/matrix.hpp"        // for Matrix
+#include "sctl/static-array.hpp"  // for StaticArray
+#include "sctl/static-array.txx"  // for StaticArray::operator+, StaticArray...
+#include "sctl/vector.hpp"        // for Vector
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class Real> KrylovPrecond<Real>::KrylovPrecond() : N_(0) {}
 
@@ -77,7 +77,7 @@ namespace SCTL_NAMESPACE {
     return x_dot_y_glb;
   }
 
-  template <class Real> inline void GMRES<Real>::GenericGMRES(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter, bool use_abs_tol, Long* solve_iter, KrylovPrecond<Real>* krylov_precond) {
+  template <class Real> inline void GMRES<Real>::GenericGMRES(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter, bool use_abs_tol, Long* solve_iter, KrylovPrecond<Real>* krylov_precond) const {
     const Long N = b.Dim();
     if (max_iter < 0) { // set max_iter
       StaticArray<Long,2> NN{N,0};
@@ -246,7 +246,7 @@ namespace SCTL_NAMESPACE {
     }
   }
 
-  template <class Real> inline void GMRES<Real>::operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, const Integer max_iter, const bool use_abs_tol, Long* solve_iter, KrylovPrecond<Real>* krylov_precond) {
+  template <class Real> inline void GMRES<Real>::operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, const Integer max_iter, const bool use_abs_tol, Long* solve_iter, KrylovPrecond<Real>* krylov_precond) const {
     GenericGMRES(x, A, b, tol, max_iter, use_abs_tol, solve_iter, krylov_precond);
   }
 
@@ -288,7 +288,7 @@ namespace SCTL_NAMESPACE {
 
 #include <petscksp.h>
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class Real> int GMRESMatVec(Mat M_, ::Vec x_, ::Vec Mx_) {
     PetscErrorCode ierr;
@@ -431,11 +431,11 @@ namespace SCTL_NAMESPACE {
     if (solve_iter) (*solve_iter) = its;
   }
 
-  template <> inline void GMRES<double>::operator()(Vector<double>* x, const ParallelOp& A, const Vector<double>& b, const double tol, const Integer max_iter, const bool use_abs_tol, Long* solve_iter, KrylovPrecond<Real>* krylov_precond) {
+  template <> inline void GMRES<double>::operator()(Vector<double>* x, const ParallelOp& A, const Vector<double>& b, const double tol, const Integer max_iter, const bool use_abs_tol, Long* solve_iter, KrylovPrecond<Real>* krylov_precond) const {
     PETScGMRES(x, A, b, tol, max_iter, use_abs_tol, verbose_, comm_, solve_iter);
   }
 
-  template <> inline void GMRES<float>::operator()(Vector<float>* x, const ParallelOp& A, const Vector<float>& b, const float tol, const Integer max_iter, const bool use_abs_tol, Long* solve_iter, KrylovPrecond<Real>* krylov_precond) {
+  template <> inline void GMRES<float>::operator()(Vector<float>* x, const ParallelOp& A, const Vector<float>& b, const float tol, const Integer max_iter, const bool use_abs_tol, Long* solve_iter, KrylovPrecond<Real>* krylov_precond) const {
     PETScGMRES(x, A, b, tol, max_iter, use_abs_tol, verbose_, comm_, solve_iter);
   }
 

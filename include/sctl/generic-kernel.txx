@@ -4,18 +4,18 @@
 #include <algorithm>                // for min
 
 #include "sctl/common.hpp"          // for Integer, Long, SCTL_ASSERT, SCTL_...
-#include SCTL_INCLUDE(generic-kernel.hpp)  // for GenericKernel, uKerHelper
-#include SCTL_INCLUDE(intrin-wrapper.hpp)  // for TypeTraits
-#include SCTL_INCLUDE(iterator.hpp)        // for ConstIterator, Iterator
-#include SCTL_INCLUDE(matrix.hpp)          // for Matrix
-#include SCTL_INCLUDE(profile.hpp)         // for Profile, ProfileCounter
-#include SCTL_INCLUDE(profile.txx)         // for Profile::IncrementCounter
-#include SCTL_INCLUDE(static-array.hpp)    // for StaticArray
-#include SCTL_INCLUDE(vec.hpp)             // for Vec
-#include SCTL_INCLUDE(vec.txx)             // for DefaultVecLen, FMA
-#include SCTL_INCLUDE(vector.hpp)          // for Vector
+#include "sctl/generic-kernel.hpp"  // for GenericKernel, uKerHelper
+#include "sctl/intrin-wrapper.hpp"  // for TypeTraits
+#include "sctl/iterator.hpp"        // for ConstIterator, Iterator
+#include "sctl/matrix.hpp"          // for Matrix
+#include "sctl/profile.hpp"         // for Profile, ProfileCounter
+#include "sctl/profile.txx"         // for Profile::IncrementCounter
+#include "sctl/static-array.hpp"    // for StaticArray
+#include "sctl/vec.hpp"             // for Vec
+#include "sctl/vec.txx"             // for DefaultVecLen, FMA
+#include "sctl/vector.hpp"          // for Vector
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class uKernel> template <class Real, bool enable_openmp> void GenericKernel<uKernel>::Eval(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) {
     if (digits < 8) {

@@ -6,10 +6,10 @@
 #include <iostream>                 // for basic_ostream, cout, operator<<
 
 #include "sctl/common.hpp"          // for Integer, SCTL_ASSERT, SCTL_ALIGN_...
-#include SCTL_INCLUDE(vec.hpp)             // for Vec, AndNot, max, min, operator!=
-#include SCTL_INCLUDE(intrin-wrapper.hpp)  // for ComparisonType, comp_intrin, Type...
+#include "sctl/vec.hpp"             // for Vec, AndNot, max, min, operator!=
+#include "sctl/intrin-wrapper.hpp"  // for ComparisonType, comp_intrin, Type...
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class ValueType, Integer N> template <class T, class... T2> struct Vec<ValueType,N>::InitVec {
     template <class... T1> static inline VData apply(T1... start, T x, T2... rest) {
@@ -396,7 +396,7 @@ namespace SCTL_NAMESPACE {
 
 
   // Print
-  template <Integer digits, class ValueType, Integer N> inline std::ostream& operator<<(std::ostream& os, const Vec<ValueType,N>& in) {
+  template <class ValueType, Integer N> inline std::ostream& operator<<(std::ostream& os, const Vec<ValueType,N>& in) {
     for (Integer i = 0; i < N; i++) os << in[i] << ' ';
     return os;
   }

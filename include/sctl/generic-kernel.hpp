@@ -1,10 +1,10 @@
 #ifndef _SCTL_GENERIC_KERNEL_HPP_
 #define _SCTL_GENERIC_KERNEL_HPP_
 
-#include "sctl/common.hpp"  // for Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(vec.hpp)     // for Vec
+#include "sctl/common.hpp"  // for Integer, sctl
+#include "sctl/vec.hpp"     // for Vec
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class ValueType> class Vector;
 template <class ValueType> class Matrix;

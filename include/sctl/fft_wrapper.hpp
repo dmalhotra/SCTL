@@ -1,9 +1,9 @@
 #ifndef _SCTL_FFT_WRAPPER_HPP_
 #define _SCTL_FFT_WRAPPER_HPP_
 
-#include "sctl/common.hpp"        // for Long, Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(complex.hpp)       // for Complex
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include "sctl/common.hpp"        // for Long, Integer, sctl
+#include "sctl/complex.hpp"       // for Complex
+#include "sctl/static-array.hpp"  // for StaticArray
 
 #if defined(SCTL_HAVE_FFTW) || defined(SCTL_HAVE_FFTWF)
 #include <fftw3.h>
@@ -12,7 +12,7 @@
 #endif
 #endif
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class ValueType> class Vector;
 
@@ -24,7 +24,7 @@ namespace SCTL_NAMESPACE {
   enum class FFT_Type {R2C, C2C, C2C_INV, C2R};
 
   /**
-   *Wrapper class for FFTW.
+   * Wrapper class for FFTW.
    *
    * @tparam ValueType The value type of the FFT data.
    */

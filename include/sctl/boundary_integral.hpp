@@ -5,19 +5,17 @@
 #include <string>                // for basic_string, to_string, string
 #include <typeinfo>              // for type_info
 
-#include "sctl/common.hpp"       // for Long, Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(comm.hpp)         // for Comm
-#include SCTL_INCLUDE(comm.txx)         // for Comm::Self
-#include SCTL_INCLUDE(fmm-wrapper.hpp)  // for ParticleFMM
-#include SCTL_INCLUDE(vector.hpp)       // for Vector
+#include "sctl/common.hpp"       // for Long, Integer, sctl
+#include "sctl/comm.hpp"         // for Comm
+#include "sctl/comm.txx"         // for Comm::Self
+#include "sctl/fmm-wrapper.hpp"  // for ParticleFMM
+#include "sctl/vector.hpp"       // for Vector
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class ValueType> class Matrix;
 
   /**
-   * @brief Find the near target points (coordinates and normals) for each element.
-   *
    * Given N target points and K elements (each made of a set of source nodes with given radius that describes its near
    * region), return vectors containing the set of near targets (coordinates and normals) for each element.
    *
@@ -184,6 +182,11 @@ namespace SCTL_NAMESPACE {
 
   /**
    * Implements parallel computation of boundary integrals.
+   *
+   * @tparam Real Data type for real values.
+   * @tparam Kernel The kernel function.
+   *
+   * @see kernel_functions.hpp
    */
   template <class Real, class Kernel> class BoundaryIntegralOp {
       static constexpr Integer KDIM0 = Kernel::SrcDim();

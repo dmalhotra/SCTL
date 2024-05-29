@@ -5,12 +5,12 @@
 #include <ostream>          // for ostream
 #include <cmath>            // for acos, asin, atan, atan2, ceil, cos, exp
 
-#include "sctl/common.hpp"  // for Integer, Long, SCTL_NAMESPACE
+#include "sctl/common.hpp"  // for Integer, Long, sctl
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 /**
- * @brief Returns the number of significant bits in the representation of the template type.
+ * Returns the number of significant bits in the representation of the template type.
  *
  * @tparam Real The template type.
  * @return constexpr Integer The number of significant bits.
@@ -18,7 +18,7 @@ namespace SCTL_NAMESPACE {
 template <class Real> inline constexpr Integer significant_bits();
 
 /**
- * @brief Returns the machine epsilon (the difference between 1 and the smallest value greater than 1 that is representable).
+ * Returns the machine epsilon (the difference between 1 and the smallest value greater than 1 that is representable).
  *
  * @tparam Real The template type.
  * @return constexpr Real The machine epsilon.
@@ -26,7 +26,7 @@ template <class Real> inline constexpr Integer significant_bits();
 template <class Real> inline constexpr Real machine_eps();
 
 /**
- * @brief Converts a string to a real number.
+ * Converts a string to a real number.
  *
  * @tparam Real The template type.
  * @param str The input string.
@@ -35,7 +35,7 @@ template <class Real> inline constexpr Real machine_eps();
 template <class Real> Real atoreal(const char* str);
 
 /**
- * @brief Returns the mathematical constant pi.
+ * Returns the mathematical constant pi.
  *
  * @tparam Real The template type.
  * @return constexpr Real The value of pi.
@@ -43,7 +43,7 @@ template <class Real> Real atoreal(const char* str);
 template <class Real> inline constexpr Real const_pi() { return (Real)3.1415926535897932384626433832795028841L; }
 
 /**
- * @brief Returns the mathematical constant e.
+ * Returns the mathematical constant e.
  *
  * @tparam Real The template type.
  * @return constexpr Real The value of e.
@@ -51,7 +51,7 @@ template <class Real> inline constexpr Real const_pi() { return (Real)3.14159265
 template <class Real> inline constexpr Real const_e() { return (Real)2.7182818284590452353602874713526624977L; }
 
 /**
- * @brief Returns the absolute value of the input.
+ * Returns the absolute value of the input.
  *
  * @tparam Real The template type.
  * @param a The input value.
@@ -60,7 +60,7 @@ template <class Real> inline constexpr Real const_e() { return (Real)2.718281828
 template <class Real> inline Real fabs(const Real a) { return (Real)std::fabs(a); }
 
 /**
- * @brief Truncates the input real number to the nearest integer towards zero.
+ * Truncates the input real number to the nearest integer towards zero.
  *
  * @tparam Real The template type.
  * @param a The input real number.
@@ -69,7 +69,7 @@ template <class Real> inline Real fabs(const Real a) { return (Real)std::fabs(a)
 template <class Real> inline Real trunc(const Real a) { return (Real)std::trunc(a); }
 
 /**
- * @brief Rounds the input real number to the nearest integer.
+ * Rounds the input real number to the nearest integer.
  *
  * @tparam Real The template type.
  * @param a The input real number.
@@ -78,7 +78,7 @@ template <class Real> inline Real trunc(const Real a) { return (Real)std::trunc(
 template <class Real> inline Real round(const Real a) { return (Real)std::round(a); }
 
 /**
- * @brief Rounds the input real number down to the nearest integer.
+ * Rounds the input real number down to the nearest integer.
  *
  * @tparam Real The template type.
  * @param a The input real number.
@@ -87,7 +87,7 @@ template <class Real> inline Real round(const Real a) { return (Real)std::round(
 template <class Real> inline Real floor(const Real a) { return (Real)std::floor(a); }
 
 /**
- * @brief Rounds the input real number up to the nearest integer.
+ * Rounds the input real number up to the nearest integer.
  *
  * @tparam Real The template type.
  * @param a The input real number.
@@ -96,7 +96,7 @@ template <class Real> inline Real floor(const Real a) { return (Real)std::floor(
 template <class Real> inline Real ceil(const Real a) { return (Real)std::ceil(a); }
 
 /**
- * @brief Computes the square root of the input real number.
+ * Computes the square root of the input real number.
  *
  * @tparam Real The template type.
  * @param a The input real number.
@@ -105,7 +105,7 @@ template <class Real> inline Real ceil(const Real a) { return (Real)std::ceil(a)
 template <class Real> inline Real sqrt(const Real a) { return (Real)std::sqrt(a); }
 
 /**
- * @brief Computes the sine of the input angle.
+ * Computes the sine of the input angle.
  *
  * @tparam Real The template type.
  * @param a The input angle in radians.
@@ -114,7 +114,7 @@ template <class Real> inline Real sqrt(const Real a) { return (Real)std::sqrt(a)
 template <class Real> inline Real sin(const Real a) { return (Real)std::sin(a); }
 
 /**
- * @brief Computes the cosine of the input angle.
+ * Computes the cosine of the input angle.
  *
  * @tparam Real The template type.
  * @param a The input angle in radians.
@@ -123,7 +123,7 @@ template <class Real> inline Real sin(const Real a) { return (Real)std::sin(a); 
 template <class Real> inline Real cos(const Real a) { return (Real)std::cos(a); }
 
 /**
- * @brief Computes the tangent of the input angle.
+ * Computes the tangent of the input angle.
  *
  * @tparam Real The template type.
  * @param a The input angle in radians.
@@ -132,7 +132,7 @@ template <class Real> inline Real cos(const Real a) { return (Real)std::cos(a); 
 template <class Real> inline Real tan(const Real a) { return (Real)std::tan(a); }
 
 /**
- * @brief Computes the arcsine of the input value.
+ * Computes the arcsine of the input value.
  *
  * @tparam Real The template type.
  * @param a The input value.
@@ -141,7 +141,7 @@ template <class Real> inline Real tan(const Real a) { return (Real)std::tan(a); 
 template <class Real> inline Real asin(const Real a) { return (Real)std::asin(a); }
 
 /**
- * @brief Computes the arccosine of the input value.
+ * Computes the arccosine of the input value.
  *
  * @tparam Real The template type.
  * @param a The input value.
@@ -150,7 +150,7 @@ template <class Real> inline Real asin(const Real a) { return (Real)std::asin(a)
 template <class Real> inline Real acos(const Real a) { return (Real)std::acos(a); }
 
 /**
- * @brief Computes the arctangent of the input value.
+ * Computes the arctangent of the input value.
  *
  * @tparam Real The template type.
  * @param a The input value.
@@ -159,7 +159,7 @@ template <class Real> inline Real acos(const Real a) { return (Real)std::acos(a)
 template <class Real> inline Real atan(const Real a) { return (Real)std::atan(a); }
 
 /**
- * @brief Computes the arctangent of the ratio of two input values.
+ * Computes the arctangent of the ratio of two input values.
  *
  * @tparam Real The template type.
  * @param a The numerator.
@@ -169,7 +169,7 @@ template <class Real> inline Real atan(const Real a) { return (Real)std::atan(a)
 template <class Real> inline Real atan2(const Real a, const Real b) { return (Real)std::atan2(a, b); }
 
 /**
- * @brief Computes the remainder of the division of two input values.
+ * Computes the remainder of the division of two input values.
  *
  * @tparam Real The template type.
  * @param a The dividend.
@@ -179,7 +179,7 @@ template <class Real> inline Real atan2(const Real a, const Real b) { return (Re
 template <class Real> inline Real fmod(const Real a, const Real b) { return (Real)std::fmod(a, b); }
 
 /**
- * @brief Computes the exponential function of the input value.
+ * Computes the exponential function of the input value.
  *
  * @tparam Real The template type.
  * @param a The input value.
@@ -188,7 +188,7 @@ template <class Real> inline Real fmod(const Real a, const Real b) { return (Rea
 template <class Real> inline Real exp(const Real a) { return (Real)std::exp(a); }
 
 /**
- * @brief Computes the natural logarithm of the input value.
+ * Computes the natural logarithm of the input value.
  *
  * @tparam Real The template type.
  * @param a The input value.
@@ -197,7 +197,7 @@ template <class Real> inline Real exp(const Real a) { return (Real)std::exp(a); 
 template <class Real> inline Real log(const Real a) { return (Real)std::log(a); }
 
 /**
- * @brief Computes the base-2 logarithm of the input value.
+ * Computes the base-2 logarithm of the input value.
  *
  * @tparam Real The template type.
  * @param a The input value.
@@ -206,7 +206,7 @@ template <class Real> inline Real log(const Real a) { return (Real)std::log(a); 
 template <class Real> inline Real log2(const Real a) { return (Real)std::log2(a); }
 
 /**
- * @brief Computes the power of a base raised to an exponent.
+ * Computes the power of a base raised to an exponent.
  *
  * @tparam Real The template type of the base.
  * @tparam ExpType The template type of the exponent.
@@ -217,7 +217,7 @@ template <class Real> inline Real log2(const Real a) { return (Real)std::log2(a)
 template <class Real, class ExpType> inline Real pow(const Real b, const ExpType e);
 
 /**
- * @brief Computes the power of a base raised to a compile-time constant exponent.
+ * Computes the power of a base raised to a compile-time constant exponent.
  *
  * @tparam e The compile-time constant exponent.
  * @tparam ValueType The template type of the base.
@@ -229,26 +229,26 @@ template <Long e, class ValueType> inline constexpr ValueType pow(ValueType b);
 
 #ifdef SCTL_QUAD_T
 /**
- * @brief Class representing a quadruple precision floating-point number.
+ * Class representing a quadruple precision floating-point number.
  */
 class QuadReal {
   typedef SCTL_QUAD_T QuadRealType;
 
   public:
     /**
-     * @brief Default constructor.
+     * Default constructor.
      */
     QuadReal() = default;
 
     /**
-     * @brief Copy constructor.
+     * Copy constructor.
      *
      * @param v The value to copy.
      */
     constexpr QuadReal(const QuadReal& v) = default;
 
     /**
-     * @brief Copy assignment operator.
+     * Copy assignment operator.
      *
      * @param The value to copy.
      * @return QuadReal& The reference to the copied object.
@@ -256,12 +256,12 @@ class QuadReal {
     QuadReal& operator=(const QuadReal&) = default;
 
     /**
-     * @brief Destructor.
+     * Destructor.
      */
     ~QuadReal() = default;
 
     /**
-     * @brief Constructor with explicit conversion from another type.
+     * Constructor with explicit conversion from another type.
      *
      * @tparam ValueType The template type of the value.
      * @param v The value to convert.
@@ -269,7 +269,7 @@ class QuadReal {
     template <class ValueType> constexpr QuadReal(ValueType v) : val((QuadRealType)v) {}
 
     /**
-     * @brief Explicit conversion operator to another type.
+     * Explicit conversion operator to another type.
      *
      * @tparam ValueType The template type of the value.
      * @return constexpr ValueType The converted value.
@@ -277,7 +277,7 @@ class QuadReal {
     template <class ValueType> explicit constexpr operator ValueType() const { return (ValueType)val; }
 
     /**
-     * @brief Addition assignment operator.
+     * Addition assignment operator.
      *
      * @param x The value to add.
      * @return QuadReal& The reference to the modified object.
@@ -285,7 +285,7 @@ class QuadReal {
     QuadReal& operator+=(const QuadReal& x) { val += x.val; return *this; }
 
     /**
-     * @brief Subtraction assignment operator.
+     * Subtraction assignment operator.
      *
      * @param x The value to subtract.
      * @return QuadReal& The reference to the modified object.
@@ -293,7 +293,7 @@ class QuadReal {
     QuadReal& operator-=(const QuadReal& x) { val -= x.val; return *this; }
 
     /**
-     * @brief Multiplication assignment operator.
+     * Multiplication assignment operator.
      *
      * @param x The value to multiply by.
      * @return QuadReal& The reference to the modified object.
@@ -301,7 +301,7 @@ class QuadReal {
     QuadReal& operator*=(const QuadReal& x) { val *= x.val; return *this; }
 
     /**
-     * @brief Division assignment operator.
+     * Division assignment operator.
      *
      * @param x The value to divide by.
      * @return QuadReal& The reference to the modified object.
@@ -309,7 +309,7 @@ class QuadReal {
     QuadReal& operator/=(const QuadReal& x) { val /= x.val; return *this; }
 
     /**
-     * @brief Addition operator.
+     * Addition operator.
      *
      * @param x The value to add.
      * @return constexpr QuadReal The result of the addition.
@@ -317,7 +317,7 @@ class QuadReal {
     constexpr QuadReal operator+(const QuadReal& x) const { return QuadReal(val + x.val); }
 
     /**
-     * @brief Subtraction operator.
+     * Subtraction operator.
      *
      * @param x The value to subtract.
      * @return constexpr QuadReal The result of the subtraction.
@@ -325,7 +325,7 @@ class QuadReal {
     constexpr QuadReal operator-(const QuadReal& x) const { return QuadReal(val - x.val); }
 
     /**
-     * @brief Multiplication operator.
+     * Multiplication operator.
      *
      * @param x The value to multiply by.
      * @return constexpr QuadReal The result of the multiplication.
@@ -333,7 +333,7 @@ class QuadReal {
     constexpr QuadReal operator*(const QuadReal& x) const { return QuadReal(val * x.val); }
 
     /**
-     * @brief Division operator.
+     * Division operator.
      *
      * @param x The value to divide by.
      * @return constexpr QuadReal The result of the division.
@@ -341,14 +341,14 @@ class QuadReal {
     constexpr QuadReal operator/(const QuadReal& x) const { return QuadReal(val / x.val); }
 
     /**
-     * @brief Unary negation operator.
+     * Unary negation operator.
      *
      * @return constexpr QuadReal The negated value.
      */
     constexpr QuadReal operator-() const { return QuadReal(-val); }
 
     /**
-     * @brief Less than comparison operator.
+     * Less than comparison operator.
      *
      * @param x The value to compare with.
      * @return constexpr bool True if less than, otherwise false.
@@ -356,7 +356,7 @@ class QuadReal {
     constexpr bool operator< (const QuadReal& x) const { return val <  x.val; }
 
     /**
-     * @brief Greater than comparison operator.
+     * Greater than comparison operator.
      *
      * @param x The value to compare with.
      * @return constexpr bool True if greater than, otherwise false.
@@ -364,7 +364,7 @@ class QuadReal {
     constexpr bool operator> (const QuadReal& x) const { return val >  x.val; }
 
     /**
-     * @brief Not equal comparison operator.
+     * Not equal comparison operator.
      *
      * @param x The value to compare with.
      * @return constexpr bool True if not equal, otherwise false.
@@ -372,7 +372,7 @@ class QuadReal {
     constexpr bool operator!=(const QuadReal& x) const { return val != x.val; }
 
     /**
-     * @brief Equal comparison operator.
+     * Equal comparison operator.
      *
      * @param x The value to compare with.
      * @return constexpr bool True if equal, otherwise false.
@@ -380,7 +380,7 @@ class QuadReal {
     constexpr bool operator==(const QuadReal& x) const { return val == x.val; }
 
     /**
-     * @brief Less than or equal comparison operator.
+     * Less than or equal comparison operator.
      *
      * @param x The value to compare with.
      * @return constexpr bool True if less than or equal, otherwise false.
@@ -388,7 +388,7 @@ class QuadReal {
     constexpr bool operator<=(const QuadReal& x) const { return val <= x.val; }
 
     /**
-     * @brief Greater than or equal comparison operator.
+     * Greater than or equal comparison operator.
      *
      * @param x The value to compare with.
      * @return constexpr bool True if greater than or equal, otherwise false.
@@ -396,7 +396,7 @@ class QuadReal {
     constexpr bool operator>=(const QuadReal& x) const { return val >= x.val; }
 
     /**
-     * @brief Friend addition operator for QuadRealType and QuadReal.
+     * Friend addition operator for QuadRealType and QuadReal.
      *
      * @param a The value to add.
      * @param b The value to add.
@@ -405,7 +405,7 @@ class QuadReal {
     constexpr friend QuadReal operator+(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) + b; }
 
     /**
-     * @brief Friend subtraction operator for QuadRealType and QuadReal.
+     * Friend subtraction operator for QuadRealType and QuadReal.
      *
      * @param a The value to subtract.
      * @param b The value to subtract.
@@ -414,7 +414,7 @@ class QuadReal {
     constexpr friend QuadReal operator-(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) - b; }
 
     /**
-     * @brief Friend multiplication operator for QuadRealType and QuadReal.
+     * Friend multiplication operator for QuadRealType and QuadReal.
      *
      * @param a The value to multiply by.
      * @param b The value to multiply.
@@ -423,7 +423,7 @@ class QuadReal {
     constexpr friend QuadReal operator*(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) * b; }
 
     /**
-     * @brief Friend division operator for QuadRealType and QuadReal.
+     * Friend division operator for QuadRealType and QuadReal.
      *
      * @param a The value to divide by.
      * @param b The value to divide.
@@ -432,7 +432,7 @@ class QuadReal {
     constexpr friend QuadReal operator/(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) / b; }
 
     /**
-     * @brief Friend less than comparison operator for QuadRealType and QuadReal.
+     * Friend less than comparison operator for QuadRealType and QuadReal.
      *
      * @param a The value to compare with.
      * @param b The value to compare.
@@ -441,7 +441,7 @@ class QuadReal {
     constexpr friend bool operator< (const QuadRealType& a, const QuadReal& b) { return QuadReal(a) <  b; }
 
     /**
-     * @brief Friend greater than comparison operator for QuadRealType and QuadReal.
+     * Friend greater than comparison operator for QuadRealType and QuadReal.
      *
      * @param a The value to compare with.
      * @param b The value to compare.
@@ -450,7 +450,7 @@ class QuadReal {
     constexpr friend bool operator> (const QuadRealType& a, const QuadReal& b) { return QuadReal(a) >  b; }
 
     /**
-     * @brief Friend not equal comparison operator for QuadRealType and QuadReal.
+     * Friend not equal comparison operator for QuadRealType and QuadReal.
      *
      * @param a The value to compare with.
      * @param b The value to compare.
@@ -459,7 +459,7 @@ class QuadReal {
     constexpr friend bool operator!=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) != b; }
 
     /**
-     * @brief Friend equal comparison operator for QuadRealType and QuadReal.
+     * Friend equal comparison operator for QuadRealType and QuadReal.
      *
      * @param a The value to compare with.
      * @param b The value to compare.
@@ -468,7 +468,7 @@ class QuadReal {
     constexpr friend bool operator==(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) == b; }
 
     /**
-     * @brief Friend less than or equal comparison operator for QuadRealType and QuadReal.
+     * Friend less than or equal comparison operator for QuadRealType and QuadReal.
      *
      * @param a The value to compare with.
      * @param b The value to compare.
@@ -477,7 +477,7 @@ class QuadReal {
     constexpr friend bool operator<=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) <= b; }
 
     /**
-     * @brief Friend greater than or equal comparison operator for QuadRealType and QuadReal.
+     * Friend greater than or equal comparison operator for QuadRealType and QuadReal.
      *
      * @param a The value to compare with.
      * @param b The value to compare.
@@ -486,7 +486,7 @@ class QuadReal {
     constexpr friend bool operator>=(const QuadRealType& a, const QuadReal& b) { return QuadReal(a) >= b; }
 
     /**
-     * @brief Friend function for truncating a QuadReal.
+     * Friend function for truncating a QuadReal.
      *
      * @param x The QuadReal to truncate.
      * @return QuadReal The truncated QuadReal.
@@ -498,7 +498,7 @@ class QuadReal {
 };
 
 /**
- * @brief Overloads the output stream operator for QuadReal objects.
+ * Overloads the output stream operator for QuadReal objects.
  *
  * @param output The output stream.
  * @param x The QuadReal object to be output.
@@ -507,7 +507,7 @@ class QuadReal {
 inline std::ostream& operator<<(std::ostream& output, const QuadReal& x);
 
 /**
- * @brief Overloads the input stream operator for QuadReal objects.
+ * Overloads the input stream operator for QuadReal objects.
  *
  * @param inputstream The input stream.
  * @param x The QuadReal object to store the input.

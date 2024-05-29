@@ -15,16 +15,18 @@ Key Features:
     4. **Compile-Time Dimension Handling**: Dimensions of the tensor can be queried at compile-time, enabling optimizations and compile-time error checking.
 
 The following is a general overview on using the Tensor class.
-For more advanced usage and additional features, please refer to the :ref:`Tensor class documentation <tensor-dox>`.
+For more advanced usage and additional features, please refer to the Tensor class API in :ref:`tensor.hpp <tensor_hpp>`.
 
-1. Creating a Tensor:
+.. :ref:`Tensor class documentation <tensor-dox>`.
+
+1. **Creating a Tensor**:
 
 .. code-block:: cpp
 
     // Define a 2x3 tensor of doubles
     Tensor<double, true, 2, 3> tensor;
 
-2. Initializing Tensor Elements: The data is stored in row-major ordering.
+2. **Initializing Tensor Elements**: The data is stored in row-major ordering.
 
 .. code-block:: cpp
 
@@ -32,14 +34,14 @@ For more advanced usage and additional features, please refer to the :ref:`Tenso
     for (auto& x : tensor)
         x = drand48();
 
-3. Accessing Tensor Elements:
+3. **Accessing Tensor Elements**:
 
 .. code-block:: cpp
 
     // Accessing individual elements of the tensor
     double element = tensor(0, 1); // Accessing element at index (0, 1)
 
-4. Performing Operations:
+4. **Performing Operations**:
 
 .. code-block:: cpp
 
@@ -52,7 +54,7 @@ For more advanced usage and additional features, please refer to the :ref:`Tenso
     // Perform matrix multiplication (only for second-order tensors)
     Tensor<double, true, 2, 2> resultMatrix = tensor * rotated_tensor;
 
-5. Iterating Over Tensor Elements:
+5. **Iterating Over Tensor Elements**:
 
 .. code-block:: cpp
 
@@ -61,7 +63,7 @@ For more advanced usage and additional features, please refer to the :ref:`Tenso
         // Access and process each element
     }
 
-6. Querying Tensor Properties:
+6. **Querying Tensor Properties**:
 
 .. code-block:: cpp
 

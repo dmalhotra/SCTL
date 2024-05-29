@@ -12,9 +12,9 @@
 #include <cstdint>          // for uint32_t
 #endif
 
-#include "sctl/common.hpp"  // for SCTL_UNUSED, SCTL_NAMESPACE
+#include "sctl/common.hpp"  // for SCTL_UNUSED, sctl
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
   // Get addresses
@@ -127,7 +127,7 @@ inline int SetSigHandler() {
 
 
 #ifdef SCTL_SIG_HANDLER
-int sgh = SCTL_NAMESPACE::SetSigHandler(); // Set signal handler
+int sgh = sctl::SetSigHandler(); // Set signal handler
 #endif
 
 }  // end namespace

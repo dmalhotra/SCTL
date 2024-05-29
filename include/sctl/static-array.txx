@@ -3,11 +3,11 @@
 
 #include <initializer_list>       // for initializer_list
 
-#include "sctl/common.hpp"        // for Long, SCTL_ASSERT_MSG, SCTL_NAMESPACE
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray, operator+
-#include SCTL_INCLUDE(iterator.hpp)      // for ConstIterator, Iterator
+#include "sctl/common.hpp"        // for Long, SCTL_ASSERT_MSG, sctl
+#include "sctl/static-array.hpp"  // for StaticArray, operator+
+#include "sctl/iterator.hpp"      // for ConstIterator, Iterator
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 #ifdef SCTL_MEMDEBUG
 

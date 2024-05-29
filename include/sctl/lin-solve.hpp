@@ -4,18 +4,16 @@
 #include <functional>       // for function
 #include <list>             // for list
 
-#include "sctl/common.hpp"  // for Long, Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(comm.hpp)    // for Comm
-#include SCTL_INCLUDE(comm.txx)    // for Comm::Self, Comm::Comm
-#include SCTL_INCLUDE(vector.hpp)  // for Vector
+#include "sctl/common.hpp"  // for Long, Integer, sctl
+#include "sctl/comm.hpp"    // for Comm
+#include "sctl/comm.txx"    // for Comm::Self, Comm::Comm
+#include "sctl/vector.hpp"  // for Vector
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class ValueType> class Matrix;
 
 /**
- * @brief Preconditioner built from the Krylov-subspace constructed during GMRES solves.
- *
  * This class implements a preconditioner built from the Krylov-subspace constructed during GMRES solves.
  *
  * @tparam Real The data type of the values.
@@ -24,27 +22,26 @@ template <class Real> class KrylovPrecond {
   public:
 
     /**
-     * @brief Constructor.
+     * Constructor.
      */
     KrylovPrecond();
 
     /**
-     * @brief Get the size of the input vector to the operator.
+     * Get the size of the input vector to the operator.
      *
      * @return The length of the input vector.
      */
     Long Size() const;
 
     /**
-     * @brief Get the cumulative size of the Krylov-subspaces.
+     * Get the cumulative size of the Krylov-subspaces.
      *
      * @return The cumulative size of the Krylov-subspaces.
      */
     Long Rank() const;
 
     /**
-     * @brief Append a Krylov-subspace to the operator.
-     *
+     * Append a Krylov-subspace to the operator.
      * The operator P is updated as:
      *   P = P * (I + U * Qt)
      *
@@ -54,7 +51,7 @@ template <class Real> class KrylovPrecond {
     void Append(const Matrix<Real>& Qt, const Matrix<Real>& U);
 
     /**
-     * @brief Apply the preconditioner.
+     * Apply the preconditioner.
      *
      * @param[in,out] x The input vector which is updated by applying the preconditioner.
      */
@@ -67,8 +64,6 @@ template <class Real> class KrylovPrecond {
 };
 
 /**
- * @brief Implements a distributed memory GMRES solver.
- *
  * This class implements a distributed memory GMRES solver.
  *
  * @tparam Real The data type of the values.
@@ -80,7 +75,7 @@ template <class Real> class GMRES {
   using ParallelOp = std::function<void(Vector<Real>*, const Vector<Real>&)>; ///< Function type for linear operator.
 
   /**
-   * @brief Constructor.
+   * Constructor.
    *
    * @param[in] comm The communicator.
    * @param[in] verbose Verbosity flag.
@@ -88,7 +83,7 @@ template <class Real> class GMRES {
   GMRES(const Comm& comm = Comm::Self(), bool verbose = true) : comm_(comm), verbose_(verbose) {}
 
   /**
-   * @brief Solve the linear system: A x = b.
+   * Solve the linear system: A x = b.
    *
    * @param[out] x The solution vector.
    * @param[in] A The linear operator.
@@ -99,10 +94,10 @@ template <class Real> class GMRES {
    * @param[out] solve_iter Number of iterations.
    * @param[in,out] krylov_precond Krylov-subspace preconditioner. The preconditioner is updated.
    */
-  void operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, const Integer max_iter = -1, const bool use_abs_tol = false, Long* solve_iter=nullptr, KrylovPrecond<Real>* krylov_precond=nullptr);
+  void operator()(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, const Integer max_iter = -1, const bool use_abs_tol = false, Long* solve_iter=nullptr, KrylovPrecond<Real>* krylov_precond=nullptr) const;
 
   /**
-   * @brief A test function for GMRES solver.
+   * A test function for GMRES solver.
    *
    * @param[in] N Size of the test problem (default is 15).
    */
@@ -110,7 +105,7 @@ template <class Real> class GMRES {
 
  private:
 
-  void GenericGMRES(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, Integer max_iter, const bool use_abs_tol, Long* solve_iter, KrylovPrecond<Real>* krylov_precond);
+  void GenericGMRES(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, const Real tol, Integer max_iter, const bool use_abs_tol, Long* solve_iter, KrylovPrecond<Real>* krylov_precond) const;
 
   Comm comm_; ///< Communicator.
   bool verbose_; ///< Verbosity flag.

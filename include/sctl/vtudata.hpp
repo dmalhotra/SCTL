@@ -4,28 +4,26 @@
 #include <cstdint>            // for int32_t, uint8_t
 #include <string>             // for string
 
-#include "sctl/common.hpp"    // for Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(comm.hpp)      // for Comm
-#include SCTL_INCLUDE(comm.txx)      // for Comm::Self
-#include SCTL_INCLUDE(vector.hpp)    // for Vector
-#include SCTL_INCLUDE(vector.txx)    // for Vector::Vector<ValueType>, Vector::~Vec...
+#include "sctl/common.hpp"    // for Integer, sctl
+#include "sctl/comm.hpp"      // for Comm
+#include "sctl/comm.txx"      // for Comm::Self
+#include "sctl/vector.hpp"    // for Vector
+#include "sctl/vector.txx"    // for Vector::Vector<ValueType>, Vector::~Vec...
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class ValueType> class Matrix;
 
 /**
- * @brief Struct for storing data in the VTK (Visualization Toolkit) unstructured grid format.
+ * This struct provides facilities for storing point and cell data in the VTK (Visualization Toolkit) unstructured mesh
+ * format, which is commonly used for visualization purposes in scientific computing.
  * Refer to <a href="https://docs.vtk.org/en/latest/design_documents/VTKFileFormats.html#unstructured-grid">VTK File Formats - Unstructured grid</a> and
  * <a href="https://raw.githubusercontent.com/Kitware/vtk-examples/gh-pages/src/Testing/Baseline/Cxx/GeometricObjects/TestLinearCellDemo.png">cell-types</a>.
- *
- * This struct provides facilities for storing point and cell data in the VTK unstructured mesh format,
- * which is commonly used for visualization purposes in scientific computing.
  */
 class VTUData {
   public:
     /**
-     * @brief Type alias for the real type used in VTK.
+     * Type alias for the real type used in VTK.
      */
     typedef float VTKReal;
 
@@ -39,7 +37,7 @@ class VTUData {
     Vector<uint8_t> types;    //!< Vector storing cell types.
 
     /**
-     * @brief Write the VTU data to a VTK file.
+     * Write the VTU data to a VTK file.
      *
      * @param fname File name for the output VTK file.
      * @param comm MPI communicator.

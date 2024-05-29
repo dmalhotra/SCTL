@@ -10,22 +10,22 @@
 #include <vector>                 // for vector
 
 #include "sctl/common.hpp"        // for Long, Integer, SCTL_ASSERT, SCTL_NA...
-#include SCTL_INCLUDE(tree.hpp)          // for Tree, PtTree, Morton
-#include SCTL_INCLUDE(comm.hpp)          // for Comm, CommOp
-#include SCTL_INCLUDE(comm.txx)          // for Comm::Alltoallv, Comm::Allreduce
-#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
-#include SCTL_INCLUDE(math_utils.txx)    // for pow
-#include SCTL_INCLUDE(morton.hpp)        // for Morton
-#include SCTL_INCLUDE(ompUtils.txx)      // for reduce, scan, merge_sort
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[], StaticArra...
-#include SCTL_INCLUDE(vector.hpp)        // for Vector
-#include SCTL_INCLUDE(vector.txx)        // for Vector::operator[], Vector::begin
-#include SCTL_INCLUDE(vtudata.hpp)       // for VTUData
-#include SCTL_INCLUDE(vtudata.txx)       // for VTUData::WriteVTK
+#include "sctl/tree.hpp"          // for Tree, PtTree, Morton
+#include "sctl/comm.hpp"          // for Comm, CommOp
+#include "sctl/comm.txx"          // for Comm::Alltoallv, Comm::Allreduce
+#include "sctl/iterator.hpp"      // for Iterator, ConstIterator
+#include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
+#include "sctl/math_utils.txx"    // for pow
+#include "sctl/morton.hpp"        // for Morton
+#include "sctl/ompUtils.txx"      // for reduce, scan, merge_sort
+#include "sctl/static-array.hpp"  // for StaticArray
+#include "sctl/static-array.txx"  // for StaticArray::operator[], StaticArra...
+#include "sctl/vector.hpp"        // for Vector
+#include "sctl/vector.txx"        // for Vector::operator[], Vector::begin
+#include "sctl/vtudata.hpp"       // for VTUData
+#include "sctl/vtudata.txx"       // for VTUData::WriteVTK
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::test() {
     Long N = 100000;

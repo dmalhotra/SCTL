@@ -3,14 +3,14 @@
 
 #include <string>                      // for string
 
-#include "sctl/common.hpp"             // for Long, Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(boundary_integral.hpp)  // for ElementListBase
-#include SCTL_INCLUDE(comm.hpp)               // for Comm
-#include SCTL_INCLUDE(comm.txx)               // for Comm::Self
-#include SCTL_INCLUDE(vector.hpp)             // for Vector
-#include SCTL_INCLUDE(vector.txx)             // for Vector::~Vector<ValueType>
+#include "sctl/common.hpp"             // for Long, Integer, sctl
+#include "sctl/boundary_integral.hpp"  // for ElementListBase
+#include "sctl/comm.hpp"               // for Comm
+#include "sctl/comm.txx"               // for Comm::Self
+#include "sctl/vector.hpp"             // for Vector
+#include "sctl/vector.txx"             // for Vector::~Vector<ValueType>
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   class VTUData;
   template <class ValueType> class Matrix;

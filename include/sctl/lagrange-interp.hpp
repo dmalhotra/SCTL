@@ -1,15 +1,13 @@
 #ifndef _SCTL_LAGRANGE_INTERP_HPP_
 #define _SCTL_LAGRANGE_INTERP_HPP_
 
-#include "sctl/common.hpp"  // for SCTL_NAMESPACE
+#include "sctl/common.hpp"  // for sctl
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class ValueType> class Vector;
 
   /**
-   * @brief A class for Lagrange interpolation.
-   *
    * This class provides functionality for Lagrange interpolation,
    * including computing interpolation weights and derivatives.
    *
@@ -18,8 +16,6 @@ namespace SCTL_NAMESPACE {
   template <class Real> class LagrangeInterp {
     public:
       /**
-       * @brief Compute the Lagrange interpolation weights.
-       *
        * This function computes the interpolation weights to interpolate
        * values from the source nodes to the target nodes.
        *
@@ -32,8 +28,6 @@ namespace SCTL_NAMESPACE {
       static void Interpolate(Vector<Real>& wts, const Vector<Real>& src_nds, const Vector<Real>& trg_nds);
 
       /**
-       * @brief Compute the derivative of interpolated values.
-       *
        * This function computes the derivative of interpolated values
        * at given nodes.
        *
@@ -44,8 +38,6 @@ namespace SCTL_NAMESPACE {
       static void Derivative(Vector<Real>& df, const Vector<Real>& f, const Vector<Real>& nds);
 
       /**
-       * @brief A test function for Lagrange interpolation.
-       *
        * This function performs a simple test of Lagrange interpolation
        * and derivative computation.
        */

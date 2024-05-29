@@ -9,21 +9,20 @@
 #include <utility>                // for pair
 
 #include "sctl/common.hpp"        // for Long, Integer, SCTL_ASSERT, SCTL_UN...
-#include SCTL_INCLUDE(comm.hpp)          // for Comm, CommOp
-#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
-#include SCTL_INCLUDE(ompUtils.txx)      // for scan, merge_sort
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[], StaticArra...
-#include SCTL_INCLUDE(vector.hpp)        // for Vector
-#include SCTL_INCLUDE(vector.txx)        // for Vector::operator[], Vector::begin
+#include "sctl/comm.hpp"          // for Comm, CommOp
+#include "sctl/iterator.hpp"      // for Iterator, ConstIterator
+#include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
+#include "sctl/ompUtils.txx"      // for scan, merge_sort
+#include "sctl/static-array.hpp"  // for StaticArray
+#include "sctl/static-array.txx"  // for StaticArray::operator[], StaticArra...
+#include "sctl/vector.hpp"        // for Vector
+#include "sctl/vector.txx"        // for Vector::operator[], Vector::begin
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 #ifdef SCTL_HAVE_MPI
 /**
- * \class CommDatatype
- * \brief An abstract class used for communicating messages using user-defined
+ * An abstract class used for communicating messages using user-defined
  * datatypes. The user must implement the static member function "value()" that
  * returns the MPI_Datatype corresponding to this user-defined datatype.
  * \author Hari Sundar, hsundar@gmail.com

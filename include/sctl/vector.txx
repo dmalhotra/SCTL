@@ -11,17 +11,17 @@
 #include <iostream>               // for basic_ostream, char_traits, operator<<
 #include <vector>                 // for vector
 
-#include "sctl/common.hpp"        // for Long, SCTL_ASSERT, SCTL_NAMESPACE
-#include SCTL_INCLUDE(vector.hpp)        // for Vector, operator*, operator+, opera...
-#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)      // for NullIterator, memcopy, Ptr2Itr, Ptr...
-#include SCTL_INCLUDE(mem_mgr.txx)       // for aligned_delete, aligned_new
-#include SCTL_INCLUDE(profile.hpp)       // for Profile, ProfileCounter
-#include SCTL_INCLUDE(profile.txx)       // for Profile::IncrementCounter
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[]
+#include "sctl/common.hpp"        // for Long, SCTL_ASSERT, sctl
+#include "sctl/vector.hpp"        // for Vector, operator*, operator+, opera...
+#include "sctl/iterator.hpp"      // for Iterator, ConstIterator
+#include "sctl/iterator.txx"      // for NullIterator, memcopy, Ptr2Itr, Ptr...
+#include "sctl/mem_mgr.txx"       // for aligned_delete, aligned_new
+#include "sctl/profile.hpp"       // for Profile, ProfileCounter
+#include "sctl/profile.txx"       // for Profile::IncrementCounter
+#include "sctl/static-array.hpp"  // for StaticArray
+#include "sctl/static-array.txx"  // for StaticArray::operator[]
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class ValueType> void Vector<ValueType>::Init(Long dim_, Iterator<ValueType> data_, bool own_data_) {
   dim = dim_;

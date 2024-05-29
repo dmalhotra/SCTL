@@ -1,5 +1,7 @@
 .. _sctl_documentation:
 
+.. .. contents::
+..    :local: 
 
 .. toctree::
    :hidden:
@@ -20,31 +22,27 @@
 
    doxygen/index
 
-
-
-
 SCTL: Scientific Computing Template Library
-============================================
+===========================================
 
 .. image:: https://github.com/dmalhotra/SCTL/actions/workflows/build-test.yml/badge.svg
    :target: https://github.com/dmalhotra/SCTL/actions/workflows/build-test.yml
-   :alt: tests
+   :alt: Build and test status
 
 .. image:: https://codecov.io/gh/dmalhotra/SCTL/branch/master/graph/badge.svg?token=UIM2RYMF6D
    :target: https://codecov.io/gh/dmalhotra/SCTL
-   :alt: codecov
+   :alt: Code coverage
 
 .. image:: https://badgen.net/github/tag/dmalhotra/SCTL
    :target: https://github.com/dmalhotra/SCTL/tags
-   :alt: Stable Version
+   :alt: Stable version
 
 .. image:: https://img.shields.io/github/v/release/dmalhotra/SCTL?color=%233D9970
    :target: https://github.com/dmalhotra/SCTL/releases
-   :alt: Latest Release
+   :alt: Latest release
 
 `SCTL <https://github.com/dmalhotra/SCTL>`_ is a header-only C++ library that provides several functionalities useful in scientific computing.
-These functionalities are outlined in this document.
-
+This documentation outlines these functionalities.
 
 Getting Started
 ---------------
@@ -53,23 +51,20 @@ Getting Started
 
     SCTL requires a C++11 compliant compiler with OpenMP 4.0 support.
 
-You can download the latest version of SCTL from `SCTL GitHub <https://github.com/dmalhotra/SCTL>`_.
+To get started, download the latest version of SCTL from the `SCTL GitHub <https://github.com/dmalhotra/SCTL>`_.
 
 .. code-block:: bash
 
    git clone https://github.com/dmalhotra/SCTL.git
 
-
-
-As a header-only library, SCTL does not require compilation or installation.
+Since SCTL is a header-only library, it does not require compilation or installation.
 Simply include the ``sctl.hpp`` header file in your C++ project and start using the provided classes and functions.
 
 .. code-block:: cpp
 
-    #include <sctl.hpp>
+   #include <sctl.hpp>
 
-The path to ``SCTL_ROOT/include`` (where the header ``sctl.hpp`` is located) must be provided to the compiler using the flag ``-I ${SCTL_ROOT}/include``.
-
+Make sure to provide the path to ``SCTL_ROOT/include`` (where the header ``sctl.hpp`` is located) to the compiler using the flag ``-I ${SCTL_ROOT}/include``.
 
 Dependencies
 ------------
@@ -94,17 +89,12 @@ SCTL can optionally use the following libraries if they are available:
 
 To enable support for any of these libraries, define the corresponding flag during compilation. For example, to enable MPI support, use ``-DSCTL_HAVE_MPI``.
 
-
 ..  SCTL_MEMDEBUG
 ..  SCTL_GLOBAL_MEM_BUFF
 ..  SCTL_PROFILE
 ..  SCTL_VERBOSE
 ..  SCTL_SIG_HANDLER
 ..  SCTL_QUAD_T
-
-
-
-
 
 Containers
 ----------
@@ -115,48 +105,45 @@ Containers
 4. :ref:`Tensor <tutorial-tensor>`
 
 Numerical Methods
-------------------
+-----------------
 
 1. :ref:`SDC (Spectral Deferred Correction ODE solver) <tutorial-sdc>`
-2. `LinearSolver <include/sctl/lin-solve.hpp>`_: distributed memory GMRES (wrapper to PETSc when available)
-3. `LagrangeInterp <include/sctl/lagrange-interp.hpp>`_
-4. `InterpQuadRule, ChebQuadRule, LegQuadRule <include/sctl/quadrule.hpp>`_: generalized Chebyshev quadrature, Clenshaw-Curtis quadrature, Gauss-Legendre quadrature
-5. `SphericalHarmonics <include/sctl/sph_harm.hpp>`_
-6. `Tree, PtTree <include/sctl/tree.hpp>`_, `Morton <include/sctl/morton.hpp>`_: Morton ordering based n-dimensional tree
-7. `FFT <include/sctl/fft_wrapper.hpp>`_: wrapper to `FFTW <https://www.fftw.org>`_
-8. `FMM <include/sctl/fmm-wrapper.hpp>`_: wrapper to `PVFMM <http://pvfmm.org>`_
-9. `Kernel functions <include/sctl/kernel_functions.hpp>`_
+2. :ref:`GMRES solver, Krylov preconditioner <tutorial-gmres>`: distributed memory GMRES
+3. :ref:`LagrangeInterp <tutorial-lagrange-interp>`
+4. :ref:`InterpQuadRule, ChebQuadRule, LegQuadRule <quadrule_hpp>`: generalized Chebyshev quadrature, Clenshaw-Curtis quadrature, Gauss-Legendre quadrature
+5. :ref:`SphericalHarmonics <sph_harm_hpp>`
+6. :ref:`Tree, PtTree <tutorial-tree>`, :ref:`Morton <morton_hpp>`: Morton ordering based n-dimensional tree
+7. :ref:`FFT <fft_wrapper_hpp>`: wrapper to `FFTW <https://www.fftw.org>`_
+8. :ref:`FMM <fmm-wrapper_hpp>`: wrapper to `PVFMM <http://pvfmm.org>`_
+9. :ref:`Kernel functions <kernel_functions_hpp>`
 
-Boundary integral methods
---------------------------
+Boundary Integral Methods
+-------------------------
 
-1. `BoundaryIntegralOp <include/sctl/boundary_integral.hpp>`_: generic boundary integral method
-2. `SlenderElemList <include/sctl/slender_element.hpp>`_
+1. :ref:`BoundaryIntegralOp <tutorial-boundaryintegralop>`: generic boundary integral method
+2. :ref:`SlenderElemList <tutorial-slenderelemlist>`
 
-HPC
----
+High Performance Computing (HPC)
+--------------------------------
 
-1. `Comm <include/sctl/comm.hpp>`_: wrapper for MPI
-2. `Vec <include/sctl/vec.hpp>`_: SIMD vectorization class
-3. `OpenMP utilities <include/sctl/ompUtils.hpp>`_: merge-sort, scan
-4. `Profile <include/sctl/profile.hpp>`_
+1. :ref:`Comm <tutorial-comm>`: wrapper for MPI
+2. :ref:`Vec <tutorial-vec>`: SIMD vectorization class
+3. :ref:`OpenMP utilities <ompUtils_hpp>`: merge-sort, scan
+4. :ref:`Profile <tutorial-profile>`
 
 Miscellaneous
 -------------
 
-1. `MemoryManager, Iterator, ConstIterator <include/sctl/mem_mgr.hpp>`_
-2. `Stacktrace utility <include/sctl/stacktrace.h>`_
-3. :ref:`VTUData <tutorial-vtudata>`: write unstructured VTK files
-4. `QuadReal, basic math functions, constants <include/sctl/math_utils.hpp>`_
-5. `GEMM, SVD (unoptimized) <include/sctl/mat_utils.hpp>`_
+1. :ref:`Iterator, ConstIterator <iterator_hpp>`, :ref:`StaticArray <static-array_hpp>`
+2. :ref:`MemoryManager <mem_mgr_hpp>`
+3. :ref:`Stacktrace utility <stacktrace_h>`
+4. :ref:`VTUData <tutorial-vtudata>`: write unstructured VTK files
+5. :ref:`QuadReal, basic math functions, constants <math_utils_hpp>`
 
-Legacy (unmaintained)
+.. 6. :ref:`GEMM, SVD (unoptimized) <mat_utils_hpp>`
+
+Legacy (Unmaintained)
 ---------------------
 
-1. `Boundary quadrature <include/sctl/boundary_quadrature.hpp>`_: generic boundary integral method based on quad-patches and hedgehog quadrature
-2. `ChebBasis <include/sctl/cheb_utils.hpp>`_: general-dimension tensor product Chebyshev basis
-
-
-
-
-
+1. :ref:`Boundary quadrature <boundary_quadrature_hpp>`: generic boundary integral method based on quad-patches and hedgehog quadrature
+2. :ref:`ChebBasis <cheb_utils_hpp>`: general-dimension tensor product Chebyshev basis

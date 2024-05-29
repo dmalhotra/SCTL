@@ -3,17 +3,17 @@
 
 #include <ostream>                // for ostream
 
-#include "sctl/common.hpp"        // for Long, SCTL_NAMESPACE
-#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)      // for NullIterator
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include "sctl/common.hpp"        // for Long, sctl
+#include "sctl/iterator.hpp"      // for Iterator, ConstIterator
+#include "sctl/iterator.txx"      // for NullIterator
+#include "sctl/static-array.hpp"  // for StaticArray
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class ValueType> class Permutation;
 
 /**
- * @brief Class representing a matrix. The data is stored in row-major order.
+ * Class representing a matrix. The data is stored in row-major order.
  *
  * @tparam ValueType The type of elements stored in the matrix.
  */
@@ -28,12 +28,12 @@ template <class ValueType> class Matrix {
   typedef Long size_type; ///< Type representing the size of the matrix.
 
   /**
-   * @brief Default constructor. Constructs an empty matrix.
+   * Default constructor. Constructs an empty matrix.
    */
   Matrix();
 
   /**
-   * @brief Constructor to create a matrix with specified dimensions and optional initial data.
+   * Constructor to create a matrix with specified dimensions and optional initial data.
    *
    * @param dim1 Number of rows in the matrix.
    * @param dim2 Number of columns in the matrix.
@@ -43,26 +43,26 @@ template <class ValueType> class Matrix {
   Matrix(Long dim1, Long dim2, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
 
   /**
-   * @brief Copy constructor.
+   * Copy constructor.
    *
    * @param M Matrix to be copied.
    */
   Matrix(const Matrix<ValueType>& M);
 
   /**
-   * @brief Destructor.
+   * Destructor.
    */
   ~Matrix();
 
   /**
-   * @brief Swaps the contents of two matrices.
+   * Swaps the contents of two matrices.
    *
    * @param M Matrix to be swapped with.
    */
   void Swap(Matrix<ValueType>& M);
 
   /**
-   * @brief Reinitializes the matrix with new dimensions and optional initial data.
+   * Reinitializes the matrix with new dimensions and optional initial data.
    *
    * @param dim1 New number of rows.
    * @param dim2 New number of columns.
@@ -72,14 +72,14 @@ template <class ValueType> class Matrix {
   void ReInit(Long dim1, Long dim2, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
 
   /**
-   * @brief Writes the matrix to a file.
+   * Writes the matrix to a file.
    *
    * @param fname Filename to write the matrix data.
    */
   void Write(const char* fname) const;
 
   /**
-   * @brief Writes the matrix to a file with specified type.
+   * Writes the matrix to a file with specified type.
    *
    * @tparam Type Type of data to write.
    * @param fname Filename to write the matrix data.
@@ -87,14 +87,14 @@ template <class ValueType> class Matrix {
   template <class Type> void Write(const char* fname) const;
 
   /**
-   * @brief Reads the matrix data from a file.
+   * Reads the matrix data from a file.
    *
    * @param fname Filename from which to read the matrix data.
    */
   void Read(const char* fname);
 
   /**
-   * @brief Reads the matrix data from a file with specified type.
+   * Reads the matrix data from a file with specified type.
    *
    * @tparam Type Type of data to read.
    * @param fname Filename from which to read the matrix data.
@@ -102,7 +102,7 @@ template <class ValueType> class Matrix {
   template <class Type> void Read(const char* fname);
 
   /**
-   * @brief Returns the size of the matrix along the specified dimension.
+   * Returns the size of the matrix along the specified dimension.
    *
    * @param i Dimension index (0 for rows, 1 for columns).
    * @return Size of the matrix along the specified dimension.
@@ -110,33 +110,33 @@ template <class ValueType> class Matrix {
   Long Dim(Long i) const;
 
   /**
-   * @brief Sets all elements of the matrix to zero.
+   * Sets all elements of the matrix to zero.
    */
   void SetZero();
 
   /**
-   * @brief Returns an iterator to the beginning of the matrix.
+   * Returns an iterator to the beginning of the matrix.
    *
    * @return Iterator to the beginning of the matrix.
    */
   Iterator<ValueType> begin();
 
   /**
-   * @brief Returns a const iterator to the beginning of the matrix.
+   * Returns a const iterator to the beginning of the matrix.
    *
    * @return Const iterator to the beginning of the matrix.
    */
   ConstIterator<ValueType> begin() const;
 
   /**
-   * @brief Returns an iterator to the end of the matrix.
+   * Returns an iterator to the end of the matrix.
    *
    * @return Iterator to the end of the matrix.
    */
   Iterator<ValueType> end();
 
   /**
-   * @brief Returns a const iterator to the end of the matrix.
+   * Returns a const iterator to the end of the matrix.
    *
    * @return Const iterator to the end of the matrix.
    */
@@ -145,7 +145,7 @@ template <class ValueType> class Matrix {
   // Matrix-Matrix operations
 
   /**
-   * @brief Assigns the contents of another matrix to this matrix.
+   * Assigns the contents of another matrix to this matrix.
    *
    * @param M Matrix to be assigned.
    * @return Reference to this matrix after assignment.
@@ -153,7 +153,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType>& operator=(const Matrix<ValueType>& M);
 
   /**
-   * @brief Adds another matrix to this matrix element-wise.
+   * Adds another matrix to this matrix element-wise.
    *
    * @param M Matrix to be added.
    * @return Reference to this matrix after addition.
@@ -161,7 +161,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType>& operator+=(const Matrix<ValueType>& M);
 
   /**
-   * @brief Subtracts another matrix from this matrix element-wise.
+   * Subtracts another matrix from this matrix element-wise.
    *
    * @param M Matrix to be subtracted.
    * @return Reference to this matrix after subtraction.
@@ -169,7 +169,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType>& operator-=(const Matrix<ValueType>& M);
 
   /**
-   * @brief Adds another matrix to this matrix element-wise and returns the result.
+   * Adds another matrix to this matrix element-wise and returns the result.
    *
    * @param M2 Matrix to be added.
    * @return New matrix resulting from the addition.
@@ -177,7 +177,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType> operator+(const Matrix<ValueType>& M2) const;
 
   /**
-   * @brief Subtracts another matrix from this matrix element-wise and returns the result.
+   * Subtracts another matrix from this matrix element-wise and returns the result.
    *
    * @param M2 Matrix to be subtracted.
    * @return New matrix resulting from the subtraction.
@@ -185,7 +185,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType> operator-(const Matrix<ValueType>& M2) const;
 
   /**
-   * @brief Multiplies this matrix with another matrix.
+   * Multiplies this matrix with another matrix.
    *
    * @param M Matrix to be multiplied with.
    * @return New matrix resulting from the multiplication.
@@ -193,7 +193,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType> operator*(const Matrix<ValueType>& M) const;
 
   /**
-   * @brief Computes the matrix-matrix multiplication M_r = alpha * A * B + beta * M_r.
+   * Computes the matrix-matrix multiplication M_r = alpha * A * B + beta * M_r.
    *
    * @param M_r Result matrix.
    * @param A First matrix.
@@ -203,7 +203,7 @@ template <class ValueType> class Matrix {
   static void GEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta = 0.0);
 
   /**
-   * @brief Computes the matrix-matrix multiplication M_r = alpha * P * M + beta * M_r.
+   * Computes the matrix-matrix multiplication M_r = alpha * P * M + beta * M_r.
    *
    * @param M_r Result matrix.
    * @param P Permutation matrix.
@@ -213,7 +213,7 @@ template <class ValueType> class Matrix {
   static void GEMM(Matrix<ValueType>& M_r, const Permutation<ValueType>& P, const Matrix<ValueType>& M, ValueType beta = 0.0);
 
   /**
-   * @brief Computes the matrix-matrix multiplication M_r = alpha * M * P + beta * M_r.
+   * Computes the matrix-matrix multiplication M_r = alpha * M * P + beta * M_r.
    *
    * @param M_r Result matrix.
    * @param M Matrix.
@@ -225,7 +225,7 @@ template <class ValueType> class Matrix {
   // Matrix-Scalar operations
 
   /**
-   * @brief Assigns a scalar value to all elements of the matrix.
+   * Assigns a scalar value to all elements of the matrix.
    *
    * @param s Scalar value to be assigned.
    * @return Reference to this matrix after assignment.
@@ -233,7 +233,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType>& operator=(ValueType s);
 
   /**
-   * @brief Adds a scalar value to each element of the matrix.
+   * Adds a scalar value to each element of the matrix.
    *
    * @param s The scalar value to add.
    * @return A reference to the modified matrix.
@@ -241,7 +241,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType>& operator+=(ValueType s);
 
   /**
-   * @brief Subtracts a scalar value from each element of the matrix.
+   * Subtracts a scalar value from each element of the matrix.
    *
    * @param s The scalar value to subtract.
    * @return A reference to the modified matrix.
@@ -249,7 +249,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType>& operator-=(ValueType s);
 
   /**
-   * @brief Multiplies each element of the matrix by a scalar value.
+   * Multiplies each element of the matrix by a scalar value.
    *
    * @param s The scalar value to multiply by.
    * @return A reference to the modified matrix.
@@ -257,7 +257,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType>& operator*=(ValueType s);
 
   /**
-   * @brief Divides each element of the matrix by a scalar value.
+   * Divides each element of the matrix by a scalar value.
    *
    * @param s The scalar value to divide by.
    * @return A reference to the modified matrix.
@@ -265,7 +265,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType>& operator/=(ValueType s);
 
   /**
-   * @brief Adds a scalar value to each element of the matrix, returning a new matrix.
+   * Adds a scalar value to each element of the matrix, returning a new matrix.
    *
    * @param s The scalar value to add.
    * @return A new matrix with the scalar added to each element.
@@ -273,7 +273,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType> operator+(ValueType s) const;
 
   /**
-   * @brief Subtracts a scalar value from each element of the matrix, returning a new matrix.
+   * Subtracts a scalar value from each element of the matrix, returning a new matrix.
    *
    * @param s The scalar value to subtract.
    * @return A new matrix with the scalar subtracted from each element.
@@ -281,7 +281,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType> operator-(ValueType s) const;
 
   /**
-   * @brief Multiplies each element of the matrix by a scalar value, returning a new matrix.
+   * Multiplies each element of the matrix by a scalar value, returning a new matrix.
    *
    * @param s The scalar value to multiply by.
    * @return A new matrix with each element multiplied by the scalar.
@@ -289,7 +289,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType> operator*(ValueType s) const;
 
   /**
-   * @brief Divides each element of the matrix by a scalar value, returning a new matrix.
+   * Divides each element of the matrix by a scalar value, returning a new matrix.
    *
    * @param s The scalar value to divide by.
    * @return A new matrix with each element divided by the scalar.
@@ -299,7 +299,7 @@ template <class ValueType> class Matrix {
   // Element access
 
   /**
-   * @brief Provides mutable access to the element at the specified row and column.
+   * Provides mutable access to the element at the specified row and column.
    *
    * @param i The row index.
    * @param j The column index.
@@ -308,7 +308,7 @@ template <class ValueType> class Matrix {
   ValueType& operator()(Long i, Long j);
 
   /**
-   * @brief Provides constant access to the element at the specified row and column.
+   * Provides constant access to the element at the specified row and column.
    *
    * @param i The row index.
    * @param j The column index.
@@ -317,7 +317,7 @@ template <class ValueType> class Matrix {
   const ValueType& operator()(Long i, Long j) const;
 
   /**
-   * @brief Provides mutable access to a row of the matrix.
+   * Provides mutable access to a row of the matrix.
    *
    * @param i The row index.
    * @return An iterator pointing to the beginning of the specified row.
@@ -325,7 +325,7 @@ template <class ValueType> class Matrix {
   Iterator<ValueType> operator[](Long i);
 
   /**
-   * @brief Provides constant access to a row of the matrix.
+   * Provides constant access to a row of the matrix.
    *
    * @param i The row index.
    * @return A constant iterator pointing to the beginning of the specified row.
@@ -333,28 +333,28 @@ template <class ValueType> class Matrix {
   ConstIterator<ValueType> operator[](Long i) const;
 
   /**
-   * @brief Permutes the rows of the matrix according to the given permutation.
+   * Permutes the rows of the matrix according to the given permutation.
    *
    * @param P The permutation to apply to the rows.
    */
   void RowPerm(const Permutation<ValueType>& P);
 
   /**
-   * @brief Permutes the columns of the matrix according to the given permutation.
+   * Permutes the columns of the matrix according to the given permutation.
    *
    * @param P The permutation to apply to the columns.
    */
   void ColPerm(const Permutation<ValueType>& P);
 
   /**
-   * @brief Computes the transpose of the matrix.
+   * Computes the transpose of the matrix.
    *
    * @return The transpose of the matrix.
    */
   Matrix<ValueType> Transpose() const;
 
   /**
-   * @brief Computes the transpose of the given matrix and stores the result in another matrix.
+   * Computes the transpose of the given matrix and stores the result in another matrix.
    *
    * @param M_r The matrix to store the transpose in.
    * @param M The matrix to transpose.
@@ -362,7 +362,7 @@ template <class ValueType> class Matrix {
   static void Transpose(Matrix<ValueType>& M_r, const Matrix<ValueType>& M);
 
   /**
-   * @brief Computes the Singular Value Decomposition (SVD) of the matrix.
+   * Computes the Singular Value Decomposition (SVD) of the matrix.
    *
    * @param tU The matrix containing the left singular vectors.
    * @param tS The matrix containing the singular values.
@@ -373,7 +373,7 @@ template <class ValueType> class Matrix {
   void SVD(Matrix<ValueType>& tU, Matrix<ValueType>& tS, Matrix<ValueType>& tVT);
 
   /**
-   * @brief Computes the Moore-Penrose pseudo-inverse of the matrix.
+   * Computes the Moore-Penrose pseudo-inverse of the matrix.
    *
    * @param eps The tolerance value for singular values close to zero. Defaults to -1.
    * @return The pseudo-inverse of the matrix.
@@ -391,7 +391,7 @@ template <class ValueType> class Matrix {
 };
 
 /**
- * @brief Overloaded stream insertion operator to output the matrix to the specified output stream.
+ * Overloaded stream insertion operator to output the matrix to the specified output stream.
  *
  * @param output The output stream to write the matrix to.
  * @param M The matrix to output.
@@ -400,7 +400,7 @@ template <class ValueType> class Matrix {
 template <class ValueType> std::ostream& operator<<(std::ostream& output, const Matrix<ValueType>& M);
 
 /**
- * @brief Overloaded addition operator to add a scalar value to each element of the matrix.
+ * Overloaded addition operator to add a scalar value to each element of the matrix.
  *
  * @param s The scalar value to add.
  * @param M The matrix to add the scalar to.
@@ -409,7 +409,7 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
 template <class ValueType> Matrix<ValueType> operator+(ValueType s, const Matrix<ValueType>& M) { return M + s; }
 
 /**
- * @brief Overloaded subtraction operator to subtract a matrix from a scalar value.
+ * Overloaded subtraction operator to subtract a matrix from a scalar value.
  *
  * @param s The scalar value to subtract from.
  * @param M The matrix to subtract from the scalar.
@@ -418,7 +418,7 @@ template <class ValueType> Matrix<ValueType> operator+(ValueType s, const Matrix
 template <class ValueType> Matrix<ValueType> operator-(ValueType s, const Matrix<ValueType>& M) { return s + (M * -1.0); }
 
 /**
- * @brief Overloaded multiplication operator to multiply a scalar value with each element of the matrix.
+ * Overloaded multiplication operator to multiply a scalar value with each element of the matrix.
  *
  * @param s The scalar value to multiply.
  * @param M The matrix to multiply the scalar with.

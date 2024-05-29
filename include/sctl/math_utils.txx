@@ -14,9 +14,9 @@
 #include <vector>               // for vector
 
 #include "sctl/common.hpp"      // for Long, Integer, SCTL_ASSERT, SCTL_NAME...
-#include SCTL_INCLUDE(math_utils.hpp)  // for QuadReal, operator/, cos, operator*
+#include "sctl/math_utils.hpp"  // for QuadReal, operator/, cos, operator*
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class Real, Integer bits = sizeof(Real)*8> struct GetSigBits {
   static constexpr Integer value() {

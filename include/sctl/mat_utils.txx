@@ -6,25 +6,25 @@
 #include <iostream>               // for basic_ostream, cout, operator<<
 #include <vector>                 // for vector
 
-#include "sctl/common.hpp"        // for Long, SCTL_NAMESPACE
-#include SCTL_INCLUDE(mat_utils.hpp)     // for gemm, pinv, svd
-#include SCTL_INCLUDE(iterator.hpp)      // for Iterator
-#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
-#include SCTL_INCLUDE(math_utils.hpp)    // for fabs, sqrt
-#include SCTL_INCLUDE(math_utils.txx)    // for machine_eps
-#include SCTL_INCLUDE(matrix.hpp)        // for Matrix
-#include SCTL_INCLUDE(mem_mgr.txx)       // for aligned_delete, aligned_new
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[]
+#include "sctl/common.hpp"        // for Long, sctl
+#include "sctl/mat_utils.hpp"     // for gemm, pinv, svd
+#include "sctl/iterator.hpp"      // for Iterator
+#include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
+#include "sctl/math_utils.hpp"    // for fabs, sqrt
+#include "sctl/math_utils.txx"    // for machine_eps
+#include "sctl/matrix.hpp"        // for Matrix
+#include "sctl/mem_mgr.txx"       // for aligned_delete, aligned_new
+#include "sctl/static-array.hpp"  // for StaticArray
+#include "sctl/static-array.txx"  // for StaticArray::operator[]
 
 #if defined(SCTL_HAVE_BLAS)
-#include SCTL_INCLUDE(blas.h)
+#include "sctl/blas.h"
 #endif
 #if defined(SCTL_HAVE_LAPACK)
-#include SCTL_INCLUDE(lapack.h)
+#include "sctl/lapack.h"
 #endif
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 namespace mat {
 
 template <class ValueType> inline void gemm(char TransA, char TransB, int M, int N, int K, ValueType alpha, Iterator<ValueType> A, int lda, Iterator<ValueType> B, int ldb, ValueType beta, Iterator<ValueType> C, int ldc) {
@@ -454,7 +454,7 @@ template <> inline void svd<double>(char *JOBU, char *JOBVT, int *M, int *N, Ite
 #endif
 
 /**
- * \brief Computes the pseudo inverse of matrix M(n1xn2) (in row major form)
+ * Computes the pseudo inverse of matrix M(n1xn2) (in row major form)
  * and returns the output M_(n2xn1). Original contents of M are destroyed.
  */
 template <class ValueType> inline void pinv(Iterator<ValueType> M, int n1, int n2, ValueType eps, Iterator<ValueType> M_) {
@@ -513,6 +513,6 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, int n1, int n
 }
 
 }  // end namespace mat
-}  // end namespace SCTL_NAMESPACE
+}  // end namespace sctl
 
 #endif // _SCTL_MAT_UTILS_TXX_

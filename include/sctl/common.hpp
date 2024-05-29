@@ -10,12 +10,12 @@
 #  define SCTL_DATA_PATH ./data/
 #endif
 
-#ifndef SCTL_NAMESPACE
-#define SCTL_NAMESPACE sctl
-#endif
+//#ifndef SCTL_NAMESPACE
+//#define SCTL_NAMESPACE sctl
+//#endif
 #define SCTL_QUOTEME(x) SCTL_QUOTEME_1(x)
 #define SCTL_QUOTEME_1(x) #x
-#define SCTL_INCLUDE(x) SCTL_QUOTEME(SCTL_NAMESPACE/x)
+//#define SCTL_INCLUDE(x) SCTL_QUOTEME(SCTL_NAMESPACE/x)
 
 // Profiling parameters
 #ifndef SCTL_PROFILE
@@ -40,7 +40,7 @@
 #define SCTL_GLOBAL_MEM_BUFF 1024LL * 0LL  // in MB
 #endif
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 typedef long Integer;  // bounded numbers < 32k
 typedef int64_t Long;  // problem size
 }
@@ -71,7 +71,7 @@ typedef int64_t Long;  // problem size
 
 #define SCTL_UNUSED(x) (void)(x)  // to ignore unused variable warning.
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 #ifdef SCTL_MEMDEBUG
 template <class ValueType> class ConstIterator;
 template <class ValueType> class Iterator;

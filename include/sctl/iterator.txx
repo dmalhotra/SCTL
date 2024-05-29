@@ -6,12 +6,11 @@
 #include <type_traits>        // for is_trivially_copyable
 
 #include "sctl/common.hpp"    // for Long, SCTL_UNUSED, SCTL_ASSERT_MSG, SCT...
-#include SCTL_INCLUDE(iterator.hpp)  // for ConstIterator, Iterator, operator+, Nul...
-#include SCTL_INCLUDE(mem_mgr.hpp)   // for MemoryManager
-#include SCTL_INCLUDE(mem_mgr.txx)   // for MemoryManager::CheckMemHead, MemoryMana...
-#include SCTL_INCLUDE(vector.hpp)    // for NullIterator
+#include "sctl/iterator.hpp"  // for ConstIterator, Iterator, operator+, Nul...
+#include "sctl/mem_mgr.hpp"   // for MemoryManager
+#include "sctl/mem_mgr.txx"   // for MemoryManager::CheckMemHead, MemoryMana... // TODO: remove circular include (iterator.txx -> mem_mgr.txx -> iterator.txx)
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 #ifdef SCTL_MEMDEBUG
 

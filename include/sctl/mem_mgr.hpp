@@ -7,14 +7,14 @@
 #include <typeinfo>         // for type_info
 #include <vector>           // for vector
 
-#include "sctl/common.hpp"  // for Long, SCTL_NAMESPACE
+#include "sctl/common.hpp"  // for Long, sctl
 
 // TODO: Implement fast stack allocation.
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 /**
- * \brief MemoryManager class declaration.
+ * MemoryManager class declaration.
  */
 class MemoryManager {
 
@@ -23,7 +23,7 @@ class MemoryManager {
   static constexpr Long end_padding = 64;
 
   /**
-   * \brief Header data for each memory block.
+   * Header data for each memory block.
    */
   struct MemHead {
     typedef decltype(typeid(char).hash_code()) TypeID;
@@ -38,12 +38,12 @@ class MemoryManager {
   };
 
   /**
-   * \brief Constructor for MemoryManager.
+   * Constructor for MemoryManager.
    */
   explicit MemoryManager(Long N);
 
   /**
-   * \brief Constructor for MemoryManager.
+   * Constructor for MemoryManager.
    */
   ~MemoryManager();
 
@@ -76,7 +76,7 @@ class MemoryManager {
   MemoryManager(const MemoryManager& m);
 
   /**
-   * \brief Node structure for a doubly linked list, representing free and
+   * Node structure for a doubly linked list, representing free and
    * occupied memory blocks. Blocks are split, merged or state is changed
    * between free and occupied in O(1) time given the pointer to the MemNode.
    */
@@ -89,13 +89,13 @@ class MemoryManager {
   };
 
   /**
-   * \brief Return index of one of the available MemNodes from node_stack or
+   * Return index of one of the available MemNodes from node_stack or
    * create new MemNode by resizing node_buff.
    */
   Long new_node() const;
 
   /**
-   * \brief Add node index for now available MemNode to node_stack.
+   * Add node index for now available MemNode to node_stack.
    */
   void delete_node(Long indx) const;
 
@@ -112,17 +112,17 @@ class MemoryManager {
 };
 
 /**
- * \brief Aligned allocation as an alternative to new. Uses placement new to
+ * Aligned allocation as an alternative to new. Uses placement new to
  * construct objects.
  */
 template <class ValueType> Iterator<ValueType> aligned_new(Long n_elem = 1, const MemoryManager* mem_mgr = &MemoryManager::glbMemMgr());
 
 /**
- * \brief Aligned de-allocation as an alternative to delete. Calls the object
+ * Aligned de-allocation as an alternative to delete. Calls the object
  * destructor.
  */
 template <class ValueType> void aligned_delete(Iterator<ValueType> A, const MemoryManager* mem_mgr = &MemoryManager::glbMemMgr());
 
-}  // end namespace SCTL_NAMESPACE
+}  // end namespace sctl
 
 #endif // _SCTL_MEM_MGR_HPP_

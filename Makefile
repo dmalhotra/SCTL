@@ -1,4 +1,4 @@
-CXX=g++ # requires g++-8 or newer / icpc (with gcc compatibility 7.5 or newer) / clang++ with llvm-10 or newer
+CXX=g++ # requires g++-9 or newer / icpc (with gcc compatibility 9 or newer) / clang++ with llvm-10 or newer
 CXXFLAGS = -std=c++11 -fopenmp -Wall -Wfloat-conversion # need C++11 and OpenMP
 
 #Optional flags
@@ -60,6 +60,7 @@ TARGET_BIN = \
        $(BINDIR)/test-fft \
        $(BINDIR)/test-fmm \
        $(BINDIR)/test-gmres \
+       $(BINDIR)/test-linear-solver \
        $(BINDIR)/test-ode-solver \
        $(BINDIR)/test-pt-tree \
        $(BINDIR)/test-quadrule \

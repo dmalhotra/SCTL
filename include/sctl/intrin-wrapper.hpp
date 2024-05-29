@@ -3,19 +3,20 @@
 
 #include <stdint.h>             // for int8_t, int16_t, int32_t, int64_t
 
-#include "sctl/common.hpp"      // for Integer, SCTL_NAMESPACE, SCTL_ALIGN_B...
-#include SCTL_INCLUDE(math_utils.hpp)  // for const_pi, QuadReal, cos, exp, sin, sqrt
-#include SCTL_INCLUDE(math_utils.txx)  // for pow, significant_bits
+#include "sctl/common.hpp"      // for Integer, sctl, SCTL_ALIGN_B...
+#include "sctl/math_utils.hpp"  // for const_pi, QuadReal, cos, exp, sin, sqrt
+#include "sctl/math_utils.txx"  // for pow, significant_bits
 
 #if defined(__ARM_NEON)
-#  include SCTL_INCLUDE(sse2neon.h)
+#  include "sctl/sse2neon.h"
 #  define __SSE__
 #  define __SSE2__
 #  define __SSE3__
 #  define __SSE4__
 #  define __SSE4_1__
 #  define __SSE4_2__
-#elif defined(__SSE4_2__) || defined(__AVX__) || defined(__AVX512F__)
+#  define _MM_SHUFFLE2(fp1, fp0) (((fp1) << 1) | (fp0))
+#elif defined(__MMX__) || defined(__SSE__) || defined(__SSE2__) || defined(__SSE4_2__) || defined(__AVX__) || defined(__AVX512F__)
 #  ifdef _MSC_VER
 #    include <intrin.h>
 #  else
@@ -48,7 +49,7 @@
 // TODO: Replace pointers with iterators
 
 
-namespace SCTL_NAMESPACE { // Traits
+namespace sctl { // Traits
 
   enum class DataType {
     Integer,
@@ -127,7 +128,7 @@ namespace SCTL_NAMESPACE { // Traits
 #endif
 }
 
-namespace SCTL_NAMESPACE { // Generic
+namespace sctl { // Generic
 
   template <class ValueType, Integer N> struct alignas(sizeof(ValueType)*N>SCTL_ALIGN_BYTES?SCTL_ALIGN_BYTES:sizeof(ValueType)*N) VecData {
     using ScalarType = ValueType;
@@ -818,7 +819,7 @@ namespace SCTL_NAMESPACE { // Generic
   }
 }
 
-namespace SCTL_NAMESPACE { // SSE
+namespace sctl { // SSE
 #ifdef __SSE4_2__
   template <> struct alignas(sizeof(int8_t) * 16) VecData<int8_t,16> {
     using ScalarType = int8_t;
@@ -1536,7 +1537,7 @@ namespace SCTL_NAMESPACE { // SSE
 #endif
 }
 
-namespace SCTL_NAMESPACE { // AVX
+namespace sctl { // AVX
 #ifdef __AVX__
   template <> struct alignas(sizeof(int8_t) * 32) VecData<int8_t,32> {
     using ScalarType = int8_t;
@@ -2265,7 +2266,7 @@ namespace SCTL_NAMESPACE { // AVX
 #endif
 }
 
-namespace SCTL_NAMESPACE { // AVX512
+namespace sctl { // AVX512
 #if defined(__AVX512F__)
   template <> struct alignas(sizeof(int8_t) * 64) VecData<int8_t,64> {
     using ScalarType = int8_t;

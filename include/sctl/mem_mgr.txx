@@ -17,14 +17,14 @@
 #include <vector>               // for vector
 
 #include "sctl/common.hpp"      // for Long, SCTL_ASSERT_MSG, Integer, SCTL_...
-#include SCTL_INCLUDE(mem_mgr.hpp)     // for MemoryManager, aligned_delete, aligne...
-#include SCTL_INCLUDE(iterator.hpp)    // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)    // for Iterator::operator[], NullIterator
-#include SCTL_INCLUDE(math_utils.hpp)  // for round
-#include SCTL_INCLUDE(profile.hpp)     // for Profile, ProfileCounter
-#include SCTL_INCLUDE(profile.txx)     // for Profile::IncrementCounter
+#include "sctl/mem_mgr.hpp"     // for MemoryManager, aligned_delete, aligne...
+#include "sctl/iterator.hpp"    // for Iterator, ConstIterator
+#include "sctl/iterator.txx"    // for Iterator::operator[], NullIterator
+#include "sctl/math_utils.hpp"  // for round
+#include "sctl/profile.hpp"     // for Profile, ProfileCounter
+#include "sctl/profile.txx"     // for Profile::IncrementCounter
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 inline MemoryManager::MemoryManager(Long N) {
   buff_size = N;

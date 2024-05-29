@@ -9,20 +9,20 @@
 #include <string>                 // for char_traits, allocator, basic_string
 
 #include "sctl/common.hpp"        // for Integer, Long, SCTL_ASSERT, SCTL_NA...
-#include SCTL_INCLUDE(vtudata.hpp)       // for VTUData
-#include SCTL_INCLUDE(comm.hpp)          // for Comm, CommOp
-#include SCTL_INCLUDE(comm.txx)          // for Comm::Rank, Comm::Allreduce, Comm::...
-#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
-#include SCTL_INCLUDE(math_utils.hpp)    // for const_pi, cos
-#include SCTL_INCLUDE(math_utils.txx)    // for pow
-#include SCTL_INCLUDE(matrix.hpp)        // for Matrix
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator+, StaticArray...
-#include SCTL_INCLUDE(vector.hpp)        // for Vector
-#include SCTL_INCLUDE(vector.txx)        // for Vector::Dim, Vector::PushBack, Vect...
+#include "sctl/vtudata.hpp"       // for VTUData
+#include "sctl/comm.hpp"          // for Comm, CommOp
+#include "sctl/comm.txx"          // for Comm::Rank, Comm::Allreduce, Comm::...
+#include "sctl/iterator.hpp"      // for Iterator, ConstIterator
+#include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
+#include "sctl/math_utils.hpp"    // for const_pi, cos
+#include "sctl/math_utils.txx"    // for pow
+#include "sctl/matrix.hpp"        // for Matrix
+#include "sctl/static-array.hpp"  // for StaticArray
+#include "sctl/static-array.txx"  // for StaticArray::operator+, StaticArray...
+#include "sctl/vector.hpp"        // for Vector
+#include "sctl/vector.txx"        // for Vector::Dim, Vector::PushBack, Vect...
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 inline void VTUData::test() {
   VTUData vtu_data;

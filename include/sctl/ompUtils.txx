@@ -6,13 +6,13 @@
 #include <functional>         // for less
 #include <iterator>           // for iterator_traits
 
-#include "sctl/common.hpp"    // for Integer, SCTL_UNUSED, SCTL_NAMESPACE
-#include SCTL_INCLUDE(ompUtils.hpp)  // for merge_sort, merge, reduce, scan
-#include SCTL_INCLUDE(iterator.hpp)  // for Iterator
-#include SCTL_INCLUDE(iterator.txx)  // for Ptr2Itr
-#include SCTL_INCLUDE(vector.hpp)    // for Vector
+#include "sctl/common.hpp"    // for Integer, SCTL_UNUSED, sctl
+#include "sctl/ompUtils.hpp"  // for merge_sort, merge, reduce, scan
+#include "sctl/iterator.hpp"  // for Iterator
+#include "sctl/iterator.txx"  // for Ptr2Itr
+#include "sctl/vector.hpp"    // for Vector
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inline void omp_par::merge(ConstIter A_, ConstIter A_last, ConstIter B_, ConstIter B_last, Iter C_, Int p, StrictWeakOrdering comp) {
   typedef typename std::iterator_traits<Iter>::difference_type _DiffType;

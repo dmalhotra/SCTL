@@ -3,17 +3,17 @@
 
 #include <ostream>                // for ostream
 
-#include "sctl/common.hpp"        // for Long, Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
+#include "sctl/common.hpp"        // for Long, Integer, sctl
+#include "sctl/static-array.hpp"  // for StaticArray
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <Long k, Long d0, Long... dd> static constexpr Long TensorArgExtract();
   template <class ValueType, bool own_data, Long... dd> struct TensorRotateLeftType;
   template <class ValueType, bool own_data, Long... dd> struct TensorRotateRightType;
 
   /**
-   * @brief A template class representing a multidimensional tensor.
+   * A template class representing a multidimensional tensor.
    * The data is stored in row-major order.
    *
    * @tparam ValueType The type of the elements stored in the tensor.
@@ -23,21 +23,21 @@ namespace SCTL_NAMESPACE {
   template <class ValueType, bool own_data, Long... Args> class Tensor {
     public:
       /**
-       * @brief Get the order of the tensor.
+       * Get the order of the tensor.
        *
        * @return The order of the tensor.
        */
       static constexpr Long Order();
 
       /**
-       * @brief Get the total number of elements in the tensor.
+       * Get the total number of elements in the tensor.
        *
        * @return The total number of elements in the tensor.
        */
       static constexpr Long Size();
 
       /**
-       * @brief Get the size of a specific dimension of the tensor.
+       * Get the size of a specific dimension of the tensor.
        *
        * @tparam k The index of the dimension.
        * @return The size of the specified dimension.
@@ -45,49 +45,49 @@ namespace SCTL_NAMESPACE {
       template <Long k> static constexpr Long Dim();
 
       /**
-       * @brief A static function to test the functionality of the Tensor class.
+       * A static function to test the functionality of the Tensor class.
        */
       static void test();
 
       // Constructor and Destructor
 
       /**
-       * @brief Default constructor.
+       * Default constructor.
        *
        * Constructs an empty tensor.
        */
       Tensor();
 
       /**
-       * @brief Constructor initializing tensor from an iterator.
+       * Constructor initializing tensor from an iterator.
        *
        * @param src_iter Iterator pointing to the beginning of data to initialize the tensor.
        */
       explicit Tensor(Iterator<ValueType> src_iter);
 
       /**
-       * @brief Constructor initializing tensor from a const iterator.
+       * Constructor initializing tensor from a const iterator.
        *
        * @param src_iter Const iterator pointing to the beginning of data to initialize the tensor.
        */
       explicit Tensor(ConstIterator<ValueType> src_iter);
 
       /**
-       * @brief Copy constructor.
+       * Copy constructor.
        *
        * @param M Another tensor to copy from.
        */
       Tensor(const Tensor &M);
 
       /**
-       * @brief Constructor initializing all elements of the tensor with a specific value.
+       * Constructor initializing all elements of the tensor with a specific value.
        *
        * @param v The value to initialize all elements of the tensor with.
        */
       explicit Tensor(const ValueType& v);
 
       /**
-       * @brief Constructor converting tensor of another data type.
+       * Constructor converting tensor of another data type.
        *
        * @tparam own_data_ Boolean indicating whether the new tensor owns its data.
        * @param M Another tensor to copy from.
@@ -95,14 +95,14 @@ namespace SCTL_NAMESPACE {
       template <bool own_data_> Tensor(const Tensor<ValueType, own_data_, Args...> &M);
 
       /**
-       * @brief Destructor.
+       * Destructor.
        */
       ~Tensor() = default;
 
       // Assignment Operator
 
       /**
-       * @brief Copy assignment operator.
+       * Copy assignment operator.
        *
        * @param M Another tensor to copy from.
        * @return Reference to this tensor.
@@ -110,7 +110,7 @@ namespace SCTL_NAMESPACE {
       Tensor &operator=(const Tensor &M);
 
       /**
-       * @brief Assignment operator setting all elements of the tensor to a specific value.
+       * Assignment operator setting all elements of the tensor to a specific value.
        *
        * @param v The value to set all elements of the tensor to.
        * @return Reference to this tensor.
@@ -120,35 +120,35 @@ namespace SCTL_NAMESPACE {
       // Member Functions
 
       /**
-       * @brief Get an iterator to the beginning of the tensor.
+       * Get an iterator to the beginning of the tensor.
        *
        * @return An iterator to the beginning of the tensor.
        */
       Iterator<ValueType> begin();
 
       /**
-       * @brief Get a const iterator to the beginning of the tensor.
+       * Get a const iterator to the beginning of the tensor.
        *
        * @return A const iterator to the beginning of the tensor.
        */
       ConstIterator<ValueType> begin() const;
 
       /**
-       * @brief Get an iterator to the end of the tensor.
+       * Get an iterator to the end of the tensor.
        *
        * @return An iterator to the end of the tensor.
        */
       Iterator<ValueType> end();
 
       /**
-       * @brief Get a const iterator to the end of the tensor.
+       * Get a const iterator to the end of the tensor.
        *
        * @return A const iterator to the end of the tensor.
        */
       ConstIterator<ValueType> end() const;
 
       /**
-       * @brief Access a specific element of the tensor.
+       * Access a specific element of the tensor.
        *
        * @tparam PackedLong Variadic template parameter for the indices of the element.
        * @param ii Indices of the element.
@@ -157,7 +157,7 @@ namespace SCTL_NAMESPACE {
       template <class ...PackedLong> ValueType& operator()(PackedLong... ii);
 
       /**
-       * @brief Access a specific element of the tensor.
+       * Access a specific element of the tensor.
        *
        * @tparam PackedLong Variadic template parameter for the indices of the element.
        * @param ii Indices of the element.
@@ -166,8 +166,7 @@ namespace SCTL_NAMESPACE {
       template <class ...PackedLong> ValueType operator()(PackedLong... ii) const;
 
       /**
-       * @brief Returns a new tensor obtained by rotating the dimensions of the current tensor to the left.
-       *
+       * Returns a new tensor obtained by rotating the dimensions of the current tensor to the left.
        * This operation shifts the dimensions of the tensor. If the original tensor has dimensions n1 x n2 x n3,
        * then the left-rotated tensor will be of dimensions n2 x n3 x n1 and the data will be rearranged in a similar way.
        * This operation is a generalization of the transpose operation for matrices.
@@ -177,8 +176,7 @@ namespace SCTL_NAMESPACE {
       typename TensorRotateLeftType<ValueType, true, Args...>::Value RotateLeft() const;
 
       /**
-       * @brief Returns a new tensor obtained by rotating the dimensions of the current tensor to the right.
-       *
+       * Returns a new tensor obtained by rotating the dimensions of the current tensor to the right.
        * This operation shifts the dimensions of the tensor. If the original tensor has dimensions n1 x n2 x n3,
        * then the right-rotated tensor will be of dimensions n3 x n1 x n2 and the data will be rearranged accordingly.
        * This operation is a generalization of the transpose operation for matrices.
@@ -188,21 +186,21 @@ namespace SCTL_NAMESPACE {
       typename TensorRotateRightType<ValueType, true, Args...>::Value RotateRight() const;
 
       /**
-       * @brief Unary positive operator.
+       * Unary positive operator.
        *
        * @return The tensor itself.
        */
       Tensor<ValueType, true, Args...> operator+() const;
 
       /**
-       * @brief Unary negative operator.
+       * Unary negative operator.
        *
        * @return Negated tensor.
        */
       Tensor<ValueType, true, Args...> operator-() const;
 
       /**
-       * @brief Addition operator.
+       * Addition operator.
        *
        * @param s Scalar value to add to the tensor.
        * @return Result of addition.
@@ -210,7 +208,7 @@ namespace SCTL_NAMESPACE {
       Tensor<ValueType, true, Args...> operator+(const ValueType &s) const;
 
       /**
-       * @brief Subtraction operator.
+       * Subtraction operator.
        *
        * @param s Scalar value to subtract from the tensor.
        * @return Result of subtraction.
@@ -218,7 +216,7 @@ namespace SCTL_NAMESPACE {
       Tensor<ValueType, true, Args...> operator-(const ValueType &s) const;
 
       /**
-       * @brief Multiplication operator.
+       * Multiplication operator.
        *
        * @param s Scalar value to multiply the tensor by.
        * @return Result of multiplication.
@@ -226,7 +224,7 @@ namespace SCTL_NAMESPACE {
       Tensor<ValueType, true, Args...> operator*(const ValueType &s) const;
 
       /**
-       * @brief Division operator.
+       * Division operator.
        *
        * @param s Scalar value to divide the tensor by.
        * @return Result of division.
@@ -234,7 +232,7 @@ namespace SCTL_NAMESPACE {
       Tensor<ValueType, true, Args...> operator/(const ValueType &s) const;
 
       /**
-       * @brief Addition operator.
+       * Addition operator.
        *
        * @tparam own_data_ Boolean indicating whether the resulting tensor owns its data.
        * @param M2 Another tensor to add.
@@ -243,7 +241,7 @@ namespace SCTL_NAMESPACE {
       template <bool own_data_> Tensor<ValueType, true, Args...> operator+(const Tensor<ValueType, own_data_, Args...> &M2) const;
 
       /**
-       * @brief Subtraction operator.
+       * Subtraction operator.
        *
        * @tparam own_data_ Boolean indicating whether the resulting tensor owns its data.
        * @param M2 Another tensor to subtract.
@@ -252,7 +250,7 @@ namespace SCTL_NAMESPACE {
       template <bool own_data_> Tensor<ValueType, true, Args...> operator-(const Tensor<ValueType, own_data_, Args...> &M2) const;
 
       /**
-       * @brief Multiplication operator.
+       * Multiplication operator.
        *
        * This is matrix multiplication. The second tensor should have dimensions compatible with the first.
        *

@@ -6,16 +6,16 @@
 #include <functional>             // for function
 
 #include "sctl/common.hpp"        // for Integer, Long, SCTL_ASSERT, SCTL_NA...
-#include SCTL_INCLUDE(iterator.hpp)      // for ConstIterator, Iterator
-#include SCTL_INCLUDE(math_utils.hpp)    // for fabs, const_pi, cos
-#include SCTL_INCLUDE(math_utils.txx)    // for pow, machine_eps
-#include SCTL_INCLUDE(matrix.hpp)        // for Matrix
-#include SCTL_INCLUDE(quadrule.hpp)      // for LegQuadRule
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[]
-#include SCTL_INCLUDE(vector.hpp)        // for Vector
+#include "sctl/iterator.hpp"      // for ConstIterator, Iterator
+#include "sctl/math_utils.hpp"    // for fabs, const_pi, cos
+#include "sctl/math_utils.txx"    // for pow, machine_eps
+#include "sctl/matrix.hpp"        // for Matrix
+#include "sctl/quadrule.hpp"      // for LegQuadRule
+#include "sctl/static-array.hpp"  // for StaticArray
+#include "sctl/static-array.txx"  // for StaticArray::operator[]
+#include "sctl/vector.hpp"        // for Vector
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class ValueType, class Derived> class BasisInterface {
 
@@ -49,7 +49,7 @@ template <class ValueType, class Derived> class BasisInterface {
   }
 
   /**
-   * \brief Computes approximation from function values at node points.
+   * Computes approximation from function values at node points.
    * \param[in] fn_v Function values at node points (dof x order^DIM).
    * \param[out] coeff Coefficient values (dof x Ncoeff).
    */
@@ -155,7 +155,7 @@ template <class ValueType, class Derived> class BasisInterface {
   }
 
   /**
-   * \brief Evaluates values from input coefficients at points on a regular
+   * Evaluates values from input coefficients at points on a regular
    * grid defined by in_x, in_y, in_z the values in the input vector.
    * \param[in] coeff Coefficient values (dof x Ncoeff).
    * \param[out] out Values at node points (in_x[DIM-1].Dim() x ... x in_x[0].Dim() x dof).
@@ -215,7 +215,7 @@ template <class ValueType, class Derived> class BasisInterface {
   }
 
   /**
-   * \brief Returns the sum of the absolute value of coefficients of the
+   * Returns the sum of the absolute value of coefficients of the
    * highest order terms as an estimate of truncation error.
    * \param[in] coeff Coefficient values (dof x Ncoeff).
    */
@@ -259,7 +259,7 @@ template <class ValueType, class Derived> class BasisInterface {
   }
 
   /**
-   * \brief Compute gradient.
+   * Compute gradient.
    * \param[in] coeff_in Input coefficients (dof x Ncoeff)
    * \param[out] coeff_out Output coefficients (dof x DIM x Ncoeff)
    */
@@ -1370,7 +1370,7 @@ template <class ValueType> class ChebBasis : public BasisInterface<ValueType, Ch
   static void Nodes1D(Integer order, Vector<ValueType>& nodes) { BasisInterface<ValueType, ChebBasis<ValueType>>::cheb_nodes_1d(order, nodes); }
 
   /**
-   * \brief Returns the values of all Chebyshev polynomials up to degree d,
+   * Returns the values of all Chebyshev polynomials up to degree d,
    * evaluated at points in the input vector. Output format:
    * { T0[x[0]], ..., T0[x[n-1]], T1[x[0]], ..., Td[x[n-1]] }
    */

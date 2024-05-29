@@ -5,15 +5,15 @@
 #include <algorithm>                // for max
 #include <cstdint>                  // for int8_t, int16_t, int32_t, int64_t
 
-#include "sctl/common.hpp"          // for SCTL_ASSERT, Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(intrin-wrapper.hpp)  // for IntegerType, TypeTraits, DataType
-#include SCTL_INCLUDE(math_utils.hpp)      // for fabs, cos, sin, sqrt, QuadReal (p...
-#include SCTL_INCLUDE(math_utils.txx)      // for pow, machine_eps
-#include SCTL_INCLUDE(vec.hpp)             // for Vec
-#include SCTL_INCLUDE(vec.txx)             // for select, approx_exp, approx_rsqrt
-#include SCTL_INCLUDE(vector.hpp)          // for Vector
+#include "sctl/common.hpp"          // for SCTL_ASSERT, Integer, sctl
+#include "sctl/intrin-wrapper.hpp"  // for IntegerType, TypeTraits, DataType
+#include "sctl/math_utils.hpp"      // for fabs, cos, sin, sqrt, QuadReal (p...
+#include "sctl/math_utils.txx"      // for pow, machine_eps
+#include "sctl/vec.hpp"             // for Vec
+#include "sctl/vec.txx"             // for select, approx_exp, approx_rsqrt
+#include "sctl/vector.hpp"          // for Vector
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   // Verify Vec class
   template <class ValueType = double, Integer N = 1> class VecTest {

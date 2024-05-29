@@ -4,13 +4,13 @@
 #include <string>            // for basic_string, string
 #include <vector>            // for vector
 
-#include "sctl/common.hpp"   // for Long, Integer, SCTL_NAMESPACE
+#include "sctl/common.hpp"   // for Long, Integer, sctl
 
 #ifndef SCTL_PROFILE
 #define SCTL_PROFILE -1
 #endif
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 class Comm;
 enum class CommOp;

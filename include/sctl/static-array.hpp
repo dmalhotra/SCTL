@@ -3,9 +3,9 @@
 
 #include <initializer_list>  // for initializer_list
 
-#include "sctl/common.hpp"   // for Long, SCTL_NAMESPACE
+#include "sctl/common.hpp"   // for Long, sctl
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 #ifdef SCTL_MEMDEBUG
 
@@ -75,6 +75,6 @@ template <class ValueType, Long DIM> class StaticArray {
 
 #endif
 
-}  // end namespace SCTL_NAMESPACE
+}  // end namespace sctl
 
 #endif // _SCTL_STATIC_ARRAY_HPP_

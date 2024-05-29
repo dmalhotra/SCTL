@@ -5,9 +5,12 @@ Using the Matrix class
 
 The `Matrix` class is a template class designed to represent and manipulate matrices.
 It provides various operations for matrix-matrix and matrix-scalar computations, as well as utilities for input/output, transposition, singular value decomposition (SVD), and pseudo-inverse computation.
-For more advanced usage and additional features, please refer to the :ref:`Matrix class documentation <matrix-dox>`.
 
-To use the `Matrix` class, follow these steps:
+
+This tutorial provided a basic overview of how to use the Matrix class.
+For more advanced usage and additional features, please refer to the Matrix class API in :ref:`matrix.hpp <matrix_hpp>`.
+
+.. :ref:`Matrix class documentation <matrix-dox>`.
 
 1. **Instantiate the Class**: Instantiate an object of the `Matrix` class with the desired template parameter (`ValueType`).
 
@@ -46,20 +49,4 @@ To use the `Matrix` class, follow these steps:
    .. code-block:: cpp
 
       Matrix<double> transposed = mat.Transpose();
-
-Example Usage
---------------
-Here's an example usage of the `Matrix` class:
-
-.. code-block:: cpp
-
-   Matrix<double> A(3, 3);
-   Matrix<double> B(3, 3);
-
-   Matrix<double> C = A + B;
-   Matrix<double> D = A * B;
-
-   double val = C(1, 1);
-
-This example demonstrates how to perform matrix operations using the `Matrix` class.
 

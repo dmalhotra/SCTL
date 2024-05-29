@@ -16,13 +16,13 @@
 #include <vector>             // for vector
 
 #include "sctl/common.hpp"    // for Long, SCTL_ASSERT, Integer, SCTL_ASSERT...
-#include SCTL_INCLUDE(profile.hpp)   // for Profile, ProfileCounter, operator*, ope...
-#include SCTL_INCLUDE(comm.hpp)      // for CommOp, Comm
-#include SCTL_INCLUDE(comm.txx)      // for Comm::Rank, Comm::Size, Comm::Allreduce
-#include SCTL_INCLUDE(iterator.hpp)  // for ConstIterator, Iterator
-#include SCTL_INCLUDE(iterator.txx)  // for Ptr2ConstItr, Ptr2Itr, ConstIterator::C...
+#include "sctl/profile.hpp"   // for Profile, ProfileCounter, operator*, ope...
+#include "sctl/comm.hpp"      // for CommOp, Comm
+#include "sctl/comm.txx"      // for Comm::Rank, Comm::Size, Comm::Allreduce  // TODO: remove circular include (profile.txx -> comm.txx -> vector.txx -> profile.txx)
+#include "sctl/iterator.hpp"  // for ConstIterator, Iterator
+#include "sctl/iterator.txx"  // for Ptr2ConstItr, Ptr2Itr, ConstIterator::C...
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class E> class Profile::ExprWrapper {
     public:

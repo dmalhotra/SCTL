@@ -4,7 +4,9 @@ Using the Permutation class
 ===========================
 
 This tutorial provides an overview of the Permutation class and demonstrates how to create, manipulate, and perform operations with permutation objects.
-For more advanced usage and additional features, please refer to the :ref:`Permutation class documentation <permutation-dox>`.
+For more advanced usage and additional features, please refer to the Permutation class API in :ref:`permutation.hpp <permutation_hpp>`.
+
+.. :ref:`Permutation class documentation <permutation-dox>`.
 
 Creating Permutation Matrices
 ------------------------------

@@ -3,10 +3,10 @@
 
 #include <ostream>                  // for ostream
 
-#include "sctl/common.hpp"          // for Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(intrin-wrapper.hpp)  // for Mask, VecData
+#include "sctl/common.hpp"          // for Integer, sctl
+#include "sctl/intrin-wrapper.hpp"  // for Mask, VecData
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   /**
    * Returns the default SIMD vector length for the given scalar type.
@@ -14,8 +14,6 @@ namespace SCTL_NAMESPACE {
   template <class ScalarType> constexpr Integer DefaultVecLen();
 
   /**
-   * @brief Class template representing a SIMD (Single Instruction, Multiple Data) vector.
-   *
    * This class template provides functionality for working with SIMD vectors, enabling
    * efficient parallelization of computations on multiple data elements simultaneously.
    *
@@ -25,36 +23,36 @@ namespace SCTL_NAMESPACE {
   template <class ValueType, Integer N = DefaultVecLen<ValueType>()> class alignas(sizeof(ValueType) * N) Vec {
     public:
       /**
-       * @brief Type alias for the scalar type of the vector elements.
+       * Type alias for the scalar type of the vector elements.
        */
       using ScalarType = ValueType;
 
       /**
-       * @brief Type alias for the internal data representation of the vector.
+       * Type alias for the internal data representation of the vector.
        */
       using VData = VecData<ScalarType,N>;
 
       /**
-       * @brief Type alias for the mask type associated with the vector.
+       * Type alias for the mask type associated with the vector.
        */
       using MaskType = Mask<VData>;
 
       /**
-       * @brief Get the size of the vector.
+       * Get the size of the vector.
        *
        * @return The size of the vector.
        */
       static constexpr Integer Size();
 
       /**
-       * @brief Create a vector initialized with all elements set to zero.
+       * Create a vector initialized with all elements set to zero.
        *
        * @return Zero-initialized vector.
        */
       static inline Vec Zero();
 
       /**
-       * @brief Load a scalar value into all elements of the vector.
+       * Load a scalar value into all elements of the vector.
        *
        * @param p Pointer to the scalar value.
        * @return Vector with all elements loaded with the scalar value.
@@ -62,7 +60,7 @@ namespace SCTL_NAMESPACE {
       static inline Vec Load1(ScalarType const* p);
 
       /**
-       * @brief Load a vector of scalar values from unaligned memory.
+       * Load a vector of scalar values from unaligned memory.
        *
        * @param p Pointer to the scalar values.
        * @return Vector loaded with the scalar values.
@@ -70,7 +68,7 @@ namespace SCTL_NAMESPACE {
       static inline Vec Load(ScalarType const* p);
 
       /**
-       * @brief Load a vector of scalar values from aligned memory.
+       * Load a vector of scalar values from aligned memory.
        *
        * @param p Pointer to the scalar values.
        * @return Vector loaded with the scalar values from aligned memory.
@@ -78,19 +76,19 @@ namespace SCTL_NAMESPACE {
       static inline Vec LoadAligned(ScalarType const* p);
 
       /**
-       * @brief Default constructor.
+       * Default constructor.
        */
       Vec() = default;
 
       /**
-       * @brief Copy constructor.
+       * Copy constructor.
        *
        * @param v_ Vector to copy from.
        */
       Vec(const Vec&) = default;
 
       /**
-       * @brief Copy assignment operator.
+       * Copy assignment operator.
        *
        * @param v_ Vector to copy from.
        * @return Reference to the assigned vector.
@@ -98,26 +96,26 @@ namespace SCTL_NAMESPACE {
       Vec& operator=(const Vec&) = default;
 
       /**
-       * @brief Destructor.
+       * Destructor.
        */
       ~Vec() = default;
 
       /**
-       * @brief Constructor initializing vector with given data.
+       * Constructor initializing vector with given data.
        *
        * @param v_ Vector data.
        */
       inline Vec(const VData& v_);
 
       /**
-       * @brief Constructor initializing vector with a scalar value.
+       * Constructor initializing vector with a scalar value.
        *
        * @param a Scalar value to initialize vector elements.
        */
       inline Vec(const ScalarType& a);
 
       /**
-       * @brief Constructor initializing vector with multiple scalar values.
+       * Constructor initializing vector with multiple scalar values.
        *
        * @tparam T Data type of scalar values.
        * @tparam T1 Variadic template parameter pack for scalar values.
@@ -127,14 +125,14 @@ namespace SCTL_NAMESPACE {
       template <class T,class ...T1> inline Vec(T x, T1... args);
 
       /**
-       * @brief Store the vector data into unaligned memory.
+       * Store the vector data into unaligned memory.
        *
        * @param p Pointer to the memory location to store the data.
        */
       inline void Store(ScalarType* p) const;
 
       /**
-       * @brief Store the vector data into aligned memory.
+       * Store the vector data into aligned memory.
        *
        * @param p Pointer to the memory location to store the data.
        */
@@ -143,7 +141,7 @@ namespace SCTL_NAMESPACE {
       // Element access
 
       /**
-       * @brief Access individual elements of the vector.
+       * Access individual elements of the vector.
        *
        * @param i Index of the element to access.
        * @return Value of the element at the specified index.
@@ -151,7 +149,7 @@ namespace SCTL_NAMESPACE {
       inline ScalarType operator[](Integer i) const;
 
       /**
-       * @brief Insert a value at the specified index in the vector.
+       * Insert a value at the specified index in the vector.
        *
        * @param i Index at which to insert the value.
        * @param value Value to insert.
@@ -161,14 +159,14 @@ namespace SCTL_NAMESPACE {
       // Arithmetic operators
 
       /**
-       * @brief Unary plus operator.
+       * Unary plus operator.
        *
        * @return The vector with all elements unchanged.
        */
       inline Vec operator+() const;
 
       /**
-       * @brief Unary minus operator.
+       * Unary minus operator.
        *
        * @return The negated vector.
        */
@@ -177,7 +175,7 @@ namespace SCTL_NAMESPACE {
       // Bitwise operators
 
       /**
-       * @brief Bitwise NOT operator.
+       * Bitwise NOT operator.
        *
        * @return The bitwise complement of the vector.
        */
@@ -186,7 +184,7 @@ namespace SCTL_NAMESPACE {
       // Assignment operators
 
       /**
-       * @brief Assignment operator with a scalar value.
+       * Assignment operator with a scalar value.
        *
        * @param a Scalar value to assign to all elements of the vector.
        * @return Reference to the modified vector.
@@ -194,7 +192,7 @@ namespace SCTL_NAMESPACE {
       inline Vec& operator=(const ScalarType& a);
 
       /**
-       * @brief Multiplication assignment operator with another vector.
+       * Multiplication assignment operator with another vector.
        *
        * @param rhs Vector to multiply with.
        * @return Reference to the modified vector.
@@ -202,7 +200,7 @@ namespace SCTL_NAMESPACE {
       inline Vec& operator*=(const Vec& rhs);
 
       /**
-       * @brief Division assignment operator with another vector.
+       * Division assignment operator with another vector.
        *
        * @param rhs Vector to divide by.
        * @return Reference to the modified vector.
@@ -210,7 +208,7 @@ namespace SCTL_NAMESPACE {
       inline Vec& operator/=(const Vec& rhs);
 
       /**
-       * @brief Addition assignment operator with another vector.
+       * Addition assignment operator with another vector.
        *
        * @param rhs Vector to add.
        * @return Reference to the modified vector.
@@ -218,7 +216,7 @@ namespace SCTL_NAMESPACE {
       inline Vec& operator+=(const Vec& rhs);
 
       /**
-       * @brief Subtraction assignment operator with another vector.
+       * Subtraction assignment operator with another vector.
        *
        * @param rhs Vector to subtract.
        * @return Reference to the modified vector.
@@ -226,7 +224,7 @@ namespace SCTL_NAMESPACE {
       inline Vec& operator-=(const Vec& rhs);
 
       /**
-       * @brief Bitwise AND assignment operator with another vector.
+       * Bitwise AND assignment operator with another vector.
        *
        * @param rhs Vector for bitwise AND operation.
        * @return Reference to the modified vector.
@@ -234,7 +232,7 @@ namespace SCTL_NAMESPACE {
       inline Vec& operator&=(const Vec& rhs);
 
       /**
-       * @brief Bitwise XOR assignment operator with another vector.
+       * Bitwise XOR assignment operator with another vector.
        *
        * @param rhs Vector for bitwise XOR operation.
        * @return Reference to the modified vector.
@@ -242,7 +240,7 @@ namespace SCTL_NAMESPACE {
       inline Vec& operator^=(const Vec& rhs);
 
       /**
-       * @brief Bitwise OR assignment operator with another vector.
+       * Bitwise OR assignment operator with another vector.
        *
        * @param rhs Vector for bitwise OR operation.
        * @return Reference to the modified vector.
@@ -250,21 +248,21 @@ namespace SCTL_NAMESPACE {
       inline Vec& operator|=(const Vec& rhs);
 
       /**
-       * @brief Set the vector data.
+       * Set the vector data.
        *
        * @param v_ Vector data to set.
        */
       inline void set(const VData& v_);
 
       /**
-       * @brief Get the vector data.
+       * Get the vector data.
        *
        * @return Reference to the vector data.
        */
       inline const VData& get() const;
 
       /**
-       * @brief Get the vector data.
+       * Get the vector data.
        *
        * @return Reference to the vector data.
        */
@@ -272,12 +270,12 @@ namespace SCTL_NAMESPACE {
 
     private:
       /**
-       * @brief Helper struct for initializing vectors with multiple scalar values.
+       * Helper struct for initializing vectors with multiple scalar values.
        */
       template <class T, class... T2> struct InitVec;
 
       /**
-       * @brief Internal data representation of the vector.
+       * Internal data representation of the vector.
        */
       VData v;
   };
@@ -388,7 +386,7 @@ namespace SCTL_NAMESPACE {
 
 
   // Print
-  template <Integer digits, class ValueType, Integer N> inline std::ostream& operator<<(std::ostream& os, const Vec<ValueType,N>& in);
+  template <class ValueType, Integer N> inline std::ostream& operator<<(std::ostream& os, const Vec<ValueType,N>& in);
 
 
   // Other operators

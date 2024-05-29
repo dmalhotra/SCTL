@@ -17,105 +17,105 @@
 #endif
 
 // Math utilities
-#include SCTL_INCLUDE(math_utils.hpp)
-#include SCTL_INCLUDE(math_utils.txx)
+#include "sctl/math_utils.hpp"
+#include "sctl/math_utils.txx"
 
 // Boundary Integrals
-#include SCTL_INCLUDE(boundary_integral.hpp)
-#include SCTL_INCLUDE(boundary_integral.txx)
-#include SCTL_INCLUDE(slender_element.hpp)
-#include SCTL_INCLUDE(slender_element.txx)
-#include SCTL_INCLUDE(quadrule.hpp)
-#include SCTL_INCLUDE(quadrule.txx)
-#include SCTL_INCLUDE(lagrange-interp.hpp)
-#include SCTL_INCLUDE(lagrange-interp.txx)
+#include "sctl/boundary_integral.hpp"
+#include "sctl/boundary_integral.txx"
+#include "sctl/slender_element.hpp"
+#include "sctl/slender_element.txx"
+#include "sctl/quadrule.hpp"
+#include "sctl/quadrule.txx"
+#include "sctl/lagrange-interp.hpp"
+#include "sctl/lagrange-interp.txx"
 
 // ODE solver
-#include SCTL_INCLUDE(ode-solver.hpp)
-#include SCTL_INCLUDE(ode-solver.txx)
+#include "sctl/ode-solver.hpp"
+#include "sctl/ode-solver.txx"
 
 // Tensor
-#include SCTL_INCLUDE(tensor.hpp)
-#include SCTL_INCLUDE(tensor.txx)
+#include "sctl/tensor.hpp"
+#include "sctl/tensor.txx"
 
 // Tree
-#include SCTL_INCLUDE(tree.hpp)
-#include SCTL_INCLUDE(tree.txx)
-#include SCTL_INCLUDE(vtudata.hpp)
-#include SCTL_INCLUDE(vtudata.txx)
+#include "sctl/tree.hpp"
+#include "sctl/tree.txx"
+#include "sctl/vtudata.hpp"
+#include "sctl/vtudata.txx"
 
 // MPI Wrapper
-#include SCTL_INCLUDE(comm.hpp)
-#include SCTL_INCLUDE(comm.txx)
+#include "sctl/comm.hpp"
+#include "sctl/comm.txx"
 
 // Memory Manager, Iterators
-#include SCTL_INCLUDE(mem_mgr.hpp)
-#include SCTL_INCLUDE(mem_mgr.txx)
-#include SCTL_INCLUDE(iterator.hpp)
-#include SCTL_INCLUDE(iterator.txx)
-#include SCTL_INCLUDE(static-array.hpp)
-#include SCTL_INCLUDE(static-array.txx)
+#include "sctl/mem_mgr.hpp"
+#include "sctl/mem_mgr.txx"
+#include "sctl/iterator.hpp"
+#include "sctl/iterator.txx"
+#include "sctl/static-array.hpp"
+#include "sctl/static-array.txx"
 
 // Vector
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(vector.txx)
+#include "sctl/vector.hpp"
+#include "sctl/vector.txx"
 
 // Matrix, Permutation operators
-#include SCTL_INCLUDE(permutation.hpp)
-#include SCTL_INCLUDE(permutation.txx)
-#include SCTL_INCLUDE(matrix.hpp)
-#include SCTL_INCLUDE(matrix.txx)
-#include SCTL_INCLUDE(mat_utils.hpp)
-#include SCTL_INCLUDE(mat_utils.txx)
-#include SCTL_INCLUDE(blas.h)
-#include SCTL_INCLUDE(lapack.h)
+#include "sctl/permutation.hpp"
+#include "sctl/permutation.txx"
+#include "sctl/matrix.hpp"
+#include "sctl/matrix.txx"
+#include "sctl/mat_utils.hpp"
+#include "sctl/mat_utils.txx"
+#include "sctl/blas.h"
+#include "sctl/lapack.h"
 
 // Template vector intrinsics (new)
-#include SCTL_INCLUDE(vec.hpp)
-#include SCTL_INCLUDE(vec.txx)
-#include SCTL_INCLUDE(vec-test.hpp)
-#include SCTL_INCLUDE(vec-test.hpp)
-#include SCTL_INCLUDE(intrin-wrapper.hpp)
+#include "sctl/vec.hpp"
+#include "sctl/vec.txx"
+#include "sctl/vec-test.hpp"
+#include "sctl/vec-test.hpp"
+#include "sctl/intrin-wrapper.hpp"
 
 // OpenMP merge-sort and scan
-#include SCTL_INCLUDE(ompUtils.hpp)
-#include SCTL_INCLUDE(ompUtils.txx)
+#include "sctl/ompUtils.hpp"
+#include "sctl/ompUtils.txx"
 
 // Linear solver
-#include SCTL_INCLUDE(lin-solve.hpp)
-#include SCTL_INCLUDE(lin-solve.txx)
+#include "sctl/lin-solve.hpp"
+#include "sctl/lin-solve.txx"
 
 // Chebyshev basis
-#include SCTL_INCLUDE(cheb_utils.hpp)
+#include "sctl/cheb_utils.hpp"
 
 // Morton
-#include SCTL_INCLUDE(morton.hpp)
-#include SCTL_INCLUDE(morton.txx)
+#include "sctl/morton.hpp"
+#include "sctl/morton.txx"
 
 // Spherical Harmonics
-#include SCTL_INCLUDE(sph_harm.hpp)
-#include SCTL_INCLUDE(sph_harm.txx)
+#include "sctl/sph_harm.hpp"
+#include "sctl/sph_harm.txx"
 
-#include SCTL_INCLUDE(fft_wrapper.hpp)
-#include SCTL_INCLUDE(fft_wrapper.txx)
-#include SCTL_INCLUDE(complex.hpp)
-#include SCTL_INCLUDE(complex.txx)
+#include "sctl/fft_wrapper.hpp"
+#include "sctl/fft_wrapper.txx"
+#include "sctl/complex.hpp"
+#include "sctl/complex.txx"
 
 // Profiler
-#include SCTL_INCLUDE(profile.hpp)
-#include SCTL_INCLUDE(profile.txx)
+#include "sctl/profile.hpp"
+#include "sctl/profile.txx"
 
 // Print stack trace
-#include SCTL_INCLUDE(stacktrace.h)
+#include "sctl/stacktrace.h"
 
 // Boundary quadrature, Kernel functions
-#include SCTL_INCLUDE(generic-kernel.hpp)
-#include SCTL_INCLUDE(generic-kernel.txx)
-#include SCTL_INCLUDE(kernel_functions.hpp)
-#include SCTL_INCLUDE(boundary_quadrature.hpp)
+#include "sctl/generic-kernel.hpp"
+#include "sctl/generic-kernel.txx"
+#include "sctl/kernel_functions.hpp"
+#include "sctl/boundary_quadrature.hpp"
 
 // FMM wrapper
-#include SCTL_INCLUDE(fmm-wrapper.hpp)
-#include SCTL_INCLUDE(fmm-wrapper.txx)
+#include "sctl/fmm-wrapper.hpp"
+#include "sctl/fmm-wrapper.txx"
 
 #endif //_SCTL_HPP_

@@ -17,39 +17,39 @@
 #include <utility>                     // for pair
 
 #include "sctl/common.hpp"             // for Long, Integer, SCTL_ASSERT
-#include SCTL_INCLUDE(slender_element.hpp)    // for SlenderElemList
-#include SCTL_INCLUDE(boundary_integral.hpp)  // for BoundaryIntegralOp, ElementLis...
-#include SCTL_INCLUDE(comm.hpp)               // for Comm, CommOp
-#include SCTL_INCLUDE(comm.txx)               // for Comm::Size, Comm::Rank, Comm::...
-#include SCTL_INCLUDE(complex.hpp)            // for Complex
-#include SCTL_INCLUDE(complex.txx)            // for Complex::operator*=, Complex::...
-#include SCTL_INCLUDE(fft_wrapper.hpp)        // for FFT, FFT_Type
-#include SCTL_INCLUDE(intrin-wrapper.hpp)     // for TypeTraits
-#include SCTL_INCLUDE(iterator.hpp)           // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)           // for Iterator::Iterator<ValueType>
-#include SCTL_INCLUDE(kernel_functions.hpp)   // for Laplace3D_DxU, Laplace3D_FxU
-#include SCTL_INCLUDE(lagrange-interp.hpp)    // for LagrangeInterp
-#include SCTL_INCLUDE(math_utils.hpp)         // for QuadReal, sqrt, operator*, log
-#include SCTL_INCLUDE(math_utils.txx)         // for pow, const_pi, sin, cos, machi...
-#include SCTL_INCLUDE(matrix.hpp)             // for Matrix
-#include SCTL_INCLUDE(matrix.txx)             // for Matrix::operator[], Matrix::Dim
-#include SCTL_INCLUDE(ode-solver.hpp)         // for SDC
-#include SCTL_INCLUDE(ompUtils.txx)           // for scan
-#include SCTL_INCLUDE(profile.hpp)            // for Profile
-#include SCTL_INCLUDE(profile.txx)            // for Profile::Enable, Profile::Tic
-#include SCTL_INCLUDE(quadrule.hpp)           // for InterpQuadRule, ChebQuadRule
-#include SCTL_INCLUDE(quadrule.txx)           // for InterpQuadRule::Build
-#include SCTL_INCLUDE(static-array.hpp)       // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)       // for StaticArray::operator+, Static...
-#include SCTL_INCLUDE(tensor.hpp)             // for Tensor
-#include SCTL_INCLUDE(vec.hpp)                // for Vec
-#include SCTL_INCLUDE(vec.txx)                // for DefaultVecLen, FMA, approx_rsqrt
-#include SCTL_INCLUDE(vector.hpp)             // for Vector
-#include SCTL_INCLUDE(vector.txx)             // for Vector::operator[], Vector::~V...
-#include SCTL_INCLUDE(vtudata.hpp)            // for VTUData
-#include SCTL_INCLUDE(vtudata.txx)            // for VTUData::WriteVTK
+#include "sctl/slender_element.hpp"    // for SlenderElemList
+#include "sctl/boundary_integral.hpp"  // for BoundaryIntegralOp, ElementLis...
+#include "sctl/comm.hpp"               // for Comm, CommOp
+#include "sctl/comm.txx"               // for Comm::Size, Comm::Rank, Comm::...
+#include "sctl/complex.hpp"            // for Complex
+#include "sctl/complex.txx"            // for Complex::operator*=, Complex::...
+#include "sctl/fft_wrapper.hpp"        // for FFT, FFT_Type
+#include "sctl/intrin-wrapper.hpp"     // for TypeTraits
+#include "sctl/iterator.hpp"           // for Iterator, ConstIterator
+#include "sctl/iterator.txx"           // for Iterator::Iterator<ValueType>
+#include "sctl/kernel_functions.hpp"   // for Laplace3D_DxU, Laplace3D_FxU
+#include "sctl/lagrange-interp.hpp"    // for LagrangeInterp
+#include "sctl/math_utils.hpp"         // for QuadReal, sqrt, operator*, log
+#include "sctl/math_utils.txx"         // for pow, const_pi, sin, cos, machi...
+#include "sctl/matrix.hpp"             // for Matrix
+#include "sctl/matrix.txx"             // for Matrix::operator[], Matrix::Dim
+#include "sctl/ode-solver.hpp"         // for SDC
+#include "sctl/ompUtils.txx"           // for scan
+#include "sctl/profile.hpp"            // for Profile
+#include "sctl/profile.txx"            // for Profile::Enable, Profile::Tic
+#include "sctl/quadrule.hpp"           // for InterpQuadRule, ChebQuadRule
+#include "sctl/quadrule.txx"           // for InterpQuadRule::Build
+#include "sctl/static-array.hpp"       // for StaticArray
+#include "sctl/static-array.txx"       // for StaticArray::operator+, Static...
+#include "sctl/tensor.hpp"             // for Tensor
+#include "sctl/vec.hpp"                // for Vec
+#include "sctl/vec.txx"                // for DefaultVecLen, FMA, approx_rsqrt
+#include "sctl/vector.hpp"             // for Vector
+#include "sctl/vector.txx"             // for Vector::operator[], Vector::~V...
+#include "sctl/vtudata.hpp"            // for VTUData
+#include "sctl/vtudata.txx"            // for VTUData::WriteVTK
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 
   template <class Real, Integer Nm = 12, Integer Nr = 20, Integer Nt = 16> class ToroidalGreensFn { // deprecated

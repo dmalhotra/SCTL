@@ -6,18 +6,18 @@
 #include <vector>                 // for vector
 
 #include "sctl/common.hpp"        // for Long, Integer, SCTL_ASSERT, SCTL_AS...
-#include SCTL_INCLUDE(fft_wrapper.hpp)   // for FFT, FFT_Type
-#include SCTL_INCLUDE(iterator.hpp)      // for Iterator, ConstIterator
-#include SCTL_INCLUDE(iterator.txx)      // for Iterator::Iterator<ValueType>, Iter...
-#include SCTL_INCLUDE(math_utils.hpp)    // for const_pi, cos, sin, sqrt, fabs
-#include SCTL_INCLUDE(math_utils.txx)    // for machine_eps
-#include SCTL_INCLUDE(matrix.hpp)        // for Matrix
-#include SCTL_INCLUDE(static-array.hpp)  // for StaticArray
-#include SCTL_INCLUDE(static-array.txx)  // for StaticArray::operator[], StaticArra...
-#include SCTL_INCLUDE(vector.hpp)        // for Vector
-#include SCTL_INCLUDE(vector.txx)        // for Vector::operator[], Vector::PushBack
+#include "sctl/fft_wrapper.hpp"   // for FFT, FFT_Type
+#include "sctl/iterator.hpp"      // for Iterator, ConstIterator
+#include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
+#include "sctl/math_utils.hpp"    // for const_pi, cos, sin, sqrt, fabs
+#include "sctl/math_utils.txx"    // for machine_eps
+#include "sctl/matrix.hpp"        // for Matrix
+#include "sctl/static-array.hpp"  // for StaticArray
+#include "sctl/static-array.txx"  // for StaticArray::operator[], StaticArra...
+#include "sctl/vector.hpp"        // for Vector
+#include "sctl/vector.txx"        // for Vector::operator[], Vector::PushBack
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class ValueType> void FFT<ValueType>::test() {
     const auto inf_norm = [](const Vector<ValueType>& v) {

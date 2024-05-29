@@ -5,6 +5,8 @@ API Reference
 =============
 
 .. toctree::
+   :maxdepth: 1
+
    boundary_integral
    comm
    common
@@ -12,6 +14,7 @@ API Reference
    fft_wrapper
    fmm-wrapper
    generic-kernel
+   iterator
    kernel_functions
    lagrange-interp
    lin-solve
@@ -27,6 +30,8 @@ API Reference
    quadrule
    slender_element
    sph_harm
+   stacktrace
+   static-array
    tensor
    tree
    vec
@@ -43,3 +48,6 @@ Unmaintained
    cheb_utils
 
 ..   sdc
+
+
+

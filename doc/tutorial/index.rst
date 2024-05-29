@@ -22,8 +22,8 @@ Numerical Methods
    :maxdepth: 1
 
    Spectral Deferred Correction <sdc>
-   Generalized Minimal Residual Method <gmres>
-   Lagrange Interpolation <lagrange_interp>
+   GMRES solver, Krylov preconditioner <gmres>
+   Lagrange Interpolation <lagrange-interp>
    Generalized Chebyshev Quadrature Rule <interp_quadrule>
    Gauss-Legendre, Clenshaw-Curtis Quadrature <quadrule>
    Spherical Harmonics <shc>
@@ -38,8 +38,8 @@ Boundary Integral Methods
 .. toctree::
    :maxdepth: 1
  
-   BoundaryIntegralOp <biop>
-   SlenderElemList <csbq>
+   BoundaryIntegralOp <boundaryintegralop>
+   SlenderElemList <slenderelemlist>
 
 High Performance Computing
 --------------------------

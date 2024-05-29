@@ -5,9 +5,9 @@
 #include <iterator>         // for random_access_iterator_tag
 #include <ostream>          // for operator<<, basic_ostream
 
-#include "sctl/common.hpp"  // for Long, SCTL_NAMESPACE
+#include "sctl/common.hpp"  // for Long, sctl
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 #ifdef SCTL_MEMDEBUG
 
@@ -141,13 +141,12 @@ template <class ValueType> Iterator<ValueType> Ptr2Itr(void* ptr, Long len);
 template <class ValueType> ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len);
 
 /**
- * \brief Wrapper to memcpy. Also checks if source and destination pointers are
- * the same.
+ * Wrapper to memcpy. Also checks if source and destination pointers are the same.
  */
 template <class ValueType> Iterator<ValueType> memcopy(Iterator<ValueType> destination, ConstIterator<ValueType> source, Long num);
 
 template <class ValueType> Iterator<ValueType> memset(Iterator<ValueType> ptr, int value, Long num);
 
-}  // end namespace SCTL_NAMESPACE
+}  // end namespace sctl
 
 #endif // _SCTL_ITERATOR_HPP_

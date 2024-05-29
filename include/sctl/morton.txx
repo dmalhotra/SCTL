@@ -10,14 +10,14 @@
 #include <type_traits>          // for remove_reference
 
 #include "sctl/common.hpp"      // for Integer, Long, SCTL_ASSERT, SCTL_NAME...
-#include SCTL_INCLUDE(morton.hpp)      // for Morton
-#include SCTL_INCLUDE(iterator.hpp)    // for ConstIterator
-#include SCTL_INCLUDE(math_utils.hpp)  // for floor
-#include SCTL_INCLUDE(math_utils.txx)  // for pow
-#include SCTL_INCLUDE(tree.hpp)        // for Morton
-#include SCTL_INCLUDE(vector.hpp)      // for Vector
+#include "sctl/morton.hpp"      // for Morton
+#include "sctl/iterator.hpp"    // for ConstIterator
+#include "sctl/math_utils.hpp"  // for floor
+#include "sctl/math_utils.txx"  // for pow
+#include "sctl/tree.hpp"        // for Morton
+#include "sctl/vector.hpp"      // for Vector
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <Integer DIM> constexpr Integer Morton<DIM>::MaxDepth() {
     return MAX_DEPTH;

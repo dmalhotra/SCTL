@@ -5,16 +5,16 @@
 #include <initializer_list>   // for initializer_list
 #include <vector>             // for vector
 
-#include "sctl/common.hpp"    // for Long, SCTL_NAMESPACE
-#include SCTL_INCLUDE(iterator.hpp)  // for Iterator, ConstIterator
+#include "sctl/common.hpp"    // for Long, sctl
+#include "sctl/iterator.hpp"  // for Iterator, ConstIterator
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 // forward declaration
 template <class ValueType> Iterator<ValueType> NullIterator();
 
 /**
- * @brief A contiguous array of elements. The elements can be accesses with a non-negatvie index.  The vector can be the
+ * A contiguous array of elements. The elements can be accesses with a non-negatvie index.  The vector can be the
  * owner of the memory allocated on the heap (automatically aligned to `SCTL_MEM_ALIGN` bytes for SIMD vectorization) or
  * it may be constructed from a user provided memory location (using Iterator<ValueType>).
  *
@@ -31,12 +31,12 @@ template <class ValueType> class Vector {
   typedef Long size_type; /**< Integer type representing the size of the vector. */
 
   /**
-   * @brief Default constructor.
+   * Default constructor.
    */
   Vector();
 
   /**
-   * @brief Constructor with dimension and data pointer.
+   * Constructor with dimension and data pointer.
    *
    * @param dim Dimension of the vector.
    * @param data Pointer to the data.
@@ -45,40 +45,40 @@ template <class ValueType> class Vector {
   explicit Vector(Long dim, Iterator<ValueType> data = NullIterator<ValueType>(), bool own_data = true);
 
   /**
-   * @brief Copy constructor.
+   * Copy constructor.
    *
    * @param V Another vector to copy from.
    */
   Vector(const Vector& V);
 
   /**
-   * @brief Constructor from std::vector.
+   * Constructor from std::vector.
    *
    * @param V std::vector to construct from.
    */
   explicit Vector(const std::vector<ValueType>& V);
 
   /**
-   * @brief Constructor from initializer list.
+   * Constructor from initializer list.
    *
    * @param V Initializer list to construct from.
    */
   explicit Vector(std::initializer_list<ValueType> V);
 
   /**
-   * @brief Destructor.
+   * Destructor.
    */
   ~Vector();
 
   /**
-   * @brief Swap the contents of two vectors.
+   * Swap the contents of two vectors.
    *
    * @param v1 Vector to swap with.
    */
   void Swap(Vector<ValueType>& v1);
 
   /**
-   * @brief Reinitialize the vector.
+   * Reinitialize the vector.
    *
    * @param dim New dimension of the vector.
    * @param data New data pointer.
@@ -87,14 +87,14 @@ template <class ValueType> class Vector {
   void ReInit(Long dim, Iterator<ValueType> data = NullIterator<ValueType>(), bool own_data = true);
 
   /**
-   * @brief Write the vector to a file.
+   * Write the vector to a file.
    *
    * @param fname File name to write to.
    */
   void Write(const char* fname) const;
 
   /**
-   * @brief Write the vector to a file with a different data type.
+   * Write the vector to a file with a different data type.
    *
    * @tparam Type Type of data to write.
    * @param fname File name to write to.
@@ -102,14 +102,14 @@ template <class ValueType> class Vector {
   template <class Type> void Write(const char* fname) const;
 
   /**
-   * @brief Read the vector from a file.
+   * Read the vector from a file.
    *
    * @param fname File name to read from.
    */
   void Read(const char* fname);
 
   /**
-   * @brief Read the vector from a file with a different data type.
+   * Read the vector from a file with a different data type.
    *
    * @tparam Type Type of data to read.
    * @param fname File name to read from.
@@ -117,7 +117,7 @@ template <class ValueType> class Vector {
   template <class Type> void Read(const char* fname);
 
   /**
-   * @brief Get the dimension of the vector.
+   * Get the dimension of the vector.
    *
    * @return Long Dimension of the vector.
    */
@@ -126,40 +126,40 @@ template <class ValueType> class Vector {
   //Long Capacity() const;
 
   /**
-   * @brief Set all elements of the vector to zero.
+   * Set all elements of the vector to zero.
    */
   void SetZero();
 
   /**
-   * @brief Get an iterator pointing to the beginning of the vector.
+   * Get an iterator pointing to the beginning of the vector.
    *
    * @return Iterator<ValueType> Iterator pointing to the beginning of the vector.
    */
   Iterator<ValueType> begin();
 
   /**
-   * @brief Get a const iterator pointing to the beginning of the vector.
+   * Get a const iterator pointing to the beginning of the vector.
    *
    * @return ConstIterator<ValueType> Const iterator pointing to the beginning of the vector.
    */
   ConstIterator<ValueType> begin() const;
 
   /**
-   * @brief Get an iterator pointing to the end of the vector.
+   * Get an iterator pointing to the end of the vector.
    *
    * @return Iterator<ValueType> Iterator pointing to the end of the vector.
    */
   Iterator<ValueType> end();
 
   /**
-   * @brief Get a const iterator pointing to the end of the vector.
+   * Get a const iterator pointing to the end of the vector.
    *
    * @return ConstIterator<ValueType> Const iterator pointing to the end of the vector.
    */
   ConstIterator<ValueType> end() const;
 
   /**
-   * @brief Add an element to the end of the vector.
+   * Add an element to the end of the vector.
    *
    * @param x Element to be added.
    */
@@ -168,7 +168,7 @@ template <class ValueType> class Vector {
   // Element access
 
   /**
-   * @brief Access an element of the vector.
+   * Access an element of the vector.
    *
    * @param j Index of the element to access.
    * @return ValueType& Reference to the accessed element.
@@ -176,7 +176,7 @@ template <class ValueType> class Vector {
   ValueType& operator[](Long j);
 
   /**
-   * @brief Access a const element of the vector.
+   * Access a const element of the vector.
    *
    * @param j Index of the element to access.
    * @return const ValueType& Const reference to the accessed element.
@@ -186,7 +186,7 @@ template <class ValueType> class Vector {
   // Vector-Vector operations
 
   /**
-   * @brief Assignment operator from std::vector.
+   * Assignment operator from std::vector.
    *
    * @param V std::vector to assign from.
    * @return Vector& Reference to the modified vector.
@@ -194,7 +194,7 @@ template <class ValueType> class Vector {
   Vector& operator=(const std::vector<ValueType>& V);
 
   /**
-   * @brief Assignment operator.
+   * Assignment operator.
    *
    * @param V Vector to assign from.
    * @return Vector& Reference to the modified vector.
@@ -202,7 +202,7 @@ template <class ValueType> class Vector {
   Vector& operator=(const Vector& V);
 
   /**
-   * @brief Addition assignment operator.
+   * Addition assignment operator.
    *
    * @param V Vector to add.
    * @return Vector& Reference to the modified vector.
@@ -210,7 +210,7 @@ template <class ValueType> class Vector {
   Vector& operator+=(const Vector& V);
 
   /**
-   * @brief Subtraction assignment operator.
+   * Subtraction assignment operator.
    *
    * @param V Vector to subtract.
    * @return Vector& Reference to the modified vector.
@@ -218,7 +218,7 @@ template <class ValueType> class Vector {
   Vector& operator-=(const Vector& V);
 
   /**
-   * @brief Multiplication assignment operator.
+   * Multiplication assignment operator.
    *
    * @param V Vector to multiply.
    * @return Vector& Reference to the modified vector.
@@ -226,7 +226,7 @@ template <class ValueType> class Vector {
   Vector& operator*=(const Vector& V);
 
   /**
-   * @brief Division assignment operator.
+   * Division assignment operator.
    *
    * @param V Vector to divide.
    * @return Vector& Reference to the modified vector.
@@ -234,7 +234,7 @@ template <class ValueType> class Vector {
   Vector& operator/=(const Vector& V);
 
   /**
-   * @brief Addition operator.
+   * Addition operator.
    *
    * @param V Vector to add.
    * @return Vector Resultant vector after addition.
@@ -242,7 +242,7 @@ template <class ValueType> class Vector {
   Vector operator+(const Vector& V) const;
 
   /**
-   * @brief Subtraction operator.
+   * Subtraction operator.
    *
    * @param V Vector to subtract.
    * @return Vector Resultant vector after subtraction.
@@ -250,7 +250,7 @@ template <class ValueType> class Vector {
   Vector operator-(const Vector& V) const;
 
   /**
-   * @brief Multiplication operator.
+   * Multiplication operator.
    *
    * @param V Vector to multiply.
    * @return Vector Resultant vector after multiplication.
@@ -258,7 +258,7 @@ template <class ValueType> class Vector {
   Vector operator*(const Vector& V) const;
 
   /**
-   * @brief Division operator.
+   * Division operator.
    *
    * @param V Vector to divide.
    * @return Vector Resultant vector after division.
@@ -266,7 +266,7 @@ template <class ValueType> class Vector {
   Vector operator/(const Vector& V) const;
 
   /**
-   * @brief Negation operator.
+   * Negation operator.
    *
    * @return Vector Negated vector.
    */
@@ -275,7 +275,7 @@ template <class ValueType> class Vector {
   // Vector-Scalar operations
 
   /**
-   * @brief Assignment operator with a scalar.
+   * Assignment operator with a scalar.
    *
    * @tparam VType Type of the scalar.
    * @param s Scalar value to assign.
@@ -284,7 +284,7 @@ template <class ValueType> class Vector {
   template <class VType> Vector& operator=(VType s);
 
   /**
-   * @brief Addition assignment operator with a scalar.
+   * Addition assignment operator with a scalar.
    *
    * @tparam VType Type of the scalar.
    * @param s Scalar value to add.
@@ -293,7 +293,7 @@ template <class ValueType> class Vector {
   template <class VType> Vector& operator+=(VType s);
 
   /**
-   * @brief Subtraction assignment operator with a scalar.
+   * Subtraction assignment operator with a scalar.
    *
    * @tparam VType Type of the scalar.
    * @param s Scalar value to subtract.
@@ -302,7 +302,7 @@ template <class ValueType> class Vector {
   template <class VType> Vector& operator-=(VType s);
 
   /**
-   * @brief Multiplication assignment operator with a scalar.
+   * Multiplication assignment operator with a scalar.
    *
    * @tparam VType Type of the scalar.
    * @param s Scalar value to multiply.
@@ -311,7 +311,7 @@ template <class ValueType> class Vector {
   template <class VType> Vector& operator*=(VType s);
 
   /**
-   * @brief Division assignment operator with a scalar.
+   * Division assignment operator with a scalar.
    *
    * @tparam VType Type of the scalar.
    * @param s Scalar value to divide.
@@ -320,7 +320,7 @@ template <class ValueType> class Vector {
   template <class VType> Vector& operator/=(VType s);
 
   /**
-   * @brief Addition operator with a scalar.
+   * Addition operator with a scalar.
    *
    * @tparam VType Type of the scalar.
    * @param s Scalar value to add.
@@ -329,7 +329,7 @@ template <class ValueType> class Vector {
   template <class VType> Vector operator+(VType s) const;
 
   /**
-   * @brief Subtraction operator with a scalar.
+   * Subtraction operator with a scalar.
    *
    * @tparam VType Type of the scalar.
    * @param s Scalar value to subtract.
@@ -338,7 +338,7 @@ template <class ValueType> class Vector {
   template <class VType> Vector operator-(VType s) const;
 
   /**
-   * @brief Multiplication operator with a scalar.
+   * Multiplication operator with a scalar.
    *
    * @tparam VType Type of the scalar.
    * @param s Scalar value to multiply.
@@ -347,7 +347,7 @@ template <class ValueType> class Vector {
   template <class VType> Vector operator*(VType s) const;
 
   /**
-   * @brief Division operator with a scalar.
+   * Division operator with a scalar.
    *
    * @tparam VType Type of the scalar.
    * @param s Scalar value to divide.
@@ -357,7 +357,7 @@ template <class ValueType> class Vector {
 
  private:
   /**
-   * @brief Initialize the vector.
+   * Initialize the vector.
    *
    * @param dim Dimension of the vector.
    * @param data Pointer to the data.

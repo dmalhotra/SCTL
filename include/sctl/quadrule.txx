@@ -9,18 +9,18 @@
 #include <utility>                   // for pair
 
 #include "sctl/common.hpp"           // for Long, Integer, SCTL_ASSERT, SCTL...
-#include SCTL_INCLUDE(quadrule.hpp)         // for LegQuadRule, ChebQuadRule, Inter...
-#include SCTL_INCLUDE(iterator.hpp)         // for Iterator
-#include SCTL_INCLUDE(iterator.txx)         // for Iterator::Iterator<ValueType>
-#include SCTL_INCLUDE(lagrange-interp.hpp)  // for LagrangeInterp
-#include SCTL_INCLUDE(math_utils.hpp)       // for fabs, sqrt, const_pi, cos, log
-#include SCTL_INCLUDE(math_utils.txx)       // for machine_eps, pow
-#include SCTL_INCLUDE(matrix.hpp)           // for Matrix
-#include SCTL_INCLUDE(static-array.hpp)     // for StaticArray
-#include SCTL_INCLUDE(vector.hpp)           // for Vector
-#include SCTL_INCLUDE(vector.txx)           // for Vector::operator[], Vector::Dim
+#include "sctl/quadrule.hpp"         // for LegQuadRule, ChebQuadRule, Inter...
+#include "sctl/iterator.hpp"         // for Iterator
+#include "sctl/iterator.txx"         // for Iterator::Iterator<ValueType>
+#include "sctl/lagrange-interp.hpp"  // for LagrangeInterp
+#include "sctl/math_utils.hpp"       // for fabs, sqrt, const_pi, cos, log
+#include "sctl/math_utils.txx"       // for machine_eps, pow
+#include "sctl/matrix.hpp"           // for Matrix
+#include "sctl/static-array.hpp"     // for StaticArray
+#include "sctl/vector.hpp"           // for Vector
+#include "sctl/vector.txx"           // for Vector::operator[], Vector::Dim
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class Real> template <Integer MAX_ORDER, class ValueType> const Vector<Real>& ChebQuadRule<Real>::nds(Integer N) {
     SCTL_ASSERT(0 <= N && N <= MAX_ORDER);

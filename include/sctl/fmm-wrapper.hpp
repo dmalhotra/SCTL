@@ -5,10 +5,10 @@
 #include <string>                // for basic_string, string
 #include <utility>               // for pair
 
-#include "sctl/common.hpp"       // for Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(comm.hpp)         // for Comm
-#include SCTL_INCLUDE(comm.txx)         // for Comm::Self
-#include SCTL_INCLUDE(vector.hpp)       // for Vector
+#include "sctl/common.hpp"       // for Integer, sctl
+#include "sctl/comm.hpp"         // for Comm
+#include "sctl/comm.txx"         // for Comm::Self
+#include "sctl/vector.hpp"       // for Vector
 
 #ifdef SCTL_HAVE_PVFMM
 namespace pvfmm {
@@ -23,7 +23,7 @@ namespace pvfmm {
 }
 #endif
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 /**
  * Evaluate potentials from particle sources using PVFMM.

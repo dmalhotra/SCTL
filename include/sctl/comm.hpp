@@ -4,8 +4,8 @@
 #include <functional>         // for less
 #include <map>                // for multimap
 
-#include "sctl/common.hpp"    // for Long, Integer, SCTL_NAMESPACE
-#include SCTL_INCLUDE(iterator.hpp)  // for ConstIterator, Iterator
+#include "sctl/common.hpp"    // for Long, Integer, sctl
+#include "sctl/iterator.hpp"  // for ConstIterator, Iterator
 
 #ifdef SCTL_HAVE_MPI
 #include <mpi.h>
@@ -15,7 +15,7 @@
 #include <petscsys.h>
 #endif
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
 template <class ValueType> class Vector;
 

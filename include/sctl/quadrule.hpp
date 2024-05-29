@@ -1,11 +1,11 @@
 #ifndef _SCTL_QUADRULE_HPP_
 #define _SCTL_QUADRULE_HPP_
 
-#include "sctl/common.hpp"    // for Integer, Long, SCTL_NAMESPACE
-#include SCTL_INCLUDE(vector.hpp)    // for Vector
-#include SCTL_INCLUDE(vector.txx)    // for Vector::Vector<ValueType>, Vector::~Vec...
+#include "sctl/common.hpp"    // for Integer, Long, sctl
+#include "sctl/vector.hpp"    // for Vector
+#include "sctl/vector.txx"    // for Vector::Vector<ValueType>, Vector::~Vec...
 
-namespace SCTL_NAMESPACE {
+namespace sctl {
 
   template <class ValueType> class Matrix;
 
@@ -16,29 +16,29 @@ namespace SCTL_NAMESPACE {
     public:
 
       /**
-       * @brief Precompute and keep in memory all quadrature nodes up to MAX_ORDER; and
+       * Precompute and keep in memory all quadrature nodes up to MAX_ORDER; and
        * return const reference to a vector containing quadrature nodes of order N.
        */
       template <Integer MAX_ORDER=50, class ValueType=Real> static const Vector<Real>& nds(Integer N);
 
       /**
-       * @brief Precompute and keep in memory all quadrature weights up to MAX_ORDER; and
+       * Precompute and keep in memory all quadrature weights up to MAX_ORDER; and
        * return const reference to a vector containing quadrature weights of order N.
        */
       template <Integer MAX_ORDER=50, class ValueType=Real> static const Vector<Real>& wts(Integer N);
 
       /**
-       * @brief Return const reference to a vector containing quadrature nodes of order N.
+       * Return const reference to a vector containing quadrature nodes of order N.
        */
       template <Integer N, class ValueType=Real> static const Vector<Real>& nds();
 
       /**
-       * @brief Return const reference to a vector containing quadrature weights of order N.
+       * Return const reference to a vector containing quadrature weights of order N.
        */
       template <Integer N, class ValueType=Real> static const Vector<Real>& wts();
 
       /**
-       * @brief Compute nodes and/or weights for quadrature of order N.
+       * Compute nodes and/or weights for quadrature of order N.
        *
        * @param[out] nds (optional )pointer to vector containing the quadrature nodes.
        *
@@ -56,29 +56,29 @@ namespace SCTL_NAMESPACE {
     public:
 
       /**
-       * @brief Precompute and keep in memory all quadrature nodes up to MAX_ORDER; and
+       * Precompute and keep in memory all quadrature nodes up to MAX_ORDER; and
        * return const reference to a vector containing quadrature nodes of order N.
        */
       template <Integer MAX_ORDER=50, class ValueType=Real> static const Vector<Real>& nds(Integer N);
 
       /**
-       * @brief Precompute and keep in memory all quadrature weights up to MAX_ORDER; and
+       * Precompute and keep in memory all quadrature weights up to MAX_ORDER; and
        * return const reference to a vector containing quadrature weights of order N.
        */
       template <Integer MAX_ORDER=50, class ValueType=Real> static const Vector<Real>& wts(Integer N);
 
       /**
-       * @brief Return const reference to a vector containing quadrature nodes of order N.
+       * Return const reference to a vector containing quadrature nodes of order N.
        */
       template <Integer N, class ValueType=Real> static const Vector<Real>& nds();
 
       /**
-       * @brief Return const reference to a vector containing quadrature weights of order N.
+       * Return const reference to a vector containing quadrature weights of order N.
        */
       template <Integer N, class ValueType=Real> static const Vector<Real>& wts();
 
       /**
-       * @brief Compute nodes and/or weights for quadrature of order N.
+       * Compute nodes and/or weights for quadrature of order N.
        *
        * @param[out] nds (optional )pointer to vector containing the quadrature nodes.
        *
@@ -89,7 +89,7 @@ namespace SCTL_NAMESPACE {
       template <class ValueType=Real> static void ComputeNdsWts(Vector<Real>* nds, Vector<Real>* wts, Integer N);
 
       /**
-       * @brief Compute Legendre polynomial and/or its first derivative on the interval [-1,1].
+       * Compute Legendre polynomial and/or its first derivative on the interval [-1,1].
        *
        * @param[out] P (optional) pointer to vector containing the values of the Legendre polynomial.
        *
@@ -112,7 +112,7 @@ namespace SCTL_NAMESPACE {
     public:
 
       /**
-       * @brief Build quadrature rule from a function pointer to the integrands, by using an adaptive composite panel
+       * Build quadrature rule from a function pointer to the integrands, by using an adaptive composite panel
        * Gauss-Legendre quadrature rule to discretize the integrands.
        *
        * @param[out] quad_nds, quad_wts the output quadrature nodes and weights.
@@ -138,7 +138,7 @@ namespace SCTL_NAMESPACE {
       template <class BasisObj> static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const BasisObj& integrands, const Real interval_start, const Real interval_end, const Real eps = 1e-16, const Long order = 0, const Real nds_interval_start = 0, const Real nds_interval_end = 0, const bool UseSVD = true);
 
       /**
-       * @brief Build quadrature rule from a discretization of the integrand functions.
+       * Build quadrature rule from a discretization of the integrand functions.
        *
        * @param[out] quad_nds, quad_wts the output quadrature nodes and weights.
        *
@@ -162,7 +162,7 @@ namespace SCTL_NAMESPACE {
       static Real Build(Vector<Real>& quad_nds, Vector<Real>& quad_wts, const Matrix<Real> M, const Vector<Real>& nds, const Vector<Real>& wts, const Real eps = 1e-16, const Long order = 0, const Real nds_interval_start = 0, const Real nds_interval_end = 0, const bool UseSVD = true);
 
       /**
-       * @brief Build a set of quadrature rules for different accuracies from a discretization of the integrand
+       * Build a set of quadrature rules for different accuracies from a discretization of the integrand
        * functions.
        *
        * @param[out] quad_nds, quad_wts the output quadrature nodes and weights.
