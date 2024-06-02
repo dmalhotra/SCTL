@@ -22,6 +22,11 @@ SCTL: Scientific Computing Template Library
 
 `SCTL <https://github.com/dmalhotra/SCTL>`_ is a header-only C++ library providing various functionalities for scientific computing. This documentation outlines these functionalities and provides a guide to getting started.
 
+Requirements
+------------
+
+The only requirement to use SCTL is a working C++11 compliant compiler with OpenMP 4.0 support. It has been tested with GCC-9 and newer.
+
 Getting Started
 ---------------
 
@@ -42,11 +47,6 @@ Since SCTL is a header-only library, it does not require compilation or installa
    #include <sctl.hpp>
 
 Ensure the compiler can locate the header file by providing the path to ``SCTL_ROOT/include`` using the flag ``-I ${SCTL_ROOT}/include``.
-
-Requirements
-------------
-
-The only requirement to use SCTL is a working C++11 compliant compiler with OpenMP 4.0 support. It has been tested with GCC-9 and newer.
 
 Optional Dependencies
 ---------------------
