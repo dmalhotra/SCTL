@@ -17,6 +17,28 @@
 
 namespace sctl {
 
+  template <class uKernel> GenericKernel<uKernel>::GenericKernel() : ctx_ptr(nullptr) {}
+
+  template <class uKernel> constexpr Integer GenericKernel<uKernel>::CoordDim() {
+    return DIM;
+  }
+
+  template <class uKernel> constexpr Integer GenericKernel<uKernel>::NormalDim() {
+    return N_DIM;
+  }
+
+  template <class uKernel> constexpr Integer GenericKernel<uKernel>::SrcDim() {
+    return KDIM0;
+  }
+
+  template <class uKernel> constexpr Integer GenericKernel<uKernel>::TrgDim() {
+    return KDIM1;
+  }
+
+  template <class uKernel> const void* GenericKernel<uKernel>::GetCtxPtr() const {
+    return ctx_ptr;
+  }
+
   template <class uKernel> template <class Real, bool enable_openmp> void GenericKernel<uKernel>::Eval(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) {
     if (digits < 8) {
       if (digits < 4) {

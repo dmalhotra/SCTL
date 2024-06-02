@@ -8,7 +8,7 @@ This header file provides the `Tensor` class.
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::Tensor
+.. doxygenclass:: sctl::Tensor
 ..   :members:
 ..
 
@@ -54,6 +54,8 @@ Classes and Types
 
     **Usage guide**: :ref:`Using Tensor class <tutorial-tensor>`
 
+|
+
 .. raw:: html
 
    <div style="border-top: 3px solid"></div>
@@ -62,7 +64,7 @@ Classes and Types
 .. literalinclude:: ../../include/sctl/tensor.hpp
    :language: c++
 
-.. .. doxygenclass:: SCTL_NAMESPACE::Tensor
+.. .. doxygenclass:: sctl::Tensor
 ..    :members:
 ..    :undoc-members:
 ..    :outline:

@@ -8,7 +8,7 @@ This header file provides classes and methods for computing boundary integrals.
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::ElementListBase
+.. doxygenclass:: sctl::ElementListBase
 ..   :members:
 ..
 
@@ -32,12 +32,9 @@ Classes and Types
 
     - ``NearInterac``: Computes the near-interaction operator for a given element and each target.
 
-.. raw:: html
+|
 
-   <div style="border-top: 1px solid"></div>
-   <br>
-
-.. doxygenclass:: SCTL_NAMESPACE::BoundaryIntegralOp
+.. doxygenclass:: sctl::BoundaryIntegralOp
 ..   :members:
 ..
 
@@ -74,6 +71,8 @@ Classes and Types
     - ``InvSqrtScaling``: Scales input vector by inv-sqrt of the area of the element.
 
     **Usage guide**: :ref:`Using BoundaryIntegralOp class <tutorial-boundaryintegralop>`
+
+|
 
 .. raw:: html
 

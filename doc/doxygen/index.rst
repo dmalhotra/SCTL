@@ -4,6 +4,9 @@
 API Reference
 =============
 
+Header Files
+------------
+
 .. toctree::
    :maxdepth: 1
 
@@ -42,7 +45,7 @@ Unmaintained
 ------------
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
    boundary_quadrature
    cheb_utils

@@ -8,7 +8,7 @@ We'll walk through constructing a linear operator, creating instances of GMRES a
 For more advanced usage and additional features, please refer to the API in :ref:`lin-solve.hpp <lin-solve_hpp>`.
 
 Step 1: Constructing a Linear Operator
----------------------------------------
+--------------------------------------
 
 First, we need to define our linear operator. This operator represents the matrix-vector multiplication in the linear system Ax = b. We'll use a lambda function to define this operator.
 
@@ -19,7 +19,7 @@ First, we need to define our linear operator. This operator represents the matri
     };
 
 Step 2: Creating Instances of GMRES and KrylovPrecond
-----------------------------------------------------
+-----------------------------------------------------
 
 Next, we'll create instances of the GMRES solver and the Krylov preconditioner.
 

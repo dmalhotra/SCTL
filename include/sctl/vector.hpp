@@ -14,7 +14,7 @@ namespace sctl {
 template <class ValueType> Iterator<ValueType> NullIterator();
 
 /**
- * A contiguous array of elements. The elements can be accesses with a non-negatvie index.  The vector can be the
+ * A contiguous array of elements. The elements can be accesses with a non-negative index.  The vector can be the
  * owner of the memory allocated on the heap (automatically aligned to `SCTL_MEM_ALIGN` bytes for SIMD vectorization) or
  * it may be constructed from a user provided memory location (using Iterator<ValueType>).
  *

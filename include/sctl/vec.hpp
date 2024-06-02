@@ -16,6 +16,9 @@ namespace sctl {
   /**
    * This class template provides functionality for working with SIMD vectors, enabling
    * efficient parallelization of computations on multiple data elements simultaneously.
+   * It can optionally make use of the **Intel SVML** (by defining the macro
+   * `SCTL_HAVE_SVML`) and **libmvec** (by defining the macro `SCTL_HAVE_LIBMVEC`)
+   * libraries when they are available.
    *
    * @tparam ValueType Data type of the vector elements.
    * @tparam N Number of elements in the vector. Defaults to DefaultVecLen<ValueType>().

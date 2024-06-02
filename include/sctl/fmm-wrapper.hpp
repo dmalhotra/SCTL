@@ -26,7 +26,9 @@ namespace pvfmm {
 namespace sctl {
 
 /**
- * Evaluate potentials from particle sources using PVFMM.
+ * Evaluate potentials from particle sources using PVFMM when available, otherwise, use direct
+ * computation.  To enable PVFMM, the macro `SCTL_HAVE_PVFMM` must be defined, the code must be
+ * compiled with MPI and linked to PVFMM.
  */
 template <class Real, Integer DIM> class ParticleFMM {
   public:

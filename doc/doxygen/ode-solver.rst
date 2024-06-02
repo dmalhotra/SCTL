@@ -8,7 +8,7 @@ This header file provides the Spectral Deferred Correction (SDC) solver for ordi
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::SDC
+.. doxygenclass:: sctl::SDC
 ..   :members:
 ..
 
@@ -31,6 +31,8 @@ Classes and Types
     - ``MonitorFn``: Callback function type for monitoring the solution during time-stepping.
 
     **Usage guide**: :ref:`Using SDC class <tutorial-sdc>`
+
+|
 
 .. raw:: html
 

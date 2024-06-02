@@ -29,8 +29,8 @@ enum class CommOp {
 };
 
 /**
- * Object oriented wrapper to MPI. It uses MPI when SCTL_HAVE_MPI is defined,
- * otherwise, it defaults to the *self* communicator.
+ * Object oriented wrapper to MPI. It uses MPI when compiled with `mpicxx` and the macro `SCTL_HAVE_MPI`
+ * is defined, otherwise, it defaults to the *self* communicator.
  */
 class Comm {
 

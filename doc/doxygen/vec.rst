@@ -8,7 +8,7 @@ This header provides the Vec class for working with SIMD vectors.
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::Vec
+.. doxygenclass:: sctl::Vec
 ..
 
    **Types**:
@@ -58,6 +58,8 @@ Classes and Types
    - ``set``: Sets the vector data.
 
    **Usage guide**: :ref:`Using Vec class <tutorial-vec>`
+
+|
 
 .. raw:: html
 

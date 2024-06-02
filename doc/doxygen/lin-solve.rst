@@ -8,7 +8,7 @@ This header file provides classes for solving linear systems using iterative met
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::KrylovPrecond
+.. doxygenclass:: sctl::KrylovPrecond
 ..   :members:
 ..
 
@@ -29,13 +29,9 @@ Classes and Types
 
     **Usage guide**: :ref:`Using GMRES and KrylovPrecond classes <tutorial-gmres>`
 
-.. raw:: html
+|
 
-   <div style="border-top: 1px solid"></div>
-   <br>
-
-
-.. doxygenclass:: SCTL_NAMESPACE::GMRES
+.. doxygenclass:: sctl::GMRES
 ..   :members:
 ..
 
@@ -54,6 +50,8 @@ Classes and Types
 
     **Usage guide**: :ref:`Using GMRES and KrylovPrecond classes <tutorial-gmres>`
 
+
+|
 
 .. raw:: html
 

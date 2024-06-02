@@ -229,7 +229,9 @@ template <Long e, class ValueType> inline constexpr ValueType pow(ValueType b);
 
 #ifdef SCTL_QUAD_T
 /**
- * Class representing a quadruple precision floating-point number.
+ * Class representing a quadruple precision floating-point number.  To enable, the macro
+ * `SCTL_QUAD_T` must be defined and set equal to the compiler supported quad-precision floating
+ * point type (e.g.  with GCC use the compiler flag: `-DSCTL_QUAD_T=__float128`).
  */
 class QuadReal {
   typedef SCTL_QUAD_T QuadRealType;

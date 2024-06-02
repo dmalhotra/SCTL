@@ -8,7 +8,7 @@ This header file provides functionality for creating and manipulating tree data 
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::Tree
+.. doxygenclass:: sctl::Tree
 ..   :members:
 ..
 
@@ -52,12 +52,9 @@ Classes and Types
 
     **Usage guide**: :ref:`Using Tree and PtTree classes <tutorial-tree>`
 
-.. raw:: html
+|
 
-   <div style="border-top: 1px solid"></div>
-   <br>
-
-.. doxygenclass:: SCTL_NAMESPACE::PtTree
+.. doxygenclass:: sctl::PtTree
 ..   :members:
 ..
 
@@ -80,6 +77,8 @@ Classes and Types
     - ``WriteParticleVTK(fname, data_name, show_ghost)``: Write particle data to a VTK file.
 
     **Usage guide**: :ref:`Using Tree and PtTree classes <tutorial-tree>`
+
+|
 
 .. raw:: html
 

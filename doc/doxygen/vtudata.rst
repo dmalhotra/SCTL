@@ -8,7 +8,7 @@ This header file provides a data structure for storing data in the VTK (Visualiz
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::VTUData
+.. doxygenclass:: sctl::VTUData
 ..   :members:
 ..
 
@@ -29,6 +29,8 @@ Classes and Types
     - ``WriteVTK(fname, comm=Comm::Self())``: Writes the VTU data to a VTK file.
 
     **Usage guide**: :ref:`Using VTUData class <tutorial-vtudata>`
+
+|
 
 .. raw:: html
 

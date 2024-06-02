@@ -8,7 +8,7 @@ This header file provides classes and methods for managing lists of slender boun
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::SlenderElemList
+.. doxygenclass:: sctl::SlenderElemList
 ..   :members:
 ..
 
@@ -51,7 +51,14 @@ Classes and Types
 ..    - ``NearInterac``: Computes the near-interaction operator for a given element and each target.
 ..
 
+.. note::
+
+   Member functions of the base class :ref:`ElementListBase <boundary_integral_hpp>` are not shown here.
+   Refer to :ref:`boundary_integral.hpp <boundary_integral_hpp>` for base class member functions.
+
     **Usage guide**: :ref:`Using SlenderElemList class <tutorial-slenderelemlist>`
+
+|
 
 .. raw:: html
 

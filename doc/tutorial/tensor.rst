@@ -12,7 +12,7 @@ Key Features:
     
     2. **Extensive Operations**: Provides a wide range of operations, including element-wise arithmetic operations (addition, subtraction, multiplication, division), matrix multiplication (for 2D tensors), rotation (generalization of transpose) operation, and more.
     
-    4. **Compile-Time Dimension Handling**: Dimensions of the tensor can be queried at compile-time, enabling optimizations and compile-time error checking.
+    3. **Compile-Time Dimension Handling**: Dimensions of the tensor can be queried at compile-time, enabling optimizations and compile-time error checking.
 
 The following is a general overview on using the Tensor class.
 For more advanced usage and additional features, please refer to the Tensor class API in :ref:`tensor.hpp <tensor_hpp>`.

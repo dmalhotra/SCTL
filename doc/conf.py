@@ -41,6 +41,7 @@ release = '{}'.format(version)
 extensions = [
     'breathe',
 ]
+extensions += ['sphinx_rtd_theme']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -111,7 +112,15 @@ if not on_rtd:  # only import and set the theme if we're building docs locally
     #
     # html_sidebars = {}
 
-html_sidebars = { '**': ['globaltoc.html', 'relations.html', 'sourcelink.html', 'searchbox.html'] }
+html_theme_options = {
+    'collapse_navigation': False,
+    'sticky_navigation': True,
+    'navigation_depth': 3,
+    'includehidden': True,
+    'titles_only': False
+}
+
+#html_sidebars = { '**': ['globaltoc.html', 'relations.html', 'sourcelink.html', 'searchbox.html'] }
 
 # otherwise, readthedocs.org uses their theme by default, so no need to specify it
 

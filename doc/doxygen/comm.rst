@@ -9,11 +9,11 @@ It encapsulates common communication operations such as point-to-point communica
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::Comm
+.. doxygenclass:: sctl::Comm
 ..   :members:
 ..
 
-    **Methods**:
+    **Static Methods**:
 
     - ``MPI_Init(argc, argv)``: Initialize MPI.
 
@@ -24,6 +24,8 @@ Classes and Types
     - ``World()``: Get the *world* communicator.
 
     - ``Rank()``: Get the rank of the current process.
+
+    **Methods**:
 
     - ``Size()``: Get the size of the communicator.
 
@@ -67,7 +69,9 @@ Classes and Types
 
     **Usage guide**: :ref:`Using the Comm class <tutorial-comm>`
 
-.. doxygenenum:: SCTL_NAMESPACE::CommOp
+|
+
+.. doxygenenum:: sctl::CommOp
 ..
 
 ..    - ``SUM``: Sum operation.
@@ -75,6 +79,8 @@ Classes and Types
 ..    - ``MIN``: Minimum operation.
 ..
 ..    - ``MAX``: Maximum operation.
+
+|
 
 .. raw:: html
 

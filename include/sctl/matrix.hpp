@@ -13,7 +13,9 @@ namespace sctl {
 template <class ValueType> class Permutation;
 
 /**
- * Class representing a matrix. The data is stored in row-major order.
+ * Class representing a matrix. The data is stored in row-major order.  It can optionally make use
+ * the **BLAS** and **LAPACK** libraries when available by defining the macros `SCTL_HAVE_BLAS` and
+ * `SCTL_HAVE_LAPACK` respectively.
  *
  * @tparam ValueType The type of elements stored in the matrix.
  */

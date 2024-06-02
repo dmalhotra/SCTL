@@ -8,7 +8,7 @@ This header file provides the `Vector` class and associated functions for managi
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::Vector
+.. doxygenclass:: sctl::Vector
 ..   :members:
 ..
 
@@ -62,6 +62,8 @@ Classes and Types
 
     **Usage guide**: :ref:`Using Vector class <tutorial-vector>`
 
+|
+
 .. raw:: html
 
    <div style="border-top: 3px solid"></div>
@@ -70,7 +72,7 @@ Classes and Types
 .. literalinclude:: ../../include/sctl/vector.hpp
    :language: c++
 
-.. .. doxygenclass:: SCTL_NAMESPACE::Vector
+.. .. doxygenclass:: sctl::Vector
 ..    :members:
 
 ..   :members-only:

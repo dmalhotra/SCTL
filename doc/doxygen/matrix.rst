@@ -8,7 +8,7 @@ This header file provides the `Matrix` class.
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::Matrix
+.. doxygenclass:: sctl::Matrix
 ..   :members:
 ..
 
@@ -62,6 +62,8 @@ Classes and Types
     
     **Usage guide**: :ref:`Using Matrix class <tutorial-matrix>`
 
+|
+
 .. raw:: html
 
    <div style="border-top: 3px solid"></div>
@@ -70,7 +72,7 @@ Classes and Types
 .. literalinclude:: ../../include/sctl/matrix.hpp
    :language: c++
 
-.. .. doxygenclass:: SCTL_NAMESPACE::Matrix
+.. .. doxygenclass:: sctl::Matrix
 ..    :members:
 ..    :undoc-members:
 ..    :outline:

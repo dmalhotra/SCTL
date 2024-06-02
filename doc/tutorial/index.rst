@@ -3,8 +3,8 @@
 Tutorials
 =========
 
-Containers
-----------
+Basic Data Structures
+---------------------
 
 .. toctree::
    :maxdepth: 1
@@ -24,13 +24,18 @@ Numerical Methods
    Spectral Deferred Correction <sdc>
    GMRES solver, Krylov preconditioner <gmres>
    Lagrange Interpolation <lagrange-interp>
-   Generalized Chebyshev Quadrature Rule <interp_quadrule>
-   Gauss-Legendre, Clenshaw-Curtis Quadrature <quadrule>
-   Spherical Harmonics <shc>
+   Generalized Chebyshev Quadrature <interp-quadrule>
    Tree, PtTree <tree>
+   Gauss-Legendre, Clenshaw-Curtis Quadrature <quadrule> TODO
+
+Spectral Methods
+----------------
+
+.. toctree::
+   :maxdepth: 1
+
+   Spherical Harmonics <spherical_harmonics> TODO
    FFT <fft>
-   FMM <fmm>
-   Kernel functions <kernels>
 
 Boundary Integral Methods
 -------------------------
@@ -40,6 +45,8 @@ Boundary Integral Methods
  
    BoundaryIntegralOp <boundaryintegralop>
    SlenderElemList <slenderelemlist>
+   Kernel functions <kernels>
+   ParticleFMM <fmm>
 
 High Performance Computing
 --------------------------
@@ -47,10 +54,10 @@ High Performance Computing
 .. toctree::
    :maxdepth: 1
  
-   Profile <profile>
    Comm <comm>
    Vec <vec>
-   OpenMP Utilities (sort, merge, scan) <omp_par>
+   Profile <profile>
+   OpenMP Utilities (sort, merge, scan) <omp_par> TODO
    
 
 Miscellaneous
@@ -59,19 +66,24 @@ Miscellaneous
 .. toctree::
    :maxdepth: 1
 
-   QuadReal <quadreal>
    VTUData <vtudata>
-   MemoryManager, Iterator, ConstIterator <mem_mgr>
-   Stacktrace Utility <stacktrace>
-   GEMM, SVD (unoptimized) <mat_utils>
 
-Legacy (unmaintained)
----------------------
+..   Morton <morton>
+..   Quadrature <quadrule>
+..   QuadReal <quadreal>
+..   Iterator, ConstIterator <iterator>
+..   StaticArray <static-array>
+..   MemoryManager <mem_mgr>
+..   Stacktrace Utility <stacktrace>
+..   GEMM, SVD (unoptimized) <mat_utils>
 
-.. toctree::
-   :maxdepth: 1
-
-   Boundary quadrature <boundary_quadrature>
-   ChebBasis <cheb_utils>
-
+.. Legacy (unmaintained)
+.. ---------------------
+.. 
+.. .. toctree::
+..    :maxdepth: 1
+.. 
+..    Boundary quadrature <boundary_quadrature>
+..    ChebBasis <cheb_utils>
+.. 
 

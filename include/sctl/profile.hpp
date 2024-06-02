@@ -40,7 +40,7 @@ enum class ProfileCounter: Long {
 /**
  * This class allows for manual instrumentation of code. It allows the user to define profiling blocks. It then reports
  * the change in values of various counters (time, flops, memory allocations, etc) between the start and end of each
- * profiling block.
+ * profiling block. The macro `SCTL_PROFILE` must be defined to enable compiling with instrumentation.
  */
 class Profile {
   static constexpr Long Nfield = (Long)ProfileCounter::FIELD_COUNT;

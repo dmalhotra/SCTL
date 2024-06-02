@@ -11,7 +11,7 @@ Macros
 ``SCTL_DATA_PATH``:
     This macro defines the path to the data directory used by the library. If not defined, it defaults to "./data/".
 
-.. ``SCTL_NAMESPACE``:
+.. ``sctl``:
 ..     This macro defines the namespace used by the SCTL framework. If not defined, it defaults to "sctl".
 
 ``SCTL_PROFILE``:
@@ -47,19 +47,19 @@ Functions
 Namespaces
 ----------
 
-``SCTL_NAMESPACE``:
+``sctl``:
     The namespace under which all SCTL components reside.
 
 Classes and Types
 -----------------
 
-``SCTL_NAMESPACE::ConstIterator``:
+``sctl::ConstIterator``:
     Template class representing a constant iterator.
 
-``SCTL_NAMESPACE::Iterator``:
+``sctl::Iterator``:
     Template class representing a mutable iterator.
 
-``SCTL_NAMESPACE::StaticArray``:
+``sctl::StaticArray``:
     Template class representing a static array.
 
     - Parameters:
@@ -68,11 +68,13 @@ Classes and Types
 
     If ``SCTL_MEMDEBUG`` is defined, these classes are defined with additional debugging functionality. Otherwise, they are defined as aliases for pointer types.
 
-``SCTL_NAMESPACE::Integer``:
+``sctl::Integer``:
     Alias for a long integer type representing bounded numbers less than 32k.
 
-``SCTL_NAMESPACE::Long``:
+``sctl::Long``:
     Alias for a 64-bit integer type representing problem size.
+
+|
 
 .. raw:: html
 

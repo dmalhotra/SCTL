@@ -8,7 +8,7 @@ This header file provides functionality for Lagrange interpolation, including co
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::LagrangeInterp
+.. doxygenclass:: sctl::LagrangeInterp
 ..   :members:
 ..
 
@@ -19,6 +19,8 @@ Classes and Types
     - ``Derivative(df, f, nds)``: Computes the derivative `df` of the polynomial interpolant from function values given at the interpolation nodes.
 
     **Usage guide**: :ref:`Using the LagrangeInterp Class <tutorial-lagrange-interp>`
+
+|
 
 .. raw:: html
 

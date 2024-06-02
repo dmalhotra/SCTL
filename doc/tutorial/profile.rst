@@ -1,7 +1,7 @@
 .. _tutorial-profile:
 
 Using the Profile class
-======================
+=======================
 
 The `Profile` class allows you to instrument your code for profiling, enabling you to measure various metrics like time, FLOPs, memory allocations, and more. It provides functions to mark the beginning and end of profiling blocks and to increment profiling counters. This tutorial will guide you through using the `Profile` class in your code.
 For more advanced usage and additional features, please refer to the Profile class API in :ref:`profile.hpp <profile_hpp>`.

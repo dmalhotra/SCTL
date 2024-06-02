@@ -5,7 +5,8 @@ kernel_functions.hpp
 
 This header file defines various kernel functions used for computing potentials and gradients in Laplace and Stokes problems in 3D.
 The kernel objects inherit from the ``GenericKernel`` class defined in :ref:`generic-kernel.hpp <generic-kernel_hpp>`.
-These kernel implementations can be used as templates for other user defined kernels.
+These kernel implementations can be used as templates for writing new user defined kernels.
+This is explained further in :ref:`Writing Custom Kernel Objects <tutorial-kernels>`.
 
      - ``Laplace3D_FxU``: Laplace single-layer kernel.
      
@@ -22,6 +23,8 @@ These kernel implementations can be used as templates for other user defined ker
      - ``Stokes3D_FSxU``: Stokes single-layer + source-term kernel (required for multipole-to-local translations in FMM when double-layer sources are involved).
      
      - ``Stokes3D_FxUP``: Stokes single-layer velocity and pressure kernel.
+
+|
 
 .. raw:: html
 

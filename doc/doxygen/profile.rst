@@ -8,7 +8,7 @@ This header file provides functionality for manual instrumentation of code, allo
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::Profile
+.. doxygenclass:: sctl::Profile
 ..   :members:
 ..
 
@@ -45,6 +45,8 @@ Classes and Types
     - ``ProfExpr``: Represents a profiling expression defined in terms of one or more counters and is printed in the profiling output.
 
     **Usage guide**: :ref:`Using Profile class <tutorial-profile>`
+
+|
 
 .. raw:: html
 

@@ -20,6 +20,14 @@ template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM> struct uKerH
   }
 };
 
+/**
+ * @class GenericKernel
+ * This class is designed to help create new custom kernel objects. Kernel objects for Laplace and Stokes in 3D are defined in `kernel_functions.hpp` and can be used as a template.
+ *
+ * @tparam uKernel The base class for the kernel.
+ *
+ * @see kernel_functions.hpp
+ */
 template <class uKernel> class GenericKernel : public uKernel {
 
     template <class VecType, Integer K0, Integer K1, Integer D, class ...T> static constexpr Integer get_DIM  (void (*uKer)(VecType (&u)[K0][K1], const VecType (&r)[D], T... args)) { return D;  }
@@ -45,31 +53,92 @@ template <class uKernel> class GenericKernel : public uKernel {
 
   public:
 
-    GenericKernel() : ctx_ptr(nullptr) {}
+    /**
+     * Default constructor.
+     */
+    GenericKernel();
 
-    static constexpr Integer CoordDim() {
-      return DIM;
-    }
-    static constexpr Integer NormalDim() {
-      return N_DIM;
-    }
-    static constexpr Integer SrcDim() {
-      return KDIM0;
-    }
-    static constexpr Integer TrgDim() {
-      return KDIM1;
-    }
+    /**
+     * Returns the coordinate dimension.
+     * @return The coordinate dimension.
+     */
+    static constexpr Integer CoordDim();
 
-    const void* GetCtxPtr() const {
-      return ctx_ptr;
-    }
+    /**
+     * Returns the dimensions of the normal vector. It will return zero if the kernel function does
+     * not require a normal vector; otherwise it will return DIM.
+     *
+     * @return The normal dimension.
+     */
+    static constexpr Integer NormalDim();
 
+    /**
+     * Returns the source dimension.
+     * @return The source dimension.
+     */
+    static constexpr Integer SrcDim();
+
+    /**
+     * Returns the target dimension.
+     * @return The target dimension.
+     */
+    static constexpr Integer TrgDim();
+
+    /**
+     * Returns a constant pointer to the context.
+     * @return A constant pointer to the context.
+     */
+    const void* GetCtxPtr() const;
+
+    /**
+     * Evaluates the kernel and stores the result in `v_trg`.
+     * @tparam Real The type of the real numbers used.
+     * @tparam enable_openmp A boolean flag to enable OpenMP.
+     * @param v_trg The vector to store the potential result.
+     * @param r_trg The vector of target point coordinates.
+     * @param r_src The vector of source point coordinates.
+     * @param n_src The vector of source normals.
+     * @param v_src The vector of source densities.
+     * @param digits The number of significant digits for evaluation.
+     * @param self A constant iterator pointing to the self interaction flag.
+     */
     template <class Real, bool enable_openmp> static void Eval(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
 
+    /**
+     * Evaluates the kernel and stores the result in `v_trg`.
+     * @tparam Real The type of the real numbers used.
+     * @tparam enable_openmp A boolean flag to enable OpenMP. Default is false.
+     * @tparam digits The number of significant digits for evaluation. Default is -1 for machine-precision.
+     * @param v_trg The vector to store the potential result.
+     * @param r_trg The vector of target point coordinates.
+     * @param r_src The vector of source point coordinates.
+     * @param n_src The vector of source normals.
+     * @param v_src The vector of source densities.
+     */
     template <class Real, bool enable_openmp=false, Integer digits=-1> void Eval(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src) const;
 
+    /**
+     * Computes the kernel matrix and stores it in `M`.
+     * @tparam Real The type of the real numbers used.
+     * @tparam enable_openmp A boolean flag to enable OpenMP. Default is false.
+     * @tparam digits The number of significant digits for evaluation. Default is -1.
+     * @param M The matrix to store the kernel matrix.
+     * @param Xt The vector of target point coordinates.
+     * @param Xs The vector of source point coordinates.
+     * @param Xn The vector of source normals.
+     */
     template <class Real, bool enable_openmp=false, Integer digits=-1> void KernelMatrix(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn) const;
 
+    /**
+     * Static method for kernel matrix computation.
+     * @tparam digits The number of significant digits for evaluation.
+     * @tparam VecType The vector type.
+     * @tparam NormalType The normal type.
+     * @param u The output kernel matrix.
+     * @param r The input coordinates.
+     * @param n The input normals.
+     * @param ctx_ptr The context pointer.
+     */
     template <Integer digits, class VecType, class NormalType> static void uKerMatrix(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const NormalType& n, const void* ctx_ptr);
 
   private:

@@ -8,7 +8,7 @@ This header file provides the `Permutation` class.
 Classes and Types
 -----------------
 
-.. doxygenclass:: SCTL_NAMESPACE::Permutation
+.. doxygenclass:: sctl::Permutation
 ..   :members:
 ..
 
@@ -46,6 +46,8 @@ Classes and Types
 
     **Usage guide**: :ref:`Using Permutation class <tutorial-permutation>`
 
+|
+
 .. raw:: html
 
    <div style="border-top: 3px solid"></div>
@@ -54,7 +56,7 @@ Classes and Types
 .. literalinclude:: ../../include/sctl/permutation.hpp
    :language: c++
 
-.. .. doxygenclass:: SCTL_NAMESPACE::Permutation
+.. .. doxygenclass:: sctl::Permutation
 ..    :members:
 ..    :undoc-members:
 ..    :outline:

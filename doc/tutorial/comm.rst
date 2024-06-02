@@ -3,7 +3,7 @@
 Using the Comm Class
 ====================
 
-The `Comm` class provides an object-oriented wrapper to communication operations, primarily designed to work with MPI. When MPI is available (indicated by the macro `SCTL_HAVE_MPI`), it uses MPI functionalities. Otherwise, it defaults to the *self* communicator.
+The `Comm` class provides an object-oriented wrapper to communication operations, primarily designed to work with MPI. When MPI is available (indicated by the macro ``SCTL_HAVE_MPI``), it uses MPI functionalities. Otherwise, it defaults to the *self* communicator.
 The following tutorial provides a brief introduction to using the `Comm` class. For more advanced usage and additional features, please refer to the Comm class API in :ref:`comm.hpp <comm_hpp>`.
 
 Initialization

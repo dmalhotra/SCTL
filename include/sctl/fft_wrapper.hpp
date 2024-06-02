@@ -24,7 +24,11 @@ namespace sctl {
   enum class FFT_Type {R2C, C2C, C2C_INV, C2R};
 
   /**
-   * Wrapper class for FFTW.
+   * Wrapper class for the FFTW library.  It uses FFTW for double precision calculation when linked
+   * with `libfftw3` and the macro `SCTL_HAVE_FFTW` is defined. Similarly, for single precision and
+   * long double precision computations, the macros `SCTL_HAVE_FFTWF` and `SCTL_HAVE_FFTWL` must be
+   * defined and the code must be linked with `libfftw3f` and `libfftw3l`. If setup in this way, it
+   * computes Fourier transform directly and will have lower performance.
    *
    * @tparam ValueType The value type of the FFT data.
    */
