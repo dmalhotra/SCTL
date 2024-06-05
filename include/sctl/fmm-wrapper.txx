@@ -498,10 +498,8 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
 
   const Long Nt = Xt_.Dim() / DIM;
   SCTL_ASSERT(Xt_.Dim() == Nt * DIM);
-  if (U_.Dim() != Nt * TrgDim) {
-    U_.ReInit(Nt * TrgDim);
-    U_.SetZero();
-  }
+  if (U_.Dim() != Nt * TrgDim) U_.ReInit(Nt * TrgDim);
+  U_.SetZero();
 
   auto partition = [this](Vector<Real>& X, const Long dof) {
     StaticArray<Long,2> cnt{X.Dim()/dof, 0};
@@ -802,10 +800,8 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
     comm_.Allreduce<Long>(cnt+0, cnt+1, 1, CommOp::SUM);
     if (cnt[1] < 40000) return EvalDirect(U, trg_name);
   }
-  if (U.Dim() != Nt * TrgDim) {
-    U.ReInit(Nt * TrgDim);
-    U.SetZero();
-  }
+  if (U.Dim() != Nt * TrgDim) U.ReInit(Nt * TrgDim);
+  U.SetZero();
 
   if (digits_ <= 0) return;
   for (auto& it : s2t_map) {

@@ -970,10 +970,8 @@ namespace sctl {
     fmm.SetSrcDensity("Src", F_far);
 
     const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
-    if (U.Dim() != Ntrg*KDIM1_) {
-      U.ReInit(Ntrg*KDIM1_);
-      U.SetZero();
-    }
+    if (U.Dim() != Ntrg*KDIM1_) U.ReInit(Ntrg*KDIM1_);
+    U.SetZero();
 
     if (trg_normal_dot_prod_) {
       constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
