@@ -53,7 +53,7 @@ template <class Real> class SDC {
      * @param[out] error_picard the picard iteration error
      * @param[out] norm_dudt maximum norm of du/dt
      */
-    void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, Fn0&& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Real* norm_dudt = nullptr) const;
+    void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn0& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Real* norm_dudt = nullptr) const;
 
     /**
      * Apply one step of spectral deferred correction (SDC).
@@ -69,7 +69,7 @@ template <class Real> class SDC {
      * @param[out] error_picard the picard iteration error
      * @param[out] norm_dudt maximum norm of du/dt
      */
-    void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, Fn1&& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Real* norm_dudt = nullptr) const;
+    void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn1& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Real* norm_dudt = nullptr) const;
 
     /**
      * Solve ODE adaptively to required tolerance.
@@ -87,7 +87,7 @@ template <class Real> class SDC {
      *
      * @return the final time (should equal T if no errors)
      */
-    Real AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, Fn0&& F, Real tol, const MonitorFn* monitor_callback = nullptr, bool continue_with_errors = false, Real* error = nullptr) const;
+    Real AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, const Fn0& F, Real tol, const MonitorFn* monitor_callback = nullptr, bool continue_with_errors = false, Real* error = nullptr) const;
 
     /**
      * Solve ODE adaptively to required tolerance.
@@ -105,7 +105,7 @@ template <class Real> class SDC {
      *
      * @return the final time (should equal T if no errors)
      */
-    Real AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, Fn1&& F, Real tol, const MonitorFn* monitor_callback = nullptr, bool continue_with_errors = false, Real* error = nullptr) const;
+    Real AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, const Fn1& F, Real tol, const MonitorFn* monitor_callback = nullptr, bool continue_with_errors = false, Real* error = nullptr) const;
 
     /**
      * This is an example for how to use the SDC class.

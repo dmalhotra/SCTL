@@ -36,7 +36,7 @@ Set the quadrature accuracy for numerical integration.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Add the geometry of the surface to the boundary integral operator. This includes specifying the discretization of the surface.
-In this example the boundary is given by an instance of :ref:`SlenderElemList class <tutorial-slenderelemlist>`.
+In this example the boundary is given by an instance of `SlenderElemList class <https://csbq.readthedocs.io/en/latest/doxygen/slender_element.html>`_ (in `CSBQ <https://csbq.readthedocs.io>`_).
 
 .. code-block:: cpp
 

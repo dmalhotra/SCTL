@@ -5,17 +5,6 @@
 
 #include <sctl/common.hpp>
 
-// Import PVFMM preprocessor macro definitions
-#ifdef SCTL_HAVE_PVFMM
-#  ifndef SCTL_HAVE_MPI
-#    define SCTL_HAVE_MPI
-#  endif
-#  include "pvfmm_config.h"
-#  if defined(PVFMM_QUAD_T) && !defined(SCTL_QUAD_T)
-#    define SCTL_QUAD_T PVFMM_QUAD_T
-#  endif
-#endif
-
 // Math utilities
 #include "sctl/math_utils.hpp"
 #include "sctl/math_utils.txx"
@@ -23,8 +12,6 @@
 // Boundary Integrals
 #include "sctl/boundary_integral.hpp"
 #include "sctl/boundary_integral.txx"
-#include "sctl/slender_element.hpp"
-#include "sctl/slender_element.txx"
 #include "sctl/quadrule.hpp"
 #include "sctl/quadrule.txx"
 #include "sctl/lagrange-interp.hpp"

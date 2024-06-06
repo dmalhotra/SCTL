@@ -44,7 +44,6 @@ Boundary Integral Methods
    :maxdepth: 1
  
    BoundaryIntegralOp <boundaryintegralop>
-   SlenderElemList <slenderelemlist>
    Kernel functions <kernels>
    ParticleFMM <fmm>
 

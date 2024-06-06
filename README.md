@@ -83,7 +83,6 @@ The following list outlines the primary features and capabilities provided by th
   Techniques for solving partial differential equations using boundary integral representations.
 
   - [BoundaryIntegralOp](include/sctl/boundary_integral.hpp): Generic class for instantiating layer-potential operators.
-  - [SlenderElemList](include/sctl/slender_element.hpp): Discretization of slender fibers and computing boundary integrals.
   - [Kernel functions](include/sctl/kernel_functions.hpp): Contains a variety of kernel functions for integral equations.
   - [ParticleFMM](include/sctl/fmm-wrapper.hpp): Integration with PVFMM for particle N-body calculations.
 

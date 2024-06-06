@@ -3,7 +3,6 @@
 
 #include <stdio.h>                   // for printf
 #include <algorithm>                 // for max, min
-#include <utility>                   // for forward
 
 #include "sctl/common.hpp"           // for Long, Integer, SCTL_ASSERT, SCTL...
 #include "sctl/ode-solver.hpp"       // for SDC
@@ -141,7 +140,7 @@ namespace sctl {
   template <class Real> Integer SDC<Real>::Order() const { return order; }
 
   // solve u = u0 + \int_0^{dt} F(u)
-  template <class Real> void SDC<Real>::operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, Fn0&& F, Integer N_picard, const Real tol_picard, Real* error_interp, Real* error_picard, Real* norm_dudt) const {
+  template <class Real> void SDC<Real>::operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn0& F, Integer N_picard, const Real tol_picard, Real* error_interp, Real* error_picard, Real* norm_dudt) const {
     auto max_norm = [] (const Matrix<Real>& M, const Comm& comm) {
       StaticArray<Real,2> max_val{0,0};
       for (Long i = 0; i < M.Dim(0); i++) {
@@ -255,14 +254,14 @@ namespace sctl {
     }
   }
 
-  template <class Real> void SDC<Real>::operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, Fn1&& F, Integer N_picard, const Real tol_picard, Real* error_interp, Real* error_picard, Real* norm_dudt) const {
+  template <class Real> void SDC<Real>::operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn1& F, Integer N_picard, const Real tol_picard, Real* error_interp, Real* error_picard, Real* norm_dudt) const {
     const auto fn = [&F](Vector<Real>* dudt, const Vector<Real>& u, const Integer correction_idx, const Integer substep_idx) {
       F(dudt, u);
     };
     this->operator()(u, dt, u0, fn, N_picard, tol_picard, error_interp, error_picard, norm_dudt);
   }
 
-  template <class Real> Real SDC<Real>::AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, Fn0&& F, const Real tol, const MonitorFn* monitor_callback, bool continue_with_errors, Real* error) const {
+  template <class Real> Real SDC<Real>::AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, const Fn0& F, const Real tol, const MonitorFn* monitor_callback, bool continue_with_errors, Real* error) const {
     const Real eps = machine_eps<Real>();
     Vector<Real> u_, u0_ = u0;
 
@@ -271,7 +270,7 @@ namespace sctl {
     while (t < T && dt > eps*T) {
       Real error_interp, error_picard, norm_dudt;
       Real tol_ = std::max<Real>(tol/T, (tol-error_)/(T-t));
-      (*this)(&u_, dt, u0_, std::forward<Fn0>(F), 2*order, tol_*dt*pow<Real>(0.8,order), &error_interp, &error_picard, &norm_dudt);
+      (*this)(&u_, dt, u0_, F, 2*order, tol_*dt*pow<Real>(0.8,order), &error_interp, &error_picard, &norm_dudt);
       // The factor pow<Real>(0.8,order) ensures that we try to solve to
       // slightly higher accuracy. This allows us to determine if the next
       // time-step size can be increased by d 1/0.8.
@@ -299,7 +298,7 @@ namespace sctl {
     return t;
   }
 
-  template <class Real> Real SDC<Real>::AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, Fn1&& F, Real tol, const MonitorFn* monitor_callback, bool continue_with_errors, Real* error) const {
+  template <class Real> Real SDC<Real>::AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, const Fn1& F, Real tol, const MonitorFn* monitor_callback, bool continue_with_errors, Real* error) const {
     const auto fn = [&F](Vector<Real>* dudt, const Vector<Real>& u, const Integer correction_idx, const Integer substep_idx) {
       F(dudt, u);
     };

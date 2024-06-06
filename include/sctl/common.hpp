@@ -83,4 +83,15 @@ template <typename ValueType, Long DIM> using StaticArray = ValueType[DIM];
 #endif
 }
 
+// Import PVFMM preprocessor macro definitions
+#ifdef SCTL_HAVE_PVFMM
+#  ifndef SCTL_HAVE_MPI
+#    define SCTL_HAVE_MPI
+#  endif
+#  include "pvfmm_config.h"
+#  if defined(PVFMM_QUAD_T) && !defined(SCTL_QUAD_T)
+#    define SCTL_QUAD_T PVFMM_QUAD_T
+#  endif
+#endif
+
 #endif // _SCTL_COMMON_HPP_

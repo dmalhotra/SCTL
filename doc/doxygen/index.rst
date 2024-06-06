@@ -31,7 +31,6 @@ Header Files
    permutation
    profile
    quadrule
-   slender_element
    sph_harm
    stacktrace
    static-array
