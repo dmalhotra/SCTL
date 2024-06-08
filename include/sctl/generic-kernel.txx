@@ -35,6 +35,10 @@ namespace sctl {
     return KDIM1;
   }
 
+  template <class uKernel> void GenericKernel<uKernel>::SetCtxPtr(void* ctx) {
+    ctx_ptr = ctx;
+  }
+
   template <class uKernel> const void* GenericKernel<uKernel>::GetCtxPtr() const {
     return ctx_ptr;
   }

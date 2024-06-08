@@ -85,6 +85,11 @@ template <class uKernel> class GenericKernel : public uKernel {
     static constexpr Integer TrgDim();
 
     /**
+     * Set the pointer to the context data.
+     */
+    void SetCtxPtr(void* ctx);
+
+    /**
      * Returns a constant pointer to the context.
      * @return A constant pointer to the context.
      */

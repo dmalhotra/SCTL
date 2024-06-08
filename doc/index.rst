@@ -70,8 +70,8 @@ The following compiler flags can be used to enable or disable specific features 
 
 - ``-DSCTL_MEMDEBUG``: Enable memory debugging (:ref:`iterator.hpp <iterator_hpp>`, :ref:`static-array.hpp <static-array_hpp>`).
 - ``-DSCTL_GLOBAL_MEM_BUFF=<size in MB>``: Use a :ref:`global memory buffer <mem_mgr_hpp>` for allocations.
-- ``-DSCTL_PROFILE``: Enable :ref:`profiling <profile_hpp>`.
-- ``-DSCTL_VERBOSE=<level>``: Enable verbose :ref:`profiling <profile_hpp>` output.
+- ``-DSCTL_PROFILE=<level>``: Enable :ref:`profiling <profile_hpp>`.
+- ``-DSCTL_VERBOSE``: Enable verbose :ref:`profiling <profile_hpp>` output.
 - ``-DSCTL_SIG_HANDLER``: Enable :ref:`stack trace <stacktrace_h>`.
 - ``-DSCTL_QUAD_T``: Enable support for :ref:`quad-precision type <math_utils_hpp>`.
 
