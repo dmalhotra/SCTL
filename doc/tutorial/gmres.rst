@@ -114,3 +114,9 @@ The complete example code is shown below:
       return 0;
     }
 
+
+This generates the following output, where the first solve requires 23 GMRES iterations, while the second solve converges just 8 iterations due to preconditioning.
+
+.. literalinclude:: gmres-rsult.txt
+   :language: text
+

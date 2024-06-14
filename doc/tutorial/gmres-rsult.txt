@@ -1,0 +1,36 @@
+  0 KSP Residual norm 2.099176367385e+03
+  1 KSP Residual norm 9.003181335456e+00
+  2 KSP Residual norm 4.229781314809e+00
+  3 KSP Residual norm 3.014948102699e+00
+  4 KSP Residual norm 2.848098976816e+00
+  5 KSP Residual norm 2.353313340801e+00
+  6 KSP Residual norm 1.317737385363e+00
+  7 KSP Residual norm 1.299136900499e+00
+  8 KSP Residual norm 5.830786318937e-01
+  9 KSP Residual norm 4.104966218497e-01
+ 10 KSP Residual norm 2.296154200197e-01
+ 11 KSP Residual norm 1.132160334702e-01
+ 12 KSP Residual norm 7.357733656165e-02
+ 13 KSP Residual norm 6.190744358418e-02
+ 14 KSP Residual norm 5.755616763787e-02
+ 15 KSP Residual norm 5.741807896259e-02
+ 16 KSP Residual norm 1.680949998420e-02
+ 17 KSP Residual norm 1.816481776180e-03
+ 18 KSP Residual norm 6.359376010342e-04
+ 19 KSP Residual norm 1.981085110869e-04
+ 20 KSP Residual norm 5.229997256823e-05
+ 21 KSP Residual norm 1.046989208963e-05
+ 22 KSP Residual norm 1.443750846938e-06
+ 23 KSP Residual norm 1.212803427478e-07
+Solution error = 1.67549e-06
+
+  0 KSP Residual norm 1.834616605684e+01
+  1 KSP Residual norm 7.976544634403e+00
+  2 KSP Residual norm 1.159404821738e+00
+  3 KSP Residual norm 2.388777265664e-02
+  4 KSP Residual norm 4.215249431341e-03
+  5 KSP Residual norm 1.516499740199e-04
+  6 KSP Residual norm 1.152629619068e-05
+  7 KSP Residual norm 1.254922886814e-06
+  8 KSP Residual norm 1.542127320799e-08
+Solution error = 5.41102e-08
