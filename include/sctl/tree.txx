@@ -131,7 +131,7 @@ namespace sctl {
     return comm;
   }
 
-  template <Integer DIM> template <class Real> void Tree<DIM>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, bool periodic) {
+  template <Integer DIM> template <class Real> void Tree<DIM>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, bool periodic, Integer halo_size) {
     const Integer np = comm.Size();
     const Integer rank = comm.Rank();
 
@@ -305,7 +305,7 @@ namespace sctl {
         for (Long i = start_idx; i < end_idx; i++) {
           Morton<DIM> m0 = node_mid[i];
           Integer d0 = m0.Depth();
-          m0.NbrList(nlst, std::max<Integer>(d0-2,0), periodic);
+          if (halo_size >= 0) m0.NbrList(nlst, std::max<Integer>(d0-halo_size,0), periodic);
           user_procs.clear();
           for (const auto& m : nlst) {
             if (m.Depth() >= 0) {
@@ -652,6 +652,7 @@ namespace sctl {
           Long cnt_ = cnt[idx] * dof;
           Long recv_data_dsp_ = recv_data_dsp[i] * dof;
           Long recv_data_cnt_ = recv_data_cnt[i] * dof;
+          SCTL_ASSERT(recv_data_cnt_ == cnt_ || recv_data_cnt_ == 0);
           if (recv_data_cnt_ == cnt_) {
             for (Long j = 0; j < cnt_; j++) {
               data[dsp_+j] += recv_buff[recv_data_dsp_+j];
@@ -770,8 +771,6 @@ namespace sctl {
 
       { // Update data <-- data + recv_buff
         Long Nsplit = std::lower_bound(recv_mid.begin(), recv_mid.end(), mins[rank]) - recv_mid.begin();
-        SCTL_ASSERT(recv_mid.Dim()-Nsplit == node_mid.Dim()-end_idx);
-        SCTL_ASSERT(Nsplit == start_idx);
 
         Long N0 = (start_idx ? dsp[start_idx-1] + cnt[start_idx-1] : 0) * dof;
         Long N1 = (end_idx ? dsp[end_idx-1] + cnt[end_idx-1] : 0) * dof;
@@ -783,8 +782,13 @@ namespace sctl {
           data.ReInit(data_->Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->begin(), false);
         }
 
-        memcopy(cnt.begin(), recv_data_cnt.begin(), start_idx);
-        memcopy(cnt.begin()+end_idx, recv_data_cnt.begin()+Nsplit, node_mid.Dim()-end_idx);
+        for (Long i = 0; i < start_idx; i++) cnt[i] = 0;
+        for (Long i = end_idx; i < cnt.Dim(); i++) cnt[i] = 0;
+        for (Long i = 0; i < recv_mid.Dim(); i++) {
+          const auto idx = std::lower_bound(node_mid.begin(), node_mid.end(), recv_mid[i]) - node_mid.begin();
+          SCTL_ASSERT(node_mid[idx] == recv_mid[i]);
+          cnt[idx] = recv_data_cnt[i];
+        }
 
         memcopy(data.begin(), recv_buff.begin(), Ns);
         memcopy(data.begin()+data.Dim()+Ns-recv_buff.Dim(), recv_buff.begin()+Ns, recv_buff.Dim()-Ns);
@@ -872,9 +876,9 @@ namespace sctl {
     #endif
   }
 
-  template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, bool periodic) {
+  template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, bool periodic, Integer halo_size) {
     const auto& comm = this->GetComm();
-    BaseTree::UpdateRefinement(coord, M, balance21, periodic);
+    BaseTree::UpdateRefinement(coord, M, balance21, periodic, halo_size);
 
     Long start_node_idx, end_node_idx;
     { // Set start_node_idx, end_node_idx
