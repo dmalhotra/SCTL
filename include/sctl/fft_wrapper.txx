@@ -214,17 +214,20 @@ namespace sctl {
   }
 
 #ifdef SCTL_HAVE_FFTW
-  template <> struct FFTPlan<double> { fftw_plan fftwplan; };
+  template <> struct FFTPlan<double> {
+    FFTPlan() : fftwplan(nullptr) {}
+    fftw_plan fftwplan;
+  };
 
-  template <> inline FFT<double>::~FFT() { if (Dim(0) && Dim(1)) fftw_destroy_plan(plan.fftwplan); }
+  template <> inline FFT<double>::~FFT() {
+    if (plan.fftwplan) fftw_destroy_plan(plan.fftwplan);
+    plan.fftwplan = nullptr;
+  }
 
   template <> inline void FFT<double>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
-    FFTWInitThreads(Nthreads);
-    if (Dim(0) && Dim(1)) fftw_destroy_plan(plan.fftwplan);
     fft_type = fft_type_;
     this->howmany_ = howmany_;
     copy_input = false;
-    plan.fftwplan = NULL;
 
     Long rank = dim_vec.Dim();
     Vector<int> dim_vec_(rank);
@@ -258,26 +261,32 @@ namespace sctl {
     if (!N0 || !N1) return;
     Vector<double> in(N0), out(N1);
 
+    #pragma omp critical(SCTL_FFTW_PLAN)
+    {
+    FFTWInitThreads(Nthreads);
+    if (plan.fftwplan) fftw_destroy_plan(plan.fftwplan);
+    plan.fftwplan = nullptr;
     if (fft_type == FFT_Type::R2C) {
-      plan.fftwplan = fftw_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], NULL, 1, N0 / this->howmany_, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan.fftwplan = fftw_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2C) {
-      plan.fftwplan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan.fftwplan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2C_INV) {
-      plan.fftwplan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan.fftwplan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2R) {
-      plan.fftwplan = fftw_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, &out[0], NULL, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan.fftwplan = fftw_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     }
     if (!plan.fftwplan) { // Build plan without FFTW_PRESERVE_INPUT
       if (fft_type == FFT_Type::R2C) {
-        plan.fftwplan = fftw_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], NULL, 1, N0 / this->howmany_, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE);
+        plan.fftwplan = fftw_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C) {
-        plan.fftwplan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE);
+        plan.fftwplan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C_INV) {
-        plan.fftwplan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE);
+        plan.fftwplan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2R) {
-        plan.fftwplan = fftw_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, &out[0], NULL, 1, N1 / this->howmany_, FFTW_ESTIMATE);
+        plan.fftwplan = fftw_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE);
       }
       copy_input = true;
+    }
     }
     SCTL_ASSERT(plan.fftwplan);
   }
@@ -317,17 +326,20 @@ namespace sctl {
 #endif
 
 #ifdef SCTL_HAVE_FFTWF
-  template <> struct FFTPlan<float> { fftwf_plan fftwplan; };
+  template <> struct FFTPlan<float> {
+    FFTPlan() : fftwplan(nullptr) {}
+    fftwf_plan fftwplan;
+  };
 
-  template <> inline FFT<float>::~FFT() { if (Dim(0) && Dim(1)) fftwf_destroy_plan(plan.fftwplan); }
+  template <> inline FFT<float>::~FFT() {
+    if (plan.fftwplan) fftwf_destroy_plan(plan.fftwplan);
+    plan.fftwplan = nullptr;
+  }
 
   template <> inline void FFT<float>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
-    FFTWInitThreads(Nthreads);
-    if (Dim(0) && Dim(1)) fftwf_destroy_plan(plan.fftwplan);
     fft_type = fft_type_;
     this->howmany_ = howmany_;
     copy_input = false;
-    plan.fftwplan = NULL;
 
     Long rank = dim_vec.Dim();
     Vector<int> dim_vec_(rank);
@@ -361,26 +373,32 @@ namespace sctl {
     if (!N0 || !N1) return;
     Vector<float> in (N0), out(N1);
 
+    #pragma omp critical(SCTL_FFTW_PLAN)
+    {
+    FFTWInitThreads(Nthreads);
+    if (plan.fftwplan) fftwf_destroy_plan(plan.fftwplan);
+    plan.fftwplan = nullptr;
     if (fft_type == FFT_Type::R2C) {
-      plan.fftwplan = fftwf_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], NULL, 1, N0 / this->howmany_, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan.fftwplan = fftwf_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2C) {
-      plan.fftwplan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan.fftwplan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2C_INV) {
-      plan.fftwplan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan.fftwplan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2R) {
-      plan.fftwplan = fftwf_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, &out[0], NULL, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan.fftwplan = fftwf_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     }
     if (!plan.fftwplan) { // Build plan without FFTW_PRESERVE_INPUT
       if (fft_type == FFT_Type::R2C) {
-        plan.fftwplan = fftwf_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], NULL, 1, N0 / this->howmany_, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE);
+        plan.fftwplan = fftwf_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C) {
-        plan.fftwplan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE);
+        plan.fftwplan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C_INV) {
-        plan.fftwplan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE);
+        plan.fftwplan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2R) {
-        plan.fftwplan = fftwf_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, &out[0], NULL, 1, N1 / this->howmany_, FFTW_ESTIMATE);
+        plan.fftwplan = fftwf_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE);
       }
       copy_input = true;
+    }
     }
     SCTL_ASSERT(plan.fftwplan);
   }
@@ -421,17 +439,20 @@ namespace sctl {
 #endif
 
 #ifdef SCTL_HAVE_FFTWL
-  template <> struct FFTPlan<long double> { fftwl_plan fftwplan; };
+  template <> struct FFTPlan<long double> {
+    FFTPlan() : fftwplan(nullptr) {}
+    fftwl_plan fftwplan;
+  };
 
-  template <> inline FFT<long double>::~FFT() { if (Dim(0) && Dim(1)) fftwl_destroy_plan(plan.fftwplan); }
+  template <> inline FFT<long double>::~FFT() {
+    if (plan.fftwplan) fftwl_destroy_plan(plan.fftwplan);
+    plan.fftwplan = nullptr;
+  }
 
   template <> inline void FFT<long double>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
-    FFTWInitThreads(Nthreads);
-    if (Dim(0) && Dim(1)) fftwl_destroy_plan(plan.fftwplan);
     fft_type = fft_type_;
     this->howmany_ = howmany_;
     copy_input = false;
-    plan.fftwplan = NULL;
 
     Long rank = dim_vec.Dim();
     Vector<int> dim_vec_(rank);
@@ -463,26 +484,32 @@ namespace sctl {
     if (!N0 || !N1) return;
     Vector<long double> in (N0), out(N1);
 
+    #pragma omp critical(SCTL_FFTW_PLAN)
+    {
+    FFTWInitThreads(Nthreads);
+    if (plan.fftwplan) fftwl_destroy_plan(plan.fftwplan);
+    plan.fftwplan = nullptr;
     if (fft_type == FFT_Type::R2C) {
-      plan.fftwplan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], NULL, 1, N0 / this->howmany_, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan.fftwplan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2C) {
-      plan.fftwplan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan.fftwplan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2C_INV) {
-      plan.fftwplan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan.fftwplan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     } else if (fft_type == FFT_Type::C2R) {
-      plan.fftwplan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, &out[0], NULL, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      plan.fftwplan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     }
     if (!plan.fftwplan) { // Build plan without FFTW_PRESERVE_INPUT
       if (fft_type == FFT_Type::R2C) {
-        plan.fftwplan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], NULL, 1, N0 / this->howmany_, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE);
+        plan.fftwplan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C) {
-        plan.fftwplan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE);
+        plan.fftwplan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C_INV) {
-        plan.fftwplan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], NULL, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE);
+        plan.fftwplan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2R) {
-        plan.fftwplan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], NULL, 1, N0 / 2 / this->howmany_, &out[0], NULL, 1, N1 / this->howmany_, FFTW_ESTIMATE);
+        plan.fftwplan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE);
       }
       copy_input = true;
+    }
     }
     SCTL_ASSERT(plan.fftwplan);
   }
