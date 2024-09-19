@@ -380,7 +380,7 @@ namespace sctl {
         }
       }
       M = UU;
-    } else { // orthonormalize M and get truncation errors S_vec (using modified Gradm-Schmidt)
+    } else { // orthonormalize M and get truncation errors S_vec (using modified Gram-Schmidt)
       Matrix<Real> Q;
       Vector<Long> pivot;
       modified_gram_schmidt(Q, S_vec, pivot, M.Transpose(), min_eps, max_ORDER, false);

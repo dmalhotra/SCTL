@@ -69,6 +69,8 @@ TARGET_BIN = \
        $(BINDIR)/test-tensor \
        $(BINDIR)/test-vec
 
+.PHONY: all test clean
+
 all : $(TARGET_BIN)
 
 $(BINDIR)/%: $(OBJDIR)/%.o
@@ -81,8 +83,6 @@ endif
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)
 	$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $^ -o $@
-
-.PHONY: all check clean
 
 test: $(TARGET_BIN)
 	./$(BINDIR)/test
