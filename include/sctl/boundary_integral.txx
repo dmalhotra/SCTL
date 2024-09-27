@@ -817,17 +817,24 @@ namespace sctl {
       }
       if (Nelem) { // Set K_near
         K_near.ReInit((K_near_dsp[Nelem-1]+K_near_cnt[Nelem-1])*KDIM0*KDIM1_);
-        for (Long i = 0; i < Nlst; i++) {
-          const auto& name = elem_lst_name[i];
+
+        const Long N_near = near_elem_dsp[Nelem-1] + near_elem_cnt[Nelem-1];
+        #pragma omp parallel for schedule(dynamic)
+        for (Long i = 0; i < N_near; i++) {
+          const Long elem_idx = std::lower_bound(near_elem_dsp.begin(), near_elem_dsp.end(), i+1) - near_elem_dsp.begin() - 1;
+          const Long elem_lst_idx = std::lower_bound(elem_lst_dsp.begin(), elem_lst_dsp.end(), elem_idx+1) - elem_lst_dsp.begin() - 1;
+
+          const auto& name = elem_lst_name[elem_lst_idx];
           const auto& elem_lst = elem_lst_map.at(name);
           const auto& elem_data = elem_data_map.at(name);
-          #pragma omp parallel for // schedule(dynamic) // TODO: why is this slower?
-          for (Long j = 0; j < elem_lst_cnt[i]; j++) {
-            const Long elem_idx = elem_lst_dsp[i]+j;
-            const Long Ntrg = near_elem_cnt[elem_idx];
+
+          {
+            const Long j = elem_idx - elem_lst_dsp[elem_lst_idx];
             const Vector<Real> Xsurf_(elem_nds_cnt[elem_idx]*COORD_DIM, Xsurf.begin()+elem_nds_dsp[elem_idx]*COORD_DIM, false);
             Matrix<Real> K_near_(elem_nds_cnt[elem_idx]*KDIM0,near_elem_cnt[elem_idx]*KDIM1_, K_near.begin()+K_near_dsp[elem_idx]*KDIM0*KDIM1_, false);
-            for (Long k = 0; k < Ntrg; k++) {
+
+            {
+              const Long k = i - near_elem_dsp[elem_idx];
               Long min_Xt = -1, min_Xsurf = -1;
               const Vector<Real> Xt(COORD_DIM, Xtrg_near.begin()+(near_elem_dsp[elem_idx]+k)*COORD_DIM, false);
               const Vector<Real> Xn((trg_normal_dot_prod_ ? COORD_DIM : 0), Xn_trg_near.begin()+(near_elem_dsp[elem_idx]+k)*COORD_DIM, false);
