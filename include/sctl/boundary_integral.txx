@@ -468,6 +468,32 @@ namespace sctl {
   }
 
 
+
+
+  template <class Real> void ElementListBase<Real>::GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) const {
+    if (Fout.Dim() != 0) Fout.ReInit(0);
+  }
+
+  template <class Real> void ElementListBase<Real>::FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) const {
+    if (Mout.Dim(0) != 0 || Mout.Dim(1) != 0) Mout.ReInit(0,0);
+  }
+
+
+  template <class Real> template <class Kernel> void ElementListBase<Real>::SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self) {
+    if (M_lst.Dim() != 0) M_lst.ReInit(0);
+  }
+
+  template <class Real> template <class Kernel> void ElementListBase<Real>::NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
+    if (M.Dim(0) != 0 || M.Dim(1) != 0) M.ReInit(0,0);
+  }
+
+  template <class Real> template <class Kernel> void ElementListBase<Real>::EvalNearInterac(Vector<Real>& u, const Vector<Real>& f, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
+    if (u.Dim() != 0) u.ReInit(0);
+  }
+
+
+
+
   template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::BoundaryIntegralOp(const Kernel& ker, bool trg_normal_dot_prod, const Comm& comm) : tol_(1e-10), ker_(ker), trg_normal_dot_prod_(trg_normal_dot_prod), comm_(comm), fmm(comm) {
     SCTL_ASSERT(!trg_normal_dot_prod_ || (KDIM1 % COORD_DIM == 0));
     ClearSetup();
@@ -511,6 +537,7 @@ namespace sctl {
     elem_lst_map[name] = dynamic_cast<ElementListBase<Real>*>(new ElemLstType(elem_lst));
     elem_data_map[name].SelfInterac = ElemLstType::template SelfInterac<Kernel>;
     elem_data_map[name].NearInterac = ElemLstType::template NearInterac<Kernel>;
+    elem_data_map[name].EvalNearInterac = ElemLstType::template EvalNearInterac<Kernel>;
     ClearSetup();
   }
 
@@ -818,9 +845,11 @@ namespace sctl {
       if (Nelem) { // Set K_near
         K_near.ReInit((K_near_dsp[Nelem-1]+K_near_cnt[Nelem-1])*KDIM0*KDIM1_);
 
+        constexpr Long cache_line_size = 512;
         const Long N_near = near_elem_dsp[Nelem-1] + near_elem_cnt[Nelem-1];
-        #pragma omp parallel for schedule(dynamic)
-        for (Long i = 0; i < N_near; i++) {
+        const Long omp_chunk_size = std::max(N_near/omp_get_max_threads()/32, (cache_line_size+KDIM1_-1)/KDIM1_);
+        #pragma omp parallel for schedule(dynamic,omp_chunk_size)
+        for (Long i = 0; i < N_near; i++) { // loop over all pairs of elements and their near targets
           const Long elem_idx = std::lower_bound(near_elem_dsp.begin(), near_elem_dsp.end(), i+1) - near_elem_dsp.begin() - 1;
           const Long elem_lst_idx = std::lower_bound(elem_lst_dsp.begin(), elem_lst_dsp.end(), elem_idx+1) - elem_lst_dsp.begin() - 1;
 
@@ -829,12 +858,14 @@ namespace sctl {
           const auto& elem_data = elem_data_map.at(name);
 
           {
-            const Long j = elem_idx - elem_lst_dsp[elem_lst_idx];
+            const Long j = elem_idx - elem_lst_dsp[elem_lst_idx]; // element index in elem_lst
+
+            const Long N0 = elem_nds_cnt[elem_idx]*KDIM0;
             const Vector<Real> Xsurf_(elem_nds_cnt[elem_idx]*COORD_DIM, Xsurf.begin()+elem_nds_dsp[elem_idx]*COORD_DIM, false);
-            Matrix<Real> K_near_(elem_nds_cnt[elem_idx]*KDIM0,near_elem_cnt[elem_idx]*KDIM1_, K_near.begin()+K_near_dsp[elem_idx]*KDIM0*KDIM1_, false);
+            Matrix<Real> K_near_(N0,near_elem_cnt[elem_idx]*KDIM1_, K_near.begin()+K_near_dsp[elem_idx]*KDIM0*KDIM1_, false);
 
             {
-              const Long k = i - near_elem_dsp[elem_idx];
+              const Long k = i - near_elem_dsp[elem_idx]; // target index in near-list of elem_idx
               Long min_Xt = -1, min_Xsurf = -1;
               const Vector<Real> Xt(COORD_DIM, Xtrg_near.begin()+(near_elem_dsp[elem_idx]+k)*COORD_DIM, false);
               const Vector<Real> Xn((trg_normal_dot_prod_ ? COORD_DIM : 0), Xn_trg_near.begin()+(near_elem_dsp[elem_idx]+k)*COORD_DIM, false);
@@ -858,25 +889,41 @@ namespace sctl {
                 }
                 return min_r2;
               };
-              Real trg_elem_dist2 = compute_min_dist2(min_Xt, min_Xsurf, Xt, Xsurf_);
+              const Real trg_elem_dist2 = compute_min_dist2(min_Xt, min_Xsurf, Xt, Xsurf_);
               SCTL_ASSERT(min_Xt >= 0 && min_Xsurf >= 0);
 
-              if (trg_elem_dist2 == 0) { // Set K_near0
-                Matrix<Real> K_near0(K_self[elem_idx].Dim(0),K_self[elem_idx].Dim(1), K_self[elem_idx].begin(), false);
-                for (Long l = 0; l < K_near0.Dim(0); l++) {
-                  for (Long k1 = 0; k1 < KDIM1_; k1++) {
-                    K_near_[l][k*KDIM1_+k1] = K_near0[l][min_Xsurf*KDIM1_+k1];
+              if (trg_elem_dist2 == 0) { // Set K_near_
+                if (K_self.Dim() && K_self[elem_idx].Dim(0) && K_self[elem_idx].Dim(1)) {
+                  const auto K_near0 = K_self[elem_idx];
+                  SCTL_ASSERT(K_near0.Dim(0) == N0);
+                  for (Long l = 0; l < N0; l++) {
+                    for (Long k1 = 0; k1 < KDIM1_; k1++) {
+                      K_near_[l][k*KDIM1_+k1] = K_near0[l][min_Xsurf*KDIM1_+k1];
+                    }
+                  }
+                } else {
+                  for (Long l = 0; l < N0; l++) {
+                    for (Long k1 = 0; k1 < KDIM1_; k1++) {
+                      K_near_[l][k*KDIM1_+k1] = 0;
+                    }
                   }
                 }
               } else {
                 StaticArray<Real,10000> buff0;
-                const Long N = elem_nds_cnt[elem_idx]*KDIM0 * KDIM1_;
-                Matrix<Real> K_near0(elem_nds_cnt[elem_idx]*KDIM0, KDIM1_, (N>10000?NullIterator<Real>():buff0), (N>10000));
+                Matrix<Real> K_near0(N0, KDIM1_, (N0*KDIM1_>10000?NullIterator<Real>():buff0), (N0*KDIM1_>10000));
                 elem_data.NearInterac(K_near0, Xt, Xn, ker_, tol_, j, elem_lst);
 
-                for (Long l = 0; l < K_near0.Dim(0); l++) {
-                  for (Long k1 = 0; k1 < KDIM1_; k1++) {
-                    K_near_[l][k*KDIM1_+k1] = K_near0[l][k1];
+                if (K_near0.Dim(0) != 0 && K_near0.Dim(1) != 0) {
+                  for (Long l = 0; l < N0; l++) {
+                    for (Long k1 = 0; k1 < KDIM1_; k1++) {
+                      K_near_[l][k*KDIM1_+k1] = K_near0[l][k1];
+                    }
+                  }
+                } else {
+                  for (Long l = 0; l < N0; l++) {
+                    for (Long k1 = 0; k1 < KDIM1_; k1++) {
+                      K_near_[l][k*KDIM1_+k1] = 0;
+                    }
                   }
                 }
               }
@@ -887,7 +934,7 @@ namespace sctl {
 
       for (Long i = 0; i < Nlst; i++) { // Subtract direct-interaction part from K_near
         const auto& elem_lst = elem_lst_map.at(elem_lst_name[i]);
-        #pragma omp parallel for
+        #pragma omp parallel for if(elem_lst_cnt[i] > 4*omp_get_max_threads()) schedule(dynamic)
         for (Long j = 0; j < elem_lst_cnt[i]; j++) { // subtract direct sum
           const Long elem_idx = elem_lst_dsp[i]+j;
           const Long trg_cnt = near_elem_cnt[elem_idx];
@@ -909,7 +956,8 @@ namespace sctl {
             if (trg_normal_dot_prod_) {
               Matrix<Real> Mker_;
               constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
-              ker_.KernelMatrix(Mker_, Xtrg_near_, X, Xn);
+              ker_.template KernelMatrix<Real,true>(Mker_, Xtrg_near_, X, Xn);
+              #pragma omp parallel for schedule(static)
               for (Long s = 0; s < far_src_cnt; s++) {
                 for (Long k0 = 0; k0 < KDIM0; k0++) {
                   for (Long t = 0; t < trg_cnt; t++) {
@@ -923,13 +971,12 @@ namespace sctl {
                 }
               }
             } else {
-              ker_.KernelMatrix(Mker, Xtrg_near_, X, Xn);
+              ker_.template KernelMatrix<Real,true>(Mker, Xtrg_near_, X, Xn);
+              #pragma omp parallel for schedule(static)
               for (Long s = 0; s < far_src_cnt; s++) {
                 for (Long k0 = 0; k0 < KDIM0; k0++) {
-                  for (Long t = 0; t < trg_cnt; t++) {
-                    for (Long k1 = 0; k1 < KDIM1; k1++) {
-                      Mker[s*KDIM0+k0][t*KDIM1+k1] *= wts[s];
-                    }
+                  for (Long t = 0; t < trg_cnt*KDIM1; t++) {
+                    Mker[s*KDIM0+k0][t] *= wts[s];
                   }
                 }
               }
@@ -937,7 +984,14 @@ namespace sctl {
 
             Matrix<Real> K_direct;
             elem_lst->FarFieldDensityOperatorTranspose(K_direct, Mker, j);
-            K_near_ -= K_direct;
+            const Long N = K_near_.Dim(0)*K_near_.Dim(1);
+            if (K_direct.Dim(0) != 0 && K_direct.Dim(1) != 0) {
+              #pragma omp parallel for schedule(static)
+              for (Long k = 0; k < N; k++) K_near_[0][k] -= K_direct[0][k];
+            } else {
+              #pragma omp parallel for schedule(static)
+              for (Long k = 0; k < N; k++) K_near_[0][k] -= Mker[0][k];
+            }
           }
         }
       }
@@ -967,10 +1021,21 @@ namespace sctl {
         Vector<Real> F_far_((offset1_far-offset0_far)*KDIM0, F_far.begin() + offset0_far*KDIM0, false);
 
         elem_lst_map.at(elem_lst_name[i])->GetFarFieldDensity(F_far_, F_);
-      }
-      for (Long i = 0; i < Nsrc; i++) { // apply wts_far
-        for (Long j = 0; j < KDIM0; j++) {
-          F_far[i*KDIM0+j] *= wts_far[i];
+        if (F_far_.Dim()) { // F_far <-- F_far * wts_far
+          #pragma omp parallel for schedule(static)
+          for (Long i = offset0_far; i < offset1_far; i++) {
+            for (Long j = 0; j < KDIM0; j++) {
+              F_far[i*KDIM0+j] *= wts_far[i];
+            }
+          }
+        } else { // F_far <-- F_ * wts_far
+          #pragma omp parallel for schedule(static)
+          for (Long i = offset0_far; i < offset1_far; i++) {
+            const Long i_ = i - offset0_far;
+            for (Long j = 0; j < KDIM0; j++) {
+              F_far[i*KDIM0+j] = F_[i_*KDIM0+j] * wts_far[i];
+            }
+          }
         }
       }
     }
@@ -984,6 +1049,7 @@ namespace sctl {
       constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
       Vector<Real> U_(Ntrg * KDIM1); U_.SetZero();
       fmm.Eval(U_, "Trg");
+      #pragma omp parallel for schedule(static)
       for (Long i = 0; i < Ntrg; i++) {
         for (Long k = 0; k < KDIM1_; k++) {
           for (Long l = 0; l < COORD_DIM; l++) {
@@ -1004,14 +1070,15 @@ namespace sctl {
     Profile::Tic("EvalNear", &comm_, true, 6);
     const Long Ntrg = Xtrg.Dim()/COORD_DIM;
     const Long Nelem = near_elem_cnt.Dim();
+    SCTL_ASSERT(Nelem == elem_nds_cnt.Dim());
     if (U.Dim() != Ntrg*KDIM1_) {
       U.ReInit(Ntrg*KDIM1_);
       U.SetZero();
     }
 
     Vector<Real> U_near(Nelem ? (near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1_ : 0);
-    #pragma omp parallel for // schedule(static)
-    for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) { // compute near-interactions
+    #pragma omp parallel for if(Nelem > 4*omp_get_max_threads()) schedule(dynamic)
+    for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) { // Compute near-interactions from precomputed operator matrix
       const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
       const Long trg_dof = near_elem_cnt[elem_idx]*KDIM1_;
       if (src_dof==0 || trg_dof == 0) continue;
@@ -1019,6 +1086,31 @@ namespace sctl {
       const Matrix<Real> F_(1, src_dof, (Iterator<Real>)F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
       Matrix<Real> U_(1, trg_dof, U_near.begin() + near_elem_dsp[elem_idx]*KDIM1_, false);
       Matrix<Real>::GEMM(U_, F_, K_near_);
+    }
+
+    for (Long i = 0; i < (Long)elem_lst_map.size(); i++) { // Compute near-interactions matrix-free (if EvalNearInterac is implemented)
+      const auto& name = elem_lst_name[i];
+      const auto& elem_lst = elem_lst_map.at(name);
+      const auto& elem_data = elem_data_map.at(name);
+      #pragma omp parallel for if(elem_lst_cnt[i]>4*omp_get_max_threads()) schedule(dynamic)
+      for (Long j = 0; j < elem_lst_cnt[i]; j++) {
+        const Long elem_idx = elem_lst_dsp[i]+j;
+        const Long Ntrg = near_elem_cnt[elem_idx];
+        const Vector<Real> Xt(Ntrg*COORD_DIM, Xtrg_near.begin() + near_elem_dsp[elem_idx]*COORD_DIM, false);
+        const Vector<Real> Xn(Ntrg*(trg_normal_dot_prod_ ? COORD_DIM : 0), Xn_trg_near.begin() + near_elem_dsp[elem_idx]*COORD_DIM, false);
+
+        {
+          const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
+          const Long trg_dof = near_elem_cnt[elem_idx]*KDIM1_;
+          if (src_dof==0 || trg_dof == 0) continue;
+          const Vector<Real> F_(src_dof, (Iterator<Real>)F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
+          Vector<Real> U_(trg_dof, U_near.begin() + near_elem_dsp[elem_idx]*KDIM1_, false);
+
+          Vector<Real> U;
+          elem_data.EvalNearInterac(U, F_, Xt, Xn, ker_, tol_, elem_idx, elem_lst);
+          if (U.Dim()) U_ += U;
+        }
+      }
     }
 
     SCTL_ASSERT(near_trg_cnt.Dim() == Ntrg);

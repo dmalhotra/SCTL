@@ -117,7 +117,8 @@ namespace sctl {
 
       /**
        * Interpolates the density from surface node points to far-field
-       * quadrature node points.
+       * quadrature node points. If Fout is empty, then the density is assumed
+       * to be Fin.
        *
        * @param[out] Fout the interpolated density at far-field quadrature
        * nodes in array-of-struct order.
@@ -125,12 +126,12 @@ namespace sctl {
        * @param[in] Fin the input density at surface node points in
        * array-of-struct order.
        */
-      virtual void GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) const = 0;
+      virtual void GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) const;
 
       /**
        * Apply the transpose of the GetFarFieldDensity() operator for a single
        * element applied to the column-vectors of Min and the result is
-       * returned in Mout.
+       * returned in Mout. If Mout is empty, then identity operator is assumed.
        *
        * @param[out] Mout the output matrix where the column-vectors are the
        * result of the application of the transpose operator.
@@ -140,7 +141,7 @@ namespace sctl {
        *
        * @param[in] elem_idx the index of the element.
        */
-      virtual void FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) const = 0;
+      virtual void FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) const;
 
       /**
        * Compute self-interaction operator for each element.
@@ -178,6 +179,31 @@ namespace sctl {
        * @param[in] self pointer to element-list object.
        */
       template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
+
+      /**
+       * Evaluate near (including self) interactions on the fly. This is an optional
+       * alternative to constructing the operator matrix using SelfInterac and
+       * NearInterac.
+       *
+       * @param[out] u the output potential.
+       *
+       * @param[out] f the input density at surface discretization nodes.
+       *
+       * @param[in] Xt the position of the target points in array-of-structure
+       * order: {x_1, y_1, z_1, x_2, ..., x_n, y_n, z_n}
+       *
+       * @param[in] normal_trg the normal at the target points in array-of-structure
+       * order: {nx_1, ny_1, nz_1, nx_2, ..., nx_n, ny_n, nz_n}
+       *
+       * @param[in] ker the kernel object.
+       *
+       * @param[in] tol the accuracy tolerance.
+       *
+       * @param[in] elem_idx the index of the source element.
+       *
+       * @param[in] self pointer to element-list object.
+       */
+      template <class Kernel> static void EvalNearInterac(Vector<Real>& u, const Vector<Real>& f, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
   };
 
   /**
@@ -337,6 +363,7 @@ namespace sctl {
       struct ElemLstData {
         void (*SelfInterac)(Vector<Matrix<Real>>&, const Kernel&, Real, bool, const ElementListBase<Real>*);
         void (*NearInterac)(Matrix<Real>&, const Vector<Real>&, const Vector<Real>&, const Kernel&, Real, const Long, const ElementListBase<Real>*);
+        void (*EvalNearInterac)(Vector<Real>&, const Vector<Real>&, const Vector<Real>&, const Vector<Real>&, const Kernel&, Real, const Long, const ElementListBase<Real>*);
       };
       std::map<std::string,ElementListBase<Real>*> elem_lst_map;
       std::map<std::string,ElemLstData> elem_data_map;
