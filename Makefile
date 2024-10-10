@@ -89,6 +89,7 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-fft
 	./$(BINDIR)/test-fmm
 	./$(BINDIR)/test-gmres
+	./$(BINDIR)/test-linear-solver
 	./$(BINDIR)/test-ode-solver
 	./$(BINDIR)/test-pt-tree
 	./$(BINDIR)/test-quadrule
