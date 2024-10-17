@@ -894,7 +894,7 @@ namespace sctl {
 
               if (trg_elem_dist2 == 0) { // Set K_near_
                 if (K_self.Dim() && K_self[elem_idx].Dim(0) && K_self[elem_idx].Dim(1)) {
-                  const auto K_near0 = K_self[elem_idx];
+                  const auto& K_near0 = K_self[elem_idx];
                   SCTL_ASSERT(K_near0.Dim(0) == N0);
                   for (Long l = 0; l < N0; l++) {
                     for (Long k1 = 0; k1 < KDIM1_; k1++) {
@@ -934,7 +934,7 @@ namespace sctl {
 
       for (Long i = 0; i < Nlst; i++) { // Subtract direct-interaction part from K_near
         const auto& elem_lst = elem_lst_map.at(elem_lst_name[i]);
-        #pragma omp parallel for if(elem_lst_cnt[i] > 4*omp_get_max_threads()) schedule(dynamic)
+        #pragma omp parallel for if(elem_lst_cnt[i] > omp_get_max_threads()) schedule(dynamic)
         for (Long j = 0; j < elem_lst_cnt[i]; j++) { // subtract direct sum
           const Long elem_idx = elem_lst_dsp[i]+j;
           const Long trg_cnt = near_elem_cnt[elem_idx];
@@ -1077,7 +1077,7 @@ namespace sctl {
     }
 
     Vector<Real> U_near(Nelem ? (near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1_ : 0);
-    #pragma omp parallel for if(Nelem > 4*omp_get_max_threads()) schedule(dynamic)
+    #pragma omp parallel for if(Nelem > omp_get_max_threads()) schedule(dynamic)
     for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) { // Compute near-interactions from precomputed operator matrix
       const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
       const Long trg_dof = near_elem_cnt[elem_idx]*KDIM1_;
