@@ -491,6 +491,9 @@ namespace sctl {
     if (u.Dim() != 0) u.ReInit(0);
   }
 
+  template <class Real> bool ElementListBase<Real>::MatrixFree() const {
+    return false;
+  }
 
 
 
@@ -790,7 +793,7 @@ namespace sctl {
       for (Long i = 0; i < Nlst; i++) {
         const auto& name = elem_lst_name[i];
         const auto& elem_lst = elem_lst_map.at(name);
-        elem_cnt[i] = elem_lst->Size();
+        elem_cnt[i] = (elem_lst->MatrixFree() ? 0 : elem_lst->Size());
         elem_dsp[i] = (i==0?0:elem_dsp[i-1]+elem_cnt[i-1]);
       }
 
@@ -800,6 +803,7 @@ namespace sctl {
         const auto& name = elem_lst_name[i];
         const auto& elem_lst = elem_lst_map.at(name);
         const auto& elem_data = elem_data_map.at(name);
+        if (elem_lst->MatrixFree()) continue;
         Vector<Matrix<Real>> K_self_(elem_cnt[i], K_self.begin() + elem_dsp[i], false);
         elem_data.SelfInterac(K_self_, ker_, tol_, trg_normal_dot_prod_, elem_lst);
       }
@@ -837,8 +841,15 @@ namespace sctl {
         K_near_cnt.ReInit(Nelem);
         K_near_dsp.ReInit(Nelem);
         if (Nelem) K_near_dsp[0] = 0;
-        for (Long i = 0; i < Nelem; i++) {
-          K_near_cnt[i] = elem_nds_cnt[i]*near_elem_cnt[i];
+        #pragma omp parallel for schedule(static)
+        for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) {
+          const Long elem_lst_idx = std::lower_bound(elem_lst_dsp.begin(), elem_lst_dsp.end(), elem_idx+1) - elem_lst_dsp.begin() - 1;
+          const auto& elem_lst = elem_lst_map.at(elem_lst_name[elem_lst_idx]);
+          if (elem_lst->MatrixFree()) {
+            K_near_cnt[elem_idx] = 0;
+          } else {
+            K_near_cnt[elem_idx] = elem_nds_cnt[elem_idx]*near_elem_cnt[elem_idx];
+          }
         }
         omp_par::scan(K_near_cnt.begin(), K_near_dsp.begin(), Nelem);
       }
@@ -857,7 +868,7 @@ namespace sctl {
           const auto& elem_lst = elem_lst_map.at(name);
           const auto& elem_data = elem_data_map.at(name);
 
-          {
+          if (!elem_lst->MatrixFree()) {
             const Long j = elem_idx - elem_lst_dsp[elem_lst_idx]; // element index in elem_lst
 
             const Long N0 = elem_nds_cnt[elem_idx]*KDIM0;
@@ -934,6 +945,7 @@ namespace sctl {
 
       for (Long i = 0; i < Nlst; i++) { // Subtract direct-interaction part from K_near
         const auto& elem_lst = elem_lst_map.at(elem_lst_name[i]);
+        if (elem_lst->MatrixFree()) continue;
         #pragma omp parallel for if(elem_lst_cnt[i] > omp_get_max_threads()) schedule(dynamic)
         for (Long j = 0; j < elem_lst_cnt[i]; j++) { // subtract direct sum
           const Long elem_idx = elem_lst_dsp[i]+j;
@@ -1081,7 +1093,8 @@ namespace sctl {
     for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) { // Compute near-interactions from precomputed operator matrix
       const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
       const Long trg_dof = near_elem_cnt[elem_idx]*KDIM1_;
-      if (src_dof==0 || trg_dof == 0) continue;
+      if (src_dof==0 || trg_dof == 0 || K_near_cnt[elem_idx] == 0) continue;
+      SCTL_ASSERT(src_dof * trg_dof == K_near_cnt[elem_idx]*KDIM0*KDIM1_);
       const Matrix<Real> K_near_(src_dof, trg_dof, K_near.begin() + K_near_dsp[elem_idx]*KDIM0*KDIM1_, false);
       const Matrix<Real> F_(1, src_dof, (Iterator<Real>)F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
       Matrix<Real> U_(1, trg_dof, U_near.begin() + near_elem_dsp[elem_idx]*KDIM1_, false);
@@ -1092,6 +1105,7 @@ namespace sctl {
       const auto& name = elem_lst_name[i];
       const auto& elem_lst = elem_lst_map.at(name);
       const auto& elem_data = elem_data_map.at(name);
+      if (!elem_lst->MatrixFree()) continue;
       #pragma omp parallel for if(elem_lst_cnt[i]>4*omp_get_max_threads()) schedule(dynamic)
       for (Long j = 0; j < elem_lst_cnt[i]; j++) {
         const Long elem_idx = elem_lst_dsp[i]+j;
@@ -1105,10 +1119,7 @@ namespace sctl {
           if (src_dof==0 || trg_dof == 0) continue;
           const Vector<Real> F_(src_dof, (Iterator<Real>)F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
           Vector<Real> U_(trg_dof, U_near.begin() + near_elem_dsp[elem_idx]*KDIM1_, false);
-
-          Vector<Real> U;
-          elem_data.EvalNearInterac(U, F_, Xt, Xn, ker_, tol_, elem_idx, elem_lst);
-          if (U.Dim()) U_ += U;
+          elem_data.EvalNearInterac(U_, F_, Xt, Xn, ker_, tol_, elem_idx, elem_lst);
         }
       }
     }

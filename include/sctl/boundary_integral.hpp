@@ -204,6 +204,12 @@ namespace sctl {
        * @param[in] self pointer to element-list object.
        */
       template <class Kernel> static void EvalNearInterac(Vector<Real>& u, const Vector<Real>& f, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
+
+      /**
+       * Returns a boolean value indicating whether the near corrections are to be computed in a
+       * matrix-free way. Default value is false (i.e. not matrix-free).
+       */
+      virtual bool MatrixFree() const;
   };
 
   /**
