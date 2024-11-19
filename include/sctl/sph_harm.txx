@@ -910,6 +910,236 @@ template <class Real> void SphericalHarmonics<Real>::VecSHCEval(const Vector<Rea
   }
 }
 
+template <class Real> void SphericalHarmonics<Real>::LaplaceEvalSL(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& coord, bool interior, Vector<Real>& X) {
+  Long M = (p0+1) * (p0+1);
+
+  Long dof;
+  Matrix<Real> B1;
+  { // Set B1, dof
+    Vector<Real> B0;
+    SHCArrange1(S, arrange, p0, B0);
+    dof = B0.Dim() / M;
+    assert(B0.Dim() == dof * M);
+
+    B1.ReInit(dof, M);
+    Vector<Real> B1_(B1.Dim(0) * B1.Dim(1), B1.begin(), false);
+    SHCArrange0(B0, p0, B1_, SHCArrange::COL_MAJOR_NONZERO);
+  }
+  assert(B1.Dim(1) == M);
+  assert(B1.Dim(0) == dof);
+
+  Long N, p_;
+  Matrix<Real> SHBasis;
+  Vector<Real> R, theta_phi;
+  { // Set N, p_, R, SHBasis
+    p_ = p0 + 1;
+    Real M_ = (p_+1) * (p_+1);
+    N = coord.Dim() / COORD_DIM;
+    assert(coord.Dim() == N * COORD_DIM);
+
+    R.ReInit(N);
+    theta_phi.ReInit(2 * N);
+    for (Long i = 0; i < N; i++) { // Set R, theta_phi
+      ConstIterator<Real> x = coord.begin() + i * COORD_DIM;
+      R[i] = sqrt<Real>(x[0]*x[0] + x[1]*x[1] + x[2]*x[2]);
+      theta_phi[i * 2 + 0] = atan2(sqrt<Real>(x[0]*x[0] + x[1]*x[1]), x[2]);
+      theta_phi[i * 2 + 1] = atan2(x[1], x[0]);
+    }
+    SHBasisEval(p_, theta_phi, SHBasis);
+    assert(SHBasis.Dim(1) == M_);
+    assert(SHBasis.Dim(0) == N);
+    SCTL_UNUSED(M_);
+  }
+
+  Matrix<Real> LaplaceOp(N, M);
+  for (Long i = 0; i < N; i++) { // Set LaplaceOp
+
+    Real cos_phi, sin_phi;
+    { // Set cos_theta, csc_theta, cos_phi, sin_phi
+      cos_phi = cos(theta_phi[i * 2 + 1]);
+      sin_phi = sin(theta_phi[i * 2 + 1]);
+    }
+    Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
+
+    const Real radius = R[i];
+    Vector<Real> rpow;
+    rpow.ReInit(p0 + 4);
+    if (interior) {
+      rpow[0] = 1 / radius;
+      for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * radius;  // rpow[n] = r^(n-1)
+    } else {
+      rpow[0] = 1;
+      const Real rinv = 1 / radius;
+      for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * rinv;  // rpow[n] = r^(-n)
+    }
+
+    for (Long m = 0; m <= p0; m++) {
+      for (Long n = m; n <= p0; n++) {
+        auto write_coeff = [&](Complex<Real> c, Long n, Long m) {
+          if (0 <= m && m <= n && n <= p0) {
+            Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
+            LaplaceOp[i][idx] = c.real;
+            if (m) {
+              idx += (p0+1-m);
+              LaplaceOp[i][idx] = c.imag;
+            }
+          }
+        };
+
+        Complex<Real> Ynm = [&SHBasis,p_,i](Long n, Long m) {
+          Complex<Real> c;
+          if (0 <= m && m <= n && n <= p_) {
+            Long idx = (2 * p_ - m + 2) * m - (m ? p_+1 : 0) + n;
+            c.real = SHBasis[i][idx];
+            if (m) {
+              idx += (p_+1-m);
+              c.imag = SHBasis[i][idx];
+            }
+          }
+          return c;
+        }(n,m);
+
+        Complex<Real> GYnm;
+        if (interior) {
+          Real a = 1 / (Real)(2 * n + 1) * rpow[n + 1];
+          GYnm = a * Ynm;
+        } else {
+          Real a = 1 / (Real)(2 * n + 1) * rpow[n + 1];
+          GYnm = a * Ynm;
+        }
+
+        write_coeff(GYnm, n, m);
+      }
+    }
+  }
+
+  { // Set X <-- LaplaceOp * B1
+    if (X.Dim() != N * dof) X.ReInit(N * dof);
+    for (Long k0 = 0; k0 < N; k0++) {
+      for (Long k1 = 0; k1 < dof; k1++) { // Set X <-- LaplaceOp * B1
+        Real in = 0;
+        for (Long i = 0; i < M; i++) in += B1[k1][i] * LaplaceOp[k0][i];
+        X[k0 * dof + k1] = in;
+      }
+    }
+  }
+}
+template <class Real> void SphericalHarmonics<Real>::LaplaceEvalDL(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& coord, bool interior, Vector<Real>& X) {
+  Long M = (p0+1) * (p0+1);
+
+  Long dof;
+  Matrix<Real> B1;
+  { // Set B1, dof
+    Vector<Real> B0;
+    SHCArrange1(S, arrange, p0, B0);
+    dof = B0.Dim() / M;
+    assert(B0.Dim() == dof * M);
+
+    B1.ReInit(dof, M);
+    Vector<Real> B1_(B1.Dim(0) * B1.Dim(1), B1.begin(), false);
+    SHCArrange0(B0, p0, B1_, SHCArrange::COL_MAJOR_NONZERO);
+  }
+  assert(B1.Dim(1) == M);
+  assert(B1.Dim(0) == dof);
+
+  Long N, p_;
+  Matrix<Real> SHBasis;
+  Vector<Real> R, theta_phi;
+  { // Set N, p_, R, SHBasis
+    p_ = p0 + 1;
+    Real M_ = (p_+1) * (p_+1);
+    N = coord.Dim() / COORD_DIM;
+    assert(coord.Dim() == N * COORD_DIM);
+
+    R.ReInit(N);
+    theta_phi.ReInit(2 * N);
+    for (Long i = 0; i < N; i++) { // Set R, theta_phi
+      ConstIterator<Real> x = coord.begin() + i * COORD_DIM;
+      R[i] = sqrt<Real>(x[0]*x[0] + x[1]*x[1] + x[2]*x[2]);
+      theta_phi[i * 2 + 0] = atan2(sqrt<Real>(x[0]*x[0] + x[1]*x[1]), x[2]);
+      theta_phi[i * 2 + 1] = atan2(x[1], x[0]);
+    }
+    SHBasisEval(p_, theta_phi, SHBasis);
+    assert(SHBasis.Dim(1) == M_);
+    assert(SHBasis.Dim(0) == N);
+    SCTL_UNUSED(M_);
+  }
+
+  Matrix<Real> LaplaceOp(N, M);
+  for (Long i = 0; i < N; i++) { // Set LaplaceOp
+
+    Real cos_phi, sin_phi;
+    { // Set cos_theta, csc_theta, cos_phi, sin_phi
+      cos_phi = cos(theta_phi[i * 2 + 1]);
+      sin_phi = sin(theta_phi[i * 2 + 1]);
+    }
+    Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
+
+    const Real radius = R[i];
+    Vector<Real> rpow;
+    rpow.ReInit(p0 + 4);
+    if (interior) {
+      rpow[0] = 1 / radius;
+      for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * radius;  // rpow[n] = r^(n-1)
+    } else {
+      rpow[0] = 1;
+      const Real rinv = 1 / radius;
+      for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * rinv;  // rpow[n] = r^(-n)
+    }
+
+    for (Long m = 0; m <= p0; m++) {
+      for (Long n = m; n <= p0; n++) {
+        auto write_coeff = [&](Complex<Real> c, Long n, Long m) {
+          if (0 <= m && m <= n && n <= p0) {
+            Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
+            LaplaceOp[i][idx] = c.real;
+            if (m) {
+              idx += (p0+1-m);
+              LaplaceOp[i][idx] = c.imag;
+            }
+          }
+        };
+
+        Complex<Real> Ynm = [&SHBasis,p_,i](Long n, Long m) {
+          Complex<Real> c;
+          if (0 <= m && m <= n && n <= p_) {
+            Long idx = (2 * p_ - m + 2) * m - (m ? p_+1 : 0) + n;
+            c.real = SHBasis[i][idx];
+            if (m) {
+              idx += (p_+1-m);
+              c.imag = SHBasis[i][idx];
+            }
+          }
+          return c;
+        }(n,m);
+
+        Complex<Real> GYnm;
+        if (interior) {
+          Real a = -(n + 1) / (Real)(2 * n + 1) * rpow[n + 1];
+          GYnm = a * Ynm;
+        } else {
+          Real a = n / (Real)(2 * n + 1) * rpow[n + 1];
+          GYnm = a * Ynm;
+        }
+
+        write_coeff(GYnm, n, m);
+      }
+    }
+  }
+
+  { // Set X <-- LaplaceOp * B1
+    if (X.Dim() != N * dof) X.ReInit(N * dof);
+    for (Long k0 = 0; k0 < N; k0++) {
+      for (Long k1 = 0; k1 < dof; k1++) { // Set X <-- LaplaceOp * B1
+        Real in = 0;
+        for (Long i = 0; i < M; i++) in += B1[k1][i] * LaplaceOp[k0][i];
+        X[k0 * dof + k1] = in;
+      }
+    }
+  }
+}
+
+
 template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<Real>& S, SHCArrange arrange, Long p0, const Vector<Real>& coord, bool interior, Vector<Real>& X) {
   Long M = (p0+1) * (p0+1);
 

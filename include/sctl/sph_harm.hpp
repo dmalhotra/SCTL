@@ -115,6 +115,9 @@ template <class Real> class SphericalHarmonics{
      */
     static void VecSHCEval(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& theta_phi, Vector<Real>& X);
 
+    static void LaplaceEvalSL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
+    static void LaplaceEvalDL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
+
     /**
      * Evaluate Stokes single-layer operator at point values from the vector spherical harmonic coefficients for the density.
      * \param[in] S Vector spherical harmonic coefficients.
