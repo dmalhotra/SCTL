@@ -32,10 +32,10 @@ jobs:
         brew install gcc@13
         brew install llvm
         brew install libomp
-        echo "export PATH=/opt/homebrew/opt/llvm/bin:$PATH" >> "$GITHUB_ENV"
-        echo "export LDFLAGS=-L/opt/homebrew/opt/llvm/lib" >> "$GITHUB_ENV"
-        echo "export CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> "$GITHUB_ENV"
-        echo "export LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$LIBRARY_PATH" >> "$GITHUB_ENV"
+        echo "PATH=/opt/homebrew/opt/llvm/bin:$PATH" >> "$GITHUB_ENV"
+        echo "LDFLAGS=-L/opt/homebrew/opt/llvm/lib" >> "$GITHUB_ENV"
+        echo "CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> "$GITHUB_ENV"
+        echo "LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$LIBRARY_PATH" >> "$GITHUB_ENV"
         export PATH=/opt/homebrew/opt/llvm/bin:$PATH
 
     - name: Build
