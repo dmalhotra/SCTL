@@ -23,7 +23,6 @@ namespace sctl {
       using MaskType = Mask<typename VecType::VData>;
 
       static void test() {
-        std::cout<<__LINE__<<'\n';
         for (Integer i = 0; i < 1000; i++) {
           //VecTest<ScalarType, 1>::test_all_types();
           //VecTest<ScalarType, 2>::test_all_types();
@@ -85,18 +84,18 @@ namespace sctl {
         sctl::Vector<ScalarType> x(N+1), y(N+1), z(N);
 
         // Constructor: Vec(v)
-        alignas(64) VecType v1;//((ScalarType)2);
+        VecType v1;//((ScalarType)2);
         //for (Integer i = 0; i < N; i++) {
         //  SCTL_ASSERT(v1[i] == (ScalarType)2);
         //}
 
         // Constructor: Vec(v1,..,vn)
-        alignas(64) VecType v2;// = InitVec<N>::apply();
+        VecType v2;// = InitVec<N>::apply();
         //for (Integer i = 0; i < N; i++) {
         //  SCTL_ASSERT(v2[i] == (ScalarType)(i+1));
         //}
 
-        std::cout<<((long long)(&v1)%64)<<'\n';
+        std::cout<<((long long)(&v1)%64)<<' '<<((long long)(&v2)%64)<<'\n';
         
         // insert, operator[]
         return;
