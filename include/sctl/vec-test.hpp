@@ -24,53 +24,49 @@ namespace sctl {
 
       static void test() {
         for (Integer i = 0; i < 1000; i++) {
-          //VecTest<ScalarType, 1>::test_all_types();
-          //VecTest<ScalarType, 2>::test_all_types();
-          //VecTest<ScalarType, 4>::test_all_types();
-          //VecTest<ScalarType, 8>::test_all_types();
-          //VecTest<ScalarType,16>::test_all_types();
-          //VecTest<ScalarType,32>::test_all_types();
+          VecTest<ScalarType, 1>::test_all_types();
+          VecTest<ScalarType, 2>::test_all_types();
+          VecTest<ScalarType, 4>::test_all_types();
+          VecTest<ScalarType, 8>::test_all_types();
+          VecTest<ScalarType,16>::test_all_types();
+          VecTest<ScalarType,32>::test_all_types();
           VecTest<ScalarType,64>::test_all_types();
         }
       }
 
       static void test_all_types() {
-        std::cout<<__FUNCTION__<<'\n';
         VecTest< int8_t,N>::test_all();
-        //VecTest<int16_t,N>::test_all();
-        //VecTest<int32_t,N>::test_all();
-        //VecTest<int64_t,N>::test_all();
+        VecTest<int16_t,N>::test_all();
+        VecTest<int32_t,N>::test_all();
+        VecTest<int64_t,N>::test_all();
 
-        //VecTest<float,N>::test_all();
-        //VecTest<float,N>::test_reals();
+        VecTest<float,N>::test_all();
+        VecTest<float,N>::test_reals();
 
-        //VecTest<double,N>::test_all();
-        //VecTest<double,N>::test_reals();
+        VecTest<double,N>::test_all();
+        VecTest<double,N>::test_reals();
 
         //VecTest<long double,N>::test_all();
         //VecTest<long double,N>::test_reals();
 
-        //#ifdef SCTL_QUAD_T
-        //VecTest<QuadReal,N>::test_all();
-        //VecTest<QuadReal,N>::test_reals();
-        //#endif
+        #ifdef SCTL_QUAD_T
+        VecTest<QuadReal,N>::test_all();
+        VecTest<QuadReal,N>::test_reals();
+        #endif
       }
 
       static void test_all() {
-        std::cout<<__FUNCTION__<<'\n';
-        std::cout<<"Default SIMD vec length for "<<typeid(ValueType).name()<<" = "<<DefaultVecLen<ValueType>()<<'\n';
         if (N*sizeof(ScalarType)*8<=512) {
           test_init();
-          //test_bitwise(); // TODO: fails for 'long double'
-          //test_arithmetic();
-          //test_maxmin();
-          //test_mask(); // TODO: fails for 'long double'
-          //test_comparison(); // TODO: fails for 'long double'
+          test_bitwise(); // TODO: fails for 'long double'
+          test_arithmetic();
+          test_maxmin();
+          test_mask(); // TODO: fails for 'long double'
+          test_comparison(); // TODO: fails for 'long double'
         }
       }
 
       static void test_reals() {
-        std::cout<<__FUNCTION__<<'\n';
         if (N*sizeof(ScalarType)*8<=512) {
           test_reals_convert(); // TODO: fails for 'long double'
           test_reals_specialfunc();
@@ -83,33 +79,22 @@ namespace sctl {
       static void test_init() {
         sctl::Vector<ScalarType> x(N+1), y(N+1), z(N);
 
-        int8_t aa = 1;
-        
         // Constructor: Vec(v)
-        VecType v1;//((ScalarType)2);
-        //for (Integer i = 0; i < N; i++) {
-        //  SCTL_ASSERT(v1[i] == (ScalarType)2);
-        //}
+        VecType v1((ScalarType)2);
+        for (Integer i = 0; i < N; i++) {
+          SCTL_ASSERT(v1[i] == (ScalarType)2);
+        }
 
-        int8_t bb = 2;
-        
         // Constructor: Vec(v1,..,vn)
-        VecType v2;// = InitVec<N>::apply();
-        //for (Integer i = 0; i < N; i++) {
-        //  SCTL_ASSERT(v2[i] == (ScalarType)(i+1));
-        //}
+        VecType v2 = InitVec<N>::apply();
+        for (Integer i = 0; i < N; i++) {
+          SCTL_ASSERT(v2[i] == (ScalarType)(i+1));
+        }
 
-        int8_t cc = 3;
-        
-        std::cout<<((long long)(&v1)%64)<<' '<<((long long)(&v2)%64)<<'\n';
-
-        std::cout<<aa+bb+cc<<'\n';
         // insert, operator[]
-        return;
-        for (Integer i = 0; i < 1; i++) {
+        for (Integer i = 0; i < N; i++) {
           v1.insert(i, (ScalarType)(i+2));
         }
-        return;
         for (Integer i = 0; i < N; i++) {
           SCTL_ASSERT(v1[i] == (ScalarType)(i+2));
         }
