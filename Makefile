@@ -57,17 +57,17 @@ OBJDIR = ./obj
 INCDIR = ./include
 
 TARGET_BIN = \
-       $(BINDIR)/test \
-       $(BINDIR)/test-fft \
-       $(BINDIR)/test-fmm \
-       $(BINDIR)/test-gmres \
-       $(BINDIR)/test-linear-solver \
-       $(BINDIR)/test-ode-solver \
-       $(BINDIR)/test-pt-tree \
-       $(BINDIR)/test-quadrule \
-       $(BINDIR)/test-sph-harm \
-       $(BINDIR)/test-tensor \
-       $(BINDIR)/test-vec
+       $(BINDIR)/test-vec #\
+       #$(BINDIR)/test-fft \
+       #$(BINDIR)/test-fmm \
+       #$(BINDIR)/test-gmres \
+       #$(BINDIR)/test-linear-solver \
+       #$(BINDIR)/test-ode-solver \
+       #$(BINDIR)/test-pt-tree \
+       #$(BINDIR)/test-quadrule \
+       #$(BINDIR)/test-sph-harm \
+       #$(BINDIR)/test-tensor \
+       #$(BINDIR)/test-vec
 
 .PHONY: all test clean
 
@@ -85,7 +85,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $^ -o $@
 
 test: $(TARGET_BIN)
-        ./$(BINDIR)/test-vec
+	./$(BINDIR)/test-vec
 	#./$(BINDIR)/test
 	#./$(BINDIR)/test-fft
 	#./$(BINDIR)/test-fmm
