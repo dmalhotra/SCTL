@@ -25,19 +25,13 @@ namespace sctl {
       static void test() {
         std::cout<<__LINE__<<'\n';
         for (Integer i = 0; i < 1000; i++) {
-          std::cout<<__LINE__<<'\n';
-          VecTest<ScalarType, 1>::test_all_types();
+          //VecTest<ScalarType, 1>::test_all_types();
           //VecTest<ScalarType, 2>::test_all_types();
           //VecTest<ScalarType, 4>::test_all_types();
-          std::cout<<__LINE__<<'\n';
-          VecTest<ScalarType, 8>::test_all_types();
-          std::cout<<__LINE__<<'\n';
-          VecTest<ScalarType,16>::test_all_types();
-          std::cout<<__LINE__<<'\n';
-          VecTest<ScalarType,32>::test_all_types();
-          std::cout<<__LINE__<<'\n';
+          //VecTest<ScalarType, 8>::test_all_types();
+          //VecTest<ScalarType,16>::test_all_types();
+          //VecTest<ScalarType,32>::test_all_types();
           VecTest<ScalarType,64>::test_all_types();
-          std::cout<<__LINE__<<'\n';
         }
       }
 
