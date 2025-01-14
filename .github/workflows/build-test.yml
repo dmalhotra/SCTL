@@ -36,6 +36,7 @@ jobs:
         echo "export LDFLAGS=-L/opt/homebrew/opt/llvm/lib" >> $GITHUB_ENV
         echo "export CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> $GITHUB_ENV
         echo "export LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$LIBRARY_PATH" >> $GITHUB_ENV
+        export PATH=/opt/homebrew/opt/llvm/bin:$PATH
 
     - name: Build
       run: |
