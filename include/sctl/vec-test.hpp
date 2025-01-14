@@ -86,13 +86,13 @@ namespace sctl {
 
         // Constructor: Vec(v)
         VecType v1;//((ScalarType)2);
-        return;
         //for (Integer i = 0; i < N; i++) {
         //  SCTL_ASSERT(v1[i] == (ScalarType)2);
         //}
 
         // Constructor: Vec(v1,..,vn)
         VecType v2 = InitVec<N>::apply();
+        return;
         for (Integer i = 0; i < N; i++) {
           SCTL_ASSERT(v2[i] == (ScalarType)(i+1));
         }
