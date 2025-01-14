@@ -14,8 +14,8 @@ jobs:
         os: [ubuntu-latest] #, macos-latest]
         compiler: [g++-12] #, clang++]
         vecflag: [-march=native]
-        memdbgflag: ["", -DSCTL_MEMDEBUG -gdwarf-4 -g -rdynamic]
-        optflag: [-O0, -O3]
+        memdbgflag: [""] #, -DSCTL_MEMDEBUG]
+        optflag: [-O0 -gdwarf-4 -g -rdynamic] #, -O3]
         exclude:
           - os: macos-latest
             compiler: clang++
