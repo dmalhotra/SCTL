@@ -280,7 +280,7 @@ namespace sctl {
       /**
        * Internal data representation of the vector.
        */
-      alignas(sizeof(ValueType) * N) VData v;
+      VData v;
   };
 
   // Conversion operators
