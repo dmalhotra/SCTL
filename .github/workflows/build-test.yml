@@ -41,6 +41,10 @@ jobs:
     - name: Build
       run: |
         if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
+          export PATH=/opt/homebrew/opt/llvm/bin:$PATH
+          export LDFLAGS=-L/opt/homebrew/opt/llvm/lib
+          export CPPFLAGS=-I/opt/homebrew/opt/llvm/include
+          export LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$LIBRARY_PATH
           clang --version
           which clang
           echo $PATH
