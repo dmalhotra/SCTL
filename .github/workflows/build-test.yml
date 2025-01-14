@@ -36,15 +36,14 @@ jobs:
         echo "export LDFLAGS=-L/opt/homebrew/opt/llvm/lib" >> $GITHUB_ENV
         echo "export CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> $GITHUB_ENV
         echo "export LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$LIBRARY_PATH" >> $GITHUB_ENV
-        env
-        clang --version
-        which clang
 
 
     - name: Build
       run: |
         if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
           clang --version
+          which clang
+          echo $PATH
           make -j CXX="${{matrix.compiler}}" CXXFLAGS="-std=c++11 ${{matrix.optflag}} -mcpu=apple-m1 ${{matrix.memdbgflag}} -g -rdynamic -fopenmp -Wall -Wfloat-conversion -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_QUAD_T=__float128 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -DSCTL_SIG_HANDLER -fstack-protector -lomp"
           # -march=native, and address sanititser don't work of Apple Silicon
         else
