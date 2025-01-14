@@ -17,7 +17,7 @@ jobs:
         memdbgflag: ["", -DSCTL_MEMDEBUG]
         optflag: [-O0, -O3]
         exclude:
-          - os: macos-12
+          - os: macos-latest
             compiler: clang++
     
     runs-on: ${{ matrix.os }}
