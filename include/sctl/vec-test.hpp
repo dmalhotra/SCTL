@@ -85,13 +85,13 @@ namespace sctl {
         sctl::Vector<ScalarType> x(N+1), y(N+1), z(N);
 
         // Constructor: Vec(v)
-        VecType v1;//((ScalarType)2);
+        alignas(64) VecType v1;//((ScalarType)2);
         //for (Integer i = 0; i < N; i++) {
         //  SCTL_ASSERT(v1[i] == (ScalarType)2);
         //}
 
         // Constructor: Vec(v1,..,vn)
-        VecType v2;// = InitVec<N>::apply();
+        alignas(64) VecType v2;// = InitVec<N>::apply();
         //for (Integer i = 0; i < N; i++) {
         //  SCTL_ASSERT(v2[i] == (ScalarType)(i+1));
         //}
