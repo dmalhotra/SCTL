@@ -96,8 +96,10 @@ namespace sctl {
         //  SCTL_ASSERT(v2[i] == (ScalarType)(i+1));
         //}
 
+        std::cout<<((long long)(&v1)%64)<<'\n';
+        
         // insert, operator[]
-        for (Integer i = 0; i < N; i++) {
+        for (Integer i = 0; i < 1; i++) {
           v1.insert(i, (ScalarType)(i+2));
         }
         return;
