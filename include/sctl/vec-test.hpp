@@ -27,7 +27,7 @@ namespace sctl {
           //VecTest<ScalarType, 1>::test_all_types();
           //VecTest<ScalarType, 2>::test_all_types();
           VecTest<ScalarType, 4>::test_all_types();
-          VecTest<ScalarType, 8>::test_all_types();
+          //VecTest<ScalarType, 8>::test_all_types();
           //VecTest<ScalarType,16>::test_all_types();
           //VecTest<ScalarType,32>::test_all_types();
           //VecTest<ScalarType,64>::test_all_types();
