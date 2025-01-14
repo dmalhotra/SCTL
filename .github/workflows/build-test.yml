@@ -28,7 +28,12 @@ jobs:
 
     - name: Configure macOS
       if: runner.os == 'macOS'
-      run: brew install gcc@13 llvm
+      run: |
+        brew install gcc@13 llvm
+        echo "export PATH=/opt/homebrew/opt/llvm/bin:$PATH" >> $GITHUB_ENV
+        echo "export LDFLAGS=-L/opt/homebrew/opt/llvm/lib" >> $GITHUB_ENV
+        echo "export CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> $GITHUB_ENV
+        echo "export LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$LIBRARY_PATH" >> $GITHUB_ENV
 
     - name: Build
       run: |
