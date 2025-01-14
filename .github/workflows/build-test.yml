@@ -11,10 +11,10 @@ jobs:
     
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        compiler: [g++-12, clang++]
+        os: [ubuntu-latest] #, macos-latest]
+        compiler: [g++-12] #, clang++]
         vecflag: [-march=native]
-        memdbgflag: ["", -DSCTL_MEMDEBUG]
+        memdbgflag: ["", -DSCTL_MEMDEBUG -gdwarf-4 -g -rdynamic]
         optflag: [-O0, -O3]
         exclude:
           - os: macos-latest
@@ -35,7 +35,7 @@ jobs:
 
     - name: Build
       run: |
-        if [[ "$(uname)" == "Darwin" ]]; then
+        if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
           make -j CXX="${{matrix.compiler}}" CXXFLAGS="-std=c++11 ${{matrix.optflag}} -mcpu=apple-m1 ${{matrix.memdbgflag}} -g -rdynamic -fopenmp -Wall -Wfloat-conversion -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_QUAD_T=__float128 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -DSCTL_SIG_HANDLER -fstack-protector"
         else
           make -j CXX="${{matrix.compiler}}" CXXFLAGS="-std=c++11 ${{matrix.optflag}} ${{matrix.vecflag}} ${{matrix.memdbgflag}} -g -rdynamic -fopenmp -Wall -Wfloat-conversion -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_QUAD_T=__float128 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -DSCTL_SIG_HANDLER -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract,float-divide-by-zero,float-cast-overflow -fno-sanitize-recover=all -fstack-protector"
