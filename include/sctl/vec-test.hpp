@@ -56,6 +56,7 @@ namespace sctl {
       }
 
       static void test_all() {
+        std::cout<<"Default SIMD vec length for "<<typeid(ValueType).name()<<" = "<<DefaultVecLen<ValueType>()<<'\n';
         if (N*sizeof(ScalarType)*8<=512) {
           test_init();
           test_bitwise(); // TODO: fails for 'long double'
