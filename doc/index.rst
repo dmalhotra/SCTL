@@ -148,6 +148,8 @@ The following list outlines the primary features and capabilities provided by th
   - :ref:`ChebBasis <cheb_utils_hpp>`: Tensor product Chebyshev basis for general-dimension computations.
 
 
+.. include:: ackn.rst
+
 
 .. toctree::
    :hidden:
