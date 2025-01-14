@@ -25,16 +25,17 @@ namespace sctl {
       static void test() {
         for (Integer i = 0; i < 1000; i++) {
           VecTest<ScalarType, 1>::test_all_types();
-          //VecTest<ScalarType, 2>::test_all_types();
-          //VecTest<ScalarType, 4>::test_all_types();
-          //VecTest<ScalarType, 8>::test_all_types();
-          //VecTest<ScalarType,16>::test_all_types();
-          //VecTest<ScalarType,32>::test_all_types();
-          //VecTest<ScalarType,64>::test_all_types();
+          VecTest<ScalarType, 2>::test_all_types();
+          VecTest<ScalarType, 4>::test_all_types();
+          VecTest<ScalarType, 8>::test_all_types();
+          VecTest<ScalarType,16>::test_all_types();
+          VecTest<ScalarType,32>::test_all_types();
+          VecTest<ScalarType,64>::test_all_types();
         }
       }
 
       static void test_all_types() {
+        std::cout<<__FUNCTION__<<'\n';
         VecTest< int8_t,N>::test_all();
         VecTest<int16_t,N>::test_all();
         VecTest<int32_t,N>::test_all();
@@ -56,6 +57,7 @@ namespace sctl {
       }
 
       static void test_all() {
+        std::cout<<__FUNCTION__<<'\n';
         std::cout<<"Default SIMD vec length for "<<typeid(ValueType).name()<<" = "<<DefaultVecLen<ValueType>()<<'\n';
         if (N*sizeof(ScalarType)*8<=512) {
           test_init();
@@ -68,6 +70,7 @@ namespace sctl {
       }
 
       static void test_reals() {
+        std::cout<<__FUNCTION__<<'\n';
         if (N*sizeof(ScalarType)*8<=512) {
           test_reals_convert(); // TODO: fails for 'long double'
           test_reals_specialfunc();
