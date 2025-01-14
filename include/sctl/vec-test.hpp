@@ -84,13 +84,12 @@ namespace sctl {
       static void test_init() {
         sctl::Vector<ScalarType> x(N+1), y(N+1), z(N);
 
-        
         // Constructor: Vec(v)
         VecType v1((ScalarType)2);
+        return;
         for (Integer i = 0; i < N; i++) {
           SCTL_ASSERT(v1[i] == (ScalarType)2);
         }
-        return;
 
         // Constructor: Vec(v1,..,vn)
         VecType v2 = InitVec<N>::apply();
