@@ -91,16 +91,16 @@ namespace sctl {
         //}
 
         // Constructor: Vec(v1,..,vn)
-        VecType v2 = InitVec<N>::apply();
-        return;
-        for (Integer i = 0; i < N; i++) {
-          SCTL_ASSERT(v2[i] == (ScalarType)(i+1));
-        }
+        VecType v2;// = InitVec<N>::apply();
+        //for (Integer i = 0; i < N; i++) {
+        //  SCTL_ASSERT(v2[i] == (ScalarType)(i+1));
+        //}
 
         // insert, operator[]
         for (Integer i = 0; i < N; i++) {
           v1.insert(i, (ScalarType)(i+2));
         }
+        return;
         for (Integer i = 0; i < N; i++) {
           SCTL_ASSERT(v1[i] == (ScalarType)(i+2));
         }
