@@ -48,7 +48,7 @@ jobs:
           clang --version
           which clang
           echo $PATH
-          if [ "{{matrix.compiler}}" == "clang++" ]; then
+          if [ "${{matrix.compiler}}" == "clang++" ]; then
             make -j CXX="${{matrix.compiler}}" CXXFLAGS="-std=c++11 ${{matrix.optflag}} -mcpu=apple-m1 ${{matrix.memdbgflag}} -g -rdynamic -fopenmp -Wall -Wfloat-conversion -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -DSCTL_SIG_HANDLER -fstack-protector -lomp"
           else
             make -j CXX="${{matrix.compiler}}" CXXFLAGS="-std=c++11 ${{matrix.optflag}} -mcpu=apple-m1 ${{matrix.memdbgflag}} -g -rdynamic -fopenmp -Wall -Wfloat-conversion -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_QUAD_T=__float128 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -DSCTL_SIG_HANDLER -fstack-protector -lomp"
