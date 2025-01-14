@@ -2,9 +2,9 @@ name: Build and Test
 
 on:
   push:
-    branches: [ ci-test ]
+    branches: [ * ]
   pull_request:
-    branches: [ ci-test ]
+    branches: [ * ]
 
 jobs:
   build:
