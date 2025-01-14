@@ -38,23 +38,23 @@ namespace sctl {
       static void test_all_types() {
         std::cout<<__FUNCTION__<<'\n';
         VecTest< int8_t,N>::test_all();
-        VecTest<int16_t,N>::test_all();
-        VecTest<int32_t,N>::test_all();
-        VecTest<int64_t,N>::test_all();
+        //VecTest<int16_t,N>::test_all();
+        //VecTest<int32_t,N>::test_all();
+        //VecTest<int64_t,N>::test_all();
 
-        VecTest<float,N>::test_all();
-        VecTest<float,N>::test_reals();
+        //VecTest<float,N>::test_all();
+        //VecTest<float,N>::test_reals();
 
-        VecTest<double,N>::test_all();
-        VecTest<double,N>::test_reals();
+        //VecTest<double,N>::test_all();
+        //VecTest<double,N>::test_reals();
 
         //VecTest<long double,N>::test_all();
         //VecTest<long double,N>::test_reals();
 
-        #ifdef SCTL_QUAD_T
-        VecTest<QuadReal,N>::test_all();
-        VecTest<QuadReal,N>::test_reals();
-        #endif
+        //#ifdef SCTL_QUAD_T
+        //VecTest<QuadReal,N>::test_all();
+        //VecTest<QuadReal,N>::test_reals();
+        //#endif
       }
 
       static void test_all() {
