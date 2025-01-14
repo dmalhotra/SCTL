@@ -83,20 +83,27 @@ namespace sctl {
       static void test_init() {
         sctl::Vector<ScalarType> x(N+1), y(N+1), z(N);
 
+        int8_t aa = 1;
+        
         // Constructor: Vec(v)
         VecType v1;//((ScalarType)2);
         //for (Integer i = 0; i < N; i++) {
         //  SCTL_ASSERT(v1[i] == (ScalarType)2);
         //}
 
+        int8_t bb = 2;
+        
         // Constructor: Vec(v1,..,vn)
         VecType v2;// = InitVec<N>::apply();
         //for (Integer i = 0; i < N; i++) {
         //  SCTL_ASSERT(v2[i] == (ScalarType)(i+1));
         //}
 
-        std::cout<<((long long)(&v1)%64)<<' '<<((long long)(&v2)%64)<<'\n';
+        int8_t cc = 3;
         
+        std::cout<<((long long)(&v1)%64)<<' '<<((long long)(&v2)%64)<<'\n';
+
+        std::cout<<aa+bb+cc<<'\n';
         // insert, operator[]
         return;
         for (Integer i = 0; i < 1; i++) {
