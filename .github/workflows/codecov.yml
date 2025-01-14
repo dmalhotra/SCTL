@@ -12,7 +12,7 @@ jobs:
 
     - name: compile
       env:
-        CXX: g++-10
+        CXX: g++-13
       run: make -j CXX="$CXX" CXXFLAGS="-std=c++11 -O0 -g -rdynamic -fopenmp -march=native -DSCTL_MEMDEBUG -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_QUAD_T=__float128 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -fprofile-arcs -ftest-coverage -lgcov"
 
     - name: run tests
