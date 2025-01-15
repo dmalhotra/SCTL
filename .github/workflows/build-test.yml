@@ -45,7 +45,7 @@ jobs:
           else
             make -j CXX="${{matrix.compiler}}" CXXFLAGS="${COMMON_CXXFLAGS} -DSCTL_QUAD_T=__float128"
           fi
-          # -march=native, and address sanititser don't work of Apple Silicon
+          # -march=native, and address sanitizer don't work of Apple Silicon
         else
           make -j CXX="${{matrix.compiler}}" CXXFLAGS="${COMMON_CXXFLAGS} ${{matrix.vecflag}} ${{matrix.asanflags}} -DSCTL_QUAD_T=__float128"
         fi
