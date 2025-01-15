@@ -32,43 +32,49 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     env:
+      # Common compiler flags
       CPPFLAGS: >-
         -std=c++11 -g -rdynamic -fopenmp -Wall -Wfloat-conversion
         -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_PROFILE=5 -DSCTL_VERBOSE
         -DSCTL_SIG_HANDLER -fstack-protector
+      # Address sanitizer flags
       ASANFLAGS: >-
         -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract,float-divide-by-zero,float-cast-overflow
         -fno-sanitize-recover=all
 
     steps:
-      - uses: actions/checkout@main
+      # Checkout the repository
+      - uses: actions/checkout@v3
 
+      # Setup dependencies for Linux
       - name: Setup Linux
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libomp-dev
 
+      # Configure dependencies for macOS
       - name: Configure macOS
         if: runner.os == 'macOS'
         run: |
-          brew install gcc@13
-          brew install llvm libomp
-          echo "PATH=/opt/homebrew/opt/llvm/bin:$PATH" >> "$GITHUB_ENV"
-          echo "LDFLAGS=-L/opt/homebrew/opt/llvm/lib" >> "$GITHUB_ENV"
-          echo "CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> "$GITHUB_ENV"
-          echo "LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$LIBRARY_PATH" >> "$GITHUB_ENV"
+          brew install gcc@13 llvm libomp
+          echo "PATH=$(brew --prefix llvm)/bin:$PATH" >> $GITHUB_ENV
+          echo "LDFLAGS=-L$(brew --prefix llvm)/lib" >> $GITHUB_ENV
+          echo "CPPFLAGS=-I$(brew --prefix llvm)/include" >> $GITHUB_ENV
+          echo "LIBRARY_PATH=$(brew --prefix llvm)/lib:$LIBRARY_PATH" >> $GITHUB_ENV
 
+      # Build the project
       - name: Build
         run: |
-          CXXFLAGS="${CPPFLAGS} ${{ matrix.optflag }}"
+          CXXFLAGS="${CPPFLAGS} ${{ matrix.optflag }} -DSCTL_QUAD_T=__float128"
           if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
             CXXFLAGS+=" -mcpu=apple-m1 -lomp"
-            if [ "${{ matrix.compiler }}" != "clang++" ]; then
-              CXXFLAGS+=" -DSCTL_QUAD_T=__float128"
-            fi
+            #if [ "${{ matrix.compiler }}" != "clang++" ]; then
+            #  CXXFLAGS+=" -DSCTL_QUAD_T=__float128"
+            #fi
           else
-            CXXFLAGS+=" ${{matrix.vecflag}} ${ASANFLAGS} -DSCTL_QUAD_T=__float128"
+            CXXFLAGS+=" ${{ matrix.vecflag }} ${ASANFLAGS}" # -DSCTL_QUAD_T=__float128"
           fi
           make -j CXX="${{ matrix.compiler }}" CXXFLAGS="${CXXFLAGS}"
 
+      # Run tests
       - name: Test
         run: make test
