@@ -14,18 +14,18 @@ jobs:
   build:
     strategy:
       matrix:
-        os: 
+        os:
           - ubuntu-latest
           - macos-latest
-        compiler: 
+        compiler:
           - g++-13
           - clang++
-        vecflag: 
+        vecflag:
           - -march=native
-        memdbgflag: 
+        memdbgflag:
           - ""
           - -DSCTL_MEMDEBUG
-        optflag: 
+        optflag:
           - -O0
           - -O3
 
@@ -43,16 +43,18 @@ jobs:
         -fno-sanitize-recover=all
 
     steps:
-      # Checkout the repository
-      - uses: actions/checkout@v3
+      # Step 1: Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      # Setup dependencies for Linux
-      - name: Setup Linux
+      # Step 2: Setup dependencies based on OS
+      - name: Setup dependencies (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libomp-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libomp-dev
 
-      # Configure dependencies for macOS
-      - name: Configure macOS
+      - name: Setup dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install gcc@13 llvm libomp
@@ -61,20 +63,22 @@ jobs:
           echo "CPPFLAGS=-I$(brew --prefix llvm)/include" >> $GITHUB_ENV
           echo "LIBRARY_PATH=$(brew --prefix llvm)/lib:$LIBRARY_PATH" >> $GITHUB_ENV
 
-      # Build the project
-      - name: Build
+      # Step 3: Build the project
+      - name: Build project
         run: |
+          # Set compilation flags dynamically
           CXXFLAGS="${CPPFLAGS} ${{ matrix.optflag }}"
           if [ "$(uname -s)" == "Darwin" ] && [ "$(uname -m)" == "arm64" ]; then
             CXXFLAGS+=" -mcpu=apple-m1 -lomp"
           else
             CXXFLAGS+=" ${{ matrix.vecflag }} ${ASANFLAGS}"
           fi
+          # Enable extended precision on non-clang or non-Apple systems
           if [ "${{ matrix.compiler }}" != "clang++" ] || [ "$(uname -s)" != "Darwin" ] && [ "$(uname -m)" != "arm64" ]; then
             CXXFLAGS+=" -DSCTL_QUAD_T=__float128"
           fi
           make -j CXX="${{ matrix.compiler }}" CXXFLAGS="${CXXFLAGS}"
 
-      # Run tests
-      - name: Test
+      # Step 4: Run tests
+      - name: Run tests
         run: make test
