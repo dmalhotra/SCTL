@@ -2,56 +2,74 @@ name: Build and Test
 
 on:
   push:
-    branches: [ master, ci-test ]
+    branches:
+      - master
+      - ci-test
   pull_request:
-    branches: [ master, ci-test ]
+    branches:
+      - master
+      - ci-test
 
 jobs:
   build:
-    
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        compiler: [g++-13, clang++]
-        vecflag: [-march=native]
-        memdbgflag: ["", -DSCTL_MEMDEBUG]
-        optflag: [-O0, -O3]
-        cppflags: ["-std=c++11 -g -rdynamic -fopenmp -Wall -Wfloat-conversion -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -DSCTL_SIG_HANDLER -fstack-protector"]
-        asanflags: ["-fsanitize=address,leak,undefined,pointer-compare,pointer-subtract,float-divide-by-zero,float-cast-overflow -fno-sanitize-recover=all"]
-    
+        os: 
+          - ubuntu-latest
+          - macos-latest
+        compiler: 
+          - g++-13
+          - clang++
+        vecflag: 
+          - -march=native
+        memdbgflag: 
+          - ""
+          - -DSCTL_MEMDEBUG
+        optflag: 
+          - -O0
+          - -O3
+
     runs-on: ${{ matrix.os }}
-    
+
+    env:
+      CPPFLAGS: >-
+        -std=c++11 -g -rdynamic -fopenmp -Wall -Wfloat-conversion
+        -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_PROFILE=5 -DSCTL_VERBOSE
+        -DSCTL_SIG_HANDLER -fstack-protector
+      ASANFLAGS: >-
+        -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract,
+        float-divide-by-zero,float-cast-overflow -fno-sanitize-recover=all
+
     steps:
-    - uses: actions/checkout@main
+      - uses: actions/checkout@main
 
-    - name: Setup Linux
-      if: runner.os == 'Linux'
-      run: sudo apt-get update && sudo apt-get install -y libomp-dev
+      - name: Setup Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libomp-dev
 
-    - name: Configure macOS
-      if: runner.os == 'macOS'
-      run: |
-        brew install gcc@13
-        brew install llvm libomp
-        echo "PATH=/opt/homebrew/opt/llvm/bin:$PATH" >> "$GITHUB_ENV"
-        echo "LDFLAGS=-L/opt/homebrew/opt/llvm/lib" >> "$GITHUB_ENV"
-        echo "CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> "$GITHUB_ENV"
-        echo "LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$LIBRARY_PATH" >> "$GITHUB_ENV"
+      - name: Configure macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install gcc@13
+          brew install llvm libomp
+          echo "PATH=/opt/homebrew/opt/llvm/bin:$PATH" >> "$GITHUB_ENV"
+          echo "LDFLAGS=-L/opt/homebrew/opt/llvm/lib" >> "$GITHUB_ENV"
+          echo "CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$LIBRARY_PATH" >> "$GITHUB_ENV"
 
-    - name: Build
-      run: |
-        COMMON_CXXFLAGS="${{matrix.cppflags}} ${{matrix.optflag}} ${{matrix.memdbgflag}}"
-        if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
-          COMMON_CXXFLAGS="${COMMON_CXXFLAGS} -mcpu=apple-m1 -lomp"
-          if [ "${{matrix.compiler}}" == "clang++" ]; then
-            make -j CXX="${{matrix.compiler}}" CXXFLAGS="${COMMON_CXXFLAGS}"
+      - name: Build
+        run: |
+          COMMON_CXXFLAGS="${CPPFLAGS} ${{ matrix.optflag }}"
+          if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
+            COMMON_CXXFLAGS+="-mcpu=apple-m1 -lomp"
+            if [ "${{ matrix.compiler }}" == "clang++" ]; then
+              make -j CXX="${{ matrix.compiler }}" CXXFLAGS="${COMMON_CXXFLAGS}"
+            else
+              make -j CXX="${{ matrix.compiler }}" CXXFLAGS="${COMMON_CXXFLAGS} -DSCTL_QUAD_T=__float128"
+            fi
           else
-            make -j CXX="${{matrix.compiler}}" CXXFLAGS="${COMMON_CXXFLAGS} -DSCTL_QUAD_T=__float128"
+            make -j CXX="${{ matrix.compiler }}" CXXFLAGS="${COMMON_CXXFLAGS} ${{matrix.vecflag}} ${ASANFLAGS} -DSCTL_QUAD_T=__float128"
           fi
-          # -march=native, and address sanitizer don't work of Apple Silicon
-        else
-          make -j CXX="${{matrix.compiler}}" CXXFLAGS="${COMMON_CXXFLAGS} ${{matrix.vecflag}} ${{matrix.asanflags}} -DSCTL_QUAD_T=__float128"
-        fi
 
-    - name: Test
-      run: make test
+      - name: Test
+        run: make test
