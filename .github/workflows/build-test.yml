@@ -59,17 +59,16 @@ jobs:
 
       - name: Build
         run: |
-          COMMON_CXXFLAGS="${CPPFLAGS} ${{ matrix.optflag }}"
+          CXXFLAGS="${CPPFLAGS} ${{ matrix.optflag }}"
           if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
-            COMMON_CXXFLAGS+="-mcpu=apple-m1 -lomp"
-            if [ "${{ matrix.compiler }}" == "clang++" ]; then
-              make -j CXX="${{ matrix.compiler }}" CXXFLAGS="${COMMON_CXXFLAGS}"
-            else
-              make -j CXX="${{ matrix.compiler }}" CXXFLAGS="${COMMON_CXXFLAGS} -DSCTL_QUAD_T=__float128"
+            CXXFLAGS+=" -mcpu=apple-m1 -lomp"
+            if [ "${{ matrix.compiler }}" != "clang++" ]; then
+              CXXFLAGS+=" -DSCTL_QUAD_T=__float128"
             fi
           else
-            make -j CXX="${{ matrix.compiler }}" CXXFLAGS="${COMMON_CXXFLAGS} ${{matrix.vecflag}} ${ASANFLAGS} -DSCTL_QUAD_T=__float128"
+            CXXFLAGS+=" ${{matrix.vecflag}} ${ASANFLAGS} -DSCTL_QUAD_T=__float128"
           fi
+          make -j CXX="${{ matrix.compiler }}" CXXFLAGS="${CXXFLAGS}"
 
       - name: Test
         run: make test
