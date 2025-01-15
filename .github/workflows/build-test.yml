@@ -37,8 +37,8 @@ jobs:
         -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_PROFILE=5 -DSCTL_VERBOSE
         -DSCTL_SIG_HANDLER -fstack-protector
       ASANFLAGS: >-
-        -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract,
-        float-divide-by-zero,float-cast-overflow -fno-sanitize-recover=all
+        -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract,float-divide-by-zero,float-cast-overflow
+        -fno-sanitize-recover=all
 
     steps:
       - uses: actions/checkout@main
