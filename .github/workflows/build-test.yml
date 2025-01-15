@@ -11,11 +11,13 @@ jobs:
     
     strategy:
       matrix:
-        os: [macos-latest] #[ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
         compiler: [g++-13, clang++]
         vecflag: [-march=native]
-        memdbgflag: [""] #, -DSCTL_MEMDEBUG]
-        optflag: [-O0 ] #, -O3]
+        memdbgflag: ["", -DSCTL_MEMDEBUG]
+        optflag: [-O0, -O3]
+        cppflags: ["-std=c++11 -g -rdynamic -fopenmp -Wall -Wfloat-conversion -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -DSCTL_SIG_HANDLER -fstack-protector"]
+        asanflags: ["-fsanitize=address,leak,undefined,pointer-compare,pointer-subtract,float-divide-by-zero,float-cast-overflow -fno-sanitize-recover=all"]
     
     runs-on: ${{ matrix.os }}
     
@@ -30,26 +32,21 @@ jobs:
       if: runner.os == 'macOS'
       run: |
         brew install gcc@13
-        brew install llvm
-        brew install libomp
+        brew install llvm,libomp
         echo "PATH=/opt/homebrew/opt/llvm/bin:$PATH" >> "$GITHUB_ENV"
-        echo "LDFLAGS=-L/opt/homebrew/opt/llvm/lib" >> "$GITHUB_ENV"
-        echo "CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> "$GITHUB_ENV"
-        echo "LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$LIBRARY_PATH" >> "$GITHUB_ENV"
-        export PATH=/opt/homebrew/opt/llvm/bin:$PATH
 
     - name: Build
       run: |
         if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
-          echo $PATH ####################
+        CXXFLAGS=
           if [ "${{matrix.compiler}}" == "clang++" ]; then
-            make -j CXX="${{matrix.compiler}}" CXXFLAGS="-std=c++11 ${{matrix.optflag}} -mcpu=apple-m1 ${{matrix.memdbgflag}} -g -rdynamic -fopenmp -Wall -Wfloat-conversion -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -DSCTL_SIG_HANDLER -fstack-protector -lomp"
+            make -j CXX="${{matrix.compiler}}" CXXFLAGS="${{matrix.cppflags}} ${{matrix.optflag}} -mcpu=apple-m1 ${{matrix.memdbgflag}} -lomp"
           else
-            make -j CXX="${{matrix.compiler}}" CXXFLAGS="-std=c++11 ${{matrix.optflag}} -mcpu=apple-m1 ${{matrix.memdbgflag}} -g -rdynamic -fopenmp -Wall -Wfloat-conversion -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_QUAD_T=__float128 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -DSCTL_SIG_HANDLER -fstack-protector -lomp"
+            make -j CXX="${{matrix.compiler}}" CXXFLAGS="${{matrix.cppflags}} ${{matrix.optflag}} -mcpu=apple-m1 ${{matrix.memdbgflag}} -lomp -DSCTL_QUAD_T=__float128"
           fi
           # -march=native, and address sanititser don't work of Apple Silicon
         else
-          make -j CXX="${{matrix.compiler}}" CXXFLAGS="-std=c++11 ${{matrix.optflag}} ${{matrix.vecflag}} ${{matrix.memdbgflag}} -g -rdynamic -fopenmp -Wall -Wfloat-conversion -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_QUAD_T=__float128 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -DSCTL_SIG_HANDLER -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract,float-divide-by-zero,float-cast-overflow -fno-sanitize-recover=all -fstack-protector"
+          make -j CXX="${{matrix.compiler}}" CXXFLAGS="${{matrix.cppflags}} ${{matrix.optflag}} ${{matrix.vecflag}} ${{matrix.memdbgflag}} -DSCTL_QUAD_T=__float128 ${{matrix.asanflags}}"
         fi
 
     - name: Test
