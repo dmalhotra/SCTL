@@ -64,7 +64,7 @@ jobs:
       # Build the project
       - name: Build
         run: |
-          CXXFLAGS="${CPPFLAGS} ${{ matrix.optflag }} -DSCTL_QUAD_T=__float128"
+          CXXFLAGS="${CPPFLAGS} ${{ matrix.optflag }} -mfloat128 -DSCTL_QUAD_T=__float128"
           if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
             CXXFLAGS+=" -mcpu=apple-m1 -lomp"
             #if [ "${{ matrix.compiler }}" != "clang++" ]; then
