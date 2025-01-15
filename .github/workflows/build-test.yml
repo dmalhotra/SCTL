@@ -34,6 +34,9 @@ jobs:
         brew install gcc@13
         brew install llvm libomp
         echo "PATH=/opt/homebrew/opt/llvm/bin:$PATH" >> "$GITHUB_ENV"
+        echo "LDFLAGS=-L/opt/homebrew/opt/llvm/lib" >> "$GITHUB_ENV"
+        echo "CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> "$GITHUB_ENV"
+        echo "LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$LIBRARY_PATH" >> "$GITHUB_ENV"
 
     - name: Build
       run: |
