@@ -37,16 +37,17 @@ jobs:
 
     - name: Build
       run: |
+        COMMON_CXXFLAGS="${{matrix.cppflags}} ${{matrix.optflag}} ${{matrix.vecflag}} ${{matrix.memdbgflag}}"
         if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
-        CXXFLAGS=
+          COMMON_CXXFLAGS="${COMMON_CXXFLAGS} -mcpu=apple-m1 -lomp"
           if [ "${{matrix.compiler}}" == "clang++" ]; then
-            make -j CXX="${{matrix.compiler}}" CXXFLAGS="${{matrix.cppflags}} ${{matrix.optflag}} -mcpu=apple-m1 ${{matrix.memdbgflag}} -lomp"
+            make -j CXX="${{matrix.compiler}}" CXXFLAGS="${COMMON_CXXFLAGS}"
           else
-            make -j CXX="${{matrix.compiler}}" CXXFLAGS="${{matrix.cppflags}} ${{matrix.optflag}} -mcpu=apple-m1 ${{matrix.memdbgflag}} -lomp -DSCTL_QUAD_T=__float128"
+            make -j CXX="${{matrix.compiler}}" CXXFLAGS="${COMMON_CXXFLAGS} -DSCTL_QUAD_T=__float128"
           fi
           # -march=native, and address sanititser don't work of Apple Silicon
         else
-          make -j CXX="${{matrix.compiler}}" CXXFLAGS="${{matrix.cppflags}} ${{matrix.optflag}} ${{matrix.vecflag}} ${{matrix.memdbgflag}} -DSCTL_QUAD_T=__float128 ${{matrix.asanflags}}"
+          make -j CXX="${{matrix.compiler}}" CXXFLAGS="${COMMON_CXXFLAGS} ${{matrix.asanflags}} -DSCTL_QUAD_T=__float128"
         fi
 
     - name: Test
