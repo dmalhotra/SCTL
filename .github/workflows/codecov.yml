@@ -1,4 +1,5 @@
 name: Codecov
+
 on:
   push:
     branches:
@@ -7,16 +8,29 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-    - uses: actions/checkout@main
+      # Step 1: Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    - name: compile
-      env:
-        CXX: g++-10
-      run: make -j CXX="$CXX" CXXFLAGS="-std=c++11 -O0 -g -rdynamic -fopenmp -march=native -DSCTL_MEMDEBUG -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_QUAD_T=__float128 -DSCTL_PROFILE=5 -DSCTL_VERBOSE -fprofile-arcs -ftest-coverage -lgcov"
+      # Step 2: Compile the project
+      - name: Compile
+        env:
+          CXX: g++-13
+          CXXFLAGS: >-
+            -std=c++11 -O0 -g -rdynamic -fopenmp -march=native
+            -DSCTL_MEMDEBUG -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_QUAD_T=__float128
+            -DSCTL_PROFILE=5 -DSCTL_VERBOSE -fprofile-arcs -ftest-coverage -lgcov
+        run: make -j CXX="$CXX" CXXFLAGS="$CXXFLAGS"
 
-    - name: run tests
-      run: make test
+      # Step 3: Run tests
+      - name: Run tests
+        run: make test
 
-    - name: after success
-      run: curl -s https://codecov.io/bash | bash -s -- -t ${{ secrets.CODECOV_TOKEN }}
+      # Step 4: Upload coverage to Codecov
+      - name: Upload coverage
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          bash <(curl -s https://codecov.io/bash) || echo "Codecov upload failed"

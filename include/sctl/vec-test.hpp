@@ -57,6 +57,7 @@ namespace sctl {
 
       static void test_all() {
         if (N*sizeof(ScalarType)*8<=512) {
+          test_align();
           test_init();
           test_bitwise(); // TODO: fails for 'long double'
           test_arithmetic();
@@ -75,6 +76,20 @@ namespace sctl {
       }
 
     private:
+
+      static void test_align() {
+        // NOTE: alignas not respected on some GCC versions when compiled with address-sanitizer
+        // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=110027
+
+        VecType v1;
+        char c;
+        VecType v2;
+        auto addr1 = reinterpret_cast<uintptr_t>(&v1);
+        auto addr2 = reinterpret_cast<uintptr_t>(&v2);
+        SCTL_ASSERT(addr1 % N*sizeof(ValueType) == 0);
+        SCTL_ASSERT(addr2 % N*sizeof(ValueType) == 0);
+        SCTL_UNUSED(c);
+      }
 
       static void test_init() {
         sctl::Vector<ScalarType> x(N+1), y(N+1), z(N);
