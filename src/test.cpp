@@ -70,6 +70,8 @@ int main(int argc, char** argv) {
   TestMatrix();
 
   // Print profiling results
+  sctl::Profile::SetProfField("alloc/s", sctl::Profile::GetProfField("alloc_count")/sctl::Profile::GetProfField("t"));
+  sctl::Profile::print(nullptr, {"t", "alloc/s"}, {"%.8f"});
   sctl::Profile::print();
 
   {  // Test out-of-bound writes
