@@ -541,7 +541,7 @@ template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Ma
   mat::svd(&JOBU, &JOBVT, &m, &n, M.begin(), &m, tS.begin(), tVT.begin(), &m, tU.begin(), &k, wsbuf, &wssize, &INFO);
   aligned_delete<ValueType>(wsbuf);
 
-  if (INFO != 0) std::cout << INFO << '\n';
+  if (INFO != 0) std::cout << "SVD failed to converge: INFO = "<< INFO << '\n';
   assert(INFO == 0);
 
   for (Long i = 1; i < k; i++) {

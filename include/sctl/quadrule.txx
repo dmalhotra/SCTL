@@ -53,7 +53,7 @@ namespace sctl {
       ComputeNdsWts<ValueType>(&nds, nullptr, N);
       return nds;
     };
-    static Vector<Real> nds = compute;
+    static Vector<Real> nds = compute();
     return nds;
   }
   template <class Real> template <Integer N, class ValueType> const Vector<Real>& ChebQuadRule<Real>::wts() {

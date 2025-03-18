@@ -512,7 +512,7 @@ namespace sctl { // Generic
     return or_intrin(and_intrin(a,s_.v), andnot_intrin(b,s_.v));
   }
 
-  // Special funtions
+  // Special functions
   template <Integer MAX_ITER, Integer ITER, class VData> struct rsqrt_newton_iter {
     static inline VData eval(const VData& y, const VData& x) {
       using ValueType = typename VData::ScalarType;

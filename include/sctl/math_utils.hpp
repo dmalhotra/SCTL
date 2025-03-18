@@ -50,6 +50,9 @@ template <class Real> inline constexpr Real const_pi() { return (Real)3.14159265
  */
 template <class Real> inline constexpr Real const_e() { return (Real)2.7182818284590452353602874713526624977L; }
 
+template <class Real> inline bool isinf(const Real a) { return std::isinf(a); }
+template <class Real> inline bool isnan(const Real a) { return std::isnan(a); }
+
 /**
  * Returns the absolute value of the input.
  *
