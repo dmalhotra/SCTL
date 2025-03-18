@@ -1,7 +1,7 @@
 #include "sctl.hpp"
 
 template <class Real> void test_adaptive_solve(const int Order, const Real tol) {
-  auto ref_sol = [](Real t) { return cos(-t); };
+  auto ref_sol = [](Real t) { return sctl::cos(-t); };
   auto fn = [](sctl::Vector<Real>* dudt, const sctl::Vector<Real>& u) {
     (*dudt)[0] = -u[1];
     (*dudt)[1] = u[0];
@@ -15,8 +15,8 @@ template <class Real> void test_adaptive_solve(const int Order, const Real tol) 
   Real t = ode_solver.AdaptiveSolve(&u, dt, T, u0, fn, tol);
 
   if (t == T) {
-    printf("u = %e;  ", u[0]);
-    printf("error = %e;  \n", ref_sol(T) - u[0]);
+    printf("u = %e;  ", (double)u[0]);
+    printf("error = %e;  \n", (double)(ref_sol(T) - u[0]));
   }
 }
 

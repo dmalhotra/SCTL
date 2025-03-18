@@ -63,7 +63,7 @@ namespace sctl {
     Real T = 10.0, dt = 1.0e-1;
 
     SDC<Real> ode_solver(Order);
-    Real t = ode_solver.AdaptiveSolve(&u, dt, T, u0, fn, tol);
+    Real t = ode_solver.AdaptiveSolve(&u, dt, T, u0, fn, tol, nullptr, true);
 
     if (t == T) {
       printf("u = %e;  ", u[0]);
@@ -90,14 +90,9 @@ namespace sctl {
     const auto nds0 = second_kind_cheb_nds(order); // TODO: use Gauss-Lobatto nodes
     SCTL_ASSERT(nds0.Dim() == order);
 
-    { // Set M_error
-      Integer TRUNC_Order = order;
-      if (order >= 2) TRUNC_Order = order - 1;
-      if (order >= 6) TRUNC_Order = order - 1;
-      if (order >= 9) TRUNC_Order = order - 1;
-
-      const auto nds1 = second_kind_cheb_nds(TRUNC_Order);
-      SCTL_ASSERT(nds1.Dim() == TRUNC_Order);
+    const auto build_trunc_matrix = [](const Vector<ValueType>& nds0, const Vector<ValueType>& nds1) {
+      const Integer order = nds0.Dim();
+      const Integer TRUNC_Order = nds1.Dim();
 
       Matrix<ValueType> Minterp0(order, TRUNC_Order);
       Matrix<ValueType> Minterp1(TRUNC_Order, order);
@@ -108,8 +103,17 @@ namespace sctl {
       Matrix<ValueType> M_error_ = (Minterp0 * Minterp1).Transpose();
       for (Long i = 0; i < order; i++) M_error_[i][i] -= 1;
 
-      M_error.ReInit(order, order);
+      Matrix<Real> M_error(order, order);
       for (Long i = 0; i < order*order; i++) M_error[0][i] = (Real)M_error_[0][i];
+      return M_error;
+    };
+    { // Set M_error
+      Integer TRUNC_Order = order;
+      if (order >= 2) TRUNC_Order = order - 1;
+      if (order >= 6) TRUNC_Order = order - 1;
+      if (order >= 9) TRUNC_Order = order - 1;
+      M_error = build_trunc_matrix(nds0, second_kind_cheb_nds(TRUNC_Order));
+      M_error_half = build_trunc_matrix(nds0, second_kind_cheb_nds(order/2));
     }
     { // Set M_time_step
       Vector<ValueType> qx, qw;
@@ -140,17 +144,7 @@ namespace sctl {
   template <class Real> Integer SDC<Real>::Order() const { return order; }
 
   // solve u = u0 + \int_0^{dt} F(u)
-  template <class Real> void SDC<Real>::operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn0& F, Integer N_picard, const Real tol_picard, Real* error_interp, Real* error_picard, Real* norm_dudt) const {
-    auto max_norm = [] (const Matrix<Real>& M, const Comm& comm) {
-      StaticArray<Real,2> max_val{0,0};
-      for (Long i = 0; i < M.Dim(0); i++) {
-        for (Long j = 0; j < M.Dim(1); j++) {
-          max_val[0] = std::max<Real>(max_val[0], fabs(M[i][j]));
-        }
-      }
-      comm.Allreduce((ConstIterator<Real>)max_val, (Iterator<Real>)max_val+1, 1, CommOp::MAX);
-      return max_val[1];
-    };
+  template <class Real> void SDC<Real>::operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn0& F, Integer N_picard, const Real tol_picard, Real* error_interp, Real* error_picard, Integer* iter_count, Matrix<Real>* u_substep) const {
     if (N_picard < 0) N_picard = order;
     const Long DOF = u0.Dim();
 
@@ -183,9 +177,9 @@ namespace sctl {
       F(&f_, Vector<Real>(DOF, Mu[0], false), 0, 0);
       if (!f_.Dim()) { // abort
         u->ReInit(0);
-        if (error_interp) (*error_interp) = 1;
-        if (error_picard) (*error_picard) = 1;
-        if (norm_dudt) (*norm_dudt) = 1;
+        if (error_interp) (*error_interp) = -1;
+        if (error_picard) (*error_picard) = -1;
+        if (iter_count) (*iter_count) = -1;
         return;
       }
       for (Long i = 0; i < order; i++) {
@@ -201,7 +195,7 @@ namespace sctl {
       Mv_change = Mv;
       Matrix<Real>::GEMM(Mv, M_time_step, Mf0);
       Mv_change -= Mv;
-      picard_err[picard_iter] = max_norm(Mv_change, comm) * dt;
+      picard_err[picard_iter] = max_norm(Mv_change) * dt;
       if (picard_err[picard_iter] < tol_picard || (picard_iter>1 && picard_err[picard_iter] > picard_err[picard_iter-2])) {
         for (Long i = 1; i < order; i++) {
           const Vector<Real> v_1(DOF, Mv[i], false);
@@ -228,9 +222,9 @@ namespace sctl {
         F(&f1_1, u_1, picard_iter, i);
         if (!f1_1.Dim()) { // abort
           u->ReInit(0);
-          if (error_interp) (*error_interp) = 1;
-          if (error_picard) (*error_picard) = 1;
-          if (norm_dudt) (*norm_dudt) = 1;
+          if (error_interp) (*error_interp) = -1;
+          if (error_picard) (*error_picard) = -1;
+          if (iter_count) (*iter_count) = -1;
           return;
         }
       }
@@ -246,50 +240,67 @@ namespace sctl {
     }
     if (error_interp != nullptr) {
       Matrix<Real>& err = Mv_change; // reuse memory
-      Matrix<Real>::GEMM(err, M_error, Mv);
-      (*error_interp) = max_norm(err, comm) * dt;
+      Matrix<Real>::GEMM(err, M_error, Mu);
+      (*error_interp) = max_norm(err);
     }
-    if (norm_dudt != nullptr) {
-      (*norm_dudt) = max_norm(Mv, comm) * dt;
+    if (iter_count != nullptr) {
+      (*iter_count) = picard_iter;
+    }
+    if (u_substep != nullptr) {
+      if (u_substep->Dim(0) != order || u_substep->Dim(1) != DOF) u_substep->ReInit(order, DOF);
+      (*u_substep) = Mu;
     }
   }
 
-  template <class Real> void SDC<Real>::operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn1& F, Integer N_picard, const Real tol_picard, Real* error_interp, Real* error_picard, Real* norm_dudt) const {
+  template <class Real> void SDC<Real>::operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn1& F, Integer N_picard, const Real tol_picard, Real* error_interp, Real* error_picard, Integer* iter_count, Matrix<Real>* u_substep) const {
     const auto fn = [&F](Vector<Real>* dudt, const Vector<Real>& u, const Integer correction_idx, const Integer substep_idx) {
       F(dudt, u);
     };
-    this->operator()(u, dt, u0, fn, N_picard, tol_picard, error_interp, error_picard, norm_dudt);
+    this->operator()(u, dt, u0, fn, N_picard, tol_picard, error_interp, error_picard, iter_count, u_substep);
   }
 
   template <class Real> Real SDC<Real>::AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, const Fn0& F, const Real tol, const MonitorFn* monitor_callback, bool continue_with_errors, Real* error) const {
+    const Integer max_picard_iter = 2*order;
     const Real eps = machine_eps<Real>();
     Vector<Real> u_, u0_ = u0;
 
     Real t = 0;
     Real error_ = 0;
+    Matrix<Real> u_substep;
     while (t < T && dt > eps*T) {
-      Real error_interp, error_picard, norm_dudt;
+      Integer picard_iter;
+      Real error_interp, error_picard;
       Real tol_ = std::max<Real>(tol/T, (tol-error_)/(T-t));
-      (*this)(&u_, dt, u0_, F, 2*order, tol_*dt*pow<Real>(0.8,order), &error_interp, &error_picard, &norm_dudt);
-      // The factor pow<Real>(0.8,order) ensures that we try to solve to
-      // slightly higher accuracy. This allows us to determine if the next
-      // time-step size can be increased by d 1/0.8.
+      (*this)(&u_, dt, u0_, F, max_picard_iter, tol_*dt, &error_interp, &error_picard, &picard_iter, &u_substep);
 
-      Real max_err = std::max<Real>(error_interp, error_picard);
-      //std::cout<<"Adaptive time-step: "<<t<<' '<<dt<<' '<<error_interp/dt<<' '<<error_picard/dt<<' '<<max_err/norm_dudt/eps<<'\n';
-      if (max_err < tol_*dt || (continue_with_errors && max_err/norm_dudt < 2*eps)) { // Accept solution
+      const Real max_norm_u = max_norm(u_);
+      const Real error_interp_half = pow<Real>(max_norm(M_error_half*u_substep)/max_norm_u, (Real)1.8) * max_norm_u;
+
+      std::cout<<"Adaptive time-step: " << std::scientific << std::setw(10) <<t<<' '<<dt<<' '<<picard_iter<<" "<<error_interp_half/dt<<' '<<error_picard/dt<<' '<<error_/tol<<'\n';
+      if (picard_iter>=0 && (error_interp < tol_*dt || error_interp_half < error_interp) && (error_picard < tol_*dt || picard_iter < max_picard_iter)) { // Accept solution
+        // picard_iter>=0                     // SDC time-step succeeded
+        // && (
+        //   error_interp < tol_*dt           // interpolant error tolerance reached
+        //   ||
+        //   error_interp_half < error_interp // interpolant coefficients stagnated
+        // ) && (
+        //   error_picard < tol_*dt           // picard-iteration error tolerance reached
+        //   ||
+        //   picard_iter < max_picard_iter    // picard-iteration error stagnated
+        // )
+
         u0_.Swap(u_);
         t = t + dt;
-        error_ += max_err;
+        error_ += std::max<Real>(error_interp, error_picard);
+        SCTL_ASSERT_MSG(continue_with_errors || error_ < tol, "Could not solve ODE to the requested tolerance.");
         if (monitor_callback) (*monitor_callback)(t, dt, u0_);
       }
 
-      if (continue_with_errors && max_err/norm_dudt < 2*eps) {
-        dt = std::min<Real>(T-t, 1.1*dt);
-      } else {
-        // Adjust time-step size (Quaife, Biros - JCP 2016)
-        dt = std::min<Real>(T-t, std::max<Real>(0.5*dt, 0.9*dt*pow<Real>((tol_*dt)/max_err, 1/(Real)(order))));
-      }
+      const Real dt_picard = (picard_iter < max_picard_iter ? dt*(max_picard_iter-1)/picard_iter : log(error_picard)/log(tol_*dt)*dt );
+      const Real dt_interp = (error_interp_half < error_interp ?
+                              std::min<Real>(2.0*dt, 0.9*dt*pow<Real>(error_interp/error_interp_half, 1/(Real)(order))) : // adjust time-step size to match stagnation error
+                              std::max<Real>(0.5*dt, 0.9*dt*pow<Real>((tol_*dt)   /error_interp_half, 1/(Real)(order)))); // Adjust time-step size (Quaife, Biros - JCP 2016)
+      dt = std::min<Real>(T-t, std::min(dt_interp, dt_picard));
     }
     if (t < T || error_ > tol) SCTL_WARN("Could not solve ODE to the requested tolerance.");
     if (error != nullptr) (*error) = error_;
@@ -305,6 +316,12 @@ namespace sctl {
     return AdaptiveSolve(u, dt, T, u0, fn, tol, monitor_callback, continue_with_errors, error);
   }
 
+  template <class Real> template <class Container> Real SDC<Real>::max_norm(const Container& M) const {
+    StaticArray<Real,2> max_val{0,0};
+    for (const auto x : M) max_val[0] = std::max<Real>(max_val[0], fabs((Real)x));
+    comm.Allreduce((ConstIterator<Real>)max_val, (Iterator<Real>)max_val+1, 1, CommOp::MAX);
+    return max_val[1];
+  }
 }
 
 #endif // _SCTL_ODE_SOLVER_TXX_

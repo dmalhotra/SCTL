@@ -388,11 +388,9 @@ namespace sctl {
     else return approx_exp_intrin<ORDER>(x.get());
   }
 
-  #if defined(SCTL_HAVE_SVML) || defined(SCTL_HAVE_LIBMVEC)
   template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x) {
     return log_intrin(x.get());
   }
-  #endif
 
 
   // Print

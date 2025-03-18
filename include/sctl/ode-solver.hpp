@@ -47,13 +47,14 @@ template <class Real> class SDC {
      * @param[in] dt the step size
      * @param[in] u0 the initial value
      * @param[in] F the function du/dt
-     * @param[in] N_picard the maximum number of picard iterations
-     * @param[in] tol_picard the tolerance for stopping picard iterations
+     * @param[in] N_picard the maximum number of Picard iterations
+     * @param[in] tol_picard the tolerance for stopping Picard iterations
      * @param[out] error_interp an estimate of the truncation error of the solution interpolant
-     * @param[out] error_picard the picard iteration error
+     * @param[out] error_picard the Picard iteration error
      * @param[out] norm_dudt maximum norm of du/dt
+     * @param[out] iter_count number of Picard iterations
      */
-    void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn0& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Real* norm_dudt = nullptr) const;
+    void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn0& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Integer* iter_count = nullptr, Matrix<Real>* u_substep = nullptr) const;
 
     /**
      * Apply one step of spectral deferred correction (SDC).
@@ -63,13 +64,14 @@ template <class Real> class SDC {
      * @param[in] dt the step size
      * @param[in] u0 the initial value
      * @param[in] F the function du/dt
-     * @param[in] N_picard the maximum number of picard iterations
-     * @param[in] tol_picard the tolerance for stopping picard iterations
+     * @param[in] N_picard the maximum number of Picard iterations
+     * @param[in] tol_picard the tolerance for stopping Picard iterations
      * @param[out] error_interp an estimate of the truncation error of the solution interpolant
-     * @param[out] error_picard the picard iteration error
+     * @param[out] error_picard the Picard iteration error
      * @param[out] norm_dudt maximum norm of du/dt
+     * @param[out] iter_count number of Picard iterations on exit (or -1 if terminated)
      */
-    void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn1& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Real* norm_dudt = nullptr) const;
+    void operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn1& F, Integer N_picard = -1, const Real tol_picard = 0, Real* error_interp = nullptr, Real* error_picard = nullptr, Integer* iter_count = nullptr, Matrix<Real>* u_substep = nullptr) const;
 
     /**
      * Solve ODE adaptively to required tolerance.
@@ -118,7 +120,10 @@ template <class Real> class SDC {
     static void test_adaptive_solve(const Integer Order = 5, const Real tol = 1e-5);
 
   private:
-    Matrix<Real> M_time_step, M_error;
+
+    template <class Container> Real max_norm(const Container& M) const;
+
+    Matrix<Real> M_time_step, M_error, M_error_half;
     Vector<Real> nds;
     Integer order;
     Comm comm;

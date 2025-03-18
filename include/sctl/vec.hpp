@@ -383,9 +383,7 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x);
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x);
 
-  #if defined(SCTL_HAVE_SVML) || defined(SCTL_HAVE_LIBMVEC)
   template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x);
-  #endif
 
 
   // Print

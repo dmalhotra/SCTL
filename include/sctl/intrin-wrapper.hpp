@@ -785,7 +785,6 @@ namespace sctl { // Generic
     for (Integer i = 0; i < VData::Size; i++) expx_.x[i] = exp(x_.x[i]);
     return expx_.v;
   }
-#if defined(SCTL_HAVE_SVML) || defined(SCTL_HAVE_LIBMVEC)
   template <class VData> inline VData log_intrin(const VData& x) {
     union U {
       VData v;
@@ -795,7 +794,6 @@ namespace sctl { // Generic
     for (Integer i = 0; i < VData::Size; i++) logx_.x[i] = log(x_.x[i]);
     return logx_.v;
   }
-#endif
 
   template <Integer ORDER, class VData> inline VData approx_sin_intrin(const VData& x) {
     VData sinx, cosx;
