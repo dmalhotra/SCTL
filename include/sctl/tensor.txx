@@ -6,6 +6,7 @@
 #include <stdlib.h>               // for drand48
 #include <iomanip>                // for operator<<, setiosflags, setprecision
 #include <iostream>               // for basic_ostream, operator<<, cout
+#include <initializer_list>       // for initializer_list
 
 #include "sctl/common.hpp"        // for Long, Integer, SCTL_UNUSED, SCTL_NA...
 #include "sctl/tensor.hpp"        // for Tensor, TensorArgExtract, operator<<
@@ -91,16 +92,26 @@ namespace sctl {
   }
 
   template <class ValueType, bool own_data, Long... Args> Tensor<ValueType, own_data, Args...>::Tensor() {
+    static_assert(own_data || !Size(), "Storage for Tensor must be given when own_data==false");
     Init(NullIterator<ValueType>());
   }
 
   template <class ValueType, bool own_data, Long... Args> Tensor<ValueType, own_data, Args...>::Tensor(Iterator<ValueType> src_iter) {
+    SCTL_ASSERT_MSG(src_iter!=NullIterator<ValueType>() || own_data || !Size(), "Storage for Tensor must be given when own_data==false");
     Init(src_iter);
   }
 
   template <class ValueType, bool own_data, Long... Args> Tensor<ValueType, own_data, Args...>::Tensor(ConstIterator<ValueType> src_iter) {
     static_assert(own_data || !Size(), "Cannot use ConstIterator as storage for Tensor.");
     Init((Iterator<ValueType>)src_iter);
+  }
+
+  template <class ValueType, bool own_data, Long... Args> Tensor<ValueType, own_data, Args...>::Tensor(std::initializer_list<ValueType> arr) {
+    static_assert(own_data || !Size(), "Cannot use initializer_list as storage for Tensor.");
+    Init(NullIterator<ValueType>());
+
+    SCTL_ASSERT_MSG(arr.size() <= Size(), "too many initializer values");
+    for (Long i = 0; i < (Long)arr.size(); i++) this->begin()[i] = arr.begin()[i];
   }
 
   template <class ValueType, bool own_data, Long... Args> Tensor<ValueType, own_data, Args...>::Tensor(const Tensor &M) {
@@ -127,6 +138,12 @@ namespace sctl {
     for (auto& x : *this) x = v;
     return *this;
   }
+
+  template <class ValueType, bool own_data, Long... Args> template <bool own_data_> Tensor<ValueType, own_data, Args...>& Tensor<ValueType, own_data, Args...>::operator=(const Tensor<ValueType,own_data_,Args...> &M) {
+    memcopy(begin(), M.begin(), Size());
+    return *this;
+  }
+
 
 
   template <class ValueType, bool own_data, Long... Args> Iterator<ValueType> Tensor<ValueType, own_data, Args...>::begin() {

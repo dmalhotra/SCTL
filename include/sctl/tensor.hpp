@@ -2,6 +2,7 @@
 #define _SCTL_TENSOR_HPP_
 
 #include <ostream>                // for ostream
+#include <initializer_list>       // for initializer_list
 
 #include "sctl/common.hpp"        // for Long, Integer, sctl
 #include "sctl/static-array.hpp"  // for StaticArray
@@ -73,6 +74,13 @@ namespace sctl {
       explicit Tensor(ConstIterator<ValueType> src_iter);
 
       /**
+       * Constructor with initializer list.
+       *
+       * @param arr An initializer list to initialize the tensor.
+       */
+      explicit Tensor(std::initializer_list<ValueType> arr);
+
+      /**
        * Copy constructor.
        *
        * @param M Another tensor to copy from.
@@ -116,6 +124,14 @@ namespace sctl {
        * @return Reference to this tensor.
        */
       Tensor &operator=(const ValueType& v);
+
+      /**
+       * Copy assignment operator from another type.
+       *
+       * @param M Another tensor to copy from.
+       * @return Reference to this tensor.
+       */
+      template <bool own_data_> Tensor &operator=(const Tensor<ValueType, own_data_, Args...> &M);
 
       // Member Functions
 
