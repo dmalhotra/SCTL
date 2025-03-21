@@ -48,11 +48,20 @@ namespace sctl {
 
     StaticArray<Real,200> w_buff;
     Vector<Real> w(Nsrc, (Nsrc>=200?NullIterator<Real>():w_buff), (Nsrc>=200));
+    const Real normal_factor = [src_nds]() { // normalize
+      if (!src_nds.Dim()) return (Real)1;
+      Real max_src = src_nds[0], min_src = src_nds[0];
+      for (const auto x : src_nds) {
+        max_src = std::max<Real>(max_src, x);
+        min_src = std::min<Real>(min_src, x);
+      }
+      return 4/(max_src - min_src);
+    }();
     for (Integer j = 0; j < Nsrc; j++) {
       Real w_inv = 1;
       Real src_nds_j(src_nds[j]);
-      for (Integer k =   0; k <    j; k++) w_inv *= src_nds[k] - src_nds_j;
-      for (Integer k = j+1; k < Nsrc; k++) w_inv *= src_nds[k] - src_nds_j;
+      for (Integer k =   0; k <    j; k++) w_inv *= (src_nds[k] - src_nds_j)*normal_factor;
+      for (Integer k = j+1; k < Nsrc; k++) w_inv *= (src_nds[k] - src_nds_j)*normal_factor;
       w[j] = 1/w_inv;
     }
 
@@ -108,10 +117,21 @@ namespace sctl {
     if (df.Dim() != N * dof) df.ReInit(N * dof);
     if (N*dof == 0) return;
 
-    auto dp = [&nds,&N](Real x, Long i) {
+    const Real normal_factor = [nds]() { // normalize
+      if (!nds.Dim()) return (Real)1;
+      Real max_src = nds[0], min_src = nds[0];
+      for (const auto x : nds) {
+        max_src = std::max<Real>(max_src, x);
+        min_src = std::min<Real>(min_src, x);
+      }
+      return 4/(max_src - min_src);
+    }();
+
+    auto dp = [&nds,&N,&normal_factor](Real x, Long i) {
       Real scal = 1;
       for (Long j = 0; j < N; j++) {
         if (i!=j) scal *= (nds[i] - nds[j]);
+        scal *= normal_factor;
       }
       scal = 1/scal;
       Real wt = 0;
@@ -120,6 +140,7 @@ namespace sctl {
         if (k!=i) {
           for (Long j = 0; j < N; j++) {
             if (j!=k && j!=i) wt_ *= (x - nds[j]);
+            wt_ *= normal_factor;
           }
           wt += wt_;
         }
