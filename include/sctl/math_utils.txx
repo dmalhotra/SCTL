@@ -84,7 +84,7 @@ template <class Real> static inline constexpr Real const_e_generic() {
 }
 
 template <class Real> static inline constexpr bool isinf_generic(const Real a) {
-  return (a==2*a);
+  return (a==2*a && a!=0);
 }
 template <class Real> static inline constexpr bool isnan_generic(const Real a) {
   return (a!=a);
