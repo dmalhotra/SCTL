@@ -49,7 +49,7 @@ namespace sctl {
     StaticArray<Real,200> w_buff;
     Vector<Real> w(Nsrc, (Nsrc>=200?NullIterator<Real>():w_buff), (Nsrc>=200));
     const Real normal_factor = [src_nds]() { // normalize
-      if (!src_nds.Dim()) return (Real)1;
+      if (src_nds.Dim() < 2) return (Real)1;
       Real max_src = src_nds[0], min_src = src_nds[0];
       for (const auto x : src_nds) {
         max_src = std::max<Real>(max_src, x);
