@@ -55,7 +55,7 @@ template <class Real> class KrylovPrecond {
      *
      * @param[in,out] x The input vector which is updated by applying the preconditioner.
      */
-    void Apply(Vector<Real>& x) const;
+    void Apply(Vector<Real>& x, const Comm& comm) const;
 
   private:
 

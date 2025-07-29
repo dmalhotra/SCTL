@@ -47,10 +47,10 @@ namespace sctl {
     mat_lst.push_front(Qt);
   }
 
-  template <class Real> void KrylovPrecond<Real>::Apply(Vector<Real>& y) const {
+  template <class Real> void KrylovPrecond<Real>::Apply(Vector<Real>& y, const Comm& comm) const {
     if (N_ != y.Dim()) return;
 
-    Matrix<Real> y_Qt, y_(1, N_, y.begin(), false);
+    Matrix<Real> y_Qt, y_Qt_glb, y_(1, N_, y.begin(), false);
     for (auto it = mat_lst.begin(); it != mat_lst.end(); it++) {
       const auto& Qt = *it;
       it++;
@@ -59,7 +59,14 @@ namespace sctl {
       //y_ += (y_ * Qt) * U;
       y_Qt.ReInit(1, Qt.Dim(1));
       Matrix<Real>::GEMM(y_Qt, y_, Qt);
-      Matrix<Real>::GEMM(y_, y_Qt, U, (Real)1);
+
+      if (comm.Size() > 1) {
+        if (y_Qt_glb.Dim(0) != y_Qt.Dim(0) || y_Qt_glb.Dim(1) != y_Qt.Dim(1)) y_Qt_glb.ReInit(y_Qt.Dim(0), y_Qt.Dim(1));
+        comm.Allreduce(y_Qt.begin(), y_Qt_glb.begin(), y_Qt.Dim(1), CommOp::SUM);
+        Matrix<Real>::GEMM(y_, y_Qt_glb, U, (Real)1);
+      } else {
+        Matrix<Real>::GEMM(y_, y_Qt, U, (Real)1);
+      }
     }
   }
 
@@ -133,7 +140,7 @@ namespace sctl {
     };
     auto arnoldi = [this,N,&Q_row,&Q,&krylov_precond](Vector<Real>& h, Vector<Real>& q, const ParallelOp& A, const Long k) {
       Vector<Real> q_k(N, Q_row(k), krylov_precond?true:false);
-      if (krylov_precond) krylov_precond->Apply(q_k);
+      if (krylov_precond) krylov_precond->Apply(q_k, comm_);
       A(&q, q_k);
 
       for (Long i = 0; i < k+1; i++) { // Modified Gram-Schmidt, keeping the Hessenberg matrix
@@ -205,7 +212,7 @@ namespace sctl {
         x_[i] += beta[j] * Q(j,i);
       }
     }
-    if (krylov_precond) krylov_precond->Apply(x_);
+    if (krylov_precond) krylov_precond->Apply(x_, comm_);
     (*x) += x_;
 
     if (solve_iter) (*solve_iter) = k;
