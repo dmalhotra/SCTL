@@ -235,16 +235,48 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetComm(const Com
   #endif
 }
 
-template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetAccuracy(Integer digits) {
+template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetPeriodicity(Periodicity p, Real period_length) {
+  if (periodicity_ == p && period_length_ == period_length) return;
+  periodicity_ = p;
+  period_length_ = period_length;
+  SCTL_ASSERT(periodicity_ == Periodicity::NONE || period_length_ > 0);
+
   #ifdef SCTL_HAVE_PVFMM
-  if (DIM == 3 && digits != digits_) {
+  if (DIM == 3) {
+    for (auto& it : s2t_map) {
+      it.second.setup_tree = true;
+    }
+  } else {
+    SCTL_ASSERT_MSG(p == Periodicity::NONE, "Periodicity only supported in 3D with PVFMM.");
+  }
+  #else
+  SCTL_ASSERT_MSG(p == Periodicity::NONE, "Periodicity only supported in 3D with PVFMM.");
+  #endif
+}
+
+template <class Real, Integer DIM> Periodicity ParticleFMM<Real,DIM>::GetPeriodicity() const {
+  return periodicity_;
+}
+
+template <class Real, Integer DIM> Real ParticleFMM<Real,DIM>::GetPeriodLength() const {
+  return period_length_;
+}
+
+template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetAccuracy(Integer digits) {
+  if (digits_ == digits) return;
+  digits_ = digits;
+
+  #ifdef SCTL_HAVE_PVFMM
+  if (DIM == 3) {
     for (auto& it : s2t_map) {
       it.second.setup_ker = true;
-      it.second.setup_tree = true;
     }
   }
   #endif
-  digits_ = digits;
+}
+
+template <class Real, Integer DIM> Integer ParticleFMM<Real,DIM>::GetAccuracy() const {
+  return digits_;
 }
 
 template <class Real, Integer DIM> template <class KerM2M, class KerM2L, class KerL2L> void ParticleFMM<Real,DIM>::SetKernels(const KerM2M& ker_m2m, const KerM2L& ker_m2l, const KerL2L& ker_l2l) {
@@ -284,7 +316,6 @@ template <class Real, Integer DIM> template <class KerM2M, class KerM2L, class K
     fmm_ker.pvfmm_ker_l2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerL2L>::template Eval<Real>>(ker_l2l.Name().c_str(), DIM, std::pair<int,int>(ker_l2l.SrcDim(), ker_l2l.TrgDim()));
     for (auto& it : s2t_map) {
       it.second.setup_ker = true;
-      it.second.setup_tree = true;
     }
   }
   #endif
@@ -400,7 +431,6 @@ template <class Real, Integer DIM> template <class KerS2T> void ParticleFMM<Real
   }
   data.tree_ptr = nullptr;
   data.setup_ker = true;
-  data.setup_tree = true;
   #endif
 }
 
@@ -795,7 +825,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
 
   const Long Nt = Xt.Dim() / DIM;
   SCTL_ASSERT(Xt.Dim() == Nt * DIM);
-  { // User EvalDirect for small problems
+  if (periodicity_ == Periodicity::NONE) { // Use EvalDirect for small problems or with periodicity
     StaticArray<Long,2> cnt{Nt,0};
     comm_.Allreduce<Long>(cnt+0, cnt+1, 1, CommOp::SUM);
     if (cnt[1] < 40000) return EvalDirect(U, trg_name);
@@ -839,6 +869,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
         pvfmm_ker_s2t.k_s2l = &src_data.pvfmm_ker_s2l;
         fmm_ctx.Initialize(mult_order, comm_.GetMPI_Comm(), &pvfmm_ker_s2t);
         s2t_data.setup_ker = false;
+        s2t_data.setup_tree = true;
       }
 
       std::vector<Real> sl_den_, dl_den_;
@@ -860,8 +891,14 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
             bbox_offset[k] = (bbox[k*2+0] + bbox[k*2+1])/2;
             bbox_len = std::max<Real>(bbox_len, bbox[k*2+1]-bbox[k*2+0]);
           }
+          if (periodicity_ != Periodicity::NONE) {
+            SCTL_ASSERT(bbox_len <= period_length_);
+            bbox_len = period_length_;
+          } else {
+            bbox_len *= (Real)1.1; // extra 5% padding so that points are not on boundary
+          }
 
-          bbox_scale = 1/(bbox_len*(Real)1.1); // extra 5% padding so that points are not on boundary
+          bbox_scale = 1/bbox_len;
           for (Integer k = 0; k < DIM; k++) {
             bbox_offset[k] -= 1/(2*bbox_scale);
           }
@@ -892,7 +929,15 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
         if (tree_ptr) delete tree_ptr;
         sl_den_.resize(NorDim ? 0 : Ns*SrcDim);
         dl_den_.resize(NorDim ? Ns*(SrcDim+NorDim) : 0);
-        tree_ptr = PtFMM_CreateTree(sl_coord_, sl_den_, dl_coord_, dl_den_, trg_coord_, comm_.GetMPI_Comm(), max_pts, pvfmm::FreeSpace);
+        pvfmm::BoundaryType pvfmm_bc;
+        switch (periodicity_) {
+          case Periodicity::NONE: pvfmm_bc = pvfmm::BoundaryType::FreeSpace; break;
+          case Periodicity::X:    pvfmm_bc = pvfmm::BoundaryType::PX;   break;
+          case Periodicity::XY:   pvfmm_bc = pvfmm::BoundaryType::PXY;  break;
+          case Periodicity::XYZ:  pvfmm_bc = pvfmm::BoundaryType::PXYZ; break;
+          default: SCTL_ASSERT_MSG(false, "Periodicity type not supported by PVFMM.");
+        }
+        tree_ptr = PtFMM_CreateTree(sl_coord_, sl_den_, dl_coord_, dl_den_, trg_coord_, comm_.GetMPI_Comm(), max_pts, pvfmm_bc);
         tree_ptr->SetupFMM(&fmm_ctx);
         s2t_data.setup_tree = false;
       } else {

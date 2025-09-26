@@ -47,12 +47,12 @@ typedef int64_t Long;  // problem size
 
 #define SCTL_WARN(msg)                                         \
   do {                                                          \
-    std::cerr << "\n\033[1;31mWarning:\033[0m " << msg << '\n'; \
+    std::cerr << "\n\033[1;31mSCTL Warning:\033[0m " << msg << '\n'; \
   } while (0)
 
 #define SCTL_ERROR(msg)                                      \
   do {                                                        \
-    std::cerr << "\n\033[1;31mError:\033[0m " << msg << '\n'; \
+    std::cerr << "\n\033[1;31mSCTL Error:\033[0m " << msg << '\n'; \
     abort();                                                  \
   } while (0)
 
@@ -64,7 +64,7 @@ typedef int64_t Long;  // problem size
 #define SCTL_ASSERT(cond)                                                                                      \
   do {                                                                                                          \
     if (!(cond)) {                                                                                              \
-      fprintf(stderr, "\n%s:%d: %s: Assertion `%s' failed.\n", __FILE__, __LINE__, __PRETTY_FUNCTION__, #cond); \
+      fprintf(stderr, "\n%s:%d: %s: SCTL Assertion `%s' failed.\n", __FILE__, __LINE__, __PRETTY_FUNCTION__, #cond); \
       abort();                                                                                                  \
     }                                                                                                           \
   } while (0)

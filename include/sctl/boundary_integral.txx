@@ -514,12 +514,34 @@ namespace sctl {
     for (const auto& name : elem_lst_name) DeleteElemList(name);
   }
 
+  template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetPeriodicity(Periodicity p, Real L) {
+    if (p == periodicity_ && L == period_length_) return;
+    setup_far_flag = false;
+    setup_near_flag = false;
+    periodicity_ = p;
+    period_length_ = L;
+    fmm.SetPeriodicity(p, L);
+  }
+
+  template <class Real, class Kernel> Periodicity BoundaryIntegralOp<Real,Kernel>::GetPeriodicity() const {
+    return periodicity_;
+  }
+
+  template <class Real, class Kernel> Real BoundaryIntegralOp<Real,Kernel>::GetPeriodLength() const {
+    return period_length_;
+  }
+
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetAccuracy(Real tol) {
+    if (tol == tol_) return;
     setup_far_flag = false;
     setup_self_flag = false;
     setup_near_flag = false;
     tol_ = tol;
     fmm.SetAccuracy((Integer)(log(tol_)/log(0.1))+1);
+  }
+
+  template <class Real, class Kernel> Real BoundaryIntegralOp<Real,Kernel>::GetAccuracy() const {
+    return tol_;
   }
 
   template <class Real, class Kernel> template <class KerS2M, class KerS2L, class KerS2T, class KerM2M, class KerM2L, class KerM2T, class KerL2L, class KerL2T> void BoundaryIntegralOp<Real,Kernel>::SetFMMKer(const KerS2M& k_s2m, const KerS2L& k_s2l, const KerS2T& k_s2t, const KerM2M& k_m2m, const KerM2L& k_m2l, const KerM2T& k_m2t, const KerL2L& k_l2l, const KerL2T& k_l2t) {
@@ -830,8 +852,66 @@ namespace sctl {
 
     Profile::Tic("SetupNear", &comm_, true, 6);
     Profile::Tic("BuildNearLst", &comm_, true, 7);
-    BuildNearList<Real,COORD_DIM>(Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt, near_trg_dsp, Xtrg, Xn_trg, X_far, dist_far, elem_nds_cnt_far, elem_nds_dsp_far, comm_);
+    if (periodicity_ == Periodicity::NONE) {
+      BuildNearList<Real,COORD_DIM>(Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt, near_trg_dsp, Xtrg, Xn_trg, X_far, dist_far, elem_nds_cnt_far, elem_nds_dsp_far, comm_);
+    } else {
+      // TODO: build periodicity into BuildNearList, will be more efficient than duplicating targets
+      const Long Ncopy = [this](){
+        Long n = 1;
+        for (Long k = 0; k < COORD_DIM; k++) n *= ( static_cast<uint8_t>(periodicity_)&(1<<k) ? 3 : 1);
+        return n;
+      }();
+
+      Matrix<Real> periodic_shift(Ncopy, COORD_DIM);
+      { // Set periodic_shift
+        Long count = 1;
+        periodic_shift = 0;
+        for (Long k = 0; k < COORD_DIM; k++) {
+          if (static_cast<uint8_t>(periodicity_)&(1<<k)) {
+            for (Long i = count; i < 3*count; i++) {
+              for (Long kk = 0; kk < k; kk++) periodic_shift[i][kk] = periodic_shift[i%count][kk];
+              periodic_shift(i, k) = (i/count==2 ? -1 : i/count);
+            }
+            count *= 3;
+          }
+        }
+        periodic_shift *= period_length_;
+      }
+
+      const Long Ntrg = Xtrg.Dim()/COORD_DIM;
+      Vector<Real> Xtrg_(Ntrg*COORD_DIM*Ncopy), Xn_trg_;
+      for (Long i = 0; i < Ntrg; i++) { // Set Xtrg_
+        for (Long j = 0; j < Ncopy; j++) {
+          for (Long k = 0; k < COORD_DIM; k++) {
+            Xtrg_[(i*Ncopy+j)*COORD_DIM+k] = Xtrg[i*COORD_DIM+k] + periodic_shift[j][k];
+          }
+        }
+      }
+      if (Xn_trg.Dim()) { // Set Xn_trg_
+        Xn_trg_.ReInit(Ntrg*COORD_DIM*Ncopy);
+        for (Long i = 0; i < Ntrg; i++) {
+          for (Long j = 0; j < Ncopy; j++) {
+            for (Long k = 0; k < COORD_DIM; k++) {
+              Xn_trg_[(i*Ncopy+j)*COORD_DIM+k] = Xn_trg[i*COORD_DIM+k];
+            }
+          }
+        }
+      }
+
+      Vector<Long> near_trg_cnt_, near_trg_dsp_;
+      BuildNearList<Real,COORD_DIM>(Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt_, near_trg_dsp_, Xtrg_, Xn_trg_, X_far, dist_far, elem_nds_cnt_far, elem_nds_dsp_far, comm_);
+      SCTL_ASSERT(near_trg_cnt_.Dim() == Ntrg*Ncopy);
+
+      near_trg_cnt.ReInit(Ntrg);
+      near_trg_dsp.ReInit(Ntrg);
+      for (Long i = 0; i < Ntrg; i++) {
+        near_trg_cnt[i] = 0;
+        for (Long j = 0; j < Ncopy; j++) near_trg_cnt[i] += near_trg_cnt_[i*Ncopy+j];
+        near_trg_dsp[i] = near_trg_dsp_[i*Ncopy];
+      }
+    }
     Profile::Toc();
+
     { // Set K_near_cnt, K_near_dsp, K_near
       const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
       const Long Nlst = elem_lst_map.size();

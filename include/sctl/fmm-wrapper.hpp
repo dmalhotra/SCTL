@@ -4,6 +4,7 @@
 #include <map>                   // for map
 #include <string>                // for basic_string, string
 #include <utility>               // for pair
+#include <cstdint>               // for uint8_t
 
 #include "sctl/common.hpp"       // for Integer, sctl
 #include "sctl/comm.hpp"         // for Comm
@@ -24,6 +25,18 @@ namespace pvfmm {
 #endif
 
 namespace sctl {
+
+/**
+ * Enum for periodicity in each coordinate direction.
+ */
+enum class Periodicity : uint8_t {
+  NONE = 0,
+  X = 1u << 0,
+  Y = 1u << 1,
+  Z = 1u << 2,
+  XY = X | Y,
+  XYZ = X | Y | Z
+};
 
 /**
  * Evaluate potentials from particle sources using PVFMM when available, otherwise, use direct
@@ -57,11 +70,43 @@ template <class Real, Integer DIM> class ParticleFMM {
     void SetComm(const Comm& comm);
 
     /**
+     * Get communicator.
+     */
+    Comm GetComm() const;
+
+    /**
+     * Set periodicity.
+     *
+     * @param[in] periodicity periodicity type.
+     *
+     * @param[in] period_length length of the periodic box in each dimension.
+     * Must be positive if periodicity is not NONE.
+     *
+     * @remark Periodicity only supported in 3D and with PVFMM.
+     */
+    void SetPeriodicity(Periodicity periodicity, Real period_length = 0);
+
+    /**
+     * Get periodicity.
+     */
+    Periodicity GetPeriodicity() const;
+
+    /**
+     * Get period length.
+     */
+    Real GetPeriodLength() const;
+
+    /**
      * Set FMM accuracy
      *
      * @param[in] digits number of digits of accuracy.
      */
     void SetAccuracy(Integer digits);
+
+    /**
+     * Get FMM accuracy
+     */
+    Integer GetAccuracy() const;
 
     /**
      * Set kernel objects for KIFMM.
@@ -187,6 +232,8 @@ template <class Real, Integer DIM> class ParticleFMM {
 
     Comm comm_;
     Integer digits_;
+    Periodicity periodicity_ = Periodicity::NONE;
+    Real period_length_ = 0;
 };
 
 }  // end namespace

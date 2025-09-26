@@ -249,11 +249,36 @@ namespace sctl {
       ~BoundaryIntegralOp();
 
       /**
-       * Specify quadrature accuracy tolerance.
+       * Set periodicity.
        *
-       * @param[in] tol quadrature accuracy.
+       * @param[in] periodicity periodicity type (NONE, X, XY, XYZ).
+       *
+       * @param[in] period_length length of the periodic box in each dimension.
+       * Must be positive if periodicity is not NONE.
+       *
+       * @remark Periodicity only supported in 3D and with PVFMM.
+       */
+      void SetPeriodicity(Periodicity periodicity, Real period_length = 0);
+
+      /**
+       * Get periodicity.
+       */
+      Periodicity GetPeriodicity() const;
+
+      /**
+       * Get period length.
+       */
+      Real GetPeriodLength() const;
+
+      /**
+       * Specify quadrature accuracy tolerance.
        */
       void SetAccuracy(Real tol);
+
+      /**
+       * Get quadrature accuracy tolerance.
+       */
+      Real GetAccuracy() const;
 
       /**
        * Set kernel functions for FMM translation operators (@see pvfmm.org).
@@ -375,6 +400,8 @@ namespace sctl {
       std::map<std::string,ElemLstData> elem_data_map;
       Vector<Real> Xt; // User specified position of target points
       Vector<Real> Xnt; // User specified normal at target points
+      Periodicity periodicity_ = Periodicity::NONE;
+      Real period_length_ = 0;
       Real tol_;
       Kernel ker_;
       bool trg_normal_dot_prod_;
