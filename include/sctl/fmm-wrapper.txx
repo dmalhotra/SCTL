@@ -892,7 +892,6 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
             bbox_len = std::max<Real>(bbox_len, bbox[k*2+1]-bbox[k*2+0]);
           }
           if (periodicity_ != Periodicity::NONE) {
-            SCTL_ASSERT(bbox_len <= period_length_);
             bbox_len = period_length_;
           } else {
             bbox_len *= (Real)1.1; // extra 5% padding so that points are not on boundary
@@ -915,15 +914,33 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
         std::vector<Real> sl_coord_, dl_coord_, trg_coord_(Nt*DIM);
         auto& src_coord = (NorDim ? dl_coord_ : sl_coord_);
         src_coord.resize(Ns * DIM);
+        Integer periodic_wrap_max_k = -1;
         for (Long i = 0; i < Ns; i++) {
           for (Integer k = 0; k < DIM; k++) {
-            src_coord[i*DIM+k] = (Xs[i*DIM+k] - bbox_offset[k]) * bbox_scale;
+            Real x = (Xs[i*DIM+k] - bbox_offset[k]) * bbox_scale;
+            if (x >= 1 || x <  0) {
+              x -= sctl::floor(x);
+              periodic_wrap_max_k = std::max<Integer>(periodic_wrap_max_k, k);
+            }
+            src_coord[i*DIM+k] = x;
           }
         }
         for (Long i = 0; i < Nt; i++) {
           for (Integer k = 0; k < DIM; k++) {
-            trg_coord_[i*DIM+k] = (Xt[i*DIM+k] - bbox_offset[k]) * bbox_scale;
+            Real x = (Xt[i*DIM+k] - bbox_offset[k]) * bbox_scale;
+            if (x >= 1 || x <  0) {
+              x -= sctl::floor(x);
+              periodic_wrap_max_k = std::max<Integer>(periodic_wrap_max_k, k);
+            }
+            trg_coord_[i*DIM+k] = x;
           }
+        }
+        switch (periodicity_) { // Check if points are within periodic box
+          case Periodicity::NONE: SCTL_ASSERT(periodic_wrap_max_k < 0); break;
+          case Periodicity::X:    SCTL_ASSERT(periodic_wrap_max_k < 1); break;
+          case Periodicity::XY:   SCTL_ASSERT(periodic_wrap_max_k < 2); break;
+          case Periodicity::XYZ:  /* do nothing */ break;
+          default: SCTL_ASSERT_MSG(false, "Periodicity type not supported by PVFMM.");
         }
 
         if (tree_ptr) delete tree_ptr;
