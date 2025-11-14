@@ -279,7 +279,7 @@ template <class Real, Integer DIM> Integer ParticleFMM<Real,DIM>::GetAccuracy() 
   return digits_;
 }
 
-template <class Real, Integer DIM> template <class KerM2M, class KerM2L, class KerL2L> void ParticleFMM<Real,DIM>::SetKernels(const KerM2M& ker_m2m, const KerM2L& ker_m2l, const KerL2L& ker_l2l) {
+template <class Real, Integer DIM> template <class KerM2M, class KerM2L, class KerL2L> void ParticleFMM<Real,DIM>::SetKernels(const KerM2M& ker_m2m, const KerM2L& ker_m2l, const KerL2L& ker_l2l, const VolPotenT m2l_vol_poten) {
   if (fmm_ker.ker_m2m != NullIterator<char>()) fmm_ker.delete_ker_m2m(fmm_ker.ker_m2m);
   if (fmm_ker.ker_m2l != NullIterator<char>()) fmm_ker.delete_ker_m2l(fmm_ker.ker_m2l);
   if (fmm_ker.ker_l2l != NullIterator<char>()) fmm_ker.delete_ker_l2l(fmm_ker.ker_l2l);
@@ -312,7 +312,20 @@ template <class Real, Integer DIM> template <class KerM2M, class KerM2L, class K
   #ifdef SCTL_HAVE_PVFMM
   if (DIM == 3) {
     fmm_ker.pvfmm_ker_m2m = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2M>::template Eval<Real>>(ker_m2m.Name().c_str(), DIM, std::pair<int,int>(ker_m2m.SrcDim(), ker_m2m.TrgDim()));
-    fmm_ker.pvfmm_ker_m2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2L>::template Eval<Real>>(ker_m2l.Name().c_str(), DIM, std::pair<int,int>(ker_m2l.SrcDim(), ker_m2l.TrgDim()));
+    if (m2l_vol_poten) {
+      const auto SrcDim = ker_m2l.SrcDim();
+      const auto TrgDim = ker_m2l.TrgDim();
+      const auto vol_poten = [m2l_vol_poten,SrcDim,TrgDim](const Real* coord, int n, Real* u) {
+        const Vector<Real> coord_(n*DIM, (Iterator<Real>)Ptr2ConstItr<Real>(coord, n*DIM), false);
+        Matrix<Real> u_(SrcDim, n*TrgDim, Ptr2Itr<Real>(u, SrcDim*n*TrgDim), false);
+        m2l_vol_poten(u_, coord_);
+        SCTL_ASSERT(u_.Dim(0) == SrcDim);
+        SCTL_ASSERT(u_.Dim(1) == n*TrgDim);
+      };
+      fmm_ker.pvfmm_ker_m2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2L>::template Eval<Real>>(ker_m2l.Name().c_str(), DIM, std::pair<int,int>(ker_m2l.SrcDim(), ker_m2l.TrgDim()), nullptr, nullptr,nullptr, nullptr,nullptr,nullptr, nullptr, nullptr, vol_poten);
+    } else {
+      fmm_ker.pvfmm_ker_m2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2L>::template Eval<Real>>(ker_m2l.Name().c_str(), DIM, std::pair<int,int>(ker_m2l.SrcDim(), ker_m2l.TrgDim()));
+    }
     fmm_ker.pvfmm_ker_l2l = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerL2L>::template Eval<Real>>(ker_l2l.Name().c_str(), DIM, std::pair<int,int>(ker_l2l.SrcDim(), ker_l2l.TrgDim()));
     for (auto& it : s2t_map) {
       it.second.setup_ker = true;
@@ -363,7 +376,7 @@ template <class Real, Integer DIM> template <class KerS2M, class KerS2L> void Pa
   }
   #endif
 }
-template <class Real, Integer DIM> template <class KerM2T, class KerL2T> void ParticleFMM<Real,DIM>::AddTrg(const std::string& name, const KerM2T& ker_m2t, const KerL2T& ker_l2t) {
+template <class Real, Integer DIM> template <class KerM2T, class KerL2T> void ParticleFMM<Real,DIM>::AddTrg(const std::string& name, const KerM2T& ker_m2t, const KerL2T& ker_l2t, const VolPotenT m2t_vol_poten) {
   SCTL_ASSERT_MSG(trg_map.find(name) == trg_map.end(), "Target name already exists.");
   trg_map[name] = TrgData();
   auto& data = trg_map[name];
@@ -389,7 +402,20 @@ template <class Real, Integer DIM> template <class KerM2T, class KerL2T> void Pa
 
   #ifdef SCTL_HAVE_PVFMM
   if (DIM == 3) {
-    data.pvfmm_ker_m2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2T>::template Eval<Real>>(ker_m2t.Name().c_str(), DIM, std::pair<int,int>(ker_m2t.SrcDim(), ker_m2t.TrgDim()));
+    if (m2t_vol_poten) {
+      const auto SrcDim = ker_m2t.SrcDim();
+      const auto TrgDim = ker_m2t.TrgDim();
+      const auto vol_poten = [m2t_vol_poten,SrcDim,TrgDim](const Real* coord, int n, Real* u) {
+        const Vector<Real> coord_(n*DIM, (Iterator<Real>)Ptr2ConstItr<Real>(coord, n*DIM), false);
+        Matrix<Real> u_(SrcDim, n*TrgDim, Ptr2Itr<Real>(u, SrcDim*n*TrgDim), false);
+        m2t_vol_poten(u_, coord_);
+        SCTL_ASSERT(u_.Dim(0) == SrcDim);
+        SCTL_ASSERT(u_.Dim(1) == n*TrgDim);
+      };
+      data.pvfmm_ker_m2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2T>::template Eval<Real>>(ker_m2t.Name().c_str(), DIM, std::pair<int,int>(ker_m2t.SrcDim(), ker_m2t.TrgDim()), nullptr, nullptr,nullptr, nullptr,nullptr,nullptr, nullptr, nullptr, vol_poten);
+    } else {
+      data.pvfmm_ker_m2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerM2T>::template Eval<Real>>(ker_m2t.Name().c_str(), DIM, std::pair<int,int>(ker_m2t.SrcDim(), ker_m2t.TrgDim()));
+    }
     data.pvfmm_ker_l2t = pvfmm::BuildKernel<Real, PVFMMKernelFn<KerL2T>::template Eval<Real>>(ker_l2t.Name().c_str(), DIM, std::pair<int,int>(ker_l2t.SrcDim(), ker_l2t.TrgDim()));
     for (auto& it : s2t_map) {
       if (it.first.second != name) continue;

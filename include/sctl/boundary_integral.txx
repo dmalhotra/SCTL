@@ -544,13 +544,13 @@ namespace sctl {
     return tol_;
   }
 
-  template <class Real, class Kernel> template <class KerS2M, class KerS2L, class KerS2T, class KerM2M, class KerM2L, class KerM2T, class KerL2L, class KerL2T> void BoundaryIntegralOp<Real,Kernel>::SetFMMKer(const KerS2M& k_s2m, const KerS2L& k_s2l, const KerS2T& k_s2t, const KerM2M& k_m2m, const KerM2L& k_m2l, const KerM2T& k_m2t, const KerL2L& k_l2l, const KerL2T& k_l2t) {
+  template <class Real, class Kernel> template <class KerS2M, class KerS2L, class KerS2T, class KerM2M, class KerM2L, class KerM2T, class KerL2L, class KerL2T> void BoundaryIntegralOp<Real,Kernel>::SetFMMKer(const KerS2M& k_s2m, const KerS2L& k_s2l, const KerS2T& k_s2t, const KerM2M& k_m2m, const KerM2L& k_m2l, const KerM2T& k_m2t, const KerL2L& k_l2l, const KerL2T& k_l2t, const typename ParticleFMM<Real,COORD_DIM>::VolPotenT m2l_vol_poten, const typename ParticleFMM<Real,COORD_DIM>::VolPotenT m2t_vol_poten) {
     fmm.DeleteSrc("Src");
     fmm.DeleteTrg("Trg");
 
-    fmm.SetKernels(k_m2m, k_m2l, k_l2l);
+    fmm.SetKernels(k_m2m, k_m2l, k_l2l, m2l_vol_poten);
     fmm.AddSrc("Src", k_s2m, k_s2l);
-    fmm.AddTrg("Trg", k_m2t, k_l2t);
+    fmm.AddTrg("Trg", k_m2t, k_l2t, (m2t_vol_poten ? m2t_vol_poten : m2l_vol_poten));
     fmm.SetKernelS2T("Src", "Trg", k_s2t);
   }
 

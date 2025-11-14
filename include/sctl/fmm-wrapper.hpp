@@ -10,6 +10,7 @@
 #include "sctl/comm.hpp"         // for Comm
 #include "sctl/comm.txx"         // for Comm::Self
 #include "sctl/vector.hpp"       // for Vector
+#include "sctl/matrix.hpp"       // for Matrix
 
 #ifdef SCTL_HAVE_PVFMM
 namespace pvfmm {
@@ -45,6 +46,13 @@ enum class Periodicity : uint8_t {
  */
 template <class Real, Integer DIM> class ParticleFMM {
   public:
+
+    /**
+     * Type for volume potential evaluator function.
+     * @param[out] u computed potential of size (SrcDim x N*TrgDim).
+     * @param[in] coord coordinate vector of size (N*DIM).
+     */
+    using VolPotenT = std::function<void(Matrix<Real>& u, const Vector<Real>& coord)>;
 
     // Delete copy constructor and assignment operator
     ParticleFMM(const ParticleFMM&) = delete;
@@ -114,8 +122,9 @@ template <class Real, Integer DIM> class ParticleFMM {
      * @param[in] ker_m2m kernel for multipole-to-multipole translations.
      * @param[in] ker_m2l kernel for multipole-to-local translations.
      * @param[in] ker_l2l kernel for local-to-local translations.
+     * @param[in] m2l_vol_poten_fn evaluator for analytical potential from a uniform volume source density.
      */
-    template <class KerM2M, class KerM2L, class KerL2L> void SetKernels(const KerM2M& ker_m2m, const KerM2L& ker_m2l, const KerL2L& ker_l2l);
+    template <class KerM2M, class KerM2L, class KerL2L> void SetKernels(const KerM2M& ker_m2m, const KerM2L& ker_m2l, const KerL2L& ker_l2l, const VolPotenT m2l_vol_poten = {});
 
     /**
      * Add a source type.
@@ -132,8 +141,9 @@ template <class Real, Integer DIM> class ParticleFMM {
      * @param[in] name name for the target type.
      * @param[in] ker_m2t kernel for multipole-to-target translations.
      * @param[in] ker_l2t kernel for local-to-target translations.
+     * @param[in] m2t_vol_poten_fn evaluator for analytical potential from a uniform volume source density.
      */
-    template <class KerM2T, class KerL2T> void AddTrg(const std::string& name, const KerM2T& ker_m2t, const KerL2T& ker_l2t);
+    template <class KerM2T, class KerL2T> void AddTrg(const std::string& name, const KerM2T& ker_m2t, const KerL2T& ker_l2t, const VolPotenT m2t_vol_poten = {});
 
     /**
      * Set kernel function for source-to-target interactions.

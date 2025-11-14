@@ -291,8 +291,10 @@ namespace sctl {
        * @param[in] k_m2t multipole-to-target kernel.
        * @param[in] k_l2l local-to-local kernel.
        * @param[in] k_l2t local-to-target kernel.
+       * @param[in] m2l_vol_poten_fn evaluator for analytical potential from a uniform volume source density (for k_m2l).
+       * @param[in] m2t_vol_poten_fn evaluator for analytical potential from a uniform volume source density (for k_m2t).
        */
-      template <class KerS2M, class KerS2L, class KerS2T, class KerM2M, class KerM2L, class KerM2T, class KerL2L, class KerL2T> void SetFMMKer(const KerS2M& k_s2m, const KerS2L& k_s2l, const KerS2T& k_s2t, const KerM2M& k_m2m, const KerM2L& k_m2l, const KerM2T& k_m2t, const KerL2L& k_l2l, const KerL2T& k_l2t);
+      template <class KerS2M, class KerS2L, class KerS2T, class KerM2M, class KerM2L, class KerM2T, class KerL2L, class KerL2T> void SetFMMKer(const KerS2M& k_s2m, const KerS2L& k_s2l, const KerS2T& k_s2t, const KerM2M& k_m2m, const KerM2L& k_m2l, const KerM2T& k_m2t, const KerL2L& k_l2l, const KerL2T& k_l2t, const typename ParticleFMM<Real,COORD_DIM>::VolPotenT m2l_vol_poten = {}, const typename ParticleFMM<Real,COORD_DIM>::VolPotenT m2t_vol_poten = {});
 
       /**
        * Add an element-list.
