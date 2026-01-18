@@ -918,6 +918,10 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
             bbox_len = std::max<Real>(bbox_len, bbox[k*2+1]-bbox[k*2+0]);
           }
           if (periodicity_ != Periodicity::NONE) {
+            // Do not offset in periodic directions
+            if (periodicity_==Periodicity::XYZ || periodicity_==Periodicity::XY || periodicity_==Periodicity::X) bbox_offset[0] = 0;
+            if (periodicity_==Periodicity::XYZ || periodicity_==Periodicity::XY) bbox_offset[1] = 0;
+            if (periodicity_==Periodicity::XYZ) bbox_offset[2] = 0;
             bbox_len = period_length_;
           } else {
             bbox_len *= (Real)1.1; // extra 5% padding so that points are not on boundary
@@ -944,7 +948,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
         for (Long i = 0; i < Ns; i++) {
           for (Integer k = 0; k < DIM; k++) {
             Real x = (Xs[i*DIM+k] - bbox_offset[k]) * bbox_scale;
-            if (x >= 1 || x <  0) {
+            if (x >= 1 || x <  0) { // Periodic wrap around for source points
               x -= sctl::floor(x);
               periodic_wrap_max_k = std::max<Integer>(periodic_wrap_max_k, k);
             }
@@ -954,7 +958,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
         for (Long i = 0; i < Nt; i++) {
           for (Integer k = 0; k < DIM; k++) {
             Real x = (Xt[i*DIM+k] - bbox_offset[k]) * bbox_scale;
-            if (x >= 1 || x <  0) {
+            if (x >= 1 || x <  0) { // Periodic wrap around for target points
               x -= sctl::floor(x);
               periodic_wrap_max_k = std::max<Integer>(periodic_wrap_max_k, k);
             }
