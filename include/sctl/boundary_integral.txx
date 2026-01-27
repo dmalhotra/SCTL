@@ -870,7 +870,7 @@ namespace sctl {
           if (static_cast<uint8_t>(periodicity_)&(1<<k)) {
             for (Long i = count; i < 3*count; i++) {
               for (Long kk = 0; kk < k; kk++) periodic_shift[i][kk] = periodic_shift[i%count][kk];
-              periodic_shift(i, k) = (i/count==2 ? -1 : i/count);
+              periodic_shift[i][k] = (i/count==2 ? -1 : i/count);
             }
             count *= 3;
           }
@@ -906,8 +906,10 @@ namespace sctl {
       near_trg_dsp.ReInit(Ntrg);
       for (Long i = 0; i < Ntrg; i++) {
         near_trg_cnt[i] = 0;
-        for (Long j = 0; j < Ncopy; j++) near_trg_cnt[i] += near_trg_cnt_[i*Ncopy+j];
-        near_trg_dsp[i] = near_trg_dsp_[i*Ncopy];
+        for (Long j = 0; j < Ncopy; j++) {
+          if (!near_trg_cnt[i]) near_trg_dsp[i] = near_trg_dsp_[i*Ncopy+j]; // set dsp of first non-zero count
+          near_trg_cnt[i] += near_trg_cnt_[i*Ncopy+j];
+        }
       }
     }
     Profile::Toc();
