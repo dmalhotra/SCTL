@@ -498,7 +498,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::DeleteS2T(const s
 }
 
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetSrcCoord(const std::string& name, const Vector<Real>& src_coord, const Vector<Real>& src_normal) {
-  SCTL_ASSERT_MSG(src_map.find(name) != src_map.end(), "Target name does not exist.");
+  SCTL_ASSERT_MSG(src_map.find(name) != src_map.end(), "Source name does not exist.");
   auto& data = src_map[name];
   data.X = src_coord;
   data.Xn = src_normal;
@@ -514,7 +514,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetSrcCoord(const
   #endif
 }
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetSrcDensity(const std::string& name, const Vector<Real>& src_density) {
-  SCTL_ASSERT_MSG(src_map.find(name) != src_map.end(), "Target name does not exist.");
+  SCTL_ASSERT_MSG(src_map.find(name) != src_map.end(), "Source name does not exist.");
   auto& data = src_map[name];
   data.F = src_density;
 }
@@ -744,7 +744,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(c
       if (dot11>max_val*eps && dot22>max_val*eps) {
         Real s = dot12 / dot11;
         M_scal[0][i] = log<Real>(s) / log<Real>(2.0);
-        Real err = sqrt<Real>((Real)0.5*(dot22/dot11)/(s*s) - (Real)0.5);
+        Real err = sctl::fabs<Real>(1 - dot12*dot12/dot11/dot22);
         if (err > eps_) {
           scale_invar = false;
           M_scal[0][i] = 0.0;
