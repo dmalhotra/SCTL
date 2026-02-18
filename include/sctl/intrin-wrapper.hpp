@@ -738,7 +738,7 @@ namespace sctl { // Generic
     static constexpr Real coeff11 = 1/(((Real)2)*3*4*5*6*7*8*9*10*11);
     static constexpr Real coeff12 = 1/(((Real)2)*3*4*5*6*7*8*9*10*11*12);
     static constexpr Real coeff13 = 1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13); // err = 2^-57.2759
-    static constexpr Real x0 = -(Real)0.693147180559945309417232121458l; // -ln(2)
+    static constexpr Real x0 = -const_ln2<Real>();
     static constexpr Real invx0 = -1 / x0; // 1/ln(2)
 
     VData x_(round_real2real_intrin(mul_intrin(x, set1_intrin<VData>(invx0))));

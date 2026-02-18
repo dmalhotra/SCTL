@@ -40,7 +40,7 @@ template <class Real> Real atoreal(const char* str);
  * @tparam Real The template type.
  * @return constexpr Real The value of pi.
  */
-template <class Real> inline constexpr Real const_pi() { return (Real)3.1415926535897932384626433832795028841L; }
+template <class Real> inline constexpr Real const_pi() { return (Real)14488038916154245684ull/(Real)(1ull<<62) + (Real)7089564414062235240ull/(Real)(1ull<<62)/(Real)(1ull<<63); }
 
 /**
  * Returns the mathematical constant e.
@@ -48,7 +48,15 @@ template <class Real> inline constexpr Real const_pi() { return (Real)3.14159265
  * @tparam Real The template type.
  * @return constexpr Real The value of e.
  */
-template <class Real> inline constexpr Real const_e() { return (Real)2.7182818284590452353602874713526624977L; }
+template <class Real> inline constexpr Real const_e() { return (Real)12535862302449814170ull/(Real)(1ull<<62) + (Real)6336049073805500024ull/(Real)(1ull<<62)/(Real)(1ull<<63); }
+
+/**
+ * Returns the natural logarithm of 2.
+ *
+ * @tparam Real The template type.
+ * @return constexpr Real The value of ln(2).
+ */
+template <class Real> inline constexpr Real const_ln2() { return (Real)6393154322601327829ull/(Real)(1ull<<63) + (Real)8248603190132260267ull/(Real)(1ull<<63)/(Real)(1ull<<63); }
 
 template <class Real> inline bool isinf(const Real a) { return std::isinf(a); }
 template <class Real> inline bool isnan(const Real a) { return std::isnan(a); }
