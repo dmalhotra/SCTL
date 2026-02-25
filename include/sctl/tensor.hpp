@@ -179,7 +179,7 @@ namespace sctl {
        * @param ii Indices of the element.
        * @return Copy of the element.
        */
-      template <class ...PackedLong> ValueType operator()(PackedLong... ii) const;
+      template <class ...PackedLong> const ValueType& operator()(PackedLong... ii) const;
 
       /**
        * Returns a new tensor obtained by rotating the dimensions of the current tensor to the left.

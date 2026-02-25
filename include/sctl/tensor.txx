@@ -167,7 +167,7 @@ namespace sctl {
     return begin()[offset<0>(ii...)];
   }
 
-  template <class ValueType, bool own_data, Long... Args> template <class ...PackedLong> ValueType Tensor<ValueType, own_data, Args...>::operator()(PackedLong... ii) const {
+  template <class ValueType, bool own_data, Long... Args> template <class ...PackedLong> const ValueType& Tensor<ValueType, own_data, Args...>::operator()(PackedLong... ii) const {
     return begin()[offset<0>(ii...)];
   }
 
