@@ -154,7 +154,7 @@ class Comm {
   void Wait(void* req_ptr) const;
 
   /**
-   * Broadcast to all processed in the communicator.
+   * Broadcast to all processes in the communicator.
    *
    * @tparam Type type of the data.
    *
