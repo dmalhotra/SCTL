@@ -1,6 +1,7 @@
 #ifndef _SCTL_PROFILE_HPP_
 #define _SCTL_PROFILE_HPP_
 
+#include <map>               // for table output
 #include <string>            // for basic_string, string
 #include <vector>            // for vector
 
@@ -44,6 +45,7 @@ enum class ProfileCounter: Long {
  */
 class Profile {
   static constexpr Long Nfield = (Long)ProfileCounter::FIELD_COUNT;
+  using ProfileTable = std::vector<std::pair<std::string, std::map<std::string, double>>>;
 
   template <typename E> class ExprWrapper;
   using ProfExpr = ExprWrapper<void>;
@@ -159,6 +161,15 @@ class Profile {
    * operation on the output of e1.
    */
   static ProfExpr CommReduceExpr(const ProfExpr& e1, const CommOp comm_op);
+
+  /**
+   * Generate a flat table of the profiling output.
+   *
+   * @param[in] comm_ pointer to Comm object (can be nullptr).
+   *
+   * @param[in] field_names_in list of fields to display in the profiling output. Empty will use the default. See GetProfExpr for more info.
+   */
+  static ProfileTable get_table(const std::vector<std::string>& field_names_in, const Comm* comm_);
 
   /**
    * Display the profiling output.

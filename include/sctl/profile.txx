@@ -359,6 +359,72 @@ namespace sctl {
     return orig_val;
   }
 
+  inline Profile::ProfileTable Profile::get_table(const std::vector<std::string>& field_names_in, const Comm* comm_) {
+    ProfileTable result;
+    const std::vector<std::string> field_names_default = [&comm_]() -> std::vector<std::string> {
+      if (!comm_ || comm_->Size()==1) return {"t", "f", "f/s", "m"};
+      else return {"t_avg", "t_max", "f_avg", "f_max", "f/s_min", "f/s_avg", "f/s_total", "m_max"};
+    }();
+
+    const std::vector<std::string> &field_names = field_names_in.empty() ? field_names_default : field_names_in;
+
+    std::vector<std::string> name;
+    std::vector<Long> depth;
+    std::vector<double> counter;
+    {
+      std::stack<Long> idx_stack;
+      ProfileData& prof = GetProfData();
+      for (Long i = prof.e_log.size()-1; i >= 0; i--) {
+        if (prof.e_log[i]==0) {
+          idx_stack.push(i);
+        } else {
+        if (!idx_stack.size()) break;
+          const Long i0 = idx_stack.top();
+          name.push_back(prof.n_log[i]);
+          depth.push_back(idx_stack.size()-1);
+          for (Long k = 0; k < Nfield; k++) {
+            counter.push_back(prof.counter_log[i0*Nfield+k] - prof.counter_log[i*Nfield+k]);
+          }
+          idx_stack.pop();
+        }
+      }
+    }
+    if (name.empty()) return result;
+
+    const Long Nrow = name.size();
+    std::reverse(name.begin(), name.end());
+    std::reverse(depth.begin(), depth.end());
+    for (Long i = 0; i < Nrow/2; i++) {
+      for (Long k = 0; k < Nfield; k++) {
+        std::swap(counter[i*Nfield+k], counter[(Nrow-1-i)*Nfield+k]);
+      }
+    }
+
+    std::map<std::string, std::vector<double>> columns;
+    for (const auto& f : field_names) {
+      columns[f] = GetProfField(f)(counter, comm_);
+    }
+
+    std::vector<std::string> path_stack;
+    for (Long i = 0; i < Nrow; i++) {
+        path_stack.resize(depth[i]);
+        path_stack.push_back(name[i]);
+
+        std::string path;
+        for (Long j = 0; j < (Long)path_stack.size(); j++) {
+            if (j) path += "/";
+            path += path_stack[j];
+        }
+
+        std::map<std::string, double> row;
+        for (const auto& f : field_names) {
+            row[f] = columns[f][i];
+        }
+        result.emplace_back(path, std::move(row));
+    }
+    return result;
+  }
+
   inline void Profile::print(const Comm* comm_, std::vector<std::string> field_lst, std::vector<std::string> format_lst) {
     if (!field_lst.size()) {
       if (!comm_ || comm_->Size()==1) field_lst = {"t", "f", "f/s", "m"};
