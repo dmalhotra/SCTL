@@ -3,6 +3,7 @@
 
 #include <functional>         // for less
 #include <map>                // for multimap
+#include <vector>             // for vector
 
 #include "sctl/common.hpp"    // for Long, Integer, sctl
 #include "sctl/iterator.hpp"  // for ConstIterator, Iterator
@@ -288,7 +289,7 @@ class Comm {
    *
    * @param[in] op scan operation.
    */
-  template <class Type> void Scan(ConstIterator<Type> sbuf, Iterator<Type> rbuf, int count, CommOp op) const;
+  template <class Type> void Scan(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, CommOp op) const;
 
   /**
    * Perform a weighted partitioning of a vector.
@@ -422,7 +423,14 @@ class Comm {
    */
   void Init(const MPI_Comm mpi_comm);
 
-  Vector<MPI_Request>* NewReq() const;
+  template <class Type> static MPI_Op GetMPIOp(CommOp op);
+  static void RegisterDatatype(MPI_Datatype datatype);
+  static void RegisterOp(MPI_Op op);
+  static void FreeRegisteredHandles();
+  static std::vector<MPI_Datatype>& DatatypeRegistry();
+  static std::vector<MPI_Op>& OpRegistry();
+
+  Vector<MPI_Request>& NewReq(Long request_count) const;
 
   void DelReq(Vector<MPI_Request>* req_ptr) const;
 
@@ -430,6 +438,7 @@ class Comm {
 
   int mpi_rank_;
   int mpi_size_;
+  int mpi_tag_ub_;
   MPI_Comm mpi_comm_;
 
   template <class Type> class CommDatatype;

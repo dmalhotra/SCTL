@@ -58,6 +58,7 @@ INCDIR = ./include
 
 TARGET_BIN = \
        $(BINDIR)/test \
+       $(BINDIR)/test-comm \
        $(BINDIR)/test-fft \
        $(BINDIR)/test-fmm \
        $(BINDIR)/test-gmres \
