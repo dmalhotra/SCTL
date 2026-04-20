@@ -1041,6 +1041,7 @@ namespace sctl {
       Long end = (N1 ? (dsp[N1-1]+cnt_[N1-1])*dof : start);
       data.ReInit(end-start, data_.begin()+start, true);
       comm.ScatterReverse(data, scatter_idx_, Nlocal_ * dof);
+      SCTL_ASSERT(data.Dim() == Nlocal_ * dof);
     }
   }
 

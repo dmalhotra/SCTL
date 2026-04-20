@@ -1359,8 +1359,13 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     SCTL_ASSERT(loc_size[0] % data_dim == 0);
     send_size = loc_size[0] / data_dim;
 
-    if (glb_size[0] != glb_size[2] * data_dim) {
-      recv_size = (((rank + 1) * (glb_size[0] / data_dim)) / npes) - ((rank * (glb_size[0] / data_dim)) / npes);
+    if (glb_size[2] == 0) { // partition uniformly
+      recv_size = (((rank + 1) * glb_size[1]) / npes) - ((rank * glb_size[1]) / npes);
+    } else {
+      SCTL_ASSERT(glb_size[2] % glb_size[1] == 0);
+      const Long dof = glb_size[2] / glb_size[1];
+      SCTL_ASSERT(loc_size[2] % dof == 0);
+      recv_size = loc_size[2] / dof;
     }
   }
 
