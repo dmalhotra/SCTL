@@ -242,10 +242,10 @@ namespace sctl {
           const Integer d0 = m0.Depth();
           if (d0 > 0) parent_mid_set[d0-1].insert(m0.Ancestor(d0-1));
         }
-        for (Integer d = Morton<DIM>::MAX_DEPTH; d > 0; d--) {
+        for (Integer d = Morton<DIM>::MAX_DEPTH; d >= 0; d--) {
           for (const auto& m : parent_mid_set[d]) {
             m.NbrList(nlst, d, periodic);
-            for (const auto& nbr : nlst) if (nbr.Depth() >= 0) parent_mid_set[d-1].insert(nbr.Ancestor(d-1));
+            for (const auto& nbr : nlst) if (nbr.Depth() > 0) parent_mid_set[d-1].insert(nbr.Ancestor(d-1));
             const Long idx = std::lower_bound(mins.begin(), mins.end(), m) - mins.begin();
             if (idx>=np || !m.isAncestor(mins[idx])) // exclude ancestors of all mins to reduce communication
               parent_mid.PushBack(m);
