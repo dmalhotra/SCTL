@@ -129,23 +129,26 @@ namespace sctl {
     this->howmany_ = howmany_;
     plan.M.resize(0);
 
-    if (this->fft_type == FFT_Type::R2C) {
-      plan.M.push_back(fft_r2c(dim_vec[rank - 1]));
-      for (Long i = rank - 2; i >= 0; i--) plan.M.push_back(fft_c2c(dim_vec[i]));
-    } else if (this->fft_type == FFT_Type::C2C) {
-      for (Long i = rank - 1; i >= 0; i--) plan.M.push_back(fft_c2c(dim_vec[i]));
-    } else if (this->fft_type == FFT_Type::C2C_INV) {
-      for (Long i = rank - 1; i >= 0; i--) plan.M.push_back(fft_c2c(dim_vec[i]).Transpose());
-    } else if (this->fft_type == FFT_Type::C2R) {
-      for (Long i = rank - 2; i >= 0; i--) plan.M.push_back(fft_c2c(dim_vec[i]).Transpose());
-      plan.M.push_back(fft_c2r(dim_vec[rank - 1]));
-    }
+    Long N0 = 0, N1 = 0;
+    if (rank) {
+      if (this->fft_type == FFT_Type::R2C) {
+        plan.M.push_back(fft_r2c(dim_vec[rank - 1]));
+        for (Long i = rank - 2; i >= 0; i--) plan.M.push_back(fft_c2c(dim_vec[i]));
+      } else if (this->fft_type == FFT_Type::C2C) {
+        for (Long i = rank - 1; i >= 0; i--) plan.M.push_back(fft_c2c(dim_vec[i]));
+      } else if (this->fft_type == FFT_Type::C2C_INV) {
+        for (Long i = rank - 1; i >= 0; i--) plan.M.push_back(fft_c2c(dim_vec[i]).Transpose());
+      } else if (this->fft_type == FFT_Type::C2R) {
+        for (Long i = rank - 2; i >= 0; i--) plan.M.push_back(fft_c2c(dim_vec[i]).Transpose());
+        plan.M.push_back(fft_c2r(dim_vec[rank - 1]));
+      }
 
-    Long N0 = this->howmany_ * 2;
-    Long N1 = this->howmany_ * 2;
-    for (const auto& M : plan.M) {
-      N0 = N0 * M.Dim(0) / 2;
-      N1 = N1 * M.Dim(1) / 2;
+      N0 = this->howmany_ * 2;
+      N1 = this->howmany_ * 2;
+      for (const auto& M : plan.M) {
+        N0 = N0 * M.Dim(0) / 2;
+        N1 = N1 * M.Dim(1) / 2;
+      }
     }
     this->dim[0] = N0;
     this->dim[1] = N1;
@@ -236,7 +239,7 @@ namespace sctl {
     }
 
     Long N0 = 0, N1 = 0;
-    { // Set N0, N1
+    if (rank) { // Set N0, N1
       Long N = this->howmany_;
       for (auto ni : dim_vec) N *= ni;
       if (fft_type == FFT_Type::R2C) {
@@ -255,9 +258,9 @@ namespace sctl {
         N0 = 0;
         N1 = 0;
       }
-      dim[0] = N0;
-      dim[1] = N1;
     }
+    dim[0] = N0;
+    dim[1] = N1;
     if (!N0 || !N1) return;
     Vector<double> in(N0), out(N1);
 
@@ -347,8 +350,8 @@ namespace sctl {
       dim_vec_[i] = dim_vec[i];
     }
 
-    Long N0, N1;
-    { // Set N0, N1
+    Long N0 = 0, N1 = 0;
+    if (rank) { // Set N0, N1
       Long N = this->howmany_;
       for (auto ni : dim_vec) N *= ni;
       if (fft_type == FFT_Type::R2C) {
@@ -367,9 +370,9 @@ namespace sctl {
         N0 = 0;
         N1 = 0;
       }
-      dim[0] = N0;
-      dim[1] = N1;
     }
+    dim[0] = N0;
+    dim[1] = N1;
     if (!N0 || !N1) return;
     Vector<float> in (N0), out(N1);
 
@@ -458,8 +461,8 @@ namespace sctl {
     Vector<int> dim_vec_(rank);
     for (Integer i = 0; i < rank; i++) dim_vec_[i] = dim_vec[i];
 
-    Long N0, N1;
-    { // Set N0, N1
+    Long N0 = 0, N1 = 0;
+    if (rank) { // Set N0, N1
       Long N = this->howmany_;
       for (auto ni : dim_vec) N *= ni;
       if (fft_type == FFT_Type::R2C) {
@@ -478,9 +481,9 @@ namespace sctl {
         N0 = 0;
         N1 = 0;
       }
-      dim[0] = N0;
-      dim[1] = N1;
     }
+    dim[0] = N0;
+    dim[1] = N1;
     if (!N0 || !N1) return;
     Vector<long double> in (N0), out(N1);
 

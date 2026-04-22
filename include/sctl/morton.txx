@@ -136,6 +136,7 @@ namespace sctl {
   }
 
   template <Integer DIM> void Morton<DIM>::Children(Vector<Morton> &nlst) const {
+    SCTL_ASSERT(depth < MAX_DEPTH);
     static const Integer cnt = (1UL << DIM);
     if (nlst.Dim() != cnt) nlst.ReInit(cnt);
 
@@ -200,16 +201,18 @@ namespace sctl {
     // Intersecting -1
     // Touching 0
 
-    Long offset0 = 1 << (MAX_DEPTH - depth - 1);
-    Long offset1 = 1 << (MAX_DEPTH - I.depth - 1);
+    const UINT_T offset0 = ((UINT_T)1) << (MAX_DEPTH - depth);
+    const UINT_T offset1 = ((UINT_T)1) << (MAX_DEPTH - I.depth);
 
-    Long diff = 0;
+    UINT_T diff = 0;
     for (Integer i = 0; i < DIM; i++) {
-      diff = std::max<Long>(diff, abs(((Long)x[i] + offset0) - ((Long)I.x[i] + offset1)));
+      const UINT_T Xc0 = ((UINT_T)x[i]*2 + offset0);
+      const UINT_T Xc1 = ((UINT_T)I.x[i]*2 + offset1);
+      diff = std::max<UINT_T>(diff, (Xc0 > Xc1) ? (Xc0 - Xc1) : (Xc1 - Xc0));
     }
     if (diff < offset0 + offset1) return -1;
     Integer max_depth = std::max(depth, I.depth);
-    diff = (diff - offset0 - offset1) >> (MAX_DEPTH - max_depth);
+    diff = (diff - offset0 - offset1) >> (MAX_DEPTH+1 - max_depth);
     return diff;
   }
 

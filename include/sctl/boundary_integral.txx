@@ -136,7 +136,7 @@ namespace sctl {
           }
         }
         comm_.Allreduce<Real>(Ptr2ConstItr<Real>(&len_local,1), Ptr2Itr<Real>(&BBlen,1), 1, CommOp::MAX);
-        BBlen_inv = 1/BBlen;
+        BBlen_inv = (BBlen > 0 ? 1/BBlen : (Real)1);
       }
       { // Expand bounding-box so that no points are on the boundary
         for (Long i = 0; i < COORD_DIM; i++) {
@@ -183,9 +183,9 @@ namespace sctl {
       comm_.HyperQuickSort(src_nodes, src_nodes0, comp_node_mid);
       comm_.HyperQuickSort(trg_nodes, trg_nodes0, comp_node_mid);
 
-      SCTL_ASSERT(src_nodes0.Dim());
-      StaticArray<NodeData,1> splitter_node{src_nodes0[0]};
-      if (!rank) splitter_node[0].mid = Morton<COORD_DIM>();
+      StaticArray<NodeData,1> splitter_node;
+      SCTL_ASSERT(!rank || src_nodes0.Dim());
+      splitter_node[0].mid = (rank ? src_nodes0[0].mid : Morton<COORD_DIM>());
       while (splitter_node[0].mid.Depth()) { // find coarsest ancestor with same coordinates
         auto& mid = splitter_node[0].mid;
         const Long depth = mid.Depth();
@@ -819,7 +819,7 @@ namespace sctl {
         elem_dsp[i] = (i==0?0:elem_dsp[i-1]+elem_cnt[i-1]);
       }
 
-      if (K_self.Dim() != elem_dsp[Nlst-1]+elem_cnt[Nlst-1]) K_self.ReInit(elem_dsp[Nlst-1]+elem_cnt[Nlst-1]);
+      if (K_self.Dim() != (Nlst ? elem_dsp[Nlst-1]+elem_cnt[Nlst-1] : 0)) K_self.ReInit((Nlst ? elem_dsp[Nlst-1]+elem_cnt[Nlst-1] : 0));
       // TODO: also pre-allocate elements of K_self from a memory pool.
       for (Long i = 0; i < Nlst; i++) {
         const auto& name = elem_lst_name[i];
