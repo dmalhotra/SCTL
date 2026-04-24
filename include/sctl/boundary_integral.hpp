@@ -317,6 +317,47 @@ namespace sctl {
       template <class ElemLstType> const ElemLstType& GetElemList(const std::string& name = std::to_string(typeid(ElemLstType).hash_code())) const;
 
       /**
+       * Extract the section of the input vector V corresponding to the nodes of the element with index elem_idx in the
+       * element-list with the given name and return it in Ve. If elem_idx is -1, then extract the section corresponding
+       * to all elements in the list. The vector Ve does not own the data and is just a view into the input vector V.
+       * Ve must not be resized and modifying Ve will modify the corresponding entries in V.
+       *
+       * @param[out] Ve the output vector containing the section of the input vector V corresponding to the nodes of the
+       * element with index elem_idx in the element-list with the given name.
+       *
+       * @param[in] V the input vector corresponding to data at discretization nodes for all element lists.
+       *
+       * @param[in] name name of the element-list to return.
+       *
+       * @param[in] elem_idx the index of the element for which the section of the input vector V is to be extracted. If
+       * elem_idx is -1, then the section corresponding to all elements in the list is extracted.
+       */
+      void GetElemSubArray(Vector<Real>& Ve, Vector<Real>& V, const std::string& name, const Long elem_idx) const;
+
+      /**
+       * Extract the section of the input vector V corresponding to the nodes of the element with index elem_idx in the
+       * element-list with the given name and return it in Ve. If elem_idx is -1, then extract the section corresponding
+       * to all elements in the list. The vector Ve does not own the data and is just a view into the input vector V. Ve
+       * must not be resized and modifying Ve will modify the corresponding entries in V.
+       *
+       * @tparam[in] ElemLstType the type of the element-list for which the section of the input vector V is to be
+       * extracted.
+       *
+       * @param[out] Ve the output vector containing the section of the input vector V corresponding to the nodes of the
+       * element with index elem_idx in the element-list identified by the template parameter ElemLstType.
+       *
+       * @param[in] V the input vector corresponding to data at discretization nodes for all element lists.
+       *
+       * @param[in] elem_idx the index of the element for which the section of the input vector V is to be extracted. If
+       * elem_idx is -1, then the section corresponding to all elements in the list is extracted.
+       *
+       * @note the element-list is identified by the template parameter ElemLstType, so the name of the element-list is
+       * not needed as an argument. The name of the element-list is generated from the typeid hash of the ElemLstType,
+       * so there can only be one element-list for each ElemLstType.
+       */
+      template <class ElemLstType> void GetElemSubArray(Vector<Real>& Ve, Vector<Real>& V, const Long elem_idx = -1) const;
+
+      /**
        * Delete an element-list.
        *
        * @param[in] name name of the element-list to return.
@@ -435,7 +476,7 @@ namespace sctl {
       mutable Vector<Real> K_near;
 
       mutable bool setup_self_flag;
-      mutable Vector<Matrix<Real>> K_self;
+      mutable Vector<Matrix<Real>> K_self; // self-interaction matrix for each element (size=Nelem)
   };
 
 }

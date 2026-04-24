@@ -571,6 +571,38 @@ namespace sctl {
     return *dynamic_cast<const ElemLstType*>(elem_lst_map.at(name));
   }
 
+  template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::GetElemSubArray(Vector<Real>& Ve, Vector<Real>& V, const std::string& name, const Long elem_idx) const {
+    SetupBasic();
+    SCTL_ASSERT_MSG(elem_lst_map.find(name) != elem_lst_map.end(), "Element list does not exist.");
+
+    const Long elem_lst_idx = std::lower_bound(elem_lst_name.begin(), elem_lst_name.end(), name) - elem_lst_name.begin();
+    SCTL_ASSERT(elem_lst_idx < elem_lst_name.Dim() && elem_lst_name[elem_lst_idx] == name);
+
+    const Long elem0 = elem_lst_dsp[elem_lst_idx];
+    const Long elem_cnt = elem_lst_cnt[elem_lst_idx];
+    SCTL_ASSERT_MSG(elem_idx >= -1 && elem_idx < elem_cnt, "Invalid element index.");
+
+    const Long elem_beg = (elem_idx < 0 ? elem0 : elem0 + elem_idx);
+    const Long elem_end = (elem_idx < 0 ? elem0 + elem_cnt : elem0 + elem_idx + 1);
+    const Long nds_beg = (elem_cnt ? elem_nds_dsp[elem_beg] : 0);
+    const Long nds_end = (elem_cnt ? elem_nds_dsp[elem_end-1] + elem_nds_cnt[elem_end-1] : nds_beg);
+
+    const Long Nnds = (elem_nds_cnt.Dim() ? elem_nds_dsp.end()[-1] + elem_nds_cnt.end()[-1] : 0);
+    SCTL_ASSERT_MSG(!Nnds || V.Dim() % Nnds == 0, "Input vector size is not compatible with element nodes.");
+    const Long dof = (Nnds ? V.Dim() / Nnds : 0);
+    const Long subdim = (nds_end - nds_beg) * dof;
+
+    if (!subdim) {
+      Ve.ReInit(0);
+    } else {
+      Ve.ReInit(subdim, V.begin() + nds_beg*dof, false);
+    }
+  }
+
+  template <class Real, class Kernel> template <class ElemLstType> void BoundaryIntegralOp<Real,Kernel>::GetElemSubArray(Vector<Real>& Ve, Vector<Real>& V, const Long elem_idx) const {
+    GetElemSubArray(Ve, V, std::to_string(typeid(ElemLstType).hash_code()), elem_idx);
+  }
+
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::DeleteElemList(const std::string& name) {
     //SCTL_ASSERT_MSG(elem_lst_map.find(name) != elem_lst_map.end(), "Element list does not exist.");
     if (elem_lst_map.find(name) == elem_lst_map.end()) return;
@@ -815,7 +847,7 @@ namespace sctl {
       for (Long i = 0; i < Nlst; i++) {
         const auto& name = elem_lst_name[i];
         const auto& elem_lst = elem_lst_map.at(name);
-        elem_cnt[i] = (elem_lst->MatrixFree() ? 0 : elem_lst->Size());
+        elem_cnt[i] = elem_lst->Size();
         elem_dsp[i] = (i==0?0:elem_dsp[i-1]+elem_cnt[i-1]);
       }
 
@@ -825,8 +857,11 @@ namespace sctl {
         const auto& name = elem_lst_name[i];
         const auto& elem_lst = elem_lst_map.at(name);
         const auto& elem_data = elem_data_map.at(name);
-        if (elem_lst->MatrixFree()) continue;
         Vector<Matrix<Real>> K_self_(elem_cnt[i], K_self.begin() + elem_dsp[i], false);
+        if (elem_lst->MatrixFree()) {
+          for (auto& K : K_self_) K.ReInit(0,0);
+          continue;
+        }
         elem_data.SelfInterac(K_self_, ker_, tol_, trg_normal_dot_prod_, elem_lst);
       }
     }
@@ -1201,7 +1236,7 @@ namespace sctl {
           if (src_dof==0 || trg_dof == 0) continue;
           const Vector<Real> F_(src_dof, (Iterator<Real>)F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
           Vector<Real> U_(trg_dof, U_near.begin() + near_elem_dsp[elem_idx]*KDIM1_, false);
-          elem_data.EvalNearInterac(U_, F_, Xt, Xn, ker_, tol_, elem_idx, elem_lst);
+          elem_data.EvalNearInterac(U_, F_, Xt, Xn, ker_, tol_, j, elem_lst);
         }
       }
     }
