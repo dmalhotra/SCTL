@@ -93,17 +93,17 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& 
 }
 
 template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::FMMKernels {
-  Iterator<char> ker_m2m, ker_m2l, ker_l2l;
-  Integer dim_mul_ch, dim_mul_eq;
-  Integer dim_loc_ch, dim_loc_eq;
+  Iterator<char> ker_m2m = NullIterator<char>(), ker_m2l = NullIterator<char>(), ker_l2l = NullIterator<char>();
+  Integer dim_mul_ch = 0, dim_mul_eq = 0;
+  Integer dim_loc_ch = 0, dim_loc_eq = 0;
 
-  void (*ker_m2m_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
-  void (*ker_m2l_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
-  void (*ker_l2l_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
+  void (*ker_m2m_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) = nullptr;
+  void (*ker_m2l_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) = nullptr;
+  void (*ker_l2l_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) = nullptr;
 
-  void (*delete_ker_m2m)(Iterator<char> ker);
-  void (*delete_ker_m2l)(Iterator<char> ker);
-  void (*delete_ker_l2l)(Iterator<char> ker);
+  void (*delete_ker_m2m)(Iterator<char> ker) = nullptr;
+  void (*delete_ker_m2l)(Iterator<char> ker) = nullptr;
+  void (*delete_ker_l2l)(Iterator<char> ker) = nullptr;
 
   #ifdef SCTL_HAVE_PVFMM
   pvfmm::Kernel<Real> pvfmm_ker_m2m;
@@ -113,14 +113,14 @@ template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::FMMKernels {
 };
 template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::SrcData {
   Vector<Real> X, Xn, F;
-  Iterator<char> ker_s2m, ker_s2l;
-  Integer dim_src, dim_mul_ch, dim_loc_ch, dim_normal;
+  Iterator<char> ker_s2m = NullIterator<char>(), ker_s2l = NullIterator<char>();
+  Integer dim_src = 0, dim_mul_ch = 0, dim_loc_ch = 0, dim_normal = 0;
 
-  void (*ker_s2m_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
-  void (*ker_s2l_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
+  void (*ker_s2m_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) = nullptr;
+  void (*ker_s2l_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) = nullptr;
 
-  void (*delete_ker_s2m)(Iterator<char> ker);
-  void (*delete_ker_s2l)(Iterator<char> ker);
+  void (*delete_ker_s2m)(Iterator<char> ker) = nullptr;
+  void (*delete_ker_s2l)(Iterator<char> ker) = nullptr;
 
   #ifdef SCTL_HAVE_PVFMM
   pvfmm::Kernel<Real> pvfmm_ker_s2m;
@@ -130,14 +130,14 @@ template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::SrcData {
 };
 template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::TrgData {
   Vector<Real> X, U;
-  Iterator<char> ker_m2t, ker_l2t;
-  Integer dim_mul_eq, dim_loc_eq, dim_trg;
+  Iterator<char> ker_m2t = NullIterator<char>(), ker_l2t = NullIterator<char>();
+  Integer dim_mul_eq = 0, dim_loc_eq = 0, dim_trg = 0;
 
-  void (*ker_m2t_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
-  void (*ker_l2t_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
+  void (*ker_m2t_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) = nullptr;
+  void (*ker_l2t_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) = nullptr;
 
-  void (*delete_ker_m2t)(Iterator<char> ker);
-  void (*delete_ker_l2t)(Iterator<char> ker);
+  void (*delete_ker_m2t)(Iterator<char> ker) = nullptr;
+  void (*delete_ker_l2t)(Iterator<char> ker) = nullptr;
 
   #ifdef SCTL_HAVE_PVFMM
   pvfmm::Kernel<Real> pvfmm_ker_m2t;
@@ -146,24 +146,24 @@ template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::TrgData {
   #endif
 };
 template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::S2TData {
-  Iterator<char> ker_s2t;
-  Integer dim_src, dim_trg, dim_normal;
+  Iterator<char> ker_s2t = NullIterator<char>();
+  Integer dim_src = 0, dim_trg = 0, dim_normal = 0;
 
-  void (*ker_s2t_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
-  void (*ker_s2t_eval_omp)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
+  void (*ker_s2t_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) = nullptr;
+  void (*ker_s2t_eval_omp)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) = nullptr;
 
-  void (*delete_ker_s2t)(Iterator<char> ker);
+  void (*delete_ker_s2t)(Iterator<char> ker) = nullptr;
 
   #ifdef SCTL_HAVE_PVFMM
-  mutable Real bbox_scale;
+  mutable Real bbox_scale = 0;
   mutable StaticArray<Real,DIM> bbox_offset;
   mutable Vector<Real> src_scal_exp, trg_scal_exp;
   mutable Vector<Real> src_scal, trg_scal;
   mutable pvfmm::Kernel<Real> pvfmm_ker_s2t;
-  mutable pvfmm::PtFMM_Tree<Real>* tree_ptr;
+  mutable pvfmm::PtFMM_Tree<Real>* tree_ptr = nullptr;
   mutable pvfmm::PtFMM<Real> fmm_ctx;
-  mutable bool setup_tree;
-  mutable bool setup_ker;
+  mutable bool setup_tree = false;
+  mutable bool setup_ker = false;
   #endif
 };
 
