@@ -480,7 +480,7 @@ namespace sctl {
 
 
   template <class Real> template <class Kernel> void ElementListBase<Real>::SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self) {
-    if (M_lst.Dim() != 0) M_lst.ReInit(0);
+    for (auto& M : M_lst) if (M.Dim(0) != 0 || M.Dim(1) != 0) M.ReInit(0,0);
   }
 
   template <class Real> template <class Kernel> void ElementListBase<Real>::NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
@@ -1210,7 +1210,11 @@ namespace sctl {
     for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) { // Compute near-interactions from precomputed operator matrix
       const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
       const Long trg_dof = near_elem_cnt[elem_idx]*KDIM1_;
-      if (src_dof==0 || trg_dof == 0 || K_near_cnt[elem_idx] == 0) continue;
+      if (src_dof==0 || trg_dof == 0 || K_near_cnt[elem_idx] == 0) {
+        Matrix<Real> U_(1, trg_dof, U_near.begin() + near_elem_dsp[elem_idx]*KDIM1_, false);
+        U_ = 0;
+        continue;
+      }
       SCTL_ASSERT(src_dof * trg_dof == K_near_cnt[elem_idx]*KDIM0*KDIM1_);
       const Matrix<Real> K_near_(src_dof, trg_dof, K_near.begin() + K_near_dsp[elem_idx]*KDIM0*KDIM1_, false);
       const Matrix<Real> F_(1, src_dof, (Iterator<Real>)F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
@@ -1222,7 +1226,6 @@ namespace sctl {
       const auto& name = elem_lst_name[i];
       const auto& elem_lst = elem_lst_map.at(name);
       const auto& elem_data = elem_data_map.at(name);
-      if (!elem_lst->MatrixFree()) continue;
       #pragma omp parallel for if(elem_lst_cnt[i]>4*omp_get_max_threads()) schedule(dynamic)
       for (Long j = 0; j < elem_lst_cnt[i]; j++) {
         const Long elem_idx = elem_lst_dsp[i]+j;

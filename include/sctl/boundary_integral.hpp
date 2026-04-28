@@ -19,7 +19,7 @@ namespace sctl {
    * Given N target points and K elements (each made of a set of source nodes with given radius that describes its near
    * region), return vectors containing the set of near targets (coordinates and normals) for each element.
    *
-   * @param[in] Xtrg vector of length N*DIM, containing the target coordinates in AoS order {x1,y1,z1,..., xn,,yn,zn}.
+   * @param[in] Xtrg vector of length N*COORD_DIM, containing the target coordinates in AoS order {x1,y1,z1,..., xn,yn,zn}.
    *
    * @param[in] Xn_trg vector of target normals in AoS order (can be empty).
    *
@@ -36,7 +36,7 @@ namespace sctl {
    *
    * @param[out] Xtrg_near vector containing the target coordinates near each element (in AoS order).
    *
-   * @param[out] Xn_trg_near vector containing the target coordinates near each element (in AoS order).
+   * @param[out] Xn_trg_near vector containing the normal vector at each target near each element (in AoS order).
    *
    * @param[out] near_elem_cnt vector of length K, containing the number of near target points (in Xtrg_near) for each
    * element.
@@ -144,7 +144,10 @@ namespace sctl {
       virtual void FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) const;
 
       /**
-       * Compute self-interaction operator for each element.
+       * Compute self-interaction operator matrix for each element.
+       *
+       * @note this function must not be implemented if EvalNearInterac() is implemented and handles
+       * singular interactions.
        *
        * @param[out] M_lst the vector of all self-interaction matrices
        * (in row-major format).
@@ -160,14 +163,18 @@ namespace sctl {
       template <class Kernel> static void SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self);
 
       /**
-       * Compute near-interaction operator for a given element-idx and each target.
+       * Compute near-interaction operator matrix for a given element-idx and each target. This does
+       * not include on-surface singular interactions, which should be handled by SelfInterac().
+       *
+       * @note this function must not be implemented if EvalNearInterac() is implemented and handles
+       * near-singular interactions.
        *
        * @param[out] M the near-interaction matrix (in row-major format).
        *
-       * @param[in] Xt the position of the target points in array-of-structure
+       * @param[in] Xt the position of the target points in array-of-struct
        * order: {x_1, y_1, z_1, x_2, ..., x_n, y_n, z_n}
        *
-       * @param[in] normal_trg the normal at the target points in array-of-structure
+       * @param[in] normal_trg the normal at the target points in array-of-struct
        * order: {nx_1, ny_1, nz_1, nx_2, ..., nx_n, ny_n, nz_n}
        *
        * @param[in] ker the kernel object.
@@ -181,18 +188,25 @@ namespace sctl {
       template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
 
       /**
-       * Evaluate near (including self) interactions on the fly. This is an optional
-       * alternative to constructing the operator matrix using SelfInterac and
-       * NearInterac.
+       * Evaluate singular and/or near-singular interactions on the fly. This is an alternative to
+       * constructing the operator matrix using SelfInterac() and NearInterac().
        *
-       * @param[out] u the output potential.
+       * @note SelfInterac() and/or NearInterac() must not be implemented if this function this
+       * function handles singular and/or near-singular interactions.
        *
-       * @param[out] f the input density at surface discretization nodes.
+       * @note If MatrixFree() is defined to return true, then subtracting the incorrect near-field
+       * contribution must also be handled by this function.
        *
-       * @param[in] Xt the position of the target points in array-of-structure
+       * @param[in,out] u the potential vector to which the contribution from singular and/or
+       * near-singular interactions will be added. The data is in array-of-struct format in the
+       * order of the target points.
+       *
+       * @param[in] f the input density at surface discretization nodes in array-of-struct order.
+       *
+       * @param[in] Xt the position of the target points in array-of-struct
        * order: {x_1, y_1, z_1, x_2, ..., x_n, y_n, z_n}
        *
-       * @param[in] normal_trg the normal at the target points in array-of-structure
+       * @param[in] normal_trg the normal at the target points in array-of-struct
        * order: {nx_1, ny_1, nz_1, nx_2, ..., nx_n, ny_n, nz_n}
        *
        * @param[in] ker the kernel object.
@@ -206,8 +220,20 @@ namespace sctl {
       template <class Kernel> static void EvalNearInterac(Vector<Real>& u, const Vector<Real>& f, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
 
       /**
-       * Returns a boolean value indicating whether the near corrections are to be computed in a
-       * matrix-free way. Default value is false (i.e. not matrix-free).
+       * Returns a boolean value indicating whether the local corrections are computed in a
+       * matrix-free way.
+       *
+       * If true, then SelfInterac() and NearInterac() will not be used and the near corrections
+       * must be handled entirely by EvalNearInterac() on the fly. EvalNearInterac() must compute
+       * the correct singular and near-singular interactions and also subtract the incorrect
+       * near-field contribution due to the direct sum in far-field computation.
+       *
+       * If false, the local correction matrix to subtract the incorrect near-field contribution due
+       * to the direct sum in will be constructed. If SelfInterac() and/or NearInterac() are
+       * implemented, then their results will be added to the local correction matrix.
+       * EvalNearInterac() will also be called if implemented and can be used to handle singular
+       * and/or near-singular interactions when SelfInterac() and/or NearInterac() are not
+       * implemented.
        */
       virtual bool MatrixFree() const;
   };
@@ -291,8 +317,8 @@ namespace sctl {
        * @param[in] k_m2t multipole-to-target kernel.
        * @param[in] k_l2l local-to-local kernel.
        * @param[in] k_l2t local-to-target kernel.
-       * @param[in] m2l_vol_poten_fn evaluator for analytical potential from a uniform volume source density (for k_m2l).
-       * @param[in] m2t_vol_poten_fn evaluator for analytical potential from a uniform volume source density (for k_m2t).
+       * @param[in] m2l_vol_poten evaluator for analytical potential from a uniform volume source density (for k_m2l).
+       * @param[in] m2t_vol_poten evaluator for analytical potential from a uniform volume source density (for k_m2t).
        */
       template <class KerS2M, class KerS2L, class KerS2T, class KerM2M, class KerM2L, class KerM2T, class KerL2L, class KerL2T> void SetFMMKer(const KerS2M& k_s2m, const KerS2L& k_s2l, const KerS2T& k_s2t, const KerM2M& k_m2m, const KerM2L& k_m2l, const KerM2T& k_m2t, const KerL2L& k_l2l, const KerL2T& k_l2t, const typename ParticleFMM<Real,COORD_DIM>::VolPotenT m2l_vol_poten = {}, const typename ParticleFMM<Real,COORD_DIM>::VolPotenT m2t_vol_poten = {});
 
@@ -327,7 +353,7 @@ namespace sctl {
        *
        * @param[in] V the input vector corresponding to data at discretization nodes for all element lists.
        *
-       * @param[in] name name of the element-list to return.
+       * @param[in] name name of the element-list.
        *
        * @param[in] elem_idx the index of the element for which the section of the input vector V is to be extracted. If
        * elem_idx is -1, then the section corresponding to all elements in the list is extracted.
@@ -360,7 +386,7 @@ namespace sctl {
       /**
        * Delete an element-list.
        *
-       * @param[in] name name of the element-list to return.
+       * @param[in] name name of the element-list to delete.
        */
       void DeleteElemList(const std::string& name);
 
@@ -380,7 +406,7 @@ namespace sctl {
       /**
        * Set target point normals.
        *
-       * @param[in] Xn_trg the coordinates of target points in array-of-struct
+       * @param[in] Xn_trg the normal vectors at the target points in array-of-struct
        * order: {nx_1, ny_1, nz_1, nx_2, ..., nx_n, ny_n, nz_n}
        */
       void SetTargetNormal(const Vector<Real>& Xn_trg);
@@ -414,15 +440,13 @@ namespace sctl {
 
       /**
        * Scale input vector by sqrt of the area of the element.
-       * TODO: replace by sqrt of surface quadrature weights (not sure if it makes a difference though)
        */
-      void SqrtScaling(Vector<Real>& U) const;
+      void SqrtScaling(Vector<Real>& U) const; // TODO: replace by sqrt of surface quadrature weights (not sure if it makes a difference though)
 
       /**
        * Scale input vector by inv-sqrt of the area of the element.
-       * TODO: replace by inv-sqrt of surface quadrature weights (not sure if it makes a difference though)
        */
-      void InvSqrtScaling(Vector<Real>& U) const;
+      void InvSqrtScaling(Vector<Real>& U) const; // TODO: replace by inv-sqrt of surface quadrature weights (not sure if it makes a difference though)
 
     private:
 
