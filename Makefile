@@ -68,7 +68,8 @@ TARGET_BIN = \
        $(BINDIR)/test-quadrule \
        $(BINDIR)/test-sph-harm \
        $(BINDIR)/test-tensor \
-       $(BINDIR)/test-vec
+       $(BINDIR)/test-vec \
+       $(BINDIR)/test-quad-elem
 
 .PHONY: all test clean
 

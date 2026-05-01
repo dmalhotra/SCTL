@@ -147,13 +147,25 @@ namespace sctl {
       }
       return wt * scal;
     };
-    for (Long k = 0; k < dof; k++) {
+    if (dof == 1) {
       for (Long i = 0; i < N; i++) {
         Real df_ = 0;
         for (Long j = 0; j < N; j++) {
-          df_ += (f[k*N+j]-f[k*N+i]) * dp(nds[i],j);
+          df_ += (f[j]-f[i]) * dp(nds[i],j);
         }
-        df[k*N+i] = df_;
+        df[i] = df_;
+      }
+    } else {
+      Vector<Real> wts(N);
+      for (Long i = 0; i < N; i++) {
+        for (Long j = 0; j < N; j++) wts[j] = dp(nds[i],j);
+        for (Long k = 0; k < dof; k++) {
+          Real df_ = 0;
+          for (Long j = 0; j < N; j++) {
+            df_ += (f[k*N+j]-f[k*N+i]) * wts[j];
+          }
+          df[k*N+i] = df_;
+        }
       }
     }
   }
