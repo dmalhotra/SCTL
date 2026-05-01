@@ -98,6 +98,7 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-sph-harm
 	./$(BINDIR)/test-tensor
 	./$(BINDIR)/test-vec
+	./$(BINDIR)/test-quad-elem
 
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*
