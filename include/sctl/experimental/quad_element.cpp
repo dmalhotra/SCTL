@@ -95,7 +95,7 @@ namespace sctl {
 
     constexpr Integer Nbuff = 1024;
     StaticArray<ValueType,Nbuff> tmp_buf;
-    Matrix<ValueType> tmp(order, Nv, (order * Nv > Nbuff ? nullptr : tmp_buf), order * Nv > Nbuff);
+    Matrix<ValueType> tmp(order, Nv, (order * Nv > Nbuff ? NullIterator<ValueType>() : tmp_buf), order * Nv > Nbuff);
 
     for (Long k = 0; k < ncomp; k++) {
       const Matrix<ValueType> in_(order, order, (Iterator<ValueType>)in.begin() + k * order * order, false);
