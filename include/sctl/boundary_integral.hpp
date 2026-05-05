@@ -275,6 +275,11 @@ namespace sctl {
       ~BoundaryIntegralOp();
 
       /**
+       * Get the MPI communicator.
+       */
+      const Comm& GetComm() const;
+
+      /**
        * Set periodicity.
        *
        * @param[in] periodicity periodicity type (NONE, X, XY, XYZ).

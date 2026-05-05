@@ -514,6 +514,10 @@ namespace sctl {
     for (const auto& name : elem_lst_name) DeleteElemList(name);
   }
 
+  template <class Real, class Kernel> const Comm& BoundaryIntegralOp<Real,Kernel>::GetComm() const {
+    return comm_;
+  }
+
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetPeriodicity(Periodicity p, Real L) {
     if (p == periodicity_ && L == period_length_) return;
     setup_far_flag = false;
