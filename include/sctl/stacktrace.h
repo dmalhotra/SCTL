@@ -127,7 +127,7 @@ inline int SetSigHandler() {
 
 
 #ifdef SCTL_SIG_HANDLER
-int sgh = sctl::SetSigHandler(); // Set signal handler
+inline int sgh = sctl::SetSigHandler(); // Set signal handler
 #endif
 
 }  // end namespace
