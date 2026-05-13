@@ -54,10 +54,10 @@ void TestIsendIrecv(const Comm& comm) {
     FillSequence(send, rank * 100000 + test_id * 1000);
     for (Long i = 0; i < count; i++) recv[i] = -1;
 
-    void* recv_req = comm.Irecv(recv.begin(), recv.Dim(), src, 100 + test_id * 16);
-    void* send_req = comm.Isend(send.begin(), send.Dim(), dest, 100 + test_id * 16);
-    comm.Wait(send_req);
-    comm.Wait(recv_req);
+    auto recv_req = comm.Irecv(recv.begin(), recv.Dim(), src, 100 + test_id * 16);
+    auto send_req = comm.Isend(send.begin(), send.Dim(), dest, 100 + test_id * 16);
+    comm.Wait(std::move(send_req));
+    comm.Wait(std::move(recv_req));
 
     CheckSequence(recv, src * 100000 + test_id * 1000);
   }
@@ -81,15 +81,15 @@ void TestIsendIrecvConsecutiveTags(const Comm& comm) {
   for (Long i = 0; i < count0; i++) recv0[i] = -1;
   for (Long i = 0; i < count1; i++) recv1[i] = -1;
 
-  void* recv_req1 = comm.Irecv(recv1.begin(), recv1.Dim(), src, tag1);
-  void* recv_req0 = comm.Irecv(recv0.begin(), recv0.Dim(), src, tag0);
-  void* send_req0 = comm.Isend(send0.begin(), send0.Dim(), dest, tag0);
-  void* send_req1 = comm.Isend(send1.begin(), send1.Dim(), dest, tag1);
+  auto recv_req1 = comm.Irecv(recv1.begin(), recv1.Dim(), src, tag1);
+  auto recv_req0 = comm.Irecv(recv0.begin(), recv0.Dim(), src, tag0);
+  auto send_req0 = comm.Isend(send0.begin(), send0.Dim(), dest, tag0);
+  auto send_req1 = comm.Isend(send1.begin(), send1.Dim(), dest, tag1);
 
-  comm.Wait(send_req1);
-  comm.Wait(recv_req1);
-  comm.Wait(send_req0);
-  comm.Wait(recv_req0);
+  comm.Wait(std::move(send_req1));
+  comm.Wait(std::move(recv_req1));
+  comm.Wait(std::move(send_req0));
+  comm.Wait(std::move(recv_req0));
 
   CheckSequence(recv0, src * 100000 + 10000);
   CheckSequence(recv1, src * 100000 + 20000);
@@ -321,8 +321,8 @@ void TestIalltoallvSparse(const Comm& comm) {
     for (Long i = 0; i < send_cnt[p]; i++) send[send_dsp[p] + i] = rank * 100000 + p * 1000 + i;
   }
 
-  void* req = comm.Ialltoallv_sparse(send.begin(), send_cnt.begin(), send_dsp.begin(), recv.begin(), recv_cnt.begin(), recv_dsp.begin(), 23);
-  comm.Wait(req);
+  auto req = comm.Ialltoallv_sparse(send.begin(), send_cnt.begin(), send_dsp.begin(), recv.begin(), recv_cnt.begin(), recv_dsp.begin(), 23);
+  comm.Wait(std::move(req));
   CheckAlltoallvPayload(recv, recv_cnt, recv_dsp, rank);
 }
 

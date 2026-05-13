@@ -238,14 +238,14 @@ namespace sctl {
 
       // Exchange data
       Vector<NodeData> rbuff(rdsp[np-1] + rcnt[np-1]);
-      void* req_ptr = comm_.Ialltoallv_sparse(sbuff.begin(), scnt.begin(), sdsp.begin(), rbuff.begin(), rcnt.begin(), rdsp.begin());
+      auto req_ptr = comm_.Ialltoallv_sparse(sbuff.begin(), scnt.begin(), sdsp.begin(), rbuff.begin(), rcnt.begin(), rdsp.begin());
 
       // Set src_nodes1
       src_nodes1.ReInit(rbuff.Dim() + src_nodes0.Dim());
       for (Long i = 0; i < src_nodes0.Dim(); i++) {
         src_nodes1[rdsp[rank]+i] = src_nodes0[i];
       }
-      comm_.Wait(req_ptr);
+      comm_.Wait(std::move(req_ptr));
       for (Long i = 0; i < rdsp[rank]; i++) {
         src_nodes1[i] = rbuff[i];
       }

@@ -3,6 +3,7 @@
 
 #include <functional>         // for less
 #include <map>                // for multimap
+#include <utility>            // for move
 #include <vector>             // for vector
 
 #include "sctl/common.hpp"    // for Long, Integer, sctl
@@ -114,6 +115,45 @@ class Comm {
   void Barrier() const;
 
   /**
+   * Opaque, move-only handle for an outstanding non-blocking communication
+   * request returned by Isend(), Irecv(), or Ialltoallv_sparse(). The handle
+   * owns a pooled MPI_Request slot inside the `Comm`; that slot is released
+   * when the handle is passed to Wait() exactly once.
+   *
+   * Lifetime contract:
+   *   - The handle must be passed to Wait() (via `std::move`) before it goes
+   *     out of scope. Dropping a non-empty Request would orphan the
+   *     underlying MPI_Request; debug builds trap in the destructor.
+   *   - After Wait() consumes a handle, the handle is empty and must not be
+   *     reused. Empty handles (default-constructed or moved-from) are safe
+   *     to destroy and may also be passed to Wait() as a no-op.
+   *   - The handle is non-copyable; ownership transfers via move only.
+   */
+  class Request {
+   public:
+    Request() = default;
+    Request(const Request&) = delete;
+    Request& operator=(const Request&) = delete;
+    Request(Request&& other) noexcept : ptr_(other.ptr_) { other.ptr_ = nullptr; }
+    Request& operator=(Request&& other) noexcept {
+      SCTL_ASSERT_MSG(!ptr_, "Comm::Request: overwriting a non-empty request leaks the pending MPI_Request; Wait() must be called first");
+      ptr_ = other.ptr_;
+      other.ptr_ = nullptr;
+      return *this;
+    }
+    ~Request() {
+      SCTL_ASSERT_MSG(!ptr_, "Comm::Request destroyed without Wait(); the underlying MPI_Request is leaked");
+    }
+    explicit operator bool() const noexcept { return ptr_ != nullptr; }
+
+   private:
+    friend class Comm;
+    explicit Request(void* p) noexcept : ptr_(p) {}
+    void* release_() noexcept { void* p = ptr_; ptr_ = nullptr; return p; }
+    void* ptr_ = nullptr;
+  };
+
+  /**
    * Non-blocking send.
    *
    * @tparam SType type of the send-data.
@@ -126,9 +166,12 @@ class Comm {
    *
    * @param[in] tag identifier tag to be matched at receive.
    *
-   * @return a context pointer for the request.
+   * @return a Request handle. Must be passed to Wait() (via `std::move`)
+   *         before going out of scope; otherwise the underlying MPI_Request
+   *         is leaked. The return value is `[[nodiscard]]` — discarding it
+   *         is a programmer error.
    */
-  template <class SType> void* Isend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag = 0) const;
+  template <class SType> [[nodiscard]] Request Isend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag = 0) const;
 
   /**
    * Non-blocking receive.
@@ -143,29 +186,31 @@ class Comm {
    *
    * @param[in] tag identifier tag to be matched by the corresponding Isend.
    *
-   * @return a context pointer for the request.
+   * @return a Request handle. Same lifetime contract as Isend().
    */
-  template <class RType> void* Irecv(Iterator<RType> rbuf, Long rcount, Integer source, Integer tag = 0) const;
+  template <class RType> [[nodiscard]] Request Irecv(Iterator<RType> rbuf, Long rcount, Integer source, Integer tag = 0) const;
 
   /**
-   * Wait for a non-blocking send or receive.
+   * Wait for a non-blocking send or receive. Consumes the handle by value;
+   * after the call, the moved-from variable in the caller is empty.
    *
-   * @param[in] req_ptr context pointer for the request.
+   * @param[in] req Request handle returned by Isend(), Irecv(), or
+   *                Ialltoallv_sparse(). May be empty (no-op).
    */
-  void Wait(void* req_ptr) const;
+  void Wait(Request req) const;
 
   /**
    * Broadcast to all processes in the communicator.
    *
    * @tparam Type type of the data.
    *
-   * \param[in,out] buff send-buffer on the sending process, or the receive buffer on the receiving process.
+   * @param[in,out] buff send-buffer on the sending process, or the receive buffer on the receiving process.
    *
-   * \param[in] count number of elements in the message.
+   * @param[in] count number of elements in the message.
    *
-   * \param[in] root rank of the sending process.
+   * @param[in] root rank of the sending process.
    */
-  template <class Type> void Bcast(Iterator<Type> buf, Long count, Long root) const;
+  template <class Type> void Bcast(Iterator<Type> buf, Long count, Integer root) const;
 
   /**
    * Gather and concatenate equal size messages from all processes in the communicator.
@@ -238,9 +283,10 @@ class Comm {
    *
    * @param[in] tag identifier tag to be matched by all processes in the communicator.
    *
-   * @return a context pointer for the request.
+   * @return a Request handle. Same lifetime contract as Isend(): must be
+   *         passed to Wait() before destruction.
    */
-  template <class SType, class RType> void* Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag = 0) const;
+  template <class SType, class RType> [[nodiscard]] Request Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag = 0) const;
 
   /**
    * All-to-all communication with varying send and receive counts and displacements.

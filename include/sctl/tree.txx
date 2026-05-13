@@ -198,14 +198,14 @@ namespace sctl {
       Vector<Morton<DIM>> pt_mid_(recv_size0 + pt_mid.Dim() + recv_size1);
       memcopy(pt_mid_.begin()+recv_size0, pt_mid.begin(), pt_mid.Dim());
 
-      void* recv_req0 = comm.Irecv(pt_mid_.begin(), recv_size0, (rank+np-1)%np, 0);
-      void* recv_req1 = comm.Irecv(pt_mid_.begin() + recv_size0 + pt_mid.Dim(), recv_size1, (rank+1)%np, 1);
-      void* send_req0 = comm.Isend(pt_mid .begin() + pt_mid.Dim() - send_size0, send_size0, (rank+1)%np, 0);
-      void* send_req1 = comm.Isend(pt_mid .begin(), send_size1, (rank+np-1)%np, 1);
-      comm.Wait(recv_req0);
-      comm.Wait(recv_req1);
-      comm.Wait(send_req0);
-      comm.Wait(send_req1);
+      auto recv_req0 = comm.Irecv(pt_mid_.begin(), recv_size0, (rank+np-1)%np, 0);
+      auto recv_req1 = comm.Irecv(pt_mid_.begin() + recv_size0 + pt_mid.Dim(), recv_size1, (rank+1)%np, 1);
+      auto send_req0 = comm.Isend(pt_mid .begin() + pt_mid.Dim() - send_size0, send_size0, (rank+1)%np, 0);
+      auto send_req1 = comm.Isend(pt_mid .begin(), send_size1, (rank+np-1)%np, 1);
+      comm.Wait(std::move(recv_req0));
+      comm.Wait(std::move(recv_req1));
+      comm.Wait(std::move(send_req0));
+      comm.Wait(std::move(send_req1));
       pt_mid.Swap(pt_mid_);
     }
     { // Build linear MortonID tree from pt_mid

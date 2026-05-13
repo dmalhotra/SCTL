@@ -235,6 +235,10 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetComm(const Com
   #endif
 }
 
+template <class Real, Integer DIM> const Comm& ParticleFMM<Real,DIM>::GetComm() const {
+  return comm_;
+}
+
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::SetPeriodicity(Periodicity p, Real period_length) {
   if (periodicity_ == p && period_length_ == period_length) return;
   periodicity_ = p;
@@ -596,16 +600,16 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
         Integer recv_partner = (rank + np - offset) % np;
 
         Long send_cnt = X.Dim(), recv_cnt = 0;
-        void* recv_req = comm_.Irecv(     Ptr2Itr<Long>(&recv_cnt,1), 1, recv_partner, offset);
-        void* send_req = comm_.Isend(Ptr2ConstItr<Long>(&send_cnt,1), 1, send_partner, offset);
-        comm_.Wait(recv_req);
-        comm_.Wait(send_req);
+        auto recv_req = comm_.Irecv(     Ptr2Itr<Long>(&recv_cnt,1), 1, recv_partner, offset);
+        auto send_req = comm_.Isend(Ptr2ConstItr<Long>(&send_cnt,1), 1, send_partner, offset);
+        comm_.Wait(std::move(recv_req));
+        comm_.Wait(std::move(send_req));
 
         X_.ReInit(recv_cnt);
         recv_req = comm_.Irecv(X_.begin(), recv_cnt, recv_partner, offset);
         send_req = comm_.Isend(X .begin(), send_cnt, send_partner, offset);
-        comm_.Wait(recv_req);
-        comm_.Wait(send_req);
+        comm_.Wait(std::move(recv_req));
+        comm_.Wait(std::move(send_req));
       };
       send_recv_vec(Xs_, Xs, i);
       send_recv_vec(Xn_, Xn, i);
