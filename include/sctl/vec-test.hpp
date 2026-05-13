@@ -86,8 +86,8 @@ namespace sctl {
         VecType v2;
         auto addr1 = reinterpret_cast<uintptr_t>(&v1);
         auto addr2 = reinterpret_cast<uintptr_t>(&v2);
-        SCTL_ASSERT(addr1 % N*sizeof(ValueType) == 0);
-        SCTL_ASSERT(addr2 % N*sizeof(ValueType) == 0);
+        SCTL_ASSERT(addr1 % (N*sizeof(ValueType)) == 0);
+        SCTL_ASSERT(addr2 % (N*sizeof(ValueType)) == 0);
         SCTL_UNUSED(c);
       }
 
