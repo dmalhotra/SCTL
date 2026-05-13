@@ -61,7 +61,6 @@
 #include "sctl/vec.hpp"
 #include "sctl/vec.txx"
 #include "sctl/vec-test.hpp"
-#include "sctl/vec-test.hpp"
 #include "sctl/intrin-wrapper.hpp"
 
 // OpenMP merge-sort and scan

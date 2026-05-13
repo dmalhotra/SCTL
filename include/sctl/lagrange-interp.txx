@@ -113,9 +113,9 @@ namespace sctl {
   template <class Real> void LagrangeInterp<Real>::Derivative(Vector<Real>& df, const Vector<Real>& f, const Vector<Real>& nds) {
     Long N = nds.Dim();
     Long dof = f.Dim() / N;
-    SCTL_ASSERT(f.Dim() == N * dof);
-    if (df.Dim() != N * dof) df.ReInit(N * dof);
-    if (N*dof == 0) return;
+    SCTL_ASSERT(f.Dim() == dof * N);
+    if (df.Dim() != dof * N) df.ReInit(dof * N);
+    if (dof * N == 0) return;
 
     const Real normal_factor = [nds]() { // normalize
       if (!nds.Dim()) return (Real)1;

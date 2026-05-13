@@ -17,11 +17,6 @@
 #define SCTL_QUOTEME_1(x) #x
 //#define SCTL_INCLUDE(x) SCTL_QUOTEME(SCTL_NAMESPACE/x)
 
-// Profiling parameters
-#ifndef SCTL_PROFILE
-#define SCTL_PROFILE -1 // Granularity level
-#endif
-
 #if defined(__AVX512__) || defined(__AVX512F__)
   #define SCTL_ALIGN_BYTES 64
 #elif defined(__AVX__)

@@ -1,7 +1,6 @@
 #ifndef _SCTL_ITERATOR_HPP_
 #define _SCTL_ITERATOR_HPP_
 
-#include <ostream>          // for ostream
 #include <iterator>         // for random_access_iterator_tag
 #include <ostream>          // for operator<<, basic_ostream
 
