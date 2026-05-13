@@ -35,7 +35,7 @@ namespace sctl {
     for (Integer i = 0; i < DIM; i++) x[i] = mask & (UINT_T)floor((double)coord[i] * maxCoord);
   }
 
-  template <Integer DIM> int8_t Morton<DIM>::Depth() const {
+  template <Integer DIM> uint8_t Morton<DIM>::Depth() const {
     return depth;
   }
 

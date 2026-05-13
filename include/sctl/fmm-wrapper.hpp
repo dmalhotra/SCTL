@@ -80,7 +80,7 @@ template <class Real, Integer DIM> class ParticleFMM {
     /**
      * Get communicator.
      */
-    Comm GetComm() const;
+    const Comm& GetComm() const;
 
     /**
      * Set periodicity.

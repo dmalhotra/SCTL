@@ -60,7 +60,7 @@ template <class ValueType> Matrix<ValueType> Permutation<ValueType>::GetMatrix()
 
 template <class ValueType> Long Permutation<ValueType>::Dim() const { return perm.Dim(); }
 
-template <class ValueType> Permutation<ValueType> Permutation<ValueType>::Transpose() {
+template <class ValueType> Permutation<ValueType> Permutation<ValueType>::Transpose() const {
   Long size = perm.Dim();
   Permutation<ValueType> P_r(size);
 

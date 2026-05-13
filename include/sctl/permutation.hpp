@@ -60,7 +60,7 @@ template <class ValueType> class Permutation {
    *
    * @return The transpose of the permutation operator.
    */
-  Permutation<ValueType> Transpose();
+  Permutation<ValueType> Transpose() const;
 
   /**
    * Multiplies the permutation operator by a scalar value.

@@ -27,7 +27,7 @@
 namespace sctl {
 namespace mat {
 
-template <class ValueType> inline void gemm(char TransA, char TransB, int M, int N, int K, ValueType alpha, Iterator<ValueType> A, int lda, Iterator<ValueType> B, int ldb, ValueType beta, Iterator<ValueType> C, int ldc) {
+template <class ValueType> inline void gemm(char TransA, char TransB, int M, int N, int K, ValueType alpha, ConstIterator<ValueType> A, int lda, ConstIterator<ValueType> B, int ldb, ValueType beta, Iterator<ValueType> C, int ldc) {
   if ((TransA == 'N' || TransA == 'n') && (TransB == 'N' || TransB == 'n')) {
     #pragma omp parallel for schedule(static)
     for (Long n = 0; n < N; n++) {    // Columns of C
@@ -76,9 +76,9 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
 }
 
 #if defined(SCTL_HAVE_BLAS)
-template <> inline void gemm<float>(char TransA, char TransB, int M, int N, int K, float alpha, Iterator<float> A, int lda, Iterator<float> B, int ldb, float beta, Iterator<float> C, int ldc) { sgemm_(&TransA, &TransB, &M, &N, &K, &alpha, &A[0], &lda, &B[0], &ldb, &beta, &C[0], &ldc); }
+template <> inline void gemm<float>(char TransA, char TransB, int M, int N, int K, float alpha, ConstIterator<float> A, int lda, ConstIterator<float> B, int ldb, float beta, Iterator<float> C, int ldc) { sgemm_(&TransA, &TransB, &M, &N, &K, &alpha, &A[0], &lda, &B[0], &ldb, &beta, &C[0], &ldc); }
 
-template <> inline void gemm<double>(char TransA, char TransB, int M, int N, int K, double alpha, Iterator<double> A, int lda, Iterator<double> B, int ldb, double beta, Iterator<double> C, int ldc) { dgemm_(&TransA, &TransB, &M, &N, &K, &alpha, &A[0], &lda, &B[0], &ldb, &beta, &C[0], &ldc); }
+template <> inline void gemm<double>(char TransA, char TransB, int M, int N, int K, double alpha, ConstIterator<double> A, int lda, ConstIterator<double> B, int ldb, double beta, Iterator<double> C, int ldc) { dgemm_(&TransA, &TransB, &M, &N, &K, &alpha, &A[0], &lda, &B[0], &ldb, &beta, &C[0], &ldc); }
 #endif
 
 //#define SCTL_SVD_DEBUG
