@@ -172,7 +172,18 @@ template <class Real> class SphericalHarmonics{
     static void SHCArrange1(const Vector<Real>& S_in, SHCArrange arrange_out, Long p, Vector<Real>& S_out);
 
     /**
-     * Computes all the Associated Legendre Polynomials (normalized) up to the specified degree.
+     * Computes all the fully-normalized Associated Legendre functions P(n,m) up to
+     * the specified degree, with Condon-Shortley phase included:
+     *
+     *     P(n,m)(x) = sqrt( (2n+1)/(4*pi) * (n-m)!/(n+m)! ) * P_n^m(x),
+     *
+     * where P_n^m is the associated Legendre function carrying the (-1)^m
+     * Condon-Shortley phase. With this normalization, Y_n^m(theta,phi) =
+     * P(n,m)(cos theta) * exp(i*m*phi) is orthonormal on the unit sphere:
+     * integral over S^2 of |Y_n^m|^2 dOmega = 1. The 1/sqrt(4*pi) factor is
+     * folded in (this is the unit-sphere L^2 convention, not the geodesy
+     * "fully-normalized" convention which omits it).
+     *
      * \param[in] degree The degree up to which the Legendre polynomials have to be computed.
      * \param[in] X The input values for which the polynomials have to be computed.
      * \param[in] N The number of input points.

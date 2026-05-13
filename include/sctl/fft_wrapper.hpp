@@ -20,6 +20,20 @@ namespace sctl {
 
   /**
    * Enum class representing different types of FFT transformations.
+   *
+   * Sign convention and normalization (N = product of `dim_vec` entries):
+   *
+   * - Forward transforms (`R2C`, `C2C`):
+   *   \f[ X_k = \frac{1}{\sqrt{N}} \sum_{n=0}^{N-1} x_n \, e^{-2\pi i \, k n / N} \f]
+   *
+   * - Inverse transforms (`C2C_INV`, `C2R`):
+   *   \f[ x_n = \frac{1}{\sqrt{N}} \sum_{k=0}^{N-1} X_k \, e^{+2\pi i \, k n / N} \f]
+   *
+   * The `1/sqrt(N)` factor is applied to both directions (unitary/orthonormal
+   * normalization), so the forward followed by the inverse transform recovers
+   * the original input exactly (up to floating-point error). The forward
+   * transform uses the negative-exponent convention; the inverse uses the
+   * positive-exponent convention.
    */
   enum class FFT_Type {R2C, C2C, C2C_INV, C2R};
 

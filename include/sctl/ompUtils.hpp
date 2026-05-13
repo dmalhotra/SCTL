@@ -61,15 +61,29 @@ template <class T> void merge_sort(T A, T A_last);
 template <class ConstIter, class Int> typename std::iterator_traits<ConstIter>::value_type reduce(ConstIter A, Int cnt);
 
 /**
- * Performs a parallel prefix sum (scan) operation on a range.
+ * Parallel **exclusive** prefix sum with caller-supplied seed.
+ *
+ * Computes
+ *
+ *     B[0] is left untouched (must be initialised by the caller),
+ *     B[i] = B[0] + A[0] + A[1] + ... + A[i-1]   for i = 1, ..., cnt-1.
+ *
+ * Equivalently, `B[i]` is the sum of the first `i` elements of `A` shifted by
+ * the caller-supplied initial value at `B[0]`. With the conventional seed
+ * `B[0] = 0`, this is a standard exclusive prefix sum (e.g. converting a
+ * count array into a displacement array). The function **does not write**
+ * `B[0]`, so leaving it uninitialised is a bug.
+ *
+ * `A[cnt-1]` is not read; only `A[0..cnt-2]` participate. Aliasing `A` and
+ * `B` is not supported.
  *
  * @tparam ConstIter Iterator type for the input range.
  * @tparam Iter Iterator type for the output range.
  * @tparam Int Integer type for indexing.
  *
- * @param A Beginning iterator of the input range.
- * @param B Beginning iterator of the output range.
- * @param cnt Number of elements in the range.
+ * @param[in] A Beginning iterator of the input range (length `cnt`).
+ * @param[in,out] B Beginning iterator of the output range (length `cnt`); `B[0]` is read as the seed and must be initialised before the call; `B[1..cnt-1]` are written.
+ * @param[in] cnt Number of elements in each range.
  */
 template <class ConstIter, class Iter, class Int> void scan(ConstIter A, Iter B, Int cnt);
 

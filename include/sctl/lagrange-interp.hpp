@@ -31,8 +31,14 @@ namespace sctl {
        * This function computes the derivative of interpolated values
        * at given nodes.
        *
-       * @param[out] df The vector storing the derivative values.
+       * @param[out] df The vector storing the derivative values. The dimensions
+       * are the same as the input vector f.
+       *
        * @param[in] f The vector of function values at the interpolation nodes.
+       * Multiple scalar functions may be passed as: f = [f1(x1), f1(x2), ...,
+       * f1(xN), f2(x1), f2(x2), ..., f2(xN), ...], where x_i are the
+       * interpolation nodes.
+       *
        * @param[in] nds The vector of node positions.
        */
       static void Derivative(Vector<Real>& df, const Vector<Real>& f, const Vector<Real>& nds);

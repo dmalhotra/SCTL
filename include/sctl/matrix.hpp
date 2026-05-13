@@ -195,7 +195,7 @@ template <class ValueType> class Matrix {
   Matrix<ValueType> operator*(const Matrix<ValueType>& M) const;
 
   /**
-   * Computes the matrix-matrix multiplication M_r = alpha * A * B + beta * M_r.
+   * Computes the matrix-matrix multiplication M_r = A * B + beta * M_r.
    *
    * @param M_r Result matrix.
    * @param A First matrix.
@@ -205,7 +205,7 @@ template <class ValueType> class Matrix {
   static void GEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta = 0.0);
 
   /**
-   * Computes the matrix-matrix multiplication M_r = alpha * P * M + beta * M_r.
+   * Computes the matrix-matrix multiplication M_r = P * M + beta * M_r.
    *
    * @param M_r Result matrix.
    * @param P Permutation matrix.
@@ -215,7 +215,7 @@ template <class ValueType> class Matrix {
   static void GEMM(Matrix<ValueType>& M_r, const Permutation<ValueType>& P, const Matrix<ValueType>& M, ValueType beta = 0.0);
 
   /**
-   * Computes the matrix-matrix multiplication M_r = alpha * M * P + beta * M_r.
+   * Computes the matrix-matrix multiplication M_r = M * P + beta * M_r.
    *
    * @param M_r Result matrix.
    * @param M Matrix.
@@ -370,7 +370,7 @@ template <class ValueType> class Matrix {
    * @param tS The matrix containing the singular values.
    * @param tVT The matrix containing the right singular vectors.
    *
-   * @note Original matrix is destroyed.
+   * @warning Original matrix is destroyed.
    */
   void SVD(Matrix<ValueType>& tU, Matrix<ValueType>& tS, Matrix<ValueType>& tVT);
 

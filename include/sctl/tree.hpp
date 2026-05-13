@@ -93,7 +93,7 @@ template <Integer DIM> class Tree {
      * @param[in] M Maximum number of particles per tree node.
      * @param[in] balance21 Whether to do level-restriction (2:1 balance refinement).
      * @param[in] periodic Whether the tree is periodic across the faces of the cube.
-     * @param[in] halo_size 2^halo_size neighboring boxes will be included in the halo region
+     * @param[in] halo_size 2^halo_size neighboring boxes will be included in the halo region. Default value of -1 means no halo region.
      *
      * @note This is a collective operation and must be called from all processes in the communicator.
      */
