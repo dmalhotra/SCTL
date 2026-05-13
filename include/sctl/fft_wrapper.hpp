@@ -1,8 +1,9 @@
 #ifndef _SCTL_FFT_WRAPPER_HPP_
 #define _SCTL_FFT_WRAPPER_HPP_
 
+#include <complex>                // for complex
+
 #include "sctl/common.hpp"        // for Long, Integer, sctl
-#include "sctl/complex.hpp"       // for Complex
 #include "sctl/static-array.hpp"  // for StaticArray
 
 #if defined(SCTL_HAVE_FFTW) || defined(SCTL_HAVE_FFTWF)
@@ -47,7 +48,7 @@ namespace sctl {
    * @tparam ValueType The value type of the FFT data.
    */
   template <class ValueType> class FFT {
-    typedef Complex<ValueType> ComplexType;
+    typedef std::complex<ValueType> ComplexType;
 
     public:
 

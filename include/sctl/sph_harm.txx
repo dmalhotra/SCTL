@@ -17,10 +17,11 @@
 #include <vector>                 // for vector
 
 #include "sctl/common.hpp"        // for Long, Integer, SCTL_UNUSED, SCTL_NA...
+#include <complex>                // for complex
+
 #include "sctl/sph_harm.hpp"      // for SphericalHarmonics, SHCArrange, SCT...
 #include "sctl/comm.hpp"          // for Comm
 #include "sctl/comm.txx"          // for Comm::Rank, Comm::Size
-#include "sctl/complex.hpp"       // for Complex
 #include "sctl/fft_wrapper.hpp"   // for FFT (ptr only), FFT_Type
 #include "sctl/iterator.hpp"      // for ConstIterator, Iterator
 #include "sctl/math_utils.hpp"    // for sqrt, cos, sin, const_pi, fabs, atan2
@@ -702,26 +703,26 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
   Grid2SHC_(B0, Nt, Np, p_, B1);
 
   Vector<Real> B2(N*M0);
-  const Complex<Real> imag(0,1);
+  const std::complex<Real> imag(0,1);
   for (Long i=0; i<N; i+=COORD_DIM) {
     for (Long m=0; m<=p0; m++) {
       for (Long n=m; n<=p0; n++) {
         auto read_coeff = [&](const Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
-          Complex<Real> c;
+          std::complex<Real> c;
           if (0<=m && m<=n && n<=p) {
             Long idx_real = ((2*p-m+3)*m - (m?p+1:0))*N + (p+1-m)*i - m + n;
             Long idx_imag = idx_real + (p+1-m)*N;
-            c.real = coeff[idx_real];
-            if (m) c.imag = coeff[idx_imag];
+            c.real(coeff[idx_real]);
+            if (m) c.imag(coeff[idx_imag]);
           }
           return c;
         };
-        auto write_coeff = [&](Complex<Real> c, Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
+        auto write_coeff = [&](std::complex<Real> c, Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
           if (0<=m && m<=n && n<=p) {
             Long idx_real = ((2*p-m+3)*m - (m?p+1:0))*N + (p+1-m)*i - m + n;
             Long idx_imag = idx_real + (p+1-m)*N;
-            coeff[idx_real] = c.real;
-            if (m) coeff[idx_imag] = c.imag;
+            coeff[idx_real] = c.real();
+            if (m) coeff[idx_imag] = c.imag();
           }
         };
 
@@ -729,7 +730,7 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
         auto gt = [&](Long n, Long m) { return read_coeff(B1, i+1, p_, n, m); };
         auto gp = [&](Long n, Long m) { return read_coeff(B1, i+2, p_, n, m); };
 
-        Complex<Real> phiY, phiG, phiX;
+        std::complex<Real> phiY, phiG, phiX;
         { // (phiG, phiX) <-- (gt, gp)
           auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
           auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
@@ -767,26 +768,26 @@ template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Re
   assert(N % COORD_DIM == 0);
 
   Vector<Real> B1(N*M_);
-  const Complex<Real> imag(0,1);
+  const std::complex<Real> imag(0,1);
   for (Long i=0; i<N; i+=COORD_DIM) {
     for (Long m=0; m<=p_; m++) {
       for (Long n=m; n<=p_; n++) {
         auto read_coeff = [&](const Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
-          Complex<Real> c;
+          std::complex<Real> c;
           if (0<=m && m<=n && n<=p) {
             Long idx_real = ((2*p-m+3)*m - (m?p+1:0))*N + (p+1-m)*i - m + n;
             Long idx_imag = idx_real + (p+1-m)*N;
-            c.real = coeff[idx_real];
-            if (m) c.imag = coeff[idx_imag];
+            c.real(coeff[idx_real]);
+            if (m) c.imag(coeff[idx_imag]);
           }
           return c;
         };
-        auto write_coeff = [&](Complex<Real> c, Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
+        auto write_coeff = [&](std::complex<Real> c, Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
           if (0<=m && m<=n && n<=p) {
             Long idx_real = ((2*p-m+3)*m - (m?p+1:0))*N + (p+1-m)*i - m + n;
             Long idx_imag = idx_real + (p+1-m)*N;
-            coeff[idx_real] = c.real;
-            if (m) coeff[idx_imag] = c.imag;
+            coeff[idx_real] = c.real();
+            if (m) coeff[idx_imag] = c.imag();
           }
         };
 
@@ -798,19 +799,19 @@ template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Re
         auto phiY = [&](Long n, Long m) {
           auto phiV = read_coeff(B0, i+0, p0, n, m);
           auto phiW = read_coeff(B0, i+1, p0, n, m);
-          return phiW * n - phiV * (n + 1);
+          return phiW * (Real)n - phiV * (Real)(n + 1);
         };
         auto phiX = [&](Long n, Long m) {
           return read_coeff(B0, i+2, p0, n, m);
         };
 
-        Complex<Real> gr, gt, gp;
+        std::complex<Real> gr, gt, gp;
         { // (gt, gp) <-- (phiG, phiX)
           auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
           auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
           gr = phiY(n,m);
-          gt = phiG(n-1,m)*A(n-1,m) - phiG(n+1,m)*B(n+1,m) - imag*m*phiX(n,m);
-          gp = phiX(n-1,m)*A(n-1,m) - phiX(n+1,m)*B(n+1,m) + imag*m*phiG(n,m);
+          gt = phiG(n-1,m)*A(n-1,m) - phiG(n+1,m)*B(n+1,m) - imag*(Real)m*phiX(n,m);
+          gp = phiX(n-1,m)*A(n-1,m) - phiX(n+1,m)*B(n+1,m) + imag*(Real)m*phiG(n,m);
         }
 
         write_coeff(gr, B1, i+0, p_, n, m);
@@ -959,7 +960,7 @@ template <class Real> void SphericalHarmonics<Real>::LaplaceEvalSL(const Vector<
       cos_phi = cos(theta_phi[i * 2 + 1]);
       sin_phi = sin(theta_phi[i * 2 + 1]);
     }
-    Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
+    std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
     Vector<Real> rpow;
@@ -975,31 +976,31 @@ template <class Real> void SphericalHarmonics<Real>::LaplaceEvalSL(const Vector<
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
-        auto write_coeff = [&](Complex<Real> c, Long n, Long m) {
+        auto write_coeff = [&](std::complex<Real> c, Long n, Long m) {
           if (0 <= m && m <= n && n <= p0) {
             Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
-            LaplaceOp[i][idx] = c.real;
+            LaplaceOp[i][idx] = c.real();
             if (m) {
               idx += (p0+1-m);
-              LaplaceOp[i][idx] = c.imag;
+              LaplaceOp[i][idx] = c.imag();
             }
           }
         };
 
-        Complex<Real> Ynm = [&SHBasis,p_,i](Long n, Long m) {
-          Complex<Real> c;
+        std::complex<Real> Ynm = [&SHBasis,p_,i](Long n, Long m) {
+          std::complex<Real> c;
           if (0 <= m && m <= n && n <= p_) {
             Long idx = (2 * p_ - m + 2) * m - (m ? p_+1 : 0) + n;
-            c.real = SHBasis[i][idx];
+            c.real(SHBasis[i][idx]);
             if (m) {
               idx += (p_+1-m);
-              c.imag = SHBasis[i][idx];
+              c.imag(SHBasis[i][idx]);
             }
           }
           return c;
         }(n,m);
 
-        Complex<Real> GYnm;
+        std::complex<Real> GYnm;
         if (interior) {
           Real a = 1 / (Real)(2 * n + 1) * rpow[n + 1];
           GYnm = a * Ynm;
@@ -1073,7 +1074,7 @@ template <class Real> void SphericalHarmonics<Real>::LaplaceEvalDL(const Vector<
       cos_phi = cos(theta_phi[i * 2 + 1]);
       sin_phi = sin(theta_phi[i * 2 + 1]);
     }
-    Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
+    std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
     Vector<Real> rpow;
@@ -1089,31 +1090,31 @@ template <class Real> void SphericalHarmonics<Real>::LaplaceEvalDL(const Vector<
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
-        auto write_coeff = [&](Complex<Real> c, Long n, Long m) {
+        auto write_coeff = [&](std::complex<Real> c, Long n, Long m) {
           if (0 <= m && m <= n && n <= p0) {
             Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
-            LaplaceOp[i][idx] = c.real;
+            LaplaceOp[i][idx] = c.real();
             if (m) {
               idx += (p0+1-m);
-              LaplaceOp[i][idx] = c.imag;
+              LaplaceOp[i][idx] = c.imag();
             }
           }
         };
 
-        Complex<Real> Ynm = [&SHBasis,p_,i](Long n, Long m) {
-          Complex<Real> c;
+        std::complex<Real> Ynm = [&SHBasis,p_,i](Long n, Long m) {
+          std::complex<Real> c;
           if (0 <= m && m <= n && n <= p_) {
             Long idx = (2 * p_ - m + 2) * m - (m ? p_+1 : 0) + n;
-            c.real = SHBasis[i][idx];
+            c.real(SHBasis[i][idx]);
             if (m) {
               idx += (p_+1-m);
-              c.imag = SHBasis[i][idx];
+              c.imag(SHBasis[i][idx]);
             }
           }
           return c;
         }(n,m);
 
-        Complex<Real> GYnm;
+        std::complex<Real> GYnm;
         if (interior) {
           Real a = -(n + 1) / (Real)(2 * n + 1) * rpow[n + 1];
           GYnm = a * Ynm;
@@ -1192,7 +1193,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
       cos_phi = cos(theta_phi[i * 2 + 1]);
       sin_phi = sin(theta_phi[i * 2 + 1]);
     }
-    Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
+    std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
     Vector<Real> rpow;
@@ -1208,27 +1209,27 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
-        auto write_coeff = [&](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
+        auto write_coeff = [&](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
           if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
             Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
-            StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real;
+            StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real();
             if (m) {
               idx += (p0+1-m);
-              StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.imag;
+              StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.imag();
             }
           }
         };
 
-        Complex<Real> Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp;
+        std::complex<Real> Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp;
         { // Set vector spherical harmonics
           auto Y = [&SHBasis,p_,i](Long n, Long m) {
-            Complex<Real> c;
+            std::complex<Real> c;
             if (0 <= m && m <= n && n <= p_) {
               Long idx = (2 * p_ - m + 2) * m - (m ? p_+1 : 0) + n;
-              c.real = SHBasis[i][idx];
+              c.real(SHBasis[i][idx]);
               if (m) {
                 idx += (p_+1-m);
-                c.imag = SHBasis[i][idx];
+                c.imag(SHBasis[i][idx]);
               }
             }
             return c;
@@ -1238,29 +1239,29 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
             auto B = (0<=n && m<=n ? 0.5 * sqrt<Real>((n-m)*(n+m+1)) * (m+1==0?2.0:1.0) : 0);
             return (B / exp_phi * Y(n, m + 1) - A * exp_phi * Y(n, m - 1)) / R[i];
           };
-          Complex<Real> Y_1 = Y(n + 0, m);
-          Complex<Real> Y_1t = Yt(n + 0, m);
+          std::complex<Real> Y_1 = Y(n + 0, m);
+          std::complex<Real> Y_1t = Yt(n + 0, m);
 
-          Complex<Real> Ycsc_1 = Y_1 * csc_theta;
+          std::complex<Real> Ycsc_1 = Y_1 * csc_theta;
           if (fabs(sin_theta) == 0) {
             auto Y_csc0 = [exp_phi, cos_theta](Long n, Long m) {
               if (m == 1) return -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta<0) ? -1 : 1) * exp_phi;
-              return Complex<Real>(0, 0);
+              return std::complex<Real>(0, 0);
             };
             Ycsc_1 = Y_csc0(n + 0, m);
           }
 
-          auto SetVecSH = [&imag,n,m](Complex<Real>& Vr, Complex<Real>& Vt, Complex<Real>& Vp, Complex<Real>& Wr, Complex<Real>& Wt, Complex<Real>& Wp, Complex<Real>& Xr, Complex<Real>& Xt, Complex<Real>& Xp, const Complex<Real> C0, const Complex<Real> C1, const Complex<Real> C2) {
-            Vr = C0 * (-n-1);
+          auto SetVecSH = [&imag,n,m](std::complex<Real>& Vr, std::complex<Real>& Vt, std::complex<Real>& Vp, std::complex<Real>& Wr, std::complex<Real>& Wt, std::complex<Real>& Wp, std::complex<Real>& Xr, std::complex<Real>& Xt, std::complex<Real>& Xp, const std::complex<Real> C0, const std::complex<Real> C1, const std::complex<Real> C2) {
+            Vr = C0 * (Real)(-n-1);
             Vt = C2;
-            Vp = -imag * m * C1;
+            Vp = -imag * (Real)m * C1;
 
-            Wr = C0 * n;
+            Wr = C0 * (Real)n;
             Wt = C2;
-            Wp = -imag * m * C1;
+            Wp = -imag * (Real)m * C1;
 
             Xr = 0;
-            Xt = imag * m * C1;
+            Xt = imag * (Real)m * C1;
             Xp = C2;
           };
           { // Set Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp
@@ -1271,9 +1272,9 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
           }
         }
 
-        Complex<Real> SVr, SVt, SVp;
-        Complex<Real> SWr, SWt, SWp;
-        Complex<Real> SXr, SXt, SXp;
+        std::complex<Real> SVr, SVt, SVp;
+        std::complex<Real> SWr, SWt, SWp;
+        std::complex<Real> SXr, SXt, SXp;
         if (interior) {
           Real a, b;
           a = n / (Real)((2 * n + 1) * (2 * n + 3)) * rpow[n + 2];
@@ -1406,7 +1407,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
       cos_phi = cos(theta_phi[i * 2 + 1]);
       sin_phi = sin(theta_phi[i * 2 + 1]);
     }
-    Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
+    std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
     Vector<Real> rpow;
@@ -1422,27 +1423,27 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
-        auto write_coeff = [&](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
+        auto write_coeff = [&](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
           if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
             Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
-            StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real;
+            StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real();
             if (m) {
               idx += (p0+1-m);
-              StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.imag;
+              StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.imag();
             }
           }
         };
 
-        Complex<Real> Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp;
+        std::complex<Real> Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp;
         { // Set vector spherical harmonics
           auto Y = [&SHBasis,p_,i](Long n, Long m) {
-            Complex<Real> c;
+            std::complex<Real> c;
             if (0 <= m && m <= n && n <= p_) {
               Long idx = (2 * p_ - m + 2) * m - (m ? p_+1 : 0) + n;
-              c.real = SHBasis[i][idx];
+              c.real(SHBasis[i][idx]);
               if (m) {
                 idx += (p_+1-m);
-                c.imag = SHBasis[i][idx];
+                c.imag(SHBasis[i][idx]);
               }
             }
             return c;
@@ -1452,29 +1453,29 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
             auto B = (0<=n && m<=n ? 0.5 * sqrt<Real>((n-m)*(n+m+1)) * (m+1==0?2.0:1.0) : 0);
             return (B / exp_phi * Y(n, m + 1) - A * exp_phi * Y(n, m - 1)) / R[i];
           };
-          Complex<Real> Y_1 = Y(n + 0, m);
-          Complex<Real> Y_1t = Yt(n + 0, m);
+          std::complex<Real> Y_1 = Y(n + 0, m);
+          std::complex<Real> Y_1t = Yt(n + 0, m);
 
-          Complex<Real> Ycsc_1 = Y_1 * csc_theta;
+          std::complex<Real> Ycsc_1 = Y_1 * csc_theta;
           if (fabs(sin_theta) == 0) {
             auto Y_csc0 = [exp_phi, cos_theta](Long n, Long m) {
               if (m == 1) return -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta<0) ? -1 : 1) * exp_phi;
-              return Complex<Real>(0, 0);
+              return std::complex<Real>(0, 0);
             };
             Ycsc_1 = Y_csc0(n + 0, m);
           }
 
-          auto SetVecSH = [&imag,n,m](Complex<Real>& Vr, Complex<Real>& Vt, Complex<Real>& Vp, Complex<Real>& Wr, Complex<Real>& Wt, Complex<Real>& Wp, Complex<Real>& Xr, Complex<Real>& Xt, Complex<Real>& Xp, const Complex<Real> C0, const Complex<Real> C1, const Complex<Real> C2) {
-            Vr = C0 * (-n-1);
+          auto SetVecSH = [&imag,n,m](std::complex<Real>& Vr, std::complex<Real>& Vt, std::complex<Real>& Vp, std::complex<Real>& Wr, std::complex<Real>& Wt, std::complex<Real>& Wp, std::complex<Real>& Xr, std::complex<Real>& Xt, std::complex<Real>& Xp, const std::complex<Real> C0, const std::complex<Real> C1, const std::complex<Real> C2) {
+            Vr = C0 * (Real)(-n-1);
             Vt = C2;
-            Vp = -imag * m * C1;
+            Vp = -imag * (Real)m * C1;
 
-            Wr = C0 * n;
+            Wr = C0 * (Real)n;
             Wt = C2;
-            Wp = -imag * m * C1;
+            Wp = -imag * (Real)m * C1;
 
             Xr = 0;
-            Xt = imag * m * C1;
+            Xt = imag * (Real)m * C1;
             Xp = C2;
           };
           { // Set Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp
@@ -1485,9 +1486,9 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
           }
         }
 
-        Complex<Real> SVr, SVt, SVp;
-        Complex<Real> SWr, SWt, SWp;
-        Complex<Real> SXr, SXt, SXp;
+        std::complex<Real> SVr, SVt, SVp;
+        std::complex<Real> SWr, SWt, SWp;
+        std::complex<Real> SXr, SXt, SXp;
         if (interior) {
           Real a, b;
           a = -2 * n * (n + 2) / (Real)((2 * n + 1) * (2 * n + 3)) * rpow[n + 2];  // pow<Real>(R[i], n+1);
@@ -1621,7 +1622,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
       cos_phi = cos(theta_phi[i * 2 + 1]);
       sin_phi = sin(theta_phi[i * 2 + 1]);
     }
-    Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
+    std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
     Vector<Real> rpow;
@@ -1654,30 +1655,30 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
-        auto write_coeff = [&](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
+        auto write_coeff = [&](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
           if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
             Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
-            StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real;
+            StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real();
             if (m) {
               idx += (p0+1-m);
-              StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.imag;
+              StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.imag();
             }
           }
         };
 
-        Complex<Real> Ynm;
-        Complex<Real> Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp;
-        Complex<Real> Vr_t, Vt_t, Vp_t, Wr_t, Wt_t, Wp_t, Xr_t, Xt_t, Xp_t;
-        Complex<Real> Vr_p, Vt_p, Vp_p, Wr_p, Wt_p, Wp_p, Xr_p, Xt_p, Xp_p;
+        std::complex<Real> Ynm;
+        std::complex<Real> Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp;
+        std::complex<Real> Vr_t, Vt_t, Vp_t, Wr_t, Wt_t, Wp_t, Xr_t, Xt_t, Xp_t;
+        std::complex<Real> Vr_p, Vt_p, Vp_p, Wr_p, Wt_p, Wp_p, Xr_p, Xt_p, Xp_p;
         { // Set vector spherical harmonics
           auto Y = [&SHBasis,p_,i](Long n, Long m) {
-            Complex<Real> c;
+            std::complex<Real> c;
             if (0 <= m && m <= n && n <= p_) {
               Long idx = (2 * p_ - m + 2) * m - (m ? p_+1 : 0) + n;
-              c.real = SHBasis[i][idx];
+              c.real(SHBasis[i][idx]);
               if (m) {
                 idx += (p_+1-m);
-                c.imag = SHBasis[i][idx];
+                c.imag(SHBasis[i][idx]);
               }
             }
             return c;
@@ -1688,10 +1689,10 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
             return (B / exp_phi * Y(n, m + 1) - A * exp_phi * Y(n, m - 1)) / R[i];
           };
           auto Yp = [&Y, &imag, &R, i, csc_theta](Long n, Long m) {
-            return imag * m * Y(n, m) * csc_theta / R[i];
+            return imag * (Real)m * Y(n, m) * csc_theta / R[i];
           };
           auto Ypt = [&Yt, &imag](Long n, Long m) {
-            return imag * m * Yt(n, m);
+            return imag * (Real)m * Yt(n, m);
           };
           auto Ytt = [exp_phi, &Yt](Long n, Long m) {
             auto A = (0<=n && m<=n ? 0.5 * sqrt<Real>((n+m)*(n-m+1)) * (m-1==0?2.0:1.0) : 0);
@@ -1699,30 +1700,30 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
             return (n==0 ? 0 : (B / exp_phi * Yt(n, m + 1) - A * exp_phi * Yt(n, m - 1)));
           };
 
-          Complex<Real> Y_1 = Y(n + 0, m);
+          std::complex<Real> Y_1 = Y(n + 0, m);
 
-          Complex<Real> Y_0t = Yt(n - 1, m);
-          Complex<Real> Y_1t = Yt(n + 0, m);
-          Complex<Real> Y_2t = Yt(n + 1, m);
+          std::complex<Real> Y_0t = Yt(n - 1, m);
+          std::complex<Real> Y_1t = Yt(n + 0, m);
+          std::complex<Real> Y_2t = Yt(n + 1, m);
 
-          //Complex<Real> Y_0p = Yp(n - 1, m);
-          Complex<Real> Y_1p = Yp(n + 0, m);
-          //Complex<Real> Y_2p = Yp(n + 1, m);
+          //std::complex<Real> Y_0p = Yp(n - 1, m);
+          std::complex<Real> Y_1p = Yp(n + 0, m);
+          //std::complex<Real> Y_2p = Yp(n + 1, m);
 
           auto Anm = (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0);
           auto Bnm = (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0);
 
-          auto SetVecSH = [&imag,n,m](Complex<Real>& Vr, Complex<Real>& Vt, Complex<Real>& Vp, Complex<Real>& Wr, Complex<Real>& Wt, Complex<Real>& Wp, Complex<Real>& Xr, Complex<Real>& Xt, Complex<Real>& Xp, const Complex<Real> C0, const Complex<Real> C1, const Complex<Real> C2) {
-            Vr = C0 * (-n-1);
+          auto SetVecSH = [&imag,n,m](std::complex<Real>& Vr, std::complex<Real>& Vt, std::complex<Real>& Vp, std::complex<Real>& Wr, std::complex<Real>& Wt, std::complex<Real>& Wp, std::complex<Real>& Xr, std::complex<Real>& Xt, std::complex<Real>& Xp, const std::complex<Real> C0, const std::complex<Real> C1, const std::complex<Real> C2) {
+            Vr = C0 * (Real)(-n-1);
             Vt = C2;
-            Vp = -imag * m * C1;
+            Vp = -imag * (Real)m * C1;
 
-            Wr = C0 * n;
+            Wr = C0 * (Real)n;
             Wt = C2;
-            Wp = -imag * m * C1;
+            Wp = -imag * (Real)m * C1;
 
             Xr = 0;
-            Xt = imag * m * C1;
+            Xt = imag * (Real)m * C1;
             Xp = C2;
           };
           { // Set Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp
@@ -1813,12 +1814,12 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
           if (m!=2        ) Xp_p = 0;
         }
 
-        Complex<Real> PV, PW, PX;
-        Complex<Real> SV[COORD_DIM][COORD_DIM];
-        Complex<Real> SW[COORD_DIM][COORD_DIM];
-        Complex<Real> SX[COORD_DIM][COORD_DIM];
+        std::complex<Real> PV, PW, PX;
+        std::complex<Real> SV[COORD_DIM][COORD_DIM];
+        std::complex<Real> SW[COORD_DIM][COORD_DIM];
+        std::complex<Real> SX[COORD_DIM][COORD_DIM];
         if (interior) {
-          PV = (n + 1) * Ynm * rpow[n + 2];
+          PV = (Real)(n + 1) * Ynm * rpow[n + 2];
           PW = 0;
           PX = 0;
 
@@ -1863,7 +1864,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
           SX[2][2] = a * Xp_p;
         } else {
           PV = 0;
-          PW = n * Ynm * rpow[n + 1];
+          PW = (Real)n * Ynm * rpow[n + 1];
           PX = 0;
 
           Real a, b;
@@ -1907,7 +1908,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
           SX[2][2] = a * Xp_p;
         }
 
-        Complex<Real> KV[COORD_DIM][COORD_DIM], KW[COORD_DIM][COORD_DIM], KX[COORD_DIM][COORD_DIM];
+        std::complex<Real> KV[COORD_DIM][COORD_DIM], KW[COORD_DIM][COORD_DIM], KX[COORD_DIM][COORD_DIM];
         KV[0][0] = SV[0][0] + SV[0][0] - PV;   KV[0][1] = SV[0][1] + SV[1][0]     ;   KV[0][2] = SV[0][2] + SV[2][0]     ;
         KV[1][0] = SV[1][0] + SV[0][1]     ;   KV[1][1] = SV[1][1] + SV[1][1] - PV;   KV[1][2] = SV[1][2] + SV[2][1]     ;
         KV[2][0] = SV[2][0] + SV[0][2]     ;   KV[2][1] = SV[2][1] + SV[1][2]     ;   KV[2][2] = SV[2][2] + SV[2][2] - PV;
@@ -2018,7 +2019,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKSelf(const Vecto
       cos_phi = cos(theta_phi[i * 2 + 1]);
       sin_phi = sin(theta_phi[i * 2 + 1]);
     }
-    Complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
+    std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
     Vector<Real> rpow;
@@ -2034,27 +2035,27 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKSelf(const Vecto
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
-        auto write_coeff = [&](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
+        auto write_coeff = [&](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
           if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
             Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
-            StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real;
+            StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real();
             if (m) {
               idx += (p0+1-m);
-              StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.imag;
+              StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.imag();
             }
           }
         };
 
-        Complex<Real> Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp;
+        std::complex<Real> Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp;
         { // Set vector spherical harmonics
           auto Y = [&SHBasis,p_,i](Long n, Long m) {
-            Complex<Real> c;
+            std::complex<Real> c;
             if (0 <= m && m <= n && n <= p_) {
               Long idx = (2 * p_ - m + 2) * m - (m ? p_+1 : 0) + n;
-              c.real = SHBasis[i][idx];
+              c.real(SHBasis[i][idx]);
               if (m) {
                 idx += (p_+1-m);
-                c.imag = SHBasis[i][idx];
+                c.imag(SHBasis[i][idx]);
               }
             }
             return c;
@@ -2064,29 +2065,29 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKSelf(const Vecto
             auto B = (0<=n && m<=n ? 0.5 * sqrt<Real>((n-m)*(n+m+1)) * (m+1==0?2.0:1.0) : 0);
             return (B / exp_phi * Y(n, m + 1) - A * exp_phi * Y(n, m - 1)) / R[i];
           };
-          Complex<Real> Y_1 = Y(n + 0, m);
-          Complex<Real> Y_1t = Yt(n + 0, m);
+          std::complex<Real> Y_1 = Y(n + 0, m);
+          std::complex<Real> Y_1t = Yt(n + 0, m);
 
-          Complex<Real> Ycsc_1 = Y_1 * csc_theta;
+          std::complex<Real> Ycsc_1 = Y_1 * csc_theta;
           if (fabs(sin_theta) == 0) {
             auto Y_csc0 = [exp_phi, cos_theta](Long n, Long m) {
               if (m == 1) return -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta<0) ? -1 : 1) * exp_phi;
-              return Complex<Real>(0, 0);
+              return std::complex<Real>(0, 0);
             };
             Ycsc_1 = Y_csc0(n + 0, m);
           }
 
-          auto SetVecSH = [&imag,n,m](Complex<Real>& Vr, Complex<Real>& Vt, Complex<Real>& Vp, Complex<Real>& Wr, Complex<Real>& Wt, Complex<Real>& Wp, Complex<Real>& Xr, Complex<Real>& Xt, Complex<Real>& Xp, const Complex<Real> C0, const Complex<Real> C1, const Complex<Real> C2) {
-            Vr = C0 * (-n-1);
+          auto SetVecSH = [&imag,n,m](std::complex<Real>& Vr, std::complex<Real>& Vt, std::complex<Real>& Vp, std::complex<Real>& Wr, std::complex<Real>& Wt, std::complex<Real>& Wp, std::complex<Real>& Xr, std::complex<Real>& Xt, std::complex<Real>& Xp, const std::complex<Real> C0, const std::complex<Real> C1, const std::complex<Real> C2) {
+            Vr = C0 * (Real)(-n-1);
             Vt = C2;
-            Vp = -imag * m * C1;
+            Vp = -imag * (Real)m * C1;
 
-            Wr = C0 * n;
+            Wr = C0 * (Real)n;
             Wt = C2;
-            Wp = -imag * m * C1;
+            Wp = -imag * (Real)m * C1;
 
             Xr = 0;
-            Xt = imag * m * C1;
+            Xt = imag * (Real)m * C1;
             Xp = C2;
           };
           { // Set Vr, Vt, Vp, Wr, Wt, Wp, Xr, Xt, Xp
@@ -2097,9 +2098,9 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKSelf(const Vecto
           }
         }
 
-        Complex<Real> SVr, SVt, SVp;
-        Complex<Real> SWr, SWt, SWp;
-        Complex<Real> SXr, SXt, SXp;
+        std::complex<Real> SVr, SVt, SVp;
+        std::complex<Real> SWr, SWt, SWp;
+        std::complex<Real> SXr, SXt, SXp;
         if (interior) {
           Real a, b;
           a = ((2 * n * n + 4 * n + 3) / (Real)((2 * n + 1) * (2 * n + 3))) * rpow[n + 2];  // pow<Real>(R[i], n);
@@ -2891,14 +2892,14 @@ template <class Real> void SphericalHarmonics<Real>::SHBasisEval(Long p0, const 
   Long N = theta_phi.Dim() / 2;
   assert(theta_phi.Dim() == N * 2);
 
-  Vector<Complex<Real>> exp_phi(N);
+  Vector<std::complex<Real>> exp_phi(N);
   Matrix<Real> LegP((p0+1)*(p0+2)/2, N);
   { // Set exp_phi, LegP
     Vector<Real> theta(N);
     for (Long i = 0; i < N; i++) { // Set theta, exp_phi
       theta[i] = theta_phi[i*2+0];
-      exp_phi[i].real = cos<Real>(theta_phi[i*2+1]);
-      exp_phi[i].imag = sin<Real>(theta_phi[i*2+1]);
+      exp_phi[i].real(cos<Real>(theta_phi[i*2+1]));
+      exp_phi[i].imag(sin<Real>(theta_phi[i*2+1]));
     }
 
     Vector<Real> alp(LegP.Dim(0) * LegP.Dim(1), LegP.begin(), false);
@@ -2909,16 +2910,16 @@ template <class Real> void SphericalHarmonics<Real>::SHBasisEval(Long p0, const 
     SHBasis.ReInit(N, M);
     Real s = 4 * sqrt<Real>(const_pi<Real>());
     for (Long k0 = 0; k0 < N; k0++) {
-      Complex<Real> exp_phi_ = 1;
-      Complex<Real> exp_phi1 = exp_phi[k0];
+      std::complex<Real> exp_phi_ = 1;
+      std::complex<Real> exp_phi1 = exp_phi[k0];
       for (Long m = 0; m <= p0; m++) {
         for (Long n = m; n <= p0; n++) {
           Long poly_idx = (2 * p0 - m + 1) * m / 2 + n;
           Long basis_idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
-          SHBasis[k0][basis_idx] = LegP[poly_idx][k0] * exp_phi_.real * s;
+          SHBasis[k0][basis_idx] = LegP[poly_idx][k0] * exp_phi_.real() * s;
           if (m) { // imaginary part
             basis_idx += (p0+1-m);
-            SHBasis[k0][basis_idx] = -LegP[poly_idx][k0] * exp_phi_.imag * s;
+            SHBasis[k0][basis_idx] = -LegP[poly_idx][k0] * exp_phi_.imag() * s;
           } else {
             SHBasis[k0][basis_idx] = SHBasis[k0][basis_idx] * 0.5;
           }
@@ -2950,27 +2951,27 @@ template <class Real> void SphericalHarmonics<Real>::VecSHBasisEval(Long p0, con
   { // Set SHBasis
     SHBasis.ReInit(N * COORD_DIM, COORD_DIM * M);
     SHBasis = 0;
-    const Complex<Real> imag(0,1);
+    const std::complex<Real> imag(0,1);
     for (Long i = 0; i < N; i++) {
       auto Y = [p_, &Ynm, i](Long n, Long m) {
-        Complex<Real> c;
+        std::complex<Real> c;
         if (0 <= m && m <= n && n <= p_) {
           Long idx = (2 * p_ - m + 2) * m - (m ? p_+1 : 0) + n;
-          c.real = Ynm[i][idx];
+          c.real(Ynm[i][idx]);
           if (m) {
             idx += (p_+1-m);
-            c.imag = Ynm[i][idx];
+            c.imag(Ynm[i][idx]);
           }
         }
         return c;
       };
-      auto write_coeff = [p0, &SHBasis, i, M](Complex<Real> c, Long n, Long m, Long k0, Long k1) {
+      auto write_coeff = [p0, &SHBasis, i, M](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
         if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
           Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
-          SHBasis[i * COORD_DIM + k1][k0 * M + idx] = c.real;
+          SHBasis[i * COORD_DIM + k1][k0 * M + idx] = c.real();
           if (m) {
             idx += (p0+1-m);
-            SHBasis[i * COORD_DIM + k1][k0 * M + idx] = c.imag;
+            SHBasis[i * COORD_DIM + k1][k0 * M + idx] = c.imag();
           }
         }
       };
@@ -2979,19 +2980,19 @@ template <class Real> void SphericalHarmonics<Real>::VecSHBasisEval(Long p0, con
       if (fabs(csc_theta[i]) > 0) {
         for (Long m = 0; m <= p0; m++) {
           for (Long n = m; n <= p0; n++) {
-            Complex<Real> AYBY = A(n,m) * Y(n+1,m) - B(n,m) * Y(n-1,m);
+            std::complex<Real> AYBY = A(n,m) * Y(n+1,m) - B(n,m) * Y(n-1,m);
 
-            Complex<Real> Fv2r = Y(n,m) * (-n-1);
-            Complex<Real> Fw2r = Y(n,m) * n;
-            Complex<Real> Fx2r = 0;
+            std::complex<Real> Fv2r = Y(n,m) * (-n-1);
+            std::complex<Real> Fw2r = Y(n,m) * n;
+            std::complex<Real> Fx2r = 0;
 
-            Complex<Real> Fv2t = AYBY * csc_theta[i];
-            Complex<Real> Fw2t = AYBY * csc_theta[i];
-            Complex<Real> Fx2t = imag * m * Y(n,m) * csc_theta[i];
+            std::complex<Real> Fv2t = AYBY * csc_theta[i];
+            std::complex<Real> Fw2t = AYBY * csc_theta[i];
+            std::complex<Real> Fx2t = imag * m * Y(n,m) * csc_theta[i];
 
-            Complex<Real> Fv2p = -imag * m * Y(n,m) * csc_theta[i];
-            Complex<Real> Fw2p = -imag * m * Y(n,m) * csc_theta[i];
-            Complex<Real> Fx2p = AYBY * csc_theta[i];
+            std::complex<Real> Fv2p = -imag * m * Y(n,m) * csc_theta[i];
+            std::complex<Real> Fw2p = -imag * m * Y(n,m) * csc_theta[i];
+            std::complex<Real> Fx2p = AYBY * csc_theta[i];
 
             write_coeff(Fv2r, n, m, 0, 0);
             write_coeff(Fw2r, n, m, 1, 0);
@@ -3007,21 +3008,21 @@ template <class Real> void SphericalHarmonics<Real>::VecSHBasisEval(Long p0, con
           }
         }
       } else {
-        Complex<Real> exp_phi;
-        exp_phi.real = cos<Real>(theta_phi[i*2+1]);
-        exp_phi.imag = -sin<Real>(theta_phi[i*2+1]);
+        std::complex<Real> exp_phi;
+        exp_phi.real(cos<Real>(theta_phi[i*2+1]));
+        exp_phi.imag(-sin<Real>(theta_phi[i*2+1]));
         for (Long m = 0; m <= p0; m++) {
           for (Long n = m; n <= p0; n++) {
 
-            Complex<Real> Fv2r = 0;
-            Complex<Real> Fw2r = 0;
-            Complex<Real> Fx2r = 0;
-            Complex<Real> Fv2t = 0;
-            Complex<Real> Fw2t = 0;
-            Complex<Real> Fx2t = 0;
-            Complex<Real> Fv2p = 0;
-            Complex<Real> Fw2p = 0;
-            Complex<Real> Fx2p = 0;
+            std::complex<Real> Fv2r = 0;
+            std::complex<Real> Fw2r = 0;
+            std::complex<Real> Fx2r = 0;
+            std::complex<Real> Fv2t = 0;
+            std::complex<Real> Fw2t = 0;
+            std::complex<Real> Fx2t = 0;
+            std::complex<Real> Fv2p = 0;
+            std::complex<Real> Fw2p = 0;
+            std::complex<Real> Fx2p = 0;
 
             if (m == 0) {
               Fv2r = Y(n,m) * (-n-1);
@@ -3030,7 +3031,7 @@ template <class Real> void SphericalHarmonics<Real>::VecSHBasisEval(Long p0, con
             }
             if (m == 1) {
               auto Ycsc = [&cos_theta, &exp_phi, i](Long n) { return -sqrt<Real>((2*n+1)*n*(n+1)) * ((n%2==0) && (cos_theta[i]<0) ? -1 : 1) * exp_phi; };
-              Complex<Real> AYBY = A(n,m) * Ycsc(n+1) - B(n,m) * Ycsc(n-1);
+              std::complex<Real> AYBY = A(n,m) * Ycsc(n+1) - B(n,m) * Ycsc(n-1);
 
               Fv2t = AYBY;
               Fw2t = AYBY;
