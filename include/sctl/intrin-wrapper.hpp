@@ -87,7 +87,7 @@ namespace sctl { // Traits
     public:
       static constexpr DataType Type = DataType::Integer;
       static constexpr Integer Size = sizeof(__int128);
-      static constexpr Integer SigBits = Size * 16 - 1;
+      static constexpr Integer SigBits = Size * 8 - 1;
   };
 #endif
 
@@ -1012,7 +1012,7 @@ namespace sctl { // SSE
   }
 
   template <> inline void store_intrin<VecData<int8_t,16>>(int8_t* p, VecData<int8_t,16> vec) {
-    _mm_storeu_si128((__m128i*)p, vec.v);
+    _mm_store_si128((__m128i*)p, vec.v);
   }
   template <> inline void store_intrin<VecData<int16_t,8>>(int16_t* p, VecData<int16_t,8> vec) {
     _mm_store_si128((__m128i*)p, vec.v);
@@ -1491,7 +1491,7 @@ namespace sctl { // SSE
       #endif
     }
     static inline VecData<double,2> eval(const VecData<double,2>& a, const Mask<VecData<double,2>>& m) {
-      #if defined(__AVX51DQ__) && defined(__AVX512VL__)
+      #if defined(__AVX512DQ__) && defined(__AVX512VL__)
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(_mm_maskz_rsqrt14_pd(_mm_movepi64_mask(_mm_castpd_si128(m.v)), a.v), a.v);
       #else
@@ -2035,11 +2035,10 @@ namespace sctl { // AVX
 
   // Bitshift
   //template <> inline VecData<int8_t ,32> bitshiftleft_intrin<VecData<int8_t ,32>>(const VecData<int8_t ,32>& a, const Integer& rhs) { }
-  template <> inline VecData<int16_t,16> bitshiftleft_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a, const Integer& rhs) { return _mm256_slli_epi16(a.v , rhs); }
   #ifdef __AVX2__
+  template <> inline VecData<int16_t,16> bitshiftleft_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a, const Integer& rhs) { return _mm256_slli_epi16(a.v , rhs); }
   template <> inline VecData<int32_t ,8> bitshiftleft_intrin<VecData<int32_t ,8>>(const VecData<int32_t ,8>& a, const Integer& rhs) { return _mm256_slli_epi32(a.v , rhs); }
   template <> inline VecData<int64_t ,4> bitshiftleft_intrin<VecData<int64_t ,4>>(const VecData<int64_t ,4>& a, const Integer& rhs) { return _mm256_slli_epi64(a.v , rhs); }
-  #endif
   template <> inline VecData<float   ,8> bitshiftleft_intrin<VecData<float   ,8>>(const VecData<float   ,8>& a, const Integer& rhs) { return _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_castps_si256(a.v), rhs)); }
   template <> inline VecData<double  ,4> bitshiftleft_intrin<VecData<double  ,4>>(const VecData<double  ,4>& a, const Integer& rhs) { return _mm256_castsi256_pd(_mm256_slli_epi64(_mm256_castpd_si256(a.v), rhs)); }
 
@@ -2049,6 +2048,7 @@ namespace sctl { // AVX
   template <> inline VecData<int64_t ,4> bitshiftright_intrin<VecData<int64_t ,4>>(const VecData<int64_t ,4>& a, const Integer& rhs) { return _mm256_srli_epi64(a.v , rhs); }
   template <> inline VecData<float   ,8> bitshiftright_intrin<VecData<float   ,8>>(const VecData<float   ,8>& a, const Integer& rhs) { return _mm256_castsi256_ps(_mm256_srli_epi32(_mm256_castps_si256(a.v), rhs)); }
   template <> inline VecData<double  ,4> bitshiftright_intrin<VecData<double  ,4>>(const VecData<double  ,4>& a, const Integer& rhs) { return _mm256_castsi256_pd(_mm256_srli_epi64(_mm256_castpd_si256(a.v), rhs)); }
+  #endif
 
   // Other functions
   #ifdef __AVX2__
@@ -2775,10 +2775,10 @@ namespace sctl { // AVX512
   }
 
   // Conversion operators
-#if defined(__AVX512DQ__)
   template <> inline VecData<float,16> convert_int2real_intrin<VecData<float,16>,VecData<int32_t,16>>(const VecData<int32_t,16>& x) { return _mm512_cvtepi32_ps(x.v); }
-  template <> inline VecData<double,8> convert_int2real_intrin<VecData<double,8>,VecData<int64_t, 8>>(const VecData<int64_t, 8>& x) { return _mm512_cvtepi64_pd(x.v); }
   template <> inline VecData<int32_t,16> round_real2int_intrin<VecData<int32_t,16>,VecData<float,16>>(const VecData<float,16>& x) { return _mm512_cvtps_epi32(x.v); }
+#if defined(__AVX512DQ__)
+  template <> inline VecData<double,8> convert_int2real_intrin<VecData<double,8>,VecData<int64_t, 8>>(const VecData<int64_t, 8>& x) { return _mm512_cvtepi64_pd(x.v); }
   template <> inline VecData<int64_t, 8> round_real2int_intrin<VecData<int64_t, 8>,VecData<double,8>>(const VecData<double,8>& x) { return _mm512_cvtpd_epi64(x.v); }
 #endif
   template <> inline VecData<float,16> round_real2real_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_roundscale_ps(x.v, _MM_FROUND_TO_NEAREST_INT); }
