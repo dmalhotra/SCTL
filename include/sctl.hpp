@@ -89,8 +89,10 @@
 #include "sctl/profile.hpp"
 #include "sctl/profile.txx"
 
-// Print stack trace
+// Print stack trace (only on POSIX targets that provide <execinfo.h>; opt-in via SCTL_SIG_HANDLER)
+#ifdef SCTL_SIG_HANDLER
 #include "sctl/stacktrace.h"
+#endif
 
 // Boundary quadrature, Kernel functions
 #include "sctl/generic-kernel.hpp"

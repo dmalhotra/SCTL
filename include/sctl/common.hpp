@@ -59,7 +59,8 @@ typedef int64_t Long;  // problem size
 #define SCTL_ASSERT(cond)                                                                                      \
   do {                                                                                                          \
     if (!(cond)) {                                                                                              \
-      fprintf(stderr, "\n%s:%d: %s: SCTL Assertion `%s' failed.\n", __FILE__, __LINE__, __PRETTY_FUNCTION__, #cond); \
+      std::cerr << '\n' << __FILE__ << ':' << __LINE__ << ": " << __PRETTY_FUNCTION__                          \
+                << ": SCTL Assertion `" << #cond << "' failed.\n";                                              \
       abort();                                                                                                  \
     }                                                                                                           \
   } while (0)

@@ -38,11 +38,11 @@ inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
   // Print
   for (int i = skip; i < addrlen; i++) {
     // Get command
-    char cmd[10240+256+43];
+    char cmd[sizeof(fname) + 64];
 #ifdef __APPLE__
-    sprintf(cmd, "atos -o %s %p 2> /dev/null", fname, addrlist[i]); // on mac
+    snprintf(cmd, sizeof(cmd), "atos -o %s %p 2> /dev/null", fname, addrlist[i]); // on mac
 #elif __linux__
-    sprintf(cmd, "addr2line -f -C -i -e  %s  %p 2> /dev/null", fname, addrlist[i]);
+    snprintf(cmd, sizeof(cmd), "addr2line -f -C -i -e  %s  %p 2> /dev/null", fname, addrlist[i]);
 #endif
 
     // Execute command
@@ -66,7 +66,34 @@ inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
     } else if (fgets_ret0 != nullptr && fgets_ret1 != nullptr && buffer0[0] != '?' && buffer0[0] != '\0') {
       fprintf(out, "[%d] %s: %s\n", i - skip, buffer1, buffer0);
     } else {
-      fprintf(out, "[%d] %p: %s\n", i - skip, addrlist[i], symbollist[i]);
+      // Fallback: demangle the symbol from backtrace_symbols if possible.
+      // glibc format: "module(_Zmangled+0xoffset) [0xaddr]"
+      // macOS  format: "idx module 0xaddr _Zmangled + offset"
+      char* sym = symbollist[i];
+      char* mangled_begin = nullptr;
+      char* mangled_end = nullptr;
+      for (char* p = sym; *p; p++) {
+        if (*p == '(' && !mangled_begin) { mangled_begin = p + 1; }
+        else if ((*p == '+' || *p == ')') && mangled_begin && !mangled_end) { mangled_end = p; break; }
+      }
+      char* demangled = nullptr;
+      if (mangled_begin && mangled_end && mangled_end > mangled_begin) {
+        char saved = *mangled_end;
+        *mangled_end = '\0';
+        int status = 0;
+        demangled = abi::__cxa_demangle(mangled_begin, nullptr, nullptr, &status);
+        *mangled_end = saved;
+        if (status != 0) { free(demangled); demangled = nullptr; }
+      }
+      if (demangled) {
+        char saved = *mangled_begin;
+        *mangled_begin = '\0';
+        fprintf(out, "[%d] %p: %s%s%s\n", i - skip, addrlist[i], sym, demangled, mangled_end);
+        *mangled_begin = saved;
+        free(demangled);
+      } else {
+        fprintf(out, "[%d] %p: %s\n", i - skip, addrlist[i], sym);
+      }
     }
   }
   fprintf(stderr, "\n");
