@@ -63,7 +63,9 @@ template <class ValueType> class Matrix {
   ~Matrix();
 
   /**
-   * Swaps the contents of two matrices.
+   * Swap the contents of two matrices. O(1) — no elements are copied. Ownership
+   * travels with the buffer, so it is safe to swap an owning matrix with a
+   * non-owning view.
    *
    * @param M Matrix to be swapped with.
    */
@@ -115,7 +117,7 @@ template <class ValueType> class Matrix {
    * @param i Dimension index (0 for rows, 1 for columns).
    * @return Size of the matrix along the specified dimension.
    */
-  Long Dim(Long i) const;
+  [[nodiscard]] Long Dim(Long i) const noexcept;
 
   /**
    * Sets all elements of the matrix to zero.
@@ -127,28 +129,28 @@ template <class ValueType> class Matrix {
    *
    * @return Iterator to the beginning of the matrix.
    */
-  Iterator<ValueType> begin();
+  [[nodiscard]] Iterator<ValueType> begin();
 
   /**
    * Returns a const iterator to the beginning of the matrix.
    *
    * @return Const iterator to the beginning of the matrix.
    */
-  ConstIterator<ValueType> begin() const;
+  [[nodiscard]] ConstIterator<ValueType> begin() const;
 
   /**
    * Returns an iterator to the end of the matrix.
    *
    * @return Iterator to the end of the matrix.
    */
-  Iterator<ValueType> end();
+  [[nodiscard]] Iterator<ValueType> end();
 
   /**
    * Returns a const iterator to the end of the matrix.
    *
    * @return Const iterator to the end of the matrix.
    */
-  ConstIterator<ValueType> end() const;
+  [[nodiscard]] ConstIterator<ValueType> end() const;
 
   // Matrix-Matrix operations
 
@@ -393,7 +395,11 @@ template <class ValueType> class Matrix {
   /**
    * Computes the Moore-Penrose pseudo-inverse of the matrix.
    *
-   * @param eps The tolerance value for singular values close to zero. Defaults to -1.
+   * @param eps Relative threshold on singular values: any `sigma_i` with
+   * `sigma_i < eps * sigma_max` is treated as zero (its reciprocal is set to
+   * zero rather than `1/sigma_i`). The default value of `-1` is a sentinel
+   * for "auto-pick" and is replaced internally by `sqrt(machine_eps<ValueType>())`.
+   * Pass an explicit non-negative value to override.
    * @return The pseudo-inverse of the matrix.
    *
    * @warning Original matrix is destroyed.

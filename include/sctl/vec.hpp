@@ -45,14 +45,14 @@ namespace sctl {
        *
        * @return The size of the vector.
        */
-      static constexpr Integer Size();
+      [[nodiscard]] static constexpr Integer Size();
 
       /**
        * Create a vector initialized with all elements set to zero.
        *
        * @return Zero-initialized vector.
        */
-      static inline Vec Zero();
+      [[nodiscard]] static inline Vec Zero() noexcept;
 
       /**
        * Load a scalar value into all elements of the vector.
@@ -60,7 +60,7 @@ namespace sctl {
        * @param p Pointer to the scalar value.
        * @return Vector with all elements loaded with the scalar value.
        */
-      static inline Vec Load1(ScalarType const* p);
+      [[nodiscard]] static inline Vec Load1(ScalarType const* p);
 
       /**
        * Load a vector of scalar values from unaligned memory.
@@ -68,7 +68,7 @@ namespace sctl {
        * @param p Pointer to the scalar values.
        * @return Vector loaded with the scalar values.
        */
-      static inline Vec Load(ScalarType const* p);
+      [[nodiscard]] static inline Vec Load(ScalarType const* p);
 
       /**
        * Load a vector of scalar values from aligned memory.
@@ -76,7 +76,7 @@ namespace sctl {
        * @param p Pointer to the scalar values.
        * @return Vector loaded with the scalar values from aligned memory.
        */
-      static inline Vec LoadAligned(ScalarType const* p);
+      [[nodiscard]] static inline Vec LoadAligned(ScalarType const* p);
 
       /**
        * Default constructor.

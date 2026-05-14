@@ -102,23 +102,28 @@ template <Integer DIM> class Tree {
     /**
      * Add named data to the tree nodes.
      *
-     * @param[in] name Name for the data.
-     * @param[in] data Vector containing the contiguous data for all nodes.
-     * @param[in] cnt Vector of length equal to number of tree nodes, giving the number of data elements per node.
+     * @param[in] name Name for the data. Must not already exist on this tree.
+     * @param[in] data Contiguous data for all nodes, concatenated in node
+     * order. Must satisfy `data.Dim() == dof * sum(cnt)` for some `dof >= 0`.
+     * @param[in] cnt Number of data elements per node (length = number of tree nodes).
      *
-     * @note This is a collective operation and must be called from all processes in the communicator.
+     * @note Collective; must be called from all processes.
+     *
+     * @warning Storage is type-erased. `GetData<U>` for this `name` only
+     * round-trips when `U` matches the `ValueType` used here.
      */
     template <class ValueType> void AddData(const std::string& name, const Vector<ValueType>& data, const Vector<Long>& cnt);
 
     /**
      * Get node data.
      *
-     * @param[out] data Vector containing the contiguous data of all nodes. The vector does not own the memory, and
-     * therefore must not be modified or resized. (Technically, data may be modified in-place, but it violates const
-     * correctness).
-     * @param[out] cnt Vector of length equal to number of tree nodes, giving the number of data elements per node. The
-     * vector does not own the memory and must not be modified.
+     * @param[out] data Non-owning view of the tree's internal buffer for this
+     * data. Must not be resized; in-place mutation aliases the stored data.
+     * @param[out] cnt Number of data elements per node (length = number of tree nodes). Non-owning view; must not be modified.
      * @param[in] name Name of the data.
+     *
+     * @warning `ValueType` must match the type used in the corresponding
+     * `AddData`; otherwise the bytes are silently reinterpreted.
      */
     template <class ValueType> void GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name) const;
 
@@ -237,11 +242,12 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
     /**
      * Add particle data to the point tree.
      *
-     * @param data_name Name of the data.
-     * @param particle_name Name of the particle group.
-     * @param data Data values associated with the particles.
+     * @param data_name Name of the data. Must not already exist.
+     * @param particle_name Name of an existing particle group from `AddParticles`.
+     * @param data Local data values, sized `dof * Nlocal[particle_name]` for
+     * some implicit `dof`. Reordered to match the particle group.
      *
-     * @note This is a collective operation and must be called from all processes in the communicator.
+     * @note Collective; must be called from all processes.
      */
     void AddParticleData(const std::string& data_name, const std::string& particle_name, const Vector<Real>& data);
 

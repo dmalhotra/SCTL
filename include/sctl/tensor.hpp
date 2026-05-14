@@ -28,14 +28,14 @@ namespace sctl {
        *
        * @return The order of the tensor.
        */
-      static constexpr Long Order();
+      [[nodiscard]] static constexpr Long Order();
 
       /**
        * Get the total number of elements in the tensor.
        *
        * @return The total number of elements in the tensor.
        */
-      static constexpr Long Size();
+      [[nodiscard]] static constexpr Long Size();
 
       /**
        * Get the size of a specific dimension of the tensor.
@@ -43,7 +43,7 @@ namespace sctl {
        * @tparam k The index of the dimension.
        * @return The size of the specified dimension.
        */
-      template <Long k> static constexpr Long Dim();
+      template <Long k> [[nodiscard]] static constexpr Long Dim();
 
       /**
        * A static function to test the functionality of the Tensor class.
@@ -140,28 +140,28 @@ namespace sctl {
        *
        * @return An iterator to the beginning of the tensor.
        */
-      Iterator<ValueType> begin();
+      [[nodiscard]] Iterator<ValueType> begin();
 
       /**
        * Get a const iterator to the beginning of the tensor.
        *
        * @return A const iterator to the beginning of the tensor.
        */
-      ConstIterator<ValueType> begin() const;
+      [[nodiscard]] ConstIterator<ValueType> begin() const;
 
       /**
        * Get an iterator to the end of the tensor.
        *
        * @return An iterator to the end of the tensor.
        */
-      Iterator<ValueType> end();
+      [[nodiscard]] Iterator<ValueType> end();
 
       /**
        * Get a const iterator to the end of the tensor.
        *
        * @return A const iterator to the end of the tensor.
        */
-      ConstIterator<ValueType> end() const;
+      [[nodiscard]] ConstIterator<ValueType> end() const;
 
       /**
        * Access a specific element of the tensor.

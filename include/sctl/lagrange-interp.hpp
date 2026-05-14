@@ -28,18 +28,22 @@ namespace sctl {
       static void Interpolate(Vector<Real>& wts, const Vector<Real>& src_nds, const Vector<Real>& trg_nds);
 
       /**
-       * This function computes the derivative of interpolated values
-       * at given nodes.
+       * Compute the derivative of the unique polynomial that interpolates
+       * `f` through `nds`, evaluated at those same nodes. `df[i]` is the
+       * derivative at `nds[i]` (so the source nodes and the target nodes are
+       * one and the same).
        *
-       * @param[out] df The vector storing the derivative values. The dimensions
-       * are the same as the input vector f.
+       * @param[out] df Derivative values, same layout and length as `f`:
+       * `df.Dim() == f.Dim() == dof * nds.Dim()`. Reallocated if needed.
        *
        * @param[in] f The vector of function values at the interpolation nodes.
        * Multiple scalar functions may be passed as: f = [f1(x1), f1(x2), ...,
        * f1(xN), f2(x1), f2(x2), ..., f2(xN), ...], where x_i are the
-       * interpolation nodes.
+       * interpolation nodes. `f.Dim()` must be a multiple of `nds.Dim()`.
        *
-       * @param[in] nds The vector of node positions.
+       * @param[in] nds The interpolation node positions. Must be the same
+       * nodes at which `f` is sampled. Nodes must be distinct (the
+       * barycentric form divides by `nds[i] - nds[j]`).
        */
       static void Derivative(Vector<Real>& df, const Vector<Real>& f, const Vector<Real>& nds);
 

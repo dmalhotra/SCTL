@@ -168,9 +168,7 @@ template <class ValueType> template <class Type> void Vector<ValueType>::Read(co
   }
 }
 
-template <class ValueType> inline Long Vector<ValueType>::Dim() const { return dim; }
-
-//template <class ValueType> inline Long Vector<ValueType>::Capacity() const { return capacity; }
+template <class ValueType> inline Long Vector<ValueType>::Dim() const noexcept { return dim; }
 
 template <class ValueType> void Vector<ValueType>::SetZero() {
   if (dim > 0) memset<ValueType>(data_ptr, 0, dim);

@@ -62,7 +62,7 @@ template <class ValueType> class Permutation {
    *
    * @return The dimension of the permutation operator.
    */
-  Long Dim() const;
+  [[nodiscard]] Long Dim() const noexcept;
 
   /**
    * Computes the transpose of the permutation operator.

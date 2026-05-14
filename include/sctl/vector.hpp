@@ -77,7 +77,9 @@ template <class ValueType> class Vector {
   ~Vector();
 
   /**
-   * Swap the contents of two vectors.
+   * Swap the contents of two vectors. O(1) — no elements are copied. Ownership
+   * travels with the buffer, so it is safe to swap an owning vector with a
+   * non-owning view.
    *
    * @param v1 Vector to swap with.
    */
@@ -127,9 +129,7 @@ template <class ValueType> class Vector {
    *
    * @return Long Dimension of the vector.
    */
-  Long Dim() const;
-
-  //Long Capacity() const;
+  [[nodiscard]] Long Dim() const noexcept;
 
   /**
    * Set all elements of the vector to zero.
@@ -141,28 +141,28 @@ template <class ValueType> class Vector {
    *
    * @return Iterator<ValueType> Iterator pointing to the beginning of the vector.
    */
-  Iterator<ValueType> begin();
+  [[nodiscard]] Iterator<ValueType> begin();
 
   /**
    * Get a const iterator pointing to the beginning of the vector.
    *
    * @return ConstIterator<ValueType> Const iterator pointing to the beginning of the vector.
    */
-  ConstIterator<ValueType> begin() const;
+  [[nodiscard]] ConstIterator<ValueType> begin() const;
 
   /**
    * Get an iterator pointing to the end of the vector.
    *
    * @return Iterator<ValueType> Iterator pointing to the end of the vector.
    */
-  Iterator<ValueType> end();
+  [[nodiscard]] Iterator<ValueType> end();
 
   /**
    * Get a const iterator pointing to the end of the vector.
    *
    * @return ConstIterator<ValueType> Const iterator pointing to the end of the vector.
    */
-  ConstIterator<ValueType> end() const;
+  [[nodiscard]] ConstIterator<ValueType> end() const;
 
   /**
    * Add an element to the end of the vector.

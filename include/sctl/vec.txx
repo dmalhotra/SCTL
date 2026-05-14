@@ -43,7 +43,7 @@ namespace sctl {
     return N;
   }
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> Vec<ValueType,N>::Zero() {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> Vec<ValueType,N>::Zero() noexcept {
     Vec<ValueType,N> r;
     r.v = zero_intrin<VData>();
     return r;

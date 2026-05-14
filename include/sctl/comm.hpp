@@ -76,12 +76,12 @@ class Comm {
   /**
    * *self* communicator.
    */
-  static Comm Self();
+  [[nodiscard]] static Comm Self();
 
   /**
    * *world* communicator.
    */
-  static Comm World();
+  [[nodiscard]] static Comm World();
 
   /**
    * Duplicate communicator (copy assignment, via `MPI_Comm_dup`).
@@ -103,7 +103,7 @@ class Comm {
   /**
    * Convert to MPI_Comm.
    */
-  const MPI_Comm& GetMPI_Comm() const { return mpi_comm_; }
+  [[nodiscard]] const MPI_Comm& GetMPI_Comm() const noexcept { return mpi_comm_; }
 #endif
 
   /**
@@ -111,17 +111,17 @@ class Comm {
    *
    * @param[in] clr identify different communicator groups.
    */
-  Comm Split(Integer clr) const;
+  [[nodiscard]] Comm Split(Integer clr) const;
 
   /**
    * @return rank of the current process.
    */
-  Integer Rank() const;
+  [[nodiscard]] Integer Rank() const noexcept;
 
   /**
    * @return size of this communicator.
    */
-  Integer Size() const;
+  [[nodiscard]] Integer Size() const noexcept;
 
   /**
    * Synchronize all processes.

@@ -394,7 +394,7 @@ inline Comm Comm::Split(Integer clr) const {
 #endif
 }
 
-inline Integer Comm::Rank() const {
+inline Integer Comm::Rank() const noexcept {
 #ifdef SCTL_HAVE_MPI
   return mpi_rank_;
 #else
@@ -402,7 +402,7 @@ inline Integer Comm::Rank() const {
 #endif
 }
 
-inline Integer Comm::Size() const {
+inline Integer Comm::Size() const noexcept {
 #ifdef SCTL_HAVE_MPI
   return mpi_size_;
 #else
