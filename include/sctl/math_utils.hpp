@@ -15,7 +15,7 @@ namespace sctl {
  * @tparam Real The template type.
  * @return constexpr Integer The number of significant bits.
  */
-template <class Real> inline constexpr Integer significant_bits();
+template <class Real> [[nodiscard]] inline constexpr Integer significant_bits();
 
 /**
  * Returns the machine epsilon (the difference between 1 and the smallest value greater than 1 that is representable).
@@ -23,7 +23,7 @@ template <class Real> inline constexpr Integer significant_bits();
  * @tparam Real The template type.
  * @return constexpr Real The machine epsilon.
  */
-template <class Real> inline constexpr Real machine_eps();
+template <class Real> [[nodiscard]] inline constexpr Real machine_eps();
 
 /**
  * Converts a string to a real number.
@@ -32,7 +32,7 @@ template <class Real> inline constexpr Real machine_eps();
  * @param str The input string.
  * @return Real The real number parsed from the string.
  */
-template <class Real> Real atoreal(const char* str);
+template <class Real> [[nodiscard]] Real atoreal(const char* str);
 
 /**
  * Returns the mathematical constant pi.
@@ -40,7 +40,7 @@ template <class Real> Real atoreal(const char* str);
  * @tparam Real The template type.
  * @return constexpr Real The value of pi.
  */
-template <class Real> inline constexpr Real const_pi() { return (Real)14488038916154245684ull/(Real)(1ull<<62) + (Real)7089564414062235240ull/(Real)(1ull<<62)/(Real)(1ull<<63); }
+template <class Real> [[nodiscard]] inline constexpr Real const_pi() { return (Real)14488038916154245684ull/(Real)(1ull<<62) + (Real)7089564414062235240ull/(Real)(1ull<<62)/(Real)(1ull<<63); }
 
 /**
  * Returns the mathematical constant e.
@@ -48,7 +48,7 @@ template <class Real> inline constexpr Real const_pi() { return (Real)1448803891
  * @tparam Real The template type.
  * @return constexpr Real The value of e.
  */
-template <class Real> inline constexpr Real const_e() { return (Real)12535862302449814170ull/(Real)(1ull<<62) + (Real)6336049073805500024ull/(Real)(1ull<<62)/(Real)(1ull<<63); }
+template <class Real> [[nodiscard]] inline constexpr Real const_e() { return (Real)12535862302449814170ull/(Real)(1ull<<62) + (Real)6336049073805500024ull/(Real)(1ull<<62)/(Real)(1ull<<63); }
 
 /**
  * Returns the natural logarithm of 2.
@@ -56,10 +56,10 @@ template <class Real> inline constexpr Real const_e() { return (Real)12535862302
  * @tparam Real The template type.
  * @return constexpr Real The value of ln(2).
  */
-template <class Real> inline constexpr Real const_ln2() { return (Real)6393154322601327829ull/(Real)(1ull<<63) + (Real)8248603190132260267ull/(Real)(1ull<<63)/(Real)(1ull<<63); }
+template <class Real> [[nodiscard]] inline constexpr Real const_ln2() { return (Real)6393154322601327829ull/(Real)(1ull<<63) + (Real)8248603190132260267ull/(Real)(1ull<<63)/(Real)(1ull<<63); }
 
-template <class Real> inline bool isinf(const Real a) { return std::isinf(a); }
-template <class Real> inline bool isnan(const Real a) { return std::isnan(a); }
+template <class Real> [[nodiscard]] inline bool isinf(const Real a) { return std::isinf(a); }
+template <class Real> [[nodiscard]] inline bool isnan(const Real a) { return std::isnan(a); }
 
 /**
  * Returns the absolute value of the input.
@@ -68,7 +68,7 @@ template <class Real> inline bool isnan(const Real a) { return std::isnan(a); }
  * @param a The input value.
  * @return Real The absolute value of the input.
  */
-template <class Real> inline Real fabs(const Real a) { return (Real)std::fabs(a); }
+template <class Real> [[nodiscard]] inline Real fabs(const Real a) { return (Real)std::fabs(a); }
 
 /**
  * Truncates the input real number to the nearest integer towards zero.
@@ -77,7 +77,7 @@ template <class Real> inline Real fabs(const Real a) { return (Real)std::fabs(a)
  * @param a The input real number.
  * @return Real The truncated real number.
  */
-template <class Real> inline Real trunc(const Real a) { return (Real)std::trunc(a); }
+template <class Real> [[nodiscard]] inline Real trunc(const Real a) { return (Real)std::trunc(a); }
 
 /**
  * Rounds the input real number to the nearest integer.
@@ -86,7 +86,7 @@ template <class Real> inline Real trunc(const Real a) { return (Real)std::trunc(
  * @param a The input real number.
  * @return Real The rounded real number.
  */
-template <class Real> inline Real round(const Real a) { return (Real)std::round(a); }
+template <class Real> [[nodiscard]] inline Real round(const Real a) { return (Real)std::round(a); }
 
 /**
  * Rounds the input real number down to the nearest integer.
@@ -95,7 +95,7 @@ template <class Real> inline Real round(const Real a) { return (Real)std::round(
  * @param a The input real number.
  * @return Real The floor of the real number.
  */
-template <class Real> inline Real floor(const Real a) { return (Real)std::floor(a); }
+template <class Real> [[nodiscard]] inline Real floor(const Real a) { return (Real)std::floor(a); }
 
 /**
  * Rounds the input real number up to the nearest integer.
@@ -104,7 +104,7 @@ template <class Real> inline Real floor(const Real a) { return (Real)std::floor(
  * @param a The input real number.
  * @return Real The ceil of the real number.
  */
-template <class Real> inline Real ceil(const Real a) { return (Real)std::ceil(a); }
+template <class Real> [[nodiscard]] inline Real ceil(const Real a) { return (Real)std::ceil(a); }
 
 /**
  * Computes the square root of the input real number.
@@ -113,7 +113,7 @@ template <class Real> inline Real ceil(const Real a) { return (Real)std::ceil(a)
  * @param a The input real number.
  * @return Real The square root of the real number.
  */
-template <class Real> inline Real sqrt(const Real a) { return (Real)std::sqrt(a); }
+template <class Real> [[nodiscard]] inline Real sqrt(const Real a) { return (Real)std::sqrt(a); }
 
 /**
  * Computes the sine of the input angle.
@@ -122,7 +122,7 @@ template <class Real> inline Real sqrt(const Real a) { return (Real)std::sqrt(a)
  * @param a The input angle in radians.
  * @return Real The sine of the angle.
  */
-template <class Real> inline Real sin(const Real a) { return (Real)std::sin(a); }
+template <class Real> [[nodiscard]] inline Real sin(const Real a) { return (Real)std::sin(a); }
 
 /**
  * Computes the cosine of the input angle.
@@ -131,7 +131,7 @@ template <class Real> inline Real sin(const Real a) { return (Real)std::sin(a); 
  * @param a The input angle in radians.
  * @return Real The cosine of the angle.
  */
-template <class Real> inline Real cos(const Real a) { return (Real)std::cos(a); }
+template <class Real> [[nodiscard]] inline Real cos(const Real a) { return (Real)std::cos(a); }
 
 /**
  * Computes the tangent of the input angle.
@@ -140,7 +140,7 @@ template <class Real> inline Real cos(const Real a) { return (Real)std::cos(a); 
  * @param a The input angle in radians.
  * @return Real The tangent of the angle.
  */
-template <class Real> inline Real tan(const Real a) { return (Real)std::tan(a); }
+template <class Real> [[nodiscard]] inline Real tan(const Real a) { return (Real)std::tan(a); }
 
 /**
  * Computes the arcsine of the input value.
@@ -149,7 +149,7 @@ template <class Real> inline Real tan(const Real a) { return (Real)std::tan(a); 
  * @param a The input value.
  * @return Real The arcsine in radians.
  */
-template <class Real> inline Real asin(const Real a) { return (Real)std::asin(a); }
+template <class Real> [[nodiscard]] inline Real asin(const Real a) { return (Real)std::asin(a); }
 
 /**
  * Computes the arccosine of the input value.
@@ -158,7 +158,7 @@ template <class Real> inline Real asin(const Real a) { return (Real)std::asin(a)
  * @param a The input value.
  * @return Real The arccosine in radians.
  */
-template <class Real> inline Real acos(const Real a) { return (Real)std::acos(a); }
+template <class Real> [[nodiscard]] inline Real acos(const Real a) { return (Real)std::acos(a); }
 
 /**
  * Computes the arctangent of the input value.
@@ -167,7 +167,7 @@ template <class Real> inline Real acos(const Real a) { return (Real)std::acos(a)
  * @param a The input value.
  * @return Real The arctangent in radians.
  */
-template <class Real> inline Real atan(const Real a) { return (Real)std::atan(a); }
+template <class Real> [[nodiscard]] inline Real atan(const Real a) { return (Real)std::atan(a); }
 
 /**
  * Computes the arctangent of the ratio of two input values.
@@ -177,7 +177,7 @@ template <class Real> inline Real atan(const Real a) { return (Real)std::atan(a)
  * @param b The denominator.
  * @return Real The arctangent in radians.
  */
-template <class Real> inline Real atan2(const Real a, const Real b) { return (Real)std::atan2(a, b); }
+template <class Real> [[nodiscard]] inline Real atan2(const Real a, const Real b) { return (Real)std::atan2(a, b); }
 
 /**
  * Computes the remainder of the division of two input values.
@@ -187,7 +187,7 @@ template <class Real> inline Real atan2(const Real a, const Real b) { return (Re
  * @param b The divisor.
  * @return Real The remainder.
  */
-template <class Real> inline Real fmod(const Real a, const Real b) { return (Real)std::fmod(a, b); }
+template <class Real> [[nodiscard]] inline Real fmod(const Real a, const Real b) { return (Real)std::fmod(a, b); }
 
 /**
  * Computes the exponential function of the input value.
@@ -196,7 +196,7 @@ template <class Real> inline Real fmod(const Real a, const Real b) { return (Rea
  * @param a The input value.
  * @return Real The exponential value.
  */
-template <class Real> inline Real exp(const Real a) { return (Real)std::exp(a); }
+template <class Real> [[nodiscard]] inline Real exp(const Real a) { return (Real)std::exp(a); }
 
 /**
  * Computes the natural logarithm of the input value.
@@ -205,7 +205,7 @@ template <class Real> inline Real exp(const Real a) { return (Real)std::exp(a); 
  * @param a The input value.
  * @return Real The natural logarithm.
  */
-template <class Real> inline Real log(const Real a) { return (Real)std::log(a); }
+template <class Real> [[nodiscard]] inline Real log(const Real a) { return (Real)std::log(a); }
 
 /**
  * Computes the base-2 logarithm of the input value.
@@ -214,7 +214,7 @@ template <class Real> inline Real log(const Real a) { return (Real)std::log(a); 
  * @param a The input value.
  * @return Real The base-2 logarithm.
  */
-template <class Real> inline Real log2(const Real a) { return (Real)std::log2(a); }
+template <class Real> [[nodiscard]] inline Real log2(const Real a) { return (Real)std::log2(a); }
 
 /**
  * Computes the power of a base raised to an exponent.
@@ -225,7 +225,7 @@ template <class Real> inline Real log2(const Real a) { return (Real)std::log2(a)
  * @param e The exponent.
  * @return Real The result of the operation.
  */
-template <class Real, class ExpType> inline Real pow(const Real b, const ExpType e);
+template <class Real, class ExpType> [[nodiscard]] inline Real pow(const Real b, const ExpType e);
 
 /**
  * Computes the power of a base raised to a compile-time constant exponent.
@@ -235,7 +235,7 @@ template <class Real, class ExpType> inline Real pow(const Real b, const ExpType
  * @param b The base.
  * @return constexpr ValueType The result of the operation.
  */
-template <Long e, class ValueType> inline constexpr ValueType pow(ValueType b);
+template <Long e, class ValueType> [[nodiscard]] inline constexpr ValueType pow(ValueType b);
 
 
 #ifdef SCTL_QUAD_T

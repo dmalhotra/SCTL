@@ -189,7 +189,7 @@ namespace sctl {
        *
        * @return A new tensor with dimensions rotated to the left.
        */
-      typename TensorRotateLeftType<ValueType, true, Args...>::Value RotateLeft() const;
+      [[nodiscard]] typename TensorRotateLeftType<ValueType, true, Args...>::Value RotateLeft() const;
 
       /**
        * Returns a new tensor obtained by rotating the dimensions of the current tensor to the right.
@@ -199,21 +199,21 @@ namespace sctl {
        *
        * @return A new tensor with dimensions rotated to the right.
        */
-      typename TensorRotateRightType<ValueType, true, Args...>::Value RotateRight() const;
+      [[nodiscard]] typename TensorRotateRightType<ValueType, true, Args...>::Value RotateRight() const;
 
       /**
        * Unary positive operator.
        *
        * @return The tensor itself.
        */
-      Tensor<ValueType, true, Args...> operator+() const;
+      [[nodiscard]] Tensor<ValueType, true, Args...> operator+() const;
 
       /**
        * Unary negative operator.
        *
        * @return Negated tensor.
        */
-      Tensor<ValueType, true, Args...> operator-() const;
+      [[nodiscard]] Tensor<ValueType, true, Args...> operator-() const;
 
       /**
        * Addition operator.
@@ -221,7 +221,7 @@ namespace sctl {
        * @param s Scalar value to add to the tensor.
        * @return Result of addition.
        */
-      Tensor<ValueType, true, Args...> operator+(const ValueType &s) const;
+      [[nodiscard]] Tensor<ValueType, true, Args...> operator+(const ValueType &s) const;
 
       /**
        * Subtraction operator.
@@ -229,7 +229,7 @@ namespace sctl {
        * @param s Scalar value to subtract from the tensor.
        * @return Result of subtraction.
        */
-      Tensor<ValueType, true, Args...> operator-(const ValueType &s) const;
+      [[nodiscard]] Tensor<ValueType, true, Args...> operator-(const ValueType &s) const;
 
       /**
        * Multiplication operator.
@@ -237,7 +237,7 @@ namespace sctl {
        * @param s Scalar value to multiply the tensor by.
        * @return Result of multiplication.
        */
-      Tensor<ValueType, true, Args...> operator*(const ValueType &s) const;
+      [[nodiscard]] Tensor<ValueType, true, Args...> operator*(const ValueType &s) const;
 
       /**
        * Division operator.
@@ -245,7 +245,7 @@ namespace sctl {
        * @param s Scalar value to divide the tensor by.
        * @return Result of division.
        */
-      Tensor<ValueType, true, Args...> operator/(const ValueType &s) const;
+      [[nodiscard]] Tensor<ValueType, true, Args...> operator/(const ValueType &s) const;
 
       /**
        * Addition operator.
@@ -254,7 +254,7 @@ namespace sctl {
        * @param M2 Another tensor to add.
        * @return Result of addition.
        */
-      template <bool own_data_> Tensor<ValueType, true, Args...> operator+(const Tensor<ValueType, own_data_, Args...> &M2) const;
+      template <bool own_data_> [[nodiscard]] Tensor<ValueType, true, Args...> operator+(const Tensor<ValueType, own_data_, Args...> &M2) const;
 
       /**
        * Subtraction operator.
@@ -263,7 +263,7 @@ namespace sctl {
        * @param M2 Another tensor to subtract.
        * @return Result of subtraction.
        */
-      template <bool own_data_> Tensor<ValueType, true, Args...> operator-(const Tensor<ValueType, own_data_, Args...> &M2) const;
+      template <bool own_data_> [[nodiscard]] Tensor<ValueType, true, Args...> operator-(const Tensor<ValueType, own_data_, Args...> &M2) const;
 
       /**
        * Multiplication operator.
@@ -276,7 +276,7 @@ namespace sctl {
        * @param M2 Another tensor to multiply.
        * @return Result of multiplication.
        */
-      template <bool own_data_, Long N1, Long N2> Tensor<ValueType, true, TensorArgExtract<0, Args...>(), N2> operator*(const Tensor<ValueType, own_data_, N1, N2> &M2) const;
+      template <bool own_data_, Long N1, Long N2> [[nodiscard]] Tensor<ValueType, true, TensorArgExtract<0, Args...>(), N2> operator*(const Tensor<ValueType, own_data_, N1, N2> &M2) const;
 
     private:
 

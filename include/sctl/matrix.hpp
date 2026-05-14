@@ -192,7 +192,7 @@ template <class ValueType> class Matrix {
    * @param M2 Matrix to be added.
    * @return New matrix resulting from the addition.
    */
-  Matrix<ValueType> operator+(const Matrix<ValueType>& M2) const;
+  [[nodiscard]] Matrix<ValueType> operator+(const Matrix<ValueType>& M2) const;
 
   /**
    * Subtracts another matrix from this matrix element-wise and returns the result.
@@ -200,7 +200,7 @@ template <class ValueType> class Matrix {
    * @param M2 Matrix to be subtracted.
    * @return New matrix resulting from the subtraction.
    */
-  Matrix<ValueType> operator-(const Matrix<ValueType>& M2) const;
+  [[nodiscard]] Matrix<ValueType> operator-(const Matrix<ValueType>& M2) const;
 
   /**
    * Multiplies this matrix with another matrix.
@@ -208,7 +208,7 @@ template <class ValueType> class Matrix {
    * @param M Matrix to be multiplied with.
    * @return New matrix resulting from the multiplication.
    */
-  Matrix<ValueType> operator*(const Matrix<ValueType>& M) const;
+  [[nodiscard]] Matrix<ValueType> operator*(const Matrix<ValueType>& M) const;
 
   /**
    * Computes the matrix-matrix multiplication M_r = A * B + beta * M_r.
@@ -288,7 +288,7 @@ template <class ValueType> class Matrix {
    * @param s The scalar value to add.
    * @return A new matrix with the scalar added to each element.
    */
-  Matrix<ValueType> operator+(ValueType s) const;
+  [[nodiscard]] Matrix<ValueType> operator+(ValueType s) const;
 
   /**
    * Subtracts a scalar value from each element of the matrix, returning a new matrix.
@@ -296,7 +296,7 @@ template <class ValueType> class Matrix {
    * @param s The scalar value to subtract.
    * @return A new matrix with the scalar subtracted from each element.
    */
-  Matrix<ValueType> operator-(ValueType s) const;
+  [[nodiscard]] Matrix<ValueType> operator-(ValueType s) const;
 
   /**
    * Multiplies each element of the matrix by a scalar value, returning a new matrix.
@@ -304,7 +304,7 @@ template <class ValueType> class Matrix {
    * @param s The scalar value to multiply by.
    * @return A new matrix with each element multiplied by the scalar.
    */
-  Matrix<ValueType> operator*(ValueType s) const;
+  [[nodiscard]] Matrix<ValueType> operator*(ValueType s) const;
 
   /**
    * Divides each element of the matrix by a scalar value, returning a new matrix.
@@ -312,7 +312,7 @@ template <class ValueType> class Matrix {
    * @param s The scalar value to divide by.
    * @return A new matrix with each element divided by the scalar.
    */
-  Matrix<ValueType> operator/(ValueType s) const;
+  [[nodiscard]] Matrix<ValueType> operator/(ValueType s) const;
 
   // Element access
 
@@ -369,7 +369,7 @@ template <class ValueType> class Matrix {
    *
    * @return The transpose of the matrix.
    */
-  Matrix<ValueType> Transpose() const;
+  [[nodiscard]] Matrix<ValueType> Transpose() const;
 
   /**
    * Computes the transpose of the given matrix and stores the result in another matrix.
@@ -398,7 +398,7 @@ template <class ValueType> class Matrix {
    *
    * @warning Original matrix is destroyed.
    */
-  Matrix<ValueType> pinv(ValueType eps = -1);
+  [[nodiscard]] Matrix<ValueType> pinv(ValueType eps = -1);
 
  private:
   void Init(Long dim1, Long dim2, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
@@ -425,7 +425,7 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
  * @param M The matrix to add the scalar to.
  * @return The resulting matrix after adding the scalar.
  */
-template <class ValueType> Matrix<ValueType> operator+(ValueType s, const Matrix<ValueType>& M) { return M + s; }
+template <class ValueType> [[nodiscard]] Matrix<ValueType> operator+(ValueType s, const Matrix<ValueType>& M) { return M + s; }
 
 /**
  * Overloaded subtraction operator to subtract a matrix from a scalar value.
@@ -434,7 +434,7 @@ template <class ValueType> Matrix<ValueType> operator+(ValueType s, const Matrix
  * @param M The matrix to subtract from the scalar.
  * @return The resulting matrix after subtracting the scalar.
  */
-template <class ValueType> Matrix<ValueType> operator-(ValueType s, const Matrix<ValueType>& M) { return s + (M * -1.0); }
+template <class ValueType> [[nodiscard]] Matrix<ValueType> operator-(ValueType s, const Matrix<ValueType>& M) { return s + (M * -1.0); }
 
 /**
  * Overloaded multiplication operator to multiply a scalar value with each element of the matrix.
@@ -443,7 +443,7 @@ template <class ValueType> Matrix<ValueType> operator-(ValueType s, const Matrix
  * @param M The matrix to multiply the scalar with.
  * @return The resulting matrix after multiplying the scalar.
  */
-template <class ValueType> Matrix<ValueType> operator*(ValueType s, const Matrix<ValueType>& M) { return M * s; }
+template <class ValueType> [[nodiscard]] Matrix<ValueType> operator*(ValueType s, const Matrix<ValueType>& M) { return M * s; }
 
 }  // end namespace
 

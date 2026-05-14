@@ -113,9 +113,10 @@ class MemoryManager {
 
 /**
  * Aligned allocation as an alternative to new. Uses placement new to
- * construct objects.
+ * construct objects. The returned iterator must be released via
+ * `aligned_delete`, so discarding it leaks the allocation.
  */
-template <class ValueType> Iterator<ValueType> aligned_new(Long n_elem = 1, const MemoryManager* mem_mgr = &MemoryManager::glbMemMgr());
+template <class ValueType> [[nodiscard]] Iterator<ValueType> aligned_new(Long n_elem = 1, const MemoryManager* mem_mgr = &MemoryManager::glbMemMgr());
 
 /**
  * Aligned de-allocation as an alternative to delete. Calls the object

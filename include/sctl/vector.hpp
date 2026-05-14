@@ -255,7 +255,7 @@ template <class ValueType> class Vector {
    * @param V Vector to add.
    * @return Vector Resultant vector after addition.
    */
-  Vector operator+(const Vector& V) const;
+  [[nodiscard]] Vector operator+(const Vector& V) const;
 
   /**
    * Subtraction operator.
@@ -263,7 +263,7 @@ template <class ValueType> class Vector {
    * @param V Vector to subtract.
    * @return Vector Resultant vector after subtraction.
    */
-  Vector operator-(const Vector& V) const;
+  [[nodiscard]] Vector operator-(const Vector& V) const;
 
   /**
    * Multiplication operator.
@@ -271,7 +271,7 @@ template <class ValueType> class Vector {
    * @param V Vector to multiply.
    * @return Vector Resultant vector after multiplication.
    */
-  Vector operator*(const Vector& V) const;
+  [[nodiscard]] Vector operator*(const Vector& V) const;
 
   /**
    * Division operator.
@@ -279,14 +279,14 @@ template <class ValueType> class Vector {
    * @param V Vector to divide.
    * @return Vector Resultant vector after division.
    */
-  Vector operator/(const Vector& V) const;
+  [[nodiscard]] Vector operator/(const Vector& V) const;
 
   /**
    * Negation operator.
    *
    * @return Vector Negated vector.
    */
-  Vector operator-() const ;
+  [[nodiscard]] Vector operator-() const ;
 
   // Vector-Scalar operations
 
@@ -342,7 +342,7 @@ template <class ValueType> class Vector {
    * @param s Scalar value to add.
    * @return Vector Resultant vector after addition.
    */
-  template <class VType> Vector operator+(VType s) const;
+  template <class VType> [[nodiscard]] Vector operator+(VType s) const;
 
   /**
    * Subtraction operator with a scalar.
@@ -351,7 +351,7 @@ template <class ValueType> class Vector {
    * @param s Scalar value to subtract.
    * @return Vector Resultant vector after subtraction.
    */
-  template <class VType> Vector operator-(VType s) const;
+  template <class VType> [[nodiscard]] Vector operator-(VType s) const;
 
   /**
    * Multiplication operator with a scalar.
@@ -360,7 +360,7 @@ template <class ValueType> class Vector {
    * @param s Scalar value to multiply.
    * @return Vector Resultant vector after multiplication.
    */
-  template <class VType> Vector operator*(VType s) const;
+  template <class VType> [[nodiscard]] Vector operator*(VType s) const;
 
   /**
    * Division operator with a scalar.
@@ -369,7 +369,7 @@ template <class ValueType> class Vector {
    * @param s Scalar value to divide.
    * @return Vector Resultant vector after division.
    */
-  template <class VType> Vector operator/(VType s) const;
+  template <class VType> [[nodiscard]] Vector operator/(VType s) const;
 
  private:
   /**
@@ -389,13 +389,13 @@ template <class ValueType> class Vector {
 
 // Function template declarations for vector-scalar operations...
 
-template <class VType, class ValueType> Vector<ValueType> operator+(VType s, const Vector<ValueType>& V);
+template <class VType, class ValueType> [[nodiscard]] Vector<ValueType> operator+(VType s, const Vector<ValueType>& V);
 
-template <class VType, class ValueType> Vector<ValueType> operator-(VType s, const Vector<ValueType>& V);
+template <class VType, class ValueType> [[nodiscard]] Vector<ValueType> operator-(VType s, const Vector<ValueType>& V);
 
-template <class VType, class ValueType> Vector<ValueType> operator*(VType s, const Vector<ValueType>& V);
+template <class VType, class ValueType> [[nodiscard]] Vector<ValueType> operator*(VType s, const Vector<ValueType>& V);
 
-template <class VType, class ValueType> Vector<ValueType> operator/(VType s, const Vector<ValueType>& V);
+template <class VType, class ValueType> [[nodiscard]] Vector<ValueType> operator/(VType s, const Vector<ValueType>& V);
 
 template <class ValueType> std::ostream& operator<<(std::ostream& output, const Vector<ValueType>& V);
 
