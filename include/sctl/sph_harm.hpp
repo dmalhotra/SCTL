@@ -76,6 +76,13 @@ template <class Real> class SphericalHarmonics{
      */
     static void SHCEval(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& theta_phi, Vector<Real>& X);
 
+    /**
+     * Evaluate scalar spherical harmonic expansions at the two poles (\theta=0 and \theta=\pi).
+     * \param[in] S Spherical harmonic coefficients (one or more functions, concatenated).
+     * \param[in] arrange Arrangement of the coefficients.
+     * \param[in] p Order of spherical harmonic expansion.
+     * \param[out] P Values at the poles, interleaved per function as {north_0, south_0, north_1, south_1, ... }.
+     */
     static void SHC2Pole(const Vector<Real>& S, SHCArrange arrange, Long p, Vector<Real>& P);
 
     static void WriteVTK(const char* fname, const Vector<Real>* S, const Vector<Real>* f_val, SHCArrange arrange, Long p_in, Long p_out, Real period=0, const Comm& comm = Comm::World());
@@ -115,7 +122,29 @@ template <class Real> class SphericalHarmonics{
      */
     static void VecSHCEval(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& theta_phi, Vector<Real>& X);
 
+    /**
+     * Evaluate the Laplace single-layer potential at arbitrary points from the scalar spherical
+     * harmonic coefficients of the density on the unit sphere.
+     * \param[in] S Scalar spherical harmonic coefficients of the surface density.
+     * \param[in] arrange Arrangement of the coefficients.
+     * \param[in] p Order of spherical harmonic expansion.
+     * \param[in] coord Evaluation coordinates given as {x0,y0,z0, x1,y1,z1, ... }.
+     * \param[in] interior If true, use the interior harmonic expansion (regular at the origin); otherwise use the exterior expansion (decaying at infinity).
+     * \param[out] U Evaluated potential values {U0, U1, ... }.
+     */
     static void LaplaceEvalSL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
+
+    /**
+     * Evaluate the Laplace double-layer potential at arbitrary points from the scalar spherical
+     * harmonic coefficients of the density on the unit sphere. The surface normal is the outward
+     * radial direction.
+     * \param[in] S Scalar spherical harmonic coefficients of the surface density.
+     * \param[in] arrange Arrangement of the coefficients.
+     * \param[in] p Order of spherical harmonic expansion.
+     * \param[in] coord Evaluation coordinates given as {x0,y0,z0, x1,y1,z1, ... }.
+     * \param[in] interior If true, use the interior expansion; otherwise the exterior expansion.
+     * \param[out] U Evaluated potential values {U0, U1, ... }.
+     */
     static void LaplaceEvalDL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
 
     /**
@@ -138,8 +167,30 @@ template <class Real> class SphericalHarmonics{
      */
     static void StokesEvalDL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
 
+    /**
+     * Evaluate the Stokes traction (stress tensor contracted with a target normal) at arbitrary
+     * points from the vector spherical harmonic coefficients of the single-layer density on the
+     * unit sphere.
+     * \param[in] S Vector spherical harmonic coefficients of the surface density.
+     * \param[in] arrange Arrangement of the coefficients.
+     * \param[in] p Order of spherical harmonic expansion.
+     * \param[in] coord Evaluation coordinates given as {x0,y0,z0, x1,y1,z1, ... }.
+     * \param[in] norm Target-side normal vectors at each evaluation point as {nx0,ny0,nz0, nx1,ny1,nz1, ... }.
+     * \param[in] interior If true, use the interior expansion; otherwise the exterior expansion.
+     * \param[out] U Evaluated traction values {Ux0,Uy0,Uz0, Ux1,Uy1,Uz1, ... }.
+     */
     static void StokesEvalKL(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, const Vector<Real>& norm, bool interior, Vector<Real>& U);
 
+    /**
+     * Evaluate the Stokes traction at points on the unit sphere itself, taking the outward radial
+     * direction as the target normal (the self-interaction variant of StokesEvalKL).
+     * \param[in] S Vector spherical harmonic coefficients of the surface density.
+     * \param[in] arrange Arrangement of the coefficients.
+     * \param[in] p Order of spherical harmonic expansion.
+     * \param[in] coord Evaluation coordinates on the unit sphere given as {x0,y0,z0, x1,y1,z1, ... }.
+     * \param[in] interior If true, take the interior limit; otherwise the exterior limit.
+     * \param[out] U Evaluated traction values {Ux0,Uy0,Uz0, Ux1,Uy1,Uz1, ... }.
+     */
     static void StokesEvalKSelf(const Vector<Real>& S, SHCArrange arrange, Long p, const Vector<Real>& coord, bool interior, Vector<Real>& U);
 
     /**
