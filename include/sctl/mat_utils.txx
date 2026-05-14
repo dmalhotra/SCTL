@@ -36,7 +36,7 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
         for (Long k = 0; k < K; k++) {
           AxB += A[m + lda * k] * B[k + ldb * n];
         }
-        C[m + ldc * n] = alpha * AxB + (beta == 0 ? 0 : beta * C[m + ldc * n]);
+        C[m + ldc * n] = alpha * AxB + (beta == ValueType(0) ? ValueType(0) : beta * C[m + ldc * n]);
       }
     }
   } else if (TransA == 'N' || TransA == 'n') {
@@ -47,7 +47,7 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
         for (Long k = 0; k < K; k++) {
           AxB += A[m + lda * k] * B[n + ldb * k];
         }
-        C[m + ldc * n] = alpha * AxB + (beta == 0 ? 0 : beta * C[m + ldc * n]);
+        C[m + ldc * n] = alpha * AxB + (beta == ValueType(0) ? ValueType(0) : beta * C[m + ldc * n]);
       }
     }
   } else if (TransB == 'N' || TransB == 'n') {
@@ -58,7 +58,7 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
         for (Long k = 0; k < K; k++) {
           AxB += A[k + lda * m] * B[k + ldb * n];
         }
-        C[m + ldc * n] = alpha * AxB + (beta == 0 ? 0 : beta * C[m + ldc * n]);
+        C[m + ldc * n] = alpha * AxB + (beta == ValueType(0) ? ValueType(0) : beta * C[m + ldc * n]);
       }
     }
   } else {
@@ -69,7 +69,7 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
         for (Long k = 0; k < K; k++) {
           AxB += A[k + lda * m] * B[n + ldb * k];
         }
-        C[m + ldc * n] = alpha * AxB + (beta == 0 ? 0 : beta * C[m + ldc * n]);
+        C[m + ldc * n] = alpha * AxB + (beta == ValueType(0) ? ValueType(0) : beta * C[m + ldc * n]);
       }
     }
   }
