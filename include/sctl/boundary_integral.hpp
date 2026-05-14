@@ -2,6 +2,7 @@
 #define _SCTL_BOUNDARY_INTEGRAL_HPP_
 
 #include <map>                   // for map
+#include <memory>                // for unique_ptr
 #include <string>                // for basic_string, to_string, string
 #include <typeinfo>              // for type_info
 
@@ -468,7 +469,7 @@ namespace sctl {
         void (*NearInterac)(Matrix<Real>&, const Vector<Real>&, const Vector<Real>&, const Kernel&, Real, const Long, const ElementListBase<Real>*);
         void (*EvalNearInterac)(Vector<Real>&, const Vector<Real>&, const Vector<Real>&, const Vector<Real>&, const Kernel&, Real, const Long, const ElementListBase<Real>*);
       };
-      std::map<std::string,ElementListBase<Real>*> elem_lst_map;
+      std::map<std::string,std::unique_ptr<ElementListBase<Real>>> elem_lst_map;
       std::map<std::string,ElemLstData> elem_data_map;
       Vector<Real> Xt; // User specified position of target points
       Vector<Real> Xnt; // User specified normal at target points

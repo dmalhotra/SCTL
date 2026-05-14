@@ -508,11 +508,7 @@ namespace sctl {
     fmm.SetAccuracy((Integer)(log(tol_)/log(0.1))+1);
   }
 
-  template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::~BoundaryIntegralOp() {
-    Vector<std::string> elem_lst_name;
-    for (auto& it : elem_lst_map) elem_lst_name.PushBack(it.first);
-    for (const auto& name : elem_lst_name) DeleteElemList(name);
-  }
+  template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::~BoundaryIntegralOp() = default;
 
   template <class Real, class Kernel> const Comm& BoundaryIntegralOp<Real,Kernel>::GetComm() const {
     return comm_;
@@ -563,7 +559,8 @@ namespace sctl {
     //SCTL_ASSERT_MSG(elem_lst_map.find(name) == elem_lst_map.end(), "Element list already exists.");
     if (elem_lst_map.find(name) != elem_lst_map.end()) DeleteElemList(name);
 
-    elem_lst_map[name] = dynamic_cast<ElementListBase<Real>*>(new ElemLstType(elem_lst));
+    std::unique_ptr<ElementListBase<Real>> owned(new ElemLstType(elem_lst));
+    elem_lst_map[name] = std::move(owned);
     elem_data_map[name].SelfInterac = ElemLstType::template SelfInterac<Kernel>;
     elem_data_map[name].NearInterac = ElemLstType::template NearInterac<Kernel>;
     elem_data_map[name].EvalNearInterac = ElemLstType::template EvalNearInterac<Kernel>;
@@ -572,7 +569,7 @@ namespace sctl {
 
   template <class Real, class Kernel> template <class ElemLstType> const ElemLstType& BoundaryIntegralOp<Real,Kernel>::GetElemList(const std::string& name) const {
     SCTL_ASSERT_MSG(elem_lst_map.find(name) != elem_lst_map.end(), "Element list does not exist.");
-    return *dynamic_cast<const ElemLstType*>(elem_lst_map.at(name));
+    return *dynamic_cast<const ElemLstType*>(elem_lst_map.at(name).get());
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::GetElemSubArray(Vector<Real>& Ve, Vector<Real>& V, const std::string& name, const Long elem_idx) const {
@@ -611,7 +608,6 @@ namespace sctl {
     //SCTL_ASSERT_MSG(elem_lst_map.find(name) != elem_lst_map.end(), "Element list does not exist.");
     if (elem_lst_map.find(name) == elem_lst_map.end()) return;
 
-    delete (ElementListBase<Real>*)elem_lst_map[name];
     elem_data_map.erase(name);
     elem_lst_map.erase(name);
     ClearSetup();
@@ -866,7 +862,7 @@ namespace sctl {
           for (auto& K : K_self_) K.ReInit(0,0);
           continue;
         }
-        elem_data.SelfInterac(K_self_, ker_, tol_, trg_normal_dot_prod_, elem_lst);
+        elem_data.SelfInterac(K_self_, ker_, tol_, trg_normal_dot_prod_, elem_lst.get());
       }
     }
     Profile::Toc();
@@ -1043,7 +1039,7 @@ namespace sctl {
               } else {
                 StaticArray<Real,10000> buff0;
                 Matrix<Real> K_near0(N0, KDIM1_, (N0*KDIM1_>10000?NullIterator<Real>():buff0), (N0*KDIM1_>10000));
-                elem_data.NearInterac(K_near0, Xt, Xn, ker_, tol_, j, elem_lst);
+                elem_data.NearInterac(K_near0, Xt, Xn, ker_, tol_, j, elem_lst.get());
 
                 if (K_near0.Dim(0) != 0 && K_near0.Dim(1) != 0) {
                   for (Long l = 0; l < N0; l++) {
@@ -1243,7 +1239,7 @@ namespace sctl {
           if (src_dof==0 || trg_dof == 0) continue;
           const Vector<Real> F_(src_dof, (Iterator<Real>)F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
           Vector<Real> U_(trg_dof, U_near.begin() + near_elem_dsp[elem_idx]*KDIM1_, false);
-          elem_data.EvalNearInterac(U_, F_, Xt, Xn, ker_, tol_, j, elem_lst);
+          elem_data.EvalNearInterac(U_, F_, Xt, Xn, ker_, tol_, j, elem_lst.get());
         }
       }
     }
