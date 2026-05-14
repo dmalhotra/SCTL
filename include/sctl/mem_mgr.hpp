@@ -9,8 +9,6 @@
 
 #include "sctl/common.hpp"  // for Long, sctl
 
-// TODO: Implement fast stack allocation.
-
 namespace sctl {
 
 /**

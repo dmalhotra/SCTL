@@ -38,6 +38,8 @@
 // Memory Manager, Iterators
 #include "sctl/mem_mgr.hpp"
 #include "sctl/mem_mgr.txx"
+#include "sctl/scratch_pool.hpp"
+#include "sctl/scratch_pool.txx"
 #include "sctl/iterator.hpp"
 #include "sctl/iterator.txx"
 #include "sctl/static-array.hpp"
