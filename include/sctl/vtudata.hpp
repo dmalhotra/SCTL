@@ -23,7 +23,10 @@ template <class ValueType> class Matrix;
 class VTUData {
   public:
     /**
-     * Type alias for the real type used in VTK.
+     * Type alias for the real type used in VTK output. Fixed to `float` for
+     * ParaView/VTK compatibility; higher-precision inputs are silently
+     * narrowed when written into `coord`/`value`. Fine for visualization,
+     * not for numerical round-trips.
      */
     typedef float VTKReal;
 
