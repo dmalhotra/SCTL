@@ -27,6 +27,15 @@ template <class ValueType> class Permutation {
   Permutation() {}
 
   /**
+   * Copy and move operations follow `Vector`'s semantics: copy duplicates the
+   * underlying `perm`/`scal` buffers, move steals them.
+   */
+  Permutation(const Permutation&) = default;
+  Permutation(Permutation&&) noexcept = default;
+  Permutation& operator=(const Permutation&) = default;
+  Permutation& operator=(Permutation&&) noexcept = default;
+
+  /**
    * Constructs a permutation operator with the given size.
    *
    * @param size The size of the permutation operator.

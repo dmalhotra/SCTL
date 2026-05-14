@@ -52,6 +52,12 @@ template <class ValueType> class Vector {
   Vector(const Vector& V);
 
   /**
+   * Move constructor. Steals ownership from `V`; leaves `V` empty
+   * (`Dim() == 0`) and in a valid destructible state.
+   */
+  Vector(Vector&& V) noexcept;
+
+  /**
    * Constructor from std::vector.
    *
    * @param V std::vector to construct from.
@@ -200,6 +206,16 @@ template <class ValueType> class Vector {
    * @return Vector& Reference to the modified vector.
    */
   Vector& operator=(const Vector& V);
+
+  /**
+   * Move assignment. Swaps state with `V` when both sides own their buffers;
+   * otherwise copies `V`'s contents into `*this` (resizing as needed).
+   *
+   * @note If `*this` is a non-owning view and `V`'s size differs, the view
+   *       binding is lost — `*this` becomes an owning vector with a fresh
+   *       buffer. Same applies to copy-assignment.
+   */
+  Vector& operator=(Vector&& V) noexcept;
 
   /**
    * Addition assignment operator.

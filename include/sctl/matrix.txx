@@ -44,10 +44,11 @@ template <class ValueType> std::ostream& operator<<(std::ostream& output, const 
 template <class ValueType> void Matrix<ValueType>::Init(Long dim1, Long dim2, Iterator<ValueType> data_, bool own_data_) {
   dim[0] = dim1;
   dim[1] = dim2;
+  capacity = dim[0] * dim[1];
   own_data = own_data_;
   if (own_data) {
     if (dim[0] * dim[1] > 0) {
-      data_ptr = aligned_new<ValueType>(dim[0] * dim[1]);
+      data_ptr = aligned_new<ValueType>(capacity);
       if (data_ != NullIterator<ValueType>()) {
         memcopy(data_ptr, data_, dim[0] * dim[1]);
       }
@@ -69,6 +70,11 @@ template <class ValueType> Matrix<ValueType>::Matrix(const Matrix<ValueType>& M)
   Init(M.Dim(0), M.Dim(1), (Iterator<ValueType>)M.begin());
 }
 
+template <class ValueType> Matrix<ValueType>::Matrix(Matrix<ValueType>&& M) noexcept {
+  Init(0, 0);
+  this->Swap(M);
+}
+
 template <class ValueType> Matrix<ValueType>::~Matrix() {
   if (own_data) {
     if (data_ptr != NullIterator<ValueType>()) {
@@ -76,6 +82,7 @@ template <class ValueType> Matrix<ValueType>::~Matrix() {
     }
   }
   data_ptr = NullIterator<ValueType>();
+  capacity = 0;
   dim[0] = 0;
   dim[1] = 0;
 }
@@ -84,22 +91,25 @@ template <class ValueType> void Matrix<ValueType>::Swap(Matrix<ValueType>& M) {
   StaticArray<Long, 2> dim_;
   dim_[0] = dim[0];
   dim_[1] = dim[1];
+  Long capacity_ = capacity;
   Iterator<ValueType> data_ptr_ = data_ptr;
   bool own_data_ = own_data;
 
   dim[0] = M.dim[0];
   dim[1] = M.dim[1];
+  capacity = M.capacity;
   data_ptr = M.data_ptr;
   own_data = M.own_data;
 
   M.dim[0] = dim_[0];
   M.dim[1] = dim_[1];
+  M.capacity = capacity_;
   M.data_ptr = data_ptr_;
   M.own_data = own_data_;
 }
 
 template <class ValueType> void Matrix<ValueType>::ReInit(Long dim1, Long dim2, Iterator<ValueType> data_, bool own_data_) {
-  if (own_data_ && own_data && dim[0] * dim[1] >= dim1 * dim2) {
+  if (own_data_ && own_data && dim1 * dim2 <= capacity) {
     dim[0] = dim1;
     dim[1] = dim2;
     if (data_ptr != NullIterator<ValueType>() && data_ != NullIterator<ValueType>()) {
@@ -187,13 +197,23 @@ template <class ValueType> ConstIterator<ValueType> Matrix<ValueType>::end() con
 
 // Matrix-Matrix operations
 
+template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(Matrix<ValueType>&& M) noexcept {
+  if (this == &M) return *this;
+  if (own_data && M.own_data) {
+    // Both sides own their buffers — safe to swap; M's destructor will release
+    // our old buffer.
+    this->Swap(M);
+  } else {
+    // At least one side is a non-owning view. Falling back to copy semantics.
+    if (dim[0] != M.dim[0] || dim[1] != M.dim[1]) ReInit(M.dim[0], M.dim[1]);
+    memcopy(data_ptr, M.data_ptr, dim[0] * dim[1]);
+  }
+  return *this;
+}
+
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(const Matrix<ValueType>& M) {
   if (this != &M) {
-    if (dim[0] * dim[1] < M.dim[0] * M.dim[1]) {
-      ReInit(M.dim[0], M.dim[1]);
-    }
-    dim[0] = M.dim[0];
-    dim[1] = M.dim[1];
+    if (dim[0] != M.dim[0] || dim[1] != M.dim[1]) ReInit(M.dim[0], M.dim[1]);
     memcopy(data_ptr, M.data_ptr, dim[0] * dim[1]);
   }
   return *this;

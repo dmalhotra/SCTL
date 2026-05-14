@@ -61,9 +61,17 @@ class Comm {
 #endif
 
   /**
-   * Duplicate communicator.
+   * Duplicate communicator. The copy calls `MPI_Comm_dup` to obtain an
+   * independent handle.
    */
   Comm(const Comm& c);
+
+  /**
+   * Move constructor. Steals `c`'s `MPI_Comm` handle and pending-request
+   * pool; leaves `c` holding `MPI_COMM_NULL` and an empty pool, so its
+   * destructor is a no-op.
+   */
+  Comm(Comm&& c) noexcept;
 
   /**
    * *self* communicator.
@@ -76,9 +84,15 @@ class Comm {
   static Comm World();
 
   /**
-   * Duplicate communicator.
+   * Duplicate communicator (copy assignment, via `MPI_Comm_dup`).
    */
   Comm& operator=(const Comm& c);
+
+  /**
+   * Move assignment. Releases any handle/pool currently held by `*this`,
+   * then steals `c`'s; `c` is left holding `MPI_COMM_NULL`.
+   */
+  Comm& operator=(Comm&& c) noexcept;
 
   /**
    * Destructor.

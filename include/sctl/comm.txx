@@ -284,6 +284,24 @@ inline Comm::Comm(const Comm& c) {
 #endif
 }
 
+inline Comm::Comm(Comm&& c) noexcept {
+#ifdef SCTL_HAVE_MPI
+  mpi_rank_ = c.mpi_rank_;
+  mpi_size_ = c.mpi_size_;
+  mpi_tag_ub_ = c.mpi_tag_ub_;
+  mpi_comm_ = c.mpi_comm_;
+  req = std::move(c.req);
+
+  c.mpi_comm_ = MPI_COMM_NULL;
+  c.mpi_rank_ = 0;
+  c.mpi_size_ = 1;
+  c.mpi_tag_ub_ = std::numeric_limits<int>::max();
+#else
+  send_req = std::move(c.send_req);
+  recv_req = std::move(c.recv_req);
+#endif
+}
+
 inline Comm Comm::Self() {
 #ifdef SCTL_HAVE_MPI
   return Comm(MPI_COMM_SELF);
@@ -314,6 +332,35 @@ inline Comm& Comm::operator=(const Comm& c) {
     mpi_tag_ub_ = std::numeric_limits<int>::max();
     mpi_comm_ = MPI_COMM_NULL;
   }
+#endif
+  return *this;
+}
+
+inline Comm& Comm::operator=(Comm&& c) noexcept {
+  if (this == &c) return *this;
+#ifdef SCTL_HAVE_MPI
+  #pragma omp critical(SCTL_COMM_REQ)
+  while (!req.empty()) {
+    delete (Vector<MPI_Request>*)req.top();
+    req.pop();
+  }
+  if (comm_detail::MPIIsActive() && mpi_comm_ != MPI_COMM_NULL) {
+    #pragma omp critical(SCTL_COMM_DUP)
+    MPI_Comm_free(&mpi_comm_);
+  }
+  mpi_rank_ = c.mpi_rank_;
+  mpi_size_ = c.mpi_size_;
+  mpi_tag_ub_ = c.mpi_tag_ub_;
+  mpi_comm_ = c.mpi_comm_;
+  req = std::move(c.req);
+
+  c.mpi_comm_ = MPI_COMM_NULL;
+  c.mpi_rank_ = 0;
+  c.mpi_size_ = 1;
+  c.mpi_tag_ub_ = std::numeric_limits<int>::max();
+#else
+  send_req = std::move(c.send_req);
+  recv_req = std::move(c.recv_req);
 #endif
   return *this;
 }

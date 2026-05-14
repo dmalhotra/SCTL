@@ -51,6 +51,11 @@ template <class ValueType> Vector<ValueType>::Vector(const Vector<ValueType>& V)
   Init(V.Dim(), (Iterator<ValueType>)V.begin());
 }
 
+template <class ValueType> Vector<ValueType>::Vector(Vector<ValueType>&& V) noexcept {
+  Init(0);
+  this->Swap(V);
+}
+
 template <class ValueType> Vector<ValueType>::Vector(const std::vector<ValueType>& V) {
   Init(V.size(), Ptr2Itr<ValueType>((ValueType*)(V.size()?&V[0]:nullptr), V.size()));
 }
@@ -221,6 +226,20 @@ template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const
 
 template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const Vector<ValueType>& V) {
   if (this != &V) {
+    if (dim != V.dim) ReInit(V.dim);
+    memcopy(data_ptr, V.data_ptr, dim);
+  }
+  return *this;
+}
+
+template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(Vector<ValueType>&& V) noexcept {
+  if (this == &V) return *this;
+  if (own_data && V.own_data) {
+    // Both sides own their buffers — safe to swap; V's destructor will release
+    // our old buffer.
+    this->Swap(V);
+  } else {
+    // At least one side is a non-owning view. Falling back to copy semantics.
     if (dim != V.dim) ReInit(V.dim);
     memcopy(data_ptr, V.data_ptr, dim);
   }

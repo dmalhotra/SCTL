@@ -52,6 +52,12 @@ template <class ValueType> class Matrix {
   Matrix(const Matrix<ValueType>& M);
 
   /**
+   * Move constructor. Steals ownership from `M`; leaves `M` empty
+   * (`Dim(0) == 0`, `Dim(1) == 0`) and in a valid destructible state.
+   */
+  Matrix(Matrix<ValueType>&& M) noexcept;
+
+  /**
    * Destructor.
    */
   ~Matrix();
@@ -153,6 +159,16 @@ template <class ValueType> class Matrix {
    * @return Reference to this matrix after assignment.
    */
   Matrix<ValueType>& operator=(const Matrix<ValueType>& M);
+
+  /**
+   * Move assignment. Swaps state with `M` when both sides own their buffers;
+   * otherwise copies `M`'s contents into `*this` (resizing as needed).
+   *
+   * @note If `*this` is a non-owning view and `M`'s shape differs, the view
+   *       binding is lost — `*this` becomes an owning matrix with a fresh
+   *       buffer. Same applies to copy-assignment.
+   */
+  Matrix<ValueType>& operator=(Matrix<ValueType>&& M) noexcept;
 
   /**
    * Adds another matrix to this matrix element-wise.
@@ -380,7 +396,7 @@ template <class ValueType> class Matrix {
    * @param eps The tolerance value for singular values close to zero. Defaults to -1.
    * @return The pseudo-inverse of the matrix.
    *
-   * @note Original matrix is destroyed.
+   * @warning Original matrix is destroyed.
    */
   Matrix<ValueType> pinv(ValueType eps = -1);
 
@@ -388,6 +404,7 @@ template <class ValueType> class Matrix {
   void Init(Long dim1, Long dim2, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
 
   StaticArray<Long, 2> dim; ///< Dimensions of the matrix.
+  Long capacity; /**< Capacity of the matrix. */
   Iterator<ValueType> data_ptr; ///< Pointer to the data of the matrix.
   bool own_data; ///< Flag indicating ownership of the data.
 };
