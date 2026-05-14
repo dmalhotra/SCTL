@@ -289,7 +289,6 @@ namespace sctl {
   template <class RealVec, class IntVec> inline RealVec ConvertInt2Real(const IntVec& x);
   template <class IntVec, class RealVec> inline IntVec RoundReal2Int(const RealVec& x);
   template <class MaskType> inline Vec<typename MaskType::ScalarType,MaskType::Size> convert2vec(const MaskType& a);
-  //template <class Vec1, class Vec2> friend Vec1 reinterpret(const Vec2& x);
 
 
   // Arithmetic operators

@@ -383,7 +383,7 @@ template <class ValueType> Iterator<ValueType> NullIterator();
  *
  * @tparam ValueType The type of elements pointed to by the iterator.
  * @param ptr The pointer to convert.
- * @param len The length of the array.
+ * @param len The number of elements in the array.
  * @return An iterator pointing to the given pointer.
  */
 template <class ValueType> Iterator<ValueType> Ptr2Itr(void* ptr, Long len);
@@ -393,7 +393,7 @@ template <class ValueType> Iterator<ValueType> Ptr2Itr(void* ptr, Long len);
  *
  * @tparam ValueType The type of elements pointed to by the iterator.
  * @param ptr The const pointer to convert.
- * @param len The length of the array.
+ * @param len The number of elements in the array.
  * @return A const iterator pointing to the given pointer.
  */
 template <class ValueType> ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len);
