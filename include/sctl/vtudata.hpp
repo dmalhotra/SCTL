@@ -6,13 +6,9 @@
 
 #include "sctl/common.hpp"    // for Integer, sctl
 #include "sctl/comm.hpp"      // for Comm
-#include "sctl/comm.txx"      // for Comm::Self
 #include "sctl/vector.hpp"    // for Vector
-#include "sctl/vector.txx"    // for Vector::Vector<ValueType>, Vector::~Vec...
 
 namespace sctl {
-
-template <class ValueType> class Matrix;
 
 /**
  * This struct provides facilities for storing point and cell data in the VTK (Visualization Toolkit) unstructured mesh
@@ -51,12 +47,6 @@ class VTUData {
      * Example code showing how to use the VTUData class.
      */
     static void test();
-
-    template <class ElemLst> void AddElems(const ElemLst elem_lst, Integer order, const Comm& comm = Comm::Self()); // TODO: move to boundary_integral.hpp
-    template <class ElemLst, class ValueBasis> void AddElems(const ElemLst elem_lst, const Vector<ValueBasis>& elem_value, Integer order, const Comm& comm = Comm::Self()); // TODO: move to boundary_integral.hpp
-
-  private:
-    template <class CoordType, Integer ELEM_DIM> static Matrix<CoordType> VTK_Nodes(Integer order); // TODO: move to boundary_integral.hpp
 };
 
 }

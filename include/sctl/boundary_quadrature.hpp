@@ -32,7 +32,7 @@
 #include "sctl/vector.hpp"            // for Vector
 #include "sctl/vector.txx"            // for Vector::operator[], Vector::begin
 #include "sctl/vtudata.hpp"           // for VTUData
-#include "sctl/vtudata.txx"           // for VTUData::AddElems, VTUData::Wri...
+#include "sctl/vtudata.txx"           // for VTUData::WriteVTK
 
 namespace sctl {
 
@@ -256,8 +256,103 @@ template <Integer COORD_DIM, class Basis> class ElemList {
       return X_;
     }
 
+    void WriteToVTU(VTUData& vtu, Integer order, const Comm& comm = Comm::Self()) const {
+      SCTL_UNUSED(comm);
+      constexpr Integer ElemDim = ElemList::ElemDim();
+      Long N0 = vtu.coord.Dim() / COORD_DIM;
+      Long NElem = this->NElem();
+
+      Matrix<CoordType> nodes = VTK_Nodes_<CoordType>(order);
+      Integer Nnodes = sctl::pow<ElemDim,Integer>(order);
+      SCTL_ASSERT(nodes.Dim(0) == ElemDim);
+      SCTL_ASSERT(nodes.Dim(1) == Nnodes);
+      { // Set coord
+        Matrix<CoordType> vtk_coord;
+        auto M = CoordBasis::SetupEval(nodes);
+        CoordBasis::Eval(vtk_coord, this->ElemVector(), M);
+        for (Long k = 0; k < NElem; k++) {
+          for (Integer i = 0; i < Nnodes; i++) {
+            constexpr Integer dim = (COORD_DIM < 3 ? COORD_DIM : 3);
+            for (Integer j = 0; j < dim; j++) {
+              vtu.coord.PushBack((VTUData::VTKReal)vtk_coord[k*COORD_DIM+j][i]);
+            }
+            for (Integer j = dim; j < 3; j++) {
+              vtu.coord.PushBack((VTUData::VTKReal)0);
+            }
+          }
+        }
+      }
+
+      if (ElemDim == 2) {
+        for (Long k = 0; k < NElem; k++) {
+          for (Integer i = 0; i < order-1; i++) {
+            for (Integer j = 0; j < order-1; j++) {
+              Long idx = k*Nnodes + i*order + j;
+              vtu.connect.PushBack(N0+idx);
+              vtu.connect.PushBack(N0+idx+1);
+              vtu.connect.PushBack(N0+idx+order+1);
+              vtu.connect.PushBack(N0+idx+order);
+              vtu.offset.PushBack(vtu.connect.Dim());
+              vtu.types.PushBack(9);
+            }
+          }
+        }
+      } else {
+        // TODO
+        SCTL_ASSERT(false);
+      }
+    }
+
+    template <class ValueBasis> void WriteToVTU(VTUData& vtu, const Vector<ValueBasis>& elem_value, Integer order, const Comm& comm = Comm::Self()) const {
+      constexpr Integer ElemDim = ElemList::ElemDim();
+      using ValueType = typename ValueBasis::ValueType;
+      Long NElem = this->NElem();
+
+      Integer dof = (NElem==0 ? 0 : elem_value.Dim() / NElem);
+      SCTL_ASSERT(elem_value.Dim() == NElem * dof);
+      WriteToVTU(vtu, order, comm);
+
+      Matrix<ValueType> nodes = VTK_Nodes_<ValueType>(order);
+      Integer Nnodes = sctl::pow<ElemDim,Integer>(order);
+      SCTL_ASSERT(nodes.Dim(0) == ElemDim);
+      SCTL_ASSERT(nodes.Dim(1) == Nnodes);
+
+      { // Set value
+        Matrix<ValueType> vtk_value;
+        auto M = ValueBasis::SetupEval(nodes);
+        ValueBasis::Eval(vtk_value, elem_value, M);
+        for (Long k = 0; k < NElem; k++) {
+          for (Integer i = 0; i < Nnodes; i++) {
+            for (Integer j = 0; j < dof; j++) {
+              vtu.value.PushBack((VTUData::VTKReal)vtk_value[k*dof+j][i]);
+            }
+          }
+        }
+      }
+    }
+
   private:
     static_assert(CoordBasis::Dim() <= CoordDim(), "Basis dimension can not be greater than COORD_DIM.");
+
+    template <class T> static Matrix<T> VTK_Nodes_(Integer order) {
+      constexpr Integer ElemDim = ElemList::ElemDim();
+      Matrix<T> nodes;
+      if (ElemDim == 2) {
+        Integer Nnodes = order*order;
+        nodes.ReInit(ElemDim, Nnodes);
+        for (Integer i = 0; i < order; i++) {
+          for (Integer j = 0; j < order; j++) {
+            nodes[0][i*order+j] = 0.5 - 0.5 * sctl::cos<T>((2*i+1) * const_pi<T>() / (2*order));
+            nodes[1][i*order+j] = 0.5 - 0.5 * sctl::cos<T>((2*j+1) * const_pi<T>() / (2*order));
+          }
+        }
+      } else {
+        // TODO
+        SCTL_ASSERT(false);
+      }
+      return nodes;
+    }
+
     Vector<CoordBasis> X_;
     Long Nelem_;
 
@@ -1682,12 +1777,12 @@ template <class Real> class Quadrature {
         }
         { // Write VTK output
           VTUData vtu;
-          vtu.AddElems(elements_src, err, ORDER);
+          elements_src.WriteToVTU(vtu, err, ORDER);
           vtu.WriteVTK("err", comm);
         }
         { // Write VTK output
           VTUData vtu;
-          vtu.AddElems(elements_src, U_onsurf, ORDER);
+          elements_src.WriteToVTU(vtu, U_onsurf, ORDER);
           vtu.WriteVTK("U", comm);
         }
       }
@@ -1717,12 +1812,12 @@ template <class Real> class Quadrature {
         }
         { // Write VTK output
           VTUData vtu;
-          vtu.AddElems(elements_trg, err, ORDER);
+          elements_trg.WriteToVTU(vtu, err, ORDER);
           vtu.WriteVTK("err", comm);
         }
         { // Write VTK output
           VTUData vtu;
-          vtu.AddElems(elements_trg, U_offsurf, ORDER);
+          elements_trg.WriteToVTU(vtu, U_offsurf, ORDER);
           vtu.WriteVTK("U", comm);
         }
       }

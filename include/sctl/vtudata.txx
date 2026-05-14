@@ -14,9 +14,6 @@
 #include "sctl/comm.txx"          // for Comm::Rank, Comm::Allreduce, Comm::...
 #include "sctl/iterator.hpp"      // for Iterator, ConstIterator
 #include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
-#include "sctl/math_utils.hpp"    // for const_pi, cos
-#include "sctl/math_utils.txx"    // for pow
-#include "sctl/matrix.hpp"        // for Matrix
 #include "sctl/static-array.hpp"  // for StaticArray
 #include "sctl/static-array.txx"  // for StaticArray::operator+, StaticArray...
 #include "sctl/vector.hpp"        // for Vector
@@ -202,102 +199,6 @@ inline void VTUData::WriteVTK(const std::string& fname, const Comm& comm) const 
     pvtufile.close();  // close file
   }
 };
-
-template <class ElemLst> inline void VTUData::AddElems(const ElemLst elem_lst, Integer order, const Comm& comm) {
-  constexpr Integer COORD_DIM = ElemLst::CoordDim();
-  constexpr Integer ElemDim = ElemLst::ElemDim();
-  using CoordBasis = typename ElemLst::CoordBasis;
-  using CoordType = typename ElemLst::CoordType;
-  Long N0 = coord.Dim() / COORD_DIM;
-  Long NElem = elem_lst.NElem();
-
-  Matrix<CoordType> nodes = VTK_Nodes<CoordType, ElemDim>(order);
-  Integer Nnodes = sctl::pow<ElemDim,Integer>(order);
-  SCTL_ASSERT(nodes.Dim(0) == ElemDim);
-  SCTL_ASSERT(nodes.Dim(1) == Nnodes);
-  { // Set coord
-    Matrix<CoordType> vtk_coord;
-    auto M = CoordBasis::SetupEval(nodes);
-    CoordBasis::Eval(vtk_coord, elem_lst.ElemVector(), M);
-    for (Long k = 0; k < NElem; k++) {
-      for (Integer i = 0; i < Nnodes; i++) {
-        constexpr Integer dim = (COORD_DIM < 3 ? COORD_DIM : 3);
-        for (Integer j = 0; j < dim; j++) {
-          coord.PushBack((VTUData::VTKReal)vtk_coord[k*COORD_DIM+j][i]);
-        }
-        for (Integer j = dim; j < 3; j++) {
-          coord.PushBack((VTUData::VTKReal)0);
-        }
-      }
-    }
-  }
-
-  if (ElemLst::ElemDim() == 2) {
-    for (Long k = 0; k < NElem; k++) {
-      for (Integer i = 0; i < order-1; i++) {
-        for (Integer j = 0; j < order-1; j++) {
-          Long idx = k*Nnodes + i*order + j;
-          connect.PushBack(N0+idx);
-          connect.PushBack(N0+idx+1);
-          connect.PushBack(N0+idx+order+1);
-          connect.PushBack(N0+idx+order);
-          offset.PushBack(connect.Dim());
-          types.PushBack(9);
-        }
-      }
-    }
-  } else {
-    // TODO
-    SCTL_ASSERT(false);
-  }
-}
-template <class ElemLst, class ValueBasis> inline void VTUData::AddElems(const ElemLst elem_lst, const Vector<ValueBasis>& elem_value, Integer order, const Comm& comm) {
-  constexpr Integer ElemDim = ElemLst::ElemDim();
-  using ValueType = typename ValueBasis::ValueType;
-  Long NElem = elem_lst.NElem();
-
-  Integer dof = (NElem==0 ? 0 : elem_value.Dim() / NElem);
-  SCTL_ASSERT(elem_value.Dim() == NElem * dof);
-  AddElems(elem_lst, order, comm);
-
-  Matrix<ValueType> nodes = VTK_Nodes<ValueType, ElemDim>(order);
-  Integer Nnodes = sctl::pow<ElemDim,Integer>(order);
-  SCTL_ASSERT(nodes.Dim(0) == ElemDim);
-  SCTL_ASSERT(nodes.Dim(1) == Nnodes);
-
-  { // Set value
-    Matrix<ValueType> vtk_value;
-    auto M = ValueBasis::SetupEval(nodes);
-    ValueBasis::Eval(vtk_value, elem_value, M);
-    for (Long k = 0; k < NElem; k++) {
-      for (Integer i = 0; i < Nnodes; i++) {
-        for (Integer j = 0; j < dof; j++) {
-          value.PushBack((VTUData::VTKReal)vtk_value[k*dof+j][i]);
-        }
-      }
-    }
-  }
-}
-
-template <class CoordType, Integer ELEM_DIM> inline Matrix<CoordType> VTUData::VTK_Nodes(Integer order) {
-  Matrix<CoordType> nodes;
-  if (ELEM_DIM == 2) {
-    Integer Nnodes = order*order;
-    nodes.ReInit(ELEM_DIM, Nnodes);
-    for (Integer i = 0; i < order; i++) {
-      for (Integer j = 0; j < order; j++) {
-        //nodes[0][i*order+j] = i / (CoordType)(order-1);
-        //nodes[1][i*order+j] = j / (CoordType)(order-1);
-        nodes[0][i*order+j] = 0.5 - 0.5 * sctl::cos<CoordType>((2*i+1) * const_pi<CoordType>() / (2*order));
-        nodes[1][i*order+j] = 0.5 - 0.5 * sctl::cos<CoordType>((2*j+1) * const_pi<CoordType>() / (2*order));
-      }
-    }
-  } else {
-    // TODO
-    SCTL_ASSERT(false);
-  }
-  return nodes;
-}
 
 }
 
