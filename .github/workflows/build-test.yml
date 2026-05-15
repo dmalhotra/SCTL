@@ -32,7 +32,7 @@ jobs:
     env:
       # Common compiler flags
       CPPFLAGS: >-
-        -std=c++11 -g -rdynamic -fopenmp -Wall -Wfloat-conversion
+        -std=c++17 -g -rdynamic -fopenmp -Wall -Wfloat-conversion
         -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_PROFILE=5 -DSCTL_VERBOSE
         -DSCTL_SIG_HANDLER -fstack-protector
       # Address sanitizer flags
