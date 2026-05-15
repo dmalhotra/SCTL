@@ -30,6 +30,8 @@
 #include "sctl/profile.hpp"       // for Profile, ProfileCounter
 #include "sctl/profile.txx"       // for Profile::Tic, Profile::Toc, Profile...
 #include "sctl/quadrule.hpp"      // for LegQuadRule
+#include "sctl/scratch_pool.hpp"  // for ScratchBuf
+#include "sctl/scratch_pool.txx"  // for ScratchBuf
 #include "sctl/static-array.hpp"  // for StaticArray
 #include "sctl/static-array.txx"  // for StaticArray::StaticArray<ValueType,...
 #include "sctl/vector.hpp"        // for Vector
@@ -2203,7 +2205,8 @@ template <class Real> void SphericalHarmonics<Real>::Grid2SHC_(const Vector<Real
     Long a=(tid+0)*N*Nt/omp_p;
     Long b=(tid+1)*N*Nt/omp_p;
 
-    Vector<Real> buff(Mf.Dim(1));
+    ScratchBuf<Real> buff_storage(Mf.Dim(1));
+    Vector<Real> buff(buff_storage);
     Long fft_coeff_len = std::min(buff.Dim(), 2*p1+2);
     Matrix<Real> B0_(2*p1+1, N*Nt, B0.begin(), false);
     const Matrix<Real> MX(N * Nt, Np, (Iterator<Real>)X.begin(), false);
@@ -2501,7 +2504,9 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
       Long a=(tid+0)*N*Nt/omp_p;
       Long b=(tid+1)*N*Nt/omp_p;
 
-      Vector<Real> buff(Mf.Dim(0)); buff = 0;
+      ScratchBuf<Real> buff_storage(Mf.Dim(0));
+      Vector<Real> buff(buff_storage);
+      buff = 0;
       Long fft_coeff_len = std::min(buff.Dim(), 2*p0+2);
       Matrix<Real> B1_(2*p0+1, N*Nt, B1.begin(), false);
       for (Long i = a; i < b; i++) {
@@ -2572,7 +2577,9 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
       Long a=(tid+0)*N*Nt/omp_p;
       Long b=(tid+1)*N*Nt/omp_p;
 
-      Vector<Real> buff(Mf.Dim(0)); buff = 0;
+      ScratchBuf<Real> buff_storage(Mf.Dim(0));
+      Vector<Real> buff(buff_storage);
+      buff = 0;
       Long fft_coeff_len = std::min(buff.Dim(), 2*p0+2);
       Matrix<Real> B1_(2*p0+1, N*Nt, B1.begin(), false);
       for (Long i = a; i < b; i++) {
@@ -3194,7 +3201,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2GridTranspose(const Vec
     Long b=(tid+1)*N*(p0+1)/omp_p;
 
     const Long block_size=16;
-    Matrix<Real> B2(block_size,2*p1);
+    ScratchBuf<Real> B2_storage(block_size * 2*p1);
+    Matrix<Real> B2(block_size, 2*p1, B2_storage.begin(), false);
     for(Long i0=a;i0<b;i0+=block_size){
       Long i1=std::min(b,i0+block_size);
       const Matrix<Real> Min (i1-i0,2*p0, (Iterator<Real>)X.begin()+i0*2*p0, false);
@@ -3604,7 +3612,8 @@ template <class Real> template <bool SLayer, bool DLayer> void SphericalHarmonic
       {
         Integer tid=omp_get_thread_num();
         Integer omp_p=omp_get_num_threads();
-        Matrix<Real> B(COORD_DIM*Ncoef,Ngrid*COORD_DIM);
+        ScratchBuf<Real> B_storage(COORD_DIM*Ncoef * Ngrid*COORD_DIM);
+        Matrix<Real> B(COORD_DIM*Ncoef, Ngrid*COORD_DIM, B_storage.begin(), false);
 
         Long a=(tid+0)*N/omp_p;
         Long b=(tid+1)*N/omp_p;
@@ -3642,7 +3651,8 @@ template <class Real> template <bool SLayer, bool DLayer> void SphericalHarmonic
       {
         Integer tid=omp_get_thread_num();
         Integer omp_p=omp_get_num_threads();
-        Matrix<Real> B(COORD_DIM*Ncoef,Ngrid*COORD_DIM);
+        ScratchBuf<Real> B_storage(COORD_DIM*Ncoef * Ngrid*COORD_DIM);
+        Matrix<Real> B(COORD_DIM*Ncoef, Ngrid*COORD_DIM, B_storage.begin(), false);
 
         Long a=(tid+0)*N/omp_p;
         Long b=(tid+1)*N/omp_p;

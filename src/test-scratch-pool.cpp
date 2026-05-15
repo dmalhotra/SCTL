@@ -47,7 +47,7 @@ static void test_growth_and_shrink() {
 static void test_view() {
   ScratchPool pool;
   ScratchBuf<double> buf(8, 0, pool);
-  Vector<double> v = buf.AsVector();
+  Vector<double> v(buf);
   SCTL_ASSERT(v.Dim() == 8);
   for (Long i = 0; i < 8; ++i) v[i] = i * 2.5;
   for (Long i = 0; i < 8; ++i) SCTL_ASSERT(buf[i] == i * 2.5);

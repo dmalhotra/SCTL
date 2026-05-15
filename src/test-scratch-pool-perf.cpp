@@ -1,7 +1,10 @@
 // Performance experiments for sctl::ScratchPool / sctl::ScratchBuf<T>.
-// Compile in release mode (the default Makefile target). Cycle counts via
-// __rdtscp (invariant TSC on modern x86). Each measurement does a warmup
-// pass first, then takes a median over many iterations.
+// Compile in release mode (the default Makefile target). Timing via the
+// platform's high-resolution tick counter: __rdtscp on x86 (invariant TSC),
+// CNTVCT_EL0 on AArch64, std::chrono::steady_clock elsewhere. Units are
+// "ticks", not necessarily CPU cycles — Apple Silicon's CNTVCT_EL0 runs at
+// 24 MHz, so absolute numbers are not comparable across architectures, but
+// relative comparisons within a single run are still meaningful.
 //
 // We deliberately exclude the chunk-growth path: the pool is pre-warmed
 // to its peak working-set size, so all measured allocations are pure
@@ -10,7 +13,12 @@
 #include "sctl.hpp"
 
 #include <omp.h>
+
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #include <x86intrin.h>           // __rdtscp
+#elif !defined(__aarch64__)
+#include <chrono>
+#endif
 
 #include <algorithm>
 #include <cstdint>
@@ -25,11 +33,21 @@ using namespace sctl;
 // ---------------------------------------------------------------------------
 
 static inline uint64_t rdtscp_serialized() {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
   unsigned aux;
   asm volatile("" ::: "memory");
   uint64_t t = __rdtscp(&aux);
   asm volatile("" ::: "memory");
   return t;
+#elif defined(__aarch64__)
+  uint64_t t;
+  asm volatile("isb\n\tmrs %0, cntvct_el0" : "=r"(t) :: "memory");
+  return t;
+#else
+  return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+#endif
 }
 
 struct Stats {
@@ -219,7 +237,14 @@ int main() {
     asm volatile("" : : "r"(&warmup[0]) : "memory");
   }
 
-  printf("# ScratchPool performance microbenchmarks (release mode, __rdtscp)\n");
+  printf("# ScratchPool performance microbenchmarks (release mode)\n");
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+  printf("# Timer: __rdtscp (CPU cycles, invariant TSC).\n");
+#elif defined(__aarch64__)
+  printf("# Timer: CNTVCT_EL0 (AArch64 virtual counter ticks; e.g. 24 MHz on Apple Silicon).\n");
+#else
+  printf("# Timer: std::chrono::steady_clock (nanoseconds).\n");
+#endif
   printf("# Methodology: 100k iters (per cell), median reported, after 1k-iter warmup.\n");
   printf("# Chunk-growth path is excluded by pre-warming to %lld bytes.\n",
          (long long)SCTL_SCRATCH_POOL_INIT_BYTES);

@@ -3,7 +3,7 @@
 
 #include <sstream>            // for stringstream
 #include <omp.h>              // for omp_get_wtime
-#include <stdio.h>            // for size_t, sprintf
+#include <stdio.h>            // for size_t, snprintf
 #include <algorithm>          // for max
 #include <array>              // for array
 #include <atomic>             // for atomic, memory_order
@@ -412,7 +412,7 @@ namespace sctl {
       std::vector<std::string> column_str(N);
       for (Long j = 0; j < N; j++) {
         char buffer[100];
-        sprintf(buffer, format_lst[i].c_str(), column[j]);
+        snprintf(buffer, sizeof(buffer), format_lst[i].c_str(), column[j]);
         column_str[j] = std::string(buffer);
         max_width = std::max(max_width, (Long)column_str[j].size());
       }

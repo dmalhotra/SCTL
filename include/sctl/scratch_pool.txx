@@ -224,10 +224,11 @@ inline const T& ScratchBuf<T>::operator[](Long i) const {
   return reinterpret_cast<const T*>(&chunk_->base[byte_offset_])[i];
 }
 
+// Vector view ctor — defined here because Vector<T> forward-declares ScratchBuf
+// in vector.hpp; the body needs ScratchBuf complete.
 template <class T>
-inline Vector<T> ScratchBuf<T>::AsVector() {
-  return Vector<T>(count_, begin(), false);
-}
+inline Vector<T>::Vector(ScratchBuf<T>& buf)
+  : Vector(buf.Dim(), buf.begin(), false) {}
 
 }  // namespace sctl
 

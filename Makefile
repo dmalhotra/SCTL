@@ -101,6 +101,7 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-tensor
 	./$(BINDIR)/test-vec
 	./$(BINDIR)/test-quad-elem
+	./$(BINDIR)/test-scratch-pool
 
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*

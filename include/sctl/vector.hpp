@@ -10,8 +10,9 @@
 
 namespace sctl {
 
-// forward declaration
+// forward declarations
 template <class ValueType> Iterator<ValueType> NullIterator();
+template <class ValueType> class ScratchBuf;
 
 /**
  * A contiguous array of elements. The elements can be accesses with a non-negative index.  The vector can be the
@@ -70,6 +71,17 @@ template <class ValueType> class Vector {
    * @param V Initializer list to construct from.
    */
   explicit Vector(std::initializer_list<ValueType> V);
+
+  /**
+   * Construct a non-owning view of a ScratchBuf. The Vector aliases the
+   * buffer's storage and does not free it; the ScratchBuf owns the lifetime.
+   *
+   * The ctor is `explicit` to prevent silent copies on assignment:
+   * `existing = scratch_buf;` won't compile, because `operator=(Vector&&)`
+   * cannot reach this ctor through copy-initialization. Use direct-init
+   * (`Vector<T> v(buf);`) for a view.
+   */
+  explicit Vector(ScratchBuf<ValueType>& buf);
 
   /**
    * Destructor.

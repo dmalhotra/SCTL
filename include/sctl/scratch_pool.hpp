@@ -88,12 +88,6 @@ template <class T> class ScratchBuf {
   T&               operator[](Long i);
   const T&         operator[](Long i) const;
 
-  /**
-   * Convenience: returns a non-owning Vector view of the buffer.
-   * Equivalent to `Vector<T>(buf.Dim(), buf.begin(), false)`.
-   */
-  Vector<T> AsVector();
-
  private:
   ScratchPool* pool_;
   Integer tid_;
