@@ -21,6 +21,8 @@
 #include "sctl/permutation.hpp"   // for Permutation
 #include "sctl/profile.hpp"       // for Profile, ProfileCounter
 #include "sctl/profile.txx"       // for Profile::IncrementCounter
+#include "sctl/scratch_pool.hpp"  // for ScratchBuf
+#include "sctl/scratch_pool.txx"  // for ScratchBuf
 #include "sctl/static-array.hpp"  // for StaticArray
 #include "sctl/static-array.txx"  // for StaticArray::operator[]
 
@@ -455,19 +457,19 @@ template <class ValueType> void Matrix<ValueType>::ColPerm(const Permutation<Val
   Long d0 = M.Dim(0);
   Long d1 = M.Dim(1);
 
-  Integer omp_p = omp_get_max_threads();
-  Matrix<ValueType> M_buff(omp_p, d1);
-
   ConstIterator<Long> perm_ = P.perm.begin();
   ConstIterator<ValueType> scal_ = P.scal.begin();
-#pragma omp parallel for schedule(static)
-  for (Long i = 0; i < d0; i++) {
-    Integer pid = omp_get_thread_num();
-    Iterator<ValueType> buff = M_buff[pid];
-    Iterator<ValueType> M_ = M[i];
-    for (Long j = 0; j < d1; j++) buff[j] = M_[j];
-    for (Long j = 0; j < d1; j++) {
-      M_[j] = buff[perm_[j]] * scal_[j];
+#pragma omp parallel
+  {
+    ScratchBuf<ValueType> buff_storage(d1);
+    Iterator<ValueType> buff = buff_storage.begin();
+#pragma omp for schedule(static)
+    for (Long i = 0; i < d0; i++) {
+      Iterator<ValueType> M_ = M[i];
+      for (Long j = 0; j < d1; j++) buff[j] = M_[j];
+      for (Long j = 0; j < d1; j++) {
+        M_[j] = buff[perm_[j]] * scal_[j];
+      }
     }
   }
 }

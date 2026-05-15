@@ -16,6 +16,8 @@
 #include "sctl/math_utils.hpp"       // for fabs, sqrt, const_pi, cos, log
 #include "sctl/math_utils.txx"       // for machine_eps, pow
 #include "sctl/matrix.hpp"           // for Matrix
+#include "sctl/scratch_pool.hpp"     // for ScratchBuf
+#include "sctl/scratch_pool.txx"     // for ScratchBuf
 #include "sctl/static-array.hpp"     // for StaticArray
 #include "sctl/vector.hpp"           // for Vector
 #include "sctl/vector.txx"           // for Vector::operator[], Vector::Dim
@@ -149,12 +151,11 @@ namespace sctl {
 
   template <class Real> template <class ValueType> void LegQuadRule<Real>::ComputeNdsWts(Vector<Real>* nds, Vector<Real>* wts, Integer N) {
     if (!nds && !wts) return;
-    Vector<ValueType> nds0, Pn, dPn;
-    constexpr Long BUFF_SIZE = 128;
-    StaticArray<ValueType,BUFF_SIZE*3> buff;
-    nds0.ReInit(N, N>=BUFF_SIZE ? NullIterator<ValueType>() : buff+0*BUFF_SIZE, N>=BUFF_SIZE);
-    Pn  .ReInit(N, N>=BUFF_SIZE ? NullIterator<ValueType>() : buff+1*BUFF_SIZE, N>=BUFF_SIZE);
-    dPn .ReInit(N, N>=BUFF_SIZE ? NullIterator<ValueType>() : buff+2*BUFF_SIZE, N>=BUFF_SIZE);
+    ScratchBuf<ValueType> buff_storage(N * 3);
+    Iterator<ValueType> buff = buff_storage.begin();
+    Vector<ValueType> nds0(N, buff + 0*N, false);
+    Vector<ValueType> Pn  (N, buff + 1*N, false);
+    Vector<ValueType> dPn (N, buff + 2*N, false);
 
     constexpr Integer MAX_ITER = 5;
     for (Long i = 0; i < N; i++) { // Inital guess for roots of Pn
@@ -197,12 +198,11 @@ namespace sctl {
       return;
     }
 
-    Vector<ValueType> dP1, P0, P1;
-    constexpr Long BUFF_SIZE = 128;
-    StaticArray<ValueType,BUFF_SIZE*3> buff;
-    dP1.ReInit(N, N>=BUFF_SIZE ? NullIterator<ValueType>() : buff+0*BUFF_SIZE, N>=BUFF_SIZE);
-    P0 .ReInit(N, N>=BUFF_SIZE ? NullIterator<ValueType>() : buff+1*BUFF_SIZE, N>=BUFF_SIZE);
-    P1 .ReInit(N, N>=BUFF_SIZE ? NullIterator<ValueType>() : buff+2*BUFF_SIZE, N>=BUFF_SIZE);
+    ScratchBuf<ValueType> buff_storage(N * 3);
+    Iterator<ValueType> buff = buff_storage.begin();
+    Vector<ValueType> dP1(N, buff + 0*N, false);
+    Vector<ValueType> P0 (N, buff + 1*N, false);
+    Vector<ValueType> P1 (N, buff + 2*N, false);
     dP1 = 1; P0 = 1; P1 = X;
     for (Long n = 2; n <= degree; n++) {
       const ValueType scal0 = -(n - 1) / (ValueType)n;

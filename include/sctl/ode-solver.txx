@@ -18,6 +18,8 @@
 #include "sctl/matrix.txx"           // for Matrix::operator[], Matrix::Matr...
 #include "sctl/quadrule.hpp"         // for ChebQuadRule
 #include "sctl/quadrule.txx"         // for ChebQuadRule::ComputeNdsWts
+#include "sctl/scratch_pool.hpp"     // for ScratchBuf
+#include "sctl/scratch_pool.txx"     // for ScratchBuf
 #include "sctl/static-array.hpp"     // for StaticArray
 #include "sctl/vector.hpp"           // for Vector
 #include "sctl/vector.txx"           // for Vector::Vector<ValueType>, Vecto...
@@ -148,24 +150,14 @@ namespace sctl {
     if (N_picard < 0) N_picard = order;
     const Long DOF = u0.Dim();
 
-    const Integer Nbuff = 1000;
-    StaticArray<Real,Nbuff> buff;
-    Matrix<Real> Mu;
-    Matrix<Real> Mf0, Mf1;
-    Matrix<Real> Mv, Mv_change;
-    Vector<Real> picard_err;
-    if (Nbuff < 1*order*DOF) Mu.ReInit(order, DOF);
-    else Mu.ReInit(order, DOF, buff + 0*order*DOF, false);
-    if (Nbuff < 2*order*DOF) Mf0.ReInit(order, DOF);
-    else Mf0.ReInit(order, DOF, buff + 1*order*DOF, false);
-    if (Nbuff < 3*order*DOF) Mf1.ReInit(order, DOF);
-    else Mf1.ReInit(order, DOF, buff + 2*order*DOF, false);
-    if (Nbuff < 4*order*DOF) Mv.ReInit(order, DOF);
-    else Mv.ReInit(order, DOF, buff + 3*order*DOF, false);
-    if (Nbuff < 5*order*DOF) Mv_change.ReInit(order, DOF);
-    else Mv_change.ReInit(order, DOF, buff + 4*order*DOF, false);
-    if (Nbuff < 5*order*DOF+N_picard) picard_err.ReInit(N_picard);
-    else picard_err.ReInit(N_picard, buff + 5*order*DOF, false);
+    ScratchBuf<Real> buff_storage(5*order*DOF + N_picard);
+    Iterator<Real> buff = buff_storage.begin();
+    Matrix<Real> Mu       (order, DOF,        buff + 0*order*DOF, false);
+    Matrix<Real> Mf0      (order, DOF,        buff + 1*order*DOF, false);
+    Matrix<Real> Mf1      (order, DOF,        buff + 2*order*DOF, false);
+    Matrix<Real> Mv       (order, DOF,        buff + 3*order*DOF, false);
+    Matrix<Real> Mv_change(order, DOF,        buff + 4*order*DOF, false);
+    Vector<Real> picard_err(N_picard,         buff + 5*order*DOF, false);
 
     for (Long j = 0; j < order; j++) { // Set Mu
       for (Long k = 0; k < DOF; k++) {

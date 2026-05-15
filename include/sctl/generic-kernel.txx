@@ -10,6 +10,8 @@
 #include "sctl/matrix.hpp"          // for Matrix
 #include "sctl/profile.hpp"         // for Profile, ProfileCounter
 #include "sctl/profile.txx"         // for Profile::IncrementCounter
+#include "sctl/scratch_pool.hpp"    // for ScratchBuf
+#include "sctl/scratch_pool.txx"    // for ScratchBuf
 #include "sctl/static-array.hpp"    // for StaticArray
 #include "sctl/vec.hpp"             // for Vec
 #include "sctl/vec.txx"             // for DefaultVecLen, FMA
@@ -128,19 +130,10 @@ namespace sctl {
       const Matrix<Real> Ns_(Ns, N_DIM, (Iterator<Real>)n_src.begin(), false);
       const Matrix<Real> Vs_(Ns, KDIM0, (Iterator<Real>)v_src.begin(), false);
 
-      Matrix<Real> Xt_, Vt_;
-      constexpr Integer Nbuff = 16*1024;
-      alignas(sizeof(RealVec)) StaticArray<Real,Nbuff> buff;
-      if (DIM*NNt < Nbuff) {
-        Xt_.ReInit(DIM, NNt, buff, false);
-      } else {
-        Xt_.ReInit(DIM, NNt);
-      }
-      if ((DIM+KDIM1)*NNt < Nbuff) {
-        Vt_.ReInit(KDIM1, NNt, buff+DIM*NNt, false);
-      } else {
-        Vt_.ReInit(KDIM1, NNt);
-      }
+      ScratchBuf<Real> buff_storage((DIM + KDIM1) * NNt);
+      Iterator<Real> buff = buff_storage.begin();
+      Matrix<Real> Xt_(DIM, NNt, buff + 0, false);
+      Matrix<Real> Vt_(KDIM1, NNt, buff + DIM*NNt, false);
 
       for (Long k = 0; k < DIM; k++) { // Set Xt_
         for (Long i = 0; i < Nt; i++) {

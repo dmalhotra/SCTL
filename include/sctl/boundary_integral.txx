@@ -22,6 +22,8 @@
 #include "sctl/ompUtils.txx"           // for scan, merge_sort
 #include "sctl/profile.hpp"            // for Profile
 #include "sctl/profile.txx"            // for Profile::Tic, Profile::Toc
+#include "sctl/scratch_pool.hpp"       // for ScratchBuf
+#include "sctl/scratch_pool.txx"       // for ScratchBuf
 #include "sctl/static-array.hpp"       // for StaticArray
 #include "sctl/static-array.txx"       // for StaticArray::operator[], Stati...
 #include "sctl/tree.hpp"               // for Morton
@@ -1037,8 +1039,8 @@ namespace sctl {
                   }
                 }
               } else {
-                StaticArray<Real,10000> buff0;
-                Matrix<Real> K_near0(N0, KDIM1_, (N0*KDIM1_>10000?NullIterator<Real>():buff0), (N0*KDIM1_>10000));
+                ScratchBuf<Real> K_near0_storage(N0 * KDIM1_);
+                Matrix<Real> K_near0(N0, KDIM1_, K_near0_storage.begin(), false);
                 elem_data.NearInterac(K_near0, Xt, Xn, ker_, tol_, j, elem_lst.get());
 
                 if (K_near0.Dim(0) != 0 && K_near0.Dim(1) != 0) {

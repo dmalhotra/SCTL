@@ -7,6 +7,8 @@
 #include "sctl/lagrange-interp.hpp"  // for LagrangeInterp
 #include "sctl/iterator.txx"         // for NullIterator
 #include "sctl/matrix.hpp"           // for Matrix
+#include "sctl/scratch_pool.hpp"     // for ScratchBuf
+#include "sctl/scratch_pool.txx"     // for ScratchBuf
 #include "sctl/static-array.hpp"     // for StaticArray
 #include "sctl/vec.hpp"              // for Vec
 #include "sctl/vec.txx"              // for DefaultVecLen
@@ -46,8 +48,8 @@ namespace sctl {
     if (wts.Dim() != Nsrc*Ntrg) wts.ReInit(Nsrc*Ntrg);
     Matrix<Real> M(Nsrc, Ntrg, wts.begin(), false);
 
-    StaticArray<Real,200> w_buff;
-    Vector<Real> w(Nsrc, (Nsrc>=200?NullIterator<Real>():w_buff), (Nsrc>=200));
+    ScratchBuf<Real> w_storage(Nsrc);
+    Vector<Real> w(w_storage);
     const Real normal_factor = [src_nds]() { // normalize
       if (src_nds.Dim() < 2) return (Real)1;
       Real max_src = src_nds[0], min_src = src_nds[0];

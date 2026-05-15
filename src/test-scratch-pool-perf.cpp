@@ -162,17 +162,17 @@ static void experiment_2_threads() {
       }
     };
 
-    bench_per_thread([n]{
+    bench_per_thread([]{
       ScratchBuf<double> buf(n);
       asm volatile("" : : "r"(&buf[0]) : "memory");
     }, per_thread_scratch);
 
-    bench_per_thread([n]{
+    bench_per_thread([]{
       Vector<double> v(n);
       asm volatile("" : : "r"(&v[0]) : "memory");
     }, per_thread_sctlvec);
 
-    bench_per_thread([n]{
+    bench_per_thread([]{
       std::vector<double> v(n);
       asm volatile("" : : "r"(v.data()) : "memory");
     }, per_thread_stdvec);
