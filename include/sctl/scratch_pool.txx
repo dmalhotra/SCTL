@@ -79,7 +79,7 @@ inline ScratchPool& ScratchPool::Instance() {
     // Overflow path. Also taken on the first alloc (sentinel has end == base).
     // `std::aligned_alloc` (not `aligned_new`) so libc returns virtual pages
     // that fault in on the writing thread — NUMA-local first-touch.
-    Long new_cap = std::max((Long)SCTL_SCRATCH_POOL_INIT_BYTES, (head_->end - head_->base) * 2);
+    Long new_cap = std::max<Long>((Long)SCTL_SCRATCH_POOL_INIT_BYTES, (head_->end - head_->base) * 2);
     while (new_cap < bytes_padded) new_cap *= 2;
     new_cap = (new_cap + align_mask) & ~align_mask;  // aligned_alloc requires size % alignment == 0
     void* raw = std::aligned_alloc(SCTL_MEM_ALIGN, new_cap);

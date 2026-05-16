@@ -246,7 +246,7 @@ static void experiment_3_nesting() {
 
   const int iters = 50000;
 
-  auto run_depth = [iters](int depth) {
+  auto run_depth = [&iters](int depth) {
     uint64_t sb = 0;
     if      (depth == 1)  sb = measure([] { NestedAllocFree<1>::run();  }, iters).median;
     else if (depth == 4)  sb = measure([] { NestedAllocFree<4>::run();  }, iters).median;

@@ -47,22 +47,26 @@ namespace sctl {
     mat_lst.push_front(Qt);
   }
 
+  // Apply the stored low-rank correction in order: for each (Qt, U) pair,
+  // y <- y + (y Qt) U. Distributed: one Allreduce of size Qt.Dim(1) per pair.
   template <class Real> void KrylovPrecond<Real>::Apply(Vector<Real>& y, const Comm& comm) const {
     if (N_ != y.Dim()) return;
 
-    Matrix<Real> y_Qt, y_Qt_glb, y_(1, N_, y.begin(), false);
+    Matrix<Real> y_(1, N_, y.begin(), false);
     for (auto it = mat_lst.begin(); it != mat_lst.end(); it++) {
       const auto& Qt = *it;
       it++;
       const auto& U = *it;
 
-      //y_ += (y_ * Qt) * U;
-      y_Qt.ReInit(1, Qt.Dim(1));
+      // y_ += (y_ * Qt) * U;
+      ScratchBuf<Real> y_Qt_buf(Qt.Dim(1));
+      Matrix<Real> y_Qt(1, Qt.Dim(1), y_Qt_buf.begin(), false);
       Matrix<Real>::GEMM(y_Qt, y_, Qt);
 
       if (comm.Size() > 1) {
-        if (y_Qt_glb.Dim(0) != y_Qt.Dim(0) || y_Qt_glb.Dim(1) != y_Qt.Dim(1)) y_Qt_glb.ReInit(y_Qt.Dim(0), y_Qt.Dim(1));
-        comm.Allreduce(y_Qt.begin(), y_Qt_glb.begin(), y_Qt.Dim(1), CommOp::SUM);
+        ScratchBuf<Real> y_Qt_glb_buf(Qt.Dim(1));
+        Matrix<Real> y_Qt_glb(1, Qt.Dim(1), y_Qt_glb_buf.begin(), false);
+        comm.Allreduce(y_Qt.begin(), y_Qt_glb.begin(), Qt.Dim(1), CommOp::SUM);
         Matrix<Real>::GEMM(y_, y_Qt_glb, U, (Real)1);
       } else {
         Matrix<Real>::GEMM(y_, y_Qt, U, (Real)1);
@@ -84,6 +88,11 @@ namespace sctl {
     return x_dot_y_glb;
   }
 
+  // Right-preconditioned GMRES: builds an Arnoldi basis Q for K_k(A M^-1, r0)
+  // and the upper-Hessenberg H = Q^T A M^-1 Q in-place via Givens-rotated QR,
+  // then back-solves for y minimizing ||H y - beta e_1|| and forms x += M^-1 Q y.
+  // Q is stored row-major (rows are basis vectors); H is stored as a packed
+  // upper-triangle (row i has i+1 entries) since rotations zero subdiagonal entries.
   template <class Real> inline void GMRES<Real>::GenericGMRES(Vector<Real>* x, const ParallelOp& A, const Vector<Real>& b, Real tol, Integer max_iter, bool use_abs_tol, Long* solve_iter, KrylovPrecond<Real>* krylov_precond) const {
     const Long N = b.Dim();
     if (max_iter < 0) { // set max_iter
@@ -110,16 +119,10 @@ namespace sctl {
       }
       return Q_mat.begin() + idx;
     };
-    auto Q = [&Q_row](Long i, Long j) -> Real& {
-      return Q_row(i)[j];
-    };
     auto H_row = [&H_mat,&ResizeVector](Long i) -> Iterator<Real> {
       const Long idx = i*(i+1)/2;
       if (H_mat.Dim() <= idx+i+1) ResizeVector(H_mat, (Long)((idx+i+1)*ARRAY_RESIZE_FACTOR));
       return H_mat.begin() + idx;
-    };
-    auto H = [&H_row](Long i, Long j) -> Real& {
-      return H_row(i)[j];
     };
 
     auto apply_givens_rotation = [](Vector<Real>& h, Real& cs_k, Real& sn_k, const Vector<Real>& cs, const Vector<Real>& sn, const Long k) {
@@ -216,7 +219,10 @@ namespace sctl {
       return;
     }
 
-    for (Long i = 0; i < N; i++) Q(0,i) = r[i] / r_norm;
+    {
+      Iterator<Real> Q0 = Q_row(0);
+      for (Long i = 0; i < N; i++) Q0[i] = r[i] / r_norm;
+    }
     ScratchBuf<Real> sn_storage(max_iter), cs_storage(max_iter), beta_storage(max_iter+1), h_k_storage(max_iter+1), q_k_storage(N);
     Vector<Real> sn(sn_storage), cs(cs_storage), beta(beta_storage), h_k(h_k_storage), q_k(q_k_storage);
     beta[0] = r_norm;
@@ -231,8 +237,14 @@ namespace sctl {
 
       arnoldi(h_k, q_k, A, k);
       apply_givens_rotation(h_k, cs[k], sn[k], cs, sn, k); // eliminate the last element in H ith row and update the rotation matrix
-      for (Long i = 0; i < k+1; i++) H(k,i) = h_k[i];
-      for (Long i = 0; i < N; i++) Q(k+1,i) = q_k[i];
+      {
+        Iterator<Real> Hk = H_row(k);
+        for (Long i = 0; i < k+1; i++) Hk[i] = h_k[i];
+      }
+      {
+        Iterator<Real> Qk1 = Q_row(k+1);
+        for (Long i = 0; i < N; i++) Qk1[i] = q_k[i];
+      }
 
       // update the residual vector
       beta[k+1] = -sn[k] * beta[k];
@@ -242,9 +254,10 @@ namespace sctl {
     if (verbose_ && !comm_.Rank()) printf("%3lld KSP Residual norm %.12e\n", (long long)k, (double)error);
 
     for (Long i = k-1; i >= 0; i--) { // beta <-- beta * inv(H); (through back substitution)
-      beta[i] /= H(i,i);
+      Iterator<Real> Hi = H_row(i);
+      beta[i] /= Hi[i];
       for (Long j = 0; j < i; j++) {
-        beta[j] -= beta[i] * H(i,j);
+        beta[j] -= beta[i] * Hi[j];
       }
     }
     // x_ = Q^T * beta[0..k]  (via GEMM beta=0)
@@ -264,21 +277,32 @@ namespace sctl {
     if (solve_iter) (*solve_iter) = k;
 
     if (krylov_precond && k > 0) {
+      // Build a low-rank correction (Qt, U) so that I + U Qt^T approximates
+      // A^-1 in the directions covered by this solve's Krylov subspace.
+      // Qt = G^T Q (Q with the Givens rotations applied to its columns) and
+      // U  = H^-1 Q - Qt. Future calls with a nearby RHS converge in few iters.
       ScratchBuf<Real>   Qt_buf((Long)N * k);
       ScratchBuf<Real>    U_buf((Long)k * N);
       ScratchBuf<Real> Hinv_buf((Long)k * k);
       Matrix<Real> Qt  (N, k,   Qt_buf.begin(), false);
       Matrix<Real> U   (k, N,    U_buf.begin(), false);
       Matrix<Real> Hinv(k, k, Hinv_buf.begin(), false);
-      for (Long i = 0; i < N; i++) { // apply givens rotations to Qt
-        for (Long j = 0; j < k; j++) Qt[i][j] = Q_mat[j*N+i];
-        for (Long j = 0; j < k-1; j++) { // apply givens rotations to Qt
+      // Phase 1: Qt = Q_mat^T. Split out from the Givens pass so Q_mat is
+      // read sequentially (full cache-line utilization, perfect prefetch)
+      // rather than the original stride-N gather.
+      for (Long j = 0; j < k; j++) {
+        ConstIterator<Real> Q_col = Q_mat.begin() + j*N;
+        for (Long i = 0; i < N; i++) Qt[i][j] = Q_col[i];
+      }
+      // Phase 2: apply Givens rotations row-by-row of Qt. Each row is k
+      // contiguous elements and carries a serial data dependency between
+      // adjacent j (Qt[i][j+1] is written then read as Qt[i][j+1] next iter).
+      for (Long i = 0; i < N; i++) {
+        for (Long j = 0; j < k-1; j++) {
           Real temp = cs[j] * Qt[i][j] + sn[j] * Qt[i][j+1];
           Qt[i][j+1] = -sn[j] * Qt[i][j] + cs[j] * Qt[i][j+1];
           Qt[i][j] = temp;
         }
-      }
-      for (Long i = 0; i < N; i++) {
         Qt[i][k-1] = cs[k-1] * Qt[i][k-1] + sn[k-1] * Q_mat[k*N+i];
       }
 
@@ -286,16 +310,20 @@ namespace sctl {
         for (Long i = 0; i < k; i++) Hinv[l][i] = 0;
         Hinv[l][l] = 1;
         for (Long i = l; i >= 0; i--) {
-          Hinv[l][i] /= H(i,i);
+          Iterator<Real> Hi = H_row(i);
+          Hinv[l][i] /= Hi[i];
           for (Long j = 0; j < i; j++) {
-            Hinv[l][j] -= Hinv[l][i] * H(i,j);
+            Hinv[l][j] -= Hinv[l][i] * Hi[j];
           }
         }
       }
       Matrix<Real>::GEMM(U, Hinv, Matrix<Real>(k, N, Q_mat.begin(), false));
-      for (Long j = 0; j < N; j++) {
-        for (Long i = 0; i < k; i++) {
-          U[i][j] -= Qt[j][i];
+      // Loop order swapped: inner j makes U sequential (stride 1, the long
+      // dim) at the cost of stride-k reads from Qt (k is small, fits cache).
+      for (Long i = 0; i < k; i++) {
+        Iterator<Real> Ui = U[i];
+        for (Long j = 0; j < N; j++) {
+          Ui[j] -= Qt[j][i];
         }
       }
 
