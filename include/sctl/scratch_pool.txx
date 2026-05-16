@@ -22,13 +22,6 @@ namespace internal {
 // cache line (otherwise ~25% of chunks would straddle two). Alignment of
 // `top` is preserved by induction: `base` is aligned, every alloc consumes
 // a multiple of SCTL_MEM_ALIGN (see AllocBytes).
-inline ScratchChunk::ScratchChunk()
-  : base(), top(), end(), prev(nullptr)
-#ifdef SCTL_MEMDEBUG
-  , live_count(0)
-#endif
-{}
-
 inline ScratchChunk::ScratchChunk(Iterator<char> base, Iterator<char> top, Iterator<char> end, ScratchChunk* prev)
   : base(base), top(top), end(end), prev(prev)
 #ifdef SCTL_MEMDEBUG
@@ -41,12 +34,12 @@ inline ScratchChunk::ScratchChunk(Iterator<char> base, Iterator<char> top, Itera
 inline ScratchPool::ScratchPool() = default;
 
 inline ScratchPool::~ScratchPool() {
+  if (head_ == nullptr) return;
 #ifdef SCTL_MEMDEBUG
   SCTL_ASSERT(head_->live_count == 0);
 #endif
-  if (head_ == &sentinel_) return;
   // LIFO discipline drains all non-head chunks, so only head remains.
-  SCTL_ASSERT(head_->prev == &sentinel_);
+  SCTL_ASSERT(head_->prev == nullptr);
   std::free(&head_->base[0]);
   delete head_;
 }
@@ -72,14 +65,18 @@ inline ScratchPool& ScratchPool::Instance() {
 #endif
 
   constexpr Long align_mask = (Long)SCTL_MEM_ALIGN - 1;
-  Iterator<char> alloc_start = head_->top;
   const Long bytes_padded = (bytes + redzone + align_mask) & ~align_mask;
-
-  if (__builtin_expect(alloc_start + bytes_padded > head_->end, 0)) {
-    // Overflow path. Also taken on the first alloc (sentinel has end == base).
+  // Short-circuit on the lazy-init case (head_ == nullptr): avoids null
+  // pointer arithmetic (UB / -fsanitize=pointer-subtract,pointer-compare).
+  // Otherwise `top` and `end` point into the same chunk so the subtract
+  // and comparison are well-defined.
+  Iterator<char> alloc_start;
+  if (__builtin_expect(head_ == nullptr || bytes_padded > head_->end - head_->top, 0)) {
+    // Overflow path. Also taken on the first allocation (head_ == nullptr).
     // `std::aligned_alloc` (not `aligned_new`) so libc returns virtual pages
     // that fault in on the writing thread — NUMA-local first-touch.
-    Long new_cap = std::max<Long>((Long)SCTL_SCRATCH_POOL_INIT_BYTES, (head_->end - head_->base) * 2);
+    const Long prev_cap = (head_ == nullptr) ? 0 : (head_->end - head_->base);
+    Long new_cap = std::max<Long>((Long)SCTL_SCRATCH_POOL_INIT_BYTES, prev_cap * 2);
     while (new_cap < bytes_padded) new_cap *= 2;
     new_cap = (new_cap + align_mask) & ~align_mask;  // aligned_alloc requires size % alignment == 0
     void* raw = std::aligned_alloc(SCTL_MEM_ALIGN, new_cap);
@@ -87,6 +84,8 @@ inline ScratchPool& ScratchPool::Instance() {
     Iterator<char> new_base = Ptr2Itr<char>(static_cast<char*>(raw), new_cap);
     head_ = new Chunk(new_base, new_base, new_base + new_cap, head_);
     alloc_start = new_base;
+  } else {
+    alloc_start = head_->top;
   }
   out_chunk = head_;
   out_data = alloc_start;
@@ -146,18 +145,18 @@ inline ScratchPool& ScratchPool::Instance() {
 
 inline Long ScratchPool::DebugChunkCount() const {
   Long n = 0;
-  for (const Chunk* c = head_; c != &sentinel_; c = c->prev) ++n;
+  for (const Chunk* c = head_; c != nullptr; c = c->prev) ++n;
   return n;
 }
 
 inline Long ScratchPool::DebugLiveCount() const {
 #ifdef SCTL_MEMDEBUG
   Long n = 0;
-  for (const Chunk* c = head_; c != &sentinel_; c = c->prev) n += c->live_count;
+  for (const Chunk* c = head_; c != nullptr; c = c->prev) n += c->live_count;
   return n;
 #else
   // No per-chunk counter in release; report 0 only when known-empty.
-  if (head_ == &sentinel_) return 0;
+  if (head_ == nullptr) return 0;
   return (head_->top == head_->base) ? 0 : -1;
 #endif
 }

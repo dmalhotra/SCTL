@@ -32,7 +32,6 @@ struct alignas(SCTL_MEM_ALIGN) ScratchChunk {
   Long           live_count;
 #endif
 
-  ScratchChunk();
   ScratchChunk(Iterator<char> base, Iterator<char> top, Iterator<char> end, ScratchChunk* prev);
 };
 
@@ -134,8 +133,7 @@ class ScratchPool {
   void AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data);
   void FreeBytes(Chunk* chunk, Iterator<char> data, Long bytes);
 
-  Chunk  sentinel_;        // zero-capacity; head_ points here when empty
-  Chunk* head_{&sentinel_};
+  Chunk* head_{nullptr};   // lazily allocated on the first AllocBytes call
 };
 
 }  // namespace sctl
