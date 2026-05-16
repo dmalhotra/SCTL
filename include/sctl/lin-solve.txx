@@ -96,9 +96,10 @@ namespace sctl {
     Vector<Real> Q_mat, H_mat;
     auto ResizeVector = [](Vector<Real>& v, const Long N0) {
       if (v.Dim() < N0) {
+        const Long old = v.Dim();
         Vector<Real> v_(N0);
-        for (Long i = 0; i < v.Dim(); i++) v_[i] = v[i];
-        for (Long i = v.Dim(); i < N0; i++) v_[i] = 0;
+        if (old > 0) memcopy(v_.begin(), (ConstIterator<Real>)v.begin(), old);
+        memset((Iterator<char>)v_.begin() + old * (Long)sizeof(Real), 0, (N0 - old) * (Long)sizeof(Real));
         v.Swap(v_);
       }
     };
@@ -129,8 +130,8 @@ namespace sctl {
         h[i]     = temp;
       }
 
-      // update the next sin cos values for rotation
-      const Real t = sqrt<Real>(h[k]*h[k] + h[k+1]*h[k+1]);
+      // update the next sin cos values for rotation (hypot avoids overflow)
+      const Real t = hypot<Real>(h[k], h[k+1]);
       cs_k = h[k] / t;
       sn_k = h[k+1] / t;
 
@@ -138,31 +139,65 @@ namespace sctl {
       h[k] = cs_k * h[k] + sn_k * h[k+1];
       h[k+1] = 0.0;
     };
-    auto arnoldi = [this,N,&Q_row,&Q,&krylov_precond](Vector<Real>& h, Vector<Real>& q, const ParallelOp& A, const Long k) {
-      Vector<Real> q_k(N, Q_row(k), krylov_precond?true:false);
-      if (krylov_precond) krylov_precond->Apply(q_k, comm_);
-      A(&q, q_k);
-
-      for (Long i = 0; i < k+1; i++) { // Modified Gram-Schmidt, keeping the Hessenberg matrix
-        h[i] = inner_prod(q, Vector<Real>(N, Q_row(i), false), comm_);
-        for (Long j = 0; j < N; j++) {
-          q[j] -= h[i] * Q(i,j);
-        }
+    auto arnoldi = [this,N,&Q_row,&krylov_precond](Vector<Real>& h, Vector<Real>& q, const ParallelOp& A, const Long k) {
+      Iterator<Real> Qk = Q_row(k);
+      if (krylov_precond) { // q_pc = M^-1 * Q_row(k)
+        ScratchBuf<Real> q_pc_buf(N);
+        Vector<Real> q_pc(q_pc_buf);
+        memcopy(q_pc.begin(), (ConstIterator<Real>)Qk, N);
+        krylov_precond->Apply(q_pc, comm_);
+        A(&q, q_pc);
+      } else {
+        Vector<Real> q_src(N, Qk, false, true);
+        A(&q, q_src);
       }
-      //for (Long i = 0; i < k+1; i++) { // re-orthogonalize (more stable)
-      //  const Real h_ = inner_prod(q, Vector<Real>(N, Q_row(i), false), comm_);
-      //  for (Long j = 0; j < N; j++) {
-      //    q[j] -= h_ * Q(i,j);
-      //  }
-      //  h[i] += h_;
-      //}
+
+      // One Gram-Schmidt pass: c[i] = q . Q_row(i), q -= sum c[i]*Q_row(i),
+      // accumulating c into h[0..k]. Chained passes (initial + reorth) sum.
+      auto gs_pass = [this, N, &Q_row, &q, &h, k]() {
+        if (gs_strategy_ == GramSchmidt::MGS) {
+          for (Long i = 0; i < k+1; i++) { // Modified Gram-Schmidt
+            auto Q_row_i = Q_row(i);
+            Real dot_local = 0;
+            for (Long j = 0; j < N; j++) dot_local += q[j] * Q_row_i[j];
+            Real dot_glb = 0;
+            comm_.Allreduce(Ptr2ConstItr<Real>(&dot_local, 1), Ptr2Itr<Real>(&dot_glb, 1), 1, CommOp::SUM);
+            h[i] += dot_glb;
+            for (Long j = 0; j < N; j++) q[j] -= dot_glb * Q_row_i[j];
+          }
+        } else { // Classical Gram-Schmidt via BLAS GEMV — one batched Allreduce of size k+1
+          ScratchBuf<Real> dots_local(k+1), dots_glb(k+1);
+          Matrix<Real> Q_view(k+1, N, Q_row(0), false);
+          Matrix<Real> q_col(N, 1, q.begin(), false);
+          Matrix<Real> dots_col(k+1, 1, dots_local.begin(), false);
+          Matrix<Real>::GEMM(dots_col, Q_view, q_col); // dots = Q . q
+
+          comm_.Allreduce(dots_local.begin(), dots_glb.begin(), k+1, CommOp::SUM);
+          for (Long i = 0; i < k+1; i++) { // accumulate then negate for the subtract
+            h[i] += dots_glb[i];
+            dots_glb[i] = -dots_glb[i];
+          }
+
+          Matrix<Real> q_row(1, N, q.begin(), false);
+          Matrix<Real> neg_dots(1, k+1, dots_glb.begin(), false);
+          Matrix<Real>::GEMM(q_row, neg_dots, Q_view, (Real)1); // q -= Q^T . dots_glb
+        }
+      };
+
+      for (Long i = 0; i < k+1; i++) h[i] = 0;
+      gs_pass();                                           // initial pass
+      for (Integer p = 0; p < num_reorth_; p++) gs_pass(); // optional reorth passes
+
       h[k+1] = sqrt<Real>(inner_prod(q, q, comm_));
-      q *= 1/h[k+1];
+      // Lucky breakdown (h[k+1] = 0): skip normalization. Loop exits naturally
+      // on the next iter: sn[k] = 0 -> beta[k+1] = 0 -> error = 0.
+      if (h[k+1] > (Real)0) q *= 1/h[k+1];
     };
 
     Vector<Real> r;
     if (x->Dim() == N) { // r = b - A * x;
-      Vector<Real> Ax;
+      ScratchBuf<Real> Ax_buf(N);
+      Vector<Real> Ax(Ax_buf, false); // disable_reinit=false: user's callback may ReInit
       A(&Ax, *x);
       r = b - Ax;
     } else {
@@ -173,20 +208,26 @@ namespace sctl {
 
     const Real b_norm = sqrt<Real>(inner_prod(b, b, comm_));
     const Real abs_tol = tol * (use_abs_tol ? 1 : b_norm);
-
     const Real r_norm = sqrt<Real>(inner_prod(r, r, comm_));
+
+    // Early termination: r already meets tolerance (also guards 0/0 below).
+    if (r_norm <= abs_tol) {
+      if (solve_iter) *solve_iter = 0;
+      return;
+    }
+
     for (Long i = 0; i < N; i++) Q(0,i) = r[i] / r_norm;
-    Vector<Real> beta(1); beta = r_norm;
-    Vector<Real> sn, cs, h_k, q_k(N);
+    ScratchBuf<Real> sn_storage(max_iter), cs_storage(max_iter), beta_storage(max_iter+1), h_k_storage(max_iter+1), q_k_storage(N);
+    Vector<Real> sn(sn_storage), cs(cs_storage), beta(beta_storage), h_k(h_k_storage), q_k(q_k_storage);
+    beta[0] = r_norm;
 
     Long k = 0;
     Real error = r_norm;
     for (; k < max_iter && error > abs_tol; k++) {
       if (verbose_ && !comm_.Rank()) printf("%3lld KSP Residual norm %.12e\n", (long long)k, (double)error);
-      if (sn.Dim() <= k) ResizeVector(sn, (Long)((k+1)*ARRAY_RESIZE_FACTOR));
-      if (cs.Dim() <= k) ResizeVector(cs, (Long)((k+1)*ARRAY_RESIZE_FACTOR));
-      if (beta.Dim() <= k+1) ResizeVector(beta, (Long)((k+2)*ARRAY_RESIZE_FACTOR));
-      if ( h_k.Dim() <= k+1) ResizeVector( h_k, (Long)((k+2)*ARRAY_RESIZE_FACTOR));
+      // Pre-size Q_mat so every Q_row(i) below is a pure pointer return
+      // (no iterator invalidation — required by arnoldi's GEMM path).
+      if (Q_mat.Dim() < (k+2)*N) ResizeVector(Q_mat, (Long)(((k+2)*N)*ARRAY_RESIZE_FACTOR));
 
       arnoldi(h_k, q_k, A, k);
       apply_givens_rotation(h_k, cs[k], sn[k], cs, sn, k); // eliminate the last element in H ith row and update the rotation matrix
@@ -206,19 +247,29 @@ namespace sctl {
         beta[j] -= beta[i] * H(i,j);
       }
     }
-    Vector<Real> x_(N); x_ = 0;
-    for (Long i = 0; i < N; i++) { // x <-- beta * Q
-      for (Long j = 0; j < k; j++) {
-        x_[i] += beta[j] * Q(j,i);
-      }
+    // x_ = Q^T * beta[0..k]  (via GEMM beta=0)
+    ScratchBuf<Real> x_buf(N);
+    Vector<Real> x_(x_buf);
+    if (k > 0) {
+      Matrix<Real> x_row(1, N, x_.begin(), false);
+      Matrix<Real> beta_row(1, k, beta.begin(), false);
+      Matrix<Real> Q_top(k, N, Q_row(0), false);
+      Matrix<Real>::GEMM(x_row, beta_row, Q_top, (Real)0);
+    } else {
+      for (Long i = 0; i < N; i++) x_[i] = 0;
     }
     if (krylov_precond) krylov_precond->Apply(x_, comm_);
     (*x) += x_;
 
     if (solve_iter) (*solve_iter) = k;
 
-    if (krylov_precond) {
-      Matrix<Real> Qt(N, k), U(k, N);
+    if (krylov_precond && k > 0) {
+      ScratchBuf<Real>   Qt_buf((Long)N * k);
+      ScratchBuf<Real>    U_buf((Long)k * N);
+      ScratchBuf<Real> Hinv_buf((Long)k * k);
+      Matrix<Real> Qt  (N, k,   Qt_buf.begin(), false);
+      Matrix<Real> U   (k, N,    U_buf.begin(), false);
+      Matrix<Real> Hinv(k, k, Hinv_buf.begin(), false);
       for (Long i = 0; i < N; i++) { // apply givens rotations to Qt
         for (Long j = 0; j < k; j++) Qt[i][j] = Q_mat[j*N+i];
         for (Long j = 0; j < k-1; j++) { // apply givens rotations to Qt
@@ -231,7 +282,6 @@ namespace sctl {
         Qt[i][k-1] = cs[k-1] * Qt[i][k-1] + sn[k-1] * Q_mat[k*N+i];
       }
 
-      Matrix<Real> Hinv(k,k);
       for (Long l = 0; l < k; l++) {
         for (Long i = 0; i < k; i++) Hinv[l][i] = 0;
         Hinv[l][l] = 1;
@@ -270,7 +320,7 @@ namespace sctl {
 
     auto LinOp = [&A](Vector<Real>* Ax, const Vector<Real>& x) {
       const Long N = x.Dim();
-      Ax->ReInit(N);
+      if (Ax->Dim() != N) Ax->ReInit(N);
       Matrix<Real> Ax_(N, 1, Ax->begin(), false);
       Ax_ = A * Matrix<Real>(N, 1, (Iterator<Real>)x.begin(), false);
     };

@@ -63,13 +63,10 @@ static Stats summarize(std::vector<uint64_t>& v) {
   return s;
 }
 
-// ---------------------------------------------------------------------------
-// Experiment 1: single-thread combined alloc + free, varying size.
-// ---------------------------------------------------------------------------
-
 template <class Op>
 static Stats measure(Op op, int iters) {
-  // Warmup: get caches/branch predictors hot, exercise the lazy-init path.
+  // Warmup so caches/branch-predictors are hot and the pool's lazy-init
+  // path doesn't pollute the first samples.
   for (int i = 0; i < 1000; ++i) op();
 
   std::vector<uint64_t> samples;
@@ -83,57 +80,77 @@ static Stats measure(Op op, int iters) {
   return summarize(samples);
 }
 
+// ---------------------------------------------------------------------------
+// Experiment 1: single-thread alloc+free, varying buffer size.
+// ---------------------------------------------------------------------------
+
+template <Long N>
+static void experiment_1_one_size(int iters) {
+  auto s_scratch = measure([] {
+    ScratchBuf<double> buf(N);
+    asm volatile("" : : "r"(&buf[0]) : "memory");
+  }, iters);
+
+  auto s_sctl_vec = measure([] {
+    Vector<double> v(N);
+    asm volatile("" : : "r"(&v[0]) : "memory");
+  }, iters);
+
+  auto s_std_vec = measure([] {
+    std::vector<double> v(N);
+    asm volatile("" : : "r"(v.data()) : "memory");
+  }, iters);
+
+  auto s_malloc = measure([] {
+    void* p = std::malloc(N * sizeof(double));
+    asm volatile("" : : "r"(p) : "memory");
+    std::free(p);
+  }, iters);
+
+  // Pure stack allocation — just a frame-pointer adjustment, no allocator.
+  auto s_static = measure([] {
+    StaticArray<double, N> arr;
+    asm volatile("" : : "r"(&arr[0]) : "memory");
+  }, iters);
+
+  printf("%-10ld  %10lu  %10lu  %10lu  %10lu  %10lu\n",
+         (long)N,
+         (unsigned long)s_scratch.median,
+         (unsigned long)s_sctl_vec.median,
+         (unsigned long)s_std_vec.median,
+         (unsigned long)s_malloc.median,
+         (unsigned long)s_static.median);
+}
+
 static void experiment_1_sizes() {
   printf("\n=== Experiment 1: single-thread alloc+free vs size ===\n");
-  printf("%-12s  %14s  %14s  %14s  %14s\n",
-         "n (doubles)", "ScratchBuf", "sctl::Vector", "std::vector", "malloc");
-  printf("%-12s  %14s  %14s  %14s  %14s\n",
-         "", "(cycles)", "(cycles)", "(cycles)", "(cycles)");
+  printf("%-10s  %10s  %10s  %10s  %10s  %10s\n",
+         "n", "ScratchBuf", "sctl::Vec", "std::vec", "malloc", "StaticArr");
+  printf("%-10s  %10s  %10s  %10s  %10s  %10s\n",
+         "", "(cycles)", "(cycles)", "(cycles)", "(cycles)", "(cycles)");
 
   const int iters = 100000;
-  const Long sizes[] = {8, 64, 512, 4096, 32768};
-
-  for (Long n : sizes) {
-    auto s_scratch = measure([n] {
-      ScratchBuf<double> buf(n);
-      asm volatile("" : : "r"(&buf[0]) : "memory");
-    }, iters);
-
-    auto s_sctl_vec = measure([n] {
-      Vector<double> v(n);
-      asm volatile("" : : "r"(&v[0]) : "memory");
-    }, iters);
-
-    auto s_std_vec = measure([n] {
-      std::vector<double> v(n);
-      asm volatile("" : : "r"(v.data()) : "memory");
-    }, iters);
-
-    auto s_malloc = measure([n] {
-      void* p = std::malloc(n * sizeof(double));
-      asm volatile("" : : "r"(p) : "memory");
-      std::free(p);
-    }, iters);
-
-    printf("%-12ld  %14lu  %14lu  %14lu  %14lu\n",
-           (long)n,
-           (unsigned long)s_scratch.median,
-           (unsigned long)s_sctl_vec.median,
-           (unsigned long)s_std_vec.median,
-           (unsigned long)s_malloc.median);
-  }
+  experiment_1_one_size<8>(iters);
+  experiment_1_one_size<64>(iters);
+  experiment_1_one_size<512>(iters);
+  experiment_1_one_size<4096>(iters);
+  experiment_1_one_size<32768>(iters);
 }
 
 // ---------------------------------------------------------------------------
-// Experiment 2: multi-thread scaling.
+// Experiment 2: per-thread alloc+free scaling. Each thread bumps within its
+// own thread_local pool, so we expect flat scaling for ScratchBuf and
+// contention growth for std::malloc / std::vector.
 // ---------------------------------------------------------------------------
 
 static void experiment_2_threads() {
   printf("\n=== Experiment 2: multi-thread alloc+free (n=512, per-thread median) ===\n");
-  printf("%-8s  %14s  %14s  %14s\n", "threads", "ScratchBuf", "sctl::Vector", "std::vector");
-  printf("%-8s  %14s  %14s  %14s\n", "", "(cycles)", "(cycles)", "(cycles)");
+  printf("%-10s  %10s  %10s  %10s  %10s  %10s\n", "threads",
+         "ScratchBuf", "sctl::Vec", "std::vec", "malloc", "StaticArr");
+  printf("%-10s  %10s  %10s  %10s  %10s  %10s\n", "",
+         "(cycles)", "(cycles)", "(cycles)", "(cycles)", "(cycles)");
 
-  const Long n = 512;
+  constexpr Long n = 512;
   const int iters = 50000;
   int max_threads = omp_get_max_threads();
   int thread_counts[] = {1, 2, 4, std::min(8, max_threads)};
@@ -144,6 +161,8 @@ static void experiment_2_threads() {
     std::vector<uint64_t> per_thread_scratch(T);
     std::vector<uint64_t> per_thread_sctlvec(T);
     std::vector<uint64_t> per_thread_stdvec(T);
+    std::vector<uint64_t> per_thread_malloc(T);
+    std::vector<uint64_t> per_thread_static(T);
 
     auto bench_per_thread = [&](auto op, std::vector<uint64_t>& out) {
       #pragma omp parallel num_threads(T)
@@ -177,19 +196,34 @@ static void experiment_2_threads() {
       asm volatile("" : : "r"(v.data()) : "memory");
     }, per_thread_stdvec);
 
+    bench_per_thread([]{
+      void* p = std::malloc(n * sizeof(double));
+      asm volatile("" : : "r"(p) : "memory");
+      std::free(p);
+    }, per_thread_malloc);
+
+    bench_per_thread([]{
+      StaticArray<double, n> arr;
+      asm volatile("" : : "r"(&arr[0]) : "memory");
+    }, per_thread_static);
+
     auto median_of = [](std::vector<uint64_t>& v) {
       std::sort(v.begin(), v.end());
       return v[v.size() / 2];
     };
-    printf("%-8d  %14lu  %14lu  %14lu\n", T,
+    printf("%-10d  %10lu  %10lu  %10lu  %10lu  %10lu\n", T,
            (unsigned long)median_of(per_thread_scratch),
            (unsigned long)median_of(per_thread_sctlvec),
-           (unsigned long)median_of(per_thread_stdvec));
+           (unsigned long)median_of(per_thread_stdvec),
+           (unsigned long)median_of(per_thread_malloc),
+           (unsigned long)median_of(per_thread_static));
   }
 }
 
 // ---------------------------------------------------------------------------
-// Experiment 3: nested allocations (LIFO depth).
+// Experiment 3: nested LIFO allocations. Each level of recursion creates a
+// ScratchBuf and tears it down on return. Per-level cycles drop as depth
+// grows because branch predictors / icache lines amortize across levels.
 // ---------------------------------------------------------------------------
 
 template <int K>
@@ -207,31 +241,31 @@ struct NestedAllocFree {
 
 static void experiment_3_nesting() {
   printf("\n=== Experiment 3: nested LIFO depth (n=128 per level, alloc+free pair) ===\n");
-  printf("%-12s  %16s\n", "depth", "median cycles");
-  printf("%-12s  %16s\n", "", "(total / depth)");
+  printf("%-10s  %10s\n", "depth", "ScratchBuf");
+  printf("%-10s  %10s\n", "", "(c/level)");
 
   const int iters = 50000;
 
-  {
-    auto s = measure([] { NestedAllocFree<1>::run(); }, iters);
-    printf("%-12d  %16lu\n", 1, (unsigned long)s.median / 1);
-  }
-  {
-    auto s = measure([] { NestedAllocFree<4>::run(); }, iters);
-    printf("%-12d  %16lu\n", 4, (unsigned long)s.median / 4);
-  }
-  {
-    auto s = measure([] { NestedAllocFree<16>::run(); }, iters);
-    printf("%-12d  %16lu\n", 16, (unsigned long)s.median / 16);
-  }
+  auto run_depth = [iters](int depth) {
+    uint64_t sb = 0;
+    if      (depth == 1)  sb = measure([] { NestedAllocFree<1>::run();  }, iters).median;
+    else if (depth == 4)  sb = measure([] { NestedAllocFree<4>::run();  }, iters).median;
+    else                  sb = measure([] { NestedAllocFree<16>::run(); }, iters).median;
+    printf("%-10d  %10lu\n", depth, (unsigned long)sb / depth);
+  };
+
+  run_depth(1);
+  run_depth(4);
+  run_depth(16);
 }
 
 // ---------------------------------------------------------------------------
 
 int main() {
   // Pre-warm the global pool's head chunk so growth never fires during
-  // measurement. 1 MB is the default chunk size; allocating it forces the
-  // chunk into existence with pages faulted in.
+  // measurement. SCTL_SCRATCH_POOL_INIT_BYTES is the first-chunk size;
+  // allocating exactly that forces the chunk into existence with pages
+  // faulted in on this thread.
   {
     ScratchBuf<char> warmup(SCTL_SCRATCH_POOL_INIT_BYTES);
     asm volatile("" : : "r"(&warmup[0]) : "memory");

@@ -665,8 +665,7 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
   ScratchBuf<Real> B0_storage(N*Nt*Np);
   Vector<Real> B0(B0_storage);
   { // Set B0
-    ScratchBuf<Real> sin_phi_storage(Np), cos_phi_storage(Np);
-    Vector<Real> sin_phi(sin_phi_storage), cos_phi(cos_phi_storage);
+    ScratchBuf<Real> sin_phi(Np), cos_phi(Np);
     for (Long i = 0; i < Np; i++) {
       sin_phi[i] = sin(2 * const_pi<Real>() * i / Np);
       cos_phi[i] = cos(2 * const_pi<Real>() * i / Np);
@@ -832,8 +831,7 @@ template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Re
   { // Set X
     SHC2Grid_(B1, p_, Nt, Np, &X);
 
-    ScratchBuf<Real> sin_phi_storage(Np), cos_phi_storage(Np);
-    Vector<Real> sin_phi(sin_phi_storage), cos_phi(cos_phi_storage);
+    ScratchBuf<Real> sin_phi(Np), cos_phi(Np);
     for (Long i = 0; i < Np; i++) {
       sin_phi[i] = sin(2 * const_pi<Real>() * i / Np);
       cos_phi[i] = cos(2 * const_pi<Real>() * i / Np);
@@ -972,8 +970,7 @@ template <class Real> void SphericalHarmonics<Real>::LaplaceEvalSL(const Vector<
     std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
-    ScratchBuf<Real> rpow_storage(p0 + 4);
-    Vector<Real> rpow(rpow_storage);
+    ScratchBuf<Real> rpow(p0 + 4);
     if (interior) {
       rpow[0] = 1 / radius;
       for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * radius;  // rpow[n] = r^(n-1)
@@ -1086,8 +1083,7 @@ template <class Real> void SphericalHarmonics<Real>::LaplaceEvalDL(const Vector<
     std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
-    ScratchBuf<Real> rpow_storage(p0 + 4);
-    Vector<Real> rpow(rpow_storage);
+    ScratchBuf<Real> rpow(p0 + 4);
     if (interior) {
       rpow[0] = 1 / radius;
       for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * radius;  // rpow[n] = r^(n-1)
@@ -1205,8 +1201,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
     std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
-    ScratchBuf<Real> rpow_storage(p0 + 4);
-    Vector<Real> rpow(rpow_storage);
+    ScratchBuf<Real> rpow(p0 + 4);
     if (interior) {
       rpow[0] = 1 / radius;
       for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * radius;  // rpow[n] = r^(n-1)
@@ -1419,8 +1414,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
     std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
-    ScratchBuf<Real> rpow_storage(p0 + 4);
-    Vector<Real> rpow(rpow_storage);
+    ScratchBuf<Real> rpow(p0 + 4);
     if (interior) {
       rpow[0] = 1 / radius;
       for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * radius;  // rpow[n] = r^(n-1)
@@ -1634,8 +1628,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
     std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
-    ScratchBuf<Real> rpow_storage(p0 + 4);
-    Vector<Real> rpow(rpow_storage);
+    ScratchBuf<Real> rpow(p0 + 4);
     if (interior) {
       rpow[0] = 1 / (radius * radius);
       for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * radius;  // rpow[n] = r^(n-2)
@@ -2031,8 +2024,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKSelf(const Vecto
     std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
-    ScratchBuf<Real> rpow_storage(p0 + 4);
-    Vector<Real> rpow(rpow_storage);
+    ScratchBuf<Real> rpow(p0 + 4);
     if (interior) {
       rpow[0] = 1 / (radius * radius);
       for (Long ri = 1; ri < p0 + 4; ri++) rpow[ri] = rpow[ri - 1] * radius;  // rpow[n] = r^(n-2)
@@ -2620,8 +2612,7 @@ template <class Real> void SphericalHarmonics<Real>::LegPoly_(Vector<Real>& poly
   if (poly_val.Dim() != Npoly * N) poly_val.ReInit(Npoly * N);
 
   Real fact = 1 / sqrt<Real>(4 * const_pi<Real>());
-  ScratchBuf<Real> cos_theta_storage(N), sin_theta_storage(N);
-  Vector<Real> cos_theta(cos_theta_storage), sin_theta(sin_theta_storage);
+  ScratchBuf<Real> cos_theta(N), sin_theta(N);
   for (Long n = 0; n < N; n++) {
     cos_theta[n] = cos(theta[n]);
     sin_theta[n] = sin(theta[n]);
@@ -2668,8 +2659,7 @@ template <class Real> void SphericalHarmonics<Real>::LegPolyDeriv_(Vector<Real>&
   Long Npoly = (degree + 1) * (degree + 2) / 2;
   if (poly_val.Dim() != N * Npoly) poly_val.ReInit(N * Npoly);
 
-  ScratchBuf<Real> cos_theta_storage(N), sin_theta_storage(N);
-  Vector<Real> cos_theta(cos_theta_storage), sin_theta(sin_theta_storage);
+  ScratchBuf<Real> cos_theta(N), sin_theta(N);
   for (Long i = 0; i < N; i++) {
     cos_theta[i] = cos(theta[i]);
     sin_theta[i] = sin(theta[i]);
@@ -2969,8 +2959,7 @@ template <class Real> void SphericalHarmonics<Real>::VecSHBasisEval(Long p0, con
   Matrix<Real> Ynm(N, M_);
   SHBasisEval(p_, theta_phi, Ynm);
 
-  ScratchBuf<Real> cos_theta_storage(N), csc_theta_storage(N);
-  Vector<Real> cos_theta(cos_theta_storage), csc_theta(csc_theta_storage);
+  ScratchBuf<Real> cos_theta(N), csc_theta(N);
   for (Long i = 0; i < N; i++) { // Set theta
     cos_theta[i] = cos(theta_phi[i*2+0]);
     csc_theta[i] = 1.0 / sin(theta_phi[i*2+0]);
@@ -3143,8 +3132,7 @@ template <class Real> const std::vector<Matrix<Real>>& SphericalHarmonics<Real>:
         LegPoly(Vleg, Vcoord1, p0);
       }
 
-      ScratchBuf<Real> theta_storage(Ngrid);
-      Vector<Real> theta(theta_storage);
+      ScratchBuf<Real> theta(Ngrid);
       for(Long i=0;i<theta.Dim();i++){ // Set theta
         theta[i]=atan2(Mcoord1[1][i],Mcoord1[2][i]); // TODO: works only for float and double
       }

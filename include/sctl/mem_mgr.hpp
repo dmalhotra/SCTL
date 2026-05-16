@@ -18,7 +18,7 @@ class MemoryManager {
 
  public:
   static constexpr char init_mem_val = 42;
-  static constexpr Long end_padding = 64;
+  static constexpr Long end_padding = SCTL_MEM_ALIGN;
 
   /**
    * Header data for each memory block.

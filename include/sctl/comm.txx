@@ -15,6 +15,8 @@
 #include "sctl/iterator.hpp"      // for Iterator, ConstIterator
 #include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
 #include "sctl/ompUtils.txx"      // for scan, merge_sort
+#include "sctl/scratch_pool.hpp"  // for ScratchBuf
+#include "sctl/scratch_pool.txx"  // for ScratchBuf
 #include "sctl/static-array.hpp"  // for StaticArray
 #include "sctl/static-array.txx"  // for StaticArray::operator[], StaticArra...
 #include "sctl/vector.hpp"        // for Vector
@@ -540,7 +542,7 @@ template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sb
     MPI_Allgather((scount ? &sbuf[0] : nullptr), comm_detail::MPIAsCount(scount), CommDatatype<SType>::value(), (rcount ? &rbuf[0] : nullptr), comm_detail::MPIAsCount(rcount), CommDatatype<RType>::value(), mpi_comm_);
   } else {
     SCTL_ASSERT(scount * sizeof(SType) == rcount * sizeof(RType));
-    Vector<Long> rcounts_(mpi_size_), rdispls_(mpi_size_);
+    ScratchBuf<Long> rcounts_(mpi_size_), rdispls_(mpi_size_);
     #pragma omp parallel for schedule(static)
     for (Integer i = 0; i < mpi_size_; i++) {
       rcounts_[i] = rcount;
@@ -576,8 +578,8 @@ template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> s
 
   comm_detail::TrackCollective(1, scount * sizeof(SType) + rcount_sum * sizeof(RType));
 #if MPI_VERSION >= 4
-  Vector<MPI_Count> rcounts_(mpi_size_);
-  Vector<MPI_Aint> rdispls_(mpi_size_);
+  ScratchBuf<MPI_Count> rcounts_(mpi_size_);
+  ScratchBuf<MPI_Aint>  rdispls_(mpi_size_);
   #pragma omp parallel for schedule(static)
   for (Integer i = 0; i < mpi_size_; i++) {
     rcounts_[i] = comm_detail::MPIAsCountLarge(rcounts[i]);
@@ -588,7 +590,7 @@ template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> s
 #else
   bool fits_typed = comm_detail::MPIFitsCount(scount) && comm_detail::MPIFitsCount(recv_span);
   if (fits_typed) {  // Keep the original typed collective path when the full placed receive range fits in int.
-    Vector<int> rcounts_(mpi_size_), rdispls_(mpi_size_);
+    ScratchBuf<int> rcounts_(mpi_size_), rdispls_(mpi_size_);
     #pragma omp parallel for schedule(static)
     for (Integer i = 0; i < mpi_size_; i++) {
       rcounts_[i] = comm_detail::MPIAsCount(rcounts[i]);
@@ -608,7 +610,7 @@ template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> s
   const Long send_units = scount * send_units_scale;
 
   // Express both sides in a shared unit so mixed send/recv types can still use MPI_Allgatherv.
-  Vector<Long> recv_counts_units(mpi_size_), recv_displs_units(mpi_size_);
+  ScratchBuf<Long> recv_counts_units(mpi_size_), recv_displs_units(mpi_size_);
   #pragma omp parallel for schedule(static)
   for (Integer i = 0; i < mpi_size_; i++) {
     recv_counts_units[i] = rcounts[i] * recv_units_scale;
@@ -643,9 +645,9 @@ template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> s
       SCTL_ASSERT(recv_displs_units[prev_pid] + recv_counts_units[prev_pid] <= recv_displs_units[curr_pid]);
     }
 
-    Vector<int> rcounts_(mpi_size_), rdispls_(mpi_size_);
-    rcounts_ = 0;
-    rdispls_ = 0;
+    ScratchBuf<int> rcounts_(mpi_size_), rdispls_(mpi_size_);
+    memset(rcounts_.begin(), 0, mpi_size_);
+    memset(rdispls_.begin(), 0, mpi_size_);
 
     Long idx_begin = 0, window_begin = recv_order[0].first, num_windows = 0;
     while (idx_begin < recv_order_size) {
@@ -719,7 +721,7 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
     MPI_Alltoall((scount ? &sbuf[0] : nullptr), comm_detail::MPIAsCount(scount), CommDatatype<SType>::value(), (rcount ? &rbuf[0] : nullptr), comm_detail::MPIAsCount(rcount), CommDatatype<RType>::value(), mpi_comm_);
   } else {
     SCTL_ASSERT(scount * sizeof(SType) == rcount * sizeof(RType));
-    Vector<Long> scounts(mpi_size_), sdispls(mpi_size_), rcounts(mpi_size_), rdispls(mpi_size_);
+    ScratchBuf<Long> scounts(mpi_size_), sdispls(mpi_size_), rcounts(mpi_size_), rdispls(mpi_size_);
     #pragma omp parallel for schedule(static)
     for (Integer i = 0; i < mpi_size_; i++) {
       scounts[i] = scount;
@@ -845,8 +847,8 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
 #if MPI_VERSION >= 4
   {
     // MPI-4 handles large counts and displacements directly through the _c binding.
-    Vector<MPI_Count> scnt(mpi_size_), rcnt(mpi_size_);
-    Vector<MPI_Aint> sdsp(mpi_size_), rdsp(mpi_size_);
+    ScratchBuf<MPI_Count> scnt(mpi_size_), rcnt(mpi_size_);
+    ScratchBuf<MPI_Aint>  sdsp(mpi_size_), rdsp(mpi_size_);
     Long stotal = 0, rtotal = 0;
     #pragma omp parallel for schedule(static) reduction(+ : stotal, rtotal)
     for (Integer i = 0; i < mpi_size_; i++) {
@@ -892,7 +894,7 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
         SCTL_ASSERT(rdispls[0] == 0);
 
         const Long Nsend = sdispls[mpi_size_-1] + scounts[mpi_size_-1];
-        Vector<Type> sbuf_verify(Nsend);
+        ScratchBuf<Type> sbuf_verify(Nsend);
         mpi_req = Ialltoallv_sparse(rbuf, rcounts, rdispls, sbuf_verify.begin(), scounts, sdispls, 1);
         Wait(std::move(mpi_req));
 
@@ -914,11 +916,7 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
 
   {  // Use vendor MPI_Alltoallv
     //#ifndef ALLTOALLV_FIX
-    Vector<int> scnt, sdsp, rcnt, rdsp;
-    scnt.ReInit(mpi_size_);
-    sdsp.ReInit(mpi_size_);
-    rcnt.ReInit(mpi_size_);
-    rdsp.ReInit(mpi_size_);
+    ScratchBuf<int> scnt(mpi_size_), sdsp(mpi_size_), rcnt(mpi_size_), rdsp(mpi_size_);
     Long stotal = 0, rtotal = 0;
     #pragma omp parallel for schedule(static) reduction(+ : stotal, rtotal)
     for (Integer i = 0; i < mpi_size_; i++) {
@@ -1019,19 +1017,14 @@ template <class Type> void Comm::PartitionW(Vector<Type>& nodeList, const Vector
     off1 = off2 - localWt;
   }
 
-  Vector<Long> lscn;
+  ScratchBuf<Long> lscn(nlSize);
   if (nlSize) {  // perform a local scan on the weights first ...
-    lscn.ReInit(nlSize);
     lscn[0] = off1;
     omp_par::scan(wts.begin(), lscn.begin(), nlSize);
   }
 
-  Vector<Long> sendSz, recvSz, sendOff, recvOff;
-  sendSz.ReInit(npes);
-  recvSz.ReInit(npes);
-  sendOff.ReInit(npes);
-  recvOff.ReInit(npes);
-  sendSz.SetZero();
+  ScratchBuf<Long> sendSz(npes), recvSz(npes), sendOff(npes), recvOff(npes);
+  memset(sendSz.begin(), 0, npes);
 
   if (nlSize > 0 && totalWt > 0) {  // Compute sendSz
     Long pid1 = (off1 * npes) / totalWt;
@@ -1080,8 +1073,8 @@ template <class Type> void Comm::PartitionN(Vector<Type>& v, Long N) const {
   Integer np = Size();
   if (np == 1) return;
 
-  Vector<Long> v_cnt(np), v_dsp(np + 1);
-  Vector<Long> N_cnt(np), N_dsp(np + 1);
+  ScratchBuf<Long> v_cnt(np), v_dsp(np + 1);
+  ScratchBuf<Long> N_cnt(np), N_dsp(np + 1);
   {  // Set v_cnt, v_dsp
     v_dsp[0] = 0;
     Long cnt = v.Dim();
@@ -1111,8 +1104,7 @@ template <class Type> void Comm::PartitionN(Vector<Type>& v, Long N) const {
 
   Vector<Type> v_(N_cnt[rank]);
   {  // Set v_
-    Vector<Long> scnt(np), sdsp(np);
-    Vector<Long> rcnt(np), rdsp(np);
+    ScratchBuf<Long> scnt(np), sdsp(np), rcnt(np), rdsp(np);
     #pragma omp parallel for schedule(static)
     for (Integer i = 0; i < np; i++) {
       {  // Set scnt
@@ -1150,11 +1142,10 @@ template <class Type, class Compare> void Comm::PartitionS(Vector<Type>& nodeLis
   Integer npes = Size();
   if (npes == 1) return;
 
-  Vector<Type> mins(npes);
+  ScratchBuf<Type> mins(npes);
   Allgather(Ptr2ConstItr<Type>(&splitter, 1), 1, mins.begin(), 1);
 
-  Vector<Long> scnt(npes), sdsp(npes);
-  Vector<Long> rcnt(npes), rdsp(npes);
+  ScratchBuf<Long> scnt(npes), sdsp(npes), rcnt(npes), rdsp(npes);
   {  // Compute scnt, sdsp
     #pragma omp parallel for schedule(static)
     for (Integer i = 0; i < npes; i++) {
@@ -1184,7 +1175,8 @@ template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vecto
   typedef SortPair<Type, Long> Pair_t;
   Integer npes = Size();
 
-  Vector<Pair_t> parray(key.Dim());
+  ScratchBuf<Pair_t> parray_storage(key.Dim());
+  Vector<Pair_t> parray(parray_storage);
   {  // Build global index.
     Long glb_dsp = 0;
     Long loc_size = key.Dim();
@@ -1200,16 +1192,21 @@ template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vecto
   Vector<Pair_t> psorted;
   HyperQuickSort(parray, psorted);
 
+  const auto copy_data = [&scatter_index](const Vector<Pair_t>& psorted) {
+    if (scatter_index.Dim() != psorted.Dim()) scatter_index.ReInit(psorted.Dim());
+    #pragma omp parallel for schedule(static)
+    for (Long i = 0; i < psorted.Dim(); i++) {
+      scatter_index[i] = psorted[i].data;
+    }
+  };
+
   if (npes > 1 && split_key_ != nullptr) {  // Partition data
-    Vector<Type> split_key(npes);
+    ScratchBuf<Type> split_key(npes);
     Allgather(Ptr2ConstItr<Type>(split_key_, 1), 1, split_key.begin(), 1);
 
-    Vector<Long> sendSz(npes);
-    Vector<Long> recvSz(npes);
-    Vector<Long> sendOff(npes);
-    Vector<Long> recvOff(npes);
+    ScratchBuf<Long> sendSz(npes), recvSz(npes), sendOff(npes), recvOff(npes);
     Long nlSize = psorted.Dim();
-    sendSz.SetZero();
+    memset(sendSz.begin(), 0, npes);
 
     if (nlSize > 0) {  // Compute sendSz
       // Determine processor range.
@@ -1245,18 +1242,15 @@ template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vecto
     }
 
     // perform All2All  ...
-    Vector<Pair_t> newNodes(recvSz[npes - 1] + recvOff[npes - 1]);
+    ScratchBuf<Pair_t> newNodes_storage(recvSz[npes - 1] + recvOff[npes - 1]);
+    Vector<Pair_t> newNodes(newNodes_storage);
     auto mpi_req = Ialltoallv_sparse<Pair_t>(psorted.begin(), sendSz.begin(), sendOff.begin(), newNodes.begin(), recvSz.begin(), recvOff.begin());
     Wait(std::move(mpi_req));
 
-    // reset the pointer ...
-    psorted.Swap(newNodes);
-  }
-
-  scatter_index.ReInit(psorted.Dim());
-  #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < psorted.Dim(); i++) {
-    scatter_index[i] = psorted[i].data;
+    // copy data back to scatter_index
+    copy_data(newNodes);
+  } else {
+    copy_data(psorted);
   }
 }
 
@@ -1314,12 +1308,8 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
     omp_par::merge_sort(psorted.begin(), psorted.begin() + recv_size);
   }
 
-  Vector<Long> recv_indx(recv_size);
-  Vector<Long> send_indx(send_size);
-  Vector<Long> sendSz(npes);
-  Vector<Long> sendOff(npes);
-  Vector<Long> recvSz(npes);
-  Vector<Long> recvOff(npes);
+  ScratchBuf<Long> recv_indx(recv_size), send_indx(send_size);
+  ScratchBuf<Long> sendSz(npes), sendOff(npes), recvSz(npes), recvOff(npes);
   {  // Exchange send, recv indices.
     #pragma omp parallel for schedule(static)
     for (Long i = 0; i < recv_size; i++) {
@@ -1445,8 +1435,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     glb_rank[0] -= loc_size[0];
     glb_rank[1] -= loc_size[1];
 
-    Vector<Long> glb_scan0(npes + 1);
-    Vector<Long> glb_scan1(npes + 1);
+    ScratchBuf<Long> glb_scan0(npes + 1), glb_scan1(npes + 1);
     Allgather<Long>(glb_rank + 0, 1, glb_scan0.begin(), 1);
     Allgather<Long>(glb_rank + 1, 1, glb_scan1.begin(), 1);
     glb_scan0[npes] = glb_size[0];
@@ -1455,8 +1444,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     if (loc_size[0] != loc_size[1] || glb_rank[0] != glb_rank[1]) {  // Repartition scatter_index
       scatter_index.ReInit(loc_size[0]);
 
-      Vector<Long> send_dsp(npes + 1);
-      Vector<Long> recv_dsp(npes + 1);
+      ScratchBuf<Long> send_dsp(npes + 1), recv_dsp(npes + 1);
       #pragma omp parallel for schedule(static)
       for (Integer i = 0; i <= npes; i++) {
         send_dsp[i] = std::min(std::max(glb_scan0[i], glb_rank[1]), glb_rank[1] + loc_size[1]) - glb_rank[1];
@@ -1464,8 +1452,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
       }
 
       // Long commCnt=0;
-      Vector<Long> send_cnt(npes + 0);
-      Vector<Long> recv_cnt(npes + 0);
+      ScratchBuf<Long> send_cnt(npes + 0), recv_cnt(npes + 0);
       #pragma omp parallel for schedule(static)  // reduction(+:commCnt)
       for (Integer i = 0; i < npes; i++) {
         send_cnt[i] = send_dsp[i + 1] - send_dsp[i];
@@ -1481,7 +1468,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     }
   }
 
-  Vector<Long> glb_scan(npes);
+  ScratchBuf<Long> glb_scan(npes);
   {  // Global data size.
     Long glb_rank = 0;
     Scan(Ptr2ConstItr<Long>(&recv_size, 1), Ptr2Itr<Long>(&glb_rank, 1), 1, CommOp::SUM);
@@ -1489,7 +1476,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     Allgather(Ptr2ConstItr<Long>(&glb_rank, 1), 1, glb_scan.begin(), 1);
   }
 
-  Vector<Pair_t> psorted(send_size);
+  ScratchBuf<Pair_t> psorted(send_size);
   {  // Sort scatter_index.
     #pragma omp parallel for schedule(static)
     for (Long i = 0; i < send_size; i++) {
@@ -1499,12 +1486,8 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     omp_par::merge_sort(psorted.begin(), psorted.begin() + send_size);
   }
 
-  Vector<Long> recv_indx(recv_size);
-  Vector<Long> send_indx(send_size);
-  Vector<Long> sendSz(npes);
-  Vector<Long> sendOff(npes);
-  Vector<Long> recvSz(npes);
-  Vector<Long> recvOff(npes);
+  ScratchBuf<Long> recv_indx(recv_size), send_indx(send_size);
+  ScratchBuf<Long> sendSz(npes), sendOff(npes), recvSz(npes), recvOff(npes);
   {  // Exchange send, recv indices.
     #pragma omp parallel for schedule(static)
     for (Long i = 0; i < send_size; i++) {
@@ -1734,12 +1717,12 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
           SCTL_ASSERT(glb_splt_count);
         }
 
-        Vector<Type> splitters(splt_count);
+        ScratchBuf<Type> splitters(splt_count);
         for (Integer i = 0; i < splt_count; i++) {
           splitters[i] = arr[rand() % nelem];
         }
 
-        Vector<Integer> glb_splt_cnts(npes), glb_splt_disp(npes);
+        ScratchBuf<Integer> glb_splt_cnts(npes), glb_splt_disp(npes);
         {  // Set glb_splt_cnts, glb_splt_disp
           MPI_Allgather(&splt_count, 1, CommDatatype<Integer>::value(), &glb_splt_cnts[0], 1, CommDatatype<Integer>::value(), comm);
           glb_splt_disp[0] = 0;
@@ -1749,7 +1732,7 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
 
         {  // Gather all splitters. O( log(p) )
           glb_splitters.ReInit(glb_splt_count);
-          Vector<int> glb_splt_cnts_(npes), glb_splt_disp_(npes);
+          ScratchBuf<int> glb_splt_cnts_(npes), glb_splt_disp_(npes);
           for (Integer i = 0; i < npes; i++) {
             glb_splt_cnts_[i] = glb_splt_cnts[i];
             glb_splt_disp_[i] = glb_splt_disp[i];
@@ -1759,7 +1742,7 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
       }
 
       // Determine split key. O( log(N/p) + log(p) )
-      Vector<Long> lrank(glb_splt_count);
+      ScratchBuf<Long> lrank(glb_splt_count);
       {  // Compute local rank
         #pragma omp parallel for schedule(static)
         for (Integer i = 0; i < glb_splt_count; i++) {
@@ -1767,7 +1750,7 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
         }
       }
 
-      Vector<Long> grank(glb_splt_count);
+      ScratchBuf<Long> grank(glb_splt_count);
       {  // Compute global rank
         MPI_Allreduce(&lrank[0], &grank[0], glb_splt_count, CommDatatype<Long>::value(), CommDatatype<Long>::sum(), comm);
       }

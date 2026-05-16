@@ -6,11 +6,12 @@
 #include <functional>         // for less
 #include <iterator>           // for iterator_traits
 
-#include "sctl/common.hpp"    // for Integer, SCTL_UNUSED, sctl
-#include "sctl/ompUtils.hpp"  // for merge_sort, merge, reduce, scan
-#include "sctl/iterator.hpp"  // for Iterator
-#include "sctl/iterator.txx"  // for Ptr2Itr
-#include "sctl/vector.hpp"    // for Vector
+#include "sctl/common.hpp"        // for Integer, SCTL_UNUSED, sctl
+#include "sctl/ompUtils.hpp"      // for merge_sort, merge, reduce, scan
+#include "sctl/iterator.hpp"      // for Iterator
+#include "sctl/iterator.txx"      // for Ptr2Itr
+#include "sctl/scratch_pool.hpp"  // for ScratchBuf
+#include "sctl/scratch_pool.txx"
 
 namespace sctl {
 
@@ -37,10 +38,8 @@ template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inli
   // Split both arrays ( A and B ) into n equal parts.
   // Find the position of each split in the final merged array.
   int n = 10;
-  Vector<_ValType> split;
-  split.ReInit(p * n * 2);
-  Vector<_DiffType> split_size;
-  split_size.ReInit(p * n * 2);
+  ScratchBuf<_ValType>  split(p * n * 2);
+  ScratchBuf<_DiffType> split_size(p * n * 2);
 #pragma omp parallel for
   for (int i = 0; i < p; i++) {
     for (int j = 0; j < n; j++) {
@@ -58,10 +57,8 @@ template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inli
 
   // Find the closest split position for each thread that will
   // divide the final array equally between the threads.
-  Vector<_DiffType> split_indx_A;
-  split_indx_A.ReInit(p + 1);
-  Vector<_DiffType> split_indx_B;
-  split_indx_B.ReInit(p + 1);
+  ScratchBuf<_DiffType> split_indx_A(p + 1);
+  ScratchBuf<_DiffType> split_indx_B(p + 1);
   split_indx_A[0] = 0;
   split_indx_B[0] = 0;
   split_indx_A[p] = N1;
@@ -108,8 +105,7 @@ template <class T, class StrictWeakOrdering> inline void omp_par::merge_sort(T A
   SCTL_UNUSED(A[N - 1]);
 
   // Split the array A into p equal parts.
-  Vector<_DiffType> split;
-  split.ReInit(p + 1);
+  ScratchBuf<_DiffType> split(p + 1);
   split[p] = N;
 #pragma omp parallel for schedule(static)
   for (int id = 0; id < p; id++) {
@@ -123,8 +119,7 @@ template <class T, class StrictWeakOrdering> inline void omp_par::merge_sort(T A
   }
 
   // Merge two parts at a time.
-  Vector<_ValType> B;
-  B.ReInit(N);
+  ScratchBuf<_ValType> B(N);
   Iterator<_ValType> A_ = Ptr2Itr<_ValType>(&A[0], N);
   Iterator<_ValType> B_ = B.begin();
   for (int j = 1; j < p; j = j * 2) {
@@ -181,7 +176,7 @@ template <class ConstIter, class Iter, class Int> void omp_par::scan(ConstIter A
     for (Int j = (Int)start + 1; j < (Int)end; j++) B[j] = B[j - 1] + A[j - 1];
   }
 
-  Vector<ValueType> sum(p);
+  ScratchBuf<ValueType> sum(p);
   sum[0] = 0;
   for (Integer i = 1; i < p; i++) sum[i] = sum[i - 1] + B[i * step_size - 1] + A[i * step_size - 1];
 

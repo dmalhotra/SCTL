@@ -75,12 +75,44 @@ template <class Real> class GMRES {
   using ParallelOp = std::function<void(Vector<Real>*, const Vector<Real>&)>; ///< Function type for linear operator.
 
   /**
+   * Gram-Schmidt orthogonalization scheme used in the Arnoldi step.
+   *
+   *   - `MGS`: Modified Gram-Schmidt. One reduction per basis vector —
+   *     (k+1) `Allreduce`s of size 1 per Arnoldi iteration plus one for
+   *     the norm. Stable per step but Allreduce-latency-bound on
+   *     distributed runs.
+   *   - `CGS`: Classical Gram-Schmidt. All `k+1` basis dot products are
+   *     batched into a single `Allreduce` of size `k+1`. Two reductions
+   *     per iteration. Fastest in MPI; can lose orthogonality when the
+   *     basis becomes ill-conditioned (use `num_reorth >= 1`).
+   *
+   * Both schemes support additional reorthogonalization passes (the
+   * "twice is enough" rule). Per pass: MGS adds (k+1) more size-1
+   * reductions, CGS adds one size-(k+1) reduction.
+   *
+   * Typical recommendations:
+   *   - Serial / shared memory: `MGS, 0` (default).
+   *   - Distributed, well-conditioned: `CGS, 0`.
+   *   - Distributed, robust: `CGS, 1` — MGS-equivalent stability at ~k/3
+   *     the latency cost.
+   */
+  enum class GramSchmidt { MGS, CGS };
+
+  /**
    * Constructor.
    *
    * @param[in] comm The communicator.
    * @param[in] verbose Verbosity flag.
+   * @param[in] gs Gram-Schmidt scheme used in the Arnoldi step (default
+   *               `MGS` — matches the legacy behavior).
+   * @param[in] num_reorth Number of additional reorthogonalization passes
+   *               after the initial Gram-Schmidt pass. 0 = no reorth
+   *               (default), 1 = "twice is enough", >1 = extra-paranoid.
+   *               Each pass costs one more reduction round-trip per
+   *               Arnoldi iteration (k+1 for MGS, 1 for CGS).
    */
-  GMRES(const Comm& comm = Comm::Self(), bool verbose = true) : comm_(comm), verbose_(verbose) {}
+  GMRES(const Comm& comm = Comm::Self(), bool verbose = true, GramSchmidt gs = GramSchmidt::MGS, Integer num_reorth = 0)
+    : comm_(comm), verbose_(verbose), gs_strategy_(gs), num_reorth_(num_reorth) {}
 
   /**
    * Solve the linear system: A x = b.
@@ -109,6 +141,8 @@ template <class Real> class GMRES {
 
   Comm comm_; ///< Communicator.
   bool verbose_; ///< Verbosity flag.
+  GramSchmidt gs_strategy_; ///< Arnoldi orthogonalization scheme.
+  Integer num_reorth_; ///< Additional reorthogonalization passes after the initial Gram-Schmidt pass.
 };
 
 }  // end namespace

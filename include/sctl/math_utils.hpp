@@ -116,6 +116,16 @@ template <class Real> [[nodiscard]] inline Real ceil(const Real a) { return (Rea
 template <class Real> [[nodiscard]] inline Real sqrt(const Real a) { return (Real)std::sqrt(a); }
 
 /**
+ * Computes `sqrt(a*a + b*b)` without intermediate overflow or underflow.
+ *
+ * @tparam Real The template type.
+ * @param a First leg.
+ * @param b Second leg.
+ * @return Real The Euclidean norm of (a, b).
+ */
+template <class Real> [[nodiscard]] inline Real hypot(const Real a, const Real b) { return (Real)std::hypot(a, b); }
+
+/**
  * Computes the sine of the input angle.
  *
  * @tparam Real The template type.

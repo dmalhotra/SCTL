@@ -48,8 +48,7 @@ namespace sctl {
     if (wts.Dim() != Nsrc*Ntrg) wts.ReInit(Nsrc*Ntrg);
     Matrix<Real> M(Nsrc, Ntrg, wts.begin(), false);
 
-    ScratchBuf<Real> w_storage(Nsrc);
-    Vector<Real> w(w_storage);
+    ScratchBuf<Real> w(Nsrc);
     const Real normal_factor = [src_nds]() { // normalize
       if (src_nds.Dim() < 2) return (Real)1;
       Real max_src = src_nds[0], min_src = src_nds[0];

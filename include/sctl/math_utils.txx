@@ -108,6 +108,19 @@ template <class Real> static inline Real sqrt_generic(const Real a) {
   return b;
 }
 
+// Scale-by-max formulation: keeps the radicand in [1, 2] so the result is
+// representable whenever the true Euclidean norm is.
+template <class Real> static inline Real hypot_generic(const Real a, const Real b) {
+  const Real abs_a = fabs<Real>(a);
+  const Real abs_b = fabs<Real>(b);
+  const Real m = (abs_a > abs_b) ? abs_a : abs_b;
+  if (m == (Real)0) return (Real)0;
+  const Real inv_m = (Real)1 / m;
+  const Real ra = abs_a * inv_m;
+  const Real rb = abs_b * inv_m;
+  return m * sqrt_generic(ra * ra + rb * rb);
+}
+
 template <class Real> static inline Real sin_generic(const Real a) {
   const int N = 200;
   static std::vector<Real> theta;
@@ -417,6 +430,8 @@ template <> inline QuadReal trunc<QuadReal>(const QuadReal x) {
 }
 
 template <> inline QuadReal sqrt<QuadReal>(const QuadReal a) { return sqrt_generic(a); }
+
+template <> inline QuadReal hypot<QuadReal>(const QuadReal a, const QuadReal b) { return hypot_generic(a, b); }
 
 template <> inline QuadReal sin<QuadReal>(const QuadReal a) { return sin_generic(a); }
 

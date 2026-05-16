@@ -42,8 +42,13 @@ template <class ValueType> class Vector {
    * @param dim Dimension of the vector.
    * @param data Pointer to the data.
    * @param own_data Flag indicating ownership of data.
+   * @param disable_reinit If true, this Vector's dim and data_ptr are immutable
+   *   for the rest of its lifetime: ReInit, Swap, and resizing assignment all
+   *   trigger SCTL_ASSERT. Element-wise reads/writes are still allowed.
+   *   Useful for views into externally-owned storage (e.g. ScratchBuf) where
+   *   accidental rebinding would silently decouple the view from its backing.
    */
-  explicit Vector(Long dim, Iterator<ValueType> data = NullIterator<ValueType>(), bool own_data = true);
+  explicit Vector(Long dim, Iterator<ValueType> data = NullIterator<ValueType>(), bool own_data = true, bool disable_reinit = false);
 
   /**
    * Copy constructor.
@@ -80,8 +85,15 @@ template <class ValueType> class Vector {
    * `existing = scratch_buf;` won't compile, because `operator=(Vector&&)`
    * cannot reach this ctor through copy-initialization. Use direct-init
    * (`Vector<T> v(buf);`) for a view.
+   *
+   * By default the view is constructed with `fixed_size = true`, so calls
+   * that would resize/rebind it (`ReInit`, `Swap`, resizing `operator=`)
+   * trip `SCTL_ASSERT` in debug — protecting the ScratchBuf storage from
+   * being silently abandoned. Pass `disable_reinit = false` to opt out
+   * (e.g. when the view's contents will be moved into an owning Vector
+   * via `Swap`).
    */
-  explicit Vector(ScratchBuf<ValueType>& buf);
+  explicit Vector(ScratchBuf<ValueType>& buf, bool disable_reinit = true);
 
   /**
    * Destructor.
@@ -104,7 +116,7 @@ template <class ValueType> class Vector {
    * @param data New data pointer.
    * @param own_data Flag indicating ownership of new data.
    */
-  void ReInit(Long dim, Iterator<ValueType> data = NullIterator<ValueType>(), bool own_data = true);
+  void ReInit(Long dim, Iterator<ValueType> data = NullIterator<ValueType>(), bool own_data = true, bool disable_reinit = false);
 
   /**
    * Write the vector to a file.
@@ -391,12 +403,13 @@ template <class ValueType> class Vector {
    * @param data Pointer to the data.
    * @param own_data Flag indicating ownership of data.
    */
-  void Init(Long dim, Iterator<ValueType> data = NullIterator<ValueType>(), bool own_data = true);
+  void Init(Long dim, Iterator<ValueType> data = NullIterator<ValueType>(), bool own_data = true, bool disable_reinit = false);
 
   Long dim; /**< Dimension of the vector. */
   Long capacity; /**< Capacity of the vector. */
   Iterator<ValueType> data_ptr; /**< Pointer to the data. */
   bool own_data; /**< Flag indicating ownership of the data. */
+  bool disable_reinit_; /**< When true, ReInit/Swap/resizing assignment trigger SCTL_ASSERT. */
 };
 
 // Function template declarations for vector-scalar operations...

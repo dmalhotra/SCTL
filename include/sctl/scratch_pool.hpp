@@ -2,21 +2,13 @@
 #define _SCTL_SCRATCH_POOL_HPP_
 
 #include <cstddef>            // for size_t
-#include <vector>             // for vector
 
 #include "sctl/common.hpp"    // for Long, Integer, sctl
 #include "sctl/iterator.hpp"  // for Iterator, ConstIterator
 
-// Maximum number of OpenMP threads (or flattened nested-team IDs) the pool
-// supports. The pool pre-allocates one head-pointer slot per slot at
-// construction, costing `SCTL_SCRATCH_POOL_MAX_THREADS * sizeof(void*)` bytes
-// per pool instance (~32 KB at the default). Override at compile time with
-// `-DSCTL_SCRATCH_POOL_MAX_THREADS=N` if you need more, or to shrink the
-// per-instance overhead when stamping out many pools.
-#ifndef SCTL_SCRATCH_POOL_MAX_THREADS
-#define SCTL_SCRATCH_POOL_MAX_THREADS 4096
-#endif
-
+// Size of the first chunk a thread allocates from its pool. Subsequent chunks
+// double in size on overflow (or grow further if a single request demands).
+// Override at compile time with -DSCTL_SCRATCH_POOL_INIT_BYTES=N.
 #ifndef SCTL_SCRATCH_POOL_INIT_BYTES
 #define SCTL_SCRATCH_POOL_INIT_BYTES (1LL * 1024 * 1024)
 #endif
@@ -28,45 +20,53 @@ template <class ValueType> class Vector;
 class ScratchPool;
 
 namespace internal {
-struct ScratchChunk {
+
+// One chunk in a ScratchPool's linked list of memory blocks. See the txx for
+// the design rationale (alignment, size-rounding invariant, etc.).
+struct alignas(SCTL_MEM_ALIGN) ScratchChunk {
   Iterator<char> base;
-  Long capacity;
-  Long top;
-  Long live_count;
-  ScratchChunk* prev;
+  Iterator<char> top;
+  Iterator<char> end;
+  ScratchChunk*  prev;
+#ifdef SCTL_MEMDEBUG
+  Long           live_count;
+#endif
+
+  ScratchChunk();
+  ScratchChunk(Iterator<char> base, Iterator<char> top, Iterator<char> end, ScratchChunk* prev);
 };
+
 }  // namespace internal
 
 /**
- * RAII handle to a scratch allocation. Construction is only possible as a
- * prvalue returned by `ScratchPool::Alloc<T>(...)`. The allocation lives
- * exactly as long as the local variable holding the handle; the destructor
- * pops the stack and runs T's destructor on each element.
+ * RAII handle to a stack-allocated scratch buffer carved out of a `ScratchPool`.
  *
- * Non-copyable, non-movable, no heap allocation.
+ *     {
+ *       ScratchBuf<double> buf(N);
+ *       // ... use buf[i], buf.begin(), buf.end(), buf.Dim() ...
+ *     }                                  // buf is freed here
+ *
+ * Rules:
+ *   - **LIFO only.** Within a pool, ScratchBufs must be destroyed in the
+ *     reverse order of construction. Lexical scoping makes this automatic.
+ *   - **Stack-only.** Non-copyable, non-movable, never heap-allocated.
+ *   - **`alignof(T) <= SCTL_MEM_ALIGN`** (enforced at compile time).
+ *
+ * Trivial element types are left uninitialized at construction; non-trivial
+ * types are default-constructed and destroyed in reverse on free.
  */
 template <class T> class ScratchBuf {
   static_assert(alignof(T) <= (std::size_t)SCTL_MEM_ALIGN,
                 "ScratchBuf<T>: alignof(T) exceeds SCTL_MEM_ALIGN; pool cannot honor the requested alignment.");
  public:
-  /**
-   * Allocate `count` default-constructed T's from the current thread's
-   * pool. Uses `omp_get_thread_num()` to choose the pool.
-   */
+  /** Allocate `count` T's from the calling thread's pool (`ScratchPool::Instance()`). */
   explicit ScratchBuf(Long count);
 
   /**
-   * Allocate from pool `thread_id` (rather than the calling thread's).
-   * Useful when one thread prepares scratch space on behalf of another.
+   * Allocate from a user-supplied pool instead of the thread-local default.
+   * Provided for tests and isolation. The user pool is NOT thread-safe.
    */
-  ScratchBuf(Long count, Integer thread_id);
-
-  /**
-   * Allocate from a user-supplied pool instead of the global default.
-   * Provided mainly for tests and for callers that want isolation from
-   * the global pool.
-   */
-  ScratchBuf(Long count, Integer thread_id, ScratchPool& pool);
+  ScratchBuf(Long count, ScratchPool& pool);
 
   ScratchBuf() = delete;
   ScratchBuf(const ScratchBuf&) = delete;
@@ -89,23 +89,23 @@ template <class T> class ScratchBuf {
   const T&         operator[](Long i) const;
 
  private:
-  ScratchPool* pool_;
-  Integer tid_;
+  ScratchPool*            pool_;
   internal::ScratchChunk* chunk_;
-  Long byte_offset_;
-  Long count_;
+  Iterator<T>             data_;
+  Long                    count_;
 };
 
 /**
- * Per-OpenMP-thread stack allocator. Each thread has an independent chain
- * of memory chunks; allocation is a pointer bump within the newest chunk,
- * and overflow allocates a new chunk twice the previous size. Older
- * chunks are freed automatically once all their allocations have been
- * released; the largest (newest) chunk is retained as cached working set.
+ * Per-thread stack allocator backing `ScratchBuf`. Allocation is a pointer
+ * bump within a per-thread chunk; lock-free, NUMA-local first-touch.
  *
- * Lock-free on the hot allocation path. The only lock is on the rare
- * cold-path resize of the per-thread vector when `omp_get_max_threads()`
- * grows.
+ * Use `ScratchPool::Instance()` to get the calling thread's pool. The pool
+ * persists for the thread's lifetime, including across OpenMP parallel
+ * regions (so the warmed chunk stays hot for the next region).
+ *
+ * A user-constructed pool is allowed (for tests and isolation) but is NOT
+ * thread-safe — concurrent allocators must use distinct pools or
+ * `Instance()`.
  */
 class ScratchPool {
  public:
@@ -114,37 +114,28 @@ class ScratchPool {
   ScratchPool(const ScratchPool&) = delete;
   ScratchPool& operator=(const ScratchPool&) = delete;
 
-  /**
-   * Global default instance. Used implicitly by `ScratchBuf<T>(n)` and
-   * `ScratchBuf<T>(n, tid)` — most code should not need to touch this
-   * directly.
-   */
+  /** Returns the calling thread's pool (thread_local storage). */
   static ScratchPool& Instance();
 
-  /**
-   * Diagnostic accessor: number of chunks currently held by thread `tid`.
-   * Mainly for tests.
-   */
-  Long DebugChunkCount(Integer thread_id = -1) const;
+  /** Diagnostic: number of chunks currently held. Mainly for tests. */
+  Long DebugChunkCount() const;
 
   /**
-   * Diagnostic accessor: total live allocations across all chunks for
-   * thread `tid`. Mainly for tests.
+   * Diagnostic: number of live allocations. Exact under SCTL_MEMDEBUG;
+   * release builds return 0 when known-empty, -1 otherwise.
    */
-  Long DebugLiveCount(Integer thread_id = -1) const;
+  Long DebugLiveCount() const;
 
  private:
   template <class U> friend class ScratchBuf;
 
   using Chunk = internal::ScratchChunk;
 
-  void AllocBytes(Integer tid, Long bytes, Chunk*& out_chunk, Long& out_offset);
-  void FreeBytes(Integer tid, Chunk* chunk, Long byte_offset, Long bytes);
+  void AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data);
+  void FreeBytes(Chunk* chunk, Iterator<char> data, Long bytes);
 
-  Integer ResolveTid(Integer thread_id) const;
-  void    EnsureCapacity(Integer tid);
-
-  std::vector<Chunk*> thread_pools_;  // index = OpenMP thread id; pointer to head chunk
+  Chunk  sentinel_;        // zero-capacity; head_ points here when empty
+  Chunk* head_{&sentinel_};
 };
 
 }  // namespace sctl
