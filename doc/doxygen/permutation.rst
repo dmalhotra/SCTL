@@ -24,6 +24,8 @@ Classes and Types
 
     - ``Permutation(size)``: Constructs a permutation operator of size `size`.
 
+    - ``Permutation(const Permutation&)``, ``Permutation(Permutation&&) noexcept``: Copy and move constructors.
+
     **Methods**:
 
     - ``RandPerm(size)``: Generates a random permutation operator of size `size`.

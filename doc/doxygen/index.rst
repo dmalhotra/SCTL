@@ -13,7 +13,6 @@ Header Files
    boundary_integral
    comm
    common
-   complex
    fft_wrapper
    fmm-wrapper
    generic-kernel
@@ -31,6 +30,7 @@ Header Files
    permutation
    profile
    quadrule
+   scratch_pool
    sph_harm
    stacktrace
    static-array

@@ -13,6 +13,18 @@ Classes and Types
 ..   :members:
 ..
 
+    **Constructors**:
+
+    - ``Comm()``: Default constructor (self communicator).
+
+    - ``explicit Comm(MPI_Comm)``: Construct from an existing ``MPI_Comm`` handle.
+
+    - ``Comm(const Comm&)``: Copy constructor (calls ``MPI_Comm_dup`` to obtain an independent handle).
+
+    - ``Comm(Comm&&) noexcept``: Move constructor (steals the ``MPI_Comm`` handle without duplication).
+
+    - ``operator=`` (copy and move): Assignment with the same semantics as the corresponding constructors.
+
     **Static Methods**:
 
     - ``MPI_Init(argc, argv)``: Initialize MPI.
@@ -28,6 +40,8 @@ Classes and Types
     **Methods**:
 
     - ``Size()``: Get the size of the communicator.
+
+    - ``GetMPI_Comm()``: Get the underlying ``MPI_Comm`` handle.
 
     - ``Barrier()``: Synchronize all processes.
 

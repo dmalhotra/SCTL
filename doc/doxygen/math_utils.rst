@@ -41,6 +41,7 @@ Functions
 
 - ``template <class Real> constexpr Real const_pi()``: Returns the mathematical constant pi.
 - ``template <class Real> constexpr Real const_e()``: Returns the mathematical constant e.
+- ``template <class Real> constexpr Real machine_eps()``: Returns the machine epsilon for ``Real``.
 
 **Basic Operations**:
 
@@ -49,6 +50,8 @@ Functions
 - ``template <class Real> Real round(const Real a)``: Rounds the input real number to the nearest integer.
 - ``template <class Real> Real floor(const Real a)``: Rounds the input real number down to the nearest integer.
 - ``template <class Real> Real ceil(const Real a)``: Rounds the input real number up to the nearest integer.
+- ``template <class Real> bool isinf(const Real a)``: Returns true if the input is infinite.
+- ``template <class Real> bool isnan(const Real a)``: Returns true if the input is NaN.
 
 **Trigonometric Functions**:
 
@@ -69,6 +72,7 @@ Functions
 **Power Functions**:
 
 - ``template <class Real> Real sqrt(const Real a)``: Computes the square root of the input real number.
+- ``template <class Real> Real hypot(const Real a, const Real b)``: Computes ``sqrt(a*a + b*b)`` without overflow.
 - ``template <class Real, class ExpType> Real pow(const Real b, const ExpType e)``: Computes the power of a base raised to an exponent.
 - ``template <Long e, class ValueType> constexpr ValueType pow(ValueType b)``: Computes the power of a base raised to a compile-time constant exponent.
 

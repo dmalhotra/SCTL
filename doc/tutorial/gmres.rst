@@ -18,6 +18,16 @@ First, we need to define our linear operator. This operator represents the matri
         // Define the action of A on x and store the result in Ax
     };
 
+.. note::
+
+    GMRES passes an ``Ax`` that is already sized to ``x.Dim()`` and is backed
+    by fixed-size scratch storage. Do **not** call ``Ax->ReInit(...)`` when
+    the size already matches — it asserts. The safe idiom is:
+
+    .. code-block:: cpp
+
+        if (Ax->Dim() != x.Dim()) Ax->ReInit(x.Dim());
+
 Step 2: Creating Instances of GMRES and KrylovPrecond
 -----------------------------------------------------
 
@@ -27,6 +37,21 @@ Next, we'll create instances of the GMRES solver and the Krylov preconditioner.
 
     GMRES<double> solver;
     KrylovPrecond<double> krylov_precond;
+
+The ``GMRES`` constructor accepts two optional knobs that control the Arnoldi
+orthogonalization step:
+
+.. code-block:: cpp
+
+    // Classical Gram-Schmidt with one reorthogonalization pass — recommended
+    // for distributed (MPI) runs: one batched Allreduce per iteration, with
+    // MGS-equivalent stability.
+    GMRES<double> solver(comm, /*verbose=*/true,
+                         GMRES<double>::GramSchmidt::CGS, /*num_reorth=*/1);
+
+The default (``MGS, 0``) matches the legacy behavior and is a good choice for
+serial or shared-memory runs. See :ref:`lin-solve.hpp <lin-solve_hpp>` for the
+full latency/stability trade-off.
 
 Step 3: Solving the Linear System
 ----------------------------------
@@ -87,7 +112,7 @@ The complete example code is shown below:
         // Build linear operator
         auto LinOp = [&A](Vector<double>* Ax, const Vector<double>& x) {
           const Long N = x.Dim();
-          Ax->ReInit(N);
+          if (Ax->Dim() != N) Ax->ReInit(N);
           Matrix<double> Ax_(N, 1, Ax->begin(), false);
           Ax_ = A * Matrix<double>(N, 1, (Iterator<double>)x.begin(), false);
         };

@@ -20,6 +20,10 @@ Classes and Types
 
     - ``Vector(const Vector& V)``: Copy constructor.
 
+    - ``Vector(Vector&& V) noexcept``: Move constructor.
+
+    - ``Vector(ScratchBuf<ValueType>& buf, bool disable_reinit=true)``: Non-owning, fixed-size view into a :ref:`ScratchBuf <scratch_pool_hpp>`.
+
     - ``Vector(const std::vector<ValueType>& V)``: Constructor from `std::vector`.
 
     - ``Vector(std::initializer_list<ValueType> V)``: Constructor from initializer list.
@@ -46,7 +50,7 @@ Classes and Types
 
     - ``operator[]``: Accesses elements of the vector by index.
 
-    - ``operator=``: Assigns the vector from another vector or `std::vector`.
+    - ``operator=``: Assigns the vector from another vector or `std::vector` (copy or move).
 
     - ``operator+=``, ``operator-=``, ``operator*=``, ``operator/=``: In-place arithmetic operations with another vector.
 

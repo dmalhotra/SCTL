@@ -18,7 +18,9 @@ Classes and Types
 
     - ``Matrix(dim1, dim2, data_, own_data_)``: Constructor to create a matrix with specified dimensions and optional initial data.
 
-    - ``Matrix(M)``: Copy constructor.
+    - ``Matrix(const Matrix& M)``: Copy constructor.
+
+    - ``Matrix(Matrix&& M) noexcept``: Move constructor.
 
     **Methods**:
 
@@ -48,7 +50,7 @@ Classes and Types
 
     - ``pinv(eps)``: Computes the Moore-Penrose pseudo-inverse of the matrix. Original matrix is destroyed.
 
-    - ``operator=``, ``operator+=``, ``operator-=``: In-place arithmetic operations with another matrix.
+    - ``operator=``, ``operator+=``, ``operator-=``: Assignment (copy or move) and in-place arithmetic operations with another matrix.
 
     - ``operator+``, ``operator-``: Arithmetic operations with another matrix.
 

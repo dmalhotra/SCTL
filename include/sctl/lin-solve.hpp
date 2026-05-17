@@ -72,7 +72,18 @@ template <class Real> class GMRES {
 
  public:
 
-  using ParallelOp = std::function<void(Vector<Real>*, const Vector<Real>&)>; ///< Function type for linear operator.
+  /**
+   * Function type for the linear operator `A`: `A(Ax, x)` computes
+   * `*Ax = A * x` in place.
+   *
+   * Contract: GMRES passes an `Ax` that is already sized to `x.Dim()` and is
+   * backed by fixed-size scratch storage. The callback must **not** call
+   * `Ax->ReInit(...)` when the size already matches (it would trigger an
+   * assert on the underlying `disable_reinit=true` view). The safe pattern is:
+   *
+   *     if (Ax->Dim() != x.Dim()) Ax->ReInit(x.Dim());
+   */
+  using ParallelOp = std::function<void(Vector<Real>*, const Vector<Real>&)>;
 
   /**
    * Gram-Schmidt orthogonalization scheme used in the Arnoldi step.

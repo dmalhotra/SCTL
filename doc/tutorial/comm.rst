@@ -22,9 +22,13 @@ You can create instances of the `Comm` class to represent different communicatio
 
 1. **Default Constructor**: This initializes a communicator to represent the *self* communicator.
 
-2. **Copy Constructor**: You can duplicate an existing communicator.
+2. **Copy Constructor**: Duplicates an existing communicator (calls ``MPI_Comm_dup`` to obtain an independent handle).
 
-3. **Static Methods**: The class provides static methods `Self()` and `World()` to get the *self* and *world* communicators, respectively.
+3. **Move Constructor**: Steals the underlying handle and pending-request state from another ``Comm``. ``noexcept``.
+
+4. **MPI_Comm Constructor**: ``explicit Comm(MPI_Comm)`` wraps an existing MPI communicator without duplication.
+
+5. **Static Methods**: The class provides static methods `Self()` and `World()` to get the *self* and *world* communicators, respectively.
 
 Communication Methods
 ----------------------
@@ -48,7 +52,15 @@ Once you have a communicator, you can perform various communication operations u
 MPI Conversion
 ----------------
 
-If you are working with MPI directly and need to convert between `MPI_Comm` and `Comm`, the class provides methods for conversion.
+If you are working with MPI directly, the class supports conversion in both
+directions: pass an ``MPI_Comm`` to the explicit constructor to wrap it, and
+call ``GetMPI_Comm()`` on a ``Comm`` to retrieve the underlying handle:
+
+.. code-block:: cpp
+
+   MPI_Comm raw = MPI_COMM_WORLD;
+   Comm wrapped(raw);                    // wrap (no duplication)
+   const MPI_Comm& h = wrapped.GetMPI_Comm();
 
 Cleanup
 ---------
@@ -96,13 +108,13 @@ To compile code that utilizes the `Comm` class, follow these steps:
 
 .. code-block:: bash
 
-    g++ -std=c++11 your_code.cpp -o your_executable
+    g++ -std=c++17 -fopenmp your_code.cpp -o your_executable
 
 **With MPI**: If your code uses MPI functionality, you need to compile it with an MPI compiler and link against the MPI library. Here's an example using `mpicxx`:
 
 .. code-block:: bash
 
-    mpicxx -std=c++11 -DSCTL_HAVE_MPI your_code.cpp -o your_executable
+    mpicxx -std=c++17 -fopenmp -DSCTL_HAVE_MPI your_code.cpp -o your_executable
 
 Ensure to define the macro ``SCTL_HAVE_MPI`` during compilation.
 

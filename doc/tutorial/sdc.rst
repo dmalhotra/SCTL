@@ -35,6 +35,20 @@ To use the `SDC` class, follow these steps:
           (*dudt)[1] = u[0];
       };
 
+   For ODEs whose right-hand side does not depend on the SDC indices,
+   ``SDC`` also accepts a simpler 2-argument signature
+   (``Fn1 = std::function<void(Vector<Real>*, const Vector<Real>&)>``):
+
+   .. code-block:: cpp
+
+      auto F = [](Vector<double>* dudt, const Vector<double>& u) {
+          (*dudt)[0] = -u[1];
+          (*dudt)[1] = u[0];
+      };
+
+   Both ``operator()`` and ``AdaptiveSolve`` are overloaded on the two
+   signatures, so either form can be passed directly.
+
 3. **Apply One Step of SDC**:
    You can apply one step of the SDC method using the `operator()` method. This method computes the solution `u` at the next time step based on the current solution `u0` and the function `F` representing the derivative `du/dt`.
 

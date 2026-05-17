@@ -25,14 +25,14 @@ SCTL: Scientific Computing Template Library
 Requirements
 ------------
 
-The only requirement to use SCTL is a working C++11 compliant compiler with OpenMP 4.0 support. It has been tested with GCC-9 and newer.
+The only requirement to use SCTL is a working C++17 compliant compiler with OpenMP 4.0 support. It has been tested with GCC-9 and newer.
 
 Getting Started
 ---------------
 
 .. note::
 
-    SCTL requires a C++11 compliant compiler with OpenMP 4.0 support.
+    SCTL requires a C++17 compliant compiler with OpenMP 4.0 support.
 
 To get started, download the latest version of SCTL from the `SCTL GitHub <https://github.com/dmalhotra/SCTL>`_.
 
@@ -135,6 +135,7 @@ The following list outlines the primary features and capabilities provided by th
   - :ref:`QuadReal, basic math functions <math_utils_hpp>`: Quad-precision type and essential mathematical functions.
   - :ref:`Iterator, ConstIterator <iterator_hpp>`, :ref:`StaticArray <static-array_hpp>`: Iterator and static array utilities.
   - :ref:`MemoryManager <mem_mgr_hpp>`: Aligned memory allocation and deallocation.
+  - :ref:`ScratchBuf, ScratchPool <scratch_pool_hpp>`: Per-thread stack allocator for short-lived buffers in hot loops.
   - :ref:`Stacktrace utility <stacktrace_h>`: Prints stack traces for debugging.
 
 ..  - :ref:`GEMM, SVD (unoptimized) <mat_utils_hpp>`: Provides basic implementations of GEMM and SVD operations.

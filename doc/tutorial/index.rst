@@ -26,7 +26,8 @@ Numerical Methods
    Lagrange Interpolation <lagrange-interp>
    Generalized Chebyshev Quadrature <interp-quadrule>
    Tree, PtTree <tree>
-   Gauss-Legendre, Clenshaw-Curtis Quadrature <quadrule> TODO
+
+.. TODO: Gauss-Legendre, Clenshaw-Curtis Quadrature (quadrule)
 
 Spectral Methods
 ----------------
@@ -34,8 +35,9 @@ Spectral Methods
 .. toctree::
    :maxdepth: 1
 
-   Spherical Harmonics <spherical_harmonics> TODO
    FFT <fft>
+
+.. TODO: Spherical Harmonics (spherical_harmonics)
 
 Boundary Integral Methods
 -------------------------
@@ -56,7 +58,8 @@ High Performance Computing
    Comm <comm>
    Vec <vec>
    Profile <profile>
-   OpenMP Utilities (sort, merge, scan) <omp_par> TODO
+
+.. TODO: OpenMP Utilities (sort, merge, scan) — omp_par
    
 
 Miscellaneous

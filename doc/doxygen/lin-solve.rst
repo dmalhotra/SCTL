@@ -24,7 +24,7 @@ Classes and Types
 
     - ``Append(Qt, U)``: Append a Krylov-subspace to the operator.
 
-    - ``Apply(x) const``: Apply the preconditioner.
+    - ``Apply(x, comm) const``: Apply the preconditioner.
 
 
     **Usage guide**: :ref:`Using GMRES and KrylovPrecond classes <tutorial-gmres>`
@@ -37,7 +37,7 @@ Classes and Types
 
     **Constructor**:
 
-    - ``GMRES(comm=Comm::Self(), verbose=true)``: Constructor.
+    - ``GMRES(comm=Comm::Self(), verbose=true, gs=GramSchmidt::MGS, num_reorth=0)``: Constructor.
 
     **Member Functions**:
 
@@ -45,7 +45,15 @@ Classes and Types
 
     **Types**:
 
-    - ``ParallelOp``: Function type for linear operator.
+    - ``ParallelOp``: Function type for the linear operator. The callback must
+      not call ``Ax->ReInit(...)`` when ``Ax`` is already the right size;
+      guard with ``if (Ax->Dim() != x.Dim()) Ax->ReInit(x.Dim());``.
+
+    - ``GramSchmidt``: Orthogonalization scheme used in the Arnoldi step.
+      ``MGS`` (Modified Gram-Schmidt — one reduction per basis vector;
+      Allreduce-latency-bound on distributed runs) or ``CGS`` (Classical
+      Gram-Schmidt — all ``k+1`` dot products batched into one Allreduce;
+      pair with ``num_reorth >= 1`` for stability).
 
 
     **Usage guide**: :ref:`Using GMRES and KrylovPrecond classes <tutorial-gmres>`
