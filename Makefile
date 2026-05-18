@@ -15,6 +15,7 @@ ifeq "$(OS)" "Darwin"
 	CXXFLAGS += -g -rdynamic -Wl,-no_pie # for stack trace (on Mac)
 else
 	CXXFLAGS += -gdwarf-4 -g -rdynamic # for stack trace
+	CXXFLAGS += -ldl # dladdr() in stacktrace.h (libc on glibc >=2.34, libdl otherwise)
 endif
 
 CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB

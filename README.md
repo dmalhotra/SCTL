@@ -49,7 +49,7 @@ The following compiler flags can be used to enable or disable specific features 
 - `-DSCTL_GLOBAL_MEM_BUFF=<size in MB>`: Use a [global memory buffer](include/sctl/mem_mgr.hpp) for allocations.
 - `-DSCTL_PROFILE=<level>`: Enable [profiling](include/sctl/profile.hpp).
 - `-DSCTL_VERBOSE`: Enable verbose [profiling](include/sctl/profile.hpp) output.
-- `-DSCTL_SIG_HANDLER`: Enable [stack trace](include/sctl/stacktrace.h).
+- `-DSCTL_SIG_HANDLER`: Enable [stack trace](include/sctl/stacktrace.h). On Linux with glibc < 2.34, link with `-ldl` (newer glibc has it merged into libc).
 - `-DSCTL_QUAD_T`: Enable support for [quad-precision type](include/sctl/math_utils.hpp).
 
 ## Features and Capabilities
