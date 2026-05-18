@@ -31,7 +31,15 @@ inline ScratchChunk::ScratchChunk(Iterator<char> base, Iterator<char> top, Itera
 
 }  // namespace internal
 
-inline ScratchPool::ScratchPool() = default;
+inline ScratchPool::ScratchPool() {
+  // Eager init so AllocBytes/FreeBytes can assume head_ != nullptr.
+  constexpr Long align_mask = (Long)SCTL_MEM_ALIGN - 1;
+  const Long new_cap = ((Long)SCTL_SCRATCH_POOL_INIT_BYTES + align_mask) & ~align_mask;
+  void* raw = std::aligned_alloc(SCTL_MEM_ALIGN, new_cap);
+  SCTL_ASSERT_MSG(raw != nullptr, "ScratchPool: initial chunk allocation failed.");
+  Iterator<char> new_base = Ptr2Itr<char>(static_cast<char*>(raw), new_cap);
+  head_ = new Chunk(new_base, new_base, new_base + new_cap, nullptr);
+}
 
 inline ScratchPool::~ScratchPool() {
   if (head_ == nullptr) return;
@@ -58,6 +66,7 @@ inline ScratchPool& ScratchPool::Instance() {
 // no per-call `(top + mask) & ~mask`.
 [[gnu::always_inline]] inline void ScratchPool::AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data) {
 #ifdef SCTL_MEMDEBUG
+  SCTL_ASSERT(head_ != nullptr);
   SCTL_ASSERT(bytes >= 0);
   constexpr Long redzone = MemoryManager::end_padding;
 #else
@@ -66,22 +75,30 @@ inline ScratchPool& ScratchPool::Instance() {
 
   constexpr Long align_mask = (Long)SCTL_MEM_ALIGN - 1;
   const Long bytes_padded = (bytes + redzone + align_mask) & ~align_mask;
-  // Short-circuit on the lazy-init case (head_ == nullptr): avoids null
-  // pointer arithmetic (UB / -fsanitize=pointer-subtract,pointer-compare).
-  // Otherwise `top` and `end` point into the same chunk so the subtract
-  // and comparison are well-defined.
   Iterator<char> alloc_start;
-  if (__builtin_expect(head_ == nullptr || bytes_padded > head_->end - head_->top, 0)) {
-    // Overflow path. Also taken on the first allocation (head_ == nullptr).
+  if (__builtin_expect(bytes_padded > head_->end - head_->top, 0)) {
     // `std::aligned_alloc` (not `aligned_new`) so libc returns virtual pages
-    // that fault in on the writing thread — NUMA-local first-touch.
-    const Long prev_cap = (head_ == nullptr) ? 0 : (head_->end - head_->base);
+    // that page fault in on the writing thread — NUMA-local first-touch.
+    const Long prev_cap = head_->end - head_->base;
     Long new_cap = std::max<Long>((Long)SCTL_SCRATCH_POOL_INIT_BYTES, prev_cap * 2);
     while (new_cap < bytes_padded) new_cap *= 2;
     new_cap = (new_cap + align_mask) & ~align_mask;  // aligned_alloc requires size % alignment == 0
     void* raw = std::aligned_alloc(SCTL_MEM_ALIGN, new_cap);
     SCTL_ASSERT_MSG(raw != nullptr, "ScratchPool: chunk allocation failed.");
     Iterator<char> new_base = Ptr2Itr<char>(static_cast<char*>(raw), new_cap);
+
+    // Free the current head if empty — otherwise it gets wedged: its base
+    // alloc is already freed, so FreeBytes can never splice it later.
+    if (head_->top == head_->base) {
+#ifdef SCTL_MEMDEBUG
+      SCTL_ASSERT(head_->live_count == 0);
+#endif
+      Chunk* prev = head_->prev;
+      std::free(&head_->base[0]);
+      delete head_;
+      head_ = prev;
+    }
+
     head_ = new Chunk(new_base, new_base, new_base + new_cap, head_);
     alloc_start = new_base;
   } else {
@@ -129,9 +146,8 @@ inline ScratchPool& ScratchPool::Instance() {
     return;
   }
 
-  // Non-head chunk. Under LIFO, the only allocation in a non-head chunk that
-  // can be freed is its first one (at `base`) — everything after it has
-  // already been freed. Splice the chunk out.
+  // Non-head chunk. Earlier (non-base) frees fall through as no-ops; only
+  // the base free triggers splice — LIFO guarantees it comes last.
   if (data == chunk->base) {
 #ifdef SCTL_MEMDEBUG
     SCTL_ASSERT(chunk->live_count == 0);

@@ -133,7 +133,7 @@ class ScratchPool {
   void AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data);
   void FreeBytes(Chunk* chunk, Iterator<char> data, Long bytes);
 
-  Chunk* head_{nullptr};   // lazily allocated on the first AllocBytes call
+  Chunk* head_{nullptr};   // eagerly allocated by the ctor; never null after construction
 };
 
 }  // namespace sctl
