@@ -245,7 +245,7 @@ namespace sctl {
         for (Integer d = Morton<DIM>::MAX_DEPTH; d >= 0; d--) {
           for (const auto& m : parent_mid_set[d]) {
             m.NbrList(nlst, d, periodic);
-            for (const auto& nbr : nlst) if (nbr.Depth() > 0) parent_mid_set[d-1].insert(nbr.Ancestor(d-1));
+            for (const auto& nbr : nlst) if (nbr.Depth() != Morton<DIM>::INVALID_DEPTH && nbr.Depth() > 0) parent_mid_set[d-1].insert(nbr.Ancestor(d-1));
             const Long idx = std::lower_bound(mins.begin(), mins.end(), m) - mins.begin();
             if (idx>=np || !m.isAncestor(mins[idx])) // exclude ancestors of all mins to reduce communication
               parent_mid.PushBack(m);
@@ -308,7 +308,7 @@ namespace sctl {
           if (halo_size >= 0) m0.NbrList(nlst, std::max<Integer>(d0-halo_size,0), periodic);
           user_procs.clear();
           for (const auto& m : nlst) {
-            if (m.Depth() >= 0) {
+            if (m.Depth() != Morton<DIM>::INVALID_DEPTH) {
               Morton<DIM> m_start = m.DFD();
               Morton<DIM> m_end = m.Next();
               Integer p_start = std::lower_bound(mins.begin(), mins.end(), m_start) - mins.begin() - 1;
@@ -426,7 +426,7 @@ namespace sctl {
       for (Long i = 0; i < Nnodes; i++) { // Set nbr-list // TODO: optimize this
         node_mid[i].NbrList(nlst, node_mid[i].Depth(), periodic);
         for (Long k = 0; k < nlst.Dim(); k++) {
-          if (nlst[k].Depth() >= 0) {
+          if (nlst[k].Depth() != Morton<DIM>::INVALID_DEPTH) {
             Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), nlst[k]) - node_mid.begin();
             if (idx < node_mid.Dim() && node_mid[idx] == nlst[k]) node_lst[i].nbr[k] = idx;
           }

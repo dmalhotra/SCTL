@@ -209,7 +209,7 @@ namespace sctl {
       for (Long i = 0; i < src_nodes0.Dim(); i++) {
         user_proc_set.clear();
         src_nodes0[i].mid.NbrList(nbr_lst, src_nodes0[i].mid.Depth(), false);
-        for (const auto nbr : nbr_lst) if (nbr.Depth() >= 0) {
+        for (const auto nbr : nbr_lst) if (nbr.Depth() != Morton<COORD_DIM>::INVALID_DEPTH) {
           const auto proc_split_srch = [&splitter_nodes,&comp_node_mid](const Morton<COORD_DIM>& m) {
             NodeData srch_node; srch_node.mid = m;
             return  std::upper_bound(splitter_nodes.begin(), splitter_nodes.end(), srch_node, comp_node_mid) - splitter_nodes.begin() - 1;
@@ -312,7 +312,7 @@ namespace sctl {
             Morton<COORD_DIM> nxt_node;
             for (const auto& src_mid : src_mid_lst) {
               src_mid.NbrList(nbr_lst, src_mid.Depth(), false);
-              for (const auto& mid : nbr_lst) if (mid.Depth() >= 0) {
+              for (const auto& mid : nbr_lst) if (mid.Depth() != Morton<COORD_DIM>::INVALID_DEPTH) {
                 trg_mid_set.insert(mid);
               }
             }
@@ -335,7 +335,7 @@ namespace sctl {
           { // build interaction list trg_src_near_mid
             for (Long i = 0; i < src_mid_lst.Dim(); i++) {
               src_mid_lst[i].NbrList(nbr_lst, src_mid_lst[i].Depth(), false);
-              for (const auto& mid : nbr_lst) if (mid.Depth() >= 0) {
+              for (const auto& mid : nbr_lst) if (mid.Depth() != Morton<COORD_DIM>::INVALID_DEPTH) {
                 Long j = std::upper_bound(trg_mid_lst.begin(), trg_mid_lst.end(), mid) - trg_mid_lst.begin() - 1;
                 if (j>=0 && mid.Ancestor(trg_mid_lst[j].Depth()) == trg_mid_lst[j]) {
                   trg_src_near_mid.PushBack(std::pair<Long,Long>(j,i));

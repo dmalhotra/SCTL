@@ -127,8 +127,8 @@ namespace sctl {
           m1.x[i] = (m0.x[i] - box_size) & mask0;
           m2.x[i] = (m0.x[i]           ) & mask0;
           m3.x[i] = (m0.x[i] + box_size) & mask0;
-          if (m0.x[i] < box_size) m1.depth = -1;
-          if (m0.x[i] + box_size >= maxCoord) m3.depth = -1;
+          if (m0.x[i] < box_size) m1.depth = Morton<DIM>::INVALID_DEPTH;
+          if (m0.x[i] + box_size >= maxCoord) m3.depth = Morton<DIM>::INVALID_DEPTH;
         }
         Nnbrs *= 3;
       }

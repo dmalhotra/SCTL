@@ -45,6 +45,13 @@ template <Integer DIM = 3> class Morton {
   static constexpr Integer MAX_DEPTH = SCTL_MAX_DEPTH;
 
   /**
+   * Sentinel `depth` value for "invalid" / "missing" nodes (see `NbrList`). Picked as
+   * `0xFF` (= `(uint8_t)-1`); legal depths are in `[0, MAX_DEPTH]` and `MAX_DEPTH < 64`,
+   * so this never collides with a real depth.
+   */
+  static constexpr uint8_t INVALID_DEPTH = 0xFF;
+
+  /**
    * Get the maximum depth of the Morton index.
    *
    * @return The maximum depth of the Morton index.
