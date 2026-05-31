@@ -28,6 +28,17 @@ namespace sctl {
         VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         u[0][0] = rinv;
       }
+
+      // Volume potential for uniform unit charge; used in periodic-FMM BC correction.
+      template <class Real> static void VolPoten(Matrix<Real>& U, const Vector<Real>& X) {
+        const Long N = X.Dim() / 3;
+        SCTL_ASSERT(X.Dim() == N * 3);
+        if (U.Dim(0) != 1 || U.Dim(1) != N) U.ReInit(1, N);
+        for (Long i = 0; i < N; i++) {
+          const Real x = X[i*3+0], y = X[i*3+1], z = X[i*3+2];
+          U[0][i] = -(x*x + y*y + z*z) / 6;
+        }
+      }
     };
 
     struct Laplace3D_DxU {
@@ -69,6 +80,18 @@ namespace sctl {
         u[0][1] = r[1] * rinv3;
         u[0][2] = r[2] * rinv3;
       }
+
+      // Volume potential for uniform unit charge; used in periodic-FMM BC correction.
+      template <class Real> static void VolPoten(Matrix<Real>& U, const Vector<Real>& X) {
+        const Long N = X.Dim() / 3;
+        SCTL_ASSERT(X.Dim() == N * 3);
+        if (U.Dim(0) != 1 || U.Dim(1) != N * 3) U.ReInit(1, N * 3);
+        for (Long i = 0; i < N; i++) {
+          U[0][i*3+0] = -X[i*3+0] / 3;
+          U[0][i*3+1] = -X[i*3+1] / 3;
+          U[0][i*3+2] = -X[i*3+2] / 3;
+        }
+      }
     };
 
     struct Stokes3D_FxU {
@@ -90,6 +113,24 @@ namespace sctl {
           for (Integer j = 0; j < 3; j++) {
             u[i][j] = (i==j ? rinv : VecType::Zero()) + r[i]*r[j]*rinv3;
           }
+        }
+      }
+
+      // Volume potential for uniform unit force; used in periodic-FMM BC correction.
+      template <class Real> static void VolPoten(Matrix<Real>& U, const Vector<Real>& X) {
+        const Long N = X.Dim() / 3;
+        SCTL_ASSERT(X.Dim() == N * 3);
+        if (U.Dim(0) != 3 || U.Dim(1) != N * 3) U.ReInit(3, N * 3);
+        for (Long i = 0; i < N; i++) {
+          const Real x = X[i*3 + 0];
+          const Real y = X[i*3 + 1];
+          const Real z = X[i*3 + 2];
+          const Real rx_2 = y*y + z*z;
+          const Real ry_2 = x*x + z*z;
+          const Real rz_2 = x*x + y*y;
+          U[0][i*3+0] = -rx_2/4; U[0][i*3+1] =       0; U[0][i*3+2] =       0;
+          U[1][i*3+0] =       0; U[1][i*3+1] = -ry_2/4; U[1][i*3+2] =       0;
+          U[2][i*3+0] =       0; U[2][i*3+1] =       0; U[2][i*3+2] = -rz_2/4;
         }
       }
     };
@@ -167,6 +208,27 @@ namespace sctl {
         }
         for (Integer j = 0; j < 3; j++) {
           u[3][j] = r[j]*rinv3;
+        }
+      }
+
+      // Volume potential for uniform unit source/sink; used in periodic-FMM BC correction.
+      template <class Real> static void VolPoten(Matrix<Real>& U, const Vector<Real>& X) {
+        const Long N = X.Dim() / 3;
+        SCTL_ASSERT(X.Dim() == N * 3);
+        if (U.Dim(0) != 4 || U.Dim(1) != N * 3) U.ReInit(4, N * 3);
+        for (Long i = 0; i < N; i++) {
+          const Real x = X[i*3 + 0];
+          const Real y = X[i*3 + 1];
+          const Real z = X[i*3 + 2];
+          const Real rx_2 = y*y + z*z;
+          const Real ry_2 = x*x + z*z;
+          const Real rz_2 = x*x + y*y;
+          U[0][i*3+0] = -rx_2/4; U[0][i*3+1] =       0; U[0][i*3+2] =       0;
+          U[1][i*3+0] =       0; U[1][i*3+1] = -ry_2/4; U[1][i*3+2] =       0;
+          U[2][i*3+0] =       0; U[2][i*3+1] =       0; U[2][i*3+2] = -rz_2/4;
+          U[3][i*3+0] = x/6;
+          U[3][i*3+1] = y/6;
+          U[3][i*3+2] = z/6;
         }
       }
     };
