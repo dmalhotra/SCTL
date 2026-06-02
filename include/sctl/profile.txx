@@ -2,7 +2,6 @@
 #define _SCTL_PROFILE_TXX_
 
 #include <sstream>            // for stringstream
-#include <omp.h>              // for omp_get_wtime
 #include <stdio.h>            // for size_t, snprintf
 #include <algorithm>          // for max
 #include <array>              // for array
@@ -15,7 +14,7 @@
 #include <string>             // for basic_string, allocator, char_traits
 #include <vector>             // for vector
 
-#include "sctl/common.hpp"    // for Long, SCTL_ASSERT, Integer, SCTL_ASSERT...
+#include "sctl/common.hpp"    // for Long, SCTL_ASSERT, Integer, SCTL_ASSERT, SCTL_GET_WTIME...
 #include "sctl/profile.hpp"   // for Profile, ProfileCounter, operator*, ope...
 #include "sctl/comm.hpp"      // for CommOp, Comm
 #include "sctl/comm.txx"      // for Comm::Rank, Comm::Size, Comm::Allreduce  // TODO: remove circular include (profile.txx -> comm.txx -> vector.txx -> profile.txx)
@@ -252,7 +251,7 @@ namespace sctl {
     std::array<std::atomic<Long>, Nfield> counters;
     std::map<std::string, ProfExpr> prof_fields;
 
-    inline ProfileData() : t0(omp_get_wtime()), enable_state(false) {
+    inline ProfileData() : t0(SCTL_GET_WTIME()), enable_state(false) {
       constexpr double gb_scale = (1./1024/1024/1024);
       for (auto& x : counters) x = 0;
 
@@ -484,7 +483,7 @@ namespace sctl {
 
       prof.e_log.push_back(true);
       prof.n_log.push_back(prof.name.top());
-      prof.counters[(Long)ProfileCounter::TIME].store((Long)((omp_get_wtime()-prof.t0)*1e9),std::memory_order_relaxed);
+      prof.counters[(Long)ProfileCounter::TIME].store((Long)((SCTL_GET_WTIME()-prof.t0)*1e9),std::memory_order_relaxed);
       for (Long i = 0; i < Nfield; i++) prof.counter_log.push_back(prof.counters[i]);
     }
   }
@@ -504,7 +503,7 @@ namespace sctl {
 
       prof.e_log.push_back(false);
       prof.n_log.push_back(name_);
-      prof.counters[(Long)ProfileCounter::TIME].store((Long)((omp_get_wtime()-prof.t0)*1e9),std::memory_order_relaxed);
+      prof.counters[(Long)ProfileCounter::TIME].store((Long)((SCTL_GET_WTIME()-prof.t0)*1e9),std::memory_order_relaxed);
       for (Long i = 0; i < Nfield; i++) prof.counter_log.push_back(prof.counters[i]);
 
   #ifndef NDEBUG

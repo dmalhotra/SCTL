@@ -1671,7 +1671,7 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
   {  // Get comm size and rank.
     npes = Size();
     myrank = Rank();
-    omp_p = omp_get_max_threads();
+    omp_p = SCTL_GET_MAX_THREADS();
   }
   srand(myrank);
 

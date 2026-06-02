@@ -3,7 +3,6 @@
 
 #include <fstream>               // for ofstream
 #include <sstream>               // for stringstream
-#include <omp.h>                  // for omp_get_num_threads, omp_get_thread...
 #include <stdlib.h>               // for drand48
 #include <algorithm>              // for min, max
 #include <cassert>                // for assert
@@ -379,8 +378,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Pole(const Vector<Real>
   if (arrange == SHCArrange::ALL) {
     #pragma omp parallel
     { // Compute pole
-      Integer tid = omp_get_thread_num();
-      Integer omp_p = omp_get_num_threads();
+      Integer tid = SCTL_GET_THREAD_NUM();
+      Integer omp_p = SCTL_GET_NUM_THREADS();
 
       Long a = (tid + 0) * N / omp_p;
       Long b = (tid + 1) * N / omp_p;
@@ -398,8 +397,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Pole(const Vector<Real>
   if (arrange == SHCArrange::ROW_MAJOR) {
     #pragma omp parallel
     { // Compute pole
-      Integer tid = omp_get_thread_num();
-      Integer omp_p = omp_get_num_threads();
+      Integer tid = SCTL_GET_THREAD_NUM();
+      Integer omp_p = SCTL_GET_NUM_THREADS();
 
       Long a = (tid + 0) * N / omp_p;
       Long b = (tid + 1) * N / omp_p;
@@ -419,8 +418,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Pole(const Vector<Real>
   if (arrange == SHCArrange::COL_MAJOR_NONZERO) {
     #pragma omp parallel
     { // Compute pole
-      Integer tid = omp_get_thread_num();
-      Integer omp_p = omp_get_num_threads();
+      Integer tid = SCTL_GET_THREAD_NUM();
+      Integer omp_p = SCTL_GET_NUM_THREADS();
 
       Long a = (tid + 0) * N / omp_p;
       Long b = (tid + 1) * N / omp_p;
@@ -2200,8 +2199,8 @@ template <class Real> void SphericalHarmonics<Real>::Grid2SHC_(const Vector<Real
   Vector<Real> B0(B0_storage);
   #pragma omp parallel
   { // B0 <-- Transpose(FFT(X))
-    Integer tid=omp_get_thread_num();
-    Integer omp_p=omp_get_num_threads();
+    Integer tid=SCTL_GET_THREAD_NUM();
+    Integer omp_p=SCTL_GET_NUM_THREADS();
     Long a=(tid+0)*N*Nt/omp_p;
     Long b=(tid+1)*N*Nt/omp_p;
 
@@ -2226,8 +2225,8 @@ template <class Real> void SphericalHarmonics<Real>::Grid2SHC_(const Vector<Real
   if (B1.Dim() != N*(p1+1)*(p1+1)) B1.ReInit(N*(p1+1)*(p1+1));
   #pragma omp parallel
   { // Evaluate Legendre polynomial
-    Integer tid=omp_get_thread_num();
-    Integer omp_p=omp_get_num_threads();
+    Integer tid=SCTL_GET_THREAD_NUM();
+    Integer omp_p=SCTL_GET_NUM_THREADS();
 
     Long offset0=0;
     Long offset1=0;
@@ -2261,8 +2260,8 @@ template <class Real> void SphericalHarmonics<Real>::SHCArrange0(const Vector<Re
     if(S.Dim() != N * M) S.ReInit(N * M);
     #pragma omp parallel
     { // S <-- Rearrange(B1)
-      Integer tid=omp_get_thread_num();
-      Integer omp_p=omp_get_num_threads();
+      Integer tid=SCTL_GET_THREAD_NUM();
+      Integer omp_p=SCTL_GET_NUM_THREADS();
 
       Long a=(tid+0)*N/omp_p;
       Long b=(tid+1)*N/omp_p;
@@ -2294,8 +2293,8 @@ template <class Real> void SphericalHarmonics<Real>::SHCArrange0(const Vector<Re
     if(S.Dim() != N * M) S.ReInit(N * M);
     #pragma omp parallel
     { // S <-- Rearrange(B1)
-      Integer tid=omp_get_thread_num();
-      Integer omp_p=omp_get_num_threads();
+      Integer tid=SCTL_GET_THREAD_NUM();
+      Integer omp_p=SCTL_GET_NUM_THREADS();
 
       Long a=(tid+0)*N/omp_p;
       Long b=(tid+1)*N/omp_p;
@@ -2327,8 +2326,8 @@ template <class Real> void SphericalHarmonics<Real>::SHCArrange0(const Vector<Re
     if(S.Dim() != N * M) S.ReInit(N * M);
     #pragma omp parallel
     { // S <-- Rearrange(B1)
-      Integer tid=omp_get_thread_num();
-      Integer omp_p=omp_get_num_threads();
+      Integer tid=SCTL_GET_THREAD_NUM();
+      Integer omp_p=SCTL_GET_NUM_THREADS();
 
       Long a=(tid+0)*N/omp_p;
       Long b=(tid+1)*N/omp_p;
@@ -2370,8 +2369,8 @@ template <class Real> void SphericalHarmonics<Real>::SHCArrange1(const Vector<Re
   if (arrange == SHCArrange::ALL) { // B0 <-- Rearrange(S)
     #pragma omp parallel
     { // B0 <-- Rearrange(S)
-      Integer tid=omp_get_thread_num();
-      Integer omp_p=omp_get_num_threads();
+      Integer tid=SCTL_GET_THREAD_NUM();
+      Integer omp_p=SCTL_GET_NUM_THREADS();
 
       Long a=(tid+0)*N/omp_p;
       Long b=(tid+1)*N/omp_p;
@@ -2398,8 +2397,8 @@ template <class Real> void SphericalHarmonics<Real>::SHCArrange1(const Vector<Re
   if (arrange == SHCArrange::ROW_MAJOR) { // B0 <-- Rearrange(S)
     #pragma omp parallel
     { // B0 <-- Rearrange(S)
-      Integer tid=omp_get_thread_num();
-      Integer omp_p=omp_get_num_threads();
+      Integer tid=SCTL_GET_THREAD_NUM();
+      Integer omp_p=SCTL_GET_NUM_THREADS();
 
       Long a=(tid+0)*N/omp_p;
       Long b=(tid+1)*N/omp_p;
@@ -2426,8 +2425,8 @@ template <class Real> void SphericalHarmonics<Real>::SHCArrange1(const Vector<Re
   if (arrange == SHCArrange::COL_MAJOR_NONZERO) { // B0 <-- Rearrange(S)
     #pragma omp parallel
     { // B0 <-- Rearrange(S)
-      Integer tid=omp_get_thread_num();
-      Integer omp_p=omp_get_num_threads();
+      Integer tid=SCTL_GET_THREAD_NUM();
+      Integer omp_p=SCTL_GET_NUM_THREADS();
 
       Long a=(tid+0)*N/omp_p;
       Long b=(tid+1)*N/omp_p;
@@ -2473,8 +2472,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
   if(X || X_phi){
     #pragma omp parallel
     { // Evaluate Legendre polynomial
-      Integer tid=omp_get_thread_num();
-      Integer omp_p=omp_get_num_threads();
+      Integer tid=SCTL_GET_THREAD_NUM();
+      Integer omp_p=SCTL_GET_NUM_THREADS();
 
       Long offset0=0;
       Long offset1=0;
@@ -2499,8 +2498,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
 
     #pragma omp parallel
     { // Transpose and evaluate Fourier
-      Integer tid=omp_get_thread_num();
-      Integer omp_p=omp_get_num_threads();
+      Integer tid=SCTL_GET_THREAD_NUM();
+      Integer omp_p=SCTL_GET_NUM_THREADS();
 
       Long a=(tid+0)*N*Nt/omp_p;
       Long b=(tid+1)*N*Nt/omp_p;
@@ -2546,8 +2545,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
   if(X_theta){
     #pragma omp parallel
     { // Evaluate Legendre gradient
-      Integer tid=omp_get_thread_num();
-      Integer omp_p=omp_get_num_threads();
+      Integer tid=SCTL_GET_THREAD_NUM();
+      Integer omp_p=SCTL_GET_NUM_THREADS();
 
       Long offset0=0;
       Long offset1=0;
@@ -2572,8 +2571,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
 
     #pragma omp parallel
     { // Transpose and evaluate Fourier
-      Integer tid=omp_get_thread_num();
-      Integer omp_p=omp_get_num_threads();
+      Integer tid=SCTL_GET_THREAD_NUM();
+      Integer omp_p=SCTL_GET_NUM_THREADS();
 
       Long a=(tid+0)*N*Nt/omp_p;
       Long b=(tid+1)*N*Nt/omp_p;
@@ -3205,8 +3204,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2GridTranspose(const Vec
 
   #pragma omp parallel
   { // Evaluate Fourier and transpose
-    Integer tid=omp_get_thread_num();
-    Integer omp_p=omp_get_num_threads();
+    Integer tid=SCTL_GET_THREAD_NUM();
+    Integer omp_p=SCTL_GET_NUM_THREADS();
 
     Long a=(tid+0)*N*(p0+1)/omp_p;
     Long b=(tid+1)*N*(p0+1)/omp_p;
@@ -3230,8 +3229,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2GridTranspose(const Vec
 
   #pragma omp parallel
   { // Evaluate Legendre polynomial
-    Integer tid=omp_get_thread_num();
-    Integer omp_p=omp_get_num_threads();
+    Integer tid=SCTL_GET_THREAD_NUM();
+    Integer omp_p=SCTL_GET_NUM_THREADS();
 
     Long offset0=0;
     Long offset1=0;
@@ -3256,8 +3255,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2GridTranspose(const Vec
 
   #pragma omp parallel
   { // S <-- Rearrange(B0)
-    Integer tid=omp_get_thread_num();
-    Integer omp_p=omp_get_num_threads();
+    Integer tid=SCTL_GET_THREAD_NUM();
+    Integer omp_p=SCTL_GET_NUM_THREADS();
 
     Long a=(tid+0)*N/omp_p;
     Long b=(tid+1)*N/omp_p;
@@ -3298,8 +3297,8 @@ template <class Real> void SphericalHarmonics<Real>::RotateAll(const Vector<Real
 
   #pragma omp parallel
   { // Construct all p0*(p0+1) rotations
-    Integer tid=omp_get_thread_num();
-    Integer omp_p=omp_get_num_threads();
+    Integer tid=SCTL_GET_THREAD_NUM();
+    Integer omp_p=SCTL_GET_NUM_THREADS();
     Matrix<Real> B0(dof*p0,Ncoef); // memory buffer
 
     std::vector<Matrix<Real>> Bi(p0+1), Bo(p0+1); // memory buffers
@@ -3387,8 +3386,8 @@ template <class Real> void SphericalHarmonics<Real>::RotateTranspose(const Vecto
 
   #pragma omp parallel
   { // Transpose all p0*(p0+1) rotations
-    Integer tid=omp_get_thread_num();
-    Integer omp_p=omp_get_num_threads();
+    Integer tid=SCTL_GET_THREAD_NUM();
+    Integer omp_p=SCTL_GET_NUM_THREADS();
     Matrix<Real> B0(dof*p0,Ncoef); // memory buffer
 
     std::vector<Matrix<Real>> Bi(p0+1), Bo(p0+1); // memory buffers
@@ -3461,7 +3460,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesSingularInteg(const V
   if(DLMatrix) DLMatrix->ReInit(Nves*(Ncoef*COORD_DIM)*(Ncoef*COORD_DIM));
 
   Long BLOCK_SIZE=(Long)6e9/((3*2*p1*(p1+1))*(3*2*p0*(p0+1))*2*8); // Limit memory usage to 6GB
-  BLOCK_SIZE=std::min<Long>(BLOCK_SIZE,omp_get_max_threads());
+  BLOCK_SIZE=std::min<Long>(BLOCK_SIZE,SCTL_GET_MAX_THREADS());
   BLOCK_SIZE=std::max<Long>(BLOCK_SIZE,1);
 
   for(Long a=0;a<Nves;a+=BLOCK_SIZE){
@@ -3512,8 +3511,8 @@ template <class Real> template <bool SLayer, bool DLayer> void SphericalHarmonic
 
     #pragma omp parallel
     {
-      Integer tid=omp_get_thread_num();
-      Integer omp_p=omp_get_num_threads();
+      Integer tid=SCTL_GET_THREAD_NUM();
+      Integer omp_p=SCTL_GET_NUM_THREADS();
 
       Long a=(tid+0)*N/omp_p;
       Long b=(tid+1)*N/omp_p;
@@ -3621,8 +3620,8 @@ template <class Real> template <bool SLayer, bool DLayer> void SphericalHarmonic
       SL3.ReInit(N*COORD_DIM*Ncoef*COORD_DIM*Ngrid);
       #pragma omp parallel
       {
-        Integer tid=omp_get_thread_num();
-        Integer omp_p=omp_get_num_threads();
+        Integer tid=SCTL_GET_THREAD_NUM();
+        Integer omp_p=SCTL_GET_NUM_THREADS();
         ScratchBuf<Real> B_storage(COORD_DIM*Ncoef * Ngrid*COORD_DIM);
         Matrix<Real> B(COORD_DIM*Ncoef, Ngrid*COORD_DIM, B_storage.begin(), false);
 
@@ -3660,8 +3659,8 @@ template <class Real> template <bool SLayer, bool DLayer> void SphericalHarmonic
       DL3.ReInit(N*COORD_DIM*Ncoef*COORD_DIM*Ngrid);
       #pragma omp parallel
       {
-        Integer tid=omp_get_thread_num();
-        Integer omp_p=omp_get_num_threads();
+        Integer tid=SCTL_GET_THREAD_NUM();
+        Integer omp_p=SCTL_GET_NUM_THREADS();
         ScratchBuf<Real> B_storage(COORD_DIM*Ncoef * Ngrid*COORD_DIM);
         Matrix<Real> B(COORD_DIM*Ncoef, Ngrid*COORD_DIM, B_storage.begin(), false);
 

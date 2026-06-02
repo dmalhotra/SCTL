@@ -1,7 +1,6 @@
 #ifndef _SCTL_BOUNDARY_INTEGRAL_TXX_
 #define _SCTL_BOUNDARY_INTEGRAL_TXX_
 
-#include <omp.h>                       // for omp_get_num_threads, omp_get_t...
 #include <algorithm>                   // for lower_bound, max, min, upper_b...
 #include <map>                         // for map
 #include <set>                         // for set, __tree_const_iterator
@@ -10,7 +9,7 @@
 #include <typeinfo>                    // for type_info
 #include <utility>                     // for pair, make_pair
 
-#include "sctl/common.hpp"             // for Long, Integer, SCTL_ASSERT
+#include "sctl/common.hpp"             // for Long, Integer, SCTL_ASSERT, SCTL_GET_(...)
 #include "sctl/boundary_integral.hpp"  // for BoundaryIntegralOp, BuildNearList
 #include "sctl/comm.hpp"               // for Comm, CommOp
 #include "sctl/comm.txx"               // for Comm::Allreduce, Comm::Size
@@ -408,8 +407,8 @@ namespace sctl {
       near_elem_dsp.ReInit(Nelem);
       #pragma omp parallel
       { // Set near_elem_cnt, near_elem_dsp
-        const Integer tid = omp_get_thread_num();
-        const Integer omp_p = omp_get_num_threads();
+        const Integer tid = SCTL_GET_THREAD_NUM();
+        const Integer omp_p = SCTL_GET_NUM_THREADS();
         const Long elem_idx0 = Nelem*(tid+0)/omp_p;
         const Long elem_idx1 = Nelem*(tid+1)/omp_p;
         for (Long i = elem_idx0; i < elem_idx1; i++) {
@@ -448,8 +447,8 @@ namespace sctl {
       near_trg_dsp.ReInit(Ntrg);
       #pragma omp parallel
       { // Set near_trg_cnt, near_trg_dsp
-        const Integer tid = omp_get_thread_num();
-        const Integer omp_p = omp_get_num_threads();
+        const Integer tid = SCTL_GET_THREAD_NUM();
+        const Integer omp_p = SCTL_GET_NUM_THREADS();
         const Long trg_idx0 = Ntrg*(tid+0)/omp_p;
         const Long trg_idx1 = Ntrg*(tid+1)/omp_p;
         for (Long i = trg_idx0; i < trg_idx1; i++) {
@@ -977,7 +976,7 @@ namespace sctl {
 
         constexpr Long cache_line_size = 512;
         const Long N_near = near_elem_dsp[Nelem-1] + near_elem_cnt[Nelem-1];
-        const Long omp_chunk_size = std::max(N_near/omp_get_max_threads()/32, (cache_line_size+KDIM1_-1)/KDIM1_);
+        const Long omp_chunk_size = std::max(N_near/SCTL_GET_MAX_THREADS()/32, (cache_line_size+KDIM1_-1)/KDIM1_);
         #pragma omp parallel for schedule(dynamic,omp_chunk_size)
         for (Long i = 0; i < N_near; i++) { // loop over all pairs of elements and their near targets
           const Long elem_idx = std::lower_bound(near_elem_dsp.begin(), near_elem_dsp.end(), i+1) - near_elem_dsp.begin() - 1;
@@ -1065,7 +1064,7 @@ namespace sctl {
       for (Long i = 0; i < Nlst; i++) { // Subtract direct-interaction part from K_near
         const auto& elem_lst = elem_lst_map.at(elem_lst_name[i]);
         if (elem_lst->MatrixFree()) continue;
-        #pragma omp parallel for if(elem_lst_cnt[i] > omp_get_max_threads()) schedule(dynamic)
+        #pragma omp parallel for if(elem_lst_cnt[i] > SCTL_GET_MAX_THREADS()) schedule(dynamic)
         for (Long j = 0; j < elem_lst_cnt[i]; j++) { // subtract direct sum
           const Long elem_idx = elem_lst_dsp[i]+j;
           const Long trg_cnt = near_elem_cnt[elem_idx];
@@ -1208,7 +1207,7 @@ namespace sctl {
     }
 
     Vector<Real> U_near(Nelem ? (near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1_ : 0);
-    #pragma omp parallel for if(Nelem > omp_get_max_threads()) schedule(dynamic)
+    #pragma omp parallel for if(Nelem > SCTL_GET_MAX_THREADS()) schedule(dynamic)
     for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) { // Compute near-interactions from precomputed operator matrix
       const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
       const Long trg_dof = near_elem_cnt[elem_idx]*KDIM1_;
@@ -1228,7 +1227,7 @@ namespace sctl {
       const auto& name = elem_lst_name[i];
       const auto& elem_lst = elem_lst_map.at(name);
       const auto& elem_data = elem_data_map.at(name);
-      #pragma omp parallel for if(elem_lst_cnt[i]>4*omp_get_max_threads()) schedule(dynamic)
+      #pragma omp parallel for if(elem_lst_cnt[i]>4*SCTL_GET_MAX_THREADS()) schedule(dynamic)
       for (Long j = 0; j < elem_lst_cnt[i]; j++) {
         const Long elem_idx = elem_lst_dsp[i]+j;
         const Long Ntrg = near_elem_cnt[elem_idx];

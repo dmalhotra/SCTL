@@ -10,6 +10,21 @@
 #  define SCTL_DATA_PATH ./data/
 #endif
 
+#ifdef _OPENMP
+#include <omp.h>
+#define SCTL_GET_WTIME()       (omp_get_wtime())
+#define SCTL_GET_NUM_THREADS() (omp_get_num_threads())
+#define SCTL_GET_MAX_THREADS() (omp_get_max_threads())
+#define SCTL_GET_THREAD_NUM()  (omp_get_thread_num())
+#else
+#include <chrono>
+#define SCTL_GET_WTIME() \
+    (std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count())
+#define SCTL_GET_NUM_THREADS() (1)
+#define SCTL_GET_MAX_THREADS() (1)
+#define SCTL_GET_THREAD_NUM()  (0)
+#endif
+
 //#ifndef SCTL_NAMESPACE
 //#define SCTL_NAMESPACE sctl
 //#endif
