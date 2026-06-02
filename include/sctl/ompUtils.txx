@@ -1,7 +1,6 @@
 #ifndef _SCTL_OMPUTILS_TXX_
 #define _SCTL_OMPUTILS_TXX_
 
-#include <omp.h>              // for omp_get_max_threads
 #include <algorithm>          // for lower_bound, sort, merge
 #include <functional>         // for less
 #include <iterator>           // for iterator_traits
@@ -95,7 +94,7 @@ template <class T, class StrictWeakOrdering> inline void omp_par::merge_sort(T A
   typedef typename std::iterator_traits<T>::difference_type _DiffType;
   typedef typename std::iterator_traits<T>::value_type _ValType;
 
-  int p = omp_get_max_threads();
+  int p = SCTL_GET_MAX_THREADS();
   _DiffType N = A_last - A;
   if (N < 2 * p) {
     std::sort(A, A_last, comp);
@@ -159,7 +158,7 @@ template <class ConstIter, class Int> typename std::iterator_traits<ConstIter>::
 template <class ConstIter, class Iter, class Int> void omp_par::scan(ConstIter A, Iter B, Int cnt) {
   typedef typename std::iterator_traits<Iter>::value_type ValueType;
 
-  Integer p = omp_get_max_threads();
+  Integer p = SCTL_GET_MAX_THREADS();
   if (cnt < (Int)100 * p) {
     for (Int i = 1; i < cnt; i++) B[i] = B[i - 1] + A[i - 1];
     return;

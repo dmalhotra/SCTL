@@ -1,7 +1,6 @@
 #ifndef _SCTL_MEM_MGR_TXX_
 #define _SCTL_MEM_MGR_TXX_
 
-#include <omp.h>                // for omp_get_wtime
 #include <stdlib.h>             // for free, malloc
 #include <algorithm>            // for max
 #include <cassert>              // for assert
@@ -362,10 +361,10 @@ inline void MemoryManager::test() {
     for (Integer j = 0; j < 3; j++) {
       tmp = (Iterator<double>)memgr.malloc(M * sizeof(double));
       SCTL_ASSERT(tmp != NullIterator<double>());
-      tt = omp_get_wtime();
+      tt = SCTL_GET_WTIME();
 #pragma omp parallel for
       for (Long i = 0; i < M; i += 64) tmp[i] = (double)i;
-      tt = omp_get_wtime() - tt;
+      tt = SCTL_GET_WTIME() - tt;
       std::cout << tt << ' ';
       memgr.free((Iterator<char>)tmp);
     }
@@ -379,10 +378,10 @@ inline void MemoryManager::test() {
     for (Integer j = 0; j < 3; j++) {
       tmp = (double*)::malloc(M * sizeof(double));
       SCTL_ASSERT(tmp != nullptr);
-      tt = omp_get_wtime();
+      tt = SCTL_GET_WTIME();
 #pragma omp parallel for
       for (Long i = 0; i < M; i += 64) tmp[i] = (double)i;
-      tt = omp_get_wtime() - tt;
+      tt = SCTL_GET_WTIME() - tt;
       std::cout << tt << ' ';
       ::free(tmp);
     }

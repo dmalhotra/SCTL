@@ -3,14 +3,13 @@
 
 #include <ios>                   // for ios
 #include <ostream>               // for ostream
-#include <omp.h>                  // for omp_get_max_threads, omp_get_thread...
 #include <stdio.h>                // for fclose, fopen, fread, fwrite, FILE
 #include <cassert>                // for assert
 #include <cstdint>                // for uint64_t
 #include <iomanip>                // for operator<<, setiosflags, setprecision
 #include <iostream>               // for basic_ostream, char_traits, operator<<
 
-#include "sctl/common.hpp"        // for Long, SCTL_ASSERT, Integer, SCTL_AS...
+#include "sctl/common.hpp"        // for Long, SCTL_ASSERT, Integer, SCTL_AS, SCTL_GET_(...)...
 #include "sctl/matrix.hpp"        // for Matrix, operator<<
 #include "sctl/iterator.hpp"      // for Iterator, ConstIterator
 #include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
@@ -430,7 +429,7 @@ template <class ValueType> void Matrix<ValueType>::RowPerm(const Permutation<Val
     for (Long j = 0; j < d1; j++) M_[j] *= s;
   }
 
-  Integer omp_p = omp_get_max_threads();
+  Integer omp_p = SCTL_GET_MAX_THREADS();
 #pragma omp parallel for schedule(static)
   for (Integer tid = 0; tid < omp_p; tid++) {
     Long a = d1 * (tid + 0) / omp_p;
