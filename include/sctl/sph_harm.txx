@@ -252,50 +252,173 @@ template <class Real> void SphericalHarmonics<Real>::test_stokes() {
 }
 
 template <class Real> void SphericalHarmonics<Real>::test() {
-  int p = 3;
-  int dof = 1;
-  int Nt = p+1, Np = 2*p+1;
+  const Long p = 6;
+  const Long Nt = p + 1;
+  const Long Np = 2 * p + 2;
+  const auto arrange = SHCArrange::ROW_MAJOR;
+  const Long Ncoeff = (p + 1) * (p + 2);  // ROW_MAJOR coeffs for one scalar field
+  const Real tol = (sizeof(Real) <= 4 ? 1e-4 : 1e-10);
 
-  auto print_coeff = [&](Vector<Real> S) {
-    Long idx=0;
-    for (Long k=0;k<dof;k++) {
-      for (Long n=0;n<=p;n++) {
-        std::cout<<Vector<Real>(2*n+2, S.begin()+idx);
-        idx+=2*n+2;
-      }
+  auto max_rel_err = [](const Vector<Real>& a, const Vector<Real>& b) {
+    SCTL_ASSERT(a.Dim() == b.Dim());
+    Real ne = 0, nb = 0;
+    for (Long i = 0; i < a.Dim(); i++) {
+      ne = std::max<Real>(ne, fabs(a[i] - b[i]));
+      nb = std::max<Real>(nb, fabs(b[i]));
     }
-    std::cout<<'\n';
+    return ne / std::max<Real>(nb, machine_eps<Real>());
   };
 
-  Vector<Real> theta_phi;
-  { // Set theta_phi
-    Vector<Real> leg_nodes = LegendreNodes(Nt-1);
-    for (Long i=0;i<Nt;i++) {
-      for (Long j=0;j<Np;j++) {
+  auto grid_theta_phi = [&]() {
+    Vector<Real> theta_phi;
+    Vector<Real> leg_nodes = LegendreNodes(Nt - 1);
+    for (Long i = 0; i < Nt; i++) {
+      for (Long j = 0; j < Np; j++) {
         theta_phi.PushBack(acos(leg_nodes[i]));
         theta_phi.PushBack(j * 2 * const_pi<Real>() / Np);
       }
     }
+    return theta_phi;
+  };
+
+  { // Grid2SHC <-> SHC2Grid round-trip (projector idempotence on the grid).
+    Vector<Real> X(Nt * Np);
+    for (Long i = 0; i < X.Dim(); i++) X[i] = sin(Real(i + 1)) + cos(Real(2 * i + 3));
+    Vector<Real> S;
+    Grid2SHC(X, Nt, Np, p, S, arrange);
+    SCTL_ASSERT(S.Dim() == Ncoeff);
+    Vector<Real> X1;
+    SHC2Grid(S, arrange, p, Nt, Np, &X1);
+    SCTL_ASSERT(X1.Dim() == Nt * Np);
+    Vector<Real> S2;
+    Grid2SHC(X1, Nt, Np, p, S2, arrange);
+    SCTL_ASSERT(max_rel_err(S, S2) < tol);
+    Vector<Real> X2;
+    SHC2Grid(S2, arrange, p, Nt, Np, &X2);
+    SCTL_ASSERT(max_rel_err(X1, X2) < tol);
   }
 
-  int Ncoeff = (p + 1) * (p + 1);
-  Vector<Real> Xcoeff(dof * Ncoeff), Xgrid;
-  for (int i=0;i<Xcoeff.Dim();i++) Xcoeff[i]=i+1;
-
-  SHC2Grid(Xcoeff, sctl::SHCArrange::COL_MAJOR_NONZERO, p, Nt, Np, &Xgrid);
-  std::cout<<Matrix<Real>(Nt*dof, Np, Xgrid.begin())<<'\n';
-
-  {
-    Vector<Real> val;
-    SHCEval(Xcoeff, sctl::SHCArrange::COL_MAJOR_NONZERO, p, theta_phi, val);
-    Matrix<Real>(dof, val.Dim()/dof, val.begin(), false) = Matrix<Real>(val.Dim()/dof, dof, val.begin()).Transpose();
-    std::cout<<Matrix<Real>(val.Dim()/Np, Np, val.begin()) - Matrix<Real>(Nt*dof, Np, Xgrid.begin())+1e-10<<'\n';
+  { // SHC2Grid derivatives: smoke test.
+    Vector<Real> X(Nt * Np);
+    for (Long i = 0; i < X.Dim(); i++) X[i] = sin(Real(i + 1));
+    Vector<Real> S;
+    Grid2SHC(X, Nt, Np, p, S, arrange);
+    Vector<Real> Xg, Xth, Xph;
+    SHC2Grid(S, arrange, p, Nt, Np, &Xg, &Xth, &Xph);
+    SCTL_ASSERT(Xg.Dim() == Nt * Np);
+    SCTL_ASSERT(Xth.Dim() == Nt * Np);
+    SCTL_ASSERT(Xph.Dim() == Nt * Np);
   }
 
-  Grid2SHC(Xgrid, Nt, Np, p, Xcoeff, sctl::SHCArrange::ROW_MAJOR);
-  print_coeff(Xcoeff);
+  { // SHCEval at grid nodes matches SHC2Grid.
+    Vector<Real> X(Nt * Np);
+    for (Long i = 0; i < X.Dim(); i++) X[i] = sin(Real(i + 1));
+    Vector<Real> S;
+    Grid2SHC(X, Nt, Np, p, S, arrange);
+    Vector<Real> Xg;
+    SHC2Grid(S, arrange, p, Nt, Np, &Xg);
+    Vector<Real> Xeval;
+    SHCEval(S, arrange, p, grid_theta_phi(), Xeval);
+    SCTL_ASSERT(Xeval.Dim() == Xg.Dim());
+    SCTL_ASSERT(max_rel_err(Xeval, Xg) < tol);
+  }
 
-  //SphericalHarmonics<Real>::WriteVTK("test", nullptr, &Xcoeff, sctl::SHCArrange::ROW_MAJOR, p, 32);
+  { // SHC2Pole matches SHCEval at theta=0 and theta=pi.
+    Vector<Real> X(Nt * Np);
+    for (Long i = 0; i < X.Dim(); i++) X[i] = sin(Real(i + 1));
+    Vector<Real> S;
+    Grid2SHC(X, Nt, Np, p, S, arrange);
+    Vector<Real> P;
+    SHC2Pole(S, arrange, p, P);
+    SCTL_ASSERT(P.Dim() == 2);
+    Vector<Real> tp(4);
+    tp[0] = 0;                tp[1] = 0;
+    tp[2] = const_pi<Real>(); tp[3] = 0;
+    Vector<Real> Vp;
+    SHCEval(S, arrange, p, tp, Vp);
+    Vector<Real> Pref(2);
+    Pref[0] = Vp[0]; Pref[1] = Vp[1];
+    SCTL_ASSERT(max_rel_err(P, Pref) < tol);
+  }
+
+  { // Grid2VecSHC <-> VecSHC2Grid round-trip (projector idempotence on the grid).
+    Vector<Real> X(3 * Nt * Np);
+    for (Long i = 0; i < X.Dim(); i++) X[i] = sin(Real(i + 1)) + cos(Real(3 * i + 1));
+    Vector<Real> S;
+    Grid2VecSHC(X, Nt, Np, p, S, arrange);
+    SCTL_ASSERT(S.Dim() == 3 * Ncoeff);
+    Vector<Real> X1;
+    VecSHC2Grid(S, arrange, p, Nt, Np, X1);
+    SCTL_ASSERT(X1.Dim() == 3 * Nt * Np);
+    Vector<Real> S2;
+    Grid2VecSHC(X1, Nt, Np, p, S2, arrange);
+    SCTL_ASSERT(max_rel_err(S, S2) < tol);
+    Vector<Real> X2;
+    VecSHC2Grid(S2, arrange, p, Nt, Np, X2);
+    SCTL_ASSERT(max_rel_err(X1, X2) < tol);
+  }
+
+  { // VecSHCEval at grid nodes matches VecSHC2Grid.
+    Vector<Real> X(3 * Nt * Np);
+    for (Long i = 0; i < X.Dim(); i++) X[i] = sin(Real(i + 1));
+    Vector<Real> S;
+    Grid2VecSHC(X, Nt, Np, p, S, arrange);
+    Vector<Real> Xg;
+    VecSHC2Grid(S, arrange, p, Nt, Np, Xg);
+    // Xg is channels-major [3, Nt*Np]; transpose to per-point [Nt*Np, 3] for comparison.
+    const Long Ng = Nt * Np;
+    Vector<Real> Xg_pt(3 * Ng);
+    for (Long k = 0; k < 3; k++) {
+      for (Long i = 0; i < Ng; i++) Xg_pt[i * 3 + k] = Xg[k * Ng + i];
+    }
+    Vector<Real> Xeval;
+    VecSHCEval(S, arrange, p, grid_theta_phi(), Xeval);
+    SCTL_ASSERT(Xeval.Dim() == Xg_pt.Dim());
+    SCTL_ASSERT(max_rel_err(Xeval, Xg_pt) < tol);
+  }
+
+  { // LaplaceEvalSL / LaplaceEvalDL: smoke test at interior and exterior points.
+    Vector<Real> S(Ncoeff);
+    for (Long i = 0; i < S.Dim(); i++) S[i] = sin(Real(i + 1)) * Real(0.1);
+    Vector<Real> coord_in(3), coord_ex(3);
+    coord_in[0] = Real(0.3); coord_in[1] = Real(0.2); coord_in[2] = Real(0.4);
+    coord_ex[0] = Real(1.5); coord_ex[1] = Real(0.3); coord_ex[2] = Real(-0.4);
+    Vector<Real> U;
+    LaplaceEvalSL(S, arrange, p, coord_in, true, U);  SCTL_ASSERT(U.Dim() == 1);
+    LaplaceEvalDL(S, arrange, p, coord_in, true, U);  SCTL_ASSERT(U.Dim() == 1);
+    LaplaceEvalSL(S, arrange, p, coord_ex, false, U); SCTL_ASSERT(U.Dim() == 1);
+    LaplaceEvalDL(S, arrange, p, coord_ex, false, U); SCTL_ASSERT(U.Dim() == 1);
+  }
+
+  { // Stokes evaluators: smoke test (test_stokes() exercises SL/DL/KL against direct quadrature).
+    Vector<Real> S(3 * Ncoeff);
+    for (Long i = 0; i < S.Dim(); i++) S[i] = sin(Real(i + 1)) * Real(0.1);
+    Vector<Real> coord_in(3), coord_ex(3), coord_on(3), nor(3);
+    coord_in[0] = Real(0.3); coord_in[1] = Real(0.2); coord_in[2] = Real(0.4);
+    coord_ex[0] = Real(1.5); coord_ex[1] = Real(0.3); coord_ex[2] = Real(-0.4);
+    coord_on[0] = 1;         coord_on[1] = 0;         coord_on[2] = 0;
+    nor[0] = Real(0.1);      nor[1] = Real(-0.2);     nor[2] = Real(0.3);
+    Vector<Real> U;
+    StokesEvalSL(S, arrange, p, coord_in, true,  U); SCTL_ASSERT(U.Dim() == 3);
+    StokesEvalSL(S, arrange, p, coord_ex, false, U); SCTL_ASSERT(U.Dim() == 3);
+    StokesEvalDL(S, arrange, p, coord_in, true,  U); SCTL_ASSERT(U.Dim() == 3);
+    StokesEvalDL(S, arrange, p, coord_ex, false, U); SCTL_ASSERT(U.Dim() == 3);
+    StokesEvalKL(S, arrange, p, coord_in, nor, true,  U); SCTL_ASSERT(U.Dim() == 3);
+    StokesEvalKL(S, arrange, p, coord_ex, nor, false, U); SCTL_ASSERT(U.Dim() == 3);
+    StokesEvalKSelf(S, arrange, p, coord_on, true,  U); SCTL_ASSERT(U.Dim() == 3);
+    StokesEvalKSelf(S, arrange, p, coord_on, false, U); SCTL_ASSERT(U.Dim() == 3);
+  }
+
+  { // LegendreNodes/Weights: weights integrate the constant 1 to 2 on [-1, 1].
+    const Vector<Real>& nodes = LegendreNodes(Nt - 1);
+    const Vector<Real>& weights = LegendreWeights(Nt - 1);
+    SCTL_ASSERT(nodes.Dim() == Nt);
+    SCTL_ASSERT(weights.Dim() == Nt);
+    Real wsum = 0;
+    for (Long i = 0; i < Nt; i++) wsum += weights[i];
+    SCTL_ASSERT(fabs(wsum - 2) < tol);
+  }
+
   Clear();
 }
 
@@ -740,12 +863,12 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
           auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
           auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
           phiY = gr(n,m);
-          phiG = (gt(n+1,m)*A(n,m) - gt(n-1,m)*B(n,m) - imag*m*gp(n,m)) * (1/(Real)(std::max<Long>(n,1)*(n+1)));
-          phiX = (gp(n+1,m)*A(n,m) - gp(n-1,m)*B(n,m) + imag*m*gt(n,m)) * (1/(Real)(std::max<Long>(n,1)*(n+1)));
+          phiG = (gt(n+1,m)*A(n,m) - gt(n-1,m)*B(n,m) - imag*(Real)m*gp(n,m)) * (1/(Real)(std::max<Long>(n,1)*(n+1)));
+          phiX = (gp(n+1,m)*A(n,m) - gp(n-1,m)*B(n,m) + imag*(Real)m*gt(n,m)) * (1/(Real)(std::max<Long>(n,1)*(n+1)));
         }
 
-        auto phiV = (phiG * (n + 0) - phiY) * (1/(Real)(2*n + 1));
-        auto phiW = (phiG * (n + 1) + phiY) * (1/(Real)(2*n + 1));
+        auto phiV = (phiG * (Real)(n + 0) - phiY) * (1/(Real)(2*n + 1));
+        auto phiW = (phiG * (Real)(n + 1) + phiY) * (1/(Real)(2*n + 1));
 
         if (n==0) {
           phiW = 0;
@@ -2998,16 +3121,16 @@ template <class Real> void SphericalHarmonics<Real>::VecSHBasisEval(Long p0, con
           for (Long n = m; n <= p0; n++) {
             std::complex<Real> AYBY = A(n,m) * Y(n+1,m) - B(n,m) * Y(n-1,m);
 
-            std::complex<Real> Fv2r = Y(n,m) * (-n-1);
-            std::complex<Real> Fw2r = Y(n,m) * n;
+            std::complex<Real> Fv2r = Y(n,m) * (Real)(-n-1);
+            std::complex<Real> Fw2r = Y(n,m) * (Real)n;
             std::complex<Real> Fx2r = 0;
 
             std::complex<Real> Fv2t = AYBY * csc_theta[i];
             std::complex<Real> Fw2t = AYBY * csc_theta[i];
-            std::complex<Real> Fx2t = imag * m * Y(n,m) * csc_theta[i];
+            std::complex<Real> Fx2t = imag * (Real)m * Y(n,m) * csc_theta[i];
 
-            std::complex<Real> Fv2p = -imag * m * Y(n,m) * csc_theta[i];
-            std::complex<Real> Fw2p = -imag * m * Y(n,m) * csc_theta[i];
+            std::complex<Real> Fv2p = -imag * (Real)m * Y(n,m) * csc_theta[i];
+            std::complex<Real> Fw2p = -imag * (Real)m * Y(n,m) * csc_theta[i];
             std::complex<Real> Fx2p = AYBY * csc_theta[i];
 
             write_coeff(Fv2r, n, m, 0, 0);
@@ -3041,8 +3164,8 @@ template <class Real> void SphericalHarmonics<Real>::VecSHBasisEval(Long p0, con
             std::complex<Real> Fx2p = 0;
 
             if (m == 0) {
-              Fv2r = Y(n,m) * (-n-1);
-              Fw2r = Y(n,m) * n;
+              Fv2r = Y(n,m) * (Real)(-n-1);
+              Fw2r = Y(n,m) * (Real)n;
               Fx2r = 0;
             }
             if (m == 1) {
@@ -3051,10 +3174,10 @@ template <class Real> void SphericalHarmonics<Real>::VecSHBasisEval(Long p0, con
 
               Fv2t = AYBY;
               Fw2t = AYBY;
-              Fx2t = imag * m * Ycsc(n);
+              Fx2t = imag * (Real)m * Ycsc(n);
 
-              Fv2p =-imag * m * Ycsc(n);
-              Fw2p =-imag * m * Ycsc(n);
+              Fv2p =-imag * (Real)m * Ycsc(n);
+              Fw2p =-imag * (Real)m * Ycsc(n);
               Fx2p = AYBY;
             }
 
