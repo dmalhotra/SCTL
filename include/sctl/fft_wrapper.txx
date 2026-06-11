@@ -191,7 +191,7 @@ namespace sctl {
       Matrix<ValueType> vo(N / M.Dim(0), M.Dim(1), out.begin(), false);
       Matrix<ValueType>::GEMM(vo, vi, M);
     } else {
-      memcopy(buff0.begin(), in.begin(), in.Dim());
+      sctl::omp_par::memcpy(buff0.begin(), in.begin(), in.Dim());
       for (Long i = 0; i < rank; i++) {
         const Matrix<ValueType>& M = plan.M[i];
         Matrix<ValueType> vi(N / M.Dim(0), M.Dim(0), buff0.begin(), false);

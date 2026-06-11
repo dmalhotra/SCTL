@@ -14,8 +14,9 @@
 #include "sctl/common.hpp"        // for Long, SCTL_ASSERT, sctl
 #include "sctl/vector.hpp"        // for Vector, operator*, operator+, opera...
 #include "sctl/iterator.hpp"      // for Iterator, ConstIterator
-#include "sctl/iterator.txx"      // for NullIterator, memcopy, Ptr2Itr, Ptr...
+#include "sctl/iterator.txx"      // for NullIterator, Ptr2Itr, Ptr2ConstItr
 #include "sctl/mem_mgr.txx"       // for aligned_delete, aligned_new
+#include "sctl/ompUtils.txx"      // for omp_par::copy
 #include "sctl/profile.hpp"       // for Profile, ProfileCounter
 #include "sctl/profile.txx"       // for Profile::IncrementCounter
 #include "sctl/static-array.hpp"  // for StaticArray
@@ -32,7 +33,7 @@ template <class ValueType> void Vector<ValueType>::Init(Long dim_, Iterator<Valu
     if (dim > 0) {
       data_ptr = aligned_new<ValueType>(capacity);
       if (data_ != NullIterator<ValueType>()) {
-        memcopy(data_ptr, data_, dim);
+        omp_par::copy(data_, data_ + dim, data_ptr);
       }
     } else
       data_ptr = NullIterator<ValueType>();
@@ -115,7 +116,7 @@ template <class ValueType> void Vector<ValueType>::ReInit(Long dim_, Iterator<Va
     dim = dim_;
     disable_reinit_ = disable_reinit;
     if (dim && (data_ptr != NullIterator<ValueType>()) && (data_ != NullIterator<ValueType>())) {
-      memcopy(data_ptr, data_, dim);
+      omp_par::copy(data_, data_ + dim, data_ptr);
     }
   } else {
     // Slow path: free old owned storage, then re-initialize. Avoids the
@@ -211,7 +212,7 @@ template <class ValueType> void Vector<ValueType>::PushBack(const ValueType& x) 
 //#else
     Vector<ValueType> v((Long)(capacity * 1.6) + 1);
 //#endif
-    memcopy(v.data_ptr, data_ptr, dim);
+    omp_par::copy(data_ptr, data_ptr + dim, v.data_ptr);
     v.dim = dim;
     Swap(v);
 
@@ -237,14 +238,14 @@ template <class ValueType> inline const ValueType& Vector<ValueType>::operator[]
 
 template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const std::vector<ValueType>& V) {
   if (dim != (Long)V.size()) ReInit(V.size());
-  if (V.size()) memcopy(data_ptr, Ptr2ConstItr<ValueType>(&V[0], V.size()), dim);
+  if (V.size()) omp_par::copy(Ptr2ConstItr<ValueType>(&V[0], V.size()), Ptr2ConstItr<ValueType>(&V[0], V.size()) + dim, data_ptr);
   return *this;
 }
 
 template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const Vector<ValueType>& V) {
   if (this != &V) {
     if (dim != V.dim) ReInit(V.dim);
-    memcopy(data_ptr, V.data_ptr, dim);
+    omp_par::copy(V.data_ptr, V.data_ptr + dim, data_ptr);
   }
   return *this;
 }
@@ -258,7 +259,7 @@ template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(Vecto
   } else {
     // At least one side is a non-owning view. Falling back to copy semantics.
     if (dim != V.dim) ReInit(V.dim);
-    memcopy(data_ptr, V.data_ptr, dim);
+    omp_par::copy(V.data_ptr, V.data_ptr + dim, data_ptr);
   }
   return *this;
 }

@@ -4,6 +4,7 @@
 #include <ios>                    // for ios
 #include <ostream>                // for ostream
 #include <stdlib.h>               // for drand48
+#include <algorithm>              // for copy
 #include <iomanip>                // for operator<<, setiosflags, setprecision
 #include <iostream>               // for basic_ostream, operator<<, cout
 #include <initializer_list>       // for initializer_list
@@ -11,7 +12,7 @@
 #include "sctl/common.hpp"        // for Long, Integer, SCTL_UNUSED, SCTL_NA...
 #include "sctl/tensor.hpp"        // for Tensor, TensorArgExtract, operator<<
 #include "sctl/iterator.hpp"      // for Iterator, ConstIterator
-#include "sctl/iterator.txx"      // for NullIterator, memcopy, Ptr2Itr
+#include "sctl/iterator.txx"      // for NullIterator, Ptr2Itr
 #include "sctl/math_utils.hpp"    // for fabs
 #include "sctl/static-array.hpp"  // for StaticArray
 
@@ -130,7 +131,7 @@ namespace sctl {
   }
 
   template <class ValueType, bool own_data, Long... Args> Tensor<ValueType, own_data, Args...>& Tensor<ValueType, own_data, Args...>::operator=(const Tensor &M) {
-    memcopy(begin(), M.begin(), Size());
+    std::copy(M.begin(), M.begin() + Size(), begin());
     return *this;
   }
 
@@ -140,7 +141,7 @@ namespace sctl {
   }
 
   template <class ValueType, bool own_data, Long... Args> template <bool own_data_> Tensor<ValueType, own_data, Args...>& Tensor<ValueType, own_data, Args...>::operator=(const Tensor<ValueType,own_data_,Args...> &M) {
-    memcopy(begin(), M.begin(), Size());
+    std::copy(M.begin(), M.begin() + Size(), begin());
     return *this;
   }
 
@@ -303,7 +304,7 @@ namespace sctl {
   template <class ValueType, bool own_data, Long... Args> void Tensor<ValueType, own_data, Args...>::Init(Iterator<ValueType> src_iter) {
     if (own_data) {
       if (src_iter != NullIterator<ValueType>()) {
-        memcopy((Iterator<ValueType>)buff, src_iter, Size());
+        std::copy((ConstIterator<ValueType>)src_iter, (ConstIterator<ValueType>)src_iter + Size(), (Iterator<ValueType>)buff);
       }
     } else {
       if (Size()) {

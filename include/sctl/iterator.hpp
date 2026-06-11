@@ -403,17 +403,6 @@ template <class ValueType> Iterator<ValueType> Ptr2Itr(void* ptr, Long len);
 template <class ValueType> ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len);
 
 /**
- * Wrapper for memcpy. Also checks if source and destination pointers are the same.
- *
- * @tparam ValueType The type of elements to copy.
- * @param destination The iterator pointing to the destination.
- * @param source The const iterator pointing to the source.
- * @param num The number of elements to copy.
- * @return An iterator pointing to the destination after copying.
- */
-template <class ValueType> Iterator<ValueType> memcopy(Iterator<ValueType> destination, ConstIterator<ValueType> source, Long num);
-
-/**
  * Wrapper for memset.
  *
  * @tparam ValueType The type of elements to set.

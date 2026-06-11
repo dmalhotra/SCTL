@@ -17,6 +17,7 @@
 #include "sctl/math_utils.hpp"    // for fabs, sqrt
 #include "sctl/math_utils.txx"    // for machine_eps
 #include "sctl/mem_mgr.txx"       // for aligned_delete, aligned_new
+#include "sctl/ompUtils.txx"      // for omp_par::copy
 #include "sctl/permutation.hpp"   // for Permutation
 #include "sctl/profile.hpp"       // for Profile, ProfileCounter
 #include "sctl/profile.txx"       // for Profile::IncrementCounter
@@ -51,7 +52,7 @@ template <class ValueType> void Matrix<ValueType>::Init(Long dim1, Long dim2, It
     if (dim[0] * dim[1] > 0) {
       data_ptr = aligned_new<ValueType>(capacity);
       if (data_ != NullIterator<ValueType>()) {
-        memcopy(data_ptr, data_, dim[0] * dim[1]);
+        omp_par::copy(data_, data_ + dim[0] * dim[1], data_ptr);
       }
     } else
       data_ptr = NullIterator<ValueType>();
@@ -114,7 +115,7 @@ template <class ValueType> void Matrix<ValueType>::ReInit(Long dim1, Long dim2, 
     dim[0] = dim1;
     dim[1] = dim2;
     if (data_ptr != NullIterator<ValueType>() && data_ != NullIterator<ValueType>()) {
-      memcopy(data_ptr, data_, dim[0] * dim[1]);
+      omp_par::copy(data_, data_ + dim[0] * dim[1], data_ptr);
     }
   } else {
     Matrix<ValueType> tmp(dim1, dim2, data_, own_data_);
@@ -207,7 +208,7 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(Matri
   } else {
     // At least one side is a non-owning view. Falling back to copy semantics.
     if (dim[0] != M.dim[0] || dim[1] != M.dim[1]) ReInit(M.dim[0], M.dim[1]);
-    memcopy(data_ptr, M.data_ptr, dim[0] * dim[1]);
+    omp_par::copy(M.data_ptr, M.data_ptr + dim[0] * dim[1], data_ptr);
   }
   return *this;
 }
@@ -215,7 +216,7 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(Matri
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(const Matrix<ValueType>& M) {
   if (this != &M) {
     if (dim[0] != M.dim[0] || dim[1] != M.dim[1]) ReInit(M.dim[0], M.dim[1]);
-    memcopy(data_ptr, M.data_ptr, dim[0] * dim[1]);
+    omp_par::copy(M.data_ptr, M.data_ptr + dim[0] * dim[1], data_ptr);
   }
   return *this;
 }
@@ -442,7 +443,6 @@ template <class ValueType> void Matrix<ValueType>::RowPerm(const Permutation<Val
       SCTL_ASSERT_MSG(j < d0, "Matrix::RowPerm(Permutation P) ==> Invalid permutation vector P.");
 
       Iterator<ValueType> Mi = M[i];
-      Iterator<ValueType> Mj = M[j];
       std::swap<Long>(P_.perm[i], P_.perm[j]);
       for (Long k = a; k < b; k++) Mi[k]=tid;
     }

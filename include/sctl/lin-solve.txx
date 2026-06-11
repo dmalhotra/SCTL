@@ -15,6 +15,7 @@
 #include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
 #include "sctl/math_utils.hpp"    // for sqrt, fabs
 #include "sctl/matrix.hpp"        // for Matrix
+#include "sctl/ompUtils.txx"      // for omp_par::memcpy
 #include "sctl/static-array.hpp"  // for StaticArray
 #include "sctl/static-array.txx"  // for StaticArray::operator+, StaticArray...
 #include "sctl/vector.hpp"        // for Vector
@@ -107,7 +108,7 @@ namespace sctl {
       if (v.Dim() < N0) {
         const Long old = v.Dim();
         Vector<Real> v_(N0);
-        if (old > 0) memcopy(v_.begin(), (ConstIterator<Real>)v.begin(), old);
+        if (old > 0) omp_par::memcpy(v_.begin(), (ConstIterator<Real>)v.begin(), old);
         memset((Iterator<char>)v_.begin() + old * (Long)sizeof(Real), 0, (N0 - old) * (Long)sizeof(Real));
         v.Swap(v_);
       }
@@ -147,7 +148,7 @@ namespace sctl {
       if (krylov_precond) { // q_pc = M^-1 * Q_row(k)
         ScratchBuf<Real> q_pc_buf(N);
         Vector<Real> q_pc(q_pc_buf);
-        memcopy(q_pc.begin(), (ConstIterator<Real>)Qk, N);
+        omp_par::memcpy(q_pc.begin(), (ConstIterator<Real>)Qk, N);
         krylov_precond->Apply(q_pc, comm_);
         A(&q, q_pc);
       } else {
