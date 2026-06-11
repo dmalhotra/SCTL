@@ -3,10 +3,52 @@
 
 #include <iterator>         // for iterator_traits
 
-#include "sctl/common.hpp"  // for sctl
+#include "sctl/common.hpp"   // for sctl
+#include "sctl/iterator.hpp" // for Iterator, ConstIterator
 
 namespace sctl {
 namespace omp_par {
+
+/**
+ * Parallel bytewise copy over generic random-access iterators (raw pointers
+ * or sctl `Iterator` / `ConstIterator`, which are bounds-checked in MEMDEBUG).
+ * Byte-wise (memcpy) semantics require contiguous, trivially-copyable storage;
+ * value types of both iterators must match and be trivially copyable (asserted
+ * at compile time — contiguity itself cannot be checked before C++20 and is
+ * the caller's responsibility). For element-wise copy through arbitrary
+ * iterators, use `omp_par::copy` (or plain `std::copy`).
+ *
+ * The thread count is chosen by an empirical heuristic when `nthreads < 0`:
+ *   - bytes < 2 MB         → serial (`std::memcpy`)
+ *   - bytes >= 2 MB          → full `omp_get_max_threads()`
+ * Pass `nthreads > 0` to force a specific thread count; pass `1` to force serial.
+ * If called from inside an `omp parallel` region the heuristic forces serial.
+ *
+ * @tparam OutputIt random-access iterator over contiguous storage.
+ * @tparam InputIt  random-access iterator over contiguous storage.
+ * @param[out] dst destination iterator.
+ * @param[in]  src source iterator.
+ * @param[in]  n   number of elements (NOT bytes).
+ * @param[in]  nthreads explicit thread count, or -1 for the heuristic.
+ */
+template <class OutputIt, class InputIt> void memcpy(OutputIt dst, InputIt src, Long n, Integer nthreads = -1);
+
+/**
+ * Parallel element-wise copy over random-access iterators. Each chunk is
+ * dispatched to `std::copy`, so user `operator=` is invoked normally (safe for
+ * non-trivially-copyable T). Thread-count heuristic is identical to
+ * `omp_par::memcpy`, using `sizeof(value_type) * (last - first)` as the byte
+ * budget.
+ *
+ * @tparam InputIt  random-access input iterator.
+ * @tparam OutputIt random-access output iterator.
+ * @param[in]  first range begin.
+ * @param[in]  last  range end (one past last element).
+ * @param[out] dst   destination range begin.
+ * @param[in]  nthreads explicit thread count, or -1 for the heuristic.
+ * @return iterator past the last element written: `dst + (last - first)`.
+ */
+template <class InputIt, class OutputIt> OutputIt copy(InputIt first, InputIt last, OutputIt dst, Integer nthreads = -1);
 
 /**
  * Merges two sorted ranges into a single sorted range.

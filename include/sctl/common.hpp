@@ -16,6 +16,7 @@
 #define SCTL_GET_NUM_THREADS() (omp_get_num_threads())
 #define SCTL_GET_MAX_THREADS() (omp_get_max_threads())
 #define SCTL_GET_THREAD_NUM()  (omp_get_thread_num())
+#define SCTL_IN_PARALLEL()     (omp_in_parallel())
 #else
 #include <chrono>
 #define SCTL_GET_WTIME() \

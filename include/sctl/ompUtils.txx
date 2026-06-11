@@ -1,11 +1,13 @@
 #ifndef _SCTL_OMPUTILS_TXX_
 #define _SCTL_OMPUTILS_TXX_
 
-#include <algorithm>          // for lower_bound, sort, merge
+#include <algorithm>          // for lower_bound, sort, merge, copy
+#include <cstring>            // for memcpy
 #include <functional>         // for less
 #include <iterator>           // for iterator_traits
+#include <type_traits>        // for is_trivially_copyable
 
-#include "sctl/common.hpp"        // for Integer, SCTL_UNUSED, sctl
+#include "sctl/common.hpp"        // for Integer, Long, SCTL_UNUSED, sctl
 #include "sctl/ompUtils.hpp"      // for merge_sort, merge, reduce, scan
 #include "sctl/iterator.hpp"      // for Iterator
 #include "sctl/iterator.txx"      // for Ptr2Itr
@@ -13,6 +15,72 @@
 #include "sctl/scratch_pool.txx"
 
 namespace sctl {
+
+namespace omp_par_detail {
+
+  inline Integer PickThreads(Long nbytes, Integer requested) {
+    constexpr Long kFullThreadsBytes      = 2L * 1024L * 1024L;
+    if (requested > 0) return requested;
+    if (requested == 0) return 1;
+    if (nbytes < kFullThreadsBytes) return 1;
+    if (SCTL_IN_PARALLEL()) return 1;
+    return (Integer)SCTL_GET_MAX_THREADS();
+  }
+}
+
+template <class OutputIt, class InputIt> inline void omp_par::memcpy(OutputIt dst, InputIt src, Long n, Integer nthreads) {
+  using T = typename std::iterator_traits<OutputIt>::value_type;
+  using src_value_t = typename std::iterator_traits<InputIt>::value_type;
+  static_assert(std::is_same<T, typename std::remove_cv<src_value_t>::type>::value,
+                "omp_par::memcpy: source and destination value types must match");
+  static_assert(std::is_base_of<std::random_access_iterator_tag, typename std::iterator_traits<OutputIt>::iterator_category>::value &&
+                std::is_base_of<std::random_access_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>::value,
+                "omp_par::memcpy: iterators must be random-access over contiguous storage");
+  static_assert(std::is_trivially_copyable<T>::value,
+                "omp_par::memcpy: T must be trivially copyable; use omp_par::copy for arbitrary types");
+  if (n <= 0) return;
+  if ((const void*)&dst[0] == (const void*)&src[0]) return;
+
+  const Long nbytes = n * (Long)sizeof(T);
+  const Integer nt = omp_par_detail::PickThreads(nbytes, nthreads);
+
+  if (nt <= 1) {
+    std::memcpy((void*)&dst[0], (const void*)&src[0], (size_t)nbytes);
+    return;
+  }
+
+  #pragma omp parallel num_threads(nt)
+  {
+    const Integer tid = (Integer)SCTL_GET_THREAD_NUM();
+    const Integer p   = (Integer)SCTL_GET_NUM_THREADS();
+    const Long s = ((Long)tid * n) / p;
+    const Long e = ((Long)(tid + 1) * n) / p;
+    if (e > s) std::memcpy((void*)&dst[s], (const void*)&src[s], (size_t)((e - s) * (Long)sizeof(T)));
+  }
+}
+
+template <class InputIt, class OutputIt> inline OutputIt omp_par::copy(InputIt first, InputIt last, OutputIt dst, Integer nthreads) {
+  using val_t  = typename std::iterator_traits<InputIt>::value_type;
+  using diff_t = typename std::iterator_traits<InputIt>::difference_type;
+
+  const diff_t n = last - first;
+  if (n <= 0) return dst;
+
+  const Long nbytes = (Long)n * (Long)sizeof(val_t);
+  const Integer nt = omp_par_detail::PickThreads(nbytes, nthreads);
+
+  if (nt <= 1) return std::copy(first, last, dst);
+
+  #pragma omp parallel num_threads(nt)
+  {
+    const Integer tid = (Integer)SCTL_GET_THREAD_NUM();
+    const Integer p   = (Integer)SCTL_GET_NUM_THREADS();
+    const diff_t s = (diff_t)(((Long)tid * (Long)n) / p);
+    const diff_t e = (diff_t)(((Long)(tid + 1) * (Long)n) / p);
+    if (e > s) std::copy(first + s, first + e, dst + s);
+  }
+  return dst + n;
+}
 
 template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inline void omp_par::merge(ConstIter A_, ConstIter A_last, ConstIter B_, ConstIter B_last, Iter C_, Int p, StrictWeakOrdering comp) {
   typedef typename std::iterator_traits<Iter>::difference_type _DiffType;
@@ -71,7 +139,7 @@ template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inli
     _ValType split1 = split[j];
     _DiffType split_size1 = split_size[j];
 
-    j = (std::lower_bound(split_size.begin() + p * n, split_size.begin() + p * n * 2, req_size, std::less<_DiffType>()) - split_size.begin() + p * n) + p * n;
+    j = (std::lower_bound(split_size.begin() + p * n, split_size.begin() + p * n * 2, req_size, std::less<_DiffType>()) - (split_size.begin() + p * n)) + p * n;
     if (j >= 2 * p * n) j = 2 * p * n - 1;
     if (abs(split_size[j] - req_size) < abs(split_size1 - req_size)) {
       split1 = split[j];
