@@ -219,7 +219,7 @@ namespace sctl {
   inline Profile::ProfExpr operator/(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
     const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
       SCTL_ASSERT(x.size() == y.size());
-      for (Long i = 0; i < (Long)x.size(); i++) x[i] /= y[i];
+      for (Long i = 0; i < (Long)x.size(); i++) x[i] = (y[i] != 0) ? x[i] / y[i] : 0;
       return x;
     };
     return Profile::ExprBinary<decltype(op)>(u, v, op);

@@ -221,7 +221,8 @@ inline void MemoryManager::free(Iterator<char> p) const {
   static uintptr_t header_size = (uintptr_t)(sizeof(MemHead) + alignment) & ~(uintptr_t)alignment;
   SCTL_UNUSED(header_size);
 
-  MemHead& mem_head = GetMemHead(&p[0]);
+  char* user_ptr = &p[0];
+  MemHead& mem_head = GetMemHead(user_ptr);
   Long n_indx = mem_head.n_indx;
   Long n_elem = mem_head.n_elem;
   Long type_size = mem_head.type_size;
@@ -446,7 +447,7 @@ template <class ValueType> inline Iterator<ValueType> aligned_new(Long n_elem, c
   SCTL_ASSERT_MSG(A != NullIterator<ValueType>(), "memory allocation failed.");
 
   if (!std::is_trivial<ValueType>::value) {  // Call constructors
-                                          // printf("%s\n", __PRETTY_FUNCTION__);
+    // printf("%s\n", __PRETTY_FUNCTION__);
 #pragma omp parallel for schedule(static)
     for (Long i = 0; i < n_elem; i++) {
       ValueType* Ai = new (&A[i]) ValueType();
@@ -457,7 +458,7 @@ template <class ValueType> inline Iterator<ValueType> aligned_new(Long n_elem, c
 #ifdef SCTL_MEMDEBUG
     static Long random_init_val = 1;
     Iterator<char> A_ = (Iterator<char>)A;
-#pragma omp parallel for schedule(static)
+    #pragma omp parallel for schedule(static)
     for (Long i = 0; i < n_elem * (Long)sizeof(ValueType); i++) {
       A_[i] = random_init_val + i;
     }
@@ -476,9 +477,10 @@ template <class ValueType> inline void aligned_delete(Iterator<ValueType> A, con
     MemoryManager::MemHead& mem_head = MemoryManager::GetMemHead((char*)&A[0]);
 #ifdef SCTL_MEMDEBUG
     MemoryManager::CheckMemHead(mem_head);
-    SCTL_ASSERT_MSG(mem_head.type_id==typeid(ValueType).hash_code(), "pointer to aligned_delete has different type than what was used in aligned_new.");
+    SCTL_ASSERT_MSG(mem_head.type_id == typeid(ValueType).hash_code() || (mem_head.n_elem == 1 && std::has_virtual_destructor<ValueType>::value), "pointer to aligned_delete has different type than what was used in aligned_new.");
 #endif
     Long n_elem = mem_head.n_elem;
+    #pragma omp parallel for schedule(static)
     for (Long i = 0; i < n_elem; i++) {
       A[i].~ValueType();
     }

@@ -18,6 +18,16 @@ else
 	CXXFLAGS += -ldl # dladdr() in stacktrace.h (libc on glibc >=2.34, libdl otherwise)
 endif
 
+# GCC `-march=native` on Sapphire Rapids and newer Intel CPUs emits AVX-512-FP16
+# instructions (e.g. `vmovw`) that pre-2.38 binutils' system assembler can't
+# decode. Disable just the FP16 subset; the rest of -march=native is fine. If a
+# newer binutils is available (e.g. `module load binutils/2.43.1`), the user can
+# remove this flag manually. macOS clang doesn't emit avx512fp16 and doesn't
+# recognise the flag on Apple Silicon — skip there.
+ifneq "$(OS)" "Darwin"
+       CXXFLAGS += -mno-avx512fp16
+endif
+
 CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB
 
 CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling

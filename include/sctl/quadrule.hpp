@@ -10,7 +10,10 @@ namespace sctl {
   template <class ValueType> class Matrix;
 
   /**
-   * Clenshaw-Curtis quadrature rules in the interval [0,1].
+   * Fejér's first quadrature rule in the interval [0,1]. The nodes are the
+   * Chebyshev points of the first kind (roots of T_N, an open rule excluding
+   * the interval endpoints), and the weights are such that the rule exactly
+   * integrates the Chebyshev interpolant at those nodes.
    */
   template <class Real> class ChebQuadRule {
     public:

@@ -72,7 +72,7 @@ inline void print_stacktrace(FILE* out = stderr, int skip = 1) {
     // shared libraries (libc, etc.) instead of forcing the main exe.
     Dl_info dl_info{};
     const char* mod_path = nullptr;
-    void* mod_offset = addrlist[i];
+    [[maybe_unused]] void* mod_offset = addrlist[i];
     if (dladdr(addrlist[i], &dl_info) && dl_info.dli_fname) {
       mod_path = dl_info.dli_fname;
       mod_offset = (void*)((char*)addrlist[i] - (char*)dl_info.dli_fbase);
