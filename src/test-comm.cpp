@@ -300,6 +300,11 @@ void TestAlltoallv(const Comm& comm) {
 
     comm.Alltoallv(send.begin(), send_cnt.begin(), send_dsp.begin(), recv.begin(), recv_cnt.begin(), recv_dsp.begin());
     CheckAlltoallvPayload(recv, recv_cnt, recv_dsp, rank);
+
+    // Same payload via the recursive-bitonic implementation; result must match.
+    Vector<Long> recv_dense(recv_dsp[np - 1] + recv_cnt[np - 1]);
+    comm.Alltoallv_dense(send.begin(), send_cnt.begin(), send_dsp.begin(), recv_dense.begin(), recv_cnt.begin(), recv_dsp.begin());
+    CheckAlltoallvPayload(recv_dense, recv_cnt, recv_dsp, rank);
   }
 }
 

@@ -3,6 +3,7 @@
 
 #include <functional>         // for less
 #include <map>                // for multimap
+#include <memory>             // for shared_ptr
 #include <utility>            // for move
 #include <vector>             // for vector
 
@@ -57,19 +58,19 @@ class Comm {
   /**
    * Convert MPI_Comm to Comm.
    */
-  explicit Comm(const MPI_Comm mpi_comm) { Init(mpi_comm); }
+  explicit Comm(const MPI_Comm mpi_comm) : impl_(std::make_shared<Impl>()) { impl_->Init(mpi_comm); }
 #endif
 
   /**
-   * Duplicate communicator. The copy calls `MPI_Comm_dup` to obtain an
-   * independent handle.
+   * Copy constructor. Cheap reference-share of the underlying `Impl`
+   * (shared_ptr increment) — no `MPI_Comm_dup`. The original
+   * `MPI_Comm` is released only when the last copy is destroyed.
    */
   Comm(const Comm& c);
 
   /**
-   * Move constructor. Steals `c`'s `MPI_Comm` handle and pending-request
-   * pool; leaves `c` holding `MPI_COMM_NULL` and an empty pool, so its
-   * destructor is a no-op.
+   * Move constructor. Transfers the `Impl` pointer; leaves `c` empty so
+   * its destructor is a no-op.
    */
   Comm(Comm&& c) noexcept;
 
@@ -84,13 +85,13 @@ class Comm {
   [[nodiscard]] static Comm World();
 
   /**
-   * Duplicate communicator (copy assignment, via `MPI_Comm_dup`).
+   * Copy assignment. Reference-shares `c`'s underlying `Impl`. Releases
+   * the prior `Impl` (which frees its `MPI_Comm` if this was the last ref).
    */
   Comm& operator=(const Comm& c);
 
   /**
-   * Move assignment. Releases any handle/pool currently held by `*this`,
-   * then steals `c`'s; `c` is left holding `MPI_COMM_NULL`.
+   * Move assignment. Transfers `c`'s `Impl` pointer; `c` is left empty.
    */
   Comm& operator=(Comm&& c) noexcept;
 
@@ -103,7 +104,7 @@ class Comm {
   /**
    * Convert to MPI_Comm.
    */
-  [[nodiscard]] const MPI_Comm& GetMPI_Comm() const noexcept { return mpi_comm_; }
+  [[nodiscard]] const MPI_Comm& GetMPI_Comm() const noexcept { return impl_->mpi_comm_; }
 #endif
 
   /**
@@ -186,6 +187,31 @@ class Comm {
    *         is a programmer error.
    */
   template <class SType> [[nodiscard]] Request Isend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag = 0) const;
+
+  /**
+   * Non-blocking synchronous send. Semantically equivalent to `Isend` except
+   * that completion (via `Wait`) is delayed until the matching receive has
+   * been posted at the destination — i.e. always uses the rendezvous protocol,
+   * never the eager fast-path. Intended for the post-Irecvs-then-post-sends
+   * pattern, where this synchronization is already satisfied by construction
+   * and Issend's only practical effect is to bound unexpected-message-buffer
+   * pressure on the receiver and to surface mismatched-receive bugs as
+   * immediate deadlocks rather than silent buffering at scale.
+   *
+   * @tparam SType type of the send-data.
+   *
+   * @param[in] sbuf const-iterator to the send buffer.
+   *
+   * @param[in] scount number of elements to send.
+   *
+   * @param[in] dest the rank of the destination process.
+   *
+   * @param[in] tag identifier tag to be matched at receive.
+   *
+   * @return a Request handle. Same lifetime contract as Isend(): must be
+   *         passed to Wait() before going out of scope.
+   */
+  template <class SType> [[nodiscard]] Request Issend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag = 0) const;
 
   /**
    * Non-blocking receive.
@@ -320,6 +346,31 @@ class Comm {
    * @param[in] rdispls iterator to the displacements in the receive buffer.
    */
   template <class Type> void Alltoallv(ConstIterator<Type> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<Type> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;
+
+  /**
+   * All-to-all communication via recursive divide-and-conquer (bitonic
+   * split-exchange), ported from pvfmm's `par::Mpi_Alltoallv_dense`.
+   *
+   * Recursively halves the rank group and performs a single `MPI_Sendrecv`
+   * payload exchange between matched halves at each level, rearranging the
+   * combined buffer in-rank between iterations. O(log p) iterations,
+   * O(log p) intermediate buffers, O(log p · N_local) byte movement.
+   *
+   * Functionally equivalent to `Alltoallv`, but uses the hand-rolled
+   * algorithm rather than the vendor `MPI_Alltoallv`. Useful when the
+   * vendor implementation is known to be inferior at the relevant
+   * (p, message_size) shape — typically a niche case.
+   *
+   * @tparam Type trivially-copyable payload type.
+   *
+   * @param[in]  sbuf    iterator to the send buffer.
+   * @param[in]  scounts per-rank send counts (length `Size()`).
+   * @param[in]  sdispls per-rank send-buffer displacements (length `Size()`).
+   * @param[out] rbuf    iterator to the receive buffer.
+   * @param[in]  rcounts per-rank receive counts (length `Size()`).
+   * @param[in]  rdispls per-rank receive-buffer displacements (length `Size()`).
+   */
+  template <class Type> void Alltoallv_dense(ConstIterator<Type> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<Type> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;
 
   /**
    * Perform an all-reduce operation.
@@ -477,11 +528,32 @@ class Comm {
 
 #ifdef SCTL_HAVE_MPI
   /**
-   * Initialize the communicator.
-   *
-   * @param[in] mpi_comm MPI communicator.
+   * Internal reference-counted state for the duplicated `MPI_Comm` and
+   * its per-comm `MPI_Request` pool. Held via `shared_ptr<Impl>` so that
+   * `Comm` copy/assignment are O(1) and the underlying `MPI_Comm_free`
+   * fires exactly once when the last `Comm` referencing it is destroyed.
    */
-  void Init(const MPI_Comm mpi_comm);
+  struct Impl {
+    int mpi_rank_;
+    int mpi_size_;
+    int mpi_tag_ub_;
+    MPI_Comm mpi_comm_;
+    mutable std::stack<void*> req;
+
+    Impl();
+    ~Impl();
+
+    Impl(const Impl&) = delete;
+    Impl(Impl&&) = delete;
+    Impl& operator=(const Impl&) = delete;
+    Impl& operator=(Impl&&) = delete;
+
+    /**
+     * Initialize the impl by duplicating the given MPI_Comm.
+     * Collective on the input communicator.
+     */
+    void Init(MPI_Comm mpi_comm);
+  };
 
   template <class Type> static MPI_Op GetMPIOp(CommOp op);
   static void RegisterDatatype(MPI_Datatype datatype);
@@ -494,12 +566,7 @@ class Comm {
 
   void DelReq(Vector<MPI_Request>* req_ptr) const;
 
-  mutable std::stack<void*> req;
-
-  int mpi_rank_;
-  int mpi_size_;
-  int mpi_tag_ub_;
-  MPI_Comm mpi_comm_;
+  std::shared_ptr<Impl> impl_;
 
   template <class Type> class CommDatatype;
 
