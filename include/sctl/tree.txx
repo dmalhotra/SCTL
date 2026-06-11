@@ -18,12 +18,16 @@
 #include "sctl/math_utils.txx"    // for pow
 #include "sctl/morton.hpp"        // for Morton
 #include "sctl/ompUtils.txx"      // for reduce, scan, merge_sort
+#include "sctl/scratch_pool.hpp"  // for ScratchBuf
+#include "sctl/scratch_pool.txx"
 #include "sctl/static-array.hpp"  // for StaticArray
 #include "sctl/static-array.txx"  // for StaticArray::operator[], StaticArra...
 #include "sctl/vector.hpp"        // for Vector
 #include "sctl/vector.txx"        // for Vector::operator[], Vector::begin
 #include "sctl/vtudata.hpp"       // for VTUData
 #include "sctl/vtudata.txx"       // for VTUData::WriteVTK
+#include "sctl/matrix.hpp"
+#include "sctl/matrix.txx"
 
 namespace sctl {
 
@@ -146,7 +150,7 @@ namespace sctl {
       end_idx_orig = 0;
     }
 
-    auto coarsest_ancestor_mid = [](const Morton<DIM>& m0) {
+    const auto coarsest_ancestor_mid = [](const Morton<DIM>& m0) {
       Morton<DIM> md;
       Integer d0 = m0.Depth();
       for (Integer d = 0; d <= d0; d++) {
@@ -170,18 +174,19 @@ namespace sctl {
     };
 
     Morton<DIM> pt_mid0;
-    Vector<Morton<DIM>> pt_mid;
+    Vector<MortonCode<DIM>> pt_mid;
     { // Construct sorted pt_mid
       Long Npt = coord.Dim() / DIM;
       pt_mid.ReInit(Npt);
+      #pragma omp parallel for schedule(static)
       for (Long i = 0; i < Npt; i++) {
-        pt_mid[i] = Morton<DIM>(coord.begin() + i*DIM);
+        pt_mid[i] = MortonCode<DIM>(&coord[i*DIM]);
       }
-      Vector<Morton<DIM>> sorted_mid;
+      Vector<MortonCode<DIM>> sorted_mid;
       comm.HyperQuickSort(pt_mid, sorted_mid);
       pt_mid.Swap(sorted_mid);
       SCTL_ASSERT(pt_mid.Dim());
-      pt_mid0 = pt_mid[0];
+      pt_mid0 = Morton<DIM>{pt_mid[0], Morton<DIM>::MAX_DEPTH};
     }
     { // Update M = global_min(pt_mid.Dim(), M)
       Long M0, M1, Npt = pt_mid.Dim();
@@ -195,35 +200,94 @@ namespace sctl {
       Long send_size1 = (rank  > 0 ? M : 0);
       Long recv_size0 = (rank  > 0 ? M : 0);
       Long recv_size1 = (rank+1<np ? M : 0);
-      Vector<Morton<DIM>> pt_mid_(recv_size0 + pt_mid.Dim() + recv_size1);
-      memcopy(pt_mid_.begin()+recv_size0, pt_mid.begin(), pt_mid.Dim());
+      Vector<MortonCode<DIM>> pt_mid_(recv_size0 + pt_mid.Dim() + recv_size1);
+      { // Set pt_mid_ <-- pt_mid
+        auto dest = pt_mid_.begin() + recv_size0;
+        #pragma omp parallel for schedule(static)
+        for (Long i = 0; i < pt_mid.Dim(); i++) dest[i] = pt_mid[i];
+      }
 
       auto recv_req0 = comm.Irecv(pt_mid_.begin(), recv_size0, (rank+np-1)%np, 0);
       auto recv_req1 = comm.Irecv(pt_mid_.begin() + recv_size0 + pt_mid.Dim(), recv_size1, (rank+1)%np, 1);
-      auto send_req0 = comm.Isend(pt_mid .begin() + pt_mid.Dim() - send_size0, send_size0, (rank+1)%np, 0);
-      auto send_req1 = comm.Isend(pt_mid .begin(), send_size1, (rank+np-1)%np, 1);
+      auto send_req0 = comm.Issend(pt_mid.begin() + pt_mid.Dim() - send_size0, send_size0, (rank+1)%np, 0);
+      auto send_req1 = comm.Issend(pt_mid.begin(), send_size1, (rank+np-1)%np, 1);
       comm.Wait(std::move(recv_req0));
       comm.Wait(std::move(recv_req1));
       comm.Wait(std::move(send_req0));
       comm.Wait(std::move(send_req1));
       pt_mid.Swap(pt_mid_);
     }
-    { // Build linear MortonID tree from pt_mid
-      node_mid.ReInit(0);
-      Long idx = 0;
-      Morton<DIM> m0;
-      const Morton<DIM> mend = Morton<DIM>().Next();
-      while (m0 < mend) {
-        Integer d = m0.Depth();
-        Morton<DIM> m1 = (idx + M < pt_mid.Dim() ? pt_mid[idx+M] : Morton<DIM>().Next());
-        while (d < Morton<DIM>::MAX_DEPTH && m0.Ancestor(d) == m1.Ancestor(d)) {
-          node_mid.PushBack(m0.Ancestor(d));
-          d++;
+    { // Build linear MortonID tree from pt_mid (chunked parallel walk)
+      const Long N = pt_mid.Dim();
+
+      // Cap threads so each chunk has well over M particles (so begin + M stays in-bounds).
+      const Integer max_threads = SCTL_GET_MAX_THREADS();
+      const Long    min_chunk   = std::max<Long>(4 * M + 1, 1024);
+      const Integer nthreads    = std::clamp<Integer>(static_cast<Integer>(N / min_chunk), 1, max_threads);
+
+      // Upper bound: ~(MAX_DEPTH+1) nodes/leaf, chunk_size/M leaves/chunk, 4x slack.
+      const Long chunk_size_max = (N + nthreads - 1) / nthreads;
+      const Long max_emits      = 4 * chunk_size_max * (Morton<DIM>::MAX_DEPTH + 1) / std::max<Long>(1, M) + 4 * Morton<DIM>::MAX_DEPTH + 16;
+
+      struct alignas(64) PaddedLong { Long v; char pad[64 - sizeof(Long)]; };  // avoid false sharing
+      ScratchBuf<PaddedLong> local_sizes(nthreads);
+      ScratchBuf<Long>       offsets(nthreads);
+
+      #pragma omp parallel num_threads(nthreads)
+      {
+        const Integer tid      = SCTL_GET_THREAD_NUM();
+        const Long    begin_t  = (N *  tid     ) / nthreads;
+        const Long    end_t    = (N * (tid + 1)) / nthreads;
+        const bool    is_first = (tid == 0);
+        const bool    is_last  = (tid == nthreads - 1);
+
+        // Split-leaf anchor at chunk boundary: smallest depth d where pt[base].Ancestor(d)
+        // and pt[base+M].Ancestor(d) differ; returns pt[base+M].Ancestor(d).
+        auto split_anchor = [&pt_mid, &M](Long base) -> Morton<DIM> {
+          Integer d = 0;
+          while (d < Morton<DIM>::MAX_DEPTH && pt_mid[base].Ancestor(d) == pt_mid[base+M].Ancestor(d)) ++d;
+          return pt_mid[base+M].Ancestor(d);
+        };
+
+        const Morton<DIM> start_anchor = is_first ? Morton<DIM>{}        : split_anchor(begin_t);
+        const Morton<DIM> end_anchor   = is_last  ? Morton<DIM>{}.Next() : split_anchor(end_t);
+        const Long idx_start = is_first ? 0 : std::lower_bound(pt_mid.begin() + begin_t, pt_mid.begin() + begin_t + M, start_anchor.mid) - pt_mid.begin();
+        const Long idx_end   = is_last  ? N : std::lower_bound(pt_mid.begin() + end_t,   pt_mid.begin() + end_t   + M, end_anchor.mid)   - pt_mid.begin();
+
+        // NUMA-local per-thread scratch (first-touched on this thread's node).
+        ScratchBuf<Morton<DIM>> buf(max_emits);
+        Long count = 0;
+
+        Morton<DIM> m0     = start_anchor;
+        Long        pt_idx = idx_start;
+        while (pt_idx < idx_end - M) {
+          const Morton<DIM> m_ = split_anchor(pt_idx);
+          while (m0 != m_) {
+            buf[count++] = m0;
+            if (m0.isAncestor(m_)) m0 = m0.DFD(static_cast<uint8_t>(m0.Depth() + 1));
+            else                   m0 = m0.Next();
+          }
+          m0     = m_;
+          pt_idx = std::lower_bound(pt_mid.begin() + pt_idx, pt_mid.begin() + pt_idx + M, m0.mid) - pt_mid.begin();
         }
-        m0 = m0.Ancestor(d);
-        node_mid.PushBack(m0);
-        m0 = m0.Next();
-        idx = std::lower_bound(pt_mid.begin(), pt_mid.end(), m0) - pt_mid.begin();
+        while (m0 != end_anchor) {  // tail to end_anchor / sentinel
+          buf[count++] = m0;
+          if (m0.isAncestor(end_anchor)) m0 = m0.DFD(static_cast<uint8_t>(m0.Depth() + 1));
+          else                           m0 = m0.Next();
+        }
+
+        local_sizes[tid].v = count;
+
+        #pragma omp barrier
+        #pragma omp single
+        {
+          Long total = 0;
+          for (Integer s = 0; s < nthreads; ++s) { offsets[s] = total; total += local_sizes[s].v; }
+          node_mid.ReInit(total);
+        }
+
+        Morton<DIM>* out_ptr = &node_mid[offsets[tid]];
+        for (Long i = 0; i < count; ++i) out_ptr[i] = buf[i];
       }
     }
     { // Set mins
@@ -389,6 +453,7 @@ namespace sctl {
       Morton<DIM> m1 = (rank+1<np ? mins[rank+1] : Morton<DIM>().Next());
       Long Nnodes = node_mid.Dim();
       node_attr.ReInit(Nnodes);
+      #pragma omp parallel for schedule(static)
       for (Long i = 0; i < Nnodes; i++) {
         node_attr[i].Leaf = !(i+1<Nnodes && node_mid[i].isAncestor(node_mid[i+1]));
         node_attr[i].Ghost = (node_mid[i] < m0 || node_mid[i] >= m1);
@@ -400,36 +465,132 @@ namespace sctl {
       const Long Nnodes = node_mid.Dim();
       node_lst.ReInit(Nnodes);
 
-      Vector<Long> ancestors(Morton<DIM>::MAX_DEPTH+1);
-      Vector<Long> child_cnt(Morton<DIM>::MAX_DEPTH+1);
-      #pragma omp parallel for schedule(static)
-      for (Long i = 0; i < Nnodes; i++) {
-        node_lst[i].p2n = -1;
-        node_lst[i].parent = -1;
-        for (Integer j = 0; j < MAX_CHILD; j++) node_lst[i].child[j] = -1;
-        for (Integer j = 0; j < MAX_NBRS; j++) node_lst[i].nbr[j] = -1;
-      }
-      for (Long i = 0; i < Nnodes; i++) { // Set node_lst // TODO; parallelize
-        const Integer depth = node_mid[i].Depth();
-        ancestors[depth] = i;
-        child_cnt[depth] = 0;
-        if (depth) {
-          const Long p = ancestors[depth-1];
-          Long& c = child_cnt[depth-1];
-          node_lst[p].child[c] = i;
-          node_lst[i].parent = p;
-          node_lst[i].p2n = c;
-          c++;
+      #pragma omp parallel
+      { // Initialize node_lst (parent, child, p2n) for each thread's chunk
+        const Integer tid = SCTL_GET_THREAD_NUM();
+        const Integer nthreads = SCTL_GET_NUM_THREADS();
+        const auto i_begin = (Nnodes *  tid     ) / nthreads;
+        const auto i_end   = (Nnodes * (tid + 1)) / nthreads;
+
+        ScratchBuf<Long> ancestors(Morton<DIM>::MAX_DEPTH+1);
+        ScratchBuf<Long> child_cnt(Morton<DIM>::MAX_DEPTH+1);
+        const auto& n0 = node_mid[i_begin];
+        for (Long depth = 0; depth < n0.Depth(); depth++) {
+          const auto ancestor = n0.Ancestor(depth);
+          const auto ancestor_children = ancestor.Children();
+          ancestors[depth] = std::lower_bound(node_mid.begin(), node_mid.end(), ancestor) - node_mid.begin();
+          child_cnt[depth] = std::lower_bound(ancestor_children.begin(), ancestor_children.end(), n0.Ancestor(depth+1)) - ancestor_children.begin();
+          if (depth < n0.Depth()-1) child_cnt[depth]++;
+        }
+
+        for (Long i = i_begin; i < i_end; i++) {
+          node_lst[i].p2n = -1;
+          node_lst[i].parent = -1;
+          for (Integer j = 0; j < MAX_CHILD; j++) node_lst[i].child[j] = -1;
+        }
+        #pragma omp barrier
+
+        for (Long i = i_begin; i < i_end; i++) { // Set node_lst
+          const Integer depth = node_mid[i].Depth();
+          ancestors[depth] = i;
+          child_cnt[depth] = 0;
+          if (depth) {
+            const Long p = ancestors[depth-1];
+            Long& c = child_cnt[depth-1];
+            node_lst[p].child[c] = i;
+            node_lst[i].parent = p;
+            node_lst[i].p2n = c;
+            if (0) { // for debugging
+              const auto parent_mid = node_mid[i].Ancestor(depth-1);
+              const auto sibling_nds = parent_mid.Children();
+              SCTL_ASSERT(sibling_nds[node_lst[i].p2n] == node_mid[i]);
+              SCTL_ASSERT(node_lst[i].parent == std::lower_bound(node_mid.begin(), node_mid.end(), parent_mid) - node_mid.begin());
+              SCTL_ASSERT(node_lst[p].child[c] == std::lower_bound(node_mid.begin(), node_mid.end(), node_mid[i]) - node_mid.begin());
+              SCTL_ASSERT(node_lst[i].p2n == std::lower_bound(sibling_nds.begin(), sibling_nds.end(), node_mid[i]) - sibling_nds.begin());
+            }
+            c++;
+          }
         }
       }
-      Vector<Morton<DIM>> nlst;
-      for (Long i = 0; i < Nnodes; i++) { // Set nbr-list // TODO: optimize this
-        node_mid[i].NbrList(nlst, node_mid[i].Depth(), periodic);
-        for (Long k = 0; k < nlst.Dim(); k++) {
-          if (nlst[k].Depth() != Morton<DIM>::INVALID_DEPTH) {
-            Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), nlst[k]) - node_mid.begin();
-            if (idx < node_mid.Dim() && node_mid[idx] == nlst[k]) node_lst[i].nbr[k] = idx;
+
+      { // Set neighbor list
+        { // Set root neighbors
+          const auto& n0 = node_mid[0];
+          const auto nlst = n0.NbrList(n0.Depth(), periodic);
+          static_assert(nlst.size() == MAX_NBRS);
+          for (Long k = 0; k < MAX_NBRS; k++) {
+            if (nlst[k].Depth() != Morton<DIM>::INVALID_DEPTH) node_lst[0].nbr[k] = 0;
+            else node_lst[0].nbr[k] = -1;
           }
+        }
+
+        const auto set_nbrs = [this](Long idx) {
+          struct NbrPath {
+            Integer p_nbr, p_nbr_child;
+          };
+          static const auto nbr_path = []() {
+            const auto parent = (Morton<DIM>{}).Children()[0].Children()[MAX_CHILD-1];
+            const auto parent_nbr_lst = parent.NbrList(parent.Depth(), false); // interior node, so periodicity doesn't matter
+
+            Matrix<NbrPath> nbr_path(MAX_CHILD, MAX_NBRS);
+            for (Integer p2n = 0; p2n < MAX_CHILD; p2n++) {
+              const auto n0 = parent.Children()[p2n];
+              const auto nlst = n0.NbrList(n0.Depth(), false);
+              for (Integer nbr_idx = 0; nbr_idx < MAX_NBRS; nbr_idx++) {
+                const auto& nbr = nlst[nbr_idx];
+
+                for (Integer p_nbr = 0; p_nbr < (Integer)parent_nbr_lst.size(); p_nbr++) {
+                  if (parent_nbr_lst[p_nbr].isAncestor(nbr)) {
+                    const auto parent_nbr_child_lst = parent_nbr_lst[p_nbr].Children();
+                    nbr_path[p2n][nbr_idx].p_nbr = p_nbr;
+                    for (Integer p_nbr_child = 0; p_nbr_child < (Integer)parent_nbr_child_lst.size(); p_nbr_child++) {
+                      if (nbr == parent_nbr_child_lst[p_nbr_child]) {
+                        nbr_path[p2n][nbr_idx].p_nbr_child = p_nbr_child;
+                        break;
+                      }
+                    }
+                    break;
+                  }
+                }
+
+              }
+            }
+            return nbr_path;
+          }();
+
+          const auto& n0_depth = node_mid[idx].Depth();
+          SCTL_ASSERT(n0_depth != Morton<DIM>::INVALID_DEPTH);
+          if (n0_depth == 0) return;
+
+          auto& n0_lsts = node_lst[idx];
+          SCTL_ASSERT(n0_lsts.parent >= 0);
+
+          for (Integer nbd_idx = 0; nbd_idx < MAX_NBRS; nbd_idx++) {
+            const NbrPath& path = nbr_path[n0_lsts.p2n][nbd_idx];
+            const Long parent_nbr_idx = node_lst[n0_lsts.parent].nbr[path.p_nbr];
+            if (parent_nbr_idx >= 0) n0_lsts.nbr[nbd_idx] = node_lst[parent_nbr_idx].child[path.p_nbr_child];
+            else n0_lsts.nbr[nbd_idx] = -1;
+          }
+        };
+
+        const Integer nthreads = SCTL_GET_MAX_THREADS();
+        for (Integer tid = 0; tid < nthreads; tid++) { // Initialize neighbor list for the first node (and ancestors) in each thread's chunk
+          const Long idx0 = (Nnodes * tid) / nthreads;
+          ScratchBuf<Long> ancestors(node_mid[idx0].Depth()+1);
+          for (Long idx = idx0; node_mid[idx].Depth() > 0; idx = node_lst[idx].parent) {
+            ancestors[node_mid[idx].Depth()] = idx;
+          }
+          for (Integer d = 1; d < node_mid[idx0].Depth(); d++) {
+            set_nbrs(ancestors[d]);
+          }
+        }
+
+        #pragma omp parallel num_threads(nthreads)
+        { // Set neighbor list for the rest of the nodes in each thread's chunk
+          const Integer tid = SCTL_GET_THREAD_NUM();
+          const auto i_begin = (Nnodes *  tid     ) / nthreads;
+          const auto i_end   = (Nnodes * (tid + 1)) / nthreads;
+          for (Long i = i_begin; i < i_end; i++) set_nbrs(i);
         }
       }
     }
@@ -777,7 +938,7 @@ namespace sctl {
         Long Ns = (Nsplit ? recv_data_dsp[Nsplit-1] + recv_data_cnt[Nsplit-1] : 0) * dof;
         if (N0 != Ns || recv_buff.Dim() != N0+data.Dim()-N1) { // resize data and preserve non-ghost data
           Vector<char> data_new((recv_buff.Dim() + N1-N0) * sizeof(ValueType));
-          memcopy(data_new.begin() + Ns * sizeof(ValueType), data_->begin() + N0 * sizeof(ValueType), (N1-N0) * sizeof(ValueType));
+          omp_par::memcpy(data_new.begin() + Ns * sizeof(ValueType), data_->begin() + N0 * sizeof(ValueType), (N1-N0) * sizeof(ValueType));
           data_->Swap(data_new);
           data.ReInit(data_->Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->begin(), false);
         }
@@ -790,8 +951,8 @@ namespace sctl {
           cnt[idx] = recv_data_cnt[i];
         }
 
-        memcopy(data.begin(), recv_buff.begin(), Ns);
-        memcopy(data.begin()+data.Dim()+Ns-recv_buff.Dim(), recv_buff.begin()+Ns, recv_buff.Dim()-Ns);
+        omp_par::memcpy(data.begin(), recv_buff.begin(), Ns);
+        omp_par::memcpy(data.begin()+data.Dim()+Ns-recv_buff.Dim(), recv_buff.begin()+Ns, recv_buff.Dim()-Ns);
       }
     }
   }
