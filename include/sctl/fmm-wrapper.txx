@@ -601,13 +601,13 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
 
         Long send_cnt = X.Dim(), recv_cnt = 0;
         auto recv_req = comm_.Irecv(     Ptr2Itr<Long>(&recv_cnt,1), 1, recv_partner, offset);
-        auto send_req = comm_.Isend(Ptr2ConstItr<Long>(&send_cnt,1), 1, send_partner, offset);
+        auto send_req = comm_.Issend(Ptr2ConstItr<Long>(&send_cnt,1), 1, send_partner, offset);
         comm_.Wait(std::move(recv_req));
         comm_.Wait(std::move(send_req));
 
         X_.ReInit(recv_cnt);
         recv_req = comm_.Irecv(X_.begin(), recv_cnt, recv_partner, offset);
-        send_req = comm_.Isend(X .begin(), send_cnt, send_partner, offset);
+        send_req = comm_.Issend(X.begin(), send_cnt, send_partner, offset);
         comm_.Wait(std::move(recv_req));
         comm_.Wait(std::move(send_req));
       };
@@ -897,7 +897,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
         pvfmm_ker_s2t.k_l2t = &trg_data.pvfmm_ker_l2t;
         pvfmm_ker_s2t.k_s2m = &src_data.pvfmm_ker_s2m;
         pvfmm_ker_s2t.k_s2l = &src_data.pvfmm_ker_s2l;
-        fmm_ctx.Initialize(mult_order, comm_.GetMPI_Comm(), &pvfmm_ker_s2t);
+        fmm_ctx.Initialize(mult_order, comm_, &pvfmm_ker_s2t);
         s2t_data.setup_ker = false;
         s2t_data.setup_tree = true;
       }
@@ -988,7 +988,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
           case Periodicity::XYZ:  pvfmm_bc = pvfmm::BoundaryType::PXYZ; break;
           default: SCTL_ASSERT_MSG(false, "Periodicity type not supported by PVFMM.");
         }
-        tree_ptr = PtFMM_CreateTree(sl_coord_, sl_den_, dl_coord_, dl_den_, trg_coord_, comm_.GetMPI_Comm(), max_pts, pvfmm_bc);
+        tree_ptr = PtFMM_CreateTree(sl_coord_, sl_den_, dl_coord_, dl_den_, trg_coord_, comm_, max_pts, pvfmm_bc);
         tree_ptr->SetupFMM(&fmm_ctx);
         s2t_data.setup_tree = false;
       } else {
