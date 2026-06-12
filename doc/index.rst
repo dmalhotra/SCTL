@@ -95,7 +95,7 @@ The following list outlines the primary features and capabilities provided by th
   - :ref:`SDC (Spectral Deferred Correction) <tutorial-sdc>`: High-order solver for ordinary differential equations.
   - :ref:`GMRES solver, Krylov preconditioner <tutorial-gmres>`: Distributed memory GMRES solver.
   - :ref:`LagrangeInterp <tutorial-lagrange-interp>`: Polynomial interpolation and differentiation.
-  - :ref:`ChebQuadRule, LegQuadRule <quadrule_hpp>`: Clenshaw-Curtis and Gauss-Legendre quadrature rules.
+  - :ref:`ChebQuadRule, LegQuadRule <quadrule_hpp>`: Fejér (first rule) and Gauss-Legendre quadrature rules.
   - :ref:`InterpQuadRule <tutorial-interp-quadrule>`: Generating special quadrature rules.
   - :ref:`Tree, PtTree <tutorial-tree>`, :ref:`Morton <morton_hpp>`: Morton order based N-dimensional parallel tree structure.
 

@@ -4,7 +4,7 @@ quadrule.hpp
 ============
 
 This header file provides various classes and methods for different types of quadrature rules,
-including Clenshaw-Curtis, Gauss-Legendre, and generalized Chebyshev quadrature rules.
+including Fejér (first rule), Gauss-Legendre, and generalized Chebyshev quadrature rules.
 
 Classes and Types
 -----------------

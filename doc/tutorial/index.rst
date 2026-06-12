@@ -27,7 +27,7 @@ Numerical Methods
    Generalized Chebyshev Quadrature <interp-quadrule>
    Tree, PtTree <tree>
 
-.. TODO: Gauss-Legendre, Clenshaw-Curtis Quadrature (quadrule)
+.. TODO: Gauss-Legendre, Fejér (first rule) Quadrature (quadrule)
 
 Spectral Methods
 ----------------
