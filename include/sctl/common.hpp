@@ -24,6 +24,7 @@
 #define SCTL_GET_NUM_THREADS() (1)
 #define SCTL_GET_MAX_THREADS() (1)
 #define SCTL_GET_THREAD_NUM()  (0)
+#define SCTL_IN_PARALLEL()     (0)
 #endif
 
 //#ifndef SCTL_NAMESPACE
