@@ -573,15 +573,18 @@ namespace sctl {
           }
         };
 
+        constexpr Integer stride = Morton<DIM>::MAX_DEPTH+1;
         const Integer nthreads = SCTL_GET_MAX_THREADS();
+        ScratchBuf<Long> ancestors(nthreads * stride);
         for (Integer tid = 0; tid < nthreads; tid++) { // Initialize neighbor list for the first node (and ancestors) in each thread's chunk
           const Long idx0 = (Nnodes * tid) / nthreads;
-          ScratchBuf<Long> ancestors(node_mid[idx0].Depth()+1);
+          for (Integer d = 0; d < stride; d++) ancestors[tid*stride + d] = -1;
           for (Long idx = idx0; node_mid[idx].Depth() > 0; idx = node_lst[idx].parent) {
-            ancestors[node_mid[idx].Depth()] = idx;
+            ancestors[tid*stride + node_mid[idx].Depth()] = idx;
           }
           for (Integer d = 1; d < node_mid[idx0].Depth(); d++) {
-            set_nbrs(ancestors[d]);
+            if (tid > 0 && ancestors[tid*stride + d] == ancestors[(tid-1)*stride + d]) continue;
+            set_nbrs(ancestors[tid*stride + d]);
           }
         }
 
@@ -590,7 +593,10 @@ namespace sctl {
           const Integer tid = SCTL_GET_THREAD_NUM();
           const auto i_begin = (Nnodes *  tid     ) / nthreads;
           const auto i_end   = (Nnodes * (tid + 1)) / nthreads;
-          for (Long i = i_begin; i < i_end; i++) set_nbrs(i);
+          for (Long i = i_begin; i < i_end; i++) {
+            if (tid+1 < nthreads && ancestors[(tid+1)*stride + node_mid[i].Depth()] == i) continue;
+            set_nbrs(i);
+          }
         }
       }
     }
