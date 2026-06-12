@@ -70,6 +70,25 @@ INCDIR = ./include
 TARGET_BIN = \
        $(BINDIR)/test \
        $(BINDIR)/test-comm \
+       $(BINDIR)/test-boundary_integral \
+       $(BINDIR)/test-cheb_utils \
+       $(BINDIR)/test-fft-fallback \
+       $(BINDIR)/test-generic-kernel \
+       $(BINDIR)/test-intrin-wrapper \
+       $(BINDIR)/test-iterator \
+       $(BINDIR)/test-kernel_functions \
+       $(BINDIR)/test-lagrange-interp \
+       $(BINDIR)/test-mat_utils \
+       $(BINDIR)/test-math_utils \
+       $(BINDIR)/test-matrix \
+       $(BINDIR)/test-mem_mgr \
+       $(BINDIR)/test-morton \
+       $(BINDIR)/test-ompUtils \
+       $(BINDIR)/test-permutation \
+       $(BINDIR)/test-profile \
+       $(BINDIR)/test-static-array \
+       $(BINDIR)/test-vector \
+       $(BINDIR)/test-vtudata \
        $(BINDIR)/test-fft \
        $(BINDIR)/test-fmm \
        $(BINDIR)/test-gmres \
@@ -101,6 +120,25 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 
 test: $(TARGET_BIN)
 	./$(BINDIR)/test
+	./$(BINDIR)/test-boundary_integral
+	./$(BINDIR)/test-cheb_utils
+	./$(BINDIR)/test-fft-fallback
+	./$(BINDIR)/test-generic-kernel
+	./$(BINDIR)/test-intrin-wrapper
+	./$(BINDIR)/test-iterator
+	./$(BINDIR)/test-kernel_functions
+	./$(BINDIR)/test-lagrange-interp
+	./$(BINDIR)/test-mat_utils
+	./$(BINDIR)/test-math_utils
+	./$(BINDIR)/test-matrix
+	./$(BINDIR)/test-mem_mgr
+	./$(BINDIR)/test-morton
+	./$(BINDIR)/test-ompUtils
+	./$(BINDIR)/test-permutation
+	./$(BINDIR)/test-profile
+	./$(BINDIR)/test-static-array
+	./$(BINDIR)/test-vector
+	./$(BINDIR)/test-vtudata
 	./$(BINDIR)/test-fft
 	./$(BINDIR)/test-fmm
 	./$(BINDIR)/test-gmres
