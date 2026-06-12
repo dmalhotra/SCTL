@@ -1,7 +1,5 @@
-BasedOnStyle: LLVM
-ContinuationIndentWidth: 8
-
 BasedOnStyle: Google
+ContinuationIndentWidth: 8
 AccessModifierOffset: -1
 AlignEscapedNewlinesLeft: true
 AlignTrailingComments: true
