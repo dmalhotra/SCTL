@@ -949,33 +949,28 @@ template <class Type> void Comm::Alltoallv_dense(ConstIterator<Type> sbuf, Const
   // the original sender at each rank.
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Alltoallv_dense");
-  const Integer np  = impl_->mpi_size_;
-  const Integer pid = impl_->mpi_rank_;
-  // Per-block header: { blk_size_bytes, src_pid }. Both int; mirrors parUtils
-  // wire format. Per-rank message size must therefore fit in int.
-  constexpr Long kHeaderBytes = 2 * (Long)sizeof(int);
+  const Integer np  = Size();
+  const Integer pid = Rank();
+  // Per-block header: { blk_size_bytes, src_pid }. Both Long.
+  constexpr Long kHeaderBytes = 2 * (Long)sizeof(Long);
 
   // Initial packing into sbuff: for each destination i, a (header + payload) block.
-  Vector<int>  s_cnt(np);
-  Vector<int>  sdisp(np);
+  Vector<Long> s_cnt(np);
+  Vector<Long> sdisp(np);
   #pragma omp parallel for schedule(static)
   for (Integer i = 0; i < np; i++) {
-    const Long bytes = scounts[i] * (Long)sizeof(Type) + kHeaderBytes;
-    SCTL_ASSERT_MSG(bytes <= (Long)std::numeric_limits<int>::max(),
-                    "Comm::Alltoallv_dense: per-rank message exceeds int range");
-    s_cnt[i] = (int)bytes;
+    s_cnt[i] = scounts[i] * (Long)sizeof(Type) + kHeaderBytes;
   }
   sdisp[0] = 0;
   omp_par::scan(s_cnt.begin(), sdisp.begin(), np);
-  Long total_bytes = (Long)sdisp[np - 1] + (Long)s_cnt[np - 1];
+  const Long total_bytes = sdisp[np - 1] + s_cnt[np - 1];
 
   Vector<char> sbuff(total_bytes);
   #pragma omp parallel for schedule(static)
   for (Integer i = 0; i < np; i++) {
     Iterator<char> block = sbuff.begin() + sdisp[i];
-    int* hdr = reinterpret_cast<int*>(&block[0]);
-    hdr[0] = s_cnt[i];
-    hdr[1] = (int)pid;
+    const Long hdr[2] = {s_cnt[i], (Long)pid};
+    std::memcpy(&block[0], hdr, kHeaderBytes);
     if (scounts[i] > 0) {
       std::memcpy(&block[kHeaderBytes], &sbuf[sdispls[i]], (size_t)(scounts[i] * (Long)sizeof(Type)));
     }
@@ -995,60 +990,56 @@ template <class Type> void Comm::Alltoallv_dense(ConstIterator<Type> sbuf, Const
     SCTL_ASSERT(partner >= range[0]);
     const bool extra_partner = (((range[1] - range[0]) % 2 == 0) && (range[1] == pid));
 
-    Iterator<int> s_lengths = s_cnt.begin() + (cmp_range[0] - range[0]);
-    Vector<int> s_len_ext(cmp_np);
-    Vector<int> r_cnt(new_np);
-    Vector<int> r_cnt_ext(new_np);
+    Iterator<Long> s_lengths = s_cnt.begin() + (cmp_range[0] - range[0]);
+    Vector<Long> s_len_ext(cmp_np);
+    Vector<Long> r_cnt(new_np);
+    Vector<Long> r_cnt_ext(new_np);
     for (Integer i = 0; i < cmp_np; i++) s_len_ext[i] = 0;
     for (Integer i = 0; i < new_np; i++) { r_cnt[i] = 0; r_cnt_ext[i] = 0; }
 
-    MPI_Status status;
-    MPI_Sendrecv(&s_lengths[0],  comm_detail::MPIAsInt(cmp_np), MPI_INT, partner, 0,
-                 &r_cnt[0],      comm_detail::MPIAsInt(new_np), MPI_INT, partner, 0,
-                 impl_->mpi_comm_, &status);
+    {  // Sendrecv block-length headers.
+      Request recv_req = Irecv(r_cnt.begin(), new_np, partner, 0);
+      Request send_req = Issend<Long>(s_lengths, cmp_np, partner, 0);
+      Wait(std::move(recv_req));
+      Wait(std::move(send_req));
+    }
     if (extra_partner) {
-      MPI_Sendrecv(&s_len_ext[0], comm_detail::MPIAsInt(cmp_np), MPI_INT, split_id, 0,
-                   &r_cnt_ext[0], comm_detail::MPIAsInt(new_np), MPI_INT, split_id, 0,
-                   impl_->mpi_comm_, &status);
+      Request recv_req = Irecv(r_cnt_ext.begin(), new_np, split_id, 0);
+      Request send_req = Issend<Long>(s_len_ext.begin(), cmp_np, split_id, 0);
+      Wait(std::move(recv_req));
+      Wait(std::move(send_req));
     }
 
-    Vector<int> rdisp(new_np);
-    Vector<int> rdisp_ext(new_np);
+    Vector<Long> rdisp(new_np);
+    Vector<Long> rdisp_ext(new_np);
     rdisp[0] = 0;     omp_par::scan(r_cnt.begin(),     rdisp.begin(),     new_np);
     rdisp_ext[0] = 0; omp_par::scan(r_cnt_ext.begin(), rdisp_ext.begin(), new_np);
-    const Long rbuff_size     = (Long)rdisp[new_np - 1]     + (Long)r_cnt[new_np - 1];
-    const Long rbuff_size_ext = (Long)rdisp_ext[new_np - 1] + (Long)r_cnt_ext[new_np - 1];
-    SCTL_ASSERT_MSG(rbuff_size     <= (Long)std::numeric_limits<int>::max() &&
-                    rbuff_size_ext <= (Long)std::numeric_limits<int>::max(),
-                    "Comm::Alltoallv_dense: per-partner exchange exceeds int range");
+    const Long rbuff_size     = rdisp[new_np - 1]     + r_cnt[new_np - 1];
+    const Long rbuff_size_ext = rdisp_ext[new_np - 1] + r_cnt_ext[new_np - 1];
     Vector<char> rbuff(rbuff_size);
     Vector<char> rbuff_ext(extra_partner ? rbuff_size_ext : 0);
 
     {  // Sendrecv payloads.
-      Iterator<int>  s_cnt_tmp  = s_cnt.begin() + (cmp_range[0] - range[0]);
-      Iterator<int>  sdisp_tmp  = sdisp.begin() + (cmp_range[0] - range[0]);
+      Iterator<Long> s_cnt_tmp  = s_cnt.begin() + (cmp_range[0] - range[0]);
+      Iterator<Long> sdisp_tmp  = sdisp.begin() + (cmp_range[0] - range[0]);
       Iterator<char> sbuff_tmp  = sbuff.begin() + sdisp_tmp[0];
-      const Long sbuff_size = (Long)sdisp_tmp[cmp_np - 1] + (Long)s_cnt_tmp[cmp_np - 1] - (Long)sdisp_tmp[0];
-      SCTL_ASSERT_MSG(sbuff_size <= (Long)std::numeric_limits<int>::max(),
-                      "Comm::Alltoallv_dense: outgoing chunk exceeds int range");
-      comm_detail::TrackPointToPoint(2, sbuff_size + rbuff_size);
-      MPI_Sendrecv((sbuff_size ? &sbuff_tmp[0] : nullptr), comm_detail::MPIAsInt(sbuff_size), MPI_BYTE, partner, 0,
-                   (rbuff_size ? &rbuff[0]     : nullptr), comm_detail::MPIAsInt(rbuff_size), MPI_BYTE, partner, 0,
-                   impl_->mpi_comm_, &status);
-      if (extra_partner) {
-        comm_detail::TrackPointToPoint(2, rbuff_size_ext);
-        MPI_Sendrecv(nullptr, 0, MPI_BYTE, split_id, 0,
-                     (rbuff_size_ext ? &rbuff_ext[0] : nullptr), comm_detail::MPIAsInt(rbuff_size_ext), MPI_BYTE, split_id, 0,
-                     impl_->mpi_comm_, &status);
+      const Long sbuff_size = sdisp_tmp[cmp_np - 1] + s_cnt_tmp[cmp_np - 1] - sdisp_tmp[0];
+      Request recv_req = Irecv(rbuff.begin(), rbuff_size, partner, 0);
+      Request send_req = Issend<char>(sbuff_tmp, sbuff_size, partner, 0);
+      Wait(std::move(recv_req));
+      Wait(std::move(send_req));
+      if (extra_partner) {  // matching zero-length send is skipped on the peer
+        Request recv_req_ext = Irecv(rbuff_ext.begin(), rbuff_size_ext, split_id, 0);
+        Wait(std::move(recv_req_ext));
       }
     }
 
     {  // Rearrange: merge own slice + received + (optional) extra into a new sbuff.
-      Iterator<int> s_cnt_old = s_cnt.begin() + (new_range[0] - range[0]);
-      Iterator<int> sdisp_old = sdisp.begin() + (new_range[0] - range[0]);
+      Iterator<Long> s_cnt_old = s_cnt.begin() + (new_range[0] - range[0]);
+      Iterator<Long> sdisp_old = sdisp.begin() + (new_range[0] - range[0]);
 
-      Vector<int> s_cnt_new(new_np);
-      Vector<int> sdisp_new(new_np);
+      Vector<Long> s_cnt_new(new_np);
+      Vector<Long> sdisp_new(new_np);
       #pragma omp parallel for schedule(static)
       for (Integer i = 0; i < new_np; i++) {
         s_cnt_new[i] = s_cnt_old[i] + r_cnt[i] + r_cnt_ext[i];
@@ -1056,7 +1047,7 @@ template <class Type> void Comm::Alltoallv_dense(ConstIterator<Type> sbuf, Const
       sdisp_new[0] = 0;
       omp_par::scan(s_cnt_new.begin(), sdisp_new.begin(), new_np);
 
-      const Long new_total = (Long)sdisp_new[new_np - 1] + (Long)s_cnt_new[new_np - 1];
+      const Long new_total = sdisp_new[new_np - 1] + s_cnt_new[new_np - 1];
       Vector<char> sbuff_new(new_total);
       #pragma omp parallel for schedule(static)
       for (Integer i = 0; i < new_np; i++) {
@@ -1086,15 +1077,18 @@ template <class Type> void Comm::Alltoallv_dense(ConstIterator<Type> sbuf, Const
   Long cur_off = 0;
   for (Integer i = 0; i < np; i++) {
     block_off[i] = cur_off;
-    const int blk_size = reinterpret_cast<int*>(&sbuff[cur_off])[0];
+    Long blk_size;
+    std::memcpy(&blk_size, &sbuff[cur_off], sizeof(Long));
     cur_off += blk_size;
   }
   #pragma omp parallel for schedule(static)
   for (Integer i = 0; i < np; i++) {
     Iterator<char> block = sbuff.begin() + block_off[i];
-    const int blk_size = reinterpret_cast<int*>(&block[0])[0];
-    const int src_pid  = reinterpret_cast<int*>(&block[0])[1];
-    const Long payload_bytes = (Long)blk_size - kHeaderBytes;
+    Long hdr[2];
+    std::memcpy(hdr, &block[0], kHeaderBytes);
+    const Long blk_size = hdr[0];
+    const Long src_pid  = hdr[1];
+    const Long payload_bytes = blk_size - kHeaderBytes;
     SCTL_ASSERT(payload_bytes <= rcounts[src_pid] * (Long)sizeof(Type));
     if (payload_bytes > 0) {
       std::memcpy(&rbuf[rdispls[src_pid]], &block[kHeaderBytes], (size_t)payload_bytes);
