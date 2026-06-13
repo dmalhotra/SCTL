@@ -28,18 +28,6 @@ namespace pvfmm {
 namespace sctl {
 
 /**
- * Enum for periodicity in each coordinate direction.
- */
-enum class Periodicity : uint8_t {
-  NONE = 0,
-  X = 1u << 0,
-  Y = 1u << 1,
-  Z = 1u << 2,
-  XY = X | Y,
-  XYZ = X | Y | Z
-};
-
-/**
  * Evaluate potentials from particle sources using PVFMM when available, otherwise, use direct
  * computation.  To enable PVFMM, the macro `SCTL_HAVE_PVFMM` must be defined, the code must be
  * compiled with MPI and linked to PVFMM.
