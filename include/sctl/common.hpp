@@ -1,10 +1,11 @@
 #ifndef _SCTL_COMMON_HPP_
 #define _SCTL_COMMON_HPP_
 
-#include <stdio.h>   // for NULL, stderr
-#include <stdlib.h>  // for abort
-#include <cstdint>   // for int64_t
-#include <iostream>  // for char_traits, basic_ostream, operator<<, cerr
+#include <stdio.h>      // for NULL, stderr
+#include <stdlib.h>     // for abort
+#include <cstdint>      // for int64_t
+#include <iostream>     // for char_traits, basic_ostream, operator<<, cerr
+#include <type_traits>  // for underlying_type_t (Periodicity helpers)
 
 #ifndef SCTL_DATA_PATH
 #  define SCTL_DATA_PATH ./data/
@@ -55,6 +56,34 @@
 namespace sctl {
 typedef long Integer;  // bounded numbers < 32k
 typedef int64_t Long;  // problem size
+
+// Per-axis periodicity bitmask (bit d = axis d). Widen the underlying type for more than 8 axes.
+enum class Periodicity : uint8_t {
+  NONE = 0,
+  X = 1u << 0,
+  Y = 1u << 1,
+  Z = 1u << 2,
+  XY = X | Y,
+  XYZ = X | Y | Z
+};
+
+using PeriodicityT = std::underlying_type_t<Periodicity>;
+constexpr Integer PERIODICITY_MAX_DIM = static_cast<Integer>(sizeof(PeriodicityT) * 8);
+
+constexpr Periodicity operator|(Periodicity a, Periodicity b) {
+  return static_cast<Periodicity>(static_cast<PeriodicityT>(a) | static_cast<PeriodicityT>(b));
+}
+
+// True iff axis dim is periodic in p.
+constexpr bool is_periodic(Periodicity p, Integer dim) {
+  return ((static_cast<PeriodicityT>(p) >> dim) & PeriodicityT(1)) != 0;
+}
+
+// Mask with axes 0..dim-1 periodic.
+constexpr Periodicity all_periodic(Integer dim) {
+  return static_cast<Periodicity>(dim >= PERIODICITY_MAX_DIM ? static_cast<PeriodicityT>(~PeriodicityT(0))
+                                                             : static_cast<PeriodicityT>((PeriodicityT(1) << dim) - 1));
+}
 }
 
 #define SCTL_WARN(msg)                                         \

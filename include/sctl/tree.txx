@@ -135,7 +135,7 @@ namespace sctl {
     return comm;
   }
 
-  template <Integer DIM> template <class Real> void Tree<DIM>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, bool periodic, Integer halo_size) {
+  template <Integer DIM> template <class Real> void Tree<DIM>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, Periodicity periodicity, Integer halo_size) {
     const Integer np = comm.Size();
     const Integer rank = comm.Rank();
 
@@ -308,7 +308,7 @@ namespace sctl {
         }
         for (Integer d = Morton<DIM>::MAX_DEPTH; d >= 0; d--) {
           for (const auto& m : parent_mid_set[d]) {
-            m.NbrList(nlst, d, periodic);
+            m.NbrList(nlst, d, periodicity);
             for (const auto& nbr : nlst) if (nbr.Depth() != Morton<DIM>::INVALID_DEPTH && nbr.Depth() > 0) parent_mid_set[d-1].insert(nbr.Ancestor(d-1));
             const Long idx = std::lower_bound(mins.begin(), mins.end(), m) - mins.begin();
             if (idx>=np || !m.isAncestor(mins[idx])) // exclude ancestors of all mins to reduce communication
@@ -369,7 +369,7 @@ namespace sctl {
         for (Long i = start_idx; i < end_idx; i++) {
           Morton<DIM> m0 = node_mid[i];
           Integer d0 = m0.Depth();
-          if (halo_size >= 0) m0.NbrList(nlst, std::max<Integer>(d0-halo_size,0), periodic);
+          if (halo_size >= 0) m0.NbrList(nlst, std::max<Integer>(d0-halo_size,0), periodicity);
           user_procs.clear();
           for (const auto& m : nlst) {
             if (m.Depth() != Morton<DIM>::INVALID_DEPTH) {
@@ -516,7 +516,7 @@ namespace sctl {
       { // Set neighbor list
         { // Set root neighbors
           const auto& n0 = node_mid[0];
-          const auto nlst = n0.NbrList(n0.Depth(), periodic);
+          const auto nlst = n0.NbrList(n0.Depth(), periodicity);
           static_assert(nlst.size() == MAX_NBRS);
           for (Long k = 0; k < MAX_NBRS; k++) {
             if (nlst[k].Depth() != Morton<DIM>::INVALID_DEPTH) node_lst[0].nbr[k] = 0;
@@ -530,12 +530,12 @@ namespace sctl {
           };
           static const auto nbr_path = []() {
             const auto parent = (Morton<DIM>{}).Children()[0].Children()[MAX_CHILD-1];
-            const auto parent_nbr_lst = parent.NbrList(parent.Depth(), false); // interior node, so periodicity doesn't matter
+            const auto parent_nbr_lst = parent.NbrList(parent.Depth(), Periodicity::NONE); // interior node, so periodicity doesn't matter
 
             Matrix<NbrPath> nbr_path(MAX_CHILD, MAX_NBRS);
             for (Integer p2n = 0; p2n < MAX_CHILD; p2n++) {
               const auto n0 = parent.Children()[p2n];
-              const auto nlst = n0.NbrList(n0.Depth(), false);
+              const auto nlst = n0.NbrList(n0.Depth(), Periodicity::NONE);
               for (Integer nbr_idx = 0; nbr_idx < MAX_NBRS; nbr_idx++) {
                 const auto& nbr = nlst[nbr_idx];
 
@@ -1043,9 +1043,9 @@ namespace sctl {
     #endif
   }
 
-  template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, bool periodic, Integer halo_size) {
+  template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, Periodicity periodicity, Integer halo_size) {
     const auto& comm = this->GetComm();
-    BaseTree::UpdateRefinement(coord, M, balance21, periodic, halo_size);
+    BaseTree::UpdateRefinement(coord, M, balance21, periodicity, halo_size);
 
     Long start_node_idx, end_node_idx;
     { // Set start_node_idx, end_node_idx

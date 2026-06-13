@@ -941,7 +941,7 @@ template <class Real> class Quadrature {
 
               Vector<std::set<Long>> near_elem(Trg.Dim());
               for (Integer d = 0; d <= d0; d++) {
-                trg_mid.NbrList(nbr_mid_tmp, d, period_length>0);
+                trg_mid.NbrList(nbr_mid_tmp, d, period_length>0 ? all_periodic(CoordDim) : Periodicity::NONE);
                 for (const auto& src_mid : nbr_mid_tmp) if (src_mid.Depth() != Morton<CoordDim>::INVALID_DEPTH) { // Set Src
                   PtData m0, m1;
                   m0.mid = src_mid;

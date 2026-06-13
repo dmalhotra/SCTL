@@ -92,12 +92,12 @@ template <Integer DIM> class Tree {
      * @param[in] coord Particle coordinates (in [0,1]^dim stored in AoS order) that describe the new tree refinement.
      * @param[in] M Maximum number of particles per tree node.
      * @param[in] balance21 Whether to do level-restriction (2:1 balance refinement).
-     * @param[in] periodic Whether the tree is periodic across the faces of the cube.
+     * @param[in] periodicity Per-axis periodicity bitmask (e.g. `Periodicity::X | Periodicity::Y`, or `all_periodic(DIM)`).
      * @param[in] halo_size 2^halo_size neighboring boxes will be included in the halo region. Default value of -1 means no halo region.
      *
      * @note This is a collective operation and must be called from all processes in the communicator.
      */
-    template <class Real> void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, bool periodic = 0, Integer halo_size = -1);
+    template <class Real> void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, Periodicity periodicity = Periodicity::NONE, Integer halo_size = -1);
 
     /**
      * Add named data to the tree nodes.
@@ -222,12 +222,12 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
      * @param M Maximum number of points per box for refinement.
      * @param balance21 Flag indicating whether to construct a level-restricted
      *        tree with neighboring boxes within one level of each other.
-     * @param periodic Flag indicating periodic boundary conditions.
+     * @param periodicity Per-axis periodicity bitmask (e.g. `Periodicity::X | Periodicity::Y`, or `all_periodic(DIM)`).
      * @param[in] halo_size 2^halo_size neighboring boxes will be included in the halo region
      *
      * @note This is a collective operation and must be called from all processes in the communicator.
      */
-    void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, bool periodic = 0, Integer halo_size = -1);
+    void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, Periodicity periodicity = Periodicity::NONE, Integer halo_size = -1);
 
     /**
      * Add particles to the point tree.

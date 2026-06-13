@@ -62,25 +62,25 @@ template <Integer DIM> template <int NWORDS_> constexpr bool MortonCode<DIM>::Mo
 }
 
 template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>::template MortonBig<NWORDS_> MortonCode<DIM>::MortonBig<NWORDS_>::operator|(const MortonBig& o) const {
-  MortonBig r;
+  MortonBig r{};
   for (int i = 0; i < NWORDS_; ++i) r.w[i] = w[i] | o.w[i];
   return r;
 }
 
 template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>::template MortonBig<NWORDS_> MortonCode<DIM>::MortonBig<NWORDS_>::operator&(const MortonBig& o) const {
-  MortonBig r;
+  MortonBig r{};
   for (int i = 0; i < NWORDS_; ++i) r.w[i] = w[i] & o.w[i];
   return r;
 }
 
 template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>::template MortonBig<NWORDS_> MortonCode<DIM>::MortonBig<NWORDS_>::operator^(const MortonBig& o) const {
-  MortonBig r;
+  MortonBig r{};
   for (int i = 0; i < NWORDS_; ++i) r.w[i] = w[i] ^ o.w[i];
   return r;
 }
 
 template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>::template MortonBig<NWORDS_> MortonCode<DIM>::MortonBig<NWORDS_>::operator+(const MortonBig& o) const {
-  MortonBig r;
+  MortonBig r{};
   std::uint64_t carry = 0;
   for (int i = 0; i < NWORDS_; ++i) {
     const std::uint64_t s1 = w[i] + o.w[i];
@@ -99,7 +99,7 @@ template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>
 }
 
 template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>::template MortonBig<NWORDS_> MortonCode<DIM>::MortonBig<NWORDS_>::operator<<(int s) const {
-  MortonBig r;
+  MortonBig r{};
   const int ws = s / 64, bs = s % 64;
   for (int i = NWORDS_ - 1; i >= 0; --i) {
     std::uint64_t v = 0;
@@ -111,7 +111,7 @@ template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>
 }
 
 template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>::template MortonBig<NWORDS_> MortonCode<DIM>::MortonBig<NWORDS_>::operator>>(int s) const {
-  MortonBig r;
+  MortonBig r{};
   const int ws = s / 64, bs = s % 64;
   for (int i = 0; i < NWORDS_; ++i) {
     std::uint64_t v = 0;
@@ -223,7 +223,7 @@ template <Integer DIM> SCTL_GPU_HD std::uint64_t MortonCode<DIM>::compact_bits(M
   MortonInteger r = (code >> static_cast<int>(d)) & initial_mask;
   r = compact_step<0>(r);
   // The compacted xi occupies the low MAX_DEPTH bits; safe to cast to uint64_t (MAX_DEPTH < 64).
-  if constexpr (TOTAL_BITS <= 64) {
+  if constexpr (STORAGE_BITS <= 64) {
     return static_cast<std::uint64_t>(r);
   } else {
     return r.w[0];
@@ -328,32 +328,43 @@ template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, (1 << DIM)> Morton<DI
   return out;
 }
 
-template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrList(uint8_t level, bool periodic) const {
+template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrList(uint8_t level, Periodicity periodicity) const {
+  static_assert(DIM <= PERIODICITY_MAX_DIM, "NbrList: DIM exceeds the Periodicity bitmask width");
   using MI = typename MortonCode<DIM>::MortonInteger;
   std::array<Morton, pow<DIM, std::size_t>(3)> out{};
 
   // Step 1: truncate to `level` and extract per-coord ints.
   const Morton base = Ancestor(level);
-  std::int64_t xi_self[DIM];
+  std::uint64_t xi_self[DIM];
   for (Integer d = 0; d < DIM; ++d) {
-    xi_self[d] = static_cast<std::int64_t>(MortonCode<DIM>::compact_bits(base.mid.code, d));
+    xi_self[d] = MortonCode<DIM>::compact_bits(base.mid.code, d);
   }
-  const std::int64_t box_size = std::int64_t(1) << (MAX_DEPTH - level);
-  const std::int64_t maxCoord = std::int64_t(1) << MAX_DEPTH;
+  const std::uint64_t box_size = std::uint64_t(1) << (MAX_DEPTH - level);
+  const std::uint64_t maxCoord = std::uint64_t(1) << MAX_DEPTH;
 
   // Step 2: 3^DIM offset combos. idx = j_0 + 3*j_1 + 9*j_2 + ..., j_d ∈ {0,1,2} → offset (-1,0,+1)*box_size.
   for (Integer idx = 0; idx < pow<DIM, Integer>(3); ++idx) {
-    std::int64_t xi_nbr[DIM];
+    std::uint64_t xi_nbr[DIM];
     bool out_of_bounds = false;
     Integer tmp = idx;
     for (Integer d = 0; d < DIM; ++d) {
-      const std::int64_t offset = (static_cast<std::int64_t>(tmp % 3) - 1) * box_size;
+      const int j = static_cast<int>(tmp % 3) - 1;  // -1, 0, or +1
       tmp /= 3;
-      std::int64_t v = xi_self[d] + offset;
-      if (periodic) {
-        v = ((v % maxCoord) + maxCoord) % maxCoord;
-      } else if (v < 0 || v >= maxCoord) {
-        out_of_bounds = true;
+      const std::uint64_t self = xi_self[d];
+      std::uint64_t v = self;
+      if (j < 0) {
+        if (self < box_size) {
+          if (is_periodic(periodicity, d)) v = self + maxCoord - box_size;
+          else out_of_bounds = true;
+        } else {
+          v = self - box_size;
+        }
+      } else if (j > 0) {
+        v = self + box_size;
+        if (v >= maxCoord) {
+          if (is_periodic(periodicity, d)) v -= maxCoord;
+          else out_of_bounds = true;
+        }
       }
       xi_nbr[d] = v;
     }
@@ -362,7 +373,7 @@ template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>
     } else {
       MI code = MI(0);
       for (Integer d = 0; d < DIM; ++d) {
-        code |= MortonCode<DIM>::spread_bits(static_cast<std::uint64_t>(xi_nbr[d])) << static_cast<int>(d);
+        code |= MortonCode<DIM>::spread_bits(xi_nbr[d]) << static_cast<int>(d);
       }
       out[idx] = Morton{MortonCode<DIM>(code), level};
     }
@@ -405,8 +416,8 @@ template <Integer DIM> SCTL_GPU_HD Long Morton<DIM>::operator-(const Morton& o) 
 }
 
 // sctl::Tree-compat overloads: write std::array result into a Vector outparam.
-template <Integer DIM> void Morton<DIM>::NbrList(Vector<Morton>& nlst, uint8_t level, bool periodic) const {
-  const auto arr = NbrList(level, periodic);
+template <Integer DIM> void Morton<DIM>::NbrList(Vector<Morton>& nlst, uint8_t level, Periodicity periodicity) const {
+  const auto arr = NbrList(level, periodicity);
   nlst.ReInit(static_cast<Long>(arr.size()));
   for (Long i = 0; i < static_cast<Long>(arr.size()); ++i) nlst[i] = arr[i];
 }

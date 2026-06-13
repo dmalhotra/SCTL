@@ -204,17 +204,14 @@ template <Integer DIM> class Morton {
   SCTL_GPU_HD std::array<Morton, (1 << DIM)> Children() const;
 
   /**
-   * `3^DIM` same-level neighbors of the node containing `*this` (ancestor truncated to `level`).
-   * Indexing: for offset `(δ_0, …, δ_{DIM-1})` with `δ_d ∈ {-1, 0, +1}`, the neighbor sits at
-   * `Σ ( (δ_d + 1) * 3^d )`. Self is at the centre index `(3^DIM - 1)/2`.
-   *
-   * Non-periodic out-of-bounds entries are flagged with `depth = INVALID_DEPTH` (0xFF).
-   * Periodic wraps mod `1 << level`.
+   * `3^DIM` same-level neighbors (ancestor truncated to `level`). The neighbor for offset
+   * `(δ_0,…,δ_{DIM-1})`, `δ_d ∈ {-1,0,+1}`, is at index `Σ (δ_d + 1) 3^d`; self is the centre.
+   * Periodic axes wrap; non-periodic out-of-domain neighbors get `depth = INVALID_DEPTH`.
    */
-  SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level, bool periodic) const;
+  SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level, Periodicity periodicity) const;
 
   /** sctl::Tree-compat overloads: write into a Vector outparam (host-only). */
-  void NbrList(Vector<Morton>& nlst, uint8_t level, bool periodic) const;
+  void NbrList(Vector<Morton>& nlst, uint8_t level, Periodicity periodicity) const;
   void Children(Vector<Morton>& nlst) const;
 
   /** Lexicographic Morton order: by code first, with `depth` as tiebreaker. */

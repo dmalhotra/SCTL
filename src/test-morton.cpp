@@ -214,7 +214,7 @@ int main() {
   {
     Morton root;
     sctl::Vector<Morton> nbrs;
-    root.NbrList(nbrs, /*level=*/0, /*periodic=*/true);
+    root.NbrList(nbrs, /*level=*/0, /*periodic=*/sctl::all_periodic(DIM));
     Long pow3 = 1;
     for (Integer d = 0; d < DIM; ++d) pow3 *= 3;
     CHECK(nbrs.Dim() == pow3);
@@ -222,7 +222,7 @@ int main() {
     for (Long i = 0; i < nbrs.Dim(); ++i) CHECK(nbrs[i] == root);
 
     sctl::Vector<Morton> nbrs2;
-    root.NbrList(nbrs2, 0, /*periodic=*/false);
+    root.NbrList(nbrs2, 0, /*periodic=*/sctl::Periodicity::NONE);
     CHECK(nbrs2.Dim() == pow3);
     // Non-periodic at root level 0: all off-axis offsets are out-of-bounds.
     // Only the self entry (at the centre index (3^DIM-1)/2) is valid.
