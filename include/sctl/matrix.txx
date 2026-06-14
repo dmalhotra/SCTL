@@ -511,6 +511,12 @@ template <class ValueType> void Matrix<ValueType>::Transpose(Matrix<ValueType>& 
   Long d0 = M.dim[0];
   Long d1 = M.dim[1];
   if (M_r.dim[0] != d1 || M_r.dim[1] != d0) M_r.ReInit(d1, d0);
+  if (d0 && d1) {  // Out-of-place transpose: source and destination must not alias.
+    const ValueType* src_begin = &M[0][0],   * src_end = src_begin + d0 * d1;
+    const ValueType* dst_begin = &M_r[0][0], * dst_end = dst_begin + d0 * d1;
+    SCTL_ASSERT_MSG(src_end <= dst_begin || dst_end <= src_begin,
+        "Matrix::Transpose(M_r, M): source and destination memory overlap; use M.Transpose() for a transposed copy.");
+  }
 
   const Long blk0 = ((d0 + SCTL_B1 - 1) / SCTL_B1);
   const Long blk1 = ((d1 + SCTL_B1 - 1) / SCTL_B1);

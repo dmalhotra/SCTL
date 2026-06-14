@@ -56,9 +56,16 @@ namespace sctl {
 
     ~FFT();
 
-    // Delete copy constructor and assignment operator to prevent copying FFT objects
+    /// Deleted: an FFT owns a non-copyable transform plan.
     FFT (const FFT&) = delete;
     FFT& operator= (const FFT&) = delete;
+
+    /// Move constructor. Takes over `other`'s transform plan, leaving it empty.
+    FFT (FFT&& other) noexcept;
+
+    /// Move assignment. Takes over `other`'s transform plan and releases the
+    /// plan currently held.
+    FFT& operator= (FFT&& other) noexcept;
 
     /**
      * Dimensions of the input and output array are given by Dim(0) and Dim(1) respectively.
@@ -95,6 +102,9 @@ namespace sctl {
     static void test();
 
     private:
+
+    /// Swap all state with `other`; backs the move operations.
+    void Swap(FFT& other) noexcept;
 
     //static void check_align(const Vector<ValueType>& in, const Vector<ValueType>& out);
 

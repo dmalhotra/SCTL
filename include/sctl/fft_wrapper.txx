@@ -2,6 +2,7 @@
 #define _SCTL_FFT_WRAPPER_TXX_
 
 #include <algorithm>              // for max
+#include <utility>                // for std::swap
 #include <iostream>               // for basic_ostream, operator<<, cout
 #include <vector>                 // for vector
 #ifdef _OPENMP
@@ -879,6 +880,25 @@ namespace sctl {
   template <class ValueType> FFT<ValueType>::~FFT() {}
 
   template <class ValueType> FFT<ValueType>::FFT() : copy_input(false), dim{0,0}, fft_type(FFT_Type::R2C), howmany_(0) {}
+
+  // Move via swap: the moved-from object retains the target's previous plan, so
+  // its (possibly type-specialized) destructor releases it. Works for both the
+  // FFTW-backed and Cooley-Tukey FFTPlan specializations.
+  template <class ValueType> FFT<ValueType>::FFT(FFT<ValueType>&& other) noexcept : FFT() { this->Swap(other); }
+
+  template <class ValueType> FFT<ValueType>& FFT<ValueType>::operator=(FFT<ValueType>&& other) noexcept {
+    this->Swap(other);
+    return *this;
+  }
+
+  template <class ValueType> void FFT<ValueType>::Swap(FFT<ValueType>& other) noexcept {
+    std::swap(plan, other.plan);
+    std::swap(copy_input, other.copy_input);
+    std::swap(dim[0], other.dim[0]);
+    std::swap(dim[1], other.dim[1]);
+    std::swap(fft_type, other.fft_type);
+    std::swap(howmany_, other.howmany_);
+  }
 
   template <class ValueType> Long FFT<ValueType>::Dim(Integer i) const { return dim[i]; }
 
