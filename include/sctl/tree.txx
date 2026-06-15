@@ -576,14 +576,14 @@ namespace sctl {
         constexpr Integer stride = Morton<DIM>::MAX_DEPTH+1;
         const Integer nthreads = SCTL_GET_MAX_THREADS();
         ScratchBuf<Long> ancestors(nthreads * stride);
-        for (Integer tid = 0; tid < nthreads; tid++) { // Initialize neighbor list for the first node (and ancestors) in each thread's chunk
+        for (Integer tid = 0; tid < nthreads; tid++) { // Initialize neighbor list for the ancestors of first node in each thread's chunk
           const Long idx0 = (Nnodes * tid) / nthreads;
-          for (Integer d = 0; d < stride; d++) ancestors[tid*stride + d] = -1;
           for (Long idx = idx0; node_mid[idx].Depth() > 0; idx = node_lst[idx].parent) {
             ancestors[tid*stride + node_mid[idx].Depth()] = idx;
           }
+          const Integer prev_depth = (tid > 0) ? node_mid[(Nnodes * (tid - 1)) / nthreads].Depth() : 0;
           for (Integer d = 1; d < node_mid[idx0].Depth(); d++) {
-            if (tid > 0 && ancestors[tid*stride + d] == ancestors[(tid-1)*stride + d]) continue;
+            if (tid > 0 && d < prev_depth && ancestors[tid*stride + d] == ancestors[(tid-1)*stride + d]) continue;
             set_nbrs(ancestors[tid*stride + d]);
           }
         }
