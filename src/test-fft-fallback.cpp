@@ -250,7 +250,19 @@ void check_vs_old(FFT_Type type, const Vector<Long>& dim_vec, Long howmany, cons
   SCTL_ASSERT(f_new.Dim(1) == f_old.Dim(1));
 
   Vector<T> v0(f_new.Dim(0)), vn, vo;
-  fill_random(v0, 67890u);
+  if (type == FFT_Type::C2R) {
+    // C2R is only well-defined on a Hermitian-symmetric spectrum; on arbitrary
+    // input FFTW and the matrix reference apply different (implementation-
+    // defined) conventions for the multi-dim case. Feed a valid spectrum by
+    // forward-transforming random real data via R2C.
+    sctl::FFT<T> f_r2c;
+    f_r2c.Setup(FFT_Type::R2C, howmany, dim_vec);
+    Vector<T> real_in(f_r2c.Dim(0));
+    fill_random(real_in, 13579u);
+    f_r2c.Execute(real_in, v0);
+  } else {
+    fill_random(v0, 67890u);
+  }
   f_new.Execute(v0, vn);
   f_old.Execute(v0, vo);
   T err = inf_norm_diff(vn, vo);
