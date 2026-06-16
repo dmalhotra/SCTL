@@ -6,11 +6,8 @@
 #include "sctl/common.hpp"        // for Long, Integer, sctl
 #include "sctl/static-array.hpp"  // for StaticArray
 
-#if defined(SCTL_HAVE_FFTW) || defined(SCTL_HAVE_FFTWF)
+#if defined(SCTL_HAVE_FFTW) || defined(SCTL_HAVE_FFTWF) || defined(SCTL_HAVE_FFTWL)
 #include <fftw3.h>
-#ifdef SCTL_FFTW3_MKL
-#include <fftw3_mkl.h>
-#endif
 #endif
 
 namespace sctl {

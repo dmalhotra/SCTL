@@ -1,5 +1,5 @@
 /**
- * @file morton-code.txx
+ * @file morton.txx
  * Template implementations of MortonCode and Morton from morton-code.hpp.
  */
 
@@ -230,12 +230,26 @@ template <Integer DIM> SCTL_GPU_HD std::uint64_t MortonCode<DIM>::compact_bits(M
   }
 }
 
-template <Integer DIM> template <class Real> SCTL_GPU_HD MortonCode<DIM>::MortonCode(const Real* coord) : code() {
+// Interleave DIM per-axis ints into a code, unrolled over `d` (force-inlined for nbr_emit_).
+template <Integer DIM> template <Integer d>
+[[gnu::always_inline]] inline SCTL_GPU_HD typename MortonCode<DIM>::MortonInteger MortonCode<DIM>::interleave(const std::uint64_t* xi) {
+  if constexpr (d < DIM) {
+    return static_cast<MortonInteger>(spread_bits(xi[d]) << static_cast<int>(d)) | interleave<d + 1>(xi);
+  } else {
+    return MortonInteger(0);
+  }
+}
+
+// Ctor body: clamp coords to [0,1), scale to ints, interleave. Plain inline, not the force-inlined
+// integer overload above (forcing it regressed gcc's DIM=4 ctor ~3x).
+template <Integer DIM> template <class Real, class>
+SCTL_GPU_HD typename MortonCode<DIM>::MortonInteger MortonCode<DIM>::interleave(const Real* coord) {
   // 2^MAX_DEPTH in u64 to avoid overflow when MortonInteger is exactly MAX_DEPTH bits wide.
   constexpr std::uint64_t max_coord_u64 = std::uint64_t(1) << MAX_DEPTH;
   constexpr std::uint64_t max_xi = max_coord_u64 - 1;
   const Real scale = static_cast<Real>(max_coord_u64);
 
+  MortonInteger code{};
   for (Integer d = 0; d < DIM; ++d) {
     Real c = coord[d];
     if (!(c > Real(0))) c = Real(0);  // also handles NaN
@@ -246,7 +260,10 @@ template <Integer DIM> template <class Real> SCTL_GPU_HD MortonCode<DIM>::Morton
 
     code |= spread_bits(xi) << static_cast<int>(d);
   }
+  return code;
 }
+
+template <Integer DIM> template <class Real> SCTL_GPU_HD MortonCode<DIM>::MortonCode(const Real* coord) : code(interleave(coord)) {}
 
 template <Integer DIM> SCTL_GPU_HD bool MortonCode<DIM>::operator<(const MortonCode& other) const {
   return code < other.code;
@@ -328,9 +345,99 @@ template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, (1 << DIM)> Morton<DI
   return out;
 }
 
+// Per-axis offsets for a fixed neighbor `idx`, unrolled over `d`: j = (idx/3^d) mod 3 - 1 is constant,
+// so j==0 axes drop their bounds checks; with DYN==false `is_periodic(PER,d)` folds too (else runtime).
+template <Integer DIM> template <Periodicity PER, bool DYN, Integer idx, Integer d>
+[[gnu::always_inline]] inline SCTL_GPU_HD void Morton<DIM>::nbr_fill_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
+                                        Periodicity periodicity, std::uint64_t* xi_nbr, bool& out_of_bounds) {
+  if constexpr (d < DIM) {
+    constexpr int j = static_cast<int>(idx / pow<d, Integer>(3) % 3) - 1;  // -1, 0, or +1
+    const std::uint64_t self = xi_self[d];
+    std::uint64_t v = self;
+    if constexpr (j < 0) {
+      if (self < box_size) {
+        if constexpr (DYN) {
+          if (is_periodic(periodicity, d)) v = self + maxCoord - box_size;
+          else out_of_bounds = true;
+        } else if constexpr (is_periodic(PER, d)) {
+          v = self + maxCoord - box_size;
+        } else {
+          out_of_bounds = true;
+        }
+      } else {
+        v = self - box_size;
+      }
+    } else if constexpr (j > 0) {
+      v = self + box_size;
+      if (v >= maxCoord) {
+        if constexpr (DYN) {
+          if (is_periodic(periodicity, d)) v -= maxCoord;
+          else out_of_bounds = true;
+        } else if constexpr (is_periodic(PER, d)) {
+          v -= maxCoord;
+        } else {
+          out_of_bounds = true;
+        }
+      }
+    }
+    xi_nbr[d] = v;
+    nbr_fill_<PER, DYN, idx, d + 1>(xi_self, box_size, maxCoord, periodicity, xi_nbr, out_of_bounds);
+  }
+}
+
+// Outer loop over neighbor index `idx` (compile-time), recursing over all 3^DIM offset combos:
+// idx = j_0 + 3*j_1 + 9*j_2 + ..., j_d ∈ {0,1,2} → offset (-1,0,+1)*box_size on axis d.
+template <Integer DIM> template <Periodicity PER, bool DYN, Integer idx>
+[[gnu::always_inline]] inline SCTL_GPU_HD void Morton<DIM>::nbr_emit_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
+                                        Periodicity periodicity, uint8_t level,
+                                        std::array<Morton, pow<DIM, std::size_t>(3)>& out) {
+  if constexpr (idx < pow<DIM, Integer>(3)) {
+    using MI = typename MortonCode<DIM>::MortonInteger;
+    std::uint64_t xi_nbr[DIM];
+    bool out_of_bounds = false;
+    nbr_fill_<PER, DYN, idx, 0>(xi_self, box_size, maxCoord, periodicity, xi_nbr, out_of_bounds);
+    if (out_of_bounds) {
+      out[idx] = Morton{MortonCode<DIM>(MI(0)), Morton::INVALID_DEPTH};
+    } else {
+      out[idx] = Morton{MortonCode<DIM>(MortonCode<DIM>::interleave(xi_nbr)), level};
+    }
+    nbr_emit_<PER, DYN, idx + 1>(xi_self, box_size, maxCoord, periodicity, level, out);
+  }
+}
+
+// Compact, non-unrolled emitter (the readable reference form of `nbr_emit_`). Used on-device for
+// DIM>=4, where the unrolled emitters spill and tank occupancy; keeps register pressure low.
+template <Integer DIM>
+SCTL_GPU_HD void Morton<DIM>::nbr_loop_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
+                                        Periodicity periodicity, uint8_t level,
+                                        std::array<Morton, pow<DIM, std::size_t>(3)>& out) {
+  using MI = typename MortonCode<DIM>::MortonInteger;
+  // 3^DIM offset combos: idx = j_0 + 3*j_1 + 9*j_2 + ..., j_d in {0,1,2} -> offset (-1,0,+1)*box_size.
+  for (Integer idx = 0; idx < pow<DIM, Integer>(3); ++idx) {
+    std::uint64_t xi_nbr[DIM];
+    bool out_of_bounds = false;
+    Integer tmp = idx;
+    for (Integer d = 0; d < DIM; ++d) {
+      const int j = static_cast<int>(tmp % 3) - 1;  // -1, 0, or +1
+      tmp /= 3;
+      const std::uint64_t self = xi_self[d];
+      std::uint64_t v = self;
+      if (j < 0) {
+        if (self < box_size) { if (is_periodic(periodicity, d)) v = self + maxCoord - box_size; else out_of_bounds = true; }
+        else v = self - box_size;
+      } else if (j > 0) {
+        v = self + box_size;
+        if (v >= maxCoord) { if (is_periodic(periodicity, d)) v -= maxCoord; else out_of_bounds = true; }
+      }
+      xi_nbr[d] = v;
+    }
+    if (out_of_bounds) out[idx] = Morton{MortonCode<DIM>(MI(0)), Morton::INVALID_DEPTH};
+    else out[idx] = Morton{MortonCode<DIM>(MortonCode<DIM>::interleave(xi_nbr)), level};
+  }
+}
+
 template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrList(uint8_t level, Periodicity periodicity) const {
   static_assert(DIM <= PERIODICITY_MAX_DIM, "NbrList: DIM exceeds the Periodicity bitmask width");
-  using MI = typename MortonCode<DIM>::MortonInteger;
   std::array<Morton, pow<DIM, std::size_t>(3)> out{};
 
   // Step 1: truncate to `level` and extract per-coord ints.
@@ -342,41 +449,26 @@ template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>
   const std::uint64_t box_size = std::uint64_t(1) << (MAX_DEPTH - level);
   const std::uint64_t maxCoord = std::uint64_t(1) << MAX_DEPTH;
 
-  // Step 2: 3^DIM offset combos. idx = j_0 + 3*j_1 + 9*j_2 + ..., j_d ∈ {0,1,2} → offset (-1,0,+1)*box_size.
-  for (Integer idx = 0; idx < pow<DIM, Integer>(3); ++idx) {
-    std::uint64_t xi_nbr[DIM];
-    bool out_of_bounds = false;
-    Integer tmp = idx;
-    for (Integer d = 0; d < DIM; ++d) {
-      const int j = static_cast<int>(tmp % 3) - 1;  // -1, 0, or +1
-      tmp /= 3;
-      const std::uint64_t self = xi_self[d];
-      std::uint64_t v = self;
-      if (j < 0) {
-        if (self < box_size) {
-          if (is_periodic(periodicity, d)) v = self + maxCoord - box_size;
-          else out_of_bounds = true;
-        } else {
-          v = self - box_size;
-        }
-      } else if (j > 0) {
-        v = self + box_size;
-        if (v >= maxCoord) {
-          if (is_periodic(periodicity, d)) v -= maxCoord;
-          else out_of_bounds = true;
-        }
-      }
-      xi_nbr[d] = v;
-    }
-    if (out_of_bounds) {
-      out[idx] = Morton{MortonCode<DIM>(MI(0)), Morton::INVALID_DEPTH};
-    } else {
-      MI code = MI(0);
-      for (Integer d = 0; d < DIM; ++d) {
-        code |= MortonCode<DIM>::spread_bits(xi_nbr[d]) << static_cast<int>(d);
-      }
-      out[idx] = Morton{MortonCode<DIM>(code), level};
-    }
+  // Step 2: emit the 3^DIM neighbors.
+#if defined(__CUDA_ARCH__)
+  // On device the fully-unrolled emitters exhaust the register budget at high DIM (DIM>=4 hits the
+  // 255-reg cap + spills -> low occupancy); the compact `nbr_loop_` keeps occupancy high and is
+  // ~1.6x faster there. Host/lower-DIM keep the unrolled switch (faster on CPU and device DIM<=3).
+  // The `else` (not a bare `return`) keeps the unrolled switch from being instantiated on this path.
+  if constexpr (DIM >= 4) {
+    nbr_loop_(xi_self, box_size, maxCoord, periodicity, level, out);
+  } else
+#endif
+  // Dispatch runtime periodicity to a PER-specialized, unrolled, force-inlined emitter (DYN==false);
+  // other masks runtime. ~2-3x faster than `nbr_loop_` on host/DIM<=3 (which is the readable form).
+  switch (periodicity) {
+    case Periodicity::NONE: nbr_emit_<Periodicity::NONE, false, 0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
+    case Periodicity::X:    nbr_emit_<Periodicity::X,    false, 0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
+    case Periodicity::Y:    nbr_emit_<Periodicity::Y,    false, 0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
+    case Periodicity::Z:    nbr_emit_<Periodicity::Z,    false, 0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
+    case Periodicity::XY:   nbr_emit_<Periodicity::XY,   false, 0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
+    case Periodicity::XYZ:  nbr_emit_<Periodicity::XYZ,  false, 0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
+    default:                nbr_emit_<Periodicity::NONE, true,  0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
   }
   return out;
 }
