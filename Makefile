@@ -120,6 +120,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 
 test: $(TARGET_BIN)
 	./$(BINDIR)/test
+	./$(BINDIR)/test-comm
 	./$(BINDIR)/test-boundary_integral
 	./$(BINDIR)/test-cheb_utils
 	./$(BINDIR)/test-fft-fallback
