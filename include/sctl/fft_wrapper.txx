@@ -38,6 +38,10 @@ namespace sctl {
     fft_dim.PushBack(3);
     Long howmany = 3;
 
+    // Unnormalized: fwd then inv scales by N, so divide by N before comparing.
+    Long N = 1;
+    for (const auto& d : fft_dim) N *= d;
+
     { // R2C, C2R
       FFT myfft0, myfft1;
       myfft0.Setup(FFT_Type::R2C, howmany, fft_dim);
@@ -46,6 +50,7 @@ namespace sctl {
       for (int i = 0; i < v0.Dim(); i++) v0[i] = (1 + i) / (ValueType)v0.Dim();
       myfft0.Execute(v0, v1);
       myfft1.Execute(v1, v2);
+      v2 *= (ValueType)1 / (ValueType)N;
 
       const auto err = inf_norm(v2-v0);
       std::cout<<"Error : "<<err<<'\n';
@@ -60,6 +65,7 @@ namespace sctl {
       for (int i = 0; i < v0.Dim(); i++) v0[i] = (1 + i) / (ValueType)v0.Dim();
       myfft0.Execute(v0, v1);
       myfft1.Execute(v1, v2);
+      v2 *= (ValueType)1 / (ValueType)N;
 
       const auto err = inf_norm(v2-v0);
       std::cout<<"Error : "<<inf_norm(v2-v0)<<'\n';
@@ -703,7 +709,8 @@ namespace sctl {
         BuildSmallDFT<T>(dp.radices, dp.sign, plan.nthreads, dp.dft_flat, dp.stage_dft_off);
         BuildDigitReversal(dp.radices, plan.nthreads, dp.digit_rev);
       }
-      plan.norm_scale = (total_N > 0) ? (T)1 / sqrt<T>((T)total_N) : (T)1;
+      SCTL_UNUSED(total_N);
+      plan.norm_scale = (T)1; // Unnormalized (raw) transform; caller applies any scaling.
     }
 
     template <class T>
@@ -902,7 +909,8 @@ namespace sctl {
 
   template <class ValueType> Long FFT<ValueType>::Dim(Integer i) const { return dim[i]; }
 
-  template <class ValueType> void FFT<ValueType>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
+  template <class ValueType> void FFT<ValueType>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads, bool preserve_input) {
+    SCTL_UNUSED(preserve_input); // CT fallback never destroys its input.
     this->fft_type = fft_type_;
     this->howmany_ = howmany_;
     this->copy_input = false;
@@ -937,7 +945,7 @@ namespace sctl {
     plan.fftwplan = nullptr;
   }
 
-  template <> inline void FFT<double>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
+  template <> inline void FFT<double>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads, bool preserve_input) {
     fft_type = fft_type_;
     this->howmany_ = howmany_;
     copy_input = false;
@@ -979,16 +987,20 @@ namespace sctl {
     FFTWInitThreads(Nthreads);
     if (plan.fftwplan) fftw_destroy_plan(plan.fftwplan);
     plan.fftwplan = nullptr;
-    if (fft_type == FFT_Type::R2C) {
-      plan.fftwplan = fftw_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
-    } else if (fft_type == FFT_Type::C2C) {
-      plan.fftwplan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
-    } else if (fft_type == FFT_Type::C2C_INV) {
-      plan.fftwplan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
-    } else if (fft_type == FFT_Type::C2R) {
-      plan.fftwplan = fftw_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+    if (preserve_input) { // Try a plan that preserves its input.
+      if (fft_type == FFT_Type::R2C) {
+        plan.fftwplan = fftw_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      } else if (fft_type == FFT_Type::C2C) {
+        plan.fftwplan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      } else if (fft_type == FFT_Type::C2C_INV) {
+        plan.fftwplan = fftw_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      } else if (fft_type == FFT_Type::C2R) {
+        plan.fftwplan = fftw_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      }
+      // Multi-dim C2R has no preserve-input plan: fall back to copying the input.
+      if (!plan.fftwplan) copy_input = true;
     }
-    if (!plan.fftwplan) { // Build plan without FFTW_PRESERVE_INPUT
+    if (!plan.fftwplan) { // Build plan without FFTW_PRESERVE_INPUT (may destroy input).
       if (fft_type == FFT_Type::R2C) {
         plan.fftwplan = fftw_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C) {
@@ -998,7 +1010,6 @@ namespace sctl {
       } else if (fft_type == FFT_Type::C2R) {
         plan.fftwplan = fftw_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE);
       }
-      copy_input = true;
     }
     }
     SCTL_ASSERT(plan.fftwplan);
@@ -1013,14 +1024,7 @@ namespace sctl {
     if (out.Dim() != N1) out.ReInit(N1);
     //check_align(in, out);
 
-    // Orthonormal scale 1/sqrt(N). FFT is linear, so this scaling can be applied
-    // to the input or the output interchangeably.
-    ValueType s;
-    if      (fft_type == FFT_Type::R2C)     s = 1 / sqrt<ValueType>(N0 / this->howmany_);
-    else if (fft_type == FFT_Type::C2C)     s = 1 / sqrt<ValueType>(N0 / this->howmany_ * (ValueType)0.5);
-    else if (fft_type == FFT_Type::C2C_INV) s = 1 / sqrt<ValueType>(N1 / this->howmany_ * (ValueType)0.5);
-    else                                    s = 1 / sqrt<ValueType>(N1 / this->howmany_); // C2R
-
+    // Unnormalized (raw FFTW) transform: no scaling is applied.
     auto exec = [this](ConstIterator<ValueType> ip, Vector<ValueType>& op) {
       if      (fft_type == FFT_Type::R2C)     fftw_execute_dft_r2c(plan.fftwplan, (double*)&ip[0], (fftw_complex*)&op[0]);
       else if (fft_type == FFT_Type::C2C)     fftw_execute_dft    (plan.fftwplan, (fftw_complex*)&ip[0], (fftw_complex*)&op[0]);
@@ -1028,19 +1032,15 @@ namespace sctl {
       else                                    fftw_execute_dft_c2r(plan.fftwplan, (fftw_complex*)&ip[0], (double*)&op[0]);
     };
 
-    if (copy_input) { // FFTW destroys the input: copy it to scratch, folding the
-      // normalization into the copy (single pass instead of copy + a scaling pass).
+    if (copy_input) { // preserve_input requested but FFTW destroys the input: copy to scratch.
       ScratchBuf<ValueType> tmp(N0);
       Iterator<ValueType> t = tmp.begin();
       ConstIterator<ValueType> src = in.begin();
       #pragma omp parallel for schedule(static)
-      for (Long i = 0; i < N0; i++) t[i] = src[i] * s;
+      for (Long i = 0; i < N0; i++) t[i] = src[i];
       exec(t, out);
-    } else { // input is preserved: transform in place, then scale the output.
+    } else { // input may be overwritten by FFTW.
       exec(in.begin(), out);
-      Iterator<ValueType> o = out.begin();
-      #pragma omp parallel for schedule(static)
-      for (Long i = 0; i < N1; i++) o[i] *= s;
     }
   }
 #endif
@@ -1056,7 +1056,7 @@ namespace sctl {
     plan.fftwplan = nullptr;
   }
 
-  template <> inline void FFT<float>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
+  template <> inline void FFT<float>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads, bool preserve_input) {
     fft_type = fft_type_;
     this->howmany_ = howmany_;
     copy_input = false;
@@ -1098,16 +1098,20 @@ namespace sctl {
     FFTWInitThreads(Nthreads);
     if (plan.fftwplan) fftwf_destroy_plan(plan.fftwplan);
     plan.fftwplan = nullptr;
-    if (fft_type == FFT_Type::R2C) {
-      plan.fftwplan = fftwf_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
-    } else if (fft_type == FFT_Type::C2C) {
-      plan.fftwplan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
-    } else if (fft_type == FFT_Type::C2C_INV) {
-      plan.fftwplan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
-    } else if (fft_type == FFT_Type::C2R) {
-      plan.fftwplan = fftwf_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+    if (preserve_input) { // Try a plan that preserves its input.
+      if (fft_type == FFT_Type::R2C) {
+        plan.fftwplan = fftwf_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      } else if (fft_type == FFT_Type::C2C) {
+        plan.fftwplan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      } else if (fft_type == FFT_Type::C2C_INV) {
+        plan.fftwplan = fftwf_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      } else if (fft_type == FFT_Type::C2R) {
+        plan.fftwplan = fftwf_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      }
+      // Multi-dim C2R has no preserve-input plan: fall back to copying the input.
+      if (!plan.fftwplan) copy_input = true;
     }
-    if (!plan.fftwplan) { // Build plan without FFTW_PRESERVE_INPUT
+    if (!plan.fftwplan) { // Build plan without FFTW_PRESERVE_INPUT (may destroy input).
       if (fft_type == FFT_Type::R2C) {
         plan.fftwplan = fftwf_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C) {
@@ -1117,7 +1121,6 @@ namespace sctl {
       } else if (fft_type == FFT_Type::C2R) {
         plan.fftwplan = fftwf_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE);
       }
-      copy_input = true;
     }
     }
     SCTL_ASSERT(plan.fftwplan);
@@ -1132,14 +1135,7 @@ namespace sctl {
     if (out.Dim() != N1) out.ReInit(N1);
     //check_align(in, out);
 
-    // Orthonormal scale 1/sqrt(N). FFT is linear, so this scaling can be applied
-    // to the input or the output interchangeably.
-    ValueType s;
-    if      (fft_type == FFT_Type::R2C)     s = 1 / sqrt<ValueType>(N0 / this->howmany_);
-    else if (fft_type == FFT_Type::C2C)     s = 1 / sqrt<ValueType>(N0 / this->howmany_ * (ValueType)0.5);
-    else if (fft_type == FFT_Type::C2C_INV) s = 1 / sqrt<ValueType>(N1 / this->howmany_ * (ValueType)0.5);
-    else                                    s = 1 / sqrt<ValueType>(N1 / this->howmany_); // C2R
-
+    // Unnormalized (raw FFTW) transform: no scaling is applied.
     auto exec = [this](ConstIterator<ValueType> ip, Vector<ValueType>& op) {
       if      (fft_type == FFT_Type::R2C)     fftwf_execute_dft_r2c(plan.fftwplan, (float*)&ip[0], (fftwf_complex*)&op[0]);
       else if (fft_type == FFT_Type::C2C)     fftwf_execute_dft    (plan.fftwplan, (fftwf_complex*)&ip[0], (fftwf_complex*)&op[0]);
@@ -1147,19 +1143,15 @@ namespace sctl {
       else                                    fftwf_execute_dft_c2r(plan.fftwplan, (fftwf_complex*)&ip[0], (float*)&op[0]);
     };
 
-    if (copy_input) { // FFTW destroys the input: copy it to scratch, folding the
-      // normalization into the copy (single pass instead of copy + a scaling pass).
+    if (copy_input) { // preserve_input requested but FFTW destroys the input: copy to scratch.
       ScratchBuf<ValueType> tmp(N0);
       Iterator<ValueType> t = tmp.begin();
       ConstIterator<ValueType> src = in.begin();
       #pragma omp parallel for schedule(static)
-      for (Long i = 0; i < N0; i++) t[i] = src[i] * s;
+      for (Long i = 0; i < N0; i++) t[i] = src[i];
       exec(t, out);
-    } else { // input is preserved: transform in place, then scale the output.
+    } else { // input may be overwritten by FFTW.
       exec(in.begin(), out);
-      Iterator<ValueType> o = out.begin();
-      #pragma omp parallel for schedule(static)
-      for (Long i = 0; i < N1; i++) o[i] *= s;
     }
   }
 
@@ -1176,7 +1168,7 @@ namespace sctl {
     plan.fftwplan = nullptr;
   }
 
-  template <> inline void FFT<long double>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads) {
+  template <> inline void FFT<long double>::Setup(FFT_Type fft_type_, Long howmany_, const Vector<Long>& dim_vec, Integer Nthreads, bool preserve_input) {
     fft_type = fft_type_;
     this->howmany_ = howmany_;
     copy_input = false;
@@ -1216,16 +1208,20 @@ namespace sctl {
     FFTWInitThreads(Nthreads);
     if (plan.fftwplan) fftwl_destroy_plan(plan.fftwplan);
     plan.fftwplan = nullptr;
-    if (fft_type == FFT_Type::R2C) {
-      plan.fftwplan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
-    } else if (fft_type == FFT_Type::C2C) {
-      plan.fftwplan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
-    } else if (fft_type == FFT_Type::C2C_INV) {
-      plan.fftwplan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
-    } else if (fft_type == FFT_Type::C2R) {
-      plan.fftwplan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+    if (preserve_input) { // Try a plan that preserves its input.
+      if (fft_type == FFT_Type::R2C) {
+        plan.fftwplan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      } else if (fft_type == FFT_Type::C2C) {
+        plan.fftwplan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      } else if (fft_type == FFT_Type::C2C_INV) {
+        plan.fftwplan = fftwl_plan_many_dft(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      } else if (fft_type == FFT_Type::C2R) {
+        plan.fftwplan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+      }
+      // Multi-dim C2R has no preserve-input plan: fall back to copying the input.
+      if (!plan.fftwplan) copy_input = true;
     }
-    if (!plan.fftwplan) { // Build plan without FFTW_PRESERVE_INPUT
+    if (!plan.fftwplan) { // Build plan without FFTW_PRESERVE_INPUT (may destroy input).
       if (fft_type == FFT_Type::R2C) {
         plan.fftwplan = fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_ESTIMATE);
       } else if (fft_type == FFT_Type::C2C) {
@@ -1235,7 +1231,6 @@ namespace sctl {
       } else if (fft_type == FFT_Type::C2R) {
         plan.fftwplan = fftwl_plan_many_dft_c2r(rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, &out[0], nullptr, 1, N1 / this->howmany_, FFTW_ESTIMATE);
       }
-      copy_input = true;
     }
     }
     SCTL_ASSERT(plan.fftwplan);
@@ -1250,14 +1245,7 @@ namespace sctl {
     if (out.Dim() != N1) out.ReInit(N1);
     //check_align(in, out);
 
-    // Orthonormal scale 1/sqrt(N). FFT is linear, so this scaling can be applied
-    // to the input or the output interchangeably.
-    ValueType s;
-    if      (fft_type == FFT_Type::R2C)     s = 1 / sqrt<ValueType>(N0 / this->howmany_);
-    else if (fft_type == FFT_Type::C2C)     s = 1 / sqrt<ValueType>(N0 / this->howmany_ * (ValueType)0.5);
-    else if (fft_type == FFT_Type::C2C_INV) s = 1 / sqrt<ValueType>(N1 / this->howmany_ * (ValueType)0.5);
-    else                                    s = 1 / sqrt<ValueType>(N1 / this->howmany_); // C2R
-
+    // Unnormalized (raw FFTW) transform: no scaling is applied.
     auto exec = [this](ConstIterator<ValueType> ip, Vector<ValueType>& op) {
       if      (fft_type == FFT_Type::R2C)     fftwl_execute_dft_r2c(plan.fftwplan, (long double*)&ip[0], (fftwl_complex*)&op[0]);
       else if (fft_type == FFT_Type::C2C)     fftwl_execute_dft    (plan.fftwplan, (fftwl_complex*)&ip[0], (fftwl_complex*)&op[0]);
@@ -1265,19 +1253,15 @@ namespace sctl {
       else                                    fftwl_execute_dft_c2r(plan.fftwplan, (fftwl_complex*)&ip[0], (long double*)&op[0]);
     };
 
-    if (copy_input) { // FFTW destroys the input: copy it to scratch, folding the
-      // normalization into the copy (single pass instead of copy + a scaling pass).
+    if (copy_input) { // preserve_input requested but FFTW destroys the input: copy to scratch.
       ScratchBuf<ValueType> tmp(N0);
       Iterator<ValueType> t = tmp.begin();
       ConstIterator<ValueType> src = in.begin();
       #pragma omp parallel for schedule(static)
-      for (Long i = 0; i < N0; i++) t[i] = src[i] * s;
+      for (Long i = 0; i < N0; i++) t[i] = src[i];
       exec(t, out);
-    } else { // input is preserved: transform in place, then scale the output.
+    } else { // input may be overwritten by FFTW.
       exec(in.begin(), out);
-      Iterator<ValueType> o = out.begin();
-      #pragma omp parallel for schedule(static)
-      for (Long i = 0; i < N1; i++) o[i] *= s;
     }
   }
 #endif

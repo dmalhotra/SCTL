@@ -65,37 +65,35 @@ template <class ValueType> class OldMatrixFFT {
   Long Dim(Integer i) const { return dim_[i]; }
 
   void Setup(FFT_Type fft_type, Long howmany, const Vector<Long>& dim_vec) {
+    // Wrapper is unnormalized now: drop the 1/sqrt(N) the reference used.
     const auto fft_r2c = [](Long N0) {
-      ValueType s = 1 / sctl::sqrt<ValueType>(N0);
       Long N1 = (N0 / 2 + 1);
       Matrix<ValueType> M(N0, 2 * N1);
       for (Long j = 0; j < N0; j++)
         for (Long i = 0; i < N1; i++) {
-          M[j][2 * i + 0] =  sctl::cos<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0) * s;
-          M[j][2 * i + 1] = -sctl::sin<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0) * s;
+          M[j][2 * i + 0] =  sctl::cos<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0);
+          M[j][2 * i + 1] = -sctl::sin<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0);
         }
       return M;
     };
     const auto fft_c2c = [](Long N0) {
-      ValueType s = 1 / sctl::sqrt<ValueType>(N0);
       Matrix<ValueType> M(2 * N0, 2 * N0);
       for (Long i = 0; i < N0; i++)
         for (Long j = 0; j < N0; j++) {
-          M[2 * i + 0][2 * j + 0] =  sctl::cos<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0) * s;
-          M[2 * i + 1][2 * j + 0] =  sctl::sin<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0) * s;
-          M[2 * i + 0][2 * j + 1] = -sctl::sin<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0) * s;
-          M[2 * i + 1][2 * j + 1] =  sctl::cos<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0) * s;
+          M[2 * i + 0][2 * j + 0] =  sctl::cos<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0);
+          M[2 * i + 1][2 * j + 0] =  sctl::sin<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0);
+          M[2 * i + 0][2 * j + 1] = -sctl::sin<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0);
+          M[2 * i + 1][2 * j + 1] =  sctl::cos<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0);
         }
       return M;
     };
     const auto fft_c2r = [](Long N0) {
-      ValueType s = 1 / sctl::sqrt<ValueType>(N0);
       Long N1 = (N0 / 2 + 1);
       Matrix<ValueType> M(2 * N1, N0);
       for (Long i = 0; i < N1; i++) {
         for (Long j = 0; j < N0; j++) {
-          M[2 * i + 0][j] =  2 * sctl::cos<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0) * s;
-          M[2 * i + 1][j] = -2 * sctl::sin<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0) * s;
+          M[2 * i + 0][j] =  2 * sctl::cos<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0);
+          M[2 * i + 1][j] = -2 * sctl::sin<ValueType>(2 * sctl::const_pi<ValueType>() * j * i / N0);
         }
       }
       if (N1 > 0) {
@@ -234,6 +232,10 @@ void check_round_trip(FFT_Type fwd, FFT_Type inv,
   fill_random(v0, 12345u);
   f .Execute(v0, v1);
   fi.Execute(v1, v2);
+  // Unnormalized: fwd then inv scales by N; undo before comparing.
+  Long N = 1;
+  for (Long i = 0; i < dim_vec.Dim(); i++) N *= dim_vec[i];
+  v2 *= (T)1 / (T)N;
   T err = inf_norm_diff(v0, v2);
   T tol = sctl::machine_eps<T>() * 64 * std::max<Long>(1, f.Dim(0));
   std::cout << "  [" << tag << "] round-trip err = " << err << " (tol " << tol << ")\n";
@@ -263,8 +265,10 @@ void check_vs_old(FFT_Type type, const Vector<Long>& dim_vec, Long howmany, cons
   } else {
     fill_random(v0, 67890u);
   }
+  // C2R (preserve_input=false) may destroy v0: reference on a copy, new FFT second.
+  Vector<T> v0_copy = v0;
+  f_old.Execute(v0_copy, vo);
   f_new.Execute(v0, vn);
-  f_old.Execute(v0, vo);
   T err = inf_norm_diff(vn, vo);
   T tol = sctl::machine_eps<T>() * 64 * std::max<Long>(1, f_new.Dim(0));
   std::cout << "  [" << tag << "] vs-old err = " << err << " (tol " << tol << ")\n";

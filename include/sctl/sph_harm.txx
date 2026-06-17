@@ -2309,6 +2309,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKSelf(const Vecto
 
 
 template <class Real> void SphericalHarmonics<Real>::Grid2SHC_(const Vector<Real>& X, Long Nt, Long Np, Long p1, Vector<Real>& B1){
+  const Real fft_scal = 1 / sqrt<Real>((Real)Np);
   const auto& Mf = OpFourierInv(Np);
   assert(Mf.Dim(0) == Np);
 
@@ -2336,6 +2337,7 @@ template <class Real> void SphericalHarmonics<Real>::Grid2SHC_(const Vector<Real
       { // buff <-- FFT(Xi)
         const Vector<Real> Xi(Np, (Iterator<Real>)X.begin() + Np * i, false);
         Mf.Execute(Xi, buff);
+        buff *= fft_scal;
       }
       { // B0 <-- Transpose(buff)
         B0_[0][i] = buff[0]; // skipping buff[1] == 0
@@ -2575,6 +2577,7 @@ template <class Real> void SphericalHarmonics<Real>::SHCArrange1(const Vector<Re
   }
 }
 template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real>& B0, Long p0, Long Nt, Long Np, Vector<Real>* X, Vector<Real>* X_phi, Vector<Real>* X_theta){
+  const Real fft_scal = 1 / sqrt<Real>((Real)Np);
   const auto& Mf = OpFourier(Np);
   assert(Mf.Dim(1) == Np);
 
@@ -2642,6 +2645,7 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
         { // X <-- FFT(buff)
           Vector<Real> Xi(Np, X->begin() + Np * i, false);
           Mf.Execute(buff, Xi);
+          Xi *= fft_scal;
         }
 
         if(X_phi){ // Evaluate Fourier gradient
@@ -2660,6 +2664,7 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
           { // X_phi <-- FFT(buff)
             Vector<Real> Xi(Np, X_phi->begin() + Np * i, false);
             Mf.Execute(buff, Xi);
+            Xi *= fft_scal;
           }
         }
       }
@@ -2715,6 +2720,7 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
         { // Xi <-- FFT(buff)
           Vector<Real> Xi(Np, X_theta->begin() + Np * i, false);
           Mf.Execute(buff, Xi);
+          Xi *= fft_scal;
         }
       }
     }
@@ -2951,7 +2957,7 @@ template <class Real> const FFT<Real>& SphericalHarmonics<Real>::OpFourierInv(Lo
   #pragma omp critical (SCTL_FFT_PLAN1)
   if(!Mf.Dim(0)){
     StaticArray<Long,1> fft_dim {Np};
-    Mf.Setup(FFT_Type::R2C, 1, Vector<Long>(1,fft_dim,false));
+    Mf.Setup(FFT_Type::R2C, 1, Vector<Long>(1,fft_dim,false), 1, true); // Grid2SHC_ input is const: preserve it
   }
   return Mf;
 }
