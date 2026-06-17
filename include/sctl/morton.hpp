@@ -128,6 +128,14 @@ template <Integer DIM> class MortonCode {
   /** Extract coordinate `d` from an interleaved code (de-interleave). Inverse of `spread_bits`. */
   static SCTL_GPU_HD std::uint64_t compact_bits(MortonInteger code, Integer d);
 
+  /** Interleave DIM per-axis ints into a code (force-inlined; `nbr_emit_`'s hot path). */
+  template <Integer d = 0> static SCTL_GPU_HD MortonInteger interleave(const std::uint64_t* xi);
+
+  /** Real-coord ctor body: clamp to `[0,1)`, scale to ints, interleave. Separate plain-inline overload
+   *  (force-inlining regressed gcc's DIM=4 ctor ~3x); `enable_if` avoids clashing with the `uint64_t*` one. */
+  template <class Real, class = std::enable_if_t<!std::is_integral<Real>::value>>
+  static SCTL_GPU_HD MortonInteger interleave(const Real* coord);
+
   MortonInteger code;
 
   friend class Morton<DIM>;
@@ -249,6 +257,33 @@ template <Integer DIM> class Morton {
     os << static_cast<int>(n.depth) << ")";
     return os;
   }
+
+ private:
+  /**
+   * `NbrList` helpers, unrolled at compile time so the neighbor index `idx` and axis `d`
+   * (and hence the per-axis offset `j ∈ {-1,0,+1}`) are constants. With `j` constant, the
+   * `j<0`/`j>0` bounds-check branches collapse via `if constexpr`: the `j==0` axes emit no
+   * bounds work at all. Mirrors the recursive `if constexpr` style of `MortonCode::spread_step`.
+   *
+   * Periodicity is also a template parameter: `NbrList` dispatches the runtime `Periodicity` via a
+   * `switch` to a `PER`-specialized instantiation (`DYN == false`) so `is_periodic(PER, d)` is a
+   * compile-time constant and the wrap-vs-out-of-bounds branch folds away. Unenumerated masks fall
+   * through to the `DYN == true` instantiation, which reads the runtime `periodicity` argument.
+   */
+  template <Periodicity PER, bool DYN, Integer idx, Integer d>
+  static SCTL_GPU_HD void nbr_fill_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
+                                    Periodicity periodicity, std::uint64_t* xi_nbr, bool& out_of_bounds);
+
+  template <Periodicity PER, bool DYN, Integer idx>
+  static SCTL_GPU_HD void nbr_emit_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
+                                    Periodicity periodicity, uint8_t level,
+                                    std::array<Morton, pow<DIM, std::size_t>(3)>& out);
+
+  /** Compact (non-unrolled) emitter; the readable reference form of `nbr_emit_`. Used on-device for
+   *  DIM>=4 where the unrolled emitters spill and tank occupancy (host/DIM<=3 use the switch). */
+  static SCTL_GPU_HD void nbr_loop_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
+                                    Periodicity periodicity, uint8_t level,
+                                    std::array<Morton, pow<DIM, std::size_t>(3)>& out);
 };
 
 }  // namespace sctl
