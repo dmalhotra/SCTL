@@ -78,20 +78,32 @@ namespace sctl {
      * @param[in] dim_vec Dimensions of the input data.
      *
      * @param[in] Nthreads Number of threads (default is 1).
-     *
-     * @param[in] preserve_input If `false` (default), `Execute` may overwrite
-     * its input (only multi-D C2R does); set `true` to keep it intact.
      */
-    void Setup(FFT_Type fft_type, Long howmany, const Vector<Long>& dim_vec, Integer Nthreads = 1, bool preserve_input = false);
+    void Setup(FFT_Type fft_type, Long howmany, const Vector<Long>& dim_vec, Integer Nthreads = 1);
 
     /**
-     * Execute the FFT transform.
+     * Execute the transform, preserving `in` (multi-D C2R may cost a copy).
+     *
+     * @param[in] in the input data vector.
+     *
+     * @param[out] out the output data vector.
+     *
+     * @note FFTW build: `in`/`out` must match the plan's alignment
+     * (`SCTL_MEM_ALIGN`): a default `Vector` qualifies, a sub-view only if its
+     * offset preserves it.  Misaligned buffers trip an assert (else crash);
+     * the Cooley-Tukey fallback has none.
+     */
+    void Execute(const Vector<ValueType>& in, Vector<ValueType>& out) const;
+
+    /**
+     * Execute the transform; `in` MAY be overwritten (fast default). Pass
+     * `preserve_input = true` to keep it. Alignment rules as above.
      *
      * @param[in] in the input data vector.
      *
      * @param[out] out the output data vector.
      */
-    void Execute(const Vector<ValueType>& in, Vector<ValueType>& out) const;
+    void Execute(Vector<ValueType>& in, Vector<ValueType>& out, bool preserve_input = false) const;
 
     /**
      * Test the FFT implementation.
@@ -103,10 +115,14 @@ namespace sctl {
     /// Swap all state with `other`; backs the move operations.
     void Swap(FFT& other) noexcept;
 
-    //static void check_align(const Vector<ValueType>& in, const Vector<ValueType>& out);
+    /// Shared body; preserve_input keeps `in` (via plan_preserve or a scratch copy).
+    /// Not const-correct: writes `in` only when preserve_input==false, which only the
+    /// non-const Execute overload passes -- so the const_cast never mutates a const object.
+    void ExecuteImpl(const Vector<ValueType>& in, Vector<ValueType>& out, bool preserve_input) const;
 
-    FFTPlan<ValueType> plan;
-    bool copy_input;
+    FFTPlan<ValueType> plan;          // destroy-input plan (fast)
+    FFTPlan<ValueType> plan_preserve; // preserve-input plan; null for multi-D C2R
+    Integer align_in, align_out; // plan alignment; Execute asserts in/out match
 
     StaticArray<Long,2> dim; // operator dimensions
     FFT_Type fft_type; // type of FFT transform
