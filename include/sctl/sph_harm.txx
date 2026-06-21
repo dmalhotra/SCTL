@@ -423,6 +423,7 @@ template <class Real> void SphericalHarmonics<Real>::test() {
 }
 
 template <class Real> void SphericalHarmonics<Real>::Grid2SHC(const Vector<Real>& X, Long Nt, Long Np, Long p1, Vector<Real>& S, SHCArrange arrange){
+  SCTL_ASSERT_MSG((Np*sizeof(Real)) % 16 == 0, "SphericalHarmonics: Np*sizeof(Real) must be a multiple of 16 (FFT alignment).");
   Long N = X.Dim() / (Np*Nt);
   assert(X.Dim() == N*Np*Nt);
 
@@ -433,6 +434,7 @@ template <class Real> void SphericalHarmonics<Real>::Grid2SHC(const Vector<Real>
 }
 
 template <class Real> void SphericalHarmonics<Real>::SHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p0, Long Nt, Long Np, Vector<Real>* X, Vector<Real>* X_theta, Vector<Real>* X_phi){
+  SCTL_ASSERT_MSG((Np*sizeof(Real)) % 16 == 0, "SphericalHarmonics: Np*sizeof(Real) must be a multiple of 16 (FFT alignment).");
   Vector<Real> B0;
   SHCArrange1(S, arrange, p0, B0);
   SHC2Grid_(B0, p0, Nt, Np, X, X_phi, X_theta);
@@ -780,6 +782,7 @@ template <class Real> void SphericalHarmonics<Real>::WriteVTK(const char* fname,
 
 
 template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Real>& X, Long Nt, Long Np, Long p0, Vector<Real>& S, SHCArrange arrange) {
+  SCTL_ASSERT_MSG((Np*sizeof(Real)) % 16 == 0, "SphericalHarmonics: Np*sizeof(Real) must be a multiple of 16 (FFT alignment).");
   Long N = X.Dim() / (Np*Nt);
   assert(X.Dim() == N*Np*Nt);
   assert(N % COORD_DIM == 0);
@@ -885,6 +888,7 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
 }
 
 template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p0, Long Nt, Long Np, Vector<Real>& X) {
+  SCTL_ASSERT_MSG((Np*sizeof(Real)) % 16 == 0, "SphericalHarmonics: Np*sizeof(Real) must be a multiple of 16 (FFT alignment).");
   Vector<Real> B0;
   SHCArrange1(S, arrange, p0, B0);
 
@@ -2957,7 +2961,7 @@ template <class Real> const FFT<Real>& SphericalHarmonics<Real>::OpFourierInv(Lo
   #pragma omp critical (SCTL_FFT_PLAN1)
   if(!Mf.Dim(0)){
     StaticArray<Long,1> fft_dim {Np};
-    Mf.Setup(FFT_Type::R2C, 1, Vector<Long>(1,fft_dim,false), 1, true); // Grid2SHC_ input is const: preserve it
+    Mf.Setup(FFT_Type::R2C, 1, Vector<Long>(1,fft_dim,false), 1);
   }
   return Mf;
 }

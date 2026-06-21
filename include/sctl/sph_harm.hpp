@@ -46,7 +46,7 @@ template <class Real> class SphericalHarmonics{
      * Compute spherical harmonic coefficients from grid values.
      * \param[in] X Grid values {X(t0,p0), X(t0,p1), ... , X(t1,p0), X(t1,p1), ... }, where, {cos(t0), cos(t1), ... } are the Gauss-Legendre nodes of order (Nt-1) in the interval [-1,1] and {p0, p1, ... } are equispaced in [0, 2*pi].
      * \param[in] Nt Number of grid points \theta \in (0,pi).
-     * \param[in] Np Number of grid points \phi \in (0,2*pi).
+     * \param[in] Np Number of grid points \phi \in (0,2*pi). Np*sizeof(Real) must be a multiple of 16 (FFT alignment; Np even for double).
      * \param[in] p Order of spherical harmonic expansion.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[out] S Spherical harmonic coefficients.
@@ -59,7 +59,7 @@ template <class Real> class SphericalHarmonics{
      * \param[in] arrange Arrangement of the coefficients.
      * \param[in] p Order of spherical harmonic expansion.
      * \param[in] Nt Number of grid points \theta \in (0,pi).
-     * \param[in] Np Number of grid points \phi \in (0,2*pi).
+     * \param[in] Np Number of grid points \phi \in (0,2*pi). Np*sizeof(Real) must be a multiple of 16 (FFT alignment; Np even for double).
      * \param[out] X Grid values {X(t0,p0), X(t0,p1), ... , X(t1,p0), X(t1,p1), ... }, where, {cos(t0), cos(t1), ... } are the Gauss-Legendre nodes of order (Nt-1) in the interval [-1,1] and {p0, p1, ... } are equispaced in [0, 2*pi].
      * \param[out] X_theta \theta derivative of X evaluated at grid points.
      * \param[out] X_phi \phi derivative of X evaluated at grid points.
@@ -94,7 +94,7 @@ template <class Real> class SphericalHarmonics{
      * Compute vector spherical harmonic coefficients from grid values.
      * \param[in] X Grid values {X(t0,p0), X(t0,p1), ... , X(t1,p0), ... , Y(t0,p0), ... , Z(t0,p0), ... }, where, {cos(t0), cos(t1), ... } are the Gauss-Legendre nodes of order (Nt-1) in the interval [-1,1] and {p0, p1, ... } are equispaced in [0, 2*pi].
      * \param[in] Nt Number of grid points \theta \in (0,pi).
-     * \param[in] Np Number of grid points \phi \in (0,2*pi).
+     * \param[in] Np Number of grid points \phi \in (0,2*pi). Np*sizeof(Real) must be a multiple of 16 (FFT alignment; Np even for double).
      * \param[in] p Order of spherical harmonic expansion.
      * \param[in] arrange Arrangement of the coefficients.
      * \param[out] S Vector spherical harmonic coefficients.
@@ -107,7 +107,7 @@ template <class Real> class SphericalHarmonics{
      * \param[in] arrange Arrangement of the coefficients.
      * \param[in] p Order of spherical harmonic expansion.
      * \param[in] Nt Number of grid points \theta \in (0,pi).
-     * \param[in] Np Number of grid points \phi \in (0,2*pi).
+     * \param[in] Np Number of grid points \phi \in (0,2*pi). Np*sizeof(Real) must be a multiple of 16 (FFT alignment; Np even for double).
      * \param[out] X Grid values {X(t0,p0), X(t0,p1), ... , X(t1,p0), X(t1,p1), ... , Y(t0,p0), ... , Z(t0,p0), ... }, where, {cos(t0), cos(t1), ... } are the Gauss-Legendre nodes of order (Nt-1) in the interval [-1,1] and {p0, p1, ... } are equispaced in [0, 2*pi].
      */
     static void VecSHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p, Long Nt, Long Np, Vector<Real>& X);
