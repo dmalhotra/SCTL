@@ -423,7 +423,6 @@ template <class Real> void SphericalHarmonics<Real>::test() {
 }
 
 template <class Real> void SphericalHarmonics<Real>::Grid2SHC(const Vector<Real>& X, Long Nt, Long Np, Long p1, Vector<Real>& S, SHCArrange arrange){
-  SCTL_ASSERT_MSG((Np*sizeof(Real)) % 16 == 0, "SphericalHarmonics: Np*sizeof(Real) must be a multiple of 16 (FFT alignment).");
   Long N = X.Dim() / (Np*Nt);
   assert(X.Dim() == N*Np*Nt);
 
@@ -434,7 +433,6 @@ template <class Real> void SphericalHarmonics<Real>::Grid2SHC(const Vector<Real>
 }
 
 template <class Real> void SphericalHarmonics<Real>::SHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p0, Long Nt, Long Np, Vector<Real>* X, Vector<Real>* X_theta, Vector<Real>* X_phi){
-  SCTL_ASSERT_MSG((Np*sizeof(Real)) % 16 == 0, "SphericalHarmonics: Np*sizeof(Real) must be a multiple of 16 (FFT alignment).");
   Vector<Real> B0;
   SHCArrange1(S, arrange, p0, B0);
   SHC2Grid_(B0, p0, Nt, Np, X, X_phi, X_theta);
@@ -782,7 +780,6 @@ template <class Real> void SphericalHarmonics<Real>::WriteVTK(const char* fname,
 
 
 template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Real>& X, Long Nt, Long Np, Long p0, Vector<Real>& S, SHCArrange arrange) {
-  SCTL_ASSERT_MSG((Np*sizeof(Real)) % 16 == 0, "SphericalHarmonics: Np*sizeof(Real) must be a multiple of 16 (FFT alignment).");
   Long N = X.Dim() / (Np*Nt);
   assert(X.Dim() == N*Np*Nt);
   assert(N % COORD_DIM == 0);
@@ -888,7 +885,6 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
 }
 
 template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Real>& S, SHCArrange arrange, Long p0, Long Nt, Long Np, Vector<Real>& X) {
-  SCTL_ASSERT_MSG((Np*sizeof(Real)) % 16 == 0, "SphericalHarmonics: Np*sizeof(Real) must be a multiple of 16 (FFT alignment).");
   Vector<Real> B0;
   SHCArrange1(S, arrange, p0, B0);
 
@@ -2332,20 +2328,19 @@ template <class Real> void SphericalHarmonics<Real>::Grid2SHC_(const Vector<Real
     Long a=(tid+0)*N*Nt/omp_p;
     Long b=(tid+1)*N*Nt/omp_p;
 
-    ScratchBuf<Real> buff_storage(Mf.Dim(1));
-    Vector<Real> buff(buff_storage);
+    ScratchBuf<Real> Xi_storage(Np), buff_storage(Mf.Dim(1));
+    Vector<Real> Xi(Xi_storage), buff(buff_storage);
+
     Long fft_coeff_len = std::min(buff.Dim(), 2*p1+2);
     Matrix<Real> B0_(2*p1+1, N*Nt, B0.begin(), false);
-    const Matrix<Real> MX(N * Nt, Np, (Iterator<Real>)X.begin(), false);
     for (Long i = a; i < b; i++) {
       { // buff <-- FFT(Xi)
-        const Vector<Real> Xi(Np, (Iterator<Real>)X.begin() + Np * i, false);
+        omp_par::memcpy(Xi.begin(), X.begin() + Np * i, Np, 1);
         Mf.Execute(Xi, buff);
-        buff *= fft_scal;
       }
       { // B0 <-- Transpose(buff)
-        B0_[0][i] = buff[0]; // skipping buff[1] == 0
-        for (Long j = 2; j < fft_coeff_len; j++) B0_[j-1][i] = buff[j];
+        B0_[0][i] = buff[0] * fft_scal; // skipping buff[1] == 0
+        for (Long j = 2; j < fft_coeff_len; j++) B0_[j-1][i] = buff[j] * fft_scal;
         for (Long j = fft_coeff_len; j < 2*p1+2; j++) B0_[j-1][i] = 0;
       }
     }
@@ -2634,9 +2629,10 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
       Long a=(tid+0)*N*Nt/omp_p;
       Long b=(tid+1)*N*Nt/omp_p;
 
-      ScratchBuf<Real> buff_storage(Mf.Dim(0));
-      Vector<Real> buff(buff_storage);
+      ScratchBuf<Real> buff_storage(Mf.Dim(0)), Xout_storage(Mf.Dim(1));
+      Vector<Real> buff(buff_storage), Xout(Xout_storage);
       buff = 0;
+
       Long fft_coeff_len = std::min(buff.Dim(), 2*p0+2);
       Matrix<Real> B1_(2*p0+1, N*Nt, B1.begin(), false);
       for (Long i = a; i < b; i++) {
@@ -2647,9 +2643,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
           for (Long j = fft_coeff_len; j < buff.Dim(); j++) buff[j] = 0;
         }
         { // X <-- FFT(buff)
-          Vector<Real> Xi(Np, X->begin() + Np * i, false);
-          Mf.Execute(buff, Xi);
-          Xi *= fft_scal;
+          Mf.Execute(buff, Xout);
+          for (Long j = 0; j < Np; j++) X->begin()[Np * i + j] = Xout[j] * fft_scal;
         }
 
         if(X_phi){ // Evaluate Fourier gradient
@@ -2666,9 +2661,8 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
             }
           }
           { // X_phi <-- FFT(buff)
-            Vector<Real> Xi(Np, X_phi->begin() + Np * i, false);
-            Mf.Execute(buff, Xi);
-            Xi *= fft_scal;
+            Mf.Execute(buff, Xout);
+            for (Long j = 0; j < Np; j++) X_phi->begin()[Np * i + j] = Xout[j] * fft_scal;
           }
         }
       }
@@ -2709,9 +2703,10 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
       Long a=(tid+0)*N*Nt/omp_p;
       Long b=(tid+1)*N*Nt/omp_p;
 
-      ScratchBuf<Real> buff_storage(Mf.Dim(0));
-      Vector<Real> buff(buff_storage);
+      ScratchBuf<Real> buff_storage(Mf.Dim(0)), Xout_storage(Mf.Dim(1));
+      Vector<Real> buff(buff_storage), Xout(Xout_storage);
       buff = 0;
+
       Long fft_coeff_len = std::min(buff.Dim(), 2*p0+2);
       Matrix<Real> B1_(2*p0+1, N*Nt, B1.begin(), false);
       for (Long i = a; i < b; i++) {
@@ -2721,10 +2716,9 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
           for (Long j = 2; j < fft_coeff_len; j++) buff[j] = B1_[j-1][i];
           for (Long j = fft_coeff_len; j < buff.Dim(); j++) buff[j] = 0;
         }
-        { // Xi <-- FFT(buff)
-          Vector<Real> Xi(Np, X_theta->begin() + Np * i, false);
-          Mf.Execute(buff, Xi);
-          Xi *= fft_scal;
+        { // X_theta <-- FFT(buff)
+          Mf.Execute(buff, Xout);
+          for (Long j = 0; j < Np; j++) X_theta->begin()[Np * i + j] = Xout[j] * fft_scal;
         }
       }
     }
