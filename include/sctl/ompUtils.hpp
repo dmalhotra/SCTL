@@ -91,6 +91,36 @@ template <class T, class StrictWeakOrdering> void merge_sort(T A, T A_last, Stri
 template <class T> void merge_sort(T A, T A_last);
 
 /**
+ * Parallel sample sort. Writes the sorted output to a separate buffer B (out-of-place).
+ * Scales better than merge_sort for large records by bounding data movement (one
+ * bucket scatter + per-bucket std::sort) rather than O(log p) full-array merge passes.
+ *
+ * @param A Beginning iterator of the (unmodified) input range.
+ * @param B Beginning iterator of the output range (size N).
+ * @param N Number of elements.
+ * @param comp Functor for comparing elements.
+ */
+template <class ConstIter, class Iter, class StrictWeakOrdering> void sample_sort(ConstIter A, Iter B, Long N, StrictWeakOrdering comp);
+
+/**
+ * In-place parallel sample sort (sorts the range [A, A_last) in place using an
+ * internal scratch buffer). Drop-in replacement for merge_sort.
+ *
+ * @param A Beginning iterator of the range.
+ * @param A_last Ending iterator of the range.
+ * @param comp Functor for comparing elements.
+ */
+template <class T, class StrictWeakOrdering> void sample_sort(T A, T A_last, StrictWeakOrdering comp);
+
+/**
+ * In-place parallel sample sort using the default (operator<) ordering.
+ *
+ * @param A Beginning iterator of the range.
+ * @param A_last Ending iterator of the range.
+ */
+template <class T> void sample_sort(T A, T A_last);
+
+/**
  * Reduces the elements in a range to a single value.
  *
  * @tparam ConstIter Iterator type for the input range.

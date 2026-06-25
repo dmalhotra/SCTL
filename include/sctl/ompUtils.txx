@@ -215,6 +215,80 @@ template <class T> inline void omp_par::merge_sort(T A, T A_last) {
   omp_par::merge_sort(A, A_last, std::less<_ValType>());
 }
 
+template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp_par::sample_sort(ConstIter A, Iter B, Long N, StrictWeakOrdering comp) {
+  typedef typename std::iterator_traits<Iter>::value_type _ValType;
+  const Integer nt = SCTL_GET_MAX_THREADS();
+  const bool inplace = (N > 0) && ((const void*)&A[0] == (const void*)&B[0]);  // output aliases input
+
+  if (nt < 2 || N < 64 * nt) {  // too small to parallelize: serial std::sort
+    if (!inplace) for (Long i = 0; i < N; i++) B[i] = A[i];
+    std::sort(B, B + N, comp);
+    return;
+  }
+  if (inplace) {  // can't scatter onto the input: sort into scratch then copy back
+    ScratchBuf<_ValType> tmp_buf(N);
+    omp_par::sample_sort(A, tmp_buf.begin(), N, comp);
+    Iterator<_ValType> tmp = tmp_buf.begin();
+    #pragma omp parallel for schedule(static)
+    for (Long i = 0; i < N; i++) B[i] = tmp[i];
+    return;
+  }
+
+  // Adaptive bucket count: aim for >=~1024 elem/bucket, between nt and 16*nt buckets.
+  const Long nbuck = std::max<Long>(nt, std::min<Long>(16 * nt, N / 1024));
+
+  // 1. Pick nbuck-1 splitters by sorting a regularly-strided oversample.
+  const Long Ns = std::min<Long>(nbuck * 8, N);
+  ScratchBuf<_ValType> samp_buf(Ns), split_buf(nbuck - 1);
+  Iterator<_ValType> samp = samp_buf.begin(), split = split_buf.begin();
+  for (Long i = 0; i < Ns; i++) samp[i] = A[i * N / Ns];
+  std::sort(samp, samp + Ns, comp);
+  for (Long k = 0; k < nbuck - 1; k++) split[k] = samp[(k + 1) * Ns / nbuck];
+  auto bucket = [&split, &comp, nbuck](const _ValType& x) { return std::upper_bound(split, split + (nbuck - 1), x, comp) - split; };
+
+  // 2. Per-thread histogram of bucket counts over contiguous chunks.
+  ScratchBuf<Long> hist_buf(nt * nbuck), chunk_buf(nt + 1);
+  Iterator<Long> hist = hist_buf.begin(), chunk = chunk_buf.begin();
+  for (Long i = 0; i < nt * nbuck; i++) hist[i] = 0;
+  for (Integer t = 0; t <= nt; t++) chunk[t] = (Long)t * N / nt;
+  #pragma omp parallel num_threads(nt)
+  { const Integer t = SCTL_GET_THREAD_NUM();
+    Iterator<Long> h = hist + t * nbuck;
+    for (Long i = chunk[t]; i < chunk[t + 1]; i++) h[bucket(A[i])]++;
+  }
+
+  // 3. Bucket offsets in B and per-(thread,bucket) write positions.
+  ScratchBuf<Long> bdsp_buf(nbuck + 1), tdsp_buf(nt * nbuck);
+  Iterator<Long> bdsp = bdsp_buf.begin(), tdsp = tdsp_buf.begin();
+  bdsp[0] = 0;
+  for (Long b = 0; b < nbuck; b++) {
+    Long o = bdsp[b];
+    for (Integer t = 0; t < nt; t++) { tdsp[t * nbuck + b] = o; o += hist[t * nbuck + b]; }
+    bdsp[b + 1] = o;
+  }
+
+  // 4. Scatter A into B grouped by bucket.
+  #pragma omp parallel num_threads(nt)
+  { const Integer t = SCTL_GET_THREAD_NUM();
+    ScratchBuf<Long> o_buf(nbuck); Iterator<Long> o = o_buf.begin();
+    for (Long b = 0; b < nbuck; b++) o[b] = tdsp[t * nbuck + b];
+    for (Long i = chunk[t]; i < chunk[t + 1]; i++) { Long b = bucket(A[i]); B[o[b]++] = A[i]; }
+  }
+
+  // 5. Sort each bucket independently (dynamic for load balance).
+  #pragma omp parallel for schedule(dynamic) num_threads(nt)
+  for (Long b = 0; b < nbuck; b++) std::sort(B + bdsp[b], B + bdsp[b + 1], comp);
+}
+
+template <class T, class StrictWeakOrdering> inline void omp_par::sample_sort(T A, T A_last, StrictWeakOrdering comp) {
+  omp_par::sample_sort(A, A, A_last - A, comp);  // A==B: in-place path is auto-detected
+}
+
+template <class T> inline void omp_par::sample_sort(T A, T A_last) {
+  typedef typename std::iterator_traits<T>::value_type _ValType;
+  omp_par::sample_sort(A, A_last, std::less<_ValType>());
+}
+
 template <class ConstIter, class Int> typename std::iterator_traits<ConstIter>::value_type omp_par::reduce(ConstIter A, Int cnt) {
   typedef typename std::iterator_traits<ConstIter>::value_type ValueType;
   ValueType sum = 0;
