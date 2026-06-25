@@ -11,8 +11,10 @@
                             // runtime VMAs to file-relative offsets for PIE
                             // executables and shared libraries.
 #ifdef __APPLE__
-#include <mach-o/dyld.h>    // for _NSGetExecutablePath
 #include <cstdint>          // for uint32_t
+// Forward-declare rather than #include <mach-o/dyld.h>: that header transitively
+// pulls <mach/message.h>, which fails to compile under g++ on the macOS 26 SDK.
+extern "C" int _NSGetExecutablePath(char* buf, uint32_t* bufsize);
 #endif
 
 #include "sctl/common.hpp"  // for SCTL_UNUSED, sctl
