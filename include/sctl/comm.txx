@@ -14,7 +14,7 @@
 #include "sctl/comm.hpp"          // for Comm, CommOp
 #include "sctl/iterator.hpp"      // for Iterator, ConstIterator
 #include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
-#include "sctl/ompUtils.txx"      // for scan, merge_sort, memcpy
+#include "sctl/ompUtils.txx"      // for scan, sample_sort, memcpy
 #include "sctl/scratch_pool.hpp"  // for ScratchBuf
 #include "sctl/scratch_pool.txx"  // for ScratchBuf
 #include "sctl/static-array.hpp"  // for StaticArray
@@ -634,7 +634,7 @@ template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> s
     for (Integer i = 0; i < impl_->mpi_size_; i++) {
       if (recv_counts_units[i]) recv_order.push_back(std::make_pair(recv_displs_units[i], i));
     }
-    omp_par::merge_sort(recv_order.begin(), recv_order.end());
+    omp_par::sample_sort(recv_order.begin(), recv_order.end());
     const Long recv_order_size = static_cast<Long>(recv_order.size());
     SCTL_ASSERT(recv_order_size);
     for (Long i = 1; i < recv_order_size; i++) {
@@ -1468,7 +1468,7 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
       psorted[i].key = scatter_index[i];
       psorted[i].data = i;
     }
-    omp_par::merge_sort(psorted.begin(), psorted.begin() + recv_size);
+    omp_par::sample_sort(psorted.begin(), psorted.begin() + recv_size);
   }
 
   ScratchBuf<Long> recv_indx(recv_size), send_indx(send_size);
@@ -1646,7 +1646,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
       psorted[i].key = scatter_index[i];
       psorted[i].data = i;
     }
-    omp_par::merge_sort(psorted.begin(), psorted.begin() + send_size);
+    omp_par::sample_sort(psorted.begin(), psorted.begin() + send_size);
   }
 
   ScratchBuf<Long> recv_indx(recv_size), send_indx(send_size);
@@ -1833,18 +1833,13 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
   }
 
   if (npes == 1) {  // SortedElem <--- local_sort(arr_)
-    SortedElem = arr_;
-    omp_par::merge_sort(SortedElem.begin(), SortedElem.end(), comp);
+    if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
+    omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
     return;
   }
 
-  Vector<Type> arr;
-  {  // arr <-- local_sort(arr_)
-    arr.ReInit(arr_.Dim());
-    #pragma omp parallel for schedule(static)
-    for (Long i = 0; i < arr_.Dim(); i++) arr[i] = arr_[i];
-    omp_par::merge_sort(arr.begin(), arr.end(), comp);
-  }
+  Vector<Type> arr(arr_.Dim());
+  omp_par::sample_sort(arr_.begin(), arr.begin(), arr_.Dim(), comp);  // arr <-- local_sort(arr_)
 
   Vector<Type> nbuff, nbuff_ext, rbuff, rbuff_ext;  // Allocate memory.
   MPI_Comm comm = impl_->mpi_comm_;                        // Copy comm
@@ -2025,9 +2020,7 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
   PartitionW<Type>(SortedElem);
 #else
   if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
-  #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < arr_.Dim(); i++) SortedElem[i] = arr_[i];
-  omp_par::merge_sort(SortedElem.begin(), SortedElem.begin() + SortedElem.Dim(), comp);
+  omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
 #endif
 }
 

@@ -17,7 +17,7 @@
 #include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
 #include "sctl/math_utils.txx"    // for pow
 #include "sctl/morton.hpp"        // for Morton
-#include "sctl/ompUtils.txx"      // for reduce, scan, merge_sort
+#include "sctl/ompUtils.txx"      // for reduce, scan, sample_sort
 #include "sctl/scratch_pool.hpp"  // for ScratchBuf
 #include "sctl/scratch_pool.txx"
 #include "sctl/static-array.hpp"  // for StaticArray
@@ -392,7 +392,7 @@ namespace sctl {
             user_node_lst.PushBack(pair);
           }
         }
-        omp_par::merge_sort(user_node_lst.begin(), user_node_lst.end());
+        omp_par::sample_sort(user_node_lst.begin(), user_node_lst.end());
 
         user_cnt.ReInit(np);
         user_mid.ReInit(user_node_lst.Dim());
