@@ -184,8 +184,8 @@ namespace sctl {
 
     Vector<NodeData> trg_nodes0, src_nodes0, splitter_nodes(comm_.Size());
     { // Set trg_nodes0 <- sort(trg_nodes), src_nodes0 <- sort(src_nodes)
-      comm_.HyperQuickSort(src_nodes, src_nodes0, comp_node_mid);
-      comm_.HyperQuickSort(trg_nodes, trg_nodes0, comp_node_mid);
+      comm_.SampleSort(src_nodes, src_nodes0, comp_node_mid);
+      comm_.SampleSort(trg_nodes, trg_nodes0, comp_node_mid);
 
       StaticArray<NodeData,1> splitter_node;
       SCTL_ASSERT(!rank || src_nodes0.Dim());
@@ -429,8 +429,7 @@ namespace sctl {
         NodeData split_node;
         split_node.idx=0;
         split_node.elem_idx=elem_offset;
-        comm_.HyperQuickSort(near_lst, near_lst0, comp_node_eid_idx);
-        comm_.PartitionS(near_lst0, split_node, comp_node_eid_idx);
+        comm_.SampleSort(near_lst, near_lst0, split_node, comp_node_eid_idx);
       }
       near_lst.Swap(near_lst0);
     }
