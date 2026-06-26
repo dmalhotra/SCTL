@@ -1815,21 +1815,16 @@ SCTL_HS_MPIDATATYPE(unsigned char, MPI_UNSIGNED_CHAR);
 #undef SCTL_HS_MPIDATATYPE
 #endif
 
-template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem, Compare comp) const {  // O( ((N/p)+log(p))*(log(N/p)+log(p)) )
+template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem, Compare comp, bool partition) const {  // O( ((N/p)+log(p))*(log(N/p)+log(p)) )
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
+  SCTL_UNUSED(partition);
 #ifdef SCTL_HAVE_MPI
+
   Integer npes, myrank, omp_p;
   {  // Get comm size and rank.
     npes = Size();
     myrank = Rank();
     omp_p = SCTL_GET_MAX_THREADS();
-  }
-  srand(myrank);
-
-  Long totSize;
-  {                 // Local and global sizes. O(log p)
-    Long nelem = arr_.Dim();
-    Allreduce<Long>(Ptr2ConstItr<Long>(&nelem, 1), Ptr2Itr<Long>(&totSize, 1), 1, CommOp::SUM);
   }
 
   if (npes == 1) {  // SortedElem <--- local_sort(arr_)
@@ -1838,12 +1833,19 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
     return;
   }
 
+  Long totSize;
+  {                 // Local and global sizes. O(log p)
+    Long nelem = arr_.Dim();
+    Allreduce<Long>(Ptr2ConstItr<Long>(&nelem, 1), Ptr2Itr<Long>(&totSize, 1), 1, CommOp::SUM);
+  }
+
   Vector<Type> arr(arr_.Dim());
   omp_par::sample_sort(arr_.begin(), arr.begin(), arr_.Dim(), comp);  // arr <-- local_sort(arr_)
 
   Vector<Type> nbuff, nbuff_ext, rbuff, rbuff_ext;  // Allocate memory.
   MPI_Comm comm = impl_->mpi_comm_;                        // Copy comm
   bool free_comm = false;                           // Flag to free comm.
+  srand(myrank);
 
   // Binary split and merge in each iteration.
   while (npes > 1 && totSize > 0) {  // O(log p) iterations.
@@ -2017,8 +2019,254 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
   #pragma omp parallel for schedule(static)
   for (Long i = 0; i < arr.Dim(); i++) SortedElem[i] = arr[i];
 
-  PartitionW<Type>(SortedElem);
+  if (partition) PartitionW<Type>(SortedElem);
 #else
+  if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
+  omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
+#endif
+}
+
+template <class Type, class Compare> Type Comm::DetermineSplitter(const Vector<Type>& loc, Long totSize, Compare comp) const {
+  // This rank's lower-boundary splitter for a balanced partition, found by iterative exact-rank
+  // histogramming. Each cut keeps a value bracket whose endpoint global ranks are known; the bracket
+  // is refined by interpolating where the target rank should fall (regula-falsi), with a random
+  // fall-back when interpolation stalls. A per-process probe budget (with randomly-chosen contributors)
+  // keeps the gathered/Allreduced candidate set O(npes) at any process count. Uses only `comp` + actual
+  // elements (works for any Type); balance is independent of the data distribution. Returns rank r's cut
+  // at global rank r*totSize/npes; rank 0's return is unused by DistributeAndMerge.
+#ifdef SCTL_HAVE_MPI
+  const Integer npes = Size(), rank = Rank();
+  const Long nloc = loc.Dim(), ns = npes - 1;
+
+  // global min/max element under comp (bracket endpoints / anchors)
+  const Type l0 = nloc ? loc[0] : Type(), l1 = nloc ? loc[nloc - 1] : Type();
+  Type gmin = l0, gmax = l1;
+  { // reduce per-rank extremes to global min/max (skip empty ranks); gather buffers freed at block end
+    ScratchBuf<Long> rcnt(npes);
+    Allgather(Ptr2ConstItr<Long>(&nloc, 1), 1, rcnt.begin(), 1);
+    ScratchBuf<Type> firsts(npes), lasts(npes);
+    Allgather(Ptr2ConstItr<Type>(&l0, 1), 1, firsts.begin(), 1);
+    Allgather(Ptr2ConstItr<Type>(&l1, 1), 1, lasts.begin(), 1);
+    bool found = false;
+    for (Integer i = 0; i < npes; i++) {
+      if (!rcnt[i]) continue;
+      if (!found) {
+        gmin = firsts[i];
+        gmax = lasts[i];
+        found = true;
+      } else {
+        if (comp(firsts[i], gmin)) gmin = firsts[i];
+        if (comp(gmax, lasts[i])) gmax = lasts[i];
+      }
+    }
+  }
+  if (ns == 0) return gmin;
+
+  const double ideal = (double)totSize / npes;
+  const Long tol = std::max<Long>(1, (Long)(0.02 * ideal));   // 2% load-balance tolerance
+  const Long budget = 32;                                     // per-process probes/round (~B contributors/cut after the cap) -> O(npes) comm at any scale
+  const Integer MAXIT = 50;                                   // safety cap; converges in ~2-7 rounds in practice
+
+  // per-rank PRNG (splitmix64); only affects which probes are gathered -- results are replicated via the collectives
+  uint64_t rng = (uint64_t)rank * 0x9e3779b97f4a7c15ULL + 0x123456789abcdefULL;
+  auto next = [&rng]() {
+    uint64_t z = (rng += 0x9e3779b97f4a7c15ULL);
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31);
+  };
+
+  ScratchBuf<Long> targ(ns), rlo(ns), rhi(ns);     // per-cut state (lives across rounds) on the ScratchPool arena
+  ScratchBuf<Type> blo(ns), bhi(ns), best(ns);
+  ScratchBuf<char> done(ns), use_rand(ns);
+  { // init: each cut targets global rank r*totSize/npes, bracket = whole range
+    for (Long c = 0; c < ns; c++) {
+      targ[c] = (c + 1) * totSize / npes;
+      blo[c] = gmin;
+      bhi[c] = gmax;
+      rlo[c] = 0;
+      rhi[c] = totSize;
+      done[c] = 0;
+      best[c] = gmax;
+      use_rand[c] = 0;
+    }
+  }
+
+  for (Integer it = 0; it < MAXIT; it++) {
+    Long nun = 0;
+    for (Long c = 0; c < ns; c++) if (!done[c]) nun++;
+
+    ScratchBuf<Type> myc(ns); Long mloc = 0;           // <= ns probes contributed by this process this round
+    { // probe: contribute to <= budget active cuts (random subset), interpolated or random fall-back
+      for (Long c = 0; c < ns; c++) {
+        if (done[c]) continue;
+        if (nun > budget && (next() % (uint64_t)nun) >= (uint64_t)budget) continue;   // random contributor selection (the cap)
+        const Long a = std::lower_bound(loc.begin(), loc.end(), blo[c], comp) - loc.begin();
+        const Long b = std::lower_bound(loc.begin(), loc.end(), bhi[c], comp) - loc.begin();
+        if (b <= a) continue;
+        Long idx;
+        if (use_rand[c]) idx = a + (Long)(next() % (uint64_t)(b - a));                  // fall-back when interpolation stalled
+        else {
+          double f = (double)(targ[c] - rlo[c]) / (double)std::max<Long>(1, rhi[c] - rlo[c]);
+          f = std::min(1.0, std::max(0.0, f));
+          idx = a + (Long)(f * (b - a));
+        }
+        idx = std::min(b - 1, std::max(a, idx));
+        myc[mloc++] = loc[idx];
+      }
+    }
+
+    Long tot = 0;
+    ScratchBuf<Long> cnt(npes), dsp(npes);
+    { // gather per-process probe counts -> displacements
+      dsp[0] = 0;
+      Allgather(Ptr2ConstItr<Long>(&mloc, 1), 1, cnt.begin(), 1);
+      omp_par::scan(cnt.begin(), dsp.begin(), npes);
+      tot = dsp[npes - 1] + cnt[npes - 1];
+    }
+
+    Long S = 0;
+    ScratchBuf<Type> comb(tot + 2 * ns + 2);
+    { // assemble sorted candidate set: gathered probes ++ anchors ++ active brackets (keeps every target bracketed)
+      Allgatherv(myc.begin(), mloc, comb.begin(), cnt.begin(), dsp.begin());
+      S = tot;
+      comb[S++] = gmin;
+      comb[S++] = gmax;
+      for (Long c = 0; c < ns; c++) {
+        if (done[c]) continue;
+        comb[S++] = blo[c];
+        comb[S++] = bhi[c];
+      }
+      omp_par::sample_sort(comb.begin(), comb.begin() + S, comp);   // parallel (self-guards to serial below its threshold)
+      S = std::unique(comb.begin(), comb.begin() + S, [&comp](const Type& x, const Type& y) { return !comp(x, y) && !comp(y, x); }) - comb.begin();
+    }
+
+    ScratchBuf<Long> lr(S), gr(S);
+    { // exact global rank of every candidate: local rank, then Allreduce
+      // threshold guards OpenMP fork/join (~us): only parallelize when S is large enough to amortize it (heuristic, not measured)
+      #pragma omp parallel for schedule(static) if(S > 4096)
+      for (Long i = 0; i < S; i++) lr[i] = std::lower_bound(loc.begin(), loc.end(), comb[i], comp) - loc.begin();
+      Allreduce(lr.begin(), gr.begin(), S, CommOp::SUM);
+    }
+
+    bool anyactive = false;
+    { // assign each unresolved cut its nearest candidate; refine its bracket or freeze it (per-c writes independent)
+      #pragma omp parallel for schedule(static) reduction(||:anyactive) if(ns > 4096)   // same fork/join heuristic as the rank loop
+      for (Long c = 0; c < ns; c++) {
+        if (done[c]) continue;
+        const Long t = targ[c];
+        const Long up = std::lower_bound(gr.begin(), gr.end(), t) - gr.begin(), lo = up - 1;
+        const Long errlo = (lo >= 0) ? t - gr[lo] : t, errup = (up < S) ? gr[up] - t : (totSize - t);
+        best[c] = (errlo <= errup) ? comb[std::max<Long>(0, lo)] : comb[std::min<Long>(S - 1, up)];
+        if (lo < 0 || up >= S || std::min(errlo, errup) <= tol || (gr[up] - gr[lo]) <= tol) {
+          done[c] = 1;
+          continue;
+        }
+        const Long oldw = rhi[c] - rlo[c], neww = gr[up] - gr[lo];
+        if (neww >= oldw) {  // un-splittable (e.g. duplicate mass) -> stop refining
+          done[c] = 1;
+          continue;
+        }
+        use_rand[c] = (neww > oldw / 2);                    // interpolation didn't halve the bracket -> random next round
+        blo[c] = comb[lo];
+        rlo[c] = gr[lo];
+        bhi[c] = comb[up];
+        rhi[c] = gr[up];
+        anyactive = true;
+      }
+    }
+    if (!anyactive) break;
+  }
+  return rank == 0 ? gmin : best[rank - 1];
+#else
+  SCTL_UNUSED(totSize);
+  SCTL_UNUSED(comp);
+  return loc.Dim() ? loc[0] : Type();
+#endif
+}
+
+template <class Type, class Compare> void Comm::DistributeAndMerge(const Vector<Type>& loc, const Type& splitter, Vector<Type>& SortedElem, Compare comp) const {
+#ifdef SCTL_HAVE_MPI
+  const Integer npes = Size();
+  const Long nloc = loc.Dim();
+
+  // Gather splitters
+  ScratchBuf<Type> splitter_all(npes);
+  StaticArray<Type,1> sp; sp[0] = splitter;
+  Allgather((ConstIterator<Type>)sp, 1, splitter_all.begin(), 1);
+
+  ScratchBuf<Long> scnt(npes), sdsp(npes + 1);
+  ScratchBuf<Long> rcnt(npes + 1), rdsp(npes + 1);
+  { // Set scnt, sdsp
+    sdsp[0] = 0;
+    sdsp[npes] = nloc;
+    #pragma omp parallel for schedule(static) if(npes > 128)
+    for (Integer d = 1; d < npes; d++) sdsp[d] = std::lower_bound(loc.begin(), loc.end(), splitter_all[d], comp) - loc.begin();
+    #pragma omp parallel for schedule(static) if(npes > 128)
+    for (Integer d = 0; d < npes; d++) scnt[d] = sdsp[d + 1] - sdsp[d];
+  }
+  { // Get rcnt, rdsp
+    rdsp[0] = 0;
+    rcnt[npes] = 0;
+    Alltoall(scnt.begin(), 1, rcnt.begin(), 1);
+    omp_par::scan(rcnt.begin(), rdsp.begin(), npes + 1);
+  }
+
+  ScratchBuf<Type> recv(rdsp[npes]);
+  Alltoallv(loc.begin(), scnt.begin(), sdsp.begin(), recv.begin(), rcnt.begin(), rdsp.begin());
+
+  // parallel multiway merge of the npes received sorted runs (segments recv[rdsp[d]..rdsp[d+1]))
+  if (SortedElem.Dim() != rdsp[npes]) SortedElem.ReInit(rdsp[npes]);
+  omp_par::multiway_merge(recv.begin(), rdsp.begin(), npes, SortedElem.begin(), comp);
+#else
+  SortedElem = loc; SCTL_UNUSED(splitter); SCTL_UNUSED(comp);
+#endif
+}
+
+template <class Type, class Compare> void Comm::SampleSort(const Vector<Type>& arr_, Vector<Type>& SortedElem, Compare comp, bool partition) const {  // single-pass distributed sample sort
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
+#ifdef SCTL_HAVE_MPI
+  const Integer npes = Size();
+  if (npes == 1) {  // local sort only
+    if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
+    omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
+    return;
+  }
+
+  Long totSize;
+  const Long nloc = arr_.Dim();
+  Allreduce<Long>(Ptr2ConstItr<Long>(&nloc, 1), Ptr2Itr<Long>(&totSize, 1), 1, CommOp::SUM);
+  if (!totSize) { SortedElem.ReInit(0); return; }
+
+  // local sort
+  ScratchBuf<Type> loc_buf(nloc); Vector<Type> loc(nloc, loc_buf.begin(), false);
+  omp_par::sample_sort(arr_.begin(), loc.begin(), nloc, comp);
+
+  const Type my_split = DetermineSplitter(loc, totSize, comp);
+
+  DistributeAndMerge(loc, my_split, SortedElem, comp);
+  if (partition) PartitionW<Type>(SortedElem);
+#else
+  SCTL_UNUSED(partition);
+  if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
+  omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
+#endif
+}
+
+template <class Type, class Compare> void Comm::SampleSort(const Vector<Type>& arr_, Vector<Type>& SortedElem, const Type& splitter, Compare comp) const {  // sort with per-rank splitter
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
+#ifdef SCTL_HAVE_MPI
+  const Integer npes = Size();
+  if (npes == 1) {
+    if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
+    omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
+    return;
+  }
+  ScratchBuf<Type> loc_buf(arr_.Dim()); Vector<Type> loc(arr_.Dim(), loc_buf.begin(), false);
+  omp_par::sample_sort(arr_.begin(), loc.begin(), arr_.Dim(), comp);
+  DistributeAndMerge(loc, splitter, SortedElem, comp);
+#else
+  SCTL_UNUSED(splitter);
   if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
   omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
 #endif
