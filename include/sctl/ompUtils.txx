@@ -289,6 +289,48 @@ template <class T> inline void omp_par::sample_sort(T A, T A_last) {
   omp_par::sample_sort(A, A_last, std::less<_ValType>());
 }
 
+template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp_par::multiway_merge(ConstIter runs, ConstIterator<Long> run_dsp, Long nruns, Iter out, StrictWeakOrdering comp) {
+  typedef typename std::iterator_traits<Iter>::value_type _ValType;
+  const Integer nt = SCTL_GET_MAX_THREADS();
+  const Long N = run_dsp[nruns];
+
+  // Split the merged output into nt contiguous chunks via sampled splitters (regular-strided
+  // oversample of the runs); for nt==1 this is empty -> a single serial heap merge.
+  ScratchBuf<_ValType> tsplit_buf(nt > 1 ? nt - 1 : 0);
+  Iterator<_ValType> tsplit = tsplit_buf.begin();
+  if (nt > 1 && N > 0) {
+    const Long osamp = 16, Ns = std::min<Long>((Long)nt * osamp, N);
+    ScratchBuf<_ValType> samp(Ns);
+    for (Long i = 0; i < Ns; i++) samp[i] = runs[i * N / Ns];
+    std::sort(samp.begin(), samp.begin() + Ns, comp);
+    for (Integer k = 0; k < nt - 1; k++) tsplit[k] = samp[std::min<Long>(Ns - 1, (Long)(k + 1) * Ns / nt)];
+  }
+
+  #pragma omp parallel num_threads(nt)
+  { const Integer t = SCTL_GET_THREAD_NUM();
+    ScratchBuf<Long> pos_buf(nruns), end_buf(nruns);
+    Iterator<Long> pos = pos_buf.begin(), end = end_buf.begin();
+    Long out_off = 0;  // this thread's sub-range of each run; output offset = #elements before its chunk
+    for (Long d = 0; d < nruns; d++) {
+      ConstIter rb = runs + run_dsp[d], re = runs + run_dsp[d + 1];
+      pos[d] = (t == 0)      ? run_dsp[d]     : std::lower_bound(rb, re, tsplit[t - 1], comp) - runs;
+      end[d] = (t == nt - 1) ? run_dsp[d + 1] : std::lower_bound(rb, re, tsplit[t],     comp) - runs;
+      out_off += pos[d] - run_dsp[d];
+    }
+    auto hcmp = [&runs, &pos, &comp](Long a, Long b) { return comp(runs[pos[b]], runs[pos[a]]); };  // inverted -> min
+    ScratchBuf<Long> heap_buf(nruns); Iterator<Long> heap = heap_buf.begin(); Long hn = 0;
+    for (Long d = 0; d < nruns; d++) if (pos[d] < end[d]) heap[hn++] = d;
+    std::make_heap(heap, heap + hn, hcmp);
+    Long o = out_off;
+    while (hn > 0) {
+      std::pop_heap(heap, heap + hn, hcmp);
+      const Long d = heap[--hn];
+      out[o++] = runs[pos[d]++];
+      if (pos[d] < end[d]) { heap[hn++] = d; std::push_heap(heap, heap + hn, hcmp); }
+    }
+  }
+}
+
 template <class ConstIter, class Int> typename std::iterator_traits<ConstIter>::value_type omp_par::reduce(ConstIter A, Int cnt) {
   typedef typename std::iterator_traits<ConstIter>::value_type ValueType;
   ValueType sum = 0;
