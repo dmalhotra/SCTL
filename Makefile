@@ -54,9 +54,7 @@ CXXFLAGS += -lfftw3l -DSCTL_HAVE_FFTWL
 #LDLIBS += -L${PETSC_DIR}/lib -lpetsc
 
 #PVFMM_INC_DIR = ../include
-#PVFMM_LIB_DIR = ../lib/.libs
 #CXXFLAGS += -DSCTL_HAVE_PVFMM -I$(PVFMM_INC_DIR)
-#LDLIBS += $(PVFMM_LIB_DIR)/libpvfmm.a
 
 
 RM = rm -f
