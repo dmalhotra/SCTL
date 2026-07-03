@@ -101,24 +101,18 @@ template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>
 template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>::template MortonBig<NWORDS_> MortonCode<DIM>::MortonBig<NWORDS_>::operator<<(int s) const {
   MortonBig r{};
   const int ws = s / 64, bs = s % 64;
-  for (int i = NWORDS_ - 1; i >= 0; --i) {
-    std::uint64_t v = 0;
-    if (i - ws >= 0) v |= w[i - ws] << bs;
-    if (bs != 0 && i - ws - 1 >= 0) v |= w[i - ws - 1] >> (64 - bs);
-    r.w[i] = v;
-  }
+  for (int i = NWORDS_ - 1; i >= ws; --i) r.w[i] = w[i - ws] << bs;
+  if (bs != 0)
+    for (int i = NWORDS_ - 1; i >= ws + 1; --i) r.w[i] |= w[i - ws - 1] >> (64 - bs);
   return r;
 }
 
 template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>::template MortonBig<NWORDS_> MortonCode<DIM>::MortonBig<NWORDS_>::operator>>(int s) const {
   MortonBig r{};
   const int ws = s / 64, bs = s % 64;
-  for (int i = 0; i < NWORDS_; ++i) {
-    std::uint64_t v = 0;
-    if (i + ws < NWORDS_) v |= w[i + ws] >> bs;
-    if (bs != 0 && i + ws + 1 < NWORDS_) v |= w[i + ws + 1] << (64 - bs);
-    r.w[i] = v;
-  }
+  for (int i = 0; i < NWORDS_ - ws; ++i) r.w[i] = w[i + ws] >> bs;
+  if (bs != 0)
+    for (int i = 0; i < NWORDS_ - ws - 1; ++i) r.w[i] |= w[i + ws + 1] << (64 - bs);
   return r;
 }
 
