@@ -186,8 +186,8 @@ namespace sctl {
     return coord;
   }
 
-  template <class Real> QuadElemList<Real> GmshReader<Real>::LoadQuadElemList(const std::string& fname, Integer target_order) {
-    return QuadElemList<Real>(target_order, ReadQuadCoord(fname, target_order));
+  template <class Real> QuadElemList<Real> GmshReader<Real>::LoadQuadElemList(const std::string& fname, Integer target_order, const Comm& comm) {
+    return QuadElemList<Real>(target_order, ReadQuadCoord(fname, target_order), comm);
   }
 
 }

@@ -34,15 +34,23 @@ namespace sctl {
        * Construct from nodal coordinates.
        * @param[in] order polynomial order of each element.
        * @param[in] coord node coords, AoS {x1,y1,z1,...,xn,yn,zn}.
+       * @param[in] comm communicator. When comm.Size() > 1, `coord` is assumed to
+       * hold the full (globally-replicated) mesh and only this rank's contiguous
+       * element slice is kept; with the default single-process comm the whole mesh
+       * is used.
        */
-      template <class ValueType> QuadElemList(Integer order, const Vector<ValueType>& coord);
+      template <class ValueType> QuadElemList(Integer order, const Vector<ValueType>& coord, const Comm& comm = Comm::Self());
 
       /**
        * Initialize from nodal coordinates.
        * @param[in] order polynomial order of each element.
        * @param[in] coord node coords, AoS {x1,y1,z1,...,xn,yn,zn}.
+       * @param[in] comm communicator. When comm.Size() > 1, `coord` is assumed to
+       * hold the full (globally-replicated) mesh and only this rank's contiguous
+       * element slice is kept; with the default single-process comm the whole mesh
+       * is used.
        */
-      template <class ValueType> void Init(Integer order, const Vector<ValueType>& coord);
+      template <class ValueType> void Init(Integer order, const Vector<ValueType>& coord, const Comm& comm = Comm::Self());
 
       /** Destructor. */
       virtual ~QuadElemList() {}
@@ -216,6 +224,12 @@ namespace sctl {
       template<typename> friend struct QuadElemTestAccess;
 
     private:
+
+      // Contiguous element range [i0,i1) owned by this rank when a global mesh of
+      // Nelem_total elements is linearly partitioned across comm. Shared by Init
+      // (in-memory construction) and Read (file load). With a single-process comm
+      // this returns the full range [0, Nelem_total).
+      static void PartitionRange(Long Nelem_total, const Comm& comm, Long& i0, Long& i1);
 
       template <class ValueType> static void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv);
       

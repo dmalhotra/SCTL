@@ -18,24 +18,38 @@
 
 namespace sctl {
 
-  template <class Real> template <class ValueType> QuadElemList<Real>::QuadElemList(Integer order0, const Vector<ValueType>& coord0) {
-    Init(order0, coord0);
+  template <class Real> void QuadElemList<Real>::PartitionRange(Long Nelem_total, const Comm& comm, Long& i0, Long& i1) {
+    const Long Np = comm.Size();
+    const Long pid = comm.Rank();
+    i0 = Nelem_total * (pid + 0) / Np;
+    i1 = Nelem_total * (pid + 1) / Np;
   }
 
-  template <class Real> template <class ValueType> void QuadElemList<Real>::Init(Integer order0, const Vector<ValueType>& coord0) {
+  template <class Real> template <class ValueType> QuadElemList<Real>::QuadElemList(Integer order0, const Vector<ValueType>& coord0, const Comm& comm) {
+    Init(order0, coord0, comm);
+  }
+
+  template <class Real> template <class ValueType> void QuadElemList<Real>::Init(Integer order0, const Vector<ValueType>& coord0, const Comm& comm) {
     order = order0;
     SCTL_ASSERT(order > 0);
 
     const Long nnode_per_elem = (Long)order * order;
     SCTL_ASSERT(coord0.Dim() % (nnode_per_elem * COORD_DIM) == 0);
-    nelem = coord0.Dim() / (nnode_per_elem * COORD_DIM);
+    const Long nelem_total = coord0.Dim() / (nnode_per_elem * COORD_DIM);
+
+    // When distributed, `coord0` holds the full (replicated) mesh; keep only this
+    // rank's contiguous element slice [i0,i1).
+    Long i0, i1;
+    PartitionRange(nelem_total, comm, i0, i1);
+    nelem = i1 - i0;
 
     coord.ReInit(nelem * COORD_DIM * nnode_per_elem);
     for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
       const Long base = elem_idx * COORD_DIM * nnode_per_elem;
+      const Long src_elem = i0 + elem_idx;
       for (Integer k = 0; k < COORD_DIM; k++) {
         for (Long p = 0; p < nnode_per_elem; p++) {
-          coord[base + k * nnode_per_elem + p] = (Real)coord0[(elem_idx * nnode_per_elem + p) * COORD_DIM + k];
+          coord[base + k * nnode_per_elem + p] = (Real)coord0[(src_elem * nnode_per_elem + p) * COORD_DIM + k];
         }
       }
     }
@@ -1490,18 +1504,16 @@ namespace sctl {
     }
 
     {
-      const Long Np = comm.Size();
-      const Long pid = comm.Rank();
-
-      const Long i0 = Nelem_total * (pid + 0) / Np;
-      const Long i1 = Nelem_total * (pid + 1) / Np;
+      Long i0, i1;
+      PartitionRange(Nelem_total, comm, i0, i1);
 
       const Long j0 = i0 * nnode_per_elem;
       const Long j1 = i1 * nnode_per_elem;
 
       Vector<ValueType> coord_local;
       coord_local.ReInit((j1 - j0) * COORD_DIM, coord_.begin() + j0 * COORD_DIM, false);
-      Init<ValueType>(file_order, coord_local);
+      // Slice already local to this rank; pass Comm::Self() so Init does not re-partition.
+      Init<ValueType>(file_order, coord_local, Comm::Self());
     }
   }
 

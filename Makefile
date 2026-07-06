@@ -43,7 +43,16 @@ ifeq ($(BENCH), 1)
 	CXXFLAGS += -DBENCH_QUAD
 endif
 
-#CXXFLAGS += -DSCTL_HAVE_MPI #use MPI
+# Opt-in distributed-memory build. `make MPI=1 ...` compiles with the MPI wrapper
+# compiler and defines SCTL_HAVE_MPI so sctl::Comm::World() is a real MPI communicator
+# (QuadElemList partitions its elements across ranks). Default build stays serial (g++).
+# As with DEBUG/BENCH, do NOT pass CXXFLAGS+= on the command line -- it overrides the
+# flags assigned here rather than appending to them.
+MPI ?= 0
+ifeq ($(MPI), 1)
+	CXX = mpicxx
+	CXXFLAGS += -DSCTL_HAVE_MPI
+endif
 
 # CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
 # CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
