@@ -12,6 +12,8 @@
 #include <iomanip>
 #include <vector>
 #include <string>
+#include <fstream>
+#include <chrono>
 
 using namespace sctl;
 
@@ -467,7 +469,7 @@ void test_ManufacturedConvergence(const Comm& comm,
                                   bool rect_polar = false,
                                   const double theta_twist = 0.,
                                   const std::vector<Long>& PatchPerFaceList = {1, 2, 3, 4, 5},
-                                  Long ElemOrder = 12
+                                  Long ElemOrder = 16
                                   ) {
   const double Radius = 1.0;
   const double base_tol = 1e-13; // should be this level for ElemOrder = 12, maybe allowed higher if lower order..
@@ -533,6 +535,70 @@ void test_ManufacturedConvergence(const Comm& comm,
               << "   " << es_near << "        " << es_far << "\n";
   }
   std::cout << "Manufactured-solution convergence study: DONE" << std::endl;
+}
+
+// Nbeta (RectPolar cov_order) sweep on the maximally twisted sphere, Stokes kernel only.
+// For fixed ElemOrder/twist, increase Nbeta (GL points per direction in the rectangular-polar
+// COV) at each surface resolution (PatchPerFace) and record manufactured-solution rel-L2
+// (near + far) plus wall-clock solve+eval time. Writes a formatted table to Nbeta_sweep.txt.
+void test_NbetaSweep(const Comm& comm,
+                     const std::vector<Long>& NbetaList = {32, 64, 96, 128, 192, 256, 384, 512},
+                     const std::vector<Long>& PatchPerFaceList = {5, 10},
+                     Long ElemOrder = 16,
+                     double theta_twist = const_pi<double>()) {
+  const double Radius = 1.0;
+  const double quadr_tol = 1e-13; // tight, so Nbeta (not adaptive/GMRES tol) is the bottleneck
+
+  // Exterior Stokes DL+SL manufactured solution (Stokeslets inside the sphere).
+  const Vector<double> Fsrc_sto{1.0, 0.5, -0.3,  -0.4, 0.2, 0.1};
+  const Vector<double> src_ext{0.10, 0.20, 0.15,  -0.20, 0.10, -0.10};
+  const double R_near = 1.001, R_far = 2.0;
+  const double SL_scal = 1.0, DL_scal = 1.0;
+  const bool interior = false;
+
+  const bool root = !comm.Rank();
+  std::ofstream ofs; // only rank 0 writes the table file (avoids a multi-rank write race)
+  if (root) {
+    ofs.open("Nbeta_sweep.txt");
+    ofs << std::scientific;
+    ofs << "# Nbeta (RectPolar cov_order) sweep: Stokes DL+SL exterior manufactured solution\n";
+    ofs << "# ElemOrder=" << ElemOrder << ", theta_twist=" << theta_twist
+        << " (pi=" << const_pi<double>() << "), quadr_tol=" << quadr_tol << "\n";
+    ofs << "# columns: PatchPerFace  Nbeta  Nelem  rel-L2(near R=" << R_near
+        << ")  rel-L2(far R=" << R_far << ")  t_solve+eval(s)\n";
+
+    std::cout << "\nNbeta sweep (RectPolar, Stokes, twisted sphere) -> Nbeta_sweep.txt\n";
+    std::cout << std::scientific;
+  }
+
+  for (const Long PatchPerFace : PatchPerFaceList) {
+    const Long Nelem = 6 * PatchPerFace * PatchPerFace;
+    if (root) {
+      ofs << "# --- PatchPerFace = " << PatchPerFace << " (Nelem = " << Nelem << ") ---\n";
+      std::cout << "# --- PatchPerFace = " << PatchPerFace << " (Nelem = " << Nelem << ") ---\n";
+    }
+    for (const Long Nbeta : NbetaList) {
+      QuadElemList<double> elem_lst = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, theta_twist);
+      elem_lst.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar, /*q=*/6, /*cov_order=*/Nbeta);
+
+      const auto t0 = std::chrono::high_resolution_clock::now();
+      const std::vector<double> es = TestManufactured(elem_lst, comm, Stokes3D_FxU(), Stokes3D_DxU(),
+                               "Stokes DL+SL", src_ext, Fsrc_sto, interior, {R_near, R_far},
+                               quadr_tol, SL_scal, DL_scal);
+      const auto t1 = std::chrono::high_resolution_clock::now();
+      const double elapsed = std::chrono::duration<double>(t1 - t0).count();
+      const double es_near = es[0], es_far = es[1];
+
+      if (root) {
+        ofs << "  " << std::setw(12) << PatchPerFace << "  " << std::setw(5) << Nbeta
+            << "  " << std::setw(6) << Nelem << "   " << es_near << "   " << es_far
+            << "   " << elapsed << std::endl; // flush each row in case a heavy case crashes
+        std::cout << "  Nbeta=" << std::setw(5) << Nbeta << "  rel-L2(near)=" << es_near
+                  << "  rel-L2(far)=" << es_far << "  t=" << elapsed << "s\n";
+      }
+    }
+  }
+  if (root) std::cout << "Nbeta sweep: DONE" << std::endl;
 }
 
 }
