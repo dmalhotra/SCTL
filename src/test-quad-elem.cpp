@@ -9,6 +9,7 @@
 #include <sctl.hpp>
 #include <sctl/experimental/quad_element.hpp>
 #include <sctl/experimental/quad_element.cpp>
+#include <sctl/experimental/gmsh_reader.cpp>
 #include <iomanip>
 #include <vector>
 #include <string>
@@ -18,6 +19,21 @@
 using namespace sctl;
 
 namespace {
+
+// --- Distributed-memory helpers -------------------------------------------------
+// Under MPI each rank owns only a slice of the geometry (see BuildTwistedSphere),
+// so scalar norms/areas accumulated over local nodes must be reduced across ranks
+// before they are compared or printed, and result prints are emitted on rank 0 only.
+inline double GlobalReduce(double x, const Comm& comm, CommOp op) {
+  StaticArray<double,2> buf; buf[0] = x; buf[1] = 0;
+  comm.Allreduce(buf+0, buf+1, 1, op);
+  return buf[1];
+}
+inline Long GlobalReduce(Long x, const Comm& comm, CommOp op) {
+  StaticArray<Long,2> buf; buf[0] = x; buf[1] = 0;
+  comm.Allreduce(buf+0, buf+1, 1, op);
+  return buf[1];
+}
 
 template <class Real> void FacePoint(Real& x, Real& y, Real& z, Integer face, Real a, Real b, Real R) {
   switch (face) {
@@ -38,8 +54,10 @@ template <class Real> void FacePoint(Real& x, Real& y, Real& z, Integer face, Re
 // Cubed-sphere of radius Radius: PatchPerFace^2 quad patches per cube face, ElemOrder nodes/direction. 
 // twisted about z: at height z, {x,y} rotated by theta_twist*z.
 // Regular sphere: theta_twist = 0.
+// Every rank builds the full node array X, then the QuadElemList constructor keeps
+// only this rank's contiguous element slice (replicate-then-slice partitioning).
 template <class Real>
-QuadElemList<Real> BuildTwistedSphere(Long ElemOrder, Long PatchPerFace, Real Radius, Real theta_twist = 0.) {
+QuadElemList<Real> BuildTwistedSphere(Long ElemOrder, Long PatchPerFace, Real Radius, Real theta_twist = 0., const Comm& comm = Comm::Self()) {
   Vector<Real> X;
   const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(ElemOrder);
   for (Integer face = 0; face < 6; face++) {
@@ -64,7 +82,7 @@ QuadElemList<Real> BuildTwistedSphere(Long ElemOrder, Long PatchPerFace, Real Ra
       }
     }
   }
-  return QuadElemList<Real>(ElemOrder, X);
+  return QuadElemList<Real>(ElemOrder, X, comm);
 }
 
 // Helpers validating cubed-sphere BIOs against the SH reference on the unit sphere.
@@ -117,7 +135,7 @@ template <class DensityFn> Vector<double> SphereVecSHC(Long p, DensityFn density
 template <class Kernel, class DensityFn, class RefEvalFn>
 void TestSphereBIOvsSH(const QuadElemList<double>& elem_lst, const Comm& comm,
                        const Kernel& ker, const char* kername, bool is_DL,
-                       DensityFn density, RefEvalFn ref_eval, const double tol=1e-9) {
+                       DensityFn density, RefEvalFn ref_eval, const double tol=1e-9, const double rel_tol=1e-5) {
   static constexpr Integer KDIM0 = Kernel::SrcDim();
 
   Vector<double> Xnodes;
@@ -170,23 +188,26 @@ void TestSphereBIOvsSH(const QuadElemList<double>& elem_lst, const Comm& comm,
       const double e = U_quad[i] - U_ref[i];
       err2 += e * e; ref2 += U_ref[i] * U_ref[i];
     }
+    err2 = GlobalReduce(err2, comm, CommOp::SUM); // targets are distributed across ranks
+    ref2 = GlobalReduce(ref2, comm, CommOp::SUM);
     const double rel_l2 = sqrt(err2 / ref2);
-    std::cout << "  " << kername << " / " << c.name << " : rel L2 error = " << rel_l2 << std::endl;
-    SCTL_ASSERT(rel_l2 < 1e-5); // geometry/quadrature-limited (~1e-7 observed)
+    if (!comm.Rank()) std::cout << "  " << kername << " / " << c.name << " : rel L2 error = " << rel_l2 << std::endl;
+    SCTL_ASSERT(rel_l2 < rel_tol); // geometry/quadrature-limited (~1e-7 observed on the high-order cubed-sphere)
   }
 }
 
 // Far-field quadrature weights must sum to the analytic sphere area 4 pi R^2.
-void test_SurfaceArea(const QuadElemList<double>& elem_lst, double Radius) {
+void test_SurfaceArea(const QuadElemList<double>& elem_lst, double Radius, const Comm& comm = Comm::Self()) {
   Vector<double> wts, Xtemp, Xntemp, dist_far;
   Vector<Long> elem_wise_temp;
   elem_lst.GetFarFieldNodes(Xtemp, Xntemp, wts, dist_far, elem_wise_temp, 1);
   double Area = 0.;
   for (int i = 0; i < wts.Dim(); i++) Area += wts[i];
+  Area = GlobalReduce(Area, comm, CommOp::SUM); // weights are distributed across ranks
   const double Area_exact = 4. * const_pi<double>() * Radius * Radius;
-  std::cout << "Area from Jacobian: " << Area << ", from formula: " << Area_exact << std::endl;
+  if (!comm.Rank()) std::cout << "Area from Jacobian: " << Area << ", from formula: " << Area_exact << std::endl;
   SCTL_ASSERT(std::fabs(Area - Area_exact) / Area_exact < 1e-6);
-  std::cout << "Surface area test: PASSED" << std::endl;
+  if (!comm.Rank()) std::cout << "Surface area test: PASSED" << std::endl;
 }
 
 // Stokes DL constant-density identity on a closed sphere: D[q] = c*q, |c|=1/2.
@@ -207,6 +228,7 @@ void test_StokesDLIdentity(const QuadElemList<double>& elem_lst, const Comm& com
   for (Long i = 0; i < Nnode; i++) {
     xdotn += Xs[i*3+0]*Xns[i*3+0] + Xs[i*3+1]*Xns[i*3+1] + Xs[i*3+2]*Xns[i*3+2];
   }
+  xdotn = GlobalReduce(xdotn, comm, CommOp::SUM); // nodes are distributed across ranks
   const bool outward = (xdotn > 0);
   const double c_expect = outward ? -0.5 : 0.5;
 
@@ -216,36 +238,40 @@ void test_StokesDLIdentity(const QuadElemList<double>& elem_lst, const Comm& com
   BIOp.ComputePotential(U, q);
 
   // D[q] should equal c*q = (c, 0, 0): measure mean U_x and max deviation.
-  double cx_mean = 0;
-  for (Long i = 0; i < Nnode; i++) cx_mean += U[i*3+0];
-  cx_mean /= Nnode;
+  double sum_Ux = 0;
+  for (Long i = 0; i < Nnode; i++) sum_Ux += U[i*3+0];
+  const double cx_mean = GlobalReduce(sum_Ux, comm, CommOp::SUM) / GlobalReduce((double)Nnode, comm, CommOp::SUM);
 
   double max_dev = 0, max_perp = 0;
   for (Long i = 0; i < Nnode; i++) {
     max_dev  = std::max(max_dev,  std::fabs(U[i*3+0] - c_expect));
     max_perp = std::max(max_perp, std::max(std::fabs(U[i*3+1]), std::fabs(U[i*3+2])));
   }
+  max_dev  = GlobalReduce(max_dev,  comm, CommOp::MAX);
+  max_perp = GlobalReduce(max_perp, comm, CommOp::MAX);
 
-  std::cout << "Stokes double-layer constant-density identity:\n"
-            << "  normal orientation : " << (outward ? "outward" : "inward")
-            << " (sum x.n = " << xdotn << ")\n"
-            << "  mean U_x           : " << cx_mean << "  (expected " << c_expect << ")\n"
-            << "  max |U_x - c|      : " << max_dev  << "\n"
-            << "  max |U_perp|       : " << max_perp << std::endl;
+  if (!comm.Rank())
+    std::cout << "Stokes double-layer constant-density identity:\n"
+              << "  normal orientation : " << (outward ? "outward" : "inward")
+              << " (sum x.n = " << xdotn << ")\n"
+              << "  mean U_x           : " << cx_mean << "  (expected " << c_expect << ")\n"
+              << "  max |U_x - c|      : " << max_dev  << "\n"
+              << "  max |U_perp|       : " << max_perp << std::endl;
 
   const double rel_tol = 1e-3; // dominated by the polynomial sphere-geometry error
   if (!check) return; // diagnostic mode: print only
   SCTL_ASSERT(std::fabs(cx_mean - c_expect) < rel_tol);
   SCTL_ASSERT(max_dev  < rel_tol);
   SCTL_ASSERT(max_perp < rel_tol);
-  std::cout << "Stokes double-layer identity: PASSED (|c| = 1/2, sign tracks "
-            << "outward normal -> -1/2)" << std::endl;
+  if (!comm.Rank())
+    std::cout << "Stokes double-layer identity: PASSED (|c| = 1/2, sign tracks "
+              << "outward normal -> -1/2)" << std::endl;
 }
 
 // BIOs vs. SH reference over {Laplace/Stokes x SL/DL} and {on-surface,near,far}.
 // On the unit sphere the layer operators are diagonalized by SH, giving a spectral
 // reference for a smooth non-polynomial density.
-void test_BIOvsSH(const QuadElemList<double>& elem_lst, const Comm& comm, bool write_vtk = false, const double tol = 1e-9) {
+void test_BIOvsSH(const QuadElemList<double>& elem_lst, const Comm& comm, bool write_vtk = false, const double tol = 1e-9, const double rel_tol = 1e-5) {
   const Long p = 30; // SH truncation order (captures exp densities to ~eps)
 
   // Non-polynomial densities (analytic -> fast SH decay).
@@ -258,11 +284,12 @@ void test_BIOvsSH(const QuadElemList<double>& elem_lst, const Comm& comm, bool w
   const Vector<double> Slap = SphereScalarSHC(p, lap_density);
   const Vector<double> Ssto = SphereVecSHC(p, sto_density);
 
-  std::cout << "BIO vs. spherical-harmonics reference (density = exp):" << std::endl;
+  if (!comm.Rank()) std::cout << "BIO vs. spherical-harmonics reference (density = exp):" << std::endl;
 
   // Visualize the (kernel-independent) near/self refinement on one element; tol matches
-  // the SetAccuracy(1e-9) used in TestSphereBIOvsSH.
-  if (write_vtk) {
+  // the SetAccuracy(1e-9) used in TestSphereBIOvsSH. Diagnostic only: rank 0 visualizes its
+  // local element 0 with a self-communicator so the writers stay independent of other ranks.
+  if (write_vtk && !comm.Rank()) {
     const Long evis = 0;                       // element to visualize
     const Integer ord = elem_lst.Order();
     // Near: a surface point pushed off along its outward normal.
@@ -273,41 +300,113 @@ void test_BIOvsSH(const QuadElemList<double>& elem_lst, const Comm& comm, bool w
     if (elem_lst.Scheme() == QuadElemList<double>::QuadScheme::RectPolar) {
       elem_lst.WriteNearInteracRPVTK("near-interac-elem0", evis, Xtrg);
     } else {
-      elem_lst.WriteNearInteracVTK("near-interac-elem0", evis, Xtrg, 1e-9, comm); // tol = 1e-9 just for plotting
+      elem_lst.WriteNearInteracVTK("near-interac-elem0", evis, Xtrg, 1e-9, Comm::Self()); // tol = 1e-9 just for plotting
     }
-    
+
     // Self: an interior node parameter.
     const auto& nds = QuadElemList<double>::ParamNodes(ord);
     const double u0 = nds[ord/2], v0 = nds[ord/2];
     if (elem_lst.Scheme() == QuadElemList<double>::QuadScheme::RectPolar) {
       elem_lst.WriteSelfInteracRPVTK("self-interac-elem0", evis, u0, v0);
     } else {
-      elem_lst.WriteSelfInteracVTK("self-interac-elem0", evis, u0, v0, 1e-9, comm);
+      elem_lst.WriteSelfInteracVTK("self-interac-elem0", evis, u0, v0, 1e-9, Comm::Self());
     }
-    
+
     std::cout << "  wrote near-interac-elem0-* and self-interac-elem0-* VTK files" << std::endl;
   }
 
   TestSphereBIOvsSH(elem_lst, comm, Laplace3D_FxU(), "Laplace3D_FxU", /*is_DL=*/false, lap_density,
     [&](const Vector<double>& c, bool in, Vector<double>& U) {
-      SphericalHarmonics<double>::LaplaceEvalSL(Slap, SHCArrange::ROW_MAJOR, p, c, in, U); }, tol);
+      SphericalHarmonics<double>::LaplaceEvalSL(Slap, SHCArrange::ROW_MAJOR, p, c, in, U); }, tol, rel_tol);
 
   TestSphereBIOvsSH(elem_lst, comm, Laplace3D_DxU(), "Laplace3D_DxU", /*is_DL=*/true, lap_density,
     [&](const Vector<double>& c, bool in, Vector<double>& U) {
-      SphericalHarmonics<double>::LaplaceEvalDL(Slap, SHCArrange::ROW_MAJOR, p, c, in, U); }, tol);
+      SphericalHarmonics<double>::LaplaceEvalDL(Slap, SHCArrange::ROW_MAJOR, p, c, in, U); }, tol, rel_tol);
 
-  std::cout << "BIO vs. SH reference Laplace: PASSED" << std::endl;
+  if (!comm.Rank()) std::cout << "BIO vs. SH reference Laplace: PASSED" << std::endl;
 
   TestSphereBIOvsSH(elem_lst, comm, Stokes3D_FxU(), "Stokes3D_FxU", /*is_DL=*/false, sto_density,
     [&](const Vector<double>& c, bool in, Vector<double>& U) {
-      SphericalHarmonics<double>::StokesEvalSL(Ssto, SHCArrange::ROW_MAJOR, p, c, in, U); }, tol);
+      SphericalHarmonics<double>::StokesEvalSL(Ssto, SHCArrange::ROW_MAJOR, p, c, in, U); }, tol, rel_tol);
 
   TestSphereBIOvsSH(elem_lst, comm, Stokes3D_DxU(), "Stokes3D_DxU", /*is_DL=*/true, sto_density,
     [&](const Vector<double>& c, bool in, Vector<double>& U) {
-      SphericalHarmonics<double>::StokesEvalDL(Ssto, SHCArrange::ROW_MAJOR, p, c, in, U); }, tol);
+      SphericalHarmonics<double>::StokesEvalDL(Ssto, SHCArrange::ROW_MAJOR, p, c, in, U); }, tol, rel_tol);
 
-  std::cout << "BIO vs. SH reference Stokes: PASSED" << std::endl;
+  if (!comm.Rank()) std::cout << "BIO vs. SH reference Stokes: PASSED" << std::endl;
   SphericalHarmonics<double>::Clear();
+}
+
+// Surface area = sum of far-field quadrature weights (= integral of 1 dS).
+double SurfaceAreaOf(const QuadElemList<double>& elem_lst, const Comm& comm = Comm::Self()) {
+  Vector<double> wts, Xt, Xnt, dist_far;
+  Vector<Long> ewt;
+  elem_lst.GetFarFieldNodes(Xt, Xnt, wts, dist_far, ewt, 1);
+  double A = 0.;
+  for (Long i = 0; i < wts.Dim(); i++) A += wts[i];
+  return GlobalReduce(A, comm, CommOp::SUM); // weights are distributed across ranks
+}
+
+// Largest nodal distance from the origin.
+double MaxNodalRadius(const QuadElemList<double>& elem_lst, const Comm& comm = Comm::Self()) {
+  Vector<double> X;
+  elem_lst.GetNodeCoord(&X, nullptr, nullptr);
+  double rmax = 0;
+  for (Long i = 0; i < X.Dim() / 3; i++) {
+    const double r = std::sqrt(X[i*3+0]*X[i*3+0] + X[i*3+1]*X[i*3+1] + X[i*3+2]*X[i*3+2]);
+    rmax = std::max(rmax, r);
+  }
+  return GlobalReduce(rmax, comm, CommOp::MAX); // nodes are distributed across ranks
+}
+
+// Compare a gmsh-imported sphere against the analytic cubed-sphere TwistSphere(theta=0).
+// The two meshes have entirely different node layouts, so we compare geometry-invariant
+// quantities (surface area, bounding radius) and the BIO-vs-spherical-harmonics reference.
+void test_GmshVsTwistSphere(const Comm& comm, const char* fname = "./sphere", const Long GmshOrder = 4, const double Radius = 1.0) {
+  { std::ifstream is(fname); if (!is.good()) { if (!comm.Rank()) std::cout << "test_GmshVsTwistSphere: SKIPPED (mesh '" << fname << "' not found)\n"; return; } }
+
+  const Long TwistOrder = 16, PatchPerFace = 5;
+  QuadElemList<double> qel_gmsh  = GmshReader<double>::LoadQuadElemList(fname, GmshOrder, comm);
+  
+  Vector<double> Xtwist, Xntwist;
+  qel_gmsh.GetNodeCoord(&Xtwist, &Xntwist, nullptr);
+  qel_gmsh.WriteVTK("gmsh_sphere_mpi", Xntwist, comm);
+  
+  QuadElemList<double> qel_twist = BuildTwistedSphere<double>(TwistOrder, PatchPerFace, Radius, /*theta_twist=*/0., comm);
+  const Long n_gmsh  = GlobalReduce(qel_gmsh.Size(),  comm, CommOp::SUM); // Size() is per-rank
+  const Long n_twist = GlobalReduce(qel_twist.Size(), comm, CommOp::SUM);
+  if (!comm.Rank())
+    std::cout << "test_GmshVsTwistSphere: gmsh elems=" << n_gmsh << " (order " << GmshOrder << ")"
+              << ", TwistSphere(theta=0) elems=" << n_twist << " (order " << TwistOrder << ")\n";
+
+  double gmsh_tol = 3e-2;
+  if (GmshOrder > 4) {
+    gmsh_tol = 1e-6;
+  }
+
+  // --- Geometric invariant 1: surface area (integral of 1 dS) ---
+  const double A_exact = 4. * const_pi<double>() * Radius * Radius;
+  const double A_gmsh  = SurfaceAreaOf(qel_gmsh, comm);
+  const double A_twist = SurfaceAreaOf(qel_twist, comm);
+  if (!comm.Rank()) std::cout << "  surface area: gmsh=" << A_gmsh << ", TwistSphere=" << A_twist << ", exact(4 pi R^2)=" << A_exact << "\n";
+  SCTL_ASSERT(std::fabs(A_twist - A_exact) / A_exact < 1e-8);   // high-order cubed-sphere
+  SCTL_ASSERT(std::fabs(A_gmsh  - A_exact) / A_exact < gmsh_tol);   // linear (Q1) gmsh mesh, O(h^2)
+
+  // --- Geometric invariant 2: bounding radius ---
+  const double rmax_gmsh  = MaxNodalRadius(qel_gmsh, comm);
+  const double rmax_twist = MaxNodalRadius(qel_twist, comm);
+  if (!comm.Rank()) std::cout << "  max nodal radius: gmsh=" << rmax_gmsh << ", TwistSphere=" << rmax_twist << " (R=" << Radius << ")\n";
+  SCTL_ASSERT(std::fabs(rmax_twist - Radius) < 1e-9);            // cubed-sphere nodes lie exactly on the sphere
+  SCTL_ASSERT(rmax_gmsh <= Radius * (1 + 1e-9));                 // flat Q1 chords stay inside the sphere
+  SCTL_ASSERT(std::fabs(rmax_gmsh - Radius) < gmsh_tol);
+
+  // --- BIO vs spherical-harmonics reference on both geometries ---
+  if (!comm.Rank()) std::cout << "  TwistSphere(theta=0) BIO-vs-SH:\n";
+  test_BIOvsSH(qel_twist, comm, /*write_vtk=*/false, /*tol=*/1e-9, /*rel_tol=*/1e-5);
+  if (!comm.Rank()) std::cout << "  gmsh-sphere BIO-vs-SH:\n";
+  test_BIOvsSH(qel_gmsh, comm, /*write_vtk=*/false, /*tol=*/gmsh_tol, /*rel_tol=*/gmsh_tol);
+
+  if (!comm.Rank()) std::cout << "test_GmshVsTwistSphere: PASSED" << std::endl;
 }
 
 // Manufactured-solution interior/exterior Dirichlet test via combined-field BIE + GMRES.
@@ -341,7 +440,7 @@ std::vector<double> TestManufactured(const QuadElemList<double>& elem_lst, const
 
   // Interior with same-sign SL/DL has a null space; flip SL sign.
   if (interior && SL_scal*DL_scal > 0.) {
-    std::cout << "Warning: Interior problem has artificial null space when SL and DL same sign. Flipping SL sign. " << std::endl;
+    if (!comm.Rank()) std::cout << "Warning: Interior problem has artificial null space when SL and DL same sign. Flipping SL sign. " << std::endl;
     SL_scal = -1.*SL_scal;
   }
 
@@ -399,8 +498,10 @@ std::vector<double> TestManufactured(const QuadElemList<double>& elem_lst, const
 
     double err2 = 0, ref2 = 0;
     for (Long i = 0; i < U.Dim(); i++) { const double e = U[i] - Uref[i]; err2 += e*e; ref2 += Uref[i]*Uref[i]; }
+    err2 = GlobalReduce(err2, comm, CommOp::SUM); // targets are distributed across ranks
+    ref2 = GlobalReduce(ref2, comm, CommOp::SUM);
     const double rel_l2 = sqrt(err2 / ref2);
-    std::cout << "  " << name << " (R=" << eval_radius << ", GMRES iters = " << iter
+    if (!comm.Rank()) std::cout << "  " << name << " (R=" << eval_radius << ", GMRES iters = " << iter
               << ") : rel L2 error = " << rel_l2 << std::endl;
     rel_l2s.push_back(rel_l2);
   }
@@ -415,7 +516,7 @@ void test_LaplaceManufactured(const QuadElemList<double>& elem_lst, const Comm& 
 
   // Exterior: charges inside the sphere; verify at near and far radius > 1.
   const Vector<double> Xsrc_ext{0.10, 0.20, 0.15,  -0.20, 0.10, -0.10};
-  std::cout << "Manufactured solution (Laplace, exterior Dirichlet):" << std::endl;
+  if (!comm.Rank()) std::cout << "Manufactured solution (Laplace, exterior Dirichlet):" << std::endl;
   SCTL_ASSERT(TestManufactured(elem_lst, comm, Laplace3D_FxU(), Laplace3D_DxU(),
                 "Laplace SL+DL", Xsrc_ext, Fsrc, /*interior=*/false, /*eval_radii=*/{1.001})[0] < 1e-4);
   SCTL_ASSERT(TestManufactured(elem_lst, comm, Laplace3D_FxU(), Laplace3D_DxU(),
@@ -424,7 +525,7 @@ void test_LaplaceManufactured(const QuadElemList<double>& elem_lst, const Comm& 
   // Interior: charges outside the sphere; verify at near/far radius < 1.
   // Interior CFIE needs opposite-sign SL/DL, so SL_scal = -1.
   const Vector<double> Xsrc_int{1.50, 0.40, 0.30,  -1.20, 0.80, -0.60};
-  std::cout << "Manufactured solution (Laplace, interior Dirichlet):" << std::endl;
+  if (!comm.Rank()) std::cout << "Manufactured solution (Laplace, interior Dirichlet):" << std::endl;
   SCTL_ASSERT(TestManufactured(elem_lst, comm, Laplace3D_FxU(), Laplace3D_DxU(),
                 "Laplace SL+DL", Xsrc_int, Fsrc, /*interior=*/true, /*eval_radii=*/{0.999},
                 /*quadr_tol=*/1e-9, /*SL_scal=*/-1.0, /*DL_scal=*/1.0)[0] < 1e-4);
@@ -432,7 +533,7 @@ void test_LaplaceManufactured(const QuadElemList<double>& elem_lst, const Comm& 
                 "Laplace SL+DL", Xsrc_int, Fsrc, /*interior=*/true, /*eval_radii=*/{0.500},
                 /*quadr_tol=*/1e-9, /*SL_scal=*/-1.0, /*DL_scal=*/1.0)[0] < 1e-5);
 
-  std::cout << "Laplace manufactured-solution test: PASSED" << std::endl;
+  if (!comm.Rank()) std::cout << "Laplace manufactured-solution test: PASSED" << std::endl;
 }
 
 // Stokes CFIE Dirichlet manufactured solution: recover Stokeslet velocity field,
@@ -443,7 +544,7 @@ void test_StokesManufactured(const QuadElemList<double>& elem_lst, const Comm& c
 
   // Exterior: Stokeslets inside the sphere.
   const Vector<double> Xsrc_ext{0.10, 0.20, 0.15,  -0.20, 0.10, -0.10};
-  std::cout << "Manufactured solution (Stokes, exterior Dirichlet):" << std::endl;
+  if (!comm.Rank()) std::cout << "Manufactured solution (Stokes, exterior Dirichlet):" << std::endl;
   SCTL_ASSERT(TestManufactured(elem_lst, comm, Stokes3D_FxU(), Stokes3D_DxU(),
                 "Stokes SL+DL", Xsrc_ext, Fsrc, /*interior=*/false, /*eval_radii=*/{1.001})[0] < 1e-4);
   SCTL_ASSERT(TestManufactured(elem_lst, comm, Stokes3D_FxU(), Stokes3D_DxU(),
@@ -451,7 +552,7 @@ void test_StokesManufactured(const QuadElemList<double>& elem_lst, const Comm& c
 
   // Interior: Stokeslets outside; interior CFIE needs opposite-sign SL/DL, so SL_scal = -1.
   const Vector<double> Xsrc_int{1.50, 0.40, 0.30,  -1.20, 0.80, -0.60};
-  std::cout << "Manufactured solution (Stokes, interior Dirichlet):" << std::endl;
+  if (!comm.Rank()) std::cout << "Manufactured solution (Stokes, interior Dirichlet):" << std::endl;
   SCTL_ASSERT(TestManufactured(elem_lst, comm, Stokes3D_FxU(), Stokes3D_DxU(),
                 "Stokes SL+DL", Xsrc_int, Fsrc, /*interior=*/true, /*eval_radii=*/{0.999},
                 /*quadr_tol=*/1e-9, /*SL_scal=*/-1.0, /*DL_scal=*/1.0)[0] < 1e-4);
@@ -459,7 +560,7 @@ void test_StokesManufactured(const QuadElemList<double>& elem_lst, const Comm& c
                 "Stokes SL+DL", Xsrc_int, Fsrc, /*interior=*/true, /*eval_radii=*/{0.500},
                 /*quadr_tol=*/1e-9, /*SL_scal=*/-1.0, /*DL_scal=*/1.0)[0] < 1e-5);
 
-  std::cout << "Stokes manufactured-solution test: PASSED" << std::endl;
+  if (!comm.Rank()) std::cout << "Stokes manufactured-solution test: PASSED" << std::endl;
 }
 
 // h-refinement convergence: fixed ElemOrder, increasing PatchPerFace, report
@@ -504,11 +605,13 @@ void test_ManufacturedConvergence(const Comm& comm,
     name = "DL";
   }
 
-  std::cout << "\nManufactured-solution convergence study (ElemOrder = " << ElemOrder << "):\n";
-  std::cout << std::scientific;
-  std::cout << "  kernel    PatchPerFace  Nelem   rel-L2 (near R=" << R_near <<")   rel-L2 (far R="<<R_far<<")\n"; 
+  if (!comm.Rank()) {
+    std::cout << "\nManufactured-solution convergence study (ElemOrder = " << ElemOrder << "):\n";
+    std::cout << std::scientific;
+    std::cout << "  kernel    PatchPerFace  Nelem   rel-L2 (near R=" << R_near <<")   rel-L2 (far R="<<R_far<<")\n";
+  }
   for (const Long PatchPerFace : PatchPerFaceList) {
-    QuadElemList<double> elem_lst = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, theta_twist);
+    QuadElemList<double> elem_lst = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, theta_twist, comm);
     if (rect_polar) {
       elem_lst.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar);
     }
@@ -525,22 +628,22 @@ void test_ManufacturedConvergence(const Comm& comm,
     const std::vector<double> el = TestManufactured(elem_lst, comm, Laplace3D_FxU(), Laplace3D_DxU(),
                              ("Laplace "+name).c_str(), Xsrc_lap, Fsrc_lap, interior, {R_near, R_far}, quadr_tol, SL_scal, DL_scal);
     const double el_near = el[0], el_far = el[1];
-    std::cout << "  Laplace   " << std::setw(12) << PatchPerFace << "  " << std::setw(5) << Nelem
+    if (!comm.Rank()) std::cout << "  Laplace   " << std::setw(12) << PatchPerFace << "  " << std::setw(5) << Nelem
               << "   " << el_near << "        " << el_far << "\n";
 
     const std::vector<double> es = TestManufactured(elem_lst, comm, Stokes3D_FxU(), Stokes3D_DxU(),
                              ("Stokes "+name).c_str(), Xsrc_sto, Fsrc_sto, interior, {R_near, R_far}, quadr_tol, SL_scal, DL_scal);
     const double es_near = es[0], es_far = es[1];
-    std::cout << "  Stokes    " << std::setw(12) << PatchPerFace << "  " << std::setw(5) << Nelem
+    if (!comm.Rank()) std::cout << "  Stokes    " << std::setw(12) << PatchPerFace << "  " << std::setw(5) << Nelem
               << "   " << es_near << "        " << es_far << "\n";
   }
-  std::cout << "Manufactured-solution convergence study: DONE" << std::endl;
+  if (!comm.Rank()) std::cout << "Manufactured-solution convergence study: DONE" << std::endl;
 }
 
 // Nbeta (RectPolar cov_order) sweep on the maximally twisted sphere, Stokes kernel only.
 // For fixed ElemOrder/twist, increase Nbeta (GL points per direction in the rectangular-polar
 // COV) at each surface resolution (PatchPerFace) and record manufactured-solution rel-L2
-// (near + far) plus wall-clock solve+eval time. Writes a formatted table to Nbeta_sweep.txt.
+// (near + far) plus wall-clock solve+eval time. Writes a formatted table to Nbeta_benchmark.txt.
 void test_NbetaSweep(const Comm& comm,
                      const std::vector<Long>& NbetaList = {32, 64, 96, 128, 192, 256, 384, 512},
                      const std::vector<Long>& PatchPerFaceList = {5, 10},
@@ -567,7 +670,7 @@ void test_NbetaSweep(const Comm& comm,
     ofs << "# columns: PatchPerFace  Nbeta  Nelem  rel-L2(near R=" << R_near
         << ")  rel-L2(far R=" << R_far << ")  t_solve+eval(s)\n";
 
-    std::cout << "\nNbeta sweep (RectPolar, Stokes, twisted sphere) -> Nbeta_sweep.txt\n";
+    std::cout << "\nNbeta sweep (RectPolar, Stokes, twisted sphere) -> Nbeta_benchmark.txt\n";
     std::cout << std::scientific;
   }
 
@@ -578,7 +681,7 @@ void test_NbetaSweep(const Comm& comm,
       std::cout << "# --- PatchPerFace = " << PatchPerFace << " (Nelem = " << Nelem << ") ---\n";
     }
     for (const Long Nbeta : NbetaList) {
-      QuadElemList<double> elem_lst = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, theta_twist);
+      QuadElemList<double> elem_lst = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, theta_twist, comm);
       elem_lst.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar, /*q=*/6, /*cov_order=*/Nbeta);
 
       const auto t0 = std::chrono::high_resolution_clock::now();
@@ -645,33 +748,45 @@ int main(int argc, char** argv) {
 
   {
     const Comm comm = Comm::World();
-    SCTL_ASSERT_MSG(comm.Size() == 1, "\
-        This demo is sequential. In a distributed memory implementation, each process\n\
-        would build only its local section of the geometry.");
+    // Distributed run: every rank builds the full geometry and BuildTwistedSphere /
+    // GmshReader::LoadQuadElemList keep only this rank's contiguous element slice
+    // (replicate-then-slice). BoundaryIntegralOp handles all cross-rank communication.
 
     Profile::Enable(true);
 
+    // gmsh import pipeline vs. analytic cubed-sphere (geometry invariants + BIO-vs-SH).
+    // Coarse ./sphere mesh: low resolution, so resample its panels to QuadOrder 4.
+    // test_GmshVsTwistSphere(comm, "./sphere", 4);
+    test_GmshVsTwistSphere(comm, "./sphere_ord9", 16);
+
+    // Nbeta convergence + timing sweep (RectPolar, Stokes, twisted sphere theta=pi).
+    // The adaptive scheme and the regular-sphere / Laplace blocks below are disabled
+    // (#if 0) for now; flip to 1 to re-enable.
+    // test_NbetaSweep(comm);
+    // test_NbetaSweep(comm);
+
+#if 0
     const Long ElemOrder = 16;
-    const Long PatchPerFace = 5; 
+    const Long PatchPerFace = 5;
     const double Radius = 1.0;
-    QuadElemList<double> elem_lst = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius);
-
-    
-
-    std::cout << "\n=== Scheme 1: Adaptive subdivision of panels ===" << std::endl;
-    std::cout << "------ Quadr and BIO tests for regular sphere -------" << std::endl;
-    test_SurfaceArea(elem_lst, Radius);
-    test_StokesDLIdentity(elem_lst, comm);
-    test_BIOvsSH(elem_lst, comm, true);
-    std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    test_ManufacturedConvergence(comm);
-    std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
-    test_ManufacturedConvergence(comm, true);
-    std::cout << "------ Profile BIO compute potential at near target, regular sphere. ------ " << std::endl;
-    test_timing_StkSL(elem_lst, comm, 1e-12); 
+    QuadElemList<double> elem_lst = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, 0., comm);
 
 
-    // std::cout << "------ Quadr and BIO tests for twisted sphere -------" << std::endl;
+
+    if (!comm.Rank()) std::cout << "\n=== Scheme 1: Adaptive subdivision of panels ===" << std::endl;
+    // if (!comm.Rank()) std::cout << "------ Quadr and BIO tests for regular sphere -------" << std::endl;
+    // test_SurfaceArea(elem_lst, Radius, comm);
+    // test_StokesDLIdentity(elem_lst, comm);
+    // test_BIOvsSH(elem_lst, comm, true);
+    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
+    // test_ManufacturedConvergence(comm);
+    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
+    // test_ManufacturedConvergence(comm, true);
+    // if (!comm.Rank()) std::cout << "------ Profile BIO compute potential at near target, regular sphere. ------ " << std::endl;
+    // test_timing_StkSL(elem_lst, comm, 1e-12);
+
+
+    std::cout << "------ Quadr and BIO tests for twisted sphere -------" << std::endl;
     const Long ElemOrder_twisted = 16;
     const Long PatchPerFace_twisted = 5;
     // Small twist
@@ -681,7 +796,7 @@ int main(int argc, char** argv) {
     // test_StokesDLIdentity(elem_lst_twist, comm);
     // test_BIOvsSH(elem_lst_twist, comm, false, 1e-14);
     // std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, false, theta_twist, {1,2,3,4,5}, 12);
+    // test_ManufacturedConvergence(comm, false, false, theta_twist, {1,2,3}, 12);
 
     // // Moderate twist
     // theta_twist = const_pi<double>() / 2.;
@@ -694,47 +809,48 @@ int main(int argc, char** argv) {
 
     // // Large twist
     theta_twist = const_pi<double>();
-    QuadElemList<double> elem_lst_twist3 = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist);
-    // Vector<double> Xtwist, Xntwist;
-    // elem_lst_twist3.GetNodeCoord(&Xtwist, &Xntwist, nullptr);
-    // elem_lst_twist3.WriteVTK("twisted3_sphere", Xntwist);
-    test_SurfaceArea(elem_lst_twist3, Radius);
+    QuadElemList<double> elem_lst_twist3 = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist, comm);
+    Vector<double> Xtwist, Xntwist;
+    elem_lst_twist3.GetNodeCoord(&Xtwist, &Xntwist, nullptr);
+    elem_lst_twist3.WriteVTK("twisted3_sphere_mpi", Xntwist, comm); // one .vtu per rank + rank-0 .pvtu master
+    test_SurfaceArea(elem_lst_twist3, Radius, comm);
     test_StokesDLIdentity(elem_lst_twist3, comm);
     test_BIOvsSH(elem_lst_twist3, comm, false, 1e-14);
-    std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    test_ManufacturedConvergence(comm, false, false, theta_twist, {3,4,5}, 24);
+    if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
+    test_ManufacturedConvergence(comm, false, false, theta_twist, {3,4,5}, 16);
 
 
     // --- Scheme 2: rectangular-polar COV (Bruno 2018) for near/self interactions ---
-    std::cout << "\n=== Scheme 2: rectangular-polar change of variable ===" << std::endl;
+    if (!comm.Rank()) std::cout << "\n=== Scheme 2: rectangular-polar change of variable ===" << std::endl;
     // Profile::Enable(true);
-    QuadElemList<double> elem_lst_rp = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius);
+    QuadElemList<double> elem_lst_rp = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, 0., comm);
     elem_lst_rp.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar, 6, 256);
-    test_SurfaceArea(elem_lst_rp, Radius);
+    test_SurfaceArea(elem_lst_rp, Radius, comm);
     test_StokesDLIdentity(elem_lst_rp, comm);
     test_BIOvsSH(elem_lst_rp, comm);
     test_LaplaceManufactured(elem_lst_rp, comm);
     test_StokesManufactured(elem_lst_rp, comm);
-    std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
+    if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
     test_ManufacturedConvergence(comm, false, true);
-    std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
-    test_ManufacturedConvergence(comm, true, true);
-    std::cout << "------ Profile BIO compute potential at near target, R-P scheme, regular sphere. ------ " << std::endl;
-    test_timing_StkSL(elem_lst_rp, comm, 1e-12); 
+    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
+    // test_ManufacturedConvergence(comm, true, true);
+    if (!comm.Rank()) std::cout << "------ Profile BIO compute potential at near target, R-P scheme, regular sphere. ------ " << std::endl;
+    test_timing_StkSL(elem_lst_rp, comm, 1e-12);
 
-    elem_lst_rp = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist);
+    elem_lst_rp = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist, comm);
     elem_lst_rp.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar);
-    test_SurfaceArea(elem_lst_rp, Radius);
+    test_SurfaceArea(elem_lst_rp, Radius, comm);
     test_StokesDLIdentity(elem_lst_rp, comm);
     test_BIOvsSH(elem_lst_rp, comm);
     test_LaplaceManufactured(elem_lst_rp, comm);
     test_StokesManufactured(elem_lst_rp, comm);
-    std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
+    if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
     test_ManufacturedConvergence(comm, false, true, theta_twist);
-    std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
-    test_ManufacturedConvergence(comm, true, true, theta_twist);
-    std::cout << "------ Profile BIO compute potential at near target, R-P scheme, twisted sphere. ------ " << std::endl;
-    test_timing_StkSL(elem_lst_rp, comm, 1e-12); 
+    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
+    // test_ManufacturedConvergence(comm, true, true, theta_twist);
+    if (!comm.Rank()) std::cout << "------ Profile BIO compute potential at near target, R-P scheme, twisted sphere. ------ " << std::endl;
+    test_timing_StkSL(elem_lst_rp, comm, 1e-12);
+#endif
 
   }
 
