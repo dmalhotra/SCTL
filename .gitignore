@@ -8,3 +8,15 @@ doc/_build
 doc/_doxygen
 *~
 *.txt
+
+# Claude-generated files (guidance/docs authored by Claude Code) -- not tracked
+CLAUDE.md
+/docs/
+
+# Large mesh data (gmsh meshes / cubed-sphere geometry) -- kept out of the repo;
+# git home is on quota-enforced GPFS. Tests SKIP gracefully when a mesh is absent.
+/sphere
+/sphere_ord9
+/sphere_ord9_dense
+/cylinder_ord9
+*.geom
