@@ -170,11 +170,15 @@ namespace sctl {
   }
 
   template <class Real> const std::pair<Vector<Real>, Vector<Real>>& QuadElemList<Real>::GLRuleNbetaDispatch(const Integer Nbeta) {
-    if      (Nbeta == 64)  return GLRuleNbeta<64>();
+    if      (Nbeta == 32)  return GLRuleNbeta<32>();
+    else if (Nbeta == 64)  return GLRuleNbeta<64>();
+    else if (Nbeta == 96)  return GLRuleNbeta<96>();
     else if (Nbeta == 128) return GLRuleNbeta<128>();
+    else if (Nbeta == 192) return GLRuleNbeta<192>();
     else if (Nbeta == 256) return GLRuleNbeta<256>();
+    else if (Nbeta == 384) return GLRuleNbeta<384>();
     else if (Nbeta == 512) return GLRuleNbeta<512>();
-    SCTL_ASSERT_MSG(false, "RectPolar Nbeta (cov_order) must be one of {64,128,256,512}.");
+    SCTL_ASSERT_MSG(false, "RectPolar Nbeta (cov_order) must be one of {32,64,96,128,192,256,384,512}.");
     return GLRuleNbeta<512>(); // unreachable
   }
 
@@ -197,17 +201,25 @@ namespace sctl {
   template <class Real> template <Integer order> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::RPSelfRuleDispatch(const Integer k, const Integer q, const Integer Nbeta) {
     // Map the runtime (q, Nbeta) to the compile-time RPSelfRule instantiation.
     if (q == 6) {
-      if      (Nbeta == 64)  return RPSelfRule<order,64,6>(k);
+      if      (Nbeta == 32)  return RPSelfRule<order,32,6>(k);
+      else if (Nbeta == 64)  return RPSelfRule<order,64,6>(k);
+      else if (Nbeta == 96)  return RPSelfRule<order,96,6>(k);
       else if (Nbeta == 128) return RPSelfRule<order,128,6>(k);
+      else if (Nbeta == 192) return RPSelfRule<order,192,6>(k);
       else if (Nbeta == 256) return RPSelfRule<order,256,6>(k);
+      else if (Nbeta == 384) return RPSelfRule<order,384,6>(k);
       else if (Nbeta == 512) return RPSelfRule<order,512,6>(k);
     } else if (q == 10) {
-      if      (Nbeta == 64)  return RPSelfRule<order,64,10>(k);
+      if      (Nbeta == 32)  return RPSelfRule<order,32,10>(k);
+      else if (Nbeta == 64)  return RPSelfRule<order,64,10>(k);
+      else if (Nbeta == 96)  return RPSelfRule<order,96,10>(k);
       else if (Nbeta == 128) return RPSelfRule<order,128,10>(k);
+      else if (Nbeta == 192) return RPSelfRule<order,192,10>(k);
       else if (Nbeta == 256) return RPSelfRule<order,256,10>(k);
+      else if (Nbeta == 384) return RPSelfRule<order,384,10>(k);
       else if (Nbeta == 512) return RPSelfRule<order,512,10>(k);
     }
-    SCTL_ASSERT_MSG(false, "RectPolar (cov_q, Nbeta) must have cov_q in {6,10} and Nbeta in {64,128,256,512}.");
+    SCTL_ASSERT_MSG(false, "RectPolar (cov_q, Nbeta) must have cov_q in {6,10} and Nbeta in {32,64,96,128,192,256,384,512}.");
     return RPSelfRule<order,512,6>(k); // unreachable
   }
 
