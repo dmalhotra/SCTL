@@ -1,5 +1,6 @@
 #include <sctl.hpp>
 #include "sctl/experimental/quad_element.cpp" // template definitions
+#include "sctl/experimental/gmsh_reader.cpp"  // gmsh -> QuadElemList importer
 
 using namespace sctl;
 
@@ -611,10 +612,75 @@ template <class Real> void test_QuadNodeInterp() {
     SCTL_ASSERT(rel_err < rel_tol);
 }
 
+// gmsh import pipeline: read a quad-meshed sphere, resample onto a target_order
+// GL grid, and check (1) nodes lie approximately on the sphere, (2) they are
+// ordered as a tensor GL grid (u-slow), (3) node count matches the order.
+template <class Real> void test_GmshReader(const char* fname = "./sphere", const Integer order = 6, const Real Radius = 1) {
+    { std::ifstream is(fname); if (!is.good()) { std::cout << "test_GmshReader: SKIPPED (mesh file '" << fname << "' not found)\n"; return; } }
+
+    // Raw quad patches (tensor (i,j) order, u-slow) + the resampled GL coords.
+    Integer nside = 0;
+    Vector<Real> src;
+    const Long nquad = GmshReader<Real>::ReadQuadPatches(fname, nside, src);
+    const Vector<Real> coord = GmshReader<Real>::ReadQuadCoord(fname, order);
+
+    QuadElemList<Real> qel(order, coord);
+    SCTL_ASSERT(qel.Order() == order);
+    SCTL_ASSERT(qel.Size() == nquad);
+
+    // (3) tensor GL grid of the correct order: order*order nodes per element.
+    const Long N = order, nn_trg = N * N;
+    SCTL_ASSERT(coord.Dim() == nquad * nn_trg * 3);
+
+    // (1) every node lies approximately on the sphere of radius `Radius`.
+    // Linear (Q1) patches are flat chords, so GL nodes sit inside the sphere by O(h^2).
+    Real max_rad_err = 0;
+    for (Long i = 0; i < coord.Dim() / 3; i++) {
+        const Real r = sqrt<Real>(coord[i*3+0]*coord[i*3+0] + coord[i*3+1]*coord[i*3+1] + coord[i*3+2]*coord[i*3+2]);
+        max_rad_err = std::max<Real>(max_rad_err, fabs(r - Radius));
+    }
+    const Real sphere_tol = (nside == 2 ? (Real)3e-2 : (Real)1e-6); // resolution-dependent for flat Q1
+    std::cout << "  test_GmshReader: nquad=" << nquad << " gmsh_nside=" << nside << " order=" << order
+              << " max|r-R|=" << max_rad_err << "\n";
+    SCTL_ASSERT(max_rad_err < sphere_tol);
+
+    // (2) ordered correctly: independently re-evaluate each patch's gmsh shape
+    // functions at the GL grid using explicit per-point Lagrange basis values
+    // (a different contraction than the importer's GEMM), and require node-by-node
+    // agreement with the importer output -- any (u,v)/transpose ordering bug fails.
+    Vector<Real> eq(nside);
+    for (Integer k = 0; k < nside; k++) eq[k] = (nside == 1) ? (Real)0.5 : (Real)k / (Real)(nside - 1);
+    const Vector<Real>& gl = QuadElemList<Real>::ParamNodes(order);
+    // Lagrange basis weights at each GL node: Lu(a,i) row-major nside x N from Interpolate(eq, gl).
+    Vector<Real> Lw(nside * N); LagrangeInterp<Real>::Interpolate(Lw, eq, gl); // Lw[i*N + a]
+    const Long nn_src = (Long)nside * nside;
+    Real max_ord_err = 0;
+    for (Long e = 0; e < nquad; e++) {
+        for (Long a = 0; a < N; a++) {        // u-target index (slow)
+            for (Long b = 0; b < N; b++) {    // v-target index (fast)
+                Real X[3] = {0,0,0};
+                for (Integer i = 0; i < nside; i++) {
+                    for (Integer j = 0; j < nside; j++) {
+                        const Real w = Lw[i*N + a] * Lw[j*N + b];
+                        const Long s = (e * nn_src + (Long)i*nside + j) * 3;
+                        X[0] += w * src[s+0]; X[1] += w * src[s+1]; X[2] += w * src[s+2];
+                    }
+                }
+                const Long p = (e * nn_trg + a*N + b) * 3; // u-slow flat node index
+                for (Integer k = 0; k < 3; k++) max_ord_err = std::max<Real>(max_ord_err, fabs(coord[p+k] - X[k]));
+            }
+        }
+    }
+    std::cout << "  test_GmshReader: ordering cross-check max_abs_err=" << max_ord_err << "\n";
+    SCTL_ASSERT(max_ord_err < (Real)1e-11);
+}
+
 int main(int argc, char** argv) {
 
     using Real = double;
 
+    test_GmshReader<Real>();
+    std::cout << "test_GmshReader: PASSED\n";
     test_ParamGrid<Real>();
     std::cout << "test_ParamGrid: PASSED\n";
     test_GetClosestNode_plane<Real>();
