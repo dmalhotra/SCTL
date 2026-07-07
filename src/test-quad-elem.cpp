@@ -270,7 +270,7 @@ void test_BIOvsSH(const QuadElemList<double>& elem_lst, const Comm& comm, bool w
     elem_lst.GetGeom(&Xc, &Xn, nullptr, nullptr, nullptr, us, vs, evis);
     Vector<double> Xtrg(3);
     for (int k = 0; k < 3; k++) Xtrg[k] = Xc[k] + 0.02 * Xn[k];
-    if (elem_lst.Scheme() == QuadElemList<double>::QuadScheme::RectPolar) {
+    if (elem_lst.NearUsesRectPolar()) {
       elem_lst.WriteNearInteracRPVTK("near-interac-elem0", evis, Xtrg);
     } else {
       elem_lst.WriteNearInteracVTK("near-interac-elem0", evis, Xtrg, 1e-9, comm); // tol = 1e-9 just for plotting
@@ -279,7 +279,7 @@ void test_BIOvsSH(const QuadElemList<double>& elem_lst, const Comm& comm, bool w
     // Self: an interior node parameter.
     const auto& nds = QuadElemList<double>::ParamNodes(ord);
     const double u0 = nds[ord/2], v0 = nds[ord/2];
-    if (elem_lst.Scheme() == QuadElemList<double>::QuadScheme::RectPolar) {
+    if (elem_lst.SelfUsesRectPolar()) {
       elem_lst.WriteSelfInteracRPVTK("self-interac-elem0", evis, u0, v0);
     } else {
       elem_lst.WriteSelfInteracVTK("self-interac-elem0", evis, u0, v0, 1e-9, comm);

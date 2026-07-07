@@ -837,7 +837,7 @@ namespace sctl {
 
     // TODO: only binary split right now, see CSBQ for variable step-size.
 
-    if (qel.scheme_ == QuadScheme::RectPolar) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker); return; }
+    if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker); return; }
 
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -982,7 +982,7 @@ namespace sctl {
     // toward u0 x Alpert log-singular v-rule toward v0; both rules + interpolation are
     // preloaded (geometry-independent, fixed by order/ti/tj/digits), integrated by
     // IntegrateBlock. IntegrateBlock still does the target-centered geometry per target.
-    if (qel.scheme_ == QuadScheme::RectPolar) { SelfInteracBlockRP<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, normal_trg, ker); return; }
+    if (qel.SelfUsesRectPolar()) { SelfInteracBlockRP<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, normal_trg, ker); return; }
 
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -1040,7 +1040,7 @@ namespace sctl {
     // Pre-warm the (thread-safe) static rule caches serially: the init lambdas fill all
     // `order` indices in one shot, so the OpenMP loop below never serializes on first-touch
     // static initialization. Warm the rules of the active scheme only.
-    if (qel.scheme_ == QuadScheme::RectPolar) {
+    if (qel.SelfUsesRectPolar()) {
       const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : 512);
       RPSelfRuleDispatch<order>(0, qel.cov_q_, Nbeta);
     } else {

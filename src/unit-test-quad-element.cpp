@@ -743,5 +743,16 @@ int main(int argc, char** argv) {
         test_SelfInterac<Real>(ker_FxU, QS::RectPolar, 1e0, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/nb);
     }
 
+    // Scheme 3: Hybrid = adaptive near + rectangular-polar self. Near matches the
+    // Adaptive path (tol-driven, cov_order ignored); self matches the RectPolar path.
+    std::cout << "--- Scheme 3: Hybrid (adaptive near + RectPolar self) ---\n";
+    test_NearInterac<Real>(ker_FxU, false, "Hybrid Stokes3D_FxU / plane",    QS::Hybrid, 1e-7, /*cov_order=*/0);
+    test_NearInterac<Real>(ker_FxU, true,  "Hybrid Stokes3D_FxU / testsurf", QS::Hybrid, 1e-7, /*cov_order=*/0);
+    std::cout << "test_NearInterac (Hybrid, adaptive near): PASSED\n";
+    test_SelfInterac<Real>(ker_lapFxU, QS::Hybrid, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/256);
+    std::cout << "test_SelfInterac Lap_FxU (Hybrid, RP self, Nbeta=256): PASSED\n";
+    test_SelfInterac<Real>(ker_FxU, QS::Hybrid, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/256);
+    std::cout << "test_SelfInterac Sto_FxU (Hybrid, RP self, Nbeta=256): PASSED\n";
+
     return 0;
 }
