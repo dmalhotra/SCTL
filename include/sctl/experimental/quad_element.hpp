@@ -23,9 +23,12 @@ namespace sctl {
 
       /**
        * Near/self singular-quadrature scheme: Adaptive (dyadic subdivision +
-       * Alpert log correction, default) or RectPolar (Bruno-2018 change of var).
+       * Alpert log correction, default), RectPolar (Bruno-2018 change of var),
+       * or Hybrid (Adaptive near + RectPolar self). For Hybrid the near phase is
+       * tolerance-driven (like Adaptive) while the self phase uses the RectPolar
+       * COV knobs (`q`, `cov_order`/Nbeta) passed to SetQuadScheme.
        */
-      enum class QuadScheme { Adaptive, RectPolar };
+      enum class QuadScheme { Adaptive, RectPolar, Hybrid };
 
       /** Constructor. */
       QuadElemList() {}
@@ -65,9 +68,15 @@ namespace sctl {
       /** Singular-quadrature scheme used by SelfInterac/NearInterac. */
       QuadScheme Scheme() const;
 
+      /** True if the near phase uses the RectPolar COV (RectPolar scheme only). */
+      bool NearUsesRectPolar() const { return scheme_ == QuadScheme::RectPolar; }
+
+      /** True if the self phase uses the RectPolar COV (RectPolar or Hybrid). */
+      bool SelfUsesRectPolar() const { return scheme_ == QuadScheme::RectPolar || scheme_ == QuadScheme::Hybrid; }
+
       /**
        * Set the singular-quadrature scheme.
-       * @param[in] s scheme (Adaptive or RectPolar).
+       * @param[in] s scheme (Adaptive, RectPolar, or Hybrid).
        * @param[in] q derivative-flattening parameter for RectPolar (ignored for Adaptive).
        * @param[in] cov_order RectPolar GL points per direction (Nbeta, Bruno 2018);
        * decoupled from field order. 0 falls back to the tolerance-derived order.

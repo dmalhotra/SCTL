@@ -75,7 +75,11 @@ template <class Real> Vector<Real> get_testsurf(const Integer order) {
 }
 
 const char* SchemeName(typename QuadElemList<double>::QuadScheme s) {
-  return s == QuadElemList<double>::QuadScheme::RectPolar ? "RectPolar" : "Adaptive";
+  switch (s) {
+    case QuadElemList<double>::QuadScheme::RectPolar: return "RectPolar";
+    case QuadElemList<double>::QuadScheme::Hybrid:    return "Hybrid";
+    default:                                          return "Adaptive";
+  }
 }
 
 // ---- Self-interaction --------------------------------------------------------
@@ -171,6 +175,7 @@ int main(int argc, char** argv) {
       bench_self(ker_lap, QS::Adaptive,  order, 1e-6, 10, 0);    // scalar, interpolation-dominated
       bench_self(ker_stk, QS::Adaptive,  order, 1e-6, 10, 0);    // matrix kernel: heavier KernelEval
       bench_self(ker_lap, QS::RectPolar, order, 1e-7, 10, 256);  // fixed Nbeta tensor rule
+      bench_self(ker_lap, QS::Hybrid,    order, 1e-7, 10, 256);  // self uses RectPolar (near unused here)
     }
     bench_self(ker_lap, QS::Adaptive, 8, 1e-10, 10, 0);          // tol sweep at fixed order
 
@@ -181,6 +186,7 @@ int main(int argc, char** argv) {
       bench_near(ker_stk, QS::Adaptive,  order, 1e-10, 10, 0,   100);
       bench_near(ker_lap, QS::RectPolar, order, 1e-7,  10, 256, 100);
       bench_near(ker_stk, QS::RectPolar, order, 1e-7,  10, 256, 100);
+      bench_near(ker_lap, QS::Hybrid,    order, 1e-10, 10, 0,   100);  // near uses adaptive (tol-driven)
     }
 
     std::printf("\n==== Profiler view (counts kernel-eval FLOPs only -> understates true work) ====\n");
