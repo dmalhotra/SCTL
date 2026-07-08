@@ -483,6 +483,17 @@ namespace sctl {
     return VLevelsForDigits(digits);
   }
 
+  template <class Real> Integer QuadElemList<Real>::NbetaForDigits(const Integer digits) {
+    // Worst-case tol->Nbeta ladder for the RectPolar COV, calibrated on the maximally
+    // twisted sphere (theta=pi, PatchPerFace=5, near R=1.001 column of Nbeta_sweep.txt):
+    // smallest ladder Nbeta reaching 10^-digits with margin. RectPolar converges much
+    // faster in Nbeta on near-flat geometry, so this is conservative there.
+    if      (digits <= 2) return 128; // 1e-1..1e-2: 128 -> 7.6e-3
+    else if (digits == 3) return 256; // 1e-3     : 256 -> 1.3e-4
+    else if (digits <= 5) return 384; // 1e-4,1e-5: 384 -> 2.4e-6
+    else                  return 512; // <=1e-6   : 512 -> 5.6e-8 (ladder max)
+  }
+
   template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>* Mv_pre, const Matrix<Real>* dMv_pre, const Matrix<Real>* Mu_pre, const Matrix<Real>* dMu_pre, const Matrix<Real>* MvT_pre, const Matrix<Real>* MuT_pre, const Matrix<Real>* dMuT_pre) {
     // Accumulate the tensor-product quadrature (u_param x v_param, weights wu (x) wv)
     // against the single target Xtrg. Shared by the near (per-leaf) and self schemes.
@@ -851,7 +862,7 @@ namespace sctl {
 
     // TODO: only binary split right now, see CSBQ for variable step-size.
 
-    if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker); return; }
+    if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
 
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -897,7 +908,7 @@ namespace sctl {
     }
   }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default) {
     // Rectangular-polar near-interaction: cluster a single tensor-product GL rule
     // toward the nearest point on the element via the COV, integrate once.
     static constexpr Integer KDIM0 = Kernel::SrcDim();
@@ -908,8 +919,9 @@ namespace sctl {
     const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
 
     // Nbeta GL points per direction for the (finitely smooth) post-COV integrand,
-    // decoupled from the field order (Bruno 2018: one to a few hundred). Default 512.
-    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : 512);
+    // decoupled from the field order (Bruno 2018: one to a few hundred). cov_order_ overrides,
+    // else the caller's tol-derived nbeta_default (NbetaForDigits).
+    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : nbeta_default);
     const std::pair<Vector<Real>, Vector<Real>>& gl = GLRuleNbetaDispatch(Nbeta);
 
     // True closest point (u*,v*) sets the clustering center (alpha = 2*u*-1): bunch
@@ -996,7 +1008,7 @@ namespace sctl {
     // toward u0 x Alpert log-singular v-rule toward v0; both rules + interpolation are
     // preloaded (geometry-independent, fixed by order/ti/tj/digits), integrated by
     // IntegrateBlock. IntegrateBlock still does the target-centered geometry per target.
-    if (qel.SelfUsesRectPolar()) { SelfInteracBlockRP<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, normal_trg, ker); return; }
+    if (qel.SelfUsesRectPolar()) { SelfInteracBlockRP<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
 
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -1013,7 +1025,7 @@ namespace sctl {
     IntegrateBlock<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru.param, ru.w, rv.param, rv.w, ker, &rv.M, &rv.dM, &ru.M, &ru.dM, &rv.MT, &ru.MT, &ru.dMT);
   }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::SelfInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::SelfInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default) {
     // Rectangular-polar singular self-interaction for on-surface node (ti,tj). A single
     // tensor-product GL rule clustered toward (u0,v0) in both directions; the COV weight
     // vanishes at the singularity, so no log-singular split is needed. RP is non-adaptive,
@@ -1026,8 +1038,9 @@ namespace sctl {
     const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
 
     // Nbeta GL points per direction for the (finitely smooth) post-COV integrand,
-    // decoupled from the field order (Bruno 2018: one to a few hundred). Default 512.
-    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : 512);
+    // decoupled from the field order (Bruno 2018: one to a few hundred). cov_order_ overrides,
+    // else the caller's tol-derived nbeta_default (NbetaForDigits).
+    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : nbeta_default);
     const NodeRuleData& ru = RPSelfRuleDispatch<order>(ti, qel.cov_q_, Nbeta); // u-direction
     const NodeRuleData& rv = RPSelfRuleDispatch<order>(tj, qel.cov_q_, Nbeta); // v-direction
 
@@ -1055,7 +1068,7 @@ namespace sctl {
     // `order` indices in one shot, so the OpenMP loop below never serializes on first-touch
     // static initialization. Warm the rules of the active scheme only.
     if (qel.SelfUsesRectPolar()) {
-      const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : 512);
+      const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : NbetaForDigits(digits));
       RPSelfRuleDispatch<order>(0, qel.cov_q_, Nbeta);
     } else {
       SelfURule<order, digits>(0);

@@ -79,7 +79,10 @@ namespace sctl {
        * @param[in] s scheme (Adaptive, RectPolar, or Hybrid).
        * @param[in] q derivative-flattening parameter for RectPolar (ignored for Adaptive).
        * @param[in] cov_order RectPolar GL points per direction (Nbeta, Bruno 2018);
-       * decoupled from field order. 0 falls back to the tolerance-derived order.
+       * decoupled from field order. 0 (default) selects Nbeta from the requested tolerance
+       * via NbetaForDigits: a worst-case-calibrated ladder (theta=pi twist sphere,
+       * Nbeta_sweep.txt) giving 128 for tol>=1e-2, 256 at 1e-3, 384 at 1e-4/1e-5, 512 at
+       * tol<=1e-6. A positive value overrides this and forces that Nbeta.
        */
       void SetQuadScheme(QuadScheme s, Integer q = 6, Integer cov_order = 0) { scheme_ = s; cov_q_ = q; cov_order_ = cov_order; }
 
@@ -301,6 +304,11 @@ namespace sctl {
       static Integer VLevelsForDigits(const Integer digits);
       template <Integer digits> static Integer DigitsVLevels();
 
+      // Default RectPolar Nbeta (GL points per direction) for `digits`, used when cov_order_==0.
+      // Worst-case-calibrated ladder (theta=pi twist sphere, Nbeta_sweep.txt); returns a value
+      // in {128,256,384,512} (the GLRuleNbetaDispatch/RPSelfRuleDispatch ladders).
+      static Integer NbetaForDigits(const Integer digits);
+
       // Accumulate a tensor-product quadrature (u_param x v_param, weights wu (x) wv) on
       // elem_idx against target Xtrg into M_acc; normal_trg != null enables target-normal contraction.
       // Mv_pre/dMv_pre, Mu_pre/dMu_pre (optional): precomputed v/u interp operators (order x N) used in
@@ -349,9 +357,10 @@ namespace sctl {
       // Shared core for WriteNear/SelfInteracRPVTK: warped Nbeta x Nbeta CoV grid clustered toward (ustar,vstar).
       void WriteRectPolarGridVTK(const std::string& fname, const Long elem_idx, const Real ustar, const Real vstar, const Integer Nbeta) const;
 
-      // RP counterparts of NearInteracBlock/SelfInteracBlock; quadrature size set by cov_order_, so not templated on `digits`.
-      template <Integer order, class Kernel> static void NearInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
-      template <Integer order, class Kernel> static void SelfInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
+      // RP counterparts of NearInteracBlock/SelfInteracBlock; quadrature size is cov_order_ if set,
+      // else the tol-derived `nbeta_default` the caller passes (NbetaForDigits(digits)).
+      template <Integer order, class Kernel> static void NearInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default);
+      template <Integer order, class Kernel> static void SelfInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default);
 
       Long nelem = 0;
       Integer order = 0;
