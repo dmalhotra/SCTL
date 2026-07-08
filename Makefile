@@ -107,7 +107,6 @@ TARGET_BIN = \
        $(BINDIR)/test-sph-harm \
        $(BINDIR)/test-tensor \
        $(BINDIR)/test-vec \
-       $(BINDIR)/bench-quad-interac \
        $(BINDIR)/test-scratch-pool \
        $(BINDIR)/test-scratch-pool-perf \
 	   $(BINDIR)/unit-test-quad-element \
@@ -164,9 +163,9 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-sph-harm
 	./$(BINDIR)/test-tensor
 	./$(BINDIR)/test-vec
-	./$(BINDIR)/test-quad-elem
 	./$(BINDIR)/test-scratch-pool
 	./$(BINDIR)/unit-test-quad-element
+	./$(BINDIR)/test-quad-elem
 
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*
