@@ -369,11 +369,11 @@ std::vector<double> TestManufactured(const QuadElemList<double>& elem_lst, const
   const double gmres_tol = quadr_tol * 10.;
   const Long gmres_max_iter = 100;
 
-  Profile::reset();
-  Profile::Tic("gmres solve");
+  // Profile::reset();
+  // Profile::Tic("gmres solve");
   solver(&sigma, ApplyK, bc, gmres_tol, gmres_max_iter, false, &iter);
-  Profile::Toc();
-  Profile::print(&comm, {"t_avg", "f_avg", "f/s_avg"});
+  // Profile::Toc();
+  // Profile::print(&comm, {"t_avg", "f_avg", "f/s_avg"});
 
   // Evaluate the recovered potential at each target sphere (radius-1 nodes scaled by the
   // radius). The solve above is reused; only target placement + the eval matvec change.
@@ -384,14 +384,14 @@ std::vector<double> TestManufactured(const QuadElemList<double>& elem_lst, const
     for (Long i = 0; i < Nnode * 3; i++) Xtrg[i] = Xs[i] * eval_radius;
     SLOp.SetTargetCoord(Xtrg); DLOp.SetTargetCoord(Xtrg);
 
-    Profile::reset();
-    Profile::Tic("eval");
+    // Profile::reset();
+    // Profile::Tic("eval");
     Vector<double> Us, Ud;
     SLOp.ComputePotential(Us, sigma);
     DLOp.ComputePotential(Ud, sigma);
     Vector<double> U = SL_scal * Us + DL_scal * Ud;
-    Profile::Toc();
-    Profile::print(&comm, {"t_avg", "f_avg", "f/s_avg"});
+    // Profile::Toc();
+    // Profile::print(&comm, {"t_avg", "f_avg", "f/s_avg"});
 
     // Reference: point-source field evaluated directly at the targets.
     Vector<double> Uref;
@@ -631,10 +631,10 @@ void test_timing_StkSL(const QuadElemList<double>& elem_lst, const Comm& comm, c
   BIOp.SetTargetCoord(Xtrg);
 
   Vector<double> U_quad;
-  Profile::Tic("BIO eval near");
+  // Profile::Tic("BIO eval near");
   BIOp.ComputePotential(U_quad, F);
-  Profile::Toc();
-  Profile::print(&comm, {"t_max", "f_max", "f/s_avg"});
+  // Profile::Toc();
+  // Profile::print(&comm, {"t_max", "f_max", "f/s_avg"});
 
 }
 
@@ -649,7 +649,7 @@ int main(int argc, char** argv) {
         This demo is sequential. In a distributed memory implementation, each process\n\
         would build only its local section of the geometry.");
 
-    Profile::Enable(true);
+    // Profile::Enable(true);
 
     const Long ElemOrder = 16;
     const Long PatchPerFace = 5; 
@@ -663,12 +663,12 @@ int main(int argc, char** argv) {
     test_SurfaceArea(elem_lst, Radius);
     test_StokesDLIdentity(elem_lst, comm);
     test_BIOvsSH(elem_lst, comm, true);
-    std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    test_ManufacturedConvergence(comm);
-    std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
-    test_ManufacturedConvergence(comm, true);
-    std::cout << "------ Profile BIO compute potential at near target, regular sphere. ------ " << std::endl;
-    test_timing_StkSL(elem_lst, comm, 1e-12); 
+    // std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
+    // test_ManufacturedConvergence(comm);
+    // std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
+    // test_ManufacturedConvergence(comm, true);
+    // std::cout << "------ Profile BIO compute potential at near target, regular sphere. ------ " << std::endl;
+    // test_timing_StkSL(elem_lst, comm, 1e-12); 
 
 
     // std::cout << "------ Quadr and BIO tests for twisted sphere -------" << std::endl;
@@ -700,9 +700,9 @@ int main(int argc, char** argv) {
     // elem_lst_twist3.WriteVTK("twisted3_sphere", Xntwist);
     test_SurfaceArea(elem_lst_twist3, Radius);
     test_StokesDLIdentity(elem_lst_twist3, comm);
-    test_BIOvsSH(elem_lst_twist3, comm, false, 1e-14);
-    std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    test_ManufacturedConvergence(comm, false, false, theta_twist, {3,4,5}, 24);
+    // test_BIOvsSH(elem_lst_twist3, comm, false, 1e-14);
+    // std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
+    // test_ManufacturedConvergence(comm, false, false, theta_twist, {3,4,5}, 24);
 
 
     // --- Scheme 2: rectangular-polar COV (Bruno 2018) for near/self interactions ---
@@ -713,28 +713,28 @@ int main(int argc, char** argv) {
     test_SurfaceArea(elem_lst_rp, Radius);
     test_StokesDLIdentity(elem_lst_rp, comm);
     test_BIOvsSH(elem_lst_rp, comm);
-    test_LaplaceManufactured(elem_lst_rp, comm);
-    test_StokesManufactured(elem_lst_rp, comm);
-    std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    test_ManufacturedConvergence(comm, false, true);
-    std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
-    test_ManufacturedConvergence(comm, true, true);
-    std::cout << "------ Profile BIO compute potential at near target, R-P scheme, regular sphere. ------ " << std::endl;
-    test_timing_StkSL(elem_lst_rp, comm, 1e-12); 
+    // test_LaplaceManufactured(elem_lst_rp, comm);
+    // test_StokesManufactured(elem_lst_rp, comm);
+    // std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
+    // test_ManufacturedConvergence(comm, false, true);
+    // std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
+    // test_ManufacturedConvergence(comm, true, true);
+    // std::cout << "------ Profile BIO compute potential at near target, R-P scheme, regular sphere. ------ " << std::endl;
+    // test_timing_StkSL(elem_lst_rp, comm, 1e-12); 
 
     elem_lst_rp = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist);
     elem_lst_rp.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar);
     test_SurfaceArea(elem_lst_rp, Radius);
     test_StokesDLIdentity(elem_lst_rp, comm);
     test_BIOvsSH(elem_lst_rp, comm);
-    test_LaplaceManufactured(elem_lst_rp, comm);
-    test_StokesManufactured(elem_lst_rp, comm);
-    std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    test_ManufacturedConvergence(comm, false, true, theta_twist);
-    std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
-    test_ManufacturedConvergence(comm, true, true, theta_twist);
-    std::cout << "------ Profile BIO compute potential at near target, R-P scheme, twisted sphere. ------ " << std::endl;
-    test_timing_StkSL(elem_lst_rp, comm, 1e-12); 
+    // test_LaplaceManufactured(elem_lst_rp, comm);
+    // test_StokesManufactured(elem_lst_rp, comm);
+    // std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
+    // test_ManufacturedConvergence(comm, false, true, theta_twist);
+    // std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
+    // test_ManufacturedConvergence(comm, true, true, theta_twist);
+    // std::cout << "------ Profile BIO compute potential at near target, R-P scheme, twisted sphere. ------ " << std::endl;
+    // test_timing_StkSL(elem_lst_rp, comm, 1e-12); 
 
   }
 

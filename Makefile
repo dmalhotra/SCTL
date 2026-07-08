@@ -113,15 +113,13 @@ TARGET_BIN = \
        $(BINDIR)/test-scratch-pool-perf \
 	   $(BINDIR)/unit-test-quad-element
 
-.PHONY: all test clean quad bench newton
+.PHONY: all test clean quad bench
 
 all : $(TARGET_BIN)
 
 quad : $(BINDIR)/unit-test-quad-element
 
 bench : $(BINDIR)/bench-quad-interac
-
-newton : $(BINDIR)/investigate-newton-closest
 
 $(BINDIR)/%: $(OBJDIR)/%.o
 	-@$(MKDIRS) $(dir $@)
@@ -168,6 +166,7 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-vec
 	./$(BINDIR)/test-quad-elem
 	./$(BINDIR)/test-scratch-pool
+	./$(BINDIR)/unit-test-quad-element
 
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*
