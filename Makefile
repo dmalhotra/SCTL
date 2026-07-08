@@ -84,15 +84,6 @@ SRCDIR = ./src
 OBJDIR = ./obj
 INCDIR = ./include
 
-# CSBQ (sibling checkout) provides SlenderElemList, used only by the cylinder
-# comparison test. We expose its headers (csbq/*.hpp) and point SCTL_DATA_PATH at
-# its precomputed quadrature tables. CSBQ's slender_element.hpp includes <sctl.hpp>,
-# which still resolves to THIS repo's SCTL (INCDIR comes first on the compile line);
-# we deliberately do NOT add CSBQ's bundled SCTL to the include path.
-CSBQ_DIR ?= /mnt/home/tli10/stokes-periodize-numtest/extern/CSBQ
-CSBQ_INCDIR = $(CSBQ_DIR)/include
-CSBQ_DATA_PATH = $(CSBQ_DIR)/data
-
 TARGET_BIN = \
        $(BINDIR)/test \
        $(BINDIR)/test-comm \
@@ -130,10 +121,9 @@ TARGET_BIN = \
        $(BINDIR)/bench-gmsh-pipeline \
        $(BINDIR)/test-scratch-pool \
        $(BINDIR)/test-scratch-pool-perf \
-	   $(BINDIR)/unit-test-quad-element \
-	   $(BINDIR)/test-cylinder-gmsh-vs-csbq
+	   $(BINDIR)/unit-test-quad-element
 
-.PHONY: all test clean quad bench bench-gmsh cyl-test
+.PHONY: all test clean quad bench bench-gmsh
 
 all : $(TARGET_BIN)
 
@@ -143,8 +133,6 @@ bench : $(BINDIR)/bench-quad-interac
 
 bench-gmsh : $(BINDIR)/bench-gmsh-pipeline
 
-cyl-test : $(BINDIR)/test-cylinder-gmsh-vs-csbq
-
 newton : $(BINDIR)/investigate-newton-closest
 
 $(BINDIR)/%: $(OBJDIR)/%.o
@@ -153,12 +141,6 @@ $(BINDIR)/%: $(OBJDIR)/%.o
 ifeq "$(OS)" "Darwin"
 	/usr/bin/dsymutil $@ -o $@.dSYM
 endif
-
-# Cylinder comparison test needs CSBQ headers and CSBQ's quadrature-table path.
-# -I$(INCDIR) stays first so <sctl.hpp> resolves to this repo's SCTL.
-$(OBJDIR)/test-cylinder-gmsh-vs-csbq.o: $(SRCDIR)/test-cylinder-gmsh-vs-csbq.cpp
-	-@$(MKDIRS) $(dir $@)
-	$(CXX) $(CXXFLAGS) -I$(INCDIR) -I$(CSBQ_INCDIR) -DSCTL_DATA_PATH=$(CSBQ_DATA_PATH) -c $^ -o $@
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)
