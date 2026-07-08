@@ -161,9 +161,11 @@ namespace sctl {
        * @param[out] ustar,vstar parameters of the closest point in [0,1].
        * @param[in] elem_idx element index.
        * @param[in] Xtrg target coordinates (COORD_DIM reals).
+       * @param[out] n_iter (optional) number of Gauss-Newton iterations executed.
+       * @param[out] used_fallback (optional) true if Newton stalled and the grid-search fallback ran.
        * @return distance from target to the closest point.
        */
-      Real GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) const;
+      Real GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
 
       /** VTU data for one (elem_idx) or all elements. */
       void GetVTUData(VTUData& vtu_data, const Vector<Real>& F = Vector<Real>(), const Long elem_idx = -1) const;

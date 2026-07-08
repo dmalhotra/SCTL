@@ -145,6 +145,8 @@ bench-gmsh : $(BINDIR)/bench-gmsh-pipeline
 
 cyl-test : $(BINDIR)/test-cylinder-gmsh-vs-csbq
 
+newton : $(BINDIR)/investigate-newton-closest
+
 $(BINDIR)/%: $(OBJDIR)/%.o
 	-@$(MKDIRS) $(dir $@)
 	$(CXX) $^ $(CXXFLAGS) $(LDLIBS) -o $@
