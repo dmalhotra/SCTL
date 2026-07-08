@@ -1199,7 +1199,7 @@ namespace sctl {
     return sqrt<Real>(best);
   }
 
-  template <class Real> Real QuadElemList<Real>::GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) const {
+  template <class Real> Real QuadElemList<Real>::GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter, bool* used_fallback) const {
     // Closest point on patch to Xtrg over (u,v) in [0,1]^2. Minimize 1/2|y-x|^2 by
     // Gauss-Newton (first fundamental form), seeded by the nearest node, clamped with
     // backtracking; shrinking-box grid search is the fallback if Newton stalls.
@@ -1219,9 +1219,15 @@ namespace sctl {
 
     // Gauss-Newton with clamping and backtracking line search.
     constexpr Integer max_iter = 30;
-    const Real utol = (Real)machine_eps<Real>() * 64;
+    const Real utol = (Real)machine_eps<Real>() * 64;      // step tolerance (boundary optima)
+    // Relative first-order optimality tolerance. Because f = |r|^2 is a squared residual,
+    // the gradient can only be driven to ~sqrt(eps) (relative) before f flattens at its
+    // rounding floor -- pushing further just stalls the line search. Test at that scale.
+    const Real gtol = sqrt<Real>(machine_eps<Real>()) * 16;
     bool converged = false;
+    Integer iters = 0;
     for (Integer it = 0; it < max_iter; it++) {
+      iters = it + 1;
       Real X[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
       EvalPoint(X, dXu, dXv, u, v, elem_idx, &Xtrg); // X = y(u,v) - Xtrg
 
@@ -1245,6 +1251,16 @@ namespace sctl {
         dv = gv / (G + (Real)1e-30);
       }
 
+      // First-order optimality (KKT for the box [0,1]^2): the residual is orthogonal to
+      // the free tangents -- |gu|,|gv| negligible vs |r||y_.| = sqrt(E*f), sqrt(G*f) -- or
+      // a clamped edge blocks the outward Newton step. This is the true convergence test:
+      // unlike the step/line-search test it does not depend on the backtracking line search
+      // still being able to lower f at its rounding floor, which was spuriously flagging
+      // accurate stationary points as stalls and triggering the grid-search fallback.
+      const bool opt_u = (fabs(gu) <= gtol * sqrt<Real>(E*f)) || (u <= 0 && du > 0) || (u >= 1 && du < 0);
+      const bool opt_v = (fabs(gv) <= gtol * sqrt<Real>(G*f)) || (v <= 0 && dv > 0) || (v >= 1 && dv < 0);
+      if (opt_u && opt_v) { converged = true; break; }
+
       // Backtrack on the clamped step until f decreases.
       Real lambda = 1;
       bool improved = false;
@@ -1256,7 +1272,7 @@ namespace sctl {
         if (fn < f) { improved = true; break; }
         lambda *= (Real)0.5;
       }
-      if (!improved) break; // stalled: leave converged=false to trigger the fallback
+      if (!improved) break; // not stationary yet no feasible step lowers f -> fallback
       const bool small_step = (fabs(un-u) < utol && fabs(vn-v) < utol);
       u = un; v = vn; f = fn;
       if (small_step) { converged = true; break; }
@@ -1286,6 +1302,8 @@ namespace sctl {
     }
 
     ustar = u; vstar = v;
+    if (n_iter) *n_iter = iters;
+    if (used_fallback) *used_fallback = !converged;
     return sqrt<Real>(f);
   }
 
