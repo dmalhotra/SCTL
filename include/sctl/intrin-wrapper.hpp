@@ -496,6 +496,88 @@ namespace sctl { // Generic
     return Mask<VData>(v);
   }
 
+  template <class VData> inline unsigned mask_popcnt_intrin(const Mask<VData>& v) {
+    union {
+        Mask<VData> m;
+        typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
+    } v_ = {v};
+
+    unsigned cnt = 0;
+    for (Integer i = 0; i < VData::Size; i++) cnt += (v_.q[i]!=0);
+
+    return cnt;
+  }
+
+  template <class VData> inline bool mask_any(const Mask<VData>& v) {
+    union {
+        Mask<VData> m;
+        typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
+    } v_ = {v};
+
+    for (Integer i = 0; i < VData::Size; i++) if (v_.q[i]) return true;
+    return false;
+  }
+
+  template <class VData> inline void mask_compress_store(const Mask<VData>& mask, const VData& v, typename VData::ScalarType* ptr) {
+    union {
+        Mask<VData> m;
+        typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
+    } mask_ = {mask};
+
+    union {
+        VData vec;
+        typename VData::ScalarType s[VData::Size];
+    } v_ = {v};
+
+    int idx = 0;
+    for (Integer i = 0; i < VData::Size; i++) {
+        if (mask_.q[i]) {
+            ptr[idx++] = v_.s[i];
+        }
+    }
+  }
+
+  template <class VData> inline Integer mask_compress_iota_store(const Mask<VData>& mask, Integer base, int32_t* ptr) {
+    union {
+        Mask<VData> m;
+        typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
+    } mask_ = {mask};
+
+    Integer idx = 0;
+    for (Integer i = 0; i < VData::Size; i++) {
+        if (mask_.q[i]) {
+            ptr[idx++] = static_cast<int32_t>(base + i);
+        }
+    }
+    return idx;
+  }
+
+  template <class VData> inline Integer mask_compress_iota_store2(const Mask<VData>& mask_lo, const Mask<VData>& mask_hi, Integer base, int32_t* ptr) {
+    const Integer c = mask_compress_iota_store(mask_lo, base, ptr);
+    return c + mask_compress_iota_store(mask_hi, base + VData::Size, ptr + c);
+  }
+
+  template <class VData> inline VData mask_expand_load(const Mask<VData>& mask, const VData& zero, const typename VData::ScalarType* ptr) {
+    union {
+        Mask<VData> m;
+        typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
+    } mask_ = {mask};
+
+    union {
+        VData vec;
+        typename VData::ScalarType s[VData::Size];
+    } z_ = {zero};
+
+    int idx = 0;
+    for (Integer i = 0; i < VData::Size; i++) {
+        if (mask_.q[i]) {
+            z_.s[i] = ptr[idx++];
+        }
+    }
+    return z_.vec;
+  }
+
+
   /////////////////////////////////////////////////////////////////////////////
   /////////////////////////////////////////////////////////////////////////////
 
@@ -3257,6 +3339,42 @@ namespace sctl { // AVX512
 #endif
 
   // Bitwise operators
+  template <> inline unsigned mask_popcnt_intrin<VecData<float, 16>>(const Mask<VecData<float, 16>>& v) { return _mm_popcnt_u32(_cvtmask16_u32(v.v)); }
+  template <> inline unsigned mask_popcnt_intrin<VecData<double, 8>>(const Mask<VecData<double, 8>>& v) { return _mm_popcnt_u32(_cvtmask8_u32(v.v)); }
+  template <> inline bool mask_any<VecData<float, 16>>(const Mask<VecData<float, 16>>& v) { return v.v; }
+  template <> inline bool mask_any<VecData<double, 8>>(const Mask<VecData<double, 8>>& v) { return v.v; }
+  template <> inline void mask_compress_store<VecData<float, 16>>(const Mask<VecData<float, 16>>& mask, const VecData<float, 16>& v, float* ptr) { _mm512_mask_compressstoreu_ps(ptr, mask.v, v.v); }
+  template <> inline void mask_compress_store<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask, const VecData<double, 8>& v, double* ptr) { _mm512_mask_compressstoreu_pd(ptr, mask.v, v.v); }
+  template <> inline Integer mask_compress_iota_store<VecData<float, 16>>(const Mask<VecData<float, 16>>& mask, Integer base, int32_t* ptr) {
+    const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32((int32_t)base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15));
+    _mm512_mask_compressstoreu_epi32(ptr, mask.v, iota);
+    return (Integer)_mm_popcnt_u32(_cvtmask16_u32(mask.v));
+  }
+  template <> inline Integer mask_compress_iota_store<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask, Integer base, int32_t* ptr) {
+    // 512-bit epi32 compress (AVX512F only, no VL): low 8 lanes hold the iota, high 8 masked off.
+    const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32((int32_t)base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,0,0,0,0,0,0,0,0));
+    _mm512_mask_compressstoreu_epi32(ptr, (__mmask16)mask.v, iota);
+    return (Integer)_mm_popcnt_u32(_cvtmask8_u32(mask.v));
+  }
+  template <> inline Integer mask_compress_iota_store2<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask_lo, const Mask<VecData<double, 8>>& mask_hi, Integer base, int32_t* ptr) {
+    // Both 8-lane masks packed into one 16-lane int32 compress -> one vpcompressd for 16 sources.
+    const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32((int32_t)base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15));
+    const __mmask16 m = (__mmask16)mask_lo.v | ((__mmask16)mask_hi.v << 8);
+    _mm512_mask_compressstoreu_epi32(ptr, m, iota);
+    return (Integer)_mm_popcnt_u32(_cvtmask16_u32(m));
+  }
+  template <> inline VecData<float, 16> mask_expand_load<VecData<float, 16>>(const Mask<VecData<float, 16>> &mask, const VecData<float, 16> &zero, const float *ptr) {
+    VecData<float, 16> result;
+    result.v = _mm512_mask_expandloadu_ps(zero.v, mask.v, ptr);
+    return result;
+  }
+  template <> inline VecData<double, 8> mask_expand_load<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask, const VecData<double, 8>& zero, const double* ptr) {
+    VecData<double, 8> result;
+    result.v = _mm512_mask_expandloadu_pd(zero.v, mask.v, ptr);
+    return result;
+  }
+
+
 #if defined(__AVX512BW__)
   template <> inline Mask<VecData<int8_t ,64>> operator~<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& vec) { return Mask<VecData<int8_t ,64>>(_knot_mask64(vec.v)); }
   template <> inline Mask<VecData<int16_t,32>> operator~<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& vec) { return Mask<VecData<int16_t,32>>(_knot_mask32(vec.v)); }
