@@ -557,6 +557,16 @@ namespace sctl { // Generic
     return c + mask_compress_iota_store(mask_hi, base + VData::Size, ptr + c);
   }
 
+  template <class VData> inline typename VData::ScalarType reduce_add_intrin(const VData& a) {
+    union {
+        VData vec;
+        typename VData::ScalarType s[VData::Size];
+    } v_ = {a};
+    typename VData::ScalarType sum = v_.s[0];
+    for (Integer i = 1; i < VData::Size; i++) sum += v_.s[i];
+    return sum;
+  }
+
   template <class VData> inline VData mask_expand_load(const Mask<VData>& mask, const VData& zero, const typename VData::ScalarType* ptr) {
     union {
         Mask<VData> m;
@@ -2545,6 +2555,77 @@ namespace sctl { // AVX
   #endif
 
 
+  template <> inline float reduce_add_intrin<VecData<float,8>>(const VecData<float,8>& a) {
+    __m128 t = _mm_add_ps(_mm256_castps256_ps128(a.v), _mm256_extractf128_ps(a.v, 1));
+    t = _mm_hadd_ps(t, t);
+    t = _mm_hadd_ps(t, t);
+    return _mm_cvtss_f32(t);
+  }
+  template <> inline double reduce_add_intrin<VecData<double,4>>(const VecData<double,4>& a) {
+    __m128d t = _mm_add_pd(_mm256_castpd256_pd128(a.v), _mm256_extractf128_pd(a.v, 1));
+    t = _mm_hadd_pd(t, t);
+    return _mm_cvtsd_f64(t);
+  }
+
+#ifdef __AVX2__
+  // Left-pack permutation LUTs for mask_compress_iota_store: idx[m][k] = index of the k-th set
+  // bit of mask m (lanes past the popcount stay 0 and are dropped by the count-limited store).
+  struct Avx2IotaLUT8 {
+    int32_t idx[256][8];
+    constexpr Avx2IotaLUT8() : idx{} {
+      for (int m = 0; m < 256; ++m) {
+        int k = 0;
+        for (int i = 0; i < 8; ++i) if (m & (1 << i)) idx[m][k++] = i;
+      }
+    }
+  };
+  struct Avx2IotaLUT4 {
+    int32_t idx[16][4];
+    constexpr Avx2IotaLUT4() : idx{} {
+      for (int m = 0; m < 16; ++m) {
+        int k = 0;
+        for (int i = 0; i < 4; ++i) if (m & (1 << i)) idx[m][k++] = i;
+      }
+    }
+  };
+  inline constexpr Avx2IotaLUT8 avx2_iota_lut8{};
+  inline constexpr Avx2IotaLUT4 avx2_iota_lut4{};
+
+  // No AVX2 vcompress: left-pack the base+lane iota via a mask-indexed permute, then a
+  // count-limited masked store so only the surviving lanes are written (no buffer overrun).
+  template <> inline Integer mask_compress_iota_store<VecData<float,8>>(const Mask<VecData<float,8>>& mask, Integer base, int32_t* ptr) {
+    const unsigned m = (unsigned)_mm256_movemask_ps(mask.v);
+    const __m256i iota = _mm256_add_epi32(_mm256_set1_epi32((int32_t)base), _mm256_setr_epi32(0,1,2,3,4,5,6,7));
+    const __m256i perm = _mm256_loadu_si256((const __m256i*)avx2_iota_lut8.idx[m]);
+    const __m256i packed = _mm256_permutevar8x32_epi32(iota, perm);
+    const Integer cnt = (Integer)_mm_popcnt_u32(m);
+    const __m256i smask = _mm256_cmpgt_epi32(_mm256_set1_epi32((int)cnt), _mm256_setr_epi32(0,1,2,3,4,5,6,7));
+    _mm256_maskstore_epi32((int*)ptr, smask, packed);
+    return cnt;
+  }
+  template <> inline Integer mask_compress_iota_store<VecData<double,4>>(const Mask<VecData<double,4>>& mask, Integer base, int32_t* ptr) {
+    const unsigned m = (unsigned)_mm256_movemask_pd(mask.v);
+    const __m128i iota = _mm_add_epi32(_mm_set1_epi32((int32_t)base), _mm_setr_epi32(0,1,2,3));
+    const __m128i perm = _mm_loadu_si128((const __m128i*)avx2_iota_lut4.idx[m]);
+    const __m128i packed = _mm_castps_si128(_mm_permutevar_ps(_mm_castsi128_ps(iota), perm));
+    const Integer cnt = (Integer)_mm_popcnt_u32(m);
+    const __m128i smask = _mm_cmpgt_epi32(_mm_set1_epi32((int)cnt), _mm_setr_epi32(0,1,2,3));
+    _mm_maskstore_epi32((int*)ptr, smask, packed);
+    return cnt;
+  }
+  // Fuse two 4-lane masks into one 8-lane compress (mirrors the AVX512 double-8 store2).
+  template <> inline Integer mask_compress_iota_store2<VecData<double,4>>(const Mask<VecData<double,4>>& mask_lo, const Mask<VecData<double,4>>& mask_hi, Integer base, int32_t* ptr) {
+    const unsigned m = (unsigned)_mm256_movemask_pd(mask_lo.v) | ((unsigned)_mm256_movemask_pd(mask_hi.v) << 4);
+    const __m256i iota = _mm256_add_epi32(_mm256_set1_epi32((int32_t)base), _mm256_setr_epi32(0,1,2,3,4,5,6,7));
+    const __m256i perm = _mm256_loadu_si256((const __m256i*)avx2_iota_lut8.idx[m]);
+    const __m256i packed = _mm256_permutevar8x32_epi32(iota, perm);
+    const Integer cnt = (Integer)_mm_popcnt_u32(m);
+    const __m256i smask = _mm256_cmpgt_epi32(_mm256_set1_epi32((int)cnt), _mm256_setr_epi32(0,1,2,3,4,5,6,7));
+    _mm256_maskstore_epi32((int*)ptr, smask, packed);
+    return cnt;
+  }
+#endif
+
 #endif
 }
 
@@ -3365,6 +3446,8 @@ namespace sctl { // AVX512
     _mm512_mask_compressstoreu_epi32(ptr, m, iota);
     return (Integer)_mm_popcnt_u32(_cvtmask16_u32(m));
   }
+  template <> inline float reduce_add_intrin<VecData<float, 16>>(const VecData<float, 16>& a) { return _mm512_reduce_add_ps(a.v); }
+  template <> inline double reduce_add_intrin<VecData<double, 8>>(const VecData<double, 8>& a) { return _mm512_reduce_add_pd(a.v); }
   template <> inline VecData<float, 16> mask_expand_load<VecData<float, 16>>(const Mask<VecData<float, 16>> &mask, const VecData<float, 16> &zero, const float *ptr) {
     VecData<float, 16> result;
     result.v = _mm512_mask_expandloadu_ps(zero.v, mask.v, ptr);

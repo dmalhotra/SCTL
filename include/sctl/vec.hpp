@@ -385,6 +385,9 @@ namespace sctl {
    */
   template <class ValueType, Integer N, class ...T> inline void transpose(Vec<ValueType,N>& v0, T&... vs);
 
+  // Horizontal reduction: sum of all lanes.
+  template <class ValueType, Integer N> inline ValueType reduce_add(const Vec<ValueType,N>& a);
+
 
   // Special functions
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x);
