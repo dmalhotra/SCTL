@@ -3358,8 +3358,10 @@ namespace sctl { // AVX512
   }
   template <> inline Integer mask_compress_iota_store2<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask_lo, const Mask<VecData<double, 8>>& mask_hi, Integer base, int32_t* ptr) {
     // Both 8-lane masks packed into one 16-lane int32 compress -> one vpcompressd for 16 sources.
+    // kunpackb builds the fused mask once in a k-register (consumed directly by the compress and
+    // by a single kmov for the popcount), avoiding a redundant GPR shift/or materialization.
     const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32((int32_t)base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15));
-    const __mmask16 m = (__mmask16)mask_lo.v | ((__mmask16)mask_hi.v << 8);
+    const __mmask16 m = _mm512_kunpackb(mask_hi.v, mask_lo.v);
     _mm512_mask_compressstoreu_epi32(ptr, m, iota);
     return (Integer)_mm_popcnt_u32(_cvtmask16_u32(m));
   }
