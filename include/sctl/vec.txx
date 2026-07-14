@@ -338,6 +338,9 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> min(const Vec<ValueType,N>& lhs, const Vec<ValueType,N>& rhs) {
     return min_intrin(lhs.get(), rhs.get());
   }
+  template <class ValueType, Integer N> inline ValueType reduce_add(const Vec<ValueType,N>& a) {
+    return reduce_add_intrin(a.get());
+  }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> max(const Vec<ValueType,N>& lhs, const ValueType& rhs) {
     return max(lhs, Vec<ValueType,N>(rhs));
