@@ -37,6 +37,7 @@ enum class Phase {
   Projection,      // projection EvalTensorProduct + scatter (2 GEMMs)
   QuadtreeBuild,   // BuildNearLeaves (adaptive near only)
   ClosestPoint,    // GetClosestPoint Newton/grid search (RectPolar near only)
+  ClosestNode,     // GetClosestNode brute-force seed (adaptive near only)
   NumPhases
 };
 
@@ -53,6 +54,7 @@ inline const char* PhaseName(Phase p) {
     case Phase::Projection:    return "Projection";
     case Phase::QuadtreeBuild: return "QuadtreeBuild";
     case Phase::ClosestPoint:  return "ClosestPoint";
+    case Phase::ClosestNode:   return "ClosestNode";
     default:                   return "?";
   }
 }
@@ -64,6 +66,9 @@ struct PhaseRow {
   double t[kNumPhases];
   long   n[kNumPhases];
   double gemm_flops;
+  long   near_leaves;    // total quadtree leaves summed over adaptive-near targets
+  long   near_targets;   // number of adaptive-near NearInteracBlock calls
+  long   near_max_depth; // deepest subdivision reached across those targets
   char   pad[64];
 };
 
@@ -101,6 +106,13 @@ inline void AccumFlops(double f) {
   Table()[ThreadId()].gemm_flops += f;
 }
 
+inline void AccumNear(long nleaf, long depth) {
+  PhaseRow& row = Table()[ThreadId()];
+  row.near_leaves += nleaf;
+  row.near_targets += 1;
+  if (depth > row.near_max_depth) row.near_max_depth = depth;
+}
+
 inline double TotalFlops() {
   double f = 0;
   for (int th = 0; th < kMaxThreads; th++) f += Table()[th].gemm_flops;
@@ -117,11 +129,15 @@ inline void Reset() {
 inline void Report(const std::string& label, double outer_seconds = 0) {
   double t[kNumPhases] = {};
   long   n[kNumPhases] = {};
+  long   near_leaves = 0, near_targets = 0, near_max_depth = 0;
   for (int th = 0; th < kMaxThreads; th++) {
     for (int p = 0; p < kNumPhases; p++) {
       t[p] += Table()[th].t[p];
       n[p] += Table()[th].n[p];
     }
+    near_leaves += Table()[th].near_leaves;
+    near_targets += Table()[th].near_targets;
+    if (Table()[th].near_max_depth > near_max_depth) near_max_depth = Table()[th].near_max_depth;
   }
   double sum = 0;
   for (int p = 0; p < kNumPhases; p++) sum += t[p];
@@ -136,6 +152,10 @@ inline void Report(const std::string& label, double outer_seconds = 0) {
   }
   const double gflops = TotalFlops() * 1e-9;
   std::printf("    %-14s %12.5e GFLOP issued in tensor GEMMs\n", "gemm_flops", gflops);
+  if (near_targets > 0) {
+    std::printf("    %-14s %12.3f leaves/target  (max_depth=%ld over %ld adaptive-near targets)\n",
+                "near_quadtree", (double)near_leaves / near_targets, near_max_depth, near_targets);
+  }
   if (outer_seconds > 0) {
     std::printf("    %-14s %12.5e   (phase sum is %.1f%% of outer wall time)\n",
                 "outer", outer_seconds, 100.0 * sum / outer_seconds);
@@ -156,10 +176,12 @@ inline void Report(const std::string& label, double outer_seconds = 0) {
 #define BENCH_TIC(phase) const double _bench_t0_##phase = ::sctl::bench::Wtime()
 #define BENCH_TOC(phase) ::sctl::bench::Accum(::sctl::bench::Phase::phase, ::sctl::bench::Wtime() - _bench_t0_##phase)
 #define BENCH_FLOPS(n) ::sctl::bench::AccumFlops((double)(n))
+#define BENCH_NEAR(nleaf, depth) ::sctl::bench::AccumNear((long)(nleaf), (long)(depth))
 #else
 #define BENCH_TIC(phase) ((void)0)
 #define BENCH_TOC(phase) ((void)0)
 #define BENCH_FLOPS(n) ((void)0)
+#define BENCH_NEAR(nleaf, depth) ((void)0)
 #endif
 
 #endif // _SCTL_BENCH_QUAD_HPP_
