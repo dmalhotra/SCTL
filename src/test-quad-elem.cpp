@@ -765,6 +765,7 @@ void test_timing_StkSL(const QuadElemList<double>& elem_lst, const Comm& comm, c
 
 int main(int argc, char** argv) {
   Comm::MPI_Init(&argc, &argv);
+  using Real = double;
 
   {
     const Comm comm = Comm::World();
@@ -772,7 +773,7 @@ int main(int argc, char** argv) {
     // GmshReader::LoadQuadElemList keep only this rank's contiguous element slice
     // (replicate-then-slice). BoundaryIntegralOp handles all cross-rank communication.
 
-    Profile::Enable(true);
+    // Profile::Enable(true);
 
     // gmsh import pipeline vs. analytic cubed-sphere (geometry invariants + BIO-vs-SH).
     // Coarse ./sphere mesh: low resolution, so resample its panels to QuadOrder 4.

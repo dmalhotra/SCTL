@@ -116,12 +116,12 @@ TARGET_BIN = \
        $(BINDIR)/test-sph-harm \
        $(BINDIR)/test-tensor \
        $(BINDIR)/test-vec \
-       $(BINDIR)/test-quad-elem \
        $(BINDIR)/bench-quad-interac \
        $(BINDIR)/bench-gmsh-pipeline \
        $(BINDIR)/test-scratch-pool \
        $(BINDIR)/test-scratch-pool-perf \
-	   $(BINDIR)/unit-test-quad-element
+	   $(BINDIR)/unit-test-quad-element \
+	   $(BINDIR)/test-quad-elem
 
 .PHONY: all test clean quad bench bench-gmsh
 
@@ -132,8 +132,6 @@ quad : $(BINDIR)/unit-test-quad-element
 bench : $(BINDIR)/bench-quad-interac
 
 bench-gmsh : $(BINDIR)/bench-gmsh-pipeline
-
-newton : $(BINDIR)/investigate-newton-closest
 
 $(BINDIR)/%: $(OBJDIR)/%.o
 	-@$(MKDIRS) $(dir $@)
@@ -178,8 +176,9 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-sph-harm
 	./$(BINDIR)/test-tensor
 	./$(BINDIR)/test-vec
-	./$(BINDIR)/test-quad-elem
 	./$(BINDIR)/test-scratch-pool
+	./$(BINDIR)/unit-test-quad-element
+	./$(BINDIR)/test-quad-elem
 
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*

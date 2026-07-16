@@ -284,7 +284,11 @@ template <class Real, class Kernel> Vector<Real> direct_upsampled_potential(
     return u;
 }
 
-template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, const bool curved, const char* label, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer cov_order = 0) {
+// Forward declaration of the friend shim (defined below) so test_NearInterac can use its
+// CompareNearBlocks bit-for-bit gate; the shim's full definition appears later in namespace sctl.
+namespace sctl { template <class Real> struct QuadElemTestAccess; }
+
+template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, const bool curved, const char* label, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer cov_order = 0, const Integer max_depth = 30) {
     const Integer COORD_DIM = 3;
     const Integer order = 24;
     const Integer KDIM0 = Kernel::SrcDim();
@@ -297,7 +301,7 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
                                  : QuadElemList<Real>::ParamGrid(order, 1);
     QuadElemList<Real> qel(order, coord0);
     const Integer q = 10;
-    qel.SetQuadScheme(scheme, q, cov_order);
+    qel.SetQuadScheme(scheme, q, cov_order, max_depth);
 
     // Near-singular target: offset d along the normal at an interior point.
     const Real u0 = 0.4, v0 = 0.6, d = 0.01;
@@ -323,6 +327,14 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
     const Real tol = 1e-08;
     QuadElemList<Real>::template NearInterac<Kernel>(M, Xt, normal_trg, ker, tol, elem_idx, &qel);
     SCTL_ASSERT(M.Dim(0) == nnode * KDIM0 && M.Dim(1) == KDIM1); // single target
+
+    // Bit-for-bit gate: leaf-batched near block must exactly match the per-leaf reference.
+    // (digits=8 matches near tol=1e-8 above; order=24 matches this test's element order.)
+    {
+        const Real near_maxdiff = QuadElemTestAccess<Real>::template CompareNearBlocks<8, 24>(qel, elem_idx, Xt, normal_trg, ker);
+        std::cout << "  test_NearInterac (" << label << "): batched-vs-perleaf max|dM| = " << near_maxdiff << "\n";
+        SCTL_ASSERT(near_maxdiff == 0);
+    }
 
     Vector<Real> u_near(KDIM1);
     u_near.SetZero();
@@ -354,7 +366,7 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
 //   Stokes3D-DxU,  q arbitrary   :  u = 0
 // I0 is the in-plane Newtonian potential of the unit square (1/r antiderivative
 // F(X,Y) = X ln(Y+R) + Y ln(X+R)). Applied as u = sigma^T M.
-template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer q = 10, const Real tol = 1e-10, const Integer cov_order = 0) {
+template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer q = 10, const Real tol = 1e-10, const Integer cov_order = 0, const Integer max_depth = 30) {
     const Integer order = 12;
     const Long nnode = (Long)order * order;
     const Integer KDIM0 = Kernel::SrcDim();
@@ -364,7 +376,7 @@ template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, con
     // Flat unit square z = 0.
     Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
     QuadElemList<Real> qel(order, coord0);
-    qel.SetQuadScheme(scheme, q, cov_order);
+    qel.SetQuadScheme(scheme, q, cov_order, max_depth);
 
     // Self-interaction matrix (no target-normal contraction).
     Vector<Matrix<Real>> M_lst(1);
@@ -433,6 +445,20 @@ template <class Real> struct QuadElemTestAccess {
     }
     static void RectPolarNodes1D(Vector<Real>& nodes, Vector<Real>& wts, const Real alpha, const Integer q, const Vector<Real>& gl_nds, const Vector<Real>& gl_wts) {
         QuadElemList<Real>::RectPolarNodes1D(nodes, wts, alpha, q, gl_nds, gl_wts);
+    }
+    // Bit-for-bit gate: run both the per-leaf reference (NearInteracBlock) and the production
+    // leaf-batched block (NearInteracBlockBatched) at the same (digits,order) and return max|diff|.
+    template <Integer digits, Integer order, class Kernel>
+    static Real CompareNearBlocks(const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
+        Matrix<Real> M_ref, M_bat;
+        QuadElemList<Real>::template NearInteracBlock<digits, order>(M_ref, qel, elem_idx, Xtrg, normal_trg, ker);
+        QuadElemList<Real>::template NearInteracBlockBatched<digits, order>(M_bat, qel, elem_idx, Xtrg, normal_trg, ker);
+        SCTL_ASSERT(M_ref.Dim(0) == M_bat.Dim(0) && M_ref.Dim(1) == M_bat.Dim(1));
+        Real maxdiff = 0;
+        for (Long i = 0; i < M_ref.Dim(0); i++)
+            for (Long j = 0; j < M_ref.Dim(1); j++)
+                maxdiff = std::max<Real>(maxdiff, fabs(M_ref[i][j] - M_bat[i][j]));
+        return maxdiff;
     }
 };
 }
@@ -717,6 +743,23 @@ int main(int argc, char** argv) {
     test_SelfInterac<Real>(ker_DxU);
     std::cout << "test_SelfInterac (Stokes3D_DxU / plane): PASSED\n";
 
+    // Convergence in the adaptive dyadic-refinement depth cap (max_depth knob, {4,8,12,30}).
+    // rel_tol loosened to 1e0 so the assert never trips and only the printed err reveals the
+    // trend; max_depth=30 reproduces the default-scheme results above.
+    {
+        using QSA = QuadElemList<Real>::QuadScheme;
+        std::cout << "  Adaptive self-interac convergence, Sto_FxU (tol=1e-12; max_depth -> rel_err):\n";
+        for (const Integer depth : {4, 8, 12, 30}) {
+            std::cout << "    max_depth=" << depth << ": ";
+            test_SelfInterac<Real>(ker_FxU, QSA::Adaptive, /*rel_tol=*/1e0, /*q=*/10, /*tol=*/1e-12, /*cov_order=*/0, /*max_depth=*/depth);
+        }
+        std::cout << "  Adaptive near-interac convergence, Sto_FxU / testsurf (max_depth -> rel_err):\n";
+        for (const Integer depth : {4, 8, 12, 30}) {
+            std::cout << "    max_depth=" << depth << ": ";
+            test_NearInterac<Real>(ker_FxU, true, "adaptive depth sweep", QSA::Adaptive, /*rel_tol=*/1e0, /*cov_order=*/0, /*max_depth=*/depth);
+        }
+    }
+
 
     // Scheme 2: rectangular-polar COV (Bruno 2018); accuracy driven by Nbeta, not field order.
     using QS = QuadElemList<Real>::QuadScheme;
@@ -724,21 +767,21 @@ int main(int argc, char** argv) {
     test_RectPolarNodes1D<Real>();
     std::cout << "test_RectPolarNodes1D: PASSED\n";
 
-    const Integer Nbeta = 128;
+    const Integer Nbeta = 200;
     test_NearInterac<Real>(ker_FxU, false, "RP Stokes3D_FxU / plane",    QS::RectPolar, 1e-7, Nbeta);
     test_NearInterac<Real>(ker_FxU, true,  "RP Stokes3D_FxU / testsurf", QS::RectPolar, 1e-7, Nbeta);
     test_NearInterac<Real>(ker_DxU, false, "RP Stokes3D_DxU / plane",    QS::RectPolar, 1e-7, Nbeta);
     test_NearInterac<Real>(ker_DxU, true,  "RP Stokes3D_DxU / testsurf", QS::RectPolar, 1e-7, Nbeta);
     std::cout << "test_NearInterac (RectPolar, Nbeta=" << Nbeta << "): PASSED\n";
-    test_SelfInterac<Real>(ker_lapFxU, QS::RectPolar, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/256);
-    std::cout << "test_SelfInterac Lap_FxU (RectPolar, Nbeta=256): PASSED\n";
-    test_SelfInterac<Real>(ker_FxU, QS::RectPolar, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/256);
-    std::cout << "test_SelfInterac Sto_FxU (RectPolar, Nbeta=256): PASSED\n";
-    test_SelfInterac<Real>(ker_DxU, QS::RectPolar, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/256);
-    std::cout << "test_SelfInterac Sto_DxU (RectPolar, Nbeta=256): PASSED\n";
+    test_SelfInterac<Real>(ker_lapFxU, QS::RectPolar, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
+    std::cout << "test_SelfInterac Lap_FxU (RectPolar, Nbeta=200): PASSED\n";
+    test_SelfInterac<Real>(ker_FxU, QS::RectPolar, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
+    std::cout << "test_SelfInterac Sto_FxU (RectPolar, Nbeta=200): PASSED\n";
+    test_SelfInterac<Real>(ker_DxU, QS::RectPolar, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
+    std::cout << "test_SelfInterac Sto_DxU (RectPolar, Nbeta=200): PASSED\n";
     // Convergence in Nbeta (Nbeta, not q, drives accuracy).
     std::cout << "  RP self-interac convergence, Sto_FxU (q=10; Nbeta -> max_rel):\n";
-    for (const Integer nb : {64, 128, 256, 512}) {
+    for (const Integer nb : {48, 100, 200, 512}) {
         std::cout << "    Nbeta=" << nb << ": ";
         test_SelfInterac<Real>(ker_FxU, QS::RectPolar, 1e0, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/nb);
     }
@@ -749,10 +792,10 @@ int main(int argc, char** argv) {
     test_NearInterac<Real>(ker_FxU, false, "Hybrid Stokes3D_FxU / plane",    QS::Hybrid, 1e-7, /*cov_order=*/0);
     test_NearInterac<Real>(ker_FxU, true,  "Hybrid Stokes3D_FxU / testsurf", QS::Hybrid, 1e-7, /*cov_order=*/0);
     std::cout << "test_NearInterac (Hybrid, adaptive near): PASSED\n";
-    test_SelfInterac<Real>(ker_lapFxU, QS::Hybrid, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/256);
-    std::cout << "test_SelfInterac Lap_FxU (Hybrid, RP self, Nbeta=256): PASSED\n";
-    test_SelfInterac<Real>(ker_FxU, QS::Hybrid, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/256);
-    std::cout << "test_SelfInterac Sto_FxU (Hybrid, RP self, Nbeta=256): PASSED\n";
+    test_SelfInterac<Real>(ker_lapFxU, QS::Hybrid, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
+    std::cout << "test_SelfInterac Lap_FxU (Hybrid, RP self, Nbeta=200): PASSED\n";
+    test_SelfInterac<Real>(ker_FxU, QS::Hybrid, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
+    std::cout << "test_SelfInterac Sto_FxU (Hybrid, RP self, Nbeta=200): PASSED\n";
 
     return 0;
 }

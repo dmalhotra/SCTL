@@ -17,7 +17,6 @@ namespace sctl {
    */
   template <class Real> class QuadElemList : public ElementListBase<Real> {
       static constexpr Integer COORD_DIM = 3;
-      static constexpr Integer MAX_ADAPTIVE_DEPTH = 30;
 
     public:
 
@@ -79,12 +78,15 @@ namespace sctl {
        * @param[in] s scheme (Adaptive, RectPolar, or Hybrid).
        * @param[in] q derivative-flattening parameter for RectPolar (ignored for Adaptive).
        * @param[in] cov_order RectPolar GL points per direction (Nbeta, Bruno 2018);
-       * decoupled from field order. 0 (default) selects Nbeta from the requested tolerance
-       * via NbetaForDigits: a worst-case-calibrated ladder (theta=pi twist sphere,
-       * Nbeta_sweep.txt) giving 128 for tol>=1e-2, 256 at 1e-3, 384 at 1e-4/1e-5, 512 at
-       * tol<=1e-6. A positive value overrides this and forces that Nbeta.
+       * decoupled from field order. 0 falls back to the tolerance-derived order.
+       * @param[in] max_depth adaptive dyadic-refinement depth cap for the Adaptive scheme
+       * (self + near) and the near phase of Hybrid; must be one of {4,8,12,30}. Ignored by
+       * the RectPolar self/near phases.
        */
-      void SetQuadScheme(QuadScheme s, Integer q = 6, Integer cov_order = 0) { scheme_ = s; cov_q_ = q; cov_order_ = cov_order; }
+      void SetQuadScheme(QuadScheme s, Integer q = 6, Integer cov_order = 0, Integer max_depth = 30) {
+        SCTL_ASSERT_MSG(max_depth == 4 || max_depth == 8 || max_depth == 12 || max_depth == 30, "Adaptive max_depth must be one of {4,8,12,30}.");
+        scheme_ = s; cov_q_ = q; cov_order_ = cov_order; max_depth_ = max_depth;
+      }
 
       /**
        * Position and normals of the surface nodal points per element.
@@ -213,7 +215,7 @@ namespace sctl {
        * @param[in] Nbeta nodes per direction to draw (keep modest, e.g. 30-60).
        * @param[in] comm communicator.
        */
-      void WriteNearInteracRPVTK(const std::string& fname, const Long elem_idx, const Vector<Real>& Xtrg, const Integer Nbeta = 40, const Comm& comm = Comm::Self()) const;
+      void WriteNearInteracRPVTK(const std::string& fname, const Long elem_idx, const Vector<Real>& Xtrg, const Integer Nbeta = 48, const Comm& comm = Comm::Self()) const;
 
       /**
        * Visualize the rectangular-polar (Scheme 2) grid for an on-surface target at
@@ -224,7 +226,7 @@ namespace sctl {
        * @param[in] Nbeta nodes per direction to draw (keep modest, e.g. 30-60).
        * @param[in] comm communicator.
        */
-      void WriteSelfInteracRPVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Integer Nbeta = 40, const Comm& comm = Comm::Self()) const;
+      void WriteSelfInteracRPVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Integer Nbeta = 48, const Comm& comm = Comm::Self()) const;
 
       /**
        * Copy the element-list, possibly at a different precision.
@@ -278,8 +280,10 @@ namespace sctl {
       template <Integer order, Integer digits> static const NodeRuleData& SelfVRule(const Integer tj);
 
       // Preloaded self-interaction graded u-rule for u0=ParamNodes(order)[ti]. The subdivision
-      // is geometry-independent (scale-invariance), so fixed by (order, ti, digits) and cached once.
-      template <Integer order, Integer digits> static const NodeRuleData& SelfURule(const Integer ti);
+      // is geometry-independent (scale-invariance), so fixed by (order, ti, digits, max_depth) and
+      // cached once. Runtime max_depth maps to the compile-time template via SelfURuleDispatch.
+      template <Integer order, Integer digits, Integer max_depth> static const NodeRuleData& SelfURule(const Integer ti);
+      template <Integer order, Integer digits> static const NodeRuleData& SelfURuleDispatch(const Integer ti, const Integer max_depth);
 
       // GL rule (nodes, weights) on [0,1] for compile-time count Nbeta (RP uses Nbeta>>50,
       // beyond LegQuadRule's cache); function-local static, runtime value via dispatch over {128,256,512}.
@@ -320,11 +324,11 @@ namespace sctl {
                                                                         const Matrix<Real>* MvT_pre = nullptr, const Matrix<Real>* MuT_pre = nullptr, const Matrix<Real>* dMuT_pre = nullptr);
 
       // Geometry-independent graded 1D GL rule on [0,1], refined toward `center` until
-      // admissible or MAX_ADAPTIVE_DEPTH. Returns nodes `param`, weights `w`.
-      static void BuildGraded1D(Vector<Real>& param, Vector<Real>& w, const Real center, const Real b_ellipse, const Vector<Real>& qnds, const Vector<Real>& qwts);
+      // admissible or `max_depth`. Returns nodes `param`, weights `w`.
+      static void BuildGraded1D(Vector<Real>& param, Vector<Real>& w, const Real center, const Real b_ellipse, const Vector<Real>& qnds, const Vector<Real>& qwts, const Integer max_depth);
 
       // Dyadic subdivision underlying BuildGraded1D: leaf segments ({a0,a1} each in `seg`) + depths.
-      static void BuildGraded1DSegments(Vector<Real>& seg, Vector<Long>& seg_depth, const Real center, const Real b_ellipse);
+      static void BuildGraded1DSegments(Vector<Real>& seg, Vector<Long>& seg_depth, const Real center, const Real b_ellipse, const Integer max_depth);
 
       // Composite/graded Alpert rule on [0,1] for a log singularity at interior v0: split at
       // v0, grade `Lvl` geometric panels per side toward v0. The v0-touching panel uses the
@@ -334,7 +338,7 @@ namespace sctl {
 
       // Adaptive 2D quadtree underlying NearInteracBlock: leaf rectangles (4 reals {u0,u1,v0,v1}
       // each in `leaf_box`) + depths, graded toward the closest point to Xtrg. Shared with WriteNearInteracVTK.
-      static void BuildNearLeaves(Vector<Real>& leaf_box, Vector<Long>& leaf_depth, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse);
+      static void BuildNearLeaves(Vector<Real>& leaf_box, Vector<Long>& leaf_depth, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse, const Integer max_depth);
 
       // Accuracy/order-templated impls of NearInterac/SelfInterac: entry points dispatch runtime
       // order to compile-time `order` (switch {4..48}) and tolerance to `digits` (if-else), CSBQ-style.
@@ -345,6 +349,12 @@ namespace sctl {
 
       // Per-target adaptive 2D quadtree near-interaction block (off-surface target).
       template <Integer digits, Integer order, class Kernel> static void NearInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
+
+      // Leaf-batched equivalent of NearInteracBlock: same quadtree/interp-cache, but the per-leaf
+      // geometry/kernel/projection GEMMs are batched across leaves (interval-grouped, separable,
+      // bit-for-bit identical to the per-leaf path). This is the production near path; NearInteracBlock
+      // is retained as the reference for the bit-for-bit gate (QuadElemTestAccess::CompareNearBlocks).
+      template <Integer digits, Integer order, class Kernel> static void NearInteracBlockBatched(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
       // Per-target singular self-interaction block at (u0,v0): graded u-refinement + 1D log rule in v.
       template <Integer digits, Integer order, class Kernel> static void SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
@@ -369,6 +379,7 @@ namespace sctl {
       QuadScheme scheme_ = QuadScheme::Adaptive;
       Integer cov_q_ = 6;
       Integer cov_order_ = 0;
+      Integer max_depth_ = 30;
   };
 
 }

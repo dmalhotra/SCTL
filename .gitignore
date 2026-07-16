@@ -8,10 +8,16 @@ doc/_build
 doc/_doxygen
 *~
 *.txt
+*.csv
+*.msh
+*.out
 
 # Claude-generated files (guidance/docs authored by Claude Code) -- not tracked
 CLAUDE.md
 /docs/
+c2-smoothfinger.patch
+c2-smoothfinger.test-gmsh-geom.cpp.bak
+dlerr_*.csv
 
 # Large mesh data (gmsh meshes / cubed-sphere geometry) -- kept out of the repo;
 # git home is on quota-enforced GPFS. Tests SKIP gracefully when a mesh is absent.

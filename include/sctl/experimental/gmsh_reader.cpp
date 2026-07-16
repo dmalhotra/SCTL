@@ -111,7 +111,7 @@ namespace sctl {
           const Integer etype = (Integer)std::stol(bh[2]);
           const Long nb = std::stol(bh[3]);
           const Integer ns = QuadTypeToNside(etype);
-          std::cout << "GmshReader CHECK: Number of Lagrange nodes on each side ( = order + 1): " << ns << std::endl;
+          // std::cout << "GmshReader CHECK: Number of Lagrange nodes on each side ( = order + 1): " << ns << std::endl;
           for (Long e = 0; e < nb; e++) {
             std::vector<std::string> t;
             SCTL_ASSERT(next(t)); // elemTag node1 node2 ...
