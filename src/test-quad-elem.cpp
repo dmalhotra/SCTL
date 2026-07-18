@@ -85,6 +85,11 @@ QuadElemList<Real> BuildTwistedSphere(Long ElemOrder, Long PatchPerFace, Real Ra
   return QuadElemList<Real>(ElemOrder, X, comm);
 }
 
+// --- DISABLED: BIO-vs-SH, manufactured-solution, surface-area, timing, and gmsh tests ---
+// Commented out (kept for reference / easy revert). Only the DL-constant identity and the
+// Green's representation identity near-scheme tests (test_DLIdentity, test_greens_identity,
+// defined below) are active and called from main().
+#if 0
 // Helpers validating cubed-sphere BIOs against the SH reference on the unit sphere.
 
 // Target placement relative to the unit-radius surface.
@@ -760,6 +765,7 @@ void test_timing_StkSL(const QuadElemList<double>& elem_lst, const Comm& comm, c
   Profile::print(&comm, {"t_max", "f_max", "f/s_avg"});
 
 }
+#endif // DISABLED: BIO-vs-SH / manufactured / surface-area / timing / gmsh tests
 
 
 // Double-layer constant-density identity on a closed surface (Laplace or Stokes):
