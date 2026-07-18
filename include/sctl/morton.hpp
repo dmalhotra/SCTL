@@ -161,23 +161,36 @@ template <Integer DIM> class Morton {
   MortonCode<DIM> mid;  ///< Morton code of the node (low bits zeroed for non-leaves).
   uint8_t depth;        ///< Tree depth (0 = root, MAX_DEPTH = leaf). `INVALID_DEPTH` flags an invalid node.
 
-  /** Default ctor: ROOT (zero code, depth 0). */
-  SCTL_GPU_HD Morton() : mid(MortonCode<DIM>{}), depth(0) {}
+  /**
+   * Trivial default ctor: uninitialised. Value-init (`Morton()` / `Morton{}`) gives the ROOT
+   * (zero code, depth 0); a bare `Morton m;` is uninitialised, matching `MortonCode`.
+   */
+  SCTL_GPU_HD Morton() = default;
 
-  /** Aggregate-style ctor (preserves `Morton{code, depth}` initialiser-list syntax). */
+  /**
+   * Aggregate-style ctor (preserves `Morton{code, depth}` initialiser-list syntax).
+   */
   SCTL_GPU_HD Morton(MortonCode<DIM> mid_, uint8_t depth_) : mid(mid_), depth(depth_) {}
 
-  /** Construct the depth-`depth_` box containing `coord` (truncates low bits). Accepts a raw
-   *  `const T*` (release) or `ConstIterator<T>` (under SCTL_MEMDEBUG). */
+  /**
+   * Construct the depth-`depth_` box containing `coord` (truncates low bits). Accepts a raw
+   * `const T*` (release) or `ConstIterator<T>` (under SCTL_MEMDEBUG).
+   */
   template <class T> explicit Morton(ConstIterator<T> coord, uint8_t depth_ = MAX_DEPTH);
 
-  /** Returns this node's depth (alias for the `depth` field). */
+  /**
+   * Returns this node's depth (alias for the `depth` field).
+   */
   SCTL_GPU_HD uint8_t Depth() const;
 
-  /** Write per-dim coordinates `[0,1)^DIM` into `coord`. Inverse of `MortonCode(const Real*)`. */
+  /**
+   * Write per-dim coordinates `[0,1)^DIM` into `coord`. Inverse of `MortonCode(const Real*)`.
+   */
   template <class ArrayType> SCTL_GPU_HD void Coord(ArrayType&& coord) const;
 
-  /** Return per-dim coordinates as `std::array<Real, DIM>`. */
+  /**
+   * Return per-dim coordinates as `std::array<Real, DIM>`.
+   */
   template <class Real> std::array<Real, DIM> Coord() const {
     std::array<Real, DIM> arr{};
     Coord(arr);
@@ -201,6 +214,13 @@ template <Integer DIM> class Morton {
    */
   SCTL_GPU_HD Morton Ancestor(uint8_t level) const;
 
+  /**
+   * Deepest common ancestor of `*this` and `o`: depth is `min(depth, o.depth)` capped by the
+   * finest level on which the two codes agree. Equals the shallower node when one is an
+   * ancestor-or-equal of the other; `m.CommonAncestor(m) == m`.
+   */
+  SCTL_GPU_HD Morton CommonAncestor(const Morton& o) const;
+
   /** Deepest first descendant at the given level: same code, `depth = level`. No bit work. */
   SCTL_GPU_HD Morton DFD(uint8_t level = MAX_DEPTH) const;
 
@@ -210,6 +230,13 @@ template <Integer DIM> class Morton {
    * `depth < MAX_DEPTH`.
    */
   SCTL_GPU_HD std::array<Morton, (1 << DIM)> Children() const;
+
+  /**
+   * Path-to-node: this node's index among its parent's children, i.e. the last occupied
+   * `DIM` bits of the code (level `MAX_DEPTH - depth`) as an integer. Inverse of
+   * `Children()` ordering: `parent.Children()[m.Path2Node()] == m`. Returns 0 for the root.
+   */
+  SCTL_GPU_HD Integer Path2Node() const;
 
   /**
    * `3^DIM` same-level neighbors (ancestor truncated to `level`). The neighbor for offset

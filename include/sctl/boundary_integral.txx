@@ -341,7 +341,7 @@ namespace sctl {
               }
             }
             { // build trg_mid_lst, trg_range
-              Morton<COORD_DIM> nxt_node;
+              Morton<COORD_DIM> nxt_node{}; // init to root node
               for (const auto& src_mid : src_mid_lst) {
                 src_mid.NbrList(nbr_lst, src_mid.Depth(), Periodicity::NONE);
                 for (const auto& mid : nbr_lst) if (mid.Depth() != Morton<COORD_DIM>::INVALID_DEPTH) {
