@@ -220,7 +220,7 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp
   const Integer nt = SCTL_GET_MAX_THREADS();
   const bool inplace = (N > 0) && ((const void*)&A[0] == (const void*)&B[0]);  // output aliases input
 
-  if (nt < 2 || N < 64 * nt) {  // too small to parallelize: serial std::sort
+  if (SCTL_IN_PARALLEL() || nt < 2 || N < 64 * nt) {  // serial std::sort when nested or too small to parallelize
     if (!inplace) for (Long i = 0; i < N; i++) B[i] = A[i];
     std::sort(B, B + N, comp);
     return;
