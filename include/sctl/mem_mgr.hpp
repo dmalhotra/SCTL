@@ -11,6 +11,9 @@
 
 namespace sctl {
 
+/** Best-effort MADV_HUGEPAGE on the page-aligned interior of a large allocation (no-op below 2MB or off Linux). */
+inline void advise_huge_pages(void* ptr, Long bytes);
+
 /**
  * MemoryManager class declaration.
  */
