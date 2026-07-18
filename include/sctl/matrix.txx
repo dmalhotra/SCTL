@@ -185,6 +185,8 @@ template <class ValueType> template <class Type> void Matrix<ValueType>::Read(co
 
 template <class ValueType> Long Matrix<ValueType>::Dim(Long i) const noexcept { return dim[i]; }
 
+template <class ValueType> bool Matrix<ValueType>::OwnData() const noexcept { return own_data; }
+
 template <class ValueType> void Matrix<ValueType>::SetZero() {
   if (dim[0] && dim[1]) memset(data_ptr, 0, dim[0] * dim[1]);
 }

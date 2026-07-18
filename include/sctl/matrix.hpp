@@ -120,6 +120,13 @@ template <class ValueType> class Matrix {
   [[nodiscard]] Long Dim(Long i) const noexcept;
 
   /**
+   * Check whether the matrix owns its data (false for views of external memory).
+   *
+   * @return bool True if the matrix owns and will deallocate its data.
+   */
+  [[nodiscard]] bool OwnData() const noexcept;
+
+  /**
    * Sets all elements of the matrix to zero.
    */
   void SetZero();

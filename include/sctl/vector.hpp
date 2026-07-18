@@ -156,6 +156,13 @@ template <class ValueType> class Vector {
   [[nodiscard]] Long Dim() const noexcept;
 
   /**
+   * Check whether the vector owns its data (false for views of external memory).
+   *
+   * @return bool True if the vector owns and will deallocate its data.
+   */
+  [[nodiscard]] bool OwnData() const noexcept;
+
+  /**
    * Set all elements of the vector to zero.
    */
   void SetZero();
