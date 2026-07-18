@@ -762,6 +762,153 @@ void test_timing_StkSL(const QuadElemList<double>& elem_lst, const Comm& comm, c
 }
 
 
+// Double-layer constant-density identity on a closed surface (Laplace or Stokes):
+// D[q] = c*q for constant q, with c = -1/2 for the outward-normal convention used here.
+// Sign convention: this kernel (r = x_trg-x_src, source normal) gives c = -1/2 for
+// an outward normal, +1/2 for inward; verify magnitude and sign vs. orientation.
+template <class Real, class KerDL> void test_DLIdentity(const QuadElemList<Real>& elem_lst, const Comm& comm, const Real quad_tol = 1e-8) {
+  const KerDL kernel_dl;
+  BoundaryIntegralOp<Real, KerDL> BIOp(kernel_dl, false, comm);
+  BIOp.SetAccuracy(quad_tol);
+  BIOp.AddElemList(elem_lst);
+
+  const Real c_expect = -0.5; // Elem_lst always have outward surface normals.
+
+  // Constant density q at every node.
+  const Long KDIM0 = KerDL::SrcDim();
+  Vector<Real> X, Xn;
+  elem_lst.GetNodeCoord(&X, &Xn, nullptr);
+  const Long Nnode = X.Dim() / 3;
+  Vector<Real> q(Nnode * KDIM0), U;
+  for (Long i = 0; i < Nnode; i++) {
+    for (Long k=0; k<KDIM0; k++) {
+      q[i*KDIM0 + k] = k+1; // arbitrary constant density {1,2,3}.
+    }
+  }
+  BIOp.ComputePotential(U, q);
+
+  // D[q] should equal c*q: measure max deviation.
+  Vector<Real> cx_maxerr(KDIM0);
+  cx_maxerr = 0.;
+  for (Long i = 0; i < Nnode; i++) {
+    for (Long k=0; k<KDIM0; k++) {
+      cx_maxerr[k] = std::max(cx_maxerr[k], std::fabs(U[i*KDIM0+k] / q[i*KDIM0+k] - c_expect));
+    }
+  }
+  Real cx_relerr_avg = 0.;
+  for (Long k=0; k<KDIM0; k++) cx_relerr_avg += (cx_maxerr[k] / std::fabs(c_expect));
+  cx_relerr_avg /= KDIM0;
+  cx_relerr_avg = GlobalReduce(cx_relerr_avg, comm, CommOp::MAX);
+  if (!comm.Rank()) std::cout << std::setprecision(8) << "DL constant-density identity: max relative error = " << cx_relerr_avg << std::endl;
+}
+
+// Interior Green's representation identity on a closed surface (Laplace or Stokes):
+// for a source X0 OUTSIDE the surface (u harmonic/Stokeslet in the interior),
+// (S[Fs] - D[Fd]) - 0.5*Fd == u|_S, with Fd = u, Fs = +du/dn (outward normal).
+//
+// trg_dist == 0 : on-surface (self-eval) targets = surface nodes; apply the -0.5 DL jump.
+// trg_dist  > 0 : off-surface INTERIOR targets, pushed in by trg_dist along the inward normal
+//                 (exercises the NEAR-interaction path). The near-singular quadrature returns the
+//                 true off-surface D[u] (interior limit included), so no manual jump is applied and
+//                 (S[Fs] - D[Fd]) == u at the interior targets directly.
+template <class Real, class KerSL, class KerDL, class KerGrad> void test_greens_identity(const QuadElemList<Real>& elem_lst, const Comm& comm,
+                          const Real tol, const Vector<Real> X0, const Real trg_dist = 0, const bool center_only = false) {
+  static constexpr Integer COORD_DIM = 3;
+  const Long pid = comm.Rank();
+
+  KerSL kernel_sl;
+  KerDL kernel_dl;
+  KerGrad kernel_grad;
+  BoundaryIntegralOp<Real,KerSL> BIOpSL(kernel_sl, false, comm);
+  BoundaryIntegralOp<Real,KerDL> BIOpDL(kernel_dl, false, comm);
+  BIOpSL.AddElemList(elem_lst);
+  BIOpDL.AddElemList(elem_lst);
+  BIOpSL.SetAccuracy(tol);
+  BIOpDL.SetAccuracy(tol);
+
+  Vector<Real> X, Xn, Fs, Fd, Uref, Us, Ud, Xtrg;
+  elem_lst.GetNodeCoord(&X, &Xn, nullptr);
+  { // Targets: interior offset for the near test (push inward along the outward normal), else on-surface.
+    if (center_only && trg_dist > 0) {
+      // One target per panel at its parametric center (0.5,0.5), pushed inward. Being far from all
+      // panel edges, these avoid the edge-near adjacent-panel regime -- isolates the panel-interior
+      // near accuracy of the scheme.
+      const Long Ne = elem_lst.Size();
+      Xtrg.ReInit(Ne*COORD_DIM);
+      const Vector<Real> up05{(Real)0.5}, vp05{(Real)0.5};
+      for (Long e = 0; e < Ne; e++) {
+        Vector<Real> Xc, Nc;
+        elem_lst.GetGeom(&Xc, &Nc, nullptr, nullptr, nullptr, up05, vp05, e);
+        for (Integer k = 0; k < COORD_DIM; k++) Xtrg[e*COORD_DIM+k] = Xc[k] - trg_dist*Nc[k];
+      }
+    } else if (trg_dist > 0) {
+      const Long N = X.Dim()/COORD_DIM;
+      Xtrg.ReInit(X.Dim());
+      for (Long i = 0; i < N; i++)
+        for (Integer k = 0; k < COORD_DIM; k++)
+          Xtrg[i*COORD_DIM+k] = X[i*COORD_DIM+k] - trg_dist*Xn[i*COORD_DIM+k];
+    } else {
+      Xtrg = X;
+    }
+  }
+  {
+    Vector<Real> Xn0{0,0,0}, F0(KerSL::SrcDim()), dU, Usurf;
+    for (auto& x : F0) x = drand48()-0.5;
+    kernel_sl.Eval(Usurf, X, X0, Xn0, F0);    // u at source surface nodes (DL density)
+    kernel_grad.Eval(dU, X, X0, Xn0, F0);     // grad u at source surface nodes
+    kernel_sl.Eval(Uref, Xtrg, X0, Xn0, F0);  // u at the targets (reference)
+
+    Fd = Usurf;
+    { // Set Fs <-- +dot_prod(dU, Xn)  (= +du/dn; CSBQ utils.cpp free-function convention)
+      constexpr Integer KDIM0 = KerSL::SrcDim();
+      const Long N = X.Dim()/COORD_DIM;
+      Fs.ReInit(N * KDIM0);
+      for (Long i = 0; i < N; i++) {
+        for (Integer j = 0; j < KDIM0; j++) {
+          Real dU_dot_Xn = 0;
+          for (Long k = 0; k < COORD_DIM; k++) {
+            dU_dot_Xn += dU[(i*KDIM0+j)*COORD_DIM+k] * Xn[i*COORD_DIM+k];
+          }
+          Fs[i*KDIM0+j] = dU_dot_Xn;
+        }
+      }
+    }
+  }
+
+  // Off-surface targets exercise the near-interaction path (targets != surface nodes).
+  if (trg_dist > 0) {
+    BIOpSL.SetTargetCoord(Xtrg);
+    BIOpDL.SetTargetCoord(Xtrg);
+  }
+
+  // Warm-up (builds the near/self operators), then a timed rebuild+eval via the sctl profiler so
+  // the near-interaction assembly cost (which differs per scheme) is captured under "Greens-SetupEval".
+  BIOpSL.ComputePotential(Us,Fs);
+  BIOpDL.ComputePotential(Ud,Fd);
+  BIOpSL.ClearSetup(); BIOpDL.ClearSetup();
+  Us = 0; Ud = 0;
+  sctl::Profile::Enable(true);
+  Profile::Tic("Greens-SetupEval", &comm);
+  BIOpSL.ComputePotential(Us,Fs);
+  BIOpDL.ComputePotential(Ud,Fd);
+  Profile::Toc();
+
+  if (trg_dist == 0) Ud -= 0.5*Fd; // DL jump condition, on-surface only (off-surface D[u] already includes it)
+  Vector<Real> Uerr = (Us - Ud) - Uref;
+  { // Print error
+    StaticArray<Real,2> max_err{0,0};
+    StaticArray<Real,2> max_val{0,0};
+    for (auto x : Uerr) max_err[0] = std::max<Real>(max_err[0], fabs(x));
+    for (auto x : Uref) max_val[0] = std::max<Real>(max_val[0], fabs(x));
+    comm.Allreduce(max_err+0, max_err+1, 1, CommOp::MAX);
+    comm.Allreduce(max_val+0, max_val+1, 1, CommOp::MAX);
+    if (!pid) std::cout<<"Green's identity error = "<<max_err[1]/max_val[1]<<'\n';
+  }
+  sctl::Profile::print(&comm, {"t_max"});
+  sctl::Profile::reset();
+  sctl::Profile::Enable(false);
+}
+
 
 int main(int argc, char** argv) {
   Comm::MPI_Init(&argc, &argv);
@@ -778,7 +925,7 @@ int main(int argc, char** argv) {
     // gmsh import pipeline vs. analytic cubed-sphere (geometry invariants + BIO-vs-SH).
     // Coarse ./sphere mesh: low resolution, so resample its panels to QuadOrder 4.
     // test_GmshVsTwistSphere(comm, "./sphere", 4);
-    test_GmshVsTwistSphere(comm, "./sphere_ord9", 16);
+    // test_GmshVsTwistSphere(comm, "./sphere_ord9", 16);
 
     // test_NbetaSweep(comm);
 
@@ -786,6 +933,43 @@ int main(int argc, char** argv) {
     const Long ElemOrder = 16;
     const Long PatchPerFace = 5;
     const double Radius = 1.0;
+
+    // === Near-quadrature schemes: on-surface DL + Green's identity, and off-surface interior near ===
+    // On-surface (targets = nodes) exercises the self path + adjacent-panel EDGE near; off-surface
+    // center targets exercise the panel-INTERIOR near path. Adaptive (closest-point near) and
+    // RectPolar match at the surface-resolution floor (~5e-8 on-surface, ~5e-7 interior). hedgehog
+    // matches on interior targets but is inaccurate near seams, so it is shown for interior only.
+    {
+      using QS = QuadElemList<double>::QuadScheme;
+      const Vector<double> X0{1.3, 1.2, 0.2}; // exterior source for the interior Green's identity
+      const Long EO = 12, PPF = 2; const double ctol = 1e-7; // 24-patch order-12 sphere
+      auto make = [&](QS s) {
+        auto e = BuildTwistedSphere<double>(EO, PPF, Radius, 0., comm);
+        if      (s == QS::RectPolar) e.SetQuadScheme(QS::RectPolar, 6, 512, 30);
+        else if (s == QS::LineQBX)   { e.SetQuadScheme(QS::LineQBX); e.SetLineQBXParams(); } // R=r=0.02L,p=16,eta=2,up=72
+        else                         e.SetQuadScheme(QS::Adaptive, 6, 0, 30);
+        return e;
+      };
+
+      if (!comm.Rank()) std::cout << "\n=== On-surface DL + Green's identity (order-" << EO << ", " << PPF << " patch/face) ===\n";
+      for (const auto& c : {std::make_pair("Adaptive", QS::Adaptive), std::make_pair("RectPolar", QS::RectPolar)}) {
+        auto elem = make(c.second);
+        if (!comm.Rank()) std::cout << "\n--- " << c.first << " (on-surface) ---\n";
+        if (!comm.Rank()) std::cout << "[Laplace DL] "; test_DLIdentity<double, Laplace3D_DxU>(elem, comm, ctol);
+        if (!comm.Rank()) std::cout << "[Stokes  DL] "; test_DLIdentity<double, Stokes3D_DxU>(elem, comm, ctol);
+        if (!comm.Rank()) std::cout << "[Laplace Green's] ";
+        test_greens_identity<double, Laplace3D_FxU, Laplace3D_DxU, Laplace3D_FxdU>(elem, comm, ctol, X0, /*trg_dist=*/0.);
+        if (!comm.Rank()) std::cout << "[Stokes  Green's] ";
+        test_greens_identity<double, Stokes3D_FxU, Stokes3D_DxU, Stokes3D_FxT>(elem, comm, ctol, X0, /*trg_dist=*/0.);
+      }
+
+      if (!comm.Rank()) std::cout << "\n=== Off-surface interior near: Stokes Green's identity @ trg_dist=1e-4 ===\n";
+      for (const auto& c : {std::make_pair("Adaptive", QS::Adaptive), std::make_pair("RectPolar", QS::RectPolar), std::make_pair("hedgehog", QS::LineQBX)}) {
+        auto elem = make(c.second);
+        if (!comm.Rank()) std::cout << "\n--- " << c.first << " (interior near) ---\n";
+        test_greens_identity<double, Stokes3D_FxU, Stokes3D_DxU, Stokes3D_FxT>(elem, comm, ctol, X0, /*trg_dist=*/1e-4, /*center_only=*/true);
+      }
+    }
     // QuadElemList<double> elem_lst = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, 0., comm);
 
     // if (!comm.Rank()) std::cout << "\n=== Scheme 1: Adaptive subdivision of panels ===" << std::endl;

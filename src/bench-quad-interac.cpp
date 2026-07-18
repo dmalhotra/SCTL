@@ -78,6 +78,7 @@ const char* SchemeName(typename QuadElemList<double>::QuadScheme s) {
   switch (s) {
     case QuadElemList<double>::QuadScheme::RectPolar: return "RectPolar";
     case QuadElemList<double>::QuadScheme::Hybrid:    return "Hybrid";
+    case QuadElemList<double>::QuadScheme::LineQBX:   return "LineQBX";
     default:                                          return "Adaptive";
   }
 }
