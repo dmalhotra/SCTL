@@ -586,7 +586,7 @@ template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> s
   MPI_Allgatherv_c((scount ? &sbuf[0] : nullptr), comm_detail::MPIAsCountLarge(scount), CommDatatype<SType>::value(), (recv_span ? &rbuf[0] : nullptr), &rcounts_.begin()[0], &rdispls_.begin()[0], CommDatatype<RType>::value(), impl_->mpi_comm_);
   return;
 #else
-  bool fits_typed = comm_detail::MPIFitsCount(scount) && comm_detail::MPIFitsCount(recv_span);
+  bool fits_typed = comm_detail::MPIFitsCount(recv_span);
   if (fits_typed) {  // Keep the original typed collective path when the full placed receive range fits in int.
     ScratchBuf<int> rcounts_(impl_->mpi_size_), rdispls_(impl_->mpi_size_);
     #pragma omp parallel for schedule(static)
@@ -746,19 +746,21 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
   Long total_bytes = 0;
   // MPI-4 large-count point-to-point can exchange each peer payload directly in bytes.
   for (Integer i = 0; i < impl_->mpi_size_; i++) {
+    if (i == Rank()) continue;  // self handled by local copy below
     const Long recv_bytes = rcounts[i] * sizeof(RType);
     const Long send_bytes = scounts[i] * sizeof(SType);
     request_count += (recv_bytes != 0);
     request_count += (send_bytes != 0);
     total_bytes += recv_bytes + send_bytes;
   }
-  if (!request_count) return Request();
   Vector<MPI_Request>& request = NewReq(request_count);
   Long request_iter = 0;
 
   comm_detail::TrackPointToPoint(request_count, total_bytes);
 
+  if (request_count)
   for (Integer i = 0; i < impl_->mpi_size_; i++) {
+    if (i == Rank()) continue;  // Skip self-send/recv
     const Long recv_bytes = rcounts[i] * sizeof(RType);
     if (recv_bytes) {
       Iterator<char> recv_buf = (Iterator<char>)(rbuf + rdispls[i]);
@@ -768,7 +770,9 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
       request_iter++;
     }
   }
+  if (request_count)
   for (Integer i = 0; i < impl_->mpi_size_; i++) {
+    if (i == Rank()) continue;  // Skip self-send/recv
     const Long send_bytes = scounts[i] * sizeof(SType);
     if (send_bytes) {
       ConstIterator<char> send_buf = (ConstIterator<char>)(sbuf + sdispls[i]);
@@ -778,6 +782,7 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
       request_iter++;
     }
   }
+  omp_par::memcpy((Iterator<char>)(rbuf + rdispls[Rank()]), (ConstIterator<char>)(sbuf + sdispls[Rank()]), scounts[Rank()] * sizeof(SType));
   return Request(&request);
 #else
   Long request_count = 0;
@@ -785,6 +790,7 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
   Long total_bytes = 0;
   // Older MPI implementations need large peer messages to be split into int-sized byte chunks.
   for (Integer i = 0; i < impl_->mpi_size_; i++) {
+    if (i == Rank()) continue;  // self handled by local copy below
     const Long recv_bytes = rcounts[i] * sizeof(RType);
     const Long send_bytes = scounts[i] * sizeof(SType);
     request_count += comm_detail::MPINumChunks(recv_bytes);
@@ -793,14 +799,15 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
     max_chunk_count = std::max<Long>(max_chunk_count, comm_detail::MPINumChunks(send_bytes));
     total_bytes += recv_bytes + send_bytes;
   }
-  if (!request_count) return Request();
   comm_detail::AssertChunkedTagRange(tag, max_chunk_count, impl_->mpi_tag_ub_);
   Vector<MPI_Request>& request = NewReq(request_count);
   Long request_iter = 0;
 
   comm_detail::TrackPointToPoint(request_count, total_bytes);
 
+  if (request_count)
   for (Integer i = 0; i < impl_->mpi_size_; i++) {
+    if (i == Rank()) continue;  // Skip self-send/recv
     const Long recv_bytes = rcounts[i] * sizeof(RType);
     if (recv_bytes) {
       Iterator<char> recv_buf = (Iterator<char>)(rbuf + rdispls[i]);
@@ -815,7 +822,9 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
       }
     }
   }
+  if (request_count)
   for (Integer i = 0; i < impl_->mpi_size_; i++) {
+    if (i == Rank()) continue;  // Skip self-send/recv
     const Long send_bytes = scounts[i] * sizeof(SType);
     if (send_bytes) {
       ConstIterator<char> send_buf = (ConstIterator<char>)(sbuf + sdispls[i]);
@@ -830,6 +839,7 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
       }
     }
   }
+  omp_par::memcpy((Iterator<char>)(rbuf + rdispls[Rank()]), (ConstIterator<char>)(sbuf + sdispls[Rank()]), scounts[Rank()] * sizeof(SType));
   return Request(&request);
 #endif
 #else
@@ -865,6 +875,11 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
   bool fits_int = true;
   for (Integer i = 0; i < impl_->mpi_size_; i++) {
     fits_int = fits_int && comm_detail::MPIFitsCount(scounts[i]) && comm_detail::MPIFitsCount(sdispls[i]) && comm_detail::MPIFitsCount(rcounts[i]) && comm_detail::MPIFitsCount(rdispls[i]);
+  }
+  { // fits_int must agree across ranks: the branches below have different collective sequences
+    Long loc_fits = (fits_int ? 1 : 0), glb_fits = 0;
+    Allreduce(Ptr2ConstItr<Long>(&loc_fits, 1), Ptr2Itr<Long>(&glb_fits, 1), 1, CommOp::MIN);
+    fits_int = (glb_fits != 0);
   }
   if (!fits_int) {  // Fall back to sparse point-to-point exchange once any count or displacement exceeds int.
     auto mpi_req = Ialltoallv_sparse(sbuf, scounts, sdispls, rbuf, rcounts, rdispls, 0);
@@ -1154,24 +1169,19 @@ template <class Type> void Comm::PartitionW(Vector<Type>& nodeList, const Vector
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
   Integer npes = Size();
   if (npes == 1) return;
-  Long nlSize = nodeList.Dim();
+  const Long nlSize = nodeList.Dim();
 
-  Vector<Long> wts;
-  Long localWt = 0;
-  if (wts_ == nullptr) {  // Construct arrays of wts.
-    wts.ReInit(nlSize);
-    #pragma omp parallel for schedule(static)
-    for (Long i = 0; i < nlSize; i++) {
-      wts[i] = 1;
-    }
-    localWt = nlSize;
-  } else {
-    wts.ReInit(nlSize, (Iterator<Long>)wts_->begin(), false);
-    #pragma omp parallel for reduction(+ : localWt)
-    for (Long i = 0; i < nlSize; i++) {
-      localWt += wts[i];
-    }
+  if (wts_ == nullptr) {  // use PartitionN
+    StaticArray<Long,2> length{nlSize, 0};
+    Allreduce<Long>(length + 0, length + 1, 1, CommOp::SUM);
+    PartitionN(nodeList, length[1]*(Rank()+1)/npes - length[1]*Rank()/npes);
+    return;
   }
+  const Vector<Long>& wts = *wts_;
+
+  Long localWt = 0;
+  #pragma omp parallel for reduction(+ : localWt)
+  for (Long i = 0; i < nlSize; i++) localWt += wts[i];
 
   Long off1 = 0, off2 = 0, totalWt = 0;
   {  // compute the total weight of the problem ...
@@ -1207,6 +1217,11 @@ template <class Type> void Comm::PartitionW(Vector<Type>& nodeList, const Vector
     }
   } else {
     sendSz[0] = nlSize;
+  }
+  {  // Skip if already partitioned
+    StaticArray<Long,2> send_to_other{nodeList.Dim() - sendSz[Rank()], 0};
+    Allreduce<Long>(send_to_other + 0, send_to_other + 1, 1, CommOp::SUM);
+    if (send_to_other[1] == 0) return;
   }
 
   // Exchange sendSz, recvSz
@@ -1264,6 +1279,12 @@ template <class Type> void Comm::PartitionN(Vector<Type>& v, Long N) const {
       for (Integer i = 0; i <= np; i++) N_dsp[i] *= dof;
     }
   }
+  {  // Skip if already partitioned
+    bool is_partitioned = true;
+    #pragma omp parallel for schedule(static) reduction(&& : is_partitioned)
+    for (Integer i = 0; i < np; i++) is_partitioned = is_partitioned && (v_cnt[i] == N_cnt[i]);
+    if (is_partitioned) return;
+  }
 
   Vector<Type> v_(N_cnt[rank]);
   {  // Set v_
@@ -1319,6 +1340,11 @@ template <class Type, class Compare> void Comm::PartitionS(Vector<Type>& nodeLis
       scnt[i] = sdsp[i + 1] - sdsp[i];
     }
     scnt[npes - 1] = nodeList.Dim() - sdsp[npes - 1];
+  }
+  {  // Skip if already partitioned
+    StaticArray<Long,2> send_to_other{nodeList.Dim()-scnt[Rank()], 0};
+    Allreduce<Long>(send_to_other+0, send_to_other+1, 1, CommOp::SUM);
+    if (send_to_other[1] == 0) return;
   }
   {  // Compute rcnt, rdsp
     rdsp[0] = 0;
