@@ -342,9 +342,9 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
         for (Integer k1 = 0; k1 < KDIM1; k1++) u_near[k1] += sigma[r] * M[r][k1];
     }
 
-    // Reference: upsampled direct quadrature.
-    const Long nsub = 100;
-    Vector<Real> u_ref = direct_upsampled_potential<Real, Kernel>(qel, elem_idx, sigma, Xt, ker, nsub);
+    // Reference potential: uniform upsampled direct quadrature (nsub=100), accurate at the moderate
+    // near distance d=0.01 used here. (Deep near needs a RectPolar gold instead -- see qbx_gold_check.)
+    const Vector<Real> u_ref = direct_upsampled_potential<Real, Kernel>(qel, elem_idx, sigma, Xt, ker, 100);
 
     // Relative error in the target potential.
     Real err2 = 0, ref2 = 0;
@@ -357,6 +357,39 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
 
     std::cout << "  test_NearInterac (" << label << "): rel_err = " << rel_err << "\n";
     SCTL_ASSERT(rel_err < rel_tol);
+}
+
+// Cross-check the near potential at a flat-panel target d above (0.4,0.6) from several
+// independent high-accuracy methods to establish a gold reference and measure hedgehog against it.
+template <class Real, class Kernel> Real qbx_gold_check(const Kernel& ker, const Real d, const Integer p = 16, const Real R = 0.02, const Integer eta = 2, const Integer up = 72) {
+    using QS = typename QuadElemList<Real>::QuadScheme;
+    const Integer COORD_DIM = 3, order = 24;
+    const Integer KDIM0 = Kernel::SrcDim(), KDIM1 = Kernel::TrgDim();
+    const Long nnode = (Long)order*order, elem_idx = 0;
+    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    QuadElemList<Real> q0(order, coord0);
+    Vector<Real> upv{(Real)0.4}, vpv{(Real)0.6}, Xs, Ns;
+    q0.GetGeom(&Xs, &Ns, nullptr, nullptr, nullptr, upv, vpv, elem_idx);
+    Vector<Real> Xt(COORD_DIM); for (Integer k=0;k<COORD_DIM;k++) Xt[k]=Xs[k]+d*Ns[k];
+    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+    Vector<Real> sigma(nnode*KDIM0);
+    for (Integer i=0;i<order;i++) for (Integer j=0;j<order;j++) for (Integer k0=0;k0<KDIM0;k0++)
+        sigma[(i*order+j)*KDIM0+k0]=cos<Real>(nds[i]+2*nds[j]+(Real)0.5*k0);
+    Vector<Real> nt;
+    auto op_u = [&](QuadElemList<Real>& q)->Vector<Real>{
+        Matrix<Real> M; QuadElemList<Real>::template NearInterac<Kernel>(M,Xt,nt,ker,(Real)1e-13,elem_idx,&q);
+        Vector<Real> u(KDIM1); u.SetZero();
+        for (Long rr=0;rr<nnode*KDIM0;rr++) for (Integer k1=0;k1<KDIM1;k1++) u[k1]+=sigma[rr]*M[rr][k1];
+        return u; };
+    QuadElemList<Real> qrp(order,coord0); qrp.SetQuadScheme(QS::RectPolar,10,512,30);
+    QuadElemList<Real> qhh(order,coord0); qhh.SetQuadScheme(QS::LineQBX); qhh.SetLineQBXParams(R,R,p,up,eta);
+    QuadElemList<Real> qrp2(order,coord0); qrp2.SetQuadScheme(QS::RectPolar,10,400,30); // 2nd RP for gold self-consistency
+    Vector<Real> u_rp=op_u(qrp), u_rp2=op_u(qrp2), u_hh=op_u(qhh);
+    auto rd=[&](const Vector<Real>&a,const Vector<Real>&b){Real e=0,n=0;for(Integer k=0;k<KDIM1;k++){e+=(a[k]-b[k])*(a[k]-b[k]);n+=b[k]*b[k];}return sqrt<Real>(e)/sqrt<Real>(n);};
+    const Real hh_err = rd(u_hh,u_rp);
+    std::cout<<"  gold d="<<d<<" p="<<p<<" R="<<R<<" eta="<<eta<<" up="<<up
+             <<": |RP256-RP512|="<<rd(u_rp2,u_rp)<<" |hh-RP512|="<<hh_err<<"\n";
+    return hh_err;
 }
 
 // Singular self-interaction vs. closed-form references on the flat unit square
@@ -796,6 +829,20 @@ int main(int argc, char** argv) {
     std::cout << "test_SelfInterac Lap_FxU (Hybrid, RP self, Nbeta=200): PASSED\n";
     test_SelfInterac<Real>(ker_FxU, QS::Hybrid, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
     std::cout << "test_SelfInterac Sto_FxU (Hybrid, RP self, Nbeta=200): PASSED\n";
+
+    // Scheme 4: Line-QBX / hedgehog near (Lu 2019 sec.3.1); near-only, self falls back to Adaptive.
+    // Verify the default high-accuracy params reach deep-near ~1e-10 for a panel-INTERIOR foot (the
+    // regime QBX is accurate in; near seams it floors ~5e-3, so it is not tested there). Reference is
+    // a RectPolar gold (RP256==RP512 to ~1e-15); direct-upsampled and Adaptive refs are themselves
+    // inaccurate at deep near and must NOT be used here. d=1e-4, flat plane.
+    std::cout << "--- Scheme 4: Line-QBX (hedgehog) deep-near vs RP-gold (defaults R=0.02L,p=16,eta=2,up=72) ---\n";
+    {
+        const Real e_fxu = qbx_gold_check<Real>(ker_FxU, 1e-4);
+        const Real e_dxu = qbx_gold_check<Real>(ker_DxU, 1e-4);
+        SCTL_ASSERT(e_fxu < 1e-8);
+        SCTL_ASSERT(e_dxu < 1e-7);
+        std::cout << "test_NearInterac (LineQBX/hedgehog, deep-near @ d=1e-4): PASSED\n";
+    }
 
     return 0;
 }

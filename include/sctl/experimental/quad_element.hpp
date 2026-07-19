@@ -23,11 +23,14 @@ namespace sctl {
       /**
        * Near/self singular-quadrature scheme: Adaptive (dyadic subdivision +
        * Alpert log correction, default), RectPolar (Bruno-2018 change of var),
-       * or Hybrid (Adaptive near + RectPolar self). For Hybrid the near phase is
-       * tolerance-driven (like Adaptive) while the self phase uses the RectPolar
-       * COV knobs (`q`, `cov_order`/Nbeta) passed to SetQuadScheme.
+       * Hybrid (Adaptive near + RectPolar self), or LineQBX (Lu 2019 sec.3.1
+       * line-QBX near). For Hybrid the near phase is tolerance-driven (like
+       * Adaptive) while the self phase uses the RectPolar COV knobs (`q`,
+       * `cov_order`/Nbeta) passed to SetQuadScheme. LineQBX affects the near
+       * phase only; its self phase falls back to the Adaptive scheme and its
+       * near knobs are set via SetLineQBXParams.
        */
-      enum class QuadScheme { Adaptive, RectPolar, Hybrid };
+      enum class QuadScheme { Adaptive, RectPolar, Hybrid, LineQBX };
 
       /** Constructor. */
       QuadElemList() {}
@@ -70,6 +73,9 @@ namespace sctl {
       /** True if the near phase uses the RectPolar COV (RectPolar scheme only). */
       bool NearUsesRectPolar() const { return scheme_ == QuadScheme::RectPolar; }
 
+      /** True if the near phase uses the line-QBX scheme (LineQBX only). */
+      bool NearUsesLineQBX() const { return scheme_ == QuadScheme::LineQBX; }
+
       /** True if the self phase uses the RectPolar COV (RectPolar or Hybrid). */
       bool SelfUsesRectPolar() const { return scheme_ == QuadScheme::RectPolar || scheme_ == QuadScheme::Hybrid; }
 
@@ -86,6 +92,25 @@ namespace sctl {
       void SetQuadScheme(QuadScheme s, Integer q = 6, Integer cov_order = 0, Integer max_depth = 30) {
         SCTL_ASSERT_MSG(max_depth == 4 || max_depth == 8 || max_depth == 12 || max_depth == 30, "Adaptive max_depth must be one of {4,8,12,30}.");
         scheme_ = s; cov_q_ = q; cov_order_ = cov_order; max_depth_ = max_depth;
+      }
+
+      /**
+       * Set the line-QBX / "hedgehog" near-quadrature parameters (LineQBX scheme only; Lu 2019
+       * sec.3.1). Check points are placed at heights R + i*r (i=0..p, units of the local patch size
+       * L = sqrt(patch area)) along the patch normal through the target, the potential is evaluated
+       * there with a 4^eta-subpaneled up_order GL rule (0 => 2*order), and extrapolated (degree-p
+       * polynomial) to the target.
+       *
+       * NOTE: accurate only when the target is FAR FROM PANEL SEAMS (edges/corners); near a seam the
+       * per-pair check-point line cannot resolve the adjacent panel's edge singularity (~5e-3 floor).
+       *
+       * Defaults R=r=0.02L, p=16, eta=2, up=72 target deep-near ~1e-10 for panel-interior targets
+       * (verified vs a RectPolar gold at d=1e-4). Accuracy is a U-curve in R and p; up_order/eta only
+       * need to resolve the check points at the chosen R. Paper's cheap ~1e-2 setting: R=r=0.15L, p=8,
+       * eta=1, up=0.
+       */
+      void SetLineQBXParams(Real R_h = 0.02, Real r_h = 0.02, Integer p = 16, Integer up_order = 72, Integer eta = 2) {
+        qbx_R_ = R_h; qbx_r_ = r_h; qbx_p_ = p; qbx_up_order_ = up_order; qbx_eta_ = eta;
       }
 
       /**
@@ -372,6 +397,10 @@ namespace sctl {
       template <Integer order, class Kernel> static void NearInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default);
       template <Integer order, class Kernel> static void SelfInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default);
 
+      // Line-QBX / hedgehog near-interaction block (Lu 2019 sec.3.1); knobs from SetLineQBXParams.
+      // Accurate only for panel-interior targets (see SetLineQBXParams seam caveat).
+      template <Integer order, class Kernel> static void NearInteracBlockQBX(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
+
       Long nelem = 0;
       Integer order = 0;
       Vector<Real> coord;
@@ -380,6 +409,13 @@ namespace sctl {
       Integer cov_q_ = 6;
       Integer cov_order_ = 0;
       Integer max_depth_ = 30;
+      // Line-QBX near knobs (LineQBX scheme only); see SetLineQBXParams. Defaults target deep-near
+      // accuracy ~1e-10 (verified vs a RectPolar gold at d=1e-4). L = sqrt(patch area).
+      Real qbx_R_ = 0.02;         // first check-point distance in units of patch size L
+      Real qbx_r_ = 0.02;         // check-point spacing in units of L
+      Integer qbx_p_ = 16;        // extrapolant degree (p+1 check points)
+      Integer qbx_up_order_ = 72; // per-subpatch smooth-rule GL order; 0 => 2*order
+      Integer qbx_eta_ = 2;       // sub-paneling level: 4^eta = (2^eta)^2 subpatches
   };
 
 }
