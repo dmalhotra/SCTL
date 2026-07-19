@@ -35,10 +35,10 @@ int main() {
   std::uniform_real_distribution<Real> U(0.0, 1.0);
   std::uniform_int_distribution<int>   Ud(0, Morton::MAX_DEPTH);
 
-  // --- Default ctor: depth=0, coord components all zero ---
-  std::printf("default ctor :\n");
+  // --- Value-init: depth=0, coord components all zero (bare `Morton m;` is uninitialized) ---
+  std::printf("value-init ctor :\n");
   {
-    Morton m;
+    Morton m{};
     CHECK(m.Depth() == 0);
     std::array<Real, DIM> c;
     m.Coord(c);
@@ -137,7 +137,7 @@ int main() {
     CHECK(m < n);
     // Next at depth=0 may saturate (no representable successor); we only
     // check it doesn't crash.
-    Morton root;
+    Morton root{};
     Morton root_next = root.Next();
     (void)root_next;
     CHECK(true);
@@ -146,7 +146,7 @@ int main() {
   // --- Children : 2^DIM children at depth+1, each containing distinct sub-regions ---
   std::printf("Children :\n");
   {
-    Morton root;
+    Morton root{};
     sctl::Vector<Morton> children;
     root.Children(children);
     CHECK(children.Dim() == (1 << DIM));
@@ -165,7 +165,7 @@ int main() {
   std::printf("isAncestor :\n");
   {
     Real coord[DIM] = {0.4, 0.4, 0.4};
-    Morton root;
+    Morton root{};
     Morton mid (sctl::Ptr2ConstItr<Real>(coord, DIM), 5);
     Morton leaf(sctl::Ptr2ConstItr<Real>(coord, DIM), Morton::MAX_DEPTH);
     CHECK(root.isAncestor(mid));
@@ -212,7 +212,7 @@ int main() {
   //   non-periodic at root has all "off-domain" neighbours flagged with depth=INVALID_DEPTH.
   std::printf("NbrList :\n");
   {
-    Morton root;
+    Morton root{};
     sctl::Vector<Morton> nbrs;
     root.NbrList(nbrs, /*level=*/0, /*periodic=*/sctl::all_periodic(DIM));
     Long pow3 = 1;
@@ -238,7 +238,7 @@ int main() {
   // --- operator<< (smoke) ---
   std::printf("operator<< :\n");
   {
-    Morton m;
+    Morton m{};
     std::ostringstream os;
     os << m;
     CHECK(!os.str().empty());
