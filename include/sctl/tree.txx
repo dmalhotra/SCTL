@@ -989,8 +989,8 @@ namespace sctl {
         }
         #pragma omp parallel for schedule(static)
         for (Integer i = 0; i < np; i++) {
-          const auto pair_start = std::make_pair(i, Morton<DIM>());
-          const auto pair_end = std::make_pair(i+1, Morton<DIM>());
+          const auto pair_start = std::make_pair(Long(i), Morton<DIM>());
+          const auto pair_end = std::make_pair(Long(i+1), Morton<DIM>());
           Long cnt_start = std::lower_bound(user_node_lst.begin(), user_node_lst.end(), pair_start) - user_node_lst.begin();
           Long cnt_end   = std::lower_bound(user_node_lst.begin(), user_node_lst.end(), pair_end  ) - user_node_lst.begin();
           user_cnt[i] = cnt_end - cnt_start;
