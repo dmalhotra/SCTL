@@ -268,21 +268,23 @@ template <Integer DIM> SCTL_GPU_HD Morton<DIM> MortonCode<DIM>::CommonAncestor(c
   const int p = highest_bit_pos(diff);
   if (p < 0) return Morton<DIM>{*this, static_cast<uint8_t>(MAX_DEPTH)};  // codes identical
   const uint8_t d = static_cast<uint8_t>((TOTAL_BITS - 1 - p) / DIM);
-  const int k = TOTAL_BITS - static_cast<int>(d) * static_cast<int>(DIM);
-  // shift-by-TOTAL_BITS on built-in MortonInteger is UB; guard with k < TOTAL_BITS (only triggers at d == 0).
-  const MortonInteger anc_code = (k < TOTAL_BITS) ? ((code >> k) << k) : MortonInteger{};
-  return Morton<DIM>{MortonCode(anc_code), d};
+  return Morton<DIM>{*this, d};
 }
 
 template <Integer DIM> SCTL_GPU_HD Morton<DIM> MortonCode<DIM>::Ancestor(uint8_t depth) const {
-  const int k = TOTAL_BITS - static_cast<int>(depth) * static_cast<int>(DIM);
-  const MortonInteger anc_code = (k < TOTAL_BITS) ? ((code >> k) << k) : MortonInteger{};
-  return Morton<DIM>{MortonCode(anc_code), depth};
+  return Morton<DIM>{*this, depth};
 }
 
 // ---------------------------------------------------------------------------
 // Morton
 // ---------------------------------------------------------------------------
+
+template <Integer DIM> SCTL_GPU_HD Morton<DIM>::Morton(MortonCode<DIM> mid_, uint8_t depth_) : mid(mid_), depth(depth_) {
+  if (depth_ <= MAX_DEPTH) {
+    const int k = static_cast<int>(MortonCode<DIM>::TOTAL_BITS) - static_cast<int>(depth_) * static_cast<int>(DIM);
+    mid = MortonCode<DIM>(typename MortonCode<DIM>::MortonInteger((mid_.code >> k) << k));
+  }
+}
 
 template <Integer DIM> template <class T> Morton<DIM>::Morton(ConstIterator<T> coord, uint8_t depth_) {
   T c[DIM];

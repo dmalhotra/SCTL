@@ -168,9 +168,10 @@ template <Integer DIM> class Morton {
   SCTL_GPU_HD Morton() = default;
 
   /**
-   * Aggregate-style ctor (preserves `Morton{code, depth}` initialiser-list syntax).
+   * Box at depth `depth_` containing `mid_` (code snapped to the grid). Bits above
+   * `TOTAL_BITS` (past-end sentinel) are preserved; depths > MAX_DEPTH keep the code as-is.
    */
-  SCTL_GPU_HD Morton(MortonCode<DIM> mid_, uint8_t depth_) : mid(mid_), depth(depth_) {}
+  SCTL_GPU_HD Morton(MortonCode<DIM> mid_, uint8_t depth_);
 
   /**
    * Construct the depth-`depth_` box containing `coord` (truncates low bits). Accepts a raw
