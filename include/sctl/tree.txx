@@ -382,7 +382,6 @@ namespace sctl {
     { // Build linear tree (node_mid) and set mins
       const auto split_anchor = [](const MortonCode<DIM>& m0, const MortonCode<DIM>& m1) {
         const uint8_t d = m0.CommonAncestor(m1).Depth();
-        SCTL_ASSERT(d>=0 && d < Morton<DIM>::MAX_DEPTH);
         return m0.Ancestor(std::min<uint8_t>(Morton<DIM>::MAX_DEPTH,d+1)).Next();
       };
 
@@ -405,25 +404,37 @@ namespace sctl {
       }
       SCTL_ASSERT(M > 0);
 
-      ScratchBuf<MortonCode<DIM>> pt_mid_(pt_mid.Dim() + M);
-      if (np > 1) { // Set mins, pt_mid <-- [pt_mid; M points from rank+1]
+      ScratchBuf<MortonCode<DIM>> pt_mid_(pt_mid.Dim() + 2*M);
+      if (np > 1) { // Set mins, pt_mid <-- [M points from rank-1; pt_mid; M points from rank+1]
+        Long send_size0 = (rank+1<np ? M : 0);
         Long send_size1 = (rank  > 0 ? M : 0);
+        Long recv_size0 = (rank  > 0 ? M : 0);
         Long recv_size1 = (rank+1<np ? M : 0);
-        omp_par::memcpy(pt_mid_.begin(), pt_mid.begin(), pt_mid.Dim());
+        SCTL_ASSERT(recv_size0 + pt_mid.Dim() + recv_size1 <= pt_mid_.Dim());
+        omp_par::memcpy(pt_mid_.begin() + recv_size0, pt_mid.begin(), pt_mid.Dim());
 
-        auto recv_req1 = comm.Irecv(pt_mid_.begin() + pt_mid.Dim(), recv_size1, (rank+1)%np, 1);
+        auto recv_req0 = comm.Irecv(pt_mid_.begin(), recv_size0, (rank+np-1)%np, 0);
+        auto recv_req1 = comm.Irecv(pt_mid_.begin() + recv_size0 + pt_mid.Dim(), recv_size1, (rank+1)%np, 1);
+        auto send_req0 = comm.Issend(pt_mid.begin() + pt_mid.Dim() - send_size0, send_size0, (rank+1)%np, 0);
         auto send_req1 = comm.Issend(pt_mid.begin(), send_size1, (rank+np-1)%np, 1);
+        comm.Wait(std::move(recv_req0));
         comm.Wait(std::move(recv_req1));
+        comm.Wait(std::move(send_req0));
         comm.Wait(std::move(send_req1));
+        const Long Npts_buf = pt_mid.Dim() + recv_size0 + recv_size1;
 
         { // Set mins
           mins.ReInit(np);
-          const Morton<DIM> m0 = (!rank ? Morton<DIM>{} :  split_anchor(pt_mid[0], pt_mid[M]) );
+          SCTL_ASSERT(Npts_buf > M);
+          const Morton<DIM> m0 = (!rank ? Morton<DIM>{} :  split_anchor(pt_mid_[0], pt_mid_[M]) );
           comm.Allgather(Ptr2ConstItr<Morton<DIM>>(&m0,1), 1, mins.begin(), 1);
         }
-        const Long idx0 = std::lower_bound(pt_mid_.begin(), pt_mid_.end(), mins[rank].mid) - pt_mid_.begin();
-        const Long idx1 = (rank==np-1) ? pt_mid.Dim() : (std::lower_bound(pt_mid_.begin(), pt_mid_.end(), mins[rank+1].mid) - pt_mid_.begin());
+        const Long idx0 = std::lower_bound(pt_mid_.begin(), pt_mid_.begin() + Npts_buf, mins[rank].mid) - pt_mid_.begin();
+        const Long idx1 = std::lower_bound(pt_mid_.begin(), pt_mid_.begin() + Npts_buf, (rank==np-1) ? Morton<DIM>().Next().mid : mins[rank+1].mid) - pt_mid_.begin();
         pt_mid.ReInit(idx1-idx0, pt_mid_.begin()+idx0, false);
+      } else {
+        mins.ReInit(1);
+        mins[0] = Morton<DIM>{};
       }
 
       { // Build linear MortonID tree from pt_mid (chunked parallel walk)
@@ -436,7 +447,7 @@ namespace sctl {
 
         // Upper bound: ~(MAX_DEPTH+1) nodes/leaf, chunk_size/M leaves/chunk, 4x slack.
         const Long chunk_size_max = (N + nthreads - 1) / nthreads;
-        const Long max_emits      = 4 * chunk_size_max * (Morton<DIM>::MAX_DEPTH + 1) / std::max<Long>(1, M) + 4 * Morton<DIM>::MAX_DEPTH + 16;
+        const Long max_emits      = 4 * chunk_size_max * (Morton<DIM>::MAX_DEPTH + 1) / std::max<Long>(1, M) + 4 * (Morton<DIM>::MAX_DEPTH + 1) * (Long(1) << DIM) + 16;
 
         struct alignas(64) PaddedLong { Long v; char pad[64 - sizeof(Long)]; };  // avoid false sharing
         ScratchBuf<PaddedLong> local_sizes(nthreads);
