@@ -34,8 +34,10 @@ namespace sctl {
 
     /**
      * Convenience: build a ready QuadElemList from a gmsh file.
+     * @param[in] comm communicator. When comm.Size() > 1, every rank reads the full
+     * mesh and keeps only its contiguous element slice (see QuadElemList::Init).
      */
-    static QuadElemList<Real> LoadQuadElemList(const std::string& fname, Integer target_order);
+    static QuadElemList<Real> LoadQuadElemList(const std::string& fname, Integer target_order, const Comm& comm = Comm::Self());
 
     /**
      * Parse the raw quad patches (no resampling). All quads must share the same

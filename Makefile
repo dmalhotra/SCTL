@@ -43,7 +43,16 @@ ifeq ($(BENCH), 1)
 	CXXFLAGS += -DBENCH_QUAD
 endif
 
-#CXXFLAGS += -DSCTL_HAVE_MPI #use MPI
+# Opt-in distributed-memory build. `make MPI=1 ...` compiles with the MPI wrapper
+# compiler and defines SCTL_HAVE_MPI so sctl::Comm::World() is a real MPI communicator
+# (QuadElemList partitions its elements across ranks). Default build stays serial (g++).
+# As with DEBUG/BENCH, do NOT pass CXXFLAGS+= on the command line -- it overrides the
+# flags assigned here rather than appending to them.
+MPI ?= 0
+ifeq ($(MPI), 1)
+	CXX = mpicxx
+	CXXFLAGS += -DSCTL_HAVE_MPI
+endif
 
 # CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
 # CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
@@ -107,18 +116,22 @@ TARGET_BIN = \
        $(BINDIR)/test-sph-harm \
        $(BINDIR)/test-tensor \
        $(BINDIR)/test-vec \
+       $(BINDIR)/bench-quad-interac \
+       $(BINDIR)/bench-gmsh-pipeline \
        $(BINDIR)/test-scratch-pool \
        $(BINDIR)/test-scratch-pool-perf \
 	   $(BINDIR)/unit-test-quad-element \
 	   $(BINDIR)/test-quad-elem
 
-.PHONY: all test clean quad bench
+.PHONY: all test clean quad bench bench-gmsh
 
 all : $(TARGET_BIN)
 
 quad : $(BINDIR)/unit-test-quad-element
 
 bench : $(BINDIR)/bench-quad-interac
+
+bench-gmsh : $(BINDIR)/bench-gmsh-pipeline
 
 $(BINDIR)/%: $(OBJDIR)/%.o
 	-@$(MKDIRS) $(dir $@)

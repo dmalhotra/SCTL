@@ -18,24 +18,38 @@
 
 namespace sctl {
 
-  template <class Real> template <class ValueType> QuadElemList<Real>::QuadElemList(Integer order0, const Vector<ValueType>& coord0) {
-    Init(order0, coord0);
+  template <class Real> void QuadElemList<Real>::PartitionRange(Long Nelem_total, const Comm& comm, Long& i0, Long& i1) {
+    const Long Np = comm.Size();
+    const Long pid = comm.Rank();
+    i0 = Nelem_total * (pid + 0) / Np;
+    i1 = Nelem_total * (pid + 1) / Np;
   }
 
-  template <class Real> template <class ValueType> void QuadElemList<Real>::Init(Integer order0, const Vector<ValueType>& coord0) {
+  template <class Real> template <class ValueType> QuadElemList<Real>::QuadElemList(Integer order0, const Vector<ValueType>& coord0, const Comm& comm) {
+    Init(order0, coord0, comm);
+  }
+
+  template <class Real> template <class ValueType> void QuadElemList<Real>::Init(Integer order0, const Vector<ValueType>& coord0, const Comm& comm) {
     order = order0;
     SCTL_ASSERT(order > 0);
 
     const Long nnode_per_elem = (Long)order * order;
     SCTL_ASSERT(coord0.Dim() % (nnode_per_elem * COORD_DIM) == 0);
-    nelem = coord0.Dim() / (nnode_per_elem * COORD_DIM);
+    const Long nelem_total = coord0.Dim() / (nnode_per_elem * COORD_DIM);
+
+    // When distributed, `coord0` holds the full (replicated) mesh; keep only this
+    // rank's contiguous element slice [i0,i1).
+    Long i0, i1;
+    PartitionRange(nelem_total, comm, i0, i1);
+    nelem = i1 - i0;
 
     coord.ReInit(nelem * COORD_DIM * nnode_per_elem);
     for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
       const Long base = elem_idx * COORD_DIM * nnode_per_elem;
+      const Long src_elem = i0 + elem_idx;
       for (Integer k = 0; k < COORD_DIM; k++) {
         for (Long p = 0; p < nnode_per_elem; p++) {
-          coord[base + k * nnode_per_elem + p] = (Real)coord0[(elem_idx * nnode_per_elem + p) * COORD_DIM + k];
+          coord[base + k * nnode_per_elem + p] = (Real)coord0[(src_elem * nnode_per_elem + p) * COORD_DIM + k];
         }
       }
     }
@@ -470,6 +484,17 @@ namespace sctl {
     return VLevelsForDigits(digits);
   }
 
+  template <class Real> Integer QuadElemList<Real>::NbetaForDigits(const Integer digits) {
+    // Worst-case tol->Nbeta ladder for the RectPolar COV, calibrated on the maximally
+    // twisted sphere (theta=pi, PatchPerFace=5, near R=1.001 column of Nbeta_sweep.txt):
+    // smallest ladder Nbeta reaching 10^-digits with margin. RectPolar converges much
+    // faster in Nbeta on near-flat geometry, so this is conservative there.
+    if      (digits <= 2) return 128; // 1e-1..1e-2: 128 -> 7.6e-3
+    else if (digits == 3) return 256; // 1e-3     : 256 -> 1.3e-4
+    else if (digits <= 5) return 384; // 1e-4,1e-5: 384 -> 2.4e-6
+    else                  return 512; // <=1e-6   : 512 -> 5.6e-8 (ladder max)
+  }
+
   template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>* Mv_pre, const Matrix<Real>* dMv_pre, const Matrix<Real>* Mu_pre, const Matrix<Real>* dMu_pre, const Matrix<Real>* MvT_pre, const Matrix<Real>* MuT_pre, const Matrix<Real>* dMuT_pre) {
     // Accumulate the tensor-product quadrature (u_param x v_param, weights wu (x) wv)
     // against the single target Xtrg. Shared by the near (per-leaf) and self schemes.
@@ -838,7 +863,8 @@ namespace sctl {
 
     // TODO: only binary split right now, see CSBQ for variable step-size.
 
-    if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker); return; }
+    if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
+    if (qel.NearUsesLineQBX()) { NearInteracBlockQBX<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker); return; }
 
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -921,7 +947,8 @@ namespace sctl {
   // NOTE (staged): Stage 0 delegates each leaf to IntegrateBlock exactly like NearInteracBlock;
   // later stages replace the per-leaf loop with batched phases.
   template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockBatched(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
-    if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker); return; }
+    if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
+    if (qel.NearUsesLineQBX()) { NearInteracBlockQBX<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker); return; }
 
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -1105,7 +1132,7 @@ namespace sctl {
     }
   }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default) {
     // Rectangular-polar near-interaction: cluster a single tensor-product GL rule
     // toward the nearest point on the element via the COV, integrate once.
     static constexpr Integer KDIM0 = Kernel::SrcDim();
@@ -1136,40 +1163,118 @@ namespace sctl {
     IntegrateBlock<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, u_param, wu, v_param, wv, ker);
   }
 
-  template <class Real> void QuadElemList<Real>::BuildNearLeaves(Vector<Real>& leaf_box, Vector<Long>& leaf_depth, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse, const Integer max_depth) {
-    // Geometry-free adaptive refinement of [0,1]^2. A cell is a leaf once the refinement center is
-    // far enough from it in parameter space (pdist >= b_ellipse*width) -- the 1D BuildGraded1DSegments
-    // admissibility lifted to 2D (surface speed cancels, so no per-cell EvalPoint; conservative vs
-    // the old physical test) -- or the depth cap L is reached. L comes from the physical NODE distance
-    // (the off-surface floor). Two variants selectable at compile time (for benchmarking):
-    //   kNearTwoPhase=false -- SINGLE-PHASE, fully adaptive: clamp toward the closest NODE, no
-    //     post-hoc grading. Cheapest; no Gauss-Newton solve (production default).
-    //   kNearTwoPhase=true  -- TWO-PHASE: clamp toward the exact FOOT (GetClosestPoint, now fallback-
-    //     free after the projected-gradient fix), and geometrically grade the foot cell toward the
-    //     exact foot for the final K_grade levels (foot-aligned tip).
-    // Returns leaf rectangles ({u0,u1,v0,v1} per leaf) + depths (diagnostic; BENCH_NEAR report).
-    // Shared with WriteNearInteracVTK so solve and visualization use one refinement.
-    constexpr bool kNearTwoPhase = false;   // flip to true to build the two-phase variant
-    constexpr Long MaxLeaves = 4096;
-    constexpr Integer K_grade = 2;          // two-phase: # of final levels graded toward the exact foot
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockQBX(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
+    // Line-QBX / "hedgehog" near-interaction (Lu 2019 sec.3.1): evaluate THIS source patch's layer
+    // potential at a line of check points off the surface with a single upsampled smooth GL rule,
+    // then 1D-polynomial-extrapolate back to the near target.
+    //
+    // ACCURACY CAVEAT: this per-pair form is accurate only when the target is FAR FROM PANEL SEAMS
+    // (edges/corners). For a foot on/near a shared edge the check-point line cannot resolve the
+    // adjacent panel's own edge singularity, so error floors near seams (~5e-3 vs ~5e-7 interior).
+    // Use for panel-INTERIOR near targets; near seams prefer Adaptive (closest-point) or RectPolar.
+    static constexpr Integer KDIM0 = Kernel::SrcDim();
+    static constexpr Integer KDIM1full = Kernel::TrgDim();
+    SCTL_ASSERT(qel.order == order);
+    const Long nnode = (Long)order * order;
+    const bool trg_dot_prod = (normal_trg.Dim() > 0);
+    const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
 
-    // Closest node + its physical distance (caps depth). Refinement center = exact foot (two-phase)
-    // or node (single-phase).
-    Real unode, vnode;
+    // Foot point (u*,v*) + local geometry: y (foot), n (unit normal), h (local element size).
+    Real ustar, vstar;
+    BENCH_TIC(ClosestPoint);
+    qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
+    BENCH_TOC(ClosestPoint);
+    Vector<Real> up{ustar}, vp{vstar}, Xfoot, Nfoot, Afoot;
+    qel.GetGeom(&Xfoot, &Nfoot, &Afoot, nullptr, nullptr, up, vp, elem_idx);
+    const Real h = sqrt<Real>(Afoot[0]); // sqrt(area element) ~ local edge length on [0,1]^2
+
+    // Check-point line through the TARGET along the patch normal d = s*n at the foot (s = target's
+    // side): check point i sits at height R+i*r above the patch; extrapolate from {R+i*r} to the
+    // target height Hx = |(x-y).n|. Marching along n (not (x-y)/|x-y|) keeps the check points off
+    // the source patch (no grazing) -- correct for off-surface near targets.
+    Real d[COORD_DIM], Hx;
+    {
+      Real xy_dot_n = 0;
+      for (Integer k = 0; k < COORD_DIM; k++) xy_dot_n += (Xtrg[k] - Xfoot[k]) * Nfoot[k];
+      const Real s = (xy_dot_n >= 0 ? (Real)1 : (Real)-1);
+      for (Integer k = 0; k < COORD_DIM; k++) d[k] = s * Nfoot[k];
+      Hx = s * xy_dot_n;
+    }
+
+    // Upsampled smooth rule over the source patch: 4^eta = (2^eta)^2 uniform square subpatches, each
+    // an `up_order` GL rule (eta=0 => single panel). Interp operators built once per 1D subinterval
+    // (uniform => shared by u and v) and reused across check points via IntegrateBlock's *_pre.
+    const Integer up_order = (qel.qbx_up_order_ > 0 ? qel.qbx_up_order_ : 2*order);
+    Vector<Real> qnds, qwts;
+    LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, up_order);
+    const Integer nsub = (Integer)1 << std::max<Integer>(0, qel.qbx_eta_); // 2^eta subpanels/dir
+    const Real hsub = (Real)1 / nsub;
+    Vector<NodeRuleData> sub_rule(nsub);
+    for (Integer s = 0; s < nsub; s++) {
+      sub_rule[s].param = s*hsub + hsub*qnds;
+      sub_rule[s].w = qwts * hsub;
+      BuildInterp1D<order>(sub_rule[s].M, sub_rule[s].dM, sub_rule[s].MT, sub_rule[s].dMT, sub_rule[s].param);
+    }
+
+    // Check-point heights t_i = R + i*r (above the patch) and the 1D extrapolation weights e_i
+    // from {t_i} to the target height Hx (Lagrange weights, (p+1) x 1 row-major).
+    const Real R = qel.qbx_R_ * h, r = qel.qbx_r_ * h;
+    const Integer p = qel.qbx_p_;
+    Vector<Real> src_nds(p+1), trg_nds{Hx}, evec;
+    for (Integer i = 0; i <= p; i++) src_nds[i] = R + i*r;
+    LagrangeInterp<Real>::Interpolate(evec, src_nds, trg_nds);
+
+    if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) M_acc.ReInit(nnode, KDIM0*KDIM1_out);
+    M_acc.SetZero();
+
+    // Accumulate sum_i e_i * sum_{subpatch} (nodal->c_i operator). IntegrateBlock is linear in
+    // the quadrature weights and accumulates (+=) into M_acc, so folding e_i into the u-weights
+    // adds e_i*M_i directly with no temp matrices.
+    Vector<Real> wu(up_order);
+    for (Integer i = 0; i <= p; i++) {
+      // Check point on the line through the target, at height R+i*r above the patch:
+      // c_i = x + (R + i*r - Hx)*d  (shift the target along the normal to the desired height).
+      Vector<Real> ci(COORD_DIM);
+      for (Integer k = 0; k < COORD_DIM; k++) ci[k] = Xtrg[k] + (R + i*r - Hx) * d[k];
+      for (Integer su = 0; su < nsub; su++) {
+        for (Integer a = 0; a < up_order; a++) wu[a] = sub_rule[su].w[a] * evec[i];
+        for (Integer sv = 0; sv < nsub; sv++) {
+          IntegrateBlock<order>(M_acc, qel, elem_idx, ci, normal_trg,
+                                sub_rule[su].param, wu, sub_rule[sv].param, sub_rule[sv].w, ker,
+                                &sub_rule[sv].M, &sub_rule[sv].dM, &sub_rule[su].M, &sub_rule[su].dM,
+                                &sub_rule[sv].MT, &sub_rule[su].MT, &sub_rule[su].dMT);
+        }
+      }
+    }
+  }
+
+  template <class Real> void QuadElemList<Real>::BuildNearLeaves(Vector<Real>& leaf_box, Vector<Long>& leaf_depth, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse, const Integer max_depth) {
+    // Geometry-free adaptive refinement of [0,1]^2 toward the closest POINT (foot). A cell is a leaf
+    // once the foot is far enough from it in parameter space (pdist >= b_ellipse*width, the 1D
+    // BuildGraded1DSegments admissibility lifted to 2D) or the depth cap L is reached; the foot-owning
+    // cell is then geometrically graded toward the exact foot for the final K_grade levels.
+    //
+    // The refinement center AND depth cap both come from GetClosestPoint (the FOOT), not the closest
+    // NODE: for an off-surface target whose foot lies BETWEEN nodes (panel-interior near target) the
+    // nearest-node distance overestimates the near distance, so a node-based cap under-refines and
+    // leaves the foot mid-leaf where the smooth GL leaf rule cannot resolve it (~0.1-0.5 error).
+    // Returns leaf rectangles ({u0,u1,v0,v1}) + depths. Shared with WriteNearInteracVTK.
+    constexpr Long MaxLeaves = 4096;
+    constexpr Integer K_grade = 2;          // # of final levels graded toward the exact foot
+
+    Real ustar, vstar;
     BENCH_TIC(ClosestNode);
-    const Real dist = qel.GetClosestNode(unode, vnode, elem_idx, Xtrg);
-    Real ustar = unode, vstar = vnode;
-    if (kNearTwoPhase) qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
+    const Real dist = qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg); // foot (u*,v*) + foot distance
     BENCH_TOC(ClosestNode);
 
-    // Panel scale from the surface speeds at the node (full parameter width is 1).
+    // Panel scale from the surface speeds at the foot (full parameter width is 1).
     Real Xc[COORD_DIM], dXdu[COORD_DIM], dXdv[COORD_DIM];
-    qel.EvalPoint(Xc, dXdu, dXdv, unode, vnode, elem_idx, nullptr);
+    qel.EvalPoint(Xc, dXdu, dXdv, ustar, vstar, elem_idx, nullptr);
     Real su2 = 0, sv2 = 0;
     for (Integer k = 0; k < COORD_DIM; k++) { su2 += dXdu[k]*dXdu[k]; sv2 += dXdv[k]*dXdv[k]; }
     const Real L_phys = std::max<Real>(sqrt<Real>(su2), sqrt<Real>(sv2));
 
-    // Depth cap L from the node distance: the innermost cell at depth L has physical size
+    // Depth cap L from the foot distance: the innermost cell at depth L has physical size
     // ~ b_ellipse*L_phys*2^-L, admissible once that drops below dist, i.e. L ~ log2(b_ellipse*
     // L_phys/dist). A non-finite / non-positive dist (near-touching / degenerate) forces the full cap.
     Integer L;
@@ -1189,7 +1294,7 @@ namespace sctl {
       box.push_back(u0); box.push_back(u1); box.push_back(v0); box.push_back(v1); dep.push_back(d);
       SCTL_ASSERT((Long)dep.size() <= MaxLeaves);
     };
-    Vector<Real> useg, vseg; Vector<Long> useg_depth, vseg_depth;  // two-phase grading buffers
+    Vector<Real> useg, vseg; Vector<Long> useg_depth, vseg_depth;  // foot-cell grading buffers
 
     while (!stack.empty()) {
       const Panel p = stack.back(); stack.pop_back();
@@ -1202,15 +1307,11 @@ namespace sctl {
         emit(p.u0, p.u1, p.v0, p.v1, p.depth);   // admissible (or at cap) -> single-GL leaf
         continue;
       }
-      bool grade_here = false;
-      if (kNearTwoPhase) {
-        // Half-open containment so exactly ONE cell owns the foot (no overlapping panels).
-        const bool contains_foot = (ustar >= p.u0 && (ustar < p.u1 || p.u1 >= 1) &&
-                                    vstar >= p.v0 && (vstar < p.v1 || p.v1 >= 1));
-        grade_here = (contains_foot && p.depth >= Lswitch);
-      }
-      if (grade_here) {
-        // Two-phase: tensor-grade the foot cell toward the EXACT foot for levels depth..L.
+      // Half-open containment so exactly ONE cell owns the foot (no overlapping panels).
+      const bool contains_foot = (ustar >= p.u0 && (ustar < p.u1 || p.u1 >= 1) &&
+                                  vstar >= p.v0 && (vstar < p.v1 || p.v1 >= 1));
+      if (contains_foot && p.depth >= Lswitch) {
+        // Tensor-grade the foot cell toward the EXACT foot for levels depth..L.
         const Integer sub_cap = L - p.depth;
         const Real wu = p.u1 - p.u0, wv = p.v1 - p.v0;
         BuildGraded1DSegments(useg, useg_depth, (ustar - p.u0)/wu, b_ellipse, sub_cap);
@@ -1247,7 +1348,7 @@ namespace sctl {
     // toward u0 x Alpert log-singular v-rule toward v0; both rules + interpolation are
     // preloaded (geometry-independent, fixed by order/ti/tj/digits), integrated by
     // IntegrateBlock. IntegrateBlock still does the target-centered geometry per target.
-    if (qel.SelfUsesRectPolar()) { SelfInteracBlockRP<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, normal_trg, ker); return; }
+    if (qel.SelfUsesRectPolar()) { SelfInteracBlockRP<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
 
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -1264,7 +1365,7 @@ namespace sctl {
     IntegrateBlock<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru.param, ru.w, rv.param, rv.w, ker, &rv.M, &rv.dM, &ru.M, &ru.dM, &rv.MT, &ru.MT, &ru.dMT);
   }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::SelfInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::SelfInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default) {
     // Rectangular-polar singular self-interaction for on-surface node (ti,tj). A single
     // tensor-product GL rule clustered toward (u0,v0) in both directions; the COV weight
     // vanishes at the singularity, so no log-singular split is needed. RP is non-adaptive,
@@ -1809,18 +1910,16 @@ namespace sctl {
     }
 
     {
-      const Long Np = comm.Size();
-      const Long pid = comm.Rank();
-
-      const Long i0 = Nelem_total * (pid + 0) / Np;
-      const Long i1 = Nelem_total * (pid + 1) / Np;
+      Long i0, i1;
+      PartitionRange(Nelem_total, comm, i0, i1);
 
       const Long j0 = i0 * nnode_per_elem;
       const Long j1 = i1 * nnode_per_elem;
 
       Vector<ValueType> coord_local;
       coord_local.ReInit((j1 - j0) * COORD_DIM, coord_.begin() + j0 * COORD_DIM, false);
-      Init<ValueType>(file_order, coord_local);
+      // Slice already local to this rank; pass Comm::Self() so Init does not re-partition.
+      Init<ValueType>(file_order, coord_local, Comm::Self());
     }
   }
 

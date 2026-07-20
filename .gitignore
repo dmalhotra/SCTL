@@ -24,5 +24,4 @@ dlerr_*.csv
 /sphere
 /sphere_ord9
 /sphere_ord9_dense
-/cylinder_ord9
 *.geom
