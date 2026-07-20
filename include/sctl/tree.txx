@@ -231,18 +231,9 @@ namespace sctl {
     }
 
     const auto first_child = [](const Morton<DIM>& m) {
-      return m.Ancestor(m.Depth()+1);
+      return m.DFD(m.Depth()+1);
     };
-    const auto coarsest_ancestor_mid = [](const Morton<DIM>& m0) {
-      Morton<DIM> md;
-      Integer d0 = m0.Depth();
-      for (Integer d = 0; d <= d0; d++) {
-        md = m0.Ancestor(d);
-        if (md.Ancestor(d0) == m0) break;
-      }
-      return md;
-    };
-    const auto complete_tree = [](Vector<Morton<DIM>>& mid_lst, const Morton<DIM>& mid_begin, const Morton<DIM>& mid_end) {
+    const auto complete_tree = [&first_child](Vector<Morton<DIM>>& mid_lst, const Morton<DIM>& mid_begin, const Morton<DIM>& mid_end) {
       // Fill in the nodes for a completed tree in the interval
       // [mid_begin, mid_end) and append to mid_lst.
       // Returns mid_end.
@@ -250,7 +241,7 @@ namespace sctl {
       Morton<DIM> mid_iter = mid_begin;
       while (mid_iter != mid_end) {
         mid_lst.PushBack(mid_iter);
-        if (mid_iter.isAncestor(mid_end)) mid_iter = mid_iter.Ancestor(mid_iter.Depth()+1);
+        if (mid_iter.isAncestor(mid_end)) mid_iter = first_child(mid_iter);
         else mid_iter = mid_iter.Next();
       }
       return mid_end;
@@ -389,6 +380,12 @@ namespace sctl {
     };
 
     { // Build linear tree (node_mid) and set mins
+      const auto split_anchor = [](const MortonCode<DIM>& m0, const MortonCode<DIM>& m1) {
+        const uint8_t d = m0.CommonAncestor(m1).Depth();
+        SCTL_ASSERT(d>=0 && d < Morton<DIM>::MAX_DEPTH);
+        return m0.Ancestor(std::min<uint8_t>(Morton<DIM>::MAX_DEPTH,d+1)).Next();
+      };
+
       Vector<MortonCode<DIM>> pt_mid;
       { // Construct sorted pt_mid
         Long Npt = coord.Dim() / DIM;
@@ -400,8 +397,6 @@ namespace sctl {
         }
         comm.SampleSort(pt_mid_, pt_mid);
       }
-      SCTL_ASSERT(pt_mid.Dim());
-      const auto pt_mid0 = Morton<DIM>{pt_mid[0], Morton<DIM>::MAX_DEPTH};
 
       { // Update M = global_min(pt_mid.Dim(), M)
         StaticArray<Long,1> recv_buf, send_buf{std::min(pt_mid.Dim(), M)};
@@ -410,25 +405,27 @@ namespace sctl {
       }
       SCTL_ASSERT(M > 0);
 
-      ScratchBuf<MortonCode<DIM>> pt_mid_(pt_mid.Dim() + 2*M);
-      if (np > 1) { // pt_mid <-- [M points from rank-1; pt_mid; M points from rank+1]
-        Long send_size0 = (rank+1<np ? M : 0);
+      ScratchBuf<MortonCode<DIM>> pt_mid_(pt_mid.Dim() + M);
+      if (np > 1) { // Set mins, pt_mid <-- [pt_mid; M points from rank+1]
         Long send_size1 = (rank  > 0 ? M : 0);
-        Long recv_size0 = (rank  > 0 ? M : 0);
         Long recv_size1 = (rank+1<np ? M : 0);
-        SCTL_ASSERT(recv_size0 + pt_mid.Dim() + recv_size1 <= pt_mid_.Dim());
-        omp_par::memcpy(pt_mid_.begin() + recv_size0, pt_mid.begin(), pt_mid.Dim());
+        omp_par::memcpy(pt_mid_.begin(), pt_mid.begin(), pt_mid.Dim());
 
-        auto recv_req0 = comm.Irecv(pt_mid_.begin(), recv_size0, (rank+np-1)%np, 0);
-        auto recv_req1 = comm.Irecv(pt_mid_.begin() + recv_size0 + pt_mid.Dim(), recv_size1, (rank+1)%np, 1);
-        auto send_req0 = comm.Issend(pt_mid.begin() + pt_mid.Dim() - send_size0, send_size0, (rank+1)%np, 0);
+        auto recv_req1 = comm.Irecv(pt_mid_.begin() + pt_mid.Dim(), recv_size1, (rank+1)%np, 1);
         auto send_req1 = comm.Issend(pt_mid.begin(), send_size1, (rank+np-1)%np, 1);
-        comm.Wait(std::move(recv_req0));
         comm.Wait(std::move(recv_req1));
-        comm.Wait(std::move(send_req0));
         comm.Wait(std::move(send_req1));
-        pt_mid.ReInit(recv_size0 + pt_mid.Dim() + recv_size1, pt_mid_.begin(), false);
+
+        { // Set mins
+          mins.ReInit(np);
+          const Morton<DIM> m0 = (!rank ? Morton<DIM>{} :  split_anchor(pt_mid[0], pt_mid[M]) );
+          comm.Allgather(Ptr2ConstItr<Morton<DIM>>(&m0,1), 1, mins.begin(), 1);
+        }
+        const Long idx0 = std::lower_bound(pt_mid_.begin(), pt_mid_.end(), mins[rank].mid) - pt_mid_.begin();
+        const Long idx1 = (rank==np-1) ? pt_mid.Dim() : (std::lower_bound(pt_mid_.begin(), pt_mid_.end(), mins[rank+1].mid) - pt_mid_.begin());
+        pt_mid.ReInit(idx1-idx0, pt_mid_.begin()+idx0, false);
       }
+
       { // Build linear MortonID tree from pt_mid (chunked parallel walk)
         const Long N = pt_mid.Dim();
 
@@ -454,16 +451,8 @@ namespace sctl {
           const bool    is_first = (tid == 0);
           const bool    is_last  = (tid == nthreads - 1);
 
-          // Split-leaf anchor at chunk boundary: smallest depth d where pt[base].Ancestor(d)
-          // and pt[base+M].Ancestor(d) differ; returns pt[base+M].Ancestor(d).
-          auto split_anchor = [&pt_mid, &M](Long base) -> Morton<DIM> {
-            Integer d = 0;
-            while (d < Morton<DIM>::MAX_DEPTH && pt_mid[base].Ancestor(d) == pt_mid[base+M].Ancestor(d)) ++d;
-            return pt_mid[base+M].Ancestor(d);
-          };
-
-          const Morton<DIM> start_anchor = is_first ? Morton<DIM>{}        : split_anchor(begin_t);
-          const Morton<DIM> end_anchor   = is_last  ? Morton<DIM>{}.Next() : split_anchor(end_t);
+          const Morton<DIM> start_anchor = is_first ? mins[rank] : split_anchor(pt_mid[begin_t], pt_mid[begin_t+M]);
+          const Morton<DIM> end_anchor   = is_last  ? (rank+1<np ? mins[rank+1] : Morton<DIM>().Next()) : split_anchor(pt_mid[end_t], pt_mid[end_t+M]);
           const Long idx_start = is_first ? 0 : std::lower_bound(pt_mid.begin() + begin_t, pt_mid.begin() + begin_t + M, start_anchor.mid) - pt_mid.begin();
           const Long idx_end   = is_last  ? N : std::lower_bound(pt_mid.begin() + end_t,   pt_mid.begin() + end_t   + M, end_anchor.mid)   - pt_mid.begin();
 
@@ -471,26 +460,42 @@ namespace sctl {
           ScratchBuf<Morton<DIM>> buf(max_emits);
           Long count = 0;
 
+          if (is_first) {
+            Morton<DIM> m0{};
+            while (m0 != start_anchor) {
+              buf[count++] = m0;
+              if (m0.isAncestor(start_anchor)) m0 = first_child(m0);
+              else                             m0 = m0.Next();
+            }
+          }
+
           Morton<DIM> m0     = start_anchor;
           Long        pt_idx = idx_start;
           while (pt_idx < idx_end - M) {
-            const Morton<DIM> m_ = split_anchor(pt_idx);
-            if (m_ == m0) { // > M coincident points: their MAX_DEPTH box cannot split; skip past the run
-              pt_idx = std::lower_bound(pt_mid.begin() + pt_idx, pt_mid.begin() + idx_end, m0.Next().mid) - pt_mid.begin();
-              continue;
-            }
+            const Morton<DIM> m_ = split_anchor(pt_mid[pt_idx], pt_mid[pt_idx+M]);
             while (m0 != m_) {
               buf[count++] = m0;
-              if (m0.isAncestor(m_)) m0 = m0.DFD(static_cast<uint8_t>(m0.Depth() + 1));
+              if (m0.isAncestor(m_)) m0 = first_child(m0);
               else                   m0 = m0.Next();
             }
-            m0     = m_;
             pt_idx = std::lower_bound(pt_mid.begin() + pt_idx, pt_mid.begin() + pt_idx + M, m0.mid) - pt_mid.begin();
+            if (pt_idx < idx_end && pt_mid[pt_idx] < m0.mid) {
+              pt_idx = std::lower_bound(pt_mid.begin() + pt_idx, pt_mid.begin() + idx_end, m0.mid) - pt_mid.begin();
+            }
           }
           while (m0 != end_anchor) {  // tail to end_anchor / sentinel
             buf[count++] = m0;
-            if (m0.isAncestor(end_anchor)) m0 = m0.DFD(static_cast<uint8_t>(m0.Depth() + 1));
+            if (m0.isAncestor(end_anchor)) m0 = first_child(m0);
             else                           m0 = m0.Next();
+          }
+
+          if (is_last) {
+            const Morton<DIM> end_anchor = Morton<DIM>().Next();
+            while (m0 != end_anchor) {  // tail to end_anchor / sentinel
+              buf[count++] = m0;
+              if (m0.isAncestor(end_anchor)) m0 = first_child(m0);
+              else                           m0 = m0.Next();
+            }
           }
           local_sizes[tid].v = count;
 
@@ -504,14 +509,6 @@ namespace sctl {
 
           std::copy(buf.begin(), buf.begin() + count, node_mid.begin() + offsets[tid]);
         }
-      }
-
-      { // Set mins <-- allgather(node_mid nearest to pt_mid0)
-        mins.ReInit(np);
-        Long min_idx = std::lower_bound(node_mid.begin(), node_mid.end(), pt_mid0) - node_mid.begin() - 1;
-        if (!rank || min_idx < 0) min_idx = 0;
-        Morton<DIM> m0 = coarsest_ancestor_mid(node_mid[min_idx]);
-        comm.Allgather(Ptr2ConstItr<Morton<DIM>>(&m0,1), 1, mins.begin(), 1);
       }
     }
 
@@ -1102,6 +1099,18 @@ namespace sctl {
         SCTL_ASSERT(m0 == m);
       }
       SCTL_ASSERT(m0.Next() == Morton<DIM>().Next());
+      const Long i0 = std::lower_bound(node_mid.begin(), node_mid.end(), mins[rank]) - node_mid.begin();
+      const Long i1 = (rank == np-1 ? node_mid.Dim() : std::lower_bound(node_mid.begin(), node_mid.end(), mins[rank+1]) - node_mid.begin() );
+      SCTL_ASSERT(node_mid[i0] == mins[rank]);
+
+      for (Long i = 0; i < node_mid.Dim()-1; i++) {
+        SCTL_ASSERT(node_mid[i].Next() == node_mid[i+1] || first_child(node_mid[i]) == node_mid[i+1]);
+      }
+      SCTL_ASSERT(rank == np-1 || i1 == 0 || node_mid[i1-1].Next() == mins[rank+1] || first_child(node_mid[i1-1]) == mins[rank+1]);
+
+      for (Long i = 0; i < i0; i++) SCTL_ASSERT(node_attr[i].Ghost == true);
+      for (Long i = i0; i < i1; i++) SCTL_ASSERT(node_attr[i].Ghost == false);
+      for (Long i = i1; i < node_mid.Dim(); i++) SCTL_ASSERT(node_attr[i].Ghost == true);
     }
 
     { // Update node_data, node_cnt
