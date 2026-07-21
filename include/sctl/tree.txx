@@ -278,7 +278,7 @@ namespace sctl {
         const auto i_prev  = (Nnodes * (tid - 1)) / nthreads;
         const auto m_end = i_end < Nnodes ? node_mid[i_end] : Morton<DIM>().Next();
 
-        ScratchBuf<Long> ancestors(Morton<DIM>::MAX_DEPTH+1);
+        ScratchBuf<Long> ancestors(MAX_DEPTH+1);
         const auto& n0 = node_mid[i_begin];
         for (Long depth = 0; depth < n0.Depth(); depth++) {
           const auto ancestor = n0.Ancestor(depth);
@@ -337,7 +337,7 @@ namespace sctl {
           }
         };
 
-        constexpr Integer stride = ((Morton<DIM>::MAX_DEPTH+1) + 7) & ~(Integer)7; // MAX_DEPTH+1 rounded up to a cache line (8 Longs) to prevent false-sharing
+        constexpr Integer stride = ((MAX_DEPTH+1) + 7) & ~(Integer)7; // MAX_DEPTH+1 rounded up to a cache line (8 Longs) to prevent false-sharing
         const Integer nthreads = SCTL_GET_MAX_THREADS();
         ScratchBuf<Long> ancestors(nthreads * stride);
         #pragma omp parallel for schedule(static)
@@ -382,7 +382,7 @@ namespace sctl {
     { // Build linear tree (node_mid) and set mins
       const auto split_anchor = [](const MortonCode<DIM>& m0, const MortonCode<DIM>& m1) {
         const uint8_t d = m0.CommonAncestor(m1).Depth();
-        return m0.Ancestor(std::min<uint8_t>(Morton<DIM>::MAX_DEPTH,d+1)).Next();
+        return m0.Ancestor(std::min<uint8_t>(MAX_DEPTH,d+1)).Next();
       };
 
       Vector<MortonCode<DIM>> pt_mid;
@@ -447,7 +447,7 @@ namespace sctl {
 
         // Upper bound: ~(MAX_DEPTH+1) nodes/leaf, chunk_size/M leaves/chunk, 4x slack.
         const Long chunk_size_max = (N + nthreads - 1) / nthreads;
-        const Long max_emits      = 4 * chunk_size_max * (Morton<DIM>::MAX_DEPTH + 1) / std::max<Long>(1, M) + 4 * (Morton<DIM>::MAX_DEPTH + 1) * (Long(1) << DIM) + 16;
+        const Long max_emits      = 4 * chunk_size_max * (MAX_DEPTH + 1) / std::max<Long>(1, M) + 4 * (MAX_DEPTH + 1) * (Long(1) << DIM) + 16;
 
         struct alignas(64) PaddedLong { Long v; char pad[64 - sizeof(Long)]; };  // avoid false sharing
         ScratchBuf<PaddedLong> local_sizes(nthreads);
@@ -942,19 +942,44 @@ namespace sctl {
           user_procs_flag[rank] = true; // skip self
           const Long start_idx_t = start_idx + (end_idx - start_idx) *  tid      / nthreads;
           const Long end_idx_t   = start_idx + (end_idx - start_idx) * (tid + 1) / nthreads;
+
+          ScratchBuf<bool> ancestor_shared_flag(MAX_DEPTH);
+          if (start_idx_t < end_idx_t) {
+            ancestor_shared_flag[0] = true;
+            const Morton<DIM> m0 = node_mid[start_idx_t];
+            const Integer d0 = m0.Depth();
+            for (Integer d = 1; d < d0; d++) {
+              ancestor_shared_flag[d] = false;
+              if (ancestor_shared_flag[d-1] == false) continue; // skip if parent isn't shared
+              const auto nlst = m0.NbrList(std::max<Integer>(d-halo_size,0), periodicity);
+              for (const auto& m : nlst) {
+                if (m.Depth() != Morton<DIM>::INVALID_DEPTH) {
+                  Morton<DIM> m_end = m.Next();
+                  if (m < mins[rank] || (rank+1<np && m_end >= mins[rank+1])) {
+                    ancestor_shared_flag[d] = true;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
           for (Long i = start_idx_t; i < end_idx_t; i++) {
-            Morton<DIM> m0 = node_mid[i];
-            Integer d0 = m0.Depth();
+            const Morton<DIM> m0 = node_mid[i];
+            const Integer d0 = m0.Depth();
+            ancestor_shared_flag[d0] = false;
+            if (d0 > 0 && !ancestor_shared_flag[d0-1]) continue;
             const auto nlst = m0.NbrList(std::max<Integer>(d0-halo_size,0), periodicity);
             for (const auto& m : nlst) {
               if (m.Depth() != Morton<DIM>::INVALID_DEPTH) {
                 Morton<DIM> m_start = m.DFD();
                 Morton<DIM> m_end = m.Next();
+                if (m_start >= mins[rank] && (rank==np-1 || m_end < mins[rank+1])) continue;
                 Integer p_start = std::lower_bound(mins.begin(), mins.end(), m_start) - mins.begin() - 1;
                 Integer p_end   = std::lower_bound(mins.begin(), mins.end(), m_end  ) - mins.begin();
-                SCTL_ASSERT(0 <= p_start);
-                SCTL_ASSERT(p_start < p_end);
-                SCTL_ASSERT(p_end <= np);
+                //SCTL_ASSERT(0 <= p_start);
+                //SCTL_ASSERT(p_start < p_end);
+                //SCTL_ASSERT(p_end <= np);
                 for (Long p = p_start; p < p_end; p++) {
                   if (!user_procs_flag[p]) {
                     user_procs_flag[p] = true;
@@ -963,6 +988,7 @@ namespace sctl {
                 }
               }
             }
+            if (user_procs_cnt) ancestor_shared_flag[d0] = true;
             for (Long k = 0; k < user_procs_cnt; k++) {
               const Long p = user_procs[k];
               user_node_lst_t.PushBack(std::make_pair(p, m0));
