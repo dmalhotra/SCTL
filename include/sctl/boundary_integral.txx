@@ -3,6 +3,7 @@
 
 #include <algorithm>                   // for lower_bound, max, min, upper_b...
 #include <map>                         // for map
+#include <new>                         // for hardware_destructive_interference_size
 #include <set>                         // for set, __tree_const_iterator
 #include <string>                      // for basic_string, string, to_string
 #include <type_traits>                 // for is_copy_constructible
@@ -1024,9 +1025,16 @@ namespace sctl {
       if (Nelem) { // Set K_near
         K_near.ReInit((K_near_dsp[Nelem-1]+K_near_cnt[Nelem-1])*KDIM0*KDIM1_);
 
-        constexpr Long cache_line_size = 512;
+        #if defined(__cpp_lib_hardware_interference_size)
+        #pragma GCC diagnostic push
+        #pragma GCC diagnostic ignored "-Winterference-size" // scheduling hint only; not ABI
+        constexpr Long cache_line_size = (Long)std::hardware_destructive_interference_size;
+        #pragma GCC diagnostic pop
+        #else
+        constexpr Long cache_line_size = SCTL_MEM_ALIGN;
+        #endif
         const Long N_near = near_elem_dsp[Nelem-1] + near_elem_cnt[Nelem-1];
-        const Long omp_chunk_size = std::max(N_near/SCTL_GET_MAX_THREADS()/32, (cache_line_size+KDIM1_-1)/KDIM1_);
+        const Long omp_chunk_size = std::max(N_near/SCTL_GET_MAX_THREADS()/32, (cache_line_size/(Long)sizeof(Real)+KDIM1_-1)/KDIM1_);
         #pragma omp parallel for schedule(dynamic,omp_chunk_size)
         for (Long i = 0; i < N_near; i++) { // loop over all pairs of elements and their near targets
           const Long elem_idx = std::lower_bound(near_elem_dsp.begin(), near_elem_dsp.end(), i+1) - near_elem_dsp.begin() - 1;
