@@ -235,34 +235,34 @@ namespace sctl {
   template <class Real> void QuadElemList<Real>::LogSingularQuad1DCentered(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder) {
     // Same panel layout as LogSingularQuad1D, emitted as offsets from v0.
     const int ord = 16;
-    std::vector<double> px, pw;
-    auto add_alpert = [&](double a, double b, int corra, int corrb) {
+    std::vector<Real> px, pw;
+    auto add_alpert = [&](const Real a, const Real b, int corra, int corrb) {
       const ExtraPtResult L = (corra == 2 ? QuadLogExtraPtNodes((double)ord) : QuadSmoothExtraPtNodes((double)ord));
       const ExtraPtResult R = (corrb == 2 ? QuadLogExtraPtNodes((double)ord) : QuadSmoothExtraPtNodes((double)ord));
       const int skipL = L.NodesToSkip, skipR = R.NodesToSkip;
       const int N = std::max(skipL + skipR + 2, 2 * ord);
       const int N1 = N - 1;
-      const double h = (b - a) / N1;
+      const Real h = (b - a) / N1;
       for (int i = skipL; i <= N1 - skipR; ++i) { px.push_back(a + i*h); pw.push_back(h); }
-      for (size_t i = 0; i < L.ExtraNodes.size(); ++i) { px.push_back(a + L.ExtraNodes[i]*h); pw.push_back(L.ExtraWeights[i]*h); }
-      for (size_t i = 0; i < R.ExtraNodes.size(); ++i) { px.push_back(b - R.ExtraNodes[i]*h); pw.push_back(R.ExtraWeights[i]*h); }
+      for (size_t i = 0; i < L.ExtraNodes.size(); ++i) { px.push_back(a + (Real)L.ExtraNodes[i]*h); pw.push_back((Real)L.ExtraWeights[i]*h); }
+      for (size_t i = 0; i < R.ExtraNodes.size(); ++i) { px.push_back(b - (Real)R.ExtraNodes[i]*h); pw.push_back((Real)R.ExtraWeights[i]*h); }
     };
     Vector<Real> gnds, gwts;
     LegQuadRule<Real>::ComputeNdsWts(&gnds, &gwts, QuadOrder);
-    auto add_gl = [&](double a, double b) {
-      const double len = b - a;
-      for (Integer i = 0; i < QuadOrder; i++) { px.push_back(a + len*(double)gnds[i]); pw.push_back(len*(double)gwts[i]); }
+    auto add_gl = [&](const Real a, const Real b) {
+      const Real len = b - a;
+      for (Integer i = 0; i < QuadOrder; i++) { px.push_back(a + len*gnds[i]); pw.push_back(len*gwts[i]); }
     };
-    const double Ll = (double)v0, Lr = 1.0 - (double)v0;  // offsets: left side negative
-    { double prev = -Ll;
-      for (int i = 1; i <= Lvl; i++) { const double bnd = -Ll*std::ldexp(1.0,-i); add_gl(prev, bnd); prev = bnd; }
-      add_alpert(prev, 0.0, 1, 2); }
-    { double prev = Lr;
-      for (int i = 1; i <= Lvl; i++) { const double bnd = Lr*std::ldexp(1.0,-i); add_gl(bnd, prev); prev = bnd; }
-      add_alpert(0.0, prev, 2, 1); }
+    const Real Ll = v0, Lr = (Real)1 - v0;  // offsets: left side negative
+    { Real prev = -Ll;
+      for (int i = 1; i <= Lvl; i++) { const Real bnd = -Ll*pow<Real>((Real)0.5,(Integer)i); add_gl(prev, bnd); prev = bnd; }
+      add_alpert(prev, (Real)0, 1, 2); }
+    { Real prev = Lr;
+      for (int i = 1; i <= Lvl; i++) { const Real bnd = Lr*pow<Real>((Real)0.5,(Integer)i); add_gl(bnd, prev); prev = bnd; }
+      add_alpert((Real)0, prev, 2, 1); }
     const Long N = (Long)px.size();
     delta.ReInit(N); w.ReInit(N);
-    for (Long i = 0; i < N; ++i) { delta[i] = (Real)px[i]; w[i] = (Real)pw[i]; }
+    for (Long i = 0; i < N; ++i) { delta[i] = px[i]; w[i] = pw[i]; }
   }
 
   template <class Real> template <Integer order, Integer digits> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::CenteredURule(const Integer ti, const Integer levels) {
