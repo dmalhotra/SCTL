@@ -19,6 +19,8 @@ namespace sctl {
       static constexpr Integer COORD_DIM = 3;
 
     public:
+      static Integer SelfQuadOrderProbe(const Real tol); // resolved self GL order (sweeps/reporting)
+      static Integer SelfLevelsProbe(const Real tol);    // resolved self u-levels (sweeps/reporting)
 
       /**
        * Near/self singular-quadrature scheme: Adaptive (dyadic subdivision +
@@ -453,6 +455,27 @@ namespace sctl {
       // rho = 2.5 and the semi-major reach, which over-refines near by a^2/b^2 ~ 1.9x.
       // Near default; SCTL_NEAR_QORDER / SCTL_NEAR_BELLIPSE still override.
       static void NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder);
+      // Self quadrature heuristic, from a JOINT (L,q_u) sweep at order 12 / 4x4 panels per face.
+      // The error is NOT separable in L and q_u: q_u sets the PREFACTOR, not a floor --
+      //     err ~= C(q) * 2^-L,   C(q) ~= 2.5e-3 * (q/4)^-1.85
+      // (measured C: 2.5e-3, 1.19e-3, 6.98e-4, 4.56e-4, 3.22e-4 at q = 4,6,8,10,12; C*2^L is
+      // constant to ~5% down each column). The single genuine floor is q_u=4 saturating near
+      // 2.4e-8, so q_u=4 cannot reach 1e-8 at any depth. Pick q_u from that threshold and the
+      // smallest L clearing tol with a 2x margin.
+      //
+      // q_u SATURATES, and it is the binding limit at tight tolerance -- adding levels does not
+      // help once it does. Measured on order-12, 12x12 panels/face, 124k nodes:
+      //   q_u=4 -> ~2.4e-8      q_u=6 -> 2.56e-12 (11.6 digits)     q_u=8 -> 5.47e-14 (13.3 digits)
+      // Long double gives the SAME 2.57e-12 floor at q_u=6, so precision is not the limit there --
+      // it is the u-rule order. q_u=8 is also CHEAPER than the shipped QuadParams order (18 at
+      // digits=13): 13.0s vs 17.6s setup, because a higher q_u needs fewer levels.
+      // Only at q_u=8 does double precision bite, near 5e-14, and the residual is then dominated
+      // by the far-field direct N^2 sum (1.07e-14) rather than any singular quadrature (all <=1.8e-15).
+      // Coarser surfaces floor earlier: at 4x4 panels/face SL floors near 1.5e-11 and DL near 1.3e-9.
+      // These now drive self instead of QuadParams' order and the caller's max_depth.
+      // SCTL_SELF_LVL / SCTL_QUAD_ORDER override for sweeps.
+      template <Integer digits> static Integer SelfLevels();
+      template <Integer digits> static Integer SelfQuadOrder();
       template <Integer digits> static Integer NearQuadOrder();
       template <Integer digits> static Real NearBEllipse();
       //   SCTL_NEAR_MAXLVL   near-only level cap (0 => use max_depth_). Near-touching targets

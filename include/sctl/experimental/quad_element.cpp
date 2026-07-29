@@ -278,7 +278,7 @@ namespace sctl {
       p = slot[levels].load(std::memory_order_relaxed);
       if (!p) {
         const Vector<Real>& nds = ParamNodes(order);
-        const Integer QuadOrder = DigitsQuadOrder<digits>();
+        const Integer QuadOrder = SelfQuadOrder<digits>();
         Vector<Real> qnds, qwts;
         LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, QuadOrder);
         auto* d = new Vector<NodeRuleData>(order);
@@ -596,6 +596,47 @@ namespace sctl {
     QuadOrder = std::max<Integer>(1, (Integer)std::ceil(-std::log(((15.0*(rho*rho-1))/64.0)*(double)tol_)/std::log(rho)*0.5 + 1));
   }
 
+  template <class Real> template <Integer digits> Integer QuadElemList<Real>::SelfLevels() {
+    static const Integer L = []() {
+      if (const char* v = std::getenv("SCTL_SELF_LVL")) { const Integer x = (Integer)atoi(v); if (x > 0) return x; }
+      const double eps = std::pow(10.0, -(double)digits);
+      const double C = 2.5e-3 * std::pow((double)SelfQuadOrder<digits>()/4.0, -1.85); // see header note
+      return std::max<Integer>(2, std::min<Integer>(40, (Integer)std::ceil(std::log2(2*C/eps))));
+    }();
+    return L;
+  }
+  template <class Real> template <Integer digits> Integer QuadElemList<Real>::SelfQuadOrder() {
+    static const Integer q = []() {
+      if (const char* v = std::getenv("SCTL_QUAD_ORDER")) { const Integer x = (Integer)atoi(v); if (x > 0) return x; }
+      const double eps = std::pow(10.0, -(double)digits);
+      if (eps > 4e-8)  return (Integer)4;   // q=4 saturates near 2.4e-8 at any depth
+      if (eps > 1e-11) return (Integer)6;   // q=6 saturates near 2.6e-12 -- more L does not help
+      return (Integer)8;                    // reaches 5.5e-14; past that the far-field N^2 sum limits
+    }();
+    return q;
+  }
+  template <class Real> Integer QuadElemList<Real>::SelfQuadOrderProbe(const Real tol) {
+    const Integer d = std::max<Integer>(0, std::min<Integer>(15, (Integer)(-std::log10((double)tol)+0.5)));
+    Integer q = 0;
+    switch (d) { case 0: q=SelfQuadOrder<0>();break; case 1: q=SelfQuadOrder<1>();break; case 2: q=SelfQuadOrder<2>();break;
+      case 3: q=SelfQuadOrder<3>();break; case 4: q=SelfQuadOrder<4>();break; case 5: q=SelfQuadOrder<5>();break;
+      case 6: q=SelfQuadOrder<6>();break; case 7: q=SelfQuadOrder<7>();break; case 8: q=SelfQuadOrder<8>();break;
+      case 9: q=SelfQuadOrder<9>();break; case 10: q=SelfQuadOrder<10>();break; case 11: q=SelfQuadOrder<11>();break;
+      case 12: q=SelfQuadOrder<12>();break; case 13: q=SelfQuadOrder<13>();break; case 14: q=SelfQuadOrder<14>();break;
+      default: q=SelfQuadOrder<15>(); }
+    return q;
+  }
+  template <class Real> Integer QuadElemList<Real>::SelfLevelsProbe(const Real tol) {
+    const Integer d = std::max<Integer>(0, std::min<Integer>(15, (Integer)(-std::log10((double)tol)+0.5)));
+    Integer L = 0;
+    switch (d) { case 0: L=SelfLevels<0>();break; case 1: L=SelfLevels<1>();break; case 2: L=SelfLevels<2>();break;
+      case 3: L=SelfLevels<3>();break; case 4: L=SelfLevels<4>();break; case 5: L=SelfLevels<5>();break;
+      case 6: L=SelfLevels<6>();break; case 7: L=SelfLevels<7>();break; case 8: L=SelfLevels<8>();break;
+      case 9: L=SelfLevels<9>();break; case 10: L=SelfLevels<10>();break; case 11: L=SelfLevels<11>();break;
+      case 12: L=SelfLevels<12>();break; case 13: L=SelfLevels<13>();break; case 14: L=SelfLevels<14>();break;
+      default: L=SelfLevels<15>(); }
+    return L;
+  }
   template <class Real> template <Integer digits> Integer QuadElemList<Real>::DigitsQuadOrder() {
     // Evaluated once per `digits` at tol = 10^-digits.
     // SCTL_QUAD_ORDER overrides it for tuning sweeps (the per-panel GL order is otherwise
@@ -1909,7 +1950,7 @@ namespace sctl {
     const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
 
     const bool centered = UseCenteredRules();
-    const NodeRuleData& ru = (centered ? CenteredURule<order, digits>(ti, qel.max_depth_)
+    const NodeRuleData& ru = (centered ? CenteredURule<order, digits>(ti, SelfLevels<digits>())
                                        : SelfURuleDispatch<order, digits>(ti, qel.max_depth_));
     const NodeRuleData& rv = (centered ? CenteredVRule<order, digits>(tj) : SelfVRule<order, digits>(tj));
 
