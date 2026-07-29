@@ -11,6 +11,7 @@
 #include "sctl/iterator.hpp"
 #include "sctl/iterator.txx"  // for Iterator arithmetic, Ptr2Itr
 #include "sctl/mem_mgr.hpp"   // for MemoryManager::{end_padding,init_mem_val} (constexpr)
+#include "sctl/mem_mgr.txx"   // for advise_huge_pages
 #include "sctl/vector.hpp"
 
 namespace sctl {
@@ -37,6 +38,7 @@ inline ScratchPool::ScratchPool() {
   const Long new_cap = ((Long)SCTL_SCRATCH_POOL_INIT_BYTES + align_mask) & ~align_mask;
   void* raw = std::aligned_alloc(SCTL_MEM_ALIGN, new_cap);
   SCTL_ASSERT_MSG(raw != nullptr, "ScratchPool: initial chunk allocation failed.");
+  advise_huge_pages(raw, new_cap);
   Iterator<char> new_base = Ptr2Itr<char>(static_cast<char*>(raw), new_cap);
   head_ = new Chunk(new_base, new_base, new_base + new_cap, nullptr);
 }
@@ -53,6 +55,13 @@ inline ScratchPool::~ScratchPool() {
 }
 
 inline ScratchPool& ScratchPool::Instance() {
+  // Team-thread-0 is the same OS thread as the serial context; a separate
+  // in-parallel pool keeps its ScratchBufs NUMA-local (the serial pool's
+  // pages may have been first-touched by the whole team via shared buffers).
+  if (SCTL_IN_PARALLEL()) {
+    thread_local ScratchPool inst_par;
+    return inst_par;
+  }
   thread_local ScratchPool inst;
   return inst;
 }
@@ -85,6 +94,7 @@ inline ScratchPool& ScratchPool::Instance() {
     new_cap = (new_cap + align_mask) & ~align_mask;  // aligned_alloc requires size % alignment == 0
     void* raw = std::aligned_alloc(SCTL_MEM_ALIGN, new_cap);
     SCTL_ASSERT_MSG(raw != nullptr, "ScratchPool: chunk allocation failed.");
+    advise_huge_pages(raw, new_cap);
     Iterator<char> new_base = Ptr2Itr<char>(static_cast<char*>(raw), new_cap);
 
     // Free the current head if empty — otherwise it gets wedged: its base

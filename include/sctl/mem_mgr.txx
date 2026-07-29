@@ -2,6 +2,9 @@
 #define _SCTL_MEM_MGR_TXX_
 
 #include <stdlib.h>             // for free, malloc
+#ifdef __linux__
+#include <sys/mman.h>           // for madvise
+#endif
 #include <atomic>               // for atomic
 #include <algorithm>            // for max
 #include <cassert>              // for assert
@@ -26,6 +29,19 @@
 
 namespace sctl {
 
+inline void advise_huge_pages(void* ptr, Long bytes) {
+#ifdef __linux__
+  constexpr uintptr_t pg = 4096;
+  if (bytes < (2L << 20)) return;
+  const uintptr_t beg = ((uintptr_t)ptr + pg - 1) & ~(pg - 1);
+  const uintptr_t end = ((uintptr_t)ptr + (uintptr_t)bytes) & ~(pg - 1);
+  if (end > beg) madvise((void*)beg, end - beg, MADV_HUGEPAGE);
+#else
+  SCTL_UNUSED(ptr);
+  SCTL_UNUSED(bytes);
+#endif
+}
+
 // Minimum element count for aligned_new/aligned_delete to parallelize the
 // per-element constructor/destructor loop. Below this, run serially: a 1-trip
 // `#pragma omp parallel for` costs ~0.23us (1 thread) / ~14us (64 threads) of
@@ -41,6 +57,7 @@ inline MemoryManager::MemoryManager(Long N) {
     Long alignment = SCTL_MEM_ALIGN - 1;
     char* base_ptr = (char*)::malloc(N + 2 + alignment);
     SCTL_ASSERT_MSG(base_ptr, "memory allocation failed.");
+    advise_huge_pages(base_ptr, N + 2 + alignment);
     buff = (char*)((uintptr_t)(base_ptr + 2 + alignment) & ~(uintptr_t)alignment);
     ((uint16_t*)buff)[-1] = (uint16_t)(buff - base_ptr);
   }
@@ -166,6 +183,7 @@ inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_s
   if (!base) {             // Use system malloc
     char* p = (char*)::malloc(size + 2 + alignment + end_padding);
     SCTL_ASSERT_MSG(p, "memory allocation failed.");
+    advise_huge_pages(p, size + 2 + alignment + end_padding);
 #ifdef SCTL_MEMDEBUG
     #pragma omp critical(SCTL_MEM_MGR_CRIT)
     {  // system_malloc.insert(p)
