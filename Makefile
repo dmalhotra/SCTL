@@ -71,7 +71,9 @@ CXXFLAGS += -lfftw3l -DSCTL_HAVE_FFTWL
 #LDLIBS += -L${PETSC_DIR}/lib -lpetsc
 
 #PVFMM_INC_DIR = ../include
+#PVFMM_LIB_DIR = ../lib/.libs
 #CXXFLAGS += -DSCTL_HAVE_PVFMM -I$(PVFMM_INC_DIR)
+#LDLIBS += $(PVFMM_LIB_DIR)/libpvfmm.a
 
 
 RM = rm -f
@@ -115,13 +117,15 @@ TARGET_BIN = \
        $(BINDIR)/test-tensor \
        $(BINDIR)/test-vec \
        $(BINDIR)/bench-quad-interac \
+       $(BINDIR)/bench-quad-scaling \
        $(BINDIR)/bench-gmsh-pipeline \
        $(BINDIR)/test-scratch-pool \
        $(BINDIR)/test-scratch-pool-perf \
 	   $(BINDIR)/unit-test-quad-element \
-	   $(BINDIR)/test-quad-elem
+	   $(BINDIR)/test-quad-elem \
+	   $(BINDIR)/test-greens-conv
 
-.PHONY: all test clean quad bench bench-gmsh
+.PHONY: all test clean quad bench bench-gmsh bench-scaling
 
 all : $(TARGET_BIN)
 
@@ -129,7 +133,14 @@ quad : $(BINDIR)/unit-test-quad-element
 
 bench : $(BINDIR)/bench-quad-interac
 
+bench-scaling : $(BINDIR)/bench-quad-scaling
+
 bench-gmsh : $(BINDIR)/bench-gmsh-pipeline
+
+# Keep objects (.PRECIOUS): as implicit intermediates make deletes them after linking and
+# then only compares bin/ against src/*.cpp -- so edits to headers, where nearly all of
+# SCTL lives, would silently not rebuild. -MMD -MP emits the header dependencies.
+.PRECIOUS: $(OBJDIR)/%.o
 
 $(BINDIR)/%: $(OBJDIR)/%.o
 	-@$(MKDIRS) $(dir $@)
@@ -140,7 +151,9 @@ endif
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)
-	$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $^ -o $@
+	$(CXX) $(CXXFLAGS) -MMD -MP -I$(INCDIR) -c $< -o $@
+
+-include $(wildcard $(OBJDIR)/*.d)
 
 test: $(TARGET_BIN)
 	./$(BINDIR)/test
