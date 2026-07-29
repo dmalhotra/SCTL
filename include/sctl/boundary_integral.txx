@@ -1133,7 +1133,10 @@ namespace sctl {
       for (Long i = 0; i < Nlst; i++) { // Subtract direct-interaction part from K_near
         const auto& elem_lst = elem_lst_map.at(elem_lst_name[i]);
         if (elem_lst->MatrixFree()) continue;
-        #pragma omp parallel for if(elem_lst_cnt[i] > SCTL_GET_MAX_THREADS()) schedule(dynamic)
+        // The predicate must not compare against the thread count: once nthreads reaches nelem
+        // it goes false, the loop runs serial, and its inner pragmas become top-level parallel
+        // regions. Guard against a trivially short loop instead.
+        #pragma omp parallel for if(elem_lst_cnt[i] > 1) schedule(dynamic)
         for (Long j = 0; j < elem_lst_cnt[i]; j++) { // subtract direct sum
           const Long elem_idx = elem_lst_dsp[i]+j;
           const Long trg_cnt = near_elem_cnt[elem_idx];
