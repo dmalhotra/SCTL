@@ -85,12 +85,15 @@ namespace sctl {
        * @param[in] q derivative-flattening parameter for RectPolar (ignored for Adaptive).
        * @param[in] cov_order RectPolar GL points per direction (Nbeta, Bruno 2018);
        * decoupled from field order. 0 falls back to the tolerance-derived order.
-       * @param[in] max_depth adaptive dyadic-refinement depth cap for the Adaptive scheme
-       * (self + near) and the near phase of Hybrid; must be one of {4,8,12,30}. Ignored by
-       * the RectPolar self/near phases.
+       * @param[in] max_depth number of dyadic grading levels toward the singularity for the
+       * Adaptive scheme (self + near) and the near phase of Hybrid; any value in [1,40]. The
+       * self rule uses it as an exact level count (2*(max_depth+1) panels); the near quadtree
+       * still treats it as a depth cap. Ignored by the RectPolar self/near phases.
        */
       void SetQuadScheme(QuadScheme s, Integer q = 6, Integer cov_order = 0, Integer max_depth = 30) {
-        SCTL_ASSERT_MSG(max_depth == 4 || max_depth == 8 || max_depth == 12 || max_depth == 30, "Adaptive max_depth must be one of {4,8,12,30}.");
+        // Centered rules take `max_depth` as an exact runtime level count; the legacy
+        // templated path snaps to the nearest of {4,8,12,30}.
+        SCTL_ASSERT_MSG(max_depth >= 1 && max_depth <= 40, "Adaptive max_depth must be in [1,40].");
         scheme_ = s; cov_q_ = q; cov_order_ = cov_order; max_depth_ = max_depth;
       }
 
@@ -310,6 +313,24 @@ namespace sctl {
       template <Integer order, Integer digits, Integer max_depth> static const NodeRuleData& SelfURule(const Integer ti);
       template <Integer order, Integer digits> static const NodeRuleData& SelfURuleDispatch(const Integer ti, const Integer max_depth);
 
+      // --- Centered rules (SCTL_CENTERED_RULES=1) ------------------------------------
+      // DEFAULT ON (set SCTL_CENTERED_RULES=0 for the legacy bisection rules).
+      // Built OUTWARD from the singular node so it lands on a panel ENDPOINT (rather than
+      // strictly inside the innermost leaf of a top-down bisection), and stored as OFFSETS
+      // from it. Offsets keep full relative precision in the innermost panels: the absolute
+      // form `a0 + len*qnds` rounds to ulp(a0)~1e-16, leaving only ~7 digits of the distance
+      // to the singularity at 30 levels. `levels` is a runtime value here, not a template.
+      static bool UseCenteredRules();
+      // L_i(u0+d) with the vanishing factor formed as `d` itself, never as a subtraction of
+      // absolute coordinates. dM = DiffMat . M as usual.
+      template <Integer order> static void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& delta, const Integer ti);
+      // Geometric panels marching outward from u0 to each end; `levels`+1 panels per side.
+      static void BuildCenteredGraded1D(Vector<Real>& delta, Vector<Real>& w, const Real u0, const Integer levels, const Vector<Real>& qnds, const Vector<Real>& qwts);
+      // Offset-valued counterpart of LogSingularQuad1D (which is already outward-graded).
+      static void LogSingularQuad1DCentered(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder);
+      template <Integer order, Integer digits> static const NodeRuleData& CenteredURule(const Integer ti, const Integer levels);
+      template <Integer order, Integer digits> static const NodeRuleData& CenteredVRule(const Integer tj);
+
       // GL rule (nodes, weights) on [0,1] for compile-time count Nbeta (RP uses Nbeta>>50,
       // beyond LegQuadRule's cache); function-local static, runtime value via dispatch over {128,256,512}.
       template <Integer Nbeta> static const std::pair<Vector<Real>, Vector<Real>>& GLRuleNbeta();
@@ -346,7 +367,9 @@ namespace sctl {
                                                                         const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, 
                                                                         const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker, 
                                                                         const Matrix<Real>* Mv_pre = nullptr, const Matrix<Real>* dMv_pre = nullptr, const Matrix<Real>* Mu_pre = nullptr, const Matrix<Real>* dMu_pre = nullptr,
-                                                                        const Matrix<Real>* MvT_pre = nullptr, const Matrix<Real>* MuT_pre = nullptr, const Matrix<Real>* dMuT_pre = nullptr);
+                                                                        const Matrix<Real>* MvT_pre = nullptr, const Matrix<Real>* MuT_pre = nullptr, const Matrix<Real>* dMuT_pre = nullptr,
+                                                                        const Vector<Real>* src_nodal = nullptr, const Matrix<Real>* MuD_pre = nullptr, const Real nrm_sign = 1,
+                                                                        Vector<Real>* acc_cm = nullptr);
 
       // Geometry-independent graded 1D GL rule on [0,1], refined toward `center` until
       // admissible or `max_depth`. Returns nodes `param`, weights `w`.
@@ -396,6 +419,59 @@ namespace sctl {
       // else the tol-derived `nbeta_default` the caller passes (NbetaForDigits(digits)).
       template <Integer order, class Kernel> static void NearInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default);
       template <Integer order, class Kernel> static void SelfInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default);
+
+      // --- Split-at-foot near scheme (default; SCTL_NEAR_SPLIT=0 for the old quadtree) ---
+      // The bisection quadtree leaves the foot mid-cell and needs a position-dependent
+      // interpolation operator per leaf interval (~350 matrices rebuilt per target). Splitting
+      // the element AT the foot makes every refinement grade toward an ENDPOINT, so in
+      // normalized sub-element coordinates the graded intervals depend only on the level and
+      // their operators precompute once per (order,digits).
+      //
+      // Per side the normalized intervals are, grading toward the foot at x=1:
+      //   shell_k = [1-2^-k, 1-2^-(k+1)]    the half of core_k away from the foot
+      //   core_k  = [1-2^-k, 1]             the half touching it
+      // Splitting at (u*,v*) leaves each sub-element ANISOTROPIC, and quadrisection would pass
+      // that aspect ratio to every descendant -- giving cells still long in one direction while
+      // already close to the target in the other (inadmissible). So the corner cell is bisected
+      // along its longer PHYSICAL dimension only (parameter extent x surface speed), one split at
+      // a time, until that dimension is admissible against the target distance. Each split emits
+      // one leaf; the u- and v-levels advance independently, so every interval remains
+      // shell_k / core_k at some level and its operators stay precomputed.
+      static bool UseNearSplit();
+      // Near-only knobs, independent of the self path (SCTL_QUAD_ORDER drives both). For tuning
+      // the near heuristic while self is held at a much tighter tolerance.
+      //   SCTL_NEAR_QORDER   per-cell GL order        (default DigitsQuadOrder<digits>)
+      //   SCTL_NEAR_BELLIPSE admissibility constant   (default DigitsBEllipse<digits>)
+      // VALIDITY: calibrated and validated on the twisted unit sphere for twist <= pi/3
+      // (element anisotropy <= ~4.2). At twist pi/2 (anisotropy 6.6) the near rule needs a
+      // higher GL order than this gives -- measured q=20 vs 15 at digits=13 -- and the driver is
+      // the parameterisation's own analyticity, not element size or local shear (the refinement
+      // test b_ellipse*max(hu,hv) <= dist is scale-invariant, and keying q on the per-target
+      // spd_v/spd_u ratio was measured to change nothing). Do not rely on this past pi/3.
+      // Near-only quadrature rule: tolerance-dependent rho, and the end-foot Bernstein reach
+      // that the split-at-(u0,v0) geometry actually needs. QuadParams (still used by self) pins
+      // rho = 2.5 and the semi-major reach, which over-refines near by a^2/b^2 ~ 1.9x.
+      // Near default; SCTL_NEAR_QORDER / SCTL_NEAR_BELLIPSE still override.
+      static void NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder);
+      template <Integer digits> static Integer NearQuadOrder();
+      template <Integer digits> static Real NearBEllipse();
+      //   SCTL_NEAR_MAXLVL   near-only level cap (0 => use max_depth_). Near-touching targets
+      //   (a neighbouring patch's node, foot distance ~0) refine to the cap regardless of the
+      //   admissibility constant, so the cap -- not b_ellipse -- is what controls their error.
+      static Integer NearMaxLvlOverride();
+      // Normalized rule + operator from the sub-element's order nodes to this interval's nodes.
+      // One graded interval, in NORMALIZED sub-element coordinates. dT/TT/TD are precomputed
+      // here (not per target) because the split-at-foot scheme feeds sub-element NODAL coords
+      // into the cell quadrature, so these operators no longer depend on (u*,v*).
+      //   T  (order x q)   sub-element nodes -> this interval's GL nodes
+      //   dT (order x q)   d/dx of the above, x = the sub-element's normalized coordinate
+      //   TT (q x order)   T^T, for the projection
+      //   TD (2q x order)  [T^T ; dT^T] stacked, so value+derivative come from ONE GEMM
+      struct GradeRule { Vector<Real> nds, w; Matrix<Real> T, dT, TT, TD; Real a, b; };
+      // Flat index: shell_k -> k, core_k -> MaxNearLvl + k.
+      static constexpr Integer MaxNearLvl = 31;
+      template <Integer order, Integer digits> static const Vector<GradeRule>& NearGradeTable();
+      template <Integer digits, Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
       // Line-QBX / hedgehog near-interaction block (Lu 2019 sec.3.1); knobs from SetLineQBXParams.
       // Accurate only for panel-interior targets (see SetLineQBXParams seam caveat).
