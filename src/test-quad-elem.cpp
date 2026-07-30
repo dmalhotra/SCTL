@@ -729,8 +729,6 @@ void test_NbetaSweep(const Comm& comm,
   if (root) std::cout << "Nbeta sweep: DONE" << std::endl;
 }
 
-}
-
 //  ============= Timing ===================
 void test_timing_StkSL(const QuadElemList<double>& elem_lst, const Comm& comm, const double tol = 1e-9) {
   // Non-polynomial densities (analytic -> fast SH decay).
@@ -766,6 +764,8 @@ void test_timing_StkSL(const QuadElemList<double>& elem_lst, const Comm& comm, c
 
 }
 #endif // DISABLED: BIO-vs-SH / manufactured / surface-area / timing / gmsh tests
+
+} // end anonymous namespace (TU-local helpers: GlobalReduce, FacePoint, BuildTwistedSphere, ...)
 
 
 // Double-layer constant-density identity on a closed surface (Laplace or Stokes):
@@ -817,7 +817,8 @@ template <class Real, class KerDL> void test_DLIdentity(const QuadElemList<Real>
 //                 (exercises the NEAR-interaction path). The near-singular quadrature returns the
 //                 true off-surface D[u] (interior limit included), so no manual jump is applied and
 //                 (S[Fs] - D[Fd]) == u at the interior targets directly.
-template <class Real, class KerSL, class KerDL, class KerGrad> void test_greens_identity(const QuadElemList<Real>& elem_lst, const Comm& comm,
+// Returns the relative error max|Uerr|/max|Uref| (reduced across ranks) so callers can tabulate it.
+template <class Real, class KerSL, class KerDL, class KerGrad> Real test_greens_identity(const QuadElemList<Real>& elem_lst, const Comm& comm,
                           const Real tol, const Vector<Real> X0, const Real trg_dist = 0, const bool center_only = false) {
   static constexpr Integer COORD_DIM = 3;
   const Long pid = comm.Rank();
@@ -901,6 +902,7 @@ template <class Real, class KerSL, class KerDL, class KerGrad> void test_greens_
 
   if (trg_dist == 0) Ud -= 0.5*Fd; // DL jump condition, on-surface only (off-surface D[u] already includes it)
   Vector<Real> Uerr = (Us - Ud) - Uref;
+  Real rel_err = 0;
   { // Print error
     StaticArray<Real,2> max_err{0,0};
     StaticArray<Real,2> max_val{0,0};
@@ -908,11 +910,13 @@ template <class Real, class KerSL, class KerDL, class KerGrad> void test_greens_
     for (auto x : Uref) max_val[0] = std::max<Real>(max_val[0], fabs(x));
     comm.Allreduce(max_err+0, max_err+1, 1, CommOp::MAX);
     comm.Allreduce(max_val+0, max_val+1, 1, CommOp::MAX);
-    if (!pid) std::cout<<"Green's identity error = "<<max_err[1]/max_val[1]<<'\n';
+    rel_err = max_err[1]/max_val[1];
+    if (!pid) std::cout<<"Green's identity error = "<<rel_err<<'\n';
   }
-  sctl::Profile::print(&comm, {"t_max"});
+  sctl::Profile::print(&comm, {"t_avg", "f/s_avg"});
   sctl::Profile::reset();
   sctl::Profile::Enable(false);
+  return rel_err;
 }
 
 
@@ -926,145 +930,121 @@ int main(int argc, char** argv) {
     // GmshReader::LoadQuadElemList keep only this rank's contiguous element slice
     // (replicate-then-slice). BoundaryIntegralOp handles all cross-rank communication.
 
-    // Profile::Enable(true);
+    // ================================================================================
+    // On-surface Green's representation identity (Laplace + Stokes) on twisted spheres,
+    // sweeping the coupled near/self accuracy knobs {tol, max_depth, Nbeta} with the sctl
+    // profiler enabled (test_greens_identity toggles Profile::Enable and times the timed
+    // rebuild+eval under "Greens-SetupEval").
+    //
+    // Scheme = Hybrid: tol -> BoundaryIntegralOp::SetAccuracy (far-field + near/self dispatch
+    // digits), max_depth -> adaptive-near dyadic depth cap, Nbeta -> RectPolar-self GL points
+    // per direction (cov_order). All three tighten together.
+    //
+    // Loop nesting: twist on the OUTER loop so the sphere's full node coord is built ONCE per
+    // twist and reused; the {tol,max_depth,Nbeta} sweep on the INNER loop. A FRESH QuadElemList
+    // is constructed from the reused coord for every parameter set, so no near/self quadrature
+    // cache built for a previous (tol,max_depth,Nbeta) can leak into the next.
+    // ================================================================================
+    using QS = QuadElemList<Real>::QuadScheme;
 
-    // gmsh import pipeline vs. analytic cubed-sphere (geometry invariants + BIO-vs-SH).
-    // Coarse ./sphere mesh: low resolution, so resample its panels to QuadOrder 4.
-    // test_GmshVsTwistSphere(comm, "./sphere", 4);
-    // test_GmshVsTwistSphere(comm, "./sphere_ord9", 16);
+    const Long   ElemOrder    = 12; // fixed element order
+    const Long   PatchPerFace = 20;  // fixed patches/face (Npatch); 6*8*8 = 384 elements -> 6*20*20 = 2400 elements
+    const Real   Radius       = 1.0;
+    const Vector<Real> X0{1.3, 1.2, 0.2}; // exterior source for the interior Green's identity
 
-    // test_NbetaSweep(comm);
+    // Coupled near/self accuracy knobs, tightened together. max_depth must be one of {4,8,12,30}.
+    struct Param { Real tol; Integer max_depth; Integer Nbeta; };
+    const std::vector<Param> params = {
+      {1e-5,   4,  48},
+      {1e-7,   8, 100},
+      {1e-9,  12, 200},
+      {1e-11, 30, 400},
+    };
 
-// #if 0
-    const Long ElemOrder = 16;
-    const Long PatchPerFace = 5;
-    const double Radius = 1.0;
+    // Twisted cubed-spheres: theta_twist in {0, pi/2, pi}.
+    const std::vector<std::pair<const char*, Real>> twists = {
+      {"twist=0",    (Real)0},
+      {"twist=pi/2", const_pi<Real>() / 2},
+      {"twist=pi",   const_pi<Real>()},
+    };
 
-    // === Near-quadrature schemes: on-surface DL + Green's identity, and off-surface interior near ===
-    // On-surface (targets = nodes) exercises the self path + adjacent-panel EDGE near; off-surface
-    // center targets exercise the panel-INTERIOR near path. Adaptive (closest-point near) and
-    // RectPolar match at the surface-resolution floor (~5e-8 on-surface, ~5e-7 interior). hedgehog
-    // matches on interior targets but is inaccurate near seams, so it is shown for interior only.
-    {
-      using QS = QuadElemList<double>::QuadScheme;
-      const Vector<double> X0{1.3, 1.2, 0.2}; // exterior source for the interior Green's identity
-      const Long EO = 12, PPF = 2; const double ctol = 1e-7; // 24-patch order-12 sphere
-      auto make = [&](QS s) {
-        auto e = BuildTwistedSphere<double>(EO, PPF, Radius, 0., comm);
-        if      (s == QS::RectPolar) e.SetQuadScheme(QS::RectPolar, 6, 512, 30);
-        else if (s == QS::LineQBX)   { e.SetQuadScheme(QS::LineQBX); e.SetLineQBXParams(); } // R=r=0.02L,p=16,eta=2,up=72
-        else                         e.SetQuadScheme(QS::Adaptive, 6, 0, 30);
-        return e;
-      };
+    // Build the full (globally-replicated) node coords for a given twist once. The QuadElemList
+    // constructor keeps only this rank's contiguous element slice under MPI, so this must be the
+    // full mesh (mirrors BuildTwistedSphere's node loop; FacePoint is the shared face map).
+    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(ElemOrder);
+    auto build_coord = [&](Real theta_twist) {
+      Vector<Real> X;
+      for (Integer face = 0; face < 6; face++)
+        for (Long iu = 0; iu < PatchPerFace; iu++)
+          for (Long iv = 0; iv < PatchPerFace; iv++)
+            for (Long i = 0; i < ElemOrder; i++) {
+              const Real a = 2 * ((iu + nds[i]) / (Real)PatchPerFace) - 1;
+              for (Long j = 0; j < ElemOrder; j++) {
+                const Real b = 2 * ((iv + nds[j]) / (Real)PatchPerFace) - 1;
+                Real x, y, z;
+                FacePoint(x, y, z, face, a, b, Radius);
+                const Real s = sin<Real>(theta_twist * z), c = cos<Real>(theta_twist * z);
+                X.PushBack(x * c + y * s);
+                X.PushBack(-x * s + y * c);
+                X.PushBack(z);
+              }
+            }
+      return X;
+    };
 
-      if (!comm.Rank()) std::cout << "\n=== On-surface DL + Green's identity (order-" << EO << ", " << PPF << " patch/face) ===\n";
-      for (const auto& c : {std::make_pair("Adaptive", QS::Adaptive), std::make_pair("RectPolar", QS::RectPolar)}) {
-        auto elem = make(c.second);
-        if (!comm.Rank()) std::cout << "\n--- " << c.first << " (on-surface) ---\n";
-        if (!comm.Rank()) std::cout << "[Laplace DL] "; test_DLIdentity<double, Laplace3D_DxU>(elem, comm, ctol);
-        if (!comm.Rank()) std::cout << "[Stokes  DL] "; test_DLIdentity<double, Stokes3D_DxU>(elem, comm, ctol);
+    // Result files, named for THIS study (near tol sweep x twisted spheres at a fixed order) so they
+    // do not collide with the older results_*.txt / Nbeta_sweep.txt in the repo root. Rank 0 only,
+    // flushed per row so a crashed or timed-out configuration still leaves its completed rows.
+    const std::string tag = "near_tolsweep_ord" + std::to_string((long long)ElemOrder)
+                          + "_p" + std::to_string((long long)PatchPerFace);
+    std::ofstream csv, txt;
+    if (!comm.Rank()) {
+      csv.open("results_" + tag + ".csv");
+      txt.open("results_" + tag + ".txt");
+      csv << "twist,ElemOrder,PatchPerFace,Nelem,tol,max_depth,Nbeta,kernel,placement,err\n";
+      txt << "# Green's identity, on-surface, Hybrid scheme (adaptive near + RectPolar self)\n"
+          << "# ElemOrder=" << ElemOrder << "  PatchPerFace=" << PatchPerFace
+          << "  Nelem=" << 6*PatchPerFace*PatchPerFace << "\n"
+          << "# twist        tol   max_depth  Nbeta       Laplace          Stokes\n";
+      csv << std::scientific; txt << std::scientific;
+    }
+
+    for (const auto& tw : twists) {
+      const Vector<Real> coord = build_coord(tw.second); // built once per sphere, reused below
+      if (!comm.Rank())
+        std::cout << "\n########## Sphere " << tw.first << "  (order " << ElemOrder
+                  << ", " << PatchPerFace << " patch/face, " << 6 * PatchPerFace * PatchPerFace
+                  << " elems) ##########\n";
+
+      for (const auto& p : params) {
+        // Fresh QuadElemList from the reused coord: no cache carried over between parameter sets.
+        QuadElemList<Real> qel(ElemOrder, coord, comm);
+        qel.SetQuadScheme(QS::Hybrid, /*q=*/6, /*cov_order=*/p.Nbeta, /*max_depth=*/p.max_depth);
+
+        if (!comm.Rank())
+          std::cout << "\n--- tol=" << p.tol << "  max_depth=" << p.max_depth
+                    << "  Nbeta=" << p.Nbeta << " ---\n";
+
         if (!comm.Rank()) std::cout << "[Laplace Green's] ";
-        test_greens_identity<double, Laplace3D_FxU, Laplace3D_DxU, Laplace3D_FxdU>(elem, comm, ctol, X0, /*trg_dist=*/0.);
+        const Real e_lap = test_greens_identity<Real, Laplace3D_FxU, Laplace3D_DxU, Laplace3D_FxdU>(qel, comm, p.tol, X0, /*trg_dist=*/0.);
         if (!comm.Rank()) std::cout << "[Stokes  Green's] ";
-        test_greens_identity<double, Stokes3D_FxU, Stokes3D_DxU, Stokes3D_FxT>(elem, comm, ctol, X0, /*trg_dist=*/0.);
-      }
+        const Real e_stk = test_greens_identity<Real, Stokes3D_FxU, Stokes3D_DxU, Stokes3D_FxT>(qel, comm, p.tol, X0, /*trg_dist=*/0.);
 
-      if (!comm.Rank()) std::cout << "\n=== Off-surface interior near: Stokes Green's identity @ trg_dist=1e-4 ===\n";
-      for (const auto& c : {std::make_pair("Adaptive", QS::Adaptive), std::make_pair("RectPolar", QS::RectPolar), std::make_pair("hedgehog", QS::LineQBX)}) {
-        auto elem = make(c.second);
-        if (!comm.Rank()) std::cout << "\n--- " << c.first << " (interior near) ---\n";
-        test_greens_identity<double, Stokes3D_FxU, Stokes3D_DxU, Stokes3D_FxT>(elem, comm, ctol, X0, /*trg_dist=*/1e-4, /*center_only=*/true);
+        if (!comm.Rank()) {
+          const Long Nelem = 6*PatchPerFace*PatchPerFace;
+          csv << tw.first << ',' << ElemOrder << ',' << PatchPerFace << ',' << Nelem << ','
+              << p.tol << ',' << p.max_depth << ',' << p.Nbeta << ",Laplace,on-surface," << e_lap << '\n';
+          csv << tw.first << ',' << ElemOrder << ',' << PatchPerFace << ',' << Nelem << ','
+              << p.tol << ',' << p.max_depth << ',' << p.Nbeta << ",Stokes,on-surface," << e_stk << '\n';
+          csv.flush();
+          txt << "  " << std::setw(8) << tw.first << "  " << p.tol << "  " << std::setw(9) << p.max_depth
+              << "  " << std::setw(5) << p.Nbeta << "   " << e_lap << "   " << e_stk << '\n';
+          txt.flush();
+        }
       }
     }
-    // QuadElemList<double> elem_lst = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, 0., comm);
-
-    // if (!comm.Rank()) std::cout << "\n=== Scheme 1: Adaptive subdivision of panels ===" << std::endl;
-    // if (!comm.Rank()) std::cout << "------ Quadr and BIO tests for regular sphere -------" << std::endl;
-    // test_SurfaceArea(elem_lst, Radius, comm);
-    // test_StokesDLIdentity(elem_lst, comm);
-    // test_BIOvsSH(elem_lst, comm, true);
-    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm);
-    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, true);
-    // if (!comm.Rank()) std::cout << "------ Profile BIO compute potential at near target, regular sphere. ------ " << std::endl;
-    // test_timing_StkSL(elem_lst, comm, 1e-12);
-
-    // std::cout << "------ Quadr and BIO tests for twisted sphere -------" << std::endl;
-    const Long ElemOrder_twisted = 16;
-    const Long PatchPerFace_twisted = 5;
-    // Small twist
-    double theta_twist = const_pi<double>() / 6.;
-    // QuadElemList<double> elem_lst_twist = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist);
-    // test_SurfaceArea(elem_lst_twist, Radius);
-    // test_StokesDLIdentity(elem_lst_twist, comm);
-    // test_BIOvsSH(elem_lst_twist, comm, false, 1e-14);
-    // std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, 0, theta_twist, {1,2,3}, 12);
-
-    // // Moderate twist
-    // theta_twist = const_pi<double>() / 2.;
-    // QuadElemList<double> elem_lst_twist2 = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist);
-    // test_SurfaceArea(elem_lst_twist2, Radius);
-    // test_StokesDLIdentity(elem_lst_twist2, comm);
-    // test_BIOvsSH(elem_lst_twist2, comm, false, 1e-14);
-    // std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, 0, theta_twist, {1,2,3,4,5}, 12);
-
-    // // Large twist
-    // theta_twist = const_pi<double>();
-    // QuadElemList<double> elem_lst_twist3 = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist, comm);
-    // Vector<double> Xtwist, Xntwist;
-    // elem_lst_twist3.GetNodeCoord(&Xtwist, &Xntwist, nullptr);
-    // elem_lst_twist3.WriteVTK("twisted3_sphere_mpi", Xntwist, comm); // one .vtu per rank + rank-0 .pvtu master
-    // test_SurfaceArea(elem_lst_twist3, Radius, comm);
-    // test_StokesDLIdentity(elem_lst_twist3, comm);
-    // test_BIOvsSH(elem_lst_twist3, comm, false, 1e-14);
-    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, 0, theta_twist, {3,4,5}, 16);
-
-
-    // // --- Scheme 2: rectangular-polar COV (Bruno 2018) for near/self interactions ---
-    // if (!comm.Rank()) std::cout << "\n=== Scheme 2: rectangular-polar change of variable ===" << std::endl;
-    // // Profile::Enable(true);
-    // QuadElemList<double> elem_lst_rp = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, 0., comm);
-    // elem_lst_rp.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar, 6, 256);
-    // test_SurfaceArea(elem_lst_rp, Radius, comm);
-    // test_StokesDLIdentity(elem_lst_rp, comm);
-    // test_BIOvsSH(elem_lst_rp, comm);
-    // test_LaplaceManufactured(elem_lst_rp, comm);
-    // test_StokesManufactured(elem_lst_rp, comm);
-    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, 1);
-    // // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
-    // // test_ManufacturedConvergence(comm, true, 1);
-    // if (!comm.Rank()) std::cout << "------ Profile BIO compute potential at near target, R-P scheme, regular sphere. ------ " << std::endl;
-    // test_timing_StkSL(elem_lst_rp, comm, 1e-12);
-
-    // elem_lst_rp = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist, comm);
-    // elem_lst_rp.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar);
-    // test_SurfaceArea(elem_lst_rp, Radius, comm);
-    // test_StokesDLIdentity(elem_lst_rp, comm);
-    // test_BIOvsSH(elem_lst_rp, comm);
-    // test_LaplaceManufactured(elem_lst_rp, comm);
-    // test_StokesManufactured(elem_lst_rp, comm);
-    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, 1, theta_twist);
-    // // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
-    // // test_ManufacturedConvergence(comm, true, 1, theta_twist);
-    // if (!comm.Rank()) std::cout << "------ Profile BIO compute potential at near target, R-P scheme, twisted sphere. ------ " << std::endl;
-    // test_timing_StkSL(elem_lst_rp, comm, 1e-12);
-
-    // if (!comm.Rank()) std::cout << "\n=== Scheme 3: Hybrid ===" << std::endl;
-    // if (!comm.Rank()) std::cout << "------ Quadr and BIO tests for regular sphere -------" << std::endl;
-    // elem_lst.SetQuadScheme(QuadElemList<double>::QuadScheme::Hybrid, 6, 512);
-    // test_SurfaceArea(elem_lst, Radius, comm);
-    // test_StokesDLIdentity(elem_lst, comm);
-    // test_BIOvsSH(elem_lst, comm, true);
-    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, 2);
-
-// #endif
+    if (!comm.Rank())
+      std::cout << "\nwrote results_" << tag << ".csv and results_" << tag << ".txt\n";
 
   }
 

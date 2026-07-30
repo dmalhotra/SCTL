@@ -130,7 +130,16 @@ template <typename ValueType, Long DIM> using StaticArray = ValueType[DIM];
 #  ifndef SCTL_HAVE_MPI
 #    define SCTL_HAVE_MPI
 #  endif
-#  include "pvfmm_config.h"
+// PVFMM <= 1.3 generated pvfmm_config.h at configure time; the develop branch
+// dropped it and passes the same -D flags from MakeVariables instead. Include
+// it only if it exists so both layouts build.
+#  if defined(__has_include)
+#    if __has_include("pvfmm_config.h")
+#      include "pvfmm_config.h"
+#    endif
+#  else
+#    include "pvfmm_config.h"
+#  endif
 #  if defined(PVFMM_QUAD_T) && !defined(SCTL_QUAD_T)
 #    define SCTL_QUAD_T PVFMM_QUAD_T
 #  endif

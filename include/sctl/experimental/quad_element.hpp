@@ -328,6 +328,11 @@ namespace sctl {
       template <Integer digits> static Integer DigitsQuadOrder();
       template <Integer digits> static Real DigitsBEllipse();
 
+      // GL rule on [0,1] for the per-panel order DigitsQuadOrder<digits>(). Build-once static:
+      // LegQuadRule::ComputeNdsWts is an O(N^2) Newton solve and is NOT cached, so the adaptive
+      // near path must not call it per target. Warmed in SelfInteracHelper (off the OMP region).
+      template <Integer digits> static const std::pair<Vector<Real>, Vector<Real>>& DigitsGLRule();
+
       // Number of geometric grading levels (per side) toward v0 in the composite Alpert v-rule,
       // as a function of requested accuracy. Runtime core + compile-time `digits` wrapper.
       static Integer VLevelsForDigits(const Integer digits);
@@ -355,14 +360,45 @@ namespace sctl {
       // Dyadic subdivision underlying BuildGraded1D: leaf segments ({a0,a1} each in `seg`) + depths.
       static void BuildGraded1DSegments(Vector<Real>& seg, Vector<Long>& seg_depth, const Real center, const Real b_ellipse, const Integer max_depth);
 
+      // Lay a `qnds`-point GL rule on each segment of `seg` ({a0,a1} pairs), concatenated in
+      // segment order. The expansion tail shared by BuildGraded1D and BuildNearTensorRule.
+      static void ExpandSegments(Vector<Real>& param, Vector<Real>& w, const Vector<Real>& seg, const Vector<Real>& qnds, const Vector<Real>& qwts);
+
+      // Split [0,1] AT `center`, then grade geometrically outward from it on each side with ratio
+      // r = b_ellipse/(1+b_ellipse) (times a small safety margin) -- the coarsest ratio for which
+      // every segment satisfies pdist >= b_ellipse*width. Grading stops at an innermost width of
+      // `w_min`, so the segment TOUCHING `center` has width <= w_min and is admissible only under
+      // the off-surface effective distance sqrt(pdist^2 + h^2) with h = b_ellipse*w_min -- i.e.
+      // this partition is valid ONLY for off-surface (dist > 0) targets, never for the self path.
+      static void BuildFootGraded1DSegments(Vector<Real>& seg, Vector<Long>& seg_depth, const Real center, const Real b_ellipse, const Real w_min);
+
+      // Closest point (foot) on elem_idx to Xtrg, its distance, and the dyadic depth cap for the
+      // near quadrature: L ~ log2(b_ellipse*L_phys/dist) clamped to [0,max_depth], where L_phys is
+      // the surface speed at the foot. Shared with the legacy quadtree builder and the VTK writer
+      // so they refine about the same center to the same depth. `h_param` (optional) receives the
+      // target's off-surface distance in PARAMETER units, dist/L_phys (0 if degenerate), which sets
+      // the innermost segment width. Returns L.
+      static Integer NearFootAndDepth(Real& ustar, Real& vstar, Real& dist, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse, const Integer max_depth, Real* h_param = nullptr);
+
+      // The adaptive near rule: split at the foot and grade geometrically outward in u and in v
+      // independently (BuildFootGraded1DSegments), then take the FULL TENSOR PRODUCT of the two 1D
+      // rules. The optional seg/seg_depth out-params expose the raw segments for the VTK writer.
+      // Returns the depth cap L.
+      static Integer BuildNearTensorRule(Vector<Real>& u_param, Vector<Real>& wu, Vector<Real>& v_param, Vector<Real>& wv,
+                                         Vector<Real>* useg, Vector<Long>* useg_depth, Vector<Real>* vseg, Vector<Long>* vseg_depth,
+                                         const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg,
+                                         const Real b_ellipse, const Vector<Real>& qnds, const Vector<Real>& qwts, const Integer max_depth);
+
       // Composite/graded Alpert rule on [0,1] for a log singularity at interior v0: split at
       // v0, grade `Lvl` geometric panels per side toward v0. The v0-touching panel uses the
       // Alpert log endpoint correction; smooth panels use a `QuadOrder` Gauss-Legendre rule.
       // Tables: alpert_quadr.cpp.
       static void LogSingularQuad1D(Vector<Real>& param, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder);
 
-      // Adaptive 2D quadtree underlying NearInteracBlock: leaf rectangles (4 reals {u0,u1,v0,v1}
-      // each in `leaf_box`) + depths, graded toward the closest point to Xtrg. Shared with WriteNearInteracVTK.
+      // LEGACY (not in the production path). Adaptive 2D quadtree underlying NearInteracBlock:
+      // leaf rectangles (4 reals {u0,u1,v0,v1} each in `leaf_box`) + depths, graded toward the
+      // closest point to Xtrg. Superseded by BuildNearTensorRule; retained only so the
+      // NearInteracBlock / NearInteracBlockBatched pair remains available as a bit-exact reference.
       static void BuildNearLeaves(Vector<Real>& leaf_box, Vector<Long>& leaf_depth, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse, const Integer max_depth);
 
       // Accuracy/order-templated impls of NearInterac/SelfInterac: entry points dispatch runtime
@@ -372,14 +408,24 @@ namespace sctl {
       template <Integer digits, Integer order, class Kernel> static void SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self);
       template <Integer digits, Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self);
 
-      // Per-target adaptive 2D quadtree near-interaction block (off-surface target).
+      // LEGACY (not in the production path). Per-target adaptive 2D quadtree near-interaction
+      // block; superseded by NearInteracBlockGraded. Kept as the per-leaf reference against which
+      // NearInteracBlockBatched is gated bit-for-bit (QuadElemTestAccess::CompareNearBlocks).
       template <Integer digits, Integer order, class Kernel> static void NearInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
-      // Leaf-batched equivalent of NearInteracBlock: same quadtree/interp-cache, but the per-leaf
-      // geometry/kernel/projection GEMMs are batched across leaves (interval-grouped, separable,
-      // bit-for-bit identical to the per-leaf path). This is the production near path; NearInteracBlock
-      // is retained as the reference for the bit-for-bit gate (QuadElemTestAccess::CompareNearBlocks).
+      // LEGACY (not in the production path). Leaf-batched equivalent of NearInteracBlock: same
+      // quadtree/interp-cache, but the per-leaf geometry/kernel/projection GEMMs are batched across
+      // leaves (interval-grouped, separable, bit-for-bit identical to the per-leaf path). Was the
+      // production near path before NearInteracBlockGraded replaced it.
       template <Integer digits, Integer order, class Kernel> static void NearInteracBlockBatched(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
+
+      // THE adaptive near block (what NearInterac uses for QuadScheme::Adaptive and the near phase
+      // of Hybrid): BuildNearTensorRule gives ONE foot-graded tensor grid over the whole panel,
+      // integrated by a single IntegrateBlock -- no quadtree, no per-leaf loop, no interval dedup.
+      // One interpolation matrix per side over all concatenated nodes (no per-segment composition);
+      // the grid size is bounded a priori by max_depth and QuadOrder, so no chunking is needed --
+      // see the .cpp for the worst-case scratch figures.
+      template <Integer digits, Integer order, class Kernel> static void NearInteracBlockGraded(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
       // Per-target singular self-interaction block at (u0,v0): graded u-refinement + 1D log rule in v.
       template <Integer digits, Integer order, class Kernel> static void SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
@@ -400,6 +446,14 @@ namespace sctl {
       // Line-QBX / hedgehog near-interaction block (Lu 2019 sec.3.1); knobs from SetLineQBXParams.
       // Accurate only for panel-interior targets (see SetLineQBXParams seam caveat).
       template <Integer order, class Kernel> static void NearInteracBlockQBX(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
+
+      // Batched Line-QBX / hedgehog near-interaction for ALL near targets of one element (the
+      // production path; NearInteracBlockQBX above is the equivalent per-target reference). The
+      // upsampled source-patch geometry and the sub-panel interp rules are target-independent, so
+      // they are precomputed ONCE per element and reused across every target and check point; only
+      // the kernel evaluation and the (accumulate-then-project) contraction remain per check point.
+      // Writes the full nnode*KDIM0 x Ntrg*KDIM1_out operator M (same layout as NearInteracHelper).
+      template <Integer order, class Kernel> static void NearInteracBatchedQBX(Matrix<Real>& M, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker);
 
       Long nelem = 0;
       Integer order = 0;

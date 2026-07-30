@@ -110,13 +110,22 @@ TARGET_BIN = \
        $(BINDIR)/test-scratch-pool \
        $(BINDIR)/test-scratch-pool-perf \
 	   $(BINDIR)/unit-test-quad-element \
-	   $(BINDIR)/test-quad-elem
+	   $(BINDIR)/test-quad-elem \
+	   $(BINDIR)/test-hedgehog-near \
+	   $(BINDIR)/test-hedgehog-greens \
+	   $(BINDIR)/unit-test-near-graded
 
-.PHONY: all test clean quad bench bench-gmsh
+.PHONY: all test clean quad bench bench-gmsh hedgehog hedgehog-greens near-graded
 
 all : $(TARGET_BIN)
 
 quad : $(BINDIR)/unit-test-quad-element
+
+hedgehog : $(BINDIR)/test-hedgehog-near
+
+hedgehog-greens : $(BINDIR)/test-hedgehog-greens
+
+near-graded : $(BINDIR)/unit-test-near-graded
 
 bench : $(BINDIR)/bench-quad-interac
 

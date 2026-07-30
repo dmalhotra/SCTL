@@ -219,6 +219,17 @@ int main(int argc, char** argv) {
       bench_near(ker_stk, QS::RectPolar, order, 1e-7,  10, 300, 100);
       bench_near(ker_lap, QS::Hybrid,    order, 1e-10, 10, 0,   100);  // near uses adaptive (tol-driven), flat element
     }
+
+    // Line-QBX / hedgehog near, panel-interior off-surface target (u0=0.4,v0=0.6). Uses the
+    // SetLineQBXParams high-accuracy defaults (R=r=0.02L, p=16, up=72, eta=2). Repeated nrep calls
+    // hit the same element, so the thread_local source-geometry cache is warm from call #1 -- the
+    // warm_avg row is the amortized per-target cost (geometry shared, as when an element has many
+    // near targets). Set env QBX_OLD=1 to time the per-target reference path (rebuilds everything).
+    std::printf("\n---- Line-QBX (hedgehog) near (defaults R=0.02L,p=16,up=72,eta=2) ----\n");
+    for (const Integer order : {8, 16}) {
+      bench_near(ker_lap, QS::LineQBX, order, 1e-10, 10, 0, /*nrep=*/10);
+      bench_near(ker_stk, QS::LineQBX, order, 1e-10, 10, 0, /*nrep=*/10);
+    }
     // One twisted-patch comparison: same adaptive-near path on a pi/2-sheared cubed-sphere
     // patch. Contrast leaves/target + phase split vs the flat Hybrid case above to see whether
     // shear inflates the near cost uniformly (leaf-count growth) or hits a specific phase.

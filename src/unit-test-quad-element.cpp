@@ -734,10 +734,45 @@ template <class Real> void test_GmshReader(const char* fname = "./sphere", const
     SCTL_ASSERT(max_ord_err < (Real)1e-11);
 }
 
+// Visualize the Hybrid scheme (adaptive near + rectangular-polar self) on a single
+// flat order-12 panel: dump the near quadtree leaf GL grid and the RP self grid to VTK
+// for inspection in ParaView. Reuses QuadElemList's WriteNearInteracVTK (adaptive) and
+// WriteSelfInteracRPVTK (RectPolar) writers.
+template <class Real> void hybrid_scheme_vis() {
+    using QS = typename QuadElemList<Real>::QuadScheme;
+    const Integer order = 12;
+    const Long evis = 0;
+
+    // Flat panel z = 0, order 12, single element.
+    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    QuadElemList<Real> qel(order, coord0);
+    // Hybrid = adaptive near + RectPolar self; max_depth=12 caps the adaptive near
+    // quadtree; q/cov_order feed the RP self grid rendering.
+    qel.SetQuadScheme(QS::Hybrid, /*q=*/6, /*cov_order=*/200, /*max_depth=*/12);
+
+    // --- Near (adaptive): target at (u*,v*)=(0.314,0.157), 0.02 off surface along normal.
+    Vector<Real> up{(Real)0.314}, vp{(Real)0.157}, Xc, Xn;
+    qel.GetGeom(&Xc, &Xn, nullptr, nullptr, nullptr, up, vp, evis);
+    Vector<Real> Xtrg(3);
+    for (Integer k = 0; k < 3; k++) Xtrg[k] = Xc[k] + (Real)0.02 * Xn[k];
+    qel.WriteNearInteracVTK("hybrid-near-elem0", evis, Xtrg, /*tol=*/1e-9, Comm::Self());
+
+    // --- Self (RectPolar): singular point at the 8th x-node and 10th y-node (1-based).
+    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+    const Real u0 = nds[7], v0 = nds[9];
+    qel.WriteSelfInteracRPVTK("hybrid-self-elem0", evis, u0, v0, /*Nbeta=*/200, Comm::Self());
+
+    // --- Original order-12 tensor GL grid of the panel itself (quad mesh).
+    qel.WriteVTK("hybrid-panel-grid", Vector<Real>(), Comm::Self());
+
+    std::cout << "  hybrid_scheme_vis: wrote hybrid-near-elem0-*, hybrid-self-elem0-*, hybrid-panel-grid-* VTK files\n";
+}
+
 int main(int argc, char** argv) {
 
     using Real = double;
 
+    #if 0
     test_GmshReader<Real>();
     std::cout << "test_GmshReader: PASSED\n";
     test_ParamGrid<Real>();
@@ -843,6 +878,11 @@ int main(int argc, char** argv) {
         SCTL_ASSERT(e_dxu < 1e-7);
         std::cout << "test_NearInterac (LineQBX/hedgehog, deep-near @ d=1e-4): PASSED\n";
     }
+
+    #endif
+
+    std::cout << "--- Hybrid scheme visualization (flat order-12 panel) ---\n";
+    hybrid_scheme_vis<Real>();
 
     return 0;
 }
