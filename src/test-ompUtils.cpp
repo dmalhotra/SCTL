@@ -152,5 +152,26 @@ int main() {
     for (Long i = 0; i < N; ++i) CHECK(B[i] == ref[i]);
   }
 
+  // --- sample_sort: out-of-place, in-place, and a size past the parallel threshold ---
+  std::printf("sample_sort :\n");
+  {
+    struct Rec { Long key; char pad[88]; };           // ~96B, like BuildNearList's NodeData
+    auto by_key = [](const Rec& a, const Rec& b) { return a.key < b.key; };
+    for (const Long N : {(Long)5, (Long)1000, (Long)100 * SCTL_GET_MAX_THREADS() + 4321}) {
+      std::vector<Rec> A(N), B(N), ref(N);
+      for (Long i = 0; i < N; ++i) A[i].key = ((i * 2654435761u) % 100003);
+      ref = A;
+      std::stable_sort(ref.begin(), ref.end(), [](const Rec& a, const Rec& b){ return a.key < b.key; });
+
+      sctl::omp_par::sample_sort(A.data(), B.data(), N, by_key);   // out-of-place
+      for (Long i = 0; i < N; ++i) CHECK(B[i].key == ref[i].key);
+      for (Long i = 1; i < N; ++i) CHECK(B[i-1].key <= B[i].key);
+
+      std::vector<Rec> C = A;
+      sctl::omp_par::sample_sort(C.data(), C.data() + N, by_key);  // in-place overload
+      for (Long i = 0; i < N; ++i) CHECK(C[i].key == ref[i].key);
+    }
+  }
+
   TEST_SUMMARY_RETURN();
 }
