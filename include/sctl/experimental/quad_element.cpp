@@ -237,8 +237,8 @@ namespace sctl {
     const int ord = 16;
     std::vector<Real> px, pw;
     auto add_alpert = [&](const Real a, const Real b, int corra, int corrb) {
-      const ExtraPtResult L = (corra == 2 ? QuadLogExtraPtNodes((double)ord) : QuadSmoothExtraPtNodes((double)ord));
-      const ExtraPtResult R = (corrb == 2 ? QuadLogExtraPtNodes((double)ord) : QuadSmoothExtraPtNodes((double)ord));
+      const ExtraPtResult<Real> L = (corra == 2 ? QuadLogExtraPtNodes<Real>((double)ord) : QuadSmoothExtraPtNodes<Real>((double)ord));
+      const ExtraPtResult<Real> R = (corrb == 2 ? QuadLogExtraPtNodes<Real>((double)ord) : QuadSmoothExtraPtNodes<Real>((double)ord));
       const int skipL = L.NodesToSkip, skipR = R.NodesToSkip;
       const int N = std::max(skipL + skipR + 2, 2 * ord);
       const int N1 = N - 1;
@@ -1030,7 +1030,7 @@ namespace sctl {
       const Seg s = stack.back(); stack.pop_back();
 
       // Parameter distance from `center` to the segment (clamp into [a0,a1]) vs width.
-      const Real pdist = std::fabs(std::min<Real>(s.a1, std::max<Real>(s.a0, center)) - center);
+      const Real pdist = fabs<Real>(std::min<Real>(s.a1, std::max<Real>(s.a0, center)) - center);
       if (pdist >= b_ellipse*(s.a1-s.a0) || s.depth >= max_depth) {
         leaves.push_back(s);
         SCTL_ASSERT((Long)leaves.size() <= MaxLeaves);
@@ -1066,8 +1066,8 @@ namespace sctl {
     // Alpert log/smooth-corrected trapezoidal rule on [a,b]; corr == 2 -> log endpoint, else
     // smooth. Used only on the panel touching v0 (where the log singularity sits).
     auto add_alpert = [&](double a, double b, int corra, int corrb) {
-      const ExtraPtResult L = (corra == 2 ? QuadLogExtraPtNodes((double)ord) : QuadSmoothExtraPtNodes((double)ord));
-      const ExtraPtResult R = (corrb == 2 ? QuadLogExtraPtNodes((double)ord) : QuadSmoothExtraPtNodes((double)ord));
+      const ExtraPtResult<Real> L = (corra == 2 ? QuadLogExtraPtNodes<Real>((double)ord) : QuadSmoothExtraPtNodes<Real>((double)ord));
+      const ExtraPtResult<Real> R = (corrb == 2 ? QuadLogExtraPtNodes<Real>((double)ord) : QuadSmoothExtraPtNodes<Real>((double)ord));
       const int skipL = L.NodesToSkip, skipR = R.NodesToSkip;
 
       // Uniform grid with ~2*ord intervals, enough to host both corrections.
@@ -1891,8 +1891,8 @@ namespace sctl {
     while (!stack.empty()) {
       const Panel p = stack.back(); stack.pop_back();
       const Real width = p.u1 - p.u0;
-      const Real du = std::fabs(std::min<Real>(p.u1, std::max<Real>(p.u0, ustar)) - ustar);
-      const Real dv = std::fabs(std::min<Real>(p.v1, std::max<Real>(p.v0, vstar)) - vstar);
+      const Real du = fabs<Real>(std::min<Real>(p.u1, std::max<Real>(p.u0, ustar)) - ustar);
+      const Real dv = fabs<Real>(std::min<Real>(p.v1, std::max<Real>(p.v0, vstar)) - vstar);
       const Real pdist = sqrt<Real>(du*du + dv*dv);
 
       if (p.depth >= L || pdist >= b_ellipse*width) {
