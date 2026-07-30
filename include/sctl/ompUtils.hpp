@@ -175,6 +175,21 @@ template <class ConstIter, class Int> typename std::iterator_traits<ConstIter>::
  */
 template <class ConstIter, class Iter, class Int> void scan(ConstIter A, Iter B, Int cnt);
 
+/**
+ * Exclusive prefix sum that also writes the seed: sets `B[0] = seed`, then behaves exactly like
+ * `scan(A, B, cnt)`. Preferred over the 3-argument form, which leaves `B[0]` to the caller.
+ *
+ * @tparam ConstIter Iterator type for the input range.
+ * @tparam Iter Iterator type for the output range.
+ * @tparam Int Integer type for indexing.
+ *
+ * @param[in] A Beginning iterator of the input range (length `cnt`).
+ * @param[out] B Beginning iterator of the output range (length `cnt`); `B[0..cnt-1]` are written.
+ * @param[in] cnt Number of elements in each range.
+ * @param[in] seed Value written to `B[0]`; pass 0 to convert a count array to displacements.
+ */
+template <class ConstIter, class Iter, class Int> void scan(ConstIter A, Iter B, Int cnt, typename std::iterator_traits<Iter>::value_type seed);
+
 }  // end namespace omp_par
 }  // end namespace sctl
 

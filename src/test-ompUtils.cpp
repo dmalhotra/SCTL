@@ -127,6 +127,29 @@ int main() {
     sctl::omp_par::scan(cnt.begin(), dsp.begin(), (Long)cnt.size());
     Long expected[] = {0, 3, 8, 9, 13};
     for (size_t i = 0; i < cnt.size(); ++i) CHECK(dsp[i] == expected[i]);
+
+    // 4-argument overload writes the seed too, matching the 3-argument form
+    for (const Long seed : {(Long)0, (Long)100}) {
+      std::vector<Long> C(10, -1);
+      sctl::omp_par::scan(A.begin(), C.begin(), (Long)10, seed);
+      Long acc_ = seed;
+      for (Long i = 0; i < 10; ++i) {
+        CHECK(C[i] == acc_);
+        if (i < 9) acc_ += A[i];
+      }
+    }
+  }
+
+  // --- scan over a range long enough to take the multi-threaded path ---
+  std::printf("scan (parallel path) :\n");
+  {
+    const Long N = 100 * SCTL_GET_MAX_THREADS() + 1000;
+    std::vector<Long> A(N), B(N, -1), ref(N);
+    for (Long i = 0; i < N; ++i) A[i] = (i % 7) + 1;
+    ref[0] = 5;
+    for (Long i = 1; i < N; ++i) ref[i] = ref[i - 1] + A[i - 1];
+    sctl::omp_par::scan(A.begin(), B.begin(), N, (Long)5);
+    for (Long i = 0; i < N; ++i) CHECK(B[i] == ref[i]);
   }
 
   TEST_SUMMARY_RETURN();
