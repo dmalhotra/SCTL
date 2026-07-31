@@ -37,24 +37,6 @@
 using namespace sctl;
 
 // Friend shim: forwards to QuadElemList's private near helpers (must live in namespace sctl).
-namespace sctl {
-template <class Real> struct QuadElemTestAccess {
-  // NearFootAndDepth with the off-surface parameter distance h = dist/L_phys exposed.
-  static Integer NearFootAndDepth(Real& us, Real& vs, Real& dist, Real& h, const QuadElemList<Real>& qel,
-                                  const Long e, const Vector<Real>& Xt, const Real b, const Integer md) {
-    return QuadElemList<Real>::NearFootAndDepth(us, vs, dist, qel, e, Xt, b, md, &h);
-  }
-  static Integer BuildNearTensorRule(Vector<Real>& up, Vector<Real>& wu, Vector<Real>& vp, Vector<Real>& wv,
-                                     Vector<Real>* useg, Vector<Long>* ud, Vector<Real>* vseg, Vector<Long>* vd,
-                                     const QuadElemList<Real>& qel, const Long e, const Vector<Real>& Xt,
-                                     const Real b, const Vector<Real>& qn, const Vector<Real>& qw, const Integer md) {
-    return QuadElemList<Real>::BuildNearTensorRule(up, wu, vp, wv, useg, ud, vseg, vd, qel, e, Xt, b, qn, qw, md);
-  }
-  template <Integer digits> static Integer DigitsQuadOrder() { return QuadElemList<Real>::template DigitsQuadOrder<digits>(); }
-  template <Integer digits> static Real DigitsBEllipse() { return QuadElemList<Real>::template DigitsBEllipse<digits>(); }
-  template <Integer digits> static const std::pair<Vector<Real>, Vector<Real>>& DigitsGLRule() { return QuadElemList<Real>::template DigitsGLRule<digits>(); }
-};
-}
 
 namespace {
 
@@ -157,64 +139,6 @@ template <class Real, class Kernel> Vector<Real> direct_upsampled_potential(
   return u;
 }
 
-// ---------------------------------------------------------------------------------------------
-// 1. Rule structure + off-surface admissibility.
-//
-// sum(w) == 1 per direction proves the segments tile [0,1] exactly. The admissibility check is the
-// substantive one: every segment must satisfy rho >= b*width with rho = sqrt(pdist^2 + h^2),
-// h = dist/L_phys. The innermost segment touches the foot (pdist = 0) so it passes only via h --
-// i.e. only because the target is OFF the surface. If this rule were ever wired into the self path
-// (h = 0) this assert is what would fire.
-// ---------------------------------------------------------------------------------------------
-template <class Real> void test_rule_structure() {
-  std::cout << "--- 1. foot-graded rule: partition of unity + off-surface admissibility ---\n";
-  const Integer order = 12;
-  Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
-  QuadElemList<Real> qel(order, coord0);
-
-  const Real b = QuadElemTestAccess<Real>::template DigitsBEllipse<9>();
-  const auto& gl = QuadElemTestAccess<Real>::template DigitsGLRule<9>();
-  const Integer Q = QuadElemTestAccess<Real>::template DigitsQuadOrder<9>();
-  std::cout << "   QuadOrder=" << Q << " b_ellipse=" << (double)b << "\n";
-  std::cout << "   (u*,v*)        d      L   nseg_u nseg_v      nq   |sum(wu)-1|  |sum(wv)-1|\n";
-
-  Long nseg_checked = 0;
-  for (const auto& uv : std::vector<std::pair<Real,Real>>{{0.4,0.6},{0.5,0.5},{0.0,0.5},{1.0,1.0},{0.03,0.97}}) {
-    for (const Real d : {(Real)1e-1, (Real)1e-2, (Real)1e-4, (Real)1e-7}) {
-      const Vector<Real> Xt = offsurf_target(qel, 0, uv.first, uv.second, d);
-      Vector<Real> up, wu, vp, wv, useg, vseg; Vector<Long> ud, vd;
-      const Integer L = QuadElemTestAccess<Real>::BuildNearTensorRule(up, wu, vp, wv, &useg, &ud, &vseg, &vd,
-                            qel, 0, Xt, b, gl.first, gl.second, 30);
-      Real us_, vs_, dist_, h_;
-      QuadElemTestAccess<Real>::NearFootAndDepth(us_, vs_, dist_, h_, qel, 0, Xt, b, 30);
-
-      Real su = 0, sv = 0;
-      for (Long i = 0; i < up.Dim(); i++) { SCTL_ASSERT(up[i] > -1e-14 && up[i] < 1+1e-14); SCTL_ASSERT(wu[i] > 0); su += wu[i]; }
-      for (Long i = 0; i < vp.Dim(); i++) { SCTL_ASSERT(vp[i] > -1e-14 && vp[i] < 1+1e-14); SCTL_ASSERT(wv[i] > 0); sv += wv[i]; }
-      SCTL_ASSERT(std::fabs((double)su - 1) < 1e-13);
-      SCTL_ASSERT(std::fabs((double)sv - 1) < 1e-13);
-
-      // Off-surface admissibility, per direction.
-      auto admissible = [&](const Vector<Real>& seg, const Real c) {
-        for (Long i = 0; i < seg.Dim()/2; i++) {
-          const Real a0 = seg[i*2+0], a1 = seg[i*2+1];
-          const Real pd = std::fabs(std::min<Real>(a1, std::max<Real>(a0, c)) - c);
-          if (!(sqrt<Real>(pd*pd + h_*h_) >= b*(a1-a0)*(Real)0.999)) return false;
-        }
-        return true;
-      };
-      SCTL_ASSERT(admissible(useg, us_));
-      SCTL_ASSERT(admissible(vseg, vs_));
-      nseg_checked += ud.Dim() + vd.Dim();
-
-      printf("   (%.2f,%.2f)  %7.0e  %3d   %5ld  %5ld  %7ld   %8.1e     %8.1e\n",
-             (double)uv.first, (double)uv.second, (double)d, (int)L, (long)ud.Dim(), (long)vd.Dim(),
-             (long)(up.Dim()*vp.Dim()), std::fabs((double)su-1), std::fabs((double)sv-1));
-    }
-  }
-  std::cout << "   " << nseg_checked << " segments all admissible under rho = sqrt(pdist^2 + (dist/L_phys)^2)\n";
-  std::cout << "test_rule_structure: PASSED\n";
-}
 
 // ---------------------------------------------------------------------------------------------
 // 2. Near potential vs a direct upsampled reference at moderate near distance (d = 1e-2).
@@ -304,8 +228,6 @@ int main(int argc, char** argv) {
     const Stokes3D_FxU ker_sFxU;
     const Stokes3D_DxU ker_sDxU;
     const Laplace3D_FxU ker_lFxU;
-
-    test_rule_structure<Real>();
 
     std::cout << "--- 2. near potential vs direct upsampled reference (d=1e-2, nsub=100) ---\n";
     test_vs_upsampled<Real>(ker_sFxU, false, "Stokes3D_FxU / plane");
