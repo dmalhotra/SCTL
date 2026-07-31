@@ -14,7 +14,7 @@
 #include "sctl/math_utils.txx"  // for pow's constexpr definition (needed at class-template instantiation)
 
 #ifndef SCTL_MAX_DEPTH
-#define SCTL_MAX_DEPTH 15
+#define SCTL_MAX_DEPTH 20
 #endif
 
 // Mark host-callable functions also callable from device code under nvcc/hipcc.
