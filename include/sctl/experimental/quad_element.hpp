@@ -32,7 +32,7 @@ namespace sctl {
        * phase only; its self phase falls back to the Adaptive scheme and its
        * near knobs are set via SetLineQBXParams.
        */
-      enum class QuadScheme { Adaptive, RectPolar, Hybrid, LineQBX };
+      enum class QuadScheme { Adaptive, RectPolar, Hybrid, LineQBX, Duffy };
 
       /** Constructor. */
       QuadElemList() {}
@@ -80,6 +80,9 @@ namespace sctl {
 
       /** True if the self phase uses the RectPolar COV (RectPolar or Hybrid). */
       bool SelfUsesRectPolar() const { return scheme_ == QuadScheme::RectPolar || scheme_ == QuadScheme::Hybrid; }
+
+      /** True if the self phase uses the Duffy edge-collapsed scheme. */
+      bool SelfUsesDuffy() const { return scheme_ == QuadScheme::Duffy; }
 
       /**
        * Set the singular-quadrature scheme.
@@ -330,8 +333,32 @@ namespace sctl {
       static void BuildCenteredGraded1D(Vector<Real>& delta, Vector<Real>& w, const Real u0, const Integer levels, const Vector<Real>& qnds, const Vector<Real>& qwts);
       // Offset-valued counterpart of LogSingularQuad1D (which is already outward-graded).
       static void LogSingularQuad1DCentered(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder);
-      template <Integer order, Integer digits> static const NodeRuleData& CenteredURule(const Integer ti, const Integer levels);
-      template <Integer order, Integer digits> static const NodeRuleData& CenteredVRule(const Integer tj);
+      template <Integer order, Integer digits> static const NodeRuleData& CenteredURule(const Integer ti, const Integer levels, const Integer kid = -1);
+
+      // ---- Duffy edge-collapsed self scheme ----
+      // The panel is split at (u0,v0) into four quads with one edge collapsed onto the
+      // target. P(s,t) = (u0,v0) + s*c(t) has |det| = s*|a x b|, so the 1/r singularity is
+      // removed by the Jacobian: s needs only a plain GL rule and t a rule graded toward the
+      // foot of the perpendicular. Everything but the t-rule is fixed by (order,digits,ti,tj,tri).
+      struct DuffyTri {
+        bool swap_ab = false;    // collapsed (s-only) coordinate is u => local (alpha,beta) = (v,u)
+        Real nsign = 1;          // restores the sign of dX/du x dX/dv
+        Real J0 = 0;             // |a x b|
+        Real tstarI = 0, ddI = 0, Llen = 0;  // parameter-space foot and width; metric-corrected per target
+        Matrix<Real> WbC;        // (order x 2*ns) = [Wb | Wb'], collapsed direction at the s-nodes
+        Matrix<Real> WbT;        // (ns x order), adjoint of the value half
+        Vector<Matrix<Real>> MiC, MiT;       // ns entries: (order x 2*order) = [Mi | Mi'], and (order x order)
+      };
+      struct DuffySelfTable {
+        Integer ns = 0;
+        Vector<Real> sn, sw;
+        std::vector<DuffyTri> tri;   // 4*order*order entries, indexed (ti*order + tj)*4 + tri
+      };
+      template <Integer order, Integer digits> static const DuffySelfTable& DuffyTable();
+      template <Integer digits> static constexpr Integer DuffySOrderDelta();
+      template <Integer digits> static Integer DuffyTOrder(const Integer order, const Integer kdim0);
+      template <Integer digits, Integer order, class Kernel> static void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
+      template <Integer order, Integer digits> static const NodeRuleData& CenteredVRule(const Integer tj, const Integer kid = -1);
 
       // GL rule (nodes, weights) on [0,1] for compile-time count Nbeta (RP uses Nbeta>>50,
       // beyond LegQuadRule's cache); function-local static, runtime value via dispatch over {128,256,512}.
@@ -398,6 +425,7 @@ namespace sctl {
       template <Integer digits, Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self);
 
       // Per-target adaptive 2D quadtree near-interaction block (off-surface target).
+      static Integer NearOrderFromMetric(const Real* dXu, const Real* dXv, const Integer q_iso);
       template <Integer digits, Integer order, class Kernel> static void NearInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
       // Leaf-batched equivalent of NearInteracBlock: same quadtree/interp-cache, but the per-leaf
@@ -493,7 +521,8 @@ namespace sctl {
       struct GradeRule { Vector<Real> nds, w; Matrix<Real> T, dT, TT, TD; Real a, b; };
       // Flat index: shell_k -> k, core_k -> MaxNearLvl + k.
       static constexpr Integer MaxNearLvl = 31;
-      template <Integer order, Integer digits> static const Vector<GradeRule>& NearGradeTable();
+      static constexpr Integer NearMaxQuadOrder = 60;
+      template <Integer order, Integer digits> static const Vector<GradeRule>& NearGradeTable(const Integer q_req = 0);
       template <Integer digits, Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
       // Line-QBX / hedgehog near-interaction block (Lu 2019 sec.3.1); knobs from SetLineQBXParams.

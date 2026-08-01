@@ -19,7 +19,66 @@
 #include "sctl/experimental/alpert_quadr.cpp"
 #include "sctl/experimental/bench_quad.hpp"
 
+#include <map>
+#include <tuple>
+
 namespace sctl {
+  // ---- file-driven u-rule tables, selected by KERNEL ----
+  // SCTL_UQUAD_FILE is a comma-separated list of rule tables (later files win, so a
+  // quad-precision DL table can be layered over a double-precision SL+DL one). Each RULE line
+  // carries its own kernel id, and the kernel in use is identified from Kernel::Name(), so no
+  // environment variable selects it. Kernels with no table fall back to the adaptive rule.
+  // SCTL_UQUAD_ALP / SCTL_UQUAD_EPSIDX pick the Alpert level and the truncation rung.
+  struct UQuadTable {
+    std::map<std::tuple<int,int,int>, std::pair<std::vector<double>,std::vector<double>>> R; // (kern,alp,ti)
+    int alp = 0, epsidx = 0, vlvl = -1;
+    bool active = false;
+    UQuadTable() {
+      const char* f = std::getenv("SCTL_UQUAD_FILE"); if (!f) return;
+      alp    = std::getenv("SCTL_UQUAD_ALP")   ? atoi(std::getenv("SCTL_UQUAD_ALP"))   : 1;
+      vlvl   = std::getenv("SCTL_UQUAD_VLVL")  ? atoi(std::getenv("SCTL_UQUAD_VLVL"))  : -1; // -1: use alp
+      epsidx = std::getenv("SCTL_UQUAD_EPSIDX")? atoi(std::getenv("SCTL_UQUAD_EPSIDX")): 9;
+      std::string list(f);
+      size_t pos = 0;
+      while (pos <= list.size()) {
+        const size_t q = list.find(',', pos);
+        const std::string fn = list.substr(pos, (q==std::string::npos ? list.size() : q) - pos);
+        if (!fn.empty()) {
+          FILE* fp = fopen(fn.c_str(), "r");
+          if (fp) {
+            char buf[512];
+            while (fgets(buf, sizeof buf, fp)) {
+              int k, a, ti, e; long n;
+              if (sscanf(buf, "RULE %d %d %d %d %ld", &k, &a, &ti, &e, &n) == 5) {
+                std::vector<double> x(n), w(n);
+                for (long i = 0; i < n; i++) if (fscanf(fp, "%lf %lf", &x[i], &w[i]) != 2) break;
+                if (a == alp && e == epsidx) R[std::make_tuple(k,a,ti)] = {x,w};
+              }
+            }
+            fclose(fp);
+          }
+        }
+        if (q == std::string::npos) break;
+        pos = q + 1;
+      }
+      active = !R.empty();
+    }
+    // kernel identity -> table id; -1 means "no table, use the adaptive rule"
+    int KernelId(const std::string& nm) const {
+      if (!active) return -1;
+      const int k = (nm == "Laplace3D-FxU" ? 0 : nm == "Laplace3D-DxU" ? 1 : -1);
+      if (k < 0) return -1;
+      return R.count(std::make_tuple(k,alp,0)) ? k : -1;   // require the table to be present
+    }
+    bool Get(int k, int ti, const std::vector<double>*& x, const std::vector<double>*& w) const {
+      auto it = R.find(std::make_tuple(k,alp,ti));
+      if (it == R.end()) return false;
+      x = &it->second.first; w = &it->second.second; return true;
+    }
+  };
+  static const UQuadTable& UQuad() { static const UQuadTable t; return t; }
+
+
 
   template <class Real> void QuadElemList<Real>::PartitionRange(Long Nelem_total, const Comm& comm, Long& i0, Long& i1) {
     const Long Np = comm.Size();
@@ -265,17 +324,31 @@ namespace sctl {
     for (Long i = 0; i < N; ++i) { delta[i] = px[i]; w[i] = pw[i]; }
   }
 
-  template <class Real> template <Integer order, Integer digits> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::CenteredURule(const Integer ti, const Integer levels) {
+  template <class Real> template <Integer order, Integer digits> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::CenteredURule(const Integer ti, const Integer levels, const Integer kid) {
     // `levels` is runtime, so slots are indexed by it; atomic so post-init reads are lock-free
     // (this is read once per target inside the parallel self loop).
-    static constexpr Integer MaxLvl = 41;
-    static std::atomic<Vector<NodeRuleData>*> slot[MaxLvl];
+    static constexpr Integer MaxLvl = 41, NK = 3;   // kid -1,0,1 -> slot index kid+1
+    static std::atomic<Vector<NodeRuleData>*> slot[MaxLvl][NK];
     static std::mutex mtx;
     SCTL_ASSERT(levels >= 0 && levels < MaxLvl);
-    Vector<NodeRuleData>* p = slot[levels].load(std::memory_order_acquire);
+    const Integer ks = kid + 1;
+    SCTL_ASSERT(ks >= 0 && ks < NK);
+    Vector<NodeRuleData>* p = slot[levels][ks].load(std::memory_order_acquire);
     if (!p) {
       std::lock_guard<std::mutex> lk(mtx);
-      p = slot[levels].load(std::memory_order_relaxed);
+      p = slot[levels][ks].load(std::memory_order_relaxed);
+      if (!p && kid >= 0) { // file-driven rule for this kernel: nodes are offsets from u0
+        auto* d = new Vector<NodeRuleData>(order);
+        bool ok = true;
+        for (Integer i = 0; i < order && ok; i++) {
+          const std::vector<double> *xs=nullptr, *ws=nullptr;
+          if (!UQuad().Get((int)kid,(int)i,xs,ws)) { ok = false; break; }
+          (*d)[i].param.ReInit((Long)xs->size()); (*d)[i].w.ReInit((Long)ws->size());
+          for (size_t q = 0; q < xs->size(); q++) { (*d)[i].param[q]=(Real)(*xs)[q]; (*d)[i].w[q]=(Real)(*ws)[q]; }
+          LagrangeAtOffset<order>((*d)[i].M,(*d)[i].dM,(*d)[i].MT,(*d)[i].dMT,(*d)[i].param,i);
+        }
+        if (ok) { p = d; slot[levels][ks].store(p, std::memory_order_release); } else delete d;
+      }
       if (!p) {
         const Vector<Real>& nds = ParamNodes(order);
         const Integer QuadOrder = SelfQuadOrder<digits>();
@@ -287,16 +360,16 @@ namespace sctl {
           LagrangeAtOffset<order>((*d)[i].M, (*d)[i].dM, (*d)[i].MT, (*d)[i].dMT, (*d)[i].param, i);
         }
         p = d;
-        slot[levels].store(p, std::memory_order_release);
+        slot[levels][ks].store(p, std::memory_order_release);
       }
     }
     return (*p)[ti];
   }
 
-  template <class Real> template <Integer order, Integer digits> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::CenteredVRule(const Integer tj) {
-    auto compute_all = []() {
+  template <class Real> template <Integer order, Integer digits> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::CenteredVRule(const Integer tj, const Integer kid) {
+    auto compute_all = [kid]() {
       const Vector<Real>& nds = ParamNodes(order);
-      const Integer Lvl = DigitsVLevels<digits>();
+      const Integer Lvl = (kid >= 0 ? (UQuad().vlvl >= 0 ? UQuad().vlvl : UQuad().alp) : DigitsVLevels<digits>());
       const Integer QuadOrder = DigitsQuadOrder<digits>();
       Vector<NodeRuleData> data(order);
       for (Integer j = 0; j < order; j++) {
@@ -305,8 +378,15 @@ namespace sctl {
       }
       return data;
     };
-    static const Vector<NodeRuleData> data = compute_all();
-    return data[tj];
+    static constexpr Integer NK = 3;
+    static std::atomic<Vector<NodeRuleData>*> vslot[NK];   // one process = one vlvl
+    static std::mutex vmtx;
+    const Integer ks = kid + 1;
+    Vector<NodeRuleData>* p = vslot[ks].load(std::memory_order_acquire);
+    if (!p) { std::lock_guard<std::mutex> lk(vmtx);
+      p = vslot[ks].load(std::memory_order_relaxed);
+      if (!p) { p = new Vector<NodeRuleData>(compute_all()); vslot[ks].store(p, std::memory_order_release); } }
+    return (*p)[tj];
   }
 
   template <class Real> template <Integer Nbeta> const std::pair<Vector<Real>, Vector<Real>>& QuadElemList<Real>::GLRuleNbeta() {
@@ -402,6 +482,7 @@ namespace sctl {
 
     // 2 multiply-adds per inner-product entry: (R x S).(S x Nv) and (Nu x R).(R x Nv).
     BENCH_FLOPS(ncomp * 2.0 * Nv * ((double)R * S + (double)Nu * R));
+Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(ncomp * 2.0 * Nv * ((double)R * S + (double)Nu * R)));
     for (Long k = 0; k < ncomp; k++) {
       const Matrix<ValueType> in_(R, S, (Iterator<ValueType>)in.begin() + k * (Long)R * S, false);
       Matrix<ValueType> out_(Nu, Nv, out.begin() + k * Nout, false);
@@ -593,7 +674,15 @@ namespace sctl {
     const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
     const double rho = 2.5;
     b_ellipse = (Real)((rho + 1/rho) / 4);
+    // Diagnostic knob: scale the near GL order to test whether the near rule is the accuracy
+    // limiter on strongly sheared elements (the rho heuristic is calibrated for twist <= pi/3).
+    static const double qmul = []() { const char* v = std::getenv("SCTL_NEAR_QMUL"); return v ? atof(v) : 1.0; }();
+    // Absolute override of the near GL order. This is the order NearInteracBlock actually
+    // uses (via DigitsQuadOrder -> QuadParams); SCTL_NEAR_QORDER feeds NearQuadOrder, which
+    // NearInteracBlock does not call.
+    static const Integer qfix = []() { const char* v = std::getenv("SCTL_NEAR_QFIX"); return v ? (Integer)atoi(v) : 0; }();
     QuadOrder = std::max<Integer>(1, (Integer)std::ceil(-std::log(((15.0*(rho*rho-1))/64.0)*(double)tol_)/std::log(rho)*0.5 + 1));
+    QuadOrder = (qfix > 0 ? qfix : (Integer)std::ceil(qmul*(double)QuadOrder));
   }
 
   template <class Real> template <Integer digits> Integer QuadElemList<Real>::SelfLevels() {
@@ -766,6 +855,7 @@ namespace sctl {
       Matrix<Real>::GEMM(Cv_all,  cs_all, Mv);
       Matrix<Real>::GEMM(Cdv_all, cs_all, dMv);
       BENCH_FLOPS(2.0 * 2 * (COORD_DIM*(double)order) * order * Nv);
+Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * 2 * (COORD_DIM*(double)order) * order * Nv));
     }
     static const Long ublk_pts_ = []() { const char* v = std::getenv("SCTL_UBLK_PTS"); return v ? std::max<Long>(64, atol(v)) : 16384; }();
     if (Nu * Nv <= ublk_pts_) { // Sweep already fits: original single-shot path.
@@ -800,6 +890,7 @@ namespace sctl {
         }
         Matrix<Real>::GEMM(dV_m, MuT, Cdvc_m);
         BENCH_FLOPS(2.0 * (3.0*Nu) * order * ldc);
+Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * (3.0*Nu) * order * ldc));
       }
       BENCH_TOC(GeomTensor);
 
@@ -881,6 +972,7 @@ namespace sctl {
         else for (Long p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] += proj[(Long)c*nnode + p];
       }
       BENCH_FLOPS(2.0 * C * order * ((double)Nu*Nv + (double)order*Nu));
+Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((double)Nu*Nv + (double)order*Nu)));
       BENCH_TOC(Projection);
       return;
     }
@@ -923,6 +1015,7 @@ namespace sctl {
         Matrix<Real>::GEMM(dUk, dMuT_b, Cv_k);
         Matrix<Real>::GEMM(dVk, MuT_b,  Cdv_k);
         BENCH_FLOPS(3.0 * 2 * (double)nu * order * Nv);
+Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * order * Nv));
       }
       BENCH_TOC(GeomTensor);
 
@@ -1082,13 +1175,13 @@ namespace sctl {
       }
       // Left endpoint correction nodes (measured from a).
       for (size_t i = 0; i < L.ExtraNodes.size(); ++i) {
-        px.push_back(a + L.ExtraNodes[i] * h);
-        pw.push_back(L.ExtraWeights[i] * h);
+        px.push_back(a + (double)L.ExtraNodes[i] * h);
+        pw.push_back((double)L.ExtraWeights[i] * h);
       }
       // Right endpoint correction nodes (measured from b).
       for (size_t i = 0; i < R.ExtraNodes.size(); ++i) {
-        px.push_back(b - R.ExtraNodes[i] * h);
-        pw.push_back(R.ExtraWeights[i] * h);
+        px.push_back(b - (double)R.ExtraNodes[i] * h);
+        pw.push_back((double)R.ExtraWeights[i] * h);
       }
     };
 
@@ -1208,6 +1301,35 @@ namespace sctl {
       nodes[i] = (quad_rp::cov_xi(alpha, tau, q) + 1)/2;
       wts[i] = gl_wts[i]*quad_rp::cov_xip(alpha, tau, q);
     }
+  }
+
+  // Corner-angle correction to the near GL order. Measured on a parallelogram against an
+  // independent graded reference: the requirement is flat up to ~120 deg then grows like
+  // 1/(180-theta) as the corner flattens and the element wraps around the target (at 1e-6, SL
+  // needs q = 8/14/22/26 at theta = 120/160/168/171 deg). The parameter-space admissibility
+  // test cannot see this, so it is corrected here per (element,target).
+  //
+  // phi is the ACUTE angle between the surface tangents AT THE FOOT (the element's closest
+  // point to the target) -- that is the corner the target actually sees. An orthogonal
+  // parametrisation gives phi=90 and the factor collapses to 1, so well-shaped meshes pay
+  // nothing. C=400 is fitted on Laplace SL/DL, flat elements, one target offset.
+  template <class Real> Integer QuadElemList<Real>::NearOrderFromMetric(const Real* dXu, const Real* dXv, const Integer q_iso) {
+    Real guu=0, gvv=0, guv=0;
+    for (Integer k = 0; k < COORD_DIM; k++) { guu+=dXu[k]*dXu[k]; gvv+=dXv[k]*dXv[k]; guv+=dXu[k]*dXv[k]; }
+    const double den = std::sqrt((double)guu*(double)gvv);
+    if (!(den > 0)) return q_iso;
+    const double c = std::min(1.0, std::fabs((double)guv)/den);
+    const double phi = std::acos(c)*180.0/const_pi<double>();
+    static const double Ck = []() { const char* v = std::getenv("SCTL_NEAR_CK"); return v ? atof(v) : 400.0; }();
+    const double f = std::max(1.0, Ck/(10.0*std::max(1e-3, phi)));
+    if (f <= 1.0) return q_iso;
+    Integer q = (Integer)std::ceil(f*(double)q_iso);
+    q = ((q + 3)/4)*4;                                  // snap to the precomputed ladder
+    q = std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q_iso, q));
+#ifdef SCTL_NEAR_TRACE
+    { static bool once=false; if(!once){once=true; std::printf("[TRACE] NearOrderFromMetric: phi=%.2f q_iso=%d -> q=%d\n",phi,(int)q_iso,(int)q); std::fflush(stdout);} }
+#endif
+    return q;
   }
 
   template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
@@ -1623,14 +1745,22 @@ namespace sctl {
     const double d = -std::log10((double)std::max<Real>(tol, (Real)1e-16));
     const double rho = std::min(3.0, std::max(2.0, 2.0 + 0.25*(d - 6)));
     const double C = std::max(1e-3, (15.0*(rho*rho - 1))/64.0);
+    // Diagnostic knob: scale the near GL order to test whether the near rule is the accuracy
+    // limiter on strongly sheared elements (the rho heuristic is calibrated for twist <= pi/3).
+    static const double qmul = []() { const char* v = std::getenv("SCTL_NEAR_QMUL"); return v ? atof(v) : 1.0; }();
+    static const Integer qabs = []() { const char* v = std::getenv("SCTL_NEAR_QABS"); return v ? (Integer)atoi(v) : 0; }();
     QuadOrder = std::max<Integer>(2, (Integer)std::ceil(-std::log(C*(double)std::max<Real>(tol, (Real)1e-16))/std::log(rho)*0.5 + 1));
+    QuadOrder = (qabs > 0 ? qabs : (Integer)std::ceil(qmul*(double)QuadOrder));
     // End-foot reach, not the semi-major axis. E_rho has semi-axes a,b with a^2-b^2 = 1; a
     // singularity at parameter s with perpendicular offset d~ = 2d/L lies outside E_rho when
     // s^2/a^2 + d~^2/b^2 > 1. Splitting at (u0,v0) puts the foot at the corner cell's endpoint
     // (s = +-1), giving d~ > b^2/a -- weaker by a^2/b^2 than the (rho+1/rho)/4 semi-major reach,
     // and weaker than the true worst case d~ > b (foot at the panel centre, which cannot occur here).
     const double a = (rho + 1/rho)/2, b = (rho - 1/rho)/2;
-    b_ellipse = (Real)(b*b/(2*a));
+    // Diagnostic: scaling b_ellipse up tightens the "target is far enough" test, so cells split
+    // deeper at FIXED order -- the h-refinement counterpart to SCTL_NEAR_QMUL's p-refinement.
+    static const double bmul = []() { const char* v = std::getenv("SCTL_NEAR_BMUL"); return v ? atof(v) : 1.0; }();
+    b_ellipse = (Real)(bmul*b*b/(2*a));
   }
 
   template <class Real> Integer QuadElemList<Real>::NearMaxLvlOverride() {
@@ -1646,11 +1776,10 @@ namespace sctl {
     return b;
   }
 
-  template <class Real> template <Integer order, Integer digits> const Vector<typename QuadElemList<Real>::GradeRule>& QuadElemList<Real>::NearGradeTable() {
+  template <class Real> template <Integer order, Integer digits> const Vector<typename QuadElemList<Real>::GradeRule>& QuadElemList<Real>::NearGradeTable(const Integer q_req) {
     // Built once per (order,digits). Every entry is in NORMALIZED sub-element coordinates and
     // carries no positional index -- that is the point of splitting at the foot.
-    auto build = []() {
-      const Integer q = NearQuadOrder<digits>();
+    auto build = [](const Integer q) {
       const Vector<Real>& gnds = ParamNodes(order);   // sub-element's own nodes, normalized
       Vector<Real> qn, qw; LegQuadRule<Real>::ComputeNdsWts(&qn, &qw, q);
       Vector<GradeRule> tab(2*MaxNearLvl);
@@ -1676,8 +1805,19 @@ namespace sctl {
       }
       return tab;
     };
-    static const Vector<GradeRule> tab = build();
-    return tab;
+    // One static init builds the whole ladder: q_iso plus every multiple of 4 up to
+    // NearMaxQuadOrder. The corner-angle correction selects among these per target, so the
+    // lookup has to be O(1) and allocation-free on the hot path.
+    static const std::vector<Vector<GradeRule>> all = [&build]() {
+      std::vector<Vector<GradeRule>> t(NearMaxQuadOrder+1);
+      for (Integer q = 4; q <= NearMaxQuadOrder; q += 4) t[q] = build(q);
+      const Integer qi = NearQuadOrder<digits>();
+      if (qi > 0 && qi <= NearMaxQuadOrder && t[qi].Dim() == 0) t[qi] = build(qi);
+      return t;
+    }();
+    const Integer qi = NearQuadOrder<digits>();
+    const Integer q = (q_req > 0 && q_req <= NearMaxQuadOrder && all[q_req].Dim()) ? q_req : qi;
+    return all[q];
   }
 
   template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
@@ -1695,7 +1835,7 @@ namespace sctl {
     M_acc.SetZero();
 
     const Real b_ellipse = NearBEllipse<digits>();
-    const Vector<GradeRule>& tab = NearGradeTable<order,digits>();
+
 
     // Foot + level count (same criterion as BuildNearLeaves).
     Real ustar, vstar;
@@ -1704,6 +1844,8 @@ namespace sctl {
     BENCH_TOC(ClosestNode);
     Real Xc[COORD_DIM], dXu_[COORD_DIM], dXv_[COORD_DIM];
     qel.EvalPoint(Xc, dXu_, dXv_, ustar, vstar, elem_idx, nullptr);
+    // Order is chosen from the metric at the foot, so it costs nothing extra here.
+    const Vector<GradeRule>& tab = NearGradeTable<order,digits>(NearOrderFromMetric(&dXu_[0], &dXv_[0], NearQuadOrder<digits>()));
     Real su2 = 0, sv2 = 0;
     for (Integer k = 0; k < COORD_DIM; k++) { su2 += dXu_[k]*dXu_[k]; sv2 += dXv_[k]*dXv_[k]; }
     // Refinement stops per sub-element via the admissibility test in the loop below, so no
@@ -1935,12 +2077,360 @@ namespace sctl {
     }
   }
 
+  // Per-phase timing for the Duffy self kernel. Compiled out unless SCTL_DUFFY_PROF is
+  // defined; single-thread use only (the accumulators are plain statics).
+#ifdef SCTL_DUFFY_PROF
+  enum DuffyPhase { DP_SHIFT, DP_METRIC, DP_TRULE, DP_STAGE1, DP_STAGE2A, DP_STAGE2B,
+                    DP_POINTWISE, DP_KERNEL, DP_WEIGHT, DP_PROJ, DP_NS, DP_NT, DP_CALLS, DP_COUNT };
+  inline double* DuffyProf() { static double c[DP_COUNT] = {0}; return c; }
+  inline double DuffyWtime() {
+#ifdef _OPENMP
+    return omp_get_wtime();
+#else
+    return (double)clock()/CLOCKS_PER_SEC;
+#endif
+  }
+  #define DPROF_BEG() double dp_prev_ = DuffyWtime()
+  #define DPROF_MARK(i) do { const double t_ = DuffyWtime(); DuffyProf()[i] += t_ - dp_prev_; dp_prev_ = t_; } while (0)
+  #define DPROF_SET(i,v) do { DuffyProf()[i] = (double)(v); } while (0)
+  #define DPROF_INC(i) do { DuffyProf()[i] += 1.0; } while (0)
+#else
+  #define DPROF_BEG() (void)0
+  #define DPROF_MARK(i) (void)0
+  #define DPROF_SET(i,v) (void)0
+  #define DPROF_INC(i) (void)0
+#endif
+
+  // ---- Duffy edge-collapsed self scheme ----
+
+  template <class Real> template <Integer digits> constexpr Integer QuadElemList<Real>::DuffySOrderDelta() {
+    // The Jacobian leaves the s-integrand analytic: measured convergence is ~1.5 decades per
+    // node, and the minimum that meets tolerance is only digits/2 + 1 (3..7 for digits 4..12
+    // at order 12). That dips below order because a resolved geometry has eps-small top
+    // polynomial coefficients; the s-integrand carries degree up to 2*(order-1), so order is
+    // the floor for geometry that is not resolved. SCTL_DUFFY_QS overrides.
+    return 0;
+  }
+
+  template <class Real> template <Integer digits> Integer QuadElemList<Real>::DuffyTOrder(const Integer order, const Integer kdim0) {
+    static const Integer ov = []() { const char* v = std::getenv("SCTL_DUFFY_NT"); return v ? (Integer)atol(v) : (Integer)0; }();
+    if (ov > 0) return ov;
+    // 2.5 t-points per digit, calibrated end-to-end on the Green's identity (varying density)
+    // over twists 0, pi/6, pi/3 and pi/2. Measured minima are nt = 8/12/20/24 for
+    // digits = 6/8/10/12, so this carries 5-8 nodes (~1.7-2.8 decades) of margin: the error
+    // falls only ~0.35 decades per node, so thin margins are not safe here.
+    //
+    // The binding twist is pi/6, NOT the extremes: pi/2 has a high discretization floor that
+    // masks self error entirely, and twist 0 is geometrically benign. Calibrating on the
+    // endpoints of the twist range alone understates nt by 2x at tight tolerance.
+    //
+    // An earlier per-target operator-norm calibration gave 34/45/56/67 -- single-target
+    // operator error is a far stricter quantity than the assembled BIE error, so self rules
+    // must be calibrated end-to-end.
+    //
+    // The minima dip below order/2 at loose tolerance only because a resolved geometry has
+    // eps-small top polynomial coefficients; the t-integrand carries degree order-1, so
+    // order/2 is the floor for geometry that is not resolved.
+    // Vector kernels need ~1.5x the t-nodes of a scalar one at the same tolerance: measured
+    // minima (order 12) are 15/15/15/20 for Laplace and 20/25/36/44 for Stokes at
+    // digits = 6/8/10/12. 2.5 and 4.0 per digit cover both with margin.
+    // NOTE: the Stokes leg is calibrated at ppf=6 over twists {0, pi/6} only; the Laplace leg
+    // needed all four twists before it was right (pi/6 was binding), so treat the vector
+    // constant as provisional until it gets the same four-twist check.
+    const double per_digit = (kdim0 > 1 ? 4.0 : 2.5);
+    return std::max<Integer>(order/2, (Integer)std::ceil(per_digit*(double)digits));
+  }
+
+  template <class Real> template <Integer order, Integer digits> const typename QuadElemList<Real>::DuffySelfTable& QuadElemList<Real>::DuffyTable() {
+    // Fixed by (order, digits) alone -- q_s derives from digits and the t-rule is the only
+    // metric-dependent operator -- so one atomic slot suffices; reads after init are lock-free.
+    static std::atomic<DuffySelfTable*> slot{nullptr};
+    static std::mutex mtx;
+    if (DuffySelfTable* p = slot.load(std::memory_order_acquire)) return *p;
+    std::lock_guard<std::mutex> lock(mtx);
+    if (DuffySelfTable* p = slot.load(std::memory_order_relaxed)) return *p;
+
+    DuffySelfTable* tbl = new DuffySelfTable();
+    static const Integer qs_ov = []() { const char* v = std::getenv("SCTL_DUFFY_QS"); return v ? (Integer)atol(v) : (Integer)0; }();
+    const Integer qs = (qs_ov > 0 ? qs_ov : order + DuffySOrderDelta<digits>());
+    tbl->ns = qs;
+    LegQuadRule<Real>::ComputeNdsWts(&tbl->sn, &tbl->sw, qs);
+
+    const Vector<Real>& nds = ParamNodes(order);
+    const Matrix<Real>& D = DiffMat<order>();
+    tbl->tri.resize(4*(size_t)order*order);
+    const Real cu[4] = {0,1,1,0}, cv[4] = {0,0,1,1};
+    for (Integer ti = 0; ti < order; ti++) for (Integer tj = 0; tj < order; tj++) {
+      const Real u0 = nds[ti], v0 = nds[tj];
+      for (Integer kt = 0; kt < 4; kt++) {
+        DuffyTri& T = tbl->tri[((size_t)ti*order + tj)*4 + kt];
+        const Real a[2] = {cu[kt]-u0, cv[kt]-v0};
+        const Real b[2] = {cu[(kt+1)%4]-u0, cv[(kt+1)%4]-v0};
+        const Real e[2] = {b[0]-a[0], b[1]-a[1]};
+        T.J0 = a[0]*b[1] - a[1]*b[0];
+        SCTL_ASSERT_MSG(T.J0 > 0, "Duffy triangle orientation");
+        T.swap_ab = (fabs<Real>(e[0]) < fabs<Real>(e[1]));  // e is axis aligned
+        T.nsign = (T.swap_ab ? (Real)-1 : (Real)1);
+        { // parameter-space foot; the metric correction (cot(theta) shift) is per target
+          const Real am = e[0]*e[0] + e[1]*e[1];
+          Real ts = -(a[0]*e[0] + a[1]*e[1])/am;
+          ts = (ts < 0 ? (Real)0 : (ts > 1 ? (Real)1 : ts));
+          const Real c[2] = {a[0]+ts*e[0], a[1]+ts*e[1]};
+          T.Llen = sqrt<Real>(am);
+          T.tstarI = ts;
+          T.ddI = sqrt<Real>(c[0]*c[0] + c[1]*c[1])/T.Llen;
+        }
+        const Real al0 = (T.swap_ab ? v0 : u0), be0 = (T.swap_ab ? u0 : v0);
+        const Real aal = (T.swap_ab ? a[1] : a[0]), abe = (T.swap_ab ? a[0] : a[1]);
+        const Real eal = (T.swap_ab ? e[1] : e[0]);
+        { // collapsed direction beta(s_i): value and derivative side by side
+          Vector<Real> bv(qs);
+          for (Integer i = 0; i < qs; i++) bv[i] = be0 + tbl->sn[i]*abe;
+          Matrix<Real> Wb(order, qs), WbD(order, qs);
+          { Vector<Real> t((Long)order*qs, Wb.begin(), false); LagrangeInterp<Real>::Interpolate(t, nds, bv); }
+          Matrix<Real>::GEMM(WbD, D, Wb);
+          T.WbC.ReInit(order, 2*qs);
+          for (Integer r = 0; r < order; r++) for (Integer i = 0; i < qs; i++) { T.WbC[r][i] = Wb[r][i]; T.WbC[r][qs+i] = WbD[r][i]; }
+          T.WbT = Wb.Transpose();
+        }
+        { // alpha(s_i,.) is affine in t, so its Lagrange values at `order` reference nodes
+          // reproduce it exactly; the t-rule then enters only through Tt.
+          T.MiC.ReInit(qs); T.MiT.ReInit(qs);
+          Vector<Real> av(order);
+          Matrix<Real> Mi(order, order), MiD(order, order);
+          for (Integer i = 0; i < qs; i++) {
+            for (Integer k = 0; k < order; k++) av[k] = al0 + tbl->sn[i]*(aal + nds[k]*eal);
+            { Vector<Real> t((Long)order*order, Mi.begin(), false); LagrangeInterp<Real>::Interpolate(t, nds, av); }
+            Matrix<Real>::GEMM(MiD, D, Mi);
+            T.MiC[i].ReInit(order, 2*order);
+            for (Integer r = 0; r < order; r++) for (Integer k = 0; k < order; k++) { T.MiC[i][r][k] = Mi[r][k]; T.MiC[i][r][order+k] = MiD[r][k]; }
+            T.MiT[i] = Mi.Transpose();
+          }
+        }
+      }
+    }
+    slot.store(tbl, std::memory_order_release);
+    return *tbl;
+  }
+
+  template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
+    static constexpr Integer KDIM0 = Kernel::SrcDim();
+    static constexpr Integer KDIM1full = Kernel::TrgDim();
+    SCTL_ASSERT(qel.order == order);
+    const Long nnode = (Long)order*order;
+    const bool trg_dot_prod = (normal_trg.Dim() > 0);
+    const Integer KDIM1_out = trg_dot_prod ? KDIM1full/COORD_DIM : KDIM1full;
+    const Integer C = KDIM0*KDIM1_out;
+    constexpr Integer NR = 3*COORD_DIM;   // value, d/d_alpha, d/d_beta rows per s-node
+    constexpr Integer NA = 2*COORD_DIM;   // Ai, Adi rows fed to [Mi | Mi']
+    M_acc.ReInit(nnode, C); M_acc.SetZero();
+
+    const DuffySelfTable& tbl = DuffyTable<order,digits>();
+    const Long ns = tbl.ns, nt = DuffyTOrder<digits>(order, KDIM0);
+    // s-nodes contracted per stage-2b GEMM. Tt does not depend on the s-node, so the whole
+    // s-range goes in one (ns*NR x order)(order x nt) call instead of ns thin (NR x order)
+    // ones. Measured monotone in sblk up to ns: 14% faster on 1 thread, 3-7% at 32 threads
+    // (the parallel case is nearer bandwidth-bound, so GEMM shape matters less). Bit-identical
+    // results at every sblk -- it is a pure reassociation. SCTL_DUFFY_SBLK overrides.
+    static const Long sblk_env = []() { const char* v = std::getenv("SCTL_DUFFY_SBLK"); return v ? (Long)atol(v) : (Long)0; }();
+    const Long sblk = (sblk_env > 0 ? std::min<Long>(sblk_env, ns) : ns);
+    const Vector<Real>& nds = ParamNodes(order);
+    const Matrix<Real>& D = DiffMat<order>();
+
+    auto ash = [](const Real x) { return log<Real>(x + sqrt<Real>(x*x + (Real)1)); };
+
+    // Target-shifted nodal slab: positions are source-minus-target, so the kernel target
+    // sits at the origin and r stays accurate at the singularity.
+    thread_local Vector<Real> cs;
+    if (cs.Dim() != COORD_DIM*nnode) cs.ReInit(COORD_DIM*nnode);
+    const Long base = elem_idx*nnode*COORD_DIM;
+    DPROF_BEG(); DPROF_INC(DP_CALLS); DPROF_SET(DP_NS, ns); DPROF_SET(DP_NT, nt);
+    for (Integer k = 0; k < COORD_DIM; k++) {
+      const Real ok = Xtrg[k];
+      for (Long q = 0; q < nnode; q++) cs[k*nnode + q] = qel.coord[base + k*nnode + q] - ok;
+    }
+    DPROF_MARK(DP_SHIFT);
+
+    // Surface metric at (u0,v0). t* and the peak width are set by distance ON THE SURFACE:
+    // placing them in parameter space instead misplaces the peak by |cot(theta)| widths.
+    Real G[4];
+    {
+      Real du[COORD_DIM], dv[COORD_DIM];
+      for (Integer k = 0; k < COORD_DIM; k++) {
+        Real su = 0, sv = 0;
+        for (Integer i = 0; i < order; i++) su += cs[k*nnode + (Long)i*order + tj]*D[i][ti];
+        for (Integer j = 0; j < order; j++) sv += cs[k*nnode + (Long)ti*order + j]*D[j][tj];
+        du[k] = su; dv[k] = sv;
+      }
+      Real guu = 0, guv = 0, gvv = 0;
+      for (Integer k = 0; k < COORD_DIM; k++) { guu += du[k]*du[k]; guv += du[k]*dv[k]; gvv += dv[k]*dv[k]; }
+      G[0] = guu; G[1] = guv; G[2] = guv; G[3] = gvv;
+    }
+    DPROF_MARK(DP_METRIC);
+
+    StaticArray<Real,COORD_DIM> Xt0{0,0,0};
+    const Vector<Real> Xt0_v(COORD_DIM, Xt0, false);
+    const Vector<Real>& pnds = nds;
+
+    for (Integer kt = 0; kt < 4; kt++) {
+      const DuffyTri& T = tbl.tri[((size_t)ti*order + tj)*4 + kt];
+      const Real u0 = nds[ti], v0 = nds[tj];
+      const Real cu[4] = {0,1,1,0}, cv[4] = {0,0,1,1};
+      const Real a[2] = {cu[kt]-u0, cv[kt]-v0};
+      const Real e[2] = {cu[(kt+1)%4]-cu[kt], cv[(kt+1)%4]-cv[kt]};
+
+      Real tstar, dOverL;
+      { // metric-aware foot and width
+        const Real Me[2] = {G[0]*e[0]+G[1]*e[1], G[2]*e[0]+G[3]*e[1]};
+        const Real am = e[0]*Me[0] + e[1]*Me[1];
+        Real ts = -(a[0]*Me[0] + a[1]*Me[1])/am;
+        ts = (ts < 0 ? (Real)0 : (ts > 1 ? (Real)1 : ts));
+        const Real c[2] = {a[0]+ts*e[0], a[1]+ts*e[1]};
+        const Real d2 = c[0]*(G[0]*c[0]+G[1]*c[1]) + c[1]*(G[2]*c[0]+G[3]*c[1]);
+        tstar = ts; dOverL = sqrt<Real>(d2)/sqrt<Real>(am);
+      }
+
+      // sinh substitution t = t* + (d/L)*sinh(xi): one GL rule, and cheaper than dyadic
+      // grading toward t* at equal accuracy.
+      const Long szt = 2*nt + (Long)order*nt + (Long)nt*order;
+      ScratchBuf<Real> sbt(szt);
+      Long offt = 0;
+      auto taket = [&](const Long n) { Iterator<Real> r = sbt.begin() + offt; offt += n; return r; };
+      Vector<Real> tn(nt, taket(nt), false), tw(nt, taket(nt), false);
+      {
+        Vector<Real> qn, qw;
+        LegQuadRule<Real>::ComputeNdsWts(&qn, &qw, nt);
+        const Real dd = dOverL;
+        const Real x0 = -ash(tstar/dd), x1 = ash(((Real)1-tstar)/dd);
+        for (Long i = 0; i < nt; i++) {
+          const Real xi = x0 + (x1-x0)*qn[i];
+          const Real ex = exp<Real>(xi), iex = (Real)1/ex;
+          tn[i] = tstar + dd*(ex-iex)/(Real)2;
+          tw[i] = dd*(ex+iex)/(Real)2*(x1-x0)*qw[i];
+        }
+      }
+      Matrix<Real> Tt(order, nt, taket((Long)order*nt), false), TtT(nt, order, taket((Long)nt*order), false);
+      { Vector<Real> t((Long)order*nt, Tt.begin(), false); LagrangeInterp<Real>::Interpolate(t, pnds, tn); }
+      for (Integer r = 0; r < order; r++) for (Long j = 0; j < nt; j++) TtT[j][r] = Tt[r][j];
+      DPROF_MARK(DP_TRULE);
+
+      const Long nq = ns*nt;
+      const Long sz = COORD_DIM*nnode + 2*COORD_DIM*(Long)order*ns + (Long)NA*order + 2*(Long)NA*order
+                    + sblk*NR*(Long)order + sblk*NR*nt + 2*COORD_DIM*nq + nq
+                    + nq*KDIM0*KDIM1full + (Long)C*nq + ns*(Long)C*order + (Long)C*order + (Long)C*order*ns + nnode;
+      ScratchBuf<Real> sb(sz);
+      Long off = 0;
+      auto take = [&](const Long n) { Iterator<Real> r = sb.begin() + off; off += n; return r; };
+
+      Matrix<Real> FS(COORD_DIM*order, order, take(COORD_DIM*nnode), false);
+      Matrix<Real> Gm(COORD_DIM*order, 2*ns, take(2*COORD_DIM*(Long)order*ns), false);
+      Matrix<Real> As(NA, order, take((Long)NA*order), false), Tmp(NA, 2*order, take(2*(Long)NA*order), false);
+      Matrix<Real> HG(sblk*NR, order, take(sblk*NR*(Long)order), false);
+      Matrix<Real> XdX(sblk*NR, nt, take(sblk*NR*nt), false);
+      Vector<Real> Xs(COORD_DIM*nq, take(COORD_DIM*nq), false), Xn(COORD_DIM*nq, take(COORD_DIM*nq), false);
+      Vector<Real> wq(nq, take(nq), false);
+      Matrix<Real> Mker(nq*KDIM0, KDIM1full, take(nq*KDIM0*KDIM1full), false);
+      Matrix<Real> KW(ns*C, nt, take((Long)C*nq), false);
+      Matrix<Real> Zall(ns*C, order, take(ns*(Long)C*order), false);
+      Matrix<Real> Yi(C, order, take((Long)C*order), false), Yall(C*order, ns, take((Long)C*order*ns), false);
+      Matrix<Real> Pc(order, order, take(nnode), false);
+
+      for (Integer k = 0; k < COORD_DIM; k++)
+        for (Integer i = 0; i < order; i++) for (Integer j = 0; j < order; j++)
+          FS[k*order + (T.swap_ab ? j : i)][T.swap_ab ? i : j] = cs[k*nnode + (Long)i*order + j];
+
+      Matrix<Real>::GEMM(Gm, FS, T.WbC);            // stage 1: collapsed index, value+derivative
+      DPROF_MARK(DP_STAGE1);
+
+      for (Long i0 = 0; i0 < ns; i0 += sblk) {
+        const Long nb = std::min<Long>(sblk, ns-i0);
+        // Stage 2a: [Ai; Adi] . [Mi | Mi'] gives value, d/d_alpha and d/d_beta in one GEMM
+        // (the fourth quadrant is unused). Mi differs per s-node, so 2a stays per-node.
+        for (Long b = 0; b < nb; b++) {
+          const Long i = i0 + b;
+          for (Integer k = 0; k < COORD_DIM; k++) for (Integer m = 0; m < order; m++) {
+            As[k][m] = Gm[k*order+m][i]; As[COORD_DIM+k][m] = Gm[k*order+m][ns+i];
+          }
+          Matrix<Real>::GEMM(Tmp, As, T.MiC[i]);
+          for (Integer k = 0; k < COORD_DIM; k++) for (Integer m = 0; m < order; m++) {
+            HG[b*NR + k][m]               = Tmp[k][m];
+            HG[b*NR + COORD_DIM + k][m]   = Tmp[k][order+m];
+            HG[b*NR + 2*COORD_DIM + k][m] = Tmp[COORD_DIM+k][m];
+          }
+        }
+        DPROF_MARK(DP_STAGE2A);
+        { // Stage 2b: Tt is shared across s-nodes, so the whole block is a single GEMM.
+          const Matrix<Real> HGb(nb*NR, order, (Iterator<Real>)HG.begin(), false);
+          Matrix<Real> XdXb(nb*NR, nt, (Iterator<Real>)XdX.begin(), false);
+          Matrix<Real>::GEMM(XdXb, HGb, Tt);
+        }
+        DPROF_MARK(DP_STAGE2B);
+
+        for (Long b = 0; b < nb; b++) {
+          const Long i = i0 + b;
+          const Real jw = tbl.sn[i]*T.J0*tbl.sw[i];
+          for (Long j = 0; j < nt; j++) {
+            const Long q = i*nt + j;
+            const Real a0 = XdX[b*NR+COORD_DIM+0][j], a1 = XdX[b*NR+COORD_DIM+1][j], a2 = XdX[b*NR+COORD_DIM+2][j];
+            const Real b0 = XdX[b*NR+2*COORD_DIM+0][j], b1 = XdX[b*NR+2*COORD_DIM+1][j], b2 = XdX[b*NR+2*COORD_DIM+2][j];
+            const Real n0 = T.nsign*(a1*b2-a2*b1), n1 = T.nsign*(a2*b0-a0*b2), n2 = T.nsign*(a0*b1-a1*b0);
+            const Real ar = sqrt<Real>(n0*n0+n1*n1+n2*n2), ia = (ar > 0 ? (Real)1/ar : (Real)0);
+            for (Integer k = 0; k < COORD_DIM; k++) Xs[q*COORD_DIM+k] = XdX[b*NR+k][j];
+            Xn[q*COORD_DIM+0] = n0*ia; Xn[q*COORD_DIM+1] = n1*ia; Xn[q*COORD_DIM+2] = n2*ia;
+            wq[q] = ar*jw*tw[j];
+          }
+        }
+        DPROF_MARK(DP_POINTWISE);
+      }
+
+      ker.template KernelMatrix<Real,false>(Mker, Xt0_v, Xs, Xn);
+      DPROF_MARK(DP_KERNEL);
+      for (Long i = 0; i < ns; i++) for (Long j = 0; j < nt; j++) {
+        const Long q = i*nt + j;
+        for (Integer k0 = 0; k0 < KDIM0; k0++) for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
+          Real val;
+          if (trg_dot_prod) {
+            val = 0;
+            for (Integer l = 0; l < COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*COORD_DIM+l]*normal_trg[l];
+          } else val = Mker[q*KDIM0+k0][k1];
+          KW[i*C + k0*KDIM1_out+k1][j] = val*wq[q];
+        }
+      }
+
+      DPROF_MARK(DP_WEIGHT);
+      // Projection is the exact adjoint of stages 1-2b: same operators, reversed order.
+      Matrix<Real>::GEMM(Zall, KW, TtT);
+      for (Long i = 0; i < ns; i++) {
+        const Matrix<Real> Zi(C, order, (Iterator<Real>)Zall.begin() + i*(Long)C*order, false);
+        Matrix<Real>::GEMM(Yi, Zi, T.MiT[i]);
+        for (Integer c = 0; c < C; c++) for (Integer m = 0; m < order; m++) Yall[c*order+m][i] = Yi[c][m];
+      }
+      for (Integer c = 0; c < C; c++) {
+        const Matrix<Real> Yc(order, ns, (Iterator<Real>)Yall.begin() + (Long)c*order*ns, false);
+        Matrix<Real>::GEMM(Pc, Yc, T.WbT);
+        for (Integer m = 0; m < order; m++) for (Integer n = 0; n < order; n++)
+          M_acc[T.swap_ab ? (Long)n*order+m : (Long)m*order+n][c] += Pc[m][n];
+      }
+      { // GEMM flops for this triangle: stage 1, 2a, 2b and the three projection contractions
+        const double f = 2.0*(COORD_DIM*(double)order)*order*(2*ns)
+                       + ns*2.0*NA*order*(2.0*order)
+                       + ns*2.0*NR*order*(double)nt
+                       + 2.0*(ns*(double)C)*nt*order
+                       + ns*2.0*C*(double)order*order
+                       + C*2.0*(double)order*ns*order;
+        Profile::IncrementCounter(ProfileCounter::FLOP, (Long)f);
+      }
+      DPROF_MARK(DP_PROJ);
+    }
+  }
+
   template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
     // Singular self-interaction for on-surface node (ti,tj). 1D reduction: graded u-rule
     // toward u0 x Alpert log-singular v-rule toward v0; both rules + interpolation are
     // preloaded (geometry-independent, fixed by order/ti/tj/digits), integrated by
     // IntegrateBlock. IntegrateBlock still does the target-centered geometry per target.
     if (qel.SelfUsesRectPolar()) { SelfInteracBlockRP<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
+    if (qel.SelfUsesDuffy()) { SelfInteracBlockDuffy<digits, order>(M_acc, qel, elem_idx, ti, tj, Xtrg, normal_trg, ker); return; }
 
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -1950,9 +2440,10 @@ namespace sctl {
     const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
 
     const bool centered = UseCenteredRules();
-    const NodeRuleData& ru = (centered ? CenteredURule<order, digits>(ti, SelfLevels<digits>())
+    const Integer kid = UQuad().KernelId(Kernel::Name());
+    const NodeRuleData& ru = (centered ? CenteredURule<order, digits>(ti, SelfLevels<digits>(), kid)
                                        : SelfURuleDispatch<order, digits>(ti, qel.max_depth_));
-    const NodeRuleData& rv = (centered ? CenteredVRule<order, digits>(tj) : SelfVRule<order, digits>(tj));
+    const NodeRuleData& rv = (centered ? CenteredVRule<order, digits>(tj, kid) : SelfVRule<order, digits>(tj));
 
     M_acc.ReInit(nnode, KDIM0*KDIM1_out);
     M_acc.SetZero();
