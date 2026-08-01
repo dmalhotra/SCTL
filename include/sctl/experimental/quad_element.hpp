@@ -415,7 +415,6 @@ namespace sctl {
 
       // Adaptive 2D quadtree underlying NearInteracBlock: leaf rectangles (4 reals {u0,u1,v0,v1}
       // each in `leaf_box`) + depths, graded toward the closest point to Xtrg. Shared with WriteNearInteracVTK.
-      static void BuildNearLeaves(Vector<Real>& leaf_box, Vector<Long>& leaf_depth, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse, const Integer max_depth);
 
       // Accuracy/order-templated impls of NearInterac/SelfInterac: entry points dispatch runtime
       // order to compile-time `order` (switch {4..48}) and tolerance to `digits` (if-else), CSBQ-style.
@@ -445,7 +444,6 @@ namespace sctl {
 
       // RP counterparts of NearInteracBlock/SelfInteracBlock; quadrature size is cov_order_ if set,
       // else the tol-derived `nbeta_default` the caller passes (NbetaForDigits(digits)).
-      template <Integer order, class Kernel> static void NearInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default);
       template <Integer order, class Kernel> static void SelfInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default);
 
       // --- Split-at-foot near scheme (default; SCTL_NEAR_SPLIT=0 for the old quadtree) ---
@@ -524,7 +522,6 @@ namespace sctl {
 
       // Line-QBX / hedgehog near-interaction block (Lu 2019 sec.3.1); knobs from SetLineQBXParams.
       // Accurate only for panel-interior targets (see SetLineQBXParams seam caveat).
-      template <Integer order, class Kernel> static void NearInteracBlockQBX(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
       Long nelem = 0;
       Integer order = 0;
