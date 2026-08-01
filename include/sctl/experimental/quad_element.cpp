@@ -674,15 +674,8 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(ncomp * 2.0 * Nv * ((doub
     const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
     const double rho = 2.5;
     b_ellipse = (Real)((rho + 1/rho) / 4);
-    // Diagnostic knob: scale the near GL order to test whether the near rule is the accuracy
-    // limiter on strongly sheared elements (the rho heuristic is calibrated for twist <= pi/3).
-    static const double qmul = []() { const char* v = std::getenv("SCTL_NEAR_QMUL"); return v ? atof(v) : 1.0; }();
-    // Absolute override of the near GL order. This is the order NearInteracBlock actually
-    // uses (via DigitsQuadOrder -> QuadParams); SCTL_NEAR_QORDER feeds NearQuadOrder, which
-    // NearInteracBlock does not call.
-    static const Integer qfix = []() { const char* v = std::getenv("SCTL_NEAR_QFIX"); return v ? (Integer)atoi(v) : 0; }();
     QuadOrder = std::max<Integer>(1, (Integer)std::ceil(-std::log(((15.0*(rho*rho-1))/64.0)*(double)tol_)/std::log(rho)*0.5 + 1));
-    QuadOrder = (qfix > 0 ? qfix : (Integer)std::ceil(qmul*(double)QuadOrder));
+    
   }
 
   template <class Real> template <Integer digits> Integer QuadElemList<Real>::SelfLevels() {
@@ -1332,280 +1325,12 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
     return q;
   }
 
-  template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
-    // Adaptive 2D quadtree for an off-surface target: refine [0,1]^2 into graded leaf
-    // panels, integrate each with a QuadOrder GL rule via IntegrateBlock.
-
-    // TODO: only binary split right now, see CSBQ for variable step-size.
-
-    if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
-    if (qel.NearUsesLineQBX()) { NearInteracBlockQBX<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker); return; }
-
-    static constexpr Integer KDIM0 = Kernel::SrcDim();
-    static constexpr Integer KDIM1full = Kernel::TrgDim();
-    SCTL_ASSERT(qel.order == order);
-    const Long nnode = (Long)order * order;
-    const bool trg_dot_prod = (normal_trg.Dim() > 0);
-    const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
-
-    // Per-panel GL order / Bernstein parameter fixed at compile time by `digits`;
-    // node/weight tables preloaded.
-    const Integer QuadOrder = DigitsQuadOrder<digits>();
-    const Real b_ellipse = DigitsBEllipse<digits>();
-    Vector<Real> qnds, qwts;
-    LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, QuadOrder);
-
-    // Leaf panels in parameter space (shared with WriteNearInteracVTK so picture
-    // matches solve).
-    thread_local Vector<Real> leaf_box; thread_local Vector<Long> leaf_depth;
-    BENCH_TIC(QuadtreeBuild);
-    BuildNearLeaves(leaf_box, leaf_depth, qel, elem_idx, Xtrg, b_ellipse, qel.max_depth_);
-    BENCH_TOC(QuadtreeBuild);
-    const Long nleaf = leaf_depth.Dim();
-#ifdef BENCH_QUAD
-    { Long dmax = 0; for (Long li = 0; li < nleaf; li++) dmax = std::max<Long>(dmax, leaf_depth[li]); BENCH_NEAR(nleaf, dmax); }
-#endif
-
-    if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) {
-      M_acc.ReInit(nnode, KDIM0*KDIM1_out);
-      M_acc.SetZero();
-    }
-
-    // Integrate each leaf via the tensor-factored IntegrateBlock. NOTE: a "flat"
-    // variant that gathers all leaves into one big GEMM was tried (IntegrateBlockFlat)
-    // and was ~20x SLOWER: the geometry/projection GEMMs are skinny (contract against
-    // COORD_DIM=3 rows / C=1 cols), so they stay memory-bound no matter how large nq
-    // gets, while the dense 2D interpolation does ~order x more flops than this
-    // separable tensor form. The per-leaf tensor path wins here.
-    // Cache the 1D interp operators per DISTINCT leaf interval. The u-operators depend
-    // only on the u-interval [pu0,pu1] (u_param = pu0 + du*qnds), the v-operators only on
-    // the v-interval; dyadic leaves reuse the same 1D intervals many times, so build each
-    // once (was rebuilt per leaf inside IntegrateBlock's InterpBuild). Dyadic subdivision
-    // reaches a given interval by one arithmetic path, so identical intervals compare bit-
-    // equal. Passing these via IntegrateBlock's *_pre args is bit-identical to the local
-    // build, just deduplicated.
-    std::vector<Real> u_lo, u_hi, v_lo, v_hi;
-    Vector<Long> leaf_iu(nleaf), leaf_iv(nleaf);
-    for (Long li = 0; li < nleaf; li++) {
-      const Real pu0 = leaf_box[li*4+0], pu1 = leaf_box[li*4+1];
-      const Real pv0 = leaf_box[li*4+2], pv1 = leaf_box[li*4+3];
-      Long iu = -1; for (Long k = 0; k < (Long)u_lo.size(); k++) if (u_lo[k] == pu0 && u_hi[k] == pu1) { iu = k; break; }
-      if (iu < 0) { iu = (Long)u_lo.size(); u_lo.push_back(pu0); u_hi.push_back(pu1); }
-      leaf_iu[li] = iu;
-      Long iv = -1; for (Long k = 0; k < (Long)v_lo.size(); k++) if (v_lo[k] == pv0 && v_hi[k] == pv1) { iv = k; break; }
-      if (iv < 0) { iv = (Long)v_lo.size(); v_lo.push_back(pv0); v_hi.push_back(pv1); }
-      leaf_iv[li] = iv;
-    }
-    const Long nu = (Long)u_lo.size(), nv = (Long)v_lo.size();
-    Vector<NodeRuleData> u_rule(nu), v_rule(nv);
-    for (Long k = 0; k < nu; k++) {
-      const Real du = u_hi[k] - u_lo[k];
-      u_rule[k].param = u_lo[k] + du*qnds; u_rule[k].w = qwts * du;
-      BuildInterp1D<order>(u_rule[k].M, u_rule[k].dM, u_rule[k].MT, u_rule[k].dMT, u_rule[k].param);
-    }
-    for (Long k = 0; k < nv; k++) {
-      const Real dv = v_hi[k] - v_lo[k];
-      v_rule[k].param = v_lo[k] + dv*qnds; v_rule[k].w = qwts * dv;
-      BuildInterp1D<order>(v_rule[k].M, v_rule[k].dM, v_rule[k].MT, v_rule[k].dMT, v_rule[k].param);
-    }
-    for (Long li = 0; li < nleaf; li++) {
-      const NodeRuleData& ru = u_rule[leaf_iu[li]];
-      const NodeRuleData& rv = v_rule[leaf_iv[li]];
-      IntegrateBlock<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru.param, ru.w, rv.param, rv.w, ker,
-                            &rv.M, &rv.dM, &ru.M, &ru.dM, &rv.MT, &ru.MT, &ru.dMT);
-    }
-  }
 
   // Leaf-batched near block. Builds the SAME quadtree + per-distinct-interval interp cache as
   // NearInteracBlock, but batches the per-leaf geometry/kernel/projection GEMMs across leaves.
   // Kept bit-for-bit identical to NearInteracBlock (gated by QuadElemTestAccess::CompareNearBlocks).
   // NOTE (staged): Stage 0 delegates each leaf to IntegrateBlock exactly like NearInteracBlock;
   // later stages replace the per-leaf loop with batched phases.
-  template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockBatched(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
-    if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
-    if (qel.NearUsesLineQBX()) { NearInteracBlockQBX<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker); return; }
-
-    static constexpr Integer KDIM0 = Kernel::SrcDim();
-    static constexpr Integer KDIM1full = Kernel::TrgDim();
-    SCTL_ASSERT(qel.order == order);
-    const Long nnode = (Long)order * order;
-    const bool trg_dot_prod = (normal_trg.Dim() > 0);
-    const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
-
-    const Integer QuadOrder = DigitsQuadOrder<digits>();
-    const Real b_ellipse = DigitsBEllipse<digits>();
-    Vector<Real> qnds, qwts;
-    LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, QuadOrder);
-
-    thread_local Vector<Real> leaf_box; thread_local Vector<Long> leaf_depth;
-    BENCH_TIC(QuadtreeBuild);
-    BuildNearLeaves(leaf_box, leaf_depth, qel, elem_idx, Xtrg, b_ellipse, qel.max_depth_);
-    BENCH_TOC(QuadtreeBuild);
-    const Long nleaf = leaf_depth.Dim();
-#ifdef BENCH_QUAD
-    { Long dmax = 0; for (Long li = 0; li < nleaf; li++) dmax = std::max<Long>(dmax, leaf_depth[li]); BENCH_NEAR(nleaf, dmax); }
-#endif
-
-    if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) {
-      M_acc.ReInit(nnode, KDIM0*KDIM1_out);
-      M_acc.SetZero();
-    }
-
-    // Per-distinct-interval interp cache (identical to NearInteracBlock).
-    std::vector<Real> u_lo, u_hi, v_lo, v_hi;
-    Vector<Long> leaf_iu(nleaf), leaf_iv(nleaf);
-    for (Long li = 0; li < nleaf; li++) {
-      const Real pu0 = leaf_box[li*4+0], pu1 = leaf_box[li*4+1];
-      const Real pv0 = leaf_box[li*4+2], pv1 = leaf_box[li*4+3];
-      Long iu = -1; for (Long k = 0; k < (Long)u_lo.size(); k++) if (u_lo[k] == pu0 && u_hi[k] == pu1) { iu = k; break; }
-      if (iu < 0) { iu = (Long)u_lo.size(); u_lo.push_back(pu0); u_hi.push_back(pu1); }
-      leaf_iu[li] = iu;
-      Long iv = -1; for (Long k = 0; k < (Long)v_lo.size(); k++) if (v_lo[k] == pv0 && v_hi[k] == pv1) { iv = k; break; }
-      if (iv < 0) { iv = (Long)v_lo.size(); v_lo.push_back(pv0); v_hi.push_back(pv1); }
-      leaf_iv[li] = iv;
-    }
-    const Long nu = (Long)u_lo.size(), nv = (Long)v_lo.size();
-    Vector<NodeRuleData> u_rule(nu), v_rule(nv);
-    for (Long k = 0; k < nu; k++) {
-      const Real du = u_hi[k] - u_lo[k];
-      u_rule[k].param = u_lo[k] + du*qnds; u_rule[k].w = qwts * du;
-      BuildInterp1D<order>(u_rule[k].M, u_rule[k].dM, u_rule[k].MT, u_rule[k].dMT, u_rule[k].param);
-    }
-    for (Long k = 0; k < nv; k++) {
-      const Real dv = v_hi[k] - v_lo[k];
-      v_rule[k].param = v_lo[k] + dv*qnds; v_rule[k].w = qwts * dv;
-      BuildInterp1D<order>(v_rule[k].M, v_rule[k].dM, v_rule[k].MT, v_rule[k].dMT, v_rule[k].param);
-    }
-    // Target-shifted nodal-coordinate slab -- identical for every leaf (depends only on Xtrg +
-    // elem_idx), so compute ONCE. Then run the per-leaf pipeline inline (same arithmetic as
-    // IntegrateBlock; bit-for-bit gated). Later stages replace these per-leaf GEMMs with batched ones.
-    const Long base = elem_idx * nnode * COORD_DIM;
-    thread_local Vector<Real> coord_shift;
-    if (coord_shift.Dim() != COORD_DIM*nnode) coord_shift.ReInit(COORD_DIM*nnode);
-    for (Integer k = 0; k < COORD_DIM; k++) {
-      const Real ok = Xtrg[k];
-      for (Long p = 0; p < nnode; p++) coord_shift[k*nnode + p] = qel.coord[base + k*nnode + p] - ok;
-    }
-    StaticArray<Real,COORD_DIM> Xt0{0, 0, 0};
-    const Vector<Real> Xt0_v(COORD_DIM, Xt0, false);
-    const Long Nu = QuadOrder, Nv = QuadOrder, nq = Nu*Nv;
-    const Integer C = KDIM0 * KDIM1_out;
-
-    // Stage-2 batched geometry: the inner v-contraction (cs . Mv, cs . dMv) depends only on the
-    // v-interval, so hoist it to ONCE per distinct v-interval (was recomputed -- twice -- per leaf).
-    // coord_shift's [k*nnode+p] layout IS a (COORD_DIM*order x order) component-stacked matrix (CS3),
-    // so CS3 . Mv contracts all 3 components in one GEMM; block k (contiguous rows) = cs_k . Mv.
-    const Matrix<Real> CS3(COORD_DIM*order, order, (Iterator<Real>)coord_shift.begin(), false);
-    thread_local Vector<Real> Pval_all, Pder_all;
-    const Long pv_stride = (Long)COORD_DIM*order*Nv; // per-v-interval block: (COORD_DIM*order x Nv)
-    if (Pval_all.Dim() != nv*pv_stride) { Pval_all.ReInit(nv*pv_stride); Pder_all.ReInit(nv*pv_stride); }
-    BENCH_TIC(GeomTensor);
-    for (Long iv = 0; iv < nv; iv++) {
-      Matrix<Real> Pval(COORD_DIM*order, Nv, Pval_all.begin()+iv*pv_stride, false);
-      Matrix<Real> Pder(COORD_DIM*order, Nv, Pder_all.begin()+iv*pv_stride, false);
-      Matrix<Real>::GEMM(Pval, CS3, v_rule[iv].M);
-      Matrix<Real>::GEMM(Pder, CS3, v_rule[iv].dM);
-    }
-    BENCH_TOC(GeomTensor);
-
-    // Pass 1: per-leaf outer u-contraction (geometry) + assembly, concatenating all leaves'
-    // quadrature sources into one big source list for the SINGLE batched kernel call (Stage 3).
-    // NOTE: batching the outer-u GEMMs across leaves sharing a u-interval was tried and
-    // was ~6-37% SLOWER on GeomTensor (worse with leaf count): the leaf set is sparse in the iu x iv
-    // grid, so grouping requires gathering scattered Pval[iv] blocks -- and these GEMMs are
-    // memory-bound, so the extra gather/scatter traffic exceeds the fewer-dgemm-call savings. The
-    // per-leaf path (Pval[iv] already hot from the inner-v cache) wins; kept as-is.
-    thread_local Vector<Real> X_soa, dXdu_soa, dXdv_soa, Xsrc_all, Xnsrc_all, wq_all;
-    if (X_soa.Dim() != COORD_DIM*nq) { X_soa.ReInit(COORD_DIM*nq); dXdu_soa.ReInit(COORD_DIM*nq); dXdv_soa.ReInit(COORD_DIM*nq); }
-    if (Xsrc_all.Dim() != nleaf*nq*COORD_DIM) { Xsrc_all.ReInit(nleaf*nq*COORD_DIM); Xnsrc_all.ReInit(nleaf*nq*COORD_DIM); }
-    if (wq_all.Dim() != nleaf*nq) wq_all.ReInit(nleaf*nq);
-    for (Long li = 0; li < nleaf; li++) {
-      const Long iu = leaf_iu[li], iv = leaf_iv[li];
-      const NodeRuleData& ru = u_rule[iu];
-      const Vector<Real>& wu = ru.w; const Vector<Real>& wv = v_rule[iv].w;
-
-      // Outer u-contraction per component: X = MuT.(cs.Mv), dXdu = dMuT.(cs.Mv), dXdv = MuT.(cs.dMv).
-      BENCH_TIC(GeomTensor);
-      for (Integer k = 0; k < COORD_DIM; k++) {
-        const Matrix<Real> Pval_k(order, Nv, Pval_all.begin()+iv*pv_stride + (Long)k*order*Nv, false);
-        const Matrix<Real> Pder_k(order, Nv, Pder_all.begin()+iv*pv_stride + (Long)k*order*Nv, false);
-        Matrix<Real> Xk  (Nu, Nv, X_soa.begin()   +(Long)k*nq, false);
-        Matrix<Real> dXuk(Nu, Nv, dXdu_soa.begin()+(Long)k*nq, false);
-        Matrix<Real> dXvk(Nu, Nv, dXdv_soa.begin()+(Long)k*nq, false);
-        Matrix<Real>::GEMM(Xk,   ru.MT,  Pval_k);
-        Matrix<Real>::GEMM(dXuk, ru.dMT, Pval_k);
-        Matrix<Real>::GEMM(dXvk, ru.MT,  Pder_k);
-      }
-      BENCH_TOC(GeomTensor);
-
-      BENCH_TIC(Assembly);
-      const Long sbase = li*nq*COORD_DIM;
-      for (Long a = 0; a < Nu; a++) {
-        for (Long b = 0; b < Nv; b++) {
-          const Long q = a*Nv + b;
-          const Real du0 = dXdu_soa[0*nq+q], du1 = dXdu_soa[1*nq+q], du2 = dXdu_soa[2*nq+q];
-          const Real dv0 = dXdv_soa[0*nq+q], dv1 = dXdv_soa[1*nq+q], dv2 = dXdv_soa[2*nq+q];
-          const Real n0 = du1*dv2 - du2*dv1, n1 = du2*dv0 - du0*dv2, n2 = du0*dv1 - du1*dv0;
-          const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
-          const Real inv_area = (area > 0 ? 1/area : 0);
-          Xsrc_all[sbase+q*COORD_DIM+0] = X_soa[0*nq+q]; Xsrc_all[sbase+q*COORD_DIM+1] = X_soa[1*nq+q]; Xsrc_all[sbase+q*COORD_DIM+2] = X_soa[2*nq+q];
-          Xnsrc_all[sbase+q*COORD_DIM+0] = n0*inv_area; Xnsrc_all[sbase+q*COORD_DIM+1] = n1*inv_area; Xnsrc_all[sbase+q*COORD_DIM+2] = n2*inv_area;
-          wq_all[li*nq+q] = area*wu[a]*wv[b];
-        }
-      }
-      BENCH_TOC(Assembly);
-    }
-
-    // Single batched kernel evaluation over all leaves' sources (target at the origin). Each source
-    // is evaluated independently, so this is bit-for-bit identical to per-leaf KernelMatrix calls.
-    BENCH_TIC(KernelEval);
-    thread_local Matrix<Real> Mker_all;
-    ker.template KernelMatrix<Real,false>(Mker_all, Xt0_v, Xsrc_all, Xnsrc_all); // (nleaf*nq*KDIM0 x KDIM1full)
-    BENCH_TOC(KernelEval);
-
-    // Pass 2: per-leaf kernel-weight + projection, accumulating into M_acc in leaf order.
-    thread_local Vector<Real> KWc, proj, Pin;
-    for (Long li = 0; li < nleaf; li++) {
-      const NodeRuleData& ru = u_rule[leaf_iu[li]];
-      const NodeRuleData& rv = v_rule[leaf_iv[li]];
-      const Long mbase = li*nq*KDIM0;
-
-      BENCH_TIC(KernelWeight);
-      if (KWc.Dim() != C*nq) KWc.ReInit(C*nq);
-      for (Long q = 0; q < nq; q++) {
-        for (Integer k0 = 0; k0 < KDIM0; k0++) {
-          for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-            Real val;
-            if (trg_dot_prod) {
-              val = 0;
-              for (Integer l = 0; l < COORD_DIM; l++) val += Mker_all[mbase+q*KDIM0+k0][k1*COORD_DIM+l] * normal_trg[l];
-            } else {
-              val = Mker_all[mbase+q*KDIM0+k0][k1];
-            }
-            KWc[(Long)(k0*KDIM1_out+k1)*nq + q] = val*wq_all[li*nq+q];
-          }
-        }
-      }
-      BENCH_TOC(KernelWeight);
-
-      // Projection: proj_c = Mu.(KWc_c.MvT). Batch the inner v-contraction over ALL C channels in
-      // one GEMM (KWc as (C*N x N) row-stacked channels), then the outer u-contraction per channel.
-      BENCH_TIC(Projection);
-      const Matrix<Real> KWc_m(C*Nu, Nv, KWc.begin(), false); // (C*N x N): channel-stacked rows
-      if (Pin.Dim() != (Long)C*Nu*order) Pin.ReInit((Long)C*Nu*order);
-      Matrix<Real> Pin_m(C*Nu, order, Pin.begin(), false);
-      Matrix<Real>::GEMM(Pin_m, KWc_m, rv.MT);                // (C*N x N).(N x order) = (C*N x order)
-      if (proj.Dim() != (Long)C*nnode) proj.ReInit((Long)C*nnode);
-      for (Integer c = 0; c < C; c++) {
-        const Matrix<Real> Pin_c(Nu, order, Pin.begin()+(Long)c*Nu*order, false);
-        Matrix<Real> proj_c(order, order, proj.begin()+(Long)c*nnode, false);
-        Matrix<Real>::GEMM(proj_c, ru.M, Pin_c);             // (order x N).(N x order) = (order x order)
-      }
-      for (Long p = 0; p < nnode; p++)
-        for (Integer c = 0; c < C; c++) M_acc[p][c] += proj[(Long)c*nnode + p];
-      BENCH_TOC(Projection);
-    }
-  }
 
   template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default) {
     // Rectangular-polar near-interaction: cluster a single tensor-product GL rule
@@ -1723,12 +1448,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
     }
   }
 
-  template <class Real> bool QuadElemList<Real>::UseNearSplit() {
-    // Default ON: fewer cells and no per-target operator builds, at matched accuracy.
-    // SCTL_NEAR_SPLIT=0 restores the whole-element bisection quadtree.
-    static const bool on = []() { const char* v = std::getenv("SCTL_NEAR_SPLIT"); return v ? (bool)atoi(v) : true; }();
-    return on;
-  }
 
   template <class Real> template <Integer digits> Integer QuadElemList<Real>::NearQuadOrder() {
     static const Integer q = []() { const char* v = std::getenv("SCTL_NEAR_QORDER");
@@ -1745,22 +1464,15 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
     const double d = -std::log10((double)std::max<Real>(tol, (Real)1e-16));
     const double rho = std::min(3.0, std::max(2.0, 2.0 + 0.25*(d - 6)));
     const double C = std::max(1e-3, (15.0*(rho*rho - 1))/64.0);
-    // Diagnostic knob: scale the near GL order to test whether the near rule is the accuracy
-    // limiter on strongly sheared elements (the rho heuristic is calibrated for twist <= pi/3).
-    static const double qmul = []() { const char* v = std::getenv("SCTL_NEAR_QMUL"); return v ? atof(v) : 1.0; }();
-    static const Integer qabs = []() { const char* v = std::getenv("SCTL_NEAR_QABS"); return v ? (Integer)atoi(v) : 0; }();
     QuadOrder = std::max<Integer>(2, (Integer)std::ceil(-std::log(C*(double)std::max<Real>(tol, (Real)1e-16))/std::log(rho)*0.5 + 1));
-    QuadOrder = (qabs > 0 ? qabs : (Integer)std::ceil(qmul*(double)QuadOrder));
+    
     // End-foot reach, not the semi-major axis. E_rho has semi-axes a,b with a^2-b^2 = 1; a
     // singularity at parameter s with perpendicular offset d~ = 2d/L lies outside E_rho when
     // s^2/a^2 + d~^2/b^2 > 1. Splitting at (u0,v0) puts the foot at the corner cell's endpoint
     // (s = +-1), giving d~ > b^2/a -- weaker by a^2/b^2 than the (rho+1/rho)/4 semi-major reach,
     // and weaker than the true worst case d~ > b (foot at the panel centre, which cannot occur here).
     const double a = (rho + 1/rho)/2, b = (rho - 1/rho)/2;
-    // Diagnostic: scaling b_ellipse up tightens the "target is far enough" test, so cells split
-    // deeper at FIXED order -- the h-refinement counterpart to SCTL_NEAR_QMUL's p-refinement.
-    static const double bmul = []() { const char* v = std::getenv("SCTL_NEAR_BMUL"); return v ? atof(v) : 1.0; }();
-    b_ellipse = (Real)(bmul*b*b/(2*a));
+    b_ellipse = (Real)(b*b/(2*a));
   }
 
   template <class Real> Integer QuadElemList<Real>::NearMaxLvlOverride() {
@@ -2833,8 +2545,7 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
       if (trg_dot_prod) ntrg.ReInit(COORD_DIM, (Iterator<Real>)normal_trg.begin() + t*COORD_DIM, false);
 
       Matrix<Real> M_acc;
-      if (UseNearSplit()) NearInteracBlockSplit<digits, order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker);
-      else                NearInteracBlockBatched<digits, order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker);
+      NearInteracBlockSplit<digits, order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker);
 
       // Scatter into M for target t: M[(i*order+j)*KDIM0+k0][t*KDIM1_out+k1].
       for (Integer i = 0; i < order; i++) {

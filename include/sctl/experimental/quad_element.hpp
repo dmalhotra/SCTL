@@ -426,13 +426,11 @@ namespace sctl {
 
       // Per-target adaptive 2D quadtree near-interaction block (off-surface target).
       static Integer NearOrderFromMetric(const Real* dXu, const Real* dXv, const Integer q_iso);
-      template <Integer digits, Integer order, class Kernel> static void NearInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
       // Leaf-batched equivalent of NearInteracBlock: same quadtree/interp-cache, but the per-leaf
       // geometry/kernel/projection GEMMs are batched across leaves (interval-grouped, separable,
       // bit-for-bit identical to the per-leaf path). This is the production near path; NearInteracBlock
       // is retained as the reference for the bit-for-bit gate (QuadElemTestAccess::CompareNearBlocks).
-      template <Integer digits, Integer order, class Kernel> static void NearInteracBlockBatched(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
       // Per-target singular self-interaction block at (u0,v0): graded u-refinement + 1D log rule in v.
       template <Integer digits, Integer order, class Kernel> static void SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
@@ -467,7 +465,6 @@ namespace sctl {
       // a time, until that dimension is admissible against the target distance. Each split emits
       // one leaf; the u- and v-levels advance independently, so every interval remains
       // shell_k / core_k at some level and its operators stay precomputed.
-      static bool UseNearSplit();
       // Near-only knobs, independent of the self path (SCTL_QUAD_ORDER drives both). For tuning
       // the near heuristic while self is held at a much tighter tolerance.
       //   SCTL_NEAR_QORDER   per-cell GL order        (default DigitsQuadOrder<digits>)
