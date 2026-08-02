@@ -115,7 +115,8 @@ TARGET_BIN = \
        $(BINDIR)/test-scratch-pool-perf \
 	   $(BINDIR)/unit-test-quad-element \
 	   $(BINDIR)/test-quad-elem \
-	   $(BINDIR)/test-greens-conv
+	   $(BINDIR)/test-greens-conv \
+	   $(BINDIR)/bench-cubed-sphere
 
 .PHONY: all test clean quad bench bench-gmsh bench-scaling
 
