@@ -169,12 +169,14 @@ namespace sctl {
     if (dX_du && dX_du->Dim() != N * COORD_DIM) dX_du->ReInit(N * COORD_DIM);
     if (dX_dv && dX_dv->Dim() != N * COORD_DIM) dX_dv->ReInit(N * COORD_DIM);
 
-    Matrix<Real> MuT(order, Nu), Mv(order, Nv);
-    Vector<Real> Mu_(order * Nu, MuT.begin(), false);
-    Vector<Real> Mv_(order * Nv, Mv.begin(), false);
-    LagrangeInterp<Real>::Interpolate(Mu_, ParamNodes(order), u_param);
-    LagrangeInterp<Real>::Interpolate(Mv_, ParamNodes(order), v_param);
-    MuT = MuT.Transpose();
+    thread_local Matrix<Real> Mu, MuT, Mv;
+    if (Mu.Dim(0) != order || Mu.Dim(1) != Nu) { Mu.ReInit(order, Nu); MuT.ReInit(Nu, order); }
+    if (Mv.Dim(0) != order || Mv.Dim(1) != Nv) Mv.ReInit(order, Nv);
+    { Vector<Real> Mu_(order * Nu, Mu.begin(), false);
+      Vector<Real> Mv_(order * Nv, Mv.begin(), false);
+      LagrangeInterp<Real>::Interpolate(Mu_, ParamNodes(order), u_param);
+      LagrangeInterp<Real>::Interpolate(Mv_, ParamNodes(order), v_param); }
+    for (Integer i = 0; i < order; i++) for (Long a = 0; a < Nu; a++) MuT[a][i] = Mu[i][a];
 
     SCTL_ASSERT(elem_idx >= 0 && elem_idx < nelem);
     const Long base = elem_idx * nnode_per_elem * COORD_DIM;
@@ -185,12 +187,12 @@ namespace sctl {
     // Target-centering: subtract `origin` from nodal positions before interpolation so
     // X is target-relative (accurate near the singularity); derivatives recomputed from
     // the shifted slab. origin == nullptr keeps the cached absolute-coordinate path.
-    Vector<Real> coord_shift, du_shift, dv_shift;
+    thread_local Vector<Real> coord_shift, du_shift, dv_shift;
     const Vector<Real>* pos_in = &coord_;
     const Vector<Real>* du_in = &dcoord_du_;
     const Vector<Real>* dv_in = &dcoord_dv_;
     if (origin) {
-      coord_shift.ReInit(COORD_DIM * nnode_per_elem);
+      if (coord_shift.Dim() != COORD_DIM * nnode_per_elem) coord_shift.ReInit(COORD_DIM * nnode_per_elem);
       for (Integer k = 0; k < COORD_DIM; k++) {
         const Real ok = (*origin)[k];
         for (Long p = 0; p < nnode_per_elem; p++) coord_shift[k * nnode_per_elem + p] = coord_[k * nnode_per_elem + p] - ok;
@@ -200,7 +202,7 @@ namespace sctl {
     }
 
     if (X) {
-      Vector<Real> X_soa;
+      thread_local Vector<Real> X_soa;
       EvalTensorProduct(X_soa, *pos_in, MuT, Mv);
       for (Long i = 0; i < N; i++) {
         (*X)[i * COORD_DIM + 0] = X_soa[0 * N + i];
@@ -209,7 +211,7 @@ namespace sctl {
       }
     }
     if (Xn || Xa || dX_du || dX_dv) {
-      Vector<Real> dXdu_soa, dXdv_soa;
+      thread_local Vector<Real> dXdu_soa, dXdv_soa;
       EvalTensorProduct(dXdu_soa, *du_in, MuT, Mv);
       EvalTensorProduct(dXdv_soa, *dv_in, MuT, Mv);
       for (Long i = 0; i < N; i++) {
@@ -801,6 +803,11 @@ namespace sctl {
 
     const DuffySelfTable& tbl = DuffyTable<order>();
     const Long ns = tbl.ns, nt = DuffyTOrder(digits, order, KDIM0);
+    // nt is fixed for the whole call, so the GL rule is shared by every triangle of every
+    // target. MaxGLOrder covers DuffyTOrder's largest value (4 t-points per digit).
+    static constexpr Integer MaxGLOrder = 128;
+    const Vector<Real>& qn = LegQuadRule<Real>::template nds<MaxGLOrder>(nt);
+    const Vector<Real>& qw = LegQuadRule<Real>::template wts<MaxGLOrder>(nt);
     // Tt does not depend on the s-node, so stage 2b contracts the whole s-range in one
     // (ns*NR x order)(order x nt) GEMM.
     const Long sblk = ns;
@@ -866,8 +873,6 @@ namespace sctl {
       auto taket = [&](const Long n) { Iterator<Real> r = sbt.begin() + offt; offt += n; return r; };
       Vector<Real> tn(nt, taket(nt), false), tw(nt, taket(nt), false);
       {
-        Vector<Real> qn, qw;
-        LegQuadRule<Real>::ComputeNdsWts(&qn, &qw, nt);
         const Real dd = dOverL;
         const Real x0 = -ash(tstar/dd), x1 = ash(((Real)1-tstar)/dd);
         for (Long i = 0; i < nt; i++) {
@@ -999,7 +1004,8 @@ namespace sctl {
     #pragma omp parallel for schedule(static)
     for (Long elem_idx = 0; elem_idx < qel.nelem; elem_idx++) {
       // Surface nodes (targets) and their normals on this element.
-      Vector<Real> Xnodes, Xnnodes;
+      thread_local Vector<Real> Xnodes, Xnnodes;
+      thread_local Matrix<Real> M_acc;
       qel.GetGeom(&Xnodes, (trg_dot_prod ? &Xnnodes : nullptr), nullptr, nullptr, nullptr, nds, nds, elem_idx);
 
       Matrix<Real>& M = M_lst[elem_idx];
@@ -1014,7 +1020,6 @@ namespace sctl {
           Vector<Real> ntrg;
           if (trg_dot_prod) ntrg.ReInit(COORD_DIM, Xnnodes.begin() + t*COORD_DIM, false);
 
-          Matrix<Real> M_acc;
           SelfInteracBlockDuffy<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
 
           // Scatter into column block t of M: M[(i*order+j)*KDIM0+k0][t*KDIM1_out+k1].
@@ -1281,12 +1286,12 @@ namespace sctl {
     M.SetZero();
     if (!Ntrg) return;
 
+    thread_local Matrix<Real> M_acc;   // persists across calls so ReInit reuses its capacity
     for (Long t = 0; t < Ntrg; t++) {
       Vector<Real> Xtrg(COORD_DIM, (Iterator<Real>)Xt.begin() + t*COORD_DIM, false);
       Vector<Real> ntrg;
       if (trg_dot_prod) ntrg.ReInit(COORD_DIM, (Iterator<Real>)normal_trg.begin() + t*COORD_DIM, false);
 
-      Matrix<Real> M_acc;
       NearInteracBlockSplit<order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
 
       // Scatter into M for target t: M[(i*order+j)*KDIM0+k0][t*KDIM1_out+k1].
