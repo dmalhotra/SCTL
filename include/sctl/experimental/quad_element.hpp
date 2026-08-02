@@ -136,6 +136,24 @@ namespace sctl {
       static void NodalDerivs(const Vector<Real>& coord_slab, const Integer order, Vector<Real>& du_slab, Vector<Real>& dv_slab);
 
 
+      // ============================ SelfInterac and NearInterac ============================
+
+      // Cached 1D nodal differentiation matrix D (order x order) on the GL nodes,
+      // D[i][a] = L_i'(node_a); D . LuV turns a value-interp operator into a deriv one.
+      static const Matrix<Real>& DiffMat(const Integer order);
+      template <Integer order> static const Matrix<Real>& DiffMat() { return DiffMat(order); }
+
+      // Runtime order is dispatched to a compile-time `order` (switch {4..48}) because `order`
+      // bounds every inner loop. `digits` stays runtime: it only selects a cached rule, so
+      // templating it just duplicates identical code.
+      // Accuracy levels the type can express: digits10 ~ significand bits * log10(2)
+      // (30103/100000). 7 for float, 16 for double, 19 for long double, 34 for __float128.
+      static constexpr Integer MaxDigits = 1 + GetSigBits<Real>::value()*30103/100000;
+      // Largest d with tol <= 10^-d, where 10^-d is repeated multiplication of 0.1, NOT the
+      // literal 1e-d -- the two differ in the last bits and so pick different d at exact powers.
+      static Integer DigitsFromTol(const Real tol);
+
+
       // ============================ SelfInterac only ============================
 
       // Duffy edge-collapsed self scheme: the panel is split at the target (u0,v0) into four
@@ -199,7 +217,7 @@ namespace sctl {
 
       // Per-cell GL order and admissibility constant. b_ellipse is the end-foot Bernstein reach,
       // weaker than the semi-major reach by a^2/b^2 ~ 1.9x because the foot lands on a cell
-      // endpoint. SCTL_NEAR_QORDER / SCTL_NEAR_BELLIPSE override each.
+      // endpoint.
       static void NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder);
       static Integer NearQuadOrder(const Integer digits);
       static Real NearBEllipse(const Integer digits);
@@ -217,24 +235,6 @@ namespace sctl {
       template <Integer order> static const Vector<GradeRule>& NearGradeTable(const Integer q);
       template <Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
       template <Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits);
-
-
-      // ============================ SelfInterac and NearInterac ============================
-
-      // Cached 1D nodal differentiation matrix D (order x order) on the GL nodes,
-      // D[i][a] = L_i'(node_a); D . LuV turns a value-interp operator into a deriv one.
-      static const Matrix<Real>& DiffMat(const Integer order);
-      template <Integer order> static const Matrix<Real>& DiffMat() { return DiffMat(order); }
-
-      // Runtime order is dispatched to a compile-time `order` (switch {4..48}) because `order`
-      // bounds every inner loop. `digits` stays runtime: it only selects a cached rule, so
-      // templating it just duplicates identical code.
-      // Accuracy levels the type can express: digits10 ~ significand bits * log10(2)
-      // (30103/100000). 7 for float, 16 for double, 19 for long double, 34 for __float128.
-      static constexpr Integer MaxDigits = 1 + GetSigBits<Real>::value()*30103/100000;
-      // Largest d with tol <= 10^-d, where 10^-d is repeated multiplication of 0.1, NOT the
-      // literal 1e-d -- the two differ in the last bits and so pick different d at exact powers.
-      static Integer DigitsFromTol(const Real tol);
 
 
       Long nelem = 0;

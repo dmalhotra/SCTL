@@ -460,10 +460,7 @@ namespace sctl {
   template <class Real> Integer QuadElemList<Real>::NearQuadOrder(const Integer digits) {
     static const std::array<Integer,MaxDigits> q = []() {
       std::array<Integer,MaxDigits> t{};
-      const char* v = std::getenv("SCTL_NEAR_QORDER");
-      const Integer x = (v ? (Integer)atoi(v) : 0);
       for (Integer d = 0; d < MaxDigits; d++) {
-        if (x > 0) { t[d] = x; continue; }
         Real b; Integer qq; NearRhoRule(pow<Real,Long>((Real)0.1, (Long)d), b, qq); t[d] = qq;
       }
       return t;
@@ -494,10 +491,7 @@ namespace sctl {
   template <class Real> Real QuadElemList<Real>::NearBEllipse(const Integer digits) {
     static const std::array<Real,MaxDigits> b = []() {
       std::array<Real,MaxDigits> t{};
-      const char* v = std::getenv("SCTL_NEAR_BELLIPSE");
-      const double x = (v ? atof(v) : 0);
       for (Integer d = 0; d < MaxDigits; d++) {
-        if (x > 0) { t[d] = (Real)x; continue; }
         Real bb; Integer qq; NearRhoRule(pow<Real,Long>((Real)0.1, (Long)d), bb, qq); t[d] = bb;
       }
       return t;
@@ -587,7 +581,7 @@ namespace sctl {
       if (!(den > 0)) return q_iso;
       const double c = std::min(1.0, std::fabs((double)guv)/den);
       const double phi = std::acos(c)*180.0/const_pi<double>();
-      static const double Ck = []() { const char* v = std::getenv("SCTL_NEAR_CK"); return v ? atof(v) : 400.0; }();
+      constexpr double Ck = 400.0;   // fitted on Laplace SL/DL, flat elements, one target offset
       const double f = std::max(1.0, Ck/(10.0*std::max(1e-3, phi)));
       if (f <= 1.0) return q_iso;
       Integer q = (Integer)std::ceil(f*(double)q_iso);
@@ -725,8 +719,6 @@ namespace sctl {
 
 
   template <class Real> Integer QuadElemList<Real>::DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0) {
-    static const Integer ov = []() { const char* v = std::getenv("SCTL_DUFFY_NT"); return v ? (Integer)atol(v) : (Integer)0; }();
-    if (ov > 0) return ov;
     // t-points per digit, with margin: the error falls only ~0.35 decades per node, so a thin
     // margin is not safe. Vector kernels need ~1.5x the t-nodes of a scalar one at the same
     // tolerance. Calibrated end-to-end on the Green's identity with a varying density, not on
@@ -747,8 +739,7 @@ namespace sctl {
     // self-initializes on first use from any thread and needs no external warm-up.
     static const DuffySelfTable table = []() {
       DuffySelfTable tbl;
-      static const Integer qs_ov = []() { const char* v = std::getenv("SCTL_DUFFY_QS"); return v ? (Integer)atol(v) : (Integer)0; }();
-      const Integer qs = (qs_ov > 0 ? qs_ov : order);   // q_s = order (see DuffyTOrder note)
+      const Integer qs = order;   // radial GL order; see the DuffyTOrder note on the t-rule
       tbl.ns = qs;
       LegQuadRule<Real>::ComputeNdsWts(&tbl.sn, &tbl.sw, qs);
 
@@ -1356,19 +1347,20 @@ namespace sctl {
     const Vector<Real> nodes = ParamNodes(Order);
 
     Vector<Real> x_param(Order * Nelem_perside);
-    for (int pind=0; pind < Nelem_perside; pind ++) {
-        for (int nind=0; nind < Order; nind ++) {
-            x_param[pind * Order + nind] = (nodes[nind] + pind) / Nelem_perside; // TODO check
-        }
+    for (Integer pind = 0; pind < Nelem_perside; pind++) {
+      for (Integer nind = 0; nind < Order; nind++) {
+        x_param[pind * Order + nind] = (nodes[nind] + pind) / Nelem_perside;
+      }
     }
-    Vector<Real> coord0(x_param.Dim() * x_param.Dim() * COORD_DIM);
-    for (int xind=0; xind < x_param.Dim(); xind ++) {
-        for (int yind=0; yind < x_param.Dim(); yind ++) {
-            const Long idx = xind * x_param.Dim() * COORD_DIM + yind * COORD_DIM;
-            coord0[idx + 0] = x_param[xind];
-            coord0[idx + 1] = x_param[yind];
-            coord0[idx + 2] = 0.;
-        }
+    const Long N = x_param.Dim();
+    Vector<Real> coord0(N * N * COORD_DIM);
+    for (Long xind = 0; xind < N; xind++) {
+      for (Long yind = 0; yind < N; yind++) {
+        const Long idx = (xind * N + yind) * COORD_DIM;
+        coord0[idx + 0] = x_param[xind];
+        coord0[idx + 1] = x_param[yind];
+        coord0[idx + 2] = 0;
+      }
     }
     // Built once per (Order, Nelem_perside). The returned reference has to stay valid across
     // later calls with other arguments, so the grid is cached rather than rebuilt into one
