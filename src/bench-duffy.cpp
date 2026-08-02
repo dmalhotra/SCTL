@@ -264,14 +264,13 @@ int main(int argc, char** argv) {
 #ifdef _OPENMP
     omp_set_num_threads(nthr);
 #endif
-    std::printf("==== Duffy vs Adaptive: order=%d ppf=%ld threads=%d ====\n", (int)order, ppf, (int)nthr);
+    std::printf("==== Duffy self / split near: order=%d ppf=%ld threads=%d ====\n", (int)order, ppf, (int)nthr);
 
 #ifdef SCTL_DUFFY_PROF
     if (std::getenv("PHASE_BREAKDOWN")) {
       const char* nm[] = {"coord_shift","metric G","t-rule + Tt","stage1 (Wb)","stage2a (Mi)",
                           "stage2b (Tt)","pointwise","kernel eval","weight fold","projection"};
       QuadElemList<Real> q = BuildTwistedSphere(order, ppf, 1.0, (Real)twists[0]);
-      q.SetQuadScheme(QuadElemList<Real>::QuadScheme::Duffy);
       const Long nn = q.Size()*order*order;
       std::printf("\nPHASE BREAKDOWN (1 thread, Laplace3D-FxU, order %d, ppf %ld, %ld targets, twist %.4f)\n",
                   (int)order, ppf, (long)nn, twists[0]);
@@ -297,31 +296,18 @@ int main(int argc, char** argv) {
       return 0;
     }
 #endif
-    using QS = QuadElemList<Real>::QuadScheme;
-    struct SC { const char* nm; QS s; };
-    std::vector<SC> schemes = {{"adaptive",QS::Adaptive},{"rectpolar",QS::RectPolar},
-                               {"hybrid",QS::Hybrid},{"duffy",QS::Duffy}};
-    if (std::getenv("DUFFY_ONLY") && atoi(std::getenv("DUFFY_ONLY"))) schemes = {{"duffy",QS::Duffy}};
-    if (const char* w = std::getenv("SCHEMES")) {
-      std::vector<SC> f; const std::string t(w);
-      for (const SC& c : schemes) if (t.find(c.nm) != std::string::npos) f.push_back(c);
-      if (!f.empty()) schemes = f;
-    }
     for (const double tw : twists) {
-      for (const SC& sc : schemes) {
-        QuadElemList<Real> q = BuildTwistedSphere(order, ppf, 1.0, (Real)tw);
-        q.SetQuadScheme(sc.s);
-        for (const double tol : tols) {
-          if (std::getenv("CONST_DENSITY")) {
-            ConstDensity<Laplace3D_FxU>(q,(Real)tol,comm,"SL[1]","laplace",tw);
-            ConstDensity<Laplace3D_DxU>(q,(Real)tol,comm,"DL[1]","laplace",tw);
-            ConstDensity<Stokes3D_FxU>(q,(Real)tol,comm,"SL[1]","stokes",tw);
-            ConstDensity<Stokes3D_DxU>(q,(Real)tol,comm,"DL[1]","stokes",tw);
-            continue;
-          }
-          RunCfg<Laplace3D_FxU,Laplace3D_DxU,Laplace3D_FxdU>(sc.nm,"laplace",q,(Real)tol,tw,comm,nthr);
-          RunCfg<Stokes3D_FxU, Stokes3D_DxU, Stokes3D_FxT >(sc.nm,"stokes", q,(Real)tol,tw,comm,nthr);
+      QuadElemList<Real> q = BuildTwistedSphere(order, ppf, 1.0, (Real)tw);
+      for (const double tol : tols) {
+        if (std::getenv("CONST_DENSITY")) {
+          ConstDensity<Laplace3D_FxU>(q,(Real)tol,comm,"SL[1]","laplace",tw);
+          ConstDensity<Laplace3D_DxU>(q,(Real)tol,comm,"DL[1]","laplace",tw);
+          ConstDensity<Stokes3D_FxU>(q,(Real)tol,comm,"SL[1]","stokes",tw);
+          ConstDensity<Stokes3D_DxU>(q,(Real)tol,comm,"DL[1]","stokes",tw);
+          continue;
         }
+        RunCfg<Laplace3D_FxU,Laplace3D_DxU,Laplace3D_FxdU>("duffy","laplace",q,(Real)tol,tw,comm,nthr);
+        RunCfg<Stokes3D_FxU, Stokes3D_DxU, Stokes3D_FxT >("duffy","stokes", q,(Real)tol,tw,comm,nthr);
       }
     }
   }

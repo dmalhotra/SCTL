@@ -74,27 +74,16 @@ template <class Real> Vector<Real> get_testsurf(const Integer order) {
   return coord0;
 }
 
-const char* SchemeName(typename QuadElemList<double>::QuadScheme s) {
-  switch (s) {
-    case QuadElemList<double>::QuadScheme::RectPolar: return "RectPolar";
-    case QuadElemList<double>::QuadScheme::Hybrid:    return "Hybrid";
-    case QuadElemList<double>::QuadScheme::LineQBX:   return "LineQBX";
-    default:                                          return "Adaptive";
-  }
-}
-
 // ---- Self-interaction --------------------------------------------------------
 // A single curved element (order^2 on-surface targets) isolates the per-call cost
 // cheaply; set nface>0 to instead use an nface-per-side twisted sphere when you
 // want OpenMP scaling across many elements.
 template <class Kernel>
-void bench_self(const Kernel& ker, typename QuadElemList<double>::QuadScheme scheme,
-                Integer order, double tol, Integer q, Integer cov_order, Long PatchPerFace = 0, Long ncall = 6) {
+void bench_self(const Kernel& ker, Integer order, double tol, Long PatchPerFace = 0, Long ncall = 6) {
   using Real = double;
   QuadElemList<Real> qel = (PatchPerFace > 0)
       ? BuildTwistedSphere<Real>(order, PatchPerFace, 1.0, const_pi<Real>() / 6)
       : QuadElemList<Real>(order, get_testsurf<Real>(order));
-  qel.SetQuadScheme(scheme, q, cov_order);
   const Long nelem = qel.Size();
   const Long ntrg = nelem * (Long)order * order; // one on-surface target per node
 
@@ -106,8 +95,8 @@ void bench_self(const Kernel& ker, typename QuadElemList<double>::QuadScheme sch
   // where t_avg = that call's wall time and f_avg = that call's counted (kernel-eval)
   // FLOPs -- so identical f_avg across rows confirms identical work while t_avg drops.
   char base[220];
-  std::snprintf(base, sizeof(base), "self %-11s %-9s ord=%2d tol=%.0e Nb=%d",
-                Kernel::Name().c_str(), SchemeName(scheme), (int)order, tol, (int)cov_order);
+  std::snprintf(base, sizeof(base), "self %-11s ord=%2d tol=%.0e",
+                Kernel::Name().c_str(), (int)order, tol);
   std::printf("\n%s   (%ld targets, %ld elem)\n", base, ntrg, nelem);
 
   double t_cold = 0, t_warm_sum = 0; Long nwarm = 0;
@@ -131,9 +120,8 @@ void bench_self(const Kernel& ker, typename QuadElemList<double>::QuadScheme sch
 
 // ---- Near-interaction: single element, one off-surface target --------------
 template <class Kernel>
-void bench_near(const Kernel& ker, typename QuadElemList<double>::QuadScheme scheme,
-                Integer order, double tol, Integer q, Integer cov_order, Long nrep, Long ncall = 6,
-                Long PatchPerFace = 0, double theta_twist = 0, double d = 0.01, Integer max_depth = 30) {
+void bench_near(const Kernel& ker, Integer order, double tol, Long nrep, Long ncall = 6,
+                Long PatchPerFace = 0, double theta_twist = 0, double d = 0.01) {
   using Real = double;
   const Integer COORD_DIM = 3;
   const Long elem_idx = 0;
@@ -142,7 +130,6 @@ void bench_near(const Kernel& ker, typename QuadElemList<double>::QuadScheme sch
   QuadElemList<Real> qel = (PatchPerFace > 0)
       ? BuildTwistedSphere<Real>(order, PatchPerFace, 1.0, (Real)theta_twist)
       : QuadElemList<Real>(order, get_testsurf<Real>(order));
-  qel.SetQuadScheme(scheme, q, cov_order, max_depth);
 
   // Near-singular target: offset `d` (function arg) along the normal at an interior point.
   const Real u0 = 0.4, v0 = 0.6;
@@ -158,10 +145,10 @@ void bench_near(const Kernel& ker, typename QuadElemList<double>::QuadScheme sch
   // Profile label; block #0 is COLD (first touch of any cache this scheme needs that
   // isn't already resident). NOTE: self runs before near in main(), so DiffMat/ParamNodes
   // and the digit-/Nbeta-keyed rules are typically ALREADY warm -- near's cold penalty is
-  // therefore small (only whatever this exact (scheme,order,tol,Nbeta) has not yet touched).
+  // therefore small (only whatever this exact (order,tol) has not yet touched).
   char base[220];
-  std::snprintf(base, sizeof(base), "near %-11s %-9s ord=%2d tol=%.0e Nb=%d d=%.0e%s",
-                Kernel::Name().c_str(), SchemeName(scheme), (int)order, tol, (int)cov_order, d,
+  std::snprintf(base, sizeof(base), "near %-11s ord=%2d tol=%.0e d=%.0e%s",
+                Kernel::Name().c_str(), (int)order, tol, d,
                 (PatchPerFace > 0 ? (theta_twist != 0 ? " [twist]" : " [sphere]") : ""));
   std::printf("\n%s   (%ld reps/call)\n", base, nrep);
 
@@ -194,58 +181,38 @@ int main(int argc, char** argv) {
     SCTL_ASSERT_MSG(comm.Size() == 1, "bench-quad-interac is sequential (run with one MPI rank).");
     Profile::Enable(true);
 
-    using QS = QuadElemList<double>::QuadScheme;
     const Laplace3D_DxU ker_lap;  // scalar kernel: interpolation-dominated case
     const Stokes3D_DxU  ker_stk;  // matrix kernel: heavier KernelEval
 
-    // Adaptive self-rule node counts explode with order and tolerance, so the
-    // self sweep is on a single curved element and bounded; near is cheap (one
-    // off-surface target) so it runs the full order x scheme matrix.
+    // Self-rule node counts grow with order and tolerance, so the self sweep is on a single
+    // curved element and bounded; near is cheap (one off-surface target) so it runs the full
+    // order x tolerance matrix.
     std::printf("==================== SELF-INTERACTION (single curved element) ====================\n");
     for (const Integer order : {4, 8, 16}) {
-      bench_self(ker_lap, QS::Adaptive,  order, 1e-6, 10, 0);    // scalar, interpolation-dominated
-      bench_self(ker_stk, QS::Adaptive,  order, 1e-6, 10, 0);    // matrix kernel: heavier KernelEval
-      bench_self(ker_lap, QS::RectPolar, order, 1e-7, 10, 300);  // fixed Nbeta tensor rule
-      bench_self(ker_lap, QS::Hybrid,    order, 1e-7, 10, 300);  // self uses RectPolar (near unused here)
+      bench_self(ker_lap, order, 1e-6);   // scalar, interpolation-dominated
+      bench_self(ker_stk, order, 1e-6);   // matrix kernel: heavier KernelEval
     }
-    bench_self(ker_lap, QS::Adaptive, 8, 1e-10, 10, 0);          // tol sweep at fixed order
+    bench_self(ker_lap, 8, 1e-10);        // tol sweep at fixed order
 
     std::printf("\n==================== NEAR-INTERACTION ====================\n");
     for (const Integer order : {4, 8, 16}) {
-      bench_near(ker_lap, QS::Adaptive,  order, 1e-6,  10, 0,   /*nrep=*/100);
-      bench_near(ker_lap, QS::Adaptive,  order, 1e-10, 10, 0,   100);
-      bench_near(ker_stk, QS::Adaptive,  order, 1e-10, 10, 0,   100);
-      bench_near(ker_lap, QS::RectPolar, order, 1e-7,  10, 300, 100);
-      bench_near(ker_stk, QS::RectPolar, order, 1e-7,  10, 300, 100);
-      bench_near(ker_lap, QS::Hybrid,    order, 1e-10, 10, 0,   100);  // near uses adaptive (tol-driven), flat element
+      bench_near(ker_lap, order, 1e-6,  /*nrep=*/100);
+      bench_near(ker_lap, order, 1e-10, 100);
+      bench_near(ker_stk, order, 1e-10, 100);
     }
-    // One twisted-patch comparison: same adaptive-near path on a pi/2-sheared cubed-sphere
-    // patch. Contrast leaves/target + phase split vs the flat Hybrid case above to see whether
-    // shear inflates the near cost uniformly (leaf-count growth) or hits a specific phase.
-    bench_near(ker_lap, QS::Hybrid, 8, 1e-10, 10, 0, /*nrep=*/100, /*ncall=*/6,
+    // One twisted-patch comparison: the same near path on a pi/2-sheared cubed-sphere patch.
+    // Contrast leaves/target + phase split vs the flat case above to see whether shear inflates
+    // the near cost uniformly (leaf-count growth) or hits a specific phase.
+    bench_near(ker_lap, 8, 1e-10, /*nrep=*/100, /*ncall=*/6,
                /*PatchPerFace=*/1, /*theta_twist=*/const_pi<double>() / 2);
 
-    // Deep-near regime (d=1e-4): the off-surface near case the test-quad-elem sweep exercises.
-    // tol=1e-9 lets the adaptive tree resolve to its natural ~12 levels (max_depth_=30 uncapped);
-    // nrep lowered since each ~12-level NearInterac is far heavier than the d=0.01 cases.
-    // Under-resolved deep-near tiers (d=1e-4): match RP Nbeta against depth-capped adaptive.
-    //   tier A: RP Nbeta=48  (tol=1e-6) vs adaptive max_depth=4
-    //   tier B: RP Nbeta=100 (tol=1e-7) vs adaptive max_depth=8
-    // At d=1e-4 (needs ~11 levels) both adaptive caps are UNDER-resolved -- this contrasts the
-    // speed of the two schemes at matched low-cost budgets (accuracy read from test-quad-elem).
-    std::printf("\n---- deep-near (d=1e-4) tier A: adaptive max_depth=4 vs RP Nbeta=48 ----\n");
+    // Deep-near regime (d=1e-4): each call refines to ~11 levels, so nrep is lowered.
+    std::printf("\n---- deep-near (d=1e-4) ----\n");
     for (const Integer order : {8, 16}) {
-      bench_near(ker_lap, QS::Hybrid,    order, 1e-6, 10, 0,   /*nrep=*/50, 6, 0, 0, 1e-4, /*max_depth=*/4);
-      bench_near(ker_stk, QS::Hybrid,    order, 1e-6, 10, 0,   /*nrep=*/50, 6, 0, 0, 1e-4, /*max_depth=*/4);
-      bench_near(ker_lap, QS::RectPolar, order, 1e-6, 10, 48,  /*nrep=*/50, 6, 0, 0, 1e-4, /*max_depth=*/4);
-      bench_near(ker_stk, QS::RectPolar, order, 1e-6, 10, 48,  /*nrep=*/50, 6, 0, 0, 1e-4, /*max_depth=*/4);
-    }
-    std::printf("\n---- deep-near (d=1e-4) tier B: adaptive max_depth=8 vs RP Nbeta=100 ----\n");
-    for (const Integer order : {8, 16}) {
-      bench_near(ker_lap, QS::Hybrid,    order, 1e-7, 10, 0,   /*nrep=*/50, 6, 0, 0, 1e-4, /*max_depth=*/8);
-      bench_near(ker_stk, QS::Hybrid,    order, 1e-7, 10, 0,   /*nrep=*/50, 6, 0, 0, 1e-4, /*max_depth=*/8);
-      bench_near(ker_lap, QS::RectPolar, order, 1e-7, 10, 100, /*nrep=*/50, 6, 0, 0, 1e-4, /*max_depth=*/8);
-      bench_near(ker_stk, QS::RectPolar, order, 1e-7, 10, 100, /*nrep=*/50, 6, 0, 0, 1e-4, /*max_depth=*/8);
+      bench_near(ker_lap, order, 1e-6, /*nrep=*/50, 6, 0, 0, 1e-4);
+      bench_near(ker_stk, order, 1e-6, /*nrep=*/50, 6, 0, 0, 1e-4);
+      bench_near(ker_lap, order, 1e-7, /*nrep=*/50, 6, 0, 0, 1e-4);
+      bench_near(ker_stk, order, 1e-7, /*nrep=*/50, 6, 0, 0, 1e-4);
     }
 
     std::printf("\n==== Profiler view: per-call rows (ALL counted FLOPs: kernel + Matrix GEMMs + elementwise) ====\n");

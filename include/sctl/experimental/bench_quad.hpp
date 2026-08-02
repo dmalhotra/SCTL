@@ -36,8 +36,8 @@ enum class Phase {
   KernelWeight,    // KWc alloc + weighting loop
   Projection,      // projection EvalTensorProduct + scatter (2 GEMMs)
   QuadtreeBuild,   // BuildNearLeaves (adaptive near only)
-  ClosestPoint,    // GetClosestPoint Newton/grid search (RectPolar near only)
-  ClosestNode,     // GetClosestNode brute-force seed (adaptive near only)
+  ClosestPoint,    // GetClosestPoint Newton/grid search (foot of the perpendicular)
+  ClosestNode,     // GetClosestNode brute-force seed for the above
   NumPhases
 };
 
