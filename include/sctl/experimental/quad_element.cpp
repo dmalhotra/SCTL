@@ -125,16 +125,6 @@ namespace sctl {
     return all[order];
   }
 
-  template <class Real> template <Integer order> void QuadElemList<Real>::BuildInterp1D(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& param) {
-    const Long N = param.Dim();
-    M.ReInit(order, N);
-    { Vector<Real> v(order*N, M.begin(), false); LagrangeInterp<Real>::Interpolate(v, ParamNodes(order), param); }
-    dM.ReInit(order, N);
-    Matrix<Real>::GEMM(dM, DiffMat<order>(), M);
-    MT = M.Transpose();
-    dMT = dM.Transpose();
-  }
-
   template <class Real> Long QuadElemList<Real>::Size() const {
     return nelem;
   }

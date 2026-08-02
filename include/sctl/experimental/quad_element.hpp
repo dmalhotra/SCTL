@@ -139,47 +139,30 @@ namespace sctl {
 
     private:
 
-      // Contiguous element range [i0,i1) owned by this rank when a global mesh of
-      // Nelem_total elements is linearly partitioned across comm. Shared by Init
-      // (in-memory construction) and Read (file load). With a single-process comm
-      // this returns the full range [0, Nelem_total).
-      static void PartitionRange(Long Nelem_total, const Comm& comm, Long& i0, Long& i1);
+      // Private helpers, grouped by which public entry point reaches them.
+      // Two classifications are indirect and flagged where they occur: the near-rule
+      // accessors are also called by SelfInteracHelper, but only to pre-warm their caches
+      // before the concurrent near phase; and the geometry helpers at the bottom are reached
+      // from SelfInterac only through the public GetGeom.
 
-      template <class ValueType> static void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv);
-
-      // Nodal d/du, d/dv of a component-major SoA coord slab (order x order grid).
-      // Shared by Init (absolute, the dcoord_du/dv cache) and GetGeom (target-shifted).
-      static void NodalDerivs(const Vector<Real>& coord_slab, const Integer order, Vector<Real>& du_slab, Vector<Real>& dv_slab);
-
-      // Allocation-free single-point geometry evaluator: writes position X[COORD_DIM]
-      // (target-centered by `origin` when non-null) and, when the pointers are non-null,
-      // the tangents dXu/dXv[COORD_DIM] at parameter (u,v) on elem_idx. Builds the
-      // order-length Lagrange bases on the stack and contracts against the cached nodal
-      // coords -- no Matrix alloc / Transpose, unlike GetGeom. Used by the closest-point
-      // search where it is called many times per target.
-      void EvalPoint(Real* X, Real* dXu, Real* dXv, const Real u, const Real v, const Long elem_idx, const Vector<Real>* origin) const;
-
-      // Closest discretization NODE on elem_idx to Xtrg (brute force over the nodal grid);
-      // seeds GetClosestPoint. Returns the distance, (ustar,vstar) the node's parameters.
-      Real GetClosestNode(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) const;
-
-      // Closest POINT on patch elem_idx to Xtrg over (u,v) in [0,1]^2: GetClosestNode seed, then
-      // Gauss-Newton with a grid-search fallback. Returns the distance. This is the FOOT that the
-      // near scheme splits at, and where it reads the metric to pick the per-target GL order.
-      // n_iter/used_fallback (optional) report the Newton iteration count and whether it stalled.
-      Real GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
+      // ======================= reached from BOTH entry points =======================
 
       // Cached 1D nodal differentiation matrix D (order x order) on the GL nodes,
       // D[i][a] = L_i'(node_a); D . LuV turns a value-interp operator into a deriv one.
       static const Matrix<Real>& DiffMat(const Integer order);
       template <Integer order> static const Matrix<Real>& DiffMat() { return DiffMat(order); }
 
-      // 1D value + derivative interpolation from order GL nodes to `param`:
-      // M[i][a] = L_i(param[a]) (order x N), dM = DiffMat<order> . M.
-      template <Integer order> static void BuildInterp1D(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& param);
+      // Both entry points dispatch runtime order to a compile-time `order` (switch {4..48}),
+      // because `order` is the bound of every inner loop. `digits` stays a RUNTIME parameter:
+      // it never sizes an array or bounds a loop, it only picks a cached rule, and every one
+      // of those already returns a runtime value. Templating it produced 16 byte-identical
+      // instantiations of each block below -- 77% of this file's compile time.
+      static constexpr Integer MaxDigits = 16;   // digits in [0, MaxDigits)
+      // 10^-d as the old `pow<d,Real>((Real)0.1)` computed it, so the tol -> digits mapping is
+      // unchanged bit-for-bit (repeated multiplication, NOT the literal 1e-d).
+      static Integer DigitsFromTol(const Real tol);
 
-      // 1D quadrature rule (param, w) + value/derivative interp operators (M, dM = order x N).
-      struct NodeRuleData { Vector<Real> param, w; Matrix<Real> M, dM, MT, dMT; };
+      // ======================= SelfInterac only =======================
 
       // ---- Duffy edge-collapsed self scheme ----
       // The panel is split at (u0,v0) into four quads with one edge collapsed onto the
@@ -203,6 +186,27 @@ namespace sctl {
       template <Integer order> static const DuffySelfTable& DuffyTable(const Integer digits);
       static Integer DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0);
       template <Integer order, class Kernel> static void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
+      template <Integer order, class Kernel> static void SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits);
+
+      // ======================= NearInterac only =======================
+
+      // Allocation-free single-point geometry evaluator: writes position X[COORD_DIM]
+      // (target-centered by `origin` when non-null) and, when the pointers are non-null,
+      // the tangents dXu/dXv[COORD_DIM] at parameter (u,v) on elem_idx. Builds the
+      // order-length Lagrange bases on the stack and contracts against the cached nodal
+      // coords -- no Matrix alloc / Transpose, unlike GetGeom. Used by the closest-point
+      // search where it is called many times per target.
+      void EvalPoint(Real* X, Real* dXu, Real* dXv, const Real u, const Real v, const Long elem_idx, const Vector<Real>* origin) const;
+
+      // Closest discretization NODE on elem_idx to Xtrg (brute force over the nodal grid);
+      // seeds GetClosestPoint. Returns the distance, (ustar,vstar) the node's parameters.
+      Real GetClosestNode(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) const;
+
+      // Closest POINT on patch elem_idx to Xtrg over (u,v) in [0,1]^2: GetClosestNode seed, then
+      // Gauss-Newton with a grid-search fallback. Returns the distance. This is the FOOT that the
+      // near scheme splits at, and where it reads the metric to pick the per-target GL order.
+      // n_iter/used_fallback (optional) report the Newton iteration count and whether it stalled.
+      Real GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
 
       // Accumulate a tensor-product quadrature (u_param x v_param, weights wu (x) wv) on
       // elem_idx against target Xtrg into M_acc; normal_trg != null enables target-normal contraction.
@@ -215,20 +219,6 @@ namespace sctl {
                                                                         const Matrix<Real>* MvT_pre = nullptr, const Matrix<Real>* MuT_pre = nullptr, const Matrix<Real>* dMuT_pre = nullptr,
                                                                         const Vector<Real>* src_nodal = nullptr, const Matrix<Real>* MuD_pre = nullptr, const Real nrm_sign = 1,
                                                                         Vector<Real>* acc_cm = nullptr);
-
-      // Order-templated impls of NearInterac/SelfInterac: the entry points dispatch runtime order
-      // to compile-time `order` (switch {4..48}), because `order` is the bound of every inner
-      // loop. `digits` stays a RUNTIME parameter: it never sizes an array or bounds a loop, it
-      // only picks a cached rule (DuffyTable / NearGradeTable / NearQuadOrder / NearBEllipse),
-      // and every one of those already returns a runtime value. Templating it produced 16
-      // byte-identical instantiations of each function below -- 77% of this file's compile time.
-      static constexpr Integer MaxDigits = 16;   // digits in [0, MaxDigits)
-      // 10^-d as the old `pow<d,Real>((Real)0.1)` computed it, so the tol -> digits mapping is
-      // unchanged bit-for-bit (repeated multiplication, NOT the literal 1e-d).
-      static Integer DigitsFromTol(const Real tol);
-      template <Integer order, class Kernel> static void SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits);
-      template <Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits);
-
       // --- Split-at-foot near scheme ---
       // Splitting the element AT the foot makes every refinement grade toward an ENDPOINT, so in
       // normalized sub-element coordinates the graded intervals depend only on the level and
@@ -252,6 +242,11 @@ namespace sctl {
       // than the semi-major reach by a^2/b^2 ~ 1.9x, since the foot lands on a cell ENDPOINT).
       // SCTL_NEAR_QORDER / SCTL_NEAR_BELLIPSE override each, for tuning near while self is held
       // at a much tighter tolerance.
+      //
+      // These three and NearGradeTable below are also called by SelfInteracHelper, which makes
+      // them formally reachable from SelfInterac too -- but only to pre-warm their caches. Self
+      // runs before SetupNear and is serial, so warming there keeps first-touch static init off
+      // the concurrent near path. No self quadrature reads them.
       static void NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder);
       static Integer NearQuadOrder(const Integer digits);
       static Real NearBEllipse(const Integer digits);
@@ -273,6 +268,25 @@ namespace sctl {
       // corner-angle correction can select (each multiple of 4, plus each NearQuadOrder(d)).
       template <Integer order> static const Vector<GradeRule>& NearGradeTable(const Integer q);
       template <Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
+      template <Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits);
+
+      // ============ neither: construction, I/O, and the public geometry API ============
+      // SelfInterac reaches the two geometry helpers below through the public GetGeom; nothing
+      // in either quadrature scheme calls them directly.
+
+      // Contiguous element range [i0,i1) owned by this rank when a global mesh of
+      // Nelem_total elements is linearly partitioned across comm. Shared by Init
+      // (in-memory construction) and Read (file load). With a single-process comm
+      // this returns the full range [0, Nelem_total).
+      static void PartitionRange(Long Nelem_total, const Comm& comm, Long& i0, Long& i1);
+
+      // Tensor-product contraction of a component-major SoA slab; used by GetGeom and GetVTUData.
+      template <class ValueType> static void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv);
+
+      // Nodal d/du, d/dv of a component-major SoA coord slab (order x order grid).
+      // Shared by Init (absolute, the dcoord_du/dv cache) and GetGeom (target-shifted).
+      static void NodalDerivs(const Vector<Real>& coord_slab, const Integer order, Vector<Real>& du_slab, Vector<Real>& dv_slab);
+
 
       Long nelem = 0;
       Integer order = 0;
