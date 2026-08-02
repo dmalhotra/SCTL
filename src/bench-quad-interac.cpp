@@ -189,14 +189,14 @@ int main(int argc, char** argv) {
     // curved element and bounded; near is cheap (one off-surface target) so it runs the full
     // order x tolerance matrix.
     std::printf("==================== SELF-INTERACTION (single curved element) ====================\n");
-    for (const Integer order : {4, 8, 16}) {
+    for (const Integer order : {8, 12, 16}) {
       bench_self(ker_lap, order, 1e-6);   // scalar, interpolation-dominated
       bench_self(ker_stk, order, 1e-6);   // matrix kernel: heavier KernelEval
     }
     bench_self(ker_lap, 8, 1e-10);        // tol sweep at fixed order
 
     std::printf("\n==================== NEAR-INTERACTION ====================\n");
-    for (const Integer order : {4, 8, 16}) {
+    for (const Integer order : {8, 12, 16}) {
       bench_near(ker_lap, order, 1e-6,  /*nrep=*/100);
       bench_near(ker_lap, order, 1e-10, 100);
       bench_near(ker_stk, order, 1e-10, 100);

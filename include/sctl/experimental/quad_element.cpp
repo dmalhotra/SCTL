@@ -151,8 +151,6 @@ namespace sctl {
     StaticArray<ValueType,Nbuff> tmp_buf;
     Matrix<ValueType> tmp(R, Nv, ((Long)R * Nv > Nbuff ? NullIterator<ValueType>() : tmp_buf), (Long)R * Nv > Nbuff);
 
-    // 2 multiply-adds per inner-product entry: (R x S).(S x Nv) and (Nu x R).(R x Nv).
-    Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(ncomp * 2.0 * Nv * ((double)R * S + (double)Nu * R)));
     for (Long k = 0; k < ncomp; k++) {
       const Matrix<ValueType> in_(R, S, (Iterator<ValueType>)in.begin() + k * (Long)R * S, false);
       Matrix<ValueType> out_(Nu, Nv, out.begin() + k * Nout, false);
@@ -336,7 +334,7 @@ namespace sctl {
       }
     }
   }
-  
+
   template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD, const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT, const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm) {
     // One near leaf cell: accumulate its tensor-product quadrature (weights wu (x) wv) against
     // the target into acc_cm. src_nodal is the caller's target-shifted nodal slab, so the kernel
@@ -362,7 +360,6 @@ namespace sctl {
       Matrix<Real> Cdv_all(COORD_DIM*order, Nv, Cdv.begin(), false);
       Matrix<Real>::GEMM(Cv_all,  cs_all, Mv);
       Matrix<Real>::GEMM(Cdv_all, cs_all, dMv);
-      Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * 2 * (COORD_DIM*(double)order) * order * Nv));
     }
     // Column-stage Cv/Cdv (component index moved into the COLUMNS) so stage 2 batches over
     // components as well as over outputs: the nine original (Nu x order).(order x Nv) products
@@ -387,7 +384,6 @@ namespace sctl {
         Matrix<Real>::GEMM(XdU_m, MuD, Cvc_m);
       }
       Matrix<Real>::GEMM(dV_m, MuT, Cdvc_m);
-      Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * (3.0*Nu) * order * ldc));
     }
 
     StaticArray<Real,COORD_DIM> Xt0_{0, 0, 0};
@@ -449,7 +445,6 @@ namespace sctl {
       Matrix<Real> A_c(order, order, acc_cm.begin() + (Long)c*nnode, false);
       Matrix<Real>::GEMM(A_c, Mu, Y_c, (Real)1);   // beta = 1: accumulate in place
     }
-    Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((double)Nu*Nv + (double)order*Nu)));
   }
 
 
@@ -486,7 +481,7 @@ namespace sctl {
     const double rho = std::min(3.0, std::max(2.0, 2.0 + 0.25*(d - 6)));
     const double C = std::max(1e-3, (15.0*(rho*rho - 1))/64.0);
     QuadOrder = std::max<Integer>(2, (Integer)std::ceil(-std::log(C*(double)std::max<Real>(tol, (Real)1e-16))/std::log(rho)*0.5 + 1));
-    
+
     // End-foot reach, not the semi-major axis. E_rho has semi-axes a,b with a^2-b^2 = 1, and a
     // singularity at parameter s with perpendicular offset d~ = 2d/L lies outside it when
     // s^2/a^2 + d~^2/b^2 > 1. The split puts the foot at a cell endpoint (s = +-1), giving
@@ -990,15 +985,6 @@ namespace sctl {
         Matrix<Real>::GEMM(Pc, Yc, T.WbT);
         for (Integer m = 0; m < order; m++) for (Integer n = 0; n < order; n++)
           M_acc[T.swap_ab ? (Long)n*order+m : (Long)m*order+n][c] += Pc[m][n];
-      }
-      { // GEMM flops for this triangle: stage 1, 2a, 2b and the three projection contractions
-        const double f = 2.0*(COORD_DIM*(double)order)*order*(2*ns)
-                       + ns*2.0*NA*order*(2.0*order)
-                       + ns*2.0*NR*order*(double)nt
-                       + 2.0*(ns*(double)C)*nt*order
-                       + ns*2.0*C*(double)order*order
-                       + C*2.0*(double)order*ns*order;
-        Profile::IncrementCounter(ProfileCounter::FLOP, (Long)f);
       }
     }
   }
