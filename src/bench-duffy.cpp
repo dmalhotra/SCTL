@@ -266,36 +266,6 @@ int main(int argc, char** argv) {
 #endif
     std::printf("==== Duffy self / split near: order=%d ppf=%ld threads=%d ====\n", (int)order, ppf, (int)nthr);
 
-#ifdef SCTL_DUFFY_PROF
-    if (std::getenv("PHASE_BREAKDOWN")) {
-      const char* nm[] = {"coord_shift","metric G","t-rule + Tt","stage1 (Wb)","stage2a (Mi)",
-                          "stage2b (Tt)","pointwise","kernel eval","weight fold","projection"};
-      QuadElemList<Real> q = BuildTwistedSphere(order, ppf, 1.0, (Real)twists[0]);
-      const Long nn = q.Size()*order*order;
-      std::printf("\nPHASE BREAKDOWN (1 thread, Laplace3D-FxU, order %d, ppf %ld, %ld targets, twist %.4f)\n",
-                  (int)order, ppf, (long)nn, twists[0]);
-      std::printf("%-8s %4s %4s %6s | %-13s %9s %8s | total us/target\n","tol","ns","nt","pts","phase","ms","%");
-      for (const double tol : tols) {
-        for (int i = 0; i < DP_COUNT; i++) DuffyProf()[i] = 0;
-        Vector<Matrix<Real>> M(q.Size());
-        QuadElemList<Real>::template SelfInterac<Laplace3D_FxU>(M, Laplace3D_FxU(), (Real)tol, false, &q);
-        for (int i = 0; i < DP_COUNT; i++) DuffyProf()[i] = 0;
-        const double t0 = Wtime();
-        QuadElemList<Real>::template SelfInterac<Laplace3D_FxU>(M, Laplace3D_FxU(), (Real)tol, false, &q);
-        const double tt = Wtime()-t0;
-        double sum = 0; for (int i = 0; i < DP_PROJ+1; i++) sum += DuffyProf()[i];
-        const long ns_ = (long)DuffyProf()[DP_NS], nt_ = (long)DuffyProf()[DP_NT];
-        for (int i = 0; i <= DP_PROJ; i++)
-          std::printf("%-8.0e %4ld %4ld %6ld | %-13s %9.1f %7.1f%% |%s\n", tol, ns_, nt_, 4*ns_*nt_,
-                      nm[i], DuffyProf()[i]*1e3, 100*DuffyProf()[i]/sum,
-                      i==0 ? (" wall " + std::to_string(tt*1e6/(double)nn) + " us").c_str() : "");
-        std::printf("%-8.0e %4ld %4ld %6ld | %-13s %9.1f %7.1f%% | instrumented sum vs wall: %.1f%%\n\n",
-                    tol, ns_, nt_, 4*ns_*nt_, "TOTAL", sum*1e3, 100.0, 100*sum/tt);
-      }
-      Comm::MPI_Finalize();
-      return 0;
-    }
-#endif
     for (const double tw : twists) {
       QuadElemList<Real> q = BuildTwistedSphere(order, ppf, 1.0, (Real)tw);
       for (const double tol : tols) {

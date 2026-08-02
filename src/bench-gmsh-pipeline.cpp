@@ -5,20 +5,16 @@
  * but measures WALL TIME instead of accuracy. For each mesh size it times the
  * three pipeline stages -- gmsh load, BIO Setup, BIO Eval -- and prints the
  * hierarchical sctl::Profile breakdown (SetupFarField / SetupSingular / SetupNear,
- * EvalFar / EvalNear) so the bottleneck stage is directly readable. Under
- * -DBENCH_QUAD it also prints the intra-kernel phase breakdown (KernelEval etc.),
- * which is the phase where the scalar Laplace and matrix Stokes kernels diverge.
+ * EvalFar / EvalNear) so the bottleneck stage is directly readable.
  *
  * Two problem sizes are compared (natural per-mesh resample order, matching
  * test_GmshVsTwistSphere):
  *     ./sphere       small, coarse mesh, target_order 4
  *     ./sphere_ord9  large,  Q9 mesh,     target_order 16
- * and two kernels: Laplace3D_DxU (scalar) vs Stokes3D_DxU (matrix), Adaptive scheme.
+ * and two kernels: Laplace3D_DxU (scalar) vs Stokes3D_DxU (matrix).
  *
- * Build (coarse: wall time + stage tree only):
+ * Build:
  *     make bench-gmsh
- * Build (adds intra-kernel phase breakdown):
- *     make BENCH=1 bench-gmsh
  * Run single-threaded first for clean attribution, then scale threads:
  *     OMP_NUM_THREADS=1 ./bin/bench-gmsh-pipeline
  *     OMP_NUM_THREADS=8 ./bin/bench-gmsh-pipeline
@@ -29,10 +25,18 @@
 #include <sctl/experimental/quad_element.cpp>
 #include <sctl/experimental/gmsh_reader.hpp>
 #include <sctl/experimental/gmsh_reader.cpp>
-#include <sctl/experimental/bench_quad.hpp>
 #include <fstream>
 #include <string>
 #include <vector>
+
+namespace { inline double BenchWtime() {
+#ifdef _OPENMP
+  return omp_get_wtime();
+#else
+  return (double)clock() / CLOCKS_PER_SEC;
+#endif
+} }
+
 
 using namespace sctl;
 
@@ -77,11 +81,11 @@ bool bench_gmsh_pipeline(const char* fname, Integer target_order, double tol,
 
   // --- Stage 1: gmsh load (parse MSH 4.1 + resample each patch to a GL grid). ---
   Profile::reset();
-  const double tl0 = bench::Wtime();
+  const double tl0 = BenchWtime();
   Profile::Tic("gmsh load", &comm, true);
   QuadElemList<Real> qel = GmshReader<Real>::LoadQuadElemList(fname, target_order, comm);
   Profile::Toc();
-  const double t_load = bench::Wtime() - tl0;
+  const double t_load = BenchWtime() - tl0;
 
   // Density at surface nodes (AoS), sampled from a smooth non-polynomial field.
   Vector<Real> Xnodes;
@@ -99,22 +103,19 @@ bool bench_gmsh_pipeline(const char* fname, Integer target_order, double tol,
   // (singular), the near list, and the far field in one pass.
 
   // --- Stage 2: Setup (near list + singular/near/far operator assembly). ---
-  // The intra-kernel phase timers (KernelEval etc.) live inside IntegrateBlock,
-  // which runs here (SelfInterac/NearInterac), not in Eval -- so bracket Setup.
-  bench::Reset();
-  const double ts0 = bench::Wtime();
+  const double ts0 = BenchWtime();
   Profile::Tic("Setup", &comm, true);
   BIOp.Setup();
   Profile::Toc();
-  const double t_setup = bench::Wtime() - ts0;
+  const double t_setup = BenchWtime() - ts0;
 
   // --- Stage 3: Eval (apply). Setup is cached, so this times the apply only. ---
   Vector<Real> U;
-  const double te0 = bench::Wtime();
+  const double te0 = BenchWtime();
   Profile::Tic("Eval", &comm, true);
   BIOp.ComputePotential(U, F);
   Profile::Toc();
-  const double t_eval = bench::Wtime() - te0;
+  const double t_eval = BenchWtime() - te0;
 
   const Long nelem = GlobalReduce(qel.Size(), comm, CommOp::SUM);
   const Long Nnode_g = GlobalReduce(Nnode, comm, CommOp::SUM);
@@ -130,7 +131,6 @@ bool bench_gmsh_pipeline(const char* fname, Integer target_order, double tol,
   Profile::print(&comm, {"t_max", "f_max", "f/s_avg"});
   // Intra-kernel phase breakdown of Setup's operator assembly (KernelEval is the
   // phase where the scalar Laplace and matrix Stokes kernels diverge).
-  bench::Report("setup intra-kernel phases", t_setup);
 
   out = Row{fname, Kernel::Name(), nelem, Nnode_g, t_load, t_setup, t_eval};
   return true;

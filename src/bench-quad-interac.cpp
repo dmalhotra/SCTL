@@ -6,14 +6,9 @@
  * Two views are produced per configuration:
  *   1. Coarse: wall time, per-element / per-target cost, and the profiler's
  *      counted-FLOP throughput (which counts ONLY kernel evaluations).
- *   2. Fine: a per-phase breakdown (interp build / geometry tensor GEMMs /
- *      assembly / kernel eval / kernel weight / projection / quadtree build)
- *      plus the TRUE GEMM flops actually issued, gated on -DBENCH_QUAD.
  *
- * Build (uninstrumented, coarse only):
+ * Build:
  *     make bin/bench-quad-interac
- * Build (instrumented, full phase breakdown):
- *     make CXXFLAGS+=" -DBENCH_QUAD" bin/bench-quad-interac
  * Run single-threaded first for clean attribution, then scale threads:
  *     OMP_NUM_THREADS=1 ./bin/bench-quad-interac
  */
@@ -21,9 +16,17 @@
 #include <sctl.hpp>
 #include <sctl/experimental/quad_element.hpp>
 #include <sctl/experimental/quad_element.cpp>
-#include <sctl/experimental/bench_quad.hpp>
 #include <iomanip>
 #include <string>
+
+namespace { inline double BenchWtime() {
+#ifdef _OPENMP
+  return omp_get_wtime();
+#else
+  return (double)clock() / CLOCKS_PER_SEC;
+#endif
+} }
+
 
 using namespace sctl;
 
@@ -103,19 +106,18 @@ void bench_self(const Kernel& ker, Integer order, double tol, Long PatchPerFace 
   for (Long k = 0; k < ncall; k++) {
     char lbl[256];
     std::snprintf(lbl, sizeof(lbl), "%s #%ld%s", base, k, (k == 0 ? " [COLD]" : ""));
-    const double t0 = bench::Wtime();
+    const double t0 = BenchWtime();
     Profile::Tic(lbl);
     QuadElemList<Real>::template SelfInterac<Kernel>(M_lst, ker, tol, false, &qel);
     Profile::Toc();
-    const double dt = bench::Wtime() - t0;
-    if (k == 0) { t_cold = dt; bench::Reset(); } else { t_warm_sum += dt; nwarm++; }
+    const double dt = BenchWtime() - t0;
+    if (k == 0) { t_cold = dt; } else { t_warm_sum += dt; nwarm++; }
     std::printf("    call #%ld%-8s wall=%.4g s  | %.3g us/target\n",
                 k, (k == 0 ? " COLD" : ""), dt, 1e6 * dt / ntrg);
   }
   const double t_warm_avg = (nwarm ? t_warm_sum / nwarm : 0);
   std::printf("    --> cold=%.4g s, warm_avg=%.4g s  =>  cold/warm = %.1fx slower\n",
               t_cold, t_warm_avg, (t_warm_avg > 0 ? t_cold / t_warm_avg : 0));
-  bench::Report(base, t_warm_sum); // per-phase breakdown of the warm calls (Reset after cold above)
 }
 
 // ---- Near-interaction: single element, one off-surface target --------------
@@ -156,20 +158,19 @@ void bench_near(const Kernel& ker, Integer order, double tol, Long nrep, Long nc
   for (Long k = 0; k < ncall; k++) {
     char lbl[256];
     std::snprintf(lbl, sizeof(lbl), "%s #%ld%s", base, k, (k == 0 ? " [COLD]" : ""));
-    const double t0 = bench::Wtime();
+    const double t0 = BenchWtime();
     Profile::Tic(lbl);
     for (Long r = 0; r < nrep; r++)
       QuadElemList<Real>::template NearInterac<Kernel>(M, Xt, normal_trg, ker, tol, elem_idx, &qel);
     Profile::Toc();
-    const double dt = bench::Wtime() - t0;
-    if (k == 0) { t_cold = dt; bench::Reset(); } else { t_warm_sum += dt; nwarm++; }
+    const double dt = BenchWtime() - t0;
+    if (k == 0) { t_cold = dt; } else { t_warm_sum += dt; nwarm++; }
     std::printf("    call #%ld%-8s wall=%.4g s  | %.3g us/target\n",
                 k, (k == 0 ? " COLD" : ""), dt, 1e6 * dt / nrep);
   }
   const double t_warm_avg = (nwarm ? t_warm_sum / nwarm : 0);
   std::printf("    --> cold=%.4g s, warm_avg=%.4g s  =>  cold/warm = %.1fx slower\n",
               t_cold, t_warm_avg, (t_warm_avg > 0 ? t_cold / t_warm_avg : 0));
-  bench::Report(base, t_warm_sum); // per-phase breakdown of the warm calls (Reset after cold above)
 }
 
 } // namespace
@@ -218,11 +219,8 @@ int main(int argc, char** argv) {
     std::printf("\n==== Profiler view: per-call rows (ALL counted FLOPs: kernel + Matrix GEMMs + elementwise) ====\n");
     std::printf("     each '#k' row is one setup call; #0 is COLD (cache-warming), #1.. WARM.\n");
     std::printf("     t_avg = that call's wall time; f_avg = that call's counted FLOPs; f/s_avg = GFLOP/s.\n");
-    std::printf("     Read WITH the per-config '[bench]' phase tables above:\n");
-    std::printf("       - Profile f/s_avg here = comprehensive throughput (kernel + all tensor GEMMs + elementwise).\n");
-    std::printf("       - '[bench] gemm_f/s'    = tensor-GEMM-only GFLOP/s; the gap vs Profile f/s is elementwise + kernel.\n");
-    std::printf("       - Low Profile f/s with a large ClosestPoint/ClosestNode/Assembly/KernelWeight share\n");
-    std::printf("         ==> cost is small-GEMM + uncounted search work, NOT a FLOP mis-count.\n");
+    std::printf("     f/s counts kernel evaluations + all tensor GEMMs; the uncounted remainder is\n");
+    std::printf("     the closest-point search and the elementwise assembly/weighting loops.\n");
     Profile::print(&comm, {"t_avg", "t_max", "f_avg", "f/s_avg"});
   }
   Comm::MPI_Finalize();

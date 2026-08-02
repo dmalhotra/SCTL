@@ -14,7 +14,6 @@
 
 #include <sctl.hpp>
 #include "sctl/experimental/quad_element.hpp"
-#include "sctl/experimental/bench_quad.hpp"
 
 #include <array>
 #include <map>
@@ -153,8 +152,7 @@ namespace sctl {
     Matrix<ValueType> tmp(R, Nv, ((Long)R * Nv > Nbuff ? NullIterator<ValueType>() : tmp_buf), (Long)R * Nv > Nbuff);
 
     // 2 multiply-adds per inner-product entry: (R x S).(S x Nv) and (Nu x R).(R x Nv).
-    BENCH_FLOPS(ncomp * 2.0 * Nv * ((double)R * S + (double)Nu * R));
-Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(ncomp * 2.0 * Nv * ((double)R * S + (double)Nu * R)));
+    Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(ncomp * 2.0 * Nv * ((double)R * S + (double)Nu * R)));
     for (Long k = 0; k < ncomp; k++) {
       const Matrix<ValueType> in_(R, S, (Iterator<ValueType>)in.begin() + k * (Long)R * S, false);
       Matrix<ValueType> out_(Nu, Nv, out.begin() + k * Nout, false);
@@ -353,7 +351,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(ncomp * 2.0 * Nv * ((doub
     if (!nq) return;
     const Integer C = KDIM0 * KDIM1_out;
 
-    BENCH_TIC(GeomTensor);
     // The v-side contraction is shared by X and dXdu (both use Mv). All COORD_DIM components
     // share it and src_nodal is component-major contiguous, so the three (order x order).
     // (order x Nv) products are one (COORD_DIM*order x order) GEMM.
@@ -365,8 +362,7 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(ncomp * 2.0 * Nv * ((doub
       Matrix<Real> Cdv_all(COORD_DIM*order, Nv, Cdv.begin(), false);
       Matrix<Real>::GEMM(Cv_all,  cs_all, Mv);
       Matrix<Real>::GEMM(Cdv_all, cs_all, dMv);
-      BENCH_FLOPS(2.0 * 2 * (COORD_DIM*(double)order) * order * Nv);
-Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * 2 * (COORD_DIM*(double)order) * order * Nv));
+      Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * 2 * (COORD_DIM*(double)order) * order * Nv));
     }
     // Column-stage Cv/Cdv (component index moved into the COLUMNS) so stage 2 batches over
     // components as well as over outputs: the nine original (Nu x order).(order x Nv) products
@@ -391,14 +387,11 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * 2 * (COORD_DIM*(dou
         Matrix<Real>::GEMM(XdU_m, MuD, Cvc_m);
       }
       Matrix<Real>::GEMM(dV_m, MuT, Cdvc_m);
-      BENCH_FLOPS(2.0 * (3.0*Nu) * order * ldc);
-Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * (3.0*Nu) * order * ldc));
+      Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * (3.0*Nu) * order * ldc));
     }
-    BENCH_TOC(GeomTensor);
 
     StaticArray<Real,COORD_DIM> Xt0_{0, 0, 0};
     const Vector<Real> Xt0_v_(COORD_DIM, Xt0_, false);
-    BENCH_TIC(Assembly);
     thread_local Vector<Real> Xsrc, Xnsrc, wq;
     if (Xsrc.Dim() != nq*COORD_DIM) { Xsrc.ReInit(nq*COORD_DIM); Xnsrc.ReInit(nq*COORD_DIM); wq.ReInit(nq); }
     for (Long a = 0; a < Nu; a++) {
@@ -417,14 +410,10 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * (3.0*Nu) * order * 
         wq[q] = area*wu[a]*wv[b];
       }
     }
-    BENCH_TOC(Assembly);
 
-    BENCH_TIC(KernelEval);
     thread_local Matrix<Real> Mker;
     ker.template KernelMatrix<Real,false>(Mker, Xt0_v_, Xsrc, Xnsrc); // (nq*KDIM0 x KDIM1full)
-    BENCH_TOC(KernelEval);
 
-    BENCH_TIC(KernelWeight);
     thread_local Vector<Real> KWc;
     if (KWc.Dim() != C*nq) KWc.ReInit(C*nq);
     for (Long q = 0; q < nq; q++) {
@@ -441,9 +430,7 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * (3.0*Nu) * order * 
         }
       }
     }
-    BENCH_TOC(KernelWeight);
 
-    BENCH_TIC(Projection);
     // Adjoint of the geometry interpolation: quadrature -> nodal. KWc is channel-major with
     // (Nu x Nv) blocks, so the v-contraction is already one (C*Nu x Nv) operand and batches
     // over all C channels for free. The u-contraction then writes one (order x order) block
@@ -462,9 +449,7 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * (3.0*Nu) * order * 
       Matrix<Real> A_c(order, order, acc_cm.begin() + (Long)c*nnode, false);
       Matrix<Real>::GEMM(A_c, Mu, Y_c, (Real)1);   // beta = 1: accumulate in place
     }
-    BENCH_FLOPS(2.0 * C * order * ((double)Nu*Nv + (double)order*Nu));
-Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((double)Nu*Nv + (double)order*Nu)));
-    BENCH_TOC(Projection);
+    Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((double)Nu*Nv + (double)order*Nu)));
   }
 
 
@@ -590,9 +575,7 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
 
     // Foot + level count.
     Real ustar, vstar;
-    BENCH_TIC(ClosestNode);
     const Real dist = qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
-    BENCH_TOC(ClosestNode);
     Real Xc[COORD_DIM], dXu_[COORD_DIM], dXv_[COORD_DIM];
     qel.EvalPoint(Xc, dXu_, dXv_, ustar, vstar, elem_idx, nullptr);
     // Corner-angle correction to the near GL order. The required order is flat to ~120 deg,
@@ -626,7 +609,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
     const Vector<Real>& gnds = ParamNodes(order);
     const Real slen[2][2] = {{ustar, 1-ustar}, {vstar, 1-vstar}};   // [dir][side] sub-element length
 
-    BENCH_TIC(ClosestPoint);
     // Target-shifted element nodal coords, component-major: one contiguous (COORD_DIM*order x order).
     thread_local Vector<Real> cs;
     if (cs.Dim() != COORD_DIM*nnode) cs.ReInit(COORD_DIM*nnode);
@@ -680,7 +662,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
         }
       }
     }
-    BENCH_TOC(ClosestPoint);
 
     // Every cell operator is a table entry now. nrm_sign corrects the normal on quadrants with
     // exactly one mirrored direction, where d/dx_u x d/dx_v is anti-parallel to dXu x dXv; the
@@ -704,12 +685,10 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
         Integer ku = 0, kv = 0;
         Real hu = slen[0][sdu]*spd_u, hv = slen[1][sdv]*spd_v;
         const bool cap = !(dist > 0) || !std::isfinite((double)dist);
-        // SCTL_NEAR_MAXLVL: near-only level cap. Near-touching targets (a neighbouring patch's
-        // node, foot distance ~0) refine to the cap regardless of the admissibility constant,
-        // so the cap -- not b_ellipse -- is what controls their error.
-        static const Integer ovr = []() { const char* v = std::getenv("SCTL_NEAR_MAXLVL");
-          const Integer x = (v ? (Integer)atoi(v) : 0); return x > 0 ? x : 0; }();
-        const Integer KMAX = (ovr ? std::min<Integer>(ovr, MaxNearLvl-1) : MaxNearLvl-1); // table bound
+        // Near-touching targets (a neighbouring patch's node, foot distance ~0) refine to the
+        // cap regardless of the admissibility constant, so the cap -- not b_ellipse -- is what
+        // controls their error.
+        constexpr Integer KMAX = MaxNearLvl-1;   // table bound
         while ((cap || b_ellipse*std::max<Real>(hu,hv) > dist) && (ku < KMAX || kv < KMAX)) {
           if (hu >= hv && ku < KMAX) {
             emit(sdu, sdv, ku, MaxNearLvl + kv);               // shell_ku x core_kv
@@ -745,30 +724,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
     }
   }
 
-
-  // Per-phase timing for the Duffy self kernel. Compiled out unless SCTL_DUFFY_PROF is
-  // defined; single-thread use only (the accumulators are plain statics).
-#ifdef SCTL_DUFFY_PROF
-  enum DuffyPhase { DP_SHIFT, DP_METRIC, DP_TRULE, DP_STAGE1, DP_STAGE2A, DP_STAGE2B,
-                    DP_POINTWISE, DP_KERNEL, DP_WEIGHT, DP_PROJ, DP_NS, DP_NT, DP_CALLS, DP_COUNT };
-  inline double* DuffyProf() { static double c[DP_COUNT] = {0}; return c; }
-  inline double DuffyWtime() {
-#ifdef _OPENMP
-    return omp_get_wtime();
-#else
-    return (double)clock()/CLOCKS_PER_SEC;
-#endif
-  }
-  #define DPROF_BEG() double dp_prev_ = DuffyWtime()
-  #define DPROF_MARK(i) do { const double t_ = DuffyWtime(); DuffyProf()[i] += t_ - dp_prev_; dp_prev_ = t_; } while (0)
-  #define DPROF_SET(i,v) do { DuffyProf()[i] = (double)(v); } while (0)
-  #define DPROF_INC(i) do { DuffyProf()[i] += 1.0; } while (0)
-#else
-  #define DPROF_BEG() (void)0
-  #define DPROF_MARK(i) (void)0
-  #define DPROF_SET(i,v) (void)0
-  #define DPROF_INC(i) (void)0
-#endif
 
   // ---- Duffy edge-collapsed self scheme ----
 
@@ -864,11 +819,10 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
 
     const DuffySelfTable& tbl = DuffyTable<order>();
     const Long ns = tbl.ns, nt = DuffyTOrder(digits, order, KDIM0);
-    // s-nodes per stage-2b GEMM. Tt does not depend on the s-node, so the whole s-range goes in
-    // one (ns*NR x order)(order x nt) call rather than ns thin ones -- 14% faster on 1 thread,
-    // 3-7% at 32. A pure reassociation: bit-identical at every sblk. SCTL_DUFFY_SBLK overrides.
-    static const Long sblk_env = []() { const char* v = std::getenv("SCTL_DUFFY_SBLK"); return v ? (Long)atol(v) : (Long)0; }();
-    const Long sblk = (sblk_env > 0 ? std::min<Long>(sblk_env, ns) : ns);
+    // Tt does not depend on the s-node, so stage 2b contracts the whole s-range in one
+    // (ns*NR x order)(order x nt) GEMM rather than ns thin ones -- 14% faster on 1 thread,
+    // 3-7% at 32.
+    const Long sblk = ns;
     const Vector<Real>& nds = ParamNodes(order);
     const Matrix<Real>& D = DiffMat<order>();
 
@@ -879,12 +833,11 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
     thread_local Vector<Real> cs;
     if (cs.Dim() != COORD_DIM*nnode) cs.ReInit(COORD_DIM*nnode);
     const Long base = elem_idx*nnode*COORD_DIM;
-    DPROF_BEG(); DPROF_INC(DP_CALLS); DPROF_SET(DP_NS, ns); DPROF_SET(DP_NT, nt);
+
     for (Integer k = 0; k < COORD_DIM; k++) {
       const Real ok = Xtrg[k];
       for (Long q = 0; q < nnode; q++) cs[k*nnode + q] = qel.coord[base + k*nnode + q] - ok;
     }
-    DPROF_MARK(DP_SHIFT);
 
     // Surface metric at (u0,v0). t* and the peak width are set by distance ON THE SURFACE:
     // placing them in parameter space instead misplaces the peak by |cot(theta)| widths.
@@ -901,7 +854,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
       for (Integer k = 0; k < COORD_DIM; k++) { guu += du[k]*du[k]; guv += du[k]*dv[k]; gvv += dv[k]*dv[k]; }
       G[0] = guu; G[1] = guv; G[2] = guv; G[3] = gvv;
     }
-    DPROF_MARK(DP_METRIC);
 
     StaticArray<Real,COORD_DIM> Xt0{0,0,0};
     const Vector<Real> Xt0_v(COORD_DIM, Xt0, false);
@@ -947,7 +899,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
       Matrix<Real> Tt(order, nt, taket((Long)order*nt), false), TtT(nt, order, taket((Long)nt*order), false);
       { Vector<Real> t((Long)order*nt, Tt.begin(), false); LagrangeInterp<Real>::Interpolate(t, pnds, tn); }
       for (Integer r = 0; r < order; r++) for (Long j = 0; j < nt; j++) TtT[j][r] = Tt[r][j];
-      DPROF_MARK(DP_TRULE);
 
       const Long nq = ns*nt;
       const Long sz = COORD_DIM*nnode + 2*COORD_DIM*(Long)order*ns + (Long)NA*order + 2*(Long)NA*order
@@ -975,7 +926,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
           FS[k*order + (T.swap_ab ? j : i)][T.swap_ab ? i : j] = cs[k*nnode + (Long)i*order + j];
 
       Matrix<Real>::GEMM(Gm, FS, T.WbC);            // stage 1: collapsed index, value+derivative
-      DPROF_MARK(DP_STAGE1);
 
       for (Long i0 = 0; i0 < ns; i0 += sblk) {
         const Long nb = std::min<Long>(sblk, ns-i0);
@@ -993,13 +943,11 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
             HG[b*NR + 2*COORD_DIM + k][m] = Tmp[COORD_DIM+k][m];
           }
         }
-        DPROF_MARK(DP_STAGE2A);
         { // Stage 2b: Tt is shared across s-nodes, so the whole block is a single GEMM.
           const Matrix<Real> HGb(nb*NR, order, (Iterator<Real>)HG.begin(), false);
           Matrix<Real> XdXb(nb*NR, nt, (Iterator<Real>)XdX.begin(), false);
           Matrix<Real>::GEMM(XdXb, HGb, Tt);
         }
-        DPROF_MARK(DP_STAGE2B);
 
         for (Long b = 0; b < nb; b++) {
           const Long i = i0 + b;
@@ -1015,11 +963,9 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
             wq[q] = ar*jw*tw[j];
           }
         }
-        DPROF_MARK(DP_POINTWISE);
       }
 
       ker.template KernelMatrix<Real,false>(Mker, Xt0_v, Xs, Xn);
-      DPROF_MARK(DP_KERNEL);
       for (Long i = 0; i < ns; i++) for (Long j = 0; j < nt; j++) {
         const Long q = i*nt + j;
         for (Integer k0 = 0; k0 < KDIM0; k0++) for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
@@ -1032,7 +978,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
         }
       }
 
-      DPROF_MARK(DP_WEIGHT);
       // Projection is the exact adjoint of stages 1-2b: same operators, reversed order.
       Matrix<Real>::GEMM(Zall, KW, TtT);
       for (Long i = 0; i < ns; i++) {
@@ -1055,7 +1000,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((doubl
                        + C*2.0*(double)order*ns*order;
         Profile::IncrementCounter(ProfileCounter::FLOP, (Long)f);
       }
-      DPROF_MARK(DP_PROJ);
     }
   }
 

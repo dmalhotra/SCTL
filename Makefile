@@ -35,18 +35,10 @@ CXXFLAGS += -DSCTL_SIG_HANDLER # Enable SCTL stack trace
 
 CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
 
-# Opt-in phase timers for the quad-element self/near hot loops (bench-quad-interac).
-# Use `make BENCH=1 ...` -- do NOT pass CXXFLAGS+= on the command line, as that
-# overrides (not appends to) the flags assigned above.
-BENCH ?= 0
-ifeq ($(BENCH), 1)
-	CXXFLAGS += -DBENCH_QUAD
-endif
-
 # Opt-in distributed-memory build. `make MPI=1 ...` compiles with the MPI wrapper
 # compiler and defines SCTL_HAVE_MPI so sctl::Comm::World() is a real MPI communicator
 # (QuadElemList partitions its elements across ranks). Default build stays serial (g++).
-# As with DEBUG/BENCH, do NOT pass CXXFLAGS+= on the command line -- it overrides the
+# As with DEBUG, do NOT pass CXXFLAGS+= on the command line -- it overrides the
 # flags assigned here rather than appending to them.
 MPI ?= 0
 ifeq ($(MPI), 1)
