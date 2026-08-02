@@ -61,7 +61,18 @@ namespace sctl {
       }
     }
 
-    BuildDerivativeCache();
+    { // nodal dX/du, dX/dv cache
+      dcoord_du.ReInit(coord.Dim());
+      dcoord_dv.ReInit(coord.Dim());
+      const Long elem_stride = COORD_DIM * nnode_per_elem;
+      for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
+        const Long base = elem_idx * elem_stride;
+        const Vector<Real> coord_(elem_stride, (Iterator<Real>)coord.begin() + base, false);
+        Vector<Real> du_(elem_stride, dcoord_du.begin() + base, false);
+        Vector<Real> dv_(elem_stride, dcoord_dv.begin() + base, false);
+        NodalDerivs(coord_, order, du_, dv_);
+      }
+    }
   }
 
   template <class Real> void QuadElemList<Real>::NodalDerivs(const Vector<Real>& coord_slab, const Integer order, Vector<Real>& du_slab, Vector<Real>& dv_slab) {
@@ -87,21 +98,6 @@ namespace sctl {
         LagrangeInterp<Real>::Derivative(line_out, line_in, nodes);
         for (Integer j = 0; j < order; j++) dv_slab[cb + i * order + j] = line_out[j];
       }
-    }
-  }
-
-  template <class Real> void QuadElemList<Real>::BuildDerivativeCache() {
-    dcoord_du.ReInit(coord.Dim());
-    dcoord_dv.ReInit(coord.Dim());
-
-    const Long nnode_per_elem = (Long)order * order;
-    const Long elem_stride = COORD_DIM * nnode_per_elem;
-    for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
-      const Long base = elem_idx * elem_stride;
-      const Vector<Real> coord_(elem_stride, (Iterator<Real>)coord.begin() + base, false);
-      Vector<Real> du_(elem_stride, dcoord_du.begin() + base, false);
-      Vector<Real> dv_(elem_stride, dcoord_dv.begin() + base, false);
-      NodalDerivs(coord_, order, du_, dv_);
     }
   }
 
@@ -679,33 +675,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
   }
 
 
-  // Corner-angle correction to the near GL order. Measured on a parallelogram against an
-  // independent graded reference: the requirement is flat up to ~120 deg then grows like
-  // 1/(180-theta) as the corner flattens and the element wraps around the target (at 1e-6, SL
-  // needs q = 8/14/22/26 at theta = 120/160/168/171 deg). The parameter-space admissibility
-  // test cannot see this, so it is corrected here per (element,target).
-  //
-  // phi is the ACUTE angle between the surface tangents AT THE FOOT (the element's closest
-  // point to the target) -- that is the corner the target actually sees. An orthogonal
-  // parametrisation gives phi=90 and the factor collapses to 1, so well-shaped meshes pay
-  // nothing. C=400 is fitted on Laplace SL/DL, flat elements, one target offset.
-  template <class Real> Integer QuadElemList<Real>::NearOrderFromMetric(const Real* dXu, const Real* dXv, const Integer q_iso) {
-    Real guu=0, gvv=0, guv=0;
-    for (Integer k = 0; k < COORD_DIM; k++) { guu+=dXu[k]*dXu[k]; gvv+=dXv[k]*dXv[k]; guv+=dXu[k]*dXv[k]; }
-    const double den = std::sqrt((double)guu*(double)gvv);
-    if (!(den > 0)) return q_iso;
-    const double c = std::min(1.0, std::fabs((double)guv)/den);
-    const double phi = std::acos(c)*180.0/const_pi<double>();
-    static const double Ck = []() { const char* v = std::getenv("SCTL_NEAR_CK"); return v ? atof(v) : 400.0; }();
-    const double f = std::max(1.0, Ck/(10.0*std::max(1e-3, phi)));
-    if (f <= 1.0) return q_iso;
-    Integer q = (Integer)std::ceil(f*(double)q_iso);
-    q = ((q + 3)/4)*4;                                  // snap to the precomputed ladder
-    q = std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q_iso, q));
-    return q;
-  }
-
-
   // Leaf-batched near block: the per-leaf geometry/kernel/projection GEMMs are batched across
   // leaves, grouped by distinct interval so the interp operators are shared.
 
@@ -752,12 +721,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
     // and weaker than the true worst case d~ > b (foot at the panel centre, which cannot occur here).
     const double a = (rho + 1/rho)/2, b = (rho - 1/rho)/2;
     b_ellipse = (Real)(b*b/(2*a));
-  }
-
-  template <class Real> Integer QuadElemList<Real>::NearMaxLvlOverride() {
-    static const Integer L = []() { const char* v = std::getenv("SCTL_NEAR_MAXLVL");
-      const Integer x = (v ? (Integer)atoi(v) : 0); return x > 0 ? x : 0; }();
-    return L;
   }
 
   template <class Real> Real QuadElemList<Real>::NearBEllipse(const Integer digits) {
@@ -845,8 +808,32 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
     BENCH_TOC(ClosestNode);
     Real Xc[COORD_DIM], dXu_[COORD_DIM], dXv_[COORD_DIM];
     qel.EvalPoint(Xc, dXu_, dXv_, ustar, vstar, elem_idx, nullptr);
+    // Corner-angle correction to the near GL order. Measured on a parallelogram against an
+    // independent graded reference: the requirement is flat up to ~120 deg then grows like
+    // 1/(180-theta) as the corner flattens and the element wraps around the target (at 1e-6, SL
+    // needs q = 8/14/22/26 at theta = 120/160/168/171 deg). The parameter-space admissibility
+    // test cannot see this, so it is corrected here per (element,target).
+    //
+    // phi is the ACUTE angle between the surface tangents AT THE FOOT (the element's closest
+    // point to the target) -- that is the corner the target actually sees. An orthogonal
+    // parametrisation gives phi=90 and the factor collapses to 1, so well-shaped meshes pay
+    // nothing. C=400 is fitted on Laplace SL/DL, flat elements, one target offset.
+    const auto near_order = [](const Real* dXu, const Real* dXv, const Integer q_iso) {
+      Real guu=0, gvv=0, guv=0;
+      for (Integer k = 0; k < COORD_DIM; k++) { guu+=dXu[k]*dXu[k]; gvv+=dXv[k]*dXv[k]; guv+=dXu[k]*dXv[k]; }
+      const double den = std::sqrt((double)guu*(double)gvv);
+      if (!(den > 0)) return q_iso;
+      const double c = std::min(1.0, std::fabs((double)guv)/den);
+      const double phi = std::acos(c)*180.0/const_pi<double>();
+      static const double Ck = []() { const char* v = std::getenv("SCTL_NEAR_CK"); return v ? atof(v) : 400.0; }();
+      const double f = std::max(1.0, Ck/(10.0*std::max(1e-3, phi)));
+      if (f <= 1.0) return q_iso;
+      Integer q = (Integer)std::ceil(f*(double)q_iso);
+      q = ((q + 3)/4)*4;                                  // snap to the precomputed ladder
+      return std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q_iso, q));
+    };
     // Order is chosen from the metric at the foot, so it costs nothing extra here.
-    const Vector<GradeRule>& tab = NearGradeTable<order>(NearOrderFromMetric(&dXu_[0], &dXv_[0], NearQuadOrder(digits)));
+    const Vector<GradeRule>& tab = NearGradeTable<order>(near_order(&dXu_[0], &dXv_[0], NearQuadOrder(digits)));
     Real su2 = 0, sv2 = 0;
     for (Integer k = 0; k < COORD_DIM; k++) { su2 += dXu_[k]*dXu_[k]; sv2 += dXv_[k]*dXv_[k]; }
     // Refinement stops per sub-element via the admissibility test in the loop below, so no
@@ -942,7 +929,11 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
         Integer ku = 0, kv = 0;
         Real hu = slen[0][sdu]*spd_u, hv = slen[1][sdv]*spd_v;
         const bool cap = !(dist > 0) || !std::isfinite((double)dist);
-        const Integer ovr = NearMaxLvlOverride();
+        // SCTL_NEAR_MAXLVL: near-only level cap. Near-touching targets (a neighbouring patch's
+        // node, foot distance ~0) refine to the cap regardless of the admissibility constant,
+        // so the cap -- not b_ellipse -- is what controls their error.
+        static const Integer ovr = []() { const char* v = std::getenv("SCTL_NEAR_MAXLVL");
+          const Integer x = (v ? (Integer)atoi(v) : 0); return x > 0 ? x : 0; }();
         const Integer KMAX = (ovr ? std::min<Integer>(ovr, MaxNearLvl-1) : MaxNearLvl-1); // table bound
         while ((cap || b_ellipse*std::max<Real>(hu,hv) > dist) && (ku < KMAX || kv < KMAX)) {
           if (hu >= hv && ku < KMAX) {

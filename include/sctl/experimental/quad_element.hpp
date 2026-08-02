@@ -147,10 +147,8 @@ namespace sctl {
 
       template <class ValueType> static void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv);
 
-      void BuildDerivativeCache();
-
       // Nodal d/du, d/dv of a component-major SoA coord slab (order x order grid).
-      // Shared by BuildDerivativeCache (absolute) and GetGeom (target-shifted).
+      // Shared by Init (absolute, the dcoord_du/dv cache) and GetGeom (target-shifted).
       static void NodalDerivs(const Vector<Real>& coord_slab, const Integer order, Vector<Real>& du_slab, Vector<Real>& dv_slab);
 
       // Allocation-free single-point geometry evaluator: writes position X[COORD_DIM]
@@ -257,16 +255,8 @@ namespace sctl {
       static void NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder);
       static Integer NearQuadOrder(const Integer digits);
       static Real NearBEllipse(const Integer digits);
-      // Per-target GL order from the corner skew of the metric at the foot. The isotropic order
-      // holds to ~120 degrees; past that the required order grows like 1/(180-theta), which the
-      // refinement cannot supply -- the admissibility test b_ellipse*max(hu,hv) <= dist is
-      // scale-invariant, so skew is refinement-invariant. Rounded up to a multiple of 4 (the
-      // NearGradeTable ladder) and capped at NearMaxQuadOrder. SCTL_NEAR_CK scales it.
-      static Integer NearOrderFromMetric(const Real* dXu, const Real* dXv, const Integer q_iso);
-      //   SCTL_NEAR_MAXLVL   near-only level cap (0 => MaxNearLvl-1). Near-touching targets
-      //   (a neighbouring patch's node, foot distance ~0) refine to the cap regardless of the
-      //   admissibility constant, so the cap -- not b_ellipse -- is what controls their error.
-      static Integer NearMaxLvlOverride();
+      // The per-target GL order (corner skew of the metric at the foot, SCTL_NEAR_CK) and the
+      // level cap (SCTL_NEAR_MAXLVL) are local to NearInteracBlockSplit; see there.
       // Normalized rule + operator from the sub-element's order nodes to this interval's nodes.
       // One graded interval, in NORMALIZED sub-element coordinates. dT/TT/TD are precomputed
       // here (not per target) because the split-at-foot scheme feeds sub-element NODAL coords
