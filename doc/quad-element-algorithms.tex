@@ -1,0 +1,396 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{calc,arrows,positioning,fit,backgrounds,decorations.pathreplacing,patterns}
+
+\definecolor{cElem}{RGB}{40,80,140}
+\definecolor{cTrg}{RGB}{190,40,40}
+\definecolor{cCell}{RGB}{225,238,248}
+\definecolor{cAcc}{RGB}{240,200,120}
+\definecolor{cGrey}{RGB}{120,120,120}
+
+\newcommand{\stepbox}[1]{%
+  \par\medskip\noindent\textbf{\color{cElem}#1}\par\nopagebreak\smallskip}
+
+\title{Singular quadrature in \texttt{QuadElemList}\\[2pt]
+       \large the self- and near-interaction algorithms, step by step}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-3.5em}
+
+\section{Setting}
+
+A \texttt{QuadElemList} holds high-order quadrilateral surface patches. Each patch carries an
+$N\times N$ tensor grid of Gauss--Legendre nodes on the reference square $[0,1]^2$, and the
+surface is the order-$N$ polynomial interpolant of those nodes,
+\[
+  \mathbf{X}(u,v) \;=\; \sum_{i,j} \mathbf{x}_{ij}\, L_i(u) L_j(v),
+  \qquad (u,v)\in[0,1]^2 .
+\]
+A boundary-integral operator needs, for a target $\mathbf{y}$ and a patch $E$,
+\[
+  U(\mathbf{y}) \;=\; \int_E K(\mathbf{y},\mathbf{x})\,\sigma(\mathbf{x})\,\mathrm{d}S(\mathbf{x}),
+\]
+assembled as a matrix acting on the patch's nodal density values. When $\mathbf{y}$ is far from
+$E$ a smooth tensor rule suffices. Two cases need special treatment, and each has its own
+algorithm:
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & \textbf{self} & \textbf{near} \\
+\midrule
+target & \emph{on} $E$, at a node $(u_0,v_0)$ & \emph{off} $E$, at distance $d\ll$ patch size \\
+integrand & singular, $K\sim 1/r$ & nearly singular, sharply peaked \\
+scheme & Duffy edge-collapse & split-at-foot refinement \\
+entry point & \texttt{SelfInterac} & \texttt{NearInterac} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Both entry points map the runtime element order to a compile-time \texttt{order} and the runtime
+tolerance to a runtime \texttt{digits}; both are independent and may be called in either order.
+
+\vspace{1em}
+\hrule
+\section{Self interaction: the Duffy edge-collapse}
+
+The target sits \emph{on} the patch, at node $(u_0,v_0)$, so $r=|\mathbf{X}(u,v)-\mathbf{X}(u_0,v_0)|$
+vanishes there and $K\sim1/r$ is not integrable by any smooth rule. The Duffy transform removes
+the singularity through the Jacobian rather than by refinement.
+
+\stepbox{Step 1 --- split the panel at the target}
+
+Join the target to the four corners. This gives four triangles, each with the target as one
+vertex and one edge of the square opposite it.
+
+\begin{center}
+\begin{tikzpicture}[scale=2.6]
+  \def\ux{0.38} \def\vy{0.62}
+  \fill[cCell] (0,0) rectangle (1,1);
+  \draw[cElem,thick] (0,0) rectangle (1,1);
+  % GL-ish nodes
+  \foreach \x in {0.03,0.16,0.36,0.60,0.82,0.97}
+    \foreach \y in {0.03,0.16,0.36,0.60,0.82,0.97}
+      \fill[cGrey] (\x,\y) circle (0.008);
+  % the four triangles
+  \draw[cTrg,thick] (\ux,\vy) -- (0,0);
+  \draw[cTrg,thick] (\ux,\vy) -- (1,0);
+  \draw[cTrg,thick] (\ux,\vy) -- (1,1);
+  \draw[cTrg,thick] (\ux,\vy) -- (0,1);
+  \fill[cTrg] (\ux,\vy) circle (0.016);
+  \draw[cTrg,thin] (\ux,\vy) -- (-0.10,0.80);
+  \node[cTrg,font=\small,left=0pt] at (-0.10,0.80) {$(u_0,v_0)$};
+  \node[font=\small] at (0.48,0.14) {S};
+  \node[font=\small] at (0.86,0.60) {E};
+  \node[font=\small] at (0.52,0.88) {N};
+  \node[font=\small] at (0.11,0.42) {W};
+  \node[below] at (0.5,-0.04) {$u$};
+  \node[left]  at (-0.04,0.5) {$v$};
+\end{tikzpicture}
+\end{center}
+
+\stepbox{Step 2 --- collapse one edge onto the target}
+
+Parametrise each triangle by $(s,t)\in[0,1]^2$ with
+\[
+  P(s,t) \;=\; (u_0,v_0) + s\,\mathbf{c}(t), \qquad \mathbf{c}(t) = (1-t)\,\mathbf{a} + t\,\mathbf{b},
+\]
+where $\mathbf{a}$ and $\mathbf{b}$ point from the target to the two ends of the opposite edge.
+The line $s=0$ collapses the entire $t$-edge onto the target. The Jacobian is
+\[
+  \boxed{\;|\det| \;=\; s\,|\mathbf{a}\times\mathbf{b}|\;}
+\]
+--- linear in $s$, and \emph{independent of $t$}.
+
+\begin{center}
+\begin{tikzpicture}[scale=2.2]
+  % physical triangle
+  \begin{scope}
+    \fill[cCell] (0.38,0.62) -- (0,0) -- (1,0) -- cycle;
+    \draw[cElem,thick] (0.38,0.62) -- (0,0) -- (1,0) -- cycle;
+    \draw[->,cTrg,thick] (0.38,0.62) -- (0,0) node[midway,left] {$\mathbf{a}$};
+    \draw[->,cTrg,thick] (0.38,0.62) -- (1,0) node[midway,above right] {$\mathbf{b}$};
+    \fill[cTrg] (0.38,0.62) circle (0.02);
+    \node[font=\small] at (0.5,-0.30) {physical triangle};
+  \end{scope}
+  % arrow
+  \draw[->,very thick,cGrey] (1.25,0.3) -- (1.75,0.3) node[midway,above] {\small $P(s,t)$};
+  % (s,t) square
+  \begin{scope}[xshift=2cm]
+    \fill[cCell] (0,0) rectangle (1,0.62);
+    \draw[cElem,thick] (0,0) rectangle (1,0.62);
+    \draw[cTrg,ultra thick] (0,0) -- (1,0);
+    \node[cTrg,below,font=\small] at (0.5,-0.03) {$s=0$: the collapsed edge};
+    \node[left] at (-0.03,0.31) {$s$};
+    \node[below,font=\small] at (0.5,-0.30) {$(s,t)$ square};
+    \node[above,font=\small] at (0.5,0.63) {$t$};
+  \end{scope}
+\end{tikzpicture}
+\end{center}
+
+That single factor of $s$ is the whole point. For a kernel of order $1/r$, writing
+$\|\cdot\|_G$ for the length induced by the surface metric $G$ at the target,
+\[
+  K\,|\det| \;\sim\; \frac{1}{s\,\|\mathbf{c}(t)\|_G}\cdot s\,|\mathbf{a}\times\mathbf{b}|
+             \;=\; \frac{|\mathbf{a}\times\mathbf{b}|}{\|\mathbf{c}(t)\|_G},
+\]
+which is bounded as $s\to0$. The singularity is gone.
+
+\stepbox{Step 3 --- pick the two rules}
+
+The $s$-direction is now smooth, so it takes a plain Gauss--Legendre rule with $q_s=N$ nodes.
+The $t$-direction keeps a residual peak: $1/\|\mathbf{c}(t)\|_G$ is largest where $\mathbf{c}(t)$
+is shortest, at the foot $t^\ast$ of the perpendicular from the target to the far edge. The peak
+has height $\sim 1/d$ and width $\sim d/L$, where $d$ is the distance to that edge and $L$ its
+length.
+
+Both $t^\ast$ and $d/L$ are computed in the \emph{surface} metric $G$, not in parameter space:
+using parameter distances misplaces the peak by $|\cot\theta|$ peak-widths on a sheared patch.
+The peak is then resolved by a $\sinh$ substitution,
+\[
+  t \;=\; t^\ast + \tfrac{d}{L}\sinh\xi ,
+\]
+with one GL rule of $n_t$ points in $\xi$. $n_t$ grows with the requested digits and is larger
+for vector kernels than scalar ones.
+
+\begin{center}
+\begin{tikzpicture}[scale=2.2]
+  \fill[cCell] (0,0) rectangle (2,1);
+  \draw[cElem,thick] (0,0) rectangle (2,1);
+  \node[left] at (-0.05,0.5) {$s$};
+  \node[below,font=\small] at (1,-0.42) {quadrature points in $(s,t)$: uniform in $s$, $\sinh$-clustered at $t^\ast$};
+  \foreach \s in {0.06,0.22,0.44,0.66,0.86,0.97} {
+    \foreach \t in {0.03,0.11,0.25,0.46,0.62,0.685,0.715,0.78,0.94,1.15,1.45,1.78,1.96} {
+      \fill[cTrg] (\t,\s) circle (0.011);
+    }
+  }
+  \draw[dashed,cTrg,thick] (0.70,-0.04) -- (0.70,1.10);
+  \node[cTrg,above,font=\small] at (0.70,1.10) {$t^\ast$};
+  \draw[decorate,decoration={brace,amplitude=4pt,mirror},cGrey] (0.62,-0.07) -- (0.78,-0.07);
+  \node[cGrey,below,font=\small] at (0.70,-0.17) {width $\sim d/L$};
+\end{tikzpicture}
+\end{center}
+
+\stepbox{Step 4 --- contract, evaluate, project}
+
+Everything above depends only on $(N,t_i,t_j,\text{triangle})$, so the interpolation operators are
+built once per order and cached. The collapse gives them structure: for the S triangle
+$v(s,t)=v_0(1-s)$ depends on $s$ alone, so that factor is a small $(N\times n_s)$ operator rather
+than $(N \times n_s n_t)$. The evaluation is then a chain of GEMMs:
+
+\begin{center}
+\begin{tikzpicture}[node distance=3mm,
+   b/.style={draw,cElem,thick,fill=cCell,rounded corners=2pt,align=center,inner sep=4pt,font=\small},
+   k/.style={draw,cTrg,thick,fill=white,rounded corners=2pt,align=center,inner sep=4pt,font=\small},
+   a/.style={->,thick,cGrey}]
+  \node[b] (f)  {nodal coords\\ (target-shifted)};
+  \node[b,right=of f]  (s1) {stage 1\\ collapsed dir.};
+  \node[b,right=of s1] (s2) {stage 2a/2b\\ $M_i$, then $T_t$};
+  \node[b,right=of s2] (g)  {normal,\\ area element};
+  \node[k,right=of g]  (kk) {kernel\\ (target at $0$)};
+  \draw[a] (f)--(s1); \draw[a] (s1)--(s2); \draw[a] (s2)--(g); \draw[a] (g)--(kk);
+  \node[b,below=8mm of s2] (w) {fold in $s_i|\mathbf{a}\!\times\!\mathbf{b}|\,w_i w_j$};
+  \node[b,left=of w] (p) {projection:\\ exact adjoint of 1--2b};
+  \node[b,left=of p] (m) {$M_{\text{acc}}$};
+  \draw[a] (kk) |- (w); \draw[a] (w)--(p); \draw[a] (p)--(m);
+\end{tikzpicture}
+\end{center}
+
+The projection reuses the same operators in reverse order, so it is the exact adjoint of the
+interpolation --- which is what keeps the assembled operator consistent. Sources are stored
+relative to the target, so the kernel is always evaluated with the target at the origin and $r$
+stays accurate near the singularity.
+
+\vspace{1em}
+\hrule
+\section{Near interaction: split at the foot}
+
+Here the target is \emph{off} the patch at a distance $d$ that may be far smaller than the patch.
+The integrand is smooth but sharply peaked near the closest point, and a single tensor rule would
+need impractically many points. The scheme refines --- but chooses \emph{where} to refine so that
+every operator can be precomputed.
+
+\stepbox{Step 1 --- find the foot}
+
+Locate $(u^\ast,v^\ast)$ minimising $|\mathbf{X}(u,v)-\mathbf{y}|^2$ over $[0,1]^2$: seed at the
+nearest nodal point, then Gauss--Newton on the first fundamental form, clamped to the box with a
+backtracking line search, falling back to a shrinking grid search if it stalls. Optimality is
+tested on the \emph{projected} gradient, since at a box edge the constrained gradient is large --
+it balances the constraint -- and near-pair feet usually do lie on a shared patch edge.
+
+\begin{center}
+\begin{tikzpicture}[scale=2.4]
+  \draw[cElem,very thick] plot[smooth,domain=0:2,samples=40] (\x,{0.12*sin(150*\x)});
+  \node[cElem,left] at (0,0) {$E$};
+  \fill[cTrg] (1.15,0.42) circle (0.022) node[above,cTrg,font=\small] {target $\mathbf{y}$};
+  \fill[black] (1.15,{0.12*sin(150*1.15)}) circle (0.018);
+  \node[below,font=\small] at (1.30,{0.12*sin(150*1.15)-0.03}) {$(u^\ast,v^\ast)$};
+  \draw[dashed,cTrg] (1.15,0.42) -- (1.15,{0.12*sin(150*1.15)});
+  \node[cTrg,right,font=\small] at (1.17,0.26) {$d$};
+\end{tikzpicture}
+\end{center}
+
+\stepbox{Step 2 --- split the patch \emph{at} the foot}
+
+Cut the parameter square along $u=u^\ast$ and $v=v^\ast$, giving four sub-elements. Every
+sub-element now has the foot at one \emph{corner}, so refinement always grades toward an
+\emph{endpoint} of the sub-element rather than to a point in its interior.
+
+\begin{center}
+\begin{tikzpicture}[scale=2.6]
+  \def\ux{0.62} \def\vy{0.44}
+  \fill[cCell] (0,0) rectangle (1,1);
+  \draw[cElem,thick] (0,0) rectangle (1,1);
+  \draw[cTrg,thick] (\ux,0) -- (\ux,1);
+  \draw[cTrg,thick] (0,\vy) -- (1,\vy);
+  \fill[cTrg] (\ux,\vy) circle (0.018);
+  \node[cTrg,font=\small,above right=0pt and 1pt] at (1.0,\vy) {$(u^\ast,v^\ast)$};
+  \node[font=\small] at (0.31,0.22) {1};
+  \node[font=\small] at (0.81,0.22) {2};
+  \node[font=\small] at (0.31,0.72) {3};
+  \node[font=\small] at (0.81,0.72) {4};
+\end{tikzpicture}
+\end{center}
+
+This is the step that makes the scheme cheap. In \emph{normalised} sub-element coordinates the
+graded intervals depend only on the refinement level, never on $(u^\ast,v^\ast)$, so their
+interpolation operators are built once per order and looked up. A bisection quadtree, by
+contrast, leaves the foot mid-cell and needs a position-dependent operator per leaf --- hundreds
+of small matrices rebuilt for every target.
+
+\stepbox{Step 3 --- bisect until admissible}
+
+Within a sub-element, normalise so the foot is at $x=1$. The graded intervals are
+\[
+  \text{shell}_k = [\,1-2^{-k},\; 1-2^{-(k+1)}\,], \qquad
+  \text{core}_k  = [\,1-2^{-k},\; 1\,],
+\]
+i.e.\ $\text{core}_k$ is the part still touching the foot and $\text{shell}_k$ the half turned away
+from it.
+
+Splitting at the foot leaves the sub-elements \emph{anisotropic}, so quadrisection would hand that
+aspect ratio down to every descendant. Instead the corner cell is bisected along its longer
+\emph{physical} dimension only --- parameter extent times surface speed --- one split at a time,
+until that dimension is admissible against the target distance:
+\[
+  b_{\text{ellipse}}\cdot\max(h_u,h_v) \;\le\; d .
+\]
+Each split emits exactly one leaf (the half not touching the corner), and the $u$- and
+$v$-levels advance independently.
+
+\begin{center}
+\begin{tikzpicture}[scale=4.6,font=\small]
+  \fill[cCell] (0,0) rectangle (1,0.55);
+  \draw[cElem,thick] (0,0) rectangle (1,0.55);
+  % bisections marching toward the foot at (1,0.55)
+  \draw[cGrey] (0.5,0) -- (0.5,0.55);
+  \draw[cGrey] (0.5,0.275) -- (1,0.275);
+  \draw[cGrey] (0.75,0.275) -- (0.75,0.55);
+  \draw[cGrey] (0.75,0.4125) -- (1,0.4125);
+  \fill[cTrg] (1,0.55) circle (0.012);
+  \node[cTrg,above right=0pt,font=\small] at (1,0.55) {foot};
+  \node at (0.25,0.275) {$\ell_1$};
+  \node at (0.75,0.14)  {$\ell_2$};
+  \node at (0.615,0.41) {$\ell_3$};
+  \node at (0.875,0.34) {\tiny $\ell_4$};
+  \node[cTrg,font=\tiny] at (0.875,0.48) {$\cdots$};
+  \draw[|<->|,cGrey] (0,-0.06) -- (0.5,-0.06) node[midway,below,font=\tiny] {$h$ halves each split};
+\end{tikzpicture}
+\end{center}
+
+\stepbox{Step 4 --- choose the per-cell order}
+
+Each leaf gets a Gauss--Legendre rule whose order comes from the tolerance, via a Bernstein-ellipse
+argument evaluated at the \emph{end-foot} reach (the foot lands on a cell endpoint, which is a
+weaker requirement than the semi-major reach by $a^2/b^2\approx1.9$).
+
+That test lives in parameter space and cannot see one thing: how skewed the patch is where the
+target sits. The required order is flat up to a corner angle of about $120^\circ$ and then grows
+like $1/(180^\circ-\varphi)$ as the corner flattens and the element wraps around the target. So
+the order is corrected per (element, target) using $\varphi$, the acute angle between the surface
+tangents \emph{at the foot}. An orthogonal parametrisation gives $\varphi=90^\circ$, a correction
+factor of $1$, and costs a well-shaped mesh nothing.
+
+\begin{center}
+\begin{tikzpicture}[scale=1.0]
+  \draw[->,thick] (0,0) -- (6.6,0) node[right,font=\small] {$\varphi$};
+  \draw[->,thick] (0,0) -- (0,2.5) node[above,font=\small] {order};
+  \foreach \x/\l in {0/0,2/60,4/120,5.5/165} \draw (\x,0.06)--(\x,-0.06) node[below,font=\small] {\l};
+  \draw[cTrg,very thick] (0,0.55) -- (4,0.55)
+        plot[domain=4:5.72,samples=60] (\x,{0.55+0.55/(6.0-\x)-0.55/2.0});
+  \node[cTrg,font=\small,anchor=west] at (2.55,2.05) {$\propto 1/(180^\circ-\varphi)$};
+  \draw[cTrg,thin] (4.6,1.95) -- (5.3,1.35);
+  \draw[dashed,cGrey] (4,0)--(4,0.55);
+  \node[cGrey,font=\small,anchor=east] at (3.9,0.30) {flat to $\sim$120$^\circ$};
+\end{tikzpicture}
+\end{center}
+
+\stepbox{Step 5 --- integrate each leaf and accumulate}
+
+Each sub-element's nodal coordinates are built once per target
+($X_{\text{sub}} = S_u^{\!\top}\,\mathbf{x}\,S_v$), so nothing depending on $(u^\ast,v^\ast)$
+survives into the per-cell loop. Every leaf then runs the same tensor-product block:
+
+\begin{center}
+\begin{tikzpicture}[node distance=3mm,
+   b/.style={draw,cElem,thick,fill=cCell,rounded corners=2pt,align=center,inner sep=4pt,font=\small},
+   k/.style={draw,cTrg,thick,fill=white,rounded corners=2pt,align=center,inner sep=4pt,font=\small},
+   o/.style={draw,thick,fill=cAcc,rounded corners=2pt,align=center,inner sep=4pt,font=\small},
+   a/.style={->,thick,cGrey}]
+  \node[b] (x)  {$X_{\text{sub}}$\\ (per quadrant)};
+  \node[b,right=of x]  (gt) {geometry\\ $\mathbf{X},\partial_u\mathbf{X},\partial_v\mathbf{X}$};
+  \node[b,right=of gt] (as) {normal, area,\\ weights};
+  \node[k,right=of as] (kk) {kernel};
+  \node[b,right=of kk] (pr) {projection\\ (adjoint)};
+  \node[o,right=of pr] (ac) {channel-major\\ accumulator};
+  \draw[a] (x)--(gt); \draw[a] (gt)--(as); \draw[a] (as)--(kk); \draw[a] (kk)--(pr); \draw[a] (pr)--(ac);
+  \node[o,below=10mm of ac] (mm) {$M_{\text{acc}}$};
+  \draw[a] (ac)--(mm) node[midway,left,align=right,font=\small] {transpose,\\once per target};
+  \draw[a,dashed] (ac.north) -- ++(0,0.42) -| (x.north)
+        node[pos=0.25,above,font=\small] {next leaf};
+\end{tikzpicture}
+\end{center}
+
+Cells accumulate into a channel-major buffer so the projection's last GEMM can add in place
+($\beta=1$); a single transpose into the node-major layout at the end replaces a per-cell sweep.
+
+\vspace{1em}
+\hrule
+\section{The two side by side}
+
+\begin{center}
+\begin{tabular}{@{}p{0.19\textwidth}p{0.36\textwidth}p{0.36\textwidth}@{}}
+\toprule
+ & \textbf{self (Duffy)} & \textbf{near (split-at-foot)} \\
+\midrule
+kills the singularity by & the Jacobian $s|\mathbf{a}\times\mathbf{b}|$
+   & refinement toward the foot \\[2pt]
+geometry split & 4 triangles at the target
+   & 4 sub-elements at the foot, then bisection \\[2pt]
+cells per target & 4
+   & $\mathcal{O}(10)$, distance-dependent \\[2pt]
+what is cached & per $(N,\text{digits})$: the whole triangle table
+   & per $N$: the $\text{shell}_k/\text{core}_k$ operator ladder \\[2pt]
+what is per-target & the $t$-rule (metric-aware $t^\ast$, $d/L$)
+   & the foot, the cell list, the corner-angle order \\[2pt]
+metric enters via & $t^\ast$ and the peak width at $(u_0,v_0)$
+   & surface speeds, and $\varphi$ at the foot \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Both share the same leaf-level machinery --- interpolate to quadrature nodes, form the surface
+geometry, evaluate the kernel with the target at the origin, fold in weights, project back with
+the adjoint --- and both are written so that the per-target work is GEMMs against precomputed
+operators rather than freshly built ones.
+
+\end{document}
