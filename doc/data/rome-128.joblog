@@ -1,3 +1,12 @@
+host       : worker5433
+cpu        :  AMD EPYC 7742 64-Core Processor
+sockets    : 2
+avx512f    : 0
+tag        : rome2
+threads    : 128
+
+g++  -std=c++17 -fopenmp -Wall -Wfloat-conversion  -O3 -march=native -DNDEBUG  -gdwarf-4 -g -rdynamic  -ldl  -mno-avx512fp16 -DSCTL_GLOBAL_MEM_BUFF=0  -DSCTL_PROFILE=25 -DSCTL_VERBOSE  -DSCTL_SIG_HANDLER  -DSCTL_QUAD_T=__float128  -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK  -lfftw3_omp -DSCTL_FFTW_THREADS -lfftw3 -DSCTL_HAVE_FFTW -lfftw3f -DSCTL_HAVE_FFTWF -lfftw3l -DSCTL_HAVE_FFTWL -MMD -MP -I./include -c src/bench-cubed-sphere.cpp -o obj.rome2/bench-cubed-sphere.o
+g++  obj.rome2/bench-cubed-sphere.o -std=c++17 -fopenmp -Wall -Wfloat-conversion  -O3 -march=native -DNDEBUG  -gdwarf-4 -g -rdynamic  -ldl  -mno-avx512fp16 -DSCTL_GLOBAL_MEM_BUFF=0  -DSCTL_PROFILE=25 -DSCTL_VERBOSE  -DSCTL_SIG_HANDLER  -DSCTL_QUAD_T=__float128  -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK  -lfftw3_omp -DSCTL_FFTW_THREADS -lfftw3 -DSCTL_HAVE_FFTW -lfftw3f -DSCTL_HAVE_FFTWF -lfftw3l -DSCTL_HAVE_FFTWL  -o bin.rome2/bench-cubed-sphere
 threads/rank = 128, ranks = 1
 SL[1]abs compares S[1] against its exact value: R (Laplace), 2R/3 (Stokes).
 

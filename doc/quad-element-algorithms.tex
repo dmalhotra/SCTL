@@ -5,6 +5,8 @@
 \usepackage{booktabs}
 \usepackage{xcolor}
 \usepackage{tikz}
+\usepackage{float}
+\usepackage[font=small,labelfont=bf,width=0.92\textwidth]{caption}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usetikzlibrary{calc,arrows,positioning,fit,backgrounds,decorations.pathreplacing,patterns}
@@ -14,6 +16,7 @@
 \definecolor{cCell}{RGB}{225,238,248}
 \definecolor{cAcc}{RGB}{240,200,120}
 \definecolor{cGrey}{RGB}{120,120,120}
+\definecolor{cVec}{RGB}{110,55,150}
 
 \newcommand{\stepbox}[1]{%
   \par\medskip\noindent\textbf{\color{cElem}#1}\par\nopagebreak\smallskip}
@@ -45,6 +48,7 @@ $E$ a smooth tensor rule suffices. Two cases need special treatment, and each ha
 algorithm:
 
 \begin{center}
+\begin{minipage}{\textwidth}\centering
 \begin{tabular}{@{}lll@{}}
 \toprule
  & \textbf{self} & \textbf{near} \\
@@ -55,6 +59,9 @@ scheme & Duffy edge-collapse & split-at-foot refinement \\
 entry point & \texttt{SelfInterac} & \texttt{NearInterac} \\
 \bottomrule
 \end{tabular}
+\captionof{table}{Everything else --- a target far from the patch relative to its size --- takes a plain tensor
+Gauss--Legendre rule and is not discussed here.}
+\end{minipage}
 \end{center}
 
 Both entry points map the runtime element order to a compile-time \texttt{order} and the runtime
@@ -74,6 +81,7 @@ Join the target to the four corners. This gives four triangles, each with the ta
 vertex and one edge of the square opposite it.
 
 \begin{center}
+\begin{minipage}{\textwidth}\centering
 \begin{tikzpicture}[scale=2.6]
   \def\ux{0.38} \def\vy{0.62}
   \fill[cCell] (0,0) rectangle (1,1);
@@ -97,6 +105,9 @@ vertex and one edge of the square opposite it.
   \node[below] at (0.5,-0.04) {$u$};
   \node[left]  at (-0.04,0.5) {$v$};
 \end{tikzpicture}
+\captionof{figure}{Step 1. The target is always at a node, never at a corner or edge midpoint, so none of the four
+triangles is degenerate.}
+\end{minipage}
 \end{center}
 
 \stepbox{Step 2 --- collapse one edge onto the target}
@@ -113,15 +124,17 @@ The line $s=0$ collapses the entire $t$-edge onto the target. The Jacobian is
 --- linear in $s$, and \emph{independent of $t$}.
 
 \begin{center}
+\begin{minipage}{\textwidth}\centering
 \begin{tikzpicture}[scale=2.2]
   % physical triangle
   \begin{scope}
-    \fill[cCell] (0.38,0.62) -- (0,0) -- (1,0) -- cycle;
-    \draw[cElem,thick] (0.38,0.62) -- (0,0) -- (1,0) -- cycle;
-    \draw[->,cTrg,thick] (0.38,0.62) -- (0,0) node[midway,left] {$\mathbf{a}$};
-    \draw[->,cTrg,thick] (0.38,0.62) -- (1,0) node[midway,above right] {$\mathbf{b}$};
-    \fill[cTrg] (0.38,0.62) circle (0.02);
-    \node[font=\small] at (0.5,-0.30) {physical triangle};
+    \fill[cCell] (0.38,0) -- (0,0.62) -- (1,0.62) -- cycle;
+    \draw[cElem,thick] (0.38,0) -- (0,0.62) -- (1,0.62) -- cycle;
+    \draw[->,cVec,thick] (0.38,0) -- ($(0.38,0)!0.62!(0,0.62)$) node[midway,left=-1pt] {$\mathbf{a}$};
+    \draw[->,cVec,thick] (0.38,0) -- ($(0.38,0)!0.62!(1,0.62)$) node[midway,right=-1pt] {$\mathbf{b}$};
+    \fill[cTrg] (0.38,0) circle (0.02);
+    \node[cTrg,below,font=\small] at (0.38,-0.03) {the target};
+    \node[below,font=\small] at (0.5,-0.30) {physical triangle};
   \end{scope}
   % arrow
   \draw[->,very thick,cGrey] (1.25,0.3) -- (1.75,0.3) node[midway,above] {\small $P(s,t)$};
@@ -136,6 +149,8 @@ The line $s=0$ collapses the entire $t$-edge onto the target. The Jacobian is
     \node[above,font=\small] at (0.5,0.63) {$t$};
   \end{scope}
 \end{tikzpicture}
+\captionof{figure}{Step 2. The entire edge $s=0$ maps to the single target point.}
+\end{minipage}
 \end{center}
 
 That single factor of $s$ is the whole point. For a kernel of order $1/r$, writing
@@ -164,11 +179,11 @@ with one GL rule of $n_t$ points in $\xi$. $n_t$ grows with the requested digits
 for vector kernels than scalar ones.
 
 \begin{center}
+\begin{minipage}{\textwidth}\centering
 \begin{tikzpicture}[scale=2.2]
   \fill[cCell] (0,0) rectangle (2,1);
   \draw[cElem,thick] (0,0) rectangle (2,1);
   \node[left] at (-0.05,0.5) {$s$};
-  \node[below,font=\small] at (1,-0.42) {quadrature points in $(s,t)$: uniform in $s$, $\sinh$-clustered at $t^\ast$};
   \foreach \s in {0.06,0.22,0.44,0.66,0.86,0.97} {
     \foreach \t in {0.03,0.11,0.25,0.46,0.62,0.685,0.715,0.78,0.94,1.15,1.45,1.78,1.96} {
       \fill[cTrg] (\t,\s) circle (0.011);
@@ -179,6 +194,8 @@ for vector kernels than scalar ones.
   \draw[decorate,decoration={brace,amplitude=4pt,mirror},cGrey] (0.62,-0.07) -- (0.78,-0.07);
   \node[cGrey,below,font=\small] at (0.70,-0.17) {width $\sim d/L$};
 \end{tikzpicture}
+\captionof{figure}{Step 3. One triangle of the four, $n_s\times n_t$ points each.}
+\end{minipage}
 \end{center}
 
 \stepbox{Step 4 --- contract, evaluate, project}
@@ -189,6 +206,7 @@ $v(s,t)=v_0(1-s)$ depends on $s$ alone, so that factor is a small $(N\times n_s)
 than $(N \times n_s n_t)$. The evaluation is then a chain of GEMMs:
 
 \begin{center}
+\begin{minipage}{\textwidth}\centering
 \begin{tikzpicture}[node distance=3mm,
    b/.style={draw,cElem,thick,fill=cCell,rounded corners=2pt,align=center,inner sep=4pt,font=\small},
    k/.style={draw,cTrg,thick,fill=white,rounded corners=2pt,align=center,inner sep=4pt,font=\small},
@@ -204,6 +222,10 @@ than $(N \times n_s n_t)$. The evaluation is then a chain of GEMMs:
   \node[b,left=of p] (m) {$M_{\text{acc}}$};
   \draw[a] (kk) |- (w); \draw[a] (w)--(p); \draw[a] (p)--(m);
 \end{tikzpicture}
+\captionof{figure}{Step 4. One target, one triangle. Blue boxes are GEMMs against operators cached per
+$(N,\text{digits})$; the kernel sees the target at the origin because the nodal coordinates are
+stored target-shifted.}
+\end{minipage}
 \end{center}
 
 The projection reuses the same operators in reverse order, so it is the exact adjoint of the
@@ -229,6 +251,7 @@ tested on the \emph{projected} gradient, since at a box edge the constrained gra
 it balances the constraint -- and near-pair feet usually do lie on a shared patch edge.
 
 \begin{center}
+\begin{minipage}{\textwidth}\centering
 \begin{tikzpicture}[scale=2.4]
   \draw[cElem,very thick] plot[smooth,domain=0:2,samples=40] (\x,{0.12*sin(150*\x)});
   \node[cElem,left] at (0,0) {$E$};
@@ -238,6 +261,9 @@ it balances the constraint -- and near-pair feet usually do lie on a shared patc
   \draw[dashed,cTrg] (1.15,0.42) -- (1.15,{0.12*sin(150*1.15)});
   \node[cTrg,right,font=\small] at (1.17,0.26) {$d$};
 \end{tikzpicture}
+\captionof{figure}{Near, step 1. The foot is found by Gauss--Newton from the nearest nodal point. $d$ may be far
+smaller than the patch, which is what makes the integrand nearly singular.}
+\end{minipage}
 \end{center}
 
 \stepbox{Step 2 --- split the patch \emph{at} the foot}
@@ -247,6 +273,7 @@ sub-element now has the foot at one \emph{corner}, so refinement always grades t
 \emph{endpoint} of the sub-element rather than to a point in its interior.
 
 \begin{center}
+\begin{minipage}{\textwidth}\centering
 \begin{tikzpicture}[scale=2.6]
   \def\ux{0.62} \def\vy{0.44}
   \fill[cCell] (0,0) rectangle (1,1);
@@ -260,6 +287,10 @@ sub-element now has the foot at one \emph{corner}, so refinement always grades t
   \node[font=\small] at (0.31,0.72) {3};
   \node[font=\small] at (0.81,0.72) {4};
 \end{tikzpicture}
+\captionof{figure}{Near, step 2. With the foot at a corner of every sub-element, refinement grades toward an
+endpoint and the graded intervals depend only on the level --- which is what lets the operators
+be tabulated per $N$ rather than rebuilt per target.}
+\end{minipage}
 \end{center}
 
 This is the step that makes the scheme cheap. In \emph{normalised} sub-element coordinates the
@@ -289,6 +320,7 @@ Each split emits exactly one leaf (the half not touching the corner), and the $u
 $v$-levels advance independently.
 
 \begin{center}
+\begin{minipage}{\textwidth}\centering
 \begin{tikzpicture}[scale=4.6,font=\small]
   \fill[cCell] (0,0) rectangle (1,0.55);
   \draw[cElem,thick] (0,0) rectangle (1,0.55);
@@ -306,6 +338,11 @@ $v$-levels advance independently.
   \node[cTrg,font=\tiny] at (0.875,0.48) {$\cdots$};
   \draw[|<->|,cGrey] (0,-0.06) -- (0.5,-0.06) node[midway,below,font=\tiny] {$h$ halves each split};
 \end{tikzpicture}
+\captionof{figure}{Near, step 3. The corner cell is split along its longer \emph{physical} dimension (parameter
+extent $\times$ surface speed) until $b_{\text{ellipse}}\max(h_u,h_v)\le d$, one leaf per split,
+the $u$- and $v$-levels advancing independently. Roughly ten leaves per target at the tolerances
+used here.}
+\end{minipage}
 \end{center}
 
 \stepbox{Step 4 --- choose the per-cell order}
@@ -322,6 +359,7 @@ tangents \emph{at the foot}. An orthogonal parametrisation gives $\varphi=90^\ci
 factor of $1$, and costs a well-shaped mesh nothing.
 
 \begin{center}
+\begin{minipage}{\textwidth}\centering
 \begin{tikzpicture}[scale=1.0]
   \draw[->,thick] (0,0) -- (6.6,0) node[right,font=\small] {$\varphi$};
   \draw[->,thick] (0,0) -- (0,2.5) node[above,font=\small] {order};
@@ -333,6 +371,9 @@ factor of $1$, and costs a well-shaped mesh nothing.
   \draw[dashed,cGrey] (4,0)--(4,0.55);
   \node[cGrey,font=\small,anchor=east] at (3.9,0.30) {flat to $\sim$120$^\circ$};
 \end{tikzpicture}
+\captionof{figure}{Near, step 4. Schematic, not measured. $\varphi$ is the acute angle between the surface tangents
+at the foot; an orthogonal parametrisation sits at $\varphi=90^\circ$ and needs no correction.}
+\end{minipage}
 \end{center}
 
 \stepbox{Step 5 --- integrate each leaf and accumulate}
@@ -342,6 +383,7 @@ Each sub-element's nodal coordinates are built once per target
 survives into the per-cell loop. Every leaf then runs the same tensor-product block:
 
 \begin{center}
+\begin{minipage}{\textwidth}\centering
 \begin{tikzpicture}[node distance=3mm,
    b/.style={draw,cElem,thick,fill=cCell,rounded corners=2pt,align=center,inner sep=4pt,font=\small},
    k/.style={draw,cTrg,thick,fill=white,rounded corners=2pt,align=center,inner sep=4pt,font=\small},
@@ -359,6 +401,10 @@ survives into the per-cell loop. Every leaf then runs the same tensor-product bl
   \draw[a,dashed] (ac.north) -- ++(0,0.42) -| (x.north)
         node[pos=0.25,above,font=\small] {next leaf};
 \end{tikzpicture}
+\captionof{figure}{Near, step 5. $X_{\text{sub}}$ is built once per target, so nothing depending on
+$(u^\ast,v^\ast)$ enters the loop. The channel-major accumulator lets the projection's final
+GEMM add in place ($\beta=1$).}
+\end{minipage}
 \end{center}
 
 Cells accumulate into a channel-major buffer so the projection's last GEMM can add in place
@@ -368,73 +414,111 @@ Cells accumulate into a channel-major buffer so the projection's last GEMM can a
 \hrule
 \section{Numerical results}
 
-All from \texttt{bench-cubed-sphere} run with no arguments, which does the convergence sweep
-first and then the strong-scaling descent. The surface is the twisted cubed sphere of
-Section~3: the twist is an isometry, so the geometry is the unit sphere at every angle and only
-the parametrisation shears.
+All from \texttt{bench-cubed-sphere}. The surface is a cubed sphere twisted about $z$.
+
+\begin{figure}[H]\centering
+\input{fig-cubed-sphere}
+\caption{$4\times4$ patches per face; the runs below use $8\times8$ and $12\times12$. The twist is an
+\emph{isometry}, so all four panels are the same unit sphere and only the parametrisation shears
+--- every difference in the tables below is therefore caused by the parametrisation alone. At
+$\theta=\pi$ the patch edges are far from orthogonal, which is where the corner angle $\varphi$
+of Section~3, Step~4 departs from $90^\circ$.}
+\end{figure}
 
 \subsection{Convergence}
 
-Order 12, 12 patches per face ($864$ elements, $124{,}416$ nodes). \emph{error} is the on-surface Green's identity
-$S[\partial_n u]-D[u]=u$, relative to $\max|u|$; \emph{error-density} is the interpolation error
-of the two densities at off-node parameters, i.e.\ how well the order-12 patch represents them.
+Order 12, 12 patches per face ($864$ elements, $124{,}416$ nodes). \emph{error} is the on-surface
+Green's identity $S[\partial_n u]-D[u]=u$, relative to $\max|u|$; \emph{error-density} is the
+interpolation error of the two densities at off-node parameters, i.e.\ how well the order-12
+patch represents them. The last three columns give the cost of that accuracy on each of the three machines.
 
-\begin{center}\small
-\begin{tabular}{@{}llll@{}}
+\begin{table}[H]\centering\small
+\begin{tabular}{@{}llllrrr@{}}
 \toprule
-kernel, twist & tol & error-density & error \\
+ & & & & \multicolumn{3}{c}{pts/s/core, SL setup} \\
+\cmidrule(l){5-7}
+kernel, twist & tol & error-density & error & Rome & Genoa & Icelake \\
 \midrule
-laplace, $\pi/6$ & $1.00\!\times\!10^{-3}$ & $7.18\!\times\!10^{-14}$ & $2.14\!\times\!10^{-7}$ \\
- & $1.00\!\times\!10^{-6}$ & $7.18\!\times\!10^{-14}$ & $3.73\!\times\!10^{-10}$ \\
- & $1.00\!\times\!10^{-9}$ & $7.18\!\times\!10^{-14}$ & $3.42\!\times\!10^{-12}$ \\
- & $1.00\!\times\!10^{-12}$ & $7.18\!\times\!10^{-14}$ & $3.32\!\times\!10^{-13}$ \\
+
+laplace, $\pi/6$ & $1.00\!\times\!10^{-3}$ & $7.18\!\times\!10^{-14}$ & $2.14\!\times\!10^{-7}$ & 3628 & 8547 & 6677 \\
+ & $1.00\!\times\!10^{-6}$ & $7.18\!\times\!10^{-14}$ & $3.73\!\times\!10^{-10}$ & 3162 & 6861 & 6242 \\
+ & $1.00\!\times\!10^{-9}$ & $7.18\!\times\!10^{-14}$ & $3.42\!\times\!10^{-12}$ & 2444 & 4972 & 4958 \\
+ & $1.00\!\times\!10^{-12}$ & $7.18\!\times\!10^{-14}$ & $3.32\!\times\!10^{-13}$ & 1631 & 3247 & 3591 \\
 \addlinespace
-laplace, $\pi/2$ & $1.00\!\times\!10^{-3}$ & $4.89\!\times\!10^{-11}$ & $2.44\!\times\!10^{-7}$ \\
- & $1.00\!\times\!10^{-6}$ & $4.89\!\times\!10^{-11}$ & $8.52\!\times\!10^{-10}$ \\
- & $1.00\!\times\!10^{-9}$ & $4.89\!\times\!10^{-11}$ & $4.07\!\times\!10^{-11}$ \\
- & $1.00\!\times\!10^{-12}$ & $4.89\!\times\!10^{-11}$ & $2.71\!\times\!10^{-12}$ \\
+laplace, $\pi/2$ & $1.00\!\times\!10^{-3}$ & $4.89\!\times\!10^{-11}$ & $2.44\!\times\!10^{-7}$ & 3326 & 7287 & 7739 \\
+ & $1.00\!\times\!10^{-6}$ & $4.89\!\times\!10^{-11}$ & $8.52\!\times\!10^{-10}$ & 2405 & 4822 & 4808 \\
+ & $1.00\!\times\!10^{-9}$ & $4.89\!\times\!10^{-11}$ & $4.07\!\times\!10^{-11}$ & 1668 & 3221 & 3271 \\
+ & $1.00\!\times\!10^{-12}$ & $4.89\!\times\!10^{-11}$ & $2.71\!\times\!10^{-12}$ & 1066 & 2104 & 2149 \\
 \addlinespace
-laplace, $\pi$ & $1.00\!\times\!10^{-3}$ & $4.28\!\times\!10^{-8}$ & $2.02\!\times\!10^{-6}$ \\
- & $1.00\!\times\!10^{-6}$ & $4.28\!\times\!10^{-8}$ & $1.63\!\times\!10^{-8}$ \\
- & $1.00\!\times\!10^{-9}$ & $4.28\!\times\!10^{-8}$ & $2.04\!\times\!10^{-10}$ \\
- & $1.00\!\times\!10^{-12}$ & $4.28\!\times\!10^{-8}$ & $4.65\!\times\!10^{-11}$ \\
+laplace, $\pi$ & $1.00\!\times\!10^{-3}$ & $4.28\!\times\!10^{-8}$ & $2.02\!\times\!10^{-6}$ & 1944 & 3822 & 3867 \\
+ & $1.00\!\times\!10^{-6}$ & $4.28\!\times\!10^{-8}$ & $1.63\!\times\!10^{-8}$ & 943 & 1839 & 1701 \\
+ & $1.00\!\times\!10^{-9}$ & $4.28\!\times\!10^{-8}$ & $2.04\!\times\!10^{-10}$ & 539 & 1031 & 952 \\
+ & $1.00\!\times\!10^{-12}$ & $4.28\!\times\!10^{-8}$ & $4.65\!\times\!10^{-11}$ & 316 & 606 & 551 \\
 \addlinespace
-stokes, $\pi/6$ & $1.00\!\times\!10^{-3}$ & $2.25\!\times\!10^{-13}$ & $4.25\!\times\!10^{-6}$ \\
- & $1.00\!\times\!10^{-6}$ & $2.25\!\times\!10^{-13}$ & $4.66\!\times\!10^{-9}$ \\
- & $1.00\!\times\!10^{-9}$ & $2.25\!\times\!10^{-13}$ & $1.07\!\times\!10^{-10}$ \\
- & $1.00\!\times\!10^{-12}$ & $2.25\!\times\!10^{-13}$ & $7.68\!\times\!10^{-12}$ \\
+stokes, $\pi/6$ & $1.00\!\times\!10^{-3}$ & $2.25\!\times\!10^{-13}$ & $4.25\!\times\!10^{-6}$ & 2277 & 5024 & 4681 \\
+ & $1.00\!\times\!10^{-6}$ & $2.25\!\times\!10^{-13}$ & $4.66\!\times\!10^{-9}$ & 1696 & 3650 & 3062 \\
+ & $1.00\!\times\!10^{-9}$ & $2.25\!\times\!10^{-13}$ & $1.07\!\times\!10^{-10}$ & 1204 & 2605 & 2149 \\
+ & $1.00\!\times\!10^{-12}$ & $2.25\!\times\!10^{-13}$ & $7.68\!\times\!10^{-12}$ & 815 & 1708 & 1546 \\
 \addlinespace
-stokes, $\pi/2$ & $1.00\!\times\!10^{-3}$ & $1.54\!\times\!10^{-10}$ & $8.06\!\times\!10^{-6}$ \\
- & $1.00\!\times\!10^{-6}$ & $1.54\!\times\!10^{-10}$ & $3.10\!\times\!10^{-8}$ \\
- & $1.00\!\times\!10^{-9}$ & $1.54\!\times\!10^{-10}$ & $8.89\!\times\!10^{-10}$ \\
- & $1.00\!\times\!10^{-12}$ & $1.54\!\times\!10^{-10}$ & $5.98\!\times\!10^{-11}$ \\
+stokes, $\pi/2$ & $1.00\!\times\!10^{-3}$ & $1.54\!\times\!10^{-10}$ & $8.06\!\times\!10^{-6}$ & 1946 & 4108 & 3691 \\
+ & $1.00\!\times\!10^{-6}$ & $1.54\!\times\!10^{-10}$ & $3.10\!\times\!10^{-8}$ & 1219 & 2139 & 2199 \\
+ & $1.00\!\times\!10^{-9}$ & $1.54\!\times\!10^{-10}$ & $8.89\!\times\!10^{-10}$ & 800 & 1693 & 1443 \\
+ & $1.00\!\times\!10^{-12}$ & $1.54\!\times\!10^{-10}$ & $5.98\!\times\!10^{-11}$ & 521 & 1093 & 874 \\
 \addlinespace
-stokes, $\pi$ & $1.00\!\times\!10^{-3}$ & $1.58\!\times\!10^{-7}$ & $1.36\!\times\!10^{-5}$ \\
- & $1.00\!\times\!10^{-6}$ & $1.58\!\times\!10^{-7}$ & $1.10\!\times\!10^{-7}$ \\
- & $1.00\!\times\!10^{-9}$ & $1.58\!\times\!10^{-7}$ & $8.76\!\times\!10^{-10}$ \\
- & $1.00\!\times\!10^{-12}$ & $1.58\!\times\!10^{-7}$ & $3.19\!\times\!10^{-10}$ \\
+stokes, $\pi$ & $1.00\!\times\!10^{-3}$ & $1.58\!\times\!10^{-7}$ & $1.36\!\times\!10^{-5}$ & 1010 & 2099 & 1843 \\
+ & $1.00\!\times\!10^{-6}$ & $1.58\!\times\!10^{-7}$ & $1.10\!\times\!10^{-7}$ & 420 & 902 & 782 \\
+ & $1.00\!\times\!10^{-9}$ & $1.58\!\times\!10^{-7}$ & $8.76\!\times\!10^{-10}$ & 235 & 496 & 430 \\
+ & $1.00\!\times\!10^{-12}$ & $1.58\!\times\!10^{-7}$ & $3.19\!\times\!10^{-10}$ & 137 & 286 & 250 \\
 \bottomrule
 \end{tabular}
-\end{center}
+\caption{Order 12, 12 patches per face ($864$ elements, $124{,}416$ nodes), single point source outside
+the surface. \emph{error} is $\max|(S[\partial_n
+u]-D[u])-u|/\max|u|$ at the surface nodes, so it exercises both operators together. The two
+error columns are from Rome; Genoa and Icelake agree to the digits shown. Throughput is the
+single-layer setup with each machine on all of its cores, so it carries that machine's parallel
+efficiency.}
+\end{table}
+
+\begin{itemize}\setlength\itemsep{1pt}
+\item \textbf{The geometry is never the limit} --- it resolves to $\sim10^{-15}$ at every twist
+      (not shown).
+\item \textbf{The error tracks the tolerance over nine decades}: at twist $\pi/6$,
+      $2.1\times10^{-7}\!\to\!3.3\times10^{-13}$.
+\item \textbf{It stops at a floor set by the parametrisation}, and that floor degrades sharply
+      with twist --- at $\pi$ the best Laplace result is $4.7\times10^{-11}$ against
+      $3.3\times10^{-13}$ at $\pi/6$, a factor of $140$ for the same mesh and tolerance.
+\item \textbf{\emph{error-density} is a resolution indicator, not a bound}: at high twist the
+      error sits well below it ($4.7\times10^{-11}$ versus $4.3\times10^{-8}$), because the
+      identity is tested at nodes, where the densities are exact, and the quadrature averages the
+      between-node error.
+\end{itemize}
 
 \noindent
-Three things to read off it. The geometry is resolved to $\sim10^{-15}$ at every twist (not shown),
-so it is never the limit here. The \emph{error} tracks the requested tolerance over nine decades ---
-at twist $\pi/6$, $2.1\times10^{-7}\!\to\!3.3\times10^{-13}$ --- until it meets a floor set by the
-\emph{parametrisation}, which degrades sharply with twist: at $\pi$ the best Laplace result is
-$4.7\times10^{-11}$ against $3.3\times10^{-13}$ at $\pi/6$, a factor of 140 for the same mesh and
-the same tolerance. And the \emph{error} sits well \emph{below} the \emph{error-density} at high
-twist ($4.7\times10^{-11}$ versus $4.3\times10^{-8}$): the identity is tested at nodes, where the
-densities are exact, and the quadrature averages the between-node error --- which is why
-\emph{error-density} is a resolution indicator and not a bound.
+The throughput columns say where the cost goes, and it is not where the tolerance is.
+
+\begin{itemize}\setlength\itemsep{1pt}
+\item \textbf{Tolerance is cheap} --- nine decades cost about a factor of two (Laplace, $\pi/6$,
+      Rome: $3628$ pts/s/core at $10^{-3}$, still $1631$ at $10^{-12}$).
+\item \textbf{Twist is expensive} --- at a fixed tolerance of $10^{-9}$ Laplace falls from $2444$ to
+      $539$ pts/s/core between $\pi/6$ and $\pi$, a factor of $4.5$ on Rome and $4.8$--$5.2$ on
+      Genoa and Icelake.
+\item \textbf{So a sheared parametrisation is penalised twice}, once in accuracy and again in
+      time, for the same mesh and the same requested tolerance. Both are the near scheme reacting
+      to the corner angle $\varphi$: a skewed patch raises the per-cell order and deepens the
+      refinement, for every target.
+\item \textbf{The machine ratio, by contrast, barely moves} --- median $1.98$ over all $48$
+      machine-to-Rome comparisons, every one between $1.68$ and $2.36$. The architecture gap sits
+      in the kernel evaluation, not in how hard the quadrature is working.
+\end{itemize}
 
 \subsection{OpenMP scaling}
 
 Order 12, 8 patches per face ($384$ elements, $55{,}296$ nodes), twist $\pi/6$, tol $10^{-9}$;
-\texttt{SelfInterac} plus \texttt{NearInterac} setup, timed inside the driver, with
-\texttt{OMP\_PLACES=cores} and \texttt{OMP\_PROC\_BIND=close}. Three node types:
+self- and near-interaction setup, with
+\texttt{OMP\_PLACES=cores} and \texttt{OMP\_PROC\_BIND=close}. Everything below is the \emph{single-layer} operator alone --- the driver times the two setups
+separately, and the double-layer setup, which takes essentially the same time again, is not included. Three node types:
 
-\begin{center}\small
+\begin{table}[H]\centering\small
 \begin{tabular}{@{}llll@{}}
 \toprule
  & cores & AVX-512 & build \\
@@ -444,14 +528,52 @@ AMD EPYC 9474F (Genoa)    & $2\times48$ & yes & \texttt{-march=native} $\to$ AVX
 Intel Xeon 8358 (Icelake) & $2\times32$ & yes & \texttt{-march=native} $\to$ AVX-512 \\
 \bottomrule
 \end{tabular}
-\end{center}
+\caption{Run \texttt{-{}-exclusive}, one MPI rank per node.}
+\end{table}
 
-Points per second per core is the cross-architecture measure: it divides out the core count, so
-it compares what one core achieves and how much of that survives to the full node.
+\begin{table}[H]\centering\small
+\begin{tabular}{@{}llrrrrrr@{}}
+\toprule
+ & & & \multicolumn{2}{c}{1 thread} & \multicolumn{2}{c}{full node} & \\
+\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+machine & kernel & cores & setup (s) & pts/s & setup (s) & pts/s & speedup \\
+\midrule
+Rome    & Laplace & 128 & 15.382 & 3595 & 0.183 & 301\,645 & 84.1$\times$ (66\%) \\
+Genoa   & Laplace &  96 &  9.546 & 5793 & 0.121 & 457\,565 & 78.9$\times$ (82\%) \\
+Icelake & Laplace &  64 &  8.764 & 6310 & 0.177 & 313\,018 & 49.5$\times$ (77\%) \\
+\addlinespace
+Rome    & Stokes  & 128 & 30.347 & 1822 & 0.387 & 142\,835 & 78.4$\times$ (61\%) \\
+Genoa   & Stokes  &  96 & 18.117 & 3052 & 0.223 & 248\,323 & 81.2$\times$ (85\%) \\
+Icelake & Stokes  &  64 & 18.977 & 2914 & 0.410 & 134\,861 & 46.3$\times$ (72\%) \\
+\bottomrule
+\end{tabular}
+\caption{\emph{setup} is the total wall time of the self- and near-interaction setup, single layer only,
+at order 12, 8 patches per face ($384$ elements, $N=55{,}296$ nodes), twist $\pi/6$, tol
+$10^{-9}$. The double-layer setup costs the same to within a few percent at every thread count on all three
+machines, so building both operators takes about twice the times listed.}
+\end{table}
 
-\begin{center}
+\begin{itemize}\setlength\itemsep{1pt}
+\item \textbf{Per core at one thread}, Icelake and Genoa are $1.6$--$1.8\times$ Rome (Laplace
+      $6310$ and $5793$ against $3595$). Rome is the only one of the three without AVX-512 and the
+      only one compiled to AVX2, so that is the expected place for the vector width to show.
+\item \textbf{All three lose per-core throughput as threads are added}, Rome most: $-34\%$ from 1
+      thread to 128, against $-18\%$ (Genoa, to 96) and $-22\%$ (Icelake, to 64).
+\item \textbf{Genoa holds $82$--$85\%$ efficiency at 96 threads} where Rome is at $61$--$66\%$ at
+      128. Part of that is Rome being asked to go further, but Rome is also below Genoa at the
+      same thread count ($72\%$ against $89\%$ at 64 threads, Laplace).
+\item \textbf{On absolute throughput the core counts stop cancelling}: Genoa is highest despite
+      having a third fewer cores than Rome, and Icelake matches Rome with half of them.
+\item \textbf{The self loop runs short of work at the widest counts}: only $384/N$ elements per
+      thread, 3 per thread on Rome at 128, which is coarse for \texttt{schedule(static)}. That
+      is what bounds every curve at the right-hand end.
+\item \textbf{Stokes sits uniformly a little below Laplace}, consistent with its larger per-target
+      working set.
+\end{itemize}
+
+\begin{figure}[H]\centering
 \begin{tikzpicture}
-\begin{axis}[width=0.49\textwidth,height=5.6cm,xmode=log,ymode=log,log basis x=2,log basis y=2,
+\begin{axis}[width=0.49\textwidth,height=4.9cm,xmode=log,ymode=log,log basis x=2,log basis y=2,
              xlabel={threads},ylabel={speedup},xmin=0.8,xmax=160,ymin=0.8,ymax=160,
              legend pos=north west,legend style={font=\scriptsize,draw=none},
              grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
@@ -467,7 +589,7 @@ it compares what one core achieves and how much of that survives to the full nod
 \end{tikzpicture}
 \hfill
 \begin{tikzpicture}
-\begin{axis}[width=0.49\textwidth,height=5.6cm,xmode=log,log basis x=2,
+\begin{axis}[width=0.49\textwidth,height=4.9cm,xmode=log,log basis x=2,
              xlabel={threads},ylabel={points/s/core},xmin=0.8,xmax=160,ymin=0,ymax=7000,
              legend pos=south west,legend style={font=\scriptsize,draw=none},
              grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
@@ -480,11 +602,11 @@ it compares what one core achieves and how much of that survives to the full nod
   \addlegendentry{Icelake}
 \end{axis}
 \end{tikzpicture}
-\end{center}
-\vspace{-0.8em}
-\begin{center}
+
+\vspace{4pt}
+
 \begin{tikzpicture}
-\begin{axis}[width=0.49\textwidth,height=5.6cm,xmode=log,log basis x=2,
+\begin{axis}[width=0.49\textwidth,height=4.9cm,xmode=log,log basis x=2,
              xlabel={threads},ylabel={parallel efficiency (\%)},xmin=0.8,xmax=160,ymin=0,ymax=105,
              legend pos=south west,legend style={font=\scriptsize,draw=none},
              grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
@@ -500,7 +622,7 @@ it compares what one core achieves and how much of that survives to the full nod
 \end{tikzpicture}
 \hfill
 \begin{tikzpicture}
-\begin{axis}[width=0.49\textwidth,height=5.6cm,xmode=log,log basis x=2,
+\begin{axis}[width=0.49\textwidth,height=4.9cm,xmode=log,log basis x=2,
              xlabel={threads},ylabel={points/s/core},xmin=0.8,xmax=160,ymin=0,ymax=3500,
              legend pos=south west,legend style={font=\scriptsize,draw=none},
              grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
@@ -513,93 +635,9 @@ it compares what one core achieves and how much of that survives to the full nod
   \addlegendentry{Icelake}
 \end{axis}
 \end{tikzpicture}
-\end{center}
-
-\begin{center}\small
-\begin{tabular}{@{}llrrrrrr@{}}
-\toprule
- & & & \multicolumn{2}{c}{1 thread} & \multicolumn{2}{c}{full node} & \\
-\cmidrule(lr){4-5}\cmidrule(lr){6-7}
-machine & kernel & cores & setup (s) & pts/s & setup (s) & pts/s & speedup \\
-\midrule
-Rome    & Laplace & 128 & 15.575 & 3550 & 0.188 & 293\,568 & 82.8$\times$ (65\%) \\
-Genoa   & Laplace &  96 &  9.546 & 5793 & 0.121 & 457\,565 & 78.9$\times$ (82\%) \\
-Icelake & Laplace &  64 &  8.764 & 6310 & 0.177 & 313\,018 & 49.5$\times$ (77\%) \\
-\addlinespace
-Rome    & Stokes  & 128 & 30.945 & 1787 & 0.413 & 134\,016 & 74.9$\times$ (59\%) \\
-Genoa   & Stokes  &  96 & 18.117 & 3052 & 0.223 & 248\,323 & 81.2$\times$ (85\%) \\
-Icelake & Stokes  &  64 & 18.977 & 2914 & 0.410 & 134\,861 & 46.3$\times$ (72\%) \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\noindent
-Per core at one thread, Icelake and Genoa are $1.6$--$1.8\times$ Rome (Laplace $6310$ and $5793$
-against $3550$). Rome is the only one of the three without AVX-512, and it is the only one
-compiled to AVX2, so that gap is the expected place for the vector width to show.
-
-Per core at the full node the ordering is the same but the margins narrow, because all three lose
-throughput with width and Rome loses the most: $-35\%$ from 1 thread to 128, against $-18\%$
-(Genoa, to 96) and $-22\%$ (Icelake, to 64). Genoa holds $82$--$85\%$ efficiency at 96 threads
-where Rome is at $59$--$65\%$ at 128; part of that is simply that Rome is asked to go further, but
-Rome is also below Genoa at matched width (73\% vs 82\% at 64 threads, Laplace).
-
-The last column pair is the absolute throughput: Genoa wins on aggregate despite having fewer
-cores than Rome, and Icelake matches Rome with half the cores.
-
-Two things bound every curve and are visible in all three: at the widest setting there are only
-$384/N$ elements per thread in the self loop, which is coarse for \texttt{schedule(static)} (3 per
-thread on Rome at 128); and \texttt{GreensDensityError} in the driver is serial, so it does not
-shrink with width. It is excluded from these timings, but it does mean whole-run time scales
-worse than the table suggests. Stokes is uniformly a little below Laplace, consistent with its
-larger per-target working set.
-
-\subsection{Other node types}
-
-Not yet run. \texttt{scripts/bench-cubed-sphere.sbatch} takes the architecture and the width from
-the submit line, so one script covers every node type:
-\begin{center}\footnotesize
-\begin{tabular}{@{}ll@{}}
-Intel Icelake, 64 cores & \texttt{sbatch -C icelake -{}-cpus-per-task=64 scripts/bench-cubed-sphere.sbatch} \\
-AMD Genoa, 96 cores     & \texttt{sbatch -C genoa~~ -{}-cpus-per-task=96 scripts/bench-cubed-sphere.sbatch} \\
-\end{tabular}
-\end{center}
-The scaling section runs the full width and then powers of two down to 1, so a 96-core node gives
-$96, 64, 32, \dots, 1$ and the curves stay comparable across machines with different core counts.
-Each architecture builds into its own \texttt{bin.<tag>/} and \texttt{obj.<tag>/} and nothing
-writes \texttt{./bin}. That is not tidiness: the Makefile compiles with \texttt{-march=native}, so
-an Icelake or Genoa binary carries AVX-512 and dies with \texttt{SIGILL} on the Zen 2
-workstations, which share this home filesystem.
-
-\vspace{1em}
-\hrule
-\section{The two side by side}
-
-\begin{center}
-\begin{tabular}{@{}p{0.19\textwidth}p{0.36\textwidth}p{0.36\textwidth}@{}}
-\toprule
- & \textbf{self (Duffy)} & \textbf{near (split-at-foot)} \\
-\midrule
-kills the singularity by & the Jacobian $s|\mathbf{a}\times\mathbf{b}|$
-   & refinement toward the foot \\[2pt]
-geometry split & 4 triangles at the target
-   & 4 sub-elements at the foot, then bisection \\[2pt]
-cells per target & 4
-   & $\mathcal{O}(10)$, distance-dependent \\[2pt]
-what is cached & per $(N,\text{digits})$: the whole triangle table
-   & per $N$: the $\text{shell}_k/\text{core}_k$ operator ladder \\[2pt]
-what is per-target & the $t$-rule (metric-aware $t^\ast$, $d/L$)
-   & the foot, the cell list, the corner-angle order \\[2pt]
-metric enters via & $t^\ast$ and the peak width at $(u_0,v_0)$
-   & surface speeds, and $\varphi$ at the foot \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\noindent
-Both share the same leaf-level machinery --- interpolate to quadrature nodes, form the surface
-geometry, evaluate the kernel with the target at the origin, fold in weights, project back with
-the adjoint --- and both are written so that the per-target work is GEMMs against precomputed
-operators rather than freshly built ones.
+\caption{Single-layer setup at order 12, 8 patches per face ($384$ elements, $N=55{,}296$ nodes), twist
+$\pi/6$, tol $10^{-9}$. The double layer is timed separately and is not folded in; it costs about the same again. Speedup and
+efficiency are against 1 thread on the same machine.}
+\end{figure}
 
 \end{document}
