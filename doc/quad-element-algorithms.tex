@@ -375,122 +375,185 @@ the parametrisation shears.
 
 \subsection{Convergence}
 
-Order 12, 12 patches per face ($864$ elements, $124{,}416$ nodes). \texttt{DL[1]} is the exact
-identity $D[q]=-q/2$; \texttt{greens\_sol} is the on-surface identity $S[\partial_n u]-D[u]=u$;
-\texttt{greens\_den} is the interpolation error of the densities between nodes.
+Order 12, 12 patches per face ($864$ elements, $124{,}416$ nodes). \emph{error} is the on-surface Green's identity
+$S[\partial_n u]-D[u]=u$, relative to $\max|u|$; \emph{error-density} is the interpolation error
+of the two densities at off-node parameters, i.e.\ how well the order-12 patch represents them.
 
 \begin{center}\small
-\begin{tabular}{@{}llllll@{}}
+\begin{tabular}{@{}llll@{}}
 \toprule
-kernel, twist & tol & geom\_surf & DL[1] & greens\_den & greens\_sol \\
+kernel, twist & tol & error-density & error \\
 \midrule
-laplace, $\pi/6$ & $1.00\!\times\!10^{-3}$ & $1.11\!\times\!10^{-15}$ & $2.34\!\times\!10^{-7}$ & $7.18\!\times\!10^{-14}$ & $2.14\!\times\!10^{-7}$ \\
- & $1.00\!\times\!10^{-6}$ & $1.11\!\times\!10^{-15}$ & $2.14\!\times\!10^{-10}$ & $7.18\!\times\!10^{-14}$ & $3.73\!\times\!10^{-10}$ \\
- & $1.00\!\times\!10^{-9}$ & $1.11\!\times\!10^{-15}$ & $3.85\!\times\!10^{-12}$ & $7.18\!\times\!10^{-14}$ & $3.42\!\times\!10^{-12}$ \\
- & $1.00\!\times\!10^{-12}$ & $1.11\!\times\!10^{-15}$ & $4.96\!\times\!10^{-13}$ & $7.18\!\times\!10^{-14}$ & $3.32\!\times\!10^{-13}$ \\
+laplace, $\pi/6$ & $1.00\!\times\!10^{-3}$ & $7.18\!\times\!10^{-14}$ & $2.14\!\times\!10^{-7}$ \\
+ & $1.00\!\times\!10^{-6}$ & $7.18\!\times\!10^{-14}$ & $3.73\!\times\!10^{-10}$ \\
+ & $1.00\!\times\!10^{-9}$ & $7.18\!\times\!10^{-14}$ & $3.42\!\times\!10^{-12}$ \\
+ & $1.00\!\times\!10^{-12}$ & $7.18\!\times\!10^{-14}$ & $3.32\!\times\!10^{-13}$ \\
 \addlinespace
-laplace, $\pi/2$ & $1.00\!\times\!10^{-3}$ & $1.11\!\times\!10^{-15}$ & $2.23\!\times\!10^{-7}$ & $4.89\!\times\!10^{-11}$ & $2.44\!\times\!10^{-7}$ \\
- & $1.00\!\times\!10^{-6}$ & $1.11\!\times\!10^{-15}$ & $6.01\!\times\!10^{-10}$ & $4.89\!\times\!10^{-11}$ & $8.52\!\times\!10^{-10}$ \\
- & $1.00\!\times\!10^{-9}$ & $1.11\!\times\!10^{-15}$ & $4.89\!\times\!10^{-11}$ & $4.89\!\times\!10^{-11}$ & $4.07\!\times\!10^{-11}$ \\
- & $1.00\!\times\!10^{-12}$ & $1.11\!\times\!10^{-15}$ & $2.07\!\times\!10^{-12}$ & $4.89\!\times\!10^{-11}$ & $2.71\!\times\!10^{-12}$ \\
+laplace, $\pi/2$ & $1.00\!\times\!10^{-3}$ & $4.89\!\times\!10^{-11}$ & $2.44\!\times\!10^{-7}$ \\
+ & $1.00\!\times\!10^{-6}$ & $4.89\!\times\!10^{-11}$ & $8.52\!\times\!10^{-10}$ \\
+ & $1.00\!\times\!10^{-9}$ & $4.89\!\times\!10^{-11}$ & $4.07\!\times\!10^{-11}$ \\
+ & $1.00\!\times\!10^{-12}$ & $4.89\!\times\!10^{-11}$ & $2.71\!\times\!10^{-12}$ \\
 \addlinespace
-laplace, $\pi$ & $1.00\!\times\!10^{-3}$ & $3.11\!\times\!10^{-15}$ & $1.50\!\times\!10^{-6}$ & $4.28\!\times\!10^{-8}$ & $2.02\!\times\!10^{-6}$ \\
- & $1.00\!\times\!10^{-6}$ & $3.11\!\times\!10^{-15}$ & $1.02\!\times\!10^{-8}$ & $4.28\!\times\!10^{-8}$ & $1.63\!\times\!10^{-8}$ \\
- & $1.00\!\times\!10^{-9}$ & $3.11\!\times\!10^{-15}$ & $1.22\!\times\!10^{-10}$ & $4.28\!\times\!10^{-8}$ & $2.04\!\times\!10^{-10}$ \\
- & $1.00\!\times\!10^{-12}$ & $3.11\!\times\!10^{-15}$ & $4.93\!\times\!10^{-12}$ & $4.28\!\times\!10^{-8}$ & $4.65\!\times\!10^{-11}$ \\
+laplace, $\pi$ & $1.00\!\times\!10^{-3}$ & $4.28\!\times\!10^{-8}$ & $2.02\!\times\!10^{-6}$ \\
+ & $1.00\!\times\!10^{-6}$ & $4.28\!\times\!10^{-8}$ & $1.63\!\times\!10^{-8}$ \\
+ & $1.00\!\times\!10^{-9}$ & $4.28\!\times\!10^{-8}$ & $2.04\!\times\!10^{-10}$ \\
+ & $1.00\!\times\!10^{-12}$ & $4.28\!\times\!10^{-8}$ & $4.65\!\times\!10^{-11}$ \\
 \addlinespace
-stokes, $\pi/6$ & $1.00\!\times\!10^{-3}$ & $1.11\!\times\!10^{-15}$ & $2.43\!\times\!10^{-5}$ & $2.25\!\times\!10^{-13}$ & $4.25\!\times\!10^{-6}$ \\
- & $1.00\!\times\!10^{-6}$ & $1.11\!\times\!10^{-15}$ & $2.72\!\times\!10^{-8}$ & $2.25\!\times\!10^{-13}$ & $4.66\!\times\!10^{-9}$ \\
- & $1.00\!\times\!10^{-9}$ & $1.11\!\times\!10^{-15}$ & $9.29\!\times\!10^{-10}$ & $2.25\!\times\!10^{-13}$ & $1.07\!\times\!10^{-10}$ \\
- & $1.00\!\times\!10^{-12}$ & $1.11\!\times\!10^{-15}$ & $7.09\!\times\!10^{-11}$ & $2.25\!\times\!10^{-13}$ & $7.68\!\times\!10^{-12}$ \\
+stokes, $\pi/6$ & $1.00\!\times\!10^{-3}$ & $2.25\!\times\!10^{-13}$ & $4.25\!\times\!10^{-6}$ \\
+ & $1.00\!\times\!10^{-6}$ & $2.25\!\times\!10^{-13}$ & $4.66\!\times\!10^{-9}$ \\
+ & $1.00\!\times\!10^{-9}$ & $2.25\!\times\!10^{-13}$ & $1.07\!\times\!10^{-10}$ \\
+ & $1.00\!\times\!10^{-12}$ & $2.25\!\times\!10^{-13}$ & $7.68\!\times\!10^{-12}$ \\
 \addlinespace
-stokes, $\pi/2$ & $1.00\!\times\!10^{-3}$ & $1.11\!\times\!10^{-15}$ & $4.53\!\times\!10^{-5}$ & $1.54\!\times\!10^{-10}$ & $8.06\!\times\!10^{-6}$ \\
- & $1.00\!\times\!10^{-6}$ & $1.11\!\times\!10^{-15}$ & $1.66\!\times\!10^{-7}$ & $1.54\!\times\!10^{-10}$ & $3.10\!\times\!10^{-8}$ \\
- & $1.00\!\times\!10^{-9}$ & $1.11\!\times\!10^{-15}$ & $8.07\!\times\!10^{-9}$ & $1.54\!\times\!10^{-10}$ & $8.89\!\times\!10^{-10}$ \\
- & $1.00\!\times\!10^{-12}$ & $1.11\!\times\!10^{-15}$ & $6.03\!\times\!10^{-10}$ & $1.54\!\times\!10^{-10}$ & $5.98\!\times\!10^{-11}$ \\
+stokes, $\pi/2$ & $1.00\!\times\!10^{-3}$ & $1.54\!\times\!10^{-10}$ & $8.06\!\times\!10^{-6}$ \\
+ & $1.00\!\times\!10^{-6}$ & $1.54\!\times\!10^{-10}$ & $3.10\!\times\!10^{-8}$ \\
+ & $1.00\!\times\!10^{-9}$ & $1.54\!\times\!10^{-10}$ & $8.89\!\times\!10^{-10}$ \\
+ & $1.00\!\times\!10^{-12}$ & $1.54\!\times\!10^{-10}$ & $5.98\!\times\!10^{-11}$ \\
 \addlinespace
-stokes, $\pi$ & $1.00\!\times\!10^{-3}$ & $3.11\!\times\!10^{-15}$ & $8.16\!\times\!10^{-5}$ & $1.58\!\times\!10^{-7}$ & $1.36\!\times\!10^{-5}$ \\
- & $1.00\!\times\!10^{-6}$ & $3.11\!\times\!10^{-15}$ & $5.95\!\times\!10^{-7}$ & $1.58\!\times\!10^{-7}$ & $1.10\!\times\!10^{-7}$ \\
- & $1.00\!\times\!10^{-9}$ & $3.11\!\times\!10^{-15}$ & $1.21\!\times\!10^{-8}$ & $1.58\!\times\!10^{-7}$ & $8.76\!\times\!10^{-10}$ \\
- & $1.00\!\times\!10^{-12}$ & $3.11\!\times\!10^{-15}$ & $8.55\!\times\!10^{-10}$ & $1.58\!\times\!10^{-7}$ & $3.19\!\times\!10^{-10}$ \\
+stokes, $\pi$ & $1.00\!\times\!10^{-3}$ & $1.58\!\times\!10^{-7}$ & $1.36\!\times\!10^{-5}$ \\
+ & $1.00\!\times\!10^{-6}$ & $1.58\!\times\!10^{-7}$ & $1.10\!\times\!10^{-7}$ \\
+ & $1.00\!\times\!10^{-9}$ & $1.58\!\times\!10^{-7}$ & $8.76\!\times\!10^{-10}$ \\
+ & $1.00\!\times\!10^{-12}$ & $1.58\!\times\!10^{-7}$ & $3.19\!\times\!10^{-10}$ \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \noindent
-Three things to read off it. The geometry is resolved to $\sim10^{-15}$ at every twist, so it is
-never the limit here. \texttt{greens\_sol} tracks the requested tolerance over nine decades ---
+Three things to read off it. The geometry is resolved to $\sim10^{-15}$ at every twist (not shown),
+so it is never the limit here. The \emph{error} tracks the requested tolerance over nine decades ---
 at twist $\pi/6$, $2.1\times10^{-7}\!\to\!3.3\times10^{-13}$ --- until it meets a floor set by the
 \emph{parametrisation}, which degrades sharply with twist: at $\pi$ the best Laplace result is
 $4.7\times10^{-11}$ against $3.3\times10^{-13}$ at $\pi/6$, a factor of 140 for the same mesh and
-the same tolerance. And \texttt{greens\_sol} sits well \emph{below} \texttt{greens\_den} at high
+the same tolerance. And the \emph{error} sits well \emph{below} the \emph{error-density} at high
 twist ($4.7\times10^{-11}$ versus $4.3\times10^{-8}$): the identity is tested at nodes, where the
 densities are exact, and the quadrature averages the between-node error --- which is why
-\texttt{greens\_den} is a resolution indicator and not a bound.
+\emph{error-density} is a resolution indicator and not a bound.
 
 \subsection{OpenMP scaling}
 
 Order 12, 8 patches per face ($384$ elements, $55{,}296$ nodes), twist $\pi/6$, tol $10^{-9}$;
-\texttt{SelfInterac} plus \texttt{NearInterac} setup, timed inside the driver. AMD EPYC 7742,
-2 sockets, 128 cores, with \texttt{OMP\_PLACES=cores} and \texttt{OMP\_PROC\_BIND=close}.
+\texttt{SelfInterac} plus \texttt{NearInterac} setup, timed inside the driver, with
+\texttt{OMP\_PLACES=cores} and \texttt{OMP\_PROC\_BIND=close}. Three node types:
+
+\begin{center}\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+ & cores & AVX-512 & build \\
+\midrule
+AMD EPYC 7742 (Rome)      & $2\times64$ & no  & \texttt{-march=native} $\to$ AVX2 \\
+AMD EPYC 9474F (Genoa)    & $2\times48$ & yes & \texttt{-march=native} $\to$ AVX-512 \\
+Intel Xeon 8358 (Icelake) & $2\times32$ & yes & \texttt{-march=native} $\to$ AVX-512 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Points per second per core is the cross-architecture measure: it divides out the core count, so
+it compares what one core achieves and how much of that survives to the full node.
 
 \begin{center}
 \begin{tikzpicture}
-\begin{axis}[width=0.49\textwidth,height=5.4cm,xmode=log,ymode=log,log basis x=2,log basis y=2,
+\begin{axis}[width=0.49\textwidth,height=5.6cm,xmode=log,ymode=log,log basis x=2,log basis y=2,
              xlabel={threads},ylabel={speedup},xmin=0.8,xmax=160,ymin=0.8,ymax=160,
              legend pos=north west,legend style={font=\scriptsize,draw=none},
              grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
-             label style={font=\small}]
+             label style={font=\small},title style={font=\small},title={Laplace}]
   \addplot[dashed,cGrey,thick,domain=1:128,samples=2]{x}; \addlegendentry{ideal}
-  \addplot[cElem,thick,mark=*,mark size=1.5] table[x=thr,y=speedup] {data/scaling-epyc-laplace.dat};
-  \addlegendentry{Laplace}
-  \addplot[cTrg,thick,mark=square*,mark size=1.5] table[x=thr,y=speedup] {data/scaling-epyc-stokes.dat};
-  \addlegendentry{Stokes}
+  \addplot[cElem,thick,mark=*,mark size=1.4] table[x=thr,y=speedup] {data/scaling-rome-laplace.dat};
+  \addlegendentry{Rome}
+  \addplot[cTrg,thick,mark=square*,mark size=1.4] table[x=thr,y=speedup] {data/scaling-genoa-laplace.dat};
+  \addlegendentry{Genoa}
+  \addplot[black,thick,mark=triangle*,mark size=1.8] table[x=thr,y=speedup] {data/scaling-icelake-laplace.dat};
+  \addlegendentry{Icelake}
 \end{axis}
 \end{tikzpicture}
 \hfill
 \begin{tikzpicture}
-\begin{axis}[width=0.49\textwidth,height=5.4cm,xmode=log,log basis x=2,
+\begin{axis}[width=0.49\textwidth,height=5.6cm,xmode=log,log basis x=2,
+             xlabel={threads},ylabel={points/s/core},xmin=0.8,xmax=160,ymin=0,ymax=7000,
+             legend pos=south west,legend style={font=\scriptsize,draw=none},
+             grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
+             label style={font=\small},title style={font=\small},title={Laplace}]
+  \addplot[cElem,thick,mark=*,mark size=1.4] table[x=thr,y=pps] {data/scaling-rome-laplace.dat};
+  \addlegendentry{Rome}
+  \addplot[cTrg,thick,mark=square*,mark size=1.4] table[x=thr,y=pps] {data/scaling-genoa-laplace.dat};
+  \addlegendentry{Genoa}
+  \addplot[black,thick,mark=triangle*,mark size=1.8] table[x=thr,y=pps] {data/scaling-icelake-laplace.dat};
+  \addlegendentry{Icelake}
+\end{axis}
+\end{tikzpicture}
+\end{center}
+\vspace{-0.8em}
+\begin{center}
+\begin{tikzpicture}
+\begin{axis}[width=0.49\textwidth,height=5.6cm,xmode=log,log basis x=2,
              xlabel={threads},ylabel={parallel efficiency (\%)},xmin=0.8,xmax=160,ymin=50,ymax=105,
              legend pos=south west,legend style={font=\scriptsize,draw=none},
              grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
-             label style={font=\small}]
+             label style={font=\small},title style={font=\small},title={Laplace}]
   \addplot[dashed,cGrey,thick,domain=1:128,samples=2,forget plot]{100};
-  \addplot[cElem,thick,mark=*,mark size=1.5] table[x=thr,y=eff] {data/scaling-epyc-laplace.dat};
-  \addlegendentry{Laplace}
-  \addplot[cTrg,thick,mark=square*,mark size=1.5] table[x=thr,y=eff] {data/scaling-epyc-stokes.dat};
-  \addlegendentry{Stokes}
+  \addplot[cElem,thick,mark=*,mark size=1.4] table[x=thr,y=eff] {data/scaling-rome-laplace.dat};
+  \addlegendentry{Rome}
+  \addplot[cTrg,thick,mark=square*,mark size=1.4] table[x=thr,y=eff] {data/scaling-genoa-laplace.dat};
+  \addlegendentry{Genoa}
+  \addplot[black,thick,mark=triangle*,mark size=1.8] table[x=thr,y=eff] {data/scaling-icelake-laplace.dat};
+  \addlegendentry{Icelake}
+\end{axis}
+\end{tikzpicture}
+\hfill
+\begin{tikzpicture}
+\begin{axis}[width=0.49\textwidth,height=5.6cm,xmode=log,log basis x=2,
+             xlabel={threads},ylabel={points/s/core},xmin=0.8,xmax=160,ymin=0,ymax=3500,
+             legend pos=south west,legend style={font=\scriptsize,draw=none},
+             grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
+             label style={font=\small},title style={font=\small},title={Stokes}]
+  \addplot[cElem,thick,mark=*,mark size=1.4] table[x=thr,y=pps] {data/scaling-rome-stokes.dat};
+  \addlegendentry{Rome}
+  \addplot[cTrg,thick,mark=square*,mark size=1.4] table[x=thr,y=pps] {data/scaling-genoa-stokes.dat};
+  \addlegendentry{Genoa}
+  \addplot[black,thick,mark=triangle*,mark size=1.8] table[x=thr,y=pps] {data/scaling-icelake-stokes.dat};
+  \addlegendentry{Icelake}
 \end{axis}
 \end{tikzpicture}
 \end{center}
 
 \begin{center}\small
-\begin{tabular}{@{}rrrrrr@{}}
+\begin{tabular}{@{}llrrrrrr@{}}
 \toprule
-& \multicolumn{2}{c}{Laplace} & \multicolumn{2}{c}{Stokes} & \\
-\cmidrule(lr){2-3}\cmidrule(lr){4-5}
-threads & setup (s) & speedup & setup (s) & speedup & \\
+ & & \multicolumn{3}{c}{1 thread} & \multicolumn{3}{c}{full node} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}
+machine & kernel & cores & setup (s) & pts/s/core & setup (s) & pts/s/core & speedup \\
 \midrule
-  1 & 15.575 & \phantom{0}1.0$\times$ & 30.945 & \phantom{0}1.0$\times$ & \\
-  2 &  8.016 & \phantom{0}1.9$\times$ & 15.434 & \phantom{0}2.0$\times$ & \\
-  4 &  4.087 & \phantom{0}3.8$\times$ &  7.839 & \phantom{0}3.9$\times$ & \\
-  8 &  2.061 & \phantom{0}7.6$\times$ &  4.045 & \phantom{0}7.7$\times$ & \\
- 16 &  1.083 & 14.4$\times$           &  2.221 & 13.9$\times$           & \\
- 32 &  0.562 & 27.7$\times$           &  1.207 & 25.6$\times$           & \\
- 64 &  0.334 & 46.6$\times$           &  0.686 & 45.1$\times$           & \\
-128 &  0.188 & \textbf{82.8}$\times$  &  0.413 & \textbf{74.9}$\times$  & \\
+Rome    & Laplace & 128 & 15.575 & 3550 & 0.188 & 2294 & 82.8$\times$ (65\%) \\
+Genoa   & Laplace &  96 &  9.546 & 5793 & 0.121 & 4766 & 78.9$\times$ (82\%) \\
+Icelake & Laplace &  64 &  8.764 & 6310 & 0.177 & 4891 & 49.5$\times$ (77\%) \\
+\addlinespace
+Rome    & Stokes  & 128 & 30.945 & 1787 & 0.413 & 1047 & 74.9$\times$ (59\%) \\
+Genoa   & Stokes  &  96 & 18.117 & 3052 & 0.223 & 2587 & 81.2$\times$ (85\%) \\
+Icelake & Stokes  &  64 & 18.977 & 2914 & 0.410 & 2107 & 46.3$\times$ (72\%) \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \noindent
-Efficiency holds above 94\% to 8 threads and above 86\% to 32, then falls to 65\% (Laplace) and
-59\% (Stokes) at 128. The knee is at 64, where the second socket comes in. Two things bound the
-tail: at 128 threads there are only $384/128 = 3$ elements per thread in the self loop, which is
-coarse for \texttt{schedule(static)}; and \texttt{GreensDensityError} in the driver is serial, so
-it does not shrink with width at all --- it is excluded from these timings, but it does mean the
-whole-run time scales worse than the table suggests. Stokes is uniformly a little worse than
-Laplace, consistent with its larger per-target working set.
+Per core at one thread, Icelake and Genoa are $1.6$--$1.8\times$ Rome (Laplace $6310$ and $5793$
+against $3550$). Rome is the only one of the three without AVX-512, and it is the only one
+compiled to AVX2, so that gap is the expected place for the vector width to show.
+
+Per core at the full node the ordering is the same but the margins narrow, because all three lose
+throughput with width and Rome loses the most: $-35\%$ from 1 thread to 128, against $-18\%$
+(Genoa, to 96) and $-22\%$ (Icelake, to 64). Genoa holds $82$--$85\%$ efficiency at 96 threads
+where Rome is at $59$--$65\%$ at 128; part of that is simply that Rome is asked to go further, but
+Rome is also below Genoa at matched width (73\% vs 82\% at 64 threads, Laplace).
+
+In absolute terms the full node delivers $294$k, $458$k and $313$k points/s (Laplace) on Rome,
+Genoa and Icelake --- Genoa wins on aggregate despite having fewer cores than Rome, and Icelake
+matches Rome with half the cores.
+
+Two things bound every curve and are visible in all three: at the widest setting there are only
+$384/N$ elements per thread in the self loop, which is coarse for \texttt{schedule(static)} (3 per
+thread on Rome at 128); and \texttt{GreensDensityError} in the driver is serial, so it does not
+shrink with width. It is excluded from these timings, but it does mean whole-run time scales
+worse than the table suggests. Stokes is uniformly a little below Laplace, consistent with its
+larger per-target working set.
 
 \subsection{Other node types}
 

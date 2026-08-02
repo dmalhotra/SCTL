@@ -3,9 +3,9 @@
 #
 # The architecture and width come from the submit line, so one script covers every node type:
 #
-#   sbatch -C icelake --cpus-per-task=64 scripts/bench-cubed-sphere.sbatch
-#   sbatch -C genoa   --cpus-per-task=96 scripts/bench-cubed-sphere.sbatch
-#   sbatch -C rome    --cpus-per-task=128 scripts/bench-cubed-sphere.sbatch
+#   sbatch --export=ALL,TAG=icelake -C icelake --cpus-per-task=64  scripts/bench-cubed-sphere.sbatch
+#   sbatch --export=ALL,TAG=genoa   -C genoa   --cpus-per-task=96  scripts/bench-cubed-sphere.sbatch
+#   sbatch --export=ALL,TAG=rome    -C rome    --cpus-per-task=128 scripts/bench-cubed-sphere.sbatch
 #
 # Watch with `squeue -u $USER`; check the achieved efficiency afterwards with `seff <jobid>`.
 #
@@ -32,7 +32,9 @@ cd "${SLURM_SUBMIT_DIR:-$PWD}"
 mkdir -p doc/data
 
 NT="${SLURM_CPUS_PER_TASK:-$(nproc)}"
-TAG="${SLURM_JOB_CONSTRAINTS:-}"
+# Tag for the build dir and the output file. SLURM_JOB_CONSTRAINTS is not set by every Slurm
+# version, so allow an explicit override:  sbatch --export=ALL,TAG=genoa -C genoa ...
+TAG="${TAG:-${SLURM_JOB_CONSTRAINTS:-}}"
 if [ -z "$TAG" ]; then
   TAG=$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //; s/[^A-Za-z0-9]/_/g' | cut -c1-20)
 fi
