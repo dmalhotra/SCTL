@@ -3,9 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <atomic>
 #include <cstdlib>
-#include <mutex>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -21,6 +19,7 @@
 
 #include <array>
 #include <map>
+#include <mutex>
 #include <tuple>
 
 namespace sctl {
@@ -1017,78 +1016,73 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
     return std::max<Integer>(order/2, (Integer)std::ceil(per_digit*(double)digits));
   }
 
-  template <class Real> template <Integer order> const typename QuadElemList<Real>::DuffySelfTable& QuadElemList<Real>::DuffyTable(const Integer digits) {
-    // Fixed by (order, digits) alone -- q_s derives from digits and the t-rule is the only
-    // metric-dependent operator -- so one atomic slot per accuracy level suffices; reads after
-    // init are lock-free.
-    SCTL_ASSERT(digits >= 0 && digits < MaxDigits);
-    static std::atomic<DuffySelfTable*> slot[MaxDigits] = {};
-    static std::mutex mtx;
-    if (DuffySelfTable* p = slot[digits].load(std::memory_order_acquire)) return *p;
-    std::lock_guard<std::mutex> lock(mtx);
-    if (DuffySelfTable* p = slot[digits].load(std::memory_order_relaxed)) return *p;
+  template <class Real> template <Integer order> const typename QuadElemList<Real>::DuffySelfTable& QuadElemList<Real>::DuffyTable() {
+    // Fixed by `order` alone: q_s = order and the t-rule -- the only accuracy- and
+    // metric-dependent part -- is built per target, not here. Function-local static, so it
+    // self-initializes on first use from any thread and needs no external warm-up.
+    static const DuffySelfTable table = []() {
+      DuffySelfTable tbl;
+      static const Integer qs_ov = []() { const char* v = std::getenv("SCTL_DUFFY_QS"); return v ? (Integer)atol(v) : (Integer)0; }();
+      const Integer qs = (qs_ov > 0 ? qs_ov : order);   // q_s = order (see DuffyTOrder note)
+      tbl.ns = qs;
+      LegQuadRule<Real>::ComputeNdsWts(&tbl.sn, &tbl.sw, qs);
 
-    DuffySelfTable* tbl = new DuffySelfTable();
-    static const Integer qs_ov = []() { const char* v = std::getenv("SCTL_DUFFY_QS"); return v ? (Integer)atol(v) : (Integer)0; }();
-    const Integer qs = (qs_ov > 0 ? qs_ov : order);   // q_s = order (see DuffyTOrder note)
-    tbl->ns = qs;
-    LegQuadRule<Real>::ComputeNdsWts(&tbl->sn, &tbl->sw, qs);
-
-    const Vector<Real>& nds = ParamNodes(order);
-    const Matrix<Real>& D = DiffMat<order>();
-    tbl->tri.resize(4*(size_t)order*order);
-    const Real cu[4] = {0,1,1,0}, cv[4] = {0,0,1,1};
-    for (Integer ti = 0; ti < order; ti++) for (Integer tj = 0; tj < order; tj++) {
-      const Real u0 = nds[ti], v0 = nds[tj];
-      for (Integer kt = 0; kt < 4; kt++) {
-        DuffyTri& T = tbl->tri[((size_t)ti*order + tj)*4 + kt];
-        const Real a[2] = {cu[kt]-u0, cv[kt]-v0};
-        const Real b[2] = {cu[(kt+1)%4]-u0, cv[(kt+1)%4]-v0};
-        const Real e[2] = {b[0]-a[0], b[1]-a[1]};
-        T.J0 = a[0]*b[1] - a[1]*b[0];
-        SCTL_ASSERT_MSG(T.J0 > 0, "Duffy triangle orientation");
-        T.swap_ab = (fabs<Real>(e[0]) < fabs<Real>(e[1]));  // e is axis aligned
-        T.nsign = (T.swap_ab ? (Real)-1 : (Real)1);
-        { // parameter-space foot; the metric correction (cot(theta) shift) is per target
-          const Real am = e[0]*e[0] + e[1]*e[1];
-          Real ts = -(a[0]*e[0] + a[1]*e[1])/am;
-          ts = (ts < 0 ? (Real)0 : (ts > 1 ? (Real)1 : ts));
-          const Real c[2] = {a[0]+ts*e[0], a[1]+ts*e[1]};
-          T.Llen = sqrt<Real>(am);
-          T.tstarI = ts;
-          T.ddI = sqrt<Real>(c[0]*c[0] + c[1]*c[1])/T.Llen;
-        }
-        const Real al0 = (T.swap_ab ? v0 : u0), be0 = (T.swap_ab ? u0 : v0);
-        const Real aal = (T.swap_ab ? a[1] : a[0]), abe = (T.swap_ab ? a[0] : a[1]);
-        const Real eal = (T.swap_ab ? e[1] : e[0]);
-        { // collapsed direction beta(s_i): value and derivative side by side
-          Vector<Real> bv(qs);
-          for (Integer i = 0; i < qs; i++) bv[i] = be0 + tbl->sn[i]*abe;
-          Matrix<Real> Wb(order, qs), WbD(order, qs);
-          { Vector<Real> t((Long)order*qs, Wb.begin(), false); LagrangeInterp<Real>::Interpolate(t, nds, bv); }
-          Matrix<Real>::GEMM(WbD, D, Wb);
-          T.WbC.ReInit(order, 2*qs);
-          for (Integer r = 0; r < order; r++) for (Integer i = 0; i < qs; i++) { T.WbC[r][i] = Wb[r][i]; T.WbC[r][qs+i] = WbD[r][i]; }
-          T.WbT = Wb.Transpose();
-        }
-        { // alpha(s_i,.) is affine in t, so its Lagrange values at `order` reference nodes
-          // reproduce it exactly; the t-rule then enters only through Tt.
-          T.MiC.ReInit(qs); T.MiT.ReInit(qs);
-          Vector<Real> av(order);
-          Matrix<Real> Mi(order, order), MiD(order, order);
-          for (Integer i = 0; i < qs; i++) {
-            for (Integer k = 0; k < order; k++) av[k] = al0 + tbl->sn[i]*(aal + nds[k]*eal);
-            { Vector<Real> t((Long)order*order, Mi.begin(), false); LagrangeInterp<Real>::Interpolate(t, nds, av); }
-            Matrix<Real>::GEMM(MiD, D, Mi);
-            T.MiC[i].ReInit(order, 2*order);
-            for (Integer r = 0; r < order; r++) for (Integer k = 0; k < order; k++) { T.MiC[i][r][k] = Mi[r][k]; T.MiC[i][r][order+k] = MiD[r][k]; }
-            T.MiT[i] = Mi.Transpose();
+      const Vector<Real>& nds = ParamNodes(order);
+      const Matrix<Real>& D = DiffMat<order>();
+      tbl.tri.resize(4*(size_t)order*order);
+      const Real cu[4] = {0,1,1,0}, cv[4] = {0,0,1,1};
+      for (Integer ti = 0; ti < order; ti++) for (Integer tj = 0; tj < order; tj++) {
+        const Real u0 = nds[ti], v0 = nds[tj];
+        for (Integer kt = 0; kt < 4; kt++) {
+          DuffyTri& T = tbl.tri[((size_t)ti*order + tj)*4 + kt];
+          const Real a[2] = {cu[kt]-u0, cv[kt]-v0};
+          const Real b[2] = {cu[(kt+1)%4]-u0, cv[(kt+1)%4]-v0};
+          const Real e[2] = {b[0]-a[0], b[1]-a[1]};
+          T.J0 = a[0]*b[1] - a[1]*b[0];
+          SCTL_ASSERT_MSG(T.J0 > 0, "Duffy triangle orientation");
+          T.swap_ab = (fabs<Real>(e[0]) < fabs<Real>(e[1]));  // e is axis aligned
+          T.nsign = (T.swap_ab ? (Real)-1 : (Real)1);
+          { // parameter-space foot; the metric correction (cot(theta) shift) is per target
+            const Real am = e[0]*e[0] + e[1]*e[1];
+            Real ts = -(a[0]*e[0] + a[1]*e[1])/am;
+            ts = (ts < 0 ? (Real)0 : (ts > 1 ? (Real)1 : ts));
+            const Real c[2] = {a[0]+ts*e[0], a[1]+ts*e[1]};
+            T.Llen = sqrt<Real>(am);
+            T.tstarI = ts;
+            T.ddI = sqrt<Real>(c[0]*c[0] + c[1]*c[1])/T.Llen;
+          }
+          const Real al0 = (T.swap_ab ? v0 : u0), be0 = (T.swap_ab ? u0 : v0);
+          const Real aal = (T.swap_ab ? a[1] : a[0]), abe = (T.swap_ab ? a[0] : a[1]);
+          const Real eal = (T.swap_ab ? e[1] : e[0]);
+          { // collapsed direction beta(s_i): value and derivative side by side
+            Vector<Real> bv(qs);
+            for (Integer i = 0; i < qs; i++) bv[i] = be0 + tbl.sn[i]*abe;
+            Matrix<Real> Wb(order, qs), WbD(order, qs);
+            { Vector<Real> t((Long)order*qs, Wb.begin(), false); LagrangeInterp<Real>::Interpolate(t, nds, bv); }
+            Matrix<Real>::GEMM(WbD, D, Wb);
+            T.WbC.ReInit(order, 2*qs);
+            for (Integer r = 0; r < order; r++) for (Integer i = 0; i < qs; i++) { T.WbC[r][i] = Wb[r][i]; T.WbC[r][qs+i] = WbD[r][i]; }
+            T.WbT = Wb.Transpose();
+          }
+          { // alpha(s_i,.) is affine in t, so its Lagrange values at `order` reference nodes
+            // reproduce it exactly; the t-rule then enters only through Tt.
+            T.MiC.ReInit(qs); T.MiT.ReInit(qs);
+            Vector<Real> av(order);
+            Matrix<Real> Mi(order, order), MiD(order, order);
+            for (Integer i = 0; i < qs; i++) {
+              for (Integer k = 0; k < order; k++) av[k] = al0 + tbl.sn[i]*(aal + nds[k]*eal);
+              { Vector<Real> t((Long)order*order, Mi.begin(), false); LagrangeInterp<Real>::Interpolate(t, nds, av); }
+              Matrix<Real>::GEMM(MiD, D, Mi);
+              T.MiC[i].ReInit(order, 2*order);
+              for (Integer r = 0; r < order; r++) for (Integer k = 0; k < order; k++) { T.MiC[i][r][k] = Mi[r][k]; T.MiC[i][r][order+k] = MiD[r][k]; }
+              T.MiT[i] = Mi.Transpose();
+            }
           }
         }
       }
-    }
-    slot[digits].store(tbl, std::memory_order_release);
-    return *tbl;
+      return tbl;
+    }();
+    return table;
   }
 
   template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
@@ -1103,7 +1097,7 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
     constexpr Integer NA = 2*COORD_DIM;   // Ai, Adi rows fed to [Mi | Mi']
     M_acc.ReInit(nnode, C); M_acc.SetZero();
 
-    const DuffySelfTable& tbl = DuffyTable<order>(digits);
+    const DuffySelfTable& tbl = DuffyTable<order>();
     const Long ns = tbl.ns, nt = DuffyTOrder(digits, order, KDIM0);
     // s-nodes contracted per stage-2b GEMM. Tt does not depend on the s-node, so the whole
     // s-range goes in one (ns*NR x order)(order x nt) call instead of ns thin (NR x order)
@@ -1317,15 +1311,13 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
 
     SCTL_ASSERT((Long)M_lst.Dim() == qel.nelem);
 
-    // Pre-warm the (thread-safe) static rule caches serially: the init lambdas fill all
-    // `order` indices in one shot, so the OpenMP loop below never serializes on first-touch
-    // static initialization. SetupSelf (this serial SelfInterac) always precedes SetupNear,
-    // whose NearInterac runs inside an OMP parallel region -- so warm BOTH the self- and the
-    // near caches here to keep first-touch off the concurrent near path. ParamNodes / DiffMat
-    // are warmed transitively by the builds below.
-    DuffyTable<order>(digits);
-    NearGradeTable<order>(NearQuadOrder(digits));
-    NearBEllipse(digits);
+    // Build this order's Duffy tables before the parallel loop below, so the first iteration
+    // does not serialize the others on first-touch static init. Purely an optimization for
+    // THIS call: every cache in both schemes is a function-local static and initializes itself
+    // on first use from whichever thread gets there. Nothing here is warmed on NearInterac's
+    // behalf -- the two entry points are independent and may be called in either order.
+    // ParamNodes / DiffMat are warmed transitively by the build.
+    DuffyTable<order>();
 
     // Per-element singular blocks are independent: each writes its own M_lst[elem_idx],
     // all temporaries are loop-local, and GetGeom/rule reads are const. Not nested (SetupSelf
@@ -1682,17 +1674,23 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
             x_param[pind * Order + nind] = (nodes[nind] + pind) / Nelem_perside; // TODO check
         }
     }
-    static Vector<Real> coord0;
-    coord0.ReInit(x_param.Dim() * x_param.Dim() * COORD_DIM); // resize every call (the static ctor runs only once)
+    Vector<Real> coord0(x_param.Dim() * x_param.Dim() * COORD_DIM);
     for (int xind=0; xind < x_param.Dim(); xind ++) {
         for (int yind=0; yind < x_param.Dim(); yind ++) {
             const Long idx = xind * x_param.Dim() * COORD_DIM + yind * COORD_DIM;
             coord0[idx + 0] = x_param[xind];
             coord0[idx + 1] = x_param[yind];
-            coord0[idx + 2] = 0.; 
+            coord0[idx + 2] = 0.;
         }
     }
-    return coord0;
+    // Built once per (Order, Nelem_perside). The returned reference has to stay valid across
+    // later calls with other arguments, so the grid is cached rather than rebuilt into one
+    // shared buffer -- the previous static was rewritten on every call, which both raced
+    // between threads and invalidated any reference a caller still held.
+    static std::mutex mtx;
+    static std::map<std::pair<Integer,Integer>, Vector<Real>> cache;
+    std::lock_guard<std::mutex> lock(mtx);
+    return cache.emplace(std::make_pair(Order, Nelem_perside), std::move(coord0)).first->second;
   }
 
   template <class Real> void QuadElemList<Real>::Write(const std::string& fname, const Comm& comm) const {

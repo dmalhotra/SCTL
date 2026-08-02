@@ -139,11 +139,12 @@ namespace sctl {
 
     private:
 
-      // Private helpers, grouped by which public entry point reaches them.
-      // Two classifications are indirect and flagged where they occur: the near-rule
-      // accessors are also called by SelfInteracHelper, but only to pre-warm their caches
-      // before the concurrent near phase; and the geometry helpers at the bottom are reached
-      // from SelfInterac only through the public GetGeom.
+      // Private helpers, grouped by which public entry point reaches them. SelfInterac and
+      // NearInterac are independent and may be called in either order: every cache below is a
+      // function-local static that initializes itself on first use, from whichever thread and
+      // whichever entry point gets there first. Neither warms anything for the other.
+      // One classification is indirect and flagged in place: the geometry helpers in the last
+      // group are reached from SelfInterac only through the public GetGeom.
 
       // ======================= reached from BOTH entry points =======================
 
@@ -183,7 +184,7 @@ namespace sctl {
         Vector<Real> sn, sw;
         std::vector<DuffyTri> tri;   // 4*order*order entries, indexed (ti*order + tj)*4 + tri
       };
-      template <Integer order> static const DuffySelfTable& DuffyTable(const Integer digits);
+      template <Integer order> static const DuffySelfTable& DuffyTable();
       static Integer DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0);
       template <Integer order, class Kernel> static void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
       template <Integer order, class Kernel> static void SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits);
@@ -242,11 +243,6 @@ namespace sctl {
       // than the semi-major reach by a^2/b^2 ~ 1.9x, since the foot lands on a cell ENDPOINT).
       // SCTL_NEAR_QORDER / SCTL_NEAR_BELLIPSE override each, for tuning near while self is held
       // at a much tighter tolerance.
-      //
-      // These three and NearGradeTable below are also called by SelfInteracHelper, which makes
-      // them formally reachable from SelfInterac too -- but only to pre-warm their caches. Self
-      // runs before SetupNear and is serial, so warming there keeps first-touch static init off
-      // the concurrent near path. No self quadrature reads them.
       static void NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder);
       static Integer NearQuadOrder(const Integer digits);
       static Real NearBEllipse(const Integer digits);

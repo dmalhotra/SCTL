@@ -51,7 +51,7 @@ namespace sctl {
   // every target, so the node count per target is exactly 4*ns*nt.
   template <class Real> struct QuadElemTestAccess {
     template <Integer order> static void SelfRuleSizes(const Integer digits, const Integer kdim0) {
-      const Integer ns = QuadElemList<Real>::template DuffyTable<order>(digits).ns;
+      const Integer ns = QuadElemList<Real>::template DuffyTable<order>().ns;
       const Integer nt = QuadElemList<Real>::DuffyTOrder(digits, order, kdim0);
       std::printf("self quadrature (Duffy, order=%d, digits=%d, kdim0=%d):\n",
                   (int)order, (int)digits, (int)kdim0);
