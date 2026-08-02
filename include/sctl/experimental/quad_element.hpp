@@ -19,32 +19,20 @@ namespace sctl {
       static constexpr Integer COORD_DIM = 3;
 
     public:
-      /** Constructor. */
       QuadElemList() {}
 
       /**
        * Construct from nodal coordinates.
        * @param[in] order polynomial order of each element.
        * @param[in] coord node coords, AoS {x1,y1,z1,...,xn,yn,zn}.
-       * @param[in] comm communicator. When comm.Size() > 1, `coord` is assumed to
-       * hold the full (globally-replicated) mesh and only this rank's contiguous
-       * element slice is kept; with the default single-process comm the whole mesh
-       * is used.
+       * @param[in] comm communicator. When comm.Size() > 1, `coord` is taken to hold the full
+       * (globally-replicated) mesh and only this rank's contiguous element slice is kept.
        */
       template <class ValueType> QuadElemList(Integer order, const Vector<ValueType>& coord, const Comm& comm = Comm::Self());
 
-      /**
-       * Initialize from nodal coordinates.
-       * @param[in] order polynomial order of each element.
-       * @param[in] coord node coords, AoS {x1,y1,z1,...,xn,yn,zn}.
-       * @param[in] comm communicator. When comm.Size() > 1, `coord` is assumed to
-       * hold the full (globally-replicated) mesh and only this rank's contiguous
-       * element slice is kept; with the default single-process comm the whole mesh
-       * is used.
-       */
+      /** @see QuadElemList(Integer, const Vector<ValueType>&, const Comm&) */
       template <class ValueType> void Init(Integer order, const Vector<ValueType>& coord, const Comm& comm = Comm::Self());
 
-      /** Destructor. */
       virtual ~QuadElemList() {}
 
       /** Number of elements. */
@@ -77,31 +65,19 @@ namespace sctl {
        */
       template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
 
-      /**
-       * Reference-space Gauss-Legendre nodes in [0,1] for a given order.
-       * @param[in] Order polynomial order of the element.
-       */
+      /** Reference-space Gauss-Legendre nodes in [0,1]. */
       static const Vector<Real>& ParamNodes(const Integer Order);
 
       /**
-       * Equidistant tensor grid of Nelem_perside panels of GL nodes in [0,1] (z left zero).
-       * @param[in] Order polynomial order of the element.
+       * Equidistant tensor grid of Nelem_perside x Nelem_perside panels of GL nodes, z zero.
        * @param[in] Nelem_perside panels per direction, split equally.
        */
       static const Vector<Real>& ParamGrid(const Integer Order, const Integer Nelem_perside);
 
-      /**
-       * Write elements to file.
-       * @param[in] fname filename.
-       * @param[in] comm communicator.
-       */
+      /** Write elements to file. */
       void Write(const std::string& fname, const Comm& comm = Comm::Self()) const;
 
-      /**
-       * Read elements from file.
-       * @param[in] fname filename.
-       * @param[in] comm communicator.
-       */
+      /** Read elements from file, partitioned across `comm` as in Init. */
       template <class ValueType> void Read(const std::string& fname, const Comm& comm = Comm::Self());
 
       /**
@@ -120,16 +96,11 @@ namespace sctl {
 
       /**
        * Write VTU data to file.
-       * @param[in] fname filename.
        * @param[in] F nodal data, AoS {Ux1,Uy1,Uz1,...}.
-       * @param[in] comm communicator.
        */
       void WriteVTK(const std::string& fname, const Vector<Real>& F = Vector<Real>(), const Comm& comm = Comm::Self()) const;
 
-      /**
-       * Copy the element-list, possibly at a different precision.
-       * @param[in] elem_lst input element-list.
-       */
+      /** Copy the element-list, possibly at a different precision. */
       template <class ValueType> void Copy(QuadElemList<ValueType>& elem_lst) const;
 
       template<typename> friend class QuadElemList;
@@ -139,37 +110,32 @@ namespace sctl {
 
     private:
 
-      // Private helpers, grouped by which public entry point reaches them. SelfInterac and
-      // NearInterac are independent and may be called in either order: every cache below is a
-      // function-local static that initializes itself on first use, from whichever thread and
-      // whichever entry point gets there first. Neither warms anything for the other.
-      // One classification is indirect and flagged in place: the geometry helpers in the last
-      // group are reached from SelfInterac only through the public GetGeom.
+      // Grouped by which public entry point reaches them. SelfInterac and NearInterac are
+      // independent and may be called in either order: every cache below is a function-local
+      // static that initializes itself on first use.
 
-      // ======================= reached from BOTH entry points =======================
+      // ============================ both entry points ============================
 
       // Cached 1D nodal differentiation matrix D (order x order) on the GL nodes,
       // D[i][a] = L_i'(node_a); D . LuV turns a value-interp operator into a deriv one.
       static const Matrix<Real>& DiffMat(const Integer order);
       template <Integer order> static const Matrix<Real>& DiffMat() { return DiffMat(order); }
 
-      // Both entry points dispatch runtime order to a compile-time `order` (switch {4..48}),
-      // because `order` is the bound of every inner loop. `digits` stays a RUNTIME parameter:
-      // it never sizes an array or bounds a loop, it only picks a cached rule, and every one
-      // of those already returns a runtime value. Templating it produced 16 byte-identical
-      // instantiations of each block below -- 77% of this file's compile time.
+      // Runtime order is dispatched to a compile-time `order` (switch {4..48}) because `order`
+      // bounds every inner loop. `digits` stays runtime: it only selects a cached rule, so
+      // templating it just duplicates identical code.
       static constexpr Integer MaxDigits = 16;   // digits in [0, MaxDigits)
-      // 10^-d as the old `pow<d,Real>((Real)0.1)` computed it, so the tol -> digits mapping is
-      // unchanged bit-for-bit (repeated multiplication, NOT the literal 1e-d).
+      // Largest d with tol <= 10^-d, where 10^-d is repeated multiplication of 0.1, NOT the
+      // literal 1e-d -- the two differ in the last bits and so pick different d at exact powers.
       static Integer DigitsFromTol(const Real tol);
 
-      // ======================= SelfInterac only =======================
+      // ============================ SelfInterac only ============================
 
-      // ---- Duffy edge-collapsed self scheme ----
-      // The panel is split at (u0,v0) into four quads with one edge collapsed onto the
-      // target. P(s,t) = (u0,v0) + s*c(t) has |det| = s*|a x b|, so the 1/r singularity is
-      // removed by the Jacobian: s needs only a plain GL rule and t a rule graded toward the
-      // foot of the perpendicular. Everything but the t-rule is fixed by (order,digits,ti,tj,tri).
+      // Duffy edge-collapsed self scheme: the panel is split at the target (u0,v0) into four
+      // triangles, each parametrised as P(s,t) = (u0,v0) + s*c(t) with |det| = s*|a x b|. The
+      // s factor cancels the 1/r singularity, so s takes a plain GL rule and t a rule graded
+      // toward the foot of the perpendicular. Only the t-rule depends on the metric and the
+      // tolerance; everything below is fixed by (order, ti, tj, tri).
       struct DuffyTri {
         bool swap_ab = false;    // collapsed (s-only) coordinate is u => local (alpha,beta) = (v,u)
         Real nsign = 1;          // restores the sign of dX/du x dX/dv
@@ -191,28 +157,23 @@ namespace sctl {
 
       // ======================= NearInterac only =======================
 
-      // Allocation-free single-point geometry evaluator: writes position X[COORD_DIM]
-      // (target-centered by `origin` when non-null) and, when the pointers are non-null,
-      // the tangents dXu/dXv[COORD_DIM] at parameter (u,v) on elem_idx. Builds the
-      // order-length Lagrange bases on the stack and contracts against the cached nodal
-      // coords -- no Matrix alloc / Transpose, unlike GetGeom. Used by the closest-point
-      // search where it is called many times per target.
+      // Single-point position (target-centered by `origin` when non-null) and, when the
+      // pointers are non-null, the tangents dXu/dXv. Allocation-free, unlike GetGeom: the
+      // Lagrange bases are built on the stack. Called many times per target by GetClosestPoint.
       void EvalPoint(Real* X, Real* dXu, Real* dXv, const Real u, const Real v, const Long elem_idx, const Vector<Real>* origin) const;
 
-      // Closest discretization NODE on elem_idx to Xtrg (brute force over the nodal grid);
-      // seeds GetClosestPoint. Returns the distance, (ustar,vstar) the node's parameters.
+      // Closest nodal-grid point to Xtrg (brute force); seeds GetClosestPoint. Returns the distance.
       Real GetClosestNode(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) const;
 
-      // Closest POINT on patch elem_idx to Xtrg over (u,v) in [0,1]^2: GetClosestNode seed, then
-      // Gauss-Newton with a grid-search fallback. Returns the distance. This is the FOOT that the
-      // near scheme splits at, and where it reads the metric to pick the per-target GL order.
-      // n_iter/used_fallback (optional) report the Newton iteration count and whether it stalled.
+      // Closest point on the patch over (u,v) in [0,1]^2: GetClosestNode seed, then Gauss-Newton
+      // with a grid-search fallback. Returns the distance. This is the foot the near scheme
+      // splits at. n_iter/used_fallback (optional) report the iteration count and whether Newton
+      // stalled.
       Real GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
 
-      // Accumulate a tensor-product quadrature (u_param x v_param, weights wu (x) wv) on
-      // elem_idx against target Xtrg into M_acc; normal_trg != null enables target-normal contraction.
-      // Mv_pre/dMv_pre, Mu_pre/dMu_pre (optional): precomputed v/u interp operators (order x N) used
-      // in place of building from param.
+      // Accumulate a tensor-product quadrature (u_param x v_param, weights wu (x) wv) against
+      // target Xtrg into M_acc; non-empty normal_trg contracts with the target normal. The
+      // *_pre operators (order x N), when given, replace the ones built from param.
       template <Integer order, class Kernel> static void IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx,
                                                                         const Vector<Real>& Xtrg, const Vector<Real>& normal_trg,
                                                                         const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker,
@@ -220,69 +181,52 @@ namespace sctl {
                                                                         const Matrix<Real>* MvT_pre = nullptr, const Matrix<Real>* MuT_pre = nullptr, const Matrix<Real>* dMuT_pre = nullptr,
                                                                         const Vector<Real>* src_nodal = nullptr, const Matrix<Real>* MuD_pre = nullptr, const Real nrm_sign = 1,
                                                                         Vector<Real>* acc_cm = nullptr);
-      // --- Split-at-foot near scheme ---
-      // Splitting the element AT the foot makes every refinement grade toward an ENDPOINT, so in
-      // normalized sub-element coordinates the graded intervals depend only on the level and
-      // their operators precompute once per `order`. (A bisection quadtree instead leaves
-      // the foot mid-cell and needs a position-dependent interpolation operator per leaf
-      // interval -- ~350 matrices rebuilt per target.)
-      //
-      // Per side the normalized intervals are, grading toward the foot at x=1:
+      // Split-at-foot near scheme. Splitting the element at the foot makes every refinement
+      // grade toward an ENDPOINT, so in normalized sub-element coordinates the graded intervals
+      // depend only on the level and their operators precompute once per `order`. Per side,
+      // grading toward the foot at x=1:
       //   shell_k = [1-2^-k, 1-2^-(k+1)]    the half of core_k away from the foot
       //   core_k  = [1-2^-k, 1]             the half touching it
-      // Splitting at (u*,v*) leaves each sub-element ANISOTROPIC, and quadrisection would pass
-      // that aspect ratio to every descendant -- giving cells still long in one direction while
-      // already close to the target in the other (inadmissible). So the corner cell is bisected
-      // along its longer PHYSICAL dimension only (parameter extent x surface speed), one split at
-      // a time, until that dimension is admissible against the target distance. Each split emits
-      // one leaf; the u- and v-levels advance independently, so every interval remains
-      // shell_k / core_k at some level and its operators stay precomputed.
-      //
-      // Per-cell GL order and admissibility constant, both from NearRhoRule: a tolerance-dependent
-      // rho plus the end-foot Bernstein reach the split-at-foot geometry actually needs (weaker
-      // than the semi-major reach by a^2/b^2 ~ 1.9x, since the foot lands on a cell ENDPOINT).
-      // SCTL_NEAR_QORDER / SCTL_NEAR_BELLIPSE override each, for tuning near while self is held
-      // at a much tighter tolerance.
+      // The sub-elements are anisotropic, so the corner cell is bisected along its longer
+      // PHYSICAL dimension only (parameter extent x surface speed), one split at a time, until
+      // that dimension is admissible against the target distance; quadrisection would hand the
+      // aspect ratio to every descendant. Each split emits one leaf, and the u- and v-levels
+      // advance independently, so every interval stays shell_k / core_k at some level.
+
+      // Per-cell GL order and admissibility constant. b_ellipse is the end-foot Bernstein reach,
+      // weaker than the semi-major reach by a^2/b^2 ~ 1.9x because the foot lands on a cell
+      // endpoint. SCTL_NEAR_QORDER / SCTL_NEAR_BELLIPSE override each.
       static void NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder);
       static Integer NearQuadOrder(const Integer digits);
       static Real NearBEllipse(const Integer digits);
-      // The per-target GL order (corner skew of the metric at the foot, SCTL_NEAR_CK) and the
-      // level cap (SCTL_NEAR_MAXLVL) are local to NearInteracBlockSplit; see there.
-      // Normalized rule + operator from the sub-element's order nodes to this interval's nodes.
-      // One graded interval, in NORMALIZED sub-element coordinates. dT/TT/TD are precomputed
-      // here (not per target) because the split-at-foot scheme feeds sub-element NODAL coords
-      // into the cell quadrature, so these operators no longer depend on (u*,v*).
+
+      // One graded interval in normalized sub-element coordinates:
       //   T  (order x q)   sub-element nodes -> this interval's GL nodes
       //   dT (order x q)   d/dx of the above, x = the sub-element's normalized coordinate
       //   TT (q x order)   T^T, for the projection
       //   TD (2q x order)  [T^T ; dT^T] stacked, so value+derivative come from ONE GEMM
       struct GradeRule { Vector<Real> nds, w; Matrix<Real> T, dT, TT, TD; Real a, b; };
-      // Flat index: shell_k -> k, core_k -> MaxNearLvl + k.
-      static constexpr Integer MaxNearLvl = 31;
+      static constexpr Integer MaxNearLvl = 31;       // flat index: shell_k -> k, core_k -> MaxNearLvl + k
       static constexpr Integer NearMaxQuadOrder = 60;
-      // The ladder itself is accuracy-independent: one static per `order` holds every rung the
-      // corner-angle correction can select (each multiple of 4, plus each NearQuadOrder(d)).
+      // Accuracy-independent: one static per `order`, holding every rung the corner-angle
+      // correction can select (each multiple of 4, plus each NearQuadOrder(d)).
       template <Integer order> static const Vector<GradeRule>& NearGradeTable(const Integer q);
       template <Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
       template <Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits);
 
-      // ============ neither: construction, I/O, and the public geometry API ============
-      // SelfInterac reaches the two geometry helpers below through the public GetGeom; nothing
-      // in either quadrature scheme calls them directly.
+      // ================= neither: construction, I/O, public geometry =================
+      // The quadrature schemes reach the two geometry helpers only through the public GetGeom.
 
-      // Contiguous element range [i0,i1) owned by this rank when a global mesh of
-      // Nelem_total elements is linearly partitioned across comm. Shared by Init
-      // (in-memory construction) and Read (file load). With a single-process comm
-      // this returns the full range [0, Nelem_total).
+      // Contiguous element range [i0,i1) owned by this rank under a linear partition of
+      // Nelem_total elements; the full range for a single-process comm. Used by Init and Read.
       static void PartitionRange(Long Nelem_total, const Comm& comm, Long& i0, Long& i1);
 
       // Tensor-product contraction of a component-major SoA slab; used by GetGeom and GetVTUData.
       template <class ValueType> static void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv);
 
-      // Nodal d/du, d/dv of a component-major SoA coord slab (order x order grid).
-      // Shared by Init (absolute, the dcoord_du/dv cache) and GetGeom (target-shifted).
+      // Nodal d/du, d/dv of a component-major SoA coord slab. Init builds the absolute
+      // dcoord_du/dv cache with it; GetGeom uses it on target-shifted coords.
       static void NodalDerivs(const Vector<Real>& coord_slab, const Integer order, Vector<Real>& du_slab, Vector<Real>& dv_slab);
-
 
       Long nelem = 0;
       Integer order = 0;

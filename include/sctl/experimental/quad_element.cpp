@@ -342,8 +342,8 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(ncomp * 2.0 * Nv * ((doub
   }
   
   template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>* Mv_pre, const Matrix<Real>* dMv_pre, const Matrix<Real>* Mu_pre, const Matrix<Real>* dMu_pre, const Matrix<Real>* MvT_pre, const Matrix<Real>* MuT_pre, const Matrix<Real>* dMuT_pre, const Vector<Real>* src_nodal, const Matrix<Real>* MuD_pre, const Real nrm_sign, Vector<Real>* acc_cm) {
-    // Accumulate the tensor-product quadrature (u_param x v_param, weights wu (x) wv)
-    // against the single target Xtrg. Shared by the near (per-leaf) and self schemes.
+    // Accumulate the tensor-product quadrature (u_param x v_param, weights wu (x) wv) against
+    // the single target Xtrg, one near leaf cell per call.
     // Tensor grid is u-slow/v-fast: node (a,b) has flat index q = a*Nv + b.
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -361,10 +361,10 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(ncomp * 2.0 * Nv * ((doub
     const Vector<Real>& pnds = ParamNodes(order);
     const Matrix<Real>& D = DiffMat<order>();
 
-    // 1D value + derivative interpolation (patch nodes -> quad nodes), dMu = D.Mu.
-    // Tangents come from the SAME target-shifted slab via the tensor interpolation
-    // below -- no per-target NodalDerivs. Use preloaded M*_pre/dM*_pre when supplied
-    // (self's fixed Alpert/COV rule), else build from u_param/v_param (adaptive rule).
+    // 1D value + derivative interpolation (patch nodes -> quad nodes), dMu = D.Mu. Tangents
+    // come from the SAME target-shifted slab via the tensor interpolation below -- no
+    // per-target NodalDerivs. Use the preloaded M*_pre/dM*_pre when supplied, else build from
+    // u_param/v_param.
     Matrix<Real> Mu_local, dMu_local, MuT_local, dMuT_local;
     Matrix<Real> Mv_local, dMv_local, MvT_local;
     if (!Mu_pre || !Mv_pre) {
@@ -438,9 +438,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * 2 * (COORD_DIM*(dou
     }
     static const Long ublk_pts_ = []() { const char* v = std::getenv("SCTL_UBLK_PTS"); return v ? std::max<Long>(64, atol(v)) : 16384; }();
     if (Nu * Nv <= ublk_pts_) { // Sweep already fits: original single-shot path.
-      // Near integrates tiny per-leaf blocks (Nu = Nv = QuadOrder), where blocking buys
-      // nothing -- and the batched/per-leaf near gate requires this path bit-for-bit, so
-      // it must keep using the same buffers and GEMM calls.
       // Column-stage Cv/Cdv (component index moved into the COLUMNS) so stage 2 batches over
       // components as well as over outputs: the nine original (Nu x order).(order x Nv) products
       // collapse to two GEMMs against an (order x COORD_DIM*Nv) operand. The restage is an
@@ -521,12 +518,12 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * (3.0*Nu) * order * 
       BENCH_TOC(KernelWeight);
 
       BENCH_TIC(Projection);
-      // Projection is the adjoint of the geometry interpolation: quadrature -> nodal. The
-      // v-contraction batches over ALL C channels for free -- KWc is channel-major with each
-      // block (Nu x Nv), so it is already one (C*Nu x Nv) operand. The u-contraction then writes
-      // one (order x order) block per channel, which is exactly a channel-major accumulator's
-      // layout, so with acc_cm it accumulates in place via beta = 1 (no temporary, no += sweep;
-      // the caller transposes to M_acc's node-major layout once per target instead of per cell).
+      // Adjoint of the geometry interpolation: quadrature -> nodal. KWc is channel-major with
+      // (Nu x Nv) blocks, so the v-contraction is already one (C*Nu x Nv) operand and batches
+      // over all C channels for free. The u-contraction then writes one (order x order) block
+      // per channel -- a channel-major accumulator's layout -- so with acc_cm it accumulates in
+      // place via beta = 1, and the caller transposes to M_acc's node-major layout once per
+      // target rather than per cell.
       thread_local Vector<Real> Yv, proj;
       if (Yv.Dim() != (Long)C*Nu*order) Yv.ReInit((Long)C*Nu*order);
       {
@@ -664,11 +661,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
   }
 
 
-  // Leaf-batched near block: the per-leaf geometry/kernel/projection GEMMs are batched across
-  // leaves, grouped by distinct interval so the interp operators are shared.
-
-
-
 
   template <class Real> Integer QuadElemList<Real>::DigitsFromTol(const Real tol) {
     // Reproduces the old if-else dispatch exactly: the largest d < MaxDigits with
@@ -703,11 +695,10 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
     const double C = std::max(1e-3, (15.0*(rho*rho - 1))/64.0);
     QuadOrder = std::max<Integer>(2, (Integer)std::ceil(-std::log(C*(double)std::max<Real>(tol, (Real)1e-16))/std::log(rho)*0.5 + 1));
     
-    // End-foot reach, not the semi-major axis. E_rho has semi-axes a,b with a^2-b^2 = 1; a
-    // singularity at parameter s with perpendicular offset d~ = 2d/L lies outside E_rho when
-    // s^2/a^2 + d~^2/b^2 > 1. Splitting at (u0,v0) puts the foot at the corner cell's endpoint
-    // (s = +-1), giving d~ > b^2/a -- weaker by a^2/b^2 than the (rho+1/rho)/4 semi-major reach,
-    // and weaker than the true worst case d~ > b (foot at the panel centre, which cannot occur here).
+    // End-foot reach, not the semi-major axis. E_rho has semi-axes a,b with a^2-b^2 = 1, and a
+    // singularity at parameter s with perpendicular offset d~ = 2d/L lies outside it when
+    // s^2/a^2 + d~^2/b^2 > 1. The split puts the foot at a cell endpoint (s = +-1), giving
+    // d~ > b^2/a -- weaker than the semi-major reach by a^2/b^2.
     const double a = (rho + 1/rho)/2, b = (rho - 1/rho)/2;
     b_ellipse = (Real)(b*b/(2*a));
   }
@@ -797,16 +788,12 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
     BENCH_TOC(ClosestNode);
     Real Xc[COORD_DIM], dXu_[COORD_DIM], dXv_[COORD_DIM];
     qel.EvalPoint(Xc, dXu_, dXv_, ustar, vstar, elem_idx, nullptr);
-    // Corner-angle correction to the near GL order. Measured on a parallelogram against an
-    // independent graded reference: the requirement is flat up to ~120 deg then grows like
-    // 1/(180-theta) as the corner flattens and the element wraps around the target (at 1e-6, SL
-    // needs q = 8/14/22/26 at theta = 120/160/168/171 deg). The parameter-space admissibility
-    // test cannot see this, so it is corrected here per (element,target).
-    //
-    // phi is the ACUTE angle between the surface tangents AT THE FOOT (the element's closest
-    // point to the target) -- that is the corner the target actually sees. An orthogonal
-    // parametrisation gives phi=90 and the factor collapses to 1, so well-shaped meshes pay
-    // nothing. C=400 is fitted on Laplace SL/DL, flat elements, one target offset.
+    // Corner-angle correction to the near GL order. The required order is flat to ~120 deg,
+    // then grows like 1/(180-phi) as the corner flattens and the element wraps around the
+    // target; the parameter-space admissibility test cannot see this. phi is the acute angle
+    // between the surface tangents at the foot -- the corner the target actually sees -- so an
+    // orthogonal parametrisation gives phi=90, a factor of 1, and costs well-shaped meshes
+    // nothing. Ck is fitted on Laplace SL/DL, flat elements, one target offset.
     const auto near_order = [](const Real* dXu, const Real* dXv, const Integer q_iso) {
       Real guu=0, gvv=0, guv=0;
       for (Integer k = 0; k < COORD_DIM; k++) { guu+=dXu[k]*dXu[k]; gvv+=dXv[k]*dXv[k]; guv+=dXu[k]*dXv[k]; }
@@ -907,14 +894,8 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
       for (Integer sdv = 0; sdv < 2; sdv++) {
         if (!(slen[1][sdv] > 0)) continue;
         acc.SetZero();
-        // ANISOTROPIC refinement. Splitting the element at (u*,v*) makes the sub-elements
-        // anisotropic, and quadrisection would hand that aspect ratio to every descendant --
-        // leaving cells that are large in one direction while sitting close to the target in the
-        // other, which is inadmissible. So split the corner cell along its longer PHYSICAL
-        // dimension only (parameter extent x surface speed), one bisection at a time, until the
-        // longer side is admissible against the target distance. Each split emits exactly one
-        // leaf (the half not touching the corner); the u- and v-levels advance independently, so
-        // every interval is still shell_k / core_k at some level and comes from the table.
+        // Bisect the corner cell along its longer physical dimension (parameter extent x
+        // surface speed) until that side is admissible, emitting one leaf per split.
         Integer ku = 0, kv = 0;
         Real hu = slen[0][sdu]*spd_u, hv = slen[1][sdv]*spd_v;
         const bool cap = !(dist > 0) || !std::isfinite((double)dist);
@@ -990,29 +971,17 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
   template <class Real> Integer QuadElemList<Real>::DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0) {
     static const Integer ov = []() { const char* v = std::getenv("SCTL_DUFFY_NT"); return v ? (Integer)atol(v) : (Integer)0; }();
     if (ov > 0) return ov;
-    // 2.5 t-points per digit, calibrated end-to-end on the Green's identity (varying density)
-    // over twists 0, pi/6, pi/3 and pi/2. Measured minima are nt = 8/12/20/24 for
-    // digits = 6/8/10/12, so this carries 5-8 nodes (~1.7-2.8 decades) of margin: the error
-    // falls only ~0.35 decades per node, so thin margins are not safe here.
-    //
-    // The binding twist is pi/6, NOT the extremes: pi/2 has a high discretization floor that
-    // masks self error entirely, and twist 0 is geometrically benign. Calibrating on the
-    // endpoints of the twist range alone understates nt by 2x at tight tolerance.
-    //
-    // An earlier per-target operator-norm calibration gave 34/45/56/67 -- single-target
-    // operator error is a far stricter quantity than the assembled BIE error, so self rules
-    // must be calibrated end-to-end.
-    //
-    // The minima dip below order/2 at loose tolerance only because a resolved geometry has
-    // eps-small top polynomial coefficients; the t-integrand carries degree order-1, so
-    // order/2 is the floor for geometry that is not resolved.
-    // Vector kernels need ~1.5x the t-nodes of a scalar one at the same tolerance: measured
-    // minima (order 12) are 15/15/15/20 for Laplace and 20/25/36/44 for Stokes at
-    // digits = 6/8/10/12. 2.5 and 4.0 per digit cover both with margin.
-    // NOTE: the Stokes leg is calibrated at ppf=6 over twists {0, pi/6} only; the Laplace leg
-    // needed all four twists before it was right (pi/6 was binding), so treat the vector
-    // constant as provisional until it gets the same four-twist check.
+    // t-points per digit, with margin: the error falls only ~0.35 decades per node, so a thin
+    // margin is not safe. Vector kernels need ~1.5x the t-nodes of a scalar one at the same
+    // tolerance. Calibrated end-to-end on the Green's identity with a varying density, not on
+    // per-target operator norm, which is far stricter than the assembled BIE error. Twist pi/6
+    // binds: pi/2's discretization floor masks the self error and twist 0 is benign, so the
+    // ends of the twist range alone understate nt by 2x.
+    // CAVEAT: the vector constant is calibrated over twists {0, pi/6} only -- treat it as
+    // provisional until it gets the four-twist check the scalar one had.
     const double per_digit = (kdim0 > 1 ? 4.0 : 2.5);
+    // order/2 floor: the t-integrand carries degree order-1. The measured minima dip below it
+    // at loose tolerance only because a resolved geometry has eps-small top coefficients.
     return std::max<Integer>(order/2, (Integer)std::ceil(per_digit*(double)digits));
   }
 
@@ -1099,11 +1068,9 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
 
     const DuffySelfTable& tbl = DuffyTable<order>();
     const Long ns = tbl.ns, nt = DuffyTOrder(digits, order, KDIM0);
-    // s-nodes contracted per stage-2b GEMM. Tt does not depend on the s-node, so the whole
-    // s-range goes in one (ns*NR x order)(order x nt) call instead of ns thin (NR x order)
-    // ones. Measured monotone in sblk up to ns: 14% faster on 1 thread, 3-7% at 32 threads
-    // (the parallel case is nearer bandwidth-bound, so GEMM shape matters less). Bit-identical
-    // results at every sblk -- it is a pure reassociation. SCTL_DUFFY_SBLK overrides.
+    // s-nodes per stage-2b GEMM. Tt does not depend on the s-node, so the whole s-range goes in
+    // one (ns*NR x order)(order x nt) call rather than ns thin ones -- 14% faster on 1 thread,
+    // 3-7% at 32. A pure reassociation: bit-identical at every sblk. SCTL_DUFFY_SBLK overrides.
     static const Long sblk_env = []() { const char* v = std::getenv("SCTL_DUFFY_SBLK"); return v ? (Long)atol(v) : (Long)0; }();
     const Long sblk = (sblk_env > 0 ? std::min<Long>(sblk_env, ns) : ns);
     const Vector<Real>& nds = ParamNodes(order);
@@ -1311,17 +1278,14 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
 
     SCTL_ASSERT((Long)M_lst.Dim() == qel.nelem);
 
-    // Build this order's Duffy tables before the parallel loop below, so the first iteration
-    // does not serialize the others on first-touch static init. Purely an optimization for
-    // THIS call: every cache in both schemes is a function-local static and initializes itself
-    // on first use from whichever thread gets there. Nothing here is warmed on NearInterac's
-    // behalf -- the two entry points are independent and may be called in either order.
-    // ParamNodes / DiffMat are warmed transitively by the build.
+    // Build this order's tables before the parallel loop so the first iteration does not
+    // serialize the rest on first-touch static init. Optimization only -- the table would
+    // initialize itself on first use anyway. ParamNodes / DiffMat come along with it.
     DuffyTable<order>();
 
-    // Per-element singular blocks are independent: each writes its own M_lst[elem_idx],
-    // all temporaries are loop-local, and GetGeom/rule reads are const. Not nested (SetupSelf
-    // is not itself inside an OMP parallel region, unlike SetupNear).
+    // Per-element blocks are independent: each writes its own M_lst[elem_idx], temporaries are
+    // loop-local, and GetGeom/table reads are const. SelfInterac is not itself called from a
+    // parallel region, so this loop is not nested.
     #pragma omp parallel for schedule(static)
     for (Long elem_idx = 0; elem_idx < qel.nelem; elem_idx++) {
       // Surface nodes (targets) and their normals on this element.
@@ -1465,7 +1429,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
       return r2;
     };
 
-    // Seed: nearest node.
     Real u, v;
     Real f = GetClosestNode(u, v, elem_idx, Xtrg);
 
@@ -1545,12 +1508,10 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
         if (fn < f) { improved = true; break; }
         lambda *= (Real)0.5;
       }
-      // If the clamped Newton step stalls, retry along the PROJECTED (metric-scaled) GRADIENT.
-      // At an active bound the coupled Newton step can point outward, so clamping freezes it at a
-      // non-optimal point; the projected gradient (Pu,Pv) is a feasible descent direction whenever
-      // the point is not KKT-optimal (already returned above), so some backtracked step lowers f.
-      // This is what actually eliminates the edge-foot grid-search fallbacks (the KKT test alone
-      // did not: the loop was exiting here, not at the optimality check).
+      // If the clamped Newton step stalls, retry along the projected (metric-scaled) gradient.
+      // At an active bound the coupled Newton step can point outward, so clamping freezes it at
+      // a non-optimal point; the projected gradient is a feasible descent direction whenever the
+      // point is not KKT-optimal (already returned above), so some backtracked step lowers f.
       if (!improved) {
         const Real gu_s = Pu / (E + (Real)1e-30), gv_s = Pv / (G + (Real)1e-30);
         lambda = 1;
@@ -1598,9 +1559,8 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
   }
 
   template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits) {
-    // Per-target near-singular interaction: off-surface targets are integrated by the
-    // adaptive 2D quadtree (NearInteracBlock). On-surface singular self interactions
-    // proper are built by SelfInterac.
+    // Off-surface near-singular targets, one block per target. On-surface (singular) self
+    // interactions are built by SelfInterac instead.
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
 
