@@ -5,6 +5,8 @@
 \usepackage{booktabs}
 \usepackage{xcolor}
 \usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
 \usetikzlibrary{calc,arrows,positioning,fit,backgrounds,decorations.pathreplacing,patterns}
 
 \definecolor{cElem}{RGB}{40,80,140}
@@ -361,6 +363,144 @@ survives into the per-cell loop. Every leaf then runs the same tensor-product bl
 
 Cells accumulate into a channel-major buffer so the projection's last GEMM can add in place
 ($\beta=1$); a single transpose into the node-major layout at the end replaces a per-cell sweep.
+
+\vspace{1em}
+\hrule
+\section{Numerical results}
+
+All from \texttt{bench-cubed-sphere} run with no arguments, which does the convergence sweep
+first and then the strong-scaling descent. The surface is the twisted cubed sphere of
+Section~3: the twist is an isometry, so the geometry is the unit sphere at every angle and only
+the parametrisation shears.
+
+\subsection{Convergence}
+
+Order 12, 12 patches per face ($864$ elements, $124{,}416$ nodes). \texttt{DL[1]} is the exact
+identity $D[q]=-q/2$; \texttt{greens\_sol} is the on-surface identity $S[\partial_n u]-D[u]=u$;
+\texttt{greens\_den} is the interpolation error of the densities between nodes.
+
+\begin{center}\small
+\begin{tabular}{@{}llllll@{}}
+\toprule
+kernel, twist & tol & geom\_surf & DL[1] & greens\_den & greens\_sol \\
+\midrule
+laplace, $\pi/6$ & $1.00\!\times\!10^{-3}$ & $1.11\!\times\!10^{-15}$ & $2.34\!\times\!10^{-7}$ & $7.18\!\times\!10^{-14}$ & $2.14\!\times\!10^{-7}$ \\
+ & $1.00\!\times\!10^{-6}$ & $1.11\!\times\!10^{-15}$ & $2.14\!\times\!10^{-10}$ & $7.18\!\times\!10^{-14}$ & $3.73\!\times\!10^{-10}$ \\
+ & $1.00\!\times\!10^{-9}$ & $1.11\!\times\!10^{-15}$ & $3.85\!\times\!10^{-12}$ & $7.18\!\times\!10^{-14}$ & $3.42\!\times\!10^{-12}$ \\
+ & $1.00\!\times\!10^{-12}$ & $1.11\!\times\!10^{-15}$ & $4.96\!\times\!10^{-13}$ & $7.18\!\times\!10^{-14}$ & $3.32\!\times\!10^{-13}$ \\
+\addlinespace
+laplace, $\pi/2$ & $1.00\!\times\!10^{-3}$ & $1.11\!\times\!10^{-15}$ & $2.23\!\times\!10^{-7}$ & $4.89\!\times\!10^{-11}$ & $2.44\!\times\!10^{-7}$ \\
+ & $1.00\!\times\!10^{-6}$ & $1.11\!\times\!10^{-15}$ & $6.01\!\times\!10^{-10}$ & $4.89\!\times\!10^{-11}$ & $8.52\!\times\!10^{-10}$ \\
+ & $1.00\!\times\!10^{-9}$ & $1.11\!\times\!10^{-15}$ & $4.89\!\times\!10^{-11}$ & $4.89\!\times\!10^{-11}$ & $4.07\!\times\!10^{-11}$ \\
+ & $1.00\!\times\!10^{-12}$ & $1.11\!\times\!10^{-15}$ & $2.07\!\times\!10^{-12}$ & $4.89\!\times\!10^{-11}$ & $2.71\!\times\!10^{-12}$ \\
+\addlinespace
+laplace, $\pi$ & $1.00\!\times\!10^{-3}$ & $3.11\!\times\!10^{-15}$ & $1.50\!\times\!10^{-6}$ & $4.28\!\times\!10^{-8}$ & $2.02\!\times\!10^{-6}$ \\
+ & $1.00\!\times\!10^{-6}$ & $3.11\!\times\!10^{-15}$ & $1.02\!\times\!10^{-8}$ & $4.28\!\times\!10^{-8}$ & $1.63\!\times\!10^{-8}$ \\
+ & $1.00\!\times\!10^{-9}$ & $3.11\!\times\!10^{-15}$ & $1.22\!\times\!10^{-10}$ & $4.28\!\times\!10^{-8}$ & $2.04\!\times\!10^{-10}$ \\
+ & $1.00\!\times\!10^{-12}$ & $3.11\!\times\!10^{-15}$ & $4.93\!\times\!10^{-12}$ & $4.28\!\times\!10^{-8}$ & $4.65\!\times\!10^{-11}$ \\
+\addlinespace
+stokes, $\pi/6$ & $1.00\!\times\!10^{-3}$ & $1.11\!\times\!10^{-15}$ & $2.43\!\times\!10^{-5}$ & $2.25\!\times\!10^{-13}$ & $4.25\!\times\!10^{-6}$ \\
+ & $1.00\!\times\!10^{-6}$ & $1.11\!\times\!10^{-15}$ & $2.72\!\times\!10^{-8}$ & $2.25\!\times\!10^{-13}$ & $4.66\!\times\!10^{-9}$ \\
+ & $1.00\!\times\!10^{-9}$ & $1.11\!\times\!10^{-15}$ & $9.29\!\times\!10^{-10}$ & $2.25\!\times\!10^{-13}$ & $1.07\!\times\!10^{-10}$ \\
+ & $1.00\!\times\!10^{-12}$ & $1.11\!\times\!10^{-15}$ & $7.09\!\times\!10^{-11}$ & $2.25\!\times\!10^{-13}$ & $7.68\!\times\!10^{-12}$ \\
+\addlinespace
+stokes, $\pi/2$ & $1.00\!\times\!10^{-3}$ & $1.11\!\times\!10^{-15}$ & $4.53\!\times\!10^{-5}$ & $1.54\!\times\!10^{-10}$ & $8.06\!\times\!10^{-6}$ \\
+ & $1.00\!\times\!10^{-6}$ & $1.11\!\times\!10^{-15}$ & $1.66\!\times\!10^{-7}$ & $1.54\!\times\!10^{-10}$ & $3.10\!\times\!10^{-8}$ \\
+ & $1.00\!\times\!10^{-9}$ & $1.11\!\times\!10^{-15}$ & $8.07\!\times\!10^{-9}$ & $1.54\!\times\!10^{-10}$ & $8.89\!\times\!10^{-10}$ \\
+ & $1.00\!\times\!10^{-12}$ & $1.11\!\times\!10^{-15}$ & $6.03\!\times\!10^{-10}$ & $1.54\!\times\!10^{-10}$ & $5.98\!\times\!10^{-11}$ \\
+\addlinespace
+stokes, $\pi$ & $1.00\!\times\!10^{-3}$ & $3.11\!\times\!10^{-15}$ & $8.16\!\times\!10^{-5}$ & $1.58\!\times\!10^{-7}$ & $1.36\!\times\!10^{-5}$ \\
+ & $1.00\!\times\!10^{-6}$ & $3.11\!\times\!10^{-15}$ & $5.95\!\times\!10^{-7}$ & $1.58\!\times\!10^{-7}$ & $1.10\!\times\!10^{-7}$ \\
+ & $1.00\!\times\!10^{-9}$ & $3.11\!\times\!10^{-15}$ & $1.21\!\times\!10^{-8}$ & $1.58\!\times\!10^{-7}$ & $8.76\!\times\!10^{-10}$ \\
+ & $1.00\!\times\!10^{-12}$ & $3.11\!\times\!10^{-15}$ & $8.55\!\times\!10^{-10}$ & $1.58\!\times\!10^{-7}$ & $3.19\!\times\!10^{-10}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Three things to read off it. The geometry is resolved to $\sim10^{-15}$ at every twist, so it is
+never the limit here. \texttt{greens\_sol} tracks the requested tolerance over nine decades ---
+at twist $\pi/6$, $2.1\times10^{-7}\!\to\!3.3\times10^{-13}$ --- until it meets a floor set by the
+\emph{parametrisation}, which degrades sharply with twist: at $\pi$ the best Laplace result is
+$4.7\times10^{-11}$ against $3.3\times10^{-13}$ at $\pi/6$, a factor of 140 for the same mesh and
+the same tolerance. And \texttt{greens\_sol} sits well \emph{below} \texttt{greens\_den} at high
+twist ($4.7\times10^{-11}$ versus $4.3\times10^{-8}$): the identity is tested at nodes, where the
+densities are exact, and the quadrature averages the between-node error --- which is why
+\texttt{greens\_den} is a resolution indicator and not a bound.
+
+\subsection{OpenMP scaling}
+
+Order 12, 8 patches per face ($384$ elements, $55{,}296$ nodes), twist $\pi/6$, tol $10^{-9}$;
+\texttt{SelfInterac} plus \texttt{NearInterac} setup, timed inside the driver. AMD EPYC 7742,
+2 sockets, 128 cores, with \texttt{OMP\_PLACES=cores} and \texttt{OMP\_PROC\_BIND=close}.
+
+\begin{center}
+\begin{tikzpicture}
+\begin{axis}[width=0.49\textwidth,height=5.4cm,xmode=log,ymode=log,log basis x=2,log basis y=2,
+             xlabel={threads},ylabel={speedup},xmin=0.8,xmax=160,ymin=0.8,ymax=160,
+             legend pos=north west,legend style={font=\scriptsize,draw=none},
+             grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
+             label style={font=\small}]
+  \addplot[dashed,cGrey,thick,domain=1:128,samples=2]{x}; \addlegendentry{ideal}
+  \addplot[cElem,thick,mark=*,mark size=1.5] table[x=thr,y=speedup] {data/scaling-epyc-laplace.dat};
+  \addlegendentry{Laplace}
+  \addplot[cTrg,thick,mark=square*,mark size=1.5] table[x=thr,y=speedup] {data/scaling-epyc-stokes.dat};
+  \addlegendentry{Stokes}
+\end{axis}
+\end{tikzpicture}
+\hfill
+\begin{tikzpicture}
+\begin{axis}[width=0.49\textwidth,height=5.4cm,xmode=log,log basis x=2,
+             xlabel={threads},ylabel={parallel efficiency (\%)},xmin=0.8,xmax=160,ymin=50,ymax=105,
+             legend pos=south west,legend style={font=\scriptsize,draw=none},
+             grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
+             label style={font=\small}]
+  \addplot[dashed,cGrey,thick,domain=1:128,samples=2,forget plot]{100};
+  \addplot[cElem,thick,mark=*,mark size=1.5] table[x=thr,y=eff] {data/scaling-epyc-laplace.dat};
+  \addlegendentry{Laplace}
+  \addplot[cTrg,thick,mark=square*,mark size=1.5] table[x=thr,y=eff] {data/scaling-epyc-stokes.dat};
+  \addlegendentry{Stokes}
+\end{axis}
+\end{tikzpicture}
+\end{center}
+
+\begin{center}\small
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+& \multicolumn{2}{c}{Laplace} & \multicolumn{2}{c}{Stokes} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+threads & setup (s) & speedup & setup (s) & speedup & \\
+\midrule
+  1 & 15.575 & \phantom{0}1.0$\times$ & 30.945 & \phantom{0}1.0$\times$ & \\
+  2 &  8.016 & \phantom{0}1.9$\times$ & 15.434 & \phantom{0}2.0$\times$ & \\
+  4 &  4.087 & \phantom{0}3.8$\times$ &  7.839 & \phantom{0}3.9$\times$ & \\
+  8 &  2.061 & \phantom{0}7.6$\times$ &  4.045 & \phantom{0}7.7$\times$ & \\
+ 16 &  1.083 & 14.4$\times$           &  2.221 & 13.9$\times$           & \\
+ 32 &  0.562 & 27.7$\times$           &  1.207 & 25.6$\times$           & \\
+ 64 &  0.334 & 46.6$\times$           &  0.686 & 45.1$\times$           & \\
+128 &  0.188 & \textbf{82.8}$\times$  &  0.413 & \textbf{74.9}$\times$  & \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Efficiency holds above 94\% to 8 threads and above 86\% to 32, then falls to 65\% (Laplace) and
+59\% (Stokes) at 128. The knee is at 64, where the second socket comes in. Two things bound the
+tail: at 128 threads there are only $384/128 = 3$ elements per thread in the self loop, which is
+coarse for \texttt{schedule(static)}; and \texttt{GreensDensityError} in the driver is serial, so
+it does not shrink with width at all --- it is excluded from these timings, but it does mean the
+whole-run time scales worse than the table suggests. Stokes is uniformly a little worse than
+Laplace, consistent with its larger per-target working set.
+
+\subsection{Intel Icelake}
+
+Not yet run. \texttt{scripts/bench-cubed-sphere-icelake.sbatch} submits the same no-argument run
+to an Icelake node with 64 cores:
+\begin{center}\small\texttt{sbatch scripts/bench-cubed-sphere-icelake.sbatch}\end{center}
+The script builds into \texttt{bin.icelake/} and \texttt{obj.icelake/} rather than \texttt{./bin}.
+That is not tidiness: the Makefile compiles with \texttt{-march=native}, so an Icelake binary
+carries AVX-512 and dies with \texttt{SIGILL} on the Zen 2 workstations, and the two builds share
+a home filesystem.
 
 \vspace{1em}
 \hrule
