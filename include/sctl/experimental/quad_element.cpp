@@ -1039,24 +1039,17 @@ namespace sctl {
   }
 
   template <class Real> template <class Kernel> void QuadElemList<Real>::SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self) {
-    // Dispatch the runtime element order to a compile-time `order` in {4,8,...,48}; the
+    // Dispatch the runtime element order to a compile-time `order` in {4,8,12,16,20}; the
     // tolerance stays runtime (see MaxDigits note in the header).
     const Integer order = static_cast<const QuadElemList<Real>*>(self)->order;
     const Integer digits = DigitsFromTol(tol);
     switch (order) {
-      //case  4: SelfInteracHelper<4>(M_lst, ker, trg_dot_prod, self, digits); break;
+      case  4: SelfInteracHelper<4>(M_lst, ker, trg_dot_prod, self, digits); break;
       case  8: SelfInteracHelper<8>(M_lst, ker, trg_dot_prod, self, digits); break;
       case 12: SelfInteracHelper<12>(M_lst, ker, trg_dot_prod, self, digits); break;
       case 16: SelfInteracHelper<16>(M_lst, ker, trg_dot_prod, self, digits); break;
-      //case 20: SelfInteracHelper<20>(M_lst, ker, trg_dot_prod, self, digits); break;
-      //case 24: SelfInteracHelper<24>(M_lst, ker, trg_dot_prod, self, digits); break;
-      //case 28: SelfInteracHelper<28>(M_lst, ker, trg_dot_prod, self, digits); break;
-      //case 32: SelfInteracHelper<32>(M_lst, ker, trg_dot_prod, self, digits); break;
-      //case 36: SelfInteracHelper<36>(M_lst, ker, trg_dot_prod, self, digits); break;
-      //case 40: SelfInteracHelper<40>(M_lst, ker, trg_dot_prod, self, digits); break;
-      //case 44: SelfInteracHelper<44>(M_lst, ker, trg_dot_prod, self, digits); break;
-      //case 48: SelfInteracHelper<48>(M_lst, ker, trg_dot_prod, self, digits); break;
-      default: SCTL_ASSERT_MSG(false, "QuadElemList element order must be one of {4,8,...,48} for the templated near/self schemes.");
+      case 20: SelfInteracHelper<20>(M_lst, ker, trg_dot_prod, self, digits); break;
+      default: SCTL_ASSERT_MSG(false, "QuadElemList element order must be one of {4,8,12,16,20} for the templated near/self schemes.");
     }
   }
 
@@ -1309,24 +1302,17 @@ namespace sctl {
   }
 
   template <class Real> template <class Kernel> void QuadElemList<Real>::NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
-    // Dispatch the runtime element order to a compile-time `order` in {4,8,...,48}; the
+    // Dispatch the runtime element order to a compile-time `order` in {4,8,12,16,20}; the
     // tolerance stays runtime (see MaxDigits note in the header).
     const Integer order = static_cast<const QuadElemList<Real>*>(self)->order;
     const Integer digits = DigitsFromTol(tol);
     switch (order) {
-      //case  4: NearInteracHelper<4>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      case  4: NearInteracHelper<4>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
       case  8: NearInteracHelper<8>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
       case 12: NearInteracHelper<12>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
       case 16: NearInteracHelper<16>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
-      //case 20: NearInteracHelper<20>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
-      //case 24: NearInteracHelper<24>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
-      //case 28: NearInteracHelper<28>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
-      //case 32: NearInteracHelper<32>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
-      //case 36: NearInteracHelper<36>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
-      //case 40: NearInteracHelper<40>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
-      //case 44: NearInteracHelper<44>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
-      //case 48: NearInteracHelper<48>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
-      default: SCTL_ASSERT_MSG(false, "QuadElemList element order must be one of {4,8,...,48} for the templated near/self schemes.");
+      case 20: NearInteracHelper<20>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      default: SCTL_ASSERT_MSG(false, "QuadElemList element order must be one of {4,8,12,16,20} for the templated near/self schemes.");
     }
   }
 
