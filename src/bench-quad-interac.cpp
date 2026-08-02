@@ -221,9 +221,8 @@ int main(int argc, char** argv) {
     std::printf("     Read WITH the per-config '[bench]' phase tables above:\n");
     std::printf("       - Profile f/s_avg here = comprehensive throughput (kernel + all tensor GEMMs + elementwise).\n");
     std::printf("       - '[bench] gemm_f/s'    = tensor-GEMM-only GFLOP/s; the gap vs Profile f/s is elementwise + kernel.\n");
-    std::printf("       - Low Profile f/s together with high 'leaves/target' and large QuadtreeBuild/ClosestNode/\n");
-    std::printf("         Assembly/KernelWeight time share ==> cost is small-GEMM + uncounted quadtree/search work,\n");
-    std::printf("         NOT a FLOP mis-count. Those uncounted-scalar phases are the ops that drag f/s down most.\n");
+    std::printf("       - Low Profile f/s with a large ClosestPoint/ClosestNode/Assembly/KernelWeight share\n");
+    std::printf("         ==> cost is small-GEMM + uncounted search work, NOT a FLOP mis-count.\n");
     Profile::print(&comm, {"t_avg", "t_max", "f_avg", "f/s_avg"});
   }
   Comm::MPI_Finalize();

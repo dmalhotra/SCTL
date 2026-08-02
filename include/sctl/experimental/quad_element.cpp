@@ -14,13 +14,11 @@
 
 #include <sctl.hpp>
 #include "sctl/experimental/quad_element.hpp"
-#include "sctl/experimental/alpert_quadr.cpp"
 #include "sctl/experimental/bench_quad.hpp"
 
 #include <array>
 #include <map>
 #include <mutex>
-#include <tuple>
 
 namespace sctl {
 
@@ -341,94 +339,28 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(ncomp * 2.0 * Nv * ((doub
     }
   }
   
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>* Mv_pre, const Matrix<Real>* dMv_pre, const Matrix<Real>* Mu_pre, const Matrix<Real>* dMu_pre, const Matrix<Real>* MvT_pre, const Matrix<Real>* MuT_pre, const Matrix<Real>* dMuT_pre, const Vector<Real>* src_nodal, const Matrix<Real>* MuD_pre, const Real nrm_sign, Vector<Real>* acc_cm) {
-    // Accumulate the tensor-product quadrature (u_param x v_param, weights wu (x) wv) against
-    // the single target Xtrg, one near leaf cell per call.
-    // Tensor grid is u-slow/v-fast: node (a,b) has flat index q = a*Nv + b.
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD, const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT, const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm) {
+    // One near leaf cell: accumulate its tensor-product quadrature (weights wu (x) wv) against
+    // the target into acc_cm. src_nodal is the caller's target-shifted nodal slab, so the kernel
+    // target sits at the origin. Tensor grid is u-slow/v-fast: node (a,b) has flat index a*Nv+b.
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
-    SCTL_ASSERT(qel.order == order);
     const Long nnode = (Long)order * order;
     const bool trg_dot_prod = (normal_trg.Dim() > 0);
     const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
 
-    const Long Nu = (Mu_pre ? Mu_pre->Dim(1) : u_param.Dim());
-    const Long Nv = (Mv_pre ? Mv_pre->Dim(1) : v_param.Dim());
-    const Long nq = Nu * Nv;
+    const Long Nu = Mu.Dim(1), Nv = Mv.Dim(1), nq = Nu * Nv;
     if (!nq) return;
     const Integer C = KDIM0 * KDIM1_out;
 
-    const Vector<Real>& pnds = ParamNodes(order);
-    const Matrix<Real>& D = DiffMat<order>();
-
-    // 1D value + derivative interpolation (patch nodes -> quad nodes), dMu = D.Mu. Tangents
-    // come from the SAME target-shifted slab via the tensor interpolation below -- no
-    // per-target NodalDerivs. Use the preloaded M*_pre/dM*_pre when supplied, else build from
-    // u_param/v_param.
-    Matrix<Real> Mu_local, dMu_local, MuT_local, dMuT_local;
-    Matrix<Real> Mv_local, dMv_local, MvT_local;
-    if (!Mu_pre || !Mv_pre) {
-      if (!Mu_pre) {
-        Mu_local.ReInit(order, Nu);
-        { Vector<Real> v(order*Nu, Mu_local.begin(), false); LagrangeInterp<Real>::Interpolate(v, pnds, u_param); }
-        dMu_local.ReInit(order, Nu);
-        Matrix<Real>::GEMM(dMu_local, D, Mu_local);
-        MuT_local = Mu_local.Transpose();
-        dMuT_local = dMu_local.Transpose();
-      }
-      if (!Mv_pre) {
-        Mv_local.ReInit(order, Nv);
-        { Vector<Real> v(order*Nv, Mv_local.begin(), false); LagrangeInterp<Real>::Interpolate(v, pnds, v_param); }
-        dMv_local.ReInit(order, Nv);
-        Matrix<Real>::GEMM(dMv_local, D, Mv_local);
-        MvT_local = Mv_local.Transpose();
-      }
-    }
-    const Matrix<Real>& Mu  = (Mu_pre  ? *Mu_pre  : Mu_local);
-    // const Matrix<Real>& dMu = (dMu_pre ? *dMu_pre : dMu_local);
-    const Matrix<Real>& MuT  = (MuT_pre  ? *MuT_pre  : MuT_local);
-    const Matrix<Real>& dMuT = (dMuT_pre ? *dMuT_pre : dMuT_local);
-    const Matrix<Real>& Mv  = (Mv_pre  ? *Mv_pre  : Mv_local);
-    const Matrix<Real>& dMv = (dMv_pre ? *dMv_pre : dMv_local);
-    const Matrix<Real>& MvT  = (MvT_pre  ? *MvT_pre  : MvT_local);
-    // const Matrix<Real> MuT = Mu.Transpose();
-    // const Matrix<Real> dMuT = dMu.Transpose();
-    // const Matrix<Real> MvT = Mv.Transpose();
-
-    // Target-centering: subtract Xtrg from nodal coords before interpolation so
-    // positions are source-minus-target (accurate r near the singularity); tangents
-    // come from the same shifted slab.
     BENCH_TIC(GeomTensor);
-    const Long base = elem_idx * nnode * COORD_DIM; // TODO: assumes uniform per-element grid; consider omp scan of elem_cnt.
-    // Per-call scratch reused across the many IntegrateBlock calls (order^2 per element
-    // for self, per leaf for near). thread_local so each OMP thread has its own; every
-    // buffer is fully overwritten before use, so reuse is safe. Avoids re-malloc churn.
-    thread_local Vector<Real> coord_shift;
-    thread_local const QuadElemList<Real>* cs_qel = nullptr;
-    thread_local Long cs_elem = -1;
-    thread_local StaticArray<Real,COORD_DIM> cs_trg{0,0,0};
-    if (coord_shift.Dim() != COORD_DIM*nnode) { coord_shift.ReInit(COORD_DIM*nnode); cs_qel = nullptr; }
-    // Near emits ~10 cells per target, all sharing (elem_idx, Xtrg), so the shift is hoisted
-    // out of the per-cell loop by memoizing on that key rather than plumbing it through.
-    // src_nodal: caller already produced the target-shifted nodal slab for this sub-element
-    // (near split does it once per target), so bind a view rather than rebuilding or copying.
-    if (!src_nodal && (cs_qel != &qel || cs_elem != elem_idx || cs_trg[0] != Xtrg[0] || cs_trg[1] != Xtrg[1] || cs_trg[2] != Xtrg[2])) {
-      for (Integer k = 0; k < COORD_DIM; k++) {
-        const Real ok = Xtrg[k];
-        for (Long p = 0; p < nnode; p++) coord_shift[k*nnode + p] = qel.coord[base + k*nnode + p] - ok;
-      }
-      cs_qel = &qel; cs_elem = elem_idx;
-      for (Integer k = 0; k < COORD_DIM; k++) cs_trg[k] = Xtrg[k];
-    }
-    const Vector<Real>& cs_ref = (src_nodal ? *src_nodal : coord_shift);
-    // The v-side contraction does not depend on the u-block/u-sweep, so hoist it for BOTH paths:
-    // X and dXdu share it (both use Mv), which removed a duplicate GEMM set from the single-shot
-    // path. All COORD_DIM components share Mv and coord_shift is component-major contiguous, so
-    // the three (order x order).(order x Nv) products are one (COORD_DIM*order x order) GEMM.
+    // The v-side contraction is shared by X and dXdu (both use Mv). All COORD_DIM components
+    // share it and src_nodal is component-major contiguous, so the three (order x order).
+    // (order x Nv) products are one (COORD_DIM*order x order) GEMM.
     thread_local Vector<Real> Cv, Cdv;
     if (Cv.Dim() != COORD_DIM*order*Nv) { Cv.ReInit(COORD_DIM*order*Nv); Cdv.ReInit(COORD_DIM*order*Nv); }
     {
-      const Matrix<Real> cs_all(COORD_DIM*order, order, (Iterator<Real>)cs_ref.begin(), false); // component-major: one GEMM for all 3
+      const Matrix<Real> cs_all(COORD_DIM*order, order, (Iterator<Real>)src_nodal.begin(), false);
       Matrix<Real> Cv_all (COORD_DIM*order, Nv, Cv.begin(),  false);
       Matrix<Real> Cdv_all(COORD_DIM*order, Nv, Cdv.begin(), false);
       Matrix<Real>::GEMM(Cv_all,  cs_all, Mv);
@@ -436,227 +368,102 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(ncomp * 2.0 * Nv * ((doub
       BENCH_FLOPS(2.0 * 2 * (COORD_DIM*(double)order) * order * Nv);
 Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * 2 * (COORD_DIM*(double)order) * order * Nv));
     }
-    static const Long ublk_pts_ = []() { const char* v = std::getenv("SCTL_UBLK_PTS"); return v ? std::max<Long>(64, atol(v)) : 16384; }();
-    if (Nu * Nv <= ublk_pts_) { // Sweep already fits: original single-shot path.
-      // Column-stage Cv/Cdv (component index moved into the COLUMNS) so stage 2 batches over
-      // components as well as over outputs: the nine original (Nu x order).(order x Nv) products
-      // collapse to two GEMMs against an (order x COORD_DIM*Nv) operand. The restage is an
-      // L1-resident copy -- Matrix::GEMM has no strided-output form, and padding Mv block-diagonal
-      // instead would triple the stage-1 flops.
-      const Long ldc = COORD_DIM*Nv;
-      thread_local Vector<Real> Cvc, Cdvc, XdU, dXdv_soa;
-      if (Cvc.Dim() != (Long)order*ldc) { Cvc.ReInit((Long)order*ldc); Cdvc.ReInit((Long)order*ldc); }
-      for (Integer k = 0; k < COORD_DIM; k++) {
-        for (Integer i = 0; i < order; i++) {
-          const Long src = ((Long)k*order + i)*Nv, dst = (Long)i*ldc + k*Nv;
-          for (Long b = 0; b < Nv; b++) { Cvc[dst+b] = Cv[src+b]; Cdvc[dst+b] = Cdv[src+b]; }
-        }
+    // Column-stage Cv/Cdv (component index moved into the COLUMNS) so stage 2 batches over
+    // components as well as over outputs: the nine original (Nu x order).(order x Nv) products
+    // collapse to two GEMMs against an (order x COORD_DIM*Nv) operand. The restage is an
+    // L1-resident copy -- Matrix::GEMM has no strided-output form, and padding Mv block-diagonal
+    // instead would triple the stage-1 flops.
+    const Long ldc = COORD_DIM*Nv;
+    thread_local Vector<Real> Cvc, Cdvc, XdU, dXdv_soa;
+    if (Cvc.Dim() != (Long)order*ldc) { Cvc.ReInit((Long)order*ldc); Cdvc.ReInit((Long)order*ldc); }
+    for (Integer k = 0; k < COORD_DIM; k++) {
+      for (Integer i = 0; i < order; i++) {
+        const Long src = ((Long)k*order + i)*Nv, dst = (Long)i*ldc + k*Nv;
+        for (Long b = 0; b < Nv; b++) { Cvc[dst+b] = Cv[src+b]; Cdvc[dst+b] = Cdv[src+b]; }
       }
-      if (XdU.Dim() != 2*(Long)Nu*ldc) { XdU.ReInit(2*(Long)Nu*ldc); dXdv_soa.ReInit((Long)Nu*ldc); }
-      {
-        const Matrix<Real> Cvc_m(order, ldc, Cvc.begin(), false), Cdvc_m(order, ldc, Cdvc.begin(), false);
-        Matrix<Real> dV_m(Nu, ldc, dXdv_soa.begin(), false);
-        if (MuD_pre) { // [T^T; dT^T] -> X and dXdu in one GEMM
-          Matrix<Real> XdU_m(2*Nu, ldc, XdU.begin(), false);
-          Matrix<Real>::GEMM(XdU_m, *MuD_pre, Cvc_m);
-        } else {
-          Matrix<Real> X_m(Nu, ldc, XdU.begin(), false), dU_m(Nu, ldc, XdU.begin() + (Long)Nu*ldc, false);
-          Matrix<Real>::GEMM(X_m,  MuT,  Cvc_m);
-          Matrix<Real>::GEMM(dU_m, dMuT, Cvc_m);
-        }
-        Matrix<Real>::GEMM(dV_m, MuT, Cdvc_m);
-        BENCH_FLOPS(2.0 * (3.0*Nu) * order * ldc);
-Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * (3.0*Nu) * order * ldc));
-      }
-      BENCH_TOC(GeomTensor);
-
-      StaticArray<Real,COORD_DIM> Xt0_{0, 0, 0};
-      const Vector<Real> Xt0_v_(COORD_DIM, Xt0_, false);
-      BENCH_TIC(Assembly);
-      thread_local Vector<Real> Xsrc, Xnsrc, wq;
-      if (Xsrc.Dim() != nq*COORD_DIM) { Xsrc.ReInit(nq*COORD_DIM); Xnsrc.ReInit(nq*COORD_DIM); wq.ReInit(nq); }
-      for (Long a = 0; a < Nu; a++) {
-        for (Long b = 0; b < Nv; b++) {
-          const Long q = a*Nv + b;
-          const Long r = (Long)a*ldc + b, ru = ((Long)Nu + a)*ldc + b;
-          const Real du0 = XdU[ru+0*Nv], du1 = XdU[ru+1*Nv], du2 = XdU[ru+2*Nv];
-          const Real dv0 = dXdv_soa[r+0*Nv], dv1 = dXdv_soa[r+1*Nv], dv2 = dXdv_soa[r+2*Nv];
-          const Real n0 = du1*dv2 - du2*dv1, n1 = du2*dv0 - du0*dv2, n2 = du0*dv1 - du1*dv0;
-          const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
-          // nrm_sign flips the normal when exactly one direction is mirrored: the tangents are
-          // then d/dx (sub-element coords), whose cross product is anti-parallel to dXu x dXv.
-          const Real inv_area = (area > 0 ? nrm_sign/area : 0);
-          Xsrc[q*COORD_DIM+0] = XdU[r+0*Nv]; Xsrc[q*COORD_DIM+1] = XdU[r+1*Nv]; Xsrc[q*COORD_DIM+2] = XdU[r+2*Nv];
-          Xnsrc[q*COORD_DIM+0] = n0*inv_area; Xnsrc[q*COORD_DIM+1] = n1*inv_area; Xnsrc[q*COORD_DIM+2] = n2*inv_area;
-          wq[q] = area*wu[a]*wv[b];
-        }
-      }
-      BENCH_TOC(Assembly);
-
-      BENCH_TIC(KernelEval);
-      thread_local Matrix<Real> Mker;
-      ker.template KernelMatrix<Real,false>(Mker, Xt0_v_, Xsrc, Xnsrc); // (nq*KDIM0 x KDIM1full)
-      BENCH_TOC(KernelEval);
-
-      BENCH_TIC(KernelWeight);
-      thread_local Vector<Real> KWc;
-      if (KWc.Dim() != C*nq) KWc.ReInit(C*nq);
-      for (Long q = 0; q < nq; q++) {
-        for (Integer k0 = 0; k0 < KDIM0; k0++) {
-          for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-            Real val;
-            if (trg_dot_prod) {
-              val = 0;
-              for (Integer l = 0; l < COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*COORD_DIM+l] * normal_trg[l];
-            } else {
-              val = Mker[q*KDIM0+k0][k1];
-            }
-            KWc[(Long)(k0*KDIM1_out+k1)*nq + q] = val*wq[q];
-          }
-        }
-      }
-      BENCH_TOC(KernelWeight);
-
-      BENCH_TIC(Projection);
-      // Adjoint of the geometry interpolation: quadrature -> nodal. KWc is channel-major with
-      // (Nu x Nv) blocks, so the v-contraction is already one (C*Nu x Nv) operand and batches
-      // over all C channels for free. The u-contraction then writes one (order x order) block
-      // per channel -- a channel-major accumulator's layout -- so with acc_cm it accumulates in
-      // place via beta = 1, and the caller transposes to M_acc's node-major layout once per
-      // target rather than per cell.
-      thread_local Vector<Real> Yv, proj;
-      if (Yv.Dim() != (Long)C*Nu*order) Yv.ReInit((Long)C*Nu*order);
-      {
-        const Matrix<Real> KW_all((Long)C*Nu, Nv, KWc.begin(), false);
-        Matrix<Real> Y_all((Long)C*Nu, order, Yv.begin(), false);
-        Matrix<Real>::GEMM(Y_all, KW_all, MvT);
-      }
-      if (acc_cm) {
-        for (Integer c = 0; c < C; c++) {
-          const Matrix<Real> Y_c(Nu, order, Yv.begin() + (Long)c*Nu*order, false);
-          Matrix<Real> A_c(order, order, acc_cm->begin() + (Long)c*nnode, false);
-          Matrix<Real>::GEMM(A_c, Mu, Y_c, (Real)1);
-        }
-      } else {
-        if (proj.Dim() != (Long)C*nnode) proj.ReInit((Long)C*nnode);
-        for (Integer c = 0; c < C; c++) {
-          const Matrix<Real> Y_c(Nu, order, Yv.begin() + (Long)c*Nu*order, false);
-          Matrix<Real> P_c(order, order, proj.begin() + (Long)c*nnode, false);
-          Matrix<Real>::GEMM(P_c, Mu, Y_c);
-        }
-        if (acc_cm) for (Long i = 0; i < (Long)C*nnode; i++) (*acc_cm)[i] += proj[i];
-        else for (Long p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] += proj[(Long)c*nnode + p];
-      }
-      BENCH_FLOPS(2.0 * C * order * ((double)Nu*Nv + (double)order*Nu));
-Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((double)Nu*Nv + (double)order*Nu)));
-      BENCH_TOC(Projection);
-      return;
     }
-
+    if (XdU.Dim() != 2*(Long)Nu*ldc) { XdU.ReInit(2*(Long)Nu*ldc); dXdv_soa.ReInit((Long)Nu*ldc); }
+    {
+      const Matrix<Real> Cvc_m(order, ldc, Cvc.begin(), false), Cdvc_m(order, ldc, Cdvc.begin(), false);
+      Matrix<Real> dV_m(Nu, ldc, dXdv_soa.begin(), false);
+      { // MuD = [T^T; dT^T] gives X and dXdu in one GEMM
+        Matrix<Real> XdU_m(2*Nu, ldc, XdU.begin(), false);
+        Matrix<Real>::GEMM(XdU_m, MuD, Cvc_m);
+      }
+      Matrix<Real>::GEMM(dV_m, MuT, Cdvc_m);
+      BENCH_FLOPS(2.0 * (3.0*Nu) * order * ldc);
+Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * (3.0*Nu) * order * ldc));
+    }
     BENCH_TOC(GeomTensor);
 
-    // Sources are target-relative -> kernel target at the origin Xt0 = 0.
-    StaticArray<Real,COORD_DIM> Xt0{0, 0, 0};
-    const Vector<Real> Xt0_v(COORD_DIM, Xt0, false);
-
-    // u-BLOCKING. Unblocked, the per-target scratch is 18*nq doubles (~9 MB at nq=62k),
-    // which exceeds the L3 each thread gets once several threads share a CCX. Sweeping u
-    // in blocks keeps the live set at 18*UBLK*Nv and leaves the flop count unchanged:
-    // the u-rows of the geometry are independent, and the projection is a sum over u, so
-    // only its (Nu x order) intermediate spans blocks (42 KB at order 8).
-    const Long UBLK = std::max<Long>(1, std::min<Long>(Nu, ublk_pts_ / std::max<Long>(1, Nv)));
-    const Long nqmax = UBLK*Nv, cs = nqmax; // cs: per-component stride in the block buffers
-
-    thread_local Vector<Real> Xb, dXub, dXvb, Xsrcb, Xnsrcb, wqb, KWcb, Mkerb, Tfull, projb;
-    if (Xb.Dim() != COORD_DIM*nqmax) {
-      Xb.ReInit(COORD_DIM*nqmax); dXub.ReInit(COORD_DIM*nqmax); dXvb.ReInit(COORD_DIM*nqmax);
-      Xsrcb.ReInit(COORD_DIM*nqmax); Xnsrcb.ReInit(COORD_DIM*nqmax); wqb.ReInit(nqmax);
+    StaticArray<Real,COORD_DIM> Xt0_{0, 0, 0};
+    const Vector<Real> Xt0_v_(COORD_DIM, Xt0_, false);
+    BENCH_TIC(Assembly);
+    thread_local Vector<Real> Xsrc, Xnsrc, wq;
+    if (Xsrc.Dim() != nq*COORD_DIM) { Xsrc.ReInit(nq*COORD_DIM); Xnsrc.ReInit(nq*COORD_DIM); wq.ReInit(nq); }
+    for (Long a = 0; a < Nu; a++) {
+      for (Long b = 0; b < Nv; b++) {
+        const Long q = a*Nv + b;
+        const Long r = (Long)a*ldc + b, ru = ((Long)Nu + a)*ldc + b;
+        const Real du0 = XdU[ru+0*Nv], du1 = XdU[ru+1*Nv], du2 = XdU[ru+2*Nv];
+        const Real dv0 = dXdv_soa[r+0*Nv], dv1 = dXdv_soa[r+1*Nv], dv2 = dXdv_soa[r+2*Nv];
+        const Real n0 = du1*dv2 - du2*dv1, n1 = du2*dv0 - du0*dv2, n2 = du0*dv1 - du1*dv0;
+        const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
+        // nrm_sign flips the normal when exactly one direction is mirrored: the tangents are
+        // then d/dx (sub-element coords), whose cross product is anti-parallel to dXu x dXv.
+        const Real inv_area = (area > 0 ? nrm_sign/area : 0);
+        Xsrc[q*COORD_DIM+0] = XdU[r+0*Nv]; Xsrc[q*COORD_DIM+1] = XdU[r+1*Nv]; Xsrc[q*COORD_DIM+2] = XdU[r+2*Nv];
+        Xnsrc[q*COORD_DIM+0] = n0*inv_area; Xnsrc[q*COORD_DIM+1] = n1*inv_area; Xnsrc[q*COORD_DIM+2] = n2*inv_area;
+        wq[q] = area*wu[a]*wv[b];
+      }
     }
-    if (KWcb.Dim() != C*nqmax) { KWcb.ReInit(C*nqmax); Mkerb.ReInit(nqmax*KDIM0*KDIM1full); }
-    if (Tfull.Dim() != C*Nu*(Long)order) Tfull.ReInit(C*Nu*(Long)order);
-    if (projb.Dim() != C*nnode) projb.ReInit(C*nnode);
+    BENCH_TOC(Assembly);
 
-    for (Long a0 = 0; a0 < Nu; a0 += UBLK) {
-      const Long nu = std::min<Long>(UBLK, Nu - a0), nqb = nu*Nv;
-      // MuT/dMuT are (Nu x order) row-major, so a u-block is a contiguous row slice.
-      const Matrix<Real> MuT_b (nu, order, (Iterator<Real>)MuT.begin()  + a0*(Long)order, false);
-      const Matrix<Real> dMuT_b(nu, order, (Iterator<Real>)dMuT.begin() + a0*(Long)order, false);
+    BENCH_TIC(KernelEval);
+    thread_local Matrix<Real> Mker;
+    ker.template KernelMatrix<Real,false>(Mker, Xt0_v_, Xsrc, Xnsrc); // (nq*KDIM0 x KDIM1full)
+    BENCH_TOC(KernelEval);
 
-      BENCH_TIC(GeomTensor);
-      for (Integer k = 0; k < COORD_DIM; k++) {
-        const Matrix<Real> Cv_k (order, Nv, Cv.begin()  + k*(Long)order*Nv, false);
-        const Matrix<Real> Cdv_k(order, Nv, Cdv.begin() + k*(Long)order*Nv, false);
-        Matrix<Real> Xk(nu, Nv, Xb.begin() + k*cs, false), dUk(nu, Nv, dXub.begin() + k*cs, false), dVk(nu, Nv, dXvb.begin() + k*cs, false);
-        Matrix<Real>::GEMM(Xk,  MuT_b,  Cv_k);
-        Matrix<Real>::GEMM(dUk, dMuT_b, Cv_k);
-        Matrix<Real>::GEMM(dVk, MuT_b,  Cdv_k);
-        BENCH_FLOPS(3.0 * 2 * (double)nu * order * Nv);
-Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * order * Nv));
-      }
-      BENCH_TOC(GeomTensor);
-
-      BENCH_TIC(Assembly);
-      for (Long a = 0; a < nu; a++) {
-        for (Long b = 0; b < Nv; b++) {
-          const Long q = a*Nv + b;
-          const Real du0 = dXub[0*cs+q], du1 = dXub[1*cs+q], du2 = dXub[2*cs+q];
-          const Real dv0 = dXvb[0*cs+q], dv1 = dXvb[1*cs+q], dv2 = dXvb[2*cs+q];
-          const Real n0 = du1*dv2 - du2*dv1, n1 = du2*dv0 - du0*dv2, n2 = du0*dv1 - du1*dv0;
-          const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
-          const Real inv_area = (area > 0 ? 1/area : 0);
-          Xsrcb[q*COORD_DIM+0] = Xb[0*cs+q]; Xsrcb[q*COORD_DIM+1] = Xb[1*cs+q]; Xsrcb[q*COORD_DIM+2] = Xb[2*cs+q];
-          Xnsrcb[q*COORD_DIM+0] = n0*inv_area; Xnsrcb[q*COORD_DIM+1] = n1*inv_area; Xnsrcb[q*COORD_DIM+2] = n2*inv_area;
-          wqb[q] = area*wu[a0+a]*wv[b];
-        }
-      }
-      BENCH_TOC(Assembly);
-
-      // Sized views, so KernelMatrix never re-allocates (it only ReInits on dim mismatch).
-      BENCH_TIC(KernelEval);
-      Matrix<Real> Mker(nqb*KDIM0, KDIM1full, Mkerb.begin(), false);
-      const Vector<Real> Xsrc_v(nqb*COORD_DIM, Xsrcb.begin(), false), Xnsrc_v(nqb*COORD_DIM, Xnsrcb.begin(), false);
-      ker.template KernelMatrix<Real,false>(Mker, Xt0_v, Xsrc_v, Xnsrc_v);
-      BENCH_TOC(KernelEval);
-
-      // q stays OUTERMOST on purpose: it streams Mker (dense, row-major) contiguously. A
-      // c-outer/q-inner reorder was ~25% SLOWER for Stokes self (strided Mker gathers).
-      BENCH_TIC(KernelWeight);
-      for (Long q = 0; q < nqb; q++) {
-        for (Integer k0 = 0; k0 < KDIM0; k0++) {
-          for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-            Real val;
-            if (trg_dot_prod) {
-              val = 0;
-              for (Integer l = 0; l < COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*COORD_DIM+l] * normal_trg[l];
-            } else {
-              val = Mker[q*KDIM0+k0][k1];
-            }
-            KWcb[(Long)(k0*KDIM1_out+k1)*cs + q] = val*wqb[q];
+    BENCH_TIC(KernelWeight);
+    thread_local Vector<Real> KWc;
+    if (KWc.Dim() != C*nq) KWc.ReInit(C*nq);
+    for (Long q = 0; q < nq; q++) {
+      for (Integer k0 = 0; k0 < KDIM0; k0++) {
+        for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
+          Real val;
+          if (trg_dot_prod) {
+            val = 0;
+            for (Integer l = 0; l < COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*COORD_DIM+l] * normal_trg[l];
+          } else {
+            val = Mker[q*KDIM0+k0][k1];
           }
+          KWc[(Long)(k0*KDIM1_out+k1)*nq + q] = val*wq[q];
         }
       }
-      BENCH_TOC(KernelWeight);
-
-      // Contract v now; the u-contraction is deferred so Mu is never sliced (its columns
-      // would be strided). Tfull rows [a0,a0+nu) are written contiguously per channel.
-      BENCH_TIC(Projection);
-      for (Integer c = 0; c < C; c++) {
-        const Matrix<Real> KW_c(nu, Nv, KWcb.begin() + (Long)c*cs, false);
-        Matrix<Real> T_c(nu, order, Tfull.begin() + (Long)c*Nu*order + a0*(Long)order, false);
-        Matrix<Real>::GEMM(T_c, KW_c, MvT);
-      }
-      BENCH_TOC(Projection);
     }
+    BENCH_TOC(KernelWeight);
 
-    // Final u-contraction: M_acc[i*order+j][c] += (Mu . Tfull_c)[i][j].
     BENCH_TIC(Projection);
-    for (Integer c = 0; c < C; c++) {
-      const Matrix<Real> T_c(Nu, order, Tfull.begin() + (Long)c*Nu*order, false);
-      Matrix<Real> P_c(order, order, projb.begin() + (Long)c*nnode, false);
-      Matrix<Real>::GEMM(P_c, Mu, T_c);
+    // Adjoint of the geometry interpolation: quadrature -> nodal. KWc is channel-major with
+    // (Nu x Nv) blocks, so the v-contraction is already one (C*Nu x Nv) operand and batches
+    // over all C channels for free. The u-contraction then writes one (order x order) block
+    // per channel -- a channel-major accumulator's layout -- so with acc_cm it accumulates in
+    // place via beta = 1, and the caller transposes to M_acc's node-major layout once per
+    // target rather than per cell.
+    thread_local Vector<Real> Yv;
+    if (Yv.Dim() != (Long)C*Nu*order) Yv.ReInit((Long)C*Nu*order);
+    {
+      const Matrix<Real> KW_all((Long)C*Nu, Nv, KWc.begin(), false);
+      Matrix<Real> Y_all((Long)C*Nu, order, Yv.begin(), false);
+      Matrix<Real>::GEMM(Y_all, KW_all, MvT);
     }
-    for (Long p = 0; p < nnode; p++)
-      for (Integer c = 0; c < C; c++) M_acc[p][c] += projb[(Long)c*nnode + p];
+    for (Integer c = 0; c < C; c++) {
+      const Matrix<Real> Y_c(Nu, order, Yv.begin() + (Long)c*Nu*order, false);
+      Matrix<Real> A_c(order, order, acc_cm.begin() + (Long)c*nnode, false);
+      Matrix<Real>::GEMM(A_c, Mu, Y_c, (Real)1);   // beta = 1: accumulate in place
+    }
+    BENCH_FLOPS(2.0 * C * order * ((double)Nu*Nv + (double)order*Nu));
+Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(2.0 * C * order * ((double)Nu*Nv + (double)order*Nu)));
     BENCH_TOC(Projection);
   }
 
@@ -878,16 +685,14 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
     // Every cell operator is a table entry now. nrm_sign corrects the normal on quadrants with
     // exactly one mirrored direction, where d/dx_u x d/dx_v is anti-parallel to dXu x dXv; the
     // area element carries |du/dx . dv/dx| = slen_u.slen_v, so weights stay the normalized g.w.
-    const Vector<Real> empty_param;
     auto emit = [&](Integer sdu, Integer sdv, Integer iu, Integer iv) {
       const GradeRule& gu = tab[iu];
       const GradeRule& gv = tab[iv];
       if (!(gu.b > gu.a) || !(gv.b > gv.a)) return;
       const Real nsign = ((sdu == 1) != (sdv == 1)) ? (Real)-1 : (Real)1;
-      IntegrateBlock<order>(M_acc, qel, elem_idx, Xtrg, normal_trg,
-                            empty_param, gu.w, empty_param, gv.w, ker,
-                            &gv.T, &gv.dT, &gu.T, nullptr, &gv.TT, &gu.TT, nullptr,
-                            &Xsub[sdu][sdv], &gu.TD, nsign, &acc);
+      IntegrateBlock<order>(normal_trg, gu.w, gv.w, ker,
+                            gu.T, gu.TT, gu.TD, gv.T, gv.dT, gv.TT,
+                            Xsub[sdu][sdv], nsign, acc);
     };
     for (Integer sdu = 0; sdu < 2; sdu++) {
       if (!(slen[0][sdu] > 0)) continue;
@@ -1011,15 +816,6 @@ Profile::IncrementCounter(ProfileCounter::FLOP, (Long)(3.0 * 2 * (double)nu * or
           SCTL_ASSERT_MSG(T.J0 > 0, "Duffy triangle orientation");
           T.swap_ab = (fabs<Real>(e[0]) < fabs<Real>(e[1]));  // e is axis aligned
           T.nsign = (T.swap_ab ? (Real)-1 : (Real)1);
-          { // parameter-space foot; the metric correction (cot(theta) shift) is per target
-            const Real am = e[0]*e[0] + e[1]*e[1];
-            Real ts = -(a[0]*e[0] + a[1]*e[1])/am;
-            ts = (ts < 0 ? (Real)0 : (ts > 1 ? (Real)1 : ts));
-            const Real c[2] = {a[0]+ts*e[0], a[1]+ts*e[1]};
-            T.Llen = sqrt<Real>(am);
-            T.tstarI = ts;
-            T.ddI = sqrt<Real>(c[0]*c[0] + c[1]*c[1])/T.Llen;
-          }
           const Real al0 = (T.swap_ab ? v0 : u0), be0 = (T.swap_ab ? u0 : v0);
           const Real aal = (T.swap_ab ? a[1] : a[0]), abe = (T.swap_ab ? a[0] : a[1]);
           const Real eal = (T.swap_ab ? e[1] : e[0]);

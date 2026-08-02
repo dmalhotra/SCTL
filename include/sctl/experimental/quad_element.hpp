@@ -25,12 +25,26 @@ namespace sctl {
        * Construct from nodal coordinates.
        * @param[in] order polynomial order of each element.
        * @param[in] coord node coords, AoS {x1,y1,z1,...,xn,yn,zn}.
-       * @param[in] comm communicator. When comm.Size() > 1, `coord` is taken to hold the full
-       * (globally-replicated) mesh and only this rank's contiguous element slice is kept.
+       * @param[in] comm communicator. When comm.Size() > 1, `coord` is assumed to
+       * hold the full (globally-replicated) mesh and only this rank's contiguous
+       * element slice is kept; with the default single-process comm the whole mesh
+       * is used.
+       *
+       * TODO: Fix this: in a distributed code, a global array should never all be on a single process.
        */
       template <class ValueType> QuadElemList(Integer order, const Vector<ValueType>& coord, const Comm& comm = Comm::Self());
 
-      /** @see QuadElemList(Integer, const Vector<ValueType>&, const Comm&) */
+      /**
+       * Initialize from nodal coordinates.
+       * @param[in] order polynomial order of each element.
+       * @param[in] coord node coords, AoS {x1,y1,z1,...,xn,yn,zn}.
+       * @param[in] comm communicator. When comm.Size() > 1, `coord` is assumed to
+       * hold the full (globally-replicated) mesh and only this rank's contiguous
+       * element slice is kept; with the default single-process comm the whole mesh
+       * is used.
+       *
+       * TODO: Fix this: in a distributed code, a global array should never all be on a single process.
+       */
       template <class ValueType> void Init(Integer order, const Vector<ValueType>& coord, const Comm& comm = Comm::Self());
 
       virtual ~QuadElemList() {}
@@ -140,7 +154,6 @@ namespace sctl {
         bool swap_ab = false;    // collapsed (s-only) coordinate is u => local (alpha,beta) = (v,u)
         Real nsign = 1;          // restores the sign of dX/du x dX/dv
         Real J0 = 0;             // |a x b|
-        Real tstarI = 0, ddI = 0, Llen = 0;  // parameter-space foot and width; metric-corrected per target
         Matrix<Real> WbC;        // (order x 2*ns) = [Wb | Wb'], collapsed direction at the s-nodes
         Matrix<Real> WbT;        // (ns x order), adjoint of the value half
         Vector<Matrix<Real>> MiC, MiT;       // ns entries: (order x 2*order) = [Mi | Mi'], and (order x order)
@@ -171,16 +184,13 @@ namespace sctl {
       // stalled.
       Real GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
 
-      // Accumulate a tensor-product quadrature (u_param x v_param, weights wu (x) wv) against
-      // target Xtrg into M_acc; non-empty normal_trg contracts with the target normal. The
-      // *_pre operators (order x N), when given, replace the ones built from param.
-      template <Integer order, class Kernel> static void IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx,
-                                                                        const Vector<Real>& Xtrg, const Vector<Real>& normal_trg,
-                                                                        const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker,
-                                                                        const Matrix<Real>* Mv_pre = nullptr, const Matrix<Real>* dMv_pre = nullptr, const Matrix<Real>* Mu_pre = nullptr, const Matrix<Real>* dMu_pre = nullptr,
-                                                                        const Matrix<Real>* MvT_pre = nullptr, const Matrix<Real>* MuT_pre = nullptr, const Matrix<Real>* dMuT_pre = nullptr,
-                                                                        const Vector<Real>* src_nodal = nullptr, const Matrix<Real>* MuD_pre = nullptr, const Real nrm_sign = 1,
-                                                                        Vector<Real>* acc_cm = nullptr);
+      // One near leaf cell: accumulate its tensor-product quadrature (weights wu (x) wv) into the
+      // channel-major accumulator acc_cm. Non-empty normal_trg contracts with the target normal.
+      // src_nodal is the target-shifted nodal slab, so the kernel target is the origin.
+      template <Integer order, class Kernel> static void IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker,
+                                                                        const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD,
+                                                                        const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT,
+                                                                        const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm);
       // Split-at-foot near scheme. Splitting the element at the foot makes every refinement
       // grade toward an ENDPOINT, so in normalized sub-element coordinates the graded intervals
       // depend only on the level and their operators precompute once per `order`. Per side,
