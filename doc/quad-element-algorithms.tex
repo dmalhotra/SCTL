@@ -492,15 +492,22 @@ it does not shrink with width at all --- it is excluded from these timings, but 
 whole-run time scales worse than the table suggests. Stokes is uniformly a little worse than
 Laplace, consistent with its larger per-target working set.
 
-\subsection{Intel Icelake}
+\subsection{Other node types}
 
-Not yet run. \texttt{scripts/bench-cubed-sphere-icelake.sbatch} submits the same no-argument run
-to an Icelake node with 64 cores:
-\begin{center}\small\texttt{sbatch scripts/bench-cubed-sphere-icelake.sbatch}\end{center}
-The script builds into \texttt{bin.icelake/} and \texttt{obj.icelake/} rather than \texttt{./bin}.
-That is not tidiness: the Makefile compiles with \texttt{-march=native}, so an Icelake binary
-carries AVX-512 and dies with \texttt{SIGILL} on the Zen 2 workstations, and the two builds share
-a home filesystem.
+Not yet run. \texttt{scripts/bench-cubed-sphere.sbatch} takes the architecture and the width from
+the submit line, so one script covers every node type:
+\begin{center}\footnotesize
+\begin{tabular}{@{}ll@{}}
+Intel Icelake, 64 cores & \texttt{sbatch -C icelake -{}-cpus-per-task=64 scripts/bench-cubed-sphere.sbatch} \\
+AMD Genoa, 96 cores     & \texttt{sbatch -C genoa~~ -{}-cpus-per-task=96 scripts/bench-cubed-sphere.sbatch} \\
+\end{tabular}
+\end{center}
+The scaling section runs the full width and then powers of two down to 1, so a 96-core node gives
+$96, 64, 32, \dots, 1$ and the curves stay comparable across machines with different core counts.
+Each architecture builds into its own \texttt{bin.<tag>/} and \texttt{obj.<tag>/} and nothing
+writes \texttt{./bin}. That is not tidiness: the Makefile compiles with \texttt{-march=native}, so
+an Icelake or Genoa binary carries AVX-512 and dies with \texttt{SIGILL} on the Zen 2
+workstations, which share this home filesystem.
 
 \vspace{1em}
 \hrule

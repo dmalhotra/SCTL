@@ -34,6 +34,7 @@
 #include <sctl/experimental/quad_element.hpp>
 #include <sctl/experimental/quad_element.cpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -419,10 +420,15 @@ int main(int argc, char** argv) {
       // does not shrink with width at all.
       const Integer nt_max = (nthreads > 0 ? nthreads : NumThreads());
       if (!comm.Rank()) std::printf("# OpenMP strong scaling (order 12, ppf 8, twist pi/6, tol 1e-9)\n");
-      for (Integer nt = nt_max; nt >= 1; nt /= 2)
-        RunKernel("laplace", /*order*/ 12, /*ppf*/ 8, pi/6, (Real)1e-9, nt, comm);
-      for (Integer nt = nt_max; nt >= 1; nt /= 2)
-        RunKernel("stokes", /*order*/ 12, /*ppf*/ 8, pi/6, (Real)1e-9, nt, comm);
+      // Widths: the full node, then powers of two down to 1. Halving from nt_max instead
+      // would give 96, 48, 24, ... on a 96-core node, which is not comparable across machines.
+      std::vector<Integer> widths;
+      widths.push_back(nt_max);
+      for (Integer q = 1; q <= nt_max; q *= 2) widths.push_back(q);
+      std::sort(widths.begin(), widths.end(), std::greater<Integer>());
+      widths.erase(std::unique(widths.begin(), widths.end()), widths.end());
+      for (const Integer nt : widths) RunKernel("laplace", /*order*/ 12, /*ppf*/ 8, pi/6, (Real)1e-9, nt, comm);
+      for (const Integer nt : widths) RunKernel("stokes",  /*order*/ 12, /*ppf*/ 8, pi/6, (Real)1e-9, nt, comm);
     }
   }
   Comm::MPI_Finalize();
