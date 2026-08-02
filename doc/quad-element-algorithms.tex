@@ -485,7 +485,7 @@ it compares what one core achieves and how much of that survives to the full nod
 \begin{center}
 \begin{tikzpicture}
 \begin{axis}[width=0.49\textwidth,height=5.6cm,xmode=log,log basis x=2,
-             xlabel={threads},ylabel={parallel efficiency (\%)},xmin=0.8,xmax=160,ymin=50,ymax=105,
+             xlabel={threads},ylabel={parallel efficiency (\%)},xmin=0.8,xmax=160,ymin=0,ymax=105,
              legend pos=south west,legend style={font=\scriptsize,draw=none},
              grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
              label style={font=\small},title style={font=\small},title={Laplace}]
@@ -518,17 +518,17 @@ it compares what one core achieves and how much of that survives to the full nod
 \begin{center}\small
 \begin{tabular}{@{}llrrrrrr@{}}
 \toprule
- & & \multicolumn{3}{c}{1 thread} & \multicolumn{3}{c}{full node} \\
-\cmidrule(lr){3-5}\cmidrule(lr){6-8}
-machine & kernel & cores & setup (s) & pts/s/core & setup (s) & pts/s/core & speedup \\
+ & & & \multicolumn{2}{c}{1 thread} & \multicolumn{2}{c}{full node} & \\
+\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+machine & kernel & cores & setup (s) & pts/s & setup (s) & pts/s & speedup \\
 \midrule
-Rome    & Laplace & 128 & 15.575 & 3550 & 0.188 & 2294 & 82.8$\times$ (65\%) \\
-Genoa   & Laplace &  96 &  9.546 & 5793 & 0.121 & 4766 & 78.9$\times$ (82\%) \\
-Icelake & Laplace &  64 &  8.764 & 6310 & 0.177 & 4891 & 49.5$\times$ (77\%) \\
+Rome    & Laplace & 128 & 15.575 & 3550 & 0.188 & 293\,568 & 82.8$\times$ (65\%) \\
+Genoa   & Laplace &  96 &  9.546 & 5793 & 0.121 & 457\,565 & 78.9$\times$ (82\%) \\
+Icelake & Laplace &  64 &  8.764 & 6310 & 0.177 & 313\,018 & 49.5$\times$ (77\%) \\
 \addlinespace
-Rome    & Stokes  & 128 & 30.945 & 1787 & 0.413 & 1047 & 74.9$\times$ (59\%) \\
-Genoa   & Stokes  &  96 & 18.117 & 3052 & 0.223 & 2587 & 81.2$\times$ (85\%) \\
-Icelake & Stokes  &  64 & 18.977 & 2914 & 0.410 & 2107 & 46.3$\times$ (72\%) \\
+Rome    & Stokes  & 128 & 30.945 & 1787 & 0.413 & 134\,016 & 74.9$\times$ (59\%) \\
+Genoa   & Stokes  &  96 & 18.117 & 3052 & 0.223 & 248\,323 & 81.2$\times$ (85\%) \\
+Icelake & Stokes  &  64 & 18.977 & 2914 & 0.410 & 134\,861 & 46.3$\times$ (72\%) \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -544,9 +544,8 @@ throughput with width and Rome loses the most: $-35\%$ from 1 thread to 128, aga
 where Rome is at $59$--$65\%$ at 128; part of that is simply that Rome is asked to go further, but
 Rome is also below Genoa at matched width (73\% vs 82\% at 64 threads, Laplace).
 
-In absolute terms the full node delivers $294$k, $458$k and $313$k points/s (Laplace) on Rome,
-Genoa and Icelake --- Genoa wins on aggregate despite having fewer cores than Rome, and Icelake
-matches Rome with half the cores.
+The last column pair is the absolute throughput: Genoa wins on aggregate despite having fewer
+cores than Rome, and Icelake matches Rome with half the cores.
 
 Two things bound every curve and are visible in all three: at the widest setting there are only
 $384/N$ elements per thread in the self loop, which is coarse for \texttt{schedule(static)} (3 per
