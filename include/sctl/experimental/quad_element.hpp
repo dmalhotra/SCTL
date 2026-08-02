@@ -124,24 +124,17 @@ namespace sctl {
 
     private:
 
-      // Grouped by which public entry point reaches them. SelfInterac and NearInterac are
-      // independent and may be called in either order: every cache below is a function-local
-      // static that initializes itself on first use.
+      // Contiguous element range [i0,i1) owned by this rank under a linear partition of
+      // Nelem_total elements; the full range for a single-process comm. Used by Init and Read.
+      static void PartitionRange(Long Nelem_total, const Comm& comm, Long& i0, Long& i1);
 
-      // ============================ both entry points ============================
+      // Tensor-product contraction of a component-major SoA slab; used by GetGeom and GetVTUData.
+      template <class ValueType> static void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv);
 
-      // Cached 1D nodal differentiation matrix D (order x order) on the GL nodes,
-      // D[i][a] = L_i'(node_a); D . LuV turns a value-interp operator into a deriv one.
-      static const Matrix<Real>& DiffMat(const Integer order);
-      template <Integer order> static const Matrix<Real>& DiffMat() { return DiffMat(order); }
+      // Nodal d/du, d/dv of a component-major SoA coord slab. Init builds the absolute
+      // dcoord_du/dv cache with it; GetGeom uses it on target-shifted coords.
+      static void NodalDerivs(const Vector<Real>& coord_slab, const Integer order, Vector<Real>& du_slab, Vector<Real>& dv_slab);
 
-      // Runtime order is dispatched to a compile-time `order` (switch {4..48}) because `order`
-      // bounds every inner loop. `digits` stays runtime: it only selects a cached rule, so
-      // templating it just duplicates identical code.
-      static constexpr Integer MaxDigits = 16;   // digits in [0, MaxDigits)
-      // Largest d with tol <= 10^-d, where 10^-d is repeated multiplication of 0.1, NOT the
-      // literal 1e-d -- the two differ in the last bits and so pick different d at exact powers.
-      static Integer DigitsFromTol(const Real tol);
 
       // ============================ SelfInterac only ============================
 
@@ -167,6 +160,7 @@ namespace sctl {
       static Integer DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0);
       template <Integer order, class Kernel> static void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
       template <Integer order, class Kernel> static void SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits);
+
 
       // ======================= NearInterac only =======================
 
@@ -224,19 +218,24 @@ namespace sctl {
       template <Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
       template <Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits);
 
-      // ================= neither: construction, I/O, public geometry =================
-      // The quadrature schemes reach the two geometry helpers only through the public GetGeom.
 
-      // Contiguous element range [i0,i1) owned by this rank under a linear partition of
-      // Nelem_total elements; the full range for a single-process comm. Used by Init and Read.
-      static void PartitionRange(Long Nelem_total, const Comm& comm, Long& i0, Long& i1);
+      // ============================ SelfInterac and NearInterac ============================
 
-      // Tensor-product contraction of a component-major SoA slab; used by GetGeom and GetVTUData.
-      template <class ValueType> static void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv);
+      // Cached 1D nodal differentiation matrix D (order x order) on the GL nodes,
+      // D[i][a] = L_i'(node_a); D . LuV turns a value-interp operator into a deriv one.
+      static const Matrix<Real>& DiffMat(const Integer order);
+      template <Integer order> static const Matrix<Real>& DiffMat() { return DiffMat(order); }
 
-      // Nodal d/du, d/dv of a component-major SoA coord slab. Init builds the absolute
-      // dcoord_du/dv cache with it; GetGeom uses it on target-shifted coords.
-      static void NodalDerivs(const Vector<Real>& coord_slab, const Integer order, Vector<Real>& du_slab, Vector<Real>& dv_slab);
+      // Runtime order is dispatched to a compile-time `order` (switch {4..48}) because `order`
+      // bounds every inner loop. `digits` stays runtime: it only selects a cached rule, so
+      // templating it just duplicates identical code.
+      // Accuracy levels the type can express: digits10 ~ significand bits * log10(2)
+      // (30103/100000). 7 for float, 16 for double, 19 for long double, 34 for __float128.
+      static constexpr Integer MaxDigits = 1 + GetSigBits<Real>::value()*30103/100000;
+      // Largest d with tol <= 10^-d, where 10^-d is repeated multiplication of 0.1, NOT the
+      // literal 1e-d -- the two differ in the last bits and so pick different d at exact powers.
+      static Integer DigitsFromTol(const Real tol);
+
 
       Long nelem = 0;
       Integer order = 0;

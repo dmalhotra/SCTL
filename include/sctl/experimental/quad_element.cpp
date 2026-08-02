@@ -477,10 +477,11 @@ namespace sctl {
     // 1e-4 -> 2.0, 1e-6 -> 2.0, 1e-8 -> 2.5, 1e-10 -> 3.0, 1e-12 -> 2.5. Accuracy breaks down
     // above rho ~ 3.2 at every tolerance: the attained rate saturates near rho_eff ~ 3, so a
     // larger design rho only buys refinement levels without improving the per-cell rate.
-    const double d = -std::log10((double)std::max<Real>(tol, (Real)1e-16));
+    const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
+    const double d = -std::log10((double)tol_);
     const double rho = std::min(3.0, std::max(2.0, 2.0 + 0.25*(d - 6)));
     const double C = std::max(1e-3, (15.0*(rho*rho - 1))/64.0);
-    QuadOrder = std::max<Integer>(2, (Integer)std::ceil(-std::log(C*(double)std::max<Real>(tol, (Real)1e-16))/std::log(rho)*0.5 + 1));
+    QuadOrder = std::max<Integer>(2, (Integer)std::ceil(-std::log(C*(double)tol_)/std::log(rho)*0.5 + 1));
 
     // End-foot reach, not the semi-major axis. E_rho has semi-axes a,b with a^2-b^2 = 1, and a
     // singularity at parameter s with perpendicular offset d~ = 2d/L lies outside it when
