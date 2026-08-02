@@ -21,9 +21,12 @@
  * greens_den. Read them together: greens_sol near geom_surf/greens_den means the discretisation
  * limits the result, greens_sol far above them means the quadrature does.
  *
- * Threads come from OMP_NUM_THREADS. Run:
+ * Threads default to OMP_NUM_THREADS and can be overridden by the last argument. Binding still
+ * comes from OMP_PLACES / OMP_PROC_BIND, so set those too -- the run warns if the threads do not
+ * land on distinct cores, which would make every pts/s below meaningless. Run:
  *     ./bin/bench-cubed-sphere                                  full sweep
- *     ./bin/bench-cubed-sphere <laplace|stokes> <order> <ppf> <twist> <tol>
+ *     ./bin/bench-cubed-sphere <nthreads>                       full sweep, given threads
+ *     ./bin/bench-cubed-sphere <laplace|stokes> <order> <ppf> <twist> <tol> [nthreads]
  *     OMP_NUM_THREADS=64 OMP_PLACES=cores OMP_PROC_BIND=close ./bin/bench-cubed-sphere stokes 12 8 3.14159 1e-12
  */
 
@@ -34,8 +37,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <set>
 #include <string>
 #include <vector>
+
+#if defined(__linux__)
+#include <sched.h>
+#endif
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -53,6 +61,21 @@ double WallTime() {
   return omp_get_wtime();
 #else
   return (double)clock() / CLOCKS_PER_SEC;
+#endif
+}
+
+// Warn if the threads share cores: pts/s/core is meaningless under oversubscription.
+void CheckBinding(const Integer T) {
+#if defined(__linux__) && defined(_OPENMP)
+  std::vector<int> cpu(T, -1);
+  #pragma omp parallel num_threads(T)
+  { const Integer t = omp_get_thread_num(); if (t < T) cpu[t] = sched_getcpu(); }
+  const std::set<int> uniq(cpu.begin(), cpu.end());
+  if ((Integer)uniq.size() != T)
+    std::printf("*** WARNING: %ld distinct cores for %d threads -- oversubscribed, pts/s/core is meaningless\n",
+                (long)uniq.size(), (int)T);
+#else
+  (void)T;
 #endif
 }
 
@@ -307,8 +330,8 @@ double GreensSolError(const QuadElemList<Real>& qel, const Real tol, const Vecto
 }
 
 void Header() {
-  std::printf("#%-7s %5s %4s %8s %9s | %9s %9s | %9s %9s %9s | %10s %10s | %8s %8s %10s %10s\n",
-              "kernel", "order", "ppf", "twist", "tol",
+  std::printf("#%-7s %4s %5s %4s %8s %9s | %9s %9s | %9s %9s %9s | %10s %10s | %8s %8s %10s %10s\n",
+              "kernel", "thr", "order", "ppf", "twist", "tol",
               "geom_area", "geom_surf", "SL[1]sprd", "SL[1]abs", "DL[1]",
               "greens_den", "greens_sol", "setup_sl", "setup_dl", "pps/c_sl", "pps/c_dl");
 }
@@ -335,15 +358,23 @@ void Run(const char* name, const Real sl_scale, const Integer order, const Long 
   comm.Allreduce(n+0, n+1, 1, CommOp::SUM);
   const double N = (double)n[1], T = (double)NumThreads()*comm.Size();
   if (!comm.Rank()) {
-    std::printf(" %-7s %5d %4ld %8.4f %9.0e | %9.2e %9.2e | %9.2e %9.2e %9.2e | %10.2e %10.2e | %8.3f %8.3f %10.1f %10.1f\n",
-                name, (int)order, (long)ppf, (double)twist, (double)tol,
+    std::printf(" %-7s %4d %5d %4ld %8.4f %9.0e | %9.2e %9.2e | %9.2e %9.2e %9.2e | %10.2e %10.2e | %8.3f %8.3f %10.1f %10.1f\n",
+                name, (int)NumThreads(), (int)order, (long)ppf, (double)twist, (double)tol,
                 g.area, g.surf, sl_sprd, sl_abs, dl, den, sol,
                 ts_sl, ts_dl, N/ts_sl/T, N/ts_dl/T);
     std::fflush(stdout);
   }
 }
 
-void RunKernel(const std::string& k, const Integer order, const Long ppf, const Real twist, const Real tol, const Comm& comm) {
+// nthreads <= 0 leaves OMP_NUM_THREADS alone. Set here rather than once in main so a sweep can
+// vary the width per configuration; the binding is re-checked whenever the width changes.
+void RunKernel(const std::string& k, const Integer order, const Long ppf, const Real twist, const Real tol, const Integer nthreads, const Comm& comm) {
+#ifdef _OPENMP
+  if (nthreads > 0) omp_set_num_threads((int)nthreads);
+#endif
+  static Integer checked = -1;
+  if (NumThreads() != checked) { checked = NumThreads(); if (!comm.Rank()) CheckBinding(checked); }
+
   // S[1] on a sphere of radius R: R for Laplace, 2R/3 for the Stokeslet.
   if (k == "stokes") Run<Stokes3D_FxU, Stokes3D_DxU, Stokes3D_FxT >("stokes",  (Real)2/3, order, ppf, twist, tol, comm);
   else               Run<Laplace3D_FxU, Laplace3D_DxU, Laplace3D_FxdU>("laplace", (Real)1,   order, ppf, twist, tol, comm);
@@ -355,22 +386,43 @@ int main(int argc, char** argv) {
   Comm::MPI_Init(&argc, &argv);
   {
     const Comm comm = Comm::World();
+
+    // Threads: last positional argument if present, else OMP_NUM_THREADS. RunKernel applies it.
+    const bool single = (argc >= 6);
+    const char* nthr_arg = (single && argc >= 7) ? argv[6] : (!single && argc == 2 ? argv[1] : nullptr);
+    Integer nthreads = 0;   // 0 => leave OMP_NUM_THREADS alone
+    if (nthr_arg) {
+      const long n = atol(nthr_arg);
+      if (n > 0) nthreads = (Integer)n;
+      else if (!comm.Rank()) std::printf("# ignoring non-numeric thread count '%s'\n", nthr_arg);
+    }
+
     if (!comm.Rank()) {
-      std::printf("threads/rank = %d, ranks = %d\n", (int)NumThreads(), (int)comm.Size());
+      std::printf("threads/rank = %d, ranks = %d\n", (int)(nthreads > 0 ? nthreads : NumThreads()), (int)comm.Size());
       std::printf("SL[1]abs compares S[1] against its exact value: R (Laplace), 2R/3 (Stokes).\n\n");
     }
     Header();
 
     if (argc >= 6) {
-      RunKernel(argv[1], (Integer)atol(argv[2]), (Long)atol(argv[3]), (Real)atof(argv[4]), (Real)atof(argv[5]), comm);
+      RunKernel(argv[1], (Integer)atol(argv[2]), (Long)atol(argv[3]), (Real)atof(argv[4]), (Real)atof(argv[5]), nthreads, comm);
     } else {
-      if (argc > 1 && !comm.Rank()) std::printf("# ignoring partial arguments; running the full sweep\n");
+      if (argc > 1 && argc != 2 && !comm.Rank()) std::printf("# ignoring partial arguments; running the full sweep\n");
       const Real pi = const_pi<Real>();
       for (const char* k : {"laplace", "stokes"})
         for (const Integer order : {12})
           for (const Real twist : {pi/6, pi/2, pi})
             for (const double tol : {1e-3, 1e-6, 1e-9, 1e-12})
-              RunKernel(k, order, /*ppf*/ 12, twist, (Real)tol, comm);
+              RunKernel(k, order, /*ppf*/ 12, twist, (Real)tol, nthreads, comm);
+
+      // Strong scaling from the widest available width down to 1. Smaller mesh than the sweep
+      // above: the 1-thread points dominate the runtime, and GreensDensityError is serial so it
+      // does not shrink with width at all.
+      const Integer nt_max = (nthreads > 0 ? nthreads : NumThreads());
+      if (!comm.Rank()) std::printf("# OpenMP strong scaling (order 12, ppf 8, twist pi/6, tol 1e-9)\n");
+      for (Integer nt = nt_max; nt >= 1; nt /= 2)
+        RunKernel("laplace", /*order*/ 12, /*ppf*/ 8, pi/6, (Real)1e-9, nt, comm);
+      for (Integer nt = nt_max; nt >= 1; nt /= 2)
+        RunKernel("stokes", /*order*/ 12, /*ppf*/ 8, pi/6, (Real)1e-9, nt, comm);
     }
   }
   Comm::MPI_Finalize();
