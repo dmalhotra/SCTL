@@ -227,7 +227,8 @@ namespace sctl {
       //   TT (q x order)   T^T, for the projection
       //   TD (2q x order)  [T^T ; dT^T] stacked, so value+derivative come from ONE GEMM
       struct GradeRule { Vector<Real> nds, w; Matrix<Real> T, dT, TT, TD; Real a, b; };
-      static constexpr Integer MaxNearLvl = 31;       // flat index: shell_k -> k, core_k -> MaxNearLvl + k
+      // Refinement bottoms out where 1-2^-k stops being distinct from 1, i.e. at the mantissa width.
+      static constexpr Integer MaxNearLvl = GetSigBits<Real>::value();  // flat index: shell_k -> k, core_k -> MaxNearLvl + k
       static constexpr Integer NearMaxQuadOrder = 60;
       // Accuracy-independent: one static per `order`, holding every rung the corner-angle
       // correction can select (each multiple of 4, plus each NearQuadOrder(d)).
