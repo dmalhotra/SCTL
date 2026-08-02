@@ -267,6 +267,13 @@ double ConstDL(const QuadElemList<Real>& qel, const Real tol, const Comm& comm) 
 }
 
 // On-surface interior identity S[du/dn] - D[u] = u, with the DL jump. Lifted from test-greens-conv.
+//
+// TIMING DEPENDS ON CALL ORDER. The two Setup() calls below are timed, and they are warm only
+// because ConstSL and ConstDL have already run a full Setup() with these same two kernels. The
+// first Setup() in a process is ~60% slower (0.90 vs 0.56 s, Laplace, order 12 / ppf 4 / 64
+// threads) -- it first-touches the static tables (NearGradeTable's rung ladder, DuffyTable,
+// ParamNodes, DiffMat), a one-time cost that is not per-element setup work and does not belong
+// in the reported throughput. Keep this call last in Run(), or add an untimed warm-up here.
 template <class KerSL, class KerDL, class KerGrad>
 double GreensSolError(const QuadElemList<Real>& qel, const Real tol, const Vector<Real>& X0, const Comm& comm,
                       double* t_setup_sl, double* t_setup_dl) {
@@ -300,7 +307,7 @@ double GreensSolError(const QuadElemList<Real>& qel, const Real tol, const Vecto
 }
 
 void Header() {
-  std::printf("#%-7s %5s %4s %8s %9s | %9s %9s | %9s %9s %9s | %9s %9s | %8s %8s %10s %10s\n",
+  std::printf("#%-7s %5s %4s %8s %9s | %9s %9s | %9s %9s %9s | %10s %10s | %8s %8s %10s %10s\n",
               "kernel", "order", "ppf", "twist", "tol",
               "geom_area", "geom_surf", "SL[1]sprd", "SL[1]abs", "DL[1]",
               "greens_den", "greens_sol", "setup_sl", "setup_dl", "pps/c_sl", "pps/c_dl");
@@ -319,6 +326,8 @@ void Run(const char* name, const Real sl_scale, const Integer order, const Long 
   ConstSL<KerSL>(qel, tol, sl_scale*R, comm, &sl_sprd, &sl_abs);
   const double dl = ConstDL<KerDL>(qel, tol, comm);
 
+  // Last: its Setup() calls are the timed ones and rely on the two above to have warmed the
+  // per-order static tables. See the note on GreensSolError.
   double ts_sl = 0, ts_dl = 0;
   const double sol = GreensSolError<KerSL,KerDL,KerGrad>(qel, tol, X0, comm, &ts_sl, &ts_dl);
 
@@ -326,7 +335,7 @@ void Run(const char* name, const Real sl_scale, const Integer order, const Long 
   comm.Allreduce(n+0, n+1, 1, CommOp::SUM);
   const double N = (double)n[1], T = (double)NumThreads()*comm.Size();
   if (!comm.Rank()) {
-    std::printf(" %-7s %5d %4ld %8.4f %9.0e | %9.2e %9.2e | %9.2e %9.2e %9.2e | %9.2e %9.2e | %8.3f %8.3f %10.1f %10.1f\n",
+    std::printf(" %-7s %5d %4ld %8.4f %9.0e | %9.2e %9.2e | %9.2e %9.2e %9.2e | %10.2e %10.2e | %8.3f %8.3f %10.1f %10.1f\n",
                 name, (int)order, (long)ppf, (double)twist, (double)tol,
                 g.area, g.surf, sl_sprd, sl_abs, dl, den, sol,
                 ts_sl, ts_dl, N/ts_sl/T, N/ts_dl/T);
@@ -358,10 +367,10 @@ int main(int argc, char** argv) {
       if (argc > 1 && !comm.Rank()) std::printf("# ignoring partial arguments; running the full sweep\n");
       const Real pi = const_pi<Real>();
       for (const char* k : {"laplace", "stokes"})
-        for (const Integer order : {8, 12})
-          for (const Real twist : {(Real)0, pi/6, pi/2, pi})
-            for (const double tol : {1e-6, 1e-9, 1e-12})
-              RunKernel(k, order, /*ppf*/ 4, twist, (Real)tol, comm);
+        for (const Integer order : {12})
+          for (const Real twist : {pi/6, pi/2, pi})
+            for (const double tol : {1e-3, 1e-6, 1e-9, 1e-12})
+              RunKernel(k, order, /*ppf*/ 12, twist, (Real)tol, comm);
     }
   }
   Comm::MPI_Finalize();

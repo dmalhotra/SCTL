@@ -97,7 +97,7 @@ namespace sctl {
     }
   }
 
-  template <class Real> const Matrix<Real>& QuadElemList<Real>::DiffMat(const Integer order) {
+  template <class Real> inline const Matrix<Real>& QuadElemList<Real>::DiffMat(const Integer order) {
     // D[i][a] = L_i'(node_a). Cached for all orders at first use to avoid an
     // O(order^3) per-self-target rebuild.
     constexpr Integer MAX_ORDER = 50;
@@ -448,7 +448,7 @@ namespace sctl {
 
 
 
-  template <class Real> Integer QuadElemList<Real>::DigitsFromTol(const Real tol) {
+  template <class Real> inline Integer QuadElemList<Real>::DigitsFromTol(const Real tol) {
     // Reproduces the old if-else dispatch exactly: the largest d < MaxDigits with
     // tol <= 10^-d. pow(0.1, d) is the same repeated multiplication `pow<d,Real>` used,
     // so the branch points are bit-identical to the templated version.
@@ -456,7 +456,7 @@ namespace sctl {
     return 0;
   }
 
-  template <class Real> Integer QuadElemList<Real>::NearQuadOrder(const Integer digits) {
+  template <class Real> inline Integer QuadElemList<Real>::NearQuadOrder(const Integer digits) {
     static const std::array<Integer,MaxDigits> q = []() {
       std::array<Integer,MaxDigits> t{};
       for (Integer d = 0; d < MaxDigits; d++) {
@@ -487,7 +487,7 @@ namespace sctl {
     b_ellipse = (Real)(b*b/(2*a));
   }
 
-  template <class Real> Real QuadElemList<Real>::NearBEllipse(const Integer digits) {
+  template <class Real> inline Real QuadElemList<Real>::NearBEllipse(const Integer digits) {
     static const std::array<Real,MaxDigits> b = []() {
       std::array<Real,MaxDigits> t{};
       for (Integer d = 0; d < MaxDigits; d++) {
@@ -716,7 +716,7 @@ namespace sctl {
   // ---- Duffy edge-collapsed self scheme ----
 
 
-  template <class Real> Integer QuadElemList<Real>::DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0) {
+  template <class Real> inline Integer QuadElemList<Real>::DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0) {
     // t-points per digit, with margin: the error falls only ~0.35 decades per node, so a thin
     // margin is not safe. Vector kernels need ~1.5x the t-nodes of a scalar one at the same
     // tolerance. Calibrated end-to-end on the Green's identity with a varying density. Twist pi/6
