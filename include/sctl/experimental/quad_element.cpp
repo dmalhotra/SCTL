@@ -143,10 +143,8 @@ namespace sctl {
     const Long Nout = (Long)Nu * Nv;
     if (out.Dim() != ncomp * Nout) out.ReInit(ncomp * Nout);
 
-    // Right-first (below) is flop-optimal when the transform EXPANDS (geometry: Nu>>R) but
-    // ~7% off when it CONTRACTS (projection: Nu<<R). Left-first was measured: 6% faster
-    // while the working set fits L3, 3% slower once it spills, so it is not a win until
-    // the u-sweep is blocked to stay resident.
+    // Right-first: flop-optimal when the transform EXPANDS (geometry: Nu>>R), ~7% off when it
+    // CONTRACTS (projection: Nu<<R).
     constexpr Integer Nbuff = 1024;
     StaticArray<ValueType,Nbuff> tmp_buf;
     Matrix<ValueType> tmp(R, Nv, ((Long)R * Nv > Nbuff ? NullIterator<ValueType>() : tmp_buf), (Long)R * Nv > Nbuff);
@@ -364,8 +362,7 @@ namespace sctl {
     // Column-stage Cv/Cdv (component index moved into the COLUMNS) so stage 2 batches over
     // components as well as over outputs: the nine original (Nu x order).(order x Nv) products
     // collapse to two GEMMs against an (order x COORD_DIM*Nv) operand. The restage is an
-    // L1-resident copy -- Matrix::GEMM has no strided-output form, and padding Mv block-diagonal
-    // instead would triple the stage-1 flops.
+    // L1-resident copy; Matrix::GEMM has no strided-output form.
     const Long ldc = COORD_DIM*Nv;
     thread_local Vector<Real> Cvc, Cdvc, XdU, dXdv_soa;
     if (Cvc.Dim() != (Long)order*ldc) { Cvc.ReInit((Long)order*ldc); Cdvc.ReInit((Long)order*ldc); }
@@ -502,8 +499,7 @@ namespace sctl {
 
   template <class Real> template <Integer order> const Vector<typename QuadElemList<Real>::GradeRule>& QuadElemList<Real>::NearGradeTable(const Integer q) {
     // Built once per `order`. Every entry is in NORMALIZED sub-element coordinates and carries
-    // no positional index -- that is the point of splitting at the foot. Nothing here depends
-    // on the tolerance: `digits` only ever picked which rung to return.
+    // no positional index -- that is the point of splitting at the foot.
     auto build = [](const Integer q) {
       const Vector<Real>& gnds = ParamNodes(order);   // sub-element's own nodes, normalized
       Vector<Real> qn, qw; LegQuadRule<Real>::ComputeNdsWts(&qn, &qw, q);
@@ -629,8 +625,8 @@ namespace sctl {
       }
     }
     // Per-quadrant sub-element nodal slabs, Xsub = S_u^T . cs . S_v, built ONCE per target. This
-    // is what makes every per-cell operator a precomputed table entry (T/dT/TT/TD) instead of a
-    // per-target S.T product: nothing depending on (u*,v*) survives into the per-cell loop.
+    // is what leaves every per-cell operator a precomputed table entry (T/dT/TT/TD): nothing
+    // depending on (u*,v*) survives into the per-cell loop.
     // The v-contraction batches all COORD_DIM components into a single GEMM.
     thread_local Vector<Real> Av[2], Xsub[2][2];
     for (Integer sdv = 0; sdv < 2; sdv++) {
@@ -721,8 +717,7 @@ namespace sctl {
   template <class Real> Integer QuadElemList<Real>::DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0) {
     // t-points per digit, with margin: the error falls only ~0.35 decades per node, so a thin
     // margin is not safe. Vector kernels need ~1.5x the t-nodes of a scalar one at the same
-    // tolerance. Calibrated end-to-end on the Green's identity with a varying density, not on
-    // per-target operator norm, which is far stricter than the assembled BIE error. Twist pi/6
+    // tolerance. Calibrated end-to-end on the Green's identity with a varying density. Twist pi/6
     // binds: pi/2's discretization floor masks the self error and twist 0 is benign, so the
     // ends of the twist range alone understate nt by 2x.
     // CAVEAT: the vector constant is calibrated over twists {0, pi/6} only -- treat it as
@@ -735,8 +730,8 @@ namespace sctl {
 
   template <class Real> template <Integer order> const typename QuadElemList<Real>::DuffySelfTable& QuadElemList<Real>::DuffyTable() {
     // Fixed by `order` alone: q_s = order and the t-rule -- the only accuracy- and
-    // metric-dependent part -- is built per target, not here. Function-local static, so it
-    // self-initializes on first use from any thread and needs no external warm-up.
+    // metric-dependent part -- is built per target. Function-local static, so it
+    // self-initializes on first use from any thread.
     static const DuffySelfTable table = []() {
       DuffySelfTable tbl;
       const Integer qs = order;   // radial GL order; see the DuffyTOrder note on the t-rule
@@ -807,8 +802,7 @@ namespace sctl {
     const DuffySelfTable& tbl = DuffyTable<order>();
     const Long ns = tbl.ns, nt = DuffyTOrder(digits, order, KDIM0);
     // Tt does not depend on the s-node, so stage 2b contracts the whole s-range in one
-    // (ns*NR x order)(order x nt) GEMM rather than ns thin ones -- 14% faster on 1 thread,
-    // 3-7% at 32.
+    // (ns*NR x order)(order x nt) GEMM.
     const Long sblk = ns;
     const Vector<Real>& nds = ParamNodes(order);
     const Matrix<Real>& D = DiffMat<order>();
@@ -997,13 +991,11 @@ namespace sctl {
     SCTL_ASSERT((Long)M_lst.Dim() == qel.nelem);
 
     // Build this order's tables before the parallel loop so the first iteration does not
-    // serialize the rest on first-touch static init. Optimization only -- the table would
-    // initialize itself on first use anyway. ParamNodes / DiffMat come along with it.
+    // serialize the rest on first-touch static init. ParamNodes / DiffMat come along with it.
     DuffyTable<order>();
 
     // Per-element blocks are independent: each writes its own M_lst[elem_idx], temporaries are
-    // loop-local, and GetGeom/table reads are const. SelfInterac is not itself called from a
-    // parallel region, so this loop is not nested.
+    // loop-local, and GetGeom/table reads are const.
     #pragma omp parallel for schedule(static)
     for (Long elem_idx = 0; elem_idx < qel.nelem; elem_idx++) {
       // Surface nodes (targets) and their normals on this element.
@@ -1173,14 +1165,12 @@ namespace sctl {
       }
 
       // First-order optimality (KKT for the box [0,1]^2) via the PROJECTED gradient: at an active
-      // bound only the feasible-direction gradient component counts (f = |r|^2, so d f/du = 2 gu; a
-      // lower bound u=0 is stationary when gu >= 0, an upper bound u=1 when gu <= 0), interior when
-      // gu is negligible vs sqrt(E*f). Testing the projected GRADIENT -- not the sign of the coupled
-      // Newton step du/dv -- is what makes EDGE/CORNER optima converge: at an edge the constrained
-      // gu is NOT small (it balances the constraint) and metric coupling (F != 0) can flip du's
-      // sign, so the old step-sign test misclassified boundary optima, the clamped line search then
-      // stalled, and it bailed to the grid-search fallback (~40% of near-pair targets, whose foot
-      // lies on a shared patch edge). Only interior feet ever converged cleanly before this.
+      // bound only the feasible-direction component counts (f = |r|^2, so d f/du = 2 gu; a lower
+      // bound u=0 is stationary when gu >= 0, an upper bound u=1 when gu <= 0), interior when gu
+      // is negligible vs sqrt(E*f). The projected gradient is the right test at a bound because
+      // the constrained gu is large there -- it balances the constraint -- and metric coupling
+      // (F != 0) can flip the sign of the coupled Newton step. Near-pair feet usually lie on a
+      // shared patch edge, so this is the common case, not a corner case.
       Real Pu = gu, Pv = gv;
       if      (u <= 0) Pu = std::min<Real>(gu, (Real)0);
       else if (u >= 1) Pu = std::max<Real>(gu, (Real)0);
@@ -1190,13 +1180,10 @@ namespace sctl {
       const bool opt_v = (fabs(Pv) <= gtol * sqrt<Real>(G*f));
       if (opt_u && opt_v) { converged = true; break; }
 
-      // ACTIVE-SET reduced Gauss-Newton step. A coordinate pinned at a bound by an outward
-      // gradient is held FIXED and the step is solved in the free subspace only. Solving the
-      // coupled 2D system instead contaminates the surviving component through the metric
-      // coupling F with the CONSTRAINED gradient -- which at an edge is large precisely
-      // because it balances the constraint -- so the clamped step is not a descent direction,
-      // the line search halves 40x without improving, and the search bails to the grid.
-      // Note u_act implies opt_u (Pu is then exactly 0), so both-active is already converged.
+      // ACTIVE-SET reduced Gauss-Newton step: a coordinate pinned at a bound by an outward
+      // gradient is held FIXED and the step is solved in the free subspace only, so the metric
+      // coupling F cannot contaminate the surviving component with the constrained gradient.
+      // u_act implies opt_u (Pu is then exactly 0), so both-active is already converged.
       const bool u_act = ((u <= 0 && gu >= 0) || (u >= 1 && gu <= 0));
       const bool v_act = ((v <= 0 && gv >= 0) || (v >= 1 && gv <= 0));
       Real du = 0, dv = 0;
@@ -1226,10 +1213,9 @@ namespace sctl {
         if (fn < f) { improved = true; break; }
         lambda *= (Real)0.5;
       }
-      // If the clamped Newton step stalls, retry along the projected (metric-scaled) gradient.
-      // At an active bound the coupled Newton step can point outward, so clamping freezes it at
-      // a non-optimal point; the projected gradient is a feasible descent direction whenever the
-      // point is not KKT-optimal (already returned above), so some backtracked step lowers f.
+      // If the clamped Newton step stalls, retry along the projected (metric-scaled) gradient:
+      // it is a feasible descent direction whenever the point is not KKT-optimal, which the test
+      // above has already established, so some backtracked step lowers f.
       if (!improved) {
         const Real gu_s = Pu / (E + (Real)1e-30), gv_s = Pv / (G + (Real)1e-30);
         lambda = 1;
@@ -1362,10 +1348,8 @@ namespace sctl {
         coord0[idx + 2] = 0;
       }
     }
-    // Built once per (Order, Nelem_perside). The returned reference has to stay valid across
-    // later calls with other arguments, so the grid is cached rather than rebuilt into one
-    // shared buffer -- the previous static was rewritten on every call, which both raced
-    // between threads and invalidated any reference a caller still held.
+    // Cached per (Order, Nelem_perside): the returned reference stays valid across later calls
+    // with other arguments.
     static std::mutex mtx;
     static std::map<std::pair<Integer,Integer>, Vector<Real>> cache;
     std::lock_guard<std::mutex> lock(mtx);

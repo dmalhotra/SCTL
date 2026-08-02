@@ -143,9 +143,8 @@ namespace sctl {
       static const Matrix<Real>& DiffMat(const Integer order);
       template <Integer order> static const Matrix<Real>& DiffMat() { return DiffMat(order); }
 
-      // Runtime order is dispatched to a compile-time `order` (switch {4..48}) because `order`
-      // bounds every inner loop. `digits` stays runtime: it only selects a cached rule, so
-      // templating it just duplicates identical code.
+      // Runtime order is dispatched to a compile-time `order` (switch {4..48}), which bounds
+      // every inner loop. `digits` is a runtime value throughout: it only selects a cached rule.
       // Accuracy levels the type can express: digits10 ~ significand bits * log10(2)
       // (30103/100000). 7 for float, 16 for double, 19 for long double, 34 for __float128.
       static constexpr Integer MaxDigits = 1 + GetSigBits<Real>::value()*30103/100000;
@@ -183,8 +182,8 @@ namespace sctl {
       // ======================= NearInterac only =======================
 
       // Single-point position (target-centered by `origin` when non-null) and, when the
-      // pointers are non-null, the tangents dXu/dXv. Allocation-free, unlike GetGeom: the
-      // Lagrange bases are built on the stack. Called many times per target by GetClosestPoint.
+      // pointers are non-null, the tangents dXu/dXv. Allocation-free -- the Lagrange bases are
+      // built on the stack. Called many times per target by GetClosestPoint.
       void EvalPoint(Real* X, Real* dXu, Real* dXv, const Real u, const Real v, const Long elem_idx, const Vector<Real>* origin) const;
 
       // Closest nodal-grid point to Xtrg (brute force); seeds GetClosestPoint. Returns the distance.
@@ -211,8 +210,8 @@ namespace sctl {
       //   core_k  = [1-2^-k, 1]             the half touching it
       // The sub-elements are anisotropic, so the corner cell is bisected along its longer
       // PHYSICAL dimension only (parameter extent x surface speed), one split at a time, until
-      // that dimension is admissible against the target distance; quadrisection would hand the
-      // aspect ratio to every descendant. Each split emits one leaf, and the u- and v-levels
+      // that dimension is admissible against the target distance -- which keeps the aspect ratio
+      // from propagating to every descendant. Each split emits one leaf, and the u- and v-levels
       // advance independently, so every interval stays shell_k / core_k at some level.
 
       // Per-cell GL order and admissibility constant. b_ellipse is the end-foot Bernstein reach,
