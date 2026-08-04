@@ -335,7 +335,7 @@ namespace sctl {
     }
   }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD, const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT, const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm) {
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD, const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT, const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm, const Vector<Real>& proxy_off, const Vector<Real>& proxy_w) {
     // One near leaf cell: accumulate its tensor-product quadrature (weights wu (x) wv) against
     // the target into acc_cm. src_nodal is the caller's target-shifted nodal slab, so the kernel
     // target sits at the origin. Tensor grid is u-slow/v-fast: node (a,b) has flat index a*Nv+b.
@@ -385,8 +385,6 @@ namespace sctl {
       Matrix<Real>::GEMM(dV_m, MuT, Cdvc_m);
     }
 
-    StaticArray<Real,COORD_DIM> Xt0_{0, 0, 0};
-    const Vector<Real> Xt0_v_(COORD_DIM, Xt0_, false);
     thread_local Vector<Real> Xsrc, Xnsrc, wq;
     if (Xsrc.Dim() != nq*COORD_DIM) { Xsrc.ReInit(nq*COORD_DIM); Xnsrc.ReInit(nq*COORD_DIM); wq.ReInit(nq); }
     for (Long a = 0; a < Nu; a++) {
@@ -407,21 +405,33 @@ namespace sctl {
     }
 
     thread_local Matrix<Real> Mker;
-    ker.template KernelMatrix<Real,false>(Mker, Xt0_v_, Xsrc, Xnsrc); // (nq*KDIM0 x KDIM1full)
-
     thread_local Vector<Real> KWc;
     if (KWc.Dim() != C*nq) KWc.ReInit(C*nq);
-    for (Long q = 0; q < nq; q++) {
-      for (Integer k0 = 0; k0 < KDIM0; k0++) {
-        for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-          Real val;
-          if (trg_dot_prod) {
-            val = 0;
-            for (Integer l = 0; l < COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*COORD_DIM+l] * normal_trg[l];
-          } else {
-            val = Mker[q*KDIM0+k0][k1];
+    // The proxy targets of one hedgehog line share this cell's geometry, and the extrapolation
+    // weights are applied HERE, so only the kernel evaluation scales with the number of proxies:
+    // the fold below and the projection GEMMs run once. Valid because both are linear in the
+    // kernel values. proxy_off holds the offsets from the target that positioned the cell.
+    const Long np = (proxy_w.Dim() ? proxy_w.Dim() : 1);
+    for (Long j = 0; j < np; j++) {
+      StaticArray<Real,COORD_DIM> Xtj{0, 0, 0};
+      if (proxy_off.Dim()) for (Integer l = 0; l < COORD_DIM; l++) Xtj[l] = proxy_off[j*COORD_DIM+l];
+      const Vector<Real> Xtj_v(COORD_DIM, Xtj, false);
+      ker.template KernelMatrix<Real,false>(Mker, Xtj_v, Xsrc, Xnsrc); // (nq*KDIM0 x KDIM1full)
+      const Real wj = (proxy_w.Dim() ? proxy_w[j] : (Real)1);
+      for (Long q = 0; q < nq; q++) {
+        for (Integer k0 = 0; k0 < KDIM0; k0++) {
+          for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
+            Real val;
+            if (trg_dot_prod) {
+              val = 0;
+              for (Integer l = 0; l < COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*COORD_DIM+l] * normal_trg[l];
+            } else {
+              val = Mker[q*KDIM0+k0][k1];
+            }
+            const Long id = (Long)(k0*KDIM1_out+k1)*nq + q;
+            if (j == 0) KWc[id]  = wj*val*wq[q];
+            else        KWc[id] += wj*val*wq[q];
           }
-          KWc[(Long)(k0*KDIM1_out+k1)*nq + q] = val*wq[q];
         }
       }
     }
@@ -544,7 +554,7 @@ namespace sctl {
     return all[q];
   }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits, const Vector<Real>& proxy_off, const Vector<Real>& proxy_w) {
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
     const Long nnode = (Long)order*order;
@@ -661,7 +671,7 @@ namespace sctl {
       const Real nsign = ((sdu == 1) != (sdv == 1)) ? (Real)-1 : (Real)1;
       IntegrateBlock<order>(normal_trg, gu.w, gv.w, ker,
                             gu.T, gu.TT, gu.TD, gv.T, gv.dT, gv.TT,
-                            Xsub[sdu][sdv], nsign, acc);
+                            Xsub[sdu][sdv], nsign, acc, proxy_off, proxy_w);
     };
     for (Integer sdu = 0; sdu < 2; sdu++) {
       if (!(slen[0][sdu] > 0)) continue;
@@ -1260,7 +1270,7 @@ namespace sctl {
     return sqrt<Real>(f);
   }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits) {
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits, const Vector<Real>& proxy_off, const Vector<Real>& proxy_w) {
     // Off-surface near-singular targets, one block per target. On-surface (singular) self
     // interactions are built by SelfInterac instead.
     static constexpr Integer KDIM0 = Kernel::SrcDim();
@@ -1285,7 +1295,7 @@ namespace sctl {
       Vector<Real> ntrg;
       if (trg_dot_prod) ntrg.ReInit(COORD_DIM, (Iterator<Real>)normal_trg.begin() + t*COORD_DIM, false);
 
-      NearInteracBlockSplit<order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
+      NearInteracBlockSplit<order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits, proxy_off, proxy_w);
 
       // Scatter into M for target t: M[(i*order+j)*KDIM0+k0][t*KDIM1_out+k1].
       for (Integer i = 0; i < order; i++) {
@@ -1312,6 +1322,28 @@ namespace sctl {
       case 12: NearInteracHelper<12>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
       case 16: NearInteracHelper<16>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
       case 20: NearInteracHelper<20>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      default: SCTL_ASSERT_MSG(false, "QuadElemList element order must be one of {4,8,12,16,20} for the templated near/self schemes.");
+    }
+  }
+
+  template <class Real> template <class Kernel> void QuadElemList<Real>::NearInteracHedgehog(Matrix<Real>& M, const Vector<Real>& Xt_proxy, const Vector<Real>& wts, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
+    const Long p_ = wts.Dim();
+    SCTL_ASSERT(p_ > 0 && Xt_proxy.Dim() == p_*COORD_DIM);
+    // Foot, distance and refinement are driven by the CLOSEST proxy (first in Xt_proxy), so the
+    // one hierarchy built here is fine enough for every proxy on the line; the rest enter as
+    // offsets from it.
+    Vector<Real> Xt(COORD_DIM), off(p_*COORD_DIM);
+    for (Integer k = 0; k < COORD_DIM; k++) Xt[k] = Xt_proxy[k];
+    for (Long j = 0; j < p_; j++)
+      for (Integer k = 0; k < COORD_DIM; k++) off[j*COORD_DIM+k] = Xt_proxy[j*COORD_DIM+k] - Xt[k];
+    const Integer order = static_cast<const QuadElemList<Real>*>(self)->order;
+    const Integer digits = DigitsFromTol(tol);
+    switch (order) {
+      case  4: NearInteracHelper<4>(M, Xt, normal_trg, ker, elem_idx, self, digits, off, wts); break;
+      case  8: NearInteracHelper<8>(M, Xt, normal_trg, ker, elem_idx, self, digits, off, wts); break;
+      case 12: NearInteracHelper<12>(M, Xt, normal_trg, ker, elem_idx, self, digits, off, wts); break;
+      case 16: NearInteracHelper<16>(M, Xt, normal_trg, ker, elem_idx, self, digits, off, wts); break;
+      case 20: NearInteracHelper<20>(M, Xt, normal_trg, ker, elem_idx, self, digits, off, wts); break;
       default: SCTL_ASSERT_MSG(false, "QuadElemList element order must be one of {4,8,12,16,20} for the templated near/self schemes.");
     }
   }

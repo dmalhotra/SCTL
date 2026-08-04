@@ -61,6 +61,32 @@ namespace sctl {
       }
     };
 
+    // d/dx of the double layer: contract the target index with n_x to get the
+    // hypersingular operator D' (~1/r^3).  KDIM0=1, KDIM1=3.
+    struct Laplace3D_DxdU {
+      static const std::string& Name() {
+        static const std::string name = "Laplace3D-DxdU";
+        return name;
+      }
+      static constexpr Integer FLOPS() {
+        return 24;
+      }
+      template <class Real> static constexpr Real uKerScaleFactor() {
+        return 1 / (4 * const_pi<Real>());
+      }
+      template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[1][3], const VecType (&r)[3], const VecType (&n)[3], const void* ctx_ptr) {
+        VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+        VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
+        VecType rinv2 = rinv*rinv;
+        VecType rinv3 = rinv2*rinv;
+        VecType rdotn = r[0]*n[0] + r[1]*n[1] + r[2]*n[2];
+        VecType t = rdotn*rinv2*(VecType)(typename VecType::ScalarType)(-3);
+        u[0][0] = (n[0] + r[0]*t) * rinv3;
+        u[0][1] = (n[1] + r[1]*t) * rinv3;
+        u[0][2] = (n[2] + r[2]*t) * rinv3;
+      }
+    };
+
     struct Laplace3D_FxdU {
       static const std::string& Name() {
         static const std::string name = "Laplace3D-FxdU";
@@ -269,6 +295,7 @@ namespace sctl {
   using Laplace3D_FxU = GenericKernel<kernel_impl::Laplace3D_FxU>;
   using Laplace3D_DxU = GenericKernel<kernel_impl::Laplace3D_DxU>;
   using Laplace3D_FxdU = GenericKernel<kernel_impl::Laplace3D_FxdU>;
+  using Laplace3D_DxdU = GenericKernel<kernel_impl::Laplace3D_DxdU>;
   using Stokes3D_FxU = GenericKernel<kernel_impl::Stokes3D_FxU>;
   using Stokes3D_DxU = GenericKernel<kernel_impl::Stokes3D_DxU>;
   using Stokes3D_FxT = GenericKernel<kernel_impl::Stokes3D_FxT>; // single-layer source ---> traction-tensor
