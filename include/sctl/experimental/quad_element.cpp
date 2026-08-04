@@ -411,30 +411,42 @@ namespace sctl {
     // weights are applied HERE, so only the kernel evaluation scales with the number of proxies:
     // the fold below and the projection GEMMs run once. Valid because both are linear in the
     // kernel values. proxy_off holds the offsets from the target that positioned the cell.
-    const Long np = (proxy_w.Dim() ? proxy_w.Dim() : 1);
-    for (Long j = 0; j < np; j++) {
-      StaticArray<Real,COORD_DIM> Xtj{0, 0, 0};
-      if (proxy_off.Dim()) for (Integer l = 0; l < COORD_DIM; l++) Xtj[l] = proxy_off[j*COORD_DIM+l];
-      const Vector<Real> Xtj_v(COORD_DIM, Xtj, false);
-      ker.template KernelMatrix<Real,false>(Mker, Xtj_v, Xsrc, Xnsrc); // (nq*KDIM0 x KDIM1full)
-      const Real wj = (proxy_w.Dim() ? proxy_w[j] : (Real)1);
-      for (Long q = 0; q < nq; q++) {
-        for (Integer k0 = 0; k0 < KDIM0; k0++) {
-          for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-            Real val;
-            if (trg_dot_prod) {
-              val = 0;
-              for (Integer l = 0; l < COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*COORD_DIM+l] * normal_trg[l];
-            } else {
-              val = Mker[q*KDIM0+k0][k1];
+    //
+    // Dispatched on whether there are any proxies, so the ordinary near path -- which has none --
+    // folds with no loop over proxies, no length tests, no weight multiply and no first-iteration
+    // test in the innermost sweep. Carrying those unconditionally cost ~11% on the cubed sphere.
+    const auto fold = [&](const auto has_proxy) {
+      constexpr bool HP = decltype(has_proxy)::value;
+      const Long np = (HP ? proxy_w.Dim() : 1);
+      for (Long j = 0; j < np; j++) {
+        StaticArray<Real,COORD_DIM> Xtj{0, 0, 0};
+        if constexpr (HP) for (Integer l = 0; l < COORD_DIM; l++) Xtj[l] = proxy_off[j*COORD_DIM+l];
+        const Vector<Real> Xtj_v(COORD_DIM, Xtj, false);
+        ker.template KernelMatrix<Real,false>(Mker, Xtj_v, Xsrc, Xnsrc); // (nq*KDIM0 x KDIM1full)
+        for (Long q = 0; q < nq; q++) {
+          for (Integer k0 = 0; k0 < KDIM0; k0++) {
+            for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
+              Real val;
+              if (trg_dot_prod) {
+                val = 0;
+                for (Integer l = 0; l < COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*COORD_DIM+l] * normal_trg[l];
+              } else {
+                val = Mker[q*KDIM0+k0][k1];
+              }
+              const Long id = (Long)(k0*KDIM1_out+k1)*nq + q;
+              if constexpr (HP) {
+                const Real wj = proxy_w[j];
+                if (j == 0) KWc[id]  = wj*val*wq[q];
+                else        KWc[id] += wj*val*wq[q];
+              } else {
+                KWc[id] = val*wq[q];
+              }
             }
-            const Long id = (Long)(k0*KDIM1_out+k1)*nq + q;
-            if (j == 0) KWc[id]  = wj*val*wq[q];
-            else        KWc[id] += wj*val*wq[q];
           }
         }
       }
-    }
+    };
+    if (proxy_w.Dim()) fold(std::true_type{}); else fold(std::false_type{});
 
     // Adjoint of the geometry interpolation: quadrature -> nodal. KWc is channel-major with
     // (Nu x Nv) blocks, so the v-contraction is already one (C*Nu x Nv) operand and batches
