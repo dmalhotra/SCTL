@@ -3,6 +3,7 @@
 
 #include <string>
 #include <utility>
+#include <vector>
 #include <sctl.hpp>
 
 namespace sctl {
@@ -28,9 +29,11 @@ namespace sctl {
        * Adaptive) while the self phase uses the RectPolar COV knobs (`q`,
        * `cov_order`/Nbeta) passed to SetQuadScheme. LineQBX affects the near
        * phase only; its self phase falls back to the Adaptive scheme and its
-       * near knobs are set via SetLineQBXParams.
+       * near knobs are set via SetLineQBXParams. Duffy is Adaptive's split-at-foot
+       * near paired with a Duffy edge-collapsed (sinh-substituted) self, ported from
+       * upstream; opt in explicitly, the tolerance drives it like Adaptive.
        */
-      enum class QuadScheme { Adaptive, RectPolar, Hybrid, LineQBX };
+      enum class QuadScheme { Adaptive, RectPolar, Hybrid, LineQBX, Duffy };
 
       /** Constructor. */
       QuadElemList() {}
@@ -78,6 +81,9 @@ namespace sctl {
 
       /** True if the self phase uses the RectPolar COV (RectPolar or Hybrid). */
       bool SelfUsesRectPolar() const { return scheme_ == QuadScheme::RectPolar || scheme_ == QuadScheme::Hybrid; }
+
+      /** True if the self phase uses the Duffy edge-collapsed scheme (Duffy only). */
+      bool SelfUsesDuffy() const { return scheme_ == QuadScheme::Duffy; }
 
       /**
        * Set the singular-quadrature scheme.
@@ -196,6 +202,13 @@ namespace sctl {
        * @return distance from target to the closest point.
        */
       Real GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
+
+      // Active-set variant of GetClosestPoint (upstream): a coordinate pinned at a bound by an
+      // outward gradient is held FIXED and the reduced Gauss-Newton step is solved in the free
+      // subspace only, so the metric coupling F cannot contaminate the surviving component with
+      // the constrained gradient. Used only by the Duffy near path; the shared GetClosestPoint
+      // (and hence the Adaptive/Hybrid near) is left unchanged.
+      Real GetClosestPointAS(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
 
       /** VTU data for one (elem_idx) or all elements. */
       void GetVTUData(VTUData& vtu_data, const Vector<Real>& F = Vector<Real>(), const Long elem_idx = -1) const;
@@ -392,8 +405,49 @@ namespace sctl {
       template <Integer order, Integer digits> static const Vector<GradeRule>& NearGradeTable();
       template <Integer digits, Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
+      // ---- Upstream-ported near path (QuadScheme::Duffy only) ----
+      // Same split-at-foot geometry as NearInteracBlockSplit, but with the upstream additions that
+      // let the near rule hold accuracy under strong parametric shear: (1) a corner-angle bump to
+      // the per-target GL order (the acute tangent angle at the foot sets how much the element
+      // wraps the target, which the parameter-space admissibility test cannot see), and (2) a
+      // deeper refinement ladder (MaxNearLvlCM = mantissa width, vs the 31 above). `digits` is
+      // runtime here, so the grade table is keyed on the runtime GL order q.
+      static constexpr Integer MaxNearLvlCM = GetSigBits<Real>::value();  // shell_k -> k, core_k -> MaxNearLvlCM + k
+      static constexpr Integer NearMaxQuadOrderCM = 60;
+      static constexpr Integer MaxDigitsCM = 1 + GetSigBits<Real>::value()*30103/100000;
+      static Integer NearQuadOrderRt(const Integer digits);   // runtime counterpart of NearQuadOrder<digits>
+      static Real NearBEllipseRt(const Integer digits);       // runtime counterpart of NearBEllipse<digits>
+      template <Integer order> static const Vector<GradeRule>& NearGradeTableQ(const Integer q);
+      template <Integer order, class Kernel> static void IntegrateNearCM(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker,
+                                                                         const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD,
+                                                                         const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT,
+                                                                         const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm);
+      template <Integer order, class Kernel> static void NearInteracBlockSplitDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
+
       // Per-target singular self-interaction block at (u0,v0): graded u-refinement + 1D log rule in v.
       template <Integer digits, Integer order, class Kernel> static void SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
+
+      // Duffy edge-collapsed self scheme (QuadScheme::Duffy; ported from upstream). The panel is split
+      // at the target (u0,v0) into four triangles, each parametrised P(s,t) = (u0,v0) + s*c(t) with
+      // |det| = s*|a x b|. The s factor cancels the 1/r singularity, so s takes a plain GL rule and t a
+      // sinh-substituted rule concentrated at the foot of the perpendicular. Only the t-rule depends on
+      // the metric and tolerance; everything below is fixed by (order, ti, tj, tri). `digits` is runtime.
+      struct DuffyTri {
+        bool swap_ab = false;    // collapsed (s-only) coordinate is u => local (alpha,beta) = (v,u)
+        Real nsign = 1;          // restores the sign of dX/du x dX/dv
+        Real J0 = 0;             // |a x b|
+        Matrix<Real> WbC;        // (order x 2*ns) = [Wb | Wb'], collapsed direction at the s-nodes
+        Matrix<Real> WbT;        // (ns x order), adjoint of the value half
+        Vector<Matrix<Real>> MiC, MiT;       // ns entries: (order x 2*order) = [Mi | Mi'], and (order x order)
+      };
+      struct DuffySelfTable {
+        Integer ns = 0;
+        Vector<Real> sn, sw;
+        std::vector<DuffyTri> tri;   // 4*order*order entries, indexed (ti*order + tj)*4 + tri
+      };
+      template <Integer order> static const DuffySelfTable& DuffyTable();
+      static Integer DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0);
+      template <Integer order, class Kernel> static void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
 
       // Rectangular-polar (Bruno-2018) change-of-variable 1D rule on [0,1]: maps {gl_nds,gl_wts}
       // via eta_alpha to cluster toward the singularity (alpha=2*sing-1) with vanishing weight;

@@ -113,9 +113,11 @@ TARGET_BIN = \
 	   $(BINDIR)/test-quad-elem \
 	   $(BINDIR)/test-hedgehog-near \
 	   $(BINDIR)/test-hedgehog-greens \
-	   $(BINDIR)/unit-test-near-graded
+	   $(BINDIR)/unit-test-near-graded \
+	   $(BINDIR)/bench-cubed-sphere \
+	   $(BINDIR)/sweep-twist-selfscheme
 
-.PHONY: all test clean quad bench bench-gmsh hedgehog hedgehog-greens near-graded
+.PHONY: all test clean quad bench cubed bench-gmsh hedgehog hedgehog-greens near-graded
 
 all : $(TARGET_BIN)
 
@@ -128,6 +130,8 @@ hedgehog-greens : $(BINDIR)/test-hedgehog-greens
 near-graded : $(BINDIR)/unit-test-near-graded
 
 bench : $(BINDIR)/bench-quad-interac
+
+cubed : $(BINDIR)/bench-cubed-sphere
 
 bench-gmsh : $(BINDIR)/bench-gmsh-pipeline
 
