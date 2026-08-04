@@ -270,6 +270,14 @@ void ConstSL(const QuadElemList<Real>& qel, const Real tol, const Real expect, c
 }
 
 // D[q] = -q/2 on a closed outward-oriented surface, for any constant q.
+// On-surface hedgehog extrapolates from proxies off the surface, so it returns the one-sided
+// (exterior) limit rather than the principal value the Duffy path gives. For a double layer the two
+// differ by half the identity. Remove that here so both schemes are scored on the same convention;
+// zero when the Duffy path is in use, so this file is correct either way.
+template <class Real> static constexpr Real DLJumpFix() {
+  return QuadElemList<Real>::UseHedgehogSelf ? (Real)0.5 : (Real)0;
+}
+
 template <class Ker>
 double ConstDL(const QuadElemList<Real>& qel, const Real tol, const Comm& comm) {
   constexpr Integer KDIM0 = Ker::SrcDim();
@@ -281,6 +289,8 @@ double ConstDL(const QuadElemList<Real>& qel, const Real tol, const Comm& comm) 
   BoundaryIntegralOp<Real,Ker> B(Ker(), false, comm);
   B.SetAccuracy(tol); B.AddElemList(qel); B.Setup();
   Vector<Real> U; B.ComputePotential(U, q);
+
+  U -= DLJumpFix<Real>() * q;
 
   StaticArray<Real,2> err{0,0};
   for (Long i = 0; i < N; i++)
@@ -318,7 +328,7 @@ double GreensSolError(const QuadElemList<Real>& qel, const Real tol, const Vecto
 
   BSL.ComputePotential(Us, Fs);
   BDL.ComputePotential(Ud, Fd);
-  Ud -= (Real)0.5 * Fd;   // interior DL jump
+  Ud -= ((Real)0.5 + DLJumpFix<Real>()) * Fd;   // interior DL jump, plus any one-sided-limit jump
 
   StaticArray<Real,2> err{0,0}, val{0,0};
   for (Long i = 0; i < Uref.Dim(); i++) {

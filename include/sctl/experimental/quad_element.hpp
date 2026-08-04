@@ -85,6 +85,18 @@ namespace sctl {
       /// kernel matrix, so only the kernel evaluation scales with p.  M is a single target block.
       template <class Kernel> static void NearInteracHedgehog(Matrix<Real>& M, const Vector<Real>& Xt_proxy, const Vector<Real>& wts, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
 
+      /// Build-time switch for the on-surface hedgehog (line-QBX) self scheme. With it on,
+      /// SelfInterac evaluates each on-surface target by placing a short line of proxy points
+      /// along the outward normal, integrating there with the ordinary near scheme, and
+      /// extrapolating back to the surface; off, the Duffy edge-collapsed scheme is used.
+      /// NearInterac is unaffected either way.
+      ///
+      /// CAVEAT, and why callers need to see this: extrapolation from off-surface proxies yields
+      /// the ONE-SIDED limit, not the principal value that the Duffy path (and the rest of this
+      /// library) returns. For a double-layer kernel the two differ by the jump -- half the
+      /// identity -- so a caller comparing or combining the two conventions must correct for it.
+      static constexpr bool UseHedgehogSelf = false;
+
       /** Reference-space Gauss-Legendre nodes in [0,1]. */
       static const Vector<Real>& ParamNodes(const Integer Order);
 
@@ -223,19 +235,14 @@ namespace sctl {
 
       // ---- on-surface hedgehog (line-QBX) ----
       //
-      // With this on, SelfInterac evaluates each on-surface target by placing a short line of
-      // proxy points along the normal, integrating there with the ordinary near scheme, and
-      // extrapolating back to the surface. Off it, the Duffy edge-collapsed scheme is used.
-      // NearInterac is unaffected either way -- the near case is still the split scheme.
-      static constexpr bool UseHedgehogSelf = false;
-      // Proxies sit at rmin*ratio^(j/(p-1)), j = 0..p-1, so the line spans one factor of `ratio`.
-      // Extrapolating to the surface amplifies the quadrature error by sum|w|, which for a
-      // geometric line depends only on (p, ratio) and NOT on rmin -- see HedgehogWeights. p=5 with
-      // ratio 4 gives 61; going to p=6 costs 226 and p=4 gives 17 but extrapolates far worse.
-      static constexpr Integer HedgehogNumProxy = 5;
-      static constexpr Integer HedgehogRatio = 4;
-      // Lagrange extrapolation weights to zero distance. Scale free: r enters only through the
-      // ratios r_k/r_j, so one vector serves every node. Returns sum|w|, the error amplification.
+      // Proxy positions along the normal, normalized so the innermost is 1; a node scales them by
+      // its own rmin. Extrapolating to the surface amplifies whatever error the near quadrature
+      // leaves by sum|w|, which depends only on this shape and NOT on rmin, so it is a hard floor
+      // on the achievable accuracy. A wide span is what keeps it small: {1,4,9,...} spanning 36
+      // gives 3.4, while five points geometrically spaced over a span of 4 give 61 and six give 226.
+      static const Vector<Real>& HedgehogProxyOffsets();
+      // Lagrange extrapolation weights to zero distance for those positions. Scale free: they enter
+      // only as ratios, so one vector serves every node. Returns sum|w|.
       static Real HedgehogWeights(Vector<Real>& w);
       // Innermost proxy distance for a node whose distance to the element edge is `edge_dist`.
       // Truncation of the extrapolation falls like the sixth power of rmin for this family, so
