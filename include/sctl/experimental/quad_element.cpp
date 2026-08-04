@@ -704,11 +704,10 @@ namespace sctl {
     const Real b_ellipse = NearBEllipse(digits);
 
 
-    // Foot + level count.
+    // Foot of the target on the element.
     Real ustar, vstar;
     const Real dist = qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
-    Real Xc[COORD_DIM], dXu_[COORD_DIM], dXv_[COORD_DIM];
-    qel.EvalPoint(Xc, dXu_, dXv_, ustar, vstar, elem_idx, nullptr);
+
     // Corner-angle correction to the near GL order. The required order is flat to ~120 deg,
     // then grows like 1/(180-phi) as the corner flattens and the element wraps around the
     // target; the parameter-space admissibility test cannot see this. phi is the acute angle
@@ -729,22 +728,24 @@ namespace sctl {
       q = ((q + 3)/4)*4;                                  // snap to the precomputed ladder
       return std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q_iso, q));
     };
-    // Order is chosen from the metric at the foot, so it costs nothing extra here.
-    const Vector<GradeRule>& tab = NearGradeTable<order>(near_order(&dXu_[0], &dXv_[0], NearQuadOrder(digits)));
-    Real su2 = 0, sv2 = 0;
-    for (Integer k = 0; k < COORD_DIM; k++) { su2 += dXu_[k]*dXu_[k]; sv2 += dXv_[k]*dXv_[k]; }
-    // Refinement stops per sub-element via the admissibility test in the loop below, so no
-    // global depth is needed; only the per-direction surface speeds are.
-    const Real spd_u = sqrt<Real>(su2), spd_v = sqrt<Real>(sv2);
-
-    const Vector<Real>& gnds = ParamNodes(order);            // element basis (density)
-    const Vector<Real>& snds = NearSubNodes<Real>(order);   // sub-element basis (geometry)
+    Real spd_u, spd_v;
+    Integer q_near;
+    { // The tangents at the foot give both the surface speeds and the GL order, so the order costs
+      // nothing extra. Refinement stops per sub-element via the admissibility test in the loop
+      // below, so no global depth is needed; only the per-direction surface speeds are.
+      Real Xc[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
+      qel.EvalPoint(Xc, dXu, dXv, ustar, vstar, elem_idx, nullptr);
+      Real su2 = 0, sv2 = 0;
+      for (Integer k = 0; k < COORD_DIM; k++) { su2 += dXu[k]*dXu[k]; sv2 += dXv[k]*dXv[k]; }
+      spd_u = sqrt<Real>(su2); spd_v = sqrt<Real>(sv2);
+      q_near = near_order(&dXu[0], &dXv[0], NearQuadOrder(digits));
+    }
+    const Vector<GradeRule>& tab = NearGradeTable<order>(q_near);
     const Real slen[2][2] = {{ustar, 1-ustar}, {vstar, 1-vstar}};   // [dir][side] sub-element length
 
-    // Target-shifted element nodal coords, component-major: one contiguous (COORD_DIM*order x order).
     thread_local Vector<Real> cs;
-    if (cs.Dim() != COORD_DIM*nnode) cs.ReInit(COORD_DIM*nnode);
-    {
+    { // Target-shifted element nodal coords, component-major: one contiguous (COORD_DIM*order x order).
+      if (cs.Dim() != COORD_DIM*nnode) cs.ReInit(COORD_DIM*nnode);
       const Long base = elem_idx * nnode * COORD_DIM;
       for (Integer k = 0; k < COORD_DIM; k++) {
         const Real ok = Xtrg[k];
@@ -754,22 +755,28 @@ namespace sctl {
     // S[i][a] = L_i(sub[a]), element nodes -> sub-element nodes; side 1 mirrored so BOTH sides
     // grade toward the foot at normalized x = 1. The v-contraction needs S, the u-contraction
     // needs S^T, so build only the one each direction uses.
-    thread_local Matrix<Real> Sf[2][2], St[2][2];
-    thread_local Vector<Real> sub, Sbuf;
-    if (sub.Dim() != order) { sub.ReInit(order); Sbuf.ReInit(nnode); }
-    for (Integer d = 0; d < 2; d++) {
-      const Real xs = (d ? vstar : ustar);
-      for (Integer sd = 0; sd < 2; sd++) {
-        if (!(slen[d][sd] > 0)) continue;
-        for (Integer i = 0; i < order; i++) sub[i] = sd ? (1 - (1-xs)*snds[i]) : (xs*snds[i]);
-        { Vector<Real> v(nnode, Sbuf.begin(), false); LagrangeInterp<Real>::Interpolate(v, gnds, sub); }
-        Sf[d][sd].ReInit(order, order); St[d][sd].ReInit(order, order);
-        for (Integer i = 0; i < order; i++) for (Integer aa = 0; aa < order; aa++) {
-          Sf[d][sd][i][aa] = Sbuf[i*order+aa];   // S
-          St[d][sd][aa][i] = Sbuf[i*order+aa];   // S^T
+    const auto build_interp = [](Matrix<Real> (&Sf)[2][2], Matrix<Real> (&St)[2][2], const Real (&slen)[2][2], const Real ustar, const Real vstar) {
+      const Long nnode = (Long)order*order;
+      const Vector<Real>& gnds = ParamNodes(order);           // element basis (density)
+      const Vector<Real>& snds = NearSubNodes<Real>(order);   // sub-element basis (geometry)
+      thread_local Vector<Real> sub, Sbuf;
+      if (sub.Dim() != order) { sub.ReInit(order); Sbuf.ReInit(nnode); }
+      for (Integer d = 0; d < 2; d++) {
+        const Real xs = (d ? vstar : ustar);
+        for (Integer sd = 0; sd < 2; sd++) {
+          if (!(slen[d][sd] > 0)) continue;
+          for (Integer i = 0; i < order; i++) sub[i] = sd ? (1 - (1-xs)*snds[i]) : (xs*snds[i]);
+          { Vector<Real> v(nnode, Sbuf.begin(), false); LagrangeInterp<Real>::Interpolate(v, gnds, sub); }
+          Sf[d][sd].ReInit(order, order); St[d][sd].ReInit(order, order);
+          for (Integer i = 0; i < order; i++) for (Integer aa = 0; aa < order; aa++) {
+            Sf[d][sd][i][aa] = Sbuf[i*order+aa];   // S
+            St[d][sd][aa][i] = Sbuf[i*order+aa];   // S^T
+          }
         }
       }
-    }
+    };
+    thread_local Matrix<Real> Sf[2][2], St[2][2];
+    build_interp(Sf, St, slen, ustar, vstar);
     // Taylor rows about the foot: P[m][i] = (D^m . l(x*))[i] / m!, so the element's tensor-product
     // interpolant re-expands EXACTLY (it is a polynomial) as
     //     X(u,v) - Xtrg = sum_mn Chat[m][n] t_u^m t_v^n,     t = offset from the foot / slen,
@@ -778,8 +785,9 @@ namespace sctl {
     // error is relative (~eps) instead of absolute (~eps, i.e. eps/r relative) -- and it is the
     // relative error that a 1/r^k kernel amplifies. The (sigma*slen)^m factor folds in the affine
     // map from t; sigma = -1 on side 0, where u decreases away from the foot, and +1 on side 1.
-    thread_local Matrix<Real> Pt[2][2], PfT[2][2];
-    {
+    const auto build_taylor_rows = [](Matrix<Real> (&Pt)[2][2], Matrix<Real> (&PfT)[2][2], const Real (&slen)[2][2], const Real ustar, const Real vstar) {
+      const Long nnode = (Long)order*order;
+      const Vector<Real>& gnds = ParamNodes(order);
       const Matrix<Real>& D = DiffMat(order);
       thread_local Vector<Real> prow, pnxt, P0;
       if (P0.Dim() != nnode) { prow.ReInit(order); pnxt.ReInit(order); P0.ReInit(nnode); }
@@ -813,7 +821,10 @@ namespace sctl {
           }
         }
       }
-    }
+    };
+    thread_local Matrix<Real> Pt[2][2], PfT[2][2];
+    build_taylor_rows(Pt, PfT, slen, ustar, vstar);
+
     // Per-quadrant Taylor coefficient arrays, Chat = P_u . cs . P_v^T, built ONCE per target, so
     // nothing depending on (u*,v*) survives into the per-cell loop and every per-cell operator
     // stays a precomputed table entry. The v-contraction batches all COORD_DIM components.
@@ -823,36 +834,42 @@ namespace sctl {
     // compared with 1/order; over a full-length sub-element it is far worse than Lagrange, and the
     // outer cells do not need it -- they sit at r ~ O(1), where absolute eps error is already
     // relative eps. Both are built once per target.
-    thread_local Vector<Real> Av[2], Bv[2], Xsub[2][2], Ctay[2][2];
-    for (Integer sdv = 0; sdv < 2; sdv++) {
-      if (!(slen[1][sdv] > 0)) continue;
-      if (Av[sdv].Dim() != COORD_DIM*nnode) { Av[sdv].ReInit(COORD_DIM*nnode); Bv[sdv].ReInit(COORD_DIM*nnode); }
-      const Matrix<Real> cs_all(COORD_DIM*order, order, cs.begin(), false);
-      Matrix<Real> A_all(COORD_DIM*order, order, Av[sdv].begin(), false);
-      Matrix<Real> B_all(COORD_DIM*order, order, Bv[sdv].begin(), false);
-      Matrix<Real>::GEMM(A_all, cs_all, Sf [1][sdv]);
-      Matrix<Real>::GEMM(B_all, cs_all, PfT[1][sdv]);
-    }
-    for (Integer sdu = 0; sdu < 2; sdu++) {
-      if (!(slen[0][sdu] > 0)) continue;
+    const auto build_geom = [](Vector<Real> (&Xsub)[2][2], Vector<Real> (&Ctay)[2][2], Vector<Real>& cs, const Matrix<Real> (&Sf)[2][2], const Matrix<Real> (&St)[2][2], const Matrix<Real> (&Pt)[2][2], const Matrix<Real> (&PfT)[2][2], const Real (&slen)[2][2]) {
+      const Long nnode = (Long)order*order;
+      thread_local Vector<Real> Av[2], Bv[2];
       for (Integer sdv = 0; sdv < 2; sdv++) {
         if (!(slen[1][sdv] > 0)) continue;
-        if (Xsub[sdu][sdv].Dim() != COORD_DIM*nnode) { Xsub[sdu][sdv].ReInit(COORD_DIM*nnode); Ctay[sdu][sdv].ReInit(COORD_DIM*nnode); }
-        for (Integer k = 0; k < COORD_DIM; k++) {
-          const Matrix<Real> A_k(order, order, Av[sdv].begin() + k*nnode, false);
-          const Matrix<Real> B_k(order, order, Bv[sdv].begin() + k*nnode, false);
-          Matrix<Real> X_k(order, order, Xsub[sdu][sdv].begin() + k*nnode, false);
-          Matrix<Real> C_k(order, order, Ctay[sdu][sdv].begin() + k*nnode, false);
-          Matrix<Real>::GEMM(X_k, St[0][sdu], A_k);
-          Matrix<Real>::GEMM(C_k, Pt[0][sdu], B_k);
+        if (Av[sdv].Dim() != COORD_DIM*nnode) { Av[sdv].ReInit(COORD_DIM*nnode); Bv[sdv].ReInit(COORD_DIM*nnode); }
+        const Matrix<Real> cs_all(COORD_DIM*order, order, cs.begin(), false);
+        Matrix<Real> A_all(COORD_DIM*order, order, Av[sdv].begin(), false);
+        Matrix<Real> B_all(COORD_DIM*order, order, Bv[sdv].begin(), false);
+        Matrix<Real>::GEMM(A_all, cs_all, Sf [1][sdv]);
+        Matrix<Real>::GEMM(B_all, cs_all, PfT[1][sdv]);
+      }
+      for (Integer sdu = 0; sdu < 2; sdu++) {
+        if (!(slen[0][sdu] > 0)) continue;
+        for (Integer sdv = 0; sdv < 2; sdv++) {
+          if (!(slen[1][sdv] > 0)) continue;
+          if (Xsub[sdu][sdv].Dim() != COORD_DIM*nnode) { Xsub[sdu][sdv].ReInit(COORD_DIM*nnode); Ctay[sdu][sdv].ReInit(COORD_DIM*nnode); }
+          for (Integer k = 0; k < COORD_DIM; k++) {
+            const Matrix<Real> A_k(order, order, Av[sdv].begin() + k*nnode, false);
+            const Matrix<Real> B_k(order, order, Bv[sdv].begin() + k*nnode, false);
+            Matrix<Real> X_k(order, order, Xsub[sdu][sdv].begin() + k*nnode, false);
+            Matrix<Real> C_k(order, order, Ctay[sdu][sdv].begin() + k*nnode, false);
+            Matrix<Real>::GEMM(X_k, St[0][sdu], A_k);
+            Matrix<Real>::GEMM(C_k, Pt[0][sdu], B_k);
+          }
         }
       }
-    }
+    };
+    thread_local Vector<Real> Xsub[2][2], Ctay[2][2];
+    build_geom(Xsub, Ctay, cs, Sf, St, Pt, PfT, slen);
 
     // Every cell operator is a table entry now. nrm_sign corrects the normal on quadrants with
     // exactly one mirrored direction, where d/dx_u x d/dx_v is anti-parallel to dXu x dXv; the
     // area element carries |du/dx . dv/dx| = slen_u.slen_v, so weights stay the normalized g.w.
-    auto emit = [&](Integer sdu, Integer sdv, Integer iu, Integer iv) {
+    // Xsub, Ctay and acc are thread_local, so they cannot be captured; they are referenced directly.
+    const auto emit = [&tab, &normal_trg, &ker, &proxy_off, &proxy_w](const Integer sdu, const Integer sdv, const Integer iu, const Integer iv) {
       const GradeRule& gu = tab[iu];
       const GradeRule& gv = tab[iv];
       if (!(gu.b > gu.a) || !(gv.b > gv.a)) return;
@@ -861,7 +878,7 @@ namespace sctl {
       // the MONOMIAL operators; the rest keep the Lagrange path. Either way the density
       // projection uses the Lagrange operators (T for u, TT for v), so coefficients land in the
       // quadrant basis and the map back to the element basis is untouched.
-      const Real TAYLOR_T = (Real)1/32;
+      const Real TAYLOR_T = (Real)1/32; // (Real)1/32; ////////////////////////////////////////////////////////////////////
       if ((1-gu.a) <= TAYLOR_T && (1-gv.a) <= TAYLOR_T) {
         IntegrateBlock<order>(normal_trg, gu.w, gv.w, ker,
                               gu.T, gu.TmT, gu.TmD, gv.Tm, gv.dTm, gv.TT,
@@ -872,33 +889,35 @@ namespace sctl {
                               Xsub[sdu][sdv], nsign, acc, proxy_off, proxy_w);
       }
     };
+    // Bisect the corner cell along its longer physical dimension (hu, hv = parameter extent x
+    // surface speed) until that side is admissible, emitting one leaf per split.
+    const auto refine = [&emit, dist, b_ellipse](const Integer sdu, const Integer sdv, Real hu, Real hv) {
+      Integer ku = 0, kv = 0;
+      const bool cap = !(dist > 0) || !std::isfinite((double)dist);
+      // Near-touching targets (a neighbouring patch's node, foot distance ~0) refine to the
+      // cap regardless of the admissibility constant, so the cap -- not b_ellipse -- is what
+      // controls their error.
+      constexpr Integer KMAX = MaxNearLvl-1;   // table bound
+      while ((cap || b_ellipse*std::max<Real>(hu,hv) > dist) && (ku < KMAX || kv < KMAX)) {
+        if (hu >= hv && ku < KMAX) {
+          emit(sdu, sdv, ku, MaxNearLvl + kv);               // shell_ku x core_kv
+          ku++; hu *= (Real)0.5;
+        } else if (kv < KMAX) {
+          emit(sdu, sdv, MaxNearLvl + ku, kv);               // core_ku x shell_kv
+          kv++; hv *= (Real)0.5;
+        } else if (ku < KMAX) {
+          emit(sdu, sdv, ku, MaxNearLvl + kv);
+          ku++; hu *= (Real)0.5;
+        } else break;
+      }
+      emit(sdu, sdv, MaxNearLvl + ku, MaxNearLvl + kv);      // terminal corner cell
+    };
     for (Integer sdu = 0; sdu < 2; sdu++) {
       if (!(slen[0][sdu] > 0)) continue;
       for (Integer sdv = 0; sdv < 2; sdv++) {
         if (!(slen[1][sdv] > 0)) continue;
         acc.SetZero();
-        // Bisect the corner cell along its longer physical dimension (parameter extent x
-        // surface speed) until that side is admissible, emitting one leaf per split.
-        Integer ku = 0, kv = 0;
-        Real hu = slen[0][sdu]*spd_u, hv = slen[1][sdv]*spd_v;
-        const bool cap = !(dist > 0) || !std::isfinite((double)dist);
-        // Near-touching targets (a neighbouring patch's node, foot distance ~0) refine to the
-        // cap regardless of the admissibility constant, so the cap -- not b_ellipse -- is what
-        // controls their error.
-        constexpr Integer KMAX = MaxNearLvl-1;   // table bound
-        while ((cap || b_ellipse*std::max<Real>(hu,hv) > dist) && (ku < KMAX || kv < KMAX)) {
-          if (hu >= hv && ku < KMAX) {
-            emit(sdu, sdv, ku, MaxNearLvl + kv);               // shell_ku x core_kv
-            ku++; hu *= (Real)0.5;
-          } else if (kv < KMAX) {
-            emit(sdu, sdv, MaxNearLvl + ku, kv);               // core_ku x shell_kv
-            kv++; hv *= (Real)0.5;
-          } else if (ku < KMAX) {
-            emit(sdu, sdv, ku, MaxNearLvl + kv);
-            ku++; hu *= (Real)0.5;
-          } else break;
-        }
-        emit(sdu, sdv, MaxNearLvl + ku, MaxNearLvl + kv);      // terminal corner cell
+        refine(sdu, sdv, slen[0][sdu]*spd_u, slen[1][sdv]*spd_v);
 
         // The cells projected onto the SUB-ELEMENT basis, but the density lives on the ELEMENT
         // nodes, so map back: L_p^elem restricted to the sub-element is exactly sum_a S[p][a]
