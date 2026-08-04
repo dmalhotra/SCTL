@@ -88,12 +88,6 @@ namespace sctl {
       /** Reference-space Gauss-Legendre nodes in [0,1]. */
       static const Vector<Real>& ParamNodes(const Integer Order);
 
-      /**
-       * Equidistant tensor grid of Nelem_perside x Nelem_perside panels of GL nodes, z zero.
-       * @param[in] Nelem_perside panels per direction, split equally.
-       */
-      static const Vector<Real>& ParamGrid(const Integer Order, const Integer Nelem_perside);
-
       /** Write elements to file. */
       void Write(const std::string& fname, const Comm& comm = Comm::Self()) const;
 

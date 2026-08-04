@@ -19,6 +19,7 @@
 #include <iomanip>
 #include <string>
 
+
 namespace { inline double BenchWtime() {
 #ifdef _OPENMP
   return omp_get_wtime();
@@ -29,6 +30,30 @@ namespace { inline double BenchWtime() {
 
 
 using namespace sctl;
+
+// Equidistant tensor grid of nelem_perside^2 panels of GL nodes on [0,1]^2, z = 0. One
+// order x order block per panel, u-slow/v-fast, so QuadElemList's constructor slices it into one
+// element per panel; a single global row-major grid would instead hand each element a strip
+// spanning several panels, leaving the positions plausible but the tangents meaningless.
+template <class Real> Vector<Real> param_grid(const Integer order, const Integer nelem_perside) {
+    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+    Vector<Real> coord((Long)nelem_perside*nelem_perside*order*order*3);
+    Long idx = 0;
+    for (Integer pu = 0; pu < nelem_perside; pu++) {
+        for (Integer pv = 0; pv < nelem_perside; pv++) {
+            for (Integer i = 0; i < order; i++) {
+                for (Integer j = 0; j < order; j++) {
+                    coord[idx + 0] = (nds[i] + pu) / nelem_perside;
+                    coord[idx + 1] = (nds[j] + pv) / nelem_perside;
+                    coord[idx + 2] = 0;
+                    idx += 3;
+                }
+            }
+        }
+    }
+    SCTL_ASSERT(idx == coord.Dim());
+    return coord;
+}
 
 namespace {
 
@@ -71,7 +96,7 @@ QuadElemList<Real> BuildTwistedSphere(Long ElemOrder, Long PatchPerFace, Real Ra
 
 // Single curved element z = u*v on [0,1]^2 (matches unit-test get_testsurf).
 template <class Real> Vector<Real> get_testsurf(const Integer order) {
-  Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+  Vector<Real> coord0 = param_grid<Real>(order, 1);
   for (Long i = 0; i < coord0.Dim() / 3; i++)
     coord0[i * 3 + 2] = coord0[i * 3 + 0] * coord0[i * 3 + 1];
   return coord0;

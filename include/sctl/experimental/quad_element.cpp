@@ -1573,33 +1573,6 @@ namespace sctl {
     return LegQuadRule<Real>::nds(Order);
   }
 
-  template <class Real> const Vector<Real>& QuadElemList<Real>::ParamGrid(const Integer Order, const Integer Nelem_perside) {
-    const Vector<Real> nodes = ParamNodes(Order);
-
-    Vector<Real> x_param(Order * Nelem_perside);
-    for (Integer pind = 0; pind < Nelem_perside; pind++) {
-      for (Integer nind = 0; nind < Order; nind++) {
-        x_param[pind * Order + nind] = (nodes[nind] + pind) / Nelem_perside;
-      }
-    }
-    const Long N = x_param.Dim();
-    Vector<Real> coord0(N * N * COORD_DIM);
-    for (Long xind = 0; xind < N; xind++) {
-      for (Long yind = 0; yind < N; yind++) {
-        const Long idx = (xind * N + yind) * COORD_DIM;
-        coord0[idx + 0] = x_param[xind];
-        coord0[idx + 1] = x_param[yind];
-        coord0[idx + 2] = 0;
-      }
-    }
-    // Cached per (Order, Nelem_perside): the returned reference stays valid across later calls
-    // with other arguments.
-    static std::mutex mtx;
-    static std::map<std::pair<Integer,Integer>, Vector<Real>> cache;
-    std::lock_guard<std::mutex> lock(mtx);
-    return cache.emplace(std::make_pair(Order, Nelem_perside), std::move(coord0)).first->second;
-  }
-
   template <class Real> void QuadElemList<Real>::Write(const std::string& fname, const Comm& comm) const {
     auto allgather = [&comm](Vector<Real>& v_out, const Vector<Real>& v_in) {
       const Long Nproc = comm.Size();

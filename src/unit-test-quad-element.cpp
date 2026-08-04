@@ -17,13 +17,37 @@ template <class Real> struct QuadElemTestAccess {
 }
 
 
+// Equidistant tensor grid of nelem_perside^2 panels of GL nodes on [0,1]^2, z = 0. One
+// order x order block per panel, u-slow/v-fast, so QuadElemList's constructor slices it into one
+// element per panel; a single global row-major grid would instead hand each element a strip
+// spanning several panels, leaving the positions plausible but the tangents meaningless.
+template <class Real> Vector<Real> param_grid(const Integer order, const Integer nelem_perside) {
+    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+    Vector<Real> coord((Long)nelem_perside*nelem_perside*order*order*3);
+    Long idx = 0;
+    for (Integer pu = 0; pu < nelem_perside; pu++) {
+        for (Integer pv = 0; pv < nelem_perside; pv++) {
+            for (Integer i = 0; i < order; i++) {
+                for (Integer j = 0; j < order; j++) {
+                    coord[idx + 0] = (nds[i] + pu) / nelem_perside;
+                    coord[idx + 1] = (nds[j] + pv) / nelem_perside;
+                    coord[idx + 2] = 0;
+                    idx += 3;
+                }
+            }
+        }
+    }
+    SCTL_ASSERT(idx == coord.Dim());
+    return coord;
+}
+
 template <class Real> Vector<Real> get_testsurf(const Integer order, const Integer nelem_perside) {
     // First define surface
     const auto fsurf = [](const Real x, const Real y) {
         return x*y;
     };
 
-    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, nelem_perside); // Get x-y grid on [0,1]x[0,1]
+    Vector<Real> coord0 = param_grid<Real>(order, nelem_perside); // Get x-y grid on [0,1]x[0,1]
     // Get z value on x-y grid for surface.
     for (int i=0; i<coord0.Dim()/3; i++) {
         coord0[i*3 + 2] = fsurf(coord0[i*3+0], coord0[i*3+1]);
@@ -32,13 +56,13 @@ template <class Real> Vector<Real> get_testsurf(const Integer order, const Integ
 }
 
 template <class Real> void test_ParamGrid() {
-    // Tensor grid generation directly on ParamGrid.
+    // The driver-local grid helper, and that each block it emits becomes one valid element.
     const Long order = 4;
     const Long nelem_perside = 2;
     const Long N_per_side = order * nelem_perside; // 8 nodes per side
     const Long N_total = N_per_side * N_per_side;  // 64 tensor-grid points
 
-    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, nelem_perside);
+    Vector<Real> coord0 = param_grid<Real>(order, nelem_perside);
     SCTL_ASSERT(coord0.Dim() == N_total * 3);
 
     // Expected order-4 GL nodes mapped to [0,1], split into 2 panels.
@@ -53,14 +77,40 @@ template <class Real> void test_ParamGrid() {
         0.965284077898513196
     };
 
-    // Tensor product x_param_exp (x) x_param_exp, AoS (u slow, v fast), z = 0.
+    // One order x order block per panel, AoS (u slow, v fast), z = 0, panels in (pu,pv) order.
+    // NOT a single global row-major grid: Init slices this into elements of order^2 consecutive
+    // nodes, so a global grid would hand each element a strip spanning several panels.
     const Real tol = 1e-12;
-    for (Long xind = 0; xind < N_per_side; xind++) {
-        for (Long yind = 0; yind < N_per_side; yind++) {
-            const Long idx = (xind * N_per_side + yind) * 3;
-            SCTL_ASSERT(fabs(coord0[idx + 0] - x_param_exp[xind]) < tol);
-            SCTL_ASSERT(fabs(coord0[idx + 1] - x_param_exp[yind]) < tol);
-            SCTL_ASSERT(fabs(coord0[idx + 2] - (Real)0) < tol);
+    for (Long pu = 0; pu < nelem_perside; pu++) {
+        for (Long pv = 0; pv < nelem_perside; pv++) {
+            const Long ebase = (pu * nelem_perside + pv) * order * order;
+            for (Long i = 0; i < order; i++) {
+                for (Long j = 0; j < order; j++) {
+                    const Long idx = (ebase + i * order + j) * 3;
+                    SCTL_ASSERT(fabs(coord0[idx + 0] - x_param_exp[pu * order + i]) < tol);
+                    SCTL_ASSERT(fabs(coord0[idx + 1] - x_param_exp[pv * order + j]) < tol);
+                    SCTL_ASSERT(fabs(coord0[idx + 2] - (Real)0) < tol);
+                }
+            }
+        }
+    }
+
+    // Each element must be a panel in its own right: on this grid every tangent is constant and
+    // axis-aligned with length 1/nelem_perside. Getting the node ordering wrong leaves the
+    // positions looking plausible while the tangents -- hence normals and area -- are meaningless.
+    {
+        QuadElemList<Real> qel(order, coord0);
+        SCTL_ASSERT(qel.Size() == nelem_perside * nelem_perside);
+        const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+        const Real h = (Real)1 / nelem_perside;
+        for (Long e = 0; e < qel.Size(); e++) {
+            Vector<Real> X, Xn, dXu, dXv;
+            qel.GetGeom(&X, &Xn, nullptr, &dXu, &dXv, nds, nds, e);
+            for (Long t = 0; t < order * order; t++) {
+                SCTL_ASSERT(fabs(dXu[t*3+0] - h) < tol && fabs(dXu[t*3+1]) < tol && fabs(dXu[t*3+2]) < tol);
+                SCTL_ASSERT(fabs(dXv[t*3+0]) < tol && fabs(dXv[t*3+1] - h) < tol && fabs(dXv[t*3+2]) < tol);
+                SCTL_ASSERT(fabs(fabs(Xn[t*3+2]) - (Real)1) < tol);
+            }
         }
     }
 }
@@ -69,7 +119,7 @@ template <class Real> void test_GetClosestNode_plane() {
     // Flat patch z = 0; lifted target must snap back to the surface node.
     const Long COORD_DIM = 3;
     const Long order = 8;
-    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    Vector<Real> coord0 = param_grid<Real>(order, 1);
     QuadElemList<Real> qel(order, coord0);
 
     Vector<Real> X, Xn;
@@ -146,7 +196,7 @@ template <class Real> void test_GetClosestPoint_plane() {
     // Flat patch z = 0: GetClosestPoint must recover the exact projection at an off-node (u,v).
     const Integer COORD_DIM = 3;
     const Long order = 8;
-    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    Vector<Real> coord0 = param_grid<Real>(order, 1);
     QuadElemList<Real> qel(order, coord0);
 
     // Off-node surface point and its normal (= +z for the plane).
@@ -306,7 +356,7 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
 
     // Single element: flat plane z = 0 or curved testsurf z = u*v.
     Vector<Real> coord0 = curved ? get_testsurf<Real>(order, 1)
-                                 : QuadElemList<Real>::ParamGrid(order, 1);
+                                 : param_grid<Real>(order, 1);
     QuadElemList<Real> qel(order, coord0);
 
     // Near-singular target: offset d along the normal at an interior point.
@@ -367,7 +417,7 @@ template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, con
     SCTL_ASSERT(KDIM1 <= 3);
 
     // Flat unit square z = 0.
-    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    Vector<Real> coord0 = param_grid<Real>(order, 1);
     QuadElemList<Real> qel(order, coord0);
 
     // Self-interaction matrix (no target-normal contraction).
