@@ -885,7 +885,7 @@ namespace sctl {
       // the MONOMIAL operators; the rest keep the Lagrange path. Either way the density
       // projection uses the Lagrange operators (T for u, TT for v), so coefficients land in the
       // quadrant basis and the map back to the element basis is untouched.
-      const Real TAYLOR_T = (Real)1/32; // (Real)1/32; ////////////////////////////////////////////////////////////////////
+      const Real TAYLOR_T = (Real)1/32;
       if ((1-gu.a) <= TAYLOR_T && (1-gv.a) <= TAYLOR_T) {
         IntegrateBlock<order>(normal_trg, gu.w, gv.w, ker,
                               gu.T, gu.TmT, gu.TmD, gv.Tm, gv.dTm, gv.TT,
