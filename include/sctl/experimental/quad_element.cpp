@@ -755,18 +755,28 @@ namespace sctl {
     // S[i][a] = L_i(sub[a]), element nodes -> sub-element nodes; side 1 mirrored so BOTH sides
     // grade toward the foot at normalized x = 1. The v-contraction needs S, the u-contraction
     // needs S^T, so build only the one each direction uses.
+    //
+    // BOTH node sets are measured from the foot, and the sub-element nodes come straight from the
+    // half-angle offsets rather than from one-minus-node, so the node AT the foot is exactly 0 and
+    // its neighbours keep full relative accuracy. This is what makes the weights right near the
+    // foot: when the foot is itself an element node -- the on-surface case -- that node's shifted
+    // coordinate is exactly 0, so every other weight carries an exact factor of the offset instead
+    // of a cancelling difference of two order-one parameters, and the barycentric form takes its
+    // exact-hit branch at the foot. Absolute parameters lose that to rounding.
     const auto build_interp = [](Matrix<Real> (&Sf)[2][2], Matrix<Real> (&St)[2][2], const Real (&slen)[2][2], const Real ustar, const Real vstar) {
       const Long nnode = (Long)order*order;
-      const Vector<Real>& gnds = ParamNodes(order);           // element basis (density)
-      const Vector<Real>& snds = NearSubNodes<Real>(order);   // sub-element basis (geometry)
-      thread_local Vector<Real> sub, Sbuf;
-      if (sub.Dim() != order) { sub.ReInit(order); Sbuf.ReInit(nnode); }
+      const Vector<Real>& gnds = ParamNodes(order);          // element basis (density)
+      const Vector<Real>& soff = NearSubOffs<Real>(order);   // sub-element nodes, offset from the foot
+      thread_local Vector<Real> gsh, sub, Sbuf;
+      if (sub.Dim() != order) { gsh.ReInit(order); sub.ReInit(order); Sbuf.ReInit(nnode); }
       for (Integer d = 0; d < 2; d++) {
         const Real xs = (d ? vstar : ustar);
+        for (Integer i = 0; i < order; i++) gsh[i] = gnds[i] - xs;   // element nodes, foot at the origin
         for (Integer sd = 0; sd < 2; sd++) {
           if (!(slen[d][sd] > 0)) continue;
-          for (Integer i = 0; i < order; i++) sub[i] = sd ? (1 - (1-xs)*snds[i]) : (xs*snds[i]);
-          { Vector<Real> v(nnode, Sbuf.begin(), false); LagrangeInterp<Real>::Interpolate(v, gnds, sub); }
+          const Real sg = (sd ? slen[d][sd] : -slen[d][sd]);   // side 0 runs toward decreasing parameter
+          for (Integer i = 0; i < order; i++) sub[i] = sg*soff[i];
+          { Vector<Real> v(nnode, Sbuf.begin(), false); LagrangeInterp<Real>::Interpolate(v, gsh, sub); }
           Sf[d][sd].ReInit(order, order); St[d][sd].ReInit(order, order);
           for (Integer i = 0; i < order; i++) for (Integer aa = 0; aa < order; aa++) {
             Sf[d][sd][i][aa] = Sbuf[i*order+aa];   // S
