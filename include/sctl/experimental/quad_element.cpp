@@ -1473,7 +1473,9 @@ namespace sctl {
     // Foot, distance and refinement are driven by the CLOSEST proxy (first in Xt_proxy), so the
     // one hierarchy built here is fine enough for every proxy on the line; the rest enter as
     // offsets from it.
-    Vector<Real> Xt(COORD_DIM), off(p_*COORD_DIM);
+    StaticArray<Real,COORD_DIM> Xt_;
+    ScratchBuf<Real> off_buf(p_*COORD_DIM);
+    Vector<Real> Xt(COORD_DIM, Xt_, false), off(off_buf);
     for (Integer k = 0; k < COORD_DIM; k++) Xt[k] = Xt_proxy[k];
     for (Long j = 0; j < p_; j++)
       for (Integer k = 0; k < COORD_DIM; k++) off[j*COORD_DIM+k] = Xt_proxy[j*COORD_DIM+k] - Xt[k];
