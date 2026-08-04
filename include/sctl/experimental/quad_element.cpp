@@ -530,6 +530,26 @@ namespace sctl {
         for (Integer i = 0; i < order; i++) for (Integer a = 0; a < q; a++) {
           r.TT[a][i] = r.T[i][a]; r.TD[a][i] = r.T[i][a]; r.TD[q+a][i] = r.dT[i][a];
         }
+        // Monomial operators in t = 1-s, the offset from the foot (s = 1 is the foot on both
+        // sides). d/dt is used for the tangents: it flips BOTH directions, so the cross product
+        // -- and hence nrm_sign -- is unchanged.
+        r.Tm.ReInit(order, q); r.dTm.ReInit(order, q);
+        for (Integer a = 0; a < q; a++) {
+          const Real t = 1 - r.nds[a];
+          Real p = 1;
+          for (Integer m = 0; m < order; m++) {
+            r.Tm[m][a] = p;
+            r.dTm[m][a] = (m == 0 ? (Real)0 : m * (p / (t != 0 ? t : (Real)1)));
+            p *= t;
+          }
+          if (t == 0) {   // t=0: only the m=1 term survives in the derivative
+            for (Integer m = 0; m < order; m++) r.dTm[m][a] = (m == 1 ? (Real)1 : (Real)0);
+          }
+        }
+        r.TmT.ReInit(q, order); r.TmD.ReInit(2*q, order);
+        for (Integer m = 0; m < order; m++) for (Integer a = 0; a < q; a++) {
+          r.TmT[a][m] = r.Tm[m][a]; r.TmD[a][m] = r.Tm[m][a]; r.TmD[q+a][m] = r.dTm[m][a];
+        }
       };
       for (Integer k = 0; k < MaxNearLvl; k++) {
         const Real lo = 1 - pow<Real>((Real)0.5, k), hi = 1 - pow<Real>((Real)0.5, k+1);
@@ -636,27 +656,81 @@ namespace sctl {
         }
       }
     }
-    // Per-quadrant sub-element nodal slabs, Xsub = S_u^T . cs . S_v, built ONCE per target. This
-    // is what leaves every per-cell operator a precomputed table entry (T/dT/TT/TD): nothing
-    // depending on (u*,v*) survives into the per-cell loop.
-    // The v-contraction batches all COORD_DIM components into a single GEMM.
-    thread_local Vector<Real> Av[2], Xsub[2][2];
+    // Taylor rows about the foot: P[m][i] = (D^m . l(x*))[i] / m!, so the element's tensor-product
+    // interpolant re-expands EXACTLY (it is a polynomial) as
+    //     X(u,v) - Xtrg = sum_mn Chat[m][n] t_u^m t_v^n,     t = offset from the foot / slen,
+    // with Chat[0][0] = X(foot) - Xtrg. Evaluating that builds the source-to-target vector from
+    // products of small increments rather than by differencing panel-scale coordinates, so its
+    // error is relative (~eps) instead of absolute (~eps, i.e. eps/r relative) -- and it is the
+    // relative error that a 1/r^k kernel amplifies. The (sigma*slen)^m factor folds in the affine
+    // map from t; sigma = -1 on side 0, where u decreases away from the foot, and +1 on side 1.
+    thread_local Matrix<Real> Pt[2][2], PfT[2][2];
+    {
+      const Matrix<Real>& D = DiffMat(order);
+      thread_local Vector<Real> prow, pnxt, P0;
+      if (P0.Dim() != nnode) { prow.ReInit(order); pnxt.ReInit(order); P0.ReInit(nnode); }
+      for (Integer d = 0; d < 2; d++) {
+        { Vector<Real> x1(1); x1[0] = (d ? vstar : ustar);
+          Vector<Real> v(order, prow.begin(), false);
+          LagrangeInterp<Real>::Interpolate(v, gnds, x1); }
+        Real fact = 1;
+        for (Integer m = 0; m < order; m++) {
+          if (m > 0) {
+            for (Integer p = 0; p < order; p++) { Real s = 0;
+              for (Integer j = 0; j < order; j++) s += D[p][j]*prow[j];
+              pnxt[p] = s; }
+            for (Integer p = 0; p < order; p++) prow[p] = pnxt[p];
+            fact *= m;
+          }
+          for (Integer p = 0; p < order; p++) P0[m*order+p] = prow[p]/fact;
+        }
+        for (Integer sd = 0; sd < 2; sd++) {
+          if (!(slen[d][sd] > 0)) continue;
+          Pt[d][sd].ReInit(order, order); PfT[d][sd].ReInit(order, order);
+          const Real sg = (sd ? slen[d][sd] : -slen[d][sd]);
+          Real sc = 1;
+          for (Integer m = 0; m < order; m++) {
+            for (Integer p = 0; p < order; p++) {
+              const Real val = P0[m*order+p]*sc;
+              Pt [d][sd][m][p] = val;    // left  multiplier for u: [m][i]
+              PfT[d][sd][p][m] = val;    // right multiplier for v: [j][n]
+            }
+            sc *= sg;
+          }
+        }
+      }
+    }
+    // Per-quadrant Taylor coefficient arrays, Chat = P_u . cs . P_v^T, built ONCE per target, so
+    // nothing depending on (u*,v*) survives into the per-cell loop and every per-cell operator
+    // stays a precomputed table entry. The v-contraction batches all COORD_DIM components.
+    // Two per-quadrant geometry arrays: the Lagrange nodal slab Xsub = S_u^T . cs . S_v for the
+    // OUTER cells, and the Taylor array Ctay = P_u . cs . P_v^T for the cells near the foot. The
+    // monomial basis is only well conditioned once the cell's offset from the foot is small
+    // compared with 1/order; over a full-length sub-element it is far worse than Lagrange, and the
+    // outer cells do not need it -- they sit at r ~ O(1), where absolute eps error is already
+    // relative eps. Both are built once per target.
+    thread_local Vector<Real> Av[2], Bv[2], Xsub[2][2], Ctay[2][2];
     for (Integer sdv = 0; sdv < 2; sdv++) {
       if (!(slen[1][sdv] > 0)) continue;
-      if (Av[sdv].Dim() != COORD_DIM*nnode) Av[sdv].ReInit(COORD_DIM*nnode);
+      if (Av[sdv].Dim() != COORD_DIM*nnode) { Av[sdv].ReInit(COORD_DIM*nnode); Bv[sdv].ReInit(COORD_DIM*nnode); }
       const Matrix<Real> cs_all(COORD_DIM*order, order, cs.begin(), false);
       Matrix<Real> A_all(COORD_DIM*order, order, Av[sdv].begin(), false);
-      Matrix<Real>::GEMM(A_all, cs_all, Sf[1][sdv]);
+      Matrix<Real> B_all(COORD_DIM*order, order, Bv[sdv].begin(), false);
+      Matrix<Real>::GEMM(A_all, cs_all, Sf [1][sdv]);
+      Matrix<Real>::GEMM(B_all, cs_all, PfT[1][sdv]);
     }
     for (Integer sdu = 0; sdu < 2; sdu++) {
       if (!(slen[0][sdu] > 0)) continue;
       for (Integer sdv = 0; sdv < 2; sdv++) {
         if (!(slen[1][sdv] > 0)) continue;
-        if (Xsub[sdu][sdv].Dim() != COORD_DIM*nnode) Xsub[sdu][sdv].ReInit(COORD_DIM*nnode);
+        if (Xsub[sdu][sdv].Dim() != COORD_DIM*nnode) { Xsub[sdu][sdv].ReInit(COORD_DIM*nnode); Ctay[sdu][sdv].ReInit(COORD_DIM*nnode); }
         for (Integer k = 0; k < COORD_DIM; k++) {
           const Matrix<Real> A_k(order, order, Av[sdv].begin() + k*nnode, false);
+          const Matrix<Real> B_k(order, order, Bv[sdv].begin() + k*nnode, false);
           Matrix<Real> X_k(order, order, Xsub[sdu][sdv].begin() + k*nnode, false);
+          Matrix<Real> C_k(order, order, Ctay[sdu][sdv].begin() + k*nnode, false);
           Matrix<Real>::GEMM(X_k, St[0][sdu], A_k);
+          Matrix<Real>::GEMM(C_k, Pt[0][sdu], B_k);
         }
       }
     }
@@ -669,9 +743,20 @@ namespace sctl {
       const GradeRule& gv = tab[iv];
       if (!(gu.b > gu.a) || !(gv.b > gv.a)) return;
       const Real nsign = ((sdu == 1) != (sdv == 1)) ? (Real)-1 : (Real)1;
-      IntegrateBlock<order>(normal_trg, gu.w, gv.w, ker,
-                            gu.T, gu.TT, gu.TD, gv.T, gv.dT, gv.TT,
-                            Xsub[sdu][sdv], nsign, acc, proxy_off, proxy_w);
+      // Cells whose whole extent lies within TAYLOR_T of the foot read the Taylor array through
+      // the MONOMIAL operators; the rest keep the Lagrange path. Either way the density
+      // projection uses the Lagrange operators (T for u, TT for v), so coefficients land in the
+      // quadrant basis and the map back to the element basis is untouched.
+      const Real TAYLOR_T = (Real)1/32;
+      if ((1-gu.a) <= TAYLOR_T && (1-gv.a) <= TAYLOR_T) {
+        IntegrateBlock<order>(normal_trg, gu.w, gv.w, ker,
+                              gu.T, gu.TmT, gu.TmD, gv.Tm, gv.dTm, gv.TT,
+                              Ctay[sdu][sdv], nsign, acc, proxy_off, proxy_w);
+      } else {
+        IntegrateBlock<order>(normal_trg, gu.w, gv.w, ker,
+                              gu.T, gu.TT, gu.TD, gv.T, gv.dT, gv.TT,
+                              Xsub[sdu][sdv], nsign, acc, proxy_off, proxy_w);
+      }
     };
     for (Integer sdu = 0; sdu < 2; sdu++) {
       if (!(slen[0][sdu] > 0)) continue;

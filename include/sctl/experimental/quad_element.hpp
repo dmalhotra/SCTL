@@ -232,7 +232,13 @@ namespace sctl {
       //   dT (order x q)   d/dx of the above, x = the sub-element's normalized coordinate
       //   TT (q x order)   T^T, for the projection
       //   TD (2q x order)  [T^T ; dT^T] stacked, so value+derivative come from ONE GEMM
-      struct GradeRule { Vector<Real> nds, w; Matrix<Real> T, dT, TT, TD; Real a, b; };
+      // T/dT/TT/TD are the Lagrange operators (element nodes -> this cell's quadrature nodes) and
+      // carry the density projection. Tm/TmT/TmD are the same cell in the MONOMIAL basis of
+      // t = 1-s, the offset from the foot: Tm[m][a] = t_a^m. Geometry uses those against a Taylor
+      // coefficient array, so the source-to-target vector is built multiplicatively from small
+      // increments instead of by differencing panel-scale coordinates -- its error is then
+      // relative rather than absolute, which is what a 1/r^k kernel amplifies.
+      struct GradeRule { Vector<Real> nds, w; Matrix<Real> T, dT, TT, TD, Tm, dTm, TmT, TmD; Real a, b; };
       // Refinement bottoms out where 1-2^-k stops being distinct from 1, i.e. at the mantissa width.
       static constexpr Integer MaxNearLvl = GetSigBits<Real>::value();  // flat index: shell_k -> k, core_k -> MaxNearLvl + k
       static constexpr Integer NearMaxQuadOrder = 60;
