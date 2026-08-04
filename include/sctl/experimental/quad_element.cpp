@@ -592,15 +592,22 @@ namespace sctl {
   template <class Real> template <Integer order> const Vector<typename QuadElemList<Real>::GradeRule>& QuadElemList<Real>::NearGradeTable(const Integer q) {
     // Built once per `order`. Every entry is in NORMALIZED sub-element coordinates and carries
     // no positional index -- that is the point of splitting at the foot.
+    // Every entry is formed in the work type and rounded to Real only on the way out, so no
+    // intermediate step inherits Real rounding from the one before it. That means the Gauss rule,
+    // the node offsets and the sub-element derivative operator all have to arrive at work
+    // precision too -- a table built from already-rounded inputs gains nothing from working wide.
     auto build = [](const Integer q) {
-      const Vector<Real>& gnds = NearSubNodes<Real>(order);   // sub-element's own nodes, normalized
-      Vector<Real> qn, qw; LegQuadRule<Real>::template ComputeNdsWts<typename NearTabWork<Real>::type>(&qn, &qw, q);
+      using W = typename NearTabWork<Real>::type;
+      const Vector<W>& sig = NearSubOffs<W>(order);       // sub-element nodes, offset from the foot
+      const Matrix<W>& Dsub = NearSubDiffMat<W>(order);   // d/ds of the sub-element basis at its nodes
+      Vector<W> qn, qw; LegQuadRule<W>::template ComputeNdsWts<W>(&qn, &qw, q);
       Vector<GradeRule> tab(2*MaxNearLvl);
+      Matrix<W> T(order, q), dT(order, q);
       auto fill = [&](GradeRule& r, const Real a, const Real b) {
         r.a = a; r.b = b;
-        const Real w = b - a;
+        const W aw = (W)a, w = (W)b - (W)a;
         r.nds.ReInit(q); r.w.ReInit(q);
-        for (Integer i = 0; i < q; i++) { r.nds[i] = a + w*qn[i]; r.w[i] = w*qw[i]; }
+        for (Integer i = 0; i < q; i++) { r.nds[i] = (Real)(aw + w*qn[i]); r.w[i] = (Real)(w*qw[i]); }
         // T[i][j] = Lhat_i(nds[j]): sub-element nodes -> this interval's quadrature nodes.
         //
         // Built from t, the offset from the foot, NOT from nds. The interval ends are 1 - 2^-k so
@@ -611,30 +618,21 @@ namespace sctl {
         // 1 - O(t) and EVERY other weight carries an exact factor t/sig_i. The interpolated
         // position is then a sum of terms that are each O(t) rather than a cancelling sum of O(1)
         // terms, which is what makes its error relative instead of absolute.
-        const Real t_hi = 1 - a, t_lo = 1 - b, t_w = t_hi - t_lo;
-        r.T.ReInit(order, q);
-        {
-          using W = typename NearTabWork<Real>::type;
-          Vector<W> sig(order);
+        const W t_hi = (W)1 - aw, t_w = t_hi - ((W)1 - (W)b);
+        for (Integer j = 0; j < q; j++) {
+          const W t = t_hi - t_w*qn[j];
           for (Integer i = 0; i < order; i++) {
-            const W ch = cos<W>(const_pi<W>()*i/(2*(order-1)));
-            sig[i] = ch*ch;
-          }
-          sig[0] = 1; sig[order-1] = 0;
-          for (Integer j = 0; j < q; j++) {
-            const W t = (W)t_hi - (W)t_w*(W)qn[j];
-            for (Integer i = 0; i < order; i++) {
-              W p = 1;
-              for (Integer l = 0; l < order; l++) if (l != i) p *= (sig[l] - t)/(sig[l] - sig[i]);
-              r.T[i][j] = (Real)p;
-            }
+            W p = 1;
+            for (Integer l = 0; l < order; l++) if (l != i) p *= (sig[l] - t)/(sig[l] - sig[i]);
+            T[i][j] = p;
           }
         }
-        r.dT.ReInit(order, q);
-        Matrix<Real>::GEMM(r.dT, NearSubDiffMat<Real>(order), r.T);
+        Matrix<W>::GEMM(dT, Dsub, T);
+        r.T.ReInit(order, q); r.dT.ReInit(order, q);
         r.TT.ReInit(q, order); r.TD.ReInit(2*q, order);
-        for (Integer i = 0; i < order; i++) for (Integer a = 0; a < q; a++) {
-          r.TT[a][i] = r.T[i][a]; r.TD[a][i] = r.T[i][a]; r.TD[q+a][i] = r.dT[i][a];
+        for (Integer i = 0; i < order; i++) for (Integer j = 0; j < q; j++) {
+          r.T[i][j] = (Real)T[i][j]; r.dT[i][j] = (Real)dT[i][j];
+          r.TT[j][i] = r.T[i][j]; r.TD[j][i] = r.T[i][j]; r.TD[q+j][i] = r.dT[i][j];
         }
         // Monomial operators in t = 1-s, the offset from the foot (s = 1 is the foot on both
         // sides). d/dt is used for the tangents: it flips BOTH directions, so the cross product
@@ -646,22 +644,21 @@ namespace sctl {
         // ~1, which rounds at ABSOLUTE eps: t then carries relative error eps*2^k -- 1e-4 by
         // level 40 -- which is exactly the cancellation this whole path exists to avoid.
         r.Tm.ReInit(order, q); r.dTm.ReInit(order, q);
-        for (Integer a = 0; a < q; a++) {
-          using W = typename NearTabWork<Real>::type;
-          const W t = (W)t_hi - (W)t_w*(W)qn[a];
+        for (Integer j = 0; j < q; j++) {
+          const W t = t_hi - t_w*qn[j];
           W p = 1;
           for (Integer m = 0; m < order; m++) {
-            r.Tm[m][a] = (Real)p;
-            r.dTm[m][a] = (m == 0 ? (Real)0 : (Real)(m * (p / (t != (W)0 ? t : (W)1))));
+            r.Tm[m][j] = (Real)p;
+            r.dTm[m][j] = (m == 0 ? (Real)0 : (Real)(m * (p / (t != (W)0 ? t : (W)1))));
             p *= t;
           }
           if (t == (W)0) {   // t=0: only the m=1 term survives in the derivative
-            for (Integer m = 0; m < order; m++) r.dTm[m][a] = (m == 1 ? (Real)1 : (Real)0);
+            for (Integer m = 0; m < order; m++) r.dTm[m][j] = (m == 1 ? (Real)1 : (Real)0);
           }
         }
         r.TmT.ReInit(q, order); r.TmD.ReInit(2*q, order);
-        for (Integer m = 0; m < order; m++) for (Integer a = 0; a < q; a++) {
-          r.TmT[a][m] = r.Tm[m][a]; r.TmD[a][m] = r.Tm[m][a]; r.TmD[q+a][m] = r.dTm[m][a];
+        for (Integer m = 0; m < order; m++) for (Integer j = 0; j < q; j++) {
+          r.TmT[j][m] = r.Tm[m][j]; r.TmD[j][m] = r.Tm[m][j]; r.TmD[q+j][m] = r.dTm[m][j];
         }
       };
       for (Integer k = 0; k < MaxNearLvl; k++) {
