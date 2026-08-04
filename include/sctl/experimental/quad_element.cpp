@@ -614,7 +614,8 @@ namespace sctl {
       const Matrix<W>& Dsub = NearSubDiffMat<W>(order);   // d/ds of the sub-element basis at its nodes
       Vector<W> qn, qw; LegQuadRule<W>::template ComputeNdsWts<W>(&qn, &qw, q);
       Vector<GradeRule> tab(2*MaxNearLvl);
-      Matrix<W> T(order, q), dT(order, q);
+      Vector<W> tq(q), Twts((Long)order*q);
+      Matrix<W> dT(order, q);
       auto fill = [&](GradeRule& r, const Real a, const Real b) {
         r.a = a; r.b = b;
         const W aw = (W)a, w = (W)b - (W)a;
@@ -622,23 +623,17 @@ namespace sctl {
         for (Integer i = 0; i < q; i++) { r.nds[i] = (Real)(aw + w*qn[i]); r.w[i] = (Real)(w*qw[i]); }
         // T[i][j] = Lhat_i(nds[j]): sub-element nodes -> this interval's quadrature nodes.
         //
-        // Built from t, the offset from the foot, NOT from nds. The interval ends are 1 - 2^-k so
-        // t_hi = 1-a and t_lo = 1-b are exact and t = t_hi - (t_hi-t_lo)*qn keeps full relative
-        // accuracy, whereas nds = a + w*qn adds ~2^-k to ~1 and rounds at ABSOLUTE eps. Writing
-        // the basis as L_i(1-t) = prod_{j!=i} (sig_j - t)/(sig_j - sig_i), sig_j = 1 - snds_j,
-        // makes the structure explicit: the foot is snds = 1, i.e. sig = 0, so its own weight is
-        // 1 - O(t) and EVERY other weight carries an exact factor t/sig_i. The interpolated
-        // position is then a sum of terms that are each O(t) rather than a cancelling sum of O(1)
-        // terms, which is what makes its error relative instead of absolute.
+        // Interpolated in t, the offset from the foot, NOT in nds -- both the nodes (sig) and the
+        // quadrature points are measured from there. The interval ends are 1 - 2^-k so t_hi = 1-a
+        // and t_lo = 1-b are exact and t = t_hi - (t_hi-t_lo)*qn keeps full relative accuracy,
+        // whereas nds = a + w*qn adds ~2^-k to ~1 and rounds at ABSOLUTE eps. The foot is itself a
+        // node, at sig = 0, so its weight is 1 - O(t) and EVERY other weight carries a factor of t:
+        // an interpolated position is a sum of terms that are each O(t) rather than a cancelling
+        // sum of O(1) ones, which is what makes its error relative instead of absolute.
         const W t_hi = (W)1 - aw, t_w = t_hi - ((W)1 - (W)b);
-        for (Integer j = 0; j < q; j++) {
-          const W t = t_hi - t_w*qn[j];
-          for (Integer i = 0; i < order; i++) {
-            W p = 1;
-            for (Integer l = 0; l < order; l++) if (l != i) p *= (sig[l] - t)/(sig[l] - sig[i]);
-            T[i][j] = p;
-          }
-        }
+        for (Integer j = 0; j < q; j++) tq[j] = t_hi - t_w*qn[j];
+        LagrangeInterp<W>::Interpolate(Twts, sig, tq);   // pre-sized, so the view below stays valid
+        const Matrix<W> T(order, q, Twts.begin(), false);
         Matrix<W>::GEMM(dT, Dsub, T);
         r.T.ReInit(order, q); r.dT.ReInit(order, q);
         r.TT.ReInit(q, order); r.TD.ReInit(2*q, order);
