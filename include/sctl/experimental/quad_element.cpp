@@ -509,11 +509,51 @@ namespace sctl {
     return b[digits];
   }
 
+  // Sub-element interpolation basis for the near scheme: Chebyshev-Lobatto on [0,1]. Unlike the
+  // element's Gauss nodes it INCLUDES the endpoints, so the foot -- which the split places at
+  // s = 1 on every side -- is itself a node. Interpolating toward a node makes every other
+  // weight vanish linearly in the offset t, so the products L_i(t)*X_i are each O(t) and the
+  // small result is no longer a cancelling sum of O(1) terms: with Gauss nodes the largest term
+  // saturates at ~0.17 however small t is, giving absolute error eps and relative error eps/t.
+  template <class Real> static const Vector<Real>& NearSubNodes(const Integer order) {
+    constexpr Integer MAX_ORDER = 50;
+    SCTL_ASSERT(1 < order && order <= MAX_ORDER);
+    static const Vector<Vector<Real>> all = []() {
+      Vector<Vector<Real>> v(MAX_ORDER + 1);
+      for (Integer n = 2; n <= MAX_ORDER; n++) {
+        v[n].ReInit(n);
+        for (Integer i = 0; i < n; i++) v[n][i] = (1 - cos<Real>(const_pi<Real>()*i/(n-1)))/2;
+        v[n][0] = 0; v[n][n-1] = 1;               // endpoints exact
+      }
+      return v;
+    }();
+    return all[order];
+  }
+  // d/ds of the sub-element basis at its own nodes, D[i][a] = L_i'(node_a).
+  template <class Real> static const Matrix<Real>& NearSubDiffMat(const Integer order) {
+    constexpr Integer MAX_ORDER = 50;
+    SCTL_ASSERT(1 < order && order <= MAX_ORDER);
+    static const Vector<Matrix<Real>> all = []() {
+      Vector<Matrix<Real>> D(MAX_ORDER + 1);
+      for (Integer n = 2; n <= MAX_ORDER; n++) {
+        const Vector<Real>& nds = NearSubNodes<Real>(n);
+        Vector<Real> f((Long)n*n); f.SetZero();
+        for (Integer i = 0; i < n; i++) f[i*n + i] = 1;
+        Vector<Real> df;
+        LagrangeInterp<Real>::Derivative(df, f, nds);
+        D[n].ReInit(n, n);
+        for (Integer i = 0; i < n; i++) for (Integer a = 0; a < n; a++) D[n][i][a] = df[i*n + a];
+      }
+      return D;
+    }();
+    return all[order];
+  }
+
   template <class Real> template <Integer order> const Vector<typename QuadElemList<Real>::GradeRule>& QuadElemList<Real>::NearGradeTable(const Integer q) {
     // Built once per `order`. Every entry is in NORMALIZED sub-element coordinates and carries
     // no positional index -- that is the point of splitting at the foot.
     auto build = [](const Integer q) {
-      const Vector<Real>& gnds = ParamNodes(order);   // sub-element's own nodes, normalized
+      const Vector<Real>& gnds = NearSubNodes<Real>(order);   // sub-element's own nodes, normalized
       Vector<Real> qn, qw; LegQuadRule<Real>::ComputeNdsWts(&qn, &qw, q);
       Vector<GradeRule> tab(2*MaxNearLvl);
       auto fill = [&](GradeRule& r, const Real a, const Real b) {
@@ -522,10 +562,31 @@ namespace sctl {
         r.nds.ReInit(q); r.w.ReInit(q);
         for (Integer i = 0; i < q; i++) { r.nds[i] = a + w*qn[i]; r.w[i] = w*qw[i]; }
         // T[i][j] = Lhat_i(nds[j]): sub-element nodes -> this interval's quadrature nodes.
+        //
+        // Built from t, the offset from the foot, NOT from nds. The interval ends are 1 - 2^-k so
+        // t_hi = 1-a and t_lo = 1-b are exact and t = t_hi - (t_hi-t_lo)*qn keeps full relative
+        // accuracy, whereas nds = a + w*qn adds ~2^-k to ~1 and rounds at ABSOLUTE eps. Writing
+        // the basis as L_i(1-t) = prod_{j!=i} (sig_j - t)/(sig_j - sig_i), sig_j = 1 - snds_j,
+        // makes the structure explicit: the foot is snds = 1, i.e. sig = 0, so its own weight is
+        // 1 - O(t) and EVERY other weight carries an exact factor t/sig_i. The interpolated
+        // position is then a sum of terms that are each O(t) rather than a cancelling sum of O(1)
+        // terms, which is what makes its error relative instead of absolute.
+        const Real t_hi = 1 - a, t_lo = 1 - b, t_w = t_hi - t_lo;
         r.T.ReInit(order, q);
-        { Vector<Real> v(order*q, r.T.begin(), false); LagrangeInterp<Real>::Interpolate(v, gnds, r.nds); }
+        {
+          Vector<Real> sig(order);
+          for (Integer i = 0; i < order; i++) sig[i] = 1 - gnds[i];
+          for (Integer j = 0; j < q; j++) {
+            const Real t = t_hi - t_w*qn[j];
+            for (Integer i = 0; i < order; i++) {
+              Real p = 1;
+              for (Integer l = 0; l < order; l++) if (l != i) p *= (sig[l] - t)/(sig[l] - sig[i]);
+              r.T[i][j] = p;
+            }
+          }
+        }
         r.dT.ReInit(order, q);
-        Matrix<Real>::GEMM(r.dT, DiffMat(order), r.T);
+        Matrix<Real>::GEMM(r.dT, NearSubDiffMat<Real>(order), r.T);
         r.TT.ReInit(q, order); r.TD.ReInit(2*q, order);
         for (Integer i = 0; i < order; i++) for (Integer a = 0; a < q; a++) {
           r.TT[a][i] = r.T[i][a]; r.TD[a][i] = r.T[i][a]; r.TD[q+a][i] = r.dT[i][a];
@@ -539,7 +600,6 @@ namespace sctl {
         // full relative accuracy. Going through nds instead adds a quantity ~2^-k to a number
         // ~1, which rounds at ABSOLUTE eps: t then carries relative error eps*2^k -- 1e-4 by
         // level 40 -- which is exactly the cancellation this whole path exists to avoid.
-        const Real t_hi = 1 - a, t_lo = 1 - b, t_w = t_hi - t_lo;
         r.Tm.ReInit(order, q); r.dTm.ReInit(order, q);
         for (Integer a = 0; a < q; a++) {
           const Real t = t_hi - t_w*qn[a];
@@ -631,7 +691,8 @@ namespace sctl {
     // global depth is needed; only the per-direction surface speeds are.
     const Real spd_u = sqrt<Real>(su2), spd_v = sqrt<Real>(sv2);
 
-    const Vector<Real>& gnds = ParamNodes(order);
+    const Vector<Real>& gnds = ParamNodes(order);            // element basis (density)
+    const Vector<Real>& snds = NearSubNodes<Real>(order);   // sub-element basis (geometry)
     const Real slen[2][2] = {{ustar, 1-ustar}, {vstar, 1-vstar}};   // [dir][side] sub-element length
 
     // Target-shifted element nodal coords, component-major: one contiguous (COORD_DIM*order x order).
@@ -654,7 +715,7 @@ namespace sctl {
       const Real xs = (d ? vstar : ustar);
       for (Integer sd = 0; sd < 2; sd++) {
         if (!(slen[d][sd] > 0)) continue;
-        for (Integer i = 0; i < order; i++) sub[i] = sd ? (1 - (1-xs)*gnds[i]) : (xs*gnds[i]);
+        for (Integer i = 0; i < order; i++) sub[i] = sd ? (1 - (1-xs)*snds[i]) : (xs*snds[i]);
         { Vector<Real> v(nnode, Sbuf.begin(), false); LagrangeInterp<Real>::Interpolate(v, gnds, sub); }
         Sf[d][sd].ReInit(order, order); St[d][sd].ReInit(order, order);
         for (Integer i = 0; i < order; i++) for (Integer aa = 0; aa < order; aa++) {
