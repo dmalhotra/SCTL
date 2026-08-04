@@ -533,9 +533,16 @@ namespace sctl {
         // Monomial operators in t = 1-s, the offset from the foot (s = 1 is the foot on both
         // sides). d/dt is used for the tangents: it flips BOTH directions, so the cross product
         // -- and hence nrm_sign -- is unchanged.
+        //
+        // t MUST be formed from the interval ends, not as 1 - nds. The interval ends are
+        // 1 - 2^-k, so t_hi = 1-a and t_lo = 1-b are exact, and t = t_hi - (t_hi-t_lo)*qn keeps
+        // full relative accuracy. Going through nds instead adds a quantity ~2^-k to a number
+        // ~1, which rounds at ABSOLUTE eps: t then carries relative error eps*2^k -- 1e-4 by
+        // level 40 -- which is exactly the cancellation this whole path exists to avoid.
+        const Real t_hi = 1 - a, t_lo = 1 - b, t_w = t_hi - t_lo;
         r.Tm.ReInit(order, q); r.dTm.ReInit(order, q);
         for (Integer a = 0; a < q; a++) {
-          const Real t = 1 - r.nds[a];
+          const Real t = t_hi - t_w*qn[a];
           Real p = 1;
           for (Integer m = 0; m < order; m++) {
             r.Tm[m][a] = p;
