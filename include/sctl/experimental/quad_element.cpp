@@ -509,6 +509,17 @@ namespace sctl {
     return b[digits];
   }
 
+  // Work type for PRECOMPUTED near-scheme tables. These are built once per order and cached, so
+  // building them a precision step up and rounding to Real costs nothing at run time and leaves
+  // the nodes and interpolation weights correctly rounded instead of carrying their own build
+  // error. Only the tables use this; everything per-target stays in Real.
+#ifdef SCTL_QUAD_T
+  template <class Real> struct NearTabWork { using type = QuadReal; };
+  template <> struct NearTabWork<QuadReal> { using type = QuadReal; };
+#else
+  template <class Real> struct NearTabWork { using type = long double; };
+#endif
+
   // Sub-element interpolation basis for the near scheme: Chebyshev-Lobatto on [0,1]. Unlike the
   // element's Gauss nodes it INCLUDES the endpoints, so the foot -- which the split places at
   // s = 1 on every side -- is itself a node. Interpolating toward a node makes every other
@@ -522,13 +533,42 @@ namespace sctl {
       Vector<Vector<Real>> v(MAX_ORDER + 1);
       for (Integer n = 2; n <= MAX_ORDER; n++) {
         v[n].ReInit(n);
-        for (Integer i = 0; i < n; i++) v[n][i] = (1 - cos<Real>(const_pi<Real>()*i/(n-1)))/2;
+        // half-angle form: sin^2 is cancellation-free near 0, so the nodes closest to the
+        // element edge keep full relative accuracy.
+        using W = typename NearTabWork<Real>::type;
+        for (Integer i = 0; i < n; i++) {
+          const W sh = sin<W>(const_pi<W>()*i/(2*(n-1)));
+          v[n][i] = (Real)(sh*sh);
+        }
         v[n][0] = 0; v[n][n-1] = 1;               // endpoints exact
       }
       return v;
     }();
     return all[order];
   }
+  // Offsets of the sub-element nodes from the SPLIT POINT (the node at reference 1), built
+  // directly in the half-angle form. Forming these as one-minus-node instead would subtract two
+  // order-one numbers, leaving the nodes nearest the split point with only absolute accuracy --
+  // the same loss this whole path exists to avoid, just moved into the node table.
+  template <class Real> static const Vector<Real>& NearSubOffs(const Integer order) {
+    constexpr Integer MAX_ORDER = 50;
+    SCTL_ASSERT(1 < order && order <= MAX_ORDER);
+    static const Vector<Vector<Real>> all = []() {
+      Vector<Vector<Real>> v(MAX_ORDER + 1);
+      for (Integer n = 2; n <= MAX_ORDER; n++) {
+        v[n].ReInit(n);
+        using W = typename NearTabWork<Real>::type;
+        for (Integer i = 0; i < n; i++) {
+          const W ch = cos<W>(const_pi<W>()*i/(2*(n-1)));
+          v[n][i] = (Real)(ch*ch);
+        }
+        v[n][0] = 1; v[n][n-1] = 0;               // endpoints exact
+      }
+      return v;
+    }();
+    return all[order];
+  }
+
   // d/ds of the sub-element basis at its own nodes, D[i][a] = L_i'(node_a).
   template <class Real> static const Matrix<Real>& NearSubDiffMat(const Integer order) {
     constexpr Integer MAX_ORDER = 50;
@@ -554,7 +594,7 @@ namespace sctl {
     // no positional index -- that is the point of splitting at the foot.
     auto build = [](const Integer q) {
       const Vector<Real>& gnds = NearSubNodes<Real>(order);   // sub-element's own nodes, normalized
-      Vector<Real> qn, qw; LegQuadRule<Real>::ComputeNdsWts(&qn, &qw, q);
+      Vector<Real> qn, qw; LegQuadRule<Real>::template ComputeNdsWts<typename NearTabWork<Real>::type>(&qn, &qw, q);
       Vector<GradeRule> tab(2*MaxNearLvl);
       auto fill = [&](GradeRule& r, const Real a, const Real b) {
         r.a = a; r.b = b;
@@ -574,14 +614,19 @@ namespace sctl {
         const Real t_hi = 1 - a, t_lo = 1 - b, t_w = t_hi - t_lo;
         r.T.ReInit(order, q);
         {
-          Vector<Real> sig(order);
-          for (Integer i = 0; i < order; i++) sig[i] = 1 - gnds[i];
+          using W = typename NearTabWork<Real>::type;
+          Vector<W> sig(order);
+          for (Integer i = 0; i < order; i++) {
+            const W ch = cos<W>(const_pi<W>()*i/(2*(order-1)));
+            sig[i] = ch*ch;
+          }
+          sig[0] = 1; sig[order-1] = 0;
           for (Integer j = 0; j < q; j++) {
-            const Real t = t_hi - t_w*qn[j];
+            const W t = (W)t_hi - (W)t_w*(W)qn[j];
             for (Integer i = 0; i < order; i++) {
-              Real p = 1;
+              W p = 1;
               for (Integer l = 0; l < order; l++) if (l != i) p *= (sig[l] - t)/(sig[l] - sig[i]);
-              r.T[i][j] = p;
+              r.T[i][j] = (Real)p;
             }
           }
         }
@@ -602,14 +647,15 @@ namespace sctl {
         // level 40 -- which is exactly the cancellation this whole path exists to avoid.
         r.Tm.ReInit(order, q); r.dTm.ReInit(order, q);
         for (Integer a = 0; a < q; a++) {
-          const Real t = t_hi - t_w*qn[a];
-          Real p = 1;
+          using W = typename NearTabWork<Real>::type;
+          const W t = (W)t_hi - (W)t_w*(W)qn[a];
+          W p = 1;
           for (Integer m = 0; m < order; m++) {
-            r.Tm[m][a] = p;
-            r.dTm[m][a] = (m == 0 ? (Real)0 : m * (p / (t != 0 ? t : (Real)1)));
+            r.Tm[m][a] = (Real)p;
+            r.dTm[m][a] = (m == 0 ? (Real)0 : (Real)(m * (p / (t != (W)0 ? t : (W)1))));
             p *= t;
           }
-          if (t == 0) {   // t=0: only the m=1 term survives in the derivative
+          if (t == (W)0) {   // t=0: only the m=1 term survives in the derivative
             for (Integer m = 0; m < order; m++) r.dTm[m][a] = (m == 1 ? (Real)1 : (Real)0);
           }
         }
