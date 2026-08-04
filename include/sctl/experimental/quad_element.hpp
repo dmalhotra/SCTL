@@ -227,6 +227,28 @@ namespace sctl {
       static Integer NearQuadOrder(const Integer digits);
       static Real NearBEllipse(const Integer digits);
 
+      // ---- on-surface hedgehog (line-QBX) ----
+      //
+      // With this on, SelfInterac evaluates each on-surface target by placing a short line of
+      // proxy points along the normal, integrating there with the ordinary near scheme, and
+      // extrapolating back to the surface. Off it, the Duffy edge-collapsed scheme is used.
+      // NearInterac is unaffected either way -- the near case is still the split scheme.
+      static constexpr bool UseHedgehogSelf = false;
+      // Proxies sit at rmin*ratio^(j/(p-1)), j = 0..p-1, so the line spans one factor of `ratio`.
+      // Extrapolating to the surface amplifies the quadrature error by sum|w|, which for a
+      // geometric line depends only on (p, ratio) and NOT on rmin -- see HedgehogWeights. p=5 with
+      // ratio 4 gives 61; going to p=6 costs 226 and p=4 gives 17 but extrapolates far worse.
+      static constexpr Integer HedgehogNumProxy = 5;
+      static constexpr Integer HedgehogRatio = 4;
+      // Lagrange extrapolation weights to zero distance. Scale free: r enters only through the
+      // ratios r_k/r_j, so one vector serves every node. Returns sum|w|, the error amplification.
+      static Real HedgehogWeights(Vector<Real>& w);
+      // Innermost proxy distance for a node whose distance to the element edge is `edge_dist`.
+      // Truncation of the extrapolation falls like the sixth power of rmin for this family, so
+      // rmin ~ tol^(1/6); the constant is calibrated on the flat panel against the exact single
+      // layer at a tenth of the requested tolerance, and is within 5% across orders 8, 12 and 16.
+      static Real HedgehogRmin(const Integer digits, const Real edge_dist);
+
       // One graded interval in normalized sub-element coordinates:
       //   T  (order x q)   sub-element nodes -> this interval's GL nodes
       //   dT (order x q)   d/dx of the above, x = the sub-element's normalized coordinate

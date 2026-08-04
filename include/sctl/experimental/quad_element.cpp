@@ -521,6 +521,7 @@ namespace sctl {
     return b[digits];
   }
 
+
   // Work type for PRECOMPUTED near-scheme tables. These are built once per order and cached, so
   // building them a precision step up and rounding to Real costs nothing at run time and leaves
   // the nodes and interpolation weights correctly rounded instead of carrying their own build
@@ -531,6 +532,42 @@ namespace sctl {
 #else
   template <class Real> struct NearTabWork { using type = long double; };
 #endif
+
+  template <class Real> inline Real QuadElemList<Real>::HedgehogWeights(Vector<Real>& w) {
+    // r_j = ratio^(j/(p-1)); dropping rmin is exact here because every factor of the Lagrange
+    // product is a ratio of two distances, so rmin cancels.
+    static constexpr Integer p = HedgehogNumProxy;
+    static const std::pair<std::array<Real,p>,Real> tab = []() {
+      using W = typename NearTabWork<Real>::type;
+      std::array<W,p> r;
+      for (Integer j = 0; j < p; j++) r[j] = pow<W>((W)HedgehogRatio, (W)j/(W)(p-1));
+      std::array<Real,p> wj{};
+      Real A = 0;
+      for (Integer j = 0; j < p; j++) {
+        W v = 1;
+        for (Integer k = 0; k < p; k++) if (k != j) v *= (0 - r[k])/(r[j] - r[k]);
+        wj[j] = (Real)v; A += fabs<Real>(wj[j]);
+      }
+      return std::make_pair(wj, A);
+    }();
+    if (w.Dim() != p) w.ReInit(p);
+    for (Integer j = 0; j < p; j++) w[j] = tab.first[j];
+    return tab.second;
+  }
+
+  template <class Real> inline Real QuadElemList<Real>::HedgehogRmin(const Integer digits, const Real edge_dist) {
+    // c*tol^(1/6) with c from the flat-panel calibration; the order-16 fit is the smallest of the
+    // three measured and is used so the rule errs short rather than long.
+    static const std::array<Real,MaxDigits> c = []() {
+      std::array<Real,MaxDigits> t{};
+      for (Integer d = 0; d < MaxDigits; d++) {
+        t[d] = (Real)0.478 * pow<Real>(pow<Real,Long>((Real)0.1, (Long)d), (Real)1/(Real)6);
+      }
+      return t;
+    }();
+    SCTL_ASSERT(digits >= 0 && digits < MaxDigits);
+    return c[digits] * edge_dist;
+  }
 
   // Sub-element interpolation basis for the near scheme: Chebyshev-Lobatto on [0,1]. Unlike the
   // element's Gauss nodes it INCLUDES the endpoints, so the foot -- which the split places at
@@ -1141,18 +1178,52 @@ namespace sctl {
 
     SCTL_ASSERT((Long)M_lst.Dim() == qel.nelem);
 
+    // Hedgehog: proxies sit off the surface, so the extrapolation back to it amplifies whatever
+    // error the near quadrature leaves by sum|w|. Ask the near scheme for that many extra digits.
+    thread_local Vector<Real> hh_w;
+    const Real hh_ampl = (UseHedgehogSelf ? HedgehogWeights(hh_w) : (Real)0);
+    const Integer near_digits = (UseHedgehogSelf
+        ? std::min<Integer>(MaxDigits-1, digits + (Integer)std::ceil(std::log10((double)hh_ampl)))
+        : digits);
+
     // Build this order's tables before the parallel loop so the first iteration does not
     // serialize the rest on first-touch static init. ParamNodes / DiffMat come along with it.
-    DuffyTable<order>();
+    if (UseHedgehogSelf) NearGradeTable<order>(NearQuadOrder(near_digits));
+    else                 DuffyTable<order>();
 
     // Per-element blocks are independent: each writes its own M_lst[elem_idx], temporaries are
     // loop-local, and GetGeom/table reads are const.
     #pragma omp parallel for schedule(static)
     for (Long elem_idx = 0; elem_idx < qel.nelem; elem_idx++) {
       // Surface nodes (targets) and their normals on this element.
-      thread_local Vector<Real> Xnodes, Xnnodes;
+      thread_local Vector<Real> Xnodes, Xnnodes, dXu, dXv;
       thread_local Matrix<Real> M_acc;
-      qel.GetGeom(&Xnodes, (trg_dot_prod ? &Xnnodes : nullptr), nullptr, nullptr, nullptr, nds, nds, elem_idx);
+      // Hedgehog needs a normal at every node to lay the proxy line along, and the tangents to
+      // turn a parameter-space distance to the element edge into a physical one.
+      qel.GetGeom(&Xnodes, (UseHedgehogSelf || trg_dot_prod ? &Xnnodes : nullptr), nullptr,
+                  (UseHedgehogSelf ? &dXu : nullptr), (UseHedgehogSelf ? &dXv : nullptr), nds, nds, elem_idx);
+
+      // Proxy line for the target node at (nds[ti], nds[tj]): p points along the outward normal,
+      // starting at rmin and spanning one factor of the ratio. Returns the closest proxy in Xt1
+      // and the rest as offsets from it, which is what the near scheme wants.
+      const auto proxy_line = [&nds, digits](Vector<Real>& Xt1, Vector<Real>& off, const Long t, const Integer ti, const Integer tj) {
+        Real su2 = 0, sv2 = 0;
+        for (Integer k = 0; k < COORD_DIM; k++) {
+          su2 += dXu[t*COORD_DIM+k]*dXu[t*COORD_DIM+k];
+          sv2 += dXv[t*COORD_DIM+k]*dXv[t*COORD_DIM+k];
+        }
+        const Real du = std::min<Real>(nds[ti], 1-nds[ti]), dv = std::min<Real>(nds[tj], 1-nds[tj]);
+        const Real edge_dist = std::min<Real>(du*sqrt<Real>(su2), dv*sqrt<Real>(sv2));
+        const Real rmin = HedgehogRmin(digits, edge_dist);
+        for (Integer k = 0; k < COORD_DIM; k++) Xt1[k] = Xnodes[t*COORD_DIM+k] + rmin*Xnnodes[t*COORD_DIM+k];
+        for (Integer j = 0; j < HedgehogNumProxy; j++) {
+          const Real rj = rmin*pow<Real>((Real)HedgehogRatio, (Real)j/(Real)(HedgehogNumProxy-1));
+          for (Integer k = 0; k < COORD_DIM; k++) off[j*COORD_DIM+k] = (rj-rmin)*Xnnodes[t*COORD_DIM+k];
+        }
+      };
+      thread_local Vector<Real> hh_Xt1, hh_off;
+      thread_local Matrix<Real> M_hh;
+      if (UseHedgehogSelf && hh_Xt1.Dim() != COORD_DIM) { hh_Xt1.ReInit(COORD_DIM); hh_off.ReInit((Long)HedgehogNumProxy*COORD_DIM); }
 
       Matrix<Real>& M = M_lst[elem_idx];
       if (M.Dim(0) != nnode*KDIM0 || M.Dim(1) != nnode*KDIM1_out) M.ReInit(nnode*KDIM0, nnode*KDIM1_out);
@@ -1166,15 +1237,22 @@ namespace sctl {
           Vector<Real> ntrg;
           if (trg_dot_prod) ntrg.ReInit(COORD_DIM, Xnnodes.begin() + t*COORD_DIM, false);
 
-          SelfInteracBlockDuffy<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
+          if (UseHedgehogSelf) {
+            proxy_line(hh_Xt1, hh_off, t, ti, tj);
+            NearInteracHelper<order>(M_hh, hh_Xt1, ntrg, ker, elem_idx, self, near_digits, hh_off, hh_w);
+          } else {
+            SelfInteracBlockDuffy<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
+          }
 
-          // Scatter into column block t of M: M[(i*order+j)*KDIM0+k0][t*KDIM1_out+k1].
+          // Scatter into column block t of M: M[(i*order+j)*KDIM0+k0][t*KDIM1_out+k1]. The two
+          // schemes hand back the same numbers in different layouts.
           for (Integer i = 0; i < order; i++) {
             for (Integer j = 0; j < order; j++) {
               const Long pnode = i*order + j;
               for (Integer k0 = 0; k0 < KDIM0; k0++) {
                 for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-                  M[pnode*KDIM0+k0][t*KDIM1_out+k1] = M_acc[pnode][k0*KDIM1_out+k1];
+                  M[pnode*KDIM0+k0][t*KDIM1_out+k1] = (UseHedgehogSelf ? M_hh[pnode*KDIM0+k0][k1]
+                                                                       : M_acc[pnode][k0*KDIM1_out+k1]);
                 }
               }
             }
