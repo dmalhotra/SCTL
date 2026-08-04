@@ -1148,7 +1148,12 @@ namespace sctl {
     };
 
     Real u, v;
-    Real f = GetClosestNode(u, v, elem_idx, Xtrg);
+    // GetClosestNode returns a DISTANCE; f is the squared residual |r|^2 that the optimality
+    // test, the line search and the return value all assume. Without squaring here, a seed that
+    // is already optimal -- the target sitting on the normal through a node -- breaks out before
+    // f is ever reassigned, and the routine returns sqrt(dist) instead of dist.
+    const Real f_seed = GetClosestNode(u, v, elem_idx, Xtrg);
+    Real f = f_seed * f_seed;
 
     // Gauss-Newton with clamping and backtracking line search.
     constexpr Integer max_iter = 30;
