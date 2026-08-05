@@ -534,11 +534,8 @@ namespace sctl {
 #endif
 
   template <class Real> inline const Vector<Real>& QuadElemList<Real>::HedgehogProxyOffsets() {
-    // Five points geometrically spaced over a span of 4. Measured against wider sets on the sphere:
-    // {1,4,9,16,25,36} has a far smaller amplification (3.4 against 61) but is WORSE overall,
-    // because its outermost point sits 36x out and the fit has to cover that whole range. The
-    // amplification is not what binds here -- the near quadrature is accurate enough -- so the
-    // narrower span wins, and it also permits a larger innermost distance, hence less refinement.
+    // Five points over a span of 4. Wider sets ({1,4,..,36}) cut sum|w| from 61 to 3.4 but measured
+    // worse: amplification is not what binds, and the wide span spoils the fit.
     static const Vector<Real> s = []() {
       Vector<Real> v;
       for (Integer j = 0; j < 5; j++) v.PushBack(pow<Real>((Real)4, (Real)j/(Real)4));
@@ -566,19 +563,23 @@ namespace sctl {
     return tab.second;
   }
 
-  template <class Real> inline Real QuadElemList<Real>::HedgehogRmin(const Integer digits, const Real edge_dist) {
-    // c*tol^(1/6). The exponent is from the flat-panel calibration; the constant is set on the
-    // SPHERE, where the flat-panel value of 0.478 left the tightest tolerances a few hundred times
-    // above the discretization floor. 0.1 puts every tolerance from 1e-6 to 1e-12 on that floor.
+  template <class Real> inline Real QuadElemList<Real>::HedgehogRminCoeff(const Integer digits, const Integer sing_order) {
+    // Largest offset still reaching Duffy's error on the sphere; larger is cheaper (less refinement).
+    // 1/r wants 0.1*tol^(1/6) exactly. Steeper wants ~3e-3 flat -- below that its floor is the
+    // amplified quadrature error, not the fit, so shrinking further only costs.
     static const std::array<Real,MaxDigits> c = []() {
       std::array<Real,MaxDigits> t{};
-      for (Integer d = 0; d < MaxDigits; d++) {
-        t[d] = (Real)0.1 * pow<Real>(pow<Real,Long>((Real)0.1, (Long)d), (Real)1/(Real)6);
-      }
+      for (Integer d = 0; d < MaxDigits; d++) t[d] = (Real)0.1 * pow<Real>(pow<Real,Long>((Real)0.1, (Long)d), (Real)1/(Real)6);
       return t;
     }();
     SCTL_ASSERT(digits >= 0 && digits < MaxDigits);
-    return c[digits] * edge_dist;
+    return (sing_order <= 1 ? c[digits] : std::min<Real>(c[digits], (Real)3e-3));
+  }
+
+  template <class Real> inline Integer QuadElemList<Real>::HedgehogNearDigits(const Integer digits, const Integer sing_order) {
+    // Extrapolation multiplies the proxy quadrature error by sum|w| = 61. Two extra digits covers
+    // that for 1/r; steeper kernels measured needing six, which was the whole double-layer gap.
+    return std::min<Integer>(MaxDigits-1, digits + (sing_order <= 1 ? 2 : 6));
   }
 
   // Sub-element interpolation basis for the near scheme: Chebyshev-Lobatto on [0,1]. Unlike the
@@ -1190,17 +1191,14 @@ namespace sctl {
 
     SCTL_ASSERT((Long)M_lst.Dim() == qel.nelem);
 
-    // Hedgehog: proxies sit off the surface, so the extrapolation back to it amplifies whatever
-    // error the near quadrature leaves by sum|w|. Ask the near scheme for that many extra digits.
-    // NOT thread_local: filled here, outside the parallel region, then read by every thread. As a
-    // thread_local only the master would have it, and the workers would see an empty weight vector
-    // -- which silently drops IntegrateBlock into its no-proxy path, evaluating at the innermost
-    // proxy alone. That is invisible on a single element, since the master takes it.
+    static constexpr Integer sing_order = KernelSingularOrder<Kernel>::value;
+    // hh_w must NOT be thread_local: it is filled outside the parallel region, so only the master
+    // would have it and the workers would see it empty -- which silently drops IntegrateBlock into
+    // its no-proxy path. Invisible on a single element, since the master takes it.
     Vector<Real> hh_w;
-    const Real hh_ampl = (UseHedgehogSelf ? HedgehogWeights(hh_w) : (Real)0);
-    const Integer near_digits = (UseHedgehogSelf
-        ? std::min<Integer>(MaxDigits-1, digits + (Integer)std::ceil(std::log10((double)hh_ampl)))
-        : digits);
+    if (UseHedgehogSelf) HedgehogWeights(hh_w);
+    const Real hh_c = (UseHedgehogSelf ? HedgehogRminCoeff(digits, sing_order) : (Real)0);
+    const Integer near_digits = (UseHedgehogSelf ? HedgehogNearDigits(digits, sing_order) : digits);
 
     // Build this order's tables before the parallel loop so the first iteration does not
     // serialize the rest on first-touch static init. ParamNodes / DiffMat come along with it.
@@ -1214,15 +1212,14 @@ namespace sctl {
       // Surface nodes (targets) and their normals on this element.
       thread_local Vector<Real> Xnodes, Xnnodes, dXu, dXv;
       thread_local Matrix<Real> M_acc;
-      // Hedgehog needs a normal at every node to lay the proxy line along, and the tangents to
-      // turn a parameter-space distance to the element edge into a physical one.
+      // Hedgehog needs the normal to lay the proxy line along, and the tangents to turn the
+      // parameter-space edge distance into a physical one.
       qel.GetGeom(&Xnodes, (UseHedgehogSelf || trg_dot_prod ? &Xnnodes : nullptr), nullptr,
                   (UseHedgehogSelf ? &dXu : nullptr), (UseHedgehogSelf ? &dXv : nullptr), nds, nds, elem_idx);
 
-      // Proxy line for the target node at (nds[ti], nds[tj]): p points along the outward normal,
-      // starting at rmin and spanning one factor of the ratio. Returns the closest proxy in Xt1
-      // and the rest as offsets from it, which is what the near scheme wants.
-      const auto proxy_line = [&nds, digits](Vector<Real>& Xt1, Vector<Real>& off, const Long t, const Integer ti, const Integer tj) {
+      // Proxy line along the outward normal. Returns the closest proxy in Xt1 and the rest as
+      // offsets from it, which is what the near scheme takes.
+      const auto proxy_line = [&nds, hh_c](Vector<Real>& Xt1, Vector<Real>& off, const Long t, const Integer ti, const Integer tj) {
         Real su2 = 0, sv2 = 0;
         for (Integer k = 0; k < COORD_DIM; k++) {
           su2 += dXu[t*COORD_DIM+k]*dXu[t*COORD_DIM+k];
@@ -1230,7 +1227,7 @@ namespace sctl {
         }
         const Real du = std::min<Real>(nds[ti], 1-nds[ti]), dv = std::min<Real>(nds[tj], 1-nds[tj]);
         const Real edge_dist = std::min<Real>(du*sqrt<Real>(su2), dv*sqrt<Real>(sv2));
-        const Real rmin = HedgehogRmin(digits, edge_dist);
+        const Real rmin = hh_c * edge_dist;
         for (Integer k = 0; k < COORD_DIM; k++) Xt1[k] = Xnodes[t*COORD_DIM+k] + rmin*Xnnodes[t*COORD_DIM+k];
         const Vector<Real>& soff = HedgehogProxyOffsets();
         for (Long j = 0; j < soff.Dim(); j++) {

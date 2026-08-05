@@ -10,6 +10,15 @@ namespace sctl {
   class VTUData;
   template <class ValueType> class Matrix;
 
+  // Kernels declare SingularOrder in kernel_functions.hpp. Anything that does not gets 2, the
+  // conservative side: tighter parameters, so more cost and never less accuracy.
+  template <class Kernel, class = void> struct KernelSingularOrder {
+    static constexpr Integer value = 2;
+  };
+  template <class Kernel> struct KernelSingularOrder<Kernel, std::void_t<decltype(Kernel::SingularOrder())>> {
+    static constexpr Integer value = Kernel::SingularOrder();
+  };
+
   /**
    * High-order quadrilateral surface elements on tensor-product Gauss-Legendre
    * nodes (order N => N x N nodes on [0,1]^2, lexicographic in (u,v), u slow).
@@ -91,10 +100,9 @@ namespace sctl {
       /// extrapolating back to the surface; off, the Duffy edge-collapsed scheme is used.
       /// NearInterac is unaffected either way.
       ///
-      /// CAVEAT, and why callers need to see this: extrapolation from off-surface proxies yields
-      /// the ONE-SIDED limit, not the principal value that the Duffy path (and the rest of this
-      /// library) returns. For a double-layer kernel the two differ by the jump -- half the
-      /// identity -- so a caller comparing or combining the two conventions must correct for it.
+      /// CAVEAT: extrapolating from off-surface proxies gives the ONE-SIDED limit, not the
+      /// principal value the Duffy path returns. The two differ by half the jump, so a caller
+      /// mixing the conventions must correct for it.
       static constexpr bool UseHedgehogSelf = false;
 
       /** Reference-space Gauss-Legendre nodes in [0,1]. */
@@ -235,20 +243,15 @@ namespace sctl {
 
       // ---- on-surface hedgehog (line-QBX) ----
       //
-      // Proxy positions along the normal, normalized so the innermost is 1; a node scales them by
-      // its own rmin. Extrapolating to the surface amplifies whatever error the near quadrature
-      // leaves by sum|w|, which depends only on this shape and NOT on rmin, so it is a hard floor
-      // on the achievable accuracy. A wide span is what keeps it small: {1,4,9,...} spanning 36
-      // gives 3.4, while five points geometrically spaced over a span of 4 give 61 and six give 226.
+      // Proxy offsets along the normal, normalized so the innermost is 1; each node scales by its
+      // own rmin. sum|w| below depends only on this shape, not on rmin, and floors the accuracy.
       static const Vector<Real>& HedgehogProxyOffsets();
-      // Lagrange extrapolation weights to zero distance for those positions. Scale free: they enter
-      // only as ratios, so one vector serves every node. Returns sum|w|.
+      // Extrapolation weights to zero offset; returns sum|w|.
       static Real HedgehogWeights(Vector<Real>& w);
-      // Innermost proxy distance for a node whose distance to the element edge is `edge_dist`.
-      // Truncation of the extrapolation falls like the sixth power of rmin for this family, so
-      // rmin ~ tol^(1/6); the constant is calibrated on the flat panel against the exact single
-      // layer at a tenth of the requested tolerance, and is within 5% across orders 8, 12 and 16.
-      static Real HedgehogRmin(const Integer digits, const Real edge_dist);
+      // Innermost proxy offset as a multiple of the node's distance to the element edge, and the
+      // digits to ask at the proxies. Both tuned per singularity order against Duffy on the sphere.
+      static Real HedgehogRminCoeff(const Integer digits, const Integer sing_order);
+      static Integer HedgehogNearDigits(const Integer digits, const Integer sing_order);
 
       // One graded interval in normalized sub-element coordinates:
       //   T  (order x q)   sub-element nodes -> this interval's GL nodes
