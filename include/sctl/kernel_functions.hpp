@@ -120,6 +120,35 @@ namespace sctl {
       }
     };
 
+    // Biot-Savart: a surface current density J produces B = (1/4pi) int J x r / |r|^3 dS,
+    // r = target - source. The matrix is the cross-product matrix of r, so contracting a density
+    // with it gives J x r. Kernel size is 1/|r|^2 with no normal factor to soften it, so on a
+    // surface this is a principal-value integral -- the radial part diverges logarithmically and it
+    // is the angular rotation of the cross product that makes the symmetric limit exist. It carries
+    // a jump across the surface (the tangential field steps by the current), so an on-surface
+    // scheme returning a one-sided limit differs from the principal value by half of it.
+    struct BiotSavart3D_FxU {
+      static const std::string& Name() {
+        static const std::string name = "BiotSavart3D-FxU";
+        return name;
+      }
+      static constexpr Integer FLOPS() {
+        return 12;
+      }
+      template <class Real> static constexpr Real uKerScaleFactor() {
+        return 1 / (4 * const_pi<Real>());
+      }
+      template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[3][3], const VecType (&r)[3], const void* ctx_ptr) {
+        VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+        VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
+        VecType rinv3 = rinv*rinv*rinv;
+        const VecType z = VecType::Zero();
+        u[0][0] = z;            u[0][1] = -r[2]*rinv3;  u[0][2] =  r[1]*rinv3;
+        u[1][0] =  r[2]*rinv3;  u[1][1] = z;            u[1][2] = -r[0]*rinv3;
+        u[2][0] = -r[1]*rinv3;  u[2][1] =  r[0]*rinv3;  u[2][2] = z;
+      }
+    };
+
     struct Stokes3D_FxU {
       static const std::string& Name() {
         static const std::string name = "Stokes3D-FxU";
@@ -296,6 +325,7 @@ namespace sctl {
   using Laplace3D_DxU = GenericKernel<kernel_impl::Laplace3D_DxU>;
   using Laplace3D_FxdU = GenericKernel<kernel_impl::Laplace3D_FxdU>;
   using Laplace3D_DxdU = GenericKernel<kernel_impl::Laplace3D_DxdU>;
+  using BiotSavart3D_FxU = GenericKernel<kernel_impl::BiotSavart3D_FxU>;
   using Stokes3D_FxU = GenericKernel<kernel_impl::Stokes3D_FxU>;
   using Stokes3D_DxU = GenericKernel<kernel_impl::Stokes3D_DxU>;
   using Stokes3D_FxT = GenericKernel<kernel_impl::Stokes3D_FxT>; // single-layer source ---> traction-tensor
