@@ -335,6 +335,71 @@ namespace sctl {
     }
   }
 
+  // Does this kernel's micro-kernel take a source normal? Detected by whether the four-argument
+  // form (u, r, n, ctx) is callable; single-layer kernels only offer (u, r, ctx).
+  template <class K, class VT, class = void> struct UKerNeedsN : std::false_type {};
+  template <class K, class VT> struct UKerNeedsN<K, VT, std::void_t<decltype(
+      K::template uKerMatrix<0,VT>(std::declval<VT(&)[K::SrcDim()][K::TrgDim()]>(),
+                                   std::declval<const VT(&)[3]>(),
+                                   std::declval<const VT(&)[3]>(),
+                                   (const void*)nullptr))>> : std::true_type {};
+
+  // Kernel values times quadrature weight, accumulated straight into the caller's accumulator from
+  // COMPONENT-MAJOR sources. GenericKernel::KernelMatrix takes interleaved sources, re-stages them
+  // to component-major internally, then scatters its output back to interleaved -- two scalar
+  // transposes that undo the layout the geometry GEMMs already produced, repeated per proxy. Going
+  // to the micro-kernel directly makes every load and store contiguous and drops the intermediate
+  // matrix entirely.
+  //
+  // `run` is the accumulator's inner contiguous length, which is what distinguishes the two
+  // layouts in use: the near/hedgehog accumulator is channel-major over every source (run = nq),
+  // the Duffy one is (ns*C) x nt (run = nt). Index is (q/run)*C*run + c*run + q%run, and the vector
+  // sweep stays inside a run so it never straddles the channel stride.
+  template <class Real, class Kernel, class VecType, bool HAS_N, bool TRG_DOT>
+  static void KerFoldSoA(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs,
+                         ConstIterator<Real> Xn, ConstIterator<Real> wq, const Long nq,
+                         const Long run, const Long j0, const Long j1, const Real wj,
+                         const bool accum, ConstIterator<Real> ntrg) {
+    static constexpr Integer CD = 3;
+    static constexpr Integer KD0 = Kernel::SrcDim();
+    static constexpr Integer KD1 = Kernel::TrgDim();
+    static constexpr Integer KD1o = (TRG_DOT ? KD1/CD : KD1);
+    static constexpr Integer C_ = KD0*KD1o;
+    static constexpr Integer digits = (Integer)(TypeTraits<Real>::SigBits*0.3010299957);
+    static constexpr Integer VL = VecType::Size();
+    const VecType vws(wj * Kernel::template uKerScaleFactor<Real>());
+    VecType vXt[CD];
+    for (Integer k = 0; k < CD; k++) vXt[k] = VecType(Xt[k]);
+    for (Long qb = 0, blk = 0; qb < nq; qb += run, blk++) {
+      for (Long j = j0; j < j1; j += VL) {
+        const Long q = qb + j;
+        VecType r[CD], n[CD], u[KD0][KD1];
+        for (Integer k = 0; k < CD; k++) r[k] = vXt[k] - VecType::Load(&Xs[k*nq+q]);
+        if constexpr (HAS_N) {
+          for (Integer k = 0; k < CD; k++) n[k] = VecType::Load(&Xn[k*nq+q]);
+          Kernel::template uKerMatrix<digits,VecType>(u, r, n, nullptr);
+        } else {
+          Kernel::template uKerMatrix<digits,VecType>(u, r, nullptr);
+        }
+        const VecType vw = vws * VecType::Load(&wq[q]);
+        for (Integer a = 0; a < KD0; a++) {
+          for (Integer b = 0; b < KD1o; b++) {
+            VecType val;
+            if constexpr (TRG_DOT) {
+              val = u[a][b*CD+0] * VecType(ntrg[0]);
+              for (Integer l = 1; l < CD; l++) val = val + u[a][b*CD+l] * VecType(ntrg[l]);
+            } else {
+              val = u[a][b];
+            }
+            const Long id = blk*C_*run + (Long)(a*KD1o+b)*run + j;
+            if (accum) (VecType::Load(&out[id]) + val*vw).Store(&out[id]);
+            else       (val*vw).Store(&out[id]);
+          }
+        }
+      }
+    }
+  }
+
   template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD, const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT, const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm, const Vector<Real>& proxy_off, const Vector<Real>& proxy_w) {
     // One near leaf cell: accumulate its tensor-product quadrature (weights wu (x) wv) against
     // the target into acc_cm. src_nodal is the caller's target-shifted nodal slab, so the kernel
@@ -398,23 +463,23 @@ namespace sctl {
         // nrm_sign flips the normal when exactly one direction is mirrored: the tangents are
         // then d/dx (sub-element coords), whose cross product is anti-parallel to dXu x dXv.
         const Real inv_area = (area > 0 ? nrm_sign/area : 0);
-        Xsrc[q*COORD_DIM+0] = XdU[r+0*Nv]; Xsrc[q*COORD_DIM+1] = XdU[r+1*Nv]; Xsrc[q*COORD_DIM+2] = XdU[r+2*Nv];
-        Xnsrc[q*COORD_DIM+0] = n0*inv_area; Xnsrc[q*COORD_DIM+1] = n1*inv_area; Xnsrc[q*COORD_DIM+2] = n2*inv_area;
+        Xsrc[0*nq+q] = XdU[r+0*Nv]; Xsrc[1*nq+q] = XdU[r+1*Nv]; Xsrc[2*nq+q] = XdU[r+2*Nv];
+        Xnsrc[0*nq+q] = n0*inv_area; Xnsrc[1*nq+q] = n1*inv_area; Xnsrc[2*nq+q] = n2*inv_area;
         wq[q] = area*wu[a]*wv[b];
       }
     }
 
-    thread_local Matrix<Real> Mker;
     thread_local Vector<Real> KWc;
     if (KWc.Dim() != C*nq) KWc.ReInit(C*nq);
     // The proxy targets of one hedgehog line share this cell's geometry, and the extrapolation
     // weights are applied HERE, so only the kernel evaluation scales with the number of proxies:
-    // the fold below and the projection GEMMs run once. Valid because both are linear in the
-    // kernel values. proxy_off holds the offsets from the target that positioned the cell.
+    // the projection GEMMs run once. Valid because both are linear in the kernel values.
     //
     // Dispatched on whether there are any proxies, so the ordinary near path -- which has none --
-    // folds with no loop over proxies, no length tests, no weight multiply and no first-iteration
-    // test in the innermost sweep. Carrying those unconditionally cost ~11% on the cubed sphere.
+    // folds with no loop over proxies, no length tests and no first-iteration test.
+    static constexpr bool HAS_N = UKerNeedsN<Kernel, Vec<Real,1>>::value;
+    using WVec = Vec<Real, DefaultVecLen<Real>()>;
+    const Long qmain = (nq/WVec::Size())*WVec::Size();          // vector bulk; scalar-width tail
     const auto fold = [&](const auto has_proxy) {
       constexpr bool HP = decltype(has_proxy)::value;
       const Long np = (HP ? proxy_w.Dim() : 1);
@@ -422,27 +487,16 @@ namespace sctl {
         StaticArray<Real,COORD_DIM> Xtj{0, 0, 0};
         if constexpr (HP) for (Integer l = 0; l < COORD_DIM; l++) Xtj[l] = proxy_off[j*COORD_DIM+l];
         const Vector<Real> Xtj_v(COORD_DIM, Xtj, false);
-        ker.template KernelMatrix<Real,false>(Mker, Xtj_v, Xsrc, Xnsrc); // (nq*KDIM0 x KDIM1full)
-        for (Long q = 0; q < nq; q++) {
-          for (Integer k0 = 0; k0 < KDIM0; k0++) {
-            for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-              Real val;
-              if (trg_dot_prod) {
-                val = 0;
-                for (Integer l = 0; l < COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*COORD_DIM+l] * normal_trg[l];
-              } else {
-                val = Mker[q*KDIM0+k0][k1];
-              }
-              const Long id = (Long)(k0*KDIM1_out+k1)*nq + q;
-              if constexpr (HP) {
-                const Real wj = proxy_w[j];
-                if (j == 0) KWc[id]  = wj*val*wq[q];
-                else        KWc[id] += wj*val*wq[q];
-              } else {
-                KWc[id] = val*wq[q];
-              }
-            }
-          }
+        const Real wj = (HP ? proxy_w[j] : (Real)1);
+        const bool accum = (HP && j > 0);
+        const ConstIterator<Real> xt = Xtj_v.begin(), xs = Xsrc.begin(), xn = Xnsrc.begin(), w = wq.begin();
+        const ConstIterator<Real> nt = (trg_dot_prod ? normal_trg.begin() : ConstIterator<Real>(NullIterator<Real>()));
+        if (trg_dot_prod) {
+          KerFoldSoA<Real,Kernel,WVec,        HAS_N,true >(KWc.begin(), xt, xs, xn, w, nq, nq,     0, qmain, wj, accum, nt);
+          KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,true >(KWc.begin(), xt, xs, xn, w, nq, nq, qmain,    nq, wj, accum, nt);
+        } else {
+          KerFoldSoA<Real,Kernel,WVec,        HAS_N,false>(KWc.begin(), xt, xs, xn, w, nq, nq,     0, qmain, wj, accum, nt);
+          KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,false>(KWc.begin(), xt, xs, xn, w, nq, nq, qmain,    nq, wj, accum, nt);
         }
       }
     };
@@ -1085,7 +1139,7 @@ namespace sctl {
       const Long nq = ns*nt;
       const Long sz = COORD_DIM*nnode + 2*COORD_DIM*(Long)order*ns + (Long)NA*order + 2*(Long)NA*order
                     + sblk*NR*(Long)order + sblk*NR*nt + 2*COORD_DIM*nq + nq
-                    + nq*KDIM0*KDIM1full + (Long)C*nq + ns*(Long)C*order + (Long)C*order + (Long)C*order*ns + nnode;
+                    + (Long)C*nq + ns*(Long)C*order + (Long)C*order + (Long)C*order*ns + nnode;
       ScratchBuf<Real> sb(sz);
       Long off = 0;
       auto take = [&](const Long n) { Iterator<Real> r = sb.begin() + off; off += n; return r; };
@@ -1097,7 +1151,6 @@ namespace sctl {
       Matrix<Real> XdX(sblk*NR, nt, take(sblk*NR*nt), false);
       Vector<Real> Xs(COORD_DIM*nq, take(COORD_DIM*nq), false), Xn(COORD_DIM*nq, take(COORD_DIM*nq), false);
       Vector<Real> wq(nq, take(nq), false);
-      Matrix<Real> Mker(nq*KDIM0, KDIM1full, take(nq*KDIM0*KDIM1full), false);
       Matrix<Real> KW(ns*C, nt, take((Long)C*nq), false);
       Matrix<Real> Zall(ns*C, order, take(ns*(Long)C*order), false);
       Matrix<Real> Yi(C, order, take((Long)C*order), false), Yall(C*order, ns, take((Long)C*order*ns), false);
@@ -1140,23 +1193,25 @@ namespace sctl {
             const Real b0 = XdX[b*NR+2*COORD_DIM+0][j], b1 = XdX[b*NR+2*COORD_DIM+1][j], b2 = XdX[b*NR+2*COORD_DIM+2][j];
             const Real n0 = T.nsign*(a1*b2-a2*b1), n1 = T.nsign*(a2*b0-a0*b2), n2 = T.nsign*(a0*b1-a1*b0);
             const Real ar = sqrt<Real>(n0*n0+n1*n1+n2*n2), ia = (ar > 0 ? (Real)1/ar : (Real)0);
-            for (Integer k = 0; k < COORD_DIM; k++) Xs[q*COORD_DIM+k] = XdX[b*NR+k][j];
-            Xn[q*COORD_DIM+0] = n0*ia; Xn[q*COORD_DIM+1] = n1*ia; Xn[q*COORD_DIM+2] = n2*ia;
+            for (Integer k = 0; k < COORD_DIM; k++) Xs[k*nq+q] = XdX[b*NR+k][j];
+            Xn[0*nq+q] = n0*ia; Xn[1*nq+q] = n1*ia; Xn[2*nq+q] = n2*ia;
             wq[q] = ar*jw*tw[j];
           }
         }
       }
 
-      ker.template KernelMatrix<Real,false>(Mker, Xt0_v, Xs, Xn);
-      for (Long i = 0; i < ns; i++) for (Long j = 0; j < nt; j++) {
-        const Long q = i*nt + j;
-        for (Integer k0 = 0; k0 < KDIM0; k0++) for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-          Real val;
-          if (trg_dot_prod) {
-            val = 0;
-            for (Integer l = 0; l < COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*COORD_DIM+l]*normal_trg[l];
-          } else val = Mker[q*KDIM0+k0][k1];
-          KW[i*C + k0*KDIM1_out+k1][j] = val*wq[q];
+      { // kernel values and weight straight into KW from component-major sources; see KerFoldSoA
+        static constexpr bool HAS_N = UKerNeedsN<Kernel, Vec<Real,1>>::value;
+        using WVec = Vec<Real, DefaultVecLen<Real>()>;
+        const Long jmain = (nt/WVec::Size())*WVec::Size();
+        const ConstIterator<Real> xt = Xt0_v.begin(), xs = Xs.begin(), xn = Xn.begin(), w = wq.begin();
+        const ConstIterator<Real> ntg = (trg_dot_prod ? normal_trg.begin() : ConstIterator<Real>(NullIterator<Real>()));
+        if (trg_dot_prod) {
+          KerFoldSoA<Real,Kernel,WVec,        HAS_N,true >(KW.begin(), xt, xs, xn, w, ns*nt, nt,     0, jmain, (Real)1, false, ntg);
+          KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,true >(KW.begin(), xt, xs, xn, w, ns*nt, nt, jmain,    nt, (Real)1, false, ntg);
+        } else {
+          KerFoldSoA<Real,Kernel,WVec,        HAS_N,false>(KW.begin(), xt, xs, xn, w, ns*nt, nt,     0, jmain, (Real)1, false, ntg);
+          KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,false>(KW.begin(), xt, xs, xn, w, ns*nt, nt, jmain,    nt, (Real)1, false, ntg);
         }
       }
 
