@@ -124,9 +124,10 @@ QuadElemList<Real> BuildSphere(const Integer order, const Long ppf, const Real R
     }
   }
   QuadElemList<Real> qel(order, X, comm);
-  // Fork has 5 schemes (default Adaptive); upstream had only this one. Measure Duffy
-  // (upstream self + split-at-foot near) to reproduce the numbers this bench targets.
-  qel.SetQuadScheme(QuadElemList<Real>::QuadScheme::Duffy);
+  // Opt-in self-scheme override for the port comparison; default (unset) = Adaptive (centered-Alpert).
+  if (const char* s = std::getenv("SCTL_SELF_SCHEME")) {
+    if (!std::strcmp(s, "duffy")) qel.SetQuadScheme(QuadElemList<Real>::QuadScheme::Duffy);
+  }
   return qel;
 }
 

@@ -121,6 +121,22 @@ template <class T, class StrictWeakOrdering> void sample_sort(T A, T A_last, Str
 template <class T> void sample_sort(T A, T A_last);
 
 /**
+ * Parallel multiway merge of `nruns` sorted runs into a single sorted output. The runs are the
+ * contiguous segments [run_dsp[d], run_dsp[d+1]) of `runs` (run_dsp has nruns+1 entries, with
+ * run_dsp[0] the start offset and run_dsp[nruns] the total count); `out` (that many elements)
+ * receives their merge. Parallelized by splitting the output into per-thread contiguous chunks
+ * via sampled splitters, each thread heap-merging its chunk's sub-runs -- single pass, no extra
+ * copies, exploits the pre-sortedness (O((N/p)*log nruns) vs O((N/p)*log(N/p)) for a re-sort).
+ *
+ * @param runs Beginning iterator of the buffer holding the concatenated sorted runs.
+ * @param run_dsp Run boundary offsets into `runs` (nruns+1 entries, ascending).
+ * @param nruns Number of runs.
+ * @param out Beginning iterator of the output range (size run_dsp[nruns]).
+ * @param comp Functor for comparing elements.
+ */
+template <class ConstIter, class Iter, class StrictWeakOrdering> void multiway_merge(ConstIter runs, ConstIterator<Long> run_dsp, Long nruns, Iter out, StrictWeakOrdering comp);
+
+/**
  * Reduces the elements in a range to a single value.
  *
  * @tparam ConstIter Iterator type for the input range.
@@ -158,6 +174,21 @@ template <class ConstIter, class Int> typename std::iterator_traits<ConstIter>::
  * @param[in] cnt Number of elements in each range.
  */
 template <class ConstIter, class Iter, class Int> void scan(ConstIter A, Iter B, Int cnt);
+
+/**
+ * Exclusive prefix sum that also writes the seed: sets `B[0] = seed`, then behaves exactly like
+ * `scan(A, B, cnt)`. Preferred over the 3-argument form, which leaves `B[0]` to the caller.
+ *
+ * @tparam ConstIter Iterator type for the input range.
+ * @tparam Iter Iterator type for the output range.
+ * @tparam Int Integer type for indexing.
+ *
+ * @param[in] A Beginning iterator of the input range (length `cnt`).
+ * @param[out] B Beginning iterator of the output range (length `cnt`); `B[0..cnt-1]` are written.
+ * @param[in] cnt Number of elements in each range.
+ * @param[in] seed Value written to `B[0]`; pass 0 to convert a count array to displacements.
+ */
+template <class ConstIter, class Iter, class Int> void scan(ConstIter A, Iter B, Int cnt, typename std::iterator_traits<Iter>::value_type seed);
 
 }  // end namespace omp_par
 }  // end namespace sctl

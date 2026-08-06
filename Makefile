@@ -115,7 +115,13 @@ TARGET_BIN = \
 	   $(BINDIR)/test-hedgehog-greens \
 	   $(BINDIR)/unit-test-near-graded \
 	   $(BINDIR)/bench-cubed-sphere \
-	   $(BINDIR)/sweep-twist-selfscheme
+	   $(BINDIR)/sweep-twist-selfscheme \
+	   $(BINDIR)/bench-duffy \
+	   $(BINDIR)/bench-quad-scaling \
+	   $(BINDIR)/test-greens-conv \
+	   $(BINDIR)/bench-cubed-sphere-fork \
+	   $(BINDIR)/bench-quad-interac-fork \
+	   $(BINDIR)/verify-schemes
 
 .PHONY: all test clean quad bench cubed bench-gmsh hedgehog hedgehog-greens near-graded
 

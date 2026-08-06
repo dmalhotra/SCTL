@@ -28,13 +28,6 @@
 #define SCTL_IN_PARALLEL()     (0)
 #endif
 
-//#ifndef SCTL_NAMESPACE
-//#define SCTL_NAMESPACE sctl
-//#endif
-#define SCTL_QUOTEME(x) SCTL_QUOTEME_1(x)
-#define SCTL_QUOTEME_1(x) #x
-//#define SCTL_INCLUDE(x) SCTL_QUOTEME(SCTL_NAMESPACE/x)
-
 #if defined(__AVX512__) || defined(__AVX512F__)
   #define SCTL_ALIGN_BYTES 64
 #elif defined(__AVX__)
@@ -124,25 +117,5 @@ template <typename ValueType> using ConstIterator = const ValueType*;
 template <typename ValueType, Long DIM> using StaticArray = ValueType[DIM];
 #endif
 }
-
-// Import PVFMM preprocessor macro definitions
-#ifdef SCTL_HAVE_PVFMM
-#  ifndef SCTL_HAVE_MPI
-#    define SCTL_HAVE_MPI
-#  endif
-// PVFMM <= 1.3 generated pvfmm_config.h at configure time; the develop branch
-// dropped it and passes the same -D flags from MakeVariables instead. Include
-// it only if it exists so both layouts build.
-#  if defined(__has_include)
-#    if __has_include("pvfmm_config.h")
-#      include "pvfmm_config.h"
-#    endif
-#  else
-#    include "pvfmm_config.h"
-#  endif
-#  if defined(PVFMM_QUAD_T) && !defined(SCTL_QUAD_T)
-#    define SCTL_QUAD_T PVFMM_QUAD_T
-#  endif
-#endif
 
 #endif // _SCTL_COMMON_HPP_

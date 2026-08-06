@@ -49,7 +49,7 @@ namespace sctl {
     Matrix<Real> M(Nsrc, Ntrg, wts.begin(), false);
 
     ScratchBuf<Real> w(Nsrc);
-    const Real normal_factor = [src_nds]() { // normalize
+    const Real normal_factor = [&src_nds]() { // normalize
       if (src_nds.Dim() < 2) return (Real)1;
       Real max_src = src_nds[0], min_src = src_nds[0];
       for (const auto x : src_nds) {
@@ -118,7 +118,7 @@ namespace sctl {
     if (df.Dim() != dof * N) df.ReInit(dof * N);
     if (dof * N == 0) return;
 
-    const Real normal_factor = [nds]() { // normalize
+    const Real normal_factor = [&nds]() { // normalize
       if (!nds.Dim()) return (Real)1;
       Real max_src = nds[0], min_src = nds[0];
       for (const auto x : nds) {

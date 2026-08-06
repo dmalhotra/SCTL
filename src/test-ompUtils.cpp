@@ -127,6 +127,50 @@ int main() {
     sctl::omp_par::scan(cnt.begin(), dsp.begin(), (Long)cnt.size());
     Long expected[] = {0, 3, 8, 9, 13};
     for (size_t i = 0; i < cnt.size(); ++i) CHECK(dsp[i] == expected[i]);
+
+    // 4-argument overload writes the seed too, matching the 3-argument form
+    for (const Long seed : {(Long)0, (Long)100}) {
+      std::vector<Long> C(10, -1);
+      sctl::omp_par::scan(A.begin(), C.begin(), (Long)10, seed);
+      Long acc_ = seed;
+      for (Long i = 0; i < 10; ++i) {
+        CHECK(C[i] == acc_);
+        if (i < 9) acc_ += A[i];
+      }
+    }
+  }
+
+  // --- scan over a range long enough to take the multi-threaded path ---
+  std::printf("scan (parallel path) :\n");
+  {
+    const Long N = 100 * SCTL_GET_MAX_THREADS() + 1000;
+    std::vector<Long> A(N), B(N, -1), ref(N);
+    for (Long i = 0; i < N; ++i) A[i] = (i % 7) + 1;
+    ref[0] = 5;
+    for (Long i = 1; i < N; ++i) ref[i] = ref[i - 1] + A[i - 1];
+    sctl::omp_par::scan(A.begin(), B.begin(), N, (Long)5);
+    for (Long i = 0; i < N; ++i) CHECK(B[i] == ref[i]);
+  }
+
+  // --- sample_sort: out-of-place, in-place, and a size past the parallel threshold ---
+  std::printf("sample_sort :\n");
+  {
+    struct Rec { Long key; char pad[88]; };           // ~96B, like BuildNearList's NodeData
+    auto by_key = [](const Rec& a, const Rec& b) { return a.key < b.key; };
+    for (const Long N : {(Long)5, (Long)1000, (Long)100 * SCTL_GET_MAX_THREADS() + 4321}) {
+      std::vector<Rec> A(N), B(N), ref(N);
+      for (Long i = 0; i < N; ++i) A[i].key = ((i * 2654435761u) % 100003);
+      ref = A;
+      std::stable_sort(ref.begin(), ref.end(), [](const Rec& a, const Rec& b){ return a.key < b.key; });
+
+      sctl::omp_par::sample_sort(A.data(), B.data(), N, by_key);   // out-of-place
+      for (Long i = 0; i < N; ++i) CHECK(B[i].key == ref[i].key);
+      for (Long i = 1; i < N; ++i) CHECK(B[i-1].key <= B[i].key);
+
+      std::vector<Rec> C = A;
+      sctl::omp_par::sample_sort(C.data(), C.data() + N, by_key);  // in-place overload
+      for (Long i = 0; i < N; ++i) CHECK(C[i].key == ref[i].key);
+    }
   }
 
   TEST_SUMMARY_RETURN();
