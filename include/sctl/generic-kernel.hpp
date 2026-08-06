@@ -1,8 +1,6 @@
 #ifndef _SCTL_GENERIC_KERNEL_HPP_
 #define _SCTL_GENERIC_KERNEL_HPP_
 
-#include <type_traits>      // for false_type, bool_constant, void_t
-
 #include "sctl/common.hpp"  // for Integer, sctl
 #include "sctl/vec.hpp"     // for Vec
 
@@ -10,28 +8,6 @@ namespace sctl {
 
 template <class ValueType> class Vector;
 template <class ValueType> class Matrix;
-
-template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM, Integer N_DIM> struct uKerHelper {
-  template <Integer digits, class VecType> static void MatEval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const VecType (&n)[N_DIM], const void* ctx_ptr) {
-    uKernel::template uKerMatrix<digits>(u, r, n, ctx_ptr);
-  }
-};
-template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM> struct uKerHelper<uKernel,KDIM0,KDIM1,DIM,0> {
-  template <Integer digits, class VecType, class NormalType> static void MatEval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const NormalType& n, const void* ctx_ptr) {
-    uKernel::template uKerMatrix<digits>(u, r, ctx_ptr);
-  }
-};
-
-/**
- * Detects whether a micro-kernel provides the optional fused apply described in
- * kernel_functions.hpp. A kernel opts in by declaring `FUSED_APPLY = true` and
- * providing uKerApply(), which must accumulate the same unscaled values that
- * applying uKerMatrix to the densities would produce. GenericKernel::Eval uses
- * it when present; KernelMatrix always goes through uKerMatrix, since it has to
- * produce the matrix itself.
- */
-template <class uKernel, class = void> struct uKerFusedApply : std::false_type {};
-template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKernel::FUSED_APPLY)>> : std::bool_constant<uKernel::FUSED_APPLY> {};
 
 /**
  * @class GenericKernel
