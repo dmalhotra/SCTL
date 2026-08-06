@@ -535,7 +535,7 @@ namespace sctl {
         return 29;
       }
       template <class Real> static constexpr Real uKerScaleFactor() {
-        return 1 / (4 * const_pi<Real>());
+        return -1 / (4 * const_pi<Real>()); // matches Laplace3D_DxU as mu -> 0
       }
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[2][2], const VecType (&r)[3], const VecType (&n)[3], const void* ctx_ptr) {
         using Real = typename VecType::ScalarType;

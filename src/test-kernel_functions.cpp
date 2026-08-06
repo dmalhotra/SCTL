@@ -259,7 +259,8 @@ int main() {
     CHECK(K.NormalDim() == 3);
     CHECK(K.Name() == std::string("Helmholtz3D-DxU"));
 
-    // DxU is the normal derivative of FxU, i.e. n . FxdU
+    // DxU is the negated normal derivative of FxU, i.e. n . grad_s -- the same
+    // convention as Laplace3D_DxU, which it must reduce to as mu -> 0.
     R mu = 1.7;
     sctl::Helmholtz3D_FxdU Kg;
     K.SetCtxPtr(&mu);
@@ -268,10 +269,22 @@ int main() {
     Vector<R> vd, vg;
     K.template Eval<R, false>(vd, Xt, Xs, Xn, v_s);
     Kg.template Eval<R, false>(vg, Xt, Xs, Vector<R>(), v_s);
-    for (Long c = 0; c < 2; c++) { // n . grad, per complex component
+    for (Long c = 0; c < 2; c++) { // -n . grad, per complex component
       R acc = 0;
       for (Long i = 0; i < 3; i++) acc += Xn[i] * vg[i*2+c];
-      CHECK(test_utils::approx_eq(vd[c], acc, tol));
+      CHECK(test_utils::approx_eq(vd[c], -acc, tol));
+    }
+
+    { // mu -> 0 must reproduce Laplace3D_DxU, sign included
+      R mu0 = 0;
+      K.SetCtxPtr(&mu0);
+      sctl::Laplace3D_DxU Kl;
+      Vector<R> vd0, vl;
+      K.template Eval<R, false>(vd0, Xt, Xs, Xn, Vector<R>({1.0,0.0}));
+      Kl.template Eval<R, false>(vl, Xt, Xs, Xn, Vector<R>({1.0}));
+      CHECK(test_utils::approx_eq(vd0[0], vl[0], tol));
+      CHECK(std::fabs(vd0[1]) < 1e-12);
+      K.SetCtxPtr(&mu);
     }
   }
 
