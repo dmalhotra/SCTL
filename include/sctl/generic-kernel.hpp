@@ -1,6 +1,8 @@
 #ifndef _SCTL_GENERIC_KERNEL_HPP_
 #define _SCTL_GENERIC_KERNEL_HPP_
 
+#include <type_traits>      // for false_type, bool_constant, void_t
+
 #include "sctl/common.hpp"  // for Integer, sctl
 #include "sctl/vec.hpp"     // for Vec
 
@@ -19,6 +21,17 @@ template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM> struct uKerH
     uKernel::template uKerMatrix<digits>(u, r, ctx_ptr);
   }
 };
+
+/**
+ * Detects whether a micro-kernel provides the optional fused apply described in
+ * kernel_functions.hpp. A kernel opts in by declaring `FUSED_APPLY = true` and
+ * providing uKerApply(), which must accumulate the same unscaled values that
+ * applying uKerMatrix to the densities would produce. GenericKernel::Eval uses
+ * it when present; KernelMatrix always goes through uKerMatrix, since it has to
+ * produce the matrix itself.
+ */
+template <class uKernel, class = void> struct uKerFusedApply : std::false_type {};
+template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKernel::FUSED_APPLY)>> : std::bool_constant<uKernel::FUSED_APPLY> {};
 
 /**
  * @class GenericKernel

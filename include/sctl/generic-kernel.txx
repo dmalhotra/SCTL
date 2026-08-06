@@ -81,12 +81,17 @@ namespace sctl {
     using RealVec = Vec<Real, VecLen>;
 
     auto uKerEval = [this](RealVec (&vt)[KDIM1], const RealVec (&xt)[DIM], const RealVec (&xs)[DIM], const RealVec (&ns)[N_DIM_], const RealVec (&vs)[KDIM0]) {
-      RealVec dX[DIM], U[KDIM0][KDIM1];
+      RealVec dX[DIM];
       for (Integer i = 0; i < DIM; i++) dX[i] = xt[i] - xs[i];
-      uKerMatrix<digits_>(U, dX, ns, ctx_ptr);
-      for (Integer k0 = 0; k0 < KDIM0; k0++) {
-        for (Integer k1 = 0; k1 < KDIM1; k1++) {
-          vt[k1] = FMA(U[k0][k1], vs[k0], vt[k1]);
+      if constexpr (uKerFusedApply<uKernel>::value) { // skip the KDIM0 x KDIM1 matrix
+        uKernel::template uKerApply<digits_,1>(vt, dX, ns, vs, ctx_ptr);
+      } else {
+        RealVec U[KDIM0][KDIM1];
+        uKerMatrix<digits_>(U, dX, ns, ctx_ptr);
+        for (Integer k0 = 0; k0 < KDIM0; k0++) {
+          for (Integer k1 = 0; k1 < KDIM1; k1++) {
+            vt[k1] = FMA(U[k0][k1], vs[k0], vt[k1]);
+          }
         }
       }
     };

@@ -161,6 +161,20 @@ namespace sctl {
           U[2][i*3+0] =       0; U[2][i*3+1] =       0; U[2][i*3+2] = -rz_2/4;
         }
       }
+
+      static constexpr bool FUSED_APPLY = true;
+      template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+        const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
+        const VecType rinv3 = rinv*rinv*rinv;
+        for (Integer k = 0; k < DOF; k++) { // identity + rank-one
+          const VecType* f_ = f + k*3;
+          VecType* v_ = v + k*3;
+          const VecType fdotr_rinv3 = (f_[0]*r[0] + f_[1]*r[1] + f_[2]*r[2]) * rinv3;
+          for (Integer i = 0; i < 3; i++) v_[i] += f_[i]*rinv + r[i]*fdotr_rinv3;
+        }
+      }
+
     };
 
     struct Stokes3D_DxU {
@@ -227,6 +241,24 @@ namespace sctl {
           }
         }
       }
+
+      static constexpr bool FUSED_APPLY = true;
+      template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+        const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
+        const VecType rinv2 = rinv*rinv;
+        const VecType rinv5 = rinv2*rinv2*rinv;
+        for (Integer k = 0; k < DOF; k++) { // rank-one in the source index
+          const VecType* f_ = f + k*3;
+          VecType* v_ = v + k*9;
+          const VecType fdotr_rinv5 = (f_[0]*r[0] + f_[1]*r[1] + f_[2]*r[2]) * rinv5;
+          for (Integer i = 0; i < 3; i++) {
+            const VecType ri = r[i]*fdotr_rinv5;
+            for (Integer j = 0; j < 3; j++) v_[i*3+j] += ri*r[j];
+          }
+        }
+      }
+
     };
 
     struct Stokes3D_FSxU {
@@ -274,6 +306,20 @@ namespace sctl {
           U[3][i*3+2] = z/6;
         }
       }
+
+      static constexpr bool FUSED_APPLY = true;
+      template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+        const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
+        const VecType rinv3 = rinv*rinv*rinv;
+        for (Integer k = 0; k < DOF; k++) { // single-layer and source/sink share one dot product
+          const VecType* f_ = f + k*4;
+          VecType* v_ = v + k*3;
+          const VecType t = (f_[0]*r[0] + f_[1]*r[1] + f_[2]*r[2] + f_[3]) * rinv3;
+          for (Integer i = 0; i < 3; i++) v_[i] += f_[i]*rinv + r[i]*t;
+        }
+      }
+
     };
 
     struct Stokes3D_FxUP {
@@ -300,6 +346,21 @@ namespace sctl {
           u[i][3] = r[i]*rinv3;
         }
       }
+
+      static constexpr bool FUSED_APPLY = true;
+      template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+        const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
+        const VecType rinv3 = rinv*rinv*rinv;
+        for (Integer k = 0; k < DOF; k++) { // velocity and pressure share one dot product
+          const VecType* f_ = f + k*3;
+          VecType* v_ = v + k*4;
+          const VecType fdotr_rinv3 = (f_[0]*r[0] + f_[1]*r[1] + f_[2]*r[2]) * rinv3;
+          for (Integer i = 0; i < 3; i++) v_[i] += f_[i]*rinv + r[i]*fdotr_rinv3;
+          v_[3] += fdotr_rinv3;
+        }
+      }
+
     };
 
     struct Laplace3D_Fxd2U {

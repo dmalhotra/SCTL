@@ -381,6 +381,56 @@ int main() {
         CHECK(test_utils::approx_eq(v_fused[k1][0], acc, tol));
       }
     }
+
+    // Stokes3D_FxU / FxT / FSxU / FxUP
+    {
+      VecType u[3][3], v_fused[3];
+      sctl::kernel_impl::Stokes3D_FxU::uKerMatrix<15>(u, r, nullptr);
+      for (Long k = 0; k < 3; k++) v_fused[k] = VecType::Zero();
+      const VecType f[3] = {VecType((R)0.3), VecType((R)-0.7), VecType((R)1.1)};
+      sctl::kernel_impl::Stokes3D_FxU::uKerApply<15,1>(v_fused, r, n, f, nullptr);
+      for (Long k1 = 0; k1 < 3; k1++) {
+        R acc = 0;
+        for (Long k0 = 0; k0 < 3; k0++) acc += (u[k0][k1]*f[k0])[0];
+        CHECK(test_utils::approx_eq(v_fused[k1][0], acc, tol));
+      }
+    }
+    {
+      VecType u[3][9], v_fused[9];
+      sctl::kernel_impl::Stokes3D_FxT::uKerMatrix<15>(u, r, nullptr);
+      for (Long k = 0; k < 9; k++) v_fused[k] = VecType::Zero();
+      const VecType f[3] = {VecType((R)0.3), VecType((R)-0.7), VecType((R)1.1)};
+      sctl::kernel_impl::Stokes3D_FxT::uKerApply<15,1>(v_fused, r, n, f, nullptr);
+      for (Long k1 = 0; k1 < 9; k1++) {
+        R acc = 0;
+        for (Long k0 = 0; k0 < 3; k0++) acc += (u[k0][k1]*f[k0])[0];
+        CHECK(test_utils::approx_eq(v_fused[k1][0], acc, tol));
+      }
+    }
+    {
+      VecType u[4][3], v_fused[3];
+      sctl::kernel_impl::Stokes3D_FSxU::uKerMatrix<15>(u, r, nullptr);
+      for (Long k = 0; k < 3; k++) v_fused[k] = VecType::Zero();
+      const VecType f[4] = {VecType((R)0.3), VecType((R)-0.7), VecType((R)1.1), VecType((R)0.5)};
+      sctl::kernel_impl::Stokes3D_FSxU::uKerApply<15,1>(v_fused, r, n, f, nullptr);
+      for (Long k1 = 0; k1 < 3; k1++) {
+        R acc = 0;
+        for (Long k0 = 0; k0 < 4; k0++) acc += (u[k0][k1]*f[k0])[0];
+        CHECK(test_utils::approx_eq(v_fused[k1][0], acc, tol));
+      }
+    }
+    {
+      VecType u[3][4], v_fused[4];
+      sctl::kernel_impl::Stokes3D_FxUP::uKerMatrix<15>(u, r, nullptr);
+      for (Long k = 0; k < 4; k++) v_fused[k] = VecType::Zero();
+      const VecType f[3] = {VecType((R)0.3), VecType((R)-0.7), VecType((R)1.1)};
+      sctl::kernel_impl::Stokes3D_FxUP::uKerApply<15,1>(v_fused, r, n, f, nullptr);
+      for (Long k1 = 0; k1 < 4; k1++) {
+        R acc = 0;
+        for (Long k0 = 0; k0 < 3; k0++) acc += (u[k0][k1]*f[k0])[0];
+        CHECK(test_utils::approx_eq(v_fused[k1][0], acc, tol));
+      }
+    }
     // Helmholtz3D_FxU / DxU / FxdU
     {
       VecType u[2][2], v_fused[2];
@@ -418,6 +468,48 @@ int main() {
         CHECK(test_utils::approx_eq(v_fused[k1][0], acc, tol));
       }
     }
+  }
+
+
+  // --- Eval takes the fused path for these; it must still agree with KernelMatrix ---
+  std::printf("Eval vs KernelMatrix (fused kernels) :\n");
+  {
+    auto check = [&](auto K, const char* nm, Long K0, Long K1, Long ND, const void* ctx) {
+      if (ctx) K.SetCtxPtr((void*)ctx);
+      const Long Ns = 7, Nt = 5;
+      Vector<R> Xs(Ns*3), Xn(Ns*ND), Vs(Ns*K0), Xt(Nt*3);
+      for (Long i = 0; i < Xs.Dim(); i++) Xs[i] = 0.1*(i+1) - 0.35;
+      for (Long i = 0; i < Vs.Dim(); i++) Vs[i] = 0.3*(i%5) - 0.4;
+      for (Long i = 0; i < Xt.Dim(); i++) Xt[i] = 1.7 + 0.2*i;
+      for (Long i = 0; i < Ns; i++) { // unit normals
+        if (!ND) break;
+        Xn[i*3+0] = 0; Xn[i*3+1] = 1; Xn[i*3+2] = 0;
+      }
+      Vector<R> Vt;
+      K.template Eval<R,false>(Vt, Xt, Xs, Xn, Vs);
+      Matrix<R> M;
+      K.template KernelMatrix<R,false>(M, Xt, Xs, Xn);
+      for (Long t = 0; t < Nt; t++) {
+        for (Long k1 = 0; k1 < K1; k1++) {
+          R acc = 0;
+          for (Long is = 0; is < Ns; is++)
+            for (Long k0 = 0; k0 < K0; k0++) acc += M[is*K0+k0][t*K1+k1] * Vs[is*K0+k0];
+          CHECK(test_utils::approx_eq(Vt[t*K1+k1], acc, (R)1e-10));
+        }
+      }
+      SCTL_UNUSED(nm);
+    };
+    const R mu = 1.7;
+    check(sctl::Laplace3D_FxdU(),   "Laplace3D_FxdU",   1,3,0, nullptr);
+    check(sctl::Stokes3D_FxU(),     "Stokes3D_FxU",     3,3,0, nullptr);
+    check(sctl::Stokes3D_DxU(),     "Stokes3D_DxU",     3,3,3, nullptr);
+    check(sctl::Stokes3D_FxT(),     "Stokes3D_FxT",     3,9,0, nullptr);
+    check(sctl::Stokes3D_FSxU(),    "Stokes3D_FSxU",    4,3,0, nullptr);
+    check(sctl::Stokes3D_FxUP(),    "Stokes3D_FxUP",    3,4,0, nullptr);
+    check(sctl::BiotSavart3D_FxU(), "BiotSavart3D_FxU", 3,3,0, nullptr);
+    check(sctl::Helmholtz3D_FxU(),  "Helmholtz3D_FxU",  2,2,0, &mu);
+    check(sctl::Helmholtz3D_DxU(),  "Helmholtz3D_DxU",  2,2,3, &mu);
+    check(sctl::Helmholtz3D_FxdU(), "Helmholtz3D_FxdU", 2,6,0, &mu);
   }
 
   TEST_SUMMARY_RETURN();
