@@ -35,7 +35,7 @@ CXXFLAGS += -DSCTL_SIG_HANDLER # Enable SCTL stack trace
 
 CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
 
-# Opt-in phase timers for the quad-element self/near hot loops (bench-quad-interac).
+# Opt-in phase timers for the quad-element self/near hot loops.
 # Use `make BENCH=1 ...` -- do NOT pass CXXFLAGS+= on the command line, as that
 # overrides (not appends to) the flags assigned above.
 BENCH ?= 0
@@ -105,41 +105,19 @@ TARGET_BIN = \
        $(BINDIR)/test-sph-harm \
        $(BINDIR)/test-tensor \
        $(BINDIR)/test-vec \
-       $(BINDIR)/bench-quad-interac \
-       $(BINDIR)/bench-gmsh-pipeline \
        $(BINDIR)/test-scratch-pool \
        $(BINDIR)/test-scratch-pool-perf \
 	   $(BINDIR)/unit-test-quad-element \
 	   $(BINDIR)/test-quad-elem \
-	   $(BINDIR)/test-hedgehog-near \
-	   $(BINDIR)/test-hedgehog-greens \
-	   $(BINDIR)/unit-test-near-graded \
-	   $(BINDIR)/bench-cubed-sphere \
-	   $(BINDIR)/sweep-twist-selfscheme \
-	   $(BINDIR)/bench-duffy \
-	   $(BINDIR)/bench-quad-scaling \
-	   $(BINDIR)/test-greens-conv \
-	   $(BINDIR)/bench-cubed-sphere-fork \
-	   $(BINDIR)/bench-quad-interac-fork \
-	   $(BINDIR)/verify-schemes
+	   $(BINDIR)/bench-scheme-compare
 
-.PHONY: all test clean quad bench cubed bench-gmsh hedgehog hedgehog-greens near-graded
+.PHONY: all test clean quad scheme
 
 all : $(TARGET_BIN)
 
 quad : $(BINDIR)/unit-test-quad-element
 
-hedgehog : $(BINDIR)/test-hedgehog-near
-
-hedgehog-greens : $(BINDIR)/test-hedgehog-greens
-
-near-graded : $(BINDIR)/unit-test-near-graded
-
-bench : $(BINDIR)/bench-quad-interac
-
-cubed : $(BINDIR)/bench-cubed-sphere
-
-bench-gmsh : $(BINDIR)/bench-gmsh-pipeline
+scheme : $(BINDIR)/bench-scheme-compare
 
 $(BINDIR)/%: $(OBJDIR)/%.o
 	-@$(MKDIRS) $(dir $@)

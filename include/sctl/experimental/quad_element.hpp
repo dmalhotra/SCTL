@@ -192,8 +192,11 @@ namespace sctl {
       Real GetClosestNode(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) const;
 
       /**
-       * Closest POINT on patch elem_idx to Xtrg over (u,v) in [0,1]^2 (GetClosestNode
-       * seed, then Gauss-Newton with grid-search fallback).
+       * Closest POINT on patch elem_idx to Xtrg over (u,v) in [0,1]^2 (GetClosestNode seed, then
+       * active-set Gauss-Newton with grid-search fallback). A coordinate pinned at a bound by an
+       * outward gradient is held FIXED and the reduced step is solved in the free subspace only,
+       * so metric coupling cannot contaminate the surviving component -- edge/corner feet converge
+       * cleanly rather than bailing to the fallback.
        * @param[out] ustar,vstar parameters of the closest point in [0,1].
        * @param[in] elem_idx element index.
        * @param[in] Xtrg target coordinates (COORD_DIM reals).
@@ -202,13 +205,6 @@ namespace sctl {
        * @return distance from target to the closest point.
        */
       Real GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
-
-      // Active-set variant of GetClosestPoint (upstream): a coordinate pinned at a bound by an
-      // outward gradient is held FIXED and the reduced Gauss-Newton step is solved in the free
-      // subspace only, so the metric coupling F cannot contaminate the surviving component with
-      // the constrained gradient. Used only by the Duffy near path; the shared GetClosestPoint
-      // (and hence the Adaptive/Hybrid near) is left unchanged.
-      Real GetClosestPointAS(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
 
       /** VTU data for one (elem_idx) or all elements. */
       void GetVTUData(VTUData& vtu_data, const Vector<Real>& F = Vector<Real>(), const Long elem_idx = -1) const;
@@ -339,6 +335,9 @@ namespace sctl {
       // near/self map runtime tolerance to compile-time `digits` (CSBQ-style).
       template <Integer digits> static Integer DigitsQuadOrder();
       template <Integer digits> static Real DigitsBEllipse();
+      // Per-panel GL rule (nodes,weights) for `digits`, built once (ComputeNdsWts is an uncached
+      // O(N^2) Newton solve). Consumed by the foot-graded tensor near (NearInteracBlockGraded).
+      template <Integer digits> static const std::pair<Vector<Real>, Vector<Real>>& DigitsGLRule();
 
       // Number of geometric grading levels (per side) toward v0 in the composite Alpert v-rule,
       // as a function of requested accuracy. Runtime core + compile-time `digits` wrapper.
@@ -404,6 +403,29 @@ namespace sctl {
       static constexpr Integer MaxNearLvl = 31;
       template <Integer order, Integer digits> static const Vector<GradeRule>& NearGradeTable();
       template <Integer digits, Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
+
+      // ---- Foot-graded separable-tensor near (QuadScheme::Adaptive / Hybrid) ----
+      // THE production near path for the non-Duffy adaptive schemes. Grade [0,1] toward u* and
+      // toward v* INDEPENDENTLY -- split each side AT the foot (u*,v*), grade geometrically outward
+      // (BuildFootGraded1DSegments) -- then take the FULL TENSOR PRODUCT and integrate the whole
+      // panel with ONE IntegrateBlock: no quadtree, no per-leaf loop, no interval dedup. Matches
+      // RectPolar near accuracy across parametric shear (the isotropic-quadtree split-at-foot rule
+      // it replaced lost ~2-3 orders on smooth geometry). Requires dist > 0 (foot on a cell
+      // boundary), so it must never serve the self path.
+      // One GL rule per segment, concatenated in segment order (contiguous runs -> contiguous slices).
+      static void ExpandSegments(Vector<Real>& param, Vector<Real>& w, const Vector<Real>& seg, const Vector<Real>& qnds, const Vector<Real>& qwts);
+      // Split [0,1] at `center`, grade geometrically outward on each side; innermost segment touches
+      // the foot (admissible only under the off-surface effective distance -> near targets only).
+      static void BuildFootGraded1DSegments(Vector<Real>& seg, Vector<Long>& seg_depth, const Real center, const Real b_ellipse, const Real w_min);
+      // Foot (u*,v*), off-surface distance, and depth cap from GetClosestPoint (the FOOT, not the
+      // nearest node). h_param (optional): off-surface distance in parameter units.
+      static Integer NearFootAndDepth(Real& ustar, Real& vstar, Real& dist, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse, const Integer max_depth, Real* h_param = nullptr);
+      // Foot-graded tensor rule over the whole panel (u_param x v_param, weights wu (x) wv).
+      static Integer BuildNearTensorRule(Vector<Real>& u_param, Vector<Real>& wu, Vector<Real>& v_param, Vector<Real>& wv,
+                                         Vector<Real>* useg, Vector<Long>* useg_depth, Vector<Real>* vseg, Vector<Long>* vseg_depth,
+                                         const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg,
+                                         const Real b_ellipse, const Vector<Real>& qnds, const Vector<Real>& qwts, const Integer max_depth);
+      template <Integer digits, Integer order, class Kernel> static void NearInteracBlockGraded(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
       // ---- Upstream-ported near path (QuadScheme::Duffy only) ----
       // Same split-at-foot geometry as NearInteracBlockSplit, but with the upstream additions that
