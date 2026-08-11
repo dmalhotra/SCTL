@@ -367,6 +367,20 @@ namespace sctl { // Generic
     return a_.v;
   }
 
+  template <class VData> inline void transpose_intrin(VData (&v)[VData::Size]) {
+    static constexpr Integer N = VData::Size;
+    typename VData::ScalarType buf[N][N];
+    for (Integer i = 0; i < N; i++) storeu_intrin(buf[i], v[i]);
+    for (Integer i = 0; i < N; i++) {
+      for (Integer j = 0; j < i; j++) {
+        const typename VData::ScalarType t = buf[i][j];
+        buf[i][j] = buf[j][i];
+        buf[j][i] = t;
+      }
+    }
+    for (Integer i = 0; i < N; i++) v[i] = loadu_intrin<VData>(buf[i]);
+  }
+
   // Conversion operators
   template <class RetType, class ValueType, Integer N> inline RetType reinterpret_intrin(const VecData<ValueType,N>& v) {
     static_assert(sizeof(RetType) == sizeof(VecData<ValueType,N>), "Illegal type cast -- size of types does not match.");
@@ -1380,6 +1394,25 @@ namespace sctl { // SSE
     return _mm_min_pd(a.v, b.v);
   }
 
+  template <> inline void transpose_intrin<VecData<double,2>>(VecData<double,2> (&v)[2]) {
+    const __m128d r0 = v[0].v, r1 = v[1].v;
+    v[0].v = _mm_unpacklo_pd(r0, r1);
+    v[1].v = _mm_unpackhi_pd(r0, r1);
+  }
+  template <> inline void transpose_intrin<VecData<float,4>>(VecData<float,4> (&v)[4]) {
+    const __m128 r0 = v[0].v, r1 = v[1].v, r2 = v[2].v, r3 = v[3].v;
+
+    const __m128 a0 = _mm_unpacklo_ps(r0, r1);
+    const __m128 a1 = _mm_unpackhi_ps(r0, r1);
+    const __m128 b0 = _mm_unpacklo_ps(r2, r3);
+    const __m128 b1 = _mm_unpackhi_ps(r2, r3);
+
+    v[0].v = _mm_movelh_ps(a0, b0);
+    v[1].v = _mm_movehl_ps(b0, a0);
+    v[2].v = _mm_movelh_ps(a1, b1);
+    v[3].v = _mm_movehl_ps(b1, a1);
+  }
+
   // Conversion operators
   template <> inline VecData<float ,4> convert_int2real_intrin<VecData<float ,4>,VecData<int32_t,4>>(const VecData<int32_t,4>& x) {
     return _mm_cvtepi32_ps(x.v);
@@ -2097,6 +2130,51 @@ namespace sctl { // AVX
     return _mm256_min_pd(a.v, b.v);
   }
 
+  template <> inline void transpose_intrin<VecData<double,4>>(VecData<double,4> (&v)[4]) {
+    const __m256d r0 = v[0].v, r1 = v[1].v, r2 = v[2].v, r3 = v[3].v;
+
+    const __m256d t0 = _mm256_shuffle_pd(r0, r1, 0x0);
+    const __m256d t1 = _mm256_shuffle_pd(r2, r3, 0x0);
+    const __m256d t2 = _mm256_shuffle_pd(r0, r1, 0xF);
+    const __m256d t3 = _mm256_shuffle_pd(r2, r3, 0xF);
+
+    v[0].v = _mm256_permute2f128_pd(t0, t1, 0x20);
+    v[1].v = _mm256_permute2f128_pd(t2, t3, 0x20);
+    v[2].v = _mm256_permute2f128_pd(t0, t1, 0x31);
+    v[3].v = _mm256_permute2f128_pd(t2, t3, 0x31);
+  }
+  template <> inline void transpose_intrin<VecData<float,8>>(VecData<float,8> (&v)[8]) {
+    const __m256 r0 = v[0].v, r1 = v[1].v, r2 = v[2].v, r3 = v[3].v;
+    const __m256 r4 = v[4].v, r5 = v[5].v, r6 = v[6].v, r7 = v[7].v;
+
+    const __m256 a0 = _mm256_unpacklo_ps(r0, r1);
+    const __m256 a1 = _mm256_unpackhi_ps(r0, r1);
+    const __m256 a2 = _mm256_unpacklo_ps(r2, r3);
+    const __m256 a3 = _mm256_unpackhi_ps(r2, r3);
+    const __m256 a4 = _mm256_unpacklo_ps(r4, r5);
+    const __m256 a5 = _mm256_unpackhi_ps(r4, r5);
+    const __m256 a6 = _mm256_unpacklo_ps(r6, r7);
+    const __m256 a7 = _mm256_unpackhi_ps(r6, r7);
+
+    const __m256 t0 = _mm256_shuffle_ps(a0, a2, _MM_SHUFFLE(1,0,1,0));
+    const __m256 t1 = _mm256_shuffle_ps(a0, a2, _MM_SHUFFLE(3,2,3,2));
+    const __m256 t2 = _mm256_shuffle_ps(a1, a3, _MM_SHUFFLE(1,0,1,0));
+    const __m256 t3 = _mm256_shuffle_ps(a1, a3, _MM_SHUFFLE(3,2,3,2));
+    const __m256 t4 = _mm256_shuffle_ps(a4, a6, _MM_SHUFFLE(1,0,1,0));
+    const __m256 t5 = _mm256_shuffle_ps(a4, a6, _MM_SHUFFLE(3,2,3,2));
+    const __m256 t6 = _mm256_shuffle_ps(a5, a7, _MM_SHUFFLE(1,0,1,0));
+    const __m256 t7 = _mm256_shuffle_ps(a5, a7, _MM_SHUFFLE(3,2,3,2));
+
+    v[0].v = _mm256_permute2f128_ps(t0, t4, 0x20);
+    v[1].v = _mm256_permute2f128_ps(t1, t5, 0x20);
+    v[2].v = _mm256_permute2f128_ps(t2, t6, 0x20);
+    v[3].v = _mm256_permute2f128_ps(t3, t7, 0x20);
+    v[4].v = _mm256_permute2f128_ps(t0, t4, 0x31);
+    v[5].v = _mm256_permute2f128_ps(t1, t5, 0x31);
+    v[6].v = _mm256_permute2f128_ps(t2, t6, 0x31);
+    v[7].v = _mm256_permute2f128_ps(t3, t7, 0x31);
+  }
+
   // Conversion operators
   template <> inline VecData<float ,8> convert_int2real_intrin<VecData<float ,8>,VecData<int32_t,8>>(const VecData<int32_t,8>& x) {
     return _mm256_cvtepi32_ps(x.v);
@@ -2772,6 +2850,101 @@ namespace sctl { // AVX512
   }
   template <> inline VecData<double,8> min_intrin(const VecData<double,8>& a, const VecData<double,8>& b) {
     return _mm512_min_pd(a.v, b.v);
+  }
+
+  template <> inline void transpose_intrin<VecData<double,8>>(VecData<double,8> (&v)[8]) {
+    const __m512d r0 = v[0].v, r1 = v[1].v, r2 = v[2].v, r3 = v[3].v;
+    const __m512d r4 = v[4].v, r5 = v[5].v, r6 = v[6].v, r7 = v[7].v;
+
+    // interleave within 128-bit lanes, forming 2x2 blocks
+    const __m512d t0 = _mm512_unpacklo_pd(r0, r1);
+    const __m512d t1 = _mm512_unpackhi_pd(r0, r1);
+    const __m512d t2 = _mm512_unpacklo_pd(r2, r3);
+    const __m512d t3 = _mm512_unpackhi_pd(r2, r3);
+    const __m512d t4 = _mm512_unpacklo_pd(r4, r5);
+    const __m512d t5 = _mm512_unpackhi_pd(r4, r5);
+    const __m512d t6 = _mm512_unpacklo_pd(r6, r7);
+    const __m512d t7 = _mm512_unpackhi_pd(r6, r7);
+
+    // 0x88/0xDD select the low/high 128-bit lane of each operand, forming 4x4 blocks
+    const __m512d s0 = _mm512_shuffle_f64x2(t0, t2, 0x88);
+    const __m512d s1 = _mm512_shuffle_f64x2(t1, t3, 0x88);
+    const __m512d s2 = _mm512_shuffle_f64x2(t0, t2, 0xDD);
+    const __m512d s3 = _mm512_shuffle_f64x2(t1, t3, 0xDD);
+    const __m512d s4 = _mm512_shuffle_f64x2(t4, t6, 0x88);
+    const __m512d s5 = _mm512_shuffle_f64x2(t5, t7, 0x88);
+    const __m512d s6 = _mm512_shuffle_f64x2(t4, t6, 0xDD);
+    const __m512d s7 = _mm512_shuffle_f64x2(t5, t7, 0xDD);
+
+    v[0].v = _mm512_shuffle_f64x2(s0, s4, 0x88);
+    v[1].v = _mm512_shuffle_f64x2(s1, s5, 0x88);
+    v[2].v = _mm512_shuffle_f64x2(s2, s6, 0x88);
+    v[3].v = _mm512_shuffle_f64x2(s3, s7, 0x88);
+    v[4].v = _mm512_shuffle_f64x2(s0, s4, 0xDD);
+    v[5].v = _mm512_shuffle_f64x2(s1, s5, 0xDD);
+    v[6].v = _mm512_shuffle_f64x2(s2, s6, 0xDD);
+    v[7].v = _mm512_shuffle_f64x2(s3, s7, 0xDD);
+  }
+  template <> inline void transpose_intrin<VecData<float,16>>(VecData<float,16> (&v)[16]) {
+    const __m512 r0 = v[ 0].v, r1 = v[ 1].v, r2  = v[ 2].v, r3  = v[ 3].v;
+    const __m512 r4 = v[ 4].v, r5 = v[ 5].v, r6  = v[ 6].v, r7  = v[ 7].v;
+    const __m512 r8 = v[ 8].v, r9 = v[ 9].v, r10 = v[10].v, r11 = v[11].v;
+    const __m512 r12= v[12].v, r13= v[13].v, r14 = v[14].v, r15 = v[15].v;
+
+    // interleave 32-bit elements within 128-bit lanes
+    const __m512 t0  = _mm512_unpacklo_ps(r0 , r1 ), t1  = _mm512_unpackhi_ps(r0 , r1 );
+    const __m512 t2  = _mm512_unpacklo_ps(r2 , r3 ), t3  = _mm512_unpackhi_ps(r2 , r3 );
+    const __m512 t4  = _mm512_unpacklo_ps(r4 , r5 ), t5  = _mm512_unpackhi_ps(r4 , r5 );
+    const __m512 t6  = _mm512_unpacklo_ps(r6 , r7 ), t7  = _mm512_unpackhi_ps(r6 , r7 );
+    const __m512 t8  = _mm512_unpacklo_ps(r8 , r9 ), t9  = _mm512_unpackhi_ps(r8 , r9 );
+    const __m512 t10 = _mm512_unpacklo_ps(r10, r11), t11 = _mm512_unpackhi_ps(r10, r11);
+    const __m512 t12 = _mm512_unpacklo_ps(r12, r13), t13 = _mm512_unpackhi_ps(r12, r13);
+    const __m512 t14 = _mm512_unpacklo_ps(r14, r15), t15 = _mm512_unpackhi_ps(r14, r15);
+
+    // gather 2-wide groups into 4-wide, still within 128-bit lanes
+    const __m512 s0  = _mm512_shuffle_ps(t0 , t2 , 0x44), s1  = _mm512_shuffle_ps(t0 , t2 , 0xEE);
+    const __m512 s2  = _mm512_shuffle_ps(t1 , t3 , 0x44), s3  = _mm512_shuffle_ps(t1 , t3 , 0xEE);
+    const __m512 s4  = _mm512_shuffle_ps(t4 , t6 , 0x44), s5  = _mm512_shuffle_ps(t4 , t6 , 0xEE);
+    const __m512 s6  = _mm512_shuffle_ps(t5 , t7 , 0x44), s7  = _mm512_shuffle_ps(t5 , t7 , 0xEE);
+    const __m512 s8  = _mm512_shuffle_ps(t8 , t10, 0x44), s9  = _mm512_shuffle_ps(t8 , t10, 0xEE);
+    const __m512 s10 = _mm512_shuffle_ps(t9 , t11, 0x44), s11 = _mm512_shuffle_ps(t9 , t11, 0xEE);
+    const __m512 s12 = _mm512_shuffle_ps(t12, t14, 0x44), s13 = _mm512_shuffle_ps(t12, t14, 0xEE);
+    const __m512 s14 = _mm512_shuffle_ps(t13, t15, 0x44), s15 = _mm512_shuffle_ps(t13, t15, 0xEE);
+
+    // move 128-bit lanes across the 512-bit vectors
+    const __m512 u0  = _mm512_shuffle_f32x4(s0 , s4 , 0x88);
+    const __m512 u1  = _mm512_shuffle_f32x4(s1 , s5 , 0x88);
+    const __m512 u2  = _mm512_shuffle_f32x4(s2 , s6 , 0x88);
+    const __m512 u3  = _mm512_shuffle_f32x4(s3 , s7 , 0x88);
+    const __m512 u4  = _mm512_shuffle_f32x4(s0 , s4 , 0xDD);
+    const __m512 u5  = _mm512_shuffle_f32x4(s1 , s5 , 0xDD);
+    const __m512 u6  = _mm512_shuffle_f32x4(s2 , s6 , 0xDD);
+    const __m512 u7  = _mm512_shuffle_f32x4(s3 , s7 , 0xDD);
+    const __m512 u8  = _mm512_shuffle_f32x4(s8 , s12, 0x88);
+    const __m512 u9  = _mm512_shuffle_f32x4(s9 , s13, 0x88);
+    const __m512 u10 = _mm512_shuffle_f32x4(s10, s14, 0x88);
+    const __m512 u11 = _mm512_shuffle_f32x4(s11, s15, 0x88);
+    const __m512 u12 = _mm512_shuffle_f32x4(s8 , s12, 0xDD);
+    const __m512 u13 = _mm512_shuffle_f32x4(s9 , s13, 0xDD);
+    const __m512 u14 = _mm512_shuffle_f32x4(s10, s14, 0xDD);
+    const __m512 u15 = _mm512_shuffle_f32x4(s11, s15, 0xDD);
+
+    v[ 0].v = _mm512_shuffle_f32x4(u0 , u8 , 0x88);
+    v[ 1].v = _mm512_shuffle_f32x4(u1 , u9 , 0x88);
+    v[ 2].v = _mm512_shuffle_f32x4(u2 , u10, 0x88);
+    v[ 3].v = _mm512_shuffle_f32x4(u3 , u11, 0x88);
+    v[ 4].v = _mm512_shuffle_f32x4(u4 , u12, 0x88);
+    v[ 5].v = _mm512_shuffle_f32x4(u5 , u13, 0x88);
+    v[ 6].v = _mm512_shuffle_f32x4(u6 , u14, 0x88);
+    v[ 7].v = _mm512_shuffle_f32x4(u7 , u15, 0x88);
+    v[ 8].v = _mm512_shuffle_f32x4(u0 , u8 , 0xDD);
+    v[ 9].v = _mm512_shuffle_f32x4(u1 , u9 , 0xDD);
+    v[10].v = _mm512_shuffle_f32x4(u2 , u10, 0xDD);
+    v[11].v = _mm512_shuffle_f32x4(u3 , u11, 0xDD);
+    v[12].v = _mm512_shuffle_f32x4(u4 , u12, 0xDD);
+    v[13].v = _mm512_shuffle_f32x4(u5 , u13, 0xDD);
+    v[14].v = _mm512_shuffle_f32x4(u6 , u14, 0xDD);
+    v[15].v = _mm512_shuffle_f32x4(u7 , u15, 0xDD);
   }
 
   // Conversion operators
