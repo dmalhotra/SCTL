@@ -8,7 +8,7 @@
 // Endpoint-correction nodes and weights for a uniform trapezoidal rule: the log
 // tables correct an endpoint with a log singularity, the smooth tables correct a
 // regular (non-singular) endpoint to high order. The rule assembly that consumes
-// this data lives in QuadElemList::LogSingularQuad1D.
+// this data lives in QuadElemList::LogSingularQuad1DCentered.
 
 struct ExtraPtResult {
     std::vector<double> ExtraNodes;

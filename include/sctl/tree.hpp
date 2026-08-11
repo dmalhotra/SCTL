@@ -171,13 +171,9 @@ template <Integer DIM> class Tree {
 
     static void scan(Vector<Long>& dsp, const Vector<Long>& cnt);
 
-    template <typename A, typename B> struct SortPair {
-      int operator<(const SortPair<A, B> &p1) const { return key < p1.key; }
-      A key;
-      B data;
-    };
-
   private:
+
+    template <class T> class NodeArena; // defined in tree.txx
 
     Vector<Morton<DIM>> mins;
     Vector<Morton<DIM>> node_mid;

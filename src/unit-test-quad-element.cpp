@@ -1,6 +1,5 @@
 #include <sctl.hpp>
 #include "sctl/experimental/quad_element.cpp" // template definitions
-#include "sctl/experimental/gmsh_reader.cpp"  // gmsh -> QuadElemList importer
 
 using namespace sctl;
 
@@ -343,7 +342,7 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
     }
 
     // Reference potential: uniform upsampled direct quadrature (nsub=100), accurate at the moderate
-    // near distance d=0.01 used here. (Deep near needs a RectPolar gold instead -- see qbx_gold_check.)
+    // near distance d=0.01 used here. (Deep near needs a RectPolar gold instead.)
     const Vector<Real> u_ref = direct_upsampled_potential<Real, Kernel>(qel, elem_idx, sigma, Xt, ker, 100);
 
     // Relative error in the target potential.
@@ -357,39 +356,6 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
 
     std::cout << "  test_NearInterac (" << label << "): rel_err = " << rel_err << "\n";
     SCTL_ASSERT(rel_err < rel_tol);
-}
-
-// Cross-check the near potential at a flat-panel target d above (0.4,0.6) from several
-// independent high-accuracy methods to establish a gold reference and measure hedgehog against it.
-template <class Real, class Kernel> Real qbx_gold_check(const Kernel& ker, const Real d, const Integer p = 16, const Real R = 0.02, const Integer eta = 2, const Integer up = 72) {
-    using QS = typename QuadElemList<Real>::QuadScheme;
-    const Integer COORD_DIM = 3, order = 24;
-    const Integer KDIM0 = Kernel::SrcDim(), KDIM1 = Kernel::TrgDim();
-    const Long nnode = (Long)order*order, elem_idx = 0;
-    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
-    QuadElemList<Real> q0(order, coord0);
-    Vector<Real> upv{(Real)0.4}, vpv{(Real)0.6}, Xs, Ns;
-    q0.GetGeom(&Xs, &Ns, nullptr, nullptr, nullptr, upv, vpv, elem_idx);
-    Vector<Real> Xt(COORD_DIM); for (Integer k=0;k<COORD_DIM;k++) Xt[k]=Xs[k]+d*Ns[k];
-    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-    Vector<Real> sigma(nnode*KDIM0);
-    for (Integer i=0;i<order;i++) for (Integer j=0;j<order;j++) for (Integer k0=0;k0<KDIM0;k0++)
-        sigma[(i*order+j)*KDIM0+k0]=cos<Real>(nds[i]+2*nds[j]+(Real)0.5*k0);
-    Vector<Real> nt;
-    auto op_u = [&](QuadElemList<Real>& q)->Vector<Real>{
-        Matrix<Real> M; QuadElemList<Real>::template NearInterac<Kernel>(M,Xt,nt,ker,(Real)1e-13,elem_idx,&q);
-        Vector<Real> u(KDIM1); u.SetZero();
-        for (Long rr=0;rr<nnode*KDIM0;rr++) for (Integer k1=0;k1<KDIM1;k1++) u[k1]+=sigma[rr]*M[rr][k1];
-        return u; };
-    QuadElemList<Real> qrp(order,coord0); qrp.SetQuadScheme(QS::RectPolar,10,512,30);
-    QuadElemList<Real> qhh(order,coord0); qhh.SetQuadScheme(QS::LineQBX); qhh.SetLineQBXParams(R,R,p,up,eta);
-    QuadElemList<Real> qrp2(order,coord0); qrp2.SetQuadScheme(QS::RectPolar,10,400,30); // 2nd RP for gold self-consistency
-    Vector<Real> u_rp=op_u(qrp), u_rp2=op_u(qrp2), u_hh=op_u(qhh);
-    auto rd=[&](const Vector<Real>&a,const Vector<Real>&b){Real e=0,n=0;for(Integer k=0;k<KDIM1;k++){e+=(a[k]-b[k])*(a[k]-b[k]);n+=b[k]*b[k];}return sqrt<Real>(e)/sqrt<Real>(n);};
-    const Real hh_err = rd(u_hh,u_rp);
-    std::cout<<"  gold d="<<d<<" p="<<p<<" R="<<R<<" eta="<<eta<<" up="<<up
-             <<": |RP256-RP512|="<<rd(u_rp2,u_rp)<<" |hh-RP512|="<<hh_err<<"\n";
-    return hh_err;
 }
 
 // Singular self-interaction vs. closed-form references on the flat unit square
@@ -671,75 +637,45 @@ template <class Real> void test_QuadNodeInterp() {
     SCTL_ASSERT(rel_err < rel_tol);
 }
 
-// gmsh import pipeline: read a quad-meshed sphere, resample onto a target_order
-// GL grid, and check (1) nodes lie approximately on the sphere, (2) they are
-// ordered as a tensor GL grid (u-slow), (3) node count matches the order.
-template <class Real> void test_GmshReader(const char* fname = "./sphere", const Integer order = 6, const Real Radius = 1) {
-    { std::ifstream is(fname); if (!is.good()) { std::cout << "test_GmshReader: SKIPPED (mesh file '" << fname << "' not found)\n"; return; } }
+// Visualize the Hybrid scheme (adaptive near + rectangular-polar self) on a single
+// flat order-12 panel: dump the near quadtree leaf GL grid and the RP self grid to VTK
+// for inspection in ParaView. Reuses QuadElemList's WriteNearInteracVTK (adaptive) and
+// WriteSelfInteracRPVTK (RectPolar) writers.
+template <class Real> void hybrid_scheme_vis() {
+    using QS = typename QuadElemList<Real>::QuadScheme;
+    const Integer order = 12;
+    const Long evis = 0;
 
-    // Raw quad patches (tensor (i,j) order, u-slow) + the resampled GL coords.
-    Integer nside = 0;
-    Vector<Real> src;
-    const Long nquad = GmshReader<Real>::ReadQuadPatches(fname, nside, src);
-    const Vector<Real> coord = GmshReader<Real>::ReadQuadCoord(fname, order);
+    // Flat panel z = 0, order 12, single element.
+    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    QuadElemList<Real> qel(order, coord0);
+    // Hybrid = adaptive near + RectPolar self; max_depth=12 caps the adaptive near
+    // quadtree; q/cov_order feed the RP self grid rendering.
+    qel.SetQuadScheme(QS::Hybrid, /*q=*/6, /*cov_order=*/200, /*max_depth=*/12);
 
-    QuadElemList<Real> qel(order, coord);
-    SCTL_ASSERT(qel.Order() == order);
-    SCTL_ASSERT(qel.Size() == nquad);
+    // --- Near (adaptive): target at (u*,v*)=(0.314,0.157), 0.02 off surface along normal.
+    Vector<Real> up{(Real)0.314}, vp{(Real)0.157}, Xc, Xn;
+    qel.GetGeom(&Xc, &Xn, nullptr, nullptr, nullptr, up, vp, evis);
+    Vector<Real> Xtrg(3);
+    for (Integer k = 0; k < 3; k++) Xtrg[k] = Xc[k] + (Real)0.02 * Xn[k];
+    qel.WriteNearInteracVTK("hybrid-near-elem0", evis, Xtrg, /*tol=*/1e-9, Comm::Self());
 
-    // (3) tensor GL grid of the correct order: order*order nodes per element.
-    const Long N = order, nn_trg = N * N;
-    SCTL_ASSERT(coord.Dim() == nquad * nn_trg * 3);
+    // --- Self (RectPolar): singular point at the 8th x-node and 10th y-node (1-based).
+    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+    const Real u0 = nds[7], v0 = nds[9];
+    qel.WriteSelfInteracRPVTK("hybrid-self-elem0", evis, u0, v0, /*Nbeta=*/200, Comm::Self());
 
-    // (1) every node lies approximately on the sphere of radius `Radius`.
-    // Linear (Q1) patches are flat chords, so GL nodes sit inside the sphere by O(h^2).
-    Real max_rad_err = 0;
-    for (Long i = 0; i < coord.Dim() / 3; i++) {
-        const Real r = sqrt<Real>(coord[i*3+0]*coord[i*3+0] + coord[i*3+1]*coord[i*3+1] + coord[i*3+2]*coord[i*3+2]);
-        max_rad_err = std::max<Real>(max_rad_err, fabs(r - Radius));
-    }
-    const Real sphere_tol = (nside == 2 ? (Real)3e-2 : (Real)1e-6); // resolution-dependent for flat Q1
-    std::cout << "  test_GmshReader: nquad=" << nquad << " gmsh_nside=" << nside << " order=" << order
-              << " max|r-R|=" << max_rad_err << "\n";
-    SCTL_ASSERT(max_rad_err < sphere_tol);
+    // --- Original order-12 tensor GL grid of the panel itself (quad mesh).
+    qel.WriteVTK("hybrid-panel-grid", Vector<Real>(), Comm::Self());
 
-    // (2) ordered correctly: independently re-evaluate each patch's gmsh shape
-    // functions at the GL grid using explicit per-point Lagrange basis values
-    // (a different contraction than the importer's GEMM), and require node-by-node
-    // agreement with the importer output -- any (u,v)/transpose ordering bug fails.
-    Vector<Real> eq(nside);
-    for (Integer k = 0; k < nside; k++) eq[k] = (nside == 1) ? (Real)0.5 : (Real)k / (Real)(nside - 1);
-    const Vector<Real>& gl = QuadElemList<Real>::ParamNodes(order);
-    // Lagrange basis weights at each GL node: Lu(a,i) row-major nside x N from Interpolate(eq, gl).
-    Vector<Real> Lw(nside * N); LagrangeInterp<Real>::Interpolate(Lw, eq, gl); // Lw[i*N + a]
-    const Long nn_src = (Long)nside * nside;
-    Real max_ord_err = 0;
-    for (Long e = 0; e < nquad; e++) {
-        for (Long a = 0; a < N; a++) {        // u-target index (slow)
-            for (Long b = 0; b < N; b++) {    // v-target index (fast)
-                Real X[3] = {0,0,0};
-                for (Integer i = 0; i < nside; i++) {
-                    for (Integer j = 0; j < nside; j++) {
-                        const Real w = Lw[i*N + a] * Lw[j*N + b];
-                        const Long s = (e * nn_src + (Long)i*nside + j) * 3;
-                        X[0] += w * src[s+0]; X[1] += w * src[s+1]; X[2] += w * src[s+2];
-                    }
-                }
-                const Long p = (e * nn_trg + a*N + b) * 3; // u-slow flat node index
-                for (Integer k = 0; k < 3; k++) max_ord_err = std::max<Real>(max_ord_err, fabs(coord[p+k] - X[k]));
-            }
-        }
-    }
-    std::cout << "  test_GmshReader: ordering cross-check max_abs_err=" << max_ord_err << "\n";
-    SCTL_ASSERT(max_ord_err < (Real)1e-11);
+    std::cout << "  hybrid_scheme_vis: wrote hybrid-near-elem0-*, hybrid-self-elem0-*, hybrid-panel-grid-* VTK files\n";
 }
 
 int main(int argc, char** argv) {
 
     using Real = double;
 
-    test_GmshReader<Real>();
-    std::cout << "test_GmshReader: PASSED\n";
+    #if 0
     test_ParamGrid<Real>();
     std::cout << "test_ParamGrid: PASSED\n";
     test_GetClosestNode_plane<Real>();
@@ -830,19 +766,10 @@ int main(int argc, char** argv) {
     test_SelfInterac<Real>(ker_FxU, QS::Hybrid, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
     std::cout << "test_SelfInterac Sto_FxU (Hybrid, RP self, Nbeta=200): PASSED\n";
 
-    // Scheme 4: Line-QBX / hedgehog near (Lu 2019 sec.3.1); near-only, self falls back to Adaptive.
-    // Verify the default high-accuracy params reach deep-near ~1e-10 for a panel-INTERIOR foot (the
-    // regime QBX is accurate in; near seams it floors ~5e-3, so it is not tested there). Reference is
-    // a RectPolar gold (RP256==RP512 to ~1e-15); direct-upsampled and Adaptive refs are themselves
-    // inaccurate at deep near and must NOT be used here. d=1e-4, flat plane.
-    std::cout << "--- Scheme 4: Line-QBX (hedgehog) deep-near vs RP-gold (defaults R=0.02L,p=16,eta=2,up=72) ---\n";
-    {
-        const Real e_fxu = qbx_gold_check<Real>(ker_FxU, 1e-4);
-        const Real e_dxu = qbx_gold_check<Real>(ker_DxU, 1e-4);
-        SCTL_ASSERT(e_fxu < 1e-8);
-        SCTL_ASSERT(e_dxu < 1e-7);
-        std::cout << "test_NearInterac (LineQBX/hedgehog, deep-near @ d=1e-4): PASSED\n";
-    }
+    #endif
+
+    std::cout << "--- Hybrid scheme visualization (flat order-12 panel) ---\n";
+    hybrid_scheme_vis<Real>();
 
     return 0;
 }

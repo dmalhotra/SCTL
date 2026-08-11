@@ -1,15 +1,21 @@
 /**
- * This demo code shows how to use the class sctl::QuadElemList to build a
- * cubed-sphere geometry and write it to VTK for visualization.
+ * QuadElemList test suite, ordered from the simplest building blocks to full-geometry
+ * boundary-integral identities so a failure points at the lowest broken layer:
  *
- * To compile and run the code, start in the SCTL root directory and run:
+ *   1. Unit tests (single element / kernel building blocks): parametric grid, closest-point
+ *      projection, and the singular/near quadrature schemes (adaptive log-singular,
+ *      rectangular-polar, hybrid) against closed-form or upsampled references.
+ *   2. Sphere tests (whole closed surface, progressively harder): surface area from the far-field
+ *      weights, the double-layer constant-density identity, and the Green's representation identity,
+ *      run for every quadrature scheme on a regular cubed sphere.
+ *
  * make bin/test-quad-elem && export OMP_NUM_THREADS=4 && ./bin/test-quad-elem
  */
 
 #include <sctl.hpp>
 #include <sctl/experimental/quad_element.hpp>
 #include <sctl/experimental/quad_element.cpp>
-#include <sctl/experimental/gmsh_reader.cpp>
+#include <iostream>
 #include <iomanip>
 #include <vector>
 #include <string>
@@ -18,12 +24,671 @@
 
 using namespace sctl;
 
+// ============================================================================================
+// 1. UNIT TESTS  (single-element / building-block level; pasted from unit-test-quad-element.cpp)
+// ============================================================================================
+template <class Real> Vector<Real> get_testsurf(const Integer order, const Integer nelem_perside) {
+    // First define surface
+    const auto fsurf = [](const Real x, const Real y) {
+        return x*y;
+    };
+
+    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, nelem_perside); // Get x-y grid on [0,1]x[0,1]
+    // Get z value on x-y grid for surface.
+    for (int i=0; i<coord0.Dim()/3; i++) {
+        coord0[i*3 + 2] = fsurf(coord0[i*3+0], coord0[i*3+1]);
+    }
+    return coord0;
+}
+
+template <class Real> void test_ParamGrid() {
+    // Tensor grid generation directly on ParamGrid.
+    const Long order = 4;
+    const Long nelem_perside = 2;
+    const Long N_per_side = order * nelem_perside; // 8 nodes per side
+    const Long N_total = N_per_side * N_per_side;  // 64 tensor-grid points
+
+    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, nelem_perside);
+    SCTL_ASSERT(coord0.Dim() == N_total * 3);
+
+    // Expected order-4 GL nodes mapped to [0,1], split into 2 panels.
+    const Real x_param_exp[8] = {
+        0.034715922101486804, // panel 0
+        0.165004739103786020,
+        0.334995260896213980,
+        0.465284077898513196,
+        0.534715922101486804, // panel 1
+        0.665004739103786020,
+        0.834995260896213980,
+        0.965284077898513196
+    };
+
+    // Tensor product x_param_exp (x) x_param_exp, AoS (u slow, v fast), z = 0.
+    const Real tol = 1e-12;
+    for (Long xind = 0; xind < N_per_side; xind++) {
+        for (Long yind = 0; yind < N_per_side; yind++) {
+            const Long idx = (xind * N_per_side + yind) * 3;
+            SCTL_ASSERT(fabs(coord0[idx + 0] - x_param_exp[xind]) < tol);
+            SCTL_ASSERT(fabs(coord0[idx + 1] - x_param_exp[yind]) < tol);
+            SCTL_ASSERT(fabs(coord0[idx + 2] - (Real)0) < tol);
+        }
+    }
+}
+
+template <class Real> void test_GetClosestNode_plane() {
+    // Flat patch z = 0; lifted target must snap back to the surface node.
+    const Long COORD_DIM = 3;
+    const Long order = 8;
+    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    QuadElemList<Real> qel(order, coord0);
+
+    Vector<Real> X, Xn;
+    qel.GetNodeCoord(&X, &Xn, nullptr);
+    const int trg_idx = 13; // arbitrary point on surface
+    const Vector<Real> Xtrg(COORD_DIM, (Iterator<Real>) X.begin() + trg_idx * COORD_DIM, false);
+    const Vector<Real> Xntrg(COORD_DIM, (Iterator<Real>) Xn.begin() + trg_idx * COORD_DIM, false);
+    const Real utrg = coord0[trg_idx*COORD_DIM + 0];
+    const Real vtrg = coord0[trg_idx*COORD_DIM + 1];
+
+    Vector<Real> Xtrg_shifted = Xtrg;
+    Xtrg_shifted[2] = 0.1;
+
+    Real ustar, vstar;
+    Vector<Real> Xstar, Nstar;
+    const Real dist = qel.GetClosestNode(ustar, vstar, 0, Xtrg_shifted);
+
+    const Real tol = 1e-9;
+    SCTL_ASSERT(fabs(ustar - utrg) < tol);
+    SCTL_ASSERT(fabs(vstar - vtrg) < tol);
+    SCTL_ASSERT(fabs(dist  - 0.1) < tol);
+
+    // Now shift the target away from x and y as well.
+    Xtrg_shifted[0] -= 0.0013;
+    Xtrg_shifted[1] += 0.0005;
+    const Real exp_dist = sqrt<Real>(0.1*0.1 + 0.0013*0.0013 + 0.0005*0.0005);
+
+    const Real dist2 = qel.GetClosestNode(ustar, vstar, 0, Xtrg_shifted);
+
+    SCTL_ASSERT(fabs(ustar - utrg) < tol);
+    SCTL_ASSERT(fabs(vstar - vtrg) < tol);
+    SCTL_ASSERT(fabs(dist2  - exp_dist) < tol);
+}
+
+template <class Real> void test_GetClosestNode_curved() {
+    // Curved patch z = u*v; target lifted along the normal must snap to its node.
+    const Integer COORD_DIM = 3;
+    const Long order = 8;
+    Vector<Real> coord0 = get_testsurf<Real>(order, 1);
+    QuadElemList<Real> qel(order, coord0);
+
+    Vector<Real> X, Xn;
+    qel.GetNodeCoord(&X, &Xn, nullptr);
+    const int trg_idx = 13; // arbitrary point on surface
+    const Vector<Real> Xtrg(COORD_DIM, (Iterator<Real>) X.begin() + trg_idx * COORD_DIM, false);
+    const Vector<Real> Xntrg(COORD_DIM, (Iterator<Real>) Xn.begin() + trg_idx * COORD_DIM, false);
+    const Real utrg = coord0[trg_idx*COORD_DIM + 0];
+    const Real vtrg = coord0[trg_idx*COORD_DIM + 1];
+    const Real d = 0.001;
+    Vector<Real> Xtrg_shifted = Xtrg + d * Xntrg;
+
+    Real ustar, vstar;
+    Vector<Real> Xstar, Nstar;
+    const Real dist = qel.GetClosestNode(ustar, vstar, 0, Xtrg_shifted);
+
+    const Real tol = 1e-8;
+    SCTL_ASSERT(fabs(ustar - utrg) < tol);
+    SCTL_ASSERT(fabs(vstar - vtrg) < tol);
+    SCTL_ASSERT(fabs(dist  - d ) < tol);
+
+    // Now shift the target away from x and y as well.
+    Xtrg_shifted[0] -= 0.0013;
+    Xtrg_shifted[1] += 0.0005;
+    const Real exp_dist = sqrt<Real>((d*Xntrg[0]-0.0013)*(d*Xntrg[0]-0.0013) + (d*Xntrg[1]+0.0005)*(d*Xntrg[1]+0.0005) + (d*Xntrg[2])*(d*Xntrg[2]));
+
+    const Real dist2 = qel.GetClosestNode(ustar, vstar, 0, Xtrg_shifted);
+
+    SCTL_ASSERT(fabs(ustar - utrg) < tol);
+    SCTL_ASSERT(fabs(vstar - vtrg) < tol);
+    SCTL_ASSERT(fabs(dist2  - exp_dist) < tol);
+}
+
+template <class Real> void test_GetClosestPoint_plane() {
+    // Flat patch z = 0: GetClosestPoint must recover the exact projection at an off-node (u,v).
+    const Integer COORD_DIM = 3;
+    const Long order = 8;
+    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    QuadElemList<Real> qel(order, coord0);
+
+    // Off-node surface point and its normal (= +z for the plane).
+    const Real u0 = 0.37, v0 = 0.62;
+    Vector<Real> up{u0}, vp{v0}, Xsurf, Nsurf;
+    qel.GetGeom(&Xsurf, &Nsurf, nullptr, nullptr, nullptr, up, vp, 0);
+
+    // Target lifted a distance d along the normal.
+    const Real d = 0.1;
+    Vector<Real> Xtrg(COORD_DIM);
+    for (Integer k = 0; k < COORD_DIM; k++) Xtrg[k] = Xsurf[k] + d * Nsurf[k];
+
+    Real ustar, vstar;
+    Vector<Real> Xstar, Nstar;
+    const Real dist = qel.GetClosestPoint(ustar, vstar, 0, Xtrg);
+
+    const Real tol = 1e-9;
+    SCTL_ASSERT(fabs(ustar - u0) < tol);
+    SCTL_ASSERT(fabs(vstar - v0) < tol);
+    SCTL_ASSERT(fabs(dist  - d) < tol);
+
+    // Tangential shift: projection follows it, dist stays = d.
+    Xtrg[0] -= 0.0013;
+    Xtrg[1] += 0.0005;
+    const Real dist2 = qel.GetClosestPoint(ustar, vstar, 0, Xtrg);
+    SCTL_ASSERT(fabs(ustar - (u0 - (Real)0.0013)) < tol);
+    SCTL_ASSERT(fabs(vstar - (v0 + (Real)0.0005)) < tol);
+    SCTL_ASSERT(fabs(dist2 - d) < tol);
+}
+
+template <class Real> void test_GetClosestPoint_curved() {
+    // Curved patch z = u*v: GetClosestPoint must find the foot of the perpendicular at an off-node (u,v).
+    const Integer COORD_DIM = 3;
+    const Long order = 8;
+    Vector<Real> coord0 = get_testsurf<Real>(order, 1);
+    QuadElemList<Real> qel(order, coord0);
+
+    // Off-node surface point + normal; small offset so (u0,v0) is the unique foot.
+    const Real u0 = 0.37, v0 = 0.62;
+    Vector<Real> up{u0}, vp{v0}, Xsurf, Nsurf;
+    qel.GetGeom(&Xsurf, &Nsurf, nullptr, nullptr, nullptr, up, vp, 0);
+    const Real d = 0.01;
+    Vector<Real> Xtrg(COORD_DIM);
+    for (Integer k = 0; k < COORD_DIM; k++) Xtrg[k] = Xsurf[k] + d * Nsurf[k];
+
+    Real ustar, vstar;
+    Vector<Real> Xstar, Nstar;
+    const Real dist = qel.GetClosestPoint(ustar, vstar, 0, Xtrg);
+
+    const Real tol = 1e-7;
+    SCTL_ASSERT(fabs(ustar - u0) < tol);
+    SCTL_ASSERT(fabs(vstar - v0) < tol);
+    SCTL_ASSERT(fabs(dist  - d) < tol);
+
+    // Generic target: residual (closest point - target) must be orthogonal to both tangents.
+    Vector<Real> Xt2(COORD_DIM);
+    Xt2[0] = Xsurf[0] + (Real)0.05;
+    Xt2[1] = Xsurf[1] - (Real)0.03;
+    Xt2[2] = Xsurf[2] + (Real)0.08;
+    qel.GetClosestPoint(ustar, vstar, 0, Xt2);
+    SCTL_ASSERT(ustar > tol && ustar < 1 - tol && vstar > tol && vstar < 1 - tol); // interior min
+
+    Vector<Real> u1{ustar}, v1{vstar}, Xc, dXu, dXv;
+    qel.GetGeom(&Xc, nullptr, nullptr, &dXu, &dXv, u1, v1, 0);
+    Real ru = 0, rv = 0, tu = 0, tv = 0, rr = 0;
+    for (Integer k = 0; k < COORD_DIM; k++) {
+        const Real r = Xc[k] - Xt2[k];
+        ru += r * dXu[k]; rv += r * dXv[k];
+        tu += dXu[k]*dXu[k]; tv += dXv[k]*dXv[k]; rr += r*r;
+    }
+    const Real rn = sqrt<Real>(rr);
+    // std::cout << "tu = " << sqrt<Real>(tu) << ", tv = " << sqrt<Real>(tv) << ", rn = " << rn << ", lhs = " << fabs(ru) <<", rhs = " << (Real)1e-8 * sqrt<Real>(tu) * rn << std::endl;
+    SCTL_ASSERT(fabs(ru) < tol * sqrt<Real>(tu) * rn);
+    SCTL_ASSERT(fabs(rv) < tol * sqrt<Real>(tv) * rn);
+}
+
+
+// Reference near-singular evaluation: integrate the BIO on element `elem_idx`
+// against target `Xt` via uniform nsub x nsub refinement with order-`order` GL on
+// each panel, using the same Lagrange-interpolant density as NearInterac. As nsub
+// grows this converges to the exact integral NearInterac computes to tolerance.
+// Returns the target potential (Kernel::TrgDim() reals).
+template <class Real, class Kernel> Vector<Real> direct_upsampled_potential(
+    const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& sigma,
+    const Vector<Real>& Xt, const Kernel& ker, const Long nsub) {
+
+    const Integer order = qel.Order();
+    const Integer KDIM0 = Kernel::SrcDim();
+    const Integer KDIM1 = Kernel::TrgDim();
+    const Long nq = (Long)order * order;
+    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+    const Vector<Real>& wts = LegQuadRule<Real>::wts(order);
+
+    Vector<Real> u(KDIM1);
+    u.SetZero();
+
+    Vector<Real> u_param(order), v_param(order);
+    for (Long pi = 0; pi < nsub; pi++) {
+        for (Long pj = 0; pj < nsub; pj++) {
+            for (Integer a = 0; a < order; a++) u_param[a] = (nds[a] + pi) / (Real)nsub;
+            for (Integer b = 0; b < order; b++) v_param[b] = (nds[b] + pj) / (Real)nsub;
+
+            // Geometry on this panel's order x order GL grid.
+            Vector<Real> X, Xn, Xa;
+            qel.GetGeom(&X, &Xn, &Xa, nullptr, nullptr, u_param, v_param, elem_idx);
+
+            // Lagrange weights from patch nodes to panel quad nodes.
+            Vector<Real> Lu(order * order), Lv(order * order);
+            LagrangeInterp<Real>::Interpolate(Lu, nds, u_param);
+            LagrangeInterp<Real>::Interpolate(Lv, nds, v_param);
+
+            // Interpolate the nodal density onto the panel quad nodes.
+            Vector<Real> sigma_q(nq * KDIM0);
+            sigma_q.SetZero();
+            for (Integer a = 0; a < order; a++) {
+                for (Integer b = 0; b < order; b++) {
+                    const Long q = a * order + b;
+                    for (Integer i = 0; i < order; i++) {
+                        for (Integer j = 0; j < order; j++) {
+                            const Real L = Lu[i * order + a] * Lv[j * order + b];
+                            for (Integer k0 = 0; k0 < KDIM0; k0++) {
+                                sigma_q[q * KDIM0 + k0] += sigma[(i * order + j) * KDIM0 + k0] * L;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Kernel matrix from this panel's sources to the target (scaled, matches NearInterac).
+            Matrix<Real> Mker; // (nq*KDIM0 x KDIM1)
+            ker.template KernelMatrix<Real, false>(Mker, Xt, X, Xn);
+
+            for (Integer a = 0; a < order; a++) {
+                for (Integer b = 0; b < order; b++) {
+                    const Long q = a * order + b;
+                    // Surface quad weight with the 1/nsub^2 panel Jacobian.
+                    const Real wq = Xa[q] * wts[a] * wts[b] / ((Real)nsub * (Real)nsub);
+                    for (Integer k0 = 0; k0 < KDIM0; k0++) {
+                        for (Integer k1 = 0; k1 < KDIM1; k1++) {
+                            u[k1] += Mker[q * KDIM0 + k0][k1] * sigma_q[q * KDIM0 + k0] * wq;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return u;
+}
+
+// Forward declaration of the friend shim (defined below) that exposes QuadElemList's private
+// static quadrature helpers (log-singular 1D rule, rectangular-polar 1D COV) to the tests; the
+// shim's full definition appears later in namespace sctl.
+namespace sctl { template <class Real> struct QuadElemTestAccess; }
+
+template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, const bool curved, const char* label, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer cov_order = 0, const Integer max_depth = 30) {
+    const Integer COORD_DIM = 3;
+    const Integer order = 24;
+    const Integer KDIM0 = Kernel::SrcDim();
+    const Integer KDIM1 = Kernel::TrgDim();
+    const Long nnode = (Long)order * order;
+    const Long elem_idx = 0;
+
+    // Single element: flat plane z = 0 or curved testsurf z = u*v.
+    Vector<Real> coord0 = curved ? get_testsurf<Real>(order, 1)
+                                 : QuadElemList<Real>::ParamGrid(order, 1);
+    QuadElemList<Real> qel(order, coord0);
+    const Integer q = 10;
+    qel.SetQuadScheme(scheme, q, cov_order, max_depth);
+
+    // Near-singular target: offset d along the normal at an interior point.
+    const Real u0 = 0.4, v0 = 0.6, d = 0.01;
+    Vector<Real> up{u0}, vp{v0}, Xsurf, Nsurf;
+    qel.GetGeom(&Xsurf, &Nsurf, nullptr, nullptr, nullptr, up, vp, elem_idx);
+    Vector<Real> Xt(COORD_DIM);
+    for (Integer k = 0; k < COORD_DIM; k++) Xt[k] = Xsurf[k] + d * Nsurf[k];
+
+    // Smooth nodal density (AoS); both schemes integrate the same interpolant.
+    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+    Vector<Real> sigma(nnode * KDIM0);
+    for (Integer i = 0; i < order; i++) {
+        for (Integer j = 0; j < order; j++) {
+            for (Integer k0 = 0; k0 < KDIM0; k0++) {
+                sigma[(i * order + j) * KDIM0 + k0] = cos<Real>(nds[i] + 2 * nds[j] + (Real)0.5 * k0);
+            }
+        }
+    }
+
+    // Near-interaction matrix and potential M^T * sigma.
+    Matrix<Real> M;
+    Vector<Real> normal_trg; // empty: no target-normal contraction
+    const Real tol = 1e-08;
+    QuadElemList<Real>::template NearInterac<Kernel>(M, Xt, normal_trg, ker, tol, elem_idx, &qel);
+    SCTL_ASSERT(M.Dim(0) == nnode * KDIM0 && M.Dim(1) == KDIM1); // single target
+
+    Vector<Real> u_near(KDIM1);
+    u_near.SetZero();
+    for (Long r = 0; r < nnode * KDIM0; r++) {
+        for (Integer k1 = 0; k1 < KDIM1; k1++) u_near[k1] += sigma[r] * M[r][k1];
+    }
+
+    // Reference potential: uniform upsampled direct quadrature (nsub=100), accurate at the moderate
+    // near distance d=0.01 used here. (Deep near needs a RectPolar gold instead.)
+    const Vector<Real> u_ref = direct_upsampled_potential<Real, Kernel>(qel, elem_idx, sigma, Xt, ker, 100);
+
+    // Relative error in the target potential.
+    Real err2 = 0, ref2 = 0;
+    for (Integer k1 = 0; k1 < KDIM1; k1++) {
+        const Real e = u_near[k1] - u_ref[k1];
+        err2 += e * e;
+        ref2 += u_ref[k1] * u_ref[k1];
+    }
+    const Real rel_err = sqrt<Real>(err2) / sqrt<Real>(ref2);
+
+    std::cout << "  test_NearInterac (" << label << "): rel_err = " << rel_err << "\n";
+    SCTL_ASSERT(rel_err < rel_tol);
+}
+
+// Singular self-interaction vs. closed-form references on the flat unit square
+// (z = 0), where r_3 = 0 and n = (0,0,1) give analytic answers for constant density:
+//   Laplace3D-FxU, sigma=1       :  u = (1/4pi) I0
+//   Stokes3D-FxU,  q=(0,0,1)     :  u = (0,0,(1/8pi) I0)
+//   Stokes3D-DxU,  q arbitrary   :  u = 0
+// I0 is the in-plane Newtonian potential of the unit square (1/r antiderivative
+// F(X,Y) = X ln(Y+R) + Y ln(X+R)). Applied as u = sigma^T M.
+template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer q = 10, const Real tol = 1e-10, const Integer cov_order = 0, const Integer max_depth = 30) {
+    const Integer order = 12;
+    const Long nnode = (Long)order * order;
+    const Integer KDIM0 = Kernel::SrcDim();
+    const Integer KDIM1 = Kernel::TrgDim();
+    SCTL_ASSERT(KDIM1 <= 3);
+
+    // Flat unit square z = 0.
+    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    QuadElemList<Real> qel(order, coord0);
+    qel.SetQuadScheme(scheme, q, cov_order, max_depth);
+
+    // Self-interaction matrix (no target-normal contraction).
+    Vector<Matrix<Real>> M_lst(1);
+    QuadElemList<Real>::template SelfInterac<Kernel>(M_lst, ker, tol, /*trg_dot_prod=*/false, &qel);
+
+    // Shape + finiteness.
+    SCTL_ASSERT(M_lst.Dim() == 1);
+    const Matrix<Real>& M = M_lst[0];
+    SCTL_ASSERT(M.Dim(0) == nnode * KDIM0 && M.Dim(1) == nnode * KDIM1);
+    for (Long r = 0; r < M.Dim(0); r++) {
+        for (Long c = 0; c < M.Dim(1); c++) SCTL_ASSERT(std::isfinite(M[r][c]));
+    }
+
+    // I0: corner sum of the 1/r antiderivative.
+    auto I0 = [](Real x0, Real y0) {
+        auto F = [](Real X, Real Y) { const Real R = sqrt<Real>(X*X + Y*Y); return X*log<Real>(Y + R) + Y*log<Real>(X + R); };
+        return F(1 - x0, 1 - y0) - F(1 - x0, -y0) - F(-x0, 1 - y0) + F(-x0, -y0);
+    };
+
+    // Per-kernel constant density q and the closed-form reference u_exact(x0,y0).
+    const std::string& kname = Kernel::Name();
+    Vector<Real> qden(KDIM0); qden.SetZero();
+    auto u_exact = [&](Real x0, Real y0, Real* ue) {
+        for (Integer k = 0; k < KDIM1; k++) ue[k] = 0;
+        if (kname == "Laplace3D-FxU")      ue[0] = I0(x0, y0) / (4 * const_pi<Real>());
+        else if (kname == "Stokes3D-FxU")  ue[2] = I0(x0, y0) / (8 * const_pi<Real>());
+        else if (kname == "Stokes3D-DxU")  { /* u == 0 */ }
+        else SCTL_ASSERT_MSG(false, "test_SelfInterac: unsupported kernel");
+    };
+    if (kname == "Laplace3D-FxU")      qden[0] = 1;            // sigma = 1
+    else if (kname == "Stokes3D-FxU")  qden[2] = 1;            // q = (0,0,1) (normal)
+    else if (kname == "Stokes3D-DxU")  qden[0] = 1;            // q arbitrary
+    else SCTL_ASSERT_MSG(false, "test_SelfInterac: unsupported kernel");
+
+    // Apply to the constant density and compare at every node (relative error
+    // for the single layers, absolute for the zero double layer).
+    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+    Real max_abs = 0, ref_scale = 0;
+    for (Integer ti = 0; ti < order; ti++) {
+        for (Integer tj = 0; tj < order; tj++) {
+            const Long t = ti * order + tj;
+            Real u[3] = {0, 0, 0};
+            for (Long p = 0; p < nnode; p++)
+                for (Integer k0 = 0; k0 < KDIM0; k0++)
+                    for (Integer k1 = 0; k1 < KDIM1; k1++)
+                        u[k1] += qden[k0] * M[p*KDIM0 + k0][t*KDIM1 + k1];
+            Real ue[3];
+            u_exact(nds[ti], nds[tj], ue);
+            for (Integer k1 = 0; k1 < KDIM1; k1++) {
+                max_abs   = std::max<Real>(max_abs, fabs(u[k1] - ue[k1]));
+                ref_scale = std::max<Real>(ref_scale, fabs(ue[k1]));
+            }
+        }
+    }
+    const Real err = (ref_scale > 0 ? max_abs / ref_scale : max_abs);
+    std::cout << "  test_SelfInterac (" << kname << "): err = " << err << "\n";
+    SCTL_ASSERT(err < rel_tol);
+}
+
+
+// Friend shim forwarding to QuadElemList's private static helpers (must be in namespace sctl).
+namespace sctl {
+template <class Real> struct QuadElemTestAccess {
+    // The library now emits the log-singular 1D Alpert rule as offsets from v0
+    // (LogSingularQuad1DCentered); reconstruct the absolute nodes param = v0 + delta so the
+    // tests below keep the original absolute-node semantics.
+    static void LogSingularQuad1D(Vector<Real>& param, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder) {
+        Vector<Real> delta;
+        QuadElemList<Real>::LogSingularQuad1DCentered(delta, w, v0, Lvl, QuadOrder);
+        param.ReInit(delta.Dim());
+        for (Long i = 0; i < delta.Dim(); i++) param[i] = v0 + delta[i];
+    }
+    static void RectPolarNodes1D(Vector<Real>& nodes, Vector<Real>& wts, const Real alpha, const Integer q, const Vector<Real>& gl_nds, const Vector<Real>& gl_wts) {
+        QuadElemList<Real>::RectPolarNodes1D(nodes, wts, alpha, q, gl_nds, gl_wts);
+    }
+};
+}
+
+// Sanity-check the rectangular-polar 1D COV: nodes stay in [0,1], weights sum to 1,
+// and the COV weight vanishes at the singularity u* = (alpha+1)/2.
+template <class Real> void test_RectPolarNodes1D() {
+    const Integer order = 256, q = 10;
+    // const Vector<Real>& gl_nds = QuadElemList<Real>::ParamNodes(order);
+    // const Vector<Real>& gl_wts = sctl::LegQuadRule<Real>::wts(order);
+    Vector<Real> gl_nds, gl_wts;
+    sctl::LegQuadRule<Real>::ComputeNdsWts(&gl_nds, &gl_wts, order);
+    for (const Real ustar : {(Real)0.2, (Real)0.5, (Real)0.77}) {
+        const Real alpha = 2*ustar - 1;
+        Vector<Real> nds, wts;
+        sctl::QuadElemTestAccess<Real>::RectPolarNodes1D(nds, wts, alpha, q, gl_nds, gl_wts);
+        Real wsum = 0;
+        for (Long i = 0; i < nds.Dim(); i++) {
+            SCTL_ASSERT(nds[i] > -1e-12 && nds[i] < 1 + 1e-12);
+            SCTL_ASSERT(wts[i] > -1e-12); // monotone COV => nonnegative weights
+            wsum += wts[i];
+        }
+        // sum(w) -> 1 to GL accuracy on eta' (structural check, not machine eps).
+        std::cout << "  test_RectPolarNodes1D (u*=" << (double)ustar << "): sum(w)=" << (double)wsum
+                  << "  err=" << (double)fabs(wsum - 1) << "\n";
+        SCTL_ASSERT(fabs(wsum - 1) < 1e-8);
+
+        // Node nearest u* should have tiny weight relative to the largest.
+        Long isng = 0; Real dmin = -1, wmax = 0;
+        for (Long i = 0; i < nds.Dim(); i++) {
+            const Real d = fabs(nds[i] - ustar);
+            if (dmin < 0 || d < dmin) { dmin = d; isng = i; }
+            wmax = std::max<Real>(wmax, wts[i]);
+        }
+        std::cout << "      node nearest u*: out=" << (double)nds[isng]
+                  << " (in=" << (double)gl_nds[isng] << ")  w=" << (double)wts[isng]
+                  << "  w/wmax=" << (double)(wts[isng]/wmax) << "\n";
+    }
+}
+
+// Verify the Alpert 1D log-singular rule (LogSingularQuad1D) for I[f] = int_0^1 f
+// with a log singularity at interior v0, against closed-form integrals of:
+//   (a) log|v-v0|  (b) v log|v-v0|  (c) (1+v^2) log|v-v0|+cos(3v)  (d) cos(3v)
+// Closed forms from int_0^1 v^k log|v-a| dv.
+template <class Real> void test_LogSingularQuad1D() {
+    const Real v0 = (Real)0.6;
+    const Integer Lvl = 5, QuadOrder = 24; // grading levels per side + GL order on smooth panels
+
+    Vector<Real> param, w;
+    QuadElemTestAccess<Real>::LogSingularQuad1D(param, w, v0, Lvl, QuadOrder);
+
+    // Structural sanity: sizes match, nodes in (0,1), weights sum to 1.
+    SCTL_ASSERT(param.Dim() == w.Dim());
+    SCTL_ASSERT(param.Dim() > 0);
+    Real wsum = 0;
+    for (Long i = 0; i < param.Dim(); i++) {
+        SCTL_ASSERT(param[i] > (Real)0 && param[i] < (Real)1);
+        wsum += w[i];
+    }
+    SCTL_ASSERT(fabs(wsum - (Real)1) < (Real)1e-12);
+
+    auto quad = [&](auto f) {
+        Real I = 0;
+        for (Long i = 0; i < param.Dim(); i++) I += w[i] * f(param[i]);
+        return I;
+    };
+
+    const Real a = v0;
+    const Real la = log<Real>(a), lb = log<Real>(1 - a);
+
+    // (a) f = log|v - v0|
+    {
+        const Real I = quad([&](Real v) { return log<Real>(fabs(v - v0)); });
+        const Real I_exact = a * la + (1 - a) * lb - 1;
+        const Real err = fabs(I - I_exact);
+        std::cout << "  test_LogSingularQuad1D: f=log|v-v0|        I=" << I
+                  << " exact=" << I_exact << " err=" << err << "\n";
+        SCTL_ASSERT(err < (Real)1e-10);
+    }
+
+    // (b) f = v * log|v - v0|
+    {
+        const Real I = quad([&](Real v) { return v * log<Real>(fabs(v - v0)); });
+        const Real I_exact = ((1 - a * a) / 2) * lb + (a * a / 2) * la - (Real)0.25 - a / 2;
+        const Real err = fabs(I - I_exact);
+        std::cout << "  test_LogSingularQuad1D: f=v*log|v-v0|      I=" << I
+                  << " exact=" << I_exact << " err=" << err << "\n";
+        SCTL_ASSERT(err < (Real)1e-10);
+    }
+
+    // (c) f = (1 + v^2) * log|v - v0| + cos(3 v); int v^2 log via F(x) = ((x^3-a^3)/3)log|x-a| - x^3/9 - a x^2/6 - a^2 x/3.
+    {
+        const Real I = quad([&](Real v) {
+            return (1 + v * v) * log<Real>(fabs(v - v0)) + cos<Real>(3 * v);
+        });
+        const Real I0 = a * la + (1 - a) * lb - 1;                                   // \int v^0 log
+        const Real F1 = ((1 - a * a * a) / 3) * lb - (Real)1 / 9 - a / 6 - a * a / 3; // F(1)
+        const Real F0 = (-a * a * a / 3) * la;                                        // F(0)
+        const Real I2 = F1 - F0;                                                      // \int v^2 log
+        const Real Icos = sin<Real>((Real)3) / 3;                                     // \int_0^1 cos(3v)
+        const Real I_exact = I0 + I2 + Icos;
+        const Real err = fabs(I - I_exact);
+        std::cout << "  test_LogSingularQuad1D: f=(1+v^2)log+cos   I=" << I
+                  << " exact=" << I_exact << " err=" << err << "\n";
+        SCTL_ASSERT(err < (Real)1e-9);
+    }
+
+    // (d) purely smooth integrand; rule must still be high order.
+    {
+        const Real I = quad([&](Real v) { return cos<Real>(3 * v); });
+        const Real I_exact = sin<Real>((Real)3) / 3;
+        const Real err = fabs(I - I_exact);
+        std::cout << "  test_LogSingularQuad1D: f=cos(3v)          I=" << I
+                  << " exact=" << I_exact << " err=" << err << "\n";
+        SCTL_ASSERT(err < (Real)1e-10);
+    }
+}
+
+// Check the interpolation floor of the self-interaction quadrature: IntegrateBlock
+// samples the order-`order` tensor-product Lagrange interpolant (not the true field)
+// at the Alpert nodes. For a non-polynomial field on the curved testsurf (z = u*v)
+// this is inexact; confirm the error sits at the expected spectral level.
+template <class Real> void test_QuadNodeInterp() {
+    const Integer order = 12;
+    const Long elem_idx = 0;
+
+    // Non-flat patch z = u*v; its order-12 interpolant is what the quadrature integrates.
+    Vector<Real> coord0 = get_testsurf<Real>(order, 1);
+    QuadElemList<Real> qel(order, coord0);
+    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+
+    // Non-polynomial scalar field in physical space (non-polynomial in (u,v)).
+    auto g = [](const Real* X) {
+        return exp<Real>((Real)0.5 * X[0]) * cos<Real>(X[1]) + sin<Real>(X[2]);
+    };
+
+    // Field values at the patch nodes (interpolation data).
+    Vector<Real> Xpatch;
+    qel.GetGeom(&Xpatch, nullptr, nullptr, nullptr, nullptr, nds, nds, elem_idx);
+    Vector<Real> f_patch(order * order);
+    for (Long p = 0; p < order * order; p++) f_patch[p] = g(&Xpatch[p * 3]);
+
+    // Alpert nodes in u and v forming the tensor-product target grid (node (a,b) at a*Nv + b).
+    Vector<Real> u_param, v_param, wu, wv;
+    QuadElemTestAccess<Real>::LogSingularQuad1D(u_param, wu, (Real)0.3, /*Lvl*/ 4, /*QuadOrder*/ order);
+    QuadElemTestAccess<Real>::LogSingularQuad1D(v_param, wv, (Real)0.6, /*Lvl*/ 4, /*QuadOrder*/ order);
+    const Long Nu = u_param.Dim(), Nv = v_param.Dim();
+
+    // Lagrange weights from patch nodes to the Alpert nodes (as in IntegrateBlock).
+    Vector<Real> Mu(order * Nu), Mv(order * Nv);
+    LagrangeInterp<Real>::Interpolate(Mu, nds, u_param);
+    LagrangeInterp<Real>::Interpolate(Mv, nds, v_param);
+
+    // Exact field at the Alpert nodes, via the surface geometry there.
+    Vector<Real> Xquad;
+    qel.GetGeom(&Xquad, nullptr, nullptr, nullptr, nullptr, u_param, v_param, elem_idx);
+
+    // Compare the tensor-product Lagrange interpolant against the exact field.
+    Real max_err = 0, max_f = 0;
+    for (Long a = 0; a < Nu; a++) {
+        for (Long b = 0; b < Nv; b++) {
+            Real f_interp = 0;
+            for (Integer i = 0; i < order; i++) {
+                for (Integer j = 0; j < order; j++) {
+                    f_interp += f_patch[i * order + j] * Mu[i * Nu + a] * Mv[j * Nv + b];
+                }
+            }
+            const Real f_exact = g(&Xquad[(a * Nv + b) * 3]);
+            max_err = std::max<Real>(max_err, fabs(f_interp - f_exact));
+            max_f   = std::max<Real>(max_f, fabs(f_exact));
+        }
+    }
+    const Real rel_err = max_err / max_f;
+    std::cout << "  test_QuadNodeInterp: order=" << order << " Nu=" << Nu << " Nv=" << Nv
+              << " max_abs_err=" << max_err << " rel_err=" << rel_err << "\n";
+    const Real rel_tol = 1e-6;
+    SCTL_ASSERT(rel_err < rel_tol);
+}
+
+// Visualize the Hybrid scheme (adaptive near + rectangular-polar self) on a single
+// flat order-12 panel: dump the near quadtree leaf GL grid and the RP self grid to VTK
+// for inspection in ParaView. Reuses QuadElemList's WriteNearInteracVTK (adaptive) and
+// WriteSelfInteracRPVTK (RectPolar) writers.
+template <class Real> void hybrid_scheme_vis() {
+    using QS = typename QuadElemList<Real>::QuadScheme;
+    const Integer order = 12;
+    const Long evis = 0;
+
+    // Flat panel z = 0, order 12, single element.
+    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    QuadElemList<Real> qel(order, coord0);
+    // Hybrid = adaptive near + RectPolar self; max_depth=12 caps the adaptive near
+    // quadtree; q/cov_order feed the RP self grid rendering.
+    qel.SetQuadScheme(QS::Hybrid, /*q=*/6, /*cov_order=*/200, /*max_depth=*/12);
+
+    // --- Near (adaptive): target at (u*,v*)=(0.314,0.157), 0.02 off surface along normal.
+    Vector<Real> up{(Real)0.314}, vp{(Real)0.157}, Xc, Xn;
+    qel.GetGeom(&Xc, &Xn, nullptr, nullptr, nullptr, up, vp, evis);
+    Vector<Real> Xtrg(3);
+    for (Integer k = 0; k < 3; k++) Xtrg[k] = Xc[k] + (Real)0.02 * Xn[k];
+    qel.WriteNearInteracVTK("hybrid-near-elem0", evis, Xtrg, /*tol=*/1e-9, Comm::Self());
+
+    // --- Self (RectPolar): singular point at the 8th x-node and 10th y-node (1-based).
+    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+    const Real u0 = nds[7], v0 = nds[9];
+    qel.WriteSelfInteracRPVTK("hybrid-self-elem0", evis, u0, v0, /*Nbeta=*/200, Comm::Self());
+
+    // --- Original order-12 tensor GL grid of the panel itself (quad mesh).
+    qel.WriteVTK("hybrid-panel-grid", Vector<Real>(), Comm::Self());
+
+    std::cout << "  hybrid_scheme_vis: wrote hybrid-near-elem0-*, hybrid-self-elem0-*, hybrid-panel-grid-* VTK files\n";
+}
+
+// ============================================================================================
+// 2. SPHERE TESTS  (whole closed surface; progressively harder than the unit tests above)
+// ============================================================================================
+
 namespace {
 
 // --- Distributed-memory helpers -------------------------------------------------
-// Under MPI each rank owns only a slice of the geometry (see BuildTwistedSphere),
-// so scalar norms/areas accumulated over local nodes must be reduced across ranks
-// before they are compared or printed, and result prints are emitted on rank 0 only.
+// Under MPI each rank owns only a slice of the geometry (see BuildTwistedSphere), so scalar
+// norms/areas accumulated over local nodes must be reduced across ranks before comparison, and
+// result prints are emitted on rank 0 only.
 inline double GlobalReduce(double x, const Comm& comm, CommOp op) {
   StaticArray<double,2> buf; buf[0] = x; buf[1] = 0;
   comm.Allreduce(buf+0, buf+1, 1, op);
@@ -51,11 +716,10 @@ template <class Real> void FacePoint(Real& x, Real& y, Real& z, Integer face, Re
   z *= R / r;
 }
 
-// Cubed-sphere of radius Radius: PatchPerFace^2 quad patches per cube face, ElemOrder nodes/direction. 
-// twisted about z: at height z, {x,y} rotated by theta_twist*z.
-// Regular sphere: theta_twist = 0.
-// Every rank builds the full node array X, then the QuadElemList constructor keeps
-// only this rank's contiguous element slice (replicate-then-slice partitioning).
+// Cubed-sphere of radius Radius: PatchPerFace^2 quad patches per cube face, ElemOrder nodes/direction.
+// twisted about z: at height z, {x,y} rotated by theta_twist*z. Regular sphere: theta_twist = 0.
+// Every rank builds the full node array X, then the QuadElemList constructor keeps only this rank's
+// contiguous element slice (replicate-then-slice partitioning).
 template <class Real>
 QuadElemList<Real> BuildTwistedSphere(Long ElemOrder, Long PatchPerFace, Real Radius, Real theta_twist = 0., const Comm& comm = Comm::Self()) {
   Vector<Real> X;
@@ -64,12 +728,9 @@ QuadElemList<Real> BuildTwistedSphere(Long ElemOrder, Long PatchPerFace, Real Ra
     for (Long iu = 0; iu < PatchPerFace; iu++) {
       for (Long iv = 0; iv < PatchPerFace; iv++) {
         for (Long i = 0; i < ElemOrder; i++) {
-          const Real u = (iu + nds[i]) / (Real)PatchPerFace;
-          const Real a = 2 * u - 1;
+          const Real a = 2 * ((iu + nds[i]) / (Real)PatchPerFace) - 1;
           for (Long j = 0; j < ElemOrder; j++) {
-            const Real v = (iv + nds[j]) / (Real)PatchPerFace;
-            const Real b = 2 * v - 1;
-
+            const Real b = 2 * ((iv + nds[j]) / (Real)PatchPerFace) - 1;
             Real x, y, z;
             FacePoint(x, y, z, face, a, b, Radius);
             const Real sin_theta = sin<Real>(theta_twist * z);
@@ -85,124 +746,9 @@ QuadElemList<Real> BuildTwistedSphere(Long ElemOrder, Long PatchPerFace, Real Ra
   return QuadElemList<Real>(ElemOrder, X, comm);
 }
 
-// --- DISABLED: BIO-vs-SH, manufactured-solution, surface-area, timing, and gmsh tests ---
-// Commented out (kept for reference / easy revert). Only the DL-constant identity and the
-// Green's representation identity near-scheme tests (test_DLIdentity, test_greens_identity,
-// defined below) are active and called from main().
-#if 0
-// Helpers validating cubed-sphere BIOs against the SH reference on the unit sphere.
-
-// Target placement relative to the unit-radius surface.
-enum class TgtType { OnSurface, Near, Far };
-
-// Sample a SCALAR density on the SH grid; return ROW_MAJOR scalar SH coeffs.
-template <class DensityFn> Vector<double> SphereScalarSHC(Long p, DensityFn density) {
-  const Long Nt = p + 1, Np = 2 * p + 2;
-  const Vector<double>& CosTheta = SphericalHarmonics<double>::LegendreNodes(Nt - 1);
-  Vector<double> Xgrid(Nt * Np); // theta-major: Xgrid[i*Np + j]
-  for (Long i = 0; i < Nt; i++) {
-    const double ct = CosTheta[i], st = sqrt(1 - ct * ct);
-    for (Long j = 0; j < Np; j++) {
-      const double phi = 2 * const_pi<double>() * j / Np;
-      double out[1];
-      density(st * cos(phi), st * sin(phi), ct, out);
-      Xgrid[i * Np + j] = out[0];
-    }
-  }
-  Vector<double> S;
-  SphericalHarmonics<double>::Grid2SHC(Xgrid, Nt, Np, p, S, SHCArrange::ROW_MAJOR);
-  return S;
-}
-
-// Sample a VECTOR density on the SH grid (component-major SoA); return vector SH coeffs.
-template <class DensityFn> Vector<double> SphereVecSHC(Long p, DensityFn density) {
-  const Long Nt = p + 1, Np = 2 * p + 2, Ngrid = Nt * Np;
-  const Vector<double>& CosTheta = SphericalHarmonics<double>::LegendreNodes(Nt - 1);
-  Vector<double> Xgrid(3 * Ngrid);
-  for (Long i = 0; i < Nt; i++) {
-    const double ct = CosTheta[i], st = sqrt(1 - ct * ct);
-    for (Long j = 0; j < Np; j++) {
-      const double phi = 2 * const_pi<double>() * j / Np;
-      double out[3];
-      density(st * cos(phi), st * sin(phi), ct, out);
-      Xgrid[0 * Ngrid + i * Np + j] = out[0];
-      Xgrid[1 * Ngrid + i * Np + j] = out[1];
-      Xgrid[2 * Ngrid + i * Np + j] = out[2];
-    }
-  }
-  Vector<double> S;
-  SphericalHarmonics<double>::Grid2VecSHC(Xgrid, Nt, Np, p, S, SHCArrange::ROW_MAJOR);
-  return S;
-}
-
-// Compare BIO vs. SH reference for one kernel across all three target placements.
-// is_DL: the discontinuous double-layer PV equals the mean of the interior/exterior limits.
-template <class Kernel, class DensityFn, class RefEvalFn>
-void TestSphereBIOvsSH(const QuadElemList<double>& elem_lst, const Comm& comm,
-                       const Kernel& ker, const char* kername, bool is_DL,
-                       DensityFn density, RefEvalFn ref_eval, const double tol=1e-9, const double rel_tol=1e-5) {
-  static constexpr Integer KDIM0 = Kernel::SrcDim();
-
-  Vector<double> Xnodes;
-  elem_lst.GetNodeCoord(&Xnodes, nullptr, nullptr);
-  const Long Nnode = Xnodes.Dim() / 3;
-
-  // Density at the cubed-sphere nodes (AoS).
-  Vector<double> F(Nnode * KDIM0);
-  for (Long i = 0; i < Nnode; i++) density(Xnodes[i*3+0], Xnodes[i*3+1], Xnodes[i*3+2], &F[i*KDIM0]);
-
-  BoundaryIntegralOp<double, Kernel> BIOp(ker, /*trg_normal_dot_prod=*/false, comm);
-  BIOp.SetAccuracy(tol);
-  BIOp.AddElemList(elem_lst);
-
-  struct Cfg { const char* name; TgtType type; double scale; };
-  const Cfg cfgs[3] = {
-    {"on-surface", TgtType::OnSurface, 1.00}, // singular self-interaction
-    {"near",       TgtType::Near,      1.02}, // near-singular correction
-    {"far",        TgtType::Far,       2.00}, // smooth far-field
-  };
-
-  for (const auto& c : cfgs) {
-    // Targets: surface nodes (on-surface) or nodes pushed radially outward (off-surface).
-    Vector<double> Xtrg;
-    if (c.type != TgtType::OnSurface) {
-      Xtrg.ReInit(Nnode * 3);
-      for (Long i = 0; i < Nnode * 3; i++) Xtrg[i] = Xnodes[i] * c.scale;
-      BIOp.SetTargetCoord(Xtrg);
-    }
-
-    Vector<double> U_quad;
-    BIOp.ComputePotential(U_quad, F);
-
-    // SH reference at the same targets.
-    const Vector<double>& coord = (c.type == TgtType::OnSurface) ? Xnodes : Xtrg;
-    Vector<double> U_ref;
-    if (c.type == TgtType::OnSurface && is_DL) {
-      Vector<double> U_in, U_out; // PV = mean of the two one-sided limits
-      ref_eval(coord, /*interior=*/true,  U_in);
-      ref_eval(coord, /*interior=*/false, U_out);
-      U_ref.ReInit(U_in.Dim());
-      for (Long i = 0; i < U_ref.Dim(); i++) U_ref[i] = 0.5 * (U_in[i] + U_out[i]);
-    } else {
-      ref_eval(coord, /*interior=*/false, U_ref);
-    }
-
-    SCTL_ASSERT(U_quad.Dim() == U_ref.Dim());
-    double err2 = 0, ref2 = 0;
-    for (Long i = 0; i < U_ref.Dim(); i++) {
-      const double e = U_quad[i] - U_ref[i];
-      err2 += e * e; ref2 += U_ref[i] * U_ref[i];
-    }
-    err2 = GlobalReduce(err2, comm, CommOp::SUM); // targets are distributed across ranks
-    ref2 = GlobalReduce(ref2, comm, CommOp::SUM);
-    const double rel_l2 = sqrt(err2 / ref2);
-    if (!comm.Rank()) std::cout << "  " << kername << " / " << c.name << " : rel L2 error = " << rel_l2 << std::endl;
-    SCTL_ASSERT(rel_l2 < rel_tol); // geometry/quadrature-limited (~1e-7 observed on the high-order cubed-sphere)
-  }
-}
-
 // Far-field quadrature weights must sum to the analytic sphere area 4 pi R^2.
-void test_SurfaceArea(const QuadElemList<double>& elem_lst, double Radius, const Comm& comm = Comm::Self()) {
+// Returns the relative area error |A - 4 pi R^2| / (4 pi R^2).
+double test_SurfaceArea(const QuadElemList<double>& elem_lst, double Radius, const Comm& comm) {
   Vector<double> wts, Xtemp, Xntemp, dist_far;
   Vector<Long> elem_wise_temp;
   elem_lst.GetFarFieldNodes(Xtemp, Xntemp, wts, dist_far, elem_wise_temp, 1);
@@ -210,569 +756,20 @@ void test_SurfaceArea(const QuadElemList<double>& elem_lst, double Radius, const
   for (int i = 0; i < wts.Dim(); i++) Area += wts[i];
   Area = GlobalReduce(Area, comm, CommOp::SUM); // weights are distributed across ranks
   const double Area_exact = 4. * const_pi<double>() * Radius * Radius;
-  if (!comm.Rank()) std::cout << "Area from Jacobian: " << Area << ", from formula: " << Area_exact << std::endl;
-  SCTL_ASSERT(std::fabs(Area - Area_exact) / Area_exact < 1e-6);
-  if (!comm.Rank()) std::cout << "Surface area test: PASSED" << std::endl;
+  const double rel_err = std::fabs(Area - Area_exact) / Area_exact;
+  if (!comm.Rank()) std::cout << "  surface area: Jacobian=" << Area << ", exact=" << Area_exact
+                              << ", rel err=" << rel_err << std::endl;
+  return rel_err;
 }
 
-// Stokes DL constant-density identity on a closed sphere: D[q] = c*q, |c|=1/2.
-// Sign convention: this kernel (r = x_trg-x_src, source normal) gives c = -1/2 for
-// an outward normal, +1/2 for inward; verify magnitude and sign vs. orientation.
-void test_StokesDLIdentity(const QuadElemList<double>& elem_lst, const Comm& comm, bool check = true) {
-  const Stokes3D_DxU ker_dl;
-  BoundaryIntegralOp<double, Stokes3D_DxU> BIOp(ker_dl, /*trg_normal_dot_prod=*/false, comm);
-  BIOp.SetAccuracy(1e-8);
-  BIOp.AddElemList(elem_lst);
-  BIOp.Setup();
-
-  // Surface nodes/normals; orientation from sign(x.n) (x from sphere center).
-  Vector<double> Xs, Xns;
-  elem_lst.GetNodeCoord(&Xs, &Xns, nullptr);
-  const Long Nnode = Xs.Dim() / 3;
-  double xdotn = 0;
-  for (Long i = 0; i < Nnode; i++) {
-    xdotn += Xs[i*3+0]*Xns[i*3+0] + Xs[i*3+1]*Xns[i*3+1] + Xs[i*3+2]*Xns[i*3+2];
-  }
-  xdotn = GlobalReduce(xdotn, comm, CommOp::SUM); // nodes are distributed across ranks
-  const bool outward = (xdotn > 0);
-  const double c_expect = outward ? -0.5 : 0.5;
-
-  // Constant density q = (1, 0, 0) at every node.
-  Vector<double> q(Nnode * 3), U;
-  for (Long i = 0; i < Nnode; i++) { q[i*3+0] = 1; q[i*3+1] = 0; q[i*3+2] = 0; }
-  BIOp.ComputePotential(U, q);
-
-  // D[q] should equal c*q = (c, 0, 0): measure mean U_x and max deviation.
-  double sum_Ux = 0;
-  for (Long i = 0; i < Nnode; i++) sum_Ux += U[i*3+0];
-  const double cx_mean = GlobalReduce(sum_Ux, comm, CommOp::SUM) / GlobalReduce((double)Nnode, comm, CommOp::SUM);
-
-  double max_dev = 0, max_perp = 0;
-  for (Long i = 0; i < Nnode; i++) {
-    max_dev  = std::max(max_dev,  std::fabs(U[i*3+0] - c_expect));
-    max_perp = std::max(max_perp, std::max(std::fabs(U[i*3+1]), std::fabs(U[i*3+2])));
-  }
-  max_dev  = GlobalReduce(max_dev,  comm, CommOp::MAX);
-  max_perp = GlobalReduce(max_perp, comm, CommOp::MAX);
-
-  if (!comm.Rank())
-    std::cout << "Stokes double-layer constant-density identity:\n"
-              << "  normal orientation : " << (outward ? "outward" : "inward")
-              << " (sum x.n = " << xdotn << ")\n"
-              << "  mean U_x           : " << cx_mean << "  (expected " << c_expect << ")\n"
-              << "  max |U_x - c|      : " << max_dev  << "\n"
-              << "  max |U_perp|       : " << max_perp << std::endl;
-
-  const double rel_tol = 1e-3; // dominated by the polynomial sphere-geometry error
-  if (!check) return; // diagnostic mode: print only
-  SCTL_ASSERT(std::fabs(cx_mean - c_expect) < rel_tol);
-  SCTL_ASSERT(max_dev  < rel_tol);
-  SCTL_ASSERT(max_perp < rel_tol);
-  if (!comm.Rank())
-    std::cout << "Stokes double-layer identity: PASSED (|c| = 1/2, sign tracks "
-              << "outward normal -> -1/2)" << std::endl;
-}
-
-// BIOs vs. SH reference over {Laplace/Stokes x SL/DL} and {on-surface,near,far}.
-// On the unit sphere the layer operators are diagonalized by SH, giving a spectral
-// reference for a smooth non-polynomial density.
-void test_BIOvsSH(const QuadElemList<double>& elem_lst, const Comm& comm, bool write_vtk = false, const double tol = 1e-9, const double rel_tol = 1e-5) {
-  const Long p = 30; // SH truncation order (captures exp densities to ~eps)
-
-  // Non-polynomial densities (analytic -> fast SH decay).
-  auto lap_density = [](double x, double, double, double* o) { o[0] = std::exp(x); };
-  auto sto_density = [](double x, double y, double z, double* o) {
-    o[0] = std::exp(x); o[1] = std::exp(y); o[2] = std::exp(z);
-  };
-
-  // Density SH coefficients.
-  const Vector<double> Slap = SphereScalarSHC(p, lap_density);
-  const Vector<double> Ssto = SphereVecSHC(p, sto_density);
-
-  if (!comm.Rank()) std::cout << "BIO vs. spherical-harmonics reference (density = exp):" << std::endl;
-
-  // Visualize the (kernel-independent) near/self refinement on one element; tol matches
-  // the SetAccuracy(1e-9) used in TestSphereBIOvsSH. Diagnostic only: rank 0 visualizes its
-  // local element 0 with a self-communicator so the writers stay independent of other ranks.
-  if (write_vtk && !comm.Rank()) {
-    const Long evis = 0;                       // element to visualize
-    const Integer ord = elem_lst.Order();
-    // Near: a surface point pushed off along its outward normal.
-    Vector<double> us{0.5}, vs{0.5}, Xc, Xn;
-    elem_lst.GetGeom(&Xc, &Xn, nullptr, nullptr, nullptr, us, vs, evis);
-    Vector<double> Xtrg(3);
-    for (int k = 0; k < 3; k++) Xtrg[k] = Xc[k] + 0.02 * Xn[k];
-    if (elem_lst.NearUsesRectPolar()) {
-      elem_lst.WriteNearInteracRPVTK("near-interac-elem0", evis, Xtrg);
-    } else {
-      elem_lst.WriteNearInteracVTK("near-interac-elem0", evis, Xtrg, 1e-9, Comm::Self()); // tol = 1e-9 just for plotting
-    }
-
-    // Self: an interior node parameter.
-    const auto& nds = QuadElemList<double>::ParamNodes(ord);
-    const double u0 = nds[ord/2], v0 = nds[ord/2];
-    if (elem_lst.SelfUsesRectPolar()) {
-      elem_lst.WriteSelfInteracRPVTK("self-interac-elem0", evis, u0, v0);
-    } else {
-      elem_lst.WriteSelfInteracVTK("self-interac-elem0", evis, u0, v0, 1e-9, Comm::Self());
-    }
-
-    std::cout << "  wrote near-interac-elem0-* and self-interac-elem0-* VTK files" << std::endl;
-  }
-
-  Profile::Tic("Lap SL");
-  TestSphereBIOvsSH(elem_lst, comm, Laplace3D_FxU(), "Laplace3D_FxU", /*is_DL=*/false, lap_density,
-    [&](const Vector<double>& c, bool in, Vector<double>& U) {
-      SphericalHarmonics<double>::LaplaceEvalSL(Slap, SHCArrange::ROW_MAJOR, p, c, in, U); }, tol, rel_tol);
-  Profile::Toc();
-  Profile::print(&comm, {"t_avg", "t_max", "f_avg", "f_max"});
-  Profile::reset();
-
-  Profile::Tic("Lap DL");
-  TestSphereBIOvsSH(elem_lst, comm, Laplace3D_DxU(), "Laplace3D_DxU", /*is_DL=*/true, lap_density,
-    [&](const Vector<double>& c, bool in, Vector<double>& U) {
-      SphericalHarmonics<double>::LaplaceEvalDL(Slap, SHCArrange::ROW_MAJOR, p, c, in, U); }, tol, rel_tol);
-  Profile::Toc();
-  Profile::print(&comm, {"t_avg", "t_max", "f_avg", "f_max"});
-  Profile::reset();
-
-  if (!comm.Rank()) std::cout << "BIO vs. SH reference Laplace: PASSED" << std::endl;
-
-  Profile::Tic("Stk SL");
-  TestSphereBIOvsSH(elem_lst, comm, Stokes3D_FxU(), "Stokes3D_FxU", /*is_DL=*/false, sto_density,
-    [&](const Vector<double>& c, bool in, Vector<double>& U) {
-      SphericalHarmonics<double>::StokesEvalSL(Ssto, SHCArrange::ROW_MAJOR, p, c, in, U); }, tol, rel_tol);
-  Profile::Toc();
-  Profile::print(&comm, {"t_avg", "t_max", "f_avg", "f_max"});
-  Profile::reset();
-
-  Profile::Tic("Stk DL");
-  TestSphereBIOvsSH(elem_lst, comm, Stokes3D_DxU(), "Stokes3D_DxU", /*is_DL=*/true, sto_density,
-    [&](const Vector<double>& c, bool in, Vector<double>& U) {
-      SphericalHarmonics<double>::StokesEvalDL(Ssto, SHCArrange::ROW_MAJOR, p, c, in, U); }, tol, rel_tol);
-  Profile::Toc();
-  Profile::print(&comm, {"t_avg", "t_max", "f_avg", "f_max"});
-  Profile::reset();
-
-  if (!comm.Rank()) std::cout << "BIO vs. SH reference Stokes: PASSED" << std::endl;
-  SphericalHarmonics<double>::Clear();
-}
-
-// Surface area = sum of far-field quadrature weights (= integral of 1 dS).
-double SurfaceAreaOf(const QuadElemList<double>& elem_lst, const Comm& comm = Comm::Self()) {
-  Vector<double> wts, Xt, Xnt, dist_far;
-  Vector<Long> ewt;
-  elem_lst.GetFarFieldNodes(Xt, Xnt, wts, dist_far, ewt, 1);
-  double A = 0.;
-  for (Long i = 0; i < wts.Dim(); i++) A += wts[i];
-  return GlobalReduce(A, comm, CommOp::SUM); // weights are distributed across ranks
-}
-
-// Largest nodal distance from the origin.
-double MaxNodalRadius(const QuadElemList<double>& elem_lst, const Comm& comm = Comm::Self()) {
-  Vector<double> X;
-  elem_lst.GetNodeCoord(&X, nullptr, nullptr);
-  double rmax = 0;
-  for (Long i = 0; i < X.Dim() / 3; i++) {
-    const double r = std::sqrt(X[i*3+0]*X[i*3+0] + X[i*3+1]*X[i*3+1] + X[i*3+2]*X[i*3+2]);
-    rmax = std::max(rmax, r);
-  }
-  return GlobalReduce(rmax, comm, CommOp::MAX); // nodes are distributed across ranks
-}
-
-// Compare a gmsh-imported sphere against the analytic cubed-sphere TwistSphere(theta=0).
-// The two meshes have entirely different node layouts, so we compare geometry-invariant
-// quantities (surface area, bounding radius) and the BIO-vs-spherical-harmonics reference.
-void test_GmshVsTwistSphere(const Comm& comm, const char* fname = "./sphere", const Long GmshOrder = 4, const double Radius = 1.0) {
-  { std::ifstream is(fname); if (!is.good()) { if (!comm.Rank()) std::cout << "test_GmshVsTwistSphere: SKIPPED (mesh '" << fname << "' not found)\n"; return; } }
-
-  const Long TwistOrder = 16, PatchPerFace = 5;
-  QuadElemList<double> qel_gmsh  = GmshReader<double>::LoadQuadElemList(fname, GmshOrder, comm);
-  qel_gmsh.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar, 6, 512);
-  
-  Vector<double> Xtwist, Xntwist;
-  qel_gmsh.GetNodeCoord(&Xtwist, &Xntwist, nullptr);
-  qel_gmsh.WriteVTK("gmsh_sphere_mpi", Xntwist, comm);
-  
-  QuadElemList<double> qel_twist = BuildTwistedSphere<double>(TwistOrder, PatchPerFace, Radius, /*theta_twist=*/0., comm);
-  qel_twist.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar, 6, 512);
-  const Long n_gmsh  = GlobalReduce(qel_gmsh.Size(),  comm, CommOp::SUM); // Size() is per-rank
-  const Long n_twist = GlobalReduce(qel_twist.Size(), comm, CommOp::SUM);
-  if (!comm.Rank())
-    std::cout << "test_GmshVsTwistSphere: gmsh elems=" << n_gmsh << " (order " << GmshOrder << ")"
-              << ", TwistSphere(theta=0) elems=" << n_twist << " (order " << TwistOrder << ")\n";
-
-  double gmsh_tol = 3e-2;
-  if (GmshOrder > 4) {
-    gmsh_tol = 1e-6;
-  }
-
-  // --- Geometric invariant 1: surface area (integral of 1 dS) ---
-  const double A_exact = 4. * const_pi<double>() * Radius * Radius;
-  const double A_gmsh  = SurfaceAreaOf(qel_gmsh, comm);
-  const double A_twist = SurfaceAreaOf(qel_twist, comm);
-  if (!comm.Rank()) std::cout << "  surface area: gmsh=" << A_gmsh << ", TwistSphere=" << A_twist << ", exact(4 pi R^2)=" << A_exact << "\n";
-  SCTL_ASSERT(std::fabs(A_twist - A_exact) / A_exact < 1e-8);   // high-order cubed-sphere
-  SCTL_ASSERT(std::fabs(A_gmsh  - A_exact) / A_exact < gmsh_tol);   // linear (Q1) gmsh mesh, O(h^2)
-
-  // --- Geometric invariant 2: bounding radius ---
-  const double rmax_gmsh  = MaxNodalRadius(qel_gmsh, comm);
-  const double rmax_twist = MaxNodalRadius(qel_twist, comm);
-  if (!comm.Rank()) std::cout << "  max nodal radius: gmsh=" << rmax_gmsh << ", TwistSphere=" << rmax_twist << " (R=" << Radius << ")\n";
-  SCTL_ASSERT(std::fabs(rmax_twist - Radius) < 1e-9);            // cubed-sphere nodes lie exactly on the sphere
-  SCTL_ASSERT(rmax_gmsh <= Radius * (1 + 1e-9));                 // flat Q1 chords stay inside the sphere
-  SCTL_ASSERT(std::fabs(rmax_gmsh - Radius) < gmsh_tol);
-
-  // --- BIO vs spherical-harmonics reference on both geometries ---
-  if (!comm.Rank()) std::cout << "  TwistSphere(theta=0) BIO-vs-SH:\n";
-  test_BIOvsSH(qel_twist, comm, /*write_vtk=*/false, /*tol=*/1e-9, /*rel_tol=*/1e-5);
-  if (!comm.Rank()) std::cout << "  gmsh-sphere BIO-vs-SH:\n";
-  test_BIOvsSH(qel_gmsh, comm, /*write_vtk=*/false, /*tol=*/gmsh_tol, /*rel_tol=*/gmsh_tol);
-
-  if (!comm.Rank()) std::cout << "test_GmshVsTwistSphere: PASSED" << std::endl;
-}
-
-// Manufactured-solution interior/exterior Dirichlet test via combined-field BIE + GMRES.
-// Point sources are placed on the side OPPOSITE the solution domain so their field u_e
-// is exact on the domain; sample u_e on the surface and solve
-//      ( c*I + SL_scal*S + DL_scal*D ) sigma = u_e|_surface,
-// with jump c = +-1/2*DL_scal (sign from outward normal and interior/exterior).
-// SIGN REQUIREMENT: CFIE is uniquely solvable only for SAME sign (exterior) /
-// OPPOSITE sign (interior) of (SL_scal, DL_scal); else the interior operator has a
-// null space. quadr_tol also sets GMRES tol.
-// Returns one rel-L2 per entry of eval_radii. The CFIE is solved ONCE (the dominant cost);
-// only the post-solve evaluation is repeated per radius, so e.g. near+far share a single solve.
-template <class KerSL, class KerDL>
-std::vector<double> TestManufactured(const QuadElemList<double>& elem_lst, const Comm& comm,
-                        const KerSL& ker_sl, const KerDL& ker_dl, const char* name,
-                        const Vector<double>& Xsrc, const Vector<double>& Fsrc,
-                        bool interior, const std::vector<double>& eval_radii, const double quadr_tol = 1e-9,
-                        double SL_scal = 1.0, const double DL_scal = 1.0) {
-  static constexpr Integer KDIM = KerSL::SrcDim(); // 1 (Laplace) or 3 (Stokes)
-
-  // Surface nodes/normals; orientation sets the DL jump sign.
-  Vector<double> Xs, Xns;
-  elem_lst.GetNodeCoord(&Xs, &Xns, nullptr);
-  const Long Nnode = Xs.Dim() / 3;
-  double xdotn = 0;
-  for (Long i = 0; i < Nnode; i++)
-    xdotn += Xs[i*3+0]*Xns[i*3+0] + Xs[i*3+1]*Xns[i*3+1] + Xs[i*3+2]*Xns[i*3+2];
-  // +1/2 for outward normal exterior trace; interior flips the sign.
-  const double sgn = interior ? -1.0 : 1.0;
-  const double jump = (xdotn > 0 ? 0.5 : -0.5) * DL_scal * sgn;
-
-  // Interior with same-sign SL/DL has a null space; flip SL sign.
-  if (interior && SL_scal*DL_scal > 0.) {
-    if (!comm.Rank()) std::cout << "Warning: Interior problem has artificial null space when SL and DL same sign. Flipping SL sign. " << std::endl;
-    SL_scal = -1.*SL_scal;
-  }
-
-  // Dirichlet data: point-source field at surface nodes (SL kernel ignores src normal).
-  Vector<double> bc;
-  ker_sl.Eval(bc, Xs, Xsrc, Xsrc, Fsrc);
-
-  // Combined-field operator pieces (on-surface PV).
-  BoundaryIntegralOp<double, KerSL> SLOp(ker_sl, /*trg_normal_dot_prod=*/false, comm);
-  BoundaryIntegralOp<double, KerDL> DLOp(ker_dl, /*trg_normal_dot_prod=*/false, comm);
-  SLOp.SetAccuracy(quadr_tol); DLOp.SetAccuracy(quadr_tol);
-  SLOp.AddElemList(elem_lst); DLOp.AddElemList(elem_lst);
-
-  const auto ApplyK = [&](Vector<double>* U, const Vector<double>& sigma) {
-    Vector<double> Us, Ud;
-    SLOp.ComputePotential(Us, sigma);
-    DLOp.ComputePotential(Ud, sigma);
-    if (U->Dim() != sigma.Dim()) U->ReInit(sigma.Dim());
-    (*U) = SL_scal*Us + DL_scal*Ud + jump*sigma;
-  };
-
-  GMRES<double> solver(comm, false);
-  Vector<double> sigma;
-  Long iter = 0;
-  const double gmres_tol = quadr_tol * 10.;
-  const Long gmres_max_iter = 100;
-
-  Profile::reset();
-  Profile::Tic("gmres solve");
-  solver(&sigma, ApplyK, bc, gmres_tol, gmres_max_iter, false, &iter);
-  Profile::Toc();
-  Profile::print(&comm, {"t_avg", "f_avg", "f/s_avg"});
-
-  // Evaluate the recovered potential at each target sphere (radius-1 nodes scaled by the
-  // radius). The solve above is reused; only target placement + the eval matvec change.
-  std::vector<double> rel_l2s;
-  rel_l2s.reserve(eval_radii.size());
-  for (const double eval_radius : eval_radii) {
-    Vector<double> Xtrg(Nnode * 3);
-    for (Long i = 0; i < Nnode * 3; i++) Xtrg[i] = Xs[i] * eval_radius;
-    SLOp.SetTargetCoord(Xtrg); DLOp.SetTargetCoord(Xtrg);
-
-    Profile::reset();
-    Profile::Tic("eval");
-    Vector<double> Us, Ud;
-    SLOp.ComputePotential(Us, sigma);
-    DLOp.ComputePotential(Ud, sigma);
-    Vector<double> U = SL_scal * Us + DL_scal * Ud;
-    Profile::Toc();
-    Profile::print(&comm, {"t_avg", "f_avg", "f/s_avg"});
-
-    // Reference: point-source field evaluated directly at the targets.
-    Vector<double> Uref;
-    ker_sl.Eval(Uref, Xtrg, Xsrc, Xsrc, Fsrc);
-
-    double err2 = 0, ref2 = 0;
-    for (Long i = 0; i < U.Dim(); i++) { const double e = U[i] - Uref[i]; err2 += e*e; ref2 += Uref[i]*Uref[i]; }
-    err2 = GlobalReduce(err2, comm, CommOp::SUM); // targets are distributed across ranks
-    ref2 = GlobalReduce(ref2, comm, CommOp::SUM);
-    const double rel_l2 = sqrt(err2 / ref2);
-    if (!comm.Rank()) std::cout << "  " << name << " (R=" << eval_radius << ", GMRES iters = " << iter
-              << ") : rel L2 error = " << rel_l2 << std::endl;
-    rel_l2s.push_back(rel_l2);
-  }
-  return rel_l2s;
-}
-
-// Laplace CFIE Dirichlet manufactured solution: recover point-charge potential,
-// for both exterior (charges inside) and interior (charges outside) problems.
-void test_LaplaceManufactured(const QuadElemList<double>& elem_lst, const Comm& comm) {
-  // const Vector<double> Fsrc{1.0, -0.7};
-  const Vector<double> Fsrc{1.0, -1.0};
-
-  // Exterior: charges inside the sphere; verify at near and far radius > 1.
-  const Vector<double> Xsrc_ext{0.10, 0.20, 0.15,  -0.20, 0.10, -0.10};
-  if (!comm.Rank()) std::cout << "Manufactured solution (Laplace, exterior Dirichlet):" << std::endl;
-  SCTL_ASSERT(TestManufactured(elem_lst, comm, Laplace3D_FxU(), Laplace3D_DxU(),
-                "Laplace SL+DL", Xsrc_ext, Fsrc, /*interior=*/false, /*eval_radii=*/{1.001})[0] < 1e-4);
-  SCTL_ASSERT(TestManufactured(elem_lst, comm, Laplace3D_FxU(), Laplace3D_DxU(),
-                "Laplace SL+DL", Xsrc_ext, Fsrc, /*interior=*/false, /*eval_radii=*/{2.000})[0] < 1e-5);
-
-  // Interior: charges outside the sphere; verify at near/far radius < 1.
-  // Interior CFIE needs opposite-sign SL/DL, so SL_scal = -1.
-  const Vector<double> Xsrc_int{1.50, 0.40, 0.30,  -1.20, 0.80, -0.60};
-  if (!comm.Rank()) std::cout << "Manufactured solution (Laplace, interior Dirichlet):" << std::endl;
-  SCTL_ASSERT(TestManufactured(elem_lst, comm, Laplace3D_FxU(), Laplace3D_DxU(),
-                "Laplace SL+DL", Xsrc_int, Fsrc, /*interior=*/true, /*eval_radii=*/{0.999},
-                /*quadr_tol=*/1e-9, /*SL_scal=*/-1.0, /*DL_scal=*/1.0)[0] < 1e-4);
-  SCTL_ASSERT(TestManufactured(elem_lst, comm, Laplace3D_FxU(), Laplace3D_DxU(),
-                "Laplace SL+DL", Xsrc_int, Fsrc, /*interior=*/true, /*eval_radii=*/{0.500},
-                /*quadr_tol=*/1e-9, /*SL_scal=*/-1.0, /*DL_scal=*/1.0)[0] < 1e-5);
-
-  if (!comm.Rank()) std::cout << "Laplace manufactured-solution test: PASSED" << std::endl;
-}
-
-// Stokes CFIE Dirichlet manufactured solution: recover Stokeslet velocity field,
-// for both exterior (Stokeslets inside) and interior (outside); net force nonzero.
-void test_StokesManufactured(const QuadElemList<double>& elem_lst, const Comm& comm) {
-  // const Vector<double> Fsrc{1.0, 0.5, -0.3,  -0.4, 0.2, 0.1};
-  const Vector<double> Fsrc{1.0, 0.5, -0.3,  -1.0, -0.5, 0.3};
-
-  // Exterior: Stokeslets inside the sphere.
-  const Vector<double> Xsrc_ext{0.10, 0.20, 0.15,  -0.20, 0.10, -0.10};
-  if (!comm.Rank()) std::cout << "Manufactured solution (Stokes, exterior Dirichlet):" << std::endl;
-  SCTL_ASSERT(TestManufactured(elem_lst, comm, Stokes3D_FxU(), Stokes3D_DxU(),
-                "Stokes SL+DL", Xsrc_ext, Fsrc, /*interior=*/false, /*eval_radii=*/{1.001})[0] < 1e-4);
-  SCTL_ASSERT(TestManufactured(elem_lst, comm, Stokes3D_FxU(), Stokes3D_DxU(),
-                "Stokes SL+DL", Xsrc_ext, Fsrc, /*interior=*/false, /*eval_radii=*/{2.000})[0] < 1e-5);
-
-  // Interior: Stokeslets outside; interior CFIE needs opposite-sign SL/DL, so SL_scal = -1.
-  const Vector<double> Xsrc_int{1.50, 0.40, 0.30,  -1.20, 0.80, -0.60};
-  if (!comm.Rank()) std::cout << "Manufactured solution (Stokes, interior Dirichlet):" << std::endl;
-  SCTL_ASSERT(TestManufactured(elem_lst, comm, Stokes3D_FxU(), Stokes3D_DxU(),
-                "Stokes SL+DL", Xsrc_int, Fsrc, /*interior=*/true, /*eval_radii=*/{0.999},
-                /*quadr_tol=*/1e-9, /*SL_scal=*/-1.0, /*DL_scal=*/1.0)[0] < 1e-4);
-  SCTL_ASSERT(TestManufactured(elem_lst, comm, Stokes3D_FxU(), Stokes3D_DxU(),
-                "Stokes SL+DL", Xsrc_int, Fsrc, /*interior=*/true, /*eval_radii=*/{0.500},
-                /*quadr_tol=*/1e-9, /*SL_scal=*/-1.0, /*DL_scal=*/1.0)[0] < 1e-5);
-
-  if (!comm.Rank()) std::cout << "Stokes manufactured-solution test: PASSED" << std::endl;
-}
-
-// h-refinement convergence: fixed ElemOrder, increasing PatchPerFace, report
-// manufactured-solution rel-L2 at near/far targets per resolution.
-void test_ManufacturedConvergence(const Comm& comm,
-                                  bool interior = false,
-                                  int scheme_ = 0, // 0: adaptive, 1: rect-polar, 2: hybrid
-                                  const double theta_twist = 0.,
-                                  const std::vector<Long>& PatchPerFaceList = {1, 2, 3, 4, 5},
-                                  Long ElemOrder = 16
-                                  ) {
-  const double Radius = 1.0;
-  const double base_tol = 1e-13; // should be this level for ElemOrder = 12, maybe allowed higher if lower order..
-
-  // Laplace charges / Stokeslets outside the sphere (interior problem).
-  const Vector<double> Fsrc_lap{1.0, -0.7};
-  const Vector<double> Fsrc_sto{1.0, 0.5, -0.3,  -0.4, 0.2, 0.1};
-  const Vector<double> src_ext{0.10, 0.20, 0.15,  -0.20, 0.10, -0.10}; // for ext-erior problem
-  const Vector<double> src_int{1.50, 0.40, 0.30,  -1.20, 0.80, -0.60}; // for int-erior problem
-  const double Rint_far = 0.5;
-  const double Rint_near = 0.999;
-  const double Rext_far = 2.;
-  const double Rext_near = 1.001;
-  Vector<double> Xsrc_lap, Xsrc_sto;
-  double R_far, R_near, SL_scal, DL_scal;
-  std::string name;
-  if (!interior) { // exterior problem, DL+SL
-    Xsrc_lap = src_ext;
-    Xsrc_sto = src_ext;
-    R_far = Rext_far;
-    R_near = Rext_near;
-    SL_scal = 1.0;
-    DL_scal = 1.0;
-    name = "DL+SL";
-  } else { // interior problem, DL only
-    Xsrc_lap = src_int;
-    Xsrc_sto = src_int;
-    R_far = Rint_far;
-    R_near = Rint_near;
-    SL_scal = 0.0;
-    DL_scal = 1.0;
-    name = "DL";
-  }
-
-  if (!comm.Rank()) {
-    std::cout << "\nManufactured-solution convergence study (ElemOrder = " << ElemOrder << "):\n";
-    std::cout << std::scientific;
-    std::cout << "  kernel    PatchPerFace  Nelem   rel-L2 (near R=" << R_near <<")   rel-L2 (far R="<<R_far<<")\n";
-  }
-  for (const Long PatchPerFace : PatchPerFaceList) {
-    QuadElemList<double> elem_lst = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, theta_twist, comm);
-    if (scheme_ == 1) {
-      elem_lst.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar);
-    } else if (scheme_ == 2) {
-      elem_lst.SetQuadScheme(QuadElemList<double>::QuadScheme::Hybrid);
-    }
-    const Long Nelem = 6 * PatchPerFace * PatchPerFace;
-
-    double quadr_tol = base_tol;
-    if (PatchPerFace > 5) {
-      quadr_tol *= 0.0001;
-    } else if (PatchPerFace > 3) {
-      quadr_tol *= 0.01;
-    }
-
-    // Single solve per kernel, evaluated at both radii (near first, then far).
-    const std::vector<double> el = TestManufactured(elem_lst, comm, Laplace3D_FxU(), Laplace3D_DxU(),
-                             ("Laplace "+name).c_str(), Xsrc_lap, Fsrc_lap, interior, {R_near, R_far}, quadr_tol, SL_scal, DL_scal);
-    const double el_near = el[0], el_far = el[1];
-    if (!comm.Rank()) std::cout << "  Laplace   " << std::setw(12) << PatchPerFace << "  " << std::setw(5) << Nelem
-              << "   " << el_near << "        " << el_far << "\n";
-
-    const std::vector<double> es = TestManufactured(elem_lst, comm, Stokes3D_FxU(), Stokes3D_DxU(),
-                             ("Stokes "+name).c_str(), Xsrc_sto, Fsrc_sto, interior, {R_near, R_far}, quadr_tol, SL_scal, DL_scal);
-    const double es_near = es[0], es_far = es[1];
-    if (!comm.Rank()) std::cout << "  Stokes    " << std::setw(12) << PatchPerFace << "  " << std::setw(5) << Nelem
-              << "   " << es_near << "        " << es_far << "\n";
-  }
-  if (!comm.Rank()) std::cout << "Manufactured-solution convergence study: DONE" << std::endl;
-}
-
-// Nbeta (RectPolar cov_order) sweep on the maximally twisted sphere, Stokes kernel only.
-// For fixed ElemOrder/twist, increase Nbeta (GL points per direction in the rectangular-polar
-// COV) at each surface resolution (PatchPerFace) and record manufactured-solution rel-L2
-// (near + far) plus wall-clock solve+eval time. Writes a formatted table to Nbeta_benchmark.txt.
-void test_NbetaSweep(const Comm& comm,
-                     const std::vector<Long>& NbetaList = {32, 64, 96, 128, 192, 256, 384, 512},
-                     const std::vector<Long>& PatchPerFaceList = {5, 10},
-                     Long ElemOrder = 16,
-                     double theta_twist = const_pi<double>()) {
-  const double Radius = 1.0;
-  const double quadr_tol = 1e-13; // tight, so Nbeta (not adaptive/GMRES tol) is the bottleneck
-
-  // Exterior Stokes DL+SL manufactured solution (Stokeslets inside the sphere).
-  const Vector<double> Fsrc_sto{1.0, 0.5, -0.3,  -0.4, 0.2, 0.1};
-  const Vector<double> src_ext{0.10, 0.20, 0.15,  -0.20, 0.10, -0.10};
-  const double R_near = 1.001, R_far = 2.0;
-  const double SL_scal = 1.0, DL_scal = 1.0;
-  const bool interior = false;
-
-  const bool root = !comm.Rank();
-  std::ofstream ofs; // only rank 0 writes the table file (avoids a multi-rank write race)
-  if (root) {
-    ofs.open("Nbeta_sweep.txt");
-    ofs << std::scientific;
-    ofs << "# Nbeta (RectPolar cov_order) sweep: Stokes DL+SL exterior manufactured solution\n";
-    ofs << "# ElemOrder=" << ElemOrder << ", theta_twist=" << theta_twist
-        << " (pi=" << const_pi<double>() << "), quadr_tol=" << quadr_tol << "\n";
-    ofs << "# columns: PatchPerFace  Nbeta  Nelem  rel-L2(near R=" << R_near
-        << ")  rel-L2(far R=" << R_far << ")  t_solve+eval(s)\n";
-
-    std::cout << "\nNbeta sweep (RectPolar, Stokes, twisted sphere) -> Nbeta_benchmark.txt\n";
-    std::cout << std::scientific;
-  }
-
-  for (const Long PatchPerFace : PatchPerFaceList) {
-    const Long Nelem = 6 * PatchPerFace * PatchPerFace;
-    if (root) {
-      ofs << "# --- PatchPerFace = " << PatchPerFace << " (Nelem = " << Nelem << ") ---\n";
-      std::cout << "# --- PatchPerFace = " << PatchPerFace << " (Nelem = " << Nelem << ") ---\n";
-    }
-    for (const Long Nbeta : NbetaList) {
-      QuadElemList<double> elem_lst = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, theta_twist, comm);
-      elem_lst.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar, /*q=*/6, /*cov_order=*/Nbeta);
-
-      const auto t0 = std::chrono::high_resolution_clock::now();
-      const std::vector<double> es = TestManufactured(elem_lst, comm, Stokes3D_FxU(), Stokes3D_DxU(),
-                               "Stokes DL+SL", src_ext, Fsrc_sto, interior, {R_near, R_far},
-                               quadr_tol, SL_scal, DL_scal);
-      const auto t1 = std::chrono::high_resolution_clock::now();
-      const double elapsed = std::chrono::duration<double>(t1 - t0).count();
-      const double es_near = es[0], es_far = es[1];
-
-      if (root) {
-        ofs << "  " << std::setw(12) << PatchPerFace << "  " << std::setw(5) << Nbeta
-            << "  " << std::setw(6) << Nelem << "   " << es_near << "   " << es_far
-            << "   " << elapsed << std::endl; // flush each row in case a heavy case crashes
-        std::cout << "  Nbeta=" << std::setw(5) << Nbeta << "  rel-L2(near)=" << es_near
-                  << "  rel-L2(far)=" << es_far << "  t=" << elapsed << "s\n";
-      }
-    }
-  }
-  if (root) std::cout << "Nbeta sweep: DONE" << std::endl;
-}
-
-}
-
-//  ============= Timing ===================
-void test_timing_StkSL(const QuadElemList<double>& elem_lst, const Comm& comm, const double tol = 1e-9) {
-  // Non-polynomial densities (analytic -> fast SH decay).
-  auto sto_density = [](double x, double y, double z, double* o) {
-    o[0] = std::exp(x); o[1] = std::exp(y); o[2] = std::exp(z);
-  };
-
-  const Stokes3D_FxU ker_FxU;
-
-  static constexpr Integer KDIM0 = Stokes3D_FxU::SrcDim();
-
-  Vector<double> Xnodes, Xnnodes;
-  elem_lst.GetNodeCoord(&Xnodes, &Xnnodes, nullptr);
-  const Long Nnode = Xnodes.Dim() / 3;
-
-  // Density at the cubed-sphere nodes (AoS).
-  Vector<double> F(Nnode * KDIM0);
-  for (Long i = 0; i < Nnode; i++) sto_density(Xnodes[i*3+0], Xnodes[i*3+1], Xnodes[i*3+2], &F[i*KDIM0]);
-
-  BoundaryIntegralOp<double, Stokes3D_FxU> BIOp(ker_FxU, /*trg_normal_dot_prod=*/false, comm);
-  BIOp.SetAccuracy(tol);
-  BIOp.AddElemList(elem_lst);
-
-  Vector<double> Xtrg = Xnodes;
-  Xtrg += 1e-6 * Xnnodes;
-  BIOp.SetTargetCoord(Xtrg);
-
-  Vector<double> U_quad;
-  Profile::Tic("BIO eval near");
-  BIOp.ComputePotential(U_quad, F);
-  Profile::Toc();
-  Profile::print(&comm, {"t_max", "f_max", "f/s_avg"});
-
-}
-#endif // DISABLED: BIO-vs-SH / manufactured / surface-area / timing / gmsh tests
+} // end anonymous namespace (TU-local helpers: GlobalReduce, FacePoint, BuildTwistedSphere, test_SurfaceArea)
 
 
 // Double-layer constant-density identity on a closed surface (Laplace or Stokes):
 // D[q] = c*q for constant q, with c = -1/2 for the outward-normal convention used here.
-// Sign convention: this kernel (r = x_trg-x_src, source normal) gives c = -1/2 for
-// an outward normal, +1/2 for inward; verify magnitude and sign vs. orientation.
-template <class Real, class KerDL> void test_DLIdentity(const QuadElemList<Real>& elem_lst, const Comm& comm, const Real quad_tol = 1e-8) {
+// Sign convention: this kernel (r = x_trg-x_src, source normal) gives c = -1/2 for an outward
+// normal, +1/2 for inward. Returns the max relative error over the node components.
+template <class Real, class KerDL> Real test_DLIdentity(const QuadElemList<Real>& elem_lst, const Comm& comm, const Real quad_tol = 1e-8) {
   const KerDL kernel_dl;
   BoundaryIntegralOp<Real, KerDL> BIOp(kernel_dl, false, comm);
   BIOp.SetAccuracy(quad_tol);
@@ -805,7 +802,8 @@ template <class Real, class KerDL> void test_DLIdentity(const QuadElemList<Real>
   for (Long k=0; k<KDIM0; k++) cx_relerr_avg += (cx_maxerr[k] / std::fabs(c_expect));
   cx_relerr_avg /= KDIM0;
   cx_relerr_avg = GlobalReduce(cx_relerr_avg, comm, CommOp::MAX);
-  if (!comm.Rank()) std::cout << std::setprecision(8) << "DL constant-density identity: max relative error = " << cx_relerr_avg << std::endl;
+  if (!comm.Rank()) std::cout << std::setprecision(8) << "  DL constant-density identity: max relative error = " << cx_relerr_avg << std::endl;
+  return cx_relerr_avg;
 }
 
 // Interior Green's representation identity on a closed surface (Laplace or Stokes):
@@ -817,7 +815,8 @@ template <class Real, class KerDL> void test_DLIdentity(const QuadElemList<Real>
 //                 (exercises the NEAR-interaction path). The near-singular quadrature returns the
 //                 true off-surface D[u] (interior limit included), so no manual jump is applied and
 //                 (S[Fs] - D[Fd]) == u at the interior targets directly.
-template <class Real, class KerSL, class KerDL, class KerGrad> void test_greens_identity(const QuadElemList<Real>& elem_lst, const Comm& comm,
+// Returns the relative error max|Uerr|/max|Uref| (reduced across ranks) so callers can tabulate it.
+template <class Real, class KerSL, class KerDL, class KerGrad> Real test_greens_identity(const QuadElemList<Real>& elem_lst, const Comm& comm,
                           const Real tol, const Vector<Real> X0, const Real trg_dist = 0, const bool center_only = false) {
   static constexpr Integer COORD_DIM = 3;
   const Long pid = comm.Rank();
@@ -901,6 +900,7 @@ template <class Real, class KerSL, class KerDL, class KerGrad> void test_greens_
 
   if (trg_dist == 0) Ud -= 0.5*Fd; // DL jump condition, on-surface only (off-surface D[u] already includes it)
   Vector<Real> Uerr = (Us - Ud) - Uref;
+  Real rel_err = 0;
   { // Print error
     StaticArray<Real,2> max_err{0,0};
     StaticArray<Real,2> max_val{0,0};
@@ -908,166 +908,165 @@ template <class Real, class KerSL, class KerDL, class KerGrad> void test_greens_
     for (auto x : Uref) max_val[0] = std::max<Real>(max_val[0], fabs(x));
     comm.Allreduce(max_err+0, max_err+1, 1, CommOp::MAX);
     comm.Allreduce(max_val+0, max_val+1, 1, CommOp::MAX);
-    if (!pid) std::cout<<"Green's identity error = "<<max_err[1]/max_val[1]<<'\n';
+    rel_err = max_err[1]/max_val[1];
+    if (!pid) std::cout<<"  Green's identity error = "<<rel_err<<'\n';
   }
-  sctl::Profile::print(&comm, {"t_max"});
+  sctl::Profile::print(&comm, {"t_avg", "f/s_avg"});
   sctl::Profile::reset();
   sctl::Profile::Enable(false);
+  return rel_err;
 }
 
 
 int main(int argc, char** argv) {
   Comm::MPI_Init(&argc, &argv);
   using Real = double;
-
   {
     const Comm comm = Comm::World();
-    // Distributed run: every rank builds the full geometry and BuildTwistedSphere /
-    // GmshReader::LoadQuadElemList keep only this rank's contiguous element slice
-    // (replicate-then-slice). BoundaryIntegralOp handles all cross-rank communication.
+    const bool root = !comm.Rank();
 
-    // Profile::Enable(true);
+    // ======================================================================================
+    // 1. Unit tests -- single element / kernel building blocks (each uses Comm::Self()).
+    // ======================================================================================
+    if (root) std::cout << "==================== Unit tests ====================\n";
+    test_ParamGrid<Real>();
+    std::cout << "test_ParamGrid: PASSED\n";
+    test_GetClosestNode_plane<Real>();
+    std::cout << "test_GetClosestNode_plane: PASSED\n";
+    test_GetClosestNode_curved<Real>();
+    std::cout << "test_GetClosestNode_curved: PASSED\n";
+    test_GetClosestPoint_plane<Real>();
+    std::cout << "test_GetClosestPoint_plane: PASSED\n";
+    test_GetClosestPoint_curved<Real>();
+    std::cout << "test_GetClosestPoint_curved: PASSED\n";
 
-    // gmsh import pipeline vs. analytic cubed-sphere (geometry invariants + BIO-vs-SH).
-    // Coarse ./sphere mesh: low resolution, so resample its panels to QuadOrder 4.
-    // test_GmshVsTwistSphere(comm, "./sphere", 4);
-    // test_GmshVsTwistSphere(comm, "./sphere_ord9", 16);
+    std::cout << "--- Scheme 1: adaptive and/or log singular special quadrature ---\n";
+    test_LogSingularQuad1D<Real>();
+    std::cout << "test_LogSingularQuad1D: PASSED\n";
+    test_QuadNodeInterp<Real>();
+    std::cout << "test_QuadNodeInterp: PASSED\n";
+    // NearInterac: adaptive scheme vs. upsampled direct quadrature.
+    const Stokes3D_FxU ker_FxU;
+    const Stokes3D_DxU ker_DxU;
+    const Laplace3D_FxU ker_lapFxU;
+    test_NearInterac<Real>(ker_FxU, false, "Stokes3D_FxU / plane");
+    std::cout << "test_NearInterac (Stokes3D_FxU / plane): PASSED\n";
+    test_NearInterac<Real>(ker_FxU, true,  "Stokes3D_FxU / testsurf");
+    std::cout << "test_NearInterac (Stokes3D_FxU / testsurf): PASSED\n";
+    test_NearInterac<Real>(ker_DxU, false, "Stokes3D_DxU / plane");
+    std::cout << "test_NearInterac (Stokes3D_DxU / plane): PASSED\n";
+    test_NearInterac<Real>(ker_DxU, true,  "Stokes3D_DxU / testsurf");
+    std::cout << "test_NearInterac (Stokes3D_DxU / testsurf): PASSED\n";
+    // SelfInterac vs. closed-form references on the flat unit square (all three kernels).
+    test_SelfInterac<Real>(ker_lapFxU);
+    std::cout << "test_SelfInterac (Laplace3D_FxU / plane): PASSED\n";
+    test_SelfInterac<Real>(ker_FxU);
+    std::cout << "test_SelfInterac (Stokes3D_FxU / plane): PASSED\n";
+    test_SelfInterac<Real>(ker_DxU);
+    std::cout << "test_SelfInterac (Stokes3D_DxU / plane): PASSED\n";
 
-    // test_NbetaSweep(comm);
-
-// #if 0
-    const Long ElemOrder = 16;
-    const Long PatchPerFace = 5;
-    const double Radius = 1.0;
-
-    // === Near-quadrature schemes: on-surface DL + Green's identity, and off-surface interior near ===
-    // On-surface (targets = nodes) exercises the self path + adjacent-panel EDGE near; off-surface
-    // center targets exercise the panel-INTERIOR near path. Adaptive (closest-point near) and
-    // RectPolar match at the surface-resolution floor (~5e-8 on-surface, ~5e-7 interior). hedgehog
-    // matches on interior targets but is inaccurate near seams, so it is shown for interior only.
+    // Convergence in the adaptive dyadic-refinement depth cap (max_depth knob, {4,8,12,30}).
+    // rel_tol loosened to 1e0 so the assert never trips and only the printed err reveals the trend.
     {
-      using QS = QuadElemList<double>::QuadScheme;
-      const Vector<double> X0{1.3, 1.2, 0.2}; // exterior source for the interior Green's identity
-      const Long EO = 12, PPF = 2; const double ctol = 1e-7; // 24-patch order-12 sphere
-      auto make = [&](QS s) {
-        auto e = BuildTwistedSphere<double>(EO, PPF, Radius, 0., comm);
-        if      (s == QS::RectPolar) e.SetQuadScheme(QS::RectPolar, 6, 512, 30);
-        else if (s == QS::LineQBX)   { e.SetQuadScheme(QS::LineQBX); e.SetLineQBXParams(); } // R=r=0.02L,p=16,eta=2,up=72
-        else                         e.SetQuadScheme(QS::Adaptive, 6, 0, 30);
-        return e;
-      };
-
-      if (!comm.Rank()) std::cout << "\n=== On-surface DL + Green's identity (order-" << EO << ", " << PPF << " patch/face) ===\n";
-      for (const auto& c : {std::make_pair("Adaptive", QS::Adaptive), std::make_pair("RectPolar", QS::RectPolar)}) {
-        auto elem = make(c.second);
-        if (!comm.Rank()) std::cout << "\n--- " << c.first << " (on-surface) ---\n";
-        if (!comm.Rank()) std::cout << "[Laplace DL] "; test_DLIdentity<double, Laplace3D_DxU>(elem, comm, ctol);
-        if (!comm.Rank()) std::cout << "[Stokes  DL] "; test_DLIdentity<double, Stokes3D_DxU>(elem, comm, ctol);
-        if (!comm.Rank()) std::cout << "[Laplace Green's] ";
-        test_greens_identity<double, Laplace3D_FxU, Laplace3D_DxU, Laplace3D_FxdU>(elem, comm, ctol, X0, /*trg_dist=*/0.);
-        if (!comm.Rank()) std::cout << "[Stokes  Green's] ";
-        test_greens_identity<double, Stokes3D_FxU, Stokes3D_DxU, Stokes3D_FxT>(elem, comm, ctol, X0, /*trg_dist=*/0.);
+      using QSA = QuadElemList<Real>::QuadScheme;
+      std::cout << "  Adaptive self-interac convergence, Sto_FxU (tol=1e-12; max_depth -> rel_err):\n";
+      for (const Integer depth : {4, 8, 12, 30}) {
+        std::cout << "    max_depth=" << depth << ": ";
+        test_SelfInterac<Real>(ker_FxU, QSA::Adaptive, /*rel_tol=*/1e0, /*q=*/10, /*tol=*/1e-12, /*cov_order=*/0, /*max_depth=*/depth);
       }
-
-      if (!comm.Rank()) std::cout << "\n=== Off-surface interior near: Stokes Green's identity @ trg_dist=1e-4 ===\n";
-      for (const auto& c : {std::make_pair("Adaptive", QS::Adaptive), std::make_pair("RectPolar", QS::RectPolar), std::make_pair("hedgehog", QS::LineQBX)}) {
-        auto elem = make(c.second);
-        if (!comm.Rank()) std::cout << "\n--- " << c.first << " (interior near) ---\n";
-        test_greens_identity<double, Stokes3D_FxU, Stokes3D_DxU, Stokes3D_FxT>(elem, comm, ctol, X0, /*trg_dist=*/1e-4, /*center_only=*/true);
+      std::cout << "  Adaptive near-interac convergence, Sto_FxU / testsurf (max_depth -> rel_err):\n";
+      for (const Integer depth : {4, 8, 12, 30}) {
+        std::cout << "    max_depth=" << depth << ": ";
+        test_NearInterac<Real>(ker_FxU, true, "adaptive depth sweep", QSA::Adaptive, /*rel_tol=*/1e0, /*cov_order=*/0, /*max_depth=*/depth);
       }
     }
-    // QuadElemList<double> elem_lst = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, 0., comm);
 
-    // if (!comm.Rank()) std::cout << "\n=== Scheme 1: Adaptive subdivision of panels ===" << std::endl;
-    // if (!comm.Rank()) std::cout << "------ Quadr and BIO tests for regular sphere -------" << std::endl;
-    // test_SurfaceArea(elem_lst, Radius, comm);
-    // test_StokesDLIdentity(elem_lst, comm);
-    // test_BIOvsSH(elem_lst, comm, true);
-    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm);
-    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, true);
-    // if (!comm.Rank()) std::cout << "------ Profile BIO compute potential at near target, regular sphere. ------ " << std::endl;
-    // test_timing_StkSL(elem_lst, comm, 1e-12);
+    // Scheme 2: rectangular-polar COV (Bruno 2018); accuracy driven by Nbeta, not field order.
+    using QS = QuadElemList<Real>::QuadScheme;
+    std::cout << "--- Scheme 2: rectangular-polar change of variable ---\n";
+    test_RectPolarNodes1D<Real>();
+    std::cout << "test_RectPolarNodes1D: PASSED\n";
 
-    // std::cout << "------ Quadr and BIO tests for twisted sphere -------" << std::endl;
-    const Long ElemOrder_twisted = 16;
-    const Long PatchPerFace_twisted = 5;
-    // Small twist
-    double theta_twist = const_pi<double>() / 6.;
-    // QuadElemList<double> elem_lst_twist = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist);
-    // test_SurfaceArea(elem_lst_twist, Radius);
-    // test_StokesDLIdentity(elem_lst_twist, comm);
-    // test_BIOvsSH(elem_lst_twist, comm, false, 1e-14);
-    // std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, 0, theta_twist, {1,2,3}, 12);
+    const Integer Nbeta = 200;
+    test_NearInterac<Real>(ker_FxU, false, "RP Stokes3D_FxU / plane",    QS::RectPolar, 1e-7, Nbeta);
+    test_NearInterac<Real>(ker_FxU, true,  "RP Stokes3D_FxU / testsurf", QS::RectPolar, 1e-7, Nbeta);
+    test_NearInterac<Real>(ker_DxU, false, "RP Stokes3D_DxU / plane",    QS::RectPolar, 1e-7, Nbeta);
+    test_NearInterac<Real>(ker_DxU, true,  "RP Stokes3D_DxU / testsurf", QS::RectPolar, 1e-7, Nbeta);
+    std::cout << "test_NearInterac (RectPolar, Nbeta=" << Nbeta << "): PASSED\n";
+    test_SelfInterac<Real>(ker_lapFxU, QS::RectPolar, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
+    std::cout << "test_SelfInterac Lap_FxU (RectPolar, Nbeta=200): PASSED\n";
+    test_SelfInterac<Real>(ker_FxU, QS::RectPolar, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
+    std::cout << "test_SelfInterac Sto_FxU (RectPolar, Nbeta=200): PASSED\n";
+    test_SelfInterac<Real>(ker_DxU, QS::RectPolar, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
+    std::cout << "test_SelfInterac Sto_DxU (RectPolar, Nbeta=200): PASSED\n";
+    // Convergence in Nbeta (Nbeta, not q, drives accuracy).
+    std::cout << "  RP self-interac convergence, Sto_FxU (q=10; Nbeta -> max_rel):\n";
+    for (const Integer nb : {48, 100, 200, 512}) {
+      std::cout << "    Nbeta=" << nb << ": ";
+      test_SelfInterac<Real>(ker_FxU, QS::RectPolar, 1e0, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/nb);
+    }
 
-    // // Moderate twist
-    // theta_twist = const_pi<double>() / 2.;
-    // QuadElemList<double> elem_lst_twist2 = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist);
-    // test_SurfaceArea(elem_lst_twist2, Radius);
-    // test_StokesDLIdentity(elem_lst_twist2, comm);
-    // test_BIOvsSH(elem_lst_twist2, comm, false, 1e-14);
-    // std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, 0, theta_twist, {1,2,3,4,5}, 12);
+    // Scheme 3: Hybrid = adaptive near + rectangular-polar self.
+    std::cout << "--- Scheme 3: Hybrid (adaptive near + RectPolar self) ---\n";
+    test_NearInterac<Real>(ker_FxU, false, "Hybrid Stokes3D_FxU / plane",    QS::Hybrid, 1e-7, /*cov_order=*/0);
+    test_NearInterac<Real>(ker_FxU, true,  "Hybrid Stokes3D_FxU / testsurf", QS::Hybrid, 1e-7, /*cov_order=*/0);
+    std::cout << "test_NearInterac (Hybrid, adaptive near): PASSED\n";
+    test_SelfInterac<Real>(ker_lapFxU, QS::Hybrid, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
+    std::cout << "test_SelfInterac Lap_FxU (Hybrid, RP self, Nbeta=200): PASSED\n";
+    test_SelfInterac<Real>(ker_FxU, QS::Hybrid, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
+    std::cout << "test_SelfInterac Sto_FxU (Hybrid, RP self, Nbeta=200): PASSED\n";
 
-    // // Large twist
-    // theta_twist = const_pi<double>();
-    // QuadElemList<double> elem_lst_twist3 = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist, comm);
-    // Vector<double> Xtwist, Xntwist;
-    // elem_lst_twist3.GetNodeCoord(&Xtwist, &Xntwist, nullptr);
-    // elem_lst_twist3.WriteVTK("twisted3_sphere_mpi", Xntwist, comm); // one .vtu per rank + rank-0 .pvtu master
-    // test_SurfaceArea(elem_lst_twist3, Radius, comm);
-    // test_StokesDLIdentity(elem_lst_twist3, comm);
-    // test_BIOvsSH(elem_lst_twist3, comm, false, 1e-14);
-    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, 0, theta_twist, {3,4,5}, 16);
+    std::cout << "--- Hybrid scheme visualization (flat order-12 panel) ---\n";
+    hybrid_scheme_vis<Real>();
 
+    // ======================================================================================
+    // 2. Sphere tests -- order 12, 12 patches/face, REGULAR sphere, per scheme, tol = 1e-9.
+    //    Each returns a max relative error, gated below rel_tol. RP/Duffy reach ~1e-8 or better, but
+    //    the Adaptive near/self path floors much higher on the Stokes DL constant-density identity
+    //    (~3e-6 at order 12, even untwisted), which sets the achievable floor -- so the gate is 1e-5.
+    // ======================================================================================
+    const Long ElemOrder = 12, PatchPerFace = 12;
+    const Real Radius = 1;
+    const Real tol = 1e-9;
+    const Real rel_tol = 1e-5;                          // required accuracy: err < 1e-5 (see note above)
+    const Vector<Real> X0{(Real)1.3, (Real)1.2, (Real)0.2}; // exterior source for Green's identity
 
-    // // --- Scheme 2: rectangular-polar COV (Bruno 2018) for near/self interactions ---
-    // if (!comm.Rank()) std::cout << "\n=== Scheme 2: rectangular-polar change of variable ===" << std::endl;
-    // // Profile::Enable(true);
-    // QuadElemList<double> elem_lst_rp = BuildTwistedSphere<double>(ElemOrder, PatchPerFace, Radius, 0., comm);
-    // elem_lst_rp.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar, 6, 256);
-    // test_SurfaceArea(elem_lst_rp, Radius, comm);
-    // test_StokesDLIdentity(elem_lst_rp, comm);
-    // test_BIOvsSH(elem_lst_rp, comm);
-    // test_LaplaceManufactured(elem_lst_rp, comm);
-    // test_StokesManufactured(elem_lst_rp, comm);
-    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, 1);
-    // // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
-    // // test_ManufacturedConvergence(comm, true, 1);
-    // if (!comm.Rank()) std::cout << "------ Profile BIO compute potential at near target, R-P scheme, regular sphere. ------ " << std::endl;
-    // test_timing_StkSL(elem_lst_rp, comm, 1e-12);
+    struct SchemeCfg { const char* name; QS scheme; };
+    const std::vector<SchemeCfg> schemes = {
+      {"RP",       QS::RectPolar},
+      {"Adaptive", QS::Adaptive},
+      {"Hybrid",   QS::Hybrid},
+      {"Duffy",    QS::Duffy},
+    };
 
-    // elem_lst_rp = BuildTwistedSphere<double>(ElemOrder_twisted, PatchPerFace_twisted, Radius, theta_twist, comm);
-    // elem_lst_rp.SetQuadScheme(QuadElemList<double>::QuadScheme::RectPolar);
-    // test_SurfaceArea(elem_lst_rp, Radius, comm);
-    // test_StokesDLIdentity(elem_lst_rp, comm);
-    // test_BIOvsSH(elem_lst_rp, comm);
-    // test_LaplaceManufactured(elem_lst_rp, comm);
-    // test_StokesManufactured(elem_lst_rp, comm);
-    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, 1, theta_twist);
-    // // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Interior] ------" << std::endl;
-    // // test_ManufacturedConvergence(comm, true, 1, theta_twist);
-    // if (!comm.Rank()) std::cout << "------ Profile BIO compute potential at near target, R-P scheme, twisted sphere. ------ " << std::endl;
-    // test_timing_StkSL(elem_lst_rp, comm, 1e-12);
+    if (root) std::cout << "\n==================== Sphere tests (order " << ElemOrder << ", "
+                        << PatchPerFace << " patches/face, regular sphere, tol " << tol << ") ====================\n";
+    Real overall_worst = 0;
+    for (const auto& sc : schemes) {
+      if (root) std::cout << "\n---------- scheme = " << sc.name << " ----------\n";
+      QuadElemList<Real> qel = BuildTwistedSphere<Real>(ElemOrder, PatchPerFace, Radius, /*theta_twist=*/0., comm);
+      // max_depth = 12 is the tol=1e-9 ladder value (u-grading depth). The self-accuracy cap is the
+      // v-direction composite-Alpert levels (VLevelsForDigits, deepened to digits-2), not u.
+      qel.SetQuadScheme(sc.scheme, /*q=*/6, /*cov_order=*/200, /*max_depth=*/12);
 
-    // if (!comm.Rank()) std::cout << "\n=== Scheme 3: Hybrid ===" << std::endl;
-    // if (!comm.Rank()) std::cout << "------ Quadr and BIO tests for regular sphere -------" << std::endl;
-    // elem_lst.SetQuadScheme(QuadElemList<double>::QuadScheme::Hybrid, 6, 512);
-    // test_SurfaceArea(elem_lst, Radius, comm);
-    // test_StokesDLIdentity(elem_lst, comm);
-    // test_BIOvsSH(elem_lst, comm, true);
-    // if (!comm.Rank()) std::cout << "------- Manufactured solutions test [Exterior] ------" << std::endl;
-    // test_ManufacturedConvergence(comm, false, 2);
+      // Collect every error first (so one run prints the full per-scheme matrix), then gate on the
+      // scheme's worst. The Stokes DL constant-density identity is the hardest probe for the Adaptive
+      // near/self path (~3e-6 at order 12, even untwisted), so it sets the achievable floor.
+      const Real e_area   = test_SurfaceArea(qel, Radius, comm);
+      const Real e_dl_lap = test_DLIdentity<Real, Laplace3D_DxU>(qel, comm, tol);
+      const Real e_dl_stk = test_DLIdentity<Real, Stokes3D_DxU >(qel, comm, tol);
+      const Real e_gr_lap = test_greens_identity<Real, Laplace3D_FxU, Laplace3D_DxU, Laplace3D_FxdU>(qel, comm, tol, X0, /*trg_dist=*/0.);
+      const Real e_gr_stk = test_greens_identity<Real, Stokes3D_FxU,  Stokes3D_DxU,  Stokes3D_FxT  >(qel, comm, tol, X0, /*trg_dist=*/0.);
+      const Real scheme_worst = std::max(std::max(std::max(e_area, e_dl_lap), std::max(e_dl_stk, e_gr_lap)), e_gr_stk);
+      overall_worst = std::max(overall_worst, scheme_worst);
 
-// #endif
-
+      if (root) std::cout << "  scheme " << sc.name << " worst rel error = " << scheme_worst
+                          << "  (area=" << e_area << " DL_lap=" << e_dl_lap << " DL_stk=" << e_dl_stk
+                          << " greens_lap=" << e_gr_lap << " greens_stk=" << e_gr_stk << ")\n";
+      SCTL_ASSERT(scheme_worst < rel_tol);
+    }
+    if (root) std::cout << "\nAll tests PASSED (overall worst rel error " << overall_worst << " < " << rel_tol << ")\n";
   }
-
   Comm::MPI_Finalize();
   return 0;
 }

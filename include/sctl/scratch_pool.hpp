@@ -100,7 +100,9 @@ template <class T> class ScratchBuf {
  *
  * Use `ScratchPool::Instance()` to get the calling thread's pool. The pool
  * persists for the thread's lifetime, including across OpenMP parallel
- * regions (so the warmed chunk stays hot for the next region).
+ * regions (so the warmed chunk stays hot for the next region). Inside a
+ * parallel region `Instance()` returns a separate per-thread pool, so
+ * team-thread-0 does not share pages with the serial (master) pool.
  *
  * A user-constructed pool is allowed (for tests and isolation) but is NOT
  * thread-safe — concurrent allocators must use distinct pools or

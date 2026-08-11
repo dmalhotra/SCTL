@@ -4,12 +4,12 @@
 // Lightweight, opt-in phase timers for the QuadElemList self/near hot loops.
 //
 // All instrumentation is gated on the BENCH_QUAD macro. When BENCH_QUAD is NOT
-// defined the BENCH_TIC/BENCH_TOC/BENCH_COUNT macros expand to nothing, so the
-// instrumented translation units compile byte-identical to the uninstrumented
-// build (zero runtime cost). The Reset()/Report() helpers always exist so the
-// benchmark driver links in both builds.
+// defined the BENCH_TIC/BENCH_TOC/BENCH_FLOPS/BENCH_NEAR macros expand to nothing,
+// so the instrumented translation units compile byte-identical to the
+// uninstrumented build (zero runtime cost). The Reset()/Report() helpers always
+// exist so the benchmark driver links in both builds.
 //
-// Build instrumented:   make CXXFLAGS+=" -DBENCH_QUAD" bin/bench-quad-interac
+// Build instrumented:   make BENCH=1 bin/bench-quad-interac
 // Run single-threaded:  OMP_NUM_THREADS=1 ./bin/bench-quad-interac
 
 #include <array>
@@ -67,7 +67,7 @@ struct PhaseRow {
   long   n[kNumPhases];
   double gemm_flops;
   long   near_leaves;    // total quadtree leaves summed over adaptive-near targets
-  long   near_targets;   // number of adaptive-near NearInteracBlock calls
+  long   near_targets;   // number of adaptive-near NearInteracBlockGraded calls
   long   near_max_depth; // deepest subdivision reached across those targets
   char   pad[64];
 };
