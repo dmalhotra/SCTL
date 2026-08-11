@@ -390,6 +390,16 @@ namespace sctl { // Generic
     } u = {v};
     return u.r;
   }
+  // Lane movement is bit-level, so a type can borrow the transpose of any
+  // same-layout type -- integer widths reuse the float/double specializations.
+  template <class VData0, class VData> inline void transpose_reinterpret_intrin(VData (&v)[VData::Size]) {
+    static constexpr Integer N = VData::Size;
+    static_assert(VData0::Size == N && sizeof(VData0) == sizeof(VData), "vector layout must match.");
+    VData0 w[N];
+    for (Integer i = 0; i < N; i++) w[i] = reinterpret_intrin<VData0>(v[i]);
+    transpose_intrin(w);
+    for (Integer i = 0; i < N; i++) v[i] = reinterpret_intrin<VData>(w[i]);
+  }
   template <class RealVec, class IntVec> inline RealVec convert_int2real_intrin(const IntVec& x) {
     using Real = typename RealVec::ScalarType;
     using Int = typename IntVec::ScalarType;
@@ -1394,6 +1404,58 @@ namespace sctl { // SSE
     return _mm_min_pd(a.v, b.v);
   }
 
+  // Interleave two 128-bit vectors at a given element granularity. Used to build
+  // the transpose network for element widths that have no float counterpart.
+  template <Integer Bits> struct UnpackIntrin128;
+  template <> struct UnpackIntrin128< 8> {
+    static inline __m128i lo(const __m128i& a, const __m128i& b) { return _mm_unpacklo_epi8 (a, b); }
+    static inline __m128i hi(const __m128i& a, const __m128i& b) { return _mm_unpackhi_epi8 (a, b); }
+  };
+  template <> struct UnpackIntrin128<16> {
+    static inline __m128i lo(const __m128i& a, const __m128i& b) { return _mm_unpacklo_epi16(a, b); }
+    static inline __m128i hi(const __m128i& a, const __m128i& b) { return _mm_unpackhi_epi16(a, b); }
+  };
+  template <> struct UnpackIntrin128<32> {
+    static inline __m128i lo(const __m128i& a, const __m128i& b) { return _mm_unpacklo_epi32(a, b); }
+    static inline __m128i hi(const __m128i& a, const __m128i& b) { return _mm_unpackhi_epi32(a, b); }
+  };
+  template <> struct UnpackIntrin128<64> {
+    static inline __m128i lo(const __m128i& a, const __m128i& b) { return _mm_unpacklo_epi64(a, b); }
+    static inline __m128i hi(const __m128i& a, const __m128i& b) { return _mm_unpackhi_epi64(a, b); }
+  };
+
+  // One stage of the NxN transpose network: interleave at granularity Bits,
+  // pairing vectors Stride apart. Recurses with both doubled until Stride == N.
+  // A 128-bit vector is a single lane, so no cross-lane stage is needed.
+  template <Integer N, Integer Bits, Integer Stride> struct TransposeNet128 {
+    static inline void apply(__m128i (&v)[N]) {
+      __m128i w[N];
+      for (Integer k = 0; k < N; k += 2*Stride) {
+        for (Integer j = 0; j < Stride; j++) {
+          w[k+2*j+0] = UnpackIntrin128<Bits>::lo(v[k+j], v[k+j+Stride]);
+          w[k+2*j+1] = UnpackIntrin128<Bits>::hi(v[k+j], v[k+j+Stride]);
+        }
+      }
+      for (Integer i = 0; i < N; i++) v[i] = w[i];
+      TransposeNet128<N,Bits*2,Stride*2>::apply(v);
+    }
+  };
+  template <Integer N, Integer Bits> struct TransposeNet128<N,Bits,N> {
+    static inline void apply(__m128i (&)[N]) {}
+  };
+
+  template <> inline void transpose_intrin<VecData<int8_t,16>>(VecData<int8_t,16> (&v)[16]) {
+    __m128i w[16];
+    for (Integer i = 0; i < 16; i++) w[i] = v[i].v;
+    TransposeNet128<16,8,1>::apply(w);
+    for (Integer i = 0; i < 16; i++) v[i].v = w[i];
+  }
+  template <> inline void transpose_intrin<VecData<int16_t,8>>(VecData<int16_t,8> (&v)[8]) {
+    __m128i w[8];
+    for (Integer i = 0; i < 8; i++) w[i] = v[i].v;
+    TransposeNet128<8,16,1>::apply(w);
+    for (Integer i = 0; i < 8; i++) v[i].v = w[i];
+  }
   template <> inline void transpose_intrin<VecData<double,2>>(VecData<double,2> (&v)[2]) {
     const __m128d r0 = v[0].v, r1 = v[1].v;
     v[0].v = _mm_unpacklo_pd(r0, r1);
@@ -1412,6 +1474,8 @@ namespace sctl { // SSE
     v[2].v = _mm_movelh_ps(a1, b1);
     v[3].v = _mm_movehl_ps(b1, a1);
   }
+  template <> inline void transpose_intrin<VecData<int32_t,4>>(VecData<int32_t,4> (&v)[4]) { transpose_reinterpret_intrin<VecData<float ,4>>(v); }
+  template <> inline void transpose_intrin<VecData<int64_t,2>>(VecData<int64_t,2> (&v)[2]) { transpose_reinterpret_intrin<VecData<double,2>>(v); }
 
   // Conversion operators
   template <> inline VecData<float ,4> convert_int2real_intrin<VecData<float ,4>,VecData<int32_t,4>>(const VecData<int32_t,4>& x) {
@@ -2174,6 +2238,66 @@ namespace sctl { // AVX
     v[6].v = _mm256_permute2f128_ps(t2, t6, 0x31);
     v[7].v = _mm256_permute2f128_ps(t3, t7, 0x31);
   }
+  template <> inline void transpose_intrin<VecData<int32_t,8>>(VecData<int32_t,8> (&v)[8]) { transpose_reinterpret_intrin<VecData<float ,8>>(v); }
+  template <> inline void transpose_intrin<VecData<int64_t,4>>(VecData<int64_t,4> (&v)[4]) { transpose_reinterpret_intrin<VecData<double,4>>(v); }
+
+  #ifdef __AVX2__
+  template <Integer Bits> struct UnpackIntrin256;
+  template <> struct UnpackIntrin256< 8> {
+    static inline __m256i lo(const __m256i& a, const __m256i& b) { return _mm256_unpacklo_epi8 (a, b); }
+    static inline __m256i hi(const __m256i& a, const __m256i& b) { return _mm256_unpackhi_epi8 (a, b); }
+  };
+  template <> struct UnpackIntrin256<16> {
+    static inline __m256i lo(const __m256i& a, const __m256i& b) { return _mm256_unpacklo_epi16(a, b); }
+    static inline __m256i hi(const __m256i& a, const __m256i& b) { return _mm256_unpackhi_epi16(a, b); }
+  };
+  template <> struct UnpackIntrin256<32> {
+    static inline __m256i lo(const __m256i& a, const __m256i& b) { return _mm256_unpacklo_epi32(a, b); }
+    static inline __m256i hi(const __m256i& a, const __m256i& b) { return _mm256_unpackhi_epi32(a, b); }
+  };
+  template <> struct UnpackIntrin256<64> {
+    static inline __m256i lo(const __m256i& a, const __m256i& b) { return _mm256_unpacklo_epi64(a, b); }
+    static inline __m256i hi(const __m256i& a, const __m256i& b) { return _mm256_unpackhi_epi64(a, b); }
+  };
+
+  // 256-bit unpacks act within each 128-bit lane, so this transposes the MxM
+  // block held in each lane independently. Same stride-doubling network as
+  // TransposeNet128.
+  template <Integer M, Integer Bits, Integer Stride> struct TransposeNet256 {
+    static inline void apply(__m256i* v) {
+      __m256i w[M];
+      for (Integer k = 0; k < M; k += 2*Stride) {
+        for (Integer j = 0; j < Stride; j++) {
+          w[k+2*j+0] = UnpackIntrin256<Bits>::lo(v[k+j], v[k+j+Stride]);
+          w[k+2*j+1] = UnpackIntrin256<Bits>::hi(v[k+j], v[k+j+Stride]);
+        }
+      }
+      for (Integer i = 0; i < M; i++) v[i] = w[i];
+      TransposeNet256<M,Bits*2,Stride*2>::apply(v);
+    }
+  };
+  template <Integer M, Integer Bits> struct TransposeNet256<M,Bits,M> {
+    static inline void apply(__m256i*) {}
+  };
+
+  // Viewing the NxN matrix as 2x2 blocks of HxH, the lane-wise networks above
+  // give [[A^T,B^T],[C^T,D^T]]; the final permute stage swaps B^T and C^T.
+  template <class VData> inline void transpose256_intrin(VData (&v)[VData::Size]) {
+    static constexpr Integer N = VData::Size;
+    static constexpr Integer H = N/2;
+    static constexpr Integer W = sizeof(typename VData::ScalarType)*8;
+    __m256i w[N];
+    for (Integer i = 0; i < N; i++) w[i] = v[i].v;
+    TransposeNet256<H,W,1>::apply(w);
+    TransposeNet256<H,W,1>::apply(w+H);
+    for (Integer i = 0; i < H; i++) {
+      v[i  ].v = _mm256_permute2x128_si256(w[i], w[i+H], 0x20);
+      v[i+H].v = _mm256_permute2x128_si256(w[i], w[i+H], 0x31);
+    }
+  }
+  template <> inline void transpose_intrin<VecData<int16_t,16>>(VecData<int16_t,16> (&v)[16]) { transpose256_intrin(v); }
+  template <> inline void transpose_intrin<VecData<int8_t ,32>>(VecData<int8_t ,32> (&v)[32]) { transpose256_intrin(v); }
+  #endif
 
   // Conversion operators
   template <> inline VecData<float ,8> convert_int2real_intrin<VecData<float ,8>,VecData<int32_t,8>>(const VecData<int32_t,8>& x) {
@@ -2946,6 +3070,69 @@ namespace sctl { // AVX512
     v[14].v = _mm512_shuffle_f32x4(u6 , u14, 0xDD);
     v[15].v = _mm512_shuffle_f32x4(u7 , u15, 0xDD);
   }
+  template <> inline void transpose_intrin<VecData<int32_t,16>>(VecData<int32_t,16> (&v)[16]) { transpose_reinterpret_intrin<VecData<float ,16>>(v); }
+  template <> inline void transpose_intrin<VecData<int64_t, 8>>(VecData<int64_t, 8> (&v)[ 8]) { transpose_reinterpret_intrin<VecData<double, 8>>(v); }
+
+#if defined(__AVX512BW__)
+  template <Integer Bits> struct UnpackIntrin512;
+  template <> struct UnpackIntrin512< 8> {
+    static inline __m512i lo(const __m512i& a, const __m512i& b) { return _mm512_unpacklo_epi8 (a, b); }
+    static inline __m512i hi(const __m512i& a, const __m512i& b) { return _mm512_unpackhi_epi8 (a, b); }
+  };
+  template <> struct UnpackIntrin512<16> {
+    static inline __m512i lo(const __m512i& a, const __m512i& b) { return _mm512_unpacklo_epi16(a, b); }
+    static inline __m512i hi(const __m512i& a, const __m512i& b) { return _mm512_unpackhi_epi16(a, b); }
+  };
+  template <> struct UnpackIntrin512<32> {
+    static inline __m512i lo(const __m512i& a, const __m512i& b) { return _mm512_unpacklo_epi32(a, b); }
+    static inline __m512i hi(const __m512i& a, const __m512i& b) { return _mm512_unpackhi_epi32(a, b); }
+  };
+  template <> struct UnpackIntrin512<64> {
+    static inline __m512i lo(const __m512i& a, const __m512i& b) { return _mm512_unpacklo_epi64(a, b); }
+    static inline __m512i hi(const __m512i& a, const __m512i& b) { return _mm512_unpackhi_epi64(a, b); }
+  };
+
+  template <Integer M, Integer Bits, Integer Stride> struct TransposeNet512 {
+    static inline void apply(__m512i* v) {
+      __m512i w[M];
+      for (Integer k = 0; k < M; k += 2*Stride) {
+        for (Integer j = 0; j < Stride; j++) {
+          w[k+2*j+0] = UnpackIntrin512<Bits>::lo(v[k+j], v[k+j+Stride]);
+          w[k+2*j+1] = UnpackIntrin512<Bits>::hi(v[k+j], v[k+j+Stride]);
+        }
+      }
+      for (Integer i = 0; i < M; i++) v[i] = w[i];
+      TransposeNet512<M,Bits*2,Stride*2>::apply(v);
+    }
+  };
+  template <Integer M, Integer Bits> struct TransposeNet512<M,Bits,M> {
+    static inline void apply(__m512i*) {}
+  };
+
+  // A 512-bit register is four 128-bit lanes, so the lane-wise networks leave a
+  // 4x4 block matrix to transpose; that takes two shuffle_i32x4 stages.
+  template <class VData> inline void transpose512_intrin(VData (&v)[VData::Size]) {
+    static constexpr Integer N = VData::Size;
+    static constexpr Integer Q = N/4;
+    static constexpr Integer W = sizeof(typename VData::ScalarType)*8;
+    __m512i w[N];
+    for (Integer i = 0; i < N; i++) w[i] = v[i].v;
+    for (Integer g = 0; g < 4; g++) TransposeNet512<Q,W,1>::apply(w + g*Q);
+    for (Integer i = 0; i < Q; i++) {
+      const __m512i a0 = w[i], a1 = w[Q+i], a2 = w[2*Q+i], a3 = w[3*Q+i];
+      const __m512i t0 = _mm512_shuffle_i32x4(a0, a1, 0x88);
+      const __m512i t1 = _mm512_shuffle_i32x4(a2, a3, 0x88);
+      const __m512i t2 = _mm512_shuffle_i32x4(a0, a1, 0xDD);
+      const __m512i t3 = _mm512_shuffle_i32x4(a2, a3, 0xDD);
+      v[      i].v = _mm512_shuffle_i32x4(t0, t1, 0x88);
+      v[  Q + i].v = _mm512_shuffle_i32x4(t2, t3, 0x88);
+      v[2*Q + i].v = _mm512_shuffle_i32x4(t0, t1, 0xDD);
+      v[3*Q + i].v = _mm512_shuffle_i32x4(t2, t3, 0xDD);
+    }
+  }
+  template <> inline void transpose_intrin<VecData<int16_t,32>>(VecData<int16_t,32> (&v)[32]) { transpose512_intrin(v); }
+  template <> inline void transpose_intrin<VecData<int8_t ,64>>(VecData<int8_t ,64> (&v)[64]) { transpose512_intrin(v); }
+#endif
 
   // Conversion operators
   template <> inline VecData<float,16> convert_int2real_intrin<VecData<float,16>,VecData<int32_t,16>>(const VecData<int32_t,16>& x) { return _mm512_cvtepi32_ps(x.v); }
