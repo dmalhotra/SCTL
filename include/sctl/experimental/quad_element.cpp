@@ -447,14 +447,14 @@ namespace sctl {
   }
 
   template <class Real> Integer QuadElemList<Real>::NbetaForDigits(const Integer digits) {
-    // Worst-case tol->Nbeta ladder for the RectPolar COV, calibrated on the maximally
-    // twisted sphere (theta=pi, PatchPerFace=5, near R=1.001 column of Nbeta_sweep.txt):
-    // smallest ladder Nbeta reaching 10^-digits with margin. RectPolar converges much
-    // faster in Nbeta on near-flat geometry, so this is conservative there.
-    if      (digits <= 2) return 128; // 1e-1..1e-2: 128 -> 7.6e-3
-    else if (digits == 3) return 256; // 1e-3     : 256 -> 1.3e-4
-    else if (digits <= 5) return 384; // 1e-4,1e-5: 384 -> 2.4e-6
-    else                  return 512; // <=1e-6   : 512 -> 5.6e-8 (ladder max)
+    // Worst-case tol->Nbeta ladder for the RectPolar COV (the cov_order_==0 fallback), rounded to
+    // a supported dispatch Nbeta {48,100,200,300,400,512}. Calibrated on the maximally twisted
+    // sphere (theta=pi, PatchPerFace=5, Nbeta_sweep.txt); RectPolar converges much faster in Nbeta
+    // on near-flat geometry, so this is conservative there. A user-set cov_order overrides it.
+    if      (digits <= 2) return 100; // 1e-1..1e-2 (below the old 128 calibration point; re-verify if tight 1e-2 on strong twist matters)
+    else if (digits == 3) return 300; // 1e-3
+    else if (digits <= 5) return 400; // 1e-4,1e-5
+    else                  return 512; // <=1e-6 (ladder max)
   }
 
   template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>* Mv_pre, const Matrix<Real>* dMv_pre, const Matrix<Real>* Mu_pre, const Matrix<Real>* dMu_pre, const Matrix<Real>* MvT_pre, const Matrix<Real>* MuT_pre, const Matrix<Real>* dMuT_pre, const Vector<Real>* src_nodal, const Matrix<Real>* MuD_pre, const Real nrm_sign, Vector<Real>* acc_cm) {
@@ -501,33 +501,26 @@ namespace sctl {
       }
     }
     const Matrix<Real>& Mu  = (Mu_pre  ? *Mu_pre  : Mu_local);
-    // const Matrix<Real>& dMu = (dMu_pre ? *dMu_pre : dMu_local);
     const Matrix<Real>& MuT  = (MuT_pre  ? *MuT_pre  : MuT_local);
     const Matrix<Real>& dMuT = (dMuT_pre ? *dMuT_pre : dMuT_local);
     const Matrix<Real>& Mv  = (Mv_pre  ? *Mv_pre  : Mv_local);
     const Matrix<Real>& dMv = (dMv_pre ? *dMv_pre : dMv_local);
     const Matrix<Real>& MvT  = (MvT_pre  ? *MvT_pre  : MvT_local);
-    // const Matrix<Real> MuT = Mu.Transpose();
-    // const Matrix<Real> dMuT = dMu.Transpose();
-    // const Matrix<Real> MvT = Mv.Transpose();
 
     // Target-centering: subtract Xtrg from nodal coords before interpolation so
     // positions are source-minus-target (accurate r near the singularity); tangents
     // come from the same shifted slab.
     BENCH_TIC(GeomTensor);
     const Long base = elem_idx * nnode * COORD_DIM; // TODO: assumes uniform per-element grid; consider omp scan of elem_cnt.
-    // Per-call scratch reused across the many IntegrateBlock calls (order^2 per element
-    // for self, per leaf for near). thread_local so each OMP thread has its own; every
-    // buffer is fully overwritten before use, so reuse is safe. Avoids re-malloc churn.
+    // thread_local scratch reused across the many IntegrateBlock calls (fully overwritten
+    // before use, so reuse is safe; avoids re-malloc churn). The shifted slab is memoized on
+    // (qel, elem_idx, Xtrg) so repeated calls sharing a target (e.g. near cells) skip the shift.
     thread_local Vector<Real> coord_shift;
     thread_local const QuadElemList<Real>* cs_qel = nullptr;
     thread_local Long cs_elem = -1;
     thread_local StaticArray<Real,COORD_DIM> cs_trg{0,0,0};
     if (coord_shift.Dim() != COORD_DIM*nnode) { coord_shift.ReInit(COORD_DIM*nnode); cs_qel = nullptr; }
-    // Near emits ~10 cells per target, all sharing (elem_idx, Xtrg), so the shift is hoisted
-    // out of the per-cell loop by memoizing on that key rather than plumbing it through.
-    // src_nodal: caller already produced the target-shifted nodal slab for this sub-element
-    // (near split does it once per target), so bind a view rather than rebuilding or copying.
+    // src_nodal (when non-null): caller already produced the target-shifted slab, so bind a view.
     if (!src_nodal && (cs_qel != &qel || cs_elem != elem_idx || cs_trg[0] != Xtrg[0] || cs_trg[1] != Xtrg[1] || cs_trg[2] != Xtrg[2])) {
       for (Integer k = 0; k < COORD_DIM; k++) {
         const Real ok = Xtrg[k];
@@ -537,10 +530,9 @@ namespace sctl {
       for (Integer k = 0; k < COORD_DIM; k++) cs_trg[k] = Xtrg[k];
     }
     const Vector<Real>& cs_ref = (src_nodal ? *src_nodal : coord_shift);
-    // The v-side contraction does not depend on the u-block/u-sweep, so hoist it for BOTH paths:
-    // X and dXdu share it (both use Mv), which removed a duplicate GEMM set from the single-shot
-    // path. All COORD_DIM components share Mv and coord_shift is component-major contiguous, so
-    // the three (order x order).(order x Nv) products are one (COORD_DIM*order x order) GEMM.
+    // The v-side contraction is u-independent, so hoist it (X and dXdu both use Mv). All
+    // COORD_DIM components share Mv and coord_shift is component-major contiguous, so the three
+    // (order x order).(order x Nv) products fuse into one (COORD_DIM*order x order) GEMM.
     thread_local Vector<Real> Cv, Cdv;
     if (Cv.Dim() != COORD_DIM*order*Nv) { Cv.ReInit(COORD_DIM*order*Nv); Cdv.ReInit(COORD_DIM*order*Nv); }
     {
@@ -863,9 +855,9 @@ namespace sctl {
     const bool trg_dot_prod = (normal_trg.Dim() > 0);
     const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
 
-    // Nbeta GL points per direction for the (finitely smooth) post-COV integrand,
-    // decoupled from the field order (Bruno 2018: one to a few hundred). Default 200.
-    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : 200);
+    // Nbeta GL points per direction for the (finitely smooth) post-COV integrand, decoupled from
+    // the field order (Bruno 2018). cov_order_ if the user set it, else the tol-derived default.
+    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : nbeta_default);
     const std::pair<Vector<Real>, Vector<Real>>& gl = GLRuleNbetaDispatch(Nbeta);
 
     // True closest point (u*,v*) sets the clustering center (alpha = 2*u*-1): bunch
@@ -884,283 +876,8 @@ namespace sctl {
     IntegrateBlock<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, u_param, wu, v_param, wv, ker);
   }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockQBX(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
-    // Line-QBX / "hedgehog" near-interaction (Lu 2019 sec.3.1): evaluate THIS source patch's layer
-    // potential at a line of check points off the surface with a single upsampled smooth GL rule,
-    // then 1D-polynomial-extrapolate back to the near target.
-    //
-    // ACCURACY CAVEAT: this per-pair form is accurate only when the target is FAR FROM PANEL SEAMS
-    // (edges/corners). For a foot on/near a shared edge the check-point line cannot resolve the
-    // adjacent panel's own edge singularity, so error floors near seams (~5e-3 vs ~5e-7 interior).
-    // Use for panel-INTERIOR near targets; near seams prefer Adaptive (closest-point) or RectPolar.
-    static constexpr Integer KDIM0 = Kernel::SrcDim();
-    static constexpr Integer KDIM1full = Kernel::TrgDim();
-    SCTL_ASSERT(qel.order == order);
-    const Long nnode = (Long)order * order;
-    const bool trg_dot_prod = (normal_trg.Dim() > 0);
-    const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
-
-    // Foot point (u*,v*) + local geometry: y (foot), n (unit normal), h (local element size).
-    Real ustar, vstar;
-    BENCH_TIC(ClosestPoint);
-    qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
-    BENCH_TOC(ClosestPoint);
-    Vector<Real> up{ustar}, vp{vstar}, Xfoot, Nfoot, Afoot;
-    qel.GetGeom(&Xfoot, &Nfoot, &Afoot, nullptr, nullptr, up, vp, elem_idx);
-    const Real h = sqrt<Real>(Afoot[0]); // sqrt(area element) ~ local edge length on [0,1]^2
-
-    // Check-point line through the TARGET along the patch normal d = s*n at the foot (s = target's
-    // side): check point i sits at height R+i*r above the patch; extrapolate from {R+i*r} to the
-    // target height Hx = |(x-y).n|. Marching along n (not (x-y)/|x-y|) keeps the check points off
-    // the source patch (no grazing) -- correct for off-surface near targets.
-    Real d[COORD_DIM], Hx;
-    {
-      Real xy_dot_n = 0;
-      for (Integer k = 0; k < COORD_DIM; k++) xy_dot_n += (Xtrg[k] - Xfoot[k]) * Nfoot[k];
-      const Real s = (xy_dot_n >= 0 ? (Real)1 : (Real)-1);
-      for (Integer k = 0; k < COORD_DIM; k++) d[k] = s * Nfoot[k];
-      Hx = s * xy_dot_n;
-    }
-
-    // Upsampled smooth rule over the source patch: 4^eta = (2^eta)^2 uniform square subpatches, each
-    // an `up_order` GL rule (eta=0 => single panel). Interp operators built once per 1D subinterval
-    // (uniform => shared by u and v) and reused across check points via IntegrateBlock's *_pre.
-    const Integer up_order = (qel.qbx_up_order_ > 0 ? qel.qbx_up_order_ : 2*order);
-    Vector<Real> qnds, qwts;
-    LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, up_order);
-    const Integer nsub = (Integer)1 << std::max<Integer>(0, qel.qbx_eta_); // 2^eta subpanels/dir
-    const Real hsub = (Real)1 / nsub;
-    Vector<NodeRuleData> sub_rule(nsub);
-    for (Integer s = 0; s < nsub; s++) {
-      sub_rule[s].param = s*hsub + hsub*qnds;
-      sub_rule[s].w = qwts * hsub;
-      BuildInterp1D<order>(sub_rule[s].M, sub_rule[s].dM, sub_rule[s].MT, sub_rule[s].dMT, sub_rule[s].param);
-    }
-
-    // Check-point heights t_i = R + i*r (above the patch) and the 1D extrapolation weights e_i
-    // from {t_i} to the target height Hx (Lagrange weights, (p+1) x 1 row-major).
-    const Real R = qel.qbx_R_ * h, r = qel.qbx_r_ * h;
-    const Integer p = qel.qbx_p_;
-    Vector<Real> src_nds(p+1), trg_nds{Hx}, evec;
-    for (Integer i = 0; i <= p; i++) src_nds[i] = R + i*r;
-    LagrangeInterp<Real>::Interpolate(evec, src_nds, trg_nds);
-
-    if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) M_acc.ReInit(nnode, KDIM0*KDIM1_out);
-    M_acc.SetZero();
-
-    // Accumulate sum_i e_i * sum_{subpatch} (nodal->c_i operator). IntegrateBlock is linear in
-    // the quadrature weights and accumulates (+=) into M_acc, so folding e_i into the u-weights
-    // adds e_i*M_i directly with no temp matrices.
-    Vector<Real> wu(up_order);
-    for (Integer i = 0; i <= p; i++) {
-      // Check point on the line through the target, at height R+i*r above the patch:
-      // c_i = x + (R + i*r - Hx)*d  (shift the target along the normal to the desired height).
-      Vector<Real> ci(COORD_DIM);
-      for (Integer k = 0; k < COORD_DIM; k++) ci[k] = Xtrg[k] + (R + i*r - Hx) * d[k];
-      for (Integer su = 0; su < nsub; su++) {
-        for (Integer a = 0; a < up_order; a++) wu[a] = sub_rule[su].w[a] * evec[i];
-        for (Integer sv = 0; sv < nsub; sv++) {
-          IntegrateBlock<order>(M_acc, qel, elem_idx, ci, normal_trg,
-                                sub_rule[su].param, wu, sub_rule[sv].param, sub_rule[sv].w, ker,
-                                &sub_rule[sv].M, &sub_rule[sv].dM, &sub_rule[su].M, &sub_rule[su].dM,
-                                &sub_rule[sv].MT, &sub_rule[su].MT, &sub_rule[su].dMT);
-        }
-      }
-    }
-  }
-
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracBatchedQBX(Matrix<Real>& M, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker) {
-    // Production Line-QBX / hedgehog near-interaction (Lu 2019 sec.3.1) for ALL near targets of one
-    // element. Algebraically equivalent to calling NearInteracBlockQBX per target, but with the
-    // target-independent work hoisted out of the hot loops:
-    //   * the upsampled source-patch geometry (absolute positions, unit normals, quadrature weights)
-    //     depends only on (element, sub-panel rule), so it is built ONCE and reused across every
-    //     target AND every check point -- IntegrateBlock rebuilt it (p+1)*nsub^2 times per target;
-    //   * the sub-panel interp rules depend only on (order,up_order,nsub), reused across elements;
-    //   * projection is linear, so the (p+1) check-point contributions are accumulated per sub-panel
-    //     and projected back to the nodes ONCE per sub-panel (was one projection per check point).
-    // Only the kernel matrix + weighting remain per (target, check point) -- irreducible for hedgehog.
-    // Accurate for panel-INTERIOR targets only (see the SetLineQBXParams seam caveat).
-    static constexpr Integer KDIM0 = Kernel::SrcDim();
-    static constexpr Integer KDIM1full = Kernel::TrgDim();
-    SCTL_ASSERT(qel.order == order);
-    const Long nnode = (Long)order * order;
-    const bool trg_dot_prod = (normal_trg.Dim() > 0);
-    const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
-    const Integer C = KDIM0 * KDIM1_out;
-
-    const Long Ntrg = Xt.Dim() / COORD_DIM;
-    if (M.Dim(0) != nnode*KDIM0 || M.Dim(1) != Ntrg*KDIM1_out) M.ReInit(nnode*KDIM0, Ntrg*KDIM1_out);
-    M.SetZero();
-    if (!Ntrg) return;
-
-    const Integer up_order = (qel.qbx_up_order_ > 0 ? qel.qbx_up_order_ : 2*order);
-    const Integer nsub = (Integer)1 << std::max<Integer>(0, qel.qbx_eta_); // 2^eta subpanels/dir
-    const Long nq = (Long)up_order * up_order;
-    const Integer p = qel.qbx_p_;
-
-    // sub_rule: 4^eta uniform square subpatches, each an `up_order` GL rule + its (nodal->quad) interp
-    // operators. Depends only on (order,up_order,nsub); thread_local last-key cache -> built once and
-    // reused across every element on this thread (rebuilt only if the params change).
-    thread_local Integer sr_up = -1, sr_nsub = -1;
-    thread_local Vector<NodeRuleData> sub_rule;
-    if (sr_up != up_order || sr_nsub != nsub) {
-      Vector<Real> qnds, qwts;
-      LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, up_order);
-      const Real hsub = (Real)1 / nsub;
-      sub_rule.ReInit(nsub);
-      for (Integer s = 0; s < nsub; s++) {
-        sub_rule[s].param = s*hsub + hsub*qnds;
-        sub_rule[s].w = qwts * hsub;
-        BuildInterp1D<order>(sub_rule[s].M, sub_rule[s].dM, sub_rule[s].MT, sub_rule[s].dMT, sub_rule[s].param);
-      }
-      sr_up = up_order; sr_nsub = nsub;
-    }
-
-    // Upsampled ABSOLUTE source geometry per sub-panel (target-independent), built ONCE per call and
-    // reused across all this element's targets AND all check points. Rebuilt every call rather than
-    // cached across calls: the geometry depends on the exact (qel,elem_idx) coords, and a thread_local
-    // cross-call cache keyed on &qel is unsafe -- short-lived QuadElemList objects reuse addresses, so
-    // a stale key silently returns a previous panel's geometry (curved read as flat). The per-call
-    // build is ~2% of the per-target cost (cold~=warm in the bench), so the safe choice is cheap.
-    // Layout: Xabs/Xnsrc AoS [(sp*nq+q)*COORD_DIM+k]; wq_base [sp*nq+q]; sp=su*nsub+sv; q=a*up_order+b.
-    thread_local Vector<Real> Xabs, Xnsrc, wq_base;
-    {
-      BENCH_TIC(GeomTensor);
-      const Long nsp = (Long)nsub*nsub;
-      if (Xabs.Dim() != nsp*nq*COORD_DIM) { Xabs.ReInit(nsp*nq*COORD_DIM); Xnsrc.ReInit(nsp*nq*COORD_DIM); wq_base.ReInit(nsp*nq); }
-      const Long base = elem_idx * nnode * COORD_DIM;
-      const Vector<Real> coord_abs(COORD_DIM*nnode, (Iterator<Real>)qel.coord.begin()+base, false); // CS3-shaped: (COORD_DIM*order x order)
-      thread_local Vector<Real> X_soa, dXu_soa, dXv_soa; // component-major [k*nq+q]
-      for (Integer su = 0; su < nsub; su++) {
-        for (Integer sv = 0; sv < nsub; sv++) {
-          const Long sp = (Long)su*nsub + sv;
-          EvalTensorProduct(X_soa,   coord_abs, sub_rule[su].MT,  sub_rule[sv].M);  // absolute positions
-          EvalTensorProduct(dXu_soa, coord_abs, sub_rule[su].dMT, sub_rule[sv].M);  // du tangents
-          EvalTensorProduct(dXv_soa, coord_abs, sub_rule[su].MT,  sub_rule[sv].dM); // dv tangents
-          for (Long a = 0; a < up_order; a++) {
-            for (Long b = 0; b < up_order; b++) {
-              const Long q = a*up_order + b;
-              const Real du0 = dXu_soa[0*nq+q], du1 = dXu_soa[1*nq+q], du2 = dXu_soa[2*nq+q];
-              const Real dv0 = dXv_soa[0*nq+q], dv1 = dXv_soa[1*nq+q], dv2 = dXv_soa[2*nq+q];
-              const Real n0 = du1*dv2 - du2*dv1, n1 = du2*dv0 - du0*dv2, n2 = du0*dv1 - du1*dv0;
-              const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
-              const Real inv_area = (area > 0 ? 1/area : 0);
-              const Long o = (sp*nq + q)*COORD_DIM;
-              Xabs[o+0] = X_soa[0*nq+q]; Xabs[o+1] = X_soa[1*nq+q]; Xabs[o+2] = X_soa[2*nq+q];
-              Xnsrc[o+0] = n0*inv_area;  Xnsrc[o+1] = n1*inv_area;  Xnsrc[o+2] = n2*inv_area;
-              wq_base[sp*nq + q] = area * sub_rule[su].w[a] * sub_rule[sv].w[b]; // NO evec (target-independent)
-            }
-          }
-        }
-      }
-      BENCH_TOC(GeomTensor);
-    }
-
-    // Kernel eval: sources relative to the check point (Xsrc = Xabs - ci), target at the origin, one
-    // KernelMatrix call PER check point. (Stage-2 batching -- stacking all (p+1) check points into one
-    // call -- was tried and is 17-30% SLOWER: the nq=5184 source vectorization already saturates per
-    // call, so batching saves no arithmetic while replicating normals adds memory traffic. Same
-    // memory-bound loss as the Adaptive leaf-batching. Kept per-check-point.)
-    thread_local Vector<Real> Xsrc, KW_total, proj;
-    thread_local Matrix<Real> Mker, M_acc;
-    if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != C) M_acc.ReInit(nnode, C);
-    if (Xsrc.Dim() != nq*COORD_DIM) Xsrc.ReInit(nq*COORD_DIM);
-    if (KW_total.Dim() != C*nq) KW_total.ReInit(C*nq);
-
-    for (Long t = 0; t < Ntrg; t++) {
-      const Vector<Real> Xtrg(COORD_DIM, (Iterator<Real>)Xt.begin() + t*COORD_DIM, false);
-      Vector<Real> ntrg;
-      if (trg_dot_prod) ntrg.ReInit(COORD_DIM, (Iterator<Real>)normal_trg.begin() + t*COORD_DIM, false);
-
-      // Foot point + local size h; check-point ray d = s*n through the target; target height Hx.
-      Real ustar, vstar;
-      BENCH_TIC(ClosestPoint);
-      qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
-      BENCH_TOC(ClosestPoint);
-      Vector<Real> up{ustar}, vp{vstar}, Xfoot, Nfoot, Afoot;
-      qel.GetGeom(&Xfoot, &Nfoot, &Afoot, nullptr, nullptr, up, vp, elem_idx);
-      const Real h = sqrt<Real>(Afoot[0]);
-      Real d[COORD_DIM], Hx;
-      {
-        Real xy_dot_n = 0;
-        for (Integer k = 0; k < COORD_DIM; k++) xy_dot_n += (Xtrg[k] - Xfoot[k]) * Nfoot[k];
-        const Real s = (xy_dot_n >= 0 ? (Real)1 : (Real)-1);
-        for (Integer k = 0; k < COORD_DIM; k++) d[k] = s * Nfoot[k];
-        Hx = s * xy_dot_n;
-      }
-
-      // Check-point heights t_i = R + i*r and 1D Lagrange extrapolation weights from {t_i} to Hx.
-      const Real R = qel.qbx_R_ * h, r = qel.qbx_r_ * h;
-      Vector<Real> src_nds(p+1), trg_nds{Hx}, evec;
-      for (Integer i = 0; i <= p; i++) src_nds[i] = R + i*r;
-      LagrangeInterp<Real>::Interpolate(evec, src_nds, trg_nds);
-
-      M_acc.SetZero();
-      for (Integer su = 0; su < nsub; su++) {
-        for (Integer sv = 0; sv < nsub; sv++) {
-          const Long sp = (Long)su*nsub + sv;
-          const Vector<Real> Xnsrc_sp(nq*COORD_DIM, (Iterator<Real>)Xnsrc.begin() + sp*nq*COORD_DIM, false);
-          for (Long e = 0; e < C*nq; e++) KW_total[e] = 0;
-
-          for (Integer i = 0; i <= p; i++) {
-            Real ci[COORD_DIM];
-            for (Integer k = 0; k < COORD_DIM; k++) ci[k] = Xtrg[k] + (R + i*r - Hx) * d[k];
-            for (Long q = 0; q < nq; q++)
-              for (Integer k = 0; k < COORD_DIM; k++)
-                Xsrc[q*COORD_DIM+k] = Xabs[(sp*nq+q)*COORD_DIM+k] - ci[k];
-
-            StaticArray<Real,COORD_DIM> Xt0{0, 0, 0};
-            const Vector<Real> Xt0_v(COORD_DIM, Xt0, false); // sources already relative to ci
-            BENCH_TIC(KernelEval);
-            ker.template KernelMatrix<Real,false>(Mker, Xt0_v, Xsrc, Xnsrc_sp); // (nq*KDIM0 x KDIM1full)
-            BENCH_TOC(KernelEval);
-
-            // Weighted kernel, fold in the extrapolation weight evec[i], accumulate (linear projection
-            // deferred): KW_total[c*nq+q] += evec[i] * (trg-dot-prod?) * wq_base. Component-major.
-            BENCH_TIC(KernelWeight);
-            const Real ei = evec[i];
-            for (Long q = 0; q < nq; q++) {
-              const Real w = ei * wq_base[sp*nq+q];
-              for (Integer k0 = 0; k0 < KDIM0; k0++) {
-                for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-                  Real val;
-                  if (trg_dot_prod) {
-                    val = 0;
-                    for (Integer l = 0; l < COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*COORD_DIM+l] * ntrg[l];
-                  } else {
-                    val = Mker[q*KDIM0+k0][k1];
-                  }
-                  KW_total[(Long)(k0*KDIM1_out+k1)*nq + q] += val * w;
-                }
-              }
-            }
-            BENCH_TOC(KernelWeight);
-          }
-
-          // ONE tensor-factored projection per sub-panel: M_acc += (Mu . KW_total . MvT).
-          BENCH_TIC(Projection);
-          EvalTensorProduct(proj, KW_total, sub_rule[su].M, sub_rule[sv].MT);
-          for (Long pn = 0; pn < nnode; pn++)
-            for (Integer c = 0; c < C; c++) M_acc[pn][c] += proj[(Long)c*nnode + pn];
-          BENCH_TOC(Projection);
-        }
-      }
-
-      // Scatter M_acc into M for target t: M[(i*order+j)*KDIM0+k0][t*KDIM1_out+k1].
-      for (Integer ii = 0; ii < order; ii++) {
-        for (Integer jj = 0; jj < order; jj++) {
-          const Long pnode = ii*order + jj;
-          for (Integer k0 = 0; k0 < KDIM0; k0++)
-            for (Integer k1 = 0; k1 < KDIM1_out; k1++)
-              M[pnode*KDIM0+k0][t*KDIM1_out+k1] = M_acc[pnode][k0*KDIM1_out+k1];
-        }
-      }
-    }
-  }
-
   // ============================ ported from upstream 0f12ddf ============================
-  // Centered self rules + split-at-foot near scheme. Grafted onto the QBX/RP work below.
+  // Centered self rules + split-at-foot near scheme. Grafted onto the RP work below.
 
   template <class Real> template <Integer order> void QuadElemList<Real>::LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& delta, const Integer ti) {
     // L_i(nds[ti]+d) = prod_{j!=i} (d + (nds[ti]-nds[j])) / (nds[i]-nds[j]).
@@ -1205,7 +922,8 @@ namespace sctl {
   }
 
   template <class Real> void QuadElemList<Real>::LogSingularQuad1DCentered(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder) {
-    // Same panel layout as LogSingularQuad1D, emitted as offsets from v0.
+    // Outward-graded log-singular panel layout, emitted as offsets from v0 (the
+    // singular node sits at offset exactly 0, preserving relative precision).
     const int ord = 16;
     std::vector<double> px, pw;
     auto add_alpert = [&](double a, double b, int corra, int corrb) {
@@ -1498,7 +1216,6 @@ namespace sctl {
     // interpolation is a single large tensor multiply per quantity instead of a small GEMM set per
     // tree cell. See BuildNearTensorRule for the construction and its accuracy rationale.
     if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
-    if (qel.NearUsesLineQBX()) { NearInteracBlockQBX<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker); return; }
 
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -1549,7 +1266,6 @@ namespace sctl {
   // reference for the split-at-foot cell layout (WriteNearInteracVTK mirrors it).
   template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
     if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
-    if (qel.NearUsesLineQBX()) { NearInteracBlockQBX<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker); return; }
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
     const Long nnode = (Long)order*order;
@@ -1568,7 +1284,7 @@ namespace sctl {
     const Real b_ellipse = NearBEllipse<digits>();
     const Vector<GradeRule>& tab = NearGradeTable<order,digits>();   // precomputed shell_k/core_k intervals: xi-nodes & weights per level
 
-    // Foot + per-direction surface speeds (same criterion as the Duffy near / BuildNearLeaves).
+    // Foot + per-direction surface speeds (same criterion as the Duffy near).
     Real ustar, vstar;
     BENCH_TIC(ClosestNode);
     const Real dist = qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
@@ -1978,9 +1694,9 @@ namespace sctl {
     const bool trg_dot_prod = (normal_trg.Dim() > 0);
     const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
 
-    // Nbeta GL points per direction for the (finitely smooth) post-COV integrand,
-    // decoupled from the field order (Bruno 2018: one to a few hundred). Default 512.
-    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : 200);
+    // Nbeta GL points per direction for the (finitely smooth) post-COV integrand, decoupled from
+    // the field order (Bruno 2018). cov_order_ if the user set it, else the tol-derived default.
+    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : nbeta_default);
     const NodeRuleData& ru = RPSelfRuleDispatch<order>(ti, qel.cov_q_, Nbeta); // u-direction
     const NodeRuleData& rv = RPSelfRuleDispatch<order>(tj, qel.cov_q_, Nbeta); // v-direction
 
@@ -2012,7 +1728,7 @@ namespace sctl {
     // DiffMat (used by IntegrateBlock on both paths) are warmed transitively by the rule
     // builds below. The scheme branches can differ (Hybrid = RP self + adaptive near), so the
     // near warm-up is not redundant with the self one.
-    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : 200);
+    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : NbetaForDigits(digits)); // match the RP blocks' fallback
     if (qel.SelfUsesRectPolar()) {
       RPSelfRuleDispatch<order>(0, qel.cov_q_, Nbeta);
     } else if (qel.SelfUsesDuffy()) {
@@ -2116,7 +1832,7 @@ namespace sctl {
   // ================ Upstream-ported near path (QuadScheme::Duffy only) ================
   // Runtime-digits split-at-foot near with a corner-angle GL-order bump and a deeper refinement
   // ladder. Isolated from the compile-time-digits NearInteracBlockSplit above so the Adaptive /
-  // Hybrid / RectPolar / LineQBX paths are untouched.
+  // Hybrid / RectPolar paths are untouched.
 
   template <class Real> Integer QuadElemList<Real>::NearQuadOrderRt(const Integer digits) {
     static const Vector<Integer> q = []() {
@@ -2597,9 +2313,9 @@ namespace sctl {
   }
 
   template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self) {
-    // Per-target near-singular interaction: off-surface targets are integrated by the
-    // adaptive 2D quadtree (NearInteracBlock). On-surface singular self interactions
-    // proper are built by SelfInterac.
+    // Per-target near-singular interaction (off-surface targets). Dispatches to the
+    // scheme's near block: foot-graded separable tensor (Adaptive/Hybrid), RectPolar,
+    // or Duffy. On-surface self interactions are built by SelfInterac.
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
 
@@ -2616,10 +2332,6 @@ namespace sctl {
     M.SetZero();
     if (!Ntrg) return;
 
-    // LineQBX/hedgehog: batch all of this element's near targets so the target-independent
-    // upsampled source geometry + sub-panel rules are built once per element (not per target).
-    if (qel.NearUsesLineQBX()) { NearInteracBatchedQBX<order>(M, qel, elem_idx, Xt, normal_trg, ker); return; }
-
     for (Long t = 0; t < Ntrg; t++) {
       Vector<Real> Xtrg(COORD_DIM, (Iterator<Real>)Xt.begin() + t*COORD_DIM, false);
       Vector<Real> ntrg;
@@ -2627,8 +2339,8 @@ namespace sctl {
 
       Matrix<Real> M_acc;
       // Duffy scheme: upstream-ported near (corner-angle order + deeper ladder). Others:
-      // Adaptive/Hybrid foot-graded separable-tensor near (RP/QBX handled by the guards inside
-      // the block). NearInteracBlockGraded matches RP near accuracy under parametric shear, where
+      // Adaptive/Hybrid foot-graded separable-tensor near (RP handled by the guard inside the
+      // block). NearInteracBlockGraded matches RP near accuracy under parametric shear, where
       // the isotropic-quadtree NearInteracBlockSplit lost ~2-3 orders even on smooth geometry.
       if (qel.SelfUsesDuffy()) NearInteracBlockSplitDuffy<order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
       else NearInteracBlockGraded<digits, order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker);
