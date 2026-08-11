@@ -1058,10 +1058,14 @@ namespace sctl {
 
         // A chunk must span at least one cache line to avoid false sharing at chunk boundaries.
         #if defined(__cpp_lib_hardware_interference_size)
+        #if defined(__GNUC__) && !defined(__clang__) // -Winterference-size is GCC-only
         #pragma GCC diagnostic push
         #pragma GCC diagnostic ignored "-Winterference-size" // scheduling hint only; not ABI
+        #endif
         constexpr Long cache_line_size = (Long)std::hardware_destructive_interference_size;
+        #if defined(__GNUC__) && !defined(__clang__)
         #pragma GCC diagnostic pop
+        #endif
         #else
         constexpr Long cache_line_size = SCTL_MEM_ALIGN;
         #endif

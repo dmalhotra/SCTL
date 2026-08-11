@@ -76,7 +76,7 @@ int main(int argc, char** argv) {
 
   {  // Test out-of-bound writes
     sctl::Iterator<char> A = sctl::aligned_new<char>(10);
-    A[9];
+    SCTL_UNUSED(A[9]); // in-bounds; the bounds check is the point
     //A[10];  // Should print stack trace here (in debug mode).
     sctl::aligned_delete(A); // Show memory leak warning when commented
   }

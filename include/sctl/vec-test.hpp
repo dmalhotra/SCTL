@@ -289,7 +289,7 @@ namespace sctl {
         static void apply(VecType (&v)[N], T&... args) { TransposeVa<k-1,T...,VecType>::apply(v, args..., v[N-k]); }
       };
       template <class ...T> struct TransposeVa<0,T...> {
-        static void apply(VecType (&v)[N], T&... args) { transpose(args...); }
+        static void apply(VecType (&)[N], T&... args) { transpose(args...); }
       };
 
       static void test_mask() {
