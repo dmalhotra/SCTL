@@ -246,7 +246,7 @@ namespace sctl {
 
       template<typename> friend class QuadElemList;
 
-      // Grants unit tests access to the private helpers below; defined in unit-test-quad-element.cpp.
+      // Grants unit tests access to the private helpers below; defined in test-quad-elem.cpp.
       template<typename> friend struct QuadElemTestAccess;
 
     private:

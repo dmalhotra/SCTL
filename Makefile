@@ -107,15 +107,12 @@ TARGET_BIN = \
        $(BINDIR)/test-vec \
        $(BINDIR)/test-scratch-pool \
        $(BINDIR)/test-scratch-pool-perf \
-	   $(BINDIR)/unit-test-quad-element \
 	   $(BINDIR)/test-quad-elem \
 	   $(BINDIR)/bench-scheme-compare
 
-.PHONY: all test clean quad scheme
+.PHONY: all test clean scheme
 
 all : $(TARGET_BIN)
-
-quad : $(BINDIR)/unit-test-quad-element
 
 scheme : $(BINDIR)/bench-scheme-compare
 
@@ -163,7 +160,6 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-tensor
 	./$(BINDIR)/test-vec
 	./$(BINDIR)/test-scratch-pool
-	./$(BINDIR)/unit-test-quad-element
 	./$(BINDIR)/test-quad-elem
 
 clean:
