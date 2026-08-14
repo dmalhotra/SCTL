@@ -624,6 +624,9 @@ class Comm {
   };
 
   template <class Type> static MPI_Op GetMPIOp(CommOp op);
+  template <CommOp op, class Type> static MPI_Op GetMPIOp();
+  template <class Type> void AllreduceImpl(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, MPI_Op mpi_op) const;
+  template <class Type> void ScanImpl(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, MPI_Op mpi_op) const;
   static void RegisterDatatype(MPI_Datatype datatype);
   static void RegisterOp(MPI_Op op);
   static void FreeRegisteredHandles();
