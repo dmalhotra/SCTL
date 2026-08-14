@@ -1147,6 +1147,16 @@ template <class Type> void Comm::Allreduce(ConstIterator<Type> sbuf, Iterator<Ty
 #endif
 }
 
+template <CommOp op, class Type> void Comm::Allreduce(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
+#ifdef SCTL_HAVE_MPI
+  if (!count) return;
+  AllreduceImpl(sbuf, rbuf, count, GetMPIOp<op, Type>());
+#else
+  omp_par::memcpy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));
+#endif
+}
+
 #ifdef SCTL_HAVE_MPI
 template <class Type> inline void Comm::ScanImpl(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, MPI_Op mpi_op) const {
   comm_detail::WarnIfMPIInactive("Comm::Scan");
@@ -1170,6 +1180,16 @@ template <class Type> void Comm::Scan(ConstIterator<Type> sbuf, Iterator<Type> r
 #ifdef SCTL_HAVE_MPI
   if (!count) return;
   ScanImpl(sbuf, rbuf, count, GetMPIOp<Type>(op));
+#else
+  omp_par::memcpy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));
+#endif
+}
+
+template <CommOp op, class Type> void Comm::Scan(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
+#ifdef SCTL_HAVE_MPI
+  if (!count) return;
+  ScanImpl(sbuf, rbuf, count, GetMPIOp<op, Type>());
 #else
   omp_par::memcpy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));
 #endif
