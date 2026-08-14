@@ -1841,6 +1841,24 @@ SCTL_HS_MPIDATATYPE(unsigned char, MPI_UNSIGNED_CHAR);
 #undef SCTL_HS_MPIDATATYPE
 #endif
 
+namespace comm_detail {
+
+// Local-phase sort for SampleSort (see policy comment inside).
+template <class Type, class Compare> void LocalSort(ConstIterator<Type> in, Iterator<Type> out, Long N, Compare comp) {
+  // merge_sort wins only for small elements (extra merge-pass data movement grows with
+  // sizeof(Type)) and teams spanning at most ~2 NUMA domains; sample_sort otherwise.
+  constexpr Integer merge_sort_max_threads = 32;
+  constexpr std::size_t merge_sort_max_elem_size = 8;
+  if (sizeof(Type) <= merge_sort_max_elem_size && !SCTL_IN_PARALLEL() && SCTL_GET_MAX_THREADS() <= merge_sort_max_threads) {
+    omp_par::memcpy(out, in, N);
+    omp_par::merge_sort(out, out + N, comp);
+  } else {
+    omp_par::sample_sort(in, out, N, comp);
+  }
+}
+
+}  // namespace comm_detail
+
 template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem, Compare comp, bool partition) const {  // O( ((N/p)+log(p))*(log(N/p)+log(p)) )
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
   SCTL_UNUSED(partition);
@@ -2255,7 +2273,7 @@ template <class Type, class Compare> void Comm::SampleSort(const Vector<Type>& a
   const Integer npes = Size();
   if (npes == 1) {  // local sort only
     if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
-    omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
+    comm_detail::LocalSort<Type>(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
     return;
   }
 
@@ -2266,7 +2284,7 @@ template <class Type, class Compare> void Comm::SampleSort(const Vector<Type>& a
 
   // local sort
   ScratchBuf<Type> loc_buf(nloc); Vector<Type> loc(nloc, loc_buf.begin(), false);
-  omp_par::sample_sort(arr_.begin(), loc.begin(), nloc, comp);
+  comm_detail::LocalSort<Type>(arr_.begin(), loc.begin(), nloc, comp);
 
   const Type my_split = DetermineSplitter(loc, totSize, comp);
 
@@ -2275,7 +2293,7 @@ template <class Type, class Compare> void Comm::SampleSort(const Vector<Type>& a
 #else
   SCTL_UNUSED(partition);
   if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
-  omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
+  comm_detail::LocalSort<Type>(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
 #endif
 }
 
@@ -2285,16 +2303,16 @@ template <class Type, class Compare> void Comm::SampleSort(const Vector<Type>& a
   const Integer npes = Size();
   if (npes == 1) {
     if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
-    omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
+    comm_detail::LocalSort<Type>(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
     return;
   }
   ScratchBuf<Type> loc_buf(arr_.Dim()); Vector<Type> loc(arr_.Dim(), loc_buf.begin(), false);
-  omp_par::sample_sort(arr_.begin(), loc.begin(), arr_.Dim(), comp);
+  comm_detail::LocalSort<Type>(arr_.begin(), loc.begin(), arr_.Dim(), comp);
   DistributeAndMerge(loc, splitter, SortedElem, comp);
 #else
   SCTL_UNUSED(splitter);
   if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
-  omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
+  comm_detail::LocalSort<Type>(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
 #endif
 }
 
