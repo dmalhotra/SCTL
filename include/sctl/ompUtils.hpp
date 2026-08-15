@@ -175,6 +175,35 @@ template <class ConstIter, class Int> typename std::iterator_traits<ConstIter>::
  */
 template <class ConstIter, class Iter, class Int> void scan(ConstIter A, Iter B, Int cnt);
 
+/**
+ * Out-of-place parallel duplicate removal from a sorted range: copies A[0..N) to B with each run of
+ * elements equivalent under `comp` (neither precedes the other) collapsed to its first. A and B must not alias.
+ *
+ * @tparam ConstIter Iterator type for the input range.
+ * @tparam Iter Iterator type for the output range.
+ * @tparam StrictWeakOrdering Functor type for comparing elements.
+ *
+ * @param[in] A Beginning iterator of the sorted input range (length `N`).
+ * @param[out] B Beginning iterator of the output range.
+ * @param[in] N Number of elements in the input range.
+ * @param[in] comp Functor for comparing elements.
+ * @return Number of unique elements written to `B`.
+ */
+template <class ConstIter, class Iter, class StrictWeakOrdering> Long dedup_sorted(ConstIter A, Iter B, Long N, StrictWeakOrdering comp);
+
+/**
+ * dedup_sorted using the default (operator<) ordering.
+ *
+ * @tparam ConstIter Iterator type for the input range.
+ * @tparam Iter Iterator type for the output range.
+ *
+ * @param[in] A Beginning iterator of the sorted input range (length `N`).
+ * @param[out] B Beginning iterator of the output range.
+ * @param[in] N Number of elements in the input range.
+ * @return Number of unique elements written to `B`.
+ */
+template <class ConstIter, class Iter> Long dedup_sorted(ConstIter A, Iter B, Long N);
+
 }  // end namespace omp_par
 }  // end namespace sctl
 

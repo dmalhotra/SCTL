@@ -373,6 +373,48 @@ template <class ConstIter, class Iter, class Int> void omp_par::scan(ConstIter A
   }
 }
 
+template <class ConstIter, class Iter, class StrictWeakOrdering> inline Long omp_par::dedup_sorted(ConstIter A, Iter B, Long N, StrictWeakOrdering comp) {
+  if (N <= 0) return 0;
+
+  const Integer p = (Integer)SCTL_GET_MAX_THREADS();
+  if (N < 2 * p || SCTL_IN_PARALLEL()) { // serial: keep A[0] and every element that differs from its predecessor
+    Long m = 0;
+    B[m++] = A[0];
+    for (Long j = 1; j < N; j++) if (comp(A[j - 1], A[j])) B[m++] = A[j];
+    return m;
+  }
+
+  ScratchBuf<Long> cnt(p), dsp(p);
+  #pragma omp parallel num_threads(p)
+  { // each thread dedups its contiguous chunk of A into B[dsp[tid] ...]
+    const Integer tid = (Integer)SCTL_GET_THREAD_NUM();
+    const Integer nt  = (Integer)SCTL_GET_NUM_THREADS();
+    const Long start = 1 + ((N - 1) *  tid     ) / nt;
+    const Long end   = 1 + ((N - 1) * (tid + 1)) / nt;
+
+    Long loc_cnt = 0; // count distinct elements in this chunk
+    for (Long j = start; j < end; j++) if (comp(A[j - 1], A[j])) loc_cnt++;
+    cnt[tid] = loc_cnt;
+
+    #pragma omp barrier
+    #pragma omp single
+    { // dsp <-- exclusive_scan(cnt) seeded at 1 (B[0] is A[0], the first unique)
+      Long acc = 1;
+      for (Integer i = 0; i < nt; i++) { dsp[i] = acc; acc += cnt[i]; }
+      B[0] = A[0];
+    } // implicit barrier at end of single
+
+    Long loc_idx = dsp[tid]; // scatter this chunk's distinct elements
+    for (Long j = start; j < end; j++) if (comp(A[j - 1], A[j])) B[loc_idx++] = A[j];
+  }
+  return dsp[p - 1] + cnt[p - 1];
+}
+
+template <class ConstIter, class Iter> inline Long omp_par::dedup_sorted(ConstIter A, Iter B, Long N) {
+  typedef typename std::iterator_traits<ConstIter>::value_type _ValType;
+  return omp_par::dedup_sorted(A, B, N, std::less<_ValType>());
+}
+
 }  // end namespace
 
 #endif // _SCTL_OMPUTILS_TXX_
