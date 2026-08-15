@@ -2,9 +2,10 @@
 #define _SCTL_GENERIC_KERNEL_TXX_
 
 #include <algorithm>                // for min
+#include <type_traits>              // for false_type, bool_constant, void_t
 
 #include "sctl/common.hpp"          // for Integer, Long, SCTL_ASSERT, SCTL_...
-#include "sctl/generic-kernel.hpp"  // for GenericKernel, uKerHelper
+#include "sctl/generic-kernel.hpp"  // for GenericKernel
 #include "sctl/intrin-wrapper.hpp"  // for TypeTraits
 #include "sctl/iterator.hpp"        // for ConstIterator, Iterator
 #include "sctl/matrix.hpp"          // for Matrix
@@ -18,6 +19,29 @@
 #include "sctl/vector.hpp"          // for Vector
 
 namespace sctl {
+
+namespace detail {
+
+// Dispatches uKerMatrix on whether the micro-kernel takes a source normal.
+template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM, Integer N_DIM> struct uKerHelper {
+  template <Integer digits, class VecType> static void MatEval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const VecType (&n)[N_DIM], const void* ctx_ptr) {
+    uKernel::template uKerMatrix<digits>(u, r, n, ctx_ptr);
+  }
+};
+template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM> struct uKerHelper<uKernel,KDIM0,KDIM1,DIM,0> {
+  template <Integer digits, class VecType, class NormalType> static void MatEval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const NormalType& n, const void* ctx_ptr) {
+    uKernel::template uKerMatrix<digits>(u, r, ctx_ptr);
+  }
+};
+
+// Detects the optional fused apply described in kernel_functions.hpp: a kernel
+// opts in by declaring FUSED_APPLY = true and providing uKerApply(). Eval uses
+// it when present; KernelMatrix always goes through uKerMatrix, since it has to
+// produce the matrix itself.
+template <class uKernel, class = void> struct uKerFusedApply : std::false_type {};
+template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKernel::FUSED_APPLY)>> : std::bool_constant<uKernel::FUSED_APPLY> {};
+
+}  // namespace detail
 
   template <class uKernel> GenericKernel<uKernel>::GenericKernel() : ctx_ptr(nullptr) {}
 
@@ -81,12 +105,17 @@ namespace sctl {
     using RealVec = Vec<Real, VecLen>;
 
     auto uKerEval = [this](RealVec (&vt)[KDIM1], const RealVec (&xt)[DIM], const RealVec (&xs)[DIM], const RealVec (&ns)[N_DIM_], const RealVec (&vs)[KDIM0]) {
-      RealVec dX[DIM], U[KDIM0][KDIM1];
+      RealVec dX[DIM];
       for (Integer i = 0; i < DIM; i++) dX[i] = xt[i] - xs[i];
-      uKerMatrix<digits_>(U, dX, ns, ctx_ptr);
-      for (Integer k0 = 0; k0 < KDIM0; k0++) {
-        for (Integer k1 = 0; k1 < KDIM1; k1++) {
-          vt[k1] = FMA(U[k0][k1], vs[k0], vt[k1]);
+      if constexpr (detail::uKerFusedApply<uKernel>::value) { // skip the KDIM0 x KDIM1 matrix
+        uKernel::template uKerApply<digits_,1>(vt, dX, ns, vs, ctx_ptr);
+      } else {
+        RealVec U[KDIM0][KDIM1];
+        uKerMatrix<digits_>(U, dX, ns, ctx_ptr);
+        for (Integer k0 = 0; k0 < KDIM0; k0++) {
+          for (Integer k1 = 0; k1 < KDIM1; k1++) {
+            vt[k1] = FMA(U[k0][k1], vs[k0], vt[k1]);
+          }
         }
       }
     };
@@ -300,7 +329,7 @@ namespace sctl {
   }
 
   template <class uKernel> template <Integer digits, class VecType, class NormalType> void GenericKernel<uKernel>::uKerMatrix(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const NormalType& n, const void* ctx_ptr) {
-    uKerHelper<uKernel,KDIM0,KDIM1,DIM,N_DIM>::template MatEval<digits>(u, r, n, ctx_ptr);
+    detail::uKerHelper<uKernel,KDIM0,KDIM1,DIM,N_DIM>::template MatEval<digits>(u, r, n, ctx_ptr);
   };
 
 }  // end namespace

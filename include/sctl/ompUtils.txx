@@ -373,6 +373,12 @@ template <class ConstIter, class Iter, class Int> void omp_par::scan(ConstIter A
   }
 }
 
+template <class ConstIter, class Iter, class Int> void omp_par::scan(ConstIter A, Iter B, Int cnt, typename std::iterator_traits<Iter>::value_type seed) {
+  if (cnt < (Int)1) return;
+  B[0] = seed;
+  omp_par::scan(A, B, cnt);
+}
+
 template <class ConstIter, class Iter, class StrictWeakOrdering> inline Long omp_par::dedup_sorted(ConstIter A, Iter B, Long N, StrictWeakOrdering comp) {
   if (N <= 0) return 0;
 

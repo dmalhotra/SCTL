@@ -10,6 +10,7 @@
 
 #include "sctl/common.hpp"            // for Integer, SCTL_ASSERT, Long, SCT...
 #include "sctl/fmm-wrapper.hpp"       // for ParticleFMM
+#include "sctl/generic-kernel.txx"   // for detail::uKerFusedApply
 #include "sctl/comm.hpp"              // for Comm, CommOp
 #include "sctl/comm.txx"              // for Comm::Allreduce, Comm::Rank
 #include "sctl/iterator.hpp"          // for Iterator, ConstIterator
@@ -833,14 +834,19 @@ template <class SCTLKernel, bool use_dummy_normal> template <class VecType, int 
   constexpr Integer N_DIM = SCTLKernel::NormalDim();
   constexpr Integer N_DIM_ = (N_DIM?N_DIM:1);
 
-  VecType Xn[N_DIM_], K[KDIM0][KDIM1];
+  VecType Xn[N_DIM_];
   for (Integer i = 0; i < N_DIM; i++) { // Set Xn
     Xn[i] = (use_dummy_normal ? VecType((typename VecType::ScalarType)0) : f[KDIM0+i]);
   }
-  SCTLKernel::template uKerMatrix<digits>(K, r, Xn, ctx_ptr);
-  for (Integer k0 = 0; k0 < KDIM0; k0++) { // u <-- K * f
-    for (Integer k1 = 0; k1 < KDIM1; k1++) {
-      u[k1] = FMA(K[k0][k1], f[k0], u[k1]);
+  if constexpr (detail::uKerFusedApply<SCTLKernel>::value) { // u <-- K * f, without building K
+    SCTLKernel::template uKerApply<digits,1>(u, r, Xn, f, ctx_ptr);
+  } else {
+    VecType K[KDIM0][KDIM1];
+    SCTLKernel::template uKerMatrix<digits>(K, r, Xn, ctx_ptr);
+    for (Integer k0 = 0; k0 < KDIM0; k0++) { // u <-- K * f
+      for (Integer k1 = 0; k1 < KDIM1; k1++) {
+        u[k1] = FMA(K[k0][k1], f[k0], u[k1]);
+      }
     }
   }
 }
