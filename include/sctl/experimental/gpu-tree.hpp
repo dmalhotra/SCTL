@@ -12,6 +12,7 @@ namespace gpu_tree {
 
 using sctl::Integer;
 using sctl::Long;
+using sctl::Comm;
 using sctl::Morton;
 using sctl::MortonCode;
 using sctl::MAX_DEPTH;
