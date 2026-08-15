@@ -6,6 +6,8 @@
 
 #include "sctl/morton.hpp"
 
+namespace sctl { class Comm; }
+
 namespace gpu_tree {
 
 using sctl::Integer;
@@ -45,6 +47,15 @@ template <class Real, Integer DIM> class GPUTree {
    */
   template <template <class...> class DeviceVector>
   static void buildTreeFromSortedMorton(DeviceVector<Morton<DIM>>& tree, const DeviceVector<MortonCode<DIM>>& pt_mid, Long M = 1);
+
+  /**
+   * Distributed variant: build the global Morton-order linear tree across the ranks of
+   * `comm` via a device-buffer sample sort (one Alltoallv; CUDA-aware MPI required for
+   * device vectors). On return each rank holds a contiguous slice of the global tree;
+   * the concatenation over ranks equals the single-rank `buildTree` output.
+   */
+  template <template <class...> class DeviceVector>
+  static void buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const sctl::Comm& comm, bool balance21 = false, Integer halo_size = -1, Long* owned_range = nullptr);
 };
 
 }  // namespace gpu_tree
