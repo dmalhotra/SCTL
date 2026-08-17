@@ -6,6 +6,7 @@
 #include <functional>             // for less
 #include <limits>                 // for numeric_limits
 #include <map>                    // for multimap, __map_iterator, operator==
+#include <numeric>                // for exclusive_scan
 #include <type_traits>            // for is_trivially_copyable
 #include <utility>                // for pair
 #include <vector>                 // for vector
@@ -2103,155 +2104,234 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
 }
 
 template <class Type, class Compare> Type Comm::DetermineSplitter(const Vector<Type>& loc, Long totSize, Compare comp) const {
-  // This rank's lower-boundary splitter for a balanced partition, found by iterative exact-rank
-  // histogramming. Each cut keeps a value bracket whose endpoint global ranks are known; the bracket
-  // is refined by interpolating where the target rank should fall (regula-falsi), with a random
-  // fall-back when interpolation stalls. A per-process probe budget (with randomly-chosen contributors)
-  // keeps the gathered/Allreduced candidate set O(npes) at any process count. Uses only `comp` + actual
-  // elements (works for any Type); balance is independent of the data distribution. Returns rank r's cut
-  // at global rank r*totSize/npes; rank 0's return is unused by DistributeAndMerge.
+  // This rank's lower-boundary splitter for a balanced partition (global rank r*totSize/npes), by
+  // boundary-aware exact-rank histogramming (mirrors gpu_tree::detail::determineSplitters). Seed each
+  // of the np-1 cuts from the straddling pair of per-rank data boundaries, then iterate probe ->
+  // gather candidates -> exact global ranks -> refine, until every cut is within tol. Un-splittable
+  // cuts (target inside a duplicate run wider than tol) are detected exactly via the global upper_bound
+  // of the bracket's low end and frozen at the nearest achievable endpoint. Uses only `comp` and actual
+  // elements, so balance is independent of the data distribution. State is replicated on every rank;
+  // rank 0's return is unused by DistributeAndMerge.
 #ifdef SCTL_HAVE_MPI
-  const Integer npes = Size(), rank = Rank();
-  const Long nloc = loc.Dim(), ns = npes - 1;
+  constexpr Integer MAXIT = 50;
+  constexpr Integer budget = 16; // probes/round budget
+  constexpr double tolfrac = 0.02; // 2% load-balance tolerance
 
-  // global min/max element under comp (bracket endpoints / anchors)
-  const Type l0 = nloc ? loc[0] : Type(), l1 = nloc ? loc[nloc - 1] : Type();
-  Type gmin = l0, gmax = l1;
-  { // reduce per-rank extremes to global min/max (skip empty ranks); gather buffers freed at block end
-    ScratchBuf<Long> rcnt(npes);
-    Allgather(Ptr2ConstItr<Long>(&nloc, 1), 1, rcnt.begin(), 1);
-    ScratchBuf<Type> firsts(npes), lasts(npes);
-    Allgather(Ptr2ConstItr<Type>(&l0, 1), 1, firsts.begin(), 1);
-    Allgather(Ptr2ConstItr<Type>(&l1, 1), 1, lasts.begin(), 1);
-    bool found = false;
-    for (Integer i = 0; i < npes; i++) {
-      if (!rcnt[i]) continue;
-      if (!found) {
-        gmin = firsts[i];
-        gmax = lasts[i];
-        found = true;
-      } else {
-        if (comp(firsts[i], gmin)) gmin = firsts[i];
-        if (comp(gmax, lasts[i])) gmax = lasts[i];
-      }
-    }
-  }
-  if (ns == 0) return gmin;
+  const Long rank = Rank();
+  const Long np = Size();
 
-  const double ideal = (double)totSize / npes;
-  const Long tol = std::max<Long>(1, (Long)(0.02 * ideal));   // 2% load-balance tolerance
-  const Long budget = 32;                                     // per-process probes/round (~B contributors/cut after the cap) -> O(npes) comm at any scale
-  const Integer MAXIT = 50;                                   // safety cap; converges in ~2-7 rounds in practice
+  const Long ns = np - 1;
+  const Long Nl = loc.Dim();
+  Type gmin = Nl ? loc[0] : Type();
+  if (!ns || !totSize) return gmin;
 
-  // per-rank PRNG (splitmix64); only affects which probes are gathered -- results are replicated via the collectives
-  uint64_t rng = (uint64_t)rank * 0x9e3779b97f4a7c15ULL + 0x123456789abcdefULL;
-  auto next = [&rng]() {
+  const Long Ng = totSize;
+  const Long tol = std::max<Long>(1, Long(tolfrac * double(Ng) / double(np)));   // load-balance tolerance
+  uint64_t rng = uint64_t(rank) * 0x9e3779b97f4a7c15ULL + 0x123456789abcdefULL;
+  const auto next = [&rng]() {
     uint64_t z = (rng += 0x9e3779b97f4a7c15ULL);
     z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
     z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
     return z ^ (z >> 31);
   };
 
-  ScratchBuf<Long> targ(ns), rlo(ns), rhi(ns);     // per-cut state (lives across rounds) on the ScratchPool arena
-  ScratchBuf<Type> blo(ns), bhi(ns), best(ns);
-  ScratchBuf<char> done(ns), use_rand(ns);
-  { // init: each cut targets global rank r*totSize/npes, bracket = whole range
-    for (Long c = 0; c < ns; c++) {
-      targ[c] = (c + 1) * totSize / npes;
-      blo[c] = gmin;
-      bhi[c] = gmax;
-      rlo[c] = 0;
-      rhi[c] = totSize;
-      done[c] = 0;
-      best[c] = gmax;
-      use_rand[c] = 0;
+  ScratchBuf<Type> best(ns); // per-cut best splitter (this rank returns best[rank-1])
+  const auto local_ranks = [&loc, &comp]
+                           (Iterator<Long> r, ConstIterator<Type> q, const Long n, const bool upper = false) {  // batched binary search
+    if (!n) return;
+    #pragma omp parallel for schedule(static) if(n > 512)
+    for (Long i = 0; i < n; i++) r[i] = (upper ? std::upper_bound(loc.begin(), loc.end(), q[i], comp)
+                                               : std::lower_bound(loc.begin(), loc.end(), q[i], comp)) - loc.begin();
+  };
+
+  ScratchBuf<Type> bracket(2*ns);
+  ScratchBuf<Long> bracket_rl(2*ns), bracket_rg(2*ns);
+  [this, np, ns, Nl, Ng, &loc, &comp, &bracket, &bracket_rl, &bracket_rg, &local_ranks, &gmin]() { // Set bracket, bracket_rl, bracket_rg (and gmin)
+    ScratchBuf<Long> rcnt(np), rdsp(np);
+    const StaticArray<Long,1> scnt{Nl ? 2 : 0};
+    Allgather(scnt+0, 1, rcnt.begin(), 1);
+    std::exclusive_scan(rcnt.begin(), rcnt.end(), rdsp.begin(), Long(0));
+
+    const StaticArray<Type,2> sbuf{Nl?loc[0]:Type{}, Nl?loc[Nl-1]:Type{}};
+    ScratchBuf<Type> bnd(rdsp[np-1] + rcnt[np-1]), bnd2(rdsp[np-1] + rcnt[np-1]);
+    Allgatherv(sbuf+0, scnt[0], bnd.begin(), rcnt.begin(), rdsp.begin());
+    omp_par::merge_sort(bnd.begin(), bnd.end(), comp);
+    const Long B = omp_par::dedup_sorted(bnd.begin(), bnd2.begin(), bnd.Dim(), comp);  // out-of-place: bnd -> bnd2
+    if (B) gmin = bnd2[0];
+
+    ScratchBuf<Long> lr_b(B), gr_b(B); // each boundary's local then exact global rank
+    local_ranks(lr_b.begin(), bnd2.begin(), B);
+    Allreduce(lr_b.begin(), gr_b.begin(), B, CommOp::SUM);
+
+    #pragma omp parallel for schedule(static) if(ns > 512)
+    for (Long i = 0; i < ns; i++) {                              // straddling boundary pair for target rank t
+      const Long t = (i + 1) * Ng / np;
+      const Long up = std::min(B-1, std::max<Long>(1, std::lower_bound(gr_b.begin(), gr_b.begin()+B, t) - gr_b.begin()));
+      const Long lo = std::max<Long>(0, up - 1);                 // lo>=0 even when B==1 (degenerate all-equal data)
+      bracket[i*2+0] = bnd2[lo]; bracket_rl[i*2+0] = lr_b[lo]; bracket_rg[i*2+0] = gr_b[lo];
+      bracket[i*2+1] = bnd2[up]; bracket_rl[i*2+1] = lr_b[up]; bracket_rg[i*2+1] = gr_b[up];
     }
+  }();
+
+  ScratchBuf<char> state(ns);
+  enum CutState : char { ACTIVE = 0, DONE = 1, DONE_UPPER = 2 };
+  std::fill(state.begin(), state.end(), (char)ACTIVE);
+
+  const auto gather_pt = [&loc]
+                         (Vector<Type>& out, const Vector<Long>& idxs) {  // out: loc[idxs]; in: idxs
+    const Long n = idxs.Dim();
+    if (out.Dim() != n) out.ReInit(n);
+    for (Long k = 0; k < n; k++) out[k] = loc[idxs[k]];
+  };
+
+  // out: idxs (this rank's chosen local indices), local_cand (their point values). budget is constexpr -> no capture.
+  const auto probe = [ns, np, Ng, &state, &bracket, &bracket_rl, &bracket_rg, &next, &gather_pt]
+                     (Vector<Long>& idxs, Vector<Type>& local_cand) {
+    const double budget_ = [&state, ns]() {  // concentrate the round's budget onto the shrinking active set
+      Long active_cnt = 0;
+      for (Long i = 0; i < ns; i++) active_cnt += (state[i] ? 0 : 1);
+      return double(budget) * double(ns) / std::max<Long>(1, active_cnt);
+    }();
+
+    idxs.ReInit(0);
+    const Long start = Long(next() % (uint64_t)ns);
+    for (Long j = 0; j < ns && idxs.Dim() < 2*budget; j++) {
+      const Long i = (start + j) % ns;
+      const Long rl0 = bracket_rl[i*2+0], rl1 = bracket_rl[i*2+1];
+      const Long rg0 = bracket_rg[i*2+0], rg1 = bracket_rg[i*2+1];
+      if (state[i] || rl1 == rl0) continue;
+
+      const double share = double(rl1 - rl0) / double(rg1 - rg0);
+      const double u = double(next() >> 11) * 0x1p-53; // uniform [0,1): top 53 bits scaled by 2^-53
+      if (u >= std::min(1.0, double(budget_) * share)) continue;
+
+      const Long opt_rank = (i + 1) * Ng / np;
+      const Long idx = rl0 + (rl1 - rl0) * (opt_rank - rg0) / (rg1 - rg0); // interpolate to the target
+      idxs.PushBack(std::min(rl1 - 1, std::max(rl0, idx)));
+    }
+    gather_pt(local_cand, idxs);
+  };
+
+  // in: local_cand (this rank's probes); out: cand (all ranks' probes ++ active brackets, sorted+deduped). ret: |cand|.
+  const auto gather_candidates = [this, np, ns, &state, &bracket, &comp]
+                                 (Vector<Type>& cand, const Vector<Type>& local_cand) -> Long {
+    const Long mloc = local_cand.Dim();
+    ScratchBuf<Long> cntb(np), dspb(np);
+    Allgather(Ptr2ConstItr<Long>(&mloc,1), 1, cntb.begin(), 1);
+    std::exclusive_scan(cntb.begin(), cntb.end(), dspb.begin(), Long(0));
+    Long S = dspb[np-1] + cntb[np-1];
+
+    ScratchBuf<Type> cand_raw(S + 2*ns);  // gather + sort here, then dedup out-of-place into cand
+    Allgatherv((mloc ? local_cand.begin() : NullIterator<Type>()), mloc,
+               cand_raw.begin(), cntb.begin(), dspb.begin());
+    for (Long i = 0; i < ns; i++) if (!state[i]) { // append active brackets
+      cand_raw[S++] = bracket[i*2+0];
+      cand_raw[S++] = bracket[i*2+1];
+    }
+
+    cand.ReInit(S); // capacity for the dedup output (>= result)
+    omp_par::merge_sort(cand_raw.begin(), cand_raw.begin() + S, comp);
+    return omp_par::dedup_sorted(cand_raw.begin(), cand.begin(), S, comp);  // cand_raw -> cand[0..ret)
+  };
+
+  // in: cand, S; out: lr, gr sized S+ns. gr[0,S) = exact global ranks of cand;
+  // gr[S+i] = global upper_bound rank of bracket[i*2+0] (end of blo's duplicate run), folded into the same Allreduce.
+  const auto global_ranks = [this, ns, &local_ranks, &bracket]
+                            (ScratchBuf<Long>& lr, ScratchBuf<Long>& gr, const Vector<Type>& cand, Long S) {
+    SCTL_ASSERT(lr.Dim() >= S+ns);
+    SCTL_ASSERT(gr.Dim() >= S+ns);
+
+    ScratchBuf<Type> blo(ns);
+    for (Long i = 0; i < ns; i++) blo[i] = bracket[i*2+0];
+    local_ranks(lr.begin(), cand.begin(), S);
+    local_ranks(lr.begin()+S, blo.begin(), ns, /*upper*/true);
+    Allreduce(lr.begin(), gr.begin(), S+ns, CommOp::SUM);
+  };
+
+  // in: cand, lr, gr (sized S+ns), S; out: best + updated bracket*/state. ret: whether any cut is still active.
+  const auto refine = [/*out:*/ &best, &state, &bracket, &bracket_rl, &bracket_rg,  /*in:*/ ns, Ng, np, tol]
+                      (const Vector<Type>& cand, const ScratchBuf<Long>& lr, const ScratchBuf<Long>& gr, Long S) -> bool {
+    bool anyactive = false;
+    #pragma omp parallel for schedule(static) reduction(||:anyactive) if(ns > 512)
+    for (Long i = 0; i < ns; i++) { // refine each active bracket toward its target rank
+      if (state[i]) continue;
+      const Long t = (i + 1) * Ng / np;
+      const Long up = std::lower_bound(gr.begin(), gr.begin()+S, t) - gr.begin(), lo = up - 1;
+
+      const Long errlo = (lo >= 0) ? t - gr[lo] : t;
+      const Long errup = (up < S) ? gr[up] - t : (Ng - t);
+      best[i] = (errlo <= errup) ? cand[std::max<Long>(0,lo)] : cand[std::min<Long>(S-1,up)];
+      if (lo < 0 || up >= S || std::min(errlo,errup) <= tol) {
+        state[i] = DONE;
+        continue;
+      }
+
+      if (gr[up] - gr[lo] < bracket_rg[i*2+1] - bracket_rg[i*2+0]) {  // bracket shrank: tighten toward target
+        bracket[i*2+0]    = cand[lo]; bracket[i*2+1]    = cand[up];
+        bracket_rl[i*2+0] = lr[lo];   bracket_rl[i*2+1] = lr[up];
+        bracket_rg[i*2+0] = gr[lo];   bracket_rg[i*2+1] = gr[up];
+        anyactive = true; continue;
+      }
+
+      // no shrink: cand[lo]==blo. Exact un-splittable test on blo's duplicate run [L,U).
+      const Long L = gr[lo], U = gr[S+i];  // L = global lower_bound(blo), U = global upper_bound(blo)
+      if (U <= t) { // run ends before target -> undersampled this round, keep probing
+        anyactive = true;
+        continue;
+      }
+      // run straddles target: nearest endpoint is the best achievable.
+      if (t - L <= U - t) { best[i] = cand[lo]; state[i] = DONE; } // nearer endpoint L: splitter = blo (value in hand)
+      else                  state[i] = DONE_UPPER;                 // nearer endpoint U: successor of blo (resolved at loop end)
+    }
+    return anyactive;
+  };
+
+  Vector<Long> idxs;
+  Vector<Type> local_cand, cand;
+  for (Integer it = 0; it < MAXIT; it++) { // iterate: [ probe -> gather -> global-rank -> refine ] until every cut is within tol
+    probe(idxs, local_cand);
+    const Long S = gather_candidates(cand, local_cand);
+    ScratchBuf<Long> gr(S+ns), lr(S+ns);
+    global_ranks(lr, gr, cand, S);
+    if (!refine(cand, lr, gr, S)) break;
   }
 
-  for (Integer it = 0; it < MAXIT; it++) {
-    Long nun = 0;
-    for (Long c = 0; c < ns; c++) if (!done[c]) nun++;
+  { // resolve upper-side frozen cuts: best = successor of blo (smallest global value > blo under comp)
+    Long m = 0;
+    ScratchBuf<Long> up_cuts(ns);
+    for (Long i = 0; i < ns; i++) if (state[i] == DONE_UPPER) up_cuts[m++] = i;
+    if (m) {
+      ScratchBuf<Long> uidx(m);
+      { // uidx <-- local index of first point > blo
+        ScratchBuf<Type> bvals(m);
+        for (Long k = 0; k < m; k++) bvals[k] = bracket[up_cuts[k]*2+0];
+        local_ranks(uidx.begin(), bvals.begin(), m, /*upper*/true);
+      }
 
-    ScratchBuf<Type> myc(ns); Long mloc = 0;           // <= ns probes contributed by this process this round
-    { // probe: contribute to <= budget active cuts (random subset), interpolated or random fall-back
-      for (Long c = 0; c < ns; c++) {
-        if (done[c]) continue;
-        if (nun > budget && (next() % (uint64_t)nun) >= (uint64_t)budget) continue;   // random contributor selection (the cap)
-        const Long a = std::lower_bound(loc.begin(), loc.end(), blo[c], comp) - loc.begin();
-        const Long b = std::lower_bound(loc.begin(), loc.end(), bhi[c], comp) - loc.begin();
-        if (b <= a) continue;
-        Long idx;
-        if (use_rand[c]) idx = a + (Long)(next() % (uint64_t)(b - a));                  // fall-back when interpolation stalled
-        else {
-          double f = (double)(targ[c] - rlo[c]) / (double)std::max<Long>(1, rhi[c] - rlo[c]);
-          f = std::min(1.0, std::max(0.0, f));
-          idx = a + (Long)(f * (b - a));
+      ScratchBuf<Type> sloc(m);
+      { // sloc <-- successor value loc[uidx] (or bhi where this rank has no point > blo)
+        ScratchBuf<Long> gidx(m);
+        for (Long k = 0; k < m; k++) gidx[k] = std::min(uidx[k], Nl-1);
+        Vector<Type> sloc_v(sloc);
+        if (Nl > 0) gather_pt(sloc_v, Vector<Long>(gidx));
+        for (Long k = 0; k < m; k++) sloc[k] = (Nl > 0 && uidx[k] < Nl) ? sloc[k] : bracket[up_cuts[k]*2+1];
+      }
+
+      // global min of the per-rank successors
+      if constexpr (std::is_same<Compare, std::less<Type>>::value) {  // default order: one MIN-Allreduce, O(m)
+        ScratchBuf<Type> sglob(m);
+        Allreduce<CommOp::MIN>(sloc.begin(), sglob.begin(), m);
+        for (Long k = 0; k < m; k++) best[up_cuts[k]] = sglob[k];
+      } else {  // custom comp: Allgather the per-rank successors, reduce locally under comp
+        ScratchBuf<Type> sall(m * np);
+        Allgather(sloc.begin(), m, sall.begin(), m);
+        for (Long k = 0; k < m; k++) {
+          Type mn = sall[k];
+          for (Long p = 1; p < np; p++) if (comp(sall[p*m + k], mn)) mn = sall[p*m + k];
+          best[up_cuts[k]] = mn;
         }
-        idx = std::min(b - 1, std::max(a, idx));
-        myc[mloc++] = loc[idx];
       }
     }
-
-    Long tot = 0;
-    ScratchBuf<Long> cnt(npes), dsp(npes);
-    { // gather per-process probe counts -> displacements
-      dsp[0] = 0;
-      Allgather(Ptr2ConstItr<Long>(&mloc, 1), 1, cnt.begin(), 1);
-      omp_par::scan(cnt.begin(), dsp.begin(), npes);
-      tot = dsp[npes - 1] + cnt[npes - 1];
-    }
-
-    Long S = 0;
-    ScratchBuf<Type> comb(tot + 2 * ns + 2);
-    { // assemble sorted candidate set: gathered probes ++ anchors ++ active brackets (keeps every target bracketed)
-      Allgatherv(myc.begin(), mloc, comb.begin(), cnt.begin(), dsp.begin());
-      S = tot;
-      comb[S++] = gmin;
-      comb[S++] = gmax;
-      for (Long c = 0; c < ns; c++) {
-        if (done[c]) continue;
-        comb[S++] = blo[c];
-        comb[S++] = bhi[c];
-      }
-      omp_par::sample_sort(comb.begin(), comb.begin() + S, comp);   // parallel (self-guards to serial below its threshold)
-      S = std::unique(comb.begin(), comb.begin() + S, [&comp](const Type& x, const Type& y) { return !comp(x, y) && !comp(y, x); }) - comb.begin();
-    }
-
-    ScratchBuf<Long> lr(S), gr(S);
-    { // exact global rank of every candidate: local rank, then Allreduce
-      // threshold guards OpenMP fork/join (~us): only parallelize when S is large enough to amortize it (heuristic, not measured)
-      #pragma omp parallel for schedule(static) if(S > 4096)
-      for (Long i = 0; i < S; i++) lr[i] = std::lower_bound(loc.begin(), loc.end(), comb[i], comp) - loc.begin();
-      Allreduce(lr.begin(), gr.begin(), S, CommOp::SUM);
-    }
-
-    bool anyactive = false;
-    { // assign each unresolved cut its nearest candidate; refine its bracket or freeze it (per-c writes independent)
-      #pragma omp parallel for schedule(static) reduction(||:anyactive) if(ns > 4096)   // same fork/join heuristic as the rank loop
-      for (Long c = 0; c < ns; c++) {
-        if (done[c]) continue;
-        const Long t = targ[c];
-        const Long up = std::lower_bound(gr.begin(), gr.end(), t) - gr.begin(), lo = up - 1;
-        const Long errlo = (lo >= 0) ? t - gr[lo] : t, errup = (up < S) ? gr[up] - t : (totSize - t);
-        best[c] = (errlo <= errup) ? comb[std::max<Long>(0, lo)] : comb[std::min<Long>(S - 1, up)];
-        if (lo < 0 || up >= S || std::min(errlo, errup) <= tol || (gr[up] - gr[lo]) <= tol) {
-          done[c] = 1;
-          continue;
-        }
-        const Long oldw = rhi[c] - rlo[c], neww = gr[up] - gr[lo];
-        if (neww >= oldw) {  // un-splittable (e.g. duplicate mass) -> stop refining
-          done[c] = 1;
-          continue;
-        }
-        use_rand[c] = (neww > oldw / 2);                    // interpolation didn't halve the bracket -> random next round
-        blo[c] = comb[lo];
-        rlo[c] = gr[lo];
-        bhi[c] = comb[up];
-        rhi[c] = gr[up];
-        anyactive = true;
-      }
-    }
-    if (!anyactive) break;
   }
   return rank == 0 ? gmin : best[rank - 1];
 #else
