@@ -388,6 +388,22 @@ class Comm {
   template <class Type> void Allreduce(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, CommOp op) const;
 
   /**
+   * All-reduce with the reduction op fixed at compile time. Unlike the runtime-`op` overload, only
+   * the selected op's reduction is instantiated, so it works for types that define just the needed
+   * comparison (e.g. a type with only `operator<` for `CommOp::MIN`).
+   *
+   * @tparam op reduction operation (compile-time).
+   * @tparam Type type of the data.
+   *
+   * @param[in] sbuf iterator to the send buffer.
+   *
+   * @param[out] rbuf iterator to the receive buffer.
+   *
+   * @param[in] count number of elements.
+   */
+  template <CommOp op, class Type> void Allreduce(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count) const;
+
+  /**
    * Perform a scan operation.
    *
    * @tparam Type type of the data.
@@ -401,6 +417,22 @@ class Comm {
    * @param[in] op scan operation.
    */
   template <class Type> void Scan(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, CommOp op) const;
+
+  /**
+   * Scan with the reduction op fixed at compile time. Unlike the runtime-`op` overload, only the
+   * selected op's reduction is instantiated, so it works for types that define just the needed
+   * comparison (e.g. a type with only `operator<` for `CommOp::MIN`).
+   *
+   * @tparam op scan operation (compile-time).
+   * @tparam Type type of the data.
+   *
+   * @param[in] sbuf iterator to the send buffer.
+   *
+   * @param[out] rbuf iterator to the receive buffer.
+   *
+   * @param[in] count number of elements.
+   */
+  template <CommOp op, class Type> void Scan(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count) const;
 
   /**
    * Perform a weighted partitioning of a vector.
@@ -624,6 +656,9 @@ class Comm {
   };
 
   template <class Type> static MPI_Op GetMPIOp(CommOp op);
+  template <CommOp op, class Type> static MPI_Op GetMPIOp();
+  template <class Type> void AllreduceImpl(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, MPI_Op mpi_op) const;
+  template <class Type> void ScanImpl(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, MPI_Op mpi_op) const;
   static void RegisterDatatype(MPI_Datatype datatype);
   static void RegisterOp(MPI_Op op);
   static void FreeRegisteredHandles();
