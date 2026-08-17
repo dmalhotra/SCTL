@@ -463,7 +463,7 @@ class Comm {
    *
    * @param[in] comp comparison function for elements.
    */
-  template <class Type, class Compare> void HyperQuickSort(const Vector<Type>& arr, Vector<Type>& SortedElem, Compare comp) const;
+  template <class Type, class Compare> void HyperQuickSort(const Vector<Type>& arr, Vector<Type>& SortedElem, Compare comp, bool partition = true) const;
 
   /**
    * Sorts the elements of an array using HyperQuickSort algorithm with the default comparison function.
@@ -476,6 +476,54 @@ class Comm {
    */
   template <class Type> void HyperQuickSort(const Vector<Type>& arr, Vector<Type>& SortedElem) const {
     HyperQuickSort(arr, SortedElem, std::less<Type>());
+  }
+
+  /**
+   * Sorts the elements of a distributed array using a single-pass sample sort (regular
+   * sampling -> one Alltoallv -> k-way merge). Scales better than HyperQuickSort for large
+   * arrays by avoiding its O(log p) merge/comm-split rounds.
+   *
+   * @tparam Type type of the elements in the array.
+   * @tparam Compare comparison functor type.
+   *
+   * @param[in] arr input array to be sorted.
+   * @param[out] SortedElem sorted array.
+   * @param[in] comp comparison function for elements.
+   * @param[in] partition if true (default) the output is equally partitioned across ranks
+   *   (via PartitionW), matching HyperQuickSort; if false the output is globally sorted but
+   *   only approximately balanced (skip when a PartitionS/repartition follows).
+   */
+  template <class Type, class Compare> void SampleSort(const Vector<Type>& arr, Vector<Type>& SortedElem, Compare comp, bool partition = true) const;
+
+  /**
+   * Sorts the elements of a distributed array using a single-pass sample sort with the
+   * default comparison function.
+   */
+  template <class Type> void SampleSort(const Vector<Type>& arr, Vector<Type>& SortedElem) const {
+    SampleSort(arr, SortedElem, std::less<Type>());
+  }
+
+  /**
+   * Distributed sort using a caller-provided per-rank splitter (like PartitionS): each rank
+   * supplies its own lower boundary, gathered internally, and rank r ends up with the
+   * globally-sorted elements in [splitter_r, splitter_{r+1}). Skips splitter selection and
+   * PartitionW, sorting and partitioning in one pass when the boundaries are already known.
+   *
+   * @tparam Type type of the elements in the array.
+   * @tparam Compare comparison functor type.
+   *
+   * @param[in] arr input array to be sorted.
+   * @param[out] SortedElem sorted, splitter-partitioned array.
+   * @param[in] splitter this rank's lower boundary key (splitters must be ascending by rank).
+   * @param[in] comp comparison function for elements.
+   */
+  template <class Type, class Compare> void SampleSort(const Vector<Type>& arr, Vector<Type>& SortedElem, const Type& splitter, Compare comp) const;
+
+  /**
+   * Distributed sort using a per-rank splitter and the default comparison function.
+   */
+  template <class Type> void SampleSort(const Vector<Type>& arr, Vector<Type>& SortedElem, const Type& splitter) const {
+    SampleSort(arr, SortedElem, splitter, std::less<Type>());
   }
 
   /**
@@ -525,6 +573,26 @@ class Comm {
     A key;
     B data;
   };
+
+  /**
+   * Core of SampleSort: given a locally-sorted array `loc` and this rank's lower boundary
+   * `splitter` (one value per rank, gathered internally so the split is always consistent),
+   * redistribute (one Alltoallv) and parallel-merge so rank r ends up with the globally-sorted
+   * elements in [splitter_r, splitter_{r+1}).
+   */
+  template <class Type, class Compare> void DistributeAndMerge(const Vector<Type>& loc, const Type& splitter, Vector<Type>& SortedElem, Compare comp) const;
+
+  /**
+   * Determine this process's lower-boundary splitter for a load-balanced distributed sort via
+   * iterative exact-rank histogramming. Generic (uses only `comp` and actual elements), O(npes)
+   * communication per round; the resulting balance is independent of the data distribution.
+   *
+   * @param[in] loc locally-sorted elements on this process.
+   * @param[in] totSize total element count across all processes.
+   * @param[in] comp comparison functor.
+   * @return the value at global rank Rank()*totSize/npes (rank 0's return value is unused).
+   */
+  template <class Type, class Compare> Type DetermineSplitter(const Vector<Type>& loc, Long totSize, Compare comp) const;
 
 #ifdef SCTL_HAVE_MPI
   /**

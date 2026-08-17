@@ -101,24 +101,18 @@ template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>
 template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>::template MortonBig<NWORDS_> MortonCode<DIM>::MortonBig<NWORDS_>::operator<<(int s) const {
   MortonBig r{};
   const int ws = s / 64, bs = s % 64;
-  for (int i = NWORDS_ - 1; i >= 0; --i) {
-    std::uint64_t v = 0;
-    if (i - ws >= 0) v |= w[i - ws] << bs;
-    if (bs != 0 && i - ws - 1 >= 0) v |= w[i - ws - 1] >> (64 - bs);
-    r.w[i] = v;
-  }
+  for (int i = NWORDS_ - 1; i >= ws; --i) r.w[i] = w[i - ws] << bs;
+  if (bs != 0)
+    for (int i = NWORDS_ - 1; i >= ws + 1; --i) r.w[i] |= w[i - ws - 1] >> (64 - bs);
   return r;
 }
 
 template <Integer DIM> template <int NWORDS_> constexpr typename MortonCode<DIM>::template MortonBig<NWORDS_> MortonCode<DIM>::MortonBig<NWORDS_>::operator>>(int s) const {
   MortonBig r{};
   const int ws = s / 64, bs = s % 64;
-  for (int i = 0; i < NWORDS_; ++i) {
-    std::uint64_t v = 0;
-    if (i + ws < NWORDS_) v |= w[i + ws] >> bs;
-    if (bs != 0 && i + ws + 1 < NWORDS_) v |= w[i + ws + 1] << (64 - bs);
-    r.w[i] = v;
-  }
+  for (int i = 0; i < NWORDS_ - ws; ++i) r.w[i] = w[i + ws] >> bs;
+  if (bs != 0)
+    for (int i = 0; i < NWORDS_ - ws - 1; ++i) r.w[i] |= w[i + ws + 1] << (64 - bs);
   return r;
 }
 
@@ -274,21 +268,23 @@ template <Integer DIM> SCTL_GPU_HD Morton<DIM> MortonCode<DIM>::CommonAncestor(c
   const int p = highest_bit_pos(diff);
   if (p < 0) return Morton<DIM>{*this, static_cast<uint8_t>(MAX_DEPTH)};  // codes identical
   const uint8_t d = static_cast<uint8_t>((TOTAL_BITS - 1 - p) / DIM);
-  const int k = TOTAL_BITS - static_cast<int>(d) * static_cast<int>(DIM);
-  // shift-by-TOTAL_BITS on built-in MortonInteger is UB; guard with k < TOTAL_BITS (only triggers at d == 0).
-  const MortonInteger anc_code = (k < TOTAL_BITS) ? ((code >> k) << k) : MortonInteger{};
-  return Morton<DIM>{MortonCode(anc_code), d};
+  return Morton<DIM>{*this, d};
 }
 
 template <Integer DIM> SCTL_GPU_HD Morton<DIM> MortonCode<DIM>::Ancestor(uint8_t depth) const {
-  const int k = TOTAL_BITS - static_cast<int>(depth) * static_cast<int>(DIM);
-  const MortonInteger anc_code = (k < TOTAL_BITS) ? ((code >> k) << k) : MortonInteger{};
-  return Morton<DIM>{MortonCode(anc_code), depth};
+  return Morton<DIM>{*this, depth};
 }
 
 // ---------------------------------------------------------------------------
 // Morton
 // ---------------------------------------------------------------------------
+
+template <Integer DIM> SCTL_GPU_HD Morton<DIM>::Morton(MortonCode<DIM> mid_, uint8_t depth_) : mid(mid_), depth(depth_) {
+  if (depth_ <= MAX_DEPTH) {
+    const int k = static_cast<int>(MortonCode<DIM>::TOTAL_BITS) - static_cast<int>(depth_) * static_cast<int>(DIM);
+    mid = MortonCode<DIM>(typename MortonCode<DIM>::MortonInteger((mid_.code >> k) << k));
+  }
+}
 
 template <Integer DIM> template <class T> Morton<DIM>::Morton(ConstIterator<T> coord, uint8_t depth_) {
   T c[DIM];
@@ -330,6 +326,19 @@ template <Integer DIM> SCTL_GPU_HD Morton<DIM> Morton<DIM>::Ancestor(uint8_t lev
 
 template <Integer DIM> SCTL_GPU_HD Morton<DIM> Morton<DIM>::DFD(uint8_t level) const {
   return Morton{mid, level};
+}
+
+template <Integer DIM> SCTL_GPU_HD Integer Morton<DIM>::Path2Node() const {
+  using MC = MortonCode<DIM>;
+  using MI = typename MC::MortonInteger;
+  if (depth == 0) return 0;
+  const int shift = static_cast<int>(DIM) * (static_cast<int>(MAX_DEPTH) - static_cast<int>(depth));
+  const MI r = (mid.code >> shift) & MI((std::uint64_t(1) << DIM) - 1);
+  if constexpr (MC::STORAGE_BITS <= 64) {
+    return static_cast<Integer>(r);
+  } else {
+    return static_cast<Integer>(r.w[0]);
+  }
 }
 
 template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, (1 << DIM)> Morton<DIM>::Children() const {
@@ -488,6 +497,17 @@ template <Integer DIM> SCTL_GPU_HD bool Morton<DIM>::operator==(const Morton& o)
 template <Integer DIM> SCTL_GPU_HD bool Morton<DIM>::operator!=(const Morton& o) const { return !(*this == o); }
 
 template <Integer DIM> SCTL_GPU_HD bool Morton<DIM>::isAncestor(const Morton& descendant) const { return descendant.depth > depth && descendant.Ancestor(depth) == *this; }
+
+template <Integer DIM> SCTL_GPU_HD Morton<DIM> Morton<DIM>::CommonAncestor(const Morton& o) const {
+  using MC = MortonCode<DIM>;
+  Integer d = (depth < o.depth ? depth : o.depth);
+  const int h = MC::highest_bit_pos(mid.code ^ o.mid.code);
+  if (h >= 0) { // codes differ: cap by the finest level on which they agree
+    const Integer d_code = static_cast<Integer>(MAX_DEPTH) - 1 - h / static_cast<Integer>(DIM);
+    if (d_code < d) d = d_code;
+  }
+  return mid.Ancestor(static_cast<uint8_t>(d));
+}
 
 template <Integer DIM> SCTL_GPU_HD Long Morton<DIM>::operator-(const Morton& o) const {
   // Direct port of sctl::Morton<DIM>::operator-: -1 intersecting, 0 touching, >0 separated.

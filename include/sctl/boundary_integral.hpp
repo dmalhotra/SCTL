@@ -504,6 +504,9 @@ namespace sctl {
       mutable Vector<Long> near_elem_cnt, near_elem_dsp; // cnt and dsp of near-interaction for each element (size=Nelem)
       mutable Vector<Long> K_near_cnt, K_near_dsp; // cnt and dsp of element wise near-interaction matrix (size=Nelem)
       mutable Vector<Real> K_near;
+      // Near-eval work units: each is a contiguous target range within one element. Elements are
+      // subdivided only when there are too few to fill the thread team (size=Nblk_near)
+      mutable Vector<Long> near_blk_elem, near_blk_t0, near_blk_cnt;
 
       mutable bool setup_self_flag;
       mutable Vector<Matrix<Real>> K_self; // self-interaction matrix for each element (size=Nelem)
