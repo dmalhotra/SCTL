@@ -4,6 +4,7 @@
 #include <ostream>                  // for ostream
 #include <cstdint>                  // for uintptr_t, uint8_t
 #include <iostream>                 // for basic_ostream, cout, operator<<
+#include <type_traits>              // for is_same
 
 #include "sctl/common.hpp"          // for Integer, SCTL_ASSERT, SCTL_ALIGN_...
 #include "sctl/vec.hpp"             // for Vec, AndNot, max, min, operator!=
@@ -350,6 +351,23 @@ namespace sctl {
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> min(const ValueType& lhs, const Vec<ValueType,N>& rhs) {
     return min(Vec<ValueType,N>(lhs), rhs);
+  }
+
+  template <class ValueType, Integer N> inline void transpose(Vec<ValueType,N> (&v)[N]) {
+    VecData<ValueType,N> w[N];
+    for (Integer i = 0; i < N; i++) w[i] = v[i].get();
+    transpose_intrin(w);
+    for (Integer i = 0; i < N; i++) v[i].set(w[i]);
+  }
+
+  template <class ValueType, Integer N, class ...T> inline void transpose(Vec<ValueType,N>& v0, T&... vs) {
+    static_assert(sizeof...(T)+1 == N, "transpose requires exactly N vectors.");
+    static_assert(((std::is_same<T,Vec<ValueType,N>>::value) && ...), "all arguments must have the same Vec type.");
+    VecData<ValueType,N> w[N] = {v0.get(), vs.get()...};
+    transpose_intrin(w);
+    Integer i = 0;
+    v0.set(w[i++]);
+    ((vs.set(w[i++])), ...);
   }
 
 

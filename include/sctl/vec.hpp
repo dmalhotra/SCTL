@@ -368,6 +368,23 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> max(const ValueType& lhs, const Vec<ValueType,N>& rhs);
   template <class ValueType, Integer N> inline Vec<ValueType,N> min(const ValueType& lhs, const Vec<ValueType,N>& rhs);
 
+  /**
+   * Transpose an NxN matrix of scalars held in N vectors, in-place. On return,
+   * element j of v[i] is the original element i of v[j].
+   *
+   * @param v The N vectors forming the rows of the matrix.
+   */
+  template <class ValueType, Integer N> inline void transpose(Vec<ValueType,N> (&v)[N]);
+
+  /**
+   * Transpose an NxN matrix of scalars held in N vectors, in-place. Same as the
+   * array overload, for vectors not held in an array.
+   *
+   * @param v0 The first row. Exactly N vectors must be given in total.
+   * @param vs The remaining N-1 rows.
+   */
+  template <class ValueType, Integer N, class ...T> inline void transpose(Vec<ValueType,N>& v0, T&... vs);
+
 
   // Special functions
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x);

@@ -62,6 +62,7 @@ namespace sctl {
           test_bitwise(); // TODO: fails for 'long double'
           test_arithmetic();
           test_maxmin();
+          test_transpose();
           test_mask(); // TODO: fails for 'long double'
           test_comparison(); // TODO: fails for 'long double'
         }
@@ -259,6 +260,37 @@ namespace sctl {
           SCTL_ASSERT(u4.x[i] == (u1.x[i] < u2.x[i] ? u1.x[i] : u2.x[i]));
         }
       }
+
+      static void test_transpose() {
+        UnionType u[N], w[N];
+        for (Integer i = 0; i < N; i++) {
+          for (Integer j = 0; j < N; j++) u[i].x[j] = (ScalarType)rand();
+        }
+
+        VecType v[N];
+        for (Integer i = 0; i < N; i++) v[i] = u[i].v;
+        transpose(v);
+        for (Integer i = 0; i < N; i++) w[i].v = v[i];
+
+        for (Integer i = 0; i < N; i++) {
+          for (Integer j = 0; j < N; j++) SCTL_ASSERT(w[i].x[j] == u[j].x[i]);
+        }
+
+        // variadic overload must agree with the array overload
+        for (Integer i = 0; i < N; i++) v[i] = u[i].v;
+        TransposeVa<N>::apply(v);
+        for (Integer i = 0; i < N; i++) {
+          for (Integer j = 0; j < N; j++) SCTL_ASSERT(v[i][j] == w[i].x[j]);
+        }
+      }
+
+      // expand v[0],..,v[N-1] into the variadic transpose
+      template <Integer k, class ...T> struct TransposeVa {
+        static void apply(VecType (&v)[N], T&... args) { TransposeVa<k-1,T...,VecType>::apply(v, args..., v[N-k]); }
+      };
+      template <class ...T> struct TransposeVa<0,T...> {
+        static void apply(VecType (&)[N], T&... args) { transpose(args...); }
+      };
 
       static void test_mask() {
         union {

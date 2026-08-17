@@ -9,17 +9,6 @@ namespace sctl {
 template <class ValueType> class Vector;
 template <class ValueType> class Matrix;
 
-template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM, Integer N_DIM> struct uKerHelper {
-  template <Integer digits, class VecType> static void MatEval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const VecType (&n)[N_DIM], const void* ctx_ptr) {
-    uKernel::template uKerMatrix<digits>(u, r, n, ctx_ptr);
-  }
-};
-template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM> struct uKerHelper<uKernel,KDIM0,KDIM1,DIM,0> {
-  template <Integer digits, class VecType, class NormalType> static void MatEval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const NormalType& n, const void* ctx_ptr) {
-    uKernel::template uKerMatrix<digits>(u, r, ctx_ptr);
-  }
-};
-
 /**
  * @class GenericKernel
  * This class is designed to help create new custom kernel objects. Kernel objects for Laplace and Stokes in 3D are defined in `kernel_functions.hpp` and can be used as a template.

@@ -1084,13 +1084,6 @@ template <class Real> void SphericalHarmonics<Real>::LaplaceEvalSL(const Vector<
   Matrix<Real> LaplaceOp(N, M);
   for (Long i = 0; i < N; i++) { // Set LaplaceOp
 
-    Real cos_phi, sin_phi;
-    { // Set cos_theta, csc_theta, cos_phi, sin_phi
-      cos_phi = cos(theta_phi[i * 2 + 1]);
-      sin_phi = sin(theta_phi[i * 2 + 1]);
-    }
-    std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
-
     const Real radius = R[i];
     ScratchBuf<Real> rpow(p0 + 4);
     if (interior) {
@@ -1196,13 +1189,6 @@ template <class Real> void SphericalHarmonics<Real>::LaplaceEvalDL(const Vector<
 
   Matrix<Real> LaplaceOp(N, M);
   for (Long i = 0; i < N; i++) { // Set LaplaceOp
-
-    Real cos_phi, sin_phi;
-    { // Set cos_theta, csc_theta, cos_phi, sin_phi
-      cos_phi = cos(theta_phi[i * 2 + 1]);
-      sin_phi = sin(theta_phi[i * 2 + 1]);
-    }
-    std::complex<Real> imag(0,1), exp_phi(cos_phi, -sin_phi);
 
     const Real radius = R[i];
     ScratchBuf<Real> rpow(p0 + 4);
