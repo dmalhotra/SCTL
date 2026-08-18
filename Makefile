@@ -30,17 +30,23 @@ endif
 
 CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB
 
-CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
+CXXFLAGS += -DSCTL_PROFILE=25 -DSCTL_VERBOSE # Enable profiling
 CXXFLAGS += -DSCTL_SIG_HANDLER # Enable SCTL stack trace
 
 CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
 
-#CXXFLAGS += -DSCTL_HAVE_MPI #use MPI
+# Opt-in phase timers for the quad-element self/near hot loops.
+# Use `make BENCH=1 ...` -- do NOT pass CXXFLAGS+= on the command line, as that
+# overrides (not appends to) the flags assigned above.
+BENCH ?= 0
+ifeq ($(BENCH), 1)
+	CXXFLAGS += -DBENCH_QUAD
+endif
 
-CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
-CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
+# CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
+# CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
 #CXXFLAGS += -qmkl -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK -DSCTL_HAVE_FFTW3_MKL # use MKL BLAS, LAPACK and FFTW (Intel compiler)
-#CXXFLAGS += -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK (non-Intel compiler)
+CXXFLAGS += -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK (non-Intel compiler)
 
 CXXFLAGS += -lfftw3_omp -DSCTL_FFTW_THREADS
 CXXFLAGS += -lfftw3 -DSCTL_HAVE_FFTW
@@ -97,13 +103,16 @@ TARGET_BIN = \
        $(BINDIR)/test-sph-harm \
        $(BINDIR)/test-tensor \
        $(BINDIR)/test-vec \
-       $(BINDIR)/test-quad-elem \
        $(BINDIR)/test-scratch-pool \
-       $(BINDIR)/test-scratch-pool-perf
+       $(BINDIR)/test-scratch-pool-perf \
+	   $(BINDIR)/test-quad-elem \
+	   $(BINDIR)/bench-scheme-compare
 
-.PHONY: all test clean
+.PHONY: all test clean scheme
 
 all : $(TARGET_BIN)
+
+scheme : $(BINDIR)/bench-scheme-compare
 
 $(BINDIR)/%: $(OBJDIR)/%.o
 	-@$(MKDIRS) $(dir $@)
@@ -148,8 +157,8 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-sph-harm
 	./$(BINDIR)/test-tensor
 	./$(BINDIR)/test-vec
-	./$(BINDIR)/test-quad-elem
 	./$(BINDIR)/test-scratch-pool
+	./$(BINDIR)/test-quad-elem
 
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*
