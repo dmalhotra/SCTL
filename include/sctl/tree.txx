@@ -943,7 +943,7 @@ namespace sctl {
           const Long start_idx_t = start_idx + (end_idx - start_idx) *  tid      / nthreads;
           const Long end_idx_t   = start_idx + (end_idx - start_idx) * (tid + 1) / nthreads;
 
-          ScratchBuf<bool> ancestor_shared_flag(MAX_DEPTH);
+          ScratchBuf<bool> ancestor_shared_flag(MAX_DEPTH+1);
           if (start_idx_t < end_idx_t) {
             ancestor_shared_flag[0] = true;
             const Morton<DIM> m0 = node_mid[start_idx_t];
