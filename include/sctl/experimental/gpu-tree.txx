@@ -253,11 +253,12 @@ class DeviceVector> void buildTreeGpu(DeviceVector<Morton<DIM>>& tree, const Dev
     return;
   }
 
-  // Phase 1: anchors over all of pt_mid -- halo included, since a leaf at either end of the slice
-  // comes from a pair reaching M points outside it -- then clip to [start_bnd, end_bnd).
-  const Long N_pairs = std::max<Long>((Long)pt_mid.size() - M, 0);
+  // Phase 1: anchors from the pairs within pt_mid[base, base+N), then clip to [start_bnd, end_bnd).
+  // The boundary leaves need no points from outside: start_bnd is itself the anchor of the pair
+  // straddling the lower boundary, and the walk stops at end_bnd.
+  const Long N_pairs = std::max<Long>(N - M, 0);
   DeviceVector<NodeMIDT> anchors(N_pairs);
-  SplitLeafFunctor<Real, DIM> f{thrust::raw_pointer_cast(pt_mid.data()), M};
+  SplitLeafFunctor<Real, DIM> f{thrust::raw_pointer_cast(pt_mid.data()) + base, M};
   auto in     = thrust::make_transform_iterator(thrust::counting_iterator<Long>(0),       f);
   auto in_end = thrust::make_transform_iterator(thrust::counting_iterator<Long>(N_pairs), f);
   auto uniq_end = thrust::unique_copy(in, in_end, anchors.begin());
