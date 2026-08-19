@@ -607,7 +607,7 @@ void determineSplitters(sctl::Vector<Type>& splitters, const DeviceVector<Type>&
 }  // namespace detail_determineSplitters
 
 // 2:1 balance (distributed). Closure rule (leaf form of Tree::UpdateRefinement's touching-
-// neighbor rule): every same-depth neighbor octant of an internal node must exist. Missing ones
+// neighbor rule): every same-depth neighbor octant of a non-leaf node must exist. Missing ones
 // ("requirements") are routed to their owner and inserted as leaves; iterate to a global fixpoint.
 // Requirements never straddle a rank boundary (boundary anchors persist), so they stay rank-local.
 namespace detail_balance21 {
@@ -626,7 +626,7 @@ struct NonZeroCharPred {
   SCTL_GPU_HD bool operator()(char c) const { return c != 0; }
 };
 
-// Slot j = node i * 3^DIM + k: neighbor k of internal node i (INVALID for leaves, clipped
+// Slot j = node i * 3^DIM + k: neighbor k of non-leaf node i (INVALID for leaves, clipped
 // neighbors, and the self slot).
 template <Integer DIM> struct BalanceReqFunctor {
   static constexpr Integer K = sctl::pow<DIM, Integer>(3);
@@ -701,28 +701,19 @@ template <Integer DIM> struct KeepFinestFunctor {
 };
 
 template <Integer DIM, template <class...> class DeviceVector>
-void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const Comm& comm) {
+void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<DIM>>& mins, const Comm& comm) {
   using NodeT = Morton<DIM>;
   const Long rank = comm.Rank();
   const Long np = comm.Size();
 
-  constexpr Integer K = sctl::pow<DIM, Integer>(3);
-
-  const Long Nn0 = static_cast<Long>(tree.size());
-  std::vector<NodeT> A(np);  // fixed rank boundaries: first node of each rank (nodes in every refinement)
-  {
-    NodeT a0{}; if (Nn0) a0 = NodeT(tree[0]);
-    comm.Allgather(sctl::Ptr2ConstItr<NodeT>(&a0, 1), 1, sctl::Ptr2Itr<NodeT>(A.data(), np), 1);
-    std::vector<long long> nn(np); const long long my_nn = Nn0;
-    comm.Allgather(sctl::Ptr2ConstItr<long long>(&my_nn, 1), 1, sctl::Ptr2Itr<long long>(nn.data(), np), 1);
-    for (Long r = np - 1; r >= 0; r--) if (!nn[r]) A[r] = (r + 1 < np) ? A[r + 1] : NodeT{}.Next();  // empty rank: zero-width interval
-  }
-  const NodeT end_target = (rank + 1 < np) ? A[rank + 1] : NodeT{}.Next();
+  // mins[r] is rank r's first node -- a node in every refinement, hence a fixed rank boundary.
+  const NodeT end_target = (rank + 1 < np) ? mins[rank + 1] : NodeT{}.Next();
   const NodeT next_first = end_target;  // walk-order successor of the local last node = next non-empty rank's first node (fixed across rounds)
   DeviceVector<NodeT> Akey_d;
-  { // routing keys (A[r].mid, depth 0): lex lower_bound gives each rank's segment start
-    std::vector<NodeT> keys(A);
-    for (NodeT& k : keys) k.depth = 0;
+  { // routing keys: depth 0 makes the lex lower_bound compare on mid alone, so a requirement is
+    // routed by position (requirements never straddle a boundary, so mid determines the owner)
+    sctl::ScratchBuf<NodeT> keys(np);
+    for (Long r = 0; r < np; r++) { keys[r] = mins[r]; keys[r].depth = 0; }
     Akey_d = DeviceVector<NodeT>(keys.begin(), keys.end());
   }
 
@@ -732,9 +723,10 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const Comm& comm) {
 
     Long nreq = 0;
     DeviceVector<NodeT> req;
-    { // unsatisfied requirements from internal nodes (chunked: the K-slot expansion is transient)
+    { // unsatisfied requirements from non-leaf nodes (chunked: the K-slot expansion is transient)
       const BalanceReqFunctor<DIM> fg{thrust::raw_pointer_cast(tree.data()), Nn, next_first};
       const Long chunk = std::min<Long>(Nn, 4000000);
+      constexpr Integer K = sctl::pow<DIM, Integer>(3);
       DeviceVector<NodeT> buf(chunk * K);
       for (Long c0 = 0; c0 < Nn; c0 += chunk) {
         const Long nc = std::min<Long>(chunk, Nn - c0);
@@ -804,7 +796,7 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const Comm& comm) {
       DeviceVector<NodeT> anch2(nkeep);
       thrust::copy_if(anch.begin(), anch.end(), keep.begin(), anch2.begin(), NonZeroCharPred{});
 
-      rebuildFromAnchors<DIM>(tree, thrust::raw_pointer_cast(anch2.data()), Long(anch2.size()), A[rank], end_target);
+      rebuildFromAnchors<DIM>(tree, thrust::raw_pointer_cast(anch2.data()), Long(anch2.size()), mins[rank], end_target);
     }
   }
 }
@@ -1154,7 +1146,7 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
   }
   mark("walk (linearize)");
 
-  if (balance21) detail_balance21::balanceTreeDist<DIM>(tree, comm);
+  if (balance21) detail_balance21::balanceTreeDist<DIM>(tree, sctl::Vector<Morton<DIM>>(mins), comm);
   mark("balance21");
 
   Long owned_begin = 0, owned_end = Long(tree.size());
