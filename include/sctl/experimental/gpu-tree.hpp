@@ -40,33 +40,12 @@ template <class Real, Integer DIM> class GPUTree {
    * @param[in] balance21 Apply 2:1 balance refinement.
    * @param[in] halo_size Ghost-layer width; <0 skips ghost nodes.
    * @param[out] owned_range Optional: this rank's [begin,end) slice within the returned tree.
-   * @param[out] sort_scatter_index Optional: pre-sort index of the particle at sorted position `i`
-   *             (single-rank only; unsupported for np>1). Pass `nullptr` to discard.
+   * @param[out] sort_scatter_index Optional: for the particle at this rank's sorted position `i`,
+   *             its index in the global (rank-concatenated) input order; over all ranks these form
+   *             a permutation of [0, Nglob). Pass `nullptr` to discard.
    */
   template <template <class...> class DeviceVector>
   static void buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M = 1, const Comm& comm = Comm::Self(), bool balance21 = false, Integer halo_size = -1, Long* owned_range = nullptr, DeviceVector<Long>* sort_scatter_index = nullptr);
-
- private:
-  /**
-   * Single-rank build from particle coordinates (implementation helper for buildTreeDist).
-   *
-   * @param[out] tree Full linear tree.
-   * @param[in] coord AoS coordinates of length `N*DIM`, each in [0,1)^DIM.
-   * @param[in] M Maximum number of particles per leaf box.
-   * @param[out] sort_scatter_index Optional: pre-sort index of the particle at sorted position `i`.
-   */
-  template <template <class...> class DeviceVector>
-  static void buildTree(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M = 1, DeviceVector<Long>* sort_scatter_index = nullptr);
-
-  /**
-   * Build from pre-sorted Morton codes (implementation helper).
-   *
-   * @param[out] tree Full linear tree.
-   * @param[in] pt_mid Morton codes sorted in `(code, depth)` lex order.
-   * @param[in] M Maximum number of particles per leaf box.
-   */
-  template <template <class...> class DeviceVector>
-  static void buildTreeFromSortedMorton(DeviceVector<Morton<DIM>>& tree, const DeviceVector<MortonCode<DIM>>& pt_mid, Long M = 1);
 };
 
 }  // namespace gpu_tree

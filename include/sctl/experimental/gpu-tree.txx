@@ -54,6 +54,32 @@ template <class Vec> void local_sort(Vec& v, Long n) {
   }
 }
 
+// local_sort carrying a payload (the pre-sort index). Host path sorts packed pairs: thrust's
+// host backend is serial and omp_par has no by-key sort.
+template <class Vec, class IVec> void local_sort_by_key(Vec& keys, IVec& vals, Long n) {
+  if constexpr (is_device_vector_v<Vec>) {
+    thrust::sort_by_key(keys.begin(), keys.begin() + n, vals.begin());
+  } else {
+    using KeyT = typename Vec::value_type;
+    using ValT = typename IVec::value_type;
+    struct Pair {
+      KeyT key;
+      ValT val;
+      bool operator<(const Pair& o) const { return key < o.key; }
+    };
+    KeyT* kp = thrust::raw_pointer_cast(keys.data());
+    ValT* vp = thrust::raw_pointer_cast(vals.data());
+    sctl::ScratchBuf<Pair> pairs(n);
+    const auto pp = pairs.begin();
+    #pragma omp parallel for schedule(static)
+    for (Long i = 0; i < n; i++) { pp[i].key = kp[i]; pp[i].val = vp[i]; }
+    if (SCTL_GET_MAX_THREADS() <= 16) sctl::omp_par::merge_sort(pairs.begin(), pairs.end());
+    else sctl::omp_par::sample_sort(pairs.begin(), pairs.end());
+    #pragma omp parallel for schedule(static)
+    for (Long i = 0; i < n; i++) { kp[i] = pp[i].key; vp[i] = pp[i].val; }
+  }
+}
+
 // Functor (not lambda) so nvcc captures it across thrust kernel boundaries.
 template <class Real, Integer DIM> struct MakeMortonFunctor {
   const Real* coord_ptr;
@@ -332,81 +358,6 @@ void buildTreeCpuChunked(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Mor
 }
 
 }  // namespace detail_build
-
-template <class Real, Integer DIM> template <template <class...> class DeviceVector>
-void GPUTree<Real, DIM>::buildTree(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, DeviceVector<Long>* sort_scatter_index) {
-  using MortonT = MortonCode<DIM>;
-  constexpr bool on_device = detail::is_device_vector_v<DeviceVector<Real>>;
-
-  const Long N = static_cast<Long>(coord.size()) / DIM;
-
-  DeviceVector<MortonT> pt_mid(N);
-  if constexpr (on_device) {
-    detail::MakeMortonFunctor<Real, DIM> f{thrust::raw_pointer_cast(coord.data())};
-    thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(N), pt_mid.begin(), f);
-    if (sort_scatter_index) {
-      sort_scatter_index->resize(N);
-      thrust::sequence(sort_scatter_index->begin(), sort_scatter_index->end());
-      thrust::sort_by_key(pt_mid.begin(), pt_mid.end(), sort_scatter_index->begin());
-    } else {
-      thrust::sort(pt_mid.begin(), pt_mid.end());
-    }
-  } else {
-    // thrust/OMP was ~3x slower than omp_par::merge_sort on this workload.
-    const Real* cp = thrust::raw_pointer_cast(coord.data());
-    MortonT*    mp = thrust::raw_pointer_cast(pt_mid.data());
-    #pragma omp parallel for schedule(static)
-    for (Long i = 0; i < N; ++i) mp[i] = MortonT(cp + i * DIM);
-
-    if (sort_scatter_index) {
-      sort_scatter_index->resize(N);
-      Long* ip = thrust::raw_pointer_cast(sort_scatter_index->data());
-      struct Pair {
-        MortonT key;
-        Long data;
-        bool operator<(const Pair& o) const { return key < o.key; }
-      };
-      sctl::ScratchBuf<Pair> pairs(N);  // avoids ~16*N bytes of per-call heap alloc
-      auto pp = pairs.begin();
-      #pragma omp parallel for schedule(static)
-      for (Long i = 0; i < N; ++i) {
-        pp[i].key = mp[i];
-        pp[i].data = i;
-      }
-      sctl::omp_par::merge_sort(pairs.begin(), pairs.end());
-      #pragma omp parallel for schedule(static)
-      for (Long i = 0; i < N; ++i) {
-        mp[i] = pp[i].key;
-        ip[i] = pp[i].data;
-      }
-    } else {
-      sctl::omp_par::merge_sort(mp, mp + N);
-    }
-  }
-
-  buildTreeFromSortedMorton(tree, pt_mid, M);
-}
-
-template <class Real, Integer DIM> template <template <class...> class DeviceVector>
-void GPUTree<Real, DIM>::buildTreeFromSortedMorton(DeviceVector<Morton<DIM>>& tree, const DeviceVector<MortonCode<DIM>>& pt_mid, Long M) {
-  using MortonT = MortonCode<DIM>;
-  constexpr bool on_device = detail::is_device_vector_v<DeviceVector<MortonT>>;
-
-  if constexpr (on_device) {
-    // Chunked walk dominates except at very small N with fine M (N <= ~100K, M=1) where
-    // pair-based wins. N*M >= 128K is the empirical crossover.
-    constexpr Long kChunkedThreshold = 128 * 1024;
-    const Long N = static_cast<Long>(pt_mid.size());
-    if (N * M >= kChunkedThreshold) {
-      detail_build::buildTreeGpuChunked<Real, DIM>(tree, pt_mid, M);
-    } else {
-      detail_build::buildTreeGpu<Real, DIM>(tree, pt_mid, M);
-    }
-  } else {
-    detail_build::buildTreeCpuChunked<Real, DIM>(tree, pt_mid, M);
-  }
-}
-
 
 // Splitter selection for the distributed sort.
 namespace detail_determineSplitters {
@@ -1044,6 +995,10 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
     return;
   }
 
+  // sort_scatter_index[i] = global pre-sort index of the particle at owned sorted position i,
+  // carried through both redistributions below. Global, so concatenated over ranks it is a
+  // permutation of [0, Nglob) matching the single-rank order.
+  DeviceVector<Long> idx;
   DeviceVector<MortonT> pt_mid((Long)coord.size()/DIM);
   { // Encode coords -> Morton, then local sort (device radix / host omp_par).
     const Long Nloc = (Long)pt_mid.size();
@@ -1056,13 +1011,32 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
       #pragma omp parallel for schedule(static)
       for (Long i = 0; i < Nloc; ++i) mp[i] = MortonT(cp + i * DIM);
     }
-    detail::local_sort(pt_mid, Nloc);
+    if (sort_scatter_index) {
+      Long goff = 0;  // global index of this rank's first input particle
+      comm.Scan<sctl::CommOp::SUM>(sctl::Ptr2ConstItr<Long>(&Nloc, 1), sctl::Ptr2Itr<Long>(&goff, 1), 1);
+      goff -= Nloc;
+      idx.resize(Nloc);
+      thrust::sequence(idx.begin(), idx.end(), goff);
+      detail::local_sort_by_key(pt_mid, idx, Nloc);
+    } else {
+      detail::local_sort(pt_mid, Nloc);
+    }
   }
 
-  SCTL_ASSERT_MSG(sort_scatter_index == nullptr, "buildTreeDist: sort_scatter_index is only supported for a single rank (np==1)"); // TODO: add support for distributed sort_scatter_index
-
   #ifdef SCTL_HAVE_MPI
-  { // distributed sort
+  // Alltoallv of esz-sized elements, given per-rank element counts (displacements are their scans).
+  const auto exchange = [&comm, np](const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt, const sctl::ScratchBuf<Long>& rcnt, Long esz) {
+    sctl::ScratchBuf<int> sc(np), sd(np), rc(np), rd(np);
+    for (Long r = 0; r < np; r++) {
+      sc[r] = int(scnt[r] * esz);
+      rc[r] = int(rcnt[r] * esz);
+    }
+    std::exclusive_scan(sc.begin(), sc.end(), sd.begin(), 0);
+    std::exclusive_scan(rc.begin(), rc.end(), rd.begin(), 0);
+    MPI_Alltoallv(sbuf, &sc[0], &sd[0], MPI_BYTE, rbuf, &rc[0], &rd[0], MPI_BYTE, comm.GetMPI_Comm());
+  };
+
+  if (np > 1) { // distributed sort
     sctl::ScratchBuf<MortonT> spl_h_buf(np - 1);
     sctl::Vector<MortonT> spl_h(spl_h_buf);
     detail_determineSplitters::determineSplitters(spl_h, pt_mid, comm);
@@ -1074,23 +1048,27 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
     pos[0] = 0; pos[np] = (Long)pt_mid.size();
     thrust::copy(pos_d.begin(), pos_d.end(), pos.begin() + 1);
 
-    sctl::ScratchBuf<int> scnt(np), sdsp(np), rcnt(np), rdsp(np);
-    for (Long r = 0; r < np; r++) {
-      scnt[r] = int((pos[r+1]-pos[r])*(Long)sizeof(MortonT));
-      sdsp[r] = int(pos[r]*(Long)sizeof(MortonT));
-    }
-    MPI_Alltoall(&scnt[0], 1, MPI_INT, &rcnt[0], 1, MPI_INT, comm.GetMPI_Comm());
-    std::exclusive_scan(rcnt.begin(), rcnt.end(), rdsp.begin(), 0);
+    sctl::ScratchBuf<Long> scnt(np), rcnt(np);
+    for (Long r = 0; r < np; r++) scnt[r] = pos[r+1] - pos[r];
+    comm.Alltoall(scnt.begin(), 1, rcnt.begin(), 1);
+    Long Nrecv = 0;
+    for (Long r = 0; r < np; r++) Nrecv += rcnt[r];
 
-    DeviceVector<MortonT> buf((Long(rdsp[np - 1]) + rcnt[np - 1]) / (Long)sizeof(MortonT));
-    MPI_Alltoallv(thrust::raw_pointer_cast(pt_mid.data()), &scnt[0], &sdsp[0], MPI_BYTE,
-                  thrust::raw_pointer_cast(buf.data()), &rcnt[0], &rdsp[0], MPI_BYTE, comm.GetMPI_Comm());
-    detail::local_sort(buf, (Long)buf.size());  // np sorted segments -> one sorted block
+    DeviceVector<MortonT> buf(Nrecv);
+    exchange(thrust::raw_pointer_cast(pt_mid.data()), thrust::raw_pointer_cast(buf.data()), scnt, rcnt, sizeof(MortonT));
+    if (sort_scatter_index) {  // the index rides along on the same partition
+      DeviceVector<Long> ibuf(Nrecv);
+      exchange(thrust::raw_pointer_cast(idx.data()), thrust::raw_pointer_cast(ibuf.data()), scnt, rcnt, sizeof(Long));
+      idx = std::move(ibuf);
+      detail::local_sort_by_key(buf, idx, Nrecv);  // np sorted segments -> one sorted block
+    } else {
+      detail::local_sort(buf, Nrecv);
+    }
     pt_mid = std::move(buf);
   }
   mark("encode+sort+splitters");
 
-  { // M <- global_min(pt_mid.size(), M); repartition if necessary
+  if (np > 1) { // M <- global_min(pt_mid.size(), M); repartition if necessary
     Long Nloc = (Long)pt_mid.size(), Nloc_min = 0;
     comm.Allreduce<sctl::CommOp::MIN>(sctl::Ptr2ConstItr<Long>(&Nloc, 1), sctl::Ptr2Itr<Long>(&Nloc_min, 1), 1);
     if (Nloc_min < M) {  // repartition
@@ -1105,22 +1083,22 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
       const Long tgt_hi = (rank + 1) * Nglob / np;
 
       // every rank's block is known, so both send and recv counts are computed locally (no Alltoall)
-      sctl::ScratchBuf<int> scnt(np), sdsp(np), rcnt(np), rdsp(np);
+      sctl::ScratchBuf<Long> scnt(np), rcnt(np);
       for (Long q = 0; q < np; q++) {
         const Long q_lo = q * Nglob / np;
         const Long q_hi = (q + 1) * Nglob / np;
-        const Long sc = std::max<Long>(0, std::min(my_hi, q_hi) - std::max(my_lo, q_lo));
-        const Long rc = std::max<Long>(0, std::min(off[q + 1], tgt_hi) - std::max(off[q], tgt_lo));
-        scnt[q] = int(sc * (Long)sizeof(MortonT));
-        rcnt[q] = int(rc * (Long)sizeof(MortonT));
+        scnt[q] = std::max<Long>(0, std::min(my_hi, q_hi) - std::max(my_lo, q_lo));
+        rcnt[q] = std::max<Long>(0, std::min(off[q + 1], tgt_hi) - std::max(off[q], tgt_lo));
       }
-      std::exclusive_scan(scnt.begin(), scnt.end(), sdsp.begin(), 0);
-      std::exclusive_scan(rcnt.begin(), rcnt.end(), rdsp.begin(), 0);
 
       DeviceVector<MortonT> tmp(tgt_hi - tgt_lo);
-      MPI_Alltoallv(thrust::raw_pointer_cast(pt_mid.data()), &scnt[0], &sdsp[0], MPI_BYTE,
-                    thrust::raw_pointer_cast(tmp.data()), &rcnt[0], &rdsp[0], MPI_BYTE, comm.GetMPI_Comm());
+      exchange(thrust::raw_pointer_cast(pt_mid.data()), thrust::raw_pointer_cast(tmp.data()), scnt, rcnt, sizeof(MortonT));
       pt_mid = std::move(tmp);  // received segments concatenate in global-index order -> already sorted
+      if (sort_scatter_index) {
+        DeviceVector<Long> itmp(tgt_hi - tgt_lo);
+        exchange(thrust::raw_pointer_cast(idx.data()), thrust::raw_pointer_cast(itmp.data()), scnt, rcnt, sizeof(Long));
+        idx = std::move(itmp);
+      }
       Nloc_min = Nglob / np;  // even split: smallest chunk is floor(Nglob/np)
     }
 
@@ -1129,7 +1107,7 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
   }
   mark("rebalance");
 
-  { // halo: pt_mid <-- [M from left | pt_mid | M from right] (empty halo on domain-edge ranks)
+  if (np > 1) { // halo: pt_mid <-- [M from left | pt_mid | M from right] (empty halo on domain-edge ranks)
     const Long recv0 = (rank > 0 ? M : 0);
     const Long recv1 = (rank < np - 1 ? M : 0);
     DeviceVector<MortonT> buf(recv0 + pt_mid.size() + recv1);
@@ -1181,6 +1159,8 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
   Long owned_begin = 0, owned_end = Long(tree.size());
   if (halo_size >= 0) detail_addGhostNodes::addGhostNodes<DIM>(tree, comm, halo_size, owned_begin, owned_end);
   mark("ghost");
+
+  if (sort_scatter_index) *sort_scatter_index = std::move(idx);
 
   if (owned_range) {
     owned_range[0] = owned_begin;
