@@ -64,10 +64,62 @@ template <class Real, Integer DIM> struct MakeMortonFunctor {
 
 enum class WalkMode { Count, Write };
 
+// DFS pre-order walk over a sorted anchor range, from start_node to end_target (exclusive); the
+// anchors are the forced leaves, the walk fills the complete-tree nodes between them. Caller drives
+// i over [0, n+1]: pair 0 emits start_node, the trailing pair (i==n) targets end_target.
+template <Integer DIM, WalkMode MODE> struct AnchorWalkFunctor {
+  const Morton<DIM>* anchors;
+  Long n;
+  Morton<DIM> start_node, end_target;
+  const Long* offsets;  // Write only
+  Morton<DIM>* out;     // Write only
+
+  SCTL_GPU_HD Long operator()(Long i) const {
+    using NodeT = Morton<DIM>;
+    const bool is_tail = (i == n);
+    const NodeT target = is_tail ? end_target : anchors[i];
+    NodeT current = (i == 0) ? start_node : anchors[i - 1];
+    Long count = 0;
+    NodeT* w = nullptr;
+    if constexpr (MODE == WalkMode::Write) w = out + offsets[i];
+    if (i == 0 && start_node < end_target) {  // pair 0 emits start_node; nothing if the range is empty
+      if constexpr (MODE == WalkMode::Write) w[count] = current;
+      ++count;
+    }
+    while (current < target) {
+      const bool descend = current.depth < MAX_DEPTH && current.isAncestor(target);
+      current = descend ? current.DFD(static_cast<uint8_t>(current.depth + 1)) : current.Next();
+      if (is_tail && !(current < target)) break;  // end_target is a boundary marker, not ours to emit
+      if constexpr (MODE == WalkMode::Write) w[count] = current;
+      ++count;
+    }
+    return count;
+  }
+};
+
+// Rebuild a rank's complete preorder slice from a sorted, linearized leaf/anchor range.
+template <Integer DIM, template <class...> class DeviceVector>
+void rebuildFromAnchors(DeviceVector<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
+  const Long n_pairs = n + 1;
+  DeviceVector<Long> counts(n_pairs), offsets(n_pairs);
+  const AnchorWalkFunctor<DIM, WalkMode::Count> fc{anchors_ptr, n, start_node, end_target, nullptr, nullptr};
+  thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fc);
+  thrust::exclusive_scan(counts.begin(), counts.end(), offsets.begin(), Long(0));
+  const Long total = thrust::reduce(counts.begin(), counts.end(), Long(0));
+
+  tree.resize(total);
+  const AnchorWalkFunctor<DIM, WalkMode::Write> fw{
+      anchors_ptr, n, start_node, end_target,
+      thrust::raw_pointer_cast(offsets.data()),
+      thrust::raw_pointer_cast(tree.data())};
+  thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fw);  // transform (not for_each_n) keeps host containers on the host backend
+}
+
 }  // namespace detail
 
 // Tree linearization from sorted Morton codes: single-rank build + the distributed walk stage.
 namespace detail_build {
+using detail::AnchorWalkFunctor;
 using detail::WalkMode;
 
 // Split-leaf of pair (pt[i], pt[i+M]): child of their common ancestor holding pt[i+M]. The M-gap
@@ -82,41 +134,53 @@ template <class Real, Integer DIM> struct SplitLeafFunctor {
   }
 };
 
-// DFS pre-order walk between consecutive anchors, from start_node to end_target (exclusive).
-// Caller drives i over [0, n+1]; pair 0 emits start_node, the trailing pair (i==n) targets end_target.
-template <class Real, Integer DIM, WalkMode MODE> struct LinearizeWalkFunctor {
-  const Morton<DIM>* anchors;
-  Long n;
-  Morton<DIM> start_node, end_target;
-  const Long* offsets;  // Write only
-  Morton<DIM>* out;     // Write only
+// GPU build of the slice [start_bnd, end_bnd) from sorted codes: (1) SplitLeafFunctor over pairs
+// (pt[i],pt[i+M]) -> anchors, deduped by unique_copy and clipped to the slice (fused via
+// transform_iterator, no leaves in global memory); (2) linearize the gaps between consecutive
+// anchors (count + exclusive_scan + write) via AnchorWalkFunctor.
+template <class Real, Integer DIM, template <class...>
+class DeviceVector> void buildTreeGpu(DeviceVector<Morton<DIM>>& tree, const DeviceVector<MortonCode<DIM>>& pt_mid, Long M, Long N_owned = -1, Long base = 0, Morton<DIM> start_bnd = Morton<DIM>{}, Morton<DIM> end_bnd = Morton<DIM>{}.Next()) {
+  using NodeMIDT = Morton<DIM>;
 
-  SCTL_GPU_HD Long operator()(Long i) const {
-    using NodeT = Morton<DIM>;
-    const bool is_tail = (i == n);
-    const NodeT target = is_tail ? end_target : anchors[i];
-    NodeT current = (i == 0) ? start_node : anchors[i - 1];
-
-    Long count = 0;
-    NodeT* w = nullptr;
-    if constexpr (MODE == WalkMode::Write) w = out + offsets[i];
-
-    if (i == 0 && start_node < end_target) {  // pair 0 emits start_node; nothing if the slice is empty
-      if constexpr (MODE == WalkMode::Write) w[count] = current;
-      ++count;
-    }
-    while (current < target) {
-      const bool descend = current.depth < MAX_DEPTH && current.isAncestor(target);
-      current = descend ? current.DFD(static_cast<uint8_t>(current.depth + 1)) : current.Next();
-      if (is_tail && !(current < target)) break;  // end_target is a boundary marker, not emitted
-      if constexpr (MODE == WalkMode::Write) w[count] = current;
-      ++count;
-    }
-    return count;
+  const Long N = (N_owned < 0 ? static_cast<Long>(pt_mid.size()) : N_owned);
+  if (N <= M && start_bnd == NodeMIDT{} && end_bnd == NodeMIDT{}.Next()) {  // whole-domain root-only tree
+    tree.resize(1);
+    tree[0] = NodeMIDT{};
+    return;
   }
-};
 
-// Per-chunk LinearizeWalkFunctor: walks pt_mid[begin_t, end_t) between chunk-boundary anchors
+  // Phase 1: anchors from the pairs within pt_mid[base, base+N), then clip to [start_bnd, end_bnd).
+  // The boundary leaves need no points from outside: start_bnd is itself the anchor of the pair
+  // straddling the lower boundary, and the walk stops at end_bnd.
+  const Long N_pairs = std::max<Long>(N - M, 0);
+  DeviceVector<NodeMIDT> anchors(N_pairs);
+  SplitLeafFunctor<Real, DIM> f{thrust::raw_pointer_cast(pt_mid.data()) + base, M};
+  auto in     = thrust::make_transform_iterator(thrust::counting_iterator<Long>(0),       f);
+  auto in_end = thrust::make_transform_iterator(thrust::counting_iterator<Long>(N_pairs), f);
+  auto uniq_end = thrust::unique_copy(in, in_end, anchors.begin());
+  auto a_begin = thrust::lower_bound(anchors.begin(), uniq_end, start_bnd);
+  auto a_end   = thrust::lower_bound(a_begin,         uniq_end, end_bnd);
+  const NodeMIDT* anchors_ptr = thrust::raw_pointer_cast(anchors.data()) + (a_begin - anchors.begin());
+  const Long n_anchors = a_end - a_begin;
+
+  // Phase 2: linearize over n_anchors+1 pairs (+1 = trailing pair to end_bnd).
+  const Long n_pairs = n_anchors + 1;
+  DeviceVector<Long> counts(n_pairs), offsets(n_pairs);
+  AnchorWalkFunctor<DIM, WalkMode::Count> fc{anchors_ptr, n_anchors, start_bnd, end_bnd, nullptr, nullptr};
+  thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fc);
+  thrust::exclusive_scan(counts.begin(), counts.end(), offsets.begin(), Long(0));
+  const Long total = thrust::reduce(counts.begin(), counts.end(), Long(0));
+
+  tree.resize(total);
+  AnchorWalkFunctor<DIM, WalkMode::Write> fw{
+      anchors_ptr, n_anchors, start_bnd, end_bnd,
+      thrust::raw_pointer_cast(offsets.data()),
+      thrust::raw_pointer_cast(tree.data())};
+  thrust::for_each_n(thrust::counting_iterator<Long>(0), n_pairs, fw);
+}
+
+
+// Per-chunk anchor walk: walks pt_mid[begin_t, end_t) between chunk-boundary anchors
 // (ROOT / root.Next() at the ends; else the split-leaf of (pt[begin], pt[begin+M])).
 template <class Real, Integer DIM, WalkMode MODE> struct ChunkedWalkFunctor {
   const MortonCode<DIM>* pt_mid;
@@ -179,6 +243,35 @@ template <class Real, Integer DIM, WalkMode MODE> struct ChunkedWalkFunctor {
   }
 };
 
+// GPU port of buildTreeCpuChunked: chunked walk (count + exclusive_scan + write) via
+// ChunkedWalkFunctor, no anchor materialization; 64-particle min-chunk floor won everywhere.
+template <class Real, Integer DIM, template <class...> class DeviceVector>
+void buildTreeGpuChunked(DeviceVector<Morton<DIM>>& tree, const DeviceVector<MortonCode<DIM>>& pt_mid, Long M, Long N_owned = -1, Long base = 0, Morton<DIM> start_bnd = Morton<DIM>{}, Morton<DIM> end_bnd = Morton<DIM>{}.Next()) {
+  const Long N = (N_owned < 0 ? static_cast<Long>(pt_mid.size()) : N_owned);  // walk window is pt_mid[base, base+N) (+M halo slack beyond)
+  if (N <= M && start_bnd == Morton<DIM>{} && end_bnd == Morton<DIM>{}.Next()) {  // root-only tree
+    tree.resize(1);
+    tree[0] = Morton<DIM>{};
+    return;
+  }
+
+  const Long min_chunk = std::max<Long>(4 * M + 1, 64);
+  const Long nthreads  = std::clamp<Long>(N / min_chunk, 1, 65536);
+
+  DeviceVector<Long> counts(nthreads), offsets(nthreads);
+  ChunkedWalkFunctor<Real, DIM, WalkMode::Count> fc{thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nthreads, nullptr, nullptr, start_bnd, end_bnd};
+  thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(nthreads), counts.begin(), fc);
+  thrust::exclusive_scan(counts.begin(), counts.end(), offsets.begin(), Long(0));
+  const Long total = thrust::reduce(counts.begin(), counts.end(), Long(0));
+
+  tree.resize(total);
+  ChunkedWalkFunctor<Real, DIM, WalkMode::Write> fw{
+      thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nthreads,
+      thrust::raw_pointer_cast(offsets.data()),
+      thrust::raw_pointer_cast(tree.data()), start_bnd, end_bnd};
+  thrust::for_each_n(thrust::counting_iterator<Long>(0), nthreads, fw);
+}
+
+
 // One Long per 64-byte cache line — avoids false sharing on per-thread counters.
 struct alignas(64) PaddedLong {
   Long v;
@@ -236,79 +329,6 @@ void buildTreeCpuChunked(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Mor
     NodeMIDT* out_ptr = thrust::raw_pointer_cast(tree.data()) + offsets[tid];
     for (Long i = 0; i < count; ++i) out_ptr[i] = buf[i];
   }
-}
-
-// GPU build of the slice [start_bnd, end_bnd) from sorted codes: (1) SplitLeafFunctor over pairs
-// (pt[i],pt[i+M]) -> anchors, deduped by unique_copy and clipped to the slice (fused via
-// transform_iterator, no leaves in global memory); (2) linearize the gaps between consecutive
-// anchors (count + exclusive_scan + write) via LinearizeWalkFunctor.
-template <class Real, Integer DIM, template <class...>
-class DeviceVector> void buildTreeGpu(DeviceVector<Morton<DIM>>& tree, const DeviceVector<MortonCode<DIM>>& pt_mid, Long M, Long N_owned = -1, Long base = 0, Morton<DIM> start_bnd = Morton<DIM>{}, Morton<DIM> end_bnd = Morton<DIM>{}.Next()) {
-  using NodeMIDT = Morton<DIM>;
-
-  const Long N = (N_owned < 0 ? static_cast<Long>(pt_mid.size()) : N_owned);
-  if (N <= M && start_bnd == NodeMIDT{} && end_bnd == NodeMIDT{}.Next()) {  // whole-domain root-only tree
-    tree.resize(1);
-    tree[0] = NodeMIDT{};
-    return;
-  }
-
-  // Phase 1: anchors from the pairs within pt_mid[base, base+N), then clip to [start_bnd, end_bnd).
-  // The boundary leaves need no points from outside: start_bnd is itself the anchor of the pair
-  // straddling the lower boundary, and the walk stops at end_bnd.
-  const Long N_pairs = std::max<Long>(N - M, 0);
-  DeviceVector<NodeMIDT> anchors(N_pairs);
-  SplitLeafFunctor<Real, DIM> f{thrust::raw_pointer_cast(pt_mid.data()) + base, M};
-  auto in     = thrust::make_transform_iterator(thrust::counting_iterator<Long>(0),       f);
-  auto in_end = thrust::make_transform_iterator(thrust::counting_iterator<Long>(N_pairs), f);
-  auto uniq_end = thrust::unique_copy(in, in_end, anchors.begin());
-  auto a_begin = thrust::lower_bound(anchors.begin(), uniq_end, start_bnd);
-  auto a_end   = thrust::lower_bound(a_begin,         uniq_end, end_bnd);
-  const NodeMIDT* anchors_ptr = thrust::raw_pointer_cast(anchors.data()) + (a_begin - anchors.begin());
-  const Long n_anchors = a_end - a_begin;
-
-  // Phase 2: linearize over n_anchors+1 pairs (+1 = trailing pair to end_bnd).
-  const Long n_pairs = n_anchors + 1;
-  DeviceVector<Long> counts(n_pairs), offsets(n_pairs);
-  LinearizeWalkFunctor<Real, DIM, WalkMode::Count> fc{anchors_ptr, n_anchors, start_bnd, end_bnd, nullptr, nullptr};
-  thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fc);
-  thrust::exclusive_scan(counts.begin(), counts.end(), offsets.begin(), Long(0));
-  const Long total = thrust::reduce(counts.begin(), counts.end(), Long(0));
-
-  tree.resize(total);
-  LinearizeWalkFunctor<Real, DIM, WalkMode::Write> fw{
-      anchors_ptr, n_anchors, start_bnd, end_bnd,
-      thrust::raw_pointer_cast(offsets.data()),
-      thrust::raw_pointer_cast(tree.data())};
-  thrust::for_each_n(thrust::counting_iterator<Long>(0), n_pairs, fw);
-}
-
-// GPU port of buildTreeCpuChunked: chunked walk (count + exclusive_scan + write) via
-// ChunkedWalkFunctor, no anchor materialization; 64-particle min-chunk floor won everywhere.
-template <class Real, Integer DIM, template <class...> class DeviceVector>
-void buildTreeGpuChunked(DeviceVector<Morton<DIM>>& tree, const DeviceVector<MortonCode<DIM>>& pt_mid, Long M, Long N_owned = -1, Long base = 0, Morton<DIM> start_bnd = Morton<DIM>{}, Morton<DIM> end_bnd = Morton<DIM>{}.Next()) {
-  const Long N = (N_owned < 0 ? static_cast<Long>(pt_mid.size()) : N_owned);  // walk window is pt_mid[base, base+N) (+M halo slack beyond)
-  if (N <= M && start_bnd == Morton<DIM>{} && end_bnd == Morton<DIM>{}.Next()) {  // root-only tree
-    tree.resize(1);
-    tree[0] = Morton<DIM>{};
-    return;
-  }
-
-  const Long min_chunk = std::max<Long>(4 * M + 1, 64);
-  const Long nthreads  = std::clamp<Long>(N / min_chunk, 1, 65536);
-
-  DeviceVector<Long> counts(nthreads), offsets(nthreads);
-  ChunkedWalkFunctor<Real, DIM, WalkMode::Count> fc{thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nthreads, nullptr, nullptr, start_bnd, end_bnd};
-  thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(nthreads), counts.begin(), fc);
-  thrust::exclusive_scan(counts.begin(), counts.end(), offsets.begin(), Long(0));
-  const Long total = thrust::reduce(counts.begin(), counts.end(), Long(0));
-
-  tree.resize(total);
-  ChunkedWalkFunctor<Real, DIM, WalkMode::Write> fw{
-      thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nthreads,
-      thrust::raw_pointer_cast(offsets.data()),
-      thrust::raw_pointer_cast(tree.data()), start_bnd, end_bnd};
-  thrust::for_each_n(thrust::counting_iterator<Long>(0), nthreads, fw);
 }
 
 }  // namespace detail_build
@@ -388,7 +408,9 @@ void GPUTree<Real, DIM>::buildTreeFromSortedMorton(DeviceVector<Morton<DIM>>& tr
 }
 
 
-namespace detail {
+// Splitter selection for the distributed sort.
+namespace detail_determineSplitters {
+using detail::is_device_vector_v;
 
 // Exact-rank splitters for the distributed sort, replicated on every rank: seed np-1 cuts from
 // per-rank data boundaries, then iterate probe -> gather candidates -> exact global ranks ->
@@ -631,59 +653,7 @@ void determineSplitters(sctl::Vector<Type>& splitters, const DeviceVector<Type>&
   }
 }
 
-
-// Subtree rebuild from a sorted anchor range; shared by 2:1 balance and ghost insertion.
-// AnchorWalkFunctor is detail_build::LinearizeWalkFunctor for a rank's slice: pair 0 emits
-// start_node; the trailing pair walks to end_target EXCLUSIVE (next rank's first node / sentinel).
-template <Integer DIM, WalkMode MODE> struct AnchorWalkFunctor {
-  const Morton<DIM>* anchors;
-  Long n;
-  Morton<DIM> start_node, end_target;
-  const Long* offsets;  // Write only
-  Morton<DIM>* out;     // Write only
-
-  SCTL_GPU_HD Long operator()(Long i) const {
-    using NodeT = Morton<DIM>;
-    const bool is_tail = (i == n);
-    const NodeT target = is_tail ? end_target : anchors[i];
-    NodeT current = (i == 0) ? start_node : anchors[i - 1];
-    Long count = 0;
-    NodeT* w = nullptr;
-    if constexpr (MODE == WalkMode::Write) w = out + offsets[i];
-    if (i == 0) {
-      if constexpr (MODE == WalkMode::Write) w[count] = current;
-      ++count;
-    }
-    while (current < target) {
-      const bool descend = current.depth < MAX_DEPTH && current.isAncestor(target);
-      current = descend ? current.DFD(static_cast<uint8_t>(current.depth + 1)) : current.Next();
-      if (is_tail && !(current < target)) break;  // end_target is a boundary marker, not ours to emit
-      if constexpr (MODE == WalkMode::Write) w[count] = current;
-      ++count;
-    }
-    return count;
-  }
-};
-
-// Rebuild a rank's complete preorder slice from a sorted, linearized leaf/anchor range.
-template <Integer DIM, template <class...> class DeviceVector>
-void rebuildFromAnchors(DeviceVector<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
-  const Long n_pairs = n + 1;
-  DeviceVector<Long> counts(n_pairs), offsets(n_pairs);
-  const AnchorWalkFunctor<DIM, WalkMode::Count> fc{anchors_ptr, n, start_node, end_target, nullptr, nullptr};
-  thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fc);
-  thrust::exclusive_scan(counts.begin(), counts.end(), offsets.begin(), Long(0));
-  const Long total = thrust::reduce(counts.begin(), counts.end(), Long(0));
-
-  tree.resize(total);
-  const AnchorWalkFunctor<DIM, WalkMode::Write> fw{
-      anchors_ptr, n, start_node, end_target,
-      thrust::raw_pointer_cast(offsets.data()),
-      thrust::raw_pointer_cast(tree.data())};
-  thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fw);  // transform (not for_each_n) keeps host containers on the host backend
-}
-
-}  // namespace detail
+}  // namespace detail_determineSplitters
 
 // 2:1 balance (distributed). Closure rule (leaf form of Tree::UpdateRefinement's touching-
 // neighbor rule): every same-depth neighbor octant of an internal node must exist. Missing ones
@@ -1095,7 +1065,7 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
   { // distributed sort
     sctl::ScratchBuf<MortonT> spl_h_buf(np - 1);
     sctl::Vector<MortonT> spl_h(spl_h_buf);
-    detail::determineSplitters(spl_h, pt_mid, comm);
+    detail_determineSplitters::determineSplitters(spl_h, pt_mid, comm);
     DeviceVector<MortonT> spl_d(spl_h.begin(), spl_h.end());
 
     DeviceVector<Long> pos_d(np - 1);
