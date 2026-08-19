@@ -38,7 +38,9 @@ template <class Real, Integer DIM> class GPUTree {
    * @param[in] M Maximum number of particles per leaf box.
    * @param[in] comm Communicator to distribute the build across.
    * @param[in] balance21 Apply 2:1 balance refinement.
-   * @param[in] halo_size Ghost-layer width; <0 skips ghost nodes.
+   * @param[in] halo_size Ghost-layer width; <0 adds no neighbor nodes. Either way the returned
+   *            list is a full-domain complete tree on every rank (coarse outside the halo), so use
+   *            `owned_range` to recover this rank's own nodes.
    * @param[out] owned_range Optional: this rank's [begin,end) slice within the returned tree.
    * @param[out] sort_scatter_index Optional: for the particle at this rank's sorted position `i`,
    *             its index in the global (rank-concatenated) input order; over all ranks these form

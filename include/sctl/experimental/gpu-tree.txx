@@ -876,8 +876,9 @@ template <Integer DIM, WalkMode MODE> struct GhostSendFunctor {
   }
 };
 
-// Splice ghost placeholders into `tree`; outputs the [begin, end) index range of the owned
-// nodes within the updated list.
+// Splice ghost placeholders into `tree`; outputs the [begin, end) index range of the owned nodes
+// within the updated list. halo_size < 0 exchanges no neighbor nodes but still splices the coarse
+// complete-tree fill, so the list is full-domain on every rank (as in Tree::UpdateRefinement).
 template <Integer DIM, template <class...> class DeviceVector>
 void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const Comm& comm, Integer halo_size, Long& owned_begin, Long& owned_end) {
   using NodeT = Morton<DIM>;
@@ -901,7 +902,7 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const Comm& comm, Integer ha
 
   Long npairs = 0;
   DeviceVector<GhostPair<DIM>> pairs;
-  { // (dest rank, node) pairs, deduped
+  if (halo_size >= 0) { // (dest rank, node) pairs, deduped
     DeviceVector<Long> counts(Nn), offsets(Nn);
     const GhostSendFunctor<DIM, WalkMode::Count> fc{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(A_d.data()), np, rank, halo_size, nullptr, nullptr};
     thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), counts.begin(), fc);
@@ -1157,7 +1158,7 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
   mark("balance21");
 
   Long owned_begin = 0, owned_end = Long(tree.size());
-  if (halo_size >= 0) detail_addGhostNodes::addGhostNodes<DIM>(tree, comm, halo_size, owned_begin, owned_end);
+  detail_addGhostNodes::addGhostNodes<DIM>(tree, comm, halo_size, owned_begin, owned_end);
   mark("ghost");
 
   if (sort_scatter_index) *sort_scatter_index = std::move(idx);
