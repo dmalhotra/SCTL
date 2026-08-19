@@ -1,4 +1,5 @@
-// Template implementation of GPUTree from gpu-tree.hpp + internal `detail::` helpers.
+// Template implementation of GPUTree from gpu-tree.hpp + its internal detail_* helper namespaces
+// (detail shared helpers, detail_build, detail_balance21, detail_addGhostNodes).
 
 #ifndef _SCTL_EXPERIMENTAL_GPU_TREE_TXX_
 #define _SCTL_EXPERIMENTAL_GPU_TREE_TXX_
@@ -41,10 +42,8 @@ template <class T> struct is_device_ptr<thrust::device_ptr<T>> : std::true_type 
 template <class Vec>
 inline constexpr bool is_device_vector_v = is_device_ptr<typename std::decay<decltype(std::declval<Vec>().data())>::type>::value;
 
-// Sort v[0, n): thrust radix sort on device, omp_par parallel sort on host (thrust's host
-// backend is single-threaded). Mirrors buildTree's host/device split so the CPU path stays
-// parallel. merge_sort stops scaling past ~16 threads (bandwidth-bound); sample_sort keeps
-// scaling, so pick by thread count (measured on MortonCode-sized records).
+// Sort v[0,n): radix on device, omp_par on host (thrust's host backend is serial). merge_sort
+// stops scaling past ~16 threads (bandwidth-bound), sample_sort doesn't, so pick by thread count.
 template <class Vec> void local_sort(Vec& v, Long n) {
   if constexpr (is_device_vector_v<Vec>) {
     thrust::sort(v.begin(), v.begin() + n);
@@ -63,9 +62,16 @@ template <class Real, Integer DIM> struct MakeMortonFunctor {
   }
 };
 
-// Split-leaf of pair (pt[i], pt[i+M]): child of their common ancestor at depth d_common+1
-// containing pt[i+M]. Pair distance M forces the split — if both endpoints sit in the same
-// depth-d box, it contains M+1 > M particles and must refine.
+enum class WalkMode { Count, Write };
+
+}  // namespace detail
+
+// Tree linearization from sorted Morton codes: single-rank build + the distributed walk stage.
+namespace detail_build {
+using detail::WalkMode;
+
+// Split-leaf of pair (pt[i], pt[i+M]): child of their common ancestor holding pt[i+M]. The M-gap
+// forces the split: a depth-d box holding both endpoints has M+1 > M particles, so it refines.
 template <class Real, Integer DIM> struct SplitLeafFunctor {
   const MortonCode<DIM>* pt;
   Long M;
@@ -76,11 +82,8 @@ template <class Real, Integer DIM> struct SplitLeafFunctor {
   }
 };
 
-enum class WalkMode { Count, Write };
-
-// DFS pre-order walk between consecutive anchors (ROOT -> anchors[0] for pair 0). Caller
-// drives i over [0, n+1); i == n is a synthetic trailing pair with target = root.Next(),
-// so the walk emits any leaves between anchors[n-1] and morton-end (matches sctl::Tree).
+// DFS pre-order walk between consecutive anchors (ROOT -> anchors[0] for pair 0). Caller drives
+// i over [0, n+1]; the trailing pair (i==n) targets root.Next() to emit the tail leaves.
 template <class Real, Integer DIM, WalkMode MODE> struct LinearizeWalkFunctor {
   const Morton<DIM>* anchors;
   Long n;
@@ -112,9 +115,8 @@ template <class Real, Integer DIM, WalkMode MODE> struct LinearizeWalkFunctor {
   }
 };
 
-// Per-chunk variant of LinearizeWalkFunctor: walks pt_mid[begin_t, end_t) between synthetic
-// chunk-boundary anchors (ROOT at tid=0, root.Next() at the last chunk; otherwise the split-
-// leaf formula on (pt[begin], pt[begin+M])).
+// Per-chunk LinearizeWalkFunctor: walks pt_mid[begin_t, end_t) between chunk-boundary anchors
+// (ROOT / root.Next() at the ends; else the split-leaf of (pt[begin], pt[begin+M])).
 template <class Real, Integer DIM, WalkMode MODE> struct ChunkedWalkFunctor {
   const MortonCode<DIM>* pt_mid;
   Long N, M, nthreads;
@@ -183,13 +185,10 @@ struct alignas(64) PaddedLong {
 };
 static_assert(sizeof(PaddedLong) == 64);
 
-// CPU build from sorted Morton codes via chunked sctl-style parallel walk: each thread walks
-// pt_mid[begin_t, end_t) between synthetic chunk-boundary anchors, emitting to a NUMA-local
-// per-thread ScratchBuf via ChunkedWalkFunctor<Write>. After a barrier the per-thread counts
-// are prefix-summed and slices copied into `tree`. Output matches `sctl::Tree`.
-//
-// A 2-pass variant (count, then walk again writing directly into tree) was ~25% slower at
-// N=100M, M=300 — the second walk re-reads pt_mid (~10–20 MB per chunk) cache-cold.
+// CPU build from sorted codes: each thread walks its pt_mid chunk into a per-thread (NUMA-local)
+// ScratchBuf; after a barrier the counts are prefix-summed and slices copied into `tree`.
+// Single-pass on purpose: a count-then-rewrite 2-pass was ~25% slower at N=100M,M=300 (the
+// second walk re-reads pt_mid cache-cold).
 template <class Real, Integer DIM, template <class...> class DeviceVector>
 void buildTreeCpuChunked(DeviceVector<Morton<DIM>>& tree, const DeviceVector<MortonCode<DIM>>& pt_mid, Long M, Long N_owned = -1, Long base = 0, Morton<DIM> start_bnd = Morton<DIM>{}, Morton<DIM> end_bnd = Morton<DIM>{}.Next()) {
   using NodeMIDT = Morton<DIM>;
@@ -238,13 +237,10 @@ void buildTreeCpuChunked(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Mor
   }
 }
 
-// GPU build from sorted Morton codes:
-//   Phase 1 — anchors: SplitLeafFunctor over each pair (pt[i], pt[i+M]) emits a per-pair
-//     anchor; the sequence is sorted by construction, so thrust::unique_copy dedupes.
-//     Fused via transform_iterator to keep per-pair leaves out of global memory.
-//   Phase 2 — linearize: 2-pass count + exclusive_scan + write via LinearizeWalkFunctor over
-//     n+1 pairs. Pair n walks anchors[n-1] -> root.Next() so leaves between the last anchor
-//     and morton-end are emitted (matches sctl::Tree exactly).
+// GPU build from sorted codes: (1) SplitLeafFunctor over pairs (pt[i],pt[i+M]) -> anchors,
+// deduped by unique_copy (fused via transform_iterator, no leaves in global memory);
+// (2) linearize (count + exclusive_scan + write) via LinearizeWalkFunctor; the trailing pair
+// walks to root.Next() to emit the tail leaves.
 template <class Real, Integer DIM, template <class...>
 class DeviceVector> void buildTreeGpu(DeviceVector<Morton<DIM>>& tree, const DeviceVector<MortonCode<DIM>>& pt_mid, Long M) {
   using NodeMIDT = Morton<DIM>;
@@ -281,9 +277,8 @@ class DeviceVector> void buildTreeGpu(DeviceVector<Morton<DIM>>& tree, const Dev
   thrust::for_each_n(thrust::counting_iterator<Long>(0), n_pairs, fw);
 }
 
-// GPU port of buildTreeCpuChunked: single-pass chunked walk (no anchor materialization).
-// 2-pass count + exclusive_scan + write via ChunkedWalkFunctor over `nthreads` chunks.
-// 64-particle min_chunk floor dominates everywhere measured.
+// GPU port of buildTreeCpuChunked: chunked walk (count + exclusive_scan + write) via
+// ChunkedWalkFunctor, no anchor materialization; 64-particle min-chunk floor won everywhere.
 template <class Real, Integer DIM, template <class...> class DeviceVector>
 void buildTreeGpuChunked(DeviceVector<Morton<DIM>>& tree, const DeviceVector<MortonCode<DIM>>& pt_mid, Long M, Long N_owned = -1, Long base = 0, Morton<DIM> start_bnd = Morton<DIM>{}, Morton<DIM> end_bnd = Morton<DIM>{}.Next()) {
   const Long N = (N_owned < 0 ? static_cast<Long>(pt_mid.size()) : N_owned);  // walk window is pt_mid[base, base+N) (+M halo slack beyond)
@@ -310,7 +305,7 @@ void buildTreeGpuChunked(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Mor
   thrust::for_each_n(thrust::counting_iterator<Long>(0), nthreads, fw);
 }
 
-}  // namespace detail
+}  // namespace detail_build
 
 template <class Real, Integer DIM> template <template <class...> class DeviceVector>
 void GPUTree<Real, DIM>::buildTree(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, DeviceVector<Long>* sort_scatter_index) {
@@ -377,24 +372,22 @@ void GPUTree<Real, DIM>::buildTreeFromSortedMorton(DeviceVector<Morton<DIM>>& tr
     constexpr Long kChunkedThreshold = 128 * 1024;
     const Long N = static_cast<Long>(pt_mid.size());
     if (N * M >= kChunkedThreshold) {
-      detail::buildTreeGpuChunked<Real, DIM>(tree, pt_mid, M);
+      detail_build::buildTreeGpuChunked<Real, DIM>(tree, pt_mid, M);
     } else {
-      detail::buildTreeGpu<Real, DIM>(tree, pt_mid, M);
+      detail_build::buildTreeGpu<Real, DIM>(tree, pt_mid, M);
     }
   } else {
-    detail::buildTreeCpuChunked<Real, DIM>(tree, pt_mid, M);
+    detail_build::buildTreeCpuChunked<Real, DIM>(tree, pt_mid, M);
   }
 }
 
 
 namespace detail {
 
-// Boundary-aware exact-rank splitter selection for the distributed sort. Seeds each of the np-1
-// cuts from the straddling pair of per-rank data boundaries, then iterates
-// probe -> gather candidates -> exact global ranks -> refine, until every cut is within tol.
-// Un-splittable cuts (target inside a duplicate run wider than tol) are detected exactly via the
-// global upper_bound of the bracket's low end and frozen at the nearest achievable endpoint.
-// State is replicated on every rank.
+// Exact-rank splitters for the distributed sort, replicated on every rank: seed np-1 cuts from
+// per-rank data boundaries, then iterate probe -> gather candidates -> exact global ranks ->
+// refine until each is within tol. Un-splittable cuts (target inside a duplicate run wider than
+// tol) are frozen at the nearest achievable endpoint.
 template <class Type, template <class...> class DeviceVector>
 void determineSplitters(sctl::Vector<Type>& splitters, const DeviceVector<Type>& pt, const Comm& comm) {
   constexpr Integer MAXIT = 50;
@@ -633,13 +626,66 @@ void determineSplitters(sctl::Vector<Type>& splitters, const DeviceVector<Type>&
 }
 
 
-// --- 2:1 balance refinement helpers ---------------------------------------------------
-// Closure rule (leaf form, equivalent to Tree::UpdateRefinement's touching-parent-neighbor
-// rule on a complete tree): every same-depth neighbor octant of an internal node must exist
-// as a node. Unsatisfied neighbor octants ("requirements") are routed to their owning rank
-// and inserted as leaves; iterate to global fixpoint. A requirement never straddles a rank
-// boundary: boundary anchors remain nodes in every refinement, so a straddling octant is an
-// ancestor of one and is always already satisfied.
+// Subtree rebuild from a sorted anchor range; shared by 2:1 balance and ghost insertion.
+// AnchorWalkFunctor is detail_build::LinearizeWalkFunctor for a rank's slice: pair 0 emits
+// start_node; the trailing pair walks to end_target EXCLUSIVE (next rank's first node / sentinel).
+template <Integer DIM, WalkMode MODE> struct AnchorWalkFunctor {
+  const Morton<DIM>* anchors;
+  Long n;
+  Morton<DIM> start_node, end_target;
+  const Long* offsets;  // Write only
+  Morton<DIM>* out;     // Write only
+
+  SCTL_GPU_HD Long operator()(Long i) const {
+    using NodeT = Morton<DIM>;
+    const bool is_tail = (i == n);
+    const NodeT target = is_tail ? end_target : anchors[i];
+    NodeT current = (i == 0) ? start_node : anchors[i - 1];
+    Long count = 0;
+    NodeT* w = nullptr;
+    if constexpr (MODE == WalkMode::Write) w = out + offsets[i];
+    if (i == 0) {
+      if constexpr (MODE == WalkMode::Write) w[count] = current;
+      ++count;
+    }
+    while (current < target) {
+      const bool descend = current.depth < MAX_DEPTH && current.isAncestor(target);
+      current = descend ? current.DFD(static_cast<uint8_t>(current.depth + 1)) : current.Next();
+      if (is_tail && !(current < target)) break;  // end_target is a boundary marker, not ours to emit
+      if constexpr (MODE == WalkMode::Write) w[count] = current;
+      ++count;
+    }
+    return count;
+  }
+};
+
+// Rebuild a rank's complete preorder slice from a sorted, linearized leaf/anchor range.
+template <Integer DIM, template <class...> class DeviceVector>
+void rebuildFromAnchors(DeviceVector<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
+  const Long n_pairs = n + 1;
+  DeviceVector<Long> counts(n_pairs), offsets(n_pairs);
+  const AnchorWalkFunctor<DIM, WalkMode::Count> fc{anchors_ptr, n, start_node, end_target, nullptr, nullptr};
+  thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fc);
+  thrust::exclusive_scan(counts.begin(), counts.end(), offsets.begin(), Long(0));
+  const Long total = thrust::reduce(counts.begin(), counts.end(), Long(0));
+
+  tree.resize(total);
+  const AnchorWalkFunctor<DIM, WalkMode::Write> fw{
+      anchors_ptr, n, start_node, end_target,
+      thrust::raw_pointer_cast(offsets.data()),
+      thrust::raw_pointer_cast(tree.data())};
+  thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fw);  // transform (not for_each_n) keeps host containers on the host backend
+}
+
+}  // namespace detail
+
+// 2:1 balance (distributed). Closure rule (leaf form of Tree::UpdateRefinement's touching-
+// neighbor rule): every same-depth neighbor octant of an internal node must exist. Missing ones
+// ("requirements") are routed to their owner and inserted as leaves; iterate to a global fixpoint.
+// Requirements never straddle a rank boundary (boundary anchors persist), so they stay rank-local.
+namespace detail_balance21 {
+using detail::local_sort;
+using detail::rebuildFromAnchors;
 
 template <Integer DIM> struct NodeEqPred {
   SCTL_GPU_HD bool operator()(const Morton<DIM>& a, const Morton<DIM>& b) const { return !(a < b) && !(b < a); }
@@ -726,57 +772,6 @@ template <Integer DIM> struct KeepFinestFunctor {
     return 1;
   }
 };
-
-// LinearizeWalkFunctor variant for a rank's slice: pair 0 starts at start_node (emitted);
-// the trailing pair walks to end_target EXCLUSIVE (the next rank's first node, or the
-// morton-end sentinel on the last rank).
-template <Integer DIM, WalkMode MODE> struct AnchorWalkFunctor {
-  const Morton<DIM>* anchors;
-  Long n;
-  Morton<DIM> start_node, end_target;
-  const Long* offsets;  // Write only
-  Morton<DIM>* out;     // Write only
-
-  SCTL_GPU_HD Long operator()(Long i) const {
-    using NodeT = Morton<DIM>;
-    const bool is_tail = (i == n);
-    const NodeT target = is_tail ? end_target : anchors[i];
-    NodeT current = (i == 0) ? start_node : anchors[i - 1];
-    Long count = 0;
-    NodeT* w = nullptr;
-    if constexpr (MODE == WalkMode::Write) w = out + offsets[i];
-    if (i == 0) {
-      if constexpr (MODE == WalkMode::Write) w[count] = current;
-      ++count;
-    }
-    while (current < target) {
-      const bool descend = current.depth < MAX_DEPTH && current.isAncestor(target);
-      current = descend ? current.DFD(static_cast<uint8_t>(current.depth + 1)) : current.Next();
-      if (is_tail && !(current < target)) break;  // end_target is a boundary marker, not ours to emit
-      if constexpr (MODE == WalkMode::Write) w[count] = current;
-      ++count;
-    }
-    return count;
-  }
-};
-
-// Rebuild a rank's complete preorder slice from a sorted, linearized leaf/anchor range.
-template <Integer DIM, template <class...> class DeviceVector>
-void rebuildFromAnchors(DeviceVector<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
-  const Long n_pairs = n + 1;
-  DeviceVector<Long> counts(n_pairs), offsets(n_pairs);
-  const AnchorWalkFunctor<DIM, WalkMode::Count> fc{anchors_ptr, n, start_node, end_target, nullptr, nullptr};
-  thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fc);
-  thrust::exclusive_scan(counts.begin(), counts.end(), offsets.begin(), Long(0));
-  const Long total = thrust::reduce(counts.begin(), counts.end(), Long(0));
-
-  tree.resize(total);
-  const AnchorWalkFunctor<DIM, WalkMode::Write> fw{
-      anchors_ptr, n, start_node, end_target,
-      thrust::raw_pointer_cast(offsets.data()),
-      thrust::raw_pointer_cast(tree.data())};
-  thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fw);  // transform (not for_each_n) keeps host containers on the host backend
-}
 
 template <Integer DIM, template <class...> class DeviceVector>
 void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const Comm& comm) {
@@ -887,13 +882,16 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const Comm& comm) {
   }
 }
 
-// --- ghost node placeholders ----------------------------------------------------------
-// Mirror of Tree::UpdateRefinement's halo scheme, with the rank's true first node as the
-// partition key: an owned node is sent to every rank whose owned interval intersects the
-// node's coarse neighborhood (NbrList at depth d0-halo_size, self entry included -- the
-// self entry is what guarantees the boundary-ancestor chain is always ghosted). Received
-// ghosts are spliced around the owned slice with complete-tree placeholder fill, giving a
-// full-domain complete linear tree that is coarse outside the halo.
+}  // namespace detail_balance21
+
+// Ghost-layer placeholders (distributed), mirroring Tree::UpdateRefinement's halo scheme: send
+// each owned node to every rank whose owned interval meets its coarse neighborhood (NbrList at
+// depth d0-halo_size; the self entry keeps the boundary-ancestor chain ghosted). Received ghosts
+// are spliced around the owned slice with complete-tree fill -> full-domain tree, coarse outside the halo.
+namespace detail_addGhostNodes {
+using detail::WalkMode;
+using detail::local_sort;
+using detail::rebuildFromAnchors;
 
 template <Integer DIM> struct GhostPair {
   Long p;
@@ -1033,26 +1031,31 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const Comm& comm, Integer ha
   owned_begin = L; owned_end = L + Nn;
 }
 
-}  // namespace detail
+}  // namespace detail_addGhostNodes
 
-// Distributed build: device-buffer sample sort (local radix sort -> iterative exact-rank
-// splitters -> one Alltoallv straight out of the sorted device array -> radix re-sort)
-// followed by a two-sided M-code halo and boundary anchors from the pair straddling each
-// rank boundary (allgathered mins, as in Tree::UpdateRefinement). M is clamped to the
-// smallest per-rank count, so ranks with as little as one code work. Concatenated output
-// over ranks matches the single-rank buildTree exactly.
+// Distributed build: device sample sort (radix -> exact-rank splitters -> Alltoallv -> re-sort),
+// then a two-sided M-code halo and allgathered boundary anchors (mins). M is clamped to the
+// smallest per-rank count. Concatenated over ranks, the output matches single-rank buildTree.
 template <class Real, Integer DIM> template <template <class...> class DeviceVector>
 void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const Comm& comm, bool balance21, Integer halo_size, Long* owned_range, DeviceVector<Long>* sort_scatter_index) {
+  // Env-gated per-stage profiler (sync + barrier so each delta is the true stage wall time).
+  const bool gtprof = (getenv("GTPROF") != nullptr);
+  double t_last = 0;
+  const auto mark = [&](const char* name) {
+    if (!gtprof) return;
+#if defined(__CUDACC__) || defined(__HIPCC__)
+    cudaDeviceSynchronize();
+#endif
+    comm.Barrier();
+    const double t = SCTL_GET_WTIME();
+    if (comm.Rank() == 0 && name) fprintf(stderr, "  %-24s %8.2f ms\n", name, (t - t_last) * 1e3);
+    t_last = t;
+  };
+  mark(nullptr);
+
   using MortonT = MortonCode<DIM>;
   const Long rank = comm.Rank();
   const Long np = comm.Size();
-
-  if (np == 1) {
-    buildTree(tree, coord, M, sort_scatter_index);
-    if (balance21) detail::balanceTreeDist<DIM>(tree, comm);
-    if (owned_range) { owned_range[0] = 0; owned_range[1] = Long(tree.size()); }
-    return;
-  }
 
   const Long Nglob = [&coord, &comm]() {
     sctl::StaticArray<Long,2> N{(Long)coord.size()/DIM, 0};
@@ -1065,49 +1068,26 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
     return;
   }
 
-  #ifdef SCTL_HAVE_MPI
-  SCTL_ASSERT_MSG(sort_scatter_index == nullptr, "buildTreeDist: sort_scatter_index is only supported for a single rank (np==1)");
-  const MPI_Comm& mpi_comm = comm.GetMPI_Comm();
-
-  // Env-gated per-stage profiler (sync + barrier so each delta is the true stage wall time).
-  const bool gtprof = (getenv("GTPROF") != nullptr);
-  double t_last = 0;
-  const auto mark = [&](const char* name) {
-    if (!gtprof) return;
-#if defined(__CUDACC__) || defined(__HIPCC__)
-    cudaDeviceSynchronize();
-#endif
-    comm.Barrier();
-    const double t = MPI_Wtime();
-    if (rank == 0 && name) fprintf(stderr, "  %-24s %8.2f ms\n", name, (t - t_last) * 1e3);
-    t_last = t;
-  };
-  mark(nullptr);
-
-  DeviceVector<MortonT> pt((Long)coord.size()/DIM);
+  DeviceVector<MortonT> pt_mid((Long)coord.size()/DIM);
   { // Encode + local sort (device radix).
     detail::MakeMortonFunctor<Real, DIM> enc{thrust::raw_pointer_cast(coord.data())};
-    thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(pt.size()), pt.begin(), enc);
-    detail::local_sort(pt, (Long)pt.size());
+    thrust::transform(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(pt_mid.size()), pt_mid.begin(), enc);
+    detail::local_sort(pt_mid, (Long)pt_mid.size());
   }
 
-  // Distributed sort in two passes (mirrors Comm::SampleSort). Pass 1: value-based splitters
-  // make the data globally sorted across ranks (rank r's block < rank r+1's), but possibly
-  // imbalanced on coincident runs. Pass 2: an index rebalance -- now valid because the data
-  // is globally sorted -- evens the per-rank counts, splitting coincident runs by index so no
-  // rank is starved. Only after (2) does M <- global_min behave (shrinking M only for tiny N).
+  SCTL_ASSERT_MSG(sort_scatter_index == nullptr, "buildTreeDist: sort_scatter_index is only supported for a single rank (np==1)"); // TODO: add support for distributed sort_scatter_index
 
-  DeviceVector<MortonT> pt_mid;
-  { // Pass 1: value splitters -> globally-sorted (imbalanced) block `pt_mid`
+  #ifdef SCTL_HAVE_MPI
+  { // distributed sort
     sctl::ScratchBuf<MortonT> spl_h_buf(np - 1);
     sctl::Vector<MortonT> spl_h(spl_h_buf);
-    detail::determineSplitters(spl_h, pt, comm);
+    detail::determineSplitters(spl_h, pt_mid, comm);
     DeviceVector<MortonT> spl_d(spl_h.begin(), spl_h.end());
 
     DeviceVector<Long> pos_d(np - 1);
-    thrust::lower_bound(pt.begin(), pt.end(), spl_d.begin(), spl_d.end(), pos_d.begin());
+    thrust::lower_bound(pt_mid.begin(), pt_mid.end(), spl_d.begin(), spl_d.end(), pos_d.begin());
     sctl::ScratchBuf<Long> pos(np + 1);
-    pos[0] = 0; pos[np] = (Long)pt.size();
+    pos[0] = 0; pos[np] = (Long)pt_mid.size();
     thrust::copy(pos_d.begin(), pos_d.end(), pos.begin() + 1);
 
     sctl::ScratchBuf<int> scnt(np), sdsp(np), rcnt(np), rdsp(np);
@@ -1115,18 +1095,16 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
       scnt[r] = int((pos[r+1]-pos[r])*(Long)sizeof(MortonT));
       sdsp[r] = int(pos[r]*(Long)sizeof(MortonT));
     }
-    MPI_Alltoall(&scnt[0], 1, MPI_INT, &rcnt[0], 1, MPI_INT, mpi_comm);
+    MPI_Alltoall(&scnt[0], 1, MPI_INT, &rcnt[0], 1, MPI_INT, comm.GetMPI_Comm());
     std::exclusive_scan(rcnt.begin(), rcnt.end(), rdsp.begin(), 0);
-    pt_mid.resize((Long(rdsp[np - 1]) + rcnt[np - 1]) / (Long)sizeof(MortonT));
-    MPI_Alltoallv(thrust::raw_pointer_cast(pt.data()), &scnt[0], &sdsp[0], MPI_BYTE,
-                  thrust::raw_pointer_cast(pt_mid.data()), &rcnt[0], &rdsp[0], MPI_BYTE, mpi_comm);
-    detail::local_sort(pt_mid, (Long)pt_mid.size());  // np sorted segments -> one sorted block
+
+    DeviceVector<MortonT> buf((Long(rdsp[np - 1]) + rcnt[np - 1]) / (Long)sizeof(MortonT));
+    MPI_Alltoallv(thrust::raw_pointer_cast(pt_mid.data()), &scnt[0], &sdsp[0], MPI_BYTE,
+                  thrust::raw_pointer_cast(buf.data()), &rcnt[0], &rdsp[0], MPI_BYTE, comm.GetMPI_Comm());
+    detail::local_sort(buf, (Long)buf.size());  // np sorted segments -> one sorted block
+    pt_mid = std::move(buf);
   }
   mark("encode+sort+splitters");
-
-  // Pass 2: index rebalance -> rank r gets global indices [r*Nglob/np, (r+1)*Nglob/np).
-  // Skipped when pass 1 already balanced (value splitters only starve a rank on heavy
-  // coincident runs), keeping the common case a single redistribution.
 
   { // M <- global_min(pt_mid.size(), M); repartition if necessary
     Long Nloc = (Long)pt_mid.size(), Nloc_min = 0;
@@ -1157,17 +1135,17 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
 
       DeviceVector<MortonT> tmp(tgt_hi - tgt_lo);
       MPI_Alltoallv(thrust::raw_pointer_cast(pt_mid.data()), &scnt[0], &sdsp[0], MPI_BYTE,
-                    thrust::raw_pointer_cast(tmp.data()), &rcnt[0], &rdsp[0], MPI_BYTE, mpi_comm);
+                    thrust::raw_pointer_cast(tmp.data()), &rcnt[0], &rdsp[0], MPI_BYTE, comm.GetMPI_Comm());
       pt_mid = std::move(tmp);  // received segments concatenate in global-index order -> already sorted
       Nloc_min = Nglob / np;  // even split: smallest chunk is floor(Nglob/np)
     }
 
     M = std::min<Long>(M, Nloc_min);
-    if (M < 1) MPI_Abort(mpi_comm, 1);
+    if (M < 1) MPI_Abort(comm.GetMPI_Comm(), 1);
   }
   mark("rebalance");
 
-  { // pt_mid <-- [M from left, pt_mid, M from right]
+  { // halo: pt_mid <-- [M from left | pt_mid | M from right] (empty halo on domain-edge ranks)
     const Long recv0 = (rank > 0 ? M : 0);
     const Long recv1 = (rank < np - 1 ? M : 0);
     DeviceVector<MortonT> buf(recv0 + pt_mid.size() + recv1);
@@ -1177,10 +1155,11 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
     const int right = (rank + 1 < np ? int(rank + 1) : MPI_PROC_NULL);
     MortonT* b = thrust::raw_pointer_cast(buf.data());
     const int mb = int(M * (Long)sizeof(MortonT));
-    MPI_Sendrecv(b + recv0,                         mb, MPI_BYTE, left,  27, b + recv0 + pt_mid.size(), mb, MPI_BYTE, right, 27, mpi_comm, MPI_STATUS_IGNORE);
-    MPI_Sendrecv(b + recv0 + pt_mid.size() - recv1, mb, MPI_BYTE, right, 28, b,                         mb, MPI_BYTE, left,  28, mpi_comm, MPI_STATUS_IGNORE);
+    MPI_Sendrecv(b + recv0,                         mb, MPI_BYTE, left,  27, b + recv0 + pt_mid.size(), mb, MPI_BYTE, right, 27, comm.GetMPI_Comm(), MPI_STATUS_IGNORE);
+    MPI_Sendrecv(b + recv0 + pt_mid.size() - recv1, mb, MPI_BYTE, right, 28, b,                         mb, MPI_BYTE, left,  28, comm.GetMPI_Comm(), MPI_STATUS_IGNORE);
     pt_mid = std::move(buf);
   }
+  #endif  // SCTL_HAVE_MPI
 
   sctl::ScratchBuf<Morton<DIM>> mins(np);
   { // build mins
@@ -1202,22 +1181,24 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
     const Long idx1 = thrust::lower_bound(std::max(pt_mid.begin(), pt_mid.end()-2*M), pt_mid.end(), end_bnd.mid) - pt_mid.begin();
 
     if constexpr (detail::is_device_vector_v<DeviceVector<Real>>) {
-      detail::buildTreeGpuChunked<Real, DIM>(tree, pt_mid, M, idx1 - idx0, idx0, mins[rank], end_bnd);
+      detail_build::buildTreeGpuChunked<Real, DIM>(tree, pt_mid, M, idx1 - idx0, idx0, mins[rank], end_bnd);
     } else {
-      detail::buildTreeCpuChunked<Real, DIM>(tree, pt_mid, M, idx1 - idx0, idx0, mins[rank], end_bnd);
+      detail_build::buildTreeCpuChunked<Real, DIM>(tree, pt_mid, M, idx1 - idx0, idx0, mins[rank], end_bnd);
     }
   }
   mark("walk (linearize)");
 
-  if (balance21) detail::balanceTreeDist<DIM>(tree, comm);
+  if (balance21) detail_balance21::balanceTreeDist<DIM>(tree, comm);
   mark("balance21");
 
   Long owned_begin = 0, owned_end = Long(tree.size());
-  if (halo_size >= 0) detail::addGhostNodes<DIM>(tree, comm, halo_size, owned_begin, owned_end);
+  if (halo_size >= 0) detail_addGhostNodes::addGhostNodes<DIM>(tree, comm, halo_size, owned_begin, owned_end);
   mark("ghost");
 
-  if (owned_range) { owned_range[0] = owned_begin; owned_range[1] = owned_end; }
-  #endif  // SCTL_HAVE_MPI
+  if (owned_range) {
+    owned_range[0] = owned_begin;
+    owned_range[1] = owned_end;
+  }
 }
 
 }  // namespace gpu_tree
