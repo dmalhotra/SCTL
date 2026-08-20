@@ -33,29 +33,6 @@
 
 namespace sctl {
 
-  template <Integer DIM> template <class T> class Tree<DIM>::NodeArena {
-   public:
-    ~NodeArena() { for (Long b = 0; b < blocks_.Dim(); b++) std::free(&blocks_[b][0]); }
-
-    T& Alloc() {
-      if (cur_cnt_ == block_elems) {
-        void* raw = std::aligned_alloc(SCTL_MEM_ALIGN, block_elems * sizeof(T));
-        advise_huge_pages(raw, block_elems * (Long)sizeof(T));
-        cur_ = Ptr2Itr<T>(raw, block_elems);
-        cur_cnt_ = 0;
-        blocks_.PushBack(cur_);
-      }
-      return cur_[cur_cnt_++];
-    }
-
-   private:
-    static constexpr Long block_elems = ((8L<<20) / (Long)sizeof(T) / SCTL_MEM_ALIGN + 1) * SCTL_MEM_ALIGN;
-
-    Vector<Iterator<T>> blocks_;
-    Iterator<T> cur_;
-    Long cur_cnt_{block_elems};
-  };
-
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::test() {
     Long N = 100000;
     Vector<Real> X(N*DIM), f(N);
@@ -160,6 +137,429 @@ namespace sctl {
     return comm;
   }
 
+  namespace tree_detail {
+    // Bump allocator for the pointer tree below.
+    template <class T> class NodeArena {
+     public:
+      ~NodeArena() { for (Long b = 0; b < blocks_.Dim(); b++) std::free(&blocks_[b][0]); }
+
+      T& Alloc() {
+        if (cur_cnt_ == block_elems) {
+          void* raw = std::aligned_alloc(SCTL_MEM_ALIGN, block_elems * sizeof(T));
+          advise_huge_pages(raw, block_elems * (Long)sizeof(T));
+          cur_ = Ptr2Itr<T>(raw, block_elems);
+          cur_cnt_ = 0;
+          blocks_.PushBack(cur_);
+        }
+        return cur_[cur_cnt_++];
+      }
+
+     private:
+      static constexpr Long block_elems = ((8L<<20) / (Long)sizeof(T) / SCTL_MEM_ALIGN + 1) * SCTL_MEM_ALIGN;
+
+      Vector<Iterator<T>> blocks_;
+      Iterator<T> cur_;
+      Long cur_cnt_{block_elems};
+    };
+
+    template <Integer DIM> struct NbrPath {
+      Integer p_nbr, p_nbr_child;
+    };
+
+    // Neighbor k of child p2n = child `p_nbr_child` of parent-neighbor `p_nbr`: two pointer hops.
+    template <Integer DIM> const Matrix<NbrPath<DIM>>& nbr_path_table() {
+      static constexpr Integer MAX_CHILD = (1u << DIM);
+      static constexpr Integer MAX_NBRS = sctl::pow<DIM,Integer>(3);
+      static const Matrix<NbrPath<DIM>> tbl = []() {
+        const auto parent = (Morton<DIM>{}).Children()[0].Children()[MAX_CHILD-1];
+        const auto parent_nbr_lst = parent.NbrList(parent.Depth(), Periodicity::NONE); // interior node, so periodicity doesn't matter
+        Matrix<NbrPath<DIM>> t(MAX_CHILD, MAX_NBRS);
+        for (Integer p2n = 0; p2n < MAX_CHILD; p2n++) {
+          const auto n0 = parent.Children()[p2n];
+          const auto nlst = n0.NbrList(n0.Depth(), Periodicity::NONE);
+          for (Integer nbr_idx = 0; nbr_idx < MAX_NBRS; nbr_idx++) {
+            const auto& nbr = nlst[nbr_idx];
+            for (Integer p_nbr = 0; p_nbr < (Integer)parent_nbr_lst.size(); p_nbr++) {
+              if (parent_nbr_lst[p_nbr].isAncestor(nbr)) {
+                const auto parent_nbr_child_lst = parent_nbr_lst[p_nbr].Children();
+                t[p2n][nbr_idx].p_nbr = p_nbr;
+                for (Integer c = 0; c < (Integer)parent_nbr_child_lst.size(); c++) {
+                  if (nbr == parent_nbr_child_lst[c]) { t[p2n][nbr_idx].p_nbr_child = c; break; }
+                }
+                break;
+              }
+            }
+          }
+        }
+        return t;
+      }();
+      return tbl;
+    }
+
+    // Index of a node in its k-th neighbor's own neighbor list.
+    template <Integer DIM> const Matrix<Integer>& reverse_nbr_idx_table() {
+      static constexpr Integer MAX_CHILD = (1u << DIM);
+      static constexpr Integer MAX_NBRS = sctl::pow<DIM,Integer>(3);
+      static const Matrix<Integer> tbl = []() {
+        Matrix<Integer> t(MAX_CHILD, MAX_NBRS);
+        const auto parent = (Morton<DIM>{}).Children()[0].Children()[MAX_CHILD-1];
+        for (Integer p2n = 0; p2n < MAX_CHILD; p2n++) {
+          const auto n0 = parent.Children()[p2n];
+          const auto nlst = n0.NbrList(n0.Depth(), Periodicity::NONE);
+          for (Integer nbr_idx = 0; nbr_idx < MAX_NBRS; nbr_idx++) {
+            const auto nbr_nlst = nlst[nbr_idx].NbrList(n0.Depth(), Periodicity::NONE);
+            for (Integer i = 0; i < MAX_NBRS; i++) {
+              if (nbr_nlst[i] == n0) { t[p2n][nbr_idx] = i; break; }
+            }
+          }
+        }
+        return t;
+      }();
+      return tbl;
+    }
+
+    // 2:1 balance the non-leaf nodes in place: a non-leaf's same-depth neighbors must exist, so
+    // their parents must be non-leaf too. Local fixpoint, then redistribute by `mins` and dedup.
+    // Leaves are not represented -- rebuild them from the result, as UpdateRefinement does.
+    template <Integer DIM> void Balance21(Vector<Morton<DIM>>& parent_mid, const Vector<Morton<DIM>>& mins, const Comm& comm, Periodicity periodicity) {
+      const Integer np = comm.Size();
+      const Integer nthreads = SCTL_GET_MAX_THREADS();
+      static constexpr Integer MAX_CHILD = (1u << DIM);
+      static constexpr Integer MAX_NBRS = sctl::pow<DIM,Integer>(3);
+      static constexpr Integer MAX_DEPTH = Morton<DIM>::MAX_DEPTH;
+      static const auto& nbr_path = nbr_path_table<DIM>();  // static: lambdas below capture nothing
+      static const auto& reverse_nbr_idx = reverse_nbr_idx_table<DIM>();
+      {
+        static std::pair<Matrix<Integer>,Vector<Integer>> balance21_p_nbrs_precomp = []() { // for each p2n, list of parent's neighbors that must exist to be 2:1 balanced
+          Matrix<Integer> p_nbr_lst(MAX_CHILD, MAX_NBRS);
+          Vector<Integer> p_nbr_cnt(MAX_CHILD);
+          p_nbr_cnt = 0;
+          for (Integer i = 0; i < MAX_CHILD; i++) {
+            std::set<Integer> p_nbr_set;
+            for (Integer j = 0; j < MAX_NBRS; j++) {
+              p_nbr_set.insert(nbr_path[i][j].p_nbr);
+            }
+            for (const auto &n : p_nbr_set) {
+              p_nbr_lst[i][p_nbr_cnt[i]++] = n;
+            }
+          }
+          return std::make_pair(p_nbr_lst, p_nbr_cnt);
+        }();
+        const Matrix<Integer> &p_nbr_lst = balance21_p_nbrs_precomp.first; // MAX_CHILD x MAX_NBRS
+        const Vector<Integer> &p_nbr_cnt = balance21_p_nbrs_precomp.second; // MAX_CHILD
+        const Long Nnodes = parent_mid.Dim();
+
+        struct TreeNode {
+          Morton<DIM> m;
+          TreeNode* parent;
+          TreeNode* child[MAX_CHILD];
+          TreeNode* nbr[MAX_NBRS];
+          Integer flags;
+        };
+        ScratchBuf<TreeNode> ptree(Nnodes);
+        if (Nnodes) { // Init root
+          ptree[0].m = Morton<DIM>{};
+          ptree[0].parent = nullptr;
+          for (Integer i = 0; i < MAX_CHILD; i++) ptree[0].child[i] = nullptr;
+          const auto nbr_lst = Morton<DIM>().NbrList(0, periodicity);
+          for (Integer i = 0; i < MAX_NBRS; i++) ptree[0].nbr[i] = (nbr_lst[i].Depth() == Morton<DIM>::INVALID_DEPTH ? nullptr : &ptree[0]);
+          ptree[0].flags = 0;
+        }
+
+        const auto set_nbrs = [](TreeNode& node) {
+          const Integer p2n = node.m.Path2Node();
+          for (Integer k = 0; k < MAX_NBRS; k++) {
+            const auto nbr_path_ = nbr_path[p2n][k];
+            const TreeNode* const p_nbr_ptr = node.parent->nbr[nbr_path_.p_nbr];
+            if (p_nbr_ptr) {
+              TreeNode* const nbr_ptr = p_nbr_ptr->child[nbr_path_.p_nbr_child];
+              if (nbr_ptr) node.nbr[k] = nbr_ptr;
+            }
+          }
+        };
+        const auto set_ancestor_nbrs = [](TreeNode& root, const Morton<DIM>& min_m, const Morton<DIM>& m0) {
+          // excluding root and m0
+          const Integer d0 = m0.Depth();
+          TreeNode* ancestor_nbr[MAX_DEPTH+1][MAX_NBRS];
+          if (d0) for (Integer i = 0; i < MAX_NBRS; i++) ancestor_nbr[0][i] = root.nbr[i];
+
+          TreeNode* node = &root;
+          for (Integer d = 1; d < d0; d++) { // Set the neighbor pointers for the partition ancestors
+            const Integer p2n = m0.Ancestor(d).Path2Node();
+            node = node->child[p2n];
+            for (Integer k = 0; k < MAX_NBRS; k++) {
+              ancestor_nbr[d][k] = nullptr;
+              const auto nbr_path_ = nbr_path[p2n][k];
+              const TreeNode* const p_nbr_ptr = ancestor_nbr[d-1][nbr_path_.p_nbr];
+              if (p_nbr_ptr) {
+                TreeNode* const nbr_ptr = p_nbr_ptr->child[nbr_path_.p_nbr_child];
+                if (nbr_ptr) ancestor_nbr[d][k] = nbr_ptr;
+              }
+            }
+            if (min_m <= node->m) {
+              for (Integer k = 0; k < MAX_NBRS; k++) node->nbr[k] = ancestor_nbr[d][k];
+              node->flags = 0;
+            }
+          }
+        };
+
+        ScratchBuf<Vector<Morton<DIM>>*> shared_new_pnodes(nthreads);
+        ScratchBuf<Long> shared_pnode_cnt(nthreads), shared_pnode_dsp(nthreads);
+        #pragma omp parallel num_threads(nthreads)
+        if (Nnodes) { // Build ptree, balance it, and add nodes to parent_mid
+          const Integer tid = SCTL_GET_THREAD_NUM();
+          const Integer nt = SCTL_GET_NUM_THREADS();
+          const Long idx0 = Nnodes * tid / nt;
+          const Long idx1 = Nnodes * (tid+1) / nt;
+          const Long idx_ = Nnodes * (tid-1) / nt;
+          Long local_pnode_cnt = idx1 - idx0;
+
+          Vector<TreeNode*> new_node_lst(idx1-idx0);
+          { // Build parent tree ptree from parent_mid, and set parent, child pointers; add nodes to new_node_lst
+            Long ancestors[MAX_DEPTH+1];
+            ancestors[0] = 0;
+            const Long d0 = (idx0 < Nnodes) ? parent_mid[idx0].Depth() : 0;
+            for (Integer d = 1; d < d0; d++) { // Set ancestors, and initialize their child pointers to nullptr
+              const Long i = std::lower_bound(parent_mid.begin(), parent_mid.end(), parent_mid[idx0].Ancestor(d)) - parent_mid.begin();
+              ancestors[d] = i;
+
+              if (i >= idx_) {
+                auto& node = ptree[i];
+                for (Integer k = 0; k < MAX_CHILD; k++) node.child[k] = nullptr;
+              }
+            }
+            #pragma omp barrier
+            if (idx0 == 0 && idx0 < idx1) new_node_lst[0] = &ptree[0];
+            for (Long i = std::max<Long>(1,idx0); i < idx1; i++) { // Set parent and child pointers
+              const auto m = parent_mid[i];
+              const Integer d = m.Depth();
+              ancestors[d] = i;
+
+              auto& node = ptree[i];
+              new_node_lst[i-idx0] = &node;
+              node.m = m;
+              node.parent = &ptree[ancestors[d-1]];
+              node.parent->child[m.Path2Node()] = &node;
+              if (idx1 == Nnodes || !m.isAncestor(parent_mid[idx1])) {
+                for (Integer k = 0; k < MAX_CHILD; k++) node.child[k] = nullptr;
+                for (Integer k = 0; k < MAX_NBRS; k++) node.nbr[k] = nullptr;
+              }
+            }
+          }
+          #pragma omp barrier
+
+          { // Set nbr pointers
+            if (idx0 < Nnodes) set_ancestor_nbrs(ptree[0], (idx_ >= 0 ? parent_mid[idx_] : Morton<DIM>()), parent_mid[idx0]);
+            #pragma omp barrier
+            for (Long i = std::max<Long>(1,idx0); i < idx1; i++) { // Set the neighbor pointers
+              TreeNode& node = ptree[i];
+              node.flags = 1;
+              if (idx1 < Nnodes && node.m.isAncestor(parent_mid[idx1])) continue; // do not touch the ancestor nodes, other threads may be reading them
+              set_nbrs(node);
+            }
+          }
+
+          Vector<Morton<DIM>> new_mid;
+          NodeArena<TreeNode> new_pnodes_;
+          for (Integer iter = 0; iter <= MAX_DEPTH; iter++) {
+            new_mid.ReInit(0);
+            for (const auto node : new_node_lst) { // Collect missing parent-neighbors into new_mid
+              if (node->m.Depth() <= 1) continue;
+              const Integer p2n = node->m.Path2Node();
+              const auto p_nbr_lst_ = p_nbr_lst[p2n];
+              const Integer p_nbr_cnt_ = p_nbr_cnt[p2n];
+
+              Integer tmp_buf[MAX_NBRS];
+              Integer tmp_buf_cnt = 0;
+              for (Integer k = 0; k < p_nbr_cnt_; k++) {
+                if (node->parent->nbr[p_nbr_lst_[k]] == nullptr)
+                tmp_buf[tmp_buf_cnt++] = p_nbr_lst_[k];
+              }
+              if (tmp_buf_cnt) {
+                const auto p_nbrs = node->m.NbrList(node->m.Depth()-1, periodicity);
+                for (Integer k = 0; k < tmp_buf_cnt; k++)
+                if (p_nbrs[tmp_buf[k]].Depth() != Morton<DIM>::INVALID_DEPTH)
+                new_mid.PushBack(p_nbrs[tmp_buf[k]]);
+              }
+            }
+            std::sort(new_mid.begin(), new_mid.end());
+            shared_new_pnodes[tid] = &new_mid;
+            #pragma omp barrier
+
+            bool early_exit = true;
+            for (Integer t = 0; t < nt; t++) {
+              if (shared_new_pnodes[t]->Dim()) early_exit = false;
+            }
+            if (early_exit) break;
+
+            { // Add new_mid to ptree, set their parent, child pointers, rebuild new_node_lst
+              new_node_lst.ReInit(0);
+              ScratchBuf<Long> src0(nt), src1(nt);
+              { // bounds of this thread's owned range in each source list
+                const Morton<DIM> r0 = parent_mid[Nnodes * tid / nt];
+                const Morton<DIM> r1 = (tid+1 < nt ? parent_mid[Nnodes * (tid+1) / nt] : Morton<DIM>().Next());
+                for (Integer t = 0; t < nt; t++) {
+                  const Vector<Morton<DIM>>& lst = *shared_new_pnodes[t];
+                  src0[t] = std::lower_bound(lst.begin(), lst.end(), r0) - lst.begin();
+                  src1[t] = std::lower_bound(lst.begin(), lst.end(), r1) - lst.begin();
+                }
+              }
+              for (Integer dt = 0; dt < nt; dt++) { // Add new nodes to ptree
+                const Integer t = (tid + dt) % nt;
+                const Vector<Morton<DIM>>& src = *shared_new_pnodes[t];
+                for (Long i = src0[t]; i < src1[t]; i++) {
+                  if (i > src0[t] && src[i] == src[i-1]) continue;
+
+                  const auto m = src[i];
+                  const Integer d0 = m.Depth();
+                  TreeNode* parent = &ptree[0];
+                  for (Integer d = 1; d <= d0; d++) {
+                    const auto m_d = m.Ancestor(d);
+                    const Integer p2n = m_d.Path2Node();
+                    TreeNode* node = parent->child[p2n];
+                    if (node == nullptr) {
+                      node = &new_pnodes_.Alloc();
+                      new_node_lst.PushBack(node);
+                      node->m = m.Ancestor(d);
+                      node->parent = parent;
+                      for (Integer k = 0; k < MAX_CHILD; k++) node->child[k] = nullptr;
+                      for (Integer k = 0; k < MAX_NBRS; k++) node->nbr[k] = nullptr;
+                      parent->child[p2n] = node;
+                      node->flags = iter+1;
+                    }
+                    parent = node;
+                  }
+                }
+              }
+            }
+            local_pnode_cnt += new_node_lst.Dim();
+            #pragma omp barrier
+
+            { // Set nbr pointers
+              if (idx0 < Nnodes) set_ancestor_nbrs(ptree[0], (idx_ >= 0 ? parent_mid[idx_] : Morton<DIM>()), parent_mid[idx0]);
+              #pragma omp barrier
+              for (auto& node : new_node_lst) {
+                Integer cnt = 0;
+                TreeNode *node_ptr = node, *ancestor[MAX_DEPTH+1];
+                while (node_ptr && node_ptr->flags == iter+1) {
+                  ancestor[cnt++] = node_ptr;
+                  node_ptr = node_ptr->parent;
+                }
+                for (Integer i = cnt-1; i >= 0; i--) {
+                  set_nbrs(*ancestor[i]);
+                  ancestor[i]->flags = iter+2;
+                }
+              }
+              #pragma omp barrier
+              for (auto& node : new_node_lst) {
+                for (Integer i = 0; i < MAX_NBRS; i++) {
+                  TreeNode* nbr = node->nbr[i];
+                  if (nbr && nbr->flags != iter+2) {
+                    const Integer p2n = node->m.Path2Node();
+                    nbr->nbr[reverse_nbr_idx[p2n][i]] = node;
+                  }
+                }
+              }
+            }
+            #pragma omp barrier
+          }
+
+          static constexpr Integer FLAG_MINS_ANC = -1;  // ancestor of a min: exclude from parent_mid
+          { // Set exclude flag for ancestors of mins
+            Long local_excl = 0;
+            const Morton<DIM> b0 = parent_mid[idx0];
+            const Morton<DIM> b1 = (idx1 < Nnodes ? parent_mid[idx1] : Morton<DIM>().Next());
+            const Long r0 = std::lower_bound(mins.begin(), mins.end(), b0) - mins.begin();
+            const Long r1 = std::lower_bound(mins.begin(), mins.end(), b1) - mins.begin();
+            for (Long r = r0; r < std::min<Long>(r1+1, np); r++) {
+              TreeNode* node = &ptree[0];
+              const Integer d0 = mins[r].Depth();
+              for (Integer d = 0; d < d0 && node; d++) {
+                if (node->m >= b0 && node->m < b1 && node->flags != FLAG_MINS_ANC) { // chains of consecutive mins share prefixes: count once
+                  node->flags = FLAG_MINS_ANC;
+                  local_excl++;
+                }
+                const Integer p2n = mins[r].Ancestor(d+1).Path2Node();
+                node = node->child[p2n];
+              }
+            }
+            shared_pnode_cnt[tid] = local_pnode_cnt - local_excl;
+            #pragma omp barrier
+          }
+
+          #pragma omp single
+          { // Resize parent_mid
+            std::exclusive_scan(shared_pnode_cnt.begin(), shared_pnode_cnt.begin()+nt, shared_pnode_dsp.begin(), Long(0));
+            parent_mid.ReInit(shared_pnode_dsp[nt-1] + shared_pnode_cnt[nt-1]);
+          }
+
+          if (idx0 < ptree.Dim()) { // preorder traversal to add local nodes to parent_mid
+            TreeNode* node = &ptree[idx0];
+            const Morton<DIM> m_end = (idx1 < ptree.Dim() ? ptree[idx1].m : Morton<DIM>().Next());
+            Long out = shared_pnode_dsp[tid];
+            while (node->m < m_end) {
+              if (node->flags != FLAG_MINS_ANC) parent_mid[out++] = node->m;
+
+              TreeNode* next = nullptr;
+              for (Integer k = 0; k < MAX_CHILD; k++) { // descend to first child
+                if (node->child[k]) { next = node->child[k]; break; }
+              }
+              while (next == nullptr && node->parent) { // no child, ascend to next sibling
+                TreeNode* const parent = node->parent;
+                const Integer p2n = node->m.Path2Node();
+                for (Integer k = p2n+1; k < MAX_CHILD; k++) {
+                  if (parent->child[k]) { next = parent->child[k]; break; }
+                }
+                node = parent;
+              }
+              if (next == nullptr) break; // ascended past root: end of tree
+              node = next;
+            }
+            SCTL_ASSERT(out == shared_pnode_dsp[tid] + shared_pnode_cnt[tid]);
+          }
+        }
+      }
+
+      { // global_sort parent_mid and remove duplicates
+        Vector<Morton<DIM>> parent_mid_sorted;
+        comm.SampleSort(parent_mid, parent_mid_sorted, mins[comm.Rank()]);
+
+        ScratchBuf<Long> cnt(nthreads), dsp(nthreads);
+        if (parent_mid_sorted.Dim()) { // remove duplicates
+          #pragma omp parallel num_threads(nthreads)
+          {
+            const Integer nt = SCTL_GET_NUM_THREADS();
+            const Integer tid = SCTL_GET_THREAD_NUM();
+            const Long start = 1+((parent_mid_sorted.Dim()-1) *  tid     ) / nt;
+            const Long end   = 1+((parent_mid_sorted.Dim()-1) * (tid + 1)) / nt;
+
+            Long loc_cnt = 0;
+            for (Long j = start; j < end; j++) {
+              if (parent_mid_sorted[j]!=parent_mid_sorted[j-1]) loc_cnt++;
+            }
+            cnt[tid] = loc_cnt;
+
+            #pragma omp barrier
+            #pragma omp single
+            {
+              std::exclusive_scan(cnt.begin(), cnt.begin()+nt, dsp.begin(), Long(1));
+              parent_mid.ReInit(dsp[nt-1] + cnt[nt-1]);
+              parent_mid[0] = parent_mid_sorted[0];
+            } // implicit barrier at end of single
+
+            Long loc_idx = dsp[tid];
+            for (Long j = start; j < end; j++) {
+              if (parent_mid_sorted[j]!=parent_mid_sorted[j-1]) parent_mid[loc_idx++] = parent_mid_sorted[j];
+            }
+          }
+        } else {
+          parent_mid.ReInit(0);
+        }
+      }
+    }
+
+  }  // namespace tree_detail
+
   template <Integer DIM> template <class Real> void Tree<DIM>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, Periodicity periodicity, Integer halo_size) {
     const Integer np = comm.Size();
     const Integer rank = comm.Rank();
@@ -167,57 +567,9 @@ namespace sctl {
     static constexpr Integer MAX_CHILD = (1u << DIM);
     static constexpr Integer MAX_NBRS = sctl::pow<DIM,Integer>(3);
     static constexpr Integer MAX_DEPTH = Morton<DIM>::MAX_DEPTH;
-    struct NbrPath {
-      Integer p_nbr, p_nbr_child;
-    };
-    static const auto nbr_path = []() {
-      const auto parent = (Morton<DIM>{}).Children()[0].Children()[MAX_CHILD-1];
-      const auto parent_nbr_lst = parent.NbrList(parent.Depth(), Periodicity::NONE); // interior node, so periodicity doesn't matter
 
-      Matrix<NbrPath> nbr_path(MAX_CHILD, MAX_NBRS);
-      for (Integer p2n = 0; p2n < MAX_CHILD; p2n++) {
-        const auto n0 = parent.Children()[p2n];
-        const auto nlst = n0.NbrList(n0.Depth(), Periodicity::NONE);
-        for (Integer nbr_idx = 0; nbr_idx < MAX_NBRS; nbr_idx++) {
-          const auto& nbr = nlst[nbr_idx];
-
-          for (Integer p_nbr = 0; p_nbr < (Integer)parent_nbr_lst.size(); p_nbr++) {
-            if (parent_nbr_lst[p_nbr].isAncestor(nbr)) {
-              const auto parent_nbr_child_lst = parent_nbr_lst[p_nbr].Children();
-              nbr_path[p2n][nbr_idx].p_nbr = p_nbr;
-              for (Integer p_nbr_child = 0; p_nbr_child < (Integer)parent_nbr_child_lst.size(); p_nbr_child++) {
-                if (nbr == parent_nbr_child_lst[p_nbr_child]) {
-                  nbr_path[p2n][nbr_idx].p_nbr_child = p_nbr_child;
-                  break;
-                }
-              }
-              break;
-            }
-          }
-
-        }
-      }
-      return nbr_path;
-    }();
-    static const auto reverse_nbr_idx = []() {
-      Matrix<Integer> reverse_nbr_idx(MAX_CHILD, MAX_NBRS);
-      const auto parent = (Morton<DIM>{}).Children()[0].Children()[MAX_CHILD-1];
-      for (Integer p2n = 0; p2n < MAX_CHILD; p2n++) {
-        const auto n0 = parent.Children()[p2n];
-        const auto nlst = n0.NbrList(n0.Depth(), Periodicity::NONE);
-        for (Integer nbr_idx = 0; nbr_idx < MAX_NBRS; nbr_idx++) {
-          const auto nbr_nlst = nlst[nbr_idx].NbrList(n0.Depth(), Periodicity::NONE);
-          for (Integer i = 0; i < MAX_NBRS; i++) {
-            if (nbr_nlst[i] == n0) {
-              reverse_nbr_idx[p2n][nbr_idx] = i;
-              break;
-            }
-          }
-
-        }
-      }
-      return reverse_nbr_idx;
-    }();
+    static const auto& nbr_path = tree_detail::nbr_path_table<DIM>();  // static: the lambdas below capture nothing
+    static const auto& reverse_nbr_idx = tree_detail::reverse_nbr_idx_table<DIM>();
 
     Vector<Morton<DIM>> node_mid_orig;
     Long start_idx_orig, end_idx_orig;
@@ -330,7 +682,7 @@ namespace sctl {
           SCTL_ASSERT(n0_lsts.parent >= 0);
 
           for (Integer nbd_idx = 0; nbd_idx < MAX_NBRS; nbd_idx++) {
-            const NbrPath& path = nbr_path[n0_lsts.p2n][nbd_idx];
+            const auto& path = nbr_path[n0_lsts.p2n][nbd_idx];
             const Long parent_nbr_idx = node_lst[n0_lsts.parent].nbr[path.p_nbr];
             if (parent_nbr_idx >= 0) n0_lsts.nbr[nbd_idx] = node_lst[parent_nbr_idx].child[path.p_nbr_child];
             else n0_lsts.nbr[nbd_idx] = -1;
@@ -527,25 +879,7 @@ namespace sctl {
       const Integer nthreads = SCTL_GET_MAX_THREADS();
 
       Vector<Morton<DIM>> parent_mid;
-      { // add balancing Morton IDs
-        static std::pair<Matrix<Integer>,Vector<Integer>> balance21_p_nbrs_precomp = []() { // for each p2n, list of parent's neighbors that must exist to be 2:1 balanced
-          Matrix<Integer> p_nbr_lst(MAX_CHILD, MAX_NBRS);
-          Vector<Integer> p_nbr_cnt(MAX_CHILD);
-          p_nbr_cnt = 0;
-          for (Integer i = 0; i < MAX_CHILD; i++) {
-            std::set<Integer> p_nbr_set;
-            for (Integer j = 0; j < MAX_NBRS; j++) {
-              p_nbr_set.insert(nbr_path[i][j].p_nbr);
-            }
-            for (const auto &n : p_nbr_set) {
-              p_nbr_lst[i][p_nbr_cnt[i]++] = n;
-            }
-          }
-          return std::make_pair(p_nbr_lst, p_nbr_cnt);
-        }();
-        const Matrix<Integer> &p_nbr_lst = balance21_p_nbrs_precomp.first; // MAX_CHILD x MAX_NBRS
-        const Vector<Integer> &p_nbr_cnt = balance21_p_nbrs_precomp.second; // MAX_CHILD
-
+      { // collect the non-leaf ("parent") nodes
         ScratchBuf<Vector<Morton<DIM>>> parent_mid_t(nthreads);
         #pragma omp parallel num_threads(nthreads)
         { // build list of parent nodes parent_mid
@@ -568,315 +902,8 @@ namespace sctl {
           #pragma omp barrier
           std::copy(parent_mid_.begin(), parent_mid_.end(), parent_mid.begin() + dsp);
         }
-        const Long Nnodes = parent_mid.Dim();
-
-        struct TreeNode {
-          Morton<DIM> m;
-          TreeNode* parent;
-          TreeNode* child[MAX_CHILD];
-          TreeNode* nbr[MAX_NBRS];
-          Integer flags;
-        };
-        ScratchBuf<TreeNode> ptree(Nnodes);
-        if (Nnodes) { // Init root
-          ptree[0].m = Morton<DIM>{};
-          ptree[0].parent = nullptr;
-          for (Integer i = 0; i < MAX_CHILD; i++) ptree[0].child[i] = nullptr;
-          const auto nbr_lst = Morton<DIM>().NbrList(0, periodicity);
-          for (Integer i = 0; i < MAX_NBRS; i++) ptree[0].nbr[i] = (nbr_lst[i].Depth() == Morton<DIM>::INVALID_DEPTH ? nullptr : &ptree[0]);
-          ptree[0].flags = 0;
-        }
-
-        const auto set_nbrs = [](TreeNode& node) {
-          const Integer p2n = node.m.Path2Node();
-          for (Integer k = 0; k < MAX_NBRS; k++) {
-            const auto nbr_path_ = nbr_path[p2n][k];
-            const TreeNode* const p_nbr_ptr = node.parent->nbr[nbr_path_.p_nbr];
-            if (p_nbr_ptr) {
-              TreeNode* const nbr_ptr = p_nbr_ptr->child[nbr_path_.p_nbr_child];
-              if (nbr_ptr) node.nbr[k] = nbr_ptr;
-            }
-          }
-        };
-        const auto set_ancestor_nbrs = [](TreeNode& root, const Morton<DIM>& min_m, const Morton<DIM>& m0) {
-          // excluding root and m0
-          const Integer d0 = m0.Depth();
-          TreeNode* ancestor_nbr[MAX_DEPTH+1][MAX_NBRS];
-          if (d0) for (Integer i = 0; i < MAX_NBRS; i++) ancestor_nbr[0][i] = root.nbr[i];
-
-          TreeNode* node = &root;
-          for (Integer d = 1; d < d0; d++) { // Set the neighbor pointers for the partition ancestors
-            const Integer p2n = m0.Ancestor(d).Path2Node();
-            node = node->child[p2n];
-            for (Integer k = 0; k < MAX_NBRS; k++) {
-              ancestor_nbr[d][k] = nullptr;
-              const auto nbr_path_ = nbr_path[p2n][k];
-              const TreeNode* const p_nbr_ptr = ancestor_nbr[d-1][nbr_path_.p_nbr];
-              if (p_nbr_ptr) {
-                TreeNode* const nbr_ptr = p_nbr_ptr->child[nbr_path_.p_nbr_child];
-                if (nbr_ptr) ancestor_nbr[d][k] = nbr_ptr;
-              }
-            }
-            if (min_m <= node->m) {
-              for (Integer k = 0; k < MAX_NBRS; k++) node->nbr[k] = ancestor_nbr[d][k];
-              node->flags = 0;
-            }
-          }
-        };
-
-        ScratchBuf<Vector<Morton<DIM>>*> shared_new_pnodes(nthreads);
-        ScratchBuf<Long> shared_pnode_cnt(nthreads), shared_pnode_dsp(nthreads);
-        #pragma omp parallel num_threads(nthreads)
-        if (Nnodes) { // Build ptree, balance it, and add nodes to parent_mid
-          const Integer tid = SCTL_GET_THREAD_NUM();
-          const Integer nt = SCTL_GET_NUM_THREADS();
-          const Long idx0 = Nnodes * tid / nt;
-          const Long idx1 = Nnodes * (tid+1) / nt;
-          const Long idx_ = Nnodes * (tid-1) / nt;
-          Long local_pnode_cnt = idx1 - idx0;
-
-          Vector<TreeNode*> new_node_lst(idx1-idx0);
-          { // Build parent tree ptree from parent_mid, and set parent, child pointers; add nodes to new_node_lst
-            Long ancestors[MAX_DEPTH+1];
-            ancestors[0] = 0;
-            const Long d0 = (idx0 < Nnodes) ? parent_mid[idx0].Depth() : 0;
-            for (Integer d = 1; d < d0; d++) { // Set ancestors, and initialize their child pointers to nullptr
-              const Long i = std::lower_bound(parent_mid.begin(), parent_mid.end(), parent_mid[idx0].Ancestor(d)) - parent_mid.begin();
-              ancestors[d] = i;
-
-              if (i >= idx_) {
-                auto& node = ptree[i];
-                for (Integer k = 0; k < MAX_CHILD; k++) node.child[k] = nullptr;
-              }
-            }
-            #pragma omp barrier
-            if (idx0 == 0 && idx0 < idx1) new_node_lst[0] = &ptree[0];
-            for (Long i = std::max<Long>(1,idx0); i < idx1; i++) { // Set parent and child pointers
-              const auto m = parent_mid[i];
-              const Integer d = m.Depth();
-              ancestors[d] = i;
-
-              auto& node = ptree[i];
-              new_node_lst[i-idx0] = &node;
-              node.m = m;
-              node.parent = &ptree[ancestors[d-1]];
-              node.parent->child[m.Path2Node()] = &node;
-              if (idx1 == Nnodes || !m.isAncestor(parent_mid[idx1])) {
-                for (Integer k = 0; k < MAX_CHILD; k++) node.child[k] = nullptr;
-                for (Integer k = 0; k < MAX_NBRS; k++) node.nbr[k] = nullptr;
-              }
-            }
-          }
-          #pragma omp barrier
-
-          { // Set nbr pointers
-            if (idx0 < Nnodes) set_ancestor_nbrs(ptree[0], (idx_ >= 0 ? parent_mid[idx_] : Morton<DIM>()), parent_mid[idx0]);
-            #pragma omp barrier
-            for (Long i = std::max<Long>(1,idx0); i < idx1; i++) { // Set the neighbor pointers
-              TreeNode& node = ptree[i];
-              node.flags = 1;
-              if (idx1 < Nnodes && node.m.isAncestor(parent_mid[idx1])) continue; // do not touch the ancestor nodes, other threads may be reading them
-              set_nbrs(node);
-            }
-          }
-
-          Vector<Morton<DIM>> new_mid;
-          NodeArena<TreeNode> new_pnodes_;
-          for (Integer iter = 0; iter <= MAX_DEPTH; iter++) {
-            new_mid.ReInit(0);
-            for (const auto node : new_node_lst) { // Collect missing parent-neighbors into new_mid
-              if (node->m.Depth() <= 1) continue;
-              const Integer p2n = node->m.Path2Node();
-              const auto p_nbr_lst_ = p_nbr_lst[p2n];
-              const Integer p_nbr_cnt_ = p_nbr_cnt[p2n];
-
-              Integer tmp_buf[MAX_NBRS];
-              Integer tmp_buf_cnt = 0;
-              for (Integer k = 0; k < p_nbr_cnt_; k++) {
-                if (node->parent->nbr[p_nbr_lst_[k]] == nullptr)
-                  tmp_buf[tmp_buf_cnt++] = p_nbr_lst_[k];
-              }
-              if (tmp_buf_cnt) {
-                const auto p_nbrs = node->m.NbrList(node->m.Depth()-1, periodicity);
-                for (Integer k = 0; k < tmp_buf_cnt; k++)
-                  if (p_nbrs[tmp_buf[k]].Depth() != Morton<DIM>::INVALID_DEPTH)
-                    new_mid.PushBack(p_nbrs[tmp_buf[k]]);
-              }
-            }
-            std::sort(new_mid.begin(), new_mid.end());
-            shared_new_pnodes[tid] = &new_mid;
-            #pragma omp barrier
-
-            bool early_exit = true;
-            for (Integer t = 0; t < nt; t++) {
-              if (shared_new_pnodes[t]->Dim()) early_exit = false;
-            }
-            if (early_exit) break;
-
-            { // Add new_mid to ptree, set their parent, child pointers, rebuild new_node_lst
-              new_node_lst.ReInit(0);
-              ScratchBuf<Long> src0(nt), src1(nt);
-              { // bounds of this thread's owned range in each source list
-                const Morton<DIM> r0 = parent_mid[Nnodes * tid / nt];
-                const Morton<DIM> r1 = (tid+1 < nt ? parent_mid[Nnodes * (tid+1) / nt] : Morton<DIM>().Next());
-                for (Integer t = 0; t < nt; t++) {
-                  const Vector<Morton<DIM>>& lst = *shared_new_pnodes[t];
-                  src0[t] = std::lower_bound(lst.begin(), lst.end(), r0) - lst.begin();
-                  src1[t] = std::lower_bound(lst.begin(), lst.end(), r1) - lst.begin();
-                }
-              }
-              for (Integer dt = 0; dt < nt; dt++) { // Add new nodes to ptree
-                const Integer t = (tid + dt) % nt;
-                const Vector<Morton<DIM>>& src = *shared_new_pnodes[t];
-                for (Long i = src0[t]; i < src1[t]; i++) {
-                  if (i > src0[t] && src[i] == src[i-1]) continue;
-
-                  const auto m = src[i];
-                  const Integer d0 = m.Depth();
-                  TreeNode* parent = &ptree[0];
-                  for (Integer d = 1; d <= d0; d++) {
-                    const auto m_d = m.Ancestor(d);
-                    const Integer p2n = m_d.Path2Node();
-                    TreeNode* node = parent->child[p2n];
-                    if (node == nullptr) {
-                      node = &new_pnodes_.Alloc();
-                      new_node_lst.PushBack(node);
-                      node->m = m.Ancestor(d);
-                      node->parent = parent;
-                      for (Integer k = 0; k < MAX_CHILD; k++) node->child[k] = nullptr;
-                      for (Integer k = 0; k < MAX_NBRS; k++) node->nbr[k] = nullptr;
-                      parent->child[p2n] = node;
-                      node->flags = iter+1;
-                    }
-                    parent = node;
-                  }
-                }
-              }
-            }
-            local_pnode_cnt += new_node_lst.Dim();
-            #pragma omp barrier
-
-            { // Set nbr pointers
-              if (idx0 < Nnodes) set_ancestor_nbrs(ptree[0], (idx_ >= 0 ? parent_mid[idx_] : Morton<DIM>()), parent_mid[idx0]);
-              #pragma omp barrier
-              for (auto& node : new_node_lst) {
-                Integer cnt = 0;
-                TreeNode *node_ptr = node, *ancestor[MAX_DEPTH+1];
-                while (node_ptr && node_ptr->flags == iter+1) {
-                  ancestor[cnt++] = node_ptr;
-                  node_ptr = node_ptr->parent;
-                }
-                for (Integer i = cnt-1; i >= 0; i--) {
-                  set_nbrs(*ancestor[i]);
-                  ancestor[i]->flags = iter+2;
-                }
-              }
-              #pragma omp barrier
-              for (auto& node : new_node_lst) {
-                for (Integer i = 0; i < MAX_NBRS; i++) {
-                  TreeNode* nbr = node->nbr[i];
-                  if (nbr && nbr->flags != iter+2) {
-                    const Integer p2n = node->m.Path2Node();
-                    nbr->nbr[reverse_nbr_idx[p2n][i]] = node;
-                  }
-                }
-              }
-            }
-            #pragma omp barrier
-          }
-
-          static constexpr Integer FLAG_MINS_ANC = -1;  // ancestor of a min: exclude from parent_mid
-          { // Set exclude flag for ancestors of mins
-            Long local_excl = 0;
-            const Morton<DIM> b0 = parent_mid[idx0];
-            const Morton<DIM> b1 = (idx1 < Nnodes ? parent_mid[idx1] : Morton<DIM>().Next());
-            const Long r0 = std::lower_bound(mins.begin(), mins.end(), b0) - mins.begin();
-            const Long r1 = std::lower_bound(mins.begin(), mins.end(), b1) - mins.begin();
-            for (Long r = r0; r < std::min<Long>(r1+1, np); r++) {
-              TreeNode* node = &ptree[0];
-              const Integer d0 = mins[r].Depth();
-              for (Integer d = 0; d < d0 && node; d++) {
-                if (node->m >= b0 && node->m < b1 && node->flags != FLAG_MINS_ANC) { // chains of consecutive mins share prefixes: count once
-                  node->flags = FLAG_MINS_ANC;
-                  local_excl++;
-                }
-                const Integer p2n = mins[r].Ancestor(d+1).Path2Node();
-                node = node->child[p2n];
-              }
-            }
-            shared_pnode_cnt[tid] = local_pnode_cnt - local_excl;
-            #pragma omp barrier
-          }
-
-          #pragma omp single
-          { // Resize parent_mid
-            std::exclusive_scan(shared_pnode_cnt.begin(), shared_pnode_cnt.begin()+nt, shared_pnode_dsp.begin(), Long(0));
-            parent_mid.ReInit(shared_pnode_dsp[nt-1] + shared_pnode_cnt[nt-1]);
-          }
-
-          if (idx0 < ptree.Dim()) { // preorder traversal to add local nodes to parent_mid
-            TreeNode* node = &ptree[idx0];
-            const Morton<DIM> m_end = (idx1 < ptree.Dim() ? ptree[idx1].m : Morton<DIM>().Next());
-            Long out = shared_pnode_dsp[tid];
-            while (node->m < m_end) {
-              if (node->flags != FLAG_MINS_ANC) parent_mid[out++] = node->m;
-
-              TreeNode* next = nullptr;
-              for (Integer k = 0; k < MAX_CHILD; k++) { // descend to first child
-                if (node->child[k]) { next = node->child[k]; break; }
-              }
-              while (next == nullptr && node->parent) { // no child, ascend to next sibling
-                TreeNode* const parent = node->parent;
-                const Integer p2n = node->m.Path2Node();
-                for (Integer k = p2n+1; k < MAX_CHILD; k++) {
-                  if (parent->child[k]) { next = parent->child[k]; break; }
-                }
-                node = parent;
-              }
-              if (next == nullptr) break; // ascended past root: end of tree
-              node = next;
-            }
-            SCTL_ASSERT(out == shared_pnode_dsp[tid] + shared_pnode_cnt[tid]);
-          }
-        }
       }
-
-      { // global_sort parent_mid and remove duplicates
-        Vector<Morton<DIM>> parent_mid_sorted;
-        comm.SampleSort(parent_mid, parent_mid_sorted, mins[comm.Rank()]);
-
-        ScratchBuf<Long> cnt(nthreads), dsp(nthreads);
-        if (parent_mid_sorted.Dim()) { // remove duplicates
-          #pragma omp parallel num_threads(nthreads)
-          {
-            const Integer nt = SCTL_GET_NUM_THREADS();
-            const Integer tid = SCTL_GET_THREAD_NUM();
-            const Long start = 1+((parent_mid_sorted.Dim()-1) *  tid     ) / nt;
-            const Long end   = 1+((parent_mid_sorted.Dim()-1) * (tid + 1)) / nt;
-
-            Long loc_cnt = 0;
-            for (Long j = start; j < end; j++) {
-              if (parent_mid_sorted[j]!=parent_mid_sorted[j-1]) loc_cnt++;
-            }
-            cnt[tid] = loc_cnt;
-
-            #pragma omp barrier
-            #pragma omp single
-            {
-              std::exclusive_scan(cnt.begin(), cnt.begin()+nt, dsp.begin(), Long(1));
-              parent_mid.ReInit(dsp[nt-1] + cnt[nt-1]);
-              parent_mid[0] = parent_mid_sorted[0];
-            } // implicit barrier at end of single
-
-            Long loc_idx = dsp[tid];
-            for (Long j = start; j < end; j++) {
-              if (parent_mid_sorted[j]!=parent_mid_sorted[j-1]) parent_mid[loc_idx++] = parent_mid_sorted[j];
-            }
-          }
-        } else {
-          parent_mid.ReInit(0);
-        }
-      }
+      tree_detail::Balance21<DIM>(parent_mid, mins, comm, periodicity);
 
       if (parent_mid.Dim()) { // add children of parent_mid
         const Integer nthreads = SCTL_GET_MAX_THREADS();

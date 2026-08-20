@@ -99,6 +99,7 @@ template <Integer DIM> class Tree {
      */
     template <class Real> void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, Periodicity periodicity = Periodicity::NONE, Integer halo_size = -1);
 
+
     /**
      * Add named data to the tree nodes.
      *
@@ -172,8 +173,6 @@ template <Integer DIM> class Tree {
     static void scan(Vector<Long>& dsp, const Vector<Long>& cnt);
 
   private:
-
-    template <class T> class NodeArena; // defined in tree.txx
 
     Vector<Morton<DIM>> mins;
     Vector<Morton<DIM>> node_mid;
