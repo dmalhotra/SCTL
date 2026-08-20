@@ -5,6 +5,7 @@
 #define _SCTL_EXPERIMENTAL_GPU_TREE_TXX_
 
 #include <thrust/copy.h>
+#include <thrust/merge.h>
 #include <thrust/count.h>
 #include <thrust/device_ptr.h>
 #include <thrust/for_each.h>
@@ -831,6 +832,8 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
 
 }  // namespace detail_balance21
 
+
+
 // --- hybrid balance: closure on the host over the non-leaf set, leaves repopulated on device ---
 // Same rule as detail_balance21, but the iteration runs on the host with OpenMP. The non-leaf set
 // is ~1/2^DIM of the tree, so both the transfer and the closure work are a small fraction, and
@@ -928,6 +931,28 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
     thrust::copy(rt.begin(), rt.end(), full.begin() + nl_ + Nn);
 
     const Long Nf = (Long)full.size();
+#if defined(GT_BALANCE_GPU_STAGE1) && GT_BALANCE_GPU_STAGE1
+    { // stage 1 on the device: close the non-leaf set before it goes to the host
+      DeviceVector<NodeT> nlv;
+      { DeviceVector<Long> ix(Nf);
+        const Long k = thrust::copy_if(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nf), ix.begin(),
+                                       NonLeafPred<DIM>{thrust::raw_pointer_cast(full.data()), Nf, NodeT{}.Next()}) - ix.begin();
+        nlv.resize(k);
+        thrust::gather(ix.begin(), ix.begin() + k, full.begin(), nlv.begin());
+      }
+#if GT_BALANCE_GPU_STAGE1 == 3
+      detail_balance21_gpu::ClosureFrontier<DIM>(nlv);
+#elif GT_BALANCE_GPU_STAGE1 == 2
+      detail_balance21_gpu::ClosureLevels<DIM>(nlv);
+#else
+      detail_balance21_gpu::Closure<DIM>(nlv);
+#endif
+      tick("device: stage1 closure");
+      S.ReInit((Long)nlv.size());
+      thrust::copy(nlv.begin(), nlv.end(), S.begin());
+      tick("PCIe: D->H");
+    }
+#else
     const NonLeafPred<DIM> is_nonleaf{thrust::raw_pointer_cast(full.data()), Nf, NodeT{}.Next()};
     if constexpr (detail::is_device_vector_v<DeviceVector<NodeT>>) {
       DeviceVector<Long> nl(Nf);
@@ -958,6 +983,7 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
       tick("device: extract");
       tick("PCIe: D->H");
     }
+#endif
   }
 
   { // sctl's balance21 over the non-leaf set (host, OpenMP); it also redistributes by mins
@@ -982,6 +1008,426 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
 }
 
 }  // namespace detail_balance21_host
+
+// --- stage 1 of Balance21 on the device -------------------------------------------------
+// Local 2:1 closure over the sorted non-leaf set: for each non-leaf, every same-depth neighbor
+// must exist, so that neighbor's parent must be non-leaf too. Array-based (a pointer tree is a
+// poor GPU fit); the global sort + dedup (stage 2) still runs on the host.
+namespace detail_balance21_gpu {
+using detail::local_sort;
+
+// Slot k of node t = parent of its k-th same-depth neighbor; the self slot yields the node's own
+// parent, which is what keeps S ancestor-closed. INVALID when already in S.
+template <Integer DIM> struct ParentNbrFunctor {
+  static constexpr Integer K = sctl::pow<DIM, Integer>(3);
+  const Morton<DIM>* S;
+  Long n;
+  Long base;
+  Morton<DIM>* out;
+
+  SCTL_GPU_HD void operator()(Long t) const {
+    using NodeT = Morton<DIM>;
+    NodeT inv;
+    inv.depth = NodeT::INVALID_DEPTH;
+    NodeT* const w = out + (t - base) * K;
+    const NodeT s = S[t];
+    const Integer d = s.Depth();
+    if (!d) { for (Integer k = 0; k < K; k++) w[k] = inv; return; }  // root
+    const auto nbrs = s.NbrList((uint8_t)d, sctl::Periodicity::NONE);
+    for (Integer k = 0; k < K; k++) {
+      const NodeT& nb = nbrs[k];
+      if (nb.Depth() == NodeT::INVALID_DEPTH) { w[k] = inv; continue; }  // outside the domain
+      const NodeT p = nb.Ancestor((uint8_t)(d - 1));
+      Long lo = 0, hi = n;
+      while (lo < hi) {
+        const Long m = lo + (hi - lo) / 2;
+        if (S[m] < p) lo = m + 1;
+        else          hi = m;
+      }
+      w[k] = (lo < n && !(S[lo] < p) && !(p < S[lo])) ? inv : p;
+    }
+  }
+};
+
+template <Integer DIM, template <class...> class DeviceVector>
+void Closure(DeviceVector<Morton<DIM>>& S) {
+  using NodeT = Morton<DIM>;
+  constexpr Integer K = sctl::pow<DIM, Integer>(3);
+  for (int round = 0; round < 4 * MAX_DEPTH; round++) {
+    const Long n = (Long)S.size();
+    const Long chunk = std::min<Long>(std::max<Long>(n, 1), 4000000 / K + 1);
+    DeviceVector<NodeT> buf(chunk * K), add;
+    Long nadd = 0;
+    for (Long c0 = 0; c0 < n; c0 += chunk) {
+      const Long nc = std::min<Long>(chunk, n - c0);
+      const ParentNbrFunctor<DIM> f{thrust::raw_pointer_cast(S.data()), n, c0, thrust::raw_pointer_cast(buf.data())};
+      thrust::for_each_n(thrust::counting_iterator<Long>(c0), nc, f);
+      const Long nkeep = thrust::remove_if(buf.begin(), buf.begin() + nc * K, detail_balance21::InvalidDepthPred<DIM>{}) - buf.begin();
+      add.resize(nadd + nkeep);
+      thrust::copy(buf.begin(), buf.begin() + nkeep, add.begin() + nadd);
+      nadd += nkeep;
+    }
+    if (!nadd) break;
+    local_sort(add, nadd);
+    nadd = thrust::unique(add.begin(), add.begin() + nadd, detail_balance21::NodeEqPred<DIM>{}) - add.begin();
+
+    DeviceVector<NodeT> merged(n + nadd);
+    thrust::merge(S.begin(), S.end(), add.begin(), add.begin() + nadd, merged.begin());
+    const Long m = thrust::unique(merged.begin(), merged.end(), detail_balance21::NodeEqPred<DIM>{}) - merged.begin();
+    merged.resize(m);
+    S = std::move(merged);
+    if (m == n) break;  // nothing new
+  }
+}
+
+
+// Level-wise closure: bucket the non-leaf nodes by depth, then sweep from the finest level to the
+// coarsest. At each level, take the de-duplicated parents of that level's nodes, add those parents'
+// 3^DIM same-depth neighbors, merge into the level below, sort and de-duplicate. One pass, no
+// membership tests -- the ripple propagates coarse-ward as the sweep proceeds.
+template <Integer DIM> struct DepthEq {
+  Integer d;
+  SCTL_GPU_HD bool operator()(const Morton<DIM>& m) const { return (Integer)m.Depth() == d; }
+};
+
+template <Integer DIM> struct ToParent {
+  SCTL_GPU_HD Morton<DIM> operator()(const Morton<DIM>& m) const { return m.Ancestor((uint8_t)(m.Depth() - 1)); }
+};
+
+// The parents of a node's 3^DIM same-depth neighbors are at most 2^DIM distinct parent-neighbors
+// (the 3^DIM block spans 2^DIM parent boxes). p_nbr_lst[p2n] lists those, so each node emits 2^DIM
+// slots instead of 3^DIM and computes one neighbor list at the parent level instead of at its own.
+template <Integer DIM> struct NbrParentExpand {
+  static constexpr Integer MAX_CHILD = (1u << DIM);
+  static constexpr Integer K = sctl::pow<DIM, Integer>(3);
+  const Morton<DIM>* S;
+  const Integer* p_nbr_lst;  // MAX_CHILD x K, first p_nbr_cnt[p2n] entries valid
+  const Integer* p_nbr_cnt;
+  Long base;
+  Morton<DIM>* out;          // MAX_CHILD slots per node
+
+  SCTL_GPU_HD void operator()(Long t) const {
+    using NodeT = Morton<DIM>;
+    const NodeT s = S[t];
+    const Integer d = s.Depth();
+    const NodeT p = s.Ancestor((uint8_t)(d - 1));
+    const auto pnbrs = p.NbrList((uint8_t)(d - 1), sctl::Periodicity::NONE);
+    const Integer p2n = s.Path2Node();
+    NodeT* const w = out + (t - base) * MAX_CHILD;
+    NodeT inv;
+    inv.depth = NodeT::INVALID_DEPTH;
+    Integer j = 0;
+    for (; j < p_nbr_cnt[p2n]; j++) w[j] = pnbrs[p_nbr_lst[p2n * K + j]];
+    for (; j < MAX_CHILD; j++) w[j] = inv;
+  }
+};
+
+template <Integer DIM> struct NbrExpand {  // 3^DIM slots per node, INVALID outside the domain
+  static constexpr Integer K = sctl::pow<DIM, Integer>(3);
+  const Morton<DIM>* P;
+  Long base;
+  Morton<DIM>* out;
+  SCTL_GPU_HD void operator()(Long t) const {
+    const Morton<DIM> p = P[t];
+    const auto nbrs = p.NbrList(p.Depth(), sctl::Periodicity::NONE);
+    Morton<DIM>* const w = out + (t - base) * K;
+    for (Integer k = 0; k < K; k++) w[k] = nbrs[k];
+  }
+};
+
+template <Integer DIM, template <class...> class DeviceVector>
+void ClosureLevels(DeviceVector<Morton<DIM>>& S) {
+  using NodeT = Morton<DIM>;
+  constexpr Integer K = sctl::pow<DIM, Integer>(3);
+  constexpr Integer MAX_CHILD = (1u << DIM);
+  DeviceVector<Integer> pl_d, pc_d;
+  { // distinct parent-neighbors per child slot, from sctl's nbr_path table
+    std::vector<Integer> pl(MAX_CHILD * K, 0), pc(MAX_CHILD, 0);
+    const auto& tbl = sctl::tree_detail::nbr_path_table<DIM>();
+    for (Integer i = 0; i < MAX_CHILD; i++) {
+      for (Integer k = 0; k < K; k++) {
+        const Integer v = tbl[i][k].p_nbr;
+        bool seen = false;
+        for (Integer j = 0; j < pc[i]; j++) seen |= (pl[i * K + j] == v);
+        if (!seen) pl[i * K + pc[i]++] = v;
+      }
+      SCTL_ASSERT(pc[i] <= MAX_CHILD);
+    }
+    pl_d = DeviceVector<Integer>(pl.begin(), pl.end());
+    pc_d = DeviceVector<Integer>(pc.begin(), pc.end());
+  }
+  const bool prof = (getenv("GTLVL") != nullptr);  // TEMP per-stage/per-level breakdown
+  double acc[6] = {0,0,0,0,0,0};
+  const auto now = [prof]() {
+#if defined(__CUDACC__) || defined(__HIPCC__)
+    if (prof) cudaDeviceSynchronize();
+#endif
+    return SCTL_GET_WTIME();
+  };
+  const auto sortv = [](DeviceVector<NodeT>& v) { local_sort(v, (Long)v.size()); };
+  const auto uniq  = [](DeviceVector<NodeT>& v) { v.resize(thrust::unique(v.begin(), v.end(), detail_balance21::NodeEqPred<DIM>{}) - v.begin()); };
+  const auto dedup = [&sortv,&uniq](DeviceVector<NodeT>& v) { sortv(v); uniq(v); };
+
+  double t0 = now();
+  std::vector<DeviceVector<NodeT>> L(MAX_DEPTH + 1);
+  for (Integer d = 0; d <= MAX_DEPTH; d++) {  // bucket by level
+    L[d].resize(S.size());
+    L[d].resize(thrust::copy_if(S.begin(), S.end(), L[d].begin(), DepthEq<DIM>{d}) - L[d].begin());
+  }
+  const double t_bucket = now() - t0;
+  if (prof) fprintf(stderr, "        [lvl] bucket %6.2f ms\n", t_bucket*1e3);
+
+  for (Integer d = MAX_DEPTH; d >= 1; d--) {
+    const Long nd = (Long)L[d].size();
+    if (!nd) continue;
+    const double ta = now();
+    DeviceVector<NodeT> nb(nd * MAX_CHILD);  // required parent-neighbors (includes the own parent)
+    thrust::for_each_n(thrust::counting_iterator<Long>(0), nd, NbrParentExpand<DIM>{thrust::raw_pointer_cast(L[d].data()),
+        thrust::raw_pointer_cast(pl_d.data()), thrust::raw_pointer_cast(pc_d.data()), 0, thrust::raw_pointer_cast(nb.data())});
+    const double tb = now();
+    nb.resize(thrust::remove_if(nb.begin(), nb.end(), detail_balance21::InvalidDepthPred<DIM>{}) - nb.begin());
+    const double tc = now();
+    sortv(nb);  // sort only the new nodes; the level below is already sorted, so merge into it
+    const double td = now();
+    uniq(nb);
+    const Long nnb = (Long)nb.size();
+    DeviceVector<NodeT> u((Long)L[d - 1].size() + nnb);
+    thrust::merge(L[d - 1].begin(), L[d - 1].end(), nb.begin(), nb.end(), u.begin());
+    const double te = now();
+    u.resize(thrust::unique(u.begin(), u.end(), detail_balance21::NodeEqPred<DIM>{}) - u.begin());
+    const double tf = now();
+    acc[0]+=tb-ta; acc[1]+=tc-tb; acc[2]+=td-tc; acc[3]+=te-td; acc[4]+=tf-te;
+    if (prof) fprintf(stderr, "        [lvl %2d] nodes=%7ld new=%7ld | expand %5.2f filter %5.2f sort %5.2f merge %5.2f uniq %5.2f = %6.2f ms\n",
+                      (int)d, nd, nnb, (tb-ta)*1e3, (tc-tb)*1e3, (td-tc)*1e3, (te-td)*1e3, (tf-te)*1e3, (tf-ta)*1e3);
+    L[d - 1] = std::move(u);
+  }
+
+  const double t_g = now();
+  DeviceVector<NodeT> out;  // gather: each level is sorted, so merge them pairwise
+  for (const auto& l : L) {
+    if (!l.size()) continue;
+    DeviceVector<NodeT> u((Long)out.size() + (Long)l.size());
+    thrust::merge(out.begin(), out.end(), l.begin(), l.end(), u.begin());
+    out = std::move(u);
+  }
+  out.resize(thrust::unique(out.begin(), out.end(), detail_balance21::NodeEqPred<DIM>{}) - out.begin());
+  acc[5] = now() - t_g;
+  if (prof) {
+    fprintf(stderr, "        [lvl] TOTALS  bucket %5.2f  expand %5.2f  filter %5.2f  sort %5.2f  merge %5.2f  uniq %5.2f  gather %5.2f ms\n",
+            t_bucket*1e3, acc[0]*1e3, acc[1]*1e3, acc[2]*1e3, acc[3]*1e3, acc[4]*1e3, acc[5]*1e3);
+  }
+  S = std::move(out);
+}
+
+
+// Frontier closure: expand only the nodes added in the previous round. Each node contributes the
+// de-duplicated parents of its 3^DIM neighbors (at most 2^DIM, via the p2n map) and they are looked
+// up in the non-leaf set rather than the whole tree.
+template <Integer DIM> struct ParentNbrSearch {
+  static constexpr Integer MAX_CHILD = (1u << DIM);
+  static constexpr Integer K = sctl::pow<DIM, Integer>(3);
+  const Morton<DIM>* F;      // frontier nodes to expand
+  const Morton<DIM>* S;      // sorted non-leaf set to search
+  Long ns;
+  const Integer* p_nbr_lst;
+  const Integer* p_nbr_cnt;
+  Long base;
+  Morton<DIM>* out;          // MAX_CHILD slots per frontier node
+
+  SCTL_GPU_HD void operator()(Long t) const {
+    using NodeT = Morton<DIM>;
+    NodeT inv;
+    inv.depth = NodeT::INVALID_DEPTH;
+    NodeT* const w = out + (t - base) * MAX_CHILD;
+    const NodeT s = F[t];
+    const Integer d = s.Depth();
+    Integer j = 0;
+    if (d) {
+      const NodeT p = s.Ancestor((uint8_t)(d - 1));
+      const auto pnbrs = p.NbrList((uint8_t)(d - 1), sctl::Periodicity::NONE);
+      const Integer p2n = s.Path2Node();
+      for (; j < p_nbr_cnt[p2n]; j++) {
+        const NodeT q = pnbrs[p_nbr_lst[p2n * K + j]];
+        if (q.Depth() == NodeT::INVALID_DEPTH) { w[j] = inv; continue; }
+        Long lo = 0, hi = ns;
+        while (lo < hi) {
+          const Long m = lo + (hi - lo) / 2;
+          if (S[m] < q) lo = m + 1;
+          else          hi = m;
+        }
+        w[j] = (lo < ns && !(S[lo] < q) && !(q < S[lo])) ? inv : q;
+      }
+    }
+    for (; j < MAX_CHILD; j++) w[j] = inv;
+  }
+};
+
+template <Integer DIM, template <class...> class DeviceVector>
+void ClosureFrontier(DeviceVector<Morton<DIM>>& S) {
+  using NodeT = Morton<DIM>;
+  constexpr Integer K = sctl::pow<DIM, Integer>(3);
+  constexpr Integer MAX_CHILD = (1u << DIM);
+  DeviceVector<Integer> pl_d, pc_d;
+  { // distinct parent-neighbors per child slot, from sctl's nbr_path table
+    std::vector<Integer> pl(MAX_CHILD * K, 0), pc(MAX_CHILD, 0);
+    const auto& tbl = sctl::tree_detail::nbr_path_table<DIM>();
+    for (Integer i = 0; i < MAX_CHILD; i++) {
+      for (Integer k = 0; k < K; k++) {
+        const Integer v = tbl[i][k].p_nbr;
+        bool seen = false;
+        for (Integer j = 0; j < pc[i]; j++) seen |= (pl[i * K + j] == v);
+        if (!seen) pl[i * K + pc[i]++] = v;
+      }
+    }
+    pl_d = DeviceVector<Integer>(pl.begin(), pl.end());
+    pc_d = DeviceVector<Integer>(pc.begin(), pc.end());
+  }
+
+  DeviceVector<NodeT> F(S.size());  // first round expands the whole set
+  thrust::copy(S.begin(), S.end(), F.begin());
+  const bool prof = (getenv("GTFR") != nullptr);
+  for (int round = 0; round < 4 * MAX_DEPTH; round++) {
+    const Long nf = (Long)F.size(), ns = (Long)S.size();
+    if (!nf) break;
+    DeviceVector<NodeT> add;
+    Long nadd = 0;
+    const Long chunk = std::min<Long>(nf, 4000000 / MAX_CHILD + 1);
+    DeviceVector<NodeT> buf(chunk * MAX_CHILD);
+    for (Long c0 = 0; c0 < nf; c0 += chunk) {
+      const Long nc = std::min<Long>(chunk, nf - c0);
+      thrust::for_each_n(thrust::counting_iterator<Long>(c0), nc, ParentNbrSearch<DIM>{
+          thrust::raw_pointer_cast(F.data()), thrust::raw_pointer_cast(S.data()), ns,
+          thrust::raw_pointer_cast(pl_d.data()), thrust::raw_pointer_cast(pc_d.data()), c0,
+          thrust::raw_pointer_cast(buf.data())});
+      const Long nkeep = thrust::remove_if(buf.begin(), buf.begin() + nc * MAX_CHILD, detail_balance21::InvalidDepthPred<DIM>{}) - buf.begin();
+      add.resize(nadd + nkeep);
+      thrust::copy(buf.begin(), buf.begin() + nkeep, add.begin() + nadd);
+      nadd += nkeep;
+    }
+    if (!nadd) break;
+    local_sort(add, nadd);
+    add.resize(thrust::unique(add.begin(), add.begin() + nadd, detail_balance21::NodeEqPred<DIM>{}) - add.begin());
+    if (prof) fprintf(stderr, "        [frontier %d] expanded=%ld new=%ld\n", round, nf, (long)add.size());
+
+    DeviceVector<NodeT> u(ns + (Long)add.size());  // both sorted -> merge
+    thrust::merge(S.begin(), S.end(), add.begin(), add.end(), u.begin());
+    S = std::move(u);
+    F = std::move(add);  // next round expands only the new nodes
+  }
+}
+
+
+// Stage 2 on the device: redistribute the closed non-leaf set so rank r keeps [mins[r], mins[r+1]),
+// then de-duplicate. Device buffers go straight into MPI (CUDA-aware), so nothing leaves the GPU.
+template <Integer DIM, template <class...> class DeviceVector>
+void Stage2(DeviceVector<Morton<DIM>>& S, const sctl::Vector<Morton<DIM>>& mins, const Comm& comm) {
+  using NodeT = Morton<DIM>;
+  const Long np = comm.Size();
+  const bool adprof = (getenv("GTAD") != nullptr);  // TEMP
+  double t_ad = 0;
+  const auto admark = [&](const char* nm) {
+    if (!adprof) return;
+#if defined(__CUDACC__) || defined(__HIPCC__)
+    cudaDeviceSynchronize();
+#endif
+    comm.Barrier();
+    const double t = SCTL_GET_WTIME();
+    if (!comm.Rank() && nm) fprintf(stderr, "    AD %-12s %8.2f ms\n", nm, (t - t_ad) * 1e3);
+    t_ad = t;
+  };
+  admark(nullptr);
+  const auto uniq = [](DeviceVector<NodeT>& v) {
+    v.resize(thrust::unique(v.begin(), v.end(), detail_balance21::NodeEqPred<DIM>{}) - v.begin());
+  };
+  if (np == 1) { uniq(S); return; }
+
+#ifdef SCTL_HAVE_MPI
+  sctl::ScratchBuf<Long> scnt(np), rcnt(np);
+  { // S is sorted, so each rank's block is contiguous: split at the mins
+    DeviceVector<NodeT> mins_d(mins.begin(), mins.end());
+    DeviceVector<Long> pos_d(np);
+    thrust::lower_bound(S.begin(), S.end(), mins_d.begin(), mins_d.end(), pos_d.begin());
+    sctl::ScratchBuf<Long> pos(np + 1);
+    thrust::copy(pos_d.begin(), pos_d.end(), pos.begin());
+    pos[np] = (Long)S.size();
+    for (Long r = 0; r < np; r++) scnt[r] = pos[r + 1] - pos[r];
+  }
+  admark("s2-split");
+  comm.Alltoall(scnt.begin(), 1, rcnt.begin(), 1);
+  Long Nrecv = 0;
+  for (Long r = 0; r < np; r++) Nrecv += rcnt[r];
+
+  DeviceVector<NodeT> recv(Nrecv);
+  { sctl::ScratchBuf<int> sc(np), sd(np), rc(np), rd(np);
+    for (Long r = 0; r < np; r++) { sc[r] = int(scnt[r] * sizeof(NodeT)); rc[r] = int(rcnt[r] * sizeof(NodeT)); }
+    std::exclusive_scan(sc.begin(), sc.end(), sd.begin(), 0);
+    std::exclusive_scan(rc.begin(), rc.end(), rd.begin(), 0);
+    MPI_Alltoallv(thrust::raw_pointer_cast(S.data()), &sc[0], &sd[0], MPI_BYTE,
+                  thrust::raw_pointer_cast(recv.data()), &rc[0], &rd[0], MPI_BYTE, comm.GetMPI_Comm());
+  }
+  admark("s2-alltoallv");
+  local_sort(recv, Nrecv);  // np sorted runs -> one sorted block
+  uniq(recv);
+  admark("s2-sort+uniq");
+  S = std::move(recv);
+#endif
+}
+
+// Whole 2:1 balance on the device: extract the non-leaf set, close it, redistribute, rebuild leaves.
+template <Integer DIM, template <class...> class DeviceVector>
+void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<DIM>>& mins, const Comm& comm) {
+  using NodeT = Morton<DIM>;
+  const Long rank = comm.Rank(), np = comm.Size();
+  const NodeT end_target = (rank + 1 < np) ? mins[rank + 1] : NodeT{}.Next();
+  const Long Nn = (Long)tree.size();
+  const bool adprof = (getenv("GTAD") != nullptr);  // TEMP
+  double t_ad = 0;
+  const auto admark = [&](const char* nm) {
+    if (!adprof) return;
+#if defined(__CUDACC__) || defined(__HIPCC__)
+    cudaDeviceSynchronize();
+#endif
+    comm.Barrier();
+    const double t = SCTL_GET_WTIME();
+    if (!comm.Rank() && nm) fprintf(stderr, "    AD %-12s %8.2f ms\n", nm, (t - t_ad) * 1e3);
+    t_ad = t;
+  };
+  admark(nullptr);
+
+  DeviceVector<NodeT> S;
+  { // extend the slice to the whole domain, then take its non-leaf nodes
+    DeviceVector<NodeT> lf, rt;
+    if (rank > 0) detail::rebuildFromAnchors<DIM>(lf, nullptr, 0, NodeT{}, mins[rank]);
+    if (rank + 1 < np) detail::rebuildFromAnchors<DIM>(rt, nullptr, 0, end_target, NodeT{}.Next());
+    const Long nl_ = (Long)lf.size(), nr_ = (Long)rt.size();
+    DeviceVector<NodeT> full(nl_ + Nn + nr_);
+    thrust::copy(lf.begin(), lf.end(), full.begin());
+    thrust::copy(tree.begin(), tree.end(), full.begin() + nl_);
+    thrust::copy(rt.begin(), rt.end(), full.begin() + nl_ + Nn);
+
+    const Long Nf = (Long)full.size();
+    DeviceVector<Long> ix(Nf);
+    const Long k = thrust::copy_if(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nf), ix.begin(),
+                                   detail_balance21::NonLeafPred<DIM>{thrust::raw_pointer_cast(full.data()), Nf, NodeT{}.Next()}) - ix.begin();
+    S.resize(k);
+    thrust::gather(ix.begin(), ix.begin() + k, full.begin(), S.begin());
+  }
+  admark("extract");
+  ClosureFrontier<DIM>(S);
+  admark("closure");
+  Stage2<DIM>(S, mins, comm);
+  admark(nullptr);
+
+  { // leaves: the walk between the first children of consecutive non-leaf nodes
+    DeviceVector<NodeT> anch(S.size());
+    thrust::transform(S.begin(), S.end(), anch.begin(), detail_balance21_host::FirstChildInSlice<DIM>{mins[rank], end_target});
+    const Long na = thrust::remove_if(anch.begin(), anch.end(), detail_balance21::InvalidDepthPred<DIM>{}) - anch.begin();
+    detail::rebuildFromAnchors<DIM>(tree, thrust::raw_pointer_cast(anch.data()), na, mins[rank], end_target);
+  }
+  admark("leaves");
+}
+
+}  // namespace detail_balance21_gpu
 
 // Ghost-layer placeholders (distributed), mirroring Tree::UpdateRefinement's halo scheme: send
 // each owned node to every rank whose owned interval meets its coarse neighborhood (NbrList at
@@ -1326,7 +1772,9 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
   }
   mark("walk (linearize)");
 
-#if defined(GT_BALANCE_HOST) && GT_BALANCE_HOST
+#if defined(GT_BALANCE_DEVICE) && GT_BALANCE_DEVICE
+  if (balance21) detail_balance21_gpu::balanceTreeDist<DIM>(tree, sctl::Vector<Morton<DIM>>(mins), comm);
+#elif defined(GT_BALANCE_HOST) && GT_BALANCE_HOST
   if (balance21) detail_balance21_host::balanceTreeDist<DIM>(tree, sctl::Vector<Morton<DIM>>(mins), comm);
 #else
   if (balance21) detail_balance21::balanceTreeDist<DIM>(tree, sctl::Vector<Morton<DIM>>(mins), comm);
