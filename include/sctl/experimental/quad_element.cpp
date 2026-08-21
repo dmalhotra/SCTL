@@ -2208,11 +2208,20 @@ namespace sctl {
     };
 
     Real u, v;
-    Real f = GetClosestNode(u, v, elem_idx, Xtrg);
+    const Real d0 = GetClosestNode(u, v, elem_idx, Xtrg);
+    Real f = d0 * d0;
 
     constexpr Integer max_iter = 30;
     const Real utol = (Real)machine_eps<Real>() * 64;
     const Real gtol = sqrt<Real>(machine_eps<Real>()) * 16;
+    // Roundoff-tolerant line-search accept: a near-touching foot sits at the f=|y-x|^2 rounding
+    // floor, where no clamped step gives STRICT decrease -- so a strict `fn < f` test false-stalls
+    // and drops to the (expensive) grid-search fallback. Accept a step within rounding of f instead
+    // (CSBQ does exactly this in its slender near solve: slender_element.cpp, d2 < d2_*(1+sqrt(eps))).
+    const Real c_eps = machine_eps<Real>() * 8;
+    // Relaxed first-order optimality scale for the stall branch: a point that failed the strict KKT
+    // test above may still be stationary to rounding; accept it as converged rather than falling back.
+    const Real gtol_stall = sqrt<Real>(machine_eps<Real>()) * 256;
     bool converged = false;
     Integer iters = 0;
     for (Integer it = 0; it < max_iter; it++) {
@@ -2258,7 +2267,7 @@ namespace sctl {
         du = gu / (E + (Real)1e-30);   // 1D Newton along the u-edge, v held at its bound
       }
 
-      // Backtrack on the clamped Newton step until f decreases.
+      // Backtrack on the clamped Newton step until f decreases (or is within its rounding floor).
       Real lambda = 1;
       bool improved = false;
       Real un = u, vn = v, fn = f;
@@ -2266,7 +2275,7 @@ namespace sctl {
         un = std::min<Real>(1, std::max<Real>(0, u - lambda*du));
         vn = std::min<Real>(1, std::max<Real>(0, v - lambda*dv));
         fn = dist2_at(un, vn);
-        if (fn < f) { improved = true; break; }
+        if (fn <= f * (1 + c_eps)) { improved = true; break; }   // decrease OR within f's rounding floor
         lambda *= (Real)0.5;
       }
       // If the clamped Newton step stalls, retry along the projected (metric-scaled) gradient.
@@ -2277,11 +2286,20 @@ namespace sctl {
           un = std::min<Real>(1, std::max<Real>(0, u - lambda*gu_s));
           vn = std::min<Real>(1, std::max<Real>(0, v - lambda*gv_s));
           fn = dist2_at(un, vn);
-          if (fn < f) { improved = true; break; }
+          if (fn <= f * (1 + c_eps)) { improved = true; break; }   // decrease OR within f's rounding floor
           lambda *= (Real)0.5;
         }
       }
-      if (!improved) break; // genuine stall -> grid-search fallback
+      if (!improved) {
+        // No accepted step from either line search. Treat an already-stationary or step-floored
+        // point (after >=1 successful step) as converged instead of dropping to the grid search --
+        // the false stalls that dominate the near-setup cost live here. Genuine non-convergence
+        // (first-iteration bad basin, ill-conditioned metric) still falls back.
+        const bool stat = (fabs(Pu) <= gtol_stall * sqrt<Real>(E*f)) && (fabs(Pv) <= gtol_stall * sqrt<Real>(G*f));
+        const bool tiny = (fabs(du) < utol && fabs(dv) < utol);
+        if (iters > 1 && (stat || tiny)) converged = true;
+        break;
+      }
       const bool small_step = (fabs(un-u) < utol && fabs(vn-v) < utol);
       u = un; v = vn; f = fn;
       if (small_step) { converged = true; break; }
@@ -2710,6 +2728,67 @@ namespace sctl {
     target.WriteVTK(fname + "-target", comm);
   }
 
+  template <class Real> void QuadElemList<Real>::WriteNearInteracGradedVTK(const std::string& fname, const Long elem_idx, const Vector<Real>& Xtrg, const Real tol, const Comm& comm) const {
+    // Reconstruct THE production adaptive near rule (BuildNearTensorRule): the foot-graded
+    // separable tensor grid over the whole panel, and dump each (u-seg x v-seg) cell as its own
+    // QuadOrder x QuadOrder GL-node patch of VTK_QUAD cells (mirrors NearInteracBlockGraded's rule,
+    // NOT the superseded isotropic quadtree of WriteNearInteracVTK). Cells cluster toward the foot
+    // (u*,v*) and read as four quadrants meeting there. Target in a separate file.
+    Real b_ellipse; Integer QuadOrder;
+    NearRhoRule(tol, b_ellipse, QuadOrder);
+    Vector<Real> qnds, qwts;
+    LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, QuadOrder);
+
+    // Two 1D foot-graded partitions (in u and v) + their full tensor product, with the per-side
+    // segment boundaries/depths so cells can be delineated and colored.
+    Vector<Real> u_param, wu, v_param, wv, useg, vseg;
+    Vector<Long> useg_depth, vseg_depth;
+    BuildNearTensorRule(u_param, wu, v_param, wv, &useg, &useg_depth, &vseg, &vseg_depth,
+                        *this, elem_idx, Xtrg, b_ellipse, qnds, qwts, max_depth_);
+    const Long nu_seg = useg.Dim()/2, nv_seg = vseg.Dim()/2;
+
+    VTUData vtu;
+    Vector<Real> u_cell(QuadOrder), v_cell(QuadOrder), Xg;
+    // One (u-seg si) x (v-seg sj) cell -> its own QuadOrder x QuadOrder GL node patch of VTK_QUAD
+    // cells; point_offset resets per cell so cells never bridge two quadrature cells. Colored by
+    // the cell's grading depth = max(u-side depth, v-side depth).
+    for (Long si = 0; si < nu_seg; si++) {
+      for (Integer a = 0; a < QuadOrder; a++) u_cell[a] = u_param[si*QuadOrder + a];
+      for (Long sj = 0; sj < nv_seg; sj++) {
+        for (Integer b = 0; b < QuadOrder; b++) v_cell[b] = v_param[sj*QuadOrder + b];
+        GetGeom(&Xg, nullptr, nullptr, nullptr, nullptr, u_cell, v_cell, elem_idx);
+
+        const Long point_offset = vtu.coord.Dim() / COORD_DIM;
+        const Real depth = (Real)std::max<Long>(useg_depth[si], vseg_depth[sj]);
+        for (Long p = 0; p < (Long)QuadOrder*QuadOrder; p++) {
+          for (Integer k = 0; k < COORD_DIM; k++) vtu.coord.PushBack((VTUData::VTKReal)Xg[p*COORD_DIM+k]);
+          vtu.value.PushBack((VTUData::VTKReal)depth);
+        }
+        for (Long i = 0; i < QuadOrder - 1; i++) {
+          for (Long j = 0; j < QuadOrder - 1; j++) {
+            const Long idx = point_offset + i * QuadOrder + j;
+            vtu.connect.PushBack(idx);
+            vtu.connect.PushBack(idx + 1);
+            vtu.connect.PushBack(idx + QuadOrder + 1);
+            vtu.connect.PushBack(idx + QuadOrder);
+            vtu.offset.PushBack(vtu.connect.Dim());
+            vtu.types.PushBack(9); // VTK_QUAD
+          }
+        }
+      }
+    }
+    vtu.WriteVTK(fname, comm);
+
+    // Target: a single VTK_VERTEX in its own file.
+    VTUData target;
+    for (Integer k = 0; k < COORD_DIM; k++) target.coord.PushBack((VTUData::VTKReal)Xtrg[k]);
+    target.value.PushBack(0);
+    target.connect.PushBack(0);
+    target.offset.PushBack(target.connect.Dim());
+    target.types.PushBack(1);
+    target.WriteVTK(fname + "-target", comm);
+  }
+
   template <class Real> void QuadElemList<Real>::WriteSelfInteracVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Real tol, const Comm& comm) const {
     // Reconstruct the on-surface self-interaction structure at (u0,v0): graded
     // u-refinement x 1D Alpert log-singular v-rule. Dumps the tensor nodes as a
@@ -2753,6 +2832,111 @@ namespace sctl {
     // Singular point: a single VTK_VERTEX at the on-surface target (u0,v0).
     VTUData singpt;
     for (Integer k = 0; k < COORD_DIM; k++) singpt.coord.PushBack((VTUData::VTKReal)Xtrg[k]);
+    singpt.value.PushBack(0);
+    singpt.connect.PushBack(0);
+    singpt.offset.PushBack(singpt.connect.Dim());
+    singpt.types.PushBack(1);
+    singpt.WriteVTK(fname + "-singpt", comm);
+  }
+
+  template <class Real> void QuadElemList<Real>::WriteSelfInteracGradedVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Real tol, const Comm& comm) const {
+    // Reconstruct the on-surface self rule as PANELS, matching SelfInteracBlock's tensor of
+    // centered graded-GL u-panels (BuildCenteredGraded1D) x centered composite-v panels
+    // (LogSingularQuad1DCentered). Every panel is a GL x GL patch EXCEPT the innermost v-row
+    // touching v0, whose v-nodes are the Alpert log-singular rule (still ordered within the panel).
+    // Each (u-panel, v-panel) cell -> its own VTK_QUAD patch; the point scalar flags the Alpert row.
+    Real b_ellipse; Integer QuadOrder;
+    QuadParams(tol, b_ellipse, QuadOrder);
+    const Integer digits = std::max<Integer>(0, (Integer)std::lround(-std::log10((double)std::max<Real>(tol, machine_eps<Real>()))));
+    const Integer Lvl = VLevelsForDigits(digits);
+
+    // Full node sets (offsets from (u0,v0)) -- the exact nodes SelfInteracBlock integrates.
+    Vector<Real> qnds, qwts;
+    LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, QuadOrder);
+    Vector<Real> du, wu, dv, wv;
+    BuildCenteredGraded1D(du, wu, u0, max_depth_, qnds, qwts);
+    LogSingularQuad1DCentered(dv, wv, v0, Lvl, QuadOrder);
+
+    // Panel intervals in param space (mirror the two builders' panel layouts exactly).
+    std::vector<std::pair<Real,Real>> upan, vpan;
+    std::vector<int> valert; // per v-panel: 1 iff Alpert singular row
+    auto push_iv = [](std::vector<std::pair<Real,Real>>& P, const Real p0, const Real p1) {
+      const Real lo = std::min(p0,p1), hi = std::max(p0,p1);
+      if (hi > lo) P.push_back({lo,hi});
+    };
+    // u: geometric-graded GL panels marching outward on each side of u0 (BuildCenteredGraded1D).
+    auto uside = [&](const Real Len, const Real sgn) {
+      if (!(Len > 0)) return;
+      Real a = 0;
+      for (Integer k = max_depth_; k >= 0; k--) { const Real b = Len*pow<Real>((Real)0.5,(Integer)k); push_iv(upan, u0+sgn*a, u0+sgn*b); a = b; }
+    };
+    uside(1-u0, (Real)+1); uside(u0, (Real)-1);
+    // v: Lvl geometric-graded GL panels + 1 Alpert panel touching v0, per side (LogSingularQuad1DCentered).
+    auto vside = [&](const Real Len, const Real sgn) {
+      if (!(Len > 0)) return;
+      Real prev = Len;
+      for (Integer i = 1; i <= Lvl; i++) { const Real bnd = Len*pow<Real>((Real)0.5,(Integer)i); push_iv(vpan, v0+sgn*bnd, v0+sgn*prev); valert.push_back(0); prev = bnd; }
+      push_iv(vpan, v0, v0+sgn*prev); valert.push_back(1); // innermost: Alpert, touches v0
+    };
+    vside(1-v0, (Real)+1); vside(v0, (Real)-1);
+
+    // Bucket every node into its panel (nearest-containing; no node sits exactly on a boundary),
+    // then sort within the panel so consecutive indices form a structured grid (Alpert row included).
+    auto bucket = [](const Vector<Real>& delta, const Real center, const std::vector<std::pair<Real,Real>>& P, std::vector<std::vector<Real>>& out) {
+      out.assign(P.size(), {});
+      for (Long i = 0; i < delta.Dim(); i++) {
+        const Real x = center + delta[i];
+        Long best = 0; Real bestd = -1;
+        for (Long k = 0; k < (Long)P.size(); k++) {
+          const Real d = (x < P[k].first ? P[k].first - x : (x > P[k].second ? x - P[k].second : (Real)0));
+          if (bestd < 0 || d < bestd) { bestd = d; best = k; }
+        }
+        out[best].push_back(x);
+      }
+      for (auto& v : out) std::sort(v.begin(), v.end());
+    };
+    std::vector<std::vector<Real>> unodes, vnodes;
+    bucket(du, u0, upan, unodes);
+    bucket(dv, v0, vpan, vnodes);
+
+    VTUData vtu;
+    Vector<Real> u_cell, v_cell, Xg;
+    for (Long si = 0; si < (Long)unodes.size(); si++) {
+      const Long nu = (Long)unodes[si].size();
+      if (nu < 2) continue;
+      u_cell.ReInit(nu); for (Long a = 0; a < nu; a++) u_cell[a] = unodes[si][a];
+      for (Long sj = 0; sj < (Long)vnodes.size(); sj++) {
+        const Long nv = (Long)vnodes[sj].size();
+        if (nv < 2) continue;
+        v_cell.ReInit(nv); for (Long b = 0; b < nv; b++) v_cell[b] = vnodes[sj][b];
+        GetGeom(&Xg, nullptr, nullptr, nullptr, nullptr, u_cell, v_cell, elem_idx); // AoS, u slow / v fast
+
+        const Long point_offset = vtu.coord.Dim() / COORD_DIM;
+        const Real flag = (Real)valert[sj];
+        for (Long p = 0; p < nu*nv; p++) {
+          for (Integer k = 0; k < COORD_DIM; k++) vtu.coord.PushBack((VTUData::VTKReal)Xg[p*COORD_DIM+k]);
+          vtu.value.PushBack((VTUData::VTKReal)flag);
+        }
+        for (Long i = 0; i < nu - 1; i++) {
+          for (Long j = 0; j < nv - 1; j++) {
+            const Long idx = point_offset + i*nv + j;
+            vtu.connect.PushBack(idx);
+            vtu.connect.PushBack(idx + 1);
+            vtu.connect.PushBack(idx + nv + 1);
+            vtu.connect.PushBack(idx + nv);
+            vtu.offset.PushBack(vtu.connect.Dim());
+            vtu.types.PushBack(9); // VTK_QUAD
+          }
+        }
+      }
+    }
+    vtu.WriteVTK(fname, comm);
+
+    // Singular point: a single VTK_VERTEX at the on-surface target (u0,v0).
+    Vector<Real> us0(1), vs0(1), Xs; us0[0] = u0; vs0[0] = v0;
+    GetGeom(&Xs, nullptr, nullptr, nullptr, nullptr, us0, vs0, elem_idx);
+    VTUData singpt;
+    for (Integer k = 0; k < COORD_DIM; k++) singpt.coord.PushBack((VTUData::VTKReal)Xs[k]);
     singpt.value.PushBack(0);
     singpt.connect.PushBack(0);
     singpt.offset.PushBack(singpt.connect.Dim());
@@ -2818,6 +3002,216 @@ namespace sctl {
     singpt.offset.PushBack(singpt.connect.Dim());
     singpt.types.PushBack(1); // VTK_VERTEX
     singpt.WriteVTK(fname + "-singpt", comm);
+  }
+
+  template <class Real> void QuadElemList<Real>::WriteSelfInteracDuffyVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Real tol, const Comm& comm) const {
+    // Reconstruct the Duffy edge-collapsed self rule at (u0,v0): four target-anchored triangles
+    // (base = one panel edge, apex = the singular point). Each triangle is parametrized by a radial
+    // GL variable s in [0,1] (order points, s=0 at the apex) and an along-edge variable t in [0,1]
+    // whose nodes are the sinh substitution clustered at the metric foot t*. Mirrors
+    // SelfInteracBlockDuffy exactly. Each triangle -> its own (ns x nt) VTK_QUAD patch; the s=0 row
+    // collapses onto the apex, so the cells fan out from the singular point. Point scalar = triangle
+    // index 0..3. Singular point in a separate file.
+    const Integer digits = std::max<Integer>(0, (Integer)std::lround(-std::log10((double)std::max<Real>(tol, machine_eps<Real>()))));
+    const Integer ns = order;
+    const Integer nt = DuffyTOrder(digits, order, /*kdim0 (scalar Laplace SL)*/ 1);
+
+    Vector<Real> sn, sw, tn0, tw0;
+    LegQuadRule<Real>::ComputeNdsWts(&sn, &sw, ns);   // s-nodes on [0,1] (radial, s=0 at apex)
+    LegQuadRule<Real>::ComputeNdsWts(&tn0, &tw0, nt); // reference nodes the sinh map warps
+
+    // Surface metric at (u0,v0): the foot t* and the sinh width are set by ON-surface distance.
+    Real G[4];
+    {
+      Real Xc[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
+      EvalPoint(Xc, dXu, dXv, u0, v0, elem_idx, nullptr);
+      Real guu = 0, guv = 0, gvv = 0;
+      for (Integer k = 0; k < COORD_DIM; k++) { guu += dXu[k]*dXu[k]; guv += dXu[k]*dXv[k]; gvv += dXv[k]*dXv[k]; }
+      G[0] = guu; G[1] = guv; G[2] = guv; G[3] = gvv;
+    }
+    auto ash = [](const Real x) { return log<Real>(x + sqrt<Real>(x*x + (Real)1)); };
+    const Real cu[4] = {0,1,1,0}, cv[4] = {0,0,1,1};
+
+    VTUData vtu;
+    for (Integer kt = 0; kt < 4; kt++) {
+      const Real a[2] = {cu[kt]-u0, cv[kt]-v0};
+      const Real b[2] = {cu[(kt+1)%4]-u0, cv[(kt+1)%4]-v0};
+      const Real e[2] = {b[0]-a[0], b[1]-a[1]};
+      const bool swap_ab = (fabs<Real>(e[0]) < fabs<Real>(e[1]));   // e axis-aligned; collapse beta
+      const Real al0 = (swap_ab ? v0 : u0), be0 = (swap_ab ? u0 : v0);
+      const Real aal = (swap_ab ? a[1] : a[0]), abe = (swap_ab ? a[0] : a[1]);
+      const Real eal = (swap_ab ? e[1] : e[0]);
+
+      Real tstar, dOverL;
+      { // metric-aware foot and width (identical to SelfInteracBlockDuffy)
+        const Real Me[2] = {G[0]*e[0]+G[1]*e[1], G[2]*e[0]+G[3]*e[1]};
+        const Real am = e[0]*Me[0] + e[1]*Me[1];
+        Real ts = -(a[0]*Me[0] + a[1]*Me[1])/am;
+        ts = (ts < 0 ? (Real)0 : (ts > 1 ? (Real)1 : ts));
+        const Real c[2] = {a[0]+ts*e[0], a[1]+ts*e[1]};
+        const Real d2 = c[0]*(G[0]*c[0]+G[1]*c[1]) + c[1]*(G[2]*c[0]+G[3]*c[1]);
+        tstar = ts; dOverL = sqrt<Real>(d2)/sqrt<Real>(am);
+      }
+      Vector<Real> tn(nt);
+      { // t = t* + (d/L)*sinh(xi), xi linear on the reference nodes
+        const Real dd = dOverL;
+        const Real x0 = -ash(tstar/dd), x1 = ash(((Real)1-tstar)/dd);
+        for (Integer j = 0; j < nt; j++) {
+          const Real xi = x0 + (x1-x0)*tn0[j];
+          const Real ex = exp<Real>(xi), iex = (Real)1/ex;
+          tn[j] = tstar + dd*(ex-iex)/(Real)2;
+        }
+      }
+
+      // (s,t) grid -> (u,v) -> physical, one point at a time (the map is non-separable).
+      const Long point_offset = vtu.coord.Dim() / COORD_DIM;
+      for (Integer i = 0; i < ns; i++) {
+        const Real s = sn[i];
+        for (Integer j = 0; j < nt; j++) {
+          const Real t = tn[j];
+          const Real alpha = al0 + s*(aal + t*eal);
+          const Real beta  = be0 + s*abe;
+          const Real u = (swap_ab ? beta : alpha), v = (swap_ab ? alpha : beta);
+          Real Xc[COORD_DIM];
+          EvalPoint(Xc, nullptr, nullptr, u, v, elem_idx, nullptr);
+          for (Integer k = 0; k < COORD_DIM; k++) vtu.coord.PushBack((VTUData::VTKReal)Xc[k]);
+          vtu.value.PushBack((VTUData::VTKReal)kt);
+        }
+      }
+      for (Integer i = 0; i < ns-1; i++) {
+        for (Integer j = 0; j < nt-1; j++) {
+          const Long idx = point_offset + (Long)i*nt + j;
+          vtu.connect.PushBack(idx);
+          vtu.connect.PushBack(idx + 1);
+          vtu.connect.PushBack(idx + nt + 1);
+          vtu.connect.PushBack(idx + nt);
+          vtu.offset.PushBack(vtu.connect.Dim());
+          vtu.types.PushBack(9); // VTK_QUAD
+        }
+      }
+    }
+    vtu.WriteVTK(fname, comm);
+
+    // Singular point: a single VTK_VERTEX at the on-surface apex (u0,v0).
+    Real Xs[COORD_DIM];
+    EvalPoint(Xs, nullptr, nullptr, u0, v0, elem_idx, nullptr);
+    VTUData singpt;
+    for (Integer k = 0; k < COORD_DIM; k++) singpt.coord.PushBack((VTUData::VTKReal)Xs[k]);
+    singpt.value.PushBack(0);
+    singpt.connect.PushBack(0);
+    singpt.offset.PushBack(singpt.connect.Dim());
+    singpt.types.PushBack(1);
+    singpt.WriteVTK(fname + "-singpt", comm);
+  }
+
+  template <class Real> void QuadElemList<Real>::WriteNearInteracDuffyVTK(const std::string& fname, const Long elem_idx, const Vector<Real>& Xtrg, const Real tol, const Comm& comm) const {
+    // Reconstruct the Duffy near rule for Xtrg and dump its per-cell GL nodes as a VTK_QUAD mesh
+    // (mirrors NearInteracBlockSplitDuffy's split-at-foot layout with the ANISOTROPIC u/v ladder --
+    // refine whichever direction is coarser on the surface -- unlike the isotropic quadtree of
+    // WriteNearInteracVTK). QuadOrder and b_ellipse come from tol just as the solver does, including
+    // the corner-angle order bump. Point scalar = cell refinement step. Target in a separate file.
+    const Integer digits = std::max<Integer>(0, (Integer)std::lround(-std::log10((double)std::max<Real>(tol, machine_eps<Real>()))));
+    const Real b_ellipse = NearBEllipseRt(digits);
+
+    Real ustar, vstar;
+    const Real dist = GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
+    Real Xc[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
+    EvalPoint(Xc, dXu, dXv, ustar, vstar, elem_idx, nullptr);
+
+    // Corner-angle order bump (identical to NearInteracBlockSplitDuffy). Flat/orthogonal panels
+    // leave QuadOrder unchanged; strongly sheared feet raise it.
+    Integer QuadOrder;
+    {
+      const Integer q_iso = NearQuadOrderRt(digits);
+      Real guu=0, gvv=0, guv=0;
+      for (Integer k = 0; k < COORD_DIM; k++) { guu+=dXu[k]*dXu[k]; gvv+=dXv[k]*dXv[k]; guv+=dXu[k]*dXv[k]; }
+      const double den = std::sqrt((double)guu*(double)gvv);
+      QuadOrder = q_iso;
+      if (den > 0) {
+        const double c = std::min(1.0, std::fabs((double)guv)/den);
+        const double phi = std::acos(c)*180.0/const_pi<double>();
+        const double f = std::max(1.0, 400.0/(10.0*std::max(1e-3, phi)));
+        if (f > 1.0) { Integer q = ((Integer)std::ceil(f*(double)q_iso) + 3)/4*4; QuadOrder = std::min<Integer>(NearMaxQuadOrderCM, std::max<Integer>(q_iso, q)); }
+      }
+    }
+
+    Real su2 = 0, sv2 = 0;
+    for (Integer k = 0; k < COORD_DIM; k++) { su2 += dXu[k]*dXu[k]; sv2 += dXv[k]*dXv[k]; }
+    const Real spd_u = sqrt<Real>(su2), spd_v = sqrt<Real>(sv2);
+    const Real slen[2][2] = {{ustar, 1-ustar}, {vstar, 1-vstar}};
+
+    VTUData vtu;
+    const Vector<Real>& qnds = ParamNodes(QuadOrder);
+    Vector<Real> u_param(QuadOrder), v_param(QuadOrder), Xg;
+
+    // Flat cell index -> normalized [a,b] (x=1 at the foot): shell_k=[1-2^-k,1-2^-(k+1)] for
+    // i=k<MaxNearLvlCM, core_k=[1-2^-k,1] for i=MaxNearLvlCM+k. Then the sub-element affine map.
+    auto ivl = [](Integer i, Real& a, Real& b) {
+      const Integer k = (i < MaxNearLvlCM ? i : i - MaxNearLvlCM);
+      a = 1 - pow<Real>((Real)0.5, k);
+      b = (i < MaxNearLvlCM) ? 1 - pow<Real>((Real)0.5, k+1) : (Real)1;
+    };
+    auto mp = [](Real a, Real b, Integer sd, Real xs, Real& lo, Real& hi) {
+      if (sd == 0) { lo = xs*a; hi = xs*b; } else { lo = 1-(1-xs)*b; hi = 1-(1-xs)*a; }
+    };
+    auto emit_cell = [&](const Real u0, const Real u1, const Real v0, const Real v1, const Real level) {
+      const Real du = u1-u0, dv = v1-v0;
+      if (!(du > 0) || !(dv > 0)) return;
+      for (Integer a = 0; a < QuadOrder; a++) u_param[a] = u0 + du*qnds[a];
+      for (Integer b = 0; b < QuadOrder; b++) v_param[b] = v0 + dv*qnds[b];
+      GetGeom(&Xg, nullptr, nullptr, nullptr, nullptr, u_param, v_param, elem_idx);
+      const Long point_offset = vtu.coord.Dim() / COORD_DIM;
+      for (Long p = 0; p < (Long)QuadOrder*QuadOrder; p++) {
+        for (Integer k = 0; k < COORD_DIM; k++) vtu.coord.PushBack((VTUData::VTKReal)Xg[p*COORD_DIM+k]);
+        vtu.value.PushBack((VTUData::VTKReal)level);
+      }
+      for (Long i = 0; i < QuadOrder-1; i++) {
+        for (Long j = 0; j < QuadOrder-1; j++) {
+          const Long idx = point_offset + i*QuadOrder + j;
+          vtu.connect.PushBack(idx);
+          vtu.connect.PushBack(idx + 1);
+          vtu.connect.PushBack(idx + QuadOrder + 1);
+          vtu.connect.PushBack(idx + QuadOrder);
+          vtu.offset.PushBack(vtu.connect.Dim());
+          vtu.types.PushBack(9); // VTK_QUAD
+        }
+      }
+    };
+    auto cell = [&](Integer sdu, Integer sdv, Integer iu, Integer iv, Real level) {
+      Real au,bu,av,bv; ivl(iu,au,bu); ivl(iv,av,bv);
+      Real u0,u1,v0,v1; mp(au,bu,sdu,ustar,u0,u1); mp(av,bv,sdv,vstar,v0,v1);
+      emit_cell(u0,u1,v0,v1,level);
+    };
+
+    const bool cap = !(dist > 0) || !std::isfinite((double)dist);
+    constexpr Integer KMAX = MaxNearLvlCM-1;
+    for (Integer sdu = 0; sdu < 2; sdu++) {
+      if (!(slen[0][sdu] > 0)) continue;
+      for (Integer sdv = 0; sdv < 2; sdv++) {
+        if (!(slen[1][sdv] > 0)) continue;
+        Integer ku = 0, kv = 0;
+        Real hu = slen[0][sdu]*spd_u, hv = slen[1][sdv]*spd_v;
+        Real level = 0;
+        while ((cap || b_ellipse*std::max<Real>(hu,hv) > dist) && (ku < KMAX || kv < KMAX)) {
+          if (hu >= hv && ku < KMAX) { cell(sdu, sdv, ku, MaxNearLvlCM + kv, level); ku++; hu *= (Real)0.5; }
+          else if (kv < KMAX) { cell(sdu, sdv, MaxNearLvlCM + ku, kv, level); kv++; hv *= (Real)0.5; }
+          else if (ku < KMAX) { cell(sdu, sdv, ku, MaxNearLvlCM + kv, level); ku++; hu *= (Real)0.5; }
+          else break;
+          level += 1;
+        }
+        cell(sdu, sdv, MaxNearLvlCM + ku, MaxNearLvlCM + kv, level);   // terminal corner cell
+      }
+    }
+    vtu.WriteVTK(fname, comm);
+
+    // Target: a single VTK_VERTEX in its own file.
+    VTUData target;
+    for (Integer k = 0; k < COORD_DIM; k++) target.coord.PushBack((VTUData::VTKReal)Xtrg[k]);
+    target.value.PushBack(0);
+    target.connect.PushBack(0);
+    target.offset.PushBack(target.connect.Dim());
+    target.types.PushBack(1);
+    target.WriteVTK(fname + "-target", comm);
   }
 
   template <class Real> template <class ValueType> void QuadElemList<Real>::Copy(QuadElemList<ValueType>& elem_lst) const {
