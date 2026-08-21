@@ -206,6 +206,22 @@ namespace sctl {
       void WriteNearInteracVTK(const std::string& fname, const Long elem_idx, const Vector<Real>& Xtrg, const Real tol, const Comm& comm = Comm::Self()) const;
 
       /**
+       * Visualize THE production adaptive near quadrature (off-surface target): the
+       * foot-graded separable tensor grid built by BuildNearTensorRule -- two 1D
+       * foot-graded partitions (in u and v) tensored over the whole panel, so the
+       * cells cluster toward the foot (u*,v*) and read as four quadrants meeting
+       * there. Writes `<fname>` (per-cell GL nodes as VTK_QUAD, colored by cell
+       * depth) and `<fname>-target`. Unlike WriteNearInteracVTK (which mirrors the
+       * SUPERSEDED isotropic graded-quadtree rule), this matches NearInteracBlockGraded.
+       * @param[in] fname output filename prefix.
+       * @param[in] elem_idx source element index.
+       * @param[in] Xtrg off-surface target coords (COORD_DIM reals).
+       * @param[in] tol accuracy tolerance (match the BIO's SetAccuracy).
+       * @param[in] comm communicator.
+       */
+      void WriteNearInteracGradedVTK(const std::string& fname, const Long elem_idx, const Vector<Real>& Xtrg, const Real tol, const Comm& comm = Comm::Self()) const;
+
+      /**
        * Visualize the on-surface self-interaction structure at (u0,v0) (graded u x
        * Alpert v): writes `<fname>` (quadrature node cloud) and `<fname>-singpt`.
        * @param[in] fname output filename prefix.
@@ -215,6 +231,23 @@ namespace sctl {
        * @param[in] comm communicator.
        */
       void WriteSelfInteracVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Real tol, const Comm& comm = Comm::Self()) const;
+
+      /**
+       * Visualize the adaptive self quadrature at (u0,v0) as PANELS (like the near
+       * grid), not a point cloud. The rule is a tensor of centered graded-GL u-panels
+       * x centered composite-v panels; every panel is a GL x GL patch EXCEPT the
+       * innermost v-row touching the singular node, whose v-nodes are the Alpert
+       * log-singular rule (still ordered within the panel). Each (u-panel, v-panel)
+       * cell is emitted as its own VTK_QUAD patch, with the point scalar flagging the
+       * Alpert singular row (1) vs the GL panels (0). Writes `<fname>` and
+       * `<fname>-singpt`.
+       * @param[in] fname output filename prefix.
+       * @param[in] elem_idx source element index.
+       * @param[in] u0,v0 on-surface target parameters in [0,1].
+       * @param[in] tol accuracy tolerance (match the BIO's SetAccuracy).
+       * @param[in] comm communicator.
+       */
+      void WriteSelfInteracGradedVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Real tol, const Comm& comm = Comm::Self()) const;
 
       /**
        * Visualize the rectangular-polar (Scheme 2) grid for an off-surface target:
@@ -237,6 +270,34 @@ namespace sctl {
        * @param[in] comm communicator.
        */
       void WriteSelfInteracRPVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Integer Nbeta = 48, const Comm& comm = Comm::Self()) const;
+
+      /**
+       * Visualize the Duffy edge-collapsed self rule (Scheme `Duffy`) at (u0,v0):
+       * the four target-anchored triangles, each a (ns x nt) sinh-graded grid that
+       * fans from the singular apex (SelfInteracBlockDuffy's layout). Writes `<fname>`
+       * (warped VTK_QUAD mesh, one point scalar = triangle index 0..3) and
+       * `<fname>-singpt`. `tol` fixes nt via DuffyTOrder just as the solver does.
+       * @param[in] fname output filename prefix.
+       * @param[in] elem_idx source element index.
+       * @param[in] u0,v0 on-surface target parameters in [0,1].
+       * @param[in] tol target tolerance (sets the sinh t-order).
+       * @param[in] comm communicator.
+       */
+      void WriteSelfInteracDuffyVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Real tol, const Comm& comm = Comm::Self()) const;
+
+      /**
+       * Visualize the Duffy near rule (Scheme `Duffy`) for an off-surface target:
+       * the split-at-foot cells with the anisotropic u/v refinement ladder of
+       * NearInteracBlockSplitDuffy, each a QuadOrder x QuadOrder GL-node patch of
+       * VTK_QUAD cells (point scalar = cell refinement level). Writes `<fname>` and
+       * `<fname>-target`. `tol` fixes QuadOrder / b_ellipse as the solver does.
+       * @param[in] fname output filename prefix.
+       * @param[in] elem_idx source element index.
+       * @param[in] Xtrg off-surface target coords (COORD_DIM reals).
+       * @param[in] tol target tolerance.
+       * @param[in] comm communicator.
+       */
+      void WriteNearInteracDuffyVTK(const std::string& fname, const Long elem_idx, const Vector<Real>& Xtrg, const Real tol, const Comm& comm = Comm::Self()) const;
 
       /**
        * Copy the element-list, possibly at a different precision.
