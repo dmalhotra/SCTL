@@ -135,38 +135,29 @@ Long splitCounts(sctl::ScratchBuf<Long>& scnt, sctl::ScratchBuf<Long>& rcnt, con
 inline void alltoallv(const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt,
                       const sctl::ScratchBuf<Long>& rcnt, Long esz, const Comm& comm) {
 #ifdef SCTL_HAVE_MPI
-  const Long np = comm.Size(), rank = comm.Rank();
-  sctl::ScratchBuf<Long> sd(np), rd(np);
-  std::exclusive_scan(scnt.begin(), scnt.end(), sd.begin(), Long(0));
-  std::exclusive_scan(rcnt.begin(), rcnt.end(), rd.begin(), Long(0));
+  const Long np = comm.Size();
+  sctl::ScratchBuf<int> sc(np), sd(np), rc(np), rd(np);
+  for (Long r = 0; r < np; r++) {
+    sc[r] = int(scnt[r] * esz);
+    rc[r] = int(rcnt[r] * esz);
+  }
+  std::exclusive_scan(sc.begin(), sc.end(), sd.begin(), 0);
+  std::exclusive_scan(rc.begin(), rc.end(), rd.begin(), 0);
+  MPI_Alltoallv(sbuf, &sc[0], &sd[0], MPI_BYTE, rbuf, &rc[0], &rd[0], MPI_BYTE, comm.GetMPI_Comm());
+#endif
+}
 
-  // Posted point-to-point rather than MPI_Alltoallv: measured 255.8 vs 235.1 GB/s on 4 NVLink
-  // A100s (98% vs 90% of what raw peer copies reach), because the transfers overlap instead of
-  // being staged by the collective. The self-block never goes near MPI.
-  sctl::ScratchBuf<MPI_Request> req(2 * np);
-  Integer nreq = 0;
-  const char* const sp = static_cast<const char*>(sbuf);
-  char* const rp = static_cast<char*>(rbuf);
-  for (Long r = 0; r < np; r++) {
-    if (r == rank || !rcnt[r]) continue;
-    MPI_Irecv(rp + rd[r] * esz, int(rcnt[r] * esz), MPI_BYTE, int(r), 7, comm.GetMPI_Comm(), &req[nreq++]);
-  }
-  for (Long r = 0; r < np; r++) {
-    if (r == rank || !scnt[r]) continue;
-    MPI_Isend(sp + sd[r] * esz, int(scnt[r] * esz), MPI_BYTE, int(r), 7, comm.GetMPI_Comm(), &req[nreq++]);
-  }
-  if (scnt[rank]) {  // self-block: a local copy, not a message
-#if defined(__CUDACC__) || defined(__HIPCC__)
-    cudaMemcpyAsync(rp + rd[rank] * esz, sp + sd[rank] * esz, scnt[rank] * esz, cudaMemcpyDefault);
-#else
-    std::memcpy(rp + rd[rank] * esz, sp + sd[rank] * esz, scnt[rank] * esz);
-#endif
-  }
-  if (nreq) MPI_Waitall(nreq, &req[0], MPI_STATUSES_IGNORE);
-#if defined(__CUDACC__) || defined(__HIPCC__)
-  if (scnt[rank]) cudaStreamSynchronize(0);
-#endif
-#endif
+// Exchange through pooled scratch. A buffer taken and released each build pays, on every call, for
+// the peer mapping the transport rebuilds, the allocation, and the device-wide drain a release
+// forces: 43.7 ms vs 5.8 ms for an 800 MB/rank exchange on 4 GPUs. The two copies cost far less.
+template <class T, template <class...> class DeviceVector, class Policy>
+void exchangePooled(const Policy& pol, const DeviceVector<T>& src, Long nsrc, DeviceVector<T>& dst, Long ndst,
+                    const sctl::ScratchBuf<Long>& scnt, const sctl::ScratchBuf<Long>& rcnt, const Comm& comm) {
+  DeviceScratch<T, DeviceVector> xs(nsrc), xr(ndst);
+  thrust::copy(pol, src.begin(), src.begin() + nsrc, xs.begin());
+  alltoallv(thrust::raw_pointer_cast(xs.data()), thrust::raw_pointer_cast(xr.data()), scnt, rcnt, (Long)sizeof(T), comm);
+  dst.resize(ndst);
+  thrust::copy(pol, xr.begin(), xr.end(), dst.begin());
 }
 
 // Functor (not lambda) so nvcc captures it across thrust kernel boundaries.
@@ -1004,8 +995,8 @@ void Stage2(DeviceVector<Morton<DIM>>& S, const sctl::Vector<Morton<DIM>>& mins,
     Nrecv = detail::splitCounts(scnt, rcnt, S, (Long)S.size(), mins_d, comm);
   }
 
-  DeviceVector<NodeT> recv(Nrecv);
-  detail::alltoallv(thrust::raw_pointer_cast(S.data()), thrust::raw_pointer_cast(recv.data()), scnt, rcnt, sizeof(NodeT), comm);
+  DeviceVector<NodeT> recv;
+  detail::exchangePooled(pol, S, (Long)S.size(), recv, Nrecv, scnt, rcnt, comm);
   local_sort(pol, recv, Nrecv);  // np sorted runs -> one sorted block
   uniq(recv);
   S = std::move(recv);
@@ -1212,9 +1203,6 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
     t_last = t;
   };
   mark(nullptr);
-  // TEMP: split the encode+sort+splitters stage into its parts (GTSORT=1)
-  const bool subprof = (getenv("GTSORT") != nullptr);
-  const auto submark = [&](const char* nm) { if (subprof) mark(nm); };
 
   using MortonT = MortonCode<DIM>;
   const auto pol = detail::scratch_policy<DeviceVector, MortonT>();
@@ -1248,7 +1236,6 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
       #pragma omp parallel for schedule(static)
       for (Long i = 0; i < Nloc; ++i) mp[i] = MortonT(cp + i * DIM);
     }
-    submark("  sort: encode");
     if (sort_scatter_index) {
       Long goff = 0;  // global index of this rank's first input particle
       comm.Scan<sctl::CommOp::SUM>(sctl::Ptr2ConstItr<Long>(&Nloc, 1), sctl::Ptr2Itr<Long>(&goff, 1), 1);
@@ -1259,7 +1246,6 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
     } else {
       detail::local_sort(pt_mid, Nloc);
     }
-    submark("  sort: local sort");
   }
 
   #ifdef SCTL_HAVE_MPI
@@ -1267,27 +1253,22 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
     sctl::ScratchBuf<MortonT> spl_h_buf(np - 1);
     sctl::Vector<MortonT> spl_h(spl_h_buf);  // determineSplitters takes a Vector
     detail_determineSplitters::determineSplitters(spl_h, pt_mid, comm);
-    submark("  sort: splitters");
     DeviceScratch<MortonT, DeviceVector> spl_d(np - 1);
     thrust::copy(spl_h.begin(), spl_h.end(), spl_d.begin());
 
     sctl::ScratchBuf<Long> scnt(np), rcnt(np);
     const Long Nrecv = detail::splitCounts(scnt, rcnt, pt_mid, (Long)pt_mid.size(), spl_d, comm);
-    submark("  sort: route counts");
 
-    DeviceVector<MortonT> buf(Nrecv);
-    detail::alltoallv(thrust::raw_pointer_cast(pt_mid.data()), thrust::raw_pointer_cast(buf.data()), scnt, rcnt, sizeof(MortonT), comm);
+    DeviceVector<MortonT> buf;
+    detail::exchangePooled(pol, pt_mid, (Long)pt_mid.size(), buf, Nrecv, scnt, rcnt, comm);
     if (sort_scatter_index) {  // the index rides along on the same partition
-      DeviceVector<Long> ibuf(Nrecv);
-      detail::alltoallv(thrust::raw_pointer_cast(idx.data()), thrust::raw_pointer_cast(ibuf.data()), scnt, rcnt, sizeof(Long), comm);
+      DeviceVector<Long> ibuf;
+      detail::exchangePooled(pol, idx, (Long)idx.size(), ibuf, Nrecv, scnt, rcnt, comm);
       idx = std::move(ibuf);
-      submark("  sort: alltoallv");
       detail::local_sort_by_key(buf, idx, Nrecv);  // np sorted segments -> one sorted block
     } else {
-      submark("  sort: alltoallv");
       detail::local_sort(buf, Nrecv);
     }
-    submark("  sort: merge sort");
     pt_mid = std::move(buf);
   }
   mark("encode+sort+splitters");
@@ -1315,12 +1296,12 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
         rcnt[q] = std::max<Long>(0, std::min(off[q + 1], tgt_hi) - std::max(off[q], tgt_lo));
       }
 
-      DeviceVector<MortonT> tmp(tgt_hi - tgt_lo);
-      detail::alltoallv(thrust::raw_pointer_cast(pt_mid.data()), thrust::raw_pointer_cast(tmp.data()), scnt, rcnt, sizeof(MortonT), comm);
+      DeviceVector<MortonT> tmp;
+      detail::exchangePooled(pol, pt_mid, (Long)pt_mid.size(), tmp, tgt_hi - tgt_lo, scnt, rcnt, comm);
       pt_mid = std::move(tmp);  // received segments concatenate in global-index order -> already sorted
       if (sort_scatter_index) {
-        DeviceVector<Long> itmp(tgt_hi - tgt_lo);
-        detail::alltoallv(thrust::raw_pointer_cast(idx.data()), thrust::raw_pointer_cast(itmp.data()), scnt, rcnt, sizeof(Long), comm);
+        DeviceVector<Long> itmp;
+        detail::exchangePooled(pol, idx, (Long)idx.size(), itmp, tgt_hi - tgt_lo, scnt, rcnt, comm);
         idx = std::move(itmp);
       }
       Nloc_min = Nglob / np;  // even split: smallest chunk is floor(Nglob/np)
