@@ -7,7 +7,6 @@
 
 #include <thrust/device_ptr.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <type_traits>
 #include <utility>
@@ -52,14 +51,13 @@ template <template <class...> class DeviceVector> class DeviceScratchPool {
  public:
   static constexpr Long ALIGN = 256;  // cudaMalloc's guarantee; rounding sizes keeps `top` aligned
 
-  static DeviceScratchPool& Instance() {
-    static DeviceScratchPool pool;
-    return pool;
-  }
+  /** The pool for this backend. */
+  static DeviceScratchPool& Instance();
 
   DeviceScratchPool(const DeviceScratchPool&) = delete;
   DeviceScratchPool& operator=(const DeviceScratchPool&) = delete;
 
+  /** One chunk of the pool; `DeviceScratch` holds the chunk its slice came from. */
   struct Chunk {
     DeviceVector<char>* buf;  // leaked by design: freeing device memory at exit races CUDA teardown
     char* base;
@@ -68,60 +66,20 @@ template <template <class...> class DeviceVector> class DeviceScratchPool {
     Chunk* prev;
   };
 
-  std::pair<Chunk*, char*> AllocBytes(Long bytes) {
-    const Long need = (bytes + ALIGN - 1) & ~(ALIGN - 1);
-    if (head_ == nullptr || need > head_->end - head_->top) NewChunk(need);
-    char* const p = head_->top;
-    head_->top += need;
-    high_water_ = std::max(high_water_, Live());
-    return {head_, p};
-  }
+  /** Carve `bytes` off the pool; returns the owning chunk and the slice. */
+  std::pair<Chunk*, char*> AllocBytes(Long bytes);
 
-  void FreeBytes(Chunk* chunk, char* p, Long bytes) {
-    const Long need = (bytes + ALIGN - 1) & ~(ALIGN - 1);
-    SCTL_ASSERT_MSG(chunk->top == p + need, "DeviceScratch: LIFO violation (free out of order).");
-    chunk->top = p;
-  }
+  /** Return a slice (LIFO: it must be the last one taken from `chunk`). */
+  void FreeBytes(Chunk* chunk, char* p, Long bytes);
 
-  void FreeBytes(char* p, Long bytes) {  // owning chunk located by the LIFO invariant
-    const Long need = (bytes + ALIGN - 1) & ~(ALIGN - 1);
-    for (Chunk* c = head_; c; c = c->prev) {
-      if (c->top == p + need) { c->top = p; return; }
-    }
-    SCTL_ASSERT_MSG(false, "DeviceScratch: LIFO violation (free out of order).");
-  }
-
-  Long Reserved() const {  // bytes held by the pool
-    Long n = 0;
-    for (const Chunk* c = head_; c; c = c->prev) n += c->end - c->base;
-    return n;
-  }
-  Long Live() const {  // bytes currently handed out
-    Long n = 0;
-    for (const Chunk* c = head_; c; c = c->prev) n += c->top - c->base;
-    return n;
-  }
-  Long HighWater() const { return high_water_; }
-  Long ChunkCount() const {
-    Long n = 0;
-    for (const Chunk* c = head_; c; c = c->prev) ++n;
-    return n;
-  }
+  /** Same, with the owning chunk located by the LIFO invariant. */
+  void FreeBytes(char* p, Long bytes);
 
  private:
   DeviceScratchPool() = default;
-
-  void NewChunk(Long need) {
-    const Long prev_cap = head_ ? head_->end - head_->base : 0;
-    Long cap = std::max<Long>((Long)SCTL_DEVICE_SCRATCH_INIT_BYTES, prev_cap * 2);
-    while (cap < need) cap *= 2;
-    auto* buf = new DeviceVector<char>(cap);
-    char* const base = thrust::raw_pointer_cast(buf->data());
-    head_ = new Chunk{buf, base, base, base + cap, head_};
-  }
+  void NewChunk(Long need);
 
   Chunk* head_{nullptr};
-  Long high_water_{0};
 };
 
 /**
@@ -144,16 +102,13 @@ template <class T, template <class...> class DeviceVector> class DeviceScratch {
  public:
   using iterator = detail::ScratchIterator<T, DeviceVector>;
 
-  explicit DeviceScratch(Long count) : DeviceScratch(count, Pool::Instance()) {}
+  /** Allocate `count` T's from this backend's pool. */
+  explicit DeviceScratch(Long count);
 
-  DeviceScratch(Long count, Pool& pool) : pool_(&pool), count_(count) {
-    SCTL_ASSERT(count >= 0);
-    const auto slot = pool.AllocBytes(count * (Long)sizeof(T));
-    chunk_ = slot.first;
-    data_ = reinterpret_cast<T*>(slot.second);
-  }
+  /** Allocate from a user-supplied pool instead (tests, isolation). */
+  DeviceScratch(Long count, Pool& pool);
 
-  ~DeviceScratch() { pool_->FreeBytes(chunk_, reinterpret_cast<char*>(data_), count_ * (Long)sizeof(T)); }
+  ~DeviceScratch();
 
   DeviceScratch() = delete;
   DeviceScratch(const DeviceScratch&) = delete;
@@ -165,10 +120,10 @@ template <class T, template <class...> class DeviceVector> class DeviceScratch {
   static void operator delete(void*) = delete;
   static void operator delete[](void*) = delete;
 
-  iterator begin() const { return iterator(data_); }
-  iterator end() const { return iterator(data_ + count_); }
-  iterator data() const { return iterator(data_); }  // thrust convention: use raw_pointer_cast for functors
-  Long Dim() const { return count_; }
+  iterator begin() const;
+  iterator end() const;
+  iterator data() const;  // thrust convention: use raw_pointer_cast for functors
+  Long Dim() const;
 
  private:
   Pool* pool_;
@@ -185,15 +140,12 @@ template <template <class...> class DeviceVector> class DeviceScratchAllocator {
  public:
   using value_type = char;
 
-  char* allocate(std::ptrdiff_t n) {
-    const auto slot = DeviceScratchPool<DeviceVector>::Instance().AllocBytes((Long)n);
-    return slot.second;
-  }
-  void deallocate(char* p, std::size_t n) {
-    DeviceScratchPool<DeviceVector>::Instance().FreeBytes(p, (Long)n);
-  }
+  char* allocate(std::ptrdiff_t n);
+  void deallocate(char* p, std::size_t n);
 };
 
 }  // namespace gpu_tree
+
+#include "sctl/experimental/device_scratch.txx"
 
 #endif  // _SCTL_EXPERIMENTAL_DEVICE_SCRATCH_HPP_
