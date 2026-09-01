@@ -1094,7 +1094,7 @@ template <Integer DIM> struct GhostPairToMid {
 template <Integer DIM, WalkMode MODE> struct GhostSendFunctor {
   static constexpr Integer K = sctl::pow<DIM, Integer>(3);
   const Morton<DIM>* tree;
-  const Morton<DIM>* A;  // rank boundaries (first node of each rank), lex order
+  const Morton<DIM>* A;  // partition boundaries: A[r] is rank r's first node, lex order
   Morton<DIM> lo, hi;    // this rank's owned interval [lo, hi)
   Long np, rank;
   Integer halo;
@@ -1145,7 +1145,7 @@ template <Integer DIM, WalkMode MODE> struct GhostSendFunctor {
 // within the updated list. halo_size < 0 exchanges no neighbor nodes but still splices the coarse
 // complete-tree fill, so the list is full-domain on every rank (as in Tree::UpdateRefinement).
 template <Integer DIM, template <class...> class DeviceVector>
-void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const Comm& comm, Integer halo_size, Long& owned_begin, Long& owned_end) {
+void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DIM>>& mins, const Comm& comm, Integer halo_size, Long& owned_begin, Long& owned_end) {
   using NodeT = Morton<DIM>;
   const Long rank = comm.Rank();
   const Long np = comm.Size();
@@ -1154,19 +1154,12 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const Comm& comm, Integer ha
   owned_begin = 0; owned_end = Nn;
   if (np == 1) return;
 
-  sctl::ScratchBuf<NodeT> A(np);
-  { // rank boundaries; empty ranks inherit the next non-empty rank's first node (zero-width interval)
-    NodeT a0{}; if (Nn) a0 = NodeT(tree[0]);
-    comm.Allgather(sctl::Ptr2ConstItr<NodeT>(&a0, 1), 1, A.begin(), 1);
-    sctl::ScratchBuf<Long> nn(np);
-    comm.Allgather(sctl::Ptr2ConstItr<Long>(&Nn, 1), 1, nn.begin(), 1);
-    for (Long r = np - 1; r >= 0; r--) if (!nn[r]) A[r] = (r + 1 < np) ? A[r + 1] : NodeT{}.Next();
-  }
-
-  const NodeT lo = A[rank], hi = (rank + 1 < np) ? A[rank + 1] : NodeT{}.Next();
+  // `mins` is the partition: mins[r] is rank r's first node, in code and depth alike, so the
+  // boundaries need no gathering here.
+  const NodeT lo = mins[rank], hi = (rank + 1 < np) ? mins[rank + 1] : NodeT{}.Next();
   const auto pol = detail::scratch_policy<DeviceVector, NodeT>();
-  DeviceScratch<NodeT, DeviceVector> A_d(np);
-  thrust::copy(A.begin(), A.end(), A_d.begin());
+  DeviceScratch<NodeT, DeviceVector> mins_d(np);
+  thrust::copy(mins.begin(), mins.end(), mins_d.begin());
   // halo_size < 0 exchanges no neighbor nodes, so the scan is skipped and `pairs` stays empty. The
   // count and write passes are separate blocks because `pairs` is a pool slice: its size has to be
   // known at construction, and the scan is what produces it.
@@ -1175,14 +1168,14 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const Comm& comm, Integer ha
   Long npairs_tot = 0;
   if (Nscan) { // how many (dest rank, node) pairs each owned node produces
     DeviceScratch<Long, DeviceVector> counts(Nn);  // released before `pairs` is taken, so the pool stays LIFO
-    const GhostSendFunctor<DIM, WalkMode::Count> fc{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(A_d.data()), lo, hi, np, rank, halo_size, nullptr, nullptr};
+    const GhostSendFunctor<DIM, WalkMode::Count> fc{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(mins_d.data()), lo, hi, np, rank, halo_size, nullptr, nullptr};
     thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), counts.begin(), fc);
     npairs_tot = detail::scanCounts(pol, counts, offsets, Nn);
   }
   Long npairs = 0;
   DeviceScratch<GhostPair<DIM>, DeviceVector> pairs(npairs_tot);
   if (Nscan) { // emit the pairs, sort by (dest rank, node), drop duplicates
-    const GhostSendFunctor<DIM, WalkMode::Write> fw{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(A_d.data()), lo, hi, np, rank, halo_size,
+    const GhostSendFunctor<DIM, WalkMode::Write> fw{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(mins_d.data()), lo, hi, np, rank, halo_size,
                                                     thrust::raw_pointer_cast(offsets.data()), thrust::raw_pointer_cast(pairs.data())};
     thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), thrust::make_discard_iterator(), fw);
     local_sort(pol, pairs, npairs_tot);
@@ -1204,15 +1197,15 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const Comm& comm, Integer ha
   DeviceScratch<NodeT, DeviceVector> ghost(Nrecv);
   detail::alltoallv(thrust::raw_pointer_cast(send_mid.data()), thrust::raw_pointer_cast(ghost.data()), scnt, rcnt, sizeof(NodeT), comm);
   // sorted: each source's segment is sorted and source owned-intervals are ordered
-  const Long Nsplit = thrust::lower_bound(pol, ghost.begin(), ghost.end(), A[rank]) - ghost.begin();
+  const Long Nsplit = thrust::lower_bound(pol, ghost.begin(), ghost.end(), mins[rank]) - ghost.begin();
 
   const NodeT* gp = thrust::raw_pointer_cast(ghost.data());
   DeviceScratch<Long, DeviceVector> off_l(rank > 0 ? Nsplit + 1 : 0), off_r(rank + 1 < np ? Nrecv - Nsplit + 1 : 0);
-  const Long L = (rank > 0) ? detail::anchorWalkCount<DIM, DeviceVector>(off_l, gp, Nsplit, NodeT{}, A[rank]) : 0;
-  const Long R = (rank + 1 < np) ? detail::anchorWalkCount<DIM, DeviceVector>(off_r, gp + Nsplit, Nrecv - Nsplit, A[rank + 1], NodeT{}.Next()) : 0;
+  const Long L = (rank > 0) ? detail::anchorWalkCount<DIM, DeviceVector>(off_l, gp, Nsplit, NodeT{}, mins[rank]) : 0;
+  const Long R = (rank + 1 < np) ? detail::anchorWalkCount<DIM, DeviceVector>(off_r, gp + Nsplit, Nrecv - Nsplit, mins[rank + 1], NodeT{}.Next()) : 0;
   DeviceScratch<NodeT, DeviceVector> left(L), right(R);
-  if (L) detail::anchorWalkWrite<DIM, DeviceVector>(thrust::raw_pointer_cast(left.data()), thrust::raw_pointer_cast(off_l.data()), gp, Nsplit, NodeT{}, A[rank]);
-  if (R) detail::anchorWalkWrite<DIM, DeviceVector>(thrust::raw_pointer_cast(right.data()), thrust::raw_pointer_cast(off_r.data()), gp + Nsplit, Nrecv - Nsplit, A[rank + 1], NodeT{}.Next());
+  if (L) detail::anchorWalkWrite<DIM, DeviceVector>(thrust::raw_pointer_cast(left.data()), thrust::raw_pointer_cast(off_l.data()), gp, Nsplit, NodeT{}, mins[rank]);
+  if (R) detail::anchorWalkWrite<DIM, DeviceVector>(thrust::raw_pointer_cast(right.data()), thrust::raw_pointer_cast(off_r.data()), gp + Nsplit, Nrecv - Nsplit, mins[rank + 1], NodeT{}.Next());
 
   // Swapped rather than assigned, so `tree` and this retained buffer trade storage each build
   // instead of one being freed and the other allocated.
@@ -1411,7 +1404,7 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
   mark("balance21");
 
   Long owned_begin = 0, owned_end = Long(tree.size());
-  detail_addGhostNodes::addGhostNodes<DIM>(tree, comm, halo_size, owned_begin, owned_end);
+  detail_addGhostNodes::addGhostNodes<DIM>(tree, mins, comm, halo_size, owned_begin, owned_end);
   mark("ghost");
 
   if (sort_scatter_index) *sort_scatter_index = std::move(idx);
