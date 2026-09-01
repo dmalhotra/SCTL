@@ -111,8 +111,8 @@ template <class Vec, class IVec> void local_sort_by_key(Vec& keys, IVec& vals, L
 // Route a sorted array to its owners. Per-rank element counts from splitting `in[0,n)` at the
 // device-resident `keys` (np keys, or np-1 splitters with the first block starting at 0), and the
 // counts coming back; returns the number of elements to be received.
-template <class T, template <class...> class DeviceVector>
-Long splitCounts(sctl::ScratchBuf<Long>& scnt, sctl::ScratchBuf<Long>& rcnt, const DeviceVector<T>& in, Long n,
+template <class T, template <class...> class DeviceVector, class Vec>
+Long splitCounts(sctl::ScratchBuf<Long>& scnt, sctl::ScratchBuf<Long>& rcnt, const Vec& in, Long n,
                  const DeviceScratch<T, DeviceVector>& keys, const Comm& comm) {
   const Long np = comm.Size(), nkeys = keys.Dim();
   SCTL_ASSERT(nkeys == np || nkeys == np - 1);
@@ -1071,6 +1071,7 @@ template <Integer DIM, WalkMode MODE> struct GhostSendFunctor {
   static constexpr Integer K = sctl::pow<DIM, Integer>(3);
   const Morton<DIM>* tree;
   const Morton<DIM>* A;  // rank boundaries (first node of each rank), lex order
+  Morton<DIM> lo, hi;    // this rank's owned interval [lo, hi)
   Long np, rank;
   Integer halo;
   const Long* offsets;      // Write only
@@ -1089,6 +1090,13 @@ template <Integer DIM, WalkMode MODE> struct GhostSendFunctor {
   SCTL_GPU_HD Long operator()(Long i) const {
     const Morton<DIM>& X = tree[i];
     const Integer lvl = (Integer(X.depth) > halo ? Integer(X.depth) - halo : 0);
+    { // Every neighbor strictly inside [lo, hi) belongs to this rank, so nothing is sent and the
+      // 3^DIM list need not be built. Strict on the low side: a neighbor starting exactly at `lo`
+      // would make the lower_bound below return `rank`, and `p0 = lb - 1` would reach rank-1.
+      Morton<DIM> nb0, nb1;
+      X.NbrRange(nb0, nb1, uint8_t(lvl));
+      if (lo < nb0 && !(hi < nb1)) return 0;
+    }
     const auto nl = X.NbrList(uint8_t(lvl), sctl::Periodicity::NONE);
     Long count = 0;
     GhostPair<DIM>* w = nullptr;
@@ -1131,21 +1139,32 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const Comm& comm, Integer ha
     for (Long r = np - 1; r >= 0; r--) if (!nn[r]) A[r] = (r + 1 < np) ? A[r + 1] : NodeT{}.Next();
   }
 
+  const NodeT lo = A[rank], hi = (rank + 1 < np) ? A[rank + 1] : NodeT{}.Next();
   const auto pol = detail::scratch_policy<DeviceVector, NodeT>();
   DeviceScratch<NodeT, DeviceVector> A_d(np);
   thrust::copy(A.begin(), A.end(), A_d.begin());
-  Long npairs = 0;
-  DeviceVector<GhostPair<DIM>> pairs;
-  if (halo_size >= 0) { // (dest rank, node) pairs, deduped
-    DeviceScratch<Long, DeviceVector> counts(Nn), offsets(Nn);
-    const GhostSendFunctor<DIM, WalkMode::Count> fc{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(A_d.data()), np, rank, halo_size, nullptr, nullptr};
+  // halo_size < 0 exchanges no neighbor nodes, so the scan is skipped and `pairs` stays empty. The
+  // count and write passes are separate blocks because `pairs` is a pool slice: its size has to be
+  // known at construction, and the scan is what produces it.
+  const Long Nscan = (halo_size >= 0 ? Nn : 0);
+  DeviceScratch<Long, DeviceVector> counts(Nscan), offsets(Nscan ? Nscan + 1 : 0);
+  Long npairs_tot = 0;
+  if (Nscan) { // how many (dest rank, node) pairs each owned node produces
+    const GhostSendFunctor<DIM, WalkMode::Count> fc{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(A_d.data()), lo, hi, np, rank, halo_size, nullptr, nullptr};
     thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), counts.begin(), fc);
-    thrust::exclusive_scan(pol, counts.begin(), counts.end(), offsets.begin(), Long(0));
-    pairs.resize(thrust::reduce(pol, counts.begin(), counts.end(), Long(0)));
-    const GhostSendFunctor<DIM, WalkMode::Write> fw{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(A_d.data()), np, rank, halo_size,
-                                                    thrust::raw_pointer_cast(offsets.data()), thrust::raw_pointer_cast(pairs.data())};
+    // Inclusive scan shifted by one: offsets[0, Nn) are the exclusive offsets the write pass wants
+    // and offsets[Nn] is the total, so sizing `pairs` needs no second pass over counts.
+    *offsets.begin() = Long(0);
+    thrust::inclusive_scan(pol, counts.begin(), counts.end(), offsets.begin() + 1);
+    thrust::copy(offsets.begin() + Nn, offsets.begin() + Nn + 1, &npairs_tot);
+  }
+  Long npairs = 0;
+  DeviceScratch<GhostPair<DIM>, DeviceVector> pairs(npairs_tot);
+  if (Nscan) { // emit the pairs, sort by (dest rank, node), drop duplicates
+    const GhostSendFunctor<DIM, WalkMode::Write> fw{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(A_d.data()), lo, hi, np, rank, halo_size,
+                                                  thrust::raw_pointer_cast(offsets.data()), thrust::raw_pointer_cast(pairs.data())};
     thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), counts.begin(), fw);
-    local_sort(pol, pairs, (Long)pairs.size());
+    local_sort(pol, pairs, npairs_tot);
     npairs = thrust::unique(pol, pairs.begin(), pairs.end(), GhostPairEqPred<DIM>{}) - pairs.begin();
   }
 

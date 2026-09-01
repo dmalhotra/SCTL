@@ -528,6 +528,20 @@ template <Integer DIM> SCTL_GPU_HD Long Morton<DIM>::operator-(const Morton& o) 
 }
 
 // sctl::Tree-compat overloads: write std::array result into a Vector outparam.
+template <Integer DIM> SCTL_GPU_HD void Morton<DIM>::NbrRange(Morton& first, Morton& last, uint8_t level) const {
+  const Morton base = Ancestor(level);
+  const std::uint64_t box_size = std::uint64_t(1) << (MAX_DEPTH - level);
+  const std::uint64_t maxCoord = std::uint64_t(1) << MAX_DEPTH;
+  std::uint64_t xlo[DIM], xhi[DIM];
+  for (Integer d = 0; d < DIM; ++d) {  // one box out on each side, clamped at the domain edge
+    const std::uint64_t x = MortonCode<DIM>::compact_bits(base.mid.code, d);
+    xlo[d] = (x >= box_size) ? x - box_size : x;
+    xhi[d] = (x + box_size < maxCoord) ? x + box_size : x;
+  }
+  first = Morton(MortonCode<DIM>(MortonCode<DIM>::interleave(xlo)), level).DFD();
+  last = Morton(MortonCode<DIM>(MortonCode<DIM>::interleave(xhi)), level).Next();
+}
+
 template <Integer DIM> void Morton<DIM>::NbrList(Vector<Morton>& nlst, uint8_t level, Periodicity periodicity) const {
   const auto arr = NbrList(level, periodicity);
   nlst.ReInit(static_cast<Long>(arr.size()));

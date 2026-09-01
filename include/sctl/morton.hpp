@@ -233,6 +233,11 @@ template <Integer DIM> class Morton {
   SCTL_GPU_HD std::array<Morton, (1 << DIM)> Children() const;
 
   /**
+   * Write the `2^DIM` children of this node into a Vector outparam (host-only).
+   */
+  void Children(Vector<Morton>& nlst) const;
+
+  /**
    * Path-to-node: this node's index among its parent's children, i.e. the last occupied
    * `DIM` bits of the code (level `MAX_DEPTH - depth`) as an integer. Inverse of
    * `Children()` ordering: `parent.Children()[m.Path2Node()] == m`. Returns 0 for the root.
@@ -248,7 +253,19 @@ template <Integer DIM> class Morton {
 
   /** sctl::Tree-compat overloads: write into a Vector outparam (host-only). */
   void NbrList(Vector<Morton>& nlst, uint8_t level, Periodicity periodicity) const;
-  void Children(Vector<Morton>& nlst) const;
+
+  /**
+   * Morton range `[first, last)` containing every neighbor `NbrList(level, Periodicity::NONE)`
+   * would return. Z-order is monotone in each coordinate, so the two extreme corners bound the
+   * whole `3^DIM` block: this costs two interleaves rather than `3^DIM` emissions. A caller that
+   * only needs to know whether any neighbor can fall outside a known range can test against this
+   * and skip building the list.
+   *
+   * @param[out] first Lowest code any neighbor's subtree can contain.
+   * @param[out] last  One past the highest such code.
+   * @param[in] level Tree level the neighbors are taken at.
+   */
+  SCTL_GPU_HD void NbrRange(Morton& first, Morton& last, uint8_t level) const;
 
   /** Lexicographic Morton order: by code first, with `depth` as tiebreaker. */
   SCTL_GPU_HD bool operator<(const Morton& o) const;
