@@ -950,11 +950,13 @@ void ClosureFrontier(DeviceVector<Morton<DIM>>& S) {
 
   // The per-round buffers come from the scratch pool: `buf`, `add` (kept candidates, at most
   // MAX_CHILD per frontier node) and the merge target. `F` (the frontier) and `S` (the caller's
-  // vector) outlive a round, so they stay real allocations that only grow, geometrically.
+  // vector) outlive a round, so they grow geometrically; both are retained across calls, so after
+  // the first few builds the high-water mark is reached and the growth stops allocating.
   const auto grow = [](DeviceVector<NodeT>& v, Long need) {
     if ((Long)v.size() < need) v.resize(std::max<Long>(need, 2 * (Long)v.size()));
   };
-  DeviceVector<NodeT> F(S.size());
+  DeviceVector<NodeT>& F = PersistentBuffer<NodeT, DeviceVector, 3>();
+  F.resize(S.size());
   thrust::copy(pol, S.begin(), S.end(), F.begin());
   Long ns = (Long)S.size(), nf = ns;
   for (int round = 0; round < 4 * MAX_DEPTH; round++) {
@@ -1012,11 +1014,11 @@ void Stage2(DeviceVector<Morton<DIM>>& S, const sctl::Vector<Morton<DIM>>& mins,
     Nrecv = detail::splitCounts(scnt, rcnt, S, (Long)S.size(), mins_d, comm);
   }
 
-  DeviceVector<NodeT> recv;
+  DeviceVector<NodeT>& recv = PersistentBuffer<NodeT, DeviceVector, 4>();
   detail::exchangePooled(pol, S, (Long)S.size(), recv, Nrecv, scnt, rcnt, comm);
   local_sort(pol, recv, Nrecv);  // np sorted runs -> one sorted block
   uniq(recv);
-  S = std::move(recv);
+  S.swap(recv);
 #endif
 }
 
@@ -1029,7 +1031,7 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
   const Long Nn = (Long)tree.size();
 
   const auto pol = detail::scratch_policy<DeviceVector, NodeT>();
-  DeviceVector<NodeT> S;
+  DeviceVector<NodeT>& S = PersistentBuffer<NodeT, DeviceVector, 2>();
   { // extend the slice to the whole domain, then take its non-leaf nodes
     constexpr Long BND = detail::kStaircaseMax<DIM>;
     DeviceScratch<NodeT, DeviceVector> lf(rank > 0 ? BND : 0), rt(rank + 1 < np ? BND : 0);
@@ -1207,7 +1209,10 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const Comm& comm, Integer ha
   if (L) detail::anchorWalkWrite<DIM, DeviceVector>(thrust::raw_pointer_cast(left.data()), thrust::raw_pointer_cast(off_l.data()), gp, Nsplit, NodeT{}, A[rank]);
   if (R) detail::anchorWalkWrite<DIM, DeviceVector>(thrust::raw_pointer_cast(right.data()), thrust::raw_pointer_cast(off_r.data()), gp + Nsplit, Nrecv - Nsplit, A[rank + 1], NodeT{}.Next());
 
-  DeviceVector<NodeT> merged(L + Nn + R);
+  // Swapped rather than assigned, so `tree` and this retained buffer trade storage each build
+  // instead of one being freed and the other allocated.
+  DeviceVector<NodeT>& merged = PersistentBuffer<NodeT, DeviceVector, 5>();
+  merged.resize(L + Nn + R);
   thrust::copy(pol, left.begin(), left.end(), merged.begin());
   thrust::copy(pol, tree.begin(), tree.end(), merged.begin() + L);
   thrust::copy(pol, right.begin(), right.end(), merged.begin() + L + Nn);
