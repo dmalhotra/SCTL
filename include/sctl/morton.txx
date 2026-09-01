@@ -527,13 +527,18 @@ template <Integer DIM> SCTL_GPU_HD Long Morton<DIM>::operator-(const Morton& o) 
   return static_cast<Long>((diff - offset0 - offset1) >> (MAX_DEPTH + 1 - max_d));
 }
 
-template <Integer DIM> SCTL_GPU_HD void Morton<DIM>::NbrRange(Morton& first, Morton& last, uint8_t level) const {
+template <Integer DIM> SCTL_GPU_HD void Morton<DIM>::NbrRange(Morton& first, Morton& last, uint8_t level, Periodicity periodicity) const {
   const Morton base = Ancestor(level);
   const std::uint64_t box_size = std::uint64_t(1) << (MAX_DEPTH - level);
   const std::uint64_t maxCoord = std::uint64_t(1) << MAX_DEPTH;
   std::uint64_t xlo[DIM], xhi[DIM];
   for (Integer d = 0; d < DIM; ++d) {  // one box out on each side, clamped at the domain edge
     const std::uint64_t x = MortonCode<DIM>::compact_bits(base.mid.code, d);
+    if (is_periodic(periodicity, d) && (x < box_size || x + box_size >= maxCoord)) {
+      first = Morton().DFD();  // wraps: the neighbors are no longer a contiguous range around this box
+      last = Morton().Next();
+      return;
+    }
     xlo[d] = (x >= box_size) ? x - box_size : x;
     xhi[d] = (x + box_size < maxCoord) ? x + box_size : x;
   }

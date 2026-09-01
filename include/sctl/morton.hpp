@@ -261,11 +261,16 @@ template <Integer DIM> class Morton {
    * only needs to know whether any neighbor can fall outside a known range can test against this
    * and skip building the list.
    *
+   * A neighbor that wraps across a periodic boundary is not adjacent in Morton order, so when the
+   * box touches a periodic face the range widens to the whole domain -- correct, but of no use for
+   * rejection. Only boxes on such a face are affected.
+   *
    * @param[out] first Lowest code any neighbor's subtree can contain.
    * @param[out] last  One past the highest such code.
    * @param[in] level Tree level the neighbors are taken at.
+   * @param[in] periodicity Axes that wrap.
    */
-  SCTL_GPU_HD void NbrRange(Morton& first, Morton& last, uint8_t level) const;
+  SCTL_GPU_HD void NbrRange(Morton& first, Morton& last, uint8_t level, Periodicity periodicity) const;
 
   /** Lexicographic Morton order: by code first, with `depth` as tiebreaker. */
   SCTL_GPU_HD bool operator<(const Morton& o) const;
