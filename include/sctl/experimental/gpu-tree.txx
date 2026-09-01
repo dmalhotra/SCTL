@@ -85,6 +85,17 @@ template <class Policy, class Vec> void local_sort(const Policy& pol, Vec& v, Lo
 
 // local_sort carrying a payload (the pre-sort index). Host path sorts packed pairs: thrust's
 // host backend is serial and omp_par has no by-key sort.
+template <class Vec, class IVec> void local_sort_by_key(Vec& keys, IVec& vals, Long n);
+
+// Same, with a caller-supplied execution policy (pooled temporaries) on the device path.
+template <class Policy, class Vec, class IVec> void local_sort_by_key(const Policy& pol, Vec& keys, IVec& vals, Long n) {
+  if constexpr (is_device_vector_v<Vec>) {
+    thrust::sort_by_key(pol, keys.begin(), keys.begin() + n, vals.begin());
+  } else {
+    local_sort_by_key(keys, vals, n);
+  }
+}
+
 template <class Vec, class IVec> void local_sort_by_key(Vec& keys, IVec& vals, Long n) {
   if constexpr (is_device_vector_v<Vec>) {
     thrust::sort_by_key(keys.begin(), keys.begin() + n, vals.begin());
@@ -796,6 +807,7 @@ template <Integer DIM> struct FirstChildInSlice {
 template <Integer DIM, template <class...> class DeviceVector>
 void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<DIM>>& mins, const Comm& comm) {
   using NodeT = Morton<DIM>;
+  const auto pol = detail::scratch_policy<DeviceVector, NodeT>();
   const Long rank = comm.Rank();
   const Long np = comm.Size();
   const NodeT end_target = (rank + 1 < np) ? mins[rank + 1] : NodeT{}.Next();
@@ -820,9 +832,9 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
     const NonLeafPred<DIM> is_nonleaf{thrust::raw_pointer_cast(full.data()), Nf, NodeT{}.Next()};
     if constexpr (detail::is_device_vector_v<DeviceVector<NodeT>>) {
       DeviceScratch<Long, DeviceVector> nl(Nf);
-      const Long Nnl = thrust::copy_if(thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nf), nl.begin(), is_nonleaf) - nl.begin();
+      const Long Nnl = thrust::copy_if(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nf), nl.begin(), is_nonleaf) - nl.begin();
       DeviceScratch<NodeT, DeviceVector> nlv(Nnl);
-      thrust::gather(nl.begin(), nl.begin() + Nnl, full.begin(), nlv.begin());
+      thrust::gather(pol, nl.begin(), nl.begin() + Nnl, full.begin(), nlv.begin());
       S.ReInit(Nnl);  // one bulk transfer: copying via device iterators element-by-element is slow
       thrust::copy(nlv.begin(), nlv.begin() + Nnl, S.begin());  // already sorted (full is)
     } else {  // thrust's host backend is serial, so compact with OpenMP straight into S
@@ -857,8 +869,8 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
     // parent_mid"); first_child keeps mid and adds a level, so the sequence stays sorted and the
     // walk between anchors emits the leaves.
     DeviceScratch<NodeT, DeviceVector> anch_d(S.Dim());
-    thrust::transform(S_d.begin(), S_d.end(), anch_d.begin(), FirstChildInSlice<DIM>{mins[rank], end_target});
-    const Long na = thrust::remove_if(anch_d.begin(), anch_d.end(), detail_balance21::InvalidDepthPred<DIM>{}) - anch_d.begin();
+    thrust::transform(pol, S_d.begin(), S_d.end(), anch_d.begin(), FirstChildInSlice<DIM>{mins[rank], end_target});
+    const Long na = thrust::remove_if(pol, anch_d.begin(), anch_d.end(), detail_balance21::InvalidDepthPred<DIM>{}) - anch_d.begin();
     rebuildFromAnchors<DIM>(tree, thrust::raw_pointer_cast(anch_d.data()), na, mins[rank], end_target);
   }
 }
@@ -1267,9 +1279,9 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
       goff -= Nloc;
       idx.resize(Nloc);
       thrust::sequence(pol, idx.begin(), idx.end(), goff);
-      detail::local_sort_by_key(pt_mid, idx, Nloc);
+      detail::local_sort_by_key(pol, pt_mid, idx, Nloc);
     } else {
-      detail::local_sort(pt_mid, Nloc);
+      detail::local_sort(pol, pt_mid, Nloc);
     }
   }
 
@@ -1290,9 +1302,9 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
       DeviceVector<Long> ibuf;
       detail::exchangePooled(pol, idx, (Long)idx.size(), ibuf, Nrecv, scnt, rcnt, comm);
       idx = std::move(ibuf);
-      detail::local_sort_by_key(buf, idx, Nrecv);  // np sorted segments -> one sorted block
+      detail::local_sort_by_key(pol, buf, idx, Nrecv);  // np sorted segments -> one sorted block
     } else {
-      detail::local_sort(buf, Nrecv);
+      detail::local_sort(pol, buf, Nrecv);
     }
     pt_mid = std::move(buf);
   }
@@ -1369,8 +1381,8 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
 
   { // build linear tree from pt_mid
     const Morton<DIM> end_bnd = (rank + 1 < np) ? mins[rank + 1] : Morton<DIM>{}.Next();
-    const Long idx0 = thrust::lower_bound(pt_mid.begin(), std::min(pt_mid.begin()+2*M, pt_mid.end()), mins[rank].mid) - pt_mid.begin();
-    const Long idx1 = thrust::lower_bound(std::max(pt_mid.begin(), pt_mid.end()-2*M), pt_mid.end(), end_bnd.mid) - pt_mid.begin();
+    const Long idx0 = thrust::lower_bound(pol, pt_mid.begin(), std::min(pt_mid.begin()+2*M, pt_mid.end()), mins[rank].mid) - pt_mid.begin();
+    const Long idx1 = thrust::lower_bound(pol, std::max(pt_mid.begin(), pt_mid.end()-2*M), pt_mid.end(), end_bnd.mid) - pt_mid.begin();
 
     if constexpr (detail::is_device_vector_v<DeviceVector<Real>>) {
       // anchor build wins for small slices, chunked for large; the choice depends only on local size.
