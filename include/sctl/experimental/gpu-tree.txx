@@ -806,7 +806,7 @@ template <Integer DIM> struct FirstChildInSlice {
   }
 };
 template <Integer DIM, template <class...> class DeviceVector>
-void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<DIM>>& mins, const Comm& comm) {
+void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<DIM>>& mins, const Comm& comm, sctl::Periodicity periodicity) {
   using NodeT = Morton<DIM>;
   const auto pol = detail::scratch_policy<DeviceVector, NodeT>();
   const Long rank = comm.Rank();
@@ -860,7 +860,7 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
   }
 
   { // sctl's balance21 over the non-leaf set (host, OpenMP); it also redistributes by mins
-    sctl::tree_detail::Balance21<DIM>(S, mins, comm, sctl::Periodicity::NONE);
+    sctl::tree_detail::Balance21<DIM>(S, mins, comm, periodicity);
   }
 
   { // balanced non-leaf set -> device; the leaves are built there
@@ -901,6 +901,7 @@ template <Integer DIM> struct ParentNbrSearch {
   const Integer* p_nbr_cnt;
   Long base;
   Morton<DIM>* out;          // MAX_CHILD slots per frontier node
+  sctl::Periodicity per;
 
   SCTL_GPU_HD void operator()(Long t) const {
     using NodeT = Morton<DIM>;
@@ -912,7 +913,7 @@ template <Integer DIM> struct ParentNbrSearch {
     Integer j = 0;
     if (d) {
       const NodeT p = s.Ancestor((uint8_t)(d - 1));
-      const auto pnbrs = p.NbrList((uint8_t)(d - 1), sctl::Periodicity::NONE);
+      const auto pnbrs = p.NbrList((uint8_t)(d - 1), per);
       const Integer p2n = s.Path2Node();
       for (; j < p_nbr_cnt[p2n]; j++) {
         const NodeT q = pnbrs[p_nbr_lst[p2n * K + j]];
@@ -931,7 +932,7 @@ template <Integer DIM> struct ParentNbrSearch {
 };
 
 template <Integer DIM, template <class...> class DeviceVector>
-void ClosureFrontier(DeviceVector<Morton<DIM>>& S) {
+void ClosureFrontier(DeviceVector<Morton<DIM>>& S, sctl::Periodicity periodicity) {
   using NodeT = Morton<DIM>;
   constexpr Integer K = sctl::pow<DIM, Integer>(3);
   constexpr Integer MAX_CHILD = (1u << DIM);
@@ -974,7 +975,7 @@ void ClosureFrontier(DeviceVector<Morton<DIM>>& S) {
       const Long nc = std::min<Long>(chunk, nf - c0);
       thrust::for_each_n(pol, thrust::counting_iterator<Long>(c0), nc, ParentNbrSearch<DIM>{
           thrust::raw_pointer_cast(F.data()), thrust::raw_pointer_cast(S.data()), ns,
-          thrust::raw_pointer_cast(pl_d.data()), thrust::raw_pointer_cast(pc_d.data()), c0, thrust::raw_pointer_cast(buf.data())});
+          thrust::raw_pointer_cast(pl_d.data()), thrust::raw_pointer_cast(pc_d.data()), c0, thrust::raw_pointer_cast(buf.data()), periodicity});
       const Long nkeep = thrust::remove_if(pol, buf.begin(), buf.begin() + nc * MAX_CHILD, detail_balance21::InvalidDepthPred<DIM>{}) - buf.begin();
       thrust::copy(pol, buf.begin(), buf.begin() + nkeep, add.begin() + nadd);
       nadd += nkeep;
@@ -1029,7 +1030,7 @@ void Stage2(DeviceVector<Morton<DIM>>& S, const sctl::Vector<Morton<DIM>>& mins,
 
 // Whole 2:1 balance on the device: extract the non-leaf set, close it, redistribute, rebuild leaves.
 template <Integer DIM, template <class...> class DeviceVector>
-void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<DIM>>& mins, const Comm& comm) {
+void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<DIM>>& mins, const Comm& comm, sctl::Periodicity periodicity) {
   using NodeT = Morton<DIM>;
   const Long rank = comm.Rank(), np = comm.Size();
   const NodeT end_target = (rank + 1 < np) ? mins[rank + 1] : NodeT{}.Next();
@@ -1056,7 +1057,7 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
     S.resize(k);
     thrust::gather(pol, ix.begin(), ix.begin() + k, full.begin(), S.begin());
   }
-  ClosureFrontier<DIM>(S);
+  ClosureFrontier<DIM>(S, periodicity);
   Stage2<DIM>(S, mins, comm);
 
   { // leaves: the walk between the first children of consecutive non-leaf nodes
@@ -1098,6 +1099,7 @@ template <Integer DIM, WalkMode MODE> struct GhostSendFunctor {
   Morton<DIM> lo, hi;    // this rank's owned interval [lo, hi)
   Long np, rank;
   Integer halo;
+  sctl::Periodicity per;
   const Long* offsets;      // Write only
   GhostPair<DIM>* out;      // Write only
 
@@ -1118,10 +1120,10 @@ template <Integer DIM, WalkMode MODE> struct GhostSendFunctor {
       // 3^DIM list need not be built. Strict on the low side: a neighbor starting exactly at `lo`
       // would make the lower_bound below return `rank`, and `p0 = lb - 1` would reach rank-1.
       Morton<DIM> nb0, nb1;
-      X.NbrRange(nb0, nb1, uint8_t(lvl));
+      X.NbrRange(nb0, nb1, uint8_t(lvl), per);
       if (lo < nb0 && !(hi < nb1)) return 0;
     }
-    const auto nl = X.NbrList(uint8_t(lvl), sctl::Periodicity::NONE);
+    const auto nl = X.NbrList(uint8_t(lvl), per);
     Long count = 0;
     GhostPair<DIM>* w = nullptr;
     if constexpr (MODE == WalkMode::Write) w = out + offsets[i];
@@ -1145,7 +1147,7 @@ template <Integer DIM, WalkMode MODE> struct GhostSendFunctor {
 // within the updated list. halo_size < 0 exchanges no neighbor nodes but still splices the coarse
 // complete-tree fill, so the list is full-domain on every rank (as in Tree::UpdateRefinement).
 template <Integer DIM, template <class...> class DeviceVector>
-void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DIM>>& mins, const Comm& comm, Integer halo_size, Long& owned_begin, Long& owned_end) {
+void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DIM>>& mins, const Comm& comm, Integer halo_size, sctl::Periodicity periodicity, Long& owned_begin, Long& owned_end) {
   using NodeT = Morton<DIM>;
   const Long rank = comm.Rank();
   const Long np = comm.Size();
@@ -1168,14 +1170,14 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const sctl::ScratchBuf<Morto
   Long npairs_tot = 0;
   if (Nscan) { // how many (dest rank, node) pairs each owned node produces
     DeviceScratch<Long, DeviceVector> counts(Nn);  // released before `pairs` is taken, so the pool stays LIFO
-    const GhostSendFunctor<DIM, WalkMode::Count> fc{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(mins_d.data()), lo, hi, np, rank, halo_size, nullptr, nullptr};
+    const GhostSendFunctor<DIM, WalkMode::Count> fc{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(mins_d.data()), lo, hi, np, rank, halo_size, periodicity, nullptr, nullptr};
     thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), counts.begin(), fc);
     npairs_tot = detail::scanCounts(pol, counts, offsets, Nn);
   }
   Long npairs = 0;
   DeviceScratch<GhostPair<DIM>, DeviceVector> pairs(npairs_tot);
   if (Nscan) { // emit the pairs, sort by (dest rank, node), drop duplicates
-    const GhostSendFunctor<DIM, WalkMode::Write> fw{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(mins_d.data()), lo, hi, np, rank, halo_size,
+    const GhostSendFunctor<DIM, WalkMode::Write> fw{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(mins_d.data()), lo, hi, np, rank, halo_size, periodicity,
                                                     thrust::raw_pointer_cast(offsets.data()), thrust::raw_pointer_cast(pairs.data())};
     thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), thrust::make_discard_iterator(), fw);
     local_sort(pol, pairs, npairs_tot);
@@ -1224,7 +1226,7 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const sctl::ScratchBuf<Morto
 // then a two-sided M-code halo and allgathered boundary anchors (mins). M is clamped to the
 // smallest per-rank count. Concatenated over ranks, the output matches single-rank buildTree.
 template <class Real, Integer DIM> template <template <class...> class DeviceVector>
-void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const Comm& comm, bool balance21, Integer halo_size, Long* owned_range, DeviceVector<Long>* sort_scatter_index) {
+void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, DeviceVector<Long>* sort_scatter_index) {
   // Env-gated per-stage profiler (sync + barrier so each delta is the true stage wall time).
   const bool gtprof = (getenv("GTPROF") != nullptr);
   double t_last = 0;
@@ -1397,14 +1399,14 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
   mark("walk (linearize)");
 
 #if defined(GT_BALANCE_HOST) && GT_BALANCE_HOST  // opt-in: closure on the host (see detail_balance21_host)
-  if (balance21) detail_balance21_host::balanceTreeDist<DIM>(tree, sctl::Vector<Morton<DIM>>(mins), comm);
+  if (balance21) detail_balance21_host::balanceTreeDist<DIM>(tree, sctl::Vector<Morton<DIM>>(mins), comm, periodicity);
 #else
-  if (balance21) detail_balance21_gpu::balanceTreeDist<DIM>(tree, sctl::Vector<Morton<DIM>>(mins), comm);
+  if (balance21) detail_balance21_gpu::balanceTreeDist<DIM>(tree, sctl::Vector<Morton<DIM>>(mins), comm, periodicity);
 #endif
   mark("balance21");
 
   Long owned_begin = 0, owned_end = Long(tree.size());
-  detail_addGhostNodes::addGhostNodes<DIM>(tree, mins, comm, halo_size, owned_begin, owned_end);
+  detail_addGhostNodes::addGhostNodes<DIM>(tree, mins, comm, halo_size, periodicity, owned_begin, owned_end);
   mark("ghost");
 
   if (sort_scatter_index) *sort_scatter_index = std::move(idx);

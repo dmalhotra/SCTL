@@ -38,6 +38,7 @@ template <class Real, Integer DIM> class GPUTree {
    * @param[in] M Maximum number of particles per leaf box.
    * @param[in] comm Communicator to distribute the build across.
    * @param[in] balance21 Apply 2:1 balance refinement.
+   * @param[in] periodicity Axes on which the domain wraps; neighbors cross those faces.
    * @param[in] halo_size Ghost-layer width; <0 adds no neighbor nodes. Either way the returned
    *            list is a full-domain complete tree on every rank (coarse outside the halo), so use
    *            `owned_range` to recover this rank's own nodes.
@@ -47,7 +48,7 @@ template <class Real, Integer DIM> class GPUTree {
    *             a permutation of [0, Nglob). Pass `nullptr` to discard.
    */
   template <template <class...> class DeviceVector>
-  static void buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M = 1, const Comm& comm = Comm::Self(), bool balance21 = false, Integer halo_size = -1, Long* owned_range = nullptr, DeviceVector<Long>* sort_scatter_index = nullptr);
+  static void buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M = 1, const Comm& comm = Comm::Self(), bool balance21 = false, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1, Long* owned_range = nullptr, DeviceVector<Long>* sort_scatter_index = nullptr);
 };
 
 }  // namespace gpu_tree
