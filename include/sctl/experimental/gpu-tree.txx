@@ -48,6 +48,11 @@ namespace gpu_tree {
 
 namespace detail {
 
+// Which retained buffer a `PersistentBuffer` call means: the arrays below are rebuilt every build,
+// and naming the tags here rather than numbering them at the use sites keeps two of them from
+// silently sharing one buffer.
+enum class Buf { PtMid, PtAlt, Closure, Frontier, ClosureRecv, GhostMerge };
+
 // Execution policy for thrust calls on backend memory, with temporaries drawn from the scratch
 // pool (thrust/cub otherwise cudaMalloc's them per call, which costs more than the work).
 template <template <class...> class DeviceVector, class T> auto scratch_policy() {
@@ -955,7 +960,7 @@ void ClosureFrontier(DeviceVector<Morton<DIM>>& S) {
   const auto grow = [](DeviceVector<NodeT>& v, Long need) {
     if ((Long)v.size() < need) v.resize(std::max<Long>(need, 2 * (Long)v.size()));
   };
-  DeviceVector<NodeT>& F = PersistentBuffer<NodeT, DeviceVector, 3>();
+  DeviceVector<NodeT>& F = detail::PersistentBuffer<NodeT, DeviceVector, detail::Buf::Frontier>();
   F.resize(S.size());
   thrust::copy(pol, S.begin(), S.end(), F.begin());
   Long ns = (Long)S.size(), nf = ns;
@@ -1014,7 +1019,7 @@ void Stage2(DeviceVector<Morton<DIM>>& S, const sctl::Vector<Morton<DIM>>& mins,
     Nrecv = detail::splitCounts(scnt, rcnt, S, (Long)S.size(), mins_d, comm);
   }
 
-  DeviceVector<NodeT>& recv = PersistentBuffer<NodeT, DeviceVector, 4>();
+  DeviceVector<NodeT>& recv = detail::PersistentBuffer<NodeT, DeviceVector, detail::Buf::ClosureRecv>();
   detail::exchangePooled(pol, S, (Long)S.size(), recv, Nrecv, scnt, rcnt, comm);
   local_sort(pol, recv, Nrecv);  // np sorted runs -> one sorted block
   uniq(recv);
@@ -1031,7 +1036,7 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
   const Long Nn = (Long)tree.size();
 
   const auto pol = detail::scratch_policy<DeviceVector, NodeT>();
-  DeviceVector<NodeT>& S = PersistentBuffer<NodeT, DeviceVector, 2>();
+  DeviceVector<NodeT>& S = detail::PersistentBuffer<NodeT, DeviceVector, detail::Buf::Closure>();
   { // extend the slice to the whole domain, then take its non-leaf nodes
     constexpr Long BND = detail::kStaircaseMax<DIM>;
     DeviceScratch<NodeT, DeviceVector> lf(rank > 0 ? BND : 0), rt(rank + 1 < np ? BND : 0);
@@ -1211,7 +1216,7 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const Comm& comm, Integer ha
 
   // Swapped rather than assigned, so `tree` and this retained buffer trade storage each build
   // instead of one being freed and the other allocated.
-  DeviceVector<NodeT>& merged = PersistentBuffer<NodeT, DeviceVector, 5>();
+  DeviceVector<NodeT>& merged = detail::PersistentBuffer<NodeT, DeviceVector, detail::Buf::GhostMerge>();
   merged.resize(L + Nn + R);
   thrust::copy(pol, left.begin(), left.end(), merged.begin());
   thrust::copy(pol, tree.begin(), tree.end(), merged.begin() + L);
@@ -1264,8 +1269,8 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
   DeviceVector<Long> idx; // TODO: is scatter index handled efficiently?
   // Double-buffered: `pt_mid` is replaced three times below (sort, repartition, halo). Swapping with
   // a second retained buffer recycles the storage instead of freeing it and taking a fresh block.
-  DeviceVector<MortonT>& pt_mid = PersistentBuffer<MortonT, DeviceVector, 0>();
-  DeviceVector<MortonT>& alt = PersistentBuffer<MortonT, DeviceVector, 1>();
+  DeviceVector<MortonT>& pt_mid = detail::PersistentBuffer<MortonT, DeviceVector, detail::Buf::PtMid>();
+  DeviceVector<MortonT>& alt = detail::PersistentBuffer<MortonT, DeviceVector, detail::Buf::PtAlt>();
   pt_mid.resize((Long)coord.size()/DIM);
   { // Encode coords -> Morton, then local sort (device radix / host omp_par).
     const Long Nloc = (Long)pt_mid.size();

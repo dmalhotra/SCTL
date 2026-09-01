@@ -10,6 +10,16 @@
 
 namespace gpu_tree {
 
+namespace detail {
+
+template <class T, template <class...> class DeviceVector, auto Tag>
+inline DeviceVector<T>& PersistentBuffer() {
+  static DeviceVector<T> buf;
+  return buf;
+}
+
+}  // namespace detail
+
 template <template <class...> class DeviceVector>
 inline DeviceScratchPool<DeviceVector>& DeviceScratchPool<DeviceVector>::Instance() {
   static DeviceScratchPool pool;
@@ -80,12 +90,6 @@ inline typename DeviceScratch<T, DeviceVector>::iterator DeviceScratch<T, Device
 
 template <class T, template <class...> class DeviceVector>
 inline Long DeviceScratch<T, DeviceVector>::Dim() const { return count_; }
-
-template <class T, template <class...> class DeviceVector, int Tag>
-inline DeviceVector<T>& PersistentBuffer() {
-  static DeviceVector<T> buf;
-  return buf;
-}
 
 template <template <class...> class DeviceVector>
 inline char* DeviceScratchAllocator<DeviceVector>::allocate(std::ptrdiff_t n) {
