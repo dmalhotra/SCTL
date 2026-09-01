@@ -546,19 +546,17 @@ void determineSplitters(sctl::Vector<Type>& splitters, const DeviceVector<Type>&
     return z ^ (z >> 31);
   };
 
-  DeviceVector<Type> q_d;  // grow-on-demand, reused across the bisection rounds below
-  DeviceVector<Long> r_d;
-  const auto local_ranks = [&q_d,&r_d,&pt]
+  const auto local_ranks = [&pt]
                            (sctl::Iterator<Long> r, sctl::ConstIterator<Type> q, const Long n, const bool upper = false) {  // batched binary search
     if (!n) return;
     if constexpr (is_device_vector_v<DeviceVector<Type>>) {  // device: thrust batched binary search
-      if ((Long)q_d.size() < n) q_d.resize(n);
-      if ((Long)r_d.size() < n) r_d.resize(n);
+      DeviceScratch<Type, DeviceVector> q_d(n);
+      DeviceScratch<Long, DeviceVector> r_d(n);
       const auto pol = detail::scratch_policy<DeviceVector, Type>();
       thrust::copy(q, q + n, q_d.begin());
-      if (upper) thrust::upper_bound(pol, pt.begin(), pt.end(), q_d.begin(), q_d.begin() + n, r_d.begin());
-      else       thrust::lower_bound(pol, pt.begin(), pt.end(), q_d.begin(), q_d.begin() + n, r_d.begin());
-      thrust::copy(r_d.begin(), r_d.begin() + n, r);
+      if (upper) thrust::upper_bound(pol, pt.begin(), pt.end(), q_d.begin(), q_d.end(), r_d.begin());
+      else       thrust::lower_bound(pol, pt.begin(), pt.end(), q_d.begin(), q_d.end(), r_d.begin());
+      thrust::copy(r_d.begin(), r_d.end(), r);
     } else {                                                 // host: omp binary search (thrust host backend is serial)
       const Type* pp = thrust::raw_pointer_cast(pt.data());
       const Long m = (Long)pt.size();
@@ -600,18 +598,16 @@ void determineSplitters(sctl::Vector<Type>& splitters, const DeviceVector<Type>&
   std::fill(state.begin(), state.end(), (char)ACTIVE);
 
 
-  DeviceVector<Type> gv_d;  // grow-on-demand, reused across the bisection rounds below
-  DeviceVector<Long> idx_d;
-  const auto gather_pt = [&idx_d,&gv_d,&pt]
+  const auto gather_pt = [&pt]
                          (sctl::Vector<Type>& out, const sctl::Vector<Long>& idxs) {  // out: pt[idxs]; in: idxs. one gather (+D2H on device)
     const Long n = idxs.Dim();
     if (out.Dim() != n) out.ReInit(n);
     if (!n) return;
-    if ((Long)idx_d.size() < n) idx_d.resize(n);
-    if ((Long)gv_d.size() < n) gv_d.resize(n);
+    DeviceScratch<Long, DeviceVector> idx_d(n);
+    DeviceScratch<Type, DeviceVector> gv_d(n);
     thrust::copy(idxs.begin(), idxs.end(), idx_d.begin());
-    thrust::gather(detail::scratch_policy<DeviceVector, Type>(), idx_d.begin(), idx_d.begin() + n, pt.begin(), gv_d.begin());
-    thrust::copy(gv_d.begin(), gv_d.begin() + n, out.begin());
+    thrust::gather(detail::scratch_policy<DeviceVector, Type>(), idx_d.begin(), idx_d.end(), pt.begin(), gv_d.begin());
+    thrust::copy(gv_d.begin(), gv_d.end(), out.begin());
   };
 
   // out: idxs (this rank's chosen local indices), local_cand (their point values). budget is constexpr -> no capture.
