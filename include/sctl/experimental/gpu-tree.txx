@@ -12,6 +12,7 @@
 #include <thrust/for_each.h>
 #include <thrust/gather.h>
 #include <thrust/iterator/counting_iterator.h>
+#include <thrust/iterator/discard_iterator.h>
 #include <thrust/iterator/transform_iterator.h>
 #include <thrust/reduce.h>
 #include <thrust/remove.h>
@@ -206,6 +207,17 @@ template <Integer DIM, WalkMode MODE> struct AnchorWalkFunctor {
 // The anchor walk in two passes, so a caller that knows (or can bound) the output size can write
 // straight into its own buffer -- e.g. pooled scratch -- instead of having the walk allocate one.
 
+// Exclusive scan of counts[0,n) into `offsets`, returning the total the scan already summed --
+// reading back the last offset and count avoids a second pass over counts just to total them.
+template <class Policy, template <class...> class DeviceVector>
+Long scanCounts(const Policy& pol, const DeviceScratch<Long, DeviceVector>& counts, DeviceScratch<Long, DeviceVector>& offsets, Long n) {
+  thrust::exclusive_scan(pol, counts.begin(), counts.begin() + n, offsets.begin(), Long(0));
+  Long tail[2] = {0, 0};
+  thrust::copy(offsets.begin() + (n - 1), offsets.begin() + n, &tail[0]);
+  thrust::copy(counts.begin() + (n - 1), counts.begin() + n, &tail[1]);
+  return tail[0] + tail[1];
+}
+
 // Count pass: fills `offsets` (exclusive scan of the per-pair node counts) and returns the total.
 template <Integer DIM, template <class...> class DeviceVector>
 Long anchorWalkCount(DeviceScratch<Long, DeviceVector>& offsets, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
@@ -215,8 +227,7 @@ Long anchorWalkCount(DeviceScratch<Long, DeviceVector>& offsets, const Morton<DI
   const AnchorWalkFunctor<DIM, WalkMode::Count> fc{anchors_ptr, n, start_node, end_target, nullptr, nullptr};
   if constexpr (is_device_vector_v<DeviceVector<Morton<DIM>>>) {
     thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fc);
-    thrust::exclusive_scan(pol, counts.begin(), counts.end(), offsets.begin(), Long(0));
-    return thrust::reduce(pol, counts.begin(), counts.end(), Long(0));
+    return scanCounts(pol, counts, offsets, n_pairs);
   } else {  // thrust's host backend is serial, so drive the walk with OpenMP instead
     Long* const cnt = thrust::raw_pointer_cast(counts.data());
     Long* const off = thrust::raw_pointer_cast(offsets.data());
@@ -324,8 +335,7 @@ class DeviceVector> void buildTreeGpu(DeviceVector<Morton<DIM>>& tree, const Dev
   DeviceScratch<Long, DeviceVector> counts(n_pairs), offsets(n_pairs);
   AnchorWalkFunctor<DIM, WalkMode::Count> fc{anchors_ptr, n_anchors, start_bnd, end_bnd, nullptr, nullptr};
   thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fc);
-  thrust::exclusive_scan(pol, counts.begin(), counts.end(), offsets.begin(), Long(0));
-  const Long total = thrust::reduce(pol, counts.begin(), counts.end(), Long(0));
+  const Long total = detail::scanCounts(pol, counts, offsets, n_pairs);
 
   tree.resize(total);
   AnchorWalkFunctor<DIM, WalkMode::Write> fw{
@@ -416,8 +426,7 @@ void buildTreeGpuChunked(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Mor
   DeviceScratch<Long, DeviceVector> counts(nthreads), offsets(nthreads);
   ChunkedWalkFunctor<Real, DIM, WalkMode::Count> fc{thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nthreads, nullptr, nullptr, start_bnd, end_bnd};
   thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(nthreads), counts.begin(), fc);
-  thrust::exclusive_scan(pol, counts.begin(), counts.end(), offsets.begin(), Long(0));
-  const Long total = thrust::reduce(pol, counts.begin(), counts.end(), Long(0));
+  const Long total = detail::scanCounts(pol, counts, offsets, nthreads);
 
   tree.resize(total);
   ChunkedWalkFunctor<Real, DIM, WalkMode::Write> fw{
@@ -1147,23 +1156,20 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const Comm& comm, Integer ha
   // count and write passes are separate blocks because `pairs` is a pool slice: its size has to be
   // known at construction, and the scan is what produces it.
   const Long Nscan = (halo_size >= 0 ? Nn : 0);
-  DeviceScratch<Long, DeviceVector> counts(Nscan), offsets(Nscan ? Nscan + 1 : 0);
+  DeviceScratch<Long, DeviceVector> offsets(Nscan);
   Long npairs_tot = 0;
   if (Nscan) { // how many (dest rank, node) pairs each owned node produces
+    DeviceScratch<Long, DeviceVector> counts(Nn);  // released before `pairs` is taken, so the pool stays LIFO
     const GhostSendFunctor<DIM, WalkMode::Count> fc{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(A_d.data()), lo, hi, np, rank, halo_size, nullptr, nullptr};
     thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), counts.begin(), fc);
-    // Inclusive scan shifted by one: offsets[0, Nn) are the exclusive offsets the write pass wants
-    // and offsets[Nn] is the total, so sizing `pairs` needs no second pass over counts.
-    *offsets.begin() = Long(0);
-    thrust::inclusive_scan(pol, counts.begin(), counts.end(), offsets.begin() + 1);
-    thrust::copy(offsets.begin() + Nn, offsets.begin() + Nn + 1, &npairs_tot);
+    npairs_tot = detail::scanCounts(pol, counts, offsets, Nn);
   }
   Long npairs = 0;
   DeviceScratch<GhostPair<DIM>, DeviceVector> pairs(npairs_tot);
   if (Nscan) { // emit the pairs, sort by (dest rank, node), drop duplicates
     const GhostSendFunctor<DIM, WalkMode::Write> fw{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(A_d.data()), lo, hi, np, rank, halo_size,
-                                                  thrust::raw_pointer_cast(offsets.data()), thrust::raw_pointer_cast(pairs.data())};
-    thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), counts.begin(), fw);
+                                                    thrust::raw_pointer_cast(offsets.data()), thrust::raw_pointer_cast(pairs.data())};
+    thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), thrust::make_discard_iterator(), fw);
     local_sort(pol, pairs, npairs_tot);
     npairs = thrust::unique(pol, pairs.begin(), pairs.end(), GhostPairEqPred<DIM>{}) - pairs.begin();
   }
