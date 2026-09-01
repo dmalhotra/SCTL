@@ -1257,7 +1257,11 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
   // carried through both redistributions below. Global, so concatenated over ranks it is a
   // permutation of [0, Nglob) matching the single-rank order.
   DeviceVector<Long> idx; // TODO: is scatter index handled efficiently?
-  DeviceVector<MortonT> pt_mid((Long)coord.size()/DIM);
+  // Double-buffered: `pt_mid` is replaced three times below (sort, repartition, halo). Swapping with
+  // a second retained buffer recycles the storage instead of freeing it and taking a fresh block.
+  DeviceVector<MortonT>& pt_mid = PersistentBuffer<MortonT, DeviceVector, 0>();
+  DeviceVector<MortonT>& alt = PersistentBuffer<MortonT, DeviceVector, 1>();
+  pt_mid.resize((Long)coord.size()/DIM);
   { // Encode coords -> Morton, then local sort (device radix / host omp_par).
     const Long Nloc = (Long)pt_mid.size();
     if constexpr (detail::is_device_vector_v<DeviceVector<Real>>) {
@@ -1292,17 +1296,16 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
     sctl::ScratchBuf<Long> scnt(np), rcnt(np);
     const Long Nrecv = detail::splitCounts(scnt, rcnt, pt_mid, (Long)pt_mid.size(), spl_d, comm);
 
-    DeviceVector<MortonT> buf;
-    detail::exchangePooled(pol, pt_mid, (Long)pt_mid.size(), buf, Nrecv, scnt, rcnt, comm);
+    detail::exchangePooled(pol, pt_mid, (Long)pt_mid.size(), alt, Nrecv, scnt, rcnt, comm);
     if (sort_scatter_index) {  // the index rides along on the same partition
       DeviceVector<Long> ibuf;
       detail::exchangePooled(pol, idx, (Long)idx.size(), ibuf, Nrecv, scnt, rcnt, comm);
       idx = std::move(ibuf);
-      detail::local_sort_by_key(pol, buf, idx, Nrecv);  // np sorted segments -> one sorted block
+      detail::local_sort_by_key(pol, alt, idx, Nrecv);  // np sorted segments -> one sorted block
     } else {
-      detail::local_sort(pol, buf, Nrecv);
+      detail::local_sort(pol, alt, Nrecv);
     }
-    pt_mid = std::move(buf);
+    pt_mid.swap(alt);
   }
   mark("encode+sort+splitters");
 
@@ -1329,9 +1332,8 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
         rcnt[q] = std::max<Long>(0, std::min(off[q + 1], tgt_hi) - std::max(off[q], tgt_lo));
       }
 
-      DeviceVector<MortonT> tmp;
-      detail::exchangePooled(pol, pt_mid, (Long)pt_mid.size(), tmp, tgt_hi - tgt_lo, scnt, rcnt, comm);
-      pt_mid = std::move(tmp);  // received segments concatenate in global-index order -> already sorted
+      detail::exchangePooled(pol, pt_mid, (Long)pt_mid.size(), alt, tgt_hi - tgt_lo, scnt, rcnt, comm);
+      pt_mid.swap(alt);  // received segments concatenate in global-index order -> already sorted
       if (sort_scatter_index) {
         DeviceVector<Long> itmp;
         detail::exchangePooled(pol, idx, (Long)idx.size(), itmp, tgt_hi - tgt_lo, scnt, rcnt, comm);
@@ -1348,16 +1350,16 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
   if (np > 1) { // halo: pt_mid <-- [M from left | pt_mid | M from right] (empty halo on domain-edge ranks)
     const Long recv0 = (rank > 0 ? M : 0);
     const Long recv1 = (rank < np - 1 ? M : 0);
-    DeviceVector<MortonT> buf(recv0 + pt_mid.size() + recv1);
-    thrust::copy(pol, pt_mid.begin(), pt_mid.end(), buf.begin() + recv0);
+    alt.resize(recv0 + pt_mid.size() + recv1);
+    thrust::copy(pol, pt_mid.begin(), pt_mid.end(), alt.begin() + recv0);
 
     const int left  = (rank > 0      ? int(rank - 1) : MPI_PROC_NULL);
     const int right = (rank + 1 < np ? int(rank + 1) : MPI_PROC_NULL);
-    MortonT* b = thrust::raw_pointer_cast(buf.data());
+    MortonT* b = thrust::raw_pointer_cast(alt.data());
     const int mb = int(M * (Long)sizeof(MortonT));
     MPI_Sendrecv(b + recv0,                         mb, MPI_BYTE, left,  27, b + recv0 + pt_mid.size(), mb, MPI_BYTE, right, 27, comm.GetMPI_Comm(), MPI_STATUS_IGNORE);
     MPI_Sendrecv(b + recv0 + pt_mid.size() - recv1, mb, MPI_BYTE, right, 28, b,                         mb, MPI_BYTE, left,  28, comm.GetMPI_Comm(), MPI_STATUS_IGNORE);
-    pt_mid = std::move(buf);
+    pt_mid.swap(alt);
   }
   #endif  // SCTL_HAVE_MPI
 

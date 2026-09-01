@@ -133,6 +133,19 @@ template <class T, template <class...> class DeviceVector> class DeviceScratch {
 };
 
 /**
+ * Long-lived working storage for an array that is rebuilt on every call. Unlike `DeviceScratch`
+ * (fixed size, LIFO, released at scope exit) this grows on demand and is retained for the process,
+ * so an array that ends up the same size each call stops allocating after the first. Swap into it
+ * instead of assigning a fresh vector and the storage is recycled rather than freed and retaken --
+ * which matters because a release is an allocator round trip and drains the device.
+ *
+ * `Tag` separates independent arrays so two of them do not share one buffer. Retention is deliberate,
+ * as in `DeviceScratchPool`. Like the pool, the buffers are process-wide: a caller that runs two
+ * builds concurrently in one process must not share a tag between them.
+ */
+template <class T, template <class...> class DeviceVector, int Tag> DeviceVector<T>& PersistentBuffer();
+
+/**
  * Allocator adaptor handing thrust's temporary storage to the same pool, e.g.
  * `thrust::cuda::par(alloc)`. Thrust frees its temporaries in LIFO order, so it fits the pool.
  */

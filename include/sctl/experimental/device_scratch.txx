@@ -81,6 +81,12 @@ inline typename DeviceScratch<T, DeviceVector>::iterator DeviceScratch<T, Device
 template <class T, template <class...> class DeviceVector>
 inline Long DeviceScratch<T, DeviceVector>::Dim() const { return count_; }
 
+template <class T, template <class...> class DeviceVector, int Tag>
+inline DeviceVector<T>& PersistentBuffer() {
+  static DeviceVector<T> buf;
+  return buf;
+}
+
 template <template <class...> class DeviceVector>
 inline char* DeviceScratchAllocator<DeviceVector>::allocate(std::ptrdiff_t n) {
   return DeviceScratchPool<DeviceVector>::Instance().AllocBytes((Long)n).second;
