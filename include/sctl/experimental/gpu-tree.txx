@@ -189,17 +189,16 @@ template <Integer DIM, class AttrT> struct NodeAttrFunctor {
   }
 };
 
-// Parent, children and same-level neighbors, each located by an exact binary search in the sorted
-// tree. sctl derives neighbors hierarchically (a node's neighbor is its parent's neighbor's child),
-// which forces level-by-level order; searching instead is the same answer and needs no ordering.
-template <Integer DIM, class ListT> struct NodeListsFunctor {
-  static constexpr Integer MAX_CHILD = 1 << DIM;
-  static constexpr Integer MAX_NBRS = sctl::pow<DIM, Integer>(3);
+// Connectivity in three passes, written straight into the caller's arrays. Parent and child are
+// kept in their own compact arrays -- 8 and 64 bytes per node -- because the neighbor walk reads
+// them repeatedly and the working set is what decides whether they stay cached.
+
+// Pass 1: parent index, by one exact binary search per node.
+template <Integer DIM> struct ParentPassFunctor {
   const Morton<DIM>* tree;
   Long n;
-  sctl::Periodicity per;
-
-  SCTL_GPU_HD Long find(const Morton<DIM>& key) const {  // exact (code, depth) match, else -1
+  Long* par;
+  SCTL_GPU_HD Long find(const Morton<DIM>& key) const {
     Long lo = 0, hi = n;
     while (lo < hi) {
       const Long m = lo + (hi - lo) / 2;
@@ -207,18 +206,46 @@ template <Integer DIM, class ListT> struct NodeListsFunctor {
     }
     return (lo < n && !(key < tree[lo])) ? lo : -1;
   }
-  SCTL_GPU_HD ListT operator()(Long i) const {
+  SCTL_GPU_HD void operator()(Long i) const {
+    const Integer d = tree[i].Depth();
+    par[i] = d ? find(tree[i].Ancestor((uint8_t)(d - 1))) : -1;
+  }
+};
+
+// Pass 2: each node writes itself into its parent's child slot. (parent, p2n) is unique: no atomics.
+template <Integer DIM> struct ChildPassFunctor {
+  static constexpr Integer MAX_CHILD = 1 << DIM;
+  const Morton<DIM>* tree;
+  const Long* par;
+  Long* ch;
+  SCTL_GPU_HD void operator()(Long i) const {
+    const Long p = par[i];
+    if (p >= 0) ch[p * MAX_CHILD + tree[i].Path2Node()] = i;
+  }
+};
+
+// Pass 3: locate each neighbor by walking down from the root along its path-to-node digits, through
+// the compact child array. No depth ordering is needed -- every node walks independently -- and the
+// shallow levels are shared by all nodes, so they stay cached.
+template <Integer DIM> struct NbrDescentFunctor {
+  static constexpr Integer MAX_CHILD = 1 << DIM;
+  static constexpr Integer MAX_NBRS = sctl::pow<DIM, Integer>(3);
+  const Morton<DIM>* tree;
+  const Long* ch;
+  Long* nbr;               // MAX_NBRS per node
+  sctl::Periodicity per;
+  SCTL_GPU_HD void operator()(Long i) const {
     const Morton<DIM> X = tree[i];
     const Integer d = X.Depth();
-    ListT L;
-    L.p2n = d ? (Long)X.Path2Node() : -1;
-    L.parent = d ? find(X.Ancestor((uint8_t)(d - 1))) : -1;
-    const auto ch = X.Children();
-    for (Integer k = 0; k < MAX_CHILD; k++) L.child[k] = find(ch[k]);
     const auto nl = X.NbrList((uint8_t)d, per);
-    for (Integer k = 0; k < MAX_NBRS; k++)
-      L.nbr[k] = (nl[k].depth == Morton<DIM>::INVALID_DEPTH) ? -1 : find(nl[k]);
-    return L;
+    Long* const out = nbr + i * MAX_NBRS;
+    for (Integer k = 0; k < MAX_NBRS; k++) {
+      const Morton<DIM>& m = nl[k];
+      if (m.depth == Morton<DIM>::INVALID_DEPTH) { out[k] = -1; continue; }
+      Long cur = 0;  // the root is at index 0
+      for (Integer l = 1; l <= d && cur >= 0; l++) cur = ch[cur * MAX_CHILD + m.Ancestor((uint8_t)l).Path2Node()];
+      out[k] = cur;
+    }
   }
 };
 
@@ -1271,7 +1298,7 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const sctl::ScratchBuf<Morto
 // then a two-sided M-code halo and allgathered boundary anchors (mins). M is clamped to the
 // smallest per-rank count. Concatenated over ranks, the output matches single-rank buildTree.
 template <class Real, Integer DIM> template <template <class...> class DeviceVector>
-void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index, Morton<DIM>* partition, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr, detail::no_deduce_t<DeviceVector<NodeLists>>* node_lists) {
+void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index, Morton<DIM>* partition, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr, detail::no_deduce_t<NodeLists<DeviceVector>>* node_lists) {
   // Env-gated per-stage profiler (sync + barrier so each delta is the true stage wall time).
   const bool gtprof = (getenv("GTPROF") != nullptr);
   double t_last = 0;
@@ -1469,11 +1496,19 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
                       detail::NodeAttrFunctor<DIM, NodeAttr>{thrust::raw_pointer_cast(tree.data()), Nt, owned_begin, owned_end});
   }
   if (node_lists) {
+    static constexpr Integer MAX_CHILD = 1 << DIM, MAX_NBRS = sctl::pow<DIM, Integer>(3);
     const Long Nt = (Long)tree.size();
-    node_lists->resize(Nt);
-    thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nt),
-                      node_lists->begin(),
-                      detail::NodeListsFunctor<DIM, NodeLists>{thrust::raw_pointer_cast(tree.data()), Nt, periodicity});
+    const Morton<DIM>* const tp = thrust::raw_pointer_cast(tree.data());
+    node_lists->parent.resize(Nt);
+    node_lists->child.resize(Nt * MAX_CHILD);
+    node_lists->nbr.resize(Nt * MAX_NBRS);
+    Long* const pp = thrust::raw_pointer_cast(node_lists->parent.data());
+    Long* const cp = thrust::raw_pointer_cast(node_lists->child.data());
+    Long* const np_ = thrust::raw_pointer_cast(node_lists->nbr.data());
+    thrust::fill(pol, node_lists->child.begin(), node_lists->child.end(), Long(-1));
+    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail::ParentPassFunctor<DIM>{tp, Nt, pp});
+    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail::ChildPassFunctor<DIM>{tp, pp, cp});
+    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail::NbrDescentFunctor<DIM>{tp, cp, np_, periodicity});
   }
 }
 

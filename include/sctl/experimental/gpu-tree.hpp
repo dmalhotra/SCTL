@@ -42,15 +42,17 @@ template <class Real, Integer DIM> class GPUTree {
   };
 
   /**
-   * Per-node connectivity, same meaning and layout as `sctl::Tree`'s. Indices are into `tree`;
-   * `-1` means the node is not in the tree (no parent at the root, no children at a leaf, no
-   * same-level neighbor across a domain face or where the tree is coarser).
+   * Per-node connectivity: the same links `sctl::Tree`'s NodeLists carries, but one array per kind
+   * rather than an array of structs. That is how the build produces them and how a GPU consumer
+   * reads them -- a thread per node touching one field gives coalesced access either way, and no
+   * copy into a packed struct is needed. Indices are into `tree`; `-1` means the node is not in the
+   * tree (no parent at the root, no children at a leaf, no same-level neighbor across a domain face
+   * or where the tree is coarser). `p2n` is not stored: it is `tree[i].Path2Node()`.
    */
-  struct NodeLists {
-    Long p2n;                              ///< index among the parent's children, -1 at the root
-    Long parent;                           ///< index of the parent, -1 at the root
-    Long child[1 << DIM];                  ///< indices of the children
-    Long nbr[sctl::pow<DIM, Integer>(3)];  ///< indices of the same-level neighbors
+  template <template <class...> class DeviceVector> struct NodeLists {
+    DeviceVector<Long> parent;  ///< `N`: index of the parent
+    DeviceVector<Long> child;   ///< `N * 2^DIM`, row-major: indices of the children
+    DeviceVector<Long> nbr;     ///< `N * 3^DIM`, row-major: indices of the same-level neighbors
   };
 
   /**
@@ -75,11 +77,11 @@ template <class Real, Integer DIM> class GPUTree {
    * @param[out] partition Optional: `comm.Size()` entries, the first node owned by each rank, so a
    *             caller can route its own data the same way the build did. Caller-allocated.
    * @param[out] node_attr Optional: per-node `Leaf`/`Ghost` flags, one per entry of `tree`.
-   * @param[out] node_lists Optional: per-node parent/child/neighbor indices. Costs one binary
-   *             search per link, so it is built only when asked for.
+   * @param[out] node_lists Optional: per-node parent/child/neighbor indices. Roughly 288 bytes per
+   *             node and a third of the build's time, so it is produced only when asked for.
    */
   template <template <class...> class DeviceVector>
-  static void buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M = 1, const Comm& comm = Comm::Self(), bool balance21 = false, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1, Long* owned_range = nullptr, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index = nullptr, Morton<DIM>* partition = nullptr, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr = nullptr, detail::no_deduce_t<DeviceVector<NodeLists>>* node_lists = nullptr);
+  static void buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M = 1, const Comm& comm = Comm::Self(), bool balance21 = false, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1, Long* owned_range = nullptr, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index = nullptr, Morton<DIM>* partition = nullptr, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr = nullptr, detail::no_deduce_t<NodeLists<DeviceVector>>* node_lists = nullptr);
 };
 
 }  // namespace gpu_tree
