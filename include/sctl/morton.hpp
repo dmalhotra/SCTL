@@ -251,6 +251,14 @@ template <Integer DIM> class Morton {
    */
   SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level, Periodicity periodicity) const;
 
+  /**
+   * `NbrList` with the mask fixed at compile time, skipping the runtime dispatch the `Periodicity`
+   * overload does internally. A device kernel that takes the mask as a runtime argument carries
+   * every `PER` emitter and branches over them in each thread; instantiating on the mask instead
+   * leaves one.
+   */
+  template <Periodicity PER> SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level) const;
+
   /** sctl::Tree-compat overloads: write into a Vector outparam (host-only). */
   void NbrList(Vector<Morton>& nlst, uint8_t level, Periodicity periodicity) const;
 
@@ -334,6 +342,10 @@ template <Integer DIM> class Morton {
   static SCTL_GPU_HD void nbr_loop_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
                                     Periodicity periodicity, uint8_t level,
                                     std::array<Morton, pow<DIM, std::size_t>(3)>& out);
+
+  /** Shared body of both `NbrList` forms; `DYN` reads the runtime `periodicity` instead of `PER`. */
+  template <Periodicity PER, bool DYN>
+  SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> nbr_list_(uint8_t level, Periodicity periodicity) const;
 };
 
 }  // namespace sctl

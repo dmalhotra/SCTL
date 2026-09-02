@@ -227,17 +227,16 @@ template <Integer DIM> struct ChildPassFunctor {
 // Pass 3: locate each neighbor by walking down from the root along its path-to-node digits, through
 // the compact child array. No depth ordering is needed -- every node walks independently -- and the
 // shallow levels are shared by all nodes, so they stay cached.
-template <Integer DIM> struct NbrDescentFunctor {
+template <Integer DIM, sctl::Periodicity PER> struct NbrDescentFunctor {
   static constexpr Integer MAX_CHILD = 1 << DIM;
   static constexpr Integer MAX_NBRS = sctl::pow<DIM, Integer>(3);
   const Morton<DIM>* tree;
   const Long* ch;
   Long* nbr;               // MAX_NBRS per node
-  sctl::Periodicity per;
   SCTL_GPU_HD void operator()(Long i) const {
     const Morton<DIM> X = tree[i];
     const Integer d = X.Depth();
-    const auto nl = X.NbrList((uint8_t)d, per);
+    const auto nl = X.template NbrList<PER>((uint8_t)d);
     Long* const out = nbr + i * MAX_NBRS;
     for (Integer k = 0; k < MAX_NBRS; k++) {
       const Morton<DIM>& m = nl[k];
@@ -304,6 +303,18 @@ Long scanCounts(const Policy& pol, const DeviceScratch<Long, DeviceVector>& coun
   thrust::copy(offsets.begin() + (n - 1), offsets.begin() + n, &tail[0]);
   thrust::copy(counts.begin() + (n - 1), counts.begin() + n, &tail[1]);
   return tail[0] + tail[1];
+}
+
+// Turn a runtime periodicity mask into a template parameter: `f` is called with the matching mask as
+// a `std::integral_constant`, so a kernel launched from it instantiates on the mask. A kernel that
+// takes the mask as a runtime argument instead carries every emitter `Morton::NbrList` can dispatch
+// to, which costs registers and so occupancy. All 2^DIM masks are enumerated, so a partial mask
+// (X|Z, ...) gets its own specialization like the named ones.
+template <Integer DIM, class F, sctl::PeriodicityT MASK = 0>
+void dispatchPeriodicity(sctl::Periodicity periodicity, const F& f) {
+  constexpr sctl::Periodicity PER = static_cast<sctl::Periodicity>(MASK);
+  if (periodicity == PER) { f(std::integral_constant<sctl::Periodicity, PER>{}); return; }
+  if constexpr (MASK + 1 < (1 << DIM)) dispatchPeriodicity<DIM, F, sctl::PeriodicityT(MASK + 1)>(periodicity, f);
 }
 
 // Count pass: fills `offsets` (exclusive scan of the per-pair node counts) and returns the total.
@@ -963,7 +974,7 @@ using detail::local_sort;
 // Expand one frontier node: for each distinct parent-neighbor of its 3^DIM same-depth neighbors
 // (the p2n map: <= 2^DIM of them), emit it if absent from the sorted non-leaf set S. The map is a
 // by-value member, so it rides in kernel parameters -- no device buffer, no per-call upload.
-template <Integer DIM> struct ParentNbrSearch {
+template <Integer DIM, sctl::Periodicity PER> struct ParentNbrSearch {
   static constexpr Integer MAX_CHILD = (1u << DIM);
   static constexpr Integer K = sctl::pow<DIM, Integer>(3);
   const Morton<DIM>* F;      // frontier nodes to expand
@@ -973,7 +984,6 @@ template <Integer DIM> struct ParentNbrSearch {
   const Integer* p_nbr_cnt;
   Long base;
   Morton<DIM>* out;          // MAX_CHILD slots per frontier node
-  sctl::Periodicity per;
 
   SCTL_GPU_HD void operator()(Long t) const {
     using NodeT = Morton<DIM>;
@@ -985,7 +995,7 @@ template <Integer DIM> struct ParentNbrSearch {
     Integer j = 0;
     if (d) {
       const NodeT p = s.Ancestor((uint8_t)(d - 1));
-      const auto pnbrs = p.NbrList((uint8_t)(d - 1), per);
+      const auto pnbrs = p.template NbrList<PER>((uint8_t)(d - 1));
       const Integer p2n = s.Path2Node();
       for (; j < p_nbr_cnt[p2n]; j++) {
         const NodeT q = pnbrs[p_nbr_lst[p2n * K + j]];
@@ -1045,9 +1055,11 @@ void ClosureFrontier(DeviceVector<Morton<DIM>>& S, sctl::Periodicity periodicity
     Long nadd = 0;
     for (Long c0 = 0; c0 < nf; c0 += chunk) {
       const Long nc = std::min<Long>(chunk, nf - c0);
-      thrust::for_each_n(pol, thrust::counting_iterator<Long>(c0), nc, ParentNbrSearch<DIM>{
-          thrust::raw_pointer_cast(F.data()), thrust::raw_pointer_cast(S.data()), ns,
-          thrust::raw_pointer_cast(pl_d.data()), thrust::raw_pointer_cast(pc_d.data()), c0, thrust::raw_pointer_cast(buf.data()), periodicity});
+      detail::dispatchPeriodicity<DIM>(periodicity, [&](auto per_c) {
+        thrust::for_each_n(pol, thrust::counting_iterator<Long>(c0), nc, ParentNbrSearch<DIM, decltype(per_c)::value>{
+            thrust::raw_pointer_cast(F.data()), thrust::raw_pointer_cast(S.data()), ns,
+            thrust::raw_pointer_cast(pl_d.data()), thrust::raw_pointer_cast(pc_d.data()), c0, thrust::raw_pointer_cast(buf.data())});
+      });
       const Long nkeep = thrust::remove_if(pol, buf.begin(), buf.begin() + nc * MAX_CHILD, detail_balance21::InvalidDepthPred<DIM>{}) - buf.begin();
       thrust::copy(pol, buf.begin(), buf.begin() + nkeep, add.begin() + nadd);
       nadd += nkeep;
@@ -1164,14 +1176,13 @@ template <Integer DIM> struct GhostPairToMid {
   SCTL_GPU_HD Morton<DIM> operator()(const GhostPair<DIM>& gp) const { return gp.m; }
 };
 
-template <Integer DIM, WalkMode MODE> struct GhostSendFunctor {
+template <Integer DIM, WalkMode MODE, sctl::Periodicity PER> struct GhostSendFunctor {
   static constexpr Integer K = sctl::pow<DIM, Integer>(3);
   const Morton<DIM>* tree;
   const Morton<DIM>* A;  // partition boundaries: A[r] is rank r's first node, lex order
   Morton<DIM> lo, hi;    // this rank's owned interval [lo, hi)
   Long np, rank;
   Integer halo;
-  sctl::Periodicity per;
   const Long* offsets;      // Write only
   GhostPair<DIM>* out;      // Write only
 
@@ -1192,10 +1203,10 @@ template <Integer DIM, WalkMode MODE> struct GhostSendFunctor {
       // 3^DIM list need not be built. Strict on the low side: a neighbor starting exactly at `lo`
       // would make the lower_bound below return `rank`, and `p0 = lb - 1` would reach rank-1.
       Morton<DIM> nb0, nb1;
-      X.NbrRange(nb0, nb1, uint8_t(lvl), per);
+      X.NbrRange(nb0, nb1, uint8_t(lvl), PER);
       if (lo < nb0 && !(hi < nb1)) return 0;
     }
-    const auto nl = X.NbrList(uint8_t(lvl), per);
+    const auto nl = X.template NbrList<PER>(uint8_t(lvl));
     Long count = 0;
     GhostPair<DIM>* w = nullptr;
     if constexpr (MODE == WalkMode::Write) w = out + offsets[i];
@@ -1242,16 +1253,20 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const sctl::ScratchBuf<Morto
   Long npairs_tot = 0;
   if (Nscan) { // how many (dest rank, node) pairs each owned node produces
     DeviceScratch<Long, DeviceVector> counts(Nn);  // released before `pairs` is taken, so the pool stays LIFO
-    const GhostSendFunctor<DIM, WalkMode::Count> fc{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(mins_d.data()), lo, hi, np, rank, halo_size, periodicity, nullptr, nullptr};
-    thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), counts.begin(), fc);
+    detail::dispatchPeriodicity<DIM>(periodicity, [&](auto per_c) {
+      const GhostSendFunctor<DIM, WalkMode::Count, decltype(per_c)::value> fc{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(mins_d.data()), lo, hi, np, rank, halo_size, nullptr, nullptr};
+      thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), counts.begin(), fc);
+    });
     npairs_tot = detail::scanCounts(pol, counts, offsets, Nn);
   }
   Long npairs = 0;
   DeviceScratch<GhostPair<DIM>, DeviceVector> pairs(npairs_tot);
   if (Nscan) { // emit the pairs, sort by (dest rank, node), drop duplicates
-    const GhostSendFunctor<DIM, WalkMode::Write> fw{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(mins_d.data()), lo, hi, np, rank, halo_size, periodicity,
-                                                    thrust::raw_pointer_cast(offsets.data()), thrust::raw_pointer_cast(pairs.data())};
-    thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), thrust::make_discard_iterator(), fw);
+    detail::dispatchPeriodicity<DIM>(periodicity, [&](auto per_c) {
+      const GhostSendFunctor<DIM, WalkMode::Write, decltype(per_c)::value> fw{thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(mins_d.data()), lo, hi, np, rank, halo_size,
+                                                                              thrust::raw_pointer_cast(offsets.data()), thrust::raw_pointer_cast(pairs.data())};
+      thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), thrust::make_discard_iterator(), fw);
+    });
     local_sort(pol, pairs, npairs_tot);
     npairs = thrust::unique(pol, pairs.begin(), pairs.end(), GhostPairEqPred<DIM>{}) - pairs.begin();
   }
@@ -1508,7 +1523,9 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
     thrust::fill(pol, node_lists->child.begin(), node_lists->child.end(), Long(-1));
     thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail::ParentPassFunctor<DIM>{tp, Nt, pp});
     thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail::ChildPassFunctor<DIM>{tp, pp, cp});
-    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail::NbrDescentFunctor<DIM>{tp, cp, np_, periodicity});
+    detail::dispatchPeriodicity<DIM>(periodicity, [&](auto per_c) {
+      thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail::NbrDescentFunctor<DIM, decltype(per_c)::value>{tp, cp, np_});
+    });
   }
 }
 

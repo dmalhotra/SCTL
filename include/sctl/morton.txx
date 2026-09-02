@@ -445,7 +445,8 @@ SCTL_GPU_HD void Morton<DIM>::nbr_loop_(const std::uint64_t* xi_self, std::uint6
   }
 }
 
-template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrList(uint8_t level, Periodicity periodicity) const {
+template <Integer DIM> template <Periodicity PER, bool DYN>
+SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::nbr_list_(uint8_t level, Periodicity periodicity) const {
   static_assert(DIM <= PERIODICITY_MAX_DIM, "NbrList: DIM exceeds the Periodicity bitmask width");
   std::array<Morton, pow<DIM, std::size_t>(3)> out{};
 
@@ -462,24 +463,36 @@ template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>
 #if defined(__CUDA_ARCH__)
   // On device the fully-unrolled emitters exhaust the register budget at high DIM (DIM>=4 hits the
   // 255-reg cap + spills -> low occupancy); the compact `nbr_loop_` keeps occupancy high and is
-  // ~1.6x faster there. Host/lower-DIM keep the unrolled switch (faster on CPU and device DIM<=3).
-  // The `else` (not a bare `return`) keeps the unrolled switch from being instantiated on this path.
+  // ~1.6x faster there. Host/lower-DIM keep the unrolled emitter (faster on CPU and device DIM<=3).
+  // The `else` (not a bare `return`) keeps the unrolled emitter from being instantiated on this path.
   if constexpr (DIM >= 4) {
     nbr_loop_(xi_self, box_size, maxCoord, periodicity, level, out);
   } else
 #endif
-  // Dispatch runtime periodicity to a PER-specialized, unrolled, force-inlined emitter (DYN==false);
-  // other masks runtime. ~2-3x faster than `nbr_loop_` on host/DIM<=3 (which is the readable form).
-  switch (periodicity) {
-    case Periodicity::NONE: nbr_emit_<Periodicity::NONE, false, 0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
-    case Periodicity::X:    nbr_emit_<Periodicity::X,    false, 0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
-    case Periodicity::Y:    nbr_emit_<Periodicity::Y,    false, 0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
-    case Periodicity::Z:    nbr_emit_<Periodicity::Z,    false, 0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
-    case Periodicity::XY:   nbr_emit_<Periodicity::XY,   false, 0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
-    case Periodicity::XYZ:  nbr_emit_<Periodicity::XYZ,  false, 0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
-    default:                nbr_emit_<Periodicity::NONE, true,  0>(xi_self, box_size, maxCoord, periodicity, level, out); break;
-  }
+  nbr_emit_<PER, DYN, 0>(xi_self, box_size, maxCoord, periodicity, level, out);
   return out;
+}
+
+template <Integer DIM> template <Periodicity PER>
+SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrList(uint8_t level) const {
+  return nbr_list_<PER, false>(level, PER);
+}
+
+template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrList(uint8_t level, Periodicity periodicity) const {
+  // Dispatch runtime periodicity to a PER-specialized, unrolled, force-inlined emitter (DYN==false);
+  // every mask up to DIM==3 is enumerated, so only DIM>3 masks take the runtime emitter. ~2-3x
+  // faster than `nbr_loop_` on host/DIM<=3 (which is the readable form).
+  switch (periodicity) {
+    case Periodicity::NONE: return nbr_list_<Periodicity::NONE, false>(level, periodicity);
+    case Periodicity::X:    return nbr_list_<Periodicity::X,    false>(level, periodicity);
+    case Periodicity::Y:    return nbr_list_<Periodicity::Y,    false>(level, periodicity);
+    case Periodicity::Z:    return nbr_list_<Periodicity::Z,    false>(level, periodicity);
+    case Periodicity::XY:   return nbr_list_<Periodicity::XY,   false>(level, periodicity);
+    case Periodicity::X | Periodicity::Z: return nbr_list_<Periodicity::X | Periodicity::Z, false>(level, periodicity);
+    case Periodicity::Y | Periodicity::Z: return nbr_list_<Periodicity::Y | Periodicity::Z, false>(level, periodicity);
+    case Periodicity::XYZ:  return nbr_list_<Periodicity::XYZ,  false>(level, periodicity);
+    default:                return nbr_list_<Periodicity::NONE, true >(level, periodicity);
+  }
 }
 
 template <Integer DIM> SCTL_GPU_HD bool Morton<DIM>::operator<(const Morton& o) const {
