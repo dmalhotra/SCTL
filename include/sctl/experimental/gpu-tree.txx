@@ -61,9 +61,7 @@ template <template <class...> class DeviceVector, class T> auto scratch_policy()
   }
 }
 
-// Which retained buffer a `PersistentBuffer` call means: the arrays below are rebuilt every build,
-// and naming the tags here rather than numbering them at the use sites keeps two of them from
-// silently sharing one buffer.
+// Which retained buffer a `PersistentBuffer` call means; no two uses may share a tag.
 enum class Buf { PtMid, PtAlt, Closure, Frontier, ClosureRecv, GhostMerge };
 
 // Functor (not lambda) so nvcc captures it across thrust kernel boundaries.
@@ -234,10 +232,8 @@ Long scanCounts(const Policy& pol, const DeviceScratch<Long, DeviceVector>& coun
 }
 
 // Turn a runtime periodicity mask into a template parameter: `f` is called with the matching mask as
-// a `std::integral_constant`, so a kernel launched from it instantiates on the mask. A kernel that
-// takes the mask as a runtime argument instead carries every emitter `Morton::NbrList` can dispatch
-// to, which costs registers and so occupancy. All 2^DIM masks are enumerated, so a partial mask
-// (X|Z, ...) gets its own specialization like the named ones.
+// a `std::integral_constant`, so the kernel it launches carries one `Morton::NbrList` emitter rather
+// than all of them. Every 2^DIM mask is enumerated, partial ones (X|Z, ...) included.
 template <Integer DIM, class F, sctl::PeriodicityT MASK = 0>
 void dispatchPeriodicity(sctl::Periodicity periodicity, const F& f) {
   constexpr sctl::Periodicity PER = static_cast<sctl::Periodicity>(MASK);
@@ -754,9 +750,8 @@ using detail::scratch_policy;
 // Longest possible boundary staircase (zero anchors): at most 2^DIM nodes emitted per level.
 template <Integer DIM> constexpr Long kStaircaseMax = (Long)MAX_DEPTH * ((Long)1 << DIM) + 1;
 
-// One boundary staircase into a caller-provided buffer of at least kStaircaseMax entries. Single
-// Write pass: with one pair the offset is trivially 0, so the count pass is unnecessary -- the
-// functor returns the node count it wrote.
+// Coarsest complete-tree nodes filling the Morton interval [start_node, end_target). The functor
+// returns the node count it wrote.
 template <Integer DIM, template <class...> class DeviceVector>
 Long staircaseWalk(Morton<DIM>* out, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
   const auto pol = scratch_policy<DeviceVector, Morton<DIM>>();
@@ -901,17 +896,13 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
 
 // Default balance: everything on the device. Local closure over the sorted non-leaf set
 // (ClosureFrontier), then redistribute by `mins` and dedup (Stage2, CUDA-aware MPI straight from
-// device buffers), then rebuild the leaves. Array-based throughout -- a pointer tree is a poor GPU
-// fit -- and nothing crosses PCIe.
+// device buffers), then rebuild the leaves. Nothing crosses PCIe.
 namespace detail_balance21_gpu {
 using detail::local_sort;
 
-// Frontier closure: expand only the nodes added in the previous round. Each node contributes the
-// de-duplicated parents of its 3^DIM neighbors (at most 2^DIM, via the p2n map) and they are looked
-// up in the non-leaf set rather than the whole tree.
 // Expand one frontier node: for each distinct parent-neighbor of its 3^DIM same-depth neighbors
 // (the p2n map: <= 2^DIM of them), emit it if absent from the sorted non-leaf set S. The map is a
-// by-value member, so it rides in kernel parameters -- no device buffer, no per-call upload.
+// by-value member, so it rides in kernel parameters.
 template <Integer DIM, sctl::Periodicity PER> struct ParentNbrSearch {
   static constexpr Integer MAX_CHILD = (1u << DIM);
   static constexpr Integer K = sctl::pow<DIM, Integer>(3);
@@ -951,6 +942,8 @@ template <Integer DIM, sctl::Periodicity PER> struct ParentNbrSearch {
   }
 };
 
+// Expand only the nodes added in the previous round, looking their parent-neighbors up in the
+// non-leaf set.
 template <Integer DIM, template <class...> class DeviceVector>
 void ClosureFrontier(DeviceVector<Morton<DIM>>& S, sctl::Periodicity periodicity) {
   using NodeT = Morton<DIM>;
@@ -974,10 +967,8 @@ void ClosureFrontier(DeviceVector<Morton<DIM>>& S, sctl::Periodicity periodicity
     thrust::copy(pc.begin(), pc.end(), pc_d.begin());
   }
 
-  // The per-round buffers come from the scratch pool: `buf`, `add` (kept candidates, at most
-  // MAX_CHILD per frontier node) and the merge target. `F` (the frontier) and `S` (the caller's
-  // vector) outlive a round, so they grow geometrically; both are retained across calls, so after
-  // the first few builds the high-water mark is reached and the growth stops allocating.
+  // Per-round buffers come from the scratch pool: `buf`, `add` (at most MAX_CHILD per frontier
+  // node) and the merge target. `F` and `S` outlive a round, so they grow geometrically.
   const auto grow = [](DeviceVector<NodeT>& v, Long need) {
     if ((Long)v.size() < need) v.resize(std::max<Long>(need, 2 * (Long)v.size()));
   };

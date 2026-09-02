@@ -252,10 +252,8 @@ template <Integer DIM> class Morton {
   SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level, Periodicity periodicity) const;
 
   /**
-   * `NbrList` with the mask fixed at compile time, skipping the runtime dispatch the `Periodicity`
-   * overload does internally. A device kernel that takes the mask as a runtime argument carries
-   * every `PER` emitter and branches over them in each thread; instantiating on the mask instead
-   * leaves one.
+   * `NbrList` with the mask fixed at compile time, so only one `PER` emitter is instantiated and the
+   * `Periodicity` overload's runtime dispatch is skipped.
    */
   template <Periodicity PER> SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level) const;
 
