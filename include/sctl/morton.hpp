@@ -325,8 +325,9 @@ template <Integer DIM> class Morton {
    *
    * Periodicity is also a template parameter: `NbrList` dispatches the runtime `Periodicity` via a
    * `switch` to a `PER`-specialized instantiation (`DYN == false`) so `is_periodic(PER, d)` is a
-   * compile-time constant and the wrap-vs-out-of-bounds branch folds away. Unenumerated masks fall
-   * through to the `DYN == true` instantiation, which reads the runtime `periodicity` argument.
+   * compile-time constant and the wrap-vs-out-of-bounds branch folds away. Every mask up to DIM==3
+   * is enumerated, so only a DIM>3 mask reaches the `DYN == true` instantiation, which reads the
+   * runtime `periodicity` argument.
    */
   template <Periodicity PER, bool DYN, Integer idx, Integer d>
   static SCTL_GPU_HD void nbr_fill_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
@@ -338,7 +339,7 @@ template <Integer DIM> class Morton {
                                     std::array<Morton, pow<DIM, std::size_t>(3)>& out);
 
   /** Compact (non-unrolled) emitter; the readable reference form of `nbr_emit_`. Used on-device for
-   *  DIM>=4 where the unrolled emitters spill and tank occupancy (host/DIM<=3 use the switch). */
+   *  DIM>=4 where the unrolled emitters spill and tank occupancy (host/DIM<=3 use `nbr_emit_`). */
   static SCTL_GPU_HD void nbr_loop_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
                                     Periodicity periodicity, uint8_t level,
                                     std::array<Morton, pow<DIM, std::size_t>(3)>& out);

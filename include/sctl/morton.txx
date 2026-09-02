@@ -488,8 +488,8 @@ template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>
     case Periodicity::Y:    return nbr_list_<Periodicity::Y,    false>(level, periodicity);
     case Periodicity::Z:    return nbr_list_<Periodicity::Z,    false>(level, periodicity);
     case Periodicity::XY:   return nbr_list_<Periodicity::XY,   false>(level, periodicity);
-    case Periodicity::X | Periodicity::Z: return nbr_list_<Periodicity::X | Periodicity::Z, false>(level, periodicity);
-    case Periodicity::Y | Periodicity::Z: return nbr_list_<Periodicity::Y | Periodicity::Z, false>(level, periodicity);
+    case Periodicity::XZ:   return nbr_list_<Periodicity::XZ,   false>(level, periodicity);
+    case Periodicity::YZ:   return nbr_list_<Periodicity::YZ,   false>(level, periodicity);
     case Periodicity::XYZ:  return nbr_list_<Periodicity::XYZ,  false>(level, periodicity);
     default:                return nbr_list_<Periodicity::NONE, true >(level, periodicity);
   }

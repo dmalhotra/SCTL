@@ -57,6 +57,8 @@ enum class Periodicity : uint8_t {
   Y = 1u << 1,
   Z = 1u << 2,
   XY = X | Y,
+  XZ = X | Z,
+  YZ = Y | Z,
   XYZ = X | Y | Z
 };
 

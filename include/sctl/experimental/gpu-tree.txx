@@ -14,7 +14,6 @@
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/iterator/discard_iterator.h>
 #include <thrust/iterator/transform_iterator.h>
-#include <thrust/reduce.h>
 #include <thrust/remove.h>
 #include <thrust/scan.h>
 #include <thrust/binary_search.h>
@@ -31,7 +30,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <cstring>
+#include <type_traits>
 #include <utility>
 #include <numeric>
 
