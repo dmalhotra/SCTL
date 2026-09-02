@@ -152,18 +152,20 @@ template <Integer DIM> SCTL_GPU_HD uint8_t MortonCode<DIM>::coarsest_depth(const
 
 // log-step doubling: at each Step, r <- (r | (r << (DIM-1)*2^Step)) & mask_Step, where mask_Step keeps
 // bit p iff (p mod (DIM*2^Step)) < 2^Step. Bottoms out at Step == -1.
+template <Integer DIM> template <Integer S> constexpr typename MortonCode<DIM>::MortonInteger MortonCode<DIM>::step_mask() {
+  MortonInteger m{};
+  constexpr Integer total_bits = DIM * MAX_DEPTH;
+  constexpr Integer stride     = DIM * (Integer(1) << S);
+  constexpr Integer keep       =       (Integer(1) << S);
+  for (Integer p = 0; p < total_bits; ++p)
+    if ((p % stride) < keep) m |= MortonInteger(1) << static_cast<int>(p);
+  return m;
+}
+
 template <Integer DIM> template <Integer Step> SCTL_GPU_HD typename MortonCode<DIM>::MortonInteger MortonCode<DIM>::spread_step(MortonInteger r) {
   if constexpr (Step >= 0) {
     constexpr int shift = static_cast<int>((DIM - 1) * (Integer(1) << Step));
-    constexpr MortonInteger mask = [] {
-      MortonInteger m{};
-      constexpr Integer total_bits = DIM * MAX_DEPTH;
-      constexpr Integer stride     = DIM * (Integer(1) << Step);
-      constexpr Integer keep       =       (Integer(1) << Step);
-      for (Integer p = 0; p < total_bits; ++p)
-        if ((p % stride) < keep) m |= MortonInteger(1) << static_cast<int>(p);
-      return m;
-    }();
+    constexpr MortonInteger mask = step_mask<Step>();
     r = (r | (r << shift)) & mask;
     return spread_step<Step - 1>(r);
   } else {
@@ -172,11 +174,6 @@ template <Integer DIM> template <Integer Step> SCTL_GPU_HD typename MortonCode<D
 }
 
 template <Integer DIM> SCTL_GPU_HD typename MortonCode<DIM>::MortonInteger MortonCode<DIM>::spread_bits(std::uint64_t xi) {
-  constexpr Integer NumSteps = [] {
-    Integer l = 0;
-    while ((Integer(1) << l) < MAX_DEPTH) ++l;
-    return l;
-  }();
   return spread_step<NumSteps - 1>(static_cast<MortonInteger>(xi));
 }
 
@@ -184,22 +181,9 @@ template <Integer DIM> SCTL_GPU_HD typename MortonCode<DIM>::MortonInteger Morto
 // corresponding spread step back together: r <- (r | (r >> (DIM-1)*2^Step)) & mask_Step, where
 // mask_Step keeps bit p iff (p mod (DIM*2^(Step+1))) < 2^(Step+1). Bottoms out when Step == NumSteps.
 template <Integer DIM> template <Integer Step> SCTL_GPU_HD typename MortonCode<DIM>::MortonInteger MortonCode<DIM>::compact_step(MortonInteger r) {
-  constexpr Integer NumSteps = [] {
-    Integer l = 0;
-    while ((Integer(1) << l) < MAX_DEPTH) ++l;
-    return l;
-  }();
   if constexpr (Step < NumSteps) {
     constexpr int shift = static_cast<int>((DIM - 1) * (Integer(1) << Step));
-    constexpr MortonInteger mask = [] {
-      MortonInteger m{};
-      constexpr Integer total_bits = DIM * MAX_DEPTH;
-      constexpr Integer stride     = DIM * (Integer(1) << (Step + 1));
-      constexpr Integer keep       =       (Integer(1) << (Step + 1));
-      for (Integer p = 0; p < total_bits; ++p)
-        if ((p % stride) < keep) m |= MortonInteger(1) << static_cast<int>(p);
-      return m;
-    }();
+    constexpr MortonInteger mask = step_mask<Step + 1>();
     r = (r | (r >> shift)) & mask;
     return compact_step<Step + 1>(r);
   } else {

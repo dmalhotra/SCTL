@@ -117,6 +117,12 @@ template <Integer DIM> class MortonCode {
   /** Coarsest depth at which `c` is a valid box ID (low `(MAX_DEPTH-d)*DIM` bits zero). 0 for `c == 0`. */
   static SCTL_GPU_HD uint8_t coarsest_depth(const MortonInteger& c);
 
+  /** Number of mask/shift steps `spread_step`/`compact_step` take: least `l` with `2^l >= MAX_DEPTH`. */
+  static constexpr Integer NumSteps = [] { Integer l = 0; while ((Integer(1) << l) < MAX_DEPTH) ++l; return l; }();
+
+  /** Mask over `DIM*MAX_DEPTH` bits keeping bit `p` iff `(p mod DIM*2^S) < 2^S`. */
+  template <Integer S> static constexpr MortonInteger step_mask();
+
   /** Spread MAX_DEPTH bits of `xi` to DIM-spaced positions in `O(log MAX_DEPTH)` mask/shift steps. */
   template <Integer Step> static SCTL_GPU_HD MortonInteger spread_step(MortonInteger r);
 

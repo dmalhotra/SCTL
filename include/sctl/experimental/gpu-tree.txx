@@ -182,6 +182,16 @@ void exchangePooled(const Policy& pol, const DeviceVector<T>& src, Long nsrc, De
   thrust::copy(pol, xr.begin(), xr.end(), dst.begin());
 }
 
+// Binary lower_bound over v[lo, hi); std::lower_bound is host-only.
+template <class T> SCTL_GPU_HD Long lowerBound(const T* v, Long lo, Long hi, const T& key) {
+  while (lo < hi) {
+    const Long m = lo + (hi - lo) / 2;
+    if (v[m] < key) lo = m + 1;
+    else            hi = m;
+  }
+  return lo;
+}
+
 enum class WalkMode { Count, Write };
 
 // DFS pre-order walk over a sorted anchor range, from start_node to end_target (exclusive); the
@@ -291,6 +301,7 @@ void treeFromAnchors(DeviceVector<Morton<DIM>>& tree, const Morton<DIM>* anchors
 namespace detail_build {
 using detail::AnchorWalkFunctor;
 using detail::WalkMode;
+using detail::lowerBound;
 
 // A slice of at most M points spanning the whole domain is one leaf: the root. Returns false if the
 // caller still has a tree to build.
@@ -355,16 +366,6 @@ template <class Real, Integer DIM, WalkMode MODE> struct ChunkedWalkFunctor {
   Morton<DIM> start_bnd;  // rank's lower boundary anchor (ROOT on the first rank)
   Morton<DIM> end_bnd;    // rank's upper boundary, exclusive (root.Next() on the last rank)
 
-  // Binary lower_bound in [lo, hi); std::lower_bound is host-only.
-  SCTL_GPU_HD Long lower_bound_window(Long lo, Long hi, const MortonCode<DIM>& key) const {
-    while (lo < hi) {
-      const Long mid = lo + (hi - lo) / 2;
-      if (pt_mid[mid] < key) lo = mid + 1;
-      else                   hi = mid;
-    }
-    return lo;
-  }
-
   SCTL_GPU_HD Long operator()(Long tid) const {
     using NodeT = Morton<DIM>;
     const SplitLeafFunctor<Real, DIM> split{pt_mid, M};
@@ -374,36 +375,35 @@ template <class Real, Integer DIM, WalkMode MODE> struct ChunkedWalkFunctor {
     const bool  is_last      = (tid == nthreads - 1);
     const NodeT start_anchor = (tid == 0) ? start_bnd : split(begin_t);
     const NodeT end_anchor   = (is_last)  ? end_bnd   : split(end_t);
-    const Long  idx_start    = (tid == 0) ? 0 : lower_bound_window(begin_t, begin_t + M, start_anchor.mid);
-    const Long  idx_end      = (is_last)  ? N : lower_bound_window(end_t,   end_t   + M, end_anchor.mid);
+    const Long  idx_start    = (tid == 0) ? 0 : lowerBound(pt_mid, begin_t, begin_t + M, start_anchor.mid);
+    const Long  idx_end      = (is_last)  ? N : lowerBound(pt_mid, end_t,   end_t   + M, end_anchor.mid);
 
     Long count = 0;
     NodeT* w = nullptr;
     if constexpr (MODE == WalkMode::Write) w = out + offsets[tid];
 
     NodeT m0 = start_anchor;
+    // Emit the complete-tree nodes from m0 up to `target`, leaving m0 there.
+    const auto walk_to = [&](const NodeT& target) {
+      while (m0 != target) {
+        if constexpr (MODE == WalkMode::Write) w[count] = m0;
+        ++count;
+        if (m0.isAncestor(target)) m0 = m0.DFD(static_cast<uint8_t>(m0.depth + 1));
+        else                       m0 = m0.Next();
+      }
+    };
     Long pt_idx = idx_start;
     while (pt_idx < idx_end - M) {
       const NodeT m_ = split(pt_idx);
       if (m_ == m0) {  // > M coincident codes: their MAX_DEPTH box cannot split; skip past the run
-        pt_idx = lower_bound_window(pt_idx, idx_end, m0.Next().mid);
+        pt_idx = lowerBound(pt_mid, pt_idx, idx_end, m0.Next().mid);
         continue;
       }
-      while (m0 != m_) {
-        if constexpr (MODE == WalkMode::Write) w[count] = m0;
-        ++count;
-        if (m0.isAncestor(m_)) m0 = m0.DFD(static_cast<uint8_t>(m0.depth + 1));
-        else                   m0 = m0.Next();
-      }
+      walk_to(m_);
       m0 = m_;
-      pt_idx = lower_bound_window(pt_idx, pt_idx + M, m0.mid);
+      pt_idx = lowerBound(pt_mid, pt_idx, pt_idx + M, m0.mid);
     }
-    while (m0 != end_anchor) {  // tail to end_anchor / sentinel
-      if constexpr (MODE == WalkMode::Write) w[count] = m0;
-      ++count;
-      if (m0.isAncestor(end_anchor)) m0 = m0.DFD(static_cast<uint8_t>(m0.depth + 1));
-      else                           m0 = m0.Next();
-    }
+    walk_to(end_anchor);  // tail to end_anchor / sentinel
     return count;
   }
 };
@@ -915,12 +915,7 @@ template <Integer DIM, sctl::Periodicity PER> struct ParentNbrSearch {
       for (; j < p_nbr_cnt[p2n]; j++) {
         const NodeT q = pnbrs[p_nbr_lst[p2n * K + j]];
         if (q.Depth() == NodeT::INVALID_DEPTH) { w[j] = inv; continue; }
-        Long lo = 0, hi = ns;
-        while (lo < hi) {
-          const Long m = lo + (hi - lo) / 2;
-          if (S[m] < q) lo = m + 1;
-          else          hi = m;
-        }
+        const Long lo = detail::lowerBound(S, Long(0), ns, q);
         w[j] = (lo < ns && !(S[lo] < q) && !(q < S[lo])) ? inv : q;
       }
     }
@@ -1076,6 +1071,7 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
 namespace detail_addGhostNodes {
 using detail::WalkMode;
 using detail::local_sort;
+using detail::lowerBound;
 
 template <Integer DIM> struct GhostPair {
   Long p;
@@ -1092,16 +1088,6 @@ template <Integer DIM, WalkMode MODE, sctl::Periodicity PER> struct GhostSendFun
   Integer halo;
   const Long* offsets;      // Write only
   GhostPair<DIM>* out;      // Write only
-
-  SCTL_GPU_HD Long lb(const Morton<DIM>& key) const {
-    Long lo = 0, hi = np;
-    while (lo < hi) {
-      const Long m = lo + (hi - lo) / 2;
-      if (A[m] < key) lo = m + 1;
-      else            hi = m;
-    }
-    return lo;
-  }
 
   SCTL_GPU_HD Long operator()(Long i) const {
     const Morton<DIM>& X = tree[i];
@@ -1120,9 +1106,9 @@ template <Integer DIM, WalkMode MODE, sctl::Periodicity PER> struct GhostSendFun
     for (Integer k = 0; k < K; k++) {
       const Morton<DIM>& m = nl[k];
       if (m.depth == Morton<DIM>::INVALID_DEPTH) continue;
-      Long p0 = lb(m.DFD()) - 1;
+      Long p0 = lowerBound(A, Long(0), np, m.DFD()) - 1;
       if (p0 < 0) p0 = 0;
-      const Long p1 = lb(m.Next());
+      const Long p1 = lowerBound(A, Long(0), np, m.Next());
       for (Long p = p0; p < p1; p++) {
         if (p == rank) continue;
         if constexpr (MODE == WalkMode::Write) w[count] = GhostPair<DIM>{p, X};
@@ -1254,11 +1240,7 @@ template <Integer DIM> struct ParentPassFunctor {
   Long n;
   Long* par;
   SCTL_GPU_HD Long find(const Morton<DIM>& key) const {
-    Long lo = 0, hi = n;
-    while (lo < hi) {
-      const Long m = lo + (hi - lo) / 2;
-      if (tree[m] < key) lo = m + 1; else hi = m;
-    }
+    const Long lo = detail::lowerBound(tree, Long(0), n, key);
     return (lo < n && !(key < tree[lo])) ? lo : -1;
   }
   SCTL_GPU_HD void operator()(Long i) const {
