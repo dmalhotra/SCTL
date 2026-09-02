@@ -233,25 +233,6 @@ Long scanCounts(const Policy& pol, const DeviceScratch<Long, DeviceVector>& coun
   return tail[0] + tail[1];
 }
 
-// Longest possible boundary staircase (zero anchors): at most 2^DIM nodes emitted per level.
-template <Integer DIM> constexpr Long kStaircaseMax = (Long)MAX_DEPTH * ((Long)1 << DIM) + 1;
-
-// One boundary staircase into a caller-provided buffer of at least kStaircaseMax entries. Single
-// Write pass: with one pair the offset is trivially 0, so the count pass is unnecessary -- the
-// functor returns the node count it wrote.
-template <Integer DIM, template <class...> class DeviceVector>
-Long staircaseWalk(Morton<DIM>* out, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
-  const auto pol = scratch_policy<DeviceVector, Morton<DIM>>();
-  DeviceScratch<Long, DeviceVector> off(1), cnt(1);
-  thrust::fill(pol, off.begin(), off.end(), Long(0));
-  const AnchorWalkFunctor<DIM, WalkMode::Write> fw{nullptr, 0, start_node, end_target, thrust::raw_pointer_cast(off.data()), out};
-  thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(1), cnt.begin(), fw);
-  Long n = 0;
-  thrust::copy(cnt.begin(), cnt.end(), &n);
-  SCTL_ASSERT_MSG(n <= kStaircaseMax<DIM>, "staircaseWalk: output exceeded the staircase bound.");
-  return n;
-}
-
 // Turn a runtime periodicity mask into a template parameter: `f` is called with the matching mask as
 // a `std::integral_constant`, so a kernel launched from it instantiates on the mask. A kernel that
 // takes the mask as a runtime argument instead carries every emitter `Morton::NbrList` can dispatch
@@ -298,86 +279,6 @@ void anchorWalkWrite(Morton<DIM>* out, const Long* offsets, const Morton<DIM>* a
     for (Long i = 0; i < n_pairs; i++) fw(i);
   }
 }
-
-// Rebuild a rank's complete preorder slice from a sorted, linearized leaf/anchor range.
-template <Integer DIM, template <class...> class DeviceVector>
-void rebuildFromAnchors(DeviceVector<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
-  DeviceScratch<Long, DeviceVector> offsets(n + 1);
-  const Long total = anchorWalkCount<DIM, DeviceVector>(offsets, anchors_ptr, n, start_node, end_target);
-  tree.resize(total);
-  anchorWalkWrite<DIM, DeviceVector>(thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(offsets.data()), anchors_ptr, n, start_node, end_target);
-}
-
-// Leaf: no child of this node follows it (sctl's test). Ghost: outside the owned index range.
-template <Integer DIM, class AttrT> struct NodeAttrFunctor {
-  const Morton<DIM>* tree;
-  Long n, owned_begin, owned_end;
-  SCTL_GPU_HD AttrT operator()(Long i) const {
-    AttrT a{};
-    a.Leaf = !(i + 1 < n && tree[i].isAncestor(tree[i + 1]));
-    a.Ghost = (i < owned_begin || i >= owned_end);
-    return a;
-  }
-};
-
-// Connectivity in three passes, written straight into the caller's arrays. Parent and child are
-// kept in their own compact arrays -- 8 and 64 bytes per node -- because the neighbor walk reads
-// them repeatedly and the working set is what decides whether they stay cached.
-
-// Pass 1: parent index, by one exact binary search per node.
-template <Integer DIM> struct ParentPassFunctor {
-  const Morton<DIM>* tree;
-  Long n;
-  Long* par;
-  SCTL_GPU_HD Long find(const Morton<DIM>& key) const {
-    Long lo = 0, hi = n;
-    while (lo < hi) {
-      const Long m = lo + (hi - lo) / 2;
-      if (tree[m] < key) lo = m + 1; else hi = m;
-    }
-    return (lo < n && !(key < tree[lo])) ? lo : -1;
-  }
-  SCTL_GPU_HD void operator()(Long i) const {
-    const Integer d = tree[i].Depth();
-    par[i] = d ? find(tree[i].Ancestor((uint8_t)(d - 1))) : -1;
-  }
-};
-
-// Pass 2: each node writes itself into its parent's child slot. (parent, p2n) is unique: no atomics.
-template <Integer DIM> struct ChildPassFunctor {
-  static constexpr Integer MAX_CHILD = 1 << DIM;
-  const Morton<DIM>* tree;
-  const Long* par;
-  Long* ch;
-  SCTL_GPU_HD void operator()(Long i) const {
-    const Long p = par[i];
-    if (p >= 0) ch[p * MAX_CHILD + tree[i].Path2Node()] = i;
-  }
-};
-
-// Pass 3: locate each neighbor by walking down from the root along its path-to-node digits, through
-// the compact child array. No depth ordering is needed -- every node walks independently -- and the
-// shallow levels are shared by all nodes, so they stay cached.
-template <Integer DIM, sctl::Periodicity PER> struct NbrDescentFunctor {
-  static constexpr Integer MAX_CHILD = 1 << DIM;
-  static constexpr Integer MAX_NBRS = sctl::pow<DIM, Integer>(3);
-  const Morton<DIM>* tree;
-  const Long* ch;
-  Long* nbr;               // MAX_NBRS per node
-  SCTL_GPU_HD void operator()(Long i) const {
-    const Morton<DIM> X = tree[i];
-    const Integer d = X.Depth();
-    const auto nl = X.template NbrList<PER>((uint8_t)d);
-    Long* const out = nbr + i * MAX_NBRS;
-    for (Integer k = 0; k < MAX_NBRS; k++) {
-      const Morton<DIM>& m = nl[k];
-      if (m.depth == Morton<DIM>::INVALID_DEPTH) { out[k] = -1; continue; }
-      Long cur = 0;  // the root is at index 0
-      for (Integer l = 1; l <= d && cur >= 0; l++) cur = ch[cur * MAX_CHILD + m.Ancestor((uint8_t)l).Path2Node()];
-      out[k] = cur;
-    }
-  }
-};
 
 }  // namespace detail
 
@@ -841,8 +742,34 @@ void determineSplitters(sctl::Vector<Type>& splitters, const DeviceVector<Type>&
 
 // 2:1 balance closure rule (leaf form of Tree::UpdateRefinement's touching-neighbor rule): every
 // same-depth neighbor octant of a non-leaf node must exist, so that neighbor's parent must be
-// non-leaf too. Predicates below are shared by both balance schemes.
+// non-leaf too. Everything below is shared by both balance schemes: the predicates, the boundary
+// staircase the closure is seeded from, and the leaf rebuild it ends with.
 namespace detail_balance21 {
+using detail::AnchorWalkFunctor;
+using detail::WalkMode;
+using detail::anchorWalkCount;
+using detail::anchorWalkWrite;
+using detail::scratch_policy;
+
+// Longest possible boundary staircase (zero anchors): at most 2^DIM nodes emitted per level.
+template <Integer DIM> constexpr Long kStaircaseMax = (Long)MAX_DEPTH * ((Long)1 << DIM) + 1;
+
+// One boundary staircase into a caller-provided buffer of at least kStaircaseMax entries. Single
+// Write pass: with one pair the offset is trivially 0, so the count pass is unnecessary -- the
+// functor returns the node count it wrote.
+template <Integer DIM, template <class...> class DeviceVector>
+Long staircaseWalk(Morton<DIM>* out, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
+  const auto pol = scratch_policy<DeviceVector, Morton<DIM>>();
+  DeviceScratch<Long, DeviceVector> off(1), cnt(1);
+  thrust::fill(pol, off.begin(), off.end(), Long(0));
+  const AnchorWalkFunctor<DIM, WalkMode::Write> fw{nullptr, 0, start_node, end_target, thrust::raw_pointer_cast(off.data()), out};
+  thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(1), cnt.begin(), fw);
+  Long n = 0;
+  thrust::copy(cnt.begin(), cnt.end(), &n);
+  SCTL_ASSERT_MSG(n <= kStaircaseMax<DIM>, "staircaseWalk: output exceeded the staircase bound.");
+  return n;
+}
+
 // True for nodes that have children (the next node in walk order is a descendant).
 template <Integer DIM> struct NonLeafPred {
   const Morton<DIM>* tree;
@@ -861,18 +788,6 @@ template <Integer DIM> struct NodeEqPred {
   SCTL_GPU_HD bool operator()(const Morton<DIM>& a, const Morton<DIM>& b) const { return !(a < b) && !(b < a); }
 };
 
-}  // namespace detail_balance21
-
-
-
-// Hybrid balance (-DGT_BALANCE_HOST=1): extract the non-leaf set on the device, close it with
-// sctl's Balance21 on the host (OpenMP, includes its own redistribute), then rebuild the leaves on
-// the device. The non-leaf set is ~1/2^DIM of the tree, so the PCIe transfer is small; it wins over
-// the device closure only on small trees, where the device is launch-bound.
-namespace detail_balance21_host {
-using detail::rebuildFromAnchors;
-using detail_balance21::NonLeafPred;
-
 // First child of a non-leaf node (same mid, one level deeper), or INVALID outside [lo,hi).
 template <Integer DIM> struct FirstChildInSlice {
   Morton<DIM> lo, hi;
@@ -885,6 +800,32 @@ template <Integer DIM> struct FirstChildInSlice {
     return c;
   }
 };
+
+// Rebuild a rank's complete preorder slice from a sorted, linearized leaf/anchor range.
+template <Integer DIM, template <class...> class DeviceVector>
+void rebuildFromAnchors(DeviceVector<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
+  DeviceScratch<Long, DeviceVector> offsets(n + 1);
+  const Long total = anchorWalkCount<DIM, DeviceVector>(offsets, anchors_ptr, n, start_node, end_target);
+  tree.resize(total);
+  anchorWalkWrite<DIM, DeviceVector>(thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(offsets.data()), anchors_ptr, n, start_node, end_target);
+}
+
+}  // namespace detail_balance21
+
+
+
+// Hybrid balance (-DGT_BALANCE_HOST=1): extract the non-leaf set on the device, close it with
+// sctl's Balance21 on the host (OpenMP, includes its own redistribute), then rebuild the leaves on
+// the device. The non-leaf set is ~1/2^DIM of the tree, so the PCIe transfer is small; it wins over
+// the device closure only on small trees, where the device is launch-bound.
+namespace detail_balance21_host {
+using detail_balance21::rebuildFromAnchors;
+using detail_balance21::NonLeafPred;
+using detail_balance21::FirstChildInSlice;
+using detail_balance21::kStaircaseMax;
+using detail_balance21::staircaseWalk;
+using detail_balance21::InvalidDepthPred;
+
 template <Integer DIM, template <class...> class DeviceVector>
 void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<DIM>>& mins, const Comm& comm, sctl::Periodicity periodicity) {
   using NodeT = Morton<DIM>;
@@ -898,11 +839,11 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
   { // Balance21 builds a tree from the root, so every node's ancestors must be present. Extend the
     // slice to the whole domain on the device -- walk ROOT -> mins[rank] and mins[rank+1] -> end --
     // then take the non-leaf nodes of that (the fill contributes only the boundary ancestors).
-    constexpr Long BND = detail::kStaircaseMax<DIM>;
+    constexpr Long BND = kStaircaseMax<DIM>;
     DeviceScratch<NodeT, DeviceVector> lf(rank > 0 ? BND : 0), rt(rank + 1 < np ? BND : 0);
     Long nl_ = 0, nr_ = 0;
-    if (rank > 0) nl_ = detail::staircaseWalk<DIM, DeviceVector>(thrust::raw_pointer_cast(lf.data()), NodeT{}, mins[rank]);
-    if (rank + 1 < np) nr_ = detail::staircaseWalk<DIM, DeviceVector>(thrust::raw_pointer_cast(rt.data()), end_target, NodeT{}.Next());
+    if (rank > 0) nl_ = staircaseWalk<DIM, DeviceVector>(thrust::raw_pointer_cast(lf.data()), NodeT{}, mins[rank]);
+    if (rank + 1 < np) nr_ = staircaseWalk<DIM, DeviceVector>(thrust::raw_pointer_cast(rt.data()), end_target, NodeT{}.Next());
 
     const Long Nf = nl_ + Nn + nr_;
     DeviceScratch<NodeT, DeviceVector> full(Nf);
@@ -951,7 +892,7 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
     // walk between anchors emits the leaves.
     DeviceScratch<NodeT, DeviceVector> anch_d(S.Dim());
     thrust::transform(pol, S_d.begin(), S_d.end(), anch_d.begin(), FirstChildInSlice<DIM>{mins[rank], end_target});
-    const Long na = thrust::remove_if(pol, anch_d.begin(), anch_d.end(), detail_balance21::InvalidDepthPred<DIM>{}) - anch_d.begin();
+    const Long na = thrust::remove_if(pol, anch_d.begin(), anch_d.end(), InvalidDepthPred<DIM>{}) - anch_d.begin();
     rebuildFromAnchors<DIM>(tree, thrust::raw_pointer_cast(anch_d.data()), na, mins[rank], end_target);
   }
 }
@@ -1120,11 +1061,11 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
   const auto pol = detail::scratch_policy<DeviceVector, NodeT>();
   DeviceVector<NodeT>& S = detail::PersistentBuffer<NodeT, DeviceVector, detail::Buf::Closure>();
   { // extend the slice to the whole domain, then take its non-leaf nodes
-    constexpr Long BND = detail::kStaircaseMax<DIM>;
+    constexpr Long BND = detail_balance21::kStaircaseMax<DIM>;
     DeviceScratch<NodeT, DeviceVector> lf(rank > 0 ? BND : 0), rt(rank + 1 < np ? BND : 0);
     Long nl_ = 0, nr_ = 0;
-    if (rank > 0) nl_ = detail::staircaseWalk<DIM, DeviceVector>(thrust::raw_pointer_cast(lf.data()), NodeT{}, mins[rank]);
-    if (rank + 1 < np) nr_ = detail::staircaseWalk<DIM, DeviceVector>(thrust::raw_pointer_cast(rt.data()), end_target, NodeT{}.Next());
+    if (rank > 0) nl_ = detail_balance21::staircaseWalk<DIM, DeviceVector>(thrust::raw_pointer_cast(lf.data()), NodeT{}, mins[rank]);
+    if (rank + 1 < np) nr_ = detail_balance21::staircaseWalk<DIM, DeviceVector>(thrust::raw_pointer_cast(rt.data()), end_target, NodeT{}.Next());
 
     const Long Nf = nl_ + Nn + nr_;
     DeviceScratch<NodeT, DeviceVector> full(Nf);
@@ -1143,9 +1084,9 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
 
   { // leaves: the walk between the first children of consecutive non-leaf nodes
     DeviceScratch<NodeT, DeviceVector> anch(S.size());
-    thrust::transform(pol, S.begin(), S.end(), anch.begin(), detail_balance21_host::FirstChildInSlice<DIM>{mins[rank], end_target});
+    thrust::transform(pol, S.begin(), S.end(), anch.begin(), detail_balance21::FirstChildInSlice<DIM>{mins[rank], end_target});
     const Long na = thrust::remove_if(pol, anch.begin(), anch.end(), detail_balance21::InvalidDepthPred<DIM>{}) - anch.begin();
-    detail::rebuildFromAnchors<DIM>(tree, thrust::raw_pointer_cast(anch.data()), na, mins[rank], end_target);
+    detail_balance21::rebuildFromAnchors<DIM>(tree, thrust::raw_pointer_cast(anch.data()), na, mins[rank], end_target);
   }
 }
 
@@ -1306,9 +1247,91 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const sctl::ScratchBuf<Morto
 
 }  // namespace detail_addGhostNodes
 
+// Optional per-node flags, mirroring sctl::Tree::GetNodeAttr.
+namespace detail_nodeAttr {
+
+// Leaf: no child of this node follows it (sctl's test). Ghost: outside the owned index range.
+template <Integer DIM, class AttrT> struct NodeAttrFunctor {
+  const Morton<DIM>* tree;
+  Long n, owned_begin, owned_end;
+  SCTL_GPU_HD AttrT operator()(Long i) const {
+    AttrT a{};
+    a.Leaf = !(i + 1 < n && tree[i].isAncestor(tree[i + 1]));
+    a.Ghost = (i < owned_begin || i >= owned_end);
+    return a;
+  }
+};
+
+}  // namespace detail_nodeAttr
+
+// Optional per-node connectivity, mirroring sctl::Tree::GetNodeLists but structure-of-arrays.
+namespace detail_nodeLists {
+
+// Connectivity in three passes, written straight into the caller's arrays. Parent and child are
+// kept in their own compact arrays -- 8 and 64 bytes per node -- because the neighbor walk reads
+// them repeatedly and the working set is what decides whether they stay cached.
+
+// Pass 1: parent index, by one exact binary search per node.
+template <Integer DIM> struct ParentPassFunctor {
+  const Morton<DIM>* tree;
+  Long n;
+  Long* par;
+  SCTL_GPU_HD Long find(const Morton<DIM>& key) const {
+    Long lo = 0, hi = n;
+    while (lo < hi) {
+      const Long m = lo + (hi - lo) / 2;
+      if (tree[m] < key) lo = m + 1; else hi = m;
+    }
+    return (lo < n && !(key < tree[lo])) ? lo : -1;
+  }
+  SCTL_GPU_HD void operator()(Long i) const {
+    const Integer d = tree[i].Depth();
+    par[i] = d ? find(tree[i].Ancestor((uint8_t)(d - 1))) : -1;
+  }
+};
+
+// Pass 2: each node writes itself into its parent's child slot. (parent, p2n) is unique: no atomics.
+template <Integer DIM> struct ChildPassFunctor {
+  static constexpr Integer MAX_CHILD = 1 << DIM;
+  const Morton<DIM>* tree;
+  const Long* par;
+  Long* ch;
+  SCTL_GPU_HD void operator()(Long i) const {
+    const Long p = par[i];
+    if (p >= 0) ch[p * MAX_CHILD + tree[i].Path2Node()] = i;
+  }
+};
+
+// Pass 3: locate each neighbor by walking down from the root along its path-to-node digits, through
+// the compact child array. No depth ordering is needed -- every node walks independently -- and the
+// shallow levels are shared by all nodes, so they stay cached.
+template <Integer DIM, sctl::Periodicity PER> struct NbrDescentFunctor {
+  static constexpr Integer MAX_CHILD = 1 << DIM;
+  static constexpr Integer MAX_NBRS = sctl::pow<DIM, Integer>(3);
+  const Morton<DIM>* tree;
+  const Long* ch;
+  Long* nbr;               // MAX_NBRS per node
+  SCTL_GPU_HD void operator()(Long i) const {
+    const Morton<DIM> X = tree[i];
+    const Integer d = X.Depth();
+    const auto nl = X.template NbrList<PER>((uint8_t)d);
+    Long* const out = nbr + i * MAX_NBRS;
+    for (Integer k = 0; k < MAX_NBRS; k++) {
+      const Morton<DIM>& m = nl[k];
+      if (m.depth == Morton<DIM>::INVALID_DEPTH) { out[k] = -1; continue; }
+      Long cur = 0;  // the root is at index 0
+      for (Integer l = 1; l <= d && cur >= 0; l++) cur = ch[cur * MAX_CHILD + m.Ancestor((uint8_t)l).Path2Node()];
+      out[k] = cur;
+    }
+  }
+};
+
+}  // namespace detail_nodeLists
+
 // Distributed build: device sample sort (radix -> exact-rank splitters -> Alltoallv -> re-sort),
 // then a two-sided M-code halo and allgathered boundary anchors (mins). M is clamped to the
 // smallest per-rank count. Concatenated over ranks, the output matches single-rank buildTree.
+
 template <class Real, Integer DIM> template <template <class...> class DeviceVector>
 void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index, Morton<DIM>* partition, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr, detail::no_deduce_t<NodeLists<DeviceVector>>* node_lists) {
   // Env-gated per-stage profiler (sync + barrier so each delta is the true stage wall time).
@@ -1505,7 +1528,7 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
     node_attr->resize(Nt);
     thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nt),
                       node_attr->begin(),
-                      detail::NodeAttrFunctor<DIM, NodeAttr>{thrust::raw_pointer_cast(tree.data()), Nt, owned_begin, owned_end});
+                      detail_nodeAttr::NodeAttrFunctor<DIM, NodeAttr>{thrust::raw_pointer_cast(tree.data()), Nt, owned_begin, owned_end});
   }
   if (node_lists) {
     static constexpr Integer MAX_CHILD = 1 << DIM, MAX_NBRS = sctl::pow<DIM, Integer>(3);
@@ -1518,10 +1541,10 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
     Long* const cp = thrust::raw_pointer_cast(node_lists->child.data());
     Long* const np_ = thrust::raw_pointer_cast(node_lists->nbr.data());
     thrust::fill(pol, node_lists->child.begin(), node_lists->child.end(), Long(-1));
-    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail::ParentPassFunctor<DIM>{tp, Nt, pp});
-    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail::ChildPassFunctor<DIM>{tp, pp, cp});
+    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail_nodeLists::ParentPassFunctor<DIM>{tp, Nt, pp});
+    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail_nodeLists::ChildPassFunctor<DIM>{tp, pp, cp});
     detail::dispatchPeriodicity<DIM>(periodicity, [&](auto per_c) {
-      thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail::NbrDescentFunctor<DIM, decltype(per_c)::value>{tp, cp, np_});
+      thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail_nodeLists::NbrDescentFunctor<DIM, decltype(per_c)::value>{tp, cp, np_});
     });
   }
 }
