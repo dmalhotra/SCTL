@@ -177,6 +177,51 @@ void exchangePooled(const Policy& pol, const DeviceVector<T>& src, Long nsrc, De
   thrust::copy(pol, xr.begin(), xr.end(), dst.begin());
 }
 
+// Leaf: no child of this node follows it (sctl's test). Ghost: outside the owned index range.
+template <Integer DIM, class AttrT> struct NodeAttrFunctor {
+  const Morton<DIM>* tree;
+  Long n, owned_begin, owned_end;
+  SCTL_GPU_HD AttrT operator()(Long i) const {
+    AttrT a{};
+    a.Leaf = !(i + 1 < n && tree[i].isAncestor(tree[i + 1]));
+    a.Ghost = (i < owned_begin || i >= owned_end);
+    return a;
+  }
+};
+
+// Parent, children and same-level neighbors, each located by an exact binary search in the sorted
+// tree. sctl derives neighbors hierarchically (a node's neighbor is its parent's neighbor's child),
+// which forces level-by-level order; searching instead is the same answer and needs no ordering.
+template <Integer DIM, class ListT> struct NodeListsFunctor {
+  static constexpr Integer MAX_CHILD = 1 << DIM;
+  static constexpr Integer MAX_NBRS = sctl::pow<DIM, Integer>(3);
+  const Morton<DIM>* tree;
+  Long n;
+  sctl::Periodicity per;
+
+  SCTL_GPU_HD Long find(const Morton<DIM>& key) const {  // exact (code, depth) match, else -1
+    Long lo = 0, hi = n;
+    while (lo < hi) {
+      const Long m = lo + (hi - lo) / 2;
+      if (tree[m] < key) lo = m + 1; else hi = m;
+    }
+    return (lo < n && !(key < tree[lo])) ? lo : -1;
+  }
+  SCTL_GPU_HD ListT operator()(Long i) const {
+    const Morton<DIM> X = tree[i];
+    const Integer d = X.Depth();
+    ListT L;
+    L.p2n = d ? (Long)X.Path2Node() : -1;
+    L.parent = d ? find(X.Ancestor((uint8_t)(d - 1))) : -1;
+    const auto ch = X.Children();
+    for (Integer k = 0; k < MAX_CHILD; k++) L.child[k] = find(ch[k]);
+    const auto nl = X.NbrList((uint8_t)d, per);
+    for (Integer k = 0; k < MAX_NBRS; k++)
+      L.nbr[k] = (nl[k].depth == Morton<DIM>::INVALID_DEPTH) ? -1 : find(nl[k]);
+    return L;
+  }
+};
+
 // Functor (not lambda) so nvcc captures it across thrust kernel boundaries.
 template <class Real, Integer DIM> struct MakeMortonFunctor {
   const Real* coord_ptr;
@@ -1226,7 +1271,7 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const sctl::ScratchBuf<Morto
 // then a two-sided M-code halo and allgathered boundary anchors (mins). M is clamped to the
 // smallest per-rank count. Concatenated over ranks, the output matches single-rank buildTree.
 template <class Real, Integer DIM> template <template <class...> class DeviceVector>
-void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, DeviceVector<Long>* sort_scatter_index) {
+void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index, Morton<DIM>* partition, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr, detail::no_deduce_t<DeviceVector<NodeLists>>* node_lists) {
   // Env-gated per-stage profiler (sync + barrier so each delta is the true stage wall time).
   const bool gtprof = (getenv("GTPROF") != nullptr);
   double t_last = 0;
@@ -1414,6 +1459,21 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
   if (owned_range) {
     owned_range[0] = owned_begin;
     owned_range[1] = owned_end;
+  }
+  if (partition) for (Long r = 0; r < np; r++) partition[r] = mins[r];
+  if (node_attr) {
+    const Long Nt = (Long)tree.size();
+    node_attr->resize(Nt);
+    thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nt),
+                      node_attr->begin(),
+                      detail::NodeAttrFunctor<DIM, NodeAttr>{thrust::raw_pointer_cast(tree.data()), Nt, owned_begin, owned_end});
+  }
+  if (node_lists) {
+    const Long Nt = (Long)tree.size();
+    node_lists->resize(Nt);
+    thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nt),
+                      node_lists->begin(),
+                      detail::NodeListsFunctor<DIM, NodeLists>{thrust::raw_pointer_cast(tree.data()), Nt, periodicity});
   }
 }
 
