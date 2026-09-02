@@ -276,12 +276,31 @@ void anchorWalkWrite(Morton<DIM>* out, const Long* offsets, const Morton<DIM>* a
   }
 }
 
+// The complete preorder tree over [start_node, end_target) with `anchors` as its forced leaves.
+template <Integer DIM, template <class...> class DeviceVector>
+void treeFromAnchors(DeviceVector<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
+  DeviceScratch<Long, DeviceVector> offsets(n + 1);
+  const Long total = anchorWalkCount<DIM, DeviceVector>(offsets, anchors_ptr, n, start_node, end_target);
+  tree.resize(total);
+  anchorWalkWrite<DIM, DeviceVector>(thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(offsets.data()), anchors_ptr, n, start_node, end_target);
+}
+
 }  // namespace detail
 
 // Tree linearization from sorted Morton codes: single-rank build + the distributed walk stage.
 namespace detail_build {
 using detail::AnchorWalkFunctor;
 using detail::WalkMode;
+
+// A slice of at most M points spanning the whole domain is one leaf: the root. Returns false if the
+// caller still has a tree to build.
+template <Integer DIM, template <class...> class DeviceVector>
+bool rootOnlyTree(DeviceVector<Morton<DIM>>& tree, Long N, Long M, const Morton<DIM>& start_bnd, const Morton<DIM>& end_bnd) {
+  if (!(N <= M && start_bnd == Morton<DIM>{} && end_bnd == Morton<DIM>{}.Next())) return false;
+  tree.resize(1);
+  tree[0] = Morton<DIM>{};
+  return true;
+}
 
 // Split-leaf of pair (pt[i], pt[i+M]): child of their common ancestor holding pt[i+M]. The M-gap
 // forces the split: a depth-d box holding both endpoints has M+1 > M particles, so it refines.
@@ -304,11 +323,7 @@ class DeviceVector> void buildTreeGpu(DeviceVector<Morton<DIM>>& tree, const Dev
   using NodeMIDT = Morton<DIM>;
 
   const Long N = (N_owned < 0 ? static_cast<Long>(pt_mid.size()) : N_owned);
-  if (N <= M && start_bnd == NodeMIDT{} && end_bnd == NodeMIDT{}.Next()) {  // whole-domain root-only tree
-    tree.resize(1);
-    tree[0] = NodeMIDT{};
-    return;
-  }
+  if (rootOnlyTree<DIM, DeviceVector>(tree, N, M, start_bnd, end_bnd)) return;
 
   // Phase 1: anchors from the pairs within pt_mid[base, base+N), then clip to [start_bnd, end_bnd).
   // The boundary leaves need no points from outside: start_bnd is itself the anchor of the pair
@@ -325,18 +340,8 @@ class DeviceVector> void buildTreeGpu(DeviceVector<Morton<DIM>>& tree, const Dev
   const NodeMIDT* anchors_ptr = thrust::raw_pointer_cast(anchors.data()) + (a_begin - anchors.begin());
   const Long n_anchors = a_end - a_begin;
 
-  // Phase 2: linearize over n_anchors+1 pairs (+1 = trailing pair to end_bnd).
-  const Long n_pairs = n_anchors + 1;
-  DeviceScratch<Long, DeviceVector> counts(n_pairs), offsets(n_pairs);
-  AnchorWalkFunctor<DIM, WalkMode::Count> fc{anchors_ptr, n_anchors, start_bnd, end_bnd, nullptr, nullptr};
-  thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fc);
-  const Long total = detail::scanCounts(pol, counts, offsets, n_pairs);
-
-  tree.resize(total);
-  AnchorWalkFunctor<DIM, WalkMode::Write> fw{
-      anchors_ptr, n_anchors, start_bnd, end_bnd, thrust::raw_pointer_cast(offsets.data()),
-      thrust::raw_pointer_cast(tree.data())};
-  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), n_pairs, fw);
+  // Phase 2: linearize over the n_anchors+1 gaps (+1 = trailing gap to end_bnd).
+  detail::treeFromAnchors<DIM, DeviceVector>(tree, anchors_ptr, n_anchors, start_bnd, end_bnd);
 }
 
 
@@ -408,11 +413,7 @@ template <class Real, Integer DIM, WalkMode MODE> struct ChunkedWalkFunctor {
 template <class Real, Integer DIM, template <class...> class DeviceVector>
 void buildTreeGpuChunked(DeviceVector<Morton<DIM>>& tree, const DeviceVector<MortonCode<DIM>>& pt_mid, Long M, Long N_owned = -1, Long base = 0, Morton<DIM> start_bnd = Morton<DIM>{}, Morton<DIM> end_bnd = Morton<DIM>{}.Next()) {
   const Long N = (N_owned < 0 ? static_cast<Long>(pt_mid.size()) : N_owned);  // walk window is pt_mid[base, base+N) (+M halo slack beyond)
-  if (N <= M && start_bnd == Morton<DIM>{} && end_bnd == Morton<DIM>{}.Next()) {  // root-only tree
-    tree.resize(1);
-    tree[0] = Morton<DIM>{};
-    return;
-  }
+  if (rootOnlyTree<DIM, DeviceVector>(tree, N, M, start_bnd, end_bnd)) return;
 
   const Long min_chunk = std::max<Long>(4 * M + 1, 64);
   const Long nthreads  = std::clamp<Long>(N / min_chunk, 1, 65536);
@@ -446,11 +447,7 @@ template <class Real, Integer DIM, template <class...> class DeviceVector>
 void buildTreeCpuChunked(DeviceVector<Morton<DIM>>& tree, const DeviceVector<MortonCode<DIM>>& pt_mid, Long M, Long N_owned = -1, Long base = 0, Morton<DIM> start_bnd = Morton<DIM>{}, Morton<DIM> end_bnd = Morton<DIM>{}.Next()) {
   using NodeMIDT = Morton<DIM>;
   const Long N = (N_owned < 0 ? static_cast<Long>(pt_mid.size()) : N_owned);  // walk window is pt_mid[base, base+N) (+M halo slack beyond)
-  if (N <= M && start_bnd == NodeMIDT{} && end_bnd == NodeMIDT{}.Next()) {  // root-only tree
-    tree.resize(1);
-    tree[0] = NodeMIDT{};
-    return;
-  }
+  if (rootOnlyTree<DIM, DeviceVector>(tree, N, M, start_bnd, end_bnd)) return;
 
   // Cap threads so each chunk has well over M particles (so `begin + M` stays in-bounds).
   const int max_threads = SCTL_GET_MAX_THREADS();
@@ -739,21 +736,19 @@ void determineSplitters(sctl::Vector<Type>& splitters, const DeviceVector<Type>&
 // 2:1 balance closure rule (leaf form of Tree::UpdateRefinement's touching-neighbor rule): every
 // same-depth neighbor octant of a non-leaf node must exist, so that neighbor's parent must be
 // non-leaf too. Everything below is shared by both balance schemes: the predicates, the boundary
-// staircase the closure is seeded from, and the leaf rebuild it ends with.
+// complete-tree fill the closure is seeded from.
 namespace detail_balance21 {
 using detail::AnchorWalkFunctor;
 using detail::WalkMode;
-using detail::anchorWalkCount;
-using detail::anchorWalkWrite;
 using detail::scratch_policy;
 
-// Longest possible boundary staircase (zero anchors): at most 2^DIM nodes emitted per level.
-template <Integer DIM> constexpr Long kStaircaseMax = (Long)MAX_DEPTH * ((Long)1 << DIM) + 1;
+// Longest possible fill (zero anchors): at most 2^DIM nodes per level.
+template <Integer DIM> constexpr Long kCompleteTreeMax = (Long)MAX_DEPTH * ((Long)1 << DIM) + 1;
 
 // Coarsest complete-tree nodes filling the Morton interval [start_node, end_target). The functor
 // returns the node count it wrote.
 template <Integer DIM, template <class...> class DeviceVector>
-Long staircaseWalk(Morton<DIM>* out, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
+Long completeTree(Morton<DIM>* out, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
   const auto pol = scratch_policy<DeviceVector, Morton<DIM>>();
   DeviceScratch<Long, DeviceVector> off(1), cnt(1);
   thrust::fill(pol, off.begin(), off.end(), Long(0));
@@ -761,7 +756,7 @@ Long staircaseWalk(Morton<DIM>* out, const Morton<DIM>& start_node, const Morton
   thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(1), cnt.begin(), fw);
   Long n = 0;
   thrust::copy(cnt.begin(), cnt.end(), &n);
-  SCTL_ASSERT_MSG(n <= kStaircaseMax<DIM>, "staircaseWalk: output exceeded the staircase bound.");
+  SCTL_ASSERT_MSG(n <= kCompleteTreeMax<DIM>, "completeTree: output exceeded the fill bound.");
   return n;
 }
 
@@ -796,15 +791,6 @@ template <Integer DIM> struct FirstChildInSlice {
   }
 };
 
-// Rebuild a rank's complete preorder slice from a sorted, linearized leaf/anchor range.
-template <Integer DIM, template <class...> class DeviceVector>
-void rebuildFromAnchors(DeviceVector<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
-  DeviceScratch<Long, DeviceVector> offsets(n + 1);
-  const Long total = anchorWalkCount<DIM, DeviceVector>(offsets, anchors_ptr, n, start_node, end_target);
-  tree.resize(total);
-  anchorWalkWrite<DIM, DeviceVector>(thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(offsets.data()), anchors_ptr, n, start_node, end_target);
-}
-
 }  // namespace detail_balance21
 
 
@@ -814,11 +800,11 @@ void rebuildFromAnchors(DeviceVector<Morton<DIM>>& tree, const Morton<DIM>* anch
 // the device. The non-leaf set is ~1/2^DIM of the tree, so the PCIe transfer is small; it wins over
 // the device closure only on small trees, where the device is launch-bound.
 namespace detail_balance21_host {
-using detail_balance21::rebuildFromAnchors;
+using detail::treeFromAnchors;
 using detail_balance21::NonLeafPred;
 using detail_balance21::FirstChildInSlice;
-using detail_balance21::kStaircaseMax;
-using detail_balance21::staircaseWalk;
+using detail_balance21::kCompleteTreeMax;
+using detail_balance21::completeTree;
 using detail_balance21::InvalidDepthPred;
 
 template <Integer DIM, template <class...> class DeviceVector>
@@ -834,11 +820,11 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
   { // Balance21 builds a tree from the root, so every node's ancestors must be present. Extend the
     // slice to the whole domain on the device -- walk ROOT -> mins[rank] and mins[rank+1] -> end --
     // then take the non-leaf nodes of that (the fill contributes only the boundary ancestors).
-    constexpr Long BND = kStaircaseMax<DIM>;
+    constexpr Long BND = kCompleteTreeMax<DIM>;
     DeviceScratch<NodeT, DeviceVector> lf(rank > 0 ? BND : 0), rt(rank + 1 < np ? BND : 0);
     Long nl_ = 0, nr_ = 0;
-    if (rank > 0) nl_ = staircaseWalk<DIM, DeviceVector>(thrust::raw_pointer_cast(lf.data()), NodeT{}, mins[rank]);
-    if (rank + 1 < np) nr_ = staircaseWalk<DIM, DeviceVector>(thrust::raw_pointer_cast(rt.data()), end_target, NodeT{}.Next());
+    if (rank > 0) nl_ = completeTree<DIM, DeviceVector>(thrust::raw_pointer_cast(lf.data()), NodeT{}, mins[rank]);
+    if (rank + 1 < np) nr_ = completeTree<DIM, DeviceVector>(thrust::raw_pointer_cast(rt.data()), end_target, NodeT{}.Next());
 
     const Long Nf = nl_ + Nn + nr_;
     DeviceScratch<NodeT, DeviceVector> full(Nf);
@@ -888,7 +874,7 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
     DeviceScratch<NodeT, DeviceVector> anch_d(S.Dim());
     thrust::transform(pol, S_d.begin(), S_d.end(), anch_d.begin(), FirstChildInSlice<DIM>{mins[rank], end_target});
     const Long na = thrust::remove_if(pol, anch_d.begin(), anch_d.end(), InvalidDepthPred<DIM>{}) - anch_d.begin();
-    rebuildFromAnchors<DIM>(tree, thrust::raw_pointer_cast(anch_d.data()), na, mins[rank], end_target);
+    treeFromAnchors<DIM>(tree, thrust::raw_pointer_cast(anch_d.data()), na, mins[rank], end_target);
   }
 }
 
@@ -1052,11 +1038,11 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
   const auto pol = detail::scratch_policy<DeviceVector, NodeT>();
   DeviceVector<NodeT>& S = detail::PersistentBuffer<NodeT, DeviceVector, detail::Buf::Closure>();
   { // extend the slice to the whole domain, then take its non-leaf nodes
-    constexpr Long BND = detail_balance21::kStaircaseMax<DIM>;
+    constexpr Long BND = detail_balance21::kCompleteTreeMax<DIM>;
     DeviceScratch<NodeT, DeviceVector> lf(rank > 0 ? BND : 0), rt(rank + 1 < np ? BND : 0);
     Long nl_ = 0, nr_ = 0;
-    if (rank > 0) nl_ = detail_balance21::staircaseWalk<DIM, DeviceVector>(thrust::raw_pointer_cast(lf.data()), NodeT{}, mins[rank]);
-    if (rank + 1 < np) nr_ = detail_balance21::staircaseWalk<DIM, DeviceVector>(thrust::raw_pointer_cast(rt.data()), end_target, NodeT{}.Next());
+    if (rank > 0) nl_ = detail_balance21::completeTree<DIM, DeviceVector>(thrust::raw_pointer_cast(lf.data()), NodeT{}, mins[rank]);
+    if (rank + 1 < np) nr_ = detail_balance21::completeTree<DIM, DeviceVector>(thrust::raw_pointer_cast(rt.data()), end_target, NodeT{}.Next());
 
     const Long Nf = nl_ + Nn + nr_;
     DeviceScratch<NodeT, DeviceVector> full(Nf);
@@ -1077,7 +1063,7 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
     DeviceScratch<NodeT, DeviceVector> anch(S.size());
     thrust::transform(pol, S.begin(), S.end(), anch.begin(), detail_balance21::FirstChildInSlice<DIM>{mins[rank], end_target});
     const Long na = thrust::remove_if(pol, anch.begin(), anch.end(), detail_balance21::InvalidDepthPred<DIM>{}) - anch.begin();
-    detail_balance21::rebuildFromAnchors<DIM>(tree, thrust::raw_pointer_cast(anch.data()), na, mins[rank], end_target);
+    detail::treeFromAnchors<DIM>(tree, thrust::raw_pointer_cast(anch.data()), na, mins[rank], end_target);
   }
 }
 
