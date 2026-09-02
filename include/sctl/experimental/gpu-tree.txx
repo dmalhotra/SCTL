@@ -47,11 +47,6 @@ namespace gpu_tree {
 
 namespace detail {
 
-// Which retained buffer a `PersistentBuffer` call means: the arrays below are rebuilt every build,
-// and naming the tags here rather than numbering them at the use sites keeps two of them from
-// silently sharing one buffer.
-enum class Buf { PtMid, PtAlt, Closure, Frontier, ClosureRecv, GhostMerge };
-
 // Execution policy for thrust calls on backend memory, with temporaries drawn from the scratch
 // pool (thrust/cub otherwise cudaMalloc's them per call, which costs more than the work).
 template <template <class...> class DeviceVector, class T> auto scratch_policy() {
@@ -65,6 +60,19 @@ template <template <class...> class DeviceVector, class T> auto scratch_policy()
     return thrust::host;
   }
 }
+
+// Which retained buffer a `PersistentBuffer` call means: the arrays below are rebuilt every build,
+// and naming the tags here rather than numbering them at the use sites keeps two of them from
+// silently sharing one buffer.
+enum class Buf { PtMid, PtAlt, Closure, Frontier, ClosureRecv, GhostMerge };
+
+// Functor (not lambda) so nvcc captures it across thrust kernel boundaries.
+template <class Real, Integer DIM> struct MakeMortonFunctor {
+  const Real* coord_ptr;
+  SCTL_GPU_HD MortonCode<DIM> operator()(Long i) const {
+    return MortonCode<DIM>(coord_ptr + i * DIM);
+  }
+};
 
 // Sort v[0,n): radix on device, omp_par on host (thrust's host backend is serial). merge_sort
 // stops scaling past ~16 threads (bandwidth-bound), sample_sort doesn't, so pick by thread count.
@@ -176,6 +184,130 @@ void exchangePooled(const Policy& pol, const DeviceVector<T>& src, Long nsrc, De
   thrust::copy(pol, xr.begin(), xr.end(), dst.begin());
 }
 
+enum class WalkMode { Count, Write };
+
+// DFS pre-order walk over a sorted anchor range, from start_node to end_target (exclusive); the
+// anchors are the forced leaves, the walk fills the complete-tree nodes between them. Caller drives
+// i over [0, n+1]: pair 0 emits start_node, the trailing pair (i==n) targets end_target.
+template <Integer DIM, WalkMode MODE> struct AnchorWalkFunctor {
+  const Morton<DIM>* anchors;
+  Long n;
+  Morton<DIM> start_node, end_target;
+  const Long* offsets;  // Write only
+  Morton<DIM>* out;     // Write only
+
+  SCTL_GPU_HD Long operator()(Long i) const {
+    using NodeT = Morton<DIM>;
+    const bool is_tail = (i == n);
+    const NodeT target = is_tail ? end_target : anchors[i];
+    NodeT current = (i == 0) ? start_node : anchors[i - 1];
+    Long count = 0;
+    NodeT* w = nullptr;
+    if constexpr (MODE == WalkMode::Write) w = out + offsets[i];
+    if (i == 0 && start_node < end_target) {  // pair 0 emits start_node; nothing if the range is empty
+      if constexpr (MODE == WalkMode::Write) w[count] = current;
+      ++count;
+    }
+    while (current < target) {
+      const bool descend = current.depth < MAX_DEPTH && current.isAncestor(target);
+      current = descend ? current.DFD(static_cast<uint8_t>(current.depth + 1)) : current.Next();
+      if (is_tail && !(current < target)) break;  // end_target is a boundary marker, not ours to emit
+      if constexpr (MODE == WalkMode::Write) w[count] = current;
+      ++count;
+    }
+    return count;
+  }
+};
+
+// The anchor walk in two passes, so a caller that knows (or can bound) the output size can write
+// straight into its own buffer -- e.g. pooled scratch -- instead of having the walk allocate one.
+
+// Exclusive scan of counts[0,n) into `offsets`, returning the total the scan already summed --
+// reading back the last offset and count avoids a second pass over counts just to total them.
+template <class Policy, template <class...> class DeviceVector>
+Long scanCounts(const Policy& pol, const DeviceScratch<Long, DeviceVector>& counts, DeviceScratch<Long, DeviceVector>& offsets, Long n) {
+  thrust::exclusive_scan(pol, counts.begin(), counts.begin() + n, offsets.begin(), Long(0));
+  Long tail[2] = {0, 0};
+  thrust::copy(offsets.begin() + (n - 1), offsets.begin() + n, &tail[0]);
+  thrust::copy(counts.begin() + (n - 1), counts.begin() + n, &tail[1]);
+  return tail[0] + tail[1];
+}
+
+// Longest possible boundary staircase (zero anchors): at most 2^DIM nodes emitted per level.
+template <Integer DIM> constexpr Long kStaircaseMax = (Long)MAX_DEPTH * ((Long)1 << DIM) + 1;
+
+// One boundary staircase into a caller-provided buffer of at least kStaircaseMax entries. Single
+// Write pass: with one pair the offset is trivially 0, so the count pass is unnecessary -- the
+// functor returns the node count it wrote.
+template <Integer DIM, template <class...> class DeviceVector>
+Long staircaseWalk(Morton<DIM>* out, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
+  const auto pol = scratch_policy<DeviceVector, Morton<DIM>>();
+  DeviceScratch<Long, DeviceVector> off(1), cnt(1);
+  thrust::fill(pol, off.begin(), off.end(), Long(0));
+  const AnchorWalkFunctor<DIM, WalkMode::Write> fw{nullptr, 0, start_node, end_target, thrust::raw_pointer_cast(off.data()), out};
+  thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(1), cnt.begin(), fw);
+  Long n = 0;
+  thrust::copy(cnt.begin(), cnt.end(), &n);
+  SCTL_ASSERT_MSG(n <= kStaircaseMax<DIM>, "staircaseWalk: output exceeded the staircase bound.");
+  return n;
+}
+
+// Turn a runtime periodicity mask into a template parameter: `f` is called with the matching mask as
+// a `std::integral_constant`, so a kernel launched from it instantiates on the mask. A kernel that
+// takes the mask as a runtime argument instead carries every emitter `Morton::NbrList` can dispatch
+// to, which costs registers and so occupancy. All 2^DIM masks are enumerated, so a partial mask
+// (X|Z, ...) gets its own specialization like the named ones.
+template <Integer DIM, class F, sctl::PeriodicityT MASK = 0>
+void dispatchPeriodicity(sctl::Periodicity periodicity, const F& f) {
+  constexpr sctl::Periodicity PER = static_cast<sctl::Periodicity>(MASK);
+  if (periodicity == PER) { f(std::integral_constant<sctl::Periodicity, PER>{}); return; }
+  if constexpr (MASK + 1 < (1 << DIM)) dispatchPeriodicity<DIM, F, sctl::PeriodicityT(MASK + 1)>(periodicity, f);
+}
+
+// Count pass: fills `offsets` (exclusive scan of the per-pair node counts) and returns the total.
+template <Integer DIM, template <class...> class DeviceVector>
+Long anchorWalkCount(DeviceScratch<Long, DeviceVector>& offsets, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
+  const Long n_pairs = n + 1;
+  const auto pol = scratch_policy<DeviceVector, Morton<DIM>>();
+  DeviceScratch<Long, DeviceVector> counts(n_pairs);
+  const AnchorWalkFunctor<DIM, WalkMode::Count> fc{anchors_ptr, n, start_node, end_target, nullptr, nullptr};
+  if constexpr (is_device_vector_v<DeviceVector<Morton<DIM>>>) {
+    thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fc);
+    return scanCounts(pol, counts, offsets, n_pairs);
+  } else {  // thrust's host backend is serial, so drive the walk with OpenMP instead
+    Long* const cnt = thrust::raw_pointer_cast(counts.data());
+    Long* const off = thrust::raw_pointer_cast(offsets.data());
+    #pragma omp parallel for schedule(static)
+    for (Long i = 0; i < n_pairs; i++) cnt[i] = fc(i);
+    off[0] = 0;  // omp_par::scan is exclusive and takes off[0] as the (unwritten) seed
+    sctl::omp_par::scan(cnt, off, n_pairs);
+    return off[n_pairs - 1] + cnt[n_pairs - 1];
+  }
+}
+
+// Write pass: emit the walk into `out`, which must hold the count from anchorWalkCount.
+template <Integer DIM, template <class...> class DeviceVector>
+void anchorWalkWrite(Morton<DIM>* out, const Long* offsets, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
+  const Long n_pairs = n + 1;
+  const auto pol = scratch_policy<DeviceVector, Morton<DIM>>();
+  const AnchorWalkFunctor<DIM, WalkMode::Write> fw{anchors_ptr, n, start_node, end_target, offsets, out};
+  if constexpr (is_device_vector_v<DeviceVector<Morton<DIM>>>) {
+    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), n_pairs, fw);
+  } else {
+    #pragma omp parallel for schedule(static)
+    for (Long i = 0; i < n_pairs; i++) fw(i);
+  }
+}
+
+// Rebuild a rank's complete preorder slice from a sorted, linearized leaf/anchor range.
+template <Integer DIM, template <class...> class DeviceVector>
+void rebuildFromAnchors(DeviceVector<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
+  DeviceScratch<Long, DeviceVector> offsets(n + 1);
+  const Long total = anchorWalkCount<DIM, DeviceVector>(offsets, anchors_ptr, n, start_node, end_target);
+  tree.resize(total);
+  anchorWalkWrite<DIM, DeviceVector>(thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(offsets.data()), anchors_ptr, n, start_node, end_target);
+}
+
 // Leaf: no child of this node follows it (sctl's test). Ghost: outside the owned index range.
 template <Integer DIM, class AttrT> struct NodeAttrFunctor {
   const Morton<DIM>* tree;
@@ -246,138 +378,6 @@ template <Integer DIM, sctl::Periodicity PER> struct NbrDescentFunctor {
     }
   }
 };
-
-// Functor (not lambda) so nvcc captures it across thrust kernel boundaries.
-template <class Real, Integer DIM> struct MakeMortonFunctor {
-  const Real* coord_ptr;
-  SCTL_GPU_HD MortonCode<DIM> operator()(Long i) const {
-    return MortonCode<DIM>(coord_ptr + i * DIM);
-  }
-};
-
-enum class WalkMode { Count, Write };
-
-// DFS pre-order walk over a sorted anchor range, from start_node to end_target (exclusive); the
-// anchors are the forced leaves, the walk fills the complete-tree nodes between them. Caller drives
-// i over [0, n+1]: pair 0 emits start_node, the trailing pair (i==n) targets end_target.
-template <Integer DIM, WalkMode MODE> struct AnchorWalkFunctor {
-  const Morton<DIM>* anchors;
-  Long n;
-  Morton<DIM> start_node, end_target;
-  const Long* offsets;  // Write only
-  Morton<DIM>* out;     // Write only
-
-  SCTL_GPU_HD Long operator()(Long i) const {
-    using NodeT = Morton<DIM>;
-    const bool is_tail = (i == n);
-    const NodeT target = is_tail ? end_target : anchors[i];
-    NodeT current = (i == 0) ? start_node : anchors[i - 1];
-    Long count = 0;
-    NodeT* w = nullptr;
-    if constexpr (MODE == WalkMode::Write) w = out + offsets[i];
-    if (i == 0 && start_node < end_target) {  // pair 0 emits start_node; nothing if the range is empty
-      if constexpr (MODE == WalkMode::Write) w[count] = current;
-      ++count;
-    }
-    while (current < target) {
-      const bool descend = current.depth < MAX_DEPTH && current.isAncestor(target);
-      current = descend ? current.DFD(static_cast<uint8_t>(current.depth + 1)) : current.Next();
-      if (is_tail && !(current < target)) break;  // end_target is a boundary marker, not ours to emit
-      if constexpr (MODE == WalkMode::Write) w[count] = current;
-      ++count;
-    }
-    return count;
-  }
-};
-
-// The anchor walk in two passes, so a caller that knows (or can bound) the output size can write
-// straight into its own buffer -- e.g. pooled scratch -- instead of having the walk allocate one.
-
-// Exclusive scan of counts[0,n) into `offsets`, returning the total the scan already summed --
-// reading back the last offset and count avoids a second pass over counts just to total them.
-template <class Policy, template <class...> class DeviceVector>
-Long scanCounts(const Policy& pol, const DeviceScratch<Long, DeviceVector>& counts, DeviceScratch<Long, DeviceVector>& offsets, Long n) {
-  thrust::exclusive_scan(pol, counts.begin(), counts.begin() + n, offsets.begin(), Long(0));
-  Long tail[2] = {0, 0};
-  thrust::copy(offsets.begin() + (n - 1), offsets.begin() + n, &tail[0]);
-  thrust::copy(counts.begin() + (n - 1), counts.begin() + n, &tail[1]);
-  return tail[0] + tail[1];
-}
-
-// Turn a runtime periodicity mask into a template parameter: `f` is called with the matching mask as
-// a `std::integral_constant`, so a kernel launched from it instantiates on the mask. A kernel that
-// takes the mask as a runtime argument instead carries every emitter `Morton::NbrList` can dispatch
-// to, which costs registers and so occupancy. All 2^DIM masks are enumerated, so a partial mask
-// (X|Z, ...) gets its own specialization like the named ones.
-template <Integer DIM, class F, sctl::PeriodicityT MASK = 0>
-void dispatchPeriodicity(sctl::Periodicity periodicity, const F& f) {
-  constexpr sctl::Periodicity PER = static_cast<sctl::Periodicity>(MASK);
-  if (periodicity == PER) { f(std::integral_constant<sctl::Periodicity, PER>{}); return; }
-  if constexpr (MASK + 1 < (1 << DIM)) dispatchPeriodicity<DIM, F, sctl::PeriodicityT(MASK + 1)>(periodicity, f);
-}
-
-// Count pass: fills `offsets` (exclusive scan of the per-pair node counts) and returns the total.
-template <Integer DIM, template <class...> class DeviceVector>
-Long anchorWalkCount(DeviceScratch<Long, DeviceVector>& offsets, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
-  const Long n_pairs = n + 1;
-  const auto pol = scratch_policy<DeviceVector, Morton<DIM>>();
-  DeviceScratch<Long, DeviceVector> counts(n_pairs);
-  const AnchorWalkFunctor<DIM, WalkMode::Count> fc{anchors_ptr, n, start_node, end_target, nullptr, nullptr};
-  if constexpr (is_device_vector_v<DeviceVector<Morton<DIM>>>) {
-    thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(n_pairs), counts.begin(), fc);
-    return scanCounts(pol, counts, offsets, n_pairs);
-  } else {  // thrust's host backend is serial, so drive the walk with OpenMP instead
-    Long* const cnt = thrust::raw_pointer_cast(counts.data());
-    Long* const off = thrust::raw_pointer_cast(offsets.data());
-    #pragma omp parallel for schedule(static)
-    for (Long i = 0; i < n_pairs; i++) cnt[i] = fc(i);
-    off[0] = 0;  // omp_par::scan is exclusive and takes off[0] as the (unwritten) seed
-    sctl::omp_par::scan(cnt, off, n_pairs);
-    return off[n_pairs - 1] + cnt[n_pairs - 1];
-  }
-}
-
-// Write pass: emit the walk into `out`, which must hold the count from anchorWalkCount.
-template <Integer DIM, template <class...> class DeviceVector>
-void anchorWalkWrite(Morton<DIM>* out, const Long* offsets, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
-  const Long n_pairs = n + 1;
-  const auto pol = scratch_policy<DeviceVector, Morton<DIM>>();
-  const AnchorWalkFunctor<DIM, WalkMode::Write> fw{anchors_ptr, n, start_node, end_target, offsets, out};
-  if constexpr (is_device_vector_v<DeviceVector<Morton<DIM>>>) {
-    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), n_pairs, fw);
-  } else {
-    #pragma omp parallel for schedule(static)
-    for (Long i = 0; i < n_pairs; i++) fw(i);
-  }
-}
-
-// Longest possible boundary staircase (zero anchors): at most 2^DIM nodes emitted per level.
-template <Integer DIM> constexpr Long kStaircaseMax = (Long)MAX_DEPTH * ((Long)1 << DIM) + 1;
-
-// One boundary staircase into a caller-provided buffer of at least kStaircaseMax entries. Single
-// Write pass: with one pair the offset is trivially 0, so the count pass is unnecessary -- the
-// functor returns the node count it wrote.
-template <Integer DIM, template <class...> class DeviceVector>
-Long staircaseWalk(Morton<DIM>* out, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
-  const auto pol = scratch_policy<DeviceVector, Morton<DIM>>();
-  DeviceScratch<Long, DeviceVector> off(1), cnt(1);
-  thrust::fill(pol, off.begin(), off.end(), Long(0));
-  const AnchorWalkFunctor<DIM, WalkMode::Write> fw{nullptr, 0, start_node, end_target, thrust::raw_pointer_cast(off.data()), out};
-  thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(1), cnt.begin(), fw);
-  Long n = 0;
-  thrust::copy(cnt.begin(), cnt.end(), &n);
-  SCTL_ASSERT_MSG(n <= kStaircaseMax<DIM>, "staircaseWalk: output exceeded the staircase bound.");
-  return n;
-}
-
-// Rebuild a rank's complete preorder slice from a sorted, linearized leaf/anchor range.
-template <Integer DIM, template <class...> class DeviceVector>
-void rebuildFromAnchors(DeviceVector<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
-  DeviceScratch<Long, DeviceVector> offsets(n + 1);
-  const Long total = anchorWalkCount<DIM, DeviceVector>(offsets, anchors_ptr, n, start_node, end_target);
-  tree.resize(total);
-  anchorWalkWrite<DIM, DeviceVector>(thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(offsets.data()), anchors_ptr, n, start_node, end_target);
-}
 
 }  // namespace detail
 
@@ -843,16 +843,6 @@ void determineSplitters(sctl::Vector<Type>& splitters, const DeviceVector<Type>&
 // same-depth neighbor octant of a non-leaf node must exist, so that neighbor's parent must be
 // non-leaf too. Predicates below are shared by both balance schemes.
 namespace detail_balance21 {
-template <Integer DIM> struct NodeEqPred {
-  SCTL_GPU_HD bool operator()(const Morton<DIM>& a, const Morton<DIM>& b) const { return !(a < b) && !(b < a); }
-};
-
-template <Integer DIM> struct InvalidDepthPred {
-  SCTL_GPU_HD bool operator()(const Morton<DIM>& m) const { return m.depth == Morton<DIM>::INVALID_DEPTH; }
-};
-
-// Slot j = node i * 3^DIM + k: neighbor k of non-leaf node i (INVALID for leaves, clipped
-// neighbors, and the self slot).
 // True for nodes that have children (the next node in walk order is a descendant).
 template <Integer DIM> struct NonLeafPred {
   const Morton<DIM>* tree;
@@ -861,6 +851,14 @@ template <Integer DIM> struct NonLeafPred {
   SCTL_GPU_HD bool operator()(Long i) const {
     return tree[i].isAncestor((i + 1 < Nn) ? tree[i + 1] : next_first);
   }
+};
+
+template <Integer DIM> struct InvalidDepthPred {
+  SCTL_GPU_HD bool operator()(const Morton<DIM>& m) const { return m.depth == Morton<DIM>::INVALID_DEPTH; }
+};
+
+template <Integer DIM> struct NodeEqPred {
+  SCTL_GPU_HD bool operator()(const Morton<DIM>& a, const Morton<DIM>& b) const { return !(a < b) && !(b < a); }
 };
 
 }  // namespace detail_balance21
@@ -1167,14 +1165,6 @@ template <Integer DIM> struct GhostPair {
   SCTL_GPU_HD bool operator<(const GhostPair& o) const { return p < o.p || (!(o.p < p) && m < o.m); }
 };
 
-template <Integer DIM> struct GhostPairEqPred {
-  SCTL_GPU_HD bool operator()(const GhostPair<DIM>& a, const GhostPair<DIM>& b) const { return !(a < b) && !(b < a); }
-};
-
-template <Integer DIM> struct GhostPairToMid {
-  SCTL_GPU_HD Morton<DIM> operator()(const GhostPair<DIM>& gp) const { return gp.m; }
-};
-
 template <Integer DIM, WalkMode MODE, sctl::Periodicity PER> struct GhostSendFunctor {
   static constexpr Integer K = sctl::pow<DIM, Integer>(3);
   const Morton<DIM>* tree;
@@ -1223,6 +1213,14 @@ template <Integer DIM, WalkMode MODE, sctl::Periodicity PER> struct GhostSendFun
     }
     return count;
   }
+};
+
+template <Integer DIM> struct GhostPairEqPred {
+  SCTL_GPU_HD bool operator()(const GhostPair<DIM>& a, const GhostPair<DIM>& b) const { return !(a < b) && !(b < a); }
+};
+
+template <Integer DIM> struct GhostPairToMid {
+  SCTL_GPU_HD Morton<DIM> operator()(const GhostPair<DIM>& gp) const { return gp.m; }
 };
 
 // Splice ghost placeholders into `tree`; outputs the [begin, end) index range of the owned nodes
