@@ -264,6 +264,9 @@ template <Integer DIM> SCTL_GPU_HD Morton<DIM> MortonCode<DIM>::Ancestor(uint8_t
 // ---------------------------------------------------------------------------
 
 template <Integer DIM> SCTL_GPU_HD Morton<DIM>::Morton(MortonCode<DIM> mid_, uint8_t depth_) : mid(mid_), depth(depth_) {
+#if !defined(__CUDA_ARCH__)  // SCTL_ASSERT reaches std::cerr/abort, neither callable on the device
+  SCTL_ASSERT(depth_ <= MAX_DEPTH || depth_ == INVALID_DEPTH);
+#endif
   if (depth_ <= MAX_DEPTH) {
     const int k = static_cast<int>(MortonCode<DIM>::TOTAL_BITS) - static_cast<int>(depth_) * static_cast<int>(DIM);
     mid = MortonCode<DIM>(typename MortonCode<DIM>::MortonInteger((mid_.code >> k) << k));

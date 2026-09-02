@@ -95,6 +95,11 @@ int main() {
   //   level == depth: returns self
   //   level <  depth: returns a coarser node containing self
   //   Ancestor∘Ancestor at coarser depth = Ancestor of the coarser depth.
+  // An interior depth (0 < d < MAX_DEPTH) for the tests below; 5 unless MAX_DEPTH is shallower.
+  static_assert(Morton::MAX_DEPTH >= 2, "test-morton needs a depth strictly between root and leaf");
+  const uint8_t d_mid = (uint8_t)std::min<int>(5, Morton::MAX_DEPTH - 1);
+  const uint8_t d_deep = (uint8_t)std::min<int>(8, Morton::MAX_DEPTH - 1);
+
   std::printf("Ancestor :\n");
   {
     Real coord[DIM] = {0.3, 0.6, 0.9};
@@ -104,8 +109,8 @@ int main() {
     Morton mc = m.Ancestor(0);  // root
     CHECK(mc.Depth() == 0);
     // Idempotency at the same coarser depth
-    Morton mc1 = m.Ancestor(3);
-    Morton mc2 = mc1.Ancestor(3);
+    Morton mc1 = m.Ancestor(d_mid);
+    Morton mc2 = mc1.Ancestor(d_mid);
     CHECK(mc1 == mc2);
   }
 
@@ -113,7 +118,7 @@ int main() {
   std::printf("DFD :\n");
   {
     Real coord[DIM] = {0.1, 0.7, 0.3};
-    Morton m(sctl::Ptr2ConstItr<Real>(coord, DIM), 5);
+    Morton m(sctl::Ptr2ConstItr<Real>(coord, DIM), d_mid);
     Morton d = m.DFD(Morton::MAX_DEPTH);
     CHECK(d.Depth() == Morton::MAX_DEPTH);
     // After DFD at MAX_DEPTH the code is unchanged (no masking).
@@ -132,7 +137,7 @@ int main() {
   {
     // Pick a coord well below the top so Next stays in-range.
     Real coord[DIM] = {0.1, 0.2, 0.3};
-    Morton m(sctl::Ptr2ConstItr<Real>(coord, DIM), 5);
+    Morton m(sctl::Ptr2ConstItr<Real>(coord, DIM), d_mid);
     Morton n = m.Next();
     CHECK(m < n);
     // Next at depth=0 may saturate (no representable successor); we only
@@ -166,7 +171,7 @@ int main() {
   {
     Real coord[DIM] = {0.4, 0.4, 0.4};
     Morton root{};
-    Morton mid (sctl::Ptr2ConstItr<Real>(coord, DIM), 5);
+    Morton mid (sctl::Ptr2ConstItr<Real>(coord, DIM), d_mid);
     Morton leaf(sctl::Ptr2ConstItr<Real>(coord, DIM), Morton::MAX_DEPTH);
     CHECK(root.isAncestor(mid));
     CHECK(root.isAncestor(leaf));
@@ -183,8 +188,8 @@ int main() {
   {
     Real ca[DIM] = {0.1, 0.2, 0.3};
     Real cb[DIM] = {0.5, 0.5, 0.5};
-    Morton a(sctl::Ptr2ConstItr<Real>(ca, DIM), 8);
-    Morton b(sctl::Ptr2ConstItr<Real>(cb, DIM), 8);
+    Morton a(sctl::Ptr2ConstItr<Real>(ca, DIM), d_deep);
+    Morton b(sctl::Ptr2ConstItr<Real>(cb, DIM), d_deep);
     CHECK(a < b);
     CHECK(b > a);
     CHECK(a <= a);
