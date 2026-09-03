@@ -59,9 +59,9 @@ int main(int argc, char** argv) {
     std::vector<Long>    idx;
 
     auto t0 = std::chrono::steady_clock::now();
-    GPUTree::buildTree(tree, coord, M);
+    GPUTree::buildTreeDist(tree, coord, M, sctl::Comm::Self());
     auto t1 = std::chrono::steady_clock::now();
-    GPUTree::buildTree(tree, coord, M, &idx);
+    GPUTree::buildTreeDist(tree, coord, M, sctl::Comm::Self(), false, sctl::Periodicity::NONE, -1, nullptr, &idx);
     auto t2 = std::chrono::steady_clock::now();
 
     bool sorted_ok = leaves_sorted(tree);
@@ -82,10 +82,10 @@ int main(int argc, char** argv) {
 
     cudaDeviceSynchronize();
     auto t0 = std::chrono::steady_clock::now();
-    GPUTree::buildTree(tree, coord, M);
+    GPUTree::buildTreeDist(tree, coord, M, sctl::Comm::Self());
     cudaDeviceSynchronize();
     auto t1 = std::chrono::steady_clock::now();
-    GPUTree::buildTree(tree, coord, M, &idx);
+    GPUTree::buildTreeDist(tree, coord, M, sctl::Comm::Self(), false, sctl::Periodicity::NONE, -1, nullptr, &idx);
     cudaDeviceSynchronize();
     auto t2 = std::chrono::steady_clock::now();
 

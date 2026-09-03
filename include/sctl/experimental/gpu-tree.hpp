@@ -243,6 +243,17 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
   template <template <class...> class DeviceVector>
   static void buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M = 1, const Comm& comm = Comm::Self(), bool balance21 = false, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1, Long* owned_range = nullptr, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index = nullptr, Morton<DIM>* partition = nullptr, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr = nullptr, detail::no_deduce_t<NodeLists<DeviceVector>>* node_lists = nullptr, detail::no_deduce_t<DeviceVector<Morton<DIM>>>* user_mid = nullptr, sctl::Vector<Long>* user_cnt = nullptr);
 
+ protected:
+
+  /**
+   * The stored buffers themselves, for a derived class that has to rewrite a data set in place.
+   * `GetData` copies -- fine for a caller, wasteful for `PtTree::UpdateRefinement`, which would
+   * otherwise copy the payload out, again into a staging buffer, and a third time back in.
+   * `sctl::Tree` exposes the same seam as `GetData_`.
+   */
+  DevVec<char>& NodeData_(const std::string& name) { return node_data_.at(name); }
+  sctl::Vector<Long>& NodeCnt_(const std::string& name) { return node_cnt_.at(name); }
+
  private:
 
   /** Per-new-node `[range[i], range[i+1])` into `old_mid`, the old nodes each new node absorbs. */
@@ -367,7 +378,9 @@ class PtTree : public BaseTree {
   void nodeCounts(const std::string& name, sctl::Vector<Long>& cnt) const;
 
   std::map<std::string, Long> Nlocal_;                                 ///< particles this rank was given
-  std::map<std::string, DevVec<Morton<DIM>>> pt_mid_;                  ///< per group, in tree order
+  /// Per group, in tree order. Codes, not `Morton`: a particle has no depth of its own -- it always
+  /// sits at MAX_DEPTH -- and every comparison against a node agrees on the code alone.
+  std::map<std::string, DevVec<MortonCode<DIM>>> pt_mid_;
   std::map<std::string, detail_ptTree::PtScatter<DevVec>> scatter_;
   std::map<std::string, std::string> data_pt_name_;                    ///< data name -> particle group
 };

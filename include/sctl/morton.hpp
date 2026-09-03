@@ -54,6 +54,21 @@ template <Integer DIM> class MortonCode {
   template <class Real> SCTL_GPU_HD explicit MortonCode(const Real* coord);
 
   /** Morton-order less-than. */
+  /**
+   * The most significant 64 bits of the code, as an unsigned integer. Ordering by this agrees with
+   * `operator<`: completely when the code fits one word (`IntKeyIsExact`), and as a bucket key
+   * otherwise -- codes with different keys are ordered correctly, codes sharing one need the full
+   * comparison to separate them. Exists so a radix sort can replace the comparison sort a sorting
+   * library otherwise picks for a non-arithmetic key type.
+   */
+  SCTL_GPU_HD std::uint64_t GetIntKey() const;
+
+  /** True when `GetIntKey()` orders codes completely rather than only bucketing them. */
+  static constexpr bool IntKeyIsExact = (DIM * MAX_DEPTH <= 64);
+
+  /** Inverse of `GetIntKey()`. Only meaningful when `IntKeyIsExact`. */
+  static SCTL_GPU_HD MortonCode FromIntKey(std::uint64_t key);
+
   SCTL_GPU_HD bool operator<(const MortonCode& other) const;
 
   /**

@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
     std::vector<GNode> tree;  // reused
     const double t_total = best_of_with_warmup(nruns, [&] {
       auto t0 = std::chrono::steady_clock::now();
-      GPUTree::buildTree(tree, coord_std, M);
+      GPUTree::buildTreeDist(tree, coord_std, M, sctl::Comm::Self());
       auto t1 = std::chrono::steady_clock::now();
       sz = tree.size();
       return ms(t0, t1);
@@ -164,7 +164,7 @@ int main(int argc, char** argv) {
     const double t_total = best_of_with_warmup(nruns, [&] {
       cudaDeviceSynchronize();
       auto t0 = std::chrono::steady_clock::now();
-      GPUTree::buildTree(tree_d, coord_d, M);
+      GPUTree::buildTreeDist(tree_d, coord_d, M, sctl::Comm::Self());
       cudaDeviceSynchronize();
       auto t1 = std::chrono::steady_clock::now();
       sz = tree_d.size();

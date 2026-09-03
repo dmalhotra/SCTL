@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
   std::printf("CPU path:\n");
   std::vector<NodeMID> leaves_cpu;
   {
-    GPUTree::buildTree(leaves_cpu, coord, M);
+    GPUTree::buildTreeDist(leaves_cpu, coord, M, sctl::Comm::Self());
 
     for (const NodeMID& a : leaves_cpu) CHECK(a.depth <= gpu_tree::MAX_DEPTH);
 
@@ -114,7 +114,7 @@ int main(int argc, char** argv) {
   thrust::device_vector<NodeMID> leaves_gpu_d;
   {
     thrust::device_vector<Real> coord_d(coord.begin(), coord.end());
-    GPUTree::buildTree(leaves_gpu_d, coord_d, M);
+    GPUTree::buildTreeDist(leaves_gpu_d, coord_d, M, sctl::Comm::Self());
   }
   thrust::host_vector<NodeMID> leaves_gpu(leaves_gpu_d.begin(), leaves_gpu_d.end());
 

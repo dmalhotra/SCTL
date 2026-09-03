@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
 
   // GPU tree: full linear tree on CPU container path.
   std::vector<GNode> gpu_tree;
-  GPUTree::buildTree(gpu_tree, coord_std, M);
+  GPUTree::buildTreeDist(gpu_tree, coord_std, M, sctl::Comm::Self());
   std::printf("gpu_tree::GPUTree    size=%zu\n", gpu_tree.size());
 
   // SCTL tree.

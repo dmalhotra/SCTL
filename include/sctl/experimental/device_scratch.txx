@@ -18,6 +18,26 @@ inline DeviceVector<T>& PersistentBuffer() {
   return buf;
 }
 
+template <class SrcPtr, class T> inline void deviceToHost(SrcPtr src, Long n, T* dst) {
+  if (!n) return;
+  const T* p = nullptr;  // host-side source of the fill: the staging buffer, or `src` itself
+  if constexpr (is_device_ptr<SrcPtr>::value) {
+    static T* stage = nullptr;
+    static Long cap = 0;
+    if (n > cap) {
+      if (stage) cudaFreeHost(stage);
+      cap = std::max<Long>(2 * cap, n);
+      SCTL_ASSERT(cudaMallocHost((void**)&stage, cap * sizeof(T)) == cudaSuccess);
+    }
+    SCTL_ASSERT(cudaMemcpy(stage, thrust::raw_pointer_cast(src), n * sizeof(T), cudaMemcpyDeviceToHost) == cudaSuccess);
+    p = stage;
+  } else {
+    p = &src[0];
+  }
+  #pragma omp parallel for schedule(static)
+  for (Long i = 0; i < n; i++) dst[i] = p[i];
+}
+
 }  // namespace detail
 
 template <template <class...> class DeviceVector>
