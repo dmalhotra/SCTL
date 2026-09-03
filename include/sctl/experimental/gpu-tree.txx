@@ -209,20 +209,25 @@ inline void alltoallv(const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>
   for (Long r = 0; r < np; r++) { sd[r + 1] = sd[r] + scnt[r] * esz; rd[r + 1] = rd[r] + rcnt[r] * esz; }
 
   // MPI_Alltoallv's counts and displacements are `int`, and a dof=3 payload at 100M items per rank
-  // is 2.4 GB. Counting in units of one item rather than one byte buys a factor of `esz` of
-  // headroom, which keeps every payload exchange on the tuned collective; only the byte-granular
-  // node-data migration (esz=1) can still exceed it. The limit is per count and per displacement,
-  // not on their total, which is larger than any of them.
-  bool fits = (sd[np - 1] <= IMAX * esz && rd[np - 1] <= IMAX * esz);
-  for (Long r = 0; r < np && fits; r++) fits = (scnt[r] <= IMAX && rcnt[r] <= IMAX);
+  // is 2.4 GB. Counting in a larger unit than one byte buys that factor of headroom, so rather
+  // than take `esz` -- which the byte-granular node-data migration passes as 1 -- find the largest
+  // power of two that divides every count and displacement. The low set bit of their OR is exactly
+  // that: if all are multiples of 2^k then none has a bit below k, so neither does the OR. At
+  // dof=3 doubles the counts are multiples of 24, giving 8 and a 17 GB ceiling, which no caller
+  // approaches. The limit is per count and per displacement, not on their total.
+  Long g = sd[np - 1] | rd[np - 1];
+  for (Long r = 0; r < np; r++) g |= (scnt[r] * esz) | (rcnt[r] * esz);
+  const Long G = g ? std::min<Long>(g & -g, Long(1) << 20) : 1;
+  bool fits = (sd[np - 1] / G <= IMAX && rd[np - 1] / G <= IMAX);
+  for (Long r = 0; r < np && fits; r++) fits = (scnt[r] * esz / G <= IMAX && rcnt[r] * esz / G <= IMAX);
   if (fits) {
     sctl::ScratchBuf<int> sc(np), sdi(np), rc(np), rdi(np);
     for (Long r = 0; r < np; r++) {
-      sc[r] = (int)scnt[r];        rc[r] = (int)rcnt[r];
-      sdi[r] = (int)(sd[r] / esz); rdi[r] = (int)(rd[r] / esz);
+      sc[r] = (int)(scnt[r] * esz / G); rc[r] = (int)(rcnt[r] * esz / G);
+      sdi[r] = (int)(sd[r] / G);        rdi[r] = (int)(rd[r] / G);
     }
     MPI_Datatype dt;
-    MPI_Type_contiguous((int)esz, MPI_BYTE, &dt);
+    MPI_Type_contiguous((int)G, MPI_BYTE, &dt);
     MPI_Type_commit(&dt);
     MPI_Alltoallv(sbuf, &sc[0], &sdi[0], dt, rbuf, &rc[0], &rdi[0], dt, comm.GetMPI_Comm());
     MPI_Type_free(&dt);
