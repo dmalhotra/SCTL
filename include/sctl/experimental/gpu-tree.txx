@@ -202,17 +202,61 @@ Long splitCounts(sctl::ScratchBuf<Long>& scnt, sctl::ScratchBuf<Long>& rcnt, con
 inline void alltoallv(const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt,
                       const sctl::ScratchBuf<Long>& rcnt, Long esz, const Comm& comm) {
 #ifdef SCTL_HAVE_MPI
-  const Long np = comm.Size();
-  sctl::ScratchBuf<int> sc(np), sd(np), rc(np), rd(np);
-  for (Long r = 0; r < np; r++) {
-    sc[r] = int(scnt[r] * esz);
-    rc[r] = int(rcnt[r] * esz);
+  const Long np = comm.Size(), rank = comm.Rank();
+  static const Long IMAX = 2147483647;
+  sctl::ScratchBuf<Long> sd(np + 1), rd(np + 1);   // byte offsets, in Long
+  sd[0] = 0; rd[0] = 0;
+  for (Long r = 0; r < np; r++) { sd[r + 1] = sd[r] + scnt[r] * esz; rd[r + 1] = rd[r] + rcnt[r] * esz; }
+
+  // MPI_Alltoallv's counts and displacements are `int`, and a dof=3 payload at 100M items per rank
+  // is 2.4 GB. Counting in units of one item rather than one byte buys a factor of `esz` of
+  // headroom, which keeps every payload exchange on the tuned collective; only the byte-granular
+  // node-data migration (esz=1) can still exceed it. The limit is per count and per displacement,
+  // not on their total, which is larger than any of them.
+  bool fits = (sd[np - 1] <= IMAX * esz && rd[np - 1] <= IMAX * esz);
+  for (Long r = 0; r < np && fits; r++) fits = (scnt[r] <= IMAX && rcnt[r] <= IMAX);
+  if (fits) {
+    sctl::ScratchBuf<int> sc(np), sdi(np), rc(np), rdi(np);
+    for (Long r = 0; r < np; r++) {
+      sc[r] = (int)scnt[r];        rc[r] = (int)rcnt[r];
+      sdi[r] = (int)(sd[r] / esz); rdi[r] = (int)(rd[r] / esz);
+    }
+    MPI_Datatype dt;
+    MPI_Type_contiguous((int)esz, MPI_BYTE, &dt);
+    MPI_Type_commit(&dt);
+    MPI_Alltoallv(sbuf, &sc[0], &sdi[0], dt, rbuf, &rc[0], &rdi[0], dt, comm.GetMPI_Comm());
+    MPI_Type_free(&dt);
+    return;
   }
-  std::exclusive_scan(sc.begin(), sc.end(), sd.begin(), 0);
-  std::exclusive_scan(rc.begin(), rc.end(), rd.begin(), 0);
-  MPI_Alltoallv(sbuf, &sc[0], &sd[0], MPI_BYTE, rbuf, &rc[0], &rd[0], MPI_BYTE, comm.GetMPI_Comm());
+
+  // Beyond that, exchange pairwise on a rotating schedule, one send and one receive outstanding.
+  // Posting every peer at once -- which this did first -- collapses at scale: at 16 ranks, 30
+  // unscheduled 1 GB transfers per rank timed out after 40 minutes where the collective needs
+  // seconds. Pairwise is the shape MPI's own large-message alltoallv uses. Offsets stay `Long` and
+  // become pointer arithmetic, so only each message's count must fit an `int`.
+  const char* sp = (const char*)sbuf;
+  char* rp = (char*)rbuf;
+  const Long CHUNK = Long(1) << 30;
+  const auto nchunk = [CHUNK](Long n) { return (n + CHUNK - 1) / CHUNK; };
+  for (Long k = 0; k < np; k++) {
+    const Long to = (rank + k) % np, from = (rank - k + np) % np;
+    // The send and receive of one step are with *different* peers, so their chunk counts differ
+    // and cannot share a lockstep loop -- doing that deadlocks, because whichever rank iterates
+    // longer posts a zero-count receive that never gets a matching send. Post each direction's
+    // chunks independently; a block's chunk count then matches at both ends, since both derive it
+    // from the same size.
+    const Long nreq = nchunk(sd[to + 1] - sd[to]) + nchunk(rd[from + 1] - rd[from]);
+    sctl::ScratchBuf<MPI_Request> req(std::max<Long>(nreq, 1));
+    Long m = 0;
+    for (Long o = rd[from]; o < rd[from + 1]; o += CHUNK)
+      MPI_Irecv(rp + o, (int)std::min<Long>(CHUNK, rd[from + 1] - o), MPI_BYTE, (int)from, 0, comm.GetMPI_Comm(), &req[m++]);
+    for (Long o = sd[to]; o < sd[to + 1]; o += CHUNK)
+      MPI_Isend(sp + o, (int)std::min<Long>(CHUNK, sd[to + 1] - o), MPI_BYTE, (int)to, 0, comm.GetMPI_Comm(), &req[m++]);
+    if (m) MPI_Waitall((int)m, &req[0], MPI_STATUSES_IGNORE);
+  }
 #endif
 }
+
 
 // Exchange through pooled scratch. A buffer taken and released each build pays, on every call, for
 // the peer mapping the transport rebuilds, the allocation, and the device-wide drain a release
