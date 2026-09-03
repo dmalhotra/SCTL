@@ -1597,21 +1597,23 @@ void partitionN(const Policy& pol, DeviceVector<T>& v, Long n, Long Ntgt, const 
 
 template <class Real, Integer DIM, template <class...> class DevVec>
 GPUTree<Real, DIM, DevVec>::GPUTree(const Comm& comm) : comm_(comm) {
-  // A tree with no refinement is the root, not nothing -- the same degenerate state buildTreeDist
-  // produces when every particle fits one leaf. Rank 0 owns it; the others hold it as a ghost, so
-  // the partition is well formed and data can be attached before the first UpdateRefinement.
+  // The coarsest uniform tree with at least one leaf per rank, as sctl::Tree builds it: one point
+  // per cell of an n0^DIM grid, dealt out evenly, refined to one point per leaf. Every rank then
+  // owns a non-empty range before any particle is added -- where a root-only tree would leave all
+  // but the first owning nothing, so the first AddParticles would land the whole global particle
+  // set on rank 0. An unrefined tree is still a valid one, so data can be attached immediately.
   const Long np = comm_.Size(), rank = comm_.Rank();
-  node_mid_.resize(1);
-  { sctl::Vector<Morton<DIM>> h(1); h[0] = Morton<DIM>{};
-    thrust::copy(h.begin(), h.end(), node_mid_.begin()); }
-  node_attr_.resize(1);
-  { sctl::Vector<NodeAttr> h(1); h[0] = NodeAttr{}; h[0].Leaf = 1; h[0].Ghost = (rank != 0);
-    thrust::copy(h.begin(), h.end(), node_attr_.begin()); }
-  mins_.ReInit(np);
-  mins_[0] = Morton<DIM>{};
-  for (Long r = 1; r < np; r++) mins_[r] = Morton<DIM>{}.Next();  // ranks > 0 own an empty range
-  owned_begin_ = 0;
-  owned_end_ = (rank == 0 ? 1 : 0);
+  Long n0 = 1;
+  while (sctl::pow<DIM, Long>(n0) < np) n0++;
+  const Long N = sctl::pow<DIM, Long>(n0), beg = N * rank / np, end = N * (rank + 1) / np;
+  sctl::Vector<Real> h((end - beg) * DIM);
+  for (Long i = beg; i < end; i++) {
+    Long idx = i;
+    for (Integer k = 0; k < DIM; k++) { h[(i - beg) * DIM + k] = (Real)(idx % n0) / (Real)n0; idx /= n0; }
+  }
+  DevVec<Real> coord(h.Dim());
+  thrust::copy(h.begin(), h.end(), coord.begin());
+  UpdateRefinement(coord);
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>
