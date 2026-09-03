@@ -336,8 +336,11 @@ class PtTree : public BaseTree {
   /** `dof` deduced globally as `sum(ndata)/sum(nitem)`, as in sctl::Tree. */
   Long globalDof(Long ndata, Long nitem) const;
 
-  /** Sort a group into the tree's node order and record the movement so data can follow it. */
+  /** Sort a group into the tree's node order, recording each particle's global caller index. */
   void sortGroup(const std::string& name, const DevVec<Real>& coord);
+
+  /** Slide a group onto the current partition after a rebuild. */
+  void repartitionGroup(const std::string& name);
 
   /** Particles of `name` falling in each node of `GetNodeMID()`. */
   void nodeCounts(const std::string& name, sctl::Vector<Long>& cnt) const;
