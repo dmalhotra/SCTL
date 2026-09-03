@@ -62,7 +62,7 @@ template <template <class...> class DeviceVector, class T> auto scratch_policy()
 }
 
 // Which retained buffer a `PersistentBuffer` call means; no two uses may share a tag.
-enum class Buf { PtMid, PtAlt, Closure, Frontier, ClosureRecv, GhostMerge };
+enum class Buf { PtMid, PtAlt, Closure, Frontier, ClosureRecv, GhostMerge, DataRecv };
 
 // Functor (not lambda) so nvcc captures it across thrust kernel boundaries.
 template <class Real, Integer DIM> struct MakeMortonFunctor {
@@ -1291,8 +1291,8 @@ template <Integer DIM, sctl::Periodicity PER> struct NbrDescentFunctor {
 // then a two-sided M-code halo and allgathered boundary anchors (mins). M is clamped to the
 // smallest per-rank count. Concatenated over ranks, the output matches single-rank buildTree.
 
-template <class Real, Integer DIM> template <template <class...> class DeviceVector>
-void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index, Morton<DIM>* partition, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr, detail::no_deduce_t<NodeLists<DeviceVector>>* node_lists) {
+template <class Real, Integer DIM, template <class...> class DevVec> template <template <class...> class DeviceVector>
+void GPUTree<Real, DIM, DevVec>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index, Morton<DIM>* partition, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr, detail::no_deduce_t<NodeLists<DeviceVector>>* node_lists) {
   // Env-gated per-stage profiler (sync + barrier so each delta is the true stage wall time).
   const bool gtprof = (getenv("GTPROF") != nullptr);
   double t_last = 0;
@@ -1506,6 +1506,167 @@ void GPUTree<Real, DIM>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const De
       thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail_nodeLists::NbrDescentFunctor<DIM, decltype(per_c)::value>{tp, cp, np_});
     });
   }
+}
+
+// Stateful interface: the tree, the partition and any named per-node data live in the object, so a
+// rebuild can carry the data across. `buildTreeDist` above does the building; everything here is
+// bookkeeping around it, mirroring sctl::Tree.
+namespace detail_treeData {
+
+/** Redistribute a sorted device vector so this rank ends up with `Ntgt` elements, order preserved
+ *  (device counterpart of `Comm::PartitionN`). Counts are known locally once every rank's size is. */
+template <class T, template <class...> class DeviceVector, class Policy>
+void partitionN(const Policy& pol, DeviceVector<T>& v, Long n, Long Ntgt, const Comm& comm) {
+  const Long np = comm.Size(), rank = comm.Rank();
+  if (np == 1) { v.resize(Ntgt); return; }
+#ifdef SCTL_HAVE_MPI
+  sctl::ScratchBuf<Long> cnt(np), off(np + 1), tgt(np), toff(np + 1);
+  comm.Allgather(sctl::Ptr2ConstItr<Long>(&n, 1), 1, cnt.begin(), 1);
+  comm.Allgather(sctl::Ptr2ConstItr<Long>(&Ntgt, 1), 1, tgt.begin(), 1);
+  off[0] = 0; std::inclusive_scan(cnt.begin(), cnt.end(), off.begin() + 1);
+  toff[0] = 0; std::inclusive_scan(tgt.begin(), tgt.end(), toff.begin() + 1);
+  SCTL_ASSERT(off[np] == toff[np]);
+
+  sctl::ScratchBuf<Long> scnt(np), rcnt(np);
+  for (Long q = 0; q < np; q++) {  // overlap of my current block with q's target block, and vice versa
+    scnt[q] = std::max<Long>(0, std::min(off[rank + 1], toff[q + 1]) - std::max(off[rank], toff[q]));
+    rcnt[q] = std::max<Long>(0, std::min(off[q + 1], toff[rank + 1]) - std::max(off[q], toff[rank]));
+  }
+  DeviceVector<T>& dst = detail::PersistentBuffer<T, DeviceVector, detail::Buf::DataRecv>();
+  detail::exchangePooled(pol, v, n, dst, Ntgt, scnt, rcnt, comm);
+  v.swap(dst);
+  v.resize(Ntgt);
+#endif
+}
+
+}  // namespace detail_treeData
+
+template <class Real, Integer DIM, template <class...> class DevVec>
+GPUTree<Real, DIM, DevVec>::GPUTree(const Comm& comm) : comm_(comm) {}
+
+template <class Real, Integer DIM, template <class...> class DevVec>
+void GPUTree<Real, DIM, DevVec>::remapRanges(sctl::Vector<Long>& range, const sctl::Vector<Morton<DIM>>& old_mid, const sctl::Vector<Morton<DIM>>& new_mid) {
+  const Long Nn = new_mid.Dim(), No = old_mid.Dim();
+  range.ReInit(Nn + 1);
+  #pragma omp parallel for schedule(static)
+  for (Long i = 0; i < Nn; i++) {
+    range[i] = std::lower_bound(old_mid.begin(), old_mid.begin() + No, new_mid[i]) - old_mid.begin();
+  }
+  range[Nn] = No;
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec>
+void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Long M, bool balance21, sctl::Periodicity periodicity, Integer halo_size) {
+  const Long np = comm_.Size(), rank = comm_.Rank();
+  const auto pol = detail::scratch_policy<DevVec, Morton<DIM>>();
+
+  sctl::Vector<Morton<DIM>> old_owned;  // this rank's owned nodes before the rebuild
+  if (!node_data_.empty() && mins_.Dim()) {
+    old_owned.ReInit(owned_end_ - owned_begin_);
+    thrust::copy(node_mid_.begin() + owned_begin_, node_mid_.begin() + owned_end_, old_owned.begin());
+  }
+  const Long old_begin = owned_begin_, old_end = owned_end_;
+
+  { // rebuild
+    mins_.ReInit(np);
+    Long owned[2] = {0, 0};
+    buildTreeDist(node_mid_, coord, M, comm_, balance21, periodicity, halo_size, owned,
+                  (DevVec<Long>*)nullptr, mins_.begin(), &node_attr_, &node_lists_);
+    owned_begin_ = owned[0];
+    owned_end_ = owned[1];
+  }
+  if (node_data_.empty()) return;
+
+  // Remap: move the old owned nodes to whoever owns their range now, then find, for each new node,
+  // the old nodes it absorbs. A new node's count is their counts summed.
+  sctl::Vector<Long> range;
+  Long No = 0;
+  {
+    sctl::Vector<Morton<DIM>> old_part(old_owned);
+    if (np > 1) comm_.PartitionS(old_part, mins_[rank]);
+    No = old_part.Dim();
+    sctl::Vector<Morton<DIM>> new_mid(node_mid_.size());
+    thrust::copy(node_mid_.begin(), node_mid_.end(), new_mid.begin());
+    remapRanges(range, old_part, new_mid);
+  }
+
+  for (auto& kv : node_data_) {
+    const std::string& name = kv.first;
+    DevVec<char>& data = kv.second;
+    sctl::Vector<Long>& cnt = node_cnt_[name];
+
+    const Long dof = [this, &data, &cnt]() {
+      sctl::StaticArray<Long, 2> Nl, Ng;
+      Nl[0] = (Long)data.size();
+      Nl[1] = sctl::omp_par::reduce(cnt.begin(), cnt.Dim());
+      comm_.Allreduce((sctl::ConstIterator<Long>)Nl, (sctl::Iterator<Long>)Ng, 2, sctl::CommOp::SUM);
+      const Long d = Ng[0] / std::max<Long>(Ng[1], 1);
+      SCTL_ASSERT(Nl[0] == Nl[1] * d);
+      return d;
+    }();
+
+    const Long data_begin = sctl::omp_par::reduce(cnt.begin(), old_begin);
+    const Long data_count = sctl::omp_par::reduce(cnt.begin() + old_begin, old_end - old_begin);
+    { // counts follow the nodes, then aggregate onto the new nodes
+      sctl::Vector<Long> cnt_own(old_end - old_begin, cnt.begin() + old_begin, false);
+      sctl::Vector<Long> cnt_tmp(cnt_own);
+      if (np > 1) comm_.PartitionN(cnt_tmp, No);
+      cnt.ReInit((Long)node_mid_.size());
+      #pragma omp parallel for schedule(static)
+      for (Long i = 0; i < (Long)node_mid_.size(); i++) {
+        Long sum = 0;
+        for (Long j = range[i]; j < range[i + 1]; j++) sum += cnt_tmp[j];
+        cnt[i] = sum;
+      }
+    }
+    { // the payload follows the same movement, on the device
+      const Long Ndata = sctl::omp_par::reduce(cnt.begin(), cnt.Dim()) * dof;
+      DevVec<char> own(data_count * dof);
+      thrust::copy(pol, data.begin() + data_begin * dof, data.begin() + (data_begin + data_count) * dof, own.begin());
+      detail_treeData::partitionN(pol, own, data_count * dof, Ndata, comm_);
+      data.swap(own);
+    }
+  }
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec>
+template <class ValueType>
+void GPUTree<Real, DIM, DevVec>::AddData(const std::string& name, const DevVec<ValueType>& data, const sctl::Vector<Long>& cnt) {
+  SCTL_ASSERT_MSG(node_data_.find(name) == node_data_.end(), "GPUTree::AddData: name already present.");
+  { // dof must be uniform across ranks, as in sctl::Tree
+    sctl::StaticArray<Long, 2> Nl, Ng;
+    Nl[0] = (Long)data.size();
+    Nl[1] = sctl::omp_par::reduce(cnt.begin(), cnt.Dim());
+    comm_.Allreduce((sctl::ConstIterator<Long>)Nl, (sctl::Iterator<Long>)Ng, 2, sctl::CommOp::SUM);
+    const Long dof = Ng[0] / std::max<Long>(Ng[1], 1);
+    SCTL_ASSERT(Nl[0] == Nl[1] * dof);
+    if (dof) SCTL_ASSERT(cnt.Dim() == (Long)node_mid_.size());
+  }
+  DevVec<char>& dst = node_data_[name];
+  dst.resize((Long)data.size() * (Long)sizeof(ValueType));
+  thrust::copy(thrust::device_pointer_cast((const char*)thrust::raw_pointer_cast(data.data())),
+               thrust::device_pointer_cast((const char*)thrust::raw_pointer_cast(data.data())) + dst.size(), dst.begin());
+  node_cnt_[name] = cnt;
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec>
+template <class ValueType>
+void GPUTree<Real, DIM, DevVec>::GetData(DevVec<ValueType>& data, sctl::Vector<Long>& cnt, const std::string& name) const {
+  const auto d = node_data_.find(name);
+  const auto c = node_cnt_.find(name);
+  SCTL_ASSERT_MSG(d != node_data_.end() && c != node_cnt_.end(), "GPUTree::GetData: unknown name.");
+  SCTL_ASSERT(d->second.size() % sizeof(ValueType) == 0);
+  data.resize((Long)d->second.size() / (Long)sizeof(ValueType));
+  thrust::copy(d->second.begin(), d->second.end(),
+               thrust::device_pointer_cast((char*)thrust::raw_pointer_cast(data.data())));
+  cnt = c->second;
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec>
+void GPUTree<Real, DIM, DevVec>::DeleteData(const std::string& name) {
+  SCTL_ASSERT_MSG(node_data_.find(name) != node_data_.end(), "GPUTree::DeleteData: unknown name.");
+  node_data_.erase(name);
+  node_cnt_.erase(name);
 }
 
 }  // namespace gpu_tree
