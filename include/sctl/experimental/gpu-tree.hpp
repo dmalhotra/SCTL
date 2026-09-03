@@ -252,12 +252,25 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
    * `sctl::Tree` exposes the same seam as `GetData_`.
    */
   DevVec<char>& NodeData_(const std::string& name) { return node_data_.at(name); }
+  const DevVec<char>& NodeData_(const std::string& name) const { return node_data_.at(name); }
   sctl::Vector<Long>& NodeCnt_(const std::string& name) { return node_cnt_.at(name); }
 
- private:
+  /**
+   * Create a data set and return its storage, sized from `cnt` but left unwritten. Lets a caller
+   * that produces the payload with its own kernel write in place, where `AddData` would have it
+   * fill a temporary and then copy that in.
+   */
+  DevVec<char>& AddDataUninit_(const std::string& name, const sctl::Vector<Long>& cnt, Long item_bytes);
 
-  /** Per-new-node `[range[i], range[i+1])` into `old_mid`, the old nodes each new node absorbs. */
-  static void remapRanges(sctl::Vector<Long>& range, const sctl::Vector<Morton<DIM>>& old_mid, const sctl::Vector<Morton<DIM>>& new_mid);
+ private:
+  /**
+   * Per-new-node `[range[i], range[i+1])` into `old_mid`, the old nodes each new node absorbs.
+   * Searches wherever the nodes live, so on the device only `range` crosses the bus -- which is
+   * why `UpdateRefinement` keeps the pre-rebuild nodes device-side.
+   */
+  static void remapRanges(sctl::Vector<Long>& range, const DevVec<Morton<DIM>>& old_mid, const DevVec<Morton<DIM>>& new_mid);
+
+
 
   sctl::Vector<Morton<DIM>> mins_;
   DevVec<Morton<DIM>> node_mid_;

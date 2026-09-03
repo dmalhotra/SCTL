@@ -65,7 +65,7 @@ template <template <class...> class DeviceVector, class T> auto scratch_policy()
 
 // Which retained buffer a `PersistentBuffer` call means; no two uses may share a tag.
 enum class Buf { PtMid, PtAlt, Closure, Frontier, ClosureRecv, GhostMerge, DataRecv,
-                 PtSend, PtRecv, PtData, PtPlan, PtSortK, PtSortV, MigData };
+                 PtSend, PtRecv, PtPlan, PtSortK, PtSortV, MigData, OldMid };
 
 // Functor (not lambda) so nvcc captures it across thrust kernel boundaries.
 template <class Real, Integer DIM> struct MakeMortonFunctor {
@@ -1615,14 +1615,21 @@ GPUTree<Real, DIM, DevVec>::GPUTree(const Comm& comm) : comm_(comm) {
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>
-void GPUTree<Real, DIM, DevVec>::remapRanges(sctl::Vector<Long>& range, const sctl::Vector<Morton<DIM>>& old_mid, const sctl::Vector<Morton<DIM>>& new_mid) {
-  const Long Nn = new_mid.Dim(), No = old_mid.Dim();
+void GPUTree<Real, DIM, DevVec>::remapRanges(sctl::Vector<Long>& range, const DevVec<Morton<DIM>>& old_mid, const DevVec<Morton<DIM>>& new_mid) {
+  const Long Nn = (Long)new_mid.size(), No = (Long)old_mid.size();
   range.ReInit(Nn + 1);
-  #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < Nn; i++) {
-    range[i] = std::lower_bound(old_mid.begin(), old_mid.begin() + No, new_mid[i]) - old_mid.begin();
-  }
   range[Nn] = No;
+  if constexpr (detail::is_device_vector_v<DevVec<Morton<DIM>>>) {
+    const auto pol = detail::scratch_policy<DevVec, Morton<DIM>>();
+    DeviceScratch<Long, DevVec> r(Nn);
+    thrust::lower_bound(pol, old_mid.begin(), old_mid.begin() + No, new_mid.begin(), new_mid.begin() + Nn, r.begin());
+    detail::deviceToHost(r.data(), Nn, range.begin());
+  } else {  // thrust's host backend is serial unless built for OMP, so parallelize it here
+    const Morton<DIM>* o = thrust::raw_pointer_cast(old_mid.data());
+    const Morton<DIM>* n = thrust::raw_pointer_cast(new_mid.data());
+    #pragma omp parallel for schedule(static)
+    for (Long i = 0; i < Nn; i++) range[i] = std::lower_bound(o, o + No, n[i]) - o;
+  }
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>
@@ -1630,11 +1637,12 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
   const Long np = comm_.Size(), rank = comm_.Rank();
   const auto pol = detail::scratch_policy<DevVec, Morton<DIM>>();
 
-  sctl::Vector<Morton<DIM>> old_owned;  // this rank's owned nodes before the rebuild
-  if (!node_data_.empty() && mins_.Dim()) {
-    old_owned.ReInit(owned_end_ - owned_begin_);
-    detail::deviceToHost(node_mid_.data() + owned_begin_, old_owned.Dim(), old_owned.begin());
-  }
+  // This rank's owned nodes before the rebuild, kept on the device: the search that consumes them
+  // runs there too, so only its result has to cross the bus.
+  DevVec<Morton<DIM>>& old_mid = detail::PersistentBuffer<Morton<DIM>, DevVec, detail::Buf::OldMid>();
+  const bool remap = !node_data_.empty() && mins_.Dim();
+  old_mid.resize(remap ? owned_end_ - owned_begin_ : 0);
+  if (remap) thrust::copy(pol, node_mid_.begin() + owned_begin_, node_mid_.begin() + owned_end_, old_mid.begin());
   const Long old_begin = owned_begin_, old_end = owned_end_;
 
   { // rebuild
@@ -1652,12 +1660,15 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
   sctl::Vector<Long> range;
   Long No = 0;
   {
-    sctl::Vector<Morton<DIM>> old_part(old_owned);
-    if (np > 1) comm_.PartitionS(old_part, mins_[rank]);
-    No = old_part.Dim();
-    sctl::Vector<Morton<DIM>> new_mid(node_mid_.size());
-    detail::deviceToHost(node_mid_.data(), new_mid.Dim(), new_mid.begin());
-    remapRanges(range, old_part, new_mid);
+    if (np > 1) {  // PartitionS is a host operation, so the nodes round-trip for it alone
+      sctl::Vector<Morton<DIM>> h((Long)old_mid.size());
+      detail::deviceToHost(old_mid.data(), h.Dim(), h.begin());
+      comm_.PartitionS(h, mins_[rank]);
+      old_mid.resize(h.Dim());
+      thrust::copy(h.begin(), h.end(), old_mid.begin());
+    }
+    No = (Long)old_mid.size();
+    remapRanges(range, old_mid, node_mid_);
   }
 
   for (auto& kv : node_data_) {
@@ -1718,6 +1729,16 @@ void GPUTree<Real, DIM, DevVec>::AddData(const std::string& name, const DevVec<V
   thrust::copy(thrust::device_pointer_cast((const char*)thrust::raw_pointer_cast(data.data())),
                thrust::device_pointer_cast((const char*)thrust::raw_pointer_cast(data.data())) + dst.size(), dst.begin());
   node_cnt_[name] = cnt;
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec>
+DevVec<char>& GPUTree<Real, DIM, DevVec>::AddDataUninit_(const std::string& name, const sctl::Vector<Long>& cnt, Long item_bytes) {
+  SCTL_ASSERT_MSG(node_data_.find(name) == node_data_.end(), "GPUTree::AddDataUninit_: name already present.");
+  if (item_bytes) SCTL_ASSERT(cnt.Dim() == (Long)node_mid_.size());
+  DevVec<char>& dst = node_data_[name];
+  dst.resize(sctl::omp_par::reduce(cnt.begin(), cnt.Dim()) * item_bytes);
+  node_cnt_[name] = cnt;
+  return dst;
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>
@@ -2040,21 +2061,25 @@ template <Integer /*unused*/ D = 0> struct SrcRankFunctor {
   }
 };
 
-// One thread per particle, looping over its `dof` values: the element-parallel form needs an
-// integer divide and modulo by a runtime `dof` for every element, which is the dominant cost at
-// dof=3.
+// One thread per value, not per particle: consecutive threads then touch consecutive addresses
+// within one particle's block, where the per-particle form has each thread issue its own strided
+// access. At 100M particles and dof=3 that is 25.9 -> 19.7 ms for the gather and 56.3 -> 42.5 ms
+// for the scatter. The divide and modulo by a runtime `dof` cost nothing measurable -- making it a
+// compile-time constant changes neither timing.
+//
+// The thread count is the value count, `n * dof`, not `n`.
 template <class T> struct GatherDofFunctor {
   const T* src; const Long* idx; T* dst; Long dof;
-  SCTL_GPU_HD void operator()(Long i) const {
-    const Long s = idx[i] * dof, d = i * dof;
-    for (Long k = 0; k < dof; k++) dst[d + k] = src[s + k];
+  SCTL_GPU_HD void operator()(Long e) const {
+    const Long i = e / dof, k = e - i * dof;
+    dst[e] = src[idx[i] * dof + k];
   }
 };
 template <class T> struct ScatterDofFunctor {
   const T* src; const Long* idx; T* dst; Long dof;
-  SCTL_GPU_HD void operator()(Long i) const {
-    const Long s = i * dof, d = idx[i] * dof;
-    for (Long k = 0; k < dof; k++) dst[d + k] = src[s + k];
+  SCTL_GPU_HD void operator()(Long e) const {
+    const Long i = e / dof, k = e - i * dof;
+    dst[idx[i] * dof + k] = src[e];
   }
 };
 
@@ -2108,7 +2133,7 @@ void derivePlan(const Policy& pol, PtScatter<DeviceVector>& s, const Comm& comm)
   detail::local_sort_by_key(pol, rk_sorted, s.recv_pos, Ntree);
   thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Ntree, GatherDofFunctor<Long>{
       thrust::raw_pointer_cast(loc.data()), thrust::raw_pointer_cast(s.recv_pos.data()),
-      thrust::raw_pointer_cast(req.data()), Long(1)});
+      thrust::raw_pointer_cast(req.data()), Long(1)});  // dof=1: one thread per request either way
   { // how many I ask of each rank: `rk_sorted` is sorted, so the run boundaries are the counts
     DeviceScratch<Long, DeviceVector> r_d(np + 1), bnd(np + 1);
     sctl::ScratchBuf<Long> h(np + 1);
@@ -2132,54 +2157,53 @@ void derivePlan(const Policy& pol, PtScatter<DeviceVector>& s, const Comm& comm)
 #endif
 }
 
-/** Caller order -> tree order, `dof` values per particle. */
+/**
+ * Caller order -> tree order, `dof` values per particle. `src` holds `Nloc*dof` values, `dst`
+ * holds `Ntree*dof`, and they must not overlap.
+ *
+ * Raw pointers rather than containers so the payload can move straight from the caller's array
+ * into the type-erased node storage: neither end has to be a `DeviceVector<T>`, which is what lets
+ * the copy in and the copy back out both go away.
+ */
 template <class T, template <class...> class DeviceVector, class Policy>
-void forward(const Policy& pol, DeviceVector<T>& v, PtScatter<DeviceVector>& s, Long dof, const Comm& comm) {
+void forward(const Policy& pol, const T* src, T* dst, PtScatter<DeviceVector>& s, Long dof, const Comm& comm) {
   derivePlan(pol, s, comm);
   const Long Ntree = (Long)s.gid.size();
-  DeviceVector<T>& a = detail::PersistentBuffer<T, DeviceVector, detail::Buf::PtSend>();
   if (comm.Size() == 1) {  // nothing leaves the rank, so the whole move is one gather by `gid`
-    a.resize(Ntree * dof);
-    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Ntree, GatherDofFunctor<T>{
-        thrust::raw_pointer_cast(v.data()), thrust::raw_pointer_cast(s.gid.data()), thrust::raw_pointer_cast(a.data()), dof});
-    v.swap(a);
+    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Ntree * dof, GatherDofFunctor<T>{
+        src, thrust::raw_pointer_cast(s.gid.data()), dst, dof});
     return;
   }
   const Long Nsend = (Long)s.send_idx.size();
+  DeviceVector<T>& a = detail::PersistentBuffer<T, DeviceVector, detail::Buf::PtSend>();
   DeviceVector<T>& b = detail::PersistentBuffer<T, DeviceVector, detail::Buf::PtRecv>();
   a.resize(Nsend * dof);
-  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nsend, GatherDofFunctor<T>{
-      thrust::raw_pointer_cast(v.data()), thrust::raw_pointer_cast(s.send_idx.data()), thrust::raw_pointer_cast(a.data()), dof});
+  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nsend * dof, GatherDofFunctor<T>{
+      src, thrust::raw_pointer_cast(s.send_idx.data()), thrust::raw_pointer_cast(a.data()), dof});
   exchangeDof(pol, a, Nsend, b, Ntree, s.scnt, s.rcnt, dof, comm);
-  v.clear();  // overwritten entirely below; clearing keeps a grow from copying the old contents
-  v.resize(Ntree * dof);
-  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Ntree, ScatterDofFunctor<T>{
-      thrust::raw_pointer_cast(b.data()), thrust::raw_pointer_cast(s.recv_pos.data()), thrust::raw_pointer_cast(v.data()), dof});
+  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Ntree * dof, ScatterDofFunctor<T>{
+      thrust::raw_pointer_cast(b.data()), thrust::raw_pointer_cast(s.recv_pos.data()), dst, dof});
 }
 
-/** Tree order -> caller order; the inverse of `forward`. */
+/** Tree order -> caller order; the inverse of `forward`. `src` is `Ntree*dof`, `dst` `Nloc*dof`. */
 template <class T, template <class...> class DeviceVector, class Policy>
-void reverse(const Policy& pol, DeviceVector<T>& v, PtScatter<DeviceVector>& s, Long dof, const Comm& comm) {
+void reverse(const Policy& pol, const T* src, T* dst, PtScatter<DeviceVector>& s, Long dof, const Comm& comm) {
   derivePlan(pol, s, comm);
   const Long Ntree = (Long)s.gid.size();
-  DeviceVector<T>& a = detail::PersistentBuffer<T, DeviceVector, detail::Buf::PtSend>();
   if (comm.Size() == 1) {  // the inverse of `forward`'s one gather: one scatter by `gid`
-    a.resize(Ntree * dof);
-    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Ntree, ScatterDofFunctor<T>{
-        thrust::raw_pointer_cast(v.data()), thrust::raw_pointer_cast(s.gid.data()), thrust::raw_pointer_cast(a.data()), dof});
-    v.swap(a);
+    thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Ntree * dof, ScatterDofFunctor<T>{
+        src, thrust::raw_pointer_cast(s.gid.data()), dst, dof});
     return;
   }
   const Long Nsend = (Long)s.send_idx.size();
+  DeviceVector<T>& a = detail::PersistentBuffer<T, DeviceVector, detail::Buf::PtSend>();
   DeviceVector<T>& b = detail::PersistentBuffer<T, DeviceVector, detail::Buf::PtRecv>();
   a.resize(Ntree * dof);
-  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Ntree, GatherDofFunctor<T>{
-      thrust::raw_pointer_cast(v.data()), thrust::raw_pointer_cast(s.recv_pos.data()), thrust::raw_pointer_cast(a.data()), dof});
+  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Ntree * dof, GatherDofFunctor<T>{
+      src, thrust::raw_pointer_cast(s.recv_pos.data()), thrust::raw_pointer_cast(a.data()), dof});
   exchangeDof(pol, a, Ntree, b, Nsend, s.rcnt, s.scnt, dof, comm);
-  v.clear();
-  v.resize(Nsend * dof);
-  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nsend, ScatterDofFunctor<T>{
-      thrust::raw_pointer_cast(b.data()), thrust::raw_pointer_cast(s.send_idx.data()), thrust::raw_pointer_cast(v.data()), dof});
+  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nsend * dof, ScatterDofFunctor<T>{
+      thrust::raw_pointer_cast(b.data()), thrust::raw_pointer_cast(s.send_idx.data()), dst, dof});
 }
 
 }  // namespace detail_ptTree
@@ -2315,13 +2339,12 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& dat
   auto& s = scatter_[particle_name];
   const Long dof = globalDof((Long)data.size(), Nlocal_.find(particle_name)->second);
 
-  DevVec<Real>& d = detail::PersistentBuffer<Real, DevVec, detail::Buf::PtData>();
-  d.resize(data.size());
-  thrust::copy(pol, data.begin(), data.end(), d.begin());
-  detail_ptTree::forward(pol, d, s, dof, this->GetComm());
   sctl::Vector<Long> cnt;
   nodeCounts(particle_name, cnt);
-  this->AddData(data_name, d, cnt);
+  // `forward` reads the caller's array and writes the stored buffer, so neither end is copied
+  DevVec<char>& raw = this->AddDataUninit_(data_name, cnt, dof * (Long)sizeof(Real));
+  detail_ptTree::forward(pol, (const Real*)thrust::raw_pointer_cast(data.data()),
+                         (Real*)thrust::raw_pointer_cast(raw.data()), s, dof, this->GetComm());
   data_pt_name_[data_name] = particle_name;
 }
 
@@ -2333,10 +2356,12 @@ void PtTree<Real, DIM, DevVec, BaseTree>::GetParticleData(DevVec<Real>& data, co
   auto& s = const_cast<PtTree*>(this)->scatter_[particle_name];  // forward/reverse cache the plan
   const auto pol = detail::scratch_policy<DevVec, Real>();
 
-  sctl::Vector<Long> cnt;
-  this->GetData(data, cnt, data_name);  // straight into the output; `reverse` permutes it in place
-  const Long dof = globalDof((Long)data.size(), (Long)s.gid.size());
-  detail_ptTree::reverse(pol, data, s, dof, this->GetComm());
+  // `reverse` reads the stored buffer and writes the output, so the payload is touched once
+  const DevVec<char>& raw = this->NodeData_(data_name);
+  const Long dof = globalDof((Long)raw.size() / (Long)sizeof(Real), (Long)s.gid.size());
+  data.resize(s.Nloc * dof);
+  detail_ptTree::reverse(pol, (const Real*)thrust::raw_pointer_cast(raw.data()),
+                         (Real*)thrust::raw_pointer_cast(data.data()), s, dof, this->GetComm());
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
