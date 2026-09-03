@@ -179,6 +179,25 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
    *
    * @note This is a collective operation and must be called from all processes in the communicator.
    */
+  /**
+   * Reduce data on nodes shared between processors and then broadcast the halo/ghost node data. The
+   * resulting tree will have ghost nodes added to the tree.
+   *
+   * @param[in] name Name of the data.
+   *
+   * @note This is a collective operation and must be called from all processes in the communicator.
+   */
+  template <class ValueType> void ReduceBroadcast(const std::string& name);
+
+  /**
+   * Broadcast the halo/ghost node data. The resulting tree will have ghost nodes added to the tree.
+   *
+   * @param[in] name Name of the data.
+   *
+   * @note This is a collective operation and must be called from all processes in the communicator.
+   */
+  template <class ValueType> void Broadcast(const std::string& name);
+
   void DeleteData(const std::string& name);
 
   /**
@@ -222,7 +241,7 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
    * @note This is a collective operation and must be called from all processes in the communicator.
    */
   template <template <class...> class DeviceVector>
-  static void buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M = 1, const Comm& comm = Comm::Self(), bool balance21 = false, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1, Long* owned_range = nullptr, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index = nullptr, Morton<DIM>* partition = nullptr, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr = nullptr, detail::no_deduce_t<NodeLists<DeviceVector>>* node_lists = nullptr);
+  static void buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M = 1, const Comm& comm = Comm::Self(), bool balance21 = false, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1, Long* owned_range = nullptr, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index = nullptr, Morton<DIM>* partition = nullptr, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr = nullptr, detail::no_deduce_t<NodeLists<DeviceVector>>* node_lists = nullptr, detail::no_deduce_t<DeviceVector<Morton<DIM>>>* user_mid = nullptr, sctl::Vector<Long>* user_cnt = nullptr);
 
  private:
 
@@ -231,6 +250,8 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
 
   sctl::Vector<Morton<DIM>> mins_;
   DevVec<Morton<DIM>> node_mid_;
+  DevVec<Morton<DIM>> user_mid_;   ///< halo send list: my nodes, grouped by the rank that ghosts them
+  sctl::Vector<Long> user_cnt_;    ///< np entries: how many of them go to each rank
   DevVec<NodeAttr> node_attr_;
   NodeLists<DevVec> node_lists_;
   Long owned_begin_ = 0, owned_end_ = 0;
