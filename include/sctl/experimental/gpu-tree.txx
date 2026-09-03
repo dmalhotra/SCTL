@@ -39,6 +39,8 @@
 #include "sctl/comm.hpp"
 #include "sctl/ompUtils.txx"
 #include "sctl/tree.hpp"   // sctl::Tree::Balance21 (hybrid host balance)
+#include "sctl/vtudata.hpp"  // WriteTreeVTK
+#include "sctl/vtudata.txx"
 #include "sctl/tree.txx"
 #include "sctl/scratch_pool.hpp"
 #include "sctl/scratch_pool.txx"
@@ -1660,6 +1662,48 @@ void GPUTree<Real, DIM, DevVec>::GetData(DevVec<ValueType>& data, sctl::Vector<L
   thrust::copy(d->second.begin(), d->second.end(),
                thrust::device_pointer_cast((char*)thrust::raw_pointer_cast(data.data())));
   cnt = c->second;
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec>
+void GPUTree<Real, DIM, DevVec>::WriteTreeVTK(std::string fname, bool show_ghost) const {
+  using VTKReal = typename sctl::VTUData::VTKReal;
+  sctl::VTUData vtu_data;
+  if (DIM <= 3) {  // one cell per leaf, its 2^DIM corners as points
+    static constexpr Integer Ncorner = (1u << DIM);
+    const Long Nn = (Long)node_mid_.size();
+    sctl::Vector<Morton<DIM>> mid(Nn);
+    sctl::Vector<NodeAttr> attr(Nn);
+    thrust::copy(node_mid_.begin(), node_mid_.end(), mid.begin());
+    thrust::copy(node_attr_.begin(), node_attr_.end(), attr.begin());
+
+    sctl::Vector<VTKReal>& coord = vtu_data.coord;
+    sctl::Vector<int32_t>& connect = vtu_data.connect;
+    sctl::Vector<int32_t>& offset = vtu_data.offset;
+    sctl::Vector<uint8_t>& types = vtu_data.types;
+
+    sctl::StaticArray<VTKReal, DIM> c;
+    Long point_cnt = coord.Dim() / 3;
+    Long connect_cnt = connect.Dim();
+    for (Long nid = 0; nid < Nn; nid++) {
+      if (!show_ghost && attr[nid].Ghost) continue;
+      if (!attr[nid].Leaf) continue;
+
+      mid[nid].Coord((sctl::Iterator<VTKReal>)c);
+      const VTKReal s = sctl::pow<VTKReal>(0.5, mid[nid].Depth());
+      for (Integer j = 0; j < Ncorner; j++) {
+        for (Integer i = 0; i < DIM; i++) coord.PushBack(c[i] + ((j & (1u << i)) ? 1 : 0) * s);
+        for (Integer i = DIM; i < 3; i++) coord.PushBack(0);
+        connect.PushBack(point_cnt);
+        connect_cnt++;
+        point_cnt++;
+      }
+      offset.PushBack(connect_cnt);
+      if (DIM == 2) types.PushBack(8);
+      else if (DIM == 3) types.PushBack(11);
+      else types.PushBack(4);
+    }
+  }
+  vtu_data.WriteVTK(fname, comm_);
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>

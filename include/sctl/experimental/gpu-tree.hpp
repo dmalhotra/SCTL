@@ -178,6 +178,16 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
   void DeleteData(const std::string& name);
 
   /**
+   * Write VTK visualization.
+   *
+   * @param[in] fname Filename for the output.
+   * @param[in] show_ghost Whether to show ghost nodes.
+   *
+   * @note This is a collective operation and must be called from all processes in the communicator.
+   */
+  void WriteTreeVTK(std::string fname, bool show_ghost = false) const;
+
+  /**
    * Build the global Morton-order linear tree from particle coordinates, distributed across the
    * ranks of `comm` (default `Comm::Self()` = single-rank build). Each rank returns a contiguous
    * slice; the concatenation over ranks equals the single-rank output. The np>1 path uses a
