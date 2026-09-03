@@ -1713,6 +1713,264 @@ void GPUTree<Real, DIM, DevVec>::DeleteData(const std::string& name) {
   node_cnt_.erase(name);
 }
 
+// Particle bookkeeping. sctl's PtTree keeps a global scatter index and moves data with
+// Comm::ScatterForward/Reverse, both host-side. Here we record the movement the sort performed --
+// the local permutation before the exchange, the exchange counts, and the local permutation after
+// -- and replay it: forward is gather/exchange/gather, reverse is the same run backwards. The
+// payload never leaves the device.
+namespace detail_ptTree {
+
+template <template <class...> class DeviceVector> struct PtScatter {
+  DeviceVector<Long> send_perm;  ///< Nloc: caller-order index of the i-th element in send order
+  DeviceVector<Long> recv_perm;  ///< Nrecv: received index of the i-th element in tree order
+  sctl::Vector<Long> scnt, rcnt;  ///< ScratchBuf is stack-only, so the retained counts are Vectors
+  Long Nloc = 0, Nrecv = 0;
+};
+
+/** Particle coordinate -> its MAX_DEPTH node. */
+template <class Real, Integer DIM> struct MakeNodeFunctor {
+  const Real* coord;
+  SCTL_GPU_HD Morton<DIM> operator()(Long i) const {
+    return Morton<DIM>(MortonCode<DIM>(coord + i * DIM), (uint8_t)MAX_DEPTH);
+  }
+};
+
+template <class T> struct GatherDofFunctor {
+  const T* src; const Long* idx; T* dst; Long dof;
+  SCTL_GPU_HD void operator()(Long i) const { dst[i] = src[idx[i / dof] * dof + i % dof]; }
+};
+template <class T> struct ScatterDofFunctor {
+  const T* src; const Long* idx; T* dst; Long dof;
+  SCTL_GPU_HD void operator()(Long i) const { dst[idx[i / dof] * dof + i % dof] = src[i]; }
+};
+
+/** Exchange with the per-rank counts scaled by `dof`. */
+template <class T, template <class...> class DeviceVector, class Policy>
+void exchangeDof(const Policy& pol, const DeviceVector<T>& src, Long nsrc, DeviceVector<T>& dst, Long ndst,
+                 const sctl::Vector<Long>& scnt, const sctl::Vector<Long>& rcnt, Long dof, const Comm& comm) {
+  const Long np = comm.Size();
+  dst.resize(ndst * dof);
+  if (np == 1) { thrust::copy(pol, src.begin(), src.begin() + nsrc * dof, dst.begin()); return; }
+#ifdef SCTL_HAVE_MPI
+  sctl::ScratchBuf<Long> sc(np), rc(np);
+  for (Long r = 0; r < np; r++) { sc[r] = scnt[r] * dof; rc[r] = rcnt[r] * dof; }
+  detail::alltoallv(thrust::raw_pointer_cast(src.data()), thrust::raw_pointer_cast(dst.data()), sc, rc, (Long)sizeof(T), comm);
+#endif
+}
+
+/** Caller order -> tree order, `dof` values per particle. */
+template <class T, template <class...> class DeviceVector, class Policy>
+void forward(const Policy& pol, DeviceVector<T>& v, const PtScatter<DeviceVector>& s, Long dof, const Comm& comm) {
+  DeviceVector<T> a(s.Nloc * dof), b;
+  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), s.Nloc * dof, GatherDofFunctor<T>{
+      thrust::raw_pointer_cast(v.data()), thrust::raw_pointer_cast(s.send_perm.data()), thrust::raw_pointer_cast(a.data()), dof});
+  exchangeDof(pol, a, s.Nloc, b, s.Nrecv, s.scnt, s.rcnt, dof, comm);
+  v.resize(s.Nrecv * dof);
+  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), s.Nrecv * dof, GatherDofFunctor<T>{
+      thrust::raw_pointer_cast(b.data()), thrust::raw_pointer_cast(s.recv_perm.data()), thrust::raw_pointer_cast(v.data()), dof});
+}
+
+/** Tree order -> caller order; the inverse of `forward`. */
+template <class T, template <class...> class DeviceVector, class Policy>
+void reverse(const Policy& pol, DeviceVector<T>& v, const PtScatter<DeviceVector>& s, Long dof, const Comm& comm) {
+  DeviceVector<T> a(s.Nrecv * dof), b;
+  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), s.Nrecv * dof, ScatterDofFunctor<T>{
+      thrust::raw_pointer_cast(v.data()), thrust::raw_pointer_cast(s.recv_perm.data()), thrust::raw_pointer_cast(a.data()), dof});
+  exchangeDof(pol, a, s.Nrecv, b, s.Nloc, s.rcnt, s.scnt, dof, comm);
+  v.resize(s.Nloc * dof);
+  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), s.Nloc * dof, ScatterDofFunctor<T>{
+      thrust::raw_pointer_cast(b.data()), thrust::raw_pointer_cast(s.send_perm.data()), thrust::raw_pointer_cast(v.data()), dof});
+}
+
+}  // namespace detail_ptTree
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+PtTree<Real, DIM, DevVec, BaseTree>::PtTree(const Comm& comm) : BaseTree(comm) {}
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+Long PtTree<Real, DIM, DevVec, BaseTree>::globalDof(Long ndata, Long nitem) const {
+  sctl::StaticArray<Long, 2> Nl, Ng;
+  Nl[0] = ndata; Nl[1] = nitem;
+  this->GetComm().Allreduce((sctl::ConstIterator<Long>)Nl, (sctl::Iterator<Long>)Ng, 2, sctl::CommOp::SUM);
+  const Long dof = Ng[0] / std::max<Long>(Ng[1], 1);
+  SCTL_ASSERT(Nl[0] == Nl[1] * dof);
+  return dof;
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+void PtTree<Real, DIM, DevVec, BaseTree>::sortGroup(const std::string& name, const DevVec<Real>& coord) {
+  const Comm& comm = this->GetComm();
+  const Long np = comm.Size();
+  const auto pol = detail::scratch_policy<DevVec, Morton<DIM>>();
+  const Long Nloc = (Long)coord.size() / DIM;
+  SCTL_ASSERT((Long)coord.size() == Nloc * DIM);
+
+  auto& s = scatter_[name];
+  s.Nloc = Nloc;
+  DevVec<Morton<DIM>> key(Nloc);
+  thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nloc), key.begin(),
+                    detail_ptTree::MakeNodeFunctor<Real, DIM>{thrust::raw_pointer_cast(coord.data())});
+  s.send_perm.resize(Nloc);
+  thrust::sequence(pol, s.send_perm.begin(), s.send_perm.end(), Long(0));
+  detail::local_sort_by_key(pol, key, s.send_perm, Nloc);
+
+  DevVec<Morton<DIM>> recv;
+  if (np == 1) {
+    s.Nrecv = Nloc;
+    s.scnt.ReInit(1); s.rcnt.ReInit(1); s.scnt[0] = Nloc; s.rcnt[0] = Nloc;
+    recv = key;  // Vector::ReInit, not ScratchBuf
+  } else {
+    const auto& mins = this->GetPartitionMID();
+    DeviceScratch<Morton<DIM>, DevVec> spl(np);
+    thrust::copy(mins.begin(), mins.begin() + np, spl.begin());
+    sctl::ScratchBuf<Long> sc(np), rc(np);
+    s.Nrecv = detail::splitCounts(sc, rc, key, Nloc, spl, comm);
+    s.scnt.ReInit(np); s.rcnt.ReInit(np);
+    for (Long r = 0; r < np; r++) { s.scnt[r] = sc[r]; s.rcnt[r] = rc[r]; }
+    detail_ptTree::exchangeDof(pol, key, Nloc, recv, s.Nrecv, s.scnt, s.rcnt, Long(1), comm);
+  }
+  s.recv_perm.resize(s.Nrecv);
+  thrust::sequence(pol, s.recv_perm.begin(), s.recv_perm.end(), Long(0));
+  detail::local_sort_by_key(pol, recv, s.recv_perm, s.Nrecv);
+  pt_mid_[name] = recv;
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+void PtTree<Real, DIM, DevVec, BaseTree>::nodeCounts(const std::string& name, sctl::Vector<Long>& cnt) const {
+  const auto pol = detail::scratch_policy<DevVec, Morton<DIM>>();
+  const auto& node_mid = this->GetNodeMID();
+  const auto& pm = pt_mid_.find(name)->second;
+  const Long Nn = (Long)node_mid.size(), Npt = (Long)pm.size();
+  DeviceScratch<Long, DevVec> pos(Nn);
+  thrust::lower_bound(pol, pm.begin(), pm.begin() + Npt, node_mid.begin(), node_mid.end(), pos.begin());
+  sctl::Vector<Long> h(Nn);
+  thrust::copy(pos.begin(), pos.end(), h.begin());
+  cnt.ReInit(Nn);
+  for (Long i = 0; i < Nn; i++) cnt[i] = (i + 1 < Nn ? h[i + 1] : Npt) - h[i];
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+void PtTree<Real, DIM, DevVec, BaseTree>::AddParticles(const std::string& name, const DevVec<Real>& coord) {
+  SCTL_ASSERT_MSG(scatter_.find(name) == scatter_.end(), "PtTree::AddParticles: name already present.");
+  Nlocal_[name] = (Long)coord.size() / DIM;
+  sortGroup(name, coord);
+  AddParticleData(name, name, coord);
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, const DevVec<Real>& data) {
+  SCTL_ASSERT_MSG(scatter_.find(particle_name) != scatter_.end(), "PtTree::AddParticleData: unknown particle group.");
+  SCTL_ASSERT_MSG(data_pt_name_.find(data_name) == data_pt_name_.end(), "PtTree::AddParticleData: data name already present.");
+  const auto pol = detail::scratch_policy<DevVec, Real>();
+  const auto& s = scatter_.find(particle_name)->second;
+  const Long dof = globalDof((Long)data.size(), Nlocal_.find(particle_name)->second);
+
+  DevVec<Real> d(data);
+  detail_ptTree::forward(pol, d, s, dof, this->GetComm());
+  sctl::Vector<Long> cnt;
+  nodeCounts(particle_name, cnt);
+  this->AddData(data_name, d, cnt);
+  data_pt_name_[data_name] = particle_name;
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+void PtTree<Real, DIM, DevVec, BaseTree>::GetParticleData(DevVec<Real>& data, const std::string& data_name) const {
+  const auto it = data_pt_name_.find(data_name);
+  SCTL_ASSERT_MSG(it != data_pt_name_.end(), "PtTree::GetParticleData: unknown data name.");
+  const std::string& particle_name = it->second;
+  const auto& s = scatter_.find(particle_name)->second;
+  const auto pol = detail::scratch_policy<DevVec, Real>();
+
+  DevVec<Real> stored;
+  sctl::Vector<Long> cnt;
+  this->GetData(stored, cnt, data_name);
+  const Long dof = globalDof((Long)stored.size(), s.Nrecv);
+  data = stored;
+  detail_ptTree::reverse(pol, data, s, dof, this->GetComm());
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+void PtTree<Real, DIM, DevVec, BaseTree>::DeleteParticleData(const std::string& data_name) {
+  const auto it = data_pt_name_.find(data_name);
+  SCTL_ASSERT_MSG(it != data_pt_name_.end(), "PtTree::DeleteParticleData: unknown data name.");
+  const std::string particle_name = it->second;
+  if (data_name == particle_name) {  // deleting the group takes every data set on it
+    std::vector<std::string> lst;
+    for (const auto& kv : data_pt_name_) if (kv.second == particle_name && kv.first != particle_name) lst.push_back(kv.first);
+    for (const auto& x : lst) DeleteParticleData(x);
+    Nlocal_.erase(particle_name);
+    pt_mid_.erase(particle_name);
+    scatter_.erase(particle_name);
+  }
+  this->DeleteData(data_name);
+  data_pt_name_.erase(data_name);
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& coord, Long M, bool balance21, sctl::Periodicity periodicity, Integer halo_size) {
+  // Recover every particle data set in caller order, rebuild, then re-sort each group against the
+  // new partition and put the data back. The base class would migrate the stored data node-by-node,
+  // but the scatter that maps it back to the caller is tied to the old partition, so the groups are
+  // withdrawn first and re-derived after.
+  std::map<std::string, std::string> owner = data_pt_name_;
+  std::map<std::string, DevVec<Real>> saved;
+  for (const auto& kv : owner) {
+    DevVec<Real> d;
+    GetParticleData(d, kv.first);
+    saved[kv.first] = std::move(d);
+  }
+  for (const auto& kv : owner) { this->DeleteData(kv.first); }
+  data_pt_name_.clear();
+
+  BaseTree::UpdateRefinement(coord, M, balance21, periodicity, halo_size);
+
+  for (const auto& kv : owner) {  // groups first: a group's own coords define its scatter
+    if (kv.first == kv.second) { sortGroup(kv.first, saved[kv.first]); AddParticleData(kv.first, kv.first, saved[kv.first]); }
+  }
+  for (const auto& kv : owner) {
+    if (kv.first != kv.second) AddParticleData(kv.first, kv.second, saved[kv.first]);
+  }
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+void PtTree<Real, DIM, DevVec, BaseTree>::WriteParticleVTK(std::string fname, std::string data_name, bool show_ghost) const {
+  using VTKReal = typename sctl::VTUData::VTKReal;
+  const auto it = data_pt_name_.find(data_name);
+  SCTL_ASSERT_MSG(it != data_pt_name_.end(), "PtTree::WriteParticleVTK: unknown data name.");
+  const std::string& particle_name = it->second;
+
+  sctl::Vector<Long> pt_cnt, val_cnt;
+  DevVec<Real> pt_d, val_d;
+  this->GetData(pt_d, pt_cnt, particle_name);
+  this->GetData(val_d, val_cnt, data_name);
+  sctl::Vector<Real> pt((Long)pt_d.size()), val((Long)val_d.size());
+  thrust::copy(pt_d.begin(), pt_d.end(), pt.begin());
+  thrust::copy(val_d.begin(), val_d.end(), val.begin());
+
+  const Long Nn = (Long)this->GetNodeMID().size();
+  sctl::Vector<typename BaseTree::NodeAttr> attr(Nn);
+  thrust::copy(this->GetNodeAttr().begin(), this->GetNodeAttr().end(), attr.begin());
+  Long npt = 0;
+  for (Long i = 0; i < pt_cnt.Dim(); i++) npt += pt_cnt[i];
+  const Long vdof = (npt ? (Long)val.Dim() / npt : 0);
+
+  sctl::VTUData vtu_data;
+  Long pt_idx = 0;
+  for (Long i = 0; i < Nn; i++) {
+    const bool skip = (!show_ghost && attr[i].Ghost);
+    for (Long j = 0; j < pt_cnt[i]; j++, pt_idx++) {
+      if (skip) continue;
+      for (Integer k = 0; k < DIM; k++) vtu_data.coord.PushBack((VTKReal)pt[pt_idx * DIM + k]);
+      for (Integer k = DIM; k < 3; k++) vtu_data.coord.PushBack(0);
+      for (Long k = 0; k < vdof; k++) vtu_data.value.PushBack((VTKReal)val[pt_idx * vdof + k]);
+      vtu_data.connect.PushBack(vtu_data.offset.Dim());
+      vtu_data.offset.PushBack(vtu_data.connect.Dim());
+      vtu_data.types.PushBack(1);  // VTK_VERTEX
+    }
+  }
+  vtu_data.WriteVTK(fname, this->GetComm());
+}
+
 }  // namespace gpu_tree
 
 #endif  // _SCTL_EXPERIMENTAL_GPU_TREE_TXX_

@@ -28,6 +28,10 @@ using sctl::MAX_DEPTH;
 
 template <class Real, Integer DIM, template <class...> class DevVec> class GPUTree;
 
+namespace detail_ptTree {
+template <template <class...> class DeviceVector> struct PtScatter;
+}  // namespace detail_ptTree
+
 namespace detail {
 // Blocks template deduction: the optional out-params below must not take part in deducing
 // `DeviceVector` -- `tree` and `coord` already fix it -- or passing `nullptr` for one of them
@@ -235,6 +239,113 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
   std::map<std::string, sctl::Vector<Long>> node_cnt_;
 
   Comm comm_;
+};
+
+/**
+ * Class template representing a point tree in a specified dimension, built on the device.
+ *
+ * Particle groups are named, sorted into the tree's node order, and their data follows the tree
+ * through `UpdateRefinement`. `GetParticleData` scatters back to the caller's original ordering.
+ *
+ * @tparam Real Data type for the coordinates and values of points.
+ * @tparam DIM Dimensionality of the point tree.
+ * @tparam DevVec Vector template holding the retained state (e.g. `thrust::device_vector`).
+ * @tparam BaseTree Base class for the point tree. Defaults to GPUTree<Real,DIM,DevVec>.
+ */
+template <class Real, Integer DIM, template <class...> class DevVec = std::vector, class BaseTree = GPUTree<Real, DIM, DevVec>>
+class PtTree : public BaseTree {
+ public:
+
+  /**
+   * Constructor for PtTree.
+   *
+   * @param comm Communication object for distributed computing. Defaults to Comm::Self().
+   */
+  explicit PtTree(const Comm& comm = Comm::Self());
+
+  /**
+   * Update refinement of the point tree based on given coordinates.
+   *
+   * @param coord Coordinates of the points.
+   * @param M Maximum number of points per box for refinement.
+   * @param balance21 Flag indicating whether to construct a level-restricted
+   *        tree with neighboring boxes within one level of each other.
+   * @param periodicity Per-axis periodicity bitmask (e.g. `Periodicity::X | Periodicity::Y`, or `all_periodic(DIM)`).
+   * @param[in] halo_size 2^halo_size neighboring boxes will be included in the halo region
+   *
+   * @note This is a collective operation and must be called from all processes in the communicator.
+   */
+  void UpdateRefinement(const DevVec<Real>& coord, Long M = 1, bool balance21 = 0, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1);
+
+  /**
+   * Add particles to the point tree.
+   *
+   * @param name Name of the particle group.
+   * @param coord Coordinates of the particles.
+   *
+   * @note This is a collective operation and must be called from all processes in the communicator.
+   */
+  void AddParticles(const std::string& name, const DevVec<Real>& coord);
+
+  /**
+   * Add particle data to the point tree.
+   *
+   * @param data_name Name of the data. Must not already exist.
+   * @param particle_name Name of an existing particle group from `AddParticles`.
+   * @param data Local data values, sized `dof * Nlocal[particle_name]` for
+   * some implicit `dof`. Reordered to match the particle group.
+   *
+   * @note Collective; must be called from all processes.
+   */
+  void AddParticleData(const std::string& data_name, const std::string& particle_name, const DevVec<Real>& data);
+
+  /**
+   * Get particle data from the point tree. The data scattered back to
+   * the original ordering of the particles.
+   *
+   * @param data Vector to store the data values.
+   * @param data_name Name of the data.
+   *
+   * @note This is a collective operation and must be called from all processes in the communicator.
+   */
+  void GetParticleData(DevVec<Real>& data, const std::string& data_name) const;
+
+  /**
+   * Delete particle data from the point tree. Deleting a particle group also deletes every data
+   * set attached to it.
+   *
+   * @param data_name Name of the data to delete.
+   *
+   * @note This is a collective operation and must be called from all processes in the communicator.
+   */
+  void DeleteParticleData(const std::string& data_name);
+
+  /**
+   * Write particle data to a VTK file.
+   *
+   * @param fname Filename for the VTK file.
+   * @param data_name Name of the data to write.
+   * @param show_ghost Flag indicating whether to include ghost particles in the visualization.
+   *
+   * @note This is a collective operation and must be called from all processes in the communicator.
+   */
+  void WriteParticleVTK(std::string fname, std::string data_name, bool show_ghost = false) const;
+
+ private:
+
+  /** `dof` deduced globally as `sum(ndata)/sum(nitem)`, as in sctl::Tree. */
+  Long globalDof(Long ndata, Long nitem) const;
+
+  /** Sort a group into the tree's node order and record the movement so data can follow it. */
+  void sortGroup(const std::string& name, const DevVec<Real>& coord);
+
+  /** Particles of `name` falling in each node of `GetNodeMID()`. */
+  void nodeCounts(const std::string& name, sctl::Vector<Long>& cnt) const;
+
+  std::map<std::string, Long> Nlocal_;                                 ///< particles this rank was given
+  std::map<std::string, DevVec<Morton<DIM>>> pt_mid_;                  ///< per group, in tree order
+  std::map<std::string, detail_ptTree::PtScatter<DevVec>> scatter_;
+  std::map<std::string, std::string> data_pt_name_;                    ///< data name -> particle group
 };
 
 }  // namespace gpu_tree
