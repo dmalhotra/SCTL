@@ -1727,13 +1727,14 @@ namespace sctl {
 
     const Long N = coord.Dim() / DIM;
     SCTL_ASSERT(coord.Dim() == N * DIM);
-    Vector<MortonCode<DIM>> pt_mid(N);
+    ScratchBuf<MortonCode<DIM>> pt_mid_(N);
+    Vector<MortonCode<DIM>> pt_mid(pt_mid_);
     #pragma omp parallel for schedule(static)
     for (Long i = 0; i < N; i++) {
       pt_mid[i] = MortonCode<DIM>(&coord[i*DIM]);
     }
     auto& group = groups.try_emplace(name, this->GetComm()).first->second;
-    group.Init(std::move(pt_mid), partition_codes);
+    group.Init(pt_mid, partition_codes);
     AddParticleData(name, name, coord);
 
     { // Set node_cnt

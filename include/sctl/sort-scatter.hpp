@@ -59,10 +59,9 @@ template <class Key> class SortScatter {
 
   /**
    * Sort `keys` (caller order) into the global order cut at `splitters`: np entries, `splitters[r]`
-   * the first key of rank r's range; `splitters[0]` is not consulted. Pass `std::move(keys)` to
-   * avoid the copy.
+   * the first key of rank r's range; `splitters[0]` is not consulted.
    */
-  void Init(Vector<Key> keys, const Vector<Key>& splitters);
+  void Init(const Vector<Key>& keys, const Vector<Key>& splitters);
 
   /** Move the sorted keys to the partition given by new `splitters`; the operators follow. */
   void Repartition(const Vector<Key>& splitters);

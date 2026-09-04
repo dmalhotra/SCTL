@@ -5,7 +5,6 @@
 #include <cstring>              // for memcpy
 #include <functional>           // for less
 #include <iostream>             // for cout (test)
-#include <utility>              // for move
 
 #include "sctl/sort-scatter.hpp"
 #include "sctl/common.hpp"        // for SCTL_ASSERT, Long, Integer
@@ -32,16 +31,15 @@ template <class Key> struct Pair {
   bool operator<(const Pair& p) const { return key < p.key; }
 };
 
-/** Sort `keys` in place and write the source position of each into `idx`. */
-template <class Key> void sortWithIndex(Vector<Key>& keys, Vector<Long>& idx) {
-  const Long n = keys.Dim();
+/** Sort `n` keys from `src` into `dst` (may alias), writing the source position of each into `idx`. */
+template <class Key> void sortWithIndex(ConstIterator<Key> src, Iterator<Key> dst, Vector<Long>& idx, Long n) {
   ScratchBuf<Pair<Key>> in(n), out(n);
   #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < n; i++) { in[i].key = keys[i]; in[i].data = i; }
+  for (Long i = 0; i < n; i++) { in[i].key = src[i]; in[i].data = i; }
   comm_detail::LocalSort<Pair<Key>>(in.begin(), out.begin(), n, std::less<Pair<Key>>());
   if (idx.Dim() != n) idx.ReInit(n);
   #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < n; i++) { keys[i] = out[i].key; idx[i] = out[i].data; }
+  for (Long i = 0; i < n; i++) { dst[i] = out[i].key; idx[i] = out[i].data; }
 }
 
 /** `scnt[r]`: sorted `keys` in `[splitters[r], splitters[r+1])` (ends open); `rcnt`: what comes back.
@@ -162,27 +160,32 @@ template <class T> void reverse(ConstIterator<T> src, Iterator<T> dst, Plan& s, 
 
 template <class Key> SortScatter<Key>::SortScatter(const Comm& comm) : comm_(comm) {}
 
-template <class Key> void SortScatter<Key>::Init(Vector<Key> keys, const Vector<Key>& splitters) {
+template <class Key> void SortScatter<Key>::Init(const Vector<Key>& keys, const Vector<Key>& splitters) {
   const Integer np = comm_.Size();
   SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Init: one splitter per rank.");
-  keys_ = std::move(keys);
+  const Long Nloc = keys.Dim();
   plan_ = sort_scatter_detail::Plan{};
-  plan_.Nloc = keys_.Dim();
+  plan_.Nloc = Nloc;
 
-  sort_scatter_detail::sortWithIndex(keys_, plan_.pre);  // stage 1: this rank's own keys, carrying their handed positions
-
-  plan_.Nmid = plan_.Nloc;
-  if (np > 1) {
-    { // stage 2: each key to the rank owning its stretch; the sort left each destination's keys contiguous
-      plan_.scnt.ReInit(np);
-      plan_.rcnt.ReInit(np);
-      plan_.Nmid = sort_scatter_detail::splitCounts(plan_.scnt, plan_.rcnt, keys_, splitters, comm_);
-      Vector<Key> recv(plan_.Nmid);
-      sort_scatter_detail::exchange<Key>(keys_.begin(), recv.begin(), plan_.scnt, plan_.rcnt, 1, comm_);
-      keys_.Swap(recv);
-    }
-    sort_scatter_detail::sortWithIndex(keys_, plan_.post);  // stage 3: merge the arriving sorted runs
+  if (np == 1) {  // stage 1 alone: the sort is the result
+    keys_.ReInit(Nloc);
+    sort_scatter_detail::sortWithIndex<Key>(keys.begin(), keys_.begin(), plan_.pre, Nloc);
+    plan_.Nmid = plan_.Ntree = Nloc;
+    return;
   }
+
+  ScratchBuf<Key> sorted_(Nloc);
+  Vector<Key> sorted(sorted_);
+  sort_scatter_detail::sortWithIndex<Key>(keys.begin(), sorted.begin(), plan_.pre, Nloc);  // stage 1: this rank's own keys, carrying their handed positions
+
+  { // stage 2: each key to the rank owning its stretch; the sort left each destination's keys contiguous
+    plan_.scnt.ReInit(np);
+    plan_.rcnt.ReInit(np);
+    plan_.Nmid = sort_scatter_detail::splitCounts(plan_.scnt, plan_.rcnt, sorted, splitters, comm_);
+    keys_.ReInit(plan_.Nmid);
+    sort_scatter_detail::exchange<Key>(sorted.begin(), keys_.begin(), plan_.scnt, plan_.rcnt, 1, comm_);
+  }
+  sort_scatter_detail::sortWithIndex<Key>(keys_.begin(), keys_.begin(), plan_.post, plan_.Nmid);  // stage 3: merge the arriving sorted runs
   plan_.Ntree = plan_.Nmid;
 }
 
