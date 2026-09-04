@@ -14,6 +14,8 @@
 #include "sctl/comm.txx"        // for Comm::Self
 #include "sctl/math_utils.txx"  // for pow
 #include "sctl/vector.hpp"      // for Vector
+#include "sctl/sort-scatter.hpp"  // for SortScatter
+#include "sctl/sort-scatter.txx"
 
 namespace sctl {
 
@@ -287,9 +289,8 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
 
   private:
 
-    std::map<std::string, Long> Nlocal;                    ///< Number of local particles for each group.
-    std::map<std::string, Vector<MortonCode<DIM>>> pt_mid; ///< MortonCode indices for each particle group.
-    std::map<std::string, Vector<Long>> scatter_idx;       ///< Scatter indices for each particle group.
+    Vector<MortonCode<DIM>> partition_codes;  ///< partition mins as codes: the SortScatter splitters; set with each partition
+    std::map<std::string, SortScatter<MortonCode<DIM>>> groups;  ///< per particle group: codes in tree order, maps to/from caller order
     std::map<std::string, std::string> data_pt_name;       ///< Mapping of data name to particle name.
 };
 

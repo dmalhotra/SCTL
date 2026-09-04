@@ -1637,7 +1637,11 @@ namespace sctl {
 
 
 
-  template <class Real, Integer DIM, class BaseTree> PtTree<Real,DIM,BaseTree>::PtTree(const Comm& comm) : BaseTree(comm) {}
+  template <class Real, Integer DIM, class BaseTree> PtTree<Real,DIM,BaseTree>::PtTree(const Comm& comm) : BaseTree(comm) {
+    const auto& mins = this->GetPartitionMID();
+    partition_codes.ReInit(mins.Dim());
+    for (Long r = 0; r < mins.Dim(); r++) partition_codes[r] = mins[r].mid;
+  }
 
   template <class Real, Integer DIM, class BaseTree> PtTree<Real,DIM,BaseTree>::~PtTree() {
     #ifdef SCTL_MEMDEBUG
@@ -1645,7 +1649,7 @@ namespace sctl {
       Vector<Real> data;
       Vector<Long> cnt;
       this->GetData(data, cnt, pair.second);
-      SCTL_ASSERT(scatter_idx.find(pair.second) != scatter_idx.end());
+      SCTL_ASSERT(groups.find(pair.second) != groups.end());
     }
     #endif
   }
@@ -1653,6 +1657,11 @@ namespace sctl {
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, Periodicity periodicity, Integer halo_size) {
     const auto& comm = this->GetComm();
     BaseTree::UpdateRefinement(coord, M, balance21, periodicity, halo_size);
+    { // Set partition_codes
+      const auto& mins = this->GetPartitionMID();
+      if (partition_codes.Dim() != mins.Dim()) partition_codes.ReInit(mins.Dim());
+      for (Long r = 0; r < mins.Dim(); r++) partition_codes[r] = mins[r].mid;
+    }
 
     Long start_node_idx, end_node_idx;
     { // Set start_node_idx, end_node_idx
@@ -1664,18 +1673,14 @@ namespace sctl {
       end_node_idx = std::lower_bound(node_mid.begin(), node_mid.end(), (rank+1==np ? Morton<DIM>().Next() : mins[rank+1])) - node_mid.begin();
     }
 
-    const auto& mins = this->GetPartitionMID();
     const auto& node_mid = this->GetNodeMID();
-    for (const auto& pair : pt_mid) {
+    for (auto& pair : groups) {
       const auto& pt_name = pair.first;
-
-      auto& pt_mid_ = pt_mid[pt_name];
-      auto& scatter_idx_ = scatter_idx[pt_name];
-      comm.PartitionS(pt_mid_, mins[comm.Rank()].mid);
-      comm.PartitionN(scatter_idx_, pt_mid_.Dim());
+      auto& group = pair.second;
+      group.Repartition(partition_codes);
 
       ScratchBuf<Long> pt_cnt(node_mid.Dim());
-      pt_node_counts<DIM>(node_mid, pt_mid_, pt_cnt.begin());
+      pt_node_counts<DIM>(node_mid, group.SortedKeys(), pt_cnt.begin());
 
       Vector<char> data_tmp;
       for (const auto& pair : data_pt_name) {
@@ -1702,7 +1707,7 @@ namespace sctl {
             const Long data_count = omp_par::reduce(cnt->begin() + start_node_idx, end_node_idx - start_node_idx);
 
             data_tmp.ReInit(data_count * dof, data->begin() + data_begin * dof, false);
-            comm.PartitionN(data_tmp, pt_mid_.Dim());
+            comm.PartitionN(data_tmp, group.SortedCount());
 
             if (data_tmp.OwnData()) data->Swap(data_tmp);
             else if (data_begin != 0 || data_count * dof != data->Dim()) { // make a new copy
@@ -1717,25 +1722,18 @@ namespace sctl {
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticles(const std::string& name, const Vector<Real>& coord) {
-    const auto& mins = this->GetPartitionMID();
     const auto& node_mid = this->GetNodeMID();
-    const auto& comm = this->GetComm();
+    SCTL_ASSERT(groups.find(name) == groups.end());
 
-    SCTL_ASSERT(scatter_idx.find(name) == scatter_idx.end());
-    Vector<Long>& scatter_idx_ = scatter_idx[name];
-
-    Long N = coord.Dim() / DIM;
+    const Long N = coord.Dim() / DIM;
     SCTL_ASSERT(coord.Dim() == N * DIM);
-    Nlocal[name] = N;
-
-    Vector<MortonCode<DIM>>& pt_mid_ = pt_mid[name];
-    if (pt_mid_.Dim() != N) pt_mid_.ReInit(N);
+    Vector<MortonCode<DIM>> pt_mid(N);
     #pragma omp parallel for schedule(static)
     for (Long i = 0; i < N; i++) {
-      pt_mid_[i] = MortonCode<DIM>(&coord[i*DIM]);
+      pt_mid[i] = MortonCode<DIM>(&coord[i*DIM]);
     }
-    comm.SortScatterIndex(pt_mid_, scatter_idx_, &mins[comm.Rank()].mid);
-    comm.ScatterForward(pt_mid_, scatter_idx_);
+    auto& group = groups.try_emplace(name, this->GetComm()).first->second;
+    group.Init(std::move(pt_mid), partition_codes);
     AddParticleData(name, name, coord);
 
     { // Set node_cnt
@@ -1743,12 +1741,13 @@ namespace sctl {
       Iterator<Vector<Long>> cnt_;
       this->GetData_(data_,cnt_,name);
       cnt_[0].ReInit(node_mid.Dim());
-      pt_node_counts<DIM>(node_mid, pt_mid_, cnt_[0].begin());
+      pt_node_counts<DIM>(node_mid, group.SortedKeys(), cnt_[0].begin());
     }
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, const Vector<Real>& data) {
-    SCTL_ASSERT(scatter_idx.find(particle_name) != scatter_idx.end());
+    const auto group = groups.find(particle_name);
+    SCTL_ASSERT(group != groups.end());
     SCTL_ASSERT(data_pt_name.find(data_name) == data_pt_name.end());
     data_pt_name[data_name] = particle_name;
 
@@ -1757,8 +1756,15 @@ namespace sctl {
     this->AddData(data_name, Vector<Real>(), Vector<Long>());
     this->GetData_(data_,cnt_,data_name);
     { // Set data_[0]
-      data_[0].ReInit(data.Dim()*sizeof(Real), (Iterator<char>)data.begin(), true);
-      this->GetComm().ScatterForward(data_[0], scatter_idx[particle_name]);
+      const Long dof = [this,&data,&group]() { // global: a rank may hold no particles
+        StaticArray<Long,2> Ng, Nl{data.Dim(), group->second.LocalCount()};
+        this->GetComm().Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
+        return Ng[0] / std::max<Long>(Ng[1],1);
+      }();
+      SCTL_ASSERT(data.Dim() == group->second.LocalCount() * dof);
+      const Long bytes = dof * sizeof(Real);
+      data_[0].ReInit(group->second.SortedCount() * bytes);
+      group->second.ScatterForward((ConstIterator<char>)data.begin(), data_[0].begin(), bytes);
     }
     if (data_name != particle_name) { // Set cnt_[0]
       Vector<Real> pt_coord;
@@ -1778,9 +1784,8 @@ namespace sctl {
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::GetParticleData(Vector<Real>& data, const std::string& data_name) const {
     SCTL_ASSERT(data_pt_name.find(data_name) != data_pt_name.end());
     const std::string& particle_name = data_pt_name.find(data_name)->second;
-    SCTL_ASSERT(scatter_idx.find(particle_name) != scatter_idx.end());
-    const auto& scatter_idx_ = scatter_idx.find(particle_name)->second;
-    const Long Nlocal_ = Nlocal.find(particle_name)->second;
+    SCTL_ASSERT(groups.find(particle_name) != groups.end());
+    const auto& group = groups.find(particle_name)->second;
 
     const auto& mins = this->GetPartitionMID();
     const auto& node_mid = this->GetNodeMID();
@@ -1806,9 +1811,9 @@ namespace sctl {
       Long N1 = std::lower_bound(node_mid.begin(), node_mid.end(), (rank==np-1 ? Morton<DIM>().Next() : mins[rank+1])) - node_mid.begin();
       Long start = dsp[N0] * dof;
       Long end = (N1 ? (dsp[N1-1]+cnt_[N1-1])*dof : start);
-      data.ReInit(end-start, data_.begin()+start, true);
-      comm.ScatterReverse(data, scatter_idx_, Nlocal_ * dof);
-      SCTL_ASSERT(data.Dim() == Nlocal_ * dof);
+      SCTL_ASSERT(end - start == group.SortedCount() * dof);
+      data.ReInit(group.LocalCount() * dof);
+      group.ScatterReverse((ConstIterator<Real>)data_.begin() + start, data.begin(), dof);
     }
   }
 
@@ -1827,7 +1832,7 @@ namespace sctl {
           DeleteParticleData(x);
         }
       }
-      Nlocal.erase(particle_name);
+      groups.erase(particle_name);
     }
     this->DeleteData(data_name);
     data_pt_name.erase(data_name);

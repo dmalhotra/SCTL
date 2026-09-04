@@ -93,6 +93,7 @@ TARGET_BIN = \
        $(BINDIR)/test-linear-solver \
        $(BINDIR)/test-ode-solver \
        $(BINDIR)/test-pt-tree \
+       $(BINDIR)/test-sort-scatter \
        $(BINDIR)/test-quadrule \
        $(BINDIR)/test-sph-harm \
        $(BINDIR)/test-tensor \
@@ -144,6 +145,7 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-linear-solver
 	./$(BINDIR)/test-ode-solver
 	./$(BINDIR)/test-pt-tree
+	./$(BINDIR)/test-sort-scatter
 	./$(BINDIR)/test-quadrule
 	./$(BINDIR)/test-sph-harm
 	./$(BINDIR)/test-tensor
