@@ -105,51 +105,13 @@ template <class T> struct FromIntKeyFunctor {
 
 // Sort v[0,n): radix on device, omp_par on host (thrust's host backend is serial). merge_sort
 // stops scaling past ~16 threads (bandwidth-bound), sample_sort doesn't, so pick by thread count.
-/**
- * Parallel LSD radix sort of `n` elements by a 64-bit key, 16-bit digits, four passes. `KeyOf`
- * maps an element to its key. A comparison sort moves the same data in O(n log n) compares; at
- * 100M keys the pair merge sort took 851 ms where this takes a third of that, which is why the
- * host gets a radix path to mirror the one `GetIntKey` opened for cub on the device.
- */
-template <class T, class KeyOf> void host_radix_sort(T* a, Long n, KeyOf key) {
-  constexpr int RB = 16;
-  constexpr Long NB = Long(1) << RB;
-  const Integer nt = (Integer)SCTL_GET_MAX_THREADS();
-  sctl::ScratchBuf<T> tmp(n);
-  sctl::ScratchBuf<Long> hist((Long)nt * NB);
-  T* src = a;
-  T* dst = tmp.begin();
-  for (int pass = 0; pass < 4; pass++) {
-    const int shift = RB * pass;
-    #pragma omp parallel num_threads(nt)
-    {
-      const Integer tid = (Integer)SCTL_GET_THREAD_NUM();
-      const Long lo = n * tid / nt, hi = n * (tid + 1) / nt;
-      Long* h = hist.begin() + (Long)tid * NB;
-      for (Long b = 0; b < NB; b++) h[b] = 0;
-      for (Long i = lo; i < hi; i++) h[(key(src[i]) >> shift) & (NB - 1)]++;
-      #pragma omp barrier
-      #pragma omp single
-      { // bucket-major exclusive scan: thread t's slice of bucket b starts after every earlier
-        // bucket and after threads before t within b
-        Long acc = 0;
-        for (Long b = 0; b < NB; b++)
-          for (Integer t = 0; t < nt; t++) { const Long c = hist[(Long)t * NB + b]; hist[(Long)t * NB + b] = acc; acc += c; }
-      }
-      for (Long i = lo; i < hi; i++) dst[h[(key(src[i]) >> shift) & (NB - 1)]++] = src[i];
-    }
-    std::swap(src, dst);
-  }
-  // four passes: the result is back in `a`
-}
-
 template <class Vec> void local_sort(Vec& v, Long n) {
   using T = typename vec_family<Vec>::elem;
   auto* p = thrust::raw_pointer_cast(v.data());
   if constexpr (is_device_vector_v<Vec>) {
     thrust::sort(v.begin(), v.begin() + n);
   } else if constexpr (radix_via_int_key<T>::value) {
-    host_radix_sort(p, n, [](const T& x) { return x.GetIntKey(); });
+    sctl::omp_par::radix_sort(p, n, [](const T& x) { return x.GetIntKey(); });
   } else {
     if (SCTL_GET_MAX_THREADS() <= 16) sctl::omp_par::merge_sort(p, p + n);
     else sctl::omp_par::sample_sort(p, p + n);
@@ -210,7 +172,7 @@ template <class Vec, class IVec> void local_sort_by_key(Vec& keys, IVec& vals, L
     #pragma omp parallel for schedule(static)
     for (Long i = 0; i < n; i++) { pp[i].key = kp[i]; pp[i].val = vp[i]; }
     if constexpr (radix_via_int_key<KeyT>::value) {
-      host_radix_sort(&pp[0], n, [](const Pair& x) { return x.key.GetIntKey(); });
+      sctl::omp_par::radix_sort(&pp[0], n, [](const Pair& x) { return x.key.GetIntKey(); });
     } else if (SCTL_GET_MAX_THREADS() <= 16) {
       sctl::omp_par::merge_sort(pairs.begin(), pairs.end());
     } else {

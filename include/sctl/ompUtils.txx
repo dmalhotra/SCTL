@@ -416,6 +416,43 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline Long omp
   return dsp[p - 1] + cnt[p - 1];
 }
 
+template <class Iter, class KeyFn> inline void omp_par::radix_sort(Iter A, Long N, KeyFn key) {
+  typedef typename std::iterator_traits<Iter>::value_type _ValType;
+  static_assert(std::is_trivially_copyable<_ValType>::value, "radix_sort moves elements bytewise");
+  if (N <= 1) return;
+  const Integer p = (SCTL_IN_PARALLEL() ? 1 : (Integer)SCTL_GET_MAX_THREADS());
+  constexpr Integer RB = 16;              // digit width; 4 passes cover a 64-bit key
+  constexpr Long NB = Long(1) << RB;
+
+  ScratchBuf<_ValType> tmp(N);
+  ScratchBuf<Long> hist((Long)p * NB);
+  _ValType* src = &A[0];
+  _ValType* dst = &tmp[0];
+  for (Integer pass = 0; pass < 4; pass++) {
+    const Integer shift = RB * pass;
+    #pragma omp parallel num_threads(p)
+    {
+      const Integer tid = (Integer)SCTL_GET_THREAD_NUM();
+      const Integer nt = (Integer)SCTL_GET_NUM_THREADS();
+      const Long lo = N * tid / nt, hi = N * (tid + 1) / nt;
+      Iterator<Long> h = hist.begin() + (Long)tid * NB;
+      for (Long b = 0; b < NB; b++) h[b] = 0;
+      for (Long i = lo; i < hi; i++) h[(key(src[i]) >> shift) & (NB - 1)]++;
+      #pragma omp barrier
+      #pragma omp single
+      { // bucket-major exclusive scan: thread t's slice of bucket b starts after every earlier
+        // bucket and after threads before t within b
+        Long acc = 0;
+        for (Long b = 0; b < NB; b++)
+          for (Integer t = 0; t < nt; t++) { const Long c = hist[(Long)t * NB + b]; hist[(Long)t * NB + b] = acc; acc += c; }
+      } // implicit barrier at end of single
+      for (Long i = lo; i < hi; i++) dst[h[(key(src[i]) >> shift) & (NB - 1)]++] = src[i];
+    }
+    std::swap(src, dst);
+  }
+  // an even number of passes: the result is back in A
+}
+
 template <class ConstIter, class Iter> inline Long omp_par::dedup_sorted(ConstIter A, Iter B, Long N) {
   typedef typename std::iterator_traits<ConstIter>::value_type _ValType;
   return omp_par::dedup_sorted(A, B, N, std::less<_ValType>());

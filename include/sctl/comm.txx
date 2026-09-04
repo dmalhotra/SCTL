@@ -1876,17 +1876,37 @@ SCTL_HS_MPIDATATYPE(unsigned char, MPI_UNSIGNED_CHAR);
 
 namespace comm_detail {
 
-// Local-phase sort for SampleSort (see policy comment inside).
+// A type radix-sorts through its own integer key, and a pair-like type -- Comm's SortPair, which
+// is detected structurally by its `key` member since the nested name is private -- through its
+// key's; SortPair's operator< compares the key alone, so the orders agree. Custom comparators
+// fall through to the comparison sorts.
+template <class Type, class = void> struct IsRadixSortable : omp_par::is_radix_sortable<Type> {};
+template <class Type> struct IsRadixSortable<Type, std::void_t<decltype(std::declval<Type>().key)>>
+    : omp_par::is_radix_sortable<typename std::decay<decltype(std::declval<Type>().key)>::type> {};
+template <class Type, class = void> struct RadixKeyOf {
+  std::uint64_t operator()(const Type& x) const { return x.GetIntKey(); }
+};
+template <class Type> struct RadixKeyOf<Type, std::void_t<decltype(std::declval<Type>().key)>> {
+  std::uint64_t operator()(const Type& p) const { return p.key.GetIntKey(); }
+};
+
+// Local-phase sort for SampleSort and HyperQuickSort (see policy comment inside).
 template <class Type, class Compare> void LocalSort(ConstIterator<Type> in, Iterator<Type> out, Long N, Compare comp) {
-  // merge_sort wins only for small elements (extra merge-pass data movement grows with
-  // sizeof(Type)) and teams spanning at most ~2 NUMA domains; sample_sort otherwise.
-  constexpr Integer merge_sort_max_threads = 32;
-  constexpr std::size_t merge_sort_max_elem_size = 8;
-  if (sizeof(Type) <= merge_sort_max_elem_size && !SCTL_IN_PARALLEL() && SCTL_GET_MAX_THREADS() <= merge_sort_max_threads) {
+  if constexpr (IsRadixSortable<Type>::value && std::is_same<Compare, std::less<Type>>::value) {
     omp_par::memcpy(out, in, N);
-    omp_par::merge_sort(out, out + N, comp);
+    omp_par::radix_sort(out, N, RadixKeyOf<Type>{});
+    SCTL_UNUSED(comp);
   } else {
-    omp_par::sample_sort(in, out, N, comp);
+    // merge_sort wins only for small elements (extra merge-pass data movement grows with
+    // sizeof(Type)) and teams spanning at most ~2 NUMA domains; sample_sort otherwise.
+    constexpr Integer merge_sort_max_threads = 32;
+    constexpr std::size_t merge_sort_max_elem_size = 8;
+    if (sizeof(Type) <= merge_sort_max_elem_size && !SCTL_IN_PARALLEL() && SCTL_GET_MAX_THREADS() <= merge_sort_max_threads) {
+      omp_par::memcpy(out, in, N);
+      omp_par::merge_sort(out, out + N, comp);
+    } else {
+      omp_par::sample_sort(in, out, N, comp);
+    }
   }
 }
 
@@ -1906,7 +1926,7 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
 
   if (npes == 1) {  // SortedElem <--- local_sort(arr_)
     if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
-    omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
+    comm_detail::LocalSort<Type>(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
     return;
   }
 
@@ -1917,7 +1937,7 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
   }
 
   Vector<Type> arr(arr_.Dim());
-  omp_par::sample_sort(arr_.begin(), arr.begin(), arr_.Dim(), comp);  // arr <-- local_sort(arr_)
+  comm_detail::LocalSort<Type>(arr_.begin(), arr.begin(), arr_.Dim(), comp);  // arr <-- local_sort(arr_)
 
   Vector<Type> nbuff, nbuff_ext, rbuff, rbuff_ext;  // Allocate memory.
   MPI_Comm comm = impl_->mpi_comm_;                        // Copy comm
@@ -2099,7 +2119,7 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
   if (partition) PartitionW<Type>(SortedElem);
 #else
   if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
-  omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
+  comm_detail::LocalSort<Type>(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
 #endif
 }
 
