@@ -47,10 +47,7 @@ void buildInverse(const Policy& pol, const DeviceVector<Long>& m, DeviceVector<L
       thrust::raw_pointer_cast(m.data()), thrust::raw_pointer_cast(inv.data())});
 }
 
-/**
- * Build the inverse of each local stage, on the first move back rather than during the sort: a
- * caller that only ever moves data into sorted order should not pay for them.
- */
+/** Inverses on the first move back: a caller that only moves data into sorted order never pays for them. */
 template <template <class...> class DeviceVector, class Policy>
 void ensureInverse(const Policy& pol, Plan<DeviceVector>& s) {
   if (s.inv) return;
@@ -59,11 +56,8 @@ void ensureInverse(const Policy& pol, Plan<DeviceVector>& s) {
   s.inv = true;
 }
 
-/**
- * Stage-4 counts from the fixed stage-3 layout to the current one, on the first move after a
- * repartition: every rank's block is known once its size is, so no Alltoall is needed, and a
- * partition that moves several times between two data moves costs one computation.
- */
+/** Stage-4 counts from the stage-3 layout to the current one, on the first move after a repartition;
+ *  no Alltoall, since every block size is allgathered. */
 template <template <class...> class DeviceVector>
 void ensureRecut(Plan<DeviceVector>& s, const Comm& comm) {
   if (!s.recut || s.recut_cnt) return;
@@ -179,8 +173,7 @@ void SortScatter<Key, DeviceVector>::Init(DeviceVector<Key> keys, const sctl::Ve
 
   plan_.Nmid = Nloc;
   if (np > 1) {
-    { // stage 2: hand each key to the rank owning its stretch of the order. The sort left each
-      // destination's keys contiguous, so the counts are the whole description.
+    { // stage 2: each key to the rank owning its stretch; the sort left each destination's keys contiguous
       DeviceScratch<Key, DeviceVector> spl(np);
       thrust::copy(splitters.begin(), splitters.end(), spl.begin());
       sctl::ScratchBuf<Long> sc(np), rc(np);
@@ -227,9 +220,7 @@ void SortScatter<Key, DeviceVector>::Repartition(const sctl::Vector<Key>& splitt
                                                thrust::raw_pointer_cast(k2.data()), Nnew, scv, rcv, Long(1), comm_);
     keys_.swap(k2);
   }
-  // Stage 4 is derived from the stage-3 layout and this one, on the first move (ensureRecut):
-  // composing two re-cuts of one sorted block gives a single re-cut, so it stays one stage however
-  // often the partition moves.
+  // stage 4 follows on the first move (ensureRecut), from the stage-3 layout: two re-cuts compose to one
   plan_.Ntree = Nnew;
   plan_.recut = true;
   plan_.recut_cnt = false;

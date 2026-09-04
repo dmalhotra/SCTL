@@ -2168,7 +2168,11 @@ template <Integer DIM> struct NodeToCodeFunctor {
 }  // namespace detail_ptTree
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
-PtTree<Real, DIM, DevVec, BaseTree>::PtTree(const Comm& comm) : BaseTree(comm) {}
+PtTree<Real, DIM, DevVec, BaseTree>::PtTree(const Comm& comm) : BaseTree(comm) {
+  const auto& mins = this->GetPartitionMID();
+  partition_codes_.ReInit(mins.Dim());
+  for (Long r = 0; r < mins.Dim(); r++) partition_codes_[r] = mins[r].mid;
+}
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 Long PtTree<Real, DIM, DevVec, BaseTree>::globalDof(Long ndata, Long nitem) const {
@@ -2178,14 +2182,6 @@ Long PtTree<Real, DIM, DevVec, BaseTree>::globalDof(Long ndata, Long nitem) cons
   const Long dof = Ng[0] / std::max<Long>(Ng[1], 1);
   SCTL_ASSERT(Nl[0] == Nl[1] * dof);
   return dof;
-}
-
-template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
-sctl::Vector<MortonCode<DIM>> PtTree<Real, DIM, DevVec, BaseTree>::partitionCodes() const {
-  const auto& mins = this->GetPartitionMID();
-  sctl::Vector<MortonCode<DIM>> codes(mins.Dim());
-  for (Long r = 0; r < mins.Dim(); r++) codes[r] = mins[r].mid;
-  return codes;
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
@@ -2221,7 +2217,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticles(const std::string& name, 
   DevVec<MortonCode<DIM>> key(Nloc);
   thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nloc), key.begin(),
                     detail::MakeMortonFunctor<Real, DIM>{thrust::raw_pointer_cast(coord.data())});
-  groups_.try_emplace(name, this->GetComm()).first->second.Init(std::move(key), partitionCodes());
+  groups_.try_emplace(name, this->GetComm()).first->second.Init(std::move(key), partition_codes_);
   AddParticleData(name, name, coord);
 }
 
@@ -2274,11 +2270,15 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& c
   const Comm& comm = this->GetComm();
   const auto pol = detail::scratch_policy<DevVec, char>();
   BaseTree::UpdateRefinement(coord, M, balance21, periodicity, halo_size);
+  { // set partition_codes_
+    const auto& mins = this->GetPartitionMID();
+    if (partition_codes_.Dim() != mins.Dim()) partition_codes_.ReInit(mins.Dim());
+    for (Long r = 0; r < mins.Dim(); r++) partition_codes_[r] = mins[r].mid;
+  }
 
-  const sctl::Vector<MortonCode<DIM>> codes = partitionCodes();
   for (auto& kv : groups_) {
     const std::string& group = kv.first;
-    kv.second.Repartition(codes);  // slide the codes onto the new partition; the scatter maps follow
+    kv.second.Repartition(partition_codes_);
 
     // The base moved each payload by node: after a split, every item of an old node lands on the
     // first new node inside it, which can sit on a different rank than the particle's own Morton

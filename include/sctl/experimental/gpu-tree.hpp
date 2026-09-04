@@ -398,16 +398,11 @@ class PtTree : public BaseTree {
   /** `dof` deduced globally as `sum(ndata)/sum(nitem)`, as in sctl::Tree. */
   Long globalDof(Long ndata, Long nitem) const;
 
-  /** The current partition as codes: the splitters a group's `SortScatter` cuts at. */
-  sctl::Vector<MortonCode<DIM>> partitionCodes() const;
-
   /** Particles of `name` falling in each node of `GetNodeMID()`. */
   void nodeCounts(const std::string& name, sctl::Vector<Long>& cnt) const;
 
-  /// Per group: the particles' codes in tree order with the moves to and from the caller's order.
-  /// Codes, not `Morton`: a particle has no depth of its own -- it always sits at MAX_DEPTH -- and
-  /// every comparison against a node agrees on the code alone.
-  std::map<std::string, SortScatter<MortonCode<DIM>, DevVec>> groups_;
+  sctl::Vector<MortonCode<DIM>> partition_codes_;  ///< partition mins as codes: the SortScatter splitters; set with each partition
+  std::map<std::string, SortScatter<MortonCode<DIM>, DevVec>> groups_;  ///< per particle group: codes in tree order, maps to/from caller order
   std::map<std::string, std::string> data_pt_name_;                    ///< data name -> particle group
 };
 
