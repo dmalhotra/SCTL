@@ -19,6 +19,26 @@
 
 namespace gpu_tree {
 
+/**
+ * `std::vector` that leaves new elements uninitialized on resize, for the host backend.
+ * `std::vector<char>::resize` value-initializes, and at 100M particles that is ~290 ms of memset
+ * per payload buffer that `forward` then overwrites in full -- three such fills per pipeline.
+ * `sctl::Vector` skips construction of trivial types for the same reason. A class rather than an
+ * alias, because an alias template cannot be deduced as the tree's container template parameter.
+ */
+namespace detail {
+template <class T> struct DefaultInitAllocator : std::allocator<T> {
+  template <class U> struct rebind { using other = DefaultInitAllocator<U>; };
+  template <class U> void construct(U* p) noexcept(std::is_nothrow_default_constructible<U>::value) { ::new (static_cast<void*>(p)) U; }
+  template <class U, class... A> void construct(U* p, A&&... a) { ::new (static_cast<void*>(p)) U(std::forward<A>(a)...); }
+};
+}  // namespace detail
+template <class T> class HostVector : public std::vector<T, detail::DefaultInitAllocator<T>> {
+ public:
+  using std::vector<T, detail::DefaultInitAllocator<T>>::vector;
+};
+
+
 using sctl::Integer;
 using sctl::Long;
 using sctl::Comm;

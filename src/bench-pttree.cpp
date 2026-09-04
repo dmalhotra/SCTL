@@ -132,13 +132,13 @@ int main(int argc, char** argv) {
     });
 
     if (all || mode == "c") row("GPUTree PtTree CPU", [&](double* t) {
-      gpu_tree::PtTree<Real, kDim, std::vector> tr(comm);
-      std::vector<Real> c(xs), d(rho);
+      gpu_tree::PtTree<Real, kDim, gpu_tree::HostVector> tr(comm);
+      gpu_tree::HostVector<Real> c(xs.begin(), xs.end()), d(rho.begin(), rho.end());
       double a = tick(), ca = commsec(); tr.UpdateRefinement(c, M, true, sctl::Periodicity::NONE, 0);
       double b = tick(), cb = commsec(); t[0] = (b-a)*1e3; t[4] = (cb-ca)*1e3;
       a = b; ca = cb; tr.AddParticles("pt", c);              b = tick(); cb = commsec(); t[1] = (b-a)*1e3; t[5] = (cb-ca)*1e3;
       a = b; ca = cb; tr.AddParticleData("rho", "pt", d);    b = tick(); cb = commsec(); t[2] = (b-a)*1e3; t[6] = (cb-ca)*1e3;
-      std::vector<Real> out;
+      gpu_tree::HostVector<Real> out;
       a = b; ca = cb; tr.GetParticleData(out, "rho");        b = tick(); cb = commsec(); t[3] = (b-a)*1e3; t[7] = (cb-ca)*1e3;
       return (long)tr.GetNodeMID().size();
     });

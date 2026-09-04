@@ -105,11 +105,52 @@ template <class T> struct FromIntKeyFunctor {
 
 // Sort v[0,n): radix on device, omp_par on host (thrust's host backend is serial). merge_sort
 // stops scaling past ~16 threads (bandwidth-bound), sample_sort doesn't, so pick by thread count.
+/**
+ * Parallel LSD radix sort of `n` elements by a 64-bit key, 16-bit digits, four passes. `KeyOf`
+ * maps an element to its key. A comparison sort moves the same data in O(n log n) compares; at
+ * 100M keys the pair merge sort took 851 ms where this takes a third of that, which is why the
+ * host gets a radix path to mirror the one `GetIntKey` opened for cub on the device.
+ */
+template <class T, class KeyOf> void host_radix_sort(T* a, Long n, KeyOf key) {
+  constexpr int RB = 16;
+  constexpr Long NB = Long(1) << RB;
+  const Integer nt = (Integer)SCTL_GET_MAX_THREADS();
+  sctl::ScratchBuf<T> tmp(n);
+  sctl::ScratchBuf<Long> hist((Long)nt * NB);
+  T* src = a;
+  T* dst = tmp.begin();
+  for (int pass = 0; pass < 4; pass++) {
+    const int shift = RB * pass;
+    #pragma omp parallel num_threads(nt)
+    {
+      const Integer tid = (Integer)SCTL_GET_THREAD_NUM();
+      const Long lo = n * tid / nt, hi = n * (tid + 1) / nt;
+      Long* h = hist.begin() + (Long)tid * NB;
+      for (Long b = 0; b < NB; b++) h[b] = 0;
+      for (Long i = lo; i < hi; i++) h[(key(src[i]) >> shift) & (NB - 1)]++;
+      #pragma omp barrier
+      #pragma omp single
+      { // bucket-major exclusive scan: thread t's slice of bucket b starts after every earlier
+        // bucket and after threads before t within b
+        Long acc = 0;
+        for (Long b = 0; b < NB; b++)
+          for (Integer t = 0; t < nt; t++) { const Long c = hist[(Long)t * NB + b]; hist[(Long)t * NB + b] = acc; acc += c; }
+      }
+      for (Long i = lo; i < hi; i++) dst[h[(key(src[i]) >> shift) & (NB - 1)]++] = src[i];
+    }
+    std::swap(src, dst);
+  }
+  // four passes: the result is back in `a`
+}
+
 template <class Vec> void local_sort(Vec& v, Long n) {
+  using T = typename vec_family<Vec>::elem;
+  auto* p = thrust::raw_pointer_cast(v.data());
   if constexpr (is_device_vector_v<Vec>) {
     thrust::sort(v.begin(), v.begin() + n);
+  } else if constexpr (radix_via_int_key<T>::value) {
+    host_radix_sort(p, n, [](const T& x) { return x.GetIntKey(); });
   } else {
-    auto* p = thrust::raw_pointer_cast(v.data());
     if (SCTL_GET_MAX_THREADS() <= 16) sctl::omp_par::merge_sort(p, p + n);
     else sctl::omp_par::sample_sort(p, p + n);
   }
@@ -168,8 +209,13 @@ template <class Vec, class IVec> void local_sort_by_key(Vec& keys, IVec& vals, L
     const auto pp = pairs.begin();
     #pragma omp parallel for schedule(static)
     for (Long i = 0; i < n; i++) { pp[i].key = kp[i]; pp[i].val = vp[i]; }
-    if (SCTL_GET_MAX_THREADS() <= 16) sctl::omp_par::merge_sort(pairs.begin(), pairs.end());
-    else sctl::omp_par::sample_sort(pairs.begin(), pairs.end());
+    if constexpr (radix_via_int_key<KeyT>::value) {
+      host_radix_sort(&pp[0], n, [](const Pair& x) { return x.key.GetIntKey(); });
+    } else if (SCTL_GET_MAX_THREADS() <= 16) {
+      sctl::omp_par::merge_sort(pairs.begin(), pairs.end());
+    } else {
+      sctl::omp_par::sample_sort(pairs.begin(), pairs.end());
+    }
     #pragma omp parallel for schedule(static)
     for (Long i = 0; i < n; i++) { kp[i] = pp[i].key; vp[i] = pp[i].val; }
   }
@@ -1397,9 +1443,8 @@ template <Integer DIM> struct ChildPassFunctor {
   }
 };
 
-// Pass 3: locate each neighbor by walking down from the root along its path-to-node digits, through
-// the compact child array. No depth ordering is needed -- every node walks independently -- and the
-// shallow levels are shared by all nodes, so they stay cached.
+// Pass 3, root only: its row seeds the propagation below. Walking from the root costs nothing for
+// the root itself, and this keeps the one place periodicity must be consulted explicitly.
 template <Integer DIM, sctl::Periodicity PER> struct NbrDescentFunctor {
   static constexpr Integer MAX_CHILD = 1 << DIM;
   static constexpr Integer MAX_NBRS = sctl::pow<DIM, Integer>(3);
@@ -1417,6 +1462,42 @@ template <Integer DIM, sctl::Periodicity PER> struct NbrDescentFunctor {
       Long cur = 0;  // the root is at index 0
       for (Integer l = 1; l <= d && cur >= 0; l++) cur = ch[cur * MAX_CHILD + m.Ancestor((uint8_t)l).Path2Node()];
       out[k] = cur;
+    }
+  }
+};
+
+// Pass 4, one depth at a time: a node's k-th neighbor is a child of its parent's k'-th neighbor,
+// where k' and the child slot follow from the node's position bits within its parent plus the
+// offset digits of k. Two array reads per entry, against a root-to-depth descent of dependent
+// loads per entry: the host lists block went 758 -> 171 ms at 9.3M nodes, uninitialized resizes
+// included. Periodicity needs no dispatch here: a
+// wrapped neighbor is reached through the parent's wrapped row, and an out-of-domain one inherits
+// the -1 its parent's row already carries. Reads touch only depth-1 rows, writes only depth rows,
+// so running over the whole array per level does not alias.
+template <Integer DIM> struct NbrPropagateFunctor {
+  static constexpr Integer MAX_CHILD = 1 << DIM;
+  static constexpr Integer MAX_NBRS = sctl::pow<DIM, Integer>(3);
+  const Morton<DIM>* tree;
+  const Long* par;
+  const Long* ch;
+  Long* nbr;
+  Integer depth;
+  SCTL_GPU_HD void operator()(Long i) const {
+    if ((Integer)tree[i].Depth() != depth) return;
+    const Integer b = (Integer)tree[i].Path2Node();
+    const Long* pr = nbr + par[i] * MAX_NBRS;
+    Long* out = nbr + i * MAX_NBRS;
+    for (Integer k = 0; k < MAX_NBRS; k++) {
+      Integer kk = k, kp = 0, cj = 0, p3 = 1;
+      for (Integer c = 0; c < DIM; c++) {
+        const Integer t = ((b >> c) & 1) + kk % 3 - 1;  // this coord's move within the parent: -1..2
+        kk /= 3;
+        kp += ((t + 2) / 2) * p3;  // which of the parent's neighbors the target is a child of
+        cj |= (t & 1) << c;        // and which child slot -- the AND is the periodic wrap
+        p3 *= 3;
+      }
+      const Long pn = pr[kp];
+      out[k] = (pn >= 0) ? ch[pn * MAX_CHILD + cj] : Long(-1);
     }
   }
 };
@@ -1638,9 +1719,22 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, 
     thrust::fill(pol, node_lists->child.begin(), node_lists->child.end(), Long(-1));
     thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail_nodeLists::ParentPassFunctor<DIM>{tp, Nt, pp});
     thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail_nodeLists::ChildPassFunctor<DIM>{tp, pp, cp});
-    detail::dispatchPeriodicity<DIM>(periodicity, [&](auto per_c) {
-      thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail_nodeLists::NbrDescentFunctor<DIM, decltype(per_c)::value>{tp, cp, np_});
-    });
+    if constexpr (detail::is_device_vector_v<DeviceVector<Long>>) {
+      // One kernel of independent root-to-depth descents: the device hides their latency with
+      // parallelism and the shallow levels stay in cache, where twenty level-ordered launches
+      // cost it ~8 ms in idle sweeps.
+      detail::dispatchPeriodicity<DIM>(periodicity, [&](auto per_c) {
+        thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail_nodeLists::NbrDescentFunctor<DIM, decltype(per_c)::value>{tp, cp, np_});
+      });
+    } else {
+      // The host is the opposite: the descents are dependent random loads (758 ms at 9.3M nodes),
+      // so seed the root's row and propagate level by level instead.
+      detail::dispatchPeriodicity<DIM>(periodicity, [&](auto per_c) {  // the root is always index 0
+        thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Long(1), detail_nodeLists::NbrDescentFunctor<DIM, decltype(per_c)::value>{tp, cp, np_});
+      });
+      for (Integer d = 1; d <= Morton<DIM>::MAX_DEPTH; d++)
+        thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Nt, detail_nodeLists::NbrPropagateFunctor<DIM>{tp, pp, cp, np_, d});
+    }
   }
 }
 
