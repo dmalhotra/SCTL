@@ -196,6 +196,8 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
    *
    * @note This is a collective operation and must be called from all processes in the communicator.
    */
+  void DeleteData(const std::string& name);
+
   /**
    * Reduce data on nodes shared between processors and then broadcast the halo/ghost node data. The
    * resulting tree will have ghost nodes added to the tree.
@@ -214,8 +216,6 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
    * @note This is a collective operation and must be called from all processes in the communicator.
    */
   template <class ValueType> void Broadcast(const std::string& name);
-
-  void DeleteData(const std::string& name);
 
   /**
    * Write VTK visualization.
