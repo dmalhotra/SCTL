@@ -1641,7 +1641,7 @@ namespace sctl {
 
       auto& pt_mid_ = pt_mid[pt_name];
       auto& scatter_idx_ = scatter_idx[pt_name];
-      comm.PartitionS(pt_mid_, mins[comm.Rank()]);
+      comm.PartitionS(pt_mid_, mins[comm.Rank()].mid);
       comm.PartitionN(scatter_idx_, pt_mid_.Dim());
 
       ScratchBuf<Long> pt_cnt(node_mid.Dim());
@@ -1653,10 +1653,10 @@ namespace sctl {
         const Long idx1 = (node_mid.Dim() * (tid + 1)) / nthreads;
 
         if (idx0 < node_mid.Dim()) {
-          Long j0 = std::lower_bound(pt_mid_.begin(), pt_mid_.end(), node_mid[idx0]) - pt_mid_.begin();
+          Long j0 = std::lower_bound(pt_mid_.begin(), pt_mid_.end(), node_mid[idx0].mid) - pt_mid_.begin();
           if (idx0 == 0) SCTL_ASSERT(j0 == 0);
           for (Long i = idx0; i < idx1; i++) {
-            const auto m1 = (i+1<node_mid.Dim() ? node_mid[i+1] : Morton<DIM>().Next());
+            const auto m1 = (i+1<node_mid.Dim() ? node_mid[i+1].mid : Morton<DIM>().Next().mid);
 
             Long j = 1;
             while (j0+j < pt_mid_.Dim() && pt_mid_[j0+j] < m1) j *= 2;
@@ -1719,12 +1719,12 @@ namespace sctl {
     SCTL_ASSERT(coord.Dim() == N * DIM);
     Nlocal[name] = N;
 
-    Vector<Morton<DIM>>& pt_mid_ = pt_mid[name];
+    Vector<MortonCode<DIM>>& pt_mid_ = pt_mid[name];
     if (pt_mid_.Dim() != N) pt_mid_.ReInit(N);
     for (Long i = 0; i < N; i++) {
-      pt_mid_[i] = Morton<DIM>(coord.begin() + i*DIM);
+      pt_mid_[i] = MortonCode<DIM>(&coord[i*DIM]);
     }
-    comm.SortScatterIndex(pt_mid_, scatter_idx_, &mins[comm.Rank()]);
+    comm.SortScatterIndex(pt_mid_, scatter_idx_, &mins[comm.Rank()].mid);
     comm.ScatterForward(pt_mid_, scatter_idx_);
     AddParticleData(name, name, coord);
 
@@ -1734,8 +1734,8 @@ namespace sctl {
       this->GetData_(data_,cnt_,name);
       cnt_[0].ReInit(node_mid.Dim());
       for (Long i = 0; i < node_mid.Dim(); i++) {
-        Long start = std::lower_bound(pt_mid_.begin(), pt_mid_.end(), node_mid[i]) - pt_mid_.begin();
-        Long end = std::lower_bound(pt_mid_.begin(), pt_mid_.end(), (i+1==node_mid.Dim() ? Morton<DIM>().Next() : node_mid[i+1])) - pt_mid_.begin();
+        Long start = std::lower_bound(pt_mid_.begin(), pt_mid_.end(), node_mid[i].mid) - pt_mid_.begin();
+        Long end = std::lower_bound(pt_mid_.begin(), pt_mid_.end(), (i+1==node_mid.Dim() ? Morton<DIM>().Next().mid : node_mid[i+1].mid)) - pt_mid_.begin();
         if (i == 0) SCTL_ASSERT(start == 0);
         if (i+1 == node_mid.Dim()) SCTL_ASSERT(end == pt_mid_.Dim());
         cnt_[0][i] = end - start;

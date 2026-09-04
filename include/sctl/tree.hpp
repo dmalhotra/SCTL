@@ -18,6 +18,7 @@
 namespace sctl {
 
 template <Integer DIM> class Morton;
+template <Integer DIM> class MortonCode;
 
 /**
  * Class template representing a tree data structure.
@@ -287,7 +288,7 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
   private:
 
     std::map<std::string, Long> Nlocal;                    ///< Number of local particles for each group.
-    std::map<std::string, Vector<Morton<DIM>>> pt_mid;     ///< Morton indices for each particle group.
+    std::map<std::string, Vector<MortonCode<DIM>>> pt_mid; ///< MortonCode indices for each particle group.
     std::map<std::string, Vector<Long>> scatter_idx;       ///< Scatter indices for each particle group.
     std::map<std::string, std::string> data_pt_name;       ///< Mapping of data name to particle name.
 };
