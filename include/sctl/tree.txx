@@ -33,6 +33,36 @@
 
 namespace sctl {
 
+  /**
+   * Per-node particle counts from sorted codes: cnt[i] = number of codes in
+   * [node_mid[i], node_mid[i+1]). Parallel over node chunks; each thread locates its first
+   * boundary by one binary search and walks forward with a doubling search per node.
+   */
+  template <Integer DIM> void pt_node_counts(const Vector<Morton<DIM>>& node_mid, const Vector<MortonCode<DIM>>& pt_mid, Iterator<Long> cnt) {
+    #pragma omp parallel
+    {
+      const Integer tid = SCTL_GET_THREAD_NUM();
+      const Integer nthreads = SCTL_GET_NUM_THREADS();
+      const Long idx0 = (node_mid.Dim() *  tid     ) / nthreads;
+      const Long idx1 = (node_mid.Dim() * (tid + 1)) / nthreads;
+
+      if (idx0 < node_mid.Dim()) {
+        Long j0 = std::lower_bound(pt_mid.begin(), pt_mid.end(), node_mid[idx0].mid) - pt_mid.begin();
+        if (idx0 == 0) SCTL_ASSERT(j0 == 0);
+        for (Long i = idx0; i < idx1; i++) {
+          const auto m1 = (i+1<node_mid.Dim() ? node_mid[i+1].mid : Morton<DIM>().Next().mid);
+
+          Long j = 1;
+          while (j0+j < pt_mid.Dim() && pt_mid[j0+j] < m1) j *= 2;
+          const Long j1 = std::lower_bound(pt_mid.begin()+j0+(j>>1), pt_mid.begin()+std::min<Long>(j0+j, pt_mid.Dim()), m1) - pt_mid.begin();
+          cnt[i] = j1 - j0;
+          j0 = j1;
+        }
+        if (idx1 == node_mid.Dim()) SCTL_ASSERT(j0 == pt_mid.Dim());
+      }
+    }
+  }
+
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::test() {
     Long N = 100000;
     Vector<Real> X(N*DIM), f(N);
@@ -1645,28 +1675,7 @@ namespace sctl {
       comm.PartitionN(scatter_idx_, pt_mid_.Dim());
 
       ScratchBuf<Long> pt_cnt(node_mid.Dim());
-      #pragma omp parallel
-      { // Set pt_cnt
-        const Integer tid = SCTL_GET_THREAD_NUM();
-        const Integer nthreads = SCTL_GET_NUM_THREADS();
-        const Long idx0 = (node_mid.Dim() *  tid     ) / nthreads;
-        const Long idx1 = (node_mid.Dim() * (tid + 1)) / nthreads;
-
-        if (idx0 < node_mid.Dim()) {
-          Long j0 = std::lower_bound(pt_mid_.begin(), pt_mid_.end(), node_mid[idx0].mid) - pt_mid_.begin();
-          if (idx0 == 0) SCTL_ASSERT(j0 == 0);
-          for (Long i = idx0; i < idx1; i++) {
-            const auto m1 = (i+1<node_mid.Dim() ? node_mid[i+1].mid : Morton<DIM>().Next().mid);
-
-            Long j = 1;
-            while (j0+j < pt_mid_.Dim() && pt_mid_[j0+j] < m1) j *= 2;
-            const Long j1 = std::lower_bound(pt_mid_.begin()+j0+(j>>1), pt_mid_.begin()+std::min<Long>(j0+j, pt_mid_.Dim()), m1) - pt_mid_.begin();
-            pt_cnt[i] = j1 - j0;
-            j0 = j1;
-          }
-          if (idx1 == node_mid.Dim()) SCTL_ASSERT(j0 == pt_mid_.Dim());
-        }
-      }
+      pt_node_counts<DIM>(node_mid, pt_mid_, pt_cnt.begin());
 
       Vector<char> data_tmp;
       for (const auto& pair : data_pt_name) {
@@ -1721,6 +1730,7 @@ namespace sctl {
 
     Vector<MortonCode<DIM>>& pt_mid_ = pt_mid[name];
     if (pt_mid_.Dim() != N) pt_mid_.ReInit(N);
+    #pragma omp parallel for schedule(static)
     for (Long i = 0; i < N; i++) {
       pt_mid_[i] = MortonCode<DIM>(&coord[i*DIM]);
     }
@@ -1733,13 +1743,7 @@ namespace sctl {
       Iterator<Vector<Long>> cnt_;
       this->GetData_(data_,cnt_,name);
       cnt_[0].ReInit(node_mid.Dim());
-      for (Long i = 0; i < node_mid.Dim(); i++) {
-        Long start = std::lower_bound(pt_mid_.begin(), pt_mid_.end(), node_mid[i].mid) - pt_mid_.begin();
-        Long end = std::lower_bound(pt_mid_.begin(), pt_mid_.end(), (i+1==node_mid.Dim() ? Morton<DIM>().Next().mid : node_mid[i+1].mid)) - pt_mid_.begin();
-        if (i == 0) SCTL_ASSERT(start == 0);
-        if (i+1 == node_mid.Dim()) SCTL_ASSERT(end == pt_mid_.Dim());
-        cnt_[0][i] = end - start;
-      }
+      pt_node_counts<DIM>(node_mid, pt_mid_, cnt_[0].begin());
     }
   }
 
