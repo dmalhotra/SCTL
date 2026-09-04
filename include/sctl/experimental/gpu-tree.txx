@@ -199,6 +199,46 @@ Long splitCounts(sctl::ScratchBuf<Long>& scnt, sctl::ScratchBuf<Long>& rcnt, con
 
 // Alltoallv of esz-sized elements given per-rank element counts (displacements are their scans).
 // Buffers may be device pointers -- they go straight to MPI, which is CUDA-aware here.
+/** Equivalence under `operator<`, for thrust's unique on the device path. */
+template <class T> struct EquivPred {
+  SCTL_GPU_HD bool operator()(const T& a, const T& b) const { return !(a < b) && !(b < a); }
+};
+
+/**
+ * `thrust::unique` of a sorted range that stays inside it. thrust's OMP host backend flags run
+ * heads through `zip(counting, first, first - 1)` and materializes the tuple before its index
+ * check, so `first[-1]` is loaded (thrust/detail/range/head_flags.h); when the range begins
+ * exactly at an mmap boundary -- a fresh pool chunk, or any large std::vector -- that load
+ * faults. The device backend takes cub's paths and is unaffected, so it keeps thrust; the host
+ * path uses sctl's parallel dedup, which reads only [first, last).
+ */
+template <class Policy, class Vec>
+Long local_unique(const Policy& pol, Vec& v, Long n) {
+  using T = typename vec_family<Vec>::elem;
+  if constexpr (is_device_vector_v<Vec>) {
+    return thrust::unique(pol, v.begin(), v.begin() + n, EquivPred<T>{}) - v.begin();
+  } else {
+    if (!n) return 0;
+    T* p = thrust::raw_pointer_cast(v.data());
+    sctl::ScratchBuf<T> tmp(n);
+    const Long m = sctl::omp_par::dedup_sorted(p, tmp.begin(), n);
+    #pragma omp parallel for schedule(static)
+    for (Long i = 0; i < m; i++) p[i] = tmp[i];
+    return m;
+  }
+}
+
+/** The copying form of `local_unique`; `in` may be a transform iterator. */
+template <class Policy, class InIt, class Vec>
+Long local_unique_copy(const Policy& pol, InIt in, Long n, Vec& out) {
+  using T = typename vec_family<Vec>::elem;
+  if constexpr (is_device_vector_v<Vec>) {
+    return thrust::unique_copy(pol, in, in + n, out.begin(), EquivPred<T>{}) - out.begin();
+  } else {
+    return n ? sctl::omp_par::dedup_sorted(in, thrust::raw_pointer_cast(out.data()), n) : 0;
+  }
+}
+
 inline void alltoallv(const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt,
                       const sctl::ScratchBuf<Long>& rcnt, Long esz, const Comm& comm) {
 #ifdef SCTL_HAVE_MPI
@@ -437,9 +477,8 @@ class DeviceVector> void buildTreeGpu(DeviceVector<Morton<DIM>>& tree, const Dev
   const auto pol = detail::scratch_policy<DeviceVector, NodeMIDT>();
   DeviceScratch<NodeMIDT, DeviceVector> anchors(N_pairs);
   SplitLeafFunctor<Real, DIM> f{thrust::raw_pointer_cast(pt_mid.data()) + base, M};
-  auto in     = thrust::make_transform_iterator(thrust::counting_iterator<Long>(0),       f);
-  auto in_end = thrust::make_transform_iterator(thrust::counting_iterator<Long>(N_pairs), f);
-  auto uniq_end = thrust::unique_copy(pol, in, in_end, anchors.begin());
+  auto in = thrust::make_transform_iterator(thrust::counting_iterator<Long>(0), f);
+  auto uniq_end = anchors.begin() + detail::local_unique_copy(pol, in, N_pairs, anchors);
   auto a_begin = thrust::lower_bound(pol, anchors.begin(), uniq_end, start_bnd);
   auto a_end   = thrust::lower_bound(pol, a_begin,         uniq_end, end_bnd);
   const NodeMIDT* anchors_ptr = thrust::raw_pointer_cast(anchors.data()) + (a_begin - anchors.begin());
@@ -868,9 +907,6 @@ template <Integer DIM> struct InvalidDepthPred {
   SCTL_GPU_HD bool operator()(const Morton<DIM>& m) const { return m.depth == Morton<DIM>::INVALID_DEPTH; }
 };
 
-template <Integer DIM> struct NodeEqPred {
-  SCTL_GPU_HD bool operator()(const Morton<DIM>& a, const Morton<DIM>& b) const { return !(a < b) && !(b < a); }
-};
 
 // First child of a non-leaf node (same mid, one level deeper), or INVALID outside [lo,hi).
 template <Integer DIM> struct FirstChildInSlice {
@@ -1070,7 +1106,7 @@ void ClosureFrontier(DeviceVector<Morton<DIM>>& S, sctl::Periodicity periodicity
     }
     if (!nadd) break;
     local_sort(pol, add, nadd);
-    nadd = thrust::unique(pol, add.begin(), add.begin() + nadd, detail_balance21::NodeEqPred<DIM>{}) - add.begin();
+    nadd = detail::local_unique(pol, add, nadd);
 
     { // merge S and the new nodes, then hand the result back to S
       DeviceScratch<NodeT, DeviceVector> m(ns + nadd);
@@ -1095,7 +1131,7 @@ void Stage2(DeviceVector<Morton<DIM>>& S, const sctl::Vector<Morton<DIM>>& mins,
   const Long np = comm.Size();
   const auto pol = detail::scratch_policy<DeviceVector, NodeT>();
   const auto uniq = [&pol](DeviceVector<NodeT>& v) {
-    v.resize(thrust::unique(pol, v.begin(), v.end(), detail_balance21::NodeEqPred<DIM>{}) - v.begin());
+    v.resize(detail::local_unique(pol, v, (Long)v.size()));
   };
   if (np == 1) { uniq(S); return; }
 
@@ -1213,9 +1249,6 @@ template <Integer DIM, WalkMode MODE, sctl::Periodicity PER> struct GhostSendFun
   }
 };
 
-template <Integer DIM> struct GhostPairEqPred {
-  SCTL_GPU_HD bool operator()(const GhostPair<DIM>& a, const GhostPair<DIM>& b) const { return !(a < b) && !(b < a); }
-};
 
 template <Integer DIM> struct GhostPairToMid {
   SCTL_GPU_HD Morton<DIM> operator()(const GhostPair<DIM>& gp) const { return gp.m; }
@@ -1264,7 +1297,7 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const sctl::ScratchBuf<Morto
       thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nn), thrust::make_discard_iterator(), fw);
     });
     local_sort(pol, pairs, npairs_tot);
-    npairs = thrust::unique(pol, pairs.begin(), pairs.end(), GhostPairEqPred<DIM>{}) - pairs.begin();
+    npairs = detail::local_unique(pol, pairs, npairs_tot);
   }
 
   Long Nrecv = 0;
