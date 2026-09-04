@@ -2,6 +2,7 @@
 #define _SCTL_COMM_TXX_
 
 #include <algorithm>              // for lower_bound, max, min, sort, upper_...
+#include <cstring>                // for memcpy
 #include <cassert>                // for assert
 #include <functional>             // for less
 #include <limits>                 // for numeric_limits
@@ -1501,7 +1502,7 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
     for (Long i = 0; i < recv_size; i++) {
       Long src_indx = scatter_index[i] * data_dim;
       Long trg_indx = i * data_dim;
-      for (Long j = 0; j < data_dim; j++) data[trg_indx + j] = data_[src_indx + j];
+      std::memcpy(&data[trg_indx], &data_[src_indx], data_dim * sizeof(Type));
     }
     data_.Swap(data);
     return;
@@ -1565,7 +1566,7 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
     for (Long i = 0; i < send_size; i++) {
       Long src_indx = send_indx[i] * data_dim;
       Long trg_indx = i * data_dim;
-      for (Long j = 0; j < data_dim; j++) send_buff[trg_indx + j] = data[src_indx + j];
+      std::memcpy(&send_buff[trg_indx], &data[src_indx], data_dim * sizeof(Type));
     }
   }
 
@@ -1589,7 +1590,7 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
     for (Long i = 0; i < recv_size; i++) {
       Long src_indx = i * data_dim;
       Long trg_indx = psorted[i].data * data_dim;
-      for (Long j = 0; j < data_dim; j++) data[trg_indx + j] = recv_buff[src_indx + j];
+      std::memcpy(&data[trg_indx], &recv_buff[src_indx], data_dim * sizeof(Type));
     }
   }
 }
@@ -1635,7 +1636,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     for (Long i = 0; i < recv_size; i++) {
       Long src_indx = i * data_dim;
       Long trg_indx = scatter_index_[i] * data_dim;
-      for (Long j = 0; j < data_dim; j++) data[trg_indx + j] = data_[src_indx + j];
+      std::memcpy(&data[trg_indx], &data_[src_indx], data_dim * sizeof(Type));
     }
     data_.Swap(data);
     return;
@@ -1743,7 +1744,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     for (Long i = 0; i < send_size; i++) {
       Long src_indx = psorted[i].data * data_dim;
       Long trg_indx = i * data_dim;
-      for (Long j = 0; j < data_dim; j++) send_buff[trg_indx + j] = data[src_indx + j];
+      std::memcpy(&send_buff[trg_indx], &data[src_indx], data_dim * sizeof(Type));
     }
   }
 
@@ -1767,7 +1768,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     for (Long i = 0; i < recv_size; i++) {
       Long src_indx = i * data_dim;
       Long trg_indx = recv_indx[i] * data_dim;
-      for (Long j = 0; j < data_dim; j++) data[trg_indx + j] = recv_buff[src_indx + j];
+      std::memcpy(&data[trg_indx], &recv_buff[src_indx], data_dim * sizeof(Type));
     }
   }
 }
