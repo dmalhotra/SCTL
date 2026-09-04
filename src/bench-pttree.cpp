@@ -1,10 +1,15 @@
-// PtTree end-to-end: build a tree on sphere-surface particles, attach dof=3 density, then refine
-// onto a uniform distribution. Times each API stage for sctl::PtTree, gpu_tree::PtTree on the host
-// backend, and the same on the device. GTPROF=1 additionally prints buildTreeDist's own stages.
+// PtTree end-to-end: refine on sphere-surface particles, then add them and attach dof=3 density.
+// Refine-first is the idiomatic order: adding a non-uniform group before the first refinement
+// concentrates it on the coarse starting partition -- measured 3.7x on one rank at np=16, 5.5x at
+// np=24 -- so the add-first order runs out of device memory at scale. Times each API stage for
+// sctl::PtTree, gpu_tree::PtTree on the host backend, and the same on the device. GTPROF=1
+// additionally prints buildTreeDist's own stages. When tools/pmpiprof.c is LD_PRELOADed, each
+// stage is also split into mpi and compute rows; waiting on a slower rank counts as mpi.
 //
 // argv: N(per rank) M mode(s|c|g|all) reps
 #include <cstdio>
 #include <cstdlib>
+#include <dlfcn.h>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -25,6 +30,11 @@
 
 using Real = double;
 using sctl::Long;
+
+// Seconds spent inside MPI so far, from the pmpiprof shim when preloaded; zero without it.
+typedef double (*mpiprof_fn)(void);
+static mpiprof_fn g_mpiprof = nullptr;
+static double commsec() { return g_mpiprof ? g_mpiprof() : 0.0; }
 static constexpr sctl::Integer kDim = 3;
 
 static void gen_sphere(std::vector<Real>& x, Long i0, Long i1) {
@@ -45,25 +55,13 @@ static void gen_sphere(std::vector<Real>& x, Long i0, Long i1) {
     x[(i-i0)*kDim+2] = 0.5 + 0.3 * z;
   }
 }
-static void gen_uniform(std::vector<Real>& x, Long i0, Long i1) {
-  x.resize((i1 - i0) * kDim);
-  const auto mix = [](uint64_t v) {
-    v += 0xD6E8FEB86659FD93ull;
-    v = (v ^ (v >> 32)) * 0xD6E8FEB86659FD93ull;
-    v = (v ^ (v >> 32)) * 0xD6E8FEB86659FD93ull;
-    return v ^ (v >> 32);
-  };
-  #pragma omp parallel for schedule(static)
-  for (Long i = i0; i < i1; i++)
-    for (sctl::Integer d = 0; d < kDim; d++)
-      x[(i-i0)*kDim+d] = (Real)(mix(3*(uint64_t)i + d) >> 11) * (1.0 / 9007199254740992.0);
-}
 
 int main(int argc, char** argv) {
   sctl::Comm::MPI_Init(&argc, &argv);
   {
     sctl::Comm comm = sctl::Comm::World();
     const Long np = comm.Size(), rank = comm.Rank();
+    g_mpiprof = (mpiprof_fn)dlsym(RTLD_DEFAULT, "mpiprof_seconds");
     const Long N = (argc > 1 ? atol(argv[1]) : 10000000);   // per rank
     const Long M = (argc > 2 ? atol(argv[2]) : 100);
     const std::string mode = (argc > 3 ? argv[3] : "all");
@@ -85,65 +83,75 @@ int main(int argc, char** argv) {
         fflush(stdout); }
       comm.Barrier(); }
 
-    std::vector<Real> xs, xu;
-    gen_sphere (xs, N * rank, N * (rank + 1));
-    gen_uniform(xu, N * rank, N * (rank + 1));
+    std::vector<Real> xs;
+    gen_sphere(xs, N * rank, N * (rank + 1));
     std::vector<Real> rho(N * 3);
     #pragma omp parallel for schedule(static)
     for (Long i = 0; i < N * 3; i++) rho[i] = 0.5 + (Real)((i * 2654435761u) % 1000) / 1000.0;
 
     if (!rank) printf("\n# np=%ld  N=%ld/rank (%ld total)  M=%ld  dof=3  balance21=1  %d threads/rank  %d timed reps\n",
                       (long)np, (long)N, (long)(N*np), (long)M, omp_get_max_threads(), reps);
-    if (!rank) printf("  %-18s %13s %10s %10s %13s %10s %12s\n",
-                      "variant", "build(sphere)", "AddPart", "AddData", "refine(unif)", "GetData", "nodes");
+    if (!rank) printf("  %-18s %13s %10s %10s %10s %12s\n",
+                      "variant", "build(sphere)", "AddPart", "AddData", "GetData", "nodes");
 
     const auto mx = [&comm](double t) { double g = 0; comm.Allreduce(sctl::Ptr2ConstItr<double>(&t,1), sctl::Ptr2Itr<double>(&g,1), 1, sctl::CommOp::MAX); return g; };
     const auto tick = [](){ cudaDeviceSynchronize(); return SCTL_GET_WTIME(); };
 
     const auto row = [&](const char* name, auto&& run) {
-      double best[5] = {1e30,1e30,1e30,1e30,1e30}; long nodes = 0;
+      double best[12]; for (int i = 0; i < 12; i++) best[i] = 1e30;
+      long nodes = 0;
       for (int r = 0; r <= reps; r++) {
-        double t[5] = {0,0,0,0,0};
+        double t[12] = {0};
         comm.Barrier();
         nodes = run(t);
-        for (int i = 0; i < 5; i++) { const double g = mx(t[i]); if (r && g < best[i]) best[i] = g; }
+        for (int i = 0; i < 4; i++) t[8 + i] = t[i] - t[4 + i];  // per-rank compute = wall - mpi
+        for (int i = 0; i < 12; i++) { const double g = mx(t[i]); if (r && g < best[i]) best[i] = g; }
       }
       long gn = 0; comm.Allreduce(sctl::Ptr2ConstItr<long>(&nodes,1), sctl::Ptr2Itr<long>(&gn,1), 1, sctl::CommOp::SUM);
-      if (!rank) printf("  %-18s %13.1f %10.1f %10.1f %13.1f %10.1f %12ld\n", name, best[0], best[1], best[2], best[3], best[4], gn);
+      if (!rank) {
+        printf("  %-18s %13.1f %10.1f %10.1f %10.1f %12ld\n", name, best[0], best[1], best[2], best[3], gn);
+        if (g_mpiprof) {
+          printf("  %-18s %13.1f %10.1f %10.1f %10.1f\n", "    - mpi",     best[4], best[5],  best[6],  best[7]);
+          printf("  %-18s %13.1f %10.1f %10.1f %10.1f\n", "    - compute", best[8], best[9],  best[10], best[11]);
+        }
+      }
     };
 
     if (all || mode == "s") row("sctl::PtTree", [&](double* t) {
       sctl::PtTree<Real, kDim> tr(comm);
-      sctl::Vector<Real> c(N*kDim), u(N*kDim), d(N*3);
-      for (Long i = 0; i < N*kDim; i++) { c[i] = xs[i]; u[i] = xu[i]; }
+      sctl::Vector<Real> c(N*kDim), d(N*3);
+      for (Long i = 0; i < N*kDim; i++) c[i] = xs[i];
       for (Long i = 0; i < N*3; i++) d[i] = rho[i];
-      double a = tick(); tr.AddParticles("pt", c);                                          double b = tick(); t[1] = (b-a)*1e3;
-      a = b; tr.UpdateRefinement(c, M, true, sctl::Periodicity::NONE, 0);                   b = tick(); t[0] = (b-a)*1e3;
-      a = b; tr.AddParticleData("rho", "pt", d);                                            b = tick(); t[2] = (b-a)*1e3;
-      a = b; tr.UpdateRefinement(u, M, true, sctl::Periodicity::NONE, 0);                   b = tick(); t[3] = (b-a)*1e3;
-      sctl::Vector<Real> out; a = b; tr.GetParticleData(out, "rho");                        b = tick(); t[4] = (b-a)*1e3;
+      double a = tick(), ca = commsec(); tr.UpdateRefinement(c, M, true, sctl::Periodicity::NONE, 0);
+      double b = tick(), cb = commsec(); t[0] = (b-a)*1e3; t[4] = (cb-ca)*1e3;
+      a = b; ca = cb; tr.AddParticles("pt", c);              b = tick(); cb = commsec(); t[1] = (b-a)*1e3; t[5] = (cb-ca)*1e3;
+      a = b; ca = cb; tr.AddParticleData("rho", "pt", d);    b = tick(); cb = commsec(); t[2] = (b-a)*1e3; t[6] = (cb-ca)*1e3;
+      sctl::Vector<Real> out;
+      a = b; ca = cb; tr.GetParticleData(out, "rho");        b = tick(); cb = commsec(); t[3] = (b-a)*1e3; t[7] = (cb-ca)*1e3;
       return (long)tr.GetNodeMID().Dim();
     });
 
     if (all || mode == "c") row("GPUTree PtTree CPU", [&](double* t) {
       gpu_tree::PtTree<Real, kDim, std::vector> tr(comm);
-      std::vector<Real> c(xs), u(xu), d(rho);
-      double a = tick(); tr.AddParticles("pt", c);                                          double b = tick(); t[1] = (b-a)*1e3;
-      a = b; tr.UpdateRefinement(c, M, true, sctl::Periodicity::NONE, 0);                   b = tick(); t[0] = (b-a)*1e3;
-      a = b; tr.AddParticleData("rho", "pt", d);                                            b = tick(); t[2] = (b-a)*1e3;
-      a = b; tr.UpdateRefinement(u, M, true, sctl::Periodicity::NONE, 0);                   b = tick(); t[3] = (b-a)*1e3;
-      std::vector<Real> out; a = b; tr.GetParticleData(out, "rho");                         b = tick(); t[4] = (b-a)*1e3;
+      std::vector<Real> c(xs), d(rho);
+      double a = tick(), ca = commsec(); tr.UpdateRefinement(c, M, true, sctl::Periodicity::NONE, 0);
+      double b = tick(), cb = commsec(); t[0] = (b-a)*1e3; t[4] = (cb-ca)*1e3;
+      a = b; ca = cb; tr.AddParticles("pt", c);              b = tick(); cb = commsec(); t[1] = (b-a)*1e3; t[5] = (cb-ca)*1e3;
+      a = b; ca = cb; tr.AddParticleData("rho", "pt", d);    b = tick(); cb = commsec(); t[2] = (b-a)*1e3; t[6] = (cb-ca)*1e3;
+      std::vector<Real> out;
+      a = b; ca = cb; tr.GetParticleData(out, "rho");        b = tick(); cb = commsec(); t[3] = (b-a)*1e3; t[7] = (cb-ca)*1e3;
       return (long)tr.GetNodeMID().size();
     });
 
     if (all || mode == "g") row("GPUTree PtTree GPU", [&](double* t) {
       gpu_tree::PtTree<Real, kDim, thrust::device_vector> tr(comm);
-      thrust::device_vector<Real> c(xs.begin(), xs.end()), u(xu.begin(), xu.end()), d(rho.begin(), rho.end());
-      double a = tick(); tr.AddParticles("pt", c);                                          double b = tick(); t[1] = (b-a)*1e3;
-      a = b; tr.UpdateRefinement(c, M, true, sctl::Periodicity::NONE, 0);                   b = tick(); t[0] = (b-a)*1e3;
-      a = b; tr.AddParticleData("rho", "pt", d);                                            b = tick(); t[2] = (b-a)*1e3;
-      a = b; tr.UpdateRefinement(u, M, true, sctl::Periodicity::NONE, 0);                   b = tick(); t[3] = (b-a)*1e3;
-      thrust::device_vector<Real> out; a = b; tr.GetParticleData(out, "rho");               b = tick(); t[4] = (b-a)*1e3;
+      thrust::device_vector<Real> c(xs.begin(), xs.end()), d(rho.begin(), rho.end());
+      double a = tick(), ca = commsec(); tr.UpdateRefinement(c, M, true, sctl::Periodicity::NONE, 0);
+      double b = tick(), cb = commsec(); t[0] = (b-a)*1e3; t[4] = (cb-ca)*1e3;
+      a = b; ca = cb; tr.AddParticles("pt", c);              b = tick(); cb = commsec(); t[1] = (b-a)*1e3; t[5] = (cb-ca)*1e3;
+      a = b; ca = cb; tr.AddParticleData("rho", "pt", d);    b = tick(); cb = commsec(); t[2] = (b-a)*1e3; t[6] = (cb-ca)*1e3;
+      thrust::device_vector<Real> out;
+      a = b; ca = cb; tr.GetParticleData(out, "rho");        b = tick(); cb = commsec(); t[3] = (b-a)*1e3; t[7] = (cb-ca)*1e3;
       return (long)tr.GetNodeMID().size();
     });
   }
