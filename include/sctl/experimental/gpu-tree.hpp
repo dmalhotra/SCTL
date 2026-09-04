@@ -16,13 +16,14 @@
 #include "sctl/morton.hpp"
 #include "sctl/comm.hpp"    // Comm::Self() default, and the partition helpers the data layer uses
 #include "sctl/vector.hpp"  // per-node counts stay host-side, as in sctl::Tree
+#include "sctl/experimental/sort-scatter.hpp"
 
 namespace gpu_tree {
 
 /**
  * `std::vector` that leaves new elements uninitialized on resize, for the host backend.
  * `std::vector<char>::resize` value-initializes, and at 100M particles that is ~290 ms of memset
- * per payload buffer that `forward` then overwrites in full -- three such fills per pipeline.
+ * per payload buffer that the forward scatter then overwrites in full -- three such fills per pipeline.
  * `sctl::Vector` skips construction of trivial types for the same reason. A class rather than an
  * alias, because an alias template cannot be deduced as the tree's container template parameter.
  */
@@ -47,10 +48,6 @@ using sctl::MortonCode;
 using sctl::MAX_DEPTH;
 
 template <class Real, Integer DIM, template <class...> class DevVec> class GPUTree;
-
-namespace detail_ptTree {
-template <template <class...> class DeviceVector> struct PtScatter;
-}  // namespace detail_ptTree
 
 namespace detail {
 // Blocks template deduction: the optional out-params below must not take part in deducing
@@ -401,20 +398,16 @@ class PtTree : public BaseTree {
   /** `dof` deduced globally as `sum(ndata)/sum(nitem)`, as in sctl::Tree. */
   Long globalDof(Long ndata, Long nitem) const;
 
-  /** Sort a group into the tree's node order, recording each particle's global caller index. */
-  void sortGroup(const std::string& name, const DevVec<Real>& coord);
-
-  /** Slide a group onto the current partition after a rebuild. */
-  void repartitionGroup(const std::string& name);
+  /** The current partition as codes: the splitters a group's `SortScatter` cuts at. */
+  sctl::Vector<MortonCode<DIM>> partitionCodes() const;
 
   /** Particles of `name` falling in each node of `GetNodeMID()`. */
   void nodeCounts(const std::string& name, sctl::Vector<Long>& cnt) const;
 
-  std::map<std::string, Long> Nlocal_;                                 ///< particles this rank was given
-  /// Per group, in tree order. Codes, not `Morton`: a particle has no depth of its own -- it always
-  /// sits at MAX_DEPTH -- and every comparison against a node agrees on the code alone.
-  std::map<std::string, DevVec<MortonCode<DIM>>> pt_mid_;
-  std::map<std::string, detail_ptTree::PtScatter<DevVec>> scatter_;
+  /// Per group: the particles' codes in tree order with the moves to and from the caller's order.
+  /// Codes, not `Morton`: a particle has no depth of its own -- it always sits at MAX_DEPTH -- and
+  /// every comparison against a node agrees on the code alone.
+  std::map<std::string, SortScatter<MortonCode<DIM>, DevVec>> groups_;
   std::map<std::string, std::string> data_pt_name_;                    ///< data name -> particle group
 };
 

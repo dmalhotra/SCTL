@@ -2152,48 +2152,9 @@ void GPUTree<Real, DIM, DevVec>::DeleteData(const std::string& name) {
   node_cnt_.erase(name);
 }
 
-// Particle bookkeeping. sctl's PtTree keeps a global scatter index and moves data with
-// Comm::ScatterForward/Reverse, both host-side. Here we record the movement the sort performed --
-// the local permutation before the exchange, the exchange counts, and the local permutation after
-// -- and replay it: forward is gather/exchange/gather, reverse is the same run backwards. The
-// payload never leaves the device.
+// Particle bookkeeping. The particles' codes, their order and the moves between caller and tree
+// order live in a `SortScatter` per group (sort-scatter.hpp); the tree only maps them to nodes.
 namespace detail_ptTree {
-
-/**
- * The particle order recorded as the stages that produced it, so a payload can be moved either way
- * without deriving anything:
- *
- *   1. a local rearrangement -- the sort of this rank's own particles
- *   2. one exchange           -- each particle to the rank owning its stretch of the order
- *   3. a local rearrangement -- merging the arriving sorted runs into one block
- *   4. one exchange           -- present only once the partition has changed
- *
- * Stage 4 composes with itself: re-cutting an already sorted block twice is again one re-cut, so
- * it is recomputed from the fixed stage-3 layout rather than appended to.
- *
- * Neither exchange needs a map. Stage 1 leaves each destination's particles contiguous, and a
- * re-cut of a sorted block likewise, so the per-rank counts alone describe both moves; the payload
- * reuses those counts scaled by `dof`, and the reverse direction just swaps them.
- *
- * Each local stage is kept twice, as the map and its inverse, so both directions are gathers. A
- * scattered write costs about twice a scattered read -- it lands on part of a memory chunk and
- * forces a fetch, merge and store -- which at dof=3 and 100M particles is 42.5 ms against 19.7.
- * The inverses cost one scattered write of one index per particle, paid once here.
- */
-template <template <class...> class DeviceVector> struct PtScatter {
-  Long Nloc = 0;   ///< particles this rank was handed
-  Long Nmid = 0;   ///< particles held after stages 1-3
-  Long Ntree = 0;  ///< particles held now; differs from `Nmid` once the partition has changed
-
-  DeviceVector<Long> pre, pre_inv;    ///< Nloc: stage 1 and its inverse
-  sctl::Vector<Long> scnt, rcnt;      ///< stage 2; unused at np=1
-  DeviceVector<Long> post, post_inv;  ///< Nmid: stage 3 and its inverse; unused at np=1
-
-  bool recut = false;                 ///< stage 4 present
-  sctl::Vector<Long> rscnt, rrcnt;    ///< stage 4
-
-  bool inv = false;                   ///< the inverses exist; built on the first move back
-};
 
 /**
  * A node's code, for comparing nodes against particles. Sound because a particle sits at MAX_DEPTH:
@@ -2203,124 +2164,6 @@ template <template <class...> class DeviceVector> struct PtScatter {
 template <Integer DIM> struct NodeToCodeFunctor {
   SCTL_GPU_HD MortonCode<DIM> operator()(const Morton<DIM>& m) const { return m.mid; }
 };
-
-// One thread per value, not per particle: consecutive threads then touch consecutive addresses
-// within one particle's block, where the per-particle form has each thread issue its own strided
-// access. At 100M particles and dof=3 that is 25.9 -> 19.7 ms for the gather and 56.3 -> 42.5 ms
-// for the scatter. The divide and modulo by a runtime `dof` cost nothing measurable -- making it a
-// compile-time constant changes neither timing.
-//
-// The thread count is the value count, `n * dof`, not `n`.
-template <class T> struct GatherDofFunctor {
-  const T* src; const Long* idx; T* dst; Long dof;
-  SCTL_GPU_HD void operator()(Long e) const {
-    const Long i = e / dof, k = e - i * dof;
-    dst[e] = src[idx[i] * dof + k];
-  }
-};
-
-/** `inv[m[i]] = i`. The only scattered write in the scheme, and it moves one index per particle. */
-template <Integer /*unused*/ D = 0> struct InvertFunctor {
-  const Long* m; Long* inv;
-  SCTL_GPU_HD void operator()(Long i) const { inv[m[i]] = i; }
-};
-
-template <template <class...> class DeviceVector, class Policy>
-void buildInverse(const Policy& pol, const DeviceVector<Long>& m, DeviceVector<Long>& inv, Long n) {
-  inv.resize(n);
-  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), n, InvertFunctor<>{
-      thrust::raw_pointer_cast(m.data()), thrust::raw_pointer_cast(inv.data())});
-}
-
-/**
- * Build the inverse of each local stage, on the first move back rather than during the sort: a
- * caller that only ever moves data into tree order should not pay for them.
- */
-template <template <class...> class DeviceVector, class Policy>
-void ensureInverse(const Policy& pol, PtScatter<DeviceVector>& s) {
-  if (s.inv) return;
-  buildInverse(pol, s.pre, s.pre_inv, s.Nloc);
-  if ((Long)s.post.size()) buildInverse(pol, s.post, s.post_inv, s.Nmid);
-  s.inv = true;
-}
-
-/** One local stage: `dst[e] = src[map[e/dof]*dof + e%dof]` over `n*dof` values. */
-template <template <class...> class DeviceVector, class T, class Policy>
-void localMove(const Policy& pol, const T* src, T* dst, const DeviceVector<Long>& map, Long n, Long dof) {
-  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), n * dof, GatherDofFunctor<T>{
-      src, thrust::raw_pointer_cast(map.data()), dst, dof});
-}
-
-/** One exchange stage, between raw buffers, with the per-rank counts scaled by `dof`. */
-template <template <class...> class DeviceVector, class T, class Policy>
-void exchange(const Policy& pol, const T* src, Long nsrc, T* dst, Long ndst,
-              const sctl::Vector<Long>& scnt, const sctl::Vector<Long>& rcnt, Long dof, const Comm& comm) {
-  const Long np = comm.Size();
-  if (np == 1) {
-    using It = detail::ScratchIterator<T, DeviceVector>;
-    thrust::copy(pol, It(const_cast<T*>(src)), It(const_cast<T*>(src)) + nsrc * dof, It(dst));
-    return;
-  }
-  SCTL_UNUSED(ndst);
-#ifdef SCTL_HAVE_MPI
-  sctl::ScratchBuf<Long> sc(np), rc(np);
-  for (Long r = 0; r < np; r++) { sc[r] = scnt[r] * dof; rc[r] = rcnt[r] * dof; }
-  detail::alltoallv(src, dst, sc, rc, (Long)sizeof(T), comm);
-#endif
-}
-
-/**
- * Caller order -> tree order, `dof` values per particle. `src` holds `Nloc*dof` values, `dst`
- * holds `Ntree*dof`, and they must not overlap.
- *
- * Raw pointers rather than containers so the payload can move straight from the caller's array
- * into the type-erased node storage, without either end being a `DeviceVector<T>`.
- */
-template <class T, template <class...> class DeviceVector, class Policy>
-void forward(const Policy& pol, const T* src, T* dst, PtScatter<DeviceVector>& s, Long dof, const Comm& comm) {
-  if (comm.Size() == 1) {  // stages 2-4 are absent, so the sort alone is the map
-    localMove<DeviceVector>(pol, src, dst, s.pre, s.Nloc, dof);
-    return;
-  }
-  DeviceVector<T>& a = detail::PersistentBuffer<T, DeviceVector, detail::Buf::PtSend>();
-  DeviceVector<T>& b = detail::PersistentBuffer<T, DeviceVector, detail::Buf::PtRecv>();
-  a.resize(s.Nloc * dof);
-  b.resize(s.Nmid * dof);
-  localMove<DeviceVector>(pol, src, thrust::raw_pointer_cast(a.data()), s.pre, s.Nloc, dof);
-  exchange<DeviceVector>(pol, thrust::raw_pointer_cast(a.data()), s.Nloc,
-                         thrust::raw_pointer_cast(b.data()), s.Nmid, s.scnt, s.rcnt, dof, comm);
-  if (!s.recut) {
-    localMove<DeviceVector>(pol, thrust::raw_pointer_cast(b.data()), dst, s.post, s.Nmid, dof);
-    return;
-  }
-  a.resize(s.Nmid * dof);
-  localMove<DeviceVector>(pol, thrust::raw_pointer_cast(b.data()), thrust::raw_pointer_cast(a.data()), s.post, s.Nmid, dof);
-  exchange<DeviceVector>(pol, thrust::raw_pointer_cast(a.data()), s.Nmid, dst, s.Ntree, s.rscnt, s.rrcnt, dof, comm);
-}
-
-/** Tree order -> caller order: the same stages in reverse, each local one using its inverse. */
-template <class T, template <class...> class DeviceVector, class Policy>
-void reverse(const Policy& pol, const T* src, T* dst, PtScatter<DeviceVector>& s, Long dof, const Comm& comm) {
-  ensureInverse(pol, s);
-  if (comm.Size() == 1) {
-    localMove<DeviceVector>(pol, src, dst, s.pre_inv, s.Nloc, dof);
-    return;
-  }
-  DeviceVector<T>& a = detail::PersistentBuffer<T, DeviceVector, detail::Buf::PtSend>();
-  DeviceVector<T>& b = detail::PersistentBuffer<T, DeviceVector, detail::Buf::PtRecv>();
-  const T* mid = src;  // the stage-3 output, whichever buffer holds it
-  if (s.recut) {
-    b.resize(s.Nmid * dof);
-    exchange<DeviceVector>(pol, src, s.Ntree, thrust::raw_pointer_cast(b.data()), s.Nmid, s.rrcnt, s.rscnt, dof, comm);
-    mid = thrust::raw_pointer_cast(b.data());
-  }
-  a.resize(s.Nmid * dof);
-  localMove<DeviceVector>(pol, mid, thrust::raw_pointer_cast(a.data()), s.post_inv, s.Nmid, dof);
-  b.resize(s.Nloc * dof);
-  exchange<DeviceVector>(pol, thrust::raw_pointer_cast(a.data()), s.Nmid,
-                         thrust::raw_pointer_cast(b.data()), s.Nloc, s.rcnt, s.scnt, dof, comm);
-  localMove<DeviceVector>(pol, thrust::raw_pointer_cast(b.data()), dst, s.pre_inv, s.Nloc, dof);
-}
 
 }  // namespace detail_ptTree
 
@@ -2338,118 +2181,18 @@ Long PtTree<Real, DIM, DevVec, BaseTree>::globalDof(Long ndata, Long nitem) cons
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
-void PtTree<Real, DIM, DevVec, BaseTree>::sortGroup(const std::string& name, const DevVec<Real>& coord) {
-  const Comm& comm = this->GetComm();
-  const Long np = comm.Size();
-  const auto pol = detail::scratch_policy<DevVec, Morton<DIM>>();
-  const Long Nloc = (Long)coord.size() / DIM;
-  SCTL_ASSERT((Long)coord.size() == Nloc * DIM);
-
-  auto& s = scatter_[name];
-  s = detail_ptTree::PtScatter<DevVec>{};
-  s.Nloc = Nloc;
-
-  // Sort the bare MortonCode, not the Morton. Every particle sits at MAX_DEPTH, so the depth field
-  // is a constant: carrying it doubles the key to 16 bytes, costs a struct comparison instead of a
-  // 64-bit one, and moves twice the bytes through the exchange. Comparing codes gives the same
-  // order and the same splits -- a particle sharing a node's code sorts after it either way, since
-  // its depth is greater -- so the codes are widened back to nodes once, at the end.
-  DevVec<MortonCode<DIM>> key(Nloc);
-  thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nloc), key.begin(),
-                    detail::MakeMortonFunctor<Real, DIM>{thrust::raw_pointer_cast(coord.data())});
-
-  { // stage 1: sort this rank's own particles, carrying their handed positions
-    s.pre.resize(Nloc);
-    thrust::sequence(pol, s.pre.begin(), s.pre.end(), Long(0));
-    detail::local_sort_by_key(pol, key, s.pre, Nloc);
-  }
-
-  s.Nmid = Nloc;
-  if (np > 1) {
-    { // stage 2: hand each particle to the rank owning its stretch of the order. The sort left
-      // each destination's particles contiguous, so the counts are the whole description.
-      const auto& mins = this->GetPartitionMID();
-      DeviceScratch<MortonCode<DIM>, DevVec> spl(np);
-      { sctl::Vector<MortonCode<DIM>> h(np);
-        for (Long r = 0; r < np; r++) h[r] = mins[r].mid;
-        thrust::copy(h.begin(), h.end(), spl.begin()); }
-      sctl::ScratchBuf<Long> sc(np), rc(np);
-      s.Nmid = detail::splitCounts(sc, rc, key, Nloc, spl, comm);
-      s.scnt.ReInit(np); s.rcnt.ReInit(np);
-      for (Long r = 0; r < np; r++) { s.scnt[r] = sc[r]; s.rcnt[r] = rc[r]; }
-      DevVec<MortonCode<DIM>>& k2 = detail::PersistentBuffer<MortonCode<DIM>, DevVec, detail::Buf::PtSortK>();
-      k2.resize(s.Nmid);
-      detail_ptTree::exchange<DevVec>(pol, thrust::raw_pointer_cast(key.data()), Nloc,
-                                      thrust::raw_pointer_cast(k2.data()), s.Nmid, s.scnt, s.rcnt, Long(1), comm);
-      key.swap(k2);
-    }
-    { // stage 3: merge the arriving sorted runs into one block
-      s.post.resize(s.Nmid);
-      thrust::sequence(pol, s.post.begin(), s.post.end(), Long(0));
-      detail::local_sort_by_key(pol, key, s.post, s.Nmid);
-    }
-  }
-  s.Ntree = s.Nmid;
-  key.resize(s.Nmid);
-  pt_mid_[name].swap(key);  // stays a code: nothing downstream needs the depth back
-}
-
-/** Slide a group onto the new partition: pt_mid_ is globally sorted, so this is a contiguous
- *  chunk move (no merge), and the global index rides along on the same counts. */
-template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
-void PtTree<Real, DIM, DevVec, BaseTree>::repartitionGroup(const std::string& name) {
-  const Comm& comm = this->GetComm();
-  const Long np = comm.Size();
-  if (np == 1) return;
-  const auto pol = detail::scratch_policy<DevVec, MortonCode<DIM>>();
-  auto& pm = pt_mid_[name];
-  auto& s = scatter_[name];
-  const Long N = (Long)pm.size();
-
+sctl::Vector<MortonCode<DIM>> PtTree<Real, DIM, DevVec, BaseTree>::partitionCodes() const {
   const auto& mins = this->GetPartitionMID();
-  DeviceScratch<MortonCode<DIM>, DevVec> spl(np);
-  { sctl::Vector<MortonCode<DIM>> h(np);
-    for (Long r = 0; r < np; r++) h[r] = mins[r].mid;
-    thrust::copy(h.begin(), h.end(), spl.begin()); }
-  sctl::ScratchBuf<Long> sc(np), rc(np);
-  const Long Nnew = detail::splitCounts(sc, rc, pm, N, spl, comm);
-  { Long moved = N - sc[comm.Rank()], tot = 0;  // skip when nothing crosses a rank boundary
-    comm.Allreduce(sctl::Ptr2ConstItr<Long>(&moved, 1), sctl::Ptr2Itr<Long>(&tot, 1), 1, sctl::CommOp::SUM);
-    if (!tot) return; }
-  { // move the codes to the new partition
-    sctl::Vector<Long> scv(np), rcv(np);
-    for (Long r = 0; r < np; r++) { scv[r] = sc[r]; rcv[r] = rc[r]; }
-    DevVec<MortonCode<DIM>>& k2 = detail::PersistentBuffer<MortonCode<DIM>, DevVec, detail::Buf::PtSortK>();
-    k2.resize(Nnew);
-    detail_ptTree::exchange<DevVec>(pol, thrust::raw_pointer_cast(pm.data()), N,
-                                    thrust::raw_pointer_cast(k2.data()), Nnew, scv, rcv, Long(1), comm);
-    pm.swap(k2);
-  }
-  { // Recompute stage 4 from the fixed stage-3 layout to the new partition, rather than appending
-    // to whatever the last partition change left: composing two re-cuts of one sorted block gives
-    // a single re-cut, so this stays one stage however often the partition moves.
-    const Long rank = comm.Rank();
-    sctl::ScratchBuf<Long> mid(np), cur(np);
-    comm.Allgather(sctl::Ptr2ConstItr<Long>(&s.Nmid, 1), 1, mid.begin(), 1);
-    comm.Allgather(sctl::Ptr2ConstItr<Long>(&Nnew, 1), 1, cur.begin(), 1);
-    sctl::ScratchBuf<Long> moff(np + 1), coff(np + 1);
-    moff[0] = 0; std::inclusive_scan(mid.begin(), mid.end(), moff.begin() + 1);
-    coff[0] = 0; std::inclusive_scan(cur.begin(), cur.end(), coff.begin() + 1);
-    s.rscnt.ReInit(np); s.rrcnt.ReInit(np);
-    for (Long q = 0; q < np; q++) {  // overlap of my stage-3 block with q's new block, and inverse
-      s.rscnt[q] = std::max<Long>(0, std::min(moff[rank + 1], coff[q + 1]) - std::max(moff[rank], coff[q]));
-      s.rrcnt[q] = std::max<Long>(0, std::min(moff[q + 1], coff[rank + 1]) - std::max(moff[q], coff[rank]));
-    }
-    s.recut = true;
-    s.Ntree = Nnew;
-  }
+  sctl::Vector<MortonCode<DIM>> codes(mins.Dim());
+  for (Long r = 0; r < mins.Dim(); r++) codes[r] = mins[r].mid;
+  return codes;
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::nodeCounts(const std::string& name, sctl::Vector<Long>& cnt) const {
   const auto pol = detail::scratch_policy<DevVec, MortonCode<DIM>>();
   const auto& node_mid = this->GetNodeMID();
-  const auto& pm = pt_mid_.find(name)->second;
+  const auto& pm = groups_.find(name)->second.SortedKeys();
   const Long Nn = (Long)node_mid.size(), Npt = (Long)pm.size();
   // The search is cheap; differencing its result on the host was not. Difference on the device and
   // move the finished counts across once.
@@ -2465,26 +2208,36 @@ void PtTree<Real, DIM, DevVec, BaseTree>::nodeCounts(const std::string& name, sc
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::AddParticles(const std::string& name, const DevVec<Real>& coord) {
-  SCTL_ASSERT_MSG(scatter_.find(name) == scatter_.end(), "PtTree::AddParticles: name already present.");
-  Nlocal_[name] = (Long)coord.size() / DIM;
-  sortGroup(name, coord);
+  SCTL_ASSERT_MSG(groups_.find(name) == groups_.end(), "PtTree::AddParticles: name already present.");
+  const auto pol = detail::scratch_policy<DevVec, MortonCode<DIM>>();
+  const Long Nloc = (Long)coord.size() / DIM;
+  SCTL_ASSERT((Long)coord.size() == Nloc * DIM);
+
+  // Sort the bare MortonCode, not the Morton. Every particle sits at MAX_DEPTH, so the depth field
+  // is a constant: carrying it doubles the key to 16 bytes, costs a struct comparison instead of a
+  // 64-bit one, and moves twice the bytes through the exchange. Comparing codes gives the same
+  // order and the same splits -- a particle sharing a node's code sorts after it either way, since
+  // its depth is greater -- and nothing downstream needs the depth back.
+  DevVec<MortonCode<DIM>> key(Nloc);
+  thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nloc), key.begin(),
+                    detail::MakeMortonFunctor<Real, DIM>{thrust::raw_pointer_cast(coord.data())});
+  groups_.try_emplace(name, this->GetComm()).first->second.Init(std::move(key), partitionCodes());
   AddParticleData(name, name, coord);
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, const DevVec<Real>& data) {
-  SCTL_ASSERT_MSG(scatter_.find(particle_name) != scatter_.end(), "PtTree::AddParticleData: unknown particle group.");
+  const auto it = groups_.find(particle_name);
+  SCTL_ASSERT_MSG(it != groups_.end(), "PtTree::AddParticleData: unknown particle group.");
   SCTL_ASSERT_MSG(data_pt_name_.find(data_name) == data_pt_name_.end(), "PtTree::AddParticleData: data name already present.");
-  const auto pol = detail::scratch_policy<DevVec, Real>();
-  auto& s = scatter_[particle_name];
-  const Long dof = globalDof((Long)data.size(), Nlocal_.find(particle_name)->second);
+  const auto& g = it->second;
+  const Long dof = globalDof((Long)data.size(), g.LocalCount());
 
   sctl::Vector<Long> cnt;
   nodeCounts(particle_name, cnt);
-  // `forward` reads the caller's array and writes the stored buffer, so neither end is copied
+  // the forward scatter reads the caller's array and writes the stored buffer, so neither end is copied
   DevVec<char>& raw = this->AddDataUninit_(data_name, cnt, dof * (Long)sizeof(Real));
-  detail_ptTree::forward(pol, (const Real*)thrust::raw_pointer_cast(data.data()),
-                         (Real*)thrust::raw_pointer_cast(raw.data()), s, dof, this->GetComm());
+  g.ScatterForward((const Real*)thrust::raw_pointer_cast(data.data()), (Real*)thrust::raw_pointer_cast(raw.data()), dof);
   data_pt_name_[data_name] = particle_name;
 }
 
@@ -2492,16 +2245,13 @@ template <class Real, Integer DIM, template <class...> class DevVec, class BaseT
 void PtTree<Real, DIM, DevVec, BaseTree>::GetParticleData(DevVec<Real>& data, const std::string& data_name) const {
   const auto it = data_pt_name_.find(data_name);
   SCTL_ASSERT_MSG(it != data_pt_name_.end(), "PtTree::GetParticleData: unknown data name.");
-  const std::string& particle_name = it->second;
-  auto& s = const_cast<PtTree*>(this)->scatter_[particle_name];  // forward/reverse cache the plan
-  const auto pol = detail::scratch_policy<DevVec, Real>();
+  const auto& g = groups_.find(it->second)->second;
 
-  // `reverse` reads the stored buffer and writes the output, so the payload is touched once
+  // the reverse scatter reads the stored buffer and writes the output, so the payload is touched once
   const DevVec<char>& raw = this->NodeData_(data_name);
-  const Long dof = globalDof((Long)raw.size() / (Long)sizeof(Real), s.Ntree);
-  data.resize(s.Nloc * dof);
-  detail_ptTree::reverse(pol, (const Real*)thrust::raw_pointer_cast(raw.data()),
-                         (Real*)thrust::raw_pointer_cast(data.data()), s, dof, this->GetComm());
+  const Long dof = globalDof((Long)raw.size() / (Long)sizeof(Real), g.SortedCount());
+  data.resize(g.LocalCount() * dof);
+  g.ScatterReverse((const Real*)thrust::raw_pointer_cast(raw.data()), (Real*)thrust::raw_pointer_cast(data.data()), dof);
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
@@ -2513,9 +2263,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::DeleteParticleData(const std::string& 
     std::vector<std::string> lst;
     for (const auto& kv : data_pt_name_) if (kv.second == particle_name && kv.first != particle_name) lst.push_back(kv.first);
     for (const auto& x : lst) DeleteParticleData(x);
-    Nlocal_.erase(particle_name);
-    pt_mid_.erase(particle_name);
-    scatter_.erase(particle_name);
+    groups_.erase(particle_name);
   }
   this->DeleteData(data_name);
   data_pt_name_.erase(data_name);
@@ -2527,9 +2275,10 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& c
   const auto pol = detail::scratch_policy<DevVec, char>();
   BaseTree::UpdateRefinement(coord, M, balance21, periodicity, halo_size);
 
-  for (auto& kv : pt_mid_) {
+  const sctl::Vector<MortonCode<DIM>> codes = partitionCodes();
+  for (auto& kv : groups_) {
     const std::string& group = kv.first;
-    repartitionGroup(group);  // slide the Morton ids and global indices onto the new partition
+    kv.second.Repartition(codes);  // slide the codes onto the new partition; the scatter maps follow
 
     // The base moved each payload by node: after a split, every item of an old node lands on the
     // first new node inside it, which can sit on a different rank than the particle's own Morton
@@ -2537,7 +2286,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& c
     // applies -- and the per-node counts are recomputed from the particles themselves.
     sctl::Vector<Long> cnt_new;
     nodeCounts(group, cnt_new);
-    const Long Nnew = (Long)kv.second.size();
+    const Long Nnew = kv.second.SortedCount();
     Long ob = 0, oe = 0;
     this->GetOwnedRange(ob, oe);
 
@@ -2606,5 +2355,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::WriteParticleVTK(std::string fname, st
 }
 
 }  // namespace gpu_tree
+
+#include "sctl/experimental/sort-scatter.txx"  // uses the detail helpers above
 
 #endif  // _SCTL_EXPERIMENTAL_GPU_TREE_TXX_
