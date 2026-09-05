@@ -304,7 +304,9 @@ class Comm {
   template <class SType, class RType> void Alltoall(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const;
 
   /**
-   * Sparse all-to-all communication.
+   * Sparse all-to-all communication. Collective. Blocks that stay on the node never go through
+   * MPI: the self block is copied, and node peers' blocks are read straight out of their send
+   * buffers (Linux; falls back to MPI where the kernel forbids it). The request covers the rest.
    *
    * @tparam SType type of the send-data.
    * @tparam RType type of the receive-data.
@@ -640,6 +642,15 @@ class Comm {
     MPI_Comm mpi_comm_;
     mutable std::stack<void*> req;
 
+    // Ranks sharing this node, whose send buffers a sparse exchange reads directly (Linux
+    // process_vm_readv) instead of receiving through MPI; set up by InitNode on first use.
+    bool node_init_ = false;
+    bool direct_ = false;
+    MPI_Comm node_comm_ = MPI_COMM_NULL;
+    int node_size_ = 1;
+    std::vector<int> node_rank_of_;  ///< comm rank -> node rank, -1 off-node
+    std::vector<int> node_pid_;      ///< by node rank
+
     Impl();
     ~Impl();
 
@@ -653,6 +664,9 @@ class Comm {
      * Collective on the input communicator.
      */
     void Init(MPI_Comm mpi_comm);
+
+    /** Set up the node-local ranks; direct reads are enabled only if every node peer proves readable. Collective. */
+    void InitNode();
   };
 
   template <class Type> static MPI_Op GetMPIOp(CommOp op);
