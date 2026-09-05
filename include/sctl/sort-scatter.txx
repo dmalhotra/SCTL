@@ -192,26 +192,37 @@ template <class Key> void SortScatter<Key>::Init(const Vector<Key>& keys, const 
 /** The keys are globally sorted, so this is a contiguous chunk move (no merge). */
 template <class Key> void SortScatter<Key>::Repartition(const Vector<Key>& splitters) {
   const Integer np = comm_.Size();
+  moved_ = false;
   if (np == 1) return;
   SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Repartition: one splitter per rank.");
 
-  ScratchBuf<Long> sc_(np), rc_(np);
-  Vector<Long> sc(sc_), rc(rc_);
-  const Long Nnew = sort_scatter_detail::splitCounts(sc, rc, keys_, splitters, comm_);
+  move_scnt_.ReInit(np);
+  move_rcnt_.ReInit(np);
+  const Long Nnew = sort_scatter_detail::splitCounts(move_scnt_, move_rcnt_, keys_, splitters, comm_);
   { // skip when nothing crosses a rank boundary
-    Long moved = keys_.Dim() - sc[comm_.Rank()], tot = 0;
+    Long moved = keys_.Dim() - move_scnt_[comm_.Rank()], tot = 0;
     comm_.Allreduce(Ptr2ConstItr<Long>(&moved, 1), Ptr2Itr<Long>(&tot, 1), 1, CommOp::SUM);
     if (!tot) return;
   }
-  { // move the keys to the new partition
+  { // move the keys to the new partition, keeping the counts for RepartitionData
+    move_n_ = keys_.Dim();
+    moved_ = true;
     Vector<Key> recv(Nnew);
-    sort_scatter_detail::exchange<Key>(keys_.begin(), recv.begin(), sc, rc, 1, comm_);
+    sort_scatter_detail::exchange<Key>(keys_.begin(), recv.begin(), move_scnt_, move_rcnt_, 1, comm_);
     keys_.Swap(recv);
   }
   // stage 4 follows on the first move (ensureRecut), from the stage-3 layout: two re-cuts compose to one
   plan_.Ntree = Nnew;
   plan_.recut = true;
   plan_.recut_cnt = false;
+}
+
+template <class Key> template <class T> void SortScatter<Key>::RepartitionData(Vector<T>& data, Long dof) const {
+  if (!moved_) return;
+  SCTL_ASSERT_MSG(data.Dim() == move_n_ * dof, "SortScatter::RepartitionData: data holds the previous SortedCount()*dof values.");
+  Vector<T> out(plan_.Ntree * dof);
+  sort_scatter_detail::exchange<T>(data.begin(), out.begin(), move_scnt_, move_rcnt_, dof, comm_);
+  data.Swap(out);
 }
 
 template <class Key> template <class T> void SortScatter<Key>::ScatterForward(ConstIterator<T> src, Iterator<T> dst, Long dof) const {
@@ -298,7 +309,14 @@ template <class Key> void SortScatter<Key>::test() {
   ss.Init(keys, splA);
   SCTL_ASSERT(ss.LocalCount() == N);
   roundTrip(ss, splA);
+  Vector<Long> q = payload;
+  ss.ScatterForward(q, dof);  // in the first layout
   ss.Repartition(splB);  // re-cut
+  ss.RepartitionData(q, dof);  // follows the keys
+  { Vector<Long> q2 = payload;
+    ss.ScatterForward(q2, dof);
+    SCTL_ASSERT(q2.Dim() == q.Dim());
+    for (Long i = 0; i < q.Dim(); i++) SCTL_ASSERT(q2[i] == q[i]); }
   roundTrip(ss, splB);
   ss.Repartition(splA);  // re-cut of a re-cut
   roundTrip(ss, splA);

@@ -7,6 +7,7 @@
 #define _SCTL_TREE_HPP_
 
 #include <map>                  // for map
+#include <set>                  // for set
 #include <string>               // for basic_string, string
 
 #include "sctl/common.hpp"      // for Long, Integer, sctl
@@ -174,6 +175,8 @@ template <Integer DIM> class Tree {
     void GetData_(Iterator<Vector<char>>& data, Iterator<Vector<Long>>& cnt, const std::string& name);
 
     static void scan(Vector<Long>& dsp, const Vector<Long>& cnt);
+
+    std::set<std::string> data_moved_by_derived;  ///< payloads a derived class moves itself after a rebuild; UpdateRefinement skips them
 
   private:
 

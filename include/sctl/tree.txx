@@ -1207,7 +1207,9 @@ namespace sctl {
       for (Long i = i1; i < node_mid.Dim(); i++) SCTL_ASSERT(node_attr[i].Ghost == true);
     }
 
-    { // Update node_data, node_cnt
+    Long nbase = 0;  // data sets moved here
+    for (const auto& pair : node_data) nbase += !data_moved_by_derived.count(pair.first);
+    if (nbase) { // Update node_data, node_cnt
       comm.PartitionS(node_mid_orig, mins[comm.Rank()]);
 
       ScratchBuf<Long> new_cnt_range0(node_mid.Dim()+1);
@@ -1242,6 +1244,7 @@ namespace sctl {
 
       for (const auto& pair : node_data) {
         const std::string& data_name = pair.first;
+        if (data_moved_by_derived.count(data_name)) continue;
 
         Iterator<Vector<char>> data_;
         Iterator<Vector<Long>> cnt_;
@@ -1575,6 +1578,7 @@ namespace sctl {
     SCTL_ASSERT(node_cnt .find(name) != node_cnt .end());
     node_data.erase(name);
     node_cnt .erase(name);
+    data_moved_by_derived.erase(name);
   }
 
   template <Integer DIM> void Tree<DIM>::WriteTreeVTK(std::string fname, bool show_ghost) const {
@@ -1663,18 +1667,8 @@ namespace sctl {
       for (Long r = 0; r < mins.Dim(); r++) partition_codes[r] = mins[r].mid;
     }
 
-    Long start_node_idx, end_node_idx;
-    { // Set start_node_idx, end_node_idx
-      const auto& mins = this->GetPartitionMID();
-      const auto& node_mid = this->GetNodeMID();
-      const Integer np = comm.Size();
-      const Integer rank = comm.Rank();
-      start_node_idx = std::lower_bound(node_mid.begin(), node_mid.end(), mins[rank]) - node_mid.begin();
-      end_node_idx = std::lower_bound(node_mid.begin(), node_mid.end(), (rank+1==np ? Morton<DIM>().Next() : mins[rank+1])) - node_mid.begin();
-    }
-
     const auto& node_mid = this->GetNodeMID();
-    for (auto& pair : groups) {
+    for (auto& pair : groups) {  // payloads follow their keys' re-cut; per-node counts come from the particles
       const auto& pt_name = pair.first;
       auto& group = pair.second;
       group.Repartition(partition_codes);
@@ -1682,39 +1676,19 @@ namespace sctl {
       ScratchBuf<Long> pt_cnt(node_mid.Dim());
       pt_node_counts<DIM>(node_mid, group.SortedKeys(), pt_cnt.begin());
 
-      Vector<char> data_tmp;
       for (const auto& pair : data_pt_name) {
         if (pair.second == pt_name) {
-          const auto& data_name = pair.first;
-
           Iterator<Vector<char>> data;
           Iterator<Vector<Long>> cnt;
-          this->GetData_(data, cnt, data_name);
-          SCTL_ASSERT(cnt->Dim() == node_mid.Dim());
-
-          { // Update data
-            const Long dof = [&comm,&cnt,&data]() {
-              StaticArray<Long,2> Nl, Ng;
-              Nl[0] = data->Dim();
-              Nl[1] = omp_par::reduce(cnt->begin(), cnt->Dim());
-              comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
-              const Long dof = Ng[0] / std::max<Long>(Ng[1],1);
-              SCTL_ASSERT(Nl[0] == Nl[1] * dof);
-              SCTL_ASSERT(Ng[0] == Ng[1] * dof);
-              return dof;
-            }();
-            const Long data_begin = omp_par::reduce(cnt->begin(), start_node_idx);
-            const Long data_count = omp_par::reduce(cnt->begin() + start_node_idx, end_node_idx - start_node_idx);
-
-            data_tmp.ReInit(data_count * dof, data->begin() + data_begin * dof, false);
-            comm.PartitionN(data_tmp, group.SortedCount());
-
-            if (data_tmp.OwnData()) data->Swap(data_tmp);
-            else if (data_begin != 0 || data_count * dof != data->Dim()) { // make a new copy
-              Vector<char> data_new = data_tmp;
-              data->Swap(data_new);
-            } // else no change to data
-          }
+          this->GetData_(data, cnt, pair.first);
+          const Long bytes = [&comm,&cnt,&data]() { // per item, reduced globally: a rank may hold no particles
+            StaticArray<Long,2> Nl, Ng;
+            Nl[0] = data->Dim();
+            Nl[1] = omp_par::reduce(cnt->begin(), cnt->Dim());
+            comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
+            return Ng[0] / std::max<Long>(Ng[1],1);
+          }();
+          group.RepartitionData(*data, bytes);
           (*cnt) = Vector<Long>(pt_cnt);
         }
       }
@@ -1755,6 +1729,7 @@ namespace sctl {
     Iterator<Vector<char>> data_;
     Iterator<Vector<Long>> cnt_;
     this->AddData(data_name, Vector<Real>(), Vector<Long>());
+    this->data_moved_by_derived.insert(data_name);
     this->GetData_(data_,cnt_,data_name);
     { // Set data_[0]
       const Long dof = [this,&data,&group]() { // global: a rank may hold no particles
