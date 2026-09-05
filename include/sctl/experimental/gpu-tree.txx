@@ -246,25 +246,28 @@ Long local_unique_copy(const Policy& pol, InIt in, Long n, Vec& out) {
 }
 
 // Alltoallv of esz-sized elements given per-rank element counts (displacements are their scans).
-// Buffers may be device pointers -- they go straight to MPI, which is CUDA-aware here -- except the
-// block a rank sends itself, which is copied locally: MPI streams it single-threaded at a few GB/s.
+// Host buffers take Comm's exchange. Device buffers go straight to MPI, which is CUDA-aware here,
+// except the block a rank sends itself: MPI streams that single-threaded at a few GB/s.
 template <template <class...> class DeviceVector, class Policy>
 void alltoallv(const Policy& pol, const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt,
                const sctl::ScratchBuf<Long>& rcnt, Long esz, const Comm& comm) {
 #ifdef SCTL_HAVE_MPI
   const Long np = comm.Size(), rank = comm.Rank();
-  static const Long IMAX = 2147483647;
   sctl::ScratchBuf<Long> sd(np + 1), rd(np + 1);   // byte offsets, in Long
   sd[0] = 0; rd[0] = 0;
   for (Long r = 0; r < np; r++) { sd[r + 1] = sd[r] + scnt[r] * esz; rd[r + 1] = rd[r] + rcnt[r] * esz; }
+  if constexpr (!is_device_vector_v<DeviceVector<char>>) {
+    sctl::ScratchBuf<Long> sb(np), rb(np);
+    for (Long r = 0; r < np; r++) { sb[r] = scnt[r] * esz; rb[r] = rcnt[r] * esz; }
+    comm.Wait(comm.Ialltoallv_sparse(sctl::Ptr2ConstItr<char>(sbuf, sd[np]), sb.begin(), sd.begin(), sctl::Ptr2Itr<char>(rbuf, rd[np]), rb.begin(), rd.begin()));
+    return;
+  }
+  static const Long IMAX = 2147483647;
   SCTL_ASSERT(scnt[rank] == rcnt[rank]);
-  if (const Long n = scnt[rank] * esz) {  // self block
-    const char* s = (const char*)sbuf + sd[rank];
-    char* d = (char*)rbuf + rd[rank];
-    if constexpr (is_device_vector_v<DeviceVector<char>>) {
-      using It = ScratchIterator<char, DeviceVector>;
-      thrust::copy(pol, It(const_cast<char*>(s)), It(const_cast<char*>(s)) + n, It(d));
-    } else sctl::omp_par::memcpy(d, s, n);
+  if (const Long n = scnt[rank] * esz) {  // self block, copied on the device
+    using It = ScratchIterator<char, DeviceVector>;
+    const It s(const_cast<char*>((const char*)sbuf + sd[rank]));
+    thrust::copy(pol, s, s + n, It((char*)rbuf + rd[rank]));
   }
 
   // MPI_Alltoallv's counts and displacements are `int`, and a dof=3 payload at 100M items per rank

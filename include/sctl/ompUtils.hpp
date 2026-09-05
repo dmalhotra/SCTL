@@ -36,6 +36,13 @@ namespace omp_par {
 template <class OutputIt, class InputIt> void memcpy(OutputIt dst, InputIt src, Long n, Integer nthreads = -1);
 
 /**
+ * Fault in the pages of a buffer about to be overwritten, one write per 4 KB page in parallel;
+ * otherwise the first writer takes every fault, which for an MPI receive is a single thread.
+ * Cheap when the pages are already mapped. The buffer's contents are discarded.
+ */
+template <class Iter> void prefault(Iter first, Long n, Integer nthreads = -1);
+
+/**
  * Parallel element-wise copy over random-access iterators. Each chunk is
  * dispatched to `std::copy`, so user `operator=` is invoked normally (safe for
  * non-trivially-copyable T). Thread-count heuristic is identical to

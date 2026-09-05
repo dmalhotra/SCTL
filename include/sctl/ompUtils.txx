@@ -59,6 +59,22 @@ template <class OutputIt, class InputIt> inline void omp_par::memcpy(OutputIt ds
   }
 }
 
+template <class Iter> inline void omp_par::prefault(Iter first, Long n, Integer nthreads) {
+  using T = typename std::iterator_traits<Iter>::value_type;
+  static_assert(std::is_trivially_copyable<T>::value, "omp_par::prefault: T must be trivially copyable");
+  if (n <= 0) return;
+  const Long nbytes = n * (Long)sizeof(T), page = 4096, npages = (nbytes + page - 1) / page;
+  char* p = (char*)&first[0];
+  const Integer nt = omp_par_detail::PickThreads(nbytes, nthreads);
+  if (nt <= 1) {
+    for (Long i = 0; i < npages; i++) p[i * page] = 0;
+  } else {
+    #pragma omp parallel for num_threads(nt) schedule(static)
+    for (Long i = 0; i < npages; i++) p[i * page] = 0;
+  }
+  p[nbytes - 1] = 0;
+}
+
 template <class InputIt, class OutputIt> inline OutputIt omp_par::copy(InputIt first, InputIt last, OutputIt dst, Integer nthreads) {
   using val_t  = typename std::iterator_traits<InputIt>::value_type;
   using diff_t = typename std::iterator_traits<InputIt>::difference_type;

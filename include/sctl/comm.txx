@@ -742,6 +742,9 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Ialltoallv_sparse");
+  for (Integer i = 0; i < impl_->mpi_size_; i++) {  // receive pages fault in with all threads, not MPI's one
+    if (i != Rank() && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
+  }
 #if MPI_VERSION >= 4
   Long request_count = 0;
   Long total_bytes = 0;
@@ -868,6 +871,11 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
       stotal += scounts[i];
       rtotal += rcounts[i];
     }
+    for (Integer i = 0; i < impl_->mpi_size_; i++) {  // receive pages fault in with all threads, not MPI's one
+      if (i != Rank() && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
+    }
+    scnt[Rank()] = 0; rcnt[Rank()] = 0;  // the self block is a local copy
+    omp_par::memcpy(rbuf + rdispls[Rank()], sbuf + sdispls[Rank()], scounts[Rank()]);
     comm_detail::TrackCollective(1, stotal * sizeof(Type) + rtotal * sizeof(Type));
     MPI_Alltoallv_c((stotal ? &sbuf[0] : nullptr), &scnt[0], &sdsp[0], CommDatatype<Type>::value(), (rtotal ? &rbuf[0] : nullptr), &rcnt[0], &rdsp[0], CommDatatype<Type>::value(), impl_->mpi_comm_);
     return;
@@ -942,6 +950,11 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
       rtotal += rcounts[i];
     }
 
+    for (Integer i = 0; i < impl_->mpi_size_; i++) {  // receive pages fault in with all threads, not MPI's one
+      if (i != Rank() && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
+    }
+    scnt[Rank()] = 0; rcnt[Rank()] = 0;  // the self block is a local copy
+    omp_par::memcpy(rbuf + rdispls[Rank()], sbuf + sdispls[Rank()], scounts[Rank()]);
     comm_detail::TrackCollective(1, stotal * sizeof(Type) + rtotal * sizeof(Type));
     MPI_Alltoallv((stotal ? &sbuf[0] : nullptr), &scnt[0], &sdsp[0], CommDatatype<Type>::value(), (rtotal ? &rbuf[0] : nullptr), &rcnt[0], &rdsp[0], CommDatatype<Type>::value(), impl_->mpi_comm_);
     return;
