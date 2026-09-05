@@ -1,7 +1,7 @@
 // Timing benchmark with sort/rest breakdown. Compares three linear-tree implementations:
 //   1. sctl::Tree<DIM>::UpdateRefinement                   (CPU, distributed-capable)
 //   2. gpu_tree::GPUTree<Real,DIM>::UpdateRefinement       (CPU std::vector)
-//   3. gpu_tree::GPUTree<Real,DIM>::UpdateRefinement       (GPU thrust::device_vector)
+//   3. gpu_tree::GPUTree<Real,DIM>::UpdateRefinement       (GPU gpu_tree::DeviceVector)
 //
 // For each: total time, isolated sort time (Morton-encode + sort on the same N codes), and
 // "rest" = total - sort.
@@ -142,9 +142,9 @@ int main(int argc, char** argv) {
 
   // ===== gpu_tree GPU ===============================================
   {
-    thrust::device_vector<Real> coord_d(coord_std.begin(), coord_std.end());
+    gpu_tree::DeviceVector<Real> coord_d(coord_std.begin(), coord_std.end());
     cudaDeviceSynchronize();
-    thrust::device_vector<GMorton> pt_pre(N);
+    gpu_tree::DeviceVector<GMorton> pt_pre(N);
     gpu_tree::detail::MakeMortonFunctor<Real, kDim> mk{thrust::raw_pointer_cast(coord_d.data())};
     thrust::transform(thrust::counting_iterator<GLong>(0),
                       thrust::counting_iterator<GLong>(N),
@@ -152,7 +152,7 @@ int main(int argc, char** argv) {
     cudaDeviceSynchronize();
 
     const double t_sort = best_of_with_warmup(nruns, [&] {
-      thrust::device_vector<GMorton> pt = pt_pre;
+      gpu_tree::DeviceVector<GMorton> pt = pt_pre;
       cudaDeviceSynchronize();
       auto t0 = std::chrono::steady_clock::now();
       thrust::sort(pt.begin(), pt.end());
@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
       return ms(t0, t1);
     });
     size_t sz = 0;
-    gpu_tree::GPUTree<Real, kDim, thrust::device_vector> tr(sctl::Comm::Self());  // reused
+    gpu_tree::GPUTree<Real, kDim, gpu_tree::DeviceVector> tr(sctl::Comm::Self());  // reused
     const double t_total = best_of_with_warmup(nruns, [&] {
       cudaDeviceSynchronize();
       auto t0 = std::chrono::steady_clock::now();

@@ -60,7 +60,7 @@ template <template <class...> class DeviceVector> struct Plan {
  *
  * @tparam Key Trivially copyable, ordered by `operator<`, with `GetIntKey`/`FromIntKey` for the
  *             radix path (as `MortonCode` has).
- * @tparam DeviceVector Backend container: `HostVector` or `thrust::device_vector`.
+ * @tparam DeviceVector Backend container: `HostVector` or `gpu_tree::DeviceVector`.
  *
  * Every member that moves keys or data is collective.
  */

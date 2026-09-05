@@ -112,10 +112,10 @@ int main(int argc, char** argv) {
 
   // 3) GPU path.
   std::printf("GPU path:\n");
-  thrust::device_vector<NodeMID> leaves_gpu_d;
+  gpu_tree::DeviceVector<NodeMID> leaves_gpu_d;
   {
-    thrust::device_vector<Real> coord_d(coord.begin(), coord.end());
-    gpu_tree::GPUTree<Real, kDim, thrust::device_vector> tr(sctl::Comm::Self());
+    gpu_tree::DeviceVector<Real> coord_d(coord.begin(), coord.end());
+    gpu_tree::GPUTree<Real, kDim, gpu_tree::DeviceVector> tr(sctl::Comm::Self());
     tr.UpdateRefinement(coord_d, M);
     leaves_gpu_d = tr.GetNodeMID();
   }

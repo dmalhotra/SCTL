@@ -14,7 +14,7 @@
 
 using Real = double;
 static constexpr sctl::Integer kDim = 3;
-using GPT = gpu_tree::PtTree<Real, kDim, thrust::device_vector>;
+using GPT = gpu_tree::PtTree<Real, kDim, gpu_tree::DeviceVector>;
 using SPT = sctl::PtTree<Real, kDim>;
 
 int main(int argc, char** argv) {
@@ -35,8 +35,8 @@ int main(int argc, char** argv) {
     std::vector<Real> f(N * 2);
     for (sctl::Long i = 0; i < N; i++) { f[2*i] = 1e6*rank + i; f[2*i+1] = -(Real)i; }
 
-    thrust::device_vector<Real> xd(x.begin(), x.end()), fd(f.begin(), f.end());
-    thrust::device_vector<Real> yd(y.begin(), y.end()), gd2(g.begin(), g.end());
+    gpu_tree::DeviceVector<Real> xd(x.begin(), x.end()), fd(f.begin(), f.end());
+    gpu_tree::DeviceVector<Real> yd(y.begin(), y.end()), gd2(g.begin(), g.end());
     sctl::Vector<Real> ys(N2*kDim), gs(N2);
     for (sctl::Long i = 0; i < N2*kDim; i++) ys[i] = y[i];
     for (sctl::Long i = 0; i < N2; i++) gs[i] = g[i];
@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
       }
 
       { // round trip, both libraries
-        thrust::device_vector<Real> gout; gt.GetParticleData(gout, "f");
+        gpu_tree::DeviceVector<Real> gout; gt.GetParticleData(gout, "f");
         thrust::host_vector<Real> gh(gout);
         sctl::Vector<Real> sout; st.GetParticleData(sout, "f");
         int gbad = ((long)gh.size() != N*2), sbad = (sout.Dim() != N*2);
@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
         if (!sbad) for (sctl::Long i = 0; i < N*2; i++) if (sout[i] != f[i]) { sbad = 1; break; }
         fail += gbad;
         // the second group, built from different points than the tree
-        thrust::device_vector<Real> gout2; gt.GetParticleData(gout2, "g");
+        gpu_tree::DeviceVector<Real> gout2; gt.GetParticleData(gout2, "g");
         thrust::host_vector<Real> gh2(gout2);
         sctl::Vector<Real> sout2; st.GetParticleData(sout2, "g");
         int gbad2 = ((long)gh2.size() != N2), sbad2 = (sout2.Dim() != N2);
@@ -77,10 +77,10 @@ int main(int argc, char** argv) {
       }
 
       { // total particles held by the tree must match globally
-        sctl::Vector<long> gc, sc; thrust::device_vector<Real> gd; sctl::Vector<Real> sd;
+        sctl::Vector<long> gc, sc; gpu_tree::DeviceVector<Real> gd; sctl::Vector<Real> sd;
         gt.GetParticleData(gd, "pt");  // forces the group to exist
         long gsum = 0, ssum = 0, g = 0, s2 = 0;
-        { thrust::device_vector<Real> tmp; sctl::Vector<long> c;
+        { gpu_tree::DeviceVector<Real> tmp; sctl::Vector<long> c;
           gt.GetData(tmp, c, "pt"); for (sctl::Long i=0;i<c.Dim();i++) g += c[i]; }
         { sctl::Vector<Real> tmp; sctl::Vector<long> c;
           st.GetData(tmp, c, "pt"); for (sctl::Long i=0;i<c.Dim();i++) s2 += c[i]; }

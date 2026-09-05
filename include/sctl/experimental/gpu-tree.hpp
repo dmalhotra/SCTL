@@ -13,6 +13,8 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <thrust/device_allocator.h>
+#include <thrust/device_vector.h>
 
 #include "sctl/morton.hpp"
 #include "sctl/comm.hpp"    // Comm::Self() default, and the partition helpers the data layer uses
@@ -38,6 +40,22 @@ template <class T> struct DefaultInitAllocator : std::allocator<T> {
 template <class T> class HostVector : public std::vector<T, detail::DefaultInitAllocator<T>> {
  public:
   using std::vector<T, detail::DefaultInitAllocator<T>>::vector;
+};
+
+/**
+ * The device counterpart: `thrust::device_vector` with a no-op element construction (thrust's
+ * uninitialized_vector idiom). thrust still walks the new elements on resize, so for byte storage
+ * this saves little over the zero fill it replaces, for 8-byte elements about 8x.
+ */
+namespace detail {
+template <class T> struct DeviceUninitAllocator : thrust::device_allocator<T> {
+  template <class U> struct rebind { using other = DeviceUninitAllocator<U>; };
+  SCTL_GPU_HD void construct(T*) {}
+};
+}  // namespace detail
+template <class T> class DeviceVector : public thrust::device_vector<T, detail::DeviceUninitAllocator<T>> {
+ public:
+  using thrust::device_vector<T, detail::DeviceUninitAllocator<T>>::device_vector;
 };
 
 
@@ -69,7 +87,7 @@ template <class T> using no_deduce_t = typename no_deduce<T>::type;
  *
  * @tparam Real Data type for the particle coordinates.
  * @tparam DIM Number of spatial dimensions.
- * @tparam DevVec Vector template holding the retained state (e.g. `thrust::device_vector`). Only
+ * @tparam DevVec Vector template holding the retained state (`HostVector` or `DeviceVector`). Only
  * the stateful interface uses it; `buildTreeDist` deduces its own from its arguments.
  */
 template <class Real, Integer DIM, template <class...> class DevVec = std::vector> class GPUTree {
@@ -312,7 +330,7 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
  *
  * @tparam Real Data type for the coordinates and values of points.
  * @tparam DIM Dimensionality of the point tree.
- * @tparam DevVec Vector template holding the retained state (e.g. `thrust::device_vector`).
+ * @tparam DevVec Vector template holding the retained state (`HostVector` or `DeviceVector`).
  * @tparam BaseTree Base class for the point tree. Defaults to GPUTree<Real,DIM,DevVec>.
  */
 template <class Real, Integer DIM, template <class...> class DevVec = std::vector, class BaseTree = GPUTree<Real, DIM, DevVec>>

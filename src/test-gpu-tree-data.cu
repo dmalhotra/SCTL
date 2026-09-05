@@ -18,7 +18,7 @@
 
 using Real = double;
 static constexpr sctl::Integer kDim = 3;
-using GT = gpu_tree::GPUTree<Real, kDim, thrust::device_vector>;
+using GT = gpu_tree::GPUTree<Real, kDim, gpu_tree::DeviceVector>;
 using GNode = sctl::Morton<kDim>;
 
 // deterministic per-node value, independent of which rank holds the node
@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
       for (auto& v : x) v = U(rng);
 
       const sctl::Long M = 32 + 8 * step;
-      thrust::device_vector<Real> cd(x.begin(), x.end());
+      gpu_tree::DeviceVector<Real> cd(x.begin(), x.end());
       sctl::Vector<Real> xs(Nloc * kDim);
       for (sctl::Long i = 0; i < Nloc * kDim; i++) xs[i] = x[i];
 
@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
       }
 
       if (step) { // what the previous step's data became, compared globally
-        thrust::device_vector<Real> gd; sctl::Vector<long> gc;
+        gpu_tree::DeviceVector<Real> gd; sctl::Vector<long> gc;
         sctl::Vector<Real> sd; sctl::Vector<long> sc;
         gt.GetData(gd, gc, "f");
         st.GetData(sd, sc, "f");
@@ -125,7 +125,7 @@ int main(int argc, char** argv) {
         std::vector<Real> gval(Ng); sctl::Vector<Real> sval(Ns);
         for (sctl::Long i = 0; i < Ng; i++) { gcnt[i] = 1; gval[i] = node_value(gmid_h[i], step); }
         for (sctl::Long i = 0; i < Ns; i++) { scnt[i] = 1; sval[i] = node_value(smid[i], step); }
-        thrust::device_vector<Real> vd(gval.begin(), gval.end());
+        gpu_tree::DeviceVector<Real> vd(gval.begin(), gval.end());
         gt.AddData("f", vd, gcnt);
         st.AddData("f", sval, scnt);
       }

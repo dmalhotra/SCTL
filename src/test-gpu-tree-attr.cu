@@ -11,7 +11,7 @@
 
 using Real = double;
 static constexpr sctl::Integer kDim = 3;
-using GT = gpu_tree::GPUTree<Real, kDim, thrust::device_vector>;
+using GT = gpu_tree::GPUTree<Real, kDim, gpu_tree::DeviceVector>;
 using GNode = sctl::Morton<kDim>;
 
 int main(int argc, char** argv) {
@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
     for (sctl::PeriodicityT m = 0; m < (1 << kDim); m++)
     for (auto per : {static_cast<sctl::Periodicity>(m)})
     for (int b21 = 0; b21 <= 1; b21++) {
-      thrust::device_vector<Real> cd(x.begin(), x.end());
+      gpu_tree::DeviceVector<Real> cd(x.begin(), x.end());
       GT tr(comm);
       tr.UpdateRefinement(cd, M, b21, per, -1);
       const auto& lst_d = tr.GetNodeLists();

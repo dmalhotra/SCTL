@@ -1,5 +1,5 @@
 // Verifies the backend dispatch of GPUTree and PtTree:
-//   thrust::device_vector  -> GPU path (thrust)
+//   gpu_tree::DeviceVector  -> GPU path (thrust)
 //   std::vector            -> CPU path (omp_par, chunked walk)
 // Runs each path on N random particles and checks that the node sequence is sorted in (code, depth)
 // lex order and that AddParticles + GetParticleData round-trips the particle order, which is the
@@ -76,9 +76,9 @@ int main(int argc, char** argv) {
 
   // --- GPU path ---------------------------------------------------------
   {
-    thrust::device_vector<Real> coord(coord_h.begin(), coord_h.end());
-    gpu_tree::GPUTree<Real, kDim, thrust::device_vector> tr(sctl::Comm::Self());
-    gpu_tree::PtTree<Real, kDim, thrust::device_vector> pt(sctl::Comm::Self());
+    gpu_tree::DeviceVector<Real> coord(coord_h.begin(), coord_h.end());
+    gpu_tree::GPUTree<Real, kDim, gpu_tree::DeviceVector> tr(sctl::Comm::Self());
+    gpu_tree::PtTree<Real, kDim, gpu_tree::DeviceVector> pt(sctl::Comm::Self());
 
     cudaDeviceSynchronize();
     auto t0 = std::chrono::steady_clock::now();
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
     auto t1 = std::chrono::steady_clock::now();
     pt.UpdateRefinement(coord, M);
     pt.AddParticles("pt", coord);
-    thrust::device_vector<Real> back;
+    gpu_tree::DeviceVector<Real> back;
     pt.GetParticleData(back, "pt");
     cudaDeviceSynchronize();
     auto t2 = std::chrono::steady_clock::now();

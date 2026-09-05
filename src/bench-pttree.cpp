@@ -232,15 +232,15 @@ int main(int argc, char** argv) {
     });
 
     if (all || mode == "g") row("GPUTree PtTree GPU", [&](double* t) {
-      gpu_tree::PtTree<Real, kDim, thrust::device_vector> tr(comm);
+      gpu_tree::PtTree<Real, kDim, gpu_tree::DeviceVector> tr(comm);
       const char* const v = "GPUTree PtTree GPU";
-      thrust::device_vector<Real> c(xs.begin(), xs.end()), d(rho.begin(), rho.end()), u(xu.begin(), xu.end());
+      gpu_tree::DeviceVector<Real> c(xs.begin(), xs.end()), d(rho.begin(), rho.end()), u(xu.begin(), xu.end());
       banner(v, "build(sphere)");
       stage(t, 0, [&] { tr.UpdateRefinement(c, M, true, sctl::Periodicity::NONE, 0); });
       stage(t, 1, [&] { tr.AddParticles("pt", c); });
       imbalance(tr.GetPartitionMID(), xs, comm, t[kImb+0], t[kImb+1]);
       stage(t, 2, [&] { tr.AddParticleData("rho", "pt", d); });
-      thrust::device_vector<Real> out;
+      gpu_tree::DeviceVector<Real> out;
       stage(t, 3, [&] { tr.GetParticleData(out, "rho"); });
       const long nodes = tr.GetNodeMID().size();
       banner(v, "Refine(unif)");

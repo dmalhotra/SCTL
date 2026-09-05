@@ -54,12 +54,12 @@ int main(int argc, char** argv) {
 
     std::vector<double> best(K, 1e30);
     for (int rep = 0; rep < 2; rep++) {
-      gpu_tree::PtTree<Real, kDim, thrust::device_vector> tr(comm);
-      thrust::device_vector<Real> c(xs.begin(), xs.end()), d(rho.begin(), rho.end());
+      gpu_tree::PtTree<Real, kDim, gpu_tree::DeviceVector> tr(comm);
+      gpu_tree::DeviceVector<Real> c(xs.begin(), xs.end()), d(rho.begin(), rho.end());
       tr.UpdateRefinement(c, M, true, sctl::Periodicity::NONE, 0);
       tr.AddParticles("pt", c);
       tr.AddParticleData("rho", "pt", d);
-      thrust::device_vector<Real> out;
+      gpu_tree::DeviceVector<Real> out;
       for (int k = 0; k < K; k++) {
         comm.Barrier();
         const double a = tick(); tr.GetParticleData(out, "rho"); const double b = tick();

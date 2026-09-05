@@ -15,7 +15,7 @@
 
 using Real = double;
 static constexpr sctl::Integer kDim = 3;
-using GT = gpu_tree::GPUTree<Real, kDim, thrust::device_vector>;
+using GT = gpu_tree::GPUTree<Real, kDim, gpu_tree::DeviceVector>;
 using GNode = sctl::Morton<kDim>;
 
 static Real node_value(const GNode& m) {
@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
     std::mt19937_64 rng(9 + 31 * rank);
     std::uniform_real_distribution<Real> U(0, 1);
     std::vector<Real> x(N * kDim); for (auto& v : x) v = U(rng);
-    thrust::device_vector<Real> cd(x.begin(), x.end());
+    gpu_tree::DeviceVector<Real> cd(x.begin(), x.end());
     sctl::Vector<Real> xs(N * kDim); for (sctl::Long i = 0; i < N*kDim; i++) xs[i] = x[i];
 
     GT gt(comm); sctl::Tree<kDim> st(comm);
@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
     const sctl::Long Ng = (sctl::Long)gmid.size();
     sctl::Vector<long> gcnt(Ng); std::vector<Real> gval;
     for (sctl::Long i = 0; i < Ng; i++) { gcnt[i] = (i>=gb && i<ge) ? 1 : 0; if (gcnt[i]) gval.push_back(node_value(gmid[i])); }
-    thrust::device_vector<Real> gvd(gval.begin(), gval.end());
+    gpu_tree::DeviceVector<Real> gvd(gval.begin(), gval.end());
     gt.AddData("u", gvd, gcnt);
     gt.AddData("v", gvd, gcnt);
 
@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
       if (mode) { gt.ReduceBroadcast<Real>(nm); st.ReduceBroadcast<Real>(nm); }
       else      { gt.Broadcast<Real>(nm);       st.Broadcast<Real>(nm); }
 
-      thrust::device_vector<Real> gd; sctl::Vector<long> gc; gt.GetData(gd, gc, nm);
+      gpu_tree::DeviceVector<Real> gd; sctl::Vector<long> gc; gt.GetData(gd, gc, nm);
       thrust::host_vector<Real> gh(gd);
       sctl::Vector<Real> sd; sctl::Vector<long> sc; st.GetData(sd, sc, nm);
       thrust::host_vector<GNode> gm(gt.GetNodeMID());
