@@ -79,6 +79,12 @@ class SortScatter {
   /** Move the sorted keys to the partition given by new `splitters`; the operators follow. */
   void Repartition(const sctl::Vector<Key>& splitters);
 
+  /**
+   * Move `data`, `dof` values per key in the layout before the last `Repartition` (its previous
+   * `SortedCount()`), to the current layout, in place. A no-op when that `Repartition` moved nothing.
+   */
+  template <class T> void RepartitionData(DeviceVector<T>& data, Long dof) const;
+
   const DeviceVector<Key>& SortedKeys() const { return keys_; }  ///< this rank's stretch of the global order
   Long LocalCount() const { return plan_.Nloc; }                 ///< keys the caller handed in
   Long SortedCount() const { return plan_.Ntree; }               ///< keys held now
@@ -100,6 +106,9 @@ class SortScatter {
   Comm comm_;
   DeviceVector<Key> keys_;
   mutable detail_sortScatter::Plan<DeviceVector> plan_;  ///< inverses and stage-4 counts are built on first use
+  sctl::Vector<Long> move_scnt_, move_rcnt_;  ///< the last Repartition's move, previous layout -> current
+  Long move_n_ = 0;                           ///< keys held before it
+  bool moved_ = false;                        ///< whether it moved keys; RepartitionData is a no-op otherwise
 };
 
 }  // namespace gpu_tree

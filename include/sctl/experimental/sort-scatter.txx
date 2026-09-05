@@ -199,6 +199,7 @@ void SortScatter<Key, DeviceVector>::Init(DeviceVector<Key> keys, const sctl::Ve
 template <class Key, template <class...> class DeviceVector>
 void SortScatter<Key, DeviceVector>::Repartition(const sctl::Vector<Key>& splitters) {
   const Long np = comm_.Size();
+  moved_ = false;
   if (np == 1) return;
   SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Repartition: one splitter per rank.");
   const auto pol = detail::scratch_policy<DeviceVector, Key>();
@@ -211,19 +212,31 @@ void SortScatter<Key, DeviceVector>::Repartition(const sctl::Vector<Key>& splitt
   { Long moved = N - sc[comm_.Rank()], tot = 0;  // skip when nothing crosses a rank boundary
     comm_.Allreduce(sctl::Ptr2ConstItr<Long>(&moved, 1), sctl::Ptr2Itr<Long>(&tot, 1), 1, sctl::CommOp::SUM);
     if (!tot) return; }
-  { // move the keys to the new partition
-    sctl::Vector<Long> scv(np), rcv(np);
-    for (Long r = 0; r < np; r++) { scv[r] = sc[r]; rcv[r] = rc[r]; }
+  { // move the keys to the new partition, keeping the counts for RepartitionData
+    move_scnt_.ReInit(np); move_rcnt_.ReInit(np);
+    for (Long r = 0; r < np; r++) { move_scnt_[r] = sc[r]; move_rcnt_[r] = rc[r]; }
+    move_n_ = N;
+    moved_ = true;
     DeviceVector<Key>& k2 = detail::PersistentBuffer<Key, DeviceVector, detail::Buf::PtSortK>();
     k2.resize(Nnew);
     detail_sortScatter::exchange<DeviceVector>(pol, thrust::raw_pointer_cast(keys_.data()), N,
-                                               thrust::raw_pointer_cast(k2.data()), Nnew, scv, rcv, Long(1), comm_);
+                                               thrust::raw_pointer_cast(k2.data()), Nnew, move_scnt_, move_rcnt_, Long(1), comm_);
     keys_.swap(k2);
   }
   // stage 4 follows on the first move (ensureRecut), from the stage-3 layout: two re-cuts compose to one
   plan_.Ntree = Nnew;
   plan_.recut = true;
   plan_.recut_cnt = false;
+}
+
+template <class Key, template <class...> class DeviceVector> template <class T>
+void SortScatter<Key, DeviceVector>::RepartitionData(DeviceVector<T>& data, Long dof) const {
+  if (!moved_) return;
+  SCTL_ASSERT_MSG((Long)data.size() == move_n_ * dof, "SortScatter::RepartitionData: data holds the previous SortedCount()*dof values.");
+  DeviceVector<T> out(plan_.Ntree * dof);
+  detail_sortScatter::exchange<DeviceVector>(detail::scratch_policy<DeviceVector, T>(), thrust::raw_pointer_cast(data.data()), move_n_,
+                                             thrust::raw_pointer_cast(out.data()), plan_.Ntree, move_scnt_, move_rcnt_, dof, comm_);
+  data.swap(out);
 }
 
 template <class Key, template <class...> class DeviceVector> template <class T>

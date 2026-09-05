@@ -1718,6 +1718,11 @@ void partitionN(const Policy& pol, DeviceVector<T>& v, Long n, Long Ntgt, const 
   off[0] = 0; std::inclusive_scan(cnt.begin(), cnt.end(), off.begin() + 1);
   toff[0] = 0; std::inclusive_scan(tgt.begin(), tgt.end(), toff.begin() + 1);
   SCTL_ASSERT(off[np] == toff[np]);
+  { // nothing crosses a rank boundary: the layout already is the target
+    bool same = true;
+    for (Long q = 0; q <= np; q++) same = same && (off[q] == toff[q]);
+    if (same) return;
+  }
 
   sctl::ScratchBuf<Long> scnt(np), rcnt(np);
   for (Long q = 0; q < np; q++) {  // overlap of my current block with q's target block, and vice versa
@@ -1780,7 +1785,10 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
   // This rank's owned nodes before the rebuild, kept on the device: the search that consumes them
   // runs there too, so only its result has to cross the bus.
   DevVec<Morton<DIM>>& old_mid = detail::PersistentBuffer<Morton<DIM>, DevVec, detail::Buf::OldMid>();
-  const bool remap = !node_data_.empty() && mins_.Dim();
+  const auto base_moved = [this](const std::string& name) { return !data_moved_by_derived_.count(name); };
+  Long nbase = 0;  // data sets moved here
+  for (const auto& kv : node_data_) nbase += base_moved(kv.first);
+  const bool remap = nbase && mins_.Dim();
   old_mid.resize(remap ? owned_end_ - owned_begin_ : 0);
   if (remap) thrust::copy(pol, node_mid_.begin() + owned_begin_, node_mid_.begin() + owned_end_, old_mid.begin());
   const Long old_begin = owned_begin_, old_end = owned_end_;
@@ -1793,7 +1801,7 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
     owned_begin_ = owned[0];
     owned_end_ = owned[1];
   }
-  if (node_data_.empty()) return;
+  if (!nbase) return;
 
   // Remap: move the old owned nodes to whoever owns their range now, then find, for each new node,
   // the old nodes it absorbs. A new node's count is their counts summed.
@@ -1813,6 +1821,7 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
 
   for (auto& kv : node_data_) {
     const std::string& name = kv.first;
+    if (!base_moved(name)) continue;
     DevVec<char>& data = kv.second;
     sctl::Vector<Long>& cnt = node_cnt_[name];
 
@@ -2150,6 +2159,7 @@ void GPUTree<Real, DIM, DevVec>::DeleteData(const std::string& name) {
   SCTL_ASSERT_MSG(node_data_.find(name) != node_data_.end(), "GPUTree::DeleteData: unknown name.");
   node_data_.erase(name);
   node_cnt_.erase(name);
+  data_moved_by_derived_.erase(name);
 }
 
 // Particle bookkeeping. The particles' codes, their order and the moves between caller and tree
@@ -2234,6 +2244,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& dat
   // the forward scatter reads the caller's array and writes the stored buffer, so neither end is copied
   DevVec<char>& raw = this->AddDataUninit_(data_name, cnt, dof * (Long)sizeof(Real));
   g.ScatterForward((const Real*)thrust::raw_pointer_cast(data.data()), (Real*)thrust::raw_pointer_cast(raw.data()), dof);
+  this->data_moved_by_derived_.insert(data_name);
   data_pt_name_[data_name] = particle_name;
 }
 
@@ -2268,7 +2279,6 @@ void PtTree<Real, DIM, DevVec, BaseTree>::DeleteParticleData(const std::string& 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& coord, Long M, bool balance21, sctl::Periodicity periodicity, Integer halo_size) {
   const Comm& comm = this->GetComm();
-  const auto pol = detail::scratch_policy<DevVec, char>();
   BaseTree::UpdateRefinement(coord, M, balance21, periodicity, halo_size);
   { // set partition_codes_
     const auto& mins = this->GetPartitionMID();
@@ -2276,40 +2286,24 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& c
     for (Long r = 0; r < mins.Dim(); r++) partition_codes_[r] = mins[r].mid;
   }
 
-  for (auto& kv : groups_) {
+  for (auto& kv : groups_) {  // payloads follow their keys' re-cut; per-node counts come from the particles
     const std::string& group = kv.first;
     kv.second.Repartition(partition_codes_);
-
-    // The base moved each payload by node: after a split, every item of an old node lands on the
-    // first new node inside it, which can sit on a different rank than the particle's own Morton
-    // says. So the payload gets a second, particle-aware repartition -- the same correction sctl
-    // applies -- and the per-node counts are recomputed from the particles themselves.
     sctl::Vector<Long> cnt_new;
     nodeCounts(group, cnt_new);
-    const Long Nnew = kv.second.SortedCount();
-    Long ob = 0, oe = 0;
-    this->GetOwnedRange(ob, oe);
 
     std::vector<std::string> names;
     for (const auto& p : data_pt_name_) if (p.second == group) names.push_back(p.first);
     for (const auto& name : names) {
-      // in place: one staging buffer for the exchange, then swap. Going through GetData/AddData
-      // would copy the payload three times over.
       DevVec<char>& raw = this->NodeData_(name);
       sctl::Vector<Long>& cnt = this->NodeCnt_(name);
-      Long tot = 0, beg = 0, own = 0;
-      for (Long i = 0; i < cnt.Dim(); i++) { if (i < ob) beg += cnt[i]; if (i >= ob && i < oe) own += cnt[i]; tot += cnt[i]; }
-      // bytes per item, reduced globally: a rank that currently holds no particles has nothing to
-      // divide by, and a local 0 would shrink its share of the repartition to nothing
+      // bytes per item, reduced globally: a rank that holds no particles has nothing to divide by
       Long w = 0;
       { sctl::StaticArray<Long, 2> Nl, Ng;
-        Nl[0] = (Long)raw.size(); Nl[1] = tot;
+        Nl[0] = (Long)raw.size(); Nl[1] = sctl::omp_par::reduce(cnt.begin(), cnt.Dim());
         comm.Allreduce((sctl::ConstIterator<Long>)Nl, (sctl::Iterator<Long>)Ng, 2, sctl::CommOp::SUM);
         w = Ng[0] / std::max<Long>(Ng[1], 1); }
-      DevVec<char> slice(own * w);
-      if (own * w) thrust::copy(pol, raw.begin() + beg * w, raw.begin() + (beg + own) * w, slice.begin());
-      detail_treeData::partitionN(pol, slice, own * w, Nnew * w, comm);
-      raw.swap(slice);
+      kv.second.RepartitionData(raw, w);
       cnt = cnt_new;
     }
   }

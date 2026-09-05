@@ -10,6 +10,7 @@
 #define _SCTL_EXPERIMENTAL_GPU_TREE_HPP_
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -278,6 +279,8 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
    * fill a temporary and then copy that in.
    */
   DevVec<char>& AddDataUninit_(const std::string& name, const sctl::Vector<Long>& cnt, Long item_bytes);
+
+  std::set<std::string> data_moved_by_derived_;  ///< payloads a derived class moves itself after a rebuild; UpdateRefinement skips them
 
  private:
   /**
