@@ -1878,31 +1878,28 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
 template <class Real, Integer DIM, template <class...> class DevVec>
 template <class ValueType>
 void GPUTree<Real, DIM, DevVec>::AddData(const std::string& name, const DevVec<ValueType>& data, const sctl::Vector<Long>& cnt) {
-  SCTL_ASSERT_MSG(node_data_.find(name) == node_data_.end(), "GPUTree::AddData: name already present.");
+  Long dof = 0;
   { // dof must be uniform across ranks, as in sctl::Tree
     sctl::StaticArray<Long, 2> Nl, Ng;
     Nl[0] = (Long)data.size();
     Nl[1] = sctl::omp_par::reduce(cnt.begin(), cnt.Dim());
     comm_.Allreduce((sctl::ConstIterator<Long>)Nl, (sctl::Iterator<Long>)Ng, 2, sctl::CommOp::SUM);
-    const Long dof = Ng[0] / std::max<Long>(Ng[1], 1);
+    dof = Ng[0] / std::max<Long>(Ng[1], 1);
     SCTL_ASSERT(Nl[0] == Nl[1] * dof);
-    if (dof) SCTL_ASSERT(cnt.Dim() == (Long)node_mid_.size());
   }
+  AddData<ValueType>(name, dof, cnt);
   DevVec<char>& dst = node_data_[name];
-  dst.resize((Long)data.size() * (Long)sizeof(ValueType));
   thrust::copy(thrust::device_pointer_cast((const char*)thrust::raw_pointer_cast(data.data())),
                thrust::device_pointer_cast((const char*)thrust::raw_pointer_cast(data.data())) + dst.size(), dst.begin());
-  node_cnt_[name] = cnt;
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>
-DevVec<char>& GPUTree<Real, DIM, DevVec>::AddDataUninit_(const std::string& name, const sctl::Vector<Long>& cnt, Long item_bytes) {
-  SCTL_ASSERT_MSG(node_data_.find(name) == node_data_.end(), "GPUTree::AddDataUninit_: name already present.");
-  if (item_bytes) SCTL_ASSERT(cnt.Dim() == (Long)node_mid_.size());
-  DevVec<char>& dst = node_data_[name];
-  dst.resize(sctl::omp_par::reduce(cnt.begin(), cnt.Dim()) * item_bytes);
+template <class ValueType>
+void GPUTree<Real, DIM, DevVec>::AddData(const std::string& name, Long dof, const sctl::Vector<Long>& cnt) {
+  SCTL_ASSERT_MSG(node_data_.find(name) == node_data_.end(), "GPUTree::AddData: name already present.");
+  if (dof) SCTL_ASSERT(cnt.Dim() == (Long)node_mid_.size());
+  node_data_[name].resize(sctl::omp_par::reduce(cnt.begin(), cnt.Dim()) * dof * (Long)sizeof(ValueType));
   node_cnt_[name] = cnt;
-  return dst;
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>
@@ -2250,15 +2247,19 @@ template <class Real, Integer DIM, template <class...> class DevVec, class BaseT
 void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, const DevVec<Real>& data) {
   const auto it = groups_.find(particle_name);
   SCTL_ASSERT_MSG(it != groups_.end(), "PtTree::AddParticleData: unknown particle group.");
-  SCTL_ASSERT_MSG(data_pt_name_.find(data_name) == data_pt_name_.end(), "PtTree::AddParticleData: data name already present.");
-  const auto& g = it->second;
-  const Long dof = globalDof((Long)data.size(), g.LocalCount());
+  const Long dof = globalDof((Long)data.size(), it->second.LocalCount());
+  AddParticleData(data_name, particle_name, dof);
+  // the forward scatter reads the caller's array and writes the stored buffer, so neither end is copied
+  it->second.ScatterForward((const Real*)thrust::raw_pointer_cast(data.data()), (Real*)thrust::raw_pointer_cast(this->NodeData_(data_name).data()), dof);
+}
 
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof) {
+  SCTL_ASSERT_MSG(groups_.find(particle_name) != groups_.end(), "PtTree::AddParticleData: unknown particle group.");
+  SCTL_ASSERT_MSG(data_pt_name_.find(data_name) == data_pt_name_.end(), "PtTree::AddParticleData: data name already present.");
   sctl::Vector<Long> cnt;
   nodeCounts(particle_name, cnt);
-  // the forward scatter reads the caller's array and writes the stored buffer, so neither end is copied
-  DevVec<char>& raw = this->AddDataUninit_(data_name, cnt, dof * (Long)sizeof(Real));
-  g.ScatterForward((const Real*)thrust::raw_pointer_cast(data.data()), (Real*)thrust::raw_pointer_cast(raw.data()), dof);
+  this->template AddData<Real>(data_name, dof, cnt);
   this->data_moved_by_derived_.insert(data_name);
   data_pt_name_[data_name] = particle_name;
 }

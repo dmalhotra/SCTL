@@ -1311,6 +1311,13 @@ namespace sctl {
     node_cnt [name] = cnt;
   }
 
+  template <Integer DIM> template <class ValueType> void Tree<DIM>::AddData(const std::string& name, Long dof, const Vector<Long>& cnt) {
+    if (dof) SCTL_ASSERT(cnt.Dim() == node_mid.Dim());
+    SCTL_ASSERT(node_data.find(name) == node_data.end());
+    node_data[name].ReInit(omp_par::reduce(cnt.begin(), cnt.Dim()) * dof * (Long)sizeof(ValueType));
+    node_cnt [name] = cnt;
+  }
+
   template <Integer DIM> template <class ValueType> void Tree<DIM>::GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name) const {
     const auto data_ = node_data.find(name);
     const auto cnt_ = node_cnt.find(name);
@@ -1696,7 +1703,6 @@ namespace sctl {
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticles(const std::string& name, const Vector<Real>& coord) {
-    const auto& node_mid = this->GetNodeMID();
     SCTL_ASSERT(groups.find(name) == groups.end());
 
     const Long N = coord.Dim() / DIM;
@@ -1710,51 +1716,35 @@ namespace sctl {
     auto& group = groups.try_emplace(name, this->GetComm()).first->second;
     group.Init(pt_mid, partition_codes);
     AddParticleData(name, name, coord);
-
-    { // Set node_cnt
-      Iterator<Vector<char>> data_;
-      Iterator<Vector<Long>> cnt_;
-      this->GetData_(data_,cnt_,name);
-      cnt_[0].ReInit(node_mid.Dim());
-      pt_node_counts<DIM>(node_mid, group.SortedKeys(), cnt_[0].begin());
-    }
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, const Vector<Real>& data) {
     const auto group = groups.find(particle_name);
     SCTL_ASSERT(group != groups.end());
-    SCTL_ASSERT(data_pt_name.find(data_name) == data_pt_name.end());
-    data_pt_name[data_name] = particle_name;
+    const Long dof = [this,&data,&group]() { // global: a rank may hold no particles
+      StaticArray<Long,2> Ng, Nl{data.Dim(), group->second.LocalCount()};
+      this->GetComm().Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
+      return Ng[0] / std::max<Long>(Ng[1],1);
+    }();
+    SCTL_ASSERT(data.Dim() == group->second.LocalCount() * dof);
+    AddParticleData(data_name, particle_name, dof);
 
     Iterator<Vector<char>> data_;
     Iterator<Vector<Long>> cnt_;
-    this->AddData(data_name, Vector<Real>(), Vector<Long>());
-    this->data_moved_by_derived.insert(data_name);
-    this->GetData_(data_,cnt_,data_name);
-    { // Set data_[0]
-      const Long dof = [this,&data,&group]() { // global: a rank may hold no particles
-        StaticArray<Long,2> Ng, Nl{data.Dim(), group->second.LocalCount()};
-        this->GetComm().Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
-        return Ng[0] / std::max<Long>(Ng[1],1);
-      }();
-      SCTL_ASSERT(data.Dim() == group->second.LocalCount() * dof);
-      const Long bytes = dof * sizeof(Real);
-      data_[0].ReInit(group->second.SortedCount() * bytes);
-      group->second.ScatterForward((ConstIterator<char>)data.begin(), data_[0].begin(), bytes);
-    }
-    if (data_name != particle_name) { // Set cnt_[0]
-      Vector<Real> pt_coord;
-      Vector<Long> pt_cnt;
-      this->GetData(pt_coord, pt_cnt, particle_name);
-      cnt_[0] = pt_cnt;
+    this->GetData_(data_, cnt_, data_name);
+    group->second.ScatterForward((ConstIterator<char>)data.begin(), data_[0].begin(), dof * (Long)sizeof(Real));
+  }
 
-      const auto& node_attr = this->GetNodeAttr();
-      SCTL_ASSERT(node_attr.Dim() == cnt_[0].Dim());
-      for (Long i = 0; i < node_attr.Dim(); i++) {
-        if (node_attr[i].Ghost) cnt_[0][i] = 0;
-        SCTL_ASSERT(node_attr[i].Leaf || !cnt_[0][i]);
-      }
-    }
+  template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof) {
+    const auto group = groups.find(particle_name);
+    SCTL_ASSERT(group != groups.end());
+    SCTL_ASSERT(data_pt_name.find(data_name) == data_pt_name.end());
+    const auto& node_mid = this->GetNodeMID();
+    ScratchBuf<Long> cnt(node_mid.Dim());
+    pt_node_counts<DIM>(node_mid, group->second.SortedKeys(), cnt.begin());
+    this->template AddData<Real>(data_name, dof, Vector<Long>(cnt));
+    this->data_moved_by_derived.insert(data_name);
+    data_pt_name[data_name] = particle_name;
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::GetParticleData(Vector<Real>& data, const std::string& data_name) const {

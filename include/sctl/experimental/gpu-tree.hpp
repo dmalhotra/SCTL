@@ -177,6 +177,12 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
   template <class ValueType> void AddData(const std::string& name, const DevVec<ValueType>& data, const sctl::Vector<Long>& cnt);
 
   /**
+   * Add named data without values: `cnt[i] * dof` unwritten elements for node i. Local, no
+   * communication. Filling it in place needs a non-copying accessor, which `GetData` is not yet.
+   */
+  template <class ValueType> void AddData(const std::string& name, Long dof, const sctl::Vector<Long>& cnt);
+
+  /**
    * Get node data.
    *
    * @param[out] data Copy of the stored data for this name. Unlike `sctl::Tree::GetData`, which
@@ -273,13 +279,6 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
   const DevVec<char>& NodeData_(const std::string& name) const { return node_data_.at(name); }
   sctl::Vector<Long>& NodeCnt_(const std::string& name) { return node_cnt_.at(name); }
 
-  /**
-   * Create a data set and return its storage, sized from `cnt` but left unwritten. Lets a caller
-   * that produces the payload with its own kernel write in place, where `AddData` would have it
-   * fill a temporary and then copy that in.
-   */
-  DevVec<char>& AddDataUninit_(const std::string& name, const sctl::Vector<Long>& cnt, Long item_bytes);
-
   std::set<std::string> data_moved_by_derived_;  ///< payloads a derived class moves itself after a rebuild; UpdateRefinement skips them
 
  private:
@@ -363,6 +362,13 @@ class PtTree : public BaseTree {
    * @note Collective; must be called from all processes.
    */
   void AddParticleData(const std::string& data_name, const std::string& particle_name, const DevVec<Real>& data);
+
+  /**
+   * Add particle data without values: `dof` unwritten values per particle of `particle_name`, in
+   * the group's tree order, which `GetParticleData` maps back to the caller's. Local, no
+   * communication.
+   */
+  void AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof);
 
   /**
    * Get particle data from the point tree. The data scattered back to

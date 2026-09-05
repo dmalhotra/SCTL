@@ -120,6 +120,16 @@ template <Integer DIM> class Tree {
     template <class ValueType> void AddData(const std::string& name, const Vector<ValueType>& data, const Vector<Long>& cnt);
 
     /**
+     * Add named data without values: `cnt[i] * dof` unwritten elements for node i, to be filled in
+     * place through the view `GetData` returns. Local, no communication.
+     *
+     * @param[in] name Name for the data. Must not already exist on this tree.
+     * @param[in] dof Elements per data item; must agree across processes.
+     * @param[in] cnt Number of data items per node (length = number of tree nodes).
+     */
+    template <class ValueType> void AddData(const std::string& name, Long dof, const Vector<Long>& cnt);
+
+    /**
      * Get node data.
      *
      * @param[out] data Non-owning view of the tree's internal buffer for this
@@ -251,6 +261,13 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
      * @note Collective; must be called from all processes.
      */
     void AddParticleData(const std::string& data_name, const std::string& particle_name, const Vector<Real>& data);
+
+    /**
+     * Add particle data without values: `dof` unwritten values per particle of `particle_name`, in
+     * the group's tree order, to be filled in place through the view `GetData` returns.
+     * `GetParticleData` maps that order back to the caller's. Local, no communication.
+     */
+    void AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof);
 
     /**
      * Get particle data from the point tree. The data scattered back to
