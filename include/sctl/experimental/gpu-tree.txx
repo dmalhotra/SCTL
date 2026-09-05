@@ -205,8 +205,6 @@ Long splitCounts(sctl::ScratchBuf<Long>& scnt, sctl::ScratchBuf<Long>& rcnt, con
   return nrecv;
 }
 
-// Alltoallv of esz-sized elements given per-rank element counts (displacements are their scans).
-// Buffers may be device pointers -- they go straight to MPI, which is CUDA-aware here.
 /** Equivalence under `operator<`, for thrust's unique on the device path. */
 template <class T> struct EquivPred {
   SCTL_GPU_HD bool operator()(const T& a, const T& b) const { return !(a < b) && !(b < a); }
@@ -247,14 +245,27 @@ Long local_unique_copy(const Policy& pol, InIt in, Long n, Vec& out) {
   }
 }
 
-inline void alltoallv(const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt,
-                      const sctl::ScratchBuf<Long>& rcnt, Long esz, const Comm& comm) {
+// Alltoallv of esz-sized elements given per-rank element counts (displacements are their scans).
+// Buffers may be device pointers -- they go straight to MPI, which is CUDA-aware here -- except the
+// block a rank sends itself, which is copied locally: MPI streams it single-threaded at a few GB/s.
+template <template <class...> class DeviceVector, class Policy>
+void alltoallv(const Policy& pol, const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt,
+               const sctl::ScratchBuf<Long>& rcnt, Long esz, const Comm& comm) {
 #ifdef SCTL_HAVE_MPI
   const Long np = comm.Size(), rank = comm.Rank();
   static const Long IMAX = 2147483647;
   sctl::ScratchBuf<Long> sd(np + 1), rd(np + 1);   // byte offsets, in Long
   sd[0] = 0; rd[0] = 0;
   for (Long r = 0; r < np; r++) { sd[r + 1] = sd[r] + scnt[r] * esz; rd[r + 1] = rd[r] + rcnt[r] * esz; }
+  SCTL_ASSERT(scnt[rank] == rcnt[rank]);
+  if (const Long n = scnt[rank] * esz) {  // self block
+    const char* s = (const char*)sbuf + sd[rank];
+    char* d = (char*)rbuf + rd[rank];
+    if constexpr (is_device_vector_v<DeviceVector<char>>) {
+      using It = ScratchIterator<char, DeviceVector>;
+      thrust::copy(pol, It(const_cast<char*>(s)), It(const_cast<char*>(s)) + n, It(d));
+    } else sctl::omp_par::memcpy(d, s, n);
+  }
 
   // MPI_Alltoallv's counts and displacements are `int`, and a dof=3 payload at 100M items per rank
   // is 2.4 GB. Counting in a larger unit than one byte buys that factor of headroom, so rather
@@ -274,6 +285,7 @@ inline void alltoallv(const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>
       sc[r] = (int)(scnt[r] * esz / G); rc[r] = (int)(rcnt[r] * esz / G);
       sdi[r] = (int)(sd[r] / G);        rdi[r] = (int)(rd[r] / G);
     }
+    sc[rank] = 0; rc[rank] = 0;
     MPI_Datatype dt;
     MPI_Type_contiguous((int)G, MPI_BYTE, &dt);
     MPI_Type_commit(&dt);
@@ -291,7 +303,7 @@ inline void alltoallv(const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>
   char* rp = (char*)rbuf;
   const Long CHUNK = Long(1) << 30;
   const auto nchunk = [CHUNK](Long n) { return (n + CHUNK - 1) / CHUNK; };
-  for (Long k = 0; k < np; k++) {
+  for (Long k = 1; k < np; k++) {  // k = 0 is the self block
     const Long to = (rank + k) % np, from = (rank - k + np) % np;
     // The send and receive of one step are with *different* peers, so their chunk counts differ
     // and cannot share a lockstep loop -- doing that deadlocks, because whichever rank iterates
@@ -319,7 +331,7 @@ void exchangePooled(const Policy& pol, const DeviceVector<T>& src, Long nsrc, De
                     const sctl::ScratchBuf<Long>& scnt, const sctl::ScratchBuf<Long>& rcnt, const Comm& comm) {
   DeviceScratch<T, DeviceVector> xs(nsrc), xr(ndst);
   thrust::copy(pol, src.begin(), src.begin() + nsrc, xs.begin());
-  alltoallv(thrust::raw_pointer_cast(xs.data()), thrust::raw_pointer_cast(xr.data()), scnt, rcnt, (Long)sizeof(T), comm);
+  alltoallv<DeviceVector>(pol, thrust::raw_pointer_cast(xs.data()), thrust::raw_pointer_cast(xr.data()), scnt, rcnt, (Long)sizeof(T), comm);
   dst.resize(ndst);
   thrust::copy(pol, xr.begin(), xr.end(), dst.begin());
 }
@@ -1329,7 +1341,7 @@ void addGhostNodes(DeviceVector<Morton<DIM>>& tree, const sctl::ScratchBuf<Morto
   }
 
   DeviceScratch<NodeT, DeviceVector> ghost(Nrecv);
-  detail::alltoallv(thrust::raw_pointer_cast(send_mid.data()), thrust::raw_pointer_cast(ghost.data()), scnt, rcnt, sizeof(NodeT), comm);
+  detail::alltoallv<DeviceVector>(pol, thrust::raw_pointer_cast(send_mid.data()), thrust::raw_pointer_cast(ghost.data()), scnt, rcnt, sizeof(NodeT), comm);
   // sorted: each source's segment is sorted and source owned-intervals are ordered
   const Long Nsplit = thrust::lower_bound(pol, ghost.begin(), ghost.end(), mins[rank]) - ghost.begin();
 
@@ -2005,7 +2017,7 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
       sbc[p] = a * w; rbc[p] = b * w;
     }
     DevVec<char> rbuf(Nrecv * w);
-    detail::alltoallv(thrust::raw_pointer_cast(sbuf.data()), thrust::raw_pointer_cast(rbuf.data()), sbc, rbc, Long(1), comm_);
+    detail::alltoallv<DevVec>(pol, thrust::raw_pointer_cast(sbuf.data()), thrust::raw_pointer_cast(rbuf.data()), sbc, rbc, Long(1), comm_);
 
     sctl::Vector<Long> cnt_new(cnt), ridx(Nr);
     for (Long i = 0; i < Nr; i++) {
@@ -2092,7 +2104,7 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
       sbc[p] = a * dof * (Long)sizeof(ValueType); rbc[p] = b * dof * (Long)sizeof(ValueType);
     }
     DevVec<char> rbuf(Nrecv * dof * (Long)sizeof(ValueType));
-    detail::alltoallv(thrust::raw_pointer_cast(sbuf.data()), thrust::raw_pointer_cast(rbuf.data()), sbc, rbc, Long(1), comm_);
+    detail::alltoallv<DevVec>(pol, thrust::raw_pointer_cast(sbuf.data()), thrust::raw_pointer_cast(rbuf.data()), sbc, rbc, Long(1), comm_);
 
     { // add each received block into the node it belongs to
       ValueType* const d = (ValueType*)thrust::raw_pointer_cast(data.data());

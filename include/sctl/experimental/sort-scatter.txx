@@ -97,7 +97,7 @@ void exchange(const Policy& pol, const T* src, Long nsrc, T* dst, Long ndst,
 #ifdef SCTL_HAVE_MPI
   sctl::ScratchBuf<Long> sc(np), rc(np);
   for (Long r = 0; r < np; r++) { sc[r] = scnt[r] * dof; rc[r] = rcnt[r] * dof; }
-  detail::alltoallv(src, dst, sc, rc, (Long)sizeof(T), comm);
+  detail::alltoallv<DeviceVector>(pol, src, dst, sc, rc, (Long)sizeof(T), comm);
 #endif
 }
 
