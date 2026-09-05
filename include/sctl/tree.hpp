@@ -133,14 +133,16 @@ template <Integer DIM> class Tree {
      * Get node data.
      *
      * @param[out] data Non-owning view of the tree's internal buffer for this
-     * data. Must not be resized; in-place mutation aliases the stored data.
+     * data. Must not be resized; in-place mutation aliases the stored data. A
+     * const tree fills a `Vector<const ValueType>`.
      * @param[out] cnt Number of data elements per node (length = number of tree nodes). Non-owning view; must not be modified.
      * @param[in] name Name of the data.
      *
      * @warning `ValueType` must match the type used in the corresponding
      * `AddData`; otherwise the bytes are silently reinterpreted.
      */
-    template <class ValueType> void GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name) const;
+    template <class ValueType> void GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name);
+    template <class ValueType> void GetData(Vector<const ValueType>& data, Vector<Long>& cnt, const std::string& name) const;
 
     /**
      * Reduce data on nodes shared between processors and then broadcast the halo/ghost node data. The resulting tree

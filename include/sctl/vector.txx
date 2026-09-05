@@ -9,6 +9,7 @@
 #include <initializer_list>       // for initializer_list
 #include <iomanip>                // for operator<<, setiosflags, setprecision
 #include <iostream>               // for basic_ostream, char_traits, operator<<
+#include <type_traits>            // for is_const
 #include <vector>                 // for vector
 
 #include "sctl/common.hpp"        // for Long, SCTL_ASSERT, sctl
@@ -32,7 +33,9 @@ template <class ValueType> void Vector<ValueType>::Init(Long dim_, Iterator<Valu
   if (own_data) {
     if (dim > 0) {
       data_ptr = aligned_new<ValueType>(capacity);
-      if (data_ != NullIterator<ValueType>()) {
+      if constexpr (std::is_const<ValueType>::value) {  // Vector<const T> is a view
+        SCTL_ASSERT_MSG(!dim || data_ == NullIterator<ValueType>(), "Vector<const T> cannot own a copy of the data; use a non-owning view.");
+      } else if (data_ != NullIterator<ValueType>()) {
         omp_par::copy(data_, data_ + dim, data_ptr);
       }
     } else
@@ -50,6 +53,7 @@ template <class ValueType> Vector<ValueType>::Vector(Long dim_, Iterator<ValueTy
 }
 
 template <class ValueType> Vector<ValueType>::Vector(const Vector<ValueType>& V) {
+  static_assert(!std::is_const<ValueType>::value, "Vector<const T> is a view; copy the elements into a Vector<T> instead");
   Init(V.Dim(), (Iterator<ValueType>)V.begin());
 }
 
@@ -115,7 +119,9 @@ template <class ValueType> void Vector<ValueType>::ReInit(Long dim_, Iterator<Va
     // just to mark the Vector fixed.
     dim = dim_;
     disable_reinit_ = disable_reinit;
-    if (dim && (data_ptr != NullIterator<ValueType>()) && (data_ != NullIterator<ValueType>())) {
+    if constexpr (std::is_const<ValueType>::value) {  // Vector<const T> is a view
+      SCTL_ASSERT_MSG(!dim || data_ == NullIterator<ValueType>(), "Vector<const T> cannot own a copy of the data; use a non-owning view.");
+    } else if (dim && (data_ptr != NullIterator<ValueType>()) && (data_ != NullIterator<ValueType>())) {
       omp_par::copy(data_, data_ + dim, data_ptr);
     }
   } else {
@@ -245,6 +251,7 @@ template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const
 }
 
 template <class ValueType> Vector<ValueType>& Vector<ValueType>::operator=(const Vector<ValueType>& V) {
+  static_assert(!std::is_const<ValueType>::value, "Vector<const T> is a view; copy the elements into a Vector<T> instead");
   if (this != &V) {
     if (dim != V.dim) ReInit(V.dim);
     omp_par::copy(V.data_ptr, V.data_ptr + dim, data_ptr);
@@ -335,6 +342,7 @@ template <class ValueType> Vector<ValueType> Vector<ValueType>::operator-() cons
 // Vector-Scalar operations
 
 template <class ValueType> template <class VType> Vector<ValueType>& Vector<ValueType>::operator=(VType s) {
+  static_assert(!std::is_const<ValueType>::value, "Vector<const T> is a view; its elements cannot be assigned");
   for (Long i = 0; i < dim; i++) data_ptr[i] = s;
   return *this;
 }

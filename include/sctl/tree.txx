@@ -1318,12 +1318,22 @@ namespace sctl {
     node_cnt [name] = cnt;
   }
 
-  template <Integer DIM> template <class ValueType> void Tree<DIM>::GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name) const {
+  template <Integer DIM> template <class ValueType> void Tree<DIM>::GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name) {
     const auto data_ = node_data.find(name);
     const auto cnt_ = node_cnt.find(name);
     SCTL_ASSERT(data_ != node_data.end());
     SCTL_ASSERT( cnt_ != node_cnt .end());
     data.ReInit(data_->second.Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->second.begin(), false);
+    SCTL_ASSERT(data.Dim()*(Long)sizeof(ValueType) == data_->second.Dim());
+    cnt .ReInit( cnt_->second.Dim(), cnt_->second.begin(), false);
+  }
+
+  template <Integer DIM> template <class ValueType> void Tree<DIM>::GetData(Vector<const ValueType>& data, Vector<Long>& cnt, const std::string& name) const {
+    const auto data_ = node_data.find(name);
+    const auto cnt_ = node_cnt.find(name);
+    SCTL_ASSERT(data_ != node_data.end());
+    SCTL_ASSERT( cnt_ != node_cnt .end());
+    data.ReInit(data_->second.Dim()/sizeof(ValueType), (Iterator<const ValueType>)data_->second.begin(), false);
     SCTL_ASSERT(data.Dim()*(Long)sizeof(ValueType) == data_->second.Dim());
     cnt .ReInit( cnt_->second.Dim(), (Iterator<Long>)cnt_->second.begin(), false);
   }
@@ -1760,7 +1770,7 @@ namespace sctl {
     Long dof;
     Vector<Long> dsp;
     Vector<Long> cnt_;
-    Vector<Real> data_;
+    Vector<const Real> data_;
     this->GetData(data_, cnt_, data_name);
     SCTL_ASSERT(cnt_.Dim() == node_mid.Dim());
     BaseTree::scan(dsp, cnt_);
@@ -1814,8 +1824,8 @@ namespace sctl {
       SCTL_ASSERT(data_pt_name.find(data_name) != data_pt_name.end());
       std::string particle_name = data_pt_name.find(data_name)->second;
 
-      Vector<Real> pt_coord;
-      Vector<Real> pt_value;
+      Vector<const Real> pt_coord;
+      Vector<const Real> pt_value;
       Vector<Long> pt_cnt;
       Vector<Long> pt_dsp;
       Long value_dof = 0;
@@ -1849,8 +1859,8 @@ namespace sctl {
         if (!node_attr[i].Leaf) continue;
 
         for (Long j = 0; j < pt_cnt[i]; j++) {
-          ConstIterator<Real> pt_coord_ = pt_coord.begin() + (pt_dsp[i] + j) * DIM;
-          ConstIterator<Real> pt_value_ = (value_dof ? pt_value.begin() + (pt_dsp[i] + j) * value_dof : NullIterator<Real>());
+          ConstIterator<Real> pt_coord_ = (ConstIterator<Real>)pt_coord.begin() + (pt_dsp[i] + j) * DIM;
+          ConstIterator<Real> pt_value_ = (value_dof ? (ConstIterator<Real>)pt_value.begin() + (pt_dsp[i] + j) * value_dof : (ConstIterator<Real>)NullIterator<Real>());
 
           for (Integer k = 0; k < DIM; k++) coord.PushBack((VTKReal)pt_coord_[k]);
           for (Integer k = DIM; k < 3; k++) coord.PushBack(0);

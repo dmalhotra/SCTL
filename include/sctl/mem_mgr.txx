@@ -474,7 +474,7 @@ template <class ValueType> inline Iterator<ValueType> aligned_new(Long n_elem, c
   Iterator<ValueType> A = (Iterator<ValueType>)mem_mgr->malloc(n_elem, sizeof(ValueType), typeid(ValueType).hash_code());
   SCTL_ASSERT_MSG(A != NullIterator<ValueType>(), "memory allocation failed.");
 
-  if (!std::is_trivial<ValueType>::value) {  // Call constructors
+  if constexpr (!std::is_trivial<ValueType>::value) {  // Call constructors
     // printf("%s\n", __PRETTY_FUNCTION__);
     if (n_elem > SCTL_OMP_ALLOC_MIN) {
 #pragma omp parallel for schedule(static)
@@ -500,7 +500,7 @@ template <class ValueType> inline Iterator<ValueType> aligned_new(Long n_elem, c
 template <class ValueType> inline void aligned_delete(Iterator<ValueType> A, const MemoryManager* mem_mgr) {
   if (A == NullIterator<ValueType>()) return;
 
-  if (!std::is_trivial<ValueType>::value) {  // Call destructors
+  if constexpr (!std::is_trivial<ValueType>::value) {  // Call destructors
     // printf("%s\n", __PRETTY_FUNCTION__);
     MemoryManager::MemHead& mem_head = MemoryManager::GetMemHead((char*)&A[0]);
 #ifdef SCTL_MEMDEBUG
