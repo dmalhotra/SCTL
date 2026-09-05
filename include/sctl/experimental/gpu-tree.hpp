@@ -234,14 +234,28 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
    */
   void WriteTreeVTK(std::string fname, bool show_ghost = false) const;
 
+ protected:
+
+  /**
+   * The stored buffers themselves, for a derived class that has to rewrite a data set in place.
+   * `GetData` copies -- fine for a caller, wasteful for `PtTree::UpdateRefinement`, which would
+   * otherwise copy the payload out, again into a staging buffer, and a third time back in.
+   * `sctl::Tree` exposes the same seam as `GetData_`.
+   */
+  DevVec<char>& NodeData_(const std::string& name) { return node_data_.at(name); }
+  const DevVec<char>& NodeData_(const std::string& name) const { return node_data_.at(name); }
+  sctl::Vector<Long>& NodeCnt_(const std::string& name) { return node_cnt_.at(name); }
+
+  std::set<std::string> data_moved_by_derived_;  ///< payloads a derived class moves itself after a rebuild; UpdateRefinement skips them
+
+ private:
   /**
    * Build the global Morton-order linear tree from particle coordinates, distributed across the
    * ranks of `comm` (default `Comm::Self()` = single-rank build). Each rank returns a contiguous
    * slice; the concatenation over ranks equals the single-rank output. The np>1 path uses a
    * device-buffer sample sort (one Alltoallv; CUDA-aware MPI required for device vectors).
    *
-   * This is the stateless form: it keeps nothing, so it cannot carry node data across a rebuild.
-   * Use the stateful interface above for that.
+   * The build step of `UpdateRefinement`; the standalone form keeps nothing.
    *
    * @param[out] tree Full linear tree slice (sorted in `(code, depth)` lex order; root at index 0).
    * @param[in] coord AoS-packed coordinates of length `Nloc*DIM`, each in [0,1)^DIM.
@@ -267,21 +281,6 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
   template <template <class...> class DeviceVector>
   static void buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M = 1, const Comm& comm = Comm::Self(), bool balance21 = false, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1, Long* owned_range = nullptr, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index = nullptr, Morton<DIM>* partition = nullptr, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr = nullptr, detail::no_deduce_t<NodeLists<DeviceVector>>* node_lists = nullptr, detail::no_deduce_t<DeviceVector<Morton<DIM>>>* user_mid = nullptr, sctl::Vector<Long>* user_cnt = nullptr);
 
- protected:
-
-  /**
-   * The stored buffers themselves, for a derived class that has to rewrite a data set in place.
-   * `GetData` copies -- fine for a caller, wasteful for `PtTree::UpdateRefinement`, which would
-   * otherwise copy the payload out, again into a staging buffer, and a third time back in.
-   * `sctl::Tree` exposes the same seam as `GetData_`.
-   */
-  DevVec<char>& NodeData_(const std::string& name) { return node_data_.at(name); }
-  const DevVec<char>& NodeData_(const std::string& name) const { return node_data_.at(name); }
-  sctl::Vector<Long>& NodeCnt_(const std::string& name) { return node_cnt_.at(name); }
-
-  std::set<std::string> data_moved_by_derived_;  ///< payloads a derived class moves itself after a rebuild; UpdateRefinement skips them
-
- private:
   /**
    * Per-new-node `[range[i], range[i+1])` into `old_mid`, the old nodes each new node absorbs.
    * Searches wherever the nodes live, so on the device only `range` crosses the bus -- which is

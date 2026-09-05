@@ -1,7 +1,7 @@
 // Timing benchmark with sort/rest breakdown. Compares three linear-tree implementations:
 //   1. sctl::Tree<DIM>::UpdateRefinement                   (CPU, distributed-capable)
-//   2. gpu_tree::GPUTree<Real,DIM>::buildTree              (CPU std::vector)
-//   3. gpu_tree::GPUTree<Real,DIM>::buildTree              (GPU thrust::device_vector)
+//   2. gpu_tree::GPUTree<Real,DIM>::UpdateRefinement       (CPU std::vector)
+//   3. gpu_tree::GPUTree<Real,DIM>::UpdateRefinement       (GPU thrust::device_vector)
 //
 // For each: total time, isolated sort time (Morton-encode + sort on the same N codes), and
 // "rest" = total - sort.
@@ -66,6 +66,7 @@ template <class Fn> static double best_of_with_warmup(int nruns, Fn fn) {
 }
 
 int main(int argc, char** argv) {
+  sctl::Comm::MPI_Init(&argc, &argv);
   const GLong N      = (argc > 1) ? std::stoll(argv[1]) : 1'000'000;
   const GLong M      = (argc > 2) ? std::stoll(argv[2]) : 4;
   const int   nruns  = (argc > 3) ? std::stoi(argv[3])  : 3;
@@ -128,12 +129,12 @@ int main(int argc, char** argv) {
       return ms(t0, t1);
     });
     size_t sz = 0;
-    std::vector<GNode> tree;  // reused
+    GPUTree tr(sctl::Comm::Self());  // reused
     const double t_total = best_of_with_warmup(nruns, [&] {
       auto t0 = std::chrono::steady_clock::now();
-      GPUTree::buildTreeDist(tree, coord_std, M, sctl::Comm::Self());
+      tr.UpdateRefinement(coord_std, M);
       auto t1 = std::chrono::steady_clock::now();
-      sz = tree.size();
+      sz = tr.GetNodeMID().size();
       return ms(t0, t1);
     });
     rows.push_back({"gpu_tree::GPUTree (CPU std::vector)", t_total, t_sort, t_total - t_sort, sz});
@@ -160,14 +161,14 @@ int main(int argc, char** argv) {
       return ms(t0, t1);
     });
     size_t sz = 0;
-    thrust::device_vector<GNode> tree_d;  // reused
+    gpu_tree::GPUTree<Real, kDim, thrust::device_vector> tr(sctl::Comm::Self());  // reused
     const double t_total = best_of_with_warmup(nruns, [&] {
       cudaDeviceSynchronize();
       auto t0 = std::chrono::steady_clock::now();
-      GPUTree::buildTreeDist(tree_d, coord_d, M, sctl::Comm::Self());
+      tr.UpdateRefinement(coord_d, M);
       cudaDeviceSynchronize();
       auto t1 = std::chrono::steady_clock::now();
-      sz = tree_d.size();
+      sz = tr.GetNodeMID().size();
       return ms(t0, t1);
     });
     rows.push_back({"gpu_tree::GPUTree (GPU device_vector)", t_total, t_sort, t_total - t_sort, sz});
@@ -184,5 +185,6 @@ int main(int argc, char** argv) {
                 r.name, r.rest, r.sort, r.total, r.size);
   }
   std::printf("\n");
+  sctl::Comm::MPI_Finalize();
   return 0;
 }

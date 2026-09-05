@@ -88,6 +88,7 @@ static std::vector<GNode> compute_gpu_anchors(const std::vector<Real>& coord, GL
 }
 
 int main(int argc, char** argv) {
+  sctl::Comm::MPI_Init(&argc, &argv);
   const GLong N = (argc > 1) ? std::stoll(argv[1]) : 100'000;
   const GLong M = (argc > 2) ? std::stoll(argv[2]) : 4;
 
@@ -103,7 +104,7 @@ int main(int argc, char** argv) {
 
   // GPU tree: full linear tree on CPU container path.
   std::vector<GNode> gpu_tree;
-  GPUTree::buildTreeDist(gpu_tree, coord_std, M, sctl::Comm::Self());
+  { GPUTree tr(sctl::Comm::Self()); tr.UpdateRefinement(coord_std, M); gpu_tree = tr.GetNodeMID(); }
   std::printf("gpu_tree::GPUTree    size=%zu\n", gpu_tree.size());
 
   // SCTL tree.
@@ -250,5 +251,6 @@ int main(int argc, char** argv) {
   }
 
   std::printf("\nDone (comparison-only test; structural differences are expected).\n");
+  sctl::Comm::MPI_Finalize();
   return 0;
 }

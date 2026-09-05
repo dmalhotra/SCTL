@@ -1,5 +1,5 @@
-// GPUTree's optional outputs against sctl::Tree: the partition boundaries (GetPartitionMID) and the
-// per-node Leaf/Ghost flags (GetNodeAttr). Single rank, so the comparison is node-for-node.
+// GPUTree against sctl::Tree: the partition boundaries (GetPartitionMID), the per-node Leaf/Ghost
+// flags (GetNodeAttr) and the node lists (GetNodeLists). Single rank, so the comparison is node-for-node.
 #include <cstdio>
 #include <random>
 #include <vector>
@@ -11,7 +11,7 @@
 
 using Real = double;
 static constexpr sctl::Integer kDim = 3;
-using GT = gpu_tree::GPUTree<Real, kDim>;
+using GT = gpu_tree::GPUTree<Real, kDim, thrust::device_vector>;
 using GNode = sctl::Morton<kDim>;
 
 int main(int argc, char** argv) {
@@ -30,15 +30,13 @@ int main(int argc, char** argv) {
     for (auto per : {static_cast<sctl::Periodicity>(m)})
     for (int b21 = 0; b21 <= 1; b21++) {
       thrust::device_vector<Real> cd(x.begin(), x.end());
-      thrust::device_vector<GNode> tree;
-      thrust::device_vector<GT::NodeAttr> attr_d;
-      GT::NodeLists<thrust::device_vector> lst_d;
-      GNode part[1];
-      sctl::Long owned[2] = {0, 0};
-      GT::buildTreeDist(tree, cd, M, comm, b21, per, -1, owned, nullptr, part, &attr_d, &lst_d);
-      thrust::host_vector<GT::NodeAttr> attr(attr_d);
+      GT tr(comm);
+      tr.UpdateRefinement(cd, M, b21, per, -1);
+      const auto& lst_d = tr.GetNodeLists();
+      const auto& part = tr.GetPartitionMID();
+      thrust::host_vector<GT::NodeAttr> attr(tr.GetNodeAttr());
       thrust::host_vector<sctl::Long> lpar(lst_d.parent), lch(lst_d.child), lnbr(lst_d.nbr);
-      thrust::host_vector<GNode> mid(tree);
+      thrust::host_vector<GNode> mid(tr.GetNodeMID());
 
       sctl::Vector<Real> xs(N * kDim);
       for (sctl::Long i = 0; i < N * kDim; i++) xs[i] = x[i];
@@ -61,7 +59,7 @@ int main(int argc, char** argv) {
       }
       char mask_name[4] = {'-', '-', '-', 0};
       for (sctl::Integer d = 0; d < kDim; d++) if (sctl::is_periodic(per, d)) mask_name[d] = "xyz"[d];
-      const bool bad_part = !(spart.Dim() == 1) || (part[0] < spart[0]) || (spart[0] < part[0]);
+      const bool bad_part = !(spart.Dim() == 1 && part.Dim() == 1) || (part[0] < spart[0]) || (spart[0] < part[0]);
       printf("b21=%d per=%s nodes=%zu/%ld  leaf=%d ghost=%d p2n=%d parent=%d child=%d nbr=%d partition_%s\n",
              b21, mask_name, mid.size(), (long)smid.Dim(), bad_leaf, bad_ghost, bad_p2n, bad_par, bad_ch, bad_nbr,
              bad_part ? "MISMATCH" : "ok");

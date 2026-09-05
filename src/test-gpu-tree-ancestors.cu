@@ -1,8 +1,8 @@
 // Verifies Morton::CommonAncestor, Morton::Ancestor, NodeMID::Next, and the
-// leaf-derivation step of GPUTree::buildTree.
+// leaf-derivation step of GPUTree::UpdateRefinement.
 //
 // 1) Spot-check CommonAncestor and Next on hand-picked inputs.
-// 2) Call buildTree on random coords for both CPU and GPU paths, and check:
+// 2) Build the tree from random coords for both CPU and GPU paths, and check:
 //      - depth never exceeds MAX_DEPTH
 //      - no two consecutive entries are exactly equal (post-unique)
 //      - the (code, depth) sequence is non-decreasing lex (the property
@@ -37,6 +37,7 @@ static int failures = 0;
 #define CHECK(cond) do { if (!(cond)) { std::printf("  FAIL @%d: %s\n", __LINE__, #cond); ++failures; } } while (0)
 
 int main(int argc, char** argv) {
+  sctl::Comm::MPI_Init(&argc, &argv);
   const Long N = (argc > 1) ? std::stoll(argv[1]) : 100'000;
   const Long M = (argc > 2) ? std::stoll(argv[2]) : 4;
 
@@ -81,7 +82,7 @@ int main(int argc, char** argv) {
   std::printf("CPU path:\n");
   std::vector<NodeMID> leaves_cpu;
   {
-    GPUTree::buildTreeDist(leaves_cpu, coord, M, sctl::Comm::Self());
+    { GPUTree tr(sctl::Comm::Self()); tr.UpdateRefinement(coord, M); leaves_cpu = tr.GetNodeMID(); }
 
     for (const NodeMID& a : leaves_cpu) CHECK(a.depth <= gpu_tree::MAX_DEPTH);
 
@@ -114,7 +115,9 @@ int main(int argc, char** argv) {
   thrust::device_vector<NodeMID> leaves_gpu_d;
   {
     thrust::device_vector<Real> coord_d(coord.begin(), coord.end());
-    GPUTree::buildTreeDist(leaves_gpu_d, coord_d, M, sctl::Comm::Self());
+    gpu_tree::GPUTree<Real, kDim, thrust::device_vector> tr(sctl::Comm::Self());
+    tr.UpdateRefinement(coord_d, M);
+    leaves_gpu_d = tr.GetNodeMID();
   }
   thrust::host_vector<NodeMID> leaves_gpu(leaves_gpu_d.begin(), leaves_gpu_d.end());
 
@@ -126,5 +129,6 @@ int main(int argc, char** argv) {
   std::printf("  %zu leaf nodes from GPU path\n", leaves_gpu.size());
 
   std::printf("\n%s (%d check(s) failed)\n", failures == 0 ? "PASS" : "FAIL", failures);
+  sctl::Comm::MPI_Finalize();
   return failures == 0 ? 0 : 1;
 }

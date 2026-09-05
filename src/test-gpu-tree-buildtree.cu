@@ -1,9 +1,9 @@
-// Verifies GPUTree::buildTree compile-time dispatch:
+// Verifies the backend dispatch of GPUTree and PtTree:
 //   thrust::device_vector  -> GPU path (thrust)
 //   std::vector            -> CPU path (omp_par, chunked walk)
-// Runs each path on N random particles, with and without sort_scatter_index, and checks the
-// output leaf node sequence is sorted in (code, depth) lex order and the scatter index (when
-// requested) is a permutation of [0..N).
+// Runs each path on N random particles and checks that the node sequence is sorted in (code, depth)
+// lex order and that AddParticles + GetParticleData round-trips the particle order, which is the
+// sort's permutation.
 
 #include <algorithm>
 #include <chrono>
@@ -44,6 +44,7 @@ static bool leaves_sorted(const std::vector<NodeMID>& v) {
 }
 
 int main(int argc, char** argv) {
+  sctl::Comm::MPI_Init(&argc, &argv);
   Long N = (argc > 1) ? std::stoll(argv[1]) : 1'000'000;
   const Long M = 4;
 
@@ -54,53 +55,51 @@ int main(int argc, char** argv) {
 
   // --- CPU path ---------------------------------------------------------
   {
-    std::vector<Real>    coord = coord_h;
-    std::vector<NodeMID> tree;
-    std::vector<Long>    idx;
+    std::vector<Real> coord = coord_h;
+    GPUTree tr(sctl::Comm::Self());
+    gpu_tree::PtTree<Real, kDim, std::vector> pt(sctl::Comm::Self());
 
     auto t0 = std::chrono::steady_clock::now();
-    GPUTree::buildTreeDist(tree, coord, M, sctl::Comm::Self());
+    tr.UpdateRefinement(coord, M);
     auto t1 = std::chrono::steady_clock::now();
-    GPUTree::buildTreeDist(tree, coord, M, sctl::Comm::Self(), false, sctl::Periodicity::NONE, -1, nullptr, &idx);
+    pt.UpdateRefinement(coord, M);
+    pt.AddParticles("pt", coord);
+    std::vector<Real> back;
+    pt.GetParticleData(back, "pt");
     auto t2 = std::chrono::steady_clock::now();
 
-    bool sorted_ok = leaves_sorted(tree);
-    bool idx_ok    = (idx.size() == (size_t)N);
-    if (idx_ok) {
-      std::vector<int> seen(N, 0);
-      for (Long v : idx) if (v < 0 || v >= N || seen[v]++) { idx_ok = false; break; }
-    }
-    std::printf("CPU (std::vector):  buildTree(tree)     %.2f ms  sorted=%s\n", ms(t0, t1), sorted_ok ? "ok" : "FAIL");
-    std::printf("CPU (std::vector):  buildTree(tree+idx) %.2f ms  idx=%s\n",    ms(t1, t2), idx_ok    ? "ok" : "FAIL");
+    const bool sorted_ok = leaves_sorted(tr.GetNodeMID());
+    const bool perm_ok = (back == coord);
+    std::printf("CPU (std::vector):  UpdateRefinement          %.2f ms  sorted=%s\n", ms(t0, t1), sorted_ok ? "ok" : "FAIL");
+    std::printf("CPU (std::vector):  AddParticles + round trip %.2f ms  permutation=%s\n", ms(t1, t2), perm_ok ? "ok" : "FAIL");
   }
 
   // --- GPU path ---------------------------------------------------------
   {
-    thrust::device_vector<Real>    coord(coord_h.begin(), coord_h.end());
-    thrust::device_vector<NodeMID> tree;
-    thrust::device_vector<Long>    idx;
+    thrust::device_vector<Real> coord(coord_h.begin(), coord_h.end());
+    gpu_tree::GPUTree<Real, kDim, thrust::device_vector> tr(sctl::Comm::Self());
+    gpu_tree::PtTree<Real, kDim, thrust::device_vector> pt(sctl::Comm::Self());
 
     cudaDeviceSynchronize();
     auto t0 = std::chrono::steady_clock::now();
-    GPUTree::buildTreeDist(tree, coord, M, sctl::Comm::Self());
+    tr.UpdateRefinement(coord, M);
     cudaDeviceSynchronize();
     auto t1 = std::chrono::steady_clock::now();
-    GPUTree::buildTreeDist(tree, coord, M, sctl::Comm::Self(), false, sctl::Periodicity::NONE, -1, nullptr, &idx);
+    pt.UpdateRefinement(coord, M);
+    pt.AddParticles("pt", coord);
+    thrust::device_vector<Real> back;
+    pt.GetParticleData(back, "pt");
     cudaDeviceSynchronize();
     auto t2 = std::chrono::steady_clock::now();
 
-    std::vector<NodeMID> tree_h(tree.size());
-    thrust::copy(tree.begin(), tree.end(), tree_h.begin());
-    thrust::host_vector<Long> idx_h = idx;
-    bool sorted_ok = leaves_sorted(tree_h);
-    bool idx_ok    = (idx_h.size() == (size_t)N);
-    if (idx_ok) {
-      std::vector<int> seen(N, 0);
-      for (Long v : idx_h) if (v < 0 || v >= N || seen[v]++) { idx_ok = false; break; }
-    }
-    std::printf("GPU (device_vector): buildTree(tree)     %.2f ms  sorted=%s\n", ms(t0, t1), sorted_ok ? "ok" : "FAIL");
-    std::printf("GPU (device_vector): buildTree(tree+idx) %.2f ms  idx=%s\n",    ms(t1, t2), idx_ok    ? "ok" : "FAIL");
+    std::vector<NodeMID> tree_h(tr.GetNodeMID().size());
+    thrust::copy(tr.GetNodeMID().begin(), tr.GetNodeMID().end(), tree_h.begin());
+    const bool sorted_ok = leaves_sorted(tree_h);
+    const bool perm_ok = (back.size() == coord.size()) && thrust::equal(back.begin(), back.end(), coord.begin());
+    std::printf("GPU (device_vector): UpdateRefinement          %.2f ms  sorted=%s\n", ms(t0, t1), sorted_ok ? "ok" : "FAIL");
+    std::printf("GPU (device_vector): AddParticles + round trip %.2f ms  permutation=%s\n", ms(t1, t2), perm_ok ? "ok" : "FAIL");
   }
 
+  sctl::Comm::MPI_Finalize();
   return 0;
 }
