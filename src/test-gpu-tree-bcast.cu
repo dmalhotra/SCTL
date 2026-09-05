@@ -64,8 +64,8 @@ int main(int argc, char** argv) {
       if (mode) { gt.ReduceBroadcast<Real>(nm); st.ReduceBroadcast<Real>(nm); }
       else      { gt.Broadcast<Real>(nm);       st.Broadcast<Real>(nm); }
 
-      gpu_tree::DeviceVector<Real> gd; sctl::Vector<long> gc; gt.GetData(gd, gc, nm);
-      thrust::host_vector<Real> gh(gd);
+      gpu_tree::DataView<const Real, gpu_tree::DeviceVector> gd; sctl::Vector<long> gc; gt.GetData(gd, gc, nm);
+      thrust::host_vector<Real> gh(gd.begin(), gd.end());
       sctl::Vector<Real> sd; sctl::Vector<long> sc; st.GetData(sd, sc, nm);
       thrust::host_vector<GNode> gm(gt.GetNodeMID());
 

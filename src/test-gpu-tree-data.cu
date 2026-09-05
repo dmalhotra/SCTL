@@ -85,11 +85,11 @@ int main(int argc, char** argv) {
       }
 
       if (step) { // what the previous step's data became, compared globally
-        gpu_tree::DeviceVector<Real> gd; sctl::Vector<long> gc;
+        gpu_tree::DataView<const Real, gpu_tree::DeviceVector> gd; sctl::Vector<long> gc;
         sctl::Vector<Real> sd; sctl::Vector<long> sc;
         gt.GetData(gd, gc, "f");
         st.GetData(sd, sc, "f");
-        thrust::host_vector<Real> gh(gd);
+        thrust::host_vector<Real> gh(gd.begin(), gd.end());
 
         sctl::Vector<long> gco(ge - gb), sco(se - sb);
         for (sctl::Long i = 0; i < ge - gb; i++) gco[i] = gc[gb + i];

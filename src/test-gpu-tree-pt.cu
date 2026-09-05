@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
         sctl::Vector<long> gc, sc; gpu_tree::DeviceVector<Real> gd; sctl::Vector<Real> sd;
         gt.GetParticleData(gd, "pt");  // forces the group to exist
         long gsum = 0, ssum = 0, g = 0, s2 = 0;
-        { gpu_tree::DeviceVector<Real> tmp; sctl::Vector<long> c;
+        { gpu_tree::DataView<const Real, gpu_tree::DeviceVector> tmp; sctl::Vector<long> c;
           gt.GetData(tmp, c, "pt"); for (sctl::Long i=0;i<c.Dim();i++) g += c[i]; }
         { sctl::Vector<Real> tmp; sctl::Vector<long> c;
           st.GetData(tmp, c, "pt"); for (sctl::Long i=0;i<c.Dim();i++) s2 += c[i]; }

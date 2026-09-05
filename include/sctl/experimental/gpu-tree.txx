@@ -1904,15 +1904,24 @@ void GPUTree<Real, DIM, DevVec>::AddData(const std::string& name, Long dof, cons
 
 template <class Real, Integer DIM, template <class...> class DevVec>
 template <class ValueType>
-void GPUTree<Real, DIM, DevVec>::GetData(DevVec<ValueType>& data, sctl::Vector<Long>& cnt, const std::string& name) const {
+void GPUTree<Real, DIM, DevVec>::GetData(View<ValueType>& data, sctl::Vector<Long>& cnt, const std::string& name) {
   const auto d = node_data_.find(name);
   const auto c = node_cnt_.find(name);
   SCTL_ASSERT_MSG(d != node_data_.end() && c != node_cnt_.end(), "GPUTree::GetData: unknown name.");
   SCTL_ASSERT(d->second.size() % sizeof(ValueType) == 0);
-  data.resize((Long)d->second.size() / (Long)sizeof(ValueType));
-  thrust::copy(d->second.begin(), d->second.end(),
-               thrust::device_pointer_cast((char*)thrust::raw_pointer_cast(data.data())));
-  cnt = c->second;
+  data = View<ValueType>{(ValueType*)thrust::raw_pointer_cast(d->second.data()), (Long)d->second.size() / (Long)sizeof(ValueType)};
+  cnt.ReInit(c->second.Dim(), c->second.begin(), false);
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec>
+template <class ValueType>
+void GPUTree<Real, DIM, DevVec>::GetData(View<const ValueType>& data, sctl::Vector<Long>& cnt, const std::string& name) const {
+  const auto d = node_data_.find(name);
+  const auto c = node_cnt_.find(name);
+  SCTL_ASSERT_MSG(d != node_data_.end() && c != node_cnt_.end(), "GPUTree::GetData: unknown name.");
+  SCTL_ASSERT(d->second.size() % sizeof(ValueType) == 0);
+  data = View<const ValueType>{(const ValueType*)thrust::raw_pointer_cast(d->second.data()), (Long)d->second.size() / (Long)sizeof(ValueType)};
+  cnt.ReInit(c->second.Dim(), (sctl::Iterator<Long>)c->second.begin(), false);
 }
 
 
@@ -2333,10 +2342,10 @@ void PtTree<Real, DIM, DevVec, BaseTree>::WriteParticleVTK(std::string fname, st
   const std::string& particle_name = it->second;
 
   sctl::Vector<Long> pt_cnt, val_cnt;
-  DevVec<Real> pt_d, val_d;
+  DataView<const Real, DevVec> pt_d, val_d;
   this->GetData(pt_d, pt_cnt, particle_name);
   this->GetData(val_d, val_cnt, data_name);
-  sctl::Vector<Real> pt((Long)pt_d.size()), val((Long)val_d.size());
+  sctl::Vector<Real> pt(pt_d.size()), val(val_d.size());
   thrust::copy(pt_d.begin(), pt_d.end(), pt.begin());
   thrust::copy(val_d.begin(), val_d.end(), val.begin());
 

@@ -20,6 +20,7 @@
 #include "sctl/comm.hpp"    // Comm::Self() default, and the partition helpers the data layer uses
 #include "sctl/vector.hpp"  // per-node counts stay host-side, as in sctl::Tree
 #include "sctl/experimental/sort-scatter.hpp"
+#include "sctl/experimental/device_scratch.hpp"  // is_device_vector_v, for DataView's iterator
 
 namespace gpu_tree {
 
@@ -65,6 +66,21 @@ using sctl::Comm;
 using sctl::Morton;
 using sctl::MortonCode;
 using sctl::MAX_DEPTH;
+
+/**
+ * Non-owning view of a data set's storage: `n` values at `ptr`, in node order, with the iterator
+ * thrust dispatches on for the backend. Valid until the set is reallocated (`UpdateRefinement`,
+ * `DeleteData`); the analogue of the view `sctl::Tree::GetData` returns.
+ */
+template <class T, template <class...> class DevVec> struct DataView {
+  using iterator = std::conditional_t<detail::is_device_vector_v<DevVec<char>>, thrust::device_ptr<T>, T*>;
+  T* ptr = nullptr;
+  Long n = 0;
+  T* data() const { return ptr; }
+  Long size() const { return n; }
+  iterator begin() const { return iterator(ptr); }
+  iterator end() const { return iterator(ptr) + n; }
+};
 
 template <class Real, Integer DIM, template <class...> class DevVec> class GPUTree;
 
@@ -189,30 +205,34 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
    *
    * @note Collective; must be called from all processes.
    *
-   * @warning Storage is type-erased. `GetData<U>` for this `name` only
+   * @warning Storage is type-erased. `GetData` with a `View<U>` for this `name` only
    * round-trips when `U` matches the `ValueType` used here.
    */
   template <class ValueType> void AddData(const std::string& name, const DevVec<ValueType>& data, const sctl::Vector<Long>& cnt);
 
   /**
-   * Add named data without values: `cnt[i] * dof` unwritten elements for node i. Local, no
-   * communication. Filling it in place needs a non-copying accessor, which `GetData` is not yet.
+   * Add named data without values: `cnt[i] * dof` unwritten elements for node i, to be filled in
+   * place through the view `GetData` fills. Local, no communication.
    */
   template <class ValueType> void AddData(const std::string& name, Long dof, const sctl::Vector<Long>& cnt);
 
+  /** Non-owning view of a data set's storage on this backend; see `DataView`. */
+  template <class T> using View = DataView<T, DevVec>;
+
   /**
-   * Get node data.
+   * Get node data as views of the stored buffers, as `sctl::Tree::GetData` does: `data` over the
+   * payload, `cnt` over the per-node counts. Neither owns; both are valid until the set is
+   * reallocated (`UpdateRefinement`, `DeleteData`). A const tree yields a const view.
    *
-   * @param[out] data Copy of the stored data for this name. Unlike `sctl::Tree::GetData`, which
-   * returns a non-owning view, this copies: the payload lives in a device vector the tree owns and
-   * resizes on every refinement.
-   * @param[out] cnt Number of data elements per node (length = number of tree nodes).
+   * @param[out] data View of the stored data for this name.
+   * @param[out] cnt View of the number of data items per node (length = number of tree nodes); not to be modified.
    * @param[in] name Name of the data.
    *
    * @warning `ValueType` must match the type used in the corresponding
    * `AddData`; otherwise the bytes are silently reinterpreted.
    */
-  template <class ValueType> void GetData(DevVec<ValueType>& data, sctl::Vector<Long>& cnt, const std::string& name) const;
+  template <class ValueType> void GetData(View<ValueType>& data, sctl::Vector<Long>& cnt, const std::string& name);
+  template <class ValueType> void GetData(View<const ValueType>& data, sctl::Vector<Long>& cnt, const std::string& name) const;
 
   /**
    * Delete data from the tree nodes.
@@ -255,10 +275,9 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
  protected:
 
   /**
-   * The stored buffers themselves, for a derived class that has to rewrite a data set in place.
-   * `GetData` copies -- fine for a caller, wasteful for `PtTree::UpdateRefinement`, which would
-   * otherwise copy the payload out, again into a staging buffer, and a third time back in.
-   * `sctl::Tree` exposes the same seam as `GetData_`.
+   * The stored buffers themselves, for a derived class that has to reallocate a data set in place
+   * (`PtTree::UpdateRefinement` swaps in the re-cut payload), which the view from `GetData` cannot
+   * do. `sctl::Tree` exposes the same seam as `GetData_`.
    */
   DevVec<char>& NodeData_(const std::string& name) { return node_data_.at(name); }
   const DevVec<char>& NodeData_(const std::string& name) const { return node_data_.at(name); }
@@ -382,8 +401,8 @@ class PtTree : public BaseTree {
 
   /**
    * Add particle data without values: `dof` unwritten values per particle of `particle_name`, in
-   * the group's tree order, which `GetParticleData` maps back to the caller's. Local, no
-   * communication.
+   * the group's tree order, to be filled in place through the view `GetData` fills;
+   * `GetParticleData` maps that order back to the caller's. Local, no communication.
    */
   void AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof);
 
