@@ -1541,7 +1541,7 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
   // sort_scatter_index[i] = global pre-sort index of the particle at owned sorted position i,
   // carried through both redistributions below. Global, so concatenated over ranks it is a
   // permutation of [0, Nglob) matching the single-rank order.
-  DevVec<Long> idx; // TODO: is scatter index handled efficiently?
+  DevVec<Long> idx;
   // Double-buffered: `pt_mid` is replaced three times below (sort, repartition, halo). Swapping with
   // a second retained buffer recycles the storage instead of freeing it and taking a fresh block.
   DevVec<MortonT>& pt_mid = detail::PersistentBuffer<MortonT, DevVec, detail::Buf::PtMid>();

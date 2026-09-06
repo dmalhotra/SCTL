@@ -63,8 +63,11 @@ template <Integer DIM> class MortonCode {
    */
   SCTL_GPU_HD std::uint64_t GetIntKey() const;
 
-  /** True when `GetIntKey()` orders codes completely rather than only bucketing them. */
-  static constexpr bool IntKeyIsExact = (DIM * MAX_DEPTH <= 64);
+  /**
+   * True when `GetIntKey()` orders codes completely rather than only bucketing them: the code fits
+   * one word, counting the extra level the storage keeps for the past-end sentinel.
+   */
+  static constexpr bool IntKeyIsExact = (DIM * (MAX_DEPTH + 1) <= 64);
 
   /** Inverse of `GetIntKey()`. Only meaningful when `IntKeyIsExact`. */
   static SCTL_GPU_HD MortonCode FromIntKey(std::uint64_t key);
