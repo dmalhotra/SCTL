@@ -13,52 +13,14 @@
 #include <set>
 #include <string>
 #include <vector>
-#include <thrust/device_allocator.h>
-#include <thrust/device_vector.h>
 
 #include "sctl/morton.hpp"
 #include "sctl/comm.hpp"    // Comm::Self() default, and the partition helpers the data layer uses
 #include "sctl/vector.hpp"  // per-node counts stay host-side, as in sctl::Tree
+#include "sctl/experimental/gpu-vector.hpp"  // HostVector, DeviceVector, DataView
 #include "sctl/experimental/sort-scatter.hpp"
-#include "sctl/experimental/device_scratch.hpp"  // is_device_vector_v, for DataView's iterator
 
 namespace gpu_tree {
-
-/**
- * `std::vector` that leaves new elements uninitialized on resize, for the host backend.
- * `std::vector<char>::resize` value-initializes, and at 100M particles that is ~290 ms of memset
- * per payload buffer that the forward scatter then overwrites in full -- three such fills per pipeline.
- * `sctl::Vector` skips construction of trivial types for the same reason. A class rather than an
- * alias, because an alias template cannot be deduced as the tree's container template parameter.
- */
-namespace detail {
-template <class T> struct DefaultInitAllocator : std::allocator<T> {
-  template <class U> struct rebind { using other = DefaultInitAllocator<U>; };
-  template <class U> void construct(U* p) noexcept(std::is_nothrow_default_constructible<U>::value) { ::new (static_cast<void*>(p)) U; }
-  template <class U, class... A> void construct(U* p, A&&... a) { ::new (static_cast<void*>(p)) U(std::forward<A>(a)...); }
-};
-}  // namespace detail
-template <class T> class HostVector : public std::vector<T, detail::DefaultInitAllocator<T>> {
- public:
-  using std::vector<T, detail::DefaultInitAllocator<T>>::vector;
-};
-
-/**
- * The device counterpart: `thrust::device_vector` with a no-op element construction (thrust's
- * uninitialized_vector idiom). thrust still walks the new elements on resize, so for byte storage
- * this saves little over the zero fill it replaces, for 8-byte elements about 8x.
- */
-namespace detail {
-template <class T> struct DeviceUninitAllocator : thrust::device_allocator<T> {
-  template <class U> struct rebind { using other = DeviceUninitAllocator<U>; };
-  SCTL_GPU_HD void construct(T*) {}
-};
-}  // namespace detail
-template <class T> class DeviceVector : public thrust::device_vector<T, detail::DeviceUninitAllocator<T>> {
- public:
-  using thrust::device_vector<T, detail::DeviceUninitAllocator<T>>::device_vector;
-};
-
 
 using sctl::Integer;
 using sctl::Long;
@@ -67,46 +29,18 @@ using sctl::Morton;
 using sctl::MortonCode;
 using sctl::MAX_DEPTH;
 
-/**
- * Non-owning view of a data set's storage: `n` values at `ptr`, in node order, with the iterator
- * thrust dispatches on for the backend. Valid until the set is reallocated (`UpdateRefinement`,
- * `DeleteData`); the analogue of the view `sctl::Tree::GetData` returns.
- */
-template <class T, template <class...> class DevVec> struct DataView {
-  using iterator = std::conditional_t<detail::is_device_vector_v<DevVec<char>>, thrust::device_ptr<T>, T*>;
-  T* ptr = nullptr;
-  Long n = 0;
-  T* data() const { return ptr; }
-  Long size() const { return n; }
-  iterator begin() const { return iterator(ptr); }
-  iterator end() const { return iterator(ptr) + n; }
-};
-
 template <class Real, Integer DIM, template <class...> class DevVec> class GPUTree;
 
-namespace detail {
-// Blocks template deduction: the optional out-params below must not take part in deducing
-// `DeviceVector` -- `tree` and `coord` already fix it -- or passing `nullptr` for one of them
-// fails the whole call.
-template <class T> struct no_deduce { using type = T; };
-template <class T> using no_deduce_t = typename no_deduce<T>::type;
-}  // namespace detail
-
 /**
- * Class template representing a Morton-order linear tree, built on the device.
- *
- * The node set is the same as `sctl::Tree`'s for the same inputs. Two ways to use it: the stateful
- * interface below mirrors `sctl::Tree` -- the object retains the tree, the partition and any named
- * per-node data, and `UpdateRefinement` carries that data onto the new nodes -- while the static
- * `buildTreeDist` builds a tree into caller-owned vectors and keeps no state. As in `sctl::Tree`,
- * `UpdateRefinement` is a full rebuild; the retained tree serves only to remap the data.
+ * Morton-order linear tree on a thrust backend, with the node set of `sctl::Tree` for the same
+ * inputs. The object retains the tree, the partition and any named per-node data;
+ * `UpdateRefinement` is a full rebuild, as in `sctl::Tree`, that remaps the data onto the new nodes.
  *
  * @tparam Real Data type for the particle coordinates.
  * @tparam DIM Number of spatial dimensions.
- * @tparam DevVec Vector template holding the retained state (`HostVector` or `DeviceVector`). Only
- * the stateful interface uses it; `buildTreeDist` deduces its own from its arguments.
+ * @tparam DevVec Container template for the tree and its data: `HostVector` or `DeviceVector`.
  */
-template <class Real, Integer DIM, template <class...> class DevVec = std::vector> class GPUTree {
+template <class Real, Integer DIM, template <class...> class DevVec = HostVector> class GPUTree {
   static_assert(DIM > 0, "GPUTree: DIM must be positive");
 
  public:
@@ -120,19 +54,15 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
   };
 
   /**
-   * Structure for storing lists of nodes (children, parent, neighbors).
-   *
-   * One array per kind rather than an array of structs: that is how the build produces them and how
-   * a GPU consumer reads them -- a thread per node touching one field gives coalesced access either
-   * way, and no copy into a packed struct is needed. This is the one place the interface
-   * deliberately departs from `sctl::Tree`. Indices are into the node list; `-1` means the node is
-   * not in the tree (no parent at the root, no children at a leaf, no same-level neighbor across a
-   * domain face or where the tree is coarser). `p2n` is not stored: it is `GetNodeMID()[i].Path2Node()`.
+   * Node lists, one array per kind (structure of arrays, unlike `sctl::Tree`): how the build
+   * produces them and how a kernel reads them. Indices are into the node list; `-1` means absent
+   * (no parent at the root, no children at a leaf, no same-level neighbor across a domain face or
+   * where the tree is coarser). `p2n` is `GetNodeMID()[i].Path2Node()`.
    */
-  template <template <class...> class DeviceVector> struct NodeLists {
-    DeviceVector<Long> parent;  ///< `N`: index of the parent
-    DeviceVector<Long> child;   ///< `N * 2^DIM`, row-major: indices of the children
-    DeviceVector<Long> nbr;     ///< `N * 3^DIM`, row-major: indices of the same-level neighbors
+  template <template <class...> class Vec> struct NodeLists {
+    Vec<Long> parent;  ///< `N`: index of the parent
+    Vec<Long> child;   ///< `N * 2^DIM`, row-major: indices of the children
+    Vec<Long> nbr;     ///< `N * 3^DIM`, row-major: indices of the same-level neighbors
   };
 
   /**
@@ -286,37 +216,16 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
   std::set<std::string> data_moved_by_derived_;  ///< payloads a derived class moves itself after a rebuild; UpdateRefinement skips them
 
  private:
+
   /**
-   * Build the global Morton-order linear tree from particle coordinates, distributed across the
-   * ranks of `comm` (default `Comm::Self()` = single-rank build). Each rank returns a contiguous
-   * slice; the concatenation over ranks equals the single-rank output. The np>1 path uses a
-   * device-buffer sample sort (one Alltoallv; CUDA-aware MPI required for device vectors).
-   *
-   * The build step of `UpdateRefinement`; the standalone form keeps nothing.
-   *
-   * @param[out] tree Full linear tree slice (sorted in `(code, depth)` lex order; root at index 0).
-   * @param[in] coord AoS-packed coordinates of length `Nloc*DIM`, each in [0,1)^DIM.
-   * @param[in] M Maximum number of particles per leaf box.
-   * @param[in] comm Communicator to distribute the build across.
-   * @param[in] balance21 Apply 2:1 balance refinement.
-   * @param[in] periodicity Axes on which the domain wraps; neighbors cross those faces.
-   * @param[in] halo_size Ghost-layer width; <0 adds no neighbor nodes. Either way the returned
-   *            list is a full-domain complete tree on every rank (coarse outside the halo), so use
-   *            `owned_range` to recover this rank's own nodes.
-   * @param[out] owned_range Optional: this rank's [begin,end) slice within the returned tree.
-   * @param[out] sort_scatter_index Optional: for the particle at this rank's sorted position `i`,
-   *             its index in the global (rank-concatenated) input order; over all ranks these form
-   *             a permutation of [0, Nglob). Pass `nullptr` to discard.
-   * @param[out] partition Optional: `comm.Size()` entries, the first node owned by each rank, so a
-   *             caller can route its own data the same way the build did. Caller-allocated.
-   * @param[out] node_attr Optional: per-node `Leaf`/`Ghost` flags, one per entry of `tree`.
-   * @param[out] node_lists Optional: per-node parent/child/neighbor indices. Roughly 288 bytes per
-   *             node and a third of the build's time, so it is produced only when asked for.
-   *
-   * @note This is a collective operation and must be called from all processes in the communicator.
+   * The build step of `UpdateRefinement`, into caller-owned vectors: `tree` is this rank's full
+   * linear tree slice (`(code, depth)` order, complete over the domain, coarse outside the halo),
+   * `owned_range` its own [begin,end) within it, `partition` the first node of each rank (np
+   * entries, caller-allocated), `node_attr` the Leaf/Ghost flags, `node_lists` the connectivity,
+   * `user_mid`/`user_cnt` the halo send list and its per-rank counts, `sort_scatter_index` the
+   * sorted particles' indices in the global input order. Each output pointer may be null. Collective.
    */
-  template <template <class...> class DeviceVector>
-  static void buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M = 1, const Comm& comm = Comm::Self(), bool balance21 = false, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1, Long* owned_range = nullptr, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index = nullptr, Morton<DIM>* partition = nullptr, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr = nullptr, detail::no_deduce_t<NodeLists<DeviceVector>>* node_lists = nullptr, detail::no_deduce_t<DeviceVector<Morton<DIM>>>* user_mid = nullptr, sctl::Vector<Long>* user_cnt = nullptr);
+  static void buildTreeDist(DevVec<Morton<DIM>>& tree, const DevVec<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, DevVec<Long>* sort_scatter_index, Morton<DIM>* partition, DevVec<NodeAttr>* node_attr, NodeLists<DevVec>* node_lists, DevVec<Morton<DIM>>* user_mid, sctl::Vector<Long>* user_cnt);
 
   /**
    * Per-new-node `[range[i], range[i+1])` into `old_mid`, the old nodes each new node absorbs.
@@ -349,10 +258,10 @@ template <class Real, Integer DIM, template <class...> class DevVec = std::vecto
  *
  * @tparam Real Data type for the coordinates and values of points.
  * @tparam DIM Dimensionality of the point tree.
- * @tparam DevVec Vector template holding the retained state (`HostVector` or `DeviceVector`).
+ * @tparam DevVec Container template for the tree and its data: `HostVector` or `DeviceVector`.
  * @tparam BaseTree Base class for the point tree. Defaults to GPUTree<Real,DIM,DevVec>.
  */
-template <class Real, Integer DIM, template <class...> class DevVec = std::vector, class BaseTree = GPUTree<Real, DIM, DevVec>>
+template <class Real, Integer DIM, template <class...> class DevVec = HostVector, class BaseTree = GPUTree<Real, DIM, DevVec>>
 class PtTree : public BaseTree {
  public:
 

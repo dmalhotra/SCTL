@@ -30,7 +30,7 @@ using Real    = double;
 constexpr int kDim = 3;
 using Morton  = sctl::MortonCode<kDim>;
 using NodeMID = sctl::Morton<kDim>;
-using GPUTree = gpu_tree::GPUTree<Real, kDim>;
+using GPUTree = gpu_tree::GPUTree<Real, kDim, std::vector>;
 using Long    = gpu_tree::Long;
 
 static int failures = 0;

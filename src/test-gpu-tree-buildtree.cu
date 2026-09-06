@@ -24,7 +24,7 @@
 using Real    = double;
 constexpr int kDim = 3;
 using NodeMID = sctl::Morton<kDim>;
-using GPUTree = gpu_tree::GPUTree<Real, kDim>;
+using GPUTree = gpu_tree::GPUTree<Real, kDim, std::vector>;
 using Long    = gpu_tree::Long;
 
 template <class V> double ms(V t0, V t1) {

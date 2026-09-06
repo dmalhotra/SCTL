@@ -32,8 +32,8 @@ template <class Vec>
 inline constexpr bool is_device_vector_v = is_device_ptr<typename std::decay<decltype(std::declval<Vec>().data())>::type>::value;
 
 // Iterator thrust dispatches on: device_ptr<T> for the device backend, plain T* for the host one.
-template <class T, template <class...> class DeviceVector>
-using ScratchIterator = std::conditional_t<is_device_vector_v<DeviceVector<T>>, thrust::device_ptr<T>, T*>;
+template <class T, template <class...> class DevVec>
+using ScratchIterator = std::conditional_t<is_device_vector_v<DevVec<T>>, thrust::device_ptr<T>, T*>;
 
 /**
  * Long-lived working storage for an array that is rebuilt on every call. Unlike `DeviceScratch`
@@ -46,7 +46,7 @@ using ScratchIterator = std::conditional_t<is_device_vector_v<DeviceVector<T>>, 
  * as in `DeviceScratchPool`. Like the pool, the buffers are process-wide: a caller that runs two
  * builds concurrently in one process must not share a tag between them.
  */
-template <class T, template <class...> class DeviceVector, auto Tag> DeviceVector<T>& PersistentBuffer();
+template <class T, template <class...> class DevVec, auto Tag> DevVec<T>& PersistentBuffer();
 
 /**
  * Copy `n` elements of device storage into a host buffer, staged through a retained pinned buffer.
@@ -73,7 +73,7 @@ template <class SrcPtr, class T> void deviceToHost(SrcPtr src, Long n, T* dst);
  *
  * Not thread-safe: one pool serves the thread issuing the backend calls.
  */
-template <template <class...> class DeviceVector> class DeviceScratchPool {
+template <template <class...> class DevVec> class DeviceScratchPool {
  public:
   static constexpr Long ALIGN = 256;  // cudaMalloc's guarantee; rounding sizes keeps `top` aligned
 
@@ -85,7 +85,7 @@ template <template <class...> class DeviceVector> class DeviceScratchPool {
 
   /** One chunk of the pool; `DeviceScratch` holds the chunk its slice came from. */
   struct Chunk {
-    DeviceVector<char>* buf;  // leaked by design: freeing device memory at exit races CUDA teardown
+    DevVec<char>* buf;  // leaked by design: freeing device memory at exit races CUDA teardown
     char* base;
     char* top;
     char* end;
@@ -109,10 +109,10 @@ template <template <class...> class DeviceVector> class DeviceScratchPool {
 };
 
 /**
- * RAII handle to a scratch buffer carved out of `DeviceScratchPool<DeviceVector>`.
+ * RAII handle to a scratch buffer carved out of `DeviceScratchPool<DevVec>`.
  *
  *     {
- *       DeviceScratch<Morton<3>, DeviceVector> buf(n);
+ *       DeviceScratch<Morton<3>, DevVec> buf(n);
  *       thrust::for_each(buf.begin(), buf.end(), ...);   // thrust iterators
  *     }                                                  // freed here
  *
@@ -120,13 +120,13 @@ template <template <class...> class DeviceVector> class DeviceScratchPool {
  * non-copyable, non-movable. Contents are uninitialized -- the element type must be trivial,
  * since no constructor can run on backend memory.
  */
-template <class T, template <class...> class DeviceVector> class DeviceScratch {
-  using Pool = DeviceScratchPool<DeviceVector>;
+template <class T, template <class...> class DevVec> class DeviceScratch {
+  using Pool = DeviceScratchPool<DevVec>;
   static_assert(std::is_trivially_copyable<T>::value, "DeviceScratch<T>: T must be trivially copyable.");
   static_assert(alignof(T) <= (std::size_t)Pool::ALIGN, "DeviceScratch<T>: alignof(T) exceeds the pool alignment.");
 
  public:
-  using iterator = detail::ScratchIterator<T, DeviceVector>;
+  using iterator = detail::ScratchIterator<T, DevVec>;
 
   /** Allocate `count` T's from this backend's pool. */
   explicit DeviceScratch(Long count);
@@ -162,7 +162,7 @@ template <class T, template <class...> class DeviceVector> class DeviceScratch {
  * Allocator adaptor handing thrust's temporary storage to the same pool, e.g.
  * `thrust::cuda::par(alloc)`. Thrust frees its temporaries in LIFO order, so it fits the pool.
  */
-template <template <class...> class DeviceVector> class DeviceScratchAllocator {
+template <template <class...> class DevVec> class DeviceScratchAllocator {
  public:
   using value_type = char;
 
