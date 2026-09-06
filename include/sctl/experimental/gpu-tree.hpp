@@ -222,7 +222,8 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
    * `owned_range` its own [begin,end) within it, `partition` the first node of each rank (np
    * entries, caller-allocated), `node_attr` the Leaf/Ghost flags, `node_lists` the connectivity,
    * `user_mid`/`user_cnt` the halo send list and its per-rank counts. Each output pointer may be
-   * null. Collective.
+   * null. Collective. When all particles fit one leaf, rank 0 holds the root alone and every other
+   * rank an empty tree.
    */
   static void buildTreeDist(DevVec<Morton<DIM>>& tree, const DevVec<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, Morton<DIM>* partition, DevVec<NodeAttr>* node_attr, NodeLists<DevVec>* node_lists, DevVec<Morton<DIM>>* user_mid, sctl::Vector<Long>* user_cnt);
 

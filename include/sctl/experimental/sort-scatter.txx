@@ -52,11 +52,9 @@ template <template <class...> class DevVec, class T, class Policy>
 void exchange(const Policy& pol, const T* src, T* dst,
               const sctl::Vector<Long>& scnt, const sctl::Vector<Long>& rcnt, Long dof, const Comm& comm) {
   const Long np = comm.Size();
-#ifdef SCTL_HAVE_MPI
   sctl::ScratchBuf<Long> sc(np), rc(np);
   for (Long r = 0; r < np; r++) { sc[r] = scnt[r] * dof; rc[r] = rcnt[r] * dof; }
   detail::alltoallv<DevVec>(pol, src, dst, sc, rc, (Long)sizeof(T), comm);
-#endif
 }
 
 }  // namespace detail_sortScatter

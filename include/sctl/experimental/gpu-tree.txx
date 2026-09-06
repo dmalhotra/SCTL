@@ -1528,7 +1528,7 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
       } else {
         // The host is the opposite: the descents are dependent random loads, so seed the root's row
         // and propagate level by level instead.
-        detail::dispatchPeriodicity<DIM>(periodicity, [&pol, tp, cp, nbp](auto per_c) {  // the root is always index 0
+        if (Nt) detail::dispatchPeriodicity<DIM>(periodicity, [&pol, tp, cp, nbp](auto per_c) {  // the root is always index 0
           thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), Long(1), detail_nodeLists::NbrDescentFunctor<DIM, decltype(per_c)::value>{tp, cp, nbp});
         });
         for (Integer d = 1; d <= Morton<DIM>::MAX_DEPTH; d++)
@@ -1703,11 +1703,9 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
   }
   if (!nbase) return;
 
-  // Remap: move the old owned nodes to whoever owns their range now, then find, for each new node,
-  // the old nodes it absorbs. A new node's count is their counts summed.
   sctl::ScratchBuf<Long> range((Long)node_mid_.size() + 1);
   Long No = 0;
-  {
+  { // move the old owned nodes to whoever owns their range now, then find the old nodes each new node absorbs
     if (np > 1) {  // PartitionS is a host operation, so the nodes round-trip for it alone
       sctl::Vector<Morton<DIM>> h((Long)old_mid.size());
       detail::deviceToHost(old_mid.data(), h.Dim(), h.begin());
@@ -1743,8 +1741,7 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
     const Long data_begin = dsp[old_begin], data_count = dsp[old_end] - dsp[old_begin];
     Long Ndata = 0;  // items after the aggregation
     { // counts follow the nodes, then aggregate onto the new nodes
-      sctl::Vector<Long> cnt_own(old_end - old_begin, cnt.begin() + old_begin, false);
-      sctl::Vector<Long> cnt_tmp(cnt_own);
+      sctl::Vector<Long> cnt_tmp(old_end - old_begin, cnt.begin() + old_begin);  // a copy: PartitionN moves it
       if (np > 1) comm_.PartitionN(cnt_tmp, No);
       cnt.ReInit((Long)node_mid_.size());
       #pragma omp parallel for schedule(static) reduction(+ : Ndata)
@@ -1771,9 +1768,10 @@ void GPUTree<Real, DIM, DevVec>::AddData(const std::string& name, const DevVec<V
   const Long nitem = sctl::omp_par::reduce(cnt.begin(), cnt.Dim());
   const Long dof = detail::globalDof((Long)data.size(), nitem, comm_);
   addData_(name, nitem * dof * (Long)sizeof(ValueType), cnt);
-  DevVec<char>& dst = node_data_[name];
-  thrust::copy(thrust::device_pointer_cast((const char*)thrust::raw_pointer_cast(data.data())),
-               thrust::device_pointer_cast((const char*)thrust::raw_pointer_cast(data.data())) + dst.size(), dst.begin());
+  DevVec<char>& dst = NodeData_(name);
+  using It = detail::ScratchIterator<char, DevVec>;
+  const It src(const_cast<char*>((const char*)thrust::raw_pointer_cast(data.data())));
+  thrust::copy(src, src + (Long)dst.size(), dst.begin());
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>
@@ -1835,7 +1833,21 @@ template <class T> struct BlockCopyFunctor {
  */
 template <template <class...> class DevVec, class Policy, class T>
 void blockCopy(const Policy& pol, T* dst, const T* src,
-               sctl::ConstIterator<Long> srcoff, sctl::ConstIterator<Long> dstoff, sctl::ConstIterator<Long> len, Long nb, Long w);
+               sctl::ConstIterator<Long> srcoff, sctl::ConstIterator<Long> dstoff, sctl::ConstIterator<Long> len, Long nb, Long w) {
+  sctl::ScratchBuf<Long> off(nb + 1);
+  const Long tot = detail::scanv(off.begin(), len, nb) * w;
+  if (!tot) return;
+  sctl::ScratchBuf<Long> si(tot), di(tot);
+  #pragma omp parallel for schedule(static)
+  for (Long i = 0; i < nb; i++) {
+    for (Long j = 0; j < len[i] * w; j++) { si[off[i] * w + j] = srcoff[i] * w + j; di[off[i] * w + j] = dstoff[i] * w + j; }
+  }
+  DeviceScratch<Long, DevVec> si_d(tot), di_d(tot);
+  thrust::copy(si.begin(), si.end(), si_d.begin());
+  thrust::copy(di.begin(), di.end(), di_d.begin());
+  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), tot, BlockCopyFunctor<T>{
+      src, dst, thrust::raw_pointer_cast(si_d.data()), thrust::raw_pointer_cast(di_d.data())});
+}
 
 /**
  * Send rank p the nodes `smid[sndsp[p], sndsp[p+1])` and, for each of them that this rank holds
@@ -1876,24 +1888,6 @@ void exchangeBlocks(const Policy& pol, const Comm& comm, sctl::ConstIterator<Mor
   consume(Nr, (sctl::ConstIterator<Morton<DIM>>)rmid.begin(), (sctl::ConstIterator<Long>)rdcnt.begin(), (sctl::ConstIterator<Long>)rddsp.begin(), (const char*)thrust::raw_pointer_cast(rbuf.data()));
 }
 
-template <template <class...> class DevVec, class Policy, class T>
-void blockCopy(const Policy& pol, T* dst, const T* src,
-               sctl::ConstIterator<Long> srcoff, sctl::ConstIterator<Long> dstoff, sctl::ConstIterator<Long> len, Long nb, Long w) {
-  sctl::ScratchBuf<Long> off(nb + 1);
-  const Long tot = detail::scanv(off.begin(), len, nb) * w;
-  if (!tot) return;
-  sctl::ScratchBuf<Long> si(tot), di(tot);
-  #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < nb; i++) {
-    for (Long j = 0; j < len[i] * w; j++) { si[off[i] * w + j] = srcoff[i] * w + j; di[off[i] * w + j] = dstoff[i] * w + j; }
-  }
-  DeviceScratch<Long, DevVec> si_d(tot), di_d(tot);
-  thrust::copy(si.begin(), si.end(), si_d.begin());
-  thrust::copy(di.begin(), di.end(), di_d.begin());
-  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), tot, BlockCopyFunctor<T>{
-      src, dst, thrust::raw_pointer_cast(si_d.data()), thrust::raw_pointer_cast(di_d.data())});
-}
-
 }  // namespace detail_bcast
 
 template <class Real, Integer DIM, template <class...> class DevVec>
@@ -1903,8 +1897,8 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
   if (np == 1) return;
 #ifdef SCTL_HAVE_MPI
   const auto pol = detail::scratch_policy<DevVec, char>();
-  DevVec<char>& data = node_data_[name];
-  sctl::Vector<Long>& cnt = node_cnt_[name];
+  DevVec<char>& data = NodeData_(name);
+  sctl::Vector<Long>& cnt = NodeCnt_(name);
   const Long Nn = (Long)node_mid_.size();
   SCTL_ASSERT(cnt.Dim() == Nn);
 
@@ -1912,7 +1906,7 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
   detail::deviceToHost(node_mid_.data(), Nn, nmid.begin());
   sctl::ScratchBuf<Long> dsp(Nn + 1);
   const Long nitem = detail::scanv(dsp.begin(), cnt.begin(), Nn);
-  const Long w = (nitem ? (Long)data.size() / nitem : 0);  // bytes per item; Broadcast only copies
+  const Long w = detail::globalDof((Long)data.size(), nitem, comm_);  // bytes per item; Broadcast only copies
 
   const Long Ns = (Long)user_mid_.size();  // the halo send list: which of my nodes each rank wants
   sctl::ScratchBuf<Morton<DIM>> smid(Ns);
@@ -1952,14 +1946,14 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
   if (np == 1) return;
 #ifdef SCTL_HAVE_MPI
   const auto pol = detail::scratch_policy<DevVec, ValueType>();
-  DevVec<char>& data = node_data_[name];
-  sctl::Vector<Long>& cnt = node_cnt_[name];
+  DevVec<char>& data = NodeData_(name);
+  sctl::Vector<Long>& cnt = NodeCnt_(name);
   const Long Nn = (Long)node_mid_.size();
   sctl::ScratchBuf<Morton<DIM>> nmid(Nn);
   detail::deviceToHost(node_mid_.data(), Nn, nmid.begin());
   sctl::ScratchBuf<Long> dsp(Nn + 1);
   const Long nitem = detail::scanv(dsp.begin(), cnt.begin(), Nn);
-  const Long dof = (nitem ? (Long)data.size() / (Long)sizeof(ValueType) / nitem : 0);
+  const Long dof = detail::globalDof((Long)data.size() / (Long)sizeof(ValueType), nitem, comm_);
 
   { // the ancestors of my first node are shared with earlier ranks; send them my partial values
     const Long Ns = mins_[rank].Depth();
@@ -1980,10 +1974,9 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
             if (!rdcnt[i]) continue;
             const Long idx = detail_bcast::findNode<DIM>(nmid.begin(), Nn, rmid[i]);
             if (idx < 0 || cnt[idx] != rdcnt[i]) continue;
-            thrust::transform(pol, thrust::device_pointer_cast(d + dsp[idx] * dof),
-                              thrust::device_pointer_cast(d + (dsp[idx] + cnt[idx]) * dof),
-                              thrust::device_pointer_cast(r + rddsp[i] * dof),
-                              thrust::device_pointer_cast(d + dsp[idx] * dof), thrust::plus<ValueType>());
+            using It = detail::ScratchIterator<ValueType, DevVec>;
+            thrust::transform(pol, It(d + dsp[idx] * dof), It(d + (dsp[idx] + cnt[idx]) * dof),
+                              It(const_cast<ValueType*>(r + rddsp[i] * dof)), It(d + dsp[idx] * dof), thrust::plus<ValueType>());
           }
         });
   }

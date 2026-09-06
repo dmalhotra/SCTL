@@ -185,8 +185,8 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     const auto particle_total = [&gt, &st, &comm]() {  // particles held by the tree, summed over ranks, the same in both
       gpu_tree::DataView<const Real, DevVec> gv; sctl::Vector<Long> gc; gt.GetData(gv, gc, "pt");
       sctl::Vector<Real> sv; sctl::Vector<Long> sc; st.GetData(sv, sc, "pt");
-      Long l[2] = {sctl::omp_par::reduce(gc.begin(), gc.Dim()), sctl::omp_par::reduce(sc.begin(), sc.Dim())}, t[2] = {0, 0};
-      comm.Allreduce(sctl::Ptr2ConstItr<Long>(l, 2), sctl::Ptr2Itr<Long>(t, 2), 2, sctl::CommOp::SUM);
+      sctl::StaticArray<Long, 2> l{sctl::omp_par::reduce(gc.begin(), gc.Dim()), sctl::omp_par::reduce(sc.begin(), sc.Dim())}, t{0, 0};
+      comm.Allreduce((sctl::ConstIterator<Long>)l, (sctl::Iterator<Long>)t, 2, sctl::CommOp::SUM);
       return (Long)(t[0] != t[1]);
     };
     gt.UpdateRefinement(xd, 32, true, sctl::Periodicity::NONE, 0); st.UpdateRefinement(xs, 32, true, sctl::Periodicity::NONE, 0);

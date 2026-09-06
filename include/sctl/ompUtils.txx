@@ -442,8 +442,7 @@ template <class Iter, class KeyFn> inline void omp_par::radix_sort(Iter A, Long 
 
   ScratchBuf<_ValType> tmp(N);
   ScratchBuf<Long> hist((Long)p * NB);
-  _ValType* src = &A[0];
-  _ValType* dst = &tmp[0];
+  Iterator<_ValType> src = Ptr2Itr<_ValType>(&A[0], N), dst = tmp.begin();
   for (Integer pass = 0; pass < 4; pass++) {
     const Integer shift = RB * pass;
     #pragma omp parallel num_threads(p)

@@ -365,13 +365,13 @@ namespace sctl {
               Integer tmp_buf_cnt = 0;
               for (Integer k = 0; k < p_nbr_cnt_; k++) {
                 if (node->parent->nbr[p_nbr_lst_[k]] == nullptr)
-                tmp_buf[tmp_buf_cnt++] = p_nbr_lst_[k];
+                  tmp_buf[tmp_buf_cnt++] = p_nbr_lst_[k];
               }
               if (tmp_buf_cnt) {
                 const auto p_nbrs = node->m.NbrList(node->m.Depth()-1, periodicity);
                 for (Integer k = 0; k < tmp_buf_cnt; k++)
-                if (p_nbrs[tmp_buf[k]].Depth() != Morton<DIM>::INVALID_DEPTH)
-                new_mid.PushBack(p_nbrs[tmp_buf[k]]);
+                  if (p_nbrs[tmp_buf[k]].Depth() != Morton<DIM>::INVALID_DEPTH)
+                    new_mid.PushBack(p_nbrs[tmp_buf[k]]);
               }
             }
             std::sort(new_mid.begin(), new_mid.end());
@@ -1330,7 +1330,7 @@ namespace sctl {
     Vector<Long>& cnt = *cnt_;
     scan(dsp, cnt);
 
-    const Long dof = tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim()));
+    const Long dof = tree_detail::global_dof(comm, data.Dim(), dsp[cnt.Dim() - 1] + cnt[cnt.Dim() - 1]);
 
     { // Reduce
       Vector<Morton<DIM>> send_mid, recv_mid;
@@ -1442,7 +1442,7 @@ namespace sctl {
     Vector<Long>& cnt = *cnt_;
     scan(dsp, cnt);
 
-    const Long dof = tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim()));
+    const Long dof = tree_detail::global_dof(comm, data.Dim(), dsp[cnt.Dim() - 1] + cnt[cnt.Dim() - 1]);
 
     { // Broadcast
       const Vector<Morton<DIM>>& send_mid = user_mid;

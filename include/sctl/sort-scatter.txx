@@ -12,7 +12,7 @@
 #include "sctl/comm.txx"          // for Comm::Alltoallv, comm_detail::LocalSort
 #include "sctl/iterator.hpp"      // for Iterator, ConstIterator, Ptr2ConstItr
 #include "sctl/iterator.txx"
-#include "sctl/ompUtils.hpp"      // for omp_par::scan, omp_par::memcpy
+#include "sctl/ompUtils.hpp"      // for omp_par::scan
 #include "sctl/ompUtils.txx"
 #include "sctl/scratch_pool.hpp"  // for ScratchBuf
 #include "sctl/scratch_pool.txx"
