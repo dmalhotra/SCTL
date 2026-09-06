@@ -84,15 +84,15 @@ inline void DeviceScratchPool<DevVec>::NewChunk(Long need) {
 }
 
 template <class T, template <class...> class DevVec>
-inline DeviceScratch<T, DevVec>::DeviceScratch(Long count) : DeviceScratch(count, Pool::Instance()) {}
-
-template <class T, template <class...> class DevVec>
-inline DeviceScratch<T, DevVec>::DeviceScratch(Long count, Pool& pool) : pool_(&pool), count_(count) {
+inline DeviceScratch<T, DevVec>::DeviceScratch(Long count) : pool_(&Pool::Instance()), count_(count) {
   SCTL_ASSERT(count >= 0);
-  const auto slot = pool.AllocBytes(count * (Long)sizeof(T));
+  const auto slot = pool_->AllocBytes(count * (Long)sizeof(T));
   chunk_ = slot.first;
   data_ = reinterpret_cast<T*>(slot.second);
 }
+
+template <class T, template <class...> class DevVec>
+inline Long DeviceScratch<T, DevVec>::Dim() const { return count_; }
 
 template <class T, template <class...> class DevVec>
 inline DeviceScratch<T, DevVec>::~DeviceScratch() {
@@ -108,8 +108,6 @@ inline typename DeviceScratch<T, DevVec>::iterator DeviceScratch<T, DevVec>::end
 template <class T, template <class...> class DevVec>
 inline typename DeviceScratch<T, DevVec>::iterator DeviceScratch<T, DevVec>::data() const { return iterator(data_); }
 
-template <class T, template <class...> class DevVec>
-inline Long DeviceScratch<T, DevVec>::Dim() const { return count_; }
 
 template <template <class...> class DevVec>
 inline char* DeviceScratchAllocator<DevVec>::allocate(std::ptrdiff_t n) {

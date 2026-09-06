@@ -134,9 +134,6 @@ template <class T, template <class...> class DevVec> class DeviceScratch {
   /** Allocate `count` T's from this backend's pool. */
   explicit DeviceScratch(Long count);
 
-  /** Allocate from a user-supplied pool instead (tests, isolation). */
-  DeviceScratch(Long count, Pool& pool);
-
   ~DeviceScratch();
 
   DeviceScratch() = delete;

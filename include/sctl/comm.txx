@@ -190,12 +190,12 @@ inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
     return true;
   };
   const Integer nt = (SCTL_IN_PARALLEL() ? 1 : (Integer)SCTL_GET_MAX_THREADS());
-  int ok = 1;
+  bool ok = true;
   #pragma omp parallel for schedule(dynamic) num_threads(nt)
   for (Long c = 0; c < nchunk; c++) {
     if (!read(c)) {
       #pragma omp atomic write
-      ok = 0;
+      ok = false;
     }
   }
   return ok;

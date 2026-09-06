@@ -7,9 +7,8 @@
 #ifndef _SCTL_EXPERIMENTAL_SORT_SCATTER_HPP_
 #define _SCTL_EXPERIMENTAL_SORT_SCATTER_HPP_
 
-#include <vector>
-
 #include "sctl/comm.hpp"
+#include "sctl/experimental/gpu-vector.hpp"
 #include "sctl/vector.hpp"
 #include "sctl/sort-scatter.hpp"  // the host-side Plan and its helpers
 
@@ -20,11 +19,7 @@ using sctl::Comm;
 
 namespace detail_sortScatter {
 
-/**
- * `sctl::sort_scatter_detail::PlanBase` -- the stages, their counts and flags -- with the local maps
- * in backend memory. Both directions are gathers, not scatters (a scattered write costs about
- * twice a scattered read), which is what the inverses are for.
- */
+/** `sctl::sort_scatter_detail::PlanBase` -- the stages, their counts and flags -- with the local maps in backend memory. */
 template <template <class...> class DevVec> struct Plan : sctl::sort_scatter_detail::PlanBase {
   DevVec<Long> pre, pre_inv;    ///< Nloc: stage 1 and its inverse
   DevVec<Long> post, post_inv;  ///< Nmid: stage 3 and its inverse; unused at np=1
@@ -45,7 +40,7 @@ template <template <class...> class DevVec> struct Plan : sctl::sort_scatter_det
  *
  * Every member that moves keys or data is collective.
  */
-template <class Key, template <class...> class DevVec = std::vector>
+template <class Key, template <class...> class DevVec = HostVector>
 class SortScatter {
  public:
   explicit SortScatter(const Comm& comm = Comm::Self()) : comm_(comm) {}
@@ -87,9 +82,6 @@ class SortScatter {
   Comm comm_;
   DevVec<Key> keys_;
   mutable detail_sortScatter::Plan<DevVec> plan_;  ///< inverses and stage-4 counts are built on first use
-  sctl::Vector<Long> move_scnt_, move_rcnt_;  ///< the last Repartition's move, previous layout -> current
-  Long move_n_ = 0;                           ///< keys held before it
-  bool moved_ = false;                        ///< whether it moved keys; RepartitionData is a no-op otherwise
 };
 
 }  // namespace gpu_tree

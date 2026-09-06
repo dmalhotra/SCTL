@@ -103,7 +103,6 @@ template <Integer DIM> class Tree {
      */
     template <class Real> void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, Periodicity periodicity = Periodicity::NONE, Integer halo_size = -1);
 
-
     /**
      * Add named data to the tree nodes.
      *
@@ -315,7 +314,8 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
 
     Vector<MortonCode<DIM>> partition_codes;  ///< partition mins as codes: the SortScatter splitters; set with each partition
     std::map<std::string, SortScatter<MortonCode<DIM>>> groups;  ///< per particle group: codes in tree order, maps to/from caller order
-    std::map<std::string, std::string> data_pt_name;       ///< Mapping of data name to particle name.
+    struct PtData { std::string particle_name; Long dof; };
+    std::map<std::string, PtData> pt_data;  ///< particle group and dof of each particle data set
 };
 
 }

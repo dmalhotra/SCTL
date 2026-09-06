@@ -477,8 +477,8 @@ SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrLi
 
 template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrList(uint8_t level, Periodicity periodicity) const {
   // Dispatch runtime periodicity to a PER-specialized, unrolled, force-inlined emitter (DYN==false);
-  // every mask up to DIM==3 is enumerated, so only DIM>3 masks take the runtime emitter `nbr_loop_`,
-  // the readable form; the unrolled one is faster on host and DIM<=3.
+  // every mask up to DIM==3 is enumerated, so only a DIM>3 mask reaches the DYN==true emitter, which
+  // reads the mask at run time.
   switch (periodicity) {
     case Periodicity::NONE: return nbr_list_<Periodicity::NONE, false>(level, periodicity);
     case Periodicity::X:    return nbr_list_<Periodicity::X,    false>(level, periodicity);

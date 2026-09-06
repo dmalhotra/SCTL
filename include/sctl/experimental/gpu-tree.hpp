@@ -12,7 +12,6 @@
 #include <map>
 #include <set>
 #include <string>
-#include <vector>
 
 #include "sctl/morton.hpp"
 #include "sctl/comm.hpp"    // Comm::Self() default, and the partition helpers the data layer uses
@@ -221,16 +220,19 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
    * linear tree slice (`(code, depth)` order, complete over the domain, coarse outside the halo),
    * `owned_range` its own [begin,end) within it, `partition` the first node of each rank (np
    * entries, caller-allocated), `node_attr` the Leaf/Ghost flags, `node_lists` the connectivity,
-   * `user_mid`/`user_cnt` the halo send list and its per-rank counts, `sort_scatter_index` the
-   * sorted particles' indices in the global input order. Each output pointer may be null. Collective.
+   * `user_mid`/`user_cnt` the halo send list and its per-rank counts. Each output pointer may be
+   * null. Collective.
    */
-  static void buildTreeDist(DevVec<Morton<DIM>>& tree, const DevVec<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, DevVec<Long>* sort_scatter_index, Morton<DIM>* partition, DevVec<NodeAttr>* node_attr, NodeLists<DevVec>* node_lists, DevVec<Morton<DIM>>* user_mid, sctl::Vector<Long>* user_cnt);
+  static void buildTreeDist(DevVec<Morton<DIM>>& tree, const DevVec<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, Morton<DIM>* partition, DevVec<NodeAttr>* node_attr, NodeLists<DevVec>* node_lists, DevVec<Morton<DIM>>* user_mid, sctl::Vector<Long>* user_cnt);
 
   /**
    * Per-new-node `[range[i], range[i+1])` into `old_mid`, the old nodes each new node absorbs.
    * Searches wherever the nodes live, so on the device only `range` crosses the bus.
    */
-  static void remapRanges(sctl::Vector<Long>& range, const DevVec<Morton<DIM>>& old_mid, const DevVec<Morton<DIM>>& new_mid);
+  static void remapRanges(sctl::Iterator<Long> range, const DevVec<Morton<DIM>>& old_mid, const DevVec<Morton<DIM>>& new_mid);
+
+  /** The view behind both `GetData` overloads; `VT` may be const. */
+  template <class VT> void dataView(View<VT>& data, sctl::Vector<Long>& cnt, const std::string& name) const;
 
 
 

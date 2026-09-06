@@ -550,6 +550,27 @@ namespace sctl {
       }
     }
 
+    /** Non-owning views of the data set `name` and its counts; `VT` may be const. */
+    template <class VT> void data_view(const std::map<std::string, Vector<char>>& node_data, const std::map<std::string, Vector<Long>>& node_cnt, const std::string& name, Vector<VT>& data, Vector<Long>& cnt) {
+      const auto data_ = node_data.find(name);
+      const auto cnt_ = node_cnt.find(name);
+      SCTL_ASSERT(data_ != node_data.end());
+      SCTL_ASSERT( cnt_ != node_cnt .end());
+      data.ReInit(data_->second.Dim() / (Long)sizeof(VT), (Iterator<VT>)data_->second.begin(), false);
+      SCTL_ASSERT(data.Dim() * (Long)sizeof(VT) == data_->second.Dim());
+      cnt .ReInit( cnt_->second.Dim(), (Iterator<Long>)cnt_->second.begin(), false);
+    }
+
+    /** `ndata / nitem` summed over ranks, since a rank may hold no items; the division must be exact. */
+    inline Long global_dof(const Comm& comm, Long ndata, Long nitem) {
+      StaticArray<Long,2> Ng, Nl{ndata, nitem};
+      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
+      const Long dof = Ng[0] / std::max<Long>(Ng[1],1);
+      SCTL_ASSERT(ndata == nitem * dof);
+      SCTL_ASSERT(Ng[0] == Ng[1] * dof);
+      return dof;
+    }
+
     /**
      * Per-node particle counts from sorted codes: cnt[i] = number of codes in
      * [node_mid[i], node_mid[i+1]). Parallel over node chunks; each thread locates its first
@@ -589,7 +610,7 @@ namespace sctl {
     static constexpr Integer MAX_NBRS = sctl::pow<DIM,Integer>(3);
     static constexpr Integer MAX_DEPTH = Morton<DIM>::MAX_DEPTH;
 
-    static const auto& nbr_path = tree_detail::nbr_path_table<DIM>();  // static: the lambdas below capture nothing
+    static const auto& nbr_path = tree_detail::nbr_path_table<DIM>();  // static: set_node_lst below captures nothing
 
     Vector<Morton<DIM>> node_mid_orig;
     Long start_idx_orig, end_idx_orig;
@@ -1197,9 +1218,8 @@ namespace sctl {
       for (Long i = i1; i < node_mid.Dim(); i++) SCTL_ASSERT(node_attr[i].Ghost == true);
     }
 
-    Long nbase = 0;  // data sets moved here
-    for (const auto& pair : node_data) nbase += !data_moved_by_derived.count(pair.first);
-    if (nbase) { // Update node_data, node_cnt
+    const bool any_own = std::any_of(node_data.begin(), node_data.end(), [this](const auto& pair) { return !data_moved_by_derived.count(pair.first); });  // a data set this class moves itself
+    if (any_own) { // Update node_data, node_cnt
       comm.PartitionS(node_mid_orig, mins[comm.Rank()]);
 
       ScratchBuf<Long> new_cnt_range0(node_mid.Dim()+1);
@@ -1239,16 +1259,7 @@ namespace sctl {
         Iterator<Vector<char>> data_;
         Iterator<Vector<Long>> cnt_;
         GetData_(data_, cnt_, data_name);
-        const Long dof = [this,&data_,&cnt_]() {
-          StaticArray<Long,2> Nl, Ng;
-          Nl[0] = data_->Dim();
-          Nl[1] = omp_par::reduce(cnt_->begin(), cnt_->Dim());
-          comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
-          const Long dof = Ng[0] / std::max<Long>(Ng[1],1);
-          SCTL_ASSERT(Nl[0] == Nl[1] * dof);
-          SCTL_ASSERT(Ng[0] == Ng[1] * dof);
-          return dof;
-        }();
+        const Long dof = tree_detail::global_dof(comm, data_->Dim(), omp_par::reduce(cnt_->begin(), cnt_->Dim()));
 
         const Long data_begin = omp_par::reduce(cnt_->begin(), start_idx_orig);
         const Long data_count = omp_par::reduce(cnt_->begin() + start_idx_orig, end_idx_orig - start_idx_orig);
@@ -1285,15 +1296,7 @@ namespace sctl {
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::AddData(const std::string& name, const Vector<ValueType>& data, const Vector<Long>& cnt) {
     Long dof;
-    { // Check dof
-      StaticArray<Long,2> Nl, Ng;
-      Nl[0] = data.Dim();
-      Nl[1] = omp_par::reduce(cnt.begin(), cnt.Dim());
-      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
-      dof = Ng[0] / std::max<Long>(Ng[1],1);
-      SCTL_ASSERT(Nl[0] == Nl[1] * dof);
-      SCTL_ASSERT(Ng[0] == Ng[1] * dof);
-    }
+    dof = tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim()));
     if (dof) SCTL_ASSERT(cnt.Dim() == node_mid.Dim());
 
     SCTL_ASSERT(node_data.find(name) == node_data.end());
@@ -1302,30 +1305,18 @@ namespace sctl {
   }
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::AddData(const std::string& name, Long dof, const Vector<Long>& cnt) {
-    if (dof) SCTL_ASSERT(cnt.Dim() == node_mid.Dim());
+    SCTL_ASSERT(cnt.Dim() == node_mid.Dim());
     SCTL_ASSERT(node_data.find(name) == node_data.end());
     node_data[name].ReInit(omp_par::reduce(cnt.begin(), cnt.Dim()) * dof * (Long)sizeof(ValueType));
     node_cnt [name] = cnt;
   }
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name) {
-    const auto data_ = node_data.find(name);
-    const auto cnt_ = node_cnt.find(name);
-    SCTL_ASSERT(data_ != node_data.end());
-    SCTL_ASSERT( cnt_ != node_cnt .end());
-    data.ReInit(data_->second.Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->second.begin(), false);
-    SCTL_ASSERT(data.Dim()*(Long)sizeof(ValueType) == data_->second.Dim());
-    cnt .ReInit( cnt_->second.Dim(), cnt_->second.begin(), false);
+    tree_detail::data_view(node_data, node_cnt, name, data, cnt);
   }
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::GetData(Vector<const ValueType>& data, Vector<Long>& cnt, const std::string& name) const {
-    const auto data_ = node_data.find(name);
-    const auto cnt_ = node_cnt.find(name);
-    SCTL_ASSERT(data_ != node_data.end());
-    SCTL_ASSERT( cnt_ != node_cnt .end());
-    data.ReInit(data_->second.Dim()/sizeof(ValueType), (Iterator<const ValueType>)data_->second.begin(), false);
-    SCTL_ASSERT(data.Dim()*(Long)sizeof(ValueType) == data_->second.Dim());
-    cnt .ReInit( cnt_->second.Dim(), (Iterator<Long>)cnt_->second.begin(), false);
+    tree_detail::data_view(node_data, node_cnt, name, data, cnt);
   }
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::ReduceBroadcast(const std::string& name) {
@@ -1341,15 +1332,7 @@ namespace sctl {
     scan(dsp, cnt);
 
     Long dof;
-    { // Set dof
-      StaticArray<Long,2> Nl, Ng;
-      Nl[0] = data.Dim();
-      Nl[1] = omp_par::reduce(cnt.begin(), cnt.Dim());
-      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
-      dof = Ng[0] / std::max<Long>(Ng[1],1);
-      SCTL_ASSERT(Nl[0] == Nl[1] * dof);
-      SCTL_ASSERT(Ng[0] == Ng[1] * dof);
-    }
+    dof = tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim()));
 
     { // Reduce
       Vector<Morton<DIM>> send_mid, recv_mid;
@@ -1462,15 +1445,7 @@ namespace sctl {
     scan(dsp, cnt);
 
     Long dof;
-    { // Set dof
-      StaticArray<Long,2> Nl, Ng;
-      Nl[0] = data.Dim();
-      Nl[1] = omp_par::reduce(cnt.begin(), cnt.Dim());
-      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
-      dof = Ng[0] / std::max<Long>(Ng[1],1);
-      SCTL_ASSERT(Nl[0] == Nl[1] * dof);
-      SCTL_ASSERT(Ng[0] == Ng[1] * dof);
-    }
+    dof = tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim()));
 
     { // Broadcast
       const Vector<Morton<DIM>>& send_mid = user_mid;
@@ -1654,17 +1629,16 @@ namespace sctl {
 
   template <class Real, Integer DIM, class BaseTree> PtTree<Real,DIM,BaseTree>::~PtTree() {
     #ifdef SCTL_MEMDEBUG
-    for (auto& pair : data_pt_name) {
+    for (auto& pair : pt_data) {
       Vector<Real> data;
       Vector<Long> cnt;
-      this->GetData(data, cnt, pair.second);
-      SCTL_ASSERT(groups.find(pair.second) != groups.end());
+      this->GetData(data, cnt, pair.second.particle_name);
+      SCTL_ASSERT(groups.find(pair.second.particle_name) != groups.end());
     }
     #endif
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, Periodicity periodicity, Integer halo_size) {
-    const auto& comm = this->GetComm();
     BaseTree::UpdateRefinement(coord, M, balance21, periodicity, halo_size);
     SetPartitionCodes();
 
@@ -1677,19 +1651,12 @@ namespace sctl {
       ScratchBuf<Long> pt_cnt(node_mid.Dim());
       tree_detail::pt_node_counts<DIM>(node_mid, group.SortedKeys(), pt_cnt.begin());
 
-      for (const auto& pair : data_pt_name) {
-        if (pair.second == pt_name) {
+      for (const auto& pair : pt_data) {
+        if (pair.second.particle_name == pt_name) {
           Iterator<Vector<char>> data;
           Iterator<Vector<Long>> cnt;
           this->GetData_(data, cnt, pair.first);
-          const Long bytes = [&comm,&cnt,&data]() { // per item, reduced globally: a rank may hold no particles
-            StaticArray<Long,2> Nl, Ng;
-            Nl[0] = data->Dim();
-            Nl[1] = omp_par::reduce(cnt->begin(), cnt->Dim());
-            comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
-            return Ng[0] / std::max<Long>(Ng[1],1);
-          }();
-          group.RepartitionData(*data, bytes);
+          group.RepartitionData(*data, pair.second.dof * (Long)sizeof(Real));
           (*cnt) = Vector<Long>(pt_cnt);
         }
       }
@@ -1715,12 +1682,7 @@ namespace sctl {
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, const Vector<Real>& data) {
     const auto group = groups.find(particle_name);
     SCTL_ASSERT(group != groups.end());
-    const Long dof = [this,&data,&group]() { // global: a rank may hold no particles
-      StaticArray<Long,2> Ng, Nl{data.Dim(), group->second.LocalCount()};
-      this->GetComm().Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
-      return Ng[0] / std::max<Long>(Ng[1],1);
-    }();
-    SCTL_ASSERT(data.Dim() == group->second.LocalCount() * dof);
+    const Long dof = tree_detail::global_dof(this->GetComm(), data.Dim(), group->second.LocalCount());
     AddParticleData(data_name, particle_name, dof);
 
     Iterator<Vector<char>> data_;
@@ -1732,7 +1694,7 @@ namespace sctl {
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof) {
     const auto group = groups.find(particle_name);
     SCTL_ASSERT(group != groups.end());
-    SCTL_ASSERT(data_pt_name.find(data_name) == data_pt_name.end());
+    SCTL_ASSERT(pt_data.find(data_name) == pt_data.end());
     if (data_name == particle_name) { // the group's own coordinates: count its particles per node
       const auto& node_mid = this->GetNodeMID();
       ScratchBuf<Long> cnt(node_mid.Dim());
@@ -1745,7 +1707,7 @@ namespace sctl {
       this->template AddData<Real>(data_name, dof, *cnt_);
     }
     this->data_moved_by_derived.insert(data_name);
-    data_pt_name[data_name] = particle_name;
+    pt_data[data_name] = {particle_name, dof};
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::SetPartitionCodes() {
@@ -1755,8 +1717,8 @@ namespace sctl {
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::GetParticleData(Vector<Real>& data, const std::string& data_name) const {
-    SCTL_ASSERT(data_pt_name.find(data_name) != data_pt_name.end());
-    const std::string& particle_name = data_pt_name.find(data_name)->second;
+    SCTL_ASSERT(pt_data.find(data_name) != pt_data.end());
+    const std::string& particle_name = pt_data.find(data_name)->second.particle_name;
     SCTL_ASSERT(groups.find(particle_name) != groups.end());
     const auto& group = groups.find(particle_name)->second;
 
@@ -1771,12 +1733,7 @@ namespace sctl {
     this->GetData(data_, cnt_, data_name);
     SCTL_ASSERT(cnt_.Dim() == node_mid.Dim());
     BaseTree::scan(dsp, cnt_);
-    { // Set dof
-      Long Nn = node_mid.Dim();
-      StaticArray<Long,2> Ng, Nl{data_.Dim(), dsp[Nn-1]+cnt_[Nn-1]};
-      comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
-      dof = Ng[0] / std::max<Long>(Ng[1],1);
-    }
+    dof = tree_detail::global_dof(comm, data_.Dim(), dsp[node_mid.Dim()-1] + cnt_[node_mid.Dim()-1]);
     { // Set data
       Integer np = comm.Size();
       Integer rank = comm.Rank();
@@ -1791,12 +1748,12 @@ namespace sctl {
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::DeleteParticleData(const std::string& data_name) {
-    SCTL_ASSERT(data_pt_name.find(data_name) != data_pt_name.end());
-    auto particle_name = data_pt_name[data_name];
+    SCTL_ASSERT(pt_data.find(data_name) != pt_data.end());
+    const std::string particle_name = pt_data[data_name].particle_name;
     if (data_name == particle_name) {
       std::vector<std::string> data_name_lst;
-      for (auto& pair : data_pt_name) {
-        if (pair.second == particle_name) {
+      for (auto& pair : pt_data) {
+        if (pair.second.particle_name == particle_name) {
           data_name_lst.push_back(pair.first);
         }
       }
@@ -1808,7 +1765,7 @@ namespace sctl {
       groups.erase(particle_name);
     }
     this->DeleteData(data_name);
-    data_pt_name.erase(data_name);
+    pt_data.erase(data_name);
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::WriteParticleVTK(std::string fname, std::string data_name, bool show_ghost) const {
@@ -1818,8 +1775,8 @@ namespace sctl {
 
     VTUData vtu_data;
     if (DIM <= 3) {  // Set vtu data
-      SCTL_ASSERT(data_pt_name.find(data_name) != data_pt_name.end());
-      std::string particle_name = data_pt_name.find(data_name)->second;
+      SCTL_ASSERT(pt_data.find(data_name) != pt_data.end());
+      const std::string& particle_name = pt_data.find(data_name)->second.particle_name;
 
       Vector<const Real> pt_coord;
       Vector<const Real> pt_value;

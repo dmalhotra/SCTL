@@ -13,8 +13,6 @@
  *
  *     mpirun -np 2 bin/example-gpu-tree
  */
-#include <sctl/tree.hpp>
-#include <sctl/tree.txx>
 #include "sctl/experimental/gpu-tree.hpp"
 
 int main(int argc, char** argv) {

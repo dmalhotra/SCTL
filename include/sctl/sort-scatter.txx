@@ -66,8 +66,8 @@ template <class T> void exchange(ConstIterator<T> src, Iterator<T> dst, const Ve
   }
   ScratchBuf<Long> sc(np), rc(np), sd(np), rd(np);
   for (Integer r = 0; r < np; r++) { sc[r] = scnt[r] * dof; rc[r] = rcnt[r] * dof; }
-  sd[0] = 0; omp_par::scan(sc.begin(), sd.begin(), np);
-  rd[0] = 0; omp_par::scan(rc.begin(), rd.begin(), np);
+  omp_par::scan(sc.begin(), sd.begin(), np, Long(0));
+  omp_par::scan(rc.begin(), rd.begin(), np, Long(0));
   comm.Alltoallv<T>(src, sc.begin(), sd.begin(), dst, rc.begin(), rd.begin());
 }
 
@@ -88,8 +88,8 @@ inline void ensureRecut(PlanBase& s, const Comm& comm) {
   comm.Allgather(Ptr2ConstItr<Long>(&s.Nmid, 1), 1, mid.begin(), 1);
   comm.Allgather(Ptr2ConstItr<Long>(&s.Ntree, 1), 1, cur.begin(), 1);
   ScratchBuf<Long> moff(np + 1), coff(np + 1);
-  moff[0] = 0; omp_par::scan(mid.begin(), moff.begin(), np); moff[np] = moff[np - 1] + mid[np - 1];
-  coff[0] = 0; omp_par::scan(cur.begin(), coff.begin(), np); coff[np] = coff[np - 1] + cur[np - 1];
+  omp_par::scan(mid.begin(), moff.begin(), np + 1, Long(0));  // reads mid[0, np) only
+  omp_par::scan(cur.begin(), coff.begin(), np + 1, Long(0));
   if (s.rscnt.Dim() != np) s.rscnt.ReInit(np);
   if (s.rrcnt.Dim() != np) s.rrcnt.ReInit(np);
   for (Integer q = 0; q < np; q++) {  // overlap of my stage-3 block with q's current block, and inverse
@@ -99,13 +99,15 @@ inline void ensureRecut(PlanBase& s, const Comm& comm) {
   s.recut_cnt = true;
 }
 
-/** A re-cut with per-rank counts `scnt` (this rank keeps `scnt[rank]` of its `n` keys and holds `Nnew`
- *  after): whether any rank's keys move. If so, stage 4 is recorded on `s`, to follow on the first
- *  move (ensureRecut) from the stage-3 layout, since two re-cuts compose to one. */
-inline bool recordRecut(PlanBase& s, const Vector<Long>& scnt, Long n, Long Nnew, const Comm& comm) {
-  Long moved = n - scnt[comm.Rank()], tot = 0;
+/** A re-cut with counts `s.move_scnt` (this rank keeps `move_scnt[rank]` of its `n` keys and holds
+ *  `Nnew` after): records whether any rank's keys move and, if so, stage 4 on `s`, to follow on the
+ *  first move (ensureRecut) from the stage-3 layout, since two re-cuts compose to one. */
+inline bool recordRecut(PlanBase& s, Long n, Long Nnew, const Comm& comm) {
+  Long moved = n - s.move_scnt[comm.Rank()], tot = 0;
   comm.Allreduce(Ptr2ConstItr<Long>(&moved, 1), Ptr2Itr<Long>(&tot, 1), 1, CommOp::SUM);
-  if (!tot) return false;
+  s.moved = (tot != 0);
+  if (!s.moved) return false;
+  s.move_n = n;  // the counts stay for RepartitionData
   s.Ntree = Nnew;
   s.recut = true;
   s.recut_cnt = false;
@@ -147,26 +149,24 @@ template <class Key> void SortScatter<Key>::Init(const Vector<Key>& keys, const 
 /** The keys are globally sorted, so this is a contiguous chunk move (no merge). */
 template <class Key> void SortScatter<Key>::Repartition(const Vector<Key>& splitters) {
   const Integer np = comm_.Size();
-  moved_ = false;
+  plan_.moved = false;
   if (np == 1) return;
   SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Repartition: one splitter per rank.");
 
-  move_scnt_.ReInit(np);
-  move_rcnt_.ReInit(np);
-  const Long Nnew = sort_scatter_detail::splitCounts<Key>(move_scnt_, move_rcnt_, keys_.begin(), keys_.Dim(), splitters, comm_);
-  moved_ = sort_scatter_detail::recordRecut(plan_, move_scnt_, keys_.Dim(), Nnew, comm_);
-  if (!moved_) return;
-  move_n_ = keys_.Dim();  // the counts stay for RepartitionData
+  plan_.move_scnt.ReInit(np);
+  plan_.move_rcnt.ReInit(np);
+  const Long Nnew = sort_scatter_detail::splitCounts<Key>(plan_.move_scnt, plan_.move_rcnt, keys_.begin(), keys_.Dim(), splitters, comm_);
+  if (!sort_scatter_detail::recordRecut(plan_, keys_.Dim(), Nnew, comm_)) return;
   Vector<Key> recv(Nnew);
-  sort_scatter_detail::exchange<Key>(keys_.begin(), recv.begin(), move_scnt_, move_rcnt_, 1, comm_);
+  sort_scatter_detail::exchange<Key>(keys_.begin(), recv.begin(), plan_.move_scnt, plan_.move_rcnt, 1, comm_);
   keys_.Swap(recv);
 }
 
 template <class Key> template <class T> void SortScatter<Key>::RepartitionData(Vector<T>& data, Long dof) const {
-  if (!moved_) return;
-  SCTL_ASSERT_MSG(data.Dim() == move_n_ * dof, "SortScatter::RepartitionData: data holds the previous SortedCount()*dof values.");
+  if (!plan_.moved) return;
+  SCTL_ASSERT_MSG(data.Dim() == plan_.move_n * dof, "SortScatter::RepartitionData: data holds the previous SortedCount()*dof values.");
   Vector<T> out(plan_.Ntree * dof);
-  sort_scatter_detail::exchange<T>(data.begin(), out.begin(), move_scnt_, move_rcnt_, dof, comm_);
+  sort_scatter_detail::exchange<T>(data.begin(), out.begin(), plan_.move_scnt, plan_.move_rcnt, dof, comm_);
   data.Swap(out);
 }
 

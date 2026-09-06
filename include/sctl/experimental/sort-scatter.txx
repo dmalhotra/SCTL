@@ -108,7 +108,7 @@ void SortScatter<Key, DevVec>::Init(DevVec<Key> keys, const sctl::Vector<Key>& s
 template <class Key, template <class...> class DevVec>
 void SortScatter<Key, DevVec>::Repartition(const sctl::Vector<Key>& splitters) {
   const Long np = comm_.Size();
-  moved_ = false;
+  plan_.moved = false;
   if (np == 1) return;
   SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Repartition: one splitter per rank.");
   const auto pol = detail::scratch_policy<DevVec, Key>();
@@ -116,25 +116,23 @@ void SortScatter<Key, DevVec>::Repartition(const sctl::Vector<Key>& splitters) {
 
   DeviceScratch<Key, DevVec> spl(np);
   thrust::copy(splitters.begin(), splitters.end(), spl.begin());
-  move_scnt_.ReInit(np); move_rcnt_.ReInit(np);
-  const Long Nnew = detail::splitCounts(move_scnt_.begin(), move_rcnt_.begin(), keys_, N, spl, comm_);
-  moved_ = sctl::sort_scatter_detail::recordRecut(plan_, move_scnt_, N, Nnew, comm_);
-  if (!moved_) return;
-  move_n_ = N;  // the counts stay for RepartitionData
+  plan_.move_scnt.ReInit(np); plan_.move_rcnt.ReInit(np);
+  const Long Nnew = detail::splitCounts(plan_.move_scnt.begin(), plan_.move_rcnt.begin(), keys_, N, spl, comm_);
+  if (!sctl::sort_scatter_detail::recordRecut(plan_, N, Nnew, comm_)) return;
   DevVec<Key>& k2 = detail::PersistentBuffer<Key, DevVec, detail::Buf::PtSortK>();
   k2.resize(Nnew);
   detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(keys_.data()), N,
-                                             thrust::raw_pointer_cast(k2.data()), move_scnt_, move_rcnt_, Long(1), comm_);
+                                             thrust::raw_pointer_cast(k2.data()), plan_.move_scnt, plan_.move_rcnt, Long(1), comm_);
   keys_.swap(k2);
 }
 
 template <class Key, template <class...> class DevVec> template <class T>
 void SortScatter<Key, DevVec>::RepartitionData(DevVec<T>& data, Long dof) const {
-  if (!moved_) return;
-  SCTL_ASSERT_MSG((Long)data.size() == move_n_ * dof, "SortScatter::RepartitionData: data holds the previous SortedCount()*dof values.");
+  if (!plan_.moved) return;
+  SCTL_ASSERT_MSG((Long)data.size() == plan_.move_n * dof, "SortScatter::RepartitionData: data holds the previous SortedCount()*dof values.");
   DevVec<T> out(plan_.Ntree * dof);
-  detail_sortScatter::exchange<DevVec>(detail::scratch_policy<DevVec, T>(), thrust::raw_pointer_cast(data.data()), move_n_,
-                                             thrust::raw_pointer_cast(out.data()), move_scnt_, move_rcnt_, dof, comm_);
+  detail_sortScatter::exchange<DevVec>(detail::scratch_policy<DevVec, T>(), thrust::raw_pointer_cast(data.data()), plan_.move_n,
+                                             thrust::raw_pointer_cast(out.data()), plan_.move_scnt, plan_.move_rcnt, dof, comm_);
   data.swap(out);
 }
 

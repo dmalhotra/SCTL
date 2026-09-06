@@ -39,6 +39,10 @@ struct PlanBase {
   Vector<Long> rscnt, rrcnt;    ///< stage 4
 
   bool inv = false;             ///< the inverses exist; built on the first move back
+
+  Vector<Long> move_scnt, move_rcnt;  ///< the last Repartition's move, previous layout -> current
+  Long move_n = 0;                    ///< keys held before it
+  bool moved = false;                 ///< whether it moved keys; RepartitionData is a no-op otherwise
 };
 
 struct Plan : PlanBase {
@@ -102,9 +106,6 @@ template <class Key> class SortScatter {
   Comm comm_;
   Vector<Key> keys_;
   mutable sort_scatter_detail::Plan plan_;  ///< inverses and stage-4 counts are built on first use
-  Vector<Long> move_scnt_, move_rcnt_;      ///< the last Repartition's move, previous layout -> current
-  Long move_n_ = 0;                         ///< keys held before it
-  bool moved_ = false;                      ///< whether it moved keys; RepartitionData is a no-op otherwise
 };
 
 }  // namespace sctl
