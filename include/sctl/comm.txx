@@ -174,12 +174,8 @@ inline void MPIWaitAllBatched(MPI_Request* request, Long request_count) {
   }
 }
 
-/**
- * Copy `bytes` out of another process on this node, in 8 MB chunks on every thread but one, which
- * keeps calling `progress` so that MPI transfers already posted advance meanwhile. False if the
- * kernel refuses.
- */
-template <class Progress> bool ReadPeer(int pid, const void* src, void* dst, Long bytes, Progress&& progress) {
+/** Copy `bytes` out of another process on this node, in 8 MB chunks over all threads. False if the kernel refuses. */
+inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
 #ifdef __linux__
   const Long chunk = Long(8) << 20, nchunk = (bytes + chunk - 1) / chunk;
   const auto read = [&](Long c) {
@@ -194,42 +190,17 @@ template <class Progress> bool ReadPeer(int pid, const void* src, void* dst, Lon
     return true;
   };
   const Integer nt = (SCTL_IN_PARALLEL() ? 1 : (Integer)SCTL_GET_MAX_THREADS());
-  if (nchunk <= 1 || nt < 2) {
-    bool ok = true;
-    for (Long c = 0; c < nchunk; c++) ok = read(c) && ok;
-    return ok;
-  }
-  int ok = 1, readers = nt - 1;
-  Long next = 0;
-  #pragma omp parallel num_threads(nt)
-  {
-    if (SCTL_GET_THREAD_NUM() == 0) {
-      int r = 1;
-      while (r) {
-        progress();
-        #pragma omp atomic read
-        r = readers;
-      }
-    } else {
-      bool mine = true;
-      while (true) {
-        Long c;
-        #pragma omp atomic capture
-        c = next++;
-        if (c >= nchunk) break;
-        mine = read(c) && mine;
-      }
-      if (!mine) {
-        #pragma omp atomic write
-        ok = 0;
-      }
-      #pragma omp atomic update
-      readers--;
+  int ok = 1;
+  #pragma omp parallel for schedule(dynamic) num_threads(nt)
+  for (Long c = 0; c < nchunk; c++) {
+    if (!read(c)) {
+      #pragma omp atomic write
+      ok = 0;
     }
   }
   return ok;
 #else
-  SCTL_UNUSED(pid); SCTL_UNUSED(src); SCTL_UNUSED(dst); SCTL_UNUSED(bytes); SCTL_UNUSED(progress);
+  SCTL_UNUSED(pid); SCTL_UNUSED(src); SCTL_UNUSED(dst); SCTL_UNUSED(bytes);
   return false;
 #endif
 }
@@ -398,7 +369,7 @@ inline void Comm::Impl::InitNode() {
     MPI_Allgather(&mine, 1, MPI_INT64_T, addr.data(), 1, MPI_INT64_T, node_comm_);
     ok = 1;
     for (int j = 0; j < node_size_ && ok; j++) {
-      if (j != node_rank) ok = comm_detail::ReadPeer(node_pid_[j], (const void*)addr[j], &got, sizeof(Long), [] {}) && (got == 0x5c71 + ranks[j]);
+      if (j != node_rank) ok = comm_detail::ReadPeer(node_pid_[j], (const void*)addr[j], &got, sizeof(Long)) && (got == 0x5c71 + ranks[j]);
     }
     MPI_Barrier(node_comm_);  // every probe stays alive until all peers have read it
   }
@@ -844,132 +815,77 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Ialltoallv_sparse");
   if (!impl_->node_init_) impl_->InitNode();
-  const auto skip = [this](Integer i) { return i == Rank() || (impl_->direct_ && impl_->node_rank_of_[i] >= 0); };  // moved by `local`, not MPI
-  const auto local = [&](Vector<MPI_Request>& request) {  // the self block, then node peers' blocks read straight out of their send buffers
-    omp_par::memcpy((Iterator<char>)(rbuf + rdispls[Rank()]), (ConstIterator<char>)(sbuf + sdispls[Rank()]), scounts[Rank()] * (Long)sizeof(SType));
-    if (!impl_->direct_) return;
+  const Integer np = impl_->mpi_size_, rank = Rank();
+  const auto skip = [&](Integer i) { return i == rank || (impl_->direct_ && impl_->node_rank_of_[i] >= 0); };  // stays on the node
+  for (Integer i = 0; i < np; i++) {  // receive pages fault in with all threads, not MPI's one
+    if (!skip(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
+  }
+  omp_par::memcpy((Iterator<char>)(rbuf + rdispls[rank]), (ConstIterator<char>)(sbuf + sdispls[rank]), scounts[rank] * (Long)sizeof(SType));
+  if (impl_->direct_) {  // node peers' blocks are read straight out of their send buffers
     ScratchBuf<Long> saddr(impl_->node_size_), raddr(impl_->node_size_);  // where each node peer's block starts in my send buffer
-    for (Integer i = 0; i < impl_->mpi_size_; i++) {
+    for (Integer i = 0; i < np; i++) {
       const int j = impl_->node_rank_of_[i];
       if (j >= 0) saddr[j] = (scounts[i] ? (Long)&sbuf[sdispls[i]] : 0);
     }
     MPI_Alltoall(&saddr[0], 1, MPI_INT64_T, &raddr[0], 1, MPI_INT64_T, impl_->node_comm_);
-    for (Integer i = 0; i < impl_->mpi_size_; i++) {
+    for (Integer i = 0; i < np; i++) {
       const int j = impl_->node_rank_of_[i];
-      if (i == Rank() || j < 0 || !rcounts[i]) continue;
-      const auto progress = [&request]() {  // the off-node transfers need a thread inside MPI to advance
-        int flag = 0;
-        if (request.Dim()) MPI_Testall((int)request.Dim(), &request[0], &flag, MPI_STATUSES_IGNORE);
-      };
-      const bool ok = comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType), progress);
+      if (i == rank || j < 0 || !rcounts[i]) continue;
+      const bool ok = comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType));
       SCTL_ASSERT_MSG(ok, "Comm::Ialltoallv_sparse: direct read from a node peer failed.");
     }
     MPI_Barrier(impl_->node_comm_);  // peers are done reading this rank's send buffer
-  };
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {  // receive pages fault in with all threads, not MPI's one
-    if (!skip(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
   }
+
+  // The rest goes to MPI all at once, receives posted before sends, and completes in the caller's
+  // Wait. Synchronous sends here ran 1.7x slower across six nodes; capping the sends in flight, or
+  // strict pairwise steps, measured no better than this.
+  const auto chunks = [](Long bytes) {  // MPI-3 counts are int, so a large block goes in pieces under their own tags
 #if MPI_VERSION >= 4
-  Long request_count = 0;
-  Long total_bytes = 0;
-  // MPI-4 large-count point-to-point can exchange each peer payload directly in bytes.
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {
-    if (skip(i)) continue;
-    const Long recv_bytes = rcounts[i] * sizeof(RType);
-    const Long send_bytes = scounts[i] * sizeof(SType);
-    request_count += (recv_bytes != 0);
-    request_count += (send_bytes != 0);
-    total_bytes += recv_bytes + send_bytes;
-  }
-  Vector<MPI_Request>& request = NewReq(request_count);
-  Long request_iter = 0;
-
-  comm_detail::TrackPointToPoint(request_count, total_bytes);
-
-  if (request_count)
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {
-    if (skip(i)) continue;
-    const Long recv_bytes = rcounts[i] * sizeof(RType);
-    if (recv_bytes) {
-      Iterator<char> recv_buf = (Iterator<char>)(rbuf + rdispls[i]);
-      SCTL_UNUSED(recv_buf[0]             );
-      SCTL_UNUSED(recv_buf[recv_bytes - 1]);
-      MPI_Irecv_c(&recv_buf[0], comm_detail::MPIAsCountLarge(recv_bytes), MPI_BYTE, i, tag, impl_->mpi_comm_, &request[request_iter]);
-      request_iter++;
-    }
-  }
-  if (request_count)
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {
-    if (skip(i)) continue;
-    const Long send_bytes = scounts[i] * sizeof(SType);
-    if (send_bytes) {
-      ConstIterator<char> send_buf = (ConstIterator<char>)(sbuf + sdispls[i]);
-      SCTL_UNUSED(send_buf[0]             );
-      SCTL_UNUSED(send_buf[send_bytes - 1]);
-      MPI_Issend_c(&send_buf[0], comm_detail::MPIAsCountLarge(send_bytes), MPI_BYTE, i, tag, impl_->mpi_comm_, &request[request_iter]);
-      request_iter++;
-    }
-  }
-  local(request);
-  return Request(&request);
+    return (Long)(bytes != 0);
 #else
-  Long request_count = 0;
-  Long max_chunk_count = 0;
-  Long total_bytes = 0;
-  // Older MPI implementations need large peer messages to be split into int-sized byte chunks.
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {
+    return comm_detail::MPINumChunks(bytes);
+#endif
+  };
+  Long max_chunks = 0, request_count = 0, total_bytes = 0;
+  for (Integer i = 0; i < np; i++) {
     if (skip(i)) continue;
-    const Long recv_bytes = rcounts[i] * sizeof(RType);
-    const Long send_bytes = scounts[i] * sizeof(SType);
-    request_count += comm_detail::MPINumChunks(recv_bytes);
-    request_count += comm_detail::MPINumChunks(send_bytes);
-    max_chunk_count = std::max<Long>(max_chunk_count, comm_detail::MPINumChunks(recv_bytes));
-    max_chunk_count = std::max<Long>(max_chunk_count, comm_detail::MPINumChunks(send_bytes));
+    const Long recv_bytes = rcounts[i] * (Long)sizeof(RType), send_bytes = scounts[i] * (Long)sizeof(SType);
+    max_chunks = std::max<Long>({max_chunks, chunks(recv_bytes), chunks(send_bytes)});
+    request_count += chunks(recv_bytes) + chunks(send_bytes);
     total_bytes += recv_bytes + send_bytes;
   }
-  comm_detail::AssertChunkedTagRange(tag, max_chunk_count, impl_->mpi_tag_ub_);
-  Vector<MPI_Request>& request = NewReq(request_count);
-  Long request_iter = 0;
-
   comm_detail::TrackPointToPoint(request_count, total_bytes);
-
-  if (request_count)
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {
-    if (skip(i)) continue;
-    const Long recv_bytes = rcounts[i] * sizeof(RType);
-    if (recv_bytes) {
-      Iterator<char> recv_buf = (Iterator<char>)(rbuf + rdispls[i]);
-      SCTL_UNUSED(recv_buf[0]             );
-      SCTL_UNUSED(recv_buf[recv_bytes - 1]);
-      Long offset = 0;
-      for (Long j = 0; j < comm_detail::MPINumChunks(recv_bytes); j++) {
-        const Long chunk = std::min<Long>(recv_bytes - offset, comm_detail::MPIIntLimit());
-        MPI_Irecv(&recv_buf[offset], comm_detail::MPIAsCount(chunk), MPI_BYTE, i, comm_detail::MPIChunkTag(tag, j), impl_->mpi_comm_, &request[request_iter]);
-        request_iter++;
-        offset += chunk;
-      }
-    }
-  }
-  if (request_count)
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {
-    if (skip(i)) continue;
-    const Long send_bytes = scounts[i] * sizeof(SType);
-    if (send_bytes) {
-      ConstIterator<char> send_buf = (ConstIterator<char>)(sbuf + sdispls[i]);
-      SCTL_UNUSED(send_buf[0]             );
-      SCTL_UNUSED(send_buf[send_bytes - 1]);
-      Long offset = 0;
-      for (Long j = 0; j < comm_detail::MPINumChunks(send_bytes); j++) {
-        const Long chunk = std::min<Long>(send_bytes - offset, comm_detail::MPIIntLimit());
-        MPI_Issend(&send_buf[offset], comm_detail::MPIAsCount(chunk), MPI_BYTE, i, comm_detail::MPIChunkTag(tag, j), impl_->mpi_comm_, &request[request_iter]);
-        request_iter++;
-        offset += chunk;
-      }
-    }
-  }
-  local(request);
-  return Request(&request);
+#if MPI_VERSION < 4
+  comm_detail::AssertChunkedTagRange(tag, max_chunks, impl_->mpi_tag_ub_);
 #endif
+  Vector<MPI_Request>& request = NewReq(request_count);
+  const auto post = [&](auto buf, Long bytes, Integer peer, MPI_Request* req) {  // a send from a ConstIterator, a receive into an Iterator; returns the requests posted
+    constexpr bool send = std::is_same<decltype(buf), ConstIterator<char>>::value;
+    SCTL_UNUSED(buf[0]); SCTL_UNUSED(buf[bytes - 1]);
+#if MPI_VERSION >= 4
+    if constexpr (send) MPI_Isend_c(&buf[0], comm_detail::MPIAsCountLarge(bytes), MPI_BYTE, peer, tag, impl_->mpi_comm_, req);
+    else                MPI_Irecv_c(&buf[0], comm_detail::MPIAsCountLarge(bytes), MPI_BYTE, peer, tag, impl_->mpi_comm_, req);
+    return (Long)1;
+#else
+    const Long n = comm_detail::MPINumChunks(bytes);
+    for (Long j = 0, offset = 0; j < n; j++) {
+      const Long chunk = std::min<Long>(bytes - offset, comm_detail::MPIIntLimit());
+      if constexpr (send) MPI_Isend(&buf[offset], comm_detail::MPIAsCount(chunk), MPI_BYTE, peer, comm_detail::MPIChunkTag(tag, j), impl_->mpi_comm_, req + j);
+      else                MPI_Irecv(&buf[offset], comm_detail::MPIAsCount(chunk), MPI_BYTE, peer, comm_detail::MPIChunkTag(tag, j), impl_->mpi_comm_, req + j);
+      offset += chunk;
+    }
+    return n;
+#endif
+  };
+  Long m = 0;
+  for (Integer i = 0; i < np; i++) {
+    if (!skip(i) && rcounts[i]) m += post((Iterator<char>)(rbuf + rdispls[i]), rcounts[i] * (Long)sizeof(RType), i, &request[m]);
+  }
+  for (Integer i = 0; i < np; i++) {
+    if (!skip(i) && scounts[i]) m += post((ConstIterator<char>)(sbuf + sdispls[i]), scounts[i] * (Long)sizeof(SType), i, &request[m]);
+  }
+  return Request(&request);
 #else
   omp_par::memcpy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)(sbuf + sdispls[0]), scounts[0] * sizeof(SType));
   return Request();
