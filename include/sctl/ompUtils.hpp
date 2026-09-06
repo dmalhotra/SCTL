@@ -1,7 +1,6 @@
 #ifndef _SCTL_OMPUTILS_HPP_
 #define _SCTL_OMPUTILS_HPP_
 
-#include <cstdint>          // for uint64_t
 #include <iterator>         // for iterator_traits
 #include <type_traits>      // for enable_if, false_type, true_type
 

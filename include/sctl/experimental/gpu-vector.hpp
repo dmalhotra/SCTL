@@ -47,7 +47,7 @@ template <class T> class DeviceVector : public thrust::device_vector<T, detail::
 /// Non-owning view of a data set: `n` values at `ptr` in node order, with the iterator thrust dispatches on for the backend. Valid until the set is reallocated.
 template <class T, template <class...> class DevVec> struct DataView {
   using value_type = T;
-  using iterator = std::conditional_t<detail::is_device_vector_v<DevVec<char>>, thrust::device_ptr<T>, T*>;
+  using iterator = std::conditional_t<detail::is_device_vector_v<DevVec<char>>, thrust::device_ptr<T>, T*>;  // probed on DevVec<char>: T may be const, which no container holds
   T* ptr = nullptr;
   sctl::Long n = 0;
   T* data() const { return ptr; }

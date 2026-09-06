@@ -221,7 +221,7 @@ namespace sctl {
         }
         return t;
       }();
-      {
+      { // local fixpoint: add the parent-neighbors every non-leaf node needs
         static std::pair<Matrix<Integer>,Vector<Integer>> balance21_p_nbrs_precomp = []() { // for each p2n, list of parent's neighbors that must exist to be 2:1 balanced
           Matrix<Integer> p_nbr_lst(MAX_CHILD, MAX_NBRS);
           Vector<Integer> p_nbr_cnt(MAX_CHILD);
@@ -923,7 +923,7 @@ namespace sctl {
       { // collect the non-leaf ("parent") nodes
         ScratchBuf<Vector<Morton<DIM>>> parent_mid_t(nthreads);
         #pragma omp parallel num_threads(nthreads)
-        { // build list of parent nodes parent_mid
+        {
           const Integer tid = SCTL_GET_THREAD_NUM();
           const Integer nt = SCTL_GET_NUM_THREADS();
 
@@ -1295,8 +1295,7 @@ namespace sctl {
   }
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::AddData(const std::string& name, const Vector<ValueType>& data, const Vector<Long>& cnt) {
-    Long dof;
-    dof = tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim()));
+    const Long dof = tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim()));
     if (dof) SCTL_ASSERT(cnt.Dim() == node_mid.Dim());
 
     SCTL_ASSERT(node_data.find(name) == node_data.end());
@@ -1331,8 +1330,7 @@ namespace sctl {
     Vector<Long>& cnt = *cnt_;
     scan(dsp, cnt);
 
-    Long dof;
-    dof = tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim()));
+    const Long dof = tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim()));
 
     { // Reduce
       Vector<Morton<DIM>> send_mid, recv_mid;
@@ -1444,8 +1442,7 @@ namespace sctl {
     Vector<Long>& cnt = *cnt_;
     scan(dsp, cnt);
 
-    Long dof;
-    dof = tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim()));
+    const Long dof = tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim()));
 
     { // Broadcast
       const Vector<Morton<DIM>>& send_mid = user_mid;
@@ -1726,14 +1723,13 @@ namespace sctl {
     const auto& node_mid = this->GetNodeMID();
     const auto& comm = this->GetComm();
 
-    Long dof;
     Vector<Long> dsp;
     Vector<Long> cnt_;
     Vector<const Real> data_;
     this->GetData(data_, cnt_, data_name);
     SCTL_ASSERT(cnt_.Dim() == node_mid.Dim());
     BaseTree::scan(dsp, cnt_);
-    dof = tree_detail::global_dof(comm, data_.Dim(), dsp[node_mid.Dim()-1] + cnt_[node_mid.Dim()-1]);
+    const Long dof = tree_detail::global_dof(comm, data_.Dim(), dsp[node_mid.Dim()-1] + cnt_[node_mid.Dim()-1]);
     { // Set data
       Integer np = comm.Size();
       Integer rank = comm.Rank();

@@ -37,7 +37,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
   const Comm comm = Comm::World();
   const Long np = comm.Size(), rank = comm.Rank(), N = 20000;
   Long fails = 0;
-  const auto check = [&](const char* what, Long bad) {
+  const auto check = [&comm, &fails, rank](const char* what, Long bad) {
     Long tot = 0;
     comm.Allreduce(sctl::Ptr2ConstItr<Long>(&bad, 1), sctl::Ptr2Itr<Long>(&tot, 1), 1, sctl::CommOp::SUM);
     fails += (tot != 0);
@@ -48,7 +48,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     thrust::copy(d.begin(), d.end(), h.begin());
     return h;
   };
-  const auto gather = [&](const auto& loc) {  // concatenation over ranks
+  const auto gather = [&comm, np](const auto& loc) {  // concatenation over ranks
     using T = typename std::decay_t<decltype(loc)>::value_type;
     const Long n = loc.Dim();
     sctl::ScratchBuf<Long> cnt(np), dsp(np);
@@ -122,7 +122,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     gt.UpdateRefinement(xd, 32, true, sctl::Periodicity::NONE, 0);
     st.UpdateRefinement(xs, 32, true, sctl::Periodicity::NONE, 0);
     { const sctl::Vector<NodeT> gmid = to_host(gt.GetNodeMID()); const auto& smid = st.GetNodeMID();
-      std::vector<Real> gv(gmid.Dim()); sctl::Vector<Real> sv(smid.Dim());
+      sctl::ScratchBuf<Real> gv(gmid.Dim()); sctl::Vector<Real> sv(smid.Dim());
       sctl::Vector<Long> gc(gmid.Dim()), sc(smid.Dim());
       for (Long i = 0; i < gmid.Dim(); i++) { gc[i] = 1; gv[i] = node_value(gmid[i], 0); }
       for (Long i = 0; i < smid.Dim(); i++) { sc[i] = 1; sv[i] = node_value(smid[i], 0); }
@@ -149,8 +149,8 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     Long gb, ge;
     gt.GetOwnedRange(gb, ge);
     const sctl::Vector<NodeT> gmid = to_host(gt.GetNodeMID());
-    sctl::Vector<Long> gc(gmid.Dim()); std::vector<Real> gv;
-    for (Long i = 0; i < gmid.Dim(); i++) { gc[i] = (i >= gb && i < ge); if (gc[i]) gv.push_back(node_value(gmid[i], 1)); }
+    sctl::Vector<Long> gc(gmid.Dim()); sctl::ScratchBuf<Real> gv(ge - gb);
+    for (Long i = 0; i < gmid.Dim(); i++) { gc[i] = (i >= gb && i < ge); if (gc[i]) gv[i - gb] = node_value(gmid[i], 1); }
     const DevVec<Real> gvd(gv.begin(), gv.end());
     gt.AddData("u", gvd, gc); gt.AddData("v", gvd, gc);
     for (Integer mode = 0; mode < 2; mode++) {
@@ -174,7 +174,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     const DevVec<Real> fd(f.begin(), f.end()), gd(g.begin(), g.end()), hd(h.begin(), h.end()), y2d(y.begin(), y.begin() + N2 * DIM);
     const sctl::Vector<Real> fs(N * 2, sctl::Ptr2Itr<Real>(f.data(), N * 2), false), gs(N2, sctl::Ptr2Itr<Real>(g.data(), N2), false),
                              hs(N, sctl::Ptr2Itr<Real>(h.data(), N), false), y2s(N2 * DIM, sctl::Ptr2Itr<Real>(y.data(), N2 * DIM), false);  // views of f, g, h, y
-    const auto round_trip = [&](const char* name, const std::vector<Real>& ref) {  // both libraries return the caller's array
+    const auto round_trip = [&gt, &st, &to_host](const char* name, const std::vector<Real>& ref) {  // both libraries return the caller's array
       DevVec<Real> go; gt.GetParticleData(go, name);
       const sctl::Vector<Real> gh = to_host(go);
       sctl::Vector<Real> so; st.GetParticleData(so, name);
@@ -182,7 +182,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
       if (!bad) for (Long i = 0; i < (Long)ref.size(); i++) bad += (gh[i] != ref[i]) + (so[i] != ref[i]);
       return bad;
     };
-    const auto particle_total = [&]() {  // particles held by the tree, summed over ranks, the same in both
+    const auto particle_total = [&gt, &st, &comm]() {  // particles held by the tree, summed over ranks, the same in both
       gpu_tree::DataView<const Real, DevVec> gv; sctl::Vector<Long> gc; gt.GetData(gv, gc, "pt");
       sctl::Vector<Real> sv; sctl::Vector<Long> sc; st.GetData(sv, sc, "pt");
       Long l[2] = {sctl::omp_par::reduce(gc.begin(), gc.Dim()), sctl::omp_par::reduce(sc.begin(), sc.Dim())}, t[2] = {0, 0};
@@ -200,7 +200,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
       thrust::copy(vf.begin(), vf.end(), vu.begin()); }
     { sctl::Vector<Real> vf, vu; sctl::Vector<Long> c1, c2;
       st.GetData(vf, c1, "f"); st.GetData(vu, c2, "u");
-      for (Long i = 0; i < vu.Dim(); i++) vu[i] = vf[i]; }
+      std::copy(vf.begin(), vf.end(), vu.begin()); }
     check("particle data round-trips (two groups, one set filled through the view)", round_trip("f", f) + round_trip("g", g) + round_trip("u", f) + particle_total());
     gt.UpdateRefinement(yd, 25, true, sctl::Periodicity::NONE, 0); st.UpdateRefinement(ys, 25, true, sctl::Periodicity::NONE, 0);
     gt.AddParticleData("h", "pt", hd); st.AddParticleData("h", "pt", hs);  // added after the repartition: the forward scatter with its re-cut stage

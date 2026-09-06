@@ -60,10 +60,6 @@ template <class T> void localMove(ConstIterator<T> src, Iterator<T> dst, const V
 /** One exchange stage, with the per-rank counts scaled by `dof`. */
 template <class T> void exchange(ConstIterator<T> src, Iterator<T> dst, const Vector<Long>& scnt, const Vector<Long>& rcnt, Long dof, const Comm& comm) {
   const Integer np = comm.Size();
-  if (np == 1) {
-    omp_par::memcpy(dst, src, scnt[0] * dof);
-    return;
-  }
   ScratchBuf<Long> sc(np), rc(np), sd(np), rd(np);
   for (Integer r = 0; r < np; r++) { sc[r] = scnt[r] * dof; rc[r] = rcnt[r] * dof; }
   omp_par::scan(sc.begin(), sd.begin(), np, Long(0));
@@ -252,22 +248,21 @@ template <class Key> void SortScatter<Key>::test() {
     for (Integer r = 0; r < np; r++) spl[r] = (Key)(r * (KMAX / np) + (r ? shift : 0));
     return spl;
   };
-  const auto check = [&](const SortScatter& ss, const Vector<Key>& spl, const Vector<Long>& sorted_payload) {
+  const auto check = [&comm, np, rank, N, dof](const SortScatter& ss, const Vector<Key>& spl, const Vector<Long>& sorted_payload) {
     const Long n = ss.SortedCount();
     SCTL_ASSERT(ss.SortedKeys().Dim() == n && sorted_payload.Dim() == n * dof);
-    Long bad = 0, tot = 0, gtot = 0;
+    Long bad = 0;
     for (Long i = 0; i < n; i++) {
       const Key k = ss.SortedKeys()[i];
       bad += (i && k < ss.SortedKeys()[i - 1]);                    // sorted
       bad += (rank && k < spl[rank]) || (rank + 1 < np && !(k < spl[rank + 1]));  // within my range
       bad += ((Long)k != sorted_payload[i * dof]);                 // payload rode along with its key
     }
-    StaticArray<Long, 2> l{bad, n}, g;
-    comm.Allreduce((ConstIterator<Long>)l, (Iterator<Long>)g, 2, CommOp::SUM);
-    tot = N; comm.Allreduce(Ptr2ConstItr<Long>(&tot, 1), Ptr2Itr<Long>(&gtot, 1), 1, CommOp::SUM);
-    SCTL_ASSERT(g[0] == 0 && g[1] == gtot);
+    StaticArray<Long, 3> l{bad, n, N}, g;
+    comm.Allreduce((ConstIterator<Long>)l, (Iterator<Long>)g, 3, CommOp::SUM);
+    SCTL_ASSERT(g[0] == 0 && g[1] == g[2]);
   };
-  const auto roundTrip = [&](const SortScatter& ss, const Vector<Key>& spl) {
+  const auto roundTrip = [&check, &payload, N, dof](const SortScatter& ss, const Vector<Key>& spl) {
     Vector<Long> q = payload;
     ss.ScatterForward(q, dof);
     check(ss, spl, q);

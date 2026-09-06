@@ -149,7 +149,8 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
   /**
    * Get node data as views of the stored buffers, as `sctl::Tree::GetData` does: `data` over the
    * payload, `cnt` over the per-node counts. Neither owns; both are valid until the set is
-   * reallocated (`UpdateRefinement`, `DeleteData`). A const tree yields a const view.
+   * reallocated (`UpdateRefinement`, `Broadcast`, `ReduceBroadcast`, `DeleteData`). A const tree yields a
+   * const view.
    *
    * @param[out] data View of the stored data for this name.
    * @param[out] cnt View of the number of data items per node (length = number of tree nodes); not to be modified.
@@ -225,14 +226,11 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
    */
   static void buildTreeDist(DevVec<Morton<DIM>>& tree, const DevVec<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, Morton<DIM>* partition, DevVec<NodeAttr>* node_attr, NodeLists<DevVec>* node_lists, DevVec<Morton<DIM>>* user_mid, sctl::Vector<Long>* user_cnt);
 
-  /**
-   * Per-new-node `[range[i], range[i+1])` into `old_mid`, the old nodes each new node absorbs.
-   * Searches wherever the nodes live, so on the device only `range` crosses the bus.
-   */
-  static void remapRanges(sctl::Iterator<Long> range, const DevVec<Morton<DIM>>& old_mid, const DevVec<Morton<DIM>>& new_mid);
-
   /** The view behind both `GetData` overloads; `VT` may be const. */
   template <class VT> void dataView(View<VT>& data, sctl::Vector<Long>& cnt, const std::string& name) const;
+
+  /** Storage for a new data set of `bytes`, with its per-node counts; both `AddData` overloads end here. */
+  void addData_(const std::string& name, Long bytes, const sctl::Vector<Long>& cnt);
 
 
 

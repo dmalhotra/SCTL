@@ -49,14 +49,9 @@ void localMove(const Policy& pol, const T* src, T* dst, const DevVec<Long>& map,
 
 /** One exchange stage, between raw buffers, with the per-rank counts scaled by `dof`. */
 template <template <class...> class DevVec, class T, class Policy>
-void exchange(const Policy& pol, const T* src, Long nsrc, T* dst,
+void exchange(const Policy& pol, const T* src, T* dst,
               const sctl::Vector<Long>& scnt, const sctl::Vector<Long>& rcnt, Long dof, const Comm& comm) {
   const Long np = comm.Size();
-  if (np == 1) {
-    using It = detail::ScratchIterator<T, DevVec>;
-    thrust::copy(pol, It(const_cast<T*>(src)), It(const_cast<T*>(src)) + nsrc * dof, It(dst));
-    return;
-  }
 #ifdef SCTL_HAVE_MPI
   sctl::ScratchBuf<Long> sc(np), rc(np);
   for (Long r = 0; r < np; r++) { sc[r] = scnt[r] * dof; rc[r] = rcnt[r] * dof; }
@@ -91,7 +86,7 @@ void SortScatter<Key, DevVec>::Init(DevVec<Key> keys, const sctl::Vector<Key>& s
       plan_.Nmid = detail::splitCounts(plan_.scnt.begin(), plan_.rcnt.begin(), keys_, Nloc, spl, comm_);
       DevVec<Key>& k2 = detail::PersistentBuffer<Key, DevVec, detail::Buf::PtSortK>();
       k2.resize(plan_.Nmid);
-      detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(keys_.data()), Nloc,
+      detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(keys_.data()),
                                                  thrust::raw_pointer_cast(k2.data()), plan_.scnt, plan_.rcnt, Long(1), comm_);
       keys_.swap(k2);
     }
@@ -121,7 +116,7 @@ void SortScatter<Key, DevVec>::Repartition(const sctl::Vector<Key>& splitters) {
   if (!sctl::sort_scatter_detail::recordRecut(plan_, N, Nnew, comm_)) return;
   DevVec<Key>& k2 = detail::PersistentBuffer<Key, DevVec, detail::Buf::PtSortK>();
   k2.resize(Nnew);
-  detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(keys_.data()), N,
+  detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(keys_.data()),
                                              thrust::raw_pointer_cast(k2.data()), plan_.move_scnt, plan_.move_rcnt, Long(1), comm_);
   keys_.swap(k2);
 }
@@ -131,7 +126,7 @@ void SortScatter<Key, DevVec>::RepartitionData(DevVec<T>& data, Long dof) const 
   if (!plan_.moved) return;
   SCTL_ASSERT_MSG((Long)data.size() == plan_.move_n * dof, "SortScatter::RepartitionData: data holds the previous SortedCount()*dof values.");
   DevVec<T> out(plan_.Ntree * dof);
-  detail_sortScatter::exchange<DevVec>(detail::scratch_policy<DevVec, T>(), thrust::raw_pointer_cast(data.data()), plan_.move_n,
+  detail_sortScatter::exchange<DevVec>(detail::scratch_policy<DevVec, T>(), thrust::raw_pointer_cast(data.data()),
                                              thrust::raw_pointer_cast(out.data()), plan_.move_scnt, plan_.move_rcnt, dof, comm_);
   data.swap(out);
 }
@@ -149,7 +144,7 @@ void SortScatter<Key, DevVec>::ScatterForward(const T* src, T* dst, Long dof) co
   a.resize(plan_.Nloc * dof);
   b.resize(plan_.Nmid * dof);
   detail_sortScatter::localMove<DevVec>(pol, src, thrust::raw_pointer_cast(a.data()), plan_.pre, plan_.Nloc, dof);
-  detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(a.data()), plan_.Nloc,
+  detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(a.data()),
                                              thrust::raw_pointer_cast(b.data()), plan_.scnt, plan_.rcnt, dof, comm_);
   if (!plan_.recut) {
     detail_sortScatter::localMove<DevVec>(pol, thrust::raw_pointer_cast(b.data()), dst, plan_.post, plan_.Nmid, dof);
@@ -157,7 +152,7 @@ void SortScatter<Key, DevVec>::ScatterForward(const T* src, T* dst, Long dof) co
   }
   a.resize(plan_.Nmid * dof);
   detail_sortScatter::localMove<DevVec>(pol, thrust::raw_pointer_cast(b.data()), thrust::raw_pointer_cast(a.data()), plan_.post, plan_.Nmid, dof);
-  detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(a.data()), plan_.Nmid, dst, plan_.rscnt, plan_.rrcnt, dof, comm_);
+  detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(a.data()), dst, plan_.rscnt, plan_.rrcnt, dof, comm_);
 }
 
 template <class Key, template <class...> class DevVec> template <class T>
@@ -179,13 +174,13 @@ void SortScatter<Key, DevVec>::ScatterReverse(const T* src, T* dst, Long dof) co
   const T* mid = src;  // the stage-3 output, whichever buffer holds it
   if (plan_.recut) {
     b.resize(plan_.Nmid * dof);
-    detail_sortScatter::exchange<DevVec>(pol, src, plan_.Ntree, thrust::raw_pointer_cast(b.data()), plan_.rrcnt, plan_.rscnt, dof, comm_);
+    detail_sortScatter::exchange<DevVec>(pol, src, thrust::raw_pointer_cast(b.data()), plan_.rrcnt, plan_.rscnt, dof, comm_);
     mid = thrust::raw_pointer_cast(b.data());
   }
   a.resize(plan_.Nmid * dof);
   detail_sortScatter::localMove<DevVec>(pol, mid, thrust::raw_pointer_cast(a.data()), plan_.post_inv, plan_.Nmid, dof);
   b.resize(plan_.Nloc * dof);
-  detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(a.data()), plan_.Nmid,
+  detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(a.data()),
                                              thrust::raw_pointer_cast(b.data()), plan_.rcnt, plan_.scnt, dof, comm_);
   detail_sortScatter::localMove<DevVec>(pol, thrust::raw_pointer_cast(b.data()), dst, plan_.pre_inv, plan_.Nloc, dof);
 }
