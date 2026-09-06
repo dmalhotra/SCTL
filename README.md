@@ -54,7 +54,7 @@ The following compiler flags can be used to enable or disable specific features 
 
 ## GPU Tree (experimental)
 
-[gpu-tree.hpp](include/sctl/experimental/gpu-tree.hpp) provides `gpu_tree::GPUTree` and `gpu_tree::PtTree`, the `Tree`/`PtTree` interface on a thrust backend: `gpu_tree::HostVector` (OpenMP on the host) or `gpu_tree::DeviceVector` (CUDA device, exchanged through CUDA-aware MPI). `make gpu` builds its validation test ([test-gpu-tree.cu](src/test-gpu-tree.cu), every backend against `sctl::Tree`) and a minimal example ([example-gpu-tree.cu](src/example-gpu-tree.cu)) with `nvcc -ccbin mpicxx`; adjust `NVCC` and `NVCCFLAGS` in the Makefile for another toolchain.
+[gpu-tree.hpp](include/sctl/experimental/gpu-tree.hpp) provides `gpu_tree::GPUTree` and `gpu_tree::PtTree`, the `Tree`/`PtTree` interface on a thrust backend: `gpu_tree::HostVector` (OpenMP on the host) or `gpu_tree::DeviceVector` (CUDA device, exchanged through CUDA-aware MPI). `make gpu` builds its validation test ([test-gpu-tree.cu](src/test-gpu-tree.cu), every backend against `sctl::Tree`) and the minimal example `PtTree::test()` ([example-gpu-tree.cu](src/example-gpu-tree.cu)) with `nvcc -ccbin mpicxx`; adjust `NVCC` and `NVCCFLAGS` in the Makefile for another toolchain.
 
 ## Features and Capabilities
 

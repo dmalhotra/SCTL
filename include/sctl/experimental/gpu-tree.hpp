@@ -348,9 +348,9 @@ class PtTree : public BaseTree {
   void WriteParticleVTK(std::string fname, std::string data_name, bool show_ghost = false) const;
 
   /**
-   * Validation against `sctl::Tree` and `sctl::PtTree` on `Comm::World()`: node sets, flags, lists,
-   * node data across a refinement, broadcasts, and particle data round trips through repartitions.
-   * Prints one line per check and asserts that all passed.
+   * Minimal example on `Comm::World()`: build a tree over random particles, attach a value per
+   * particle, scale it in place through a view of the node data, and read it back in the caller's
+   * order. Validation against `sctl::Tree` lives in `src/test-gpu-tree.cu`.
    */
   static void test();
 
