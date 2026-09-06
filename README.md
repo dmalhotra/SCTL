@@ -52,10 +52,6 @@ The following compiler flags can be used to enable or disable specific features 
 - `-DSCTL_SIG_HANDLER`: Enable [stack trace](include/sctl/stacktrace.h). On Linux with glibc < 2.34, link with `-ldl` (newer glibc has it merged into libc).
 - `-DSCTL_QUAD_T`: Enable support for [quad-precision type](include/sctl/math_utils.hpp).
 
-## GPU Tree (experimental)
-
-[gpu-tree.hpp](include/sctl/experimental/gpu-tree.hpp) provides `gpu_tree::GPUTree` and `gpu_tree::PtTree`, the `Tree`/`PtTree` interface on a thrust backend: `gpu_tree::HostVector` (OpenMP on the host) or `gpu_tree::DeviceVector` (CUDA device, exchanged through CUDA-aware MPI). `make gpu` builds its validation test ([test-gpu-tree.cu](src/test-gpu-tree.cu), every backend against `sctl::Tree`) and the minimal example `PtTree::test()` ([example-gpu-tree.cu](src/example-gpu-tree.cu)) with `nvcc -ccbin mpicxx`; adjust `NVCC` and `NVCCFLAGS` in the Makefile for another toolchain.
-
 ## Features and Capabilities
 
 The following list outlines the primary features and capabilities provided by the library, along with references to detailed tutorials and documentation for each component:
@@ -77,7 +73,6 @@ The following list outlines the primary features and capabilities provided by th
   - [InterpQuadRule](include/sctl/quadrule.hpp): Generating special quadrature rules.
   - [Tree, PtTree](include/sctl/tree.hpp), [Morton](include/sctl/morton.hpp): Morton order based N-dimensional parallel tree structure.
   - [SortScatter](include/sctl/sort-scatter.hpp): keys sorted into a rank-partitioned order, kept together with the permutation to and from the caller's order; the trees move particle data with it.
-  - [GPUTree, PtTree](include/sctl/experimental/gpu-tree.hpp): the same trees on a thrust host or device backend (experimental).
 
 - **Spectral Methods**:
   Methods for spectral representations and transformations.
@@ -110,6 +105,11 @@ The following list outlines the primary features and capabilities provided by th
   - [ScratchBuf, ScratchPool](include/sctl/scratch_pool.hpp): Per-thread stack allocator for short-lived buffers in hot loops.
   - [Stacktrace utility](include/sctl/stacktrace.h): Prints stack traces for debugging.
   - [GEMM, SVD (unoptimized)](include/sctl/mat_utils.hpp): Provides basic implementations of GEMM and SVD operations.
+
+- **Experimental**:
+  Components whose interfaces may still change.
+
+  - [GPUTree, PtTree](include/sctl/experimental/gpu-tree.hpp): The `Tree`/`PtTree` interface on a thrust backend, OpenMP host or CUDA device, with CUDA-aware MPI (`make gpu`).
 
 - **Legacy (Unmaintained)**:
   Older functionalities that are no longer actively maintained.

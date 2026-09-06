@@ -1,9 +1,22 @@
-// gpu_tree against sctl on every backend. Build: make gpu. Run under mpirun.
-//
-// The same points go to both libraries. Node sets, counts and values are compared as the global
-// concatenation of each rank's owned nodes, since the two libraries cut the node set between ranks
-// differently; flags, lists and the partition compare node for node at one rank, where the cuts
-// coincide. Particle data must come back in the caller's order from both, bit for bit.
+/**
+ * @file test-gpu-tree.cu
+ * @brief gpu_tree against sctl on every backend.
+ *
+ * The same points go to both libraries. Node sets, counts and values are compared as the global
+ * concatenation of each rank's owned nodes, since the two libraries cut the node set between ranks
+ * differently; flags, lists and the partition compare node for node at one rank, where the cuts
+ * coincide. Particle data must come back in the caller's order from both, bit for bit.
+ *
+ * Build (`make gpu`, or by hand with a CUDA-aware MPI):
+ *
+ *     nvcc -ccbin mpicxx -x cu -std=c++17 -O3 -arch=native -rdc=true --expt-relaxed-constexpr \
+ *          -Xcompiler -fopenmp -DSCTL_HAVE_MPI -DSCTL_MAX_DEPTH=20 \
+ *          -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP -I include src/test-gpu-tree.cu -o bin/test-gpu-tree -ldl
+ *
+ * Run:
+ *
+ *     mpirun -np 4 bin/test-gpu-tree
+ */
 #include <cstdio>
 #include <random>
 #include <vector>
