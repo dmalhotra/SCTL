@@ -24,33 +24,26 @@ namespace sctl {
 
 namespace sort_scatter_detail {
 
-/** Key with its position; `comm_detail::LocalSort` radix-sorts it through `key` when Key allows. */
-template <class Key> struct Pair {
-  Key key;
-  Long data;
-  bool operator<(const Pair& p) const { return key < p.key; }
-};
-
 /** Sort `n` keys from `src` into `dst` (may alias), writing the source position of each into `idx`. */
 template <class Key> void sortWithIndex(ConstIterator<Key> src, Iterator<Key> dst, Vector<Long>& idx, Long n) {
-  ScratchBuf<Pair<Key>> in(n), out(n);
+  ScratchBuf<comm_detail::SortPair<Key, Long>> in(n), out(n);
   #pragma omp parallel for schedule(static)
   for (Long i = 0; i < n; i++) { in[i].key = src[i]; in[i].data = i; }
-  comm_detail::LocalSort<Pair<Key>>(in.begin(), out.begin(), n, std::less<Pair<Key>>());
+  comm_detail::LocalSort<comm_detail::SortPair<Key, Long>>(in.begin(), out.begin(), n, std::less<comm_detail::SortPair<Key, Long>>());
   if (idx.Dim() != n) idx.ReInit(n);
   #pragma omp parallel for schedule(static)
   for (Long i = 0; i < n; i++) { dst[i] = out[i].key; idx[i] = out[i].data; }
 }
 
-/** `scnt[r]`: sorted `keys` in `[splitters[r], splitters[r+1])` (ends open); `rcnt`: what comes back.
- *  Both sized np by the caller. Returns the receive total. */
-template <class Key> Long splitCounts(Vector<Long>& scnt, Vector<Long>& rcnt, const Vector<Key>& keys, const Vector<Key>& splitters, const Comm& comm) {
+/** `scnt[r]`: the `n` sorted `keys` in `[splitters[r], splitters[r+1])` (ends open); `rcnt`: what
+ *  comes back. Both sized np by the caller. Returns the receive total. */
+template <class Key> Long splitCounts(Vector<Long>& scnt, Vector<Long>& rcnt, ConstIterator<Key> keys, Long n, const Vector<Key>& splitters, const Comm& comm) {
   const Integer np = comm.Size();
   ScratchBuf<Long> pos(np + 1);
   pos[0] = 0;
-  pos[np] = keys.Dim();
+  pos[np] = n;
   #pragma omp parallel for schedule(static)
-  for (Integer r = 1; r < np; r++) pos[r] = std::lower_bound(keys.begin(), keys.end(), splitters[r]) - keys.begin();
+  for (Integer r = 1; r < np; r++) pos[r] = std::lower_bound(keys, keys + n, splitters[r]) - keys;
   for (Integer r = 0; r < np; r++) scnt[r] = pos[r + 1] - pos[r];
   comm.Alltoall<Long>(scnt.begin(), 1, rcnt.begin(), 1);
   Long nrecv = 0;
@@ -86,17 +79,9 @@ inline void buildInverse(const Vector<Long>& m, Vector<Long>& inv) {
   for (Long i = 0; i < n; i++) inv[m[i]] = i;
 }
 
-/** Inverses on the first move back: a caller that only moves data into sorted order never pays for them. */
-inline void ensureInverse(Plan& s) {
-  if (s.inv) return;
-  buildInverse(s.pre, s.pre_inv);
-  if (s.post.Dim()) buildInverse(s.post, s.post_inv);
-  s.inv = true;
-}
-
 /** Stage-4 counts from the stage-3 layout to the current one, on the first move after a repartition;
  *  no Alltoall, since every block size is allgathered. */
-inline void ensureRecut(Plan& s, const Comm& comm) {
+inline void ensureRecut(PlanBase& s, const Comm& comm) {
   if (!s.recut || s.recut_cnt) return;
   const Integer np = comm.Size(), rank = comm.Rank();
   ScratchBuf<Long> mid(np), cur(np);
@@ -114,46 +99,17 @@ inline void ensureRecut(Plan& s, const Comm& comm) {
   s.recut_cnt = true;
 }
 
-/**
- * Caller order -> sorted order, `dof` values per key. `src` holds `Nloc*dof` values, `dst` holds
- * `Ntree*dof`, and they must not overlap.
- */
-template <class T> void forward(ConstIterator<T> src, Iterator<T> dst, Plan& s, Long dof, const Comm& comm) {
-  if (comm.Size() == 1) {  // stages 2-4 are absent, so the sort alone is the map
-    localMove<T>(src, dst, s.pre, s.Nloc, dof);
-    return;
-  }
-  ensureRecut(s, comm);
-  ScratchBuf<T> a(s.Nloc * dof), b(s.Nmid * dof);
-  localMove<T>(src, a.begin(), s.pre, s.Nloc, dof);
-  exchange<T>(a.begin(), b.begin(), s.scnt, s.rcnt, dof, comm);
-  if (!s.recut) {
-    localMove<T>(b.begin(), dst, s.post, s.Nmid, dof);
-    return;
-  }
-  ScratchBuf<T> c(s.Nmid * dof);
-  localMove<T>(b.begin(), c.begin(), s.post, s.Nmid, dof);
-  exchange<T>(c.begin(), dst, s.rscnt, s.rrcnt, dof, comm);
-}
-
-/** Sorted order -> caller order: the same stages in reverse, each local one using its inverse. */
-template <class T> void reverse(ConstIterator<T> src, Iterator<T> dst, Plan& s, Long dof, const Comm& comm) {
-  ensureInverse(s);
-  if (comm.Size() == 1) {
-    localMove<T>(src, dst, s.pre_inv, s.Nloc, dof);
-    return;
-  }
-  ensureRecut(s, comm);
-  ScratchBuf<T> c(s.recut ? s.Nmid * dof : 0);
-  ConstIterator<T> mid = src;  // the stage-3 output, whichever buffer holds it
-  if (s.recut) {
-    exchange<T>(src, c.begin(), s.rrcnt, s.rscnt, dof, comm);
-    mid = c.begin();
-  }
-  ScratchBuf<T> a(s.Nmid * dof), b(s.Nloc * dof);
-  localMove<T>(mid, a.begin(), s.post_inv, s.Nmid, dof);
-  exchange<T>(a.begin(), b.begin(), s.rcnt, s.scnt, dof, comm);
-  localMove<T>(b.begin(), dst, s.pre_inv, s.Nloc, dof);
+/** A re-cut with per-rank counts `scnt` (this rank keeps `scnt[rank]` of its `n` keys and holds `Nnew`
+ *  after): whether any rank's keys move. If so, stage 4 is recorded on `s`, to follow on the first
+ *  move (ensureRecut) from the stage-3 layout, since two re-cuts compose to one. */
+inline bool recordRecut(PlanBase& s, const Vector<Long>& scnt, Long n, Long Nnew, const Comm& comm) {
+  Long moved = n - scnt[comm.Rank()], tot = 0;
+  comm.Allreduce(Ptr2ConstItr<Long>(&moved, 1), Ptr2Itr<Long>(&tot, 1), 1, CommOp::SUM);
+  if (!tot) return false;
+  s.Ntree = Nnew;
+  s.recut = true;
+  s.recut_cnt = false;
+  return true;
 }
 
 }  // namespace sort_scatter_detail
@@ -174,14 +130,13 @@ template <class Key> void SortScatter<Key>::Init(const Vector<Key>& keys, const 
     return;
   }
 
-  ScratchBuf<Key> sorted_(Nloc);
-  Vector<Key> sorted(sorted_);
+  ScratchBuf<Key> sorted(Nloc);
   sort_scatter_detail::sortWithIndex<Key>(keys.begin(), sorted.begin(), plan_.pre, Nloc);  // stage 1: this rank's own keys, carrying their handed positions
 
   { // stage 2: each key to the rank owning its stretch; the sort left each destination's keys contiguous
     plan_.scnt.ReInit(np);
     plan_.rcnt.ReInit(np);
-    plan_.Nmid = sort_scatter_detail::splitCounts(plan_.scnt, plan_.rcnt, sorted, splitters, comm_);
+    plan_.Nmid = sort_scatter_detail::splitCounts<Key>(plan_.scnt, plan_.rcnt, sorted.begin(), Nloc, splitters, comm_);
     keys_.ReInit(plan_.Nmid);
     sort_scatter_detail::exchange<Key>(sorted.begin(), keys_.begin(), plan_.scnt, plan_.rcnt, 1, comm_);
   }
@@ -198,23 +153,13 @@ template <class Key> void SortScatter<Key>::Repartition(const Vector<Key>& split
 
   move_scnt_.ReInit(np);
   move_rcnt_.ReInit(np);
-  const Long Nnew = sort_scatter_detail::splitCounts(move_scnt_, move_rcnt_, keys_, splitters, comm_);
-  { // skip when nothing crosses a rank boundary
-    Long moved = keys_.Dim() - move_scnt_[comm_.Rank()], tot = 0;
-    comm_.Allreduce(Ptr2ConstItr<Long>(&moved, 1), Ptr2Itr<Long>(&tot, 1), 1, CommOp::SUM);
-    if (!tot) return;
-  }
-  { // move the keys to the new partition, keeping the counts for RepartitionData
-    move_n_ = keys_.Dim();
-    moved_ = true;
-    Vector<Key> recv(Nnew);
-    sort_scatter_detail::exchange<Key>(keys_.begin(), recv.begin(), move_scnt_, move_rcnt_, 1, comm_);
-    keys_.Swap(recv);
-  }
-  // stage 4 follows on the first move (ensureRecut), from the stage-3 layout: two re-cuts compose to one
-  plan_.Ntree = Nnew;
-  plan_.recut = true;
-  plan_.recut_cnt = false;
+  const Long Nnew = sort_scatter_detail::splitCounts<Key>(move_scnt_, move_rcnt_, keys_.begin(), keys_.Dim(), splitters, comm_);
+  moved_ = sort_scatter_detail::recordRecut(plan_, move_scnt_, keys_.Dim(), Nnew, comm_);
+  if (!moved_) return;
+  move_n_ = keys_.Dim();  // the counts stay for RepartitionData
+  Vector<Key> recv(Nnew);
+  sort_scatter_detail::exchange<Key>(keys_.begin(), recv.begin(), move_scnt_, move_rcnt_, 1, comm_);
+  keys_.Swap(recv);
 }
 
 template <class Key> template <class T> void SortScatter<Key>::RepartitionData(Vector<T>& data, Long dof) const {
@@ -226,11 +171,45 @@ template <class Key> template <class T> void SortScatter<Key>::RepartitionData(V
 }
 
 template <class Key> template <class T> void SortScatter<Key>::ScatterForward(ConstIterator<T> src, Iterator<T> dst, Long dof) const {
-  sort_scatter_detail::forward<T>(src, dst, plan_, dof, comm_);
+  if (comm_.Size() == 1) {  // stages 2-4 are absent, so the sort alone is the map
+    sort_scatter_detail::localMove<T>(src, dst, plan_.pre, plan_.Nloc, dof);
+    return;
+  }
+  sort_scatter_detail::ensureRecut(plan_, comm_);
+  ScratchBuf<T> a(plan_.Nloc * dof), b(plan_.Nmid * dof);
+  sort_scatter_detail::localMove<T>(src, a.begin(), plan_.pre, plan_.Nloc, dof);
+  sort_scatter_detail::exchange<T>(a.begin(), b.begin(), plan_.scnt, plan_.rcnt, dof, comm_);
+  if (!plan_.recut) {
+    sort_scatter_detail::localMove<T>(b.begin(), dst, plan_.post, plan_.Nmid, dof);
+    return;
+  }
+  ScratchBuf<T> c(plan_.Nmid * dof);
+  sort_scatter_detail::localMove<T>(b.begin(), c.begin(), plan_.post, plan_.Nmid, dof);
+  sort_scatter_detail::exchange<T>(c.begin(), dst, plan_.rscnt, plan_.rrcnt, dof, comm_);
 }
 
 template <class Key> template <class T> void SortScatter<Key>::ScatterReverse(ConstIterator<T> src, Iterator<T> dst, Long dof) const {
-  sort_scatter_detail::reverse<T>(src, dst, plan_, dof, comm_);
+  if (!plan_.inv) {  // inverses on the first move back: a caller that only moves data into sorted order never pays for them
+    sort_scatter_detail::buildInverse(plan_.pre, plan_.pre_inv);
+    if (plan_.post.Dim()) sort_scatter_detail::buildInverse(plan_.post, plan_.post_inv);
+    plan_.inv = true;
+  }
+  if (comm_.Size() == 1) {
+    sort_scatter_detail::localMove<T>(src, dst, plan_.pre_inv, plan_.Nloc, dof);
+    return;
+  }
+  // the stages of ScatterForward in reverse, each local one through its inverse
+  sort_scatter_detail::ensureRecut(plan_, comm_);
+  ScratchBuf<T> c(plan_.recut ? plan_.Nmid * dof : 0);
+  ConstIterator<T> mid = src;  // the stage-3 output, whichever buffer holds it
+  if (plan_.recut) {
+    sort_scatter_detail::exchange<T>(src, c.begin(), plan_.rrcnt, plan_.rscnt, dof, comm_);
+    mid = c.begin();
+  }
+  ScratchBuf<T> a(plan_.Nmid * dof), b(plan_.Nloc * dof);
+  sort_scatter_detail::localMove<T>(mid, a.begin(), plan_.post_inv, plan_.Nmid, dof);
+  sort_scatter_detail::exchange<T>(a.begin(), b.begin(), plan_.rcnt, plan_.scnt, dof, comm_);
+  sort_scatter_detail::localMove<T>(b.begin(), dst, plan_.pre_inv, plan_.Nloc, dof);
 }
 
 template <class Key> template <class T> void SortScatter<Key>::ScatterForward(Vector<T>& data, Long dof) const {

@@ -54,8 +54,8 @@ template <class T, template <class...> class DevVec, auto Tag> DevVec<T>& Persis
  * A caller-owned destination is pageable and usually freshly allocated, which costs twice over:
  * the driver cannot DMA into it, and it faults in a page at a time inside the driver's copy. Taking
  * the DMA into one pinned buffer that is kept and regrown, then filling the destination with the
- * host threads, avoids both -- 42.6 -> 5.3 ms for a 75 MB node array. No `Tag`: the staging buffer
- * is live only within the call, so all uses of a given `T` share one.
+ * host threads, avoids both. No `Tag`: the staging buffer is live only within the call, so all
+ * uses of a given `T` share one.
  *
  * On host backends `src` is already a host pointer and this is a plain copy.
  */
@@ -83,6 +83,10 @@ template <template <class...> class DevVec> class DeviceScratchPool {
   DeviceScratchPool(const DeviceScratchPool&) = delete;
   DeviceScratchPool& operator=(const DeviceScratchPool&) = delete;
 
+ private:
+  template <class, template <class...> class> friend class DeviceScratch;
+  template <template <class...> class> friend class DeviceScratchAllocator;
+
   /** One chunk of the pool; `DeviceScratch` holds the chunk its slice came from. */
   struct Chunk {
     DevVec<char>* buf;  // leaked by design: freeing device memory at exit races CUDA teardown
@@ -101,7 +105,6 @@ template <template <class...> class DevVec> class DeviceScratchPool {
   /** Same, with the owning chunk located by the LIFO invariant. */
   void FreeBytes(char* p, Long bytes);
 
- private:
   DeviceScratchPool() = default;
   void NewChunk(Long need);
 

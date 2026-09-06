@@ -178,7 +178,7 @@ inline void MPIWaitAllBatched(MPI_Request* request, Long request_count) {
 inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
 #ifdef __linux__
   const Long chunk = Long(8) << 20, nchunk = (bytes + chunk - 1) / chunk;
-  const auto read = [&](Long c) {
+  const auto read = [pid,src,dst,bytes,chunk](Long c) {
     Long a = c * chunk;
     const Long b = std::min<Long>(bytes, a + chunk);
     while (a < b) {
@@ -352,10 +352,10 @@ inline void Comm::Impl::InitNode() {
   int node_rank = 0;
   MPI_Comm_size(node_comm_, &node_size_);
   MPI_Comm_rank(node_comm_, &node_rank);
-  std::vector<int> ranks(node_size_);  // node rank -> comm rank
-  MPI_Allgather(&mpi_rank_, 1, MPI_INT, ranks.data(), 1, MPI_INT, node_comm_);
+  ScratchBuf<int> ranks(node_size_);  // node rank -> comm rank
+  MPI_Allgather(&mpi_rank_, 1, MPI_INT, &ranks[0], 1, MPI_INT, node_comm_);
   node_rank_of_.assign(mpi_size_, -1);
-  for (int j = 0; j < node_size_; j++) node_rank_of_[ranks[j]] = j;
+  for (Integer j = 0; j < node_size_; j++) node_rank_of_[ranks[j]] = j;
   int ok = 0;
 #ifdef __linux__
   if (node_size_ > 1) {
@@ -365,10 +365,10 @@ inline void Comm::Impl::InitNode() {
     MPI_Allgather(&pid, 1, MPI_INT, node_pid_.data(), 1, MPI_INT, node_comm_);
     Long probe = 0x5c71 + mpi_rank_, got = 0;
     const Long mine = (Long)&probe;
-    std::vector<Long> addr(node_size_);
-    MPI_Allgather(&mine, 1, MPI_INT64_T, addr.data(), 1, MPI_INT64_T, node_comm_);
+    ScratchBuf<Long> addr(node_size_);
+    MPI_Allgather(&mine, 1, MPI_INT64_T, &addr[0], 1, MPI_INT64_T, node_comm_);
     ok = 1;
-    for (int j = 0; j < node_size_ && ok; j++) {
+    for (Integer j = 0; j < node_size_ && ok; j++) {
       if (j != node_rank) ok = comm_detail::ReadPeer(node_pid_[j], (const void*)addr[j], &got, sizeof(Long)) && (got == 0x5c71 + ranks[j]);
     }
     MPI_Barrier(node_comm_);  // every probe stays alive until all peers have read it
@@ -816,7 +816,7 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
   comm_detail::WarnIfMPIInactive("Comm::Ialltoallv_sparse");
   if (!impl_->node_init_) impl_->InitNode();
   const Integer np = impl_->mpi_size_, rank = Rank();
-  const auto skip = [&](Integer i) { return i == rank || (impl_->direct_ && impl_->node_rank_of_[i] >= 0); };  // stays on the node
+  const auto skip = [this,rank](Integer i) { return i == rank || (impl_->direct_ && impl_->node_rank_of_[i] >= 0); };  // stays on the node
   for (Integer i = 0; i < np; i++) {  // receive pages fault in with all threads, not MPI's one
     if (!skip(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
   }
@@ -824,12 +824,12 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
   if (impl_->direct_) {  // node peers' blocks are read straight out of their send buffers
     ScratchBuf<Long> saddr(impl_->node_size_), raddr(impl_->node_size_);  // where each node peer's block starts in my send buffer
     for (Integer i = 0; i < np; i++) {
-      const int j = impl_->node_rank_of_[i];
+      const Integer j = impl_->node_rank_of_[i];
       if (j >= 0) saddr[j] = (scounts[i] ? (Long)&sbuf[sdispls[i]] : 0);
     }
     MPI_Alltoall(&saddr[0], 1, MPI_INT64_T, &raddr[0], 1, MPI_INT64_T, impl_->node_comm_);
     for (Integer i = 0; i < np; i++) {
-      const int j = impl_->node_rank_of_[i];
+      const Integer j = impl_->node_rank_of_[i];
       if (i == rank || j < 0 || !rcounts[i]) continue;
       const bool ok = comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType));
       SCTL_ASSERT_MSG(ok, "Comm::Ialltoallv_sparse: direct read from a node peer failed.");
@@ -837,9 +837,7 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
     MPI_Barrier(impl_->node_comm_);  // peers are done reading this rank's send buffer
   }
 
-  // The rest goes to MPI all at once, receives posted before sends, and completes in the caller's
-  // Wait. Synchronous sends here ran 1.7x slower across six nodes; capping the sends in flight, or
-  // strict pairwise steps, measured no better than this.
+  // The rest goes to MPI all at once, receives posted before sends, and completes in the caller's Wait.
   const auto chunks = [](Long bytes) {  // MPI-3 counts are int, so a large block goes in pieces under their own tags
 #if MPI_VERSION >= 4
     return (Long)(bytes != 0);
@@ -860,7 +858,7 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
   comm_detail::AssertChunkedTagRange(tag, max_chunks, impl_->mpi_tag_ub_);
 #endif
   Vector<MPI_Request>& request = NewReq(request_count);
-  const auto post = [&](auto buf, Long bytes, Integer peer, MPI_Request* req) {  // a send from a ConstIterator, a receive into an Iterator; returns the requests posted
+  const auto post = [this,tag](auto buf, Long bytes, Integer peer, MPI_Request* req) {  // a send from a ConstIterator, a receive into an Iterator; returns the requests posted
     constexpr bool send = std::is_same<decltype(buf), ConstIterator<char>>::value;
     SCTL_UNUSED(buf[0]); SCTL_UNUSED(buf[bytes - 1]);
 #if MPI_VERSION >= 4
@@ -1445,7 +1443,7 @@ template <class Type, class Compare> void Comm::PartitionS(Vector<Type>& nodeLis
 
 template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vector<Long>& scatter_index, const Type* split_key_) const {
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
-  typedef SortPair<Type, Long> Pair_t;
+  typedef comm_detail::SortPair<Type, Long> Pair_t;
   Integer npes = Size();
 
   ScratchBuf<Pair_t> parray_storage(key.Dim());
@@ -1529,7 +1527,7 @@ template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vecto
 
 template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vector<Long>& scatter_index) const {
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
-  typedef SortPair<Long, Long> Pair_t;
+  typedef comm_detail::SortPair<Long, Long> Pair_t;
   Integer npes = Size(), rank = Rank();
 
   Long data_dim = 0;
@@ -1650,7 +1648,7 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
 
 template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vector<Long>& scatter_index_, Long loc_size_) const {
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
-  typedef SortPair<Long, Long> Pair_t;
+  typedef comm_detail::SortPair<Long, Long> Pair_t;
   Integer npes = Size(), rank = Rank();
 
   Long data_dim = 0;
@@ -1929,18 +1927,15 @@ SCTL_HS_MPIDATATYPE(unsigned char, MPI_UNSIGNED_CHAR);
 
 namespace comm_detail {
 
-// A type radix-sorts through its own integer key, and a pair-like type -- Comm's SortPair, which
-// is detected structurally by its `key` member since the nested name is private -- through its
-// key's; SortPair's operator< compares the key alone, so the orders agree. Custom comparators
-// fall through to the comparison sorts.
-template <class Type, class = void> struct IsRadixSortable : omp_par::is_radix_sortable<Type> {};
-template <class Type> struct IsRadixSortable<Type, std::void_t<decltype(std::declval<Type>().key)>>
-    : omp_par::is_radix_sortable<typename std::decay<decltype(std::declval<Type>().key)>::type> {};
-template <class Type, class = void> struct RadixKeyOf {
+// A type radix-sorts through its own integer key, and a SortPair through its key's. Custom
+// comparators fall through to the comparison sorts.
+template <class Type> struct IsRadixSortable : omp_par::is_radix_sortable<Type> {};
+template <class A, class B> struct IsRadixSortable<SortPair<A, B>> : omp_par::is_radix_sortable<A> {};
+template <class Type> struct RadixKeyOf {
   std::uint64_t operator()(const Type& x) const { return x.GetIntKey(); }
 };
-template <class Type> struct RadixKeyOf<Type, std::void_t<decltype(std::declval<Type>().key)>> {
-  std::uint64_t operator()(const Type& p) const { return p.key.GetIntKey(); }
+template <class A, class B> struct RadixKeyOf<SortPair<A, B>> {
+  std::uint64_t operator()(const SortPair<A, B>& p) const { return p.key.GetIntKey(); }
 };
 
 // Local-phase sort for SampleSort and HyperQuickSort (see policy comment inside).

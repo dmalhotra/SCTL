@@ -257,8 +257,8 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
      *
      * @param data_name Name of the data. Must not already exist.
      * @param particle_name Name of an existing particle group from `AddParticles`.
-     * @param data Local data values, sized `dof * Nlocal[particle_name]` for
-     * some implicit `dof`. Reordered to match the particle group.
+     * @param data Local data values, `dof` per local particle of `particle_name` for some
+     * implicit `dof`. Reordered to match the particle group.
      *
      * @note Collective; must be called from all processes.
      */
@@ -310,6 +310,8 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
     static void test();
 
   private:
+
+    void SetPartitionCodes();  ///< partition_codes from GetPartitionMID()
 
     Vector<MortonCode<DIM>> partition_codes;  ///< partition mins as codes: the SortScatter splitters; set with each partition
     std::map<std::string, SortScatter<MortonCode<DIM>>> groups;  ///< per particle group: codes in tree order, maps to/from caller order

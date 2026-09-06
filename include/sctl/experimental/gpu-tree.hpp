@@ -29,8 +29,6 @@ using sctl::Morton;
 using sctl::MortonCode;
 using sctl::MAX_DEPTH;
 
-template <class Real, Integer DIM, template <class...> class DevVec> class GPUTree;
-
 /**
  * Morton-order linear tree on a thrust backend, with the node set of `sctl::Tree` for the same
  * inputs. The object retains the tree, the partition and any named per-node data;
@@ -174,8 +172,8 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
   void DeleteData(const std::string& name);
 
   /**
-   * Reduce data on nodes shared between processors and then broadcast the halo/ghost node data. The
-   * resulting tree will have ghost nodes added to the tree.
+   * Sum the partial values of nodes shared between processors, then fill the ghost copies with the
+   * result. The ghost nodes themselves come from `UpdateRefinement`'s halo; only their data changes.
    *
    * @param[in] name Name of the data.
    *
@@ -184,7 +182,8 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
   template <class ValueType> void ReduceBroadcast(const std::string& name);
 
   /**
-   * Broadcast the halo/ghost node data. The resulting tree will have ghost nodes added to the tree.
+   * Fill the ghost copies of nodes with their owner's data. The ghost nodes themselves come from
+   * `UpdateRefinement`'s halo; only their data changes.
    *
    * @param[in] name Name of the data.
    *
@@ -229,8 +228,7 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
 
   /**
    * Per-new-node `[range[i], range[i+1])` into `old_mid`, the old nodes each new node absorbs.
-   * Searches wherever the nodes live, so on the device only `range` crosses the bus -- which is
-   * why `UpdateRefinement` keeps the pre-rebuild nodes device-side.
+   * Searches wherever the nodes live, so on the device only `range` crosses the bus.
    */
   static void remapRanges(sctl::Vector<Long>& range, const DevVec<Morton<DIM>>& old_mid, const DevVec<Morton<DIM>>& new_mid);
 
@@ -355,9 +353,6 @@ class PtTree : public BaseTree {
   static void test();
 
  private:
-
-  /** `dof` deduced globally as `sum(ndata)/sum(nitem)`, as in sctl::Tree. */
-  Long globalDof(Long ndata, Long nitem) const;
 
   /** Particles of `name` falling in each node of `GetNodeMID()`. */
   void nodeCounts(const std::string& name, sctl::Vector<Long>& cnt) const;

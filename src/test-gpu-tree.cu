@@ -18,6 +18,7 @@
  *     mpirun -np 4 bin/test-gpu-tree
  */
 #include <cstdio>
+#include <numeric>
 #include <random>
 #include <vector>
 #include <thrust/copy.h>
@@ -50,11 +51,10 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
   const auto gather = [&](const auto& loc) {  // concatenation over ranks
     using T = typename std::decay_t<decltype(loc)>::value_type;
     const Long n = loc.Dim();
-    sctl::Vector<Long> cnt(np), dsp(np);
+    sctl::ScratchBuf<Long> cnt(np), dsp(np);
     comm.Allgather(sctl::Ptr2ConstItr<Long>(&n, 1), 1, cnt.begin(), 1);
-    Long tot = 0;
-    for (Long i = 0; i < np; i++) { dsp[i] = tot; tot += cnt[i]; }
-    sctl::Vector<T> out(tot);
+    std::exclusive_scan(cnt.begin(), cnt.end(), dsp.begin(), Long(0));
+    sctl::Vector<T> out(dsp[np - 1] + cnt[np - 1]);
     comm.Allgatherv(loc.begin(), n, out.begin(), cnt.begin(), dsp.begin());
     return out;
   };
@@ -81,12 +81,11 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
   for (auto& v : x) v = U(rng);
   for (auto& v : y) { const Real u = U(rng); v = 0.5 + 0.45 * u * u * u; }  // clustered, for the refinements
   const DevVec<Real> xd(x.begin(), x.end()), yd(y.begin(), y.end());
-  sctl::Vector<Real> xs(N * DIM), ys(N * DIM);
-  for (Long i = 0; i < N * DIM; i++) { xs[i] = x[i]; ys[i] = y[i]; }
+  const sctl::Vector<Real> xs(N * DIM, sctl::Ptr2Itr<Real>(x.data(), N * DIM), false), ys(N * DIM, sctl::Ptr2Itr<Real>(y.data(), N * DIM), false);  // views of x, y
 
   { // node set, and at one rank flags, lists and partition, for every periodicity mask with and without 2:1 balance
     Long bad_set = 0, bad_local = 0;
-    for (sctl::PeriodicityT m = 0; m < (1 << DIM); m++) for (int b21 = 0; b21 <= 1; b21++) {
+    for (sctl::PeriodicityT m = 0; m < (1 << DIM); m++) for (Integer b21 = 0; b21 <= 1; b21++) {
       const auto per = static_cast<sctl::Periodicity>(m);
       const Integer halo = (b21 ? 1 : -1);
       GT gt(comm); gt.UpdateRefinement(xd, 32, b21, per, halo);
@@ -95,9 +94,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
       gt.GetOwnedRange(gb, ge); owned(st, sb, se);
       const sctl::Vector<NodeT> gmid = to_host(gt.GetNodeMID());
       const auto& smid = st.GetNodeMID();
-      sctl::Vector<NodeT> g(ge - gb), s(se - sb);
-      for (Long i = 0; i < ge - gb; i++) g[i] = gmid[gb + i];
-      for (Long i = 0; i < se - sb; i++) s[i] = smid[sb + i];
+      const sctl::Vector<NodeT> g(ge - gb, (sctl::Iterator<NodeT>)gmid.begin() + gb, false), s(se - sb, (sctl::Iterator<NodeT>)smid.begin() + sb, false);  // views of the owned slices
       bad_set += !equal(gather(g), gather(s));
       if (np == 1) {
         const sctl::Vector<typename GT::NodeAttr> attr = to_host(gt.GetNodeAttr());
@@ -138,15 +135,10 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     gpu_tree::DataView<const Real, DevVec> gd; sctl::Vector<Long> gcnt; gt.GetData(gd, gcnt, "f");
     sctl::Vector<Real> sd; sctl::Vector<Long> scnt; st.GetData(sd, scnt, "f");
     const sctl::Vector<Real> gh = to_host(gd);
-    sctl::Vector<Long> gco(ge - gb), sco(se - sb);
-    Long goff = 0, soff = 0, gn = 0, sn = 0;
-    for (Long i = 0; i < gb; i++) goff += gcnt[i];
-    for (Long i = 0; i < sb; i++) soff += scnt[i];
-    for (Long i = 0; i < ge - gb; i++) { gco[i] = gcnt[gb + i]; gn += gco[i]; }
-    for (Long i = 0; i < se - sb; i++) { sco[i] = scnt[sb + i]; sn += sco[i]; }
-    sctl::Vector<Real> gv(gn), sv(sn);
-    for (Long i = 0; i < gn; i++) gv[i] = gh[goff + i];
-    for (Long i = 0; i < sn; i++) sv[i] = sd[soff + i];
+    const sctl::Vector<Long> gco(ge - gb, gcnt.begin() + gb, false), sco(se - sb, scnt.begin() + sb, false);  // views of the owned slices
+    const Long goff = sctl::omp_par::reduce(gcnt.begin(), gb), soff = sctl::omp_par::reduce(scnt.begin(), sb);
+    const Long gn = sctl::omp_par::reduce(gco.begin(), gco.Dim()), sn = sctl::omp_par::reduce(sco.begin(), sco.Dim());
+    const sctl::Vector<Real> gv(gn, (sctl::Iterator<Real>)gh.begin() + goff, false), sv(sn, sd.begin() + soff, false);
     check("node data migrated by a refinement equals sctl::Tree's (counts)", !equal(gather(gco), gather(sco)));
     check("node data migrated by a refinement equals sctl::Tree's (values)", !equal(gather(gv), gather(sv)));
   }
@@ -161,7 +153,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     for (Long i = 0; i < gmid.Dim(); i++) { gc[i] = (i >= gb && i < ge); if (gc[i]) gv.push_back(node_value(gmid[i], 1)); }
     const DevVec<Real> gvd(gv.begin(), gv.end());
     gt.AddData("u", gvd, gc); gt.AddData("v", gvd, gc);
-    for (int mode = 0; mode < 2; mode++) {
+    for (Integer mode = 0; mode < 2; mode++) {
       const char* nm = (mode ? "v" : "u");
       if (mode) gt.template ReduceBroadcast<Real>(nm); else gt.template Broadcast<Real>(nm);
       gpu_tree::DataView<const Real, DevVec> gd; sctl::Vector<Long> gcn; gt.GetData(gd, gcn, nm);
@@ -180,11 +172,8 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     for (Long i = 0; i < N; i++) { f[2 * i] = 1e6 * rank + i; f[2 * i + 1] = -(Real)i; h[i] = 0.5 * i + rank; }
     for (Long i = 0; i < N2; i++) g[i] = 7e5 * rank + 3 * i;
     const DevVec<Real> fd(f.begin(), f.end()), gd(g.begin(), g.end()), hd(h.begin(), h.end()), y2d(y.begin(), y.begin() + N2 * DIM);
-    sctl::Vector<Real> fs(N * 2), gs(N2), hs(N), y2s(N2 * DIM);
-    for (Long i = 0; i < N * 2; i++) fs[i] = f[i];
-    for (Long i = 0; i < N2; i++) gs[i] = g[i];
-    for (Long i = 0; i < N; i++) hs[i] = h[i];
-    for (Long i = 0; i < N2 * DIM; i++) y2s[i] = y[i];
+    const sctl::Vector<Real> fs(N * 2, sctl::Ptr2Itr<Real>(f.data(), N * 2), false), gs(N2, sctl::Ptr2Itr<Real>(g.data(), N2), false),
+                             hs(N, sctl::Ptr2Itr<Real>(h.data(), N), false), y2s(N2 * DIM, sctl::Ptr2Itr<Real>(y.data(), N2 * DIM), false);  // views of f, g, h, y
     const auto round_trip = [&](const char* name, const std::vector<Real>& ref) {  // both libraries return the caller's array
       DevVec<Real> go; gt.GetParticleData(go, name);
       const sctl::Vector<Real> gh = to_host(go);

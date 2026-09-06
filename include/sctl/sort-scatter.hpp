@@ -23,21 +23,27 @@ namespace sort_scatter_detail {
  * re-cut of a sorted block is contiguous too. Stage 4 is always recomputed from the stage-3 layout,
  * since two re-cuts compose to one. Each local map is kept with its inverse so both directions are
  * gathers; the inverses are built on the first move back.
+ *
+ * The local maps live where the keys do -- host `Vector`s in `Plan`, backend vectors in
+ * `gpu_tree::detail_sortScatter::Plan` -- so each adds them to this shared record.
  */
-struct Plan {
+struct PlanBase {
   Long Nloc = 0;   ///< keys this rank was handed
   Long Nmid = 0;   ///< keys held after stages 1-3
   Long Ntree = 0;  ///< keys held now; differs from `Nmid` once the partition has changed
 
-  Vector<Long> pre, pre_inv;    ///< Nloc: stage 1 and its inverse
   Vector<Long> scnt, rcnt;      ///< stage 2; unused at np=1
-  Vector<Long> post, post_inv;  ///< Nmid: stage 3 and its inverse; unused at np=1
 
   bool recut = false;           ///< stage 4 present
   bool recut_cnt = false;       ///< stage-4 counts computed; done on the first move after a repartition
   Vector<Long> rscnt, rrcnt;    ///< stage 4
 
   bool inv = false;             ///< the inverses exist; built on the first move back
+};
+
+struct Plan : PlanBase {
+  Vector<Long> pre, pre_inv;    ///< Nloc: stage 1 and its inverse
+  Vector<Long> post, post_inv;  ///< Nmid: stage 3 and its inverse; unused at np=1
 };
 
 }  // namespace sort_scatter_detail

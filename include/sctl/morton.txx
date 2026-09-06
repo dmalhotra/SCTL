@@ -460,7 +460,7 @@ SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::nbr_l
 #if defined(__CUDA_ARCH__)
   // On device the fully-unrolled emitters exhaust the register budget at high DIM (DIM>=4 hits the
   // 255-reg cap + spills -> low occupancy); the compact `nbr_loop_` keeps occupancy high and is
-  // ~1.6x faster there. Host/lower-DIM keep the unrolled emitter (faster on CPU and device DIM<=3).
+  // faster there. Host/lower-DIM keep the unrolled emitter, which is faster on CPU and device DIM<=3.
   // The `else` (not a bare `return`) keeps the unrolled emitter from being instantiated on this path.
   if constexpr (DIM >= 4) {
     nbr_loop_(xi_self, box_size, maxCoord, periodicity, level, out);
@@ -477,8 +477,8 @@ SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrLi
 
 template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrList(uint8_t level, Periodicity periodicity) const {
   // Dispatch runtime periodicity to a PER-specialized, unrolled, force-inlined emitter (DYN==false);
-  // every mask up to DIM==3 is enumerated, so only DIM>3 masks take the runtime emitter. ~2-3x
-  // faster than `nbr_loop_` on host/DIM<=3 (which is the readable form).
+  // every mask up to DIM==3 is enumerated, so only DIM>3 masks take the runtime emitter `nbr_loop_`,
+  // the readable form; the unrolled one is faster on host and DIM<=3.
   switch (periodicity) {
     case Periodicity::NONE: return nbr_list_<Periodicity::NONE, false>(level, periodicity);
     case Periodicity::X:    return nbr_list_<Periodicity::X,    false>(level, periodicity);

@@ -35,6 +35,15 @@ enum class CommOp {
  * Object oriented wrapper to MPI. It uses MPI when compiled with `mpicxx` and the macro `SCTL_HAVE_MPI`
  * is defined, otherwise, it defaults to the *self* communicator.
  */
+namespace comm_detail {
+/** Key with its payload, ordered by the key alone, so a radix sort through the key agrees with `operator<`. */
+template <class A, class B> struct SortPair {
+  bool operator<(const SortPair& p) const { return key < p.key; }
+  A key;
+  B data;
+};
+}  // namespace comm_detail
+
 class Comm {
 
  public:
@@ -304,9 +313,10 @@ class Comm {
   template <class SType, class RType> void Alltoall(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const;
 
   /**
-   * Sparse all-to-all communication. Collective. Blocks that stay on the node never go through
-   * MPI: the self block is copied, and node peers' blocks are read straight out of their send
-   * buffers (Linux; falls back to MPI where the kernel forbids it). The request covers the rest.
+   * Sparse all-to-all communication. Collective. The payload of blocks that stay on the node never
+   * goes through MPI: the self block is copied, and node peers' blocks are read straight out of
+   * their send buffers (Linux; falls back to MPI where the kernel forbids it). The request covers
+   * the rest.
    *
    * @tparam SType type of the send-data.
    * @tparam RType type of the receive-data.
@@ -600,15 +610,6 @@ class Comm {
  private:
 
   /**
-   * Structure to hold a pair of elements for sorting.
-   */
-  template <typename A, typename B> struct SortPair {
-    int operator<(const SortPair<A, B>& p1) const { return key < p1.key; }
-    A key;
-    B data;
-  };
-
-  /**
    * Core of SampleSort: given a locally-sorted array `loc` and this rank's lower boundary
    * `splitter` (one value per rank, gathered internally so the split is always consistent),
    * redistribute (one Alltoallv) and parallel-merge so rank r ends up with the globally-sorted
@@ -648,8 +649,8 @@ class Comm {
     bool direct_ = false;
     MPI_Comm node_comm_ = MPI_COMM_NULL;
     int node_size_ = 1;
-    std::vector<int> node_rank_of_;  ///< comm rank -> node rank, -1 off-node
-    std::vector<int> node_pid_;      ///< by node rank
+    std::vector<Integer> node_rank_of_;  ///< comm rank -> node rank, -1 off-node
+    std::vector<int> node_pid_;          ///< by node rank
 
     Impl();
     ~Impl();

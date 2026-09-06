@@ -32,7 +32,7 @@ template <class SrcPtr, class T> inline void deviceToHost(SrcPtr src, Long n, T*
     SCTL_ASSERT(cudaMemcpy(stage, thrust::raw_pointer_cast(src), n * sizeof(T), cudaMemcpyDeviceToHost) == cudaSuccess);
     p = stage;
   } else {
-    p = &src[0];
+    p = src;
   }
   #pragma omp parallel for schedule(static)
   for (Long i = 0; i < n; i++) dst[i] = p[i];

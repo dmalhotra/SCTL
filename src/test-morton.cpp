@@ -97,8 +97,8 @@ int main() {
   //   Ancestor∘Ancestor at coarser depth = Ancestor of the coarser depth.
   // An interior depth (0 < d < MAX_DEPTH) for the tests below; 5 unless MAX_DEPTH is shallower.
   static_assert(Morton::MAX_DEPTH >= 2, "test-morton needs a depth strictly between root and leaf");
-  const uint8_t d_mid = (uint8_t)std::min<int>(5, Morton::MAX_DEPTH - 1);
-  const uint8_t d_deep = (uint8_t)std::min<int>(8, Morton::MAX_DEPTH - 1);
+  const uint8_t d_mid = (uint8_t)std::min<Integer>(5, Morton::MAX_DEPTH - 1);
+  const uint8_t d_deep = (uint8_t)std::min<Integer>(8, Morton::MAX_DEPTH - 1);
 
   std::printf("Ancestor :\n");
   {

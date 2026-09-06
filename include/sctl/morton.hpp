@@ -53,9 +53,8 @@ template <Integer DIM> class MortonCode {
   /** @param[in] coord `DIM` coordinates; inputs outside [0,1) are clamped. */
   template <class Real> SCTL_GPU_HD explicit MortonCode(const Real* coord);
 
-  /** Morton-order less-than. */
   /**
-   * The most significant 64 bits of the code, as an unsigned integer. Ordering by this agrees with
+   * The most significant word of the code, as an unsigned integer. Ordering by this agrees with
    * `operator<`: completely when the code fits one word (`IntKeyIsExact`), and as a bucket key
    * otherwise -- codes with different keys are ordered correctly, codes sharing one need the full
    * comparison to separate them. Exists so a radix sort can replace the comparison sort a sorting
@@ -72,6 +71,7 @@ template <Integer DIM> class MortonCode {
   /** Inverse of `GetIntKey()`. Only meaningful when `IntKeyIsExact`. */
   static SCTL_GPU_HD MortonCode FromIntKey(std::uint64_t key);
 
+  /** Morton-order less-than. */
   SCTL_GPU_HD bool operator<(const MortonCode& other) const;
 
   /**
@@ -281,7 +281,7 @@ template <Integer DIM> class Morton {
    */
   template <Periodicity PER> SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level) const;
 
-  /** sctl::Tree-compat overloads: write into a Vector outparam (host-only). */
+  /** sctl::Tree-compat overload: writes into a Vector outparam (host-only). */
   void NbrList(Vector<Morton>& nlst, uint8_t level, Periodicity periodicity) const;
 
   /**

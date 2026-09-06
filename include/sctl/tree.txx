@@ -33,36 +33,6 @@
 
 namespace sctl {
 
-  /**
-   * Per-node particle counts from sorted codes: cnt[i] = number of codes in
-   * [node_mid[i], node_mid[i+1]). Parallel over node chunks; each thread locates its first
-   * boundary by one binary search and walks forward with a doubling search per node.
-   */
-  template <Integer DIM> void pt_node_counts(const Vector<Morton<DIM>>& node_mid, const Vector<MortonCode<DIM>>& pt_mid, Iterator<Long> cnt) {
-    #pragma omp parallel
-    {
-      const Integer tid = SCTL_GET_THREAD_NUM();
-      const Integer nthreads = SCTL_GET_NUM_THREADS();
-      const Long idx0 = (node_mid.Dim() *  tid     ) / nthreads;
-      const Long idx1 = (node_mid.Dim() * (tid + 1)) / nthreads;
-
-      if (idx0 < node_mid.Dim()) {
-        Long j0 = std::lower_bound(pt_mid.begin(), pt_mid.end(), node_mid[idx0].mid) - pt_mid.begin();
-        if (idx0 == 0) SCTL_ASSERT(j0 == 0);
-        for (Long i = idx0; i < idx1; i++) {
-          const auto m1 = (i+1<node_mid.Dim() ? node_mid[i+1].mid : Morton<DIM>().Next().mid);
-
-          Long j = 1;
-          while (j0+j < pt_mid.Dim() && pt_mid[j0+j] < m1) j *= 2;
-          const Long j1 = std::lower_bound(pt_mid.begin()+j0+(j>>1), pt_mid.begin()+std::min<Long>(j0+j, pt_mid.Dim()), m1) - pt_mid.begin();
-          cnt[i] = j1 - j0;
-          j0 = j1;
-        }
-        if (idx1 == node_mid.Dim()) SCTL_ASSERT(j0 == pt_mid.Dim());
-      }
-    }
-  }
-
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::test() {
     Long N = 100000;
     Vector<Real> X(N*DIM), f(N);
@@ -226,11 +196,17 @@ namespace sctl {
       return tbl;
     }
 
-    // Index of a node in its k-th neighbor's own neighbor list.
-    template <Integer DIM> const Matrix<Integer>& reverse_nbr_idx_table() {
+    // 2:1 balance the non-leaf nodes in place: a non-leaf's same-depth neighbors must exist, so
+    // their parents must be non-leaf too. Local fixpoint, then redistribute by `mins` and dedup.
+    // Leaves are not represented -- rebuild them from the result, as UpdateRefinement does.
+    template <Integer DIM> void Balance21(Vector<Morton<DIM>>& parent_mid, ConstIterator<Morton<DIM>> mins, const Comm& comm, Periodicity periodicity) {
+      const Integer np = comm.Size();
+      const Integer nthreads = SCTL_GET_MAX_THREADS();
       static constexpr Integer MAX_CHILD = (1u << DIM);
       static constexpr Integer MAX_NBRS = sctl::pow<DIM,Integer>(3);
-      static const Matrix<Integer> tbl = []() {
+      static constexpr Integer MAX_DEPTH = Morton<DIM>::MAX_DEPTH;
+      static const auto& nbr_path = nbr_path_table<DIM>();  // static: lambdas below capture nothing
+      static const auto reverse_nbr_idx = []() { // index of a node in its k-th neighbor's own neighbor list
         Matrix<Integer> t(MAX_CHILD, MAX_NBRS);
         const auto parent = (Morton<DIM>{}).Children()[0].Children()[MAX_CHILD-1];
         for (Integer p2n = 0; p2n < MAX_CHILD; p2n++) {
@@ -245,20 +221,6 @@ namespace sctl {
         }
         return t;
       }();
-      return tbl;
-    }
-
-    // 2:1 balance the non-leaf nodes in place: a non-leaf's same-depth neighbors must exist, so
-    // their parents must be non-leaf too. Local fixpoint, then redistribute by `mins` and dedup.
-    // Leaves are not represented -- rebuild them from the result, as UpdateRefinement does.
-    template <Integer DIM> void Balance21(Vector<Morton<DIM>>& parent_mid, const Vector<Morton<DIM>>& mins, const Comm& comm, Periodicity periodicity) {
-      const Integer np = comm.Size();
-      const Integer nthreads = SCTL_GET_MAX_THREADS();
-      static constexpr Integer MAX_CHILD = (1u << DIM);
-      static constexpr Integer MAX_NBRS = sctl::pow<DIM,Integer>(3);
-      static constexpr Integer MAX_DEPTH = Morton<DIM>::MAX_DEPTH;
-      static const auto& nbr_path = nbr_path_table<DIM>();  // static: lambdas below capture nothing
-      static const auto& reverse_nbr_idx = reverse_nbr_idx_table<DIM>();
       {
         static std::pair<Matrix<Integer>,Vector<Integer>> balance21_p_nbrs_precomp = []() { // for each p2n, list of parent's neighbors that must exist to be 2:1 balanced
           Matrix<Integer> p_nbr_lst(MAX_CHILD, MAX_NBRS);
@@ -499,8 +461,8 @@ namespace sctl {
             Long local_excl = 0;
             const Morton<DIM> b0 = parent_mid[idx0];
             const Morton<DIM> b1 = (idx1 < Nnodes ? parent_mid[idx1] : Morton<DIM>().Next());
-            const Long r0 = std::lower_bound(mins.begin(), mins.end(), b0) - mins.begin();
-            const Long r1 = std::lower_bound(mins.begin(), mins.end(), b1) - mins.begin();
+            const Long r0 = std::lower_bound(mins, mins + np, b0) - mins;
+            const Long r1 = std::lower_bound(mins, mins + np, b1) - mins;
             for (Long r = r0; r < std::min<Long>(r1+1, np); r++) {
               TreeNode* node = &ptree[0];
               const Integer d0 = mins[r].Depth();
@@ -588,6 +550,35 @@ namespace sctl {
       }
     }
 
+    /**
+     * Per-node particle counts from sorted codes: cnt[i] = number of codes in
+     * [node_mid[i], node_mid[i+1]). Parallel over node chunks; each thread locates its first
+     * boundary by one binary search and walks forward with a doubling search per node.
+     */
+    template <Integer DIM> void pt_node_counts(const Vector<Morton<DIM>>& node_mid, const Vector<MortonCode<DIM>>& pt_mid, Iterator<Long> cnt) {
+      #pragma omp parallel
+      {
+        const Integer tid = SCTL_GET_THREAD_NUM();
+        const Integer nthreads = SCTL_GET_NUM_THREADS();
+        const Long idx0 = (node_mid.Dim() *  tid     ) / nthreads;
+        const Long idx1 = (node_mid.Dim() * (tid + 1)) / nthreads;
+
+        if (idx0 < node_mid.Dim()) {
+          Long j0 = std::lower_bound(pt_mid.begin(), pt_mid.end(), node_mid[idx0].mid) - pt_mid.begin();
+          if (idx0 == 0) SCTL_ASSERT(j0 == 0);
+          for (Long i = idx0; i < idx1; i++) {
+            const auto m1 = (i+1<node_mid.Dim() ? node_mid[i+1].mid : Morton<DIM>().Next().mid);
+
+            Long j = 1;
+            while (j0+j < pt_mid.Dim() && pt_mid[j0+j] < m1) j *= 2;
+            const Long j1 = std::lower_bound(pt_mid.begin()+j0+(j>>1), pt_mid.begin()+std::min<Long>(j0+j, pt_mid.Dim()), m1) - pt_mid.begin();
+            cnt[i] = j1 - j0;
+            j0 = j1;
+          }
+          if (idx1 == node_mid.Dim()) SCTL_ASSERT(j0 == pt_mid.Dim());
+        }
+      }
+    }
   }  // namespace tree_detail
 
   template <Integer DIM> template <class Real> void Tree<DIM>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, Periodicity periodicity, Integer halo_size) {
@@ -932,7 +923,7 @@ namespace sctl {
           std::copy(parent_mid_.begin(), parent_mid_.end(), parent_mid.begin() + dsp);
         }
       }
-      tree_detail::Balance21<DIM>(parent_mid, mins, comm, periodicity);
+      tree_detail::Balance21<DIM>(parent_mid, mins.begin(), comm, periodicity);
 
       if (parent_mid.Dim()) { // add children of parent_mid
         const Integer nthreads = SCTL_GET_MAX_THREADS();
@@ -999,7 +990,7 @@ namespace sctl {
           const Long start_idx_t = start_idx + (end_idx - start_idx) *  tid      / nthreads;
           const Long end_idx_t   = start_idx + (end_idx - start_idx) * (tid + 1) / nthreads;
 
-          ScratchBuf<bool> ancestor_shared_flag(MAX_DEPTH);
+          ScratchBuf<bool> ancestor_shared_flag(MAX_DEPTH+1);
           if (start_idx_t < end_idx_t) {
             ancestor_shared_flag[0] = true;
             const Morton<DIM> m0 = node_mid[start_idx_t];
@@ -1658,9 +1649,7 @@ namespace sctl {
 
 
   template <class Real, Integer DIM, class BaseTree> PtTree<Real,DIM,BaseTree>::PtTree(const Comm& comm) : BaseTree(comm) {
-    const auto& mins = this->GetPartitionMID();
-    partition_codes.ReInit(mins.Dim());
-    for (Long r = 0; r < mins.Dim(); r++) partition_codes[r] = mins[r].mid;
+    SetPartitionCodes();
   }
 
   template <class Real, Integer DIM, class BaseTree> PtTree<Real,DIM,BaseTree>::~PtTree() {
@@ -1677,11 +1666,7 @@ namespace sctl {
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, Periodicity periodicity, Integer halo_size) {
     const auto& comm = this->GetComm();
     BaseTree::UpdateRefinement(coord, M, balance21, periodicity, halo_size);
-    { // Set partition_codes
-      const auto& mins = this->GetPartitionMID();
-      if (partition_codes.Dim() != mins.Dim()) partition_codes.ReInit(mins.Dim());
-      for (Long r = 0; r < mins.Dim(); r++) partition_codes[r] = mins[r].mid;
-    }
+    SetPartitionCodes();
 
     const auto& node_mid = this->GetNodeMID();
     for (auto& pair : groups) {  // payloads follow their keys' re-cut; per-node counts come from the particles
@@ -1690,7 +1675,7 @@ namespace sctl {
       group.Repartition(partition_codes);
 
       ScratchBuf<Long> pt_cnt(node_mid.Dim());
-      pt_node_counts<DIM>(node_mid, group.SortedKeys(), pt_cnt.begin());
+      tree_detail::pt_node_counts<DIM>(node_mid, group.SortedKeys(), pt_cnt.begin());
 
       for (const auto& pair : data_pt_name) {
         if (pair.second == pt_name) {
@@ -1748,12 +1733,25 @@ namespace sctl {
     const auto group = groups.find(particle_name);
     SCTL_ASSERT(group != groups.end());
     SCTL_ASSERT(data_pt_name.find(data_name) == data_pt_name.end());
-    const auto& node_mid = this->GetNodeMID();
-    ScratchBuf<Long> cnt(node_mid.Dim());
-    pt_node_counts<DIM>(node_mid, group->second.SortedKeys(), cnt.begin());
-    this->template AddData<Real>(data_name, dof, Vector<Long>(cnt));
+    if (data_name == particle_name) { // the group's own coordinates: count its particles per node
+      const auto& node_mid = this->GetNodeMID();
+      ScratchBuf<Long> cnt(node_mid.Dim());
+      tree_detail::pt_node_counts<DIM>(node_mid, group->second.SortedKeys(), cnt.begin());
+      this->template AddData<Real>(data_name, dof, Vector<Long>(cnt));
+    } else { // the group's counts already exist under particle_name
+      Iterator<Vector<char>> data_;
+      Iterator<Vector<Long>> cnt_;
+      this->GetData_(data_, cnt_, particle_name);
+      this->template AddData<Real>(data_name, dof, *cnt_);
+    }
     this->data_moved_by_derived.insert(data_name);
     data_pt_name[data_name] = particle_name;
+  }
+
+  template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::SetPartitionCodes() {
+    const auto& mins = this->GetPartitionMID();
+    if (partition_codes.Dim() != mins.Dim()) partition_codes.ReInit(mins.Dim());
+    for (Long r = 0; r < mins.Dim(); r++) partition_codes[r] = mins[r].mid;
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::GetParticleData(Vector<Real>& data, const std::string& data_name) const {
