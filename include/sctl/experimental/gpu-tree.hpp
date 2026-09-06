@@ -347,6 +347,13 @@ class PtTree : public BaseTree {
    */
   void WriteParticleVTK(std::string fname, std::string data_name, bool show_ghost = false) const;
 
+  /**
+   * Validation against `sctl::Tree` and `sctl::PtTree` on `Comm::World()`: node sets, flags, lists,
+   * node data across a refinement, broadcasts, and particle data round trips through repartitions.
+   * Prints one line per check and asserts that all passed.
+   */
+  static void test();
+
  private:
 
   /** `dof` deduced globally as `sum(ndata)/sum(nitem)`, as in sctl::Tree. */

@@ -124,24 +124,12 @@ NVCCFLAGS = -x cu -std=c++17 -O3 -arch=native -rdc=true --expt-relaxed-constexpr
             -DSCTL_HAVE_MPI -DSCTL_MAX_DEPTH=20 -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP -ldl
 
 GPU_BIN = \
-       $(BINDIR)/test-gpu-tree-ancestors \
-       $(BINDIR)/test-gpu-tree-attr \
-       $(BINDIR)/test-gpu-tree-bcast \
-       $(BINDIR)/test-gpu-tree-buildtree \
-       $(BINDIR)/test-gpu-tree-data \
-       $(BINDIR)/test-gpu-tree-pt \
-       $(BINDIR)/test-gpu-tree-vs-sctl \
-       $(BINDIR)/bench-gpu-tree-vs-sctl \
-       $(BINDIR)/bench-pttree \
-       $(BINDIR)/bench-pttree-reads
+       $(BINDIR)/test-gpu-tree \
+       $(BINDIR)/example-gpu-tree
 
 gpu: $(GPU_BIN)
 
 $(BINDIR)/%: $(SRCDIR)/%.cu
-	-@$(MKDIRS) $(dir $@)
-	$(NVCC) $(NVCCFLAGS) -I$(INCDIR) $< -o $@
-
-$(BINDIR)/bench-pttree $(BINDIR)/bench-pttree-reads: $(BINDIR)/%: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)
 	$(NVCC) $(NVCCFLAGS) -I$(INCDIR) $< -o $@
 
