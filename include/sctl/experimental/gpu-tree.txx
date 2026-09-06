@@ -246,22 +246,28 @@ Long local_unique_copy(const Policy& pol, InIt in, Long n, Vec& out) {
 }
 
 // Alltoallv of esz-sized elements given per-rank element counts (displacements are their scans).
-// Host buffers take Comm's exchange. Device buffers go straight to MPI, which is CUDA-aware here,
-// except the block a rank sends itself: MPI streams that single-threaded at a few GB/s.
+// Host buffers take Comm's exchange; device buffers go straight to MPI, which is CUDA-aware here.
+inline void alltoallvHost(const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt, const sctl::ScratchBuf<Long>& rcnt, Long esz, const Comm& comm) {
+  const Long np = comm.Size();
+  sctl::ScratchBuf<Long> sb(np), rb(np), sd(np), rd(np);  // byte counts and offsets
+  for (Long r = 0, so = 0, ro = 0; r < np; r++) {
+    sb[r] = scnt[r] * esz; sd[r] = so; so += sb[r];
+    rb[r] = rcnt[r] * esz; rd[r] = ro; ro += rb[r];
+  }
+  const Long ns = (np ? sd[np - 1] + sb[np - 1] : 0), nr = (np ? rd[np - 1] + rb[np - 1] : 0);
+  comm.Wait(comm.Ialltoallv_sparse(sctl::Ptr2ConstItr<char>(sbuf, ns), sb.begin(), sd.begin(), sctl::Ptr2Itr<char>(rbuf, nr), rb.begin(), rd.begin()));
+}
+
+// The device path: the block a rank sends itself is copied on the device, since MPI streams it
+// single-threaded at a few GB/s; the rest goes to MPI_Alltoallv, or pairwise once counts exceed int.
 template <template <class...> class DeviceVector, class Policy>
-void alltoallv(const Policy& pol, const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt,
-               const sctl::ScratchBuf<Long>& rcnt, Long esz, const Comm& comm) {
+void alltoallvDevice(const Policy& pol, const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt,
+                     const sctl::ScratchBuf<Long>& rcnt, Long esz, const Comm& comm) {
 #ifdef SCTL_HAVE_MPI
   const Long np = comm.Size(), rank = comm.Rank();
   sctl::ScratchBuf<Long> sd(np + 1), rd(np + 1);   // byte offsets, in Long
   sd[0] = 0; rd[0] = 0;
   for (Long r = 0; r < np; r++) { sd[r + 1] = sd[r] + scnt[r] * esz; rd[r + 1] = rd[r] + rcnt[r] * esz; }
-  if constexpr (!is_device_vector_v<DeviceVector<char>>) {
-    sctl::ScratchBuf<Long> sb(np), rb(np);
-    for (Long r = 0; r < np; r++) { sb[r] = scnt[r] * esz; rb[r] = rcnt[r] * esz; }
-    comm.Wait(comm.Ialltoallv_sparse(sctl::Ptr2ConstItr<char>(sbuf, sd[np]), sb.begin(), sd.begin(), sctl::Ptr2Itr<char>(rbuf, rd[np]), rb.begin(), rd.begin()));
-    return;
-  }
   static const Long IMAX = 2147483647;
   SCTL_ASSERT(scnt[rank] == rcnt[rank]);
   if (const Long n = scnt[rank] * esz) {  // self block, copied on the device
@@ -323,6 +329,13 @@ void alltoallv(const Policy& pol, const void* sbuf, void* rbuf, const sctl::Scra
     if (m) MPI_Waitall((int)m, &req[0], MPI_STATUSES_IGNORE);
   }
 #endif
+}
+
+template <template <class...> class DeviceVector, class Policy>
+void alltoallv(const Policy& pol, const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt,
+               const sctl::ScratchBuf<Long>& rcnt, Long esz, const Comm& comm) {
+  if constexpr (is_device_vector_v<DeviceVector<char>>) alltoallvDevice<DeviceVector>(pol, sbuf, rbuf, scnt, rcnt, esz, comm);
+  else alltoallvHost(sbuf, rbuf, scnt, rcnt, esz, comm);
 }
 
 
@@ -1483,7 +1496,7 @@ template <Integer DIM> struct NbrPropagateFunctor {
 
 // Distributed build: device sample sort (radix -> exact-rank splitters -> Alltoallv -> re-sort),
 // then a two-sided M-code halo and allgathered boundary anchors (mins). M is clamped to the
-// smallest per-rank count. Concatenated over ranks, the output matches single-rank buildTree.
+// smallest per-rank count. Concatenated over ranks, the output matches the single-rank build.
 
 template <class Real, Integer DIM, template <class...> class DevVec> template <template <class...> class DeviceVector>
 void GPUTree<Real, DIM, DevVec>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index, Morton<DIM>* partition, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr, detail::no_deduce_t<NodeLists<DeviceVector>>* node_lists, detail::no_deduce_t<DeviceVector<Morton<DIM>>>* user_mid, sctl::Vector<Long>* user_cnt) {

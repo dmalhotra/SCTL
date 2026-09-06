@@ -102,7 +102,7 @@ TARGET_BIN = \
        $(BINDIR)/test-scratch-pool \
        $(BINDIR)/test-scratch-pool-perf
 
-.PHONY: all test clean
+.PHONY: all gpu test clean
 
 all : $(TARGET_BIN)
 
@@ -116,6 +116,34 @@ endif
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)
 	$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $^ -o $@
+
+# GPU tree (include/sctl/experimental): CUDA sources, compiled by nvcc with the MPI wrapper as the
+# host compiler. Needs CUDA and a CUDA-aware MPI, so `gpu` is separate from `all`.
+NVCC = nvcc -ccbin mpicxx
+NVCCFLAGS = -x cu -std=c++17 -O3 -arch=native -rdc=true --expt-relaxed-constexpr -Xcompiler "-fopenmp" \
+            -DSCTL_HAVE_MPI -DSCTL_MAX_DEPTH=20 -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP -ldl
+
+GPU_BIN = \
+       $(BINDIR)/test-gpu-tree-ancestors \
+       $(BINDIR)/test-gpu-tree-attr \
+       $(BINDIR)/test-gpu-tree-bcast \
+       $(BINDIR)/test-gpu-tree-buildtree \
+       $(BINDIR)/test-gpu-tree-data \
+       $(BINDIR)/test-gpu-tree-pt \
+       $(BINDIR)/test-gpu-tree-vs-sctl \
+       $(BINDIR)/bench-gpu-tree-vs-sctl \
+       $(BINDIR)/bench-pttree \
+       $(BINDIR)/bench-pttree-reads
+
+gpu: $(GPU_BIN)
+
+$(BINDIR)/%: $(SRCDIR)/%.cu
+	-@$(MKDIRS) $(dir $@)
+	$(NVCC) $(NVCCFLAGS) -I$(INCDIR) $< -o $@
+
+$(BINDIR)/bench-pttree $(BINDIR)/bench-pttree-reads: $(BINDIR)/%: $(SRCDIR)/%.cpp
+	-@$(MKDIRS) $(dir $@)
+	$(NVCC) $(NVCCFLAGS) -I$(INCDIR) $< -o $@
 
 test: $(TARGET_BIN)
 	./$(BINDIR)/test

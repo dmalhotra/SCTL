@@ -599,7 +599,6 @@ namespace sctl {
     static constexpr Integer MAX_DEPTH = Morton<DIM>::MAX_DEPTH;
 
     static const auto& nbr_path = tree_detail::nbr_path_table<DIM>();  // static: the lambdas below capture nothing
-    static const auto& reverse_nbr_idx = tree_detail::reverse_nbr_idx_table<DIM>();
 
     Vector<Morton<DIM>> node_mid_orig;
     Long start_idx_orig, end_idx_orig;
