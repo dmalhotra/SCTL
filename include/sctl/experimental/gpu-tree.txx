@@ -1,7 +1,7 @@
 // Template implementation of GPUTree from gpu-tree.hpp + its internal detail_* helper namespaces:
 // detail (shared helpers), detail_build, detail_determineSplitters, detail_balance21 (predicates
-// shared by both balance schemes), detail_balance21_gpu (default) / detail_balance21_host
-// (-DGT_BALANCE_HOST=1), detail_addGhostNodes.
+// shared by both balance schemes), detail_balance21_gpu (device vectors) / detail_balance21_host
+// (host vectors), detail_addGhostNodes.
 
 #ifndef _SCTL_EXPERIMENTAL_GPU_TREE_TXX_
 #define _SCTL_EXPERIMENTAL_GPU_TREE_TXX_
@@ -38,6 +38,8 @@
 #include "sctl/experimental/device_scratch.hpp"
 #include "sctl/comm.hpp"
 #include "sctl/ompUtils.txx"
+#include "sctl/profile.hpp"  // build stages as Profile blocks
+#include "sctl/profile.txx"
 #include "sctl/tree.hpp"   // sctl::Tree::Balance21 (hybrid host balance)
 #include "sctl/vtudata.hpp"  // WriteTreeVTK
 #include "sctl/vtudata.txx"
@@ -62,6 +64,19 @@ template <template <class...> class DeviceVector, class T> auto scratch_policy()
     return thrust::host;
   }
 }
+
+// Stage timing through sctl::Profile, compiled out with it. The device is drained before each mark
+// so that a block's time is the stage's own.
+template <template <class...> class DeviceVector> struct StageTimer {
+  const Comm& comm;
+  void tic(const char* name) const { sync(); sctl::Profile::Tic(name, &comm, true); }
+  void toc() const { sync(); sctl::Profile::Toc(); }
+  static void sync() {
+#if SCTL_PROFILE >= 0 && (defined(__CUDACC__) || defined(__HIPCC__))
+    if constexpr (is_device_vector_v<DeviceVector<char>>) cudaDeviceSynchronize();
+#endif
+  }
+};
 
 // Which retained buffer a `PersistentBuffer` call means; no two uses may share a tag.
 enum class Buf { PtMid, PtAlt, Closure, Frontier, ClosureRecv, GhostMerge, DataRecv,
@@ -961,10 +976,10 @@ template <Integer DIM> struct FirstChildInSlice {
 
 
 
-// Hybrid balance (-DGT_BALANCE_HOST=1): extract the non-leaf set on the device, close it with
-// sctl's Balance21 on the host (OpenMP, includes its own redistribute), then rebuild the leaves on
-// the device. The non-leaf set is ~1/2^DIM of the tree, so the PCIe transfer is small; it wins over
-// the device closure only on small trees, where the device is launch-bound.
+// Balance for the host backend: extract the non-leaf set, close it with sctl's Balance21 (OpenMP,
+// includes its own redistribute), then rebuild the leaves. On host vectors this beats the thrust
+// closure below by 25 to 50 percent; on the device it loses 4 to 10x at 100M particles per rank,
+// hence the split by backend in buildTreeDist.
 namespace detail_balance21_host {
 using detail::treeFromAnchors;
 using detail_balance21::NonLeafPred;
@@ -1046,7 +1061,7 @@ void balanceTreeDist(DeviceVector<Morton<DIM>>& tree, const sctl::Vector<Morton<
 
 }  // namespace detail_balance21_host
 
-// Default balance: everything on the device. Local closure over the sorted non-leaf set
+// Balance for the device backend: everything on the device. Local closure over the sorted non-leaf set
 // (ClosureFrontier), then redistribute by `mins` and dedup (Stage2, CUDA-aware MPI straight from
 // device buffers), then rebuild the leaves. Nothing crosses PCIe.
 namespace detail_balance21_gpu {
@@ -1500,20 +1515,8 @@ template <Integer DIM> struct NbrPropagateFunctor {
 
 template <class Real, Integer DIM, template <class...> class DevVec> template <template <class...> class DeviceVector>
 void GPUTree<Real, DIM, DevVec>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, const DeviceVector<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, detail::no_deduce_t<DeviceVector<Long>>* sort_scatter_index, Morton<DIM>* partition, detail::no_deduce_t<DeviceVector<NodeAttr>>* node_attr, detail::no_deduce_t<NodeLists<DeviceVector>>* node_lists, detail::no_deduce_t<DeviceVector<Morton<DIM>>>* user_mid, sctl::Vector<Long>* user_cnt) {
-  // Env-gated per-stage profiler (sync + barrier so each delta is the true stage wall time).
-  const bool gtprof = (getenv("GTPROF") != nullptr);
-  double t_last = 0;
-  const auto mark = [&](const char* name) {
-    if (!gtprof) return;
-#if defined(__CUDACC__) || defined(__HIPCC__)
-    cudaDeviceSynchronize();
-#endif
-    comm.Barrier();
-    const double t = SCTL_GET_WTIME();
-    if (comm.Rank() == 0 && name) fprintf(stderr, "  %-24s %8.2f ms\n", name, (t - t_last) * 1e3);
-    t_last = t;
-  };
-  mark(nullptr);
+  const detail::StageTimer<DeviceVector> prof{comm};
+  prof.tic("encode+sort+splitters");
 
   using MortonT = MortonCode<DIM>;
   const auto pol = detail::scratch_policy<DeviceVector, MortonT>();
@@ -1585,7 +1588,7 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, 
     }
     pt_mid.swap(alt);
   }
-  mark("encode+sort+splitters");
+  prof.toc(); prof.tic("rebalance");
 
   if (np > 1) { // M <- global_min(pt_mid.size(), M); repartition if necessary
     Long Nloc = (Long)pt_mid.size(), Nloc_min = 0;
@@ -1623,7 +1626,7 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, 
     M = std::min<Long>(M, Nloc_min);
     if (M < 1) MPI_Abort(comm.GetMPI_Comm(), 1);
   }
-  mark("rebalance");
+  prof.toc(); prof.tic("halo+mins");
 
   if (np > 1) { // halo: pt_mid <-- [M from left | pt_mid | M from right] (empty halo on domain-edge ranks)
     const Long recv0 = (rank > 0 ? M : 0);
@@ -1653,7 +1656,7 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, 
     }
     comm.Allgather(sctl::Ptr2ConstItr<Morton<DIM>>(&A, 1), 1, mins.begin(), 1);
   }
-  mark("halo+mins");
+  prof.toc(); prof.tic("walk (linearize)");
 
   { // build linear tree from pt_mid
     const Morton<DIM> end_bnd = (rank + 1 < np) ? mins[rank + 1] : Morton<DIM>{}.Next();
@@ -1669,18 +1672,17 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DeviceVector<Morton<DIM>>& tree, 
       detail_build::buildTreeCpuChunked<Real, DIM>(tree, pt_mid, M, idx1 - idx0, idx0, mins[rank], end_bnd);
     }
   }
-  mark("walk (linearize)");
+  prof.toc(); prof.tic("balance21");
 
-#if defined(GT_BALANCE_HOST) && GT_BALANCE_HOST  // opt-in: closure on the host (see detail_balance21_host)
-  if (balance21) detail_balance21_host::balanceTreeDist<DIM>(tree, sctl::Vector<Morton<DIM>>(mins), comm, periodicity);
-#else
-  if (balance21) detail_balance21_gpu::balanceTreeDist<DIM>(tree, sctl::Vector<Morton<DIM>>(mins), comm, periodicity);
-#endif
-  mark("balance21");
+  if (balance21) {  // each backend's faster closure, see the two namespaces
+    if constexpr (detail::is_device_vector_v<DeviceVector<Morton<DIM>>>) detail_balance21_gpu::balanceTreeDist<DIM>(tree, sctl::Vector<Morton<DIM>>(mins), comm, periodicity);
+    else detail_balance21_host::balanceTreeDist<DIM>(tree, sctl::Vector<Morton<DIM>>(mins), comm, periodicity);
+  }
+  prof.toc(); prof.tic("ghost");
 
   Long owned_begin = 0, owned_end = Long(tree.size());
   detail_addGhostNodes::addGhostNodes<DIM>(tree, mins, comm, halo_size, periodicity, owned_begin, owned_end, user_mid, user_cnt);
-  mark("ghost");
+  prof.toc();
 
   if (sort_scatter_index) *sort_scatter_index = std::move(idx);
 

@@ -4,7 +4,8 @@
 // before the first refinement concentrates it on the coarse starting partition -- measured 3.7x on
 // one rank at np=16, 5.5x at np=24 -- so the add-first order runs out of device memory at scale.
 // Times each API stage for sctl::PtTree, gpu_tree::PtTree on the host backend, and the same on the
-// device. GTPROF=1 additionally prints buildTreeDist's own stages. When tools/pmpiprof.c is
+// device. Built with -DSCTL_PROFILE=5, sctl::Profile prints each stage with the tree build's own
+// substages after the row. When tools/pmpiprof.c is
 // LD_PRELOADed, each stage is also split into mpi, shared (node-local direct reads between ranks)
 // and compute rows; waiting on a slower rank counts as mpi. Peak resident memory (max over ranks) is printed after each stage, and the share
 // of particles per rank (max/avg, min/avg) under the sphere partition and under the uniform one.
@@ -106,6 +107,7 @@ enum { kWall = 0, kMpi = 5, kShm = 10, kCompute = 15, kRss = 20, kImb = 25, kNod
 
 int main(int argc, char** argv) {
   sctl::Comm::MPI_Init(&argc, &argv);
+  sctl::Profile::Enable(true);
   {
     sctl::Comm comm = sctl::Comm::World();
     const Long np = comm.Size(), rank = comm.Rank();
@@ -147,17 +149,12 @@ int main(int argc, char** argv) {
 
     const auto mx = [&comm](double t) { double g = 0; comm.Allreduce(sctl::Ptr2ConstItr<double>(&t,1), sctl::Ptr2Itr<double>(&g,1), 1, sctl::CommOp::MAX); return g; };
     const auto tick = [](){ cudaDeviceSynchronize(); return SCTL_GET_WTIME(); };
-    // With GTPROF set the library prints its stage lines to stderr; a banner per bench stage groups them.
-    const bool gtprof = (getenv("GTPROF") != nullptr);
-    const auto banner = [&](const char* variant, const char* stage) {
-      if (!gtprof) return;
-      fflush(stdout); comm.Barrier();
-      if (!rank) { fprintf(stderr, "  -- %s: %s --\n", variant, stage); fflush(stderr); }
-    };
-
+    static const char* const kStage[5] = {"build(sphere)", "AddParticles", "AddParticleData", "GetParticleData", "UpdateRefinement(uniform)"};
     const auto stage = [&](double* t, int i, auto&& fn) {  // wall, mpi and shared seconds of one API call, plus peak RSS after it
       const double a = tick(), ca = commsec(), sa = shmsec();
+      sctl::Profile::Tic(kStage[i], &comm, true);
       fn();
+      sctl::Profile::Toc();
       const double b = tick();
       t[kWall + i] = (b - a) * 1e3; t[kMpi + i] = (commsec() - ca) * 1e3; t[kShm + i] = (shmsec() - sa) * 1e3; t[kRss + i] = peakRssGB();
     };
@@ -188,16 +185,18 @@ int main(int argc, char** argv) {
         printf("  %-18s %13.2f %10.2f %10.2f %10.2f %12.2f\n", "    - peak RSS GB", rss[0], rss[1], rss[2], rss[3], rss[4]);
         printf("  %-18s particles/rank max/avg, min/avg: sphere partition %.2f/%.2f, uniform partition %.2f/%.2f\n", "    - imbalance", imb[0], imb[1], imb[2], imb[3]);
       }
+#if SCTL_PROFILE >= 0
+      sctl::Profile::print(&comm);  // the stages above with the tree build's own substages
+      sctl::Profile::reset();
+#endif
     };
 
     if (all || cpu || mode == "s") row("sctl::PtTree", [&](double* t) {
       sctl::PtTree<Real, kDim> tr(comm);
-      const char* const v = "sctl::PtTree";
       sctl::Vector<Real> c(N*kDim), d(N*3), u((Long)xu.size());
       for (Long i = 0; i < N*kDim; i++) c[i] = xs[i];
       for (Long i = 0; i < N*3; i++) d[i] = rho[i];
       for (Long i = 0; i < (Long)xu.size(); i++) u[i] = xu[i];
-      banner(v, "build(sphere)");
       stage(t, 0, [&] { tr.UpdateRefinement(c, M, true, sctl::Periodicity::NONE, 0); });
       stage(t, 1, [&] { tr.AddParticles("pt", c); });
       imbalance(tr.GetPartitionMID(), xs, comm, t[kImb+0], t[kImb+1]);
@@ -205,7 +204,6 @@ int main(int argc, char** argv) {
       sctl::Vector<Real> out;
       stage(t, 3, [&] { tr.GetParticleData(out, "rho"); });
       const long nodes = tr.GetNodeMID().Dim();
-      banner(v, "Refine(unif)");
       stage(t, 4, [&] { tr.UpdateRefinement(u, M, true, sctl::Periodicity::NONE, 0); });
       imbalance(tr.GetPartitionMID(), xs, comm, t[kImb+2], t[kImb+3]);
       t[kNodesUnif] = (double)tr.GetNodeMID().Dim();
@@ -214,9 +212,7 @@ int main(int argc, char** argv) {
 
     if (all || cpu || mode == "c") row("GPUTree PtTree CPU", [&](double* t) {
       gpu_tree::PtTree<Real, kDim, gpu_tree::HostVector> tr(comm);
-      const char* const v = "GPUTree PtTree CPU";
       gpu_tree::HostVector<Real> c(xs.begin(), xs.end()), d(rho.begin(), rho.end()), u(xu.begin(), xu.end());
-      banner(v, "build(sphere)");
       stage(t, 0, [&] { tr.UpdateRefinement(c, M, true, sctl::Periodicity::NONE, 0); });
       stage(t, 1, [&] { tr.AddParticles("pt", c); });
       imbalance(tr.GetPartitionMID(), xs, comm, t[kImb+0], t[kImb+1]);
@@ -224,7 +220,6 @@ int main(int argc, char** argv) {
       gpu_tree::HostVector<Real> out;
       stage(t, 3, [&] { tr.GetParticleData(out, "rho"); });
       const long nodes = tr.GetNodeMID().size();
-      banner(v, "Refine(unif)");
       stage(t, 4, [&] { tr.UpdateRefinement(u, M, true, sctl::Periodicity::NONE, 0); });
       imbalance(tr.GetPartitionMID(), xs, comm, t[kImb+2], t[kImb+3]);
       t[kNodesUnif] = (double)tr.GetNodeMID().size();
@@ -233,9 +228,7 @@ int main(int argc, char** argv) {
 
     if (all || mode == "g") row("GPUTree PtTree GPU", [&](double* t) {
       gpu_tree::PtTree<Real, kDim, gpu_tree::DeviceVector> tr(comm);
-      const char* const v = "GPUTree PtTree GPU";
       gpu_tree::DeviceVector<Real> c(xs.begin(), xs.end()), d(rho.begin(), rho.end()), u(xu.begin(), xu.end());
-      banner(v, "build(sphere)");
       stage(t, 0, [&] { tr.UpdateRefinement(c, M, true, sctl::Periodicity::NONE, 0); });
       stage(t, 1, [&] { tr.AddParticles("pt", c); });
       imbalance(tr.GetPartitionMID(), xs, comm, t[kImb+0], t[kImb+1]);
@@ -243,7 +236,6 @@ int main(int argc, char** argv) {
       gpu_tree::DeviceVector<Real> out;
       stage(t, 3, [&] { tr.GetParticleData(out, "rho"); });
       const long nodes = tr.GetNodeMID().size();
-      banner(v, "Refine(unif)");
       stage(t, 4, [&] { tr.UpdateRefinement(u, M, true, sctl::Periodicity::NONE, 0); });
       imbalance(tr.GetPartitionMID(), xs, comm, t[kImb+2], t[kImb+3]);
       t[kNodesUnif] = (double)tr.GetNodeMID().size();
