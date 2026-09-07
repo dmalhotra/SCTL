@@ -7,6 +7,10 @@
 #include <algorithm>
 
 #include "sctl/experimental/device_scratch.hpp"
+#include "sctl/iterator.txx"      // for Ptr2Itr
+#include "sctl/ompUtils.hpp"      // for omp_par::copy, omp_par::prefault
+#include "sctl/ompUtils.txx"
+#include "sctl/scratch_pool.txx"  // for ScratchBuf
 
 namespace gpu_tree {
 
@@ -18,24 +22,25 @@ inline DevVec<T>& PersistentBuffer() {
   return buf;
 }
 
+inline sctl::ScratchPool& pinnedStagingPool() {
+  static sctl::ScratchPool pool(
+      [](void* base, Long bytes) {  // fault the chunk in first: registering cold memory is far dearer
+        sctl::omp_par::prefault(sctl::Ptr2Itr<char>((char*)base, bytes), bytes);
+        SCTL_ASSERT(cudaHostRegister(base, (std::size_t)bytes, cudaHostRegisterDefault) == cudaSuccess);
+      },
+      [](void* base, Long) { cudaHostUnregister(base); });  // at exit the runtime may already be gone
+  return pool;
+}
+
 template <class SrcPtr, class T> inline void deviceToHost(SrcPtr src, Long n, T* dst) {
   if (!n) return;
-  const T* p = nullptr;  // host-side source of the fill: the staging buffer, or `src` itself
   if constexpr (is_device_ptr<SrcPtr>::value) {
-    static T* stage = nullptr;
-    static Long cap = 0;
-    if (n > cap) {
-      if (stage) cudaFreeHost(stage);
-      cap = std::max<Long>(2 * cap, n);
-      SCTL_ASSERT(cudaMallocHost((void**)&stage, cap * sizeof(T)) == cudaSuccess);
-    }
-    SCTL_ASSERT(cudaMemcpy(stage, thrust::raw_pointer_cast(src), n * sizeof(T), cudaMemcpyDeviceToHost) == cudaSuccess);
-    p = stage;
+    sctl::ScratchBuf<T> stage(n, pinnedStagingPool());
+    SCTL_ASSERT(cudaMemcpy(&stage[0], thrust::raw_pointer_cast(src), n * sizeof(T), cudaMemcpyDeviceToHost) == cudaSuccess);
+    sctl::omp_par::copy(stage.begin(), stage.end(), dst);
   } else {
-    p = src;
+    sctl::omp_par::copy(src, src + n, dst);
   }
-  #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < n; i++) dst[i] = p[i];
 }
 
 }  // namespace detail

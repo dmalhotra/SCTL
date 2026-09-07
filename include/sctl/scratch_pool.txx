@@ -32,13 +32,16 @@ inline ScratchChunk::ScratchChunk(Iterator<char> base, Iterator<char> top, Itera
 
 }  // namespace internal
 
-inline ScratchPool::ScratchPool() {
+inline ScratchPool::ScratchPool() : ScratchPool(nullptr, nullptr) {}
+
+inline ScratchPool::ScratchPool(ChunkHook on_new, ChunkHook on_free) : on_new_(on_new), on_free_(on_free) {
   // Eager init so AllocBytes/FreeBytes can assume head_ != nullptr.
   constexpr Long align_mask = (Long)SCTL_MEM_ALIGN - 1;
   const Long new_cap = ((Long)SCTL_SCRATCH_POOL_INIT_BYTES + align_mask) & ~align_mask;
   void* raw = std::aligned_alloc(SCTL_MEM_ALIGN, new_cap);
   SCTL_ASSERT_MSG(raw != nullptr, "ScratchPool: initial chunk allocation failed.");
   advise_huge_pages(raw, new_cap);
+  if (on_new_) on_new_(raw, new_cap);
   Iterator<char> new_base = Ptr2Itr<char>(static_cast<char*>(raw), new_cap);
   head_ = new Chunk(new_base, new_base, new_base + new_cap, nullptr);
 }
@@ -50,8 +53,13 @@ inline ScratchPool::~ScratchPool() {
 #endif
   // LIFO discipline drains all non-head chunks, so only head remains.
   SCTL_ASSERT(head_->prev == nullptr);
-  std::free(&head_->base[0]);
-  delete head_;
+  ReleaseChunk(head_);
+}
+
+inline void ScratchPool::ReleaseChunk(Chunk* chunk) {
+  if (on_free_) on_free_(&chunk->base[0], chunk->end - chunk->base);
+  std::free(&chunk->base[0]);
+  delete chunk;
 }
 
 inline ScratchPool& ScratchPool::Instance() {
@@ -95,6 +103,7 @@ inline ScratchPool& ScratchPool::Instance() {
     void* raw = std::aligned_alloc(SCTL_MEM_ALIGN, new_cap);
     SCTL_ASSERT_MSG(raw != nullptr, "ScratchPool: chunk allocation failed.");
     advise_huge_pages(raw, new_cap);
+    if (on_new_) on_new_(raw, new_cap);
     Iterator<char> new_base = Ptr2Itr<char>(static_cast<char*>(raw), new_cap);
 
     // Free the current head if empty — otherwise it gets wedged: its base
@@ -104,8 +113,7 @@ inline ScratchPool& ScratchPool::Instance() {
       SCTL_ASSERT(head_->live_count == 0);
 #endif
       Chunk* prev = head_->prev;
-      std::free(&head_->base[0]);
-      delete head_;
+      ReleaseChunk(head_);
       head_ = prev;
     }
 
@@ -164,8 +172,7 @@ inline ScratchPool& ScratchPool::Instance() {
     SCTL_ASSERT(head_->prev == chunk);
 #endif
     head_->prev = chunk->prev;
-    std::free(&chunk->base[0]);
-    delete chunk;
+    ReleaseChunk(chunk);
   }
 }
 

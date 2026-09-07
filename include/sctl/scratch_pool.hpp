@@ -110,7 +110,18 @@ template <class T> class ScratchBuf {
  */
 class ScratchPool {
  public:
+  /**
+   * Notified of a chunk after it is allocated and again before it is released, so a pool can hold
+   * memory the plain allocator cannot give it. `gpu_tree`'s staging pool registers its chunks with
+   * the CUDA driver this way, which keeps that knowledge out of core sctl.
+   */
+  using ChunkHook = void (*)(void* base, Long bytes);
+
   ScratchPool();
+
+  /** A pool whose chunks are passed to `on_new` once allocated and to `on_free` before release. */
+  ScratchPool(ChunkHook on_new, ChunkHook on_free);
+
   ~ScratchPool();
   ScratchPool(const ScratchPool&) = delete;
   ScratchPool& operator=(const ScratchPool&) = delete;
@@ -134,8 +145,11 @@ class ScratchPool {
 
   void AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data);
   void FreeBytes(Chunk* chunk, Iterator<char> data, Long bytes);
+  void ReleaseChunk(Chunk* chunk);
 
   Chunk* head_{nullptr};   // eagerly allocated by the ctor; never null after construction
+  ChunkHook on_new_{nullptr};
+  ChunkHook on_free_{nullptr};
 };
 
 }  // namespace sctl

@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "sctl/common.hpp"
+#include "sctl/scratch_pool.hpp"  // for ScratchPool
 
 // First chunk size; later chunks double (or grow to fit a single request).
 #ifndef SCTL_DEVICE_SCRATCH_INIT_BYTES
@@ -53,13 +54,24 @@ template <class T, template <class...> class DevVec, auto Tag> DevVec<T>& Persis
  *
  * A caller-owned destination is pageable and usually freshly allocated, which costs twice over:
  * the driver cannot DMA into it, and it faults in a page at a time inside the driver's copy. Taking
- * the DMA into one pinned buffer that is kept and regrown, then filling the destination with the
- * host threads, avoids both. No `Tag`: the staging buffer is live only within the call, so all
- * uses of a given `T` share one.
+ * the DMA into pinned memory, then filling the destination with the host threads, avoids both. The
+ * staging buffer comes from `pinnedStagingPool()` and is live only within the call.
  *
  * On host backends `src` is already a host pointer and this is a plain copy.
  */
 template <class SrcPtr, class T> void deviceToHost(SrcPtr src, Long n, T* dst);
+
+/**
+ * Host staging memory for `deviceToHost`, as one byte-addressed arena shared by every element type
+ * rather than a buffer per type. Chunks are registered with the driver so the DMA lands in pinned
+ * memory, and registration follows the pages being faulted in: registering them cold instead costs
+ * several times as much and drags the whole chunk onto the faulting thread's NUMA node.
+ *
+ * Not thread-safe, like any pool outside `ScratchPool::Instance()`. Every `deviceToHost` call site
+ * runs outside a parallel region, and its buffer never outlives the call, so the pool sees one
+ * allocation at a time.
+ */
+sctl::ScratchPool& pinnedStagingPool();
 
 }  // namespace detail
 
