@@ -37,6 +37,7 @@
 #include "sctl/experimental/gpu-tree.hpp"
 #include "sctl/experimental/device_scratch.hpp"
 #include "sctl/comm.hpp"
+#include "sctl/comm.txx"
 #include "sctl/ompUtils.txx"
 #include "sctl/profile.hpp"  // build stages as Profile blocks
 #include "sctl/profile.txx"
@@ -86,7 +87,7 @@ template <template <class...> class DevVec> struct StageTimer {
 
 // Which retained buffer a `PersistentBuffer` call means; no two uses may share a tag.
 enum class Buf { PtMid, PtAlt, BcastOut, Closure, Frontier, ClosureRecv, GhostMerge, DataRecv,
-                 PtSend, PtRecv, PtSortK, MigData, OldMid };
+                 PtSend, PtRecv, PtSortK, MigData, OldMid, SwapOut };
 
 // Functor (not lambda) so nvcc captures it across thrust kernel boundaries.
 template <class Real, Integer DIM> struct MakeMortonFunctor {
@@ -131,7 +132,7 @@ template <class Policy, class Vec> void local_sort(const Policy& pol, Vec& v, Lo
   } else {
     T* const p = thrust::raw_pointer_cast(v.data());
     if constexpr (sctl::omp_par::is_radix_sortable<T>::value) sctl::omp_par::radix_sort(p, n, [](const T& x) { return x.GetIntKey(); });
-    else if (SCTL_GET_MAX_THREADS() <= 16) sctl::omp_par::merge_sort(p, p + n);
+    else if (sctl::omp_par::prefer_merge_sort(sizeof(T))) sctl::omp_par::merge_sort(p, p + n);
     else sctl::omp_par::sample_sort(p, p + n);
   }
 }
@@ -165,7 +166,7 @@ template <class Policy, class Vec, class IVec> void local_sort_by_key(const Poli
     }
     if constexpr (sctl::omp_par::is_radix_sortable<T>::value) {
       sctl::omp_par::radix_sort(pairs.begin(), n, [](const Pair& x) { return x.key.GetIntKey(); });
-    } else if (SCTL_GET_MAX_THREADS() <= 16) {
+    } else if (sctl::omp_par::prefer_merge_sort(sizeof(Pair))) {
       sctl::omp_par::merge_sort(pairs.begin(), pairs.end());
     } else {
       sctl::omp_par::sample_sort(pairs.begin(), pairs.end());
@@ -191,7 +192,7 @@ Long splitCounts(sctl::Iterator<Long> scnt, sctl::Iterator<Long> rcnt, const Vec
     DeviceScratch<Long, DevVec> pos_d(nkeys);
     thrust::lower_bound(scratch_policy<DevVec, T>(), in.begin(), in.begin() + n, keys.begin(), keys.end(), pos_d.begin());
     thrust::copy(pos_d.begin(), pos_d.end(), pos.begin() + (np - nkeys));
-    if (nkeys < np) pos[0] = 0;  // splitters: this rank keeps everything below the first one
+    pos[0] = 0;  // `splitters[0]` is not consulted: rank 0 takes everything below the next splitter
     pos[np] = n;
     for (Long r = 0; r < np; r++) scnt[r] = pos[r + 1] - pos[r];
   }
@@ -252,7 +253,7 @@ inline void alltoallvHost(const void* sbuf, void* rbuf, const sctl::ScratchBuf<L
   std::exclusive_scan(sb.begin(), sb.end(), sd.begin(), Long(0));
   std::exclusive_scan(rb.begin(), rb.end(), rd.begin(), Long(0));
   const Long ns = sd[np - 1] + sb[np - 1], nr = rd[np - 1] + rb[np - 1];
-  comm.Wait(comm.Ialltoallv_sparse(sctl::Ptr2ConstItr<char>(sbuf, ns), sb.begin(), sd.begin(), sctl::Ptr2Itr<char>(rbuf, nr), rb.begin(), rd.begin()));
+  comm.Alltoallv(sctl::Ptr2ConstItr<char>(sbuf, ns), sb.begin(), sd.begin(), sctl::Ptr2Itr<char>(rbuf, nr), rb.begin(), rd.begin());
 }
 
 // The device path: the block a rank sends itself is copied on the device, since MPI streams it

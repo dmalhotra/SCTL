@@ -44,6 +44,13 @@ void buildInverse(const Policy& pol, const DevVec<Long>& m, DevVec<Long>& inv, L
       thrust::raw_pointer_cast(m.data()), thrust::raw_pointer_cast(inv.data())});
 }
 
+/** Size a retained buffer for output it is about to be given: `resize` alone preserves contents,
+ *  which are dead here, and copies them when the buffer has to grow. */
+template <class T, template <class...> class DevVec> void resizeDiscard(DevVec<T>& v, Long n) {
+  v.clear();
+  v.resize(n);
+}
+
 /** One local stage: `dst[e] = src[map[e/dof]*dof + e%dof]` over `n*dof` values. */
 template <template <class...> class DevVec, class T, class Policy>
 void localMove(const Policy& pol, const T* src, T* dst, const DevVec<Long>& map, Long n, Long dof) {
@@ -91,7 +98,7 @@ void SortScatter<Key, DevVec>::Init(DevVec<Key> keys, const sctl::Vector<Key>& s
       plan_.rcnt.ReInit(np);
       plan_.Nmid = detail::splitCounts(plan_.scnt.begin(), plan_.rcnt.begin(), keys_, Nloc, spl, comm_);
       DevVec<Key>& k2 = detail::PersistentBuffer<Key, DevVec, detail::Buf::PtSortK>();
-      k2.resize(plan_.Nmid);
+      detail_sortScatter::resizeDiscard(k2, plan_.Nmid);
       detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(keys_.data()),
                                                  thrust::raw_pointer_cast(k2.data()), plan_.scnt, plan_.rcnt, Long(1), comm_);
       keys_.swap(k2);
@@ -132,7 +139,8 @@ template <class Key, template <class...> class DevVec> template <class T>
 void SortScatter<Key, DevVec>::RepartitionData(DevVec<T>& data, Long dof) const {
   if (!plan_.moved) return;
   SCTL_ASSERT_MSG((Long)data.size() == plan_.move_n * dof, "SortScatter::RepartitionData: data holds the previous SortedCount()*dof values.");
-  DevVec<T> out(plan_.Ntree * dof);
+  DevVec<T>& out = detail::PersistentBuffer<T, DevVec, detail::Buf::SwapOut>();
+  detail_sortScatter::resizeDiscard(out, plan_.Ntree * dof);
   detail_sortScatter::exchange<DevVec>(detail::scratch_policy<DevVec, T>(), thrust::raw_pointer_cast(data.data()),
                                              thrust::raw_pointer_cast(out.data()), plan_.move_scnt, plan_.move_rcnt, dof, comm_);
   data.swap(out);
@@ -148,8 +156,8 @@ void SortScatter<Key, DevVec>::ScatterForward(const T* src, T* dst, Long dof) co
   sctl::sort_scatter_detail::ensureRecut(plan_, comm_);
   DevVec<T>& a = detail::PersistentBuffer<T, DevVec, detail::Buf::PtSend>();
   DevVec<T>& b = detail::PersistentBuffer<T, DevVec, detail::Buf::PtRecv>();
-  a.resize(plan_.Nloc * dof);
-  b.resize(plan_.Nmid * dof);
+  detail_sortScatter::resizeDiscard(a, plan_.Nloc * dof);
+  detail_sortScatter::resizeDiscard(b, plan_.Nmid * dof);
   detail_sortScatter::localMove<DevVec>(pol, src, thrust::raw_pointer_cast(a.data()), plan_.pre, plan_.Nloc, dof);
   detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(a.data()),
                                              thrust::raw_pointer_cast(b.data()), plan_.scnt, plan_.rcnt, dof, comm_);
@@ -157,7 +165,7 @@ void SortScatter<Key, DevVec>::ScatterForward(const T* src, T* dst, Long dof) co
     detail_sortScatter::localMove<DevVec>(pol, thrust::raw_pointer_cast(b.data()), dst, plan_.post, plan_.Nmid, dof);
     return;
   }
-  a.resize(plan_.Nmid * dof);
+  detail_sortScatter::resizeDiscard(a, plan_.Nmid * dof);
   detail_sortScatter::localMove<DevVec>(pol, thrust::raw_pointer_cast(b.data()), thrust::raw_pointer_cast(a.data()), plan_.post, plan_.Nmid, dof);
   detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(a.data()), dst, plan_.rscnt, plan_.rrcnt, dof, comm_);
 }
@@ -180,13 +188,13 @@ void SortScatter<Key, DevVec>::ScatterReverse(const T* src, T* dst, Long dof) co
   DevVec<T>& b = detail::PersistentBuffer<T, DevVec, detail::Buf::PtRecv>();
   const T* mid = src;  // the stage-3 output, whichever buffer holds it
   if (plan_.recut) {
-    b.resize(plan_.Nmid * dof);
+    detail_sortScatter::resizeDiscard(b, plan_.Nmid * dof);
     detail_sortScatter::exchange<DevVec>(pol, src, thrust::raw_pointer_cast(b.data()), plan_.rrcnt, plan_.rscnt, dof, comm_);
     mid = thrust::raw_pointer_cast(b.data());
   }
-  a.resize(plan_.Nmid * dof);
+  detail_sortScatter::resizeDiscard(a, plan_.Nmid * dof);
   detail_sortScatter::localMove<DevVec>(pol, mid, thrust::raw_pointer_cast(a.data()), plan_.post_inv, plan_.Nmid, dof);
-  b.resize(plan_.Nloc * dof);
+  detail_sortScatter::resizeDiscard(b, plan_.Nloc * dof);
   detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(a.data()),
                                              thrust::raw_pointer_cast(b.data()), plan_.rcnt, plan_.scnt, dof, comm_);
   detail_sortScatter::localMove<DevVec>(pol, thrust::raw_pointer_cast(b.data()), dst, plan_.pre_inv, plan_.Nloc, dof);
@@ -195,7 +203,8 @@ void SortScatter<Key, DevVec>::ScatterReverse(const T* src, T* dst, Long dof) co
 template <class Key, template <class...> class DevVec> template <class T>
 void SortScatter<Key, DevVec>::ScatterForward(DevVec<T>& data, Long dof) const {
   SCTL_ASSERT_MSG((Long)data.size() == plan_.Nloc * dof, "SortScatter::ScatterForward: data holds LocalCount()*dof values.");
-  DevVec<T> out(plan_.Ntree * dof);
+  DevVec<T>& out = detail::PersistentBuffer<T, DevVec, detail::Buf::SwapOut>();
+  detail_sortScatter::resizeDiscard(out, plan_.Ntree * dof);
   ScatterForward(thrust::raw_pointer_cast(data.data()), thrust::raw_pointer_cast(out.data()), dof);
   data.swap(out);
 }
@@ -203,7 +212,8 @@ void SortScatter<Key, DevVec>::ScatterForward(DevVec<T>& data, Long dof) const {
 template <class Key, template <class...> class DevVec> template <class T>
 void SortScatter<Key, DevVec>::ScatterReverse(DevVec<T>& data, Long dof) const {
   SCTL_ASSERT_MSG((Long)data.size() == plan_.Ntree * dof, "SortScatter::ScatterReverse: data holds SortedCount()*dof values.");
-  DevVec<T> out(plan_.Nloc * dof);
+  DevVec<T>& out = detail::PersistentBuffer<T, DevVec, detail::Buf::SwapOut>();
+  detail_sortScatter::resizeDiscard(out, plan_.Nloc * dof);
   ScatterReverse(thrust::raw_pointer_cast(data.data()), thrust::raw_pointer_cast(out.data()), dof);
   data.swap(out);
 }

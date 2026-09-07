@@ -347,6 +347,12 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp
   }
 }
 
+inline bool omp_par::prefer_merge_sort(std::size_t elem_size) {
+  constexpr Integer max_threads = 32;
+  constexpr std::size_t max_elem_size = 8;
+  return elem_size <= max_elem_size && !SCTL_IN_PARALLEL() && SCTL_GET_MAX_THREADS() <= max_threads;
+}
+
 template <class ConstIter, class Int> typename std::iterator_traits<ConstIter>::value_type omp_par::reduce(ConstIter A, Int cnt) {
   typedef typename std::iterator_traits<ConstIter>::value_type ValueType;
   ValueType sum = 0;

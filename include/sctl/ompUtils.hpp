@@ -1,6 +1,7 @@
 #ifndef _SCTL_OMPUTILS_HPP_
 #define _SCTL_OMPUTILS_HPP_
 
+#include <cstddef>          // for size_t
 #include <iterator>         // for iterator_traits
 #include <type_traits>      // for enable_if, false_type, true_type
 
@@ -143,6 +144,13 @@ template <class T> void sample_sort(T A, T A_last);
  * @param comp Functor for comparing elements.
  */
 template <class ConstIter, class Iter, class StrictWeakOrdering> void multiway_merge(ConstIter runs, ConstIterator<Long> run_dsp, Long nruns, Iter out, StrictWeakOrdering comp);
+
+/**
+ * Whether `merge_sort` beats `sample_sort` for elements of this size. Merge wins only for small
+ * elements, since its extra merge-pass data movement grows with the element, and only for teams
+ * spanning at most ~2 NUMA domains; it is also unusable from inside a parallel region.
+ */
+bool prefer_merge_sort(std::size_t elem_size);
 
 /**
  * Reduces the elements in a range to a single value.

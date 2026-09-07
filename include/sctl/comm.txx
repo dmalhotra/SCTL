@@ -1966,11 +1966,7 @@ template <class Type, class Compare> void LocalSort(ConstIterator<Type> in, Iter
     omp_par::radix_sort(out, N, RadixKeyOf<Type>{});
     SCTL_UNUSED(comp);
   } else {
-    // merge_sort wins only for small elements (extra merge-pass data movement grows with
-    // sizeof(Type)) and teams spanning at most ~2 NUMA domains; sample_sort otherwise.
-    constexpr Integer merge_sort_max_threads = 32;
-    constexpr std::size_t merge_sort_max_elem_size = 8;
-    if (sizeof(Type) <= merge_sort_max_elem_size && !SCTL_IN_PARALLEL() && SCTL_GET_MAX_THREADS() <= merge_sort_max_threads) {
+    if (omp_par::prefer_merge_sort(sizeof(Type))) {
       omp_par::memcpy(out, in, N);
       omp_par::merge_sort(out, out + N, comp);
     } else {
