@@ -1966,7 +1966,7 @@ template <class Type, class Compare> void LocalSort(ConstIterator<Type> in, Iter
     omp_par::radix_sort(out, N, RadixKeyOf<Type>{});
     SCTL_UNUSED(comp);
   } else {
-    if (omp_par::prefer_merge_sort(sizeof(Type))) {
+    if (omp_par_detail::PreferMergeSort(sizeof(Type))) {
       omp_par::memcpy(out, in, N);
       omp_par::merge_sort(out, out + N, comp);
     } else {

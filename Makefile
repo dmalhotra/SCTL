@@ -126,6 +126,7 @@ NVCCLIBS = -ldl
 
 GPU_BIN = \
        $(BINDIR)/test-gpu-tree \
+       $(BINDIR)/test-gpu-sort-scatter \
        $(BINDIR)/example-gpu-tree
 
 gpu: $(GPU_BIN)

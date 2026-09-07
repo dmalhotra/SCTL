@@ -218,6 +218,107 @@ void SortScatter<Key, DevVec>::ScatterReverse(DevVec<T>& data, Long dof) const {
   data.swap(out);
 }
 
+
+// Keys with duplicates and one empty rank, cut two ways, round-tripped through every stage. The
+// checks read backend memory on the host, since that is where the comparisons are.
+template <class Key, template <class...> class DevVec> void SortScatter<Key, DevVec>::test() {
+  const Comm comm = Comm::World();
+  const Integer np = comm.Size(), rank = comm.Rank();
+  const Long KMAX = Long(1) << 40, dof = 2;
+  const Long N = (np > 2 && rank == np - 1 ? 0 : 100000);  // one empty rank when there are enough
+
+  sctl::Vector<Key> keys(N);
+  sctl::Vector<Long> payload(N * dof);
+  { // payload row = (key, global index), so a moved row can be traced back
+    Long gid0 = 0;
+    comm.Scan(sctl::Ptr2ConstItr<Long>(&N, 1), sctl::Ptr2Itr<Long>(&gid0, 1), 1, sctl::CommOp::SUM);
+    gid0 -= N;
+    unsigned long long s = 0x9E3779B97F4A7C15ULL * (rank + 1);
+    for (Long i = 0; i < N; i++) {
+      s = s * 6364136223846793005ULL + 1442695040888963407ULL;
+      const Long k = (Long)((s >> 24) % (unsigned long long)KMAX) / (i % 7 == 0 ? 1024 : 1);  // some repeated keys
+      keys[i] = (Key)k;
+      payload[i * dof + 0] = k;
+      payload[i * dof + 1] = gid0 + i;
+    }
+  }
+  const auto splitters = [np, KMAX](Long shift) {  // even cut of the key range, shifted
+    sctl::Vector<Key> spl(np);
+    for (Integer r = 0; r < np; r++) spl[r] = (Key)(r * (KMAX / np) + (r ? shift : 0));
+    return spl;
+  };
+  const auto toHost = [](const auto& d, Long n) {
+    sctl::Vector<std::remove_const_t<typename std::decay_t<decltype(d)>::value_type>> h(n);
+    if (n) detail::deviceToHost(d.data(), n, h.begin());
+    return h;
+  };
+  const auto check = [&comm, &toHost, np, rank, N](const SortScatter& ss, const sctl::Vector<Key>& spl, const DevVec<Long>& sorted) {
+    const Long n = ss.SortedCount();
+    SCTL_ASSERT((Long)ss.SortedKeys().size() == n && (Long)sorted.size() == n * dof);
+    const sctl::Vector<Key> k = toHost(ss.SortedKeys(), n);
+    const sctl::Vector<Long> q = toHost(sorted, n * dof);
+    Long bad = 0;
+    for (Long i = 0; i < n; i++) {
+      bad += (i && k[i] < k[i - 1]);                                                    // sorted
+      bad += (rank && k[i] < spl[rank]) || (rank + 1 < np && !(k[i] < spl[rank + 1]));  // within my range
+      bad += ((Long)k[i] != q[i * dof]);                                                // payload rode along
+    }
+    sctl::StaticArray<Long, 3> l{bad, n, N}, g;
+    comm.Allreduce((sctl::ConstIterator<Long>)l, (sctl::Iterator<Long>)g, 3, sctl::CommOp::SUM);
+    SCTL_ASSERT(g[0] == 0 && g[1] == g[2]);
+  };
+  const auto same = [&toHost](const DevVec<Long>& got, const sctl::Vector<Long>& want) {
+    SCTL_ASSERT((Long)got.size() == want.Dim());
+    const sctl::Vector<Long> h = toHost(got, want.Dim());
+    for (Long i = 0; i < want.Dim(); i++) SCTL_ASSERT(h[i] == want[i]);
+  };
+  const auto roundTrip = [&check, &same, &payload, N](const SortScatter& ss, const sctl::Vector<Key>& spl) {
+    DevVec<Long> q(payload.begin(), payload.end());
+    ss.ScatterForward(q, dof);
+    check(ss, spl, q);
+    ss.ScatterReverse(q, dof);
+    same(q, payload);
+    { // the raw form, into caller-sized buffers
+      const DevVec<Long> src(payload.begin(), payload.end());
+      DevVec<Long> fwd(ss.SortedCount() * dof), back(N * dof);
+      ss.template ScatterForward<Long>(thrust::raw_pointer_cast(src.data()), thrust::raw_pointer_cast(fwd.data()), dof);
+      check(ss, spl, fwd);
+      ss.template ScatterReverse<Long>(thrust::raw_pointer_cast(fwd.data()), thrust::raw_pointer_cast(back.data()), dof);
+      same(back, payload);
+    }
+  };
+
+  SortScatter ss(comm);
+  const sctl::Vector<Key> splA = splitters(0), splB = splitters(KMAX / (3 * np));
+  ss.Init(DevVec<Key>(keys.begin(), keys.end()), splA);
+  SCTL_ASSERT(ss.LocalCount() == N);
+  roundTrip(ss, splA);
+
+  DevVec<Long> q(payload.begin(), payload.end());
+  ss.ScatterForward(q, dof);  // in the first layout
+  ss.Repartition(splB);       // re-cut
+  ss.RepartitionData(q, dof); // follows the keys
+  { // repartitioning the data must land where sorting into the new layout directly would
+    DevVec<Long> q2(payload.begin(), payload.end());
+    ss.ScatterForward(q2, dof);
+    SCTL_ASSERT(q2.size() == q.size());
+    same(q2, toHost(q, (Long)q.size()));
+  }
+  roundTrip(ss, splB);
+  ss.Repartition(splA);  // re-cut of a re-cut
+  roundTrip(ss, splA);
+  ss.Repartition(splA);  // nothing moves
+  roundTrip(ss, splA);
+  { // a first splitter above some keys: the contract says it is not consulted, so rank 0 keeps
+    // them. Dropping them instead shows up as a global count short of the input.
+    sctl::Vector<Key> splC = splA;
+    splC[0] = (Key)(np > 1 ? (Long)splA[1] / 2 : KMAX / 2);
+    ss.Repartition(splC);
+    roundTrip(ss, splC);
+  }
+  if (!rank) std::printf("gpu_tree::SortScatter::test passed on %d ranks\n", (int)np);
+}
+
 }  // namespace gpu_tree
 
 #endif  // _SCTL_EXPERIMENTAL_SORT_SCATTER_TXX_

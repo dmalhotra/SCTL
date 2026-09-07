@@ -78,6 +78,9 @@ class SortScatter {
   /** `src` `SortedCount()*dof` values, `dst` `LocalCount()*dof`, no overlap. */
   template <class T> void ScatterReverse(const T* src, T* dst, Long dof) const;
 
+  /** Round-trips every stage against its inverse, as `sctl::SortScatter::test` does. Collective. */
+  static void test();
+
  private:
   Comm comm_;
   DevVec<Key> keys_;

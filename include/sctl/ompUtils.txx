@@ -2,6 +2,7 @@
 #define _SCTL_OMPUTILS_TXX_
 
 #include <algorithm>          // for lower_bound, sort, merge, copy
+#include <cstddef>            // for size_t
 #include <cstring>            // for memcpy
 #include <functional>         // for less
 #include <iterator>           // for iterator_traits
@@ -17,6 +18,15 @@
 namespace sctl {
 
 namespace omp_par_detail {
+
+  /** Whether `merge_sort` beats `sample_sort` for elements of this size. Merge wins only for small
+   *  elements, since its extra merge-pass data movement grows with the element, and only for teams
+   *  spanning at most ~2 NUMA domains; it is also unusable from inside a parallel region. */
+  inline bool PreferMergeSort(std::size_t elem_size) {
+    constexpr Integer max_threads = 32;
+    constexpr std::size_t max_elem_size = 8;
+    return elem_size <= max_elem_size && !SCTL_IN_PARALLEL() && SCTL_GET_MAX_THREADS() <= max_threads;
+  }
 
   inline Integer PickThreads(Long nbytes, Integer requested) {
     constexpr Long kFullThreadsBytes      = 2L * 1024L * 1024L;
@@ -345,12 +355,6 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp
       if (pos[d] < end[d]) { heap[hn++] = d; std::push_heap(heap, heap + hn, hcmp); }
     }
   }
-}
-
-inline bool omp_par::prefer_merge_sort(std::size_t elem_size) {
-  constexpr Integer max_threads = 32;
-  constexpr std::size_t max_elem_size = 8;
-  return elem_size <= max_elem_size && !SCTL_IN_PARALLEL() && SCTL_GET_MAX_THREADS() <= max_threads;
 }
 
 template <class ConstIter, class Int> typename std::iterator_traits<ConstIter>::value_type omp_par::reduce(ConstIter A, Int cnt) {

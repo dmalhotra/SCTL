@@ -132,7 +132,7 @@ template <class Policy, class Vec> void local_sort(const Policy& pol, Vec& v, Lo
   } else {
     T* const p = thrust::raw_pointer_cast(v.data());
     if constexpr (sctl::omp_par::is_radix_sortable<T>::value) sctl::omp_par::radix_sort(p, n, [](const T& x) { return x.GetIntKey(); });
-    else if (sctl::omp_par::prefer_merge_sort(sizeof(T))) sctl::omp_par::merge_sort(p, p + n);
+    else if (sctl::omp_par_detail::PreferMergeSort(sizeof(T))) sctl::omp_par::merge_sort(p, p + n);
     else sctl::omp_par::sample_sort(p, p + n);
   }
 }
@@ -166,7 +166,7 @@ template <class Policy, class Vec, class IVec> void local_sort_by_key(const Poli
     }
     if constexpr (sctl::omp_par::is_radix_sortable<T>::value) {
       sctl::omp_par::radix_sort(pairs.begin(), n, [](const Pair& x) { return x.key.GetIntKey(); });
-    } else if (sctl::omp_par::prefer_merge_sort(sizeof(Pair))) {
+    } else if (sctl::omp_par_detail::PreferMergeSort(sizeof(Pair))) {
       sctl::omp_par::merge_sort(pairs.begin(), pairs.end());
     } else {
       sctl::omp_par::sample_sort(pairs.begin(), pairs.end());
