@@ -67,8 +67,13 @@ inline DeviceScratchPool<DevVec>::~DeviceScratchPool() {
 }
 
 template <template <class...> class DevVec>
+inline Long DeviceScratchPool<DevVec>::PaddedBytes(Long bytes) {
+  return std::max<Long>(ALIGN, (bytes + ALIGN - 1) & ~(ALIGN - 1));
+}
+
+template <template <class...> class DevVec>
 inline std::pair<typename DeviceScratchPool<DevVec>::Chunk*, char*> DeviceScratchPool<DevVec>::AllocBytes(Long bytes) {
-  const Long need = (bytes + ALIGN - 1) & ~(ALIGN - 1);
+  const Long need = PaddedBytes(bytes);
   if (head_ == nullptr || need > head_->end - head_->top) NewChunk(need);
   char* const p = head_->top;
   head_->top += need;
@@ -91,16 +96,16 @@ inline void DeviceScratchPool<DevVec>::Rewind(Chunk* chunk, char* p) {
 
 template <template <class...> class DevVec>
 inline void DeviceScratchPool<DevVec>::FreeBytes(Chunk* chunk, char* p, Long bytes) {
-  const Long need = (bytes + ALIGN - 1) & ~(ALIGN - 1);
+  const Long need = PaddedBytes(bytes);
   SCTL_ASSERT_MSG(chunk->top == p + need, "DeviceScratch: LIFO violation (free out of order).");
   Rewind(chunk, p);
 }
 
 template <template <class...> class DevVec>
 inline void DeviceScratchPool<DevVec>::FreeBytes(char* p, Long bytes) {
-  const Long need = (bytes + ALIGN - 1) & ~(ALIGN - 1);
+  const Long need = PaddedBytes(bytes);
   for (Chunk* c = head_; c; c = c->prev) {
-    if (c->top == p + need) {
+    if (c->base <= p && p < c->end && c->top == p + need) {
       Rewind(c, p);
       return;
     }
@@ -115,9 +120,15 @@ inline void DeviceScratchPool<DevVec>::NewChunk(Long need) {
   const Long prev_cap = head_ ? head_->end - head_->base : 0;
   Long cap = std::max<Long>((Long)SCTL_DEVICE_SCRATCH_INIT_BYTES, prev_cap * 2);
   while (cap < need) cap *= 2;
-  auto* buf = new DevVec<char>(cap + ALIGN - 1);  // room to align the base; the backend guarantees less
+  auto* buf = new DevVec<char>(cap + ALIGN - 1);  // room to align the base; the host backend gives only 16
   char* const raw = thrust::raw_pointer_cast(buf->data());
   char* const base = raw + ((ALIGN - (Long)((std::uintptr_t)raw & (ALIGN - 1))) & (ALIGN - 1));
+  if (head_ != nullptr && head_->top == head_->base) {  // outgrown and holding nothing: let it go
+    Chunk* const prev = head_->prev;                    // else it is buried, and Rewind below
+    delete head_->buf;                                  // could never reach it again
+    delete head_;
+    head_ = prev;
+  }
   head_ = new Chunk{buf, base, base, base + cap, head_};
 }
 

@@ -81,17 +81,25 @@ inline ScratchPool& ScratchPool::Instance() {
 // of aligning the *start* pointer. Since `base` is aligned and every alloc
 // consumes a multiple of SCTL_MEM_ALIGN, `top` stays aligned by induction —
 // no per-call `(top + mask) & ~mask`.
+[[gnu::always_inline]] inline Long ScratchPool::PaddedBytes(Long bytes) {
+#ifdef SCTL_MEMDEBUG
+  constexpr Long redzone = MemoryManager::end_padding;
+#else
+  constexpr Long redzone = 0;
+#endif
+  constexpr Long align_mask = (Long)SCTL_MEM_ALIGN - 1;
+  return std::max<Long>(SCTL_MEM_ALIGN, (bytes + redzone + align_mask) & ~align_mask);
+}
+
 [[gnu::always_inline]] inline void ScratchPool::AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data) {
 #ifdef SCTL_MEMDEBUG
   SCTL_ASSERT(head_ != nullptr);
   SCTL_ASSERT(bytes >= 0);
   constexpr Long redzone = MemoryManager::end_padding;
-#else
-  constexpr Long redzone = 0;
 #endif
 
   constexpr Long align_mask = (Long)SCTL_MEM_ALIGN - 1;
-  const Long bytes_padded = (bytes + redzone + align_mask) & ~align_mask;
+  const Long bytes_padded = PaddedBytes(bytes);
   Iterator<char> alloc_start;
   if (__builtin_expect(bytes_padded > head_->end - head_->top, 0)) {
     // `std::aligned_alloc` (not `aligned_new`) so libc returns virtual pages
@@ -155,9 +163,7 @@ inline ScratchPool& ScratchPool::Instance() {
 #ifdef SCTL_MEMDEBUG
     // Strict LIFO: this alloc's end exactly matches the chunk's top (no
     // inter-allocation padding thanks to size-rounding in AllocBytes).
-    constexpr Long align_mask = (Long)SCTL_MEM_ALIGN - 1;
-    const Long bytes_padded = (bytes + redzone + align_mask) & ~align_mask;
-    SCTL_ASSERT_MSG(data + bytes_padded == chunk->top,
+    SCTL_ASSERT_MSG(data + PaddedBytes(bytes) == chunk->top,
                     "ScratchBuf: LIFO violation (free out of order).");
 #endif
     chunk->top = data;

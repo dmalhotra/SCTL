@@ -89,7 +89,7 @@ sctl::ScratchPool& pinnedStagingPool();
 template <template <class...> class DevVec> class DeviceScratchPool {
  public:
   // Chunk bases and slice sizes are both rounded to this, so every slice starts aligned for any
-  // type the pool hands out. The backends guarantee less: 256 on the device, 16 on the host.
+  // type the pool hands out. The device's blocks arrive 256-aligned already; the host's give only 16.
   static constexpr Long ALIGN = SCTL_MEM_ALIGN;
 
   /** The pool for this backend. */
@@ -119,6 +119,10 @@ template <template <class...> class DevVec> class DeviceScratchPool {
 
   /** Give the slice back and shed the chunk if that emptied it. */
   void Rewind(Chunk* chunk, char* p);
+
+  /** What a slice of `bytes` consumes: rounded up to `ALIGN`, and never zero, so that
+   *  `top == base` means the chunk holds no live slice. */
+  static Long PaddedBytes(Long bytes);
 
   /** Same, with the owning chunk located by the LIFO invariant. */
   void FreeBytes(char* p, Long bytes);

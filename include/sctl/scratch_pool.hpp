@@ -147,6 +147,10 @@ class ScratchPool {
   void FreeBytes(Chunk* chunk, Iterator<char> data, Long bytes);
   void ReleaseChunk(Chunk* chunk);
 
+  /** What a slice of `bytes` consumes: the size rounded up to `SCTL_MEM_ALIGN` (plus the debug
+   *  redzone), and never zero, so that `top == base` means the chunk holds no live buffer. */
+  static Long PaddedBytes(Long bytes);
+
   Chunk* head_{nullptr};   // eagerly allocated by the ctor; never null after construction
   ChunkHook on_new_{nullptr};
   ChunkHook on_free_{nullptr};
