@@ -162,18 +162,18 @@ namespace sctl {
       Long cur_cnt_{block_elems};
     };
 
-    template <Integer DIM> struct NbrPath {
+    struct NbrPath {
       Integer p_nbr, p_nbr_child;
     };
 
     // Neighbor k of child p2n = child `p_nbr_child` of parent-neighbor `p_nbr`: two pointer hops.
-    template <Integer DIM> const Matrix<NbrPath<DIM>>& nbr_path_table() {
+    template <Integer DIM> const Matrix<NbrPath>& nbr_path_table() {
       static constexpr Integer MAX_CHILD = (1u << DIM);
       static constexpr Integer MAX_NBRS = sctl::pow<DIM,Integer>(3);
-      static const Matrix<NbrPath<DIM>> tbl = []() {
+      static const Matrix<NbrPath> tbl = []() {
         const auto parent = (Morton<DIM>{}).Children()[0].Children()[MAX_CHILD-1];
         const auto parent_nbr_lst = parent.NbrList(parent.Depth(), Periodicity::NONE); // interior node, so periodicity doesn't matter
-        Matrix<NbrPath<DIM>> t(MAX_CHILD, MAX_NBRS);
+        Matrix<NbrPath> t(MAX_CHILD, MAX_NBRS);
         for (Integer p2n = 0; p2n < MAX_CHILD; p2n++) {
           const auto n0 = parent.Children()[p2n];
           const auto nlst = n0.NbrList(n0.Depth(), Periodicity::NONE);
@@ -573,8 +573,7 @@ namespace sctl {
 
     /**
      * Per-node particle counts from sorted codes: cnt[i] = number of codes in
-     * [node_mid[i], node_mid[i+1]). Parallel over node chunks; each thread locates its first
-     * boundary by one binary search and walks forward with a doubling search per node.
+     * [node_mid[i], node_mid[i+1]).
      */
     template <Integer DIM> void pt_node_counts(const Vector<Morton<DIM>>& node_mid, const Vector<MortonCode<DIM>>& pt_mid, Iterator<Long> cnt) {
       #pragma omp parallel
@@ -944,7 +943,7 @@ namespace sctl {
           std::copy(parent_mid_.begin(), parent_mid_.end(), parent_mid.begin() + dsp);
         }
       }
-      tree_detail::Balance21<DIM>(parent_mid, mins.begin(), comm, periodicity);
+      tree_detail::Balance21(parent_mid, mins.begin(), comm, periodicity);
 
       if (parent_mid.Dim()) { // add children of parent_mid
         const Integer nthreads = SCTL_GET_MAX_THREADS();
@@ -1328,9 +1327,7 @@ namespace sctl {
     GetData_(data_, cnt_, name);
     Vector<ValueType> data(data_->Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->begin(), false);
     Vector<Long>& cnt = *cnt_;
-    scan(dsp, cnt);
-
-    const Long dof = tree_detail::global_dof(comm, data.Dim(), dsp[cnt.Dim() - 1] + cnt[cnt.Dim() - 1]);
+    const Long dof = tree_detail::global_dof(comm, data.Dim(), scan(dsp, cnt));
 
     { // Reduce
       Vector<Morton<DIM>> send_mid, recv_mid;
@@ -1440,9 +1437,7 @@ namespace sctl {
     GetData_(data_, cnt_, name);
     Vector<ValueType> data(data_->Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->begin(), false);
     Vector<Long>& cnt = *cnt_;
-    scan(dsp, cnt);
-
-    const Long dof = tree_detail::global_dof(comm, data.Dim(), dsp[cnt.Dim() - 1] + cnt[cnt.Dim() - 1]);
+    const Long dof = tree_detail::global_dof(comm, data.Dim(), scan(dsp, cnt));
 
     { // Broadcast
       const Vector<Morton<DIM>>& send_mid = user_mid;
@@ -1612,10 +1607,12 @@ namespace sctl {
     cnt  = Ptr2Itr<Vector<Long>>(& cnt_->second,1);
   }
 
-  template <Integer DIM> void Tree<DIM>::scan(Vector<Long>& dsp, const Vector<Long>& cnt) {
-    dsp.ReInit(cnt.Dim());
-    if (cnt.Dim()) dsp[0] = 0;
-    omp_par::scan(cnt.begin(), dsp.begin(), cnt.Dim());
+  template <Integer DIM> Long Tree<DIM>::scan(Vector<Long>& dsp, const Vector<Long>& cnt) {
+    const Long n = cnt.Dim();
+    dsp.ReInit(n);
+    if (!n) return 0;
+    omp_par::scan(cnt.begin(), dsp.begin(), n, 0);
+    return dsp[n - 1] + cnt[n - 1];
   }
 
 
@@ -1646,14 +1643,14 @@ namespace sctl {
       group.Repartition(partition_codes);
 
       ScratchBuf<Long> pt_cnt(node_mid.Dim());
-      tree_detail::pt_node_counts<DIM>(node_mid, group.SortedKeys(), pt_cnt.begin());
+      tree_detail::pt_node_counts(node_mid, group.SortedKeys(), pt_cnt.begin());
 
-      for (const auto& pair : pt_data) {
-        if (pair.second.particle_name == pt_name) {
+      for (const auto& data_pair : pt_data) {
+        if (data_pair.second.particle_name == pt_name) {
           Iterator<Vector<char>> data;
           Iterator<Vector<Long>> cnt;
-          this->GetData_(data, cnt, pair.first);
-          group.RepartitionData(*data, pair.second.dof * (Long)sizeof(Real));
+          this->GetData_(data, cnt, data_pair.first);
+          group.RepartitionData(*data, data_pair.second.dof * (Long)sizeof(Real));
           (*cnt) = Vector<Long>(pt_cnt);
         }
       }
@@ -1695,7 +1692,7 @@ namespace sctl {
     if (data_name == particle_name) { // the group's own coordinates: count its particles per node
       const auto& node_mid = this->GetNodeMID();
       ScratchBuf<Long> cnt(node_mid.Dim());
-      tree_detail::pt_node_counts<DIM>(node_mid, group->second.SortedKeys(), cnt.begin());
+      tree_detail::pt_node_counts(node_mid, group->second.SortedKeys(), cnt.begin());
       this->template AddData<Real>(data_name, dof, Vector<Long>(cnt));
     } else { // the group's counts already exist under particle_name
       Iterator<Vector<char>> data_;
@@ -1728,8 +1725,7 @@ namespace sctl {
     Vector<const Real> data_;
     this->GetData(data_, cnt_, data_name);
     SCTL_ASSERT(cnt_.Dim() == node_mid.Dim());
-    BaseTree::scan(dsp, cnt_);
-    const Long dof = tree_detail::global_dof(comm, data_.Dim(), dsp[node_mid.Dim()-1] + cnt_[node_mid.Dim()-1]);
+    const Long dof = tree_detail::global_dof(comm, data_.Dim(), BaseTree::scan(dsp, cnt_));
     { // Set data
       Integer np = comm.Size();
       Integer rank = comm.Rank();

@@ -211,8 +211,7 @@ Long local_unique(const Policy& pol, Vec& v, Long n) {
     T* p = thrust::raw_pointer_cast(v.data());
     sctl::ScratchBuf<T> tmp(n);
     const Long m = sctl::omp_par::dedup_sorted(p, tmp.begin(), n);
-    #pragma omp parallel for schedule(static)
-    for (Long i = 0; i < m; i++) p[i] = tmp[i];
+    sctl::omp_par::copy(tmp.begin(), tmp.begin() + m, p);
     return m;
   }
 }
@@ -1049,7 +1048,7 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
   }
 
   { // sctl's balance21 over the non-leaf set (host, OpenMP); it also redistributes by mins
-    sctl::tree_detail::Balance21<DIM>(S, mins.begin(), comm, periodicity);
+    sctl::tree_detail::Balance21(S, mins.begin(), comm, periodicity);
   }
 
   leavesFromNonLeaf<DIM, DevVec>(pol, tree, &S[0], S.Dim(), mins[rank], end_target);  // S holds at least the root

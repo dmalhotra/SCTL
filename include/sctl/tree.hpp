@@ -10,13 +10,13 @@
 #include <set>                  // for set
 #include <string>               // for basic_string, string
 
-#include "sctl/common.hpp"      // for Long, Integer, sctl
-#include "sctl/comm.hpp"        // for Comm
-#include "sctl/comm.txx"        // for Comm::Self
-#include "sctl/math_utils.txx"  // for pow
-#include "sctl/vector.hpp"      // for Vector
+#include "sctl/common.hpp"        // for Long, Integer, sctl
+#include "sctl/comm.hpp"          // for Comm
+#include "sctl/comm.txx"          // for Comm::Self
+#include "sctl/math_utils.txx"    // for pow
 #include "sctl/sort-scatter.hpp"  // for SortScatter
-#include "sctl/sort-scatter.txx"
+#include "sctl/sort-scatter.txx"  // for SortScatter::Init
+#include "sctl/vector.hpp"        // for Vector
 
 namespace sctl {
 
@@ -185,7 +185,8 @@ template <Integer DIM> class Tree {
 
     void GetData_(Iterator<Vector<char>>& data, Iterator<Vector<Long>>& cnt, const std::string& name);
 
-    static void scan(Vector<Long>& dsp, const Vector<Long>& cnt);
+    /** Exclusive scan of `cnt` into `dsp`, returning the total the scan already accumulated. */
+    static Long scan(Vector<Long>& dsp, const Vector<Long>& cnt);
 
     std::set<std::string> data_moved_by_derived;  ///< payloads a derived class moves itself after a rebuild; UpdateRefinement skips them
 

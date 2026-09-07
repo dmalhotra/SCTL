@@ -81,8 +81,12 @@ inline void ensureRecut(PlanBase& s, const Comm& comm) {
   if (!s.recut || s.recut_cnt) return;
   const Integer np = comm.Size(), rank = comm.Rank();
   ScratchBuf<Long> mid(np), cur(np);
-  comm.Allgather(Ptr2ConstItr<Long>(&s.Nmid, 1), 1, mid.begin(), 1);
-  comm.Allgather(Ptr2ConstItr<Long>(&s.Ntree, 1), 1, cur.begin(), 1);
+  { // both block sizes in one gather
+    ScratchBuf<Long> n(2 * np);
+    const StaticArray<Long, 2> loc{s.Nmid, s.Ntree};
+    comm.Allgather((ConstIterator<Long>)loc, 2, n.begin(), 2);
+    for (Integer q = 0; q < np; q++) { mid[q] = n[2 * q]; cur[q] = n[2 * q + 1]; }
+  }
   ScratchBuf<Long> moff(np + 1), coff(np + 1);
   omp_par::scan(mid.begin(), moff.begin(), np + 1, Long(0));  // reads mid[0, np) only
   omp_par::scan(cur.begin(), coff.begin(), np + 1, Long(0));

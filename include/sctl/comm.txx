@@ -845,11 +845,16 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
     return comm_detail::MPINumChunks(bytes);
 #endif
   };
-  Long max_chunks = 0, request_count = 0, total_bytes = 0;
+  Long request_count = 0, total_bytes = 0;
+#if MPI_VERSION < 4
+  Long max_chunks = 0;
+#endif
   for (Integer i = 0; i < np; i++) {
     if (skip(i)) continue;
     const Long recv_bytes = rcounts[i] * (Long)sizeof(RType), send_bytes = scounts[i] * (Long)sizeof(SType);
+#if MPI_VERSION < 4
     max_chunks = std::max<Long>({max_chunks, chunks(recv_bytes), chunks(send_bytes)});
+#endif
     request_count += chunks(recv_bytes) + chunks(send_bytes);
     total_bytes += recv_bytes + send_bytes;
   }
@@ -858,7 +863,8 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
   comm_detail::AssertChunkedTagRange(tag, max_chunks, impl_->mpi_tag_ub_);
 #endif
   Vector<MPI_Request>& request = NewReq(request_count);
-  const auto post = [this,tag](auto buf, Long bytes, Integer peer, MPI_Request* req) {  // a send from a ConstIterator, a receive into an Iterator; returns the requests posted
+  // A send from a ConstIterator, a receive into an Iterator; returns the number of requests posted.
+  const auto post = [this,tag](auto buf, Long bytes, Integer peer, MPI_Request* req) {
     constexpr bool send = std::is_same<decltype(buf), ConstIterator<char>>::value;
     SCTL_UNUSED(buf[0]); SCTL_UNUSED(buf[bytes - 1]);
 #if MPI_VERSION >= 4

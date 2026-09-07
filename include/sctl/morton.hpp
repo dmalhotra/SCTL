@@ -193,7 +193,8 @@ template <Integer DIM> class Morton {
 
   /**
    * Box at depth `depth_` containing `mid_` (code snapped to the grid). Bits above
-   * `TOTAL_BITS` (past-end sentinel) are preserved; depths > MAX_DEPTH keep the code as-is.
+   * `TOTAL_BITS` (past-end sentinel) are preserved. `depth_` must be at most `MAX_DEPTH`, or
+   * `INVALID_DEPTH`, which keeps the code as-is.
    */
   SCTL_GPU_HD Morton(MortonCode<DIM> mid_, uint8_t depth_);
 

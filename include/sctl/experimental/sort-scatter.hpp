@@ -10,7 +10,7 @@
 #include "sctl/comm.hpp"
 #include "sctl/experimental/gpu-vector.hpp"
 #include "sctl/vector.hpp"
-#include "sctl/sort-scatter.hpp"  // the host-side Plan and its helpers
+#include "sctl/sort-scatter.hpp"  // for sort_scatter_detail::PlanBase
 
 namespace gpu_tree {
 

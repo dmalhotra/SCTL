@@ -224,10 +224,11 @@ template <class T, class = void> struct is_radix_sortable : std::false_type {};
 template <class T> struct is_radix_sortable<T, typename std::enable_if<T::IntKeyIsExact>::type> : std::true_type {};
 
 /**
- * Parallel LSD radix sort of A[0..N) by a 64-bit key, four passes of 16-bit digits. The sort is
+ * Parallel LSD radix sort of A[0..N) by a 64-bit key, six passes of 11-bit digits. The sort is
  * stable, and the result agrees with `operator<` whenever the key orders elements exactly as
  * `operator<` does (see `is_radix_sortable`). A comparison sort moves the same data through
- * O(N log N) compares.
+ * O(N log N) compares. The team is capped by `N`, so a short range does not pay for threads
+ * whose histograms would cost more than their share of the elements.
  *
  * @tparam Iter Random-access iterator over contiguous, trivially-copyable elements.
  * @tparam KeyFn Functor mapping an element to its `std::uint64_t` key.

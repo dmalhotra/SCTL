@@ -1,7 +1,7 @@
 #ifndef _SCTL_SORT_SCATTER_HPP_
 #define _SCTL_SORT_SCATTER_HPP_
 
-#include "sctl/common.hpp"    // for Long, Integer, sctl
+#include "sctl/common.hpp"    // for Long, sctl
 #include "sctl/comm.hpp"      // for Comm
 #include "sctl/comm.txx"      // for Comm::Self
 #include "sctl/iterator.hpp"  // for Iterator, ConstIterator
