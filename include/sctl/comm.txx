@@ -200,7 +200,10 @@ inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
   }
   return ok;
 #else
-  SCTL_UNUSED(pid); SCTL_UNUSED(src); SCTL_UNUSED(dst); SCTL_UNUSED(bytes);
+  SCTL_UNUSED(pid);
+  SCTL_UNUSED(src);
+  SCTL_UNUSED(dst);
+  SCTL_UNUSED(bytes);
   return false;
 #endif
 }
@@ -866,7 +869,8 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
   // A send from a ConstIterator, a receive into an Iterator; returns the number of requests posted.
   const auto post = [this,tag](auto buf, Long bytes, Integer peer, MPI_Request* req) {
     constexpr bool send = std::is_same<decltype(buf), ConstIterator<char>>::value;
-    SCTL_UNUSED(buf[0]); SCTL_UNUSED(buf[bytes - 1]);
+    SCTL_UNUSED(buf[0]);
+    SCTL_UNUSED(buf[bytes - 1]);
 #if MPI_VERSION >= 4
     if constexpr (send) MPI_Isend_c(&buf[0], comm_detail::MPIAsCountLarge(bytes), MPI_BYTE, peer, tag, impl_->mpi_comm_, req);
     else                MPI_Irecv_c(&buf[0], comm_detail::MPIAsCountLarge(bytes), MPI_BYTE, peer, tag, impl_->mpi_comm_, req);
@@ -918,7 +922,9 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     for (Integer i = 0; i < impl_->mpi_size_; i++) {  // receive pages fault in with all threads, not MPI's one
       if (i != Rank() && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
     }
-    scnt[Rank()] = 0; rcnt[Rank()] = 0;  // the self block is a local copy
+    // the self block is a local copy
+    scnt[Rank()] = 0;
+    rcnt[Rank()] = 0;
     omp_par::memcpy(rbuf + rdispls[Rank()], sbuf + sdispls[Rank()], scounts[Rank()]);
     comm_detail::TrackCollective(1, stotal * sizeof(Type) + rtotal * sizeof(Type));
     MPI_Alltoallv_c((stotal ? &sbuf[0] : nullptr), &scnt[0], &sdsp[0], CommDatatype<Type>::value(), (rtotal ? &rbuf[0] : nullptr), &rcnt[0], &rdsp[0], CommDatatype<Type>::value(), impl_->mpi_comm_);
@@ -997,7 +1003,9 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     for (Integer i = 0; i < impl_->mpi_size_; i++) {  // receive pages fault in with all threads, not MPI's one
       if (i != Rank() && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
     }
-    scnt[Rank()] = 0; rcnt[Rank()] = 0;  // the self block is a local copy
+    // the self block is a local copy
+    scnt[Rank()] = 0;
+    rcnt[Rank()] = 0;
     omp_par::memcpy(rbuf + rdispls[Rank()], sbuf + sdispls[Rank()], scounts[Rank()]);
     comm_detail::TrackCollective(1, stotal * sizeof(Type) + rtotal * sizeof(Type));
     MPI_Alltoallv((stotal ? &sbuf[0] : nullptr), &scnt[0], &sdsp[0], CommDatatype<Type>::value(), (rtotal ? &rbuf[0] : nullptr), &rcnt[0], &rdsp[0], CommDatatype<Type>::value(), impl_->mpi_comm_);

@@ -184,7 +184,10 @@ namespace sctl {
                 const auto parent_nbr_child_lst = parent_nbr_lst[p_nbr].Children();
                 t[p2n][nbr_idx].p_nbr = p_nbr;
                 for (Integer c = 0; c < (Integer)parent_nbr_child_lst.size(); c++) {
-                  if (nbr == parent_nbr_child_lst[c]) { t[p2n][nbr_idx].p_nbr_child = c; break; }
+                  if (nbr == parent_nbr_child_lst[c]) {
+                    t[p2n][nbr_idx].p_nbr_child = c;
+                    break;
+                  }
                 }
                 break;
               }
@@ -215,7 +218,10 @@ namespace sctl {
           for (Integer nbr_idx = 0; nbr_idx < MAX_NBRS; nbr_idx++) {
             const auto nbr_nlst = nlst[nbr_idx].NbrList(n0.Depth(), Periodicity::NONE);
             for (Integer i = 0; i < MAX_NBRS; i++) {
-              if (nbr_nlst[i] == n0) { t[p2n][nbr_idx] = i; break; }
+              if (nbr_nlst[i] == n0) {
+                t[p2n][nbr_idx] = i;
+                break;
+              }
             }
           }
         }
@@ -482,7 +488,8 @@ namespace sctl {
           #pragma omp single
           { // Resize parent_mid
             std::exclusive_scan(shared_pnode_cnt.begin(), shared_pnode_cnt.begin()+nt, shared_pnode_dsp.begin(), Long(0));
-            parent_mid.ReInit(shared_pnode_dsp[nt-1] + shared_pnode_cnt[nt-1]);
+            const Long Nnew = shared_pnode_dsp[nt-1] + shared_pnode_cnt[nt-1];
+            if (parent_mid.Dim() != Nnew) parent_mid.ReInit(Nnew);
           }
 
           if (idx0 < ptree.Dim()) { // preorder traversal to add local nodes to parent_mid
@@ -494,13 +501,19 @@ namespace sctl {
 
               TreeNode* next = nullptr;
               for (Integer k = 0; k < MAX_CHILD; k++) { // descend to first child
-                if (node->child[k]) { next = node->child[k]; break; }
+                if (node->child[k]) {
+                  next = node->child[k];
+                  break;
+                }
               }
               while (next == nullptr && node->parent) { // no child, ascend to next sibling
                 TreeNode* const parent = node->parent;
                 const Integer p2n = node->m.Path2Node();
                 for (Integer k = p2n+1; k < MAX_CHILD; k++) {
-                  if (parent->child[k]) { next = parent->child[k]; break; }
+                  if (parent->child[k]) {
+                    next = parent->child[k];
+                    break;
+                  }
                 }
                 node = parent;
               }
@@ -535,7 +548,8 @@ namespace sctl {
             #pragma omp single
             {
               std::exclusive_scan(cnt.begin(), cnt.begin()+nt, dsp.begin(), Long(1));
-              parent_mid.ReInit(dsp[nt-1] + cnt[nt-1]);
+              const Long Nnew = dsp[nt-1] + cnt[nt-1];
+              if (parent_mid.Dim() != Nnew) parent_mid.ReInit(Nnew);
               parent_mid[0] = parent_mid_sorted[0];
             } // implicit barrier at end of single
 
@@ -545,7 +559,7 @@ namespace sctl {
             }
           }
         } else {
-          parent_mid.ReInit(0);
+          if (parent_mid.Dim()) parent_mid.ReInit(0);
         }
       }
     }
@@ -841,7 +855,10 @@ namespace sctl {
         const Long chunk_size_max = (N + nthreads - 1) / nthreads;
         const Long max_emits      = 4 * chunk_size_max * (MAX_DEPTH + 1) / std::max<Long>(1, M) + 4 * (MAX_DEPTH + 1) * (Long(1) << DIM) + 16;
 
-        struct alignas(64) PaddedLong { Long v; char pad[64 - sizeof(Long)]; };  // avoid false sharing
+        struct alignas(64) PaddedLong {  // avoid false sharing
+          Long v;
+          char pad[64 - sizeof(Long)];
+        };
         ScratchBuf<PaddedLong> local_sizes(nthreads);
         ScratchBuf<Long>       offsets(nthreads);
 
@@ -906,7 +923,10 @@ namespace sctl {
           #pragma omp single
           {
             Long total = 0;
-            for (Integer s = 0; s < nthreads; ++s) { offsets[s] = total; total += local_sizes[s].v; }
+            for (Integer s = 0; s < nthreads; ++s) {
+              offsets[s] = total;
+              total += local_sizes[s].v;
+            }
             node_mid.ReInit(total);
           }
 
@@ -1609,7 +1629,7 @@ namespace sctl {
 
   template <Integer DIM> Long Tree<DIM>::scan(Vector<Long>& dsp, const Vector<Long>& cnt) {
     const Long n = cnt.Dim();
-    dsp.ReInit(n);
+    if (dsp.Dim() != n) dsp.ReInit(n);
     if (!n) return 0;
     omp_par::scan(cnt.begin(), dsp.begin(), n, 0);
     return dsp[n - 1] + cnt[n - 1];
@@ -1734,7 +1754,8 @@ namespace sctl {
       Long start = dsp[N0] * dof;
       Long end = (N1 ? (dsp[N1-1]+cnt_[N1-1])*dof : start);
       SCTL_ASSERT(end - start == group.SortedCount() * dof);
-      data.ReInit(group.LocalCount() * dof);
+      const Long Nout = group.LocalCount() * dof;
+      if (data.Dim() != Nout) data.ReInit(Nout);
       group.ScatterReverse((ConstIterator<Real>)data_.begin() + start, data.begin(), dof);
     }
   }

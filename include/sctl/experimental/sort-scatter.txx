@@ -20,7 +20,10 @@ namespace detail_sortScatter {
 
 // One thread per value, `n * dof` of them, so a key's block is read contiguously.
 template <class T> struct GatherDofFunctor {
-  const T* src; const Long* idx; T* dst; Long dof;
+  const T* src;
+  const Long* idx;
+  T* dst;
+  Long dof;
   SCTL_GPU_HD void operator()(Long e) const {
     const Long i = e / dof, k = e - i * dof;
     dst[e] = src[idx[i] * dof + k];
@@ -29,7 +32,8 @@ template <class T> struct GatherDofFunctor {
 
 /** `inv[m[i]] = i`. The only scattered write in the scheme, and it moves one index per key. */
 struct InvertFunctor {
-  const Long* m; Long* inv;
+  const Long* m;
+  Long* inv;
   SCTL_GPU_HD void operator()(Long i) const { inv[m[i]] = i; }
 };
 
@@ -53,7 +57,10 @@ void exchange(const Policy& pol, const T* src, T* dst,
               const sctl::Vector<Long>& scnt, const sctl::Vector<Long>& rcnt, Long dof, const Comm& comm) {
   const Long np = comm.Size();
   sctl::ScratchBuf<Long> sc(np), rc(np);
-  for (Long r = 0; r < np; r++) { sc[r] = scnt[r] * dof; rc[r] = rcnt[r] * dof; }
+  for (Long r = 0; r < np; r++) {
+    sc[r] = scnt[r] * dof;
+    rc[r] = rcnt[r] * dof;
+  }
   detail::alltoallv<DevVec>(pol, src, dst, sc, rc, (Long)sizeof(T), comm);
 }
 
@@ -80,7 +87,8 @@ void SortScatter<Key, DevVec>::Init(DevVec<Key> keys, const sctl::Vector<Key>& s
     { // stage 2: each key to the rank owning its stretch; the sort left each destination's keys contiguous
       DeviceScratch<Key, DevVec> spl(np);
       thrust::copy(splitters.begin(), splitters.end(), spl.begin());
-      plan_.scnt.ReInit(np); plan_.rcnt.ReInit(np);
+      plan_.scnt.ReInit(np);
+      plan_.rcnt.ReInit(np);
       plan_.Nmid = detail::splitCounts(plan_.scnt.begin(), plan_.rcnt.begin(), keys_, Nloc, spl, comm_);
       DevVec<Key>& k2 = detail::PersistentBuffer<Key, DevVec, detail::Buf::PtSortK>();
       k2.resize(plan_.Nmid);
@@ -109,7 +117,8 @@ void SortScatter<Key, DevVec>::Repartition(const sctl::Vector<Key>& splitters) {
 
   DeviceScratch<Key, DevVec> spl(np);
   thrust::copy(splitters.begin(), splitters.end(), spl.begin());
-  plan_.move_scnt.ReInit(np); plan_.move_rcnt.ReInit(np);
+  plan_.move_scnt.ReInit(np);
+  plan_.move_rcnt.ReInit(np);
   const Long Nnew = detail::splitCounts(plan_.move_scnt.begin(), plan_.move_rcnt.begin(), keys_, N, spl, comm_);
   if (!sctl::sort_scatter_detail::recordRecut(plan_, N, Nnew, comm_)) return;
   DevVec<Key>& k2 = detail::PersistentBuffer<Key, DevVec, detail::Buf::PtSortK>();

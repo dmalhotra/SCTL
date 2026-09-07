@@ -5,6 +5,7 @@
 #define _SCTL_EXPERIMENTAL_DEVICE_SCRATCH_TXX_
 
 #include <algorithm>
+#include <cstdint>
 
 #include "sctl/experimental/device_scratch.hpp"
 #include "sctl/iterator.txx"      // for Ptr2Itr
@@ -18,8 +19,8 @@ namespace detail {
 
 template <class T, template <class...> class DevVec, auto Tag>
 inline DevVec<T>& PersistentBuffer() {
-  static DevVec<T> buf;
-  return buf;
+  static DevVec<T>* buf = new DevVec<T>();  // never destroyed, for the reason in ~DeviceScratchPool
+  return *buf;
 }
 
 inline sctl::ScratchPool& pinnedStagingPool() {
@@ -51,6 +52,20 @@ inline DeviceScratchPool<DevVec>& DeviceScratchPool<DevVec>::Instance() {
   return pool;
 }
 
+// The chunk list is host memory and always freed. Its backing storage is freed only on the host
+// backends: this runs during static destruction, where the CUDA runtime may already have unloaded
+// and thrust's deallocate would then throw out of a destructor.
+template <template <class...> class DevVec>
+inline DeviceScratchPool<DevVec>::~DeviceScratchPool() {
+  for (Chunk* c = head_; c != nullptr;) {
+    Chunk* const prev = c->prev;
+    if constexpr (!detail::is_device_vector_v<DevVec<char>>) delete c->buf;
+    delete c;
+    c = prev;
+  }
+  head_ = nullptr;
+}
+
 template <template <class...> class DevVec>
 inline std::pair<typename DeviceScratchPool<DevVec>::Chunk*, char*> DeviceScratchPool<DevVec>::AllocBytes(Long bytes) {
   const Long need = (bytes + ALIGN - 1) & ~(ALIGN - 1);
@@ -60,18 +75,35 @@ inline std::pair<typename DeviceScratchPool<DevVec>::Chunk*, char*> DeviceScratc
   return {head_, p};
 }
 
+// Rewind the slice, and hand an emptied chunk back unless it is the head, which is kept for the
+// next build. Only `head_->prev` can empty first, since its slices were taken before the head's and
+// LIFO frees them after, so the splice stays local. Releasing here is safe -- unlike at exit, the
+// backend is still up.
+template <template <class...> class DevVec>
+inline void DeviceScratchPool<DevVec>::Rewind(Chunk* chunk, char* p) {
+  chunk->top = p;
+  if (chunk == head_ || chunk->top != chunk->base) return;
+  SCTL_ASSERT(head_->prev == chunk);
+  head_->prev = chunk->prev;
+  delete chunk->buf;
+  delete chunk;
+}
+
 template <template <class...> class DevVec>
 inline void DeviceScratchPool<DevVec>::FreeBytes(Chunk* chunk, char* p, Long bytes) {
   const Long need = (bytes + ALIGN - 1) & ~(ALIGN - 1);
   SCTL_ASSERT_MSG(chunk->top == p + need, "DeviceScratch: LIFO violation (free out of order).");
-  chunk->top = p;
+  Rewind(chunk, p);
 }
 
 template <template <class...> class DevVec>
 inline void DeviceScratchPool<DevVec>::FreeBytes(char* p, Long bytes) {
   const Long need = (bytes + ALIGN - 1) & ~(ALIGN - 1);
   for (Chunk* c = head_; c; c = c->prev) {
-    if (c->top == p + need) { c->top = p; return; }
+    if (c->top == p + need) {
+      Rewind(c, p);
+      return;
+    }
   }
   SCTL_ASSERT_MSG(false, "DeviceScratch: LIFO violation (free out of order).");
 }
@@ -83,8 +115,9 @@ inline void DeviceScratchPool<DevVec>::NewChunk(Long need) {
   const Long prev_cap = head_ ? head_->end - head_->base : 0;
   Long cap = std::max<Long>((Long)SCTL_DEVICE_SCRATCH_INIT_BYTES, prev_cap * 2);
   while (cap < need) cap *= 2;
-  auto* buf = new DevVec<char>(cap);
-  char* const base = thrust::raw_pointer_cast(buf->data());
+  auto* buf = new DevVec<char>(cap + ALIGN - 1);  // room to align the base; the backend guarantees less
+  char* const raw = thrust::raw_pointer_cast(buf->data());
+  char* const base = raw + ((ALIGN - (Long)((std::uintptr_t)raw & (ALIGN - 1))) & (ALIGN - 1));
   head_ = new Chunk{buf, base, base, base + cap, head_};
 }
 

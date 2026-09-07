@@ -79,15 +79,18 @@ sctl::ScratchPool& pinnedStagingPool();
  * Bump allocator backing `DeviceScratch`, one instance per backend (`Instance()`).
  *
  * Allocation is a pointer bump inside a chunk; on overflow a new chunk is added (doubling) and
- * older chunks stay live, so outstanding pointers remain valid. Chunks are **never** released:
- * retaining them is the point -- `cudaMalloc`/`cudaFree` cost ~1 ms per large block and dominate
- * the tree build otherwise. Peak reservation is bounded by 2x the high-water mark.
+ * older chunks stay live, so outstanding pointers remain valid. The head chunk is retained however
+ * empty it gets -- that is the point, since releasing backend memory costs ~1 ms per large block
+ * and would dominate the tree build. An older chunk is handed back once it empties, so after a few
+ * builds the pool converges on one chunk holding the high-water mark.
  *
  * Not thread-safe: one pool serves the thread issuing the backend calls.
  */
 template <template <class...> class DevVec> class DeviceScratchPool {
  public:
-  static constexpr Long ALIGN = 256;  // cudaMalloc's guarantee; rounding sizes keeps `top` aligned
+  // Chunk bases and slice sizes are both rounded to this, so every slice starts aligned for any
+  // type the pool hands out. The backends guarantee less: 256 on the device, 16 on the host.
+  static constexpr Long ALIGN = SCTL_MEM_ALIGN;
 
   /** The pool for this backend. */
   static DeviceScratchPool& Instance();
@@ -101,7 +104,7 @@ template <template <class...> class DevVec> class DeviceScratchPool {
 
   /** One chunk of the pool; `DeviceScratch` holds the chunk its slice came from. */
   struct Chunk {
-    DevVec<char>* buf;  // leaked by design: freeing device memory at exit races CUDA teardown
+    DevVec<char>* buf;  // released when the chunk is shed; at exit only on host backends
     char* base;
     char* top;
     char* end;
@@ -114,10 +117,14 @@ template <template <class...> class DevVec> class DeviceScratchPool {
   /** Return a slice (LIFO: it must be the last one taken from `chunk`). */
   void FreeBytes(Chunk* chunk, char* p, Long bytes);
 
+  /** Give the slice back and shed the chunk if that emptied it. */
+  void Rewind(Chunk* chunk, char* p);
+
   /** Same, with the owning chunk located by the LIFO invariant. */
   void FreeBytes(char* p, Long bytes);
 
   DeviceScratchPool() = default;
+  ~DeviceScratchPool();
   void NewChunk(Long need);
 
   Chunk* head_{nullptr};

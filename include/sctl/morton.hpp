@@ -136,7 +136,11 @@ template <Integer DIM> class MortonCode {
   static SCTL_GPU_HD uint8_t coarsest_depth(const MortonInteger& c);
 
   /** Number of mask/shift steps `spread_step`/`compact_step` take: least `l` with `2^l >= MAX_DEPTH`. */
-  static constexpr Integer NumSteps = [] { Integer l = 0; while ((Integer(1) << l) < MAX_DEPTH) ++l; return l; }();
+  static constexpr Integer NumSteps = [] {
+    Integer l = 0;
+    while ((Integer(1) << l) < MAX_DEPTH) ++l;
+    return l;
+  }();
 
   /** Mask over `DIM*MAX_DEPTH` bits keeping bit `p` iff `(p mod DIM*2^S) < 2^S`. */
   template <Integer S> static constexpr MortonInteger step_mask();

@@ -106,7 +106,10 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
    * @param[out] begin Index of this rank's first owned node.
    * @param[out] end One past its last owned node.
    */
-  void GetOwnedRange(Long& begin, Long& end) const { begin = owned_begin_; end = owned_end_; }
+  void GetOwnedRange(Long& begin, Long& end) const {
+    begin = owned_begin_;
+    end = owned_end_;
+  }
 
   /**
    * Update tree refinement and repartition node data among the new tree nodes.

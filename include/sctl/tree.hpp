@@ -185,7 +185,8 @@ template <Integer DIM> class Tree {
 
     void GetData_(Iterator<Vector<char>>& data, Iterator<Vector<Long>>& cnt, const std::string& name);
 
-    /** Exclusive scan of `cnt` into `dsp`, returning the total the scan already accumulated. */
+    /** Exclusive scan of `cnt` into `dsp`, returning the total the scan already accumulated.
+     *  `dsp` is resized only when it is the wrong length, so it may be a non-owning view. */
     static Long scan(Vector<Long>& dsp, const Vector<Long>& cnt);
 
     std::set<std::string> data_moved_by_derived;  ///< payloads a derived class moves itself after a rebuild; UpdateRefinement skips them
@@ -315,7 +316,10 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
 
     Vector<MortonCode<DIM>> partition_codes;  ///< partition mins as codes: the SortScatter splitters; set with each partition
     std::map<std::string, SortScatter<MortonCode<DIM>>> groups;  ///< per particle group: codes in tree order, maps to/from caller order
-    struct PtData { std::string particle_name; Long dof; };
+    struct PtData {
+      std::string particle_name;
+      Long dof;
+    };
     std::map<std::string, PtData> pt_data;  ///< particle group and dof of each particle data set
 };
 

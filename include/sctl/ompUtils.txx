@@ -468,10 +468,21 @@ template <class Iter, class KeyFn> inline void omp_par::radix_sort(Iter A, Long 
         part[tid] = sum;
         #pragma omp barrier
         #pragma omp single
-        { Long acc = 0; for (Integer t = 0; t < nt; t++) { const Long c = part[t]; part[t] = acc; acc += c; } }
+        {
+          Long acc = 0;
+          for (Integer t = 0; t < nt; t++) {
+            const Long c = part[t];
+            part[t] = acc;
+            acc += c;
+          }
+        }
         Long acc = part[tid];
         for (Long b = b0; b < b1; b++)
-          for (Integer t = 0; t < nt; t++) { const Long c = hist[(Long)t * NB + b]; hist[(Long)t * NB + b] = acc; acc += c; }
+          for (Integer t = 0; t < nt; t++) {
+            const Long c = hist[(Long)t * NB + b];
+            hist[(Long)t * NB + b] = acc;
+            acc += c;
+          }
       }
       #pragma omp barrier
       for (Long i = lo; i < hi; i++) dst[h[(key(src[i]) >> shift) & (NB - 1)]++] = src[i];

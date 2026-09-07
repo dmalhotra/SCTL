@@ -28,11 +28,17 @@ namespace sort_scatter_detail {
 template <class Key> void sortWithIndex(ConstIterator<Key> src, Iterator<Key> dst, Vector<Long>& idx, Long n) {
   ScratchBuf<comm_detail::SortPair<Key, Long>> in(n), out(n);
   #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < n; i++) { in[i].key = src[i]; in[i].data = i; }
+  for (Long i = 0; i < n; i++) {
+    in[i].key = src[i];
+    in[i].data = i;
+  }
   comm_detail::LocalSort<comm_detail::SortPair<Key, Long>>(in.begin(), out.begin(), n, std::less<comm_detail::SortPair<Key, Long>>());
   if (idx.Dim() != n) idx.ReInit(n);
   #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < n; i++) { dst[i] = out[i].key; idx[i] = out[i].data; }
+  for (Long i = 0; i < n; i++) {
+    dst[i] = out[i].key;
+    idx[i] = out[i].data;
+  }
 }
 
 /** `scnt[r]`: the `n` sorted `keys` in `[splitters[r], splitters[r+1])` (ends open); `rcnt`: what
@@ -61,7 +67,10 @@ template <class T> void localMove(ConstIterator<T> src, Iterator<T> dst, const V
 template <class T> void exchange(ConstIterator<T> src, Iterator<T> dst, const Vector<Long>& scnt, const Vector<Long>& rcnt, Long dof, const Comm& comm) {
   const Integer np = comm.Size();
   ScratchBuf<Long> sc(np), rc(np), sd(np), rd(np);
-  for (Integer r = 0; r < np; r++) { sc[r] = scnt[r] * dof; rc[r] = rcnt[r] * dof; }
+  for (Integer r = 0; r < np; r++) {
+    sc[r] = scnt[r] * dof;
+    rc[r] = rcnt[r] * dof;
+  }
   omp_par::scan(sc.begin(), sd.begin(), np, Long(0));
   omp_par::scan(rc.begin(), rd.begin(), np, Long(0));
   comm.Alltoallv<T>(src, sc.begin(), sd.begin(), dst, rc.begin(), rd.begin());
@@ -85,7 +94,10 @@ inline void ensureRecut(PlanBase& s, const Comm& comm) {
     ScratchBuf<Long> n(2 * np);
     const StaticArray<Long, 2> loc{s.Nmid, s.Ntree};
     comm.Allgather((ConstIterator<Long>)loc, 2, n.begin(), 2);
-    for (Integer q = 0; q < np; q++) { mid[q] = n[2 * q]; cur[q] = n[2 * q + 1]; }
+    for (Integer q = 0; q < np; q++) {
+      mid[q] = n[2 * q];
+      cur[q] = n[2 * q + 1];
+    }
   }
   ScratchBuf<Long> moff(np + 1), coff(np + 1);
   omp_par::scan(mid.begin(), moff.begin(), np + 1, Long(0));  // reads mid[0, np) only

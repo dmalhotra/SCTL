@@ -69,8 +69,14 @@ template <template <class...> class DevVec, class T> auto scratch_policy() {
 // so that a block's time is the stage's own.
 template <template <class...> class DevVec> struct StageTimer {
   const Comm& comm;
-  void tic(const char* name) const { sync(); sctl::Profile::Tic(name, &comm, true); }
-  void toc() const { sync(); sctl::Profile::Toc(); }
+  void tic(const char* name) const {
+    sync();
+    sctl::Profile::Tic(name, &comm, true);
+  }
+  void toc() const {
+    sync();
+    sctl::Profile::Toc();
+  }
   static void sync() {
 #if SCTL_PROFILE >= 0 && (defined(__CUDACC__) || defined(__HIPCC__))
     if constexpr (is_device_vector_v<DevVec<char>>) cudaDeviceSynchronize();
@@ -153,7 +159,10 @@ template <class Policy, class Vec, class IVec> void local_sort_by_key(const Poli
     sctl::ScratchBuf<Pair> pairs(n);
     const auto pp = pairs.begin();
     #pragma omp parallel for schedule(static)
-    for (Long i = 0; i < n; i++) { pp[i].key = kp[i]; pp[i].val = vp[i]; }
+    for (Long i = 0; i < n; i++) {
+      pp[i].key = kp[i];
+      pp[i].val = vp[i];
+    }
     if constexpr (sctl::omp_par::is_radix_sortable<T>::value) {
       sctl::omp_par::radix_sort(pairs.begin(), n, [](const Pair& x) { return x.key.GetIntKey(); });
     } else if (SCTL_GET_MAX_THREADS() <= 16) {
@@ -162,7 +171,10 @@ template <class Policy, class Vec, class IVec> void local_sort_by_key(const Poli
       sctl::omp_par::sample_sort(pairs.begin(), pairs.end());
     }
     #pragma omp parallel for schedule(static)
-    for (Long i = 0; i < n; i++) { kp[i] = pp[i].key; vp[i] = pp[i].val; }
+    for (Long i = 0; i < n; i++) {
+      kp[i] = pp[i].key;
+      vp[i] = pp[i].val;
+    }
   }
 }
 
@@ -232,7 +244,10 @@ Long local_unique_copy(const Policy& pol, InIt in, Long n, Vec& out) {
 inline void alltoallvHost(const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt, const sctl::ScratchBuf<Long>& rcnt, Long esz, const Comm& comm) {
   const Long np = comm.Size();
   sctl::ScratchBuf<Long> sb(np), rb(np), sd(np), rd(np);  // byte counts and offsets
-  for (Long r = 0; r < np; r++) { sb[r] = scnt[r] * esz; rb[r] = rcnt[r] * esz; }
+  for (Long r = 0; r < np; r++) {
+    sb[r] = scnt[r] * esz;
+    rb[r] = rcnt[r] * esz;
+  }
   std::exclusive_scan(sb.begin(), sb.end(), sd.begin(), Long(0));
   std::exclusive_scan(rb.begin(), rb.end(), rd.begin(), Long(0));
   const Long ns = sd[np - 1] + sb[np - 1], nr = rd[np - 1] + rb[np - 1];
@@ -248,7 +263,8 @@ void alltoallvDevice(const Policy& pol, const void* sbuf, void* rbuf, const sctl
   const Long np = comm.Size(), rank = comm.Rank();
   sctl::ScratchBuf<Long> sd(np + 1), rd(np + 1);   // byte offsets, in Long
   const auto bytes = [esz](Long cnt) { return cnt * esz; };
-  sd[0] = 0; rd[0] = 0;
+  sd[0] = 0;
+  rd[0] = 0;
   std::transform_inclusive_scan(scnt.begin(), scnt.end(), sd.begin() + 1, std::plus<Long>(), bytes);
   std::transform_inclusive_scan(rcnt.begin(), rcnt.end(), rd.begin() + 1, std::plus<Long>(), bytes);
   static const Long IMAX = 2147483647;
@@ -274,10 +290,13 @@ void alltoallvDevice(const Policy& pol, const void* sbuf, void* rbuf, const sctl
   if (fits) {
     sctl::ScratchBuf<int> sc(np), sdi(np), rc(np), rdi(np);
     for (Long r = 0; r < np; r++) {
-      sc[r] = (int)(scnt[r] * esz / G); rc[r] = (int)(rcnt[r] * esz / G);
-      sdi[r] = (int)(sd[r] / G);        rdi[r] = (int)(rd[r] / G);
+      sc[r] = (int)(scnt[r] * esz / G);
+      rc[r] = (int)(rcnt[r] * esz / G);
+      sdi[r] = (int)(sd[r] / G);
+      rdi[r] = (int)(rd[r] / G);
     }
-    sc[rank] = 0; rc[rank] = 0;
+    sc[rank] = 0;
+    rc[rank] = 0;
     MPI_Datatype dt;
     MPI_Type_contiguous((int)G, MPI_BYTE, &dt);
     MPI_Type_commit(&dt);
@@ -343,7 +362,8 @@ inline Long scanv(sctl::Iterator<Long> dsp, sctl::ConstIterator<Long> cnt, Long 
 // items has nothing to divide by.
 inline Long globalDof(Long ndata, Long nitem, const Comm& comm) {
   sctl::StaticArray<Long, 2> Nl, Ng;
-  Nl[0] = ndata; Nl[1] = nitem;
+  Nl[0] = ndata;
+  Nl[1] = nitem;
   comm.Allreduce((sctl::ConstIterator<Long>)Nl, (sctl::Iterator<Long>)Ng, 2, sctl::CommOp::SUM);
   const Long dof = Ng[0] / std::max<Long>(Ng[1], 1);
   SCTL_ASSERT(ndata == nitem * dof);
@@ -412,7 +432,10 @@ Long scanCounts(const Policy& pol, const DeviceScratch<Long, DevVec>& counts, De
 template <Integer DIM, class F, sctl::PeriodicityT MASK = 0>
 void dispatchPeriodicity(sctl::Periodicity periodicity, const F& f) {
   constexpr sctl::Periodicity PER = static_cast<sctl::Periodicity>(MASK);
-  if (periodicity == PER) { f(std::integral_constant<sctl::Periodicity, PER>{}); return; }
+  if (periodicity == PER) {
+    f(std::integral_constant<sctl::Periodicity, PER>{});
+    return;
+  }
   if constexpr (MASK + 1 < (1 << DIM)) dispatchPeriodicity<DIM, F, sctl::PeriodicityT(MASK + 1)>(periodicity, f);
 }
 
@@ -468,7 +491,10 @@ void treeFromAnchors(DevVec<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, 
 template <class T, template <class...> class DevVec, class Policy>
 void partitionN(const Policy& pol, DevVec<T>& v, Long n, Long Ntgt, const Comm& comm, DevVec<T>& dst) {
   const Long np = comm.Size(), rank = comm.Rank();
-  if (np == 1) { v.resize(Ntgt); return; }
+  if (np == 1) {
+    v.resize(Ntgt);
+    return;
+  }
 #ifdef SCTL_HAVE_MPI
   sctl::ScratchBuf<Long> cnt(np), off(np + 1), tgt(np), toff(np + 1);
   comm.Allgather(sctl::Ptr2ConstItr<Long>(&n, 1), 1, cnt.begin(), 1);
@@ -754,8 +780,12 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
       const Long t = (i + 1) * Ng / np;
       const Long up = std::min(B-1, std::max<Long>(1, std::lower_bound(gr_b.begin(), gr_b.begin()+B, t) - gr_b.begin()));
       const Long lo = std::max<Long>(0, up - 1);                 // lo>=0 even when B==1 (degenerate all-equal data)
-      bracket[i*2+0] = bnd2[lo]; bracket_rl[i*2+0] = lr_b[lo]; bracket_rg[i*2+0] = gr_b[lo];
-      bracket[i*2+1] = bnd2[up]; bracket_rl[i*2+1] = lr_b[up]; bracket_rg[i*2+1] = gr_b[up];
+      bracket[i*2+0] = bnd2[lo];
+      bracket_rl[i*2+0] = lr_b[lo];
+      bracket_rg[i*2+0] = gr_b[lo];
+      bracket[i*2+1] = bnd2[up];
+      bracket_rl[i*2+1] = lr_b[up];
+      bracket_rg[i*2+1] = gr_b[up];
     }
   }();
 
@@ -858,10 +888,14 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
       }
 
       if (gr[up] - gr[lo] < bracket_rg[i*2+1] - bracket_rg[i*2+0]) {  // bracket shrank: tighten toward target
-        bracket[i*2+0]    = cand[lo]; bracket[i*2+1]    = cand[up];
-        bracket_rl[i*2+0] = lr[lo];   bracket_rl[i*2+1] = lr[up];
-        bracket_rg[i*2+0] = gr[lo];   bracket_rg[i*2+1] = gr[up];
-        anyactive = true; continue;
+        bracket[i*2+0]    = cand[lo];
+        bracket[i*2+1]    = cand[up];
+        bracket_rl[i*2+0] = lr[lo];
+        bracket_rl[i*2+1] = lr[up];
+        bracket_rg[i*2+0] = gr[lo];
+        bracket_rg[i*2+1] = gr[up];
+        anyactive = true;
+        continue;
       }
 
       // no shrink: cand[lo]==blo. Exact un-splittable test on blo's duplicate run [L,U).
@@ -871,7 +905,10 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
         continue;
       }
       // run straddles target: nearest endpoint is the best achievable.
-      if (t - L <= U - t) { splitters[i] = cand[lo]; state[i] = DONE; } // nearer endpoint L: splitter = blo (value in hand)
+      if (t - L <= U - t) {  // nearer endpoint L: splitter = blo (value in hand)
+        splitters[i] = cand[lo];
+        state[i] = DONE;
+      }
       else                  state[i] = DONE_UPPER;                      // nearer endpoint U: splitter = successor of blo (resolved at loop end)
     }
     return anyactive;
@@ -1089,7 +1126,10 @@ template <Integer DIM, sctl::Periodicity PER> struct ParentNbrSearch {
       const Integer p2n = s.Path2Node();
       for (; j < p_nbr_cnt[p2n]; j++) {
         const NodeT q = pnbrs[p_nbr_lst[p2n * K + j]];
-        if (q.Depth() == NodeT::INVALID_DEPTH) { w[j] = inv; continue; }
+        if (q.Depth() == NodeT::INVALID_DEPTH) {
+          w[j] = inv;
+          continue;
+        }
         const Long lo = detail::lowerBound(S, Long(0), ns, q);
         w[j] = (lo < ns && !(S[lo] < q) && !(q < S[lo])) ? inv : q;
       }
@@ -1282,7 +1322,8 @@ void addGhostNodes(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DIM>
   const Long np = comm.Size();
 
   const Long Nn = static_cast<Long>(tree.size());
-  owned_begin = 0; owned_end = Nn;
+  owned_begin = 0;
+  owned_end = Nn;
   if (np == 1) return;
 
   // `mins` is the partition: mins[r] is rank r's first node, in code and depth alike, so the
@@ -1332,7 +1373,10 @@ void addGhostNodes(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DIM>
     user_mid->resize(npairs);
     thrust::copy(pol, send_mid.begin(), send_mid.begin() + npairs, user_mid->begin());
   }
-  if (user_cnt) user_cnt->ReInit(np, scnt.begin());
+  if (user_cnt) {  // the caller's vector may be a view, so keep it when it already fits
+    if (user_cnt->Dim() != np) user_cnt->ReInit(np);
+    sctl::omp_par::copy(scnt.begin(), scnt.begin() + np, user_cnt->begin());
+  }
 
   DeviceScratch<NodeT, DevVec> ghost(Nrecv);
   detail::alltoallv<DevVec>(pol, thrust::raw_pointer_cast(send_mid.data()), thrust::raw_pointer_cast(ghost.data()), scnt, rcnt, sizeof(NodeT), comm);
@@ -1355,7 +1399,8 @@ void addGhostNodes(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DIM>
   thrust::copy(pol, tree.begin(), tree.end(), merged.begin() + L);
   thrust::copy(pol, right.begin(), right.end(), merged.begin() + L + Nn);
   tree.swap(merged);
-  owned_begin = L; owned_end = L + Nn;
+  owned_begin = L;
+  owned_end = L + Nn;
 }
 
 }  // namespace detail_addGhostNodes
@@ -1426,7 +1471,10 @@ template <Integer DIM, sctl::Periodicity PER> struct NbrDescentFunctor {
     Long* const out = nbr + i * MAX_NBRS;
     for (Integer k = 0; k < MAX_NBRS; k++) {
       const Morton<DIM>& m = nl[k];
-      if (m.depth == Morton<DIM>::INVALID_DEPTH) { out[k] = -1; continue; }
+      if (m.depth == Morton<DIM>::INVALID_DEPTH) {
+        out[k] = -1;
+        continue;
+      }
       Long cur = 0;  // the root is at index 0
       for (Integer l = 1; l <= d && cur >= 0; l++) cur = ch[cur * MAX_CHILD + m.Ancestor((uint8_t)l).Path2Node()];
       out[k] = cur;
@@ -1540,7 +1588,10 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
     if (rank == 0) tree[0] = Morton<DIM>{};
     for (Long r = 0; r < np; r++) mins[r] = (r == 0 ? Morton<DIM>{} : Morton<DIM>{}.Next());
     if (user_mid) user_mid->resize(0);
-    if (user_cnt) { user_cnt->ReInit(np); user_cnt->SetZero(); }
+    if (user_cnt) {
+      if (user_cnt->Dim() != np) user_cnt->ReInit(np);
+      user_cnt->SetZero();
+    }
     fillOutputs(0, (Long)tree.size());
     return;
   }
@@ -1578,7 +1629,8 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
     detail::local_sort(pol, alt, Nrecv);  // np sorted segments -> one sorted block
     pt_mid.swap(alt);
   }
-  prof.toc(); prof.tic("rebalance");
+  prof.toc();
+  prof.tic("rebalance");
 
   if (np > 1) { // M <- global_min(pt_mid.size(), M); repartition if necessary
     Long Nloc = (Long)pt_mid.size(), Nloc_min = 0;
@@ -1591,7 +1643,8 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
     M = std::min<Long>(M, Nloc_min);
     if (M < 1) MPI_Abort(comm.GetMPI_Comm(), 1);
   }
-  prof.toc(); prof.tic("halo+mins");
+  prof.toc();
+  prof.tic("halo+mins");
 
   if (np > 1) { // halo: pt_mid <-- [M from left | pt_mid | M from right] (empty halo on domain-edge ranks)
     const Long recv0 = (rank > 0 ? M : 0);
@@ -1620,7 +1673,8 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
     }
     comm.Allgather(sctl::Ptr2ConstItr<Morton<DIM>>(&A, 1), 1, mins.begin(), 1);
   }
-  prof.toc(); prof.tic("walk (linearize)");
+  prof.toc();
+  prof.tic("walk (linearize)");
 
   { // build linear tree from pt_mid
     const Morton<DIM> end_bnd = (rank + 1 < np) ? mins[rank + 1] : Morton<DIM>{}.Next();
@@ -1636,13 +1690,15 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
       detail_build::buildTreeCpuChunked<DIM>(tree, pt_mid, M, idx1 - idx0, idx0, mins[rank], end_bnd);
     }
   }
-  prof.toc(); prof.tic("balance21");
+  prof.toc();
+  prof.tic("balance21");
 
   if (balance21) {  // each backend's faster closure, see the two namespaces
     if constexpr (detail::is_device_vector_v<DevVec<Morton<DIM>>>) detail_balance21_gpu::balanceTreeDist<DIM>(tree, mins, comm, periodicity);
     else detail_balance21_host::balanceTreeDist<DIM>(tree, mins, comm, periodicity);
   }
-  prof.toc(); prof.tic("ghost");
+  prof.toc();
+  prof.tic("ghost");
 
   Long owned_begin = 0, owned_end = Long(tree.size());
   detail_addGhostNodes::addGhostNodes<DIM>(tree, mins, comm, halo_size, periodicity, owned_begin, owned_end, user_mid, user_cnt);
@@ -1669,7 +1725,10 @@ GPUTree<Real, DIM, DevVec>::GPUTree(const Comm& comm) : comm_(comm) {
   sctl::ScratchBuf<Real> h((end - beg) * DIM);
   for (Long i = beg; i < end; i++) {
     Long idx = i;
-    for (Integer k = 0; k < DIM; k++) { h[(i - beg) * DIM + k] = (Real)(idx % n0) / (Real)n0; idx /= n0; }
+    for (Integer k = 0; k < DIM; k++) {
+      h[(i - beg) * DIM + k] = (Real)(idx % n0) / (Real)n0;
+      idx /= n0;
+    }
   }
   DevVec<Real> coord(h.Dim());
   thrust::copy(h.begin(), h.end(), coord.begin());
@@ -1821,7 +1880,10 @@ template <Integer DIM> Long findNode(sctl::ConstIterator<Morton<DIM>> nmid, Long
 
 /** dst[di[k]] = src[si[k]] -- touches only the elements the blocks actually cover. */
 template <class T> struct BlockCopyFunctor {
-  const T* src; T* dst; const Long* si; const Long* di;
+  const T* src;
+  T* dst;
+  const Long* si;
+  const Long* di;
   SCTL_GPU_HD void operator()(Long k) const { dst[di[k]] = src[si[k]]; }
 };
 
@@ -1839,7 +1901,10 @@ void blockCopy(const Policy& pol, T* dst, const T* src,
   sctl::ScratchBuf<Long> si(tot), di(tot);
   #pragma omp parallel for schedule(static)
   for (Long i = 0; i < nb; i++) {
-    for (Long j = 0; j < len[i] * w; j++) { si[off[i] * w + j] = srcoff[i] * w + j; di[off[i] * w + j] = dstoff[i] * w + j; }
+    for (Long j = 0; j < len[i] * w; j++) {
+      si[off[i] * w + j] = srcoff[i] * w + j;
+      di[off[i] * w + j] = dstoff[i] * w + j;
+    }
   }
   DeviceScratch<Long, DevVec> si_d(tot), di_d(tot);
   thrust::copy(si.begin(), si.end(), si_d.begin());
@@ -1929,7 +1994,12 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
         { // received blocks land in the slots that were empty
           sctl::ScratchBuf<Long> a(Nr), b(Nr), l(Nr);
           Long m = 0;
-          for (Long i = 0; i < Nr; i++) if (!cnt[ridx[i]] && rdcnt[i]) { a[m] = rddsp[i]; b[m] = dsp_new[ridx[i]]; l[m] = rdcnt[i]; m++; }
+          for (Long i = 0; i < Nr; i++) if (!cnt[ridx[i]] && rdcnt[i]) {
+            a[m] = rddsp[i];
+            b[m] = dsp_new[ridx[i]];
+            l[m] = rdcnt[i];
+            m++;
+          }
           detail_bcast::blockCopy<DevVec>(pol, thrust::raw_pointer_cast(out.data()), rbuf, a.begin(), b.begin(), l.begin(), m, w);
         }
         data.swap(out);
@@ -2072,7 +2142,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::nodeCounts(const std::string& name, sc
   thrust::fill(pol, pos.begin() + Nn, pos.begin() + Nn + 1, Npt);
   DeviceScratch<Long, DevVec> d(Nn);
   thrust::transform(pol, pos.begin() + 1, pos.begin() + Nn + 1, pos.begin(), d.begin(), thrust::minus<Long>());
-  cnt.ReInit(Nn);
+  if (cnt.Dim() != Nn) cnt.ReInit(Nn);
   detail::deviceToHost(d.data(), Nn, cnt.begin());
 }
 
@@ -2221,7 +2291,9 @@ void PtTree<Real, DIM, DevVec, BaseTree>::test() {
   tree.AddParticleData("f", "pt", fd);  // follows the particles
 
   { // work on the stored data in place: the view aliases the tree's storage, in node order
-    DataView<Real, DevVec> v; sctl::Vector<Long> cnt;  // cnt[i]: particles in node i
+    // cnt[i]: particles in node i
+    DataView<Real, DevVec> v;
+    sctl::Vector<Long> cnt;
     tree.GetData(v, cnt, "f");
     thrust::transform(v.begin(), v.end(), v.begin(), 2.0 * thrust::placeholders::_1);
   }
