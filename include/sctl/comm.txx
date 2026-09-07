@@ -38,6 +38,13 @@ template <class IteratorType> inline void TouchBuffer(IteratorType buf, Long cou
   SCTL_UNUSED(buf[count - 1]);
 }
 
+/** Key with its payload, ordered by the key alone, so a radix sort through the key agrees with `operator<`. */
+template <class A, class B> struct SortPair {
+  bool operator<(const SortPair& p) const { return key < p.key; }
+  A key;
+  B data;
+};
+
 }  // namespace comm_detail
 
 #ifdef SCTL_HAVE_MPI

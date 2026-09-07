@@ -31,15 +31,6 @@ enum class CommOp {
   MAX
 };
 
-namespace comm_detail {
-/** Key with its payload, ordered by the key alone, so a radix sort through the key agrees with `operator<`. */
-template <class A, class B> struct SortPair {
-  bool operator<(const SortPair& p) const { return key < p.key; }
-  A key;
-  B data;
-};
-}  // namespace comm_detail
-
 /**
  * Object oriented wrapper to MPI. It uses MPI when compiled with `mpicxx` and the macro `SCTL_HAVE_MPI`
  * is defined, otherwise, it defaults to the *self* communicator.
