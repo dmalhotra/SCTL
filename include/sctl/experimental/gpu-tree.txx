@@ -186,7 +186,8 @@ Long splitCounts(sctl::Iterator<Long> scnt, sctl::Iterator<Long> rcnt, const Vec
                  const DeviceScratch<T, DevVec>& keys, const Comm& comm) {
   const Long np = comm.Size(), nkeys = keys.Dim();
   SCTL_ASSERT(nkeys == np || nkeys == np - 1);
-  { sctl::ScratchBuf<Long> pos(np + 1);
+  {
+    sctl::ScratchBuf<Long> pos(np + 1);
     DeviceScratch<Long, DevVec> pos_d(nkeys);
     thrust::lower_bound(scratch_policy<DevVec, T>(), in.begin(), in.begin() + n, keys.begin(), keys.end(), pos_d.begin());
     thrust::copy(pos_d.begin(), pos_d.end(), pos.begin() + (np - nkeys));
@@ -437,6 +438,7 @@ void dispatchPeriodicity(sctl::Periodicity periodicity, const F& f) {
     return;
   }
   if constexpr (MASK + 1 < (1 << DIM)) dispatchPeriodicity<DIM, F, sctl::PeriodicityT(MASK + 1)>(periodicity, f);
+  else SCTL_ASSERT_MSG(false, "dispatchPeriodicity: periodicity has bits outside DIM");
 }
 
 // The anchor walk in two passes, so a caller that knows (or can bound) the output size can write
@@ -675,7 +677,10 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
   sctl::ScratchBuf<PaddedLong> local_sizes(nthreads);  // padded: concurrent per-thread writes
   sctl::ScratchBuf<Long> offsets(nthreads);            // written once by `single`, read-only after
   sctl::ScratchBuf<Long> zero_offsets(nthreads);       // functor reads `offsets[tid] == 0`
-  for (Integer t = 0; t < nthreads; ++t) zero_offsets[t] = 0;
+  for (Integer t = 0; t < nthreads; ++t) {
+    zero_offsets[t] = 0;
+    local_sizes[t].v = 0;  // a smaller team than asked for would leave the rest unwritten
+  }
 
   #pragma omp parallel num_threads(nthreads)
   {
@@ -683,6 +688,7 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
     sctl::ScratchBuf<NodeMIDT> buf(max_emits);  // NUMA-local: first-touched on this thread's node
     const ChunkedWalkFunctor<DIM, WalkMode::Write> fw{thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nthreads, &zero_offsets[0], &buf[0], start_bnd, end_bnd};
     const Long count = fw(tid);
+    SCTL_ASSERT_MSG(count <= max_emits, "chunked walk: emitted more nodes than the bound allows");
     local_sizes[tid].v = count;
 
     #pragma omp barrier
@@ -1068,9 +1074,10 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
     const NodeT* const fp = thrust::raw_pointer_cast(full.data());
     const Integer nt = SCTL_GET_MAX_THREADS();
     sctl::ScratchBuf<Long> dsp(nt + 1);
-    dsp[0] = 0;
+    std::fill(dsp.begin(), dsp.end(), Long(0));  // a smaller team leaves its tail unwritten
     #pragma omp parallel num_threads(nt)
-    { const Integer tid = SCTL_GET_THREAD_NUM();
+    {
+      const Integer tid = SCTL_GET_THREAD_NUM();
       Long c = 0;
       for (Long i = Nf * tid / nt; i < Nf * (tid + 1) / nt; i++) c += is_nonleaf(i);
       dsp[tid + 1] = c;
@@ -1078,7 +1085,8 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
     std::inclusive_scan(dsp.begin() + 1, dsp.end(), dsp.begin() + 1);
     S.ReInit(dsp[nt]);
     #pragma omp parallel num_threads(nt)
-    { const Integer tid = SCTL_GET_THREAD_NUM();
+    {
+      const Integer tid = SCTL_GET_THREAD_NUM();
       Long o = dsp[tid];
       for (Long i = Nf * tid / nt; i < Nf * (tid + 1) / nt; i++) if (is_nonleaf(i)) S[o++] = fp[i];
     }

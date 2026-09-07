@@ -247,7 +247,8 @@ template <class Key> void SortScatter<Key>::test() {
   // keys: pseudo-random with duplicates; payload row = (key, global index)
   Vector<Key> keys(N);
   Vector<Long> payload(N * dof);
-  { Long gid0 = 0;
+  {
+    Long gid0 = 0;
     comm.Scan(Ptr2ConstItr<Long>(&N, 1), Ptr2Itr<Long>(&gid0, 1), 1, CommOp::SUM);
     gid0 -= N;
     unsigned long long s = 0x9E3779B97F4A7C15ULL * (rank + 1);
@@ -303,7 +304,8 @@ template <class Key> void SortScatter<Key>::test() {
   ss.ScatterForward(q, dof);  // in the first layout
   ss.Repartition(splB);  // re-cut
   ss.RepartitionData(q, dof);  // follows the keys
-  { Vector<Long> q2 = payload;
+  {
+    Vector<Long> q2 = payload;
     ss.ScatterForward(q2, dof);
     SCTL_ASSERT(q2.Dim() == q.Dim());
     for (Long i = 0; i < q.Dim(); i++) SCTL_ASSERT(q2[i] == q[i]); }

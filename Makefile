@@ -121,7 +121,8 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 # host compiler. Needs CUDA and a CUDA-aware MPI, so `gpu` is separate from `all`.
 NVCC = nvcc -ccbin mpicxx
 NVCCFLAGS = -x cu -std=c++17 -O3 -arch=native -rdc=true --expt-relaxed-constexpr -Xcompiler "-fopenmp" \
-            -DSCTL_HAVE_MPI -DSCTL_MAX_DEPTH=20 -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP -ldl
+            -DSCTL_HAVE_MPI -DSCTL_MAX_DEPTH=20 -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP
+NVCCLIBS = -ldl
 
 GPU_BIN = \
        $(BINDIR)/test-gpu-tree \
@@ -131,7 +132,7 @@ gpu: $(GPU_BIN)
 
 $(BINDIR)/%: $(SRCDIR)/%.cu
 	-@$(MKDIRS) $(dir $@)
-	$(NVCC) $(NVCCFLAGS) -I$(INCDIR) $< -o $@
+	$(NVCC) $(NVCCFLAGS) -I$(INCDIR) $< $(NVCCLIBS) -o $@
 
 test: $(TARGET_BIN)
 	./$(BINDIR)/test

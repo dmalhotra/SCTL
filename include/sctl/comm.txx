@@ -20,7 +20,7 @@
 #include "sctl/comm.hpp"          // for Comm, CommOp
 #include "sctl/iterator.hpp"      // for Iterator, ConstIterator
 #include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
-#include "sctl/ompUtils.txx"      // for scan, sample_sort, memcpy
+#include "sctl/ompUtils.txx"      // for scan, sample_sort, memcpy, prefault, radix_sort
 #include "sctl/scratch_pool.hpp"  // for ScratchBuf
 #include "sctl/scratch_pool.txx"  // for ScratchBuf
 #include "sctl/static-array.hpp"  // for StaticArray
@@ -1952,7 +1952,7 @@ template <class A, class B> struct RadixKeyOf<SortPair<A, B>> {
   std::uint64_t operator()(const SortPair<A, B>& p) const { return p.key.GetIntKey(); }
 };
 
-// Local-phase sort for SampleSort and HyperQuickSort (see policy comment inside).
+// Local-phase sort for SampleSort, HyperQuickSort and sort_scatter_detail (policy comment inside).
 template <class Type, class Compare> void LocalSort(ConstIterator<Type> in, Iterator<Type> out, Long N, Compare comp) {
   if constexpr (IsRadixSortable<Type>::value && std::is_same<Compare, std::less<Type>>::value) {
     omp_par::memcpy(out, in, N);

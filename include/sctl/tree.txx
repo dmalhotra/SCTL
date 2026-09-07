@@ -1365,17 +1365,15 @@ namespace sctl {
           Long end_idx = std::lower_bound(send_mid.begin(), send_mid.end(), (p+1==np ? Morton<DIM>().Next() : mins[p+1])) - send_mid.begin();
           send_node_cnt[p] = end_idx - start_idx;
         }
-        scan(send_node_dsp, send_node_cnt);
-        SCTL_ASSERT(send_node_dsp[np-1]+send_node_cnt[np-1] == send_mid.Dim());
+        SCTL_ASSERT(scan(send_node_dsp, send_node_cnt) == send_mid.Dim());
         comm.Alltoall(send_node_cnt.begin(), 1, recv_node_cnt.begin(), 1);
-        scan(recv_node_dsp, recv_node_cnt);
-
-        recv_mid.ReInit(recv_node_dsp[np-1] + recv_node_cnt[np-1]);
+        recv_mid.ReInit(scan(recv_node_dsp, recv_node_cnt));
         comm.Alltoallv(send_mid.begin(), send_node_cnt.begin(), send_node_dsp.begin(), recv_mid.begin(), recv_node_cnt.begin(), recv_node_dsp.begin());
       }
 
       Vector<Long> send_data_cnt, send_data_dsp;
       Vector<Long> recv_data_cnt, recv_data_dsp;
+      Long send_data_tot = 0, recv_data_tot = 0;
       { // Set send_data_cnt, send_data_dsp
         send_data_cnt.ReInit(send_mid.Dim());
         recv_data_cnt.ReInit(recv_mid.Dim());
@@ -1384,9 +1382,9 @@ namespace sctl {
           SCTL_ASSERT(send_mid[i] == node_mid[idx]);
           send_data_cnt[i] = cnt[idx];
         }
-        scan(send_data_dsp, send_data_cnt);
+        send_data_tot = scan(send_data_dsp, send_data_cnt);
         comm.Alltoallv(send_data_cnt.begin(), send_node_cnt.begin(), send_node_dsp.begin(), recv_data_cnt.begin(), recv_node_cnt.begin(), recv_node_dsp.begin());
-        scan(recv_data_dsp, recv_data_cnt);
+        recv_data_tot = scan(recv_data_dsp, recv_data_cnt);
       }
 
       Vector<ValueType> send_buff, recv_buff;
@@ -1395,8 +1393,8 @@ namespace sctl {
       { // Set send_buff, send_buff_cnt, send_buff_dsp, recv_buff, recv_buff_cnt, recv_buff_dsp
         Long N_send_nodes = send_mid.Dim();
         Long N_recv_nodes = recv_mid.Dim();
-        if (N_send_nodes) send_buff.ReInit((send_data_dsp[N_send_nodes-1] + send_data_cnt[N_send_nodes-1]) * dof);
-        if (N_recv_nodes) recv_buff.ReInit((recv_data_dsp[N_recv_nodes-1] + recv_data_cnt[N_recv_nodes-1]) * dof);
+        send_buff.ReInit(send_data_tot * dof);
+        recv_buff.ReInit(recv_data_tot * dof);
         for (Long i = 0; i < N_send_nodes; i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(send_mid[i] == node_mid[idx]);
@@ -1465,22 +1463,20 @@ namespace sctl {
       Vector<Long> send_node_dsp(np);
       { // Set send_dsp
         SCTL_ASSERT(send_node_cnt.Dim() == np);
-        scan(send_node_dsp, send_node_cnt);
-        SCTL_ASSERT(send_node_dsp[np-1] + send_node_cnt[np-1] == send_mid.Dim());
+        SCTL_ASSERT(scan(send_node_dsp, send_node_cnt) == send_mid.Dim());
       }
 
       Vector<Morton<DIM>> recv_mid;
       Vector<Long> recv_node_cnt(np), recv_node_dsp(np);
       { // Set recv_mid, recv_node_cnt, recv_node_dsp
         comm.Alltoall(send_node_cnt.begin(), 1, recv_node_cnt.begin(), 1);
-        scan(recv_node_dsp, recv_node_cnt);
-
-        recv_mid.ReInit(recv_node_dsp[np-1] + recv_node_cnt[np-1]);
+        recv_mid.ReInit(scan(recv_node_dsp, recv_node_cnt));
         comm.Alltoallv(send_mid.begin(), send_node_cnt.begin(), send_node_dsp.begin(), recv_mid.begin(), recv_node_cnt.begin(), recv_node_dsp.begin());
       }
 
       Vector<Long> send_data_cnt, send_data_dsp;
       Vector<Long> recv_data_cnt, recv_data_dsp;
+      Long send_data_tot = 0, recv_data_tot = 0;
       { // Set send_data_cnt, send_data_dsp
         send_data_cnt.ReInit(send_mid.Dim());
         recv_data_cnt.ReInit(recv_mid.Dim());
@@ -1489,9 +1485,9 @@ namespace sctl {
           SCTL_ASSERT(send_mid[i] == node_mid[idx]);
           send_data_cnt[i] = cnt[idx];
         }
-        scan(send_data_dsp, send_data_cnt);
+        send_data_tot = scan(send_data_dsp, send_data_cnt);
         comm.Alltoallv(send_data_cnt.begin(), send_node_cnt.begin(), send_node_dsp.begin(), recv_data_cnt.begin(), recv_node_cnt.begin(), recv_node_dsp.begin());
-        scan(recv_data_dsp, recv_data_cnt);
+        recv_data_tot = scan(recv_data_dsp, recv_data_cnt);
       }
 
       Vector<ValueType> send_buff, recv_buff;
@@ -1500,8 +1496,8 @@ namespace sctl {
       { // Set send_buff, send_buff_cnt, send_buff_dsp, recv_buff, recv_buff_cnt, recv_buff_dsp
         Long N_send_nodes = send_mid.Dim();
         Long N_recv_nodes = recv_mid.Dim();
-        if (N_send_nodes) send_buff.ReInit((send_data_dsp[N_send_nodes-1] + send_data_cnt[N_send_nodes-1]) * dof);
-        if (N_recv_nodes) recv_buff.ReInit((recv_data_dsp[N_recv_nodes-1] + recv_data_cnt[N_recv_nodes-1]) * dof);
+        send_buff.ReInit(send_data_tot * dof);
+        recv_buff.ReInit(recv_data_tot * dof);
         for (Long i = 0; i < N_send_nodes; i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(send_mid[i] == node_mid[idx]);

@@ -244,8 +244,8 @@ SCTL_GPU_HD typename MortonCode<DIM>::MortonInteger MortonCode<DIM>::interleave(
 template <Integer DIM> template <class Real> SCTL_GPU_HD MortonCode<DIM>::MortonCode(const Real* coord) : code(interleave(coord)) {}
 
 template <Integer DIM> SCTL_GPU_HD std::uint64_t MortonCode<DIM>::GetIntKey() const {
-  if constexpr (IntKeyIsExact) return static_cast<std::uint64_t>(code);
-  else return code.w[NWORDS - 1];  // MortonBig compares from the most significant word down
+  static_assert(IntKeyIsExact, "MortonCode::GetIntKey: the code does not fit in one word");
+  return static_cast<std::uint64_t>(code);
 }
 
 template <Integer DIM> SCTL_GPU_HD MortonCode<DIM> MortonCode<DIM>::FromIntKey(std::uint64_t key) {

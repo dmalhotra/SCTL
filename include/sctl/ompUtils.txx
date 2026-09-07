@@ -489,7 +489,6 @@ template <class Iter, class KeyFn> inline void omp_par::radix_sort(Iter A, Long 
     }
     std::swap(src, dst);
   }
-  // an even number of passes: the result is back in A
 }
 
 template <class ConstIter, class Iter> inline Long omp_par::dedup_sorted(ConstIter A, Iter B, Long N) {

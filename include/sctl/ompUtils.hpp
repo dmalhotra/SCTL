@@ -227,8 +227,8 @@ template <class T> struct is_radix_sortable<T, typename std::enable_if<T::IntKey
  * Parallel LSD radix sort of A[0..N) by a 64-bit key, six passes of 11-bit digits. The sort is
  * stable, and the result agrees with `operator<` whenever the key orders elements exactly as
  * `operator<` does (see `is_radix_sortable`). A comparison sort moves the same data through
- * O(N log N) compares. The team is capped by `N`, so a short range does not pay for threads
- * whose histograms would cost more than their share of the elements.
+ * O(N log N) compares. The team is capped at one thread per four buckets' worth of elements, so a
+ * short range does not pay for threads whose histograms would cost more than their share.
  *
  * @tparam Iter Random-access iterator over contiguous, trivially-copyable elements.
  * @tparam KeyFn Functor mapping an element to its `std::uint64_t` key.

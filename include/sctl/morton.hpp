@@ -54,11 +54,9 @@ template <Integer DIM> class MortonCode {
   template <class Real> SCTL_GPU_HD explicit MortonCode(const Real* coord);
 
   /**
-   * The most significant word of the code, as an unsigned integer. Ordering by this agrees with
-   * `operator<`: completely when the code fits one word (`IntKeyIsExact`), and as a bucket key
-   * otherwise -- codes with different keys are ordered correctly, codes sharing one need the full
-   * comparison to separate them. Exists so a radix sort can replace the comparison sort a sorting
-   * library otherwise picks for a non-arithmetic key type.
+   * The code as an unsigned integer, ordering by which agrees with `operator<`. Exists so a radix
+   * sort can replace the comparison sort a sorting library otherwise picks for a non-arithmetic key
+   * type. Only meaningful when `IntKeyIsExact`, as `FromIntKey` is.
    */
   SCTL_GPU_HD std::uint64_t GetIntKey() const;
 
@@ -290,7 +288,7 @@ template <Integer DIM> class Morton {
   void NbrList(Vector<Morton>& nlst, uint8_t level, Periodicity periodicity) const;
 
   /**
-   * Morton range `[first, last)` containing every neighbor `NbrList(level, Periodicity::NONE)`
+   * Morton range `[first, last)` containing every neighbor `NbrList(level, periodicity)`
    * would return. Z-order is monotone in each coordinate, so the two extreme corners bound the
    * whole `3^DIM` block: this costs two interleaves rather than `3^DIM` emissions. A caller that
    * only needs to know whether any neighbor can fall outside a known range can test against this

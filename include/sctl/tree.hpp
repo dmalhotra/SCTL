@@ -123,6 +123,8 @@ template <Integer DIM> class Tree {
      * place through the view `GetData` returns. Local, no communication.
      *
      * @param[in] name Name for the data. Must not already exist on this tree.
+     * @tparam ValueType Element type. Must be given explicitly: it appears only in the size
+     * calculation, so it cannot be deduced from the arguments.
      * @param[in] dof Elements per data item; must agree across processes.
      * @param[in] cnt Number of data items per node (length = number of tree nodes).
      */
