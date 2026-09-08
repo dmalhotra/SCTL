@@ -1347,6 +1347,7 @@ namespace sctl {
     GetData_(data_, cnt_, name);
     Vector<ValueType> data(data_->Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->begin(), false);
     Vector<Long>& cnt = *cnt_;
+    SCTL_ASSERT(cnt.Dim() == node_mid.Dim());
     const Long dof = tree_detail::global_dof(comm, data.Dim(), scan(dsp, cnt));
 
     { // Reduce
@@ -1379,7 +1380,7 @@ namespace sctl {
         recv_data_cnt.ReInit(recv_mid.Dim());
         for (Long i = 0; i < send_mid.Dim(); i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
-          SCTL_ASSERT(send_mid[i] == node_mid[idx]);
+          SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
           send_data_cnt[i] = cnt[idx];
         }
         send_data_tot = scan(send_data_dsp, send_data_cnt);
@@ -1397,7 +1398,7 @@ namespace sctl {
         recv_buff.ReInit(recv_data_tot * dof);
         for (Long i = 0; i < N_send_nodes; i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
-          SCTL_ASSERT(send_mid[i] == node_mid[idx]);
+          SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
           Long dsp_ = dsp[idx] * dof;
           Long cnt_ = cnt[idx] * dof;
           Long send_data_dsp_ = send_data_dsp[i] * dof;
@@ -1428,6 +1429,7 @@ namespace sctl {
         Long N_recv_nodes = recv_mid.Dim();
         for (Long i = 0; i < N_recv_nodes; i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), recv_mid[i]) - node_mid.begin();
+          SCTL_ASSERT(idx < node_mid.Dim() && node_mid[idx] == recv_mid[i]);
           Long dsp_ = dsp[idx] * dof;
           Long cnt_ = cnt[idx] * dof;
           Long recv_data_dsp_ = recv_data_dsp[i] * dof;
@@ -1455,6 +1457,7 @@ namespace sctl {
     GetData_(data_, cnt_, name);
     Vector<ValueType> data(data_->Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->begin(), false);
     Vector<Long>& cnt = *cnt_;
+    SCTL_ASSERT(cnt.Dim() == node_mid.Dim());
     const Long dof = tree_detail::global_dof(comm, data.Dim(), scan(dsp, cnt));
 
     { // Broadcast
@@ -1482,7 +1485,7 @@ namespace sctl {
         recv_data_cnt.ReInit(recv_mid.Dim());
         for (Long i = 0; i < send_mid.Dim(); i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
-          SCTL_ASSERT(send_mid[i] == node_mid[idx]);
+          SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
           send_data_cnt[i] = cnt[idx];
         }
         send_data_tot = scan(send_data_dsp, send_data_cnt);
@@ -1500,7 +1503,7 @@ namespace sctl {
         recv_buff.ReInit(recv_data_tot * dof);
         for (Long i = 0; i < N_send_nodes; i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
-          SCTL_ASSERT(send_mid[i] == node_mid[idx]);
+          SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
           Long dsp_ = dsp[idx] * dof;
           Long cnt_ = cnt[idx] * dof;
           Long send_data_dsp_ = send_data_dsp[i] * dof;
@@ -1553,7 +1556,7 @@ namespace sctl {
         for (Long i = end_idx; i < cnt.Dim(); i++) cnt[i] = 0;
         for (Long i = 0; i < recv_mid.Dim(); i++) {
           const auto idx = std::lower_bound(node_mid.begin(), node_mid.end(), recv_mid[i]) - node_mid.begin();
-          SCTL_ASSERT(node_mid[idx] == recv_mid[i]);
+          SCTL_ASSERT(idx < node_mid.Dim() && node_mid[idx] == recv_mid[i]);
           cnt[idx] = recv_data_cnt[i];
         }
 
