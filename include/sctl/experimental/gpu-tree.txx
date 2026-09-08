@@ -1769,12 +1769,7 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
                   mins_.begin(), &node_attr_, &node_lists_, &user_mid_, &user_cnt_);
     owned_begin_ = owned[0];
     owned_end_ = owned[1];
-    if constexpr (detail::is_device_vector_v<DevVec<char>>) {  // what the host side reads later
-      node_mid_host_.ReInit((Long)node_mid_.size());
-      detail::deviceToHost(node_mid_.data(), node_mid_host_.Dim(), node_mid_host_.begin());
-      user_mid_host_.ReInit((Long)user_mid_.size());
-      detail::deviceToHost(user_mid_.data(), user_mid_host_.Dim(), user_mid_host_.begin());
-    }
+    host_mid_stale_ = true;
   }
   if (!nbase) return;
 
@@ -2105,15 +2100,33 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>
+void GPUTree<Real, DIM, DevVec>::fillHostMID() const {
+  if (!host_mid_stale_) return;
+  node_mid_host_.ReInit((Long)node_mid_.size());
+  detail::deviceToHost(node_mid_.data(), node_mid_host_.Dim(), node_mid_host_.begin());
+  user_mid_host_.ReInit((Long)user_mid_.size());
+  detail::deviceToHost(user_mid_.data(), user_mid_host_.Dim(), user_mid_host_.begin());
+  host_mid_stale_ = false;
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec>
 sctl::ConstIterator<Morton<DIM>> GPUTree<Real, DIM, DevVec>::hostNodeMID() const {
-  if constexpr (detail::is_device_vector_v<DevVec<char>>) return node_mid_host_.begin();
-  else return sctl::Ptr2ConstItr<Morton<DIM>>(thrust::raw_pointer_cast(node_mid_.data()), (Long)node_mid_.size());
+  if constexpr (detail::is_device_vector_v<DevVec<char>>) {
+    fillHostMID();
+    return node_mid_host_.begin();
+  } else {
+    return sctl::Ptr2ConstItr<Morton<DIM>>(thrust::raw_pointer_cast(node_mid_.data()), (Long)node_mid_.size());
+  }
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>
 sctl::ConstIterator<Morton<DIM>> GPUTree<Real, DIM, DevVec>::hostUserMID() const {
-  if constexpr (detail::is_device_vector_v<DevVec<char>>) return user_mid_host_.begin();
-  else return sctl::Ptr2ConstItr<Morton<DIM>>(thrust::raw_pointer_cast(user_mid_.data()), (Long)user_mid_.size());
+  if constexpr (detail::is_device_vector_v<DevVec<char>>) {
+    fillHostMID();
+    return user_mid_host_.begin();
+  } else {
+    return sctl::Ptr2ConstItr<Morton<DIM>>(thrust::raw_pointer_cast(user_mid_.data()), (Long)user_mid_.size());
+  }
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>
