@@ -242,6 +242,16 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
   DevVec<Morton<DIM>> node_mid_;
   DevVec<Morton<DIM>> user_mid_;   ///< halo send list: my nodes, grouped by the rank that ghosts them
   sctl::Vector<Long> user_cnt_;    ///< np entries: how many of them go to each rank
+  sctl::Vector<Morton<DIM>> node_mid_host_;  ///< node_mid_ on the host; empty unless the backend needs it
+  sctl::Vector<Morton<DIM>> user_mid_host_;  ///< user_mid_ likewise
+
+  /**
+   * The node list and the halo send list, in host memory, where Broadcast and the VTK writer read
+   * them. Both change only when the refinement does, so a device backend takes its copy there
+   * rather than on every call; a host backend hands back its own storage and copies nothing.
+   */
+  sctl::ConstIterator<Morton<DIM>> hostNodeMID() const;
+  sctl::ConstIterator<Morton<DIM>> hostUserMID() const;
   DevVec<NodeAttr> node_attr_;
   NodeLists<DevVec> node_lists_;
   Long owned_begin_ = 0, owned_end_ = 0;

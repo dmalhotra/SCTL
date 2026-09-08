@@ -1769,6 +1769,12 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
                   mins_.begin(), &node_attr_, &node_lists_, &user_mid_, &user_cnt_);
     owned_begin_ = owned[0];
     owned_end_ = owned[1];
+    if constexpr (detail::is_device_vector_v<DevVec<char>>) {  // what the host side reads later
+      node_mid_host_.ReInit((Long)node_mid_.size());
+      detail::deviceToHost(node_mid_.data(), node_mid_host_.Dim(), node_mid_host_.begin());
+      user_mid_host_.ReInit((Long)user_mid_.size());
+      detail::deviceToHost(user_mid_.data(), user_mid_host_.Dim(), user_mid_host_.begin());
+    }
   }
   if (!nbase) return;
 
@@ -1989,25 +1995,22 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
   const Long Nn = (Long)node_mid_.size();
   SCTL_ASSERT(cnt.Dim() == Nn);
 
-  sctl::ScratchBuf<Morton<DIM>> nmid(Nn);
-  detail::deviceToHost(node_mid_.data(), Nn, nmid.begin());
+  const sctl::ConstIterator<Morton<DIM>> nmid = hostNodeMID();
   sctl::ScratchBuf<Long> dsp(Nn + 1);
   const Long nitem = detail::scanv(dsp.begin(), cnt.begin(), Nn);
   const Long w = detail::globalDof((Long)data.size(), nitem, comm_);  // bytes per item; Broadcast only copies
 
   const Long Ns = (Long)user_mid_.size();  // the halo send list: which of my nodes each rank wants
-  sctl::ScratchBuf<Morton<DIM>> smid(Ns);
-  detail::deviceToHost(user_mid_.data(), Ns, smid.begin());
   const Long ob = owned_begin_, oe = owned_end_;
-  detail_bcast::exchangeBlocks<DIM, DevVec>(pol, comm_, smid.begin(), Ns, user_cnt_.begin(), nmid.begin(), Nn, cnt, dsp.begin(), data, w,
-      [&pol, &data, &cnt, &nmid, &dsp, Nn, w, ob, oe](Long Nr, sctl::ConstIterator<Morton<DIM>> rmid, sctl::ConstIterator<Long> rdcnt, sctl::ConstIterator<Long> rddsp, const char* rbuf) {
+  detail_bcast::exchangeBlocks<DIM, DevVec>(pol, comm_, hostUserMID(), Ns, user_cnt_.begin(), nmid, Nn, cnt, dsp.begin(), data, w,
+      [&pol, &data, &cnt, nmid, &dsp, Nn, w, ob, oe](Long Nr, sctl::ConstIterator<Morton<DIM>> rmid, sctl::ConstIterator<Long> rdcnt, sctl::ConstIterator<Long> rddsp, const char* rbuf) {
         // rebuild the array: only my own nodes keep what they held, every ghost comes from its owner
         sctl::Vector<Long> cnt_new(Nn);
         for (Long i = 0; i < Nn; i++) cnt_new[i] = (ob <= i && i < oe ? cnt[i] : 0);
         sctl::ScratchBuf<Long> ridx(Nr);
         #pragma omp parallel for schedule(static)  // a ghost has one owner, so no two agree on ridx
         for (Long i = 0; i < Nr; i++) {
-          ridx[i] = detail_bcast::findNode<DIM>(nmid.begin(), Nn, rmid[i]);
+          ridx[i] = detail_bcast::findNode<DIM>(nmid, Nn, rmid[i]);
           SCTL_ASSERT(ridx[i] >= 0);
           cnt_new[ridx[i]] = rdcnt[i];
         }
@@ -2066,8 +2069,7 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
   DevVec<char>& data = NodeData_(name);
   sctl::Vector<Long>& cnt = NodeCnt_(name);
   const Long Nn = (Long)node_mid_.size();
-  sctl::ScratchBuf<Morton<DIM>> nmid(Nn);
-  detail::deviceToHost(node_mid_.data(), Nn, nmid.begin());
+  const sctl::ConstIterator<Morton<DIM>> nmid = hostNodeMID();
   sctl::ScratchBuf<Long> dsp(Nn + 1);
   const Long nitem = detail::scanv(dsp.begin(), cnt.begin(), Nn);
   const Long dof = detail::globalDof((Long)data.size() / (Long)sizeof(ValueType), nitem, comm_);
@@ -2082,14 +2084,14 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
       const Long b = std::lower_bound(smid.begin(), smid.begin() + Ns, (p + 1 == np ? Morton<DIM>().Next() : mins_[p + 1])) - smid.begin();
       sncnt[p] = b - a;
     }
-    detail_bcast::exchangeBlocks<DIM, DevVec>(pol, comm_, smid.begin(), Ns, sncnt.begin(), nmid.begin(), Nn, cnt, dsp.begin(), data, dof * (Long)sizeof(ValueType),
-        [&pol, &data, &cnt, &nmid, &dsp, Nn, dof](Long Nr, sctl::ConstIterator<Morton<DIM>> rmid, sctl::ConstIterator<Long> rdcnt, sctl::ConstIterator<Long> rddsp, const char* rbuf) {
+    detail_bcast::exchangeBlocks<DIM, DevVec>(pol, comm_, smid.begin(), Ns, sncnt.begin(), nmid, Nn, cnt, dsp.begin(), data, dof * (Long)sizeof(ValueType),
+        [&pol, &data, &cnt, nmid, &dsp, Nn, dof](Long Nr, sctl::ConstIterator<Morton<DIM>> rmid, sctl::ConstIterator<Long> rdcnt, sctl::ConstIterator<Long> rddsp, const char* rbuf) {
           // add each received block into the node it belongs to
           ValueType* const d = (ValueType*)thrust::raw_pointer_cast(data.data());
           const ValueType* const r = (const ValueType*)rbuf;
           for (Long i = 0; i < Nr; i++) {
             if (!rdcnt[i]) continue;
-            const Long idx = detail_bcast::findNode<DIM>(nmid.begin(), Nn, rmid[i]);
+            const Long idx = detail_bcast::findNode<DIM>(nmid, Nn, rmid[i]);
             if (idx < 0 || cnt[idx] != rdcnt[i]) continue;
             using It = detail::ScratchIterator<ValueType, DevVec>;
             thrust::transform(pol, It(d + dsp[idx] * dof), It(d + (dsp[idx] + cnt[idx]) * dof),
@@ -2103,15 +2105,26 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>
+sctl::ConstIterator<Morton<DIM>> GPUTree<Real, DIM, DevVec>::hostNodeMID() const {
+  if constexpr (detail::is_device_vector_v<DevVec<char>>) return node_mid_host_.begin();
+  else return sctl::Ptr2ConstItr<Morton<DIM>>(thrust::raw_pointer_cast(node_mid_.data()), (Long)node_mid_.size());
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec>
+sctl::ConstIterator<Morton<DIM>> GPUTree<Real, DIM, DevVec>::hostUserMID() const {
+  if constexpr (detail::is_device_vector_v<DevVec<char>>) return user_mid_host_.begin();
+  else return sctl::Ptr2ConstItr<Morton<DIM>>(thrust::raw_pointer_cast(user_mid_.data()), (Long)user_mid_.size());
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec>
 void GPUTree<Real, DIM, DevVec>::WriteTreeVTK(std::string fname, bool show_ghost) const {
   using VTKReal = typename sctl::VTUData::VTKReal;
   sctl::VTUData vtu_data;
   if (DIM <= 3) {  // one cell per leaf, its 2^DIM corners as points
     static constexpr Integer Ncorner = (1u << DIM);
     const Long Nn = (Long)node_mid_.size();
-    sctl::ScratchBuf<Morton<DIM>> mid(Nn);
+    const sctl::ConstIterator<Morton<DIM>> mid = hostNodeMID();
     sctl::ScratchBuf<NodeAttr> attr(Nn);
-    detail::deviceToHost(node_mid_.data(), Nn, mid.begin());
     detail::deviceToHost(node_attr_.data(), Nn, attr.begin());
 
     sctl::Vector<VTKReal>& coord = vtu_data.coord;
