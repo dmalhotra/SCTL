@@ -245,6 +245,14 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
   mutable sctl::Vector<Morton<DIM>> node_mid_host_;  ///< node_mid_ on the host; a device backend only
   mutable sctl::Vector<Morton<DIM>> user_mid_host_;  ///< user_mid_ likewise
   mutable bool host_mid_stale_ = true;               ///< whether those two still describe the tree
+  DevVec<NodeAttr> node_attr_;
+  NodeLists<DevVec> node_lists_;
+  Long owned_begin_ = 0, owned_end_ = 0;
+
+  std::map<std::string, DevVec<char>> node_data_;  ///< payload, type-erased to bytes
+  std::map<std::string, sctl::Vector<Long>> node_cnt_;
+
+  Comm comm_;
 
   /**
    * The node list and the halo send list, in host memory, where Broadcast and the VTK writer read
@@ -257,14 +265,6 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
   sctl::ConstIterator<Morton<DIM>> hostNodeMID() const;
   sctl::ConstIterator<Morton<DIM>> hostUserMID() const;
   void fillHostMID() const;
-  DevVec<NodeAttr> node_attr_;
-  NodeLists<DevVec> node_lists_;
-  Long owned_begin_ = 0, owned_end_ = 0;
-
-  std::map<std::string, DevVec<char>> node_data_;  ///< payload, type-erased to bytes
-  std::map<std::string, sctl::Vector<Long>> node_cnt_;
-
-  Comm comm_;
 };
 
 /**

@@ -1536,8 +1536,6 @@ template <Integer DIM> struct NbrPropagateFunctor {
 
 template <class Real, Integer DIM, template <class...> class DevVec>
 void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const DevVec<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, Morton<DIM>* partition, DevVec<NodeAttr>* node_attr, NodeLists<DevVec>* node_lists, DevVec<Morton<DIM>>* user_mid, sctl::Vector<Long>* user_cnt) {
-  const detail::StageTimer<DevVec> prof{comm};
-  prof.tic("encode+sort+splitters");
 
   using MortonT = MortonCode<DIM>;
   const auto pol = detail::scratch_policy<DevVec, MortonT>();
@@ -1640,8 +1638,6 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
     detail::local_sort(pol, alt, Nrecv);  // np sorted segments -> one sorted block
     pt_mid.swap(alt);
   }
-  prof.toc();
-  prof.tic("rebalance");
 
   if (np > 1) { // M <- global_min(pt_mid.size(), M); repartition if necessary
     Long Nloc = (Long)pt_mid.size(), Nloc_min = 0;
@@ -1654,8 +1650,6 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
     M = std::min<Long>(M, Nloc_min);
     if (M < 1) MPI_Abort(comm.GetMPI_Comm(), 1);
   }
-  prof.toc();
-  prof.tic("halo+mins");
 
   if (np > 1) { // halo: pt_mid <-- [M from left | pt_mid | M from right] (empty halo on domain-edge ranks)
     const Long recv0 = (rank > 0 ? M : 0);
@@ -1684,8 +1678,6 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
     }
     comm.Allgather(sctl::Ptr2ConstItr<Morton<DIM>>(&A, 1), 1, mins.begin(), 1);
   }
-  prof.toc();
-  prof.tic("walk (linearize)");
 
   { // build linear tree from pt_mid
     const Morton<DIM> end_bnd = (rank + 1 < np) ? mins[rank + 1] : Morton<DIM>{}.Next();
@@ -1701,19 +1693,14 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
       detail_build::buildTreeCpuChunked<DIM>(tree, pt_mid, M, idx1 - idx0, idx0, mins[rank], end_bnd);
     }
   }
-  prof.toc();
-  prof.tic("balance21");
 
   if (balance21) {  // each backend's faster closure, see the two namespaces
     if constexpr (detail::is_device_vector_v<DevVec<Morton<DIM>>>) detail_balance21_gpu::balanceTreeDist<DIM>(tree, mins, comm, periodicity);
     else detail_balance21_host::balanceTreeDist<DIM>(tree, mins, comm, periodicity);
   }
-  prof.toc();
-  prof.tic("ghost");
 
   Long owned_begin = 0, owned_end = Long(tree.size());
   detail_addGhostNodes::addGhostNodes<DIM>(tree, mins, comm, halo_size, periodicity, owned_begin, owned_end, user_mid, user_cnt);
-  prof.toc();
 
   fillOutputs(owned_begin, owned_end);
 }
@@ -1919,19 +1906,29 @@ void blockCopy(const Policy& pol, T* dst, const T* src,
                sctl::ConstIterator<Long> srcoff, sctl::ConstIterator<Long> dstoff, sctl::ConstIterator<Long> len, Long nb, Long w) {
   if (nb <= 0) return;
   if constexpr (!detail::is_device_vector_v<DevVec<char>>) {
-    #pragma omp parallel for schedule(static)
-    for (Long i = 0; i < nb; i++) {
-      if (len[i]) std::memcpy(dst + dstoff[i] * w, src + srcoff[i] * w, len[i] * w * sizeof(T));
-    }
+    #pragma omp parallel for schedule(static) if (nb > 256)
+    for (Long i = 0; i < nb; i++) std::memcpy(dst + dstoff[i] * w, src + srcoff[i] * w, len[i] * w * sizeof(T));
     return;
   }
   DeviceScratch<Long, DevVec> so(nb), doff(nb), l(nb);
   thrust::copy(srcoff, srcoff + nb, so.begin());
   thrust::copy(dstoff, dstoff + nb, doff.begin());
   thrust::copy(len, len + nb, l.begin());
-  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), nb, BlockCopyFunctor<T>{
-      src, dst, thrust::raw_pointer_cast(so.data()), thrust::raw_pointer_cast(doff.data()),
-      thrust::raw_pointer_cast(l.data()), w});
+  const Long* const so_p = thrust::raw_pointer_cast(so.data());
+  const Long* const doff_p = thrust::raw_pointer_cast(doff.data());
+  const Long* const l_p = thrust::raw_pointer_cast(l.data());
+  // A byte at a time would leave most of the memory path idle, so regroup the copy into words
+  // where the widths and both bases allow it. Callers pass byte buffers, hence `sizeof(T) == 1`.
+  using Word = std::uint64_t;
+  if constexpr (sizeof(T) == 1) {
+    const bool aligned = !(w % (Long)sizeof(Word)) && !((std::uintptr_t)dst % sizeof(Word)) && !((std::uintptr_t)src % sizeof(Word));
+    if (aligned) {
+      thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), nb, BlockCopyFunctor<Word>{
+          (const Word*)src, (Word*)dst, so_p, doff_p, l_p, w / (Long)sizeof(Word)});
+      return;
+    }
+  }
+  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), nb, BlockCopyFunctor<T>{src, dst, so_p, doff_p, l_p, w});
 }
 
 /**
@@ -1952,7 +1949,7 @@ void exchangeBlocks(const Policy& pol, const Comm& comm, sctl::ConstIterator<Mor
   comm.Alltoallv(smid, sncnt, sndsp.begin(), rmid.begin(), rncnt.begin(), rndsp.begin());
 
   sctl::ScratchBuf<Long> sdcnt(Ns), rdcnt(Nr), soff(Ns);
-  #pragma omp parallel for schedule(static)
+  #pragma omp parallel for schedule(static) if (Ns > 256)
   for (Long i = 0; i < Ns; i++) {  // my nodes among the requests, and how many items each carries
     const Long k = findNode<DIM>(nmid, Nn, smid[i]);
     sdcnt[i] = (k >= 0 ? cnt[k] : 0);
@@ -1999,34 +1996,48 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
   const Long ob = owned_begin_, oe = owned_end_;
   detail_bcast::exchangeBlocks<DIM, DevVec>(pol, comm_, hostUserMID(), Ns, user_cnt_.begin(), nmid, Nn, cnt, dsp.begin(), data, w,
       [&pol, &data, &cnt, nmid, &dsp, Nn, w, ob, oe](Long Nr, sctl::ConstIterator<Morton<DIM>> rmid, sctl::ConstIterator<Long> rdcnt, sctl::ConstIterator<Long> rddsp, const char* rbuf) {
-        // rebuild the array: only my own nodes keep what they held, every ghost comes from its owner
-        sctl::Vector<Long> cnt_new(Nn);
-        for (Long i = 0; i < Nn; i++) cnt_new[i] = (ob <= i && i < oe ? cnt[i] : 0);
         sctl::ScratchBuf<Long> ridx(Nr);
-        #pragma omp parallel for schedule(static)  // a ghost has one owner, so no two agree on ridx
+        #pragma omp parallel for schedule(static) if (Nr > 256)
         for (Long i = 0; i < Nr; i++) {
           ridx[i] = detail_bcast::findNode<DIM>(nmid, Nn, rmid[i]);
           SCTL_ASSERT(ridx[i] >= 0);
-          cnt_new[ridx[i]] = rdcnt[i];
         }
-        { // in a steady state every ghost gets back the count it had, so nothing has to move
-          Long moved = 0;
-          #pragma omp parallel for schedule(static) reduction(+ : moved)
-          for (Long i = 0; i < Nn; i++) moved += (cnt_new[i] != cnt[i]);
-          if (!moved) {
+        // where each arriving block lands, given the offsets the nodes will have
+        const auto packRecv = [Nr, rdcnt, rddsp, &ridx](sctl::ConstIterator<Long> off, sctl::Iterator<Long> a, sctl::Iterator<Long> b, sctl::Iterator<Long> l) {
+          Long m = 0;
+          for (Long i = 0; i < Nr; i++) {
+            if (!rdcnt[i]) continue;
+            a[m] = rddsp[i];
+            b[m] = off[ridx[i]];
+            l[m] = rdcnt[i];
+            m++;
+          }
+          return m;
+        };
+        { // Nothing moves when every ghost slot gets back the count it already had. Deciding that
+          // costs a pass over what arrived and over the ghosts, never over the whole node list.
+          Long changed = 0, arriving = 0, occupied = 0;
+          #pragma omp parallel for schedule(static) reduction(+ : changed, arriving) if (Nr > 256)
+          for (Long i = 0; i < Nr; i++) {
+            changed += (rdcnt[i] != cnt[ridx[i]]);
+            arriving += (rdcnt[i] != 0);
+          }
+          #pragma omp parallel for schedule(static) reduction(+ : occupied) if (ob > 256)
+          for (Long i = 0; i < ob; i++) occupied += (cnt[i] != 0);  // the ghosts below my range
+          #pragma omp parallel for schedule(static) reduction(+ : occupied) if (Nn - oe > 256)
+          for (Long i = oe; i < Nn; i++) occupied += (cnt[i] != 0);  // and above it
+          if (!changed && arriving == occupied) {
             sctl::ScratchBuf<Long> a(Nr), b(Nr), l(Nr);
-            Long m = 0;
-            for (Long i = 0; i < Nr; i++) {
-              if (!rdcnt[i]) continue;
-              a[m] = rddsp[i];
-              b[m] = dsp[ridx[i]];
-              l[m] = rdcnt[i];
-              m++;
-            }
+            const Long m = packRecv(dsp.begin(), a.begin(), b.begin(), l.begin());
             detail_bcast::blockCopy<DevVec>(pol, (char*)thrust::raw_pointer_cast(data.data()), rbuf, a.begin(), b.begin(), l.begin(), m, w);
             return;
           }
         }
+        // rebuild the array: only my own nodes keep what they held, every ghost comes from its owner
+        sctl::Vector<Long> cnt_new(Nn);
+        #pragma omp parallel for schedule(static)
+        for (Long i = 0; i < Nn; i++) cnt_new[i] = (ob <= i && i < oe ? cnt[i] : 0);
+        for (Long i = 0; i < Nr; i++) cnt_new[ridx[i]] = rdcnt[i];  // a ghost has one owner, so no two agree
         sctl::ScratchBuf<Long> dsp_new(Nn + 1);
         const Long nnew = detail::scanv(dsp_new.begin(), cnt_new.begin(), Nn);
         DevVec<char>& out = detail::PersistentBuffer<char, DevVec, detail::Buf::BcastOut>();
@@ -2035,14 +2046,7 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
         detail_bcast::blockCopy<DevVec>(pol, thrust::raw_pointer_cast(out.data()), thrust::raw_pointer_cast(data.data()), dsp.begin() + ob, dsp_new.begin() + ob, cnt.begin() + ob, oe - ob, w);
         { // every received block refills its node's slot, whatever that slot held before
           sctl::ScratchBuf<Long> a(Nr), b(Nr), l(Nr);
-          Long m = 0;
-          for (Long i = 0; i < Nr; i++) {
-            if (!rdcnt[i]) continue;
-            a[m] = rddsp[i];
-            b[m] = dsp_new[ridx[i]];
-            l[m] = rdcnt[i];
-            m++;
-          }
+          const Long m = packRecv(dsp_new.begin(), a.begin(), b.begin(), l.begin());
           detail_bcast::blockCopy<DevVec>(pol, thrust::raw_pointer_cast(out.data()), rbuf, a.begin(), b.begin(), l.begin(), m, w);
         }
         data.swap(out);
@@ -2102,9 +2106,9 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
 template <class Real, Integer DIM, template <class...> class DevVec>
 void GPUTree<Real, DIM, DevVec>::fillHostMID() const {
   if (!host_mid_stale_) return;
-  node_mid_host_.ReInit((Long)node_mid_.size());
+  if (node_mid_host_.Dim() != (Long)node_mid_.size()) node_mid_host_.ReInit((Long)node_mid_.size());
   detail::deviceToHost(node_mid_.data(), node_mid_host_.Dim(), node_mid_host_.begin());
-  user_mid_host_.ReInit((Long)user_mid_.size());
+  if (user_mid_host_.Dim() != (Long)user_mid_.size()) user_mid_host_.ReInit((Long)user_mid_.size());
   detail::deviceToHost(user_mid_.data(), user_mid_host_.Dim(), user_mid_host_.begin());
   host_mid_stale_ = false;
 }

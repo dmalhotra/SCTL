@@ -1381,7 +1381,7 @@ namespace sctl {
       { // Set send_data_cnt, send_data_dsp
         send_data_cnt.ReInit(send_mid.Dim());
         recv_data_cnt.ReInit(recv_mid.Dim());
-        #pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static) if (send_mid.Dim() > 256)
         for (Long i = 0; i < send_mid.Dim(); i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
@@ -1400,7 +1400,7 @@ namespace sctl {
         Long N_recv_nodes = recv_mid.Dim();
         send_buff.ReInit(send_data_tot * dof);
         recv_buff.ReInit(recv_data_tot * dof);
-        #pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static) if (N_send_nodes > 256)
         for (Long i = 0; i < N_send_nodes; i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
@@ -1489,7 +1489,7 @@ namespace sctl {
       { // Set send_data_cnt, send_data_dsp
         send_data_cnt.ReInit(send_mid.Dim());
         recv_data_cnt.ReInit(recv_mid.Dim());
-        #pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static) if (send_mid.Dim() > 256)
         for (Long i = 0; i < send_mid.Dim(); i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
@@ -1508,7 +1508,7 @@ namespace sctl {
         Long N_recv_nodes = recv_mid.Dim();
         send_buff.ReInit(send_data_tot * dof);
         recv_buff.ReInit(recv_data_tot * dof);
-        #pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static) if (N_send_nodes > 256)
         for (Long i = 0; i < N_send_nodes; i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
@@ -1560,9 +1560,11 @@ namespace sctl {
           data.ReInit(data_->Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->begin(), false);
         }
 
+        #pragma omp parallel for schedule(static) if (start_idx > 256)
         for (Long i = 0; i < start_idx; i++) cnt[i] = 0;
+        #pragma omp parallel for schedule(static) if (cnt.Dim() - end_idx > 256)
         for (Long i = end_idx; i < cnt.Dim(); i++) cnt[i] = 0;
-        #pragma omp parallel for schedule(static)  // a ghost has one owner, so no two agree on idx
+        #pragma omp parallel for schedule(static) if (recv_mid.Dim() > 256)  // a ghost has one owner, so no two agree on idx
         for (Long i = 0; i < recv_mid.Dim(); i++) {
           const auto idx = std::lower_bound(node_mid.begin(), node_mid.end(), recv_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && node_mid[idx] == recv_mid[i]);
