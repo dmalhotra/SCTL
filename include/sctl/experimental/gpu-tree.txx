@@ -369,6 +369,7 @@ inline Long globalDof(Long ndata, Long nitem, const Comm& comm) {
   comm.Allreduce((sctl::ConstIterator<Long>)Nl, (sctl::Iterator<Long>)Ng, 2, sctl::CommOp::SUM);
   const Long dof = Ng[0] / std::max<Long>(Ng[1], 1);
   SCTL_ASSERT(ndata == nitem * dof);
+  SCTL_ASSERT(Ng[0] == Ng[1] * dof);
   return dof;
 }
 
@@ -1984,26 +1985,29 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
   const Long Ns = (Long)user_mid_.size();  // the halo send list: which of my nodes each rank wants
   sctl::ScratchBuf<Morton<DIM>> smid(Ns);
   detail::deviceToHost(user_mid_.data(), Ns, smid.begin());
+  const Long ob = owned_begin_, oe = owned_end_;
   detail_bcast::exchangeBlocks<DIM, DevVec>(pol, comm_, smid.begin(), Ns, user_cnt_.begin(), nmid.begin(), Nn, cnt, dsp.begin(), data, w,
-      [&pol, &data, &cnt, &nmid, &dsp, Nn, w](Long Nr, sctl::ConstIterator<Morton<DIM>> rmid, sctl::ConstIterator<Long> rdcnt, sctl::ConstIterator<Long> rddsp, const char* rbuf) {
-        // rebuild the array with the ghost slots filled
-        sctl::Vector<Long> cnt_new(cnt);
+      [&pol, &data, &cnt, &nmid, &dsp, Nn, w, ob, oe](Long Nr, sctl::ConstIterator<Morton<DIM>> rmid, sctl::ConstIterator<Long> rdcnt, sctl::ConstIterator<Long> rddsp, const char* rbuf) {
+        // rebuild the array: only my own nodes keep what they held, every ghost comes from its owner
+        sctl::Vector<Long> cnt_new(Nn);
+        for (Long i = 0; i < Nn; i++) cnt_new[i] = (ob <= i && i < oe ? cnt[i] : 0);
         sctl::ScratchBuf<Long> ridx(Nr);
         for (Long i = 0; i < Nr; i++) {
           ridx[i] = detail_bcast::findNode<DIM>(nmid.begin(), Nn, rmid[i]);
           SCTL_ASSERT(ridx[i] >= 0);
-          if (!cnt_new[ridx[i]]) cnt_new[ridx[i]] = rdcnt[i];
+          cnt_new[ridx[i]] = rdcnt[i];
         }
         sctl::ScratchBuf<Long> dsp_new(Nn + 1);
         const Long nnew = detail::scanv(dsp_new.begin(), cnt_new.begin(), Nn);
         DevVec<char>& out = detail::PersistentBuffer<char, DevVec, detail::Buf::BcastOut>();
         out.resize(nnew * w);
         // my own blocks keep their contents, at their new offsets
-        detail_bcast::blockCopy<DevVec>(pol, thrust::raw_pointer_cast(out.data()), thrust::raw_pointer_cast(data.data()), dsp.begin(), dsp_new.begin(), cnt.begin(), Nn, w);
-        { // received blocks land in the slots that were empty
+        detail_bcast::blockCopy<DevVec>(pol, thrust::raw_pointer_cast(out.data()), thrust::raw_pointer_cast(data.data()), dsp.begin() + ob, dsp_new.begin() + ob, cnt.begin() + ob, oe - ob, w);
+        { // every received block refills its node's slot, whatever that slot held before
           sctl::ScratchBuf<Long> a(Nr), b(Nr), l(Nr);
           Long m = 0;
-          for (Long i = 0; i < Nr; i++) if (!cnt[ridx[i]] && rdcnt[i]) {
+          for (Long i = 0; i < Nr; i++) {
+            if (!rdcnt[i]) continue;
             a[m] = rddsp[i];
             b[m] = dsp_new[ridx[i]];
             l[m] = rdcnt[i];

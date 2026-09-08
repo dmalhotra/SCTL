@@ -5,7 +5,9 @@
  * The same points go to both libraries. Node sets, counts and values are compared as the global
  * concatenation of each rank's owned nodes, since the two libraries cut the node set between ranks
  * differently; flags, lists and the partition compare node for node at one rank, where the cuts
- * coincide. Particle data must come back in the caller's order from both, bit for bit.
+ * coincide. Particle data must come back in the caller's order from both, bit for bit. Broadcast
+ * and ReduceBroadcast are checked against what the rank boundaries imply, which does not depend on
+ * either library, since where the ranks divide is a choice each of them makes for itself.
  *
  * Build (`make gpu`, or by hand with a CUDA-aware MPI):
  *
@@ -167,33 +169,193 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     check("node data migrated by a refinement equals sctl::Tree's (values)", !equal(gather(gv), gather(sv)));
   }
 
-  { // Broadcast and ReduceBroadcast on a halo-1 tree: every node carrying data ends with its owner's value
-    GT gt(comm);
-    gt.UpdateRefinement(xd, 32, true, sctl::Periodicity::NONE, 1);
-    Long gb, ge;
-    gt.GetOwnedRange(gb, ge);
-    const sctl::Vector<NodeT> gmid = to_host(gt.GetNodeMID());
-    sctl::Vector<Long> gc(gmid.Dim());
-    sctl::ScratchBuf<Real> gv(ge - gb);
-    for (Long i = 0; i < gmid.Dim(); i++) {
-      gc[i] = (i >= gb && i < ge);
-      if (gc[i]) gv[i - gb] = node_value(gmid[i], 1);
+  { // Broadcast and ReduceBroadcast, with data on every node so that shared nodes really do reduce
+    //
+    // Data on owned nodes alone leaves no node carrying data on two ranks, so the reduce half sums
+    // nothing. Here the ghosts get data too. Counts and values are functions of the node, not of
+    // its index, so the two libraries agree on the layout despite cutting the node set differently.
+    //
+    // The expected values follow from the rank boundaries alone rather than from either library.
+    // ReduceBroadcast sums onto the owner the partial values held by the ranks that share a node,
+    // and the nodes a rank shares with earlier ranks are exactly the strict ancestors of its first
+    // node. Every rank holds those, so an owned node comes back scaled by one plus the number of
+    // other ranks whose first node it is an ancestor of. Which nodes those are depends on where
+    // the ranks divide, and the two libraries choose different boundaries for the same node set,
+    // so their reduced values differ while both are right. Only Broadcast, which leaves owned
+    // values alone, may be compared between the two directly.
+    constexpr Long dof = 3;
+    const auto node_cnt = [](const NodeT& m) -> Long {
+      return 1 + (Long)((m.mid.GetIntKey() >> 7) % 3);  // 1, 2 or 3 items on this node
+    };
+    const auto node_val = [](const NodeT& m, Long item, Long k) {
+      const auto c = m.template Coord<Real>();
+      Real v = 1 + 17 * item + 3 * k + 1e3 * m.Depth();
+      for (Integer d = 0; d < DIM; d++) v += (137.0 / (d + 1)) * c[d];
+      return v;
+    };
+    const auto ndiff = [](const auto& a, const auto& b) {
+      if (a.Dim() != b.Dim()) return std::max(a.Dim(), b.Dim());
+      Long n = 0;
+      for (Long i = 0; i < a.Dim(); i++) n += !(a[i] == b[i]);
+      return n;
+    };
+    // the values a rank puts on its own copy of each node; a ghost slot may instead be given a
+    // marker that Broadcast has to replace, which node_val's positive values can never be
+    const auto fill = [&node_cnt, &node_val](const sctl::Vector<NodeT>& mid, Long b, Long e, bool stale, sctl::Vector<Long>& cnt) {
+      cnt.ReInit(mid.Dim());
+      Long tot = 0;
+      for (Long i = 0; i < mid.Dim(); i++) {
+        cnt[i] = node_cnt(mid[i]);
+        tot += cnt[i];
+      }
+      sctl::Vector<Real> val(tot * dof);
+      for (Long i = 0, o = 0; i < mid.Dim(); i++) {
+        const bool marked = stale && (i < b || i >= e);
+        for (Long j = 0; j < cnt[i]; j++, o++) {
+          for (Long k = 0; k < dof; k++) val[o * dof + k] = (marked ? -1 : node_val(mid[i], j, k));
+        }
+      }
+      return val;
+    };
+    const auto expect = [&node_cnt, &node_val, &comm, np, rank](const sctl::Vector<NodeT>& owned_mid, bool reduce) {
+      sctl::ScratchBuf<NodeT> mins(np);  // rank p's first owned node
+      comm.Allgather((sctl::ConstIterator<NodeT>)owned_mid.begin(), 1, mins.begin(), 1);
+      Long tot = 0;
+      for (Long i = 0; i < owned_mid.Dim(); i++) tot += node_cnt(owned_mid[i]);
+      sctl::Vector<Real> val(tot * dof);
+      for (Long i = 0, o = 0; i < owned_mid.Dim(); i++) {
+        Long mult = 1;
+        if (reduce) {
+          for (Long p = 0; p < np; p++) mult += (p != rank && owned_mid[i].isAncestor(mins[p]));
+        }
+        for (Long j = 0; j < node_cnt(owned_mid[i]); j++, o++) {
+          for (Long k = 0; k < dof; k++) val[o * dof + k] = mult * node_val(owned_mid[i], j, k);
+        }
+      }
+      return val;
+    };
+    // every node, owned and ghost, must hold the value its owner holds
+    const auto owners_values = [&node_cnt, &node_val](const sctl::Vector<NodeT>& mid, const sctl::Vector<Long>& cnt, const sctl::Vector<Real>& val) {
+      Long bad = 0, o = 0;
+      for (Long i = 0; i < mid.Dim(); i++) {
+        bad += (cnt[i] != node_cnt(mid[i]));
+        for (Long j = 0; j < cnt[i]; j++, o++) {
+          for (Long k = 0; k < dof; k++) bad += (val[o * dof + k] != node_val(mid[i], j, k));
+        }
+      }
+      return bad;
+    };
+    const auto owned_vals_gpu = [&to_host](GT& t, const char* name, sctl::Vector<NodeT>& mid) {
+      Long b, e;
+      t.GetOwnedRange(b, e);
+      gpu_tree::DataView<const Real, DevVec> d;
+      sctl::Vector<Long> cnt;
+      t.GetData(d, cnt, name);
+      const sctl::Vector<Real> h = to_host(d);
+      const sctl::Vector<NodeT> all = to_host(t.GetNodeMID());
+      mid.ReInit(e - b);
+      for (Long i = b; i < e; i++) mid[i - b] = all[i];
+      const Long off = sctl::omp_par::reduce(cnt.begin(), b) * dof;
+      const Long n = sctl::omp_par::reduce(cnt.begin() + b, e - b) * dof;
+      sctl::Vector<Real> out(n);
+      for (Long i = 0; i < n; i++) out[i] = h[off + i];
+      return out;
+    };
+    const auto owned_vals_sctl = [&owned](sctl::Tree<DIM>& t, const char* name, sctl::Vector<NodeT>& mid) {
+      Long b, e;
+      owned(t, b, e);
+      sctl::Vector<Real> d;
+      sctl::Vector<Long> cnt;
+      t.GetData(d, cnt, name);
+      const auto& all = t.GetNodeMID();
+      mid.ReInit(e - b);
+      for (Long i = b; i < e; i++) mid[i - b] = all[i];
+      const Long off = sctl::omp_par::reduce(cnt.begin(), b) * dof;
+      const Long n = sctl::omp_par::reduce(cnt.begin() + b, e - b) * dof;
+      sctl::Vector<Real> out(n);
+      for (Long i = 0; i < n; i++) out[i] = d[off + i];
+      return out;
+    };
+
+    for (Integer halo = 0; halo <= 1; halo++) {
+      for (Integer mode = 0; mode < 2; mode++) {
+        const char* op = (mode ? "ReduceBroadcast" : "Broadcast");
+        GT gt(comm);
+        sctl::Tree<DIM> st(comm);
+        gt.UpdateRefinement(xd, 32, true, sctl::Periodicity::NONE, halo);
+        st.UpdateRefinement(x, 32, true, sctl::Periodicity::NONE, halo);
+        {
+          Long b, e;
+          gt.GetOwnedRange(b, e);
+          sctl::Vector<Long> cnt;
+          const sctl::Vector<Real> v = fill(to_host(gt.GetNodeMID()), b, e, false, cnt);
+          gt.AddData("d", DevVec<Real>(v.begin(), v.end()), cnt);
+        }
+        {
+          Long b, e;
+          owned(st, b, e);
+          sctl::Vector<Long> cnt;
+          sctl::Vector<Real> v = fill(st.GetNodeMID(), b, e, false, cnt);
+          st.AddData("d", v, cnt);
+        }
+        if (mode) {
+          gt.template ReduceBroadcast<Real>("d");
+          st.template ReduceBroadcast<Real>("d");
+        } else {
+          gt.template Broadcast<Real>("d");
+          st.template Broadcast<Real>("d");
+        }
+        char msg[160];
+        sctl::Vector<NodeT> gmid, smid;
+        const sctl::Vector<Real> g = owned_vals_gpu(gt, "d", gmid), s = owned_vals_sctl(st, "d", smid);
+        std::snprintf(msg, sizeof msg, "%s, halo=%d: gpu_tree owned values are what the contract asks for", op, (int)halo);
+        check(msg, ndiff(g, expect(gmid, mode)));
+        std::snprintf(msg, sizeof msg, "%s, halo=%d: sctl::Tree owned values are what the contract asks for", op, (int)halo);
+        check(msg, ndiff(s, expect(smid, mode)));
+        if (!mode) {  // see above: only Broadcast's result is independent of where the ranks divide
+          std::snprintf(msg, sizeof msg, "%s, halo=%d: the two libraries agree", op, (int)halo);
+          check(msg, ndiff(gather(g), gather(s)));
+        }
+
+        // the ghosts already hold the owners' values and Broadcast does not accumulate
+        gt.template Broadcast<Real>("d");
+        st.template Broadcast<Real>("d");
+        sctl::Vector<NodeT> gmid2, smid2;
+        const sctl::Vector<Real> g2 = owned_vals_gpu(gt, "d", gmid2), s2 = owned_vals_sctl(st, "d", smid2);
+        std::snprintf(msg, sizeof msg, "%s, halo=%d: a further Broadcast changes nothing", op, (int)halo);
+        check(msg, ndiff(g, g2) + ndiff(s, s2));
+      }
     }
-    const DevVec<Real> gvd(gv.begin(), gv.end());
-    gt.AddData("u", gvd, gc);
-    gt.AddData("v", gvd, gc);
-    for (Integer mode = 0; mode < 2; mode++) {
-      const char* nm = (mode ? "v" : "u");
-      if (mode) gt.template ReduceBroadcast<Real>(nm);
-      else gt.template Broadcast<Real>(nm);
-      gpu_tree::DataView<const Real, DevVec> gd;
-      sctl::Vector<Long> gcn;
-      gt.GetData(gd, gcn, nm);
-      const sctl::Vector<Real> gh = to_host(gd);
-      const sctl::Vector<NodeT> gm = to_host(gt.GetNodeMID());  // ghosts were added
-      Long bad = 0;  // which ghosts carry data depends on the cuts, so only the values are compared
-      for (Long i = 0, k = 0; i < gcn.Dim(); i++) if (gcn[i]) bad += (gh[k++] != node_value(gm[i], 1));
-      check(mode ? "ReduceBroadcast: every node with data holds its owner's value" : "Broadcast: every node with data holds its owner's value", bad);
+
+    { // a ghost slot holding something stale must come back holding the owner's values
+      GT gt(comm);
+      sctl::Tree<DIM> st(comm);
+      gt.UpdateRefinement(xd, 32, true, sctl::Periodicity::NONE, 1);
+      st.UpdateRefinement(x, 32, true, sctl::Periodicity::NONE, 1);
+      {
+        Long b, e;
+        gt.GetOwnedRange(b, e);
+        sctl::Vector<Long> cnt;
+        const sctl::Vector<Real> v = fill(to_host(gt.GetNodeMID()), b, e, true, cnt);
+        gt.AddData("d", DevVec<Real>(v.begin(), v.end()), cnt);
+        gt.template Broadcast<Real>("d");
+        gpu_tree::DataView<const Real, DevVec> d;
+        sctl::Vector<Long> cnt_out;
+        gt.GetData(d, cnt_out, "d");
+        check("Broadcast: gpu_tree replaces stale ghost values with the owner's", owners_values(to_host(gt.GetNodeMID()), cnt_out, to_host(d)));
+      }
+      {
+        Long b, e;
+        owned(st, b, e);
+        sctl::Vector<Long> cnt;
+        sctl::Vector<Real> v = fill(st.GetNodeMID(), b, e, true, cnt);
+        st.AddData("d", v, cnt);
+        st.template Broadcast<Real>("d");
+        sctl::Vector<Real> d;
+        sctl::Vector<Long> cnt_out;
+        st.GetData(d, cnt_out, "d");
+        check("Broadcast: sctl::Tree replaces stale ghost values with the owner's", owners_values(st.GetNodeMID(), cnt_out, d));
+      }
     }
   }
 
