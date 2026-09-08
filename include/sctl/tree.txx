@@ -20,6 +20,8 @@
 #include "sctl/math_utils.txx"    // for pow
 #include "sctl/morton.hpp"        // for Morton
 #include "sctl/ompUtils.txx"      // for reduce, scan, sample_sort
+#include "sctl/profile.hpp"       // for Profile
+#include "sctl/profile.txx"       // for Profile::Scoped
 #include "sctl/scratch_pool.hpp"  // for ScratchBuf
 #include "sctl/scratch_pool.txx"
 #include "sctl/static-array.hpp"  // for StaticArray
@@ -1338,6 +1340,7 @@ namespace sctl {
   }
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::ReduceBroadcast(const std::string& name) {
+    Profile::Scoped prof_("Tree::ReduceBroadcast", &comm, true, 8);
     Integer np = comm.Size();
     Integer rank = comm.Rank();
 
@@ -1378,6 +1381,7 @@ namespace sctl {
       { // Set send_data_cnt, send_data_dsp
         send_data_cnt.ReInit(send_mid.Dim());
         recv_data_cnt.ReInit(recv_mid.Dim());
+        #pragma omp parallel for schedule(static)
         for (Long i = 0; i < send_mid.Dim(); i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
@@ -1396,6 +1400,7 @@ namespace sctl {
         Long N_recv_nodes = recv_mid.Dim();
         send_buff.ReInit(send_data_tot * dof);
         recv_buff.ReInit(recv_data_tot * dof);
+        #pragma omp parallel for schedule(static)
         for (Long i = 0; i < N_send_nodes; i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
@@ -1448,6 +1453,7 @@ namespace sctl {
   }
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::Broadcast(const std::string& name) {
+    Profile::Scoped prof_("Tree::Broadcast", &comm, true, 8);
     Integer np = comm.Size();
     Integer rank = comm.Rank();
 
@@ -1483,6 +1489,7 @@ namespace sctl {
       { // Set send_data_cnt, send_data_dsp
         send_data_cnt.ReInit(send_mid.Dim());
         recv_data_cnt.ReInit(recv_mid.Dim());
+        #pragma omp parallel for schedule(static)
         for (Long i = 0; i < send_mid.Dim(); i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
@@ -1501,6 +1508,7 @@ namespace sctl {
         Long N_recv_nodes = recv_mid.Dim();
         send_buff.ReInit(send_data_tot * dof);
         recv_buff.ReInit(recv_data_tot * dof);
+        #pragma omp parallel for schedule(static)
         for (Long i = 0; i < N_send_nodes; i++) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
@@ -1554,6 +1562,7 @@ namespace sctl {
 
         for (Long i = 0; i < start_idx; i++) cnt[i] = 0;
         for (Long i = end_idx; i < cnt.Dim(); i++) cnt[i] = 0;
+        #pragma omp parallel for schedule(static)  // a ghost has one owner, so no two agree on idx
         for (Long i = 0; i < recv_mid.Dim(); i++) {
           const auto idx = std::lower_bound(node_mid.begin(), node_mid.end(), recv_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && node_mid[idx] == recv_mid[i]);

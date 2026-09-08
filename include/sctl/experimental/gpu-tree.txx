@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <random>
 #include <vector>
@@ -70,9 +71,9 @@ template <template <class...> class DevVec, class T> auto scratch_policy() {
 // so that a block's time is the stage's own.
 template <template <class...> class DevVec> struct StageTimer {
   const Comm& comm;
-  void tic(const char* name) const {
+  void tic(const char* name, Integer verbose = 1) const {
     sync();
-    sctl::Profile::Tic(name, &comm, true);
+    sctl::Profile::Tic(name, &comm, true, verbose);
   }
   void toc() const {
     sync();
@@ -1888,39 +1889,48 @@ template <Integer DIM> Long findNode(sctl::ConstIterator<Morton<DIM>> nmid, Long
   return (k < Nn && nmid[k] == m) ? k : -1;
 }
 
-/** dst[di[k]] = src[si[k]] -- touches only the elements the blocks actually cover. */
+/** One whole block per call: `dst[dstoff[i]*w + j] = src[srcoff[i]*w + j]` for `j < len[i]*w`. */
 template <class T> struct BlockCopyFunctor {
   const T* src;
   T* dst;
-  const Long* si;
-  const Long* di;
-  SCTL_GPU_HD void operator()(Long k) const { dst[di[k]] = src[si[k]]; }
+  const Long* srcoff;
+  const Long* dstoff;
+  const Long* len;
+  Long w;
+  SCTL_GPU_HD void operator()(Long i) const {
+    const T* const s = src + srcoff[i] * w;
+    T* const d = dst + dstoff[i] * w;
+    for (Long j = 0; j < len[i] * w; j++) d[j] = s[j];
+  }
 };
 
 /**
  * Copy `nb` variable-length blocks: `dst[dstoff[i]*w + j] = src[srcoff[i]*w + j]` for `j < len[i]*w`.
- * Expressed as a scatter rather than a gather, so destination elements no block covers are left
- * alone -- a gather over the whole destination would read an index for them that was never set.
+ * A scatter rather than a gather, so destination elements no block covers are left alone.
+ *
+ * One thread per block, and only the blocks' bounds ever reach the device. Naming each element's
+ * source and destination outright would instead cost an eight-byte pair for every element moved,
+ * which is many times the traffic of the copy it is arranging. Every caller passes node-granular
+ * blocks, so `nb` runs with the node count and the blocks are individually small.
  */
 template <template <class...> class DevVec, class Policy, class T>
 void blockCopy(const Policy& pol, T* dst, const T* src,
                sctl::ConstIterator<Long> srcoff, sctl::ConstIterator<Long> dstoff, sctl::ConstIterator<Long> len, Long nb, Long w) {
-  sctl::ScratchBuf<Long> off(nb + 1);
-  const Long tot = detail::scanv(off.begin(), len, nb) * w;
-  if (!tot) return;
-  sctl::ScratchBuf<Long> si(tot), di(tot);
-  #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < nb; i++) {
-    for (Long j = 0; j < len[i] * w; j++) {
-      si[off[i] * w + j] = srcoff[i] * w + j;
-      di[off[i] * w + j] = dstoff[i] * w + j;
+  if (nb <= 0) return;
+  if constexpr (!detail::is_device_vector_v<DevVec<char>>) {
+    #pragma omp parallel for schedule(static)
+    for (Long i = 0; i < nb; i++) {
+      if (len[i]) std::memcpy(dst + dstoff[i] * w, src + srcoff[i] * w, len[i] * w * sizeof(T));
     }
+    return;
   }
-  DeviceScratch<Long, DevVec> si_d(tot), di_d(tot);
-  thrust::copy(si.begin(), si.end(), si_d.begin());
-  thrust::copy(di.begin(), di.end(), di_d.begin());
-  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), tot, BlockCopyFunctor<T>{
-      src, dst, thrust::raw_pointer_cast(si_d.data()), thrust::raw_pointer_cast(di_d.data())});
+  DeviceScratch<Long, DevVec> so(nb), doff(nb), l(nb);
+  thrust::copy(srcoff, srcoff + nb, so.begin());
+  thrust::copy(dstoff, dstoff + nb, doff.begin());
+  thrust::copy(len, len + nb, l.begin());
+  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), nb, BlockCopyFunctor<T>{
+      src, dst, thrust::raw_pointer_cast(so.data()), thrust::raw_pointer_cast(doff.data()),
+      thrust::raw_pointer_cast(l.data()), w});
 }
 
 /**
@@ -1941,6 +1951,7 @@ void exchangeBlocks(const Policy& pol, const Comm& comm, sctl::ConstIterator<Mor
   comm.Alltoallv(smid, sncnt, sndsp.begin(), rmid.begin(), rncnt.begin(), rndsp.begin());
 
   sctl::ScratchBuf<Long> sdcnt(Ns), rdcnt(Nr), soff(Ns);
+  #pragma omp parallel for schedule(static)
   for (Long i = 0; i < Ns; i++) {  // my nodes among the requests, and how many items each carries
     const Long k = findNode<DIM>(nmid, Nn, smid[i]);
     sdcnt[i] = (k >= 0 ? cnt[k] : 0);
@@ -1970,6 +1981,8 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
   const Long np = comm_.Size();
   if (np == 1) return;
 #ifdef SCTL_HAVE_MPI
+  const detail::StageTimer<DevVec> prof{comm_};
+  prof.tic("GPUTree::Broadcast", 8);
   const auto pol = detail::scratch_policy<DevVec, char>();
   DevVec<char>& data = NodeData_(name);
   sctl::Vector<Long>& cnt = NodeCnt_(name);
@@ -1992,10 +2005,29 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
         sctl::Vector<Long> cnt_new(Nn);
         for (Long i = 0; i < Nn; i++) cnt_new[i] = (ob <= i && i < oe ? cnt[i] : 0);
         sctl::ScratchBuf<Long> ridx(Nr);
+        #pragma omp parallel for schedule(static)  // a ghost has one owner, so no two agree on ridx
         for (Long i = 0; i < Nr; i++) {
           ridx[i] = detail_bcast::findNode<DIM>(nmid.begin(), Nn, rmid[i]);
           SCTL_ASSERT(ridx[i] >= 0);
           cnt_new[ridx[i]] = rdcnt[i];
+        }
+        { // in a steady state every ghost gets back the count it had, so nothing has to move
+          Long moved = 0;
+          #pragma omp parallel for schedule(static) reduction(+ : moved)
+          for (Long i = 0; i < Nn; i++) moved += (cnt_new[i] != cnt[i]);
+          if (!moved) {
+            sctl::ScratchBuf<Long> a(Nr), b(Nr), l(Nr);
+            Long m = 0;
+            for (Long i = 0; i < Nr; i++) {
+              if (!rdcnt[i]) continue;
+              a[m] = rddsp[i];
+              b[m] = dsp[ridx[i]];
+              l[m] = rdcnt[i];
+              m++;
+            }
+            detail_bcast::blockCopy<DevVec>(pol, (char*)thrust::raw_pointer_cast(data.data()), rbuf, a.begin(), b.begin(), l.begin(), m, w);
+            return;
+          }
         }
         sctl::ScratchBuf<Long> dsp_new(Nn + 1);
         const Long nnew = detail::scanv(dsp_new.begin(), cnt_new.begin(), Nn);
@@ -2018,6 +2050,7 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
         data.swap(out);
         cnt.Swap(cnt_new);
       });
+  prof.toc();
 #endif
 }
 
@@ -2027,6 +2060,8 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
   const Long np = comm_.Size(), rank = comm_.Rank();
   if (np == 1) return;
 #ifdef SCTL_HAVE_MPI
+  const detail::StageTimer<DevVec> prof{comm_};
+  prof.tic("GPUTree::ReduceBroadcast", 8);
   const auto pol = detail::scratch_policy<DevVec, ValueType>();
   DevVec<char>& data = NodeData_(name);
   sctl::Vector<Long>& cnt = NodeCnt_(name);
@@ -2063,6 +2098,7 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
         });
   }
   Broadcast<ValueType>(name);
+  prof.toc();
 #endif
 }
 
