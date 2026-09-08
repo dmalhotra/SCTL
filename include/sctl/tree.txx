@@ -1340,7 +1340,7 @@ namespace sctl {
   }
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::ReduceBroadcast(const std::string& name) {
-    Profile::Scoped prof_("Tree::ReduceBroadcast", &comm, true, 8);
+    Profile::Scoped prof_("Tree::ReduceBroadcast", &comm, true, 6);
     Integer np = comm.Size();
     Integer rank = comm.Rank();
 
@@ -1453,7 +1453,7 @@ namespace sctl {
   }
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::Broadcast(const std::string& name) {
-    Profile::Scoped prof_("Tree::Broadcast", &comm, true, 8);
+    Profile::Scoped prof_("Tree::Broadcast", &comm, true, 6);
     Integer np = comm.Size();
     Integer rank = comm.Rank();
 
@@ -1689,6 +1689,7 @@ namespace sctl {
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticles(const std::string& name, const Vector<Real>& coord) {
     SCTL_ASSERT(groups.find(name) == groups.end());
+    Profile::Scoped prof_("PtTree::AddParticles", &this->GetComm(), true, 6);
 
     const Long N = coord.Dim() / DIM;
     SCTL_ASSERT(coord.Dim() == N * DIM);

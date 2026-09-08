@@ -1980,7 +1980,7 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
   if (np == 1) return;
 #ifdef SCTL_HAVE_MPI
   const detail::StageTimer<DevVec> prof{comm_};
-  prof.tic("GPUTree::Broadcast", 8);
+  prof.tic("GPUTree::Broadcast", 6);
   const auto pol = detail::scratch_policy<DevVec, char>();
   DevVec<char>& data = NodeData_(name);
   sctl::Vector<Long>& cnt = NodeCnt_(name);
@@ -2063,7 +2063,7 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
   if (np == 1) return;
 #ifdef SCTL_HAVE_MPI
   const detail::StageTimer<DevVec> prof{comm_};
-  prof.tic("GPUTree::ReduceBroadcast", 8);
+  prof.tic("GPUTree::ReduceBroadcast", 6);
   const auto pol = detail::scratch_policy<DevVec, ValueType>();
   DevVec<char>& data = NodeData_(name);
   sctl::Vector<Long>& cnt = NodeCnt_(name);
@@ -2228,6 +2228,8 @@ void PtTree<Real, DIM, DevVec, BaseTree>::nodeCounts(const std::string& name, sc
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::AddParticles(const std::string& name, const DevVec<Real>& coord) {
   SCTL_ASSERT_MSG(groups_.find(name) == groups_.end(), "PtTree::AddParticles: name already present.");
+  const detail::StageTimer<DevVec> prof{this->GetComm()};
+  prof.tic("PtTree::AddParticles", 6);
   const auto pol = detail::scratch_policy<DevVec, MortonCode<DIM>>();
   const Long Nloc = (Long)coord.size() / DIM;
   SCTL_ASSERT((Long)coord.size() == Nloc * DIM);
@@ -2239,6 +2241,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticles(const std::string& name, 
                     detail::MakeMortonFunctor<Real, DIM>{thrust::raw_pointer_cast(coord.data())});
   groups_.try_emplace(name, this->GetComm()).first->second.Init(std::move(key), partition_codes_);
   AddParticleData(name, name, coord);
+  prof.toc();
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
