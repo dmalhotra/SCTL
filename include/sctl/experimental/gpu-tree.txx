@@ -2086,7 +2086,8 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
           for (Long i = 0; i < Nr; i++) {
             if (!rdcnt[i]) continue;
             const Long idx = detail_bcast::findNode<DIM>(nmid, Nn, rmid[i]);
-            if (idx < 0 || cnt[idx] != rdcnt[i]) continue;
+            SCTL_ASSERT_MSG(idx >= 0, "GPUTree::ReduceBroadcast: received a node this rank does not hold");
+            SCTL_ASSERT_MSG(cnt[idx] == rdcnt[i], "GPUTree::ReduceBroadcast: item count differs from the sender's");
             using It = detail::ScratchIterator<ValueType, DevVec>;
             thrust::transform(pol, It(d + dsp[idx] * dof), It(d + (dsp[idx] + cnt[idx]) * dof),
                               It(const_cast<ValueType*>(r + rddsp[i] * dof)), It(d + dsp[idx] * dof), thrust::plus<ValueType>());
