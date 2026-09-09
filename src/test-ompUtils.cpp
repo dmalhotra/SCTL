@@ -1,21 +1,38 @@
 // Per-function tests for sctl/ompUtils.{hpp,txx}.
 //
 // Covers omp_par::merge, omp_par::merge_sort (with and without comparator),
-// omp_par::reduce, and omp_par::scan.
+// omp_par::reduce, omp_par::scan, omp_par::sample_sort, omp_par::radix_sort and omp_par::sort.
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <random>
 #include <vector>
 
 #include "sctl/common.hpp"
+#include "sctl/iterator.hpp"
+#include "sctl/iterator.txx"
+#include "sctl/morton.hpp"
+#include "sctl/morton.txx"
 #include "sctl/ompUtils.hpp"
 #include "sctl/ompUtils.txx"
 
 #include "test-utils.hpp"
 
+using sctl::Integer;
 using sctl::Long;
+
+/** Radix-sortable through its own key, as MortonCode is; `tag` records the input order so a sort
+ *  that claims to be stable can be held to it. */
+struct RadixRec {
+  static constexpr bool IntKeyIsExact = true;
+  std::uint64_t k;
+  Long tag;
+  std::uint64_t GetIntKey() const { return k; }
+  bool operator<(const RadixRec& o) const { return k < o.k; }
+  bool operator>(const RadixRec& o) const { return o.k < k; }
+};
 
 int main() {
   std::mt19937_64 rng(42);
@@ -170,6 +187,86 @@ int main() {
       std::vector<Rec> C = A;
       sctl::omp_par::sample_sort(C.data(), C.data() + N, by_key);  // in-place overload
       for (Long i = 0; i < N; ++i) CHECK(C[i].key == ref[i].key);
+    }
+  }
+
+  // --- radix_sort: against stable_sort, over the sizes and key widths the passes turn on ---
+  std::printf("radix_sort :\n");
+  {
+    // Sizes straddle 4*2^11, the per-thread share radix_sort caps its team by. Key widths leave the
+    // upper passes all-zero, which the six-pass loop has to carry through unchanged.
+    for (const Long N : {(Long)0, (Long)1, (Long)2, (Long)17, (Long)8191, (Long)8192, (Long)8193,
+                         (Long)100 * SCTL_GET_MAX_THREADS() + 54321}) {
+      for (const Integer width : {16, 32, 64}) {
+        const std::uint64_t mask = (width == 64 ? ~(std::uint64_t)0 : (((std::uint64_t)1 << width) - 1));
+        std::vector<RadixRec> A((size_t)N);
+        for (Long i = 0; i < N; ++i) {
+          A[i].k = rng() & (i % 5 == 0 ? mask : (std::uint64_t)0xFF);  // plenty of repeated keys
+          A[i].tag = i;
+        }
+        std::vector<RadixRec> ref = A;
+        std::stable_sort(ref.begin(), ref.end(), [](const RadixRec& a, const RadixRec& b) { return a.k < b.k; });
+
+        std::vector<RadixRec> B = A;
+        sctl::omp_par::radix_sort(B.data(), N, [](const RadixRec& r) { return r.k; });
+        for (Long i = 0; i < N; ++i) CHECK(B[i].k == ref[i].k);
+        for (Long i = 0; i < N; ++i) CHECK(B[i].tag == ref[i].tag);  // stable: ties keep their order
+      }
+    }
+  }
+
+  // --- omp_par::sort: both overloads, and that it picks the radix path only where it may ---
+  std::printf("omp_par::sort :\n");
+  {
+    static_assert(sctl::omp_par::is_radix_sortable<RadixRec>::value, "RadixRec declares an exact key");
+    static_assert(!sctl::omp_par::is_radix_sortable<Long>::value, "a plain integer has no GetIntKey");
+
+    for (const Long N : {(Long)0, (Long)1, (Long)3000, (Long)100 * SCTL_GET_MAX_THREADS() + 54321}) {
+      std::vector<RadixRec> A((size_t)N);
+      for (Long i = 0; i < N; ++i) {
+        A[i].k = rng();
+        A[i].tag = i;
+      }
+      std::vector<RadixRec> ref = A;
+      std::sort(ref.begin(), ref.end());
+
+      std::vector<RadixRec> B = A;  // in place
+      sctl::omp_par::sort(B.data(), N);
+      for (Long i = 0; i < N; ++i) CHECK(B[i].k == ref[i].k);
+
+      std::vector<RadixRec> C((size_t)N);  // into a separate range, leaving the input alone
+      sctl::omp_par::sort(sctl::Ptr2ConstItr<RadixRec>(A.data(), std::max<Long>(N, 1)),
+                          sctl::Ptr2Itr<RadixRec>(C.data(), std::max<Long>(N, 1)), N);
+      for (Long i = 0; i < N; ++i) CHECK(C[i].k == ref[i].k);
+      for (Long i = 0; i < N; ++i) CHECK(A[i].tag == i);
+
+      // The comparator overloads never take the radix path; a reversed order proves it is not taken.
+      std::vector<RadixRec> D = A, E((size_t)N);
+      sctl::omp_par::sort(D.data(), N, std::greater<RadixRec>());
+      for (Long i = 0; i < N; ++i) CHECK(D[i].k == ref[N - 1 - i].k);
+      sctl::omp_par::sort(sctl::Ptr2ConstItr<RadixRec>(A.data(), std::max<Long>(N, 1)),
+                          sctl::Ptr2Itr<RadixRec>(E.data(), std::max<Long>(N, 1)), N, std::greater<RadixRec>());
+      for (Long i = 0; i < N; ++i) CHECK(E[i].k == ref[N - 1 - i].k);
+    }
+  }
+
+  // --- MortonCode, the type the radix path exists for: it must agree with operator< ---
+  std::printf("omp_par::sort (MortonCode) :\n");
+  {
+    constexpr Integer DIM = 3;
+    using MC = sctl::MortonCode<DIM>;
+    if constexpr (sctl::omp_par::is_radix_sortable<MC>::value) {  // false once DIM*(MAX_DEPTH+1) > 64
+      const Long N = 200000;
+      std::vector<MC> A((size_t)N);
+      for (Long i = 0; i < N; ++i) {
+        double c[DIM];
+        for (Integer k = 0; k < DIM; ++k) c[k] = (double)(rng() % 1000000) / 1000000.0;
+        A[i] = MC(c);
+      }
+      std::vector<MC> ref = A, B = A;
+      std::sort(ref.begin(), ref.end());
+      sctl::omp_par::sort(B.data(), N);
+      for (Long i = 0; i < N; ++i) CHECK(!(B[i] < ref[i]) && !(ref[i] < B[i]));
     }
   }
 
