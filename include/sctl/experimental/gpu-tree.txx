@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <random>
 #include <vector>
 #include <type_traits>
@@ -1655,9 +1656,16 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
     const int left  = (rank > 0      ? int(rank - 1) : MPI_PROC_NULL);
     const int right = (rank + 1 < np ? int(rank + 1) : MPI_PROC_NULL);
     MortonT* b = thrust::raw_pointer_cast(alt.data());
-    const int mb = int(M * (Long)sizeof(MortonT));
-    MPI_Sendrecv(b + recv0,                         mb, MPI_BYTE, left,  27, b + recv0 + pt_mid.size(), mb, MPI_BYTE, right, 27, comm.GetMPI_Comm(), MPI_STATUS_IGNORE);
-    MPI_Sendrecv(b + recv0 + pt_mid.size() - recv1, mb, MPI_BYTE, right, 28, b,                         mb, MPI_BYTE, left,  28, comm.GetMPI_Comm(), MPI_STATUS_IGNORE);
+    // One element of a MortonT-sized datatype per particle, so the count is M rather than M bytes:
+    // M is the caller's leaf size and its byte count need not fit an int.
+    SCTL_ASSERT_MSG(M <= (Long)std::numeric_limits<int>::max(), "GPUTree::UpdateRefinement: M exceeds an MPI count");
+    MPI_Datatype dt;
+    MPI_Type_contiguous((int)sizeof(MortonT), MPI_BYTE, &dt);
+    MPI_Type_commit(&dt);
+    const int mc = (int)M;
+    MPI_Sendrecv(b + recv0,                     mc, dt, left,  27, b + recv0 + pt_mid.size(), mc, dt, right, 27, comm.GetMPI_Comm(), MPI_STATUS_IGNORE);
+    MPI_Sendrecv(b + recv0 + pt_mid.size() - M, mc, dt, right, 28, b,                         mc, dt, left,  28, comm.GetMPI_Comm(), MPI_STATUS_IGNORE);
+    MPI_Type_free(&dt);
     pt_mid.swap(alt);
   }
   #endif  // SCTL_HAVE_MPI
