@@ -361,6 +361,11 @@ inline void Comm::Impl::Init(MPI_Comm mpi_comm) {
 
 inline void Comm::Impl::InitNode() {
   node_init_ = true;
+#ifdef SCTL_COMM_NO_DIRECT
+  // `direct_` stays false, so a sparse exchange sends every block through MPI and reads none of
+  // what the rest of this would set up: no node communicator, no pids, no probe.
+  return;
+#else
   #pragma omp critical(SCTL_COMM_DUP)  // creating a communicator, as Init and ~Impl do
   MPI_Comm_split_type(mpi_comm_, MPI_COMM_TYPE_SHARED, mpi_rank_, MPI_INFO_NULL, &node_comm_);
   int node_rank = 0;
@@ -398,6 +403,7 @@ inline void Comm::Impl::InitNode() {
   int all = 0;
   MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, node_comm_);
   direct_ = (all != 0);
+#endif  // SCTL_COMM_NO_DIRECT
 }
 #endif
 
@@ -849,13 +855,24 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
       if (j >= 0) saddr[j] = (scounts[i] ? (Long)&sbuf[sdispls[i]] : 0);
     }
     MPI_Alltoall(&saddr[0], 1, MPI_INT64_T, &raddr[0], 1, MPI_INT64_T, impl_->node_comm_);
+    int ok = 1;
     for (Integer i = 0; i < np; i++) {
       const Integer j = impl_->node_rank_of_[i];
       if (i == rank || j < 0 || !rcounts[i]) continue;
-      const bool ok = comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType));
-      SCTL_ASSERT_MSG(ok, "Comm::Ialltoallv_sparse: direct read from a node peer failed.");
+      ok = (int)comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType)) && ok;
     }
-    MPI_Barrier(impl_->node_comm_);  // peers are done reading this rank's send buffer
+    // InitNode's probe only proved a stack address readable; a later read can still be refused, so
+    // agree on the outcome and give up the direct path for good rather than ending the run. The
+    // reduction also holds every rank here until its peers have finished reading its send buffer,
+    // which is what the exchange needs of it.
+    int all = 0;
+    MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, impl_->node_comm_);
+    if (!all) {  // node peers join the MPI exchange below; whatever was read is overwritten with the same bytes
+      impl_->direct_ = false;
+      for (Integer i = 0; i < np; i++) {
+        if (!skip(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
+      }
+    }
   }
 
   // The rest goes to MPI all at once, receives posted before sends, and completes in the caller's Wait.

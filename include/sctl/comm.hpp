@@ -319,7 +319,9 @@ class Comm {
    * owns) the direct path is used, and where it does not the setup probe fails and everything goes
    * through MPI. Building with `-DSCTL_COMM_PTRACER` lets the ranks widen it for themselves with
    * `PR_SET_PTRACER_ANY`, which opens their address space to every process of the same user for
-   * the rest of their lifetime -- appropriate on a node a job owns, not on a shared one.
+   * the rest of their lifetime -- do not do that on a shared node. `-DSCTL_COMM_NO_DIRECT` turns
+   * the direct path off outright. A read the kernel refuses after the probe has passed also turns
+   * it off, for this exchange and every later one, rather than ending the run.
    *
    * @tparam SType type of the send-data.
    * @tparam RType type of the receive-data.
