@@ -1889,6 +1889,10 @@ template <class Type> inline MPI_Op Comm::GetMPIOp(CommOp op) {  // runtime op: 
   }
 }
 
+template <class Type> inline MPI_Datatype Comm::MPIDatatype() {
+  return CommDatatype<Type>::value();
+}
+
 inline void Comm::RegisterDatatype(MPI_Datatype datatype) {
   #pragma omp critical(SCTL_COMM_HANDLE_REG)
   {

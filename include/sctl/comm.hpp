@@ -105,6 +105,15 @@ class Comm {
    * Convert to MPI_Comm.
    */
   [[nodiscard]] const MPI_Comm& GetMPI_Comm() const noexcept { return impl_->mpi_comm_; }
+
+  /**
+   * The MPI datatype for `Type`: `sizeof(Type)` contiguous bytes, built on first use and freed at
+   * finalize, so a caller counting in elements rather than bytes does not build one per call.
+   *
+   * The same handle the collectives here use. Exposed for code that reaches MPI directly with a
+   * buffer this class does not own, as `gpu_tree`'s device exchanges do.
+   */
+  template <class Type> [[nodiscard]] static MPI_Datatype MPIDatatype();
 #endif
 
   /**
