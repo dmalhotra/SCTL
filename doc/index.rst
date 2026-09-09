@@ -74,12 +74,9 @@ The following compiler flags can be used to enable or disable specific features 
 - ``-DSCTL_VERBOSE``: Enable verbose :ref:`profiling <profile_hpp>` output.
 - ``-DSCTL_SIG_HANDLER``: Enable :ref:`stack trace <stacktrace_h>`. On Linux with glibc < 2.34, link with ``-ldl`` (newer glibc has it merged into libc).
 - ``-DSCTL_QUAD_T``: Enable support for :ref:`quad-precision type <math_utils_hpp>`.
-- ``-DSCTL_MAX_DEPTH=<levels>``: Maximum depth of a :ref:`Morton <morton_hpp>` code, and so of a :ref:`Tree <tree_hpp>` (default 20, must be in ``(0, 64)``). A code holds ``DIM * (MAX_DEPTH + 1)`` bits, so raising it past ``64 / DIM - 1`` (20 for ``DIM = 3``) widens the code to a multi-word integer and costs the single-word radix sort that :ref:`omp_par::sort <ompUtils_hpp>` would otherwise use on Morton codes. It must be the same in every translation unit linked together.
-
-Ranks sharing a node can move data by reading each other's buffers rather than sending them, which :ref:`Comm's <comm_hpp>` ``Alltoallv``, ``Send`` and ``Recv`` do wherever they can, and ``Ialltoallv_sparse`` does when asked (it cannot without giving up the non-blocking behaviour its name promises). The next two flags govern that, and are not opposites: set neither and the reads happen only where the kernel already permits them, which is the default.
-
-- ``-DSCTL_COMM_PTRACER``: Let each rank widen its own ptrace permission (Linux ``PR_SET_PTRACER_ANY``) so the reads are permitted where the kernel would otherwise refuse them (yama ``ptrace_scope`` 1 or 2). This leaves the rank's memory readable by every process of the same user for the rest of its life: appropriate on a node the job owns, not on a shared one.
-- ``-DSCTL_COMM_NO_DIRECT``: Do not read peers' memory at all; every block of a sparse exchange goes through MPI. Overrides ``SCTL_COMM_PTRACER``, which then does nothing.
+- ``-DSCTL_MAX_DEPTH=<levels>``: Set the maximum depth of a :ref:`Morton <morton_hpp>` code, and so of a :ref:`Tree <tree_hpp>` (default 20).
+- ``-DSCTL_COMM_PTRACER``: Let :ref:`Comm <comm_hpp>` read node-local peers' buffers where the kernel would otherwise refuse; this exposes a rank's memory to the same user.
+- ``-DSCTL_COMM_NO_DIRECT``: Disable those reads, so every :ref:`Comm <comm_hpp>` exchange goes through MPI.
 
 Features and Capabilities
 -------------------------

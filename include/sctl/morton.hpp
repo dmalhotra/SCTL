@@ -13,6 +13,13 @@
 #include "sctl/math_utils.hpp"  // for pow (declaration)
 #include "sctl/math_utils.txx"  // for pow's constexpr definition (needed at class-template instantiation)
 
+/**
+ * Maximum depth of a `MortonCode`, and so of a `Tree`. Must lie in `(0, 64)` and be identical in
+ * every translation unit linked together, since it fixes the width of a code and so the layout of
+ * everything holding one. A code occupies `DIM * (MAX_DEPTH + 1)` bits, so beyond `64 / DIM - 1`
+ * (20 for `DIM = 3`) it no longer fits a single word: `IntKeyIsExact` goes false and codes lose the
+ * radix sort `omp_par::sort` would otherwise pick for them.
+ */
 #ifndef SCTL_MAX_DEPTH
 #define SCTL_MAX_DEPTH 20
 #endif
