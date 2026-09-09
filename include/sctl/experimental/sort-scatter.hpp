@@ -58,8 +58,12 @@ class SortScatter {
   /**
    * Move `data`, `dof` values per key in the layout before the last `Repartition` (its previous
    * `SortedCount()`), to the current layout, in place. A no-op when that `Repartition` moved nothing.
+   *
+   * `begin` names the first value to move when the keys' values are a stretch of a longer buffer,
+   * as a tree payload whose ghost slots are filled is; `data` is left holding the moved values
+   * alone. With `begin` non-zero and nothing to move, the stretch is brought to the front.
    */
-  template <class T> void RepartitionData(DevVec<T>& data, Long dof) const;
+  template <class T> void RepartitionData(DevVec<T>& data, Long dof, Long begin = 0) const;
 
   const DevVec<Key>& SortedKeys() const { return keys_; }  ///< this rank's stretch of the global order
   Long LocalCount() const { return plan_.Nloc; }                 ///< keys the caller handed in

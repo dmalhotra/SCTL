@@ -89,7 +89,7 @@ template <template <class...> class DevVec> struct StageTimer {
 
 // Which retained buffer a `PersistentBuffer` call means; no two uses may share a tag.
 enum class Buf { PtMid, PtAlt, BcastOut, Closure, Frontier, ClosureRecv, GhostMerge, DataRecv,
-                 PtSend, PtRecv, PtSortK, MigData, PtOwned, OldMid, SwapOut };
+                 PtSend, PtRecv, PtSortK, MigData, OldMid, SwapOut };
 
 // Functor (not lambda) so nvcc captures it across thrust kernel boundaries.
 template <class Real, Integer DIM> struct MakeMortonFunctor {
@@ -2396,19 +2396,10 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& c
       sctl::Vector<Long>& cnt = this->NodeCnt_(name);
       const Long nitem = sctl::omp_par::reduce(cnt.begin(), cnt.Dim());
       const Long w = detail::globalDof((Long)raw.size(), nitem, comm);  // bytes per item
-      { // A Broadcast may have filled the ghost slots; only the owned items take part in the re-cut.
-        const Long begin = sctl::omp_par::reduce(cnt.begin(), owned0) * w;
-        const Long count = sctl::omp_par::reduce(cnt.begin() + owned0, owned1 - owned0) * w;
-        if (begin != 0 || count != (Long)raw.size()) {
-          using It = detail::ScratchIterator<char, DevVec>;
-          DevVec<char>& own = detail::PersistentBuffer<char, DevVec, detail::Buf::PtOwned>();
-          detail::resizeDiscard(own, count);
-          thrust::copy(detail::scratch_policy<DevVec, char>(), It(thrust::raw_pointer_cast(raw.data()) + begin),
-                       It(thrust::raw_pointer_cast(raw.data()) + begin + count), It(thrust::raw_pointer_cast(own.data())));
-          raw.swap(own);
-        }
-      }
-      kv.second.RepartitionData(raw, w);
+      // A Broadcast may have filled the ghost slots; the re-cut reads the owned stretch out of the
+      // buffer where it lies and leaves `raw` holding only what it produced.
+      const Long begin = sctl::omp_par::reduce(cnt.begin(), owned0) * w;
+      kv.second.RepartitionData(raw, w, begin);
       cnt = cnt_new;
     }
   }

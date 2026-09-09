@@ -131,12 +131,24 @@ void SortScatter<Key, DevVec>::Repartition(const sctl::Vector<Key>& splitters) {
 }
 
 template <class Key, template <class...> class DevVec> template <class T>
-void SortScatter<Key, DevVec>::RepartitionData(DevVec<T>& data, Long dof) const {
-  if (!plan_.moved) return;
-  SCTL_ASSERT_MSG((Long)data.size() == plan_.move_n * dof, "SortScatter::RepartitionData: data holds the previous SortedCount()*dof values.");
+void SortScatter<Key, DevVec>::RepartitionData(DevVec<T>& data, Long dof, Long begin) const {
+  const auto pol = detail::scratch_policy<DevVec, T>();
+  // Values the keys held before the last Repartition; with nothing moved, what they hold now.
+  const Long n = (plan_.moved ? plan_.move_n : plan_.Ntree) * dof;
+  SCTL_ASSERT_MSG(begin >= 0 && begin + n <= (Long)data.size(),
+                  "SortScatter::RepartitionData: data does not hold the previous SortedCount()*dof values at `begin`.");
   DevVec<T>& out = detail::PersistentBuffer<T, DevVec, detail::Buf::SwapOut>();
-  detail_sortScatter::resizeDiscard(out, plan_.Ntree * dof);
-  detail_sortScatter::exchange<DevVec>(detail::scratch_policy<DevVec, T>(), thrust::raw_pointer_cast(data.data()),
+  if (!plan_.moved) {
+    if (!begin && n == (Long)data.size()) return;  // already those values alone, in place
+    using It = detail::ScratchIterator<T, DevVec>;  // nothing moved, but the surrounding values must go
+    detail::resizeDiscard(out, n);
+    T* const p = thrust::raw_pointer_cast(data.data());
+    thrust::copy(pol, It(p + begin), It(p + begin + n), It(thrust::raw_pointer_cast(out.data())));
+    data.swap(out);
+    return;
+  }
+  detail::resizeDiscard(out, plan_.Ntree * dof);
+  detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(data.data()) + begin,
                                              thrust::raw_pointer_cast(out.data()), plan_.move_scnt, plan_.move_rcnt, dof, comm_);
   data.swap(out);
 }
