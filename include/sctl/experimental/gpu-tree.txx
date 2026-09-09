@@ -88,7 +88,7 @@ template <template <class...> class DevVec> struct StageTimer {
 
 // Which retained buffer a `PersistentBuffer` call means; no two uses may share a tag.
 enum class Buf { PtMid, PtAlt, BcastOut, Closure, Frontier, ClosureRecv, GhostMerge, DataRecv,
-                 PtSend, PtRecv, PtSortK, MigData, OldMid, SwapOut };
+                 PtSend, PtRecv, PtSortK, MigData, PtOwned, OldMid, SwapOut };
 
 // Functor (not lambda) so nvcc captures it across thrust kernel boundaries.
 template <class Real, Integer DIM> struct MakeMortonFunctor {
@@ -2292,6 +2292,8 @@ void PtTree<Real, DIM, DevVec, BaseTree>::DeleteParticleData(const std::string& 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& coord, Long M, bool balance21, sctl::Periodicity periodicity, Integer halo_size) {
   const Comm& comm = this->GetComm();
+  Long owned0 = 0, owned1 = 0;
+  this->GetOwnedRange(owned0, owned1);  // against the node list the payloads are still laid out on
   BaseTree::UpdateRefinement(coord, M, balance21, periodicity, halo_size);
   detail_ptTree::partitionCodes<DIM>(partition_codes_, this->GetPartitionMID());
 
@@ -2306,7 +2308,20 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& c
     for (const auto& name : names) {
       DevVec<char>& raw = this->NodeData_(name);
       sctl::Vector<Long>& cnt = this->NodeCnt_(name);
-      const Long w = detail::globalDof((Long)raw.size(), sctl::omp_par::reduce(cnt.begin(), cnt.Dim()), comm);  // bytes per item
+      const Long nitem = sctl::omp_par::reduce(cnt.begin(), cnt.Dim());
+      const Long w = detail::globalDof((Long)raw.size(), nitem, comm);  // bytes per item
+      { // A Broadcast may have filled the ghost slots; only the owned items take part in the re-cut.
+        const Long begin = sctl::omp_par::reduce(cnt.begin(), owned0) * w;
+        const Long count = sctl::omp_par::reduce(cnt.begin() + owned0, owned1 - owned0) * w;
+        if (begin != 0 || count != (Long)raw.size()) {
+          using It = detail::ScratchIterator<char, DevVec>;
+          DevVec<char>& own = detail::PersistentBuffer<char, DevVec, detail::Buf::PtOwned>();
+          detail_sortScatter::resizeDiscard(own, count);
+          thrust::copy(detail::scratch_policy<DevVec, char>(), It(thrust::raw_pointer_cast(raw.data()) + begin),
+                       It(thrust::raw_pointer_cast(raw.data()) + begin + count), It(thrust::raw_pointer_cast(own.data())));
+          raw.swap(own);
+        }
+      }
       kv.second.RepartitionData(raw, w);
       cnt = cnt_new;
     }

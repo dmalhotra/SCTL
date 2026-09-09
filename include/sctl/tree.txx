@@ -1661,6 +1661,19 @@ namespace sctl {
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, Periodicity periodicity, Integer halo_size) {
+    Long owned0 = 0, owned1 = 0;
+    { // Owned node range in the list the payloads are still laid out against; a Broadcast may have
+      // filled the ghost slots and only the owned items take part in the re-cut.
+      const auto& mins_ = this->GetPartitionMID();
+      const auto& node_mid_ = this->GetNodeMID();
+      if (mins_.Dim() && node_mid_.Dim()) {
+        const Integer np = this->GetComm().Size();
+        const Integer rank = this->GetComm().Rank();
+        owned0 = std::lower_bound(node_mid_.begin(), node_mid_.end(), mins_[rank]) - node_mid_.begin();
+        owned1 = std::lower_bound(node_mid_.begin(), node_mid_.end(), (rank+1==np ? Morton<DIM>().Next() : mins_[rank+1])) - node_mid_.begin();
+      }
+    }
+
     BaseTree::UpdateRefinement(coord, M, balance21, periodicity, halo_size);
     SetPartitionCodes();
 
@@ -1674,13 +1687,23 @@ namespace sctl {
       tree_detail::pt_node_counts(node_mid, group.SortedKeys(), pt_cnt.begin());
 
       for (const auto& data_pair : pt_data) {
-        if (data_pair.second.particle_name == pt_name) {
-          Iterator<Vector<char>> data;
-          Iterator<Vector<Long>> cnt;
-          this->GetData_(data, cnt, data_pair.first);
-          group.RepartitionData(*data, data_pair.second.dof * (Long)sizeof(Real));
-          (*cnt) = Vector<Long>(pt_cnt);
+        if (data_pair.second.particle_name != pt_name) continue;
+        Iterator<Vector<char>> data_;
+        Iterator<Vector<Long>> cnt_;
+        this->GetData_(data_, cnt_, data_pair.first);
+        Vector<char>& data = *data_;
+
+        const Long esz = data_pair.second.dof * (Long)sizeof(Real);
+        const Long begin = omp_par::reduce(cnt_->begin(), owned0) * esz;
+        const Long count = omp_par::reduce(cnt_->begin() + owned0, owned1 - owned0) * esz;
+        Vector<char> owned(count, data.begin() + begin, false);  // the owned items, without copying them
+        group.RepartitionData(owned, esz);
+        if (owned.OwnData()) data.Swap(owned);  // the re-cut allocated the result
+        else if (begin != 0 || count != data.Dim()) { // nothing moved, but the ghost values must go
+          Vector<char> compact = owned;
+          data.Swap(compact);
         }
+        (*cnt_) = Vector<Long>(pt_cnt);
       }
     }
   }
