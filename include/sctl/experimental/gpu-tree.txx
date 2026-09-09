@@ -1937,6 +1937,60 @@ void blockCopy(const Policy& pol, T* dst, const T* src,
 }
 
 /**
+ * One destination block per call, summing every contribution that lands on it:
+ * `dst[dstoff[g]*w + j] += src[srcoff[k]*w + j]` over the contributions `k` in `[gdsp[g], gdsp[g+1])`.
+ *
+ * A thread per destination, not per contribution: in the reduce direction several ranks hold a
+ * partial value for the same shared ancestor, so the contributions are not independent writes.
+ */
+template <class T> struct BlockAddFunctor {
+  const T* src;
+  T* dst;
+  const Long* srcoff;  // per contribution, grouped by destination
+  const Long* dstoff;  // per destination
+  const Long* len;     // per destination
+  const Long* gdsp;    // per destination, with a trailing total
+  Long w;
+  SCTL_GPU_HD void operator()(Long g) const {
+    T* const d = dst + dstoff[g] * w;
+    const Long n = len[g] * w;
+    for (Long k = gdsp[g]; k < gdsp[g + 1]; k++) {
+      const T* const s = src + srcoff[k] * w;
+      for (Long j = 0; j < n; j++) d[j] += s[j];
+    }
+  }
+};
+
+/** `blockCopy` with `+=`, over values rather than bytes: the reduce half of ReduceBroadcast, in one
+ *  pass over the destinations rather than one per contribution. See `BlockAddFunctor`. */
+template <template <class...> class DevVec, class Policy, class T>
+void blockAdd(const Policy& pol, T* dst, const T* src, sctl::ConstIterator<Long> srcoff, sctl::ConstIterator<Long> dstoff,
+              sctl::ConstIterator<Long> len, sctl::ConstIterator<Long> gdsp, Long ng, Long w) {
+  if (ng <= 0) return;
+  if constexpr (!detail::is_device_vector_v<DevVec<char>>) {
+    #pragma omp parallel for schedule(static) if (ng > 256)
+    for (Long g = 0; g < ng; g++) {
+      T* const d = dst + dstoff[g] * w;
+      const Long n = len[g] * w;
+      for (Long k = gdsp[g]; k < gdsp[g + 1]; k++) {
+        const T* const s = src + srcoff[k] * w;
+        for (Long j = 0; j < n; j++) d[j] += s[j];
+      }
+    }
+    return;
+  }
+  const Long nc = gdsp[ng];
+  DeviceScratch<Long, DevVec> so(nc), doff(ng), l(ng), gd(ng + 1);
+  thrust::copy(srcoff, srcoff + nc, so.begin());
+  thrust::copy(dstoff, dstoff + ng, doff.begin());
+  thrust::copy(len, len + ng, l.begin());
+  thrust::copy(gdsp, gdsp + ng + 1, gd.begin());
+  thrust::for_each_n(pol, thrust::counting_iterator<Long>(0), ng, BlockAddFunctor<T>{
+      src, dst, thrust::raw_pointer_cast(so.data()), thrust::raw_pointer_cast(doff.data()),
+      thrust::raw_pointer_cast(l.data()), thrust::raw_pointer_cast(gd.data()), w});
+}
+
+/**
  * Send rank p the nodes `smid[sndsp[p], sndsp[p+1])` and, for each of them that this rank holds
  * (found in `nmid`), its `cnt` items of `w` bytes out of `data`; receive the same from every rank.
  * `consume` then sees the Nr received nodes with their item counts, item offsets and packed bytes.
@@ -2090,18 +2144,34 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
     }
     detail_bcast::exchangeBlocks<DIM, DevVec>(pol, comm_, smid.begin(), Ns, sncnt.begin(), nmid, Nn, cnt, dsp.begin(), data, dof * (Long)sizeof(ValueType),
         [&pol, &data, &cnt, nmid, &dsp, Nn, dof](Long Nr, sctl::ConstIterator<Morton<DIM>> rmid, sctl::ConstIterator<Long> rdcnt, sctl::ConstIterator<Long> rddsp, const char* rbuf) {
-          // add each received block into the node it belongs to
+          // Add the received blocks into the nodes they belong to, in one pass. Several ranks can
+          // send the same shared ancestor, so group the contributions by node first.
           ValueType* const d = (ValueType*)thrust::raw_pointer_cast(data.data());
           const ValueType* const r = (const ValueType*)rbuf;
+          sctl::ScratchBuf<std::pair<Long,Long>> hit(Nr);  // (node index, offset of the block sent for it)
+          Long m = 0;
           for (Long i = 0; i < Nr; i++) {
             if (!rdcnt[i]) continue;
             const Long idx = detail_bcast::findNode<DIM>(nmid, Nn, rmid[i]);
             SCTL_ASSERT_MSG(idx >= 0, "GPUTree::ReduceBroadcast: received a node this rank does not hold");
             SCTL_ASSERT_MSG(cnt[idx] == rdcnt[i], "GPUTree::ReduceBroadcast: item count differs from the sender's");
-            using It = detail::ScratchIterator<ValueType, DevVec>;
-            thrust::transform(pol, It(d + dsp[idx] * dof), It(d + (dsp[idx] + cnt[idx]) * dof),
-                              It(const_cast<ValueType*>(r + rddsp[i] * dof)), It(d + dsp[idx] * dof), thrust::plus<ValueType>());
+            hit[m++] = std::make_pair(idx, rddsp[i]);
           }
+          std::sort(hit.begin(), hit.begin() + m);
+          sctl::ScratchBuf<Long> soff(m), doff(m), len(m), gdsp(m + 1);
+          Long ng = 0;
+          gdsp[0] = 0;
+          for (Long k = 0; k < m; k++) {
+            soff[k] = hit[k].second;
+            if (!k || hit[k].first != hit[k-1].first) {  // a new destination node
+              doff[ng] = dsp[hit[k].first];
+              len[ng] = cnt[hit[k].first];
+              gdsp[ng] = k;
+              ng++;
+            }
+          }
+          gdsp[ng] = m;
+          detail_bcast::blockAdd<DevVec>(pol, d, r, soff.begin(), doff.begin(), len.begin(), gdsp.begin(), ng, dof);
         });
   }
   Broadcast<ValueType>(name);
