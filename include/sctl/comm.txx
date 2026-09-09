@@ -861,7 +861,7 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
       rcounts[i] = rcount;
       rdispls[i] = i * rcount;
     }
-    auto mpi_req = Ialltoallv_sparse(sbuf, scounts.begin(), sdispls.begin(), rbuf, rcounts.begin(), rdispls.begin(), 0);
+    auto mpi_req = Ialltoallv_sparse(sbuf, scounts.begin(), sdispls.begin(), rbuf, rcounts.begin(), rdispls.begin(), 0, true);
     Wait(std::move(mpi_req));
   }
 #endif
@@ -870,14 +870,46 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
 #endif
 }
 
-template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag) const {
+#ifdef SCTL_HAVE_MPI
+template <class SType, class RType>
+bool Comm::ReadNodeBlocks(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls,
+                          Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
+  const Integer rank = impl_->mpi_rank_;
+  const Long node_size = (Long)impl_->node_rank_.size();
+  ScratchBuf<Long> saddr(node_size), raddr(node_size);  // where each node peer's block starts in my send buffer
+  for (Long j = 0; j < node_size; j++) {
+    const Integer i = (Integer)impl_->node_rank_[j];
+    saddr[j] = (scounts[i] ? (Long)&sbuf[sdispls[i]] : 0);
+  }
+  // Completing this also proves every node peer has entered, so its send buffer is filled.
+  MPI_Alltoall(&saddr[0], 1, MPI_INT64_T, &raddr[0], 1, MPI_INT64_T, impl_->node_comm_);
+  int ok = 1;
+  for (Long j = 0; j < node_size; j++) {
+    const Integer i = (Integer)impl_->node_rank_[j];
+    if (i == rank || !rcounts[i]) continue;
+    ok = (int)comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType)) && ok;
+  }
+  // The setup probe only proved a stack address readable; a later read can still be refused, so
+  // agree on the outcome and give up the direct path for good rather than ending the run. The
+  // reduction also holds every rank here until its peers have finished reading its send buffer,
+  // which is what the exchange needs of it.
+  int all = 0;
+  MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, impl_->node_comm_);
+  if (!all) impl_->direct_ = false;
+  return all != 0;
+}
+#endif  // SCTL_HAVE_MPI
+
+template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag, bool blocking_direct) const {
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Ialltoallv_sparse");
   const Integer np = impl_->mpi_size_, rank = Rank();
   const auto on_node = [this](Integer i) { return impl_->NodeIdx(i) >= 0; };
-  const bool direct = impl_->DirectOk();
+  // Reading a peer's send buffer means synchronizing the node before returning, which this
+  // routine's name says it will not do, so the caller has to ask for it.
+  const bool direct = blocking_direct && impl_->DirectOk();
   const auto skip = [rank,direct,&on_node](Integer i) { return i == rank || (direct && on_node(i)); };
   for (Integer i = 0; i < np; i++) {  // receive pages fault in with all threads, not MPI's one
     if (!skip(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
@@ -955,33 +987,11 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
 
   // Now the node-local work, over memory rather than the network, alongside the transfers above.
   omp_par::memcpy((Iterator<char>)(rbuf + rdispls[rank]), (ConstIterator<char>)(sbuf + sdispls[rank]), scounts[rank] * (Long)sizeof(SType));
-  if (direct) {  // node peers' blocks are read straight out of their send buffers
-    const Long node_size = (Long)impl_->node_rank_.size();
-    ScratchBuf<Long> saddr(node_size), raddr(node_size);  // where each node peer's block starts in my send buffer
-    for (Long j = 0; j < node_size; j++) {
-      const Integer i = (Integer)impl_->node_rank_[j];
-      saddr[j] = (scounts[i] ? (Long)&sbuf[sdispls[i]] : 0);
+  if (direct && !ReadNodeBlocks(sbuf, scounts, sdispls, rbuf, rcounts, rdispls)) {
+    for (Integer i = 0; i < np; i++) {  // refused: the node peers go through MPI after all, into
+      if (i != rank && on_node(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
     }
-    MPI_Alltoall(&saddr[0], 1, MPI_INT64_T, &raddr[0], 1, MPI_INT64_T, impl_->node_comm_);
-    int ok = 1;
-    for (Long j = 0; j < node_size; j++) {
-      const Integer i = (Integer)impl_->node_rank_[j];
-      if (i == rank || !rcounts[i]) continue;
-      ok = (int)comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType)) && ok;
-    }
-    // InitNode's probe only proved a stack address readable; a later read can still be refused, so
-    // agree on the outcome and give up the direct path for good rather than ending the run. The
-    // reduction also holds every rank here until its peers have finished reading its send buffer,
-    // which is what the exchange needs of it.
-    int all = 0;
-    MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, impl_->node_comm_);
-    if (!all) {  // the node peers go through MPI after all, into the slots kept for them
-      impl_->direct_ = false;
-      for (Integer i = 0; i < np; i++) {
-        if (i != rank && on_node(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
-      }
-      post_peers([rank,&on_node](Integer i) { return i != rank && on_node(i); });
-    }
+    post_peers([rank,&on_node](Integer i) { return i != rank && on_node(i); });  // the slots kept for them
   }
   comm_detail::TrackPointToPoint(m, posted_bytes);
   return Request(&request);
@@ -1013,7 +1023,16 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     for (Integer i = 0; i < impl_->mpi_size_; i++) {  // receive pages fault in with all threads, not MPI's one
       if (i != Rank() && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
     }
-    // the self block is a local copy
+    // The self block is a local copy, and where the kernel allows it so is every other block that
+    // stays on this node: this routine blocks either way, so reading them costs nothing here.
+    if (impl_->DirectOk() && ReadNodeBlocks(sbuf, scounts, sdispls, rbuf, rcounts, rdispls)) {
+      for (Integer i = 0; i < impl_->mpi_size_; i++) {
+        if (i != Rank() && impl_->NodeIdx(i) >= 0) {
+          scnt[i] = 0;
+          rcnt[i] = 0;
+        }
+      }
+    }
     scnt[Rank()] = 0;
     rcnt[Rank()] = 0;
     omp_par::memcpy(rbuf + rdispls[Rank()], sbuf + sdispls[Rank()], scounts[Rank()]);
@@ -1032,7 +1051,7 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     fits_int = (glb_fits != 0);
   }
   if (!fits_int) {  // Fall back to sparse point-to-point exchange once any count or displacement exceeds int.
-    auto mpi_req = Ialltoallv_sparse(sbuf, scounts, sdispls, rbuf, rcounts, rdispls, 0);
+    auto mpi_req = Ialltoallv_sparse(sbuf, scounts, sdispls, rbuf, rcounts, rdispls, 0, true);
     Wait(std::move(mpi_req));
     return;
   }
@@ -1045,7 +1064,7 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     }
     Allreduce(Ptr2ConstItr<Long>(&connectivity, 1), Ptr2Itr<Long>(&glb_connectivity, 1), 1, CommOp::SUM);
     if (glb_connectivity < 64 * Size()) {
-      auto mpi_req = Ialltoallv_sparse(sbuf, scounts, sdispls, rbuf, rcounts, rdispls, 0);
+      auto mpi_req = Ialltoallv_sparse(sbuf, scounts, sdispls, rbuf, rcounts, rdispls, 0, true);
       Wait(std::move(mpi_req));
       { // Verify
         #ifdef SCTL_MEMDEBUG
@@ -1058,7 +1077,7 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
 
         const Long Nsend = sdispls[impl_->mpi_size_-1] + scounts[impl_->mpi_size_-1];
         ScratchBuf<Type> sbuf_verify(Nsend);
-        mpi_req = Ialltoallv_sparse(rbuf, rcounts, rdispls, sbuf_verify.begin(), scounts, sdispls, 1);
+        mpi_req = Ialltoallv_sparse(rbuf, rcounts, rdispls, sbuf_verify.begin(), scounts, sdispls, 1, true);
         Wait(std::move(mpi_req));
 
         for (long p = 0; p < impl_->mpi_size_; p++) {
@@ -1094,7 +1113,16 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     for (Integer i = 0; i < impl_->mpi_size_; i++) {  // receive pages fault in with all threads, not MPI's one
       if (i != Rank() && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
     }
-    // the self block is a local copy
+    // The self block is a local copy, and where the kernel allows it so is every other block that
+    // stays on this node: this routine blocks either way, so reading them costs nothing here.
+    if (impl_->DirectOk() && ReadNodeBlocks(sbuf, scounts, sdispls, rbuf, rcounts, rdispls)) {
+      for (Integer i = 0; i < impl_->mpi_size_; i++) {
+        if (i != Rank() && impl_->NodeIdx(i) >= 0) {
+          scnt[i] = 0;
+          rcnt[i] = 0;
+        }
+      }
+    }
     scnt[Rank()] = 0;
     rcnt[Rank()] = 0;
     omp_par::memcpy(rbuf + rdispls[Rank()], sbuf + sdispls[Rank()], scounts[Rank()]);
@@ -1425,7 +1453,7 @@ template <class Type> void Comm::PartitionW(Vector<Type>& nodeList, const Vector
   // perform All2All  ...
   Vector<Type> newNodes;
   newNodes.ReInit(recvSz[npes - 1] + recvOff[npes - 1]);
-  auto mpi_req = Ialltoallv_sparse<Type>(nodeList.begin(), sendSz.begin(), sendOff.begin(), newNodes.begin(), recvSz.begin(), recvOff.begin());
+  auto mpi_req = Ialltoallv_sparse<Type>(nodeList.begin(), sendSz.begin(), sendOff.begin(), newNodes.begin(), recvSz.begin(), recvOff.begin(), 0, true);
   Wait(std::move(mpi_req));
 
   // reset the pointer ...
@@ -1502,7 +1530,7 @@ template <class Type> void Comm::PartitionN(Vector<Type>& v, Long N) const {
     rdsp[0] = 0;
     omp_par::scan(rcnt.begin(), rdsp.begin(), np);
 
-    auto mpi_request = Ialltoallv_sparse(v.begin(), scnt.begin(), sdsp.begin(), v_.begin(), rcnt.begin(), rdsp.begin());
+    auto mpi_request = Ialltoallv_sparse(v.begin(), scnt.begin(), sdsp.begin(), v_.begin(), rcnt.begin(), rdsp.begin(), 0, true);
     Wait(std::move(mpi_request));
   }
   v.Swap(v_);
@@ -1540,7 +1568,7 @@ template <class Type, class Compare> void Comm::PartitionS(Vector<Type>& nodeLis
   }
   {  // Redistribute nodeList
     Vector<Type> nodeList_(rdsp[npes - 1] + rcnt[npes - 1]);
-    auto mpi_request = Ialltoallv_sparse(nodeList.begin(), scnt.begin(), sdsp.begin(), nodeList_.begin(), rcnt.begin(), rdsp.begin());
+    auto mpi_request = Ialltoallv_sparse(nodeList.begin(), scnt.begin(), sdsp.begin(), nodeList_.begin(), rcnt.begin(), rdsp.begin(), 0, true);
     Wait(std::move(mpi_request));
     nodeList.Swap(nodeList_);
   }
@@ -1620,7 +1648,7 @@ template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vecto
     // perform All2All  ...
     ScratchBuf<Pair_t> newNodes_storage(recvSz[npes - 1] + recvOff[npes - 1]);
     Vector<Pair_t> newNodes(newNodes_storage);
-    auto mpi_req = Ialltoallv_sparse<Pair_t>(psorted.begin(), sendSz.begin(), sendOff.begin(), newNodes.begin(), recvSz.begin(), recvOff.begin());
+    auto mpi_req = Ialltoallv_sparse<Pair_t>(psorted.begin(), sendSz.begin(), sendOff.begin(), newNodes.begin(), recvSz.begin(), recvOff.begin(), 0, true);
     Wait(std::move(mpi_req));
 
     // copy data back to scatter_index
@@ -1837,7 +1865,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
         // if(recv_cnt[i] && i!=rank) commCnt++;
       }
 
-      auto mpi_req = Ialltoallv_sparse<Long>(scatter_index_.begin(), send_cnt.begin(), send_dsp.begin(), scatter_index.begin(), recv_cnt.begin(), recv_dsp.begin(), 0);
+      auto mpi_req = Ialltoallv_sparse<Long>(scatter_index_.begin(), send_cnt.begin(), send_dsp.begin(), scatter_index.begin(), recv_cnt.begin(), recv_dsp.begin(), 0, true);
       Wait(std::move(mpi_req));
     } else {
       scatter_index.ReInit(scatter_index_.Dim(), (Iterator<Long>)scatter_index_.begin(), false);

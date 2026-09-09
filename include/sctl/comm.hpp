@@ -332,10 +332,15 @@ class Comm {
    * their send buffers (Linux; falls back to MPI where the kernel forbids it). The request covers
    * the rest.
    *
-   * @note Collective, and not fully non-blocking: the first call sets up the node-local group, and
-   * every call that reads peers directly synchronizes the node before returning, so that no rank
-   * leaves while a peer is still reading its send buffer. Ranks must therefore reach it in the same
-   * order, and there is no overlap to be had with the node-local part of the exchange.
+   * @param[in] blocking_direct Allow the node-local blocks to be read out of their peers' send
+   * buffers. That cannot be done without synchronizing the node before returning -- no rank may
+   * leave while a peer is still reading its send buffer -- so it costs this routine the
+   * non-blocking behaviour its name promises, and it is off by default. Pass true only where the
+   * request is waited on straight away, and pass the same value on every rank. `Alltoallv` blocks
+   * anyway and so reads node peers without being asked.
+   *
+   * @note Collective. With `blocking_direct`, also not fully non-blocking: the node-local part of
+   * the exchange is complete when the call returns and only the rest is left for `Wait`.
    *
    * @note Reading a peer's memory needs ptrace permission. By default nothing is done to obtain
    * it: where the kernel already permits the reads (yama `ptrace_scope` 0, as on a node a job
@@ -366,7 +371,7 @@ class Comm {
    * @return a Request handle. Same lifetime contract as Isend(): must be
    *         passed to Wait() before destruction.
    */
-  template <class SType, class RType> [[nodiscard]] Request Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag = 0) const;
+  template <class SType, class RType> [[nodiscard]] Request Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag = 0, bool blocking_direct = false) const;
 
   /**
    * All-to-all communication with varying send and receive counts and displacements.
@@ -731,6 +736,24 @@ class Comm {
   static void FreeRegisteredHandles();
   static std::vector<MPI_Datatype>& DatatypeRegistry();
   static std::vector<MPI_Op>& OpRegistry();
+
+#ifdef SCTL_HAVE_MPI
+  /**
+   * Read every node peer's block for this rank straight out of that peer's send buffer.
+   * `scounts`/`sdispls` locate this rank's block for each peer, so each peer can be told where to
+   * read from; `rcounts`/`rdispls` where each peer's block for this rank goes.
+   *
+   * Blocking and collective on the node: it returns only once every peer has finished reading this
+   * rank's send buffer, which is what makes the reads safe. Callers must have faulted in the
+   * receive blocks already -- doing so afterwards would overwrite what was read.
+   *
+   * @return false if any read on this node was refused, in which case nothing was delivered and the
+   * direct path is given up for the rest of the run.
+   */
+  template <class SType, class RType>
+  bool ReadNodeBlocks(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls,
+                      Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;
+#endif
 
   Vector<MPI_Request>& NewReq(Long request_count) const;
 
