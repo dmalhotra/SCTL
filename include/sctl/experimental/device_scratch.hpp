@@ -50,6 +50,13 @@ using ScratchIterator = std::conditional_t<is_device_vector_v<DevVec<T>>, thrust
 template <class T, template <class...> class DevVec, auto Tag> DevVec<T>& PersistentBuffer();
 
 /**
+ * Size a buffer for output it is about to be given in full. `resize` alone preserves the contents,
+ * which are dead in that case, and copies them when the buffer has to grow -- a device-to-device
+ * copy of the whole buffer on the CUDA backend.
+ */
+template <class T, template <class...> class DevVec> void resizeDiscard(DevVec<T>& v, Long n);
+
+/**
  * Copy `n` elements of device storage into a host buffer, staged through a retained pinned buffer.
  *
  * A caller-owned destination is pageable and usually freshly allocated, which costs twice over:

@@ -44,12 +44,7 @@ void buildInverse(const Policy& pol, const DevVec<Long>& m, DevVec<Long>& inv, L
       thrust::raw_pointer_cast(m.data()), thrust::raw_pointer_cast(inv.data())});
 }
 
-/** Size a retained buffer for output it is about to be given: `resize` alone preserves contents,
- *  which are dead here, and copies them when the buffer has to grow. */
-template <class T, template <class...> class DevVec> void resizeDiscard(DevVec<T>& v, Long n) {
-  v.clear();
-  v.resize(n);
-}
+using detail::resizeDiscard;  // sizing a retained buffer for output it is about to be given
 
 /** One local stage: `dst[e] = src[map[e/dof]*dof + e%dof]` over `n*dof` values. */
 template <template <class...> class DevVec, class T, class Policy>
@@ -129,7 +124,7 @@ void SortScatter<Key, DevVec>::Repartition(const sctl::Vector<Key>& splitters) {
   const Long Nnew = detail::splitCounts(plan_.move_scnt.begin(), plan_.move_rcnt.begin(), keys_, N, spl, comm_);
   if (!sctl::sort_scatter_detail::recordRecut(plan_, N, Nnew, comm_)) return;
   DevVec<Key>& k2 = detail::PersistentBuffer<Key, DevVec, detail::Buf::PtSortK>();
-  k2.resize(Nnew);
+  detail::resizeDiscard(k2, Nnew);
   detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(keys_.data()),
                                              thrust::raw_pointer_cast(k2.data()), plan_.move_scnt, plan_.move_rcnt, Long(1), comm_);
   keys_.swap(k2);

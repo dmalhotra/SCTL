@@ -1174,11 +1174,11 @@ void ClosureFrontier(DevVec<Morton<DIM>>& S, sctl::Periodicity periodicity) {
 
   // Per-round buffers come from the scratch pool: `buf`, `add` (at most MAX_CHILD per frontier
   // node) and the merge target. `F` and `S` outlive a round, so they grow geometrically.
-  const auto grow = [](DevVec<NodeT>& v, Long need) {
-    if ((Long)v.size() < need) v.resize(std::max<Long>(need, 2 * (Long)v.size()));
+  const auto grow = [](DevVec<NodeT>& v, Long need) {  // the caller rewrites the range straight after
+    if ((Long)v.size() < need) detail::resizeDiscard(v, std::max<Long>(need, 2 * (Long)v.size()));
   };
   DevVec<NodeT>& F = detail::PersistentBuffer<NodeT, DevVec, detail::Buf::Frontier>();
-  F.resize(S.size());
+  detail::resizeDiscard(F, (Long)S.size());
   thrust::copy(pol, S.begin(), S.end(), F.begin());
   Long ns = (Long)S.size(), nf = ns;
   for (Integer round = 0; round < 4 * MAX_DEPTH; round++) {
@@ -1233,7 +1233,7 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
     DeviceScratch<Long, DevVec> ix(Nf);
     const Long k = thrust::copy_if(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nf), ix.begin(),
                                    detail_balance21::NonLeafPred<DIM>{thrust::raw_pointer_cast(full.data()), Nf, NodeT{}.Next()}) - ix.begin();
-    S.resize(k);
+    detail::resizeDiscard(S, k);
     thrust::gather(pol, ix.begin(), ix.begin() + k, full.begin(), S.begin());
   }
   ClosureFrontier<DIM>(S, periodicity);
@@ -1402,7 +1402,7 @@ void addGhostNodes(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DIM>
   // Swapped rather than assigned, so `tree` and this retained buffer trade storage each build
   // instead of one being freed and the other allocated.
   DevVec<NodeT>& merged = detail::PersistentBuffer<NodeT, DevVec, detail::Buf::GhostMerge>();
-  merged.resize(L + Nn + R);
+  detail::resizeDiscard(merged, L + Nn + R);
   thrust::copy(pol, left.begin(), left.end(), merged.begin());
   thrust::copy(pol, tree.begin(), tree.end(), merged.begin() + L);
   thrust::copy(pol, right.begin(), right.end(), merged.begin() + L + Nn);
@@ -1606,7 +1606,7 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
   // a second retained buffer recycles the storage instead of freeing it and taking a fresh block.
   DevVec<MortonT>& pt_mid = detail::PersistentBuffer<MortonT, DevVec, detail::Buf::PtMid>();
   DevVec<MortonT>& alt = detail::PersistentBuffer<MortonT, DevVec, detail::Buf::PtAlt>();
-  pt_mid.resize((Long)coord.size()/DIM);
+  detail::resizeDiscard(pt_mid, (Long)coord.size()/DIM);
   { // Encode coords -> Morton, then local sort (device radix / host omp_par).
     const Long Nloc = (Long)pt_mid.size();
     if constexpr (detail::is_device_vector_v<DevVec<Real>>) {
@@ -1749,7 +1749,7 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
   Long nbase = 0;  // data sets moved here
   for (const auto& kv : node_data_) nbase += base_moved(kv.first);
   const bool remap = nbase && mins_.Dim();
-  old_mid.resize(remap ? owned_end_ - owned_begin_ : 0);
+  detail::resizeDiscard(old_mid, remap ? owned_end_ - owned_begin_ : 0);
   if (remap) thrust::copy(pol, node_mid_.begin() + owned_begin_, node_mid_.begin() + owned_end_, old_mid.begin());
   const Long old_begin = owned_begin_, old_end = owned_end_;
 
@@ -1815,7 +1815,7 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
     }
     { // the payload follows the same movement, on the device
       DevVec<char>& own = detail::PersistentBuffer<char, DevVec, detail::Buf::MigData>();
-      own.resize(data_count * dof);
+      detail::resizeDiscard(own, data_count * dof);
       thrust::copy(pol, data.begin() + data_begin * dof, data.begin() + (data_begin + data_count) * dof, own.begin());
       detail::partitionN(pol, own, data_count * dof, Ndata * dof, comm_, detail::PersistentBuffer<char, DevVec, detail::Buf::DataRecv>());
       data.swap(own);
@@ -2045,7 +2045,7 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
         sctl::ScratchBuf<Long> dsp_new(Nn + 1);
         const Long nnew = detail::scanv(dsp_new.begin(), cnt_new.begin(), Nn);
         DevVec<char>& out = detail::PersistentBuffer<char, DevVec, detail::Buf::BcastOut>();
-        out.resize(nnew * w);
+        detail::resizeDiscard(out, nnew * w);
         // my own blocks keep their contents, at their new offsets
         detail_bcast::blockCopy<DevVec>(pol, thrust::raw_pointer_cast(out.data()), thrust::raw_pointer_cast(data.data()), dsp.begin() + ob, dsp_new.begin() + ob, cnt.begin() + ob, oe - ob, w);
         { // every received block refills its node's slot, whatever that slot held before
@@ -2333,8 +2333,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& c
         if (begin != 0 || count != (Long)raw.size()) {
           using It = detail::ScratchIterator<char, DevVec>;
           DevVec<char>& own = detail::PersistentBuffer<char, DevVec, detail::Buf::PtOwned>();
-          own.clear();  // the previous contents are dead; resize alone would copy them to grow
-          own.resize(count);
+          detail::resizeDiscard(own, count);
           thrust::copy(detail::scratch_policy<DevVec, char>(), It(thrust::raw_pointer_cast(raw.data()) + begin),
                        It(thrust::raw_pointer_cast(raw.data()) + begin + count), It(thrust::raw_pointer_cast(own.data())));
           raw.swap(own);

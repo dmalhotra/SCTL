@@ -27,6 +27,11 @@ inline DevVec<T>& PersistentBuffer() {
   return *buf;
 }
 
+template <class T, template <class...> class DevVec> inline void resizeDiscard(DevVec<T>& v, Long n) {
+  v.clear();
+  v.resize(n);
+}
+
 inline sctl::ScratchPool& pinnedStagingPool() {
   static sctl::ScratchPool pool(
       [](void* base, Long bytes) {  // fault the chunk in first: registering cold memory is far dearer
