@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <type_traits>
+#if defined(__CUDACC__)
+#include <cuda_runtime.h>  // cudaHostRegister, cudaMemcpy: used below, not otherwise declared
+#endif
 
 #include "sctl/experimental/device_scratch.hpp"
 #include "sctl/iterator.txx"      // for Ptr2Itr
