@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
   Comm::MPI_Init(&argc, &argv);
 
   {
-    const Comm comm = Comm::World();
+    const Comm& comm = Comm::World();
     SCTL_ASSERT_MSG(comm.Size() == 1, "\
         This demo is sequential. In a distributed memory implementation, each process\n\
         would build only its local section of the geometry.");

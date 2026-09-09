@@ -239,7 +239,7 @@ template <class Key> template <class T> void SortScatter<Key>::ScatterReverse(Ve
 }
 
 template <class Key> void SortScatter<Key>::test() {
-  const Comm comm = Comm::World();
+  const Comm& comm = Comm::World();
   const Integer np = comm.Size(), rank = comm.Rank();
   const Long KMAX = Long(1) << 40, dof = 2;
   const Long N = (np > 2 && rank == np - 1 ? 0 : 100000);  // one empty rank when there are enough

@@ -37,7 +37,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
   using NodeT = sctl::Morton<DIM>;
   using GT = gpu_tree::GPUTree<Real, DIM, DevVec>;
   using PT = gpu_tree::PtTree<Real, DIM, DevVec>;
-  const Comm comm = Comm::World();
+  const Comm& comm = Comm::World();
   const Long np = comm.Size(), rank = comm.Rank(), N = 20000;
   Long fails = 0;
   const auto check = [&comm, &fails, rank](const char* what, Long bad) {

@@ -2445,7 +2445,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::WriteParticleVTK(std::string fname, st
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::test() {
-  const Comm comm = Comm::World();
+  const Comm& comm = Comm::World();
   const Long N = 100000;  // particles on this rank
 
   std::mt19937_64 rng(comm.Rank());

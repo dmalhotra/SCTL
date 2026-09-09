@@ -229,7 +229,7 @@ void SortScatter<Key, DevVec>::ScatterReverse(DevVec<T>& data, Long dof) const {
 // Keys with duplicates and one empty rank, cut two ways, round-tripped through every stage. The
 // checks read backend memory on the host, since that is where the comparisons are.
 template <class Key, template <class...> class DevVec> void SortScatter<Key, DevVec>::test() {
-  const Comm comm = Comm::World();
+  const Comm& comm = Comm::World();
   const Integer np = comm.Size(), rank = comm.Rank();
   const Long KMAX = Long(1) << 40, dof = 2;
   const Long N = (np > 2 && rank == np - 1 ? 0 : 100000);  // one empty rank when there are enough

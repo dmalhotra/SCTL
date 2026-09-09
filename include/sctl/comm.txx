@@ -302,6 +302,18 @@ template <class Type> class Comm::CommDatatype {
 };
 #endif
 
+namespace comm_detail {
+
+/** The communicators `Comm::Self()` and `Comm::World()` hand out, released by `Comm::MPI_Finalize`.
+ *  Heap-held rather than function statics so the release happens while MPI is still up: a static
+ *  would be destroyed after `MPI_Finalize`, where `MPI_Comm_free` is not allowed. */
+inline std::vector<Comm*>& CommCache() {
+  static std::vector<Comm*> cache(2, nullptr);
+  return cache;
+}
+
+}  // namespace comm_detail
+
 inline void Comm::MPI_Init(int* argc, char*** argv) {
 #ifdef SCTL_HAVE_PETSC
   PetscInitialize(argc, argv, NULL, NULL);
@@ -313,6 +325,13 @@ inline void Comm::MPI_Init(int* argc, char*** argv) {
 }
 
 inline void Comm::MPI_Finalize() {
+  { // while MPI is still up, so their MPI_Comm goes back rather than leaking
+    #pragma omp critical(SCTL_COMM_CACHE)
+    for (Comm*& c : comm_detail::CommCache()) {
+      delete c;
+      c = nullptr;
+    }
+  }
 #ifdef SCTL_HAVE_MPI
   if (comm_detail::MPIIsActive()) FreeRegisteredHandles();
 #endif
@@ -442,20 +461,34 @@ inline Comm::Comm(const Comm& c) = default;
 
 inline Comm::Comm(Comm&& c) noexcept = default;
 
-inline Comm Comm::Self() {
+inline const Comm& Comm::Self() {
+  Comm* c = nullptr;
+  #pragma omp critical(SCTL_COMM_CACHE)
+  {
+    Comm*& slot = comm_detail::CommCache()[0];
 #ifdef SCTL_HAVE_MPI
-  return Comm(MPI_COMM_SELF);
+    if (!slot) slot = new Comm(MPI_COMM_SELF);
 #else
-  return Comm();
+    if (!slot) slot = new Comm();
 #endif
+    c = slot;
+  }
+  return *c;
 }
 
-inline Comm Comm::World() {
+inline const Comm& Comm::World() {
+  Comm* c = nullptr;
+  #pragma omp critical(SCTL_COMM_CACHE)
+  {
+    Comm*& slot = comm_detail::CommCache()[1];
 #ifdef SCTL_HAVE_MPI
-  return Comm(MPI_COMM_WORLD);
+    if (!slot) slot = new Comm(MPI_COMM_WORLD);
 #else
-  return Comm();
+    if (!slot) slot = new Comm();
 #endif
+    c = slot;
+  }
+  return *c;
 }
 
 inline Comm& Comm::operator=(const Comm& c) = default;

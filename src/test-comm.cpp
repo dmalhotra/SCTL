@@ -335,7 +335,7 @@ void TestIalltoallvSparse(const Comm& comm) {
 
 int main(int argc, char** argv) {
   Comm::MPI_Init(&argc, &argv);
-  const Comm comm = Comm::World();
+  const Comm& comm = Comm::World();
 
   TestIsendIrecv(comm);
   TestIsendIrecvConsecutiveTags(comm);

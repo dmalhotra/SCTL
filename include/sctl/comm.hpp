@@ -76,14 +76,18 @@ class Comm {
   Comm(Comm&& c) noexcept;
 
   /**
-   * *self* communicator.
+   * The *self* communicator, built on first use and shared thereafter.
+   *
+   * Cached because each call would otherwise duplicate a communicator, which is a finite resource,
+   * and because this is the default argument of most classes here. Released by `MPI_Finalize`, so
+   * nothing may hold the reference past that -- as nothing holding a `Comm` could anyway.
    */
-  [[nodiscard]] static Comm Self();
+  [[nodiscard]] static const Comm& Self();
 
   /**
-   * *world* communicator.
+   * The *world* communicator, built on first use and shared thereafter. As `Self()`.
    */
-  [[nodiscard]] static Comm World();
+  [[nodiscard]] static const Comm& World();
 
   /**
    * Copy assignment. Reference-shares `c`'s underlying `Impl`. Releases
