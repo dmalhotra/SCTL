@@ -35,7 +35,12 @@ CXXFLAGS += -DSCTL_SIG_HANDLER # Enable SCTL stack trace
 
 CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
 
+#CXXFLAGS += -DSCTL_MAX_DEPTH=20 # Morton/Tree depth limit (default 20); above 64/DIM-1 the code needs more than one word
+
 #CXXFLAGS += -DSCTL_HAVE_MPI #use MPI
+
+#CXXFLAGS += -DSCTL_COMM_PTRACER # permit direct-communication where the kernel would refuse, by opening each rank's memory to every process of the same user
+#CXXFLAGS += -DSCTL_COMM_NO_DIRECT # never read peer memory: every block goes through MPI (overrides the above)
 
 CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
 CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
