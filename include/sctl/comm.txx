@@ -843,39 +843,15 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
   comm_detail::WarnIfMPIInactive("Comm::Ialltoallv_sparse");
   if (!impl_->node_init_) impl_->InitNode();
   const Integer np = impl_->mpi_size_, rank = Rank();
-  const auto skip = [this,rank](Integer i) { return i == rank || (impl_->direct_ && impl_->node_rank_of_[i] >= 0); };  // stays on the node
+  const auto on_node = [this](Integer i) { return impl_->node_rank_of_[i] >= 0; };  // only read while direct_
+  const auto skip = [this,rank,&on_node](Integer i) { return i == rank || (impl_->direct_ && on_node(i)); };
   for (Integer i = 0; i < np; i++) {  // receive pages fault in with all threads, not MPI's one
     if (!skip(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
   }
-  omp_par::memcpy((Iterator<char>)(rbuf + rdispls[rank]), (ConstIterator<char>)(sbuf + sdispls[rank]), scounts[rank] * (Long)sizeof(SType));
-  if (impl_->direct_) {  // node peers' blocks are read straight out of their send buffers
-    ScratchBuf<Long> saddr(impl_->node_size_), raddr(impl_->node_size_);  // where each node peer's block starts in my send buffer
-    for (Integer i = 0; i < np; i++) {
-      const Integer j = impl_->node_rank_of_[i];
-      if (j >= 0) saddr[j] = (scounts[i] ? (Long)&sbuf[sdispls[i]] : 0);
-    }
-    MPI_Alltoall(&saddr[0], 1, MPI_INT64_T, &raddr[0], 1, MPI_INT64_T, impl_->node_comm_);
-    int ok = 1;
-    for (Integer i = 0; i < np; i++) {
-      const Integer j = impl_->node_rank_of_[i];
-      if (i == rank || j < 0 || !rcounts[i]) continue;
-      ok = (int)comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType)) && ok;
-    }
-    // InitNode's probe only proved a stack address readable; a later read can still be refused, so
-    // agree on the outcome and give up the direct path for good rather than ending the run. The
-    // reduction also holds every rank here until its peers have finished reading its send buffer,
-    // which is what the exchange needs of it.
-    int all = 0;
-    MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, impl_->node_comm_);
-    if (!all) {  // node peers join the MPI exchange below; whatever was read is overwritten with the same bytes
-      impl_->direct_ = false;
-      for (Integer i = 0; i < np; i++) {
-        if (!skip(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
-      }
-    }
-  }
 
-  // The rest goes to MPI all at once, receives posted before sends, and completes in the caller's Wait.
+  // The off-node blocks go to MPI first, so those transfers are in flight while the node-local
+  // copies below run: different hardware, no reason to serialize them. Receives are posted before
+  // sends, and everything posted here completes in the caller's Wait.
   const auto chunks = [](Long bytes) {  // MPI-3 counts are int, so a large block goes in pieces under their own tags
 #if MPI_VERSION >= 4
     return (Long)(bytes != 0);
@@ -883,24 +859,29 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
     return comm_detail::MPINumChunks(bytes);
 #endif
   };
-  Long request_count = 0, total_bytes = 0;
+  // A slot for every non-empty block of every peer but self -- an empty block costs none. The
+  // node-local stage runs after these are posted and can still give up the direct path, and its
+  // peers then need slots of their own. That is at most one slot per non-empty node-local block, so
+  // the array grows with the ranks per node and not with np: under 200 slots either way, whether np
+  // is ten thousand or a million.
+  Long slots = 0;
 #if MPI_VERSION < 4
   Long max_chunks = 0;
 #endif
   for (Integer i = 0; i < np; i++) {
-    if (skip(i)) continue;
+    if (i == rank) continue;
     const Long recv_bytes = rcounts[i] * (Long)sizeof(RType), send_bytes = scounts[i] * (Long)sizeof(SType);
 #if MPI_VERSION < 4
     max_chunks = std::max<Long>({max_chunks, chunks(recv_bytes), chunks(send_bytes)});
 #endif
-    request_count += chunks(recv_bytes) + chunks(send_bytes);
-    total_bytes += recv_bytes + send_bytes;
+    slots += chunks(recv_bytes) + chunks(send_bytes);
   }
-  comm_detail::TrackPointToPoint(request_count, total_bytes);
 #if MPI_VERSION < 4
   comm_detail::AssertChunkedTagRange(tag, max_chunks, impl_->mpi_tag_ub_);
 #endif
-  Vector<MPI_Request>& request = NewReq(request_count);
+  Vector<MPI_Request>& request = NewReq(slots);
+  for (Long k = 0; k < slots; k++) request[k] = MPI_REQUEST_NULL;  // Wait ignores the slots left over
+
   // A send from a ConstIterator, a receive into an Iterator; returns the number of requests posted.
   const auto post = [this,tag](auto buf, Long bytes, Integer peer, MPI_Request* req) {
     constexpr bool send = std::is_same<decltype(buf), ConstIterator<char>>::value;
@@ -921,13 +902,53 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
     return n;
 #endif
   };
-  Long m = 0;
-  for (Integer i = 0; i < np; i++) {
-    if (!skip(i) && rcounts[i]) m += post((Iterator<char>)(rbuf + rdispls[i]), rcounts[i] * (Long)sizeof(RType), i, &request[m]);
+  Long m = 0, posted_bytes = 0;
+  const auto post_peers = [&](const auto& take) {  // receives for the whole set, then sends
+    for (Integer i = 0; i < np; i++) {
+      if (!take(i) || !rcounts[i]) continue;
+      const Long bytes = rcounts[i] * (Long)sizeof(RType);
+      m += post((Iterator<char>)(rbuf + rdispls[i]), bytes, i, &request[m]);
+      posted_bytes += bytes;
+    }
+    for (Integer i = 0; i < np; i++) {
+      if (!take(i) || !scounts[i]) continue;
+      const Long bytes = scounts[i] * (Long)sizeof(SType);
+      m += post((ConstIterator<char>)(sbuf + sdispls[i]), bytes, i, &request[m]);
+      posted_bytes += bytes;
+    }
+  };
+  post_peers([&skip](Integer i) { return !skip(i); });
+
+  // Now the node-local work, over memory rather than the network, alongside the transfers above.
+  omp_par::memcpy((Iterator<char>)(rbuf + rdispls[rank]), (ConstIterator<char>)(sbuf + sdispls[rank]), scounts[rank] * (Long)sizeof(SType));
+  if (impl_->direct_) {  // node peers' blocks are read straight out of their send buffers
+    ScratchBuf<Long> saddr(impl_->node_size_), raddr(impl_->node_size_);  // where each node peer's block starts in my send buffer
+    for (Integer i = 0; i < np; i++) {
+      const Integer j = impl_->node_rank_of_[i];
+      if (j >= 0) saddr[j] = (scounts[i] ? (Long)&sbuf[sdispls[i]] : 0);
+    }
+    MPI_Alltoall(&saddr[0], 1, MPI_INT64_T, &raddr[0], 1, MPI_INT64_T, impl_->node_comm_);
+    int ok = 1;
+    for (Integer i = 0; i < np; i++) {
+      const Integer j = impl_->node_rank_of_[i];
+      if (i == rank || j < 0 || !rcounts[i]) continue;
+      ok = (int)comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType)) && ok;
+    }
+    // InitNode's probe only proved a stack address readable; a later read can still be refused, so
+    // agree on the outcome and give up the direct path for good rather than ending the run. The
+    // reduction also holds every rank here until its peers have finished reading its send buffer,
+    // which is what the exchange needs of it.
+    int all = 0;
+    MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, impl_->node_comm_);
+    if (!all) {  // the node peers go through MPI after all, into the slots kept for them
+      impl_->direct_ = false;
+      for (Integer i = 0; i < np; i++) {
+        if (i != rank && on_node(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
+      }
+      post_peers([rank,&on_node](Integer i) { return i != rank && on_node(i); });
+    }
   }
-  for (Integer i = 0; i < np; i++) {
-    if (!skip(i) && scounts[i]) m += post((ConstIterator<char>)(sbuf + sdispls[i]), scounts[i] * (Long)sizeof(SType), i, &request[m]);
-  }
+  comm_detail::TrackPointToPoint(m, posted_bytes);
   return Request(&request);
 #else
   omp_par::memcpy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)(sbuf + sdispls[0]), scounts[0] * sizeof(SType));
