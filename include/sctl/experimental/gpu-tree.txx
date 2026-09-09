@@ -1844,7 +1844,7 @@ void GPUTree<Real, DIM, DevVec>::AddData(const std::string& name, Long dof, cons
 template <class Real, Integer DIM, template <class...> class DevVec>
 void GPUTree<Real, DIM, DevVec>::addData_(const std::string& name, Long bytes, const sctl::Vector<Long>& cnt) {
   SCTL_ASSERT_MSG(node_data_.find(name) == node_data_.end(), "GPUTree::AddData: name already present.");
-  SCTL_ASSERT(cnt.Dim() == (Long)node_mid_.size());
+  SCTL_ASSERT_MSG(cnt.Dim() == (Long)node_mid_.size(), "GPUTree::AddData: one count per tree node.");
   node_data_[name].resize(bytes);
   node_cnt_[name] = cnt;
 }

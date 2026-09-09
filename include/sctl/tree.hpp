@@ -109,7 +109,7 @@ template <Integer DIM> class Tree {
      * @param[in] name Name for the data. Must not already exist on this tree.
      * @param[in] data Contiguous data for all nodes, concatenated in node
      * order. Must satisfy `data.Dim() == dof * sum(cnt)` for some `dof >= 0`.
-     * @param[in] cnt Number of data elements per node (length = number of tree nodes).
+     * @param[in] cnt Number of data elements per node. Must have one entry per tree node.
      *
      * @note Collective; must be called from all processes.
      *
@@ -126,7 +126,7 @@ template <Integer DIM> class Tree {
      * @tparam ValueType Element type. Must be given explicitly: it appears only in the size
      * calculation, so it cannot be deduced from the arguments.
      * @param[in] dof Elements per data item; must agree across processes.
-     * @param[in] cnt Number of data items per node (length = number of tree nodes).
+     * @param[in] cnt Number of data items per node. Must have one entry per tree node.
      */
     template <class ValueType> void AddData(const std::string& name, Long dof, const Vector<Long>& cnt);
 

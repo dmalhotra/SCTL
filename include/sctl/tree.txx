@@ -1316,8 +1316,10 @@ namespace sctl {
   }
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::AddData(const std::string& name, const Vector<ValueType>& data, const Vector<Long>& cnt) {
-    const Long dof = tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim()));
-    if (dof) SCTL_ASSERT(cnt.Dim() == node_mid.Dim());
+    // One count per node, whatever dof works out to: Broadcast, ReduceBroadcast and the refinement
+    // all index cnt by node, so a shorter one is unusable rather than merely empty.
+    SCTL_ASSERT_MSG(cnt.Dim() == node_mid.Dim(), "Tree::AddData: one count per tree node.");
+    SCTL_UNUSED(tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim())));  // checks the values divide evenly among the items
 
     SCTL_ASSERT(node_data.find(name) == node_data.end());
     node_data[name].ReInit(data.Dim()*sizeof(ValueType), (Iterator<char>)data.begin(), true);
@@ -1325,7 +1327,7 @@ namespace sctl {
   }
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::AddData(const std::string& name, Long dof, const Vector<Long>& cnt) {
-    SCTL_ASSERT(cnt.Dim() == node_mid.Dim());
+    SCTL_ASSERT_MSG(cnt.Dim() == node_mid.Dim(), "Tree::AddData: one count per tree node.");
     SCTL_ASSERT(node_data.find(name) == node_data.end());
     node_data[name].ReInit(omp_par::reduce(cnt.begin(), cnt.Dim()) * dof * (Long)sizeof(ValueType));
     node_cnt [name] = cnt;
