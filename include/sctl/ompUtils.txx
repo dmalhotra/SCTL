@@ -501,6 +501,38 @@ template <class Iter, class KeyFn> inline void omp_par::radix_sort(Iter A, Long 
   }
 }
 
+template <class Iter> inline void omp_par::sort(Iter A, Long N) {
+  typedef typename std::iterator_traits<Iter>::value_type _ValType;
+  if constexpr (is_radix_sortable<_ValType>::value) omp_par::radix_sort(A, N, [](const _ValType& x) { return x.GetIntKey(); });
+  else omp_par::sort(A, N, std::less<_ValType>());
+}
+
+template <class Iter, class Compare> inline void omp_par::sort(Iter A, Long N, Compare comp) {
+  typedef typename std::iterator_traits<Iter>::value_type _ValType;
+  if (omp_par_detail::PreferMergeSort(sizeof(_ValType))) omp_par::merge_sort(A, A + N, comp);
+  else omp_par::sample_sort(A, A, N, comp);
+}
+
+template <class ConstIter, class Iter> inline void omp_par::sort(ConstIter in, Iter out, Long N) {
+  typedef typename std::iterator_traits<Iter>::value_type _ValType;
+  if constexpr (is_radix_sortable<_ValType>::value) {
+    omp_par::memcpy(out, in, N);
+    omp_par::radix_sort(out, N, [](const _ValType& x) { return x.GetIntKey(); });
+  } else {
+    omp_par::sort(in, out, N, std::less<_ValType>());
+  }
+}
+
+template <class ConstIter, class Iter, class Compare> inline void omp_par::sort(ConstIter in, Iter out, Long N, Compare comp) {
+  typedef typename std::iterator_traits<Iter>::value_type _ValType;
+  if (omp_par_detail::PreferMergeSort(sizeof(_ValType))) {
+    omp_par::memcpy(out, in, N);
+    omp_par::merge_sort(out, out + N, comp);
+  } else {
+    omp_par::sample_sort(in, out, N, comp);
+  }
+}
+
 template <class ConstIter, class Iter> inline Long omp_par::dedup_sorted(ConstIter A, Iter B, Long N) {
   typedef typename std::iterator_traits<ConstIter>::value_type _ValType;
   return omp_par::dedup_sorted(A, B, N, std::less<_ValType>());

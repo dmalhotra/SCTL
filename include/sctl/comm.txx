@@ -2,6 +2,7 @@
 #define _SCTL_COMM_TXX_
 
 #include <algorithm>              // for lower_bound, max, min, sort, upper_...
+#include <cstdint>                // for uint64_t
 #include <cstring>                // for memcpy
 #include <cassert>                // for assert
 #include <functional>             // for less
@@ -20,7 +21,7 @@
 #include "sctl/comm.hpp"          // for Comm, CommOp
 #include "sctl/iterator.hpp"      // for Iterator, ConstIterator
 #include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
-#include "sctl/ompUtils.txx"      // for scan, sample_sort, memcpy, prefault, radix_sort
+#include "sctl/ompUtils.txx"      // for scan, sort, memcpy, prefault
 #include "sctl/scratch_pool.hpp"  // for ScratchBuf
 #include "sctl/scratch_pool.txx"  // for ScratchBuf
 #include "sctl/static-array.hpp"  // for StaticArray
@@ -38,8 +39,10 @@ template <class IteratorType> inline void TouchBuffer(IteratorType buf, Long cou
   SCTL_UNUSED(buf[count - 1]);
 }
 
-/** Key with its payload, ordered by the key alone, so a radix sort through the key agrees with `operator<`. */
+/** Key with its payload, ordered by the key alone; radix-sortable exactly when the key is. */
 template <class A, class B> struct SortPair {
+  static constexpr bool IntKeyIsExact = omp_par::is_radix_sortable<A>::value;
+  std::uint64_t GetIntKey() const { return key.GetIntKey(); }
   bool operator<(const SortPair& p) const { return key < p.key; }
   A key;
   B data;
@@ -1948,30 +1951,14 @@ SCTL_HS_MPIDATATYPE(unsigned char, MPI_UNSIGNED_CHAR);
 
 namespace comm_detail {
 
-// A type radix-sorts through its own integer key, and a SortPair through its key's. Custom
-// comparators fall through to the comparison sorts.
-template <class Type> struct IsRadixSortable : omp_par::is_radix_sortable<Type> {};
-template <class A, class B> struct IsRadixSortable<SortPair<A, B>> : omp_par::is_radix_sortable<A> {};
-template <class Type> struct RadixKeyOf {
-  std::uint64_t operator()(const Type& x) const { return x.GetIntKey(); }
-};
-template <class A, class B> struct RadixKeyOf<SortPair<A, B>> {
-  std::uint64_t operator()(const SortPair<A, B>& p) const { return p.key.GetIntKey(); }
-};
-
-// Local-phase sort for SampleSort, HyperQuickSort and sort_scatter_detail (policy comment inside).
+// Local-phase sort for SampleSort, HyperQuickSort and sort_scatter_detail: omp_par picks the sort,
+// and only the default ordering may take its radix path.
 template <class Type, class Compare> void LocalSort(ConstIterator<Type> in, Iterator<Type> out, Long N, Compare comp) {
-  if constexpr (IsRadixSortable<Type>::value && std::is_same<Compare, std::less<Type>>::value) {
-    omp_par::memcpy(out, in, N);
-    omp_par::radix_sort(out, N, RadixKeyOf<Type>{});
+  if constexpr (std::is_same<Compare, std::less<Type>>::value) {
+    omp_par::sort(in, out, N);
     SCTL_UNUSED(comp);
   } else {
-    if (omp_par_detail::PreferMergeSort(sizeof(Type))) {
-      omp_par::memcpy(out, in, N);
-      omp_par::merge_sort(out, out + N, comp);
-    } else {
-      omp_par::sample_sort(in, out, N, comp);
-    }
+    omp_par::sort(in, out, N, comp);
   }
 }
 

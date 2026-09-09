@@ -118,9 +118,7 @@ template <class T> struct FromIntKeyFunctor {
 
 // Sort v[0,n), `pol` supplying the device path's temporaries. Device: a Morton code is a struct,
 // so thrust picks a comparison sort for it; sorting its integer key reaches cub's radix sort
-// instead and gives the identical order. Host: omp_par, since thrust's host backend is serial;
-// merge_sort stops scaling past ~16 threads (bandwidth-bound), sample_sort doesn't, so pick by
-// thread count.
+// instead and gives the identical order. Host: omp_par::sort, since thrust's host backend is serial.
 template <class Policy, class Vec> void local_sort(const Policy& pol, Vec& v, Long n) {
   using T = typename vec_family<Vec>::elem;
   if constexpr (is_device_vector_v<Vec> && sctl::omp_par::is_radix_sortable<T>::value) {
@@ -131,12 +129,18 @@ template <class Policy, class Vec> void local_sort(const Policy& pol, Vec& v, Lo
   } else if constexpr (is_device_vector_v<Vec>) {
     thrust::sort(pol, v.begin(), v.begin() + n);
   } else {
-    T* const p = thrust::raw_pointer_cast(v.data());
-    if constexpr (sctl::omp_par::is_radix_sortable<T>::value) sctl::omp_par::radix_sort(p, n, [](const T& x) { return x.GetIntKey(); });
-    else if (sctl::omp_par_detail::PreferMergeSort(sizeof(T))) sctl::omp_par::merge_sort(p, p + n);
-    else sctl::omp_par::sample_sort(p, p + n);
+    sctl::omp_par::sort(thrust::raw_pointer_cast(v.data()), n);
   }
 }
+
+/** Key with its payload for the host by-key sort; radix-sortable exactly when the key is. */
+template <class T, class ValT> struct KeyVal {
+  static constexpr bool IntKeyIsExact = sctl::omp_par::is_radix_sortable<T>::value;
+  std::uint64_t GetIntKey() const { return key.GetIntKey(); }
+  bool operator<(const KeyVal& o) const { return key < o.key; }
+  T key;
+  ValT val;
+};
 
 // local_sort carrying a payload (the pre-sort index). Host path sorts packed pairs: omp_par has no
 // by-key sort.
@@ -150,14 +154,9 @@ template <class Policy, class Vec, class IVec> void local_sort_by_key(const Poli
   } else if constexpr (is_device_vector_v<Vec>) {
     thrust::sort_by_key(pol, keys.begin(), keys.begin() + n, vals.begin());
   } else {
-    using ValT = typename vec_family<IVec>::elem;
-    struct Pair {
-      T key;
-      ValT val;
-      bool operator<(const Pair& o) const { return key < o.key; }
-    };
+    using Pair = KeyVal<T, typename vec_family<IVec>::elem>;
     T* kp = thrust::raw_pointer_cast(keys.data());
-    ValT* vp = thrust::raw_pointer_cast(vals.data());
+    auto* vp = thrust::raw_pointer_cast(vals.data());
     sctl::ScratchBuf<Pair> pairs(n);
     const auto pp = pairs.begin();
     #pragma omp parallel for schedule(static)
@@ -165,13 +164,7 @@ template <class Policy, class Vec, class IVec> void local_sort_by_key(const Poli
       pp[i].key = kp[i];
       pp[i].val = vp[i];
     }
-    if constexpr (sctl::omp_par::is_radix_sortable<T>::value) {
-      sctl::omp_par::radix_sort(pairs.begin(), n, [](const Pair& x) { return x.key.GetIntKey(); });
-    } else if (sctl::omp_par_detail::PreferMergeSort(sizeof(Pair))) {
-      sctl::omp_par::merge_sort(pairs.begin(), pairs.end());
-    } else {
-      sctl::omp_par::sample_sort(pairs.begin(), pairs.end());
-    }
+    sctl::omp_par::sort(pairs.begin(), n);
     #pragma omp parallel for schedule(static)
     for (Long i = 0; i < n; i++) {
       kp[i] = pp[i].key;

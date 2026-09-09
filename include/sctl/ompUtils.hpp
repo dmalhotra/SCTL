@@ -240,6 +240,29 @@ template <class T> struct is_radix_sortable<T, typename std::enable_if<T::IntKey
 template <class Iter, class KeyFn> void radix_sort(Iter A, Long N, KeyFn key);
 
 /**
+ * Sort A[0..N) in place with the fastest sort for the element type and the team: `radix_sort`
+ * through the type's integer key when `is_radix_sortable` holds for the element type, otherwise
+ * `merge_sort` for small elements on small teams and `sample_sort` beyond that. The `comp` overload
+ * is a comparison sort under that ordering, so it never takes the radix path.
+ *
+ * @tparam Iter Random-access iterator over contiguous, trivially-copyable elements.
+ *
+ * @param[in,out] A Beginning iterator of the range; sorted in place.
+ * @param[in] N Number of elements in the range.
+ * @param[in] comp Strict weak ordering.
+ */
+template <class Iter> void sort(Iter A, Long N);
+template <class Iter, class Compare> void sort(Iter A, Long N, Compare comp);
+
+/**
+ * Sort `in[0..N)` into `out[0..N)` (no overlap), choosing the sort as the in-place `sort` does.
+ * Where the chosen sort works in place, `in` is first copied to `out`; `sample_sort` writes `out`
+ * directly.
+ */
+template <class ConstIter, class Iter> void sort(ConstIter in, Iter out, Long N);
+template <class ConstIter, class Iter, class Compare> void sort(ConstIter in, Iter out, Long N, Compare comp);
+
+/**
  * dedup_sorted using the default (operator<) ordering.
  *
  * @tparam ConstIter Iterator type for the input range.
