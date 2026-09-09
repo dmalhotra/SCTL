@@ -1002,8 +1002,11 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
   // routine's name says it will not do, so the caller has to ask for it.
   const bool direct = blocking_direct && impl_->DirectOk();
   const auto skip = [rank,direct,&on_node](Integer i) { return i == rank || (direct && on_node(i)); };
-  for (Integer i = 0; i < np; i++) {  // receive pages fault in with all threads, not MPI's one
-    if (!skip(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
+  // Every block but self, whichever way it arrives: the node-local ones are read by ReadNodeBlocks,
+  // which needs them faulted in already, and the rest are written by MPI. Either way the pages fault
+  // in with all threads here rather than one at a time inside the transfer.
+  for (Integer i = 0; i < np; i++) {
+    if (i != rank && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
   }
 
   // The off-node blocks go to MPI first, so those transfers are in flight while the node-local
@@ -1079,10 +1082,9 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
   // Now the node-local work, over memory rather than the network, alongside the transfers above.
   omp_par::memcpy((Iterator<char>)(rbuf + rdispls[rank]), (ConstIterator<char>)(sbuf + sdispls[rank]), scounts[rank] * (Long)sizeof(SType));
   if (direct && !ReadNodeBlocks(sbuf, scounts, sdispls, rbuf, rcounts, rdispls)) {
-    for (Integer i = 0; i < np; i++) {  // refused: the node peers go through MPI after all, into
-      if (i != rank && on_node(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
-    }
-    post_peers([rank,&on_node](Integer i) { return i != rank && on_node(i); });  // the slots kept for them
+    // Refused: the node peers go through MPI after all, into the slots kept for them. Their receive
+    // blocks were faulted in with the rest above.
+    post_peers([rank,&on_node](Integer i) { return i != rank && on_node(i); });
   }
   comm_detail::TrackPointToPoint(m, posted_bytes);
   return Request(&request);
