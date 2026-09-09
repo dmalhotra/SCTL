@@ -361,6 +361,7 @@ inline void Comm::Impl::Init(MPI_Comm mpi_comm) {
 
 inline void Comm::Impl::InitNode() {
   node_init_ = true;
+  #pragma omp critical(SCTL_COMM_DUP)  // creating a communicator, as Init and ~Impl do
   MPI_Comm_split_type(mpi_comm_, MPI_COMM_TYPE_SHARED, mpi_rank_, MPI_INFO_NULL, &node_comm_);
   int node_rank = 0;
   MPI_Comm_size(node_comm_, &node_size_);
