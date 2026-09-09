@@ -255,7 +255,6 @@ inline void alltoallvHost(const void* sbuf, void* rbuf, const sctl::ScratchBuf<L
 template <template <class...> class DevVec, class Policy>
 void alltoallvDevice(const Policy& pol, const void* sbuf, void* rbuf, const sctl::ScratchBuf<Long>& scnt,
                      const sctl::ScratchBuf<Long>& rcnt, Long esz, const Comm& comm) {
-#ifdef SCTL_HAVE_MPI
   const Long np = comm.Size(), rank = comm.Rank();
   sctl::ScratchBuf<Long> sd(np + 1), rd(np + 1);   // byte offsets, in Long
   const auto bytes = [esz](Long cnt) { return cnt * esz; };
@@ -263,13 +262,14 @@ void alltoallvDevice(const Policy& pol, const void* sbuf, void* rbuf, const sctl
   rd[0] = 0;
   std::transform_inclusive_scan(scnt.begin(), scnt.end(), sd.begin() + 1, std::plus<Long>(), bytes);
   std::transform_inclusive_scan(rcnt.begin(), rcnt.end(), rd.begin() + 1, std::plus<Long>(), bytes);
-  static const Long IMAX = 2147483647;
   SCTL_ASSERT(scnt[rank] == rcnt[rank]);
   if (const Long n = scnt[rank] * esz) {  // self block, copied on the device
     using It = ScratchIterator<char, DevVec>;
     const It s(const_cast<char*>((const char*)sbuf + sd[rank]));
     thrust::copy(pol, s, s + n, It((char*)rbuf + rd[rank]));
   }
+#ifdef SCTL_HAVE_MPI
+  static const Long IMAX = 2147483647;
 
   // MPI_Alltoallv's counts and displacements are `int`, and a dof=3 payload at 100M items per rank
   // is 2.4 GB. Counting in a larger unit than one byte buys that factor of headroom, so rather
