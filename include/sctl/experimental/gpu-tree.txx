@@ -1748,7 +1748,7 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
     mins_.ReInit(np);
     Long owned[2] = {0, 0};
     buildTreeDist(node_mid_, coord, M, comm_, balance21, periodicity, halo_size, owned,
-                  mins_.begin(), &node_attr_, &node_lists_, &user_mid_, &user_cnt_);
+                  &mins_[0], &node_attr_, &node_lists_, &user_mid_, &user_cnt_);  // np >= 1
     owned_begin_ = owned[0];
     owned_end_ = owned[1];
     host_mid_stale_ = true;

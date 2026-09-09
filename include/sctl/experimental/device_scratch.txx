@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <type_traits>
 
 #include "sctl/experimental/device_scratch.hpp"
 #include "sctl/iterator.txx"      // for Ptr2Itr
@@ -33,7 +34,9 @@ inline sctl::ScratchPool& pinnedStagingPool() {
   return pool;
 }
 
-template <class SrcPtr, class T> inline void deviceToHost(SrcPtr src, Long n, T* dst) {
+/** `dst` takes a pointer or an sctl iterator: with SCTL_MEMDEBUG the containers hand back the latter. */
+template <class SrcPtr, class DstPtr> inline void deviceToHost(SrcPtr src, Long n, DstPtr dst) {
+  using T = typename std::remove_cv<typename std::remove_reference<decltype(*dst)>::type>::type;
   if (!n) return;
   if constexpr (is_device_ptr<SrcPtr>::value) {
     sctl::ScratchBuf<T> stage(n, pinnedStagingPool());

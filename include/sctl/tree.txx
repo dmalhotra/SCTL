@@ -1397,7 +1397,6 @@ namespace sctl {
       Vector<Long> recv_buff_cnt(np), recv_buff_dsp(np);
       { // Set send_buff, send_buff_cnt, send_buff_dsp, recv_buff, recv_buff_cnt, recv_buff_dsp
         Long N_send_nodes = send_mid.Dim();
-        Long N_recv_nodes = recv_mid.Dim();
         send_buff.ReInit(send_data_tot * dof);
         recv_buff.ReInit(recv_data_tot * dof);
         #pragma omp parallel for schedule(static) if (N_send_nodes > 256)
@@ -1505,7 +1504,6 @@ namespace sctl {
       Vector<Long> recv_buff_cnt(np), recv_buff_dsp(np);
       { // Set send_buff, send_buff_cnt, send_buff_dsp, recv_buff, recv_buff_cnt, recv_buff_dsp
         Long N_send_nodes = send_mid.Dim();
-        Long N_recv_nodes = recv_mid.Dim();
         send_buff.ReInit(send_data_tot * dof);
         recv_buff.ReInit(recv_data_tot * dof);
         #pragma omp parallel for schedule(static) if (N_send_nodes > 256)

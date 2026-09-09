@@ -59,7 +59,7 @@ template <class T, template <class...> class DevVec, auto Tag> DevVec<T>& Persis
  *
  * On host backends `src` is already a host pointer and this is a plain copy.
  */
-template <class SrcPtr, class T> void deviceToHost(SrcPtr src, Long n, T* dst);
+template <class SrcPtr, class DstPtr> void deviceToHost(SrcPtr src, Long n, DstPtr dst);
 
 /**
  * Host staging memory for `deviceToHost`, as one byte-addressed arena shared by every element type
