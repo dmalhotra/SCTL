@@ -308,7 +308,8 @@ template <class Key> void SortScatter<Key>::test() {
     Vector<Long> q2 = payload;
     ss.ScatterForward(q2, dof);
     SCTL_ASSERT(q2.Dim() == q.Dim());
-    for (Long i = 0; i < q.Dim(); i++) SCTL_ASSERT(q2[i] == q[i]); }
+    for (Long i = 0; i < q.Dim(); i++) SCTL_ASSERT(q2[i] == q[i]);
+  }
   roundTrip(ss, splB);
   ss.Repartition(splA);  // re-cut of a re-cut
   roundTrip(ss, splA);
