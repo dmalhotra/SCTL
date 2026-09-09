@@ -417,6 +417,7 @@ template <Integer DIM, WalkMode MODE> struct AnchorWalkFunctor {
 // reading back the last offset and count avoids a second pass over counts just to total them.
 template <class Policy, template <class...> class DevVec>
 Long scanCounts(const Policy& pol, const DeviceScratch<Long, DevVec>& counts, DeviceScratch<Long, DevVec>& offsets, Long n) {
+  if (n <= 0) return 0;  // the reads below are of the last entry, which an empty range does not have
   thrust::exclusive_scan(pol, counts.begin(), counts.begin() + n, offsets.begin(), Long(0));
   Long tail[2] = {0, 0};
   thrust::copy(offsets.begin() + (n - 1), offsets.begin() + n, &tail[0]);
