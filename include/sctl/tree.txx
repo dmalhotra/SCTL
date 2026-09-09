@@ -1239,7 +1239,19 @@ namespace sctl {
       for (Long i = i1; i < node_mid.Dim(); i++) SCTL_ASSERT(node_attr[i].Ghost == true);
     }
 
-    const bool any_own = std::any_of(node_data.begin(), node_data.end(), [this](const auto& pair) { return !data_moved_by_derived.count(pair.first); });  // a data set this class moves itself
+    // A data set this class moves itself. AddData is collective, so every rank holds the same names
+    // and agrees on this without being asked; the block below and its per-name loop are both
+    // collective, so a rank that disagreed would hang rather than give a wrong answer.
+    const bool any_own = std::any_of(node_data.begin(), node_data.end(), [this](const auto& pair) { return !data_moved_by_derived.count(pair.first); });
+    #ifdef SCTL_MEMDEBUG
+    { // check that agreement rather than assume it
+      StaticArray<Long,2> loc, glb;
+      loc[0] = (Long)node_data.size() - (Long)data_moved_by_derived.size();
+      loc[1] = -loc[0];
+      comm.Allreduce((ConstIterator<Long>)loc, (Iterator<Long>)glb, 2, CommOp::MAX);
+      SCTL_ASSERT_MSG(glb[0] == -glb[1], "Tree::UpdateRefinement: ranks disagree on how many data sets they hold; AddData is collective.");
+    }
+    #endif
     if (any_own) { // Update node_data, node_cnt
       comm.PartitionS(node_mid_orig, mins[comm.Rank()]);
 
