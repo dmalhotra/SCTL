@@ -1383,7 +1383,8 @@ namespace sctl {
           Long end_idx = std::lower_bound(send_mid.begin(), send_mid.end(), (p+1==np ? Morton<DIM>().Next() : mins[p+1])) - send_mid.begin();
           send_node_cnt[p] = end_idx - start_idx;
         }
-        SCTL_ASSERT(scan(send_node_dsp, send_node_cnt) == send_mid.Dim());
+        const Long send_node_tot = scan(send_node_dsp, send_node_cnt);
+        SCTL_ASSERT(send_node_tot == send_mid.Dim());
         comm.Alltoall(send_node_cnt.begin(), 1, recv_node_cnt.begin(), 1);
         recv_mid.ReInit(scan(recv_node_dsp, recv_node_cnt));
         comm.Alltoallv(send_mid.begin(), send_node_cnt.begin(), send_node_dsp.begin(), recv_mid.begin(), recv_node_cnt.begin(), recv_node_dsp.begin());
@@ -1485,7 +1486,8 @@ namespace sctl {
       Vector<Long> send_node_dsp(np);
       { // Set send_dsp
         SCTL_ASSERT(send_node_cnt.Dim() == np);
-        SCTL_ASSERT(scan(send_node_dsp, send_node_cnt) == send_mid.Dim());
+        const Long send_node_tot = scan(send_node_dsp, send_node_cnt);
+        SCTL_ASSERT(send_node_tot == send_mid.Dim());
       }
 
       Vector<Morton<DIM>> recv_mid;

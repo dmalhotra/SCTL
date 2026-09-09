@@ -499,7 +499,8 @@ void partitionN(const Policy& pol, DevVec<T>& v, Long n, Long Ntgt, const Comm& 
   sctl::ScratchBuf<Long> cnt(np), off(np + 1), tgt(np), toff(np + 1);
   comm.Allgather(sctl::Ptr2ConstItr<Long>(&n, 1), 1, cnt.begin(), 1);
   comm.Allgather(sctl::Ptr2ConstItr<Long>(&Ntgt, 1), 1, tgt.begin(), 1);
-  SCTL_ASSERT(scanv(off.begin(), cnt.begin(), np) == scanv(toff.begin(), tgt.begin(), np));
+  const Long ntot = scanv(off.begin(), cnt.begin(), np), ntgt_tot = scanv(toff.begin(), tgt.begin(), np);
+  SCTL_ASSERT(ntot == ntgt_tot);
   { // nothing crosses a rank boundary: the layout already is the target
     bool same = true;
     for (Long q = 0; q <= np; q++) same = same && (off[q] == toff[q]);

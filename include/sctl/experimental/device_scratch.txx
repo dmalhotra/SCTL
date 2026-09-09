@@ -36,7 +36,8 @@ inline sctl::ScratchPool& pinnedStagingPool() {
   static sctl::ScratchPool pool(
       [](void* base, Long bytes) {  // fault the chunk in first: registering cold memory is far dearer
         sctl::omp_par::prefault(sctl::Ptr2Itr<char>((char*)base, bytes), bytes);
-        SCTL_ASSERT(cudaHostRegister(base, (std::size_t)bytes, cudaHostRegisterDefault) == cudaSuccess);
+        const cudaError_t reg = cudaHostRegister(base, (std::size_t)bytes, cudaHostRegisterDefault);
+        SCTL_ASSERT(reg == cudaSuccess);
       },
       [](void* base, Long) { cudaHostUnregister(base); });  // at exit the runtime may already be gone
   return pool;
@@ -48,7 +49,8 @@ template <class SrcPtr, class DstPtr> inline void deviceToHost(SrcPtr src, Long 
   if (!n) return;
   if constexpr (is_device_ptr<SrcPtr>::value) {
     sctl::ScratchBuf<T> stage(n, pinnedStagingPool());
-    SCTL_ASSERT(cudaMemcpy(&stage[0], thrust::raw_pointer_cast(src), n * sizeof(T), cudaMemcpyDeviceToHost) == cudaSuccess);
+    const cudaError_t cpy = cudaMemcpy(&stage[0], thrust::raw_pointer_cast(src), n * sizeof(T), cudaMemcpyDeviceToHost);
+    SCTL_ASSERT(cpy == cudaSuccess);
     sctl::omp_par::copy(stage.begin(), stage.end(), dst);
   } else {
     sctl::omp_par::copy(src, src + n, dst);
