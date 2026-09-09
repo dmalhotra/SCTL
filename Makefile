@@ -131,7 +131,13 @@ GPU_BIN = \
 
 gpu: $(GPU_BIN)
 
-$(BINDIR)/%: $(SRCDIR)/%.cu
+# The whole library is headers, so a .cu alone does not say when its binary is out of date: editing
+# a header would otherwise leave `make gpu` handing back the previous build. The recipe passes `$<`,
+# so listing them as prerequisites does not put them on the command line.
+GPU_DEPS = $(wildcard $(INCDIR)/*.hpp $(INCDIR)/sctl/*.hpp $(INCDIR)/sctl/*.txx \
+                      $(INCDIR)/sctl/experimental/*.hpp $(INCDIR)/sctl/experimental/*.txx)
+
+$(BINDIR)/%: $(SRCDIR)/%.cu $(GPU_DEPS)
 	-@$(MKDIRS) $(dir $@)
 	$(NVCC) $(NVCCFLAGS) -I$(INCDIR) $< $(NVCCLIBS) -o $@
 
