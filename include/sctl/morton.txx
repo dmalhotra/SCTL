@@ -6,6 +6,7 @@
 #ifndef _SCTL_MORTON_TXX_
 #define _SCTL_MORTON_TXX_
 
+#include <cassert>  // for assert: the device-side precondition check, where SCTL_ASSERT cannot run
 #include <cstdint>  // for uint8_t, uint64_t
 
 // libstdc++ marks std::count{l,r}_zero as __host__-only constexpr, so the C++20 path is host-only;
@@ -274,7 +275,9 @@ template <Integer DIM> SCTL_GPU_HD Morton<DIM> MortonCode<DIM>::Ancestor(uint8_t
 // ---------------------------------------------------------------------------
 
 template <Integer DIM> SCTL_GPU_HD Morton<DIM>::Morton(MortonCode<DIM> mid_, uint8_t depth_) : mid(mid_), depth(depth_) {
-#if !defined(__CUDA_ARCH__)  // SCTL_ASSERT reaches std::cerr/abort, neither callable on the device
+#if defined(__CUDA_ARCH__)  // SCTL_ASSERT reaches std::cerr/abort, neither callable on the device; assert traps the kernel
+  assert(depth_ <= MAX_DEPTH || depth_ == INVALID_DEPTH);
+#else
   SCTL_ASSERT(depth_ <= MAX_DEPTH || depth_ == INVALID_DEPTH);
 #endif
   if (depth_ <= MAX_DEPTH) {
@@ -339,6 +342,11 @@ template <Integer DIM> SCTL_GPU_HD Integer Morton<DIM>::Path2Node() const {
 }
 
 template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, (1 << DIM)> Morton<DIM>::Children() const {
+#if defined(__CUDA_ARCH__)
+  assert(depth < MAX_DEPTH);
+#else
+  SCTL_ASSERT_MSG(depth < MAX_DEPTH, "Morton::Children: a MAX_DEPTH node has no children");
+#endif
   using MI = typename MortonCode<DIM>::MortonInteger;
   std::array<Morton, (1 << DIM)> out{};
   // Child k's code: parent's code with bit i of k setting coord i's bit at level (MAX_DEPTH-depth-1).

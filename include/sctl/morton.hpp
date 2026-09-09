@@ -249,7 +249,7 @@ template <Integer DIM> class Morton {
    */
   SCTL_GPU_HD Morton CommonAncestor(const Morton& o) const;
 
-  /** Deepest first descendant at the given level: same code, `depth = level`. No bit work. */
+  /** Deepest first descendant at the given level: same code, `depth = level`. No bit work. `level` must be at most `MAX_DEPTH`. */
   SCTL_GPU_HD Morton DFD(uint8_t level = MAX_DEPTH) const;
 
   /**
