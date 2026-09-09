@@ -2387,6 +2387,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::test() {
   tree.GetOwnedRange(b, e);
   printf("rank %d: %ld particles, %ld nodes of which %ld owned, %ld values wrong\n",
          (int)comm.Rank(), (long)N, (long)tree.GetNodeMID().size(), (long)(e - b), (long)bad);
+  SCTL_ASSERT_MSG(bad == 0, "PtTree::test: values came back wrong");
 }
 
 }  // namespace gpu_tree
