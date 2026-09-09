@@ -1643,7 +1643,7 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
     }
 
     M = std::min<Long>(M, Nloc_min);
-    if (M < 1) MPI_Abort(comm.GetMPI_Comm(), 1);
+    SCTL_ASSERT_MSG(M >= 1, "GPUTree::UpdateRefinement: fewer particles than ranks; every rank needs at least one");
   }
 
   if (np > 1) { // halo: pt_mid <-- [M from left | pt_mid | M from right] (empty halo on domain-edge ranks)
