@@ -762,10 +762,28 @@ class Comm {
     /** Ask the kernel whether a node peer's memory can be read. Collective on `node_comm_`. */
     void ProbeDirect();
 
-    /** Whether direct reads are on, probing once if that has not been settled yet. */
+    /** Whether direct reads are on, probing once if that has not been settled yet. Only callable
+     *  from a routine that is collective on the communicator, since the probe is. */
     bool DirectOk() {
       if (!direct_probed_) ProbeDirect();
       return direct_;
+    }
+
+    /**
+     * Whether a node peer's memory may be worth reading, answered without asking the kernel: the
+     * settled answer where `ProbeDirect` has already run, and otherwise optimism that the caller's
+     * own handshake corrects. Never probes, so point-to-point code can consult it.
+     *
+     * Both ranks of a pair get the same answer from this, which is what lets them agree on the
+     * transport without exchanging anything first: `direct_probed_` and `direct_` are only ever set
+     * together across a node, by `ProbeDirect`, by `ReadNodeBlocks` or by `InitNode`.
+     */
+    bool DirectMaybe() const {
+#if defined(SCTL_COMM_NO_DIRECT) || !defined(__linux__)
+      return false;
+#else
+      return direct_probed_ ? direct_ : true;
+#endif
     }
   };
 
