@@ -28,6 +28,17 @@ namespace omp_par_detail {
     return elem_size <= max_elem_size && !SCTL_IN_PARALLEL() && SCTL_GET_MAX_THREADS() <= max_threads;
   }
 
+  /** Least `N` at which `radix_sort` is worth picking over a comparison sort. Its six passes cost
+   *  each thread a 2048-entry histogram whatever that thread's share of the elements, and its own
+   *  team cap already asks for `4 * 2048` elements per thread, so require that much for the whole
+   *  team: below it the bookkeeping outweighs the sorting. Measured on MortonCode<3>, the crossover
+   *  is near 2k elements on one thread and 130k on eight, so this stays on the safe side of both. */
+  inline Long RadixMinSize() {
+    constexpr Long share = 4 * (Long(1) << 11);
+    const Long threads = (SCTL_IN_PARALLEL() ? 1 : (Long)SCTL_GET_MAX_THREADS());
+    return share * std::max<Long>(1, threads);
+  }
+
   inline Integer PickThreads(Long nbytes, Integer requested) {
     constexpr Long kFullThreadsBytes      = 2L * 1024L * 1024L;
     if (requested > 0) return requested;
@@ -503,8 +514,13 @@ template <class Iter, class KeyFn> inline void omp_par::radix_sort(Iter A, Long 
 
 template <class Iter> inline void omp_par::sort(Iter A, Long N) {
   typedef typename std::iterator_traits<Iter>::value_type _ValType;
-  if constexpr (is_radix_sortable<_ValType>::value) omp_par::radix_sort(A, N, [](const _ValType& x) { return x.GetIntKey(); });
-  else omp_par::sort(A, N, std::less<_ValType>());
+  if constexpr (is_radix_sortable<_ValType>::value) {
+    if (N >= omp_par_detail::RadixMinSize()) {
+      omp_par::radix_sort(A, N, [](const _ValType& x) { return x.GetIntKey(); });
+      return;
+    }
+  }
+  omp_par::sort(A, N, std::less<_ValType>());
 }
 
 template <class Iter, class Compare> inline void omp_par::sort(Iter A, Long N, Compare comp) {
@@ -516,11 +532,13 @@ template <class Iter, class Compare> inline void omp_par::sort(Iter A, Long N, C
 template <class ConstIter, class Iter> inline void omp_par::sort(ConstIter in, Iter out, Long N) {
   typedef typename std::iterator_traits<Iter>::value_type _ValType;
   if constexpr (is_radix_sortable<_ValType>::value) {
-    omp_par::memcpy(out, in, N);
-    omp_par::radix_sort(out, N, [](const _ValType& x) { return x.GetIntKey(); });
-  } else {
-    omp_par::sort(in, out, N, std::less<_ValType>());
+    if (N >= omp_par_detail::RadixMinSize()) {
+      omp_par::memcpy(out, in, N);
+      omp_par::radix_sort(out, N, [](const _ValType& x) { return x.GetIntKey(); });
+      return;
+    }
   }
+  omp_par::sort(in, out, N, std::less<_ValType>());
 }
 
 template <class ConstIter, class Iter, class Compare> inline void omp_par::sort(ConstIter in, Iter out, Long N, Compare comp) {
