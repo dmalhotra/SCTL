@@ -2268,10 +2268,18 @@ void PtTree<Real, DIM, DevVec, BaseTree>::GetParticleData(DevVec<Real>& data, co
   const auto& g = groups_.find(it->second)->second;
 
   // the reverse scatter reads the stored buffer and writes the output, so the payload is touched once
-  const DevVec<char>& raw = this->NodeData_(data_name);
-  const Long dof = detail::globalDof((Long)raw.size() / (Long)sizeof(Real), g.SortedCount(), this->GetComm());
+  DataView<const Real, DevVec> raw;
+  sctl::Vector<Long> cnt;
+  this->GetData(raw, cnt, data_name);
+  const Long dof = detail::globalDof(raw.size(), sctl::omp_par::reduce(cnt.begin(), cnt.Dim()), this->GetComm());
+
+  Long owned0 = 0, owned1 = 0;  // a Broadcast may have filled the ghost slots; the owned items scatter back
+  this->GetOwnedRange(owned0, owned1);
+  const Long begin = sctl::omp_par::reduce(cnt.begin(), owned0) * dof;
+  SCTL_ASSERT_MSG(sctl::omp_par::reduce(cnt.begin() + owned0, owned1 - owned0) == g.SortedCount(),
+                  "PtTree::GetParticleData: the owned items do not match the group's sorted keys.");
   data.resize(g.LocalCount() * dof);
-  g.ScatterReverse((const Real*)thrust::raw_pointer_cast(raw.data()), (Real*)thrust::raw_pointer_cast(data.data()), dof);
+  g.ScatterReverse(raw.data() + begin, (Real*)thrust::raw_pointer_cast(data.data()), dof);
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
@@ -2316,7 +2324,8 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& c
         if (begin != 0 || count != (Long)raw.size()) {
           using It = detail::ScratchIterator<char, DevVec>;
           DevVec<char>& own = detail::PersistentBuffer<char, DevVec, detail::Buf::PtOwned>();
-          detail_sortScatter::resizeDiscard(own, count);
+          own.clear();  // the previous contents are dead; resize alone would copy them to grow
+          own.resize(count);
           thrust::copy(detail::scratch_policy<DevVec, char>(), It(thrust::raw_pointer_cast(raw.data()) + begin),
                        It(thrust::raw_pointer_cast(raw.data()) + begin + count), It(thrust::raw_pointer_cast(own.data())));
           raw.swap(own);
