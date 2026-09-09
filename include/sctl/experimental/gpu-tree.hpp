@@ -33,6 +33,12 @@ using sctl::MAX_DEPTH;
  * inputs. The object retains the tree, the partition and any named per-node data;
  * `UpdateRefinement` is a full rebuild, as in `sctl::Tree`, that remaps the data onto the new nodes.
  *
+ * The one input on which the two node sets differ is a box where more than `M` particles share a
+ * single Morton code: no refinement separates them, so the box stays over `M` however deep it goes,
+ * and the two libraries stop at different depths -- this one at `MAX_DEPTH`, `sctl::Tree` as soon as
+ * the run is alone in a box. Both are leaves that splitting cannot make smaller, so neither is
+ * wrong; only the node count differs, and only for such runs.
+ *
  * @tparam Real Data type for the particle coordinates.
  * @tparam DIM Number of spatial dimensions.
  * @tparam DevVec Container template for the tree and its data: `HostVector` or `DeviceVector`.

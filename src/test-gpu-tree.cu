@@ -19,6 +19,7 @@
  *
  *     mpirun -np 4 bin/test-gpu-tree
  */
+#include <algorithm>
 #include <cstdio>
 #include <numeric>
 #include <random>
@@ -125,6 +126,40 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     }
     check("node set equals sctl::Tree's (every periodicity mask, balance on and off)", bad_set);
     if (np == 1) check("flags, node lists and partition equal sctl::Tree's node for node", bad_local);
+  }
+
+  { // Coincident codes: where more than M particles share one, the node sets are allowed to differ
+    // (see the GPUTree doc comment), so check the property that does hold of both -- no leaf holds
+    // more than M particles unless every one of them has the same code, when no split would help.
+    const Long M = 32, sites = 64;
+    sctl::Vector<Real> c(N * DIM);
+    for (Long i = 0; i < N; i++) {  // N/sites particles per site, all exactly coincident
+      std::mt19937_64 r(i / (N / sites));
+      std::uniform_real_distribution<Real> Us(0, 1);
+      for (Integer k = 0; k < DIM; k++) c[i * DIM + k] = Us(r);
+    }
+    sctl::Vector<sctl::MortonCode<DIM>> code(N);
+    for (Long i = 0; i < N; i++) code[i] = sctl::MortonCode<DIM>(&c[i * DIM]);
+    std::sort(code.begin(), code.end(), [](const sctl::MortonCode<DIM>& a, const sctl::MortonCode<DIM>& b) { return a < b; });
+    const sctl::Vector<sctl::MortonCode<DIM>> all = gather(code);  // every rank's codes, for the counts
+
+    const DevVec<Real> cd(c.begin(), c.end());
+    GT gt(comm);
+    gt.UpdateRefinement(cd, M, false, sctl::Periodicity::NONE, -1);
+    const sctl::Vector<NodeT> gmid = to_host(gt.GetNodeMID());
+    Long gb, ge;
+    gt.GetOwnedRange(gb, ge);
+
+    Long bad = 0;
+    for (Long i = gb; i < ge; i++) {
+      const bool leaf = (i + 1 < gmid.Dim()) ? !gmid[i].isAncestor(gmid[i + 1]) : true;
+      if (!leaf) continue;
+      const Long j0 = std::lower_bound(all.begin(), all.end(), gmid[i].mid) - all.begin();
+      const Long j1 = std::lower_bound(all.begin(), all.end(), gmid[i].Next().mid) - all.begin();
+      if (j1 - j0 <= M) continue;
+      bad += (all[j0] < all[j1 - 1]) || (all[j1 - 1] < all[j0]);  // over M and splittable
+    }
+    check("a leaf over M particles holds one code, which no split separates", bad);
   }
 
   { // named node data follows a refinement to other points, compared with sctl::Tree
