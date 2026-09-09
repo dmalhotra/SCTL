@@ -1097,7 +1097,10 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
     sctl::tree_detail::Balance21(S, mins.begin(), comm, periodicity);
   }
 
-  leavesFromNonLeaf<DIM, DevVec>(pol, tree, &S[0], S.Dim(), mins[rank], end_target);  // S holds at least the root
+  // Balance21 redistributes by `mins`, and a rank whose range holds only leaves comes back with
+  // none: their parents have smaller codes and belong to an earlier rank. The walk builds this
+  // rank's slice from no anchors at all, so only the pointer needs guarding.
+  leavesFromNonLeaf<DIM, DevVec>(pol, tree, (S.Dim() ? &S[0] : nullptr), S.Dim(), mins[rank], end_target);
 }
 
 }  // namespace detail_balance21_host
