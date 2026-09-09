@@ -237,6 +237,44 @@ class Comm {
   template <class SType> [[nodiscard]] Request Issend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag = 0) const;
 
   /**
+   * Blocking send, matched by `Recv` at the destination. Where the destination is a rank on this
+   * node and the kernel permits it, the destination reads this buffer instead of being sent a copy
+   * of it, and this returns once it has done so; otherwise this is `Issend` followed by `Wait`.
+   *
+   * Deadlocks if two ranks both send to each other before either receives, as `MPI_Send` does for
+   * a message too large to buffer.
+   *
+   * @tparam SType type of the send-data.
+   *
+   * @param[in] sbuf const-iterator to the send buffer.
+   *
+   * @param[in] scount number of elements to send.
+   *
+   * @param[in] dest the rank of the destination process.
+   *
+   * @param[in] tag identifier tag to be matched at receive.
+   */
+  template <class SType> void Send(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag = 0) const;
+
+  /**
+   * Blocking receive, matched by `Send` at the source. Where the source is a rank on this node and
+   * the kernel permits it, this reads the source's send buffer instead of receiving a copy of it;
+   * otherwise this is `Irecv` followed by `Wait`. As with MPI, `rcount` is an upper bound: what
+   * arrives is what the source sent.
+   *
+   * @tparam RType type of the receive-data.
+   *
+   * @param[out] rbuf iterator to the receive buffer.
+   *
+   * @param[in] rcount number of elements the buffer holds.
+   *
+   * @param[in] source the rank of the source process.
+   *
+   * @param[in] tag identifier tag to be matched by the corresponding Send.
+   */
+  template <class RType> void Recv(Iterator<RType> rbuf, Long rcount, Integer source, Integer tag = 0) const;
+
+  /**
    * Non-blocking receive.
    *
    * @tparam RType type of the receive-data.

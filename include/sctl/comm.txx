@@ -501,7 +501,7 @@ inline bool Comm::SameNode(Integer rank) const {
   return impl_->NodeIdx(rank) >= 0;
 #else
   SCTL_ASSERT(rank == 0);
-  return false;
+  return true;  // the only rank there is, which is this one
 #endif
 }
 
@@ -868,6 +868,55 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
 #else
   omp_par::memcpy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, scount * sizeof(SType));
 #endif
+}
+
+// A node-local Send/Recv pair is a rendezvous with process_vm_readv as its transport: the sender
+// publishes where its buffer is and how much of it there is, the receiver reads it there and
+// acknowledges, and the sender returns once acknowledged, its buffer its own again. Three small
+// messages plus the read, against MPI's own rendezvous of two small messages plus a copy -- so what
+// this buys is the copy. Off-node, and wherever the kernel refuses the read, both fall back to MPI.
+//
+// The handshake runs on the caller's tag. MPI does not reorder messages of one (source, tag,
+// communicator), and each direction is posted in the same order at both ends, so the address, the
+// acknowledgement and any fallback payload cannot be mistaken for one another.
+template <class SType> void Comm::Send(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag) const {
+  static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
+#ifdef SCTL_HAVE_MPI
+  comm_detail::WarnIfMPIInactive("Comm::Send");
+  // Not conditioned on the count: both sides must choose the same branch, and only the sender knows
+  // its count.
+  if (dest != impl_->mpi_rank_ && SameNode(dest) && impl_->DirectOk()) {
+    const Long tell[2] = {(scount ? (Long)&sbuf[0] : 0), scount * (Long)sizeof(SType)};
+    MPI_Send(tell, 2, MPI_INT64_T, dest, tag, impl_->mpi_comm_);
+    char ack = 0;
+    MPI_Recv(&ack, 1, MPI_BYTE, dest, tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
+    if (ack) return;         // read, so the buffer is mine again
+    impl_->direct_ = false;  // refused after the setup probe passed: send it after all
+  }
+#endif
+  auto req = Issend(sbuf, scount, dest, tag);
+  Wait(std::move(req));
+}
+
+template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Integer source, Integer tag) const {
+  static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
+#ifdef SCTL_HAVE_MPI
+  comm_detail::WarnIfMPIInactive("Comm::Recv");
+  if (source != impl_->mpi_rank_ && SameNode(source) && impl_->DirectOk()) {
+    Long told[2] = {0, 0};
+    MPI_Recv(told, 2, MPI_INT64_T, source, tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
+    const Long bytes = std::min<Long>(told[1], rcount * (Long)sizeof(RType));  // at most what was sent
+    omp_par::prefault(rbuf, rcount);  // before the read; after it would overwrite what was read
+    const Integer j = impl_->NodeIdx(source);
+    const bool ok = !bytes || comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)told[0], &rbuf[0], bytes);
+    const char ack = (char)ok;
+    MPI_Send(&ack, 1, MPI_BYTE, source, tag, impl_->mpi_comm_);
+    if (ok) return;
+    impl_->direct_ = false;  // the sender takes the refusal as its cue to send the payload
+  }
+#endif
+  auto req = Irecv(rbuf, rcount, source, tag);
+  Wait(std::move(req));
 }
 
 #ifdef SCTL_HAVE_MPI
