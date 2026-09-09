@@ -661,8 +661,10 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
   using NodeMIDT = Morton<DIM>;
   if (rootOnlyTree<DIM, DevVec>(tree, N, M, start_bnd, end_bnd)) return;
 
-  // Cap threads so each chunk has well over M particles (so `begin + M` stays in-bounds).
-  const Integer max_threads = SCTL_GET_MAX_THREADS();
+  // Cap threads so each chunk has well over M particles (so `begin + M` stays in-bounds). Inside a
+  // parallel region a new team has one thread, so split the work for one rather than for threads
+  // that will not be started.
+  const Integer max_threads = (SCTL_IN_PARALLEL() ? 1 : SCTL_GET_MAX_THREADS());
   const Long min_chunk = std::max<Long>(4 * M + 1, 1024);
   const Integer nthreads = std::clamp<Integer>(N / min_chunk, 1, max_threads);
 
@@ -673,13 +675,11 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
   sctl::ScratchBuf<PaddedLong> local_sizes(nthreads);  // padded: concurrent per-thread writes
   sctl::ScratchBuf<Long> offsets(nthreads);            // written once by `single`, read-only after
   sctl::ScratchBuf<Long> zero_offsets(nthreads);       // functor reads `offsets[tid] == 0`
-  for (Integer t = 0; t < nthreads; ++t) {
-    zero_offsets[t] = 0;
-    local_sizes[t].v = 0;  // a smaller team than asked for would leave the rest unwritten
-  }
+  for (Integer t = 0; t < nthreads; ++t) zero_offsets[t] = 0;
 
   #pragma omp parallel num_threads(nthreads)
   {
+    SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nthreads, "buildTreeCpuChunked: the team is smaller than the split, so chunks would go unwalked");
     const Integer tid = SCTL_GET_THREAD_NUM();
     sctl::ScratchBuf<NodeMIDT> buf(max_emits);  // NUMA-local: first-touched on this thread's node
     const ChunkedWalkFunctor<DIM, WalkMode::Write> fw{thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nthreads, &zero_offsets[0], &buf[0], start_bnd, end_bnd};
@@ -1068,11 +1068,12 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
     const Long Nf = completeSlice<DIM, DevVec>(pol, tree, mins, rank, np, end_target, full);
     const NonLeafPred<DIM> is_nonleaf{thrust::raw_pointer_cast(full.data()), Nf, NodeT{}.Next()};
     const NodeT* const fp = thrust::raw_pointer_cast(full.data());
-    const Integer nt = SCTL_GET_MAX_THREADS();
+    const Integer nt = (SCTL_IN_PARALLEL() ? 1 : SCTL_GET_MAX_THREADS());
     sctl::ScratchBuf<Long> dsp(nt + 1);
-    std::fill(dsp.begin(), dsp.end(), Long(0));  // a smaller team leaves its tail unwritten
+    dsp[0] = 0;
     #pragma omp parallel num_threads(nt)
     {
+      SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nt, "balanceTreeDist: the team is smaller than the split, so nodes would be dropped");
       const Integer tid = SCTL_GET_THREAD_NUM();
       Long c = 0;
       for (Long i = Nf * tid / nt; i < Nf * (tid + 1) / nt; i++) c += is_nonleaf(i);
@@ -1082,6 +1083,7 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
     S.ReInit(dsp[nt]);
     #pragma omp parallel num_threads(nt)
     {
+      SCTL_ASSERT(SCTL_GET_NUM_THREADS() == nt);
       const Integer tid = SCTL_GET_THREAD_NUM();
       Long o = dsp[tid];
       for (Long i = Nf * tid / nt; i < Nf * (tid + 1) / nt; i++) if (is_nonleaf(i)) S[o++] = fp[i];
