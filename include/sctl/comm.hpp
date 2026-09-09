@@ -309,6 +309,18 @@ class Comm {
    * their send buffers (Linux; falls back to MPI where the kernel forbids it). The request covers
    * the rest.
    *
+   * @note Collective, and not fully non-blocking: the first call sets up the node-local group, and
+   * every call that reads peers directly synchronizes the node before returning, so that no rank
+   * leaves while a peer is still reading its send buffer. Ranks must therefore reach it in the same
+   * order, and there is no overlap to be had with the node-local part of the exchange.
+   *
+   * @note Reading a peer's memory needs ptrace permission. By default nothing is done to obtain
+   * it: where the kernel already permits the reads (yama `ptrace_scope` 0, as on a node a job
+   * owns) the direct path is used, and where it does not the setup probe fails and everything goes
+   * through MPI. Building with `-DSCTL_COMM_PTRACER` lets the ranks widen it for themselves with
+   * `PR_SET_PTRACER_ANY`, which opens their address space to every process of the same user for
+   * the rest of their lifetime -- appropriate on a node a job owns, not on a shared one.
+   *
    * @tparam SType type of the send-data.
    * @tparam RType type of the receive-data.
    *

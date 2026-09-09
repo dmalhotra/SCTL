@@ -372,7 +372,14 @@ inline void Comm::Impl::InitNode() {
   int ok = 0;
 #ifdef __linux__
   if (node_size_ > 1) {
-    prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);  // yama may otherwise limit reads to descendants
+    // Reading a peer's send buffer needs ptrace permission, which yama may narrow to descendants.
+    // Widening it with PR_SET_PTRACER_ANY opens this process's whole address space to every
+    // same-uid process for the rest of its life, so it is a build-time decision about the machine
+    // rather than a side effect of an exchange. Without SCTL_COMM_PTRACER the probe below simply
+    // fails wherever the kernel says no, and the exchange stays on MPI.
+#ifdef SCTL_COMM_PTRACER
+    prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+#endif
     node_pid_.resize(node_size_);
     const int pid = (int)getpid();
     MPI_Allgather(&pid, 1, MPI_INT, node_pid_.data(), 1, MPI_INT, node_comm_);
