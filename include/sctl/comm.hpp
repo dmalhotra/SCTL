@@ -1,6 +1,7 @@
 #ifndef _SCTL_COMM_HPP_
 #define _SCTL_COMM_HPP_
 
+#include <algorithm>          // for lower_bound, sort
 #include <functional>         // for less
 #include <map>                // for multimap
 #include <memory>             // for shared_ptr
@@ -132,6 +133,19 @@ class Comm {
    * @return size of this communicator.
    */
   [[nodiscard]] Integer Size() const noexcept;
+
+  /**
+   * Whether `rank` is a rank of this communicator running on this node -- this rank included, for
+   * which it is trivially true. Not the same question as `rank == Rank()`: with ranks 0 to 3 on one
+   * node, rank 0 sees `SameNode(2)` as true.
+   *
+   * Established when the communicator is built, so this is a local lookup. Reports the real
+   * topology whatever the direct-read build flags say -- those govern reading a peer's memory, not
+   * who shares the node. Without MPI there is one rank, itself.
+   *
+   * @param[in] rank A rank of this communicator.
+   */
+  [[nodiscard]] bool SameNode(Integer rank) const;
 
   /**
    * Synchronize all processes.
@@ -657,14 +671,29 @@ class Comm {
     MPI_Comm mpi_comm_;
     mutable std::stack<void*> req;
 
-    // Ranks sharing this node, whose send buffers a sparse exchange reads directly (Linux
-    // process_vm_readv) instead of receiving through MPI; set up by InitNode on first use.
-    bool node_init_ = false;
-    bool direct_ = false;
+    // The ranks of this communicator sharing this node, whose memory this rank may be able to read
+    // directly (Linux process_vm_readv) instead of receiving through MPI. Built with the
+    // communicator, so one made from an MPI_Comm and one made by Split each get their own.
+    //
+    // Held as the node's comm ranks in ascending order and searched, rather than as a table indexed
+    // by comm rank: that table would be one entry per rank of the communicator -- 7.6 MB each at a
+    // million ranks -- to carry node_size useful entries.
     MPI_Comm node_comm_ = MPI_COMM_NULL;
-    int node_size_ = 1;
-    std::vector<Integer> node_rank_of_;  ///< comm rank -> node rank, -1 off-node
-    std::vector<int> node_pid_;          ///< by node rank
+    std::vector<int> node_rank_;         ///< comm ranks on this node, ascending
+    std::vector<int> node_pid_;          ///< their pids, in the same order
+
+    // Whether the kernel actually permits those reads is a separate question from who is on the
+    // node, and answering it costs a read per peer and a barrier. The topology is built with the
+    // communicator, since SameNode() is a plain query; the permission is settled on first use.
+    bool direct_probed_ = false;
+    bool direct_ = false;
+
+    /** Position of `rank` in `node_rank_`, or -1 when `rank` is not a rank on this node. */
+    Integer NodeIdx(Integer rank) const {
+      const auto i = std::lower_bound(node_rank_.begin(), node_rank_.end(), (int)rank);
+      if (i == node_rank_.end() || *i != (int)rank) return -1;
+      return (Integer)(i - node_rank_.begin());
+    }
 
     Impl();
     ~Impl();
@@ -680,8 +709,17 @@ class Comm {
      */
     void Init(MPI_Comm mpi_comm);
 
-    /** Set up the node-local ranks; direct reads are enabled only if every node peer proves readable. Collective. */
+    /** Find the ranks sharing this node. Called by `Init`; collective on the communicator. */
     void InitNode();
+
+    /** Ask the kernel whether a node peer's memory can be read. Collective on `node_comm_`. */
+    void ProbeDirect();
+
+    /** Whether direct reads are on, probing once if that has not been settled yet. */
+    bool DirectOk() {
+      if (!direct_probed_) ProbeDirect();
+      return direct_;
+    }
   };
 
   template <class Type> static MPI_Op GetMPIOp(CommOp op);

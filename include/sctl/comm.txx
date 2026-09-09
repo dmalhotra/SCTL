@@ -357,53 +357,77 @@ inline void Comm::Impl::Init(MPI_Comm mpi_comm) {
   int* tag_ub_ptr = nullptr;
   MPI_Comm_get_attr(mpi_comm_, MPI_TAG_UB, &tag_ub_ptr, &flag);
   mpi_tag_ub_ = (flag && tag_ub_ptr) ? *tag_ub_ptr : std::numeric_limits<int>::max();
+  InitNode();
 }
 
 inline void Comm::Impl::InitNode() {
-  node_init_ = true;
-#ifdef SCTL_COMM_NO_DIRECT
-  // `direct_` stays false, so a sparse exchange sends every block through MPI and reads none of
-  // what the rest of this would set up: no node communicator, no pids, no probe.
-  return;
-#else
+  // Who shares this node is a fact about the job, and a caller may want it for reasons of its own,
+  // so this is built whatever SCTL_COMM_NO_DIRECT says; that flag stops the reads, in ProbeDirect.
+  if (mpi_size_ == 1) {  // nothing to share a node with, and this is the shape Comm::Self() takes
+    node_rank_.assign(1, mpi_rank_);
+    node_pid_.assign(1, 0);
+    direct_probed_ = true;
+    return;
+  }
   #pragma omp critical(SCTL_COMM_DUP)  // creating a communicator, as Init and ~Impl do
   MPI_Comm_split_type(mpi_comm_, MPI_COMM_TYPE_SHARED, mpi_rank_, MPI_INFO_NULL, &node_comm_);
-  int node_rank = 0;
-  MPI_Comm_size(node_comm_, &node_size_);
-  MPI_Comm_rank(node_comm_, &node_rank);
-  ScratchBuf<int> ranks(node_size_);  // node rank -> comm rank
-  MPI_Allgather(&mpi_rank_, 1, MPI_INT, &ranks[0], 1, MPI_INT, node_comm_);
-  node_rank_of_.assign(mpi_size_, -1);
-  for (Integer j = 0; j < node_size_; j++) node_rank_of_[ranks[j]] = j;
-  int ok = 0;
+  int node_size = 1;
+  MPI_Comm_size(node_comm_, &node_size);
+  { // this node's comm ranks and pids, by ascending comm rank so NodeIdx can bisect
+    std::vector<int> by_node(2 * node_size);
+    int mine[2] = {mpi_rank_, 0};
 #ifdef __linux__
-  if (node_size_ > 1) {
-    // Reading a peer's send buffer needs ptrace permission, which yama may narrow to descendants.
-    // Widening it with PR_SET_PTRACER_ANY opens this process's whole address space to every
-    // same-uid process for the rest of its life, so it is a build-time decision about the machine
-    // rather than a side effect of an exchange. Without SCTL_COMM_PTRACER the probe below simply
-    // fails wherever the kernel says no, and the exchange stays on MPI.
-#ifdef SCTL_COMM_PTRACER
-    prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+    mine[1] = (int)getpid();
 #endif
-    node_pid_.resize(node_size_);
-    const int pid = (int)getpid();
-    MPI_Allgather(&pid, 1, MPI_INT, node_pid_.data(), 1, MPI_INT, node_comm_);
-    Long probe = 0x5c71 + mpi_rank_, got = 0;
-    const Long mine = (Long)&probe;
-    ScratchBuf<Long> addr(node_size_);
-    MPI_Allgather(&mine, 1, MPI_INT64_T, &addr[0], 1, MPI_INT64_T, node_comm_);
-    ok = 1;
-    for (Integer j = 0; j < node_size_ && ok; j++) {
-      if (j != node_rank) ok = comm_detail::ReadPeer(node_pid_[j], (const void*)addr[j], &got, sizeof(Long)) && (got == 0x5c71 + ranks[j]);
+    MPI_Allgather(mine, 2, MPI_INT, by_node.data(), 2, MPI_INT, node_comm_);
+    std::vector<std::pair<int,int>> peers(node_size);
+    for (int j = 0; j < node_size; j++) peers[j] = std::make_pair(by_node[2*j], by_node[2*j+1]);
+    std::sort(peers.begin(), peers.end());
+    node_rank_.resize(node_size);
+    node_pid_.resize(node_size);
+    for (int j = 0; j < node_size; j++) {
+      node_rank_[j] = peers[j].first;
+      node_pid_[j] = peers[j].second;
     }
-    MPI_Barrier(node_comm_);  // every probe stays alive until all peers have read it
   }
+  if (node_size == 1) direct_probed_ = true;  // no peer to read, so nothing to ask the kernel
+}
+
+inline void Comm::Impl::ProbeDirect() {
+  direct_probed_ = true;
+  direct_ = false;
+#if !defined(SCTL_COMM_NO_DIRECT) && defined(__linux__)
+  const int node_size = (int)node_rank_.size();
+  if (node_size <= 1) return;
+  int node_rank = 0;
+  MPI_Comm_rank(node_comm_, &node_rank);
+  // Reading a peer's memory needs ptrace permission, which yama may narrow to descendants. Widening
+  // it with PR_SET_PTRACER_ANY opens this process's whole address space to every same-uid process
+  // for the rest of its life, so it is a build-time decision about the machine rather than a side
+  // effect of an exchange. Without SCTL_COMM_PTRACER the probe below simply fails wherever the
+  // kernel says no, and every exchange stays on MPI.
+#ifdef SCTL_COMM_PTRACER
+  prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
 #endif
+  // Each rank publishes the address of a word holding a value that identifies it, so a read coming
+  // back with that value proves it landed where it was meant to.
+  Long probe = 0x5c71 + mpi_rank_, got = 0;
+  const Long probe_addr = (Long)&probe;
+  ScratchBuf<Long> addr(node_size), rank_of(node_size);
+  MPI_Allgather(&probe_addr, 1, MPI_INT64_T, &addr[0], 1, MPI_INT64_T, node_comm_);
+  const Long mine = mpi_rank_;
+  MPI_Allgather(&mine, 1, MPI_INT64_T, &rank_of[0], 1, MPI_INT64_T, node_comm_);
+  int ok = 1;
+  for (int j = 0; j < node_size && ok; j++) {
+    if (j == node_rank) continue;
+    const Integer idx = NodeIdx((Integer)rank_of[j]);
+    ok = comm_detail::ReadPeer(node_pid_[idx], (const void*)addr[j], &got, sizeof(Long)) && (got == 0x5c71 + rank_of[j]);
+  }
+  MPI_Barrier(node_comm_);  // every probe stays alive until all peers have read it
   int all = 0;
   MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, node_comm_);
   direct_ = (all != 0);
-#endif  // SCTL_COMM_NO_DIRECT
+#endif
 }
 #endif
 
@@ -468,6 +492,16 @@ inline Integer Comm::Size() const noexcept {
   return impl_->mpi_size_;
 #else
   return 1;
+#endif
+}
+
+inline bool Comm::SameNode(Integer rank) const {
+#ifdef SCTL_HAVE_MPI
+  SCTL_ASSERT(0 <= rank && rank < impl_->mpi_size_);
+  return impl_->NodeIdx(rank) >= 0;
+#else
+  SCTL_ASSERT(rank == 0);
+  return false;
 #endif
 }
 
@@ -841,10 +875,10 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Ialltoallv_sparse");
-  if (!impl_->node_init_) impl_->InitNode();
   const Integer np = impl_->mpi_size_, rank = Rank();
-  const auto on_node = [this](Integer i) { return impl_->node_rank_of_[i] >= 0; };  // only read while direct_
-  const auto skip = [this,rank,&on_node](Integer i) { return i == rank || (impl_->direct_ && on_node(i)); };
+  const auto on_node = [this](Integer i) { return impl_->NodeIdx(i) >= 0; };
+  const bool direct = impl_->DirectOk();
+  const auto skip = [rank,direct,&on_node](Integer i) { return i == rank || (direct && on_node(i)); };
   for (Integer i = 0; i < np; i++) {  // receive pages fault in with all threads, not MPI's one
     if (!skip(i) && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
   }
@@ -921,17 +955,18 @@ template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstI
 
   // Now the node-local work, over memory rather than the network, alongside the transfers above.
   omp_par::memcpy((Iterator<char>)(rbuf + rdispls[rank]), (ConstIterator<char>)(sbuf + sdispls[rank]), scounts[rank] * (Long)sizeof(SType));
-  if (impl_->direct_) {  // node peers' blocks are read straight out of their send buffers
-    ScratchBuf<Long> saddr(impl_->node_size_), raddr(impl_->node_size_);  // where each node peer's block starts in my send buffer
-    for (Integer i = 0; i < np; i++) {
-      const Integer j = impl_->node_rank_of_[i];
-      if (j >= 0) saddr[j] = (scounts[i] ? (Long)&sbuf[sdispls[i]] : 0);
+  if (direct) {  // node peers' blocks are read straight out of their send buffers
+    const Long node_size = (Long)impl_->node_rank_.size();
+    ScratchBuf<Long> saddr(node_size), raddr(node_size);  // where each node peer's block starts in my send buffer
+    for (Long j = 0; j < node_size; j++) {
+      const Integer i = (Integer)impl_->node_rank_[j];
+      saddr[j] = (scounts[i] ? (Long)&sbuf[sdispls[i]] : 0);
     }
     MPI_Alltoall(&saddr[0], 1, MPI_INT64_T, &raddr[0], 1, MPI_INT64_T, impl_->node_comm_);
     int ok = 1;
-    for (Integer i = 0; i < np; i++) {
-      const Integer j = impl_->node_rank_of_[i];
-      if (i == rank || j < 0 || !rcounts[i]) continue;
+    for (Long j = 0; j < node_size; j++) {
+      const Integer i = (Integer)impl_->node_rank_[j];
+      if (i == rank || !rcounts[i]) continue;
       ok = (int)comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType)) && ok;
     }
     // InitNode's probe only proved a stack address readable; a later read can still be refused, so
