@@ -498,8 +498,8 @@ void treeFromAnchors(DevVec<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, 
 template <class T, template <class...> class DevVec, class Policy>
 void partitionN(const Policy& pol, DevVec<T>& v, Long Ntgt, const Comm& comm, DevVec<T>& storage_buf) {
   const Long np = comm.Size(), rank = comm.Rank(), n = (Long)v.size();
-  if (np == 1) {
-    v.resize(Ntgt);
+  if (np == 1) {  // the one rank holds every element, so the target is what it already has
+    SCTL_ASSERT_MSG(n == Ntgt, "partitionN: Ntgt does not total the elements the ranks hold.");
     return;
   }
 #ifdef SCTL_HAVE_MPI
