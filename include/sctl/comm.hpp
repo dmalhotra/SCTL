@@ -41,7 +41,11 @@ class Comm {
  public:
 
   /**
-   * Initialize MPI.
+   * Initialize MPI, and ask the kernel once whether this process may read the memory of the ranks
+   * sharing its node. That answer is a property of the process, so settling it here spares every
+   * communicator a probe of its own -- and spares any routine that consults it from being
+   * collective. A program that brings up MPI without this leaves the direct path off and sends
+   * everything through MPI.
    */
   static void MPI_Init(int* argc, char*** argv);
 
@@ -386,14 +390,16 @@ class Comm {
    * @note Collective. With `BlockingDirect`, also not fully non-blocking: the node-local part of
    * the exchange is complete when the call returns and only the rest is left for `Wait`.
    *
-   * @note Reading a peer's memory needs ptrace permission. By default nothing is done to obtain
-   * it: where the kernel already permits the reads (yama `ptrace_scope` 0, as on a node a job
-   * owns) the direct path is used, and where it does not the setup probe fails and everything goes
-   * through MPI. Building with `-DSCTL_COMM_PTRACER` lets the ranks widen it for themselves with
-   * `PR_SET_PTRACER_ANY`, which opens their address space to every process of the same user for
-   * the rest of their lifetime -- do not do that on a shared node. `-DSCTL_COMM_NO_DIRECT` turns
-   * the direct path off outright. A read the kernel refuses after the probe has passed also turns
-   * it off, for this exchange and every later one, rather than ending the run.
+   * @note Reading a peer's memory needs ptrace permission, which `Comm::MPI_Init` asks the kernel
+   * about once for the process. By default nothing is done to obtain it: where the kernel already
+   * permits the reads (yama `ptrace_scope` 0, as on a node a job owns) the direct path is used,
+   * and where it does not the probe fails and everything goes through MPI -- as it also does for a
+   * program that brings up MPI without `Comm::MPI_Init`. Building with `-DSCTL_COMM_PTRACER` lets
+   * the ranks widen it for themselves with `PR_SET_PTRACER_ANY`, which opens their address space
+   * to every process of the same user for the rest of their lifetime -- do not do that on a shared
+   * node. `-DSCTL_COMM_NO_DIRECT` turns the direct path off outright. A read the kernel refuses
+   * after the probe has passed sends that one exchange through MPI instead; it is not remembered,
+   * since a permission that changed under a running job is not something to carry a flag for.
    *
    * @tparam SType type of the send-data.
    * @tparam RType type of the receive-data.
@@ -731,10 +737,11 @@ class Comm {
     std::vector<int> node_rank_;         ///< comm ranks on this node, ascending
     std::vector<int> node_pid_;          ///< their pids, in the same order
 
-    // Whether the kernel actually permits those reads is a separate question from who is on the
-    // node, and answering it costs a read per peer and a barrier. The topology is built with the
-    // communicator, since SameNode() is a plain query; the permission is settled on first use.
-    bool direct_probed_ = false;
+    // Whether node peers' memory may be read on this communicator. Whether the kernel permits it is
+    // a separate question from who is on the node, and one this communicator does not ask:
+    // `Comm::MPI_Init` settles it once for the process, over the whole node. Written by `InitNode`
+    // and never again, so every rank of a node holds the same value and point-to-point code may
+    // read it as freely as a collective.
     bool direct_ = false;
 
     /** Position of `rank` in `node_rank_`, or -1 when `rank` is not a rank on this node. */
@@ -758,35 +765,9 @@ class Comm {
      */
     void Init(MPI_Comm mpi_comm);
 
-    /** Find the ranks sharing this node. Called by `Init`; collective on the communicator. */
+    /** Find the ranks sharing this node, and take the process's direct-read answer. Called by
+     *  `Init`; collective on the communicator. */
     void InitNode();
-
-    /** Ask the kernel whether a node peer's memory can be read. Collective on `node_comm_`. */
-    void ProbeDirect();
-
-    /** Whether direct reads are on, probing once if that has not been settled yet. Only callable
-     *  from a routine that is collective on the communicator, since the probe is. */
-    bool DirectOk() {
-      if (!direct_probed_) ProbeDirect();
-      return direct_;
-    }
-
-    /**
-     * Whether a node peer's memory may be worth reading, answered without asking the kernel: the
-     * settled answer where `ProbeDirect` has already run, and otherwise optimism that the caller's
-     * own handshake corrects. Never probes, so point-to-point code can consult it.
-     *
-     * Both ranks of a pair get the same answer from this, which is what lets them agree on the
-     * transport without exchanging anything first: `direct_probed_` and `direct_` are only ever set
-     * together across a node, by `ProbeDirect`, by `ReadNodeBlocks` or by `InitNode`.
-     */
-    bool DirectMaybe() const {
-#if defined(SCTL_COMM_NO_DIRECT) || !defined(__linux__)
-      return false;
-#else
-      return direct_probed_ ? direct_ : true;
-#endif
-    }
   };
 
   template <class Type> static MPI_Op GetMPIOp(CommOp op);

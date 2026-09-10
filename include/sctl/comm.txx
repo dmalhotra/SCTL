@@ -218,6 +218,61 @@ inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
 #endif
 }
 
+/**
+ * Whether the kernel lets this process read its node peers' memory, settled once by
+ * `Comm::MPI_Init` and read by every communicator built afterwards.
+ *
+ * A property of the process and its node rather than of any communicator: what
+ * `process_vm_readv` is allowed to do depends on the two processes, and a sub-communicator's node
+ * peers are a subset of the world's, so the world's answer holds for all of them -- right when it
+ * says yes, and merely conservative when it says no.
+ *
+ * Left false where `Comm::MPI_Init` is not the entry point, so a caller that brings up MPI itself
+ * stays on MPI rather than having a collective probe run from wherever it first happens to matter.
+ */
+inline bool& DirectAvailable() {
+  static bool ok = false;
+  return ok;
+}
+
+/**
+ * Ask the kernel whether this rank can read its node peers. Collective on `node_comm`.
+ *
+ * Each rank publishes the address of a word holding a value that identifies it, so a read coming
+ * back with that value proves it landed where it was meant to. The answer is reduced, since the
+ * ranks of a node have to agree on it before any of them branches on it.
+ */
+inline bool ProbeDirectOnNode(MPI_Comm node_comm) {
+#if !defined(SCTL_COMM_NO_DIRECT) && defined(__linux__)
+  int node_size = 1, node_rank = 0;
+  MPI_Comm_size(node_comm, &node_size);
+  MPI_Comm_rank(node_comm, &node_rank);
+  if (node_size <= 1) return false;  // no peer to read, so nothing to ask
+  // Widening ptrace opens this process's address space to every process of the same user for the
+  // rest of its life, so it is a build-time decision about the machine. Without it the reads below
+  // simply fail wherever the kernel says no, and every exchange stays on MPI.
+#ifdef SCTL_COMM_PTRACER
+  prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+#endif
+  Long probe = 0x5c71 + node_rank, got = 0;
+  const Long mine[2] = {(Long)&probe, (Long)getpid()};
+  ScratchBuf<Long> peers(2 * node_size);
+  MPI_Allgather(mine, 2, MPI_INT64_T, &peers[0], 2, MPI_INT64_T, node_comm);
+  int ok = 1;
+  for (int j = 0; j < node_size && ok; j++) {
+    if (j == node_rank) continue;
+    ok = ReadPeer((int)peers[2*j+1], (const void*)peers[2*j], &got, sizeof(Long)) && (got == 0x5c71 + j);
+  }
+  MPI_Barrier(node_comm);  // every probe stays alive until all peers have read it
+  int all = 0;
+  MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, node_comm);
+  return all != 0;
+#else
+  SCTL_UNUSED(node_comm);
+  return false;
+#endif
+}
+
 }  // namespace comm_detail
 
 /**
@@ -322,6 +377,18 @@ inline void Comm::MPI_Init(int* argc, char*** argv) {
   ::MPI_Init_thread(argc, argv, MPI_THREAD_SERIALIZED, &provided);
   if (provided < MPI_THREAD_SERIALIZED) SCTL_WARN("MPI implementation does not support MPI_THREAD_SERIALIZED.");
 #endif
+#ifdef SCTL_HAVE_MPI
+  { // Settle the direct-read permission once, over the whole node, so no communicator has to probe.
+    // Every rank is here, so the node group is whole; a communicator made later covers a subset of
+    // it and can take this answer as it stands.
+    MPI_Comm node_comm = MPI_COMM_NULL;
+    int rank = 0;
+    ::MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, rank, MPI_INFO_NULL, &node_comm);
+    comm_detail::DirectAvailable() = comm_detail::ProbeDirectOnNode(node_comm);
+    MPI_Comm_free(&node_comm);
+  }
+#endif
 }
 
 inline void Comm::MPI_Finalize() {
@@ -381,11 +448,11 @@ inline void Comm::Impl::Init(MPI_Comm mpi_comm) {
 
 inline void Comm::Impl::InitNode() {
   // Who shares this node is a fact about the job, and a caller may want it for reasons of its own,
-  // so this is built whatever SCTL_COMM_NO_DIRECT says; that flag stops the reads, in ProbeDirect.
+  // so this is built whatever SCTL_COMM_NO_DIRECT says; that flag stops the reads, in the probe.
   if (mpi_size_ == 1) {  // nothing to share a node with, and this is the shape Comm::Self() takes
     node_rank_.assign(1, mpi_rank_);
     node_pid_.assign(1, 0);
-    direct_probed_ = true;
+    direct_ = false;
     return;
   }
   #pragma omp critical(SCTL_COMM_DUP)  // creating a communicator, as Init and ~Impl do
@@ -409,44 +476,9 @@ inline void Comm::Impl::InitNode() {
       node_pid_[j] = peers[j].second;
     }
   }
-  if (node_size == 1) direct_probed_ = true;  // no peer to read, so nothing to ask the kernel
-}
-
-inline void Comm::Impl::ProbeDirect() {
-  direct_probed_ = true;
-  direct_ = false;
-#if !defined(SCTL_COMM_NO_DIRECT) && defined(__linux__)
-  const int node_size = (int)node_rank_.size();
-  if (node_size <= 1) return;
-  int node_rank = 0;
-  MPI_Comm_rank(node_comm_, &node_rank);
-  // Reading a peer's memory needs ptrace permission, which yama may narrow to descendants. Widening
-  // it with PR_SET_PTRACER_ANY opens this process's whole address space to every same-uid process
-  // for the rest of its life, so it is a build-time decision about the machine rather than a side
-  // effect of an exchange. Without SCTL_COMM_PTRACER the probe below simply fails wherever the
-  // kernel says no, and every exchange stays on MPI.
-#ifdef SCTL_COMM_PTRACER
-  prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
-#endif
-  // Each rank publishes the address of a word holding a value that identifies it, so a read coming
-  // back with that value proves it landed where it was meant to.
-  Long probe = 0x5c71 + mpi_rank_, got = 0;
-  const Long probe_addr = (Long)&probe;
-  ScratchBuf<Long> addr(node_size), rank_of(node_size);
-  MPI_Allgather(&probe_addr, 1, MPI_INT64_T, &addr[0], 1, MPI_INT64_T, node_comm_);
-  const Long mine = mpi_rank_;
-  MPI_Allgather(&mine, 1, MPI_INT64_T, &rank_of[0], 1, MPI_INT64_T, node_comm_);
-  int ok = 1;
-  for (int j = 0; j < node_size && ok; j++) {
-    if (j == node_rank) continue;
-    const Integer idx = NodeIdx((Integer)rank_of[j]);
-    ok = comm_detail::ReadPeer(node_pid_[idx], (const void*)addr[j], &got, sizeof(Long)) && (got == 0x5c71 + rank_of[j]);
-  }
-  MPI_Barrier(node_comm_);  // every probe stays alive until all peers have read it
-  int all = 0;
-  MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, node_comm_);
-  direct_ = (all != 0);
-#endif
+  // The kernel was asked once, at Comm::MPI_Init, over the whole node -- of which this
+  // communicator's node group is a subset -- so every rank here starts from the same answer.
+  direct_ = comm_detail::DirectAvailable() && node_size > 1;
 }
 #endif
 
@@ -913,21 +945,17 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
 // communicator), and each direction is posted in the same order at both ends, so the address, the
 // acknowledgement and any fallback payload cannot be mistaken for one another.
 //
-// The branch is taken on `DirectMaybe`, not `DirectOk`: the probe behind `DirectOk` is collective on
-// the node, and only the two ranks of the pair are here, so probing would leave them waiting on
-// peers that never arrive. The handshake needs no probe -- a refusal comes back in the
-// acknowledgement -- and `DirectMaybe` gives both ranks the same answer without communicating.
-//
-// A refusal is not recorded either. `direct_` is a fact about the node, agreed by every rank on it;
-// writing it here would set it on two ranks and leave the rest disagreeing, which is worse than the
-// two extra messages a later pair spends rediscovering the refusal.
+// `direct_` is settled at Comm::MPI_Init and never written afterwards, so both ranks of the pair
+// read the same answer without communicating and nothing collective runs from here. A refusal is
+// not recorded, as it is not in `ReadNodeBlocks`: the acknowledgement reports it for this message,
+// and a later pair spends two small messages finding out again.
 template <class SType> void Comm::Send(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag) const {
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Send");
   // Not conditioned on the count: both sides must choose the same branch, and only the sender knows
   // its count.
-  if (dest != impl_->mpi_rank_ && SameNode(dest) && impl_->DirectMaybe()) {
+  if (dest != impl_->mpi_rank_ && SameNode(dest) && impl_->direct_) {
     const Long tell[2] = {(scount ? (Long)&sbuf[0] : 0), scount * (Long)sizeof(SType)};
     MPI_Send(tell, 2, MPI_INT64_T, dest, tag, impl_->mpi_comm_);
     char ack = 0;
@@ -943,7 +971,7 @@ template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Intege
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Recv");
-  if (source != impl_->mpi_rank_ && SameNode(source) && impl_->DirectMaybe()) {
+  if (source != impl_->mpi_rank_ && SameNode(source) && impl_->direct_) {
     Long told[2] = {0, 0};
     MPI_Recv(told, 2, MPI_INT64_T, source, tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
     const Long bytes = std::min<Long>(told[1], rcount * (Long)sizeof(RType));  // at most what was sent
@@ -980,13 +1008,17 @@ bool Comm::ReadNodeBlocks(ConstIterator<SType> sbuf, ConstIterator<Long> scounts
     if (i == rank || !rcounts[i]) continue;
     ok = (int)comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType)) && ok;
   }
-  // The setup probe only proved a stack address readable; a later read can still be refused, so
-  // agree on the outcome and give up the direct path for good rather than ending the run. The
-  // reduction also holds every rank here until its peers have finished reading its send buffer,
-  // which is what the exchange needs of it.
+  // Agree on the outcome, so the node either delivered every block this way or none of them and
+  // falls back together. The reduction also holds every rank here until its peers have finished
+  // reading its send buffer, which is what the exchange needs of it.
+  //
+  // The outcome is not remembered. Once the kernel has answered at init, the only refusal left is a
+  // permission that changed under a running job, which does not happen in the ordinary course; the
+  // wasted attempt if it ever did is one small exchange, against the cost of carrying a flag that
+  // ranks could hold different values of. Nothing writes `direct_` after `InitNode`, so there is
+  // nothing for them to disagree about.
   int all = 0;
   MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, impl_->node_comm_);
-  if (!all) impl_->direct_ = false;
   return all != 0;
 }
 #endif  // SCTL_HAVE_MPI
@@ -1000,7 +1032,7 @@ template <bool BlockingDirect, class SType, class RType> Comm::Request Comm::Ial
   const auto on_node = [this](Integer i) { return impl_->NodeIdx(i) >= 0; };
   // Reading a peer's send buffer means synchronizing the node before returning, which this
   // routine's name says it will not do, so the caller has to ask for it.
-  const bool direct = BlockingDirect && impl_->DirectOk();
+  const bool direct = BlockingDirect && impl_->direct_;
   const auto skip = [rank,direct,&on_node](Integer i) { return i == rank || (direct && on_node(i)); };
   // Every block but self, whichever way it arrives: the node-local ones are read by ReadNodeBlocks,
   // which needs them faulted in already, and the rest are written by MPI. Either way the pages fault
@@ -1118,7 +1150,7 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     }
     // The self block is a local copy, and where the kernel allows it so is every other block that
     // stays on this node: this routine blocks either way, so reading them costs nothing here.
-    if (impl_->DirectOk() && ReadNodeBlocks(sbuf, scounts, sdispls, rbuf, rcounts, rdispls)) {
+    if (impl_->direct_ && ReadNodeBlocks(sbuf, scounts, sdispls, rbuf, rcounts, rdispls)) {
       for (Integer i = 0; i < impl_->mpi_size_; i++) {
         if (i != Rank() && impl_->NodeIdx(i) >= 0) {
           scnt[i] = 0;
@@ -1208,7 +1240,7 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     }
     // The self block is a local copy, and where the kernel allows it so is every other block that
     // stays on this node: this routine blocks either way, so reading them costs nothing here.
-    if (impl_->DirectOk() && ReadNodeBlocks(sbuf, scounts, sdispls, rbuf, rcounts, rdispls)) {
+    if (impl_->direct_ && ReadNodeBlocks(sbuf, scounts, sdispls, rbuf, rcounts, rdispls)) {
       for (Integer i = 0; i < impl_->mpi_size_; i++) {
         if (i != Rank() && impl_->NodeIdx(i) >= 0) {
           scnt[i] = 0;
