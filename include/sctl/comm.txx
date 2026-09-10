@@ -383,9 +383,9 @@ inline void Comm::MPI_Init(int* argc, char*** argv) {
   ::MPI_Init_thread(argc, argv, MPI_THREAD_SERIALIZED, &provided);
   if (provided < MPI_THREAD_SERIALIZED) SCTL_WARN("MPI implementation does not support MPI_THREAD_SERIALIZED.");
 #endif
-#ifdef SCTL_HAVE_MPI
+#if defined(SCTL_HAVE_MPI) && !defined(SCTL_COMM_NO_DIRECT)
   { // Every rank is here, so the node group is whole and a communicator made later covers a subset
-    // of it.
+    // of it. Skipped where the probe would answer no without asking.
     MPI_Comm node_comm = MPI_COMM_NULL;
     int rank = 0;
     ::MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -452,9 +452,16 @@ inline void Comm::Impl::Init(MPI_Comm mpi_comm) {
 }
 
 inline void Comm::Impl::InitNode() {
-  // Who shares this node is a fact about the job, and a caller may want it for reasons of its own,
-  // so this is built whatever SCTL_COMM_NO_DIRECT says; that flag stops the reads, in the probe.
-  if (mpi_size_ == 1) {  // nothing to share a node with, and this is the shape Comm::Self() takes
+  // Finding the node group costs a communicator and two collectives per Comm, which a build with no
+  // use for it should not pay: SCTL_COMM_NO_DIRECT takes the node group down to this rank alone.
+  // The cost cannot be deferred to the first caller instead, since splitting the communicator is
+  // collective and the first caller need not be -- a Send to one peer would leave the others in it.
+#ifdef SCTL_COMM_NO_DIRECT
+  const bool alone = true;
+#else
+  const bool alone = (mpi_size_ == 1);  // nothing to share a node with, as Comm::Self() has
+#endif
+  if (alone) {  // this rank is its own node group, so every direct path is skipped
     node_rank_.assign(1, mpi_rank_);
     node_pid_.assign(1, 0);
     direct_ = false;

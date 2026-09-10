@@ -76,7 +76,7 @@ The following compiler flags can be used to enable or disable specific features 
 - ``-DSCTL_QUAD_T``: Enable support for :ref:`quad-precision type <math_utils_hpp>`.
 - ``-DSCTL_MAX_DEPTH=<levels>``: Set the maximum depth of a :ref:`Morton <morton_hpp>` code, and so of a :ref:`Tree <tree_hpp>` (default 20).
 - ``-DSCTL_COMM_PTRACER``: Let :ref:`Comm <comm_hpp>` read node-local peers' buffers where the kernel would otherwise refuse; this exposes a rank's memory to the same user.
-- ``-DSCTL_COMM_NO_DIRECT``: Disable those reads, so every :ref:`Comm <comm_hpp>` exchange goes through MPI.
+- ``-DSCTL_COMM_NO_DIRECT``: Disable those reads, so every :ref:`Comm <comm_hpp>` exchange goes through MPI. Each :ref:`Comm <comm_hpp>` then skips finding its node group, and ``SameNode`` reports only the calling rank.
 
 Features and Capabilities
 -------------------------

@@ -146,9 +146,11 @@ class Comm {
    * which it is trivially true. Not the same question as `rank == Rank()`: with ranks 0 to 3 on one
    * node, rank 0 sees `SameNode(2)` as true.
    *
-   * Established when the communicator is built, so this is a local lookup. Reports the real
-   * topology whatever the direct-read build flags say -- those govern reading a peer's memory, not
-   * who shares the node. Without MPI there is one rank, itself.
+   * Established when the communicator is built, so this is a local lookup. `-DSCTL_COMM_NO_DIRECT`
+   * does not build the node group -- finding it costs a communicator and two collectives per `Comm`,
+   * and nothing in that build reads it -- so there this reports only this rank, and the same without
+   * MPI. Everywhere else it is the real topology, which is not what the other direct-read flags
+   * govern: those say whether a peer's memory may be read, not who shares the node.
    *
    * @param[in] rank A rank of this communicator.
    */
@@ -399,7 +401,7 @@ class Comm {
    * program that initializes MPI without `Comm::MPI_Init`. Building with `-DSCTL_COMM_PTRACER` lets
    * the ranks widen it for themselves with `PR_SET_PTRACER_ANY`, which opens their address space
    * to every process of the same user for the rest of their lifetime -- do not do that on a shared
-   * node. `-DSCTL_COMM_NO_DIRECT` turns the direct path off outright. A read the kernel refuses
+   * node. `-DSCTL_COMM_NO_DIRECT` turns the direct path off outright, and with it the per-`Comm` node group, so `SameNode` there reports only this rank. A read the kernel refuses
    * after the probe has passed sends that one exchange through MPI instead; it is not remembered,
    * since a permission that changed under a running job is not something to carry a flag for.
    *
