@@ -130,13 +130,15 @@ template <Integer DIM> class Tree {
 
     /**
      * Add named data without values: `cnt[i] * dof` unwritten elements for node i, to be filled in
-     * place through the view `GetData` returns. Local, no communication.
+     * place through the view `GetData` returns. No data moves; the ranks only agree on `dof`.
      *
      * @param[in] name Name for the data. Must not already exist on this tree.
      * @tparam ValueType Element type. Must be given explicitly: it appears only in the size
      * calculation, so it cannot be deduced from the arguments.
-     * @param[in] dof Elements per data item; must agree across processes.
+     * @param[in] dof Elements per data item; must agree across processes, which is checked.
      * @param[in] cnt Number of data items per node. Must have one entry per tree node.
+     *
+     * @note Collective; must be called from all processes.
      */
     template <class ValueType> void AddData(const std::string& name, Long dof, const Vector<Long>& cnt);
 

@@ -1840,6 +1840,7 @@ void GPUTree<Real, DIM, DevVec>::AddData(const std::string& name, const DevVec<V
 template <class Real, Integer DIM, template <class...> class DevVec>
 template <class ValueType>
 void GPUTree<Real, DIM, DevVec>::AddData(const std::string& name, Long dof, const sctl::Vector<Long>& cnt) {
+  sctl::tree_detail::assert_same_dof(comm_, dof, "GPUTree::AddData");
   addData_(name, sctl::omp_par::reduce(cnt.begin(), cnt.Dim()) * dof * (Long)sizeof(ValueType), cnt);
 }
 

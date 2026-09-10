@@ -148,7 +148,9 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
 
   /**
    * Add named data without values: `cnt[i] * dof` unwritten elements for node i, to be filled in
-   * place through the view `GetData` fills. Local, no communication.
+   * place through the view `GetData` fills. No data moves; the ranks only agree on `dof`.
+   *
+   * @note Collective; must be called from all processes.
    */
   template <class ValueType> void AddData(const std::string& name, Long dof, const sctl::Vector<Long>& cnt);
 

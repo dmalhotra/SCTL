@@ -637,6 +637,15 @@ namespace sctl {
       cnt .ReInit( cnt_->second.Dim(), (Iterator<Long>)cnt_->second.begin(), false);
     }
 
+    /** `dof` is a property of the data set, so every rank must give the same one. Reported here
+     *  rather than where a later `global_dof` would divide by a total the ranks disagree on, which
+     *  fails on some other rank and names some other data set. */
+    inline void assert_same_dof(const Comm& comm, Long dof, const char* who) {
+      StaticArray<Long,2> loc{dof, -dof}, glb;
+      comm.Allreduce((ConstIterator<Long>)loc, (Iterator<Long>)glb, 2, CommOp::MAX);
+      SCTL_ASSERT_MSG(glb[0] == -glb[1], (std::string(who) + ": ranks disagree on dof.").c_str());
+    }
+
     /** `ndata / nitem` summed over ranks, since a rank may hold no items; the division must be exact. */
     inline Long global_dof(const Comm& comm, Long ndata, Long nitem) {
       StaticArray<Long,2> Ng, Nl{ndata, nitem};
@@ -1401,6 +1410,7 @@ namespace sctl {
   template <Integer DIM> template <class ValueType> void Tree<DIM>::AddData(const std::string& name, Long dof, const Vector<Long>& cnt) {
     SCTL_ASSERT_MSG(cnt.Dim() == node_mid.Dim(), "Tree::AddData: one count per tree node.");
     SCTL_ASSERT(node_data.find(name) == node_data.end());
+    tree_detail::assert_same_dof(comm, dof, "Tree::AddData");
     node_data[name].ReInit(omp_par::reduce(cnt.begin(), cnt.Dim()) * dof * (Long)sizeof(ValueType));
     node_cnt [name] = cnt;
   }
