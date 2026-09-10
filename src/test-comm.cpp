@@ -331,6 +331,90 @@ void TestIalltoallvSparse(const Comm& comm) {
   CheckAlltoallvPayload(recv, recv_cnt, recv_dsp, rank);
 }
 
+// Send/Recv pair up with a rank on this node wherever the kernel permits it, so the payload is read
+// out of the sender's buffer rather than sent. Both ends must agree on that without exchanging the
+// decision, and the fallback must match message for message, so the pairs below run whichever
+// transport the run gets: neighbour ranks are on the same node under one mpirun, off it otherwise.
+void TestSendRecv(const Comm& comm) {
+  const Integer np = comm.Size();
+  if (np < 2) return;
+  const Integer rank = comm.Rank();
+  const Integer peer = (rank % 2 == 0 ? rank + 1 : rank - 1);
+  if (peer >= np) return;  // odd rank count leaves the last one out
+  const bool first = (rank < peer);
+
+  // The pair sends in one order and receives in the other, so neither waits on a send it must
+  // itself receive.
+  const auto exchange = [&comm, peer, first](Vector<Long>& send, Vector<Long>& recv, Integer tag) {
+    if (first) {
+      comm.Send(send.begin(), send.Dim(), peer, tag);
+      comm.Recv(recv.begin(), recv.Dim(), peer, tag);
+    } else {
+      comm.Recv(recv.begin(), recv.Dim(), peer, tag);
+      comm.Send(send.begin(), send.Dim(), peer, tag);
+    }
+  };
+
+  for (Integer test_id = 0; test_id < NInterestingCount; test_id++) {  // 0 through several chunks
+    const Long count = InterestingCount(test_id);
+    Vector<Long> send(count), recv(count);
+    FillSequence(send, rank * 100000 + test_id * 1000);
+    for (Long i = 0; i < count; i++) recv[i] = -1;
+    exchange(send, recv, 200 + test_id);
+    CheckSequence(recv, peer * 100000 + test_id * 1000);
+  }
+
+  { // the same payload through Isend/Irecv: whichever transport Send/Recv takes, it agrees
+    const Long count = 2 * kChunkLimit + 1;
+    Vector<Long> send(count), blocking(count), nonblocking(count);
+    FillSequence(send, rank * 100000 + 700);
+    for (Long i = 0; i < count; i++) blocking[i] = nonblocking[i] = -7;
+    exchange(send, blocking, 260);
+    auto rq = comm.Irecv(nonblocking.begin(), count, peer, 261);
+    auto sq = comm.Isend(send.begin(), count, peer, 261);
+    comm.Wait(std::move(sq));
+    comm.Wait(std::move(rq));
+    for (Long i = 0; i < count; i++) AssertEqual(blocking[i], nonblocking[i]);
+  }
+
+  { // two messages on one tag arrive in the order they were sent
+    Vector<Long> a(kChunkLimit + 1), b(kChunkLimit + 1), ra(a.Dim()), rb(b.Dim());
+    FillSequence(a, rank * 100000 + 800);
+    FillSequence(b, rank * 100000 + 900);
+    if (first) {
+      comm.Send(a.begin(), a.Dim(), peer, 270);
+      comm.Send(b.begin(), b.Dim(), peer, 270);
+      comm.Recv(ra.begin(), ra.Dim(), peer, 270);
+      comm.Recv(rb.begin(), rb.Dim(), peer, 270);
+    } else {
+      comm.Recv(ra.begin(), ra.Dim(), peer, 270);
+      comm.Recv(rb.begin(), rb.Dim(), peer, 270);
+      comm.Send(a.begin(), a.Dim(), peer, 270);
+      comm.Send(b.begin(), b.Dim(), peer, 270);
+    }
+    CheckSequence(ra, peer * 100000 + 800);
+    CheckSequence(rb, peer * 100000 + 900);
+  }
+}
+
+// SameNode reports the topology, not what the direct-read flags allow, so it holds for this rank
+// whatever the build says.
+void TestSameNode(const Comm& comm) {
+  const Integer np = comm.Size(), rank = comm.Rank();
+  SCTL_ASSERT(comm.SameNode(rank));  // this rank shares its own node
+
+  Long local = 0;
+  for (Integer i = 0; i < np; i++) local += (comm.SameNode(i) ? 1 : 0);
+  SCTL_ASSERT(local >= 1 && local <= np);
+
+  { // every rank this one calls a node peer says the same of it
+    Vector<Long> mine(np), theirs(np);
+    for (Integer i = 0; i < np; i++) mine[i] = (comm.SameNode(i) ? 1 : 0);
+    comm.Alltoall(mine.begin(), 1, theirs.begin(), 1);
+    for (Integer i = 0; i < np; i++) AssertEqual(mine[i], theirs[i]);
+  }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -339,6 +423,8 @@ int main(int argc, char** argv) {
 
   TestIsendIrecv(comm);
   TestIsendIrecvConsecutiveTags(comm);
+  TestSendRecv(comm);
+  TestSameNode(comm);
   TestBcast(comm);
   TestAllreduce(comm);
   TestScan(comm);
