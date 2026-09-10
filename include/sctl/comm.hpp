@@ -374,14 +374,16 @@ class Comm {
    * their send buffers (Linux; falls back to MPI where the kernel forbids it). The request covers
    * the rest.
    *
-   * @param[in] blocking_direct Allow the node-local blocks to be read out of their peers' send
-   * buffers. That cannot be done without synchronizing the node before returning -- no rank may
-   * leave while a peer is still reading its send buffer -- so it costs this routine the
-   * non-blocking behaviour its name promises, and it is off by default. Pass true only where the
-   * request is waited on straight away, and pass the same value on every rank. `Alltoallv` blocks
-   * anyway and so reads node peers without being asked.
+   * @tparam BlockingDirect Allow the node-local blocks to be read out of their peers' send buffers.
+   * That cannot be done without synchronizing the node before returning -- no rank may leave while
+   * a peer is still reading its send buffer -- so it costs this routine the non-blocking behaviour
+   * its name promises, and it is off by default. Ask for it only where the request is waited on
+   * straight away. It is a template parameter because every rank must make the same choice: as a
+   * runtime argument a rank could work one out for itself, and a node whose ranks disagreed would
+   * have some of them synchronizing it and the others leaving. `Alltoallv` blocks anyway and so
+   * reads node peers without being asked.
    *
-   * @note Collective. With `blocking_direct`, also not fully non-blocking: the node-local part of
+   * @note Collective. With `BlockingDirect`, also not fully non-blocking: the node-local part of
    * the exchange is complete when the call returns and only the rest is left for `Wait`.
    *
    * @note Reading a peer's memory needs ptrace permission. By default nothing is done to obtain
@@ -413,7 +415,7 @@ class Comm {
    * @return a Request handle. Same lifetime contract as Isend(): must be
    *         passed to Wait() before destruction.
    */
-  template <class SType, class RType> [[nodiscard]] Request Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag = 0, bool blocking_direct = false) const;
+  template <bool BlockingDirect = false, class SType, class RType> [[nodiscard]] Request Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag = 0) const;
 
   /**
    * All-to-all communication with varying send and receive counts and displacements.
