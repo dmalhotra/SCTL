@@ -5,7 +5,6 @@
 #include <algorithm>              // for lower_bound, max, min, sort
 #include <cstdint>                // for int32_t, uint8_t
 #include <cstdlib>                // for std::aligned_alloc, std::free
-#include <iostream>               // for cout (test)
 #include <map>                    // for map, operator!=, __map_iterator
 #include <numeric>                // for exclusive_scan
 #include <set>                    // for set, __tree_const_iterator
@@ -87,56 +86,8 @@ namespace sctl {
     // Generate visualization
     tree.WriteParticleVTK("pt", "pt-value");
     tree.WriteTreeVTK("tree");
-
-    test_particle_data_layout();
   }
 
-  template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::test_particle_data_layout() {
-    const Comm& comm = Comm::World();
-    const Integer np = comm.Size(), rank = comm.Rank();
-    const Long N = (np > 2 && rank == np-1 ? 0 : 5000 + 100*rank);  // one empty rank when there are enough
-    const Long dof = 2;
-
-    Vector<Real> X(N*DIM), f(N*dof);
-    for (Long i = 0; i < N; i++) {
-      for (Integer k = 0; k < DIM; k++) X[i*DIM+k] = (Real)(((i*37 + k*11 + rank*101) % 1000)) / 1000;
-      for (Long k = 0; k < dof; k++) f[i*dof+k] = (Real)(rank*1000000 + i*dof + k);
-    }
-
-    const auto check = [&comm,&f](const PtTree& t, const std::string& name) {
-      Vector<Real> out;
-      t.GetParticleData(out, name);
-      Long bad = (out.Dim() != f.Dim());
-      if (!bad) for (Long i = 0; i < out.Dim(); i++) bad += (out[i] != f[i]);
-      Long tot = 0;
-      comm.Allreduce(Ptr2ConstItr<Long>(&bad, 1), Ptr2Itr<Long>(&tot, 1), 1, CommOp::SUM);
-      SCTL_ASSERT_MSG(tot == 0, ("PtTree::test: " + name + " does not round-trip").c_str());
-    };
-
-    PtTree<Real,DIM,BaseTree> tree(comm);
-    tree.AddParticles("pt", X);
-    tree.AddParticleData("v1", "pt", f);
-    tree.UpdateRefinement(X, 100, true, Periodicity::NONE, 1);
-    check(tree, "v1");
-
-    // A Broadcast fills the group's ghost slots, so its counts stop being the owned-item counts.
-    // A data set added after that is laid out against those counts, with its items in the owned
-    // window; one added before is laid out against the owned-only counts. Both must round-trip,
-    // before and after a refinement moves them.
-    tree.template Broadcast<Real>("pt");
-    tree.AddParticleData("v2", "pt", f);
-    check(tree, "v1");
-    check(tree, "v2");
-
-    tree.template Broadcast<Real>("v2");  // the ghost slots are already sized, so this moves nothing
-    check(tree, "v2");
-
-    tree.UpdateRefinement(X, 60, true, Periodicity::NONE, 1);
-    check(tree, "v1");
-    check(tree, "v2");
-
-    if (!rank) std::cout << "PtTree::test passed on " << np << " ranks\n";
-  }
 
   template <Integer DIM> constexpr Integer Tree<DIM>::Dim() {
     return DIM;

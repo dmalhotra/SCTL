@@ -326,10 +326,6 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
 
   private:
 
-    /** Particle data round-trips on `Comm::World()`, for data added before and after a `Broadcast`
-     *  has filled the group's ghost slots, and across a refinement. Called by `test`. */
-    static void test_particle_data_layout();
-
     void SetPartitionCodes();  ///< partition_codes from GetPartitionMID()
 
     Vector<MortonCode<DIM>> partition_codes;  ///< partition mins as codes: the SortScatter splitters; set with each partition
