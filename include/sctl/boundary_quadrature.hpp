@@ -923,7 +923,7 @@ template <class Real> class Quadrature {
 
         Vector<Morton<CoordDim>> nbr_mid_tmp;
         for (Long i = 0; i < node_mid.Dim(); i++) {
-          if (node_attr[i].Leaf && !node_attr[i].Ghost && node_mid[i].Depth() < Morton<CoordDim>::MAX_DEPTH) {  // a MAX_DEPTH leaf has no child boxes to target
+          if (node_attr[i].Leaf && !node_attr[i].Ghost) {
             Vector<Morton<CoordDim>> child_mid;
             node_mid[i].Children(child_mid);
             for (const auto& trg_mid : child_mid) {
