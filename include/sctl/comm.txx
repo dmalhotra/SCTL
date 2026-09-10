@@ -228,6 +228,26 @@ inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
 #endif
 }
 
+#ifdef SCTL_MEMDEBUG
+/**
+ * Every rank's send count for a peer, in bytes, equals that peer's receive count for it.
+ *
+ * A pair that disagrees is undefined behaviour in MPI, and what it does instead of reporting
+ * depends on which way it disagrees and on how the exchange is carried: a send shorter than the
+ * receive leaves the rest of the block as it was, and a node-local read of it would return the
+ * bytes beside it. So the direct path checks it -- the sizes are already exchanged there -- and
+ * this gives the MPI path the same answer, for the cost of one Alltoall in the builds that check.
+ */
+inline void AssertCountsAgree(ConstIterator<Long> scounts, Long sbytes_per, ConstIterator<Long> rcounts, Long rbytes_per, Integer np, MPI_Comm comm) {
+  ScratchBuf<Long> mine(np), theirs(np);
+  for (Integer i = 0; i < np; i++) mine[i] = scounts[i] * sbytes_per;
+  MPI_Alltoall(&mine[0], 1, MPI_INT64_T, &theirs[0], 1, MPI_INT64_T, comm);
+  for (Integer i = 0; i < np; i++) {
+    SCTL_ASSERT_MSG(theirs[i] == rcounts[i] * rbytes_per, "Comm: a peer sends a different number of bytes than this rank expects; the send and receive counts disagree.");
+  }
+}
+#endif
+
 /** Whether the kernel lets this process read its node peers' memory. Set once by `Comm::MPI_Init`,
  *  which is why one answer serves every communicator: a sub-communicator's node peers are a subset
  *  of the world's. False when `Comm::MPI_Init` was not the entry point. */
@@ -1035,6 +1055,9 @@ template <bool BlockingDirect, class SType, class RType> Comm::Request Comm::Ial
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Ialltoallv_sparse");
+  #ifdef SCTL_MEMDEBUG
+  comm_detail::AssertCountsAgree(scounts, (Long)sizeof(SType), rcounts, (Long)sizeof(RType), impl_->mpi_size_, impl_->mpi_comm_);
+  #endif
   const Integer np = impl_->mpi_size_, rank = Rank();
   const auto on_node = [this](Integer i) { return impl_->NodeIdx(i) >= 0; };
   // Reading a peer's send buffer means synchronizing the node before returning, which this
@@ -1136,6 +1159,9 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Alltoallv");
+  #ifdef SCTL_MEMDEBUG
+  comm_detail::AssertCountsAgree(scounts, (Long)sizeof(Type), rcounts, (Long)sizeof(Type), impl_->mpi_size_, impl_->mpi_comm_);
+  #endif
 #if MPI_VERSION >= 4
   {
     // MPI-4 handles large counts and displacements directly through the _c binding.
