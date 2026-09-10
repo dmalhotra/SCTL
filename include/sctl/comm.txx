@@ -2,6 +2,7 @@
 #define _SCTL_COMM_TXX_
 
 #include <algorithm>              // for lower_bound, max, min, sort, upper_...
+#include <cerrno>                 // for errno, EFAULT
 #include <cstdint>                // for uint64_t
 #include <cstring>                // for memcpy
 #include <cassert>                // for assert
@@ -184,17 +185,33 @@ inline void MPIWaitAllBatched(MPI_Request* request, Long request_count) {
   }
 }
 
-/** Copy `bytes` out of another process on this node, in 8 MB chunks over all threads. False if the kernel refuses. */
+/**
+ * Copy `bytes` out of another process on this node, in 8 MB chunks over all threads. False if the
+ * kernel refuses.
+ *
+ * A refusal (`EPERM`) is a fact about permission and the caller may fall back to MPI. `EFAULT` is
+ * not: it says the range asked for is not mapped in the peer, so the counts do not describe that
+ * peer's buffer, and the caller's send and receive counts disagree. Reported here because MPI would
+ * not report it -- a receive posted larger than the message completes short and says nothing, which
+ * is the same mismatch seen from the other side. It only catches the cases that run off a mapping;
+ * an undersized buffer inside a larger one reads back whatever follows it.
+ */
 inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
 #ifdef __linux__
   const Long chunk = Long(8) << 20, nchunk = (bytes + chunk - 1) / chunk;
-  const auto read = [pid,src,dst,bytes,chunk](Long c) {
+  int err = 0;
+  const auto read = [pid,src,dst,bytes,chunk,&err](Long c) {
     Long a = c * chunk;
     const Long b = std::min<Long>(bytes, a + chunk);
     while (a < b) {
       struct iovec l = {(char*)dst + a, (size_t)(b - a)}, r = {(char*)const_cast<void*>(src) + a, (size_t)(b - a)};
       const ssize_t n = process_vm_readv((pid_t)pid, &l, 1, &r, 1, 0);
-      if (n <= 0) return false;
+      if (n <= 0) {
+        const int e = errno;
+        #pragma omp atomic write
+        err = e;
+        return false;
+      }
       a += n;
     }
     return true;
@@ -208,6 +225,7 @@ inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
       ok = false;
     }
   }
+  SCTL_ASSERT_MSG(err != EFAULT, "Comm: a node peer's buffer does not cover the block the counts ask for; the send and receive counts disagree.");
   return ok;
 #else
   SCTL_UNUSED(pid);
