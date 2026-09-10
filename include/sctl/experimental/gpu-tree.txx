@@ -344,7 +344,7 @@ void exchangePooled(const Policy& pol, const DevVec<T>& src, Long nsrc, DevVec<T
   DeviceScratch<T, DevVec> xs(nsrc), xr(ndst);
   thrust::copy(pol, src.begin(), src.begin() + nsrc, xs.begin());
   alltoallv<DevVec>(pol, thrust::raw_pointer_cast(xs.data()), thrust::raw_pointer_cast(xr.data()), scnt, rcnt, (Long)sizeof(T), comm);
-  dst.resize(ndst);
+  resizeDiscard(dst, ndst);  // the copy below covers all of it, so growing need not carry the old contents
   thrust::copy(pol, xr.begin(), xr.end(), dst.begin());
 }
 
@@ -1655,7 +1655,9 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
   if (np > 1) { // halo: pt_mid <-- [M from left | pt_mid | M from right] (empty halo on domain-edge ranks)
     const Long recv0 = (rank > 0 ? M : 0);
     const Long recv1 = (rank < np - 1 ? M : 0);
-    alt.resize(recv0 + pt_mid.size() + recv1);
+    // The copy and the two Sendrecvs below cover the whole buffer -- an edge rank's missing halo
+    // side has length zero -- so growing need not carry the old contents.
+    detail::resizeDiscard(alt, recv0 + (Long)pt_mid.size() + recv1);
     thrust::copy(pol, pt_mid.begin(), pt_mid.end(), alt.begin() + recv0);
 
     const int left  = (rank > 0      ? int(rank - 1) : MPI_PROC_NULL);
