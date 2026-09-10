@@ -356,9 +356,12 @@ template <Integer DIM> SCTL_GPU_HD Integer Morton<DIM>::Path2Node() const {
 }
 
 template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, (1 << DIM)> Morton<DIM>::Children() const {
+  // SCTL_ASSERT_MSG is not compiled out, and inlining a stream and an abort into a routine the tree
+  // build calls per node costs more than the check is worth once a build is known to hold to the
+  // precondition. `assert` on both sides, so NDEBUG governs it as it does the device check.
 #if defined(__CUDA_ARCH__)
   assert(depth < MAX_DEPTH);
-#else
+#elif !defined(NDEBUG)
   SCTL_ASSERT_MSG(depth < MAX_DEPTH, "Morton::Children: a MAX_DEPTH node has no children");
 #endif
   using MI = typename MortonCode<DIM>::MortonInteger;
