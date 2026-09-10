@@ -189,12 +189,10 @@ inline void MPIWaitAllBatched(MPI_Request* request, Long request_count) {
  * Copy `bytes` out of another process on this node, in 8 MB chunks over all threads. False if the
  * kernel refuses.
  *
- * A refusal (`EPERM`) is a fact about permission and the caller may fall back to MPI. `EFAULT` is
- * not: it says the range asked for is not mapped in the peer, so the counts do not describe that
- * peer's buffer, and the caller's send and receive counts disagree. Reported here because MPI would
- * not report it -- a receive posted larger than the message completes short and says nothing, which
- * is the same mismatch seen from the other side. It only catches the cases that run off a mapping;
- * an undersized buffer inside a larger one reads back whatever follows it.
+ * `EPERM` is about permission, so the caller may fall back to MPI. `EFAULT` is not: the range is
+ * not mapped in the peer, so the send and receive counts disagree. Reported here because MPI takes
+ * that mismatch silently. One-sided: a read staying inside a larger mapping returns whatever
+ * follows the buffer.
  */
 inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
 #ifdef __linux__
@@ -236,18 +234,9 @@ inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
 #endif
 }
 
-/**
- * Whether the kernel lets this process read its node peers' memory, settled once by
- * `Comm::MPI_Init` and read by every communicator built afterwards.
- *
- * A property of the process and its node rather than of any communicator: what
- * `process_vm_readv` is allowed to do depends on the two processes, and a sub-communicator's node
- * peers are a subset of the world's, so the world's answer holds for all of them -- right when it
- * says yes, and merely conservative when it says no.
- *
- * Left false where `Comm::MPI_Init` is not the entry point, so a caller that brings up MPI itself
- * stays on MPI rather than having a collective probe run from wherever it first happens to matter.
- */
+/** Whether the kernel lets this process read its node peers' memory. Set once by `Comm::MPI_Init`,
+ *  which is why one answer serves every communicator: a sub-communicator's node peers are a subset
+ *  of the world's. False when `Comm::MPI_Init` was not the entry point. */
 inline bool& DirectAvailable() {
   static bool ok = false;
   return ok;
@@ -256,9 +245,8 @@ inline bool& DirectAvailable() {
 /**
  * Ask the kernel whether this rank can read its node peers. Collective on `node_comm`.
  *
- * Each rank publishes the address of a word holding a value that identifies it, so a read coming
- * back with that value proves it landed where it was meant to. The answer is reduced, since the
- * ranks of a node have to agree on it before any of them branches on it.
+ * Each rank publishes the address of a word holding a value that identifies it, so a read returning
+ * that value shows it reached the intended address. Reduced, since a node's ranks must agree.
  */
 inline bool ProbeDirectOnNode(MPI_Comm node_comm) {
 #if !defined(SCTL_COMM_NO_DIRECT) && defined(__linux__)
@@ -396,9 +384,8 @@ inline void Comm::MPI_Init(int* argc, char*** argv) {
   if (provided < MPI_THREAD_SERIALIZED) SCTL_WARN("MPI implementation does not support MPI_THREAD_SERIALIZED.");
 #endif
 #ifdef SCTL_HAVE_MPI
-  { // Settle the direct-read permission once, over the whole node, so no communicator has to probe.
-    // Every rank is here, so the node group is whole; a communicator made later covers a subset of
-    // it and can take this answer as it stands.
+  { // Every rank is here, so the node group is whole and a communicator made later covers a subset
+    // of it.
     MPI_Comm node_comm = MPI_COMM_NULL;
     int rank = 0;
     ::MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -495,7 +482,7 @@ inline void Comm::Impl::InitNode() {
     }
   }
   // The kernel was asked once, at Comm::MPI_Init, over the whole node -- of which this
-  // communicator's node group is a subset -- so every rank here starts from the same answer.
+  // communicator's node group is a subset -- so every rank here holds the same answer.
   direct_ = comm_detail::DirectAvailable() && node_size > 1;
 }
 #endif
@@ -954,19 +941,13 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
 }
 
 // A node-local Send/Recv pair is a rendezvous with process_vm_readv as its transport: the sender
-// publishes where its buffer is and how much of it there is, the receiver reads it there and
-// acknowledges, and the sender returns once acknowledged, its buffer its own again. Three small
-// messages plus the read, against MPI's own rendezvous of two small messages plus a copy -- so what
-// this buys is the copy. Off-node, and wherever the kernel refuses the read, both fall back to MPI.
+// publishes where its buffer is, the receiver reads it there and acknowledges, and the sender
+// returns once acknowledged. Three small messages plus the read against MPI's two plus a copy, so
+// what this saves is the copy. Off-node, and wherever the kernel refuses, both fall back to MPI.
 //
 // The handshake runs on the caller's tag. MPI does not reorder messages of one (source, tag,
 // communicator), and each direction is posted in the same order at both ends, so the address, the
 // acknowledgement and any fallback payload cannot be mistaken for one another.
-//
-// `direct_` is settled at Comm::MPI_Init and never written afterwards, so both ranks of the pair
-// read the same answer without communicating and nothing collective runs from here. A refusal is
-// not recorded, as it is not in `ReadNodeBlocks`: the acknowledgement reports it for this message,
-// and a later pair spends two small messages finding out again.
 template <class SType> void Comm::Send(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag) const {
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
@@ -993,8 +974,8 @@ template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Intege
     Long told[2] = {0, 0};
     MPI_Recv(told, 2, MPI_INT64_T, source, tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
     const Long bytes = std::min<Long>(told[1], rcount * (Long)sizeof(RType));  // at most what was sent
-    // Only the bytes the read is about to overwrite: past them the buffer is the caller's, and MPI
-    // would leave it alone. Before the read; after it would overwrite what was read.
+    // Only the bytes the read overwrites: past them the buffer is the caller's, and MPI does not
+    // write there. Before the read; after it would overwrite what was read.
     omp_par::prefault((Iterator<char>)rbuf, bytes);
     const Integer j = impl_->NodeIdx(source);
     const bool ok = !bytes || comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)told[0], &rbuf[0], bytes);
@@ -1026,15 +1007,9 @@ bool Comm::ReadNodeBlocks(ConstIterator<SType> sbuf, ConstIterator<Long> scounts
     if (i == rank || !rcounts[i]) continue;
     ok = (int)comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType)) && ok;
   }
-  // Agree on the outcome, so the node either delivered every block this way or none of them and
-  // falls back together. The reduction also holds every rank here until its peers have finished
-  // reading its send buffer, which is what the exchange needs of it.
-  //
-  // The outcome is not remembered. Once the kernel has answered at init, the only refusal left is a
-  // permission that changed under a running job, which does not happen in the ordinary course; the
-  // wasted attempt if it ever did is one small exchange, against the cost of carrying a flag that
-  // ranks could hold different values of. Nothing writes `direct_` after `InitNode`, so there is
-  // nothing for them to disagree about.
+  // Agree on the outcome so the node falls back together, and hold every rank until its peers have
+  // finished reading its send buffer -- which is what makes the reads safe. Not remembered: after
+  // the probe at init the only refusal left is a permission changed mid-run.
   int all = 0;
   MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, impl_->node_comm_);
   return all != 0;
@@ -1052,9 +1027,8 @@ template <bool BlockingDirect, class SType, class RType> Comm::Request Comm::Ial
   // routine's name says it will not do, so the caller has to ask for it.
   const bool direct = BlockingDirect && impl_->direct_;
   const auto skip = [rank,direct,&on_node](Integer i) { return i == rank || (direct && on_node(i)); };
-  // Every block but self, whichever way it arrives: the node-local ones are read by ReadNodeBlocks,
-  // which needs them faulted in already, and the rest are written by MPI. Either way the pages fault
-  // in with all threads here rather than one at a time inside the transfer.
+  // Every block but self, whichever way it arrives: ReadNodeBlocks needs the node-local ones
+  // faulted in already, and MPI writes the rest. Here the pages fault in with all threads.
   for (Integer i = 0; i < np; i++) {
     if (i != rank && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
   }

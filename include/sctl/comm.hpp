@@ -42,10 +42,9 @@ class Comm {
 
   /**
    * Initialize MPI, and ask the kernel once whether this process may read the memory of the ranks
-   * sharing its node. That answer is a property of the process, so settling it here spares every
-   * communicator a probe of its own -- and spares any routine that consults it from being
-   * collective. A program that brings up MPI without this leaves the direct path off and sends
-   * everything through MPI.
+   * sharing its node -- a property of the process, so no communicator has to ask again and no
+   * routine that reads it has to be collective. A program that initializes MPI without this leaves
+   * the direct path off.
    */
   static void MPI_Init(int* argc, char*** argv);
 
@@ -373,19 +372,16 @@ class Comm {
   template <class SType, class RType> void Alltoall(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const;
 
   /**
-   * Sparse all-to-all communication. Collective. The payload of blocks that stay on the node never
-   * goes through MPI: the self block is copied, and node peers' blocks are read straight out of
-   * their send buffers (Linux; falls back to MPI where the kernel forbids it). The request covers
-   * the rest.
+   * Sparse all-to-all communication. The self block is copied rather than sent. With
+   * `BlockingDirect`, so is every other block that stays on this node, read out of its peer's send
+   * buffer (Linux; falls back to MPI where the kernel forbids it); without it those blocks go
+   * through MPI like any other. The request covers everything left to MPI.
    *
-   * @tparam BlockingDirect Allow the node-local blocks to be read out of their peers' send buffers.
-   * That cannot be done without synchronizing the node before returning -- no rank may leave while
-   * a peer is still reading its send buffer -- so it costs this routine the non-blocking behaviour
-   * its name promises, and it is off by default. Ask for it only where the request is waited on
-   * straight away. It is a template parameter because every rank must make the same choice: as a
-   * runtime argument a rank could work one out for itself, and a node whose ranks disagreed would
-   * have some of them synchronizing it and the others leaving. `Alltoallv` blocks anyway and so
-   * reads node peers without being asked.
+   * @tparam BlockingDirect Read the node-local blocks out of their peers' send buffers. That needs
+   * the node synchronized before returning -- no rank may leave while a peer is still reading its
+   * send buffer -- so it costs the non-blocking behaviour this routine's name promises, and is off
+   * by default. Ask for it only where the request is waited on straight away. A template parameter
+   * because every rank must choose the same way, which a runtime argument could not ensure.
    *
    * @note Collective. With `BlockingDirect`, also not fully non-blocking: the node-local part of
    * the exchange is complete when the call returns and only the rest is left for `Wait`.
@@ -394,7 +390,7 @@ class Comm {
    * about once for the process. By default nothing is done to obtain it: where the kernel already
    * permits the reads (yama `ptrace_scope` 0, as on a node a job owns) the direct path is used,
    * and where it does not the probe fails and everything goes through MPI -- as it also does for a
-   * program that brings up MPI without `Comm::MPI_Init`. Building with `-DSCTL_COMM_PTRACER` lets
+   * program that initializes MPI without `Comm::MPI_Init`. Building with `-DSCTL_COMM_PTRACER` lets
    * the ranks widen it for themselves with `PR_SET_PTRACER_ANY`, which opens their address space
    * to every process of the same user for the rest of their lifetime -- do not do that on a shared
    * node. `-DSCTL_COMM_NO_DIRECT` turns the direct path off outright. A read the kernel refuses
@@ -737,11 +733,8 @@ class Comm {
     std::vector<int> node_rank_;         ///< comm ranks on this node, ascending
     std::vector<int> node_pid_;          ///< their pids, in the same order
 
-    // Whether node peers' memory may be read on this communicator. Whether the kernel permits it is
-    // a separate question from who is on the node, and one this communicator does not ask:
-    // `Comm::MPI_Init` settles it once for the process, over the whole node. Written by `InitNode`
-    // and never again, so every rank of a node holds the same value and point-to-point code may
-    // read it as freely as a collective.
+    // Whether node peers' memory may be read here. Set by `InitNode` from the process-wide answer
+    // and never written again, so every rank of a node agrees and any code may read it.
     bool direct_ = false;
 
     /** Position of `rank` in `node_rank_`, or -1 when `rank` is not a rank on this node. */
