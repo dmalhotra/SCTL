@@ -292,11 +292,20 @@ class Comm {
   /**
    * Non-blocking receive.
    *
+   * `rcount` is not an upper bound as it is in MPI: it must name the same number of bytes the
+   * source sends. A message that does not fit is an `MPI_ERR_TRUNCATE` either way, but one smaller
+   * than the buffer has no single behaviour -- where the byte count exceeds `MPI_Count`'s range
+   * this splits it into chunks under their own tags, one receive posted per chunk of `rcount`, and
+   * the chunks the source does not send are waited on forever. The size at which that starts is the
+   * implementation's, so a program that relies on the MPI rule works until its messages grow. The
+   * receiver does not learn the source's count, so nothing here can report the mismatch; `Recv`
+   * does, on the transport that does hold it.
+   *
    * @tparam RType type of the receive-data.
    *
    * @param[out] rbuf iterator to the receive buffer.
    *
-   * @param[in] rcount number of elements to receive.
+   * @param[in] rcount number of elements to receive; must equal the source's `scount` in bytes.
    *
    * @param[in] source the rank of the source process.
    *

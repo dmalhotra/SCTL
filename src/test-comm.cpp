@@ -61,6 +61,25 @@ void TestIsendIrecv(const Comm& comm) {
 
     CheckSequence(recv, src * 100000 + test_id * 1000);
   }
+
+  // The counts must name the same number of bytes at both ends. A message split into chunks is one
+  // receive per chunk of rcount, so a receive buffer larger than the message waits on chunks that
+  // were never sent -- the counts below straddle the chunk boundary in both directions, and each
+  // pair matches exactly. kChunkLimit is small here, so this is the same shape a message over the
+  // implementation's count limit takes in a default build.
+  for (Integer test_id = 0; test_id < NInterestingCount; test_id++) {
+    const Long count = InterestingCount(test_id);
+    Vector<Long> send(count), recv(count);
+    FillSequence(send, rank * 100000 + 500 + test_id);
+    for (Long i = 0; i < count; i++) recv[i] = -1;
+
+    auto recv_req = comm.Irecv(recv.begin(), count, src, 400 + test_id);
+    auto send_req = comm.Isend(send.begin(), count, dest, 400 + test_id);
+    comm.Wait(std::move(send_req));
+    comm.Wait(std::move(recv_req));
+
+    CheckSequence(recv, src * 100000 + 500 + test_id);
+  }
 }
 
 void TestIsendIrecvConsecutiveTags(const Comm& comm) {
