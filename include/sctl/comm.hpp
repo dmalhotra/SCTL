@@ -783,8 +783,11 @@ class Comm {
    * rank's send buffer, which is what makes the reads safe. Callers must have faulted in the
    * receive blocks already -- doing so afterwards would overwrite what was read.
    *
-   * @return false if any read on this node was refused, in which case nothing was delivered and the
-   * direct path is given up for the rest of the run.
+   * @return false if any read on this node was refused. The whole node returns the same answer, so
+   * it falls back together. Blocks read before the refusal were delivered, so a receive block holds
+   * either its data or what it held before; the caller sends every node-local block through MPI,
+   * which overwrites all of them. The refusal is not remembered: after the probe at init the only
+   * one left is a permission changed mid-run.
    */
   template <class SType, class RType>
   bool ReadNodeBlocks(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls,
