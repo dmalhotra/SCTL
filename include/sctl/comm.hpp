@@ -266,14 +266,20 @@ class Comm {
   /**
    * Blocking receive, matched by `Send` at the source. Where the source is a rank on this node and
    * the kernel permits it, this reads the source's send buffer instead of receiving a copy of it;
-   * otherwise this is `Irecv` followed by `Wait`. As with MPI, `rcount` is an upper bound: what
-   * arrives is what the source sent.
+   * otherwise this is `Irecv` followed by `Wait`.
+   *
+   * `rcount` is not an upper bound as it is in MPI: the two counts must name the same number of
+   * bytes. Neither disagreement has one behaviour across the transports here -- a message larger
+   * than the buffer is an `MPI_ERR_TRUNCATE` through MPI and would be taken silently by a direct
+   * read, and a message smaller than the buffer arrives through MPI unchunked but hangs the chunked
+   * path, which posts one receive per chunk of `rcount`. The direct read is the one transport
+   * holding the sender's size, so it reports the mismatch for all of them.
    *
    * @tparam RType type of the receive-data.
    *
    * @param[out] rbuf iterator to the receive buffer.
    *
-   * @param[in] rcount number of elements the buffer holds.
+   * @param[in] rcount number of elements to receive; must equal the source's `scount` in bytes.
    *
    * @param[in] source the rank of the source process.
    *

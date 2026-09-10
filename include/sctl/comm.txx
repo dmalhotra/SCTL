@@ -973,7 +973,13 @@ template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Intege
   if (source != impl_->mpi_rank_ && SameNode(source) && impl_->direct_) {
     Long told[2] = {0, 0};
     MPI_Recv(told, 2, MPI_INT64_T, source, tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
-    const Long bytes = std::min<Long>(told[1], rcount * (Long)sizeof(RType));  // at most what was sent
+    const Long bytes = told[1];
+    // The counts must agree, and this is the one transport that can say so: the sender's size is in
+    // hand. Reading only what fits would take the rest silently, where MPI reports MPI_ERR_TRUNCATE,
+    // and a receive buffer larger than the message hangs the chunked MPI path, which posts one
+    // receive per chunk of `rcount`. Reported here so a count bug does not depend on which
+    // transport the run happens to take.
+    SCTL_ASSERT_MSG(bytes == rcount * (Long)sizeof(RType), "Comm::Recv: the source sent a different number of bytes than this buffer holds; the send and receive counts disagree.");
     // Only the bytes the read overwrites: past them the buffer is the caller's, and MPI does not
     // write there. Before the read; after it would overwrite what was read.
     omp_par::prefault((Iterator<char>)rbuf, bytes);
