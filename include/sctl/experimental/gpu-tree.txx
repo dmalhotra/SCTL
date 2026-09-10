@@ -485,12 +485,19 @@ void treeFromAnchors(DevVec<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, 
   anchorWalkWrite<DIM, DevVec>(thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(offsets.data()), anchors_ptr, n, start_node, end_target);
 }
 
-/** Redistribute the sorted `v` (`n` elements) so this rank ends up with `Ntgt`, order preserved: the
- *  device counterpart of `Comm::PartitionN`. Counts are known locally once every rank's size is; the
- *  result arrives in the retained `dst` and is swapped into `v`. */
+/** Redistribute the sorted `v` so this rank ends up with `Ntgt` of its elements, order preserved:
+ *  the device counterpart of `Comm::PartitionN`. Counts are known locally once every rank's size
+ *  is. `v` holds `Ntgt` elements on return, whichever way the call goes.
+ *
+ *  @param[in] pol Thrust execution policy for this backend.
+ *  @param[in,out] v This rank's elements, all of them; `Ntgt` of them on return.
+ *  @param[in] Ntgt Elements this rank is to hold; `sum(Ntgt)` over ranks must equal `sum(v.size())`.
+ *  @param[in] comm Communicator. Collective on it.
+ *  @param[in] storage_buf Scratch the exchange receives into, swapped with `v` and left holding
+ *  what `v` held. Retained across calls, so its contents on entry mean nothing. */
 template <class T, template <class...> class DevVec, class Policy>
-void partitionN(const Policy& pol, DevVec<T>& v, Long n, Long Ntgt, const Comm& comm, DevVec<T>& dst) {
-  const Long np = comm.Size(), rank = comm.Rank();
+void partitionN(const Policy& pol, DevVec<T>& v, Long Ntgt, const Comm& comm, DevVec<T>& storage_buf) {
+  const Long np = comm.Size(), rank = comm.Rank(), n = (Long)v.size();
   if (np == 1) {
     v.resize(Ntgt);
     return;
@@ -501,7 +508,7 @@ void partitionN(const Policy& pol, DevVec<T>& v, Long n, Long Ntgt, const Comm& 
   comm.Allgather(sctl::Ptr2ConstItr<Long>(&Ntgt, 1), 1, tgt.begin(), 1);
   const Long ntot = scanv(off.begin(), cnt.begin(), np), ntgt_tot = scanv(toff.begin(), tgt.begin(), np);
   SCTL_ASSERT(ntot == ntgt_tot);
-  { // nothing crosses a rank boundary: the layout already is the target
+  { // nothing crosses a rank boundary: the layout already is the target, and n == Ntgt with it
     bool same = true;
     for (Long q = 0; q <= np; q++) same = same && (off[q] == toff[q]);
     if (same) return;
@@ -512,8 +519,8 @@ void partitionN(const Policy& pol, DevVec<T>& v, Long n, Long Ntgt, const Comm& 
     scnt[q] = std::max<Long>(0, std::min(off[rank + 1], toff[q + 1]) - std::max(off[rank], toff[q]));
     rcnt[q] = std::max<Long>(0, std::min(off[q + 1], toff[rank + 1]) - std::max(off[q], toff[rank]));
   }
-  exchangePooled(pol, v, n, dst, Ntgt, scnt, rcnt, comm);
-  v.swap(dst);
+  exchangePooled(pol, v, n, storage_buf, Ntgt, scnt, rcnt, comm);
+  v.swap(storage_buf);
   v.resize(Ntgt);
 #endif
 }
@@ -1644,7 +1651,7 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
     Long Nloc = (Long)pt_mid.size(), Nloc_min = 0;
     comm.Allreduce<sctl::CommOp::MIN>(sctl::Ptr2ConstItr<Long>(&Nloc, 1), sctl::Ptr2Itr<Long>(&Nloc_min, 1), 1);
     if (Nloc_min < M) {  // repartition to an even split; received segments concatenate in global-index order, so pt_mid stays sorted
-      detail::partitionN(pol, pt_mid, Nloc, (rank + 1) * Nglob / np - rank * Nglob / np, comm, alt);
+      detail::partitionN(pol, pt_mid, (rank + 1) * Nglob / np - rank * Nglob / np, comm, alt);
       Nloc_min = Nglob / np;  // smallest chunk of the even split
     }
 
@@ -1821,7 +1828,7 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
       DevVec<char>& own = detail::PersistentBuffer<char, DevVec, detail::Buf::MigData>();
       detail::resizeDiscard(own, data_count * dof);
       thrust::copy(pol, data.begin() + data_begin * dof, data.begin() + (data_begin + data_count) * dof, own.begin());
-      detail::partitionN(pol, own, data_count * dof, Ndata * dof, comm_, detail::PersistentBuffer<char, DevVec, detail::Buf::DataRecv>());
+      detail::partitionN(pol, own, Ndata * dof, comm_, detail::PersistentBuffer<char, DevVec, detail::Buf::DataRecv>());
       data.swap(own);
     }
   }
