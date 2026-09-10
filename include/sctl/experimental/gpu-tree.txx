@@ -2327,17 +2327,27 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& dat
   SCTL_ASSERT_MSG(it != groups_.end(), "PtTree::AddParticleData: unknown particle group.");
   const Long dof = detail::globalDof((Long)data.size(), it->second.LocalCount(), this->GetComm());
   AddParticleData(data_name, particle_name, dof);
+  // The items are this rank's own, so they go in the owned window. The counts come from the particle
+  // group, whose ghost slots a Broadcast may have filled; those slots stay unwritten here, as they
+  // hold their owner's values and only a Broadcast of this data set brings them.
+  Long owned0 = 0, owned1 = 0;
+  this->GetOwnedRange(owned0, owned1);
+  const Long begin = sctl::omp_par::reduce(this->NodeCnt_(data_name).begin(), owned0) * dof;
   // the forward scatter reads the caller's array and writes the stored buffer, so neither end is copied
-  it->second.ScatterForward((const Real*)thrust::raw_pointer_cast(data.data()), (Real*)thrust::raw_pointer_cast(this->NodeData_(data_name).data()), dof);
+  it->second.ScatterForward((const Real*)thrust::raw_pointer_cast(data.data()), (Real*)thrust::raw_pointer_cast(this->NodeData_(data_name).data()) + begin, dof);
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof) {
   SCTL_ASSERT_MSG(groups_.find(particle_name) != groups_.end(), "PtTree::AddParticleData: unknown particle group.");
   SCTL_ASSERT_MSG(data_pt_name_.find(data_name) == data_pt_name_.end(), "PtTree::AddParticleData: data name already present.");
-  sctl::Vector<Long> cnt;
-  nodeCounts(particle_name, cnt);
-  this->template AddData<Real>(data_name, dof, cnt);
+  if (data_name == particle_name) {  // the group's own coordinates: count its particles per node
+    sctl::Vector<Long> cnt;
+    nodeCounts(particle_name, cnt);
+    this->template AddData<Real>(data_name, dof, cnt);
+  } else {  // the group's counts already exist, ghost slots and all, so the layouts stay in step
+    this->template AddData<Real>(data_name, dof, this->NodeCnt_(particle_name));
+  }
   this->data_moved_by_derived_.insert(data_name);
   data_pt_name_[data_name] = particle_name;
 }

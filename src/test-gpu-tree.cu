@@ -466,6 +466,20 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     gt.UpdateRefinement(xd, 32, true, sctl::Periodicity::NONE, 0);
     st.UpdateRefinement(x, 32, true, sctl::Periodicity::NONE, 0);
     check("particle data round-trips after a second repartition", round_trip("f", f) + round_trip("h", h) + particle_total());
+    // A Broadcast fills the group's ghost slots, so its counts stop being the owned-item counts. A
+    // data set added after that is laid out against those counts, with its items in the owned
+    // window; one added before keeps the owned-only layout. Both must round-trip, and still do once
+    // a refinement has moved them.
+    gt.template Broadcast<Real>("pt");
+    st.template Broadcast<Real>("pt");
+    gt.AddParticleData("b", "pt", hd);
+    st.AddParticleData("b", "pt", h);
+    check("particle data round-trips for a set added after a Broadcast filled the ghost slots",
+          round_trip("b", h) + round_trip("f", f) + round_trip("h", h));
+    gt.UpdateRefinement(yd, 25, true, sctl::Periodicity::NONE, 0);
+    st.UpdateRefinement(y, 25, true, sctl::Periodicity::NONE, 0);
+    check("that set round-trips after the next refinement",
+          round_trip("b", h) + round_trip("f", f) + particle_total());
     {
       const sctl::Vector<NodeT> m = to_host(gt.GetNodeMID());
       Long bad = 0;

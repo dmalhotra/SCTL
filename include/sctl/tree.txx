@@ -5,6 +5,7 @@
 #include <algorithm>              // for lower_bound, max, min, sort
 #include <cstdint>                // for int32_t, uint8_t
 #include <cstdlib>                // for std::aligned_alloc, std::free
+#include <iostream>               // for cout (test)
 #include <map>                    // for map, operator!=, __map_iterator
 #include <numeric>                // for exclusive_scan
 #include <set>                    // for set, __tree_const_iterator
@@ -86,6 +87,55 @@ namespace sctl {
     // Generate visualization
     tree.WriteParticleVTK("pt", "pt-value");
     tree.WriteTreeVTK("tree");
+
+    test_particle_data_layout();
+  }
+
+  template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::test_particle_data_layout() {
+    const Comm& comm = Comm::World();
+    const Integer np = comm.Size(), rank = comm.Rank();
+    const Long N = (np > 2 && rank == np-1 ? 0 : 5000 + 100*rank);  // one empty rank when there are enough
+    const Long dof = 2;
+
+    Vector<Real> X(N*DIM), f(N*dof);
+    for (Long i = 0; i < N; i++) {
+      for (Integer k = 0; k < DIM; k++) X[i*DIM+k] = (Real)(((i*37 + k*11 + rank*101) % 1000)) / 1000;
+      for (Long k = 0; k < dof; k++) f[i*dof+k] = (Real)(rank*1000000 + i*dof + k);
+    }
+
+    const auto check = [&comm,&f](const PtTree& t, const std::string& name) {
+      Vector<Real> out;
+      t.GetParticleData(out, name);
+      Long bad = (out.Dim() != f.Dim());
+      if (!bad) for (Long i = 0; i < out.Dim(); i++) bad += (out[i] != f[i]);
+      Long tot = 0;
+      comm.Allreduce(Ptr2ConstItr<Long>(&bad, 1), Ptr2Itr<Long>(&tot, 1), 1, CommOp::SUM);
+      SCTL_ASSERT_MSG(tot == 0, ("PtTree::test: " + name + " does not round-trip").c_str());
+    };
+
+    PtTree<Real,DIM,BaseTree> tree(comm);
+    tree.AddParticles("pt", X);
+    tree.AddParticleData("v1", "pt", f);
+    tree.UpdateRefinement(X, 100, true, Periodicity::NONE, 1);
+    check(tree, "v1");
+
+    // A Broadcast fills the group's ghost slots, so its counts stop being the owned-item counts.
+    // A data set added after that is laid out against those counts, with its items in the owned
+    // window; one added before is laid out against the owned-only counts. Both must round-trip,
+    // before and after a refinement moves them.
+    tree.template Broadcast<Real>("pt");
+    tree.AddParticleData("v2", "pt", f);
+    check(tree, "v1");
+    check(tree, "v2");
+
+    tree.template Broadcast<Real>("v2");  // the ghost slots are already sized, so this moves nothing
+    check(tree, "v2");
+
+    tree.UpdateRefinement(X, 60, true, Periodicity::NONE, 1);
+    check(tree, "v1");
+    check(tree, "v2");
+
+    if (!rank) std::cout << "PtTree::test passed on " << np << " ranks\n";
   }
 
   template <Integer DIM> constexpr Integer Tree<DIM>::Dim() {
@@ -137,6 +187,16 @@ namespace sctl {
   }
   template <Integer DIM> const Comm& Tree<DIM>::GetComm() const {
     return comm;
+  }
+  template <Integer DIM> void Tree<DIM>::GetOwnedRange(Long& begin, Long& end) const {
+    if (!mins.Dim() || !node_mid.Dim()) {
+      begin = 0;
+      end = 0;
+      return;
+    }
+    const Integer np = comm.Size(), rank = comm.Rank();
+    begin = std::lower_bound(node_mid.begin(), node_mid.end(), mins[rank]) - node_mid.begin();
+    end = std::lower_bound(node_mid.begin(), node_mid.end(), (rank+1==np ? Morton<DIM>().Next() : mins[rank+1])) - node_mid.begin();
   }
 
   namespace tree_detail {
@@ -1678,17 +1738,9 @@ namespace sctl {
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::UpdateRefinement(const Vector<Real>& coord, Long M, bool balance21, Periodicity periodicity, Integer halo_size) {
     Long owned0 = 0, owned1 = 0;
-    { // Owned node range in the list the payloads are still laid out against; a Broadcast may have
-      // filled the ghost slots and only the owned items take part in the re-cut.
-      const auto& mins_ = this->GetPartitionMID();
-      const auto& node_mid_ = this->GetNodeMID();
-      if (mins_.Dim() && node_mid_.Dim()) {
-        const Integer np = this->GetComm().Size();
-        const Integer rank = this->GetComm().Rank();
-        owned0 = std::lower_bound(node_mid_.begin(), node_mid_.end(), mins_[rank]) - node_mid_.begin();
-        owned1 = std::lower_bound(node_mid_.begin(), node_mid_.end(), (rank+1==np ? Morton<DIM>().Next() : mins_[rank+1])) - node_mid_.begin();
-      }
-    }
+    // Against the node list the payloads are still laid out on; a Broadcast may have filled the
+    // ghost slots and only the owned items take part in the re-cut.
+    this->GetOwnedRange(owned0, owned1);
 
     BaseTree::UpdateRefinement(coord, M, balance21, periodicity, halo_size);
     SetPartitionCodes();
@@ -1750,7 +1802,13 @@ namespace sctl {
     Iterator<Vector<char>> data_;
     Iterator<Vector<Long>> cnt_;
     this->GetData_(data_, cnt_, data_name);
-    group->second.ScatterForward((ConstIterator<char>)data.begin(), data_[0].begin(), dof * (Long)sizeof(Real));
+    // The items are this rank's own, so they go in the owned window. The counts come from the
+    // particle group, whose ghost slots a Broadcast may have filled; those slots stay unwritten
+    // here, as they hold their owner's values and only a Broadcast of this data set brings them.
+    Long owned0 = 0, owned1 = 0;
+    this->GetOwnedRange(owned0, owned1);
+    const Long begin = omp_par::reduce(cnt_->begin(), owned0) * dof * (Long)sizeof(Real);
+    group->second.ScatterForward((ConstIterator<char>)data.begin(), data_[0].begin() + begin, dof * (Long)sizeof(Real));
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof) {
@@ -1784,24 +1842,19 @@ namespace sctl {
     SCTL_ASSERT(groups.find(particle_name) != groups.end());
     const auto& group = groups.find(particle_name)->second;
 
-    const auto& mins = this->GetPartitionMID();
     const auto& node_mid = this->GetNodeMID();
     const auto& comm = this->GetComm();
 
-    Vector<Long> dsp;
     Vector<Long> cnt_;
     Vector<const Real> data_;
     this->GetData(data_, cnt_, data_name);
     SCTL_ASSERT(cnt_.Dim() == node_mid.Dim());
-    const Long dof = tree_detail::global_dof(comm, data_.Dim(), BaseTree::scan(dsp, cnt_));
-    { // Set data
-      Integer np = comm.Size();
-      Integer rank = comm.Rank();
-      Long N0 = std::lower_bound(node_mid.begin(), node_mid.end(), mins[rank]) - node_mid.begin();
-      Long N1 = std::lower_bound(node_mid.begin(), node_mid.end(), (rank==np-1 ? Morton<DIM>().Next() : mins[rank+1])) - node_mid.begin();
-      Long start = dsp[N0] * dof;
-      Long end = (N1 ? (dsp[N1-1]+cnt_[N1-1])*dof : start);
-      SCTL_ASSERT(end - start == group.SortedCount() * dof);
+    const Long dof = tree_detail::global_dof(comm, data_.Dim(), omp_par::reduce(cnt_.begin(), cnt_.Dim()));
+    { // the owned items scatter back; a Broadcast may have put the owners' values around them
+      Long owned0 = 0, owned1 = 0;
+      this->GetOwnedRange(owned0, owned1);
+      const Long start = omp_par::reduce(cnt_.begin(), owned0) * dof;
+      SCTL_ASSERT(omp_par::reduce(cnt_.begin() + owned0, owned1 - owned0) == group.SortedCount());
       const Long Nout = group.LocalCount() * dof;
       if (data.Dim() != Nout) data.ReInit(Nout);
       group.ScatterReverse((ConstIterator<Real>)data_.begin() + start, data.begin(), dof);

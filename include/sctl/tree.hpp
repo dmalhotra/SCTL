@@ -91,6 +91,16 @@ template <Integer DIM> class Tree {
     const Comm& GetComm() const;
 
     /**
+     * This rank's own nodes within `GetNodeMID()`; the rest are ghosts. The node data of a set that
+     * a `Broadcast` has filled covers the ghosts too, so a caller reading or writing only the
+     * owned items starts at `GetOwnedRange`'s `begin`-th node.
+     *
+     * @param[out] begin Index of this rank's first owned node.
+     * @param[out] end One past its last owned node.
+     */
+    void GetOwnedRange(Long& begin, Long& end) const;
+
+    /**
      * Update tree refinement and repartition node data among the new tree nodes.
      *
      * @param[in] coord Particle coordinates (in [0,1]^dim stored in AoS order) that describe the new tree refinement.
@@ -313,6 +323,10 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
     static void test();
 
   private:
+
+    /** Particle data round-trips on `Comm::World()`, for data added before and after a `Broadcast`
+     *  has filled the group's ghost slots, and across a refinement. Called by `test`. */
+    static void test_particle_data_layout();
 
     void SetPartitionCodes();  ///< partition_codes from GetPartitionMID()
 
