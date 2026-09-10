@@ -800,6 +800,10 @@ class Comm {
    * rank's send buffer, which is what makes the reads safe. Callers must have faulted in the
    * receive blocks already -- doing so afterwards would overwrite what was read.
    *
+   * Each peer's byte count travels with its address, and a count that does not match what this rank
+   * expects is reported. The read itself cannot notice: it is one-sided, and a send buffer holds
+   * every block in one allocation, so reading past a peer's block returns the block beside it.
+   *
    * @return false if any read on this node was refused. The whole node returns the same answer, so
    * it falls back together. Blocks read before the refusal were delivered, so a receive block holds
    * either its data or what it held before; the caller sends every node-local block through MPI,

@@ -1007,18 +1007,25 @@ bool Comm::ReadNodeBlocks(ConstIterator<SType> sbuf, ConstIterator<Long> scounts
                           Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
   const Integer rank = impl_->mpi_rank_;
   const Long node_size = (Long)impl_->node_rank_.size();
-  ScratchBuf<Long> saddr(node_size), raddr(node_size);  // where each node peer's block starts in my send buffer
+  // Where each node peer's block for me starts in that peer's send buffer, and how many bytes it
+  // put there. The size travels with the address because the read cannot ask for it: reading past a
+  // peer's block returns the block next to it rather than failing, so a count that is too large
+  // would deliver a neighbour's data as this one's. Here both counts are in hand.
+  ScratchBuf<Long> stell(2 * node_size), rtell(2 * node_size);
   for (Long j = 0; j < node_size; j++) {
     const Integer i = (Integer)impl_->node_rank_[j];
-    saddr[j] = (scounts[i] ? (Long)&sbuf[sdispls[i]] : 0);
+    stell[2*j+0] = (scounts[i] ? (Long)&sbuf[sdispls[i]] : 0);
+    stell[2*j+1] = scounts[i] * (Long)sizeof(SType);
   }
   // Completing this also proves every node peer has entered, so its send buffer is filled.
-  MPI_Alltoall(&saddr[0], 1, MPI_INT64_T, &raddr[0], 1, MPI_INT64_T, impl_->node_comm_);
+  MPI_Alltoall(&stell[0], 2, MPI_INT64_T, &rtell[0], 2, MPI_INT64_T, impl_->node_comm_);
   int ok = 1;
   for (Long j = 0; j < node_size; j++) {
     const Integer i = (Integer)impl_->node_rank_[j];
+    const Long want = rcounts[i] * (Long)sizeof(RType);
+    SCTL_ASSERT_MSG(rtell[2*j+1] == want, "Comm: a node peer sent a different number of bytes than this rank expects; the send and receive counts disagree.");
     if (i == rank || !rcounts[i]) continue;
-    ok = (int)comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)raddr[j], &rbuf[rdispls[i]], rcounts[i] * (Long)sizeof(RType)) && ok;
+    ok = (int)comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)rtell[2*j+0], &rbuf[rdispls[i]], want) && ok;
   }
   // Agree on the outcome so the node falls back together, and hold every rank until its peers have
   // finished reading its send buffer -- which is what makes the reads safe. Not remembered: after
