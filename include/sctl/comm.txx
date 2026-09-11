@@ -1140,6 +1140,9 @@ template <bool BlockingDirect, class SType, class RType> Comm::Request Comm::Ial
   };
   post_peers([&skip](Integer i) { return !skip(i); });
 
+  // The self block does not reach MPI, so this is the only place its two counts meet.
+  SCTL_ASSERT_MSG(scounts[rank] * (Long)sizeof(SType) == rcounts[rank] * (Long)sizeof(RType), "Comm::Ialltoallv_sparse: this rank's send and receive counts for itself disagree.");
+
   // Now the node-local work, over memory rather than the network, alongside the transfers above.
   omp_par::memcpy((Iterator<char>)(rbuf + rdispls[rank]), (ConstIterator<char>)(sbuf + sdispls[rank]), scounts[rank] * (Long)sizeof(SType));
   if (direct && !ReadNodeBlocks(sbuf, scounts, sdispls, rbuf, rcounts, rdispls)) {
@@ -1192,6 +1195,8 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     }
     scnt[Rank()] = 0;
     rcnt[Rank()] = 0;
+    // The self block does not reach MPI, so this is the only place its two counts meet.
+    SCTL_ASSERT_MSG(scounts[Rank()] == rcounts[Rank()], "Comm::Alltoallv: this rank's send and receive counts for itself disagree.");
     omp_par::memcpy(rbuf + rdispls[Rank()], sbuf + sdispls[Rank()], scounts[Rank()]);
     comm_detail::TrackCollective(1, stotal * sizeof(Type) + rtotal * sizeof(Type));
     MPI_Alltoallv_c((stotal ? &sbuf[0] : nullptr), &scnt[0], &sdsp[0], CommDatatype<Type>::value(), (rtotal ? &rbuf[0] : nullptr), &rcnt[0], &rdsp[0], CommDatatype<Type>::value(), impl_->mpi_comm_);
@@ -1282,6 +1287,8 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     }
     scnt[Rank()] = 0;
     rcnt[Rank()] = 0;
+    // The self block does not reach MPI, so this is the only place its two counts meet.
+    SCTL_ASSERT_MSG(scounts[Rank()] == rcounts[Rank()], "Comm::Alltoallv: this rank's send and receive counts for itself disagree.");
     omp_par::memcpy(rbuf + rdispls[Rank()], sbuf + sdispls[Rank()], scounts[Rank()]);
     comm_detail::TrackCollective(1, stotal * sizeof(Type) + rtotal * sizeof(Type));
     MPI_Alltoallv((stotal ? &sbuf[0] : nullptr), &scnt[0], &sdsp[0], CommDatatype<Type>::value(), (rtotal ? &rbuf[0] : nullptr), &rcnt[0], &rdsp[0], CommDatatype<Type>::value(), impl_->mpi_comm_);
