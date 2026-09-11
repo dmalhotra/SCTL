@@ -184,6 +184,12 @@ inline void MPIWaitAllBatched(MPI_Request* request, Long request_count) {
   }
 }
 
+/** What the receiver answers with in the node-local rendezvous of `Comm::Send` / `Comm::Recv`. The
+ *  sender waits for this, so every path the receiver can leave by has to send one. */
+constexpr char kAckFallback      = 0;  // not read; both sides fall back to MPI
+constexpr char kAckRead          = 1;  // read; the sender's buffer is free
+constexpr char kAckCountMismatch = 2;  // the counts disagree; both sides stop
+
 /**
  * Copy `bytes` out of another process on this node, in 8 MB chunks over all threads. False when the
  * kernel refuses, which every caller answers the same way: give this exchange to MPI.
@@ -966,6 +972,9 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
 // returns once acknowledged. Three small messages plus the read against MPI's two plus a copy, so
 // what this saves is the copy. Off-node, and wherever the kernel refuses, both fall back to MPI.
 //
+// The acknowledgement says which of the three outcomes happened, so a receiver that stops on a count
+// mismatch stops the sender along with it rather than leaving it waiting for an answer.
+//
 // The handshake runs on the caller's tag. MPI does not reorder messages of one (source, tag,
 // communicator), and each direction is posted in the same order at both ends, so the address, the
 // acknowledgement and any fallback payload cannot be mistaken for one another.
@@ -979,9 +988,10 @@ template <class SType> void Comm::Send(ConstIterator<SType> sbuf, Long scount, I
   if (direct_path) {
     const Long tell[2] = {(scount ? (Long)&sbuf[0] : 0), scount * (Long)sizeof(SType)};
     MPI_Send(tell, 2, MPI_INT64_T, dest, tag, impl_->mpi_comm_);
-    char ack = 0;
+    char ack = comm_detail::kAckFallback;
     MPI_Recv(&ack, 1, MPI_BYTE, dest, tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
-    if (ack) return;  // read, so the buffer is mine again
+    SCTL_ASSERT_MSG(ack != comm_detail::kAckCountMismatch, "Comm::Send: the destination's buffer holds a different number of bytes than this call sends; the send and receive counts disagree.");
+    if (ack == comm_detail::kAckRead) return;  // read, so the buffer is mine again
   }
 #ifdef SCTL_MEMDEBUG
   // The handshake above carries this count already; where it did not run, send it on its own so the
@@ -1010,13 +1020,17 @@ template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Intege
     // MPI_ERR_TRUNCATE, and a receive buffer larger than the message stalls the chunked MPI path,
     // which posts one receive per chunk of `rcount`. Free to check here, since the sender's size
     // came with its address; the builds that check pay for a message to compare it anywhere else.
-    SCTL_ASSERT_MSG(bytes == rcount * (Long)sizeof(RType), "Comm::Recv: the source sent a different number of bytes than this buffer holds; the send and receive counts disagree.");
+    if (bytes != rcount * (Long)sizeof(RType)) {  // answer first: the sender stops on it too
+      const char ack = comm_detail::kAckCountMismatch;
+      MPI_Send(&ack, 1, MPI_BYTE, source, tag, impl_->mpi_comm_);
+      SCTL_ERROR("Comm::Recv: the source sent a different number of bytes than this buffer holds; the send and receive counts disagree.");
+    }
     // Only the bytes the read overwrites: past them the buffer is the caller's, and MPI does not
     // write there. Before the read; after it would overwrite what was read.
     omp_par::prefault((Iterator<char>)rbuf, bytes);
     const Integer j = impl_->NodeIdx(source);
     const bool ok = !bytes || comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)told[0], &rbuf[0], bytes);
-    const char ack = (char)ok;
+    const char ack = (ok ? comm_detail::kAckRead : comm_detail::kAckFallback);
     MPI_Send(&ack, 1, MPI_BYTE, source, tag, impl_->mpi_comm_);
     if (ok) return;
   }

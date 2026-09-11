@@ -253,6 +253,9 @@ class Comm {
    * Deadlocks if two ranks both send to each other before either receives, as `MPI_Send` does for
    * a message too large to buffer.
    *
+   * Stops the program when the destination's `rcount` names a different number of bytes, wherever
+   * that is detected; see `Recv` for which transports detect it.
+   *
    * @tparam SType type of the send-data.
    *
    * @param[in] sbuf const-iterator to the send buffer.
@@ -278,7 +281,9 @@ class Comm {
    * sender's size along with its address, so it always reports a mismatch; on every other transport
    * the size costs a message of its own, which only `SCTL_MEMDEBUG` builds send. So the check is
    * there for whichever transport a release build takes on one node, and for all of them under
-   * `SCTL_MEMDEBUG` -- where a count bug cannot hide behind the ranks' placement.
+   * `SCTL_MEMDEBUG` -- where a count bug cannot hide behind the ranks' placement. On one node both
+   * ranks stop: the receiver answers the sender before stopping, so the sender reports the
+   * disagreement too rather than waiting on a rendezvous that will not finish.
    *
    * @tparam RType type of the receive-data.
    *
