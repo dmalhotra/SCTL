@@ -372,6 +372,13 @@ namespace sctl {
 
           Vector<Morton<DIM>> new_mid;
           NodeArena<TreeNode> new_pnodes_;
+          // The iterations are a cap, not the end condition: an iteration adds the parent-neighbors
+          // of what the previous one added, so the requirement moves one level coarser each time and
+          // the closure settles within MAX_DEPTH of them. Reaching the cap means it did not, which
+          // would leave the tree unbalanced, so the loop says how it ended rather than the cap
+          // ending it with nothing said. Every thread reads the same shared list after a barrier, so
+          // they agree on this and leave together.
+          bool early_exit = false;
           for (Integer iter = 0; iter <= MAX_DEPTH; iter++) {
             new_mid.ReInit(0);
             for (const auto node : new_node_lst) { // Collect missing parent-neighbors into new_mid
@@ -397,7 +404,7 @@ namespace sctl {
             shared_new_pnodes[tid] = &new_mid;
             #pragma omp barrier
 
-            bool early_exit = true;
+            early_exit = true;
             for (Integer t = 0; t < nt; t++) {
               if (shared_new_pnodes[t]->Dim()) early_exit = false;
             }
@@ -474,6 +481,7 @@ namespace sctl {
             }
             #pragma omp barrier
           }
+          SCTL_ASSERT_MSG(early_exit, "Balance21: the 2:1 closure did not settle within MAX_DEPTH iterations");
 
           static constexpr Integer FLAG_MINS_ANC = -1;  // ancestor of a min: exclude from parent_mid
           { // Set exclude flag for ancestors of mins

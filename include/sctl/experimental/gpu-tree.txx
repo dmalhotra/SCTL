@@ -1237,8 +1237,16 @@ void ClosureFrontier(DevVec<Morton<DIM>>& S, sctl::Periodicity periodicity) {
   detail::resizeDiscard(F, (Long)S.size());
   thrust::copy(pol, S.begin(), S.end(), F.begin());
   Long ns = (Long)S.size(), nf = ns;
+  // The rounds are a cap, not the end condition: a round adds the parent-neighbors of what the
+  // previous one added, so the requirement moves one level coarser each time and the closure settles
+  // within MAX_DEPTH rounds. Reaching the cap means it did not, which would leave the tree
+  // unbalanced, so record how the loop ended rather than let the cap end it with nothing said.
+  bool settled = false;
   for (Integer round = 0; round < 4 * MAX_DEPTH; round++) {
-    if (!nf) break;
+    if (!nf) {
+      settled = true;
+      break;
+    }
     const Long chunk = std::min<Long>(nf, 4000000 / MAX_CHILD + 1);
     DeviceScratch<NodeT, DevVec> buf(chunk * MAX_CHILD), add(nf * MAX_CHILD);
 
@@ -1254,7 +1262,10 @@ void ClosureFrontier(DevVec<Morton<DIM>>& S, sctl::Periodicity periodicity) {
       thrust::copy(pol, buf.begin(), buf.begin() + nkeep, add.begin() + nadd);
       nadd += nkeep;
     }
-    if (!nadd) break;
+    if (!nadd) {
+      settled = true;
+      break;
+    }
     local_sort(pol, add, nadd);
     nadd = detail::local_unique(pol, add, nadd);
 
@@ -1269,6 +1280,7 @@ void ClosureFrontier(DevVec<Morton<DIM>>& S, sctl::Periodicity periodicity) {
     ns += nadd;
     nf = nadd;
   }
+  SCTL_ASSERT_MSG(settled, "ClosureFrontier: the 2:1 closure did not settle within the rounds allowed");
   S.resize(ns);
 }
 
