@@ -593,6 +593,56 @@ static Long test_host_sink_spill() {
   return bad ? 1 : 0;
 }
 
+/**
+ * `detail::partitionN` over a stretch of a longer buffer, which is how a tree payload whose ghost
+ * slots are filled is re-cut: the stretch is read where it lies and the buffer comes back holding
+ * it alone.
+ *
+ * The element values are their own global index, so each rank can say where its block belongs
+ * without gathering anything. Both routes are taken: the exchange, and the one where the cut does
+ * not move and the stretch is only lifted out of the buffer around it -- which is the route a
+ * refinement that repartitions nothing takes, and the one no other test reaches.
+ */
+template <template <class...> class DevVec> Long test_partitionN_stretch(const char* what) {
+  const Comm& comm = Comm::World();
+  const Long np = comm.Size(), rank = comm.Rank();
+  const Long n = 100 + 10 * rank, gl = 7, gr = 5;  // the stretch sits at gl, with junk on both sides
+  const auto pol = gpu_tree::detail::scratch_policy<DevVec, Long>();
+
+  Long gid0 = 0;
+  comm.Scan(sctl::Ptr2ConstItr<Long>(&n, 1), sctl::Ptr2Itr<Long>(&gid0, 1), 1, sctl::CommOp::SUM);
+  gid0 -= n;
+  std::vector<Long> h(gl + n + gr, -999);
+  for (Long i = 0; i < n; i++) h[gl + i] = gid0 + i;
+
+  Long bad = 0;
+  const auto run = [&](Long tgt) {
+    DevVec<Long> v(h.begin(), h.end()), tmp;
+    gpu_tree::detail::partitionN(pol, v, gl, n, tgt, comm, tmp);
+    Long off = 0;
+    comm.Scan(sctl::Ptr2ConstItr<Long>(&tgt, 1), sctl::Ptr2Itr<Long>(&off, 1), 1, sctl::CommOp::SUM);
+    off -= tgt;
+    if ((Long)v.size() != tgt) {
+      bad++;
+      return;
+    }
+    std::vector<Long> got(v.size());
+    thrust::copy(v.begin(), v.end(), got.begin());
+    for (Long i = 0; i < tgt; i++) bad += (got[i] != off + i);  // my block of the global sequence, and no junk
+  };
+
+  run(n);  // the cut does not move: the stretch is lifted out, nothing is exchanged
+  if (np > 1) {  // the cut moves: rank 0 takes 3 elements from rank 1
+    const Long k = 3;
+    run(n + (rank == 0 ? k : (rank == 1 ? -k : 0)));
+  }
+
+  Long tot = 0;
+  comm.Allreduce(sctl::Ptr2ConstItr<Long>(&bad, 1), sctl::Ptr2Itr<Long>(&tot, 1), 1, sctl::CommOp::SUM);
+  if (!rank) printf("  %-72s %s\n", what, tot ? "FAIL" : "ok");
+  return tot ? 1 : 0;
+}
+
 int main(int argc, char** argv) {
   sctl::Comm::MPI_Init(&argc, &argv);
   {
@@ -604,6 +654,9 @@ int main(int argc, char** argv) {
     fails += test_vs_sctl<double, 3, gpu_tree::DeviceVector>();
     if (root) printf("std::vector backend\n");
     fails += test_vs_sctl<double, 3, std::vector>();
+    if (root) printf("partitionN over a stretch\n");
+    fails += test_partitionN_stretch<gpu_tree::HostVector>("HostVector: the buffer comes back holding the stretch alone");
+    fails += test_partitionN_stretch<gpu_tree::DeviceVector>("DeviceVector: the buffer comes back holding the stretch alone");
     if (root) {  // the host walk counts and writes in one pass, so it is the one that can exceed its estimate
       printf("walk overflow\n");
       fails += test_walk_overflow<double, 3, gpu_tree::HostVector>("HostVector: the cover is complete");

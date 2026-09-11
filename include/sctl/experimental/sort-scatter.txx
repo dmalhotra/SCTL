@@ -111,7 +111,6 @@ void SortScatter<Key, DevVec>::Init(DevVec<Key> keys, const sctl::Vector<Key>& s
 template <class Key, template <class...> class DevVec>
 void SortScatter<Key, DevVec>::Repartition(const sctl::Vector<Key>& splitters) {
   const Long np = comm_.Size();
-  plan_.moved = false;
   if (np == 1) return;
   SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Repartition: one splitter per rank.");
   const auto pol = detail::scratch_policy<DevVec, Key>();
@@ -119,38 +118,14 @@ void SortScatter<Key, DevVec>::Repartition(const sctl::Vector<Key>& splitters) {
 
   DeviceScratch<Key, DevVec> spl(np);
   thrust::copy(splitters.begin(), splitters.end(), spl.begin());
-  plan_.move_scnt.ReInit(np);
-  plan_.move_rcnt.ReInit(np);
-  const Long Nnew = detail::splitCounts(plan_.move_scnt.begin(), plan_.move_rcnt.begin(), keys_, N, spl, comm_);
-  if (!sctl::sort_scatter_detail::recordRecut(plan_, N, Nnew, comm_)) return;
+  sctl::Vector<Long> scnt(np), rcnt(np);
+  const Long Nnew = detail::splitCounts(scnt.begin(), rcnt.begin(), keys_, N, spl, comm_);
+  if (!sctl::sort_scatter_detail::recordRecut(plan_, N, scnt[comm_.Rank()], Nnew, comm_)) return;
   DevVec<Key>& k2 = detail::PersistentBuffer<Key, DevVec, detail::Buf::PtSortK>();
   detail::resizeDiscard(k2, Nnew);
   detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(keys_.data()),
-                                             thrust::raw_pointer_cast(k2.data()), plan_.move_scnt, plan_.move_rcnt, Long(1), comm_);
+                                             thrust::raw_pointer_cast(k2.data()), scnt, rcnt, Long(1), comm_);
   keys_.swap(k2);
-}
-
-template <class Key, template <class...> class DevVec> template <class T>
-void SortScatter<Key, DevVec>::RepartitionData(DevVec<T>& data, Long dof, Long begin) const {
-  const auto pol = detail::scratch_policy<DevVec, T>();
-  // Values the keys held before the last Repartition; with nothing moved, what they hold now.
-  const Long n = (plan_.moved ? plan_.move_n : plan_.Ntree) * dof;
-  SCTL_ASSERT_MSG(begin >= 0 && begin + n <= (Long)data.size(),
-                  "SortScatter::RepartitionData: data does not hold the previous SortedCount()*dof values at `begin`.");
-  DevVec<T>& out = detail::PersistentBuffer<T, DevVec, detail::Buf::SwapOut>();
-  if (!plan_.moved) {
-    if (!begin && n == (Long)data.size()) return;  // already those values alone, in place
-    using It = detail::ScratchIterator<T, DevVec>;  // nothing moved, but the surrounding values must go
-    detail::resizeDiscard(out, n);
-    T* const p = thrust::raw_pointer_cast(data.data());
-    thrust::copy(pol, It(p + begin), It(p + begin + n), It(thrust::raw_pointer_cast(out.data())));
-    data.swap(out);
-    return;
-  }
-  detail::resizeDiscard(out, plan_.Ntree * dof);
-  detail_sortScatter::exchange<DevVec>(pol, thrust::raw_pointer_cast(data.data()) + begin,
-                                             thrust::raw_pointer_cast(out.data()), plan_.move_scnt, plan_.move_rcnt, dof, comm_);
-  data.swap(out);
 }
 
 template <class Key, template <class...> class DevVec> template <class T>
@@ -304,7 +279,10 @@ template <class Key, template <class...> class DevVec> void SortScatter<Key, Dev
   DevVec<Long> q(payload.begin(), payload.end());
   ss.ScatterForward(q, dof);  // in the first layout
   ss.Repartition(splB);       // re-cut
-  ss.RepartitionData(q, dof); // follows the keys
+  { // the payload follows the keys
+    DevVec<Long> tmp;
+    detail::partitionN(detail::scratch_policy<DevVec, Long>(), q, 0, (Long)q.size(), ss.SortedCount() * dof, comm, tmp);
+  }
   { // repartitioning the data must land where sorting into the new layout directly would
     DevVec<Long> q2(payload.begin(), payload.end());
     ss.ScatterForward(q2, dof);

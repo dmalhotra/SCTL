@@ -1767,7 +1767,10 @@ namespace sctl {
         const Long begin = omp_par::reduce(cnt_->begin(), owned0) * esz;
         const Long count = omp_par::reduce(cnt_->begin() + owned0, owned1 - owned0) * esz;
         Vector<char> owned(count, data.begin() + begin, false);  // the owned items, without copying them
-        group.RepartitionData(owned, esz);
+        // The keys are globally sorted, so their re-cut moves the payload the same way their block
+        // sizes do, which is what PartitionN derives its exchange from. It takes the item count and
+        // works out the bytes per item itself.
+        this->GetComm().PartitionN(owned, group.SortedCount());
         if (owned.OwnData()) data.Swap(owned);  // the re-cut allocated the result
         else if (begin != 0 || count != data.Dim()) { // nothing moved, but the ghost values must go
           Vector<char> compact = owned;

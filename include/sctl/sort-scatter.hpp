@@ -39,10 +39,6 @@ struct PlanBase {
   Vector<Long> rscnt, rrcnt;    ///< stage 4
 
   bool inv = false;             ///< the inverses exist; built on the first move back
-
-  Vector<Long> move_scnt, move_rcnt;  ///< the last Repartition's move, previous layout -> current
-  Long move_n = 0;                    ///< keys held before it
-  bool moved = false;                 ///< whether it moved keys; RepartitionData is a no-op otherwise
 };
 
 struct Plan : PlanBase {
@@ -73,14 +69,14 @@ template <class Key> class SortScatter {
    */
   void Init(const Vector<Key>& keys, const Vector<Key>& splitters);
 
-  /** Move the sorted keys to the partition given by new `splitters`; the operators follow. */
-  void Repartition(const Vector<Key>& splitters);
-
   /**
-   * Move `data`, `dof` values per key in the layout before the last `Repartition` (its previous
-   * `SortedCount()`), to the current layout, in place. A no-op when that `Repartition` moved nothing.
+   * Move the sorted keys to the partition given by new `splitters`; the operators follow.
+   *
+   * A payload already in the old layout is moved to the new one with `Comm::PartitionN`, which
+   * derives that move from the block sizes: the keys are globally sorted, so a re-cut of them moves
+   * the payload the same way.
    */
-  template <class T> void RepartitionData(Vector<T>& data, Long dof) const;
+  void Repartition(const Vector<Key>& splitters);
 
   const Vector<Key>& SortedKeys() const { return keys_; }  ///< this rank's stretch of the global order
   Long LocalCount() const { return plan_.Nloc; }           ///< keys the caller handed in

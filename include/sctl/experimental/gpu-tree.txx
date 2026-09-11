@@ -339,10 +339,10 @@ void alltoallv(const Policy& pol, const void* sbuf, void* rbuf, const sctl::Scra
 // Exchange staged through pooled scratch: MPI sees the same registered addresses on every call, at
 // the price of a copy in and a copy out.
 template <class T, template <class...> class DevVec, class Policy>
-void exchangePooled(const Policy& pol, const DevVec<T>& src, Long nsrc, DevVec<T>& dst, Long ndst,
+void exchangePooled(const Policy& pol, const DevVec<T>& src, Long sbegin, Long nsrc, DevVec<T>& dst, Long ndst,
                     const sctl::ScratchBuf<Long>& scnt, const sctl::ScratchBuf<Long>& rcnt, const Comm& comm) {
   DeviceScratch<T, DevVec> xs(nsrc), xr(ndst);
-  thrust::copy(pol, src.begin(), src.begin() + nsrc, xs.begin());
+  thrust::copy(pol, src.begin() + sbegin, src.begin() + sbegin + nsrc, xs.begin());
   alltoallv<DevVec>(pol, thrust::raw_pointer_cast(xs.data()), thrust::raw_pointer_cast(xr.data()), scnt, rcnt, (Long)sizeof(T), comm);
   resizeDiscard(dst, ndst);  // the copy below covers all of it, so growing need not carry the old contents
   thrust::copy(pol, xr.begin(), xr.end(), dst.begin());
@@ -490,16 +490,30 @@ void treeFromAnchors(DevVec<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, 
  *  is. `v` holds `Ntgt` elements on return, whichever way the call goes.
  *
  *  @param[in] pol Thrust execution policy for this backend.
- *  @param[in,out] v This rank's elements, all of them; `Ntgt` of them on return.
- *  @param[in] Ntgt Elements this rank is to hold; `sum(Ntgt)` over ranks must equal `sum(v.size())`.
+ *  @param[in,out] v Holds this rank's `n` elements at `begin`; holds its `Ntgt` elements, and
+ *  nothing else, on return. The stretch may sit inside a longer buffer -- a tree payload whose
+ *  ghost slots are filled does -- and is read where it lies, without a copy of its own.
+ *  @param[in] begin Index of the first element to move.
+ *  @param[in] n Elements to move.
+ *  @param[in] Ntgt Elements this rank is to hold; `sum(Ntgt)` over ranks must equal `sum(n)`.
  *  @param[in] comm Communicator. Collective on it.
  *  @param[in] storage_buf Scratch the exchange receives into, swapped with `v` and left holding
  *  what `v` held. Retained across calls, so its contents on entry mean nothing. */
 template <class T, template <class...> class DevVec, class Policy>
-void partitionN(const Policy& pol, DevVec<T>& v, Long Ntgt, const Comm& comm, DevVec<T>& storage_buf) {
-  const Long np = comm.Size(), rank = comm.Rank(), n = (Long)v.size();
+void partitionN(const Policy& pol, DevVec<T>& v, Long begin, Long n, Long Ntgt, const Comm& comm, DevVec<T>& storage_buf) {
+  const Long np = comm.Size(), rank = comm.Rank();
+  SCTL_ASSERT_MSG(begin >= 0 && begin + n <= (Long)v.size(), "partitionN: v does not hold n elements at begin.");
+  const auto compact = [&pol, &v, &storage_buf, begin, n]() {  // nothing to exchange, but the rest of the buffer must still go
+    if (!begin && n == (Long)v.size()) return;
+    using It = ScratchIterator<T, DevVec>;
+    resizeDiscard(storage_buf, n);
+    T* const p = thrust::raw_pointer_cast(v.data());
+    thrust::copy(pol, It(p + begin), It(p + begin + n), It(thrust::raw_pointer_cast(storage_buf.data())));
+    v.swap(storage_buf);
+  };
   if (np == 1) {  // the one rank holds every element, so the target is what it already has
     SCTL_ASSERT_MSG(n == Ntgt, "partitionN: Ntgt does not total the elements the ranks hold.");
+    compact();
     return;
   }
 #ifdef SCTL_HAVE_MPI
@@ -511,7 +525,10 @@ void partitionN(const Policy& pol, DevVec<T>& v, Long Ntgt, const Comm& comm, De
   { // nothing crosses a rank boundary: the layout already is the target, and n == Ntgt with it
     bool same = true;
     for (Long q = 0; q <= np; q++) same = same && (off[q] == toff[q]);
-    if (same) return;
+    if (same) {
+      compact();
+      return;
+    }
   }
 
   sctl::ScratchBuf<Long> scnt(np), rcnt(np);
@@ -519,7 +536,7 @@ void partitionN(const Policy& pol, DevVec<T>& v, Long Ntgt, const Comm& comm, De
     scnt[q] = std::max<Long>(0, std::min(off[rank + 1], toff[q + 1]) - std::max(off[rank], toff[q]));
     rcnt[q] = std::max<Long>(0, std::min(off[q + 1], toff[rank + 1]) - std::max(off[q], toff[rank]));
   }
-  exchangePooled(pol, v, n, storage_buf, Ntgt, scnt, rcnt, comm);
+  exchangePooled(pol, v, begin, n, storage_buf, Ntgt, scnt, rcnt, comm);
   v.swap(storage_buf);
   v.resize(Ntgt);
 #endif
@@ -1315,7 +1332,7 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
       Nrecv = detail::splitCounts(scnt.begin(), rcnt.begin(), S, (Long)S.size(), mins_d, comm);
     }
     DevVec<NodeT>& recv = detail::PersistentBuffer<NodeT, DevVec, detail::Buf::ClosureRecv>();
-    detail::exchangePooled(pol, S, (Long)S.size(), recv, Nrecv, scnt, rcnt, comm);
+    detail::exchangePooled(pol, S, Long(0), (Long)S.size(), recv, Nrecv, scnt, rcnt, comm);
     local_sort(pol, recv, Nrecv);  // np sorted runs -> one sorted block
     S.swap(recv);
   }
@@ -1706,7 +1723,7 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
     sctl::ScratchBuf<Long> scnt(np), rcnt(np);
     const Long Nrecv = detail::splitCounts(scnt.begin(), rcnt.begin(), pt_mid, (Long)pt_mid.size(), spl_d, comm);
 
-    detail::exchangePooled(pol, pt_mid, (Long)pt_mid.size(), alt, Nrecv, scnt, rcnt, comm);
+    detail::exchangePooled(pol, pt_mid, Long(0), (Long)pt_mid.size(), alt, Nrecv, scnt, rcnt, comm);
     detail::local_sort(pol, alt, Nrecv);  // np sorted segments -> one sorted block
     pt_mid.swap(alt);
   }
@@ -1715,7 +1732,7 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
     Long Nloc = (Long)pt_mid.size(), Nloc_min = 0;
     comm.Allreduce<sctl::CommOp::MIN>(sctl::Ptr2ConstItr<Long>(&Nloc, 1), sctl::Ptr2Itr<Long>(&Nloc_min, 1), 1);
     if (Nloc_min < M) {  // repartition to an even split; received segments concatenate in global-index order, so pt_mid stays sorted
-      detail::partitionN(pol, pt_mid, (rank + 1) * Nglob / np - rank * Nglob / np, comm, alt);
+      detail::partitionN(pol, pt_mid, Long(0), (Long)pt_mid.size(), (rank + 1) * Nglob / np - rank * Nglob / np, comm, alt);
       Nloc_min = Nglob / np;  // smallest chunk of the even split
     }
 
@@ -1895,7 +1912,7 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
       DevVec<char>& own = detail::PersistentBuffer<char, DevVec, detail::Buf::MigData>();
       detail::resizeDiscard(own, data_count * dof);
       thrust::copy(pol, data.begin() + data_begin * dof, data.begin() + (data_begin + data_count) * dof, own.begin());
-      detail::partitionN(pol, own, Ndata * dof, comm_, detail::PersistentBuffer<char, DevVec, detail::Buf::DataRecv>());
+      detail::partitionN(pol, own, Long(0), (Long)own.size(), Ndata * dof, comm_, detail::PersistentBuffer<char, DevVec, detail::Buf::DataRecv>());
       data.swap(own);
     }
   }
@@ -2469,6 +2486,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::DeleteParticleData(const std::string& 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& coord, Long M, bool balance21, sctl::Periodicity periodicity, Integer halo_size) {
   const Comm& comm = this->GetComm();
+  const auto pol = detail::scratch_policy<DevVec, char>();
   Long owned0 = 0, owned1 = 0;
   this->GetOwnedRange(owned0, owned1);  // against the node list the payloads are still laid out on
   BaseTree::UpdateRefinement(coord, M, balance21, periodicity, halo_size);
@@ -2488,9 +2506,12 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& c
       const Long nitem = sctl::omp_par::reduce(cnt.begin(), cnt.Dim());
       const Long w = detail::globalDof((Long)raw.size(), nitem, comm);  // bytes per item
       // A Broadcast may have filled the ghost slots; the re-cut reads the owned stretch out of the
-      // buffer where it lies and leaves `raw` holding only what it produced.
+      // buffer where it lies and leaves `raw` holding only what it produced. The keys are globally
+      // sorted, so their re-cut moves the payload the same way their block sizes do.
       const Long begin = sctl::omp_par::reduce(cnt.begin(), owned0) * w;
-      kv.second.RepartitionData(raw, w, begin);
+      const Long count = sctl::omp_par::reduce(cnt.begin() + owned0, owned1 - owned0) * w;
+      detail::partitionN(pol, raw, begin, count, kv.second.SortedCount() * w, comm,
+                         detail::PersistentBuffer<char, DevVec, detail::Buf::SwapOut>());
       cnt = cnt_new;
     }
   }

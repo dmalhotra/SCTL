@@ -52,18 +52,14 @@ class SortScatter {
    */
   void Init(DevVec<Key> keys, const sctl::Vector<Key>& splitters);
 
-  /** Move the sorted keys to the partition given by new `splitters`; the operators follow. */
-  void Repartition(const sctl::Vector<Key>& splitters);
-
   /**
-   * Move `data`, `dof` values per key in the layout before the last `Repartition` (its previous
-   * `SortedCount()`), to the current layout, in place. A no-op when that `Repartition` moved nothing.
+   * Move the sorted keys to the partition given by new `splitters`; the operators follow.
    *
-   * `begin` names the first value to move when the keys' values are a stretch of a longer buffer,
-   * as a tree payload whose ghost slots are filled is; `data` is left holding the moved values
-   * alone. With `begin` non-zero and nothing to move, the stretch is brought to the front.
+   * A payload already in the old layout is moved to the new one with `detail::partitionN`, which
+   * derives that move from the block sizes: the keys are globally sorted, so a re-cut of them moves
+   * the payload the same way.
    */
-  template <class T> void RepartitionData(DevVec<T>& data, Long dof, Long begin = 0) const;
+  void Repartition(const sctl::Vector<Key>& splitters);
 
   const DevVec<Key>& SortedKeys() const { return keys_; }  ///< this rank's stretch of the global order
   Long LocalCount() const { return plan_.Nloc; }                 ///< keys the caller handed in

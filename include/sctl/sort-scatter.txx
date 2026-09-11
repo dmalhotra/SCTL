@@ -111,15 +111,14 @@ inline void ensureRecut(PlanBase& s, const Comm& comm) {
   s.recut_cnt = true;
 }
 
-/** A re-cut with counts `s.move_scnt` (this rank keeps `move_scnt[rank]` of its `n` keys and holds
- *  `Nnew` after): records whether any rank's keys move and, if so, stage 4 on `s`, to follow on the
- *  first move (ensureRecut) from the stage-3 layout, since two re-cuts compose to one. */
-inline bool recordRecut(PlanBase& s, Long n, Long Nnew, const Comm& comm) {
-  Long moved = n - s.move_scnt[comm.Rank()], tot = 0;
+/** A re-cut in which this rank keeps `nkeep` of its `n` keys and holds `Nnew` after: records
+ *  stage 4 on `s`, to follow on the first move (ensureRecut) from the stage-3 layout, since two
+ *  re-cuts compose to one. Returns whether any rank's keys move, which is also whether any rank's
+ *  block size changes -- the cuts of a sorted block can only move together. */
+inline bool recordRecut(PlanBase& s, Long n, Long nkeep, Long Nnew, const Comm& comm) {
+  Long moved = n - nkeep, tot = 0;
   comm.Allreduce(Ptr2ConstItr<Long>(&moved, 1), Ptr2Itr<Long>(&tot, 1), 1, CommOp::SUM);
-  s.moved = (tot != 0);
-  if (!s.moved) return false;
-  s.move_n = n;  // the counts stay for RepartitionData
+  if (!tot) return false;
   s.Ntree = Nnew;
   s.recut = true;
   s.recut_cnt = false;
@@ -161,25 +160,16 @@ template <class Key> void SortScatter<Key>::Init(const Vector<Key>& keys, const 
 /** The keys are globally sorted, so this is a contiguous chunk move (no merge). */
 template <class Key> void SortScatter<Key>::Repartition(const Vector<Key>& splitters) {
   const Integer np = comm_.Size();
-  plan_.moved = false;
   if (np == 1) return;
   SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Repartition: one splitter per rank.");
 
-  plan_.move_scnt.ReInit(np);
-  plan_.move_rcnt.ReInit(np);
-  const Long Nnew = sort_scatter_detail::splitCounts<Key>(plan_.move_scnt, plan_.move_rcnt, keys_.begin(), keys_.Dim(), splitters, comm_);
-  if (!sort_scatter_detail::recordRecut(plan_, keys_.Dim(), Nnew, comm_)) return;
+  const Long n = keys_.Dim();
+  Vector<Long> scnt(np), rcnt(np);
+  const Long Nnew = sort_scatter_detail::splitCounts<Key>(scnt, rcnt, keys_.begin(), n, splitters, comm_);
+  if (!sort_scatter_detail::recordRecut(plan_, n, scnt[comm_.Rank()], Nnew, comm_)) return;
   Vector<Key> recv(Nnew);
-  sort_scatter_detail::exchange<Key>(keys_.begin(), recv.begin(), plan_.move_scnt, plan_.move_rcnt, 1, comm_);
+  sort_scatter_detail::exchange<Key>(keys_.begin(), recv.begin(), scnt, rcnt, 1, comm_);
   keys_.Swap(recv);
-}
-
-template <class Key> template <class T> void SortScatter<Key>::RepartitionData(Vector<T>& data, Long dof) const {
-  if (!plan_.moved) return;
-  SCTL_ASSERT_MSG(data.Dim() == plan_.move_n * dof, "SortScatter::RepartitionData: data holds the previous SortedCount()*dof values.");
-  Vector<T> out(plan_.Ntree * dof);
-  sort_scatter_detail::exchange<T>(data.begin(), out.begin(), plan_.move_scnt, plan_.move_rcnt, dof, comm_);
-  data.Swap(out);
 }
 
 template <class Key> template <class T> void SortScatter<Key>::ScatterForward(ConstIterator<T> src, Iterator<T> dst, Long dof) const {
@@ -303,7 +293,7 @@ template <class Key> void SortScatter<Key>::test() {
   Vector<Long> q = payload;
   ss.ScatterForward(q, dof);  // in the first layout
   ss.Repartition(splB);  // re-cut
-  ss.RepartitionData(q, dof);  // follows the keys
+  comm.PartitionN(q, ss.SortedCount());  // the payload follows the keys
   {
     Vector<Long> q2 = payload;
     ss.ScatterForward(q2, dof);
