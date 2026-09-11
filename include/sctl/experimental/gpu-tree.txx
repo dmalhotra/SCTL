@@ -1343,7 +1343,14 @@ void addGhostNodes(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DIM>
   const Long Nn = static_cast<Long>(tree.size());
   owned_begin = 0;
   owned_end = Nn;
-  if (np == 1) return;
+  if (np == 1) {  // no peer wants anything, but the halo send list still has to say so
+    if (user_mid) user_mid->resize(0);
+    if (user_cnt) {
+      if (user_cnt->Dim() != np) user_cnt->ReInit(np);
+      user_cnt->SetZero();
+    }
+    return;
+  }
 
   // `mins` is the partition: mins[r] is rank r's first node, in code and depth alike, so the
   // boundaries need no gathering here.
