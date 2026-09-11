@@ -7,6 +7,9 @@
 #include <functional>         // for less
 #include <iterator>           // for iterator_traits
 #include <type_traits>        // for is_trivially_copyable, is_pointer, true_type
+#if defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>           // for sysconf, _SC_PAGESIZE
+#endif
 
 #include "sctl/common.hpp"        // for Integer, Long, SCTL_UNUSED, sctl
 #include "sctl/ompUtils.hpp"      // for merge_sort, merge, reduce, scan
@@ -63,6 +66,17 @@ namespace omp_par_detail {
 #endif
                             > {};
 
+  /** The stride `prefault` walks by. A stride above the real page size leaves pages untouched, which
+   *  is the whole point of the walk; below it only repeats a store into a page already resident. */
+  inline Long PageSize() {
+#if defined(_SC_PAGESIZE)
+    static const Long ps = std::max<Long>(1, (Long)sysconf(_SC_PAGESIZE));
+    return ps;
+#else
+    return 4096;
+#endif
+  }
+
   inline Integer PickThreads(Long nbytes, Integer requested) {
     constexpr Long kFullThreadsBytes      = 2L * 1024L * 1024L;
     if (requested > 0) return requested;
@@ -111,7 +125,7 @@ template <class Iter> inline void omp_par::prefault(Iter first, Long n, Integer 
   // lands inside it when the elements are one unbroken block.
   static_assert(omp_par_detail::is_contiguous<Iter>::value, "omp_par::prefault: the range must be contiguous; pass a pointer or an sctl::Iterator");
   if (n <= 0) return;
-  const Long nbytes = n * (Long)sizeof(T), page = 4096, npages = (nbytes + page - 1) / page;
+  const Long nbytes = n * (Long)sizeof(T), page = omp_par_detail::PageSize(), npages = (nbytes + page - 1) / page;
   char* p = (char*)&first[0];
   const Integer nt = omp_par_detail::PickThreads(nbytes, nthreads);
   if (nt <= 1) {
