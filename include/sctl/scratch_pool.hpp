@@ -87,6 +87,33 @@ template <class T> class ScratchBuf {
   T&               operator[](Long i);
   const T&         operator[](Long i) const;
 
+  /**
+   * Ask this buffer's pool to be ready to hand out `count` elements, so the chunk that needs is
+   * taken now rather than during the work that wants it. This buffer is unchanged -- it is the pool
+   * that is being asked.
+   *
+   * The question is what the pool can serve as it stands, buffers already live included, so asking
+   * from a full chunk does take a new one even where the chunk would be large enough empty. That is
+   * the case it is for: a caller that has just filled its chunk and wants the next round not to.
+   *
+   * For a caller that outgrew its buffer and put the rest elsewhere: telling the pool what was
+   * really needed lets the next round grow into the chunk instead.
+   */
+  void Reserve(Long count);
+
+  /**
+   * Try to grow in place to `count` elements, keeping what is already stored where it is.
+   *
+   * Best-effort, and never a reason for the pool to allocate: it grows only into what this buffer's
+   * chunk already has spare, and only while this is the chunk's top-most buffer. The return value
+   * is the size now held, which is the old one when nothing could be given. Shrinking is refused
+   * the same way, so a caller cannot hand back memory a neighbour would then overlap.
+   *
+   * A refusal cannot be reversed while this buffer lives -- nothing can free memory above the
+   * top-most buffer -- so one refusal is final and a caller should stop asking.
+   */
+  Long RequestResize(Long count);
+
  private:
   ScratchPool*            pool_;
   internal::ScratchChunk* chunk_;
@@ -146,6 +173,17 @@ class ScratchPool {
   void AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data);
   void FreeBytes(Chunk* chunk, Iterator<char> data, Long bytes);
   void ReleaseChunk(Chunk* chunk);
+
+  /** Take a chunk that can hold `bytes` if the current one cannot, and keep it. See
+   *  `ScratchBuf::Reserve`, which is how callers reach this. */
+  void Reserve(Long bytes);
+
+  /** Largest size the slice at `data` could grow to, or 0 when it is not the head chunk's top-most
+   *  slice. Counts only room the chunk already has. */
+  Long ResizableBytes(Chunk* chunk, Iterator<char> data, Long bytes) const;
+
+  /** Move `top` to fit `new_bytes`, which `ResizableBytes` must have allowed. */
+  void CommitResize(Chunk* chunk, Iterator<char> data, Long bytes, Long new_bytes);
 
   /** What a slice of `bytes` consumes: the size rounded up to `SCTL_MEM_ALIGN` (plus the debug
    *  redzone), and never zero, so that `top == base` means the chunk holds no live buffer. */

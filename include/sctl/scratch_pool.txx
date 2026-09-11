@@ -1,7 +1,7 @@
 #ifndef _SCTL_SCRATCH_POOL_TXX_
 #define _SCTL_SCRATCH_POOL_TXX_
 
-#include <algorithm>          // for max
+#include <algorithm>          // for max, min
 #include <cstdlib>            // for std::aligned_alloc, std::free
 #include <new>                // for placement new
 #include <type_traits>        // for is_trivially_default_constructible, is_trivially_destructible
@@ -182,6 +182,37 @@ inline ScratchPool& ScratchPool::Instance() {
   }
 }
 
+inline Long ScratchPool::ResizableBytes(Chunk* chunk, Iterator<char> data, Long bytes) const {
+  // Only the head chunk's top-most slice can move `top`; anything else would run into a live
+  // neighbour, and a non-head chunk's `top` is not the allocation point at all.
+  if (chunk != head_ || data + PaddedBytes(bytes) != chunk->top) return 0;
+  const Long room = chunk->end - data;
+  // Not a policy reserve, just rounding headroom: `PaddedBytes` adds at most the redzone plus the
+  // alignment it rounds to, and `PaddedBytes(0)` is at least the redzone, so this many raw bytes
+  // are certain to pad to within `room`.
+  const Long usable = room - PaddedBytes(0) - (Long)SCTL_MEM_ALIGN;
+  return std::max<Long>(usable, 0);
+}
+
+inline void ScratchPool::CommitResize(Chunk* chunk, Iterator<char> data, Long bytes, Long new_bytes) {
+  SCTL_ASSERT(chunk == head_ && data + PaddedBytes(bytes) == chunk->top);
+  chunk->top = data + PaddedBytes(new_bytes);
+  SCTL_ASSERT(chunk->top <= chunk->end);
+#ifdef SCTL_MEMDEBUG
+  Iterator<char> redzone_start = data + new_bytes;  // the trailer moves with the end; FreeBytes reads it there
+  for (Long i = 0; i < MemoryManager::end_padding; ++i) redzone_start[i] = MemoryManager::init_mem_val;
+#endif
+}
+
+inline void ScratchPool::Reserve(Long bytes) {
+  // Allocate and hand straight back: what matters is the chunk this leaves behind. A request the
+  // head chunk can serve moves `top` and moves it back, so this costs nothing in the settled case.
+  Chunk* chunk = nullptr;
+  Iterator<char> data;
+  AllocBytes(bytes, chunk, data);
+  FreeBytes(chunk, data, bytes);
+}
+
 inline Long ScratchPool::DebugChunkCount() const {
   Long n = 0;
   for (const Chunk* c = head_; c != nullptr; c = c->prev) ++n;
@@ -227,6 +258,24 @@ template <class T>
     for (Long i = count_ - 1; i >= 0; --i) elem[i].~T();
   }
   pool_->FreeBytes(chunk_, Iterator<char>(data_), count_ * (Long)sizeof(T));
+}
+
+template <class T>
+inline void ScratchBuf<T>::Reserve(Long count) {
+  pool_->Reserve(count * (Long)sizeof(T));
+}
+
+template <class T>
+inline Long ScratchBuf<T>::RequestResize(Long count) {
+  static_assert(std::is_trivially_default_constructible<T>::value && std::is_trivially_destructible<T>::value,
+                "ScratchBuf::RequestResize: growing would leave the new elements unconstructed");
+  if (count <= count_) return count_;
+  const Long room = pool_->ResizableBytes(chunk_, Iterator<char>(data_), count_ * (Long)sizeof(T));
+  const Long fit = std::min(count, room / (Long)sizeof(T));  // whole elements only
+  if (fit <= count_) return count_;
+  pool_->CommitResize(chunk_, Iterator<char>(data_), count_ * (Long)sizeof(T), fit * (Long)sizeof(T));
+  count_ = fit;
+  return count_;
 }
 
 template <class T>
