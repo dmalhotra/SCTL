@@ -31,11 +31,15 @@ template <class ValueType> void Vector<ValueType>::Init(Long dim_, Iterator<Valu
   own_data = own_data_;
   disable_reinit_ = disable_reinit;
   if (own_data) {
-    if (dim > 0) {
+    // Checked before the allocation, not after: storage a Vector<const T> owns is storage nothing
+    // can ever write, so taking it and then rejecting the copy leaves the elements as the allocator
+    // left them. This also keeps aligned_new<const T> from being instantiated at all.
+    if constexpr (std::is_const<ValueType>::value) {  // Vector<const T> is a view
+      SCTL_ASSERT_MSG(dim == 0, "Vector<const T> cannot own storage; use a non-owning view.");
+      data_ptr = NullIterator<ValueType>();
+    } else if (dim > 0) {
       data_ptr = aligned_new<ValueType>(capacity);
-      if constexpr (std::is_const<ValueType>::value) {  // Vector<const T> is a view
-        SCTL_ASSERT_MSG(data_ == NullIterator<ValueType>(), "Vector<const T> cannot own a copy of the data; use a non-owning view.");
-      } else if (data_ != NullIterator<ValueType>()) {
+      if (data_ != NullIterator<ValueType>()) {
         omp_par::copy(data_, data_ + dim, data_ptr);
       }
     } else
@@ -120,7 +124,7 @@ template <class ValueType> void Vector<ValueType>::ReInit(Long dim_, Iterator<Va
     dim = dim_;
     disable_reinit_ = disable_reinit;
     if constexpr (std::is_const<ValueType>::value) {  // Vector<const T> is a view
-      SCTL_ASSERT_MSG(!dim || data_ == NullIterator<ValueType>(), "Vector<const T> cannot own a copy of the data; use a non-owning view.");
+      SCTL_ASSERT_MSG(dim == 0, "Vector<const T> cannot own storage; use a non-owning view.");
     } else if (dim && (data_ptr != NullIterator<ValueType>()) && (data_ != NullIterator<ValueType>())) {
       omp_par::copy(data_, data_ + dim, data_ptr);
     }
