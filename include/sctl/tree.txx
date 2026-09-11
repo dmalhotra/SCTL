@@ -3,7 +3,7 @@
 
 #include <stdlib.h>               // for drand48
 #include <algorithm>              // for lower_bound, max, min, sort
-#include <cstdint>                // for int32_t, uint8_t
+#include <cstdint>                // for int32_t, uint8_t, uint64_t
 #include <cstdlib>                // for std::aligned_alloc, std::free
 #include <map>                    // for map, operator!=, __map_iterator
 #include <numeric>                // for exclusive_scan
@@ -1264,19 +1264,20 @@ namespace sctl {
     // in the same order, which AddData being collective gives them. Check it rather than rely on
     // it: a rank that disagreed would otherwise enter a collective the others do not, or reach the
     // per-name loop with a different name, and hang with nothing said about why.
-    Long own_hash = 0;
+    std::uint64_t own_hash = 0;  // unsigned: the multiply is meant to wrap, which is not defined for Long
     const bool any_own = [this, &own_hash]() {
       bool any = false;
       for (const auto& pair : node_data) {  // std::map, so the names come out sorted on every rank
         if (data_moved_by_derived.count(pair.first)) continue;
         any = true;
-        for (const char c : pair.first) own_hash = own_hash * 1000003 + (Long)(unsigned char)c;
+        for (const char c : pair.first) own_hash = own_hash * 1000003 + (std::uint64_t)(unsigned char)c;
         own_hash = own_hash * 1000003 + 1;  // a separator, so {"ab","c"} and {"a","bc"} differ
       }
       return any;
     }();
     { // one reduction: max and -min agree only when every rank hashed the same names
-      StaticArray<Long,2> loc{own_hash, -own_hash}, glb;
+      const Long h = (Long)(own_hash >> 1);  // the top bit is dropped, so h and -h are both Long values
+      StaticArray<Long,2> loc{h, -h}, glb;
       comm.Allreduce((ConstIterator<Long>)loc, (Iterator<Long>)glb, 2, CommOp::MAX);
       SCTL_ASSERT_MSG(glb[0] == -glb[1], "Tree::UpdateRefinement: ranks hold different node data; AddData and DeleteData are collective.");
     }
