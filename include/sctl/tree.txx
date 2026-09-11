@@ -898,47 +898,51 @@ namespace sctl {
           const Long idx_start = is_first ? 0 : std::lower_bound(pt_mid.begin() + begin_t, pt_mid.begin() + begin_t + M, start_anchor.mid) - pt_mid.begin();
           const Long idx_end   = is_last  ? N : std::lower_bound(pt_mid.begin() + end_t,   pt_mid.begin() + end_t   + M, end_anchor.mid)   - pt_mid.begin();
 
-          // NUMA-local per-thread scratch (first-touched on this thread's node).
+          // NUMA-local per-thread scratch (first-touched on this thread's node). `max_emits` is an
+          // estimate, not a bound: a clump of more than M identical coordinates splits at every
+          // level down to MAX_DEPTH, which costs 2^DIM nodes per level against the 4*(MAX_DEPTH+1)
+          // per leaf reserved here. So the nodes past the estimate go to `spill` rather than past
+          // the end of the buffer. The test is per node and measures as free beside the store.
           ScratchBuf<Morton<DIM>> buf(max_emits);
+          Vector<Morton<DIM>> spill;
+          Long cap = buf.Dim();
           Long count = 0;
-
-          if (is_first) {
-            Morton<DIM> m0{};
-            while (m0 != start_anchor) {
-              buf[count++] = m0;
-              if (m0.isAncestor(start_anchor)) m0 = first_child(m0);
-              else                             m0 = m0.Next();
+          const Long grow = std::max<Long>(max_emits / 4, 1024);
+          // Growing the scratch keeps what is already written where it is, where `spill` copies on
+          // every step, so ask the pool first. `count == cap` both spaces the requests out and ends
+          // them: a refusal returns `cap` unchanged, `count` then passes it, and nothing asks again.
+          const auto emit = [&buf, &spill, &count, &cap, grow](const Morton<DIM>& m) {
+            if (count < cap) {
+              buf[count++] = m;
+              if (count == cap) cap = buf.RequestResize(cap + grow);
+            } else {
+              spill.PushBack(m);
+              count++;
             }
-          }
+          };
 
-          Morton<DIM> m0     = start_anchor;
-          Long        pt_idx = idx_start;
+          Morton<DIM> m0{};
+          const auto walk_to = [&m0, &emit, &first_child](const Morton<DIM>& target) { // nodes of [m0, target), leaving m0 there
+            while (m0 != target) {
+              emit(m0);
+              if (m0.isAncestor(target)) m0 = first_child(m0);
+              else                       m0 = m0.Next();
+            }
+          };
+
+          if (is_first) walk_to(start_anchor);  // from the root, which m0 already holds
+          m0 = start_anchor;
+
+          Long pt_idx = idx_start;
           while (pt_idx < idx_end - M) {
-            const Morton<DIM> m_ = split_anchor(pt_mid[pt_idx], pt_mid[pt_idx+M]);
-            while (m0 != m_) {
-              buf[count++] = m0;
-              if (m0.isAncestor(m_)) m0 = first_child(m0);
-              else                   m0 = m0.Next();
-            }
+            walk_to(split_anchor(pt_mid[pt_idx], pt_mid[pt_idx+M]));
             pt_idx = std::lower_bound(pt_mid.begin() + pt_idx, pt_mid.begin() + pt_idx + M, m0.mid) - pt_mid.begin();
             if (pt_idx < idx_end && pt_mid[pt_idx] < m0.mid) {
               pt_idx = std::lower_bound(pt_mid.begin() + pt_idx, pt_mid.begin() + idx_end, m0.mid) - pt_mid.begin();
             }
           }
-          while (m0 != end_anchor) {  // tail to end_anchor / sentinel
-            buf[count++] = m0;
-            if (m0.isAncestor(end_anchor)) m0 = first_child(m0);
-            else                           m0 = m0.Next();
-          }
-
-          if (is_last) {
-            const Morton<DIM> end_anchor = Morton<DIM>().Next();
-            while (m0 != end_anchor) {  // tail to end_anchor / sentinel
-              buf[count++] = m0;
-              if (m0.isAncestor(end_anchor)) m0 = first_child(m0);
-              else                           m0 = m0.Next();
-            }
-          }
+          walk_to(end_anchor);
+          if (is_last) walk_to(Morton<DIM>().Next());
           local_sizes[tid].v = count;
 
           #pragma omp barrier
@@ -952,7 +956,14 @@ namespace sctl {
             node_mid.ReInit(total);
           }
 
-          std::copy(buf.begin(), buf.begin() + count, node_mid.begin() + offsets[tid]);
+          const Long n_buf = std::min(count, cap);  // the rest, if any, is in `spill`
+          std::copy(buf.begin(), buf.begin() + n_buf, node_mid.begin() + offsets[tid]);
+          if (spill.Dim()) {
+            std::copy(spill.begin(), spill.end(), node_mid.begin() + offsets[tid] + n_buf);
+            // The chunk could not hold what this walk produced. Ask for that much now, while the
+            // number is known, so the next build grows into the chunk instead of the heap.
+            buf.Reserve(count);
+          }
         }
       }
     }
