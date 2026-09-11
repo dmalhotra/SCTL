@@ -81,8 +81,8 @@ template <template <class...> class DevVec> struct StageTimer {
     sctl::Profile::Toc();
   }
   static void sync() {
-#if SCTL_PROFILE >= 0 && (defined(__CUDACC__) || defined(__HIPCC__))
-    if constexpr (is_device_vector_v<DevVec<char>>) cudaDeviceSynchronize();
+#if SCTL_PROFILE >= 0
+    if constexpr (is_device_vector_v<DevVec<char>>) gpu_runtime::DeviceSynchronize();
 #endif
   }
 };

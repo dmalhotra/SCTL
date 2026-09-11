@@ -7,10 +7,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <type_traits>
-#if defined(__CUDACC__)
-#include <cuda_runtime.h>  // cudaHostRegister, cudaMemcpy: used below, not otherwise declared
-#endif
-
 #include "sctl/experimental/device_scratch.hpp"
 #include "sctl/iterator.txx"      // for Ptr2Itr
 #include "sctl/ompUtils.hpp"      // for omp_par::copy, omp_par::prefault
@@ -36,10 +32,10 @@ inline sctl::ScratchPool& pinnedStagingPool() {
   static sctl::ScratchPool pool(
       [](void* base, Long bytes) {  // fault the chunk in first: registering cold memory is far dearer
         sctl::omp_par::prefault(sctl::Ptr2Itr<char>((char*)base, bytes), bytes);
-        const cudaError_t reg = cudaHostRegister(base, (std::size_t)bytes, cudaHostRegisterDefault);
-        SCTL_ASSERT(reg == cudaSuccess);
+        const bool ok = gpu_runtime::HostRegister(base, (std::size_t)bytes);
+        SCTL_ASSERT_MSG(ok, "pinnedStagingPool: the device runtime refused to page-lock a staging chunk.");
       },
-      [](void* base, Long) { cudaHostUnregister(base); });  // at exit the runtime may already be gone
+      [](void* base, Long) { gpu_runtime::HostUnregister(base); });  // at exit the runtime may already be gone
   return pool;
 }
 
@@ -49,8 +45,8 @@ template <class SrcPtr, class DstPtr> inline void deviceToHost(SrcPtr src, Long 
   if (!n) return;
   if constexpr (is_device_ptr<SrcPtr>::value) {
     sctl::ScratchBuf<T> stage(n, pinnedStagingPool());
-    const cudaError_t cpy = cudaMemcpy(&stage[0], thrust::raw_pointer_cast(src), n * sizeof(T), cudaMemcpyDeviceToHost);
-    SCTL_ASSERT(cpy == cudaSuccess);
+    const bool ok = gpu_runtime::CopyToHost(&stage[0], thrust::raw_pointer_cast(src), n * sizeof(T));
+    SCTL_ASSERT_MSG(ok, "deviceToHost: the device runtime refused the copy.");
     sctl::omp_par::copy(stage.begin(), stage.end(), dst);
   } else {
     sctl::omp_par::copy(src, src + n, dst);

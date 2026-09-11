@@ -6,6 +6,11 @@
 #define _SCTL_EXPERIMENTAL_DEVICE_SCRATCH_HPP_
 
 #include <thrust/device_ptr.h>
+#if defined(__HIPCC__)
+#include <hip/hip_runtime.h>  // the host-register and copy calls below; not otherwise declared
+#elif defined(__CUDACC__)
+#include <cuda_runtime.h>     // the host-register and copy calls below; not otherwise declared
+#endif
 
 #include <cstddef>
 #include <type_traits>
@@ -24,6 +29,66 @@ namespace gpu_tree {
 using sctl::Long;
 
 namespace detail {
+
+/**
+ * The device-runtime calls made here, over whichever runtime is compiling this file. CUDA and HIP
+ * spell them the same way under different prefixes, so only the names differ. A build with neither
+ * cannot produce a device pointer, so `CopyToHost` is unreachable there and the rest have nothing
+ * to do -- which is what a host backend wants.
+ *
+ * `__HIPCC__` is tested first: on the NVIDIA platform hipcc defines both, and there the hip names
+ * are the cuda ones.
+ */
+namespace gpu_runtime {
+
+/** Page-lock `bytes` at `p` so the driver can copy out of it directly. False if the runtime refused. */
+inline bool HostRegister(void* p, std::size_t bytes) {
+#if defined(__HIPCC__)
+  return hipHostRegister(p, bytes, hipHostRegisterDefault) == hipSuccess;
+#elif defined(__CUDACC__)
+  return cudaHostRegister(p, bytes, cudaHostRegisterDefault) == cudaSuccess;
+#else
+  (void)p;
+  (void)bytes;
+  return true;  // nothing to pin
+#endif
+}
+
+/** Undo `HostRegister`. Runs at exit, where the runtime may already be gone, so the result is of no use. */
+inline void HostUnregister(void* p) {
+#if defined(__HIPCC__)
+  hipHostUnregister(p);
+#elif defined(__CUDACC__)
+  cudaHostUnregister(p);
+#else
+  (void)p;
+#endif
+}
+
+/** Copy `bytes` of device memory at `src` to host memory at `dst`. False if the runtime refused. */
+inline bool CopyToHost(void* dst, const void* src, std::size_t bytes) {
+#if defined(__HIPCC__)
+  return hipMemcpy(dst, src, bytes, hipMemcpyDeviceToHost) == hipSuccess;
+#elif defined(__CUDACC__)
+  return cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToHost) == cudaSuccess;
+#else
+  (void)dst;
+  (void)src;
+  (void)bytes;
+  return false;  // no runtime to copy with, and no device pointer to copy from
+#endif
+}
+
+/** Wait for the device to finish what it has been given. */
+inline void DeviceSynchronize() {
+#if defined(__HIPCC__)
+  hipDeviceSynchronize();
+#elif defined(__CUDACC__)
+  cudaDeviceSynchronize();
+#endif
+}
+
+}  // namespace gpu_runtime
 
 // True iff `Vec::data()` returns a thrust::device_ptr (i.e. Vec is GPU-resident).
 template <class T> struct is_device_ptr                        : std::false_type {};
