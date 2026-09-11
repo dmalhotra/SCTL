@@ -493,6 +493,59 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
   return fails;
 }
 
+/**
+ * A tree whose walk produces more nodes than `buildTreeCpuChunked` reserves room for: clumps of
+ * identical coordinates, more than `M` to a clump, which split at every level down to MAX_DEPTH
+ * because duplicates never separate.
+ *
+ * Checks the node list is the complete linear tree it is meant to be -- sorted, its leaves covering
+ * the domain end to end with no gap or overlap. A node lost, duplicated or written out of order past
+ * the reserved room breaks that. Whether the nodes past the reservation stay in the pool scratch or
+ * go to the heap depends on how much room the thread's chunk has; the tree is the same either way.
+ */
+template <class Real, Integer DIM, template <class...> class DevVec> Long test_walk_overflow(const char* what) {
+  using NodeT = sctl::Morton<DIM>;
+  const Comm& self = Comm::Self();
+  const Long M = 512, per = M + 1, clumps = 400, N = clumps * per;
+
+  std::vector<Real> X(N * DIM);
+  for (Long g = 0; g < clumps; g++) {
+    Real c[DIM];
+    for (Integer d = 0; d < DIM; d++) c[d] = (Real)((g * 7919 + d * 104729) % 100003) / (Real)100003;
+    for (Long j = 0; j < per; j++)
+      for (Integer d = 0; d < DIM; d++) X[((g * per + j) * DIM) + d] = c[d];
+  }
+  DevVec<Real> Xd(X.size());
+  thrust::copy(X.begin(), X.end(), Xd.begin());
+
+  gpu_tree::GPUTree<Real, DIM, DevVec> tree(self);
+  tree.UpdateRefinement(Xd, M, false, sctl::Periodicity::NONE, 0);
+
+  const auto to_host = [](const auto& d) {
+    sctl::Vector<std::remove_const_t<typename std::decay_t<decltype(d)>::value_type>> h((Long)d.size());
+    thrust::copy(d.begin(), d.end(), h.begin());
+    return h;
+  };
+  const auto mid = to_host(tree.GetNodeMID());
+  const auto attr = to_host(tree.GetNodeAttr());
+
+  // Morton equality takes the depth in too; here only where a box starts matters.
+  const auto same_box = [](const NodeT& a, const NodeT& b) { return !(a.mid < b.mid) && !(b.mid < a.mid); };
+  Long bad = 0, leaves = 0;
+  NodeT reach = NodeT();  // how far the cover has got; leaves tile in order, each starting where the last ended
+  for (Long i = 0; i < mid.Dim(); i++) {
+    if (i && !(mid[i - 1] < mid[i])) bad++;
+    if (!attr[i].Leaf) continue;
+    if (!same_box(mid[i], reach)) bad++;
+    reach = mid[i].Next();
+    leaves++;
+  }
+  if (!same_box(reach, NodeT().Next())) bad++;
+  if (leaves <= clumps) bad++;  // every clump had to be resolved into a box of its own
+  printf("  %-72s %s\n", what, bad ? "FAIL" : "ok");
+  return bad ? 1 : 0;
+}
+
 int main(int argc, char** argv) {
   sctl::Comm::MPI_Init(&argc, &argv);
   {
@@ -504,6 +557,11 @@ int main(int argc, char** argv) {
     fails += test_vs_sctl<double, 3, gpu_tree::DeviceVector>();
     if (root) printf("std::vector backend\n");
     fails += test_vs_sctl<double, 3, std::vector>();
+    if (root) {  // the host walk counts and writes in one pass, so it is the one that can exceed its estimate
+      printf("walk overflow\n");
+      fails += test_walk_overflow<double, 3, gpu_tree::HostVector>("HostVector: the cover is complete");
+      fails += test_walk_overflow<double, 3, std::vector>("std::vector: the cover is complete");
+    }
     SCTL_ASSERT_MSG(fails == 0, "test-gpu-tree: failures above");
   }
   sctl::Comm::MPI_Finalize();

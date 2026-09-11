@@ -581,15 +581,20 @@ void buildTreeGpu(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>>& pt_m
 }
 
 
+// What the write pass does with each node: store it. The device counts first, so its buffer holds
+// the count exactly; the host counts and writes in one pass and hands a sink of its own.
+struct StoreNode {};
+
 // Per-chunk anchor walk: walks pt_mid[begin_t, end_t) between chunk-boundary anchors
 // (start_bnd / end_bnd at the ends; else the split-leaf of (pt[begin], pt[begin+M])).
-template <Integer DIM, WalkMode MODE> struct ChunkedWalkFunctor {
+template <Integer DIM, WalkMode MODE, class Sink = StoreNode> struct ChunkedWalkFunctor {
   const MortonCode<DIM>* pt_mid;
   Long N, M, nthreads;
   const Long* offsets;  // WalkMode::Write only
   Morton<DIM>* out;     // WalkMode::Write only
   Morton<DIM> start_bnd;  // rank's lower boundary anchor (ROOT on the first rank)
   Morton<DIM> end_bnd;    // rank's upper boundary, exclusive (root.Next() on the last rank)
+  Sink* sink = nullptr;   // WalkMode::Write only, and only where `Sink` is not StoreNode
 
   SCTL_GPU_HD Long operator()(Long tid) const {
     using NodeT = Morton<DIM>;
@@ -609,9 +614,12 @@ template <Integer DIM, WalkMode MODE> struct ChunkedWalkFunctor {
 
     NodeT m0 = start_anchor;
     // Emit the complete-tree nodes from m0 up to `target`, leaving m0 there.
-    const auto walk_to = [&m0, &count, w](const NodeT& target) {
+    const auto walk_to = [&m0, &count, w, this](const NodeT& target) {
       while (m0 != target) {
-        if constexpr (MODE == WalkMode::Write) w[count] = m0;
+        if constexpr (MODE == WalkMode::Write) {
+          if constexpr (std::is_same<Sink, StoreNode>::value) w[count] = m0;
+          else                                               sink->Put(w, count, m0);
+        }
         ++count;
         if (m0.isAncestor(target)) m0 = m0.DFD(static_cast<uint8_t>(m0.depth + 1));
         else                       m0 = m0.Next();
@@ -630,6 +638,33 @@ template <Integer DIM, WalkMode MODE> struct ChunkedWalkFunctor {
     }
     walk_to(end_anchor);  // tail to end_anchor / sentinel
     return count;
+  }
+};
+
+// Where the host walk's nodes go. Growing the scratch keeps what is already written where it is,
+// where `spill` copies on every step, so ask the pool first. `i + 1 == cap` both spaces the requests
+// out and ends them: a refusal returns `cap` unchanged, the next index passes it, and nothing asks
+// again.
+template <class NodeT> struct HostSink {
+  sctl::ScratchBuf<NodeT>* buf;
+  sctl::Vector<NodeT>* spill;
+  Long cap, grow;
+
+  // The walk it is handed to is __host__ __device__, so this has to compile for the device as well,
+  // where none of what it does is available. The host path is its only caller.
+  SCTL_GPU_HD void Put(NodeT* w, Long i, const NodeT& m) {
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    (void)w;
+    (void)i;
+    (void)m;
+#else
+    if (i < cap) {
+      w[i] = m;
+      if (i + 1 == cap) cap = buf->RequestResize(cap + grow);
+    } else {
+      spill->PushBack(m);
+    }
+#endif
   }
 };
 
@@ -678,7 +713,10 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
   const Long min_chunk = std::max<Long>(4 * M + 1, 1024);
   const Integer nthreads = std::clamp<Integer>(N / min_chunk, 1, max_threads);
 
-  // Upper bound: ~(MAX_DEPTH+1) nodes/leaf, chunk_size/M leaves/chunk, 4x slack.
+  // An estimate, not a bound: ~(MAX_DEPTH+1) nodes/leaf, chunk_size/M leaves/chunk, 4x slack. A split
+  // emits all 2^DIM children, so the worst case is 2^DIM*MAX_DEPTH per leaf -- about twice this --
+  // and a clump of more than M identical coordinates reaches it, splitting at every level down to
+  // MAX_DEPTH because duplicates never separate. `HostSink` takes what does not fit.
   const Long chunk_size_max = (N + nthreads - 1) / nthreads;
   const Long max_emits = 4 * chunk_size_max * (MAX_DEPTH + 1) / std::max<Long>(1, M) + 4 * (MAX_DEPTH + 1) * (Long(1) << DIM) + 16;  // constant term: boundary anchors can sit at MAX_DEPTH
 
@@ -692,9 +730,11 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
     SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nthreads, "buildTreeCpuChunked: the team is smaller than the split, so chunks would go unwalked");
     const Integer tid = SCTL_GET_THREAD_NUM();
     sctl::ScratchBuf<NodeMIDT> buf(max_emits);  // NUMA-local: first-touched on this thread's node
-    const ChunkedWalkFunctor<DIM, WalkMode::Write> fw{thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nthreads, &zero_offsets[0], &buf[0], start_bnd, end_bnd};
+    sctl::Vector<NodeMIDT> spill;
+    HostSink<NodeMIDT> sink{&buf, &spill, buf.Dim(), std::max<Long>(max_emits / 4, 1024)};
+    const ChunkedWalkFunctor<DIM, WalkMode::Write, HostSink<NodeMIDT>> fw{
+        thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nthreads, &zero_offsets[0], &buf[0], start_bnd, end_bnd, &sink};
     const Long count = fw(tid);
-    SCTL_ASSERT_MSG(count <= max_emits, "chunked walk: emitted more nodes than the bound allows");
     local_sizes[tid].v = count;
 
     #pragma omp barrier
@@ -705,7 +745,12 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
     }
 
     NodeMIDT* out_ptr = thrust::raw_pointer_cast(tree.data()) + offsets[tid];
-    for (Long i = 0; i < count; ++i) out_ptr[i] = buf[i];
+    const Long n_buf = std::min(count, sink.cap);  // the rest, if any, is in `spill`
+    for (Long i = 0; i < n_buf; ++i) out_ptr[i] = buf[i];
+    for (Long i = 0; i < spill.Dim(); ++i) out_ptr[n_buf + i] = spill[i];
+    // The chunk could not hold what this walk produced. Ask for that much now, while the number is
+    // known, so the next build grows into the chunk instead of the heap.
+    if (spill.Dim()) buf.Reserve(count);
   }
 }
 
