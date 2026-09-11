@@ -2190,6 +2190,7 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
   DevVec<char>& data = NodeData_(name);
   sctl::Vector<Long>& cnt = NodeCnt_(name);
   const Long Nn = (Long)node_mid_.size();
+  SCTL_ASSERT(cnt.Dim() == Nn);
   const sctl::ConstIterator<Morton<DIM>> nmid = hostNodeMID();
   sctl::ScratchBuf<Long> dsp(Nn + 1);
   const Long nitem = detail::scanv(dsp.begin(), cnt.begin(), Nn);
