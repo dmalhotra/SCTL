@@ -176,6 +176,35 @@ inline void AssertChunkedTagRange(Long user_tag, Long chunk_count, int mpi_tag_u
   SCTL_ASSERT(MPIChunkTagBase(user_tag) + MPIMaxChunks() - 1 <= static_cast<Long>(mpi_tag_ub));
 }
 
+/**
+ * The tag `Comm::Send` and `Comm::Recv` run their rendezvous on: the one the payload's first
+ * message carries, rather than the caller's tag by itself.
+ *
+ * A message wider than one MPI count goes as chunks under derived tags, so caller tag `t` owns the
+ * block `[t * MPIMaxChunks(), (t + 1) * MPIMaxChunks())`. The caller's tag by itself does not lie in
+ * its own block: `t` is chunk `t % MPIMaxChunks()` of the block belonging to caller tag
+ * `t / MPIMaxChunks()`. A chunked message of that other caller tag therefore carries the tag the
+ * rendezvous waits on, and the two match each other -- and where the sizes agree, as a two-element
+ * chunk of a `Long` payload and the rendezvous's own two words do, MPI reports nothing and the
+ * receiver reads a payload value as an address. Deriving this tag as the payload's first chunk puts
+ * the rendezvous in the block the caller's tag already owns, where the only other traffic is this
+ * same message's own chunks. Those cannot be confused with it: MPI does not reorder within one
+ * (source, tag, communicator) and both ends post in the same order.
+ *
+ * Where the implementation has large-count point-to-point, nothing is chunked and the payload is on
+ * the caller's tag itself, which is then the tag to share.
+ */
+inline int MPIRendezvousTag(Long user_tag, int mpi_tag_ub) {
+#if MPI_VERSION >= 4
+  SCTL_UNUSED(mpi_tag_ub);
+  SCTL_ASSERT(user_tag >= 0);
+  return MPIAsInt(user_tag);
+#else
+  AssertChunkedTagRange(user_tag, 1, mpi_tag_ub);
+  return MPIChunkTag(user_tag, 0);
+#endif
+}
+
 inline void MPIWaitAllBatched(MPI_Request* request, Long request_count) {
   for (Long offset = 0; offset < request_count; offset += MPIIntMax()) {
     const Long batch = std::min<Long>(request_count - offset, MPIIntMax());
@@ -975,21 +1004,24 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
 // The acknowledgement says which of the three outcomes happened, so a receiver that stops on a count
 // mismatch stops the sender along with it rather than leaving it waiting for an answer.
 //
-// The handshake runs on the caller's tag. MPI does not reorder messages of one (source, tag,
-// communicator), and each direction is posted in the same order at both ends, so the address, the
-// acknowledgement and any fallback payload cannot be mistaken for one another.
+// The handshake runs on `MPIRendezvousTag`, the tag the payload's first message carries -- not the
+// caller's tag, which belongs to another caller tag's block of chunk tags. MPI does not reorder
+// messages of one (source, tag, communicator), and each direction is posted in the same order at
+// both ends, so the address, the acknowledgement and any fallback payload cannot be mistaken for
+// one another.
 template <class SType> void Comm::Send(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag) const {
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Send");
+  const int rv_tag = comm_detail::MPIRendezvousTag(tag, impl_->mpi_tag_ub_);
   // Not conditioned on the count: both sides must choose the same branch, and only the sender knows
   // its count.
   const bool direct_path = (dest != impl_->mpi_rank_ && SameNode(dest) && impl_->direct_);
   if (direct_path) {
     const Long tell[2] = {(scount ? (Long)&sbuf[0] : 0), scount * (Long)sizeof(SType)};
-    MPI_Send(tell, 2, MPI_INT64_T, dest, tag, impl_->mpi_comm_);
+    MPI_Send(tell, 2, MPI_INT64_T, dest, rv_tag, impl_->mpi_comm_);
     char ack = comm_detail::kAckFallback;
-    MPI_Recv(&ack, 1, MPI_BYTE, dest, tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
+    MPI_Recv(&ack, 1, MPI_BYTE, dest, rv_tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
     SCTL_ASSERT_MSG(ack != comm_detail::kAckCountMismatch, "Comm::Send: the destination's buffer holds a different number of bytes than this call sends; the send and receive counts disagree.");
     if (ack == comm_detail::kAckRead) return;  // read, so the buffer is mine again
   }
@@ -999,7 +1031,7 @@ template <class SType> void Comm::Send(ConstIterator<SType> sbuf, Long scount, I
   // at both ends, so it cannot be taken for it.
   if (!direct_path) {
     const Long sbytes = scount * (Long)sizeof(SType);
-    MPI_Send(&sbytes, 1, MPI_INT64_T, dest, tag, impl_->mpi_comm_);
+    MPI_Send(&sbytes, 1, MPI_INT64_T, dest, rv_tag, impl_->mpi_comm_);
   }
 #endif
 #endif
@@ -1011,10 +1043,11 @@ template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Intege
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Recv");
+  const int rv_tag = comm_detail::MPIRendezvousTag(tag, impl_->mpi_tag_ub_);
   const bool direct_path = (source != impl_->mpi_rank_ && SameNode(source) && impl_->direct_);
   if (direct_path) {
     Long told[2] = {0, 0};
-    MPI_Recv(told, 2, MPI_INT64_T, source, tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
+    MPI_Recv(told, 2, MPI_INT64_T, source, rv_tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
     const Long bytes = told[1];
     // The counts must agree. Reading only what fits would take the rest silently, where MPI reports
     // MPI_ERR_TRUNCATE, and a receive buffer larger than the message stalls the chunked MPI path,
@@ -1022,7 +1055,7 @@ template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Intege
     // came with its address; the builds that check pay for a message to compare it anywhere else.
     if (bytes != rcount * (Long)sizeof(RType)) {  // answer first: the sender stops on it too
       const char ack = comm_detail::kAckCountMismatch;
-      MPI_Send(&ack, 1, MPI_BYTE, source, tag, impl_->mpi_comm_);
+      MPI_Send(&ack, 1, MPI_BYTE, source, rv_tag, impl_->mpi_comm_);
       SCTL_ERROR("Comm::Recv: the source sent a different number of bytes than this buffer holds; the send and receive counts disagree.");
     }
     // Only the bytes the read overwrites: past them the buffer is the caller's, and MPI does not
@@ -1031,13 +1064,13 @@ template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Intege
     const Integer j = impl_->NodeIdx(source);
     const bool ok = !bytes || comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)told[0], &rbuf[0], bytes);
     const char ack = (ok ? comm_detail::kAckRead : comm_detail::kAckFallback);
-    MPI_Send(&ack, 1, MPI_BYTE, source, tag, impl_->mpi_comm_);
+    MPI_Send(&ack, 1, MPI_BYTE, source, rv_tag, impl_->mpi_comm_);
     if (ok) return;
   }
 #ifdef SCTL_MEMDEBUG
   if (!direct_path) {  // the count the sender put on the wire for this build
     Long sbytes = 0;
-    MPI_Recv(&sbytes, 1, MPI_INT64_T, source, tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
+    MPI_Recv(&sbytes, 1, MPI_INT64_T, source, rv_tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
     SCTL_ASSERT_MSG(sbytes == rcount * (Long)sizeof(RType), "Comm::Recv: the source sent a different number of bytes than this buffer holds; the send and receive counts disagree.");
   }
 #endif
