@@ -6,7 +6,7 @@
 #include <cstring>            // for memcpy
 #include <functional>         // for less
 #include <iterator>           // for iterator_traits
-#include <type_traits>        // for is_trivially_copyable
+#include <type_traits>        // for is_trivially_copyable, is_pointer, true_type
 
 #include "sctl/common.hpp"        // for Integer, Long, SCTL_UNUSED, sctl
 #include "sctl/ompUtils.hpp"      // for merge_sort, merge, reduce, scan
@@ -38,6 +38,30 @@ namespace omp_par_detail {
     const Long threads = (SCTL_IN_PARALLEL() ? 1 : (Long)SCTL_GET_MAX_THREADS());
     return share * std::max<Long>(1, threads);
   }
+
+  /**
+   * Whether `Iter` walks one unbroken block, so that stepping a byte pointer forward from `&it[0]`
+   * stays inside the range. A pointer does, and so does `sctl::Iterator`, which wraps one.
+   *
+   * Built as C++20 this is `std::contiguous_iterator`, which answers for the standard containers
+   * too. Built as C++17 there is no way to ask an arbitrary iterator, so anything beyond the two
+   * above is refused rather than guessed at -- `std::vector`'s iterator among them, whose holder
+   * passes `&v[0]`. `thrust::device_ptr` is refused either way: it is contiguous, but in device
+   * memory, which the byte walk below may not write to. Note the test is the stronger one of
+   * contiguous *and* addressable from the host.
+   */
+  template <class Iter> struct is_sctl_iterator : std::false_type {};
+#ifdef SCTL_MEMDEBUG  // without it these are a pointer, which `is_pointer` already answers for
+  template <class T> struct is_sctl_iterator<Iterator<T>> : std::true_type {};
+  template <class T> struct is_sctl_iterator<ConstIterator<T>> : std::true_type {};
+#endif
+
+  template <class Iter> struct is_contiguous
+    : std::integral_constant<bool, std::is_pointer<Iter>::value || is_sctl_iterator<Iter>::value
+#if defined(__cpp_lib_concepts) && __cpp_lib_concepts >= 202002L
+                                   || std::contiguous_iterator<Iter>
+#endif
+                            > {};
 
   inline Integer PickThreads(Long nbytes, Integer requested) {
     constexpr Long kFullThreadsBytes      = 2L * 1024L * 1024L;
@@ -83,6 +107,9 @@ template <class OutputIt, class InputIt> inline void omp_par::memcpy(OutputIt ds
 template <class Iter> inline void omp_par::prefault(Iter first, Long n, Integer nthreads) {
   using T = typename std::iterator_traits<Iter>::value_type;
   static_assert(std::is_trivially_copyable<T>::value, "omp_par::prefault: T must be trivially copyable");
+  // The walk below strides a byte pointer from the first element across the whole range, which only
+  // lands inside it when the elements are one unbroken block.
+  static_assert(omp_par_detail::is_contiguous<Iter>::value, "omp_par::prefault: the range must be contiguous; pass a pointer or an sctl::Iterator");
   if (n <= 0) return;
   const Long nbytes = n * (Long)sizeof(T), page = 4096, npages = (nbytes + page - 1) / page;
   char* p = (char*)&first[0];
