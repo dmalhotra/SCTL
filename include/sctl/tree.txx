@@ -827,7 +827,7 @@ namespace sctl {
         }
         #pragma omp parallel num_threads(nthreads)
         { // Set neighbor list for the rest of the nodes in each thread's chunk
-          SCTL_ASSERT(SCTL_GET_NUM_THREADS() == nthreads);
+          SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nthreads, "Tree::UpdateRefinement: the OpenMP team is smaller than the split it was asked for; set OMP_DYNAMIC=false and OMP_THREAD_LIMIT at or above OMP_NUM_THREADS");
           const Integer tid = SCTL_GET_THREAD_NUM();
           const Long idx0 = (Nnodes * tid) / nthreads;
           const Long idx1 = (Nnodes * (tid + 1)) / nthreads;
@@ -928,7 +928,7 @@ namespace sctl {
 
         #pragma omp parallel num_threads(nthreads)
         {
-          SCTL_ASSERT(SCTL_GET_NUM_THREADS() == nthreads);
+          SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nthreads, "Tree::UpdateRefinement: the OpenMP team is smaller than the split it was asked for, which would leave chunks unwalked; set OMP_DYNAMIC=false and OMP_THREAD_LIMIT at or above OMP_NUM_THREADS");
           const Integer tid      = SCTL_GET_THREAD_NUM();
           const Long    begin_t  = (N *  tid     ) / nthreads;
           const Long    end_t    = (N * (tid + 1)) / nthreads;

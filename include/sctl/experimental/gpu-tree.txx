@@ -744,7 +744,7 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
 
   #pragma omp parallel num_threads(nthreads)
   {
-    SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nthreads, "buildTreeCpuChunked: the team is smaller than the split, so chunks would go unwalked");
+    SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nthreads, "buildTreeCpuChunked: the OpenMP team is smaller than the split it was asked for, which would leave chunks unwalked; set OMP_DYNAMIC=false and OMP_THREAD_LIMIT at or above OMP_NUM_THREADS");
     const Integer tid = SCTL_GET_THREAD_NUM();
     sctl::ScratchBuf<NodeMIDT> buf(max_emits);  // NUMA-local: first-touched on this thread's node
     sctl::Vector<NodeMIDT> spill;
@@ -1145,7 +1145,7 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
     dsp[0] = 0;
     #pragma omp parallel num_threads(nt)
     {
-      SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nt, "balanceTreeDist: the team is smaller than the split, so nodes would be dropped");
+      SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nt, "balanceTreeDist: the OpenMP team is smaller than the split it was asked for, which would drop nodes; set OMP_DYNAMIC=false and OMP_THREAD_LIMIT at or above OMP_NUM_THREADS");
       const Integer tid = SCTL_GET_THREAD_NUM();
       Long c = 0;
       for (Long i = Nf * tid / nt; i < Nf * (tid + 1) / nt; i++) c += is_nonleaf(i);
@@ -1155,7 +1155,7 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
     S.ReInit(dsp[nt]);
     #pragma omp parallel num_threads(nt)
     {
-      SCTL_ASSERT(SCTL_GET_NUM_THREADS() == nt);
+      SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nt, "balanceTreeDist: the OpenMP team is smaller than the split it was asked for, which would drop nodes; set OMP_DYNAMIC=false and OMP_THREAD_LIMIT at or above OMP_NUM_THREADS");
       const Integer tid = SCTL_GET_THREAD_NUM();
       Long o = dsp[tid];
       for (Long i = Nf * tid / nt; i < Nf * (tid + 1) / nt; i++) if (is_nonleaf(i)) S[o++] = fp[i];

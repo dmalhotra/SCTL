@@ -330,8 +330,13 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp
   Iterator<Long> hist = hist_buf.begin(), chunk = chunk_buf.begin();
   for (Long i = 0; i < nt * nbuck; i++) hist[i] = 0;
   for (Integer t = 0; t <= nt; t++) chunk[t] = (Long)t * N / nt;
-  #pragma omp parallel num_threads(nt)
-  { const Integer t = SCTL_GET_THREAD_NUM();
+  // `nt` chunks, not `nt` threads: step 4 writes where these counts say, so the two passes have to
+  // cut A the same way. `num_threads` is a request a runtime with dynamic or limited teams may
+  // answer with fewer, which would leave chunks uncounted and unscattered -- and the result is a
+  // wrong sort with nothing said. `omp for` gives every chunk to exactly one thread whatever the
+  // team turns out to be.
+  #pragma omp parallel for schedule(static) num_threads(nt)
+  for (Integer t = 0; t < nt; t++) {
     Iterator<Long> h = hist + t * nbuck;
     for (Long i = chunk[t]; i < chunk[t + 1]; i++) h[bucket(A[i])]++;
   }
@@ -347,8 +352,8 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp
   }
 
   // 4. Scatter A into B grouped by bucket.
-  #pragma omp parallel num_threads(nt)
-  { const Integer t = SCTL_GET_THREAD_NUM();
+  #pragma omp parallel for schedule(static) num_threads(nt)
+  for (Integer t = 0; t < nt; t++) {
     ScratchBuf<Long> o_buf(nbuck); Iterator<Long> o = o_buf.begin();
     for (Long b = 0; b < nbuck; b++) o[b] = tdsp[t * nbuck + b];
     for (Long i = chunk[t]; i < chunk[t + 1]; i++) { Long b = bucket(A[i]); B[o[b]++] = A[i]; }
@@ -469,7 +474,8 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline Long omp
     return m;
   }
 
-  ScratchBuf<Long> cnt(p), dsp(p);
+  ScratchBuf<Long> cnt(p), dsp(p);  // sized for the team asked for, an upper bound on the one that arrives
+  Long ndistinct = 0;
   #pragma omp parallel num_threads(p)
   { // each thread dedups its contiguous chunk of A into B[dsp[tid] ...]
     const Integer tid = (Integer)SCTL_GET_THREAD_NUM();
@@ -487,12 +493,13 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline Long omp
       Long acc = 1;
       for (Integer i = 0; i < nt; i++) { dsp[i] = acc; acc += cnt[i]; }
       B[0] = A[0];
+      ndistinct = acc;  // taken here, where the team that ran is known
     } // implicit barrier at end of single
 
     Long loc_idx = dsp[tid]; // scatter this chunk's distinct elements
     for (Long j = start; j < end; j++) if (comp(A[j - 1], A[j])) B[loc_idx++] = A[j];
   }
-  return dsp[p - 1] + cnt[p - 1];
+  return ndistinct;
 }
 
 template <class Iter, class KeyFn> inline void omp_par::radix_sort(Iter A, Long N, KeyFn key) {
