@@ -92,9 +92,10 @@ template <class OutputIt, class InputIt> inline void omp_par::memcpy(OutputIt ds
   using src_value_t = typename std::iterator_traits<InputIt>::value_type;
   static_assert(std::is_same<T, typename std::remove_cv<src_value_t>::type>::value,
                 "omp_par::memcpy: source and destination value types must match");
-  static_assert(std::is_base_of<std::random_access_iterator_tag, typename std::iterator_traits<OutputIt>::iterator_category>::value &&
-                std::is_base_of<std::random_access_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>::value,
-                "omp_par::memcpy: iterators must be random-access over contiguous storage");
+  // Both ranges are addressed as bytes from their first element, which stays inside them only when
+  // the elements are one unbroken block.
+  static_assert(omp_par_detail::is_contiguous<OutputIt>::value && omp_par_detail::is_contiguous<InputIt>::value,
+                "omp_par::memcpy: the ranges must be contiguous; pass pointers or sctl::Iterators");
   static_assert(std::is_trivially_copyable<T>::value,
                 "omp_par::memcpy: T must be trivially copyable; use omp_par::copy for arbitrary types");
   if (n <= 0) return;

@@ -11,13 +11,13 @@ namespace sctl {
 namespace omp_par {
 
 /**
- * Parallel bytewise copy over generic random-access iterators (raw pointers
- * or sctl `Iterator` / `ConstIterator`, which are bounds-checked in MEMDEBUG).
- * Byte-wise (memcpy) semantics require contiguous, trivially-copyable storage;
- * value types of both iterators must match and be trivially copyable (asserted
- * at compile time — contiguity itself cannot be checked before C++20 and is
- * the caller's responsibility). For element-wise copy through arbitrary
- * iterators, use `omp_par::copy` (or plain `std::copy`).
+ * Parallel bytewise copy over contiguous ranges (raw pointers or sctl
+ * `Iterator` / `ConstIterator`, which are bounds-checked in MEMDEBUG).
+ * Byte-wise (memcpy) semantics require contiguous, trivially-copyable storage:
+ * the value types of both iterators must match and be trivially copyable, and
+ * both ranges must be contiguous, all asserted at compile time. For
+ * element-wise copy through arbitrary iterators, use `omp_par::copy` (or plain
+ * `std::copy`).
  *
  * The thread count is chosen by an empirical heuristic when `nthreads < 0`:
  *   - bytes < 2 MB         → serial (`std::memcpy`)
