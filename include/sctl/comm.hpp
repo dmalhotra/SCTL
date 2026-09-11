@@ -273,9 +273,12 @@ class Comm {
    * `rcount` is not an upper bound as it is in MPI: the two counts must name the same number of
    * bytes. Neither disagreement has one behaviour across the transports here -- a message larger
    * than the buffer is an `MPI_ERR_TRUNCATE` through MPI and would be taken silently by a direct
-   * read, and a message smaller than the buffer arrives through MPI unchunked but hangs the chunked
-   * path, which posts one receive per chunk of `rcount`. The direct read is the one transport
-   * holding the sender's size, so it reports the mismatch for all of them.
+   * read, and a message smaller than the buffer arrives through MPI unchunked but stalls the
+   * chunked path, which posts one receive per chunk of `rcount`. A direct read is handed the
+   * sender's size along with its address, so it always reports a mismatch; on every other transport
+   * the size costs a message of its own, which only `SCTL_MEMDEBUG` builds send. So the check is
+   * there for whichever transport a release build takes on one node, and for all of them under
+   * `SCTL_MEMDEBUG` -- where a count bug cannot hide behind the ranks' placement.
    *
    * @tparam RType type of the receive-data.
    *

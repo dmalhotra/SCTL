@@ -975,13 +975,23 @@ template <class SType> void Comm::Send(ConstIterator<SType> sbuf, Long scount, I
   comm_detail::WarnIfMPIInactive("Comm::Send");
   // Not conditioned on the count: both sides must choose the same branch, and only the sender knows
   // its count.
-  if (dest != impl_->mpi_rank_ && SameNode(dest) && impl_->direct_) {
+  const bool direct_path = (dest != impl_->mpi_rank_ && SameNode(dest) && impl_->direct_);
+  if (direct_path) {
     const Long tell[2] = {(scount ? (Long)&sbuf[0] : 0), scount * (Long)sizeof(SType)};
     MPI_Send(tell, 2, MPI_INT64_T, dest, tag, impl_->mpi_comm_);
     char ack = 0;
     MPI_Recv(&ack, 1, MPI_BYTE, dest, tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
     if (ack) return;  // read, so the buffer is mine again
   }
+#ifdef SCTL_MEMDEBUG
+  // The handshake above carries this count already; where it did not run, send it on its own so the
+  // receiver can compare on every transport rather than only on that one. Posted before the payload
+  // at both ends, so it cannot be taken for it.
+  if (!direct_path) {
+    const Long sbytes = scount * (Long)sizeof(SType);
+    MPI_Send(&sbytes, 1, MPI_INT64_T, dest, tag, impl_->mpi_comm_);
+  }
+#endif
 #endif
   auto req = Issend(sbuf, scount, dest, tag);
   Wait(std::move(req));
@@ -991,15 +1001,15 @@ template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Intege
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Recv");
-  if (source != impl_->mpi_rank_ && SameNode(source) && impl_->direct_) {
+  const bool direct_path = (source != impl_->mpi_rank_ && SameNode(source) && impl_->direct_);
+  if (direct_path) {
     Long told[2] = {0, 0};
     MPI_Recv(told, 2, MPI_INT64_T, source, tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
     const Long bytes = told[1];
-    // The counts must agree, and this is the one transport that can say so: the sender's size is in
-    // hand. Reading only what fits would take the rest silently, where MPI reports MPI_ERR_TRUNCATE,
-    // and a receive buffer larger than the message hangs the chunked MPI path, which posts one
-    // receive per chunk of `rcount`. Reported here so a count bug does not depend on which
-    // transport the run happens to take.
+    // The counts must agree. Reading only what fits would take the rest silently, where MPI reports
+    // MPI_ERR_TRUNCATE, and a receive buffer larger than the message stalls the chunked MPI path,
+    // which posts one receive per chunk of `rcount`. Free to check here, since the sender's size
+    // came with its address; the builds that check pay for a message to compare it anywhere else.
     SCTL_ASSERT_MSG(bytes == rcount * (Long)sizeof(RType), "Comm::Recv: the source sent a different number of bytes than this buffer holds; the send and receive counts disagree.");
     // Only the bytes the read overwrites: past them the buffer is the caller's, and MPI does not
     // write there. Before the read; after it would overwrite what was read.
@@ -1010,6 +1020,13 @@ template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Intege
     MPI_Send(&ack, 1, MPI_BYTE, source, tag, impl_->mpi_comm_);
     if (ok) return;
   }
+#ifdef SCTL_MEMDEBUG
+  if (!direct_path) {  // the count the sender put on the wire for this build
+    Long sbytes = 0;
+    MPI_Recv(&sbytes, 1, MPI_INT64_T, source, tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
+    SCTL_ASSERT_MSG(sbytes == rcount * (Long)sizeof(RType), "Comm::Recv: the source sent a different number of bytes than this buffer holds; the send and receive counts disagree.");
+  }
+#endif
 #endif
   auto req = Irecv(rbuf, rcount, source, tag);
   Wait(std::move(req));
