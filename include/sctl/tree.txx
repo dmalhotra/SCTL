@@ -605,6 +605,40 @@ namespace sctl {
       SCTL_ASSERT_MSG(glb[0] == -glb[1], (std::string(who) + ": ranks disagree on dof.").c_str());
     }
 
+    /**
+     * The data sets a refinement moves itself, which is every name `node_data` holds but
+     * `moved_by_derived`. Returns whether there are any, and checks the ranks agree on which.
+     *
+     * That answer decides whether a rank enters the collectives that move node data, and which
+     * names its per-name loop runs, so the ranks must hold the same names in the same order --
+     * which `AddData` and `DeleteData` being collective gives them. Check it rather than rely on
+     * it: a rank that disagreed would otherwise enter a collective the others do not, or reach the
+     * per-name loop with a different name, and the run would stop there with nothing said about
+     * why. Shared with `gpu_tree::GPUTree::UpdateRefinement`, which decides the same way.
+     *
+     * @param[in] node_data Name-keyed data sets; a `std::map`, so the names come out sorted on
+     * every rank. Its mapped type is not read, so either library's storage serves.
+     *
+     * @note Collective: one `Allreduce` of two `Long`s.
+     */
+    template <class DataMap> bool assert_same_data_names(const Comm& comm, const DataMap& node_data, const std::set<std::string>& moved_by_derived, const char* who) {
+      std::uint64_t hash = 0;  // unsigned: the multiply is meant to wrap, which is not defined for Long
+      bool any = false;
+      for (const auto& pair : node_data) {
+        if (moved_by_derived.count(pair.first)) continue;
+        any = true;
+        for (const char c : pair.first) hash = hash * 1000003 + (std::uint64_t)(unsigned char)c;
+        hash = hash * 1000003 + 1;  // a separator, so {"ab","c"} and {"a","bc"} differ
+      }
+      { // one reduction: max and -min agree only when every rank hashed the same names
+        const Long h = (Long)(hash >> 1);  // the top bit is dropped, so h and -h are both Long values
+        StaticArray<Long,2> loc{h, -h}, glb;
+        comm.Allreduce((ConstIterator<Long>)loc, (Iterator<Long>)glb, 2, CommOp::MAX);
+        SCTL_ASSERT_MSG(glb[0] == -glb[1], (std::string(who) + ": ranks hold different node data; AddData and DeleteData are collective.").c_str());
+      }
+      return any;
+    }
+
     /** `ndata / nitem` summed over ranks, since a rank may hold no items; the division must be exact. */
     inline Long global_dof(const Comm& comm, Long ndata, Long nitem) {
       StaticArray<Long,2> Ng, Nl{ndata, nitem};
@@ -1278,28 +1312,7 @@ namespace sctl {
       for (Long i = i1; i < node_mid.Dim(); i++) SCTL_ASSERT(node_attr[i].Ghost == true);
     }
 
-    // The names this class moves itself are excluded; what is left decides whether the block below
-    // runs, and both it and its per-name loop are collective. So the ranks must hold the same names
-    // in the same order, which AddData being collective gives them. Check it rather than rely on
-    // it: a rank that disagreed would otherwise enter a collective the others do not, or reach the
-    // per-name loop with a different name, and hang with nothing said about why.
-    std::uint64_t own_hash = 0;  // unsigned: the multiply is meant to wrap, which is not defined for Long
-    const bool any_own = [this, &own_hash]() {
-      bool any = false;
-      for (const auto& pair : node_data) {  // std::map, so the names come out sorted on every rank
-        if (data_moved_by_derived.count(pair.first)) continue;
-        any = true;
-        for (const char c : pair.first) own_hash = own_hash * 1000003 + (std::uint64_t)(unsigned char)c;
-        own_hash = own_hash * 1000003 + 1;  // a separator, so {"ab","c"} and {"a","bc"} differ
-      }
-      return any;
-    }();
-    { // one reduction: max and -min agree only when every rank hashed the same names
-      const Long h = (Long)(own_hash >> 1);  // the top bit is dropped, so h and -h are both Long values
-      StaticArray<Long,2> loc{h, -h}, glb;
-      comm.Allreduce((ConstIterator<Long>)loc, (Iterator<Long>)glb, 2, CommOp::MAX);
-      SCTL_ASSERT_MSG(glb[0] == -glb[1], "Tree::UpdateRefinement: ranks hold different node data; AddData and DeleteData are collective.");
-    }
+    const bool any_own = tree_detail::assert_same_data_names(comm, node_data, data_moved_by_derived, "Tree::UpdateRefinement");
     if (any_own) { // Update node_data, node_cnt
       comm.PartitionS(node_mid_orig, mins[comm.Rank()]);
 

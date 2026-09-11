@@ -1821,9 +1821,12 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
   // np > 1 they round-trip through the host once, for PartitionS.
   DevVec<Morton<DIM>>& old_mid = detail::PersistentBuffer<Morton<DIM>, DevVec, detail::Buf::OldMid>();
   const auto base_moved = [this](const std::string& name) { return !data_moved_by_derived_.count(name); };
-  Long nbase = 0;  // data sets moved here
-  for (const auto& kv : node_data_) nbase += base_moved(kv.first);
-  const bool remap = nbase && mins_.Dim();
+  // Whether any data set is moved here, and the ranks agreeing on which ones: that answer decides
+  // which collectives below this rank enters, so a rank holding different names has to be reported
+  // rather than left to stop in one the others are not in. Shared with sctl::Tree, which decides
+  // the same way.
+  const bool any_base = sctl::tree_detail::assert_same_data_names(comm_, node_data_, data_moved_by_derived_, "GPUTree::UpdateRefinement");
+  const bool remap = any_base && mins_.Dim();
   detail::resizeDiscard(old_mid, remap ? owned_end_ - owned_begin_ : 0);
   if (remap) thrust::copy(pol, node_mid_.begin() + owned_begin_, node_mid_.begin() + owned_end_, old_mid.begin());
   const Long old_begin = owned_begin_, old_end = owned_end_;
@@ -1837,7 +1840,7 @@ void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Lon
     owned_end_ = owned[1];
     host_mid_stale_ = true;
   }
-  if (!nbase) return;
+  if (!any_base) return;
 
   sctl::ScratchBuf<Long> range((Long)node_mid_.size() + 1);
   Long No = 0;
