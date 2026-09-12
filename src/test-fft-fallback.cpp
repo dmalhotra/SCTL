@@ -141,7 +141,7 @@ template <class ValueType> class OldMatrixFFT {
 
   void Execute(const Vector<ValueType>& in, Vector<ValueType>& out) const {
     const auto transpose = [](Iterator<ValueType> out, ConstIterator<ValueType> in, Long N0, Long N1) {
-      const Matrix<ComplexType> M0(N0, N1, (Iterator<ComplexType>)in, false);
+      const Matrix<const ComplexType> M0(N0, N1, (ConstIterator<ComplexType>)in, false);
       Matrix<ComplexType> M1(N1, N0, (Iterator<ComplexType>)out, false);
       M1 = M0.Transpose();
     };

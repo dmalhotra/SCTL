@@ -2590,13 +2590,13 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
       Long offset1=0;
       for(Long i=0;i<p0+1;i++){
         Long N_ = (i==0 ? N : 2*N);
-        const Matrix<Real> Min (N_, p0+1-i, (Iterator<Real>)B0.begin()+offset0, false);
+        const Matrix<const Real> Min (N_, p0+1-i, B0.begin()+offset0, false);
         Matrix<Real> Mout(N_, Nt    , B1.begin()+offset1, false);
         { // Mout = Min * Ml[i]  // split between threads
           Long a=(tid+0)*N_/omp_p;
           Long b=(tid+1)*N_/omp_p;
           if(a<b){
-            const Matrix<Real> Min_ (b-a, Min .Dim(1), (Iterator<Real>)Min [a], false);
+            const Matrix<const Real> Min_ (b-a, Min .Dim(1), Min [a], false);
             Matrix<Real> Mout_(b-a, Mout.Dim(1), Mout[a], false);
             Matrix<Real>::GEMM(Mout_,Min_,Ml[i]);
           }
@@ -2664,13 +2664,13 @@ template <class Real> void SphericalHarmonics<Real>::SHC2Grid_(const Vector<Real
       Long offset1=0;
       for(Long i=0;i<p0+1;i++){
         Long N_ = (i==0 ? N : 2*N);
-        const Matrix<Real> Min (N_, p0+1-i, (Iterator<Real>)B0.begin()+offset0, false);
+        const Matrix<const Real> Min (N_, p0+1-i, B0.begin()+offset0, false);
         Matrix<Real> Mout(N_, Nt    , B1.begin()+offset1, false);
         { // Mout = Min * Mdl[i]  // split between threads
           Long a=(tid+0)*N_/omp_p;
           Long b=(tid+1)*N_/omp_p;
           if(a<b){
-            const Matrix<Real> Min_ (b-a, Min .Dim(1), (Iterator<Real>)Min [a], false);
+            const Matrix<const Real> Min_ (b-a, Min .Dim(1), Min [a], false);
             Matrix<Real> Mout_(b-a, Mout.Dim(1), Mout[a], false);
             Matrix<Real>::GEMM(Mout_,Min_,Mdl[i]);
           }
@@ -3328,7 +3328,7 @@ template <class Real> void SphericalHarmonics<Real>::SHC2GridTranspose(const Vec
     Matrix<Real> B2(block_size, 2*p1, B2_storage.begin(), false);
     for(Long i0=a;i0<b;i0+=block_size){
       Long i1=std::min(b,i0+block_size);
-      const Matrix<Real> Min (i1-i0,2*p0, (Iterator<Real>)X.begin()+i0*2*p0, false);
+      const Matrix<const Real> Min (i1-i0,2*p0, X.begin()+i0*2*p0, false);
       Matrix<Real> Mout(i1-i0,2*p1, B2.begin(), false);
       Matrix<Real>::GEMM(Mout, Min, Mf);
 
@@ -3405,7 +3405,7 @@ template <class Real> void SphericalHarmonics<Real>::RotateAll(const Vector<Real
   Long N=S.Dim()/Ncoef/dof;
   assert(N*Ncoef*dof==S.Dim());
   if(S_.Dim()!=N*dof*Ncoef*p0*(p0+1)) S_.ReInit(N*dof*Ncoef*p0*(p0+1));
-  const Matrix<Real> S0(N*dof, Ncoef, (Iterator<Real>)S.begin(), false);
+  const Matrix<const Real> S0(N*dof, Ncoef, S.begin(), false);
   Matrix<Real> S1(N*dof*p0*(p0+1), Ncoef, S_.begin(), false);
 
   #pragma omp parallel
@@ -3495,7 +3495,7 @@ template <class Real> void SphericalHarmonics<Real>::RotateTranspose(const Vecto
   assert(N*Ncoef*dof*(p0*(p0+1))==S_.Dim());
   if(S.Dim()!=N*dof*Ncoef*p0*(p0+1)) S.ReInit(N*dof*Ncoef*p0*(p0+1));
   Matrix<Real> S0(N*dof*p0*(p0+1), Ncoef, S.begin(), false);
-  const Matrix<Real> S1(N*dof*p0*(p0+1), Ncoef, (Iterator<Real>)S_.begin(), false);
+  const Matrix<const Real> S1(N*dof*p0*(p0+1), Ncoef, S_.begin(), false);
 
   #pragma omp parallel
   { // Transpose all p0*(p0+1) rotations
@@ -3515,7 +3515,7 @@ template <class Real> void SphericalHarmonics<Real>::RotateTranspose(const Vecto
       for(Long t=0;t<p0+1;t++){
         Long idx0=(i*(p0+1)+t)*p0*dof;
         { // Fast rotation
-          const Matrix<Real> Min(p0*dof, Ncoef, (Iterator<Real>)S1[idx0], false);
+          const Matrix<const Real> Min(p0*dof, Ncoef, S1[idx0], false);
           for(Long k=0;k<dof*p0;k++){ // forward permutation
             for(Long l=0;l<=p0;l++){
               for(Long j=0;j<(Long)coeff_perm[l].size();j++){

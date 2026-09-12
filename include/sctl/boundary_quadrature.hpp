@@ -135,7 +135,7 @@ template <class Real, Integer DIM, Integer ORDER> class Basis {
 
       if (dX.Dim() != X.Dim()*DIM) dX.ReInit(X.Dim()*DIM);
       for (Long i = 0; i < X.Dim(); i++) {
-        const Matrix<ValueType> Vi(1, Size(), (Iterator<ValueType>)(ConstIterator<ValueType>)X[i].NodeValues_, false);
+        const Matrix<const ValueType> Vi(1, Size(), (ConstIterator<ValueType>)X[i].NodeValues_, false);
         for (Integer k = 0; k < DIM; k++) {
           Matrix<ValueType> Vo(1, Size(), dX[i*DIM+k].NodeValues_, false);
           Matrix<ValueType>::GEMM(Vo, Vi, GradOp[k]);
@@ -194,7 +194,7 @@ template <class Real, Integer DIM, Integer ORDER> class Basis {
       SCTL_ASSERT(M.Dim(0) == Size());
       if (Y.Dim(0) != N0 || Y.Dim(1) != N1) Y.ReInit(N0, N1);
       for (Long i = 0; i < N0; i++) {
-        const Matrix<ValueType> X_(1,Size(),(Iterator<ValueType>)(ConstIterator<ValueType>)X[i].NodeValues_,false);
+        const Matrix<const ValueType> X_(1,Size(),(ConstIterator<ValueType>)X[i].NodeValues_,false);
         Matrix<ValueType> Y_(1,N1,Y[i],false);
         Matrix<ValueType>::GEMM(Y_,X_,M);
       }
@@ -662,7 +662,7 @@ template <class Real> class Quadrature {
         U = 0;
       }
       for (Long j = 0; j < Nelem; j++) {
-        const Matrix<Real> M_(KDIM0_ * DensityBasis::Size(), KDIM1_ * Ntrg, (Iterator<Real>)M[j * KDIM0_ * DensityBasis::Size()], false);
+        const Matrix<const Real> M_(KDIM0_ * DensityBasis::Size(), KDIM1_ * Ntrg, M[j * KDIM0_ * DensityBasis::Size()], false);
         Matrix<Real> U_(dof, KDIM1_ * Ntrg, U[j*dof*KDIM1_], false);
         Matrix<Real> F_(dof, KDIM0_ * DensityBasis::Size());
         for (Long i = 0; i < dof; i++) {
@@ -1214,7 +1214,7 @@ template <class Real> class Quadrature {
             CoordBasis::Eval(X_, Vector<CoordBasis>(CoordDim,(Iterator<CoordBasis>)X.begin()+src_idx*CoordDim,false),eval_op);
             CoordBasis::Eval(dX_, Vector<CoordBasis>(CoordDim*ElemDim,dX.begin()+src_idx*CoordDim*ElemDim,false),eval_op);
 
-            const Tensor<Real,false,CoordDim,1> x0((Iterator<Real>)Xt_);
+            const Tensor<const Real,false,CoordDim,1> x0(Xt_);
             const Tensor<Real,false,CoordDim,1> x(X_.begin());
             const Tensor<Real,false,CoordDim,ElemDim> x_u(dX_.begin());
             auto inv = [](const Tensor<Real,true,2,2>& M) {
@@ -1365,7 +1365,7 @@ template <class Real> class Quadrature {
       Vector<Real> U_loc(Ninterac*dof*KDIM1_);
       for (Long j = 0; j < Ninterac; j++) {
         const Long src_idx = pair_lst[j].first - elem_rank_offset;
-        const Matrix<Real> M_(KDIM0_ * DensityBasis::Size(), KDIM1_, (Iterator<Real>)M[j * KDIM0_ * DensityBasis::Size()], false);
+        const Matrix<const Real> M_(KDIM0_ * DensityBasis::Size(), KDIM1_, M[j * KDIM0_ * DensityBasis::Size()], false);
         Matrix<Real> U_(dof, KDIM1_, U_loc.begin() + j*dof*KDIM1_, false);
         Matrix<Real> F_(dof, KDIM0_ * DensityBasis::Size());
         for (Long i = 0; i < dof; i++) {

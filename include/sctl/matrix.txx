@@ -8,6 +8,7 @@
 #include <cstdint>                // for uint64_t
 #include <iomanip>                // for operator<<, setiosflags, setprecision
 #include <iostream>               // for basic_ostream, char_traits, operator<<
+#include <type_traits>            // for is_const
 
 #include "sctl/common.hpp"        // for Long, SCTL_ASSERT, Integer, SCTL_AS, SCTL_GET_(...)...
 #include "sctl/matrix.hpp"        // for Matrix, operator<<
@@ -49,7 +50,13 @@ template <class ValueType> void Matrix<ValueType>::Init(Long dim1, Long dim2, It
   capacity = dim[0] * dim[1];
   own_data = own_data_;
   if (own_data) {
-    if (dim[0] * dim[1] > 0) {
+    // Checked before the allocation, not after: storage a Matrix<const T> owns is storage nothing
+    // can ever write, so taking it and then rejecting the copy leaves the elements as the allocator
+    // left them. This also keeps aligned_new<const T> from being instantiated at all.
+    if constexpr (std::is_const<ValueType>::value) {  // Matrix<const T> is a view
+      SCTL_ASSERT_MSG(dim[0] * dim[1] == 0, "Matrix<const T> cannot own storage; use a non-owning view.");
+      data_ptr = NullIterator<ValueType>();
+    } else if (dim[0] * dim[1] > 0) {
       data_ptr = aligned_new<ValueType>(capacity);
       if (data_ != NullIterator<ValueType>()) {
         omp_par::copy(data_, data_ + dim[0] * dim[1], data_ptr);
@@ -69,6 +76,7 @@ template <class ValueType> Matrix<ValueType>::Matrix(Long dim1, Long dim2, Itera
 }
 
 template <class ValueType> Matrix<ValueType>::Matrix(const Matrix<ValueType>& M) {
+  static_assert(!std::is_const<ValueType>::value, "Matrix<const T> is a view; copy the elements into a Matrix<T> instead");
   Init(M.Dim(0), M.Dim(1), (Iterator<ValueType>)M.begin());
 }
 
@@ -114,7 +122,9 @@ template <class ValueType> void Matrix<ValueType>::ReInit(Long dim1, Long dim2, 
   if (own_data_ && own_data && dim1 * dim2 <= capacity) {
     dim[0] = dim1;
     dim[1] = dim2;
-    if (data_ptr != NullIterator<ValueType>() && data_ != NullIterator<ValueType>()) {
+    if constexpr (std::is_const<ValueType>::value) {  // Matrix<const T> is a view
+      SCTL_ASSERT_MSG(dim[0] * dim[1] == 0, "Matrix<const T> cannot own storage; use a non-owning view.");
+    } else if (data_ptr != NullIterator<ValueType>() && data_ != NullIterator<ValueType>()) {
       omp_par::copy(data_, data_ + dim[0] * dim[1], data_ptr);
     }
   } else {
@@ -216,6 +226,7 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(Matri
 }
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(const Matrix<ValueType>& M) {
+  static_assert(!std::is_const<ValueType>::value, "Matrix<const T> is a view; copy the elements into a Matrix<T> instead");
   if (this != &M) {
     if (dim[0] != M.dim[0] || dim[1] != M.dim[1]) ReInit(M.dim[0], M.dim[1]);
     omp_par::copy(M.data_ptr, M.data_ptr + dim[0] * dim[1], data_ptr);
@@ -223,7 +234,8 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(const
   return *this;
 }
 
-template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator+=(const Matrix<ValueType>& M) {
+template <class ValueType> template <class VType> Matrix<ValueType>& Matrix<ValueType>::operator+=(const Matrix<VType>& M) {
+  static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Matrix operands must have the same element type.");
   SCTL_ASSERT(M.Dim(0) == Dim(0) && M.Dim(1) == Dim(1));
   Profile::IncrementCounter(ProfileCounter::FLOP, dim[0] * dim[1]);
 
@@ -231,7 +243,8 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator+=(cons
   return *this;
 }
 
-template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator-=(const Matrix<ValueType>& M) {
+template <class ValueType> template <class VType> Matrix<ValueType>& Matrix<ValueType>::operator-=(const Matrix<VType>& M) {
+  static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Matrix operands must have the same element type.");
   SCTL_ASSERT(M.Dim(0) == Dim(0) && M.Dim(1) == Dim(1));
   Profile::IncrementCounter(ProfileCounter::FLOP, dim[0] * dim[1]);
 
@@ -239,46 +252,51 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator-=(cons
   return *this;
 }
 
-template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator+(const Matrix<ValueType>& M2) const {
+template <class ValueType> template <class VType> Matrix<typename Matrix<ValueType>::value_type> Matrix<ValueType>::operator+(const Matrix<VType>& M2) const {
+  static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Matrix operands must have the same element type.");
   const Matrix<ValueType>& M1 = *this;
   SCTL_ASSERT(M2.Dim(0) == M1.Dim(0) && M2.Dim(1) == M1.Dim(1));
   Profile::IncrementCounter(ProfileCounter::FLOP, dim[0] * dim[1]);
 
-  Matrix<ValueType> M_r(M1.Dim(0), M1.Dim(1));
+  Matrix<value_type> M_r(M1.Dim(0), M1.Dim(1));
   for (Long i = 0; i < M1.Dim(0) * M1.Dim(1); i++) M_r[0][i] = M1[0][i] + M2[0][i];
   return M_r;
 }
 
-template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator-(const Matrix<ValueType>& M2) const {
+template <class ValueType> template <class VType> Matrix<typename Matrix<ValueType>::value_type> Matrix<ValueType>::operator-(const Matrix<VType>& M2) const {
+  static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Matrix operands must have the same element type.");
   const Matrix<ValueType>& M1 = *this;
   SCTL_ASSERT(M2.Dim(0) == M1.Dim(0) && M2.Dim(1) == M1.Dim(1));
   Profile::IncrementCounter(ProfileCounter::FLOP, dim[0] * dim[1]);
 
-  Matrix<ValueType> M_r(M1.Dim(0), M1.Dim(1));
+  Matrix<value_type> M_r(M1.Dim(0), M1.Dim(1));
   for (Long i = 0; i < M1.Dim(0) * M1.Dim(1); i++) M_r[0][i] = M1[0][i] - M2[0][i];
   return M_r;
 }
 
-template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator*(const Matrix<ValueType>& M) const {
+template <class ValueType> template <class VType> Matrix<typename Matrix<ValueType>::value_type> Matrix<ValueType>::operator*(const Matrix<VType>& M) const {
+  static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Matrix operands must have the same element type.");
   SCTL_ASSERT(dim[1] == M.dim[0]);
   Profile::IncrementCounter(ProfileCounter::FLOP, 2 * (((Long)dim[0]) * dim[1]) * M.dim[1]);
 
-  Matrix<ValueType> M_r(dim[0], M.dim[1]);
+  Matrix<value_type> M_r(dim[0], M.dim[1]);
   if (M.Dim(0) * M.Dim(1) == 0 || this->Dim(0) * this->Dim(1) == 0) return M_r;
-  mat::gemm<ValueType>('N', 'N', M.dim[1], dim[0], dim[1], 1.0, M.data_ptr, M.dim[1], data_ptr, dim[1], 0.0, M_r.data_ptr, M_r.dim[1]);
+  mat::gemm<value_type>('N', 'N', M.dim[1], dim[0], dim[1], 1.0, M.data_ptr, M.dim[1], data_ptr, dim[1], 0.0, M_r.data_ptr, M_r.dim[1]);
   return M_r;
 }
 
-template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& A, const Matrix<ValueType>& B, ValueType beta) {
+template <class ValueType> template <class AType, class BType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, const Matrix<AType>& A, const Matrix<BType>& B, ValueType beta) {
+  static_assert(std::is_same<typename std::remove_const<AType>::type, value_type>::value, "Matrix operands must have the same element type.");
+  static_assert(std::is_same<typename std::remove_const<BType>::type, value_type>::value, "Matrix operands must have the same element type.");
   SCTL_ASSERT(A.dim[1] == B.dim[0]);
   SCTL_ASSERT(M_r.dim[0] == A.dim[0]);
   SCTL_ASSERT(M_r.dim[1] == B.dim[1]);
   if (A.Dim(0) * A.Dim(1) == 0 || B.Dim(0) * B.Dim(1) == 0) return;
   Profile::IncrementCounter(ProfileCounter::FLOP, 2 * (((Long)A.dim[0]) * A.dim[1]) * B.dim[1]);
-  mat::gemm<ValueType>('N', 'N', B.dim[1], A.dim[0], A.dim[1], 1.0, B.data_ptr, B.dim[1], A.data_ptr, A.dim[1], beta, M_r.data_ptr, M_r.dim[1]);
+  mat::gemm<value_type>('N', 'N', B.dim[1], A.dim[0], A.dim[1], 1.0, B.data_ptr, B.dim[1], A.data_ptr, A.dim[1], beta, M_r.data_ptr, M_r.dim[1]);
 }
 
-template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, const Permutation<ValueType>& P, const Matrix<ValueType>& M, ValueType beta) {
+template <class ValueType> template <class VType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, const Permutation<ValueType>& P, const Matrix<VType>& M, ValueType beta) {
   Long d0 = M.Dim(0);
   Long d1 = M.Dim(1);
 
@@ -304,7 +322,7 @@ template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, 
   }
 }
 
-template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, const Matrix<ValueType>& M, const Permutation<ValueType>& P, ValueType beta) {
+template <class ValueType> template <class VType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, const Matrix<VType>& M, const Permutation<ValueType>& P, ValueType beta) {
   Long d0 = M.Dim(0);
   Long d1 = M.Dim(1);
 
@@ -335,6 +353,7 @@ template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, 
 // Matrix-Scalar operations
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(ValueType s) {
+  static_assert(!std::is_const<ValueType>::value, "Matrix<const T> is a view; its elements cannot be assigned");
   Long N = dim[0] * dim[1];
   for (Long i = 0; i < N; i++) data_ptr[i] = s;
   return *this;
@@ -368,30 +387,30 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator/=(Valu
   return *this;
 }
 
-template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator+(ValueType s) const {
+template <class ValueType> Matrix<typename Matrix<ValueType>::value_type> Matrix<ValueType>::operator+(ValueType s) const {
   Long N = dim[0] * dim[1];
-  Matrix<ValueType> M_r(dim[0], dim[1]);
+  Matrix<value_type> M_r(dim[0], dim[1]);
   for (Long i = 0; i < N; i++) M_r.data_ptr[i] = data_ptr[i] + s;
   return M_r;
 }
 
-template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator-(ValueType s) const {
+template <class ValueType> Matrix<typename Matrix<ValueType>::value_type> Matrix<ValueType>::operator-(ValueType s) const {
   Long N = dim[0] * dim[1];
-  Matrix<ValueType> M_r(dim[0], dim[1]);
+  Matrix<value_type> M_r(dim[0], dim[1]);
   for (Long i = 0; i < N; i++) M_r.data_ptr[i] = data_ptr[i] - s;
   return M_r;
 }
 
-template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator*(ValueType s) const {
+template <class ValueType> Matrix<typename Matrix<ValueType>::value_type> Matrix<ValueType>::operator*(ValueType s) const {
   Long N = dim[0] * dim[1];
-  Matrix<ValueType> M_r(dim[0], dim[1]);
+  Matrix<value_type> M_r(dim[0], dim[1]);
   for (Long i = 0; i < N; i++) M_r.data_ptr[i] = data_ptr[i] * s;
   return M_r;
 }
 
-template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator/(ValueType s) const {
+template <class ValueType> Matrix<typename Matrix<ValueType>::value_type> Matrix<ValueType>::operator/(ValueType s) const {
   Long N = dim[0] * dim[1];
-  Matrix<ValueType> M_r(dim[0], dim[1]);
+  Matrix<value_type> M_r(dim[0], dim[1]);
   for (Long i = 0; i < N; i++) M_r.data_ptr[i] = data_ptr[i] / s;
   return M_r;
 }
@@ -477,11 +496,11 @@ template <class ValueType> void Matrix<ValueType>::ColPerm(const Permutation<Val
 
 #define SCTL_B1 128
 #define SCTL_B2 32
-template <class ValueType> Matrix<ValueType> Matrix<ValueType>::Transpose() const {
+template <class ValueType> Matrix<typename Matrix<ValueType>::value_type> Matrix<ValueType>::Transpose() const {
   const Matrix<ValueType>& M = *this;
   Long d0 = M.dim[0];
   Long d1 = M.dim[1];
-  Matrix<ValueType> M_r(d1, d0);
+  Matrix<value_type> M_r(d1, d0);
 
   const Long blk0 = ((d0 + SCTL_B1 - 1) / SCTL_B1);
   const Long blk1 = ((d1 + SCTL_B1 - 1) / SCTL_B1);
@@ -509,7 +528,7 @@ template <class ValueType> Matrix<ValueType> Matrix<ValueType>::Transpose() cons
   return M_r;
 }
 
-template <class ValueType> void Matrix<ValueType>::Transpose(Matrix<ValueType>& M_r, const Matrix<ValueType>& M) {
+template <class ValueType> template <class VType> void Matrix<ValueType>::Transpose(Matrix<ValueType>& M_r, const Matrix<VType>& M) {
   Long d0 = M.dim[0];
   Long d1 = M.dim[1];
   if (M_r.dim[0] != d1 || M_r.dim[1] != d0) M_r.ReInit(d1, d0);

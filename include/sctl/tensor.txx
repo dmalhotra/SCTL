@@ -8,6 +8,7 @@
 #include <iomanip>                // for operator<<, setiosflags, setprecision
 #include <iostream>               // for basic_ostream, operator<<, cout
 #include <initializer_list>       // for initializer_list
+#include <type_traits>            // for is_const
 
 #include "sctl/common.hpp"        // for Long, Integer, SCTL_UNUSED, SCTL_NA...
 #include "sctl/tensor.hpp"        // for Tensor, TensorArgExtract, operator<<
@@ -102,8 +103,8 @@ namespace sctl {
     Init(src_iter);
   }
 
-  template <class ValueType, bool own_data, Long... Args> Tensor<ValueType, own_data, Args...>::Tensor(ConstIterator<ValueType> src_iter) {
-    static_assert(own_data || !Size(), "Cannot use ConstIterator as storage for Tensor.");
+  template <class ValueType, bool own_data, Long... Args> template <class T, class> Tensor<ValueType, own_data, Args...>::Tensor(ConstIterator<ValueType> src_iter) {
+    static_assert(own_data || !Size(), "Cannot use ConstIterator as storage for Tensor; use a Tensor<const T> view.");
     Init((Iterator<ValueType>)src_iter);
   }
 
@@ -131,16 +132,19 @@ namespace sctl {
   }
 
   template <class ValueType, bool own_data, Long... Args> Tensor<ValueType, own_data, Args...>& Tensor<ValueType, own_data, Args...>::operator=(const Tensor &M) {
+    static_assert(!std::is_const<ValueType>::value, "Tensor<const T> is a view; its elements cannot be assigned");
     std::copy(M.begin(), M.begin() + Size(), begin());
     return *this;
   }
 
   template <class ValueType, bool own_data, Long... Args> Tensor<ValueType, own_data, Args...>& Tensor<ValueType, own_data, Args...>::operator=(const ValueType& v) {
+    static_assert(!std::is_const<ValueType>::value, "Tensor<const T> is a view; its elements cannot be assigned");
     for (auto& x : *this) x = v;
     return *this;
   }
 
   template <class ValueType, bool own_data, Long... Args> template <bool own_data_> Tensor<ValueType, own_data, Args...>& Tensor<ValueType, own_data, Args...>::operator=(const Tensor<ValueType,own_data_,Args...> &M) {
+    static_assert(!std::is_const<ValueType>::value, "Tensor<const T> is a view; its elements cannot be assigned");
     std::copy(M.begin(), M.begin() + Size(), begin());
     return *this;
   }
@@ -256,8 +260,9 @@ namespace sctl {
     return M0;
   }
 
-  template <class ValueType, bool own_data, Long... Args> template <bool own_data_> Tensor<ValueType, true, Args...> Tensor<ValueType, own_data, Args...>::operator+(const Tensor<ValueType, own_data_, Args...> &M2) const {
-    Tensor<ValueType, true, Args...> M0;
+  template <class ValueType, bool own_data, Long... Args> template <class VType, bool own_data_> Tensor<typename std::remove_const<ValueType>::type, true, Args...> Tensor<ValueType, own_data, Args...>::operator+(const Tensor<VType, own_data_, Args...> &M2) const {
+    static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Tensor operands must have the same element type.");
+    Tensor<value_type, true, Args...> M0;
     const auto &M1 = *this;
 
     for (Long i = 0; i < Size(); i++) {
@@ -266,8 +271,9 @@ namespace sctl {
     return M0;
   }
 
-  template <class ValueType, bool own_data, Long... Args> template <bool own_data_> Tensor<ValueType, true, Args...> Tensor<ValueType, own_data, Args...>::operator-(const Tensor<ValueType, own_data_, Args...> &M2) const {
-    Tensor<ValueType, true, Args...> M0;
+  template <class ValueType, bool own_data, Long... Args> template <class VType, bool own_data_> Tensor<typename std::remove_const<ValueType>::type, true, Args...> Tensor<ValueType, own_data, Args...>::operator-(const Tensor<VType, own_data_, Args...> &M2) const {
+    static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Tensor operands must have the same element type.");
+    Tensor<value_type, true, Args...> M0;
     const auto &M1 = *this;
 
     for (Long i = 0; i < Size(); i++) {
@@ -276,15 +282,16 @@ namespace sctl {
     return M0;
   }
 
-  template <class ValueType, bool own_data, Long... Args> template <bool own_data_, Long N1, Long N2> Tensor<ValueType, true, TensorArgExtract<0, Args...>(), N2> Tensor<ValueType, own_data, Args...>::operator*(const Tensor<ValueType, own_data_, N1, N2> &M2) const {
+  template <class ValueType, bool own_data, Long... Args> template <class VType, bool own_data_, Long N1, Long N2> Tensor<typename std::remove_const<ValueType>::type, true, TensorArgExtract<0, Args...>(), N2> Tensor<ValueType, own_data, Args...>::operator*(const Tensor<VType, own_data_, N1, N2> &M2) const {
+    static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Tensor operands must have the same element type.");
     static_assert(Order() == 2, "Multiplication is only defined for tensors of order two.");
     static_assert(Dim<1>() == N1, "Tensor dimensions don't match for multiplication.");
-    Tensor<ValueType, true, Dim<0>(), N2> M0;
+    Tensor<value_type, true, Dim<0>(), N2> M0;
     const auto &M1 = *this;
 
     for (Long i = 0; i < Dim<0>(); i++) {
       for (Long j = 0; j < N2; j++) {
-        ValueType Mij = 0;
+        value_type Mij = 0;
         for (Long k = 0; k < N1; k++) {
           Mij += M1(i,k)*M2(k,j);
         }
@@ -302,7 +309,7 @@ namespace sctl {
   }
 
   template <class ValueType, bool own_data, Long... Args> void Tensor<ValueType, own_data, Args...>::Init(Iterator<ValueType> src_iter) {
-    if (own_data) {
+    if constexpr (own_data) {
       if (src_iter != NullIterator<ValueType>()) {
         std::copy((ConstIterator<ValueType>)src_iter, (ConstIterator<ValueType>)src_iter + Size(), (Iterator<ValueType>)buff);
       }

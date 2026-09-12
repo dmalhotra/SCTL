@@ -351,7 +351,7 @@ namespace sctl {
       const Long N = x.Dim();
       if (Ax->Dim() != N) Ax->ReInit(N);
       Matrix<Real> Ax_(N, 1, Ax->begin(), false);
-      Ax_ = A * Matrix<Real>(N, 1, (Iterator<Real>)x.begin(), false);
+      Ax_ = A * Matrix<const Real>(N, 1, x.begin(), false);
     };
 
     Long solve_iter;
@@ -360,7 +360,7 @@ namespace sctl {
 
     auto print_error = [N,&A,&b](const Vector<Real>& x) {
       Real max_err = 0;
-      auto Merr = A*Matrix<Real>(N, 1, (Iterator<Real>)x.begin(), false) - Matrix<Real>(N, 1, b.begin(), false);
+      auto Merr = A*Matrix<const Real>(N, 1, x.begin(), false) - Matrix<Real>(N, 1, b.begin(), false);
       for (const auto& a : Merr) max_err = std::max(max_err, fabs(a));
       std::cout<<"Maximum error = "<<max_err<<'\n';
     };

@@ -1328,7 +1328,7 @@ namespace sctl {
       SCTL_ASSERT(src_dof * near_elem_cnt[elem_idx]*KDIM1_ == K_near_cnt[elem_idx]*KDIM0*KDIM1_);
       // target-major: K.F rather than F.K, and a target range is a contiguous row-block
       const Matrix<Real> K_near_(trg_dof, src_dof, K_near.begin() + K_near_dsp[elem_idx]*KDIM0*KDIM1_ + t0*KDIM1_*src_dof, false);
-      const Matrix<Real> F_(src_dof, 1, (Iterator<Real>)F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
+      const Matrix<const Real> F_(src_dof, 1, F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
       Matrix<Real> U_(trg_dof, 1, U_near.begin() + (near_elem_dsp[elem_idx]+t0)*KDIM1_, false);
       Matrix<Real>::GEMM(U_, K_near_, F_);
     }

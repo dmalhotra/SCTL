@@ -143,7 +143,7 @@ template <class ValueType> template <class AnotherType> inline bool Iterator<Val
   return (this->base + this->offset) >= (I.base + I.offset);
 }
 
-template <class ValueType> inline Iterator<ValueType> Ptr2Itr(void* ptr, Long len) {
+template <class ValueType> inline Iterator<ValueType> Ptr2Itr(VoidPtr<ValueType> ptr, Long len) {
   return Iterator<ValueType>((ValueType*)ptr, len);
 }
 template <class ValueType> inline ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len) {
@@ -152,7 +152,7 @@ template <class ValueType> inline ConstIterator<ValueType> Ptr2ConstItr(const vo
 
 #else
 
-template <class ValueType> inline Iterator<ValueType> Ptr2Itr(void* ptr, Long len) {
+template <class ValueType> inline Iterator<ValueType> Ptr2Itr(VoidPtr<ValueType> ptr, Long len) {
   return (Iterator<ValueType>) ptr;
 }
 template <class ValueType> inline ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len) {

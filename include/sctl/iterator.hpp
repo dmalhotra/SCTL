@@ -3,7 +3,7 @@
 
 #include <iterator>         // for random_access_iterator_tag
 #include <ostream>          // for operator<<, basic_ostream
-#include <type_traits>      // for enable_if, is_convertible, remove_const
+#include <type_traits>      // for conditional, enable_if, is_const, is_convertible, remove_const
 
 #include "sctl/common.hpp"  // for Long, sctl
 
@@ -260,6 +260,9 @@ template <class ValueType> class Iterator {
  */
 template <class ValueType> Iterator<ValueType> NullIterator();
 
+/** `void*`, or `const void*` when `ValueType` is const, so `Ptr2Itr` cannot drop a const. */
+template <class ValueType> using VoidPtr = typename std::conditional<std::is_const<ValueType>::value, const void*, void*>::type;
+
 /**
  * Converts a pointer to an iterator.
  *
@@ -270,7 +273,7 @@ template <class ValueType> Iterator<ValueType> NullIterator();
  * `SCTL_MEMDEBUG` is defined; ignored in release builds.
  * @return An iterator pointing to the given pointer.
  */
-template <class ValueType> Iterator<ValueType> Ptr2Itr(void* ptr, Long len);
+template <class ValueType> Iterator<ValueType> Ptr2Itr(VoidPtr<ValueType> ptr, Long len);
 
 /**
  * Converts a const pointer to a const iterator.

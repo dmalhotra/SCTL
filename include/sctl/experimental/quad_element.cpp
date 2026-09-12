@@ -98,7 +98,7 @@ namespace sctl {
     Matrix<ValueType> tmp(order, Nv, (order * Nv > Nbuff ? NullIterator<ValueType>() : tmp_buf), order * Nv > Nbuff);
 
     for (Long k = 0; k < ncomp; k++) {
-      const Matrix<ValueType> in_(order, order, (Iterator<ValueType>)in.begin() + k * order * order, false);
+      const Matrix<const ValueType> in_(order, order, in.begin() + k * order * order, false);
       Matrix<ValueType> out_(Nu, Nv, out.begin() + k * Nout, false);
       Matrix<ValueType>::GEMM(tmp, in_, Mv);
       Matrix<ValueType>::GEMM(out_, MuT, tmp);
