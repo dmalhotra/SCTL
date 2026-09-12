@@ -745,11 +745,8 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
 
   #pragma omp parallel num_threads(nthreads)
   {
-    // `num_threads` is a request, and a runtime with dynamic teams may answer with fewer. The walk
-    // keeps one chunk per thread -- each needs scratch of its own, which it holds until the copy-out
-    // below -- so the cut follows the team that actually arrived rather than the one that was asked
-    // for. Every member of a team reads the same size here. `max_emits` is then an estimate for a
-    // chunk larger than it was sized for, which is what `HostSink` is for; it was never a bound.
+    // The cut follows the team that arrived, not the one asked for: each chunk holds scratch of its
+    // own until the copy-out below. `max_emits` is an estimate, not a bound -- hence `HostSink`.
     const Integer nt = SCTL_GET_NUM_THREADS();
     const Integer tid = SCTL_GET_THREAD_NUM();
     sctl::ScratchBuf<NodeMIDT> buf(max_emits);  // NUMA-local: first-touched on this thread's node
@@ -1146,10 +1143,8 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
     const Long Nf = completeSlice<DIM, DevVec>(pol, tree, mins, rank, np, end_target, full);
     const NonLeafPred<DIM> is_nonleaf{thrust::raw_pointer_cast(full.data()), Nf, NodeT{}.Next()};
     const NodeT* const fp = thrust::raw_pointer_cast(full.data());
-    // A count of chunks, not of threads: the second pass writes where the first pass's counts say,
-    // so the two have to cut `full` the same way. `num_threads` is a request the runtime may answer
-    // with fewer, so the cut cannot be the team; `omp for` gives every chunk to exactly one thread
-    // whatever the team turns out to be.
+    // A count of chunks, not threads: the second pass writes where the first pass's counts say, so
+    // the two must cut `full` the same way.
     const Integer nchunk = (SCTL_IN_PARALLEL() ? 1 : SCTL_GET_MAX_THREADS());
     sctl::ScratchBuf<Long> dsp(nchunk + 1);
     dsp[0] = 0;

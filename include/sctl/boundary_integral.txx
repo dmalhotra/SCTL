@@ -245,9 +245,7 @@ namespace sctl {
             dsp[t+1] = dsp[t] + cnt[t];
           }
           proc_srcidx_lst.ReInit(dsp[omp_p]);
-          // Indexed by thread id, but a team the runtime trimmed costs nothing here: the slots no
-          // thread filled are empty, so they add nothing to dsp and copy nothing. The work itself
-          // was spread by the `omp for` above, which covers it whatever the team.
+          // Indexed by thread id: slots no thread filled are empty, so they add nothing to dsp.
           #pragma omp parallel num_threads(omp_p)
           {
             const Integer tid = SCTL_GET_THREAD_NUM();
@@ -418,8 +416,7 @@ namespace sctl {
           dsp[i+1] = dsp[i] + cnt[i];
         }
         near_lst.ReInit(dsp[omp_p]);
-        // Indexed by thread id; the slots no thread filled are empty, so a trimmed team costs
-        // nothing here. The work was spread by the `omp for` above.
+        // Indexed by thread id: slots no thread filled are empty, so they add nothing to dsp.
         #pragma omp parallel num_threads(omp_p)
         {
           const Integer tid = SCTL_GET_THREAD_NUM();

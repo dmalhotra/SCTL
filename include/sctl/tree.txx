@@ -808,10 +808,8 @@ namespace sctl {
         };
 
         constexpr Integer stride = ((MAX_DEPTH+1) + 7) & ~(Integer)7; // MAX_DEPTH+1 rounded up to a cache line (8 Longs) to prevent false-sharing
-        // A count of chunks, not of threads: the three passes below all cut the nodes this way and
-        // read each other's results by chunk, so they have to agree on the cut. `num_threads` is a
-        // request the runtime may answer with fewer, so the cut cannot be the team. `omp for` gives
-        // every chunk to exactly one thread whatever the team turns out to be.
+        // A count of chunks, not threads: the three passes below cut the nodes this way and read
+        // each other's results by chunk, so they must agree on the cut.
         const Integer nchunk = SCTL_GET_MAX_THREADS();
         ScratchBuf<Long> ancestors(nchunk * stride);
         #pragma omp parallel for schedule(static)
@@ -933,12 +931,8 @@ namespace sctl {
 
         #pragma omp parallel num_threads(nthreads)
         {
-          // `num_threads` is a request, and a runtime with dynamic teams may answer with fewer. The
-          // walk keeps one chunk per thread -- each needs scratch of its own, which it holds until
-          // the copy-out below -- so the cut follows the team that actually arrived rather than the
-          // one that was asked for. Every member of a team reads the same size here. `max_emits` is
-          // then an estimate for a chunk larger than it was sized for, which is what the spill is
-          // for; it was never a bound.
+          // The cut follows the team that arrived, not the one asked for: each chunk holds scratch of
+          // its own until the copy-out below. `max_emits` is an estimate, not a bound -- hence the spill.
           const Integer nt       = SCTL_GET_NUM_THREADS();
           const Integer tid      = SCTL_GET_THREAD_NUM();
           const Long    begin_t  = (N *  tid     ) / nt;
@@ -1180,9 +1174,7 @@ namespace sctl {
         const Long Nsend = dsp[nthreads-1] + cnt[nthreads-1];
         ScratchBuf<std::pair<Long,Morton<DIM>>> user_node_lst_buf(Nsend);
         Vector<std::pair<Long,Morton<DIM>>> user_node_lst(user_node_lst_buf);
-        // Indexed by thread id; the slots no thread filled are empty, so they add nothing to dsp
-        // and copy nothing. The nodes themselves were divided by the team that ran, above, so all
-        // of them were visited.
+        // Indexed by thread id: slots no thread filled are empty, so they add nothing to dsp.
         #pragma omp parallel num_threads(nthreads)
         { // user_node_lst <-- concatenate user_node_lst_t_[tid]
           const Integer tid = SCTL_GET_THREAD_NUM();

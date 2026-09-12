@@ -330,11 +330,8 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp
   Iterator<Long> hist = hist_buf.begin(), chunk = chunk_buf.begin();
   for (Long i = 0; i < nt * nbuck; i++) hist[i] = 0;
   for (Integer t = 0; t <= nt; t++) chunk[t] = (Long)t * N / nt;
-  // `nt` chunks, not `nt` threads: step 4 writes where these counts say, so the two passes have to
-  // cut A the same way. `num_threads` is a request a runtime with dynamic or limited teams may
-  // answer with fewer, which would leave chunks uncounted and unscattered -- and the result is a
-  // wrong sort with nothing said. `omp for` gives every chunk to exactly one thread whatever the
-  // team turns out to be.
+  // `nt` chunks, not threads: step 4 writes where these counts say, so both passes must cut A the
+  // same way, and `num_threads` is only a request.
   #pragma omp parallel for schedule(static) num_threads(nt)
   for (Integer t = 0; t < nt; t++) {
     Iterator<Long> h = hist + t * nbuck;
@@ -390,10 +387,8 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp
     for (Integer k = 0; k < nt - 1; k++) tsplit[k] = samp[std::min<Long>(Ns - 1, (Long)(k + 1) * Ns / nt)];
   }
 
-  // `nt` chunks, not `nt` threads: the splitters above cut the output into `nt` pieces, each merged
-  // on its own, so a team the runtime trims would leave the pieces past it unwritten -- and the
-  // output is then neither sorted nor a permutation of the input, with nothing said. `omp for`
-  // gives every piece to exactly one thread whatever the team turns out to be.
+  // `nt` chunks, not threads: the splitters above cut the output into `nt` pieces, each merged on
+  // its own.
   #pragma omp parallel for schedule(static) num_threads(nt)
   for (Integer t = 0; t < nt; t++) {
     ScratchBuf<Long> pos_buf(nruns), end_buf(nruns);
