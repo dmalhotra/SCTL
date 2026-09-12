@@ -2,10 +2,14 @@
 #define _SCTL_OMPUTILS_TXX_
 
 #include <algorithm>          // for lower_bound, sort, merge, copy
+#include <cstddef>            // for size_t
 #include <cstring>            // for memcpy
 #include <functional>         // for less
 #include <iterator>           // for iterator_traits
-#include <type_traits>        // for is_trivially_copyable
+#include <type_traits>        // for is_trivially_copyable, is_pointer, true_type
+#if defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>           // for sysconf, _SC_PAGESIZE
+#endif
 
 #include "sctl/common.hpp"        // for Integer, Long, SCTL_UNUSED, sctl
 #include "sctl/ompUtils.hpp"      // for merge_sort, merge, reduce, scan
@@ -17,6 +21,61 @@
 namespace sctl {
 
 namespace omp_par_detail {
+
+  /** Whether `merge_sort` beats `sample_sort` for elements of this size. Merge wins only for small
+   *  elements, since its extra merge-pass data movement grows with the element, and only for teams
+   *  spanning at most ~2 NUMA domains; it is also unusable from inside a parallel region. */
+  inline bool PreferMergeSort(std::size_t elem_size) {
+    constexpr Integer max_threads = 32;
+    constexpr std::size_t max_elem_size = 8;
+    return elem_size <= max_elem_size && !SCTL_IN_PARALLEL() && SCTL_GET_MAX_THREADS() <= max_threads;
+  }
+
+  /** Least `N` at which `radix_sort` is worth picking over a comparison sort. Its six passes cost
+   *  each thread a 2048-entry histogram whatever that thread's share of the elements, and its own
+   *  team cap already asks for `4 * 2048` elements per thread, so require that much for the whole
+   *  team: below it the bookkeeping outweighs the sorting. Measured on MortonCode<3>, the crossover
+   *  is near 2k elements on one thread and 130k on eight, so this stays on the safe side of both. */
+  inline Long RadixMinSize() {
+    constexpr Long share = 4 * (Long(1) << 11);
+    const Long threads = (SCTL_IN_PARALLEL() ? 1 : (Long)SCTL_GET_MAX_THREADS());
+    return share * std::max<Long>(1, threads);
+  }
+
+  /**
+   * Whether `Iter` walks one unbroken block, so that stepping a byte pointer forward from `&it[0]`
+   * stays inside the range. A pointer does, and so does `sctl::Iterator`, which wraps one.
+   *
+   * Built as C++20 this is `std::contiguous_iterator`, which answers for the standard containers
+   * too. Built as C++17 there is no way to ask an arbitrary iterator, so anything beyond the two
+   * above is refused rather than guessed at -- `std::vector`'s iterator among them, whose holder
+   * passes `&v[0]`. `thrust::device_ptr` is refused either way: it is contiguous, but in device
+   * memory, which the byte walk below may not write to. Note the test is the stronger one of
+   * contiguous *and* addressable from the host.
+   */
+  template <class Iter> struct is_sctl_iterator : std::false_type {};
+#ifdef SCTL_MEMDEBUG  // without it these are a pointer, which `is_pointer` already answers for
+  template <class T> struct is_sctl_iterator<Iterator<T>> : std::true_type {};
+  template <class T> struct is_sctl_iterator<ConstIterator<T>> : std::true_type {};
+#endif
+
+  template <class Iter> struct is_contiguous
+    : std::integral_constant<bool, std::is_pointer<Iter>::value || is_sctl_iterator<Iter>::value
+#if defined(__cpp_lib_concepts) && __cpp_lib_concepts >= 202002L
+                                   || std::contiguous_iterator<Iter>
+#endif
+                            > {};
+
+  /** The stride `prefault` walks by. A stride above the real page size leaves pages untouched, which
+   *  is the whole point of the walk; below it only repeats a store into a page already resident. */
+  inline Long PageSize() {
+#if defined(_SC_PAGESIZE)
+    static const Long ps = std::max<Long>(1, (Long)sysconf(_SC_PAGESIZE));
+    return ps;
+#else
+    return 4096;
+#endif
+  }
 
   inline Integer PickThreads(Long nbytes, Integer requested) {
     constexpr Long kFullThreadsBytes      = 2L * 1024L * 1024L;
@@ -33,9 +92,10 @@ template <class OutputIt, class InputIt> inline void omp_par::memcpy(OutputIt ds
   using src_value_t = typename std::iterator_traits<InputIt>::value_type;
   static_assert(std::is_same<T, typename std::remove_cv<src_value_t>::type>::value,
                 "omp_par::memcpy: source and destination value types must match");
-  static_assert(std::is_base_of<std::random_access_iterator_tag, typename std::iterator_traits<OutputIt>::iterator_category>::value &&
-                std::is_base_of<std::random_access_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>::value,
-                "omp_par::memcpy: iterators must be random-access over contiguous storage");
+  // Both ranges are addressed as bytes from their first element, which stays inside them only when
+  // the elements are one unbroken block.
+  static_assert(omp_par_detail::is_contiguous<OutputIt>::value && omp_par_detail::is_contiguous<InputIt>::value,
+                "omp_par::memcpy: the ranges must be contiguous; pass pointers or sctl::Iterators");
   static_assert(std::is_trivially_copyable<T>::value,
                 "omp_par::memcpy: T must be trivially copyable; use omp_par::copy for arbitrary types");
   if (n <= 0) return;
@@ -57,6 +117,25 @@ template <class OutputIt, class InputIt> inline void omp_par::memcpy(OutputIt ds
     const Long e = ((Long)(tid + 1) * n) / p;
     if (e > s) std::memcpy((void*)&dst[s], (const void*)&src[s], (size_t)((e - s) * (Long)sizeof(T)));
   }
+}
+
+template <class Iter> inline void omp_par::prefault(Iter first, Long n, Integer nthreads) {
+  using T = typename std::iterator_traits<Iter>::value_type;
+  static_assert(std::is_trivially_copyable<T>::value, "omp_par::prefault: T must be trivially copyable");
+  // The walk below strides a byte pointer from the first element across the whole range, which only
+  // stays inside it when the elements are one unbroken block.
+  static_assert(omp_par_detail::is_contiguous<Iter>::value, "omp_par::prefault: the range must be contiguous; pass a pointer or an sctl::Iterator");
+  if (n <= 0) return;
+  const Long nbytes = n * (Long)sizeof(T), page = omp_par_detail::PageSize(), npages = (nbytes + page - 1) / page;
+  char* p = (char*)&first[0];
+  const Integer nt = omp_par_detail::PickThreads(nbytes, nthreads);
+  if (nt <= 1) {
+    for (Long i = 0; i < npages; i++) p[i * page] = 0;
+  } else {
+    #pragma omp parallel for num_threads(nt) schedule(static)
+    for (Long i = 0; i < npages; i++) p[i * page] = 0;
+  }
+  p[nbytes - 1] = 0;
 }
 
 template <class InputIt, class OutputIt> inline OutputIt omp_par::copy(InputIt first, InputIt last, OutputIt dst, Integer nthreads) {
@@ -251,8 +330,10 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp
   Iterator<Long> hist = hist_buf.begin(), chunk = chunk_buf.begin();
   for (Long i = 0; i < nt * nbuck; i++) hist[i] = 0;
   for (Integer t = 0; t <= nt; t++) chunk[t] = (Long)t * N / nt;
-  #pragma omp parallel num_threads(nt)
-  { const Integer t = SCTL_GET_THREAD_NUM();
+  // `nt` chunks, not threads: step 4 writes where these counts say, so both passes must cut A the
+  // same way, and `num_threads` is only a request.
+  #pragma omp parallel for schedule(static) num_threads(nt)
+  for (Integer t = 0; t < nt; t++) {
     Iterator<Long> h = hist + t * nbuck;
     for (Long i = chunk[t]; i < chunk[t + 1]; i++) h[bucket(A[i])]++;
   }
@@ -268,8 +349,8 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp
   }
 
   // 4. Scatter A into B grouped by bucket.
-  #pragma omp parallel num_threads(nt)
-  { const Integer t = SCTL_GET_THREAD_NUM();
+  #pragma omp parallel for schedule(static) num_threads(nt)
+  for (Integer t = 0; t < nt; t++) {
     ScratchBuf<Long> o_buf(nbuck); Iterator<Long> o = o_buf.begin();
     for (Long b = 0; b < nbuck; b++) o[b] = tdsp[t * nbuck + b];
     for (Long i = chunk[t]; i < chunk[t + 1]; i++) { Long b = bucket(A[i]); B[o[b]++] = A[i]; }
@@ -306,8 +387,10 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp
     for (Integer k = 0; k < nt - 1; k++) tsplit[k] = samp[std::min<Long>(Ns - 1, (Long)(k + 1) * Ns / nt)];
   }
 
-  #pragma omp parallel num_threads(nt)
-  { const Integer t = SCTL_GET_THREAD_NUM();
+  // `nt` chunks, not threads: the splitters above cut the output into `nt` pieces, each merged on
+  // its own.
+  #pragma omp parallel for schedule(static) num_threads(nt)
+  for (Integer t = 0; t < nt; t++) {
     ScratchBuf<Long> pos_buf(nruns), end_buf(nruns);
     Iterator<Long> pos = pos_buf.begin(), end = end_buf.begin();
     Long out_off = 0;  // this thread's sub-range of each run; output offset = #elements before its chunk
@@ -390,7 +473,8 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline Long omp
     return m;
   }
 
-  ScratchBuf<Long> cnt(p), dsp(p);
+  ScratchBuf<Long> cnt(p), dsp(p);  // sized for the team asked for, an upper bound on the one that arrives
+  Long ndistinct = 0;
   #pragma omp parallel num_threads(p)
   { // each thread dedups its contiguous chunk of A into B[dsp[tid] ...]
     const Integer tid = (Integer)SCTL_GET_THREAD_NUM();
@@ -408,12 +492,111 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline Long omp
       Long acc = 1;
       for (Integer i = 0; i < nt; i++) { dsp[i] = acc; acc += cnt[i]; }
       B[0] = A[0];
+      ndistinct = acc;  // taken here, where the team that ran is known
     } // implicit barrier at end of single
 
     Long loc_idx = dsp[tid]; // scatter this chunk's distinct elements
     for (Long j = start; j < end; j++) if (comp(A[j - 1], A[j])) B[loc_idx++] = A[j];
   }
-  return dsp[p - 1] + cnt[p - 1];
+  return ndistinct;
+}
+
+template <class Iter, class KeyFn> inline void omp_par::radix_sort(Iter A, Long N, KeyFn key) {
+  typedef typename std::iterator_traits<Iter>::value_type _ValType;
+  static_assert(std::is_trivially_copyable<_ValType>::value, "radix_sort moves elements bytewise");
+  if (N <= 1) return;
+  constexpr Integer RB = 11;              // digit width
+  constexpr Long NB = Long(1) << RB;
+  constexpr Integer NPASS = (64 + RB - 1) / RB;
+  static_assert(NPASS % 2 == 0, "an even number of passes leaves the result in A");
+  // A thread keeps an NB-entry histogram and scans it once per pass whatever its share of the
+  // elements, so cap the team where that bookkeeping would rival the sorting.
+  const Integer p = (SCTL_IN_PARALLEL() ? 1 : (Integer)std::min<Long>(SCTL_GET_MAX_THREADS(), std::max<Long>(1, N / (4 * NB))));
+
+  ScratchBuf<_ValType> tmp(N);
+  ScratchBuf<Long> hist((Long)p * NB), part(p);
+  Iterator<_ValType> src = Ptr2Itr<_ValType>(&A[0], N), dst = tmp.begin();
+  for (Integer pass = 0; pass < NPASS; pass++) {
+    const Integer shift = RB * pass;
+    #pragma omp parallel num_threads(p)
+    {
+      const Integer tid = (Integer)SCTL_GET_THREAD_NUM();
+      const Integer nt = (Integer)SCTL_GET_NUM_THREADS();
+      const Long lo = N * tid / nt, hi = N * (tid + 1) / nt;
+      Iterator<Long> h = hist.begin() + (Long)tid * NB;
+      for (Long b = 0; b < NB; b++) h[b] = 0;
+      for (Long i = lo; i < hi; i++) h[(key(src[i]) >> shift) & (NB - 1)]++;
+      #pragma omp barrier
+      { // exclusive scan in (bucket, thread) order: a thread's slice of bucket b starts after every
+        // earlier bucket and after the threads before it within b. Two levels over a range of
+        // buckets each, so the histogram is never walked serially.
+        const Long b0 = NB * tid / nt, b1 = NB * (tid + 1) / nt;
+        Long sum = 0;
+        for (Long b = b0; b < b1; b++)
+          for (Integer t = 0; t < nt; t++) sum += hist[(Long)t * NB + b];
+        part[tid] = sum;
+        #pragma omp barrier
+        #pragma omp single
+        {
+          Long acc = 0;
+          for (Integer t = 0; t < nt; t++) {
+            const Long c = part[t];
+            part[t] = acc;
+            acc += c;
+          }
+        }
+        Long acc = part[tid];
+        for (Long b = b0; b < b1; b++)
+          for (Integer t = 0; t < nt; t++) {
+            const Long c = hist[(Long)t * NB + b];
+            hist[(Long)t * NB + b] = acc;
+            acc += c;
+          }
+      }
+      #pragma omp barrier
+      for (Long i = lo; i < hi; i++) dst[h[(key(src[i]) >> shift) & (NB - 1)]++] = src[i];
+    }
+    std::swap(src, dst);
+  }
+}
+
+template <class Iter> inline void omp_par::sort(Iter A, Long N) {
+  typedef typename std::iterator_traits<Iter>::value_type _ValType;
+  if constexpr (is_radix_sortable<_ValType>::value) {
+    if (N >= omp_par_detail::RadixMinSize()) {
+      omp_par::radix_sort(A, N, [](const _ValType& x) { return x.GetIntKey(); });
+      return;
+    }
+  }
+  omp_par::sort(A, N, std::less<_ValType>());
+}
+
+template <class Iter, class Compare> inline void omp_par::sort(Iter A, Long N, Compare comp) {
+  typedef typename std::iterator_traits<Iter>::value_type _ValType;
+  if (omp_par_detail::PreferMergeSort(sizeof(_ValType))) omp_par::merge_sort(A, A + N, comp);
+  else omp_par::sample_sort(A, A, N, comp);
+}
+
+template <class ConstIter, class Iter> inline void omp_par::sort(ConstIter in, Iter out, Long N) {
+  typedef typename std::iterator_traits<Iter>::value_type _ValType;
+  if constexpr (is_radix_sortable<_ValType>::value) {
+    if (N >= omp_par_detail::RadixMinSize()) {
+      omp_par::memcpy(out, in, N);
+      omp_par::radix_sort(out, N, [](const _ValType& x) { return x.GetIntKey(); });
+      return;
+    }
+  }
+  omp_par::sort(in, out, N, std::less<_ValType>());
+}
+
+template <class ConstIter, class Iter, class Compare> inline void omp_par::sort(ConstIter in, Iter out, Long N, Compare comp) {
+  typedef typename std::iterator_traits<Iter>::value_type _ValType;
+  if (omp_par_detail::PreferMergeSort(sizeof(_ValType))) {
+    omp_par::memcpy(out, in, N);
+    omp_par::merge_sort(out, out + N, comp);
+  } else {
+    omp_par::sample_sort(in, out, N, comp);
+  }
 }
 
 template <class ConstIter, class Iter> inline Long omp_par::dedup_sorted(ConstIter A, Iter B, Long N) {

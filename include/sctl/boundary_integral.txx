@@ -2,8 +2,6 @@
 #define _SCTL_BOUNDARY_INTEGRAL_TXX_
 
 #include <algorithm>                   // for lower_bound, max, min, upper_b...
-#include <cstdio>                      // for printf (SCTL_BIO_VERBOSE diagnostic)
-#include <cstdlib>                     // for getenv, atoi
 #include <map>                         // for map
 #include <new>                         // for hardware_destructive_interference_size
 #include <set>                         // for set, __tree_const_iterator
@@ -247,6 +245,7 @@ namespace sctl {
             dsp[t+1] = dsp[t] + cnt[t];
           }
           proc_srcidx_lst.ReInit(dsp[omp_p]);
+          // Indexed by thread id: slots no thread filled are empty, so they add nothing to dsp.
           #pragma omp parallel num_threads(omp_p)
           {
             const Integer tid = SCTL_GET_THREAD_NUM();
@@ -417,6 +416,7 @@ namespace sctl {
           dsp[i+1] = dsp[i] + cnt[i];
         }
         near_lst.ReInit(dsp[omp_p]);
+        // Indexed by thread id: slots no thread filled are empty, so they add nothing to dsp.
         #pragma omp parallel num_threads(omp_p)
         {
           const Integer tid = SCTL_GET_THREAD_NUM();
@@ -1071,12 +1071,6 @@ namespace sctl {
         #endif
         const Long N_near = near_elem_dsp[Nelem-1] + near_elem_cnt[Nelem-1];
         const Long omp_chunk_size = std::max(N_near/SCTL_GET_MAX_THREADS()/32, (cache_line_size/(Long)sizeof(Real)+KDIM1_-1)/KDIM1_);
-        if (const char* v = std::getenv("SCTL_BIO_VERBOSE")) { // diagnostic: near-loop shape
-          if (std::atoi(v)) std::printf("[SetupNear] N_near=%ld chunk=%ld nchunk=%ld nthreads=%d Nelem=%ld\n",
-                                        (long)N_near, (long)omp_chunk_size,
-                                        (long)((N_near+omp_chunk_size-1)/omp_chunk_size),
-                                        (int)SCTL_GET_MAX_THREADS(), (long)Nelem);
-        }
         #pragma omp parallel for schedule(dynamic,omp_chunk_size)
         for (Long i = 0; i < N_near; i++) { // loop over all pairs of elements and their near targets
           const Long elem_idx = std::lower_bound(near_elem_dsp.begin(), near_elem_dsp.end(), i+1) - near_elem_dsp.begin() - 1;

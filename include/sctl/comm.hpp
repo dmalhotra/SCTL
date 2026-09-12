@@ -1,6 +1,7 @@
 #ifndef _SCTL_COMM_HPP_
 #define _SCTL_COMM_HPP_
 
+#include <algorithm>          // for lower_bound, sort
 #include <functional>         // for less
 #include <map>                // for multimap
 #include <memory>             // for shared_ptr
@@ -40,7 +41,10 @@ class Comm {
  public:
 
   /**
-   * Initialize MPI.
+   * Initialize MPI, and ask the kernel once whether this process may read the memory of the ranks
+   * sharing its node -- a property of the process, so no communicator has to ask again and no
+   * routine that reads it has to be collective. A program that initializes MPI without this leaves
+   * the direct path off.
    */
   static void MPI_Init(int* argc, char*** argv);
 
@@ -56,7 +60,10 @@ class Comm {
 
 #ifdef SCTL_HAVE_MPI
   /**
-   * Convert MPI_Comm to Comm.
+   * Convert MPI_Comm to Comm. Collective, and holds two communicators rather than one: besides
+   * duplicating `mpi_comm` it splits off the ranks sharing this node, at the cost of a further two
+   * collectives, so that `SameNode` and the direct reads are local lookups afterwards. `Split` pays
+   * this too. `-DSCTL_COMM_NO_DIRECT` builds none of it.
    */
   explicit Comm(const MPI_Comm mpi_comm) : impl_(std::make_shared<Impl>()) { impl_->Init(mpi_comm); }
 #endif
@@ -75,14 +82,18 @@ class Comm {
   Comm(Comm&& c) noexcept;
 
   /**
-   * *self* communicator.
+   * The *self* communicator, built on first use and shared thereafter.
+   *
+   * Cached because each call would otherwise duplicate a communicator, which is a finite resource,
+   * and because this is the default argument of most classes here. Released by `MPI_Finalize`, so
+   * nothing may hold the reference past that -- as nothing holding a `Comm` could anyway.
    */
-  [[nodiscard]] static Comm Self();
+  [[nodiscard]] static const Comm& Self();
 
   /**
-   * *world* communicator.
+   * The *world* communicator, built on first use and shared thereafter. As `Self()`.
    */
-  [[nodiscard]] static Comm World();
+  [[nodiscard]] static const Comm& World();
 
   /**
    * Copy assignment. Reference-shares `c`'s underlying `Impl`. Releases
@@ -105,6 +116,15 @@ class Comm {
    * Convert to MPI_Comm.
    */
   [[nodiscard]] const MPI_Comm& GetMPI_Comm() const noexcept { return impl_->mpi_comm_; }
+
+  /**
+   * The MPI datatype for `Type`: `sizeof(Type)` contiguous bytes, built on first use and freed at
+   * finalize, so a caller counting in elements rather than bytes does not build one per call.
+   *
+   * The same handle the collectives here use. Exposed for code that reaches MPI directly with a
+   * buffer this class does not own, as `gpu_tree`'s device exchanges do.
+   */
+  template <class Type> [[nodiscard]] static MPI_Datatype MPIDatatype();
 #endif
 
   /**
@@ -123,6 +143,21 @@ class Comm {
    * @return size of this communicator.
    */
   [[nodiscard]] Integer Size() const noexcept;
+
+  /**
+   * Whether `rank` is a rank of this communicator running on this node -- this rank included, for
+   * which it is trivially true. Not the same question as `rank == Rank()`: with ranks 0 to 3 on one
+   * node, rank 0 sees `SameNode(2)` as true.
+   *
+   * Established when the communicator is built, so this is a local lookup. `-DSCTL_COMM_NO_DIRECT`
+   * does not build the node group -- finding it costs a communicator and two collectives per `Comm`,
+   * and nothing in that build reads it -- so there this reports only this rank, and the same without
+   * MPI. Everywhere else it is the real topology, which is not what the other direct-read flags
+   * govern: those say whether a peer's memory may be read, not who shares the node.
+   *
+   * @param[in] rank A rank of this communicator.
+   */
+  [[nodiscard]] bool SameNode(Integer rank) const;
 
   /**
    * Synchronize all processes.
@@ -214,13 +249,77 @@ class Comm {
   template <class SType> [[nodiscard]] Request Issend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag = 0) const;
 
   /**
-   * Non-blocking receive.
+   * Blocking send, matched by `Recv` at the destination. Where the destination is a rank on this
+   * node and the kernel permits it, the destination reads this buffer instead of being sent a copy
+   * of it, and this returns once it has done so; otherwise this is `Issend` followed by `Wait`.
+   *
+   * Deadlocks if two ranks both send to each other before either receives, as `MPI_Send` does for
+   * a message too large to buffer -- but on the direct path at any size, since this returns only
+   * once the destination has read the buffer. A pair that MPI would have buffered its way through
+   * therefore deadlocks when the two ranks share a node and not when they do not, so order the
+   * pair (one sends while the other receives) rather than rely on the message being small.
+   *
+   * Stops the program when the destination's `rcount` names a different number of bytes, wherever
+   * that is detected; see `Recv` for which transports detect it.
+   *
+   * @tparam SType type of the send-data.
+   *
+   * @param[in] sbuf const-iterator to the send buffer.
+   *
+   * @param[in] scount number of elements to send.
+   *
+   * @param[in] dest the rank of the destination process.
+   *
+   * @param[in] tag identifier tag to be matched at receive.
+   */
+  template <class SType> void Send(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag = 0) const;
+
+  /**
+   * Blocking receive, matched by `Send` at the source. Where the source is a rank on this node and
+   * the kernel permits it, this reads the source's send buffer instead of receiving a copy of it;
+   * otherwise this is `Irecv` followed by `Wait`.
+   *
+   * `rcount` is not an upper bound as it is in MPI: the two counts must name the same number of
+   * bytes. Neither disagreement has one behaviour across the transports here -- a message larger
+   * than the buffer is an `MPI_ERR_TRUNCATE` through MPI and a direct read takes it without
+   * reporting the error, and a message smaller than the buffer arrives through MPI unchunked but
+   * leaves the chunked path waiting, since it posts one receive per chunk of `rcount`. A direct read is handed the
+   * sender's size along with its address, so it always reports a mismatch; on every other transport
+   * the size costs a message of its own, which only `SCTL_MEMDEBUG` builds send. So the check is
+   * there for whichever transport a release build takes on one node, and for all of them under
+   * `SCTL_MEMDEBUG` -- where a count bug cannot hide behind the ranks' placement. On one node both
+   * ranks stop: the receiver answers the sender before stopping, so the sender reports the
+   * disagreement too rather than waiting on a rendezvous that will not finish.
    *
    * @tparam RType type of the receive-data.
    *
    * @param[out] rbuf iterator to the receive buffer.
    *
-   * @param[in] rcount number of elements to receive.
+   * @param[in] rcount number of elements to receive; must equal the source's `scount` in bytes.
+   *
+   * @param[in] source the rank of the source process.
+   *
+   * @param[in] tag identifier tag to be matched by the corresponding Send.
+   */
+  template <class RType> void Recv(Iterator<RType> rbuf, Long rcount, Integer source, Integer tag = 0) const;
+
+  /**
+   * Non-blocking receive.
+   *
+   * `rcount` is not an upper bound as it is in MPI: it must name the same number of bytes the
+   * source sends. A message that does not fit is an `MPI_ERR_TRUNCATE` either way, but one smaller
+   * than the buffer has no single behaviour -- where the byte count exceeds `MPI_Count`'s range
+   * this splits it into chunks under their own tags, one receive posted per chunk of `rcount`, and
+   * the chunks the source does not send are waited on forever. The size at which that starts is the
+   * implementation's, so a program that relies on the MPI rule works until its messages grow. The
+   * receiver does not learn the source's count, so nothing here can report the mismatch; `Recv`
+   * does, on the transport that does hold it.
+   *
+   * @tparam RType type of the receive-data.
+   *
+   * @param[out] rbuf iterator to the receive buffer.
+   *
+   * @param[in] rcount number of elements to receive; must equal the source's `scount` in bytes.
    *
    * @param[in] source the rank of the source process.
    *
@@ -304,7 +403,30 @@ class Comm {
   template <class SType, class RType> void Alltoall(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const;
 
   /**
-   * Sparse all-to-all communication.
+   * Sparse all-to-all communication. The self block is copied rather than sent. With
+   * `BlockingDirect`, so is every other block that stays on this node, read out of its peer's send
+   * buffer (Linux; falls back to MPI where the kernel forbids it); without it those blocks go
+   * through MPI like any other. The request covers everything left to MPI.
+   *
+   * @tparam BlockingDirect Read the node-local blocks out of their peers' send buffers. That needs
+   * the node synchronized before returning -- no rank may leave while a peer is still reading its
+   * send buffer -- so it costs the non-blocking behaviour this routine's name promises, and is off
+   * by default. Ask for it only where the request is waited on straight away. A template parameter
+   * because every rank must choose the same way, which a runtime argument could not ensure.
+   *
+   * @note Collective. With `BlockingDirect`, also not fully non-blocking: the node-local part of
+   * the exchange is complete when the call returns and only the rest is left for `Wait`.
+   *
+   * @note Reading a peer's memory needs ptrace permission, which `Comm::MPI_Init` asks the kernel
+   * about once for the process. By default nothing is done to obtain it: where the kernel already
+   * permits the reads (yama `ptrace_scope` 0, as on a node a job owns) the direct path is used,
+   * and where it does not the probe fails and everything goes through MPI -- as it also does for a
+   * program that initializes MPI without `Comm::MPI_Init`. Building with `-DSCTL_COMM_PTRACER` lets
+   * the ranks widen it for themselves with `PR_SET_PTRACER_ANY`, which opens their address space
+   * to every process of the same user for the rest of their lifetime -- do not do that on a shared
+   * node. `-DSCTL_COMM_NO_DIRECT` turns the direct path off outright, and with it the per-`Comm` node group, so `SameNode` there reports only this rank. A read the kernel refuses
+   * after the probe has passed sends that one exchange through MPI instead; it is not remembered,
+   * since a permission that changed under a running job is not something to carry a flag for.
    *
    * @tparam SType type of the send-data.
    * @tparam RType type of the receive-data.
@@ -326,7 +448,7 @@ class Comm {
    * @return a Request handle. Same lifetime contract as Isend(): must be
    *         passed to Wait() before destruction.
    */
-  template <class SType, class RType> [[nodiscard]] Request Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag = 0) const;
+  template <bool BlockingDirect = false, class SType, class RType> [[nodiscard]] Request Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag = 0) const;
 
   /**
    * All-to-all communication with varying send and receive counts and displacements.
@@ -598,15 +720,6 @@ class Comm {
  private:
 
   /**
-   * Structure to hold a pair of elements for sorting.
-   */
-  template <typename A, typename B> struct SortPair {
-    int operator<(const SortPair<A, B>& p1) const { return key < p1.key; }
-    A key;
-    B data;
-  };
-
-  /**
    * Core of SampleSort: given a locally-sorted array `loc` and this rank's lower boundary
    * `splitter` (one value per rank, gathered internally so the split is always consistent),
    * redistribute (one Alltoallv) and parallel-merge so rank r ends up with the globally-sorted
@@ -640,6 +753,24 @@ class Comm {
     MPI_Comm mpi_comm_;
     mutable std::stack<void*> req;
 
+    // Node peers of this communicator, whose memory this rank may be able to read directly instead
+    // of receiving through MPI. Ascending comm-rank order and searched, not a table indexed by comm
+    // rank: that would be one entry per rank -- 7.6 MB at a million -- for node_size useful ones.
+    MPI_Comm node_comm_ = MPI_COMM_NULL;
+    std::vector<int> node_rank_;         ///< comm ranks on this node, ascending
+    std::vector<int> node_pid_;          ///< their pids, in the same order
+
+    // Whether node peers' memory may be read here. Set by `InitNode` from the process-wide answer
+    // and never written again, so every rank of a node agrees and any code may read it.
+    bool direct_ = false;
+
+    /** Position of `rank` in `node_rank_`, or -1 when `rank` is not a rank on this node. */
+    Integer NodeIdx(Integer rank) const {
+      const auto i = std::lower_bound(node_rank_.begin(), node_rank_.end(), (int)rank);
+      if (i == node_rank_.end() || *i != (int)rank) return -1;
+      return (Integer)(i - node_rank_.begin());
+    }
+
     Impl();
     ~Impl();
 
@@ -653,6 +784,10 @@ class Comm {
      * Collective on the input communicator.
      */
     void Init(MPI_Comm mpi_comm);
+
+    /** Find the ranks sharing this node, and take the process's direct-read answer. Called by
+     *  `Init`; collective on the communicator. */
+    void InitNode();
   };
 
   template <class Type> static MPI_Op GetMPIOp(CommOp op);
@@ -664,6 +799,31 @@ class Comm {
   static void FreeRegisteredHandles();
   static std::vector<MPI_Datatype>& DatatypeRegistry();
   static std::vector<MPI_Op>& OpRegistry();
+
+#ifdef SCTL_HAVE_MPI
+  /**
+   * Read every node peer's block for this rank straight out of that peer's send buffer.
+   * `scounts`/`sdispls` locate this rank's block for each peer, so each peer can be told where to
+   * read from; `rcounts`/`rdispls` where each peer's block for this rank goes.
+   *
+   * Blocking and collective on the node: it returns only once every peer has finished reading this
+   * rank's send buffer, which is what makes the reads safe. Callers must have faulted in the
+   * receive blocks already -- doing so afterwards would overwrite what was read.
+   *
+   * Each peer's byte count travels with its address, and a count that does not match what this rank
+   * expects is reported. The read itself cannot notice: it is one-sided, and a send buffer holds
+   * every block in one allocation, so reading past a peer's block returns the block beside it.
+   *
+   * @return false if any read on this node was refused. The whole node returns the same answer, so
+   * it falls back together. Blocks read before the refusal were delivered, so a receive block holds
+   * either its data or what it held before; the caller sends every node-local block through MPI,
+   * which overwrites all of them. The refusal is not remembered: after the probe at init the only
+   * one left is a permission changed mid-run.
+   */
+  template <class SType, class RType>
+  bool ReadNodeBlocks(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls,
+                      Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;
+#endif
 
   Vector<MPI_Request>& NewReq(Long request_count) const;
 

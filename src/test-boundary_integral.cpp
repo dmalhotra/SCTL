@@ -90,7 +90,6 @@ int main(int argc, char** argv) {
     CHECK(true);
   }
 
-  TEST_SUMMARY_RETURN();
-
   Comm::MPI_Finalize();
+  TEST_SUMMARY_RETURN();
 }

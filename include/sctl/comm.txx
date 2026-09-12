@@ -2,6 +2,8 @@
 #define _SCTL_COMM_TXX_
 
 #include <algorithm>              // for lower_bound, max, min, sort, upper_...
+#include <cstdint>                // for uint64_t
+#include <cstring>                // for memcpy
 #include <cassert>                // for assert
 #include <functional>             // for less
 #include <limits>                 // for numeric_limits
@@ -10,12 +12,17 @@
 #include <type_traits>            // for is_trivially_copyable
 #include <utility>                // for pair
 #include <vector>                 // for vector
+#ifdef __linux__
+#include <sys/prctl.h>            // for prctl
+#include <sys/uio.h>              // for process_vm_readv
+#include <unistd.h>               // for getpid
+#endif
 
 #include "sctl/common.hpp"        // for Long, Integer, SCTL_ASSERT, SCTL_UN...
 #include "sctl/comm.hpp"          // for Comm, CommOp
 #include "sctl/iterator.hpp"      // for Iterator, ConstIterator
 #include "sctl/iterator.txx"      // for Iterator::Iterator<ValueType>, Iter...
-#include "sctl/ompUtils.txx"      // for scan, sample_sort, memcpy
+#include "sctl/ompUtils.txx"      // for scan, sort, memcpy, prefault
 #include "sctl/scratch_pool.hpp"  // for ScratchBuf
 #include "sctl/scratch_pool.txx"  // for ScratchBuf
 #include "sctl/static-array.hpp"  // for StaticArray
@@ -32,6 +39,15 @@ template <class IteratorType> inline void TouchBuffer(IteratorType buf, Long cou
   SCTL_UNUSED(buf[0]        );
   SCTL_UNUSED(buf[count - 1]);
 }
+
+/** Key with its payload, ordered by the key alone; radix-sortable exactly when the key is. */
+template <class A, class B> struct SortPair {
+  static constexpr bool IntKeyIsExact = omp_par::is_radix_sortable<A>::value;
+  std::uint64_t GetIntKey() const { return key.GetIntKey(); }
+  bool operator<(const SortPair& p) const { return key < p.key; }
+  A key;
+  B data;
+};
 
 }  // namespace comm_detail
 
@@ -161,12 +177,156 @@ inline void AssertChunkedTagRange(Long user_tag, Long chunk_count, int mpi_tag_u
   SCTL_ASSERT(MPIChunkTagBase(user_tag) + MPIMaxChunks() - 1 <= static_cast<Long>(mpi_tag_ub));
 }
 
+/**
+ * The tag `Comm::Send` and `Comm::Recv` run their rendezvous on: the one the payload's first
+ * message carries, rather than the caller's tag by itself.
+ *
+ * A message wider than one MPI count goes as chunks under derived tags, so caller tag `t` owns the
+ * block `[t * MPIMaxChunks(), (t + 1) * MPIMaxChunks())`. The caller's tag by itself does not lie in
+ * its own block: `t` is chunk `t % MPIMaxChunks()` of the block belonging to caller tag
+ * `t / MPIMaxChunks()`. A chunked message of that other caller tag therefore carries the tag the
+ * rendezvous waits on, and the two match each other -- and where the sizes agree, as a two-element
+ * chunk of a `Long` payload and the rendezvous's own two words do, MPI reports nothing and the
+ * receiver reads a payload value as an address. Deriving this tag as the payload's first chunk puts
+ * the rendezvous in the block the caller's tag already owns, where the only other traffic is this
+ * same message's own chunks. Those cannot be confused with it: MPI does not reorder within one
+ * (source, tag, communicator) and both ends post in the same order.
+ *
+ * Where the implementation has large-count point-to-point, nothing is chunked and the payload is on
+ * the caller's tag itself, which is then the tag to share.
+ */
+inline int MPIRendezvousTag(Long user_tag, int mpi_tag_ub) {
+#if MPI_VERSION >= 4
+  SCTL_UNUSED(mpi_tag_ub);
+  SCTL_ASSERT(user_tag >= 0);
+  return MPIAsInt(user_tag);
+#else
+  AssertChunkedTagRange(user_tag, 1, mpi_tag_ub);
+  return MPIChunkTag(user_tag, 0);
+#endif
+}
+
 inline void MPIWaitAllBatched(MPI_Request* request, Long request_count) {
   for (Long offset = 0; offset < request_count; offset += MPIIntMax()) {
     const Long batch = std::min<Long>(request_count - offset, MPIIntMax());
     const int err = MPI_Waitall(MPIAsInt(batch), request + offset, MPI_STATUSES_IGNORE);
     SCTL_ASSERT(err == MPI_SUCCESS);
   }
+}
+
+/** What the receiver answers with in the node-local rendezvous of `Comm::Send` / `Comm::Recv`. The
+ *  sender waits for this, so every path the receiver can leave by has to send one. */
+constexpr char kAckFallback      = 0;  // not read; both sides fall back to MPI
+constexpr char kAckRead          = 1;  // read; the sender's buffer is free
+constexpr char kAckCountMismatch = 2;  // the counts disagree; both sides stop
+
+/**
+ * Copy `bytes` out of another process on this node, in 8 MB chunks over all threads. False when the
+ * kernel refuses, which every caller answers the same way: give this exchange to MPI.
+ *
+ * Why it does not report on the refusal beyond that: the read is one-sided, so it cannot tell a
+ * block that is shorter than asked for from one that is not. Reading past the peer's block returns
+ * whatever the peer keeps next to it and succeeds, since a send buffer holds every block in one
+ * allocation; only an over-read leaving that allocation's mapping altogether fails, and then just
+ * as any other refusal. `ReadNodeBlocks` compares the two counts before reading, which is the one
+ * place both of them are known.
+ */
+inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
+#ifdef __linux__
+  const Long chunk = Long(8) << 20, nchunk = (bytes + chunk - 1) / chunk;
+  const auto read = [pid,src,dst,bytes,chunk](Long c) {
+    Long a = c * chunk;
+    const Long b = std::min<Long>(bytes, a + chunk);
+    while (a < b) {
+      struct iovec l = {(char*)dst + a, (size_t)(b - a)}, r = {(char*)const_cast<void*>(src) + a, (size_t)(b - a)};
+      const ssize_t n = process_vm_readv((pid_t)pid, &l, 1, &r, 1, 0);
+      if (n <= 0) return false;
+      a += n;
+    }
+    return true;
+  };
+  const Integer nt = (SCTL_IN_PARALLEL() ? 1 : (Integer)SCTL_GET_MAX_THREADS());
+  bool ok = true;
+  #pragma omp parallel for schedule(dynamic) num_threads(nt)
+  for (Long c = 0; c < nchunk; c++) {
+    if (!read(c)) {
+      #pragma omp atomic write
+      ok = false;
+    }
+  }
+  return ok;
+#else
+  SCTL_UNUSED(pid);
+  SCTL_UNUSED(src);
+  SCTL_UNUSED(dst);
+  SCTL_UNUSED(bytes);
+  return false;
+#endif
+}
+
+#ifdef SCTL_MEMDEBUG
+/**
+ * Every rank's send count for a peer, in bytes, equals that peer's receive count for it.
+ *
+ * A pair that disagrees is undefined behaviour in MPI, and what it does instead of reporting
+ * depends on which way it disagrees and on how the exchange is carried: a send shorter than the
+ * receive leaves the rest of the block as it was, and a node-local read of it would return the
+ * bytes beside it. So the direct path checks it -- the sizes are already exchanged there -- and
+ * this gives the MPI path the same answer, for the cost of one Alltoall in the builds that check.
+ */
+inline void AssertCountsAgree(ConstIterator<Long> scounts, Long sbytes_per, ConstIterator<Long> rcounts, Long rbytes_per, Integer np, MPI_Comm comm) {
+  ScratchBuf<Long> mine(np), theirs(np);
+  for (Integer i = 0; i < np; i++) mine[i] = scounts[i] * sbytes_per;
+  MPI_Alltoall(&mine[0], 1, MPI_INT64_T, &theirs[0], 1, MPI_INT64_T, comm);
+  for (Integer i = 0; i < np; i++) {
+    SCTL_ASSERT_MSG(theirs[i] == rcounts[i] * rbytes_per, "Comm: a peer sends a different number of bytes than this rank expects; the send and receive counts disagree.");
+  }
+}
+#endif
+
+/** Whether the kernel lets this process read its node peers' memory. Set once by `Comm::MPI_Init`,
+ *  which is why one answer serves every communicator: a sub-communicator's node peers are a subset
+ *  of the world's. False when `Comm::MPI_Init` was not the entry point. */
+inline bool& DirectAvailable() {
+  static bool ok = false;
+  return ok;
+}
+
+/**
+ * Ask the kernel whether this rank can read its node peers. Collective on `node_comm`.
+ *
+ * Each rank publishes the address of a word holding a value that identifies it, so a read returning
+ * that value shows it reached the intended address. Reduced, since a node's ranks must agree.
+ */
+inline bool ProbeDirectOnNode(MPI_Comm node_comm) {
+#if !defined(SCTL_COMM_NO_DIRECT) && defined(__linux__)
+  int node_size = 1, node_rank = 0;
+  MPI_Comm_size(node_comm, &node_size);
+  MPI_Comm_rank(node_comm, &node_rank);
+  if (node_size <= 1) return false;  // no peer to read, so nothing to ask
+  // Widening ptrace opens this process's address space to every process of the same user for the
+  // rest of its life, so it is a build-time decision about the machine. Without it the reads below
+  // simply fail wherever the kernel says no, and every exchange stays on MPI.
+#ifdef SCTL_COMM_PTRACER
+  prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+#endif
+  Long probe = 0x5c71 + node_rank, got = 0;
+  const Long mine[2] = {(Long)&probe, (Long)getpid()};
+  ScratchBuf<Long> peers(2 * node_size);
+  MPI_Allgather(mine, 2, MPI_INT64_T, &peers[0], 2, MPI_INT64_T, node_comm);
+  int ok = 1;
+  for (int j = 0; j < node_size && ok; j++) {
+    if (j == node_rank) continue;
+    ok = ReadPeer((int)peers[2*j+1], (const void*)peers[2*j], &got, sizeof(Long)) && (got == 0x5c71 + j);
+  }
+  MPI_Barrier(node_comm);  // every probe stays alive until all peers have read it
+  int all = 0;
+  MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, node_comm);
+  return all != 0;
+#else
+  SCTL_UNUSED(node_comm);
+  return false;
+#endif
 }
 
 }  // namespace comm_detail
@@ -253,6 +413,24 @@ template <class Type> class Comm::CommDatatype {
 };
 #endif
 
+namespace comm_detail {
+
+/** The communicators `Comm::Self()` and `Comm::World()` hand out. `Comm::MPI_Finalize` releases them
+ *  while MPI is still up, which is where an `MPI_Comm` can still be given back; the destructor below
+ *  covers a program that never calls it, where `~Impl` finds MPI gone and frees only the memory. */
+inline std::vector<Comm*>& CommCache() {
+  struct Cache {
+    std::vector<Comm*> v{2, nullptr};
+    ~Cache() {
+      for (Comm* c : v) delete c;
+    }
+  };
+  static Cache cache;
+  return cache.v;
+}
+
+}  // namespace comm_detail
+
 inline void Comm::MPI_Init(int* argc, char*** argv) {
 #ifdef SCTL_HAVE_PETSC
   PetscInitialize(argc, argv, NULL, NULL);
@@ -261,9 +439,27 @@ inline void Comm::MPI_Init(int* argc, char*** argv) {
   ::MPI_Init_thread(argc, argv, MPI_THREAD_SERIALIZED, &provided);
   if (provided < MPI_THREAD_SERIALIZED) SCTL_WARN("MPI implementation does not support MPI_THREAD_SERIALIZED.");
 #endif
+#if defined(SCTL_HAVE_MPI) && !defined(SCTL_COMM_NO_DIRECT)
+  { // Every rank is here, so the node group is whole and a communicator made later covers a subset
+    // of it. Skipped where the probe would answer no without asking.
+    MPI_Comm node_comm = MPI_COMM_NULL;
+    int rank = 0;
+    ::MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, rank, MPI_INFO_NULL, &node_comm);
+    comm_detail::DirectAvailable() = comm_detail::ProbeDirectOnNode(node_comm);
+    MPI_Comm_free(&node_comm);
+  }
+#endif
 }
 
 inline void Comm::MPI_Finalize() {
+  { // while MPI is still up, so their MPI_Comm goes back rather than leaking
+    #pragma omp critical(SCTL_COMM_CACHE)
+    for (Comm*& c : comm_detail::CommCache()) {
+      delete c;
+      c = nullptr;
+    }
+  }
 #ifdef SCTL_HAVE_MPI
   if (comm_detail::MPIIsActive()) FreeRegisteredHandles();
 #endif
@@ -291,7 +487,10 @@ inline Comm::Impl::~Impl() {
   }
   if (comm_detail::MPIIsActive() && mpi_comm_ != MPI_COMM_NULL) {
     #pragma omp critical(SCTL_COMM_DUP)
-    MPI_Comm_free(&mpi_comm_);
+    {
+      if (node_comm_ != MPI_COMM_NULL) MPI_Comm_free(&node_comm_);
+      MPI_Comm_free(&mpi_comm_);
+    }
   }
 }
 
@@ -305,6 +504,49 @@ inline void Comm::Impl::Init(MPI_Comm mpi_comm) {
   int* tag_ub_ptr = nullptr;
   MPI_Comm_get_attr(mpi_comm_, MPI_TAG_UB, &tag_ub_ptr, &flag);
   mpi_tag_ub_ = (flag && tag_ub_ptr) ? *tag_ub_ptr : std::numeric_limits<int>::max();
+  InitNode();
+}
+
+inline void Comm::Impl::InitNode() {
+  // Finding the node group costs a communicator and two collectives per Comm, which a build with no
+  // use for it should not pay: SCTL_COMM_NO_DIRECT takes the node group down to this rank alone.
+  // The cost cannot be deferred to the first caller instead, since splitting the communicator is
+  // collective and the first caller need not be -- a Send to one peer would leave the others in it.
+#ifdef SCTL_COMM_NO_DIRECT
+  const bool alone = true;
+#else
+  const bool alone = (mpi_size_ == 1);  // nothing to share a node with, as Comm::Self() has
+#endif
+  if (alone) {  // this rank is its own node group, so every direct path is skipped
+    node_rank_.assign(1, mpi_rank_);
+    node_pid_.assign(1, 0);
+    direct_ = false;
+    return;
+  }
+  #pragma omp critical(SCTL_COMM_DUP)  // creating a communicator, as Init and ~Impl do
+  MPI_Comm_split_type(mpi_comm_, MPI_COMM_TYPE_SHARED, mpi_rank_, MPI_INFO_NULL, &node_comm_);
+  int node_size = 1;
+  MPI_Comm_size(node_comm_, &node_size);
+  { // this node's comm ranks and pids, by ascending comm rank so NodeIdx can bisect
+    std::vector<int> by_node(2 * node_size);
+    int mine[2] = {mpi_rank_, 0};
+#ifdef __linux__
+    mine[1] = (int)getpid();
+#endif
+    MPI_Allgather(mine, 2, MPI_INT, by_node.data(), 2, MPI_INT, node_comm_);
+    std::vector<std::pair<int,int>> peers(node_size);
+    for (int j = 0; j < node_size; j++) peers[j] = std::make_pair(by_node[2*j], by_node[2*j+1]);
+    std::sort(peers.begin(), peers.end());
+    node_rank_.resize(node_size);
+    node_pid_.resize(node_size);
+    for (int j = 0; j < node_size; j++) {
+      node_rank_[j] = peers[j].first;
+      node_pid_[j] = peers[j].second;
+    }
+  }
+  // The kernel was asked once, at Comm::MPI_Init, over the whole node -- of which this
+  // communicator's node group is a subset -- so every rank here holds the same answer.
+  direct_ = comm_detail::DirectAvailable() && node_size > 1;
 }
 #endif
 
@@ -319,20 +561,34 @@ inline Comm::Comm(const Comm& c) = default;
 
 inline Comm::Comm(Comm&& c) noexcept = default;
 
-inline Comm Comm::Self() {
+inline const Comm& Comm::Self() {
+  Comm* c = nullptr;
+  #pragma omp critical(SCTL_COMM_CACHE)
+  {
+    Comm*& slot = comm_detail::CommCache()[0];
 #ifdef SCTL_HAVE_MPI
-  return Comm(MPI_COMM_SELF);
+    if (!slot) slot = new Comm(MPI_COMM_SELF);
 #else
-  return Comm();
+    if (!slot) slot = new Comm();
 #endif
+    c = slot;
+  }
+  return *c;
 }
 
-inline Comm Comm::World() {
+inline const Comm& Comm::World() {
+  Comm* c = nullptr;
+  #pragma omp critical(SCTL_COMM_CACHE)
+  {
+    Comm*& slot = comm_detail::CommCache()[1];
 #ifdef SCTL_HAVE_MPI
-  return Comm(MPI_COMM_WORLD);
+    if (!slot) slot = new Comm(MPI_COMM_WORLD);
 #else
-  return Comm();
+    if (!slot) slot = new Comm();
 #endif
+    c = slot;
+  }
+  return *c;
 }
 
 inline Comm& Comm::operator=(const Comm& c) = default;
@@ -369,6 +625,16 @@ inline Integer Comm::Size() const noexcept {
   return impl_->mpi_size_;
 #else
   return 1;
+#endif
+}
+
+inline bool Comm::SameNode(Integer rank) const {
+#ifdef SCTL_HAVE_MPI
+  SCTL_ASSERT(0 <= rank && rank < impl_->mpi_size_);
+  return impl_->NodeIdx(rank) >= 0;
+#else
+  SCTL_ASSERT(rank == 0);
+  return true;  // the only rank there is, which is this one
 #endif
 }
 
@@ -728,7 +994,7 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
       rcounts[i] = rcount;
       rdispls[i] = i * rcount;
     }
-    auto mpi_req = Ialltoallv_sparse(sbuf, scounts.begin(), sdispls.begin(), rbuf, rcounts.begin(), rdispls.begin(), 0);
+    auto mpi_req = Ialltoallv_sparse<true>(sbuf, scounts.begin(), sdispls.begin(), rbuf, rcounts.begin(), rdispls.begin(), 0);
     Wait(std::move(mpi_req));
   }
 #endif
@@ -737,112 +1003,224 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
 #endif
 }
 
-template <class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag) const {
+// A node-local Send/Recv pair is a rendezvous with process_vm_readv as its transport: the sender
+// publishes where its buffer is, the receiver reads it there and acknowledges, and the sender
+// returns once acknowledged. Three small messages plus the read against MPI's two plus a copy, so
+// what this saves is the copy. Off-node, and wherever the kernel refuses, both fall back to MPI.
+//
+// The acknowledgement says which of the three outcomes happened, so a receiver that stops on a count
+// mismatch stops the sender along with it rather than leaving it waiting for an answer.
+//
+// The handshake runs on `MPIRendezvousTag`, the tag the payload's first message carries -- not the
+// caller's tag, which belongs to another caller tag's block of chunk tags. MPI does not reorder
+// messages of one (source, tag, communicator), and each direction is posted in the same order at
+// both ends, so the address, the acknowledgement and any fallback payload cannot be mistaken for
+// one another.
+template <class SType> void Comm::Send(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag) const {
+  static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
+#ifdef SCTL_HAVE_MPI
+  comm_detail::WarnIfMPIInactive("Comm::Send");
+  const int rv_tag = comm_detail::MPIRendezvousTag(tag, impl_->mpi_tag_ub_);
+  // Not conditioned on the count: both sides must choose the same branch, and only the sender knows
+  // its count.
+  const bool direct_path = (dest != impl_->mpi_rank_ && SameNode(dest) && impl_->direct_);
+  if (direct_path) {
+    const Long tell[2] = {(scount ? (Long)&sbuf[0] : 0), scount * (Long)sizeof(SType)};
+    MPI_Send(tell, 2, MPI_INT64_T, dest, rv_tag, impl_->mpi_comm_);
+    char ack = comm_detail::kAckFallback;
+    MPI_Recv(&ack, 1, MPI_BYTE, dest, rv_tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
+    SCTL_ASSERT_MSG(ack != comm_detail::kAckCountMismatch, "Comm::Send: the destination's buffer holds a different number of bytes than this call sends; the send and receive counts disagree.");
+    if (ack == comm_detail::kAckRead) return;  // read, so the buffer is mine again
+  }
+#ifdef SCTL_MEMDEBUG
+  // The handshake above carries this count already; where it did not run, send it on its own so the
+  // receiver can compare on every transport rather than only on that one. Posted before the payload
+  // at both ends, so it cannot be taken for it.
+  if (!direct_path) {
+    const Long sbytes = scount * (Long)sizeof(SType);
+    MPI_Send(&sbytes, 1, MPI_INT64_T, dest, rv_tag, impl_->mpi_comm_);
+  }
+#endif
+#endif
+  auto req = Issend(sbuf, scount, dest, tag);
+  Wait(std::move(req));
+}
+
+template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Integer source, Integer tag) const {
+  static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
+#ifdef SCTL_HAVE_MPI
+  comm_detail::WarnIfMPIInactive("Comm::Recv");
+  const int rv_tag = comm_detail::MPIRendezvousTag(tag, impl_->mpi_tag_ub_);
+  const bool direct_path = (source != impl_->mpi_rank_ && SameNode(source) && impl_->direct_);
+  if (direct_path) {
+    Long told[2] = {0, 0};
+    MPI_Recv(told, 2, MPI_INT64_T, source, rv_tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
+    const Long bytes = told[1];
+    // The counts must agree. Reading only what fits would drop the rest without reporting it, where
+    // MPI reports MPI_ERR_TRUNCATE, and a receive buffer larger than the message leaves the chunked
+    // MPI path waiting, since it posts one receive per chunk of `rcount`. Free to check here, since the sender's size
+    // came with its address; the builds that check pay for a message to compare it anywhere else.
+    if (bytes != rcount * (Long)sizeof(RType)) {  // answer first: the sender stops on it too
+      const char ack = comm_detail::kAckCountMismatch;
+      MPI_Send(&ack, 1, MPI_BYTE, source, rv_tag, impl_->mpi_comm_);
+      SCTL_ERROR("Comm::Recv: the source sent a different number of bytes than this buffer holds; the send and receive counts disagree.");
+    }
+    // Only the bytes the read overwrites: past them the buffer is the caller's, and MPI does not
+    // write there. Before the read; after it would overwrite what was read.
+    omp_par::prefault((Iterator<char>)rbuf, bytes);
+    const Integer j = impl_->NodeIdx(source);
+    const bool ok = !bytes || comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)told[0], &rbuf[0], bytes);
+    const char ack = (ok ? comm_detail::kAckRead : comm_detail::kAckFallback);
+    MPI_Send(&ack, 1, MPI_BYTE, source, rv_tag, impl_->mpi_comm_);
+    if (ok) return;
+  }
+#ifdef SCTL_MEMDEBUG
+  if (!direct_path) {  // the count the sender put on the wire for this build
+    Long sbytes = 0;
+    MPI_Recv(&sbytes, 1, MPI_INT64_T, source, rv_tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
+    SCTL_ASSERT_MSG(sbytes == rcount * (Long)sizeof(RType), "Comm::Recv: the source sent a different number of bytes than this buffer holds; the send and receive counts disagree.");
+  }
+#endif
+#endif
+  auto req = Irecv(rbuf, rcount, source, tag);
+  Wait(std::move(req));
+}
+
+#ifdef SCTL_HAVE_MPI
+template <class SType, class RType>
+bool Comm::ReadNodeBlocks(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls,
+                          Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
+  const Integer rank = impl_->mpi_rank_;
+  const Long node_size = (Long)impl_->node_rank_.size();
+  // Where each node peer's block for me starts in that peer's send buffer, and how many bytes it
+  // put there. The size travels with the address because the read cannot ask for it: reading past a
+  // peer's block returns the block next to it rather than failing, so a count that is too large
+  // would deliver a neighbour's data as this one's. Here both counts are in hand.
+  ScratchBuf<Long> stell(2 * node_size), rtell(2 * node_size);
+  for (Long j = 0; j < node_size; j++) {
+    const Integer i = (Integer)impl_->node_rank_[j];
+    stell[2*j+0] = (scounts[i] ? (Long)&sbuf[sdispls[i]] : 0);
+    stell[2*j+1] = scounts[i] * (Long)sizeof(SType);
+  }
+  // Completing this also proves every node peer has entered, so its send buffer is filled.
+  MPI_Alltoall(&stell[0], 2, MPI_INT64_T, &rtell[0], 2, MPI_INT64_T, impl_->node_comm_);
+  int ok = 1;
+  for (Long j = 0; j < node_size; j++) {
+    const Integer i = (Integer)impl_->node_rank_[j];
+    const Long want = rcounts[i] * (Long)sizeof(RType);
+    SCTL_ASSERT_MSG(rtell[2*j+1] == want, "Comm: a node peer sent a different number of bytes than this rank expects; the send and receive counts disagree.");
+    if (i == rank || !rcounts[i]) continue;
+    ok = (int)comm_detail::ReadPeer(impl_->node_pid_[j], (const void*)rtell[2*j+0], &rbuf[rdispls[i]], want) && ok;
+  }
+  // Agree on the outcome so the node falls back together, and hold every rank until its peers have
+  // finished reading its send buffer -- which is what makes the reads safe. Not remembered: after
+  // the probe at init the only refusal left is a permission changed mid-run.
+  int all = 0;
+  MPI_Allreduce(&ok, &all, 1, MPI_INT, MPI_MIN, impl_->node_comm_);
+  return all != 0;
+}
+#endif  // SCTL_HAVE_MPI
+
+template <bool BlockingDirect, class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag) const {
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Ialltoallv_sparse");
+  #ifdef SCTL_MEMDEBUG
+  comm_detail::AssertCountsAgree(scounts, (Long)sizeof(SType), rcounts, (Long)sizeof(RType), impl_->mpi_size_, impl_->mpi_comm_);
+  #endif
+  const Integer np = impl_->mpi_size_, rank = Rank();
+  const auto on_node = [this](Integer i) { return impl_->NodeIdx(i) >= 0; };
+  // Reading a peer's send buffer means synchronizing the node before returning, which this
+  // routine's name says it will not do, so the caller has to ask for it.
+  const bool direct = BlockingDirect && impl_->direct_;
+  const auto skip = [rank,direct,&on_node](Integer i) { return i == rank || (direct && on_node(i)); };
+  // Every block but self, whichever way it arrives: ReadNodeBlocks needs the node-local ones
+  // faulted in already, and MPI writes the rest. Here the pages fault in with all threads.
+  for (Integer i = 0; i < np; i++) {
+    if (i != rank && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
+  }
+
+  // The off-node blocks go to MPI first, so those transfers are in flight while the node-local
+  // copies below run: different hardware, no reason to serialize them. Receives are posted before
+  // sends, and everything posted here completes in the caller's Wait.
+  const auto chunks = [](Long bytes) {  // MPI-3 counts are int, so a large block goes in pieces under their own tags
 #if MPI_VERSION >= 4
-  Long request_count = 0;
-  Long total_bytes = 0;
-  // MPI-4 large-count point-to-point can exchange each peer payload directly in bytes.
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {
-    if (i == Rank()) continue;  // self handled by local copy below
-    const Long recv_bytes = rcounts[i] * sizeof(RType);
-    const Long send_bytes = scounts[i] * sizeof(SType);
-    request_count += (recv_bytes != 0);
-    request_count += (send_bytes != 0);
-    total_bytes += recv_bytes + send_bytes;
-  }
-  Vector<MPI_Request>& request = NewReq(request_count);
-  Long request_iter = 0;
-
-  comm_detail::TrackPointToPoint(request_count, total_bytes);
-
-  if (request_count)
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {
-    if (i == Rank()) continue;  // Skip self-send/recv
-    const Long recv_bytes = rcounts[i] * sizeof(RType);
-    if (recv_bytes) {
-      Iterator<char> recv_buf = (Iterator<char>)(rbuf + rdispls[i]);
-      SCTL_UNUSED(recv_buf[0]             );
-      SCTL_UNUSED(recv_buf[recv_bytes - 1]);
-      MPI_Irecv_c(&recv_buf[0], comm_detail::MPIAsCountLarge(recv_bytes), MPI_BYTE, i, tag, impl_->mpi_comm_, &request[request_iter]);
-      request_iter++;
-    }
-  }
-  if (request_count)
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {
-    if (i == Rank()) continue;  // Skip self-send/recv
-    const Long send_bytes = scounts[i] * sizeof(SType);
-    if (send_bytes) {
-      ConstIterator<char> send_buf = (ConstIterator<char>)(sbuf + sdispls[i]);
-      SCTL_UNUSED(send_buf[0]             );
-      SCTL_UNUSED(send_buf[send_bytes - 1]);
-      MPI_Issend_c(&send_buf[0], comm_detail::MPIAsCountLarge(send_bytes), MPI_BYTE, i, tag, impl_->mpi_comm_, &request[request_iter]);
-      request_iter++;
-    }
-  }
-  omp_par::memcpy((Iterator<char>)(rbuf + rdispls[Rank()]), (ConstIterator<char>)(sbuf + sdispls[Rank()]), scounts[Rank()] * sizeof(SType));
-  return Request(&request);
+    return (Long)(bytes != 0);
 #else
-  Long request_count = 0;
-  Long max_chunk_count = 0;
-  Long total_bytes = 0;
-  // Older MPI implementations need large peer messages to be split into int-sized byte chunks.
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {
-    if (i == Rank()) continue;  // self handled by local copy below
-    const Long recv_bytes = rcounts[i] * sizeof(RType);
-    const Long send_bytes = scounts[i] * sizeof(SType);
-    request_count += comm_detail::MPINumChunks(recv_bytes);
-    request_count += comm_detail::MPINumChunks(send_bytes);
-    max_chunk_count = std::max<Long>(max_chunk_count, comm_detail::MPINumChunks(recv_bytes));
-    max_chunk_count = std::max<Long>(max_chunk_count, comm_detail::MPINumChunks(send_bytes));
-    total_bytes += recv_bytes + send_bytes;
-  }
-  comm_detail::AssertChunkedTagRange(tag, max_chunk_count, impl_->mpi_tag_ub_);
-  Vector<MPI_Request>& request = NewReq(request_count);
-  Long request_iter = 0;
-
-  comm_detail::TrackPointToPoint(request_count, total_bytes);
-
-  if (request_count)
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {
-    if (i == Rank()) continue;  // Skip self-send/recv
-    const Long recv_bytes = rcounts[i] * sizeof(RType);
-    if (recv_bytes) {
-      Iterator<char> recv_buf = (Iterator<char>)(rbuf + rdispls[i]);
-      SCTL_UNUSED(recv_buf[0]             );
-      SCTL_UNUSED(recv_buf[recv_bytes - 1]);
-      Long offset = 0;
-      for (Long j = 0; j < comm_detail::MPINumChunks(recv_bytes); j++) {
-        const Long chunk = std::min<Long>(recv_bytes - offset, comm_detail::MPIIntLimit());
-        MPI_Irecv(&recv_buf[offset], comm_detail::MPIAsCount(chunk), MPI_BYTE, i, comm_detail::MPIChunkTag(tag, j), impl_->mpi_comm_, &request[request_iter]);
-        request_iter++;
-        offset += chunk;
-      }
-    }
-  }
-  if (request_count)
-  for (Integer i = 0; i < impl_->mpi_size_; i++) {
-    if (i == Rank()) continue;  // Skip self-send/recv
-    const Long send_bytes = scounts[i] * sizeof(SType);
-    if (send_bytes) {
-      ConstIterator<char> send_buf = (ConstIterator<char>)(sbuf + sdispls[i]);
-      SCTL_UNUSED(send_buf[0]             );
-      SCTL_UNUSED(send_buf[send_bytes - 1]);
-      Long offset = 0;
-      for (Long j = 0; j < comm_detail::MPINumChunks(send_bytes); j++) {
-        const Long chunk = std::min<Long>(send_bytes - offset, comm_detail::MPIIntLimit());
-        MPI_Issend(&send_buf[offset], comm_detail::MPIAsCount(chunk), MPI_BYTE, i, comm_detail::MPIChunkTag(tag, j), impl_->mpi_comm_, &request[request_iter]);
-        request_iter++;
-        offset += chunk;
-      }
-    }
-  }
-  omp_par::memcpy((Iterator<char>)(rbuf + rdispls[Rank()]), (ConstIterator<char>)(sbuf + sdispls[Rank()]), scounts[Rank()] * sizeof(SType));
-  return Request(&request);
+    return comm_detail::MPINumChunks(bytes);
 #endif
+  };
+  // A slot for every non-empty block of every peer but self -- an empty block costs none. Counted
+  // over all such peers, node-local ones included: the direct read runs after these are posted and
+  // can still be refused, and those peers then go to MPI into the slots kept here.
+  Long slots = 0;
+#if MPI_VERSION < 4
+  Long max_chunks = 0;
+#endif
+  for (Integer i = 0; i < np; i++) {
+    if (i == rank) continue;
+    const Long recv_bytes = rcounts[i] * (Long)sizeof(RType), send_bytes = scounts[i] * (Long)sizeof(SType);
+#if MPI_VERSION < 4
+    max_chunks = std::max<Long>({max_chunks, chunks(recv_bytes), chunks(send_bytes)});
+#endif
+    slots += chunks(recv_bytes) + chunks(send_bytes);
+  }
+#if MPI_VERSION < 4
+  comm_detail::AssertChunkedTagRange(tag, max_chunks, impl_->mpi_tag_ub_);
+#endif
+  Vector<MPI_Request>& request = NewReq(slots);
+  for (Long k = 0; k < slots; k++) request[k] = MPI_REQUEST_NULL;  // Wait ignores the slots left over
+
+  // A send from a ConstIterator, a receive into an Iterator; returns the number of requests posted.
+  const auto post = [this,tag](auto buf, Long bytes, Integer peer, MPI_Request* req) {
+    constexpr bool send = std::is_same<decltype(buf), ConstIterator<char>>::value;
+    SCTL_UNUSED(buf[0]);
+    SCTL_UNUSED(buf[bytes - 1]);
+#if MPI_VERSION >= 4
+    if constexpr (send) MPI_Isend_c(&buf[0], comm_detail::MPIAsCountLarge(bytes), MPI_BYTE, peer, tag, impl_->mpi_comm_, req);
+    else                MPI_Irecv_c(&buf[0], comm_detail::MPIAsCountLarge(bytes), MPI_BYTE, peer, tag, impl_->mpi_comm_, req);
+    return (Long)1;
+#else
+    const Long n = comm_detail::MPINumChunks(bytes);
+    for (Long j = 0, offset = 0; j < n; j++) {
+      const Long chunk = std::min<Long>(bytes - offset, comm_detail::MPIIntLimit());
+      if constexpr (send) MPI_Isend(&buf[offset], comm_detail::MPIAsCount(chunk), MPI_BYTE, peer, comm_detail::MPIChunkTag(tag, j), impl_->mpi_comm_, req + j);
+      else                MPI_Irecv(&buf[offset], comm_detail::MPIAsCount(chunk), MPI_BYTE, peer, comm_detail::MPIChunkTag(tag, j), impl_->mpi_comm_, req + j);
+      offset += chunk;
+    }
+    return n;
+#endif
+  };
+  Long m = 0, posted_bytes = 0;
+  const auto post_peers = [&](const auto& take) {  // receives for the whole set, then sends
+    for (Integer i = 0; i < np; i++) {
+      if (!take(i) || !rcounts[i]) continue;
+      const Long bytes = rcounts[i] * (Long)sizeof(RType);
+      m += post((Iterator<char>)(rbuf + rdispls[i]), bytes, i, &request[m]);
+      posted_bytes += bytes;
+    }
+    for (Integer i = 0; i < np; i++) {
+      if (!take(i) || !scounts[i]) continue;
+      const Long bytes = scounts[i] * (Long)sizeof(SType);
+      m += post((ConstIterator<char>)(sbuf + sdispls[i]), bytes, i, &request[m]);
+      posted_bytes += bytes;
+    }
+  };
+  post_peers([&skip](Integer i) { return !skip(i); });
+
+  // The self block does not reach MPI, so this is the only place its two counts meet.
+  SCTL_ASSERT_MSG(scounts[rank] * (Long)sizeof(SType) == rcounts[rank] * (Long)sizeof(RType), "Comm::Ialltoallv_sparse: this rank's send and receive counts for itself disagree.");
+
+  // Now the node-local work, over memory rather than the network, alongside the transfers above.
+  omp_par::memcpy((Iterator<char>)(rbuf + rdispls[rank]), (ConstIterator<char>)(sbuf + sdispls[rank]), scounts[rank] * (Long)sizeof(SType));
+  if (direct && !ReadNodeBlocks(sbuf, scounts, sdispls, rbuf, rcounts, rdispls)) {
+    // Refused: the node peers go through MPI after all, into the slots kept for them. Their receive
+    // blocks were faulted in with the rest above.
+    post_peers([rank,&on_node](Integer i) { return i != rank && on_node(i); });
+  }
+  comm_detail::TrackPointToPoint(m, posted_bytes);
+  return Request(&request);
 #else
   omp_par::memcpy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)(sbuf + sdispls[0]), scounts[0] * sizeof(SType));
   return Request();
@@ -853,6 +1231,9 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Alltoallv");
+  #ifdef SCTL_MEMDEBUG
+  comm_detail::AssertCountsAgree(scounts, (Long)sizeof(Type), rcounts, (Long)sizeof(Type), impl_->mpi_size_, impl_->mpi_comm_);
+  #endif
 #if MPI_VERSION >= 4
   {
     // MPI-4 handles large counts and displacements directly through the _c binding.
@@ -868,6 +1249,24 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
       stotal += scounts[i];
       rtotal += rcounts[i];
     }
+    for (Integer i = 0; i < impl_->mpi_size_; i++) {  // receive pages fault in with all threads, not MPI's one
+      if (i != Rank() && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
+    }
+    // The self block is a local copy, and where the kernel allows it so is every other block that
+    // stays on this node: this routine blocks either way, so reading them costs nothing here.
+    if (impl_->direct_ && ReadNodeBlocks(sbuf, scounts, sdispls, rbuf, rcounts, rdispls)) {
+      for (Integer i = 0; i < impl_->mpi_size_; i++) {
+        if (i != Rank() && impl_->NodeIdx(i) >= 0) {
+          scnt[i] = 0;
+          rcnt[i] = 0;
+        }
+      }
+    }
+    scnt[Rank()] = 0;
+    rcnt[Rank()] = 0;
+    // The self block does not reach MPI, so this is the only place its two counts meet.
+    SCTL_ASSERT_MSG(scounts[Rank()] == rcounts[Rank()], "Comm::Alltoallv: this rank's send and receive counts for itself disagree.");
+    omp_par::memcpy(rbuf + rdispls[Rank()], sbuf + sdispls[Rank()], scounts[Rank()]);
     comm_detail::TrackCollective(1, stotal * sizeof(Type) + rtotal * sizeof(Type));
     MPI_Alltoallv_c((stotal ? &sbuf[0] : nullptr), &scnt[0], &sdsp[0], CommDatatype<Type>::value(), (rtotal ? &rbuf[0] : nullptr), &rcnt[0], &rdsp[0], CommDatatype<Type>::value(), impl_->mpi_comm_);
     return;
@@ -883,7 +1282,7 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     fits_int = (glb_fits != 0);
   }
   if (!fits_int) {  // Fall back to sparse point-to-point exchange once any count or displacement exceeds int.
-    auto mpi_req = Ialltoallv_sparse(sbuf, scounts, sdispls, rbuf, rcounts, rdispls, 0);
+    auto mpi_req = Ialltoallv_sparse<true>(sbuf, scounts, sdispls, rbuf, rcounts, rdispls, 0);
     Wait(std::move(mpi_req));
     return;
   }
@@ -896,7 +1295,7 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
     }
     Allreduce(Ptr2ConstItr<Long>(&connectivity, 1), Ptr2Itr<Long>(&glb_connectivity, 1), 1, CommOp::SUM);
     if (glb_connectivity < 64 * Size()) {
-      auto mpi_req = Ialltoallv_sparse(sbuf, scounts, sdispls, rbuf, rcounts, rdispls, 0);
+      auto mpi_req = Ialltoallv_sparse<true>(sbuf, scounts, sdispls, rbuf, rcounts, rdispls, 0);
       Wait(std::move(mpi_req));
       { // Verify
         #ifdef SCTL_MEMDEBUG
@@ -909,7 +1308,7 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
 
         const Long Nsend = sdispls[impl_->mpi_size_-1] + scounts[impl_->mpi_size_-1];
         ScratchBuf<Type> sbuf_verify(Nsend);
-        mpi_req = Ialltoallv_sparse(rbuf, rcounts, rdispls, sbuf_verify.begin(), scounts, sdispls, 1);
+        mpi_req = Ialltoallv_sparse<true>(rbuf, rcounts, rdispls, sbuf_verify.begin(), scounts, sdispls, 1);
         Wait(std::move(mpi_req));
 
         for (long p = 0; p < impl_->mpi_size_; p++) {
@@ -942,6 +1341,24 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
       rtotal += rcounts[i];
     }
 
+    for (Integer i = 0; i < impl_->mpi_size_; i++) {  // receive pages fault in with all threads, not MPI's one
+      if (i != Rank() && rcounts[i]) omp_par::prefault(rbuf + rdispls[i], rcounts[i]);
+    }
+    // The self block is a local copy, and where the kernel allows it so is every other block that
+    // stays on this node: this routine blocks either way, so reading them costs nothing here.
+    if (impl_->direct_ && ReadNodeBlocks(sbuf, scounts, sdispls, rbuf, rcounts, rdispls)) {
+      for (Integer i = 0; i < impl_->mpi_size_; i++) {
+        if (i != Rank() && impl_->NodeIdx(i) >= 0) {
+          scnt[i] = 0;
+          rcnt[i] = 0;
+        }
+      }
+    }
+    scnt[Rank()] = 0;
+    rcnt[Rank()] = 0;
+    // The self block does not reach MPI, so this is the only place its two counts meet.
+    SCTL_ASSERT_MSG(scounts[Rank()] == rcounts[Rank()], "Comm::Alltoallv: this rank's send and receive counts for itself disagree.");
+    omp_par::memcpy(rbuf + rdispls[Rank()], sbuf + sdispls[Rank()], scounts[Rank()]);
     comm_detail::TrackCollective(1, stotal * sizeof(Type) + rtotal * sizeof(Type));
     MPI_Alltoallv((stotal ? &sbuf[0] : nullptr), &scnt[0], &sdsp[0], CommDatatype<Type>::value(), (rtotal ? &rbuf[0] : nullptr), &rcnt[0], &rdsp[0], CommDatatype<Type>::value(), impl_->mpi_comm_);
     return;
@@ -1269,7 +1686,7 @@ template <class Type> void Comm::PartitionW(Vector<Type>& nodeList, const Vector
   // perform All2All  ...
   Vector<Type> newNodes;
   newNodes.ReInit(recvSz[npes - 1] + recvOff[npes - 1]);
-  auto mpi_req = Ialltoallv_sparse<Type>(nodeList.begin(), sendSz.begin(), sendOff.begin(), newNodes.begin(), recvSz.begin(), recvOff.begin());
+  auto mpi_req = Ialltoallv_sparse<true>(nodeList.begin(), sendSz.begin(), sendOff.begin(), newNodes.begin(), recvSz.begin(), recvOff.begin(), 0);
   Wait(std::move(mpi_req));
 
   // reset the pointer ...
@@ -1346,7 +1763,7 @@ template <class Type> void Comm::PartitionN(Vector<Type>& v, Long N) const {
     rdsp[0] = 0;
     omp_par::scan(rcnt.begin(), rdsp.begin(), np);
 
-    auto mpi_request = Ialltoallv_sparse(v.begin(), scnt.begin(), sdsp.begin(), v_.begin(), rcnt.begin(), rdsp.begin());
+    auto mpi_request = Ialltoallv_sparse<true>(v.begin(), scnt.begin(), sdsp.begin(), v_.begin(), rcnt.begin(), rdsp.begin(), 0);
     Wait(std::move(mpi_request));
   }
   v.Swap(v_);
@@ -1384,7 +1801,7 @@ template <class Type, class Compare> void Comm::PartitionS(Vector<Type>& nodeLis
   }
   {  // Redistribute nodeList
     Vector<Type> nodeList_(rdsp[npes - 1] + rcnt[npes - 1]);
-    auto mpi_request = Ialltoallv_sparse(nodeList.begin(), scnt.begin(), sdsp.begin(), nodeList_.begin(), rcnt.begin(), rdsp.begin());
+    auto mpi_request = Ialltoallv_sparse<true>(nodeList.begin(), scnt.begin(), sdsp.begin(), nodeList_.begin(), rcnt.begin(), rdsp.begin(), 0);
     Wait(std::move(mpi_request));
     nodeList.Swap(nodeList_);
   }
@@ -1392,7 +1809,7 @@ template <class Type, class Compare> void Comm::PartitionS(Vector<Type>& nodeLis
 
 template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vector<Long>& scatter_index, const Type* split_key_) const {
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
-  typedef SortPair<Type, Long> Pair_t;
+  typedef comm_detail::SortPair<Type, Long> Pair_t;
   Integer npes = Size();
 
   ScratchBuf<Pair_t> parray_storage(key.Dim());
@@ -1464,7 +1881,7 @@ template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vecto
     // perform All2All  ...
     ScratchBuf<Pair_t> newNodes_storage(recvSz[npes - 1] + recvOff[npes - 1]);
     Vector<Pair_t> newNodes(newNodes_storage);
-    auto mpi_req = Ialltoallv_sparse<Pair_t>(psorted.begin(), sendSz.begin(), sendOff.begin(), newNodes.begin(), recvSz.begin(), recvOff.begin());
+    auto mpi_req = Ialltoallv_sparse<true>(psorted.begin(), sendSz.begin(), sendOff.begin(), newNodes.begin(), recvSz.begin(), recvOff.begin(), 0);
     Wait(std::move(mpi_req));
 
     // copy data back to scatter_index
@@ -1476,7 +1893,7 @@ template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vecto
 
 template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vector<Long>& scatter_index) const {
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
-  typedef SortPair<Long, Long> Pair_t;
+  typedef comm_detail::SortPair<Long, Long> Pair_t;
   Integer npes = Size(), rank = Rank();
 
   Long data_dim = 0;
@@ -1502,7 +1919,7 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
     for (Long i = 0; i < recv_size; i++) {
       Long src_indx = scatter_index[i] * data_dim;
       Long trg_indx = i * data_dim;
-      for (Long j = 0; j < data_dim; j++) data[trg_indx + j] = data_[src_indx + j];
+      std::memcpy(&data[trg_indx], &data_[src_indx], data_dim * sizeof(Type));
     }
     data_.Swap(data);
     return;
@@ -1566,7 +1983,7 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
     for (Long i = 0; i < send_size; i++) {
       Long src_indx = send_indx[i] * data_dim;
       Long trg_indx = i * data_dim;
-      for (Long j = 0; j < data_dim; j++) send_buff[trg_indx + j] = data[src_indx + j];
+      std::memcpy(&send_buff[trg_indx], &data[src_indx], data_dim * sizeof(Type));
     }
   }
 
@@ -1590,14 +2007,14 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
     for (Long i = 0; i < recv_size; i++) {
       Long src_indx = i * data_dim;
       Long trg_indx = psorted[i].data * data_dim;
-      for (Long j = 0; j < data_dim; j++) data[trg_indx + j] = recv_buff[src_indx + j];
+      std::memcpy(&data[trg_indx], &recv_buff[src_indx], data_dim * sizeof(Type));
     }
   }
 }
 
 template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vector<Long>& scatter_index_, Long loc_size_) const {
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
-  typedef SortPair<Long, Long> Pair_t;
+  typedef comm_detail::SortPair<Long, Long> Pair_t;
   Integer npes = Size(), rank = Rank();
 
   Long data_dim = 0;
@@ -1636,7 +2053,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     for (Long i = 0; i < recv_size; i++) {
       Long src_indx = i * data_dim;
       Long trg_indx = scatter_index_[i] * data_dim;
-      for (Long j = 0; j < data_dim; j++) data[trg_indx + j] = data_[src_indx + j];
+      std::memcpy(&data[trg_indx], &data_[src_indx], data_dim * sizeof(Type));
     }
     data_.Swap(data);
     return;
@@ -1681,7 +2098,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
         // if(recv_cnt[i] && i!=rank) commCnt++;
       }
 
-      auto mpi_req = Ialltoallv_sparse<Long>(scatter_index_.begin(), send_cnt.begin(), send_dsp.begin(), scatter_index.begin(), recv_cnt.begin(), recv_dsp.begin(), 0);
+      auto mpi_req = Ialltoallv_sparse<true>(scatter_index_.begin(), send_cnt.begin(), send_dsp.begin(), scatter_index.begin(), recv_cnt.begin(), recv_dsp.begin(), 0);
       Wait(std::move(mpi_req));
     } else {
       scatter_index.ReInit(scatter_index_.Dim(), (Iterator<Long>)scatter_index_.begin(), false);
@@ -1744,7 +2161,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     for (Long i = 0; i < send_size; i++) {
       Long src_indx = psorted[i].data * data_dim;
       Long trg_indx = i * data_dim;
-      for (Long j = 0; j < data_dim; j++) send_buff[trg_indx + j] = data[src_indx + j];
+      std::memcpy(&send_buff[trg_indx], &data[src_indx], data_dim * sizeof(Type));
     }
   }
 
@@ -1768,7 +2185,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     for (Long i = 0; i < recv_size; i++) {
       Long src_indx = i * data_dim;
       Long trg_indx = recv_indx[i] * data_dim;
-      for (Long j = 0; j < data_dim; j++) data[trg_indx + j] = recv_buff[src_indx + j];
+      std::memcpy(&data[trg_indx], &recv_buff[src_indx], data_dim * sizeof(Type));
     }
   }
 }
@@ -1787,6 +2204,10 @@ template <class Type> inline MPI_Op Comm::GetMPIOp(CommOp op) {  // runtime op: 
     case CommOp::MAX: return GetMPIOp<CommOp::MAX, Type>();
     default:          return MPI_OP_NULL;
   }
+}
+
+template <class Type> inline MPI_Datatype Comm::MPIDatatype() {
+  return CommDatatype<Type>::value();
 }
 
 inline void Comm::RegisterDatatype(MPI_Datatype datatype) {
@@ -1876,17 +2297,14 @@ SCTL_HS_MPIDATATYPE(unsigned char, MPI_UNSIGNED_CHAR);
 
 namespace comm_detail {
 
-// Local-phase sort for SampleSort (see policy comment inside).
+// Local-phase sort for SampleSort, HyperQuickSort and sort_scatter_detail: omp_par picks the sort,
+// and only the default ordering may take its radix path.
 template <class Type, class Compare> void LocalSort(ConstIterator<Type> in, Iterator<Type> out, Long N, Compare comp) {
-  // merge_sort wins only for small elements (extra merge-pass data movement grows with
-  // sizeof(Type)) and teams spanning at most ~2 NUMA domains; sample_sort otherwise.
-  constexpr Integer merge_sort_max_threads = 32;
-  constexpr std::size_t merge_sort_max_elem_size = 8;
-  if (sizeof(Type) <= merge_sort_max_elem_size && !SCTL_IN_PARALLEL() && SCTL_GET_MAX_THREADS() <= merge_sort_max_threads) {
-    omp_par::memcpy(out, in, N);
-    omp_par::merge_sort(out, out + N, comp);
+  if constexpr (std::is_same<Compare, std::less<Type>>::value) {
+    omp_par::sort(in, out, N);
+    SCTL_UNUSED(comp);
   } else {
-    omp_par::sample_sort(in, out, N, comp);
+    omp_par::sort(in, out, N, comp);
   }
 }
 
@@ -1906,7 +2324,7 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
 
   if (npes == 1) {  // SortedElem <--- local_sort(arr_)
     if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
-    omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
+    comm_detail::LocalSort<Type>(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
     return;
   }
 
@@ -1917,7 +2335,7 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
   }
 
   Vector<Type> arr(arr_.Dim());
-  omp_par::sample_sort(arr_.begin(), arr.begin(), arr_.Dim(), comp);  // arr <-- local_sort(arr_)
+  comm_detail::LocalSort<Type>(arr_.begin(), arr.begin(), arr_.Dim(), comp);  // arr <-- local_sort(arr_)
 
   Vector<Type> nbuff, nbuff_ext, rbuff, rbuff_ext;  // Allocate memory.
   MPI_Comm comm = impl_->mpi_comm_;                        // Copy comm
@@ -2099,7 +2517,7 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
   if (partition) PartitionW<Type>(SortedElem);
 #else
   if (SortedElem.Dim() != arr_.Dim()) SortedElem.ReInit(arr_.Dim());
-  omp_par::sample_sort(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
+  comm_detail::LocalSort<Type>(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
 #endif
 }
 

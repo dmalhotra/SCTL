@@ -13,6 +13,13 @@
 #include "sctl/math_utils.hpp"  // for pow (declaration)
 #include "sctl/math_utils.txx"  // for pow's constexpr definition (needed at class-template instantiation)
 
+/**
+ * Maximum depth of a `MortonCode`, and so of a `Tree`. Must lie in `(0, 64)` and be identical in
+ * every translation unit linked together, since it fixes the width of a code and so the layout of
+ * everything holding one. A code occupies `DIM * (MAX_DEPTH + 1)` bits, so beyond `64 / DIM - 1`
+ * (20 for `DIM = 3`) it no longer fits a single word: `IntKeyIsExact` goes false and codes lose the
+ * radix sort `omp_par::sort` would otherwise pick for them.
+ */
 #ifndef SCTL_MAX_DEPTH
 #define SCTL_MAX_DEPTH 20
 #endif
@@ -52,6 +59,22 @@ template <Integer DIM> class MortonCode {
 
   /** @param[in] coord `DIM` coordinates; inputs outside [0,1) are clamped. */
   template <class Real> SCTL_GPU_HD explicit MortonCode(const Real* coord);
+
+  /**
+   * The code as an unsigned integer, ordering by which agrees with `operator<`. Exists so a radix
+   * sort can replace the comparison sort a sorting library otherwise picks for a non-arithmetic key
+   * type. Only meaningful when `IntKeyIsExact`, as `FromIntKey` is.
+   */
+  SCTL_GPU_HD std::uint64_t GetIntKey() const;
+
+  /**
+   * True when `GetIntKey()` orders codes completely rather than only bucketing them: the code fits
+   * one word, counting the extra level the storage keeps for the past-end sentinel.
+   */
+  static constexpr bool IntKeyIsExact = (DIM * (MAX_DEPTH + 1) <= 64);
+
+  /** Inverse of `GetIntKey()`. Only meaningful when `IntKeyIsExact`. */
+  static SCTL_GPU_HD MortonCode FromIntKey(std::uint64_t key);
 
   /** Morton-order less-than. */
   SCTL_GPU_HD bool operator<(const MortonCode& other) const;
@@ -117,6 +140,16 @@ template <Integer DIM> class MortonCode {
   /** Coarsest depth at which `c` is a valid box ID (low `(MAX_DEPTH-d)*DIM` bits zero). 0 for `c == 0`. */
   static SCTL_GPU_HD uint8_t coarsest_depth(const MortonInteger& c);
 
+  /** Number of mask/shift steps `spread_step`/`compact_step` take: least `l` with `2^l >= MAX_DEPTH`. */
+  static constexpr Integer NumSteps = [] {
+    Integer l = 0;
+    while ((Integer(1) << l) < MAX_DEPTH) ++l;
+    return l;
+  }();
+
+  /** Mask over `DIM*MAX_DEPTH` bits keeping bit `p` iff `(p mod DIM*2^S) < 2^S`. */
+  template <Integer S> static constexpr MortonInteger step_mask();
+
   /** Spread MAX_DEPTH bits of `xi` to DIM-spaced positions in `O(log MAX_DEPTH)` mask/shift steps. */
   template <Integer Step> static SCTL_GPU_HD MortonInteger spread_step(MortonInteger r);
 
@@ -169,7 +202,8 @@ template <Integer DIM> class Morton {
 
   /**
    * Box at depth `depth_` containing `mid_` (code snapped to the grid). Bits above
-   * `TOTAL_BITS` (past-end sentinel) are preserved; depths > MAX_DEPTH keep the code as-is.
+   * `TOTAL_BITS` (past-end sentinel) are preserved. `depth_` must be at most `MAX_DEPTH`, or
+   * `INVALID_DEPTH`, which keeps the code as-is.
    */
   SCTL_GPU_HD Morton(MortonCode<DIM> mid_, uint8_t depth_);
 
@@ -222,7 +256,7 @@ template <Integer DIM> class Morton {
    */
   SCTL_GPU_HD Morton CommonAncestor(const Morton& o) const;
 
-  /** Deepest first descendant at the given level: same code, `depth = level`. No bit work. */
+  /** Deepest first descendant at the given level: same code, `depth = level`. No bit work. `level` must be at most `MAX_DEPTH`. */
   SCTL_GPU_HD Morton DFD(uint8_t level = MAX_DEPTH) const;
 
   /**
@@ -231,6 +265,11 @@ template <Integer DIM> class Morton {
    * `depth < MAX_DEPTH`.
    */
   SCTL_GPU_HD std::array<Morton, (1 << DIM)> Children() const;
+
+  /**
+   * Write the `2^DIM` children of this node into a Vector outparam (host-only).
+   */
+  void Children(Vector<Morton>& nlst) const;
 
   /**
    * Path-to-node: this node's index among its parent's children, i.e. the last occupied
@@ -246,9 +285,32 @@ template <Integer DIM> class Morton {
    */
   SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level, Periodicity periodicity) const;
 
-  /** sctl::Tree-compat overloads: write into a Vector outparam (host-only). */
+  /**
+   * `NbrList` with the mask fixed at compile time, so only one `PER` emitter is instantiated and the
+   * `Periodicity` overload's runtime dispatch is skipped.
+   */
+  template <Periodicity PER> SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level) const;
+
+  /** sctl::Tree-compat overload: writes into a Vector outparam (host-only). */
   void NbrList(Vector<Morton>& nlst, uint8_t level, Periodicity periodicity) const;
-  void Children(Vector<Morton>& nlst) const;
+
+  /**
+   * Morton range `[first, last)` containing every neighbor `NbrList(level, periodicity)`
+   * would return. Z-order is monotone in each coordinate, so the two extreme corners bound the
+   * whole `3^DIM` block: this costs two interleaves rather than `3^DIM` emissions. A caller that
+   * only needs to know whether any neighbor can fall outside a known range can test against this
+   * and skip building the list.
+   *
+   * A neighbor that wraps across a periodic boundary is not adjacent in Morton order, so when the
+   * box touches a periodic face the range widens to the whole domain -- correct, but of no use for
+   * rejection. Only boxes on such a face are affected.
+   *
+   * @param[out] first Lowest code any neighbor's subtree can contain.
+   * @param[out] last  One past the highest such code.
+   * @param[in] level Tree level the neighbors are taken at.
+   * @param[in] periodicity Axes that wrap.
+   */
+  SCTL_GPU_HD void NbrRange(Morton& first, Morton& last, uint8_t level, Periodicity periodicity) const;
 
   /** Lexicographic Morton order: by code first, with `depth` as tiebreaker. */
   SCTL_GPU_HD bool operator<(const Morton& o) const;
@@ -295,8 +357,9 @@ template <Integer DIM> class Morton {
    *
    * Periodicity is also a template parameter: `NbrList` dispatches the runtime `Periodicity` via a
    * `switch` to a `PER`-specialized instantiation (`DYN == false`) so `is_periodic(PER, d)` is a
-   * compile-time constant and the wrap-vs-out-of-bounds branch folds away. Unenumerated masks fall
-   * through to the `DYN == true` instantiation, which reads the runtime `periodicity` argument.
+   * compile-time constant and the wrap-vs-out-of-bounds branch folds away. Every mask up to DIM==3
+   * is enumerated, so only a DIM>3 mask reaches the `DYN == true` instantiation, which reads the
+   * runtime `periodicity` argument.
    */
   template <Periodicity PER, bool DYN, Integer idx, Integer d>
   static SCTL_GPU_HD void nbr_fill_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
@@ -308,10 +371,14 @@ template <Integer DIM> class Morton {
                                     std::array<Morton, pow<DIM, std::size_t>(3)>& out);
 
   /** Compact (non-unrolled) emitter; the readable reference form of `nbr_emit_`. Used on-device for
-   *  DIM>=4 where the unrolled emitters spill and tank occupancy (host/DIM<=3 use the switch). */
+   *  DIM>=4 where the unrolled emitters spill and tank occupancy (host/DIM<=3 use `nbr_emit_`). */
   static SCTL_GPU_HD void nbr_loop_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
                                     Periodicity periodicity, uint8_t level,
                                     std::array<Morton, pow<DIM, std::size_t>(3)>& out);
+
+  /** Shared body of both `NbrList` forms; `DYN` reads the runtime `periodicity` instead of `PER`. */
+  template <Periodicity PER, bool DYN>
+  SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> nbr_list_(uint8_t level, Periodicity periodicity) const;
 };
 
 }  // namespace sctl

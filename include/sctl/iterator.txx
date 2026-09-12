@@ -252,6 +252,7 @@ template <class ValueType> inline Iterator<ValueType> NullIterator() {
 }
 
 template <class ValueType> inline Iterator<ValueType> memset(Iterator<ValueType> ptr, int value, Long num) {
+  static_assert(!std::is_const<ValueType>::value, "memset into a const range");
   if (num) {
 #ifdef SCTL_MEMDEBUG
     SCTL_UNUSED(ptr[0]      );

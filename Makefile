@@ -35,7 +35,12 @@ CXXFLAGS += -DSCTL_SIG_HANDLER # Enable SCTL stack trace
 
 CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
 
+#CXXFLAGS += -DSCTL_MAX_DEPTH=20 # Morton/Tree depth limit
+
 #CXXFLAGS += -DSCTL_HAVE_MPI #use MPI
+
+#CXXFLAGS += -DSCTL_COMM_PTRACER # allow direct reads; exposes rank memory to the same user
+#CXXFLAGS += -DSCTL_COMM_NO_DIRECT # disable direct reads (overrides the above)
 
 CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
 CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
@@ -93,6 +98,7 @@ TARGET_BIN = \
        $(BINDIR)/test-linear-solver \
        $(BINDIR)/test-ode-solver \
        $(BINDIR)/test-pt-tree \
+       $(BINDIR)/test-sort-scatter \
        $(BINDIR)/test-quadrule \
        $(BINDIR)/test-sph-harm \
        $(BINDIR)/test-tensor \
@@ -101,7 +107,7 @@ TARGET_BIN = \
        $(BINDIR)/test-scratch-pool \
        $(BINDIR)/test-scratch-pool-perf
 
-.PHONY: all test clean
+.PHONY: all gpu test clean
 
 all : $(TARGET_BIN)
 
@@ -115,6 +121,26 @@ endif
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)
 	$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $^ -o $@
+
+# GPU tree: needs CUDA and a CUDA-aware MPI, so `gpu` is separate from `all`.
+NVCC = nvcc -ccbin mpicxx
+NVCCFLAGS = -x cu -std=c++17 -O3 -arch=native -rdc=true --expt-relaxed-constexpr -Xcompiler "-fopenmp" \
+            -DSCTL_HAVE_MPI -DSCTL_MAX_DEPTH=20 -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP
+NVCCLIBS = -ldl
+
+GPU_BIN = \
+       $(BINDIR)/test-gpu-tree \
+       $(BINDIR)/test-gpu-sort-scatter \
+       $(BINDIR)/example-gpu-tree
+
+gpu: $(GPU_BIN)
+
+GPU_DEPS = $(wildcard $(INCDIR)/*.hpp $(INCDIR)/sctl/*.hpp $(INCDIR)/sctl/*.txx \
+                      $(INCDIR)/sctl/experimental/*.hpp $(INCDIR)/sctl/experimental/*.txx)
+
+$(BINDIR)/%: $(SRCDIR)/%.cu $(GPU_DEPS)
+	-@$(MKDIRS) $(dir $@)
+	$(NVCC) $(NVCCFLAGS) -I$(INCDIR) $< $(NVCCLIBS) -o $@
 
 test: $(TARGET_BIN)
 	./$(BINDIR)/test
@@ -144,6 +170,7 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-linear-solver
 	./$(BINDIR)/test-ode-solver
 	./$(BINDIR)/test-pt-tree
+	./$(BINDIR)/test-sort-scatter
 	./$(BINDIR)/test-quadrule
 	./$(BINDIR)/test-sph-harm
 	./$(BINDIR)/test-tensor
