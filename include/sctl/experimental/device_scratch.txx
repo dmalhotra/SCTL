@@ -9,6 +9,7 @@
 #include <type_traits>
 #include "sctl/experimental/device_scratch.hpp"
 #include "sctl/iterator.txx"      // for Ptr2Itr
+#include "sctl/mem_mgr.txx"       // for advise_huge_pages, MemoryManager
 #include "sctl/ompUtils.hpp"      // for omp_par::copy, omp_par::prefault
 #include "sctl/ompUtils.txx"
 #include "sctl/scratch_pool.txx"  // for ScratchBuf
@@ -71,6 +72,9 @@ inline DeviceScratchPool<DevVec>& DeviceScratchPool<DevVec>::Instance() {
 // and thrust's deallocate would then throw out of a destructor.
 template <template <class...> class DevVec>
 inline DeviceScratchPool<DevVec>::~DeviceScratchPool() {
+#ifdef SCTL_MEMDEBUG
+  SCTL_ASSERT_MSG(DebugLiveCount() == 0, "~DeviceScratchPool: the pool still holds live slices.");
+#endif
   for (Chunk* c = head_; c != nullptr;) {
     Chunk* const prev = c->prev;
     if constexpr (!detail::is_device_vector_v<DevVec<char>>) delete c->buf;
@@ -81,16 +85,51 @@ inline DeviceScratchPool<DevVec>::~DeviceScratchPool() {
 }
 
 template <template <class...> class DevVec>
-inline Long DeviceScratchPool<DevVec>::PaddedBytes(Long bytes) {
-  return std::max<Long>(ALIGN, (bytes + ALIGN - 1) & ~(ALIGN - 1));
+inline Long DeviceScratchPool<DevVec>::DebugChunkCount() const {
+  Long n = 0;
+  for (const Chunk* c = head_; c; c = c->prev) n++;
+  return n;
 }
 
 template <template <class...> class DevVec>
-inline std::pair<typename DeviceScratchPool<DevVec>::Chunk*, char*> DeviceScratchPool<DevVec>::AllocBytes(Long bytes) {
+inline Long DeviceScratchPool<DevVec>::DebugLiveCount() const {
+#ifdef SCTL_MEMDEBUG
+  Long n = 0;
+  for (const Chunk* c = head_; c; c = c->prev) n += c->live_count;
+  return n;
+#else
+  return (head_ == nullptr || head_->top == head_->base) ? 0 : -1;
+#endif
+}
+
+// 3: a redzone past each slice, checked on free. Only on a host backend -- stamping device memory
+// would cost a round trip per allocation, which is what the pool exists to avoid.
+template <template <class...> class DevVec>
+constexpr Long DeviceScratchPool<DevVec>::Redzone() {
+#ifdef SCTL_MEMDEBUG
+  if constexpr (!detail::is_device_vector_v<DevVec<char>>) return sctl::MemoryManager::end_padding;
+#endif
+  return 0;
+}
+
+template <template <class...> class DevVec>
+[[gnu::always_inline]] inline Long DeviceScratchPool<DevVec>::PaddedBytes(Long bytes) {
+  return std::max<Long>(ALIGN, (bytes + Redzone() + ALIGN - 1) & ~(ALIGN - 1));
+}
+
+template <template <class...> class DevVec>
+[[gnu::always_inline]] inline std::pair<typename DeviceScratchPool<DevVec>::Chunk*, char*> DeviceScratchPool<DevVec>::AllocBytes(Long bytes) {
   const Long need = PaddedBytes(bytes);
   if (head_ == nullptr || need > head_->end - head_->top) NewChunk(need);
   char* const p = head_->top;
   head_->top += need;
+#ifdef SCTL_MEMDEBUG
+  head_->live_count++;
+  SCTL_ASSERT_MSG(((p - head_->base) & (ALIGN - 1)) == 0, "DeviceScratchPool: alignment invariant violated.");
+  if constexpr (Redzone() > 0) {
+    for (Long i = 0; i < Redzone(); i++) p[bytes + i] = sctl::MemoryManager::init_mem_val;
+  }
+#endif
   return {head_, p};
 }
 
@@ -109,10 +148,23 @@ inline void DeviceScratchPool<DevVec>::Rewind(Chunk* chunk, char* p) {
 }
 
 template <template <class...> class DevVec>
-inline void DeviceScratchPool<DevVec>::FreeBytes(Chunk* chunk, char* p, Long bytes) {
+inline void DeviceScratchPool<DevVec>::CheckRedzone(const char* p, Long bytes) {
+  if constexpr (Redzone() > 0) {
+    for (Long i = 0; i < Redzone(); i++) {
+      SCTL_ASSERT_MSG(p[bytes + i] == sctl::MemoryManager::init_mem_val,
+                      "DeviceScratch: out-of-bounds write past buffer end detected.");
+    }
+  }
+}
+
+template <template <class...> class DevVec>
+[[gnu::always_inline]] inline void DeviceScratchPool<DevVec>::FreeBytes(Chunk* chunk, char* p, Long bytes) {
   const Long need = PaddedBytes(bytes);
 #ifdef SCTL_MEMDEBUG
   SCTL_ASSERT_MSG(chunk->top == p + need, "DeviceScratch: LIFO violation (free out of order).");
+  CheckRedzone(p, bytes);
+  SCTL_ASSERT(chunk->live_count > 0);
+  chunk->live_count--;
 #endif
   Rewind(chunk, p);
 }
@@ -122,6 +174,11 @@ inline void DeviceScratchPool<DevVec>::FreeBytes(char* p, Long bytes) {
   const Long need = PaddedBytes(bytes);
   for (Chunk* c = head_; c; c = c->prev) {
     if (c->base <= p && p < c->end && c->top == p + need) {
+#ifdef SCTL_MEMDEBUG
+      CheckRedzone(p, bytes);
+      SCTL_ASSERT(c->live_count > 0);
+      c->live_count--;
+#endif
       Rewind(c, p);
       return;
     }
@@ -140,6 +197,10 @@ inline void DeviceScratchPool<DevVec>::NewChunk(Long need) {
   while (cap < need) cap *= 2;
   auto* buf = new DevVec<char>(cap + ALIGN - 1);  // room to align the base; the host backend gives only 16
   char* const raw = thrust::raw_pointer_cast(buf->data());
+  if constexpr (!detail::is_device_vector_v<DevVec<char>>) {
+    sctl::advise_huge_pages(raw, cap + ALIGN - 1);
+    sctl::omp_par::prefault(sctl::Ptr2Itr<char>(raw, cap + ALIGN - 1), cap + ALIGN - 1);
+  }
   char* const base = raw + ((ALIGN - (Long)((std::uintptr_t)raw & (ALIGN - 1))) & (ALIGN - 1));
   SCTL_ASSERT((std::uintptr_t)base % (std::uintptr_t)ALIGN == 0);
   if (head_ != nullptr && head_->top == head_->base) {  // outgrown and holding nothing: let it go
@@ -148,11 +209,19 @@ inline void DeviceScratchPool<DevVec>::NewChunk(Long need) {
     delete head_;
     head_ = prev;
   }
-  head_ = new Chunk{buf, base, base, base + cap, head_};
+  head_ = new Chunk{buf, base, base, base + cap, head_, 0};
 }
 
 template <class T, template <class...> class DevVec>
 inline DeviceScratch<T, DevVec>::DeviceScratch(Long count) : pool_(&Pool::Instance()), count_(count) {
+  SCTL_ASSERT(count >= 0);
+  const auto slot = pool_->AllocBytes(count * (Long)sizeof(T));
+  chunk_ = slot.first;
+  data_ = reinterpret_cast<T*>(slot.second);
+}
+
+template <class T, template <class...> class DevVec>
+inline DeviceScratch<T, DevVec>::DeviceScratch(Long count, Pool& pool) : pool_(&pool), count_(count) {
   SCTL_ASSERT(count >= 0);
   const auto slot = pool_->AllocBytes(count * (Long)sizeof(T));
   chunk_ = slot.first;

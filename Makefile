@@ -129,6 +129,7 @@ NVCCFLAGS = -x cu -std=c++17 -O3 -arch=native -rdc=true --expt-relaxed-constexpr
 NVCCLIBS = -ldl
 
 GPU_BIN = \
+       $(BINDIR)/test-device-scratch \
        $(BINDIR)/test-gpu-tree \
        $(BINDIR)/test-gpu-sort-scatter \
        $(BINDIR)/example-gpu-tree

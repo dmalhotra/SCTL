@@ -170,20 +170,35 @@ template <template <class...> class DevVec> class DeviceScratchPool {
   /** The pool for this backend. */
   static DeviceScratchPool& Instance();
 
+  /** A pool of one's own. For tests and isolation; not thread-safe, like `Instance()`. */
+  DeviceScratchPool() = default;
+
+  ~DeviceScratchPool();
+
   DeviceScratchPool(const DeviceScratchPool&) = delete;
   DeviceScratchPool& operator=(const DeviceScratchPool&) = delete;
+
+  /** Diagnostic: number of chunks currently held. Mainly for tests. */
+  Long DebugChunkCount() const;
+
+  /**
+   * Diagnostic: number of live allocations. Exact under SCTL_MEMDEBUG;
+   * release builds return 0 when known-empty, -1 otherwise.
+   */
+  Long DebugLiveCount() const;
 
  private:
   template <class, template <class...> class> friend class DeviceScratch;
   template <template <class...> class> friend class DeviceScratchAllocator;
 
   /** One chunk of the pool; `DeviceScratch` holds the chunk its slice came from. */
-  struct Chunk {
+  struct alignas(SCTL_MEM_ALIGN) Chunk {
     DevVec<char>* buf;  // released when the chunk is shed; at exit only on host backends
     char* base;
     char* top;
     char* end;
     Chunk* prev;
+    Long live_count;  // maintained under SCTL_MEMDEBUG only, as ScratchPool does
   };
 
   /** Carve `bytes` off the pool; returns the owning chunk and the slice. */
@@ -195,6 +210,12 @@ template <template <class...> class DevVec> class DeviceScratchPool {
   /** Give the slice back and shed the chunk if that emptied it. */
   void Rewind(Chunk* chunk, char* p);
 
+  /** Bytes of trailer past each slice: nonzero only under SCTL_MEMDEBUG on a host backend. */
+  static constexpr Long Redzone();
+
+  /** Verify the trailer stamped by `AllocBytes`. */
+  static void CheckRedzone(const char* p, Long bytes);
+
   /** What a slice of `bytes` consumes: rounded up to `ALIGN`, and never zero, so that
    *  `top == base` means the chunk holds no live slice. */
   static Long PaddedBytes(Long bytes);
@@ -202,8 +223,6 @@ template <template <class...> class DevVec> class DeviceScratchPool {
   /** Same, with the owning chunk located by the LIFO invariant. */
   void FreeBytes(char* p, Long bytes);
 
-  DeviceScratchPool() = default;
-  ~DeviceScratchPool();
   void NewChunk(Long need);
 
   Chunk* head_{nullptr};  ///< first chunk taken on first use: a static must not reach CUDA during startup
@@ -231,6 +250,9 @@ template <class T, template <class...> class DevVec> class DeviceScratch {
 
   /** Allocate `count` T's from this backend's pool. */
   explicit DeviceScratch(Long count);
+
+  /** Allocate from a caller-supplied pool instead. For tests and isolation. */
+  DeviceScratch(Long count, Pool& pool);
 
   ~DeviceScratch();
 
