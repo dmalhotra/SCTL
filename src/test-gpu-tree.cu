@@ -106,7 +106,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
       owned(st, sb, se);
       const sctl::Vector<NodeT> gmid = to_host(gt.GetNodeMID());
       const auto& smid = st.GetNodeMID();
-      const sctl::Vector<NodeT> g(ge - gb, (sctl::Iterator<NodeT>)gmid.begin() + gb, false), s(se - sb, (sctl::Iterator<NodeT>)smid.begin() + sb, false);  // views of the owned slices
+      const sctl::Vector<const NodeT> g(ge - gb, gmid.begin() + gb, false), s(se - sb, smid.begin() + sb, false);  // views of the owned slices
       bad_set += !equal(gather(g), gather(s));
       if (np == 1) {
         const sctl::Vector<typename GT::NodeAttr> attr = to_host(gt.GetNodeAttr());
@@ -201,7 +201,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     const sctl::Vector<Long> gco(ge - gb, gcnt.begin() + gb, false), sco(se - sb, scnt.begin() + sb, false);  // views of the owned slices
     const Long goff = sctl::omp_par::reduce(gcnt.begin(), gb), soff = sctl::omp_par::reduce(scnt.begin(), sb);
     const Long gn = sctl::omp_par::reduce(gco.begin(), gco.Dim()), sn = sctl::omp_par::reduce(sco.begin(), sco.Dim());
-    const sctl::Vector<Real> gv(gn, (sctl::Iterator<Real>)gh.begin() + goff, false), sv(sn, sd.begin() + soff, false);
+    const sctl::Vector<const Real> gv(gn, gh.begin() + goff, false), sv(sn, sd.begin() + soff, false);
     check("node data migrated by a refinement equals sctl::Tree's (counts)", !equal(gather(gco), gather(sco)));
     check("node data migrated by a refinement equals sctl::Tree's (values)", !equal(gather(gv), gather(sv)));
   }

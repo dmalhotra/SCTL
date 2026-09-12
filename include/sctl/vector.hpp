@@ -3,6 +3,7 @@
 
 #include <ostream>            // for ostream
 #include <initializer_list>   // for initializer_list
+#include <type_traits>        // for remove_const
 #include <vector>             // for vector
 
 #include "sctl/common.hpp"    // for Long, sctl
@@ -23,7 +24,7 @@ template <class ValueType> class ScratchBuf;
  */
 template <class ValueType> class Vector {
  public:
-  typedef ValueType value_type; /**< Type of the elements stored in the vector. */
+  typedef typename std::remove_const<ValueType>::type value_type; /**< Type of the elements stored in the vector, without const. */
   typedef ValueType& reference; /**< Reference to an element in the vector. */
   typedef const ValueType& const_reference; /**< Const reference to an element in the vector. */
   typedef Iterator<ValueType> iterator; /**< Iterator for traversing the vector. */
