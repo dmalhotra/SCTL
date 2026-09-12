@@ -107,7 +107,7 @@ TARGET_BIN = \
        $(BINDIR)/test-scratch-pool \
        $(BINDIR)/test-scratch-pool-perf
 
-.PHONY: all gpu test clean
+.PHONY: all gpu test test-omp-trimmed clean
 
 all : $(TARGET_BIN)
 
@@ -145,6 +145,14 @@ GPU_DEPS = $(wildcard $(INCDIR)/*.hpp $(INCDIR)/sctl/*.hpp $(INCDIR)/sctl/*.txx 
 $(BINDIR)/%: $(SRCDIR)/%.cu $(GPU_DEPS)
 	-@$(MKDIRS) $(dir $@)
 	$(NVCC) $(NVCCFLAGS) -I$(INCDIR) $< $(NVCCLIBS) -o $@
+
+# The suite again with an OpenMP team smaller than the one the code asks for. `num_threads` is a
+# request: OMP_DYNAMIC, or an OMP_THREAD_LIMIT below OMP_NUM_THREADS, lets the runtime answer with
+# fewer. Anything that splits work across threads still has to cover all of it, and a split that
+# goes by thread id silently leaves the rest undone.
+test-omp-trimmed:
+	OMP_NUM_THREADS=8 OMP_THREAD_LIMIT=3 $(MAKE) test
+	OMP_DYNAMIC=true OMP_NUM_THREADS=8 $(MAKE) test
 
 test: $(TARGET_BIN)
 	./$(BINDIR)/test

@@ -737,6 +737,7 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
   const Long chunk_size_max = (N + nthreads - 1) / nthreads;
   const Long max_emits = 4 * chunk_size_max * (MAX_DEPTH + 1) / std::max<Long>(1, M) + 4 * (MAX_DEPTH + 1) * (Long(1) << DIM) + 16;  // constant term: boundary anchors can sit at MAX_DEPTH
 
+  // Sized for the team that was asked for, which is an upper bound on the one that arrives.
   sctl::ScratchBuf<PaddedLong> local_sizes(nthreads);  // padded: concurrent per-thread writes
   sctl::ScratchBuf<Long> offsets(nthreads);            // written once by `single`, read-only after
   sctl::ScratchBuf<Long> zero_offsets(nthreads);       // functor reads `offsets[tid] == 0`
@@ -744,21 +745,26 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
 
   #pragma omp parallel num_threads(nthreads)
   {
-    SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nthreads, "buildTreeCpuChunked: the OpenMP team is smaller than the split it was asked for, which would leave chunks unwalked; set OMP_DYNAMIC=false and OMP_THREAD_LIMIT at or above OMP_NUM_THREADS");
+    // `num_threads` is a request, and a runtime with dynamic teams may answer with fewer. The walk
+    // keeps one chunk per thread -- each needs scratch of its own, which it holds until the copy-out
+    // below -- so the cut follows the team that actually arrived rather than the one that was asked
+    // for. Every member of a team reads the same size here. `max_emits` is then an estimate for a
+    // chunk larger than it was sized for, which is what `HostSink` is for; it was never a bound.
+    const Integer nt = SCTL_GET_NUM_THREADS();
     const Integer tid = SCTL_GET_THREAD_NUM();
     sctl::ScratchBuf<NodeMIDT> buf(max_emits);  // NUMA-local: first-touched on this thread's node
     sctl::Vector<NodeMIDT> spill;
     HostSink<NodeMIDT> sink{&buf, &spill, buf.Dim(), std::max<Long>(max_emits / 4, 1024)};
     const ChunkedWalkFunctor<DIM, WalkMode::Write, HostSink<NodeMIDT>> fw{
-        thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nthreads, &zero_offsets[0], &buf[0], start_bnd, end_bnd, &sink};
+        thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nt, &zero_offsets[0], &buf[0], start_bnd, end_bnd, &sink};
     const Long count = fw(tid);
     local_sizes[tid].v = count;
 
     #pragma omp barrier
     #pragma omp single
     {
-      std::transform_exclusive_scan(local_sizes.begin(), local_sizes.end(), offsets.begin(), Long(0), std::plus<Long>(), [](const PaddedLong& s) { return s.v; });
-      tree.resize(offsets[nthreads - 1] + local_sizes[nthreads - 1].v);
+      std::transform_exclusive_scan(local_sizes.begin(), local_sizes.begin() + nt, offsets.begin(), Long(0), std::plus<Long>(), [](const PaddedLong& s) { return s.v; });
+      tree.resize(offsets[nt - 1] + local_sizes[nt - 1].v);
     }
 
     NodeMIDT* out_ptr = thrust::raw_pointer_cast(tree.data()) + offsets[tid];
@@ -1140,25 +1146,25 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
     const Long Nf = completeSlice<DIM, DevVec>(pol, tree, mins, rank, np, end_target, full);
     const NonLeafPred<DIM> is_nonleaf{thrust::raw_pointer_cast(full.data()), Nf, NodeT{}.Next()};
     const NodeT* const fp = thrust::raw_pointer_cast(full.data());
-    const Integer nt = (SCTL_IN_PARALLEL() ? 1 : SCTL_GET_MAX_THREADS());
-    sctl::ScratchBuf<Long> dsp(nt + 1);
+    // A count of chunks, not of threads: the second pass writes where the first pass's counts say,
+    // so the two have to cut `full` the same way. `num_threads` is a request the runtime may answer
+    // with fewer, so the cut cannot be the team; `omp for` gives every chunk to exactly one thread
+    // whatever the team turns out to be.
+    const Integer nchunk = (SCTL_IN_PARALLEL() ? 1 : SCTL_GET_MAX_THREADS());
+    sctl::ScratchBuf<Long> dsp(nchunk + 1);
     dsp[0] = 0;
-    #pragma omp parallel num_threads(nt)
-    {
-      SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nt, "balanceTreeDist: the OpenMP team is smaller than the split it was asked for, which would drop nodes; set OMP_DYNAMIC=false and OMP_THREAD_LIMIT at or above OMP_NUM_THREADS");
-      const Integer tid = SCTL_GET_THREAD_NUM();
-      Long c = 0;
-      for (Long i = Nf * tid / nt; i < Nf * (tid + 1) / nt; i++) c += is_nonleaf(i);
-      dsp[tid + 1] = c;
+    #pragma omp parallel for schedule(static) num_threads(nchunk)
+    for (Integer c = 0; c < nchunk; c++) {
+      Long cnt = 0;
+      for (Long i = Nf * c / nchunk; i < Nf * (c + 1) / nchunk; i++) cnt += is_nonleaf(i);
+      dsp[c + 1] = cnt;
     }
     std::inclusive_scan(dsp.begin() + 1, dsp.end(), dsp.begin() + 1);
-    S.ReInit(dsp[nt]);
-    #pragma omp parallel num_threads(nt)
-    {
-      SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nt, "balanceTreeDist: the OpenMP team is smaller than the split it was asked for, which would drop nodes; set OMP_DYNAMIC=false and OMP_THREAD_LIMIT at or above OMP_NUM_THREADS");
-      const Integer tid = SCTL_GET_THREAD_NUM();
-      Long o = dsp[tid];
-      for (Long i = Nf * tid / nt; i < Nf * (tid + 1) / nt; i++) if (is_nonleaf(i)) S[o++] = fp[i];
+    S.ReInit(dsp[nchunk]);
+    #pragma omp parallel for schedule(static) num_threads(nchunk)
+    for (Integer c = 0; c < nchunk; c++) {
+      Long o = dsp[c];
+      for (Long i = Nf * c / nchunk; i < Nf * (c + 1) / nchunk; i++) if (is_nonleaf(i)) S[o++] = fp[i];
     }
   }
 

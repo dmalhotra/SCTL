@@ -808,41 +808,45 @@ namespace sctl {
         };
 
         constexpr Integer stride = ((MAX_DEPTH+1) + 7) & ~(Integer)7; // MAX_DEPTH+1 rounded up to a cache line (8 Longs) to prevent false-sharing
-        const Integer nthreads = SCTL_GET_MAX_THREADS();
-        ScratchBuf<Long> ancestors(nthreads * stride);
+        // A count of chunks, not of threads: the three passes below all cut the nodes this way and
+        // read each other's results by chunk, so they have to agree on the cut. `num_threads` is a
+        // request the runtime may answer with fewer, so the cut cannot be the team. `omp for` gives
+        // every chunk to exactly one thread whatever the team turns out to be.
+        const Integer nchunk = SCTL_GET_MAX_THREADS();
+        ScratchBuf<Long> ancestors(nchunk * stride);
         #pragma omp parallel for schedule(static)
-        for (Integer tid = 0; tid < nthreads; tid++) { // Set ancestors
-          const Long idx0 = (Nnodes * tid) / nthreads;
+        for (Integer c = 0; c < nchunk; c++) { // Set ancestors
+          const Long idx0 = (Nnodes * c) / nchunk;
           for (Long idx = idx0; node_mid[idx].Depth() > 0; idx = node_lst[idx].parent) {
-            ancestors[tid*stride + node_mid[idx].Depth()] = idx;
+            ancestors[c*stride + node_mid[idx].Depth()] = idx;
           }
         }
-        for (Integer tid = 0; tid < nthreads; tid++) { // Set neighbor list for ancestors shared by multiple threads
-          const Long idx0 = (Nnodes *  tid     ) / nthreads;
-          const Long idx1 = (Nnodes * (tid + 1)) / nthreads;
-          const Long idx_ = (Nnodes * (tid - 1)) / nthreads;
-          const Integer d0 = (tid > 0) ? node_mid[idx0].CommonAncestor(node_mid[idx_]).Depth() : 0;
-          const Integer d1 = (tid + 1 < nthreads) ? node_mid[idx0].CommonAncestor(node_mid[idx1]).Depth() : 0;
-          for (Integer d = std::max<Integer>(1, d0); d < d1; d++) set_nbrs(ancestors[tid*stride + d]);
+        for (Integer c = 0; c < nchunk; c++) { // Set neighbor list for ancestors shared by multiple chunks
+          const Long idx0 = (Nnodes *  c     ) / nchunk;
+          const Long idx1 = (Nnodes * (c + 1)) / nchunk;
+          const Long idx_ = (Nnodes * (c - 1)) / nchunk;
+          const Integer d0 = (c > 0) ? node_mid[idx0].CommonAncestor(node_mid[idx_]).Depth() : 0;
+          const Integer d1 = (c + 1 < nchunk) ? node_mid[idx0].CommonAncestor(node_mid[idx1]).Depth() : 0;
+          for (Integer d = std::max<Integer>(1, d0); d < d1; d++) set_nbrs(ancestors[c*stride + d]);
         }
-        #pragma omp parallel num_threads(nthreads)
-        { // Set neighbor list for the rest of the nodes in each thread's chunk
-          SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nthreads, "Tree::UpdateRefinement: the OpenMP team is smaller than the split it was asked for; set OMP_DYNAMIC=false and OMP_THREAD_LIMIT at or above OMP_NUM_THREADS");
-          const Integer tid = SCTL_GET_THREAD_NUM();
-          const Long idx0 = (Nnodes * tid) / nthreads;
-          const Long idx1 = (Nnodes * (tid + 1)) / nthreads;
-          { // Set neighbors for ancestors of each thread's first node
-            const Long idx_ = (Nnodes * (tid - 1)) / nthreads;
-            const Integer d0 = (tid > 0) ? node_mid[idx0].CommonAncestor(node_mid[idx_]).Depth() : 0;
-            const Integer d1 = (tid + 1 < nthreads) ? node_mid[idx0].CommonAncestor(node_mid[idx1]).Depth() : 0;
-            const Integer d2 = node_mid[idx0].Depth();
-            for (Integer d = std::max<Integer>(1, std::max(d0,d1)); d < d2; d++) {
-              set_nbrs(ancestors[tid*stride + d]);
-            }
+        #pragma omp parallel for schedule(static)
+        for (Integer c = 0; c < nchunk; c++) { // Set neighbors for ancestors of each chunk's first node
+          const Long idx0 = (Nnodes *  c     ) / nchunk;
+          const Long idx1 = (Nnodes * (c + 1)) / nchunk;
+          const Long idx_ = (Nnodes * (c - 1)) / nchunk;
+          const Integer d0 = (c > 0) ? node_mid[idx0].CommonAncestor(node_mid[idx_]).Depth() : 0;
+          const Integer d1 = (c + 1 < nchunk) ? node_mid[idx0].CommonAncestor(node_mid[idx1]).Depth() : 0;
+          const Integer d2 = node_mid[idx0].Depth();
+          for (Integer d = std::max<Integer>(1, std::max(d0,d1)); d < d2; d++) {
+            set_nbrs(ancestors[c*stride + d]);
           }
-          #pragma omp barrier
+        }
+        #pragma omp parallel for schedule(static)
+        for (Integer c = 0; c < nchunk; c++) { // Set neighbor list for the rest of the nodes in each chunk
+          const Long idx0 = (Nnodes *  c     ) / nchunk;
+          const Long idx1 = (Nnodes * (c + 1)) / nchunk;
           for (Long i = idx0; i < idx1; i++) {
-            if (tid + 1 < nthreads && node_mid[i].isAncestor(node_mid[idx1])) continue;
+            if (c + 1 < nchunk && node_mid[i].isAncestor(node_mid[idx1])) continue;
             set_nbrs(i);
           }
         }
@@ -923,20 +927,27 @@ namespace sctl {
           Long v;
           char pad[64 - sizeof(Long)];
         };
+        // Sized for the team that was asked for, which is an upper bound on the one that arrives.
         ScratchBuf<PaddedLong> local_sizes(nthreads);
         ScratchBuf<Long>       offsets(nthreads);
 
         #pragma omp parallel num_threads(nthreads)
         {
-          SCTL_ASSERT_MSG(SCTL_GET_NUM_THREADS() == nthreads, "Tree::UpdateRefinement: the OpenMP team is smaller than the split it was asked for, which would leave chunks unwalked; set OMP_DYNAMIC=false and OMP_THREAD_LIMIT at or above OMP_NUM_THREADS");
+          // `num_threads` is a request, and a runtime with dynamic teams may answer with fewer. The
+          // walk keeps one chunk per thread -- each needs scratch of its own, which it holds until
+          // the copy-out below -- so the cut follows the team that actually arrived rather than the
+          // one that was asked for. Every member of a team reads the same size here. `max_emits` is
+          // then an estimate for a chunk larger than it was sized for, which is what the spill is
+          // for; it was never a bound.
+          const Integer nt       = SCTL_GET_NUM_THREADS();
           const Integer tid      = SCTL_GET_THREAD_NUM();
-          const Long    begin_t  = (N *  tid     ) / nthreads;
-          const Long    end_t    = (N * (tid + 1)) / nthreads;
+          const Long    begin_t  = (N *  tid     ) / nt;
+          const Long    end_t    = (N * (tid + 1)) / nt;
           const bool    is_first = (tid == 0);
-          const bool    is_last  = (tid == nthreads - 1);
+          const bool    is_last  = (tid == nt - 1);
 
           const Morton<DIM> start_anchor = is_first ? mins[rank] : split_anchor(pt_mid[begin_t], pt_mid[begin_t+M]);
-          const Morton<DIM> end_anchor   = is_last  ? (rank+1<np ? mins[rank+1] : Morton<DIM>().Next()) : split_anchor(pt_mid[end_t], pt_mid[end_t+M]);
+          const Morton<DIM> end_anchor   = is_last  ? (rank+1<np ? mins[rank+1] : Morton<DIM>().Next()) : split_anchor(pt_mid[end_t], pt_mid[end_t+M]);  // `nt` cut, so the chunks tile [0, N)
           const Long idx_start = is_first ? 0 : std::lower_bound(pt_mid.begin() + begin_t, pt_mid.begin() + begin_t + M, start_anchor.mid) - pt_mid.begin();
           const Long idx_end   = is_last  ? N : std::lower_bound(pt_mid.begin() + end_t,   pt_mid.begin() + end_t   + M, end_anchor.mid)   - pt_mid.begin();
 
@@ -991,7 +1002,7 @@ namespace sctl {
           #pragma omp single
           {
             Long total = 0;
-            for (Integer s = 0; s < nthreads; ++s) {
+            for (Integer s = 0; s < nt; ++s) {
               offsets[s] = total;
               total += local_sizes[s].v;
             }
@@ -1169,6 +1180,9 @@ namespace sctl {
         const Long Nsend = dsp[nthreads-1] + cnt[nthreads-1];
         ScratchBuf<std::pair<Long,Morton<DIM>>> user_node_lst_buf(Nsend);
         Vector<std::pair<Long,Morton<DIM>>> user_node_lst(user_node_lst_buf);
+        // Indexed by thread id; the slots no thread filled are empty, so they add nothing to dsp
+        // and copy nothing. The nodes themselves were divided by the team that ran, above, so all
+        // of them were visited.
         #pragma omp parallel num_threads(nthreads)
         { // user_node_lst <-- concatenate user_node_lst_t_[tid]
           const Integer tid = SCTL_GET_THREAD_NUM();

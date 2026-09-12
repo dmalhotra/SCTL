@@ -390,8 +390,12 @@ template <class ConstIter, class Iter, class StrictWeakOrdering> inline void omp
     for (Integer k = 0; k < nt - 1; k++) tsplit[k] = samp[std::min<Long>(Ns - 1, (Long)(k + 1) * Ns / nt)];
   }
 
-  #pragma omp parallel num_threads(nt)
-  { const Integer t = SCTL_GET_THREAD_NUM();
+  // `nt` chunks, not `nt` threads: the splitters above cut the output into `nt` pieces, each merged
+  // on its own, so a team the runtime trims would leave the pieces past it unwritten -- and the
+  // output is then neither sorted nor a permutation of the input, with nothing said. `omp for`
+  // gives every piece to exactly one thread whatever the team turns out to be.
+  #pragma omp parallel for schedule(static) num_threads(nt)
+  for (Integer t = 0; t < nt; t++) {
     ScratchBuf<Long> pos_buf(nruns), end_buf(nruns);
     Iterator<Long> pos = pos_buf.begin(), end = end_buf.begin();
     Long out_off = 0;  // this thread's sub-range of each run; output offset = #elements before its chunk
