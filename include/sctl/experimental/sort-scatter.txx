@@ -243,7 +243,7 @@ template <class Key, template <class...> class DevVec> void SortScatter<Key, Dev
     for (Long i = 0; i < n; i++) {
       bad += (i && k[i] < k[i - 1]);                                                    // sorted
       bad += (rank && k[i] < spl[rank]) || (rank + 1 < np && !(k[i] < spl[rank + 1]));  // within my range
-      bad += ((Long)k[i] != q[i * dof]);                                                // payload rode along
+      bad += ((Long)k[i] != q[i * dof]);                                                // payload followed its key
     }
     sctl::StaticArray<Long, 3> l{bad, n, N}, g;
     comm.Allreduce((sctl::ConstIterator<Long>)l, (sctl::Iterator<Long>)g, 3, sctl::CommOp::SUM);

@@ -252,12 +252,12 @@ template <class Key> void SortScatter<Key>::test() {
       payload[i * dof + 1] = gid0 + i;
     }
   }
-  const auto splitters = [np, KMAX](Long shift) {  // even cut of the key range, shifted
+  const auto splitters = [np](Long shift) {  // even cut of the key range, shifted
     Vector<Key> spl(np);
     for (Integer r = 0; r < np; r++) spl[r] = (Key)(r * (KMAX / np) + (r ? shift : 0));
     return spl;
   };
-  const auto check = [&comm, np, rank, N, dof](const SortScatter& ss, const Vector<Key>& spl, const Vector<Long>& sorted_payload) {
+  const auto check = [&comm, np, rank, N](const SortScatter& ss, const Vector<Key>& spl, const Vector<Long>& sorted_payload) {
     const Long n = ss.SortedCount();
     SCTL_ASSERT(ss.SortedKeys().Dim() == n && sorted_payload.Dim() == n * dof);
     Long bad = 0;
@@ -265,13 +265,13 @@ template <class Key> void SortScatter<Key>::test() {
       const Key k = ss.SortedKeys()[i];
       bad += (i && k < ss.SortedKeys()[i - 1]);                    // sorted
       bad += (rank && k < spl[rank]) || (rank + 1 < np && !(k < spl[rank + 1]));  // within my range
-      bad += ((Long)k != sorted_payload[i * dof]);                 // payload rode along with its key
+      bad += ((Long)k != sorted_payload[i * dof]);                 // payload followed its key
     }
     StaticArray<Long, 3> l{bad, n, N}, g;
     comm.Allreduce((ConstIterator<Long>)l, (Iterator<Long>)g, 3, CommOp::SUM);
     SCTL_ASSERT(g[0] == 0 && g[1] == g[2]);
   };
-  const auto roundTrip = [&check, &payload, N, dof](const SortScatter& ss, const Vector<Key>& spl) {
+  const auto roundTrip = [&check, &payload, N](const SortScatter& ss, const Vector<Key>& spl) {
     Vector<Long> q = payload;
     ss.ScatterForward(q, dof);
     check(ss, spl, q);
