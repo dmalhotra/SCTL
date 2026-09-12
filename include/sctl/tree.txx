@@ -215,7 +215,7 @@ namespace sctl {
     // 2:1 balance the non-leaf nodes in place: a non-leaf's same-depth neighbors must exist, so
     // their parents must be non-leaf too. Local fixpoint, then redistribute by `mins` and dedup.
     // Leaves are not represented -- rebuild them from the result, as UpdateRefinement does.
-    template <Integer DIM> void Balance21(Vector<Morton<DIM>>& parent_mid, ConstIterator<Morton<DIM>> mins, const Comm& comm, Periodicity periodicity) {
+    template <Integer DIM, class MIter> void Balance21(Vector<Morton<DIM>>& parent_mid, MIter mins, const Comm& comm, Periodicity periodicity) {
       const Integer np = comm.Size();
       const Integer nthreads = SCTL_GET_MAX_THREADS();
       static constexpr Integer MAX_CHILD = (1u << DIM);

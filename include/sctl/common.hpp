@@ -110,14 +110,14 @@ constexpr Periodicity all_periodic(Integer dim) {
 
 namespace sctl {
 #ifdef SCTL_MEMDEBUG
-template <class ValueType> class ConstIterator;
 template <class ValueType> class Iterator;
 template <class ValueType, Long DIM> class StaticArray;
 #else
 template <typename ValueType> using Iterator = ValueType*;
-template <typename ValueType> using ConstIterator = const ValueType*;
 template <typename ValueType, Long DIM> using StaticArray = ValueType[DIM];
 #endif
+// Constness rides on the element type, as it does for a pointer, in either build.
+template <typename ValueType> using ConstIterator = Iterator<const ValueType>;
 }
 
 #endif // _SCTL_COMMON_HPP_

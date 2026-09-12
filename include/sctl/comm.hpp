@@ -820,9 +820,9 @@ class Comm {
    * which overwrites all of them. The refusal is not remembered: after the probe at init the only
    * one left is a permission changed mid-run.
    */
-  template <class SType, class RType>
-  bool ReadNodeBlocks(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls,
-                      Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;
+  template <class SIter, class RIter>
+  bool ReadNodeBlocks(SIter sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls,
+                      RIter rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;
 #endif
 
   Vector<MPI_Request>& NewReq(Long request_count) const;

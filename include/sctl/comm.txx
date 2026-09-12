@@ -1103,9 +1103,11 @@ template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Intege
 }
 
 #ifdef SCTL_HAVE_MPI
-template <class SType, class RType>
-bool Comm::ReadNodeBlocks(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls,
-                          Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
+template <class SIter, class RIter>
+bool Comm::ReadNodeBlocks(SIter sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls,
+                          RIter rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
+  using SType = typename std::iterator_traits<SIter>::value_type;
+  using RType = typename std::iterator_traits<RIter>::value_type;
   const Integer rank = impl_->mpi_rank_;
   const Long node_size = (Long)impl_->node_rank_.size();
   // Where each node peer's block for me starts in that peer's send buffer, and how many bytes it
