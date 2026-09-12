@@ -3,6 +3,8 @@
 #include <iostream>
 #include <string>
 
+#include "test-utils.hpp"
+
 namespace {
 
 using sctl::Comm;
@@ -121,10 +123,18 @@ int main(int argc, char** argv) {
   sctl::Comm::MPI_Init(&argc, &argv);
   {
     const Comm& comm = Comm::World();
-    sctl::PtTree<double, 2>::test();  // the usage example
-    TestParticleDataLayout(comm);
-    if (!comm.Rank()) TestWalkOverflow();
-    comm.Barrier();
+    const auto run = [&comm]() {
+      sctl::PtTree<double, 2>::test();  // the usage example
+      TestParticleDataLayout(comm);
+      if (!comm.Rank()) TestWalkOverflow();
+      comm.Barrier();
+    };
+    run();
+    { // and again where the OpenMP team is smaller than the tree build asks for
+      const test_utils::TrimmedOmpTeam team;
+      if (!comm.Rank()) team.Report("  again");
+      if (team.Trimmed()) run();
+    }
     if (!comm.Rank()) std::cout << "test-pt-tree passed on " << comm.Size() << " ranks\n";
   }
   sctl::Comm::MPI_Finalize();

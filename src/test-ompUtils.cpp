@@ -270,5 +270,52 @@ int main() {
     }
   }
 
+  // --- the same primitives where the OpenMP team is smaller than the one they ask for ---
+  //
+  // Each of these cuts its input into SCTL_GET_MAX_THREADS() pieces and works a piece at a time. If
+  // the pieces go by thread id and the runtime hands back a smaller team, the pieces past it are
+  // never touched -- and the result is wrong with nothing said. See test_utils::TrimmedOmpTeam for
+  // how the smaller team is arranged without an environment variable.
+  std::printf("trimmed OpenMP team :\n");
+  {
+    const test_utils::TrimmedOmpTeam team;
+    team.Report("  checking sample_sort, dedup_sorted and multiway_merge");
+    if (team.Trimmed()) {
+      for (const Long N : {(Long)1000, (Long)70000, (Long)400000}) {
+        std::vector<Long> a((size_t)N);
+        for (Long i = 0; i < N; ++i) a[i] = (Long)(rng() % 5000);  // duplicates, so dedup has work
+        std::vector<Long> ref = a;
+        std::sort(ref.begin(), ref.end());
+
+        { // sample_sort
+          std::vector<Long> out((size_t)N, -1);
+          sctl::omp_par::sample_sort(sctl::Ptr2ConstItr<Long>(a.data(), N), sctl::Ptr2Itr<Long>(out.data(), N), N, std::less<Long>());
+          for (Long i = 0; i < N; ++i) CHECK(out[i] == ref[i]);
+        }
+        { // dedup_sorted: both the elements it keeps and the count it returns
+          std::vector<Long> want = ref;
+          want.erase(std::unique(want.begin(), want.end()), want.end());
+          std::vector<Long> out((size_t)N, -1);
+          const Long m = sctl::omp_par::dedup_sorted(sctl::Ptr2ConstItr<Long>(ref.data(), N), sctl::Ptr2Itr<Long>(out.data(), N), N);
+          CHECK(m == (Long)want.size());
+          if (m == (Long)want.size()) for (Long i = 0; i < m; ++i) CHECK(out[i] == want[i]);
+        }
+        { // multiway_merge over five sorted runs
+          const Long nruns = 5;
+          std::vector<Long> dsp((size_t)nruns + 1, 0), runs((size_t)N);
+          for (Long r = 0; r < nruns; ++r) dsp[r + 1] = (r + 1) * N / nruns;
+          for (Long r = 0; r < nruns; ++r) {
+            for (Long i = dsp[r]; i < dsp[r + 1]; ++i) runs[i] = a[i];
+            std::sort(runs.begin() + dsp[r], runs.begin() + dsp[r + 1]);
+          }
+          std::vector<Long> out((size_t)N, -1);
+          sctl::omp_par::multiway_merge(sctl::Ptr2ConstItr<Long>(runs.data(), N), sctl::Ptr2ConstItr<Long>(dsp.data(), nruns + 1),
+                                        nruns, sctl::Ptr2Itr<Long>(out.data(), N), std::less<Long>());
+          for (Long i = 0; i < N; ++i) CHECK(out[i] == ref[i]);
+        }
+      }
+    }
+  }
+
   TEST_SUMMARY_RETURN();
 }

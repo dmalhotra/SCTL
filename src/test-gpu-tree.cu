@@ -29,6 +29,8 @@
 #include "sctl/tree.txx"
 #include "sctl/experimental/gpu-tree.hpp"
 
+#include "test-utils.hpp"
+
 using sctl::Integer;
 using sctl::Long;
 using sctl::Comm;
@@ -648,20 +650,28 @@ int main(int argc, char** argv) {
   {
     const bool root = (sctl::Comm::World().Rank() == 0);
     Long fails = 0;
-    if (root) printf("HostVector backend\n");
-    fails += test_vs_sctl<double, 3, gpu_tree::HostVector>();
-    if (root) printf("DeviceVector backend\n");
-    fails += test_vs_sctl<double, 3, gpu_tree::DeviceVector>();
-    if (root) printf("std::vector backend\n");
-    fails += test_vs_sctl<double, 3, std::vector>();
-    if (root) printf("partitionN over a stretch\n");
-    fails += test_partitionN_stretch<gpu_tree::HostVector>("HostVector: the buffer comes back holding the stretch alone");
-    fails += test_partitionN_stretch<gpu_tree::DeviceVector>("DeviceVector: the buffer comes back holding the stretch alone");
-    if (root) {  // the host walk counts and writes in one pass, so it is the one that can exceed its estimate
-      printf("walk overflow\n");
-      fails += test_walk_overflow<double, 3, gpu_tree::HostVector>("HostVector: the cover is complete");
-      fails += test_walk_overflow<double, 3, std::vector>("std::vector: the cover is complete");
-      fails += test_host_sink_spill();
+    const auto run = [root, &fails]() {
+      if (root) printf("HostVector backend\n");
+      fails += test_vs_sctl<double, 3, gpu_tree::HostVector>();
+      if (root) printf("DeviceVector backend\n");
+      fails += test_vs_sctl<double, 3, gpu_tree::DeviceVector>();
+      if (root) printf("std::vector backend\n");
+      fails += test_vs_sctl<double, 3, std::vector>();
+      if (root) printf("partitionN over a stretch\n");
+      fails += test_partitionN_stretch<gpu_tree::HostVector>("HostVector: the buffer comes back holding the stretch alone");
+      fails += test_partitionN_stretch<gpu_tree::DeviceVector>("DeviceVector: the buffer comes back holding the stretch alone");
+      if (root) {  // the host walk counts and writes in one pass, so it is the one that can exceed its estimate
+        printf("walk overflow\n");
+        fails += test_walk_overflow<double, 3, gpu_tree::HostVector>("HostVector: the cover is complete");
+        fails += test_walk_overflow<double, 3, std::vector>("std::vector: the cover is complete");
+        fails += test_host_sink_spill();
+      }
+    };
+    run();
+    { // and again where the OpenMP team is smaller than the host-side builds ask for
+      const test_utils::TrimmedOmpTeam team;
+      if (root) team.Report("again");
+      if (team.Trimmed()) run();
     }
     SCTL_ASSERT_MSG(fails == 0, "test-gpu-tree: failures above");
   }
