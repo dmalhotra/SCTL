@@ -123,7 +123,7 @@ template <class Iter> inline void omp_par::prefault(Iter first, Long n, Integer 
   using T = typename std::iterator_traits<Iter>::value_type;
   static_assert(std::is_trivially_copyable<T>::value, "omp_par::prefault: T must be trivially copyable");
   // The walk below strides a byte pointer from the first element across the whole range, which only
-  // lands inside it when the elements are one unbroken block.
+  // stays inside it when the elements are one unbroken block.
   static_assert(omp_par_detail::is_contiguous<Iter>::value, "omp_par::prefault: the range must be contiguous; pass a pointer or an sctl::Iterator");
   if (n <= 0) return;
   const Long nbytes = n * (Long)sizeof(T), page = omp_par_detail::PageSize(), npages = (nbytes + page - 1) / page;

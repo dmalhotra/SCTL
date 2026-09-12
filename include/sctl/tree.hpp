@@ -154,7 +154,7 @@ template <Integer DIM> class Tree {
      * @param[in] name Name of the data.
      *
      * @warning `ValueType` must match the type used in the corresponding
-     * `AddData`; otherwise the bytes are silently reinterpreted.
+     * `AddData`; otherwise the bytes are reinterpreted, with no check.
      */
     template <class ValueType> void GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name);
     template <class ValueType> void GetData(Vector<const ValueType>& data, Vector<Long>& cnt, const std::string& name) const;

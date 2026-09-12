@@ -281,9 +281,9 @@ class Comm {
    *
    * `rcount` is not an upper bound as it is in MPI: the two counts must name the same number of
    * bytes. Neither disagreement has one behaviour across the transports here -- a message larger
-   * than the buffer is an `MPI_ERR_TRUNCATE` through MPI and would be taken silently by a direct
-   * read, and a message smaller than the buffer arrives through MPI unchunked but stalls the
-   * chunked path, which posts one receive per chunk of `rcount`. A direct read is handed the
+   * than the buffer is an `MPI_ERR_TRUNCATE` through MPI and a direct read takes it without
+   * reporting the error, and a message smaller than the buffer arrives through MPI unchunked but
+   * leaves the chunked path waiting, since it posts one receive per chunk of `rcount`. A direct read is handed the
    * sender's size along with its address, so it always reports a mismatch; on every other transport
    * the size costs a message of its own, which only `SCTL_MEMDEBUG` builds send. So the check is
    * there for whichever transport a release build takes on one node, and for all of them under
@@ -753,13 +753,9 @@ class Comm {
     MPI_Comm mpi_comm_;
     mutable std::stack<void*> req;
 
-    // The ranks of this communicator sharing this node, whose memory this rank may be able to read
-    // directly (Linux process_vm_readv) instead of receiving through MPI. Built with the
-    // communicator, so one made from an MPI_Comm and one made by Split each get their own.
-    //
-    // Held as the node's comm ranks in ascending order and searched, rather than as a table indexed
-    // by comm rank: that table would be one entry per rank of the communicator -- 7.6 MB each at a
-    // million ranks -- to carry node_size useful entries.
+    // Node peers of this communicator, whose memory this rank may be able to read directly instead
+    // of receiving through MPI. Ascending comm-rank order and searched, not a table indexed by comm
+    // rank: that would be one entry per rank -- 7.6 MB at a million -- for node_size useful ones.
     MPI_Comm node_comm_ = MPI_COMM_NULL;
     std::vector<int> node_rank_;         ///< comm ranks on this node, ascending
     std::vector<int> node_pid_;          ///< their pids, in the same order

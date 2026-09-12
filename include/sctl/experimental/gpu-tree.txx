@@ -746,7 +746,7 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
   #pragma omp parallel num_threads(nthreads)
   {
     // The cut follows the team that arrived, not the one asked for: each chunk holds scratch of its
-    // own until the copy-out below. `max_emits` is an estimate, not a bound -- hence `HostSink`.
+    // own until the copy-out below.
     const Integer nt = SCTL_GET_NUM_THREADS();
     const Integer tid = SCTL_GET_THREAD_NUM();
     sctl::ScratchBuf<NodeMIDT> buf(max_emits);  // NUMA-local: first-touched on this thread's node
@@ -2033,7 +2033,7 @@ void blockCopy(const Policy& pol, T* dst, const T* src,
 }
 
 /**
- * One destination block per call, summing every contribution that lands on it:
+ * One destination block per call, summing every contribution addressed to it:
  * `dst[dstoff[g]*w + j] += src[srcoff[k]*w + j]` over the contributions `k` in `[gdsp[g], gdsp[g+1])`.
  *
  * A thread per destination, not per contribution: in the reduce direction several ranks hold a
@@ -2157,7 +2157,7 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
           ridx[i] = detail_bcast::findNode<DIM>(nmid, Nn, rmid[i]);
           SCTL_ASSERT(ridx[i] >= 0);
         }
-        // where each arriving block lands, given the offsets the nodes will have
+        // where each arriving block is written, given the offsets the nodes will have
         const auto packRecv = [Nr, rdcnt, rddsp, &ridx](sctl::ConstIterator<Long> off, sctl::Iterator<Long> a, sctl::Iterator<Long> b, sctl::Iterator<Long> l) {
           Long m = 0;
           for (Long i = 0; i < Nr; i++) {

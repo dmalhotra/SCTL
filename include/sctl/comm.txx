@@ -224,7 +224,7 @@ constexpr char kAckCountMismatch = 2;  // the counts disagree; both sides stop
  * kernel refuses, which every caller answers the same way: give this exchange to MPI.
  *
  * Why it does not report on the refusal beyond that: the read is one-sided, so it cannot tell a
- * block that is shorter than asked for from one that is not. Reading past the peer's block lands in
+ * block that is shorter than asked for from one that is not. Reading past the peer's block returns
  * whatever the peer keeps next to it and succeeds, since a send buffer holds every block in one
  * allocation; only an over-read leaving that allocation's mapping altogether fails, and then just
  * as any other refusal. `ReadNodeBlocks` compares the two counts before reading, which is the one
@@ -1049,9 +1049,9 @@ template <class RType> void Comm::Recv(Iterator<RType> rbuf, Long rcount, Intege
     Long told[2] = {0, 0};
     MPI_Recv(told, 2, MPI_INT64_T, source, rv_tag, impl_->mpi_comm_, MPI_STATUS_IGNORE);
     const Long bytes = told[1];
-    // The counts must agree. Reading only what fits would take the rest silently, where MPI reports
-    // MPI_ERR_TRUNCATE, and a receive buffer larger than the message stalls the chunked MPI path,
-    // which posts one receive per chunk of `rcount`. Free to check here, since the sender's size
+    // The counts must agree. Reading only what fits would drop the rest without reporting it, where
+    // MPI reports MPI_ERR_TRUNCATE, and a receive buffer larger than the message leaves the chunked
+    // MPI path waiting, since it posts one receive per chunk of `rcount`. Free to check here, since the sender's size
     // came with its address; the builds that check pay for a message to compare it anywhere else.
     if (bytes != rcount * (Long)sizeof(RType)) {  // answer first: the sender stops on it too
       const char ack = comm_detail::kAckCountMismatch;

@@ -372,12 +372,10 @@ namespace sctl {
 
           Vector<Morton<DIM>> new_mid;
           NodeArena<TreeNode> new_pnodes_;
-          // The iterations are a cap, not the end condition: an iteration adds the parent-neighbors
-          // of what the previous one added, so the requirement moves one level coarser each time and
-          // the closure settles within MAX_DEPTH of them. Reaching the cap means it did not, which
-          // would leave the tree unbalanced, so the loop says how it ended rather than the cap
-          // ending it with nothing said. Every thread reads the same shared list after a barrier, so
-          // they agree on this and leave together.
+          // The iterations are a cap, not the end condition: each adds the parent-neighbors of what
+          // the last added, so the closure settles within MAX_DEPTH. Reaching the cap means it did
+          // not and the tree is unbalanced, so the loop reports how it ended. Every thread reads the
+          // same shared list after a barrier, so they agree and leave together.
           bool early_exit = false;
           for (Integer iter = 0; iter <= MAX_DEPTH; iter++) {
             new_mid.ReInit(0);
@@ -917,7 +915,9 @@ namespace sctl {
         const Long    min_chunk   = std::max<Long>(4 * M + 1, 1024);
         const Integer nthreads    = std::clamp<Integer>(static_cast<Integer>(N / min_chunk), 1, max_threads);
 
-        // Upper bound: ~(MAX_DEPTH+1) nodes/leaf, chunk_size/M leaves/chunk, 4x slack.
+        // An estimate, not a bound: ~(MAX_DEPTH+1) nodes/leaf, chunk_size/M leaves/chunk, 4x slack.
+        // A split emits all 2^DIM children, so the worst case is 2^DIM*MAX_DEPTH per leaf, and a
+        // clump of more than M identical coordinates reaches it. `spill` takes what does not fit.
         const Long chunk_size_max = (N + nthreads - 1) / nthreads;
         const Long max_emits      = 4 * chunk_size_max * (MAX_DEPTH + 1) / std::max<Long>(1, M) + 4 * (MAX_DEPTH + 1) * (Long(1) << DIM) + 16;
 
@@ -932,7 +932,7 @@ namespace sctl {
         #pragma omp parallel num_threads(nthreads)
         {
           // The cut follows the team that arrived, not the one asked for: each chunk holds scratch of
-          // its own until the copy-out below. `max_emits` is an estimate, not a bound -- hence the spill.
+          // its own until the copy-out below.
           const Integer nt       = SCTL_GET_NUM_THREADS();
           const Integer tid      = SCTL_GET_THREAD_NUM();
           const Long    begin_t  = (N *  tid     ) / nt;
@@ -945,12 +945,7 @@ namespace sctl {
           const Long idx_start = is_first ? 0 : std::lower_bound(pt_mid.begin() + begin_t, pt_mid.begin() + begin_t + M, start_anchor.mid) - pt_mid.begin();
           const Long idx_end   = is_last  ? N : std::lower_bound(pt_mid.begin() + end_t,   pt_mid.begin() + end_t   + M, end_anchor.mid)   - pt_mid.begin();
 
-          // NUMA-local per-thread scratch (first-touched on this thread's node). `max_emits` is an
-          // estimate, not a bound: a clump of more than M identical coordinates splits at every
-          // level down to MAX_DEPTH, which costs 2^DIM nodes per level against the 4*(MAX_DEPTH+1)
-          // per leaf reserved here. So the nodes past the estimate go to `spill` rather than past
-          // the end of the buffer. The test is per node and measures as free beside the store.
-          ScratchBuf<Morton<DIM>> buf(max_emits);
+          ScratchBuf<Morton<DIM>> buf(max_emits);  // NUMA-local: first-touched on this thread's node
           Vector<Morton<DIM>> spill;
           Long cap = buf.Dim();
           Long count = 0;

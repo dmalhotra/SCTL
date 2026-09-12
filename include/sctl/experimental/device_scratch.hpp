@@ -135,9 +135,9 @@ template <class SrcPtr, class DstPtr> void deviceToHost(SrcPtr src, Long n, DstP
 
 /**
  * Host staging memory for `deviceToHost`, as one byte-addressed arena shared by every element type
- * rather than a buffer per type. Chunks are registered with the driver so the DMA lands in pinned
+ * rather than a buffer per type. Chunks are registered with the driver so the DMA writes into pinned
  * memory, and registration follows the pages being faulted in: registering them cold instead costs
- * several times as much and drags the whole chunk onto the faulting thread's NUMA node.
+ * several times as much and places the whole chunk on the faulting thread's NUMA node.
  *
  * Not thread-safe, like any pool outside `ScratchPool::Instance()`. Every `deviceToHost` call site
  * runs outside a parallel region, and its buffer never outlives the call, so the pool sees one

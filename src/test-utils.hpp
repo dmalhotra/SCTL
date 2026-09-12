@@ -30,7 +30,7 @@ namespace test_utils {
  * count. The previous settings are restored on the way out.
  *
  * `Trimmed()` is false where the runtime does not adjust. A test that meant to check this has then
- * checked nothing, and `Report` says so rather than let it pass quietly.
+ * checked nothing, and `Report` prints that.
  */
 class TrimmedOmpTeam {
  public:
