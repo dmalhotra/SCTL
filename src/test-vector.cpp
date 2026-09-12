@@ -6,10 +6,12 @@
 // (+, -, *, /, +=, -=, *=, /=, unary -), all scalar broadcast ops, scalar/
 // vector free-function operators, Write/Read round-trip, operator<<.
 
+#include <unistd.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <sstream>
+#include <string>
 #include <vector>
 
 #include "sctl/common.hpp"
@@ -255,7 +257,10 @@ int main() {
   std::printf("Write / Read :\n");
   {
     Vector<double> v({3.14, 2.71, 1.41, 1.73});
-    const char* fname = "/tmp/sctl-test-vector.bin";
+    // Named for this process: a fixed path collides with another run of this test on the same node.
+    const char* dir = std::getenv("TMPDIR");
+    const std::string path = std::string(dir ? dir : "/tmp") + "/sctl-test-vector-" + std::to_string((long)getpid()) + ".bin";
+    const char* fname = path.c_str();
     v.Write(fname);
     Vector<double> r;
     r.Read(fname);
