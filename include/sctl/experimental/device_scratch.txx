@@ -19,8 +19,13 @@ namespace detail {
 
 template <class T, template <class...> class DevVec, auto Tag>
 inline DevVec<T>& PersistentBuffer() {
-  static DevVec<T>* buf = new DevVec<T>();  // never destroyed, for the reason in ~DeviceScratchPool
-  return *buf;
+  if constexpr (is_device_vector_v<DevVec<T>>) {
+    static DevVec<T>* buf = new DevVec<T>();  // never destroyed, for the reason in ~DeviceScratchPool
+    return *buf;
+  } else {  // host storage: that reason does not apply, and a leak checker would report it
+    static DevVec<T> buf;
+    return buf;
+  }
 }
 
 template <class T, template <class...> class DevVec> inline void resizeDiscard(DevVec<T>& v, Long n) {
