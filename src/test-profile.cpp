@@ -50,6 +50,29 @@ int main() {
     CHECK(Profile::IncrementCounter(ProfileCounter::CUSTOM3, 0) == b0 + 200);
   }
 
+  // --- every thread of a team gets a row of its own, however large the team ---
+  // Two threads sharing a row would show as an increment that skips a value, and a thread with no
+  // row writes past the end, which the sanitizer build reports.
+  std::printf("IncrementCounter (large team) :\n");
+  {
+#ifdef _OPENMP
+    const int prev_threads = omp_get_max_threads();
+    const int prev_dynamic = omp_get_dynamic();
+    const int asked = 4 * omp_get_num_procs();
+    omp_set_dynamic(0);
+    Long shared = 0;
+    #pragma omp parallel num_threads(asked) reduction(+:shared)
+    {
+      const Long a = Profile::IncrementCounter(ProfileCounter::CUSTOM5, 1);
+      const Long b = Profile::IncrementCounter(ProfileCounter::CUSTOM5, 1);
+      if (b != a + 1) shared++;
+    }
+    omp_set_dynamic(prev_dynamic);
+    omp_set_num_threads(prev_threads);
+    CHECK(shared == 0);
+#endif
+  }
+
   // --- reset() clears the Tic/Toc log without throwing ---
   // (Note: reset() does not zero the IncrementCounter atomics; it only clears
   // the timing/event log used by print().)
