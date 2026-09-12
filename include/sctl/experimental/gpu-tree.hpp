@@ -222,6 +222,7 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
   DevVec<char>& NodeData_(const std::string& name) { return node_data_.at(name); }
   const DevVec<char>& NodeData_(const std::string& name) const { return node_data_.at(name); }
   sctl::Vector<Long>& NodeCnt_(const std::string& name) { return node_cnt_.at(name); }
+  const sctl::Vector<Long>& NodeCnt_(const std::string& name) const { return node_cnt_.at(name); }
 
   std::set<std::string> data_moved_by_derived_;  ///< payloads a derived class moves itself after a rebuild; UpdateRefinement skips them
 
@@ -243,8 +244,6 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
 
   /** Storage for a new data set of `bytes`, with its per-node counts; both `AddData` overloads end here. */
   void addData_(const std::string& name, Long bytes, const sctl::Vector<Long>& cnt);
-
-
 
   sctl::Vector<Morton<DIM>> mins_;
   DevVec<Morton<DIM>> node_mid_;

@@ -873,7 +873,7 @@ namespace sctl {
         comm.Allreduce(send_buf + 0, recv_buf + 0, 1, CommOp::MIN);
         M = recv_buf[0];
       }
-      SCTL_ASSERT(M > 0);
+      SCTL_ASSERT_MSG(M > 0, "Tree::UpdateRefinement: fewer particles than ranks; every rank needs at least one");
 
       ScratchBuf<MortonCode<DIM>> pt_mid_(pt_mid.Dim() + 2*M);
       if (np > 1) { // Set mins, pt_mid <-- [M points from rank-1; pt_mid; M points from rank+1]

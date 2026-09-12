@@ -111,7 +111,9 @@ inline void DeviceScratchPool<DevVec>::Rewind(Chunk* chunk, char* p) {
 template <template <class...> class DevVec>
 inline void DeviceScratchPool<DevVec>::FreeBytes(Chunk* chunk, char* p, Long bytes) {
   const Long need = PaddedBytes(bytes);
+#ifdef SCTL_MEMDEBUG
   SCTL_ASSERT_MSG(chunk->top == p + need, "DeviceScratch: LIFO violation (free out of order).");
+#endif
   Rewind(chunk, p);
 }
 
@@ -124,7 +126,9 @@ inline void DeviceScratchPool<DevVec>::FreeBytes(char* p, Long bytes) {
       return;
     }
   }
+#ifdef SCTL_MEMDEBUG
   SCTL_ASSERT_MSG(false, "DeviceScratch: LIFO violation (free out of order).");
+#endif
 }
 
 // Chunks double so the pool converges after a few builds; `need` wins when a single request is
@@ -137,6 +141,7 @@ inline void DeviceScratchPool<DevVec>::NewChunk(Long need) {
   auto* buf = new DevVec<char>(cap + ALIGN - 1);  // room to align the base; the host backend gives only 16
   char* const raw = thrust::raw_pointer_cast(buf->data());
   char* const base = raw + ((ALIGN - (Long)((std::uintptr_t)raw & (ALIGN - 1))) & (ALIGN - 1));
+  SCTL_ASSERT((std::uintptr_t)base % (std::uintptr_t)ALIGN == 0);
   if (head_ != nullptr && head_->top == head_->base) {  // outgrown and holding nothing: let it go
     Chunk* const prev = head_->prev;                    // else it is buried, and Rewind below
     delete head_->buf;                                  // could never reach it again

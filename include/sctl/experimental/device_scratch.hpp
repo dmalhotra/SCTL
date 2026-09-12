@@ -139,6 +139,9 @@ template <class SrcPtr, class DstPtr> void deviceToHost(SrcPtr src, Long n, DstP
  * memory, and registration follows the pages being faulted in: registering them cold instead costs
  * several times as much and places the whole chunk on the faulting thread's NUMA node.
  *
+ * The retained chunk grows to the largest request and is never shrunk, so one big copy leaves that
+ * much host memory page-locked for the process.
+ *
  * Not thread-safe, like any pool outside `ScratchPool::Instance()`. Every `deviceToHost` call site
  * runs outside a parallel region, and its buffer never outlives the call, so the pool sees one
  * allocation at a time.
@@ -203,7 +206,7 @@ template <template <class...> class DevVec> class DeviceScratchPool {
   ~DeviceScratchPool();
   void NewChunk(Long need);
 
-  Chunk* head_{nullptr};
+  Chunk* head_{nullptr};  ///< first chunk taken on first use: a static must not reach CUDA during startup
 };
 
 /**

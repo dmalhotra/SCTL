@@ -1040,7 +1040,7 @@ using detail::WalkMode;
 using detail::scratch_policy;
 
 // Longest possible fill (zero anchors): at most 2^DIM nodes per level.
-template <Integer DIM> constexpr Long kCompleteTreeMax = (Long)MAX_DEPTH * ((Long)1 << DIM) + 1;
+template <Integer DIM> constexpr Long COMPLETE_TREE_MAX = (Long)MAX_DEPTH * ((Long)1 << DIM) + 1;
 
 // Coarsest complete-tree nodes filling the Morton interval [start_node, end_target). The functor
 // returns the node count it wrote.
@@ -1053,7 +1053,7 @@ Long completeTree(Morton<DIM>* out, const Morton<DIM>& start_node, const Morton<
   thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(1), cnt.begin(), fw);
   Long n = 0;
   thrust::copy(cnt.begin(), cnt.end(), &n);
-  SCTL_ASSERT_MSG(n <= kCompleteTreeMax<DIM>, "completeTree: output exceeded the fill bound.");
+  SCTL_ASSERT_MSG(n <= COMPLETE_TREE_MAX<DIM>, "completeTree: output exceeded the fill bound.");
   return n;
 }
 
@@ -1086,11 +1086,11 @@ template <Integer DIM> struct FirstChildInSlice {
 };
 
 /** `tree`, this rank's slice, completed to the whole domain by the ancestors of its two boundaries,
- *  sorted. `full` must hold `tree.size() + 2 * kCompleteTreeMax`; returns the count written. */
+ *  sorted. `full` must hold `tree.size() + 2 * COMPLETE_TREE_MAX`; returns the count written. */
 template <Integer DIM, template <class...> class DevVec, class Policy>
 Long completeSlice(const Policy& pol, const DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DIM>>& mins, Long rank, Long np, Morton<DIM> end_target, DeviceScratch<Morton<DIM>, DevVec>& full) {
   using NodeT = Morton<DIM>;
-  constexpr Long BND = kCompleteTreeMax<DIM>;
+  constexpr Long BND = COMPLETE_TREE_MAX<DIM>;
   const Long Nn = (Long)tree.size();
   DeviceScratch<NodeT, DevVec> lf(rank > 0 ? BND : 0), rt(rank + 1 < np ? BND : 0);
   Long nl = 0, nr = 0;
@@ -1122,7 +1122,7 @@ void leavesFromNonLeaf(const Policy& pol, DevVec<Morton<DIM>>& tree, const Morto
 // host vectors and far slower on the device, hence the split by backend in buildTreeDist.
 namespace detail_balance21_host {
 using detail_balance21::NonLeafPred;
-using detail_balance21::kCompleteTreeMax;
+using detail_balance21::COMPLETE_TREE_MAX;
 using detail_balance21::completeSlice;
 using detail_balance21::leavesFromNonLeaf;
 
@@ -1139,7 +1139,7 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
   { // Balance21 builds a tree from the root, so every node's ancestors must be present: extend the
     // slice to the whole domain, then take its non-leaf nodes. thrust's host backend is serial, so
     // compact with OpenMP straight into S.
-    DeviceScratch<NodeT, DevVec> full(Nn + 2 * kCompleteTreeMax<DIM>);
+    DeviceScratch<NodeT, DevVec> full(Nn + 2 * COMPLETE_TREE_MAX<DIM>);
     const Long Nf = completeSlice<DIM, DevVec>(pol, tree, mins, rank, np, end_target, full);
     const NonLeafPred<DIM> is_nonleaf{thrust::raw_pointer_cast(full.data()), Nf, NodeT{}.Next()};
     const NodeT* const fp = thrust::raw_pointer_cast(full.data());
@@ -1314,7 +1314,7 @@ void balanceTreeDist(DevVec<Morton<DIM>>& tree, const sctl::ScratchBuf<Morton<DI
   const auto pol = detail::scratch_policy<DevVec, NodeT>();
   DevVec<NodeT>& S = detail::PersistentBuffer<NodeT, DevVec, detail::Buf::Closure>();
   { // extend the slice to the whole domain, then take its non-leaf nodes
-    DeviceScratch<NodeT, DevVec> full(Nn + 2 * detail_balance21::kCompleteTreeMax<DIM>);
+    DeviceScratch<NodeT, DevVec> full(Nn + 2 * detail_balance21::COMPLETE_TREE_MAX<DIM>);
     const Long Nf = detail_balance21::completeSlice<DIM, DevVec>(pol, tree, mins, rank, np, end_target, full);
     DeviceScratch<Long, DevVec> ix(Nf);
     const Long k = thrust::copy_if(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nf), ix.begin(),
