@@ -102,14 +102,27 @@ inline Long DeviceScratchPool<DevVec>::DebugLiveCount() const {
 #endif
 }
 
-// 3: a redzone past each slice, checked on free. Only on a host backend -- stamping device memory
-// would cost a round trip per allocation, which is what the pool exists to avoid.
+// A redzone past each slice, stamped on allocation and checked on free. Debug builds only: on a
+// device backend each stamp and each check is a round trip, which is what the pool exists to avoid.
 template <template <class...> class DevVec>
 constexpr Long DeviceScratchPool<DevVec>::Redzone() {
 #ifdef SCTL_MEMDEBUG
-  if constexpr (!detail::is_device_vector_v<DevVec<char>>) return sctl::MemoryManager::end_padding;
-#endif
+  return sctl::MemoryManager::end_padding;
+#else
   return 0;
+#endif
+}
+
+template <template <class...> class DevVec>
+inline void DeviceScratchPool<DevVec>::StampRedzone(char* p, Long bytes) {
+  if constexpr (Redzone() > 0) {
+    if constexpr (detail::is_device_vector_v<DevVec<char>>) {
+      const bool ok = detail::gpu_runtime::MemsetDevice(p + bytes, sctl::MemoryManager::init_mem_val, (std::size_t)Redzone());
+      SCTL_ASSERT_MSG(ok, "DeviceScratchPool: the device runtime refused to stamp a redzone.");
+    } else {
+      for (Long i = 0; i < Redzone(); i++) p[bytes + i] = sctl::MemoryManager::init_mem_val;
+    }
+  }
 }
 
 template <template <class...> class DevVec>
@@ -126,9 +139,7 @@ template <template <class...> class DevVec>
 #ifdef SCTL_MEMDEBUG
   head_->live_count++;
   SCTL_ASSERT_MSG(((p - head_->base) & (ALIGN - 1)) == 0, "DeviceScratchPool: alignment invariant violated.");
-  if constexpr (Redzone() > 0) {
-    for (Long i = 0; i < Redzone(); i++) p[bytes + i] = sctl::MemoryManager::init_mem_val;
-  }
+  StampRedzone(p, bytes);
 #endif
   return {head_, p};
 }
@@ -150,8 +161,15 @@ inline void DeviceScratchPool<DevVec>::Rewind(Chunk* chunk, char* p) {
 template <template <class...> class DevVec>
 inline void DeviceScratchPool<DevVec>::CheckRedzone(const char* p, Long bytes) {
   if constexpr (Redzone() > 0) {
+    char trailer[Redzone()];
+    const char* seen = p + bytes;
+    if constexpr (detail::is_device_vector_v<DevVec<char>>) {
+      const bool ok = detail::gpu_runtime::CopyToHost(trailer, p + bytes, (std::size_t)Redzone());
+      SCTL_ASSERT_MSG(ok, "DeviceScratchPool: the device runtime refused to read a redzone back.");
+      seen = trailer;
+    }
     for (Long i = 0; i < Redzone(); i++) {
-      SCTL_ASSERT_MSG(p[bytes + i] == sctl::MemoryManager::init_mem_val,
+      SCTL_ASSERT_MSG(seen[i] == sctl::MemoryManager::init_mem_val,
                       "DeviceScratch: out-of-bounds write past buffer end detected.");
     }
   }

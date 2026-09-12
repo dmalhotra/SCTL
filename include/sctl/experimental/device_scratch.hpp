@@ -79,6 +79,20 @@ inline bool CopyToHost(void* dst, const void* src, std::size_t bytes) {
 #endif
 }
 
+/** Fill `bytes` of device memory at `p` with `value`. False if the runtime refused. */
+inline bool MemsetDevice(void* p, int value, std::size_t bytes) {
+#if defined(__HIPCC__)
+  return hipMemset(p, value, bytes) == hipSuccess;
+#elif defined(__CUDACC__)
+  return cudaMemset(p, value, bytes) == cudaSuccess;
+#else
+  (void)p;
+  (void)value;
+  (void)bytes;
+  return false;  // no runtime, and no device pointer to fill
+#endif
+}
+
 /** Wait for the device to finish what it has been given. */
 inline void DeviceSynchronize() {
 #if defined(__HIPCC__)
@@ -212,6 +226,9 @@ template <template <class...> class DevVec> class DeviceScratchPool {
 
   /** Bytes of trailer past each slice: nonzero only under SCTL_MEMDEBUG on a host backend. */
   static constexpr Long Redzone();
+
+  /** Stamp the trailer past a slice, so `CheckRedzone` can tell it was written over. */
+  static void StampRedzone(char* p, Long bytes);
 
   /** Verify the trailer stamped by `AllocBytes`. */
   static void CheckRedzone(const char* p, Long bytes);
