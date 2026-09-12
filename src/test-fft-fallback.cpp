@@ -194,11 +194,6 @@ template <class ValueType> class OldMatrixFFT {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-template <class T> T inf_norm(const Vector<T>& v) {
-  T m = 0;
-  for (const auto& x : v) m = std::max<T>(m, sctl::fabs(x));
-  return m;
-}
 template <class T> T inf_norm_diff(const Vector<T>& a, const Vector<T>& b) {
   SCTL_ASSERT(a.Dim() == b.Dim());
   T m = 0;

@@ -77,7 +77,7 @@ namespace sctl {
 
 
 
-  template <class Real> static Real inner_prod(const Vector<Real>& x, const Vector<Real>& y, const Comm& comm) {
+  template <class Real> Real inner_prod(const Vector<Real>& x, const Vector<Real>& y, const Comm& comm) {
     Real x_dot_y = 0;
     Long N = x.Dim();
     SCTL_ASSERT(y.Dim() == N);

@@ -32,7 +32,7 @@
 
 namespace sctl {
 
-  template <class VType> static void concat_vecs(Vector<VType>& v, const Vector<Vector<VType>>& vec_lst) {
+  template <class VType> void concat_vecs(Vector<VType>& v, const Vector<Vector<VType>>& vec_lst) {
     const Long N = vec_lst.Dim();
     Vector<Long> dsp(N+1); dsp[0] = 0;
     for (Long i = 0; i < N; i++) {
