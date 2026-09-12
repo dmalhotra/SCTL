@@ -5,6 +5,7 @@
 #include <algorithm>              // for lower_bound, max, min, sort
 #include <cstdint>                // for int32_t, uint8_t, uint64_t
 #include <cstdlib>                // for std::aligned_alloc, std::free
+#include <cstring>                // for memcpy
 #include <map>                    // for map, operator!=, __map_iterator
 #include <numeric>                // for exclusive_scan
 #include <set>                    // for set, __tree_const_iterator
@@ -1526,10 +1527,10 @@ namespace sctl {
       }
     }
 
-    Broadcast<ValueType>(name);
+    Broadcast(name);
   }
 
-  template <Integer DIM> template <class ValueType> void Tree<DIM>::Broadcast(const std::string& name) {
+  template <Integer DIM> void Tree<DIM>::Broadcast(const std::string& name) {
     Profile::Scoped prof_("Tree::Broadcast", &comm, true, 6);
     Integer np = comm.Size();
     Integer rank = comm.Rank();
@@ -1538,7 +1539,7 @@ namespace sctl {
     Iterator<Vector<char>> data_;
     Iterator<Vector<Long>> cnt_;
     GetData_(data_, cnt_, name);
-    Vector<ValueType> data(data_->Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->begin(), false);
+    Vector<char>& data = *data_;
     Vector<Long>& cnt = *cnt_;
     SCTL_ASSERT(cnt.Dim() == node_mid.Dim());
     const Long dof = tree_detail::global_dof(comm, data.Dim(), scan(dsp, cnt));
@@ -1578,7 +1579,7 @@ namespace sctl {
         recv_data_tot = scan(recv_data_dsp, recv_data_cnt);
       }
 
-      Vector<ValueType> send_buff, recv_buff;
+      Vector<char> send_buff, recv_buff;
       Vector<Long> send_buff_cnt(np), send_buff_dsp(np);
       Vector<Long> recv_buff_cnt(np), recv_buff_dsp(np);
       { // Set send_buff, send_buff_cnt, send_buff_dsp, recv_buff, recv_buff_cnt, recv_buff_dsp
@@ -1594,9 +1595,7 @@ namespace sctl {
           Long send_data_dsp_ = send_data_dsp[i] * dof;
           Long send_data_cnt_ = send_data_cnt[i] * dof;
           SCTL_ASSERT(send_data_cnt_ == cnt_);
-          for (Long j = 0; j < cnt_; j++) {
-            send_buff[send_data_dsp_+j] = data[dsp_+j];
-          }
+          if (cnt_) std::memcpy(&send_buff[send_data_dsp_], &data[dsp_], cnt_);
         }
         for (Integer p = 0; p < np; p++) {
           Long send_buff_cnt_ = 0;
@@ -1631,10 +1630,9 @@ namespace sctl {
         Long N1 = (end_idx ? dsp[end_idx-1] + cnt[end_idx-1] : 0) * dof;
         Long Ns = (Nsplit ? recv_data_dsp[Nsplit-1] + recv_data_cnt[Nsplit-1] : 0) * dof;
         if (N0 != Ns || recv_buff.Dim() != N0+data.Dim()-N1) { // resize data and preserve non-ghost data
-          Vector<char> data_new((recv_buff.Dim() + N1-N0) * sizeof(ValueType));
-          omp_par::memcpy(data_new.begin() + Ns * sizeof(ValueType), data_->begin() + N0 * sizeof(ValueType), (N1-N0) * sizeof(ValueType));
+          Vector<char> data_new(recv_buff.Dim() + N1-N0);
+          omp_par::memcpy(data_new.begin() + Ns, data_->begin() + N0, N1-N0);
           data_->Swap(data_new);
-          data.ReInit(data_->Dim()/sizeof(ValueType), (Iterator<ValueType>)data_->begin(), false);
         }
 
         #pragma omp parallel for schedule(static) if (start_idx > 256)

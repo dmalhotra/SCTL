@@ -339,8 +339,8 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
           gt.template ReduceBroadcast<Real>("d");
           st.template ReduceBroadcast<Real>("d");
         } else {
-          gt.template Broadcast<Real>("d");
-          st.template Broadcast<Real>("d");
+          gt.Broadcast("d");
+          st.Broadcast("d");
         }
         char msg[160];
         sctl::Vector<NodeT> gmid, smid;
@@ -355,8 +355,8 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
         }
 
         // the ghosts already hold the owners' values and Broadcast does not accumulate
-        gt.template Broadcast<Real>("d");
-        st.template Broadcast<Real>("d");
+        gt.Broadcast("d");
+        st.Broadcast("d");
         sctl::Vector<NodeT> gmid2, smid2;
         const sctl::Vector<Real> g2 = owned_vals_gpu(gt, "d", gmid2), s2 = owned_vals_sctl(st, "d", smid2);
         std::snprintf(msg, sizeof msg, "%s, halo=%d: a further Broadcast changes nothing", op, (int)halo);
@@ -375,7 +375,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
         sctl::Vector<Long> cnt;
         const sctl::Vector<Real> v = fill(to_host(gt.GetNodeMID()), b, e, true, cnt);
         gt.AddData("d", DevVec<Real>(v.begin(), v.end()), cnt);
-        gt.template Broadcast<Real>("d");
+        gt.Broadcast("d");
         gpu_tree::DataView<const Real, DevVec> d;
         sctl::Vector<Long> cnt_out;
         gt.GetData(d, cnt_out, "d");
@@ -387,7 +387,7 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
         sctl::Vector<Long> cnt;
         sctl::Vector<Real> v = fill(st.GetNodeMID(), b, e, true, cnt);
         st.AddData("d", v, cnt);
-        st.template Broadcast<Real>("d");
+        st.Broadcast("d");
         sctl::Vector<Real> d;
         sctl::Vector<Long> cnt_out;
         st.GetData(d, cnt_out, "d");
@@ -472,8 +472,8 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
     // data set added after that is laid out against those counts, with its items in the owned
     // window; one added before keeps the owned-only layout. Both must round-trip, and still do once
     // a refinement has moved them.
-    gt.template Broadcast<Real>("pt");
-    st.template Broadcast<Real>("pt");
+    gt.Broadcast("pt");
+    st.Broadcast("pt");
     gt.AddParticleData("b", "pt", hd);
     st.AddParticleData("b", "pt", h);
     check("particle data round-trips for a set added after a Broadcast filled the ghost slots",

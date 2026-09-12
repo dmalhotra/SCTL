@@ -54,12 +54,12 @@ void TestParticleDataLayout(const Comm& comm) {
   tree.UpdateRefinement(X, 100, true, Periodicity::NONE, 1);
   check(tree, "v1");
 
-  tree.Broadcast<Real>("pt");        // fills the group's ghost slots
+  tree.Broadcast("pt");        // fills the group's ghost slots
   tree.AddParticleData("v2", "pt", f);  // laid out against counts that now cover them
   check(tree, "v1");
   check(tree, "v2");
 
-  tree.Broadcast<Real>("v2");  // the ghost slots are already sized, so this moves nothing
+  tree.Broadcast("v2");  // the ghost slots are already sized, so this moves nothing
   check(tree, "v2");
 
   tree.UpdateRefinement(X, 60, true, Periodicity::NONE, 1);

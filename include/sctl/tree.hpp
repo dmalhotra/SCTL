@@ -176,7 +176,7 @@ template <Integer DIM> class Tree {
      *
      * @note This is a collective operation and must be called from all processes in the communicator.
      */
-    template <class ValueType> void Broadcast(const std::string& name);
+    void Broadcast(const std::string& name);
 
     /**
      * Delete data from the tree nodes.

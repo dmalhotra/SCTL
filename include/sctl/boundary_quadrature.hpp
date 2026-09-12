@@ -912,7 +912,7 @@ template <class Real> class Quadrature {
         cnt[N-1] = PtSrc.Dim() - dsp[N-1];
         tree.AddData("PtSrc", PtSrc, cnt);
       }
-      tree.template Broadcast<PtData>("PtSrc");
+      tree.Broadcast("PtSrc");
 
       { // Build pair_lst
         Vector<Long> cnt;

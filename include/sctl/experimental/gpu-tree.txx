@@ -2129,7 +2129,6 @@ void exchangeBlocks(const Policy& pol, const Comm& comm, sctl::ConstIterator<Mor
 }  // namespace detail_bcast
 
 template <class Real, Integer DIM, template <class...> class DevVec>
-template <class ValueType>
 void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
   const Long np = comm_.Size();
   if (np == 1) return;
@@ -2271,7 +2270,7 @@ void GPUTree<Real, DIM, DevVec>::ReduceBroadcast(const std::string& name) {
           detail_bcast::blockAdd<DevVec>(pol, d, r, soff.begin(), doff.begin(), len.begin(), gdsp.begin(), ng, dof);
         });
   }
-  Broadcast<ValueType>(name);
+  Broadcast(name);
   prof.toc();
 #endif
 }
