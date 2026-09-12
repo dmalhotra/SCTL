@@ -481,7 +481,7 @@ template <Integer DIM, template <class...> class DevVec>
 void treeFromAnchors(DevVec<Morton<DIM>>& tree, const Morton<DIM>* anchors_ptr, Long n, const Morton<DIM>& start_node, const Morton<DIM>& end_target) {
   DeviceScratch<Long, DevVec> offsets(n + 1);
   const Long total = anchorWalkCount<DIM, DevVec>(offsets, anchors_ptr, n, start_node, end_target);
-  tree.resize(total);
+  resizeDiscard(tree, total);  // the write pass below covers all of it
   anchorWalkWrite<DIM, DevVec>(thrust::raw_pointer_cast(tree.data()), thrust::raw_pointer_cast(offsets.data()), anchors_ptr, n, start_node, end_target);
 }
 
@@ -538,7 +538,7 @@ void partitionN(const Policy& pol, DevVec<T>& v, Long begin, Long n, Long Ntgt, 
   }
   exchangePooled(pol, v, begin, n, storage_buf, Ntgt, scnt, rcnt, comm);
   v.swap(storage_buf);
-  v.resize(Ntgt);
+  SCTL_ASSERT((Long)v.size() == Ntgt);  // exchangePooled sized the receive buffer, so the swap already did it
 #endif
 }
 
@@ -700,7 +700,7 @@ void buildTreeGpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
   thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(nthreads), counts.begin(), fc);
   const Long total = detail::scanCounts(pol, counts, offsets, nthreads);
 
-  tree.resize(total);
+  detail::resizeDiscard(tree, total);  // the write pass below covers all of it
   ChunkedWalkFunctor<DIM, WalkMode::Write> fw{
       thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nthreads, thrust::raw_pointer_cast(offsets.data()),
       thrust::raw_pointer_cast(tree.data()), start_bnd, end_bnd};

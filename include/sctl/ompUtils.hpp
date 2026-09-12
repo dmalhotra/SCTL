@@ -19,6 +19,10 @@ namespace omp_par {
  * element-wise copy through arbitrary iterators, use `omp_par::copy` (or plain
  * `std::copy`).
  *
+ * Contiguity cannot be asked of an arbitrary iterator before C++20, so a C++17 build accepts only
+ * the two named above and refuses every other iterator, `std::vector`'s among them; pass `&v[0]`
+ * for those. A C++20 build accepts any `std::contiguous_iterator`.
+ *
  * The thread count is chosen by an empirical heuristic when `nthreads < 0`:
  *   - bytes < 2 MB         → serial (`std::memcpy`)
  *   - bytes >= 2 MB          → full `omp_get_max_threads()`

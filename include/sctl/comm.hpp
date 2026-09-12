@@ -60,7 +60,10 @@ class Comm {
 
 #ifdef SCTL_HAVE_MPI
   /**
-   * Convert MPI_Comm to Comm.
+   * Convert MPI_Comm to Comm. Collective, and holds two communicators rather than one: besides
+   * duplicating `mpi_comm` it splits off the ranks sharing this node, at the cost of a further two
+   * collectives, so that `SameNode` and the direct reads are local lookups afterwards. `Split` pays
+   * this too. `-DSCTL_COMM_NO_DIRECT` builds none of it.
    */
   explicit Comm(const MPI_Comm mpi_comm) : impl_(std::make_shared<Impl>()) { impl_->Init(mpi_comm); }
 #endif
@@ -251,7 +254,10 @@ class Comm {
    * of it, and this returns once it has done so; otherwise this is `Issend` followed by `Wait`.
    *
    * Deadlocks if two ranks both send to each other before either receives, as `MPI_Send` does for
-   * a message too large to buffer.
+   * a message too large to buffer -- but on the direct path at any size, since this returns only
+   * once the destination has read the buffer. A pair that MPI would have buffered its way through
+   * therefore deadlocks when the two ranks share a node and not when they do not, so order the
+   * pair (one sends while the other receives) rather than rely on the message being small.
    *
    * Stops the program when the destination's `rcount` names a different number of bytes, wherever
    * that is detected; see `Recv` for which transports detect it.

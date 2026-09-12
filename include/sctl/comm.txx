@@ -1144,11 +1144,9 @@ template <bool BlockingDirect, class SType, class RType> Comm::Request Comm::Ial
     return comm_detail::MPINumChunks(bytes);
 #endif
   };
-  // A slot for every non-empty block of every peer but self -- an empty block costs none. The
-  // node-local stage runs after these are posted and can still give up the direct path, and its
-  // peers then need slots of their own. That is at most one slot per non-empty node-local block, so
-  // the array grows with the ranks per node and not with np: under 200 slots either way, whether np
-  // is ten thousand or a million.
+  // A slot for every non-empty block of every peer but self -- an empty block costs none. Counted
+  // over all such peers, node-local ones included: the direct read runs after these are posted and
+  // can still be refused, and those peers then go to MPI into the slots kept here.
   Long slots = 0;
 #if MPI_VERSION < 4
   Long max_chunks = 0;

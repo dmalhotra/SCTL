@@ -119,7 +119,8 @@ template <Integer DIM> class Tree {
      * @param[in] name Name for the data. Must not already exist on this tree.
      * @param[in] data Contiguous data for all nodes, concatenated in node
      * order. Must satisfy `data.Dim() == dof * sum(cnt)` for some `dof >= 0`.
-     * @param[in] cnt Number of data elements per node. Must have one entry per tree node.
+     * @param[in] cnt Number of data elements per node. Must have one entry per tree node, whatever
+     * `dof` works out to -- an empty `data` and an empty `cnt` do not reserve the name.
      *
      * @note Collective; must be called from all processes.
      *
@@ -147,7 +148,8 @@ template <Integer DIM> class Tree {
      *
      * @param[out] data Non-owning view of the tree's internal buffer for this
      * data. Must not be resized; in-place mutation aliases the stored data. A
-     * const tree fills a `Vector<const ValueType>`.
+     * const tree fills a `Vector<const ValueType>` and only that: the writable
+     * view is not available through a const reference.
      * @param[out] cnt Number of data elements per node (length = number of tree nodes). Non-owning view; must not be modified.
      * @param[in] name Name of the data.
      *

@@ -100,8 +100,10 @@ inline void ensureRecut(PlanBase& s, const Comm& comm) {
     }
   }
   ScratchBuf<Long> moff(np + 1), coff(np + 1);
-  omp_par::scan(mid.begin(), moff.begin(), np + 1, Long(0));  // reads mid[0, np) only
-  omp_par::scan(cur.begin(), coff.begin(), np + 1, Long(0));
+  omp_par::scan(mid.begin(), moff.begin(), np, Long(0));  // over exactly the np counts; the total is the entry past them
+  omp_par::scan(cur.begin(), coff.begin(), np, Long(0));
+  moff[np] = moff[np - 1] + mid[np - 1];
+  coff[np] = coff[np - 1] + cur[np - 1];
   if (s.rscnt.Dim() != np) s.rscnt.ReInit(np);
   if (s.rrcnt.Dim() != np) s.rrcnt.ReInit(np);
   for (Integer q = 0; q < np; q++) {  // overlap of my stage-3 block with q's current block, and inverse
