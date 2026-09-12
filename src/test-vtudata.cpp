@@ -89,7 +89,6 @@ int main(int argc, char** argv) {
     std::remove((fname + "000000.vtu").c_str());
   }
 
-  TEST_SUMMARY_RETURN();
-
   Comm::MPI_Finalize();
+  TEST_SUMMARY_RETURN();
 }

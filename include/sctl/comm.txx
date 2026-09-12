@@ -414,12 +414,18 @@ template <class Type> class Comm::CommDatatype {
 
 namespace comm_detail {
 
-/** The communicators `Comm::Self()` and `Comm::World()` hand out, released by `Comm::MPI_Finalize`.
- *  Heap-held rather than function statics so the release happens while MPI is still up: a static
- *  would be destroyed after `MPI_Finalize`, where `MPI_Comm_free` is not allowed. */
+/** The communicators `Comm::Self()` and `Comm::World()` hand out. `Comm::MPI_Finalize` releases them
+ *  while MPI is still up, which is where an `MPI_Comm` can still be given back; the destructor below
+ *  covers a program that never calls it, where `~Impl` finds MPI gone and frees only the memory. */
 inline std::vector<Comm*>& CommCache() {
-  static std::vector<Comm*> cache(2, nullptr);
-  return cache;
+  struct Cache {
+    std::vector<Comm*> v{2, nullptr};
+    ~Cache() {
+      for (Comm* c : v) delete c;
+    }
+  };
+  static Cache cache;
+  return cache.v;
 }
 
 }  // namespace comm_detail
