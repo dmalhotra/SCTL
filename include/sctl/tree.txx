@@ -869,7 +869,7 @@ namespace sctl {
 
       { // Update M = global_min(pt_mid.Dim(), M)
         StaticArray<Long,1> recv_buf, send_buf{std::min(pt_mid.Dim(), M)};
-        comm.Allreduce<Long>(send_buf, recv_buf, 1, CommOp::MIN);
+        comm.Allreduce(send_buf + 0, recv_buf + 0, 1, CommOp::MIN);
         M = recv_buf[0];
       }
       SCTL_ASSERT(M > 0);

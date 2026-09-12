@@ -2,7 +2,9 @@
 #define _SCTL_SORT_SCATTER_TXX_
 
 #include <algorithm>            // for lower_bound, min, max
-#include <cstring>              // for memcpy
+#include <cstring>
+#include <iterator>
+#include <type_traits>              // for memcpy
 #include <functional>           // for less
 #include <iostream>             // for cout (test)
 
@@ -51,7 +53,7 @@ template <class Key> Long splitCounts(Vector<Long>& scnt, Vector<Long>& rcnt, Co
   #pragma omp parallel for schedule(static)
   for (Integer r = 1; r < np; r++) pos[r] = std::lower_bound(keys, keys + n, splitters[r]) - keys;
   for (Integer r = 0; r < np; r++) scnt[r] = pos[r + 1] - pos[r];
-  comm.Alltoall<Long>(scnt.begin(), 1, rcnt.begin(), 1);
+  comm.Alltoall(scnt.begin(), 1, rcnt.begin(), 1);
   Long nrecv = 0;
   for (Integer r = 0; r < np; r++) nrecv += rcnt[r];
   return nrecv;
@@ -73,7 +75,7 @@ template <class T> void exchange(ConstIterator<T> src, Iterator<T> dst, const Ve
   }
   omp_par::scan(sc.begin(), sd.begin(), np, Long(0));
   omp_par::scan(rc.begin(), rd.begin(), np, Long(0));
-  comm.Alltoallv<T>(src, sc.begin(), sd.begin(), dst, rc.begin(), rd.begin());
+  comm.Alltoallv(src, sc.begin(), sd.begin(), dst, rc.begin(), rd.begin());
 }
 
 /** `inv[m[i]] = i`: the one scattered write in the scheme, one index per key. */
@@ -174,7 +176,10 @@ template <class Key> void SortScatter<Key>::Repartition(const Vector<Key>& split
   keys_.Swap(recv);
 }
 
-template <class Key> template <class T> void SortScatter<Key>::ScatterForward(ConstIterator<T> src, Iterator<T> dst, Long dof) const {
+template <class Key> template <class SIter, class DIter> void SortScatter<Key>::ScatterForward(SIter src, DIter dst, Long dof) const {
+  using T = typename std::iterator_traits<SIter>::value_type;
+  static_assert(std::is_same<T, typename std::iterator_traits<DIter>::value_type>::value,
+                "SortScatter::ScatterForward: the source and destination must hold the same type");
   if (comm_.Size() == 1) {  // stages 2-4 are absent, so the sort alone is the map
     sort_scatter_detail::localMove<T>(src, dst, plan_.pre, plan_.Nloc, dof);
     return;
@@ -192,7 +197,10 @@ template <class Key> template <class T> void SortScatter<Key>::ScatterForward(Co
   sort_scatter_detail::exchange<T>(c.begin(), dst, plan_.rscnt, plan_.rrcnt, dof, comm_);
 }
 
-template <class Key> template <class T> void SortScatter<Key>::ScatterReverse(ConstIterator<T> src, Iterator<T> dst, Long dof) const {
+template <class Key> template <class SIter, class DIter> void SortScatter<Key>::ScatterReverse(SIter src, DIter dst, Long dof) const {
+  using T = typename std::iterator_traits<SIter>::value_type;
+  static_assert(std::is_same<T, typename std::iterator_traits<DIter>::value_type>::value,
+                "SortScatter::ScatterReverse: the source and destination must hold the same type");
   if (!plan_.inv) {  // inverses on the first move back: a caller that only moves data into sorted order never pays for them
     sort_scatter_detail::buildInverse(plan_.pre, plan_.pre_inv);
     if (plan_.post.Dim()) sort_scatter_detail::buildInverse(plan_.post, plan_.post_inv);
@@ -219,14 +227,14 @@ template <class Key> template <class T> void SortScatter<Key>::ScatterReverse(Co
 template <class Key> template <class T> void SortScatter<Key>::ScatterForward(Vector<T>& data, Long dof) const {
   SCTL_ASSERT_MSG(data.Dim() == plan_.Nloc * dof, "SortScatter::ScatterForward: data holds LocalCount()*dof values.");
   Vector<T> out(plan_.Ntree * dof);
-  ScatterForward<T>(data.begin(), out.begin(), dof);
+  ScatterForward(data.begin(), out.begin(), dof);
   data.Swap(out);
 }
 
 template <class Key> template <class T> void SortScatter<Key>::ScatterReverse(Vector<T>& data, Long dof) const {
   SCTL_ASSERT_MSG(data.Dim() == plan_.Ntree * dof, "SortScatter::ScatterReverse: data holds SortedCount()*dof values.");
   Vector<T> out(plan_.Nloc * dof);
-  ScatterReverse<T>(data.begin(), out.begin(), dof);
+  ScatterReverse(data.begin(), out.begin(), dof);
   data.Swap(out);
 }
 
@@ -280,9 +288,9 @@ template <class Key> void SortScatter<Key>::test() {
     for (Long i = 0; i < q.Dim(); i++) SCTL_ASSERT(q[i] == payload[i]);
     { // the raw form, into caller-sized buffers
       Vector<Long> fwd(ss.SortedCount() * dof), back(N * dof);
-      ss.ScatterForward<Long>(payload.begin(), fwd.begin(), dof);
+      ss.ScatterForward(payload.begin(), fwd.begin(), dof);
       check(ss, spl, fwd);
-      ss.ScatterReverse<Long>(fwd.begin(), back.begin(), dof);
+      ss.ScatterReverse(fwd.begin(), back.begin(), dof);
       for (Long i = 0; i < back.Dim(); i++) SCTL_ASSERT(back[i] == payload[i]);
     }
   };

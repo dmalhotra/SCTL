@@ -9,7 +9,8 @@
 #include <limits>                 // for numeric_limits
 #include <map>                    // for multimap, __map_iterator, operator==
 #include <numeric>                // for exclusive_scan
-#include <type_traits>            // for is_trivially_copyable
+#include <iterator>               // for iterator_traits
+#include <type_traits>            // for is_trivially_copyable, is_same
 #include <utility>                // for pair
 #include <vector>                 // for vector
 #ifdef __linux__
@@ -645,7 +646,9 @@ inline void Comm::Barrier() const {
 #endif
 }
 
-template <class SType> Comm::Request Comm::Isend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag) const {
+template <class SIter> Comm::Request Comm::Isend(SIter sbuf, Long scount, Integer dest, Integer tag) const {
+  using SType = typename std::iterator_traits<SIter>::value_type;
+
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (!scount) return Request();
@@ -682,7 +685,9 @@ template <class SType> Comm::Request Comm::Isend(ConstIterator<SType> sbuf, Long
 #endif
 }
 
-template <class SType> Comm::Request Comm::Issend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag) const {
+template <class SIter> Comm::Request Comm::Issend(SIter sbuf, Long scount, Integer dest, Integer tag) const {
+  using SType = typename std::iterator_traits<SIter>::value_type;
+
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (!scount) return Request();
@@ -792,7 +797,10 @@ template <class Type> void Comm::Bcast(Iterator<Type> buf, Long count, Integer r
 #endif
 }
 
-template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const {
+template <class SIter, class RIter> void Comm::Allgather(SIter sbuf, Long scount, RIter rbuf, Long rcount) const {
+  using SType = typename std::iterator_traits<SIter>::value_type;
+  using RType = typename std::iterator_traits<RIter>::value_type;
+
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
   comm_detail::TouchBuffer(sbuf, scount);
@@ -821,7 +829,10 @@ template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sb
 #endif
 }
 
-template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
+template <class SIter, class RIter> void Comm::Allgatherv(SIter sbuf, Long scount, RIter rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
+  using SType = typename std::iterator_traits<SIter>::value_type;
+  using RType = typename std::iterator_traits<RIter>::value_type;
+
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
@@ -965,7 +976,10 @@ template <class SType, class RType> void Comm::Allgatherv(ConstIterator<SType> s
 #endif
 }
 
-template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const {
+template <class SIter, class RIter> void Comm::Alltoall(SIter sbuf, Long scount, RIter rbuf, Long rcount) const {
+  using SType = typename std::iterator_traits<SIter>::value_type;
+  using RType = typename std::iterator_traits<RIter>::value_type;
+
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
@@ -1016,7 +1030,9 @@ template <class SType, class RType> void Comm::Alltoall(ConstIterator<SType> sbu
 // messages of one (source, tag, communicator), and each direction is posted in the same order at
 // both ends, so the address, the acknowledgement and any fallback payload cannot be mistaken for
 // one another.
-template <class SType> void Comm::Send(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag) const {
+template <class SIter> void Comm::Send(SIter sbuf, Long scount, Integer dest, Integer tag) const {
+  using SType = typename std::iterator_traits<SIter>::value_type;
+
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Send");
@@ -1121,7 +1137,10 @@ bool Comm::ReadNodeBlocks(ConstIterator<SType> sbuf, ConstIterator<Long> scounts
 }
 #endif  // SCTL_HAVE_MPI
 
-template <bool BlockingDirect, class SType, class RType> Comm::Request Comm::Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag) const {
+template <bool BlockingDirect, class SIter, class RIter> Comm::Request Comm::Ialltoallv_sparse(SIter sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, RIter rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag) const {
+  using SType = typename std::iterator_traits<SIter>::value_type;
+  using RType = typename std::iterator_traits<RIter>::value_type;
+
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
@@ -1227,7 +1246,11 @@ template <bool BlockingDirect, class SType, class RType> Comm::Request Comm::Ial
 #endif
 }
 
-template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<Type> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
+template <class SIter, class RIter> void Comm::Alltoallv(SIter sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, RIter rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
+  using Type = typename std::iterator_traits<SIter>::value_type;
+  static_assert(std::is_same<Type, typename std::iterator_traits<RIter>::value_type>::value,
+                "Comm::Alltoallv: the send and receive buffers must hold the same type");
+
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   comm_detail::WarnIfMPIInactive("Comm::Alltoallv");
@@ -1372,7 +1395,11 @@ template <class Type> void Comm::Alltoallv(ConstIterator<Type> sbuf, ConstIterat
 #endif
 }
 
-template <class Type> void Comm::Alltoallv_dense(ConstIterator<Type> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<Type> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
+template <class SIter, class RIter> void Comm::Alltoallv_dense(SIter sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, RIter rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const {
+  using Type = typename std::iterator_traits<SIter>::value_type;
+  static_assert(std::is_same<Type, typename std::iterator_traits<RIter>::value_type>::value,
+                "Comm::Alltoallv_dense: the send and receive buffers must hold the same type");
+
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
   // Ported from pvfmm's par::Mpi_Alltoallv_dense. Recursive bitonic split-exchange:
   // at each level we halve the rank group, send all data destined for the comparison
@@ -1432,13 +1459,13 @@ template <class Type> void Comm::Alltoallv_dense(ConstIterator<Type> sbuf, Const
 
     {  // Sendrecv block-length headers.
       Request recv_req = Irecv(r_cnt.begin(), new_np, partner, 0);
-      Request send_req = Issend<Long>(s_lengths, cmp_np, partner, 0);
+      Request send_req = Issend(s_lengths, cmp_np, partner, 0);
       Wait(std::move(recv_req));
       Wait(std::move(send_req));
     }
     if (extra_partner) {
       Request recv_req = Irecv(r_cnt_ext.begin(), new_np, split_id, 0);
-      Request send_req = Issend<Long>(s_len_ext.begin(), cmp_np, split_id, 0);
+      Request send_req = Issend(s_len_ext.begin(), cmp_np, split_id, 0);
       Wait(std::move(recv_req));
       Wait(std::move(send_req));
     }
@@ -1458,7 +1485,7 @@ template <class Type> void Comm::Alltoallv_dense(ConstIterator<Type> sbuf, Const
       Iterator<char> sbuff_tmp  = sbuff.begin() + sdisp_tmp[0];
       const Long sbuff_size = sdisp_tmp[cmp_np - 1] + s_cnt_tmp[cmp_np - 1] - sdisp_tmp[0];
       Request recv_req = Irecv(rbuff.begin(), rbuff_size, partner, 0);
-      Request send_req = Issend<char>(sbuff_tmp, sbuff_size, partner, 0);
+      Request send_req = Issend(sbuff_tmp, sbuff_size, partner, 0);
       Wait(std::move(recv_req));
       Wait(std::move(send_req));
       if (extra_partner) {  // matching zero-length send is skipped on the peer
@@ -1538,7 +1565,11 @@ template <class Type> void Comm::Alltoallv_dense(ConstIterator<Type> sbuf, Const
 }
 
 #ifdef SCTL_HAVE_MPI
-template <class Type> inline void Comm::AllreduceImpl(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, MPI_Op mpi_op) const {
+template <class SIter, class RIter> inline void Comm::AllreduceImpl(SIter sbuf, RIter rbuf, Long count, MPI_Op mpi_op) const {
+  using Type = typename std::iterator_traits<SIter>::value_type;
+  static_assert(std::is_same<Type, typename std::iterator_traits<RIter>::value_type>::value,
+                "Comm::Allreduce: the send and receive buffers must hold the same type");
+
   comm_detail::WarnIfMPIInactive("Comm::Allreduce");
   comm_detail::TouchBuffer(sbuf, count);
   comm_detail::TouchBuffer(rbuf, count);
@@ -1555,7 +1586,9 @@ template <class Type> inline void Comm::AllreduceImpl(ConstIterator<Type> sbuf, 
 }
 #endif
 
-template <class Type> void Comm::Allreduce(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, CommOp op) const {
+template <class SIter, class RIter> void Comm::Allreduce(SIter sbuf, RIter rbuf, Long count, CommOp op) const {
+  using Type = typename std::iterator_traits<SIter>::value_type;
+
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (!count) return;
@@ -1565,7 +1598,9 @@ template <class Type> void Comm::Allreduce(ConstIterator<Type> sbuf, Iterator<Ty
 #endif
 }
 
-template <CommOp op, class Type> void Comm::Allreduce(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count) const {
+template <CommOp op, class SIter, class RIter> void Comm::Allreduce(SIter sbuf, RIter rbuf, Long count) const {
+  using Type = typename std::iterator_traits<SIter>::value_type;
+
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (!count) return;
@@ -1576,7 +1611,11 @@ template <CommOp op, class Type> void Comm::Allreduce(ConstIterator<Type> sbuf, 
 }
 
 #ifdef SCTL_HAVE_MPI
-template <class Type> inline void Comm::ScanImpl(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, MPI_Op mpi_op) const {
+template <class SIter, class RIter> inline void Comm::ScanImpl(SIter sbuf, RIter rbuf, Long count, MPI_Op mpi_op) const {
+  using Type = typename std::iterator_traits<SIter>::value_type;
+  static_assert(std::is_same<Type, typename std::iterator_traits<RIter>::value_type>::value,
+                "Comm::Scan: the send and receive buffers must hold the same type");
+
   comm_detail::WarnIfMPIInactive("Comm::Scan");
   comm_detail::TouchBuffer(sbuf, count);
   comm_detail::TouchBuffer(rbuf, count);
@@ -1593,7 +1632,9 @@ template <class Type> inline void Comm::ScanImpl(ConstIterator<Type> sbuf, Itera
 }
 #endif
 
-template <class Type> void Comm::Scan(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, CommOp op) const {
+template <class SIter, class RIter> void Comm::Scan(SIter sbuf, RIter rbuf, Long count, CommOp op) const {
+  using Type = typename std::iterator_traits<SIter>::value_type;
+
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (!count) return;
@@ -1603,7 +1644,9 @@ template <class Type> void Comm::Scan(ConstIterator<Type> sbuf, Iterator<Type> r
 #endif
 }
 
-template <CommOp op, class Type> void Comm::Scan(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count) const {
+template <CommOp op, class SIter, class RIter> void Comm::Scan(SIter sbuf, RIter rbuf, Long count) const {
+  using Type = typename std::iterator_traits<SIter>::value_type;
+
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   if (!count) return;
@@ -1621,7 +1664,7 @@ template <class Type> void Comm::PartitionW(Vector<Type>& nodeList, const Vector
 
   if (wts_ == nullptr) {  // use PartitionN
     StaticArray<Long,2> length{nlSize, 0};
-    Allreduce<Long>(length + 0, length + 1, 1, CommOp::SUM);
+    Allreduce(length + 0, length + 1, 1, CommOp::SUM);
     PartitionN(nodeList, length[1]*(Rank()+1)/npes - length[1]*Rank()/npes);
     return;
   }
@@ -1633,8 +1676,8 @@ template <class Type> void Comm::PartitionW(Vector<Type>& nodeList, const Vector
 
   Long off1 = 0, off2 = 0, totalWt = 0;
   {  // compute the total weight of the problem ...
-    Allreduce<Long>(Ptr2ConstItr<Long>(&localWt, 1), Ptr2Itr<Long>(&totalWt, 1), 1, CommOp::SUM);
-    Scan<Long>(Ptr2ConstItr<Long>(&localWt, 1), Ptr2Itr<Long>(&off2, 1), 1, CommOp::SUM);
+    Allreduce(Ptr2ConstItr<Long>(&localWt, 1), Ptr2Itr<Long>(&totalWt, 1), 1, CommOp::SUM);
+    Scan(Ptr2ConstItr<Long>(&localWt, 1), Ptr2Itr<Long>(&off2, 1), 1, CommOp::SUM);
     off1 = off2 - localWt;
   }
 
@@ -1668,12 +1711,12 @@ template <class Type> void Comm::PartitionW(Vector<Type>& nodeList, const Vector
   }
   {  // Skip if already partitioned
     StaticArray<Long,2> send_to_other{nodeList.Dim() - sendSz[Rank()], 0};
-    Allreduce<Long>(send_to_other + 0, send_to_other + 1, 1, CommOp::SUM);
+    Allreduce(send_to_other + 0, send_to_other + 1, 1, CommOp::SUM);
     if (send_to_other[1] == 0) return;
   }
 
   // Exchange sendSz, recvSz
-  Alltoall<Long>(sendSz.begin(), 1, recvSz.begin(), 1);
+  Alltoall(sendSz.begin(), 1, recvSz.begin(), 1);
 
   {  // Compute sendOff, recvOff
     sendOff[0] = 0;
@@ -1791,7 +1834,7 @@ template <class Type, class Compare> void Comm::PartitionS(Vector<Type>& nodeLis
   }
   {  // Skip if already partitioned
     StaticArray<Long,2> send_to_other{nodeList.Dim()-scnt[Rank()], 0};
-    Allreduce<Long>(send_to_other+0, send_to_other+1, 1, CommOp::SUM);
+    Allreduce(send_to_other+0, send_to_other+1, 1, CommOp::SUM);
     if (send_to_other[1] == 0) return;
   }
   {  // Compute rcnt, rdsp
@@ -1867,7 +1910,7 @@ template <class Type> void Comm::SortScatterIndex(const Vector<Type>& key, Vecto
     }
 
     // Exchange sendSz, recvSz
-    Alltoall<Long>(sendSz.begin(), 1, recvSz.begin(), 1);
+    Alltoall(sendSz.begin(), 1, recvSz.begin(), 1);
 
     // compute offsets ...
     {  // Compute sendOff, recvOff
@@ -1905,7 +1948,7 @@ template <class Type> void Comm::ScatterForward(Vector<Type>& data_, const Vecto
     StaticArray<Long, 2> loc_size;
     loc_size[0] = data_.Dim();
     loc_size[1] = recv_size;
-    Allreduce<Long>(loc_size, glb_size, 2, CommOp::SUM);
+    Allreduce(loc_size + 0, glb_size + 0, 2, CommOp::SUM);
     if (glb_size[0] == 0 || glb_size[1] == 0) return;  // Nothing to be done.
     data_dim = glb_size[0] / glb_size[1];
     SCTL_ASSERT(glb_size[0] == data_dim * glb_size[1]);
@@ -2027,7 +2070,7 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     loc_size[0] = data_.Dim();
     loc_size[1] = scatter_index_.Dim();
     loc_size[2] = recv_size;
-    Allreduce<Long>(loc_size, glb_size, 3, CommOp::SUM);
+    Allreduce(loc_size + 0, glb_size + 0, 3, CommOp::SUM);
     if (glb_size[0] == 0 || glb_size[1] == 0) return;  // Nothing to be done.
 
     SCTL_ASSERT(glb_size[0] % glb_size[1] == 0);
@@ -2066,15 +2109,15 @@ template <class Type> void Comm::ScatterReverse(Vector<Type>& data_, const Vecto
     StaticArray<Long, 2> loc_size;
     loc_size[0] = data_.Dim() / data_dim;
     loc_size[1] = scatter_index_.Dim();
-    Scan<Long>(loc_size, glb_rank, 2, CommOp::SUM);
-    Allreduce<Long>(loc_size, glb_size, 2, CommOp::SUM);
+    Scan(loc_size + 0, glb_rank + 0, 2, CommOp::SUM);
+    Allreduce(loc_size + 0, glb_size + 0, 2, CommOp::SUM);
     SCTL_ASSERT(glb_size[0] == glb_size[1]);
     glb_rank[0] -= loc_size[0];
     glb_rank[1] -= loc_size[1];
 
     ScratchBuf<Long> glb_scan0(npes + 1), glb_scan1(npes + 1);
-    Allgather<Long>(glb_rank + 0, 1, glb_scan0.begin(), 1);
-    Allgather<Long>(glb_rank + 1, 1, glb_scan1.begin(), 1);
+    Allgather(glb_rank + 0, 1, glb_scan0.begin(), 1);
+    Allgather(glb_rank + 1, 1, glb_scan1.begin(), 1);
     glb_scan0[npes] = glb_size[0];
     glb_scan1[npes] = glb_size[1];
 
@@ -2331,7 +2374,7 @@ template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type
   Long totSize;
   {                 // Local and global sizes. O(log p)
     Long nelem = arr_.Dim();
-    Allreduce<Long>(Ptr2ConstItr<Long>(&nelem, 1), Ptr2Itr<Long>(&totSize, 1), 1, CommOp::SUM);
+    Allreduce(Ptr2ConstItr<Long>(&nelem, 1), Ptr2Itr<Long>(&totSize, 1), 1, CommOp::SUM);
   }
 
   Vector<Type> arr(arr_.Dim());
@@ -2809,7 +2852,7 @@ template <class Type, class Compare> void Comm::SampleSort(const Vector<Type>& a
 
   Long totSize;
   const Long nloc = arr_.Dim();
-  Allreduce<Long>(Ptr2ConstItr<Long>(&nloc, 1), Ptr2Itr<Long>(&totSize, 1), 1, CommOp::SUM);
+  Allreduce(Ptr2ConstItr<Long>(&nloc, 1), Ptr2Itr<Long>(&totSize, 1), 1, CommOp::SUM);
   if (!totSize) { SortedElem.ReInit(0); return; }
 
   // local sort

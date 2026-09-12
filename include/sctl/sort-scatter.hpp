@@ -90,10 +90,10 @@ template <class Key> class SortScatter {
   template <class T> void ScatterReverse(Vector<T>& data, Long dof) const;
 
   /** Same between caller-sized buffers: `src` `LocalCount()*dof` values, `dst` `SortedCount()*dof`, no overlap. */
-  template <class T> void ScatterForward(ConstIterator<T> src, Iterator<T> dst, Long dof) const;
+  template <class SIter, class DIter> void ScatterForward(SIter src, DIter dst, Long dof) const;
 
   /** `src` `SortedCount()*dof` values, `dst` `LocalCount()*dof`, no overlap. */
-  template <class T> void ScatterReverse(ConstIterator<T> src, Iterator<T> dst, Long dof) const;
+  template <class SIter, class DIter> void ScatterReverse(SIter src, DIter dst, Long dof) const;
 
   /** Round trips through Init, Repartition and both scatters on Comm::World(); Key constructible from Long. */
   static void test();

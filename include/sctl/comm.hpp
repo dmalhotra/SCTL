@@ -221,7 +221,7 @@ class Comm {
    *         is leaked. The return value is `[[nodiscard]]` — discarding it
    *         is a programmer error.
    */
-  template <class SType> [[nodiscard]] Request Isend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag = 0) const;
+  template <class SIter> [[nodiscard]] Request Isend(SIter sbuf, Long scount, Integer dest, Integer tag = 0) const;
 
   /**
    * Non-blocking synchronous send. Semantically equivalent to `Isend` except
@@ -246,7 +246,7 @@ class Comm {
    * @return a Request handle. Same lifetime contract as Isend(): must be
    *         passed to Wait() before going out of scope.
    */
-  template <class SType> [[nodiscard]] Request Issend(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag = 0) const;
+  template <class SIter> [[nodiscard]] Request Issend(SIter sbuf, Long scount, Integer dest, Integer tag = 0) const;
 
   /**
    * Blocking send, matched by `Recv` at the destination. Where the destination is a rank on this
@@ -272,7 +272,7 @@ class Comm {
    *
    * @param[in] tag identifier tag to be matched at receive.
    */
-  template <class SType> void Send(ConstIterator<SType> sbuf, Long scount, Integer dest, Integer tag = 0) const;
+  template <class SIter> void Send(SIter sbuf, Long scount, Integer dest, Integer tag = 0) const;
 
   /**
    * Blocking receive, matched by `Send` at the source. Where the source is a rank on this node and
@@ -366,7 +366,7 @@ class Comm {
    * @param[in] rcount number of elements in the receive buffer. The total number of elements in the receive buffer
    * should be `rcount * Size()`.
    */
-  template <class SType, class RType> void Allgather(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const;
+  template <class SIter, class RIter> void Allgather(SIter sbuf, Long scount, RIter rbuf, Long rcount) const;
 
   /**
    * Gather and concatenate messages of different lengths from all processes in the communicator.
@@ -384,7 +384,7 @@ class Comm {
    *
    * @param[in] rdispls iterator to the displacements in the receive buffer where the data from each process is stored.
    */
-  template <class SType, class RType> void Allgatherv(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;
+  template <class SIter, class RIter> void Allgatherv(SIter sbuf, Long scount, RIter rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;
 
   /**
    * Perform all-to-all operation for equal size messages.
@@ -400,7 +400,7 @@ class Comm {
    *
    * @param[in] rcount number of elements in each receive message. Size of receive-buffer must be `rcount * Size()`.
    */
-  template <class SType, class RType> void Alltoall(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const;
+  template <class SIter, class RIter> void Alltoall(SIter sbuf, Long scount, RIter rbuf, Long rcount) const;
 
   /**
    * Sparse all-to-all communication. The self block is copied rather than sent. With
@@ -448,7 +448,7 @@ class Comm {
    * @return a Request handle. Same lifetime contract as Isend(): must be
    *         passed to Wait() before destruction.
    */
-  template <bool BlockingDirect = false, class SType, class RType> [[nodiscard]] Request Ialltoallv_sparse(ConstIterator<SType> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<RType> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag = 0) const;
+  template <bool BlockingDirect = false, class SIter, class RIter> [[nodiscard]] Request Ialltoallv_sparse(SIter sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, RIter rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls, Integer tag = 0) const;
 
   /**
    * All-to-all communication with varying send and receive counts and displacements.
@@ -467,7 +467,7 @@ class Comm {
    *
    * @param[in] rdispls iterator to the displacements in the receive buffer.
    */
-  template <class Type> void Alltoallv(ConstIterator<Type> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<Type> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;
+  template <class SIter, class RIter> void Alltoallv(SIter sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, RIter rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;
 
   /**
    * All-to-all communication via recursive divide-and-conquer (bitonic
@@ -492,7 +492,7 @@ class Comm {
    * @param[in]  rcounts per-rank receive counts (length `Size()`).
    * @param[in]  rdispls per-rank receive-buffer displacements (length `Size()`).
    */
-  template <class Type> void Alltoallv_dense(ConstIterator<Type> sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, Iterator<Type> rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;
+  template <class SIter, class RIter> void Alltoallv_dense(SIter sbuf, ConstIterator<Long> scounts, ConstIterator<Long> sdispls, RIter rbuf, ConstIterator<Long> rcounts, ConstIterator<Long> rdispls) const;
 
   /**
    * Perform an all-reduce operation.
@@ -507,7 +507,7 @@ class Comm {
    *
    * @param[in] op reduction operation.
    */
-  template <class Type> void Allreduce(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, CommOp op) const;
+  template <class SIter, class RIter> void Allreduce(SIter sbuf, RIter rbuf, Long count, CommOp op) const;
 
   /**
    * All-reduce with the reduction op fixed at compile time. Unlike the runtime-`op` overload, only
@@ -523,7 +523,7 @@ class Comm {
    *
    * @param[in] count number of elements.
    */
-  template <CommOp op, class Type> void Allreduce(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count) const;
+  template <CommOp op, class SIter, class RIter> void Allreduce(SIter sbuf, RIter rbuf, Long count) const;
 
   /**
    * Perform a scan operation.
@@ -538,7 +538,7 @@ class Comm {
    *
    * @param[in] op scan operation.
    */
-  template <class Type> void Scan(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, CommOp op) const;
+  template <class SIter, class RIter> void Scan(SIter sbuf, RIter rbuf, Long count, CommOp op) const;
 
   /**
    * Scan with the reduction op fixed at compile time. Unlike the runtime-`op` overload, only the
@@ -554,7 +554,7 @@ class Comm {
    *
    * @param[in] count number of elements.
    */
-  template <CommOp op, class Type> void Scan(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count) const;
+  template <CommOp op, class SIter, class RIter> void Scan(SIter sbuf, RIter rbuf, Long count) const;
 
   /**
    * Perform a weighted partitioning of a vector.
@@ -792,8 +792,8 @@ class Comm {
 
   template <class Type> static MPI_Op GetMPIOp(CommOp op);
   template <CommOp op, class Type> static MPI_Op GetMPIOp();
-  template <class Type> void AllreduceImpl(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, MPI_Op mpi_op) const;
-  template <class Type> void ScanImpl(ConstIterator<Type> sbuf, Iterator<Type> rbuf, Long count, MPI_Op mpi_op) const;
+  template <class SIter, class RIter> void AllreduceImpl(SIter sbuf, RIter rbuf, Long count, MPI_Op mpi_op) const;
+  template <class SIter, class RIter> void ScanImpl(SIter sbuf, RIter rbuf, Long count, MPI_Op mpi_op) const;
   static void RegisterDatatype(MPI_Datatype datatype);
   static void RegisterOp(MPI_Op op);
   static void FreeRegisteredHandles();

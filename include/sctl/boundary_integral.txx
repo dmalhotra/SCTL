@@ -76,7 +76,7 @@ namespace sctl {
     bool have_trg_normal;
     { // Set have_trg_normal
       StaticArray<Long,1> Nloc{Xn_trg.Dim()}, Nglb{0};
-      comm.Allreduce<Long>(Nloc, Nglb, 1, CommOp::SUM);
+      comm.Allreduce(Nloc + 0, Nglb + 0, 1, CommOp::SUM);
       have_trg_normal = (Nglb[0] > 0);
       SCTL_ASSERT(!have_trg_normal || (Xn_trg.Dim() == Xtrg.Dim()));
     }
@@ -124,7 +124,7 @@ namespace sctl {
             X0_local[k] = std::min<Real>(X0_local[k], Xsrc[i*COORD_DIM+k]);
           }
         }
-        comm_.Allreduce<Real>(X0_local, BBX0, COORD_DIM, CommOp::MIN);
+        comm_.Allreduce(X0_local, BBX0, COORD_DIM, CommOp::MIN);
 
         Real BBlen, len_local = 0;
         for (Long i = 0; i < Ntrg; i++) {
@@ -137,7 +137,7 @@ namespace sctl {
             len_local = std::max<Real>(len_local, Xsrc[i*COORD_DIM+k]-BBX0[k]);
           }
         }
-        comm_.Allreduce<Real>(Ptr2ConstItr<Real>(&len_local,1), Ptr2Itr<Real>(&BBlen,1), 1, CommOp::MAX);
+        comm_.Allreduce(Ptr2ConstItr<Real>(&len_local,1), Ptr2Itr<Real>(&BBlen,1), 1, CommOp::MAX);
         BBlen_inv = (BBlen > 0 ? 1/BBlen : (Real)1);
       }
       { // Expand bounding-box so that no points are on the boundary
@@ -268,7 +268,7 @@ namespace sctl {
       for (Long i = 0; i < sbuff.Dim(); i++) sbuff[i] = src_nodes0[proc_srcidx_lst[i].second];
 
       Vector<Long> rcnt(np), rdsp(np); rdsp = 0;
-      comm_.Alltoall<Long>(scnt.begin(), 1, rcnt.begin(), 1);
+      comm_.Alltoall(scnt.begin(), 1, rcnt.begin(), 1);
       omp_par::scan(rcnt.begin(), rdsp.begin(), np);
 
       // Exchange data
