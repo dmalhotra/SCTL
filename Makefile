@@ -35,12 +35,12 @@ CXXFLAGS += -DSCTL_SIG_HANDLER # Enable SCTL stack trace
 
 CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
 
-#CXXFLAGS += -DSCTL_MAX_DEPTH=20 # Morton/Tree depth limit (default 20); above 64/DIM-1 the code needs more than one word
+#CXXFLAGS += -DSCTL_MAX_DEPTH=20 # Morton/Tree depth limit
 
 #CXXFLAGS += -DSCTL_HAVE_MPI #use MPI
 
-#CXXFLAGS += -DSCTL_COMM_PTRACER # permit direct-communication where the kernel would refuse, by opening each rank's memory to every process of the same user
-#CXXFLAGS += -DSCTL_COMM_NO_DIRECT # never read peer memory: every block goes through MPI, and no Comm looks for its node group (overrides the above)
+#CXXFLAGS += -DSCTL_COMM_PTRACER # allow direct reads; exposes rank memory to the same user
+#CXXFLAGS += -DSCTL_COMM_NO_DIRECT # disable direct reads (overrides the above)
 
 CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
 CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
@@ -122,8 +122,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)
 	$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $^ -o $@
 
-# GPU tree (include/sctl/experimental): CUDA sources, compiled by nvcc with the MPI wrapper as the
-# host compiler. Needs CUDA and a CUDA-aware MPI, so `gpu` is separate from `all`.
+# GPU tree: needs CUDA and a CUDA-aware MPI, so `gpu` is separate from `all`.
 NVCC = nvcc -ccbin mpicxx
 NVCCFLAGS = -x cu -std=c++17 -O3 -arch=native -rdc=true --expt-relaxed-constexpr -Xcompiler "-fopenmp" \
             -DSCTL_HAVE_MPI -DSCTL_MAX_DEPTH=20 -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP
@@ -136,9 +135,6 @@ GPU_BIN = \
 
 gpu: $(GPU_BIN)
 
-# The whole library is headers, so a .cu alone does not say when its binary is out of date: editing
-# a header would otherwise leave `make gpu` handing back the previous build. The recipe passes `$<`,
-# so listing them as prerequisites does not put them on the command line.
 GPU_DEPS = $(wildcard $(INCDIR)/*.hpp $(INCDIR)/sctl/*.hpp $(INCDIR)/sctl/*.txx \
                       $(INCDIR)/sctl/experimental/*.hpp $(INCDIR)/sctl/experimental/*.txx)
 
