@@ -2437,7 +2437,8 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& dat
   SCTL_ASSERT_MSG(groups_.find(particle_name) != groups_.end(), "PtTree::AddParticleData: unknown particle group.");
   SCTL_ASSERT_MSG(data_pt_name_.find(data_name) == data_pt_name_.end(), "PtTree::AddParticleData: data name already present.");
   if (data_name == particle_name) {  // the group's own coordinates: count its particles per node
-    sctl::Vector<Long> cnt;
+    sctl::ScratchBuf<Long> cnt_buf((Long)this->GetNodeMID().size());  // AddData copies the counts out
+    sctl::Vector<Long> cnt(cnt_buf.Dim(), cnt_buf.begin(), false);
     nodeCounts(particle_name, cnt);
     this->template AddData<Real>(data_name, dof, cnt);
   } else {  // the group's counts already exist, ghost slots and all, so the layouts stay in step
@@ -2495,7 +2496,8 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& c
   for (auto& kv : groups_) {  // payloads follow their keys' re-cut; per-node counts come from the particles
     const std::string& group = kv.first;
     kv.second.Repartition(partition_codes_);
-    sctl::Vector<Long> cnt_new;
+    sctl::ScratchBuf<Long> cnt_new_buf((Long)this->GetNodeMID().size());  // copied into each name's counts below
+    sctl::Vector<Long> cnt_new(cnt_new_buf.Dim(), cnt_new_buf.begin(), false);
     nodeCounts(group, cnt_new);
 
     std::vector<std::string> names;
