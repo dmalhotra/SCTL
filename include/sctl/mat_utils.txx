@@ -83,6 +83,10 @@ template <> inline void gemm<double>(char TransA, char TransB, int M, int N, int
 
 //#define SCTL_SVD_DEBUG
 
+/** One rotation updates two columns, O(dim) work, and SVD issues O(dim^2) of them, so below this
+ * the parallel region costs more than the update it guards. Measured crossover on four threads. */
+static constexpr Long givens_omp_min = 512;
+
 template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, const StaticArray<Long, 2> &dim, Long m, ValueType a, ValueType b) {
   auto S = [S_,dim](Long i, Long j) -> ValueType& { return S_[(i) * dim[1] + (j)]; };
 
@@ -91,7 +95,7 @@ template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, co
   ValueType c = a / r;
   ValueType s = -b / r;
 
-#pragma omp parallel for
+#pragma omp parallel for if (dim[1] >= givens_omp_min)
   for (Long i = 0; i < dim[1]; i++) {
     ValueType S0 = S(m + 0, i);
     ValueType S1 = S(m + 1, i);
@@ -111,7 +115,7 @@ template <class ValueType> static inline void GivensR(Iterator<ValueType> S_, co
   ValueType c = a / r;
   ValueType s = -b / r;
 
-#pragma omp parallel for
+#pragma omp parallel for if (dim[0] >= givens_omp_min)
   for (Long i = 0; i < dim[0]; i++) {
     ValueType S0 = S(i, m + 0);
     ValueType S1 = S(i, m + 1);
