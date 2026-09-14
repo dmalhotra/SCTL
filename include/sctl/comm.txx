@@ -235,7 +235,7 @@ constexpr char kAckCountMismatch = 2;  // the counts disagree; both sides stop
 inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
 #ifdef __linux__
   const Long chunk = Long(8) << 20, nchunk = (bytes + chunk - 1) / chunk;
-  const auto read = [pid,src,dst,bytes,chunk](Long c) {
+  const auto read = [pid,src,dst,bytes](Long c) {
     Long a = c * chunk;
     const Long b = std::min<Long>(bytes, a + chunk);
     while (a < b) {
