@@ -665,6 +665,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::CheckKernelDims()
   }
 }
 
+#ifdef SCTL_HAVE_PVFMM
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(const S2TData& data, bool verbose) {
   const StaticArray<Integer,2> kdim{data.dim_src, data.dim_trg};
   const Integer dim_normal = data.dim_normal;
@@ -814,7 +815,6 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(c
   #endif
 }
 
-#ifdef SCTL_HAVE_PVFMM
 template <class SCTLKernel, bool use_dummy_normal> struct PVFMMKernelFn_ {
   static const int FLOPS = SCTLKernel::FLOPS() + 2*SCTLKernel::SrcDim()*SCTLKernel::TrgDim();;
 

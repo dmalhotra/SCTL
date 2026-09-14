@@ -209,8 +209,6 @@ template <class Real, Integer DIM> class ParticleFMM {
     struct TrgData;
     struct S2TData;
 
-    static void BuildSrcTrgScal(const S2TData& s2t_data, bool verbose);
-
     template <class Ker> static void DeleteKer(Iterator<char> ker);
 
     void CheckKernelDims() const;
@@ -219,6 +217,8 @@ template <class Real, Integer DIM> class ParticleFMM {
 
     #ifdef SCTL_HAVE_PVFMM
     template <class SCTLKernel, bool use_dummy_normal=false> struct PVFMMKernelFn; // construct PVFMMKernel from SCTLKernel
+
+    static void BuildSrcTrgScal(const S2TData& s2t_data, bool verbose);
 
     void EvalPVFMM(Vector<Real>& U, const std::string& trg_name) const;
     #endif
