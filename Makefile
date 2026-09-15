@@ -134,7 +134,30 @@ GPU_BIN = \
        $(BINDIR)/test-gpu-sort-scatter \
        $(BINDIR)/example-gpu-tree
 
-gpu: $(GPU_BIN)
+gpu: $(GPU_BIN) $(BINDIR)/test-device-tree
+
+# The precompiled device tree, for callers that nvcc never touches: one object carrying the
+# common instantiations, which a host compiler links against libcudart alone. No -rdc, so the
+# object is self-contained and needs no device-link step. The archive and its caller must agree
+# on SCTL_HAVE_MPI, since that changes the layout of Comm.
+CUDA_HOME ?= $(patsubst %/bin/nvcc,%,$(shell which nvcc))
+MPICXX ?= mpicxx
+LIBDIR = ./lib
+DEVTREE_LIB = $(LIBDIR)/libsctl-device-tree.a
+DEVTREE_NVCCFLAGS = -x cu -std=c++17 -O3 -arch=native --expt-relaxed-constexpr -Xcompiler "-fopenmp -fPIC" \
+                    -DSCTL_HAVE_MPI -DSCTL_MAX_DEPTH=20 -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP
+
+device-tree-lib: $(DEVTREE_LIB)
+
+$(DEVTREE_LIB): $(SRCDIR)/device-tree.cu $(GPU_DEPS)
+	-@$(MKDIRS) $(dir $@)
+	-@$(MKDIRS) $(OBJDIR)
+	$(NVCC) $(DEVTREE_NVCCFLAGS) -I$(INCDIR) -c $< -o $(OBJDIR)/device-tree.o
+	ar rcs $@ $(OBJDIR)/device-tree.o
+
+$(BINDIR)/test-device-tree: $(SRCDIR)/test-device-tree.cpp $(DEVTREE_LIB)
+	-@$(MKDIRS) $(dir $@)
+	$(MPICXX) $(CXXFLAGS) -DSCTL_HAVE_MPI -I$(INCDIR) $< $(DEVTREE_LIB) -L$(CUDA_HOME)/lib64 -lcudart -o $@
 
 GPU_DEPS = $(wildcard $(INCDIR)/*.hpp $(INCDIR)/sctl/*.hpp $(INCDIR)/sctl/*.txx \
                       $(INCDIR)/sctl/experimental/*.hpp $(INCDIR)/sctl/experimental/*.txx)
