@@ -148,7 +148,6 @@ The following list outlines the primary features and capabilities provided by th
 - **Legacy (Unmaintained)**:
   Older functionalities that are no longer actively maintained.
 
-  - :ref:`Boundary quadrature <boundary_quadrature_hpp>`: Boundary integrals on quad-patches using hedgehog quadrature.
   - :ref:`ChebBasis <cheb_utils_hpp>`: Tensor product Chebyshev basis for general-dimension computations.
 
 

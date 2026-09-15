@@ -102,7 +102,6 @@
 #include "sctl/generic-kernel.hpp"
 #include "sctl/generic-kernel.txx"
 #include "sctl/kernel_functions.hpp"
-#include "sctl/boundary_quadrature.hpp"
 
 // FMM wrapper
 #include "sctl/fmm-wrapper.hpp"
