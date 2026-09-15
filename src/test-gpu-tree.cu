@@ -651,11 +651,15 @@ int main(int argc, char** argv) {
     const bool root = (sctl::Comm::World().Rank() == 0);
     Long fails = 0;
     const auto run = [root, &fails]() {
-      if (root) printf("HostVector backend\n");
+      if (root) printf("HostVector backend, double\n");
       fails += test_vs_sctl<double, 3, gpu_tree::HostVector>();
-      if (root) printf("DeviceVector backend\n");
+      if (root) printf("HostVector backend, float\n");
+      fails += test_vs_sctl<float, 3, gpu_tree::HostVector>();
+      if (root) printf("DeviceVector backend, double\n");
       fails += test_vs_sctl<double, 3, gpu_tree::DeviceVector>();
-      if (root) printf("std::vector backend\n");
+      if (root) printf("DeviceVector backend, float\n");
+      fails += test_vs_sctl<float, 3, gpu_tree::DeviceVector>();
+      if (root) printf("std::vector backend, double\n");
       fails += test_vs_sctl<double, 3, std::vector>();
       if (root) printf("partitionN over a stretch\n");
       fails += test_partitionN_stretch<gpu_tree::HostVector>("HostVector: the buffer comes back holding the stretch alone");
