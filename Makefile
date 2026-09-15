@@ -134,39 +134,7 @@ GPU_BIN = \
        $(BINDIR)/test-gpu-sort-scatter \
        $(BINDIR)/example-gpu-tree
 
-gpu: $(GPU_BIN) $(BINDIR)/test-device-tree
-
-# The precompiled device tree, for callers that nvcc never touches: one object carrying the
-# common instantiations, which a host compiler links against libcudart alone. No -rdc, so the
-# object is self-contained and needs no device-link step. The archive and its caller must agree
-# on SCTL_HAVE_MPI, since that changes the layout of Comm.
-CUDA_HOME ?= $(patsubst %/bin/nvcc,%,$(shell which nvcc))
-MPICXX ?= mpicxx
-LIBDIR = ./lib
-# The configuration is in the name: the archive is only usable by a caller built the same way, and
-# make would otherwise consider a differently-configured archive up to date.
-DEVTREE_LIB = $(LIBDIR)/libsctl-device-tree-depth$(DEVTREE_MAX_DEPTH)-mpi$(DEVTREE_MPI).a
-# A caller has to be built with the same values, so they are overridable here:
-#   make device-tree-lib DEVTREE_MAX_DEPTH=62
-DEVTREE_MAX_DEPTH ?= 20
-DEVTREE_MPI ?= 1
-ifeq ($(DEVTREE_MPI), 1)
-	DEVTREE_MPI_FLAG = -DSCTL_HAVE_MPI
-endif
-DEVTREE_NVCCFLAGS = -x cu -std=c++17 -O3 -arch=native --expt-relaxed-constexpr -Xcompiler "-fopenmp -fPIC" \
-                    $(DEVTREE_MPI_FLAG) -DSCTL_MAX_DEPTH=$(DEVTREE_MAX_DEPTH) -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP
-
-device-tree-lib: $(DEVTREE_LIB)
-
-$(DEVTREE_LIB): $(SRCDIR)/device-tree.cu $(GPU_DEPS)
-	-@$(MKDIRS) $(dir $@)
-	-@$(MKDIRS) $(OBJDIR)
-	$(NVCC) $(DEVTREE_NVCCFLAGS) -I$(INCDIR) -c $< -o $(OBJDIR)/device-tree-depth$(DEVTREE_MAX_DEPTH)-mpi$(DEVTREE_MPI).o
-	ar rcs $@ $(OBJDIR)/device-tree-depth$(DEVTREE_MAX_DEPTH)-mpi$(DEVTREE_MPI).o
-
-$(BINDIR)/test-device-tree: $(SRCDIR)/test-device-tree.cpp $(DEVTREE_LIB)
-	-@$(MKDIRS) $(dir $@)
-	$(MPICXX) $(CXXFLAGS) $(DEVTREE_MPI_FLAG) -DSCTL_MAX_DEPTH=$(DEVTREE_MAX_DEPTH) -I$(INCDIR) $< $(DEVTREE_LIB) -L$(CUDA_HOME)/lib64 -lcudart -o $@
+gpu: $(GPU_BIN)
 
 GPU_DEPS = $(wildcard $(INCDIR)/*.hpp $(INCDIR)/sctl/*.hpp $(INCDIR)/sctl/*.txx \
                       $(INCDIR)/sctl/experimental/*.hpp $(INCDIR)/sctl/experimental/*.txx)
