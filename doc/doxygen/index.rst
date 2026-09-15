@@ -46,7 +46,6 @@ Unmaintained
 .. toctree::
    :maxdepth: 1
 
-   boundary_quadrature
    cheb_utils
 
 ..   sdc
