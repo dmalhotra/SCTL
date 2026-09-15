@@ -5,8 +5,10 @@
 // Buffers cross the interface as pointer and length, tagged with the memory space they live in.
 // Everything the tree hands back is a device pointer.
 //
-// The caller and the archive must agree on SCTL_HAVE_MPI, which changes the layout of Comm, and
-// on the size of Long.
+// The caller and the archive must be built with the same SCTL_HAVE_MPI, which changes the layout
+// of Comm, and the same SCTL_MAX_DEPTH, which changes the width of a Morton code. Both are carried
+// as template arguments defaulted from the macros, so a mismatch is a link error naming the
+// configuration rather than silent memory corruption.
 
 #ifndef _SCTL_EXPERIMENTAL_DEVICE_TREE_HPP_
 #define _SCTL_EXPERIMENTAL_DEVICE_TREE_HPP_
@@ -73,6 +75,13 @@ template <class Real> struct PayloadOf<Real, Real> { static constexpr Payload va
 template <class Real> struct PayloadOf<Real, char> { static constexpr Payload value = Payload::Char; };
 template <class Real> struct PayloadOf<Real, long> { static constexpr Payload value = Payload::Long; };
 
+/** Whether this translation unit was built with MPI, as part of the configuration fingerprint. */
+#ifdef SCTL_HAVE_MPI
+constexpr bool have_mpi = true;
+#else
+constexpr bool have_mpi = false;
+#endif
+
 /**
  * Point tree whose nodes, topology and payloads live on the device.
  *
@@ -80,7 +89,7 @@ template <class Real> struct PayloadOf<Real, long> { static constexpr Payload va
  * operation. Views returned here stay valid until the data set is reallocated, which
  * `UpdateRefinement`, `Broadcast`, `ReduceBroadcast` and the delete operations all do.
  */
-template <class Real, Integer DIM> class PtTree {
+template <class Real, Integer DIM, Integer MaxDepth = MAX_DEPTH, bool Mpi = have_mpi> class PtTree {
  public:
   explicit PtTree(const Comm& comm = Comm::Self());
   ~PtTree();

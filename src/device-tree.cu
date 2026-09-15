@@ -49,7 +49,7 @@ namespace detail_deviceTree {
 
 }  // namespace detail_deviceTree
 
-template <class Real, Integer DIM> struct PtTree<Real, DIM>::Impl {
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> struct PtTree<Real, DIM, MaxDepth, Mpi>::Impl {
   using Tree = gpu_tree::PtTree<Real, DIM, gpu_tree::DeviceVector>;
 
   explicit Impl(const Comm& comm) : tree(comm) {}
@@ -57,19 +57,19 @@ template <class Real, Integer DIM> struct PtTree<Real, DIM>::Impl {
   Tree tree;
 };
 
-template <class Real, Integer DIM> PtTree<Real, DIM>::PtTree(const Comm& comm) : p_(new Impl(comm)) {}
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> PtTree<Real, DIM, MaxDepth, Mpi>::PtTree(const Comm& comm) : p_(new Impl(comm)) {}
 
-template <class Real, Integer DIM> PtTree<Real, DIM>::~PtTree()
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> PtTree<Real, DIM, MaxDepth, Mpi>::~PtTree()
 {
   delete p_;
 }
 
-template <class Real, Integer DIM> PtTree<Real, DIM>::PtTree(PtTree&& other) noexcept : p_(other.p_)
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> PtTree<Real, DIM, MaxDepth, Mpi>::PtTree(PtTree&& other) noexcept : p_(other.p_)
 {
   other.p_ = nullptr;
 }
 
-template <class Real, Integer DIM> PtTree<Real, DIM>& PtTree<Real, DIM>::operator=(PtTree&& other) noexcept
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> PtTree<Real, DIM, MaxDepth, Mpi>& PtTree<Real, DIM, MaxDepth, Mpi>::operator=(PtTree&& other) noexcept
 {
   if (this != &other)
   {
@@ -80,37 +80,37 @@ template <class Real, Integer DIM> PtTree<Real, DIM>& PtTree<Real, DIM>::operato
   return *this;
 }
 
-template <class Real, Integer DIM> void PtTree<Real, DIM>::UpdateRefinement(const Real* coord, Long n, MemSpace space, Long M, bool balance21, Periodicity periodicity, Integer halo_size)
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> void PtTree<Real, DIM, MaxDepth, Mpi>::UpdateRefinement(const Real* coord, Long n, MemSpace space, Long M, bool balance21, Periodicity periodicity, Integer halo_size)
 {
   const auto x = detail_deviceTree::toDevice(coord, n * DIM, space);
   p_->tree.UpdateRefinement(x, M, balance21, periodicity, halo_size);
 }
 
-template <class Real, Integer DIM> void PtTree<Real, DIM>::AddParticles(const std::string& name, const Real* coord, Long n, MemSpace space)
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> void PtTree<Real, DIM, MaxDepth, Mpi>::AddParticles(const std::string& name, const Real* coord, Long n, MemSpace space)
 {
   const auto x = detail_deviceTree::toDevice(coord, n * DIM, space);
   p_->tree.AddParticles(name, x);
 }
 
-template <class Real, Integer DIM> void PtTree<Real, DIM>::AddParticleData(const std::string& data_name, const std::string& particle_name, const Real* data, Long n, MemSpace space)
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> void PtTree<Real, DIM, MaxDepth, Mpi>::AddParticleData(const std::string& data_name, const std::string& particle_name, const Real* data, Long n, MemSpace space)
 {
   const auto v = detail_deviceTree::toDevice(data, n, space);
   p_->tree.AddParticleData(data_name, particle_name, v);
 }
 
-template <class Real, Integer DIM> void PtTree<Real, DIM>::AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof)
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> void PtTree<Real, DIM, MaxDepth, Mpi>::AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof)
 {
   p_->tree.AddParticleData(data_name, particle_name, dof);
 }
 
-template <class Real, Integer DIM> Long PtTree<Real, DIM>::ParticleDataDim(const std::string& data_name) const
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> Long PtTree<Real, DIM, MaxDepth, Mpi>::ParticleDataDim(const std::string& data_name) const
 {
   gpu_tree::DeviceVector<Real> v;
   p_->tree.GetParticleData(v, data_name);
   return (Long)v.size();
 }
 
-template <class Real, Integer DIM> void PtTree<Real, DIM>::GetParticleData(const std::string& data_name, Real* out, Long n, MemSpace space) const
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> void PtTree<Real, DIM, MaxDepth, Mpi>::GetParticleData(const std::string& data_name, Real* out, Long n, MemSpace space) const
 {
   gpu_tree::DeviceVector<Real> v;
   p_->tree.GetParticleData(v, data_name);
@@ -118,12 +118,12 @@ template <class Real, Integer DIM> void PtTree<Real, DIM>::GetParticleData(const
   detail_deviceTree::fromDevice(v, out, space);
 }
 
-template <class Real, Integer DIM> void PtTree<Real, DIM>::DeleteParticleData(const std::string& data_name)
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> void PtTree<Real, DIM, MaxDepth, Mpi>::DeleteParticleData(const std::string& data_name)
 {
   p_->tree.DeleteParticleData(data_name);
 }
 
-template <class Real, Integer DIM> void PtTree<Real, DIM>::AddData(const std::string& name, Payload payload, Long dof, const Vector<Long>& cnt)
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> void PtTree<Real, DIM, MaxDepth, Mpi>::AddData(const std::string& name, Payload payload, Long dof, const Vector<Long>& cnt)
 {
   switch (payload)
   {
@@ -140,7 +140,7 @@ template <class Real, Integer DIM> void PtTree<Real, DIM>::AddData(const std::st
   SCTL_ASSERT_MSG(false, "device_tree::PtTree::AddData: unknown payload type.");
 }
 
-template <class Real, Integer DIM> void* PtTree<Real, DIM>::dataPtr(const std::string& name, Payload payload, Long& n, Vector<Long>& cnt)
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> void* PtTree<Real, DIM, MaxDepth, Mpi>::dataPtr(const std::string& name, Payload payload, Long& n, Vector<Long>& cnt)
 {
   switch (payload)
   {
@@ -171,23 +171,23 @@ template <class Real, Integer DIM> void* PtTree<Real, DIM>::dataPtr(const std::s
   return nullptr;
 }
 
-template <class Real, Integer DIM> void PtTree<Real, DIM>::Broadcast(const std::string& name)
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> void PtTree<Real, DIM, MaxDepth, Mpi>::Broadcast(const std::string& name)
 {
   p_->tree.Broadcast(name);
 }
 
-template <class Real, Integer DIM> void PtTree<Real, DIM>::ReduceBroadcast(const std::string& name)
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> void PtTree<Real, DIM, MaxDepth, Mpi>::ReduceBroadcast(const std::string& name)
 {
   p_->tree.template ReduceBroadcast<Real>(name);
 }
 
-template <class Real, Integer DIM> Span<const Morton<DIM>> PtTree<Real, DIM>::NodeMID() const
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> Span<const Morton<DIM>> PtTree<Real, DIM, MaxDepth, Mpi>::NodeMID() const
 {
   const auto& v = p_->tree.GetNodeMID();
   return Span<const Morton<DIM>>{detail_deviceTree::raw(v), (Long)v.size()};
 }
 
-template <class Real, Integer DIM> Span<const NodeAttr> PtTree<Real, DIM>::NodeAttrs() const
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> Span<const NodeAttr> PtTree<Real, DIM, MaxDepth, Mpi>::NodeAttrs() const
 {
   using TreeAttr = typename Impl::Tree::NodeAttr;
   static_assert(sizeof(TreeAttr) == sizeof(NodeAttr), "device_tree::NodeAttr must match the tree's node attributes.");
@@ -195,7 +195,7 @@ template <class Real, Integer DIM> Span<const NodeAttr> PtTree<Real, DIM>::NodeA
   return Span<const NodeAttr>{reinterpret_cast<const NodeAttr*>(detail_deviceTree::raw(v)), (Long)v.size()};
 }
 
-template <class Real, Integer DIM> NodeLists PtTree<Real, DIM>::Lists() const
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> NodeLists PtTree<Real, DIM, MaxDepth, Mpi>::Lists() const
 {
   const auto& l = p_->tree.GetNodeLists();
   NodeLists out;
@@ -205,7 +205,7 @@ template <class Real, Integer DIM> NodeLists PtTree<Real, DIM>::Lists() const
   return out;
 }
 
-template <class Real, Integer DIM> void PtTree<Real, DIM>::OwnedRange(Long& begin, Long& end) const
+template <class Real, Integer DIM, Integer MaxDepth, bool Mpi> void PtTree<Real, DIM, MaxDepth, Mpi>::OwnedRange(Long& begin, Long& end) const
 {
   p_->tree.GetOwnedRange(begin, end);
 }
