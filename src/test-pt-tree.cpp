@@ -38,11 +38,11 @@ void TestParticleDataLayout(const Comm& comm) {
     for (Long k = 0; k < dof; k++) f[i * dof + k] = (Real)(rank * 1000000 + i * dof + k);
   }
 
-  const auto check = [&comm, &f](const PtTree& tree, const std::string& name) {
+  const auto check = [&comm](const PtTree& tree, const std::string& name, const Vector<Real>& ref) {
     Vector<Real> out;
     tree.GetParticleData(out, name);
-    Long bad = (out.Dim() != f.Dim());
-    if (!bad) for (Long i = 0; i < out.Dim(); i++) bad += (out[i] != f[i]);
+    Long bad = (out.Dim() != ref.Dim());
+    if (!bad) for (Long i = 0; i < out.Dim(); i++) bad += (out[i] != ref[i]);
     Long tot = 0;
     comm.Allreduce(sctl::Ptr2ConstItr<Long>(&bad, 1), sctl::Ptr2Itr<Long>(&tot, 1), 1, CommOp::SUM);
     SCTL_ASSERT_MSG(tot == 0, ("test-pt-tree: " + name + " does not round-trip").c_str());
@@ -52,19 +52,34 @@ void TestParticleDataLayout(const Comm& comm) {
   tree.AddParticles("pt", X);
   tree.AddParticleData("v1", "pt", f);
   tree.UpdateRefinement(X, 100, true, Periodicity::NONE, 1);
-  check(tree, "v1");
+  check(tree, "v1", f);
 
   tree.Broadcast("pt");        // fills the group's ghost slots
   tree.AddParticleData("v2", "pt", f);  // laid out against counts that now cover them
-  check(tree, "v1");
-  check(tree, "v2");
+  check(tree, "v1", f);
+  check(tree, "v2", f);
 
   tree.Broadcast("v2");  // the ghost slots are already sized, so this moves nothing
-  check(tree, "v2");
+  check(tree, "v2", f);
+
+  Vector<Real> f2(f.Dim());
+  for (Long i = 0; i < f.Dim(); i++) f2[i] = 2 * f[i] + 1;
+  { // the same name again: the new values go into the storage the set has
+    Vector<Real> before, after;
+    Vector<Long> cnt;
+    tree.GetData(before, cnt, "v2");
+    tree.AddParticleData("v2", "pt", f2);
+    tree.GetData(after, cnt, "v2");
+#ifndef SCTL_MEMDEBUG  // Vector::ReInit reallocates in that mode even when the size fits
+    SCTL_ASSERT_MSG(before.begin() == after.begin(), "test-pt-tree: v2 was reallocated");
+#endif
+    SCTL_ASSERT_MSG(before.Dim() == after.Dim(), "test-pt-tree: v2 changed size");
+    check(tree, "v2", f2);
+  }
 
   tree.UpdateRefinement(X, 60, true, Periodicity::NONE, 1);
-  check(tree, "v1");
-  check(tree, "v2");
+  check(tree, "v1", f);
+  check(tree, "v2", f2);
 }
 
 /**

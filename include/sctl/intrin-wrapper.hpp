@@ -3417,9 +3417,7 @@ namespace sctl { // AVX512
 
     __mmask8  v;
   };
-#endif
 
-  // Bitwise operators
   template <> inline unsigned mask_popcnt_intrin<VecData<float, 16>>(const Mask<VecData<float, 16>>& v) { return _mm_popcnt_u32(_cvtmask16_u32(v.v)); }
   template <> inline unsigned mask_popcnt_intrin<VecData<double, 8>>(const Mask<VecData<double, 8>>& v) { return _mm_popcnt_u32(_cvtmask8_u32(v.v)); }
   template <> inline bool mask_any<VecData<float, 16>>(const Mask<VecData<float, 16>>& v) { return v.v; }
@@ -3432,7 +3430,7 @@ namespace sctl { // AVX512
     return (Integer)_mm_popcnt_u32(_cvtmask16_u32(mask.v));
   }
   template <> inline Integer mask_compress_iota_store<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask, Integer base, int32_t* ptr) {
-    // 512-bit epi32 compress (AVX512F only, no VL): low 8 lanes hold the iota, high 8 masked off.
+    // 512-bit epi32 compress (needs no AVX512VL): low 8 lanes hold the iota, high 8 masked off.
     const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32((int32_t)base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,0,0,0,0,0,0,0,0));
     _mm512_mask_compressstoreu_epi32(ptr, (__mmask16)mask.v, iota);
     return (Integer)_mm_popcnt_u32(_cvtmask8_u32(mask.v));
@@ -3458,8 +3456,9 @@ namespace sctl { // AVX512
     result.v = _mm512_mask_expandloadu_pd(zero.v, mask.v, ptr);
     return result;
   }
+#endif
 
-
+  // Bitwise operators
 #if defined(__AVX512BW__)
   template <> inline Mask<VecData<int8_t ,64>> operator~<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& vec) { return Mask<VecData<int8_t ,64>>(_knot_mask64(vec.v)); }
   template <> inline Mask<VecData<int16_t,32>> operator~<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& vec) { return Mask<VecData<int16_t,32>>(_knot_mask32(vec.v)); }

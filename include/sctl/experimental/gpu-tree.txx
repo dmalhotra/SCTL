@@ -1940,7 +1940,6 @@ void GPUTree<Real, DIM, DevVec>::AddData(const std::string& name, Long dof, cons
 
 template <class Real, Integer DIM, template <class...> class DevVec>
 void GPUTree<Real, DIM, DevVec>::addData_(const std::string& name, Long bytes, const sctl::Vector<Long>& cnt) {
-  SCTL_ASSERT_MSG(node_data_.find(name) == node_data_.end(), "GPUTree::AddData: name already present.");
   SCTL_ASSERT_MSG(cnt.Dim() == (Long)node_mid_.size(), "GPUTree::AddData: one count per tree node.");
   node_data_[name].resize(bytes);
   node_cnt_[name] = cnt;
@@ -2435,7 +2434,9 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& dat
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof) {
   SCTL_ASSERT_MSG(groups_.find(particle_name) != groups_.end(), "PtTree::AddParticleData: unknown particle group.");
-  SCTL_ASSERT_MSG(data_pt_name_.find(data_name) == data_pt_name_.end(), "PtTree::AddParticleData: data name already present.");
+  const auto present = data_pt_name_.find(data_name);
+  SCTL_ASSERT_MSG(present == data_pt_name_.end() || present->second == particle_name,
+                  "PtTree::AddParticleData: the name belongs to another particle group.");
   if (data_name == particle_name) {  // the group's own coordinates: count its particles per node
     sctl::ScratchBuf<Long> cnt_buf((Long)this->GetNodeMID().size());  // AddData copies the counts out
     sctl::Vector<Long> cnt(cnt_buf.Dim(), cnt_buf.begin(), false);

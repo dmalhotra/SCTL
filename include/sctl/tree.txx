@@ -1396,14 +1396,12 @@ namespace sctl {
     SCTL_ASSERT_MSG(cnt.Dim() == node_mid.Dim(), "Tree::AddData: one count per tree node.");
     SCTL_UNUSED(tree_detail::global_dof(comm, data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim())));  // checks the values divide evenly among the items
 
-    SCTL_ASSERT(node_data.find(name) == node_data.end());
     node_data[name].ReInit(data.Dim()*sizeof(ValueType), (Iterator<char>)data.begin(), true);
     node_cnt [name] = cnt;
   }
 
   template <Integer DIM> template <class ValueType> void Tree<DIM>::AddData(const std::string& name, Long dof, const Vector<Long>& cnt) {
     SCTL_ASSERT_MSG(cnt.Dim() == node_mid.Dim(), "Tree::AddData: one count per tree node.");
-    SCTL_ASSERT(node_data.find(name) == node_data.end());
     tree_detail::assert_same_dof(comm, dof, "Tree::AddData");
     node_data[name].ReInit(omp_par::reduce(cnt.begin(), cnt.Dim()) * dof * (Long)sizeof(ValueType));
     node_cnt [name] = cnt;
@@ -1818,7 +1816,9 @@ namespace sctl {
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof) {
     const auto group = groups.find(particle_name);
     SCTL_ASSERT(group != groups.end());
-    SCTL_ASSERT(pt_data.find(data_name) == pt_data.end());
+    const auto present = pt_data.find(data_name);
+    SCTL_ASSERT_MSG(present == pt_data.end() || present->second.particle_name == particle_name,
+                    "PtTree::AddParticleData: the name belongs to another particle group.");
     if (data_name == particle_name) { // the group's own coordinates: count its particles per node
       const auto& node_mid = this->GetNodeMID();
       ScratchBuf<Long> cnt(node_mid.Dim());

@@ -116,7 +116,8 @@ template <Integer DIM> class Tree {
     /**
      * Add named data to the tree nodes.
      *
-     * @param[in] name Name for the data. Must not already exist on this tree.
+     * @param[in] name Name for the data; an existing set of the name is replaced, reusing its
+     * storage when the new size fits.
      * @param[in] data Contiguous data for all nodes, concatenated in node
      * order. Must satisfy `data.Dim() == dof * sum(cnt)` for some `dof >= 0`.
      * @param[in] cnt Number of data elements per node. Must have one entry per tree node, whatever
@@ -133,7 +134,8 @@ template <Integer DIM> class Tree {
      * Add named data without values: `cnt[i] * dof` unwritten elements for node i, to be filled in
      * place through the view `GetData` returns. No data moves; the ranks only agree on `dof`.
      *
-     * @param[in] name Name for the data. Must not already exist on this tree.
+     * @param[in] name Name for the data; an existing set of the name is replaced, reusing its
+     * storage when the new size fits.
      * @tparam ValueType Element type. Must be given explicitly: it appears only in the size
      * calculation, so it cannot be deduced from the arguments.
      * @param[in] dof Elements per data item; must agree across processes, which is checked.
@@ -272,7 +274,7 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
     /**
      * Add particle data to the point tree.
      *
-     * @param data_name Name of the data. Must not already exist.
+     * @param data_name Name of the data; an existing set of the name is replaced.
      * @param particle_name Name of an existing particle group from `AddParticles`.
      * @param data Local data values, `dof` per local particle of `particle_name` for some
      * implicit `dof`. Reordered to match the particle group.
