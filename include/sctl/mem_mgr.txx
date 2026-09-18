@@ -245,9 +245,6 @@ inline Iterator<char> MemoryManager::malloc(const Long n_elem, const Long type_s
 
 inline void MemoryManager::free(Iterator<char> p) const {
   if (p == NullIterator<char>()) return;
-  static uintptr_t alignment = SCTL_MEM_ALIGN - 1;
-  static uintptr_t header_size = (uintptr_t)(sizeof(MemHead) + alignment) & ~(uintptr_t)alignment;
-  SCTL_UNUSED(header_size);
 
   char* user_ptr = &p[0];
   MemHead& mem_head = GetMemHead(user_ptr);
@@ -277,6 +274,8 @@ inline void MemoryManager::free(Iterator<char> p) const {
       base[-1] = init_mem_val;
       base[-2] = init_mem_val;
 
+      static uintptr_t alignment = SCTL_MEM_ALIGN - 1;
+      static uintptr_t header_size = (uintptr_t)(sizeof(MemHead) + alignment) & ~(uintptr_t)alignment;
       Long size = n_elem * type_size + header_size;
       size = (uintptr_t)(size + alignment) & ~(uintptr_t)alignment;
 #pragma omp parallel for
