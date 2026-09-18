@@ -497,6 +497,7 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline unsigned mask_popcnt_intrin(const Mask<VData>& v) {
+    static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
     union {
         Mask<VData> m;
         typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
@@ -509,6 +510,7 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline bool mask_any(const Mask<VData>& v) {
+    static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
     union {
         Mask<VData> m;
         typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
@@ -519,6 +521,7 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline void mask_compress_store(const Mask<VData>& mask, const VData& v, typename VData::ScalarType* ptr) {
+    static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
     union {
         Mask<VData> m;
         typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
@@ -538,6 +541,7 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline Integer mask_compress_iota_store(const Mask<VData>& mask, Integer base, int32_t* ptr) {
+    static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
     union {
         Mask<VData> m;
         typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
@@ -568,6 +572,7 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline VData mask_expand_load(const Mask<VData>& mask, const VData& zero, const typename VData::ScalarType* ptr) {
+    static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
     union {
         Mask<VData> m;
         typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
