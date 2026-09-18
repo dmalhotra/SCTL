@@ -3423,22 +3423,41 @@ namespace sctl { // AVX512
     __mmask8  v;
   };
 
-  template <> inline unsigned mask_popcnt_intrin<VecData<float, 16>>(const Mask<VecData<float, 16>>& v) { return _mm_popcnt_u32(_cvtmask16_u32(v.v)); }
-  template <> inline unsigned mask_popcnt_intrin<VecData<double, 8>>(const Mask<VecData<double, 8>>& v) { return _mm_popcnt_u32(_cvtmask8_u32(v.v)); }
-  template <> inline bool mask_any<VecData<float, 16>>(const Mask<VecData<float, 16>>& v) { return v.v; }
-  template <> inline bool mask_any<VecData<double, 8>>(const Mask<VecData<double, 8>>& v) { return v.v; }
+  // GCC 12 to 13.3 and 14.0 to 14.2 spill a compare's mask with a 16-bit store and reload it as 32 bits
+  // (GCC bug 117159); an explicit kmov to a general register keeps the zero-extension.
+#if defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_LLVM_COMPILER) && \
+    (__GNUC__ == 12 || (__GNUC__ == 13 && __GNUC_MINOR__ < 4) || (__GNUC__ == 14 && __GNUC_MINOR__ < 3))
+  inline unsigned mask_to_u32(__mmask16 k) {
+    unsigned m;
+    asm("kmovw %1, %0" : "=r"(m) : "k"(k));
+    return m;
+  }
+  inline unsigned mask_to_u32(__mmask8 k) {
+    unsigned m;
+    asm("kmovb %1, %0" : "=r"(m) : "k"(k));
+    return m;
+  }
+#else
+  inline unsigned mask_to_u32(__mmask16 k) { return _cvtmask16_u32(k); }
+  inline unsigned mask_to_u32(__mmask8 k) { return _cvtmask8_u32(k); }
+#endif
+
+  template <> inline unsigned mask_popcnt_intrin<VecData<float, 16>>(const Mask<VecData<float, 16>>& v) { return _mm_popcnt_u32(mask_to_u32(v.v)); }
+  template <> inline unsigned mask_popcnt_intrin<VecData<double, 8>>(const Mask<VecData<double, 8>>& v) { return _mm_popcnt_u32(mask_to_u32(v.v)); }
+  template <> inline bool mask_any<VecData<float, 16>>(const Mask<VecData<float, 16>>& v) { return mask_to_u32(v.v) != 0; }
+  template <> inline bool mask_any<VecData<double, 8>>(const Mask<VecData<double, 8>>& v) { return mask_to_u32(v.v) != 0; }
   template <> inline void mask_compress_store<VecData<float, 16>>(const Mask<VecData<float, 16>>& mask, const VecData<float, 16>& v, float* ptr) { _mm512_mask_compressstoreu_ps(ptr, mask.v, v.v); }
   template <> inline void mask_compress_store<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask, const VecData<double, 8>& v, double* ptr) { _mm512_mask_compressstoreu_pd(ptr, mask.v, v.v); }
   template <> inline Integer mask_compress_iota_store<VecData<float, 16>>(const Mask<VecData<float, 16>>& mask, Integer base, int32_t* ptr) {
     const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32((int32_t)base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15));
     _mm512_mask_compressstoreu_epi32(ptr, mask.v, iota);
-    return (Integer)_mm_popcnt_u32(_cvtmask16_u32(mask.v));
+    return (Integer)_mm_popcnt_u32(mask_to_u32(mask.v));
   }
   template <> inline Integer mask_compress_iota_store<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask, Integer base, int32_t* ptr) {
     // 512-bit epi32 compress (needs no AVX512VL): low 8 lanes hold the iota, high 8 masked off.
     const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32((int32_t)base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,0,0,0,0,0,0,0,0));
     _mm512_mask_compressstoreu_epi32(ptr, (__mmask16)mask.v, iota);
-    return (Integer)_mm_popcnt_u32(_cvtmask8_u32(mask.v));
+    return (Integer)_mm_popcnt_u32(mask_to_u32(mask.v));
   }
   template <> inline Integer mask_compress_iota_store2<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask_lo, const Mask<VecData<double, 8>>& mask_hi, Integer base, int32_t* ptr) {
     // Both 8-lane masks packed into one 16-lane int32 compress -> one vpcompressd for 16 sources.
@@ -3447,7 +3466,7 @@ namespace sctl { // AVX512
     const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32((int32_t)base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15));
     const __mmask16 m = _mm512_kunpackb(mask_hi.v, mask_lo.v);
     _mm512_mask_compressstoreu_epi32(ptr, m, iota);
-    return (Integer)_mm_popcnt_u32(_cvtmask16_u32(m));
+    return (Integer)_mm_popcnt_u32(mask_to_u32(m));
   }
   template <> inline float reduce_add_intrin<VecData<float, 16>>(const VecData<float, 16>& a) { return _mm512_reduce_add_ps(a.v); }
   template <> inline double reduce_add_intrin<VecData<double, 8>>(const VecData<double, 8>& a) { return _mm512_reduce_add_pd(a.v); }

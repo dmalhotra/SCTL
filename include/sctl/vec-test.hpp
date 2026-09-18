@@ -73,6 +73,7 @@ namespace sctl {
           test_reals_convert(); // TODO: fails for 'long double'
           test_reals_specialfunc();
           test_reals_rsqrt();
+          test_mask_helpers();
         }
       }
 
@@ -349,6 +350,92 @@ namespace sctl {
         for (Integer i = 0; i < N; i++) {
           SCTL_ASSERT(v2[i] == (u1.x[i] <  u2.x[i] ? u3.x[i] : u4.x[i]));
           SCTL_ASSERT(v3[i] == (u1.x[i] <  u2.x[i] ? u3.x[i] : u4.x[i]));
+        }
+      }
+
+      static void test_mask_helpers() {
+        for (Integer trial = 0; trial < 16; trial++) {
+          ScalarType a[N], b[N], src[N];
+          for (Integer i = 0; i < N; i++) {
+            a[i] = (ScalarType)(rand()%4);
+            b[i] = (trial == 0 ? a[i] : trial == 1 ? a[i] + 1 : (ScalarType)(rand()%4)); // no lane, every lane, then random lanes
+            src[i] = (ScalarType)(100 + i);
+          }
+          const VecType va = VecType::Load(a);
+          const VecType vb = VecType::Load(b);
+          const MaskType lt = (va < vb);
+          const MaskType gt = (va > vb);
+          Integer cnt_lt = 0;
+          Integer cnt_gt = 0;
+          ScalarType sum = 0;
+          for (Integer i = 0; i < N; i++) {
+            cnt_lt += (a[i] < b[i]);
+            cnt_gt += (a[i] > b[i]);
+            sum += a[i];
+          }
+
+          SCTL_ASSERT(reduce_add(va) == sum); // small integers, so the summation order does not matter
+          SCTL_ASSERT((Integer)mask_popcnt_intrin(lt) == cnt_lt);
+          SCTL_ASSERT(mask_any(lt) == (cnt_lt > 0));
+
+          { // compress store: the selected elements in order, nothing written past them
+            ScalarType out[N+1];
+            for (Integer i = 0; i <= N; i++) out[i] = -1;
+            mask_compress_store(lt, va.get(), out);
+            Integer k = 0;
+            for (Integer i = 0; i < N; i++) {
+              if (a[i] < b[i]) {
+                SCTL_ASSERT(out[k] == a[i]);
+                k++;
+              }
+            }
+            for (Integer i = cnt_lt; i <= N; i++) SCTL_ASSERT(out[i] == -1);
+          }
+          { // iota stores: the selected indices in order, nothing written past them
+            const Integer base = 1000;
+            int32_t idx[2*N+1];
+            for (Integer i = 0; i <= 2*N; i++) idx[i] = -1;
+            SCTL_ASSERT(mask_compress_iota_store(lt, base, idx) == cnt_lt);
+            Integer k = 0;
+            for (Integer i = 0; i < N; i++) {
+              if (a[i] < b[i]) {
+                SCTL_ASSERT(idx[k] == base + i);
+                k++;
+              }
+            }
+            for (Integer i = cnt_lt; i <= 2*N; i++) SCTL_ASSERT(idx[i] == -1);
+
+            for (Integer i = 0; i <= 2*N; i++) idx[i] = -1;
+            SCTL_ASSERT(mask_compress_iota_store2(lt, gt, base, idx) == cnt_lt + cnt_gt);
+            k = 0;
+            for (Integer i = 0; i < N; i++) {
+              if (a[i] < b[i]) {
+                SCTL_ASSERT(idx[k] == base + i);
+                k++;
+              }
+            }
+            for (Integer i = 0; i < N; i++) {
+              if (a[i] > b[i]) {
+                SCTL_ASSERT(idx[k] == base + N + i);
+                k++;
+              }
+            }
+            for (Integer i = cnt_lt + cnt_gt; i <= 2*N; i++) SCTL_ASSERT(idx[i] == -1);
+          }
+          { // expand load: the inverse of the compress store
+            const VecType v(mask_expand_load(lt, vb.get(), src));
+            ScalarType out[N];
+            v.Store(out);
+            Integer k = 0;
+            for (Integer i = 0; i < N; i++) {
+              if (a[i] < b[i]) {
+                SCTL_ASSERT(out[i] == src[k]);
+                k++;
+              } else {
+                SCTL_ASSERT(out[i] == b[i]);
+              }
+            }
+          }
         }
       }
 
