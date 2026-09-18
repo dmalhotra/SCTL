@@ -375,7 +375,7 @@ namespace sctl {
           }
 
           SCTL_ASSERT(reduce_add(va) == sum); // small integers, so the summation order does not matter
-          SCTL_ASSERT((Integer)mask_popcnt_intrin(lt) == cnt_lt);
+          SCTL_ASSERT(mask_popcnt_intrin(lt) == cnt_lt);
           SCTL_ASSERT(mask_any(lt) == (cnt_lt > 0));
 
           { // compress store: the selected elements in order, nothing written past them
@@ -392,7 +392,7 @@ namespace sctl {
             for (Integer i = cnt_lt; i <= N; i++) SCTL_ASSERT(out[i] == -1);
           }
           { // iota stores: the selected indices in order, nothing written past them
-            const Integer base = 1000;
+            const int32_t base = 1000;
             int32_t idx[2*N+1];
             for (Integer i = 0; i <= 2*N; i++) idx[i] = -1;
             SCTL_ASSERT(mask_compress_iota_store(lt, base, idx) == cnt_lt);

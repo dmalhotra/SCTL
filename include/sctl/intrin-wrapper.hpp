@@ -496,14 +496,14 @@ namespace sctl { // Generic
     return Mask<VData>(v);
   }
 
-  template <class VData> inline unsigned mask_popcnt_intrin(const Mask<VData>& v) {
+  template <class VData> inline Integer mask_popcnt_intrin(const Mask<VData>& v) {
     static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
     union {
         Mask<VData> m;
         typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
     } v_ = {v};
 
-    unsigned cnt = 0;
+    Integer cnt = 0;
     for (Integer i = 0; i < VData::Size; i++) cnt += (v_.q[i]!=0);
 
     return cnt;
@@ -532,7 +532,7 @@ namespace sctl { // Generic
         typename VData::ScalarType s[VData::Size];
     } v_ = {v};
 
-    int idx = 0;
+    Integer idx = 0;
     for (Integer i = 0; i < VData::Size; i++) {
         if (mask_.q[i]) {
             ptr[idx++] = v_.s[i];
@@ -540,7 +540,7 @@ namespace sctl { // Generic
     }
   }
 
-  template <class VData> inline Integer mask_compress_iota_store(const Mask<VData>& mask, Integer base, int32_t* ptr) {
+  template <class VData> inline Integer mask_compress_iota_store(const Mask<VData>& mask, int32_t base, int32_t* ptr) {
     static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
     union {
         Mask<VData> m;
@@ -550,15 +550,15 @@ namespace sctl { // Generic
     Integer idx = 0;
     for (Integer i = 0; i < VData::Size; i++) {
         if (mask_.q[i]) {
-            ptr[idx++] = static_cast<int32_t>(base + i);
+            ptr[idx++] = base + (int32_t)i;
         }
     }
     return idx;
   }
 
-  template <class VData> inline Integer mask_compress_iota_store2(const Mask<VData>& mask_lo, const Mask<VData>& mask_hi, Integer base, int32_t* ptr) {
+  template <class VData> inline Integer mask_compress_iota_store2(const Mask<VData>& mask_lo, const Mask<VData>& mask_hi, int32_t base, int32_t* ptr) {
     const Integer c = mask_compress_iota_store(mask_lo, base, ptr);
-    return c + mask_compress_iota_store(mask_hi, base + VData::Size, ptr + c);
+    return c + mask_compress_iota_store(mask_hi, base + (int32_t)VData::Size, ptr + c);
   }
 
   template <class VData> inline typename VData::ScalarType reduce_add_intrin(const VData& a) {
@@ -583,7 +583,7 @@ namespace sctl { // Generic
         typename VData::ScalarType s[VData::Size];
     } z_ = {zero};
 
-    int idx = 0;
+    Integer idx = 0;
     for (Integer i = 0; i < VData::Size; i++) {
         if (mask_.q[i]) {
             z_.s[i] = ptr[idx++];
@@ -2598,9 +2598,9 @@ namespace sctl { // AVX
 
   // No AVX2 vcompress: left-pack the base+lane iota via a mask-indexed permute, then a
   // count-limited masked store so only the surviving lanes are written (no buffer overrun).
-  template <> inline Integer mask_compress_iota_store<VecData<float,8>>(const Mask<VecData<float,8>>& mask, Integer base, int32_t* ptr) {
+  template <> inline Integer mask_compress_iota_store<VecData<float,8>>(const Mask<VecData<float,8>>& mask, int32_t base, int32_t* ptr) {
     const unsigned m = (unsigned)_mm256_movemask_ps(mask.v);
-    const __m256i iota = _mm256_add_epi32(_mm256_set1_epi32((int32_t)base), _mm256_setr_epi32(0,1,2,3,4,5,6,7));
+    const __m256i iota = _mm256_add_epi32(_mm256_set1_epi32(base), _mm256_setr_epi32(0,1,2,3,4,5,6,7));
     const __m256i perm = _mm256_loadu_si256((const __m256i*)avx2_iota_lut8.idx[m]);
     const __m256i packed = _mm256_permutevar8x32_epi32(iota, perm);
     const Integer cnt = (Integer)_mm_popcnt_u32(m);
@@ -2608,9 +2608,9 @@ namespace sctl { // AVX
     _mm256_maskstore_epi32((int*)ptr, smask, packed);
     return cnt;
   }
-  template <> inline Integer mask_compress_iota_store<VecData<double,4>>(const Mask<VecData<double,4>>& mask, Integer base, int32_t* ptr) {
+  template <> inline Integer mask_compress_iota_store<VecData<double,4>>(const Mask<VecData<double,4>>& mask, int32_t base, int32_t* ptr) {
     const unsigned m = (unsigned)_mm256_movemask_pd(mask.v);
-    const __m128i iota = _mm_add_epi32(_mm_set1_epi32((int32_t)base), _mm_setr_epi32(0,1,2,3));
+    const __m128i iota = _mm_add_epi32(_mm_set1_epi32(base), _mm_setr_epi32(0,1,2,3));
     const __m128i perm = _mm_loadu_si128((const __m128i*)avx2_iota_lut4.idx[m]);
     const __m128i packed = _mm_castps_si128(_mm_permutevar_ps(_mm_castsi128_ps(iota), perm));
     const Integer cnt = (Integer)_mm_popcnt_u32(m);
@@ -2619,9 +2619,9 @@ namespace sctl { // AVX
     return cnt;
   }
   // Fuse two 4-lane masks into one 8-lane compress (mirrors the AVX512 double-8 store2).
-  template <> inline Integer mask_compress_iota_store2<VecData<double,4>>(const Mask<VecData<double,4>>& mask_lo, const Mask<VecData<double,4>>& mask_hi, Integer base, int32_t* ptr) {
+  template <> inline Integer mask_compress_iota_store2<VecData<double,4>>(const Mask<VecData<double,4>>& mask_lo, const Mask<VecData<double,4>>& mask_hi, int32_t base, int32_t* ptr) {
     const unsigned m = (unsigned)_mm256_movemask_pd(mask_lo.v) | ((unsigned)_mm256_movemask_pd(mask_hi.v) << 4);
-    const __m256i iota = _mm256_add_epi32(_mm256_set1_epi32((int32_t)base), _mm256_setr_epi32(0,1,2,3,4,5,6,7));
+    const __m256i iota = _mm256_add_epi32(_mm256_set1_epi32(base), _mm256_setr_epi32(0,1,2,3,4,5,6,7));
     const __m256i perm = _mm256_loadu_si256((const __m256i*)avx2_iota_lut8.idx[m]);
     const __m256i packed = _mm256_permutevar8x32_epi32(iota, perm);
     const Integer cnt = (Integer)_mm_popcnt_u32(m);
@@ -3442,28 +3442,28 @@ namespace sctl { // AVX512
   inline unsigned mask_to_u32(__mmask8 k) { return _cvtmask8_u32(k); }
 #endif
 
-  template <> inline unsigned mask_popcnt_intrin<VecData<float, 16>>(const Mask<VecData<float, 16>>& v) { return _mm_popcnt_u32(mask_to_u32(v.v)); }
-  template <> inline unsigned mask_popcnt_intrin<VecData<double, 8>>(const Mask<VecData<double, 8>>& v) { return _mm_popcnt_u32(mask_to_u32(v.v)); }
+  template <> inline Integer mask_popcnt_intrin<VecData<float, 16>>(const Mask<VecData<float, 16>>& v) { return (Integer)_mm_popcnt_u32(mask_to_u32(v.v)); }
+  template <> inline Integer mask_popcnt_intrin<VecData<double, 8>>(const Mask<VecData<double, 8>>& v) { return (Integer)_mm_popcnt_u32(mask_to_u32(v.v)); }
   template <> inline bool mask_any<VecData<float, 16>>(const Mask<VecData<float, 16>>& v) { return mask_to_u32(v.v) != 0; }
   template <> inline bool mask_any<VecData<double, 8>>(const Mask<VecData<double, 8>>& v) { return mask_to_u32(v.v) != 0; }
   template <> inline void mask_compress_store<VecData<float, 16>>(const Mask<VecData<float, 16>>& mask, const VecData<float, 16>& v, float* ptr) { _mm512_mask_compressstoreu_ps(ptr, mask.v, v.v); }
   template <> inline void mask_compress_store<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask, const VecData<double, 8>& v, double* ptr) { _mm512_mask_compressstoreu_pd(ptr, mask.v, v.v); }
-  template <> inline Integer mask_compress_iota_store<VecData<float, 16>>(const Mask<VecData<float, 16>>& mask, Integer base, int32_t* ptr) {
-    const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32((int32_t)base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15));
+  template <> inline Integer mask_compress_iota_store<VecData<float, 16>>(const Mask<VecData<float, 16>>& mask, int32_t base, int32_t* ptr) {
+    const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32(base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15));
     _mm512_mask_compressstoreu_epi32(ptr, mask.v, iota);
     return (Integer)_mm_popcnt_u32(mask_to_u32(mask.v));
   }
-  template <> inline Integer mask_compress_iota_store<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask, Integer base, int32_t* ptr) {
+  template <> inline Integer mask_compress_iota_store<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask, int32_t base, int32_t* ptr) {
     // 512-bit epi32 compress (needs no AVX512VL): low 8 lanes hold the iota, high 8 masked off.
-    const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32((int32_t)base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,0,0,0,0,0,0,0,0));
+    const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32(base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,0,0,0,0,0,0,0,0));
     _mm512_mask_compressstoreu_epi32(ptr, (__mmask16)mask.v, iota);
     return (Integer)_mm_popcnt_u32(mask_to_u32(mask.v));
   }
-  template <> inline Integer mask_compress_iota_store2<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask_lo, const Mask<VecData<double, 8>>& mask_hi, Integer base, int32_t* ptr) {
+  template <> inline Integer mask_compress_iota_store2<VecData<double, 8>>(const Mask<VecData<double, 8>>& mask_lo, const Mask<VecData<double, 8>>& mask_hi, int32_t base, int32_t* ptr) {
     // Both 8-lane masks packed into one 16-lane int32 compress -> one vpcompressd for 16 sources.
     // kunpackb builds the fused mask once in a k-register (consumed directly by the compress and
     // by a single kmov for the popcount), avoiding a redundant GPR shift/or materialization.
-    const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32((int32_t)base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15));
+    const __m512i iota = _mm512_add_epi32(_mm512_set1_epi32(base), _mm512_setr_epi32(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15));
     const __mmask16 m = _mm512_kunpackb(mask_hi.v, mask_lo.v);
     _mm512_mask_compressstoreu_epi32(ptr, m, iota);
     return (Integer)_mm_popcnt_u32(mask_to_u32(m));
