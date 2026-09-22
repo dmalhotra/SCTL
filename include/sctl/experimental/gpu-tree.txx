@@ -2418,10 +2418,11 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticles(const std::string& name, 
   thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nloc), key.begin(),
                     detail::MakeMortonFunctor<Real, DIM>{thrust::raw_pointer_cast(coord.data())});
   groups_.try_emplace(name, this->GetComm()).first->second.Init(DataView<const MortonCode<DIM>, DevVec>{thrust::raw_pointer_cast(key.data()), Nloc}, partition_codes_);
-  for (const auto& kv : data_pt_name_) {  // an existing group's data sets no longer match its particles: emptied, storage kept
-    if (kv.second == name && kv.first != name) {
+  for (auto& kv : pt_data_) {  // an existing group's data sets no longer match its particles: emptied, storage kept
+    if (kv.second.particle_name == name && kv.first != name) {
       this->NodeData_(kv.first).resize(0);
       this->NodeCnt_(kv.first).SetZero();
+      kv.second.dof = 0;
     }
   }
   AddParticleData(name, name, coord);
@@ -2456,21 +2457,23 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& dat
     this->template AddData<Real>(data_name, dof, this->NodeCnt_(particle_name));
   }
   this->data_moved_by_derived_.insert(data_name);
-  data_pt_name_[data_name] = particle_name;
+  pt_data_[data_name] = PtData{particle_name, dof};
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 Long PtTree<Real, DIM, DevVec, BaseTree>::particleDataDof(const std::string& data_name, DataView<const Real, DevVec>& raw, sctl::Vector<Long>& cnt) const {
-  SCTL_ASSERT_MSG(data_pt_name_.count(data_name), "PtTree::GetParticleData: unknown data name.");
+  const auto it = pt_data_.find(data_name);
+  SCTL_ASSERT_MSG(it != pt_data_.end(), "PtTree::GetParticleData: unknown data name.");
   this->GetData(raw, cnt, data_name);
-  return detail::globalDof(raw.size(), sctl::omp_par::reduce(cnt.begin(), cnt.Dim()), this->GetComm());
+  SCTL_ASSERT(raw.size() == sctl::omp_par::reduce(cnt.begin(), cnt.Dim()) * it->second.dof);
+  return it->second.dof;
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::scatterParticleData(const std::string& data_name, DataView<const Real, DevVec> raw, const sctl::Vector<Long>& cnt, Long dof, Real* out) const {
   if (dof == 0) return;  // an emptied set: nothing to scatter
   // the reverse scatter reads the stored buffer and writes the output, so the payload is touched once
-  const auto& g = groups_.find(data_pt_name_.find(data_name)->second)->second;
+  const auto& g = groups_.find(pt_data_.find(data_name)->second.particle_name)->second;
   Long owned0 = 0, owned1 = 0;  // a Broadcast may have filled the ghost slots; the owned items scatter back
   this->GetOwnedRange(owned0, owned1);
   const Long begin = sctl::omp_par::reduce(cnt.begin(), owned0) * dof;
@@ -2484,7 +2487,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::GetParticleData(DevVec<Real>& data, co
   DataView<const Real, DevVec> raw;
   sctl::Vector<Long> cnt;
   const Long dof = particleDataDof(data_name, raw, cnt);
-  data.resize(groups_.find(data_pt_name_.find(data_name)->second)->second.LocalCount() * dof);
+  data.resize(groups_.find(pt_data_.find(data_name)->second.particle_name)->second.LocalCount() * dof);
   scatterParticleData(data_name, raw, cnt, dof, thrust::raw_pointer_cast(data.data()));
 }
 
@@ -2493,7 +2496,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::GetParticleData(DataView<Real, DevVec>
   DataView<const Real, DevVec> raw;
   sctl::Vector<Long> cnt;
   const Long dof = particleDataDof(data_name, raw, cnt);
-  SCTL_ASSERT_MSG(data.size() == groups_.find(data_pt_name_.find(data_name)->second)->second.LocalCount() * dof, "PtTree::GetParticleData: data must hold dof * Nlocal values.");
+  SCTL_ASSERT_MSG(data.size() == groups_.find(pt_data_.find(data_name)->second.particle_name)->second.LocalCount() * dof, "PtTree::GetParticleData: data must hold dof * Nlocal values.");
   scatterParticleData(data_name, raw, cnt, dof, data.data());
 }
 
@@ -2502,22 +2505,22 @@ Long PtTree<Real, DIM, DevVec, BaseTree>::ParticleDataSize(const std::string& da
   DataView<const Real, DevVec> raw;
   sctl::Vector<Long> cnt;
   const Long dof = particleDataDof(data_name, raw, cnt);
-  return groups_.find(data_pt_name_.find(data_name)->second)->second.LocalCount() * dof;
+  return groups_.find(pt_data_.find(data_name)->second.particle_name)->second.LocalCount() * dof;
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::DeleteParticleData(const std::string& data_name) {
-  const auto it = data_pt_name_.find(data_name);
-  SCTL_ASSERT_MSG(it != data_pt_name_.end(), "PtTree::DeleteParticleData: unknown data name.");
-  const std::string particle_name = it->second;
+  const auto it = pt_data_.find(data_name);
+  SCTL_ASSERT_MSG(it != pt_data_.end(), "PtTree::DeleteParticleData: unknown data name.");
+  const std::string particle_name = it->second.particle_name;
   if (data_name == particle_name) {  // deleting the group takes every data set on it
     std::vector<std::string> lst;
-    for (const auto& kv : data_pt_name_) if (kv.second == particle_name && kv.first != particle_name) lst.push_back(kv.first);
+    for (const auto& kv : pt_data_) if (kv.second.particle_name == particle_name && kv.first != particle_name) lst.push_back(kv.first);
     for (const auto& x : lst) DeleteParticleData(x);
     groups_.erase(particle_name);
   }
   this->DeleteData(data_name);
-  data_pt_name_.erase(data_name);
+  pt_data_.erase(data_name);
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
@@ -2537,7 +2540,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(DataView<const Real, 
     nodeCounts(group, cnt_new);
 
     std::vector<std::string> names;
-    for (const auto& p : data_pt_name_) if (p.second == group) names.push_back(p.first);
+    for (const auto& p : pt_data_) if (p.second.particle_name == group) names.push_back(p.first);
     for (const auto& name : names) {
       DevVec<char>& raw = this->NodeData_(name);
       sctl::Vector<Long>& cnt = this->NodeCnt_(name);
@@ -2558,9 +2561,9 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(DataView<const Real, 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::WriteParticleVTK(std::string fname, std::string data_name, bool show_ghost) const {
   using VTKReal = typename sctl::VTUData::VTKReal;
-  const auto it = data_pt_name_.find(data_name);
-  SCTL_ASSERT_MSG(it != data_pt_name_.end(), "PtTree::WriteParticleVTK: unknown data name.");
-  const std::string& particle_name = it->second;
+  const auto it = pt_data_.find(data_name);
+  SCTL_ASSERT_MSG(it != pt_data_.end(), "PtTree::WriteParticleVTK: unknown data name.");
+  const std::string& particle_name = it->second.particle_name;
 
   sctl::Vector<Long> pt_cnt, val_cnt;
   DataView<const Real, DevVec> pt_d, val_d;

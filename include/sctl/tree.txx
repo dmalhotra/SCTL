@@ -1853,13 +1853,13 @@ namespace sctl {
     const auto& group = groups.find(particle_name)->second;
 
     const auto& node_mid = this->GetNodeMID();
-    const auto& comm = this->GetComm();
 
     Vector<Long> cnt_;
     Vector<const Real> data_;
     this->GetData(data_, cnt_, data_name);
     SCTL_ASSERT(cnt_.Dim() == node_mid.Dim());
-    const Long dof = tree_detail::global_dof(comm, data_.Dim(), omp_par::reduce(cnt_.begin(), cnt_.Dim()));
+    const Long dof = pt_data.find(data_name)->second.dof;
+    SCTL_ASSERT(data_.Dim() == omp_par::reduce(cnt_.begin(), cnt_.Dim()) * dof);
     if (dof == 0) { // an emptied set: nothing to scatter
       if (data.Dim()) data.ReInit(0);
       return;

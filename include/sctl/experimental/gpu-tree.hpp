@@ -375,8 +375,6 @@ class PtTree : public BaseTree {
    * values per particle given to `AddParticleData`.
    *
    * @param data_name Name of the data.
-   *
-   * @note Collective; must be called from all processes.
    */
   Long ParticleDataSize(const std::string& data_name) const;
 
@@ -413,7 +411,7 @@ class PtTree : public BaseTree {
   /** Particles of `name` falling in each node of `GetNodeMID()`. */
   void nodeCounts(const std::string& name, sctl::Vector<Long>& cnt) const;
 
-  /** A data set's stored values, per-node counts and dof. Collective. */
+  /** A data set's stored values, per-node counts and dof. */
   Long particleDataDof(const std::string& data_name, DataView<const Real, DevVec>& raw, sctl::Vector<Long>& cnt) const;
 
   /** The owned values of a data set back to the group's caller order, `dof` per particle, into `out`. */
@@ -421,7 +419,11 @@ class PtTree : public BaseTree {
 
   sctl::Vector<MortonCode<DIM>> partition_codes_;  ///< partition mins as codes: the SortScatter splitters; set with each partition
   std::map<std::string, SortScatter<MortonCode<DIM>, DevVec>> groups_;  ///< per particle group: codes in tree order, maps to/from caller order
-  std::map<std::string, std::string> data_pt_name_;                    ///< data name -> particle group
+  struct PtData {
+    std::string particle_name;
+    Long dof;
+  };
+  std::map<std::string, PtData> pt_data_;  ///< particle group and dof of each particle data set
 };
 
 }  // namespace gpu_tree
