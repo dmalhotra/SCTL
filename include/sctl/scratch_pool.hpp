@@ -49,7 +49,7 @@ struct alignas(SCTL_MEM_ALIGN) ScratchChunk {
  *
  *     {
  *       ScratchBuf<double> buf(N);
- *       // ... use buf[i], buf.begin(), buf.end(), buf.Dim() ...
+ *       // ... use buf[i], buf.begin(), buf.end(), buf.size() ...
  *     }                                  // buf is freed here
  *
  * Rules:
@@ -90,7 +90,7 @@ template <class T> class ScratchBuf {
   Iterator<T>      end();
   ConstIterator<T> begin() const;
   ConstIterator<T> end()   const;
-  Long             Dim() const;
+  Long             size() const;
   T&               operator[](Long i);
   const T&         operator[](Long i) const;
 

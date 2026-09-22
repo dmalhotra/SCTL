@@ -291,7 +291,7 @@ template <class T>
 inline ConstIterator<T> ScratchBuf<T>::end() const { return data_ + count_; }
 
 template <class T>
-inline Long ScratchBuf<T>::Dim() const { return count_; }
+inline Long ScratchBuf<T>::size() const { return count_; }
 
 template <class T>
 inline T& ScratchBuf<T>::operator[](Long i) { return data_[i]; }
@@ -304,7 +304,7 @@ inline const T& ScratchBuf<T>::operator[](Long i) const { return data_[i]; }
 // default is declared in vector.hpp.
 template <class T>
 inline Vector<T>::Vector(ScratchBuf<T>& buf, bool disable_reinit)
-  : Vector(buf.Dim(), buf.begin(), /*own_data=*/false, disable_reinit) {}
+  : Vector(buf.size(), buf.begin(), /*own_data=*/false, disable_reinit) {}
 
 }  // namespace sctl
 

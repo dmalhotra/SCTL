@@ -394,7 +394,7 @@ inline DeviceScratch<T, DevVec>::DeviceScratch(Long count, Pool& pool) : pool_(&
 }
 
 template <class T, template <class...> class DevVec>
-inline Long DeviceScratch<T, DevVec>::Dim() const { return count_; }
+inline Long DeviceScratch<T, DevVec>::size() const { return count_; }
 
 template <class T, template <class...> class DevVec>
 inline DeviceScratch<T, DevVec>::~DeviceScratch() {

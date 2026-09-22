@@ -198,7 +198,7 @@ template <class T, template <class...> class DevVec> class DeviceScratch {
   iterator begin() const;
   iterator end() const;
   iterator data() const;  // thrust convention: use raw_pointer_cast for functors
-  Long Dim() const;
+  Long size() const;
 
  private:
   Pool* pool_;

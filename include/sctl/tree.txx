@@ -512,9 +512,9 @@ namespace sctl {
             if (parent_mid.Dim() != Nnew) parent_mid.ReInit(Nnew);
           }
 
-          if (idx0 < ptree.Dim()) { // preorder traversal to add local nodes to parent_mid
+          if (idx0 < ptree.size()) { // preorder traversal to add local nodes to parent_mid
             TreeNode* node = &ptree[idx0];
-            const Morton<DIM> m_end = (idx1 < ptree.Dim() ? ptree[idx1].m : Morton<DIM>().Next());
+            const Morton<DIM> m_end = (idx1 < ptree.size() ? ptree[idx1].m : Morton<DIM>().Next());
             Long out = shared_pnode_dsp[tid];
             while (node->m < m_end) {
               if (node->flags != FLAG_MINS_ANC) parent_mid[out++] = node->m;
@@ -881,7 +881,7 @@ namespace sctl {
         Long send_size1 = (rank  > 0 ? M : 0);
         Long recv_size0 = (rank  > 0 ? M : 0);
         Long recv_size1 = (rank+1<np ? M : 0);
-        SCTL_ASSERT(recv_size0 + pt_mid.Dim() + recv_size1 <= pt_mid_.Dim());
+        SCTL_ASSERT(recv_size0 + pt_mid.Dim() + recv_size1 <= pt_mid_.size());
         omp_par::memcpy(pt_mid_.begin() + recv_size0, pt_mid.begin(), pt_mid.Dim());
 
         auto recv_req0 = comm.Irecv(pt_mid_.begin(), recv_size0, (rank+np-1)%np, 0);
@@ -948,7 +948,7 @@ namespace sctl {
 
           ScratchBuf<Morton<DIM>> buf(max_emits);  // NUMA-local: first-touched on this thread's node
           Vector<Morton<DIM>> spill;
-          Long cap = buf.Dim();
+          Long cap = buf.size();
           Long count = 0;
           const Long grow = std::max<Long>(max_emits / 4, 1024);
           // Growing the scratch keeps what is already written where it is, where `spill` copies on

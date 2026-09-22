@@ -9,9 +9,9 @@ static void test_basic() {
   double* first_addr;
   {
     ScratchBuf<double> buf(10, pool);
-    SCTL_ASSERT(buf.Dim() == 10);
-    for (Long i = 0; i < buf.Dim(); ++i) buf[i] = (double)i;
-    for (Long i = 0; i < buf.Dim(); ++i) SCTL_ASSERT(buf[i] == (double)i);
+    SCTL_ASSERT(buf.size() == 10);
+    for (Long i = 0; i < buf.size(); ++i) buf[i] = (double)i;
+    for (Long i = 0; i < buf.size(); ++i) SCTL_ASSERT(buf[i] == (double)i);
     first_addr = &buf[0];
   }
   SCTL_ASSERT(pool.DebugLiveCount() == 0);
@@ -127,7 +127,7 @@ static void test_request_resize() {
     for (long i = 0; i < 1000; i++) b[i] = i;
     const long* before = &b[0];
     const long got = b.RequestResize(5000);
-    SCTL_ASSERT(got == b.Dim() && got >= 1000);
+    SCTL_ASSERT(got == b.size() && got >= 1000);
     SCTL_ASSERT(&b[0] == before);
     for (long i = 0; i < 1000; i++) SCTL_ASSERT(b[i] == i);
     for (long i = 1000; i < got; i++) b[i] = i;          // the new room is usable
@@ -137,14 +137,14 @@ static void test_request_resize() {
     sctl::ScratchBuf<long> a(1000, pool);
     sctl::ScratchBuf<long> b(10, pool);
     SCTL_ASSERT(a.RequestResize(5000) == 1000);          // `b` sits above `a`
-    SCTL_ASSERT(b.RequestResize(2000) == b.Dim());       // `b` is the top one
-    SCTL_ASSERT(b.RequestResize(1) == b.Dim());
+    SCTL_ASSERT(b.RequestResize(2000) == b.size());       // `b` is the top one
+    SCTL_ASSERT(b.RequestResize(1) == b.size());
   }
   { // growing never makes the pool allocate, however far it is pushed
     sctl::ScratchBuf<char> b(1024, pool);
     const sctl::Long chunks = pool.DebugChunkCount();
     sctl::Long prev = 0;
-    while (b.RequestResize(b.Dim() * 2) != prev) prev = b.Dim();
+    while (b.RequestResize(b.size() * 2) != prev) prev = b.size();
     SCTL_ASSERT(pool.DebugChunkCount() == chunks);
   }
   std::cout << "test_request_resize OK\n";
@@ -156,14 +156,14 @@ static void test_reserve() {
   { // reserving changes the pool, not the buffer it is asked through
     sctl::ScratchBuf<char> b(1024, pool);
     b.Reserve(want);
-    SCTL_ASSERT(b.Dim() == 1024);
+    SCTL_ASSERT(b.size() == 1024);
   }
   { // the reserved size is there now: a buffer grows into it without the pool allocating
     sctl::ScratchBuf<char> b(1024, pool);
     const sctl::Long chunks = pool.DebugChunkCount();
     sctl::Long prev = 0;
-    while (b.RequestResize(b.Dim() * 2) != prev) prev = b.Dim();
-    SCTL_ASSERT(b.Dim() >= want / 2);                    // it grew into the reserved chunk
+    while (b.RequestResize(b.size() * 2) != prev) prev = b.size();
+    SCTL_ASSERT(b.size() >= want / 2);                    // it grew into the reserved chunk
     SCTL_ASSERT(pool.DebugChunkCount() == chunks);
   }
   { // a size the pool can serve as it stands costs nothing

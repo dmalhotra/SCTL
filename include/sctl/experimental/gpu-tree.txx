@@ -182,7 +182,7 @@ template <class Policy, class Vec, class IVec> void local_sort_by_key(const Poli
 template <class T, template <class...> class DevVec, class Vec>
 Long splitCounts(sctl::Iterator<Long> scnt, sctl::Iterator<Long> rcnt, const Vec& in, Long n,
                  const DeviceScratch<T, DevVec>& keys, const Comm& comm) {
-  const Long np = comm.Size(), nkeys = keys.Dim();
+  const Long np = comm.Size(), nkeys = keys.size();
   SCTL_ASSERT(nkeys == np || nkeys == np - 1);
   {
     sctl::ScratchBuf<Long> pos(np + 1);
@@ -753,7 +753,7 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
     const Integer tid = SCTL_GET_THREAD_NUM();
     sctl::ScratchBuf<NodeMIDT> buf(max_emits);  // NUMA-local: first-touched on this thread's node
     sctl::Vector<NodeMIDT> spill;
-    HostSink<NodeMIDT> sink{&buf, &spill, buf.Dim(), std::max<Long>(max_emits / 4, 1024)};
+    HostSink<NodeMIDT> sink{&buf, &spill, buf.size(), std::max<Long>(max_emits / 4, 1024)};
     const ChunkedWalkFunctor<DIM, WalkMode::Write, HostSink<NodeMIDT>> fw{
         thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nt, &zero_offsets[0], &buf[0], start_bnd, end_bnd, &sink};
     const Long count = fw(tid);
@@ -797,7 +797,7 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
   const Long np = comm.Size();
 
   const Long ns = np - 1;
-  SCTL_ASSERT(splitters.Dim() == ns);
+  SCTL_ASSERT(splitters.size() == ns);
   if (!ns) return;
 
   const Long Nl = static_cast<Long>(pt.size());
@@ -848,7 +848,7 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
     sctl::ScratchBuf<Type> bnd(rdsp[np-1] + rcnt[np-1]), bnd2(rdsp[np-1] + rcnt[np-1]);
     comm.Allgatherv(sbuf+0, scnt[0], bnd.begin(), rcnt.begin(), rdsp.begin());
     sctl::omp_par::merge_sort(bnd.begin(), bnd.end());
-    const Long B = sctl::omp_par::dedup_sorted(bnd.begin(), bnd2.begin(), bnd.Dim());
+    const Long B = sctl::omp_par::dedup_sorted(bnd.begin(), bnd2.begin(), bnd.size());
 
     sctl::ScratchBuf<Long> lr_b(B), gr_b(B); // each boundary's local then exact global rank
     local_ranks(lr_b.begin(), bnd2.begin(), B);
@@ -929,7 +929,7 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
       cand_raw[S++] = bracket[i*2+1];
     }
 
-    SCTL_ASSERT(cand.Dim() >= S);
+    SCTL_ASSERT(cand.size() >= S);
     sctl::omp_par::merge_sort(cand_raw.begin(), cand_raw.begin() + S);
     return sctl::omp_par::dedup_sorted(cand_raw.begin(), cand.begin(), S);
   };
@@ -938,8 +938,8 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
   // gr[S+i] = global upper_bound rank of bracket[i*2+0] (end of blo's duplicate run), folded into the same Allreduce.
   const auto global_ranks = [&comm,ns,&local_ranks,&bracket]
                             (sctl::ScratchBuf<Long>& lr, sctl::ScratchBuf<Long>& gr, const sctl::ScratchBuf<Type>& cand, Long S) {
-    SCTL_ASSERT(lr.Dim() >= S+ns);
-    SCTL_ASSERT(gr.Dim() >= S+ns);
+    SCTL_ASSERT(lr.size() >= S+ns);
+    SCTL_ASSERT(gr.size() >= S+ns);
 
     sctl::ScratchBuf<Type> blo(ns);
     for (Long i = 0; i < ns; i++) blo[i] = bracket[i*2+0];
@@ -1833,7 +1833,7 @@ GPUTree<Real, DIM, DevVec>::GPUTree(const Comm& comm) : comm_(comm) {
       idx /= n0;
     }
   }
-  DevVec<Real> coord(h.Dim());
+  DevVec<Real> coord(h.size());
   thrust::copy(h.begin(), h.end(), coord.begin());
   UpdateRefinement(coord);
 }
@@ -2450,7 +2450,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& dat
   SCTL_ASSERT_MSG(groups_.find(particle_name) != groups_.end(), "PtTree::AddParticleData: unknown particle group.");
   if (data_name == particle_name) {  // the group's own coordinates: count its particles per node
     sctl::ScratchBuf<Long> cnt_buf((Long)this->GetNodeMID().size());  // AddData copies the counts out
-    sctl::Vector<Long> cnt(cnt_buf.Dim(), cnt_buf.begin(), false);
+    sctl::Vector<Long> cnt(cnt_buf.size(), cnt_buf.begin(), false);
     nodeCounts(particle_name, cnt);
     this->template AddData<Real>(data_name, dof, cnt);
   } else {  // the group's counts already exist, ghost slots and all, so the layouts stay in step
@@ -2536,7 +2536,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(DataView<const Real, 
     const std::string& group = kv.first;
     kv.second.Repartition(partition_codes_);
     sctl::ScratchBuf<Long> cnt_new_buf((Long)this->GetNodeMID().size());  // copied into each name's counts below
-    sctl::Vector<Long> cnt_new(cnt_new_buf.Dim(), cnt_new_buf.begin(), false);
+    sctl::Vector<Long> cnt_new(cnt_new_buf.size(), cnt_new_buf.begin(), false);
     nodeCounts(group, cnt_new);
 
     std::vector<std::string> names;
@@ -2577,7 +2577,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::WriteParticleVTK(std::string fname, st
   sctl::ScratchBuf<typename BaseTree::NodeAttr> attr(Nn);
   detail::deviceToHost(this->GetNodeAttr().data(), Nn, attr.begin());
   const Long npt = sctl::omp_par::reduce(pt_cnt.begin(), pt_cnt.Dim());
-  const Long vdof = (npt ? val.Dim() / npt : 0);
+  const Long vdof = (npt ? val.size() / npt : 0);
 
   sctl::VTUData vtu_data;
   Long pt_idx = 0;

@@ -3245,7 +3245,7 @@ template <class Real> const std::vector<Matrix<Real>>& SphericalHarmonics<Real>:
       }
 
       ScratchBuf<Real> theta(Ngrid);
-      for(Long i=0;i<theta.Dim();i++){ // Set theta
+      for(Long i=0;i<theta.size();i++){ // Set theta
         theta[i]=atan2(Mcoord1[1][i],Mcoord1[2][i]); // TODO: works only for float and double
       }
 

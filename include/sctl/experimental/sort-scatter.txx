@@ -273,7 +273,8 @@ template <class Key, template <class...> class DevVec> void SortScatter<Key, Dev
 
   SortScatter ss(comm);
   const sctl::Vector<Key> splA = splitters(0), splB = splitters(KMAX / (3 * np));
-  ss.Init(DevVec<Key>(keys.begin(), keys.end()), splA);
+  const DevVec<Key> kd(keys.begin(), keys.end());
+  ss.Init(kd, splA);
   SCTL_ASSERT(ss.LocalCount() == N);
   roundTrip(ss, splA);
 
