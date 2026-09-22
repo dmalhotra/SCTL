@@ -4,6 +4,7 @@
 #ifndef _SCTL_EXPERIMENTAL_GPU_VECTOR_HPP_
 #define _SCTL_EXPERIMENTAL_GPU_VECTOR_HPP_
 
+#include <cstddef>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -25,10 +26,14 @@ template <class T> struct DefaultInitAllocator : std::allocator<T> {
   template <class U> void construct(U* p) noexcept(std::is_nothrow_default_constructible<U>::value) { ::new (static_cast<void*>(p)) U; }
   template <class U, class... A> void construct(U* p, A&&... a) { ::new (static_cast<void*>(p)) U(std::forward<A>(a)...); }
 };
-/// `thrust::device_allocator` whose construct is a no-op (thrust's uninitialized_vector idiom).
+/// `thrust::device_allocator` whose construct is a no-op (thrust's uninitialized_vector idiom), allocating stream-ordered from the device's memory pool (`gpu_runtime::DeviceMalloc`).
 template <class T> struct DeviceUninitAllocator : thrust::device_allocator<T> {
+  using pointer = thrust::device_ptr<T>;
+  using size_type = std::size_t;
   template <class U> struct rebind { using other = DeviceUninitAllocator<U>; };
   SCTL_GPU_HD void construct(T*) {}
+  pointer allocate(size_type n) { return pointer(static_cast<T*>(gpu_runtime::DeviceMalloc(n * sizeof(T)))); }
+  void deallocate(pointer p, size_type) { gpu_runtime::DeviceFree(thrust::raw_pointer_cast(p)); }
 };
 }  // namespace detail
 

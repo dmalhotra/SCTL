@@ -81,6 +81,63 @@ inline bool MemsetDevice(void* p, int value, std::size_t bytes) {
 #endif
 }
 
+/**
+ * Set the current device's default memory pool to keep released blocks; by default it returns them
+ * to the driver at the next synchronization. A threshold the application has already set is kept.
+ */
+inline void RetainPoolBlocks() {
+  unsigned long long threshold = 0, keep_all = ~0ull;
+  int device = -1;
+#if defined(__HIPCC__)
+  hipMemPool_t pool;
+  if (hipGetDevice(&device) != hipSuccess || hipDeviceGetDefaultMemPool(&pool, device) != hipSuccess) return;
+  if (hipMemPoolGetAttribute(pool, hipMemPoolAttrReleaseThreshold, &threshold) == hipSuccess && threshold == 0) hipMemPoolSetAttribute(pool, hipMemPoolAttrReleaseThreshold, &keep_all);
+#elif defined(__CUDACC__)
+  cudaMemPool_t pool;
+  if (cudaGetDevice(&device) != cudaSuccess || cudaDeviceGetDefaultMemPool(&pool, device) != cudaSuccess) return;
+  if (cudaMemPoolGetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &threshold) == cudaSuccess && threshold == 0) cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &keep_all);
+#else
+  (void)threshold;
+  (void)keep_all;
+  (void)device;
+#endif
+}
+
+/**
+ * Allocate `bytes` of device memory from the default memory pool, ordered on the null stream, so a
+ * repeated request is served from memory a previous free returned. Aborts if the runtime refused.
+ * The pool is set to keep its blocks on the first call (`RetainPoolBlocks`); a process that uses
+ * several devices keeps the default on all but the first.
+ */
+inline void* DeviceMalloc(std::size_t bytes) {
+  static bool pool_retains = false;
+  if (!pool_retains) {
+    RetainPoolBlocks();
+    pool_retains = true;
+  }
+  void* p = nullptr;
+#if defined(__HIPCC__)
+  const bool ok = hipMallocAsync(&p, bytes, nullptr) == hipSuccess;
+#elif defined(__CUDACC__)
+  const bool ok = cudaMallocAsync(&p, bytes, nullptr) == cudaSuccess;
+#else
+  const bool ok = (bytes == 0);  // no runtime to allocate with
+#endif
+  SCTL_ASSERT_MSG(ok, "gpu_runtime::DeviceMalloc: the runtime refused the device allocation.");
+  return p;
+}
+
+/** Release memory from `DeviceMalloc`, ordered on the null stream; unlike a plain free this does not wait for the device. */
+inline void DeviceFree(void* p) {
+#if defined(__HIPCC__)
+  hipFreeAsync(p, nullptr);
+#elif defined(__CUDACC__)
+  cudaFreeAsync(p, nullptr);
+#else
+  (void)p;
+#endif
+}
+
 /** Wait for the device to finish what it has been given. */
 inline void DeviceSynchronize() {
 #if defined(__HIPCC__)
