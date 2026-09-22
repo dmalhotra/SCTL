@@ -39,6 +39,9 @@ struct PlanBase {
   Vector<Long> rscnt, rrcnt;    ///< stage 4
 
   bool inv = false;             ///< the inverses exist; built on the first move back
+
+  /** The state before `Init`; the vectors keep their storage. */
+  void Reset();
 };
 
 struct Plan : PlanBase {

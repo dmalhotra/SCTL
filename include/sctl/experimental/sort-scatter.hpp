@@ -47,10 +47,10 @@ class SortScatter {
 
   /**
    * Sort `keys` (caller order) into the global order cut at `splitters`: np entries, `splitters[r]`
-   * the first key of rank r's range; `splitters[0]` is not consulted. Pass `std::move(keys)` to
-   * avoid the copy.
+   * the first key of rank r's range; `splitters[0]` is not consulted. A `DevVec<Key>` converts to
+   * the view. Storage from a previous `Init` is reused.
    */
-  void Init(DevVec<Key> keys, const sctl::Vector<Key>& splitters);
+  void Init(DataView<const Key, DevVec> keys, const sctl::Vector<Key>& splitters);
 
   /**
    * Move the sorted keys to the partition given by new `splitters`; the operators follow.

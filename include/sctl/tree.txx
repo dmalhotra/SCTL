@@ -1779,7 +1779,6 @@ namespace sctl {
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticles(const std::string& name, const Vector<Real>& coord) {
-    SCTL_ASSERT(groups.find(name) == groups.end());
     Profile::Scoped prof_("PtTree::AddParticles", &this->GetComm(), true, 6);
 
     const Long N = coord.Dim() / DIM;
@@ -1792,6 +1791,16 @@ namespace sctl {
     }
     auto& group = groups.try_emplace(name, this->GetComm()).first->second;
     group.Init(pt_mid, partition_codes);
+    for (auto& kv : pt_data) { // an existing group's data sets no longer match its particles: emptied, storage kept
+      if (kv.second.particle_name == name && kv.first != name) {
+        Iterator<Vector<char>> data_;
+        Iterator<Vector<Long>> cnt_;
+        this->GetData_(data_, cnt_, kv.first);
+        data_[0].ReInit(0);
+        cnt_[0].SetZero();
+        kv.second.dof = 0;
+      }
+    }
     AddParticleData(name, name, coord);
   }
 
@@ -1816,9 +1825,6 @@ namespace sctl {
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof) {
     const auto group = groups.find(particle_name);
     SCTL_ASSERT(group != groups.end());
-    const auto present = pt_data.find(data_name);
-    SCTL_ASSERT_MSG(present == pt_data.end() || present->second.particle_name == particle_name,
-                    "PtTree::AddParticleData: the name belongs to another particle group.");
     if (data_name == particle_name) { // the group's own coordinates: count its particles per node
       const auto& node_mid = this->GetNodeMID();
       ScratchBuf<Long> cnt(node_mid.Dim());
@@ -1854,6 +1860,10 @@ namespace sctl {
     this->GetData(data_, cnt_, data_name);
     SCTL_ASSERT(cnt_.Dim() == node_mid.Dim());
     const Long dof = tree_detail::global_dof(comm, data_.Dim(), omp_par::reduce(cnt_.begin(), cnt_.Dim()));
+    if (dof == 0) { // an emptied set: nothing to scatter
+      if (data.Dim()) data.ReInit(0);
+      return;
+    }
     { // the owned items scatter back; a Broadcast may have put the owners' values around them
       Long owned0 = 0, owned1 = 0;
       this->GetOwnedRange(owned0, owned1);

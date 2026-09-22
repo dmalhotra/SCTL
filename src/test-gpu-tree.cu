@@ -487,6 +487,35 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
       check("particle data round-trips through the view overloads", bad);
       gt.DeleteParticleData("pv");
     }
+    { // adding a group again replaces it in place; its data sets are emptied and keep their storage
+      gpu_tree::DataView<Real, DevVec> gv;
+      sctl::Vector<Real> sv;
+      sctl::Vector<Long> gc, sc;
+      gt.GetData(gv, gc, "g");
+      st.GetData(sv, sc, "g");
+      const Real* const gp = gv.data();
+      const Real* const sp = sv.Dim() ? &sv[0] : nullptr;  // a rank may hold none of the group
+      gt.AddParticles("q", y2d);
+      st.AddParticles("q", y2s);
+      st.GetData(sv, sc, "g");
+      Long bad = (gt.ParticleDataSize("g") != 0) + (sv.Dim() != 0) + (sctl::omp_par::reduce(sc.begin(), sc.Dim()) != 0);
+      gt.AddParticleData("g", "q", gd);
+      st.AddParticleData("g", "q", g);
+      gt.GetData(gv, gc, "g");
+      st.GetData(sv, sc, "g");
+      bad += (gv.data() != gp);
+#ifndef SCTL_MEMDEBUG  // a debug ReInit always reallocates
+      bad += ((sv.Dim() ? &sv[0] : nullptr) != sp);
+#endif
+      check("adding a particle group again replaces it and keeps its data sets' storage", bad + round_trip("g", g));
+      // a data set may be re-added under another group; then back
+      gt.AddParticleData("g", "pt", fd);
+      st.AddParticleData("g", "pt", f);
+      bad = round_trip("g", f);
+      gt.AddParticleData("g", "q", gd);
+      st.AddParticleData("g", "q", g);
+      check("adding a particle data set again may attach it to another group", bad + round_trip("g", g));
+    }
     gt.UpdateRefinement(yd, 25, true, sctl::Periodicity::NONE, 0);
     st.UpdateRefinement(y, 25, true, sctl::Periodicity::NONE, 0);
     // added after the repartition: the forward scatter with its re-cut stage

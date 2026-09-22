@@ -311,7 +311,8 @@ class PtTree : public BaseTree {
   void UpdateRefinement(DataView<const Real, DevVec> coord, Long M = 1, bool balance21 = 0, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1);
 
   /**
-   * Add particles to the point tree.
+   * Add particles to the point tree. An existing group of the name is replaced in place; the data
+   * sets attached to it are emptied (size zero, storage kept) and must be added again.
    *
    * @param name Name of the particle group.
    * @param coord Coordinates of the particles, `DIM` values per particle with the particles in
@@ -325,7 +326,7 @@ class PtTree : public BaseTree {
   /**
    * Add particle data to the point tree.
    *
-   * @param data_name Name of the data; an existing set of the name is replaced.
+   * @param data_name Name of the data; an existing set of the name is replaced, whatever group it was attached to.
    * @param particle_name Name of an existing particle group from `AddParticles`.
    * @param data Local data values, sized `dof * Nlocal[particle_name]` for some implicit `dof`, in
    *        the caller's particle order: a `DevVec<Real>`, or a view of backend memory. Reordered to

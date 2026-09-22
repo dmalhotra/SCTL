@@ -26,6 +26,15 @@ namespace sctl {
 
 namespace sort_scatter_detail {
 
+inline void PlanBase::Reset() {
+  Nloc = 0;
+  Nmid = 0;
+  Ntree = 0;
+  recut = false;
+  recut_cnt = false;
+  inv = false;
+}
+
 /** Sort `n` keys from `src` into `dst` (may alias), writing the source position of each into `idx`. */
 template <class Key> void sortWithIndex(ConstIterator<Key> src, Iterator<Key> dst, Vector<Long>& idx, Long n) {
   ScratchBuf<comm_detail::SortPair<Key, Long>> in(n), out(n);
@@ -137,7 +146,7 @@ template <class Key> void SortScatter<Key>::Init(const Vector<Key>& keys, const 
   const Integer np = comm_.Size();
   SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Init: one splitter per rank.");
   const Long Nloc = keys.Dim();
-  plan_ = sort_scatter_detail::Plan{};
+  plan_.Reset();
   plan_.Nloc = Nloc;
 
   if (np == 1) {  // stage 1 alone: the sort is the result

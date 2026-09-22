@@ -262,7 +262,8 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
     void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, Periodicity periodicity = Periodicity::NONE, Integer halo_size = -1);
 
     /**
-     * Add particles to the point tree.
+     * Add particles to the point tree. An existing group of the name is replaced in place; the
+     * data sets attached to it are emptied (size zero, storage kept) and must be added again.
      *
      * @param name Name of the particle group.
      * @param coord Coordinates of the particles.
@@ -274,7 +275,7 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
     /**
      * Add particle data to the point tree.
      *
-     * @param data_name Name of the data; an existing set of the name is replaced.
+     * @param data_name Name of the data; an existing set of the name is replaced, whatever group it was attached to.
      * @param particle_name Name of an existing particle group from `AddParticles`.
      * @param data Local data values, `dof` per local particle of `particle_name` for some
      * implicit `dof`. Reordered to match the particle group.

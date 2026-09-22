@@ -2406,7 +2406,6 @@ void PtTree<Real, DIM, DevVec, BaseTree>::nodeCounts(const std::string& name, sc
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::AddParticles(const std::string& name, DataView<const Real, DevVec> coord) {
-  SCTL_ASSERT_MSG(groups_.find(name) == groups_.end(), "PtTree::AddParticles: name already present.");
   const detail::StageTimer<DevVec> prof{this->GetComm()};
   prof.tic("PtTree::AddParticles", 6);
   const auto pol = detail::scratch_policy<DevVec, MortonCode<DIM>>();
@@ -2415,10 +2414,16 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticles(const std::string& name, 
 
   // The key is the bare MortonCode, not the Morton: every particle sits at MAX_DEPTH, so the depth
   // would only double the key and the exchange volume (NodeToCodeFunctor: why codes alone order them).
-  DevVec<MortonCode<DIM>> key(Nloc);
+  DeviceScratch<MortonCode<DIM>, DevVec> key(Nloc);
   thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nloc), key.begin(),
                     detail::MakeMortonFunctor<Real, DIM>{thrust::raw_pointer_cast(coord.data())});
-  groups_.try_emplace(name, this->GetComm()).first->second.Init(std::move(key), partition_codes_);
+  groups_.try_emplace(name, this->GetComm()).first->second.Init(DataView<const MortonCode<DIM>, DevVec>{thrust::raw_pointer_cast(key.data()), Nloc}, partition_codes_);
+  for (const auto& kv : data_pt_name_) {  // an existing group's data sets no longer match its particles: emptied, storage kept
+    if (kv.second == name && kv.first != name) {
+      this->NodeData_(kv.first).resize(0);
+      this->NodeCnt_(kv.first).SetZero();
+    }
+  }
   AddParticleData(name, name, coord);
   prof.toc();
 }
@@ -2442,9 +2447,6 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& dat
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof) {
   SCTL_ASSERT_MSG(groups_.find(particle_name) != groups_.end(), "PtTree::AddParticleData: unknown particle group.");
-  const auto present = data_pt_name_.find(data_name);
-  SCTL_ASSERT_MSG(present == data_pt_name_.end() || present->second == particle_name,
-                  "PtTree::AddParticleData: the name belongs to another particle group.");
   if (data_name == particle_name) {  // the group's own coordinates: count its particles per node
     sctl::ScratchBuf<Long> cnt_buf((Long)this->GetNodeMID().size());  // AddData copies the counts out
     sctl::Vector<Long> cnt(cnt_buf.Dim(), cnt_buf.begin(), false);
@@ -2466,6 +2468,7 @@ Long PtTree<Real, DIM, DevVec, BaseTree>::particleDataDof(const std::string& dat
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
 void PtTree<Real, DIM, DevVec, BaseTree>::scatterParticleData(const std::string& data_name, DataView<const Real, DevVec> raw, const sctl::Vector<Long>& cnt, Long dof, Real* out) const {
+  if (dof == 0) return;  // an emptied set: nothing to scatter
   // the reverse scatter reads the stored buffer and writes the output, so the payload is touched once
   const auto& g = groups_.find(data_pt_name_.find(data_name)->second)->second;
   Long owned0 = 0, owned1 = 0;  // a Broadcast may have filled the ghost slots; the owned items scatter back

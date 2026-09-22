@@ -69,17 +69,18 @@ void exchange(const Policy& pol, const T* src, T* dst,
 }  // namespace detail_sortScatter
 
 template <class Key, template <class...> class DevVec>
-void SortScatter<Key, DevVec>::Init(DevVec<Key> keys, const sctl::Vector<Key>& splitters) {
+void SortScatter<Key, DevVec>::Init(DataView<const Key, DevVec> keys, const sctl::Vector<Key>& splitters) {
   const Long np = comm_.Size();
   SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Init: one splitter per rank.");
   const auto pol = detail::scratch_policy<DevVec, Key>();
-  const Long Nloc = (Long)keys.size();
-  keys_ = std::move(keys);
-  plan_ = detail_sortScatter::Plan<DevVec>{};
+  const Long Nloc = keys.size();
+  detail_sortScatter::resizeDiscard(keys_, Nloc);
+  thrust::copy(pol, keys.begin(), keys.end(), keys_.begin());
+  plan_.Reset();
   plan_.Nloc = Nloc;
 
   { // stage 1: sort this rank's own keys, carrying their handed positions
-    plan_.pre.resize(Nloc);
+    detail_sortScatter::resizeDiscard(plan_.pre, Nloc);
     thrust::sequence(pol, plan_.pre.begin(), plan_.pre.end(), Long(0));
     detail::local_sort_by_key(pol, keys_, plan_.pre, Nloc);
   }
@@ -99,7 +100,7 @@ void SortScatter<Key, DevVec>::Init(DevVec<Key> keys, const sctl::Vector<Key>& s
       keys_.swap(k2);
     }
     { // stage 3: merge the arriving sorted runs into one block
-      plan_.post.resize(plan_.Nmid);
+      detail_sortScatter::resizeDiscard(plan_.post, plan_.Nmid);
       thrust::sequence(pol, plan_.post.begin(), plan_.post.end(), Long(0));
       detail::local_sort_by_key(pol, keys_, plan_.post, plan_.Nmid);
     }
