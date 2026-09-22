@@ -30,80 +30,6 @@ using sctl::Long;
 
 namespace detail {
 
-/**
- * The device-runtime calls made here, over whichever runtime is compiling this file. CUDA and HIP
- * spell them the same way under different prefixes, so only the names differ. A build with neither
- * cannot produce a device pointer, so `CopyToHost` is unreachable there and the rest have nothing
- * to do -- which is what a host backend wants.
- *
- * `__HIPCC__` is tested first: on the NVIDIA platform hipcc defines both, and there the hip names
- * are the cuda ones.
- */
-namespace gpu_runtime {
-
-/** Page-lock `bytes` at `p` so the driver can copy out of it directly. False if the runtime refused. */
-inline bool HostRegister(void* p, std::size_t bytes) {
-#if defined(__HIPCC__)
-  return hipHostRegister(p, bytes, hipHostRegisterDefault) == hipSuccess;
-#elif defined(__CUDACC__)
-  return cudaHostRegister(p, bytes, cudaHostRegisterDefault) == cudaSuccess;
-#else
-  (void)p;
-  (void)bytes;
-  return true;  // nothing to pin
-#endif
-}
-
-/** Undo `HostRegister`. Runs at exit, where the runtime may already be gone, so the result is of no use. */
-inline void HostUnregister(void* p) {
-#if defined(__HIPCC__)
-  hipHostUnregister(p);
-#elif defined(__CUDACC__)
-  cudaHostUnregister(p);
-#else
-  (void)p;
-#endif
-}
-
-/** Copy `bytes` of device memory at `src` to host memory at `dst`. False if the runtime refused. */
-inline bool CopyToHost(void* dst, const void* src, std::size_t bytes) {
-#if defined(__HIPCC__)
-  return hipMemcpy(dst, src, bytes, hipMemcpyDeviceToHost) == hipSuccess;
-#elif defined(__CUDACC__)
-  return cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToHost) == cudaSuccess;
-#else
-  (void)dst;
-  (void)src;
-  (void)bytes;
-  return false;  // no runtime to copy with, and no device pointer to copy from
-#endif
-}
-
-/** Fill `bytes` of device memory at `p` with `value`. False if the runtime refused. */
-inline bool MemsetDevice(void* p, int value, std::size_t bytes) {
-#if defined(__HIPCC__)
-  return hipMemset(p, value, bytes) == hipSuccess;
-#elif defined(__CUDACC__)
-  return cudaMemset(p, value, bytes) == cudaSuccess;
-#else
-  (void)p;
-  (void)value;
-  (void)bytes;
-  return false;  // no runtime, and no device pointer to fill
-#endif
-}
-
-/** Wait for the device to finish what it has been given. */
-inline void DeviceSynchronize() {
-#if defined(__HIPCC__)
-  hipDeviceSynchronize();
-#elif defined(__CUDACC__)
-  cudaDeviceSynchronize();
-#endif
-}
-
-}  // namespace gpu_runtime
-
 // True iff `Vec::data()` returns a thrust::device_ptr (i.e. Vec is GPU-resident).
 template <class T> struct is_device_ptr                        : std::false_type {};
 template <class T> struct is_device_ptr<thrust::device_ptr<T>> : std::true_type  {};
@@ -114,26 +40,6 @@ inline constexpr bool is_device_vector_v = is_device_ptr<typename std::decay<dec
 // Iterator thrust dispatches on: device_ptr<T> for the device backend, plain T* for the host one.
 template <class T, template <class...> class DevVec>
 using ScratchIterator = std::conditional_t<is_device_vector_v<DevVec<T>>, thrust::device_ptr<T>, T*>;
-
-/**
- * Long-lived working storage for an array that is rebuilt on every call. Unlike `DeviceScratch`
- * (fixed size, LIFO, released at scope exit) this grows on demand and is retained for the process,
- * so an array that ends up the same size each call stops allocating after the first. Swap into it
- * instead of assigning a fresh vector and the storage is recycled rather than freed and retaken --
- * which matters because a release is an allocator round trip and drains the device.
- *
- * `Tag` separates independent arrays so two of them do not share one buffer. Retention is deliberate,
- * as in `DeviceScratchPool`. Like the pool, the buffers are process-wide: a caller that runs two
- * builds concurrently in one process must not share a tag between them.
- */
-template <class T, template <class...> class DevVec, auto Tag> DevVec<T>& PersistentBuffer();
-
-/**
- * Size a buffer for output it is about to be given in full. `resize` alone preserves the contents,
- * which are dead in that case, and copies them when the buffer has to grow -- a device-to-device
- * copy of the whole buffer on the CUDA backend.
- */
-template <class T, template <class...> class DevVec> void resizeDiscard(DevVec<T>& v, Long n);
 
 /**
  * Copy `n` elements of device storage into a host buffer, staged through a retained pinned buffer.

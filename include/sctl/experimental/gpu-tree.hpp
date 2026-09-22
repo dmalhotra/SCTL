@@ -26,7 +26,6 @@ using sctl::Long;
 using sctl::Comm;
 using sctl::Morton;
 using sctl::MortonCode;
-using sctl::MAX_DEPTH;
 
 /**
  * Morton-order linear tree on a thrust backend, with the node set of `sctl::Tree` for the same
@@ -112,10 +111,7 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
    * @param[out] begin Index of this rank's first owned node.
    * @param[out] end One past its last owned node.
    */
-  void GetOwnedRange(Long& begin, Long& end) const {
-    begin = owned_begin_;
-    end = owned_end_;
-  }
+  void GetOwnedRange(Long& begin, Long& end) const;
 
   /**
    * Update tree refinement and repartition node data among the new tree nodes.

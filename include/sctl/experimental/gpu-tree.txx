@@ -52,6 +52,8 @@
 
 namespace gpu_tree {
 
+using sctl::MAX_DEPTH;
+
 namespace detail {
 
 // Execution policy for thrust calls on backend memory, with temporaries drawn from the scratch
@@ -1805,6 +1807,12 @@ void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const 
 // Stateful interface: the tree, the partition and any named per-node data live in the object, so a
 // rebuild can carry the data across. `buildTreeDist` above does the building; everything here is
 // bookkeeping around it, mirroring sctl::Tree.
+
+template <class Real, Integer DIM, template <class...> class DevVec>
+void GPUTree<Real, DIM, DevVec>::GetOwnedRange(Long& begin, Long& end) const {
+  begin = owned_begin_;
+  end = owned_end_;
+}
 
 template <class Real, Integer DIM, template <class...> class DevVec>
 GPUTree<Real, DIM, DevVec>::GPUTree(const Comm& comm) : comm_(comm) {
