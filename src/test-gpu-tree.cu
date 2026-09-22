@@ -515,9 +515,26 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
       gt.AddParticleData("g", "q", gd);
       st.AddParticleData("g", "q", g);
       check("adding a particle data set again may attach it to another group", bad + round_trip("g", g));
+      // a set left emptied is carried through the refinement below and re-added after it
+      gt.AddParticleData("e", "q", gd);
+      st.AddParticleData("e", "q", g);
+      gt.AddParticles("q", y2d);
+      st.AddParticles("q", y2s);
+      gt.AddParticleData("g", "q", gd);
+      st.AddParticleData("g", "q", g);
     }
     gt.UpdateRefinement(yd, 25, true, sctl::Periodicity::NONE, 0);
     st.UpdateRefinement(y, 25, true, sctl::Periodicity::NONE, 0);
+    {
+      sctl::Vector<Real> se;
+      st.GetParticleData(se, "e");
+      Long bad = (gt.ParticleDataSize("e") != 0) + (se.Dim() != 0);
+      gt.AddParticleData("e", "q", gd);
+      st.AddParticleData("e", "q", g);
+      check("an emptied particle data set survives a repartition and can be added again", bad + round_trip("e", g));
+      gt.DeleteParticleData("e");
+      st.DeleteParticleData("e");
+    }
     // added after the repartition: the forward scatter with its re-cut stage
     gt.AddParticleData("h", "pt", hd);
     st.AddParticleData("h", "pt", h);
