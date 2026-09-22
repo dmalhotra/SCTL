@@ -13,7 +13,14 @@
 #endif
 
 #include <cstddef>
+#include <deque>  // the holders made incomplete for DeviceScratch below
+#include <forward_list>
+#include <list>
+#include <map>
+#include <memory>
+#include <optional>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 
 #include "sctl/common.hpp"
@@ -213,6 +220,17 @@ template <template <class...> class DevVec> class DeviceScratchAllocator {
 };
 
 }  // namespace gpu_tree
+
+namespace std {
+// Incomplete on purpose: a `DeviceScratch` must be a named local, released in stack order.
+template <class T, template <class...> class V> class optional<gpu_tree::DeviceScratch<T, V>>;
+template <class T, template <class...> class V> class shared_ptr<gpu_tree::DeviceScratch<T, V>>;
+template <class T, template <class...> class V, class A> class list<gpu_tree::DeviceScratch<T, V>, A>;
+template <class T, template <class...> class V, class A> class forward_list<gpu_tree::DeviceScratch<T, V>, A>;
+template <class T, template <class...> class V, class A> class deque<gpu_tree::DeviceScratch<T, V>, A>;
+template <class K, class T, template <class...> class V, class C, class A> class map<K, gpu_tree::DeviceScratch<T, V>, C, A>;
+template <class K, class T, template <class...> class V, class H, class E, class A> class unordered_map<K, gpu_tree::DeviceScratch<T, V>, H, E, A>;
+}  // namespace std
 
 #include "sctl/experimental/device_scratch.txx"
 
