@@ -1627,7 +1627,7 @@ template <Integer DIM> struct NbrPropagateFunctor {
 // smallest per-rank count. Concatenated over ranks, the output matches the single-rank build.
 
 template <class Real, Integer DIM, template <class...> class DevVec>
-void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, const DevVec<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, Morton<DIM>* partition, DevVec<NodeAttr>* node_attr, NodeLists<DevVec>* node_lists, DevVec<Morton<DIM>>* user_mid, sctl::Vector<Long>* user_cnt) {
+void GPUTree<Real, DIM, DevVec>::buildTreeDist(DevVec<Morton<DIM>>& tree, DataView<const Real, DevVec> coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, Morton<DIM>* partition, DevVec<NodeAttr>* node_attr, NodeLists<DevVec>* node_lists, DevVec<Morton<DIM>>* user_mid, sctl::Vector<Long>* user_cnt) {
 
   using MortonT = MortonCode<DIM>;
   const auto pol = detail::scratch_policy<DevVec, MortonT>();
@@ -1839,7 +1839,7 @@ GPUTree<Real, DIM, DevVec>::GPUTree(const Comm& comm) : comm_(comm) {
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec>
-void GPUTree<Real, DIM, DevVec>::UpdateRefinement(const DevVec<Real>& coord, Long M, bool balance21, sctl::Periodicity periodicity, Integer halo_size) {
+void GPUTree<Real, DIM, DevVec>::UpdateRefinement(DataView<const Real, DevVec> coord, Long M, bool balance21, sctl::Periodicity periodicity, Integer halo_size) {
   const Long np = comm_.Size(), rank = comm_.Rank();
   const auto pol = detail::scratch_policy<DevVec, Morton<DIM>>();
 
@@ -2405,7 +2405,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::nodeCounts(const std::string& name, sc
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
-void PtTree<Real, DIM, DevVec, BaseTree>::AddParticles(const std::string& name, const DevVec<Real>& coord) {
+void PtTree<Real, DIM, DevVec, BaseTree>::AddParticles(const std::string& name, DataView<const Real, DevVec> coord) {
   SCTL_ASSERT_MSG(groups_.find(name) == groups_.end(), "PtTree::AddParticles: name already present.");
   const detail::StageTimer<DevVec> prof{this->GetComm()};
   prof.tic("PtTree::AddParticles", 6);
@@ -2424,7 +2424,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticles(const std::string& name, 
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
-void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, const DevVec<Real>& data) {
+void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, DataView<const Real, DevVec> data) {
   const auto it = groups_.find(particle_name);
   SCTL_ASSERT_MSG(it != groups_.end(), "PtTree::AddParticleData: unknown particle group.");
   const Long dof = detail::globalDof((Long)data.size(), it->second.LocalCount(), this->GetComm());
@@ -2458,24 +2458,48 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& dat
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
-void PtTree<Real, DIM, DevVec, BaseTree>::GetParticleData(DevVec<Real>& data, const std::string& data_name) const {
-  const auto it = data_pt_name_.find(data_name);
-  SCTL_ASSERT_MSG(it != data_pt_name_.end(), "PtTree::GetParticleData: unknown data name.");
-  const auto& g = groups_.find(it->second)->second;
-
-  // the reverse scatter reads the stored buffer and writes the output, so the payload is touched once
-  DataView<const Real, DevVec> raw;
-  sctl::Vector<Long> cnt;
+Long PtTree<Real, DIM, DevVec, BaseTree>::particleDataDof(const std::string& data_name, DataView<const Real, DevVec>& raw, sctl::Vector<Long>& cnt) const {
+  SCTL_ASSERT_MSG(data_pt_name_.count(data_name), "PtTree::GetParticleData: unknown data name.");
   this->GetData(raw, cnt, data_name);
-  const Long dof = detail::globalDof(raw.size(), sctl::omp_par::reduce(cnt.begin(), cnt.Dim()), this->GetComm());
+  return detail::globalDof(raw.size(), sctl::omp_par::reduce(cnt.begin(), cnt.Dim()), this->GetComm());
+}
 
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+void PtTree<Real, DIM, DevVec, BaseTree>::scatterParticleData(const std::string& data_name, DataView<const Real, DevVec> raw, const sctl::Vector<Long>& cnt, Long dof, Real* out) const {
+  // the reverse scatter reads the stored buffer and writes the output, so the payload is touched once
+  const auto& g = groups_.find(data_pt_name_.find(data_name)->second)->second;
   Long owned0 = 0, owned1 = 0;  // a Broadcast may have filled the ghost slots; the owned items scatter back
   this->GetOwnedRange(owned0, owned1);
   const Long begin = sctl::omp_par::reduce(cnt.begin(), owned0) * dof;
   SCTL_ASSERT_MSG(sctl::omp_par::reduce(cnt.begin() + owned0, owned1 - owned0) == g.SortedCount(),
                   "PtTree::GetParticleData: the owned items do not match the group's sorted keys.");
-  data.resize(g.LocalCount() * dof);
-  g.ScatterReverse(raw.data() + begin, (Real*)thrust::raw_pointer_cast(data.data()), dof);
+  g.ScatterReverse(raw.data() + begin, out, dof);
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+void PtTree<Real, DIM, DevVec, BaseTree>::GetParticleData(DevVec<Real>& data, const std::string& data_name) const {
+  DataView<const Real, DevVec> raw;
+  sctl::Vector<Long> cnt;
+  const Long dof = particleDataDof(data_name, raw, cnt);
+  data.resize(groups_.find(data_pt_name_.find(data_name)->second)->second.LocalCount() * dof);
+  scatterParticleData(data_name, raw, cnt, dof, thrust::raw_pointer_cast(data.data()));
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+void PtTree<Real, DIM, DevVec, BaseTree>::GetParticleData(DataView<Real, DevVec> data, const std::string& data_name) const {
+  DataView<const Real, DevVec> raw;
+  sctl::Vector<Long> cnt;
+  const Long dof = particleDataDof(data_name, raw, cnt);
+  SCTL_ASSERT_MSG(data.size() == groups_.find(data_pt_name_.find(data_name)->second)->second.LocalCount() * dof, "PtTree::GetParticleData: data must hold dof * Nlocal values.");
+  scatterParticleData(data_name, raw, cnt, dof, data.data());
+}
+
+template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
+Long PtTree<Real, DIM, DevVec, BaseTree>::ParticleDataSize(const std::string& data_name) const {
+  DataView<const Real, DevVec> raw;
+  sctl::Vector<Long> cnt;
+  const Long dof = particleDataDof(data_name, raw, cnt);
+  return groups_.find(data_pt_name_.find(data_name)->second)->second.LocalCount() * dof;
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
@@ -2494,7 +2518,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::DeleteParticleData(const std::string& 
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
-void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(const DevVec<Real>& coord, Long M, bool balance21, sctl::Periodicity periodicity, Integer halo_size) {
+void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(DataView<const Real, DevVec> coord, Long M, bool balance21, sctl::Periodicity periodicity, Integer halo_size) {
   const Comm& comm = this->GetComm();
   const auto pol = detail::scratch_policy<DevVec, char>();
   Long owned0 = 0, owned1 = 0;

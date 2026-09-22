@@ -55,6 +55,11 @@ template <class T, template <class...> class DevVec> struct DataView {
   using iterator = std::conditional_t<detail::is_device_vector_v<DevVec<char>>, thrust::device_ptr<T>, T*>;  // probed on DevVec<char>: T may be const, which no container holds
   T* ptr = nullptr;
   sctl::Long n = 0;
+  DataView() = default;
+  DataView(T* p, sctl::Long count) : ptr(p), n(count) {}
+  /// The whole of `v`: any container or view whose `data()` gives a pointer convertible to `T*`. Valid while `v` is not reallocated.
+  template <class V, class = std::enable_if_t<std::is_convertible<decltype(thrust::raw_pointer_cast(std::declval<V&>().data())), T*>::value>>
+  DataView(V& v) : ptr(thrust::raw_pointer_cast(v.data())), n((sctl::Long)v.size()) {}
   T* data() const { return ptr; }
   sctl::Long size() const { return n; }
   iterator begin() const { return iterator(ptr); }

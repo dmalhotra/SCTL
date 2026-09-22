@@ -476,6 +476,17 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_v
       std::copy(vf.begin(), vf.end(), vu.begin());
     }
     check("particle data round-trips (two groups, one set filled through the view)", round_trip("f", f) + round_trip("g", g) + round_trip("u", f) + particle_total());
+    { // the same through views into caller storage
+      gt.AddParticles("pv", gpu_tree::DataView<const Real, DevVec>(xd));
+      gt.AddParticleData("fv", "pv", gpu_tree::DataView<const Real, DevVec>(fd));
+      DevVec<Real> back(gt.ParticleDataSize("fv"));
+      gt.GetParticleData(gpu_tree::DataView<Real, DevVec>(back), "fv");
+      const sctl::Vector<Real> bh = to_host(back);
+      Long bad = (bh.Dim() != f.Dim());
+      if (!bad) for (Long i = 0; i < f.Dim(); i++) bad += (bh[i] != f[i]);
+      check("particle data round-trips through the view overloads", bad);
+      gt.DeleteParticleData("pv");
+    }
     gt.UpdateRefinement(yd, 25, true, sctl::Periodicity::NONE, 0);
     st.UpdateRefinement(y, 25, true, sctl::Periodicity::NONE, 0);
     // added after the repartition: the forward scatter with its re-cut stage

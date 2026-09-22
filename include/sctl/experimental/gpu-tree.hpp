@@ -116,7 +116,8 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
   /**
    * Update tree refinement and repartition node data among the new tree nodes.
    *
-   * @param[in] coord Particle coordinates (in [0,1]^dim stored in AoS order) that describe the new tree refinement.
+   * @param[in] coord Particle coordinates in [0,1]^DIM, `DIM` values per point with the points in
+   *        sequence: a `DevVec<Real>`, or a view of `n * DIM` values in backend memory.
    * @param[in] M Maximum number of particles per tree node.
    * @param[in] balance21 Whether to do level-restriction (2:1 balance refinement).
    * @param[in] periodicity Per-axis periodicity bitmask (e.g. `Periodicity::X | Periodicity::Y`, or `all_periodic(DIM)`).
@@ -124,7 +125,7 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
    *
    * @note This is a collective operation and must be called from all processes in the communicator.
    */
-  void UpdateRefinement(const DevVec<Real>& coord, Long M = 1, bool balance21 = 0, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1);
+  void UpdateRefinement(DataView<const Real, DevVec> coord, Long M = 1, bool balance21 = 0, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1);
 
   /**
    * Add named data to the tree nodes.
@@ -235,7 +236,7 @@ template <class Real, Integer DIM, template <class...> class DevVec = HostVector
    * null. Collective. When all particles fit one leaf, rank 0 holds the root alone and every other
    * rank an empty tree.
    */
-  static void buildTreeDist(DevVec<Morton<DIM>>& tree, const DevVec<Real>& coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, Morton<DIM>* partition, DevVec<NodeAttr>* node_attr, NodeLists<DevVec>* node_lists, DevVec<Morton<DIM>>* user_mid, sctl::Vector<Long>* user_cnt);
+  static void buildTreeDist(DevVec<Morton<DIM>>& tree, DataView<const Real, DevVec> coord, Long M, const Comm& comm, bool balance21, sctl::Periodicity periodicity, Integer halo_size, Long* owned_range, Morton<DIM>* partition, DevVec<NodeAttr>* node_attr, NodeLists<DevVec>* node_lists, DevVec<Morton<DIM>>* user_mid, sctl::Vector<Long>* user_cnt);
 
   /** The view behind both `GetData` overloads; `VT` may be const. */
   template <class VT> void dataView(View<VT>& data, sctl::Vector<Long>& cnt, const std::string& name) const;
@@ -297,7 +298,8 @@ class PtTree : public BaseTree {
   /**
    * Update refinement of the point tree based on given coordinates.
    *
-   * @param coord Coordinates of the points.
+   * @param coord Coordinates of the points, `DIM` values per point with the points in sequence: a
+   *        `DevVec<Real>`, or a view of `n * DIM` values in backend memory.
    * @param M Maximum number of points per box for refinement.
    * @param balance21 Flag indicating whether to construct a level-restricted
    *        tree with neighboring boxes within one level of each other.
@@ -306,29 +308,32 @@ class PtTree : public BaseTree {
    *
    * @note This is a collective operation and must be called from all processes in the communicator.
    */
-  void UpdateRefinement(const DevVec<Real>& coord, Long M = 1, bool balance21 = 0, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1);
+  void UpdateRefinement(DataView<const Real, DevVec> coord, Long M = 1, bool balance21 = 0, sctl::Periodicity periodicity = sctl::Periodicity::NONE, Integer halo_size = -1);
 
   /**
    * Add particles to the point tree.
    *
    * @param name Name of the particle group.
-   * @param coord Coordinates of the particles.
+   * @param coord Coordinates of the particles, `DIM` values per particle with the particles in
+   *        sequence: a `DevVec<Real>`, or a view of backend memory. `Nlocal = coord.size() / DIM`
+   *        particles on this rank, in the caller's order.
    *
    * @note This is a collective operation and must be called from all processes in the communicator.
    */
-  void AddParticles(const std::string& name, const DevVec<Real>& coord);
+  void AddParticles(const std::string& name, DataView<const Real, DevVec> coord);
 
   /**
    * Add particle data to the point tree.
    *
    * @param data_name Name of the data; an existing set of the name is replaced.
    * @param particle_name Name of an existing particle group from `AddParticles`.
-   * @param data Local data values, sized `dof * Nlocal[particle_name]` for
-   * some implicit `dof`. Reordered to match the particle group.
+   * @param data Local data values, sized `dof * Nlocal[particle_name]` for some implicit `dof`, in
+   *        the caller's particle order: a `DevVec<Real>`, or a view of backend memory. Reordered to
+   *        match the particle group.
    *
    * @note Collective; must be called from all processes.
    */
-  void AddParticleData(const std::string& data_name, const std::string& particle_name, const DevVec<Real>& data);
+  void AddParticleData(const std::string& data_name, const std::string& particle_name, DataView<const Real, DevVec> data);
 
   /**
    * Add particle data without values: `dof` unwritten values per particle of `particle_name`, in
@@ -347,6 +352,32 @@ class PtTree : public BaseTree {
    * @note This is a collective operation and must be called from all processes in the communicator.
    */
   void GetParticleData(DevVec<Real>& data, const std::string& data_name) const;
+
+  /**
+   * Get particle data from the point tree into memory the caller owns. The data is scattered back
+   * to the original ordering of the particles.
+   *
+   * @param data View of backend memory the values are written to. Must hold `dof * Nlocal` values:
+   *        `Nlocal` the number of particles this rank passed to `AddParticles` for the group the
+   *        data set is attached to (the caller's count, not the count after the sort into tree
+   *        order), `dof` the values per particle given to `AddParticleData`.
+   * @param data_name Name of the data.
+   *
+   * @note This is a collective operation and must be called from all processes in the communicator.
+   */
+  void GetParticleData(DataView<Real, DevVec> data, const std::string& data_name) const;
+
+  /**
+   * Number of values `GetParticleData` writes on this rank for a data set: `dof * Nlocal`, with
+   * `Nlocal` the number of particles this rank passed to `AddParticles` for the group the data set
+   * is attached to (the caller's count, not the count after the sort into tree order) and `dof` the
+   * values per particle given to `AddParticleData`.
+   *
+   * @param data_name Name of the data.
+   *
+   * @note Collective; must be called from all processes.
+   */
+  Long ParticleDataSize(const std::string& data_name) const;
 
   /**
    * Delete particle data from the point tree. Deleting a particle group also deletes every data
@@ -380,6 +411,12 @@ class PtTree : public BaseTree {
 
   /** Particles of `name` falling in each node of `GetNodeMID()`. */
   void nodeCounts(const std::string& name, sctl::Vector<Long>& cnt) const;
+
+  /** A data set's stored values, per-node counts and dof. Collective. */
+  Long particleDataDof(const std::string& data_name, DataView<const Real, DevVec>& raw, sctl::Vector<Long>& cnt) const;
+
+  /** The owned values of a data set back to the group's caller order, `dof` per particle, into `out`. */
+  void scatterParticleData(const std::string& data_name, DataView<const Real, DevVec> raw, const sctl::Vector<Long>& cnt, Long dof, Real* out) const;
 
   sctl::Vector<MortonCode<DIM>> partition_codes_;  ///< partition mins as codes: the SortScatter splitters; set with each partition
   std::map<std::string, SortScatter<MortonCode<DIM>, DevVec>> groups_;  ///< per particle group: codes in tree order, maps to/from caller order
