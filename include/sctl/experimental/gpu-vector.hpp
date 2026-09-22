@@ -1,5 +1,5 @@
 // Backend containers for gpu_tree: HostVector and DeviceVector, whose resize leaves trivial elements
-// uninitialized, and DataView, the non-owning view GetData hands out.
+// uninitialized, and DataView, a non-owning view of backend memory.
 
 #ifndef _SCTL_EXPERIMENTAL_GPU_VECTOR_HPP_
 #define _SCTL_EXPERIMENTAL_GPU_VECTOR_HPP_
@@ -37,19 +37,34 @@ template <class T> struct DeviceUninitAllocator : thrust::device_allocator<T> {
 };
 }  // namespace detail
 
-/// Host backend: `std::vector` that leaves new elements uninitialized, as `sctl::Vector` does. A class rather than an alias, so it deduces as the tree's container template parameter.
+/**
+ * Host backend container: `std::vector` whose `resize` leaves new elements uninitialized.
+ *
+ * @tparam T Element type.
+ */
 template <class T> class HostVector : public std::vector<T, detail::DefaultInitAllocator<T>> {
  public:
   using std::vector<T, detail::DefaultInitAllocator<T>>::vector;
 };
 
-/// Device backend: `thrust::device_vector` without value-initialization on resize.
+/**
+ * Device backend container: `thrust::device_vector` whose `resize` leaves new elements
+ * uninitialized, allocated stream-ordered from the device's memory pool.
+ *
+ * @tparam T Element type; trivially copyable, since no constructor runs on device memory.
+ */
 template <class T> class DeviceVector : public thrust::device_vector<T, detail::DeviceUninitAllocator<T>> {
  public:
   using thrust::device_vector<T, detail::DeviceUninitAllocator<T>>::device_vector;
 };
 
-/// Non-owning view of a data set: `n` values at `ptr` in node order, with the iterator thrust dispatches on for the backend. Valid until the set is reallocated.
+/**
+ * Non-owning view of `n` values at `ptr` in backend memory. Valid until the storage it points into
+ * is reallocated or freed.
+ *
+ * @tparam T Element type, `const` for a read-only view.
+ * @tparam DevVec The backend's container template; selects the iterator type.
+ */
 template <class T, template <class...> class DevVec> struct DataView {
   using value_type = T;
   using iterator = std::conditional_t<detail::is_device_vector_v<DevVec<char>>, thrust::device_ptr<T>, T*>;  // probed on DevVec<char>: T may be const, which no container holds

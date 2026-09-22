@@ -54,36 +54,35 @@ using ScratchIterator = std::conditional_t<is_device_vector_v<DevVec<T>>, thrust
 template <class SrcPtr, class DstPtr> void deviceToHost(SrcPtr src, Long n, DstPtr dst);
 
 /**
- * Host staging memory for `deviceToHost`, as one byte-addressed arena shared by every element type
- * rather than a buffer per type. Chunks are registered with the driver so the DMA writes into pinned
- * memory, and registration follows the pages being faulted in: registering them cold instead costs
- * several times as much and places the whole chunk on the faulting thread's NUMA node.
+ * Page-locked host staging memory, as one byte-addressed arena shared by every element type rather
+ * than a buffer per type. Chunks are registered with the driver so a DMA can write into them, and
+ * registration follows the pages being faulted in: registering them cold instead costs several
+ * times as much and places the whole chunk on the faulting thread's NUMA node.
  *
- * The retained chunk grows to the largest request and is never shrunk, so one big copy leaves that
- * much host memory page-locked for the process.
+ * The retained chunk grows to the largest request and is never shrunk, so one big request leaves
+ * that much host memory page-locked for the process.
  *
- * Not thread-safe, like any pool outside `ScratchPool::Instance()`. Every `deviceToHost` call site
- * runs outside a parallel region, and its buffer never outlives the call, so the pool sees one
- * allocation at a time.
+ * Not thread-safe, like any pool outside `ScratchPool::Instance()`: take from it outside parallel
+ * regions, one buffer at a time, and release the buffer before returning to the caller.
  */
 sctl::ScratchPool& pinnedStagingPool();
 
 }  // namespace detail
 
 /**
- * Bump allocator backing `DeviceScratch`, one instance per backend (`Instance()`).
+ * Bump allocator for backend scratch memory, one instance per backend (`Instance()`).
  *
  * Allocation is a pointer bump inside a chunk; on overflow a new chunk is added (doubling) and
  * older chunks stay live, so outstanding pointers remain valid. The head chunk is retained however
- * empty it gets -- that is the point, since releasing backend memory costs ~1 ms per large block
- * and would dominate the tree build. An older chunk is handed back once it empties, so after a few
- * builds the pool converges on one chunk holding the high-water mark.
+ * empty it gets -- that is the point, since releasing backend memory costs ~1 ms per large block.
+ * An older chunk is released once it empties, so after a few rounds of use the pool converges on
+ * one chunk holding the high-water mark.
  *
  * Not thread-safe: one pool serves the thread issuing the backend calls.
  */
 template <template <class...> class DevVec> class DeviceScratchPool {
  public:
-  // Chunk bases and slice sizes are both rounded to this, so every slice starts aligned for any
+  // Chunk bases and allocation sizes are both rounded to this, so every allocation starts aligned for any
   // type the pool hands out. The device's blocks arrive 256-aligned already; the host's give only 16.
   static constexpr Long ALIGN = SCTL_MEM_ALIGN;
 
@@ -111,9 +110,9 @@ template <template <class...> class DevVec> class DeviceScratchPool {
   template <class, template <class...> class> friend class DeviceScratch;
   template <template <class...> class> friend class DeviceScratchAllocator;
 
-  /** One chunk of the pool; `DeviceScratch` holds the chunk its slice came from. */
+  /** One block of backend memory: allocations are taken from it in order and freed in reverse order. */
   struct alignas(SCTL_MEM_ALIGN) Chunk {
-    DevVec<char>* buf;  // released when the chunk is shed; at exit only on host backends
+    DevVec<char>* buf;  // released with the chunk; at exit only on host backends
     char* base;
     char* top;
     char* end;
@@ -121,26 +120,26 @@ template <template <class...> class DevVec> class DeviceScratchPool {
     Long live_count;  // maintained under SCTL_MEMDEBUG only, as ScratchPool does
   };
 
-  /** Carve `bytes` off the pool; returns the owning chunk and the slice. */
+  /** Allocate `bytes` from the pool; returns the chunk the allocation came from and its pointer. */
   std::pair<Chunk*, char*> AllocBytes(Long bytes);
 
-  /** Return a slice (LIFO: it must be the last one taken from `chunk`). */
+  /** Free an allocation (LIFO: it must be the last one taken from `chunk`). */
   void FreeBytes(Chunk* chunk, char* p, Long bytes);
 
-  /** Give the slice back and shed the chunk if that emptied it. */
+  /** Free the allocation and release the chunk if that emptied it. */
   void Rewind(Chunk* chunk, char* p);
 
-  /** Bytes of trailer past each slice: nonzero only under SCTL_MEMDEBUG on a host backend. */
+  /** Bytes of trailer past each allocation: nonzero only under SCTL_MEMDEBUG on a host backend. */
   static constexpr Long Redzone();
 
-  /** Stamp the trailer past a slice, so `CheckRedzone` can tell it was written over. */
+  /** Stamp the trailer past an allocation, so `CheckRedzone` can tell it was written over. */
   static void StampRedzone(char* p, Long bytes);
 
   /** Verify the trailer stamped by `AllocBytes`. */
   static void CheckRedzone(const char* p, Long bytes);
 
-  /** What a slice of `bytes` consumes: rounded up to `ALIGN`, and never zero, so that
-   *  `top == base` means the chunk holds no live slice. */
+  /** What an allocation of `bytes` consumes: rounded up to `ALIGN`, and never zero, so that
+   *  `top == base` means the chunk holds no live allocation. */
   static Long PaddedBytes(Long bytes);
 
   /** Same, with the owning chunk located by the LIFO invariant. */
@@ -152,7 +151,7 @@ template <template <class...> class DevVec> class DeviceScratchPool {
 };
 
 /**
- * RAII handle to a scratch buffer carved out of `DeviceScratchPool<DevVec>`.
+ * RAII handle to a scratch buffer allocated from `DeviceScratchPool<DevVec>`.
  *
  *     {
  *       DeviceScratch<Morton<3>, DevVec> buf(n);

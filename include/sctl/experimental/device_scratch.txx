@@ -192,7 +192,7 @@ inline sctl::ScratchPool& pinnedStagingPool() {
   return pool;
 }
 
-/** `dst` takes a pointer or an sctl iterator: with SCTL_MEMDEBUG the containers hand back the latter. */
+/** `dst` takes a pointer or an sctl iterator: with SCTL_MEMDEBUG the containers return the latter. */
 template <class SrcPtr, class DstPtr> inline void deviceToHost(SrcPtr src, Long n, DstPtr dst) {
   using T = typename std::remove_cv<typename std::remove_reference<decltype(*dst)>::type>::type;
   if (!n) return;
@@ -220,7 +220,7 @@ inline DeviceScratchPool<DevVec>& DeviceScratchPool<DevVec>::Instance() {
 template <template <class...> class DevVec>
 inline DeviceScratchPool<DevVec>::~DeviceScratchPool() {
 #ifdef SCTL_MEMDEBUG
-  SCTL_ASSERT_MSG(DebugLiveCount() == 0, "~DeviceScratchPool: the pool still holds live slices.");
+  SCTL_ASSERT_MSG(DebugLiveCount() == 0, "~DeviceScratchPool: the pool still holds live allocations.");
 #endif
   for (Chunk* c = head_; c != nullptr;) {
     Chunk* const prev = c->prev;
@@ -249,7 +249,7 @@ inline Long DeviceScratchPool<DevVec>::DebugLiveCount() const {
 #endif
 }
 
-// A redzone past each slice, stamped on allocation and checked on free. Debug builds only: on a
+// A redzone past each allocation, stamped when it is taken and checked when it is freed. Debug builds only: on a
 // device backend each stamp and each check is a round trip, which is what the pool exists to avoid.
 template <template <class...> class DevVec>
 constexpr Long DeviceScratchPool<DevVec>::Redzone() {
@@ -291,8 +291,8 @@ template <template <class...> class DevVec>
   return {head_, p};
 }
 
-// Rewind the slice, and hand an emptied chunk back unless it is the head, which is kept for the
-// next build. Only `head_->prev` can empty first, since its slices were taken before the head's and
+// Free the allocation, and release an emptied chunk unless it is the head, which is kept for the
+// next build. Only `head_->prev` can empty first, since its allocations were taken before the head's and
 // LIFO frees them after, so the splice stays local. Releasing here is safe -- unlike at exit, the
 // backend is still up.
 template <template <class...> class DevVec>
@@ -354,7 +354,7 @@ inline void DeviceScratchPool<DevVec>::FreeBytes(char* p, Long bytes) {
 }
 
 // Chunks double so the pool converges after a few builds; `need` wins when a single request is
-// larger. The previous head stays in the list -- slices already handed out point into it.
+// larger. The previous head stays in the list -- allocations already handed out point into it.
 template <template <class...> class DevVec>
 inline void DeviceScratchPool<DevVec>::NewChunk(Long need) {
   const Long prev_cap = head_ ? head_->end - head_->base : 0;
