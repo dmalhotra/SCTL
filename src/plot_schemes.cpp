@@ -1,8 +1,8 @@
 // plot_schemes.cpp -- dump the self- AND near-interaction singular quadrature layout of the
-// Adaptive, RectPolar and Duffy schemes on a single flat order-8 panel, for inspection in ParaView.
+// Adaptive and Duffy schemes on a single flat order-8 panel, for inspection in ParaView.
 //
-// One tolerance (1e-5) fixes the scheme knobs via the bench TolLadder preset: Nbeta = 48
-// (RectPolar GL points per direction) and max_depth = 4 (Adaptive centered-graded u-depth cap).
+// One tolerance (1e-5) fixes the scheme knobs via the bench TolLadder preset:
+// max_depth = 4 (Adaptive centered-graded u-depth cap).
 // All the geometry / VTK writers used here already exist on QuadElemList.
 //
 // The singular point (u0,v0) is one interior tensor node of the panel, shared by both schemes.
@@ -13,7 +13,6 @@
 //
 // Writer used per scheme's self path:
 //   Adaptive  -> WriteSelfInteracVTK    (centered graded-GL u x Alpert log-singular v; uses tol/max_depth)
-//   RectPolar -> WriteSelfInteracRPVTK  (rectangular-polar COV grid clustered at the singular point; uses Nbeta)
 
 #include <sctl.hpp>
 #include <sctl/experimental/quad_element.hpp>
@@ -27,9 +26,9 @@ template <class Real> void plot_schemes() {
   const Integer order = 8;
   const Long evis = 0;
 
-  // tol=1e-5 preset (bench-scheme-compare TolLadder): Nbeta=48, max_depth=4.
+  // tol=1e-5 preset (bench-scheme-compare TolLadder): max_depth=4.
   const Real tol = (Real)1e-5;
-  const Integer Nbeta = 48, max_depth = 4;
+  const Integer max_depth = 4;
 
   // Flat panel z = 0, order 8, single element.
   Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
@@ -50,7 +49,7 @@ template <class Real> void plot_schemes() {
 
   {
     QuadElemList<Real> qel(order, coord0);
-    qel.SetQuadScheme(QS::Adaptive, /*q=*/6, /*cov_order=Nbeta*/ Nbeta, /*max_depth*/ max_depth);
+    qel.SetQuadScheme(QS::Adaptive, /*max_depth*/ max_depth);
     // Paneled self (GL panels + Alpert singular v-row), matching the near paneling.
     qel.WriteSelfInteracGradedVTK("adaptive-self-elem0", evis, u0, v0, tol, Comm::Self());
     // Production adaptive near = foot-graded separable tensor grid (BuildNearTensorRule),
@@ -60,14 +59,7 @@ template <class Real> void plot_schemes() {
   }
   {
     QuadElemList<Real> qel(order, coord0);
-    qel.SetQuadScheme(QS::RectPolar, /*q=*/6, /*cov_order=Nbeta*/ Nbeta, /*max_depth*/ max_depth);
-    qel.WriteSelfInteracRPVTK("rectpolar-self-elem0", evis, u0, v0, Nbeta, Comm::Self());
-    qel.WriteNearInteracRPVTK("rectpolar-near-elem0", evis, Xtrg, Nbeta, Comm::Self());
-    std::cout << "  wrote rectpolar-self-elem0-* and rectpolar-near-elem0-* VTK files\n";
-  }
-  {
-    QuadElemList<Real> qel(order, coord0);
-    qel.SetQuadScheme(QS::Duffy, /*q=*/6, /*cov_order=Nbeta*/ Nbeta, /*max_depth*/ max_depth);
+    qel.SetQuadScheme(QS::Duffy, /*max_depth*/ max_depth);
     // Duffy self = edge-collapsed (sinh) rule on four target-anchored triangles fanning from (u0,v0);
     // Duffy near = split-at-foot cells with the anisotropic u/v refinement ladder. Both take tol
     // (same 1e-5 preset), which sets the sinh t-order and the near QuadOrder/b_ellipse respectively.
@@ -79,7 +71,7 @@ template <class Real> void plot_schemes() {
 }
 
 int main() {
-  std::cout << "plot_schemes: self+near quadrature, order-8 flat panel, tol=1e-5 (Nbeta=48, max_depth=4)\n";
+  std::cout << "plot_schemes: self+near quadrature, order-8 flat panel, tol=1e-5 (max_depth=4)\n";
   plot_schemes<double>();
   return 0;
 }

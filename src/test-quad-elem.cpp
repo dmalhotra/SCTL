@@ -307,11 +307,11 @@ template <class Real, class Kernel> Vector<Real> direct_upsampled_potential(
 }
 
 // Forward declaration of the friend shim (defined below) that exposes QuadElemList's private
-// static quadrature helpers (log-singular 1D rule, rectangular-polar 1D COV) to the tests; the
+// static quadrature helpers (the log-singular 1D rule) to the tests; the
 // shim's full definition appears later in namespace sctl.
 namespace sctl { template <class Real> struct QuadElemTestAccess; }
 
-template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, const bool curved, const char* label, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer cov_order = 0, const Integer max_depth = 30) {
+template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, const bool curved, const char* label, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer max_depth = 30) {
     const Integer COORD_DIM = 3;
     const Integer order = 24;
     const Integer KDIM0 = Kernel::SrcDim();
@@ -323,8 +323,7 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
     Vector<Real> coord0 = curved ? get_testsurf<Real>(order, 1)
                                  : QuadElemList<Real>::ParamGrid(order, 1);
     QuadElemList<Real> qel(order, coord0);
-    const Integer q = 10;
-    qel.SetQuadScheme(scheme, q, cov_order, max_depth);
+    qel.SetQuadScheme(scheme, max_depth);
 
     // Near-singular target: offset d along the normal at an interior point.
     const Real u0 = 0.4, v0 = 0.6, d = 0.01;
@@ -358,7 +357,7 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
     }
 
     // Reference potential: uniform upsampled direct quadrature (nsub=100), accurate at the moderate
-    // near distance d=0.01 used here. (Deep near needs a RectPolar gold instead.)
+    // near distance d=0.01 used here.
     const Vector<Real> u_ref = direct_upsampled_potential<Real, Kernel>(qel, elem_idx, sigma, Xt, ker, 100);
 
     // Relative error in the target potential.
@@ -381,7 +380,7 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
 //   Stokes3D-DxU,  q arbitrary   :  u = 0
 // I0 is the in-plane Newtonian potential of the unit square (1/r antiderivative
 // F(X,Y) = X ln(Y+R) + Y ln(X+R)). Applied as u = sigma^T M.
-template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer q = 10, const Real tol = 1e-10, const Integer cov_order = 0, const Integer max_depth = 30) {
+template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer q = 10, const Real tol = 1e-10, const Integer max_depth = 30) {
     const Integer order = 12;
     const Long nnode = (Long)order * order;
     const Integer KDIM0 = Kernel::SrcDim();
@@ -391,7 +390,7 @@ template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, con
     // Flat unit square z = 0.
     Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
     QuadElemList<Real> qel(order, coord0);
-    qel.SetQuadScheme(scheme, q, cov_order, max_depth);
+    qel.SetQuadScheme(scheme, max_depth);
 
     // Self-interaction matrix (no target-normal contraction).
     Vector<Matrix<Real>> M_lst(1);
@@ -464,52 +463,9 @@ template <class Real> struct QuadElemTestAccess {
         param.ReInit(delta.Dim());
         for (Long i = 0; i < delta.Dim(); i++) param[i] = v0 + delta[i];
     }
-    static void RectPolarNodes1D(Vector<Real>& nodes, Vector<Real>& wts, const Real alpha, const Integer q, const Vector<Real>& gl_nds, const Vector<Real>& gl_wts) {
-        QuadElemList<Real>::RectPolarNodes1D(nodes, wts, alpha, q, gl_nds, gl_wts);
-    }
 };
 }
 
-// Sanity-check the rectangular-polar 1D COV: nodes stay in [0,1], weights sum to 1,
-// and the COV weight vanishes at the singularity u* = (alpha+1)/2.
-template <class Real> void test_RectPolarNodes1D() {
-    const Integer order = 256, q = 10;
-    // const Vector<Real>& gl_nds = QuadElemList<Real>::ParamNodes(order);
-    // const Vector<Real>& gl_wts = sctl::LegQuadRule<Real>::wts(order);
-    Vector<Real> gl_nds, gl_wts;
-    sctl::LegQuadRule<Real>::ComputeNdsWts(&gl_nds, &gl_wts, order);
-    for (const Real ustar : {(Real)0.2, (Real)0.5, (Real)0.77}) {
-        const Real alpha = 2*ustar - 1;
-        Vector<Real> nds, wts;
-        sctl::QuadElemTestAccess<Real>::RectPolarNodes1D(nds, wts, alpha, q, gl_nds, gl_wts);
-        Real wsum = 0;
-        for (Long i = 0; i < nds.Dim(); i++) {
-            SCTL_ASSERT(nds[i] > -1e-12 && nds[i] < 1 + 1e-12);
-            SCTL_ASSERT(wts[i] > -1e-12); // monotone COV => nonnegative weights
-            wsum += wts[i];
-        }
-        // sum(w) -> 1 to GL accuracy on eta' (structural check, not machine eps).
-        std::cout << "  test_RectPolarNodes1D (u*=" << (double)ustar << "): sum(w)=" << (double)wsum
-                  << "  err=" << (double)fabs(wsum - 1) << "\n";
-        SCTL_ASSERT(fabs(wsum - 1) < 1e-8);
-
-        // Node nearest u* should have tiny weight relative to the largest.
-        Long isng = 0; Real dmin = -1, wmax = 0;
-        for (Long i = 0; i < nds.Dim(); i++) {
-            const Real d = fabs(nds[i] - ustar);
-            if (dmin < 0 || d < dmin) { dmin = d; isng = i; }
-            wmax = std::max<Real>(wmax, wts[i]);
-        }
-        std::cout << "      node nearest u*: out=" << (double)nds[isng]
-                  << " (in=" << (double)gl_nds[isng] << ")  w=" << (double)wts[isng]
-                  << "  w/wmax=" << (double)(wts[isng]/wmax) << "\n";
-    }
-}
-
-// Verify the Alpert 1D log-singular rule (LogSingularQuad1D) for I[f] = int_0^1 f
-// with a log singularity at interior v0, against closed-form integrals of:
-//   (a) log|v-v0|  (b) v log|v-v0|  (c) (1+v^2) log|v-v0|+cos(3v)  (d) cos(3v)
-// Closed forms from int_0^1 v^k log|v-a| dv.
 template <class Real> void test_LogSingularQuad1D() {
     const Real v0 = (Real)0.6;
     const Integer Lvl = 5, QuadOrder = 24; // grading levels per side + GL order on smooth panels
@@ -643,40 +599,6 @@ template <class Real> void test_QuadNodeInterp() {
               << " max_abs_err=" << max_err << " rel_err=" << rel_err << "\n";
     const Real rel_tol = 1e-6;
     SCTL_ASSERT(rel_err < rel_tol);
-}
-
-// Visualize the Hybrid scheme (adaptive near + rectangular-polar self) on a single
-// flat order-12 panel: dump the near quadtree leaf GL grid and the RP self grid to VTK
-// for inspection in ParaView. Reuses QuadElemList's WriteNearInteracVTK (adaptive) and
-// WriteSelfInteracRPVTK (RectPolar) writers.
-template <class Real> void hybrid_scheme_vis() {
-    using QS = typename QuadElemList<Real>::QuadScheme;
-    const Integer order = 12;
-    const Long evis = 0;
-
-    // Flat panel z = 0, order 12, single element.
-    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
-    QuadElemList<Real> qel(order, coord0);
-    // Hybrid = adaptive near + RectPolar self; max_depth=12 caps the adaptive near
-    // quadtree; q/cov_order feed the RP self grid rendering.
-    qel.SetQuadScheme(QS::Hybrid, /*q=*/6, /*cov_order=*/200, /*max_depth=*/12);
-
-    // --- Near (adaptive): target at (u*,v*)=(0.314,0.157), 0.02 off surface along normal.
-    Vector<Real> up{(Real)0.314}, vp{(Real)0.157}, Xc, Xn;
-    qel.GetGeom(&Xc, &Xn, nullptr, nullptr, nullptr, up, vp, evis);
-    Vector<Real> Xtrg(3);
-    for (Integer k = 0; k < 3; k++) Xtrg[k] = Xc[k] + (Real)0.02 * Xn[k];
-    qel.WriteNearInteracVTK("hybrid-near-elem0", evis, Xtrg, /*tol=*/1e-9, Comm::Self());
-
-    // --- Self (RectPolar): singular point at the 8th x-node and 10th y-node (1-based).
-    const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-    const Real u0 = nds[7], v0 = nds[9];
-    qel.WriteSelfInteracRPVTK("hybrid-self-elem0", evis, u0, v0, /*Nbeta=*/200, Comm::Self());
-
-    // --- Original order-12 tensor GL grid of the panel itself (quad mesh).
-    qel.WriteVTK("hybrid-panel-grid", Vector<Real>(), Comm::Self());
-
-    std::cout << "  hybrid_scheme_vis: wrote hybrid-near-elem0-*, hybrid-self-elem0-*, hybrid-panel-grid-* VTK files\n";
 }
 
 // ============================================================================================
@@ -972,62 +894,24 @@ int main(int argc, char** argv) {
       std::cout << "  Adaptive self-interac convergence, Sto_FxU (tol=1e-12; max_depth -> rel_err):\n";
       for (const Integer depth : {4, 8, 12, 30}) {
         std::cout << "    max_depth=" << depth << ": ";
-        test_SelfInterac<Real>(ker_FxU, QSA::Adaptive, /*rel_tol=*/1e0, /*q=*/10, /*tol=*/1e-12, /*cov_order=*/0, /*max_depth=*/depth);
+        test_SelfInterac<Real>(ker_FxU, QSA::Adaptive, /*rel_tol=*/1e0, /*q=*/10, /*tol=*/1e-12, /*max_depth=*/depth);
       }
       std::cout << "  Adaptive near-interac convergence, Sto_FxU / testsurf (max_depth -> rel_err):\n";
       for (const Integer depth : {4, 8, 12, 30}) {
         std::cout << "    max_depth=" << depth << ": ";
-        test_NearInterac<Real>(ker_FxU, true, "adaptive depth sweep", QSA::Adaptive, /*rel_tol=*/1e0, /*cov_order=*/0, /*max_depth=*/depth);
+        test_NearInterac<Real>(ker_FxU, true, "adaptive depth sweep", QSA::Adaptive, /*rel_tol=*/1e0, /*max_depth=*/depth);
       }
     }
 
-    // Scheme 2: rectangular-polar COV (Bruno 2018); accuracy driven by Nbeta, not field order.
     using QS = QuadElemList<Real>::QuadScheme;
-    std::cout << "--- Scheme 2: rectangular-polar change of variable ---\n";
-    test_RectPolarNodes1D<Real>();
-    std::cout << "test_RectPolarNodes1D: PASSED\n";
-
-    const Integer Nbeta = 200;
-    test_NearInterac<Real>(ker_FxU, false, "RP Stokes3D_FxU / plane",    QS::RectPolar, 1e-7, Nbeta);
-    test_NearInterac<Real>(ker_FxU, true,  "RP Stokes3D_FxU / testsurf", QS::RectPolar, 1e-7, Nbeta);
-    test_NearInterac<Real>(ker_DxU, false, "RP Stokes3D_DxU / plane",    QS::RectPolar, 1e-7, Nbeta);
-    test_NearInterac<Real>(ker_DxU, true,  "RP Stokes3D_DxU / testsurf", QS::RectPolar, 1e-7, Nbeta);
-    std::cout << "test_NearInterac (RectPolar, Nbeta=" << Nbeta << "): PASSED\n";
-    test_SelfInterac<Real>(ker_lapFxU, QS::RectPolar, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
-    std::cout << "test_SelfInterac Lap_FxU (RectPolar, Nbeta=200): PASSED\n";
-    test_SelfInterac<Real>(ker_FxU, QS::RectPolar, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
-    std::cout << "test_SelfInterac Sto_FxU (RectPolar, Nbeta=200): PASSED\n";
-    test_SelfInterac<Real>(ker_DxU, QS::RectPolar, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
-    std::cout << "test_SelfInterac Sto_DxU (RectPolar, Nbeta=200): PASSED\n";
-    // Convergence in Nbeta (Nbeta, not q, drives accuracy).
-    std::cout << "  RP self-interac convergence, Sto_FxU (q=10; Nbeta -> max_rel):\n";
-    for (const Integer nb : {48, 100, 200, 512}) {
-      std::cout << "    Nbeta=" << nb << ": ";
-      test_SelfInterac<Real>(ker_FxU, QS::RectPolar, 1e0, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/nb);
-    }
-
-    // Scheme 3: Hybrid = adaptive near + rectangular-polar self.
-    std::cout << "--- Scheme 3: Hybrid (adaptive near + RectPolar self) ---\n";
-    test_NearInterac<Real>(ker_FxU, false, "Hybrid Stokes3D_FxU / plane",    QS::Hybrid, 1e-7, /*cov_order=*/0);
-    test_NearInterac<Real>(ker_FxU, true,  "Hybrid Stokes3D_FxU / testsurf", QS::Hybrid, 1e-7, /*cov_order=*/0);
-    std::cout << "test_NearInterac (Hybrid, adaptive near): PASSED\n";
-    test_SelfInterac<Real>(ker_lapFxU, QS::Hybrid, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
-    std::cout << "test_SelfInterac Lap_FxU (Hybrid, RP self, Nbeta=200): PASSED\n";
-    test_SelfInterac<Real>(ker_FxU, QS::Hybrid, 1e-7, /*q=*/10, /*tol=*/1e-14, /*cov_order=*/200);
-    std::cout << "test_SelfInterac Sto_FxU (Hybrid, RP self, Nbeta=200): PASSED\n";
-
-    // Hybrid scheme visualization (flat order-12 panel): VTK dump for ParaView inspection only,
-    // no assertions. Disabled in the test build (exercises the VTK writers, not the quadrature).
-    // std::cout << "--- Hybrid scheme visualization (flat order-12 panel) ---\n";
-    // hybrid_scheme_vis<Real>();
 
     // ======================================================================================
     // 2. Sphere tests (OPT-IN) -- order 12, 12 patches/face, REGULAR sphere, per scheme, tol = 1e-9.
-    //    Each returns a max relative error, gated below rel_tol. RP/Duffy reach ~1e-8 or better, but
+    //    Each returns a max relative error, gated below rel_tol. Duffy reaches ~1e-8 or better, but
     //    the Adaptive near/self path floors much higher on the Stokes DL constant-density identity
     //    (~3e-6 at order 12, even untwisted), which sets the achievable floor -- so the gate is 1e-5.
     //
-    //    This is a heavy convergence STUDY (864-element BIE solves x 4 schemes) -- too slow and too
+    //    This is a heavy convergence STUDY (864-element BIE solves x 2 schemes) -- too slow and too
     //    large for the sanitizer CI matrix: an order-12, 864-element solve overflows the runner's
     //    8 MB stack under ASan's redzone-inflated frames (raw SIGSEGV). It is therefore OPT-IN: a
     //    bare invocation (`make test` / CI) runs only the unit + single-element scheme tests above;
@@ -1042,9 +926,7 @@ int main(int argc, char** argv) {
 
     struct SchemeCfg { const char* name; QS scheme; };
     const std::vector<SchemeCfg> schemes = {
-      {"RP",       QS::RectPolar},
       {"Adaptive", QS::Adaptive},
-      {"Hybrid",   QS::Hybrid},
       {"Duffy",    QS::Duffy},
     };
 
@@ -1056,7 +938,7 @@ int main(int argc, char** argv) {
       QuadElemList<Real> qel = BuildTwistedSphere<Real>(ElemOrder, PatchPerFace, Radius, /*theta_twist=*/0., comm);
       // max_depth = 12 is the tol=1e-9 ladder value (u-grading depth). The self-accuracy cap is the
       // v-direction composite-Alpert levels (VLevelsForDigits, deepened to digits-2), not u.
-      qel.SetQuadScheme(sc.scheme, /*q=*/6, /*cov_order=*/200, /*max_depth=*/12);
+      qel.SetQuadScheme(sc.scheme, /*max_depth=*/12);
 
       // Collect every error first (so one run prints the full per-scheme matrix), then gate on the
       // scheme's worst. The Stokes DL constant-density identity is the hardest probe for the Adaptive

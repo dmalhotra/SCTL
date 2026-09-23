@@ -22,16 +22,11 @@ namespace sctl {
     public:
 
       /**
-       * Near/self singular-quadrature scheme: Adaptive (dyadic subdivision +
-       * Alpert log correction, default), RectPolar (Bruno-2018 change of var),
-       * or Hybrid (Adaptive near + RectPolar self). For Hybrid the near phase is
-       * tolerance-driven (like Adaptive) while the self phase uses the RectPolar
-       * COV knobs (`q`, `cov_order`/Nbeta) passed to SetQuadScheme. Duffy is
-       * Adaptive's split-at-foot near paired with a Duffy edge-collapsed
-       * (sinh-substituted) self, ported from upstream; opt in explicitly, the
-       * tolerance drives it like Adaptive.
+       * Near/self singular-quadrature scheme: Adaptive (foot-graded separable-tensor near +
+       * centered graded/Alpert self, default), or Duffy (Adaptive's split-at-foot near paired
+       * with a Duffy edge-collapsed, sinh-substituted self). The tolerance drives both.
        */
-      enum class QuadScheme { Adaptive, RectPolar, Hybrid, Duffy };
+      enum class QuadScheme { Adaptive, Duffy };
 
       /** Constructor. */
       QuadElemList() {}
@@ -71,28 +66,17 @@ namespace sctl {
       /** Singular-quadrature scheme used by SelfInterac/NearInterac. */
       QuadScheme Scheme() const;
 
-      /** True if the near phase uses the RectPolar COV (RectPolar scheme only). */
-      bool NearUsesRectPolar() const { return scheme_ == QuadScheme::RectPolar; }
-
-      /** True if the self phase uses the RectPolar COV (RectPolar or Hybrid). */
-      bool SelfUsesRectPolar() const { return scheme_ == QuadScheme::RectPolar || scheme_ == QuadScheme::Hybrid; }
-
       /** True if the self phase uses the Duffy edge-collapsed scheme (Duffy only). */
       bool SelfUsesDuffy() const { return scheme_ == QuadScheme::Duffy; }
 
       /**
        * Set the singular-quadrature scheme.
        * @param[in] s scheme (see QuadScheme; default Adaptive).
-       * @param[in] q derivative-flattening parameter for RectPolar (ignored for Adaptive).
-       * @param[in] cov_order RectPolar GL points per direction (Nbeta, Bruno 2018);
-       * decoupled from field order. 0 falls back to the tolerance-derived order.
-       * @param[in] max_depth adaptive dyadic-refinement depth cap for the Adaptive scheme
-       * (self + near) and the near phase of Hybrid; must be one of {4,8,12,30}. Ignored by
-       * the RectPolar self/near phases.
+       * @param[in] max_depth dyadic-refinement depth cap; must be one of {4,8,12,30}.
        */
-      void SetQuadScheme(QuadScheme s, Integer q = 6, Integer cov_order = 0, Integer max_depth = 30) {
+      void SetQuadScheme(QuadScheme s, Integer max_depth = 30) {
         SCTL_ASSERT_MSG(max_depth == 4 || max_depth == 8 || max_depth == 12 || max_depth == 30, "Adaptive max_depth must be one of {4,8,12,30}.");
-        scheme_ = s; cov_q_ = q; cov_order_ = cov_order; max_depth_ = max_depth;
+        scheme_ = s; max_depth_ = max_depth;
       }
 
       /**
@@ -250,28 +234,6 @@ namespace sctl {
       void WriteSelfInteracGradedVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Real tol, const Comm& comm = Comm::Self()) const;
 
       /**
-       * Visualize the rectangular-polar (Scheme 2) grid for an off-surface target:
-       * writes `<fname>` (warped Nbeta x Nbeta VTK_QUAD mesh) and `<fname>-target`.
-       * @param[in] fname output filename prefix.
-       * @param[in] elem_idx source element index.
-       * @param[in] Xtrg off-surface target coords (COORD_DIM reals).
-       * @param[in] Nbeta nodes per direction to draw (keep modest, e.g. 30-60).
-       * @param[in] comm communicator.
-       */
-      void WriteNearInteracRPVTK(const std::string& fname, const Long elem_idx, const Vector<Real>& Xtrg, const Integer Nbeta = 48, const Comm& comm = Comm::Self()) const;
-
-      /**
-       * Visualize the rectangular-polar (Scheme 2) grid for an on-surface target at
-       * (u0,v0): writes `<fname>` (warped Nbeta x Nbeta VTK_QUAD mesh) and `<fname>-singpt`.
-       * @param[in] fname output filename prefix.
-       * @param[in] elem_idx source element index.
-       * @param[in] u0,v0 on-surface target parameters in [0,1].
-       * @param[in] Nbeta nodes per direction to draw (keep modest, e.g. 30-60).
-       * @param[in] comm communicator.
-       */
-      void WriteSelfInteracRPVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Integer Nbeta = 48, const Comm& comm = Comm::Self()) const;
-
-      /**
        * Visualize the Duffy edge-collapsed self rule (Scheme `Duffy`) at (u0,v0):
        * the four target-anchored triangles, each a (ns x nt) sinh-graded grid that
        * fans from the singular apex (SelfInteracBlockDuffy's layout). Writes `<fname>`
@@ -356,17 +318,6 @@ namespace sctl {
       template <Integer order, Integer digits> static const NodeRuleData& CenteredURule(const Integer ti, const Integer levels);
       template <Integer order, Integer digits> static const NodeRuleData& CenteredVRule(const Integer tj);
 
-      // GL rule (nodes, weights) on [0,1] for compile-time count Nbeta (RP uses Nbeta>>50,
-      // beyond LegQuadRule's cache); function-local static, runtime value via GLRuleNbetaDispatch
-      // over {48,100,200,300,400,512}.
-      template <Integer Nbeta> static const std::pair<Vector<Real>, Vector<Real>>& GLRuleNbeta();
-      static const std::pair<Vector<Real>, Vector<Real>>& GLRuleNbetaDispatch(const Integer Nbeta);
-
-      // Preloaded self-RP change-of-variable rule for on-surface node k (singularity at nds[k]),
-      // serving both u (k=ti) and v (k=tj). Build-once static; dispatch over q in {6,10}, Nbeta in {128,256,512}.
-      template <Integer order, Integer Nbeta, Integer q> static const NodeRuleData& RPSelfRule(const Integer k);
-      template <Integer order> static const NodeRuleData& RPSelfRuleDispatch(const Integer k, const Integer q, const Integer Nbeta);
-
       // Bernstein-ellipse parameter + per-panel GL order from tolerance (shared by adaptive schemes).
       static void QuadParams(const Real tol, Real& b_ellipse, Integer& QuadOrder);
 
@@ -382,11 +333,6 @@ namespace sctl {
       // as a function of requested accuracy. Runtime core + compile-time `digits` wrapper.
       static Integer VLevelsForDigits(const Integer digits);
       template <Integer digits> static Integer DigitsVLevels();
-
-      // Default RectPolar Nbeta (GL points per direction) for `digits`, used when cov_order_==0.
-      // Worst-case-calibrated ladder (theta=pi twist sphere, Nbeta_sweep.txt); returns a value in
-      // {100,300,400,512}, all within the GLRuleNbetaDispatch/RPSelfRuleDispatch set {48,100,200,300,400,512}.
-      static Integer NbetaForDigits(const Integer digits);
 
       // Accumulate a tensor-product quadrature (u_param x v_param, weights wu (x) wv) on
       // elem_idx against target Xtrg into M_acc; normal_trg != null enables target-normal contraction.
@@ -443,13 +389,13 @@ namespace sctl {
       template <Integer order, Integer digits> static const Vector<GradeRule>& NearGradeTable();
       template <Integer digits, Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
-      // ---- Foot-graded separable-tensor near (QuadScheme::Adaptive / Hybrid) ----
-      // THE production near path for the non-Duffy adaptive schemes. Grade [0,1] toward u* and
+      // ---- Foot-graded separable-tensor near (QuadScheme::Adaptive) ----
+      // THE production near path for the Adaptive scheme. Grade [0,1] toward u* and
       // toward v* INDEPENDENTLY -- split each side AT the foot (u*,v*), grade geometrically outward
       // (BuildFootGraded1DSegments) -- then take the FULL TENSOR PRODUCT and integrate the whole
-      // panel with ONE IntegrateBlock: no quadtree, no per-leaf loop, no interval dedup. Matches
-      // RectPolar near accuracy across parametric shear (the isotropic-quadtree split-at-foot rule
-      // it replaced lost ~2-3 orders on smooth geometry). Requires dist > 0 (foot on a cell
+      // panel with ONE IntegrateBlock: no quadtree, no per-leaf loop, no interval dedup. Holds its
+      // accuracy across parametric shear, where the isotropic-quadtree split-at-foot rule it
+      // replaced lost ~2-3 orders on smooth geometry. Requires dist > 0 (foot on a cell
       // boundary), so it must never serve the self path.
       // One GL rule per segment, concatenated in segment order (contiguous runs -> contiguous slices).
       static void ExpandSegments(Vector<Real>& param, Vector<Real>& w, const Vector<Real>& seg, const Vector<Real>& qnds, const Vector<Real>& qwts);
@@ -513,26 +459,11 @@ namespace sctl {
       static Integer DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0);
       template <Integer order, class Kernel> static void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
 
-      // Rectangular-polar (Bruno-2018) change-of-variable 1D rule on [0,1]: maps {gl_nds,gl_wts}
-      // via eta_alpha to cluster toward the singularity (alpha=2*sing-1) with vanishing weight;
-      // `q` flattens derivatives up to order q-1.
-      static void RectPolarNodes1D(Vector<Real>& nodes, Vector<Real>& wts, const Real alpha, const Integer q, const Vector<Real>& gl_nds, const Vector<Real>& gl_wts);
-
-      // Shared core for WriteNear/SelfInteracRPVTK: warped Nbeta x Nbeta CoV grid clustered toward (ustar,vstar).
-      void WriteRectPolarGridVTK(const std::string& fname, const Long elem_idx, const Real ustar, const Real vstar, const Integer Nbeta) const;
-
-      // RectPolar near/self blocks. Quadrature size is cov_order_ if set, else the tol-derived
-      // `nbeta_default` the caller passes (NbetaForDigits(digits)).
-      template <Integer order, class Kernel> static void NearInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default);
-      template <Integer order, class Kernel> static void SelfInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default);
-
       Long nelem = 0;
       Integer order = 0;
       Vector<Real> coord;
       Vector<Real> dcoord_du, dcoord_dv;
       QuadScheme scheme_ = QuadScheme::Adaptive;
-      Integer cov_q_ = 6;
-      Integer cov_order_ = 0;
       Integer max_depth_ = 30;
   };
 

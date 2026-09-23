@@ -1,7 +1,7 @@
 /**
- * Singular-quadrature scheme comparison on a twisted cubed sphere: RP / Adaptive / Hybrid / Duffy.
+ * Singular-quadrature scheme comparison on a twisted cubed sphere: Adaptive / Duffy.
  *
- * Compares the four singular-quadrature SCHEMES against each other on one machine: for each scheme
+ * Compares the two singular-quadrature SCHEMES against each other on one machine: for each scheme
  * both the on-surface Green's-identity error and the single-layer setup throughput are reported, so
  * accuracy and speed can be read side by side.
  *
@@ -14,17 +14,16 @@
  *   setup_sl    wall time of the single-layer BIOp Setup()
  *   pts/s/core  N_pts / setup_sl / (threads*ranks)     single-layer setup throughput
  *
- * tol -> (Nbeta, max_depth) ladder. There is no automatic map in the core (tol only feeds
- * SetAccuracy -> digits), so we encode one here. Nbeta (SetQuadScheme cov_order) is used by RP and
- * by Hybrid's self phase; max_depth by Adaptive and Hybrid's near phase; Duffy ignores both. The
- * ladder is therefore inert for Duffy and partially inert for the others -- by design.
+ * tol -> max_depth ladder. There is no automatic map in the core (tol only feeds SetAccuracy ->
+ * digits), so we encode one here. max_depth is used by Adaptive; Duffy ignores it, so the ladder
+ * is inert for Duffy by design.
  *
- *   tol     Nbeta   max_depth
- *   1e-3     48        4
- *   1e-5     48        4
- *   1e-7    100        8
- *   1e-9    200       12
- *   1e-11   400       30
+ *   tol     max_depth
+ *   1e-3        4
+ *   1e-5        4
+ *   1e-7        8
+ *   1e-9       12
+ *   1e-11      30
  *
  * In addition to a human-readable table, each config emits a machine-readable tagged line for the
  * parser (scripts/parse-scheme-compare.sh). The same format serves both modes; in conv mode `thr`
@@ -34,8 +33,8 @@
  * Threads default to OMP_NUM_THREADS and can be overridden by the last argument. Binding still
  * comes from OMP_PLACES / OMP_PROC_BIND, so set those too -- the run warns if the threads do not
  * land on distinct cores, which would make every pts/s below meaningless. Run:
- *     ./bin/bench-scheme-compare conv <laplace|stokes> <RP|Adaptive|Hybrid|Duffy> [nthreads]
- *     ./bin/bench-scheme-compare omp  <laplace|stokes> <RP|Adaptive|Hybrid|Duffy> [nthreads]
+ *     ./bin/bench-scheme-compare conv <laplace|stokes> <Adaptive|Duffy> [nthreads]
+ *     ./bin/bench-scheme-compare omp  <laplace|stokes> <Adaptive|Duffy> [nthreads]
  *     OMP_NUM_THREADS=64 OMP_PLACES=cores OMP_PROC_BIND=close \
  *         ./bin/bench-scheme-compare conv laplace Duffy
  */
@@ -101,25 +100,23 @@ Integer NumThreads() {
 
 // --- scheme + tolerance ladder ----------------------------------------------------------------
 
-// "RP" is the doc shorthand for the RectPolar enumerator; the other three match the enum.
+// Names match the enum.
 bool SchemeFromName(const std::string& s, QScheme& out) {
-  if (s == "RP" || s == "RectPolar") { out = QScheme::RectPolar; return true; }
-  if (s == "Adaptive")               { out = QScheme::Adaptive;  return true; }
-  if (s == "Hybrid")                 { out = QScheme::Hybrid;    return true; }
-  if (s == "Duffy")                  { out = QScheme::Duffy;     return true; }
+  if (s == "Adaptive") { out = QScheme::Adaptive; return true; }
+  if (s == "Duffy")    { out = QScheme::Duffy;    return true; }
   return false;
 }
 
-struct Ladder { Integer nbeta, max_depth; };
+struct Ladder { Integer max_depth; };
 
-// tol -> (Nbeta, max_depth). max_depth must be one of {4,8,12,30} (asserted by SetQuadScheme).
+// tol -> max_depth. max_depth must be one of {4,8,12,30} (asserted by SetQuadScheme).
 // Compare against a slightly-loosened tol so exact 1e-k literals land in the intended rung.
 Ladder TolLadder(const Real tol) {
-  if (tol >= (Real)0.9e-3)  return {48,   4};   // 1e-3
-  if (tol >= (Real)0.9e-5)  return {48,   4};   // 1e-5
-  if (tol >= (Real)0.9e-7)  return {100,  8};   // 1e-7
-  if (tol >= (Real)0.9e-9)  return {200, 12};   // 1e-9
-  return {400, 30};                             // 1e-11 and tighter
+  if (tol >= (Real)0.9e-3)  return { 4};   // 1e-3
+  if (tol >= (Real)0.9e-5)  return { 4};   // 1e-5
+  if (tol >= (Real)0.9e-7)  return { 8};   // 1e-7
+  if (tol >= (Real)0.9e-9)  return {12};   // 1e-9
+  return {30};                             // 1e-11 and tighter
 }
 
 void FacePoint(Real& x, Real& y, Real& z, Integer face, Real a, Real b, Real R) {
@@ -136,10 +133,9 @@ void FacePoint(Real& x, Real& y, Real& z, Integer face, Real a, Real b, Real R) 
 }
 
 // Cubed sphere, ppf^2 patches per face, twisted about z by theta*z, with the given scheme and its
-// tol-derived Nbeta / max_depth. Nbeta and max_depth are ignored by the schemes that do not use
-// them (Duffy ignores both, RectPolar ignores max_depth) -- SetQuadScheme just stores them.
+// tol-derived max_depth, which Duffy ignores -- SetQuadScheme just stores it.
 QuadElemList<Real> BuildSphere(const Integer order, const Long ppf, const Real R, const Real twist,
-                               const QScheme scheme, const Integer nbeta, const Integer max_depth, const Comm& comm) {
+                               const QScheme scheme, const Integer max_depth, const Comm& comm) {
   Vector<Real> X;
   const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
   for (Integer f = 0; f < 6; f++) {
@@ -161,7 +157,7 @@ QuadElemList<Real> BuildSphere(const Integer order, const Long ppf, const Real R
     }
   }
   QuadElemList<Real> qel(order, X, comm);
-  qel.SetQuadScheme(scheme, /*q*/ 6, /*cov_order = Nbeta*/ nbeta, /*max_depth*/ max_depth);
+  qel.SetQuadScheme(scheme, /*max_depth*/ max_depth);
   return qel;
 }
 
@@ -225,8 +221,8 @@ double GreensSolError(const QuadElemList<Real>& qel, const Real tol, const Vecto
 }
 
 void Header() {
-  std::printf("#%-7s %-9s %4s %5s %4s %8s %9s %6s %8s | %10s | %9s %10s\n",
-              "kernel", "scheme", "thr", "order", "ppf", "twist", "tol", "Nbeta", "maxdep",
+  std::printf("#%-7s %-9s %4s %5s %4s %8s %9s %8s | %10s | %9s %10s\n",
+              "kernel", "scheme", "thr", "order", "ppf", "twist", "tol", "maxdep",
               "error", "setup_sl", "pps/c_sl");
 }
 
@@ -238,7 +234,7 @@ void Run(const char* kname, const char* sname, const QScheme scheme, const Integ
          const Real twist, const Real tol, const Comm& comm) {
   const Real R = 1;
   const Ladder L = TolLadder(tol);
-  const QuadElemList<Real> qel = BuildSphere(order, ppf, R, twist, scheme, L.nbeta, L.max_depth, comm);
+  const QuadElemList<Real> qel = BuildSphere(order, ppf, R, twist, scheme, L.max_depth, comm);
   const Vector<Real> X0{(Real)1.3, (Real)1.2, (Real)0.2};   // exterior source
 
   // Untimed warm-up: first-touch the static per-order tables so the timed Setup() below is warm.
@@ -253,9 +249,9 @@ void Run(const char* kname, const char* sname, const QScheme scheme, const Integ
   const double N = (double)n[1], T = (double)NumThreads()*comm.Size();
   const double pps = (ts_sl > 0 ? N/ts_sl/T : 0);
   if (!comm.Rank()) {
-    std::printf(" %-7s %-9s %4d %5d %4ld %8.4f %9.0e %6d %8d | %10.2e | %9.3f %10.1f\n",
+    std::printf(" %-7s %-9s %4d %5d %4ld %8.4f %9.0e %8d | %10.2e | %9.3f %10.1f\n",
                 kname, sname, (int)NumThreads(), (int)order, (long)ppf, (double)twist, (double)tol,
-                (int)L.nbeta, (int)L.max_depth, err, ts_sl, pps);
+                (int)L.max_depth, err, ts_sl, pps);
     std::printf("@@ROW kernel=%s scheme=%s thr=%d twist=%.6f tol=%.0e error=%.6e pps=%.1f setup=%.6f\n",
                 kname, sname, (int)NumThreads(), (double)twist, (double)tol, err, pps, ts_sl);
     std::fflush(stdout);
@@ -302,7 +298,7 @@ int main(int argc, char** argv) {
 
     if (argc < 4) {
       if (!comm.Rank()) {
-        std::printf("usage: %s conv|omp <laplace|stokes> <RP|Adaptive|Hybrid|Duffy> [nthreads]\n", argv[0]);
+        std::printf("usage: %s conv|omp <laplace|stokes> <Adaptive|Duffy> [nthreads]\n", argv[0]);
       }
       Comm::MPI_Finalize();
       return 1;
@@ -312,7 +308,7 @@ int main(int argc, char** argv) {
     const std::string sname = argv[3];
     QScheme scheme;
     if (!SchemeFromName(sname, scheme)) {
-      if (!comm.Rank()) std::printf("# unknown scheme '%s' (use RP|Adaptive|Hybrid|Duffy)\n", sname.c_str());
+      if (!comm.Rank()) std::printf("# unknown scheme '%s' (use Adaptive|Duffy)\n", sname.c_str());
       Comm::MPI_Finalize();
       return 1;
     }

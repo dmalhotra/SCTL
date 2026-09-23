@@ -132,62 +132,9 @@ namespace sctl {
     dMT = dM.Transpose();
   }
 
-  template <class Real> template <Integer Nbeta> const std::pair<Vector<Real>, Vector<Real>>& QuadElemList<Real>::GLRuleNbeta() {
-    // GL rule on [0,1] for Nbeta points (exceeds LegQuadRule's compile-time cache).
-    // Built once as a function-local static for lock-free reads.
-    static const std::pair<Vector<Real>, Vector<Real>> gl = []() {
-      std::pair<Vector<Real>, Vector<Real>> p;
-      LegQuadRule<Real>::ComputeNdsWts(&p.first, &p.second, Nbeta);
-      return p;
-    }();
-    return gl;
-  }
 
-  template <class Real> const std::pair<Vector<Real>, Vector<Real>>& QuadElemList<Real>::GLRuleNbetaDispatch(const Integer Nbeta) {
-    if      (Nbeta == 48)  return GLRuleNbeta<48>();
-    else if (Nbeta == 100)  return GLRuleNbeta<100>();
-    else if (Nbeta == 200)  return GLRuleNbeta<200>();
-    else if (Nbeta == 300)  return GLRuleNbeta<300>();
-    else if (Nbeta == 400)  return GLRuleNbeta<400>();
-    else if (Nbeta == 512) return GLRuleNbeta<512>();
-    SCTL_ASSERT_MSG(false, "RectPolar Nbeta (cov_order) must be one of {48, 100, 200, 300, 400, 512}.");
-  }
 
-  template <class Real> template <Integer order, Integer Nbeta, Integer q> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::RPSelfRule(const Integer k) {
-    // Self-RP COV rule + interpolation for the singularity at nds[m] (same rule serves
-    // u and v). Geometry-independent (fixed COV), so cached once per (order, Nbeta, q).
-    static const Vector<NodeRuleData> data = []() {
-      const Vector<Real>& nds = ParamNodes(order);
-      const std::pair<Vector<Real>, Vector<Real>>& gl = GLRuleNbetaDispatch(Nbeta);
-      Vector<NodeRuleData> d(order);
-      for (Integer m = 0; m < order; m++) {
-        RectPolarNodes1D(d[m].param, d[m].w, 2*nds[m] - 1, q, gl.first, gl.second);
-        BuildInterp1D<order>(d[m].M, d[m].dM, d[m].MT, d[m].dMT, d[m].param);
-      }
-      return d;
-    }();
-    return data[k];
-  }
 
-  template <class Real> template <Integer order> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::RPSelfRuleDispatch(const Integer k, const Integer q, const Integer Nbeta) {
-    // Map the runtime (q, Nbeta) to the compile-time RPSelfRule instantiation.
-    if (q == 6) {
-      if      (Nbeta == 48)  return RPSelfRule<order,48,6>(k);
-      else if (Nbeta == 100)  return RPSelfRule<order,100,6>(k);
-      else if (Nbeta == 200)  return RPSelfRule<order,200,6>(k);
-      else if (Nbeta == 300)  return RPSelfRule<order,300,6>(k);
-      else if (Nbeta == 400)  return RPSelfRule<order,400,6>(k);
-      else if (Nbeta == 512) return RPSelfRule<order,512,6>(k);
-    } else if (q == 10) {
-      if      (Nbeta == 48)  return RPSelfRule<order,48,10>(k);
-      else if (Nbeta == 100)  return RPSelfRule<order,100,10>(k);
-      else if (Nbeta == 200)  return RPSelfRule<order,200,10>(k);
-      else if (Nbeta == 300)  return RPSelfRule<order,300,10>(k);
-      else if (Nbeta == 400)  return RPSelfRule<order,400,10>(k);
-      else if (Nbeta == 512) return RPSelfRule<order,512,10>(k);
-    }
-    SCTL_ASSERT_MSG(false, "RectPolar (cov_q, Nbeta) must have cov_q in {6,10} and Nbeta in {48,100,200,300,400,512}.");
-  }
 
   template <class Real> Long QuadElemList<Real>::Size() const {
     return nelem;
@@ -446,16 +393,6 @@ namespace sctl {
     return VLevelsForDigits(digits);
   }
 
-  template <class Real> Integer QuadElemList<Real>::NbetaForDigits(const Integer digits) {
-    // Worst-case tol->Nbeta ladder for the RectPolar COV (the cov_order_==0 fallback), rounded to
-    // a supported dispatch Nbeta {48,100,200,300,400,512}. Calibrated on the maximally twisted
-    // sphere (theta=pi, PatchPerFace=5, Nbeta_sweep.txt); RectPolar converges much faster in Nbeta
-    // on near-flat geometry, so this is conservative there. A user-set cov_order overrides it.
-    if      (digits <= 2) return 100; // 1e-1..1e-2 (below the old 128 calibration point; re-verify if tight 1e-2 on strong twist matters)
-    else if (digits == 3) return 300; // 1e-3
-    else if (digits <= 5) return 400; // 1e-4,1e-5
-    else                  return 512; // <=1e-6 (ladder max)
-  }
 
   template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>* Mv_pre, const Matrix<Real>* dMv_pre, const Matrix<Real>* Mu_pre, const Matrix<Real>* dMu_pre, const Matrix<Real>* MvT_pre, const Matrix<Real>* MuT_pre, const Matrix<Real>* dMuT_pre, const Vector<Real>* src_nodal, const Matrix<Real>* MuD_pre, const Real nrm_sign, Vector<Real>* acc_cm) {
     // Accumulate the tensor-product quadrature (u_param x v_param, weights wu (x) wv)
@@ -831,50 +768,7 @@ namespace sctl {
 
   } // namespace quad_rp
 
-  template <class Real> void QuadElemList<Real>::RectPolarNodes1D(Vector<Real>& nodes, Vector<Real>& wts, const Real alpha, const Integer q, const Vector<Real>& gl_nds, const Vector<Real>& gl_wts) {
-    // Map GL nodes/weights on [0,1] through eta_alpha(u) = (xi_alpha(2u-1)+1)/2. The
-    // COV weight xi'_alpha is folded into the weights; it vanishes at the singularity
-    // u* = (alpha+1)/2, so the (near-)singular kernel is never evaluated there.
-    const Long N = gl_nds.Dim();
-    nodes.ReInit(N);
-    wts.ReInit(N);
-    for (Long i = 0; i < N; i++) {
-      const Real tau = 2*gl_nds[i] - 1;
-      nodes[i] = (quad_rp::cov_xi(alpha, tau, q) + 1)/2;
-      wts[i] = gl_wts[i]*quad_rp::cov_xip(alpha, tau, q);
-    }
-  }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default) {
-    // Rectangular-polar near-interaction: cluster a single tensor-product GL rule
-    // toward the nearest point on the element via the COV, integrate once.
-    static constexpr Integer KDIM0 = Kernel::SrcDim();
-    static constexpr Integer KDIM1full = Kernel::TrgDim();
-    SCTL_ASSERT(qel.order == order);
-    const Long nnode = (Long)order * order;
-    const bool trg_dot_prod = (normal_trg.Dim() > 0);
-    const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
-
-    // Nbeta GL points per direction for the (finitely smooth) post-COV integrand, decoupled from
-    // the field order (Bruno 2018). cov_order_ if the user set it, else the tol-derived default.
-    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : nbeta_default);
-    const std::pair<Vector<Real>, Vector<Real>>& gl = GLRuleNbetaDispatch(Nbeta);
-
-    // True closest point (u*,v*) sets the clustering center (alpha = 2*u*-1): bunch
-    // nodes at the foot of the perpendicular, not merely the nearest node.
-    Real ustar, vstar;
-    BENCH_TIC(ClosestPoint);
-    qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
-    BENCH_TOC(ClosestPoint);
-
-    Vector<Real> u_param, wu, v_param, wv;
-    RectPolarNodes1D(u_param, wu, 2*ustar - 1, qel.cov_q_, gl.first, gl.second);
-    RectPolarNodes1D(v_param, wv, 2*vstar - 1, qel.cov_q_, gl.first, gl.second);
-
-    if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) M_acc.ReInit(nnode, KDIM0*KDIM1_out);
-    M_acc.SetZero();
-    IntegrateBlock<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, u_param, wu, v_param, wv, ker);
-  }
 
   // ============================ ported from upstream 0f12ddf ============================
   // Centered self rules + split-at-foot near scheme. Grafted onto the RP work below.
@@ -1215,7 +1109,6 @@ namespace sctl {
     // IntegrateBlock: no quadtree, no per-leaf loop, no distinct-interval dedup, and the
     // interpolation is a single large tensor multiply per quantity instead of a small GEMM set per
     // tree cell. See BuildNearTensorRule for the construction and its accuracy rationale.
-    if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
 
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -1260,12 +1153,11 @@ namespace sctl {
                           &rv.M, &rv.dM, &ru.M, &ru.dM, &rv.MT, &ru.MT, &ru.dMT);
   }
 
-  // SUPERSEDED by NearInteracBlockGraded (foot-graded separable tensor) in the Adaptive/Hybrid near
-  // path -- this isotropic graded-quadtree split-at-foot rule lost ~2-3 orders vs RectPolar even on
-  // smooth geometry (Hybrid DL_stk 3.1e-6 here vs 1.3e-8 with the graded tensor). Retained only as a
+  // SUPERSEDED by NearInteracBlockGraded (foot-graded separable tensor) in the Adaptive near path --
+  // this isotropic graded-quadtree split-at-foot rule lost ~2-3 orders even on smooth geometry
+  // (DL_stk 3.1e-6 here vs 1.3e-8 with the graded tensor). Retained only as a
   // reference for the split-at-foot cell layout (WriteNearInteracVTK mirrors it).
   template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
-    if (qel.NearUsesRectPolar()) { NearInteracBlockRP<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
     const Long nnode = (Long)order*order;
@@ -1396,7 +1288,6 @@ namespace sctl {
     // toward u0 x Alpert log-singular v-rule toward v0; both rules + interpolation are
     // preloaded (geometry-independent, fixed by order/ti/tj/digits), integrated by
     // IntegrateBlock. IntegrateBlock still does the target-centered geometry per target.
-    if (qel.SelfUsesRectPolar()) { SelfInteracBlockRP<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, normal_trg, ker, NbetaForDigits(digits)); return; }
     if (qel.SelfUsesDuffy()) { SelfInteracBlockDuffy<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, normal_trg, ker, digits); return; }
 
     static constexpr Integer KDIM0 = Kernel::SrcDim();
@@ -1682,28 +1573,6 @@ namespace sctl {
     }
   }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::SelfInteracBlockRP(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer nbeta_default) {
-    // Rectangular-polar singular self-interaction for on-surface node (ti,tj). A single
-    // tensor-product GL rule clustered toward (u0,v0) in both directions; the COV weight
-    // vanishes at the singularity, so no log-singular split is needed. RP is non-adaptive,
-    // so both directions are preloaded from RPSelfRule (cached per order,cov_q,Nbeta).
-    static constexpr Integer KDIM0 = Kernel::SrcDim();
-    static constexpr Integer KDIM1full = Kernel::TrgDim();
-    SCTL_ASSERT(qel.order == order);
-    const Long nnode = (Long)order * order;
-    const bool trg_dot_prod = (normal_trg.Dim() > 0);
-    const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
-
-    // Nbeta GL points per direction for the (finitely smooth) post-COV integrand, decoupled from
-    // the field order (Bruno 2018). cov_order_ if the user set it, else the tol-derived default.
-    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : nbeta_default);
-    const NodeRuleData& ru = RPSelfRuleDispatch<order>(ti, qel.cov_q_, Nbeta); // u-direction
-    const NodeRuleData& rv = RPSelfRuleDispatch<order>(tj, qel.cov_q_, Nbeta); // v-direction
-
-    M_acc.ReInit(nnode, KDIM0*KDIM1_out);
-    M_acc.SetZero();
-    IntegrateBlock<order>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru.param, ru.w, rv.param, rv.w, ker, &rv.M, &rv.dM, &ru.M, &ru.dM, &rv.MT, &ru.MT, &ru.dMT);
-  }
 
   template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self) {
     // On-surface singular self-interaction: every node is an on-element target, built
@@ -1726,25 +1595,20 @@ namespace sctl {
     // whose NearInterac runs inside an OMP parallel region -- so warm BOTH the self- and the
     // near-scheme caches here to keep first-touch off the concurrent near path. ParamNodes /
     // DiffMat (used by IntegrateBlock on both paths) are warmed transitively by the rule
-    // builds below. The scheme branches can differ (Hybrid = RP self + adaptive near), so the
-    // near warm-up is not redundant with the self one.
-    const Integer Nbeta = (qel.cov_order_ > 0 ? qel.cov_order_ : NbetaForDigits(digits)); // match the RP blocks' fallback
-    if (qel.SelfUsesRectPolar()) {
-      RPSelfRuleDispatch<order>(0, qel.cov_q_, Nbeta);
-    } else if (qel.SelfUsesDuffy()) {
+    // builds below. The self and near branches are selected independently, so the near warm-up is
+    // not redundant with the self one.
+    if (qel.SelfUsesDuffy()) {
       DuffyTable<order>();                              // Duffy self: per-(order) triangle operators (ParamNodes/DiffMat come along)
     } else {
       CenteredURule<order, digits>(0, qel.max_depth_);  // centered self: graded u-rule (mutex-cached)
       CenteredVRule<order, digits>(0);                  // centered Alpert v-rule
     }
-    if (qel.NearUsesRectPolar()) {
-      GLRuleNbetaDispatch(Nbeta);  // near-RP: RectPolarNodes1D GL rule (also DiffMat/ParamNodes, already warm)
-    } else if (qel.SelfUsesDuffy()) {
+    if (qel.SelfUsesDuffy()) {
       NearGradeTableQ<order>(NearQuadOrderRt(digits));  // upstream near: full rung ladder built on first call
       NearBEllipseRt(digits); NearQuadOrderRt(digits);
     } else {
       NearGradeTable<order, digits>();  // split-near: normalized shell/core interval table + operators, keyed on (order,digits).
-      NearBEllipse<digits>();           // near admissibility constant (end-foot reach). Not covered by the RP self warm-up in Hybrid.
+      NearBEllipse<digits>();           // near admissibility constant (end-foot reach).
       NearQuadOrder<digits>();          // near per-cell GL order.
     }
 
@@ -1831,8 +1695,8 @@ namespace sctl {
 
   // ================ Upstream-ported near path (QuadScheme::Duffy only) ================
   // Runtime-digits split-at-foot near with a corner-angle GL-order bump and a deeper refinement
-  // ladder. Isolated from the compile-time-digits NearInteracBlockSplit above so the Adaptive /
-  // Hybrid / RectPolar paths are untouched.
+  // ladder. Isolated from the compile-time-digits NearInteracBlockSplit above so the Adaptive
+  // path is untouched.
 
   template <class Real> Integer QuadElemList<Real>::NearQuadOrderRt(const Integer digits) {
     static const Vector<Integer> q = []() {
@@ -2331,9 +2195,9 @@ namespace sctl {
   }
 
   template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self) {
-    // Per-target near-singular interaction (off-surface targets). Dispatches to the
-    // scheme's near block: foot-graded separable tensor (Adaptive/Hybrid), RectPolar,
-    // or Duffy. On-surface self interactions are built by SelfInterac.
+    // Per-target near-singular interaction (off-surface targets). Dispatches to the scheme's
+    // near block: foot-graded separable tensor (Adaptive) or Duffy. On-surface self
+    // interactions are built by SelfInterac.
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
 
@@ -2356,9 +2220,8 @@ namespace sctl {
       if (trg_dot_prod) ntrg.ReInit(COORD_DIM, (Iterator<Real>)normal_trg.begin() + t*COORD_DIM, false);
 
       Matrix<Real> M_acc;
-      // Duffy scheme: upstream-ported near (corner-angle order + deeper ladder). Others:
-      // Adaptive/Hybrid foot-graded separable-tensor near (RP handled by the guard inside the
-      // block). NearInteracBlockGraded matches RP near accuracy under parametric shear, where
+      // Duffy scheme: runtime-digits near (corner-angle order + deeper ladder). Otherwise the
+      // foot-graded separable-tensor near, which holds its accuracy under parametric shear where
       // the isotropic-quadtree NearInteracBlockSplit lost ~2-3 orders even on smooth geometry.
       if (qel.SelfUsesDuffy()) NearInteracBlockSplitDuffy<order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
       else NearInteracBlockGraded<digits, order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker);
@@ -2944,65 +2807,8 @@ namespace sctl {
     singpt.WriteVTK(fname + "-singpt", comm);
   }
 
-  template <class Real> void QuadElemList<Real>::WriteRectPolarGridVTK(const std::string& fname, const Long elem_idx, const Real ustar, const Real vstar, const Integer Nbeta) const {
-    // Shared RP visualizer core: push an Nbeta x Nbeta GL grid through the COV
-    // (clustering toward (u*,v*)) and dump as a VTK_QUAD mesh. COV is monotone per
-    // direction, so the tensor grid meshes cleanly.
-    Vector<Real> qnds, qwts;
-    LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, Nbeta);
-    Vector<Real> u_param, wu, v_param, wv, Xg;
-    RectPolarNodes1D(u_param, wu, 2*ustar - 1, cov_q_, qnds, qwts);
-    RectPolarNodes1D(v_param, wv, 2*vstar - 1, cov_q_, qnds, qwts);
-    GetGeom(&Xg, nullptr, nullptr, nullptr, nullptr, u_param, v_param, elem_idx);
 
-    VTUData vtu;
-    for (const auto& x : Xg) vtu.coord.PushBack((VTUData::VTKReal)x);
-    for (Long i = 0; i < Nbeta - 1; i++) {
-      for (Long j = 0; j < Nbeta - 1; j++) {
-        const Long idx = i*Nbeta + j;
-        vtu.connect.PushBack(idx);
-        vtu.connect.PushBack(idx + 1);
-        vtu.connect.PushBack(idx + Nbeta + 1);
-        vtu.connect.PushBack(idx + Nbeta);
-        vtu.offset.PushBack(vtu.connect.Dim());
-        vtu.types.PushBack(9); // VTK_QUAD
-      }
-    }
-    vtu.WriteVTK(fname, Comm::Self());
-  }
 
-  template <class Real> void QuadElemList<Real>::WriteNearInteracRPVTK(const std::string& fname, const Long elem_idx, const Vector<Real>& Xtrg, const Integer Nbeta, const Comm& comm) const {
-    // RP near-interaction grid: cluster toward the closest point (same (u*,v*) as
-    // NearInteracBlockRP). Grid in `<fname>`, target in `<fname>-target`.
-    Real ustar, vstar;
-    GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
-    WriteRectPolarGridVTK(fname, elem_idx, ustar, vstar, Nbeta);
-
-    VTUData target;
-    for (Integer k = 0; k < COORD_DIM; k++) target.coord.PushBack((VTUData::VTKReal)Xtrg[k]);
-    target.value.PushBack(0);
-    target.connect.PushBack(0);
-    target.offset.PushBack(target.connect.Dim());
-    target.types.PushBack(1); // VTK_VERTEX
-    target.WriteVTK(fname + "-target", comm);
-  }
-
-  template <class Real> void QuadElemList<Real>::WriteSelfInteracRPVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Integer Nbeta, const Comm& comm) const {
-    // RP self-interaction grid: cluster toward the on-surface target (u0,v0).
-    // Grid in `<fname>`, singular point in `<fname>-singpt`.
-    WriteRectPolarGridVTK(fname, elem_idx, u0, v0, Nbeta);
-
-    Vector<Real> us0(1), vs0(1), Xtrg;
-    us0[0] = u0; vs0[0] = v0;
-    GetGeom(&Xtrg, nullptr, nullptr, nullptr, nullptr, us0, vs0, elem_idx);
-    VTUData singpt;
-    for (Integer k = 0; k < COORD_DIM; k++) singpt.coord.PushBack((VTUData::VTKReal)Xtrg[k]);
-    singpt.value.PushBack(0);
-    singpt.connect.PushBack(0);
-    singpt.offset.PushBack(singpt.connect.Dim());
-    singpt.types.PushBack(1); // VTK_VERTEX
-    singpt.WriteVTK(fname + "-singpt", comm);
-  }
 
   template <class Real> void QuadElemList<Real>::WriteSelfInteracDuffyVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Real tol, const Comm& comm) const {
     // Reconstruct the Duffy edge-collapsed self rule at (u0,v0): four target-anchored triangles

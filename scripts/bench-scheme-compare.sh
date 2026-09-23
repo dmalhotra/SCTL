@@ -1,14 +1,14 @@
 #!/bin/bash
 # Scheme-comparison sweep + OpenMP strong scaling for bench-scheme-compare on one Icelake node.
 #
-# Compares the four singular-quadrature schemes {RP, Adaptive, Hybrid, Duffy} against each other on
+# Compares the two singular-quadrature schemes {Adaptive, Duffy} against each other on
 # a single machine. The whole node is allocated to one task and split internally, so both studies
 # run from one submission:
 #
 #   Phase 1 (convergence): the (kernel x scheme) jobs are dispatched across NSLOTS concurrent slots,
 #     each pinned to its own disjoint set of PHYSICAL cores (taskset mask + OMP_PLACES=cores). A
 #     dynamic flock work-queue hands the next job to whichever slot frees up first, so one slow job
-#     (e.g. RectPolar at large Nbeta) never blocks the others.
+#     never blocks the others.
 #   Phase 2 (OpenMP scaling): each (kernel x scheme) runs in turn on ALL physical cores; the binary
 #     descends the thread width from the full node down to 1, emitting one row per width.
 #
@@ -74,7 +74,7 @@ export OMP_PLACES=cores
 export OMP_PROC_BIND=close
 
 KERNELS="laplace stokes"
-SCHEMES="RP Adaptive Hybrid Duffy"
+SCHEMES="Adaptive Duffy"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/scheme-compare.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT

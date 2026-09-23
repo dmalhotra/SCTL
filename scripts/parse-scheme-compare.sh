@@ -5,7 +5,7 @@
 #   @@ROW kernel=<k> scheme=<s> thr=<n> twist=<t> tol=<tol> error=<e> pps=<p> setup=<s>
 # In a convergence run twist/tol vary at a fixed thread width; in an OpenMP run the thread width is
 # swept at a fixed twist/tol. This parser consumes both raw logs and compares the four schemes
-# {RP, Adaptive, Hybrid, Duffy} side by side.
+# {Adaptive, Duffy} side by side.
 #
 # Two tables are produced:
 #   1. convergence      -- Green's-identity error and single-layer setup throughput per scheme,
@@ -23,7 +23,7 @@ CONV="${1:-}"
 OMP="${2:-}"
 OUT="${3:-}"
 
-SCHEMES="RP Adaptive Hybrid Duffy"
+SCHEMES="Adaptive Duffy"
 
 # ---------------------------------------------------------------- shared gawk library (functions)
 read -r -d '' AWKLIB <<'AWK' || true
