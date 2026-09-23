@@ -5,7 +5,6 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
-#include <iostream>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -893,12 +892,6 @@ namespace sctl {
     return data[tj];
   }
 
-  template <class Real> template <Integer digits> Integer QuadElemList<Real>::NearQuadOrder() {
-    static const Integer q = []() { const char* v = std::getenv("SCTL_NEAR_QORDER");
-      const Integer x = (v ? (Integer)atoi(v) : 0); if (x > 0) return x;
-      Real b; Integer qq; NearRhoRule(pow<digits,Real>((Real)0.1), b, qq); return qq; }();
-    return q;
-  }
 
   template <class Real> void QuadElemList<Real>::NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder) {
     // Measured cost-optimal rho vs requested digits (order 12, 4x4 panels/face, Laplace SL+DL):
@@ -919,46 +912,7 @@ namespace sctl {
   }
 
 
-  template <class Real> template <Integer digits> Real QuadElemList<Real>::NearBEllipse() {
-    static const Real b = []() { const char* v = std::getenv("SCTL_NEAR_BELLIPSE");
-      const double x = (v ? atof(v) : 0); if (x > 0) return (Real)x;
-      Real bb; Integer qq; NearRhoRule(pow<digits,Real>((Real)0.1), bb, qq); return bb; }();
-    return b;
-  }
 
-  template <class Real> template <Integer order, Integer digits> const Vector<typename QuadElemList<Real>::GradeRule>& QuadElemList<Real>::NearGradeTable() {
-    // Built once per (order,digits). Every entry is in NORMALIZED sub-element coordinates and
-    // carries no positional index -- that is the point of splitting at the foot.
-    auto build = []() {
-      const Integer q = NearQuadOrder<digits>();
-      const Vector<Real>& gnds = ParamNodes(order);   // sub-element's own nodes, normalized
-      Vector<Real> qn, qw; LegQuadRule<Real>::ComputeNdsWts(&qn, &qw, q);
-      Vector<GradeRule> tab(2*MaxNearLvl);
-      auto fill = [&](GradeRule& r, const Real a, const Real b) {
-        r.a = a; r.b = b;
-        const Real w = b - a;
-        r.nds.ReInit(q); r.w.ReInit(q);
-        for (Integer i = 0; i < q; i++) { r.nds[i] = a + w*qn[i]; r.w[i] = w*qw[i]; }
-        // T[i][j] = Lhat_i(nds[j]): sub-element nodes -> this interval's quadrature nodes.
-        r.T.ReInit(order, q);
-        { Vector<Real> v(order*q, r.T.begin(), false); LagrangeInterp<Real>::Interpolate(v, gnds, r.nds); }
-        r.dT.ReInit(order, q);
-        Matrix<Real>::GEMM(r.dT, DiffMat(order), r.T);
-        r.TT.ReInit(q, order); r.TD.ReInit(2*q, order);
-        for (Integer i = 0; i < order; i++) for (Integer a = 0; a < q; a++) {
-          r.TT[a][i] = r.T[i][a]; r.TD[a][i] = r.T[i][a]; r.TD[q+a][i] = r.dT[i][a];
-        }
-      };
-      for (Integer k = 0; k < MaxNearLvl; k++) {
-        const Real lo = 1 - pow<Real>((Real)0.5, k), hi = 1 - pow<Real>((Real)0.5, k+1);
-        fill(tab[k], lo, hi);                                   // shell_k
-        fill(tab[MaxNearLvl + k], lo, (Real)1);                  // core_k = [1-2^-k, 1]
-      }
-      return tab;
-    };
-    static const Vector<GradeRule> tab = build();
-    return tab;
-  }
 
   template <class Real> void QuadElemList<Real>::ExpandSegments(Vector<Real>& param, Vector<Real>& w, const Vector<Real>& seg, const Vector<Real>& qnds, const Vector<Real>& qwts) {
     // One QuadOrder GL rule per segment, concatenated in segment order (so a contiguous run of
@@ -1474,9 +1428,9 @@ namespace sctl {
       NearGradeTableQ<order>(NearQuadOrderRt(digits));  // upstream near: full rung ladder built on first call
       NearBEllipseRt(digits); NearQuadOrderRt(digits);
     } else {
-      NearGradeTable<order, digits>();  // split-near: normalized shell/core interval table + operators, keyed on (order,digits).
-      NearBEllipse<digits>();           // near admissibility constant (end-foot reach).
-      NearQuadOrder<digits>();          // near per-cell GL order.
+      DigitsGLRule<digits>();           // graded near: per-cell GL rule (ComputeNdsWts is an uncached O(N^2) solve)
+      DigitsBEllipse<digits>();         // near admissibility constant (end-foot reach)
+      DigitsQuadOrder<digits>();        // near per-cell GL order
     }
 
     // Per-element singular blocks are independent: each writes its own M_lst[elem_idx],

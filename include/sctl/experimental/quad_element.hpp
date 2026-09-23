@@ -281,19 +281,13 @@ namespace sctl {
       template <Integer digits, Integer order, class Kernel> static void SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self);
       template <Integer digits, Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self);
 
-      // Near-only knobs, independent of the self path (SCTL_QUAD_ORDER drives both). For tuning
-      // the near heuristic while self is held at a much tighter tolerance.
-      //   SCTL_NEAR_QORDER   per-cell GL order        (default from NearRhoRule)
-      //   SCTL_NEAR_BELLIPSE admissibility constant   (default from NearRhoRule)
-      // VALIDITY: calibrated and validated on the twisted unit sphere for twist <= pi/3
-      // (element anisotropy <= ~4.2). Beyond that the near rule needs a higher GL order than
-      // this gives; do not rely on it past pi/3 without re-checking accuracy.
       // Tolerance-dependent rho + the end-foot Bernstein reach the split-at-(u0,v0) geometry
       // needs. QuadParams (still used by self) pins rho = 2.5 and the semi-major reach, which
       // over-refines near by a^2/b^2 ~ 1.9x.
+      // VALIDITY: calibrated and validated on the twisted unit sphere for twist <= pi/3
+      // (element anisotropy <= ~4.2). Beyond that the near rule needs a higher GL order than
+      // this gives; do not rely on it past pi/3 without re-checking accuracy.
       static void NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder);
-      template <Integer digits> static Integer NearQuadOrder();
-      template <Integer digits> static Real NearBEllipse();
       // One graded interval, in NORMALIZED sub-element coordinates. dT/TT/TD are precomputed
       // here (not per target) because the split-at-foot scheme feeds sub-element NODAL coords
       // into the cell quadrature, so these operators no longer depend on (u*,v*).
@@ -302,9 +296,6 @@ namespace sctl {
       //   TT (q x order)   T^T, for the projection
       //   TD (2q x order)  [T^T ; dT^T] stacked, so value+derivative come from ONE GEMM
       struct GradeRule { Vector<Real> nds, w; Matrix<Real> T, dT, TT, TD; Real a, b; };
-      // Flat index: shell_k -> k, core_k -> MaxNearLvl + k.
-      static constexpr Integer MaxNearLvl = 31;
-      template <Integer order, Integer digits> static const Vector<GradeRule>& NearGradeTable();
 
       // ---- Foot-graded separable-tensor near (QuadScheme::Adaptive) ----
       // THE production near path for the Adaptive scheme. Grade [0,1] toward u* and
@@ -338,12 +329,12 @@ namespace sctl {
       // runtime here, so the grade table is keyed on the runtime GL order q.
       // The `…CM` suffix = channel-major: these are the caps of the near path that accumulates via
       // IntegrateNearCM (into the channel-major `acc_cm` buffer), as opposed to the compile-time
-      // MaxNearLvl/NearQuadOrder.
+      // compile-time near constants.
       static constexpr Integer MaxNearLvlCM = GetSigBits<Real>::value();  // shell_k -> k, core_k -> MaxNearLvlCM + k
       static constexpr Integer NearMaxQuadOrderCM = 60;
       static constexpr Integer MaxDigitsCM = 1 + GetSigBits<Real>::value()*30103/100000;
-      static Integer NearQuadOrderRt(const Integer digits);   // runtime counterpart of NearQuadOrder<digits>
-      static Real NearBEllipseRt(const Integer digits);       // runtime counterpart of NearBEllipse<digits>
+      static Integer NearQuadOrderRt(const Integer digits);   // per-cell GL order for a runtime digit count
+      static Real NearBEllipseRt(const Integer digits);       // admissibility constant for a runtime digit count
       template <Integer order> static const Vector<GradeRule>& NearGradeTableQ(const Integer q);
       template <Integer order, class Kernel> static void IntegrateNearCM(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker,
                                                                          const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD,
