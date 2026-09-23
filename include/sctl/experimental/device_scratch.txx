@@ -67,6 +67,35 @@ inline bool CopyToHost(void* dst, const void* src, std::size_t bytes) {
 #endif
 }
 
+/** Copy `bytes` of host memory at `src` to device memory at `dst`. False if the runtime refused. */
+inline bool CopyToDevice(void* dst, const void* src, std::size_t bytes) {
+#if defined(__HIPCC__)
+  return hipMemcpy(dst, src, bytes, hipMemcpyHostToDevice) == hipSuccess;
+#elif defined(__CUDACC__)
+  return cudaMemcpy(dst, src, bytes, cudaMemcpyHostToDevice) == cudaSuccess;
+#else
+  (void)dst;
+  (void)src;
+  (void)bytes;
+  return false;  // no runtime to copy with, and no device pointer to copy to
+#endif
+}
+
+/** Whether `bytes` at `p` are page-locked, queried at both ends; an unregistered gap between them is not seen. */
+inline bool HostPinned(const void* p, std::size_t bytes) {
+#if defined(__CUDACC__) && !defined(__HIPCC__)
+  const auto pinned = [](const void* q) {
+    cudaPointerAttributes attr{};
+    return cudaPointerGetAttributes(&attr, q) == cudaSuccess && attr.type == cudaMemoryTypeHost;
+  };
+  return bytes && pinned(p) && pinned((const char*)p + bytes - 1);
+#else
+  (void)p;
+  (void)bytes;
+  return false;  // no runtime to ask, or HIP, whose attribute field differs across ROCm versions
+#endif
+}
+
 /** Fill `bytes` of device memory at `p` with `value`. False if the runtime refused. */
 inline bool MemsetDevice(void* p, int value, std::size_t bytes) {
 #if defined(__HIPCC__)
@@ -192,15 +221,36 @@ inline sctl::ScratchPool& pinnedStagingPool() {
   return pool;
 }
 
-/** `dst` takes a pointer or an sctl iterator: with SCTL_MEMDEBUG the containers return the latter. */
-template <class SrcPtr, class DstPtr> inline void deviceToHost(SrcPtr src, Long n, DstPtr dst) {
+/** The host end takes a pointer or an sctl iterator: with SCTL_MEMDEBUG the containers return the latter. */
+template <class SrcPtr, class DstPtr> inline void deviceToHost(SrcPtr src, Long n, DstPtr dst, bool pinned) {
   using T = typename std::remove_cv<typename std::remove_reference<decltype(*dst)>::type>::type;
   if (!n) return;
   if constexpr (is_device_ptr<SrcPtr>::value) {
+    const char* const refused = "deviceToHost: the device runtime refused the copy.";
+    if (pinned || gpu_runtime::HostPinned(&dst[0], n * sizeof(T))) {
+      SCTL_ASSERT_MSG(gpu_runtime::CopyToHost(&dst[0], thrust::raw_pointer_cast(src), n * sizeof(T)), refused);
+      return;
+    }
     sctl::ScratchBuf<T> stage(n, pinnedStagingPool());
-    const bool ok = gpu_runtime::CopyToHost(&stage[0], thrust::raw_pointer_cast(src), n * sizeof(T));
-    SCTL_ASSERT_MSG(ok, "deviceToHost: the device runtime refused the copy.");
+    SCTL_ASSERT_MSG(gpu_runtime::CopyToHost(&stage[0], thrust::raw_pointer_cast(src), n * sizeof(T)), refused);
     sctl::omp_par::copy(stage.begin(), stage.end(), dst);
+  } else {
+    sctl::omp_par::copy(src, src + n, dst);
+  }
+}
+
+template <class SrcPtr, class DstPtr> inline void hostToDevice(SrcPtr src, Long n, DstPtr dst, bool pinned) {
+  using T = typename std::remove_cv<typename std::remove_reference<decltype(*src)>::type>::type;
+  if (!n) return;
+  if constexpr (is_device_ptr<DstPtr>::value) {
+    const char* const refused = "hostToDevice: the device runtime refused the copy.";
+    if (pinned || gpu_runtime::HostPinned(&src[0], n * sizeof(T))) {
+      SCTL_ASSERT_MSG(gpu_runtime::CopyToDevice(thrust::raw_pointer_cast(dst), &src[0], n * sizeof(T)), refused);
+      return;
+    }
+    sctl::ScratchBuf<T> stage(n, pinnedStagingPool());
+    sctl::omp_par::copy(src, src + n, stage.begin());
+    SCTL_ASSERT_MSG(gpu_runtime::CopyToDevice(thrust::raw_pointer_cast(dst), &stage[0], n * sizeof(T)), refused);
   } else {
     sctl::omp_par::copy(src, src + n, dst);
   }

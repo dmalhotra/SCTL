@@ -49,16 +49,20 @@ template <class T, template <class...> class DevVec>
 using ScratchIterator = std::conditional_t<is_device_vector_v<DevVec<T>>, thrust::device_ptr<T>, T*>;
 
 /**
- * Copy `n` elements of device storage into a host buffer, staged through a retained pinned buffer.
+ * Copy `n` elements of device storage into a host buffer.
  *
- * A caller-owned destination is pageable and usually freshly allocated, which costs twice over:
- * the driver cannot DMA into it, and it faults in a page at a time inside the driver's copy. Taking
- * the DMA into pinned memory, then filling the destination with the host threads, avoids both. The
- * staging buffer comes from `pinnedStagingPool()` and is live only within the call.
+ * A pageable buffer costs twice over: the driver cannot move it directly, and it faults in a page
+ * at a time inside the driver's copy. Taking the transfer through page-locked memory from
+ * `pinnedStagingPool()`, then filling the destination with the host threads, avoids both. A
+ * destination that is page-locked already takes the transfer directly; `pinned` asserts that it is,
+ * skipping the query.
  *
  * On host backends `src` is already a host pointer and this is a plain copy.
  */
-template <class SrcPtr, class DstPtr> void deviceToHost(SrcPtr src, Long n, DstPtr dst);
+template <class SrcPtr, class DstPtr> void deviceToHost(SrcPtr src, Long n, DstPtr dst, bool pinned = false);
+
+/** `n` elements of a host buffer into device storage; `deviceToHost` the other way round. */
+template <class SrcPtr, class DstPtr> void hostToDevice(SrcPtr src, Long n, DstPtr dst, bool pinned = false);
 
 /**
  * Page-locked host staging memory, as one byte-addressed arena shared by every element type rather
