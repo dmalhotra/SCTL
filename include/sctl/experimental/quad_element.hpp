@@ -177,89 +177,11 @@ namespace sctl {
        */
       void WriteVTK(const std::string& fname, const Vector<Real>& F = Vector<Real>(), const Comm& comm = Comm::Self()) const;
 
-      /**
-       * Visualize the adaptive near-interaction quadtree (off-surface target):
-       * writes `<fname>` (per-leaf GL nodes + VTK_QUAD leaf outlines, colored by
-       * depth) and `<fname>-target`.
-       * @param[in] fname output filename prefix.
-       * @param[in] elem_idx source element index.
-       * @param[in] Xtrg off-surface target coords (COORD_DIM reals).
-       * @param[in] tol accuracy tolerance (match the BIO's SetAccuracy).
-       * @param[in] comm communicator.
-       */
-      void WriteNearInteracVTK(const std::string& fname, const Long elem_idx, const Vector<Real>& Xtrg, const Real tol, const Comm& comm = Comm::Self()) const;
 
-      /**
-       * Visualize THE production adaptive near quadrature (off-surface target): the
-       * foot-graded separable tensor grid built by BuildNearTensorRule -- two 1D
-       * foot-graded partitions (in u and v) tensored over the whole panel, so the
-       * cells cluster toward the foot (u*,v*) and read as four quadrants meeting
-       * there. Writes `<fname>` (per-cell GL nodes as VTK_QUAD, colored by cell
-       * depth) and `<fname>-target`. Unlike WriteNearInteracVTK (which mirrors the
-       * SUPERSEDED isotropic graded-quadtree rule), this matches NearInteracBlockGraded.
-       * @param[in] fname output filename prefix.
-       * @param[in] elem_idx source element index.
-       * @param[in] Xtrg off-surface target coords (COORD_DIM reals).
-       * @param[in] tol accuracy tolerance (match the BIO's SetAccuracy).
-       * @param[in] comm communicator.
-       */
-      void WriteNearInteracGradedVTK(const std::string& fname, const Long elem_idx, const Vector<Real>& Xtrg, const Real tol, const Comm& comm = Comm::Self()) const;
 
-      /**
-       * Visualize the on-surface self-interaction structure at (u0,v0) (graded u x
-       * Alpert v): writes `<fname>` (quadrature node cloud) and `<fname>-singpt`.
-       * @param[in] fname output filename prefix.
-       * @param[in] elem_idx source element index.
-       * @param[in] u0,v0 on-surface target parameters in [0,1].
-       * @param[in] tol accuracy tolerance (match the BIO's SetAccuracy).
-       * @param[in] comm communicator.
-       */
-      void WriteSelfInteracVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Real tol, const Comm& comm = Comm::Self()) const;
 
-      /**
-       * Visualize the adaptive self quadrature at (u0,v0) as PANELS (like the near
-       * grid), not a point cloud. The rule is a tensor of centered graded-GL u-panels
-       * x centered composite-v panels; every panel is a GL x GL patch EXCEPT the
-       * innermost v-row touching the singular node, whose v-nodes are the Alpert
-       * log-singular rule (still ordered within the panel). Each (u-panel, v-panel)
-       * cell is emitted as its own VTK_QUAD patch, with the point scalar flagging the
-       * Alpert singular row (1) vs the GL panels (0). Writes `<fname>` and
-       * `<fname>-singpt`.
-       * @param[in] fname output filename prefix.
-       * @param[in] elem_idx source element index.
-       * @param[in] u0,v0 on-surface target parameters in [0,1].
-       * @param[in] tol accuracy tolerance (match the BIO's SetAccuracy).
-       * @param[in] comm communicator.
-       */
-      void WriteSelfInteracGradedVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Real tol, const Comm& comm = Comm::Self()) const;
 
-      /**
-       * Visualize the Duffy edge-collapsed self rule (Scheme `Duffy`) at (u0,v0):
-       * the four target-anchored triangles, each a (ns x nt) sinh-graded grid that
-       * fans from the singular apex (SelfInteracBlockDuffy's layout). Writes `<fname>`
-       * (warped VTK_QUAD mesh, one point scalar = triangle index 0..3) and
-       * `<fname>-singpt`. `tol` fixes nt via DuffyTOrder just as the solver does.
-       * @param[in] fname output filename prefix.
-       * @param[in] elem_idx source element index.
-       * @param[in] u0,v0 on-surface target parameters in [0,1].
-       * @param[in] tol target tolerance (sets the sinh t-order).
-       * @param[in] comm communicator.
-       */
-      void WriteSelfInteracDuffyVTK(const std::string& fname, const Long elem_idx, const Real u0, const Real v0, const Real tol, const Comm& comm = Comm::Self()) const;
 
-      /**
-       * Visualize the Duffy near rule (Scheme `Duffy`) for an off-surface target:
-       * the split-at-foot cells with the anisotropic u/v refinement ladder of
-       * NearInteracBlockSplitDuffy, each a QuadOrder x QuadOrder GL-node patch of
-       * VTK_QUAD cells (point scalar = cell refinement level). Writes `<fname>` and
-       * `<fname>-target`. `tol` fixes QuadOrder / b_ellipse as the solver does.
-       * @param[in] fname output filename prefix.
-       * @param[in] elem_idx source element index.
-       * @param[in] Xtrg off-surface target coords (COORD_DIM reals).
-       * @param[in] tol target tolerance.
-       * @param[in] comm communicator.
-       */
-      void WriteNearInteracDuffyVTK(const std::string& fname, const Long elem_idx, const Vector<Real>& Xtrg, const Real tol, const Comm& comm = Comm::Self()) const;
 
       /**
        * Copy the element-list, possibly at a different precision.
@@ -372,10 +294,6 @@ namespace sctl {
       static void NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder);
       template <Integer digits> static Integer NearQuadOrder();
       template <Integer digits> static Real NearBEllipse();
-      //   SCTL_NEAR_MAXLVL   near-only level cap (0 => use max_depth_). Near-touching targets
-      //   (a neighbouring patch's node, foot distance ~0) refine to the cap regardless of the
-      //   admissibility constant, so the cap -- not b_ellipse -- controls their error.
-      static Integer NearMaxLvlOverride();
       // One graded interval, in NORMALIZED sub-element coordinates. dT/TT/TD are precomputed
       // here (not per target) because the split-at-foot scheme feeds sub-element NODAL coords
       // into the cell quadrature, so these operators no longer depend on (u*,v*).
@@ -387,7 +305,6 @@ namespace sctl {
       // Flat index: shell_k -> k, core_k -> MaxNearLvl + k.
       static constexpr Integer MaxNearLvl = 31;
       template <Integer order, Integer digits> static const Vector<GradeRule>& NearGradeTable();
-      template <Integer digits, Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
       // ---- Foot-graded separable-tensor near (QuadScheme::Adaptive) ----
       // THE production near path for the Adaptive scheme. Grade [0,1] toward u* and
@@ -413,7 +330,7 @@ namespace sctl {
       template <Integer digits, Integer order, class Kernel> static void NearInteracBlockGraded(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
 
       // ---- Upstream-ported near path (QuadScheme::Duffy only) ----
-      // Same split-at-foot geometry as NearInteracBlockSplit, but with the upstream additions that
+      // Split-at-foot geometry with the additions that
       // let the near rule hold accuracy under strong parametric shear: (1) a corner-angle bump to
       // the per-target GL order (the acute tangent angle at the foot sets how much the element
       // wraps the target, which the parameter-space admissibility test cannot see), and (2) a
@@ -421,7 +338,7 @@ namespace sctl {
       // runtime here, so the grade table is keyed on the runtime GL order q.
       // The `…CM` suffix = channel-major: these are the caps of the near path that accumulates via
       // IntegrateNearCM (into the channel-major `acc_cm` buffer), as opposed to the compile-time
-      // MaxNearLvl/NearQuadOrder used by NearInteracBlockSplit.
+      // MaxNearLvl/NearQuadOrder.
       static constexpr Integer MaxNearLvlCM = GetSigBits<Real>::value();  // shell_k -> k, core_k -> MaxNearLvlCM + k
       static constexpr Integer NearMaxQuadOrderCM = 60;
       static constexpr Integer MaxDigitsCM = 1 + GetSigBits<Real>::value()*30103/100000;

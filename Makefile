@@ -108,13 +108,12 @@ TARGET_BIN = \
 	   $(BINDIR)/test-quad-elem \
 	   $(BINDIR)/bench-scheme-compare
 
-.PHONY: all test clean scheme plot
+.PHONY: all test clean scheme
 
 all : $(TARGET_BIN)
 
 scheme : $(BINDIR)/bench-scheme-compare
 
-plot : $(BINDIR)/plot_schemes
 
 $(BINDIR)/%: $(OBJDIR)/%.o
 	-@$(MKDIRS) $(dir $@)
