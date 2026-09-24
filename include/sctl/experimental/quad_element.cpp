@@ -97,7 +97,7 @@ namespace sctl {
     }
   }
 
-  template <class Real> const Matrix<Real>& QuadElemList<Real>::DiffMat(const Integer order) {
+  template <class Real> inline const Matrix<Real>& QuadElemList<Real>::DiffMat(const Integer order) {
     // D[i][a] = L_i'(node_a). Cached for all orders at first use to avoid an
     // O(order^3) per-self-target rebuild.
     constexpr Integer MAX_ORDER = 50;
@@ -343,6 +343,117 @@ namespace sctl {
     }
   }
 
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD, const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT, const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm) {
+    // One near leaf cell: accumulate its tensor-product quadrature (weights wu (x) wv) against
+    // the target into acc_cm. src_nodal is the caller's target-shifted nodal slab, so the kernel
+    // target sits at the origin. Tensor grid is u-slow/v-fast: node (a,b) has flat index a*Nv+b.
+    static constexpr Integer KDIM0 = Kernel::SrcDim();
+    static constexpr Integer KDIM1full = Kernel::TrgDim();
+    const Long nnode = (Long)order * order;
+    const bool trg_dot_prod = (normal_trg.Dim() > 0);
+    const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
+
+    const Long Nu = Mu.Dim(1), Nv = Mv.Dim(1), nq = Nu * Nv;
+    if (!nq) return;
+    const Integer C = KDIM0 * KDIM1_out;
+
+    // The v-side contraction is shared by X and dXdu (both use Mv). All COORD_DIM components
+    // share it and src_nodal is component-major contiguous, so the three (order x order).
+    // (order x Nv) products are one (COORD_DIM*order x order) GEMM.
+    thread_local Vector<Real> Cv, Cdv;
+    if (Cv.Dim() != COORD_DIM*order*Nv) { Cv.ReInit(COORD_DIM*order*Nv); Cdv.ReInit(COORD_DIM*order*Nv); }
+    {
+      const Matrix<Real> cs_all(COORD_DIM*order, order, (Iterator<Real>)src_nodal.begin(), false);
+      Matrix<Real> Cv_all (COORD_DIM*order, Nv, Cv.begin(),  false);
+      Matrix<Real> Cdv_all(COORD_DIM*order, Nv, Cdv.begin(), false);
+      Matrix<Real>::GEMM(Cv_all,  cs_all, Mv);
+      Matrix<Real>::GEMM(Cdv_all, cs_all, dMv);
+    }
+    // Column-stage Cv/Cdv (component index moved into the COLUMNS) so stage 2 batches over
+    // components as well as over outputs: the nine original (Nu x order).(order x Nv) products
+    // collapse to two GEMMs against an (order x COORD_DIM*Nv) operand. The restage is an
+    // L1-resident copy; Matrix::GEMM has no strided-output form.
+    const Long ldc = COORD_DIM*Nv;
+    thread_local Vector<Real> Cvc, Cdvc, XdU, dXdv_soa;
+    if (Cvc.Dim() != (Long)order*ldc) { Cvc.ReInit((Long)order*ldc); Cdvc.ReInit((Long)order*ldc); }
+    for (Integer k = 0; k < COORD_DIM; k++) {
+      for (Integer i = 0; i < order; i++) {
+        const Long src = ((Long)k*order + i)*Nv, dst = (Long)i*ldc + k*Nv;
+        for (Long b = 0; b < Nv; b++) { Cvc[dst+b] = Cv[src+b]; Cdvc[dst+b] = Cdv[src+b]; }
+      }
+    }
+    if (XdU.Dim() != 2*(Long)Nu*ldc) { XdU.ReInit(2*(Long)Nu*ldc); dXdv_soa.ReInit((Long)Nu*ldc); }
+    {
+      const Matrix<Real> Cvc_m(order, ldc, Cvc.begin(), false), Cdvc_m(order, ldc, Cdvc.begin(), false);
+      Matrix<Real> dV_m(Nu, ldc, dXdv_soa.begin(), false);
+      { // MuD = [T^T; dT^T] gives X and dXdu in one GEMM
+        Matrix<Real> XdU_m(2*Nu, ldc, XdU.begin(), false);
+        Matrix<Real>::GEMM(XdU_m, MuD, Cvc_m);
+      }
+      Matrix<Real>::GEMM(dV_m, MuT, Cdvc_m);
+    }
+
+    StaticArray<Real,COORD_DIM> Xt0_{0, 0, 0};
+    const Vector<Real> Xt0_v_(COORD_DIM, Xt0_, false);
+    thread_local Vector<Real> Xsrc, Xnsrc, wq;
+    if (Xsrc.Dim() != nq*COORD_DIM) { Xsrc.ReInit(nq*COORD_DIM); Xnsrc.ReInit(nq*COORD_DIM); wq.ReInit(nq); }
+    for (Long a = 0; a < Nu; a++) {
+      for (Long b = 0; b < Nv; b++) {
+        const Long q = a*Nv + b;
+        const Long r = (Long)a*ldc + b, ru = ((Long)Nu + a)*ldc + b;
+        const Real du0 = XdU[ru+0*Nv], du1 = XdU[ru+1*Nv], du2 = XdU[ru+2*Nv];
+        const Real dv0 = dXdv_soa[r+0*Nv], dv1 = dXdv_soa[r+1*Nv], dv2 = dXdv_soa[r+2*Nv];
+        const Real n0 = du1*dv2 - du2*dv1, n1 = du2*dv0 - du0*dv2, n2 = du0*dv1 - du1*dv0;
+        const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
+        // nrm_sign flips the normal when exactly one direction is mirrored: the tangents are
+        // then d/dx (sub-element coords), whose cross product is anti-parallel to dXu x dXv.
+        const Real inv_area = (area > 0 ? nrm_sign/area : 0);
+        Xsrc[q*COORD_DIM+0] = XdU[r+0*Nv]; Xsrc[q*COORD_DIM+1] = XdU[r+1*Nv]; Xsrc[q*COORD_DIM+2] = XdU[r+2*Nv];
+        Xnsrc[q*COORD_DIM+0] = n0*inv_area; Xnsrc[q*COORD_DIM+1] = n1*inv_area; Xnsrc[q*COORD_DIM+2] = n2*inv_area;
+        wq[q] = area*wu[a]*wv[b];
+      }
+    }
+
+    thread_local Matrix<Real> Mker;
+    ker.template KernelMatrix<Real,false>(Mker, Xt0_v_, Xsrc, Xnsrc); // (nq*KDIM0 x KDIM1full)
+
+    thread_local Vector<Real> KWc;
+    if (KWc.Dim() != C*nq) KWc.ReInit(C*nq);
+    for (Long q = 0; q < nq; q++) {
+      for (Integer k0 = 0; k0 < KDIM0; k0++) {
+        for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
+          Real val;
+          if (trg_dot_prod) {
+            val = 0;
+            for (Integer l = 0; l < COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*COORD_DIM+l] * normal_trg[l];
+          } else {
+            val = Mker[q*KDIM0+k0][k1];
+          }
+          KWc[(Long)(k0*KDIM1_out+k1)*nq + q] = val*wq[q];
+        }
+      }
+    }
+
+    // Adjoint of the geometry interpolation: quadrature -> nodal. KWc is channel-major with
+    // (Nu x Nv) blocks, so the v-contraction is already one (C*Nu x Nv) operand and batches
+    // over all C channels for free. The u-contraction then writes one (order x order) block
+    // per channel -- a channel-major accumulator's layout -- so with acc_cm it accumulates in
+    // place via beta = 1, and the caller transposes to M_acc's node-major layout once per
+    // target rather than per cell.
+    thread_local Vector<Real> Yv;
+    if (Yv.Dim() != (Long)C*Nu*order) Yv.ReInit((Long)C*Nu*order);
+    {
+      const Matrix<Real> KW_all((Long)C*Nu, Nv, KWc.begin(), false);
+      Matrix<Real> Y_all((Long)C*Nu, order, Yv.begin(), false);
+      Matrix<Real>::GEMM(Y_all, KW_all, MvT);
+    }
+    for (Integer c = 0; c < C; c++) {
+      const Matrix<Real> Y_c(Nu, order, Yv.begin() + (Long)c*Nu*order, false);
+      Matrix<Real> A_c(order, order, acc_cm.begin() + (Long)c*nnode, false);
+      Matrix<Real>::GEMM(A_c, Mu, Y_c, (Real)1);   // beta = 1: accumulate in place
+    }
+  }
+
   template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>* Mv_pre, const Matrix<Real>* dMv_pre, const Matrix<Real>* Mu_pre, const Matrix<Real>* dMu_pre, const Matrix<Real>* MvT_pre, const Matrix<Real>* MuT_pre, const Matrix<Real>* dMuT_pre, const Vector<Real>* src_nodal, const Matrix<Real>* MuD_pre, const Real nrm_sign, Vector<Real>* acc_cm) {
     // Accumulate the tensor-product quadrature (u_param x v_param, weights wu (x) wv)
     // against the single target Xtrg. Shared by the near (per-leaf) and self schemes.
@@ -369,8 +480,10 @@ namespace sctl {
     // (self's fixed Alpert/COV rule), else build from u_param/v_param (adaptive rule).
     Matrix<Real> Mu_local, dMu_local, MuT_local, dMuT_local;
     Matrix<Real> Mv_local, dMv_local, MvT_local;
-    if (!Mu_pre || !Mv_pre) {
-      if (!Mu_pre) {
+    {
+      // Build the u-side locally unless EVERY u operator was supplied: the blocked sweep below
+      // reads dMuT, so supplying Mu_pre alone must not leave dMuT_local empty.
+      if (!Mu_pre || !MuT_pre || !dMuT_pre) {
         Mu_local.ReInit(order, Nu);
         { Vector<Real> v(order*Nu, Mu_local.begin(), false); LagrangeInterp<Real>::Interpolate(v, pnds, u_param); }
         dMu_local.ReInit(order, Nu);
@@ -429,8 +542,7 @@ namespace sctl {
       Matrix<Real>::GEMM(Cdv_all, cs_all, dMv);
       BENCH_FLOPS(2.0 * 2 * (COORD_DIM*(double)order) * order * Nv);
     }
-    static const Long ublk_pts_ = []() { const char* v = std::getenv("SCTL_UBLK_PTS"); return v ? std::max<Long>(64, atol(v)) : 16384; }();
-    if (Nu * Nv <= ublk_pts_) { // Sweep already fits: original single-shot path.
+    if (Nu * Nv <= UBlkPts) { // Sweep already fits: original single-shot path.
       // Near integrates tiny per-leaf blocks (Nu = Nv = QuadOrder), where blocking buys
       // nothing -- and the batched/per-leaf near gate requires this path bit-for-bit, so
       // it must keep using the same buffers and GEMM calls.
@@ -558,7 +670,7 @@ namespace sctl {
     // in blocks keeps the live set at 18*UBLK*Nv and leaves the flop count unchanged:
     // the u-rows of the geometry are independent, and the projection is a sum over u, so
     // only its (Nu x order) intermediate spans blocks (42 KB at order 8).
-    const Long UBLK = std::max<Long>(1, std::min<Long>(Nu, ublk_pts_ / std::max<Long>(1, Nv)));
+    const Long UBLK = std::max<Long>(1, std::min<Long>(Nu, UBlkPts / std::max<Long>(1, Nv)));
     const Long nqmax = UBLK*Nv, cs = nqmax; // cs: per-component stride in the block buffers
 
     thread_local Vector<Real> Xb, dXub, dXvb, Xsrcb, Xnsrcb, wqb, KWcb, Mkerb, Tfull, projb;
@@ -749,7 +861,7 @@ namespace sctl {
     return gl;
   }
 
-  template <class Real> Integer QuadElemList<Real>::VLevelsForDigits(const Integer digits) {
+  template <class Real> inline Integer QuadElemList<Real>::VLevelsForDigits(const Integer digits) {
     // Geometric grading levels per side toward v0 in the composite Alpert v-rule.
     return std::min<Integer>(12, std::max<Integer>(1, digits - 5));
   }
@@ -780,7 +892,7 @@ namespace sctl {
   // Runtime-digits split-at-foot near with a corner-angle GL-order bump and a deeper refinement
   // ladder, with digits taken at runtime. The Adaptive path is untouched.
 
-  template <class Real> Integer QuadElemList<Real>::NearQuadOrderRt(const Integer digits) {
+  template <class Real> inline Integer QuadElemList<Real>::NearQuadOrderRt(const Integer digits) {
     static const Vector<Integer> q = []() {
       Vector<Integer> t(MaxDigitsCM);
       for (Integer d = 0; d < MaxDigitsCM; d++) { Real b; Integer qq; NearRhoRule(pow<Real,Long>((Real)0.1, (Long)d), b, qq); t[d] = qq; }
@@ -790,7 +902,7 @@ namespace sctl {
     return q[digits];
   }
 
-  template <class Real> Real QuadElemList<Real>::NearBEllipseRt(const Integer digits) {
+  template <class Real> inline Real QuadElemList<Real>::NearBEllipseRt(const Integer digits) {
     static const Vector<Real> b = []() {
       Vector<Real> t(MaxDigitsCM);
       for (Integer d = 0; d < MaxDigitsCM; d++) { Real bb; Integer qq; NearRhoRule(pow<Real,Long>((Real)0.1, (Long)d), bb, qq); t[d] = bb; }

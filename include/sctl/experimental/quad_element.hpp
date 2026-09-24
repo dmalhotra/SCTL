@@ -253,6 +253,25 @@ namespace sctl {
       // caller-supplied target-shifted nodal slab, so the kernel target is the origin. nrm_sign
       // flips the source normal for mirrored sub-elements. acc_cm is a channel-major accumulator
       // added into with beta=1, so the caller transposes to node-major once per target, not per cell.
+      // Cell size above which the u sweep is blocked to keep the intermediates cache-resident.
+      // Only the Adaptive grids get near it; the Duffy paths never reach this routine.
+      static constexpr Long UBlkPts = 16384;
+
+      // Plain form: one cell, every operator required, no internal geometry shift. The caller
+      // supplies the target-shifted nodal slab, so the kernel target is the origin, and gets the
+      // result in the channel-major accumulator. MuD is [T^T; dT^T] stacked, so value and
+      // derivative come from one GEMM. This is quadelem-hedgehog's signature, kept so the two can
+      // be measured against each other -- see the TODO on the overload below. Currently unused.
+      template <Integer order, class Kernel> static void IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker,
+                                                                        const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD,
+                                                                        const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT,
+                                                                        const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm);
+
+      // TODO: measure this against the plain form above. It carries nine optional arguments, an
+      // internal target-shift, and a u-blocked sweep, none of which the plain form has. Establish
+      // whether any of that earns its complexity -- in particular whether the u-blocking is worth
+      // keeping at all (it only runs above UBlkPts points, which only the Adaptive grids reach) --
+      // and if not, drop this overload and move the callers to the plain form.
       template <Integer order, class Kernel> static void IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx,
                                                                         const Vector<Real>& Xtrg, const Vector<Real>& normal_trg,
                                                                         const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker,
