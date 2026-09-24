@@ -2279,8 +2279,8 @@ namespace sctl {
     const int ord = 16;
     std::vector<double> px, pw;
     auto add_alpert = [&](double a, double b, int corra, int corrb) {
-      const ExtraPtResult L = (corra == 2 ? QuadLogExtraPtNodes((double)ord) : QuadSmoothExtraPtNodes((double)ord));
-      const ExtraPtResult R = (corrb == 2 ? QuadLogExtraPtNodes((double)ord) : QuadSmoothExtraPtNodes((double)ord));
+      const auto L = (corra == 2 ? QuadLogExtraPtNodes<Real>((double)ord) : QuadSmoothExtraPtNodes<Real>((double)ord));
+      const auto R = (corrb == 2 ? QuadLogExtraPtNodes<Real>((double)ord) : QuadSmoothExtraPtNodes<Real>((double)ord));
       const int skipL = L.NodesToSkip, skipR = R.NodesToSkip;
       const int N = std::max(skipL + skipR + 2, 2 * ord);
       const int N1 = N - 1;

@@ -235,6 +235,14 @@ namespace sctl {
       // n_iter/used_fallback (optional) report the iteration count and whether Newton stalled.
       Real GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
 
+      // One near leaf cell: accumulate its tensor-product quadrature (weights wu (x) wv) into the
+      // channel-major accumulator acc_cm. Non-empty normal_trg contracts with the target normal.
+      // src_nodal is the target-shifted nodal slab, so the kernel target is the origin.
+      template <Integer order, class Kernel> static void IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker,
+                                                                        const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD,
+                                                                        const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT,
+                                                                        const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>());
+
       // Accumulate a tensor-product quadrature (weights wu (x) wv) on elem_idx against Xtrg into
       // M_acc. Non-empty normal_trg contracts with the target normal. Every _pre operator is
       // optional and replaces the build from param: Mv/dMv and Mu/dMu are the v- and u-interps,
@@ -303,10 +311,6 @@ namespace sctl {
       // correction can select (each multiple of 4, plus each NearQuadOrder(d)).
       template <Integer order> static const Vector<GradeRule>& NearGradeTable(const Integer q);
 
-      template <Integer order, class Kernel> static void IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker,
-                                                                         const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD,
-                                                                         const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT,
-                                                                         const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>());
       template <Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>());
 
       template <Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>());

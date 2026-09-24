@@ -4,6 +4,7 @@
 #include <istream>              // for istream
 #include <ostream>              // for ostream
 #include <stdlib.h>             // for abs
+#include <cctype>               // for isspace
 #include <ctype.h>              // for isspace
 #include <algorithm>            // for max
 #include <cmath>                // for acos, asin, atan, log, sqrt, NAN, pow
@@ -11,6 +12,7 @@
 #include <istream>              // for basic_istream, ws
 #include <ostream>              // for basic_ostream, operator<<
 #include <string>               // for basic_string, string, to_string
+#include <charconv>             // for from_chars (defines __cpp_lib_to_chars, tested below)
 #include <vector>               // for vector
 
 #include "sctl/common.hpp"      // for Long, Integer, SCTL_ASSERT, SCTL_NAME...
@@ -35,6 +37,32 @@ template <class Real> inline constexpr Integer significant_bits() {
 template <class Real> inline constexpr Real machine_eps() {
   return pow<-GetSigBits<Real>::value()-1,Real>(2);
 }
+
+#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
+namespace detail {
+
+// std::from_chars is correctly rounded and, unlike strtod / std::stod, independent of the
+// LC_NUMERIC decimal separator. It takes no leading whitespace and no leading '+', both of which
+// atoreal accepts, and it leaves the value at 0 when nothing parses.
+template <class ValueType> inline ValueType from_chars_parse(const char* str) {
+  const char* p = str;
+  while (std::isspace((unsigned char)*p)) p++; // cast: isspace is undefined for negative char
+  if (*p == '+') p++;
+  ValueType v = 0;
+  std::from_chars(p, p + std::strlen(p), v);
+  return v;
+}
+
+}  // namespace detail
+
+template <> inline int atoreal<int>(const char* str) { return detail::from_chars_parse<int>(str); }
+template <> inline long atoreal<long>(const char* str) { return detail::from_chars_parse<long>(str); }
+template <> inline long long atoreal<long long>(const char* str) { return detail::from_chars_parse<long long>(str); }
+
+template <> inline float atoreal<float>(const char* str) { return detail::from_chars_parse<float>(str); }
+template <> inline double atoreal<double>(const char* str) { return detail::from_chars_parse<double>(str); }
+template <> inline long double atoreal<long double>(const char* str) { return detail::from_chars_parse<long double>(str); }
+#endif
 
 template <class Real> inline Real atoreal(const char* str) { // Warning: does not do correct rounding
   const auto get_num = [](const char* str, int& end) {
