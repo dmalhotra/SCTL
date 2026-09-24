@@ -26,12 +26,10 @@ using namespace sctl;
 
 namespace sctl {
 template <class Real> struct QuadElemTestAccess {
-    // The library now emits the log-singular 1D Alpert rule as offsets from v0
-    // (LogSingularQuad1DCentered); reconstruct the absolute nodes param = v0 + delta so the
-    // tests below keep the original absolute-node semantics.
+    // The rule comes out as offsets from v0; reconstruct absolute nodes param = v0 + delta.
     static void LogSingularQuad1D(Vector<Real>& param, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder) {
         Vector<Real> delta;
-        QuadElemList<Real>::LogSingularQuad1DCentered(delta, w, v0, Lvl, QuadOrder);
+        detail_adaptive::LogSingularQuad1DCentered<Real>(delta, w, v0, Lvl, QuadOrder);
         param.ReInit(delta.Dim());
         for (Long i = 0; i < delta.Dim(); i++) param[i] = v0 + delta[i];
     }
@@ -354,7 +352,7 @@ template <class Real, class Kernel> Vector<Real> direct_upsampled_potential(
 // static quadrature helpers (the log-singular 1D rule) to the tests; the
 // shim's full definition appears later in namespace sctl.
 
-template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, const bool curved, const char* label, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer max_depth = 30) {
+template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, const bool curved, const char* label, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6) {
     const Integer COORD_DIM = 3;
     const Integer order = 16;
     const Integer KDIM0 = Kernel::SrcDim();
@@ -366,7 +364,7 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
     Vector<Real> coord0 = curved ? get_testsurf<Real>(order, 1)
                                  : param_grid<Real>(order, 1);
     QuadElemList<Real> qel(order, coord0);
-    qel.SetQuadScheme(scheme, max_depth);
+    qel.SetQuadScheme(scheme);
 
     // Near-singular target: offset d along the normal at an interior point.
     const Real u0 = 0.4, v0 = 0.6, d = 0.01;
@@ -423,7 +421,7 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
 //   Stokes3D-DxU,  q arbitrary   :  u = 0
 // I0 is the in-plane Newtonian potential of the unit square (1/r antiderivative
 // F(X,Y) = X ln(Y+R) + Y ln(X+R)). Applied as u = sigma^T M.
-template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer q = 10, const Real tol = 1e-10, const Integer max_depth = 30) {
+template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer q = 10, const Real tol = 1e-10) {
     const Integer order = 12;
     const Long nnode = (Long)order * order;
     const Integer KDIM0 = Kernel::SrcDim();
@@ -433,7 +431,7 @@ template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, con
     // Flat unit square z = 0.
     Vector<Real> coord0 = param_grid<Real>(order, 1);
     QuadElemList<Real> qel(order, coord0);
-    qel.SetQuadScheme(scheme, max_depth);
+    qel.SetQuadScheme(scheme);
 
     // Self-interaction matrix (no target-normal contraction).
     Vector<Matrix<Real>> M_lst(1);
@@ -917,29 +915,13 @@ int main(int argc, char** argv) {
     test_SelfInterac<Real>(ker_DxU);
     std::cout << "test_SelfInterac (Stokes3D_DxU / plane): PASSED\n";
 
-    // Convergence in the adaptive dyadic-refinement depth cap (max_depth knob, {4,8,12,30}).
-    // rel_tol loosened to 1e0 so the assert never trips and only the printed err reveals the trend.
-    {
-      using QSA = QuadElemList<Real>::QuadScheme;
-      std::cout << "  Adaptive self-interac convergence, Sto_FxU (tol=1e-12; max_depth -> rel_err):\n";
-      for (const Integer depth : {4, 8, 12, 30}) {
-        std::cout << "    max_depth=" << depth << ": ";
-        test_SelfInterac<Real>(ker_FxU, QSA::Adaptive, /*rel_tol=*/1e0, /*q=*/10, /*tol=*/1e-12, /*max_depth=*/depth);
-      }
-      std::cout << "  Adaptive near-interac convergence, Sto_FxU / testsurf (max_depth -> rel_err):\n";
-      for (const Integer depth : {4, 8, 12, 30}) {
-        std::cout << "    max_depth=" << depth << ": ";
-        test_NearInterac<Real>(ker_FxU, true, "adaptive depth sweep", QSA::Adaptive, /*rel_tol=*/1e0, /*max_depth=*/depth);
-      }
-    }
-
     using QS = QuadElemList<Real>::QuadScheme;
 
     // ======================================================================================
     // 2. Sphere tests (OPT-IN) -- order 12, 12 patches/face, REGULAR sphere, per scheme, tol = 1e-9.
-    //    Each returns a max relative error, gated below rel_tol. Duffy reaches ~1e-8 or better, but
-    //    the Adaptive near/self path floors much higher on the Stokes DL constant-density identity
-    //    (~3e-6 at order 12, even untwisted), which sets the achievable floor -- so the gate is 1e-5.
+    //    Each returns a max relative error, gated below rel_tol. Both schemes reach ~1e-11 on the
+    //    Stokes DL constant-density identity, the hardest probe; the gate is loose so the printed
+    //    per-scheme matrix, not the assert, is what reports a regression.
     //
     //    This is a heavy convergence STUDY (864-element BIE solves x 2 schemes) -- too slow and too
     //    large for the sanitizer CI matrix: an order-12, 864-element solve overflows the runner's
@@ -951,7 +933,7 @@ int main(int argc, char** argv) {
     const Long ElemOrder = 12, PatchPerFace = 12;
     const Real Radius = 1;
     const Real tol = 1e-9;
-    const Real rel_tol = 1e-5;                          // required accuracy: err < 1e-5 (see note above)
+    const Real rel_tol = 1e-9;                          // both schemes reach ~1e-11; see note above
     const Vector<Real> X0{(Real)1.3, (Real)1.2, (Real)0.2}; // exterior source for Green's identity
 
     struct SchemeCfg { const char* name; QS scheme; };
@@ -966,13 +948,10 @@ int main(int argc, char** argv) {
     for (const auto& sc : schemes) {
       if (root) std::cout << "\n---------- scheme = " << sc.name << " ----------\n";
       QuadElemList<Real> qel = BuildTwistedSphere<Real>(ElemOrder, PatchPerFace, Radius, /*theta_twist=*/0., comm);
-      // max_depth = 12 is the tol=1e-9 ladder value (u-grading depth). The self-accuracy cap is the
-      // v-direction composite-Alpert levels (VLevelsForDigits, deepened to digits-2), not u.
-      qel.SetQuadScheme(sc.scheme, /*max_depth=*/12);
+      qel.SetQuadScheme(sc.scheme);
 
       // Collect every error first (so one run prints the full per-scheme matrix), then gate on the
-      // scheme's worst. The Stokes DL constant-density identity is the hardest probe for the Adaptive
-      // near/self path (~3e-6 at order 12, even untwisted), so it sets the achievable floor.
+      // scheme's worst. The Stokes DL constant-density identity is the hardest probe for both.
       const Real e_area   = test_SurfaceArea(qel, Radius, comm);
       const Real e_dl_lap = test_DLIdentity<Real, Laplace3D_DxU>(qel, comm, tol);
       const Real e_dl_stk = test_DLIdentity<Real, Stokes3D_DxU >(qel, comm, tol);
