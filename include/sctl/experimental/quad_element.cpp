@@ -1344,7 +1344,7 @@ namespace sctl {
   }
 
   template <class Real> template <class Kernel> void QuadElemList<Real>::SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self) {
-    // Dispatch the runtime element order to a compile-time `order` in {4,8,...,48}; the
+    // Dispatch the runtime element order to a compile-time `order` in {4,8,12,16,20}; the
     // tolerance stays runtime -- `digits` only selects a cached rule.
     const Integer order = static_cast<const QuadElemList<Real>*>(self)->order;
     const Integer digits = DigitsFromTol(tol);
@@ -2132,7 +2132,7 @@ namespace sctl {
     // closest NODE: for an off-surface target whose foot lies BETWEEN nodes (panel-interior near
     // target) the nearest-node distance overestimates the near distance, so a node-based cap
     // under-refines and leaves the foot mid-cell where a smooth GL rule cannot resolve it
-    // (~0.1-0.5 error). Shared by both near partitionings so they agree on center and depth.
+    // (~0.1-0.5 error).
     dist = qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
 
     // Panel scale from the surface speeds at the foot (full parameter width is 1).
