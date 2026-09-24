@@ -356,7 +356,7 @@ template <class Real, class Kernel> Vector<Real> direct_upsampled_potential(
 
 template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, const bool curved, const char* label, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer max_depth = 30) {
     const Integer COORD_DIM = 3;
-    const Integer order = 24;
+    const Integer order = 16;
     const Integer KDIM0 = Kernel::SrcDim();
     const Integer KDIM1 = Kernel::TrgDim();
     const Long nnode = (Long)order * order;
