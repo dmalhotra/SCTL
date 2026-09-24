@@ -11,15 +11,6 @@ namespace sctl {
   class VTUData;
   template <class ValueType> class Matrix;
 
-  // Kernels declare SingularOrder in kernel_functions.hpp. Anything that does not gets 2, the
-  // conservative side: tighter parameters, so more cost and never less accuracy.
-  template <class Kernel, class = void> struct KernelSingularOrder {
-    static constexpr Integer value = 2;
-  };
-  template <class Kernel> struct KernelSingularOrder<Kernel, std::void_t<decltype(Kernel::SingularOrder())>> {
-    static constexpr Integer value = Kernel::SingularOrder();
-  };
-
   /**
    * High-order quadrilateral surface elements on tensor-product Gauss-Legendre
    * nodes (order N => N x N nodes on [0,1]^2, lexicographic in (u,v), u slow).
@@ -96,11 +87,18 @@ namespace sctl {
       template <class Kernel> static void NearInteracHedgehog(Matrix<Real>& M, const Vector<Real>& Xt_proxy, const Vector<Real>& wts, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
 
       /**
-       * Near/self singular-quadrature scheme: Adaptive (foot-graded separable-tensor near +
-       * centered graded/Alpert self, default), or Duffy (Adaptive's split-at-foot near paired
-       * with a Duffy edge-collapsed, sinh-substituted self). The tolerance drives both.
+       * Near/self singular-quadrature scheme. The tolerance drives all three.
+       *   Adaptive  foot-graded separable-tensor near + centered graded/Alpert self (default).
+       *   Duffy     split-at-foot near + Duffy edge-collapsed, sinh-substituted self.
+       *   Hedgehog  Duffy's split-at-foot near, with the self block built by line-QBX: a short
+       *             line of proxy points along the outward normal, integrated with that near
+       *             scheme and extrapolated back to the surface.
+       *
+       * CAVEAT for Hedgehog: extrapolating from off-surface proxies gives the ONE-SIDED limit,
+       * not the principal value the other two return. The two differ by half the jump, so a
+       * caller mixing the conventions must correct for it.
        */
-      enum class QuadScheme { Adaptive, Duffy };
+      enum class QuadScheme { Adaptive, Duffy, Hedgehog };
 
       /**
        * Set the singular-quadrature scheme.
@@ -111,17 +109,6 @@ namespace sctl {
         SCTL_ASSERT_MSG(max_depth == 4 || max_depth == 8 || max_depth == 12 || max_depth == 30, "Adaptive max_depth must be one of {4,8,12,30}.");
         scheme_ = s; max_depth_ = max_depth;
       }
-
-      /// Build-time switch for the on-surface hedgehog (line-QBX) self scheme. With it on,
-      /// SelfInterac evaluates each on-surface target by placing a short line of proxy points
-      /// along the outward normal, integrating there with the ordinary near scheme, and
-      /// extrapolating back to the surface; off, the Duffy edge-collapsed scheme is used.
-      /// NearInterac is unaffected either way.
-      ///
-      /// CAVEAT: extrapolating from off-surface proxies gives the ONE-SIDED limit, not the
-      /// principal value the Duffy path returns. The two differ by half the jump, so a caller
-      /// mixing the conventions must correct for it.
-      static constexpr bool UseHedgehogSelf = false;
 
       /** Reference-space Gauss-Legendre nodes in [0,1]. */
       static const Vector<Real>& ParamNodes(const Integer Order);

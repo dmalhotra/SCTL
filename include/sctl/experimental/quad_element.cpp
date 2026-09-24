@@ -813,7 +813,7 @@ namespace sctl {
     return 0;
   }
 
-  // ================ Split-at-foot near path (QuadScheme::Duffy only) ================
+  // ============ Split-at-foot near path (QuadScheme::Duffy and ::Hedgehog) ============
   // Runtime-digits split-at-foot near with a corner-angle GL-order bump and a deeper refinement
   // ladder, with digits taken at runtime. The Adaptive path is untouched.
 
@@ -845,8 +845,9 @@ namespace sctl {
     // s^2/a^2 + d~^2/b^2 > 1. The split puts the foot at a cell endpoint (s = +-1), giving
     // d~ > b^2/a -- weaker than the semi-major reach by a^2/b^2, and weaker still than the true
     // worst case d~ > b (foot at the panel centre, which cannot occur here).
-    const double a = (rho + 1/rho)/2, b = (rho - 1/rho)/2;
-    b_ellipse = (Real)(b*b/(2*a));
+    const Real rho_ = (Real)rho; // rho is one of {2, 2.5, 3}: exact in Real, unlike b_ellipse
+    const Real a = (rho_ + 1/rho_)/2, b = (rho_ - 1/rho_)/2;
+    b_ellipse = b*b/(2*a);
   }
 
   template <class Real> inline Real QuadElemList<Real>::NearBEllipse(const Integer digits) {
@@ -1085,9 +1086,11 @@ namespace sctl {
     const auto near_order = [](const Real* dXu, const Real* dXv, const Integer q_iso) {
       Real guu=0, gvv=0, guv=0;
       for (Integer k = 0; k < COORD_DIM; k++) { guu+=dXu[k]*dXu[k]; gvv+=dXv[k]*dXv[k]; guv+=dXu[k]*dXv[k]; }
-      const double den = std::sqrt((double)guu*(double)gvv);
+      // The metric entries scale with the element, so their product is formed in Real: cast
+      // first and a large element overflows the double before the ratio brings it back.
+      const Real den = sqrt<Real>(guu*gvv);
       if (!(den > 0)) return q_iso;
-      const double c = std::min(1.0, std::fabs((double)guv)/den);
+      const double c = std::min(1.0, (double)(fabs<Real>(guv)/den));
       const double phi = std::acos(c)*180.0/const_pi<double>();
       constexpr double Ck = 400.0;   // fitted on Laplace SL/DL, flat elements, one target offset
       const double f = std::max(1.0, Ck/(10.0*std::max(1e-3, phi)));
@@ -1201,7 +1204,7 @@ namespace sctl {
     // surface speed) until that side is admissible, emitting one leaf per split.
     const auto refine = [&emit, dist, b_ellipse](const Integer sdu, const Integer sdv, Real hu, Real hv) {
       Integer ku = 0, kv = 0;
-      const bool cap = !(dist > 0) || !std::isfinite((double)dist);
+      const bool cap = !(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist);
       // Near-touching targets (a neighbouring patch's node, foot distance ~0) refine to the
       // cap regardless of the admissibility constant, so the cap -- not b_ellipse -- is what
       // controls their error.
@@ -1276,12 +1279,12 @@ namespace sctl {
 
       const Vector<Real>& nds = ParamNodes(order);
       const Matrix<Real>& D = DiffMat<order>();
-      tbl.tri.resize(4*(size_t)order*order);
+      tbl.tri.resize((size_t)(4*order*order));
       const Real cu[4] = {0,1,1,0}, cv[4] = {0,0,1,1};
       for (Integer ti = 0; ti < order; ti++) for (Integer tj = 0; tj < order; tj++) {
         const Real u0 = nds[ti], v0 = nds[tj];
         for (Integer kt = 0; kt < 4; kt++) {
-          DuffyTri& T = tbl.tri[((size_t)ti*order + tj)*4 + kt];
+          DuffyTri& T = tbl.tri[(size_t)((ti*order + tj)*4 + kt)];
           const Real a[2] = {cu[kt]-u0, cv[kt]-v0};
           const Real b[2] = {cu[(kt+1)%4]-u0, cv[(kt+1)%4]-v0};
           const Real e[2] = {b[0]-a[0], b[1]-a[1]};
@@ -1382,7 +1385,7 @@ namespace sctl {
     const Vector<Real>& pnds = nds;
 
     for (Integer kt = 0; kt < 4; kt++) {
-      const DuffyTri& T = tbl.tri[((size_t)ti*order + tj)*4 + kt];
+      const DuffyTri& T = tbl.tri[(size_t)((ti*order + tj)*4 + kt)];
       const Real u0 = nds[ti], v0 = nds[tj];
       const Real cu[4] = {0,1,1,0}, cv[4] = {0,0,1,1};
       const Real a[2] = {cu[kt]-u0, cv[kt]-v0};
@@ -1515,6 +1518,19 @@ namespace sctl {
     }
   }
 
+  namespace detail {
+
+  // Kernels declare SingularOrder in kernel_functions.hpp. Anything that does not gets 2, the
+  // conservative side: tighter parameters, so more cost and never less accuracy.
+  template <class Kernel, class = void> struct KernelSingularOrder {
+    static constexpr Integer value = 2;
+  };
+  template <class Kernel> struct KernelSingularOrder<Kernel, std::void_t<decltype(Kernel::SingularOrder())>> {
+    static constexpr Integer value = Kernel::SingularOrder();
+  };
+
+  }  // namespace detail
+
   template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits) {
     // On-surface singular self-interaction: every node is an on-element target, built
     // by the singular block. M_lst[e] is (nnode*KDIM0) x (nnode*KDIM1_out), applied as
@@ -1530,14 +1546,15 @@ namespace sctl {
 
     SCTL_ASSERT((Long)M_lst.Dim() == qel.nelem);
 
-    static constexpr Integer sing_order = KernelSingularOrder<Kernel>::value;
+    static constexpr Integer sing_order = detail::KernelSingularOrder<Kernel>::value;
     // hh_w must NOT be thread_local: it is filled outside the parallel region, so only the master
     // would have it and the workers would see it empty -- which silently drops IntegrateBlock into
     // its no-proxy path. Invisible on a single element, since the master takes it.
     Vector<Real> hh_w;
-    if (UseHedgehogSelf) HedgehogWeights(hh_w);
-    const Real hh_c = (UseHedgehogSelf ? HedgehogRminCoeff(digits, sing_order) : (Real)0);
-    const Integer near_digits = (UseHedgehogSelf ? HedgehogNearDigits(digits, sing_order) : digits);
+    const bool hedgehog_self = (qel.scheme_ == QuadScheme::Hedgehog);
+    if (hedgehog_self) HedgehogWeights(hh_w);
+    const Real hh_c = (hedgehog_self ? HedgehogRminCoeff(digits, sing_order) : (Real)0);
+    const Integer near_digits = (hedgehog_self ? HedgehogNearDigits(digits, sing_order) : digits);
 
     // Pre-warm the (thread-safe) static rule caches serially: the init lambdas fill all
     // `order` indices in one shot, so the OpenMP loop below never serializes on first-touch
@@ -1547,15 +1564,16 @@ namespace sctl {
     // DiffMat (used by IntegrateBlock on both paths) are warmed transitively by the rule
     // builds below. The self and near branches are selected independently, so the near warm-up is
     // not redundant with the self one.
-    if (qel.scheme_ == QuadScheme::Duffy) {
-      if (UseHedgehogSelf) NearGradeTable<order>(NearQuadOrder(near_digits));
-      else                 DuffyTable<order>();        // Duffy self: per-(order) triangle operators (ParamNodes/DiffMat come along)
+    if (hedgehog_self) {
+      NearGradeTable<order>(NearQuadOrder(near_digits));  // hedgehog self: the near ladder, at its own digits
+    } else if (qel.scheme_ == QuadScheme::Duffy) {
+      DuffyTable<order>();        // Duffy self: per-(order) triangle operators (ParamNodes/DiffMat come along)
     } else {
       CenteredURule<order>(0, qel.max_depth_, digits);  // centered self: graded u-rule (mutex-cached)
       CenteredVRule<order>(0, digits);                  // centered Alpert v-rule
     }
-    if (qel.scheme_ == QuadScheme::Duffy) {
-      NearGradeTable<order>(NearQuadOrder(digits));  // upstream near: full rung ladder built on first call
+    if (qel.scheme_ != QuadScheme::Adaptive) {
+      NearGradeTable<order>(NearQuadOrder(digits));  // split-at-foot near: full rung ladder built on first call
       NearBEllipse(digits); NearQuadOrder(digits);
     } else {
       DigitsGLRule(digits);           // graded near: per-cell GL rule (ComputeNdsWts is an uncached O(N^2) solve)
@@ -1573,8 +1591,8 @@ namespace sctl {
       thread_local Matrix<Real> M_acc;
       // Hedgehog needs the normal to lay the proxy line along, and the tangents to turn the
       // parameter-space edge distance into a physical one.
-      qel.GetGeom(&Xnodes, (UseHedgehogSelf || trg_dot_prod ? &Xnnodes : nullptr), nullptr,
-                  (UseHedgehogSelf ? &dXu : nullptr), (UseHedgehogSelf ? &dXv : nullptr), nds, nds, elem_idx);
+      qel.GetGeom(&Xnodes, (hedgehog_self || trg_dot_prod ? &Xnnodes : nullptr), nullptr,
+                  (hedgehog_self ? &dXu : nullptr), (hedgehog_self ? &dXv : nullptr), nds, nds, elem_idx);
 
       // Proxy line along the outward normal. Returns the closest proxy in Xt1 and the rest as
       // offsets from it, which is what the near scheme takes.
@@ -1596,7 +1614,7 @@ namespace sctl {
       };
       thread_local Vector<Real> hh_Xt1, hh_off;
       thread_local Matrix<Real> M_hh;
-      if (UseHedgehogSelf && hh_Xt1.Dim() != COORD_DIM) { hh_Xt1.ReInit(COORD_DIM); hh_off.ReInit(HedgehogProxyOffsets().Dim()*COORD_DIM); }
+      if (hedgehog_self && hh_Xt1.Dim() != COORD_DIM) { hh_Xt1.ReInit(COORD_DIM); hh_off.ReInit(HedgehogProxyOffsets().Dim()*COORD_DIM); }
 
       Matrix<Real>& M = M_lst[elem_idx];
       if (M.Dim(0) != nnode*KDIM0 || M.Dim(1) != nnode*KDIM1_out) M.ReInit(nnode*KDIM0, nnode*KDIM1_out);
@@ -1610,13 +1628,11 @@ namespace sctl {
           Vector<Real> ntrg;
           if (trg_dot_prod) ntrg.ReInit(COORD_DIM, Xnnodes.begin() + t*COORD_DIM, false);
 
-          if (qel.scheme_ == QuadScheme::Duffy) {
-            if (UseHedgehogSelf) {
-              proxy_line(hh_Xt1, hh_off, t, ti, tj);
-              NearInteracHelper<order>(M_hh, hh_Xt1, ntrg, ker, elem_idx, self, near_digits, hh_off, hh_w);
-            } else {
-              SelfInteracBlockDuffy<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
-            }
+          if (hedgehog_self) {
+            proxy_line(hh_Xt1, hh_off, t, ti, tj);
+            NearInteracHelper<order>(M_hh, hh_Xt1, ntrg, ker, elem_idx, self, near_digits, hh_off, hh_w);
+          } else if (qel.scheme_ == QuadScheme::Duffy) {
+            SelfInteracBlockDuffy<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
           } else {
             SelfInteracBlockAdaptive<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
           }
@@ -1628,8 +1644,8 @@ namespace sctl {
               const Long pnode = i*order + j;
               for (Integer k0 = 0; k0 < KDIM0; k0++) {
                 for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-                  M[pnode*KDIM0+k0][t*KDIM1_out+k1] = (UseHedgehogSelf ? M_hh[pnode*KDIM0+k0][k1]
-                                                                       : M_acc[pnode][k0*KDIM1_out+k1]);
+                  M[pnode*KDIM0+k0][t*KDIM1_out+k1] = (hedgehog_self ? M_hh[pnode*KDIM0+k0][k1]
+                                                                     : M_acc[pnode][k0*KDIM1_out+k1]);
                 }
               }
             }
@@ -1903,7 +1919,7 @@ namespace sctl {
       // Duffy scheme: runtime-digits near (corner-angle order + deeper ladder). Otherwise the
       // foot-graded separable-tensor near, which holds its accuracy under parametric shear where
       // the isotropic-quadtree rule it replaced lost ~2-3 orders even on smooth geometry.
-      if (qel.scheme_ == QuadScheme::Duffy) NearInteracBlockSplit<order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits, proxy_off, proxy_w);
+      if (qel.scheme_ != QuadScheme::Adaptive) NearInteracBlockSplit<order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits, proxy_off, proxy_w);
       else NearInteracBlockGraded<order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
 
       // Scatter into M for target t: M[(i*order+j)*KDIM0+k0][t*KDIM1_out+k1].
@@ -2178,7 +2194,8 @@ namespace sctl {
     // target is at distance >= b_ellipse*L.
     const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
     const double rho = 2.5;
-    b_ellipse = (Real)((rho + 1/rho) / 4);
+    const Real rho_ = (Real)rho; // exact; 1/rho is not, so form b_ellipse in Real
+    b_ellipse = (rho_ + 1/rho_) / 4;
     QuadOrder = std::max<Integer>(1, (Integer)std::ceil(-std::log(((15.0*(rho*rho-1))/64.0)*(double)tol_)/std::log(rho)*0.5 + 1));
   }
 
@@ -2276,35 +2293,65 @@ namespace sctl {
   template <class Real> void QuadElemList<Real>::LogSingularQuad1DCentered(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder) {
     // Outward-graded log-singular panel layout, emitted as offsets from v0 (the
     // singular node sits at offset exactly 0, preserving relative precision).
-    const int ord = 16;
-    std::vector<double> px, pw;
-    auto add_alpert = [&](double a, double b, int corra, int corrb) {
-      const auto L = (corra == 2 ? QuadLogExtraPtNodes<Real>((double)ord) : QuadSmoothExtraPtNodes<Real>((double)ord));
-      const auto R = (corrb == 2 ? QuadLogExtraPtNodes<Real>((double)ord) : QuadSmoothExtraPtNodes<Real>((double)ord));
-      const int skipL = L.NodesToSkip, skipR = R.NodesToSkip;
-      const int N = std::max(skipL + skipR + 2, 2 * ord);
-      const int N1 = N - 1;
-      const double h = (b - a) / N1;
-      for (int i = skipL; i <= N1 - skipR; ++i) { px.push_back(a + i*h); pw.push_back(h); }
-      for (size_t i = 0; i < L.ExtraNodes.size(); ++i) { px.push_back(a + L.ExtraNodes[i]*h); pw.push_back(L.ExtraWeights[i]*h); }
-      for (size_t i = 0; i < R.ExtraNodes.size(); ++i) { px.push_back(b - R.ExtraNodes[i]*h); pw.push_back(R.ExtraWeights[i]*h); }
+    // Nodes and weights are accumulated in Real: the Alpert tables carry more digits than double
+    // holds, and the panel boundaries halve Lvl times, so building the layout in double would cap
+    // the whole rule -- and with it the Adaptive self scheme -- at double precision.
+    const Integer ord = 16;
+    std::vector<Real> px, pw;
+    auto add_alpert = [&](const Real a, const Real b, const Integer corra, const Integer corrb) {
+      const auto L = (corra == 2 ? QuadLogExtraPtNodes<Real>(ord) : QuadSmoothExtraPtNodes<Real>(ord));
+      const auto R = (corrb == 2 ? QuadLogExtraPtNodes<Real>(ord) : QuadSmoothExtraPtNodes<Real>(ord));
+      const Integer skipL = L.NodesToSkip, skipR = R.NodesToSkip;
+      const Integer N = std::max<Integer>(skipL + skipR + 2, 2 * ord);
+      const Integer N1 = N - 1;
+      const Real h = (b - a) / (Real)N1;
+      for (Integer i = skipL; i <= N1 - skipR; i++) {
+        px.push_back(a + (Real)i*h);
+        pw.push_back(h);
+      }
+      for (Integer i = 0; i < L.ExtraNodes.Dim(); i++) {
+        px.push_back(a + L.ExtraNodes[i]*h);
+        pw.push_back(L.ExtraWeights[i]*h);
+      }
+      for (Integer i = 0; i < R.ExtraNodes.Dim(); i++) {
+        px.push_back(b - R.ExtraNodes[i]*h);
+        pw.push_back(R.ExtraWeights[i]*h);
+      }
     };
     Vector<Real> gnds, gwts;
     LegQuadRule<Real>::ComputeNdsWts(&gnds, &gwts, QuadOrder);
-    auto add_gl = [&](double a, double b) {
-      const double len = b - a;
-      for (Integer i = 0; i < QuadOrder; i++) { px.push_back(a + len*(double)gnds[i]); pw.push_back(len*(double)gwts[i]); }
+    auto add_gl = [&](const Real a, const Real b) {
+      const Real len = b - a;
+      for (Integer i = 0; i < QuadOrder; i++) {
+        px.push_back(a + len*gnds[i]);
+        pw.push_back(len*gwts[i]);
+      }
     };
-    const double Ll = (double)v0, Lr = 1.0 - (double)v0;  // offsets: left side negative
-    { double prev = -Ll;
-      for (int i = 1; i <= Lvl; i++) { const double bnd = -Ll*std::ldexp(1.0,-i); add_gl(prev, bnd); prev = bnd; }
-      add_alpert(prev, 0.0, 1, 2); }
-    { double prev = Lr;
-      for (int i = 1; i <= Lvl; i++) { const double bnd = Lr*std::ldexp(1.0,-i); add_gl(bnd, prev); prev = bnd; }
-      add_alpert(0.0, prev, 2, 1); }
+    const Real Ll = v0, Lr = (Real)1 - v0;  // offsets: left side negative
+    {
+      Real prev = -Ll;
+      for (Integer i = 1; i <= Lvl; i++) { // 2^-i is exact, so the boundaries carry no rounding
+        const Real bnd = -Ll*pow<Real,Long>((Real)0.5, (Long)i);
+        add_gl(prev, bnd);
+        prev = bnd;
+      }
+      add_alpert(prev, (Real)0, 1, 2);
+    }
+    {
+      Real prev = Lr;
+      for (Integer i = 1; i <= Lvl; i++) {
+        const Real bnd = Lr*pow<Real,Long>((Real)0.5, (Long)i);
+        add_gl(bnd, prev);
+        prev = bnd;
+      }
+      add_alpert((Real)0, prev, 2, 1);
+    }
     const Long N = (Long)px.size();
     delta.ReInit(N); w.ReInit(N);
-    for (Long i = 0; i < N; ++i) { delta[i] = (Real)px[i]; w[i] = (Real)pw[i]; }
+    for (Long i = 0; i < N; i++) {
+      delta[i] = px[i];
+      w[i] = pw[i];
+    }
   }
 
   template <class Real> template <Integer order> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::CenteredURule(const Integer ti, const Integer levels, const Integer digits) {
@@ -2469,12 +2516,12 @@ namespace sctl {
     // Depth cap L from the foot distance: the innermost cell at depth L has physical size
     // ~ b_ellipse*L_phys*2^-L, admissible once that drops below dist, i.e. L ~ log2(b_ellipse*
     // L_phys/dist). A non-finite / non-positive dist (near-touching / degenerate) forces the full cap.
-    if (!(dist > 0) || !std::isfinite((double)dist) || !(L_phys > 0)) {
+    if (!(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist) || !(L_phys > 0)) {
       if (h_param) *h_param = 0; // degenerate/near-touching: force the full cap
       return max_depth;
     }
     if (h_param) *h_param = dist/L_phys; // off-surface distance in PARAMETER units
-    const double lvl = std::ceil(std::log2((double)(b_ellipse*L_phys) / (double)dist));
+    const double lvl = std::ceil(std::log2((double)(b_ellipse*L_phys/dist)));
     return (Integer)std::min<double>((double)max_depth, std::max<double>(0.0, lvl));
   }
 
