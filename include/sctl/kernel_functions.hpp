@@ -29,7 +29,10 @@ namespace sctl {
      * identical results from uKerMatrix.
      */
 
+    // SingularOrder: kernel grows like 1/r^order toward the surface. Read by the on-surface
+    // hedgehog scheme; steeper needs a smaller proxy offset and tighter quadrature.
     struct Laplace3D_FxU {
+      static constexpr Integer SingularOrder() { return 1; }
       static const std::string& Name() {
         static const std::string name = "Laplace3D-FxU";
         return name;
@@ -59,6 +62,7 @@ namespace sctl {
     };
 
     struct Laplace3D_DxU {
+      static constexpr Integer SingularOrder() { return 2; }
       static const std::string& Name() {
         static const std::string name = "Laplace3D-DxU";
         return name;
@@ -79,6 +83,7 @@ namespace sctl {
     };
 
     struct Laplace3D_FxdU {
+      static constexpr Integer SingularOrder() { return 2; }
       static const std::string& Name() {
         static const std::string name = "Laplace3D-FxdU";
         return name;
@@ -123,6 +128,7 @@ namespace sctl {
     };
 
     struct Stokes3D_FxU {
+      static constexpr Integer SingularOrder() { return 1; }
       static const std::string& Name() {
         static const std::string name = "Stokes3D-FxU";
         return name;
@@ -178,6 +184,7 @@ namespace sctl {
     };
 
     struct Stokes3D_DxU {
+      static constexpr Integer SingularOrder() { return 2; }
       static const std::string& Name() {
         static const std::string name = "Stokes3D-DxU";
         return name;
@@ -218,6 +225,7 @@ namespace sctl {
     };
 
     struct Stokes3D_FxT {
+      static constexpr Integer SingularOrder() { return 2; }
       static const std::string& Name() {
         static const std::string name = "Stokes3D-FxT";
         return name;
@@ -262,6 +270,7 @@ namespace sctl {
     };
 
     struct Stokes3D_FSxU {
+      static constexpr Integer SingularOrder() { return 2; }   // 1/r velocity, 1/r^2 source column
       static const std::string& Name() {
         static const std::string name = "Stokes3D-FSxU";
         return name;
@@ -323,6 +332,7 @@ namespace sctl {
     };
 
     struct Stokes3D_FxUP {
+      static constexpr Integer SingularOrder() { return 2; }   // 1/r velocity, 1/r^2 pressure column
       static const std::string& Name() {
         static const std::string name = "Stokes3D-FxUP";
         return name;
@@ -390,6 +400,7 @@ namespace sctl {
     };
 
     struct Laplace3D_DxdU {
+      static constexpr Integer SingularOrder() { return 3; }
       static const std::string& Name() {
         static const std::string name = "Laplace3D-DxdU";
         return name;
@@ -414,6 +425,7 @@ namespace sctl {
     };
 
     struct BiotSavart3D_FxU {
+      static constexpr Integer SingularOrder() { return 2; }
       static const std::string& Name() {
         static const std::string name = "BiotSavart3D-FxU";
         return name;
