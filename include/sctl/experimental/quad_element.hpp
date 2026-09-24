@@ -183,27 +183,10 @@ namespace sctl {
       static Integer VLevelsForDigits(const Integer digits);
       template <Integer digits> static Integer DigitsVLevels();
 
-      // Accumulate a tensor-product quadrature (weights wu (x) wv) on elem_idx against Xtrg into
-      // M_acc. Non-empty normal_trg contracts with the target normal. Every _pre operator is
-      // optional and replaces the build from param: Mv/dMv and Mu/dMu are the v- and u-interps,
-      // MuD is [T^T; dT^T] stacked so value and derivative come from one GEMM. src_nodal is a
-      // caller-supplied target-shifted nodal slab, so the kernel target is the origin. nrm_sign
-      // flips the source normal for mirrored sub-elements. acc_cm is a channel-major accumulator
-      // added into with beta=1, so the caller transposes to node-major once per target, not per cell.
-      template <Integer order, class Kernel> static void IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx,
-                                                                        const Vector<Real>& Xtrg, const Vector<Real>& normal_trg,
-                                                                        const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker,
-                                                                        const Matrix<Real>* Mv_pre = nullptr, const Matrix<Real>* dMv_pre = nullptr, const Matrix<Real>* Mu_pre = nullptr, const Matrix<Real>* dMu_pre = nullptr,
-                                                                        const Matrix<Real>* MvT_pre = nullptr, const Matrix<Real>* MuT_pre = nullptr, const Matrix<Real>* dMuT_pre = nullptr,
-                                                                        const Vector<Real>* src_nodal = nullptr, const Matrix<Real>* MuD_pre = nullptr, const Real nrm_sign = 1,
-                                                                        Vector<Real>* acc_cm = nullptr);
-
       // Accuracy/order-templated impls of NearInterac/SelfInterac: entry points dispatch runtime
       // order to compile-time `order` (switch {4..48}) and tolerance to `digits` (if-else), CSBQ-style.
       template <Integer order, class Kernel> static void SelfInteracDispatchDigits(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self);
       template <Integer order, class Kernel> static void NearInteracDispatchDigits(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
-      template <Integer digits, Integer order, class Kernel> static void SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self);
-      template <Integer digits, Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self);
 
 
       // ============================ SelfInterac only ============================
@@ -241,6 +224,8 @@ namespace sctl {
       static Integer DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0);
       template <Integer order, class Kernel> static void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
 
+      template <Integer digits, Integer order, class Kernel> static void SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self);
+
 
       // ============================ NearInterac only ============================
 
@@ -260,6 +245,21 @@ namespace sctl {
       // surviving component -- edge/corner feet converge instead of falling back.
       // n_iter/used_fallback (optional) report the iteration count and whether Newton stalled.
       Real GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
+
+      // Accumulate a tensor-product quadrature (weights wu (x) wv) on elem_idx against Xtrg into
+      // M_acc. Non-empty normal_trg contracts with the target normal. Every _pre operator is
+      // optional and replaces the build from param: Mv/dMv and Mu/dMu are the v- and u-interps,
+      // MuD is [T^T; dT^T] stacked so value and derivative come from one GEMM. src_nodal is a
+      // caller-supplied target-shifted nodal slab, so the kernel target is the origin. nrm_sign
+      // flips the source normal for mirrored sub-elements. acc_cm is a channel-major accumulator
+      // added into with beta=1, so the caller transposes to node-major once per target, not per cell.
+      template <Integer order, class Kernel> static void IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx,
+                                                                        const Vector<Real>& Xtrg, const Vector<Real>& normal_trg,
+                                                                        const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker,
+                                                                        const Matrix<Real>* Mv_pre = nullptr, const Matrix<Real>* dMv_pre = nullptr, const Matrix<Real>* Mu_pre = nullptr, const Matrix<Real>* dMu_pre = nullptr,
+                                                                        const Matrix<Real>* MvT_pre = nullptr, const Matrix<Real>* MuT_pre = nullptr, const Matrix<Real>* dMuT_pre = nullptr,
+                                                                        const Vector<Real>* src_nodal = nullptr, const Matrix<Real>* MuD_pre = nullptr, const Real nrm_sign = 1,
+                                                                        Vector<Real>* acc_cm = nullptr);
 
       // Tolerance-dependent rho + the end-foot Bernstein reach the split-at-(u0,v0) geometry
       // needs. QuadParams (still used by self) pins rho = 2.5 and the semi-major reach, which
@@ -321,6 +321,8 @@ namespace sctl {
                                                                          const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT,
                                                                          const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm);
       template <Integer order, class Kernel> static void NearInteracBlockSplitDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
+
+      template <Integer digits, Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self);
 
       Long nelem = 0;
       Integer order = 0;
