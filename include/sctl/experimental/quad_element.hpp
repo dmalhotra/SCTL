@@ -80,6 +80,12 @@ namespace sctl {
        */
       template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
 
+      /// Hedgehog / line-QBX near interaction.  Xt_proxy holds p targets on one line (closest
+      /// first); wts holds the 1D extrapolation weights to the actual target.  All p proxies
+      /// share one foot, one subdivision and one geometry pass; the weights are applied at the
+      /// kernel matrix, so only the kernel evaluation scales with p.  M is a single target block.
+      template <class Kernel> static void NearInteracHedgehog(Matrix<Real>& M, const Vector<Real>& Xt_proxy, const Vector<Real>& wts, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
+
       /**
        * Near/self singular-quadrature scheme: Adaptive (foot-graded separable-tensor near +
        * centered graded/Alpert self, default), or Duffy (Adaptive's split-at-foot near paired
@@ -264,10 +270,10 @@ namespace sctl {
       template <Integer order, class Kernel> static void IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker,
                                                                          const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD,
                                                                          const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT,
-                                                                         const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm);
-      template <Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
+                                                                         const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>());
+      template <Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>());
 
-      template <Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits);
+      template <Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>());
 
       // ============================ Adaptive scheme only ============================
 
