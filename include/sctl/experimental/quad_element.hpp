@@ -329,7 +329,7 @@ namespace sctl {
       template <Integer order> static const NodeRuleData& CenteredVRule(const Integer tj, const Integer digits);
 
       // Per-target singular self-interaction block at (u0,v0): graded u-refinement + 1D log rule in v.
-      template <Integer order, class Kernel> static void SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
+      template <Integer order, class Kernel> static void SelfInteracBlockAdaptive(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
 
       // ---- Foot-graded separable-tensor near (QuadScheme::Adaptive) ----
       // THE production near path for the Adaptive scheme. Grade [0,1] toward u* and

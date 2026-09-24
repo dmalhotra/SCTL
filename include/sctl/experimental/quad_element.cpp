@@ -1324,7 +1324,8 @@ namespace sctl {
           Vector<Real> ntrg;
           if (trg_dot_prod) ntrg.ReInit(COORD_DIM, Xnnodes.begin() + t*COORD_DIM, false);
 
-          SelfInteracBlock<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
+          if (qel.scheme_ == QuadScheme::Duffy) SelfInteracBlockDuffy<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
+          else SelfInteracBlockAdaptive<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
 
           // Scatter into column block t of M: M[(i*order+j)*KDIM0+k0][t*KDIM1_out+k1].
           for (Integer i = 0; i < order; i++) {
@@ -1843,7 +1844,7 @@ namespace sctl {
 
   // ============================================================================================
   // Adaptive scheme: centered graded/Alpert self and foot-graded separable-tensor near.
-  // Nothing above this line calls into it -- the entry points reach it through SelfInteracBlock
+  // Nothing above this line calls into it -- the entry points reach it through SelfInteracBlockAdaptive
   // and NearInteracBlockGraded only.
   // ============================================================================================
 
@@ -2036,13 +2037,11 @@ namespace sctl {
     return (*p)[tj];
   }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::SelfInteracBlockAdaptive(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
     // Singular self-interaction for on-surface node (ti,tj). 1D reduction: graded u-rule
     // toward u0 x Alpert log-singular v-rule toward v0; both rules + interpolation are
     // preloaded (geometry-independent, fixed by order/ti/tj/digits), integrated by
     // IntegrateBlock. IntegrateBlock still does the target-centered geometry per target.
-    if (qel.scheme_ == QuadScheme::Duffy) { SelfInteracBlockDuffy<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, normal_trg, ker, digits); return; }
-
     static constexpr Integer KDIM0 = Kernel::SrcDim();
     static constexpr Integer KDIM1full = Kernel::TrgDim();
     SCTL_ASSERT(qel.order == order);
