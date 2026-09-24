@@ -35,14 +35,6 @@ CXXFLAGS += -DSCTL_SIG_HANDLER # Enable SCTL stack trace
 
 CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
 
-# Opt-in phase timers for the quad-element self/near hot loops.
-# Use `make BENCH=1 ...` -- do NOT pass CXXFLAGS+= on the command line, as that
-# overrides (not appends to) the flags assigned above.
-BENCH ?= 0
-ifeq ($(BENCH), 1)
-	CXXFLAGS += -DBENCH_QUAD
-endif
-
 # CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
 # CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
 #CXXFLAGS += -qmkl -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK -DSCTL_HAVE_FFTW3_MKL # use MKL BLAS, LAPACK and FFTW (Intel compiler)

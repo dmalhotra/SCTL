@@ -20,8 +20,6 @@ namespace sctl {
       static constexpr Integer COORD_DIM = 3;
 
     public:
-
-
       QuadElemList() {}
 
       /**
@@ -32,6 +30,8 @@ namespace sctl {
        * hold the full (globally-replicated) mesh and only this rank's contiguous
        * element slice is kept; with the default single-process comm the whole mesh
        * is used.
+       *
+       * TODO: Fix this: in a distributed code, a global array should never all be on a single process.
        */
       template <class ValueType> QuadElemList(Integer order, const Vector<ValueType>& coord, const Comm& comm = Comm::Self());
 
@@ -43,6 +43,8 @@ namespace sctl {
        * hold the full (globally-replicated) mesh and only this rank's contiguous
        * element slice is kept; with the default single-process comm the whole mesh
        * is used.
+       *
+       * TODO: Fix this: in a distributed code, a global array should never all be on a single process.
        */
       template <class ValueType> void Init(Integer order, const Vector<ValueType>& coord, const Comm& comm = Comm::Self());
 
@@ -134,19 +136,15 @@ namespace sctl {
 
     private:
 
-      /** True if the self phase uses the Duffy edge-collapsed scheme. */
-      bool SelfUsesDuffy() const { return scheme_ == QuadScheme::Duffy; }
-
       // Contiguous element range [i0,i1) owned by this rank under a linear partition of
       // Nelem_total elements; the full range for a single-process comm. Used by Init and Read.
       static void PartitionRange(Long Nelem_total, const Comm& comm, Long& i0, Long& i1);
 
+      // Tensor-product contraction of a component-major SoA slab; used by GetGeom and GetVTUData.
       template <class ValueType> static void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv);
 
-      void BuildDerivativeCache();
-
-      // Nodal d/du, d/dv of a component-major SoA coord slab (order x order grid).
-      // Shared by BuildDerivativeCache (absolute) and GetGeom (target-shifted).
+      // Nodal d/du, d/dv of a component-major SoA coord slab. Init builds the absolute
+      // dcoord_du/dv cache with it; GetGeom uses it on target-shifted coords.
       static void NodalDerivs(const Vector<Real>& coord_slab, const Integer order, Vector<Real>& du_slab, Vector<Real>& dv_slab);
 
 
@@ -157,48 +155,17 @@ namespace sctl {
       static const Matrix<Real>& DiffMat(const Integer order);
       template <Integer order> static const Matrix<Real>& DiffMat() { return DiffMat(order); }
 
-      // 1D value + derivative interpolation from order GL nodes to `param`:
-      // M[i][a] = L_i(param[a]) (order x N), dM = DiffMat<order> . M.
-      template <Integer order> static void BuildInterp1D(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& param);
-
-      // 1D quadrature rule (param, w) + value/derivative interp operators (M, dM = order x N).
-      struct NodeRuleData { Vector<Real> param, w; Matrix<Real> M, dM, MT, dMT; };
-      // L_i(u0+d) with the vanishing factor formed as `d` itself, never as a subtraction of
-      // absolute coordinates. dM = DiffMat . M as usual.
-      template <Integer order> static void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& delta, const Integer ti);
-
-      // Bernstein-ellipse parameter + per-panel GL order from tolerance (shared by adaptive schemes).
-      static void QuadParams(const Real tol, Real& b_ellipse, Integer& QuadOrder);
-
-      // Compile-time per-panel GL order / Bernstein parameter for `digits` (QuadParams at 10^-digits);
-      // near/self map runtime tolerance to compile-time `digits` (CSBQ-style).
-      static Integer DigitsQuadOrder(const Integer digits);
-      static Real DigitsBEllipse(const Integer digits);
-      // Per-panel GL rule (nodes,weights) for `digits`, built once (ComputeNdsWts is an uncached
-      // O(N^2) Newton solve). Consumed by the foot-graded tensor near (NearInteracBlockGraded).
-      static const std::pair<Vector<Real>, Vector<Real>>& DigitsGLRule(const Integer digits);
-
-      // Number of geometric grading levels (per side) toward v0 in the composite Alpert v-rule,
-      // as a function of requested accuracy. Runtime core + compile-time `digits` wrapper.
-      static Integer VLevelsForDigits(const Integer digits);
-
-
-      // Accuracy/order-templated impls of NearInterac/SelfInterac: entry points dispatch runtime
-      // order to compile-time `order` (switch {4..48}) and tolerance to `digits` (if-else), CSBQ-style.
+      // Runtime order is dispatched to a compile-time `order` (switch {4..48}), which bounds
+      // every inner loop. `digits` is a runtime value throughout: it only selects a cached rule.
+      // Accuracy levels the type can express: digits10 ~ significand bits * log10(2)
+      // (30103/100000). 7 for float, 16 for double, 19 for long double, 34 for __float128.
+      static constexpr Integer MaxDigits = 1 + GetSigBits<Real>::value()*30103/100000;
+      // Largest d with tol <= 10^-d, where 10^-d is repeated multiplication of 0.1, NOT the
+      // literal 1e-d -- the two differ in the last bits and so pick different d at exact powers.
+      static Integer DigitsFromTol(const Real tol);
 
 
       // ============================ SelfInterac only ============================
-
-      // Per-target singular self-interaction block at (u0,v0): graded u-refinement + 1D log rule in v.
-      template <Integer order, class Kernel> static void SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
-
-      // Geometric panels marching outward from u0 to each end; `levels`+1 panels per side.
-      static void BuildCenteredGraded1D(Vector<Real>& delta, Vector<Real>& w, const Real u0, const Integer levels, const Vector<Real>& qnds, const Vector<Real>& qwts);
-      // Outward-graded log-singular 1D rule, emitted as offsets `delta` from v0 (singular node at
-      // offset exactly 0) so the innermost panels keep full relative precision.
-      static void LogSingularQuad1DCentered(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder);
-      template <Integer order> static const NodeRuleData& CenteredURule(const Integer ti, const Integer levels, const Integer digits);
-      template <Integer order> static const NodeRuleData& CenteredVRule(const Integer tj, const Integer digits);
 
       // Duffy edge-collapsed self scheme (QuadScheme::Duffy). The panel is split
       // at the target (u0,v0) into four triangles, each parametrised P(s,t) = (u0,v0) + s*c(t) with
@@ -221,12 +188,10 @@ namespace sctl {
       template <Integer order> static const DuffySelfTable& DuffyTable();
       static Integer DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0);
       template <Integer order, class Kernel> static void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
-
       template <Integer order, class Kernel> static void SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits);
 
 
-      // ============================ NearInterac only ============================
-
+      // ======================= NearInterac only =======================
 
       // Single-point position (target-centered by `origin` when non-null) and, when the
       // pointers are non-null, the tangents dXu/dXv. Allocation-free -- the Lagrange bases are
@@ -255,15 +220,56 @@ namespace sctl {
       // Only the Adaptive grids get near it; the Duffy paths never reach this routine.
       static constexpr Long UBlkPts = 16384;
 
-      // Plain form: one cell, every operator required, no internal geometry shift. The caller
-      // supplies the target-shifted nodal slab, so the kernel target is the origin, and gets the
-      // result in the channel-major accumulator. MuD is [T^T; dT^T] stacked, so value and
-      // derivative come from one GEMM. This is quadelem-hedgehog's signature, kept so the two can
-      // be measured against each other -- see the TODO on the overload below. Currently unused.
+
+      // Split-at-foot near scheme. Splitting the element at the foot makes every refinement
+      // grade toward an ENDPOINT, so in normalized sub-element coordinates the graded intervals
+      // depend only on the level and their operators precompute once per `order`. Per side,
+      // grading toward the foot at x=1:
+      //   shell_k = [1-2^-k, 1-2^-(k+1)]    the half of core_k away from the foot
+      //   core_k  = [1-2^-k, 1]             the half touching it
+      // The sub-elements are anisotropic, so the corner cell is bisected along its longer
+      // PHYSICAL dimension only (parameter extent x surface speed), one split at a time, until
+      // that dimension is admissible against the target distance -- which keeps the aspect ratio
+      // from propagating to every descendant. Each split emits one leaf, and the u- and v-levels
+      // advance independently, so every interval stays shell_k / core_k at some level.
+
+      // Per-cell GL order and admissibility constant. b_ellipse is the end-foot Bernstein reach,
+      // weaker than the semi-major reach by a^2/b^2 ~ 1.9x because the foot lands on a cell
+      // endpoint. QuadParams, which the Adaptive self path still uses, pins rho = 2.5 and the
+      // semi-major reach instead.
+      // VALIDITY: calibrated and validated on the twisted unit sphere for twist <= pi/3
+      // (element anisotropy <= ~4.2). Beyond that the near rule needs a higher GL order than
+      // this gives; do not rely on it past pi/3 without re-checking accuracy.
+      static void NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder);
+      static Integer NearQuadOrder(const Integer digits);
+      static Real NearBEllipse(const Integer digits);
+
+      // One graded interval, in NORMALIZED sub-element coordinates. dT/TT/TD are precomputed
+      // here (not per target) because the split-at-foot scheme feeds sub-element NODAL coords
+      // into the cell quadrature, so these operators no longer depend on (u*,v*).
+      //   T  (order x q)   sub-element nodes -> this interval's GL nodes
+      //   dT (order x q)   d/dx of the above, x = the sub-element's normalized coordinate
+      //   TT (q x order)   T^T, for the projection
+      //   TD (2q x order)  [T^T ; dT^T] stacked, so value+derivative come from ONE GEMM
+      struct GradeRule { Vector<Real> nds, w; Matrix<Real> T, dT, TT, TD; Real a, b; };
+
+      // Refinement bottoms out where 1-2^-k stops being distinct from 1, i.e. at the mantissa width.
+      static constexpr Integer MaxNearLvl = GetSigBits<Real>::value();  // flat index: shell_k -> k, core_k -> MaxNearLvl + k
+      static constexpr Integer NearMaxQuadOrder = 60;
+
+      // Accuracy-independent: one static per `order`, holding every rung the corner-angle
+      // correction can select (each multiple of 4, plus each NearQuadOrder(d)).
+      template <Integer order> static const Vector<GradeRule>& NearGradeTable(const Integer q);
+
       template <Integer order, class Kernel> static void IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker,
-                                                                        const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD,
-                                                                        const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT,
-                                                                        const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm);
+                                                                         const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD,
+                                                                         const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT,
+                                                                         const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm);
+      template <Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
+
+      template <Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits);
+
+      // ============================ Adaptive scheme only ============================
 
       // TODO: measure this against the plain form above. It carries nine optional arguments, an
       // internal target-shift, and a u-blocked sweep, none of which the plain form has. Establish
@@ -278,21 +284,52 @@ namespace sctl {
                                                                         const Vector<Real>* src_nodal = nullptr, const Matrix<Real>* MuD_pre = nullptr, const Real nrm_sign = 1,
                                                                         Vector<Real>* acc_cm = nullptr);
 
-      // Tolerance-dependent rho + the end-foot Bernstein reach the split-at-(u0,v0) geometry
-      // needs. QuadParams (still used by self) pins rho = 2.5 and the semi-major reach, which
-      // over-refines near by a^2/b^2 ~ 1.9x.
-      // VALIDITY: calibrated and validated on the twisted unit sphere for twist <= pi/3
-      // (element anisotropy <= ~4.2). Beyond that the near rule needs a higher GL order than
-      // this gives; do not rely on it past pi/3 without re-checking accuracy.
-      static void NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder);
-      // One graded interval, in NORMALIZED sub-element coordinates. dT/TT/TD are precomputed
-      // here (not per target) because the split-at-foot scheme feeds sub-element NODAL coords
-      // into the cell quadrature, so these operators no longer depend on (u*,v*).
-      //   T  (order x q)   sub-element nodes -> this interval's GL nodes
-      //   dT (order x q)   d/dx of the above, x = the sub-element's normalized coordinate
-      //   TT (q x order)   T^T, for the projection
-      //   TD (2q x order)  [T^T ; dT^T] stacked, so value+derivative come from ONE GEMM
-      struct GradeRule { Vector<Real> nds, w; Matrix<Real> T, dT, TT, TD; Real a, b; };
+
+
+      // Bernstein-ellipse parameter + per-panel GL order from tolerance (shared by adaptive schemes).
+      static void QuadParams(const Real tol, Real& b_ellipse, Integer& QuadOrder);
+
+      // Per-panel GL order and Bernstein parameter for `digits`, i.e. QuadParams at 10^-digits,
+      // tabulated once over MaxDigits.
+      static Integer DigitsQuadOrder(const Integer digits);
+      static Real DigitsBEllipse(const Integer digits);
+
+      // Per-panel GL rule (nodes,weights) for `digits`, built once (ComputeNdsWts is an uncached
+      // O(N^2) Newton solve). Consumed by the foot-graded tensor near (NearInteracBlockGraded).
+      static const std::pair<Vector<Real>, Vector<Real>>& DigitsGLRule(const Integer digits);
+
+      // Number of geometric grading levels (per side) toward v0 in the composite Alpert v-rule,
+      // as a function of requested accuracy.
+      static Integer VLevelsForDigits(const Integer digits);
+
+
+
+
+      // ============================ SelfInterac only ============================
+
+      // 1D value + derivative interpolation from order GL nodes to `param`:
+      // M[i][a] = L_i(param[a]) (order x N), dM = DiffMat<order> . M.
+      template <Integer order> static void BuildInterp1D(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& param);
+
+      // 1D quadrature rule (param, w) + value/derivative interp operators (M, dM = order x N).
+      struct NodeRuleData { Vector<Real> param, w; Matrix<Real> M, dM, MT, dMT; };
+
+      // L_i(u0+d) with the vanishing factor formed as `d` itself, never as a subtraction of
+      // absolute coordinates. dM = DiffMat . M as usual.
+      template <Integer order> static void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& delta, const Integer ti);
+
+      // Geometric panels marching outward from u0 to each end; `levels`+1 panels per side.
+      static void BuildCenteredGraded1D(Vector<Real>& delta, Vector<Real>& w, const Real u0, const Integer levels, const Vector<Real>& qnds, const Vector<Real>& qwts);
+
+      // Outward-graded log-singular 1D rule, emitted as offsets `delta` from v0 (singular node at
+      // offset exactly 0) so the innermost panels keep full relative precision.
+      static void LogSingularQuad1DCentered(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder);
+
+      template <Integer order> static const NodeRuleData& CenteredURule(const Integer ti, const Integer levels, const Integer digits);
+      template <Integer order> static const NodeRuleData& CenteredVRule(const Integer tj, const Integer digits);
+
+      // Per-target singular self-interaction block at (u0,v0): graded u-refinement + 1D log rule in v.
+      template <Integer order, class Kernel> static void SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
 
       // ---- Foot-graded separable-tensor near (QuadScheme::Adaptive) ----
       // THE production near path for the Adaptive scheme. Grade [0,1] toward u* and
@@ -304,45 +341,21 @@ namespace sctl {
       // boundary), so it must never serve the self path.
       // One GL rule per segment, concatenated in segment order (contiguous runs -> contiguous slices).
       static void ExpandSegments(Vector<Real>& param, Vector<Real>& w, const Vector<Real>& seg, const Vector<Real>& qnds, const Vector<Real>& qwts);
+
       // Split [0,1] at `center`, grade geometrically outward on each side; innermost segment touches
       // the foot (admissible only under the off-surface effective distance -> near targets only).
       static void BuildFootGraded1DSegments(Vector<Real>& seg, Vector<Long>& seg_depth, const Real center, const Real b_ellipse, const Real w_min);
+
       // Foot (u*,v*), off-surface distance, and depth cap from GetClosestPoint (the FOOT, not the
       // nearest node). h_param (optional): off-surface distance in parameter units.
       static Integer NearFootAndDepth(Real& ustar, Real& vstar, Real& dist, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse, const Integer max_depth, Real* h_param = nullptr);
+
       // Foot-graded tensor rule over the whole panel (u_param x v_param, weights wu (x) wv).
       static Integer BuildNearTensorRule(Vector<Real>& u_param, Vector<Real>& wu, Vector<Real>& v_param, Vector<Real>& wv,
                                          Vector<Real>* useg, Vector<Long>* useg_depth, Vector<Real>* vseg, Vector<Long>* vseg_depth,
                                          const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg,
                                          const Real b_ellipse, const Vector<Real>& qnds, const Vector<Real>& qwts, const Integer max_depth);
       template <Integer order, class Kernel> static void NearInteracBlockGraded(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
-
-      // ---- Upstream-ported near path (QuadScheme::Duffy only) ----
-      // Split-at-foot geometry with the additions that
-      // let the near rule hold accuracy under strong parametric shear: (1) a corner-angle bump to
-      // the per-target GL order (the acute tangent angle at the foot sets how much the element
-      // wraps the target, which the parameter-space admissibility test cannot see), and (2) a
-      // deeper refinement ladder (MaxNearLvl = mantissa width, vs the 31 above). `digits` is
-      // runtime here, so the grade table is keyed on the runtime GL order q.
-      // The `…CM` suffix = channel-major: these are the caps of the near path that accumulates via
-      // IntegrateNearCM (into the channel-major `acc_cm` buffer), as opposed to the compile-time
-      // compile-time near constants.
-      static constexpr Integer MaxNearLvl = GetSigBits<Real>::value();  // shell_k -> k, core_k -> MaxNearLvl + k
-      static constexpr Integer NearMaxQuadOrder = 60;
-      static constexpr Integer MaxDigits = 1 + GetSigBits<Real>::value()*30103/100000;
-      // Largest d with tol <= 10^-d, where 10^-d is repeated multiplication of 0.1, NOT the
-      // literal 1e-d -- the two differ in the last bits and so pick different d at exact powers.
-      static Integer DigitsFromTol(const Real tol);
-      static Integer NearQuadOrder(const Integer digits);   // per-cell GL order for a runtime digit count
-      static Real NearBEllipse(const Integer digits);       // admissibility constant for a runtime digit count
-      template <Integer order> static const Vector<GradeRule>& NearGradeTableQ(const Integer q);
-      template <Integer order, class Kernel> static void IntegrateNearCM(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker,
-                                                                         const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD,
-                                                                         const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT,
-                                                                         const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm);
-      template <Integer order, class Kernel> static void NearInteracBlockSplitDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
-
-      template <Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits);
 
       Long nelem = 0;
       Integer order = 0;
