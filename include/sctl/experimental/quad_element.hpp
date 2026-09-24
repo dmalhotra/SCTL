@@ -21,14 +21,7 @@ namespace sctl {
 
     public:
 
-      /**
-       * Near/self singular-quadrature scheme: Adaptive (foot-graded separable-tensor near +
-       * centered graded/Alpert self, default), or Duffy (Adaptive's split-at-foot near paired
-       * with a Duffy edge-collapsed, sinh-substituted self). The tolerance drives both.
-       */
-      enum class QuadScheme { Adaptive, Duffy };
 
-      /** Constructor. */
       QuadElemList() {}
 
       /**
@@ -53,7 +46,6 @@ namespace sctl {
        */
       template <class ValueType> void Init(Integer order, const Vector<ValueType>& coord, const Comm& comm = Comm::Self());
 
-      /** Destructor. */
       virtual ~QuadElemList() {}
 
       /** Number of elements. */
@@ -61,23 +53,6 @@ namespace sctl {
 
       /** Polynomial order of the elements. */
       Integer Order() const;
-
-
-      /** Singular-quadrature scheme used by SelfInterac/NearInterac. */
-      QuadScheme Scheme() const;
-
-      /** True if the self phase uses the Duffy edge-collapsed scheme (Duffy only). */
-      bool SelfUsesDuffy() const { return scheme_ == QuadScheme::Duffy; }
-
-      /**
-       * Set the singular-quadrature scheme.
-       * @param[in] s scheme (see QuadScheme; default Adaptive).
-       * @param[in] max_depth dyadic-refinement depth cap; must be one of {4,8,12,30}.
-       */
-      void SetQuadScheme(QuadScheme s, Integer max_depth = 30) {
-        SCTL_ASSERT_MSG(max_depth == 4 || max_depth == 8 || max_depth == 12 || max_depth == 30, "Adaptive max_depth must be one of {4,8,12,30}.");
-        scheme_ = s; max_depth_ = max_depth;
-      }
 
       /**
        * Position and normals of the surface nodal points per element.
@@ -104,30 +79,29 @@ namespace sctl {
       template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
 
       /**
-       * Reference-space Gauss-Legendre nodes in [0,1] for a given order.
-       * @param[in] Order polynomial order of the element.
+       * Near/self singular-quadrature scheme: Adaptive (foot-graded separable-tensor near +
+       * centered graded/Alpert self, default), or Duffy (Adaptive's split-at-foot near paired
+       * with a Duffy edge-collapsed, sinh-substituted self). The tolerance drives both.
        */
+      enum class QuadScheme { Adaptive, Duffy };
+
+      /**
+       * Set the singular-quadrature scheme.
+       * @param[in] s scheme (see QuadScheme; default Adaptive).
+       * @param[in] max_depth dyadic-refinement depth cap; must be one of {4,8,12,30}.
+       */
+      void SetQuadScheme(QuadScheme s, Integer max_depth = 30) {
+        SCTL_ASSERT_MSG(max_depth == 4 || max_depth == 8 || max_depth == 12 || max_depth == 30, "Adaptive max_depth must be one of {4,8,12,30}.");
+        scheme_ = s; max_depth_ = max_depth;
+      }
+
+      /** Reference-space Gauss-Legendre nodes in [0,1]. */
       static const Vector<Real>& ParamNodes(const Integer Order);
 
-      /**
-       * Equidistant tensor grid of Nelem_perside panels of GL nodes in [0,1] (z left zero).
-       * @param[in] Order polynomial order of the element.
-       * @param[in] Nelem_perside panels per direction, split equally.
-       */
-      static const Vector<Real>& ParamGrid(const Integer Order, const Integer Nelem_perside);
-
-      /**
-       * Write elements to file.
-       * @param[in] fname filename.
-       * @param[in] comm communicator.
-       */
+      /** Write elements to file. */
       void Write(const std::string& fname, const Comm& comm = Comm::Self()) const;
 
-      /**
-       * Read elements from file.
-       * @param[in] fname filename.
-       * @param[in] comm communicator.
-       */
+      /** Read elements from file, partitioned across `comm` as in Init. */
       template <class ValueType> void Read(const std::string& fname, const Comm& comm = Comm::Self());
 
       /**
@@ -141,52 +115,16 @@ namespace sctl {
        */
       void GetGeom(Vector<Real>* X, Vector<Real>* Xn, Vector<Real>* Xa, Vector<Real>* dX_du, Vector<Real>* dX_dv, const Vector<Real>& u_param, const Vector<Real>& v_param, const Long elem_idx, const Vector<Real>* origin = nullptr) const;
 
-      /**
-       * Closest discretization NODE on elem_idx to Xtrg (brute-force over the nodal
-       * grid; see GetClosestPoint for the true closest patch point).
-       * @param[out] ustar,vstar parameters of the closest node in [0,1].
-       * @param[in] elem_idx element index.
-       * @param[in] Xtrg target coordinates (COORD_DIM reals).
-       * @return distance from target to the closest node.
-       */
-      Real GetClosestNode(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) const;
-
-      /**
-       * Closest POINT on patch elem_idx to Xtrg over (u,v) in [0,1]^2 (GetClosestNode seed, then
-       * active-set Gauss-Newton with grid-search fallback). A coordinate pinned at a bound by an
-       * outward gradient is held FIXED and the reduced step is solved in the free subspace only,
-       * so metric coupling cannot contaminate the surviving component -- edge/corner feet converge
-       * cleanly rather than bailing to the fallback.
-       * @param[out] ustar,vstar parameters of the closest point in [0,1].
-       * @param[in] elem_idx element index.
-       * @param[in] Xtrg target coordinates (COORD_DIM reals).
-       * @param[out] n_iter (optional) number of Gauss-Newton iterations executed.
-       * @param[out] used_fallback (optional) true if Newton stalled and the grid-search fallback ran.
-       * @return distance from target to the closest point.
-       */
-      Real GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
-
       /** VTU data for one (elem_idx) or all elements. */
       void GetVTUData(VTUData& vtu_data, const Vector<Real>& F = Vector<Real>(), const Long elem_idx = -1) const;
 
       /**
        * Write VTU data to file.
-       * @param[in] fname filename.
        * @param[in] F nodal data, AoS {Ux1,Uy1,Uz1,...}.
-       * @param[in] comm communicator.
        */
       void WriteVTK(const std::string& fname, const Vector<Real>& F = Vector<Real>(), const Comm& comm = Comm::Self()) const;
 
-
-
-
-
-
-
-      /**
-       * Copy the element-list, possibly at a different precision.
-       * @param[in] elem_lst input element-list.
-       */
+      /** Copy the element-list, possibly at a different precision. */
       template <class ValueType> void Copy(QuadElemList<ValueType>& elem_lst) const;
 
       template<typename> friend class QuadElemList;
@@ -196,27 +134,23 @@ namespace sctl {
 
     private:
 
-      // Contiguous element range [i0,i1) owned by this rank when a global mesh of
-      // Nelem_total elements is linearly partitioned across comm. Shared by Init
-      // (in-memory construction) and Read (file load). With a single-process comm
-      // this returns the full range [0, Nelem_total).
+      /** True if the self phase uses the Duffy edge-collapsed scheme. */
+      bool SelfUsesDuffy() const { return scheme_ == QuadScheme::Duffy; }
+
+      // Contiguous element range [i0,i1) owned by this rank under a linear partition of
+      // Nelem_total elements; the full range for a single-process comm. Used by Init and Read.
       static void PartitionRange(Long Nelem_total, const Comm& comm, Long& i0, Long& i1);
 
       template <class ValueType> static void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv);
-      
+
       void BuildDerivativeCache();
 
       // Nodal d/du, d/dv of a component-major SoA coord slab (order x order grid).
       // Shared by BuildDerivativeCache (absolute) and GetGeom (target-shifted).
       static void NodalDerivs(const Vector<Real>& coord_slab, const Integer order, Vector<Real>& du_slab, Vector<Real>& dv_slab);
 
-      // Allocation-free single-point geometry evaluator: writes position X[COORD_DIM]
-      // (target-centered by `origin` when non-null) and, when the pointers are non-null,
-      // the tangents dXu/dXv[COORD_DIM] at parameter (u,v) on elem_idx. Builds the
-      // order-length Lagrange bases on the stack and contracts against the cached nodal
-      // coords -- no Matrix alloc / Transpose, unlike GetGeom. Used by the closest-point
-      // search where it is called many times per target.
-      void EvalPoint(Real* X, Real* dXu, Real* dXv, const Real u, const Real v, const Long elem_idx, const Vector<Real>* origin) const;
+
+      // ============================ SelfInterac and NearInterac ============================
 
       // Cached 1D nodal differentiation matrix D (order x order) on the GL nodes,
       // D[i][a] = L_i'(node_a); D . LuV turns a value-interp operator into a deriv one.
@@ -232,13 +166,6 @@ namespace sctl {
       // L_i(u0+d) with the vanishing factor formed as `d` itself, never as a subtraction of
       // absolute coordinates. dM = DiffMat . M as usual.
       template <Integer order> static void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& delta, const Integer ti);
-      // Geometric panels marching outward from u0 to each end; `levels`+1 panels per side.
-      static void BuildCenteredGraded1D(Vector<Real>& delta, Vector<Real>& w, const Real u0, const Integer levels, const Vector<Real>& qnds, const Vector<Real>& qwts);
-      // Outward-graded log-singular 1D rule, emitted as offsets `delta` from v0 (singular node at
-      // offset exactly 0) so the innermost panels keep full relative precision.
-      static void LogSingularQuad1DCentered(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder);
-      template <Integer order, Integer digits> static const NodeRuleData& CenteredURule(const Integer ti, const Integer levels);
-      template <Integer order, Integer digits> static const NodeRuleData& CenteredVRule(const Integer tj);
 
       // Bernstein-ellipse parameter + per-panel GL order from tolerance (shared by adaptive schemes).
       static void QuadParams(const Real tol, Real& b_ellipse, Integer& QuadOrder);
@@ -256,16 +183,13 @@ namespace sctl {
       static Integer VLevelsForDigits(const Integer digits);
       template <Integer digits> static Integer DigitsVLevels();
 
-      // Accumulate a tensor-product quadrature (u_param x v_param, weights wu (x) wv) on
-      // elem_idx against target Xtrg into M_acc; normal_trg != null enables target-normal contraction.
-      // Mv_pre/dMv_pre, Mu_pre/dMu_pre (optional): precomputed v/u interp operators (order x N) used in
-      // place of building from param (self supplies Alpert v; self-RP supplies both; near/Adaptive leave null).
-      // src_nodal (optional): caller-supplied target-shifted nodal slab (COORD_DIM*order x order,
-      // component-major) for this sub-element, bypassing the internal coord_shift build (near split
-      // supplies it). MuD_pre (optional): stacked [T^T; dT^T] (2q x order) so value+derivative come
-      // from one GEMM. nrm_sign: flips the source normal (mirrored sub-elements). acc_cm (optional):
-      // channel-major accumulator (C*nnode) added into via beta=1, so the caller transposes to
-      // node-major once per target instead of per cell.
+      // Accumulate a tensor-product quadrature (weights wu (x) wv) on elem_idx against Xtrg into
+      // M_acc. Non-empty normal_trg contracts with the target normal. Every _pre operator is
+      // optional and replaces the build from param: Mv/dMv and Mu/dMu are the v- and u-interps,
+      // MuD is [T^T; dT^T] stacked so value and derivative come from one GEMM. src_nodal is a
+      // caller-supplied target-shifted nodal slab, so the kernel target is the origin. nrm_sign
+      // flips the source normal for mirrored sub-elements. acc_cm is a channel-major accumulator
+      // added into with beta=1, so the caller transposes to node-major once per target, not per cell.
       template <Integer order, class Kernel> static void IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx,
                                                                         const Vector<Real>& Xtrg, const Vector<Real>& normal_trg,
                                                                         const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker,
@@ -280,6 +204,62 @@ namespace sctl {
       template <Integer order, class Kernel> static void NearInteracDispatchDigits(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
       template <Integer digits, Integer order, class Kernel> static void SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self);
       template <Integer digits, Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self);
+
+
+      // ============================ SelfInterac only ============================
+
+      // Per-target singular self-interaction block at (u0,v0): graded u-refinement + 1D log rule in v.
+      template <Integer digits, Integer order, class Kernel> static void SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
+
+      // Geometric panels marching outward from u0 to each end; `levels`+1 panels per side.
+      static void BuildCenteredGraded1D(Vector<Real>& delta, Vector<Real>& w, const Real u0, const Integer levels, const Vector<Real>& qnds, const Vector<Real>& qwts);
+      // Outward-graded log-singular 1D rule, emitted as offsets `delta` from v0 (singular node at
+      // offset exactly 0) so the innermost panels keep full relative precision.
+      static void LogSingularQuad1DCentered(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder);
+      template <Integer order, Integer digits> static const NodeRuleData& CenteredURule(const Integer ti, const Integer levels);
+      template <Integer order, Integer digits> static const NodeRuleData& CenteredVRule(const Integer tj);
+
+      // Duffy edge-collapsed self scheme (QuadScheme::Duffy). The panel is split
+      // at the target (u0,v0) into four triangles, each parametrised P(s,t) = (u0,v0) + s*c(t) with
+      // |det| = s*|a x b|. The s factor cancels the 1/r singularity, so s takes a plain GL rule and t a
+      // sinh-substituted rule concentrated at the foot of the perpendicular. Only the t-rule depends on
+      // the metric and tolerance; everything below is fixed by (order, ti, tj, tri). `digits` is runtime.
+      struct DuffyTri {
+        bool swap_ab = false;    // collapsed (s-only) coordinate is u => local (alpha,beta) = (v,u)
+        Real nsign = 1;          // restores the sign of dX/du x dX/dv
+        Real J0 = 0;             // |a x b|
+        Matrix<Real> WbC;        // (order x 2*ns) = [Wb | Wb'], collapsed direction at the s-nodes
+        Matrix<Real> WbT;        // (ns x order), adjoint of the value half
+        Vector<Matrix<Real>> MiC, MiT;       // ns entries: (order x 2*order) = [Mi | Mi'], and (order x order)
+      };
+      struct DuffySelfTable {
+        Integer ns = 0;
+        Vector<Real> sn, sw;
+        std::vector<DuffyTri> tri;   // 4*order*order entries, indexed (ti*order + tj)*4 + tri
+      };
+      template <Integer order> static const DuffySelfTable& DuffyTable();
+      static Integer DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0);
+      template <Integer order, class Kernel> static void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
+
+
+      // ============================ NearInterac only ============================
+
+
+      // Single-point position (target-centered by `origin` when non-null) and, when the
+      // pointers are non-null, the tangents dXu/dXv. Allocation-free -- the Lagrange bases are
+      // built on the stack. Called many times per target by GetClosestPoint.
+      void EvalPoint(Real* X, Real* dXu, Real* dXv, const Real u, const Real v, const Long elem_idx, const Vector<Real>* origin) const;
+
+      // Closest nodal-grid point to Xtrg (brute force); seeds GetClosestPoint. Returns the distance.
+      Real GetClosestNode(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) const;
+
+      // Closest point on the patch over (u,v) in [0,1]^2: GetClosestNode seed, then active-set
+      // Gauss-Newton with a grid-search fallback. Returns the distance. This is the foot the near
+      // scheme splits at. A coordinate pinned at a bound by an outward gradient is held FIXED and
+      // the step solved in the free subspace only, so metric coupling cannot contaminate the
+      // surviving component -- edge/corner feet converge instead of falling back.
+      // n_iter/used_fallback (optional) report the iteration count and whether Newton stalled.
+      Real GetClosestPoint(Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg, Integer* n_iter = nullptr, bool* used_fallback = nullptr) const;
 
       // Tolerance-dependent rho + the end-foot Bernstein reach the split-at-(u0,v0) geometry
       // needs. QuadParams (still used by self) pins rho = 2.5 and the semi-major reach, which
@@ -341,31 +321,6 @@ namespace sctl {
                                                                          const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT,
                                                                          const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm);
       template <Integer order, class Kernel> static void NearInteracBlockSplitDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
-
-      // Per-target singular self-interaction block at (u0,v0): graded u-refinement + 1D log rule in v.
-      template <Integer digits, Integer order, class Kernel> static void SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
-
-      // Duffy edge-collapsed self scheme (QuadScheme::Duffy; ported from upstream). The panel is split
-      // at the target (u0,v0) into four triangles, each parametrised P(s,t) = (u0,v0) + s*c(t) with
-      // |det| = s*|a x b|. The s factor cancels the 1/r singularity, so s takes a plain GL rule and t a
-      // sinh-substituted rule concentrated at the foot of the perpendicular. Only the t-rule depends on
-      // the metric and tolerance; everything below is fixed by (order, ti, tj, tri). `digits` is runtime.
-      struct DuffyTri {
-        bool swap_ab = false;    // collapsed (s-only) coordinate is u => local (alpha,beta) = (v,u)
-        Real nsign = 1;          // restores the sign of dX/du x dX/dv
-        Real J0 = 0;             // |a x b|
-        Matrix<Real> WbC;        // (order x 2*ns) = [Wb | Wb'], collapsed direction at the s-nodes
-        Matrix<Real> WbT;        // (ns x order), adjoint of the value half
-        Vector<Matrix<Real>> MiC, MiT;       // ns entries: (order x 2*order) = [Mi | Mi'], and (order x order)
-      };
-      struct DuffySelfTable {
-        Integer ns = 0;
-        Vector<Real> sn, sw;
-        std::vector<DuffyTri> tri;   // 4*order*order entries, indexed (ti*order + tj)*4 + tri
-      };
-      template <Integer order> static const DuffySelfTable& DuffyTable();
-      static Integer DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0);
-      template <Integer order, class Kernel> static void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
 
       Long nelem = 0;
       Integer order = 0;

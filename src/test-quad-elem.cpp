@@ -24,16 +24,60 @@
 
 using namespace sctl;
 
+namespace sctl {
+template <class Real> struct QuadElemTestAccess {
+    // The library now emits the log-singular 1D Alpert rule as offsets from v0
+    // (LogSingularQuad1DCentered); reconstruct the absolute nodes param = v0 + delta so the
+    // tests below keep the original absolute-node semantics.
+    static void LogSingularQuad1D(Vector<Real>& param, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder) {
+        Vector<Real> delta;
+        QuadElemList<Real>::LogSingularQuad1DCentered(delta, w, v0, Lvl, QuadOrder);
+        param.ReInit(delta.Dim());
+        for (Long i = 0; i < delta.Dim(); i++) param[i] = v0 + delta[i];
+    }
+    static Real GetClosestNode(const QuadElemList<Real>& qel, Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) {
+        return qel.GetClosestNode(ustar, vstar, elem_idx, Xtrg);
+    }
+    static Real GetClosestPoint(const QuadElemList<Real>& qel, Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) {
+        return qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
+    }
+};
+}
+
 // ============================================================================================
 // 1. UNIT TESTS  (single-element / building-block level)
 // ============================================================================================
+// Tensor grid of Nelem_perside panels of GL nodes in [0,1] per side, z left zero. Driver-local:
+// the library has no use for it.
+template <class Real> Vector<Real> param_grid(const Integer Order, const Integer Nelem_perside) {
+    const Vector<Real>& nodes = QuadElemList<Real>::ParamNodes(Order);
+    const Long N_side = (Long)Order * Nelem_perside;
+
+    Vector<Real> x_param(N_side);
+    for (Integer pind = 0; pind < Nelem_perside; pind++) {
+        for (Integer nind = 0; nind < Order; nind++) {
+            x_param[pind * Order + nind] = (nodes[nind] + pind) / Nelem_perside;
+        }
+    }
+    Vector<Real> coord(N_side * N_side * 3);
+    for (Long xind = 0; xind < N_side; xind++) {
+        for (Long yind = 0; yind < N_side; yind++) {
+            const Long idx = (xind * N_side + yind) * 3;
+            coord[idx + 0] = x_param[xind];
+            coord[idx + 1] = x_param[yind];
+            coord[idx + 2] = 0;
+        }
+    }
+    return coord;
+}
+
 template <class Real> Vector<Real> get_testsurf(const Integer order, const Integer nelem_perside) {
     // First define surface
     const auto fsurf = [](const Real x, const Real y) {
         return x*y;
     };
 
-    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, nelem_perside); // Get x-y grid on [0,1]x[0,1]
+    Vector<Real> coord0 = param_grid<Real>(order, nelem_perside); // Get x-y grid on [0,1]x[0,1]
     // Get z value on x-y grid for surface.
     for (int i=0; i<coord0.Dim()/3; i++) {
         coord0[i*3 + 2] = fsurf(coord0[i*3+0], coord0[i*3+1]);
@@ -41,14 +85,14 @@ template <class Real> Vector<Real> get_testsurf(const Integer order, const Integ
     return coord0;
 }
 
-template <class Real> void test_ParamGrid() {
-    // Tensor grid generation directly on ParamGrid.
+template <class Real> void test_param_grid() {
+    // Tensor grid generation directly on param_grid.
     const Long order = 4;
     const Long nelem_perside = 2;
     const Long N_per_side = order * nelem_perside; // 8 nodes per side
     const Long N_total = N_per_side * N_per_side;  // 64 tensor-grid points
 
-    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, nelem_perside);
+    Vector<Real> coord0 = param_grid<Real>(order, nelem_perside);
     SCTL_ASSERT(coord0.Dim() == N_total * 3);
 
     // Expected order-4 GL nodes mapped to [0,1], split into 2 panels.
@@ -79,7 +123,7 @@ template <class Real> void test_GetClosestNode_plane() {
     // Flat patch z = 0; lifted target must snap back to the surface node.
     const Long COORD_DIM = 3;
     const Long order = 8;
-    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    Vector<Real> coord0 = param_grid<Real>(order, 1);
     QuadElemList<Real> qel(order, coord0);
 
     Vector<Real> X, Xn;
@@ -95,7 +139,7 @@ template <class Real> void test_GetClosestNode_plane() {
 
     Real ustar, vstar;
     Vector<Real> Xstar, Nstar;
-    const Real dist = qel.GetClosestNode(ustar, vstar, 0, Xtrg_shifted);
+    const Real dist = QuadElemTestAccess<Real>::GetClosestNode(qel, ustar, vstar, 0, Xtrg_shifted);
 
     const Real tol = 1e-9;
     SCTL_ASSERT(fabs(ustar - utrg) < tol);
@@ -107,7 +151,7 @@ template <class Real> void test_GetClosestNode_plane() {
     Xtrg_shifted[1] += 0.0005;
     const Real exp_dist = sqrt<Real>(0.1*0.1 + 0.0013*0.0013 + 0.0005*0.0005);
 
-    const Real dist2 = qel.GetClosestNode(ustar, vstar, 0, Xtrg_shifted);
+    const Real dist2 = QuadElemTestAccess<Real>::GetClosestNode(qel, ustar, vstar, 0, Xtrg_shifted);
 
     SCTL_ASSERT(fabs(ustar - utrg) < tol);
     SCTL_ASSERT(fabs(vstar - vtrg) < tol);
@@ -133,7 +177,7 @@ template <class Real> void test_GetClosestNode_curved() {
 
     Real ustar, vstar;
     Vector<Real> Xstar, Nstar;
-    const Real dist = qel.GetClosestNode(ustar, vstar, 0, Xtrg_shifted);
+    const Real dist = QuadElemTestAccess<Real>::GetClosestNode(qel, ustar, vstar, 0, Xtrg_shifted);
 
     const Real tol = 1e-8;
     SCTL_ASSERT(fabs(ustar - utrg) < tol);
@@ -145,7 +189,7 @@ template <class Real> void test_GetClosestNode_curved() {
     Xtrg_shifted[1] += 0.0005;
     const Real exp_dist = sqrt<Real>((d*Xntrg[0]-0.0013)*(d*Xntrg[0]-0.0013) + (d*Xntrg[1]+0.0005)*(d*Xntrg[1]+0.0005) + (d*Xntrg[2])*(d*Xntrg[2]));
 
-    const Real dist2 = qel.GetClosestNode(ustar, vstar, 0, Xtrg_shifted);
+    const Real dist2 = QuadElemTestAccess<Real>::GetClosestNode(qel, ustar, vstar, 0, Xtrg_shifted);
 
     SCTL_ASSERT(fabs(ustar - utrg) < tol);
     SCTL_ASSERT(fabs(vstar - vtrg) < tol);
@@ -156,7 +200,7 @@ template <class Real> void test_GetClosestPoint_plane() {
     // Flat patch z = 0: GetClosestPoint must recover the exact projection at an off-node (u,v).
     const Integer COORD_DIM = 3;
     const Long order = 8;
-    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    Vector<Real> coord0 = param_grid<Real>(order, 1);
     QuadElemList<Real> qel(order, coord0);
 
     // Off-node surface point and its normal (= +z for the plane).
@@ -171,7 +215,7 @@ template <class Real> void test_GetClosestPoint_plane() {
 
     Real ustar, vstar;
     Vector<Real> Xstar, Nstar;
-    const Real dist = qel.GetClosestPoint(ustar, vstar, 0, Xtrg);
+    const Real dist = QuadElemTestAccess<Real>::GetClosestPoint(qel, ustar, vstar, 0, Xtrg);
 
     const Real tol = 1e-9;
     SCTL_ASSERT(fabs(ustar - u0) < tol);
@@ -181,7 +225,7 @@ template <class Real> void test_GetClosestPoint_plane() {
     // Tangential shift: projection follows it, dist stays = d.
     Xtrg[0] -= 0.0013;
     Xtrg[1] += 0.0005;
-    const Real dist2 = qel.GetClosestPoint(ustar, vstar, 0, Xtrg);
+    const Real dist2 = QuadElemTestAccess<Real>::GetClosestPoint(qel, ustar, vstar, 0, Xtrg);
     SCTL_ASSERT(fabs(ustar - (u0 - (Real)0.0013)) < tol);
     SCTL_ASSERT(fabs(vstar - (v0 + (Real)0.0005)) < tol);
     SCTL_ASSERT(fabs(dist2 - d) < tol);
@@ -204,7 +248,7 @@ template <class Real> void test_GetClosestPoint_curved() {
 
     Real ustar, vstar;
     Vector<Real> Xstar, Nstar;
-    const Real dist = qel.GetClosestPoint(ustar, vstar, 0, Xtrg);
+    const Real dist = QuadElemTestAccess<Real>::GetClosestPoint(qel, ustar, vstar, 0, Xtrg);
 
     const Real tol = 1e-7;
     SCTL_ASSERT(fabs(ustar - u0) < tol);
@@ -216,7 +260,7 @@ template <class Real> void test_GetClosestPoint_curved() {
     Xt2[0] = Xsurf[0] + (Real)0.05;
     Xt2[1] = Xsurf[1] - (Real)0.03;
     Xt2[2] = Xsurf[2] + (Real)0.08;
-    qel.GetClosestPoint(ustar, vstar, 0, Xt2);
+    QuadElemTestAccess<Real>::GetClosestPoint(qel, ustar, vstar, 0, Xt2);
     SCTL_ASSERT(ustar > tol && ustar < 1 - tol && vstar > tol && vstar < 1 - tol); // interior min
 
     Vector<Real> u1{ustar}, v1{vstar}, Xc, dXu, dXv;
@@ -309,7 +353,6 @@ template <class Real, class Kernel> Vector<Real> direct_upsampled_potential(
 // Forward declaration of the friend shim (defined below) that exposes QuadElemList's private
 // static quadrature helpers (the log-singular 1D rule) to the tests; the
 // shim's full definition appears later in namespace sctl.
-namespace sctl { template <class Real> struct QuadElemTestAccess; }
 
 template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, const bool curved, const char* label, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer max_depth = 30) {
     const Integer COORD_DIM = 3;
@@ -321,7 +364,7 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
 
     // Single element: flat plane z = 0 or curved testsurf z = u*v.
     Vector<Real> coord0 = curved ? get_testsurf<Real>(order, 1)
-                                 : QuadElemList<Real>::ParamGrid(order, 1);
+                                 : param_grid<Real>(order, 1);
     QuadElemList<Real> qel(order, coord0);
     qel.SetQuadScheme(scheme, max_depth);
 
@@ -388,7 +431,7 @@ template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, con
     SCTL_ASSERT(KDIM1 <= 3);
 
     // Flat unit square z = 0.
-    Vector<Real> coord0 = QuadElemList<Real>::ParamGrid(order, 1);
+    Vector<Real> coord0 = param_grid<Real>(order, 1);
     QuadElemList<Real> qel(order, coord0);
     qel.SetQuadScheme(scheme, max_depth);
 
@@ -452,19 +495,6 @@ template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, con
 
 
 // Friend shim forwarding to QuadElemList's private static helpers (must be in namespace sctl).
-namespace sctl {
-template <class Real> struct QuadElemTestAccess {
-    // The library now emits the log-singular 1D Alpert rule as offsets from v0
-    // (LogSingularQuad1DCentered); reconstruct the absolute nodes param = v0 + delta so the
-    // tests below keep the original absolute-node semantics.
-    static void LogSingularQuad1D(Vector<Real>& param, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder) {
-        Vector<Real> delta;
-        QuadElemList<Real>::LogSingularQuad1DCentered(delta, w, v0, Lvl, QuadOrder);
-        param.ReInit(delta.Dim());
-        for (Long i = 0; i < delta.Dim(); i++) param[i] = v0 + delta[i];
-    }
-};
-}
 
 template <class Real> void test_LogSingularQuad1D() {
     const Real v0 = (Real)0.6;
@@ -851,8 +881,8 @@ int main(int argc, char** argv) {
     // 1. Unit tests -- single element / kernel building blocks (each uses Comm::Self()).
     // ======================================================================================
     if (root) std::cout << "==================== Unit tests ====================\n";
-    test_ParamGrid<Real>();
-    std::cout << "test_ParamGrid: PASSED\n";
+    test_param_grid<Real>();
+    std::cout << "test_param_grid: PASSED\n";
     test_GetClosestNode_plane<Real>();
     std::cout << "test_GetClosestNode_plane: PASSED\n";
     test_GetClosestNode_curved<Real>();
