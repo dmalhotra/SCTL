@@ -172,35 +172,33 @@ namespace sctl {
 
       // Compile-time per-panel GL order / Bernstein parameter for `digits` (QuadParams at 10^-digits);
       // near/self map runtime tolerance to compile-time `digits` (CSBQ-style).
-      template <Integer digits> static Integer DigitsQuadOrder();
-      template <Integer digits> static Real DigitsBEllipse();
+      static Integer DigitsQuadOrder(const Integer digits);
+      static Real DigitsBEllipse(const Integer digits);
       // Per-panel GL rule (nodes,weights) for `digits`, built once (ComputeNdsWts is an uncached
       // O(N^2) Newton solve). Consumed by the foot-graded tensor near (NearInteracBlockGraded).
-      template <Integer digits> static const std::pair<Vector<Real>, Vector<Real>>& DigitsGLRule();
+      static const std::pair<Vector<Real>, Vector<Real>>& DigitsGLRule(const Integer digits);
 
       // Number of geometric grading levels (per side) toward v0 in the composite Alpert v-rule,
       // as a function of requested accuracy. Runtime core + compile-time `digits` wrapper.
       static Integer VLevelsForDigits(const Integer digits);
-      template <Integer digits> static Integer DigitsVLevels();
+
 
       // Accuracy/order-templated impls of NearInterac/SelfInterac: entry points dispatch runtime
       // order to compile-time `order` (switch {4..48}) and tolerance to `digits` (if-else), CSBQ-style.
-      template <Integer order, class Kernel> static void SelfInteracDispatchDigits(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self);
-      template <Integer order, class Kernel> static void NearInteracDispatchDigits(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
 
 
       // ============================ SelfInterac only ============================
 
       // Per-target singular self-interaction block at (u0,v0): graded u-refinement + 1D log rule in v.
-      template <Integer digits, Integer order, class Kernel> static void SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
+      template <Integer order, class Kernel> static void SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
 
       // Geometric panels marching outward from u0 to each end; `levels`+1 panels per side.
       static void BuildCenteredGraded1D(Vector<Real>& delta, Vector<Real>& w, const Real u0, const Integer levels, const Vector<Real>& qnds, const Vector<Real>& qwts);
       // Outward-graded log-singular 1D rule, emitted as offsets `delta` from v0 (singular node at
       // offset exactly 0) so the innermost panels keep full relative precision.
       static void LogSingularQuad1DCentered(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder);
-      template <Integer order, Integer digits> static const NodeRuleData& CenteredURule(const Integer ti, const Integer levels);
-      template <Integer order, Integer digits> static const NodeRuleData& CenteredVRule(const Integer tj);
+      template <Integer order> static const NodeRuleData& CenteredURule(const Integer ti, const Integer levels, const Integer digits);
+      template <Integer order> static const NodeRuleData& CenteredVRule(const Integer tj, const Integer digits);
 
       // Duffy edge-collapsed self scheme (QuadScheme::Duffy). The panel is split
       // at the target (u0,v0) into four triangles, each parametrised P(s,t) = (u0,v0) + s*c(t) with
@@ -224,7 +222,7 @@ namespace sctl {
       static Integer DuffyTOrder(const Integer digits, const Integer order, const Integer kdim0);
       template <Integer order, class Kernel> static void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
 
-      template <Integer digits, Integer order, class Kernel> static void SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self);
+      template <Integer order, class Kernel> static void SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits);
 
 
       // ============================ NearInterac only ============================
@@ -270,8 +268,8 @@ namespace sctl {
       // TODO: measure this against the plain form above. It carries nine optional arguments, an
       // internal target-shift, and a u-blocked sweep, none of which the plain form has. Establish
       // whether any of that earns its complexity -- in particular whether the u-blocking is worth
-      // keeping at all (it only runs above UBlkPts points, which only the Adaptive grids reach) --
-      // and if not, drop this overload and move the callers to the plain form.
+      // keeping at all (it only runs above SCTL_UBLK_PTS points, which only the Adaptive grids
+      // reach) -- and if not, drop this overload and move the callers to the plain form.
       template <Integer order, class Kernel> static void IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx,
                                                                         const Vector<Real>& Xtrg, const Vector<Real>& normal_trg,
                                                                         const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker,
@@ -317,23 +315,26 @@ namespace sctl {
                                          Vector<Real>* useg, Vector<Long>* useg_depth, Vector<Real>* vseg, Vector<Long>* vseg_depth,
                                          const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg,
                                          const Real b_ellipse, const Vector<Real>& qnds, const Vector<Real>& qwts, const Integer max_depth);
-      template <Integer digits, Integer order, class Kernel> static void NearInteracBlockGraded(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker);
+      template <Integer order, class Kernel> static void NearInteracBlockGraded(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
 
       // ---- Upstream-ported near path (QuadScheme::Duffy only) ----
       // Split-at-foot geometry with the additions that
       // let the near rule hold accuracy under strong parametric shear: (1) a corner-angle bump to
       // the per-target GL order (the acute tangent angle at the foot sets how much the element
       // wraps the target, which the parameter-space admissibility test cannot see), and (2) a
-      // deeper refinement ladder (MaxNearLvlCM = mantissa width, vs the 31 above). `digits` is
+      // deeper refinement ladder (MaxNearLvl = mantissa width, vs the 31 above). `digits` is
       // runtime here, so the grade table is keyed on the runtime GL order q.
       // The `…CM` suffix = channel-major: these are the caps of the near path that accumulates via
       // IntegrateNearCM (into the channel-major `acc_cm` buffer), as opposed to the compile-time
       // compile-time near constants.
-      static constexpr Integer MaxNearLvlCM = GetSigBits<Real>::value();  // shell_k -> k, core_k -> MaxNearLvlCM + k
-      static constexpr Integer NearMaxQuadOrderCM = 60;
-      static constexpr Integer MaxDigitsCM = 1 + GetSigBits<Real>::value()*30103/100000;
-      static Integer NearQuadOrderRt(const Integer digits);   // per-cell GL order for a runtime digit count
-      static Real NearBEllipseRt(const Integer digits);       // admissibility constant for a runtime digit count
+      static constexpr Integer MaxNearLvl = GetSigBits<Real>::value();  // shell_k -> k, core_k -> MaxNearLvl + k
+      static constexpr Integer NearMaxQuadOrder = 60;
+      static constexpr Integer MaxDigits = 1 + GetSigBits<Real>::value()*30103/100000;
+      // Largest d with tol <= 10^-d, where 10^-d is repeated multiplication of 0.1, NOT the
+      // literal 1e-d -- the two differ in the last bits and so pick different d at exact powers.
+      static Integer DigitsFromTol(const Real tol);
+      static Integer NearQuadOrder(const Integer digits);   // per-cell GL order for a runtime digit count
+      static Real NearBEllipse(const Integer digits);       // admissibility constant for a runtime digit count
       template <Integer order> static const Vector<GradeRule>& NearGradeTableQ(const Integer q);
       template <Integer order, class Kernel> static void IntegrateNearCM(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker,
                                                                          const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD,
@@ -341,7 +342,7 @@ namespace sctl {
                                                                          const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm);
       template <Integer order, class Kernel> static void NearInteracBlockSplitDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
 
-      template <Integer digits, Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self);
+      template <Integer order, class Kernel> static void NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits);
 
       Long nelem = 0;
       Integer order = 0;

@@ -2,6 +2,7 @@
 #define _SCTL_QUAD_ELEMENT_CPP_
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -839,35 +840,48 @@ namespace sctl {
     QuadOrder = std::max<Integer>(1, (Integer)std::ceil(-std::log(((15.0*(rho*rho-1))/64.0)*(double)tol_)/std::log(rho)*0.5 + 1));
   }
 
-  template <class Real> template <Integer digits> Integer QuadElemList<Real>::DigitsQuadOrder() {
-    // Evaluated once per `digits` at tol = 10^-digits.
-    static const Integer QuadOrder = []() { Real b; Integer q; QuadParams(pow<digits,Real>((Real)0.1), b, q); return q; }();
-    return QuadOrder;
+  template <class Real> inline Integer QuadElemList<Real>::DigitsFromTol(const Real tol) {
+    // Largest d < MaxDigits with tol <= 10^-d, using repeated multiplication of 0.1 so the
+    // branch points match what the old templated dispatch used.
+    for (Integer d = MaxDigits-1; d > 0; d--) if (tol <= pow<Real,Long>((Real)0.1, (Long)d)) return d;
+    return 0;
   }
 
-  template <class Real> template <Integer digits> Real QuadElemList<Real>::DigitsBEllipse() {
-    static const Real b_ellipse = []() { Real b; Integer q; QuadParams(pow<digits,Real>((Real)0.1), b, q); return b; }();
-    return b_ellipse;
-  }
-
-  template <class Real> template <Integer digits> const std::pair<Vector<Real>, Vector<Real>>& QuadElemList<Real>::DigitsGLRule() {
-    // Per-panel GL rule for `digits`, built once. LegQuadRule::ComputeNdsWts is an uncached
-    // O(N^2) Newton solve, so the adaptive near path must not call it per (element,target).
-    static const std::pair<Vector<Real>, Vector<Real>> gl = []() {
-      std::pair<Vector<Real>, Vector<Real>> p;
-      LegQuadRule<Real>::ComputeNdsWts(&p.first, &p.second, DigitsQuadOrder<digits>());
-      return p;
+  template <class Real> inline Integer QuadElemList<Real>::DigitsQuadOrder(const Integer digits) {
+    static const std::array<Integer,MaxDigits> q = []() {
+      std::array<Integer,MaxDigits> t{};
+      for (Integer d = 0; d < MaxDigits; d++) { Real b; Integer qq; QuadParams(pow<Real,Long>((Real)0.1, (Long)d), b, qq); t[d] = qq; }
+      return t;
     }();
-    return gl;
+    SCTL_ASSERT(digits >= 0 && digits < MaxDigits);
+    return q[digits];
+  }
+
+  template <class Real> inline Real QuadElemList<Real>::DigitsBEllipse(const Integer digits) {
+    static const std::array<Real,MaxDigits> b = []() {
+      std::array<Real,MaxDigits> t{};
+      for (Integer d = 0; d < MaxDigits; d++) { Real bb; Integer qq; QuadParams(pow<Real,Long>((Real)0.1, (Long)d), bb, qq); t[d] = bb; }
+      return t;
+    }();
+    SCTL_ASSERT(digits >= 0 && digits < MaxDigits);
+    return b[digits];
+  }
+
+  template <class Real> const std::pair<Vector<Real>, Vector<Real>>& QuadElemList<Real>::DigitsGLRule(const Integer digits) {
+    // Per-panel GL rule for `digits`, built once per digit count. LegQuadRule::ComputeNdsWts is an
+    // uncached O(N^2) Newton solve, so the adaptive near path must not call it per (element,target).
+    static const std::array<std::pair<Vector<Real>, Vector<Real>>,MaxDigits> gl = []() {
+      std::array<std::pair<Vector<Real>, Vector<Real>>,MaxDigits> t;
+      for (Integer d = 0; d < MaxDigits; d++) LegQuadRule<Real>::ComputeNdsWts(&t[d].first, &t[d].second, DigitsQuadOrder(d));
+      return t;
+    }();
+    SCTL_ASSERT(digits >= 0 && digits < MaxDigits);
+    return gl[digits];
   }
 
   template <class Real> inline Integer QuadElemList<Real>::VLevelsForDigits(const Integer digits) {
     // Geometric grading levels per side toward v0 in the composite Alpert v-rule.
     return std::min<Integer>(12, std::max<Integer>(1, digits - 5));
-  }
-
-  template <class Real> template <Integer digits> Integer QuadElemList<Real>::DigitsVLevels() {
-    return VLevelsForDigits(digits);
   }
 
   template <class Real> void QuadElemList<Real>::NearRhoRule(const Real tol, Real& b_ellipse, Integer& QuadOrder) {
@@ -892,23 +906,23 @@ namespace sctl {
   // Runtime-digits split-at-foot near with a corner-angle GL-order bump and a deeper refinement
   // ladder, with digits taken at runtime. The Adaptive path is untouched.
 
-  template <class Real> inline Integer QuadElemList<Real>::NearQuadOrderRt(const Integer digits) {
+  template <class Real> inline Integer QuadElemList<Real>::NearQuadOrder(const Integer digits) {
     static const Vector<Integer> q = []() {
-      Vector<Integer> t(MaxDigitsCM);
-      for (Integer d = 0; d < MaxDigitsCM; d++) { Real b; Integer qq; NearRhoRule(pow<Real,Long>((Real)0.1, (Long)d), b, qq); t[d] = qq; }
+      Vector<Integer> t(MaxDigits);
+      for (Integer d = 0; d < MaxDigits; d++) { Real b; Integer qq; NearRhoRule(pow<Real,Long>((Real)0.1, (Long)d), b, qq); t[d] = qq; }
       return t;
     }();
-    SCTL_ASSERT(digits >= 0 && digits < MaxDigitsCM);
+    SCTL_ASSERT(digits >= 0 && digits < MaxDigits);
     return q[digits];
   }
 
-  template <class Real> inline Real QuadElemList<Real>::NearBEllipseRt(const Integer digits) {
+  template <class Real> inline Real QuadElemList<Real>::NearBEllipse(const Integer digits) {
     static const Vector<Real> b = []() {
-      Vector<Real> t(MaxDigitsCM);
-      for (Integer d = 0; d < MaxDigitsCM; d++) { Real bb; Integer qq; NearRhoRule(pow<Real,Long>((Real)0.1, (Long)d), bb, qq); t[d] = bb; }
+      Vector<Real> t(MaxDigits);
+      for (Integer d = 0; d < MaxDigits; d++) { Real bb; Integer qq; NearRhoRule(pow<Real,Long>((Real)0.1, (Long)d), bb, qq); t[d] = bb; }
       return t;
     }();
-    SCTL_ASSERT(digits >= 0 && digits < MaxDigitsCM);
+    SCTL_ASSERT(digits >= 0 && digits < MaxDigits);
     return b[digits];
   }
 
@@ -918,7 +932,7 @@ namespace sctl {
     auto build = [](const Integer q) {
       const Vector<Real>& gnds = ParamNodes(order);   // sub-element's own nodes, normalized
       Vector<Real> qn, qw; LegQuadRule<Real>::ComputeNdsWts(&qn, &qw, q);
-      Vector<GradeRule> tab(2*MaxNearLvlCM);
+      Vector<GradeRule> tab(2*MaxNearLvl);
       auto fill = [&](GradeRule& r, const Real a, const Real b) {
         r.a = a; r.b = b;
         const Real w = b - a;
@@ -934,26 +948,26 @@ namespace sctl {
           r.TT[a][i] = r.T[i][a]; r.TD[a][i] = r.T[i][a]; r.TD[q+a][i] = r.dT[i][a];
         }
       };
-      for (Integer k = 0; k < MaxNearLvlCM; k++) {
+      for (Integer k = 0; k < MaxNearLvl; k++) {
         const Real lo = 1 - pow<Real>((Real)0.5, k), hi = 1 - pow<Real>((Real)0.5, k+1);
         fill(tab[k], lo, hi);                                   // shell_k
-        fill(tab[MaxNearLvlCM + k], lo, (Real)1);               // core_k = [1-2^-k, 1]
+        fill(tab[MaxNearLvl + k], lo, (Real)1);               // core_k = [1-2^-k, 1]
       }
       return tab;
     };
     // One static init builds every rung the corner-angle correction can select: each multiple of 4
-    // up to NearMaxQuadOrderCM, plus each accuracy level's isotropic order (which need not be a
+    // up to NearMaxQuadOrder, plus each accuracy level's isotropic order (which need not be a
     // multiple of 4). The per-target lookup has to be O(1) and allocation-free.
     static const std::vector<Vector<GradeRule>> all = [&build]() {
-      std::vector<Vector<GradeRule>> t(NearMaxQuadOrderCM+1);
-      for (Integer qq = 4; qq <= NearMaxQuadOrderCM; qq += 4) t[qq] = build(qq);
-      for (Integer d = 0; d < MaxDigitsCM; d++) {
-        const Integer qi = NearQuadOrderRt(d);
-        if (qi > 0 && qi <= NearMaxQuadOrderCM && t[qi].Dim() == 0) t[qi] = build(qi);
+      std::vector<Vector<GradeRule>> t(NearMaxQuadOrder+1);
+      for (Integer qq = 4; qq <= NearMaxQuadOrder; qq += 4) t[qq] = build(qq);
+      for (Integer d = 0; d < MaxDigits; d++) {
+        const Integer qi = NearQuadOrder(d);
+        if (qi > 0 && qi <= NearMaxQuadOrder && t[qi].Dim() == 0) t[qi] = build(qi);
       }
       return t;
     }();
-    SCTL_ASSERT(q > 0 && q <= NearMaxQuadOrderCM && all[q].Dim());
+    SCTL_ASSERT(q > 0 && q <= NearMaxQuadOrder && all[q].Dim());
     return all[q];
   }
 
@@ -1058,7 +1072,7 @@ namespace sctl {
     if (acc.Dim() != (Long)C_*nnode) { acc.ReInit((Long)C_*nnode); accB.ReInit((Long)C_*nnode); accE.ReInit(nnode); }
     M_acc.SetZero();
 
-    const Real b_ellipse = NearBEllipseRt(digits);
+    const Real b_ellipse = NearBEllipse(digits);
 
     Real ustar, vstar;
     const Real dist = qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
@@ -1080,9 +1094,9 @@ namespace sctl {
       if (f <= 1.0) return q_iso;
       Integer q = (Integer)std::ceil(f*(double)q_iso);
       q = ((q + 3)/4)*4;                                  // snap to the precomputed ladder
-      return std::min<Integer>(NearMaxQuadOrderCM, std::max<Integer>(q_iso, q));
+      return std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q_iso, q));
     };
-    const Vector<GradeRule>& tab = NearGradeTableQ<order>(near_order(&dXu_[0], &dXv_[0], NearQuadOrderRt(digits)));
+    const Vector<GradeRule>& tab = NearGradeTableQ<order>(near_order(&dXu_[0], &dXv_[0], NearQuadOrder(digits)));
     Real su2 = 0, sv2 = 0;
     for (Integer k = 0; k < COORD_DIM; k++) { su2 += dXu_[k]*dXu_[k]; sv2 += dXv_[k]*dXv_[k]; }
     const Real spd_u = sqrt<Real>(su2), spd_v = sqrt<Real>(sv2);
@@ -1153,14 +1167,14 @@ namespace sctl {
         Integer ku = 0, kv = 0;
         Real hu = slen[0][sdu]*spd_u, hv = slen[1][sdv]*spd_v;
         const bool cap = !(dist > 0) || !std::isfinite((double)dist);
-        constexpr Integer KMAX = MaxNearLvlCM-1;
+        constexpr Integer KMAX = MaxNearLvl-1;
         while ((cap || b_ellipse*std::max<Real>(hu,hv) > dist) && (ku < KMAX || kv < KMAX)) {
-          if (hu >= hv && ku < KMAX) { emit(sdu, sdv, ku, MaxNearLvlCM + kv); ku++; hu *= (Real)0.5; }
-          else if (kv < KMAX) { emit(sdu, sdv, MaxNearLvlCM + ku, kv); kv++; hv *= (Real)0.5; }
-          else if (ku < KMAX) { emit(sdu, sdv, ku, MaxNearLvlCM + kv); ku++; hu *= (Real)0.5; }
+          if (hu >= hv && ku < KMAX) { emit(sdu, sdv, ku, MaxNearLvl + kv); ku++; hu *= (Real)0.5; }
+          else if (kv < KMAX) { emit(sdu, sdv, MaxNearLvl + ku, kv); kv++; hv *= (Real)0.5; }
+          else if (ku < KMAX) { emit(sdu, sdv, ku, MaxNearLvl + kv); ku++; hu *= (Real)0.5; }
           else break;
         }
-        emit(sdu, sdv, MaxNearLvlCM + ku, MaxNearLvlCM + kv);      // terminal corner cell
+        emit(sdu, sdv, MaxNearLvl + ku, MaxNearLvl + kv);      // terminal corner cell
 
         {
           const Matrix<Real> A_all((Long)C_*order, order, acc.begin(), false);
@@ -1316,7 +1330,7 @@ namespace sctl {
     return L;
   }
 
-  template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockGraded(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracBlockGraded(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
     // THE adaptive near block. ONE foot-graded tensor grid over the whole panel -> ONE
     // IntegrateBlock: no quadtree, no per-leaf loop, no distinct-interval dedup, and the
     // interpolation is a single large tensor multiply per quantity instead of a small GEMM set per
@@ -1332,9 +1346,9 @@ namespace sctl {
     // Per-panel GL order / Bernstein parameter fixed at compile time by `digits`; the GL rule
     // itself is a build-once static (NOT recomputed per target -- ComputeNdsWts is an O(N^2)
     // uncached Newton solve).
-    const Integer QuadOrder = DigitsQuadOrder<digits>();
-    const Real b_ellipse = DigitsBEllipse<digits>();
-    const std::pair<Vector<Real>, Vector<Real>>& gl = DigitsGLRule<digits>();
+    const Integer QuadOrder = DigitsQuadOrder(digits);
+    const Real b_ellipse = DigitsBEllipse(digits);
+    const std::pair<Vector<Real>, Vector<Real>>& gl = DigitsGLRule(digits);
 
     thread_local Vector<Real> u_param, wu, v_param, wv;
     BENCH_TIC(QuadtreeBuild); // same phase label as the quadtree build it replaces
@@ -1444,20 +1458,21 @@ namespace sctl {
     for (Long i = 0; i < N; ++i) { delta[i] = (Real)px[i]; w[i] = (Real)pw[i]; }
   }
 
-  template <class Real> template <Integer order, Integer digits> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::CenteredURule(const Integer ti, const Integer levels) {
-    // `levels` is runtime, so slots are indexed by it; atomic so post-init reads are lock-free
-    // (this is read once per target inside the parallel self loop).
+  template <class Real> template <Integer order> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::CenteredURule(const Integer ti, const Integer levels, const Integer digits) {
+    // `levels` and `digits` are both runtime, so slots are indexed by the pair; atomic so
+    // post-init reads are lock-free (this is read once per target inside the parallel self loop).
     static constexpr Integer MaxLvl = 41;
-    static std::atomic<Vector<NodeRuleData>*> slot[MaxLvl];
+    static std::atomic<Vector<NodeRuleData>*> slot[MaxLvl][MaxDigits];
     static std::mutex mtx;
     SCTL_ASSERT(levels >= 0 && levels < MaxLvl);
-    Vector<NodeRuleData>* p = slot[levels].load(std::memory_order_acquire);
+    SCTL_ASSERT(digits >= 0 && digits < MaxDigits);
+    Vector<NodeRuleData>* p = slot[levels][digits].load(std::memory_order_acquire);
     if (!p) {
       std::lock_guard<std::mutex> lk(mtx);
-      p = slot[levels].load(std::memory_order_relaxed);
+      p = slot[levels][digits].load(std::memory_order_relaxed);
       if (!p) {
         const Vector<Real>& nds = ParamNodes(order);
-        const Integer QuadOrder = DigitsQuadOrder<digits>();
+        const Integer QuadOrder = DigitsQuadOrder(digits);
         Vector<Real> qnds, qwts;
         LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, QuadOrder);
         auto* d = new Vector<NodeRuleData>(order);
@@ -1466,29 +1481,38 @@ namespace sctl {
           LagrangeAtOffset<order>((*d)[i].M, (*d)[i].dM, (*d)[i].MT, (*d)[i].dMT, (*d)[i].param, i);
         }
         p = d;
-        slot[levels].store(p, std::memory_order_release);
+        slot[levels][digits].store(p, std::memory_order_release);
       }
     }
     return (*p)[ti];
   }
 
-  template <class Real> template <Integer order, Integer digits> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::CenteredVRule(const Integer tj) {
-    auto compute_all = []() {
-      const Vector<Real>& nds = ParamNodes(order);
-      const Integer Lvl = DigitsVLevels<digits>();
-      const Integer QuadOrder = DigitsQuadOrder<digits>();
-      Vector<NodeRuleData> data(order);
-      for (Integer j = 0; j < order; j++) {
-        LogSingularQuad1DCentered(data[j].param, data[j].w, nds[j], Lvl, QuadOrder);
-        LagrangeAtOffset<order>(data[j].M, data[j].dM, data[j].MT, data[j].dMT, data[j].param, j);
+  template <class Real> template <Integer order> const typename QuadElemList<Real>::NodeRuleData& QuadElemList<Real>::CenteredVRule(const Integer tj, const Integer digits) {
+    // `digits` is runtime, so slots are indexed by it (same pattern as CenteredURule).
+    static std::atomic<Vector<NodeRuleData>*> slot[MaxDigits];
+    static std::mutex mtx;
+    SCTL_ASSERT(digits >= 0 && digits < MaxDigits);
+    Vector<NodeRuleData>* p = slot[digits].load(std::memory_order_acquire);
+    if (!p) {
+      std::lock_guard<std::mutex> lk(mtx);
+      p = slot[digits].load(std::memory_order_relaxed);
+      if (!p) {
+        const Vector<Real>& nds = ParamNodes(order);
+        const Integer Lvl = VLevelsForDigits(digits);
+        const Integer QuadOrder = DigitsQuadOrder(digits);
+        auto* d = new Vector<NodeRuleData>(order);
+        for (Integer j = 0; j < order; j++) {
+          LogSingularQuad1DCentered((*d)[j].param, (*d)[j].w, nds[j], Lvl, QuadOrder);
+          LagrangeAtOffset<order>((*d)[j].M, (*d)[j].dM, (*d)[j].MT, (*d)[j].dMT, (*d)[j].param, j);
+        }
+        p = d;
+        slot[digits].store(p, std::memory_order_release);
       }
-      return data;
-    };
-    static const Vector<NodeRuleData> data = compute_all();
-    return data[tj];
+    }
+    return (*p)[tj];
   }
 
-  template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker) {
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::SelfInteracBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
     // Singular self-interaction for on-surface node (ti,tj). 1D reduction: graded u-rule
     // toward u0 x Alpert log-singular v-rule toward v0; both rules + interpolation are
     // preloaded (geometry-independent, fixed by order/ti/tj/digits), integrated by
@@ -1504,8 +1528,8 @@ namespace sctl {
 
     // Centered rules: graded u-rule + Alpert v-rule built OUTWARD from the singular node
     // (offset-stored, endpoint-anchored), so the singularity lands at parameter offset zero exactly.
-    const NodeRuleData& ru = CenteredURule<order, digits>(ti, qel.max_depth_);  // u: graded rule
-    const NodeRuleData& rv = CenteredVRule<order, digits>(tj);                   // v: composite Alpert rule
+    const NodeRuleData& ru = CenteredURule<order>(ti, qel.max_depth_, digits);  // u: graded rule
+    const NodeRuleData& rv = CenteredVRule<order>(tj, digits);                   // v: composite Alpert rule
 
     M_acc.ReInit(nnode, KDIM0*KDIM1_out);
     M_acc.SetZero();
@@ -1778,7 +1802,7 @@ namespace sctl {
     }
   }
 
-  template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self) {
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::SelfInteracHelper(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits) {
     // On-surface singular self-interaction: every node is an on-element target, built
     // by the singular block. M_lst[e] is (nnode*KDIM0) x (nnode*KDIM1_out), applied as
     // U = F * M_lst[e].
@@ -1804,16 +1828,16 @@ namespace sctl {
     if (qel.SelfUsesDuffy()) {
       DuffyTable<order>();                              // Duffy self: per-(order) triangle operators (ParamNodes/DiffMat come along)
     } else {
-      CenteredURule<order, digits>(0, qel.max_depth_);  // centered self: graded u-rule (mutex-cached)
-      CenteredVRule<order, digits>(0);                  // centered Alpert v-rule
+      CenteredURule<order>(0, qel.max_depth_, digits);  // centered self: graded u-rule (mutex-cached)
+      CenteredVRule<order>(0, digits);                  // centered Alpert v-rule
     }
     if (qel.SelfUsesDuffy()) {
-      NearGradeTableQ<order>(NearQuadOrderRt(digits));  // upstream near: full rung ladder built on first call
-      NearBEllipseRt(digits); NearQuadOrderRt(digits);
+      NearGradeTableQ<order>(NearQuadOrder(digits));  // upstream near: full rung ladder built on first call
+      NearBEllipse(digits); NearQuadOrder(digits);
     } else {
-      DigitsGLRule<digits>();           // graded near: per-cell GL rule (ComputeNdsWts is an uncached O(N^2) solve)
-      DigitsBEllipse<digits>();         // near admissibility constant (end-foot reach)
-      DigitsQuadOrder<digits>();        // near per-cell GL order
+      DigitsGLRule(digits);           // graded near: per-cell GL rule (ComputeNdsWts is an uncached O(N^2) solve)
+      DigitsBEllipse(digits);         // near admissibility constant (end-foot reach)
+      DigitsQuadOrder(digits);        // near per-cell GL order
     }
 
     // Per-element singular blocks are independent: each writes its own M_lst[elem_idx],
@@ -1838,7 +1862,7 @@ namespace sctl {
           if (trg_dot_prod) ntrg.ReInit(COORD_DIM, Xnnodes.begin() + t*COORD_DIM, false);
 
           Matrix<Real> M_acc;
-          SelfInteracBlock<digits, order>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker);
+          SelfInteracBlock<order>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
 
           // Scatter into column block t of M: M[(i*order+j)*KDIM0+k0][t*KDIM1_out+k1].
           for (Integer i = 0; i < order; i++) {
@@ -1856,43 +1880,24 @@ namespace sctl {
     }
   }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::SelfInteracDispatchDigits(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self) {
-    // Map runtime tol to compile-time `digits` (CSBQ-style) so the per-panel quad order
-    // and preloaded tables are fixed at compile time per accuracy level.
-    if      (tol <= pow<15,Real>((Real)0.1)) SelfInteracHelper<15,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow<14,Real>((Real)0.1)) SelfInteracHelper<14,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow<13,Real>((Real)0.1)) SelfInteracHelper<13,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow<12,Real>((Real)0.1)) SelfInteracHelper<12,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow<11,Real>((Real)0.1)) SelfInteracHelper<11,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow<10,Real>((Real)0.1)) SelfInteracHelper<10,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow< 9,Real>((Real)0.1)) SelfInteracHelper< 9,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow< 8,Real>((Real)0.1)) SelfInteracHelper< 8,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow< 7,Real>((Real)0.1)) SelfInteracHelper< 7,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow< 6,Real>((Real)0.1)) SelfInteracHelper< 6,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow< 5,Real>((Real)0.1)) SelfInteracHelper< 5,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow< 4,Real>((Real)0.1)) SelfInteracHelper< 4,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow< 3,Real>((Real)0.1)) SelfInteracHelper< 3,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow< 2,Real>((Real)0.1)) SelfInteracHelper< 2,order>(M_lst, ker, trg_dot_prod, self);
-    else if (tol <= pow< 1,Real>((Real)0.1)) SelfInteracHelper< 1,order>(M_lst, ker, trg_dot_prod, self);
-    else                                     SelfInteracHelper< 0,order>(M_lst, ker, trg_dot_prod, self);
-  }
-
   template <class Real> template <class Kernel> void QuadElemList<Real>::SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self) {
-    // Dispatch the runtime element order to a compile-time `order` in {4,8,...,48}.
+    // Dispatch the runtime element order to a compile-time `order` in {4,8,...,48}; the
+    // tolerance stays runtime -- `digits` only selects a cached rule.
     const Integer order = static_cast<const QuadElemList<Real>*>(self)->order;
+    const Integer digits = DigitsFromTol(tol);
     switch (order) {
-      case  4: SelfInteracDispatchDigits< 4>(M_lst, ker, tol, trg_dot_prod, self); break;
-      case  8: SelfInteracDispatchDigits< 8>(M_lst, ker, tol, trg_dot_prod, self); break;
-      case 12: SelfInteracDispatchDigits<12>(M_lst, ker, tol, trg_dot_prod, self); break;
-      case 16: SelfInteracDispatchDigits<16>(M_lst, ker, tol, trg_dot_prod, self); break;
-      case 20: SelfInteracDispatchDigits<20>(M_lst, ker, tol, trg_dot_prod, self); break;
-      case 24: SelfInteracDispatchDigits<24>(M_lst, ker, tol, trg_dot_prod, self); break;
-      case 28: SelfInteracDispatchDigits<28>(M_lst, ker, tol, trg_dot_prod, self); break;
-      case 32: SelfInteracDispatchDigits<32>(M_lst, ker, tol, trg_dot_prod, self); break;
-      case 36: SelfInteracDispatchDigits<36>(M_lst, ker, tol, trg_dot_prod, self); break;
-      case 40: SelfInteracDispatchDigits<40>(M_lst, ker, tol, trg_dot_prod, self); break;
-      case 44: SelfInteracDispatchDigits<44>(M_lst, ker, tol, trg_dot_prod, self); break;
-      case 48: SelfInteracDispatchDigits<48>(M_lst, ker, tol, trg_dot_prod, self); break;
+      case  4: SelfInteracHelper<4>(M_lst, ker, trg_dot_prod, self, digits); break;
+      case  8: SelfInteracHelper<8>(M_lst, ker, trg_dot_prod, self, digits); break;
+      case 12: SelfInteracHelper<12>(M_lst, ker, trg_dot_prod, self, digits); break;
+      case 16: SelfInteracHelper<16>(M_lst, ker, trg_dot_prod, self, digits); break;
+      case 20: SelfInteracHelper<20>(M_lst, ker, trg_dot_prod, self, digits); break;
+      case 24: SelfInteracHelper<24>(M_lst, ker, trg_dot_prod, self, digits); break;
+      case 28: SelfInteracHelper<28>(M_lst, ker, trg_dot_prod, self, digits); break;
+      case 32: SelfInteracHelper<32>(M_lst, ker, trg_dot_prod, self, digits); break;
+      case 36: SelfInteracHelper<36>(M_lst, ker, trg_dot_prod, self, digits); break;
+      case 40: SelfInteracHelper<40>(M_lst, ker, trg_dot_prod, self, digits); break;
+      case 44: SelfInteracHelper<44>(M_lst, ker, trg_dot_prod, self, digits); break;
+      case 48: SelfInteracHelper<48>(M_lst, ker, trg_dot_prod, self, digits); break;
       default: SCTL_ASSERT_MSG(false, "QuadElemList element order must be one of {4,8,...,48} for the templated near/self schemes.");
     }
   }
@@ -2108,7 +2113,7 @@ namespace sctl {
     return sqrt<Real>(f);
   }
 
-  template <class Real> template <Integer digits, Integer order, class Kernel> void QuadElemList<Real>::NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self) {
+  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracHelper(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits) {
     // Per-target near-singular interaction (off-surface targets). Dispatches to the scheme's
     // near block: foot-graded separable tensor (Adaptive) or Duffy. On-surface self
     // interactions are built by SelfInterac.
@@ -2138,7 +2143,7 @@ namespace sctl {
       // foot-graded separable-tensor near, which holds its accuracy under parametric shear where
       // the isotropic-quadtree rule it replaced lost ~2-3 orders even on smooth geometry.
       if (qel.SelfUsesDuffy()) NearInteracBlockSplitDuffy<order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
-      else NearInteracBlockGraded<digits, order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker);
+      else NearInteracBlockGraded<order>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
 
       // Scatter into M for target t: M[(i*order+j)*KDIM0+k0][t*KDIM1_out+k1].
       for (Integer i = 0; i < order; i++) {
@@ -2154,43 +2159,23 @@ namespace sctl {
     }
   }
 
-  template <class Real> template <Integer order, class Kernel> void QuadElemList<Real>::NearInteracDispatchDigits(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
-    // Map runtime tol to compile-time `digits` (CSBQ-style) so the per-panel quad order
-    // and preloaded tables are fixed at compile time per accuracy level.
-    if      (tol <= pow<15,Real>((Real)0.1)) NearInteracHelper<15,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow<14,Real>((Real)0.1)) NearInteracHelper<14,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow<13,Real>((Real)0.1)) NearInteracHelper<13,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow<12,Real>((Real)0.1)) NearInteracHelper<12,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow<11,Real>((Real)0.1)) NearInteracHelper<11,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow<10,Real>((Real)0.1)) NearInteracHelper<10,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow< 9,Real>((Real)0.1)) NearInteracHelper< 9,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow< 8,Real>((Real)0.1)) NearInteracHelper< 8,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow< 7,Real>((Real)0.1)) NearInteracHelper< 7,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow< 6,Real>((Real)0.1)) NearInteracHelper< 6,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow< 5,Real>((Real)0.1)) NearInteracHelper< 5,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow< 4,Real>((Real)0.1)) NearInteracHelper< 4,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow< 3,Real>((Real)0.1)) NearInteracHelper< 3,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow< 2,Real>((Real)0.1)) NearInteracHelper< 2,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else if (tol <= pow< 1,Real>((Real)0.1)) NearInteracHelper< 1,order>(M, Xt, normal_trg, ker, elem_idx, self);
-    else                                     NearInteracHelper< 0,order>(M, Xt, normal_trg, ker, elem_idx, self);
-  }
-
   template <class Real> template <class Kernel> void QuadElemList<Real>::NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
-    // Dispatch the runtime element order to a compile-time `order` in {4,8,...,48}.
+    // Dispatch the runtime element order to a compile-time `order`; the tolerance stays runtime.
     const Integer order = static_cast<const QuadElemList<Real>*>(self)->order;
+    const Integer digits = DigitsFromTol(tol);
     switch (order) {
-      case  4: NearInteracDispatchDigits< 4>(M, Xt, normal_trg, ker, tol, elem_idx, self); break;
-      case  8: NearInteracDispatchDigits< 8>(M, Xt, normal_trg, ker, tol, elem_idx, self); break;
-      case 12: NearInteracDispatchDigits<12>(M, Xt, normal_trg, ker, tol, elem_idx, self); break;
-      case 16: NearInteracDispatchDigits<16>(M, Xt, normal_trg, ker, tol, elem_idx, self); break;
-      case 20: NearInteracDispatchDigits<20>(M, Xt, normal_trg, ker, tol, elem_idx, self); break;
-      case 24: NearInteracDispatchDigits<24>(M, Xt, normal_trg, ker, tol, elem_idx, self); break;
-      case 28: NearInteracDispatchDigits<28>(M, Xt, normal_trg, ker, tol, elem_idx, self); break;
-      case 32: NearInteracDispatchDigits<32>(M, Xt, normal_trg, ker, tol, elem_idx, self); break;
-      case 36: NearInteracDispatchDigits<36>(M, Xt, normal_trg, ker, tol, elem_idx, self); break;
-      case 40: NearInteracDispatchDigits<40>(M, Xt, normal_trg, ker, tol, elem_idx, self); break;
-      case 44: NearInteracDispatchDigits<44>(M, Xt, normal_trg, ker, tol, elem_idx, self); break;
-      case 48: NearInteracDispatchDigits<48>(M, Xt, normal_trg, ker, tol, elem_idx, self); break;
+      case  4: NearInteracHelper<4>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      case  8: NearInteracHelper<8>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      case 12: NearInteracHelper<12>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      case 16: NearInteracHelper<16>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      case 20: NearInteracHelper<20>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      case 24: NearInteracHelper<24>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      case 28: NearInteracHelper<28>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      case 32: NearInteracHelper<32>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      case 36: NearInteracHelper<36>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      case 40: NearInteracHelper<40>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      case 44: NearInteracHelper<44>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
+      case 48: NearInteracHelper<48>(M, Xt, normal_trg, ker, elem_idx, self, digits); break;
       default: SCTL_ASSERT_MSG(false, "QuadElemList element order must be one of {4,8,...,48} for the templated near/self schemes.");
     }
   }
