@@ -456,11 +456,7 @@ namespace sctl {
       const Long Nv = rv.M.Dim(1);
       if (!Nu || !Nv) return;
 
-      thread_local Vector<Real> Cv, Cdv;
-      if (Cv.Dim() != COORD_DIM*order*Nv) {
-        Cv.ReInit(COORD_DIM*order*Nv);
-        Cdv.ReInit(COORD_DIM*order*Nv);
-      }
+      ScratchBuf<Real> Cv(COORD_DIM*order*Nv), Cdv(COORD_DIM*order*Nv);
       {
         const Matrix<Real> cs_all(COORD_DIM*order, order, (Iterator<Real>)src_nodal.begin(), false);
         Matrix<Real> Cv_all (COORD_DIM*order, Nv, Cv.begin(),  false);
@@ -471,19 +467,8 @@ namespace sctl {
 
       const Long UBLK = std::max<Long>(1, std::min<Long>(Nu, MaxUnblockedPts / Nv));
       const Long nqmax = UBLK*Nv;
-      thread_local Vector<Real> Xs, dXu, dXv, Xn, wq, KW, Tblk, Tfull;
-      if (Xs.Dim() != COORD_DIM*nqmax) {
-        Xs.ReInit(COORD_DIM*nqmax);
-        dXu.ReInit(COORD_DIM*nqmax);
-        dXv.ReInit(COORD_DIM*nqmax);
-        Xn.ReInit(COORD_DIM*nqmax);
-        wq.ReInit(nqmax);
-      }
-      if (KW.Dim() != C*nqmax) {
-        KW.ReInit(C*nqmax);
-        Tblk.ReInit(C*UBLK*(Long)order);
-      }
-      if (Tfull.Dim() != C*Nu*(Long)order) Tfull.ReInit(C*Nu*(Long)order);
+      ScratchBuf<Real> Xs(COORD_DIM*nqmax), dXu(COORD_DIM*nqmax), dXv(COORD_DIM*nqmax), Xn(COORD_DIM*nqmax), wq(nqmax);
+      ScratchBuf<Real> KW(C*nqmax), Tblk(UBLK < Nu ? C*UBLK*(Long)order : 0), Tfull(C*Nu*(Long)order);
 
       const Long np = std::max<Long>(1, proxy_w.Dim());
       for (Long a0 = 0; a0 < Nu; a0 += UBLK) {
@@ -573,7 +558,8 @@ namespace sctl {
       M.SetZero();
       if (!Ntrg) return;
 
-      thread_local Matrix<Real> M_acc;
+      ScratchBuf<Real> M_acc_buf(nnode*KDIM0*KDIM1_out);
+      Matrix<Real> M_acc(nnode, KDIM0*KDIM1_out, M_acc_buf.begin(), false);
       for (Long t = 0; t < Ntrg; t++) {
         Vector<Real> Xtrg(COORD_DIM, (Iterator<Real>)Xt.begin() + t*COORD_DIM, false);
         Vector<Real> ntrg;
@@ -595,8 +581,11 @@ namespace sctl {
 
       #pragma omp parallel for schedule(static)
       for (Long elem_idx = 0; elem_idx < qel.Size(); elem_idx++) {
-        thread_local Vector<Real> Xnodes, Xnnodes, dXu, dXv;
-        qel.GetGeom(&Xnodes, (want_tangents || trg_dot_prod ? &Xnnodes : nullptr), nullptr,
+        const bool want_normals = (want_tangents || trg_dot_prod);
+        ScratchBuf<Real> Xnodes_buf(nnode*COORD_DIM), Xnnodes_buf(want_normals ? nnode*COORD_DIM : 0);
+        ScratchBuf<Real> dXu_buf(want_tangents ? nnode*COORD_DIM : 0), dXv_buf(want_tangents ? nnode*COORD_DIM : 0);
+        Vector<Real> Xnodes(Xnodes_buf), Xnnodes(Xnnodes_buf), dXu(dXu_buf), dXv(dXv_buf);
+        qel.GetGeom(&Xnodes, (want_normals ? &Xnnodes : nullptr), nullptr,
             (want_tangents ? &dXu : nullptr), (want_tangents ? &dXv : nullptr), nds, nds, elem_idx);
 
         Matrix<Real>& M = M_lst[elem_idx];
@@ -690,16 +679,16 @@ namespace sctl {
     if (dX_du && dX_du->Dim() != N * detail_quadelem::COORD_DIM) dX_du->ReInit(N * detail_quadelem::COORD_DIM);
     if (dX_dv && dX_dv->Dim() != N * detail_quadelem::COORD_DIM) dX_dv->ReInit(N * detail_quadelem::COORD_DIM);
 
-    thread_local Matrix<Real> Mu, MuT, Mv;
-    if (Mu.Dim(0) != order || Mu.Dim(1) != Nu) {
-      Mu.ReInit(order, Nu);
-      MuT.ReInit(Nu, order);
-    }
-    if (Mv.Dim(0) != order || Mv.Dim(1) != Nv) Mv.ReInit(order, Nv);
-    { Vector<Real> Mu_(order * Nu, Mu.begin(), false);
-      Vector<Real> Mv_(order * Nv, Mv.begin(), false);
+    ScratchBuf<Real> Mu_buf(order * Nu), MuT_buf(Nu * order), Mv_buf(order * Nv);
+    Matrix<Real> Mu(order, Nu, Mu_buf.begin(), false);
+    Matrix<Real> MuT(Nu, order, MuT_buf.begin(), false);
+    Matrix<Real> Mv(order, Nv, Mv_buf.begin(), false);
+    {
+      Vector<Real> Mu_(order * Nu, Mu_buf.begin(), false);
+      Vector<Real> Mv_(order * Nv, Mv_buf.begin(), false);
       LagrangeInterp<Real>::Interpolate(Mu_, ParamNodes(order), u_param);
-      LagrangeInterp<Real>::Interpolate(Mv_, ParamNodes(order), v_param); }
+      LagrangeInterp<Real>::Interpolate(Mv_, ParamNodes(order), v_param);
+    }
     for (Integer i = 0; i < order; i++) for (Long a = 0; a < Nu; a++) MuT[a][i] = Mu[i][a];
 
     SCTL_ASSERT(elem_idx >= 0 && elem_idx < nelem);
@@ -709,7 +698,8 @@ namespace sctl {
     const Vector<Real> dcoord_dv_(detail_quadelem::COORD_DIM * nnode_per_elem, (Iterator<Real>)dcoord_dv.begin() + base, false);
 
     if (X) {
-      thread_local Vector<Real> X_soa;
+      ScratchBuf<Real> X_soa_buf(N * detail_quadelem::COORD_DIM);
+      Vector<Real> X_soa(X_soa_buf);
       detail_quadelem::EvalTensorProduct(X_soa, coord_, MuT, Mv);
       for (Long i = 0; i < N; i++) {
         (*X)[i * detail_quadelem::COORD_DIM + 0] = X_soa[0 * N + i];
@@ -718,7 +708,8 @@ namespace sctl {
       }
     }
     if (Xn || Xa || dX_du || dX_dv) {
-      thread_local Vector<Real> dXdu_soa, dXdv_soa;
+      ScratchBuf<Real> dXdu_soa_buf(N * detail_quadelem::COORD_DIM), dXdv_soa_buf(N * detail_quadelem::COORD_DIM);
+      Vector<Real> dXdu_soa(dXdu_soa_buf), dXdv_soa(dXdv_soa_buf);
       detail_quadelem::EvalTensorProduct(dXdu_soa, dcoord_du_, MuT, Mv);
       detail_quadelem::EvalTensorProduct(dXdv_soa, dcoord_dv_, MuT, Mv);
       for (Long i = 0; i < N; i++) {
@@ -1226,7 +1217,7 @@ namespace sctl {
       const Integer C = KDIM0*KDIM1_out;
       constexpr Integer NR = 3*detail_quadelem::COORD_DIM;
       constexpr Integer NA = 2*detail_quadelem::COORD_DIM;
-      M_acc.ReInit(nnode, C);
+      if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != C) M_acc.ReInit(nnode, C);
       M_acc.SetZero();
 
       const DuffySelfTable<Real>& tbl = DuffyTable<order,Real>();
@@ -1239,7 +1230,8 @@ namespace sctl {
 
       auto ash = [](const Real x) { return log<Real>(x + sqrt<Real>(x*x + (Real)1)); };
 
-      thread_local Vector<Real> cs;
+      ScratchBuf<Real> cs_buf(detail_quadelem::COORD_DIM*nnode);
+      Vector<Real> cs(cs_buf);
       detail_quadelem::ShiftedElemCoord(cs, qel, elem_idx, Xtrg);
 
       Real G[4];
@@ -1397,7 +1389,8 @@ namespace sctl {
           [&](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
             const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>&, const Vector<Real>&,
             const Vector<Real>&, const Vector<Real>&, const Integer KDIM1_out) {
-          thread_local Matrix<Real> M_acc;
+          ScratchBuf<Real> M_acc_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
+          Matrix<Real> M_acc((Long)order*order, Kernel::SrcDim()*KDIM1_out, M_acc_buf.begin(), false);
           SelfInteracBlockDuffy<order,Real>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
           detail_quadelem::ScatterTargetBlock(M, M_acc, t, KDIM1_out);
           });
@@ -1672,9 +1665,9 @@ namespace sctl {
       const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full / detail_quadelem::COORD_DIM : KDIM1full;
       const Integer C = KDIM0 * KDIM1_out;
 
-      thread_local Vector<Real> coord_shift, acc;
+      ScratchBuf<Real> coord_shift_buf(detail_quadelem::COORD_DIM*nnode), acc_buf((Long)C*nnode);
+      Vector<Real> coord_shift(coord_shift_buf), acc(acc_buf);
       detail_quadelem::ShiftedElemCoord(coord_shift, qel, elem_idx, Xtrg);
-      if (acc.Dim() != (Long)C*nnode) acc.ReInit((Long)C*nnode);
       acc.SetZero();
       detail_quadelem::IntegrateTensorRule<order,Real>(acc, coord_shift, ru, rv, normal_trg, ker);
       for (Long p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] += acc[(Long)c*nnode + p];
@@ -1718,7 +1711,7 @@ namespace sctl {
       const detail_quadelem::QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits);
       const detail_quadelem::QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, digits);
 
-      M_acc.ReInit(nnode, KDIM0*KDIM1_out);
+      if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) M_acc.ReInit(nnode, KDIM0*KDIM1_out);
       M_acc.SetZero();
       IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru, rv, ker);
     }
@@ -1781,7 +1774,8 @@ namespace sctl {
           [&](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
             const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>&, const Vector<Real>&,
             const Vector<Real>&, const Vector<Real>&, const Integer KDIM1_out) {
-          thread_local Matrix<Real> M_acc;
+          ScratchBuf<Real> M_acc_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
+          Matrix<Real> M_acc((Long)order*order, Kernel::SrcDim()*KDIM1_out, M_acc_buf.begin(), false);
           SelfInteracBlockTensorProduct<order,Real>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
           detail_quadelem::ScatterTargetBlock(M, M_acc, t, KDIM1_out);
           });
@@ -1843,13 +1837,11 @@ namespace sctl {
           [&](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
             const Vector<Real>&, const Vector<Real>& ntrg, const Vector<Real>& Xnodes, const Vector<Real>& Xnnodes,
             const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer KDIM1_out) {
-          thread_local Vector<Real> hh_Xt1, hh_off;
-          thread_local Matrix<Real> M_hh;
           const Vector<Real>& soff = HedgehogProxyOffsets<Real>();
-          if (hh_Xt1.Dim() != detail_quadelem::COORD_DIM) {
-          hh_Xt1.ReInit(detail_quadelem::COORD_DIM);
-          hh_off.ReInit(soff.Dim()*detail_quadelem::COORD_DIM);
-          }
+          ScratchBuf<Real> hh_Xt1_buf(detail_quadelem::COORD_DIM), hh_off_buf(soff.Dim()*detail_quadelem::COORD_DIM);
+          ScratchBuf<Real> M_hh_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
+          Vector<Real> hh_Xt1(hh_Xt1_buf), hh_off(hh_off_buf);
+          Matrix<Real> M_hh((Long)order*order*Kernel::SrcDim(), KDIM1_out, M_hh_buf.begin(), false);
           Real su2 = 0, sv2 = 0;
           for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
           su2 += dXu[t*detail_quadelem::COORD_DIM+k]*dXu[t*detail_quadelem::COORD_DIM+k];
