@@ -289,33 +289,20 @@ namespace sctl {
           du = gu / (E + (Real)1e-30);
         }
 
-        Real lambda = 1;
-        bool improved = false;
         Real un = u, vn = v, fn = f;
-        for (Integer ls = 0; ls < 40; ls++) {
-          un = std::min<Real>(1, std::max<Real>(0, u - lambda*du));
-          vn = std::min<Real>(1, std::max<Real>(0, v - lambda*dv));
-          fn = dist2_at(un, vn);
-          if (fn <= f * (1 + c_eps)) {
-            improved = true;
-            break;
-          }
-          lambda *= (Real)0.5;
-        }
-        if (!improved) {
-          const Real gu_s = Pu / (E + (Real)1e-30), gv_s = Pv / (G + (Real)1e-30);
-          lambda = 1;
+        const auto line_search = [&dist2_at, u, v, f, c_eps, &un, &vn, &fn](const Real step_u, const Real step_v) {
+          Real lambda = 1;
           for (Integer ls = 0; ls < 40; ls++) {
-            un = std::min<Real>(1, std::max<Real>(0, u - lambda*gu_s));
-            vn = std::min<Real>(1, std::max<Real>(0, v - lambda*gv_s));
+            un = std::min<Real>(1, std::max<Real>(0, u - lambda*step_u));
+            vn = std::min<Real>(1, std::max<Real>(0, v - lambda*step_v));
             fn = dist2_at(un, vn);
-            if (fn <= f * (1 + c_eps)) {
-              improved = true;
-              break;
-            }
+            if (fn <= f * (1 + c_eps)) return true;
             lambda *= (Real)0.5;
           }
-        }
+          return false;
+        };
+        bool improved = line_search(du, dv);
+        if (!improved) improved = line_search(Pu / (E + (Real)1e-30), Pv / (G + (Real)1e-30));
         if (!improved) {
           const bool stat = (fabs(Pu) <= gtol_stall * sqrt<Real>(E*f)) && (fabs(Pv) <= gtol_stall * sqrt<Real>(G*f));
           const bool tiny = (fabs(du) < utol && fabs(dv) < utol);
