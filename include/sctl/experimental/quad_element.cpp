@@ -2476,6 +2476,7 @@ namespace sctl {
   template <class Real> template <class ValueType> void QuadElemList<Real>::Copy(QuadElemList<ValueType>& elem_lst) const {
     elem_lst.nelem = nelem;
     elem_lst.order = order;
+    elem_lst.scheme_ = static_cast<typename QuadElemList<ValueType>::QuadScheme>(static_cast<int>(scheme_));
 
     elem_lst.coord.ReInit(coord.Dim());
     elem_lst.dcoord_du.ReInit(dcoord_du.Dim());
