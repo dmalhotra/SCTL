@@ -48,7 +48,7 @@ namespace sctl {
         scheme_ = s;
       }
 
-      static const Vector<Real>& ParamNodes(const Integer Order);
+      static const Vector<Real>& ParamNodes(const Integer order);
 
       void Write(const std::string& fname, const Comm& comm = Comm::Self()) const;
 
