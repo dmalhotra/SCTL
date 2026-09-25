@@ -126,6 +126,11 @@ namespace sctl {
     using PrecompReal = long double;
     #endif
 
+    template <class Real> struct QuadRule1D {
+      Vector<Real> w;
+      Matrix<Real> M, dM, MT, dMT;
+    };
+
     template <class Real> void EvalPoint(const QuadElemList<Real>& qel, Real* X, Real* dXu, Real* dXv, const Real u, const Real v, const Long elem_idx, const Vector<Real>* origin) {
       constexpr Integer MaxOrder = 48;
       SCTL_ASSERT(qel.Order() <= MaxOrder);
@@ -395,6 +400,121 @@ namespace sctl {
             }
           }
         }
+      }
+    }
+
+    template <Integer order, class Real, class Kernel> void IntegrateTensorRule(Vector<Real>& acc_cm, const Vector<Real>& src_nodal, const QuadRule1D<Real>& ru, const QuadRule1D<Real>& rv, const Vector<Real>& normal_trg, const Kernel& ker, const Real nrm_sign = 1, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
+      static constexpr Integer KDIM0 = Kernel::SrcDim();
+      static constexpr Integer KDIM1full = Kernel::TrgDim();
+      const Long nnode = (Long)order * order;
+      const bool trg_dot_prod = (normal_trg.Dim() > 0);
+      const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
+      const Integer C = KDIM0 * KDIM1_out;
+
+      const Long Nu = ru.M.Dim(1);
+      const Long Nv = rv.M.Dim(1);
+      if (!Nu || !Nv) return;
+
+      thread_local Vector<Real> Cv, Cdv;
+      if (Cv.Dim() != COORD_DIM*order*Nv) {
+        Cv.ReInit(COORD_DIM*order*Nv);
+        Cdv.ReInit(COORD_DIM*order*Nv);
+      }
+      {
+        const Matrix<Real> cs_all(COORD_DIM*order, order, (Iterator<Real>)src_nodal.begin(), false);
+        Matrix<Real> Cv_all (COORD_DIM*order, Nv, Cv.begin(),  false);
+        Matrix<Real> Cdv_all(COORD_DIM*order, Nv, Cdv.begin(), false);
+        Matrix<Real>::GEMM(Cv_all,  cs_all, rv.M);
+        Matrix<Real>::GEMM(Cdv_all, cs_all, rv.dM);
+      }
+
+      const Long UBLK = std::max<Long>(1, std::min<Long>(Nu, MaxUnblockedPts / Nv));
+      const Long nqmax = UBLK*Nv;
+      thread_local Vector<Real> Xs, dXu, dXv, Xn, wq, KW, Tblk, Tfull;
+      if (Xs.Dim() != COORD_DIM*nqmax) {
+        Xs.ReInit(COORD_DIM*nqmax);
+        dXu.ReInit(COORD_DIM*nqmax);
+        dXv.ReInit(COORD_DIM*nqmax);
+        Xn.ReInit(COORD_DIM*nqmax);
+        wq.ReInit(nqmax);
+      }
+      if (KW.Dim() != C*nqmax) {
+        KW.ReInit(C*nqmax);
+        Tblk.ReInit(C*UBLK*(Long)order);
+      }
+      if (Tfull.Dim() != C*Nu*(Long)order) Tfull.ReInit(C*Nu*(Long)order);
+
+      static constexpr bool HAS_N = UKerNeedsN<Kernel, Vec<Real,1>>::value;
+      using WVec = Vec<Real, DefaultVecLen<Real>()>;
+      const Long np = std::max<Long>(1, proxy_w.Dim());
+      for (Long a0 = 0; a0 < Nu; a0 += UBLK) {
+        const Long nu = std::min<Long>(UBLK, Nu - a0);
+        const Long nqb = nu*Nv;
+        const Matrix<Real> MuT_b (nu, order, (Iterator<Real>)ru.MT.begin()  + a0*(Long)order, false);
+        const Matrix<Real> dMuT_b(nu, order, (Iterator<Real>)ru.dMT.begin() + a0*(Long)order, false);
+        for (Integer k = 0; k < COORD_DIM; k++) {
+          const Matrix<Real> Cv_k (order, Nv, Cv.begin()  + k*(Long)order*Nv, false);
+          const Matrix<Real> Cdv_k(order, Nv, Cdv.begin() + k*(Long)order*Nv, false);
+          Matrix<Real> X_k(nu, Nv, Xs.begin() + k*nqb, false);
+          Matrix<Real> dXu_k(nu, Nv, dXu.begin() + k*nqb, false);
+          Matrix<Real> dXv_k(nu, Nv, dXv.begin() + k*nqb, false);
+          Matrix<Real>::GEMM(X_k,   MuT_b,  Cv_k);
+          Matrix<Real>::GEMM(dXu_k, dMuT_b, Cv_k);
+          Matrix<Real>::GEMM(dXv_k, MuT_b,  Cdv_k);
+        }
+
+        for (Long a = 0; a < nu; a++) {
+          for (Long b = 0; b < Nv; b++) {
+            const Long q = a*Nv + b;
+            const Real du0 = dXu[0*nqb+q], du1 = dXu[1*nqb+q], du2 = dXu[2*nqb+q];
+            const Real dv0 = dXv[0*nqb+q], dv1 = dXv[1*nqb+q], dv2 = dXv[2*nqb+q];
+            const Real n0 = du1*dv2 - du2*dv1, n1 = du2*dv0 - du0*dv2, n2 = du0*dv1 - du1*dv0;
+            const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
+            const Real inv_area = (area > 0 ? nrm_sign/area : 0);
+            Xn[0*nqb+q] = n0*inv_area;
+            Xn[1*nqb+q] = n1*inv_area;
+            Xn[2*nqb+q] = n2*inv_area;
+            wq[q] = area*ru.w[a0+a]*rv.w[b];
+          }
+        }
+
+        const Long qmain = (nqb/WVec::Size())*WVec::Size();
+        const ConstIterator<Real> nt = (trg_dot_prod ? normal_trg.begin() : ConstIterator<Real>(NullIterator<Real>()));
+        for (Long j = 0; j < np; j++) {
+          StaticArray<Real,COORD_DIM> Xtj{0, 0, 0};
+          if (proxy_w.Dim()) {
+            for (Integer l = 0; l < COORD_DIM; l++) Xtj[l] = proxy_off[j*COORD_DIM+l];
+          }
+          const Vector<Real> Xtj_v(COORD_DIM, Xtj, false);
+          const Real wj = (proxy_w.Dim() ? proxy_w[j] : (Real)1);
+          const bool accum = (j > 0);
+          const ConstIterator<Real> xt = Xtj_v.begin(), xs = Xs.begin(), xn = Xn.begin(), w = wq.begin();
+          if (trg_dot_prod) {
+            KerFoldSoA<Real,Kernel,WVec,        HAS_N,true >(KW.begin(), xt, xs, xn, w, nqb, nqb,     0, qmain, wj, accum, nt, ker.GetCtxPtr());
+            KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,true >(KW.begin(), xt, xs, xn, w, nqb, nqb, qmain,   nqb, wj, accum, nt, ker.GetCtxPtr());
+          } else {
+            KerFoldSoA<Real,Kernel,WVec,        HAS_N,false>(KW.begin(), xt, xs, xn, w, nqb, nqb,     0, qmain, wj, accum, nt, ker.GetCtxPtr());
+            KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,false>(KW.begin(), xt, xs, xn, w, nqb, nqb, qmain,   nqb, wj, accum, nt, ker.GetCtxPtr());
+          }
+        }
+
+        {
+          const bool one_block = (nu == Nu);
+          const Matrix<Real> KW_m((Long)C*nu, Nv, KW.begin(), false);
+          Matrix<Real> T_m((Long)C*nu, order, (one_block ? Tfull.begin() : Tblk.begin()), false);
+          Matrix<Real>::GEMM(T_m, KW_m, rv.MT);
+          if (!one_block) {
+            for (Integer c = 0; c < C; c++) {
+              for (Long i = 0; i < nu*(Long)order; i++) Tfull[((Long)c*Nu + a0)*order + i] = Tblk[(Long)c*nu*order + i];
+            }
+          }
+        }
+      }
+
+      for (Integer c = 0; c < C; c++) {
+        const Matrix<Real> T_c(Nu, order, Tfull.begin() + (Long)c*Nu*order, false);
+        Matrix<Real> A_c(order, order, acc_cm.begin() + (Long)c*nnode, false);
+        Matrix<Real>::GEMM(A_c, ru.M, T_c, (Real)1);
       }
     }
 
@@ -723,9 +843,7 @@ namespace sctl {
       return b[digits];
     }
 
-    template <class Real> struct GradeRule {
-      Vector<Real> nds, w;
-      Matrix<Real> T, dT, TT, TD;
+    template <class Real> struct GradeRule : detail_quadelem::QuadRule1D<Real> {
       Real a, b;
     };
 
@@ -805,27 +923,22 @@ namespace sctl {
           r.a = a;
           r.b = b;
           const W aw = (W)a, w = (W)b - (W)a;
-          r.nds.ReInit(q);
           r.w.ReInit(q);
-          for (Integer i = 0; i < q; i++) {
-            r.nds[i] = (Real)(aw + w*qn[i]);
-            r.w[i] = (Real)(w*qw[i]);
-          }
+          for (Integer i = 0; i < q; i++) r.w[i] = (Real)(w*qw[i]);
           const W t_hi = (W)1 - aw, t_w = t_hi - ((W)1 - (W)b);
           for (Integer j = 0; j < q; j++) tq[j] = t_hi - t_w*qn[j];
           LagrangeInterp<W>::Interpolate(Twts, sig, tq);
           const Matrix<W> T(order, q, Twts.begin(), false);
           Matrix<W>::GEMM(dT, Dsub, T);
-          r.T.ReInit(order, q);
-          r.dT.ReInit(order, q);
-          r.TT.ReInit(q, order);
-          r.TD.ReInit(2*q, order);
+          r.M.ReInit(order, q);
+          r.dM.ReInit(order, q);
+          r.MT.ReInit(q, order);
+          r.dMT.ReInit(q, order);
           for (Integer i = 0; i < order; i++) for (Integer j = 0; j < q; j++) {
-            r.T[i][j] = (Real)T[i][j];
-            r.dT[i][j] = (Real)dT[i][j];
-            r.TT[j][i] = r.T[i][j];
-            r.TD[j][i] = r.T[i][j];
-            r.TD[q+j][i] = r.dT[i][j];
+            r.M[i][j] = (Real)T[i][j];
+            r.dM[i][j] = (Real)dT[i][j];
+            r.MT[j][i] = r.M[i][j];
+            r.dMT[j][i] = r.dM[i][j];
           }
         };
         for (Integer k = 0; k < detail_quadelem::MaxRefineLvl<Real>; k++) {
@@ -846,124 +959,6 @@ namespace sctl {
       }();
       SCTL_ASSERT(q > 0 && q <= NearMaxQuadOrder && all[q].Dim());
       return all[q];
-    }
-
-    template <Integer order, class Real, class Kernel> void IntegrateCell(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD, const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT, const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
-      static constexpr Integer KDIM0 = Kernel::SrcDim();
-      static constexpr Integer KDIM1full = Kernel::TrgDim();
-      const Long nnode = (Long)order * order;
-      const bool trg_dot_prod = (normal_trg.Dim() > 0);
-      const Integer KDIM1_out = trg_dot_prod ? KDIM1full / detail_quadelem::COORD_DIM : KDIM1full;
-
-      const Long Nu = Mu.Dim(1), Nv = Mv.Dim(1), nq = Nu * Nv;
-      if (!nq) return;
-      const Integer C = KDIM0 * KDIM1_out;
-
-      thread_local Vector<Real> Cv, Cdv;
-      if (Cv.Dim() != detail_quadelem::COORD_DIM*order*Nv) {
-        Cv.ReInit(detail_quadelem::COORD_DIM*order*Nv);
-        Cdv.ReInit(detail_quadelem::COORD_DIM*order*Nv);
-      }
-      {
-        const Matrix<Real> cs_all(detail_quadelem::COORD_DIM*order, order, (Iterator<Real>)src_nodal.begin(), false);
-        Matrix<Real> Cv_all (detail_quadelem::COORD_DIM*order, Nv, Cv.begin(),  false);
-        Matrix<Real> Cdv_all(detail_quadelem::COORD_DIM*order, Nv, Cdv.begin(), false);
-        Matrix<Real>::GEMM(Cv_all,  cs_all, Mv);
-        Matrix<Real>::GEMM(Cdv_all, cs_all, dMv);
-      }
-      const Long ldc = detail_quadelem::COORD_DIM*Nv;
-      thread_local Vector<Real> Cvc, Cdvc, XdU, dXdv_soa;
-      if (Cvc.Dim() != (Long)order*ldc) {
-        Cvc.ReInit((Long)order*ldc);
-        Cdvc.ReInit((Long)order*ldc);
-      }
-      for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-        for (Integer i = 0; i < order; i++) {
-          const Long src = ((Long)k*order + i)*Nv, dst = (Long)i*ldc + k*Nv;
-          for (Long b = 0; b < Nv; b++) {
-            Cvc[dst+b] = Cv[src+b];
-            Cdvc[dst+b] = Cdv[src+b];
-          }
-        }
-      }
-      if (XdU.Dim() != 2*(Long)Nu*ldc) {
-        XdU.ReInit(2*(Long)Nu*ldc);
-        dXdv_soa.ReInit((Long)Nu*ldc);
-      }
-      {
-        const Matrix<Real> Cvc_m(order, ldc, Cvc.begin(), false), Cdvc_m(order, ldc, Cdvc.begin(), false);
-        Matrix<Real> dV_m(Nu, ldc, dXdv_soa.begin(), false);
-        {
-          Matrix<Real> XdU_m(2*Nu, ldc, XdU.begin(), false);
-          Matrix<Real>::GEMM(XdU_m, MuD, Cvc_m);
-        }
-        Matrix<Real>::GEMM(dV_m, MuT, Cdvc_m);
-      }
-
-      thread_local Vector<Real> Xsrc, Xnsrc, wq;
-      if (Xsrc.Dim() != nq*detail_quadelem::COORD_DIM) {
-        Xsrc.ReInit(nq*detail_quadelem::COORD_DIM);
-        Xnsrc.ReInit(nq*detail_quadelem::COORD_DIM);
-        wq.ReInit(nq);
-      }
-      for (Long a = 0; a < Nu; a++) {
-        for (Long b = 0; b < Nv; b++) {
-          const Long q = a*Nv + b;
-          const Long r = (Long)a*ldc + b, ru = ((Long)Nu + a)*ldc + b;
-          const Real du0 = XdU[ru+0*Nv], du1 = XdU[ru+1*Nv], du2 = XdU[ru+2*Nv];
-          const Real dv0 = dXdv_soa[r+0*Nv], dv1 = dXdv_soa[r+1*Nv], dv2 = dXdv_soa[r+2*Nv];
-          const Real n0 = du1*dv2 - du2*dv1, n1 = du2*dv0 - du0*dv2, n2 = du0*dv1 - du1*dv0;
-          const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
-          const Real inv_area = (area > 0 ? nrm_sign/area : 0);
-          Xsrc[0*nq+q] = XdU[r+0*Nv];
-          Xsrc[1*nq+q] = XdU[r+1*Nv];
-          Xsrc[2*nq+q] = XdU[r+2*Nv];
-          Xnsrc[0*nq+q] = n0*inv_area;
-          Xnsrc[1*nq+q] = n1*inv_area;
-          Xnsrc[2*nq+q] = n2*inv_area;
-          wq[q] = area*wu[a]*wv[b];
-        }
-      }
-
-      thread_local Vector<Real> KWc;
-      if (KWc.Dim() != C*nq) KWc.ReInit(C*nq);
-      static constexpr bool HAS_N = detail_quadelem::UKerNeedsN<Kernel, Vec<Real,1>>::value;
-      using WVec = Vec<Real, DefaultVecLen<Real>()>;
-      const Long qmain = (nq/WVec::Size())*WVec::Size();
-      const auto fold = [&](const auto has_proxy) {
-        constexpr bool HP = decltype(has_proxy)::value;
-        const Long np = (HP ? proxy_w.Dim() : 1);
-        for (Long j = 0; j < np; j++) {
-          StaticArray<Real,detail_quadelem::COORD_DIM> Xtj{0, 0, 0};
-          if constexpr (HP) for (Integer l = 0; l < detail_quadelem::COORD_DIM; l++) Xtj[l] = proxy_off[j*detail_quadelem::COORD_DIM+l];
-          const Vector<Real> Xtj_v(detail_quadelem::COORD_DIM, Xtj, false);
-          const Real wj = (HP ? proxy_w[j] : (Real)1);
-          const bool accum = (HP && j > 0);
-          const ConstIterator<Real> xt = Xtj_v.begin(), xs = Xsrc.begin(), xn = Xnsrc.begin(), w = wq.begin();
-          const ConstIterator<Real> nt = (trg_dot_prod ? normal_trg.begin() : ConstIterator<Real>(NullIterator<Real>()));
-          if (trg_dot_prod) {
-            detail_quadelem::KerFoldSoA<Real,Kernel,WVec,        HAS_N,true >(KWc.begin(), xt, xs, xn, w, nq, nq,     0, qmain, wj, accum, nt, ker.GetCtxPtr());
-            detail_quadelem::KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,true >(KWc.begin(), xt, xs, xn, w, nq, nq, qmain,    nq, wj, accum, nt, ker.GetCtxPtr());
-          } else {
-            detail_quadelem::KerFoldSoA<Real,Kernel,WVec,        HAS_N,false>(KWc.begin(), xt, xs, xn, w, nq, nq,     0, qmain, wj, accum, nt, ker.GetCtxPtr());
-            detail_quadelem::KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,false>(KWc.begin(), xt, xs, xn, w, nq, nq, qmain,    nq, wj, accum, nt, ker.GetCtxPtr());
-          }
-        }
-      };
-      if (proxy_w.Dim()) fold(std::true_type{}); else fold(std::false_type{});
-
-      thread_local Vector<Real> Yv;
-      if (Yv.Dim() != (Long)C*Nu*order) Yv.ReInit((Long)C*Nu*order);
-      {
-        const Matrix<Real> KW_all((Long)C*Nu, Nv, KWc.begin(), false);
-        Matrix<Real> Y_all((Long)C*Nu, order, Yv.begin(), false);
-        Matrix<Real>::GEMM(Y_all, KW_all, MvT);
-      }
-      for (Integer c = 0; c < C; c++) {
-        const Matrix<Real> Y_c(Nu, order, Yv.begin() + (Long)c*Nu*order, false);
-        Matrix<Real> A_c(order, order, acc_cm.begin() + (Long)c*nnode, false);
-        Matrix<Real>::GEMM(A_c, Mu, Y_c, (Real)1);
-      }
     }
 
     template <Integer order, class Real, class Kernel> void NearInteracBlockDyadic(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
@@ -1094,9 +1089,7 @@ namespace sctl {
         const GradeRule<Real>& gv = tab[iv];
         if (!(gu.b > gu.a) || !(gv.b > gv.a)) return;
         const Real nsign = ((sdu == 1) != (sdv == 1)) ? (Real)-1 : (Real)1;
-        IntegrateCell<order,Real>(normal_trg, gu.w, gv.w, ker,
-            gu.T, gu.TT, gu.TD, gv.T, gv.dT, gv.TT,
-            Xsub[sdu][sdv], nsign, acc, proxy_off, proxy_w);
+        detail_quadelem::IntegrateTensorRule<order,Real>(acc, Xsub[sdu][sdv], gu, gv, normal_trg, ker, nsign, proxy_off, proxy_w);
       };
       const auto refine = [&emit, dist, b_ellipse](const Integer sdu, const Integer sdv, Real hu, Real hv) {
         Integer ku = 0, kv = 0;
@@ -1499,11 +1492,6 @@ namespace sctl {
       return gl[digits];
     }
 
-    template <class Real> struct NodeRuleData {
-      Vector<Real> param, w;
-      Matrix<Real> M, dM, MT, dMT;
-    };
-
     template <Integer order, class Real> void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& delta, const Integer ti) {
       const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
       const Long N = delta.Dim();
@@ -1617,11 +1605,11 @@ namespace sctl {
       }
     }
 
-    template <Integer order, class Real> const NodeRuleData<Real>& CenteredURule(const Integer ti, const Integer digits) {
-      static std::atomic<Vector<NodeRuleData<Real>>*> slot[detail_quadelem::MaxDigits<Real>];
+    template <Integer order, class Real> const detail_quadelem::QuadRule1D<Real>& CenteredURule(const Integer ti, const Integer digits) {
+      static std::atomic<Vector<detail_quadelem::QuadRule1D<Real>>*> slot[detail_quadelem::MaxDigits<Real>];
       static std::mutex mtx;
       SCTL_ASSERT(digits >= 0 && digits < detail_quadelem::MaxDigits<Real>);
-      Vector<NodeRuleData<Real>>* p = slot[digits].load(std::memory_order_acquire);
+      Vector<detail_quadelem::QuadRule1D<Real>>* p = slot[digits].load(std::memory_order_acquire);
       if (!p) {
         std::lock_guard<std::mutex> lk(mtx);
         p = slot[digits].load(std::memory_order_relaxed);
@@ -1631,10 +1619,11 @@ namespace sctl {
           const Integer Lvl = std::min<Integer>(detail_quadelem::MaxRefineLvl<Real>, 2*digits + 6);
           Vector<Real> qnds, qwts;
           LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, QuadOrder);
-          auto* d = new Vector<NodeRuleData<Real>>(order);
+          auto* d = new Vector<detail_quadelem::QuadRule1D<Real>>(order);
           for (Integer i = 0; i < order; i++) {
-            BuildCenteredGraded1D((*d)[i].param, (*d)[i].w, nds[i], Lvl, qnds, qwts);
-            LagrangeAtOffset<order,Real>((*d)[i].M, (*d)[i].dM, (*d)[i].MT, (*d)[i].dMT, (*d)[i].param, i);
+            Vector<Real> delta;
+            BuildCenteredGraded1D(delta, (*d)[i].w, nds[i], Lvl, qnds, qwts);
+            LagrangeAtOffset<order,Real>((*d)[i].M, (*d)[i].dM, (*d)[i].MT, (*d)[i].dMT, delta, i);
           }
           p = d;
           slot[digits].store(p, std::memory_order_release);
@@ -1643,11 +1632,11 @@ namespace sctl {
       return (*p)[ti];
     }
 
-    template <Integer order, class Real> const NodeRuleData<Real>& CenteredVRule(const Integer tj, const Integer digits) {
-      static std::atomic<Vector<NodeRuleData<Real>>*> slot[detail_quadelem::MaxDigits<Real>];
+    template <Integer order, class Real> const detail_quadelem::QuadRule1D<Real>& CenteredVRule(const Integer tj, const Integer digits) {
+      static std::atomic<Vector<detail_quadelem::QuadRule1D<Real>>*> slot[detail_quadelem::MaxDigits<Real>];
       static std::mutex mtx;
       SCTL_ASSERT(digits >= 0 && digits < detail_quadelem::MaxDigits<Real>);
-      Vector<NodeRuleData<Real>>* p = slot[digits].load(std::memory_order_acquire);
+      Vector<detail_quadelem::QuadRule1D<Real>>* p = slot[digits].load(std::memory_order_acquire);
       if (!p) {
         std::lock_guard<std::mutex> lk(mtx);
         p = slot[digits].load(std::memory_order_relaxed);
@@ -1655,10 +1644,11 @@ namespace sctl {
           const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
           const Integer Lvl = std::min<Integer>(12, std::max<Integer>(1, digits - 5));
           const Integer QuadOrder = DigitsQuadOrder<Real>(digits);
-          auto* d = new Vector<NodeRuleData<Real>>(order);
+          auto* d = new Vector<detail_quadelem::QuadRule1D<Real>>(order);
           for (Integer j = 0; j < order; j++) {
-            BuildCenteredLogSingular1D((*d)[j].param, (*d)[j].w, nds[j], Lvl, QuadOrder);
-            LagrangeAtOffset<order,Real>((*d)[j].M, (*d)[j].dM, (*d)[j].MT, (*d)[j].dMT, (*d)[j].param, j);
+            Vector<Real> delta;
+            BuildCenteredLogSingular1D(delta, (*d)[j].w, nds[j], Lvl, QuadOrder);
+            LagrangeAtOffset<order,Real>((*d)[j].M, (*d)[j].dM, (*d)[j].MT, (*d)[j].dMT, delta, j);
           }
           p = d;
           slot[digits].store(p, std::memory_order_release);
@@ -1721,135 +1711,25 @@ namespace sctl {
       for (Long i = 0; i < seg.Dim(); i++) seg[i] = a[i];
     }
 
-    template <Integer order, class Real, class Kernel> void IntegratePanel(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const NodeRuleData<Real>& ru, const NodeRuleData<Real>& rv, const Kernel& ker) {
+    template <Integer order, class Real, class Kernel> void IntegratePanel(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const detail_quadelem::QuadRule1D<Real>& ru, const detail_quadelem::QuadRule1D<Real>& rv, const Kernel& ker) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer KDIM1full = Kernel::TrgDim();
       SCTL_ASSERT(qel.Order() == order);
       const Long nnode = (Long)order * order;
-      const bool trg_dot_prod = (normal_trg.Dim() > 0);
-      const Integer KDIM1_out = trg_dot_prod ? KDIM1full / detail_quadelem::COORD_DIM : KDIM1full;
-
-      const Long Nu = ru.M.Dim(1);
-      const Long Nv = rv.M.Dim(1);
-      const Long nq = Nu * Nv;
-      if (!nq) return;
+      const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full / detail_quadelem::COORD_DIM : KDIM1full;
       const Integer C = KDIM0 * KDIM1_out;
 
-      const Vector<Real>& wu = ru.w;
-      const Vector<Real>& wv = rv.w;
-      const Matrix<Real>& Mu = ru.M;
-      const Matrix<Real>& MuT = ru.MT;
-      const Matrix<Real>& dMuT = ru.dMT;
-      const Matrix<Real>& Mv = rv.M;
-      const Matrix<Real>& dMv = rv.dM;
-      const Matrix<Real>& MvT = rv.MT;
-
       const Long base = elem_idx * nnode * detail_quadelem::COORD_DIM;
-      thread_local Vector<Real> coord_shift;
+      thread_local Vector<Real> coord_shift, acc;
       if (coord_shift.Dim() != detail_quadelem::COORD_DIM*nnode) coord_shift.ReInit(detail_quadelem::COORD_DIM*nnode);
       for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
         const Real ok = Xtrg[k];
         for (Long p = 0; p < nnode; p++) coord_shift[k*nnode + p] = detail_quadelem::Access<Real>::Coord(qel)[base + k*nnode + p] - ok;
       }
-      thread_local Vector<Real> Cv, Cdv;
-      if (Cv.Dim() != detail_quadelem::COORD_DIM*order*Nv) {
-        Cv.ReInit(detail_quadelem::COORD_DIM*order*Nv);
-        Cdv.ReInit(detail_quadelem::COORD_DIM*order*Nv);
-      }
-      {
-        const Matrix<Real> cs_all(detail_quadelem::COORD_DIM*order, order, coord_shift.begin(), false);
-        Matrix<Real> Cv_all (detail_quadelem::COORD_DIM*order, Nv, Cv.begin(),  false);
-        Matrix<Real> Cdv_all(detail_quadelem::COORD_DIM*order, Nv, Cdv.begin(), false);
-        Matrix<Real>::GEMM(Cv_all,  cs_all, Mv);
-        Matrix<Real>::GEMM(Cdv_all, cs_all, dMv);
-      }
-      StaticArray<Real,detail_quadelem::COORD_DIM> Xt0{0, 0, 0};
-      const Vector<Real> Xt0_v(detail_quadelem::COORD_DIM, Xt0, false);
-
-      const Long UBLK = std::max<Long>(1, std::min<Long>(Nu, detail_quadelem::MaxUnblockedPts / std::max<Long>(1, Nv)));
-      const Long nqmax = UBLK*Nv, cs = nqmax;
-
-      thread_local Vector<Real> Xb, dXub, dXvb, Xsrcb, Xnsrcb, wqb, KWcb, Mkerb, Tfull, projb;
-      if (Xb.Dim() != detail_quadelem::COORD_DIM*nqmax) {
-        Xb.ReInit(detail_quadelem::COORD_DIM*nqmax);
-        dXub.ReInit(detail_quadelem::COORD_DIM*nqmax);
-        dXvb.ReInit(detail_quadelem::COORD_DIM*nqmax);
-        Xsrcb.ReInit(detail_quadelem::COORD_DIM*nqmax);
-        Xnsrcb.ReInit(detail_quadelem::COORD_DIM*nqmax);
-        wqb.ReInit(nqmax);
-      }
-      if (KWcb.Dim() != C*nqmax) {
-        KWcb.ReInit(C*nqmax);
-        Mkerb.ReInit(nqmax*KDIM0*KDIM1full);
-      }
-      if (Tfull.Dim() != C*Nu*(Long)order) Tfull.ReInit(C*Nu*(Long)order);
-      if (projb.Dim() != C*nnode) projb.ReInit(C*nnode);
-
-      for (Long a0 = 0; a0 < Nu; a0 += UBLK) {
-        const Long nu = std::min<Long>(UBLK, Nu - a0), nqb = nu*Nv;
-        const Matrix<Real> MuT_b (nu, order, (Iterator<Real>)MuT.begin()  + a0*(Long)order, false);
-        const Matrix<Real> dMuT_b(nu, order, (Iterator<Real>)dMuT.begin() + a0*(Long)order, false);
-
-        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-          const Matrix<Real> Cv_k (order, Nv, Cv.begin()  + k*(Long)order*Nv, false);
-          const Matrix<Real> Cdv_k(order, Nv, Cdv.begin() + k*(Long)order*Nv, false);
-          Matrix<Real> Xk(nu, Nv, Xb.begin() + k*cs, false), dUk(nu, Nv, dXub.begin() + k*cs, false), dVk(nu, Nv, dXvb.begin() + k*cs, false);
-          Matrix<Real>::GEMM(Xk,  MuT_b,  Cv_k);
-          Matrix<Real>::GEMM(dUk, dMuT_b, Cv_k);
-          Matrix<Real>::GEMM(dVk, MuT_b,  Cdv_k);
-        }
-
-        for (Long a = 0; a < nu; a++) {
-          for (Long b = 0; b < Nv; b++) {
-            const Long q = a*Nv + b;
-            const Real du0 = dXub[0*cs+q], du1 = dXub[1*cs+q], du2 = dXub[2*cs+q];
-            const Real dv0 = dXvb[0*cs+q], dv1 = dXvb[1*cs+q], dv2 = dXvb[2*cs+q];
-            const Real n0 = du1*dv2 - du2*dv1, n1 = du2*dv0 - du0*dv2, n2 = du0*dv1 - du1*dv0;
-            const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
-            const Real inv_area = (area > 0 ? 1/area : 0);
-            Xsrcb[q*detail_quadelem::COORD_DIM+0] = Xb[0*cs+q];
-            Xsrcb[q*detail_quadelem::COORD_DIM+1] = Xb[1*cs+q];
-            Xsrcb[q*detail_quadelem::COORD_DIM+2] = Xb[2*cs+q];
-            Xnsrcb[q*detail_quadelem::COORD_DIM+0] = n0*inv_area;
-            Xnsrcb[q*detail_quadelem::COORD_DIM+1] = n1*inv_area;
-            Xnsrcb[q*detail_quadelem::COORD_DIM+2] = n2*inv_area;
-            wqb[q] = area*wu[a0+a]*wv[b];
-          }
-        }
-
-        Matrix<Real> Mker(nqb*KDIM0, KDIM1full, Mkerb.begin(), false);
-        const Vector<Real> Xsrc_v(nqb*detail_quadelem::COORD_DIM, Xsrcb.begin(), false), Xnsrc_v(nqb*detail_quadelem::COORD_DIM, Xnsrcb.begin(), false);
-        ker.template KernelMatrix<Real,false>(Mker, Xt0_v, Xsrc_v, Xnsrc_v);
-
-        for (Long q = 0; q < nqb; q++) {
-          for (Integer k0 = 0; k0 < KDIM0; k0++) {
-            for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-              Real val;
-              if (trg_dot_prod) {
-                val = 0;
-                for (Integer l = 0; l < detail_quadelem::COORD_DIM; l++) val += Mker[q*KDIM0+k0][k1*detail_quadelem::COORD_DIM+l] * normal_trg[l];
-              } else {
-                val = Mker[q*KDIM0+k0][k1];
-              }
-              KWcb[(Long)(k0*KDIM1_out+k1)*cs + q] = val*wqb[q];
-            }
-          }
-        }
-
-        for (Integer c = 0; c < C; c++) {
-          const Matrix<Real> KW_c(nu, Nv, KWcb.begin() + (Long)c*cs, false);
-          Matrix<Real> T_c(nu, order, Tfull.begin() + (Long)c*Nu*order + a0*(Long)order, false);
-          Matrix<Real>::GEMM(T_c, KW_c, MvT);
-        }
-      }
-
-      for (Integer c = 0; c < C; c++) {
-        const Matrix<Real> T_c(Nu, order, Tfull.begin() + (Long)c*Nu*order, false);
-        Matrix<Real> P_c(order, order, projb.begin() + (Long)c*nnode, false);
-        Matrix<Real>::GEMM(P_c, Mu, T_c);
-      }
-      for (Long p = 0; p < nnode; p++)
-        for (Integer c = 0; c < C; c++) M_acc[p][c] += projb[(Long)c*nnode + p];
+      if (acc.Dim() != (Long)C*nnode) acc.ReInit((Long)C*nnode);
+      acc.SetZero();
+      detail_quadelem::IntegrateTensorRule<order,Real>(acc, coord_shift, ru, rv, normal_trg, ker);
+      for (Long p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] += acc[(Long)c*nnode + p];
     }
 
     template <class Real> void BuildNearTensorRule(Vector<Real>& u_param, Vector<Real>& wu, Vector<Real>& v_param, Vector<Real>& wv,
@@ -1887,8 +1767,8 @@ namespace sctl {
       const bool trg_dot_prod = (normal_trg.Dim() > 0);
       const Integer KDIM1_out = trg_dot_prod ? KDIM1full / detail_quadelem::COORD_DIM : KDIM1full;
 
-      const NodeRuleData<Real>& ru = CenteredURule<order,Real>(ti, digits);
-      const NodeRuleData<Real>& rv = CenteredVRule<order,Real>(tj, digits);
+      const detail_quadelem::QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits);
+      const detail_quadelem::QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, digits);
 
       M_acc.ReInit(nnode, KDIM0*KDIM1_out);
       M_acc.SetZero();
@@ -1907,28 +1787,29 @@ namespace sctl {
       const Real b_ellipse = DigitsBEllipse<Real>(digits);
       const std::pair<Vector<Real>, Vector<Real>>& gl = DigitsGLRule<Real>(digits);
 
-      thread_local NodeRuleData<Real> ru, rv;
-      BuildNearTensorRule<Real>(ru.param, ru.w, rv.param, rv.w, qel, elem_idx, Xtrg, b_ellipse, gl.first, gl.second);
-      const Long Nu = ru.param.Dim(), Nv = rv.param.Dim();
+      thread_local detail_quadelem::QuadRule1D<Real> ru, rv;
+      thread_local Vector<Real> u_param, v_param;
+      BuildNearTensorRule<Real>(u_param, ru.w, v_param, rv.w, qel, elem_idx, Xtrg, b_ellipse, gl.first, gl.second);
+      const Long Nu = u_param.Dim(), Nv = v_param.Dim();
 
       if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) M_acc.ReInit(nnode, KDIM0*KDIM1_out);
       M_acc.SetZero();
       if (!Nu || !Nv) return;
 
-      const auto build_interp = [](NodeRuleData<Real>& r) {
-        const Long N = r.param.Dim();
+      const auto build_interp = [](detail_quadelem::QuadRule1D<Real>& r, const Vector<Real>& param) {
+        const Long N = param.Dim();
         r.M.ReInit(order, N);
         {
           Vector<Real> v(order*N, r.M.begin(), false);
-          LagrangeInterp<Real>::Interpolate(v, QuadElemList<Real>::ParamNodes(order), r.param);
+          LagrangeInterp<Real>::Interpolate(v, QuadElemList<Real>::ParamNodes(order), param);
         }
         r.dM.ReInit(order, N);
         Matrix<Real>::GEMM(r.dM, detail_quadelem::DiffMat<Real>(order), r.M);
         r.MT = r.M.Transpose();
         r.dMT = r.dM.Transpose();
       };
-      build_interp(ru);
-      build_interp(rv);
+      build_interp(ru, u_param);
+      build_interp(rv, v_param);
 
       IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru, rv, ker);
     }
