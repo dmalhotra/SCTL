@@ -29,15 +29,15 @@ template <class Real> struct QuadElemTestAccess {
     // The rule comes out as offsets from v0; reconstruct absolute nodes param = v0 + delta.
     static void LogSingularQuad1D(Vector<Real>& param, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder) {
         Vector<Real> delta;
-        detail_adaptive::BuildCenteredLogSingular1D<Real>(delta, w, v0, Lvl, QuadOrder);
+        detail_tensorprod::BuildCenteredLogSingular1D<Real>(delta, w, v0, Lvl, QuadOrder);
         param.ReInit(delta.Dim());
         for (Long i = 0; i < delta.Dim(); i++) param[i] = v0 + delta[i];
     }
     static Real GetClosestNode(const QuadElemList<Real>& qel, Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) {
-        return qel.GetClosestNode(ustar, vstar, elem_idx, Xtrg);
+        return detail_quadelem::GetClosestNode(qel, ustar, vstar, elem_idx, Xtrg);
     }
     static Real GetClosestPoint(const QuadElemList<Real>& qel, Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) {
-        return qel.GetClosestPoint(ustar, vstar, elem_idx, Xtrg);
+        return detail_quadelem::GetClosestPoint(qel, ustar, vstar, elem_idx, Xtrg);
     }
 };
 }
@@ -352,7 +352,7 @@ template <class Real, class Kernel> Vector<Real> direct_upsampled_potential(
 // static quadrature helpers (the log-singular 1D rule) to the tests; the
 // shim's full definition appears later in namespace sctl.
 
-template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, const bool curved, const char* label, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6) {
+template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, const bool curved, const char* label, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::TensorProduct, const Real rel_tol = 1e-6) {
     const Integer COORD_DIM = 3;
     const Integer order = 16;
     const Integer KDIM0 = Kernel::SrcDim();
@@ -421,7 +421,7 @@ template <class Real, class Kernel> void test_NearInterac(const Kernel& ker, con
 //   Stokes3D-DxU,  q arbitrary   :  u = 0
 // I0 is the in-plane Newtonian potential of the unit square (1/r antiderivative
 // F(X,Y) = X ln(Y+R) + Y ln(X+R)). Applied as u = sigma^T M.
-template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::Adaptive, const Real rel_tol = 1e-6, const Integer q = 10, const Real tol = 1e-10) {
+template <class Real, class Kernel> void test_SelfInterac(const Kernel& ker, const typename QuadElemList<Real>::QuadScheme scheme = QuadElemList<Real>::QuadScheme::TensorProduct, const Real rel_tol = 1e-6, const Integer q = 10, const Real tol = 1e-10) {
     const Integer order = 12;
     const Long nnode = (Long)order * order;
     const Integer KDIM0 = Kernel::SrcDim();
@@ -938,7 +938,7 @@ int main(int argc, char** argv) {
 
     struct SchemeCfg { const char* name; QS scheme; };
     const std::vector<SchemeCfg> schemes = {
-      {"Adaptive", QS::Adaptive},
+      {"TensorProduct", QS::TensorProduct},
       {"Duffy",    QS::Duffy},
     };
 
