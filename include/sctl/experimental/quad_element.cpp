@@ -950,12 +950,8 @@ namespace sctl {
       const Integer KDIM1_out = trg_dot_prod ? KDIM1full/detail_quadelem::COORD_DIM : KDIM1full;
       if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) M_acc.ReInit(nnode, KDIM0*KDIM1_out);
       const Integer C_ = KDIM0*KDIM1_out;
-      thread_local Vector<Real> acc, accB, accE;
-      if (acc.Dim() != (Long)C_*nnode) {
-        acc.ReInit((Long)C_*nnode);
-        accB.ReInit((Long)C_*nnode);
-        accE.ReInit(nnode);
-      }
+      ScratchBuf<Real> acc_buf((Long)C_*nnode), accB((Long)C_*nnode), accE(nnode);
+      Vector<Real> acc(acc_buf);
       M_acc.SetZero();
 
       const Real b_ellipse = DigitsBEllipse<Real>(digits);
@@ -998,18 +994,15 @@ namespace sctl {
       const Vector<GradeRule<Real>>& tab = NearGradeTable<order,Real>(q_near);
       const Real slen[2][2] = {{ustar, 1-ustar}, {vstar, 1-vstar}};
 
-      thread_local Vector<Real> cs;
+      ScratchBuf<Real> cs_buf(detail_quadelem::COORD_DIM*nnode);
+      Vector<Real> cs(cs_buf);
       detail_quadelem::ShiftedElemCoord(cs, qel, elem_idx, Xtrg);
-      const auto build_interp = [](Matrix<Real> (&Sf)[2][2], Matrix<Real> (&St)[2][2], const Real (&slen)[2][2], const Real ustar, const Real vstar) {
+      const auto build_interp = [](Iterator<Real> Sf, Iterator<Real> St, const Real (&slen)[2][2], const Real ustar, const Real vstar) {
         const Long nnode = (Long)order*order;
         const Vector<Real>& gnds = QuadElemList<Real>::ParamNodes(order);
         const Vector<Real>& soff = NearSubOffsets<Real>(order);
-        thread_local Vector<Real> gsh, sub, Sbuf;
-        if (sub.Dim() != order) {
-          gsh.ReInit(order);
-          sub.ReInit(order);
-          Sbuf.ReInit(nnode);
-        }
+        ScratchBuf<Real> gsh_buf(order), sub_buf(order), Sbuf(nnode);
+        Vector<Real> gsh(gsh_buf), sub(sub_buf);
         for (Integer d = 0; d < 2; d++) {
           const Real xs = (d ? vstar : ustar);
           for (Integer i = 0; i < order; i++) gsh[i] = gnds[i] - xs;
@@ -1021,49 +1014,51 @@ namespace sctl {
               Vector<Real> v(nnode, Sbuf.begin(), false);
               LagrangeInterp<Real>::Interpolate(v, gsh, sub);
             }
-            Sf[d][sd].ReInit(order, order);
-            St[d][sd].ReInit(order, order);
+            Matrix<Real> Sf_m(order, order, Sf + (2*d+sd)*nnode, false);
+            Matrix<Real> St_m(order, order, St + (2*d+sd)*nnode, false);
             for (Integer i = 0; i < order; i++) for (Integer aa = 0; aa < order; aa++) {
-              Sf[d][sd][i][aa] = Sbuf[i*order+aa];
-              St[d][sd][aa][i] = Sbuf[i*order+aa];
+              Sf_m[i][aa] = Sbuf[i*order+aa];
+              St_m[aa][i] = Sbuf[i*order+aa];
             }
           }
         }
       };
-      thread_local Matrix<Real> Sf[2][2], St[2][2];
-      build_interp(Sf, St, slen, ustar, vstar);
-      const auto build_geom = [](Vector<Real> (&Xsub)[2][2], Vector<Real>& cs, const Matrix<Real> (&Sf)[2][2], const Matrix<Real> (&St)[2][2], const Real (&slen)[2][2]) {
+      ScratchBuf<Real> Sf_buf(4*nnode), St_buf(4*nnode);
+      build_interp(Sf_buf.begin(), St_buf.begin(), slen, ustar, vstar);
+      const auto build_geom = [](Iterator<Real> Xsub, const Vector<Real>& cs, Iterator<Real> Sf, Iterator<Real> St, const Real (&slen)[2][2]) {
         const Long nnode = (Long)order*order;
-        thread_local Vector<Real> Av[2];
+        ScratchBuf<Real> Av(2*detail_quadelem::COORD_DIM*nnode);
         for (Integer sdv = 0; sdv < 2; sdv++) {
           if (!(slen[1][sdv] > 0)) continue;
-          if (Av[sdv].Dim() != detail_quadelem::COORD_DIM*nnode) Av[sdv].ReInit(detail_quadelem::COORD_DIM*nnode);
-          const Matrix<Real> cs_all(detail_quadelem::COORD_DIM*order, order, cs.begin(), false);
-          Matrix<Real> A_all(detail_quadelem::COORD_DIM*order, order, Av[sdv].begin(), false);
-          Matrix<Real>::GEMM(A_all, cs_all, Sf[1][sdv]);
+          const Matrix<Real> cs_all(detail_quadelem::COORD_DIM*order, order, (Iterator<Real>)cs.begin(), false);
+          const Matrix<Real> Sf_v(order, order, Sf + (2+sdv)*nnode, false);
+          Matrix<Real> A_all(detail_quadelem::COORD_DIM*order, order, Av.begin() + sdv*detail_quadelem::COORD_DIM*nnode, false);
+          Matrix<Real>::GEMM(A_all, cs_all, Sf_v);
         }
         for (Integer sdu = 0; sdu < 2; sdu++) {
           if (!(slen[0][sdu] > 0)) continue;
+          const Matrix<Real> St_u(order, order, St + sdu*nnode, false);
           for (Integer sdv = 0; sdv < 2; sdv++) {
             if (!(slen[1][sdv] > 0)) continue;
-            if (Xsub[sdu][sdv].Dim() != detail_quadelem::COORD_DIM*nnode) Xsub[sdu][sdv].ReInit(detail_quadelem::COORD_DIM*nnode);
             for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-              const Matrix<Real> A_k(order, order, Av[sdv].begin() + k*nnode, false);
-              Matrix<Real> X_k(order, order, Xsub[sdu][sdv].begin() + k*nnode, false);
-              Matrix<Real>::GEMM(X_k, St[0][sdu], A_k);
+              const Matrix<Real> A_k(order, order, Av.begin() + (sdv*detail_quadelem::COORD_DIM + k)*nnode, false);
+              Matrix<Real> X_k(order, order, Xsub + ((2*sdu+sdv)*detail_quadelem::COORD_DIM + k)*nnode, false);
+              Matrix<Real>::GEMM(X_k, St_u, A_k);
             }
           }
         }
       };
-      thread_local Vector<Real> Xsub[2][2];
-      build_geom(Xsub, cs, Sf, St, slen);
+      ScratchBuf<Real> Xsub_buf(4*detail_quadelem::COORD_DIM*nnode);
+      build_geom(Xsub_buf.begin(), cs, Sf_buf.begin(), St_buf.begin(), slen);
 
-      const auto emit = [&tab, &normal_trg, &ker, &proxy_off, &proxy_w](const Integer sdu, const Integer sdv, const Integer iu, const Integer iv) {
+      const auto emit = [&tab, &normal_trg, &ker, &proxy_off, &proxy_w, &acc, &Xsub_buf](const Integer sdu, const Integer sdv, const Integer iu, const Integer iv) {
         const GradeRule<Real>& gu = tab[iu];
         const GradeRule<Real>& gv = tab[iv];
         if (!(gu.b > gu.a) || !(gv.b > gv.a)) return;
         const Real nsign = ((sdu == 1) != (sdv == 1)) ? (Real)-1 : (Real)1;
-        detail_quadelem::IntegrateTensorRule<order,Real>(acc, Xsub[sdu][sdv], gu, gv, normal_trg, ker, nsign, proxy_off, proxy_w);
+        const Long nsub = detail_quadelem::COORD_DIM*(Long)order*order;
+        const Vector<Real> Xsub(nsub, Xsub_buf.begin() + (2*sdu+sdv)*nsub, false);
+        detail_quadelem::IntegrateTensorRule<order,Real>(acc, Xsub, gu, gv, normal_trg, ker, nsign, proxy_off, proxy_w);
       };
       const auto refine = [&emit, dist, b_ellipse](const Integer sdu, const Integer sdv, Real hu, Real hv) {
         Integer ku = 0, kv = 0;
@@ -1094,13 +1089,15 @@ namespace sctl {
           refine(sdu, sdv, slen[0][sdu]*spd_u, slen[1][sdv]*spd_v);
 
           {
+            const Matrix<Real> St_v(order, order, St_buf.begin() + (2+sdv)*nnode, false);
+            const Matrix<Real> Sf_u(order, order, Sf_buf.begin() + sdu*nnode, false);
             const Matrix<Real> A_all((Long)C_*order, order, acc.begin(), false);
             Matrix<Real> B_all((Long)C_*order, order, accB.begin(), false);
-            Matrix<Real>::GEMM(B_all, A_all, St[1][sdv]);
+            Matrix<Real>::GEMM(B_all, A_all, St_v);
             for (Integer c = 0; c < C_; c++) {
               const Matrix<Real> B_c(order, order, accB.begin() + (Long)c*nnode, false);
               Matrix<Real> E_c(order, order, accE.begin(), false);
-              Matrix<Real>::GEMM(E_c, Sf[0][sdu], B_c);
+              Matrix<Real>::GEMM(E_c, Sf_u, B_c);
               for (Long p = 0; p < nnode; p++) M_acc[p][c] += accE[p];
             }
           }
