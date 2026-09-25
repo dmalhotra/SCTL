@@ -1092,10 +1092,10 @@ namespace sctl {
 
     template <Integer order, class Real, class Kernel> void NearInteracDyadic(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
       const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
-      detail_quadelem::NearInteracTargets<order,Real,Kernel>(M, Xt, normal_trg, qel,
-          [&qel, elem_idx, &ker, digits, &proxy_off, &proxy_w](Matrix<Real>& M_acc, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
-            NearInteracBlockDyadic<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits, proxy_off, proxy_w);
-          });
+      const auto near_interac_one_trg = [&qel, elem_idx, &ker, digits, &proxy_off, &proxy_w](Matrix<Real>& M_acc, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
+        NearInteracBlockDyadic<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits, proxy_off, proxy_w);
+      };
+      detail_quadelem::NearInteracTargets<order,Real,Kernel>(M, Xt, normal_trg, qel, near_interac_one_trg);
     }
 
   }
@@ -1356,15 +1356,15 @@ namespace sctl {
       const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
       DuffyTable<order,Real>(); // precomp cache
       detail_dyadic_near::NearGradeTable<order,Real>(detail_dyadic_near::DigitsQuadOrder<Real>(digits)); // precomp cache
-      detail_quadelem::SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, false,
-          [&qel, &ker, digits](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
-              const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>&, const Vector<Real>&,
-              const Vector<Real>&, const Vector<Real>&, const Integer KDIM1_out) {
-            ScratchBuf<Real> M_acc_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
-            Matrix<Real> M_acc((Long)order*order, Kernel::SrcDim()*KDIM1_out, M_acc_buf.begin(), false);
-            SelfInteracBlockDuffy<order,Real>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
-            detail_quadelem::ScatterTargetBlock(M, M_acc, t, KDIM1_out);
-          });
+      const auto self_interac_one_trg = [&qel, &ker, digits](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
+          const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>&, const Vector<Real>&,
+          const Vector<Real>&, const Vector<Real>&, const Integer KDIM1_out) {
+        ScratchBuf<Real> M_acc_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
+        Matrix<Real> M_acc((Long)order*order, Kernel::SrcDim()*KDIM1_out, M_acc_buf.begin(), false);
+        SelfInteracBlockDuffy<order,Real>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
+        detail_quadelem::ScatterTargetBlock(M, M_acc, t, KDIM1_out);
+      };
+      detail_quadelem::SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, false, self_interac_one_trg);
     }
 
   }
@@ -1735,10 +1735,10 @@ namespace sctl {
 
     template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits) {
       const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
-      detail_quadelem::NearInteracTargets<order,Real,Kernel>(M, Xt, normal_trg, qel,
-          [&qel, elem_idx, &ker, digits](Matrix<Real>& M_acc, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
-            NearInteracBlockTensorProduct<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
-          });
+      const auto near_interac_one_trg = [&qel, elem_idx, &ker, digits](Matrix<Real>& M_acc, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
+        NearInteracBlockTensorProduct<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
+      };
+      detail_quadelem::NearInteracTargets<order,Real,Kernel>(M, Xt, normal_trg, qel, near_interac_one_trg);
     }
 
     template <Integer order, class Real, class Kernel> void SelfInteracTensorProduct(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits) {
@@ -1746,15 +1746,15 @@ namespace sctl {
       CenteredURule<order,Real>(0, digits); // precomp cache
       CenteredVRule<order,Real>(0, digits); // precomp cache
       DigitsGLRule<Real>(digits); // precomp cache
-      detail_quadelem::SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, false,
-          [&qel, &ker, digits](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
-              const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>&, const Vector<Real>&,
-              const Vector<Real>&, const Vector<Real>&, const Integer KDIM1_out) {
-            ScratchBuf<Real> M_acc_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
-            Matrix<Real> M_acc((Long)order*order, Kernel::SrcDim()*KDIM1_out, M_acc_buf.begin(), false);
-            SelfInteracBlockTensorProduct<order,Real>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
-            detail_quadelem::ScatterTargetBlock(M, M_acc, t, KDIM1_out);
-          });
+      const auto self_interac_one_trg = [&qel, &ker, digits](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
+          const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>&, const Vector<Real>&,
+          const Vector<Real>&, const Vector<Real>&, const Integer KDIM1_out) {
+        ScratchBuf<Real> M_acc_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
+        Matrix<Real> M_acc((Long)order*order, Kernel::SrcDim()*KDIM1_out, M_acc_buf.begin(), false);
+        SelfInteracBlockTensorProduct<order,Real>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
+        detail_quadelem::ScatterTargetBlock(M, M_acc, t, KDIM1_out);
+      };
+      detail_quadelem::SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, false, self_interac_one_trg);
     }
 
   }
@@ -1807,30 +1807,30 @@ namespace sctl {
       detail_dyadic_near::NearGradeTable<order,Real>(detail_dyadic_near::DigitsQuadOrder<Real>(digits)); // precomp cache
 
       const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-      detail_quadelem::SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, true,
-          [&nds, hh_c, &qel, &ker, near_digits, &hh_w](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
-              const Vector<Real>&, const Vector<Real>& ntrg, const Vector<Real>& Xnodes, const Vector<Real>& Xnnodes,
-              const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer KDIM1_out) {
-            const Vector<Real>& proxy_dist = HedgehogProxyOffsets<Real>();
-            ScratchBuf<Real> hh_Xt1_buf(detail_quadelem::COORD_DIM), hh_off_buf(proxy_dist.Dim()*detail_quadelem::COORD_DIM);
-            ScratchBuf<Real> M_hh_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
-            Vector<Real> hh_Xt1(hh_Xt1_buf), hh_off(hh_off_buf);
-            Matrix<Real> M_hh((Long)order*order*Kernel::SrcDim(), KDIM1_out, M_hh_buf.begin(), false);
-            Real su2 = 0, sv2 = 0;
-            for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-              su2 += dXu[t*detail_quadelem::COORD_DIM+k]*dXu[t*detail_quadelem::COORD_DIM+k];
-              sv2 += dXv[t*detail_quadelem::COORD_DIM+k]*dXv[t*detail_quadelem::COORD_DIM+k];
-            }
-            const Real edge_u = std::min<Real>(nds[ti], 1-nds[ti]), edge_v = std::min<Real>(nds[tj], 1-nds[tj]);
-            const Real rmin = hh_c * std::min<Real>(edge_u*sqrt<Real>(su2), edge_v*sqrt<Real>(sv2));
-            for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) hh_Xt1[k] = Xnodes[t*detail_quadelem::COORD_DIM+k] + rmin*Xnnodes[t*detail_quadelem::COORD_DIM+k];
-            for (Long j = 0; j < proxy_dist.Dim(); j++) {
-              const Real rj = rmin*proxy_dist[j];
-              for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) hh_off[j*detail_quadelem::COORD_DIM+k] = (rj-rmin)*Xnnodes[t*detail_quadelem::COORD_DIM+k];
-            }
-            detail_dyadic_near::NearInteracDyadic<order,Real>(M_hh, hh_Xt1, ntrg, ker, elem_idx, &qel, near_digits, hh_off, hh_w);
-            detail_quadelem::ScatterTargetBlock(M, M_hh, t, KDIM1_out);
-          });
+      const auto self_interac_one_trg = [&nds, hh_c, &qel, &ker, near_digits, &hh_w](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
+          const Vector<Real>&, const Vector<Real>& ntrg, const Vector<Real>& Xnodes, const Vector<Real>& Xnnodes,
+          const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer KDIM1_out) {
+        const Vector<Real>& proxy_dist = HedgehogProxyOffsets<Real>();
+        ScratchBuf<Real> hh_Xt1_buf(detail_quadelem::COORD_DIM), hh_off_buf(proxy_dist.Dim()*detail_quadelem::COORD_DIM);
+        ScratchBuf<Real> M_hh_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
+        Vector<Real> hh_Xt1(hh_Xt1_buf), hh_off(hh_off_buf);
+        Matrix<Real> M_hh((Long)order*order*Kernel::SrcDim(), KDIM1_out, M_hh_buf.begin(), false);
+        Real su2 = 0, sv2 = 0;
+        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+          su2 += dXu[t*detail_quadelem::COORD_DIM+k]*dXu[t*detail_quadelem::COORD_DIM+k];
+          sv2 += dXv[t*detail_quadelem::COORD_DIM+k]*dXv[t*detail_quadelem::COORD_DIM+k];
+        }
+        const Real edge_u = std::min<Real>(nds[ti], 1-nds[ti]), edge_v = std::min<Real>(nds[tj], 1-nds[tj]);
+        const Real rmin = hh_c * std::min<Real>(edge_u*sqrt<Real>(su2), edge_v*sqrt<Real>(sv2));
+        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) hh_Xt1[k] = Xnodes[t*detail_quadelem::COORD_DIM+k] + rmin*Xnnodes[t*detail_quadelem::COORD_DIM+k];
+        for (Long j = 0; j < proxy_dist.Dim(); j++) {
+          const Real rj = rmin*proxy_dist[j];
+          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) hh_off[j*detail_quadelem::COORD_DIM+k] = (rj-rmin)*Xnnodes[t*detail_quadelem::COORD_DIM+k];
+        }
+        detail_dyadic_near::NearInteracDyadic<order,Real>(M_hh, hh_Xt1, ntrg, ker, elem_idx, &qel, near_digits, hh_off, hh_w);
+        detail_quadelem::ScatterTargetBlock(M, M_hh, t, KDIM1_out);
+      };
+      detail_quadelem::SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, true, self_interac_one_trg);
     }
 
   }
