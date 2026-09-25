@@ -151,29 +151,29 @@ namespace sctl {
     };
 
     template <class Real> void EvalPoint(const QuadElemList<Real>& qel, Real* X, Real* dXu, Real* dXv, const Real u, const Real v, const Long elem_idx, const Vector<Real>* origin) {
-      const Long nnode = (Long)qel.Order() * qel.Order();
+      const Integer order = qel.Order();
+      const Long nnode = (Long)order * order;
       const Long base = elem_idx * nnode * COORD_DIM;
+      const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+      const Vector<Real>& coord = Access<Real>::Coord(qel);
 
-      ScratchBuf<Real> Lu(qel.Order()), Lv(qel.Order()), dLu(qel.Order()), dLv(qel.Order());
-      {
-        StaticArray<Real,1> up;
-        up[0] = u;
-        Vector<Real> p(1, up, false), o(qel.Order(), Lu.begin(), false);
-        LagrangeInterp<Real>::Interpolate(o, QuadElemList<Real>::ParamNodes(qel.Order()), p);
-      }
-      {
-        StaticArray<Real,1> vp;
-        vp[0] = v;
-        Vector<Real> p(1, vp, false), o(qel.Order(), Lv.begin(), false);
-        LagrangeInterp<Real>::Interpolate(o, QuadElemList<Real>::ParamNodes(qel.Order()), p);
-      }
+      ScratchBuf<Real> Lu(order), Lv(order), dLu(order), dLv(order);
+      const auto interp_at = [&nds, order](ScratchBuf<Real>& L, const Real t) {
+        StaticArray<Real,1> tp;
+        tp[0] = t;
+        Vector<Real> p(1, tp, false);
+        Vector<Real> o(order, L.begin(), false);
+        LagrangeInterp<Real>::Interpolate(o, nds, p);
+      };
+      interp_at(Lu, u);
+      interp_at(Lv, v);
 
       const bool want_d = (dXu || dXv);
       if (want_d) {
-        const Matrix<Real>& D = detail_quadelem::DiffMat<Real>(qel.Order());
-        for (Integer i = 0; i < qel.Order(); i++) {
+        const Matrix<Real>& D = detail_quadelem::DiffMat<Real>(order);
+        for (Integer i = 0; i < order; i++) {
           Real su = 0, sv = 0;
-          for (Integer a = 0; a < qel.Order(); a++) {
+          for (Integer a = 0; a < order; a++) {
             su += D[i][a]*Lu[a];
             sv += D[i][a]*Lv[a];
           }
@@ -182,43 +182,26 @@ namespace sctl {
         }
       }
 
-      Real x0 = 0, x1 = 0, x2 = 0, du0 = 0, du1 = 0, du2 = 0, dv0 = 0, dv1 = 0, dv2 = 0;
-      for (Integer i = 0; i < qel.Order(); i++) {
-        for (Integer j = 0; j < qel.Order(); j++) {
-          const Long p = i*qel.Order() + j;
-          const Real c0 = Access<Real>::Coord(qel)[base + 0*nnode + p], c1 = Access<Real>::Coord(qel)[base + 1*nnode + p], c2 = Access<Real>::Coord(qel)[base + 2*nnode + p];
-          const Real wv = Lu[i]*Lv[j];
-          x0 += c0*wv;
-          x1 += c1*wv;
-          x2 += c2*wv;
+      Real x[COORD_DIM] = {0, 0, 0}, xu[COORD_DIM] = {0, 0, 0}, xv[COORD_DIM] = {0, 0, 0};
+      for (Integer i = 0; i < order; i++) {
+        for (Integer j = 0; j < order; j++) {
+          const Long p = i*order + j;
+          const Real w = Lu[i]*Lv[j];
+          for (Integer k = 0; k < COORD_DIM; k++) x[k] += coord[base + k*nnode + p]*w;
           if (want_d) {
-            const Real wu_ = dLu[i]*Lv[j], wvv = Lu[i]*dLv[j];
-            du0 += c0*wu_;
-            du1 += c1*wu_;
-            du2 += c2*wu_;
-            dv0 += c0*wvv;
-            dv1 += c1*wvv;
-            dv2 += c2*wvv;
+            const Real w_du = dLu[i]*Lv[j];
+            const Real w_dv = Lu[i]*dLv[j];
+            for (Integer k = 0; k < COORD_DIM; k++) {
+              xu[k] += coord[base + k*nnode + p]*w_du;
+              xv[k] += coord[base + k*nnode + p]*w_dv;
+            }
           }
         }
       }
-      if (origin) {
-        x0 -= (*origin)[0];
-        x1 -= (*origin)[1];
-        x2 -= (*origin)[2];
-      }
-      X[0] = x0;
-      X[1] = x1;
-      X[2] = x2;
-      if (dXu) {
-        dXu[0] = du0;
-        dXu[1] = du1;
-        dXu[2] = du2;
-      }
-      if (dXv) {
-        dXv[0] = dv0;
-        dXv[1] = dv1;
-        dXv[2] = dv2;
+      for (Integer k = 0; k < COORD_DIM; k++) {
+        X[k] = (origin ? x[k] - (*origin)[k] : x[k]);
+        if (dXu) dXu[k] = xu[k];
+        if (dXv) dXv[k] = xv[k];
       }
     }
 
@@ -1447,15 +1430,17 @@ namespace sctl {
     template <class Real> void BuildCenteredGraded1D(Vector<Real>& delta, Vector<Real>& w, const Real u0, const Integer levels, const Vector<Real>& qnds, const Vector<Real>& qwts) {
       const Integer q = qnds.Dim();
       std::vector<Real> d_, w_;
-      auto side = [&d_, &w_, levels, q, &qnds, &qwts](const Real Len, const Real sgn) {
-        if (!(Len > 0)) return;
+      auto side = [&d_, &w_, levels, q, &qnds, &qwts](const Real span, const Real sgn) {
+        if (!(span > 0)) return;
         Real a = 0;
         for (Integer k = levels; k >= 0; k--) {
-          const Real b = Len * pow<Real>((Real)0.5, (Integer)k);
+          const Real b = span * pow<Real>((Real)0.5, (Integer)k);
           const Real len = b - a;
-          if (len > 0) for (Integer i = 0; i < q; i++) {
-            d_.push_back(sgn*(a + len*qnds[i]));
-            w_.push_back(len*qwts[i]);
+          if (len > 0) {
+            for (Integer i = 0; i < q; i++) {
+              d_.push_back(sgn*(a + len*qnds[i]));
+              w_.push_back(len*qwts[i]);
+            }
           }
           a = b;
         }
@@ -1617,7 +1602,7 @@ namespace sctl {
 
     template <class Real> Long BuildFootGraded1DSegments(Iterator<Real> seg, const Real center, const Real b_ellipse, const Real w_min) {
       const Real r = std::min<Real>((Real)0.9, b_ellipse/(1 + b_ellipse) * (Real)1.05);
-      const Real wmin = std::max<Real>(w_min, (Real)1e-300);
+      const Real w_stop = std::max<Real>(w_min, (Real)1e-300);
 
       Long nseg = 0;
       const auto add = [&seg, &nseg](const Real e0, const Real e1) {
@@ -1635,7 +1620,7 @@ namespace sctl {
         if (!(span > 0)) continue;
 
         Real w = span;
-        while (w > wmin) {
+        while (w > w_stop) {
           const Real w_next = w*r;
           add(center + sgn*w, center + sgn*w_next);
           w = w_next;
