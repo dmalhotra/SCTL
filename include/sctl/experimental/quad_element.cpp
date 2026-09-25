@@ -537,6 +537,22 @@ namespace sctl {
       }
     }
 
+    template <Integer order, class Real, class Kernel> void IntegratePanel(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const QuadRule1D<Real>& ru, const QuadRule1D<Real>& rv, const Kernel& ker) {
+      static constexpr Integer KDIM0 = Kernel::SrcDim();
+      static constexpr Integer KDIM1full = Kernel::TrgDim();
+      SCTL_ASSERT(qel.Order() == order);
+      const Long nnode = (Long)order * order;
+      const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full / COORD_DIM : KDIM1full;
+      const Integer C = KDIM0 * KDIM1_out;
+
+      ScratchBuf<Real> coord_shift_buf(COORD_DIM*nnode), acc_buf((Long)C*nnode);
+      Vector<Real> coord_shift(coord_shift_buf), acc(acc_buf);
+      ShiftedElemCoord(coord_shift, qel, elem_idx, Xtrg);
+      acc.SetZero();
+      IntegrateTensorRule<order,Real>(acc, coord_shift, ru, rv, normal_trg, ker);
+      for (Long p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] += acc[(Long)c*nnode + p];
+    }
+
     template <class Real> void ScatterTargetBlock(Matrix<Real>& M, const Matrix<Real>& src, const Long t, const Integer KDIM1_out) {
       const Long nrow = M.Dim(0);
       SCTL_ASSERT(src.Dim(0)*src.Dim(1) == nrow*KDIM1_out);
@@ -1101,6 +1117,162 @@ namespace sctl {
 
   }
 
+  namespace detail_tensorprod_near {
+
+    template <class Real> void QuadParams(const Real tol, Real& b_ellipse, Integer& QuadOrder) {
+      const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
+      const Real rho = (Real)2.5;
+      b_ellipse = (rho + 1/rho) / 4;
+      QuadOrder = std::max<Integer>(1, (Integer)ceil<Real>(-log<Real>(((15*(rho*rho-1))/64)*tol_)/log<Real>(rho)*(Real)0.5 + 1));
+    }
+
+    template <class Real> inline Integer DigitsQuadOrder(const Integer digits) {
+      return detail_quadelem::QuadParamsForDigits<Real, QuadParams<Real>>(digits).quad_order;
+    }
+
+    template <class Real> inline Real DigitsBEllipse(const Integer digits) {
+      return detail_quadelem::QuadParamsForDigits<Real, QuadParams<Real>>(digits).b_ellipse;
+    }
+
+    template <class Real> const std::pair<Vector<Real>, Vector<Real>>& DigitsGLRule(const Integer digits) {
+      static const std::array<std::pair<Vector<Real>, Vector<Real>>,detail_quadelem::MaxDigits<Real>> gl = []() {
+        std::array<std::pair<Vector<Real>, Vector<Real>>,detail_quadelem::MaxDigits<Real>> t;
+        for (Integer d = 0; d < detail_quadelem::MaxDigits<Real>; d++) LegQuadRule<Real>::ComputeNdsWts(&t[d].first, &t[d].second, DigitsQuadOrder<Real>(d));
+        return t;
+      }();
+      SCTL_ASSERT(digits >= 0 && digits < detail_quadelem::MaxDigits<Real>);
+      return gl[digits];
+    }
+
+    template <class Real> void ExpandSegments(Vector<Real>& param, Vector<Real>& w, const Vector<Real>& seg, const Vector<Real>& qnds, const Vector<Real>& qwts) {
+      const Integer QuadOrder = qnds.Dim();
+      const Long nseg = seg.Dim()/2;
+      const Long N = nseg * QuadOrder;
+      if (param.Dim() != N) param.ReInit(N);
+      if (w.Dim() != N) w.ReInit(N);
+      Long idx = 0;
+      for (Long si = 0; si < nseg; si++) {
+        const Real a0 = seg[si*2+0], a1 = seg[si*2+1];
+        const Real len = a1 - a0;
+        for (Integer a = 0; a < QuadOrder; a++) {
+          param[idx] = a0 + len*qnds[a];
+          w[idx] = qwts[a]*len;
+          idx++;
+        }
+      }
+    }
+
+    static constexpr Long MaxSegments = 4096;
+
+    template <class Real> Long BuildGradedSegments1D(Iterator<Real> seg, const Real center, const Real b_ellipse, const Real w_min) {
+      const Real r = std::min<Real>((Real)0.9, b_ellipse/(1 + b_ellipse) * (Real)1.05);
+      const Real w_stop = std::max<Real>(w_min, (Real)1e-300);
+
+      Long nseg = 0;
+      const auto add = [&seg, &nseg](const Real e0, const Real e1) {
+        const Real lo = std::min<Real>(e0, e1);
+        const Real hi = std::max<Real>(e0, e1);
+        if (!(hi - lo > 0)) return;
+        SCTL_ASSERT(nseg < MaxSegments);
+        seg[2*nseg+0] = lo;
+        seg[2*nseg+1] = hi;
+        nseg++;
+      };
+      for (Integer side = 0; side < 2; side++) {
+        const Real sgn = (side ? (Real)1 : (Real)-1);
+        const Real span = (side ? 1 - center : center);
+        if (!(span > 0)) continue;
+
+        Real w = span;
+        while (w > w_stop) {
+          const Real w_next = w*r;
+          add(center + sgn*w, center + sgn*w_next);
+          w = w_next;
+        }
+        add(center + sgn*w, center);
+      }
+      return nseg;
+    }
+
+    template <class Real> void BuildNearSegments(Iterator<Real> useg, Long& nseg_u, Iterator<Real> vseg, Long& nseg_v, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse) {
+      Real ustar, vstar, h_param;
+      { // Closest point, and its distance in parameter units
+        const Real dist = detail_quadelem::GetClosestPoint(qel, ustar, vstar, elem_idx, Xtrg);
+        Real Xc[detail_quadelem::COORD_DIM], dXdu[detail_quadelem::COORD_DIM], dXdv[detail_quadelem::COORD_DIM];
+        detail_quadelem::EvalPoint<Real>(qel, Xc, dXdu, dXdv, ustar, vstar, elem_idx, nullptr);
+        Real su2 = 0, sv2 = 0;
+        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+          su2 += dXdu[k]*dXdu[k];
+          sv2 += dXdv[k]*dXdv[k];
+        }
+        const Real L_phys = std::max<Real>(sqrt<Real>(su2), sqrt<Real>(sv2));
+        const bool degenerate = !(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist) || !(L_phys > 0);
+        h_param = (degenerate ? 0 : dist/L_phys);
+      }
+
+      const Real w_floor = pow<Real>((Real)0.5, detail_quadelem::MaxRefineLvl<Real>);
+      const Real w_min = std::max<Real>(h_param/b_ellipse, w_floor);
+      nseg_u = BuildGradedSegments1D<Real>(useg, ustar, b_ellipse, w_min);
+      nseg_v = BuildGradedSegments1D<Real>(vseg, vstar, b_ellipse, w_min);
+    }
+
+    template <Integer order, class Real, class Kernel> void NearInteracBlockTensorProduct(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
+      static constexpr Integer KDIM0 = Kernel::SrcDim();
+      static constexpr Integer KDIM1full = Kernel::TrgDim();
+      SCTL_ASSERT(qel.Order() == order);
+      const Long nnode = (Long)order * order;
+      const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full / detail_quadelem::COORD_DIM : KDIM1full;
+      if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) M_acc.ReInit(nnode, KDIM0*KDIM1_out);
+      M_acc.SetZero();
+
+      ScratchBuf<Real> useg(2*MaxSegments), vseg(2*MaxSegments);
+      Long nseg_u, nseg_v;
+      BuildNearSegments<Real>(useg.begin(), nseg_u, vseg.begin(), nseg_v, qel, elem_idx, Xtrg, DigitsBEllipse<Real>(digits));
+      const std::pair<Vector<Real>, Vector<Real>>& gl = DigitsGLRule<Real>(digits);
+      const Long Nu = nseg_u * gl.first.Dim();
+      const Long Nv = nseg_v * gl.first.Dim();
+      if (!Nu || !Nv) return;
+
+      ScratchBuf<Real> rule_u(Nu*(1 + 4*order)), rule_v(Nv*(1 + 4*order));
+      const auto rule_view = [](Iterator<Real> buf, const Long N) {
+        return detail_quadelem::QuadRule1D<Real>{Vector<Real>(N, buf, false),
+            Matrix<Real>(order, N, buf + N, false), Matrix<Real>(order, N, buf + N*(1 + order), false),
+            Matrix<Real>(N, order, buf + N*(1 + 2*order), false), Matrix<Real>(N, order, buf + N*(1 + 3*order), false)};
+      };
+      detail_quadelem::QuadRule1D<Real> ru = rule_view(rule_u.begin(), Nu);
+      detail_quadelem::QuadRule1D<Real> rv = rule_view(rule_v.begin(), Nv);
+      { // Gauss-Legendre rule on each segment, and its interpolation matrices
+        const auto build_rule = [&gl](detail_quadelem::QuadRule1D<Real>& r, Vector<Real>& param, Iterator<Real> seg, const Long nseg) {
+          const Vector<Real> seg_v(2*nseg, seg, false);
+          ExpandSegments<Real>(param, r.w, seg_v, gl.first, gl.second);
+          const Long N = param.Dim();
+          Vector<Real> M_v(order*N, r.M.begin(), false);
+          LagrangeInterp<Real>::Interpolate(M_v, QuadElemList<Real>::ParamNodes(order), param);
+          Matrix<Real>::GEMM(r.dM, detail_quadelem::DiffMat<Real>(order), r.M);
+          for (Integer i = 0; i < order; i++) {
+            for (Long a = 0; a < N; a++) {
+              r.MT[a][i] = r.M[i][a];
+              r.dMT[a][i] = r.dM[i][a];
+            }
+          }
+        };
+        ScratchBuf<Real> param_u(Nu), param_v(Nv);
+        Vector<Real> u_param(param_u), v_param(param_v);
+        build_rule(ru, u_param, useg.begin(), nseg_u);
+        build_rule(rv, v_param, vseg.begin(), nseg_v);
+      }
+      detail_quadelem::IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru, rv, ker);
+    }
+
+    template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
+      const auto near_interac_one_trg = [&qel, elem_idx, &ker, digits](Matrix<Real>& M_acc, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
+        NearInteracBlockTensorProduct<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
+      };
+      detail_quadelem::NearInteracTargets<order,Real,Kernel>(M, Xt, normal_trg, qel, near_interac_one_trg);
+    }
+
+  }
+
   namespace detail_duffy {
 
     template <class Real> struct DuffyTri {
@@ -1364,32 +1536,83 @@ namespace sctl {
 
   }
 
-  namespace detail_tensorprod {
+  namespace detail_hedgehog {
 
-    template <class Real> void QuadParams(const Real tol, Real& b_ellipse, Integer& QuadOrder) {
-      const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
-      const Real rho = (Real)2.5;
-      b_ellipse = (rho + 1/rho) / 4;
-      QuadOrder = std::max<Integer>(1, (Integer)ceil<Real>(-log<Real>(((15*(rho*rho-1))/64)*tol_)/log<Real>(rho)*(Real)0.5 + 1));
+    template <class Real> inline const Vector<Real>& HedgehogProxyOffsets() {
+      static const Vector<Real> s = []() {
+        Vector<Real> v;
+        for (Integer j = 0; j < 5; j++) v.PushBack(pow<Real>((Real)4, (Real)j/(Real)4));
+        return v;
+      }();
+      return s;
     }
 
-    template <class Real> inline Integer DigitsQuadOrder(const Integer digits) {
-      return detail_quadelem::QuadParamsForDigits<Real, QuadParams<Real>>(digits).quad_order;
+    template <class Real> inline const Vector<Real>& HedgehogWeights() {
+      static const Vector<Real> w = []() {
+        using W = detail_quadelem::PrecompReal;
+        const Vector<Real>& s = HedgehogProxyOffsets<Real>();
+        const Long p = s.Dim();
+        Vector<Real> wj(p);
+        for (Long j = 0; j < p; j++) {
+          W v = 1;
+          for (Long k = 0; k < p; k++) if (k != j) v *= (0 - (W)s[k])/((W)s[j] - (W)s[k]);
+          wj[j] = (Real)v;
+        }
+        return wj;
+      }();
+      return w;
     }
 
-    template <class Real> inline Real DigitsBEllipse(const Integer digits) {
-      return detail_quadelem::QuadParamsForDigits<Real, QuadParams<Real>>(digits).b_ellipse;
-    }
-
-    template <class Real> const std::pair<Vector<Real>, Vector<Real>>& DigitsGLRule(const Integer digits) {
-      static const std::array<std::pair<Vector<Real>, Vector<Real>>,detail_quadelem::MaxDigits<Real>> gl = []() {
-        std::array<std::pair<Vector<Real>, Vector<Real>>,detail_quadelem::MaxDigits<Real>> t;
-        for (Integer d = 0; d < detail_quadelem::MaxDigits<Real>; d++) LegQuadRule<Real>::ComputeNdsWts(&t[d].first, &t[d].second, DigitsQuadOrder<Real>(d));
+    template <class Real> inline Real HedgehogRminCoeff(const Integer digits, const Integer sing_order) {
+      static const std::array<Real,detail_quadelem::MaxDigits<Real>> c = []() {
+        std::array<Real,detail_quadelem::MaxDigits<Real>> t{};
+        for (Integer d = 0; d < detail_quadelem::MaxDigits<Real>; d++) t[d] = (Real)0.1 * pow<Real>(pow<Real,Long>((Real)0.1, (Long)d), (Real)1/(Real)6);
         return t;
       }();
       SCTL_ASSERT(digits >= 0 && digits < detail_quadelem::MaxDigits<Real>);
-      return gl[digits];
+      return (sing_order <= 1 ? c[digits] : std::min<Real>(c[digits], (Real)3e-3));
     }
+
+    template <Integer order, class Real, class Kernel> void SelfInteracHedgehog(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
+      static constexpr Integer sing_order = detail_quadelem::KernelSingularOrder<Kernel>::value;
+      const Integer near_digits = std::min<Integer>(detail_quadelem::MaxDigits<Real>-1, digits + (sing_order <= 1 ? 2 : 6));
+      detail_dyadic_near::NearGradeTable<order,Real>(detail_dyadic_near::DigitsQuadOrder<Real>(near_digits)); // precomp cache
+      detail_dyadic_near::NearGradeTable<order,Real>(detail_dyadic_near::DigitsQuadOrder<Real>(digits)); // precomp cache
+
+      const Vector<Real>& hh_w = HedgehogWeights<Real>();
+      const Real hh_c = HedgehogRminCoeff<Real>(digits, sing_order);
+      const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+      const auto self_interac_one_trg = [&nds, hh_c, &qel, &ker, near_digits, &hh_w](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
+          const Vector<Real>&, const Vector<Real>& ntrg, const Vector<Real>& Xnodes, const Vector<Real>& Xnnodes,
+          const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer KDIM1_out) {
+        const Vector<Real>& proxy_dist = HedgehogProxyOffsets<Real>();
+        ScratchBuf<Real> hh_Xt1_buf(detail_quadelem::COORD_DIM), hh_off_buf(proxy_dist.Dim()*detail_quadelem::COORD_DIM);
+        Vector<Real> hh_Xt1(hh_Xt1_buf), hh_off(hh_off_buf);
+        { // Proxy points along the normal, sized by edge distance
+          Real su2 = 0, sv2 = 0;
+          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+            su2 += dXu[t*detail_quadelem::COORD_DIM+k]*dXu[t*detail_quadelem::COORD_DIM+k];
+            sv2 += dXv[t*detail_quadelem::COORD_DIM+k]*dXv[t*detail_quadelem::COORD_DIM+k];
+          }
+          const Real edge_u = std::min<Real>(nds[ti], 1-nds[ti]), edge_v = std::min<Real>(nds[tj], 1-nds[tj]);
+          const Real rmin = hh_c * std::min<Real>(edge_u*sqrt<Real>(su2), edge_v*sqrt<Real>(sv2));
+          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) hh_Xt1[k] = Xnodes[t*detail_quadelem::COORD_DIM+k] + rmin*Xnnodes[t*detail_quadelem::COORD_DIM+k];
+          for (Long j = 0; j < proxy_dist.Dim(); j++) {
+            const Real rj = rmin*proxy_dist[j];
+            for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) hh_off[j*detail_quadelem::COORD_DIM+k] = (rj-rmin)*Xnnodes[t*detail_quadelem::COORD_DIM+k];
+          }
+        }
+        ScratchBuf<Real> M_hh_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
+        Matrix<Real> M_hh((Long)order*order*Kernel::SrcDim(), KDIM1_out, M_hh_buf.begin(), false);
+        detail_dyadic_near::NearInteracDyadic<order,Real>(M_hh, hh_Xt1, ntrg, ker, elem_idx, qel, near_digits, hh_off, hh_w);
+        detail_quadelem::ScatterTargetBlock(M, M_hh, t, KDIM1_out);
+      };
+      detail_quadelem::SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, true, self_interac_one_trg);
+    }
+
+  }
+
+  namespace detail_tensorprod_singular {
 
     template <Integer order, class Real> void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& delta, const Integer ti) {
       const Long N = delta.Dim();
@@ -1540,7 +1763,7 @@ namespace sctl {
       static LazyTable<Vector<detail_quadelem::QuadRule1D<Real>>, detail_quadelem::MaxDigits<Real>> table;
       const auto build = [digits]() {
         const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-        const Integer QuadOrder = DigitsQuadOrder<Real>(digits);
+        const Integer QuadOrder = detail_tensorprod_near::DigitsQuadOrder<Real>(digits);
         const Integer Lvl = std::min<Integer>(detail_quadelem::MaxRefineLvl<Real>, 2*digits + 6);
         Vector<Real> qnds, qwts;
         LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, QuadOrder);
@@ -1560,7 +1783,7 @@ namespace sctl {
       const auto build = [digits]() {
         const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
         const Integer Lvl = std::min<Integer>(12, std::max<Integer>(1, digits - 5));
-        const Integer QuadOrder = DigitsQuadOrder<Real>(digits);
+        const Integer QuadOrder = detail_tensorprod_near::DigitsQuadOrder<Real>(digits);
         Vector<detail_quadelem::QuadRule1D<Real>> rules(order);
         for (Integer j = 0; j < order; j++) {
           Vector<Real> delta;
@@ -1570,95 +1793,6 @@ namespace sctl {
         return rules;
       };
       return table.Get(digits, build)[tj];
-    }
-
-    template <class Real> void ExpandSegments(Vector<Real>& param, Vector<Real>& w, const Vector<Real>& seg, const Vector<Real>& qnds, const Vector<Real>& qwts) {
-      const Integer QuadOrder = qnds.Dim();
-      const Long nseg = seg.Dim()/2;
-      const Long N = nseg * QuadOrder;
-      if (param.Dim() != N) param.ReInit(N);
-      if (w.Dim() != N) w.ReInit(N);
-      Long idx = 0;
-      for (Long si = 0; si < nseg; si++) {
-        const Real a0 = seg[si*2+0], a1 = seg[si*2+1];
-        const Real len = a1 - a0;
-        for (Integer a = 0; a < QuadOrder; a++) {
-          param[idx] = a0 + len*qnds[a];
-          w[idx] = qwts[a]*len;
-          idx++;
-        }
-      }
-    }
-
-    static constexpr Long MaxSegments = 4096;
-
-    template <class Real> Long BuildGradedSegments1D(Iterator<Real> seg, const Real center, const Real b_ellipse, const Real w_min) {
-      const Real r = std::min<Real>((Real)0.9, b_ellipse/(1 + b_ellipse) * (Real)1.05);
-      const Real w_stop = std::max<Real>(w_min, (Real)1e-300);
-
-      Long nseg = 0;
-      const auto add = [&seg, &nseg](const Real e0, const Real e1) {
-        const Real lo = std::min<Real>(e0, e1);
-        const Real hi = std::max<Real>(e0, e1);
-        if (!(hi - lo > 0)) return;
-        SCTL_ASSERT(nseg < MaxSegments);
-        seg[2*nseg+0] = lo;
-        seg[2*nseg+1] = hi;
-        nseg++;
-      };
-      for (Integer side = 0; side < 2; side++) {
-        const Real sgn = (side ? (Real)1 : (Real)-1);
-        const Real span = (side ? 1 - center : center);
-        if (!(span > 0)) continue;
-
-        Real w = span;
-        while (w > w_stop) {
-          const Real w_next = w*r;
-          add(center + sgn*w, center + sgn*w_next);
-          w = w_next;
-        }
-        add(center + sgn*w, center);
-      }
-      return nseg;
-    }
-
-    template <Integer order, class Real, class Kernel> void IntegratePanel(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const detail_quadelem::QuadRule1D<Real>& ru, const detail_quadelem::QuadRule1D<Real>& rv, const Kernel& ker) {
-      static constexpr Integer KDIM0 = Kernel::SrcDim();
-      static constexpr Integer KDIM1full = Kernel::TrgDim();
-      SCTL_ASSERT(qel.Order() == order);
-      const Long nnode = (Long)order * order;
-      const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full / detail_quadelem::COORD_DIM : KDIM1full;
-      const Integer C = KDIM0 * KDIM1_out;
-
-      ScratchBuf<Real> coord_shift_buf(detail_quadelem::COORD_DIM*nnode), acc_buf((Long)C*nnode);
-      Vector<Real> coord_shift(coord_shift_buf), acc(acc_buf);
-      detail_quadelem::ShiftedElemCoord(coord_shift, qel, elem_idx, Xtrg);
-      acc.SetZero();
-      detail_quadelem::IntegrateTensorRule<order,Real>(acc, coord_shift, ru, rv, normal_trg, ker);
-      for (Long p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] += acc[(Long)c*nnode + p];
-    }
-
-    template <class Real> void BuildNearSegments(Iterator<Real> useg, Long& nseg_u, Iterator<Real> vseg, Long& nseg_v,
-        const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse) {
-      Real ustar, vstar, h_param;
-      { // Closest point, and its distance in parameter units
-        const Real dist = detail_quadelem::GetClosestPoint(qel, ustar, vstar, elem_idx, Xtrg);
-        Real Xc[detail_quadelem::COORD_DIM], dXdu[detail_quadelem::COORD_DIM], dXdv[detail_quadelem::COORD_DIM];
-        detail_quadelem::EvalPoint<Real>(qel, Xc, dXdu, dXdv, ustar, vstar, elem_idx, nullptr);
-        Real su2 = 0, sv2 = 0;
-        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-          su2 += dXdu[k]*dXdu[k];
-          sv2 += dXdv[k]*dXdv[k];
-        }
-        const Real L_phys = std::max<Real>(sqrt<Real>(su2), sqrt<Real>(sv2));
-        const bool degenerate = !(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist) || !(L_phys > 0);
-        h_param = (degenerate ? 0 : dist/L_phys);
-      }
-
-      const Real w_floor = pow<Real>((Real)0.5, detail_quadelem::MaxRefineLvl<Real>);
-      const Real w_min = std::max<Real>(h_param/b_ellipse, w_floor);
-      nseg_u = BuildGradedSegments1D<Real>(useg, ustar, b_ellipse, w_min);
-      nseg_v = BuildGradedSegments1D<Real>(vseg, vstar, b_ellipse, w_min);
     }
 
     template <Integer order, class Real, class Kernel> void SelfInteracBlockTensorProduct(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
@@ -1672,68 +1806,13 @@ namespace sctl {
 
       const detail_quadelem::QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits);
       const detail_quadelem::QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, digits);
-      IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru, rv, ker);
-    }
-
-    template <Integer order, class Real, class Kernel> void NearInteracBlockTensorProduct(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
-      static constexpr Integer KDIM0 = Kernel::SrcDim();
-      static constexpr Integer KDIM1full = Kernel::TrgDim();
-      SCTL_ASSERT(qel.Order() == order);
-      const Long nnode = (Long)order * order;
-      const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full / detail_quadelem::COORD_DIM : KDIM1full;
-      if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) M_acc.ReInit(nnode, KDIM0*KDIM1_out);
-      M_acc.SetZero();
-
-      ScratchBuf<Real> useg(2*MaxSegments), vseg(2*MaxSegments);
-      Long nseg_u, nseg_v;
-      BuildNearSegments<Real>(useg.begin(), nseg_u, vseg.begin(), nseg_v, qel, elem_idx, Xtrg, DigitsBEllipse<Real>(digits));
-      const std::pair<Vector<Real>, Vector<Real>>& gl = DigitsGLRule<Real>(digits);
-      const Long Nu = nseg_u * gl.first.Dim();
-      const Long Nv = nseg_v * gl.first.Dim();
-      if (!Nu || !Nv) return;
-
-      ScratchBuf<Real> rule_u(Nu*(1 + 4*order)), rule_v(Nv*(1 + 4*order));
-      const auto rule_view = [](Iterator<Real> buf, const Long N) {
-        return detail_quadelem::QuadRule1D<Real>{Vector<Real>(N, buf, false),
-            Matrix<Real>(order, N, buf + N, false), Matrix<Real>(order, N, buf + N*(1 + order), false),
-            Matrix<Real>(N, order, buf + N*(1 + 2*order), false), Matrix<Real>(N, order, buf + N*(1 + 3*order), false)};
-      };
-      detail_quadelem::QuadRule1D<Real> ru = rule_view(rule_u.begin(), Nu);
-      detail_quadelem::QuadRule1D<Real> rv = rule_view(rule_v.begin(), Nv);
-      { // Gauss-Legendre rule on each segment, and its interpolation matrices
-        const auto build_rule = [&gl](detail_quadelem::QuadRule1D<Real>& r, Vector<Real>& param, Iterator<Real> seg, const Long nseg) {
-          const Vector<Real> seg_v(2*nseg, seg, false);
-          ExpandSegments<Real>(param, r.w, seg_v, gl.first, gl.second);
-          const Long N = param.Dim();
-          Vector<Real> M_v(order*N, r.M.begin(), false);
-          LagrangeInterp<Real>::Interpolate(M_v, QuadElemList<Real>::ParamNodes(order), param);
-          Matrix<Real>::GEMM(r.dM, detail_quadelem::DiffMat<Real>(order), r.M);
-          for (Integer i = 0; i < order; i++) {
-            for (Long a = 0; a < N; a++) {
-              r.MT[a][i] = r.M[i][a];
-              r.dMT[a][i] = r.dM[i][a];
-            }
-          }
-        };
-        ScratchBuf<Real> param_u(Nu), param_v(Nv);
-        Vector<Real> u_param(param_u), v_param(param_v);
-        build_rule(ru, u_param, useg.begin(), nseg_u);
-        build_rule(rv, v_param, vseg.begin(), nseg_v);
-      }
-      IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru, rv, ker);
-    }
-
-    template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
-      const auto near_interac_one_trg = [&qel, elem_idx, &ker, digits](Matrix<Real>& M_acc, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
-        NearInteracBlockTensorProduct<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
-      };
-      detail_quadelem::NearInteracTargets<order,Real,Kernel>(M, Xt, normal_trg, qel, near_interac_one_trg);
+      detail_quadelem::IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru, rv, ker);
     }
 
     template <Integer order, class Real, class Kernel> void SelfInteracTensorProduct(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       CenteredURule<order,Real>(0, digits); // precomp cache
       CenteredVRule<order,Real>(0, digits); // precomp cache
-      DigitsGLRule<Real>(digits); // precomp cache
+      detail_tensorprod_near::DigitsGLRule<Real>(digits); // precomp cache
       const auto self_interac_one_trg = [&qel, &ker, digits](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
           const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>&, const Vector<Real>&,
           const Vector<Real>&, const Vector<Real>&, const Integer KDIM1_out) {
@@ -1747,87 +1826,11 @@ namespace sctl {
 
   }
 
-  namespace detail_hedgehog {
-
-    template <class Real> inline const Vector<Real>& HedgehogProxyOffsets() {
-      static const Vector<Real> s = []() {
-        Vector<Real> v;
-        for (Integer j = 0; j < 5; j++) v.PushBack(pow<Real>((Real)4, (Real)j/(Real)4));
-        return v;
-      }();
-      return s;
-    }
-
-    template <class Real> inline const Vector<Real>& HedgehogWeights() {
-      static const Vector<Real> w = []() {
-        using W = detail_quadelem::PrecompReal;
-        const Vector<Real>& s = HedgehogProxyOffsets<Real>();
-        const Long p = s.Dim();
-        Vector<Real> wj(p);
-        for (Long j = 0; j < p; j++) {
-          W v = 1;
-          for (Long k = 0; k < p; k++) if (k != j) v *= (0 - (W)s[k])/((W)s[j] - (W)s[k]);
-          wj[j] = (Real)v;
-        }
-        return wj;
-      }();
-      return w;
-    }
-
-    template <class Real> inline Real HedgehogRminCoeff(const Integer digits, const Integer sing_order) {
-      static const std::array<Real,detail_quadelem::MaxDigits<Real>> c = []() {
-        std::array<Real,detail_quadelem::MaxDigits<Real>> t{};
-        for (Integer d = 0; d < detail_quadelem::MaxDigits<Real>; d++) t[d] = (Real)0.1 * pow<Real>(pow<Real,Long>((Real)0.1, (Long)d), (Real)1/(Real)6);
-        return t;
-      }();
-      SCTL_ASSERT(digits >= 0 && digits < detail_quadelem::MaxDigits<Real>);
-      return (sing_order <= 1 ? c[digits] : std::min<Real>(c[digits], (Real)3e-3));
-    }
-
-    template <Integer order, class Real, class Kernel> void SelfInteracHedgehog(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
-      static constexpr Integer sing_order = detail_quadelem::KernelSingularOrder<Kernel>::value;
-      const Integer near_digits = std::min<Integer>(detail_quadelem::MaxDigits<Real>-1, digits + (sing_order <= 1 ? 2 : 6));
-      detail_dyadic_near::NearGradeTable<order,Real>(detail_dyadic_near::DigitsQuadOrder<Real>(near_digits)); // precomp cache
-      detail_dyadic_near::NearGradeTable<order,Real>(detail_dyadic_near::DigitsQuadOrder<Real>(digits)); // precomp cache
-
-      const Vector<Real>& hh_w = HedgehogWeights<Real>();
-      const Real hh_c = HedgehogRminCoeff<Real>(digits, sing_order);
-      const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-      const auto self_interac_one_trg = [&nds, hh_c, &qel, &ker, near_digits, &hh_w](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
-          const Vector<Real>&, const Vector<Real>& ntrg, const Vector<Real>& Xnodes, const Vector<Real>& Xnnodes,
-          const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer KDIM1_out) {
-        const Vector<Real>& proxy_dist = HedgehogProxyOffsets<Real>();
-        ScratchBuf<Real> hh_Xt1_buf(detail_quadelem::COORD_DIM), hh_off_buf(proxy_dist.Dim()*detail_quadelem::COORD_DIM);
-        Vector<Real> hh_Xt1(hh_Xt1_buf), hh_off(hh_off_buf);
-        { // Proxy points along the normal, sized by edge distance
-          Real su2 = 0, sv2 = 0;
-          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-            su2 += dXu[t*detail_quadelem::COORD_DIM+k]*dXu[t*detail_quadelem::COORD_DIM+k];
-            sv2 += dXv[t*detail_quadelem::COORD_DIM+k]*dXv[t*detail_quadelem::COORD_DIM+k];
-          }
-          const Real edge_u = std::min<Real>(nds[ti], 1-nds[ti]), edge_v = std::min<Real>(nds[tj], 1-nds[tj]);
-          const Real rmin = hh_c * std::min<Real>(edge_u*sqrt<Real>(su2), edge_v*sqrt<Real>(sv2));
-          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) hh_Xt1[k] = Xnodes[t*detail_quadelem::COORD_DIM+k] + rmin*Xnnodes[t*detail_quadelem::COORD_DIM+k];
-          for (Long j = 0; j < proxy_dist.Dim(); j++) {
-            const Real rj = rmin*proxy_dist[j];
-            for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) hh_off[j*detail_quadelem::COORD_DIM+k] = (rj-rmin)*Xnnodes[t*detail_quadelem::COORD_DIM+k];
-          }
-        }
-        ScratchBuf<Real> M_hh_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
-        Matrix<Real> M_hh((Long)order*order*Kernel::SrcDim(), KDIM1_out, M_hh_buf.begin(), false);
-        detail_dyadic_near::NearInteracDyadic<order,Real>(M_hh, hh_Xt1, ntrg, ker, elem_idx, qel, near_digits, hh_off, hh_w);
-        detail_quadelem::ScatterTargetBlock(M, M_hh, t, KDIM1_out);
-      };
-      detail_quadelem::SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, true, self_interac_one_trg);
-    }
-
-  }
-
   namespace detail_dispatch {
 
     template <Integer order, class Real, class Kernel> void SelfInteracDispatch(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       switch (detail_quadelem::Access<Real>::Scheme(qel)) {
-        case QuadElemList<Real>::QuadScheme::TensorProduct: return detail_tensorprod::SelfInteracTensorProduct<order,Real>(M_lst, ker, trg_dot_prod, qel, digits);
+        case QuadElemList<Real>::QuadScheme::TensorProduct: return detail_tensorprod_singular::SelfInteracTensorProduct<order,Real>(M_lst, ker, trg_dot_prod, qel, digits);
         case QuadElemList<Real>::QuadScheme::Duffy:         return detail_duffy::SelfInteracDuffy<order,Real>(M_lst, ker, trg_dot_prod, qel, digits);
         case QuadElemList<Real>::QuadScheme::Hedgehog:      return detail_hedgehog::SelfInteracHedgehog<order,Real>(M_lst, ker, trg_dot_prod, qel, digits);
       }
@@ -1835,7 +1838,7 @@ namespace sctl {
 
     template <Integer order, class Real, class Kernel> void NearInteracDispatch(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
       if (detail_quadelem::Access<Real>::Scheme(qel) == QuadElemList<Real>::QuadScheme::TensorProduct) {
-        detail_tensorprod::NearInteracTensorProduct<order,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
+        detail_tensorprod_near::NearInteracTensorProduct<order,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
       } else {
         detail_dyadic_near::NearInteracDyadic<order,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
       }

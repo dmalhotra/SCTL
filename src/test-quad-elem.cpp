@@ -29,7 +29,7 @@ template <class Real> struct QuadElemTestAccess {
     // The rule comes out as offsets from v0; reconstruct absolute nodes param = v0 + delta.
     static void LogSingularQuad1D(Vector<Real>& param, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder) {
         Vector<Real> delta;
-        detail_tensorprod::BuildCenteredLogSingular1D<Real>(delta, w, v0, Lvl, QuadOrder);
+        detail_tensorprod_singular::BuildCenteredLogSingular1D<Real>(delta, w, v0, Lvl, QuadOrder);
         param.ReInit(delta.Dim());
         for (Long i = 0; i < delta.Dim(); i++) param[i] = v0 + delta[i];
     }
