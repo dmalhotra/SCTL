@@ -1828,21 +1828,12 @@ namespace sctl {
 
       const Long base = elem_idx * nnode * detail_quadelem::COORD_DIM;
       thread_local Vector<Real> coord_shift;
-      thread_local const QuadElemList<Real>* cs_qel = nullptr;
-      thread_local Long cs_elem = -1;
-      thread_local StaticArray<Real,detail_quadelem::COORD_DIM> cs_trg{0,0,0};
-      if (coord_shift.Dim() != detail_quadelem::COORD_DIM*nnode) {
-        coord_shift.ReInit(detail_quadelem::COORD_DIM*nnode);
-        cs_qel = nullptr;
-      }
-      if (!src_nodal && (cs_qel != &qel || cs_elem != elem_idx || cs_trg[0] != Xtrg[0] || cs_trg[1] != Xtrg[1] || cs_trg[2] != Xtrg[2])) {
+      if (coord_shift.Dim() != detail_quadelem::COORD_DIM*nnode) coord_shift.ReInit(detail_quadelem::COORD_DIM*nnode);
+      if (!src_nodal) {
         for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
           const Real ok = Xtrg[k];
           for (Long p = 0; p < nnode; p++) coord_shift[k*nnode + p] = detail_quadelem::Access<Real>::Coord(qel)[base + k*nnode + p] - ok;
         }
-        cs_qel = &qel;
-        cs_elem = elem_idx;
-        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) cs_trg[k] = Xtrg[k];
       }
       const Vector<Real>& cs_ref = (src_nodal ? *src_nodal : coord_shift);
       thread_local Vector<Real> Cv, Cdv;
