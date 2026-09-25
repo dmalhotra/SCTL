@@ -468,7 +468,7 @@ namespace sctl {
       const Long UBLK = std::max<Long>(1, std::min<Long>(Nu, MaxUnblockedPts / Nv));
       const Long nqmax = UBLK*Nv;
       ScratchBuf<Real> Xs(COORD_DIM*nqmax), dXu(COORD_DIM*nqmax), dXv(COORD_DIM*nqmax), Xn(COORD_DIM*nqmax), wq(nqmax);
-      ScratchBuf<Real> KW(C*nqmax), Tblk(UBLK < Nu ? C*UBLK*(Long)order : 0), Tfull(C*Nu*(Long)order);
+      ScratchBuf<Real> KW(C*nqmax), Tblk(C*UBLK*(Long)order), Tall(Nu*C*(Long)order);
 
       const Long np = std::max<Long>(1, proxy_w.Dim());
       for (Long a0 = 0; a0 < Nu; a0 += UBLK) {
@@ -514,22 +514,27 @@ namespace sctl {
         }
 
         {
-          const bool one_block = (nu == Nu);
           const Matrix<Real> KW_m((Long)C*nu, Nv, KW.begin(), false);
-          Matrix<Real> T_m((Long)C*nu, order, (one_block ? Tfull.begin() : Tblk.begin()), false);
+          Matrix<Real> T_m((Long)C*nu, order, Tblk.begin(), false);
           Matrix<Real>::GEMM(T_m, KW_m, rv.MT);
-          if (!one_block) {
+          for (Long a = 0; a < nu; a++) {
             for (Integer c = 0; c < C; c++) {
-              for (Long i = 0; i < nu*(Long)order; i++) Tfull[((Long)c*Nu + a0)*order + i] = Tblk[(Long)c*nu*order + i];
+              for (Integer j = 0; j < order; j++) Tall[((a0 + a)*C + c)*order + j] = Tblk[((Long)c*nu + a)*order + j];
             }
           }
         }
       }
 
-      for (Integer c = 0; c < C; c++) {
-        const Matrix<Real> T_c(Nu, order, Tfull.begin() + (Long)c*Nu*order, false);
-        Matrix<Real> A_c(order, order, acc_cm.begin() + (Long)c*nnode, false);
-        Matrix<Real>::GEMM(A_c, ru.M, T_c, (Real)1);
+      {
+        ScratchBuf<Real> Aall((Long)order*C*order);
+        const Matrix<Real> T_m(Nu, (Long)C*order, Tall.begin(), false);
+        Matrix<Real> A_m(order, (Long)C*order, Aall.begin(), false);
+        Matrix<Real>::GEMM(A_m, ru.M, T_m);
+        for (Integer c = 0; c < C; c++) {
+          for (Integer i = 0; i < order; i++) {
+            for (Integer j = 0; j < order; j++) acc_cm[(Long)c*nnode + i*order + j] += Aall[((Long)i*C + c)*order + j];
+          }
+        }
       }
     }
 
