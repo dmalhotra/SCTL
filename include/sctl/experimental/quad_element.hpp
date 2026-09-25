@@ -22,9 +22,9 @@ namespace sctl {
     public:
       QuadElemList() {}
 
-      template <class ValueType> QuadElemList(Integer order, const Vector<ValueType>& coord);
+      template <class ValueType> QuadElemList(const Integer order, const Vector<ValueType>& coord);
 
-      template <class ValueType> void Init(Integer order, const Vector<ValueType>& coord);
+      template <class ValueType> void Init(const Integer order, const Vector<ValueType>& coord);
 
       virtual ~QuadElemList() {}
 
@@ -38,13 +38,13 @@ namespace sctl {
 
       void GetFarFieldNodes(Vector<Real>& X, Vector<Real>& Xn, Vector<Real>& wts, Vector<Real>& dist_far, Vector<Long>& element_wise_node_cnt, const Real tol) const override;
 
-      template <class Kernel> static void SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self);
+      template <class Kernel> static void SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const Real tol, const bool trg_dot_prod, const ElementListBase<Real>* self);
 
-      template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
+      template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Real tol, const Long elem_idx, const ElementListBase<Real>* self);
 
       enum class QuadScheme { TensorProduct, Duffy, Hedgehog };
 
-      void SetQuadScheme(QuadScheme s) {
+      void SetQuadScheme(const QuadScheme s) {
         scheme_ = s;
       }
 
