@@ -31,11 +31,10 @@ namespace sctl {
 
     template <class Real> static constexpr Integer MaxRefineLvl = GetSigBits<Real>::value();
 
-    template <class Real> void PartitionRange(Long Nelem_total, const Comm& comm, Long& i0, Long& i1) {
-      const Long Np = comm.Size();
-      const Long pid = comm.Rank();
-      i0 = Nelem_total * (pid + 0) / Np;
-      i1 = Nelem_total * (pid + 1) / Np;
+    inline std::string RankFileName(const std::string& fname, const Comm& comm) {
+      std::stringstream ss;
+      ss << fname << std::setfill('0') << std::setw(6) << comm.Rank();
+      return ss.str();
     }
 
     template <class ValueType> void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv) {
@@ -2324,31 +2323,11 @@ namespace sctl {
   }
 
   template <class Real> void QuadElemList<Real>::Write(const std::string& fname, const Comm& comm) const {
-    auto allgather = [&comm](Vector<Real>& v_out, const Vector<Real>& v_in) {
-      const Long Nproc = comm.Size();
-      StaticArray<Long,1> len{v_in.Dim()};
-      Vector<Long> cnt(Nproc), dsp(Nproc);
-      comm.Allgather(len + 0, 1, cnt.begin(), 1);
-      dsp = 0;
-      omp_par::scan(cnt.begin(), dsp.begin(), Nproc);
-
-      v_out.ReInit(dsp[Nproc-1] + cnt[Nproc-1]);
-      comm.Allgatherv(v_in.begin(), v_in.Dim(), v_out.begin(), cnt.begin(), dsp.begin());
-    };
-
-    Vector<Real> coord_;
-    allgather(coord_, coord);
-
-    const Long nnode_per_elem = (Long)order * order;
-    const Long Nelem_total = coord_.Dim() / (detail_quadelem::COORD_DIM * nnode_per_elem);
-    SCTL_ASSERT(coord_.Dim() == Nelem_total * detail_quadelem::COORD_DIM * nnode_per_elem);
-
-    if (comm.Rank()) return;
-
     const Integer precision = (Integer)std::ceil(-std::log((double)machine_eps<Real>()) / std::log(10.0));
     const Integer width = precision + 8;
-    std::ofstream file(fname, std::ofstream::out | std::ofstream::trunc);
-    SCTL_ASSERT_MSG(file.good(), std::string("Unable to open file for writing: ") + fname);
+    const std::string fname_rank = detail_quadelem::RankFileName(fname, comm);
+    std::ofstream file(fname_rank, std::ofstream::out | std::ofstream::trunc);
+    SCTL_ASSERT_MSG(file.good(), std::string("Unable to open file for writing: ") + fname_rank);
 
     file << "#";
     file << std::setw(width - 1) << "X";
@@ -2358,11 +2337,12 @@ namespace sctl {
     file << '\n';
 
     file << std::scientific << std::setprecision(precision);
-    for (Long elem_idx = 0; elem_idx < Nelem_total; elem_idx++) {
+    const Long nnode_per_elem = (Long)order * order;
+    for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
       const Long base = elem_idx * detail_quadelem::COORD_DIM * nnode_per_elem;
       for (Long p = 0; p < nnode_per_elem; p++) {
         for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-          file << std::setw(width) << coord_[base + k * nnode_per_elem + p];
+          file << std::setw(width) << coord[base + k * nnode_per_elem + p];
         }
         if (!p) file << std::setw(width) << order;
         file << '\n';
@@ -2371,8 +2351,9 @@ namespace sctl {
   }
 
   template <class Real> template <class ValueType> void QuadElemList<Real>::Read(const std::string& fname, const Comm& comm) {
-    std::ifstream file(fname, std::ifstream::in);
-    SCTL_ASSERT_MSG(file.good(), std::string("Unable to open file for reading: ") + fname);
+    const std::string fname_rank = detail_quadelem::RankFileName(fname, comm);
+    std::ifstream file(fname_rank, std::ifstream::in);
+    SCTL_ASSERT_MSG(file.good(), std::string("Unable to open file for reading: ") + fname_rank);
 
     std::string line;
     Vector<ValueType> coord_;
@@ -2398,32 +2379,22 @@ namespace sctl {
     }
     file.close();
 
-    SCTL_ASSERT(order_markers.Dim() > 0);
-    const Integer file_order = order_markers[0];
-    SCTL_ASSERT(file_order > 0);
-    const Long nnode_per_elem = (Long)file_order * file_order;
+    StaticArray<Long,2> file_order{(order_markers.Dim() ? order_markers[0] : 0), 0};
+    comm.Allreduce(file_order + 0, file_order + 1, 1, CommOp::MAX);
+    SCTL_ASSERT(file_order[1] > 0);
+    const Long nnode_per_elem = file_order[1] * file_order[1];
 
     SCTL_ASSERT(order_markers.Dim() % nnode_per_elem == 0);
-    const Long Nelem_total = order_markers.Dim() / nnode_per_elem;
-    for (Long elem = 0; elem < Nelem_total; elem++) {
+    const Long Nelem_local = order_markers.Dim() / nnode_per_elem;
+    for (Long elem = 0; elem < Nelem_local; elem++) {
       const Long offset = elem * nnode_per_elem;
-      SCTL_ASSERT(order_markers[offset] == file_order);
+      SCTL_ASSERT(order_markers[offset] == file_order[1]);
       for (Long j = 1; j < nnode_per_elem; j++) {
-        SCTL_ASSERT(order_markers[offset + j] == file_order || order_markers[offset + j] == -1);
+        SCTL_ASSERT(order_markers[offset + j] == file_order[1] || order_markers[offset + j] == -1);
       }
     }
 
-    {
-      Long i0, i1;
-      detail_quadelem::PartitionRange<Real>(Nelem_total, comm, i0, i1);
-
-      const Long j0 = i0 * nnode_per_elem;
-      const Long j1 = i1 * nnode_per_elem;
-
-      Vector<ValueType> coord_local;
-      coord_local.ReInit((j1 - j0) * detail_quadelem::COORD_DIM, coord_.begin() + j0 * detail_quadelem::COORD_DIM, false);
-      Init<ValueType>(file_order, coord_local);
-    }
+    Init<ValueType>((Integer)file_order[1], coord_);
   }
 
   template <class Real> void QuadElemList<Real>::GetVTUData(VTUData& vtu_data, const Vector<Real>& F, const Long elem_idx) const {
