@@ -6,8 +6,7 @@
 //
 // Endpoint-correction nodes and weights for a uniform trapezoidal rule: the log
 // tables correct an endpoint with a log singularity, the smooth tables correct a
-// regular (non-singular) endpoint to high order. The rule assembly that consumes
-// this data lives in QuadElemList::LogSingularQuad1DCentered.
+// regular (non-singular) endpoint to high order.
 //
 // Values are decimal string literals parsed at Real precision (sctl::atoreal), so nothing
 // is truncated through double. Tables marked "refit in QuadReal" carry 34 digits, obtained by
@@ -38,9 +37,7 @@ template <class Real> void Fill(ExtraPtResult<Real>& r, const char* const* nds,
 
 } // namespace alpert_detail
 
-/**
- * Log Singularity Quadrature Rule Extra Nodes/Weights
- */
+/** Returns, for each order, the extra nodes and weights (in units of the grid spacing) that correct a trapezoidal rule at an endpoint with a log singularity, and the number of grid points they replace. */
 template <class Real> inline ExtraPtResult<Real> QuadLogExtraPtNodes(const Integer order) {
     ExtraPtResult<Real> res;
 
@@ -91,9 +88,7 @@ template <class Real> inline ExtraPtResult<Real> QuadLogExtraPtNodes(const Integ
     return res;
 }
 
-/**
- * Smooth Boundary Extra Nodes/Weights
- */
+/** Returns, for each order, the extra nodes and weights (in units of the grid spacing) that correct a trapezoidal rule at a regular endpoint, and the number of grid points they replace. */
 template <class Real> inline ExtraPtResult<Real> QuadSmoothExtraPtNodes(const Integer order) {
     ExtraPtResult<Real> res;
 

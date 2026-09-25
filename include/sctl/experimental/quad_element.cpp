@@ -104,6 +104,7 @@ namespace sctl {
       }
     }
 
+    /** Returns an order x order matrix for each order; entry (i, a) is the derivative of the i-th Lagrange basis function on ParamNodes(order) at node a. */
     template <class Real> inline const Matrix<Real>& DiffMat(const Integer order) {
       SCTL_ASSERT(0 < order && order <= MaxTableOrder);
       static const Vector<Matrix<Real>> all = []() {
@@ -124,6 +125,7 @@ namespace sctl {
       Integer quad_order;
     };
 
+    /** Returns the {b_ellipse, quad_order} pair for each digits, from QuadParams at tolerance 10^-digits; one table per QuadParams function. */
     template <class Real, void (*QuadParams)(Real, Real&, Integer&)> const QuadParamSet<Real>& QuadParamsForDigits(const Integer digits) {
       static const std::array<QuadParamSet<Real>, MaxDigits<Real>> table = []() {
         std::array<QuadParamSet<Real>, MaxDigits<Real>> t{};
@@ -824,17 +826,18 @@ namespace sctl {
   namespace detail_dyadic_near {
 
     using detail_quadelem::COORD_DIM;
+    using detail_quadelem::MaxDigits;
+    using detail_quadelem::MaxRefineLvl;
+    using detail_quadelem::MaxTableOrder;
+    using detail_quadelem::PrecompReal;
+    using detail_quadelem::QuadRule1D;
+
     using detail_quadelem::EvalPoint;
     using detail_quadelem::GetClosestPoint;
     using detail_quadelem::IntegrateTensorRule;
     using detail_quadelem::LagrangeDiffMat;
-    using detail_quadelem::MaxDigits;
-    using detail_quadelem::MaxRefineLvl;
-    using detail_quadelem::MaxTableOrder;
     using detail_quadelem::NearInteracTargets;
-    using detail_quadelem::PrecompReal;
     using detail_quadelem::QuadParamsForDigits;
-    using detail_quadelem::QuadRule1D;
     using detail_quadelem::ShiftedElemCoord;
 
     template <class Real> void QuadParams(const Real tol, Real& b_ellipse, Integer& quad_order) {
@@ -848,10 +851,12 @@ namespace sctl {
       b_ellipse = b*b/(2*a);
     }
 
+    /** Returns the Gauss-Legendre order of each piece for each digits, from the dyadic QuadParams. */
     template <class Real> inline Integer QuadOrder(const Integer digits) {
       return QuadParamsForDigits<Real, QuadParams<Real>>(digits).quad_order;
     }
 
+    /** Returns b_ellipse for each digits, from the dyadic QuadParams; pieces larger than dist/b_ellipse are split. */
     template <class Real> inline Real BEllipse(const Integer digits) {
       return QuadParamsForDigits<Real, QuadParams<Real>>(digits).b_ellipse;
     }
@@ -862,6 +867,7 @@ namespace sctl {
 
     static constexpr Integer NearMaxQuadOrder = 60;
 
+    /** Returns order nodes on [0, 1] for each order: sin^2(pi i/(2(order-1))), the Chebyshev extreme points. */
     template <class Real> static const Vector<Real>& NearSubNodes(const Integer order) {
       SCTL_ASSERT(1 < order && order <= MaxTableOrder);
       static const Vector<Vector<Real>> all = []() {
@@ -881,6 +887,7 @@ namespace sctl {
       return all[order];
     }
 
+    /** Returns 1 - NearSubNodes(order) for each order, computed as cos^2 so that it is accurate where it is small. */
     template <class Real> static const Vector<Real>& NearSubOffsets(const Integer order) {
       SCTL_ASSERT(1 < order && order <= MaxTableOrder);
       static const Vector<Vector<Real>> all = []() {
@@ -900,6 +907,7 @@ namespace sctl {
       return all[order];
     }
 
+    /** Returns an order x order matrix for each order; entry (i, a) is the derivative of the i-th Lagrange basis function on NearSubNodes(order) at node a. */
     template <class Real> static const Matrix<Real>& NearSubDiffMat(const Integer order) {
       SCTL_ASSERT(1 < order && order <= MaxTableOrder);
       static const Vector<Matrix<Real>> all = []() {
@@ -910,6 +918,7 @@ namespace sctl {
       return all[order];
     }
 
+    /** Returns 2*MaxRefineLvl rules for each (order, q): q-point Gauss-Legendre on the dyadic intervals [1-2^-k, 1-2^-(k+1)] and tails [1-2^-k, 1], each with order x q interpolation matrices. */
     template <Integer order, class Real> const Vector<GradeRule<Real>>& NearGradeTable(const Integer q) {
       const auto build = [](const Integer q) {
         using W = PrecompReal;
@@ -1127,15 +1136,16 @@ namespace sctl {
   namespace detail_tensorprod_near {
 
     using detail_quadelem::COORD_DIM;
+    using detail_quadelem::MaxDigits;
+    using detail_quadelem::MaxRefineLvl;
+    using detail_quadelem::QuadRule1D;
+
     using detail_quadelem::DiffMat;
     using detail_quadelem::EvalPoint;
     using detail_quadelem::GetClosestPoint;
     using detail_quadelem::IntegratePanel;
-    using detail_quadelem::MaxDigits;
-    using detail_quadelem::MaxRefineLvl;
     using detail_quadelem::NearInteracTargets;
     using detail_quadelem::QuadParamsForDigits;
-    using detail_quadelem::QuadRule1D;
 
     template <class Real> void QuadParams(const Real tol, Real& b_ellipse, Integer& quad_order) {
       const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
@@ -1144,14 +1154,17 @@ namespace sctl {
       quad_order = std::max<Integer>(1, (Integer)ceil<Real>(-log<Real>(((15*(rho*rho-1))/64)*tol_)/log<Real>(rho)*(Real)0.5 + 1));
     }
 
+    /** Returns the Gauss-Legendre order of each segment for each digits, from the tensor-product QuadParams. */
     template <class Real> inline Integer QuadOrder(const Integer digits) {
       return QuadParamsForDigits<Real, QuadParams<Real>>(digits).quad_order;
     }
 
+    /** Returns b_ellipse for each digits (0.725 for all); it sets the segment grading ratio and the smallest segment. */
     template <class Real> inline Real BEllipse(const Integer digits) {
       return QuadParamsForDigits<Real, QuadParams<Real>>(digits).b_ellipse;
     }
 
+    /** Returns QuadOrder(digits) Gauss-Legendre nodes and weights on [0, 1] for each digits. */
     template <class Real> const std::pair<Vector<Real>, Vector<Real>>& GLRule(const Integer digits) {
       static const std::array<std::pair<Vector<Real>, Vector<Real>>,MaxDigits<Real>> gl = []() {
         std::array<std::pair<Vector<Real>, Vector<Real>>,MaxDigits<Real>> t;
@@ -1294,6 +1307,7 @@ namespace sctl {
   namespace detail_duffy {
 
     using detail_quadelem::COORD_DIM;
+
     using detail_quadelem::DiffMat;
     using detail_quadelem::ScatterTargetBlock;
     using detail_quadelem::SelfInteracElems;
@@ -1321,6 +1335,7 @@ namespace sctl {
       return std::max<Integer>(order/2, nt);
     }
 
+    /** Returns, for each order, an order-point radial rule and, for each of the 4*order^2 (node, triangle) pairs, its Jacobian, orientation and interpolation matrices along beta and alpha. */
     template <Integer order, class Real> const DuffySelfTable<Real>& DuffyTable() {
       static const DuffySelfTable<Real> table = []() {
         DuffySelfTable<Real> tbl;
@@ -1568,6 +1583,7 @@ namespace sctl {
     using detail_quadelem::COORD_DIM;
     using detail_quadelem::MaxDigits;
     using detail_quadelem::PrecompReal;
+
     using detail_quadelem::ScatterTargetBlock;
     using detail_quadelem::SelfInteracElems;
     using detail_dyadic_near::NearGradeTable;
@@ -1581,6 +1597,7 @@ namespace sctl {
       static constexpr Integer value = Kernel::SingularOrder();
     };
 
+    /** Returns the 5 proxy distances 4^(j/4), j < 5, in units of rmin. */
     template <class Real> inline const Vector<Real>& HedgehogProxyOffsets() {
       static const Vector<Real> s = []() {
         Vector<Real> v;
@@ -1590,6 +1607,7 @@ namespace sctl {
       return s;
     }
 
+    /** Returns the 5 weights that extrapolate values at the proxy distances to distance 0. */
     template <class Real> inline const Vector<Real>& HedgehogWeights() {
       static const Vector<Real> w = []() {
         using W = PrecompReal;
@@ -1606,6 +1624,7 @@ namespace sctl {
       return w;
     }
 
+    /** Returns the proxy spacing coefficient 0.1*10^(-digits/6) for each digits, at most 3e-3 when sing_order > 1. */
     template <class Real> inline Real HedgehogRminCoeff(const Integer digits, const Integer sing_order) {
       static const std::array<Real,MaxDigits<Real>> c = []() {
         std::array<Real,MaxDigits<Real>> t{};
@@ -1658,11 +1677,12 @@ namespace sctl {
   namespace detail_tensorprod_singular {
 
     using detail_quadelem::COORD_DIM;
-    using detail_quadelem::DiffMat;
-    using detail_quadelem::IntegratePanel;
     using detail_quadelem::MaxDigits;
     using detail_quadelem::MaxRefineLvl;
     using detail_quadelem::QuadRule1D;
+
+    using detail_quadelem::DiffMat;
+    using detail_quadelem::IntegratePanel;
     using detail_quadelem::ScatterTargetBlock;
     using detail_quadelem::SelfInteracElems;
     using detail_tensorprod_near::GLRule;
@@ -1813,6 +1833,7 @@ namespace sctl {
         std::mutex mtx;
     };
 
+    /** Returns the rule toward node ti along u for each (order, digits): QuadOrder(digits)-point Gauss-Legendre on intervals halving min(MaxRefineLvl, 2*digits+6) times toward the node on each side, with order x N interpolation matrices. */
     template <Integer order, class Real> const QuadRule1D<Real>& CenteredURule(const Integer ti, const Integer digits) {
       static LazyTable<Vector<QuadRule1D<Real>>, MaxDigits<Real>> table;
       const auto build = [digits]() {
@@ -1832,6 +1853,7 @@ namespace sctl {
       return table.Get(digits, build)[ti];
     }
 
+    /** Returns the rule toward node tj along v for each (order, digits): QuadOrder(digits)-point Gauss-Legendre on min(12, max(1, digits-5)) panels halving toward the node on each side, then one order-16 Alpert panel per side, log-corrected at the node, with order x N interpolation matrices. */
     template <Integer order, class Real> const QuadRule1D<Real>& CenteredVRule(const Integer tj, const Integer digits) {
       static LazyTable<Vector<QuadRule1D<Real>>, MaxDigits<Real>> table;
       const auto build = [digits]() {
@@ -1883,6 +1905,7 @@ namespace sctl {
   namespace detail_dispatch {
 
     using detail_quadelem::Access;
+
     using detail_dyadic_near::NearInteracDyadic;
     using detail_tensorprod_near::NearInteracTensorProduct;
     using detail_duffy::SelfInteracDuffy;
