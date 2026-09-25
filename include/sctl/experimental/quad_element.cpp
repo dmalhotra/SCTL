@@ -1090,8 +1090,7 @@ namespace sctl {
       }
     }
 
-    template <Integer order, class Real, class Kernel> void NearInteracDyadic(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
-      const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
+    template <Integer order, class Real, class Kernel> void NearInteracDyadic(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
       const auto near_interac_one_trg = [&qel, elem_idx, &ker, digits, &proxy_off, &proxy_w](Matrix<Real>& M_acc, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
         NearInteracBlockDyadic<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits, proxy_off, proxy_w);
       };
@@ -1352,8 +1351,7 @@ namespace sctl {
       }
     }
 
-    template <Integer order, class Real, class Kernel> void SelfInteracDuffy(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits) {
-      const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
+    template <Integer order, class Real, class Kernel> void SelfInteracDuffy(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       DuffyTable<order,Real>(); // precomp cache
       detail_dyadic_near::NearGradeTable<order,Real>(detail_dyadic_near::DigitsQuadOrder<Real>(digits)); // precomp cache
       const auto self_interac_one_trg = [&qel, &ker, digits](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
@@ -1733,16 +1731,14 @@ namespace sctl {
       IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru, rv, ker);
     }
 
-    template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits) {
-      const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
+    template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
       const auto near_interac_one_trg = [&qel, elem_idx, &ker, digits](Matrix<Real>& M_acc, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
         NearInteracBlockTensorProduct<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
       };
       detail_quadelem::NearInteracTargets<order,Real,Kernel>(M, Xt, normal_trg, qel, near_interac_one_trg);
     }
 
-    template <Integer order, class Real, class Kernel> void SelfInteracTensorProduct(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits) {
-      const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
+    template <Integer order, class Real, class Kernel> void SelfInteracTensorProduct(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       CenteredURule<order,Real>(0, digits); // precomp cache
       CenteredVRule<order,Real>(0, digits); // precomp cache
       DigitsGLRule<Real>(digits); // precomp cache
@@ -1796,8 +1792,7 @@ namespace sctl {
       return (sing_order <= 1 ? c[digits] : std::min<Real>(c[digits], (Real)3e-3));
     }
 
-    template <Integer order, class Real, class Kernel> void SelfInteracHedgehog(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits) {
-      const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
+    template <Integer order, class Real, class Kernel> void SelfInteracHedgehog(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       static constexpr Integer sing_order = detail_quadelem::KernelSingularOrder<Kernel>::value;
 
       const Vector<Real>& hh_w = HedgehogWeights<Real>();
@@ -1827,7 +1822,7 @@ namespace sctl {
           const Real rj = rmin*proxy_dist[j];
           for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) hh_off[j*detail_quadelem::COORD_DIM+k] = (rj-rmin)*Xnnodes[t*detail_quadelem::COORD_DIM+k];
         }
-        detail_dyadic_near::NearInteracDyadic<order,Real>(M_hh, hh_Xt1, ntrg, ker, elem_idx, &qel, near_digits, hh_off, hh_w);
+        detail_dyadic_near::NearInteracDyadic<order,Real>(M_hh, hh_Xt1, ntrg, ker, elem_idx, qel, near_digits, hh_off, hh_w);
         detail_quadelem::ScatterTargetBlock(M, M_hh, t, KDIM1_out);
       };
       detail_quadelem::SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, true, self_interac_one_trg);
@@ -1837,48 +1832,48 @@ namespace sctl {
 
   namespace detail_dispatch {
 
-    template <Integer order, class Real, class Kernel> void SelfInteracDispatch(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits) {
-      const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
+    template <Integer order, class Real, class Kernel> void SelfInteracDispatch(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       switch (detail_quadelem::Access<Real>::Scheme(qel)) {
-        case QuadElemList<Real>::QuadScheme::TensorProduct: return detail_tensorprod::SelfInteracTensorProduct<order,Real>(M_lst, ker, trg_dot_prod, self, digits);
-        case QuadElemList<Real>::QuadScheme::Duffy:         return detail_duffy::SelfInteracDuffy<order,Real>(M_lst, ker, trg_dot_prod, self, digits);
-        case QuadElemList<Real>::QuadScheme::Hedgehog:      return detail_hedgehog::SelfInteracHedgehog<order,Real>(M_lst, ker, trg_dot_prod, self, digits);
+        case QuadElemList<Real>::QuadScheme::TensorProduct: return detail_tensorprod::SelfInteracTensorProduct<order,Real>(M_lst, ker, trg_dot_prod, qel, digits);
+        case QuadElemList<Real>::QuadScheme::Duffy:         return detail_duffy::SelfInteracDuffy<order,Real>(M_lst, ker, trg_dot_prod, qel, digits);
+        case QuadElemList<Real>::QuadScheme::Hedgehog:      return detail_hedgehog::SelfInteracHedgehog<order,Real>(M_lst, ker, trg_dot_prod, qel, digits);
       }
     }
 
-    template <Integer order, class Real, class Kernel> void NearInteracDispatch(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits) {
-      const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
+    template <Integer order, class Real, class Kernel> void NearInteracDispatch(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
       if (detail_quadelem::Access<Real>::Scheme(qel) == QuadElemList<Real>::QuadScheme::TensorProduct) {
-        detail_tensorprod::NearInteracTensorProduct<order,Real>(M, Xt, normal_trg, ker, elem_idx, self, digits);
+        detail_tensorprod::NearInteracTensorProduct<order,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
       } else {
-        detail_dyadic_near::NearInteracDyadic<order,Real>(M, Xt, normal_trg, ker, elem_idx, self, digits);
+        detail_dyadic_near::NearInteracDyadic<order,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
       }
     }
 
   }
 
   template <class Real> template <class Kernel> void QuadElemList<Real>::SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const Real tol, const bool trg_dot_prod, const ElementListBase<Real>* self) {
-    const Integer order = static_cast<const QuadElemList<Real>*>(self)->Order();
+    const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
+    const Integer order = qel.Order();
     const Integer digits = detail_quadelem::DigitsFromTol<Real>(tol);
     switch (order) {
-      case  4: return detail_dispatch::SelfInteracDispatch<4,Real>(M_lst, ker, trg_dot_prod, self, digits);
-      case  8: return detail_dispatch::SelfInteracDispatch<8,Real>(M_lst, ker, trg_dot_prod, self, digits);
-      case 12: return detail_dispatch::SelfInteracDispatch<12,Real>(M_lst, ker, trg_dot_prod, self, digits);
-      case 16: return detail_dispatch::SelfInteracDispatch<16,Real>(M_lst, ker, trg_dot_prod, self, digits);
-      case 20: return detail_dispatch::SelfInteracDispatch<20,Real>(M_lst, ker, trg_dot_prod, self, digits);
+      case  4: return detail_dispatch::SelfInteracDispatch<4,Real>(M_lst, ker, trg_dot_prod, qel, digits);
+      case  8: return detail_dispatch::SelfInteracDispatch<8,Real>(M_lst, ker, trg_dot_prod, qel, digits);
+      case 12: return detail_dispatch::SelfInteracDispatch<12,Real>(M_lst, ker, trg_dot_prod, qel, digits);
+      case 16: return detail_dispatch::SelfInteracDispatch<16,Real>(M_lst, ker, trg_dot_prod, qel, digits);
+      case 20: return detail_dispatch::SelfInteracDispatch<20,Real>(M_lst, ker, trg_dot_prod, qel, digits);
       default: SCTL_ASSERT_MSG(false, "QuadElemList element order must be one of {4,8,12,16,20} for the templated near/self schemes.");
     }
   }
 
   template <class Real> template <class Kernel> void QuadElemList<Real>::NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
-    const Integer order = static_cast<const QuadElemList<Real>*>(self)->Order();
+    const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
+    const Integer order = qel.Order();
     const Integer digits = detail_quadelem::DigitsFromTol<Real>(tol);
     switch (order) {
-      case  4: return detail_dispatch::NearInteracDispatch<4,Real>(M, Xt, normal_trg, ker, elem_idx, self, digits);
-      case  8: return detail_dispatch::NearInteracDispatch<8,Real>(M, Xt, normal_trg, ker, elem_idx, self, digits);
-      case 12: return detail_dispatch::NearInteracDispatch<12,Real>(M, Xt, normal_trg, ker, elem_idx, self, digits);
-      case 16: return detail_dispatch::NearInteracDispatch<16,Real>(M, Xt, normal_trg, ker, elem_idx, self, digits);
-      case 20: return detail_dispatch::NearInteracDispatch<20,Real>(M, Xt, normal_trg, ker, elem_idx, self, digits);
+      case  4: return detail_dispatch::NearInteracDispatch<4,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
+      case  8: return detail_dispatch::NearInteracDispatch<8,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
+      case 12: return detail_dispatch::NearInteracDispatch<12,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
+      case 16: return detail_dispatch::NearInteracDispatch<16,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
+      case 20: return detail_dispatch::NearInteracDispatch<20,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
       default: SCTL_ASSERT_MSG(false, "QuadElemList element order must be one of {4,8,12,16,20} for the templated near/self schemes.");
     }
   }
