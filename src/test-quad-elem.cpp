@@ -668,15 +668,19 @@ template <class Real> void FacePoint(Real& x, Real& y, Real& z, Integer face, Re
 
 // Cubed-sphere of radius Radius: PatchPerFace^2 quad patches per cube face, ElemOrder nodes/direction.
 // twisted about z: at height z, {x,y} rotated by theta_twist*z. Regular sphere: theta_twist = 0.
-// Every rank builds the full node array X, then the QuadElemList constructor keeps only this rank's
-// contiguous element slice (replicate-then-slice partitioning).
+// Each rank builds only its own contiguous range of elements.
 template <class Real>
 QuadElemList<Real> BuildTwistedSphere(Long ElemOrder, Long PatchPerFace, Real Radius, Real theta_twist = 0., const Comm& comm = Comm::Self()) {
+  const Long Nelem = 6 * PatchPerFace * PatchPerFace;
+  const Long elem0 = Nelem * comm.Rank() / comm.Size();
+  const Long elem1 = Nelem * (comm.Rank() + 1) / comm.Size();
   Vector<Real> X;
   const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(ElemOrder);
   for (Integer face = 0; face < 6; face++) {
     for (Long iu = 0; iu < PatchPerFace; iu++) {
       for (Long iv = 0; iv < PatchPerFace; iv++) {
+        const Long elem = (face * PatchPerFace + iu) * PatchPerFace + iv;
+        if (elem < elem0 || elem >= elem1) continue;
         for (Long i = 0; i < ElemOrder; i++) {
           const Real a = 2 * ((iu + nds[i]) / (Real)PatchPerFace) - 1;
           for (Long j = 0; j < ElemOrder; j++) {
@@ -693,7 +697,7 @@ QuadElemList<Real> BuildTwistedSphere(Long ElemOrder, Long PatchPerFace, Real Ra
       }
     }
   }
-  return QuadElemList<Real>(ElemOrder, X, comm);
+  return QuadElemList<Real>(ElemOrder, X);
 }
 
 // Far-field quadrature weights must sum to the analytic sphere area 4 pi R^2.

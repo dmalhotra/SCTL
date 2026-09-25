@@ -22,9 +22,9 @@ namespace sctl {
     public:
       QuadElemList() {}
 
-      template <class ValueType> QuadElemList(Integer order, const Vector<ValueType>& coord, const Comm& comm = Comm::Self());
+      template <class ValueType> QuadElemList(Integer order, const Vector<ValueType>& coord);
 
-      template <class ValueType> void Init(Integer order, const Vector<ValueType>& coord, const Comm& comm = Comm::Self());
+      template <class ValueType> void Init(Integer order, const Vector<ValueType>& coord);
 
       virtual ~QuadElemList() {}
 

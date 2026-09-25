@@ -492,29 +492,24 @@ namespace sctl {
 
   }
 
-  template <class Real> template <class ValueType> QuadElemList<Real>::QuadElemList(Integer order0, const Vector<ValueType>& coord0, const Comm& comm) {
-    Init(order0, coord0, comm);
+  template <class Real> template <class ValueType> QuadElemList<Real>::QuadElemList(Integer order0, const Vector<ValueType>& coord0) {
+    Init(order0, coord0);
   }
 
-  template <class Real> template <class ValueType> void QuadElemList<Real>::Init(Integer order0, const Vector<ValueType>& coord0, const Comm& comm) {
+  template <class Real> template <class ValueType> void QuadElemList<Real>::Init(Integer order0, const Vector<ValueType>& coord0) {
     order = order0;
     SCTL_ASSERT(order > 0);
 
     const Long nnode_per_elem = (Long)order * order;
     SCTL_ASSERT(coord0.Dim() % (nnode_per_elem * detail_quadelem::COORD_DIM) == 0);
-    const Long nelem_total = coord0.Dim() / (nnode_per_elem * detail_quadelem::COORD_DIM);
-
-    Long i0, i1;
-    detail_quadelem::PartitionRange<Real>(nelem_total, comm, i0, i1);
-    nelem = i1 - i0;
+    nelem = coord0.Dim() / (nnode_per_elem * detail_quadelem::COORD_DIM);
 
     coord.ReInit(nelem * detail_quadelem::COORD_DIM * nnode_per_elem);
     for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
       const Long base = elem_idx * detail_quadelem::COORD_DIM * nnode_per_elem;
-      const Long src_elem = i0 + elem_idx;
       for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
         for (Long p = 0; p < nnode_per_elem; p++) {
-          coord[base + k * nnode_per_elem + p] = (Real)coord0[(src_elem * nnode_per_elem + p) * detail_quadelem::COORD_DIM + k];
+          coord[base + k * nnode_per_elem + p] = (Real)coord0[(elem_idx * nnode_per_elem + p) * detail_quadelem::COORD_DIM + k];
         }
       }
     }
@@ -2427,7 +2422,7 @@ namespace sctl {
 
       Vector<ValueType> coord_local;
       coord_local.ReInit((j1 - j0) * detail_quadelem::COORD_DIM, coord_.begin() + j0 * detail_quadelem::COORD_DIM, false);
-      Init<ValueType>(file_order, coord_local, Comm::Self());
+      Init<ValueType>(file_order, coord_local);
     }
   }
 
