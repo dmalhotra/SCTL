@@ -51,9 +51,8 @@ namespace sctl {
       const Long Nout = (Long)Nu * Nv;
       if (out.Dim() != ncomp * Nout) out.ReInit(ncomp * Nout);
 
-      constexpr Integer Nbuff = 1024;
-      StaticArray<ValueType,Nbuff> tmp_buf;
-      Matrix<ValueType> tmp(R, Nv, ((Long)R * Nv > Nbuff ? NullIterator<ValueType>() : tmp_buf), (Long)R * Nv > Nbuff);
+      ScratchBuf<ValueType> tmp_buf((Long)R * Nv);
+      Matrix<ValueType> tmp(R, Nv, tmp_buf.begin(), false);
 
       for (Long k = 0; k < ncomp; k++) {
         const Matrix<ValueType> in_(R, S, (Iterator<ValueType>)in.begin() + k * (Long)R * S, false);
@@ -71,7 +70,8 @@ namespace sctl {
       if (dv_slab.Dim() != coord_slab.Dim()) dv_slab.ReInit(coord_slab.Dim());
 
       const auto& nodes = QuadElemList<Real>::ParamNodes(order);
-      Vector<Real> line_in(order), line_out(order);
+      ScratchBuf<Real> line_in_buf(order), line_out_buf(order);
+      Vector<Real> line_in(line_in_buf), line_out(line_out_buf);
       for (Long k = 0; k < ncomp; k++) {
         const Long cb = k * nnode_per_elem;
 
@@ -151,22 +151,20 @@ namespace sctl {
     };
 
     template <class Real> void EvalPoint(const QuadElemList<Real>& qel, Real* X, Real* dXu, Real* dXv, const Real u, const Real v, const Long elem_idx, const Vector<Real>* origin) {
-      constexpr Integer MaxOrder = 48;
-      SCTL_ASSERT(qel.Order() <= MaxOrder);
       const Long nnode = (Long)qel.Order() * qel.Order();
       const Long base = elem_idx * nnode * COORD_DIM;
 
-      StaticArray<Real,MaxOrder> Lu, Lv, dLu, dLv;
+      ScratchBuf<Real> Lu(qel.Order()), Lv(qel.Order()), dLu(qel.Order()), dLv(qel.Order());
       {
         StaticArray<Real,1> up;
         up[0] = u;
-        Vector<Real> p(1, up, false), o(qel.Order(), Lu, false);
+        Vector<Real> p(1, up, false), o(qel.Order(), Lu.begin(), false);
         LagrangeInterp<Real>::Interpolate(o, QuadElemList<Real>::ParamNodes(qel.Order()), p);
       }
       {
         StaticArray<Real,1> vp;
         vp[0] = v;
-        Vector<Real> p(1, vp, false), o(qel.Order(), Lv, false);
+        Vector<Real> p(1, vp, false), o(qel.Order(), Lv.begin(), false);
         LagrangeInterp<Real>::Interpolate(o, QuadElemList<Real>::ParamNodes(qel.Order()), p);
       }
 
@@ -779,7 +777,7 @@ namespace sctl {
     const auto& nodes = ParamNodes(order);
     const auto& node_wts = LegQuadRule<Real>::wts(order);
 
-    Vector<Real> dist_nodes(order);
+    ScratchBuf<Real> dist_nodes(order);
     {
       const Integer n = order;
       const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
@@ -802,7 +800,8 @@ namespace sctl {
       Vector<Real> wts_(nnode_per_elem, wts.begin() + elem_idx * nnode_per_elem, false);
       Vector<Real> dist_far_(nnode_per_elem, dist_far.begin() + elem_idx * nnode_per_elem, false);
 
-      Vector<Real> Xa, dXdu, dXdv;
+      ScratchBuf<Real> Xa_buf(nnode_per_elem), dXdu_buf(nnode_per_elem * detail_quadelem::COORD_DIM), dXdv_buf(nnode_per_elem * detail_quadelem::COORD_DIM);
+      Vector<Real> Xa(Xa_buf), dXdu(dXdu_buf), dXdv(dXdv_buf);
       GetGeom(&X_, &Xn_, &Xa, &dXdu, &dXdv, nodes, nodes, elem_idx);
 
       for (Integer i = 0; i < order; i++) {
@@ -2015,61 +2014,59 @@ namespace sctl {
       return;
     }
 
-    Vector<Real> u_nodes(order + 2), v_nodes(order + 2);
-    u_nodes[0] = 0;
-    v_nodes[0] = 0;
-    u_nodes[order + 1] = 1;
-    v_nodes[order + 1] = 1;
-    Vector<Real>(order, u_nodes.begin() + 1, false) = ParamNodes(order);
-    Vector<Real>(order, v_nodes.begin() + 1, false) = ParamNodes(order);
+    const Long Ng = order + 2;
+    ScratchBuf<Real> grid_buf(Ng);
+    Vector<Real> grid(grid_buf);
+    grid[0] = 0;
+    for (Integer i = 0; i < order; i++) grid[i + 1] = ParamNodes(order)[i];
+    grid[Ng - 1] = 1;
 
-    Vector<Real> X;
-    GetGeom(&X, nullptr, nullptr, nullptr, nullptr, u_nodes, v_nodes, elem_idx);
+    ScratchBuf<Real> X_buf(Ng * Ng * detail_quadelem::COORD_DIM);
+    Vector<Real> X(X_buf);
+    GetGeom(&X, nullptr, nullptr, nullptr, nullptr, grid, grid, elem_idx);
 
-    const Long Nu = u_nodes.Dim();
-    const Long Nv = v_nodes.Dim();
-    Vector<Real> Fgrid;
     if (F.Dim()) {
       const Long nnode_per_elem = (Long)order * order;
       const Long dof = F.Dim() / nnode_per_elem;
       SCTL_ASSERT(F.Dim() == nnode_per_elem * dof);
 
-      Vector<Real> F_soa(dof * nnode_per_elem);
+      ScratchBuf<Real> F_soa_buf(dof * nnode_per_elem);
+      Vector<Real> F_soa(F_soa_buf);
       for (Long p = 0; p < nnode_per_elem; p++) {
         for (Long k = 0; k < dof; k++) {
           F_soa[k * nnode_per_elem + p] = F[p * dof + k];
         }
       }
 
-      Matrix<Real> MuT(order, Nu), Mv(order, Nv);
-      Vector<Real> Mu_(order * Nu, MuT.begin(), false);
-      Vector<Real> Mv_(order * Nv, Mv.begin(), false);
-      LagrangeInterp<Real>::Interpolate(Mu_, ParamNodes(order), u_nodes);
-      LagrangeInterp<Real>::Interpolate(Mv_, ParamNodes(order), v_nodes);
-      MuT = MuT.Transpose();
+      ScratchBuf<Real> M_buf(order * Ng), MT_buf(Ng * order);
+      Matrix<Real> M(order, Ng, M_buf.begin(), false);
+      Matrix<Real> MT(Ng, order, MT_buf.begin(), false);
+      {
+        Vector<Real> M_(order * Ng, M_buf.begin(), false);
+        LagrangeInterp<Real>::Interpolate(M_, ParamNodes(order), grid);
+      }
+      for (Integer i = 0; i < order; i++) {
+        for (Long a = 0; a < Ng; a++) MT[a][i] = M[i][a];
+      }
 
-      Vector<Real> F_soa_eval;
-      detail_quadelem::EvalTensorProduct(F_soa_eval, F_soa, MuT, Mv);
-
-      Fgrid.ReInit(Nu * Nv * dof);
-      for (Long p = 0; p < Nu * Nv; p++) {
-        for (Long k = 0; k < dof; k++) {
-          Fgrid[p * dof + k] = F_soa_eval[k * (Nu * Nv) + p];
-        }
+      ScratchBuf<Real> F_grid_buf(dof * Ng * Ng);
+      Vector<Real> F_grid(F_grid_buf);
+      detail_quadelem::EvalTensorProduct(F_grid, F_soa, MT, M);
+      for (Long p = 0; p < Ng * Ng; p++) {
+        for (Long k = 0; k < dof; k++) vtu_data.value.PushBack((VTUData::VTKReal)F_grid[k * (Ng * Ng) + p]);
       }
     }
 
     const Long point_offset = vtu_data.coord.Dim() / detail_quadelem::COORD_DIM;
     for (const auto& x : X) vtu_data.coord.PushBack((VTUData::VTKReal)x);
-    for (const auto& f : Fgrid) vtu_data.value.PushBack((VTUData::VTKReal)f);
 
-    for (Long i = 0; i < Nu - 1; i++) {
-      for (Long j = 0; j < Nv - 1; j++) {
-        const Long idx = point_offset + i * Nv + j;
+    for (Long i = 0; i < Ng - 1; i++) {
+      for (Long j = 0; j < Ng - 1; j++) {
+        const Long idx = point_offset + i * Ng + j;
         vtu_data.connect.PushBack(idx);
         vtu_data.connect.PushBack(idx + 1);
-        vtu_data.connect.PushBack(idx + Nv + 1);
-        vtu_data.connect.PushBack(idx + Nv);
+        vtu_data.connect.PushBack(idx + Ng + 1);
+        vtu_data.connect.PushBack(idx + Ng);
         vtu_data.offset.PushBack(vtu_data.connect.Dim());
         vtu_data.types.PushBack(9);
       }
