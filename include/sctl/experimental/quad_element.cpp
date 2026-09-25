@@ -1618,12 +1618,22 @@ namespace sctl {
       }
     }
 
-    template <class Real> void BuildFootGraded1DSegments(Vector<Real>& seg, const Real center, const Real b_ellipse, const Real w_min) {
-      constexpr Long MaxLeaves = 4096;
+    static constexpr Long MaxSegments = 4096;
+
+    template <class Real> Long BuildFootGraded1DSegments(Iterator<Real> seg, const Real center, const Real b_ellipse, const Real w_min) {
       const Real r = std::min<Real>((Real)0.9, b_ellipse/(1 + b_ellipse) * (Real)1.05);
       const Real wmin = std::max<Real>(w_min, (Real)1e-300);
 
-      std::vector<Real> a;
+      Long nseg = 0;
+      const auto add = [&seg, &nseg](const Real e0, const Real e1) {
+        const Real lo = std::min<Real>(e0, e1);
+        const Real hi = std::max<Real>(e0, e1);
+        if (!(hi - lo > 0)) return;
+        SCTL_ASSERT(nseg < MaxSegments);
+        seg[2*nseg+0] = lo;
+        seg[2*nseg+1] = hi;
+        nseg++;
+      };
       for (Integer side = 0; side < 2; side++) {
         const Real sgn = (side ? (Real)1 : (Real)-1);
         const Real span = (side ? 1 - center : center);
@@ -1632,26 +1642,12 @@ namespace sctl {
         Real w = span;
         while (w > wmin) {
           const Real w_next = w*r;
-          const Real e0 = center + sgn*w, e1 = center + sgn*w_next;
-          const Real lo = std::min<Real>(e0, e1), hi = std::max<Real>(e0, e1);
-          if (hi - lo > 0) {
-            a.push_back(lo);
-            a.push_back(hi);
-          }
+          add(center + sgn*w, center + sgn*w_next);
           w = w_next;
-          SCTL_ASSERT((Long)a.size() <= 2*MaxLeaves);
         }
-        const Real e0 = center + sgn*w;
-        const Real lo = std::min<Real>(e0, center), hi = std::max<Real>(e0, center);
-        if (hi - lo > 0) {
-          a.push_back(lo);
-          a.push_back(hi);
-        }
-        SCTL_ASSERT((Long)a.size() <= 2*MaxLeaves);
+        add(center + sgn*w, center);
       }
-
-      seg.ReInit((Long)a.size());
-      for (Long i = 0; i < seg.Dim(); i++) seg[i] = a[i];
+      return nseg;
     }
 
     template <Integer order, class Real, class Kernel> void IntegratePanel(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const detail_quadelem::QuadRule1D<Real>& ru, const detail_quadelem::QuadRule1D<Real>& rv, const Kernel& ker) {
@@ -1670,9 +1666,8 @@ namespace sctl {
       for (Long p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] += acc[(Long)c*nnode + p];
     }
 
-    template <class Real> void BuildNearTensorRule(Vector<Real>& u_param, Vector<Real>& wu, Vector<Real>& v_param, Vector<Real>& wv,
-        const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg,
-        const Real b_ellipse, const Vector<Real>& qnds, const Vector<Real>& qwts) {
+    template <class Real> void BuildNearSegments(Iterator<Real> useg, Long& nseg_u, Iterator<Real> vseg, Long& nseg_v,
+        const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse) {
       Real ustar, vstar, h_param;
       {
         const Real dist = detail_quadelem::GetClosestPoint(qel, ustar, vstar, elem_idx, Xtrg);
@@ -1690,11 +1685,8 @@ namespace sctl {
 
       const Real w_floor = pow<Real>((Real)0.5, detail_quadelem::MaxRefineLvl<Real>);
       const Real w_min = std::max<Real>(h_param/b_ellipse, w_floor);
-      Vector<Real> useg, vseg;
-      BuildFootGraded1DSegments<Real>(useg, ustar, b_ellipse, w_min);
-      BuildFootGraded1DSegments<Real>(vseg, vstar, b_ellipse, w_min);
-      ExpandSegments<Real>(u_param, wu, useg, qnds, qwts);
-      ExpandSegments<Real>(v_param, wv, vseg, qnds, qwts);
+      nseg_u = BuildFootGraded1DSegments<Real>(useg, ustar, b_ellipse, w_min);
+      nseg_v = BuildFootGraded1DSegments<Real>(vseg, vstar, b_ellipse, w_min);
     }
 
     template <Integer order, class Real, class Kernel> void SelfInteracBlockTensorProduct(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
@@ -1725,29 +1717,43 @@ namespace sctl {
       const Real b_ellipse = DigitsBEllipse<Real>(digits);
       const std::pair<Vector<Real>, Vector<Real>>& gl = DigitsGLRule<Real>(digits);
 
-      thread_local detail_quadelem::QuadRule1D<Real> ru, rv;
-      thread_local Vector<Real> u_param, v_param;
-      BuildNearTensorRule<Real>(u_param, ru.w, v_param, rv.w, qel, elem_idx, Xtrg, b_ellipse, gl.first, gl.second);
-      const Long Nu = u_param.Dim(), Nv = v_param.Dim();
+      ScratchBuf<Real> useg(2*MaxSegments), vseg(2*MaxSegments);
+      Long nseg_u, nseg_v;
+      BuildNearSegments<Real>(useg.begin(), nseg_u, vseg.begin(), nseg_v, qel, elem_idx, Xtrg, b_ellipse);
+      const Long Nu = nseg_u * gl.first.Dim();
+      const Long Nv = nseg_v * gl.first.Dim();
 
       if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) M_acc.ReInit(nnode, KDIM0*KDIM1_out);
       M_acc.SetZero();
       if (!Nu || !Nv) return;
 
-      const auto build_interp = [](detail_quadelem::QuadRule1D<Real>& r, const Vector<Real>& param) {
+      ScratchBuf<Real> param_u(Nu), param_v(Nv), rule_u(Nu*(1 + 4*order)), rule_v(Nv*(1 + 4*order));
+      const auto rule_view = [](Iterator<Real> buf, const Long N) {
+        return detail_quadelem::QuadRule1D<Real>{Vector<Real>(N, buf, false),
+            Matrix<Real>(order, N, buf + N, false), Matrix<Real>(order, N, buf + N*(1 + order), false),
+            Matrix<Real>(N, order, buf + N*(1 + 2*order), false), Matrix<Real>(N, order, buf + N*(1 + 3*order), false)};
+      };
+      const auto build_rule = [&gl](detail_quadelem::QuadRule1D<Real>& r, Vector<Real>& param, Iterator<Real> seg, const Long nseg) {
+        const Vector<Real> seg_v(2*nseg, seg, false);
+        ExpandSegments<Real>(param, r.w, seg_v, gl.first, gl.second);
         const Long N = param.Dim();
-        r.M.ReInit(order, N);
         {
           Vector<Real> v(order*N, r.M.begin(), false);
           LagrangeInterp<Real>::Interpolate(v, QuadElemList<Real>::ParamNodes(order), param);
         }
-        r.dM.ReInit(order, N);
         Matrix<Real>::GEMM(r.dM, detail_quadelem::DiffMat<Real>(order), r.M);
-        r.MT = r.M.Transpose();
-        r.dMT = r.dM.Transpose();
+        for (Integer i = 0; i < order; i++) {
+          for (Long a = 0; a < N; a++) {
+            r.MT[a][i] = r.M[i][a];
+            r.dMT[a][i] = r.dM[i][a];
+          }
+        }
       };
-      build_interp(ru, u_param);
-      build_interp(rv, v_param);
+      detail_quadelem::QuadRule1D<Real> ru = rule_view(rule_u.begin(), Nu);
+      detail_quadelem::QuadRule1D<Real> rv = rule_view(rule_v.begin(), Nv);
+      Vector<Real> u_param(param_u), v_param(param_v);
+      build_rule(ru, u_param, useg.begin(), nseg_u);
+      build_rule(rv, v_param, vseg.begin(), nseg_v);
 
       IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru, rv, ker);
     }
