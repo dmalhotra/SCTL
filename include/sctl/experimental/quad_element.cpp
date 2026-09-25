@@ -1777,7 +1777,7 @@ namespace sctl {
       }
     }
 
-    template <Integer order, class Real, class Kernel> void IntegratePanel(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker, const Matrix<Real>* Mv_pre = nullptr, const Matrix<Real>* dMv_pre = nullptr, const Matrix<Real>* Mu_pre = nullptr, const Matrix<Real>* dMu_pre = nullptr, const Matrix<Real>* MvT_pre = nullptr, const Matrix<Real>* MuT_pre = nullptr, const Matrix<Real>* dMuT_pre = nullptr, const Vector<Real>* src_nodal = nullptr, const Matrix<Real>* MuD_pre = nullptr, const Real nrm_sign = 1, Vector<Real>* acc_cm = nullptr) {
+    template <Integer order, class Real, class Kernel> void IntegratePanel(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const NodeRuleData<Real>& ru, const NodeRuleData<Real>& rv, const Kernel& ker) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer KDIM1full = Kernel::TrgDim();
       SCTL_ASSERT(qel.Order() == order);
@@ -1785,64 +1785,35 @@ namespace sctl {
       const bool trg_dot_prod = (normal_trg.Dim() > 0);
       const Integer KDIM1_out = trg_dot_prod ? KDIM1full / detail_quadelem::COORD_DIM : KDIM1full;
 
-      const Long Nu = (Mu_pre ? Mu_pre->Dim(1) : u_param.Dim());
-      const Long Nv = (Mv_pre ? Mv_pre->Dim(1) : v_param.Dim());
+      const Long Nu = ru.M.Dim(1);
+      const Long Nv = rv.M.Dim(1);
       const Long nq = Nu * Nv;
       if (!nq) return;
       const Integer C = KDIM0 * KDIM1_out;
 
-      const Vector<Real>& pnds = QuadElemList<Real>::ParamNodes(order);
-      const Matrix<Real>& D = detail_quadelem::DiffMat<Real>(order);
-
-      Matrix<Real> Mu_local, dMu_local, MuT_local, dMuT_local;
-      Matrix<Real> Mv_local, dMv_local, MvT_local;
-      {
-        if (!Mu_pre || !MuT_pre || !dMuT_pre) {
-          Mu_local.ReInit(order, Nu);
-          {
-            Vector<Real> v(order*Nu, Mu_local.begin(), false);
-            LagrangeInterp<Real>::Interpolate(v, pnds, u_param);
-          }
-          dMu_local.ReInit(order, Nu);
-          Matrix<Real>::GEMM(dMu_local, D, Mu_local);
-          MuT_local = Mu_local.Transpose();
-          dMuT_local = dMu_local.Transpose();
-        }
-        if (!Mv_pre) {
-          Mv_local.ReInit(order, Nv);
-          {
-            Vector<Real> v(order*Nv, Mv_local.begin(), false);
-            LagrangeInterp<Real>::Interpolate(v, pnds, v_param);
-          }
-          dMv_local.ReInit(order, Nv);
-          Matrix<Real>::GEMM(dMv_local, D, Mv_local);
-          MvT_local = Mv_local.Transpose();
-        }
-      }
-      const Matrix<Real>& Mu  = (Mu_pre  ? *Mu_pre  : Mu_local);
-      const Matrix<Real>& MuT  = (MuT_pre  ? *MuT_pre  : MuT_local);
-      const Matrix<Real>& dMuT = (dMuT_pre ? *dMuT_pre : dMuT_local);
-      const Matrix<Real>& Mv  = (Mv_pre  ? *Mv_pre  : Mv_local);
-      const Matrix<Real>& dMv = (dMv_pre ? *dMv_pre : dMv_local);
-      const Matrix<Real>& MvT  = (MvT_pre  ? *MvT_pre  : MvT_local);
+      const Vector<Real>& wu = ru.w;
+      const Vector<Real>& wv = rv.w;
+      const Matrix<Real>& Mu = ru.M;
+      const Matrix<Real>& MuT = ru.MT;
+      const Matrix<Real>& dMuT = ru.dMT;
+      const Matrix<Real>& Mv = rv.M;
+      const Matrix<Real>& dMv = rv.dM;
+      const Matrix<Real>& MvT = rv.MT;
 
       const Long base = elem_idx * nnode * detail_quadelem::COORD_DIM;
       thread_local Vector<Real> coord_shift;
       if (coord_shift.Dim() != detail_quadelem::COORD_DIM*nnode) coord_shift.ReInit(detail_quadelem::COORD_DIM*nnode);
-      if (!src_nodal) {
-        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-          const Real ok = Xtrg[k];
-          for (Long p = 0; p < nnode; p++) coord_shift[k*nnode + p] = detail_quadelem::Access<Real>::Coord(qel)[base + k*nnode + p] - ok;
-        }
+      for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+        const Real ok = Xtrg[k];
+        for (Long p = 0; p < nnode; p++) coord_shift[k*nnode + p] = detail_quadelem::Access<Real>::Coord(qel)[base + k*nnode + p] - ok;
       }
-      const Vector<Real>& cs_ref = (src_nodal ? *src_nodal : coord_shift);
       thread_local Vector<Real> Cv, Cdv;
       if (Cv.Dim() != detail_quadelem::COORD_DIM*order*Nv) {
         Cv.ReInit(detail_quadelem::COORD_DIM*order*Nv);
         Cdv.ReInit(detail_quadelem::COORD_DIM*order*Nv);
       }
       {
-        const Matrix<Real> cs_all(detail_quadelem::COORD_DIM*order, order, (Iterator<Real>)cs_ref.begin(), false);
+        const Matrix<Real> cs_all(detail_quadelem::COORD_DIM*order, order, coord_shift.begin(), false);
         Matrix<Real> Cv_all (detail_quadelem::COORD_DIM*order, Nv, Cv.begin(),  false);
         Matrix<Real> Cdv_all(detail_quadelem::COORD_DIM*order, Nv, Cdv.begin(), false);
         Matrix<Real>::GEMM(Cv_all,  cs_all, Mv);
@@ -1871,14 +1842,9 @@ namespace sctl {
         {
           const Matrix<Real> Cvc_m(order, ldc, Cvc.begin(), false), Cdvc_m(order, ldc, Cdvc.begin(), false);
           Matrix<Real> dV_m(Nu, ldc, dXdv_soa.begin(), false);
-          if (MuD_pre) {
-            Matrix<Real> XdU_m(2*Nu, ldc, XdU.begin(), false);
-            Matrix<Real>::GEMM(XdU_m, *MuD_pre, Cvc_m);
-          } else {
-            Matrix<Real> X_m(Nu, ldc, XdU.begin(), false), dU_m(Nu, ldc, XdU.begin() + (Long)Nu*ldc, false);
-            Matrix<Real>::GEMM(X_m,  MuT,  Cvc_m);
-            Matrix<Real>::GEMM(dU_m, dMuT, Cvc_m);
-          }
+          Matrix<Real> X_m(Nu, ldc, XdU.begin(), false), dU_m(Nu, ldc, XdU.begin() + (Long)Nu*ldc, false);
+          Matrix<Real>::GEMM(X_m,  MuT,  Cvc_m);
+          Matrix<Real>::GEMM(dU_m, dMuT, Cvc_m);
           Matrix<Real>::GEMM(dV_m, MuT, Cdvc_m);
         }
 
@@ -1898,7 +1864,7 @@ namespace sctl {
             const Real dv0 = dXdv_soa[r+0*Nv], dv1 = dXdv_soa[r+1*Nv], dv2 = dXdv_soa[r+2*Nv];
             const Real n0 = du1*dv2 - du2*dv1, n1 = du2*dv0 - du0*dv2, n2 = du0*dv1 - du1*dv0;
             const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
-            const Real inv_area = (area > 0 ? nrm_sign/area : 0);
+            const Real inv_area = (area > 0 ? 1/area : 0);
             Xsrc[q*detail_quadelem::COORD_DIM+0] = XdU[r+0*Nv];
             Xsrc[q*detail_quadelem::COORD_DIM+1] = XdU[r+1*Nv];
             Xsrc[q*detail_quadelem::COORD_DIM+2] = XdU[r+2*Nv];
@@ -1936,22 +1902,13 @@ namespace sctl {
           Matrix<Real> Y_all((Long)C*Nu, order, Yv.begin(), false);
           Matrix<Real>::GEMM(Y_all, KW_all, MvT);
         }
-        if (acc_cm) {
-          for (Integer c = 0; c < C; c++) {
-            const Matrix<Real> Y_c(Nu, order, Yv.begin() + (Long)c*Nu*order, false);
-            Matrix<Real> A_c(order, order, acc_cm->begin() + (Long)c*nnode, false);
-            Matrix<Real>::GEMM(A_c, Mu, Y_c, (Real)1);
-          }
-        } else {
-          if (proj.Dim() != (Long)C*nnode) proj.ReInit((Long)C*nnode);
-          for (Integer c = 0; c < C; c++) {
-            const Matrix<Real> Y_c(Nu, order, Yv.begin() + (Long)c*Nu*order, false);
-            Matrix<Real> P_c(order, order, proj.begin() + (Long)c*nnode, false);
-            Matrix<Real>::GEMM(P_c, Mu, Y_c);
-          }
-          if (acc_cm) for (Long i = 0; i < (Long)C*nnode; i++) (*acc_cm)[i] += proj[i];
-          else for (Long p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] += proj[(Long)c*nnode + p];
+        if (proj.Dim() != (Long)C*nnode) proj.ReInit((Long)C*nnode);
+        for (Integer c = 0; c < C; c++) {
+          const Matrix<Real> Y_c(Nu, order, Yv.begin() + (Long)c*Nu*order, false);
+          Matrix<Real> P_c(order, order, proj.begin() + (Long)c*nnode, false);
+          Matrix<Real>::GEMM(P_c, Mu, Y_c);
         }
+        for (Long p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] += proj[(Long)c*nnode + p];
         return;
       }
 
@@ -2103,7 +2060,7 @@ namespace sctl {
 
       M_acc.ReInit(nnode, KDIM0*KDIM1_out);
       M_acc.SetZero();
-      IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru.param, ru.w, rv.param, rv.w, ker, &rv.M, &rv.dM, &ru.M, &ru.dM, &rv.MT, &ru.MT, &ru.dMT);
+      IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru, rv, ker);
     }
 
     template <Integer order, class Real, class Kernel> void NearInteracBlockTensorProduct(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
@@ -2118,33 +2075,31 @@ namespace sctl {
       const Real b_ellipse = DigitsBEllipse<Real>(digits);
       const std::pair<Vector<Real>, Vector<Real>>& gl = DigitsGLRule<Real>(digits);
 
-      thread_local Vector<Real> u_param, wu, v_param, wv;
-      BuildNearTensorRule<Real>(u_param, wu, v_param, wv, nullptr, nullptr, nullptr, nullptr,
+      thread_local NodeRuleData<Real> ru, rv;
+      BuildNearTensorRule<Real>(ru.param, ru.w, rv.param, rv.w, nullptr, nullptr, nullptr, nullptr,
           qel, elem_idx, Xtrg, b_ellipse, gl.first, gl.second);
-      const Long Nu = u_param.Dim(), Nv = v_param.Dim();
+      const Long Nu = ru.param.Dim(), Nv = rv.param.Dim();
 
       if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) M_acc.ReInit(nnode, KDIM0*KDIM1_out);
       M_acc.SetZero();
       if (!Nu || !Nv) return;
 
-      thread_local NodeRuleData<Real> ru, rv;
-      const auto build_interp = [](NodeRuleData<Real>& r, const Vector<Real>& param) {
-        const Long N = param.Dim();
+      const auto build_interp = [](NodeRuleData<Real>& r) {
+        const Long N = r.param.Dim();
         r.M.ReInit(order, N);
         {
           Vector<Real> v(order*N, r.M.begin(), false);
-          LagrangeInterp<Real>::Interpolate(v, QuadElemList<Real>::ParamNodes(order), param);
+          LagrangeInterp<Real>::Interpolate(v, QuadElemList<Real>::ParamNodes(order), r.param);
         }
         r.dM.ReInit(order, N);
         Matrix<Real>::GEMM(r.dM, detail_quadelem::DiffMat<Real>(order), r.M);
         r.MT = r.M.Transpose();
         r.dMT = r.dM.Transpose();
       };
-      build_interp(ru, u_param);
-      build_interp(rv, v_param);
+      build_interp(ru);
+      build_interp(rv);
 
-      IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, u_param, wu, v_param, wv, ker,
-          &rv.M, &rv.dM, &ru.M, &ru.dM, &rv.MT, &ru.MT, &ru.dMT);
+      IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru, rv, ker);
     }
 
     template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const ElementListBase<Real>* self, const Integer digits) {
