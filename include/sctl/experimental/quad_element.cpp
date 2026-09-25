@@ -1037,8 +1037,7 @@ namespace sctl {
     dMT = dM.Transpose();
   }
 
-  template <class Real> void BuildCenteredGraded1D(Vector<Real>& delta, Vector<Real>& w, const Real u0, const Vector<Real>& qnds, const Vector<Real>& qwts) {
-    const Integer levels = detail::MaxRefineLvl<Real>;
+  template <class Real> void BuildCenteredGraded1D(Vector<Real>& delta, Vector<Real>& w, const Real u0, const Integer levels, const Vector<Real>& qnds, const Vector<Real>& qwts) {
     const Integer q = qnds.Dim();
     std::vector<Real> d_, w_;
     // Panels march outward: [0,L*2^-levels], [L*2^-levels, L*2^-(levels-1)], ... , [L/2, L].
@@ -1136,11 +1135,16 @@ namespace sctl {
       if (!p) {
         const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
         const Integer QuadOrder = DigitsQuadOrder<Real>(digits);
+        // Geometric panels marching outward from u0, with no analytic correction at the singular
+        // end -- unlike v, where the Alpert rule handles it and a shallow ladder suffices. Each
+        // level buys ~0.45 digits, measured on a flat order-12 panel against the exact single
+        // layer: the error plateaus at 2*digits + 6 for every tolerance from 1e-6 to 1e-14.
+        const Integer Lvl = std::min<Integer>(detail::MaxRefineLvl<Real>, 2*digits + 6);
         Vector<Real> qnds, qwts;
         LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, QuadOrder);
         auto* d = new Vector<NodeRuleData<Real>>(order);
         for (Integer i = 0; i < order; i++) {
-          BuildCenteredGraded1D((*d)[i].param, (*d)[i].w, nds[i], qnds, qwts);
+          BuildCenteredGraded1D((*d)[i].param, (*d)[i].w, nds[i], Lvl, qnds, qwts);
           LagrangeAtOffset<order,Real>((*d)[i].M, (*d)[i].dM, (*d)[i].MT, (*d)[i].dMT, (*d)[i].param, i);
         }
         p = d;
