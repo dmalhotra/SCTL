@@ -806,13 +806,12 @@ namespace sctl {
 
     template <class Real> void QuadParams(const Real tol, Real& b_ellipse, Integer& QuadOrder) {
       const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
-      const double d = -std::log10((double)tol_);
-      const double rho = std::min(3.0, std::max(2.0, 2.0 + 0.25*(d - 6)));
-      const double C = std::max(1e-3, (15.0*(rho*rho - 1))/64.0);
-      QuadOrder = std::max<Integer>(2, (Integer)std::ceil(-std::log(C*(double)tol_)/std::log(rho)*0.5 + 1));
+      const Real d = -log<Real>(tol_)/log<Real>((Real)10);
+      const Real rho = std::min<Real>(3, std::max<Real>(2, 2 + (Real)0.25*(d - 6)));
+      const Real C = std::max<Real>((Real)1e-3, (15*(rho*rho - 1))/64);
+      QuadOrder = std::max<Integer>(2, (Integer)ceil<Real>(-log<Real>(C*tol_)/log<Real>(rho)*(Real)0.5 + 1));
 
-      const Real rho_ = (Real)rho;
-      const Real a = (rho_ + 1/rho_)/2, b = (rho_ - 1/rho_)/2;
+      const Real a = (rho + 1/rho)/2, b = (rho - 1/rho)/2;
       b_ellipse = b*b/(2*a);
     }
 
@@ -956,12 +955,12 @@ namespace sctl {
         }
         const Real den = sqrt<Real>(guu*gvv);
         if (!(den > 0)) return q_iso;
-        const double c = std::min(1.0, (double)(fabs<Real>(guv)/den));
-        const double phi = std::acos(c)*180.0/const_pi<double>();
-        constexpr double Ck = 400.0;
-        const double f = std::max(1.0, Ck/(10.0*std::max(1e-3, phi)));
-        if (f <= 1.0) return q_iso;
-        Integer q = (Integer)std::ceil(f*(double)q_iso);
+        const Real c = std::min<Real>(1, fabs<Real>(guv)/den);
+        const Real phi = acos<Real>(c)*180/const_pi<Real>();
+        const Real Ck = 400;
+        const Real f = std::max<Real>(1, Ck/(10*std::max<Real>((Real)1e-3, phi)));
+        if (f <= 1) return q_iso;
+        Integer q = (Integer)ceil<Real>(f*q_iso);
         q = ((q + 3)/4)*4;
         return std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q_iso, q));
       };
@@ -1119,9 +1118,9 @@ namespace sctl {
       std::vector<DuffyTri<Real>> tri;
     };
 
-    template <class Real> inline Integer DuffyTRuleOrder(const Integer digits, const Integer order, const Integer kdim0) {
-      const double per_digit = (kdim0 > 1 ? 4.0 : 2.5);
-      return std::max<Integer>(order/2, (Integer)std::ceil(per_digit*(double)digits));
+    inline Integer DuffyTRuleOrder(const Integer digits, const Integer order, const Integer kdim0) {
+      const Integer nt = (kdim0 > 1 ? 4*digits : (5*digits + 1)/2);
+      return std::max<Integer>(order/2, nt);
     }
 
     template <Integer order, class Real> const DuffySelfTable<Real>& DuffyTable() {
@@ -1206,7 +1205,7 @@ namespace sctl {
       M_acc.SetZero();
 
       const DuffySelfTable<Real>& tbl = DuffyTable<order,Real>();
-      const Long ns = tbl.ns, nt = DuffyTRuleOrder<Real>(digits, order, KDIM0);
+      const Long ns = tbl.ns, nt = DuffyTRuleOrder(digits, order, KDIM0);
       static constexpr Integer MaxGLOrder = 128;
       const Vector<Real>& qn = LegQuadRule<Real>::template nds<MaxGLOrder>(nt);
       const Vector<Real>& qw = LegQuadRule<Real>::template wts<MaxGLOrder>(nt);
@@ -1377,10 +1376,9 @@ namespace sctl {
 
     template <class Real> void QuadParams(const Real tol, Real& b_ellipse, Integer& QuadOrder) {
       const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
-      const double rho = 2.5;
-      const Real rho_ = (Real)rho;
-      b_ellipse = (rho_ + 1/rho_) / 4;
-      QuadOrder = std::max<Integer>(1, (Integer)std::ceil(-std::log(((15.0*(rho*rho-1))/64.0)*(double)tol_)/std::log(rho)*0.5 + 1));
+      const Real rho = (Real)2.5;
+      b_ellipse = (rho + 1/rho) / 4;
+      QuadOrder = std::max<Integer>(1, (Integer)ceil<Real>(-log<Real>(((15*(rho*rho-1))/64)*tol_)/log<Real>(rho)*(Real)0.5 + 1));
     }
 
     template <class Real> inline Integer DigitsQuadOrder(const Integer digits) {
@@ -1897,7 +1895,7 @@ namespace sctl {
   }
 
   template <class Real> void QuadElemList<Real>::Write(const std::string& fname, const Comm& comm) const {
-    const Integer precision = (Integer)std::ceil(-std::log((double)machine_eps<Real>()) / std::log(10.0));
+    const Integer precision = (Integer)ceil<Real>(-log<Real>(machine_eps<Real>()) / log<Real>((Real)10));
     const Integer width = precision + 8;
     const std::string fname_rank = detail_quadelem::RankFileName(fname, comm);
     std::ofstream file(fname_rank, std::ofstream::out | std::ofstream::trunc);
