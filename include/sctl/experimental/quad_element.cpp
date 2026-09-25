@@ -521,6 +521,17 @@ namespace sctl {
       }
     }
 
+    template <class Real> void ScatterTargetBlock(Matrix<Real>& M, const Matrix<Real>& src, const Long t, const Integer KDIM1_out) {
+      const Long nrow = M.Dim(0);
+      SCTL_ASSERT(src.Dim(0)*src.Dim(1) == nrow*KDIM1_out);
+      const ConstIterator<Real> src_ = src.begin();
+      for (Long r = 0; r < nrow; r++) {
+        for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
+          M[r][t*KDIM1_out+k1] = src_[r*KDIM1_out+k1];
+        }
+      }
+    }
+
     template <Integer order, class Real, class Kernel, class BlockFn>
     void NearInteracTargets(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const QuadElemList<Real>& qel, BlockFn block) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
@@ -541,13 +552,7 @@ namespace sctl {
         Vector<Real> ntrg;
         if (trg_dot_prod) ntrg.ReInit(COORD_DIM, (Iterator<Real>)normal_trg.begin() + t*COORD_DIM, false);
         block(M_acc, Xtrg, ntrg);
-        for (Long pnode = 0; pnode < nnode; pnode++) {
-          for (Integer k0 = 0; k0 < KDIM0; k0++) {
-            for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-              M[pnode*KDIM0+k0][t*KDIM1_out+k1] = M_acc[pnode][k0*KDIM1_out+k1];
-            }
-          }
-        }
+        ScatterTargetBlock(M, M_acc, t, KDIM1_out);
       }
     }
 
@@ -578,18 +583,6 @@ namespace sctl {
             Vector<Real> ntrg;
             if (trg_dot_prod) ntrg.ReInit(COORD_DIM, Xnnodes.begin() + t*COORD_DIM, false);
             block(M, elem_idx, t, ti, tj, Xtrg, ntrg, Xnodes, Xnnodes, dXu, dXv, KDIM1_out);
-          }
-        }
-      }
-    }
-
-    template <Integer order, class Real, class KDIM1_t, class MSrc>
-    void ScatterSelfBlock(Matrix<Real>& M, const MSrc& src, const Long t, const Integer KDIM0, const KDIM1_t KDIM1_out, const bool from_near) {
-      const Long nnode = (Long)order * order;
-      for (Long pnode = 0; pnode < nnode; pnode++) {
-        for (Integer k0 = 0; k0 < KDIM0; k0++) {
-          for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-            M[pnode*KDIM0+k0][t*KDIM1_out+k1] = (from_near ? src[pnode*KDIM0+k0][k1] : src[pnode][k0*KDIM1_out+k1]);
           }
         }
       }
@@ -1419,14 +1412,13 @@ namespace sctl {
       DuffyTable<order,Real>();
       detail_dyadic_near::NearGradeTable<order,Real>(detail_dyadic_near::DigitsQuadOrder<Real>(digits));
       detail_dyadic_near::DigitsBEllipse<Real>(digits);
-      static constexpr Integer KDIM0 = Kernel::SrcDim();
       detail_quadelem::SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, false,
           [&](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
             const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>&, const Vector<Real>&,
             const Vector<Real>&, const Vector<Real>&, const Integer KDIM1_out) {
           thread_local Matrix<Real> M_acc;
           SelfInteracBlockDuffy<order,Real>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
-          detail_quadelem::ScatterSelfBlock<order,Real>(M, M_acc, t, KDIM0, KDIM1_out, false);
+          detail_quadelem::ScatterTargetBlock(M, M_acc, t, KDIM1_out);
           });
     }
 
@@ -1819,14 +1811,13 @@ namespace sctl {
       DigitsGLRule<Real>(digits);
       DigitsBEllipse<Real>(digits);
       DigitsQuadOrder<Real>(digits);
-      static constexpr Integer KDIM0 = Kernel::SrcDim();
       detail_quadelem::SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, false,
           [&](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
             const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>&, const Vector<Real>&,
             const Vector<Real>&, const Vector<Real>&, const Integer KDIM1_out) {
           thread_local Matrix<Real> M_acc;
           SelfInteracBlockTensorProduct<order,Real>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
-          detail_quadelem::ScatterSelfBlock<order,Real>(M, M_acc, t, KDIM0, KDIM1_out, false);
+          detail_quadelem::ScatterTargetBlock(M, M_acc, t, KDIM1_out);
           });
     }
 
@@ -1871,7 +1862,6 @@ namespace sctl {
 
     template <Integer order, class Real, class Kernel> void SelfInteracHedgehog(Vector<Matrix<Real>>& M_lst, const Kernel& ker, bool trg_dot_prod, const ElementListBase<Real>* self, const Integer digits) {
       const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
-      static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer sing_order = detail_quadelem::KernelSingularOrder<Kernel>::value;
 
       const Vector<Real>& hh_w = HedgehogWeights<Real>();
@@ -1907,7 +1897,7 @@ namespace sctl {
           for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) hh_off[j*detail_quadelem::COORD_DIM+k] = (rj-rmin)*Xnnodes[t*detail_quadelem::COORD_DIM+k];
           }
           detail_dyadic_near::NearInteracDyadic<order,Real>(M_hh, hh_Xt1, ntrg, ker, elem_idx, &qel, near_digits, hh_off, hh_w);
-          detail_quadelem::ScatterSelfBlock<order,Real>(M, M_hh, t, KDIM0, KDIM1_out, true);
+          detail_quadelem::ScatterTargetBlock(M, M_hh, t, KDIM1_out);
           });
     }
 
