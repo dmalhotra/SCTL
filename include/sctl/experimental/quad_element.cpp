@@ -362,7 +362,7 @@ namespace sctl {
           (const void*)nullptr))>> : std::true_type {};
 
     template <class Real, class Kernel, class VecType, bool HAS_N, bool TRG_DOT>
-    static void KerFoldSoA(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Long nq, const Long run, const Long j0, const Long j1, const Real wj, const bool accum, ConstIterator<Real> ntrg, const void* ctx) {
+    static void WeightedKernelVec(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Long nq, const Long run, const Long j0, const Long j1, const Real wj, const bool accum, ConstIterator<Real> ntrg, const void* ctx) {
       static constexpr Integer CD = 3;
       static constexpr Integer KD0 = Kernel::SrcDim();
       static constexpr Integer KD1 = Kernel::TrgDim();
@@ -400,6 +400,20 @@ namespace sctl {
             }
           }
         }
+      }
+    }
+
+    template <class Real, class Kernel> void WeightedKernel(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Long nq, const Long run, const Real wj, const bool accum, const Vector<Real>& normal_trg, const Kernel& ker) {
+      static constexpr bool HAS_N = UKerNeedsN<Kernel, Vec<Real,1>>::value;
+      using WVec = Vec<Real, DefaultVecLen<Real>()>;
+      const Long jmain = (run/WVec::Size())*WVec::Size();
+      const ConstIterator<Real> nt = (normal_trg.Dim() ? normal_trg.begin() : ConstIterator<Real>(NullIterator<Real>()));
+      if (normal_trg.Dim()) {
+        WeightedKernelVec<Real,Kernel,WVec,        HAS_N,true >(out, Xt, Xs, Xn, wq, nq, run,     0, jmain, wj, accum, nt, ker.GetCtxPtr());
+        WeightedKernelVec<Real,Kernel,Vec<Real,1>, HAS_N,true >(out, Xt, Xs, Xn, wq, nq, run, jmain,   run, wj, accum, nt, ker.GetCtxPtr());
+      } else {
+        WeightedKernelVec<Real,Kernel,WVec,        HAS_N,false>(out, Xt, Xs, Xn, wq, nq, run,     0, jmain, wj, accum, nt, ker.GetCtxPtr());
+        WeightedKernelVec<Real,Kernel,Vec<Real,1>, HAS_N,false>(out, Xt, Xs, Xn, wq, nq, run, jmain,   run, wj, accum, nt, ker.GetCtxPtr());
       }
     }
 
@@ -444,8 +458,6 @@ namespace sctl {
       }
       if (Tfull.Dim() != C*Nu*(Long)order) Tfull.ReInit(C*Nu*(Long)order);
 
-      static constexpr bool HAS_N = UKerNeedsN<Kernel, Vec<Real,1>>::value;
-      using WVec = Vec<Real, DefaultVecLen<Real>()>;
       const Long np = std::max<Long>(1, proxy_w.Dim());
       for (Long a0 = 0; a0 < Nu; a0 += UBLK) {
         const Long nu = std::min<Long>(UBLK, Nu - a0);
@@ -478,8 +490,6 @@ namespace sctl {
           }
         }
 
-        const Long qmain = (nqb/WVec::Size())*WVec::Size();
-        const ConstIterator<Real> nt = (trg_dot_prod ? normal_trg.begin() : ConstIterator<Real>(NullIterator<Real>()));
         for (Long j = 0; j < np; j++) {
           StaticArray<Real,COORD_DIM> Xtj{0, 0, 0};
           if (proxy_w.Dim()) {
@@ -488,14 +498,7 @@ namespace sctl {
           const Vector<Real> Xtj_v(COORD_DIM, Xtj, false);
           const Real wj = (proxy_w.Dim() ? proxy_w[j] : (Real)1);
           const bool accum = (j > 0);
-          const ConstIterator<Real> xt = Xtj_v.begin(), xs = Xs.begin(), xn = Xn.begin(), w = wq.begin();
-          if (trg_dot_prod) {
-            KerFoldSoA<Real,Kernel,WVec,        HAS_N,true >(KW.begin(), xt, xs, xn, w, nqb, nqb,     0, qmain, wj, accum, nt, ker.GetCtxPtr());
-            KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,true >(KW.begin(), xt, xs, xn, w, nqb, nqb, qmain,   nqb, wj, accum, nt, ker.GetCtxPtr());
-          } else {
-            KerFoldSoA<Real,Kernel,WVec,        HAS_N,false>(KW.begin(), xt, xs, xn, w, nqb, nqb,     0, qmain, wj, accum, nt, ker.GetCtxPtr());
-            KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,false>(KW.begin(), xt, xs, xn, w, nqb, nqb, qmain,   nqb, wj, accum, nt, ker.GetCtxPtr());
-          }
+          WeightedKernel<Real>(KW.begin(), Xtj_v.begin(), Xs.begin(), Xn.begin(), wq.begin(), nqb, nqb, wj, accum, normal_trg, ker);
         }
 
         {
@@ -1394,20 +1397,7 @@ namespace sctl {
           }
         }
 
-        {
-          static constexpr bool HAS_N = detail_quadelem::UKerNeedsN<Kernel, Vec<Real,1>>::value;
-          using WVec = Vec<Real, DefaultVecLen<Real>()>;
-          const Long jmain = (nt/WVec::Size())*WVec::Size();
-          const ConstIterator<Real> xt = Xt0_v.begin(), xs = Xs.begin(), xn = Xn.begin(), w = wq.begin();
-          const ConstIterator<Real> ntg = (trg_dot_prod ? normal_trg.begin() : ConstIterator<Real>(NullIterator<Real>()));
-          if (trg_dot_prod) {
-            detail_quadelem::KerFoldSoA<Real,Kernel,WVec,        HAS_N,true >(KW.begin(), xt, xs, xn, w, ns*nt, nt,     0, jmain, (Real)1, false, ntg, ker.GetCtxPtr());
-            detail_quadelem::KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,true >(KW.begin(), xt, xs, xn, w, ns*nt, nt, jmain,    nt, (Real)1, false, ntg, ker.GetCtxPtr());
-          } else {
-            detail_quadelem::KerFoldSoA<Real,Kernel,WVec,        HAS_N,false>(KW.begin(), xt, xs, xn, w, ns*nt, nt,     0, jmain, (Real)1, false, ntg, ker.GetCtxPtr());
-            detail_quadelem::KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,false>(KW.begin(), xt, xs, xn, w, ns*nt, nt, jmain,    nt, (Real)1, false, ntg, ker.GetCtxPtr());
-          }
-        }
+        detail_quadelem::WeightedKernel<Real>(KW.begin(), Xt0_v.begin(), Xs.begin(), Xn.begin(), wq.begin(), ns*nt, nt, (Real)1, false, normal_trg, ker);
 
         Matrix<Real>::GEMM(Zall, KW, TtT);
         for (Long i = 0; i < ns; i++) {
