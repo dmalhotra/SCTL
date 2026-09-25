@@ -115,6 +115,21 @@ namespace sctl {
       return 0;
     }
 
+    template <class Real> struct QuadParamSet {
+      Real b_ellipse;
+      Integer quad_order;
+    };
+
+    template <class Real, void (*QuadParams)(Real, Real&, Integer&)> const QuadParamSet<Real>& QuadParamsForDigits(const Integer digits) {
+      static const std::array<QuadParamSet<Real>, MaxDigits<Real>> table = []() {
+        std::array<QuadParamSet<Real>, MaxDigits<Real>> t{};
+        for (Integer d = 0; d < MaxDigits<Real>; d++) QuadParams(pow<Real,Long>((Real)0.1, (Long)d), t[d].b_ellipse, t[d].quad_order);
+        return t;
+      }();
+      SCTL_ASSERT(digits >= 0 && digits < MaxDigits<Real>);
+      return table[digits];
+    }
+
     template <class Kernel, class = void> struct KernelSingularOrder {
       static constexpr Integer value = 2;
     };
@@ -812,33 +827,11 @@ namespace sctl {
     }
 
     template <class Real> inline Integer DigitsQuadOrder(const Integer digits) {
-      static const std::array<Integer,detail_quadelem::MaxDigits<Real>> q = []() {
-        std::array<Integer,detail_quadelem::MaxDigits<Real>> t{};
-        for (Integer d = 0; d < detail_quadelem::MaxDigits<Real>; d++) {
-          Real b;
-          Integer qq;
-          QuadParams(pow<Real,Long>((Real)0.1, (Long)d), b, qq);
-          t[d] = qq;
-        }
-        return t;
-      }();
-      SCTL_ASSERT(digits >= 0 && digits < detail_quadelem::MaxDigits<Real>);
-      return q[digits];
+      return detail_quadelem::QuadParamsForDigits<Real, QuadParams<Real>>(digits).quad_order;
     }
 
     template <class Real> inline Real DigitsBEllipse(const Integer digits) {
-      static const std::array<Real,detail_quadelem::MaxDigits<Real>> b = []() {
-        std::array<Real,detail_quadelem::MaxDigits<Real>> t{};
-        for (Integer d = 0; d < detail_quadelem::MaxDigits<Real>; d++) {
-          Real bb;
-          Integer qq;
-          QuadParams(pow<Real,Long>((Real)0.1, (Long)d), bb, qq);
-          t[d] = bb;
-        }
-        return t;
-      }();
-      SCTL_ASSERT(digits >= 0 && digits < detail_quadelem::MaxDigits<Real>);
-      return b[digits];
+      return detail_quadelem::QuadParamsForDigits<Real, QuadParams<Real>>(digits).b_ellipse;
     }
 
     template <class Real> struct GradeRule : detail_quadelem::QuadRule1D<Real> {
@@ -1437,33 +1430,11 @@ namespace sctl {
     }
 
     template <class Real> inline Integer DigitsQuadOrder(const Integer digits) {
-      static const std::array<Integer,detail_quadelem::MaxDigits<Real>> q = []() {
-        std::array<Integer,detail_quadelem::MaxDigits<Real>> t{};
-        for (Integer d = 0; d < detail_quadelem::MaxDigits<Real>; d++) {
-          Real b;
-          Integer qq;
-          QuadParams<Real>(pow<Real,Long>((Real)0.1, (Long)d), b, qq);
-          t[d] = qq;
-        }
-        return t;
-      }();
-      SCTL_ASSERT(digits >= 0 && digits < detail_quadelem::MaxDigits<Real>);
-      return q[digits];
+      return detail_quadelem::QuadParamsForDigits<Real, QuadParams<Real>>(digits).quad_order;
     }
 
     template <class Real> inline Real DigitsBEllipse(const Integer digits) {
-      static const std::array<Real,detail_quadelem::MaxDigits<Real>> b = []() {
-        std::array<Real,detail_quadelem::MaxDigits<Real>> t{};
-        for (Integer d = 0; d < detail_quadelem::MaxDigits<Real>; d++) {
-          Real bb;
-          Integer qq;
-          QuadParams<Real>(pow<Real,Long>((Real)0.1, (Long)d), bb, qq);
-          t[d] = bb;
-        }
-        return t;
-      }();
-      SCTL_ASSERT(digits >= 0 && digits < detail_quadelem::MaxDigits<Real>);
-      return b[digits];
+      return detail_quadelem::QuadParamsForDigits<Real, QuadParams<Real>>(digits).b_ellipse;
     }
 
     template <class Real> const std::pair<Vector<Real>, Vector<Real>>& DigitsGLRule(const Integer digits) {
