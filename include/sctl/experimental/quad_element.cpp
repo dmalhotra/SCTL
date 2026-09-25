@@ -357,7 +357,7 @@ namespace sctl {
           (const void*)nullptr))>> : std::true_type {};
 
     template <class Real, class Kernel, class VecType, bool HAS_N, bool TRG_DOT>
-    static void KerFoldSoA(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Long nq, const Long run, const Long j0, const Long j1, const Real wj, const bool accum, ConstIterator<Real> ntrg) {
+    static void KerFoldSoA(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Long nq, const Long run, const Long j0, const Long j1, const Real wj, const bool accum, ConstIterator<Real> ntrg, const void* ctx) {
       static constexpr Integer CD = 3;
       static constexpr Integer KD0 = Kernel::SrcDim();
       static constexpr Integer KD1 = Kernel::TrgDim();
@@ -375,9 +375,9 @@ namespace sctl {
           for (Integer k = 0; k < CD; k++) r[k] = vXt[k] - VecType::Load(&Xs[k*nq+q]);
           if constexpr (HAS_N) {
             for (Integer k = 0; k < CD; k++) n[k] = VecType::Load(&Xn[k*nq+q]);
-            Kernel::template uKerMatrix<digits,VecType>(u, r, n, nullptr);
+            Kernel::template uKerMatrix<digits,VecType>(u, r, n, ctx);
           } else {
-            Kernel::template uKerMatrix<digits,VecType>(u, r, nullptr);
+            Kernel::template uKerMatrix<digits,VecType>(u, r, ctx);
           }
           const VecType vw = vws * VecType::Load(&wq[q]);
           for (Integer a = 0; a < KD0; a++) {
@@ -942,11 +942,11 @@ namespace sctl {
           const ConstIterator<Real> xt = Xtj_v.begin(), xs = Xsrc.begin(), xn = Xnsrc.begin(), w = wq.begin();
           const ConstIterator<Real> nt = (trg_dot_prod ? normal_trg.begin() : ConstIterator<Real>(NullIterator<Real>()));
           if (trg_dot_prod) {
-            detail_quadelem::KerFoldSoA<Real,Kernel,WVec,        HAS_N,true >(KWc.begin(), xt, xs, xn, w, nq, nq,     0, qmain, wj, accum, nt);
-            detail_quadelem::KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,true >(KWc.begin(), xt, xs, xn, w, nq, nq, qmain,    nq, wj, accum, nt);
+            detail_quadelem::KerFoldSoA<Real,Kernel,WVec,        HAS_N,true >(KWc.begin(), xt, xs, xn, w, nq, nq,     0, qmain, wj, accum, nt, ker.GetCtxPtr());
+            detail_quadelem::KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,true >(KWc.begin(), xt, xs, xn, w, nq, nq, qmain,    nq, wj, accum, nt, ker.GetCtxPtr());
           } else {
-            detail_quadelem::KerFoldSoA<Real,Kernel,WVec,        HAS_N,false>(KWc.begin(), xt, xs, xn, w, nq, nq,     0, qmain, wj, accum, nt);
-            detail_quadelem::KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,false>(KWc.begin(), xt, xs, xn, w, nq, nq, qmain,    nq, wj, accum, nt);
+            detail_quadelem::KerFoldSoA<Real,Kernel,WVec,        HAS_N,false>(KWc.begin(), xt, xs, xn, w, nq, nq,     0, qmain, wj, accum, nt, ker.GetCtxPtr());
+            detail_quadelem::KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,false>(KWc.begin(), xt, xs, xn, w, nq, nq, qmain,    nq, wj, accum, nt, ker.GetCtxPtr());
           }
         }
       };
@@ -1408,11 +1408,11 @@ namespace sctl {
           const ConstIterator<Real> xt = Xt0_v.begin(), xs = Xs.begin(), xn = Xn.begin(), w = wq.begin();
           const ConstIterator<Real> ntg = (trg_dot_prod ? normal_trg.begin() : ConstIterator<Real>(NullIterator<Real>()));
           if (trg_dot_prod) {
-            detail_quadelem::KerFoldSoA<Real,Kernel,WVec,        HAS_N,true >(KW.begin(), xt, xs, xn, w, ns*nt, nt,     0, jmain, (Real)1, false, ntg);
-            detail_quadelem::KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,true >(KW.begin(), xt, xs, xn, w, ns*nt, nt, jmain,    nt, (Real)1, false, ntg);
+            detail_quadelem::KerFoldSoA<Real,Kernel,WVec,        HAS_N,true >(KW.begin(), xt, xs, xn, w, ns*nt, nt,     0, jmain, (Real)1, false, ntg, ker.GetCtxPtr());
+            detail_quadelem::KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,true >(KW.begin(), xt, xs, xn, w, ns*nt, nt, jmain,    nt, (Real)1, false, ntg, ker.GetCtxPtr());
           } else {
-            detail_quadelem::KerFoldSoA<Real,Kernel,WVec,        HAS_N,false>(KW.begin(), xt, xs, xn, w, ns*nt, nt,     0, jmain, (Real)1, false, ntg);
-            detail_quadelem::KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,false>(KW.begin(), xt, xs, xn, w, ns*nt, nt, jmain,    nt, (Real)1, false, ntg);
+            detail_quadelem::KerFoldSoA<Real,Kernel,WVec,        HAS_N,false>(KW.begin(), xt, xs, xn, w, ns*nt, nt,     0, jmain, (Real)1, false, ntg, ker.GetCtxPtr());
+            detail_quadelem::KerFoldSoA<Real,Kernel,Vec<Real,1>, HAS_N,false>(KW.begin(), xt, xs, xn, w, ns*nt, nt, jmain,    nt, (Real)1, false, ntg, ker.GetCtxPtr());
           }
         }
 
