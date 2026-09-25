@@ -1275,15 +1275,8 @@ namespace sctl {
           dOverL = sqrt<Real>(d2)/sqrt<Real>(am);
         }
 
-        const Long szt = 2*nt + (Long)order*nt + (Long)nt*order;
-        ScratchBuf<Real> sbt(szt);
-        Long offt = 0;
-        auto taket = [&](const Long n) {
-          Iterator<Real> r = sbt.begin() + offt;
-          offt += n;
-          return r;
-        };
-        Vector<Real> tn(nt, taket(nt), false), tw(nt, taket(nt), false);
+        ScratchBuf<Real> tn_buf(nt), tw(nt), Tt_buf((Long)order*nt), TtT_buf((Long)nt*order);
+        Vector<Real> tn(tn_buf);
         {
           const Real x0 = -ash(tstar/dOverL), x1 = ash(((Real)1-tstar)/dOverL);
           for (Long i = 0; i < nt; i++) {
@@ -1293,7 +1286,8 @@ namespace sctl {
             tw[i] = dOverL*(ex+iex)/(Real)2*(x1-x0)*qw[i];
           }
         }
-        Matrix<Real> Tt(order, nt, taket((Long)order*nt), false), TtT(nt, order, taket((Long)nt*order), false);
+        Matrix<Real> Tt(order, nt, Tt_buf.begin(), false);
+        Matrix<Real> TtT(nt, order, TtT_buf.begin(), false);
         {
           Vector<Real> t((Long)order*nt, Tt.begin(), false);
           LagrangeInterp<Real>::Interpolate(t, nds, tn);
@@ -1301,28 +1295,24 @@ namespace sctl {
         for (Integer r = 0; r < order; r++) for (Long j = 0; j < nt; j++) TtT[j][r] = Tt[r][j];
 
         const Long nq = ns*nt;
-        const Long sz = detail_quadelem::COORD_DIM*nnode + 2*detail_quadelem::COORD_DIM*(Long)order*ns + (Long)NA*order + 2*(Long)NA*order
-          + ns*NR*(Long)order + ns*NR*nt + 2*detail_quadelem::COORD_DIM*nq + nq
-          + (Long)C*nq + ns*(Long)C*order + (Long)C*order + (Long)C*order*ns + nnode;
-        ScratchBuf<Real> sb(sz);
-        Long off = 0;
-        auto take = [&](const Long n) {
-          Iterator<Real> r = sb.begin() + off;
-          off += n;
-          return r;
-        };
+        ScratchBuf<Real> FS_buf(detail_quadelem::COORD_DIM*nnode), Gm_buf(2*detail_quadelem::COORD_DIM*(Long)order*ns);
+        ScratchBuf<Real> As_buf((Long)NA*order), Tmp_buf(2*(Long)NA*order);
+        ScratchBuf<Real> HG_buf(ns*NR*(Long)order), XdX_buf(ns*NR*nt);
+        ScratchBuf<Real> Xs(detail_quadelem::COORD_DIM*nq), Xn(detail_quadelem::COORD_DIM*nq), wq(nq);
+        ScratchBuf<Real> KW_buf((Long)C*nq), Zall_buf(ns*(Long)C*order);
+        ScratchBuf<Real> Yi_buf((Long)C*order), Yall_buf((Long)C*order*ns), Pc_buf(nnode);
 
-        Matrix<Real> FS(detail_quadelem::COORD_DIM*order, order, take(detail_quadelem::COORD_DIM*nnode), false);
-        Matrix<Real> Gm(detail_quadelem::COORD_DIM*order, 2*ns, take(2*detail_quadelem::COORD_DIM*(Long)order*ns), false);
-        Matrix<Real> As(NA, order, take((Long)NA*order), false), Tmp(NA, 2*order, take(2*(Long)NA*order), false);
-        Matrix<Real> HG(ns*NR, order, take(ns*NR*(Long)order), false);
-        Matrix<Real> XdX(ns*NR, nt, take(ns*NR*nt), false);
-        Vector<Real> Xs(detail_quadelem::COORD_DIM*nq, take(detail_quadelem::COORD_DIM*nq), false), Xn(detail_quadelem::COORD_DIM*nq, take(detail_quadelem::COORD_DIM*nq), false);
-        Vector<Real> wq(nq, take(nq), false);
-        Matrix<Real> KW(ns*C, nt, take((Long)C*nq), false);
-        Matrix<Real> Zall(ns*C, order, take(ns*(Long)C*order), false);
-        Matrix<Real> Yi(C, order, take((Long)C*order), false), Yall(C*order, ns, take((Long)C*order*ns), false);
-        Matrix<Real> Pc(order, order, take(nnode), false);
+        Matrix<Real> FS(detail_quadelem::COORD_DIM*order, order, FS_buf.begin(), false);
+        Matrix<Real> Gm(detail_quadelem::COORD_DIM*order, 2*ns, Gm_buf.begin(), false);
+        Matrix<Real> As(NA, order, As_buf.begin(), false);
+        Matrix<Real> Tmp(NA, 2*order, Tmp_buf.begin(), false);
+        Matrix<Real> HG(ns*NR, order, HG_buf.begin(), false);
+        Matrix<Real> XdX(ns*NR, nt, XdX_buf.begin(), false);
+        Matrix<Real> KW(ns*C, nt, KW_buf.begin(), false);
+        Matrix<Real> Zall(ns*C, order, Zall_buf.begin(), false);
+        Matrix<Real> Yi(C, order, Yi_buf.begin(), false);
+        Matrix<Real> Yall(C*order, ns, Yall_buf.begin(), false);
+        Matrix<Real> Pc(order, order, Pc_buf.begin(), false);
 
         for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++)
           for (Integer i = 0; i < order; i++) for (Integer j = 0; j < order; j++)
