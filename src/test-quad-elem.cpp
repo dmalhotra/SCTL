@@ -29,7 +29,7 @@ template <class Real> struct QuadElemTestAccess {
     // The rule comes out as offsets from v0; reconstruct absolute nodes param = v0 + delta.
     static void LogSingularQuad1D(Vector<Real>& param, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer QuadOrder) {
         Vector<Real> delta;
-        detail_adaptive::LogSingularQuad1DCentered<Real>(delta, w, v0, Lvl, QuadOrder);
+        detail_adaptive::BuildCenteredLogSingular1D<Real>(delta, w, v0, Lvl, QuadOrder);
         param.ReInit(delta.Dim());
         for (Long i = 0; i < delta.Dim(); i++) param[i] = v0 + delta[i];
     }
@@ -568,7 +568,7 @@ template <class Real> void test_LogSingularQuad1D() {
     }
 }
 
-// Check the interpolation floor of the self-interaction quadrature: IntegrateBlock
+// Check the interpolation floor of the self-interaction quadrature: IntegratePanel
 // samples the order-`order` tensor-product Lagrange interpolant (not the true field)
 // at the Alpert nodes. For a non-polynomial field on the curved testsurf (z = u*v)
 // this is inexact; confirm the error sits at the expected spectral level.
@@ -598,7 +598,7 @@ template <class Real> void test_QuadNodeInterp() {
     QuadElemTestAccess<Real>::LogSingularQuad1D(v_param, wv, (Real)0.6, /*Lvl*/ 4, /*QuadOrder*/ order);
     const Long Nu = u_param.Dim(), Nv = v_param.Dim();
 
-    // Lagrange weights from patch nodes to the Alpert nodes (as in IntegrateBlock).
+    // Lagrange weights from patch nodes to the Alpert nodes (as in IntegratePanel).
     Vector<Real> Mu(order * Nu), Mv(order * Nv);
     LagrangeInterp<Real>::Interpolate(Mu, nds, u_param);
     LagrangeInterp<Real>::Interpolate(Mv, nds, v_param);

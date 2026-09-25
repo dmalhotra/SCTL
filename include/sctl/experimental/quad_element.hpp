@@ -83,11 +83,6 @@ namespace sctl {
        */
       template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
 
-      /// Hedgehog / line-QBX near interaction.  Xt_proxy holds p targets on one line (closest
-      /// first); wts holds the 1D extrapolation weights to the actual target.  All p proxies
-      /// share one foot, one subdivision and one geometry pass; the weights are applied at the
-      /// kernel matrix, so only the kernel evaluation scales with p.  M is a single target block.
-      template <class Kernel> static void NearInteracHedgehog(Matrix<Real>& M, const Vector<Real>& Xt_proxy, const Vector<Real>& wts, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self);
 
       /**
        * Near/self singular-quadrature scheme. The tolerance drives all three.
@@ -147,7 +142,7 @@ namespace sctl {
 
       // Single-point position (target-centered by `origin` when non-null) and, when the
       // pointers are non-null, the tangents dXu/dXv. Allocation-free -- the Lagrange bases are
-      // built on the stack. Called many times per target by GetClosestPoint.
+      // built on the stack.
       void EvalPoint(Real* X, Real* dXu, Real* dXv, const Real u, const Real v, const Long elem_idx, const Vector<Real>* origin) const;
 
       // Closest nodal-grid point to Xtrg (brute force); seeds GetClosestPoint. Returns the distance.
@@ -166,7 +161,7 @@ namespace sctl {
       // One near leaf cell: accumulate its tensor-product quadrature (weights wu (x) wv) into the
       // channel-major accumulator acc_cm. Non-empty normal_trg contracts with the target normal.
       // src_nodal is the target-shifted nodal slab, so the kernel target is the origin.
-      template <Integer order, class Kernel> static void IntegrateBlock(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker,
+      template <Integer order, class Kernel> static void IntegrateCell(const Vector<Real>& normal_trg, const Vector<Real>& wu, const Vector<Real>& wv, const Kernel& ker,
                                                                         const Matrix<Real>& Mu, const Matrix<Real>& MuT, const Matrix<Real>& MuD,
                                                                         const Matrix<Real>& Mv, const Matrix<Real>& dMv, const Matrix<Real>& MvT,
                                                                         const Vector<Real>& src_nodal, const Real nrm_sign, Vector<Real>& acc_cm, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>());
@@ -180,20 +175,20 @@ namespace sctl {
 
       // Split-at-foot near: the element is split at the foot so every refinement grades toward an
       // ENDPOINT, making the graded intervals depend only on the level. See detail_duffy.
-      template <Integer order, class Kernel> static void NearInteracBlockSplit(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>());
+      template <Integer order, class Kernel> static void NearInteracBlockDuffy(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>());
 
       // ============================ Adaptive scheme ============================
 
       // Cell size above which the u sweep is blocked to keep the intermediates cache-resident.
-      static constexpr Long UBlkPts = 16384;
+      static constexpr Long MaxUnblockedPts = 16384;
 
 
       // TODO: measure this against the plain form above. It carries nine optional arguments, an
       // internal target-shift, and a u-blocked sweep, none of which the plain form has. Establish
       // whether any of that earns its complexity -- in particular whether the u-blocking is worth
-      // keeping at all (it only runs above SCTL_UBLK_PTS points, which only the Adaptive grids
+      // keeping at all (it only runs above MaxUnblockedPts points, which only the Adaptive grids
       // reach) -- and if not, drop this overload and move the callers to the plain form.
-      template <Integer order, class Kernel> static void IntegrateBlock(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx,
+      template <Integer order, class Kernel> static void IntegratePanel(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx,
                                                                         const Vector<Real>& Xtrg, const Vector<Real>& normal_trg,
                                                                         const Vector<Real>& u_param, const Vector<Real>& wu, const Vector<Real>& v_param, const Vector<Real>& wv, const Kernel& ker,
                                                                         const Matrix<Real>* Mv_pre = nullptr, const Matrix<Real>* dMv_pre = nullptr, const Matrix<Real>* Mu_pre = nullptr, const Matrix<Real>* dMu_pre = nullptr,
@@ -213,14 +208,15 @@ namespace sctl {
 
       // Foot (u*,v*), off-surface distance, and depth cap from GetClosestPoint (the FOOT, not the
       // nearest node). h_param (optional): off-surface distance in parameter units.
-      static Integer NearFootAndDepth(Real& ustar, Real& vstar, Real& dist, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse, Real* h_param = nullptr);
+      static Integer FootAndDepth(Real& ustar, Real& vstar, Real& dist, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse, Real* h_param = nullptr);
 
       // Foot-graded tensor rule over the whole panel (u_param x v_param, weights wu (x) wv).
       static Integer BuildNearTensorRule(Vector<Real>& u_param, Vector<Real>& wu, Vector<Real>& v_param, Vector<Real>& wv,
                                          Vector<Real>* useg, Vector<Long>* useg_depth, Vector<Real>* vseg, Vector<Long>* vseg_depth,
                                          const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg,
                                          const Real b_ellipse, const Vector<Real>& qnds, const Vector<Real>& qwts);
-      template <Integer order, class Kernel> static void NearInteracBlockGraded(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
+
+      template <Integer order, class Kernel> static void NearInteracBlockAdaptive(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits);
 
       // ============================ Entry-point dispatch ============================
 
