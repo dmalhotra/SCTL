@@ -23,6 +23,7 @@ namespace sctl {
 
     static constexpr Integer COORD_DIM = 3;
     static constexpr Long MaxUnblockedPts = 16384;
+    static constexpr Integer MaxTableOrder = 50;
 
     template <class Real> struct Access {
       static const Vector<Real>& Coord(const QuadElemList<Real>& qel) { return qel.coord; }
@@ -88,25 +89,26 @@ namespace sctl {
       }
     }
 
+    template <class Real> void LagrangeDiffMat(Matrix<Real>& D, const Vector<Real>& nds) {
+      const Integer n = nds.Dim();
+      Vector<Real> f((Long)n * n);
+      f.SetZero();
+      for (Integer i = 0; i < n; i++) f[i * n + i] = 1;
+      Vector<Real> df;
+      LagrangeInterp<Real>::Derivative(df, f, nds);
+      D.ReInit(n, n);
+      for (Integer i = 0; i < n; i++) {
+        for (Integer a = 0; a < n; a++) D[i][a] = df[i * n + a];
+      }
+    }
+
     template <class Real> inline const Matrix<Real>& DiffMat(const Integer order) {
-      constexpr Integer MAX_ORDER = 50;
-      SCTL_ASSERT(0 < order && order <= MAX_ORDER);
-      auto compute_all = []() {
-        Vector<Matrix<Real>> D(MAX_ORDER + 1);
-        for (Integer n = 2; n <= MAX_ORDER; n++) {
-          const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(n);
-          Vector<Real> f((Long)n * n);
-          f.SetZero();
-          for (Integer i = 0; i < n; i++) f[i * n + i] = 1;
-          Vector<Real> df;
-          LagrangeInterp<Real>::Derivative(df, f, nds);
-          D[n].ReInit(n, n);
-          for (Integer i = 0; i < n; i++)
-            for (Integer a = 0; a < n; a++) D[n][i][a] = df[i * n + a];
-        }
+      SCTL_ASSERT(0 < order && order <= MaxTableOrder);
+      static const Vector<Matrix<Real>> all = []() {
+        Vector<Matrix<Real>> D(MaxTableOrder + 1);
+        for (Integer n = 2; n <= MaxTableOrder; n++) LagrangeDiffMat(D[n], QuadElemList<Real>::ParamNodes(n));
         return D;
-      };
-      static const Vector<Matrix<Real>> all = compute_all();
+      }();
       return all[order];
     }
 
@@ -219,6 +221,16 @@ namespace sctl {
         dXv[0] = dv0;
         dXv[1] = dv1;
         dXv[2] = dv2;
+      }
+    }
+
+    template <class Real> void ShiftedElemCoord(Vector<Real>& out, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg) {
+      const Long nnode = (Long)qel.Order() * qel.Order();
+      const Long base = elem_idx * nnode * COORD_DIM;
+      if (out.Dim() != COORD_DIM*nnode) out.ReInit(COORD_DIM*nnode);
+      for (Integer k = 0; k < COORD_DIM; k++) {
+        const Real ok = Xtrg[k];
+        for (Long p = 0; p < nnode; p++) out[k*nnode + p] = Access<Real>::Coord(qel)[base + k*nnode + p] - ok;
       }
     }
 
@@ -841,11 +853,10 @@ namespace sctl {
     static constexpr Integer NearMaxQuadOrder = 60;
 
     template <class Real> static const Vector<Real>& NearSubNodes(const Integer order) {
-      constexpr Integer MAX_ORDER = 50;
-      SCTL_ASSERT(1 < order && order <= MAX_ORDER);
+      SCTL_ASSERT(1 < order && order <= detail_quadelem::MaxTableOrder);
       static const Vector<Vector<Real>> all = []() {
-        Vector<Vector<Real>> v(MAX_ORDER + 1);
-        for (Integer n = 2; n <= MAX_ORDER; n++) {
+        Vector<Vector<Real>> v(detail_quadelem::MaxTableOrder + 1);
+        for (Integer n = 2; n <= detail_quadelem::MaxTableOrder; n++) {
           v[n].ReInit(n);
           using W = detail_quadelem::PrecompReal;
           for (Integer i = 0; i < n; i++) {
@@ -861,11 +872,10 @@ namespace sctl {
     }
 
     template <class Real> static const Vector<Real>& NearSubOffsets(const Integer order) {
-      constexpr Integer MAX_ORDER = 50;
-      SCTL_ASSERT(1 < order && order <= MAX_ORDER);
+      SCTL_ASSERT(1 < order && order <= detail_quadelem::MaxTableOrder);
       static const Vector<Vector<Real>> all = []() {
-        Vector<Vector<Real>> v(MAX_ORDER + 1);
-        for (Integer n = 2; n <= MAX_ORDER; n++) {
+        Vector<Vector<Real>> v(detail_quadelem::MaxTableOrder + 1);
+        for (Integer n = 2; n <= detail_quadelem::MaxTableOrder; n++) {
           v[n].ReInit(n);
           using W = detail_quadelem::PrecompReal;
           for (Integer i = 0; i < n; i++) {
@@ -881,20 +891,10 @@ namespace sctl {
     }
 
     template <class Real> static const Matrix<Real>& NearSubDiffMat(const Integer order) {
-      constexpr Integer MAX_ORDER = 50;
-      SCTL_ASSERT(1 < order && order <= MAX_ORDER);
+      SCTL_ASSERT(1 < order && order <= detail_quadelem::MaxTableOrder);
       static const Vector<Matrix<Real>> all = []() {
-        Vector<Matrix<Real>> D(MAX_ORDER + 1);
-        for (Integer n = 2; n <= MAX_ORDER; n++) {
-          const Vector<Real>& nds = NearSubNodes<Real>(n);
-          Vector<Real> f((Long)n*n);
-          f.SetZero();
-          for (Integer i = 0; i < n; i++) f[i*n + i] = 1;
-          Vector<Real> df;
-          LagrangeInterp<Real>::Derivative(df, f, nds);
-          D[n].ReInit(n, n);
-          for (Integer i = 0; i < n; i++) for (Integer a = 0; a < n; a++) D[n][i][a] = df[i*n + a];
-        }
+        Vector<Matrix<Real>> D(detail_quadelem::MaxTableOrder + 1);
+        for (Integer n = 2; n <= detail_quadelem::MaxTableOrder; n++) detail_quadelem::LagrangeDiffMat(D[n], NearSubNodes<Real>(n));
         return D;
       }();
       return all[order];
@@ -1009,14 +1009,7 @@ namespace sctl {
       const Real slen[2][2] = {{ustar, 1-ustar}, {vstar, 1-vstar}};
 
       thread_local Vector<Real> cs;
-      {
-        if (cs.Dim() != detail_quadelem::COORD_DIM*nnode) cs.ReInit(detail_quadelem::COORD_DIM*nnode);
-        const Long base = elem_idx * nnode * detail_quadelem::COORD_DIM;
-        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-          const Real ok = Xtrg[k];
-          for (Long p = 0; p < nnode; p++) cs[k*nnode + p] = detail_quadelem::Access<Real>::Coord(qel)[base + k*nnode + p] - ok;
-        }
-      }
+      detail_quadelem::ShiftedElemCoord(cs, qel, elem_idx, Xtrg);
       const auto build_interp = [](Matrix<Real> (&Sf)[2][2], Matrix<Real> (&St)[2][2], const Real (&slen)[2][2], const Real ustar, const Real vstar) {
         const Long nnode = (Long)order*order;
         const Vector<Real>& gnds = QuadElemList<Real>::ParamNodes(order);
@@ -1248,13 +1241,7 @@ namespace sctl {
       auto ash = [](const Real x) { return log<Real>(x + sqrt<Real>(x*x + (Real)1)); };
 
       thread_local Vector<Real> cs;
-      if (cs.Dim() != detail_quadelem::COORD_DIM*nnode) cs.ReInit(detail_quadelem::COORD_DIM*nnode);
-      const Long base = elem_idx*nnode*detail_quadelem::COORD_DIM;
-
-      for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-        const Real ok = Xtrg[k];
-        for (Long q = 0; q < nnode; q++) cs[k*nnode + q] = detail_quadelem::Access<Real>::Coord(qel)[base + k*nnode + q] - ok;
-      }
+      detail_quadelem::ShiftedElemCoord(cs, qel, elem_idx, Xtrg);
 
       Real G[4];
       {
@@ -1686,13 +1673,8 @@ namespace sctl {
       const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full / detail_quadelem::COORD_DIM : KDIM1full;
       const Integer C = KDIM0 * KDIM1_out;
 
-      const Long base = elem_idx * nnode * detail_quadelem::COORD_DIM;
       thread_local Vector<Real> coord_shift, acc;
-      if (coord_shift.Dim() != detail_quadelem::COORD_DIM*nnode) coord_shift.ReInit(detail_quadelem::COORD_DIM*nnode);
-      for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-        const Real ok = Xtrg[k];
-        for (Long p = 0; p < nnode; p++) coord_shift[k*nnode + p] = detail_quadelem::Access<Real>::Coord(qel)[base + k*nnode + p] - ok;
-      }
+      detail_quadelem::ShiftedElemCoord(coord_shift, qel, elem_idx, Xtrg);
       if (acc.Dim() != (Long)C*nnode) acc.ReInit((Long)C*nnode);
       acc.SetZero();
       detail_quadelem::IntegrateTensorRule<order,Real>(acc, coord_shift, ru, rv, normal_trg, ker);
