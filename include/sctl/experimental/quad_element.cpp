@@ -3,9 +3,11 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -1587,56 +1589,68 @@ namespace sctl {
       }
     }
 
-    template <Integer order, class Real> const detail_quadelem::QuadRule1D<Real>& CenteredURule(const Integer ti, const Integer digits) {
-      static std::atomic<Vector<detail_quadelem::QuadRule1D<Real>>*> slot[detail_quadelem::MaxDigits<Real>];
-      static std::mutex mtx;
-      SCTL_ASSERT(digits >= 0 && digits < detail_quadelem::MaxDigits<Real>);
-      Vector<detail_quadelem::QuadRule1D<Real>>* p = slot[digits].load(std::memory_order_acquire);
-      if (!p) {
-        std::lock_guard<std::mutex> lk(mtx);
-        p = slot[digits].load(std::memory_order_relaxed);
-        if (!p) {
-          const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-          const Integer QuadOrder = DigitsQuadOrder<Real>(digits);
-          const Integer Lvl = std::min<Integer>(detail_quadelem::MaxRefineLvl<Real>, 2*digits + 6);
-          Vector<Real> qnds, qwts;
-          LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, QuadOrder);
-          auto* d = new Vector<detail_quadelem::QuadRule1D<Real>>(order);
-          for (Integer i = 0; i < order; i++) {
-            Vector<Real> delta;
-            BuildCenteredGraded1D(delta, (*d)[i].w, nds[i], Lvl, qnds, qwts);
-            LagrangeAtOffset<order,Real>((*d)[i].M, (*d)[i].dM, (*d)[i].MT, (*d)[i].dMT, delta, i);
-          }
-          p = d;
-          slot[digits].store(p, std::memory_order_release);
+    template <class T, Integer N> class LazyTable {
+      public:
+        LazyTable() = default;
+        LazyTable(const LazyTable&) = delete;
+        LazyTable& operator=(const LazyTable&) = delete;
+        ~LazyTable() {
+          for (auto& p : slot) delete p.load(std::memory_order_relaxed);
         }
-      }
-      return (*p)[ti];
+
+        template <class BuildFn> const T& Get(const Integer i, BuildFn build) {
+          SCTL_ASSERT(i >= 0 && i < N);
+          T* p = slot[i].load(std::memory_order_acquire);
+          if (!p) {
+            std::lock_guard<std::mutex> lk(mtx);
+            p = slot[i].load(std::memory_order_relaxed);
+            if (!p) {
+              p = new T(build());
+              slot[i].store(p, std::memory_order_release);
+            }
+          }
+          return *p;
+        }
+
+      private:
+        std::atomic<T*> slot[N] = {};
+        std::mutex mtx;
+    };
+
+    template <Integer order, class Real> const detail_quadelem::QuadRule1D<Real>& CenteredURule(const Integer ti, const Integer digits) {
+      static LazyTable<Vector<detail_quadelem::QuadRule1D<Real>>, detail_quadelem::MaxDigits<Real>> table;
+      const auto build = [digits]() {
+        const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+        const Integer QuadOrder = DigitsQuadOrder<Real>(digits);
+        const Integer Lvl = std::min<Integer>(detail_quadelem::MaxRefineLvl<Real>, 2*digits + 6);
+        Vector<Real> qnds, qwts;
+        LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, QuadOrder);
+        Vector<detail_quadelem::QuadRule1D<Real>> rules(order);
+        for (Integer i = 0; i < order; i++) {
+          Vector<Real> delta;
+          BuildCenteredGraded1D(delta, rules[i].w, nds[i], Lvl, qnds, qwts);
+          LagrangeAtOffset<order,Real>(rules[i].M, rules[i].dM, rules[i].MT, rules[i].dMT, delta, i);
+        }
+        return rules;
+      };
+      return table.Get(digits, build)[ti];
     }
 
     template <Integer order, class Real> const detail_quadelem::QuadRule1D<Real>& CenteredVRule(const Integer tj, const Integer digits) {
-      static std::atomic<Vector<detail_quadelem::QuadRule1D<Real>>*> slot[detail_quadelem::MaxDigits<Real>];
-      static std::mutex mtx;
-      SCTL_ASSERT(digits >= 0 && digits < detail_quadelem::MaxDigits<Real>);
-      Vector<detail_quadelem::QuadRule1D<Real>>* p = slot[digits].load(std::memory_order_acquire);
-      if (!p) {
-        std::lock_guard<std::mutex> lk(mtx);
-        p = slot[digits].load(std::memory_order_relaxed);
-        if (!p) {
-          const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-          const Integer Lvl = std::min<Integer>(12, std::max<Integer>(1, digits - 5));
-          const Integer QuadOrder = DigitsQuadOrder<Real>(digits);
-          auto* d = new Vector<detail_quadelem::QuadRule1D<Real>>(order);
-          for (Integer j = 0; j < order; j++) {
-            Vector<Real> delta;
-            BuildCenteredLogSingular1D(delta, (*d)[j].w, nds[j], Lvl, QuadOrder);
-            LagrangeAtOffset<order,Real>((*d)[j].M, (*d)[j].dM, (*d)[j].MT, (*d)[j].dMT, delta, j);
-          }
-          p = d;
-          slot[digits].store(p, std::memory_order_release);
+      static LazyTable<Vector<detail_quadelem::QuadRule1D<Real>>, detail_quadelem::MaxDigits<Real>> table;
+      const auto build = [digits]() {
+        const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+        const Integer Lvl = std::min<Integer>(12, std::max<Integer>(1, digits - 5));
+        const Integer QuadOrder = DigitsQuadOrder<Real>(digits);
+        Vector<detail_quadelem::QuadRule1D<Real>> rules(order);
+        for (Integer j = 0; j < order; j++) {
+          Vector<Real> delta;
+          BuildCenteredLogSingular1D(delta, rules[j].w, nds[j], Lvl, QuadOrder);
+          LagrangeAtOffset<order,Real>(rules[j].M, rules[j].dM, rules[j].MT, rules[j].dMT, delta, j);
         }
-      }
-      return (*p)[tj];
+        return rules;
+      };
+      return table.Get(digits, build)[tj];
     }
 
     template <class Real> void ExpandSegments(Vector<Real>& param, Vector<Real>& w, const Vector<Real>& seg, const Vector<Real>& qnds, const Vector<Real>& qwts) {
