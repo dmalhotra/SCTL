@@ -96,12 +96,9 @@ namespace sctl {
       Vector<Real> f((Long)n * n);
       f.SetZero();
       for (Integer i = 0; i < n; i++) f[i * n + i] = 1;
-      Vector<Real> df;
-      LagrangeInterp<Real>::Derivative(df, f, nds);
       D.ReInit(n, n);
-      for (Integer i = 0; i < n; i++) {
-        for (Integer a = 0; a < n; a++) D[i][a] = df[i * n + a];
-      }
+      Vector<Real> df((Long)n * n, D.begin(), false);
+      LagrangeInterp<Real>::Derivative(df, f, nds);
     }
 
     /** Returns an order x order matrix for each order; entry (i, a) is the derivative of the i-th Lagrange basis function on ParamNodes(order) at node a. */
@@ -1018,7 +1015,7 @@ namespace sctl {
       { // Interpolation from the element to each side's sub-interval
         const Vector<Real>& gnds = QuadElemList<Real>::ParamNodes(order);
         const Vector<Real>& soff = NearSubOffsets<Real>(order);
-        ScratchBuf<Real> gsh_buf(order), sub_buf(order), Sbuf(nnode);
+        ScratchBuf<Real> gsh_buf(order), sub_buf(order);
         Vector<Real> gsh(gsh_buf), sub(sub_buf);
         for (Integer d = 0; d < 2; d++) {
           const Real xs = (d ? vstar : ustar);
@@ -1027,14 +1024,11 @@ namespace sctl {
             if (!(slen[d][sd] > 0)) continue;
             const Real sg = (sd ? slen[d][sd] : -slen[d][sd]);
             for (Integer i = 0; i < order; i++) sub[i] = sg*soff[i];
-            Vector<Real> Sbuf_v(nnode, Sbuf.begin(), false);
-            LagrangeInterp<Real>::Interpolate(Sbuf_v, gsh, sub);
-            Matrix<Real> Sf_m(order, order, Sf_buf.begin() + (2*d+sd)*nnode, false);
+            Vector<Real> Sf_v(nnode, Sf_buf.begin() + (2*d+sd)*nnode, false);
+            LagrangeInterp<Real>::Interpolate(Sf_v, gsh, sub);
+            const Matrix<Real> Sf_m(order, order, Sf_buf.begin() + (2*d+sd)*nnode, false);
             Matrix<Real> St_m(order, order, St_buf.begin() + (2*d+sd)*nnode, false);
-            for (Integer i = 0; i < order; i++) for (Integer aa = 0; aa < order; aa++) {
-              Sf_m[i][aa] = Sbuf[i*order+aa];
-              St_m[aa][i] = Sbuf[i*order+aa];
-            }
+            for (Integer i = 0; i < order; i++) for (Integer aa = 0; aa < order; aa++) St_m[aa][i] = Sf_m[i][aa];
           }
         }
       }
