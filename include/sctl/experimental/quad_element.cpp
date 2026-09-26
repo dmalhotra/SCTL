@@ -47,11 +47,11 @@ namespace sctl {
      * out={out_0,...,out_{n-1}} are flattened arrays.  out is resized if its size differs.
      */
     template <class ValueType> void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv) {
-      const Integer Nu = MuT.Dim(0);
-      const Integer R  = MuT.Dim(1);
-      const Integer S  = Mv.Dim(0);
-      const Integer Nv = Mv.Dim(1);
-      const Integer ncomp = in.Dim() / (R * S);
+      const Integer Nu = (Integer)MuT.Dim(0);
+      const Integer R  = (Integer)MuT.Dim(1);
+      const Integer S  = (Integer)Mv.Dim(0);
+      const Integer Nv = (Integer)Mv.Dim(1);
+      const Integer ncomp = (Integer)(in.Dim() / (R * S));
       SCTL_ASSERT(in.Dim() == ncomp * R * S);
 
       const Integer Nout = Nu * Nv;
@@ -69,7 +69,7 @@ namespace sctl {
     }
 
     template <class Real> void LagrangeDiffMat(Matrix<Real>& D, const Vector<Real>& nds) {
-      const Integer n = nds.Dim();
+      const Integer n = (Integer)nds.Dim();
       Vector<Real> f(n * n);
       f.SetZero();
       for (Integer i = 0; i < n; i++) f[i * n + i] = 1;
@@ -177,7 +177,7 @@ namespace sctl {
     }
 
     template <class Real> void ShiftedElemCoord(Vector<Real>& out, const Vector<Real>& coord, const Vector<Real>& Xtrg) {
-      const Integer nnode = coord.Dim() / COORD_DIM;
+      const Integer nnode = (Integer)(coord.Dim() / COORD_DIM);
       if (out.Dim() != COORD_DIM*nnode) out.ReInit(COORD_DIM*nnode);
       for (Integer k = 0; k < COORD_DIM; k++) {
         const Real ok = Xtrg[k];
@@ -410,8 +410,8 @@ namespace sctl {
       const Integer nnode = order * order;
       const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full / COORD_DIM : KDIM1full;
       const Integer C = KDIM0 * KDIM1_out;
-      const Integer Nu = ru.M.Dim(1);
-      const Integer Nv = rv.M.Dim(1);
+      const Integer Nu = (Integer)ru.M.Dim(1);
+      const Integer Nv = (Integer)rv.M.Dim(1);
       SCTL_ASSERT(Nu > 0 && Nv > 0);
 
       ScratchBuf<Real> Cv(COORD_DIM*order*Nv), Cdv(COORD_DIM*order*Nv);
@@ -463,7 +463,7 @@ namespace sctl {
         }
 
         ScratchBuf<Real> KW(C*nqb);
-        const Integer np = std::max<Integer>(1, proxy_w.Dim());
+        const Integer np = std::max<Integer>(1, (Integer)proxy_w.Dim());
         for (Integer j = 0; j < np; j++) { // Weighted kernel, summed over the proxy points
           StaticArray<Real,COORD_DIM> Xtj{0, 0, 0};
           if (proxy_w.Dim()) {
@@ -518,7 +518,7 @@ namespace sctl {
     }
 
     template <class Real> void ScatterTargetBlock(Matrix<Real>& M, const Matrix<Real>& src, const Long t, const Integer KDIM1_out) {
-      const Integer nrow = M.Dim(0);
+      const Integer nrow = (Integer)M.Dim(0);
       SCTL_ASSERT(src.Dim(0)*src.Dim(1) == nrow*KDIM1_out);
       const ConstIterator<Real> src_ = src.begin();
       for (Integer r = 0; r < nrow; r++) {
@@ -585,7 +585,7 @@ namespace sctl {
         #pragma omp for schedule(dynamic)
         for (Long task = 0; task < nelem*ntask_elem; task++) { // Each run of consecutive targets of one element
           const Long elem_idx = task / ntask_elem;
-          const Integer t0 = (task % ntask_elem)*chunk;
+          const Integer t0 = (Integer)(task % ntask_elem)*chunk;
           const Integer t1 = std::min<Integer>(nnode, t0 + chunk);
 
           // Coordinates and tangents component by component, normals point by point
@@ -982,8 +982,8 @@ namespace sctl {
           nseg_v = graded_segments(vseg.begin(), vstar, w_min);
         }
         const std::pair<Vector<Real>, Vector<Real>>& gl = GLRule<Real>(digits);
-        const Integer Nu = nseg_u * gl.first.Dim();
-        const Integer Nv = nseg_v * gl.first.Dim();
+        const Integer Nu = nseg_u * (Integer)gl.first.Dim();
+        const Integer Nv = nseg_v * (Integer)gl.first.Dim();
         SCTL_ASSERT(Nu > 0 && Nv > 0);
 
         ScratchBuf<Real> rule_u(Nu*(1 + 4*order)), rule_v(Nv*(1 + 4*order));
@@ -997,7 +997,7 @@ namespace sctl {
         { // Gauss-Legendre rule on each segment, and its interpolation matrices
           const auto build_rule = [&gl](QuadRule1D<Real>& r, Vector<Real>& param, Iterator<Real> seg, const Integer nseg) {
             { // Nodes and weights of every segment
-              const Integer quad_order = gl.first.Dim();
+              const Integer quad_order = (Integer)gl.first.Dim();
               Integer idx = 0;
               for (Integer si = 0; si < nseg; si++) {
                 const Real a0 = seg[si*2+0], a1 = seg[si*2+1];
@@ -1009,7 +1009,7 @@ namespace sctl {
                 }
               }
             }
-            const Integer N = param.Dim();
+            const Integer N = (Integer)param.Dim();
             Vector<Real> M_v(order*N, r.M.begin(), false);
             LagrangeInterp<Real>::Interpolate(M_v, QuadElemList<Real>::ParamNodes(order), param);
             Matrix<Real>::GEMM(r.dM, DiffMat<Real>(order), r.M);
@@ -1340,7 +1340,7 @@ namespace sctl {
       }();
       static const Vector<Real> hh_w = []() { // Weights extrapolating the proxy values to distance 0
         using W = PrecompReal;
-        const Integer p = proxy_dist.Dim();
+        const Integer p = (Integer)proxy_dist.Dim();
         Vector<Real> wj(p);
         for (Integer j = 0; j < p; j++) {
           W v = 1;
@@ -1397,7 +1397,7 @@ namespace sctl {
     using detail_tensorprod_near::QuadParams;
 
     template <Integer order, class Real> void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& delta, const Integer ti) {
-      const Integer N = delta.Dim();
+      const Integer N = (Integer)delta.Dim();
       M.ReInit(order, N);
       { // Lagrange basis at the points nds[ti] + delta
         const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
@@ -1487,7 +1487,7 @@ namespace sctl {
         Vector<Real> qnds, qwts;
         LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, quad_order);
         const auto graded_rule = [Lvl, &qnds, &qwts](Vector<Real>& delta, Vector<Real>& w, const Real u0) {
-          const Integer q = qnds.Dim();
+          const Integer q = (Integer)qnds.Dim();
           const auto side = [&delta, &w, Lvl, q, &qnds, &qwts](const Real span, const Real sgn) {
             if (!(span > 0)) return;
             Real a = 0;
@@ -1630,12 +1630,12 @@ namespace sctl {
       const auto& nodes = ParamNodes(order);
       const Long nblk = detail_quadelem::COORD_DIM * nelem;
       const Integer nthreads = SCTL_GET_MAX_THREADS();
-      const Integer chunk = std::max<Long>(1, std::min<Long>(64, (nblk + nthreads - 1) / nthreads));
+      const Integer chunk = (Integer)std::max<Long>(1, std::min<Long>(64, (nblk + nthreads - 1) / nthreads));
       const Long nchunk = (nblk + chunk - 1) / chunk;
       #pragma omp parallel for schedule(static)
       for (Long b = 0; b < nchunk; b++) {
         const Long offset = b * chunk * nnode_per_elem;
-        const Integer n = (std::min(nblk, (b + 1) * chunk) - b * chunk) * nnode_per_elem;
+        const Integer n = (Integer)(std::min(nblk, (b + 1) * chunk) - b * chunk) * nnode_per_elem;
         const Vector<Real> coord_(n, coord.begin() + offset, false);
         { // Differentiate along v, the contiguous index
           Vector<Real> dv_(n, dcoord_dv.begin() + offset, false);
@@ -1677,8 +1677,8 @@ namespace sctl {
   template <class Real> void QuadElemList<Real>::GetGeom(Vector<Real>* X, Vector<Real>* Xn, Vector<Real>* Xa, Vector<Real>* dX_du, Vector<Real>* dX_dv, const Vector<Real>& u_param, const Vector<Real>& v_param, const Long elem_idx) const {
     SCTL_ASSERT(elem_idx >= 0 && elem_idx < nelem);
     const Integer nnode_per_elem = order * order;
-    const Integer Nu = u_param.Dim();
-    const Integer Nv = v_param.Dim();
+    const Integer Nu = (Integer)u_param.Dim();
+    const Integer Nv = (Integer)v_param.Dim();
     const Integer N = Nu * Nv;
 
     { // Size the requested outputs
