@@ -1283,11 +1283,6 @@ namespace sctl {
       std::vector<DuffyTri<Real>> tri;
     };
 
-    inline Integer DuffyTRuleOrder(const Integer digits, const Integer order, const Integer kdim0) {
-      const Integer nt = (kdim0 > 1 ? 4*digits : (5*digits + 1)/2);
-      return std::max<Integer>(order/2, nt);
-    }
-
     /** Returns, for each order, an order-point radial rule and, for each of the 4*order^2 (node, triangle) pairs, its Jacobian, orientation and interpolation matrices along beta and alpha. */
     template <Integer order, class Real> const DuffySelfTable<Real>& DuffyTable() {
       static const DuffySelfTable<Real> table = []() {
@@ -1393,7 +1388,7 @@ namespace sctl {
       }
 
       const Long ns = tbl.ns;
-      const Long nt = DuffyTRuleOrder(digits, order, KDIM0);
+      const Long nt = std::max<Integer>(order/2, (KDIM0 > 1 ? 4*digits : (5*digits + 1)/2));
       const Long nq = ns*nt;
       for (Integer kt = 0; kt < 4; kt++) { // Triangles joining the target node to each edge
         const DuffyTri<Real>& T = tbl.tri[(size_t)((ti*order + tj)*4 + kt)];
