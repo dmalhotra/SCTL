@@ -33,11 +33,15 @@ template <class Real> struct QuadElemTestAccess {
         param.ReInit(delta.Dim());
         for (Long i = 0; i < delta.Dim(); i++) param[i] = v0 + delta[i];
     }
+    static Vector<Real> ElemCoord(const QuadElemList<Real>& qel, const Long elem_idx) {
+        const Long n = 3 * (Long)qel.Order() * qel.Order();
+        return Vector<Real>(n, (Iterator<Real>)qel.coord.begin() + elem_idx * n, false);
+    }
     static Real GetClosestNode(const QuadElemList<Real>& qel, Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) {
-        return detail_quadelem::GetClosestNode(qel, ustar, vstar, elem_idx, Xtrg);
+        return detail_quadelem::GetClosestNode(ElemCoord(qel, elem_idx), qel.Order(), ustar, vstar, Xtrg);
     }
     static Real GetClosestPoint(const QuadElemList<Real>& qel, Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) {
-        return detail_quadelem::GetClosestPoint(qel, ustar, vstar, elem_idx, Xtrg);
+        return detail_quadelem::GetClosestPoint(ElemCoord(qel, elem_idx), qel.Order(), ustar, vstar, Xtrg);
     }
 };
 }
