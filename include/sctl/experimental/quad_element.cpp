@@ -863,27 +863,7 @@ namespace sctl {
 
     static constexpr Integer NearMaxQuadOrder = 60;
 
-    /** Returns 'order' nodes on [0, 1] for each order: sin^2(pi i/(2(order-1))), the Chebyshev extreme points. */
-    template <class Real> static const Vector<Real>& NearSubNodes(const Integer order) {
-      SCTL_ASSERT(1 < order && order <= MaxTableOrder);
-      static const Vector<Vector<Real>> all = []() {
-        Vector<Vector<Real>> v(MaxTableOrder + 1);
-        for (Integer n = 2; n <= MaxTableOrder; n++) {
-          v[n].ReInit(n);
-          using W = PrecompReal;
-          for (Integer i = 0; i < n; i++) {
-            const W sh = sin<W>(const_pi<W>()*i/(2*(n-1)));
-            v[n][i] = (Real)(sh*sh);
-          }
-          v[n][0] = 0;
-          v[n][n-1] = 1;
-        }
-        return v;
-      }();
-      return all[order];
-    }
-
-    /** Returns 1.0 - NearSubNodes(order) for each 'order', computed as cos^2 so that it is accurate where it is small. */
+    /** Returns 'order' values cos^2(pi i/(2(order-1))) for each order: one minus the Chebyshev extreme points sin^2(pi i/(2(order-1))) on [0, 1], computed as cos^2 so that they are accurate where small. */
     template <class Real> static const Vector<Real>& NearSubOffsets(const Integer order) {
       SCTL_ASSERT(1 < order && order <= MaxTableOrder);
       static const Vector<Vector<Real>> all = []() {
@@ -903,23 +883,11 @@ namespace sctl {
       return all[order];
     }
 
-    /** Returns an order x order matrix for each 'order'; entry (i, j) is the derivative of the i-th Lagrange basis function on NearSubNodes(order) at j-th node. */
-    template <class Real> static const Matrix<Real>& NearSubDiffMat(const Integer order) {
-      SCTL_ASSERT(1 < order && order <= MaxTableOrder);
-      static const Vector<Matrix<Real>> all = []() {
-        Vector<Matrix<Real>> D(MaxTableOrder + 1);
-        for (Integer n = 2; n <= MaxTableOrder; n++) LagrangeDiffMat(D[n], NearSubNodes<Real>(n));
-        return D;
-      }();
-      return all[order];
-    }
-
     /** Returns 2*MaxRefineLvl rules for each (order, q): q-point Gauss-Legendre on the dyadic intervals [1-2^-k, 1-2^-(k+1)] and tails [1-2^-k, 1], each with order x q interpolation matrices. */
     template <Integer order, class Real> const Vector<GradeRule<Real>>& NearGradeTable(const Integer q) {
-      const auto build = [](const Integer q) {
+      const auto build = [](const Integer q, const Matrix<PrecompReal>& Dsub) {
         using W = PrecompReal;
         const Vector<W>& sig = NearSubOffsets<W>(order);
-        const Matrix<W>& Dsub = NearSubDiffMat<W>(order);
         Vector<W> qn, qw;
         LegQuadRule<W>::template ComputeNdsWts<W>(&qn, &qw, q);
         Vector<GradeRule<Real>> tab(2*MaxRefineLvl<Real>);
@@ -955,11 +923,23 @@ namespace sctl {
         return tab;
       };
       static const std::vector<Vector<GradeRule<Real>>> all = [&build]() {
+        Matrix<PrecompReal> Dsub;
+        { // Derivatives of the Lagrange basis on the Chebyshev extreme points
+          using W = PrecompReal;
+          Vector<W> sub_nds(order);
+          for (Integer i = 0; i < order; i++) {
+            const W sh = sin<W>(const_pi<W>()*i/(2*(order-1)));
+            sub_nds[i] = sh*sh;
+          }
+          sub_nds[0] = 0;
+          sub_nds[order-1] = 1;
+          LagrangeDiffMat(Dsub, sub_nds);
+        }
         std::vector<Vector<GradeRule<Real>>> t(NearMaxQuadOrder+1);
-        for (Integer q = 4; q <= NearMaxQuadOrder; q += 4) t[q] = build(q);
+        for (Integer q = 4; q <= NearMaxQuadOrder; q += 4) t[q] = build(q, Dsub);
         for (Integer d = 0; d < MaxDigits<Real>; d++) {
           const Integer qi = QuadOrder<Real>(d);
-          if (qi > 0 && qi <= NearMaxQuadOrder && t[qi].Dim() == 0) t[qi] = build(qi);
+          if (qi > 0 && qi <= NearMaxQuadOrder && t[qi].Dim() == 0) t[qi] = build(qi, Dsub);
         }
         return t;
       }();
