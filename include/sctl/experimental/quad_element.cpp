@@ -513,7 +513,7 @@ namespace sctl {
       ShiftedElemCoord(coord_shift, coord, Xtrg);
       acc.SetZero();
       IntegrateTensorRule<order,Real>(acc, coord_shift, ru, rv, normal_trg, ker);
-      for (Long p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] += acc[(Long)c*nnode + p];
+      for (Long p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] = acc[(Long)c*nnode + p];
     }
 
     template <class Real> void ScatterTargetBlock(Matrix<Real>& M, const Matrix<Real>& src, const Long t, const Integer KDIM1_out) {
@@ -538,7 +538,6 @@ namespace sctl {
 
       const Long Ntrg = Xt.Dim() / COORD_DIM;
       if (M.Dim(0) != nnode*KDIM0 || M.Dim(1) != Ntrg*KDIM1_out) M.ReInit(nnode*KDIM0, Ntrg*KDIM1_out);
-      M.SetZero();
 
       const Vector<Real> coord(COORD_DIM*nnode, (Iterator<Real>)Access<Real>::Coord(qel).begin() + elem_idx*COORD_DIM*nnode, false);
       ScratchBuf<Real> M_acc_buf(nnode*KDIM0*KDIM1_out);
@@ -571,7 +570,6 @@ namespace sctl {
 
         Matrix<Real>& M = M_lst[elem_idx];
         if (M.Dim(0) != nnode*KDIM0 || M.Dim(1) != nnode*KDIM1_out) M.ReInit(nnode*KDIM0, nnode*KDIM1_out);
-        M.SetZero();
         ScratchBuf<Real> M_acc_buf(nnode*KDIM0*KDIM1_out);
         Matrix<Real> M_acc(nnode, KDIM0*KDIM1_out, M_acc_buf.begin(), false);
         for (Integer ti = 0; ti < order; ti++) {
@@ -899,8 +897,6 @@ namespace sctl {
 
     template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
       const auto near_interac_one_trg = [&ker, digits](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
-        M_acc.SetZero();
-
         constexpr Long MaxSegments = 4096;
         ScratchBuf<Real> useg(2*MaxSegments), vseg(2*MaxSegments);
         Long nseg_u, nseg_v;
@@ -958,7 +954,10 @@ namespace sctl {
         const std::pair<Vector<Real>, Vector<Real>>& gl = GLRule<Real>(digits);
         const Long Nu = nseg_u * gl.first.Dim();
         const Long Nv = nseg_v * gl.first.Dim();
-        if (!Nu || !Nv) return;
+        if (!Nu || !Nv) {
+          M_acc.SetZero();
+          return;
+        }
 
         ScratchBuf<Real> rule_u(Nu*(1 + 4*order)), rule_v(Nv*(1 + 4*order));
         const auto rule_view = [](Iterator<Real> buf, const Long N) {
@@ -1530,7 +1529,6 @@ namespace sctl {
         for (Integer k = 0; k < COORD_DIM; k++) Xtrg_buf[k] = coord[k*(Long)order*order + t];
         const Vector<Real> Xtrg(COORD_DIM, Xtrg_buf, false);
         const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-        M_acc.SetZero();
         const QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits);
         const QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, digits);
         IntegratePanel<order,Real>(M_acc, coord, Xtrg, ntrg, ru, rv, ker);
