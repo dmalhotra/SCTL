@@ -1100,9 +1100,9 @@ namespace sctl {
       }
     }
 
-    template <Integer order, class Real, class Kernel> void NearInteracDyadic(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
-      const auto near_interac_one_trg = [&qel, elem_idx, &ker, digits, &proxy_off, &proxy_w](Matrix<Real>& M_acc, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
-        NearInteracBlockDyadic<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits, proxy_off, proxy_w);
+    template <Integer order, class Real, class Kernel> void NearInteracDyadic(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
+      const auto near_interac_one_trg = [&qel, elem_idx, &ker, digits](Matrix<Real>& M_acc, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
+        NearInteracBlockDyadic<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
       };
       NearInteracTargets<order,Real,Kernel>(M, Xt, normal_trg, qel, near_interac_one_trg);
     }
@@ -1538,7 +1538,7 @@ namespace sctl {
     using detail_quadelem::ScatterTargetBlock;
     using detail_quadelem::SelfInteracElems;
     using detail_dyadic_near::NearGradeTable;
-    using detail_dyadic_near::NearInteracDyadic;
+    using detail_dyadic_near::NearInteracBlockDyadic;
     using detail_dyadic_near::QuadOrder;
 
     template <class Kernel, class = void> struct KernelSingularOrder {
@@ -1596,10 +1596,10 @@ namespace sctl {
             for (Integer k = 0; k < COORD_DIM; k++) hh_off[j*COORD_DIM+k] = (rj-rmin)*Xnnodes[t*COORD_DIM+k];
           }
         }
-        ScratchBuf<Real> M_hh_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
-        Matrix<Real> M_hh((Long)order*order*Kernel::SrcDim(), KDIM1_out, M_hh_buf.begin(), false);
-        NearInteracDyadic<order,Real>(M_hh, hh_Xt1, ntrg, ker, elem_idx, qel, near_digits, hh_off, hh_w);
-        ScatterTargetBlock(M, M_hh, t, KDIM1_out);
+        ScratchBuf<Real> M_acc_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
+        Matrix<Real> M_acc((Long)order*order, Kernel::SrcDim()*KDIM1_out, M_acc_buf.begin(), false);
+        NearInteracBlockDyadic<order,Real>(M_acc, qel, elem_idx, hh_Xt1, ntrg, ker, near_digits, hh_off, hh_w);
+        ScatterTargetBlock(M, M_acc, t, KDIM1_out);
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }
