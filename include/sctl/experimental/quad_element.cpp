@@ -1393,6 +1393,14 @@ namespace sctl {
       const Long ns = tbl.ns;
       const Long nt = std::max<Integer>(order/2, (KDIM0 > 1 ? 4*digits : (5*digits + 1)/2));
       const Long nq = ns*nt;
+      ScratchBuf<Real> csT(COORD_DIM*nnode);
+      { // cs with u and v exchanged, for the triangles with swap_ab
+        for (Integer k = 0; k < COORD_DIM; k++) {
+          for (Integer i = 0; i < order; i++) {
+            for (Integer j = 0; j < order; j++) csT[k*nnode + (Long)j*order + i] = cs[k*nnode + (Long)i*order + j];
+          }
+        }
+      }
       for (Integer kt = 0; kt < 4; kt++) { // Triangles joining the target node to each edge
         const DuffyTri<Real>& T = tbl.tri[(size_t)((ti*order + tj)*4 + kt)];
 
@@ -1441,16 +1449,13 @@ namespace sctl {
           Matrix<Real> XdX(ns*NR, nt, XdX_buf.begin(), false);
           { // Interpolate positions and tangents to the rule's points
             constexpr Integer NA = 2*COORD_DIM;
-            ScratchBuf<Real> FS_buf(COORD_DIM*nnode), Gm_buf(2*COORD_DIM*(Long)order*ns);
+            ScratchBuf<Real> Gm_buf(2*COORD_DIM*(Long)order*ns);
             ScratchBuf<Real> As_buf((Long)NA*order), Tmp_buf(2*(Long)NA*order), HG_buf(ns*NR*(Long)order);
-            Matrix<Real> FS(COORD_DIM*order, order, FS_buf.begin(), false);
+            const Matrix<Real> FS(COORD_DIM*order, order, (T.swap_ab ? csT.begin() : cs.begin()), false);
             Matrix<Real> Gm(COORD_DIM*order, 2*ns, Gm_buf.begin(), false);
             Matrix<Real> As(NA, order, As_buf.begin(), false);
             Matrix<Real> Tmp(NA, 2*order, Tmp_buf.begin(), false);
             Matrix<Real> HG(ns*NR, order, HG_buf.begin(), false);
-            for (Integer k = 0; k < COORD_DIM; k++)
-              for (Integer i = 0; i < order; i++) for (Integer j = 0; j < order; j++)
-                FS[k*order + (T.swap_ab ? j : i)][T.swap_ab ? i : j] = cs[k*nnode + (Long)i*order + j];
             Matrix<Real>::GEMM(Gm, FS, T.beta_interp);
             for (Long i = 0; i < ns; i++) {
               for (Integer k = 0; k < COORD_DIM; k++) for (Integer m = 0; m < order; m++) {
