@@ -411,7 +411,7 @@ namespace sctl {
       const Integer C = KDIM0 * KDIM1_out;
       const Long Nu = ru.M.Dim(1);
       const Long Nv = rv.M.Dim(1);
-      if (!Nu || !Nv) return;
+      SCTL_ASSERT(Nu > 0 && Nv > 0);
 
       ScratchBuf<Real> Cv(COORD_DIM*order*Nv), Cdv(COORD_DIM*order*Nv);
       { // Interpolate the coordinates and their v-derivative along v
@@ -954,10 +954,7 @@ namespace sctl {
         const std::pair<Vector<Real>, Vector<Real>>& gl = GLRule<Real>(digits);
         const Long Nu = nseg_u * gl.first.Dim();
         const Long Nv = nseg_v * gl.first.Dim();
-        if (!Nu || !Nv) {
-          M_acc.SetZero();
-          return;
-        }
+        SCTL_ASSERT(Nu > 0 && Nv > 0);
 
         ScratchBuf<Real> rule_u(Nu*(1 + 4*order)), rule_v(Nv*(1 + 4*order));
         const auto rule_view = [](Iterator<Real> buf, const Long N) {
