@@ -1148,129 +1148,109 @@ namespace sctl {
       return gl[digits];
     }
 
-    template <class Real> void ExpandSegments(Vector<Real>& param, Vector<Real>& w, const Vector<Real>& seg, const Vector<Real>& qnds, const Vector<Real>& qwts) {
-      const Integer quad_order = qnds.Dim();
-      const Long nseg = seg.Dim()/2;
-      const Long N = nseg * quad_order;
-      if (param.Dim() != N) param.ReInit(N);
-      if (w.Dim() != N) w.ReInit(N);
-      Long idx = 0;
-      for (Long si = 0; si < nseg; si++) {
-        const Real a0 = seg[si*2+0], a1 = seg[si*2+1];
-        const Real len = a1 - a0;
-        for (Integer a = 0; a < quad_order; a++) {
-          param[idx] = a0 + len*qnds[a];
-          w[idx] = qwts[a]*len;
-          idx++;
-        }
-      }
-    }
-
-    static constexpr Long MaxSegments = 4096;
-
-    template <class Real> Long BuildGradedSegments1D(Iterator<Real> seg, const Real center, const Real b_ellipse, const Real w_min) {
-      const Real r = std::min<Real>((Real)0.9, b_ellipse/(1 + b_ellipse) * (Real)1.05);
-      const Real w_stop = std::max<Real>(w_min, (Real)1e-300);
-
-      Long nseg = 0;
-      const auto add = [&seg, &nseg](const Real e0, const Real e1) {
-        const Real lo = std::min<Real>(e0, e1);
-        const Real hi = std::max<Real>(e0, e1);
-        if (!(hi - lo > 0)) return;
-        SCTL_ASSERT(nseg < MaxSegments);
-        seg[2*nseg+0] = lo;
-        seg[2*nseg+1] = hi;
-        nseg++;
-      };
-      for (Integer side = 0; side < 2; side++) {
-        const Real sgn = (side ? (Real)1 : (Real)-1);
-        const Real span = (side ? 1 - center : center);
-        if (!(span > 0)) continue;
-
-        Real w = span;
-        while (w > w_stop) {
-          const Real w_next = w*r;
-          add(center + sgn*w, center + sgn*w_next);
-          w = w_next;
-        }
-        add(center + sgn*w, center);
-      }
-      return nseg;
-    }
-
-    template <class Real> void BuildNearSegments(Iterator<Real> useg, Long& nseg_u, Iterator<Real> vseg, Long& nseg_v, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Real b_ellipse) {
-      Real ustar, vstar, h_param;
-      { // Closest point, and its distance in parameter units
-        const Real dist = GetClosestPoint(qel, ustar, vstar, elem_idx, Xtrg);
-        Real Xc[COORD_DIM], dXdu[COORD_DIM], dXdv[COORD_DIM];
-        EvalPoint<Real>(qel, Xc, dXdu, dXdv, ustar, vstar, elem_idx, nullptr);
-        Real su2 = 0, sv2 = 0;
-        for (Integer k = 0; k < COORD_DIM; k++) {
-          su2 += dXdu[k]*dXdu[k];
-          sv2 += dXdv[k]*dXdv[k];
-        }
-        const Real L_phys = std::max<Real>(sqrt<Real>(su2), sqrt<Real>(sv2));
-        const bool degenerate = !(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist) || !(L_phys > 0);
-        h_param = (degenerate ? 0 : dist/L_phys);
-      }
-
-      const Real w_floor = pow<Real>((Real)0.5, MaxRefineLvl<Real>);
-      const Real w_min = std::max<Real>(h_param/b_ellipse, w_floor);
-      nseg_u = BuildGradedSegments1D<Real>(useg, ustar, b_ellipse, w_min);
-      nseg_v = BuildGradedSegments1D<Real>(vseg, vstar, b_ellipse, w_min);
-    }
-
-    template <Integer order, class Real, class Kernel> void NearInteracBlockTensorProduct(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
-      static constexpr Integer KDIM0 = Kernel::SrcDim();
-      static constexpr Integer KDIM1full = Kernel::TrgDim();
-      SCTL_ASSERT(qel.Order() == order);
-      const Long nnode = (Long)order * order;
-      const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full / COORD_DIM : KDIM1full;
-      if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) M_acc.ReInit(nnode, KDIM0*KDIM1_out);
-      M_acc.SetZero();
-
-      ScratchBuf<Real> useg(2*MaxSegments), vseg(2*MaxSegments);
-      Long nseg_u, nseg_v;
-      BuildNearSegments<Real>(useg.begin(), nseg_u, vseg.begin(), nseg_v, qel, elem_idx, Xtrg, BEllipse<Real>(digits));
-      const std::pair<Vector<Real>, Vector<Real>>& gl = GLRule<Real>(digits);
-      const Long Nu = nseg_u * gl.first.Dim();
-      const Long Nv = nseg_v * gl.first.Dim();
-      if (!Nu || !Nv) return;
-
-      ScratchBuf<Real> rule_u(Nu*(1 + 4*order)), rule_v(Nv*(1 + 4*order));
-      const auto rule_view = [](Iterator<Real> buf, const Long N) {
-        return QuadRule1D<Real>{Vector<Real>(N, buf, false),
-            Matrix<Real>(order, N, buf + N, false), Matrix<Real>(order, N, buf + N*(1 + order), false),
-            Matrix<Real>(N, order, buf + N*(1 + 2*order), false), Matrix<Real>(N, order, buf + N*(1 + 3*order), false)};
-      };
-      QuadRule1D<Real> ru = rule_view(rule_u.begin(), Nu);
-      QuadRule1D<Real> rv = rule_view(rule_v.begin(), Nv);
-      { // Gauss-Legendre rule on each segment, and its interpolation matrices
-        const auto build_rule = [&gl](QuadRule1D<Real>& r, Vector<Real>& param, Iterator<Real> seg, const Long nseg) {
-          const Vector<Real> seg_v(2*nseg, seg, false);
-          ExpandSegments<Real>(param, r.w, seg_v, gl.first, gl.second);
-          const Long N = param.Dim();
-          Vector<Real> M_v(order*N, r.M.begin(), false);
-          LagrangeInterp<Real>::Interpolate(M_v, QuadElemList<Real>::ParamNodes(order), param);
-          Matrix<Real>::GEMM(r.dM, DiffMat<Real>(order), r.M);
-          for (Integer i = 0; i < order; i++) {
-            for (Long a = 0; a < N; a++) {
-              r.MT[a][i] = r.M[i][a];
-              r.dMT[a][i] = r.dM[i][a];
-            }
-          }
-        };
-        ScratchBuf<Real> param_u(Nu), param_v(Nv);
-        Vector<Real> u_param(param_u), v_param(param_v);
-        build_rule(ru, u_param, useg.begin(), nseg_u);
-        build_rule(rv, v_param, vseg.begin(), nseg_v);
-      }
-      IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru, rv, ker);
-    }
-
     template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
       const auto near_interac_one_trg = [&qel, elem_idx, &ker, digits](Matrix<Real>& M_acc, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
-        NearInteracBlockTensorProduct<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ker, digits);
+        M_acc.SetZero();
+
+        constexpr Long MaxSegments = 4096;
+        ScratchBuf<Real> useg(2*MaxSegments), vseg(2*MaxSegments);
+        Long nseg_u, nseg_v;
+        { // Segments graded toward the closest point
+          const Real b_ellipse = BEllipse<Real>(digits);
+          Real ustar, vstar, h_param;
+          { // Closest point, and its distance in parameter units
+            const Real dist = GetClosestPoint(qel, ustar, vstar, elem_idx, Xtrg);
+            Real Xc[COORD_DIM], dXdu[COORD_DIM], dXdv[COORD_DIM];
+            EvalPoint<Real>(qel, Xc, dXdu, dXdv, ustar, vstar, elem_idx, nullptr);
+            Real su2 = 0, sv2 = 0;
+            for (Integer k = 0; k < COORD_DIM; k++) {
+              su2 += dXdu[k]*dXdu[k];
+              sv2 += dXdv[k]*dXdv[k];
+            }
+            const Real L_phys = std::max<Real>(sqrt<Real>(su2), sqrt<Real>(sv2));
+            const bool degenerate = !(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist) || !(L_phys > 0);
+            h_param = (degenerate ? 0 : dist/L_phys);
+          }
+
+          const auto graded_segments = [b_ellipse](Iterator<Real> seg, const Real center, const Real w_min) {
+            const Real r = std::min<Real>((Real)0.9, b_ellipse/(1 + b_ellipse) * (Real)1.05);
+            const Real w_stop = std::max<Real>(w_min, (Real)1e-300);
+
+            Long nseg = 0;
+            const auto add = [&seg, &nseg](const Real e0, const Real e1) {
+              const Real lo = std::min<Real>(e0, e1);
+              const Real hi = std::max<Real>(e0, e1);
+              if (!(hi - lo > 0)) return;
+              SCTL_ASSERT(nseg < MaxSegments);
+              seg[2*nseg+0] = lo;
+              seg[2*nseg+1] = hi;
+              nseg++;
+            };
+            for (Integer side = 0; side < 2; side++) {
+              const Real sgn = (side ? (Real)1 : (Real)-1);
+              const Real span = (side ? 1 - center : center);
+              if (!(span > 0)) continue;
+
+              Real w = span;
+              while (w > w_stop) {
+                const Real w_next = w*r;
+                add(center + sgn*w, center + sgn*w_next);
+                w = w_next;
+              }
+              add(center + sgn*w, center);
+            }
+            return nseg;
+          };
+          const Real w_floor = pow<Real>((Real)0.5, MaxRefineLvl<Real>);
+          const Real w_min = std::max<Real>(h_param/b_ellipse, w_floor);
+          nseg_u = graded_segments(useg.begin(), ustar, w_min);
+          nseg_v = graded_segments(vseg.begin(), vstar, w_min);
+        }
+        const std::pair<Vector<Real>, Vector<Real>>& gl = GLRule<Real>(digits);
+        const Long Nu = nseg_u * gl.first.Dim();
+        const Long Nv = nseg_v * gl.first.Dim();
+        if (!Nu || !Nv) return;
+
+        ScratchBuf<Real> rule_u(Nu*(1 + 4*order)), rule_v(Nv*(1 + 4*order));
+        const auto rule_view = [](Iterator<Real> buf, const Long N) {
+          return QuadRule1D<Real>{Vector<Real>(N, buf, false),
+              Matrix<Real>(order, N, buf + N, false), Matrix<Real>(order, N, buf + N*(1 + order), false),
+              Matrix<Real>(N, order, buf + N*(1 + 2*order), false), Matrix<Real>(N, order, buf + N*(1 + 3*order), false)};
+        };
+        QuadRule1D<Real> ru = rule_view(rule_u.begin(), Nu);
+        QuadRule1D<Real> rv = rule_view(rule_v.begin(), Nv);
+        { // Gauss-Legendre rule on each segment, and its interpolation matrices
+          const auto build_rule = [&gl](QuadRule1D<Real>& r, Vector<Real>& param, Iterator<Real> seg, const Long nseg) {
+            { // Nodes and weights of every segment
+              const Integer quad_order = gl.first.Dim();
+              Long idx = 0;
+              for (Long si = 0; si < nseg; si++) {
+                const Real a0 = seg[si*2+0], a1 = seg[si*2+1];
+                const Real len = a1 - a0;
+                for (Integer a = 0; a < quad_order; a++) {
+                  param[idx] = a0 + len*gl.first[a];
+                  r.w[idx] = gl.second[a]*len;
+                  idx++;
+                }
+              }
+            }
+            const Long N = param.Dim();
+            Vector<Real> M_v(order*N, r.M.begin(), false);
+            LagrangeInterp<Real>::Interpolate(M_v, QuadElemList<Real>::ParamNodes(order), param);
+            Matrix<Real>::GEMM(r.dM, DiffMat<Real>(order), r.M);
+            for (Integer i = 0; i < order; i++) {
+              for (Long a = 0; a < N; a++) {
+                r.MT[a][i] = r.M[i][a];
+                r.dMT[a][i] = r.dM[i][a];
+              }
+            }
+          };
+          ScratchBuf<Real> param_u(Nu), param_v(Nv);
+          Vector<Real> u_param(param_u), v_param(param_v);
+          build_rule(ru, u_param, useg.begin(), nseg_u);
+          build_rule(rv, v_param, vseg.begin(), nseg_v);
+        }
+        IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ru, rv, ker);
       };
       NearInteracTargets<order,Real,Kernel>(M, Xt, normal_trg, qel, near_interac_one_trg);
     }
