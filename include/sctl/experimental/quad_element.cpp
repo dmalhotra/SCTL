@@ -1545,57 +1545,37 @@ namespace sctl {
       static constexpr Integer value = Kernel::SingularOrder();
     };
 
-    /** Returns the 5 proxy distances 4^(j/4), j < 5, in units of rmin. */
-    template <class Real> inline const Vector<Real>& HedgehogProxyOffsets() {
-      static const Vector<Real> s = []() {
-        Vector<Real> v;
-        for (Integer j = 0; j < 5; j++) v.PushBack(pow<Real>((Real)4, (Real)j/(Real)4));
-        return v;
-      }();
-      return s;
-    }
-
-    /** Returns the 5 weights that extrapolate values at the proxy distances to distance 0. */
-    template <class Real> inline const Vector<Real>& HedgehogWeights() {
-      static const Vector<Real> w = []() {
-        using W = PrecompReal;
-        const Vector<Real>& s = HedgehogProxyOffsets<Real>();
-        const Long p = s.Dim();
-        Vector<Real> wj(p);
-        for (Long j = 0; j < p; j++) {
-          W v = 1;
-          for (Long k = 0; k < p; k++) if (k != j) v *= (0 - (W)s[k])/((W)s[j] - (W)s[k]);
-          wj[j] = (Real)v;
-        }
-        return wj;
-      }();
-      return w;
-    }
-
-    /** Returns the proxy spacing coefficient 0.1*10^(-digits/6) for each digits, at most 3e-3 when sing_order > 1. */
-    template <class Real> inline Real HedgehogRminCoeff(const Integer digits, const Integer sing_order) {
-      static const std::array<Real,MaxDigits<Real>> c = []() {
-        std::array<Real,MaxDigits<Real>> t{};
-        for (Integer d = 0; d < MaxDigits<Real>; d++) t[d] = (Real)0.1 * pow<Real>(pow<Real,Long>((Real)0.1, (Long)d), (Real)1/(Real)6);
-        return t;
-      }();
-      SCTL_ASSERT(digits >= 0 && digits < MaxDigits<Real>);
-      return (sing_order <= 1 ? c[digits] : std::min<Real>(c[digits], (Real)3e-3));
-    }
-
     template <Integer order, class Real, class Kernel> void SelfInteracHedgehog(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       static constexpr Integer sing_order = KernelSingularOrder<Kernel>::value;
       const Integer near_digits = std::min<Integer>(MaxDigits<Real>-1, digits + (sing_order <= 1 ? 2 : 6));
       NearGradeTable<order,Real>(QuadOrder<Real>(near_digits)); // precomp cache
       NearGradeTable<order,Real>(QuadOrder<Real>(digits)); // precomp cache
 
-      const Vector<Real>& hh_w = HedgehogWeights<Real>();
-      const Real hh_c = HedgehogRminCoeff<Real>(digits, sing_order);
+      static const Vector<Real> proxy_dist = []() { // Proxy distances, in units of rmin
+        Vector<Real> v;
+        for (Integer j = 0; j < 5; j++) v.PushBack(pow<Real>((Real)4, (Real)j/(Real)4));
+        return v;
+      }();
+      static const Vector<Real> hh_w = []() { // Weights extrapolating the proxy values to distance 0
+        using W = PrecompReal;
+        const Long p = proxy_dist.Dim();
+        Vector<Real> wj(p);
+        for (Long j = 0; j < p; j++) {
+          W v = 1;
+          for (Long k = 0; k < p; k++) if (k != j) v *= (0 - (W)proxy_dist[k])/((W)proxy_dist[j] - (W)proxy_dist[k]);
+          wj[j] = (Real)v;
+        }
+        return wj;
+      }();
+      const Real rmin_coeff = [digits]() {
+        const Real c = (Real)0.1 * pow<Real>(pow<Real,Long>((Real)0.1, (Long)digits), (Real)1/(Real)6);
+        return (sing_order <= 1 ? c : std::min<Real>(c, (Real)3e-3));
+      }();
+
       const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-      const auto self_interac_one_trg = [&nds, hh_c, &qel, &ker, near_digits, &hh_w](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
+      const auto self_interac_one_trg = [&nds, rmin_coeff, &qel, &ker, near_digits](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
           const Vector<Real>&, const Vector<Real>& ntrg, const Vector<Real>& Xnodes, const Vector<Real>& Xnnodes,
           const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer KDIM1_out) {
-        const Vector<Real>& proxy_dist = HedgehogProxyOffsets<Real>();
         ScratchBuf<Real> hh_Xt1_buf(COORD_DIM), hh_off_buf(proxy_dist.Dim()*COORD_DIM);
         Vector<Real> hh_Xt1(hh_Xt1_buf), hh_off(hh_off_buf);
         { // Proxy points along the normal, sized by edge distance
@@ -1605,7 +1585,7 @@ namespace sctl {
             sv2 += dXv[t*COORD_DIM+k]*dXv[t*COORD_DIM+k];
           }
           const Real edge_u = std::min<Real>(nds[ti], 1-nds[ti]), edge_v = std::min<Real>(nds[tj], 1-nds[tj]);
-          const Real rmin = hh_c * std::min<Real>(edge_u*sqrt<Real>(su2), edge_v*sqrt<Real>(sv2));
+          const Real rmin = rmin_coeff * std::min<Real>(edge_u*sqrt<Real>(su2), edge_v*sqrt<Real>(sv2));
           for (Integer k = 0; k < COORD_DIM; k++) hh_Xt1[k] = Xnodes[t*COORD_DIM+k] + rmin*Xnnodes[t*COORD_DIM+k];
           for (Long j = 0; j < proxy_dist.Dim(); j++) {
             const Real rj = rmin*proxy_dist[j];
