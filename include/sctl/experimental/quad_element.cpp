@@ -22,8 +22,8 @@ namespace sctl {
   namespace detail_quadelem {
 
     static constexpr Integer COORD_DIM = 3;
-    static constexpr Long MaxUnblockedPts = 16384;
     static constexpr Integer MaxTableOrder = 50;
+    static constexpr Long MaxUnblockedPts = 16384;
 
     template <class Real> struct Access {
       static const Vector<Real>& Coord(const QuadElemList<Real>& qel) { return qel.coord; }
@@ -40,6 +40,10 @@ namespace sctl {
       return ss.str();
     }
 
+    /**
+     * Computes out_k = MuT * in_k * Mv for each k-th sub-block, where in={in_0,...,in_{n-1}} and
+     * out={out_0,...,out_{n-1}} are flattened arrays.  out is resized if its size differs.
+     */
     template <class ValueType> void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv) {
       const Integer Nu = MuT.Dim(0);
       const Integer R  = MuT.Dim(1);
@@ -101,7 +105,7 @@ namespace sctl {
       LagrangeInterp<Real>::Derivative(df, f, nds);
     }
 
-    /** Returns an order x order matrix for each order; entry (i, a) is the derivative of the i-th Lagrange basis function on ParamNodes(order) at node a. */
+    /** Returns an order x order matrix for each order; entry (i, j) is the derivative of the i-th Lagrange basis function on ParamNodes(order) at j-th node. */
     template <class Real> inline const Matrix<Real>& DiffMat(const Integer order) {
       SCTL_ASSERT(0 < order && order <= MaxTableOrder);
       static const Vector<Matrix<Real>> all = []() {
@@ -864,7 +868,7 @@ namespace sctl {
 
     static constexpr Integer NearMaxQuadOrder = 60;
 
-    /** Returns order nodes on [0, 1] for each order: sin^2(pi i/(2(order-1))), the Chebyshev extreme points. */
+    /** Returns 'order' nodes on [0, 1] for each order: sin^2(pi i/(2(order-1))), the Chebyshev extreme points. */
     template <class Real> static const Vector<Real>& NearSubNodes(const Integer order) {
       SCTL_ASSERT(1 < order && order <= MaxTableOrder);
       static const Vector<Vector<Real>> all = []() {
@@ -884,7 +888,7 @@ namespace sctl {
       return all[order];
     }
 
-    /** Returns 1 - NearSubNodes(order) for each order, computed as cos^2 so that it is accurate where it is small. */
+    /** Returns 1.0 - NearSubNodes(order) for each 'order', computed as cos^2 so that it is accurate where it is small. */
     template <class Real> static const Vector<Real>& NearSubOffsets(const Integer order) {
       SCTL_ASSERT(1 < order && order <= MaxTableOrder);
       static const Vector<Vector<Real>> all = []() {
@@ -904,7 +908,7 @@ namespace sctl {
       return all[order];
     }
 
-    /** Returns an order x order matrix for each order; entry (i, a) is the derivative of the i-th Lagrange basis function on NearSubNodes(order) at node a. */
+    /** Returns an order x order matrix for each 'order'; entry (i, j) is the derivative of the i-th Lagrange basis function on NearSubNodes(order) at j-th node. */
     template <class Real> static const Matrix<Real>& NearSubDiffMat(const Integer order) {
       SCTL_ASSERT(1 < order && order <= MaxTableOrder);
       static const Vector<Matrix<Real>> all = []() {
