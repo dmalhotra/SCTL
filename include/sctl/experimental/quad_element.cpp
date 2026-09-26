@@ -6,6 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <numeric>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -559,23 +560,52 @@ namespace sctl {
       const Integer nnode = order * order;
       const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
 
-      #pragma omp parallel for schedule(static)
-      for (Long elem_idx = 0; elem_idx < qel.Size(); elem_idx++) {
-        // Coordinates and tangents component by component, normals point by point
-        const Long offset = elem_idx*nnode*COORD_DIM;
-        const Vector<Real> coord(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::Coord(qel).begin() + offset, false);
-        const Vector<Real> dXu(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::DCoordDu(qel).begin() + offset, false);
-        const Vector<Real> dXv(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::DCoordDv(qel).begin() + offset, false);
-        const Vector<Real> Xnnodes(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::XnNode(qel).begin() + offset, false);
+      const Integer nrow = nnode*KDIM0;
+      const Integer blk = nrow*KDIM1_out; // one target's block of M_acc
 
+      const Long nelem = qel.Size();
+      #pragma omp parallel for schedule(static)
+      for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) { // Size each element's matrix
         Matrix<Real>& M = M_lst[elem_idx];
-        if (M.Dim(0) != nnode*KDIM0 || M.Dim(1) != nnode*KDIM1_out) M.ReInit(nnode*KDIM0, nnode*KDIM1_out);
-        ScratchBuf<Real> M_acc_buf(nnode*KDIM0*KDIM1_out);
-        Matrix<Real> M_acc(nnode, KDIM0*KDIM1_out, M_acc_buf.begin(), false);
-        for (Integer ti = 0; ti < order; ti++) {
-          for (Integer tj = 0; tj < order; tj++) {
-            self_interac_one_trg(M_acc, coord, Xnnodes, dXu, dXv, ti, tj);
-            ScatterTargetBlock(M, M_acc, ti*order + tj, KDIM1_out);
+        if (M.Dim(0) != nrow || M.Dim(1) != nnode*KDIM1_out) M.ReInit(nrow, nnode*KDIM1_out);
+      }
+
+      const Integer chunk = [KDIM1_out, nelem, nnode]() { // Targets per task: whole cache lines of M, halved until each thread has 8 tasks
+        const Integer line = SCTL_MEM_ALIGN;
+        const Long min_tasks = 8*(Long)SCTL_GET_MAX_THREADS();
+        Integer c = line / std::gcd(line, KDIM1_out*(Integer)sizeof(Real));
+        while (c > 1 && nelem*((nnode + c - 1) / c) < min_tasks) c /= 2;
+        return c;
+      }();
+      const Integer ntask_elem = (nnode + chunk - 1) / chunk;
+
+      #pragma omp parallel
+      {
+        ScratchBuf<Real> buf((Long)chunk*blk);
+        #pragma omp for schedule(dynamic)
+        for (Long task = 0; task < nelem*ntask_elem; task++) { // Each run of consecutive targets of one element
+          const Long elem_idx = task / ntask_elem;
+          const Integer t0 = (task % ntask_elem)*chunk;
+          const Integer t1 = std::min<Integer>(nnode, t0 + chunk);
+
+          // Coordinates and tangents component by component, normals point by point
+          const Long offset = elem_idx*nnode*COORD_DIM;
+          const Vector<Real> coord(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::Coord(qel).begin() + offset, false);
+          const Vector<Real> dXu(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::DCoordDu(qel).begin() + offset, false);
+          const Vector<Real> dXv(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::DCoordDv(qel).begin() + offset, false);
+          const Vector<Real> Xnnodes(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::XnNode(qel).begin() + offset, false);
+
+          for (Integer t = t0; t < t1; t++) { // Each target's block into the buffer
+            Matrix<Real> M_acc(nnode, KDIM0*KDIM1_out, buf.begin() + (t - t0)*blk, false);
+            self_interac_one_trg(M_acc, coord, Xnnodes, dXu, dXv, t / order, t % order);
+          }
+          { // Copy the run's columns into M, row by row
+            Matrix<Real>& M = M_lst[elem_idx];
+            for (Integer r = 0; r < nrow; r++) {
+              for (Integer t = t0; t < t1; t++) {
+                for (Integer k1 = 0; k1 < KDIM1_out; k1++) M[r][t*KDIM1_out + k1] = buf[(t - t0)*blk + r*KDIM1_out + k1];
+              }
+            }
           }
         }
       }
