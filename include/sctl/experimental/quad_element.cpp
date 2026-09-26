@@ -3,11 +3,9 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
-#include <mutex>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -850,16 +848,6 @@ namespace sctl {
       b_ellipse = b*b/(2*a);
     }
 
-    /** Returns the Gauss-Legendre order of each piece for each digits, from the dyadic QuadParams. */
-    template <class Real> inline Integer QuadOrder(const Integer digits) {
-      return CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
-    }
-
-    /** Returns b_ellipse for each digits, from the dyadic QuadParams; pieces larger than dist/b_ellipse are split. */
-    template <class Real> inline Real BEllipse(const Integer digits) {
-      return CachedQuadParams<Real, QuadParams<Real>>(digits).b_ellipse;
-    }
-
     template <class Real> struct GradeRule : QuadRule1D<Real> {
       Real a, b;
     };
@@ -941,7 +929,7 @@ namespace sctl {
         std::vector<Vector<GradeRule<Real>>> t(NearMaxQuadOrder+1);
         for (Integer q = 4; q <= NearMaxQuadOrder; q += 4) t[q] = build(q, Dsub);
         for (Integer d = 0; d < MaxDigits<Real>; d++) {
-          const Integer qi = QuadOrder<Real>(d);
+          const Integer qi = CachedQuadParams<Real, QuadParams<Real>>(d).quad_order;
           if (qi > 0 && qi <= NearMaxQuadOrder && t[qi].Dim() == 0) t[qi] = build(qi, Dsub);
         }
         return t;
@@ -977,7 +965,7 @@ namespace sctl {
         spd_u = sqrt<Real>(guu);
         spd_v = sqrt<Real>(gvv);
 
-        const Integer q_iso = QuadOrder<Real>(digits);
+        const Integer q_iso = CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
         q_near = q_iso;
         const Real den = sqrt<Real>(guu*gvv);
         if (den > 0) {
@@ -1054,7 +1042,7 @@ namespace sctl {
         const Vector<Real> Xsub(nsub, Xsub_buf.begin() + (2*sdu+sdv)*nsub, false);
         IntegrateTensorRule<order,Real>(acc, Xsub, gu, gv, normal_trg, ker, nsign, proxy_off, proxy_w);
       };
-      const Real b_ellipse = BEllipse<Real>(digits);
+      const Real b_ellipse = CachedQuadParams<Real, QuadParams<Real>>(digits).b_ellipse;
       const auto refine = [&integrate_piece, dist, b_ellipse](const Integer sdu, const Integer sdv, Real hu, Real hv) {
         Integer ku = 0, kv = 0;
         const bool refine_to_max = !(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist);
@@ -1257,13 +1245,14 @@ namespace sctl {
 
     using detail_quadelem::COORD_DIM;
 
+    using detail_quadelem::CachedQuadParams;
     using detail_quadelem::DiffMat;
     using detail_quadelem::ScatterTargetBlock;
     using detail_quadelem::SelfInteracElems;
     using detail_quadelem::ShiftedElemCoord;
     using detail_quadelem::WeightedKernel;
     using detail_dyadic_near::NearGradeTable;
-    using detail_dyadic_near::QuadOrder;
+    using detail_dyadic_near::QuadParams;
 
     template <class Real> struct DuffyTri {
       bool swap_ab = false;
@@ -1513,7 +1502,7 @@ namespace sctl {
 
     template <Integer order, class Real, class Kernel> void SelfInteracDuffy(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       DuffyTable<order,Real>(); // precomp cache
-      NearGradeTable<order,Real>(QuadOrder<Real>(digits)); // precomp cache
+      NearGradeTable<order,Real>(CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order); // precomp cache
       const auto self_interac_one_trg = [&qel, &ker, digits](Matrix<Real>& M, const Long elem_idx, const Long t, const Integer ti, const Integer tj,
           const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>&, const Vector<Real>&,
           const Vector<Real>&, const Vector<Real>&, const Integer KDIM1_out) {
@@ -1533,11 +1522,12 @@ namespace sctl {
     using detail_quadelem::MaxDigits;
     using detail_quadelem::PrecompReal;
 
+    using detail_quadelem::CachedQuadParams;
     using detail_quadelem::ScatterTargetBlock;
     using detail_quadelem::SelfInteracElems;
     using detail_dyadic_near::NearGradeTable;
     using detail_dyadic_near::NearInteracBlockDyadic;
-    using detail_dyadic_near::QuadOrder;
+    using detail_dyadic_near::QuadParams;
 
     template <class Kernel, class = void> struct KernelSingularOrder {
       static constexpr Integer value = 2;
@@ -1549,8 +1539,8 @@ namespace sctl {
     template <Integer order, class Real, class Kernel> void SelfInteracHedgehog(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       static constexpr Integer sing_order = KernelSingularOrder<Kernel>::value;
       const Integer near_digits = std::min<Integer>(MaxDigits<Real>-1, digits + (sing_order <= 1 ? 2 : 6));
-      NearGradeTable<order,Real>(QuadOrder<Real>(near_digits)); // precomp cache
-      NearGradeTable<order,Real>(QuadOrder<Real>(digits)); // precomp cache
+      NearGradeTable<order,Real>(CachedQuadParams<Real, QuadParams<Real>>(near_digits).quad_order); // precomp cache
+      NearGradeTable<order,Real>(CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order); // precomp cache
 
       static const Vector<Real> proxy_dist = []() { // Proxy distances, in units of rmin
         Vector<Real> v;
@@ -1701,38 +1691,9 @@ namespace sctl {
       }
     }
 
-    template <class T, Integer N> class LazyTable {
-      public:
-        LazyTable() = default;
-        LazyTable(const LazyTable&) = delete;
-        LazyTable& operator=(const LazyTable&) = delete;
-        ~LazyTable() {
-          for (auto& p : slot) delete p.load(std::memory_order_relaxed);
-        }
-
-        template <class BuildFn> const T& Get(const Integer i, BuildFn build) {
-          SCTL_ASSERT(i >= 0 && i < N);
-          T* p = slot[i].load(std::memory_order_acquire);
-          if (!p) {
-            std::lock_guard<std::mutex> lk(mtx);
-            p = slot[i].load(std::memory_order_relaxed);
-            if (!p) {
-              p = new T(build());
-              slot[i].store(p, std::memory_order_release);
-            }
-          }
-          return *p;
-        }
-
-      private:
-        std::atomic<T*> slot[N] = {};
-        std::mutex mtx;
-    };
-
     /** Returns the rule toward node ti along u for each (order, digits): quad_order-point Gauss-Legendre on intervals halving min(MaxRefineLvl, 2*digits+6) times toward the node on each side, with order x N interpolation matrices. */
     template <Integer order, class Real> const QuadRule1D<Real>& CenteredURule(const Integer ti, const Integer digits) {
-      static LazyTable<Vector<QuadRule1D<Real>>, MaxDigits<Real>> table;
-      const auto build = [digits]() {
+      const auto build = [](const Integer digits) {
         const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
         const Integer quad_order = CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
         const Integer Lvl = std::min<Integer>(MaxRefineLvl<Real>, 2*digits + 6);
@@ -1766,13 +1727,18 @@ namespace sctl {
         }
         return rules;
       };
-      return table.Get(digits, build)[ti];
+      static const std::array<Vector<QuadRule1D<Real>>, MaxDigits<Real>> table = [&build]() {
+        std::array<Vector<QuadRule1D<Real>>, MaxDigits<Real>> t;
+        for (Integer d = 0; d < MaxDigits<Real>; d++) t[d] = build(d);
+        return t;
+      }();
+      SCTL_ASSERT(digits >= 0 && digits < MaxDigits<Real>);
+      return table[digits][ti];
     }
 
     /** Returns the rule toward node tj along v for each (order, digits): quad_order-point Gauss-Legendre on min(12, max(1, digits-5)) panels halving toward the node on each side, then one order-16 Alpert panel per side, log-corrected at the node, with order x N interpolation matrices. */
     template <Integer order, class Real> const QuadRule1D<Real>& CenteredVRule(const Integer tj, const Integer digits) {
-      static LazyTable<Vector<QuadRule1D<Real>>, MaxDigits<Real>> table;
-      const auto build = [digits]() {
+      const auto build = [](const Integer digits) {
         const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
         const Integer Lvl = std::min<Integer>(12, std::max<Integer>(1, digits - 5));
         const Integer quad_order = CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
@@ -1784,7 +1750,13 @@ namespace sctl {
         }
         return rules;
       };
-      return table.Get(digits, build)[tj];
+      static const std::array<Vector<QuadRule1D<Real>>, MaxDigits<Real>> table = [&build]() {
+        std::array<Vector<QuadRule1D<Real>>, MaxDigits<Real>> t;
+        for (Integer d = 0; d < MaxDigits<Real>; d++) t[d] = build(d);
+        return t;
+      }();
+      SCTL_ASSERT(digits >= 0 && digits < MaxDigits<Real>);
+      return table[digits][tj];
     }
 
     template <Integer order, class Real, class Kernel> void SelfInteracTensorProduct(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
