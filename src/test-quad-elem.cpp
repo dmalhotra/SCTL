@@ -34,7 +34,7 @@ template <class Real> struct QuadElemTestAccess {
         for (Long i = 0; i < delta.Dim(); i++) param[i] = v0 + delta[i];
     }
     static Vector<Real> ElemCoord(const QuadElemList<Real>& qel, const Long elem_idx) {
-        const Long n = 3 * (Long)qel.Order() * qel.Order();
+        const Integer n = 3 * qel.Order() * qel.Order();
         return Vector<Real>(n, (Iterator<Real>)qel.coord.begin() + elem_idx * n, false);
     }
     static Real GetClosestNode(const QuadElemList<Real>& qel, Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) {
