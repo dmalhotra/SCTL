@@ -545,7 +545,6 @@ namespace sctl {
       const Long Ntrg = Xt.Dim() / COORD_DIM;
       if (M.Dim(0) != nnode*KDIM0 || M.Dim(1) != Ntrg*KDIM1_out) M.ReInit(nnode*KDIM0, Ntrg*KDIM1_out);
       M.SetZero();
-      if (!Ntrg) return;
 
       ScratchBuf<Real> M_acc_buf(nnode*KDIM0*KDIM1_out);
       Matrix<Real> M_acc(nnode, KDIM0*KDIM1_out, M_acc_buf.begin(), false);
@@ -589,235 +588,6 @@ namespace sctl {
       }
     }
 
-  }
-
-  template <class Real> template <class ValueType> QuadElemList<Real>::QuadElemList(const Integer order0, const Vector<ValueType>& coord0) {
-    Init(order0, coord0);
-  }
-
-  template <class Real> template <class ValueType> void QuadElemList<Real>::Init(const Integer order0, const Vector<ValueType>& coord0) {
-    order = order0;
-    SCTL_ASSERT(order > 0);
-    const Long nnode_per_elem = (Long)order * order;
-    const Long elem_stride = detail_quadelem::COORD_DIM * nnode_per_elem;
-    SCTL_ASSERT(coord0.Dim() % elem_stride == 0);
-    nelem = coord0.Dim() / elem_stride;
-
-    { // Store the coordinates component by component per element
-      coord.ReInit(nelem * elem_stride);
-      for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
-        const Long base = elem_idx * elem_stride;
-        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-          for (Long p = 0; p < nnode_per_elem; p++) {
-            coord[base + k * nnode_per_elem + p] = (Real)coord0[(elem_idx * nnode_per_elem + p) * detail_quadelem::COORD_DIM + k];
-          }
-        }
-      }
-    }
-    { // Differentiate the coordinates along u and v
-      dcoord_du.ReInit(coord.Dim());
-      dcoord_dv.ReInit(coord.Dim());
-      const auto transpose_blocks = [order = order, nnode_per_elem](Vector<Real>& out, const Vector<Real>& in) {
-        for (Long k = 0; k < in.Dim() / nnode_per_elem; k++) {
-          for (Integer i = 0; i < order; i++) {
-            for (Integer j = 0; j < order; j++) out[k * nnode_per_elem + j * order + i] = in[k * nnode_per_elem + i * order + j];
-          }
-        }
-      };
-
-      const auto& nodes = ParamNodes(order);
-      const Long nblk = detail_quadelem::COORD_DIM * nelem;
-      const Long nthreads = SCTL_GET_MAX_THREADS();
-      const Long chunk = std::max<Long>(1, std::min<Long>(64, (nblk + nthreads - 1) / nthreads));
-      const Long nchunk = (nblk + chunk - 1) / chunk;
-      #pragma omp parallel for schedule(static)
-      for (Long b = 0; b < nchunk; b++) {
-        const Long offset = b * chunk * nnode_per_elem;
-        const Long n = (std::min(nblk, (b + 1) * chunk) - b * chunk) * nnode_per_elem;
-        const Vector<Real> coord_(n, coord.begin() + offset, false);
-        { // Differentiate along v, the contiguous index
-          Vector<Real> dv_(n, dcoord_dv.begin() + offset, false);
-          LagrangeInterp<Real>::Derivative(dv_, coord_, nodes);
-        }
-        { // Differentiate along u through transposed copies
-          ScratchBuf<Real> coordT_buf(n), duT_buf(n);
-          Vector<Real> coordT(coordT_buf), duT(duT_buf);
-          Vector<Real> du_(n, dcoord_du.begin() + offset, false);
-          transpose_blocks(coordT, coord_);
-          LagrangeInterp<Real>::Derivative(duT, coordT, nodes);
-          transpose_blocks(du_, duT);
-        }
-      }
-    }
-    { // Node positions and normals
-      X_node.ReInit(nelem * elem_stride);
-      Xn_node.ReInit(nelem * elem_stride);
-      node_cnt.ReInit(nelem);
-      node_cnt = nnode_per_elem;
-      const auto& nodes = ParamNodes(order);
-      #pragma omp parallel for schedule(static)
-      for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
-        Vector<Real> X_(elem_stride, X_node.begin() + elem_idx*elem_stride, false);
-        Vector<Real> Xn_(elem_stride, Xn_node.begin() + elem_idx*elem_stride, false);
-        GetGeom(&X_, &Xn_, nullptr, nullptr, nullptr, nodes, nodes, elem_idx);
-      }
-    }
-  }
-
-  template <class Real> Long QuadElemList<Real>::Size() const {
-    return nelem;
-  }
-
-  template <class Real> Integer QuadElemList<Real>::Order() const {
-    return order;
-  }
-
-  template <class Real> void QuadElemList<Real>::GetGeom(Vector<Real>* X, Vector<Real>* Xn, Vector<Real>* Xa, Vector<Real>* dX_du, Vector<Real>* dX_dv, const Vector<Real>& u_param, const Vector<Real>& v_param, const Long elem_idx) const {
-    SCTL_ASSERT(elem_idx >= 0 && elem_idx < nelem);
-    const Long nnode_per_elem = (Long)order * order;
-    const Long Nu = u_param.Dim();
-    const Long Nv = v_param.Dim();
-    const Long N = Nu * Nv;
-
-    { // Size the requested outputs
-      if (X && X->Dim() != N * detail_quadelem::COORD_DIM) X->ReInit(N * detail_quadelem::COORD_DIM);
-      if (Xn && Xn->Dim() != N * detail_quadelem::COORD_DIM) Xn->ReInit(N * detail_quadelem::COORD_DIM);
-      if (Xa && Xa->Dim() != N) Xa->ReInit(N);
-      if (dX_du && dX_du->Dim() != N * detail_quadelem::COORD_DIM) dX_du->ReInit(N * detail_quadelem::COORD_DIM);
-      if (dX_dv && dX_dv->Dim() != N * detail_quadelem::COORD_DIM) dX_dv->ReInit(N * detail_quadelem::COORD_DIM);
-    }
-
-    ScratchBuf<Real> MuT_buf(Nu * order), Mv_buf(order * Nv);
-    { // Interpolation matrices from the nodes to u_param and v_param
-      ScratchBuf<Real> Mu_buf(order * Nu);
-      Vector<Real> Mu_(order * Nu, Mu_buf.begin(), false);
-      Vector<Real> Mv_(order * Nv, Mv_buf.begin(), false);
-      LagrangeInterp<Real>::Interpolate(Mu_, ParamNodes(order), u_param);
-      LagrangeInterp<Real>::Interpolate(Mv_, ParamNodes(order), v_param);
-      for (Integer i = 0; i < order; i++) for (Long a = 0; a < Nu; a++) MuT_buf[a * order + i] = Mu_buf[i * Nu + a];
-    }
-    const Matrix<Real> MuT(Nu, order, MuT_buf.begin(), false);
-    const Matrix<Real> Mv(order, Nv, Mv_buf.begin(), false);
-
-    const Long base = elem_idx * nnode_per_elem * detail_quadelem::COORD_DIM;
-    if (X) { // Positions
-      const Vector<Real> coord_(detail_quadelem::COORD_DIM * nnode_per_elem, (Iterator<Real>)coord.begin() + base, false);
-      ScratchBuf<Real> X_soa_buf(N * detail_quadelem::COORD_DIM);
-      Vector<Real> X_soa(X_soa_buf);
-      detail_quadelem::EvalTensorProduct(X_soa, coord_, MuT, Mv);
-      for (Long i = 0; i < N; i++) {
-        (*X)[i * detail_quadelem::COORD_DIM + 0] = X_soa[0 * N + i];
-        (*X)[i * detail_quadelem::COORD_DIM + 1] = X_soa[1 * N + i];
-        (*X)[i * detail_quadelem::COORD_DIM + 2] = X_soa[2 * N + i];
-      }
-    }
-    if (Xn || Xa || dX_du || dX_dv) { // Tangents, and from them normals and area elements
-      const Vector<Real> dcoord_du_(detail_quadelem::COORD_DIM * nnode_per_elem, (Iterator<Real>)dcoord_du.begin() + base, false);
-      const Vector<Real> dcoord_dv_(detail_quadelem::COORD_DIM * nnode_per_elem, (Iterator<Real>)dcoord_dv.begin() + base, false);
-      ScratchBuf<Real> dXdu_soa_buf(N * detail_quadelem::COORD_DIM), dXdv_soa_buf(N * detail_quadelem::COORD_DIM);
-      Vector<Real> dXdu_soa(dXdu_soa_buf), dXdv_soa(dXdv_soa_buf);
-      detail_quadelem::EvalTensorProduct(dXdu_soa, dcoord_du_, MuT, Mv);
-      detail_quadelem::EvalTensorProduct(dXdv_soa, dcoord_dv_, MuT, Mv);
-      for (Long i = 0; i < N; i++) {
-        const Real du0 = dXdu_soa[0 * N + i];
-        const Real du1 = dXdu_soa[1 * N + i];
-        const Real du2 = dXdu_soa[2 * N + i];
-        const Real dv0 = dXdv_soa[0 * N + i];
-        const Real dv1 = dXdv_soa[1 * N + i];
-        const Real dv2 = dXdv_soa[2 * N + i];
-
-        const Real n0 = du1 * dv2 - du2 * dv1;
-        const Real n1 = du2 * dv0 - du0 * dv2;
-        const Real n2 = du0 * dv1 - du1 * dv0;
-        const Real area = sqrt<Real>(n0 * n0 + n1 * n1 + n2 * n2);
-        const Real inv_area = (area > 0 ? 1 / area : 0);
-
-        if (Xn) {
-          (*Xn)[i * detail_quadelem::COORD_DIM + 0] = n0 * inv_area;
-          (*Xn)[i * detail_quadelem::COORD_DIM + 1] = n1 * inv_area;
-          (*Xn)[i * detail_quadelem::COORD_DIM + 2] = n2 * inv_area;
-        }
-        if (Xa) {
-          (*Xa)[i] = area;
-        }
-        if (dX_du) {
-          (*dX_du)[i * detail_quadelem::COORD_DIM + 0] = du0;
-          (*dX_du)[i * detail_quadelem::COORD_DIM + 1] = du1;
-          (*dX_du)[i * detail_quadelem::COORD_DIM + 2] = du2;
-        }
-        if (dX_dv) {
-          (*dX_dv)[i * detail_quadelem::COORD_DIM + 0] = dv0;
-          (*dX_dv)[i * detail_quadelem::COORD_DIM + 1] = dv1;
-          (*dX_dv)[i * detail_quadelem::COORD_DIM + 2] = dv2;
-        }
-      }
-    }
-  }
-
-  template <class Real> void QuadElemList<Real>::GetNodeCoord(Vector<Real>* X, Vector<Real>* Xn, Vector<Long>* element_wise_node_cnt) const {
-    if (X) *X = X_node;
-    if (Xn) *Xn = Xn_node;
-    if (element_wise_node_cnt) *element_wise_node_cnt = node_cnt;
-  }
-
-  template <class Real> void QuadElemList<Real>::GetFarFieldNodes(Vector<Real>& X, Vector<Real>& Xn, Vector<Real>& wts, Vector<Real>& dist_far, Vector<Long>& element_wise_node_cnt, const Real tol) const {
-    const Long nnode_per_elem = (Long)order * order;
-    const Long Nnode = nelem * nnode_per_elem;
-    { // Size the outputs
-      if (X.Dim() != Nnode * detail_quadelem::COORD_DIM) X.ReInit(Nnode * detail_quadelem::COORD_DIM);
-      if (Xn.Dim() != Nnode * detail_quadelem::COORD_DIM) Xn.ReInit(Nnode * detail_quadelem::COORD_DIM);
-      if (wts.Dim() != Nnode) wts.ReInit(Nnode);
-      if (dist_far.Dim() != Nnode) dist_far.ReInit(Nnode);
-      if (element_wise_node_cnt.Dim() != nelem) element_wise_node_cnt.ReInit(nelem);
-      element_wise_node_cnt = nnode_per_elem;
-    }
-
-    const auto& nodes = ParamNodes(order);
-    ScratchBuf<Real> dist_nodes(order);
-    { // Parameter distance from each node to the accuracy ellipse
-      const Integer n = order;
-      const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
-      const Real rho = pow<Real>((64 / (15 * tol_)), 1 / (Real)(2 * n));
-      const Real a = (rho - 1 / rho) / 4;
-      const Real b = (rho + 1 / rho) / 4;
-      for (Integer i = 0; i < n; i++) {
-        dist_nodes[i] = b - fabs(nodes[i] - (Real)0.5);
-        const Real cos_t = 4 * b * (nodes[i] - (Real)0.5);
-        if (fabs(cos_t) <= 1) {
-          dist_nodes[i] = a * sqrt<Real>(1 + ((a * a) / (b * b) - 1) * cos_t * cos_t);
-        }
-      }
-    }
-
-    const auto& node_wts = LegQuadRule<Real>::wts(order);
-    #pragma omp parallel for schedule(static)
-    for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) { // Nodes, weights and far distances per element
-      Vector<Real> X_(nnode_per_elem * detail_quadelem::COORD_DIM, X.begin() + elem_idx * nnode_per_elem * detail_quadelem::COORD_DIM, false);
-      Vector<Real> Xn_(nnode_per_elem * detail_quadelem::COORD_DIM, Xn.begin() + elem_idx * nnode_per_elem * detail_quadelem::COORD_DIM, false);
-      Vector<Real> wts_(nnode_per_elem, wts.begin() + elem_idx * nnode_per_elem, false);
-      Vector<Real> dist_far_(nnode_per_elem, dist_far.begin() + elem_idx * nnode_per_elem, false);
-
-      ScratchBuf<Real> Xa_buf(nnode_per_elem), dXdu_buf(nnode_per_elem * detail_quadelem::COORD_DIM), dXdv_buf(nnode_per_elem * detail_quadelem::COORD_DIM);
-      Vector<Real> Xa(Xa_buf), dXdu(dXdu_buf), dXdv(dXdv_buf);
-      GetGeom(&X_, &Xn_, &Xa, &dXdu, &dXdv, nodes, nodes, elem_idx);
-
-      for (Integer i = 0; i < order; i++) {
-        for (Integer j = 0; j < order; j++) {
-          const Long p = i * order + j;
-          const Real wu = node_wts[i];
-          const Real wv = node_wts[j];
-          wts_[p] = Xa[p] * wu * wv;
-
-          const Real len_u = sqrt<Real>(dXdu[p * detail_quadelem::COORD_DIM + 0] * dXdu[p * detail_quadelem::COORD_DIM + 0] +
-              dXdu[p * detail_quadelem::COORD_DIM + 1] * dXdu[p * detail_quadelem::COORD_DIM + 1] +
-              dXdu[p * detail_quadelem::COORD_DIM + 2] * dXdu[p * detail_quadelem::COORD_DIM + 2]);
-          const Real len_v = sqrt<Real>(dXdv[p * detail_quadelem::COORD_DIM + 0] * dXdv[p * detail_quadelem::COORD_DIM + 0] +
-              dXdv[p * detail_quadelem::COORD_DIM + 1] * dXdv[p * detail_quadelem::COORD_DIM + 1] +
-              dXdv[p * detail_quadelem::COORD_DIM + 2] * dXdv[p * detail_quadelem::COORD_DIM + 2]);
-          dist_far_[p] = std::max(dist_nodes[i] * len_u, dist_nodes[j] * len_v);
-        }
-      }
-    }
   }
 
   namespace detail_dyadic_near {
@@ -1805,6 +1575,235 @@ namespace sctl {
       }
     }
 
+  }
+
+  template <class Real> template <class ValueType> QuadElemList<Real>::QuadElemList(const Integer order0, const Vector<ValueType>& coord0) {
+    Init(order0, coord0);
+  }
+
+  template <class Real> template <class ValueType> void QuadElemList<Real>::Init(const Integer order0, const Vector<ValueType>& coord0) {
+    order = order0;
+    SCTL_ASSERT(order > 0);
+    const Long nnode_per_elem = (Long)order * order;
+    const Long elem_stride = detail_quadelem::COORD_DIM * nnode_per_elem;
+    SCTL_ASSERT(coord0.Dim() % elem_stride == 0);
+    nelem = coord0.Dim() / elem_stride;
+
+    { // Store the coordinates component by component per element
+      coord.ReInit(nelem * elem_stride);
+      for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
+        const Long base = elem_idx * elem_stride;
+        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+          for (Long p = 0; p < nnode_per_elem; p++) {
+            coord[base + k * nnode_per_elem + p] = (Real)coord0[(elem_idx * nnode_per_elem + p) * detail_quadelem::COORD_DIM + k];
+          }
+        }
+      }
+    }
+    { // Differentiate the coordinates along u and v
+      dcoord_du.ReInit(coord.Dim());
+      dcoord_dv.ReInit(coord.Dim());
+      const auto transpose_blocks = [order = order, nnode_per_elem](Vector<Real>& out, const Vector<Real>& in) {
+        for (Long k = 0; k < in.Dim() / nnode_per_elem; k++) {
+          for (Integer i = 0; i < order; i++) {
+            for (Integer j = 0; j < order; j++) out[k * nnode_per_elem + j * order + i] = in[k * nnode_per_elem + i * order + j];
+          }
+        }
+      };
+
+      const auto& nodes = ParamNodes(order);
+      const Long nblk = detail_quadelem::COORD_DIM * nelem;
+      const Long nthreads = SCTL_GET_MAX_THREADS();
+      const Long chunk = std::max<Long>(1, std::min<Long>(64, (nblk + nthreads - 1) / nthreads));
+      const Long nchunk = (nblk + chunk - 1) / chunk;
+      #pragma omp parallel for schedule(static)
+      for (Long b = 0; b < nchunk; b++) {
+        const Long offset = b * chunk * nnode_per_elem;
+        const Long n = (std::min(nblk, (b + 1) * chunk) - b * chunk) * nnode_per_elem;
+        const Vector<Real> coord_(n, coord.begin() + offset, false);
+        { // Differentiate along v, the contiguous index
+          Vector<Real> dv_(n, dcoord_dv.begin() + offset, false);
+          LagrangeInterp<Real>::Derivative(dv_, coord_, nodes);
+        }
+        { // Differentiate along u through transposed copies
+          ScratchBuf<Real> coordT_buf(n), duT_buf(n);
+          Vector<Real> coordT(coordT_buf), duT(duT_buf);
+          Vector<Real> du_(n, dcoord_du.begin() + offset, false);
+          transpose_blocks(coordT, coord_);
+          LagrangeInterp<Real>::Derivative(duT, coordT, nodes);
+          transpose_blocks(du_, duT);
+        }
+      }
+    }
+    { // Node positions and normals
+      X_node.ReInit(nelem * elem_stride);
+      Xn_node.ReInit(nelem * elem_stride);
+      node_cnt.ReInit(nelem);
+      node_cnt = nnode_per_elem;
+      const auto& nodes = ParamNodes(order);
+      #pragma omp parallel for schedule(static)
+      for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
+        Vector<Real> X_(elem_stride, X_node.begin() + elem_idx*elem_stride, false);
+        Vector<Real> Xn_(elem_stride, Xn_node.begin() + elem_idx*elem_stride, false);
+        GetGeom(&X_, &Xn_, nullptr, nullptr, nullptr, nodes, nodes, elem_idx);
+      }
+    }
+  }
+
+  template <class Real> Long QuadElemList<Real>::Size() const {
+    return nelem;
+  }
+
+  template <class Real> Integer QuadElemList<Real>::Order() const {
+    return order;
+  }
+
+  template <class Real> void QuadElemList<Real>::GetGeom(Vector<Real>* X, Vector<Real>* Xn, Vector<Real>* Xa, Vector<Real>* dX_du, Vector<Real>* dX_dv, const Vector<Real>& u_param, const Vector<Real>& v_param, const Long elem_idx) const {
+    SCTL_ASSERT(elem_idx >= 0 && elem_idx < nelem);
+    const Long nnode_per_elem = (Long)order * order;
+    const Long Nu = u_param.Dim();
+    const Long Nv = v_param.Dim();
+    const Long N = Nu * Nv;
+
+    { // Size the requested outputs
+      if (X && X->Dim() != N * detail_quadelem::COORD_DIM) X->ReInit(N * detail_quadelem::COORD_DIM);
+      if (Xn && Xn->Dim() != N * detail_quadelem::COORD_DIM) Xn->ReInit(N * detail_quadelem::COORD_DIM);
+      if (Xa && Xa->Dim() != N) Xa->ReInit(N);
+      if (dX_du && dX_du->Dim() != N * detail_quadelem::COORD_DIM) dX_du->ReInit(N * detail_quadelem::COORD_DIM);
+      if (dX_dv && dX_dv->Dim() != N * detail_quadelem::COORD_DIM) dX_dv->ReInit(N * detail_quadelem::COORD_DIM);
+    }
+
+    ScratchBuf<Real> MuT_buf(Nu * order), Mv_buf(order * Nv);
+    { // Interpolation matrices from the nodes to u_param and v_param
+      ScratchBuf<Real> Mu_buf(order * Nu);
+      Vector<Real> Mu_(order * Nu, Mu_buf.begin(), false);
+      Vector<Real> Mv_(order * Nv, Mv_buf.begin(), false);
+      LagrangeInterp<Real>::Interpolate(Mu_, ParamNodes(order), u_param);
+      LagrangeInterp<Real>::Interpolate(Mv_, ParamNodes(order), v_param);
+      for (Integer i = 0; i < order; i++) for (Long a = 0; a < Nu; a++) MuT_buf[a * order + i] = Mu_buf[i * Nu + a];
+    }
+    const Matrix<Real> MuT(Nu, order, MuT_buf.begin(), false);
+    const Matrix<Real> Mv(order, Nv, Mv_buf.begin(), false);
+
+    const Long base = elem_idx * nnode_per_elem * detail_quadelem::COORD_DIM;
+    if (X) { // Positions
+      const Vector<Real> coord_(detail_quadelem::COORD_DIM * nnode_per_elem, (Iterator<Real>)coord.begin() + base, false);
+      ScratchBuf<Real> X_soa_buf(N * detail_quadelem::COORD_DIM);
+      Vector<Real> X_soa(X_soa_buf);
+      detail_quadelem::EvalTensorProduct(X_soa, coord_, MuT, Mv);
+      for (Long i = 0; i < N; i++) {
+        (*X)[i * detail_quadelem::COORD_DIM + 0] = X_soa[0 * N + i];
+        (*X)[i * detail_quadelem::COORD_DIM + 1] = X_soa[1 * N + i];
+        (*X)[i * detail_quadelem::COORD_DIM + 2] = X_soa[2 * N + i];
+      }
+    }
+    if (Xn || Xa || dX_du || dX_dv) { // Tangents, and from them normals and area elements
+      const Vector<Real> dcoord_du_(detail_quadelem::COORD_DIM * nnode_per_elem, (Iterator<Real>)dcoord_du.begin() + base, false);
+      const Vector<Real> dcoord_dv_(detail_quadelem::COORD_DIM * nnode_per_elem, (Iterator<Real>)dcoord_dv.begin() + base, false);
+      ScratchBuf<Real> dXdu_soa_buf(N * detail_quadelem::COORD_DIM), dXdv_soa_buf(N * detail_quadelem::COORD_DIM);
+      Vector<Real> dXdu_soa(dXdu_soa_buf), dXdv_soa(dXdv_soa_buf);
+      detail_quadelem::EvalTensorProduct(dXdu_soa, dcoord_du_, MuT, Mv);
+      detail_quadelem::EvalTensorProduct(dXdv_soa, dcoord_dv_, MuT, Mv);
+      for (Long i = 0; i < N; i++) {
+        const Real du0 = dXdu_soa[0 * N + i];
+        const Real du1 = dXdu_soa[1 * N + i];
+        const Real du2 = dXdu_soa[2 * N + i];
+        const Real dv0 = dXdv_soa[0 * N + i];
+        const Real dv1 = dXdv_soa[1 * N + i];
+        const Real dv2 = dXdv_soa[2 * N + i];
+
+        const Real n0 = du1 * dv2 - du2 * dv1;
+        const Real n1 = du2 * dv0 - du0 * dv2;
+        const Real n2 = du0 * dv1 - du1 * dv0;
+        const Real area = sqrt<Real>(n0 * n0 + n1 * n1 + n2 * n2);
+        const Real inv_area = (area > 0 ? 1 / area : 0);
+
+        if (Xn) {
+          (*Xn)[i * detail_quadelem::COORD_DIM + 0] = n0 * inv_area;
+          (*Xn)[i * detail_quadelem::COORD_DIM + 1] = n1 * inv_area;
+          (*Xn)[i * detail_quadelem::COORD_DIM + 2] = n2 * inv_area;
+        }
+        if (Xa) {
+          (*Xa)[i] = area;
+        }
+        if (dX_du) {
+          (*dX_du)[i * detail_quadelem::COORD_DIM + 0] = du0;
+          (*dX_du)[i * detail_quadelem::COORD_DIM + 1] = du1;
+          (*dX_du)[i * detail_quadelem::COORD_DIM + 2] = du2;
+        }
+        if (dX_dv) {
+          (*dX_dv)[i * detail_quadelem::COORD_DIM + 0] = dv0;
+          (*dX_dv)[i * detail_quadelem::COORD_DIM + 1] = dv1;
+          (*dX_dv)[i * detail_quadelem::COORD_DIM + 2] = dv2;
+        }
+      }
+    }
+  }
+
+  template <class Real> void QuadElemList<Real>::GetNodeCoord(Vector<Real>* X, Vector<Real>* Xn, Vector<Long>* element_wise_node_cnt) const {
+    if (X) *X = X_node;
+    if (Xn) *Xn = Xn_node;
+    if (element_wise_node_cnt) *element_wise_node_cnt = node_cnt;
+  }
+
+  template <class Real> void QuadElemList<Real>::GetFarFieldNodes(Vector<Real>& X, Vector<Real>& Xn, Vector<Real>& wts, Vector<Real>& dist_far, Vector<Long>& element_wise_node_cnt, const Real tol) const {
+    const Long nnode_per_elem = (Long)order * order;
+    const Long Nnode = nelem * nnode_per_elem;
+    { // Size the outputs
+      if (X.Dim() != Nnode * detail_quadelem::COORD_DIM) X.ReInit(Nnode * detail_quadelem::COORD_DIM);
+      if (Xn.Dim() != Nnode * detail_quadelem::COORD_DIM) Xn.ReInit(Nnode * detail_quadelem::COORD_DIM);
+      if (wts.Dim() != Nnode) wts.ReInit(Nnode);
+      if (dist_far.Dim() != Nnode) dist_far.ReInit(Nnode);
+      if (element_wise_node_cnt.Dim() != nelem) element_wise_node_cnt.ReInit(nelem);
+      element_wise_node_cnt = nnode_per_elem;
+    }
+
+    const auto& nodes = ParamNodes(order);
+    ScratchBuf<Real> dist_nodes(order);
+    { // Parameter distance from each node to the accuracy ellipse
+      const Integer n = order;
+      const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
+      const Real rho = pow<Real>((64 / (15 * tol_)), 1 / (Real)(2 * n));
+      const Real a = (rho - 1 / rho) / 4;
+      const Real b = (rho + 1 / rho) / 4;
+      for (Integer i = 0; i < n; i++) {
+        dist_nodes[i] = b - fabs(nodes[i] - (Real)0.5);
+        const Real cos_t = 4 * b * (nodes[i] - (Real)0.5);
+        if (fabs(cos_t) <= 1) {
+          dist_nodes[i] = a * sqrt<Real>(1 + ((a * a) / (b * b) - 1) * cos_t * cos_t);
+        }
+      }
+    }
+
+    const auto& node_wts = LegQuadRule<Real>::wts(order);
+    #pragma omp parallel for schedule(static)
+    for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) { // Nodes, weights and far distances per element
+      Vector<Real> X_(nnode_per_elem * detail_quadelem::COORD_DIM, X.begin() + elem_idx * nnode_per_elem * detail_quadelem::COORD_DIM, false);
+      Vector<Real> Xn_(nnode_per_elem * detail_quadelem::COORD_DIM, Xn.begin() + elem_idx * nnode_per_elem * detail_quadelem::COORD_DIM, false);
+      Vector<Real> wts_(nnode_per_elem, wts.begin() + elem_idx * nnode_per_elem, false);
+      Vector<Real> dist_far_(nnode_per_elem, dist_far.begin() + elem_idx * nnode_per_elem, false);
+
+      ScratchBuf<Real> Xa_buf(nnode_per_elem), dXdu_buf(nnode_per_elem * detail_quadelem::COORD_DIM), dXdv_buf(nnode_per_elem * detail_quadelem::COORD_DIM);
+      Vector<Real> Xa(Xa_buf), dXdu(dXdu_buf), dXdv(dXdv_buf);
+      GetGeom(&X_, &Xn_, &Xa, &dXdu, &dXdv, nodes, nodes, elem_idx);
+
+      for (Integer i = 0; i < order; i++) {
+        for (Integer j = 0; j < order; j++) {
+          const Long p = i * order + j;
+          const Real wu = node_wts[i];
+          const Real wv = node_wts[j];
+          wts_[p] = Xa[p] * wu * wv;
+
+          const Real len_u = sqrt<Real>(dXdu[p * detail_quadelem::COORD_DIM + 0] * dXdu[p * detail_quadelem::COORD_DIM + 0] +
+              dXdu[p * detail_quadelem::COORD_DIM + 1] * dXdu[p * detail_quadelem::COORD_DIM + 1] +
+              dXdu[p * detail_quadelem::COORD_DIM + 2] * dXdu[p * detail_quadelem::COORD_DIM + 2]);
+          const Real len_v = sqrt<Real>(dXdv[p * detail_quadelem::COORD_DIM + 0] * dXdv[p * detail_quadelem::COORD_DIM + 0] +
+              dXdv[p * detail_quadelem::COORD_DIM + 1] * dXdv[p * detail_quadelem::COORD_DIM + 1] +
+              dXdv[p * detail_quadelem::COORD_DIM + 2] * dXdv[p * detail_quadelem::COORD_DIM + 2]);
+          dist_far_[p] = std::max(dist_nodes[i] * len_u, dist_nodes[j] * len_v);
+        }
+      }
+    }
   }
 
   template <class Real> template <class Kernel> void QuadElemList<Real>::SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const Real tol, const bool trg_dot_prod, const ElementListBase<Real>* self) {
