@@ -1654,8 +1654,9 @@ namespace sctl {
 
     template <class Real> void BuildCenteredLogSingular1D(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer quad_order) {
       const Integer ord = 16;
-      std::vector<Real> px, pw;
-      const auto add_alpert = [&px, &pw, ord](const Real a, const Real b, const bool log_a, const bool log_b) {
+      delta.ReInit(0);
+      w.ReInit(0);
+      const auto add_alpert = [&delta, &w, ord](const Real a, const Real b, const bool log_a, const bool log_b) {
         const auto L = (log_a ? QuadLogExtraPtNodes<Real>(ord) : QuadSmoothExtraPtNodes<Real>(ord));
         const auto R = (log_b ? QuadLogExtraPtNodes<Real>(ord) : QuadSmoothExtraPtNodes<Real>(ord));
         const Integer skipL = L.NodesToSkip, skipR = R.NodesToSkip;
@@ -1663,25 +1664,25 @@ namespace sctl {
         const Integer N1 = N - 1;
         const Real h = (b - a) / (Real)N1;
         for (Integer i = skipL; i <= N1 - skipR; i++) {
-          px.push_back(a + (Real)i*h);
-          pw.push_back(h);
+          delta.PushBack(a + (Real)i*h);
+          w.PushBack(h);
         }
         for (Integer i = 0; i < L.ExtraNodes.Dim(); i++) {
-          px.push_back(a + L.ExtraNodes[i]*h);
-          pw.push_back(L.ExtraWeights[i]*h);
+          delta.PushBack(a + L.ExtraNodes[i]*h);
+          w.PushBack(L.ExtraWeights[i]*h);
         }
         for (Integer i = 0; i < R.ExtraNodes.Dim(); i++) {
-          px.push_back(b - R.ExtraNodes[i]*h);
-          pw.push_back(R.ExtraWeights[i]*h);
+          delta.PushBack(b - R.ExtraNodes[i]*h);
+          w.PushBack(R.ExtraWeights[i]*h);
         }
       };
       Vector<Real> gnds, gwts;
       LegQuadRule<Real>::ComputeNdsWts(&gnds, &gwts, quad_order);
-      const auto add_gl = [&px, &pw, quad_order, &gnds, &gwts](const Real a, const Real b) {
+      const auto add_gl = [&delta, &w, quad_order, &gnds, &gwts](const Real a, const Real b) {
         const Real len = b - a;
         for (Integer i = 0; i < quad_order; i++) {
-          px.push_back(a + len*gnds[i]);
-          pw.push_back(len*gwts[i]);
+          delta.PushBack(a + len*gnds[i]);
+          w.PushBack(len*gwts[i]);
         }
       };
       { // Left of v0: halving panels, then an Alpert panel
@@ -1703,13 +1704,6 @@ namespace sctl {
           prev = bnd;
         }
         add_alpert((Real)0, prev, true, false);
-      }
-      const Long N = (Long)px.size();
-      delta.ReInit(N);
-      w.ReInit(N);
-      for (Long i = 0; i < N; i++) {
-        delta[i] = px[i];
-        w[i] = pw[i];
       }
     }
 
@@ -1752,8 +1746,7 @@ namespace sctl {
         LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, quad_order);
         const auto graded_rule = [Lvl, &qnds, &qwts](Vector<Real>& delta, Vector<Real>& w, const Real u0) {
           const Integer q = qnds.Dim();
-          std::vector<Real> d_, w_;
-          const auto side = [&d_, &w_, Lvl, q, &qnds, &qwts](const Real span, const Real sgn) {
+          const auto side = [&delta, &w, Lvl, q, &qnds, &qwts](const Real span, const Real sgn) {
             if (!(span > 0)) return;
             Real a = 0;
             for (Integer k = Lvl; k >= 0; k--) {
@@ -1761,8 +1754,8 @@ namespace sctl {
               const Real len = b - a;
               if (len > 0) {
                 for (Integer i = 0; i < q; i++) {
-                  d_.push_back(sgn*(a + len*qnds[i]));
-                  w_.push_back(len*qwts[i]);
+                  delta.PushBack(sgn*(a + len*qnds[i]));
+                  w.PushBack(len*qwts[i]);
                 }
               }
               a = b;
@@ -1770,13 +1763,6 @@ namespace sctl {
           };
           side(1-u0, (Real)1);
           side(u0,   (Real)-1);
-          const Long N = (Long)d_.size();
-          delta.ReInit(N);
-          w.ReInit(N);
-          for (Long i = 0; i < N; i++) {
-            delta[i] = d_[i];
-            w[i] = w_[i];
-          }
         };
         Vector<QuadRule1D<Real>> rules(order);
         for (Integer i = 0; i < order; i++) {
