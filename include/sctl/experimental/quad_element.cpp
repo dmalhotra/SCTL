@@ -26,7 +26,6 @@ namespace sctl {
     template <class Real> struct Access {
       static const Vector<Real>& Coord(const QuadElemList<Real>& qel) { return qel.coord; }
       static typename QuadElemList<Real>::QuadScheme Scheme(const QuadElemList<Real>& qel) { return qel.scheme_; }
-      static const Vector<Real>& XNode(const QuadElemList<Real>& qel) { return qel.X_node; }
       static const Vector<Real>& XnNode(const QuadElemList<Real>& qel) { return qel.Xn_node; }
       static const Vector<Real>& DCoordDu(const QuadElemList<Real>& qel) { return qel.dcoord_du; }
       static const Vector<Real>& DCoordDv(const QuadElemList<Real>& qel) { return qel.dcoord_dv; }
@@ -563,12 +562,11 @@ namespace sctl {
 
       #pragma omp parallel for schedule(static)
       for (Long elem_idx = 0; elem_idx < qel.Size(); elem_idx++) {
-        // Coordinates and tangents component by component, node positions and normals point by point
+        // Coordinates and tangents component by component, normals point by point
         const Long offset = elem_idx*nnode*COORD_DIM;
         const Vector<Real> coord(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::Coord(qel).begin() + offset, false);
         const Vector<Real> dXu(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::DCoordDu(qel).begin() + offset, false);
         const Vector<Real> dXv(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::DCoordDv(qel).begin() + offset, false);
-        const Vector<Real> Xnodes(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::XNode(qel).begin() + offset, false);
         const Vector<Real> Xnnodes(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::XnNode(qel).begin() + offset, false);
 
         Matrix<Real>& M = M_lst[elem_idx];
@@ -578,11 +576,8 @@ namespace sctl {
         Matrix<Real> M_acc(nnode, KDIM0*KDIM1_out, M_acc_buf.begin(), false);
         for (Integer ti = 0; ti < order; ti++) {
           for (Integer tj = 0; tj < order; tj++) {
-            const Long t = ti*order + tj;
-            const Vector<Real> Xtrg(COORD_DIM, (Iterator<Real>)Xnodes.begin() + t*COORD_DIM, false);
-            const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-            self_interac_one_trg(M_acc, coord, ti, tj, Xtrg, ntrg, Xnnodes, dXu, dXv);
-            ScatterTargetBlock(M, M_acc, t, KDIM1_out);
+            self_interac_one_trg(M_acc, coord, Xnnodes, dXu, dXv, ti, tj);
+            ScatterTargetBlock(M, M_acc, ti*order + tj, KDIM1_out);
           }
         }
       }
@@ -1102,12 +1097,13 @@ namespace sctl {
       return table;
     }
 
-    template <Integer order, class Real, class Kernel> void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const Vector<Real>& coord, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
+    template <Integer order, class Real, class Kernel> void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Integer ti, const Integer tj, const bool trg_dot_prod, const Kernel& ker, const Integer digits) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer KDIM1full = Kernel::TrgDim();
-      SCTL_ASSERT(coord.Dim() == COORD_DIM*(Long)order*order);
+      SCTL_ASSERT(coord.Dim() == COORD_DIM*(Long)order*order && Xnnodes.Dim() == coord.Dim());
       const Long nnode = (Long)order*order;
-      const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full/COORD_DIM : KDIM1full;
+      const Long t = (Long)ti*order + tj;
+      const Integer KDIM1_out = trg_dot_prod ? KDIM1full/COORD_DIM : KDIM1full;
       const Integer C = KDIM0*KDIM1_out;
       if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != C) M_acc.ReInit(nnode, C);
       M_acc.SetZero();
@@ -1116,7 +1112,12 @@ namespace sctl {
       const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
       ScratchBuf<Real> cs_buf(COORD_DIM*nnode);
       Vector<Real> cs(cs_buf);
-      ShiftedElemCoord(cs, coord, Xtrg);
+      { // Coordinates relative to the target node
+        StaticArray<Real,COORD_DIM> Xtrg_buf;
+        for (Integer k = 0; k < COORD_DIM; k++) Xtrg_buf[k] = coord[k*nnode + t];
+        const Vector<Real> Xtrg(COORD_DIM, Xtrg_buf, false);
+        ShiftedElemCoord(cs, coord, Xtrg);
+      }
 
       Real G[4];
       { // Metric of the element at the target node
@@ -1243,6 +1244,7 @@ namespace sctl {
         { // Weighted kernel at the rule's points
           StaticArray<Real,COORD_DIM> Xt0{0,0,0};
           const Vector<Real> Xt0_v(COORD_DIM, Xt0, false);
+          const Vector<Real> normal_trg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
           WeightedKernel<Real>(KW_buf.begin(), Xt0_v.begin(), Xs.begin(), Xn.begin(), wq.begin(), ns*nt, nt, (Real)1, false, normal_trg, ker);
         }
 
@@ -1272,9 +1274,8 @@ namespace sctl {
     template <Integer order, class Real, class Kernel> void SelfInteracDuffy(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       DuffyTable<order,Real>(); // precomp cache
       NearGradeTable<order,Real>(CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order); // precomp cache
-      const auto self_interac_one_trg = [&ker, digits](Matrix<Real>& M_acc, const Vector<Real>& coord, const Integer ti, const Integer tj,
-          const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>&, const Vector<Real>&, const Vector<Real>&) {
-        SelfInteracBlockDuffy<order,Real>(M_acc, coord, ti, tj, Xtrg, ntrg, ker, digits);
+      const auto self_interac_one_trg = [&ker, digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>&, const Vector<Real>&, const Integer ti, const Integer tj) {
+        SelfInteracBlockDuffy<order,Real>(M_acc, coord, Xnnodes, ti, tj, trg_dot_prod, ker, digits);
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }
@@ -1328,13 +1329,12 @@ namespace sctl {
       }();
 
       const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-      const auto self_interac_one_trg = [&nds, rmin_coeff, &ker, near_digits](Matrix<Real>& M_acc, const Vector<Real>& coord, const Integer ti, const Integer tj,
-          const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>& Xnnodes, const Vector<Real>& dXu, const Vector<Real>& dXv) {
+      const auto self_interac_one_trg = [&nds, rmin_coeff, &ker, near_digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer ti, const Integer tj) {
+        const Long nnode = (Long)order*order;
+        const Long t = ti*order + tj;
         ScratchBuf<Real> hh_Xt1_buf(COORD_DIM), hh_off_buf(proxy_dist.Dim()*COORD_DIM);
         Vector<Real> hh_Xt1(hh_Xt1_buf), hh_off(hh_off_buf);
         { // Proxy points along the normal, sized by edge distance
-          const Long nnode = (Long)order*order;
-          const Long t = ti*order + tj;
           Real su2 = 0, sv2 = 0;
           for (Integer k = 0; k < COORD_DIM; k++) {
             su2 += dXu[k*nnode+t]*dXu[k*nnode+t];
@@ -1342,12 +1342,13 @@ namespace sctl {
           }
           const Real edge_u = std::min<Real>(nds[ti], 1-nds[ti]), edge_v = std::min<Real>(nds[tj], 1-nds[tj]);
           const Real rmin = rmin_coeff * std::min<Real>(edge_u*sqrt<Real>(su2), edge_v*sqrt<Real>(sv2));
-          for (Integer k = 0; k < COORD_DIM; k++) hh_Xt1[k] = Xtrg[k] + rmin*Xnnodes[t*COORD_DIM+k];
+          for (Integer k = 0; k < COORD_DIM; k++) hh_Xt1[k] = coord[k*nnode + t] + rmin*Xnnodes[t*COORD_DIM+k];
           for (Long j = 0; j < proxy_dist.Dim(); j++) {
             const Real rj = rmin*proxy_dist[j];
             for (Integer k = 0; k < COORD_DIM; k++) hh_off[j*COORD_DIM+k] = (rj-rmin)*Xnnodes[t*COORD_DIM+k];
           }
         }
+        const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
         NearInteracBlockDyadic<order,Real>(M_acc, coord, hh_Xt1, ntrg, ker, near_digits, hh_off, hh_w);
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
@@ -1523,8 +1524,12 @@ namespace sctl {
       CenteredURule<order,Real>(0, digits); // precomp cache
       CenteredVRule<order,Real>(0, digits); // precomp cache
       GLRule<Real>(digits); // precomp cache
-      const auto self_interac_one_trg = [&ker, digits](Matrix<Real>& M_acc, const Vector<Real>& coord, const Integer ti, const Integer tj,
-          const Vector<Real>& Xtrg, const Vector<Real>& ntrg, const Vector<Real>&, const Vector<Real>&, const Vector<Real>&) {
+      const auto self_interac_one_trg = [&ker, digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>&, const Vector<Real>&, const Integer ti, const Integer tj) {
+        const Long t = ti*order + tj;
+        StaticArray<Real,COORD_DIM> Xtrg_buf;
+        for (Integer k = 0; k < COORD_DIM; k++) Xtrg_buf[k] = coord[k*(Long)order*order + t];
+        const Vector<Real> Xtrg(COORD_DIM, Xtrg_buf, false);
+        const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
         M_acc.SetZero();
         const QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits);
         const QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, digits);
