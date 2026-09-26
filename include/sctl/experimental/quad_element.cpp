@@ -1643,35 +1643,6 @@ namespace sctl {
       dMT = dM.Transpose();
     }
 
-    template <class Real> void BuildCenteredGraded1D(Vector<Real>& delta, Vector<Real>& w, const Real u0, const Integer levels, const Vector<Real>& qnds, const Vector<Real>& qwts) {
-      const Integer q = qnds.Dim();
-      std::vector<Real> d_, w_;
-      const auto side = [&d_, &w_, levels, q, &qnds, &qwts](const Real span, const Real sgn) {
-        if (!(span > 0)) return;
-        Real a = 0;
-        for (Integer k = levels; k >= 0; k--) {
-          const Real b = span * pow<Real>((Real)0.5, (Integer)k);
-          const Real len = b - a;
-          if (len > 0) {
-            for (Integer i = 0; i < q; i++) {
-              d_.push_back(sgn*(a + len*qnds[i]));
-              w_.push_back(len*qwts[i]);
-            }
-          }
-          a = b;
-        }
-      };
-      side(1-u0, (Real)1);
-      side(u0,   (Real)-1);
-      const Long N = (Long)d_.size();
-      delta.ReInit(N);
-      w.ReInit(N);
-      for (Long i = 0; i < N; i++) {
-        delta[i] = d_[i];
-        w[i] = w_[i];
-      }
-    }
-
     template <class Real> void BuildCenteredLogSingular1D(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer quad_order) {
       const Integer ord = 16;
       std::vector<Real> px, pw;
@@ -1770,10 +1741,38 @@ namespace sctl {
         const Integer Lvl = std::min<Integer>(MaxRefineLvl<Real>, 2*digits + 6);
         Vector<Real> qnds, qwts;
         LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, quad_order);
+        const auto graded_rule = [Lvl, &qnds, &qwts](Vector<Real>& delta, Vector<Real>& w, const Real u0) {
+          const Integer q = qnds.Dim();
+          std::vector<Real> d_, w_;
+          const auto side = [&d_, &w_, Lvl, q, &qnds, &qwts](const Real span, const Real sgn) {
+            if (!(span > 0)) return;
+            Real a = 0;
+            for (Integer k = Lvl; k >= 0; k--) {
+              const Real b = span * pow<Real>((Real)0.5, (Integer)k);
+              const Real len = b - a;
+              if (len > 0) {
+                for (Integer i = 0; i < q; i++) {
+                  d_.push_back(sgn*(a + len*qnds[i]));
+                  w_.push_back(len*qwts[i]);
+                }
+              }
+              a = b;
+            }
+          };
+          side(1-u0, (Real)1);
+          side(u0,   (Real)-1);
+          const Long N = (Long)d_.size();
+          delta.ReInit(N);
+          w.ReInit(N);
+          for (Long i = 0; i < N; i++) {
+            delta[i] = d_[i];
+            w[i] = w_[i];
+          }
+        };
         Vector<QuadRule1D<Real>> rules(order);
         for (Integer i = 0; i < order; i++) {
           Vector<Real> delta;
-          BuildCenteredGraded1D(delta, rules[i].w, nds[i], Lvl, qnds, qwts);
+          graded_rule(delta, rules[i].w, nds[i]);
           LagrangeAtOffset<order,Real>(rules[i].M, rules[i].dM, rules[i].MT, rules[i].dMT, delta, i);
         }
         return rules;
@@ -1799,20 +1798,6 @@ namespace sctl {
       return table.Get(digits, build)[tj];
     }
 
-    template <Integer order, class Real, class Kernel> void SelfInteracBlockTensorProduct(Matrix<Real>& M_acc, const QuadElemList<Real>& qel, const Long elem_idx, const Integer ti, const Integer tj, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits) {
-      static constexpr Integer KDIM0 = Kernel::SrcDim();
-      static constexpr Integer KDIM1full = Kernel::TrgDim();
-      SCTL_ASSERT(qel.Order() == order);
-      const Long nnode = (Long)order * order;
-      const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full / COORD_DIM : KDIM1full;
-      if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != KDIM0*KDIM1_out) M_acc.ReInit(nnode, KDIM0*KDIM1_out);
-      M_acc.SetZero();
-
-      const QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits);
-      const QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, digits);
-      IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, normal_trg, ru, rv, ker);
-    }
-
     template <Integer order, class Real, class Kernel> void SelfInteracTensorProduct(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       CenteredURule<order,Real>(0, digits); // precomp cache
       CenteredVRule<order,Real>(0, digits); // precomp cache
@@ -1822,7 +1807,10 @@ namespace sctl {
           const Vector<Real>&, const Vector<Real>&, const Integer KDIM1_out) {
         ScratchBuf<Real> M_acc_buf((Long)order*order*Kernel::SrcDim()*KDIM1_out);
         Matrix<Real> M_acc((Long)order*order, Kernel::SrcDim()*KDIM1_out, M_acc_buf.begin(), false);
-        SelfInteracBlockTensorProduct<order,Real>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
+        M_acc.SetZero();
+        const QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits);
+        const QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, digits);
+        IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ru, rv, ker);
         ScatterTargetBlock(M, M_acc, t, KDIM1_out);
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, false, self_interac_one_trg);
