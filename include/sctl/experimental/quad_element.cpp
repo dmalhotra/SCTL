@@ -28,6 +28,10 @@ namespace sctl {
     template <class Real> struct Access {
       static const Vector<Real>& Coord(const QuadElemList<Real>& qel) { return qel.coord; }
       static typename QuadElemList<Real>::QuadScheme Scheme(const QuadElemList<Real>& qel) { return qel.scheme_; }
+      static const Vector<Real>& XNode(const QuadElemList<Real>& qel) { return qel.X_node; }
+      static const Vector<Real>& XnNode(const QuadElemList<Real>& qel) { return qel.Xn_node; }
+      static const Vector<Real>& DCoordDu(const QuadElemList<Real>& qel) { return qel.dcoord_du; }
+      static const Vector<Real>& DCoordDv(const QuadElemList<Real>& qel) { return qel.dcoord_dv; }
     };
 
     template <class Real> static constexpr Integer MaxDigits = 1 + GetSigBits<Real>::value()*30103/100000;
@@ -556,23 +560,22 @@ namespace sctl {
     }
 
     template <Integer order, class Real, class Kernel, class SelfInteracOneTrg>
-    void SelfInteracElems(Vector<Matrix<Real>>& M_lst, const bool trg_dot_prod, const QuadElemList<Real>& qel, const bool want_tangents, SelfInteracOneTrg self_interac_one_trg) {
+    void SelfInteracElems(Vector<Matrix<Real>>& M_lst, const bool trg_dot_prod, const QuadElemList<Real>& qel, SelfInteracOneTrg self_interac_one_trg) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer KDIM1full = Kernel::TrgDim();
       SCTL_ASSERT(qel.Order() == order);
       SCTL_ASSERT((Long)M_lst.Dim() == qel.Size());
       const Long nnode = (Long)order * order;
       const Integer KDIM1_out = trg_dot_prod ? KDIM1full / COORD_DIM : KDIM1full;
-      const bool want_normals = (want_tangents || trg_dot_prod);
-      const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
 
       #pragma omp parallel for schedule(static)
       for (Long elem_idx = 0; elem_idx < qel.Size(); elem_idx++) {
-        ScratchBuf<Real> Xnodes_buf(nnode*COORD_DIM), Xnnodes_buf(want_normals ? nnode*COORD_DIM : 0);
-        ScratchBuf<Real> dXu_buf(want_tangents ? nnode*COORD_DIM : 0), dXv_buf(want_tangents ? nnode*COORD_DIM : 0);
-        Vector<Real> Xnodes(Xnodes_buf), Xnnodes(Xnnodes_buf), dXu(dXu_buf), dXv(dXv_buf);
-        qel.GetGeom(&Xnodes, (want_normals ? &Xnnodes : nullptr), nullptr,
-            (want_tangents ? &dXu : nullptr), (want_tangents ? &dXv : nullptr), nds, nds, elem_idx);
+        // Node positions and normals point by point, tangents component by component
+        const Long offset = elem_idx*nnode*COORD_DIM;
+        const Vector<Real> Xnodes(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::XNode(qel).begin() + offset, false);
+        const Vector<Real> Xnnodes(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::XnNode(qel).begin() + offset, false);
+        const Vector<Real> dXu(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::DCoordDu(qel).begin() + offset, false);
+        const Vector<Real> dXv(nnode*COORD_DIM, (Iterator<Real>)Access<Real>::DCoordDv(qel).begin() + offset, false);
 
         Matrix<Real>& M = M_lst[elem_idx];
         if (M.Dim(0) != nnode*KDIM0 || M.Dim(1) != nnode*KDIM1_out) M.ReInit(nnode*KDIM0, nnode*KDIM1_out);
@@ -580,8 +583,8 @@ namespace sctl {
         for (Integer ti = 0; ti < order; ti++) {
           for (Integer tj = 0; tj < order; tj++) {
             const Long t = ti*order + tj;
-            const Vector<Real> Xtrg(COORD_DIM, Xnodes.begin() + t*COORD_DIM, false);
-            const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
+            const Vector<Real> Xtrg(COORD_DIM, (Iterator<Real>)Xnodes.begin() + t*COORD_DIM, false);
+            const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
             self_interac_one_trg(M, elem_idx, t, ti, tj, Xtrg, ntrg, Xnodes, Xnnodes, dXu, dXv, KDIM1_out);
           }
         }
@@ -648,7 +651,7 @@ namespace sctl {
         }
       }
     }
-    { // Node positions and normals returned by GetNodeCoord
+    { // Node positions and normals
       X_node.ReInit(nelem * elem_stride);
       Xn_node.ReInit(nelem * elem_stride);
       node_cnt.ReInit(nelem);
@@ -1521,7 +1524,7 @@ namespace sctl {
         SelfInteracBlockDuffy<order,Real>(M_acc, qel, elem_idx, ti, tj, Xtrg, ntrg, ker, digits);
         ScatterTargetBlock(M, M_acc, t, KDIM1_out);
       };
-      SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, false, self_interac_one_trg);
+      SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }
 
   }
@@ -1579,10 +1582,11 @@ namespace sctl {
         ScratchBuf<Real> hh_Xt1_buf(COORD_DIM), hh_off_buf(proxy_dist.Dim()*COORD_DIM);
         Vector<Real> hh_Xt1(hh_Xt1_buf), hh_off(hh_off_buf);
         { // Proxy points along the normal, sized by edge distance
+          const Long nnode = (Long)order*order;
           Real su2 = 0, sv2 = 0;
           for (Integer k = 0; k < COORD_DIM; k++) {
-            su2 += dXu[t*COORD_DIM+k]*dXu[t*COORD_DIM+k];
-            sv2 += dXv[t*COORD_DIM+k]*dXv[t*COORD_DIM+k];
+            su2 += dXu[k*nnode+t]*dXu[k*nnode+t];
+            sv2 += dXv[k*nnode+t]*dXv[k*nnode+t];
           }
           const Real edge_u = std::min<Real>(nds[ti], 1-nds[ti]), edge_v = std::min<Real>(nds[tj], 1-nds[tj]);
           const Real rmin = rmin_coeff * std::min<Real>(edge_u*sqrt<Real>(su2), edge_v*sqrt<Real>(sv2));
@@ -1597,7 +1601,7 @@ namespace sctl {
         NearInteracDyadic<order,Real>(M_hh, hh_Xt1, ntrg, ker, elem_idx, qel, near_digits, hh_off, hh_w);
         ScatterTargetBlock(M, M_hh, t, KDIM1_out);
       };
-      SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, true, self_interac_one_trg);
+      SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }
 
   }
@@ -1813,7 +1817,7 @@ namespace sctl {
         IntegratePanel<order,Real>(M_acc, qel, elem_idx, Xtrg, ntrg, ru, rv, ker);
         ScatterTargetBlock(M, M_acc, t, KDIM1_out);
       };
-      SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, false, self_interac_one_trg);
+      SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }
 
   }
