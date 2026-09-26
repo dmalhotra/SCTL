@@ -102,7 +102,7 @@ namespace sctl {
     };
 
     /** Returns the {b_ellipse, quad_order} pair for each digits, from QuadParams at tolerance 10^-digits; one table per QuadParams function. */
-    template <class Real, void (*QuadParams)(Real, Real&, Integer&)> const QuadParamSet<Real>& QuadParamsForDigits(const Integer digits) {
+    template <class Real, void (*QuadParams)(Real, Real&, Integer&)> const QuadParamSet<Real>& CachedQuadParams(const Integer digits) {
       static const std::array<QuadParamSet<Real>, MaxDigits<Real>> table = []() {
         std::array<QuadParamSet<Real>, MaxDigits<Real>> t{};
         for (Integer d = 0; d < MaxDigits<Real>; d++) QuadParams(pow<Real,Long>((Real)0.1, (Long)d), t[d].b_ellipse, t[d].quad_order);
@@ -831,12 +831,12 @@ namespace sctl {
     using detail_quadelem::PrecompReal;
     using detail_quadelem::QuadRule1D;
 
+    using detail_quadelem::CachedQuadParams;
     using detail_quadelem::EvalPoint;
     using detail_quadelem::GetClosestPoint;
     using detail_quadelem::IntegrateTensorRule;
     using detail_quadelem::LagrangeDiffMat;
     using detail_quadelem::NearInteracTargets;
-    using detail_quadelem::QuadParamsForDigits;
     using detail_quadelem::ShiftedElemCoord;
 
     template <class Real> void QuadParams(const Real tol, Real& b_ellipse, Integer& quad_order) {
@@ -852,12 +852,12 @@ namespace sctl {
 
     /** Returns the Gauss-Legendre order of each piece for each digits, from the dyadic QuadParams. */
     template <class Real> inline Integer QuadOrder(const Integer digits) {
-      return QuadParamsForDigits<Real, QuadParams<Real>>(digits).quad_order;
+      return CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
     }
 
     /** Returns b_ellipse for each digits, from the dyadic QuadParams; pieces larger than dist/b_ellipse are split. */
     template <class Real> inline Real BEllipse(const Integer digits) {
-      return QuadParamsForDigits<Real, QuadParams<Real>>(digits).b_ellipse;
+      return CachedQuadParams<Real, QuadParams<Real>>(digits).b_ellipse;
     }
 
     template <class Real> struct GradeRule : QuadRule1D<Real> {
@@ -1116,12 +1116,12 @@ namespace sctl {
     using detail_quadelem::MaxRefineLvl;
     using detail_quadelem::QuadRule1D;
 
+    using detail_quadelem::CachedQuadParams;
     using detail_quadelem::DiffMat;
     using detail_quadelem::EvalPoint;
     using detail_quadelem::GetClosestPoint;
     using detail_quadelem::IntegratePanel;
     using detail_quadelem::NearInteracTargets;
-    using detail_quadelem::QuadParamsForDigits;
 
     template <class Real> void QuadParams(const Real tol, Real& b_ellipse, Integer& quad_order) {
       const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
@@ -1130,21 +1130,14 @@ namespace sctl {
       quad_order = std::max<Integer>(1, (Integer)ceil<Real>(-log<Real>(((15*(rho*rho-1))/64)*tol_)/log<Real>(rho)*(Real)0.5 + 1));
     }
 
-    /** Returns the Gauss-Legendre order of each segment for each digits, from the tensor-product QuadParams. */
-    template <class Real> inline Integer QuadOrder(const Integer digits) {
-      return QuadParamsForDigits<Real, QuadParams<Real>>(digits).quad_order;
-    }
-
-    /** Returns b_ellipse for each digits (0.725 for all); it sets the segment grading ratio and the smallest segment. */
-    template <class Real> inline Real BEllipse(const Integer digits) {
-      return QuadParamsForDigits<Real, QuadParams<Real>>(digits).b_ellipse;
-    }
-
-    /** Returns QuadOrder(digits) Gauss-Legendre nodes and weights on [0, 1] for each digits. */
+    /** Returns quad_order-point Gauss-Legendre nodes and weights on [0, 1] for each digits. */
     template <class Real> const std::pair<Vector<Real>, Vector<Real>>& GLRule(const Integer digits) {
       static const std::array<std::pair<Vector<Real>, Vector<Real>>,MaxDigits<Real>> gl = []() {
         std::array<std::pair<Vector<Real>, Vector<Real>>,MaxDigits<Real>> t;
-        for (Integer d = 0; d < MaxDigits<Real>; d++) LegQuadRule<Real>::ComputeNdsWts(&t[d].first, &t[d].second, QuadOrder<Real>(d));
+        for (Integer d = 0; d < MaxDigits<Real>; d++) {
+          const Integer quad_order = CachedQuadParams<Real, QuadParams<Real>>(d).quad_order;
+          LegQuadRule<Real>::ComputeNdsWts(&t[d].first, &t[d].second, quad_order);
+        }
         return t;
       }();
       SCTL_ASSERT(digits >= 0 && digits < MaxDigits<Real>);
@@ -1159,7 +1152,7 @@ namespace sctl {
         ScratchBuf<Real> useg(2*MaxSegments), vseg(2*MaxSegments);
         Long nseg_u, nseg_v;
         { // Segments graded toward the closest point
-          const Real b_ellipse = BEllipse<Real>(digits);
+          const Real b_ellipse = CachedQuadParams<Real, QuadParams<Real>>(digits).b_ellipse;
           Real ustar, vstar, h_param;
           { // Closest point, and its distance in parameter units
             const Real dist = GetClosestPoint(qel, ustar, vstar, elem_idx, Xtrg);
@@ -1618,12 +1611,13 @@ namespace sctl {
     using detail_quadelem::MaxRefineLvl;
     using detail_quadelem::QuadRule1D;
 
+    using detail_quadelem::CachedQuadParams;
     using detail_quadelem::DiffMat;
     using detail_quadelem::IntegratePanel;
     using detail_quadelem::ScatterTargetBlock;
     using detail_quadelem::SelfInteracElems;
     using detail_tensorprod_near::GLRule;
-    using detail_tensorprod_near::QuadOrder;
+    using detail_tensorprod_near::QuadParams;
 
     template <Integer order, class Real> void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& delta, const Integer ti) {
       const Long N = delta.Dim();
@@ -1735,12 +1729,12 @@ namespace sctl {
         std::mutex mtx;
     };
 
-    /** Returns the rule toward node ti along u for each (order, digits): QuadOrder(digits)-point Gauss-Legendre on intervals halving min(MaxRefineLvl, 2*digits+6) times toward the node on each side, with order x N interpolation matrices. */
+    /** Returns the rule toward node ti along u for each (order, digits): quad_order-point Gauss-Legendre on intervals halving min(MaxRefineLvl, 2*digits+6) times toward the node on each side, with order x N interpolation matrices. */
     template <Integer order, class Real> const QuadRule1D<Real>& CenteredURule(const Integer ti, const Integer digits) {
       static LazyTable<Vector<QuadRule1D<Real>>, MaxDigits<Real>> table;
       const auto build = [digits]() {
         const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-        const Integer quad_order = QuadOrder<Real>(digits);
+        const Integer quad_order = CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
         const Integer Lvl = std::min<Integer>(MaxRefineLvl<Real>, 2*digits + 6);
         Vector<Real> qnds, qwts;
         LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, quad_order);
@@ -1775,13 +1769,13 @@ namespace sctl {
       return table.Get(digits, build)[ti];
     }
 
-    /** Returns the rule toward node tj along v for each (order, digits): QuadOrder(digits)-point Gauss-Legendre on min(12, max(1, digits-5)) panels halving toward the node on each side, then one order-16 Alpert panel per side, log-corrected at the node, with order x N interpolation matrices. */
+    /** Returns the rule toward node tj along v for each (order, digits): quad_order-point Gauss-Legendre on min(12, max(1, digits-5)) panels halving toward the node on each side, then one order-16 Alpert panel per side, log-corrected at the node, with order x N interpolation matrices. */
     template <Integer order, class Real> const QuadRule1D<Real>& CenteredVRule(const Integer tj, const Integer digits) {
       static LazyTable<Vector<QuadRule1D<Real>>, MaxDigits<Real>> table;
       const auto build = [digits]() {
         const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
         const Integer Lvl = std::min<Integer>(12, std::max<Integer>(1, digits - 5));
-        const Integer quad_order = QuadOrder<Real>(digits);
+        const Integer quad_order = CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
         Vector<QuadRule1D<Real>> rules(order);
         for (Integer j = 0; j < order; j++) {
           Vector<Real> delta;
