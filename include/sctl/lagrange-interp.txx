@@ -157,7 +157,7 @@ namespace sctl {
         df[i] = df_;
       }
     } else {
-      Vector<Real> wts(N);
+      ScratchBuf<Real> wts(N);
       for (Long i = 0; i < N; i++) {
         for (Long j = 0; j < N; j++) wts[j] = dp(nds[i],j);
         for (Long k = 0; k < dof; k++) {
