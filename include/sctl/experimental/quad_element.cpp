@@ -1036,13 +1036,10 @@ namespace sctl {
 
     using detail_quadelem::COORD_DIM;
 
-    using detail_quadelem::CachedQuadParams;
     using detail_quadelem::DiffMat;
     using detail_quadelem::SelfInteracElems;
     using detail_quadelem::ShiftedElemCoord;
     using detail_quadelem::WeightedKernel;
-    using detail_dyadic_near::NearGradeTable;
-    using detail_dyadic_near::QuadParams;
 
     template <class Real> struct DuffyTri {
       bool swap_ab = false;
@@ -1299,7 +1296,6 @@ namespace sctl {
 
     template <Integer order, class Real, class Kernel> void SelfInteracDuffy(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       DuffyTable<order,Real>(); // precomp cache
-      NearGradeTable<order,Real>(CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order); // precomp cache
       const auto self_interac_one_trg = [&ker, digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>&, const Vector<Real>&, const Integer ti, const Integer tj) {
         SelfInteracBlockDuffy<order,Real>(M_acc, coord, Xnnodes, ti, tj, trg_dot_prod, ker, digits);
       };
