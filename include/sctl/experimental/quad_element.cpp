@@ -66,35 +66,6 @@ namespace sctl {
       }
     }
 
-    template <class Real> void NodalDerivs(const Vector<Real>& coord_slab, const Integer order, Vector<Real>& du_slab, Vector<Real>& dv_slab) {
-      const Long nnode_per_elem = (Long)order * order;
-      const Long ncomp = coord_slab.Dim() / nnode_per_elem;
-      SCTL_ASSERT(coord_slab.Dim() == ncomp * nnode_per_elem);
-      if (du_slab.Dim() != coord_slab.Dim()) du_slab.ReInit(coord_slab.Dim());
-      if (dv_slab.Dim() != coord_slab.Dim()) dv_slab.ReInit(coord_slab.Dim());
-
-      const auto& nodes = QuadElemList<Real>::ParamNodes(order);
-      ScratchBuf<Real> line_in_buf(order), line_out_buf(order);
-      Vector<Real> line_in(line_in_buf), line_out(line_out_buf);
-      for (Long k = 0; k < ncomp; k++) {
-        const Long cb = k * nnode_per_elem;
-        { // Differentiate along u, one v-node column at a time
-          for (Integer j = 0; j < order; j++) {
-            for (Integer i = 0; i < order; i++) line_in[i] = coord_slab[cb + i * order + j];
-            LagrangeInterp<Real>::Derivative(line_out, line_in, nodes);
-            for (Integer i = 0; i < order; i++) du_slab[cb + i * order + j] = line_out[i];
-          }
-        }
-        { // Differentiate along v, one u-node row at a time
-          for (Integer i = 0; i < order; i++) {
-            for (Integer j = 0; j < order; j++) line_in[j] = coord_slab[cb + i * order + j];
-            LagrangeInterp<Real>::Derivative(line_out, line_in, nodes);
-            for (Integer j = 0; j < order; j++) dv_slab[cb + i * order + j] = line_out[j];
-          }
-        }
-      }
-    }
-
     template <class Real> void LagrangeDiffMat(Matrix<Real>& D, const Vector<Real>& nds) {
       const Integer n = nds.Dim();
       Vector<Real> f((Long)n * n);
@@ -645,12 +616,36 @@ namespace sctl {
     { // Differentiate the coordinates along u and v
       dcoord_du.ReInit(coord.Dim());
       dcoord_dv.ReInit(coord.Dim());
-      for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
-        const Long base = elem_idx * elem_stride;
-        const Vector<Real> coord_(elem_stride, (Iterator<Real>)coord.begin() + base, false);
-        Vector<Real> du_(elem_stride, dcoord_du.begin() + base, false);
-        Vector<Real> dv_(elem_stride, dcoord_dv.begin() + base, false);
-        detail_quadelem::NodalDerivs<Real>(coord_, order, du_, dv_);
+      const auto transpose_blocks = [order = order, nnode_per_elem](Vector<Real>& out, const Vector<Real>& in) {
+        for (Long k = 0; k < in.Dim() / nnode_per_elem; k++) {
+          for (Integer i = 0; i < order; i++) {
+            for (Integer j = 0; j < order; j++) out[k * nnode_per_elem + j * order + i] = in[k * nnode_per_elem + i * order + j];
+          }
+        }
+      };
+
+      const auto& nodes = ParamNodes(order);
+      const Long nblk = detail_quadelem::COORD_DIM * nelem;
+      const Long nthreads = SCTL_GET_MAX_THREADS();
+      const Long chunk = std::max<Long>(1, std::min<Long>(64, (nblk + nthreads - 1) / nthreads));
+      const Long nchunk = (nblk + chunk - 1) / chunk;
+      #pragma omp parallel for schedule(static)
+      for (Long b = 0; b < nchunk; b++) {
+        const Long offset = b * chunk * nnode_per_elem;
+        const Long n = (std::min(nblk, (b + 1) * chunk) - b * chunk) * nnode_per_elem;
+        const Vector<Real> coord_(n, coord.begin() + offset, false);
+        { // Differentiate along v, the contiguous index
+          Vector<Real> dv_(n, dcoord_dv.begin() + offset, false);
+          LagrangeInterp<Real>::Derivative(dv_, coord_, nodes);
+        }
+        { // Differentiate along u through transposed copies
+          ScratchBuf<Real> coordT_buf(n), duT_buf(n);
+          Vector<Real> coordT(coordT_buf), duT(duT_buf);
+          Vector<Real> du_(n, dcoord_du.begin() + offset, false);
+          transpose_blocks(coordT, coord_);
+          LagrangeInterp<Real>::Derivative(duT, coordT, nodes);
+          transpose_blocks(du_, duT);
+        }
       }
     }
     { // Node positions and normals returned by GetNodeCoord
