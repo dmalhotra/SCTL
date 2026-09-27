@@ -97,14 +97,11 @@ TARGET_BIN = \
        $(BINDIR)/test-vec \
        $(BINDIR)/test-scratch-pool \
        $(BINDIR)/test-scratch-pool-perf \
-	   $(BINDIR)/test-quad-elem \
-	   $(BINDIR)/bench-scheme-compare
+	   $(BINDIR)/test-quad-elem
 
-.PHONY: all test clean scheme
+.PHONY: all test clean
 
 all : $(TARGET_BIN)
-
-scheme : $(BINDIR)/bench-scheme-compare
 
 
 $(BINDIR)/%: $(OBJDIR)/%.o
