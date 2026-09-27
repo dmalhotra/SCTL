@@ -1424,9 +1424,9 @@ namespace sctl {
       delta.ReInit(0);
       w.ReInit(0);
       const auto add_alpert = [&delta, &w, ord](const Real a, const Real b, const bool log_a, const bool log_b) {
-        const auto L = (log_a ? QuadLogExtraPtNodes<Real>(ord) : QuadSmoothExtraPtNodes<Real>(ord));
-        const auto R = (log_b ? QuadLogExtraPtNodes<Real>(ord) : QuadSmoothExtraPtNodes<Real>(ord));
-        const Integer skipL = L.NodesToSkip, skipR = R.NodesToSkip;
+        const auto& L = (log_a ? AlpertQuadRule<Real>::LogCorrection(ord) : AlpertQuadRule<Real>::SmoothCorrection(ord));
+        const auto& R = (log_b ? AlpertQuadRule<Real>::LogCorrection(ord) : AlpertQuadRule<Real>::SmoothCorrection(ord));
+        const Integer skipL = L.nskip, skipR = R.nskip;
         const Integer N = std::max<Integer>(skipL + skipR + 2, 2 * ord);
         const Integer N1 = N - 1;
         const Real h = (b - a) / (Real)N1;
@@ -1434,13 +1434,13 @@ namespace sctl {
           delta.PushBack(a + (Real)i*h);
           w.PushBack(h);
         }
-        for (Integer i = 0; i < L.ExtraNodes.Dim(); i++) {
-          delta.PushBack(a + L.ExtraNodes[i]*h);
-          w.PushBack(L.ExtraWeights[i]*h);
+        for (Integer i = 0; i < L.nds.Dim(); i++) {
+          delta.PushBack(a + L.nds[i]*h);
+          w.PushBack(L.wts[i]*h);
         }
-        for (Integer i = 0; i < R.ExtraNodes.Dim(); i++) {
-          delta.PushBack(b - R.ExtraNodes[i]*h);
-          w.PushBack(R.ExtraWeights[i]*h);
+        for (Integer i = 0; i < R.nds.Dim(); i++) {
+          delta.PushBack(b - R.nds[i]*h);
+          w.PushBack(R.wts[i]*h);
         }
       };
       Vector<Real> gnds, gwts;
