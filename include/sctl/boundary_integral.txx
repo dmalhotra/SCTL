@@ -697,11 +697,10 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::Setup() const {
-    if (setup_flag && setup_far_flag && setup_self_flag && setup_near_flag) return;
+    if (setup_flag && setup_far_flag && setup_near_flag) return;
     Profile::Tic("Setup", &comm_, true, 5);
     SetupBasic();
     SetupFar();
-    SetupSelf();
     SetupNear();
     Profile::Toc();
   }
@@ -890,7 +889,6 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetupSelf() const {
-    // TODO: skip SetupSelf when no on-surface targets.
     if (setup_self_flag) return;
     SetupBasic();
 
@@ -905,8 +903,26 @@ namespace sctl {
         elem_dsp[i] = (i==0?0:elem_dsp[i-1]+elem_cnt[i-1]);
       }
 
-      if (K_self.Dim() != (Nlst ? elem_dsp[Nlst-1]+elem_cnt[Nlst-1] : 0)) K_self.ReInit((Nlst ? elem_dsp[Nlst-1]+elem_cnt[Nlst-1] : 0));
-      // TODO: also pre-allocate elements of K_self from a memory pool.
+      const Long Nelem = (Nlst ? elem_dsp[Nlst-1]+elem_cnt[Nlst-1] : 0);
+      if (K_self.Dim() != Nelem) K_self.ReInit(Nelem);
+      { // Each element's matrix as a view into one buffer
+        const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
+        ScratchBuf<Long> cnt(Nelem), dsp(Nelem);
+        for (Long i = 0; i < Nlst; i++) {
+          const bool matrix_free = elem_lst_map.at(elem_lst_name[i])->MatrixFree();
+          #pragma omp parallel for schedule(static)
+          for (Long j = 0; j < elem_cnt[i]; j++) {
+            const Long e = elem_dsp[i] + j;
+            cnt[e] = (matrix_free ? 0 : elem_nds_cnt[e]*KDIM0 * elem_nds_cnt[e]*KDIM1_);
+          }
+        }
+        omp_par::scan(cnt.begin(), dsp.begin(), Nelem, 0);
+        K_self_data.ReInit(Nelem ? dsp[Nelem-1] + cnt[Nelem-1] : 0);
+        #pragma omp parallel for schedule(static)
+        for (Long e = 0; e < Nelem; e++) {
+          if (cnt[e]) K_self[e].ReInit(elem_nds_cnt[e]*KDIM0, elem_nds_cnt[e]*KDIM1_, K_self_data.begin() + dsp[e], false);
+        }
+      }
       for (Long i = 0; i < Nlst; i++) {
         const auto& name = elem_lst_name[i];
         const auto& elem_lst = elem_lst_map.at(name);
@@ -940,7 +956,6 @@ namespace sctl {
     near_blk_cnt.ReInit(0);
     SetupBasic();
     SetupFar();
-    SetupSelf();
 
     Profile::Tic("SetupNear", &comm_, true, 6);
     Profile::Tic("BuildNearLst", &comm_, true, 7);
@@ -1006,6 +1021,32 @@ namespace sctl {
     }
     Profile::Toc();
 
+    { // Self-interaction matrices, used only for targets at a node of their near element
+      const Long Nelem = near_elem_cnt.Dim();
+      bool trg_at_node = false;
+      #pragma omp parallel for schedule(static) reduction(||:trg_at_node)
+      for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) {
+        if (trg_at_node) continue;
+        const Long elem_lst_idx = std::lower_bound(elem_lst_dsp.begin(), elem_lst_dsp.end(), elem_idx+1) - elem_lst_dsp.begin() - 1;
+        if (elem_lst_map.at(elem_lst_name[elem_lst_idx])->MatrixFree()) continue;
+        const ConstIterator<Real> Xs = Xsurf.begin() + elem_nds_dsp[elem_idx]*COORD_DIM;
+        for (Long k = 0; k < near_elem_cnt[elem_idx] && !trg_at_node; k++) {
+          const ConstIterator<Real> Xt_ = Xtrg_near.begin() + (near_elem_dsp[elem_idx]+k)*COORD_DIM;
+          for (Long n = 0; n < elem_nds_cnt[elem_idx] && !trg_at_node; n++) {
+            Real r2 = 0;
+            for (Long kk = 0; kk < COORD_DIM; kk++) {
+              const Real d = Xt_[kk] - Xs[n*COORD_DIM+kk];
+              r2 += d*d;
+            }
+            trg_at_node = (r2 == 0);
+          }
+        }
+      }
+      StaticArray<Long,2> any_trg_at_node{(Long)trg_at_node, 0};
+      comm_.Allreduce(any_trg_at_node+0, any_trg_at_node+1, 1, CommOp::MAX); // same setup steps on every rank
+      if (any_trg_at_node[1]) SetupSelf();
+    }
+
     { // Set near_blk_elem, near_blk_t0, near_blk_cnt
       // grain is sized to cover the team; with many elements it exceeds the per-element target
       // count, leaving one block per element. Depends only on the near-list, so build once.
@@ -1016,8 +1057,7 @@ namespace sctl {
       Vector<Long> blk_cnt(Nelem, cnt_buf.begin(), false), blk_dsp(Nelem, dsp_buf.begin(), false);
       #pragma omp parallel for schedule(static)
       for (Long e = 0; e < Nelem; e++) blk_cnt[e] = (near_elem_cnt[e] + grain-1) / grain;
-      if (Nelem) blk_dsp[0] = 0; // omp_par::scan does not write B[0]
-      omp_par::scan(blk_cnt.begin(), blk_dsp.begin(), Nelem);
+      omp_par::scan(blk_cnt.begin(), blk_dsp.begin(), Nelem, 0);
       const Long Nblk = (Nelem ? blk_dsp[Nelem-1] + blk_cnt[Nelem-1] : 0);
       near_blk_elem.ReInit(Nblk); near_blk_t0.ReInit(Nblk); near_blk_cnt.ReInit(Nblk);
       #pragma omp parallel for schedule(static)
