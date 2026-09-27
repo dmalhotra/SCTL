@@ -152,6 +152,10 @@ namespace sctl {
        * - Hedgehog: self, the potential at five proxy points along the normal
        *   at the target node, computed with the near rule of Duffy and
        *   extrapolated to the surface; near, as for Duffy.
+       *
+       * At a target on the surface, TensorProduct and Duffy return the
+       * principal value and Hedgehog the limit from the side of the normal;
+       * for a double-layer kernel the two differ by the jump, half the density.
        */
       enum class QuadScheme { TensorProduct, Duffy, Hedgehog };
 
