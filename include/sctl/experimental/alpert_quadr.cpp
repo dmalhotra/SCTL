@@ -1,6 +1,10 @@
+#ifndef _SCTL_ALPERT_QUADR_CPP_
+#define _SCTL_ALPERT_QUADR_CPP_
+
 #include "sctl/common.hpp"            // for Integer, SCTL_ASSERT_MSG
 #include "sctl/math_utils.hpp"        // for atoreal
 #include "sctl/vector.hpp"            // for Vector
+#include "sctl/experimental/alpert_quadr.hpp"  // for ExtraPtResult
 
 // Alpert hybrid Gauss-trapezoidal quadrature data (translated from MATLAB).
 //
@@ -15,12 +19,6 @@
 // (nodes sitting exactly on a grid point are pinned, not solved for).
 
 namespace sctl {
-
-template <class Real> struct ExtraPtResult {
-    Vector<Real> ExtraNodes;
-    Vector<Real> ExtraWeights;
-    Integer NodesToSkip = 0;
-};
 
 namespace alpert_detail {
 
@@ -37,7 +35,6 @@ template <class Real> void Fill(ExtraPtResult<Real>& r, const char* const* nds,
 
 } // namespace alpert_detail
 
-/** Returns, for each order, the extra nodes and weights (in units of the grid spacing) that correct a trapezoidal rule at an endpoint with a log singularity, and the number of grid points they replace. */
 template <class Real> inline ExtraPtResult<Real> QuadLogExtraPtNodes(const Integer order) {
     ExtraPtResult<Real> res;
 
@@ -88,7 +85,6 @@ template <class Real> inline ExtraPtResult<Real> QuadLogExtraPtNodes(const Integ
     return res;
 }
 
-/** Returns, for each order, the extra nodes and weights (in units of the grid spacing) that correct a trapezoidal rule at a regular endpoint, and the number of grid points they replace. */
 template <class Real> inline ExtraPtResult<Real> QuadSmoothExtraPtNodes(const Integer order) {
     ExtraPtResult<Real> res;
 
@@ -148,3 +144,5 @@ template <class Real> inline ExtraPtResult<Real> QuadSmoothExtraPtNodes(const In
 }
 
 }  // namespace sctl
+
+#endif // _SCTL_ALPERT_QUADR_CPP_
