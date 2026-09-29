@@ -432,15 +432,16 @@ namespace sctl {
       const Integer Nu = (Integer)ru.M.Dim(1);
       const Integer Nv = (Integer)rv.M.Dim(1);
       SCTL_ASSERT(Nu > 0 && Nv > 0);
+      ScratchPool& pool = ScratchPool::Instance(); // looked up once per call, not once per buffer
 
       // Small rules (one block, where the cost per product call dominates) store the coordinates side
       // by side, so that one product along u covers all of them, and project each component into acc_cm
       const bool fused = (Nu*Nv <= MaxFusedPts);
       const Integer ldc = COORD_DIM*Nv;
 
-      ScratchBuf<Real> Cv(COORD_DIM*order*Nv), Cdv(COORD_DIM*order*Nv); // [k][i*Nv + b], or [i][k*Nv + b] for a small rule
+      ScratchBuf<Real> Cv(COORD_DIM*order*Nv, pool), Cdv(COORD_DIM*order*Nv, pool); // [k][i*Nv + b], or [i][k*Nv + b] for a small rule
       { // Interpolate the coordinates and their v-derivative along v
-        ScratchBuf<Real> cs_ik(fused ? COORD_DIM*order*order : 0); // rows (i,k) of src_nodal
+        ScratchBuf<Real> cs_ik(fused ? COORD_DIM*order*order : 0, pool); // rows (i,k) of src_nodal
         if (fused) {
           for (Integer i = 0; i < order; i++) {
             for (Integer k = 0; k < COORD_DIM; k++) {
@@ -455,17 +456,17 @@ namespace sctl {
         Matrix<Real>::GEMM(Cdv_all, cs_all, rv.dM);
       }
 
-      ScratchBuf<Real> Tall(fused ? 0 : Nu*C*order);
+      ScratchBuf<Real> Tall(fused ? 0 : Nu*C*order, pool);
       const Integer UBLK = std::max<Integer>(1, std::min<Integer>(Nu, MaxUnblockedPts / Nv));
       for (Integer a0 = 0; a0 < Nu; a0 += UBLK) { // Blocks of u-rows
         const Integer nu = std::min<Integer>(UBLK, Nu - a0);
         const Integer nqb = nu*Nv;
 
-        ScratchBuf<Real> Xs(COORD_DIM*nqb), Xn(COORD_DIM*nqb), wq(nqb);
+        ScratchBuf<Real> Xs(COORD_DIM*nqb, pool), Xn(COORD_DIM*nqb, pool), wq(nqb, pool);
         { // Points, normals and weights of the block
           const Integer nfused = (fused ? nqb : 0), nsplit = (fused ? 0 : nqb);
-          ScratchBuf<Real> XdU(2*COORD_DIM*nfused), dV(COORD_DIM*nfused); // row a: [k*Nv + b]; XdU: coordinates, then u-tangents
-          ScratchBuf<Real> dXu(COORD_DIM*nsplit), dXv(COORD_DIM*nsplit); // [k][a*Nv + b]
+          ScratchBuf<Real> XdU(2*COORD_DIM*nfused, pool), dV(COORD_DIM*nfused, pool); // row a: [k*Nv + b]; XdU: coordinates, then u-tangents
+          ScratchBuf<Real> dXu(COORD_DIM*nsplit, pool), dXv(COORD_DIM*nsplit, pool); // [k][a*Nv + b]
           if (fused) { // Coordinates and u-tangents of all components in one product, v-tangents in another
             const Matrix<Real> MuD_m(2*nu, order, (Iterator<Real>)ru.MTD.begin(), false); // the only block: all of MTD
             const Matrix<Real> MuT_b(nu, order, (Iterator<Real>)ru.MTD.begin(), false);
@@ -513,7 +514,7 @@ namespace sctl {
           }
         }
 
-        ScratchBuf<Real> KW(C*nqb);
+        ScratchBuf<Real> KW(C*nqb, pool);
         const Integer np = std::max<Integer>(1, (Integer)proxy_w.Dim());
         for (Integer j = 0; j < np; j++) { // Weighted kernel, summed over the proxy points
           StaticArray<Real,COORD_DIM> Xtj{0, 0, 0};
@@ -527,7 +528,7 @@ namespace sctl {
         }
 
         { // Project onto the v-nodes, then onto the u-nodes for a small rule, else store the block's rows
-          ScratchBuf<Real> Tblk(C*nu*order);
+          ScratchBuf<Real> Tblk(C*nu*order, pool);
           const Matrix<Real> KW_m(C*nu, Nv, KW.begin(), false);
           Matrix<Real> T_m(C*nu, order, Tblk.begin(), false);
           const Matrix<Real> MvT(Nv, order, (Iterator<Real>)rv.MTD.begin(), false);
@@ -549,7 +550,7 @@ namespace sctl {
       }
 
       if (!fused) { // Project onto the u-nodes and add into acc_cm
-        ScratchBuf<Real> Aall(order*C*order);
+        ScratchBuf<Real> Aall(order*C*order, pool);
         const Matrix<Real> T_m(Nu, C*order, Tall.begin(), false);
         Matrix<Real> A_m(order, C*order, Aall.begin(), false);
         Matrix<Real>::GEMM(A_m, ru.M, T_m);
