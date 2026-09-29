@@ -104,16 +104,15 @@ TARGET_BIN = \
 all : $(TARGET_BIN)
 
 
-$(BINDIR)/%: $(OBJDIR)/%.o
-	-@$(MKDIRS) $(dir $@)
-	$(CXX) $^ $(CXXFLAGS) $(LDLIBS) -o $@
+$(BINDIR)/%: $(SRCDIR)/%.cpp
+	-@$(MKDIRS) $(dir $@) $(dir $(OBJDIR)/$*)
+	$(CXX) $< $(CXXFLAGS) -MMD -MP -MT $@ -MF $(OBJDIR)/$*.d -I$(INCDIR) $(LDLIBS) -o $@
 ifeq "$(OS)" "Darwin"
 	/usr/bin/dsymutil $@ -o $@.dSYM
 endif
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.cpp
-	-@$(MKDIRS) $(dir $@)
-	$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $^ -o $@
+# Header dependencies of each binary, written by -MMD -MP, so that header edits rebuild it
+-include $(wildcard $(OBJDIR)/*.d)
 
 test: $(TARGET_BIN)
 	./$(BINDIR)/test
