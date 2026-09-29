@@ -23,6 +23,8 @@ namespace sctl {
     static constexpr Integer COORD_DIM = 3;
     static constexpr Integer MaxTableOrder = 50;
     static constexpr Integer MaxUnblockedPts = 16384;
+    static constexpr Integer MaxFusedPts = 4096;
+    static_assert(MaxFusedPts <= MaxUnblockedPts, "a small rule must be one block of u-rows");
 
     /** static accessors to private data of QuadElemList */
     template <class Real> struct Access {
@@ -432,7 +434,23 @@ namespace sctl {
         Matrix<Real>::GEMM(Cdv_all, cs_all, rv.dM);
       }
 
-      ScratchBuf<Real> Tall(Nu*C*order);
+      // Small rules (one block, where the cost per product call dominates) store the coordinates side
+      // by side, so that one product along u covers all of them, and project each component into acc_cm
+      const bool fused = (Nu*Nv <= MaxFusedPts);
+      const Integer ldc = COORD_DIM*Nv;
+      ScratchBuf<Real> Cvc(fused ? order*ldc : 0), Cdvc(fused ? order*ldc : 0); // [i][k*Nv + b]
+      if (fused) {
+        for (Integer k = 0; k < COORD_DIM; k++) {
+          for (Integer i = 0; i < order; i++) {
+            for (Integer b = 0; b < Nv; b++) {
+              Cvc[i*ldc + k*Nv + b] = Cv[(k*order + i)*Nv + b];
+              Cdvc[i*ldc + k*Nv + b] = Cdv[(k*order + i)*Nv + b];
+            }
+          }
+        }
+      }
+
+      ScratchBuf<Real> Tall(fused ? 0 : Nu*C*order);
       const Integer UBLK = std::max<Integer>(1, std::min<Integer>(Nu, MaxUnblockedPts / Nv));
       for (Integer a0 = 0; a0 < Nu; a0 += UBLK) { // Blocks of u-rows
         const Integer nu = std::min<Integer>(UBLK, Nu - a0);
@@ -440,8 +458,26 @@ namespace sctl {
 
         ScratchBuf<Real> Xs(COORD_DIM*nqb), Xn(COORD_DIM*nqb), wq(nqb);
         { // Points, normals and weights of the block
-          ScratchBuf<Real> dXu(COORD_DIM*nqb), dXv(COORD_DIM*nqb);
-          { // Interpolate coordinates and tangents along u
+          const Integer nfused = (fused ? nqb : 0), nsplit = (fused ? 0 : nqb);
+          ScratchBuf<Real> XdU(2*COORD_DIM*nfused), dV(COORD_DIM*nfused); // row a: [k*Nv + b]; XdU: coordinates, then u-tangents
+          ScratchBuf<Real> dXu(COORD_DIM*nsplit), dXv(COORD_DIM*nsplit); // [k][a*Nv + b]
+          if (fused) { // Coordinates and u-tangents of all components in one product, v-tangents in another
+            ScratchBuf<Real> MuD(2*nu*order); // the block's rows of MT, then of dMT
+            for (Integer a = 0; a < nu; a++) {
+              for (Integer i = 0; i < order; i++) {
+                MuD[a*order + i] = ru.MT[a0 + a][i];
+                MuD[(nu + a)*order + i] = ru.dMT[a0 + a][i];
+              }
+            }
+            const Matrix<Real> MuD_m(2*nu, order, MuD.begin(), false);
+            const Matrix<Real> MuT_b(nu, order, (Iterator<Real>)ru.MT.begin() + a0*order, false);
+            const Matrix<Real> Cvc_m(order, ldc, Cvc.begin(), false);
+            const Matrix<Real> Cdvc_m(order, ldc, Cdvc.begin(), false);
+            Matrix<Real> XdU_m(2*nu, ldc, XdU.begin(), false);
+            Matrix<Real> dV_m(nu, ldc, dV.begin(), false);
+            Matrix<Real>::GEMM(XdU_m, MuD_m, Cvc_m);
+            Matrix<Real>::GEMM(dV_m, MuT_b, Cdvc_m);
+          } else { // Interpolate coordinates and tangents along u, one product per coordinate
             const Matrix<Real> MuT_b (nu, order, (Iterator<Real>)ru.MT.begin()  + a0*order, false);
             const Matrix<Real> dMuT_b(nu, order, (Iterator<Real>)ru.dMT.begin() + a0*order, false);
             for (Integer k = 0; k < COORD_DIM; k++) {
@@ -455,14 +491,22 @@ namespace sctl {
               Matrix<Real>::GEMM(dXv_k, MuT_b,  Cdv_k);
             }
           }
+          const ConstIterator<Real> Xp = (fused ? XdU.begin() : Xs.begin());
+          const ConstIterator<Real> dUp = (fused ? XdU.begin() + nu*ldc : dXu.begin());
+          const ConstIterator<Real> dVp = (fused ? dV.begin() : dXv.begin());
+          const Integer sk = (fused ? Nv : nqb), sa = (fused ? ldc : Nv); // component and u-row strides
           for (Integer a = 0; a < nu; a++) {
             for (Integer b = 0; b < Nv; b++) {
               const Integer q = a*Nv + b;
-              const Real du0 = dXu[0*nqb+q], du1 = dXu[1*nqb+q], du2 = dXu[2*nqb+q];
-              const Real dv0 = dXv[0*nqb+q], dv1 = dXv[1*nqb+q], dv2 = dXv[2*nqb+q];
+              const Integer p = a*sa + b;
+              const Real du0 = dUp[p], du1 = dUp[p + sk], du2 = dUp[p + 2*sk];
+              const Real dv0 = dVp[p], dv1 = dVp[p + sk], dv2 = dVp[p + 2*sk];
               const Real n0 = du1*dv2 - du2*dv1, n1 = du2*dv0 - du0*dv2, n2 = du0*dv1 - du1*dv0;
               const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
               const Real inv_area = (area > 0 ? nrm_sign/area : 0);
+              if (fused) {
+                for (Integer k = 0; k < COORD_DIM; k++) Xs[k*nqb + q] = Xp[p + k*sk];
+              }
               Xn[0*nqb+q] = n0*inv_area;
               Xn[1*nqb+q] = n1*inv_area;
               Xn[2*nqb+q] = n2*inv_area;
@@ -484,20 +528,28 @@ namespace sctl {
           WeightedKernel<Real>(KW.begin(), Xtj_v.begin(), Xs.begin(), Xn.begin(), wq.begin(), nqb, nqb, wj, accum, normal_trg, ker);
         }
 
-        { // Project onto the v-nodes and store the block's rows
+        { // Project onto the v-nodes, then onto the u-nodes for a small rule, else store the block's rows
           ScratchBuf<Real> Tblk(C*nu*order);
           const Matrix<Real> KW_m(C*nu, Nv, KW.begin(), false);
           Matrix<Real> T_m(C*nu, order, Tblk.begin(), false);
           Matrix<Real>::GEMM(T_m, KW_m, rv.MT);
-          for (Integer a = 0; a < nu; a++) {
+          if (fused) {
             for (Integer c = 0; c < C; c++) {
-              for (Integer j = 0; j < order; j++) Tall[((a0 + a)*C + c)*order + j] = Tblk[(c*nu + a)*order + j];
+              const Matrix<Real> T_c(nu, order, Tblk.begin() + c*nu*order, false);
+              Matrix<Real> A_c(order, order, acc_cm.begin() + c*nnode, false);
+              Matrix<Real>::GEMM(A_c, ru.M, T_c, (Real)1);
+            }
+          } else {
+            for (Integer a = 0; a < nu; a++) {
+              for (Integer c = 0; c < C; c++) {
+                for (Integer j = 0; j < order; j++) Tall[((a0 + a)*C + c)*order + j] = Tblk[(c*nu + a)*order + j];
+              }
             }
           }
         }
       }
 
-      { // Project onto the u-nodes and add into acc_cm
+      if (!fused) { // Project onto the u-nodes and add into acc_cm
         ScratchBuf<Real> Aall(order*C*order);
         const Matrix<Real> T_m(Nu, C*order, Tall.begin(), false);
         Matrix<Real> A_m(order, C*order, Aall.begin(), false);
