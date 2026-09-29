@@ -338,6 +338,14 @@ namespace sctl {
       return sqrt<Real>(f);
     }
 
+    /** max(1, phi0/phi), phi the angle in degrees between tangents with metric guu, guv, gvv */
+    template <class Real> Real SkewFactor(const Real guu, const Real guv, const Real gvv, const Real phi0) {
+      const Real den = sqrt<Real>(guu*gvv);
+      if (!(den > 0)) return 1;
+      const Real phi = acos<Real>(std::min<Real>(1, fabs<Real>(guv)/den))*180/const_pi<Real>();
+      return std::max<Real>(1, phi0/std::max<Real>((Real)1e-3, phi));
+    }
+
     /** true if K::uKerMatrix takes the source normal */
     template <class K, class VT, class = void> struct UKerNeedsN : std::false_type {};
     template <class K, class VT> struct UKerNeedsN<K, VT, std::void_t<decltype(
@@ -637,6 +645,7 @@ namespace sctl {
     using detail_quadelem::LagrangeDiffMat;
     using detail_quadelem::NearInteracTargets;
     using detail_quadelem::ShiftedElemCoord;
+    using detail_quadelem::SkewFactor;
 
     template <class Real> void QuadParams(Real& b_ellipse, Integer& quad_order, const Real tol) {
       const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
@@ -768,17 +777,11 @@ namespace sctl {
 
         const Integer q_iso = CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
         q_near = q_iso;
-        const Real den = sqrt<Real>(guu*gvv);
-        if (den > 0) {
-          const Real c = std::min<Real>(1, fabs<Real>(guv)/den);
-          const Real phi = acos<Real>(c)*180/const_pi<Real>();
-          const Real Ck = 400;
-          const Real f = std::max<Real>(1, Ck/(10*std::max<Real>((Real)1e-3, phi)));
-          if (f > 1) {
-            Integer q = (Integer)ceil<Real>(f*q_iso);
-            q = ((q + 3)/4)*4;
-            q_near = std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q_iso, q));
-          }
+        const Real f = SkewFactor<Real>(guu, guv, gvv, 40);
+        if (f > 1) {
+          Integer q = (Integer)ceil<Real>(f*q_iso);
+          q = ((q + 3)/4)*4;
+          q_near = std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q_iso, q));
         }
       }
 
