@@ -141,12 +141,12 @@ namespace sctl {
       const Integer nnode = order * order;
       ScratchPool& pool = ScratchPool::Instance(); // looked up once per call, not once per buffer
 
-      ScratchBuf<Real> Luv(2*order, pool); // Luv[i], Luv[order+i]: i-th Lagrange basis function at u, at v
-      { // Lagrange basis at u and at v
+      ScratchBuf<Real> Luv(2*order, pool); // Luv[i], Luv[order+i]: i-th interpolation weight at u, at v
+      { // Interpolation weights at u and at v
         ScratchBuf<Real> L(2*order, pool); // L[2*i], L[2*i+1]
         StaticArray<Real,2> uv{u, v};
         const Vector<Real> trg(2, uv, false);
-        Vector<Real> L_(2*order, L.begin(), false);
+        Vector<Real> L_(L);
         LagrangeInterp<Real>::Interpolate(L_, QuadElemList<Real>::ParamNodes(order), trg);
         for (Integer i = 0; i < order; i++) {
           Luv[i] = L[2*i];
@@ -155,8 +155,7 @@ namespace sctl {
       }
 
       Real x[COORD_DIM] = {0, 0, 0}, xu[COORD_DIM] = {0, 0, 0}, xv[COORD_DIM] = {0, 0, 0};
-      // Sum the nodal coordinates and their derivatives against the basis. The tangent choice is a
-      // template parameter: with a branch inside the loop, GCC's loop with tangents takes 1.6x longer.
+      // Interpolate the coordinates, and their derivatives if want_d (a template parameter: no branch in the loop)
       const auto sum_nodes = [&coord, &dcoord_du, &dcoord_dv, &Luv, &x, &xu, &xv, order, nnode](const auto want_d) {
         for (Integer i = 0; i < order; i++) {
           for (Integer j = 0; j < order; j++) {
@@ -1266,7 +1265,7 @@ namespace sctl {
             tn[i] = tstar + dOverL*(ex-iex)/(Real)2;
             tw[i] = dOverL*(ex+iex)/(Real)2*(x1-x0)*qw[i];
           }
-          Vector<Real> Tt_v(order*nt, Tt_buf.begin(), false);
+          Vector<Real> Tt_v(Tt_buf);
           LagrangeInterp<Real>::Interpolate(Tt_v, nds, tn);
           for (Integer r = 0; r < order; r++) for (Integer j = 0; j < nt; j++) TtT_buf[j*order + r] = Tt_buf[r*nt + j];
         }
@@ -1747,8 +1746,8 @@ namespace sctl {
     ScratchBuf<Real> MuT_buf(Nu * order), Mv_buf(order * Nv);
     { // Interpolation matrices from the nodes to u_param and v_param
       ScratchBuf<Real> Mu_buf(order * Nu);
-      Vector<Real> Mu_(order * Nu, Mu_buf.begin(), false);
-      Vector<Real> Mv_(order * Nv, Mv_buf.begin(), false);
+      Vector<Real> Mu_(Mu_buf);
+      Vector<Real> Mv_(Mv_buf);
       LagrangeInterp<Real>::Interpolate(Mu_, ParamNodes(order), u_param);
       LagrangeInterp<Real>::Interpolate(Mv_, ParamNodes(order), v_param);
       for (Integer i = 0; i < order; i++) for (Integer a = 0; a < Nu; a++) MuT_buf[a * order + i] = Mu_buf[i * Nu + a];
@@ -2031,7 +2030,7 @@ namespace sctl {
       }
 
       ScratchBuf<Real> M_buf(order * Ng), MT_buf(Ng * order);
-      Vector<Real> M_v(order * Ng, M_buf.begin(), false);
+      Vector<Real> M_v(M_buf);
       LagrangeInterp<Real>::Interpolate(M_v, ParamNodes(order), grid);
       for (Integer i = 0; i < order; i++) {
         for (Integer a = 0; a < Ng; a++) MT_buf[a * order + i] = M_buf[i * Ng + a];

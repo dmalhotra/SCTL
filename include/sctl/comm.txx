@@ -2395,7 +2395,8 @@ template <class Type, class Compare> void Comm::SampleSort(const Vector<Type>& a
   if (!totSize) { SortedElem.ReInit(0); return; }
 
   // local sort
-  ScratchBuf<Type> loc_buf(nloc); Vector<Type> loc(nloc, loc_buf.begin(), false);
+  ScratchBuf<Type> loc_buf(nloc);
+  Vector<Type> loc(loc_buf);
   comm_detail::LocalSort<Type>(arr_.begin(), loc.begin(), nloc, comp);
 
   const Type my_split = DetermineSplitter(loc, totSize, comp);
@@ -2418,7 +2419,8 @@ template <class Type, class Compare> void Comm::SampleSort(const Vector<Type>& a
     comm_detail::LocalSort<Type>(arr_.begin(), SortedElem.begin(), arr_.Dim(), comp);
     return;
   }
-  ScratchBuf<Type> loc_buf(arr_.Dim()); Vector<Type> loc(arr_.Dim(), loc_buf.begin(), false);
+  ScratchBuf<Type> loc_buf(arr_.Dim());
+  Vector<Type> loc(loc_buf);
   comm_detail::LocalSort<Type>(arr_.begin(), loc.begin(), arr_.Dim(), comp);
   DistributeAndMerge(loc, splitter, SortedElem, comp);
 #else

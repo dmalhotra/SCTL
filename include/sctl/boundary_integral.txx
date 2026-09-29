@@ -1045,8 +1045,7 @@ namespace sctl {
       const Long Nelem = near_elem_cnt.Dim();
       const Long N_near = (Nelem ? near_elem_dsp[Nelem-1] + near_elem_cnt[Nelem-1] : 0);
       const Long grain = std::max<Long>(1, N_near/(4*SCTL_GET_MAX_THREADS()));
-      ScratchBuf<Long> cnt_buf(Nelem), dsp_buf(Nelem);
-      Vector<Long> blk_cnt(Nelem, cnt_buf.begin(), false), blk_dsp(Nelem, dsp_buf.begin(), false);
+      ScratchBuf<Long> blk_cnt(Nelem), blk_dsp(Nelem);
       #pragma omp parallel for schedule(static)
       for (Long e = 0; e < Nelem; e++) blk_cnt[e] = (near_elem_cnt[e] + grain-1) / grain;
       omp_par::scan(blk_cnt.begin(), blk_dsp.begin(), Nelem, 0);
