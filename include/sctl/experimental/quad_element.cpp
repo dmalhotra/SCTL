@@ -139,10 +139,11 @@ namespace sctl {
     /** evaluates position (minus origin, if given) and tangents dXu, dXv (if non-null) at (u,v) */
     template <class Real> void EvalPoint(Real* X, Real* dXu, Real* dXv, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Integer order, const Real u, const Real v, const Vector<Real>* origin) {
       const Integer nnode = order * order;
+      ScratchPool& pool = ScratchPool::Instance(); // looked up once per call, not once per buffer
 
-      ScratchBuf<Real> Luv(2*order); // Luv[i], Luv[order+i]: i-th Lagrange basis function at u, at v
+      ScratchBuf<Real> Luv(2*order, pool); // Luv[i], Luv[order+i]: i-th Lagrange basis function at u, at v
       { // Lagrange basis at u and at v
-        ScratchBuf<Real> L(2*order); // L[2*i], L[2*i+1]
+        ScratchBuf<Real> L(2*order, pool); // L[2*i], L[2*i+1]
         StaticArray<Real,2> uv{u, v};
         const Vector<Real> trg(2, uv, false);
         Vector<Real> L_(2*order, L.begin(), false);
@@ -805,6 +806,7 @@ namespace sctl {
       const Integer nnode = order*order;
       const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full/COORD_DIM : KDIM1full;
       const Integer C = KDIM0*KDIM1_out;
+      ScratchPool& pool = ScratchPool::Instance(); // looked up once per call, not once per buffer
       if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != C) M_acc.ReInit(nnode, C);
       M_acc.SetZero();
 
@@ -836,11 +838,11 @@ namespace sctl {
         }
       }
 
-      ScratchBuf<Real> Sf_buf(4*nnode), St_buf(4*nnode);
+      ScratchBuf<Real> Sf_buf(4*nnode, pool), St_buf(4*nnode, pool);
       { // Interpolation from the element to each side's sub-interval
         const Vector<Real>& gnds = QuadElemList<Real>::ParamNodes(order);
         const Vector<Real>& soff = NearSubOffsets<Real>(order);
-        ScratchBuf<Real> gsh_buf(order), sub_buf(order);
+        ScratchBuf<Real> gsh_buf(order, pool), sub_buf(order, pool);
         Vector<Real> gsh(gsh_buf), sub(sub_buf);
         for (Integer d = 0; d < 2; d++) {
           const Real xs = (d ? vstar : ustar);
@@ -858,12 +860,12 @@ namespace sctl {
         }
       }
 
-      ScratchBuf<Real> Xsub_buf(4*COORD_DIM*nnode);
+      ScratchBuf<Real> Xsub_buf(4*COORD_DIM*nnode, pool);
       { // Coordinates of the sub-rectangles, relative to the target
-        ScratchBuf<Real> cs_buf(COORD_DIM*nnode);
+        ScratchBuf<Real> cs_buf(COORD_DIM*nnode, pool);
         Vector<Real> cs(cs_buf);
         ShiftedElemCoord(cs, coord, Xtrg);
-        ScratchBuf<Real> Av(2*COORD_DIM*nnode);
+        ScratchBuf<Real> Av(2*COORD_DIM*nnode, pool);
         for (Integer sdv = 0; sdv < 2; sdv++) {
           if (!(slen[1][sdv] > 0)) continue;
           const Matrix<Real> cs_all(COORD_DIM*order, order, cs.begin(), false);
@@ -885,7 +887,7 @@ namespace sctl {
         }
       }
 
-      ScratchBuf<Real> acc_buf(C*nnode);
+      ScratchBuf<Real> acc_buf(C*nnode, pool);
       Vector<Real> acc(acc_buf);
       const Vector<GradeRule<Real>>& tab = NearGradeTable<order,Real>(q_near);
       const auto integrate_piece = [&tab, &normal_trg, &ker, &proxy_off, &proxy_w, &acc, &Xsub_buf](const Integer sdu, const Integer sdv, const Integer iu, const Integer iv) {
@@ -926,7 +928,7 @@ namespace sctl {
           acc.SetZero();
           refine(sdu, sdv, slen[0][sdu]*spd_u, slen[1][sdv]*spd_v);
           { // Map the sub-rectangle's nodal values back to the element
-            ScratchBuf<Real> accB(C*nnode), accE(nnode);
+            ScratchBuf<Real> accB(C*nnode, pool), accE(nnode, pool);
             const Matrix<Real> St_v(order, order, St_buf.begin() + (2+sdv)*nnode, false);
             const Matrix<Real> Sf_u(order, order, Sf_buf.begin() + sdu*nnode, false);
             const Matrix<Real> A_all(C*order, order, acc.begin(), false);
