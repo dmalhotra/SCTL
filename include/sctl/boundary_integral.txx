@@ -98,7 +98,8 @@ namespace sctl {
       elem_offset = recv_buff[2] - send_buff[2];
     }
 
-    Vector<NodeData> trg_nodes(Ntrg), src_nodes(Nsrc);
+    ScratchBuf<NodeData> trg_nodes_buf(Ntrg), src_nodes_buf(Nsrc);
+    Vector<NodeData> trg_nodes(trg_nodes_buf), src_nodes(src_nodes_buf);
     { // Set trg_nodes, src_nodes
       Real BBlen_inv;
       StaticArray<Real,COORD_DIM> BBX0;
@@ -183,7 +184,8 @@ namespace sctl {
       }
     }
 
-    Vector<NodeData> trg_nodes0, src_nodes0, splitter_nodes(comm_.Size());
+    Vector<NodeData> trg_nodes0, src_nodes0;
+    ScratchBuf<NodeData> splitter_nodes(comm_.Size());
     { // Set trg_nodes0 <- sort(trg_nodes), src_nodes0 <- sort(src_nodes)
       comm_.SampleSort(src_nodes, src_nodes0, comp_node_mid);
       comm_.SampleSort(trg_nodes, trg_nodes0, comp_node_mid);
@@ -239,11 +241,9 @@ namespace sctl {
         if (omp_p == 1) {
           proc_srcidx_lst.Swap(proc_srcidx_omp[0]);
         } else { // concatenate per-thread lists
-          Vector<Long> cnt(omp_p), dsp(omp_p+1); dsp[0] = 0;
-          for (Integer t = 0; t < omp_p; t++) {
-            cnt[t] = proc_srcidx_omp[t].Dim();
-            dsp[t+1] = dsp[t] + cnt[t];
-          }
+          ScratchBuf<Long> cnt(omp_p), dsp(omp_p+1);
+          for (Integer t = 0; t < omp_p; t++) cnt[t] = proc_srcidx_omp[t].Dim();
+          omp_par::scan(cnt.begin(), dsp.begin(), omp_p+1, (Long)0);
           proc_srcidx_lst.ReInit(dsp[omp_p]);
           #pragma omp parallel num_threads(omp_p)
           {
@@ -256,22 +256,22 @@ namespace sctl {
       }
       omp_par::sample_sort(proc_srcidx_lst.begin(), proc_srcidx_lst.end());
 
-      Vector<Long> scnt(np), sdsp(np+1);
+      ScratchBuf<Long> scnt(np), sdsp(np+1);
       #pragma omp parallel for schedule(static)
       for (Long p = 0; p <= np; p++) sdsp[p] = std::lower_bound(proc_srcidx_lst.begin(), proc_srcidx_lst.end(), std::pair<Long,Long>(p,0)) - proc_srcidx_lst.begin();
       #pragma omp parallel for schedule(static)
       for (Long p = 0; p < np; p++) scnt[p] = sdsp[p+1] - sdsp[p];
 
-      Vector<NodeData> sbuff(proc_srcidx_lst.Dim());
+      ScratchBuf<NodeData> sbuff(proc_srcidx_lst.Dim());
       #pragma omp parallel for schedule(static)
       for (Long i = 0; i < sbuff.Dim(); i++) sbuff[i] = src_nodes0[proc_srcidx_lst[i].second];
 
-      Vector<Long> rcnt(np), rdsp(np); rdsp = 0;
+      ScratchBuf<Long> rcnt(np), rdsp(np);
       comm_.Alltoall<Long>(scnt.begin(), 1, rcnt.begin(), 1);
-      omp_par::scan(rcnt.begin(), rdsp.begin(), np);
+      omp_par::scan(rcnt.begin(), rdsp.begin(), np, (Long)0);
 
       // Exchange data
-      Vector<NodeData> rbuff(rdsp[np-1] + rcnt[np-1]);
+      ScratchBuf<NodeData> rbuff(rdsp[np-1] + rcnt[np-1]);
       auto req_ptr = comm_.Ialltoallv_sparse(sbuff.begin(), scnt.begin(), sdsp.begin(), rbuff.begin(), rcnt.begin(), rdsp.begin());
 
       // Set src_nodes1
@@ -282,10 +282,10 @@ namespace sctl {
       omp_par::memcpy(src_nodes1.begin()+src_nodes0.Dim()+rdsp[rank], rbuff.begin()+rdsp[rank], rbuff.Dim()-rdsp[rank]);
     } else { // src_nodes1 <- Allgather(src_nodes0)
       const Long Np = comm_.Size();
-      Vector<Long> cnt0(1), cnt(Np), dsp(Np);
-      cnt0[0] = src_nodes0.Dim(); dsp[0] = 0;
+      ScratchBuf<Long> cnt0(1), cnt(Np), dsp(Np);
+      cnt0[0] = src_nodes0.Dim();
       comm_.Allgather(cnt0.begin(), 1, cnt.begin(), 1);
-      omp_par::scan(cnt.begin(), dsp.begin(), Np);
+      omp_par::scan(cnt.begin(), dsp.begin(), Np, (Long)0);
 
       src_nodes1.ReInit(dsp[Np-1] + cnt[Np-1]);
       comm_.Allgatherv(src_nodes0.begin(), src_nodes0.Dim(), src_nodes1.begin(), cnt.begin(), dsp.begin());
@@ -409,11 +409,9 @@ namespace sctl {
       if (omp_p == 1) {
         near_lst.Swap(near_lst_omp[0]);
       } else { // concatenate per-thread near-lists (re-sorted below)
-        Vector<Long> cnt(omp_p), dsp(omp_p+1); dsp[0] = 0;
-        for (Integer i = 0; i < omp_p; i++) {
-          cnt[i] = near_lst_omp[i].Dim();
-          dsp[i+1] = dsp[i] + cnt[i];
-        }
+        ScratchBuf<Long> cnt(omp_p), dsp(omp_p+1);
+        for (Integer i = 0; i < omp_p; i++) cnt[i] = near_lst_omp[i].Dim();
+        omp_par::scan(cnt.begin(), dsp.begin(), omp_p+1, (Long)0);
         near_lst.ReInit(dsp[omp_p]);
         #pragma omp parallel num_threads(omp_p)
         {
@@ -464,7 +462,6 @@ namespace sctl {
         const Long elem_idx1 = Nelem*(tid+1)/omp_p;
         for (Long i = elem_idx0; i < elem_idx1; i++) {
           near_elem_cnt[i] = 0;
-          near_elem_dsp[i] = 0;
         }
 
         Long idx0, idx1;
@@ -482,7 +479,7 @@ namespace sctl {
           near_elem_cnt[elem_idx_-elem_offset] = cnt;
         }
       }
-      omp_par::scan(near_elem_cnt.begin(), near_elem_dsp.begin(), Nelem);
+      omp_par::scan(near_elem_cnt.begin(), near_elem_dsp.begin(), Nelem, (Long)0);
     }
 
     { // Set scatter_index, near_trg_cnt, near_trg_dsp
@@ -819,10 +816,8 @@ namespace sctl {
       const Long Nelem = elem_nds_cnt.Dim();
       if (elem_lst_dsp.Dim() != Nlst ) elem_lst_dsp.ReInit(Nlst);
       if (elem_nds_dsp.Dim() != Nelem) elem_nds_dsp.ReInit(Nelem);
-      if (Nlst ) elem_lst_dsp[0] = 0;
-      if (Nelem) elem_nds_dsp[0] = 0;
-      omp_par::scan(elem_lst_cnt.begin(), elem_lst_dsp.begin(), Nlst);
-      omp_par::scan(elem_nds_cnt.begin(), elem_nds_dsp.begin(), Nelem);
+      omp_par::scan(elem_lst_cnt.begin(), elem_lst_dsp.begin(), Nlst, (Long)0);
+      omp_par::scan(elem_nds_cnt.begin(), elem_nds_dsp.begin(), Nelem, (Long)0);
       SCTL_ASSERT(Nelem == (Nlst ? elem_lst_dsp[Nlst-1] + elem_lst_cnt[Nlst-1] : 0));
     }
     { // Set Xtrg
@@ -875,8 +870,7 @@ namespace sctl {
       const Long Nelem = elem_nds_cnt.Dim();
       SCTL_ASSERT(elem_nds_cnt_far.Dim() == Nelem);
       if (elem_nds_dsp_far.Dim() != Nelem) elem_nds_dsp_far.ReInit(Nelem);
-      if (Nelem) elem_nds_dsp_far[0] = 0;
-      omp_par::scan(elem_nds_cnt_far.begin(), elem_nds_dsp_far.begin(), Nelem);
+      omp_par::scan(elem_nds_cnt_far.begin(), elem_nds_dsp_far.begin(), Nelem, (Long)0);
     }
 
     fmm.SetSrcCoord("Src", X_far, Xn_far);
@@ -1077,7 +1071,6 @@ namespace sctl {
       if (Nelem) { // Set K_near_cnt, K_near_dsp
         K_near_cnt.ReInit(Nelem);
         K_near_dsp.ReInit(Nelem);
-        if (Nelem) K_near_dsp[0] = 0;
         #pragma omp parallel for schedule(static)
         for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) {
           const Long elem_lst_idx = std::lower_bound(elem_lst_dsp.begin(), elem_lst_dsp.end(), elem_idx+1) - elem_lst_dsp.begin() - 1;
@@ -1088,7 +1081,7 @@ namespace sctl {
             K_near_cnt[elem_idx] = elem_nds_cnt[elem_idx]*near_elem_cnt[elem_idx];
           }
         }
-        omp_par::scan(K_near_cnt.begin(), K_near_dsp.begin(), Nelem);
+        omp_par::scan(K_near_cnt.begin(), K_near_dsp.begin(), Nelem, (Long)0);
       }
       Profile::Tic("KNearBuild", &comm_, false, 7);
       if (Nelem) { // Set K_near
