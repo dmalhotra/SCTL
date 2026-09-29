@@ -111,10 +111,10 @@ namespace sctl {
      * Returns the {b_ellipse, quad_order} pair for each digits, from QuadParams at tolerance
      * 10^-digits; one table per QuadParams function.
      * */
-    template <class Real, void (*QuadParams)(Real, Real&, Integer&)> const QuadParamSet<Real>& CachedQuadParams(const Integer digits) {
+    template <class Real, void (*QuadParams)(Real&, Integer&, Real)> const QuadParamSet<Real>& CachedQuadParams(const Integer digits) {
       static const std::array<QuadParamSet<Real>, MaxDigits<Real>> table = []() {
         std::array<QuadParamSet<Real>, MaxDigits<Real>> t{};
-        for (Integer d = 0; d < MaxDigits<Real>; d++) QuadParams(pow<Real,Long>((Real)0.1, (Long)d), t[d].b_ellipse, t[d].quad_order);
+        for (Integer d = 0; d < MaxDigits<Real>; d++) QuadParams(t[d].b_ellipse, t[d].quad_order, pow<Real,Long>((Real)0.1, (Long)d));
         return t;
       }();
       SCTL_ASSERT(digits >= 0 && digits < MaxDigits<Real>);
@@ -134,7 +134,7 @@ namespace sctl {
     };
 
     /** evaluates position (minus origin, if given) and tangents dXu, dXv (if non-null) at (u,v) */
-    template <class Real> void EvalPoint(const Vector<Real>& coord, const Integer order, Real* X, Real* dXu, Real* dXv, const Real u, const Real v, const Vector<Real>* origin) {
+    template <class Real> void EvalPoint(Real* X, Real* dXu, Real* dXv, const Vector<Real>& coord, const Integer order, const Real u, const Real v, const Vector<Real>* origin) {
       const Integer nnode = order * order;
       const bool want_d = (dXu || dXv);
 
@@ -200,7 +200,7 @@ namespace sctl {
     }
 
     /** returns the distance from Xtrg to the nearest node; (ustar, vstar) are its parameters */
-    template <class Real> Real GetClosestNode(const Vector<Real>& coord, const Integer order, Real& ustar, Real& vstar, const Vector<Real>& Xtrg) {
+    template <class Real> Real GetClosestNode(Real& ustar, Real& vstar, const Vector<Real>& coord, const Integer order, const Vector<Real>& Xtrg) {
       const Integer nnode = order * order;
       Integer seed = 0;
       Real best = -1;
@@ -223,10 +223,10 @@ namespace sctl {
     }
 
     /** returns the distance from Xtrg to the element; (ustar, vstar) are the closest point's parameters */
-    template <class Real> Real GetClosestPoint(const Vector<Real>& coord, const Integer order, Real& ustar, Real& vstar, const Vector<Real>& Xtrg) {
+    template <class Real> Real GetClosestPoint(Real& ustar, Real& vstar, const Vector<Real>& coord, const Integer order, const Vector<Real>& Xtrg) {
       const auto dist2_at = [&coord, order, &Xtrg](const Real uu, const Real vv) -> Real {
         Real X[COORD_DIM];
-        EvalPoint<Real>(coord, order, X, nullptr, nullptr, uu, vv, &Xtrg);
+        EvalPoint<Real>(X, nullptr, nullptr, coord, order, uu, vv, &Xtrg);
         Real r2 = 0;
         for (Integer k = 0; k < COORD_DIM; k++) r2 += X[k]*X[k];
         return r2;
@@ -234,7 +234,7 @@ namespace sctl {
 
       Real u, v, f;
       { // Start from the nearest node
-        const Real f_seed = GetClosestNode(coord, order, u, v, Xtrg);
+        const Real f_seed = GetClosestNode(u, v, coord, order, Xtrg);
         f = f_seed * f_seed;
       }
 
@@ -246,7 +246,7 @@ namespace sctl {
         Real E = 0, F = 0, G = 0, gu = 0, gv = 0;
         { // Metric and gradient of the squared distance
           Real X[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
-          EvalPoint<Real>(coord, order, X, dXu, dXv, u, v, &Xtrg);
+          EvalPoint<Real>(X, dXu, dXv, coord, order, u, v, &Xtrg);
           for (Integer k = 0; k < COORD_DIM; k++) {
             const Real r = X[k], a = dXu[k], b = dXv[k];
             E += a*a;
@@ -654,7 +654,7 @@ namespace sctl {
     using detail_quadelem::NearInteracTargets;
     using detail_quadelem::ShiftedElemCoord;
 
-    template <class Real> void QuadParams(const Real tol, Real& b_ellipse, Integer& quad_order) {
+    template <class Real> void QuadParams(Real& b_ellipse, Integer& quad_order, const Real tol) {
       const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
       const Real d = -log<Real>(tol_)/log<Real>((Real)10);
       const Real rho = std::min<Real>(3, std::max<Real>(2, 2 + (Real)0.25*(d - 6)));
@@ -765,14 +765,14 @@ namespace sctl {
       M_acc.SetZero();
 
       Real ustar, vstar;
-      const Real dist = GetClosestPoint(coord, order, ustar, vstar, Xtrg);
+      const Real dist = GetClosestPoint(ustar, vstar, coord, order, Xtrg);
       const Real slen[2][2] = {{ustar, 1-ustar}, {vstar, 1-vstar}};
 
       Real spd_u, spd_v;
       Integer q_near;
       { // Speeds, and the quadrature order raised for skewed tangents
         Real Xc[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
-        EvalPoint<Real>(coord, order, Xc, dXu, dXv, ustar, vstar, nullptr);
+        EvalPoint<Real>(Xc, dXu, dXv, coord, order, ustar, vstar, nullptr);
         Real guu = 0, gvv = 0, guv = 0;
         for (Integer k = 0; k < COORD_DIM; k++) {
           guu += dXu[k]*dXu[k];
@@ -928,7 +928,7 @@ namespace sctl {
     using detail_quadelem::IntegratePanel;
     using detail_quadelem::NearInteracTargets;
 
-    template <class Real> void QuadParams(const Real tol, Real& b_ellipse, Integer& quad_order) {
+    template <class Real> void QuadParams(Real& b_ellipse, Integer& quad_order, const Real tol) {
       const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
       const Real rho = (Real)2.5;
       b_ellipse = (rho + 1/rho) / 4;
@@ -958,9 +958,9 @@ namespace sctl {
           const Real b_ellipse = CachedQuadParams<Real, QuadParams<Real>>(digits).b_ellipse;
           Real ustar, vstar, h_param;
           { // Closest point, and its distance in parameter units
-            const Real dist = GetClosestPoint(coord, order, ustar, vstar, Xtrg);
+            const Real dist = GetClosestPoint(ustar, vstar, coord, order, Xtrg);
             Real Xc[COORD_DIM], dXdu[COORD_DIM], dXdv[COORD_DIM];
-            EvalPoint<Real>(coord, order, Xc, dXdu, dXdv, ustar, vstar, nullptr);
+            EvalPoint<Real>(Xc, dXdu, dXdv, coord, order, ustar, vstar, nullptr);
             Real su2 = 0, sv2 = 0;
             for (Integer k = 0; k < COORD_DIM; k++) {
               su2 += dXdu[k]*dXdu[k];

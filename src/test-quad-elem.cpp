@@ -50,11 +50,11 @@ template <class Real> struct QuadElemTestAccess {
     const Integer n = 3 * qel.Order() * qel.Order();
     return Vector<Real>(n, (Iterator<Real>)qel.coord.begin() + elem_idx * n, false);
   }
-  static Real GetClosestNode(const QuadElemList<Real>& qel, Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) {
-    return detail_quadelem::GetClosestNode(ElemCoord(qel, elem_idx), qel.Order(), ustar, vstar, Xtrg);
+  static Real GetClosestNode(Real& ustar, Real& vstar, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg) {
+    return detail_quadelem::GetClosestNode(ustar, vstar, ElemCoord(qel, elem_idx), qel.Order(), Xtrg);
   }
-  static Real GetClosestPoint(const QuadElemList<Real>& qel, Real& ustar, Real& vstar, const Long elem_idx, const Vector<Real>& Xtrg) {
-    return detail_quadelem::GetClosestPoint(ElemCoord(qel, elem_idx), qel.Order(), ustar, vstar, Xtrg);
+  static Real GetClosestPoint(Real& ustar, Real& vstar, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg) {
+    return detail_quadelem::GetClosestPoint(ustar, vstar, ElemCoord(qel, elem_idx), qel.Order(), Xtrg);
   }
   static typename QuadElemList<Real>::QuadScheme Scheme(const QuadElemList<Real>& qel) {
     return qel.scheme_;
@@ -761,14 +761,14 @@ template <class Real> void test_GetClosestNode(const bool curved) {
   Vector<Real> Xt(COORD_DIM);
   for (Integer k = 0; k < COORD_DIM; k++) Xt[k] = X[trg_idx * COORD_DIM + k] + d * Xn[trg_idx * COORD_DIM + k];
   Real ustar, vstar;
-  const Real dist = QuadElemTestAccess<Real>::GetClosestNode(qel, ustar, vstar, 0, Xt);
+  const Real dist = QuadElemTestAccess<Real>::GetClosestNode(ustar, vstar, qel, 0, Xt);
   SCTL_ASSERT(fabs(ustar - utrg) < tol && fabs(vstar - vtrg) < tol && fabs(dist - d) < tol);
 
   Xt[0] -= (Real)0.0013;
   Xt[1] += (Real)0.0005;
   Real r2 = 0;
   for (Integer k = 0; k < COORD_DIM; k++) r2 += (Xt[k] - X[trg_idx * COORD_DIM + k]) * (Xt[k] - X[trg_idx * COORD_DIM + k]);
-  const Real dist2 = QuadElemTestAccess<Real>::GetClosestNode(qel, ustar, vstar, 0, Xt);
+  const Real dist2 = QuadElemTestAccess<Real>::GetClosestNode(ustar, vstar, qel, 0, Xt);
   SCTL_ASSERT(fabs(ustar - utrg) < tol && fabs(vstar - vtrg) < tol && fabs(dist2 - sqrt<Real>(r2)) < tol);
 }
 
@@ -785,19 +785,19 @@ template <class Real> void test_GetClosestPoint(const bool curved) {
   for (Integer k = 0; k < COORD_DIM; k++) Xt[k] = Xs[k] + d * Ns[k];
 
   Real ustar, vstar;
-  const Real dist = QuadElemTestAccess<Real>::GetClosestPoint(qel, ustar, vstar, 0, Xt);
+  const Real dist = QuadElemTestAccess<Real>::GetClosestPoint(ustar, vstar, qel, 0, Xt);
   SCTL_ASSERT(fabs(ustar - u0) < tol && fabs(vstar - v0) < tol && fabs(dist - d) < tol);
 
   if (!curved) { // A tangential shift moves the foot with it
     Xt[0] -= (Real)0.0013;
     Xt[1] += (Real)0.0005;
-    const Real dist2 = QuadElemTestAccess<Real>::GetClosestPoint(qel, ustar, vstar, 0, Xt);
+    const Real dist2 = QuadElemTestAccess<Real>::GetClosestPoint(ustar, vstar, qel, 0, Xt);
     SCTL_ASSERT(fabs(ustar - (u0 - (Real)0.0013)) < tol && fabs(vstar - (v0 + (Real)0.0005)) < tol && fabs(dist2 - d) < tol);
     return;
   }
 
   const Vector<Real> Xt2{Xs[0] + (Real)0.05, Xs[1] - (Real)0.03, Xs[2] + (Real)0.08};
-  QuadElemTestAccess<Real>::GetClosestPoint(qel, ustar, vstar, 0, Xt2);
+  QuadElemTestAccess<Real>::GetClosestPoint(ustar, vstar, qel, 0, Xt2);
   SCTL_ASSERT(ustar > tol && ustar < 1 - tol && vstar > tol && vstar < 1 - tol);
   Vector<Real> Xc, dXu, dXv;
   qel.GetGeom(&Xc, nullptr, nullptr, &dXu, &dXv, Vector<Real>{ustar}, Vector<Real>{vstar}, 0);
