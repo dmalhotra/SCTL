@@ -904,7 +904,6 @@ namespace sctl {
   namespace detail_tensorprod_near {
 
     using detail_quadelem::COORD_DIM;
-    using detail_quadelem::MaxDigits;
     using detail_quadelem::MaxRefineLvl;
     using detail_quadelem::QuadRule1D;
 
@@ -914,6 +913,8 @@ namespace sctl {
     using detail_quadelem::GetClosestPoint;
     using detail_quadelem::IntegratePanel;
     using detail_quadelem::NearInteracTargets;
+    using detail_quadelem::SkewFactor;
+    using detail_dyadic_near::NearMaxQuadOrder;
 
     template <class Real> void QuadParams(Real& b_ellipse, Integer& quad_order, const Real tol) {
       const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
@@ -922,40 +923,31 @@ namespace sctl {
       quad_order = std::max<Integer>(1, (Integer)ceil<Real>(-log<Real>(((15*(rho*rho-1))/64)*tol_)/log<Real>(rho)*(Real)0.5 + 1));
     }
 
-    /** Returns quad_order-point Gauss-Legendre nodes and weights on [0, 1] for each digits. */
-    template <class Real> const std::pair<Vector<Real>, Vector<Real>>& GLRule(const Integer digits) {
-      static const std::array<std::pair<Vector<Real>, Vector<Real>>,MaxDigits<Real>> gl = []() {
-        std::array<std::pair<Vector<Real>, Vector<Real>>,MaxDigits<Real>> t;
-        for (Integer d = 0; d < MaxDigits<Real>; d++) {
-          const Integer quad_order = CachedQuadParams<Real, QuadParams<Real>>(d).quad_order;
-          LegQuadRule<Real>::ComputeNdsWts(&t[d].first, &t[d].second, quad_order);
-        }
-        return t;
-      }();
-      SCTL_ASSERT(digits >= 0 && digits < MaxDigits<Real>);
-      return gl[digits];
-    }
-
     template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
       const auto near_interac_one_trg = [&ker, digits](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
         constexpr Integer MaxSegments = 4096;
         ScratchBuf<Real> useg(2*MaxSegments), vseg(2*MaxSegments);
-        Integer nseg_u, nseg_v;
+        Integer nseg_u, nseg_v, quad_order;
         { // Segments graded toward the closest point
           const Real b_ellipse = CachedQuadParams<Real, QuadParams<Real>>(digits).b_ellipse;
           Real ustar, vstar, h_param;
-          { // Closest point, and its distance in parameter units
+          { // Closest point, its distance in parameter units, and the Gauss-Legendre order for the tangents there
             const Real dist = GetClosestPoint(ustar, vstar, coord, dcoord_du, dcoord_dv, order, Xtrg);
             Real Xc[COORD_DIM], dXdu[COORD_DIM], dXdv[COORD_DIM];
             EvalPoint<Real>(Xc, dXdu, dXdv, coord, dcoord_du, dcoord_dv, order, ustar, vstar, nullptr);
-            Real su2 = 0, sv2 = 0;
+            Real su2 = 0, sv2 = 0, suv = 0;
             for (Integer k = 0; k < COORD_DIM; k++) {
               su2 += dXdu[k]*dXdu[k];
               sv2 += dXdv[k]*dXdv[k];
+              suv += dXdu[k]*dXdv[k];
             }
             const Real L_phys = std::max<Real>(sqrt<Real>(su2), sqrt<Real>(sv2));
             const bool degenerate = !(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist) || !(L_phys > 0);
             h_param = (degenerate ? 0 : dist/L_phys);
+
+            // ceil(2*digits/3) + 2, raised to 30*digits/phi for tangents at phi degrees
+            const Integer q0 = (2*digits + 2)/3 + 2;
+            quad_order = std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q0, (Integer)ceil<Real>(SkewFactor<Real>(su2, suv, sv2, 30*(Real)digits))));
           }
 
           const auto graded_segments = [b_ellipse](Iterator<Real> seg, const Real center, const Real w_min) {
@@ -992,9 +984,10 @@ namespace sctl {
           nseg_u = graded_segments(useg.begin(), ustar, w_min);
           nseg_v = graded_segments(vseg.begin(), vstar, w_min);
         }
-        const std::pair<Vector<Real>, Vector<Real>>& gl = GLRule<Real>(digits);
-        const Integer Nu = nseg_u * (Integer)gl.first.Dim();
-        const Integer Nv = nseg_v * (Integer)gl.first.Dim();
+        const Vector<Real>& gl_nds = LegQuadRule<Real>::template nds<NearMaxQuadOrder>(quad_order);
+        const Vector<Real>& gl_wts = LegQuadRule<Real>::template wts<NearMaxQuadOrder>(quad_order);
+        const Integer Nu = nseg_u * quad_order;
+        const Integer Nv = nseg_v * quad_order;
         SCTL_ASSERT(Nu > 0 && Nv > 0);
 
         ScratchBuf<Real> rule_u(Nu*(1 + 4*order)), rule_v(Nv*(1 + 4*order));
@@ -1006,16 +999,15 @@ namespace sctl {
         QuadRule1D<Real> ru = rule_view(rule_u.begin(), Nu);
         QuadRule1D<Real> rv = rule_view(rule_v.begin(), Nv);
         { // Gauss-Legendre rule on each segment, and its interpolation matrices
-          const auto build_rule = [&gl](QuadRule1D<Real>& r, Vector<Real>& param, Iterator<Real> seg, const Integer nseg) {
+          const auto build_rule = [&gl_nds, &gl_wts, quad_order](QuadRule1D<Real>& r, Vector<Real>& param, Iterator<Real> seg, const Integer nseg) {
             { // Nodes and weights of every segment
-              const Integer quad_order = (Integer)gl.first.Dim();
               Integer idx = 0;
               for (Integer si = 0; si < nseg; si++) {
                 const Real a0 = seg[si*2+0], a1 = seg[si*2+1];
                 const Real len = a1 - a0;
                 for (Integer a = 0; a < quad_order; a++) {
-                  param[idx] = a0 + len*gl.first[a];
-                  r.w[idx] = gl.second[a]*len;
+                  param[idx] = a0 + len*gl_nds[a];
+                  r.w[idx] = gl_wts[a]*len;
                   idx++;
                 }
               }
@@ -1400,7 +1392,6 @@ namespace sctl {
     using detail_quadelem::DiffMat;
     using detail_quadelem::IntegratePanel;
     using detail_quadelem::SelfInteracElems;
-    using detail_tensorprod_near::GLRule;
     using detail_tensorprod_near::QuadParams;
 
     template <Integer order, class Real> void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& delta, const Integer ti) {
@@ -1556,7 +1547,6 @@ namespace sctl {
     template <Integer order, class Real, class Kernel> void SelfInteracTensorProduct(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       CenteredURule<order,Real>(0, digits); // precomp cache
       CenteredVRule<order,Real>(0, digits); // precomp cache
-      GLRule<Real>(digits); // precomp cache
       const auto self_interac_one_trg = [&ker, digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>&, const Vector<Real>&, const Integer ti, const Integer tj) {
         const Integer t = ti*order + tj;
         StaticArray<Real,COORD_DIM> Xtrg_buf;
