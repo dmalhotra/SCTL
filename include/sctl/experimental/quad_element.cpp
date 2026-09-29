@@ -139,24 +139,30 @@ namespace sctl {
     /** evaluates position (minus origin, if given) and tangents dXu, dXv (if non-null) at (u,v) */
     template <class Real> void EvalPoint(Real* X, Real* dXu, Real* dXv, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Integer order, const Real u, const Real v, const Vector<Real>* origin) {
       const Integer nnode = order * order;
-      const bool want_d = (dXu || dXv);
 
-      ScratchBuf<Real> L(2*order); // L[2*i], L[2*i+1]: i-th Lagrange basis function at u, at v
+      ScratchBuf<Real> Luv(2*order); // Luv[i], Luv[order+i]: i-th Lagrange basis function at u, at v
       { // Lagrange basis at u and at v
+        ScratchBuf<Real> L(2*order); // L[2*i], L[2*i+1]
         StaticArray<Real,2> uv{u, v};
         const Vector<Real> trg(2, uv, false);
         Vector<Real> L_(2*order, L.begin(), false);
         LagrangeInterp<Real>::Interpolate(L_, QuadElemList<Real>::ParamNodes(order), trg);
+        for (Integer i = 0; i < order; i++) {
+          Luv[i] = L[2*i];
+          Luv[order + i] = L[2*i+1];
+        }
       }
 
       Real x[COORD_DIM] = {0, 0, 0}, xu[COORD_DIM] = {0, 0, 0}, xv[COORD_DIM] = {0, 0, 0};
-      { // Sum the nodal coordinates and their derivatives against the basis
+      // Sum the nodal coordinates and their derivatives against the basis. The tangent choice is a
+      // template parameter: with a branch inside the loop, GCC's loop with tangents takes 1.6x longer.
+      const auto sum_nodes = [&coord, &dcoord_du, &dcoord_dv, &Luv, &x, &xu, &xv, order, nnode](const auto want_d) {
         for (Integer i = 0; i < order; i++) {
           for (Integer j = 0; j < order; j++) {
             const Integer p = i*order + j;
-            const Real w = L[2*i]*L[2*j+1];
+            const Real w = Luv[i]*Luv[order + j];
             for (Integer k = 0; k < COORD_DIM; k++) x[k] += coord[k*nnode + p]*w;
-            if (want_d) {
+            if constexpr (decltype(want_d)::value) {
               for (Integer k = 0; k < COORD_DIM; k++) {
                 xu[k] += dcoord_du[k*nnode + p]*w;
                 xv[k] += dcoord_dv[k*nnode + p]*w;
@@ -164,7 +170,9 @@ namespace sctl {
             }
           }
         }
-      }
+      };
+      if (dXu || dXv) sum_nodes(std::true_type{});
+      else sum_nodes(std::false_type{});
       for (Integer k = 0; k < COORD_DIM; k++) {
         X[k] = (origin ? x[k] - (*origin)[k] : x[k]);
         if (dXu) dXu[k] = xu[k];
