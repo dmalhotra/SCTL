@@ -130,10 +130,10 @@ namespace sctl {
     using PrecompReal = long double;
     #endif
 
-    /** 1D rule: weights w; basis values M, derivatives dM at its points; transposes MT, dMT */
+    /** 1D rule: weights w; basis values M, derivatives dM at its N points; MTD: rows of M^T, then of dM^T (2N x order) */
     template <class Real> struct QuadRule1D {
       Vector<Real> w;
-      Matrix<Real> M, dM, MT, dMT;
+      Matrix<Real> M, dM, MTD;
     };
 
     /** evaluates position (minus origin, if given) and tangents dXu, dXv (if non-null) at (u,v) */
@@ -467,15 +467,8 @@ namespace sctl {
           ScratchBuf<Real> XdU(2*COORD_DIM*nfused), dV(COORD_DIM*nfused); // row a: [k*Nv + b]; XdU: coordinates, then u-tangents
           ScratchBuf<Real> dXu(COORD_DIM*nsplit), dXv(COORD_DIM*nsplit); // [k][a*Nv + b]
           if (fused) { // Coordinates and u-tangents of all components in one product, v-tangents in another
-            ScratchBuf<Real> MuD(2*nu*order); // the block's rows of MT, then of dMT
-            for (Integer a = 0; a < nu; a++) {
-              for (Integer i = 0; i < order; i++) {
-                MuD[a*order + i] = ru.MT[a0 + a][i];
-                MuD[(nu + a)*order + i] = ru.dMT[a0 + a][i];
-              }
-            }
-            const Matrix<Real> MuD_m(2*nu, order, MuD.begin(), false);
-            const Matrix<Real> MuT_b(nu, order, (Iterator<Real>)ru.MT.begin() + a0*order, false);
+            const Matrix<Real> MuD_m(2*nu, order, (Iterator<Real>)ru.MTD.begin(), false); // the only block: all of MTD
+            const Matrix<Real> MuT_b(nu, order, (Iterator<Real>)ru.MTD.begin(), false);
             const Matrix<Real> Cvc_m(order, ldc, Cv.begin(), false);
             const Matrix<Real> Cdvc_m(order, ldc, Cdv.begin(), false);
             Matrix<Real> XdU_m(2*nu, ldc, XdU.begin(), false);
@@ -483,8 +476,8 @@ namespace sctl {
             Matrix<Real>::GEMM(XdU_m, MuD_m, Cvc_m);
             Matrix<Real>::GEMM(dV_m, MuT_b, Cdvc_m);
           } else { // Interpolate coordinates and tangents along u, one product per coordinate
-            const Matrix<Real> MuT_b (nu, order, (Iterator<Real>)ru.MT.begin()  + a0*order, false);
-            const Matrix<Real> dMuT_b(nu, order, (Iterator<Real>)ru.dMT.begin() + a0*order, false);
+            const Matrix<Real> MuT_b (nu, order, (Iterator<Real>)ru.MTD.begin() + a0*order, false);
+            const Matrix<Real> dMuT_b(nu, order, (Iterator<Real>)ru.MTD.begin() + (Nu + a0)*order, false);
             for (Integer k = 0; k < COORD_DIM; k++) {
               const Matrix<Real> Cv_k (order, Nv, Cv.begin()  + k*order*Nv, false);
               const Matrix<Real> Cdv_k(order, Nv, Cdv.begin() + k*order*Nv, false);
@@ -537,7 +530,8 @@ namespace sctl {
           ScratchBuf<Real> Tblk(C*nu*order);
           const Matrix<Real> KW_m(C*nu, Nv, KW.begin(), false);
           Matrix<Real> T_m(C*nu, order, Tblk.begin(), false);
-          Matrix<Real>::GEMM(T_m, KW_m, rv.MT);
+          const Matrix<Real> MvT(Nv, order, (Iterator<Real>)rv.MTD.begin(), false);
+          Matrix<Real>::GEMM(T_m, KW_m, MvT);
           if (fused) {
             for (Integer c = 0; c < C; c++) {
               const Matrix<Real> T_c(nu, order, Tblk.begin() + c*nu*order, false);
@@ -764,13 +758,12 @@ namespace sctl {
           Matrix<W>::GEMM(dT, Dsub, T);
           r.M.ReInit(order, q);
           r.dM.ReInit(order, q);
-          r.MT.ReInit(q, order);
-          r.dMT.ReInit(q, order);
+          r.MTD.ReInit(2*q, order);
           for (Integer i = 0; i < order; i++) for (Integer j = 0; j < q; j++) {
             r.M[i][j] = (Real)T[i][j];
             r.dM[i][j] = (Real)dT[i][j];
-            r.MT[j][i] = r.M[i][j];
-            r.dMT[j][i] = r.dM[i][j];
+            r.MTD[j][i] = r.M[i][j];
+            r.MTD[q + j][i] = r.dM[i][j];
           }
         };
         for (Integer k = 0; k < MaxRefineLvl<Real>; k++) { // Rules on dyadic interval k and on its tail
@@ -1051,7 +1044,7 @@ namespace sctl {
         const auto rule_view = [](Iterator<Real> buf, const Integer N) {
           return QuadRule1D<Real>{Vector<Real>(N, buf, false),
               Matrix<Real>(order, N, buf + N, false), Matrix<Real>(order, N, buf + N*(1 + order), false),
-              Matrix<Real>(N, order, buf + N*(1 + 2*order), false), Matrix<Real>(N, order, buf + N*(1 + 3*order), false)};
+              Matrix<Real>(2*N, order, buf + N*(1 + 2*order), false)};
         };
         QuadRule1D<Real> ru = rule_view(rule_u.begin(), Nu);
         QuadRule1D<Real> rv = rule_view(rule_v.begin(), Nv);
@@ -1075,8 +1068,8 @@ namespace sctl {
             Matrix<Real>::GEMM(r.dM, DiffMat<Real>(order), r.M);
             for (Integer i = 0; i < order; i++) {
               for (Integer a = 0; a < N; a++) {
-                r.MT[a][i] = r.M[i][a];
-                r.dMT[a][i] = r.dM[i][a];
+                r.MTD[a][i] = r.M[i][a];
+                r.MTD[N + a][i] = r.dM[i][a];
               }
             }
           };
@@ -1451,7 +1444,7 @@ namespace sctl {
     using detail_quadelem::SelfInteracElems;
     using detail_tensorprod_near::QuadParams;
 
-    template <Integer order, class Real> void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MT, Matrix<Real>& dMT, const Vector<Real>& delta, const Integer ti) {
+    template <Integer order, class Real> void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MTD, const Vector<Real>& delta, const Integer ti) {
       const Integer N = (Integer)delta.Dim();
       M.ReInit(order, N);
       { // Lagrange basis at the points nds[ti] + delta
@@ -1474,8 +1467,13 @@ namespace sctl {
       }
       dM.ReInit(order, N);
       Matrix<Real>::GEMM(dM, DiffMat<Real>(order), M);
-      MT = M.Transpose();
-      dMT = dM.Transpose();
+      MTD.ReInit(2*N, order);
+      for (Integer i = 0; i < order; i++) {
+        for (Integer a = 0; a < N; a++) {
+          MTD[a][i] = M[i][a];
+          MTD[N + a][i] = dM[i][a];
+        }
+      }
     }
 
     template <class Real> void BuildCenteredLogSingular1D(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer quad_order) {
@@ -1565,7 +1563,7 @@ namespace sctl {
         for (Integer i = 0; i < order; i++) {
           Vector<Real> delta;
           graded_rule(delta, rules[i].w, nds[i]);
-          LagrangeAtOffset<order,Real>(rules[i].M, rules[i].dM, rules[i].MT, rules[i].dMT, delta, i);
+          LagrangeAtOffset<order,Real>(rules[i].M, rules[i].dM, rules[i].MTD, delta, i);
         }
         return rules;
       };
@@ -1588,7 +1586,7 @@ namespace sctl {
         for (Integer j = 0; j < order; j++) {
           Vector<Real> delta;
           BuildCenteredLogSingular1D(delta, rules[j].w, nds[j], Lvl, quad_order);
-          LagrangeAtOffset<order,Real>(rules[j].M, rules[j].dM, rules[j].MT, rules[j].dMT, delta, j);
+          LagrangeAtOffset<order,Real>(rules[j].M, rules[j].dM, rules[j].MTD, delta, j);
         }
         return rules;
       };
