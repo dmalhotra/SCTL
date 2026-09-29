@@ -997,9 +997,9 @@ namespace sctl {
             const bool degenerate = !(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist) || !(L_phys > 0);
             h_param = (degenerate ? 0 : dist/L_phys);
 
-            // digits + 1, raised to 30*digits/phi for tangents at phi degrees
+            // digits + 1, raised to 35*digits/phi for tangents at phi degrees
             const Integer q0 = digits + 1;
-            quad_order = std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q0, (Integer)ceil<Real>(SkewFactor<Real>(su2, suv, sv2, 30*(Real)digits))));
+            quad_order = std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q0, (Integer)ceil<Real>(SkewFactor<Real>(su2, suv, sv2, 35*(Real)digits))));
           }
 
           const auto graded_segments = [b_ellipse](Iterator<Real> seg, const Real center, const Real w_min) {
