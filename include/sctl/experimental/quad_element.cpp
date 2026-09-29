@@ -24,6 +24,7 @@ namespace sctl {
     static constexpr Integer MaxTableOrder = 50;
     static constexpr Integer MaxUnblockedPts = 16384;
 
+    /** static accessors to private data of QuadElemList */
     template <class Real> struct Access {
       static const Vector<Real>& Coord(const QuadElemList<Real>& qel) { return qel.coord; }
       static typename QuadElemList<Real>::QuadScheme Scheme(const QuadElemList<Real>& qel) { return qel.scheme_; }
@@ -36,6 +37,7 @@ namespace sctl {
 
     template <class Real> static constexpr Integer MaxRefineLvl = GetSigBits<Real>::value();
 
+    /** returns fname followed by the rank of comm, zero-padded to 6 digits */
     inline std::string RankFileName(const std::string& fname, const Comm& comm) {
       std::stringstream ss;
       ss << fname << std::setfill('0') << std::setw(6) << comm.Rank();
@@ -68,6 +70,7 @@ namespace sctl {
       }
     }
 
+    /** sets D(i,j) to the derivative of the i-th Lagrange basis on nds at nds[j] */
     template <class Real> void LagrangeDiffMat(Matrix<Real>& D, const Vector<Real>& nds) {
       const Integer n = (Integer)nds.Dim();
       Vector<Real> f(n * n);
@@ -78,7 +81,10 @@ namespace sctl {
       LagrangeInterp<Real>::Derivative(df, f, nds);
     }
 
-    /** Returns an order x order matrix for each order; entry (i, j) is the derivative of the i-th Lagrange basis function on ParamNodes(order) at j-th node. */
+    /**
+     * Returns an 'order' x 'order' matrix for the given 'order'; entry (i, j) is the derivative of
+     * the i-th Lagrange basis function on ParamNodes(order) at j-th node.
+     */
     template <class Real> inline const Matrix<Real>& DiffMat(const Integer order) {
       SCTL_ASSERT(0 < order && order <= MaxTableOrder);
       static const Vector<Matrix<Real>> all = []() {
@@ -89,17 +95,22 @@ namespace sctl {
       return all[order];
     }
 
+    /** returns floor(-log10(tol)), limited to [0, MaxDigits-1] */
     template <class Real> inline Integer DigitsFromTol(const Real tol) {
       for (Integer d = MaxDigits<Real>-1; d > 0; d--) if (tol <= pow<Real,Long>((Real)0.1, (Long)d)) return d;
       return 0;
     }
 
+    /** Gauss-Legendre order, and the minimum ratio b_ellipse of target distance to panel size */
     template <class Real> struct QuadParamSet {
       Real b_ellipse;
       Integer quad_order;
     };
 
-    /** Returns the {b_ellipse, quad_order} pair for each digits, from QuadParams at tolerance 10^-digits; one table per QuadParams function. */
+    /**
+     * Returns the {b_ellipse, quad_order} pair for each digits, from QuadParams at tolerance
+     * 10^-digits; one table per QuadParams function.
+     * */
     template <class Real, void (*QuadParams)(Real, Real&, Integer&)> const QuadParamSet<Real>& CachedQuadParams(const Integer digits) {
       static const std::array<QuadParamSet<Real>, MaxDigits<Real>> table = []() {
         std::array<QuadParamSet<Real>, MaxDigits<Real>> t{};
@@ -116,11 +127,13 @@ namespace sctl {
     using PrecompReal = long double;
     #endif
 
+    /** 1D rule: weights w; basis values M, derivatives dM at its points; transposes MT, dMT */
     template <class Real> struct QuadRule1D {
       Vector<Real> w;
       Matrix<Real> M, dM, MT, dMT;
     };
 
+    /** evaluates position (minus origin, if given) and tangents dXu, dXv (if non-null) at (u,v) */
     template <class Real> void EvalPoint(const Vector<Real>& coord, const Integer order, Real* X, Real* dXu, Real* dXv, const Real u, const Real v, const Vector<Real>* origin) {
       const Integer nnode = order * order;
       const bool want_d = (dXu || dXv);
@@ -176,6 +189,7 @@ namespace sctl {
       }
     }
 
+    /** sets out to coord minus Xtrg, for component-major nodal coordinates */
     template <class Real> void ShiftedElemCoord(Vector<Real>& out, const Vector<Real>& coord, const Vector<Real>& Xtrg) {
       const Integer nnode = (Integer)(coord.Dim() / COORD_DIM);
       if (out.Dim() != COORD_DIM*nnode) out.ReInit(COORD_DIM*nnode);
@@ -185,6 +199,7 @@ namespace sctl {
       }
     }
 
+    /** returns the distance from Xtrg to the nearest node; (ustar, vstar) are its parameters */
     template <class Real> Real GetClosestNode(const Vector<Real>& coord, const Integer order, Real& ustar, Real& vstar, const Vector<Real>& Xtrg) {
       const Integer nnode = order * order;
       Integer seed = 0;
@@ -207,6 +222,7 @@ namespace sctl {
       return sqrt<Real>(best);
     }
 
+    /** returns the distance from Xtrg to the element; (ustar, vstar) are the closest point's parameters */
     template <class Real> Real GetClosestPoint(const Vector<Real>& coord, const Integer order, Real& ustar, Real& vstar, const Vector<Real>& Xtrg) {
       const auto dist2_at = [&coord, order, &Xtrg](const Real uu, const Real vv) -> Real {
         Real X[COORD_DIM];
@@ -341,6 +357,7 @@ namespace sctl {
       return sqrt<Real>(f);
     }
 
+    /** true if K::uKerMatrix takes the source normal */
     template <class K, class VT, class = void> struct UKerNeedsN : std::false_type {};
     template <class K, class VT> struct UKerNeedsN<K, VT, std::void_t<decltype(
         K::template uKerMatrix<0,VT>(std::declval<VT(&)[K::SrcDim()][K::TrgDim()]>(),
@@ -348,6 +365,7 @@ namespace sctl {
           std::declval<const VT(&)[3]>(),
           (const void*)nullptr))>> : std::true_type {};
 
+    /** same as WeightedKernel, for j in [j0,j1) only, using vector type VecType */
     template <class Real, class Kernel, class VecType, bool HAS_N, bool TRG_DOT>
     static void WeightedKernelVec(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Integer nq, const Integer run, const Integer j0, const Integer j1, const Real wj, const bool accum, ConstIterator<Real> ntrg, const void* ctx) {
       static constexpr Integer CD = 3;
@@ -390,6 +408,7 @@ namespace sctl {
       }
     }
 
+    /** out[blk][c][j] = wj*wq*K(Xt-Xs) at point blk*run+j; dotted with normal_trg if non-empty; added if accum */
     template <class Real, class Kernel> void WeightedKernel(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Integer nq, const Integer run, const Real wj, const bool accum, const Vector<Real>& normal_trg, const Kernel& ker) {
       static constexpr bool HAS_N = UKerNeedsN<Kernel, Vec<Real,1>>::value;
       using WVec = Vec<Real, DefaultVecLen<Real>()>;
@@ -404,6 +423,7 @@ namespace sctl {
       }
     }
 
+    /** adds to acc_cm (ru,rv) integrals of kernel times basis; target at origin, or proxy-weighted sum */
     template <Integer order, class Real, class Kernel> void IntegrateTensorRule(Vector<Real>& acc_cm, const Vector<Real>& src_nodal, const QuadRule1D<Real>& ru, const QuadRule1D<Real>& rv, const Vector<Real>& normal_trg, const Kernel& ker, const Real nrm_sign = 1, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -501,6 +521,7 @@ namespace sctl {
       }
     }
 
+    /** sets M_acc[p][c] to the (ru,rv) integral at Xtrg of kernel component c times basis p */
     template <Integer order, class Real, class Kernel> void IntegratePanel(Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const QuadRule1D<Real>& ru, const QuadRule1D<Real>& rv, const Kernel& ker) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -517,6 +538,7 @@ namespace sctl {
       for (Integer p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] = acc[c*nnode + p];
     }
 
+    /** copies src, read as nrow x KDIM1_out, into columns t*KDIM1_out to (t+1)*KDIM1_out-1 of M */
     template <class Real> void ScatterTargetBlock(Matrix<Real>& M, const Matrix<Real>& src, const Long t, const Integer KDIM1_out) {
       const Integer nrow = (Integer)M.Dim(0);
       SCTL_ASSERT(src.Dim(0)*src.Dim(1) == nrow*KDIM1_out);
@@ -528,6 +550,7 @@ namespace sctl {
       }
     }
 
+    /** sets M to the matrix from element elem_idx to targets Xt, by near_interac_one_trg per target */
     template <Integer order, class Real, class Kernel, class NearInteracOneTrg>
     void NearInteracTargets(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const QuadElemList<Real>& qel, const Long elem_idx, NearInteracOneTrg near_interac_one_trg) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
@@ -551,6 +574,7 @@ namespace sctl {
       }
     }
 
+    /** sets M_lst[e] to the matrix from element e to its nodes, by self_interac_one_trg per node */
     template <Integer order, class Real, class Kernel, class SelfInteracOneTrg>
     void SelfInteracElems(Vector<Matrix<Real>>& M_lst, const bool trg_dot_prod, const QuadElemList<Real>& qel, SelfInteracOneTrg self_interac_one_trg) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
