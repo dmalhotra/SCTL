@@ -81,6 +81,7 @@ namespace sctl {
       LagrangeInterp<Real>::Derivative(df, f, nds);
     }
 
+    // TODO: test the accuracy of dcoord_du, dcoord_dv in place of DiffMat in the rule builds and the Duffy node metric
     /**
      * Returns an 'order' x 'order' matrix for the given 'order'; entry (i, j) is the derivative of
      * the i-th Lagrange basis function on ParamNodes(order) at j-th node.
@@ -134,49 +135,29 @@ namespace sctl {
     };
 
     /** evaluates position (minus origin, if given) and tangents dXu, dXv (if non-null) at (u,v) */
-    template <class Real> void EvalPoint(Real* X, Real* dXu, Real* dXv, const Vector<Real>& coord, const Integer order, const Real u, const Real v, const Vector<Real>* origin) {
+    template <class Real> void EvalPoint(Real* X, Real* dXu, Real* dXv, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Integer order, const Real u, const Real v, const Vector<Real>* origin) {
       const Integer nnode = order * order;
       const bool want_d = (dXu || dXv);
 
-      ScratchBuf<Real> Lu(order), Lv(order), dLu(order), dLv(order);
+      ScratchBuf<Real> L(2*order); // L[2*i], L[2*i+1]: i-th Lagrange basis function at u, at v
       { // Lagrange basis at u and at v
-        const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-        const auto interp_at = [&nds, order](ScratchBuf<Real>& L, const Real t) {
-          StaticArray<Real,1> tp;
-          tp[0] = t;
-          const Vector<Real> p(1, tp, false);
-          Vector<Real> o(order, L.begin(), false);
-          LagrangeInterp<Real>::Interpolate(o, nds, p);
-        };
-        interp_at(Lu, u);
-        interp_at(Lv, v);
-      }
-      if (want_d) { // Derivatives of the basis
-        const Matrix<Real>& D = DiffMat<Real>(order);
-        for (Integer i = 0; i < order; i++) {
-          Real su = 0, sv = 0;
-          for (Integer a = 0; a < order; a++) {
-            su += D[i][a]*Lu[a];
-            sv += D[i][a]*Lv[a];
-          }
-          dLu[i] = su;
-          dLv[i] = sv;
-        }
+        StaticArray<Real,2> uv{u, v};
+        const Vector<Real> trg(2, uv, false);
+        Vector<Real> L_(2*order, L.begin(), false);
+        LagrangeInterp<Real>::Interpolate(L_, QuadElemList<Real>::ParamNodes(order), trg);
       }
 
       Real x[COORD_DIM] = {0, 0, 0}, xu[COORD_DIM] = {0, 0, 0}, xv[COORD_DIM] = {0, 0, 0};
-      { // Sum the nodal coordinates against the basis
+      { // Sum the nodal coordinates and their derivatives against the basis
         for (Integer i = 0; i < order; i++) {
           for (Integer j = 0; j < order; j++) {
             const Integer p = i*order + j;
-            const Real w = Lu[i]*Lv[j];
+            const Real w = L[2*i]*L[2*j+1];
             for (Integer k = 0; k < COORD_DIM; k++) x[k] += coord[k*nnode + p]*w;
             if (want_d) {
-              const Real w_du = dLu[i]*Lv[j];
-              const Real w_dv = Lu[i]*dLv[j];
               for (Integer k = 0; k < COORD_DIM; k++) {
-                xu[k] += coord[k*nnode + p]*w_du;
-                xv[k] += coord[k*nnode + p]*w_dv;
+                xu[k] += dcoord_du[k*nnode + p]*w;
+                xv[k] += dcoord_dv[k*nnode + p]*w;
               }
             }
           }
@@ -223,10 +204,10 @@ namespace sctl {
     }
 
     /** returns the distance from Xtrg to the element; (ustar, vstar) are the closest point's parameters */
-    template <class Real> Real GetClosestPoint(Real& ustar, Real& vstar, const Vector<Real>& coord, const Integer order, const Vector<Real>& Xtrg) {
-      const auto dist2_at = [&coord, order, &Xtrg](const Real uu, const Real vv) -> Real {
+    template <class Real> Real GetClosestPoint(Real& ustar, Real& vstar, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Integer order, const Vector<Real>& Xtrg) {
+      const auto dist2_at = [&coord, &dcoord_du, &dcoord_dv, order, &Xtrg](const Real uu, const Real vv) -> Real {
         Real X[COORD_DIM];
-        EvalPoint<Real>(X, nullptr, nullptr, coord, order, uu, vv, &Xtrg);
+        EvalPoint<Real>(X, nullptr, nullptr, coord, dcoord_du, dcoord_dv, order, uu, vv, &Xtrg);
         Real r2 = 0;
         for (Integer k = 0; k < COORD_DIM; k++) r2 += X[k]*X[k];
         return r2;
@@ -246,7 +227,7 @@ namespace sctl {
         Real E = 0, F = 0, G = 0, gu = 0, gv = 0;
         { // Metric and gradient of the squared distance
           Real X[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
-          EvalPoint<Real>(X, dXu, dXv, coord, order, u, v, &Xtrg);
+          EvalPoint<Real>(X, dXu, dXv, coord, dcoord_du, dcoord_dv, order, u, v, &Xtrg);
           for (Integer k = 0; k < COORD_DIM; k++) {
             const Real r = X[k], a = dXu[k], b = dXv[k];
             E += a*a;
@@ -563,13 +544,16 @@ namespace sctl {
       const Long Ntrg = Xt.Dim() / COORD_DIM;
       if (M.Dim(0) != nnode*KDIM0 || M.Dim(1) != Ntrg*KDIM1_out) M.ReInit(nnode*KDIM0, Ntrg*KDIM1_out);
 
-      const Vector<Real> coord(COORD_DIM*nnode, (Iterator<Real>)Access<Real>::Coord(qel).begin() + elem_idx*COORD_DIM*nnode, false);
+      const Long offset = elem_idx*COORD_DIM*nnode;
+      const Vector<Real> coord(COORD_DIM*nnode, (Iterator<Real>)Access<Real>::Coord(qel).begin() + offset, false);
+      const Vector<Real> dcoord_du(COORD_DIM*nnode, (Iterator<Real>)Access<Real>::DCoordDu(qel).begin() + offset, false);
+      const Vector<Real> dcoord_dv(COORD_DIM*nnode, (Iterator<Real>)Access<Real>::DCoordDv(qel).begin() + offset, false);
       ScratchBuf<Real> M_acc_buf(nnode*KDIM0*KDIM1_out);
       Matrix<Real> M_acc(nnode, KDIM0*KDIM1_out, M_acc_buf.begin(), false);
       for (Long t = 0; t < Ntrg; t++) {
         const Vector<Real> Xtrg(COORD_DIM, (Iterator<Real>)Xt.begin() + t*COORD_DIM, false);
         const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)normal_trg.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-        near_interac_one_trg(M_acc, coord, Xtrg, ntrg);
+        near_interac_one_trg(M_acc, coord, dcoord_du, dcoord_dv, Xtrg, ntrg);
         ScatterTargetBlock(M, M_acc, t, KDIM1_out);
       }
     }
@@ -755,7 +739,7 @@ namespace sctl {
       return all[q];
     }
 
-    template <Integer order, class Real, class Kernel> void NearInteracBlockDyadic(Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
+    template <Integer order, class Real, class Kernel> void NearInteracBlockDyadic(Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer KDIM1full = Kernel::TrgDim();
       const Integer nnode = order*order;
@@ -765,14 +749,14 @@ namespace sctl {
       M_acc.SetZero();
 
       Real ustar, vstar;
-      const Real dist = GetClosestPoint(ustar, vstar, coord, order, Xtrg);
+      const Real dist = GetClosestPoint(ustar, vstar, coord, dcoord_du, dcoord_dv, order, Xtrg);
       const Real slen[2][2] = {{ustar, 1-ustar}, {vstar, 1-vstar}};
 
       Real spd_u, spd_v;
       Integer q_near;
       { // Speeds, and the quadrature order raised for skewed tangents
         Real Xc[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
-        EvalPoint<Real>(Xc, dXu, dXv, coord, order, ustar, vstar, nullptr);
+        EvalPoint<Real>(Xc, dXu, dXv, coord, dcoord_du, dcoord_dv, order, ustar, vstar, nullptr);
         Real guu = 0, gvv = 0, guv = 0;
         for (Integer k = 0; k < COORD_DIM; k++) {
           guu += dXu[k]*dXu[k];
@@ -906,8 +890,8 @@ namespace sctl {
     }
 
     template <Integer order, class Real, class Kernel> void NearInteracDyadic(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
-      const auto near_interac_one_trg = [&ker, digits](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
-        NearInteracBlockDyadic<order,Real>(M_acc, coord, Xtrg, ntrg, ker, digits);
+      const auto near_interac_one_trg = [&ker, digits](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
+        NearInteracBlockDyadic<order,Real>(M_acc, coord, dcoord_du, dcoord_dv, Xtrg, ntrg, ker, digits);
       };
       NearInteracTargets<order,Real,Kernel>(M, Xt, normal_trg, qel, elem_idx, near_interac_one_trg);
     }
@@ -950,7 +934,7 @@ namespace sctl {
     }
 
     template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
-      const auto near_interac_one_trg = [&ker, digits](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
+      const auto near_interac_one_trg = [&ker, digits](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
         constexpr Integer MaxSegments = 4096;
         ScratchBuf<Real> useg(2*MaxSegments), vseg(2*MaxSegments);
         Integer nseg_u, nseg_v;
@@ -958,9 +942,9 @@ namespace sctl {
           const Real b_ellipse = CachedQuadParams<Real, QuadParams<Real>>(digits).b_ellipse;
           Real ustar, vstar, h_param;
           { // Closest point, and its distance in parameter units
-            const Real dist = GetClosestPoint(ustar, vstar, coord, order, Xtrg);
+            const Real dist = GetClosestPoint(ustar, vstar, coord, dcoord_du, dcoord_dv, order, Xtrg);
             Real Xc[COORD_DIM], dXdu[COORD_DIM], dXdv[COORD_DIM];
-            EvalPoint<Real>(Xc, dXdu, dXdv, coord, order, ustar, vstar, nullptr);
+            EvalPoint<Real>(Xc, dXdu, dXdv, coord, dcoord_du, dcoord_dv, order, ustar, vstar, nullptr);
             Real su2 = 0, sv2 = 0;
             for (Integer k = 0; k < COORD_DIM; k++) {
               su2 += dXdu[k]*dXdu[k];
@@ -1395,7 +1379,7 @@ namespace sctl {
           }
         }
         const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-        NearInteracBlockDyadic<order,Real>(M_acc, coord, hh_Xt1, ntrg, ker, near_digits, hh_off, hh_w);
+        NearInteracBlockDyadic<order,Real>(M_acc, coord, dXu, dXv, hh_Xt1, ntrg, ker, near_digits, hh_off, hh_w);
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }

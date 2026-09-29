@@ -54,7 +54,10 @@ template <class Real> struct QuadElemTestAccess {
     return detail_quadelem::GetClosestNode(ustar, vstar, ElemCoord(qel, elem_idx), qel.Order(), Xtrg);
   }
   static Real GetClosestPoint(Real& ustar, Real& vstar, const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& Xtrg) {
-    return detail_quadelem::GetClosestPoint(ustar, vstar, ElemCoord(qel, elem_idx), qel.Order(), Xtrg);
+    const Integer n = 3 * qel.Order() * qel.Order();
+    const Vector<Real> dcoord_du(n, (Iterator<Real>)qel.dcoord_du.begin() + elem_idx * n, false);
+    const Vector<Real> dcoord_dv(n, (Iterator<Real>)qel.dcoord_dv.begin() + elem_idx * n, false);
+    return detail_quadelem::GetClosestPoint(ustar, vstar, ElemCoord(qel, elem_idx), dcoord_du, dcoord_dv, qel.Order(), Xtrg);
   }
   static typename QuadElemList<Real>::QuadScheme Scheme(const QuadElemList<Real>& qel) {
     return qel.scheme_;
