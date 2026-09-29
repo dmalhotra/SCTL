@@ -433,29 +433,26 @@ namespace sctl {
       const Integer Nv = (Integer)rv.M.Dim(1);
       SCTL_ASSERT(Nu > 0 && Nv > 0);
 
-      ScratchBuf<Real> Cv(COORD_DIM*order*Nv), Cdv(COORD_DIM*order*Nv);
-      { // Interpolate the coordinates and their v-derivative along v
-        const Matrix<Real> cs_all(COORD_DIM*order, order, (Iterator<Real>)src_nodal.begin(), false);
-        Matrix<Real> Cv_all (COORD_DIM*order, Nv, Cv.begin(),  false);
-        Matrix<Real> Cdv_all(COORD_DIM*order, Nv, Cdv.begin(), false);
-        Matrix<Real>::GEMM(Cv_all,  cs_all, rv.M);
-        Matrix<Real>::GEMM(Cdv_all, cs_all, rv.dM);
-      }
-
       // Small rules (one block, where the cost per product call dominates) store the coordinates side
       // by side, so that one product along u covers all of them, and project each component into acc_cm
       const bool fused = (Nu*Nv <= MaxFusedPts);
       const Integer ldc = COORD_DIM*Nv;
-      ScratchBuf<Real> Cvc(fused ? order*ldc : 0), Cdvc(fused ? order*ldc : 0); // [i][k*Nv + b]
-      if (fused) {
-        for (Integer k = 0; k < COORD_DIM; k++) {
+
+      ScratchBuf<Real> Cv(COORD_DIM*order*Nv), Cdv(COORD_DIM*order*Nv); // [k][i*Nv + b], or [i][k*Nv + b] for a small rule
+      { // Interpolate the coordinates and their v-derivative along v
+        ScratchBuf<Real> cs_ik(fused ? COORD_DIM*order*order : 0); // rows (i,k) of src_nodal
+        if (fused) {
           for (Integer i = 0; i < order; i++) {
-            for (Integer b = 0; b < Nv; b++) {
-              Cvc[i*ldc + k*Nv + b] = Cv[(k*order + i)*Nv + b];
-              Cdvc[i*ldc + k*Nv + b] = Cdv[(k*order + i)*Nv + b];
+            for (Integer k = 0; k < COORD_DIM; k++) {
+              for (Integer j = 0; j < order; j++) cs_ik[(i*COORD_DIM + k)*order + j] = src_nodal[(k*order + i)*order + j];
             }
           }
         }
+        const Matrix<Real> cs_all(COORD_DIM*order, order, (fused ? cs_ik.begin() : (Iterator<Real>)src_nodal.begin()), false);
+        Matrix<Real> Cv_all (COORD_DIM*order, Nv, Cv.begin(),  false);
+        Matrix<Real> Cdv_all(COORD_DIM*order, Nv, Cdv.begin(), false);
+        Matrix<Real>::GEMM(Cv_all,  cs_all, rv.M);
+        Matrix<Real>::GEMM(Cdv_all, cs_all, rv.dM);
       }
 
       ScratchBuf<Real> Tall(fused ? 0 : Nu*C*order);
@@ -479,8 +476,8 @@ namespace sctl {
             }
             const Matrix<Real> MuD_m(2*nu, order, MuD.begin(), false);
             const Matrix<Real> MuT_b(nu, order, (Iterator<Real>)ru.MT.begin() + a0*order, false);
-            const Matrix<Real> Cvc_m(order, ldc, Cvc.begin(), false);
-            const Matrix<Real> Cdvc_m(order, ldc, Cdvc.begin(), false);
+            const Matrix<Real> Cvc_m(order, ldc, Cv.begin(), false);
+            const Matrix<Real> Cdvc_m(order, ldc, Cdv.begin(), false);
             Matrix<Real> XdU_m(2*nu, ldc, XdU.begin(), false);
             Matrix<Real> dV_m(nu, ldc, dV.begin(), false);
             Matrix<Real>::GEMM(XdU_m, MuD_m, Cvc_m);
