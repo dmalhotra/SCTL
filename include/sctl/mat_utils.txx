@@ -40,6 +40,20 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
     constexpr Integer VL = Vec<ValueType>::Size();
     using IV = std::integral_constant<Integer, VL>;
     constexpr Long ParallelWork = 1 << 16; // multiply-adds per thread, enough to pay for starting it
+    if (!SCTL_IN_PARALLEL()) { // from serial code, blocks of columns of C in parallel, each by a call that takes the serial path below
+      const Long nchunk = std::min<Long>(std::min<Long>(N, SCTL_GET_MAX_THREADS()), (Long)M * N * K / ParallelWork);
+      if (nchunk > 1) {
+        // Captures copies: if the threads got the arguments by address, the serial path would read
+        // them from memory again after every store
+        const auto block = [=](const Long i) {
+          const Long n0 = N * i / nchunk, n1 = N * (i + 1) / nchunk;
+          gemm<ValueType>('N', 'N', M, (int)(n1 - n0), K, alpha, A, lda, B + ldb * n0, ldb, beta, C + ldc * n0, ldc);
+        };
+        #pragma omp parallel for schedule(static) num_threads((int)nchunk)
+        for (Long i = 0; i < nchunk; i++) block(i);
+        return;
+      }
+    }
 
     // Rows m0.. (NV vectors of W) of columns n0.. (NC of them) of C
     const auto tile = [&A, &B, &C, K, lda, ldb, ldc, alpha, beta](const Long m0, const Long n0, auto nc, auto nv, auto w) {
@@ -101,26 +115,15 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
         }
       }
     };
-    // Columns n_begin..n_end-1 of C; the leftover rows in a second pass, since inside the first loop
-    // they slowed down its tiles
-    const auto product = [&cols, &cols_tail, M, M_full](const Long n_begin, const Long n_end) {
-      Long n = n_begin;
-      for (; n + 4 <= n_end; n += 4) cols(n, I4{});
-      for (; n < n_end; n++) cols(n, I1{});
-      if (M_full < M) {
-        n = n_begin;
-        for (; n + 4 <= n_end; n += 4) cols_tail(n, I4{});
-        for (; n < n_end; n++) cols_tail(n, I1{});
-      }
-    };
-
-    // Threads only from serial code, and only as many as get ParallelWork each
-    const Long nchunk = (SCTL_IN_PARALLEL() ? 1 : std::max<Long>(1, std::min<Long>(std::min<Long>(N, SCTL_GET_MAX_THREADS()), (Long)M * N * K / ParallelWork)));
-    if (nchunk == 1) {
-      product(0, N);
-    } else {
-      #pragma omp parallel for schedule(static) num_threads((int)nchunk)
-      for (Long i = 0; i < nchunk; i++) product(N * i / nchunk, N * (i + 1) / nchunk);
+    // The leftover rows in a second pass: inside the first loop they slowed down its tiles. Not in a
+    // lambda: GCC did not inline it, which also slowed the tiles down
+    Long n = 0;
+    for (; n + 4 <= N; n += 4) cols(n, I4{});
+    for (; n < N; n++) cols(n, I1{});
+    if (M_full < M) {
+      n = 0;
+      for (; n + 4 <= N; n += 4) cols_tail(n, I4{});
+      for (; n < N; n++) cols_tail(n, I1{});
     }
   } else if (TransA == 'N' || TransA == 'n') {
     #pragma omp parallel for schedule(static)
