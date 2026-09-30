@@ -4,6 +4,7 @@
 #include <algorithm>              // for max, min
 #include <cassert>                // for assert
 #include <iostream>               // for basic_ostream, cout, operator<<
+#include <type_traits>            // for integral_constant
 #include <vector>                 // for vector
 
 #include "sctl/common.hpp"        // for Long, sctl
@@ -16,6 +17,8 @@
 #include "sctl/mem_mgr.txx"       // for aligned_delete, aligned_new
 #include "sctl/static-array.hpp"  // for StaticArray
 #include "sctl/static-array.txx"  // for StaticArray::operator[]
+#include "sctl/vec.hpp"           // for Vec, FMA
+#include "sctl/vec.txx"           // for Vec::Load, Vec::Store
 
 #if defined(SCTL_HAVE_BLAS)
 #include "sctl/blas.h"
@@ -29,15 +32,95 @@ namespace mat {
 
 template <class ValueType> inline void gemm(char TransA, char TransB, int M, int N, int K, ValueType alpha, ConstIterator<ValueType> A, int lda, ConstIterator<ValueType> B, int ldb, ValueType beta, Iterator<ValueType> C, int ldc) {
   if ((TransA == 'N' || TransA == 'n') && (TransB == 'N' || TransB == 'n')) {
-    #pragma omp parallel for schedule(static)
-    for (Long n = 0; n < N; n++) {    // Columns of C
-      for (Long m = 0; m < M; m++) {  // Rows of C
-        ValueType AxB = 0;
-        for (Long k = 0; k < K; k++) {
-          AxB += A[m + lda * k] * B[k + ldb * n];
-        }
-        C[m + ldc * n] = alpha * AxB + (beta == ValueType(0) ? ValueType(0) : beta * C[m + ldc * n]);
+    // Column n of C is the sum over k of B[k + ldb*n] times column k of A: vectors run down the
+    // columns, and a tile of 4 columns of C keeps its partial sums in registers
+    using I1 = std::integral_constant<Integer, 1>;
+    using I2 = std::integral_constant<Integer, 2>;
+    using I4 = std::integral_constant<Integer, 4>;
+    constexpr Integer VL = Vec<ValueType>::Size();
+    using IV = std::integral_constant<Integer, VL>;
+    constexpr Long ParallelWork = 1 << 16; // multiply-adds per thread, enough to pay for starting it
+
+    // Rows m0.. (NV vectors of W) of columns n0.. (NC of them) of C
+    const auto tile = [&A, &B, &C, K, lda, ldb, ldc, alpha, beta](const Long m0, const Long n0, auto nc, auto nv, auto w) {
+      constexpr Integer NC = decltype(nc)::value;
+      constexpr Integer NV = decltype(nv)::value;
+      constexpr Integer W = decltype(w)::value;
+      using V = Vec<ValueType, W>;
+      V acc[NC][NV];
+      for (Integer c = 0; c < NC; c++) {
+        for (Integer v = 0; v < NV; v++) acc[c][v] = V((ValueType)0);
       }
+      for (Long k = 0; k < K; k++) {
+        V a[NV];
+        for (Integer v = 0; v < NV; v++) a[v] = V::Load(&A[m0 + v*W + lda*k]);
+        for (Integer c = 0; c < NC; c++) {
+          const V b(B[k + ldb*(n0 + c)]);
+          for (Integer v = 0; v < NV; v++) acc[c][v] = FMA(a[v], b, acc[c][v]);
+        }
+      }
+      // Copied to locals: the compiler assumes a vector store can overwrite any memory, so it would
+      // read the captured values again after each store
+      const V alpha_v(alpha), beta_v(beta);
+      const bool add_c = (beta != 0);
+      const Long ldc_ = ldc;
+      ValueType* const C0 = &C[m0 + ldc_*n0];
+      for (Integer c = 0; c < NC; c++) {
+        for (Integer v = 0; v < NV; v++) {
+          ValueType* Cv = C0 + v*W + ldc_*c;
+          acc[c][v] = acc[c][v] * alpha_v;
+          if (add_c) acc[c][v] = FMA(beta_v, V::Load(Cv), acc[c][v]);
+          acc[c][v].Store(Cv);
+        }
+      }
+    };
+
+    const Long M_full = M - M % VL; // rows done in full-width vectors
+    const auto cols = [&tile, M_full](const Long n0, auto nc) {
+      Long m = 0;
+      for (; m + 2*VL <= M_full; m += 2*VL) tile(m, n0, nc, I2{}, IV{});
+      for (; m < M_full; m += VL) tile(m, n0, nc, I1{}, IV{});
+    };
+    const auto cols_tail = [&tile, &A, &B, &C, M, M_full, K, lda, ldb, ldc, alpha, beta](const Long n0, auto nc) { // rows M_full..
+      constexpr Integer NC = decltype(nc)::value;
+      Long m = M_full;
+      if constexpr (VL > 8) {
+        for (; m + 8 <= M; m += 8) tile(m, n0, nc, I1{}, std::integral_constant<Integer, 8>{});
+      }
+      if constexpr (VL > 4) {
+        for (; m + 4 <= M; m += 4) tile(m, n0, nc, I1{}, std::integral_constant<Integer, 4>{});
+      }
+      if constexpr (VL > 2) {
+        for (; m + 2 <= M; m += 2) tile(m, n0, nc, I1{}, std::integral_constant<Integer, 2>{});
+      }
+      for (; m < M; m++) {
+        for (Integer c = 0; c < NC; c++) {
+          ValueType AxB = 0;
+          for (Long k = 0; k < K; k++) AxB += A[m + lda*k] * B[k + ldb*(n0 + c)];
+          C[m + ldc*(n0 + c)] = alpha * AxB + (beta == ValueType(0) ? ValueType(0) : beta * C[m + ldc*(n0 + c)]);
+        }
+      }
+    };
+    // Columns n_begin..n_end-1 of C; the leftover rows in a second pass, since inside the first loop
+    // they slowed down its tiles
+    const auto product = [&cols, &cols_tail, M, M_full](const Long n_begin, const Long n_end) {
+      Long n = n_begin;
+      for (; n + 4 <= n_end; n += 4) cols(n, I4{});
+      for (; n < n_end; n++) cols(n, I1{});
+      if (M_full < M) {
+        n = n_begin;
+        for (; n + 4 <= n_end; n += 4) cols_tail(n, I4{});
+        for (; n < n_end; n++) cols_tail(n, I1{});
+      }
+    };
+
+    // Threads only from serial code, and only as many as get ParallelWork each
+    const Long nchunk = (SCTL_IN_PARALLEL() ? 1 : std::max<Long>(1, std::min<Long>(std::min<Long>(N, SCTL_GET_MAX_THREADS()), (Long)M * N * K / ParallelWork)));
+    if (nchunk == 1) {
+      product(0, N);
+    } else {
+      #pragma omp parallel for schedule(static) num_threads((int)nchunk)
+      for (Long i = 0; i < nchunk; i++) product(N * i / nchunk, N * (i + 1) / nchunk);
     }
   } else if (TransA == 'N' || TransA == 'n') {
     #pragma omp parallel for schedule(static)
