@@ -650,10 +650,12 @@ namespace sctl {
       #pragma omp parallel
       {
         ScratchBuf<Real> buf((Long)chunk*blk);
+        // Each run of consecutive targets of one element; consecutive tasks take the same run on
+        // consecutive elements, so they share its targets' precomputed tables while those are in cache
         #pragma omp for schedule(dynamic)
-        for (Long task = 0; task < nelem*ntask_elem; task++) { // Each run of consecutive targets of one element
-          const Long elem_idx = task / ntask_elem;
-          const Integer t0 = (Integer)(task % ntask_elem)*chunk;
+        for (Long task = 0; task < nelem*ntask_elem; task++) {
+          const Long elem_idx = task % nelem;
+          const Integer t0 = (Integer)(task / nelem)*chunk;
           const Integer t1 = std::min<Integer>(nnode, t0 + chunk);
 
           // Coordinates and tangents component by component, normals point by point
