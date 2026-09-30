@@ -56,6 +56,8 @@
 #include "sctl/matrix.txx"
 #include "sctl/mat_utils.hpp"
 #include "sctl/mat_utils.txx"
+#include "sctl/small_gemm.hpp"
+#include "sctl/small_gemm.txx"
 #include "sctl/blas.h"
 #include "sctl/lapack.h"
 
