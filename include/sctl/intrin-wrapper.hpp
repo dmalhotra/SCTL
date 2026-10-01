@@ -276,6 +276,9 @@ namespace sctl { // Generic
     for (Integer i = 0; i < VData::Size; i++) a_.x[i] -= b_.x[i];
     return a_.v;
   }
+  template <class VData> inline VData rem_intrin(const VData& a, const VData& b) { // remainder of the integer division, a - (a/b)*b
+    return sub_intrin(a, mul_intrin(div_intrin(a, b), b));
+  }
   template <class VData> inline VData fma_intrin(const VData& a, const VData& b, const VData& c) {
     return add_intrin(mul_intrin(a,b), c);
   }
@@ -2771,6 +2774,17 @@ namespace sctl { // AVX
   template <> inline VecData<float  , 8> concat_intrin<VecData<float  , 4>>(const VecData<float  , 4>& lo, const VecData<float  , 4>& hi) { return _mm256_insertf128_ps(_mm256_castps128_ps256(lo.v), hi.v, 1); }
   template <> inline VecData<double , 4> concat_intrin<VecData<double , 2>>(const VecData<double , 2>& lo, const VecData<double , 2>& hi) { return _mm256_insertf128_pd(_mm256_castpd128_pd256(lo.v), hi.v, 1); }
 
+  // int32_t division through double is exact: the rounding error of the quotient is
+  // below 2^-22/|b|, and a quotient that is not an integer is at least 1/|b| from one.
+  template <> inline VecData<int32_t,4> div_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return _mm256_cvttpd_epi32(_mm256_div_pd(_mm256_cvtepi32_pd(a.v), _mm256_cvtepi32_pd(b.v))); }
+  template <> inline VecData<int32_t,8> div_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
+    #if defined(__AVX512F__)
+    return _mm512_cvttpd_epi32(_mm512_div_pd(_mm512_cvtepi32_pd(a.v), _mm512_cvtepi32_pd(b.v)));
+    #else
+    return concat_intrin(div_intrin(get_low_intrin(a), get_low_intrin(b)), div_intrin(get_high_intrin(a), get_high_intrin(b)));
+    #endif
+  }
+
 
 
   // Special functions
@@ -3641,6 +3655,8 @@ namespace sctl { // AVX512
   template <> inline VecData<int64_t, 8> concat_intrin<VecData<int64_t, 4>>(const VecData<int64_t, 4>& lo, const VecData<int64_t, 4>& hi) { return _mm512_inserti64x4(_mm512_castsi256_si512(lo.v), hi.v, 1); }
   template <> inline VecData<float  ,16> concat_intrin<VecData<float  , 8>>(const VecData<float  , 8>& lo, const VecData<float  , 8>& hi) { return _mm512_castpd_ps(_mm512_insertf64x4(_mm512_castps_pd(_mm512_castps256_ps512(lo.v)), _mm256_castps_pd(hi.v), 1)); }
   template <> inline VecData<double , 8> concat_intrin<VecData<double , 4>>(const VecData<double , 4>& lo, const VecData<double , 4>& hi) { return _mm512_insertf64x4(_mm512_castpd256_pd512(lo.v), hi.v, 1); }
+
+  template <> inline VecData<int32_t,16> div_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return concat_intrin(div_intrin(get_low_intrin(a), get_low_intrin(b)), div_intrin(get_high_intrin(a), get_high_intrin(b))); } // halves through double
 
 
   /////////////////////////////////////////////////////////////////////////////

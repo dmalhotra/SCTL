@@ -80,6 +80,7 @@ namespace sctl {
       static void test_ints() {
         if (N*sizeof(ScalarType)*8<=512) {
           test_bitshift();
+          test_div_rem();
         }
       }
 
@@ -354,6 +355,32 @@ namespace sctl {
         for (Integer i = 0; i < N; i++) {
           SCTL_ASSERT(u2.x[i] == (ScalarType)(u1.x[i] >> k_.x[i]));
           SCTL_ASSERT(u3.x[i] == (ScalarType)((UInt)u1.x[i] * ((UInt)1 << k_.x[i])));
+        }
+      }
+
+      static void test_div_rem() {
+        UnionType u1, u2, u3, u4, u5, u6, u7;
+        for (Integer i = 0; i < SizeBytes; i++) {
+          u1.c[i] = rand();
+          u2.c[i] = rand();
+        }
+        for (Integer i = 0; i < N; i++) { // divisors of every magnitude; not 0, and not -1 for the minimum value
+          u2.x[i] = (ScalarType)(u2.x[i] >> (rand() % (sizeof(ScalarType)*8)));
+          if (u2.x[i] == 0 || (u2.x[i] == -1 && u1.x[i] == std::numeric_limits<ScalarType>::min())) u2.x[i] = 1;
+        }
+
+        u3.v = u1.v / u2.v;
+        u4.v = u1.v % u2.v;
+        u5.v = u1.v;
+        u5.v %= u2.v;
+        u6.v = u1.v % 7;
+        u7.v = 100 % u2.v;
+        for (Integer i = 0; i < N; i++) {
+          SCTL_ASSERT(u3.x[i] == (ScalarType)(u1.x[i] / u2.x[i]));
+          SCTL_ASSERT(u4.x[i] == (ScalarType)(u1.x[i] % u2.x[i]));
+          SCTL_ASSERT(u5.x[i] == u4.x[i]);
+          SCTL_ASSERT(u6.x[i] == (ScalarType)(u1.x[i] % 7));
+          SCTL_ASSERT(u7.x[i] == (ScalarType)(100 % u2.x[i]));
         }
       }
 

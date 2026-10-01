@@ -117,6 +117,11 @@ namespace sctl {
     v = div_intrin(v, rhs.v);
     return *this;
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N>& Vec<ValueType,N>::operator%=(const Vec<ValueType,N>& rhs) {
+    static_assert(TypeTraits<ValueType>::Type == DataType::Integer, "The remainder requires an integer type.");
+    v = rem_intrin(v, rhs.v);
+    return *this;
+  }
   template <class ValueType, Integer N> inline Vec<ValueType,N>& Vec<ValueType,N>::operator+=(const Vec<ValueType,N>& rhs) {
     v = add_intrin(v, rhs.v);
     return *this;
@@ -201,6 +206,10 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator-(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b) {
     return sub_intrin(a.get(), b.get());
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator%(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b) {
+    static_assert(TypeTraits<ValueType>::Type == DataType::Integer, "The remainder requires an integer type.");
+    return rem_intrin(a.get(), b.get());
+  }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator*(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a * Vec<ValueType,N>(b);
@@ -214,6 +223,9 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator-(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a - Vec<ValueType,N>(b);
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator%(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
+    return a % Vec<ValueType,N>(b);
+  }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator*(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return Vec<ValueType,N>(a) * b;
@@ -226,6 +238,9 @@ namespace sctl {
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator-(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return Vec<ValueType,N>(a) - b;
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator%(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
+    return Vec<ValueType,N>(a) % b;
   }
 
 
