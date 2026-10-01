@@ -6,6 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <mutex>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -348,12 +349,11 @@ namespace sctl {
       return sqrt<Real>(f);
     }
 
-    /** max(1, phi0/phi), phi the angle in degrees between tangents with metric guu, guv, gvv */
-    template <class Real> Real SkewFactor(const Real guu, const Real guv, const Real gvv, const Real phi0) {
-      const Real den = sqrt<Real>(guu*gvv);
+    /** sin of the angle between tangents with metric guu, guv, gvv, at least 1e-6; 1 if a tangent vanishes */
+    template <class Real> Real SinTangentAngle(const Real guu, const Real guv, const Real gvv) {
+      const Real den = guu*gvv;
       if (!(den > 0)) return 1;
-      const Real phi = acos<Real>(std::min<Real>(1, fabs<Real>(guv)/den))*180/const_pi<Real>();
-      return std::max<Real>(1, phi0/std::max<Real>((Real)1e-3, phi));
+      return std::max<Real>((Real)1e-6, sqrt<Real>(std::max<Real>(0, 1 - guv*guv/den)));
     }
 
     /** true if K::uKerMatrix takes the source normal */
@@ -692,7 +692,6 @@ namespace sctl {
   namespace detail_dyadic_near {
 
     using detail_quadelem::COORD_DIM;
-    using detail_quadelem::MaxDigits;
     using detail_quadelem::MaxRefineLvl;
     using detail_quadelem::MaxTableOrder;
     using detail_quadelem::PrecompReal;
@@ -705,7 +704,7 @@ namespace sctl {
     using detail_quadelem::LagrangeDiffMat;
     using detail_quadelem::NearInteracTargets;
     using detail_quadelem::ShiftedElemCoord;
-    using detail_quadelem::SkewFactor;
+    using detail_quadelem::SinTangentAngle;
 
     template <class Real> void QuadParams(Real& b_ellipse, Integer& quad_order, const Real tol) {
       const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
@@ -744,7 +743,7 @@ namespace sctl {
       return all[order];
     }
 
-    /** Returns 2*MaxRefineLvl rules for each (order, q): q-point Gauss-Legendre on the dyadic intervals [1-2^-k, 1-2^-(k+1)] and tails [1-2^-k, 1], each with order x q interpolation matrices. */
+    /** Returns 2*MaxRefineLvl rules for each (order, q), built the first time q is requested: q-point Gauss-Legendre on the dyadic intervals [1-2^-k, 1-2^-(k+1)] and tails [1-2^-k, 1], each with order x q interpolation matrices. */
     template <Integer order, class Real> const Vector<GradeRule<Real>>& NearGradeTable(const Integer q) {
       const auto build = [](const Integer q, const Matrix<PrecompReal>& Dsub) {
         using W = PrecompReal;
@@ -782,32 +781,28 @@ namespace sctl {
         }
         return tab;
       };
-      static const std::vector<Vector<GradeRule<Real>>> all = [&build]() {
-        Matrix<PrecompReal> Dsub;
-        { // Derivatives of the Lagrange basis on the Chebyshev extreme points
-          using W = PrecompReal;
-          Vector<W> sub_nds(order);
-          for (Integer i = 0; i < order; i++) {
-            const W sh = sin<W>(const_pi<W>()*i/(2*(order-1)));
-            sub_nds[i] = sh*sh;
-          }
-          sub_nds[0] = 0;
-          sub_nds[order-1] = 1;
-          LagrangeDiffMat(Dsub, sub_nds);
+      static const Matrix<PrecompReal> Dsub = []() { // Derivatives of the Lagrange basis on the Chebyshev extreme points
+        using W = PrecompReal;
+        Vector<W> sub_nds(order);
+        for (Integer i = 0; i < order; i++) {
+          const W sh = sin<W>(const_pi<W>()*i/(2*(order-1)));
+          sub_nds[i] = sh*sh;
         }
-        std::vector<Vector<GradeRule<Real>>> t(NearMaxQuadOrder+1);
-        for (Integer q = 4; q <= NearMaxQuadOrder; q += 4) t[q] = build(q, Dsub);
-        for (Integer d = 0; d < MaxDigits<Real>; d++) {
-          const Integer qi = CachedQuadParams<Real, QuadParams<Real>>(d).quad_order;
-          if (qi > 0 && qi <= NearMaxQuadOrder && t[qi].Dim() == 0) t[qi] = build(qi, Dsub);
-        }
-        return t;
+        sub_nds[0] = 0;
+        sub_nds[order-1] = 1;
+        Matrix<W> D;
+        LagrangeDiffMat(D, sub_nds);
+        return D;
       }();
-      SCTL_ASSERT(q > 0 && q <= NearMaxQuadOrder && all[q].Dim());
+      static std::array<std::once_flag, NearMaxQuadOrder+1> built;
+      static std::array<Vector<GradeRule<Real>>, NearMaxQuadOrder+1> all;
+      SCTL_ASSERT(q > 0 && q <= NearMaxQuadOrder);
+      std::call_once(built[q], [&build, q]() { all[q] = build(q, Dsub); });
       return all[q];
     }
 
-    template <Integer order, class Real, class Kernel> void NearInteracBlockDyadic(Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
+    /** quad_order: Gauss-Legendre order on each piece, or 0 to choose it from digits and the tangent angle at the closest point */
+    template <Integer order, class Real, class Kernel> void NearInteracBlockDyadic(Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits, const Integer quad_order = 0, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer KDIM1full = Kernel::TrgDim();
       const Integer nnode = order*order;
@@ -822,8 +817,8 @@ namespace sctl {
       const Real slen[2][2] = {{ustar, 1-ustar}, {vstar, 1-vstar}};
 
       Real spd_u, spd_v;
-      Integer q_near;
-      { // Speeds, and the quadrature order raised for skewed tangents
+      Integer q_near = quad_order;
+      { // Speeds, and the quadrature order for the tangent angle there
         Real Xc[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
         EvalPoint<Real>(Xc, dXu, dXv, coord, dcoord_du, dcoord_dv, order, ustar, vstar, nullptr);
         Real guu = 0, gvv = 0, guv = 0;
@@ -834,14 +829,11 @@ namespace sctl {
         }
         spd_u = sqrt<Real>(guu);
         spd_v = sqrt<Real>(gvv);
-
-        const Integer q_iso = CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
-        q_near = q_iso;
-        const Real f = SkewFactor<Real>(guu, guv, gvv, 40);
-        if (f > 1) {
-          Integer q = (Integer)ceil<Real>(f*q_iso);
-          q = ((q + 3)/4)*4;
-          q_near = std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q_iso, q));
+        if (q_near <= 0) { // at least the order for orthogonal tangents, raised for skewed tangents (fitted to the smallest passing orders, targets on and off the surface), rounded up to even
+          const Real s = SinTangentAngle<Real>(guu, guv, gvv);
+          const Real q_iso = (Real)CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
+          const Real q = std::max<Real>(std::max<Real>(q_iso, 4 + (Real)order/2), ((Real)0.875 + (Real)1.3*digits)/pow<Real>(s, (Real)0.875));
+          q_near = 2*(Integer)ceil<Real>(std::min<Real>(q, (Real)NearMaxQuadOrder)/2);
         }
       }
 
@@ -971,21 +963,13 @@ namespace sctl {
     using detail_quadelem::MaxRefineLvl;
     using detail_quadelem::QuadRule1D;
 
-    using detail_quadelem::CachedQuadParams;
     using detail_quadelem::DiffMat;
     using detail_quadelem::EvalPoint;
     using detail_quadelem::GetClosestPoint;
     using detail_quadelem::IntegratePanel;
     using detail_quadelem::NearInteracTargets;
-    using detail_quadelem::SkewFactor;
+    using detail_quadelem::SinTangentAngle;
     using detail_dyadic_near::NearMaxQuadOrder;
-
-    template <class Real> void QuadParams(Real& b_ellipse, Integer& quad_order, const Real tol) {
-      const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
-      const Real rho = (Real)2.5;
-      b_ellipse = (rho + 1/rho) / 4;
-      quad_order = std::max<Integer>(1, (Integer)ceil<Real>(-log<Real>(((15*(rho*rho-1))/64)*tol_)/log<Real>(rho)*(Real)0.5 + 1));
-    }
 
     template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
       const auto near_interac_one_trg = [&ker, digits](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
@@ -993,7 +977,8 @@ namespace sctl {
         ScratchBuf<Real> useg(2*MaxSegments), vseg(2*MaxSegments);
         Integer nseg_u, nseg_v, quad_order;
         { // Segments graded toward the closest point
-          const Real b_ellipse = CachedQuadParams<Real, QuadParams<Real>>(digits).b_ellipse;
+          const Real rho = (Real)2.5;
+          const Real b_ellipse = (rho + 1/rho)/4;
           Real ustar, vstar, h_param;
           { // Closest point, its distance in parameter units, and the Gauss-Legendre order for the tangents there
             const Real dist = GetClosestPoint(ustar, vstar, coord, dcoord_du, dcoord_dv, order, Xtrg);
@@ -1009,9 +994,10 @@ namespace sctl {
             const bool degenerate = !(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist) || !(L_phys > 0);
             h_param = (degenerate ? 0 : dist/L_phys);
 
-            // digits + 1, raised to 35*digits/phi for tangents at phi degrees
-            const Integer q0 = digits + 1;
-            quad_order = std::min<Integer>(NearMaxQuadOrder, std::max<Integer>(q0, (Integer)ceil<Real>(SkewFactor<Real>(su2, suv, sv2, 35*(Real)digits))));
+            // at least digits + 1, the order for orthogonal tangents and targets off the surface, raised for skewed tangents (fitted to the smallest passing orders)
+            const Real s = SinTangentAngle<Real>(su2, suv, sv2);
+            const Real q = std::max<Real>(std::max<Real>((Real)digits + 1, (Real)digits - 8 + (Real)order/2), (1 + (Real)0.75*digits)/sqrt<Real>(s));
+            quad_order = (Integer)ceil<Real>(std::min<Real>(q, (Real)NearMaxQuadOrder));
           }
 
           const auto graded_segments = [b_ellipse](Iterator<Real> seg, const Real center, const Real w_min) {
@@ -1122,11 +1108,11 @@ namespace sctl {
       std::vector<DuffyTri<Real>> tri;
     };
 
-    /** Returns, for each order, an order-point radial rule and, for each of the 4*order^2 (node, triangle) pairs, its Jacobian, orientation and interpolation matrices along beta and alpha. */
+    /** Returns, for each order, a (2 + ceil(order/2))-point radial rule and, for each of the 4*order^2 (node, triangle) pairs, its Jacobian, orientation and interpolation matrices along beta and alpha. */
     template <Integer order, class Real> const DuffySelfTable<Real>& DuffyTable() {
       static const DuffySelfTable<Real> table = []() {
         DuffySelfTable<Real> tbl;
-        const Integer qs = order;
+        const Integer qs = 2 + (order + 1)/2; // fitted to the smallest radial orders meeting the tolerance, at any digits
         tbl.ns = qs;
         LegQuadRule<Real>::ComputeNdsWts(&tbl.sn, &tbl.sw, qs);
 
@@ -1233,7 +1219,7 @@ namespace sctl {
       }
 
       const Integer ns = tbl.ns;
-      const Integer nt = std::max<Integer>(order/2, (KDIM0 > 1 ? 4*digits : (5*digits + 1)/2));
+      const Integer nt = std::max<Integer>(order/2, (Integer)ceil<Real>(KDIM0 > 1 ? (Real)4.75*digits - (Real)9.5 + (Real)0.625*order : (Real)3*digits - 6 + (Real)order/4)); // fitted to the smallest angular orders meeting the tolerance
       const Integer nq = ns*nt;
       ScratchBuf<Real> csT(COORD_DIM*nnode);
       { // cs with u and v exchanged, for the triangles with swap_ab
@@ -1382,12 +1368,11 @@ namespace sctl {
     using detail_quadelem::COORD_DIM;
     using detail_quadelem::MaxDigits;
     using detail_quadelem::PrecompReal;
+    using detail_dyadic_near::NearMaxQuadOrder;
 
-    using detail_quadelem::CachedQuadParams;
     using detail_quadelem::SelfInteracElems;
-    using detail_dyadic_near::NearGradeTable;
+    using detail_quadelem::SinTangentAngle;
     using detail_dyadic_near::NearInteracBlockDyadic;
-    using detail_dyadic_near::QuadParams;
 
     template <class Kernel, class = void> struct KernelSingularOrder {
       static constexpr Integer value = 2;
@@ -1399,8 +1384,6 @@ namespace sctl {
     template <Integer order, class Real, class Kernel> void SelfInteracHedgehog(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       static constexpr Integer sing_order = KernelSingularOrder<Kernel>::value;
       const Integer near_digits = std::min<Integer>(MaxDigits<Real>-1, digits + (sing_order <= 1 ? 2 : 6));
-      NearGradeTable<order,Real>(CachedQuadParams<Real, QuadParams<Real>>(near_digits).quad_order); // precomp cache
-      NearGradeTable<order,Real>(CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order); // precomp cache
 
       static const Vector<Real> proxy_dist = []() { // Proxy distances, in units of rmin
         Vector<Real> v;
@@ -1424,19 +1407,26 @@ namespace sctl {
       }();
 
       const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-      const auto self_interac_one_trg = [&nds, rmin_coeff, &ker, near_digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer ti, const Integer tj) {
+      const auto self_interac_one_trg = [&nds, rmin_coeff, &ker, digits, near_digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer ti, const Integer tj) {
         const Integer nnode = order*order;
         const Integer t = ti*order + tj;
         ScratchBuf<Real> hh_Xt1_buf(COORD_DIM), hh_off_buf(proxy_dist.Dim()*COORD_DIM);
         Vector<Real> hh_Xt1(hh_Xt1_buf), hh_off(hh_off_buf);
-        { // Proxy points along the normal, sized by edge distance
-          Real su2 = 0, sv2 = 0;
+        Integer q_proxy;
+        { // Proxy points along the normal, sized by the distance to the nearer edge, and their quadrature order
+          Real su2 = 0, sv2 = 0, suv = 0;
           for (Integer k = 0; k < COORD_DIM; k++) {
             su2 += dXu[k*nnode+t]*dXu[k*nnode+t];
             sv2 += dXv[k*nnode+t]*dXv[k*nnode+t];
+            suv += dXu[k*nnode+t]*dXv[k*nnode+t];
+          }
+          const Real s = SinTangentAngle<Real>(su2, suv, sv2);
+          { // fitted to the smallest orders meeting the tolerance on skewed elements, rounded up to even
+            const Real q = std::max<Real>(4 + (Real)digits + (Real)order/8, ((Real)0.75 + (Real)1.25*digits)/s);
+            q_proxy = 2*(Integer)ceil<Real>(std::min<Real>(q, (Real)NearMaxQuadOrder)/2);
           }
           const Real edge_u = std::min<Real>(nds[ti], 1-nds[ti]), edge_v = std::min<Real>(nds[tj], 1-nds[tj]);
-          const Real rmin = rmin_coeff * std::min<Real>(edge_u*sqrt<Real>(su2), edge_v*sqrt<Real>(sv2));
+          const Real rmin = rmin_coeff * s * std::min<Real>(edge_u*sqrt<Real>(su2), edge_v*sqrt<Real>(sv2));
           for (Integer k = 0; k < COORD_DIM; k++) hh_Xt1[k] = coord[k*nnode + t] + rmin*Xnnodes[t*COORD_DIM+k];
           for (Integer j = 0; j < proxy_dist.Dim(); j++) {
             const Real rj = rmin*proxy_dist[j];
@@ -1444,7 +1434,7 @@ namespace sctl {
           }
         }
         const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-        NearInteracBlockDyadic<order,Real>(M_acc, coord, dXu, dXv, hh_Xt1, ntrg, ker, near_digits, hh_off, hh_w);
+        NearInteracBlockDyadic<order,Real>(M_acc, coord, dXu, dXv, hh_Xt1, ntrg, ker, near_digits, q_proxy, hh_off, hh_w);
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }
@@ -1458,11 +1448,13 @@ namespace sctl {
     using detail_quadelem::MaxRefineLvl;
     using detail_quadelem::QuadRule1D;
 
-    using detail_quadelem::CachedQuadParams;
     using detail_quadelem::DiffMat;
     using detail_quadelem::IntegratePanel;
     using detail_quadelem::SelfInteracElems;
-    using detail_tensorprod_near::QuadParams;
+    using detail_quadelem::SinTangentAngle;
+
+    static constexpr Integer SelfMaxQuadOrder = 60;
+    static constexpr Integer SelfMaxLvlV = 12;
 
     template <Integer order, class Real> void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MTD, const Vector<Real>& delta, const Integer ti) {
       const Integer N = (Integer)delta.Dim();
@@ -1551,11 +1543,10 @@ namespace sctl {
       }
     }
 
-    /** Returns the rule toward node ti along u for each (order, digits): quad_order-point Gauss-Legendre on intervals halving min(MaxRefineLvl, 2*digits+6) times toward the node on each side, with order x N interpolation matrices. */
-    template <Integer order, class Real> const QuadRule1D<Real>& CenteredURule(const Integer ti, const Integer digits) {
-      const auto build = [](const Integer digits) {
+    /** Returns the rule toward node ti along u for each (order, digits, quad_order), built the first time it is requested: quad_order-point Gauss-Legendre on intervals halving min(MaxRefineLvl, 2*digits+6) times toward the node on each side, with order x N interpolation matrices. */
+    template <Integer order, class Real> const QuadRule1D<Real>& CenteredURule(const Integer ti, const Integer digits, const Integer quad_order) {
+      const auto build = [](const Integer digits, const Integer quad_order) {
         const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-        const Integer quad_order = CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
         const Integer Lvl = std::min<Integer>(MaxRefineLvl<Real>, 2*digits + 6);
         Vector<Real> qnds, qwts;
         LegQuadRule<Real>::ComputeNdsWts(&qnds, &qwts, quad_order);
@@ -1587,21 +1578,17 @@ namespace sctl {
         }
         return rules;
       };
-      static const std::array<Vector<QuadRule1D<Real>>, MaxDigits<Real>> table = [&build]() {
-        std::array<Vector<QuadRule1D<Real>>, MaxDigits<Real>> t;
-        for (Integer d = 0; d < MaxDigits<Real>; d++) t[d] = build(d);
-        return t;
-      }();
-      SCTL_ASSERT(digits >= 0 && digits < MaxDigits<Real>);
-      return table[digits][ti];
+      static std::array<std::array<std::once_flag, SelfMaxQuadOrder+1>, MaxDigits<Real>> built;
+      static std::array<std::array<Vector<QuadRule1D<Real>>, SelfMaxQuadOrder+1>, MaxDigits<Real>> table;
+      SCTL_ASSERT(digits >= 0 && digits < MaxDigits<Real> && quad_order > 0 && quad_order <= SelfMaxQuadOrder);
+      std::call_once(built[digits][quad_order], [&build, digits, quad_order]() { table[digits][quad_order] = build(digits, quad_order); });
+      return table[digits][quad_order][ti];
     }
 
-    /** Returns the rule toward node tj along v for each (order, digits): quad_order-point Gauss-Legendre on min(12, max(1, digits-5)) panels halving toward the node on each side, then one order-16 Alpert panel per side, log-corrected at the node, with order x N interpolation matrices. */
-    template <Integer order, class Real> const QuadRule1D<Real>& CenteredVRule(const Integer tj, const Integer digits) {
-      const auto build = [](const Integer digits) {
+    /** Returns the rule toward node tj along v for each (order, Lvl, quad_order), built the first time it is requested: quad_order-point Gauss-Legendre on Lvl panels halving toward the node on each side, then one order-16 Alpert panel per side, log-corrected at the node, with order x N interpolation matrices. */
+    template <Integer order, class Real> const QuadRule1D<Real>& CenteredVRule(const Integer tj, const Integer Lvl, const Integer quad_order) {
+      const auto build = [](const Integer Lvl, const Integer quad_order) {
         const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-        const Integer Lvl = std::min<Integer>(12, std::max<Integer>(1, digits - 5));
-        const Integer quad_order = CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
         Vector<QuadRule1D<Real>> rules(order);
         for (Integer j = 0; j < order; j++) {
           Vector<Real> delta;
@@ -1610,26 +1597,39 @@ namespace sctl {
         }
         return rules;
       };
-      static const std::array<Vector<QuadRule1D<Real>>, MaxDigits<Real>> table = [&build]() {
-        std::array<Vector<QuadRule1D<Real>>, MaxDigits<Real>> t;
-        for (Integer d = 0; d < MaxDigits<Real>; d++) t[d] = build(d);
-        return t;
-      }();
-      SCTL_ASSERT(digits >= 0 && digits < MaxDigits<Real>);
-      return table[digits][tj];
+      static std::array<std::array<std::once_flag, SelfMaxQuadOrder+1>, SelfMaxLvlV+1> built;
+      static std::array<std::array<Vector<QuadRule1D<Real>>, SelfMaxQuadOrder+1>, SelfMaxLvlV+1> table;
+      SCTL_ASSERT(Lvl > 0 && Lvl <= SelfMaxLvlV && quad_order > 0 && quad_order <= SelfMaxQuadOrder);
+      std::call_once(built[Lvl][quad_order], [&build, Lvl, quad_order]() { table[Lvl][quad_order] = build(Lvl, quad_order); });
+      return table[Lvl][quad_order][tj];
     }
 
     template <Integer order, class Real, class Kernel> void SelfInteracTensorProduct(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
-      CenteredURule<order,Real>(0, digits); // precomp cache
-      CenteredVRule<order,Real>(0, digits); // precomp cache
-      const auto self_interac_one_trg = [&ker, digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>&, const Vector<Real>&, const Integer ti, const Integer tj) {
+      const auto self_interac_one_trg = [&ker, digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer ti, const Integer tj) {
+        const Integer nnode = order*order;
         const Integer t = ti*order + tj;
+        Integer quad_order, lvl_v;
+        { // Gauss-Legendre order and halving levels along v for the tangent angle at the node, fitted to the smallest values meeting the tolerance on skewed elements
+          Real guu = 0, guv = 0, gvv = 0;
+          for (Integer k = 0; k < COORD_DIM; k++) {
+            guu += dXu[k*nnode+t]*dXu[k*nnode+t];
+            guv += dXu[k*nnode+t]*dXv[k*nnode+t];
+            gvv += dXv[k*nnode+t]*dXv[k*nnode+t];
+          }
+          const Real s = SinTangentAngle<Real>(guu, guv, gvv);
+          const Real q = std::max<Real>((Real)1.5 + (Real)digits/2 + (Real)order/8, ((Real)1.25 + (Real)digits/2)/pow<Real>(s, (Real)0.75));
+          quad_order = (Integer)ceil<Real>(std::min<Real>(q, (Real)SelfMaxQuadOrder));
+          // capped: levels beyond those needed add rounding error
+          const Integer lvl_max = std::min<Integer>(SelfMaxLvlV, std::max<Integer>(7, digits - 4));
+          const Real lvl = std::max<Real>((Real)std::max<Integer>(1, digits - 5), (Real)1.5*digits - (Real)6.5 + (Real)2.5*log<Real>(1/s)/log<Real>(2));
+          lvl_v = (Integer)ceil<Real>(std::min<Real>(lvl, (Real)lvl_max));
+        }
         StaticArray<Real,COORD_DIM> Xtrg_buf;
         for (Integer k = 0; k < COORD_DIM; k++) Xtrg_buf[k] = coord[k*order*order + t];
         const Vector<Real> Xtrg(COORD_DIM, Xtrg_buf, false);
         const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-        const QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits);
-        const QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, digits);
+        const QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits, quad_order);
+        const QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, lvl_v, quad_order);
         IntegratePanel<order,Real>(M_acc, coord, Xtrg, ntrg, ru, rv, ker);
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
