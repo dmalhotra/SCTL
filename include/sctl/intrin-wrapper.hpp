@@ -27,16 +27,24 @@
     #ifdef __SSE4_2__
     __m128  _ZGVbN4v_logf(__m128);
     __m128d _ZGVbN2v_log(__m128d);
+    __m128  _ZGVbN4vv_powf(__m128, __m128);
+    __m128d _ZGVbN2vv_pow(__m128d, __m128d);
     #endif
     #ifdef __AVX__
     __m256 _ZGVcN8v_logf(__m256);
     __m256d _ZGVcN4v_log(__m256d);
     __m256 _ZGVdN8v_logf(__m256);
     __m256d _ZGVdN4v_log(__m256d);
+    __m256 _ZGVcN8vv_powf(__m256, __m256);
+    __m256d _ZGVcN4vv_pow(__m256d, __m256d);
+    __m256 _ZGVdN8vv_powf(__m256, __m256);
+    __m256d _ZGVdN4vv_pow(__m256d, __m256d);
     #endif
     #if defined(__AVX512F__)
     __m512 _ZGVeN16v_logf(__m512);
     __m512d _ZGVeN8v_log(__m512d);
+    __m512 _ZGVeN16vv_powf(__m512, __m512);
+    __m512d _ZGVeN8vv_pow(__m512d, __m512d);
     #endif
   }
 #endif
@@ -1135,6 +1143,114 @@ namespace sctl { // Generic
     for (Integer i = 0; i < VData::Size; i++) logx_.x[i] = log(x_.x[i]);
     return logx_.v;
   }
+  template <class VData> inline VData pow_intrin(const VData& x, const VData& y) {
+    union U {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    };
+    U x_ = {x};
+    U y_ = {y};
+    for (Integer i = 0; i < VData::Size; i++) x_.x[i] = pow(x_.x[i], y_.x[i]);
+    return x_.v;
+  }
+  template <class VData> inline VData sqrt_intrin(const VData& x) {
+    union {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    } x_ = {x};
+    for (Integer i = 0; i < VData::Size; i++) x_.x[i] = sqrt(x_.x[i]);
+    return x_.v;
+  }
+  template <class VData> inline VData rsqrt_intrin(const VData& x) {
+    return div_intrin(set1_intrin<VData>((typename VData::ScalarType)1), sqrt_intrin(x));
+  }
+  template <class VData> inline VData fabs_intrin(const VData& x) {
+    if constexpr (TypeTraits<typename VData::ScalarType>::Type == DataType::Real) {
+      return andnot_intrin(x, set1_intrin<VData>((typename VData::ScalarType)-0.0)); // clears the sign bit
+    } else {
+      return max_intrin(x, unary_minus_intrin(x));
+    }
+  }
+  template <class VData> inline VData floor_intrin(const VData& x) {
+    union {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    } x_ = {x};
+    for (Integer i = 0; i < VData::Size; i++) x_.x[i] = floor(x_.x[i]);
+    return x_.v;
+  }
+  template <class VData> inline VData ceil_intrin(const VData& x) {
+    union {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    } x_ = {x};
+    for (Integer i = 0; i < VData::Size; i++) x_.x[i] = ceil(x_.x[i]);
+    return x_.v;
+  }
+  template <class VData> inline VData copysign_intrin(const VData& x, const VData& y) {
+    const VData sign = set1_intrin<VData>((typename VData::ScalarType)-0.0);
+    return or_intrin(andnot_intrin(x, sign), and_intrin(y, sign));
+  }
+  template <class VData> inline Mask<VData> isnan_intrin(const VData& x) {
+    using IntType = typename IntegerType<sizeof(typename VData::ScalarType)>::value;
+    union {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    } x_ = {x};
+    union {
+      VData v;
+      IntType q[VData::Size];
+    } m_;
+    for (Integer i = 0; i < VData::Size; i++) m_.q[i] = (isnan(x_.x[i]) ? ~(IntType)0 : (IntType)0);
+    return convert_vec2mask_intrin(m_.v);
+  }
+  template <class VData> inline VData atan2_intrin(const VData& y, const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      const VData zero = zero_intrin<VData>();
+      const VData one = set1_intrin<VData>((Real)1);
+      const VData inf = set1_intrin<VData>((Real)INFINITY);
+      const VData ay = fabs_intrin(y);
+      const VData ax = fabs_intrin(x);
+      const Mask<VData> swap = comp_intrin<ComparisonType::gt>(ay, ax); // angle above pi/4
+      const Mask<VData> inf_inf = comp_intrin<ComparisonType::eq>(ay, inf) & comp_intrin<ComparisonType::eq>(ax, inf);
+      const VData num = select_intrin(inf_inf, one, select_intrin(swap, ax, ay));
+      const VData den = select_intrin(inf_inf, one, select_intrin(swap, ay, ax));
+
+      // atan(num/den) with num/den in [0, 1]: reduce to |t| <= tan(pi/8), then Cephes atan rational
+      const Mask<VData> big = comp_intrin<ComparisonType::gt>(num, mul_intrin(den, set1_intrin<VData>((Real)0.41421356237309504880)));
+      const VData n2 = select_intrin(big, sub_intrin(num, den), num);
+      const VData d2 = select_intrin(big, add_intrin(num, den), den);
+      const VData t = div_intrin(n2, select_intrin(comp_intrin<ComparisonType::eq>(d2, zero), one, d2)); // 0 for atan2(0, 0)
+      const VData z = mul_intrin(t, t);
+      VData p = set1_intrin<VData>((Real)-8.750608600031904122785e-1);
+      p = fma_intrin(p, z, set1_intrin<VData>((Real)-1.615753718733365076637e1));
+      p = fma_intrin(p, z, set1_intrin<VData>((Real)-7.500855792314704667340e1));
+      p = fma_intrin(p, z, set1_intrin<VData>((Real)-1.228866684490136173410e2));
+      p = fma_intrin(p, z, set1_intrin<VData>((Real)-6.485021904942025371773e1));
+      VData q = add_intrin(z, set1_intrin<VData>((Real)2.485846490142306297962e1));
+      q = fma_intrin(q, z, set1_intrin<VData>((Real)1.650270098316988542046e2));
+      q = fma_intrin(q, z, set1_intrin<VData>((Real)4.328810604912902668951e2));
+      q = fma_intrin(q, z, set1_intrin<VData>((Real)4.853903996359136964868e2));
+      q = fma_intrin(q, z, set1_intrin<VData>((Real)1.945506571482613964425e2));
+      VData r = fma_intrin(mul_intrin(t, z), div_intrin(p, q), t);
+      r = add_intrin(r, select_intrin(big, set1_intrin<VData>((Real)0.78539816339744830962), zero));
+
+      // quadrant
+      r = select_intrin(swap, sub_intrin(set1_intrin<VData>((Real)1.57079632679489661923), r), r);
+      r = select_intrin(comp_intrin<ComparisonType::lt>(copysign_intrin(one, x), zero), sub_intrin(set1_intrin<VData>((Real)3.14159265358979323846), r), r);
+      return copysign_intrin(r, y);
+    } else {
+      union U {
+        VData v;
+        Real x[VData::Size];
+      };
+      U y_ = {y};
+      U x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) y_.x[i] = atan2(y_.x[i], x_.x[i]);
+      return y_.v;
+    }
+  }
 
   template <Integer ORDER, class VData> inline VData approx_sin_intrin(const VData& x) {
     VData sinx, cosx;
@@ -1926,6 +2042,22 @@ namespace sctl { // SSE
   template <> inline Integer mask_count_intrin<VecData<double , 2>>(const Mask<VecData<double , 2>>& m) { return _mm_popcnt_u32(_mm_movemask_pd(m.v)); }
 #endif
 
+  // Math functions
+  template <> inline VecData<float ,4> sqrt_intrin <VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_sqrt_ps (x.v); }
+  template <> inline VecData<double,2> sqrt_intrin <VecData<double,2>>(const VecData<double,2>& x) { return _mm_sqrt_pd (x.v); }
+  template <> inline VecData<float ,4> floor_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_floor_ps(x.v); }
+  template <> inline VecData<double,2> floor_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_floor_pd(x.v); }
+  template <> inline VecData<float ,4> ceil_intrin <VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_ceil_ps (x.v); }
+  template <> inline VecData<double,2> ceil_intrin <VecData<double,2>>(const VecData<double,2>& x) { return _mm_ceil_pd (x.v); }
+  template <> inline Mask<VecData<float ,4>> isnan_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return Mask<VecData<float ,4>>(_mm_cmpunord_ps(x.v, x.v)); }
+  template <> inline Mask<VecData<double,2>> isnan_intrin<VecData<double,2>>(const VecData<double,2>& x) { return Mask<VecData<double,2>>(_mm_cmpunord_pd(x.v, x.v)); }
+  template <> inline VecData<int8_t ,16> fabs_intrin<VecData<int8_t ,16>>(const VecData<int8_t ,16>& x) { return _mm_abs_epi8 (x.v); }
+  template <> inline VecData<int16_t, 8> fabs_intrin<VecData<int16_t, 8>>(const VecData<int16_t, 8>& x) { return _mm_abs_epi16(x.v); }
+  template <> inline VecData<int32_t, 4> fabs_intrin<VecData<int32_t, 4>>(const VecData<int32_t, 4>& x) { return _mm_abs_epi32(x.v); }
+  #if defined(__AVX512F__) && defined(__AVX512VL__)
+  template <> inline VecData<int64_t, 2> fabs_intrin<VecData<int64_t, 2>>(const VecData<int64_t, 2>& x) { return _mm_abs_epi64(x.v); }
+  #endif
+
 
   // Special functions
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,4>> {
@@ -1976,6 +2108,9 @@ namespace sctl { // SSE
 
   template <> inline VecData<float ,4> exp_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_exp_ps(x.v); }
   template <> inline VecData<double,2> exp_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_exp_pd(x.v); }
+
+  template <> inline VecData<float ,4> pow_intrin<VecData<float ,4>>(const VecData<float ,4>& x, const VecData<float ,4>& y) { return _mm_pow_ps(x.v, y.v); }
+  template <> inline VecData<double,2> pow_intrin<VecData<double,2>>(const VecData<double,2>& x, const VecData<double,2>& y) { return _mm_pow_pd(x.v, y.v); }
   #else
   template <> inline void sincos_intrin<VecData<float ,4>>(VecData<float ,4>& sinx, VecData<float ,4>& cosx, const VecData<float ,4>& x) {
     approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
@@ -1987,6 +2122,8 @@ namespace sctl { // SSE
 #ifdef SCTL_HAVE_LIBMVEC
   template <> inline VecData<float, 4> log_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _ZGVbN4v_logf(x.v); }
   template <> inline VecData<double,2> log_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _ZGVbN2v_log(x.v); }
+  template <> inline VecData<float, 4> pow_intrin<VecData<float ,4>>(const VecData<float ,4>& x, const VecData<float ,4>& y) { return _ZGVbN4vv_powf(x.v, y.v); }
+  template <> inline VecData<double,2> pow_intrin<VecData<double,2>>(const VecData<double,2>& x, const VecData<double,2>& y) { return _ZGVbN2vv_pow(x.v, y.v); }
 #endif
 
   template <> inline VecData<float ,4> exp_intrin<VecData<float ,4>>(const VecData<float ,4>& x) {
@@ -2797,6 +2934,24 @@ namespace sctl { // AVX
   template <> inline Integer mask_count_intrin<VecData<double , 4>>(const Mask<VecData<double , 4>>& m) { return _mm_popcnt_u32(_mm256_movemask_pd(m.v)); }
   #endif
 
+  // Math functions
+  template <> inline VecData<float ,8> sqrt_intrin <VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_sqrt_ps (x.v); }
+  template <> inline VecData<double,4> sqrt_intrin <VecData<double,4>>(const VecData<double,4>& x) { return _mm256_sqrt_pd (x.v); }
+  template <> inline VecData<float ,8> floor_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_floor_ps(x.v); }
+  template <> inline VecData<double,4> floor_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_floor_pd(x.v); }
+  template <> inline VecData<float ,8> ceil_intrin <VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_ceil_ps (x.v); }
+  template <> inline VecData<double,4> ceil_intrin <VecData<double,4>>(const VecData<double,4>& x) { return _mm256_ceil_pd (x.v); }
+  template <> inline Mask<VecData<float ,8>> isnan_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return Mask<VecData<float ,8>>(_mm256_cmp_ps(x.v, x.v, _CMP_UNORD_Q)); }
+  template <> inline Mask<VecData<double,4>> isnan_intrin<VecData<double,4>>(const VecData<double,4>& x) { return Mask<VecData<double,4>>(_mm256_cmp_pd(x.v, x.v, _CMP_UNORD_Q)); }
+  #if defined(__AVX2__)
+  template <> inline VecData<int8_t ,32> fabs_intrin<VecData<int8_t ,32>>(const VecData<int8_t ,32>& x) { return _mm256_abs_epi8 (x.v); }
+  template <> inline VecData<int16_t,16> fabs_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& x) { return _mm256_abs_epi16(x.v); }
+  template <> inline VecData<int32_t, 8> fabs_intrin<VecData<int32_t, 8>>(const VecData<int32_t, 8>& x) { return _mm256_abs_epi32(x.v); }
+  #endif
+  #if defined(__AVX512F__) && defined(__AVX512VL__)
+  template <> inline VecData<int64_t, 4> fabs_intrin<VecData<int64_t, 4>>(const VecData<int64_t, 4>& x) { return _mm256_abs_epi64(x.v); }
+  #endif
+
   // Conversion between element types
   template <> inline VecData<double ,4> convert_intrin<VecData<double ,4>,VecData<int32_t,4>>(const VecData<int32_t,4>& a) { return _mm256_cvtepi32_pd (a.v); }
   template <> inline VecData<int32_t,4> convert_intrin<VecData<int32_t,4>,VecData<double ,4>>(const VecData<double ,4>& a) { return _mm256_cvttpd_epi32(a.v); }
@@ -2893,6 +3048,9 @@ namespace sctl { // AVX
 
   template <> inline VecData<float ,8> exp_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_exp_ps(x.v); }
   template <> inline VecData<double,4> exp_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_exp_pd(x.v); }
+
+  template <> inline VecData<float ,8> pow_intrin<VecData<float ,8>>(const VecData<float ,8>& x, const VecData<float ,8>& y) { return _mm256_pow_ps(x.v, y.v); }
+  template <> inline VecData<double,4> pow_intrin<VecData<double,4>>(const VecData<double,4>& x, const VecData<double,4>& y) { return _mm256_pow_pd(x.v, y.v); }
   #else
   template <> inline void sincos_intrin<VecData<float ,8>>(VecData<float ,8>& sinx, VecData<float ,8>& cosx, const VecData<float ,8>& x) {
     approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
@@ -2905,9 +3063,13 @@ namespace sctl { // AVX
 #ifdef __AVX2__
   template <> inline VecData<float ,8> log_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _ZGVdN8v_logf(x.v); }
   template <> inline VecData<double,4> log_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _ZGVdN4v_log(x.v); }
+  template <> inline VecData<float ,8> pow_intrin<VecData<float ,8>>(const VecData<float ,8>& x, const VecData<float ,8>& y) { return _ZGVdN8vv_powf(x.v, y.v); }
+  template <> inline VecData<double,4> pow_intrin<VecData<double,4>>(const VecData<double,4>& x, const VecData<double,4>& y) { return _ZGVdN4vv_pow(x.v, y.v); }
 #else
   template <> inline VecData<float ,8> log_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _ZGVcN8v_logf(x.v); }
   template <> inline VecData<double,4> log_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _ZGVcN4v_log(x.v); }
+  template <> inline VecData<float ,8> pow_intrin<VecData<float ,8>>(const VecData<float ,8>& x, const VecData<float ,8>& y) { return _ZGVcN8vv_powf(x.v, y.v); }
+  template <> inline VecData<double,4> pow_intrin<VecData<double,4>>(const VecData<double,4>& x, const VecData<double,4>& y) { return _ZGVcN4vv_pow(x.v, y.v); }
 #endif
 #endif
 
@@ -4035,6 +4197,24 @@ namespace sctl { // AVX512
   template <> inline Integer mask_count_intrin<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& m) { return _mm_popcnt_u32(m.v); }
 #endif
 
+  // Math functions
+  template <> inline VecData<float ,16> sqrt_intrin <VecData<float ,16>>(const VecData<float ,16>& x) { return _mm512_sqrt_ps(x.v); }
+  template <> inline VecData<double, 8> sqrt_intrin <VecData<double, 8>>(const VecData<double, 8>& x) { return _mm512_sqrt_pd(x.v); }
+  template <> inline VecData<float ,16> floor_intrin<VecData<float ,16>>(const VecData<float ,16>& x) { return _mm512_roundscale_ps(x.v, _MM_FROUND_TO_NEG_INF | _MM_FROUND_NO_EXC); }
+  template <> inline VecData<double, 8> floor_intrin<VecData<double, 8>>(const VecData<double, 8>& x) { return _mm512_roundscale_pd(x.v, _MM_FROUND_TO_NEG_INF | _MM_FROUND_NO_EXC); }
+  template <> inline VecData<float ,16> ceil_intrin <VecData<float ,16>>(const VecData<float ,16>& x) { return _mm512_roundscale_ps(x.v, _MM_FROUND_TO_POS_INF | _MM_FROUND_NO_EXC); }
+  template <> inline VecData<double, 8> ceil_intrin <VecData<double, 8>>(const VecData<double, 8>& x) { return _mm512_roundscale_pd(x.v, _MM_FROUND_TO_POS_INF | _MM_FROUND_NO_EXC); }
+  template <> inline VecData<int32_t,16> fabs_intrin<VecData<int32_t,16>>(const VecData<int32_t,16>& x) { return _mm512_abs_epi32(x.v); }
+  template <> inline VecData<int64_t, 8> fabs_intrin<VecData<int64_t, 8>>(const VecData<int64_t, 8>& x) { return _mm512_abs_epi64(x.v); }
+#if defined(__AVX512BW__)
+  template <> inline VecData<int8_t ,64> fabs_intrin<VecData<int8_t ,64>>(const VecData<int8_t ,64>& x) { return _mm512_abs_epi8 (x.v); }
+  template <> inline VecData<int16_t,32> fabs_intrin<VecData<int16_t,32>>(const VecData<int16_t,32>& x) { return _mm512_abs_epi16(x.v); }
+#endif
+#if defined(__AVX512DQ__)
+  template <> inline Mask<VecData<float ,16>> isnan_intrin<VecData<float ,16>>(const VecData<float ,16>& x) { return Mask<VecData<float ,16>>(_mm512_cmp_ps_mask(x.v, x.v, _CMP_UNORD_Q)); }
+  template <> inline Mask<VecData<double, 8>> isnan_intrin<VecData<double, 8>>(const VecData<double, 8>& x) { return Mask<VecData<double, 8>>(_mm512_cmp_pd_mask(x.v, x.v, _CMP_UNORD_Q)); }
+#endif
+
 
   // Special functions
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,16>> {
@@ -4073,6 +4253,9 @@ namespace sctl { // AVX512
 
   template <> inline VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_exp_ps(x.v); }
   template <> inline VecData<double,8> exp_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_exp_pd(x.v); }
+
+  template <> inline VecData<float,16> pow_intrin<VecData<float,16>>(const VecData<float,16>& x, const VecData<float,16>& y) { return _mm512_pow_ps(x.v, y.v); }
+  template <> inline VecData<double,8> pow_intrin<VecData<double,8>>(const VecData<double,8>& x, const VecData<double,8>& y) { return _mm512_pow_pd(x.v, y.v); }
   #else
   template <> inline void sincos_intrin<VecData<float,16>>(VecData<float,16>& sinx, VecData<float,16>& cosx, const VecData<float,16>& x) {
     approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
@@ -4084,6 +4267,8 @@ namespace sctl { // AVX512
 #ifdef SCTL_HAVE_LIBMVEC
   template <> inline VecData<float ,16> log_intrin<VecData<float ,16>>(const VecData<float ,16>& x) { return _ZGVeN16v_logf(x.v); }
   template <> inline VecData<double,8> log_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _ZGVeN8v_log(x.v); }
+  template <> inline VecData<float,16> pow_intrin<VecData<float,16>>(const VecData<float,16>& x, const VecData<float,16>& y) { return _ZGVeN16vv_powf(x.v, y.v); }
+  template <> inline VecData<double,8> pow_intrin<VecData<double,8>>(const VecData<double,8>& x, const VecData<double,8>& y) { return _ZGVeN8vv_pow(x.v, y.v); }
 #endif
 
   template <> inline VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) {

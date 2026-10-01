@@ -82,6 +82,7 @@ namespace sctl {
         if (N*sizeof(ScalarType)*8<=512) {
           test_bitshift();
           test_div_rem();
+          test_fabs();
         }
       }
 
@@ -91,6 +92,7 @@ namespace sctl {
           test_reals_specialfunc();
           test_reals_rsqrt();
           test_mask_helpers();
+          test_reals_math();
         }
       }
 
@@ -382,6 +384,20 @@ namespace sctl {
           SCTL_ASSERT(u5.x[i] == u4.x[i]);
           SCTL_ASSERT(u6.x[i] == (ScalarType)(u1.x[i] % 7));
           SCTL_ASSERT(u7.x[i] == (ScalarType)(100 % u2.x[i]));
+        }
+      }
+
+      static void test_fabs() {
+        UnionType u1, u2;
+        for (Integer i = 0; i < SizeBytes; i++) {
+          u1.c[i] = rand();
+        }
+        for (Integer i = 0; i < N; i++) {
+          if (u1.x[i] == std::numeric_limits<ScalarType>::min()) u1.x[i] = 0;
+        }
+        u2.v = fabs(u1.v);
+        for (Integer i = 0; i < N; i++) {
+          SCTL_ASSERT(u2.x[i] == (ScalarType)(u1.x[i] < 0 ? -u1.x[i] : u1.x[i]));
         }
       }
 
@@ -723,6 +739,65 @@ namespace sctl {
           SCTL_ASSERT(fabs(v1[i] - sin<ScalarType>(v0[i])) < err_tol);
           SCTL_ASSERT(fabs(v2[i] - cos<ScalarType>(v0[i])) < err_tol);
           SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i]))/fabs(exp<ScalarType>(v0[i])) < err_tol);
+        }
+      }
+
+      static void test_reals_math() {
+        UnionType u1, u2, u3, u4;
+        for (Integer i = 0; i < N; i++) {
+          u1.x[i] = (ScalarType)((drand48()-0.5)*20);
+          u2.x[i] = (ScalarType)((drand48()-0.5)*20);
+          u3.x[i] = (i % 2 ? (ScalarType)NAN : u1.x[i]);
+          u4.x[i] = (ScalarType)(0.1 + 10*drand48());
+        }
+        const ScalarType eps = machine_eps<ScalarType>();
+        const ScalarType err_tol = std::max<ScalarType>((ScalarType)1.77e-15, (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5)));
+
+        const VecType a = fabs(u1.v);
+        const VecType s = sqrt(a);
+        const VecType r = rsqrt(a);
+        const VecType f = floor(u1.v);
+        const VecType c = ceil(u1.v);
+        const VecType cs = copysign(u1.v, u2.v);
+        const VecType nan = select(isnan(u3.v), VecType((ScalarType)1), VecType((ScalarType)0));
+        const VecType sn = sin(u1.v);
+        const VecType cn = cos(u1.v);
+        const VecType tn = tan(u1.v);
+        const VecType sn5 = approx_sin<5>(u1.v);
+        const VecType cn5 = approx_cos<5>(u1.v);
+        const VecType tn5 = approx_tan<5>(u1.v);
+        const VecType at = atan2(u1.v, u2.v);
+        const VecType pw = pow(u4.v, u2.v / (ScalarType)2);
+        SCTL_ASSERT(1/fabs(VecType((ScalarType)-0.0))[0] > 0);
+        for (Integer i = 0; i < N; i++) {
+          const ScalarType x = u1.x[i];
+          const ScalarType tan_x = tan<ScalarType>(x);
+          SCTL_ASSERT(a[i] == fabs(x));
+          SCTL_ASSERT(s[i] == sqrt<ScalarType>(a[i])); // correctly rounded, as the scalar sqrt
+          SCTL_ASSERT(r[i] == 1/sqrt<ScalarType>(a[i]));
+          SCTL_ASSERT(f[i] == floor<ScalarType>(x));
+          SCTL_ASSERT(c[i] == ceil<ScalarType>(x));
+          SCTL_ASSERT(cs[i] == (u2.x[i] < 0 ? -a[i] : a[i]));
+          SCTL_ASSERT(nan[i] == (ScalarType)(i % 2));
+          SCTL_ASSERT(fabs(sn[i] - sin<ScalarType>(x)) < err_tol);
+          SCTL_ASSERT(fabs(cn[i] - cos<ScalarType>(x)) < err_tol);
+          SCTL_ASSERT(fabs(tn[i] - tan_x) < 4*err_tol*(1 + tan_x*tan_x));
+          SCTL_ASSERT(fabs(sn5[i] - sin<ScalarType>(x)) < (ScalarType)1e-5);
+          SCTL_ASSERT(fabs(cn5[i] - cos<ScalarType>(x)) < (ScalarType)1e-5);
+          SCTL_ASSERT(fabs(tn5[i] - tan_x) < (ScalarType)4e-5*(1 + tan_x*tan_x));
+          SCTL_ASSERT(fabs(at[i] - atan2<ScalarType>(x, u2.x[i])) <= 8*eps*fabs(atan2<ScalarType>(x, u2.x[i])));
+          SCTL_ASSERT(fabs(pw[i] - pow<ScalarType>(u4.x[i], u2.x[i]/2)) <= 8*eps*pow<ScalarType>(u4.x[i], u2.x[i]/2));
+        }
+
+        if constexpr (sizeof(ScalarType) <= sizeof(double)) { // atan2 at zeros, infinities and NaN
+          const ScalarType sv[] = {(ScalarType)0, (ScalarType)-0.0, (ScalarType)1, (ScalarType)-1, (ScalarType)INFINITY, (ScalarType)-INFINITY, (ScalarType)NAN};
+          for (const ScalarType y : sv) {
+            for (const ScalarType x : sv) {
+              const ScalarType ref = std::atan2(y, x);
+              const ScalarType at0 = atan2(VecType(y), VecType(x))[0];
+              SCTL_ASSERT(std::isnan(ref) ? std::isnan(at0) : (fabs(at0 - ref) <= 8*eps*fabs(ref) && std::signbit(at0) == std::signbit(ref)));
+            }
+          }
         }
       }
 

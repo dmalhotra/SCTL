@@ -477,6 +477,67 @@ namespace sctl {
     return log_intrin(x.get());
   }
 
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sqrt(const Vec<ValueType,N>& x) {
+    return sqrt_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> rsqrt(const Vec<ValueType,N>& x) {
+    return rsqrt_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> fabs(const Vec<ValueType,N>& x) {
+    return fabs_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> floor(const Vec<ValueType,N>& x) {
+    return floor_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> ceil(const Vec<ValueType,N>& x) {
+    return ceil_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> copysign(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
+    static_assert(TypeTraits<ValueType>::Type == DataType::Real, "copysign requires a real type.");
+    return copysign_intrin(x.get(), y.get());
+  }
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType isnan(const Vec<ValueType,N>& x) {
+    return isnan_intrin(x.get());
+  }
+
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x) {
+    Vec<ValueType,N> sinx, cosx;
+    sincos(sinx, cosx, x);
+    return sinx;
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x) {
+    Vec<ValueType,N> sinx, cosx;
+    sincos(sinx, cosx, x);
+    return cosx;
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x) {
+    Vec<ValueType,N> sinx, cosx;
+    sincos(sinx, cosx, x);
+    return sinx / cosx;
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x) {
+    Vec<ValueType,N> sinx, cosx;
+    approx_sincos<digits>(sinx, cosx, x);
+    return sinx;
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x) {
+    Vec<ValueType,N> sinx, cosx;
+    approx_sincos<digits>(sinx, cosx, x);
+    return cosx;
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x) {
+    Vec<ValueType,N> sinx, cosx;
+    approx_sincos<digits>(sinx, cosx, x);
+    return sinx / cosx;
+  }
+
+  template <class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x) {
+    return atan2_intrin(y.get(), x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
+    return pow_intrin(x.get(), y.get());
+  }
+
 
   // Print
   template <class ValueType, Integer N> inline std::ostream& operator<<(std::ostream& os, const Vec<ValueType,N>& in) {

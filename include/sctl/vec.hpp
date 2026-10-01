@@ -562,6 +562,51 @@ namespace sctl {
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x);
 
+  /** Square root, correctly rounded; faster than approx_sqrt when the result is needed at once or among other arithmetic. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sqrt(const Vec<ValueType,N>& x);
+
+  /** 1/sqrt(x) with correctly rounded sqrt; faster than approx_rsqrt when needed at once or among much other arithmetic. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> rsqrt(const Vec<ValueType,N>& x);
+
+  /** Absolute value. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> fabs(const Vec<ValueType,N>& x);
+
+  /** Largest integer value not greater than x. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> floor(const Vec<ValueType,N>& x);
+
+  /** Smallest integer value not less than x. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> ceil(const Vec<ValueType,N>& x);
+
+  /** Magnitude of x with the sign of y. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> copysign(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+
+  /** Mask of the elements that are NaN. */
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType isnan(const Vec<ValueType,N>& x);
+
+  /** Sine. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x);
+
+  /** Cosine. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x);
+
+  /** Tangent. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x);
+
+  /** Sine to the given number of digits; -1 for full precision. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x);
+
+  /** Cosine to the given number of digits; -1 for full precision. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x);
+
+  /** Tangent to the given number of digits; -1 for full precision. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x);
+
+  /** Angle of the point (x, y), in [-pi, pi], as std::atan2. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
+
+  /** x to the power y; vectorized with SVML or libmvec, otherwise one element at a time. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+
 
   // Print
   template <class ValueType, Integer N> inline std::ostream& operator<<(std::ostream& os, const Vec<ValueType,N>& in);
