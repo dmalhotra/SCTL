@@ -305,7 +305,7 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator|(const typename Vec<ValueType,N>::ScalarType& b, const Vec<ValueType,N>& a) {
     return Vec<ValueType,N>(a) | b;
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> AndNot(const typename Vec<ValueType,N>::ScalarType& b, const Vec<ValueType,N>& a) { // return a & ~b
+  template <class ValueType, Integer N> inline Vec<ValueType,N> AndNot(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) { // return a & ~b
     return AndNot(Vec<ValueType,N>(a), b);
   }
 
