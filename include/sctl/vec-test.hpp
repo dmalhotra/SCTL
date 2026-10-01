@@ -4,6 +4,7 @@
 #include <stdlib.h>                 // for rand, drand48
 #include <algorithm>                // for max
 #include <cstdint>                  // for int8_t, int16_t, int32_t, int64_t
+#include <limits>                   // for numeric_limits
 #include <type_traits>              // for is_arithmetic
 
 #include "sctl/common.hpp"          // for SCTL_ASSERT, Integer, sctl
@@ -225,14 +226,18 @@ namespace sctl {
       }
 
       static void test_bitshift() {
-        UnionType u1, u2;
+        using UInt = typename IntegerType<sizeof(ScalarType)>::unsigned_value;
+        UnionType u1, u2, u3;
         for (Integer i = 0; i < SizeBytes; i++) {
           u1.c[i] = rand();
         }
+        u1.x[0] = std::numeric_limits<ScalarType>::min();
         for (Integer k = 0; k < (Integer)sizeof(ScalarType)*8; k++) {
           u2.v = u1.v >> k;
+          u3.v = u1.v << k;
           for (Integer i = 0; i < N; i++) {
             SCTL_ASSERT(u2.x[i] == (ScalarType)(u1.x[i] >> k));
+            SCTL_ASSERT(u3.x[i] == (ScalarType)((UInt)u1.x[i] * ((UInt)1 << k))); // x * 2^k modulo 2^(bit width)
           }
         }
       }

@@ -1,7 +1,7 @@
 #ifndef _SCTL_INTRIN_WRAPPER_HPP_
 #define _SCTL_INTRIN_WRAPPER_HPP_
 
-#include <stdint.h>             // for int8_t, int16_t, int32_t, int64_t
+#include <stdint.h>             // for int8_t, int16_t, int32_t, int64_t, uint8_t, ...
 
 #include "sctl/common.hpp"      // for Integer, sctl, SCTL_ALIGN_B...
 #include "sctl/math_utils.hpp"  // for const_pi, QuadReal, cos, exp, sin, sqrt
@@ -113,12 +113,27 @@ namespace sctl { // Traits
 #endif
 
   template <Integer N> struct IntegerType {};
-  template <> struct IntegerType<sizeof( int8_t)> { using value =  int8_t; };
-  template <> struct IntegerType<sizeof(int16_t)> { using value = int16_t; };
-  template <> struct IntegerType<sizeof(int32_t)> { using value = int32_t; };
-  template <> struct IntegerType<sizeof(int64_t)> { using value = int64_t; };
+  template <> struct IntegerType<sizeof( int8_t)> {
+    using value =  int8_t;
+    using unsigned_value =  uint8_t;
+  };
+  template <> struct IntegerType<sizeof(int16_t)> {
+    using value = int16_t;
+    using unsigned_value = uint16_t;
+  };
+  template <> struct IntegerType<sizeof(int32_t)> {
+    using value = int32_t;
+    using unsigned_value = uint32_t;
+  };
+  template <> struct IntegerType<sizeof(int64_t)> {
+    using value = int64_t;
+    using unsigned_value = uint64_t;
+  };
 #ifdef __SIZEOF_INT128__
-  template <> struct IntegerType<sizeof(__int128)> { using value = __int128; };
+  template <> struct IntegerType<sizeof(__int128)> {
+    using value = __int128;
+    using unsigned_value = unsigned __int128;
+  };
 #endif
 }
 
@@ -323,11 +338,12 @@ namespace sctl { // Generic
   // Bitshift
   template <class VData> inline VData bitshiftleft_intrin(const VData& a, const Integer& rhs) {
     static constexpr Integer N = VData::Size;
+    using UInt = typename IntegerType<sizeof(typename VData::ScalarType)>::unsigned_value;
     union {
       VData v;
-      typename VData::ScalarType x[N];
+      UInt x[N]; // unsigned: defined for negative values, unlike a signed bit shift in C++17
     } a_ = {a};
-    for (Integer i = 0; i < N; i++) a_.x[i] = (a_.x[i] < 0 ? -((-a_.x[i]) << rhs) : (a_.x[i] << rhs));
+    for (Integer i = 0; i < N; i++) a_.x[i] <<= rhs;
     return a_.v;
   }
   template <class VData> inline VData bitshiftright_intrin(const VData& a, const Integer& rhs) {
