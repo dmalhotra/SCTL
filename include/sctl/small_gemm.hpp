@@ -33,6 +33,8 @@ constexpr Long DynamicSize = -1;
  * @tparam ValueType Element type.
  * @tparam M, N, K Sizes known at compile time, or DynamicSize for sizes given to the constructor;
  * the loop over Vec is specialized for the fixed ones.
+ *
+ * Each product adds 2 m n k to the profiler's FLOP counter.
  */
 template <class ValueType, Long M = DynamicSize, Long N = DynamicSize, Long K = DynamicSize> class SmallGEMM {
  public:

@@ -8,6 +8,8 @@
 #include "sctl/iterator.hpp"    // for Iterator, ConstIterator
 #include "sctl/iterator.txx"    // for Iterator::operator[]
 #include "sctl/matrix.hpp"      // for Matrix
+#include "sctl/profile.hpp"     // for Profile, ProfileCounter
+#include "sctl/profile.txx"     // for Profile::IncrementCounter
 #include "sctl/vec.hpp"         // for Vec, FMA
 #include "sctl/vec.txx"         // for Vec::Load, Vec::Store
 
@@ -179,6 +181,7 @@ template <class ValueType, Long M, Long N, Long K> inline SmallGEMM<ValueType, M
 }
 
 template <class ValueType, Long M, Long N, Long K> inline void SmallGEMM<ValueType, M, N, K>::operator()(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B) const {
+  Profile::IncrementCounter(ProfileCounter::FLOP, 2 * m_ * n_ * k_);
 #if defined(SCTL_HAVE_LIBXSMM)
   if (kernel_) { // operands exchanged, as in the constructor
     libxsmm_gemm_param prm;
