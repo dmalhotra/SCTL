@@ -381,6 +381,20 @@ namespace sctl { // Generic
     for (Integer i = 0; i < N; i++) v[i] = loadu_intrin<VData>(buf[i]);
   }
 
+  template <class VData> inline VData swap_pairs_intrin(const VData& vec) {
+    static_assert(VData::Size % 2 == 0, "swap_pairs requires an even number of lanes.");
+    union {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    } vec_ = {vec};
+    for (Integer i = 0; i < VData::Size; i += 2) {
+      const typename VData::ScalarType t = vec_.x[i];
+      vec_.x[i] = vec_.x[i + 1];
+      vec_.x[i + 1] = t;
+    }
+    return vec_.v;
+  }
+
   // Conversion operators
   template <class RetType, class ValueType, Integer N> inline RetType reinterpret_intrin(const VecData<ValueType,N>& v) {
     static_assert(sizeof(RetType) == sizeof(VecData<ValueType,N>), "Illegal type cast -- size of types does not match.");
@@ -1477,6 +1491,9 @@ namespace sctl { // SSE
   template <> inline void transpose_intrin<VecData<int32_t,4>>(VecData<int32_t,4> (&v)[4]) { transpose_reinterpret_intrin<VecData<float ,4>>(v); }
   template <> inline void transpose_intrin<VecData<int64_t,2>>(VecData<int64_t,2> (&v)[2]) { transpose_reinterpret_intrin<VecData<double,2>>(v); }
 
+  template <> inline VecData<float,4> swap_pairs_intrin(const VecData<float,4>& vec) { return _mm_shuffle_ps(vec.v, vec.v, 0xB1); }
+  template <> inline VecData<double,2> swap_pairs_intrin(const VecData<double,2>& vec) { return _mm_shuffle_pd(vec.v, vec.v, 0x1); }
+
   // Conversion operators
   template <> inline VecData<float ,4> convert_int2real_intrin<VecData<float ,4>,VecData<int32_t,4>>(const VecData<int32_t,4>& x) {
     return _mm_cvtepi32_ps(x.v);
@@ -2240,6 +2257,9 @@ namespace sctl { // AVX
   }
   template <> inline void transpose_intrin<VecData<int32_t,8>>(VecData<int32_t,8> (&v)[8]) { transpose_reinterpret_intrin<VecData<float ,8>>(v); }
   template <> inline void transpose_intrin<VecData<int64_t,4>>(VecData<int64_t,4> (&v)[4]) { transpose_reinterpret_intrin<VecData<double,4>>(v); }
+
+  template <> inline VecData<float,8> swap_pairs_intrin(const VecData<float,8>& vec) { return _mm256_permute_ps(vec.v, 0xB1); }
+  template <> inline VecData<double,4> swap_pairs_intrin(const VecData<double,4>& vec) { return _mm256_permute_pd(vec.v, 0x5); }
 
   #ifdef __AVX2__
   template <Integer Bits> struct UnpackIntrin256;
@@ -3072,6 +3092,9 @@ namespace sctl { // AVX512
   }
   template <> inline void transpose_intrin<VecData<int32_t,16>>(VecData<int32_t,16> (&v)[16]) { transpose_reinterpret_intrin<VecData<float ,16>>(v); }
   template <> inline void transpose_intrin<VecData<int64_t, 8>>(VecData<int64_t, 8> (&v)[ 8]) { transpose_reinterpret_intrin<VecData<double, 8>>(v); }
+
+  template <> inline VecData<float,16> swap_pairs_intrin(const VecData<float,16>& vec) { return _mm512_permute_ps(vec.v, 0xB1); }
+  template <> inline VecData<double,8> swap_pairs_intrin(const VecData<double,8>& vec) { return _mm512_permute_pd(vec.v, 0x55); }
 
 #if defined(__AVX512BW__)
   template <Integer Bits> struct UnpackIntrin512;

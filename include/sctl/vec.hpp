@@ -385,6 +385,15 @@ namespace sctl {
    */
   template <class ValueType, Integer N, class ...T> inline void transpose(Vec<ValueType,N>& v0, T&... vs);
 
+  /**
+   * Exchange the elements of each pair of adjacent lanes: (x0, x1, x2, x3, ...) becomes
+   * (x1, x0, x3, x2, ...). N must be even.
+   *
+   * @param x The input vector.
+   * @return The vector with the elements of each pair exchanged.
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> swap_pairs(const Vec<ValueType,N>& x);
+
 
   // Special functions
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x);

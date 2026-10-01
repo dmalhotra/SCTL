@@ -63,6 +63,7 @@ namespace sctl {
           test_arithmetic();
           test_maxmin();
           test_transpose();
+          test_swap_pairs();
           test_mask(); // TODO: fails for 'long double'
           test_comparison(); // TODO: fails for 'long double'
         }
@@ -291,6 +292,15 @@ namespace sctl {
       template <class ...T> struct TransposeVa<0,T...> {
         static void apply(VecType (&)[N], T&... args) { transpose(args...); }
       };
+
+      static void test_swap_pairs() {
+        if constexpr (N % 2 == 0) {
+          UnionType u, w;
+          for (Integer i = 0; i < N; i++) u.x[i] = (ScalarType)rand();
+          w.v = swap_pairs(u.v);
+          for (Integer i = 0; i < N; i++) SCTL_ASSERT(w.x[i] == u.x[i ^ 1]);
+        }
+      }
 
       static void test_mask() {
         union {

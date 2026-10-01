@@ -370,6 +370,10 @@ namespace sctl {
     ((vs.set(w[i++])), ...);
   }
 
+  template <class ValueType, Integer N> inline Vec<ValueType,N> swap_pairs(const Vec<ValueType,N>& x) {
+    return swap_pairs_intrin(x.get());
+  }
+
 
   // Special functions
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x) {
