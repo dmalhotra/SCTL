@@ -452,8 +452,9 @@ namespace sctl {
         const Matrix<Real> cs_all(COORD_DIM*order, order, (fused ? cs_ik.begin() : (Iterator<Real>)src_nodal.begin()), false);
         Matrix<Real> Cv_all (COORD_DIM*order, Nv, Cv.begin(),  false);
         Matrix<Real> Cdv_all(COORD_DIM*order, Nv, Cdv.begin(), false);
-        Matrix<Real>::GEMM(Cv_all,  cs_all, rv.M);
-        Matrix<Real>::GEMM(Cdv_all, cs_all, rv.dM);
+        const SmallGEMM<Real, COORD_DIM*order, DynamicSize, order> interp_v(false, COORD_DIM*order, Nv, order);
+        interp_v(Cv_all,  cs_all, rv.M);
+        interp_v(Cdv_all, cs_all, rv.dM);
       }
 
       ScratchBuf<Real> Tall(fused ? 0 : Nu*C*order, pool);
@@ -474,20 +475,22 @@ namespace sctl {
             const Matrix<Real> Cdvc_m(order, ldc, Cdv.begin(), false);
             Matrix<Real> XdU_m(2*nu, ldc, XdU.begin(), false);
             Matrix<Real> dV_m(nu, ldc, dV.begin(), false);
-            Matrix<Real>::GEMM(XdU_m, MuD_m, Cvc_m);
-            Matrix<Real>::GEMM(dV_m, MuT_b, Cdvc_m);
+            const SmallGEMM<Real, DynamicSize, DynamicSize, order> interp_xdu(false, 2*nu, ldc, order), interp_dv(false, nu, ldc, order);
+            interp_xdu(XdU_m, MuD_m, Cvc_m);
+            interp_dv(dV_m, MuT_b, Cdvc_m);
           } else { // Interpolate coordinates and tangents along u, one product per coordinate
             const Matrix<Real> MuT_b (nu, order, (Iterator<Real>)ru.MTD.begin() + a0*order, false);
             const Matrix<Real> dMuT_b(nu, order, (Iterator<Real>)ru.MTD.begin() + (Nu + a0)*order, false);
+            const SmallGEMM<Real, DynamicSize, DynamicSize, order> interp_u(false, nu, Nv, order);
             for (Integer k = 0; k < COORD_DIM; k++) {
               const Matrix<Real> Cv_k (order, Nv, Cv.begin()  + k*order*Nv, false);
               const Matrix<Real> Cdv_k(order, Nv, Cdv.begin() + k*order*Nv, false);
               Matrix<Real> X_k(nu, Nv, Xs.begin() + k*nqb, false);
               Matrix<Real> dXu_k(nu, Nv, dXu.begin() + k*nqb, false);
               Matrix<Real> dXv_k(nu, Nv, dXv.begin() + k*nqb, false);
-              Matrix<Real>::GEMM(X_k,   MuT_b,  Cv_k);
-              Matrix<Real>::GEMM(dXu_k, dMuT_b, Cv_k);
-              Matrix<Real>::GEMM(dXv_k, MuT_b,  Cdv_k);
+              interp_u(X_k,   MuT_b,  Cv_k);
+              interp_u(dXu_k, dMuT_b, Cv_k);
+              interp_u(dXv_k, MuT_b,  Cdv_k);
             }
           }
           const ConstIterator<Real> Xp = (fused ? XdU.begin() : Xs.begin());
@@ -532,12 +535,14 @@ namespace sctl {
           const Matrix<Real> KW_m(C*nu, Nv, KW.begin(), false);
           Matrix<Real> T_m(C*nu, order, Tblk.begin(), false);
           const Matrix<Real> MvT(Nv, order, (Iterator<Real>)rv.MTD.begin(), false);
-          Matrix<Real>::GEMM(T_m, KW_m, MvT);
+          const SmallGEMM<Real, DynamicSize, order, DynamicSize> proj_v(false, C*nu, order, Nv);
+          proj_v(T_m, KW_m, MvT);
           if (fused) {
+            const SmallGEMM<Real, order, order, DynamicSize> proj_u(true, order, order, nu);
             for (Integer c = 0; c < C; c++) {
               const Matrix<Real> T_c(nu, order, Tblk.begin() + c*nu*order, false);
               Matrix<Real> A_c(order, order, acc_cm.begin() + c*nnode, false);
-              Matrix<Real>::GEMM(A_c, ru.M, T_c, (Real)1);
+              proj_u(A_c, ru.M, T_c);
             }
           } else {
             for (Integer a = 0; a < nu; a++) {
@@ -553,7 +558,8 @@ namespace sctl {
         ScratchBuf<Real> Aall(order*C*order, pool);
         const Matrix<Real> T_m(Nu, C*order, Tall.begin(), false);
         Matrix<Real> A_m(order, C*order, Aall.begin(), false);
-        Matrix<Real>::GEMM(A_m, ru.M, T_m);
+        const SmallGEMM<Real, order, DynamicSize, DynamicSize> proj_u(false, order, C*order, Nu);
+        proj_u(A_m, ru.M, T_m);
         for (Integer c = 0; c < C; c++) {
           for (Integer i = 0; i < order; i++) {
             for (Integer j = 0; j < order; j++) acc_cm[c*nnode + i*order + j] += Aall[(i*C + c)*order + j];
@@ -867,13 +873,15 @@ namespace sctl {
         Vector<Real> cs(cs_buf);
         ShiftedElemCoord(cs, coord, Xtrg);
         ScratchBuf<Real> Av(2*COORD_DIM*nnode, pool);
+        const SmallGEMM<Real, COORD_DIM*order, order, order> sub_v;
         for (Integer sdv = 0; sdv < 2; sdv++) {
           if (!(slen[1][sdv] > 0)) continue;
           const Matrix<Real> cs_all(COORD_DIM*order, order, cs.begin(), false);
           const Matrix<Real> Sf_v(order, order, Sf_buf.begin() + (2+sdv)*nnode, false);
           Matrix<Real> A_all(COORD_DIM*order, order, Av.begin() + sdv*COORD_DIM*nnode, false);
-          Matrix<Real>::GEMM(A_all, cs_all, Sf_v);
+          sub_v(A_all, cs_all, Sf_v);
         }
+        const SmallGEMM<Real, order, order, order> sub_u;
         for (Integer sdu = 0; sdu < 2; sdu++) {
           if (!(slen[0][sdu] > 0)) continue;
           const Matrix<Real> St_u(order, order, St_buf.begin() + sdu*nnode, false);
@@ -882,7 +890,7 @@ namespace sctl {
             for (Integer k = 0; k < COORD_DIM; k++) {
               const Matrix<Real> A_k(order, order, Av.begin() + (sdv*COORD_DIM + k)*nnode, false);
               Matrix<Real> X_k(order, order, Xsub_buf.begin() + ((2*sdu+sdv)*COORD_DIM + k)*nnode, false);
-              Matrix<Real>::GEMM(X_k, St_u, A_k);
+              sub_u(X_k, St_u, A_k);
             }
           }
         }
@@ -934,11 +942,13 @@ namespace sctl {
             const Matrix<Real> Sf_u(order, order, Sf_buf.begin() + sdu*nnode, false);
             const Matrix<Real> A_all(C*order, order, acc.begin(), false);
             Matrix<Real> B_all(C*order, order, accB.begin(), false);
-            Matrix<Real>::GEMM(B_all, A_all, St_v);
+            const SmallGEMM<Real, DynamicSize, order, order> map_v(false, C*order, order, order);
+            map_v(B_all, A_all, St_v);
+            const SmallGEMM<Real, order, order, order> map_u;
             for (Integer c = 0; c < C; c++) {
               const Matrix<Real> B_c(order, order, accB.begin() + c*nnode, false);
               Matrix<Real> E_c(order, order, accE.begin(), false);
-              Matrix<Real>::GEMM(E_c, Sf_u, B_c);
+              map_u(E_c, Sf_u, B_c);
               for (Integer p = 0; p < nnode; p++) M_acc[p][c] += accE[p];
             }
           }
@@ -1288,20 +1298,23 @@ namespace sctl {
             Matrix<Real> As(NA, order, As_buf.begin(), false);
             Matrix<Real> Tmp(NA, 2*order, Tmp_buf.begin(), false);
             Matrix<Real> HG(ns*NR, order, HG_buf.begin(), false);
-            Matrix<Real>::GEMM(Gm, FS, T.beta_interp);
+            const SmallGEMM<Real, COORD_DIM*order, DynamicSize, order> interp_beta(false, COORD_DIM*order, 2*ns, order);
+            interp_beta(Gm, FS, T.beta_interp);
+            const SmallGEMM<Real, NA, 2*order, order> interp_alpha;
             for (Integer i = 0; i < ns; i++) {
               for (Integer k = 0; k < COORD_DIM; k++) for (Integer m = 0; m < order; m++) {
                 As[k][m] = Gm[k*order+m][i];
                 As[COORD_DIM+k][m] = Gm[k*order+m][ns+i];
               }
-              Matrix<Real>::GEMM(Tmp, As, T.alpha_interp[i]);
+              interp_alpha(Tmp, As, T.alpha_interp[i]);
               for (Integer k = 0; k < COORD_DIM; k++) for (Integer m = 0; m < order; m++) {
                 HG[i*NR + k][m]               = Tmp[k][m];
                 HG[i*NR + COORD_DIM + k][m]   = Tmp[k][order+m];
                 HG[i*NR + 2*COORD_DIM + k][m] = Tmp[COORD_DIM+k][m];
               }
             }
-            Matrix<Real>::GEMM(XdX, HG, Tt);
+            const SmallGEMM<Real, DynamicSize, DynamicSize, order> interp_t(false, ns*NR, nt, order);
+            interp_t(XdX, HG, Tt);
           }
           for (Integer i = 0; i < ns; i++) {
             const Real jw = tbl.sn[i]*T.J0*tbl.sw[i];
@@ -1335,15 +1348,18 @@ namespace sctl {
           Matrix<Real> Yi(C, order, Yi_buf.begin(), false);
           Matrix<Real> Yall(C*order, ns, Yall_buf.begin(), false);
           Matrix<Real> Pc(order, order, Pc_buf.begin(), false);
-          Matrix<Real>::GEMM(Zall, KW, TtT);
+          const SmallGEMM<Real, DynamicSize, order, DynamicSize> proj_t(false, ns*C, order, nt);
+          proj_t(Zall, KW, TtT);
+          const SmallGEMM<Real, DynamicSize, order, order> proj_alpha(false, C, order, order);
           for (Integer i = 0; i < ns; i++) {
             const Matrix<Real> Zi(C, order, (Iterator<Real>)Zall.begin() + i*C*order, false);
-            Matrix<Real>::GEMM(Yi, Zi, T.alpha_interp_T[i]);
+            proj_alpha(Yi, Zi, T.alpha_interp_T[i]);
             for (Integer c = 0; c < C; c++) for (Integer m = 0; m < order; m++) Yall[c*order+m][i] = Yi[c][m];
           }
+          const SmallGEMM<Real, order, order, DynamicSize> proj_beta(false, order, order, ns);
           for (Integer c = 0; c < C; c++) {
             const Matrix<Real> Yc(order, ns, (Iterator<Real>)Yall.begin() + c*order*ns, false);
-            Matrix<Real>::GEMM(Pc, Yc, T.beta_interp_T);
+            proj_beta(Pc, Yc, T.beta_interp_T);
             for (Integer m = 0; m < order; m++) for (Integer n = 0; n < order; n++)
               M_acc[T.swap_ab ? n*order+m : m*order+n][c] += Pc[m][n];
           }

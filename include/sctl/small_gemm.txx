@@ -126,10 +126,26 @@ template <class ValueType, Long M, Long N, Long K> inline SmallGEMM<ValueType, M
   kernel_ = nullptr;
   if constexpr (std::is_same<ValueType, double>::value || std::is_same<ValueType, float>::value) {
     if (m * n * k > 0) {
-      constexpr libxsmm_datatype T = (std::is_same<ValueType, double>::value ? LIBXSMM_DATATYPE_F64 : LIBXSMM_DATATYPE_F32);
-      // Row-major C = A B is column-major C^T (n x m) = B^T (n x k) A^T (k x m)
-      const libxsmm_gemm_shape shape = libxsmm_create_gemm_shape((libxsmm_blasint)n, (libxsmm_blasint)m, (libxsmm_blasint)k, (libxsmm_blasint)n, (libxsmm_blasint)k, (libxsmm_blasint)n, T, T, T, T);
-      kernel_ = libxsmm_dispatch_gemm(shape, (libxsmm_bitfield)(accumulate ? 0 : LIBXSMM_GEMM_FLAG_BETA_0), (libxsmm_bitfield)LIBXSMM_GEMM_PREFETCH_NONE);
+      // A per-thread table in front of LIBXSMM's lookup, which takes about 40 ns, as long as the
+      // smallest products
+      struct Entry {
+        Long m = -1, n = -1, k = -1;
+        bool accumulate = false;
+        libxsmm_gemmfunction kernel = nullptr;
+      };
+      thread_local Entry table[64];
+      Entry& e = table[(m * 31 + n * 17 + k * 7 + (accumulate ? 1 : 0)) % 64];
+      if (e.m != m || e.n != n || e.k != k || e.accumulate != accumulate) {
+        constexpr libxsmm_datatype T = (std::is_same<ValueType, double>::value ? LIBXSMM_DATATYPE_F64 : LIBXSMM_DATATYPE_F32);
+        // Row-major C = A B is column-major C^T (n x m) = B^T (n x k) A^T (k x m)
+        const libxsmm_gemm_shape shape = libxsmm_create_gemm_shape((libxsmm_blasint)n, (libxsmm_blasint)m, (libxsmm_blasint)k, (libxsmm_blasint)n, (libxsmm_blasint)k, (libxsmm_blasint)n, T, T, T, T);
+        e.kernel = libxsmm_dispatch_gemm(shape, (libxsmm_bitfield)(accumulate ? 0 : LIBXSMM_GEMM_FLAG_BETA_0), (libxsmm_bitfield)LIBXSMM_GEMM_PREFETCH_NONE);
+        e.m = m;
+        e.n = n;
+        e.k = k;
+        e.accumulate = accumulate;
+      }
+      kernel_ = e.kernel;
     }
   }
 #endif

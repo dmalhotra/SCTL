@@ -23,11 +23,12 @@ constexpr Long DynamicSize = -1;
  *
  * With SCTL_HAVE_LIBXSMM defined, float and double products use a kernel that LIBXSMM generates
  * for the sizes and the mode (overwrite or accumulate); it is looked up when the object is
- * constructed, and LIBXSMM keeps it until the program ends. Other types, and sizes for which
- * LIBXSMM has no kernel, use a register-blocked loop over Vec.
+ * constructed, through a per-thread table after the first time, and LIBXSMM keeps it until the
+ * program ends. Other types, and sizes for which LIBXSMM has no kernel, use a register-blocked
+ * loop over Vec.
  *
- * Construct the object once for given sizes, then apply it to many matrices. Applying it does not
- * change the object, so several threads can apply the same object at once.
+ * Constructing an object takes a few ns, so it can be done where the product is needed. Applying
+ * it does not change the object, so several threads can apply the same object at once.
  *
  * @tparam ValueType Element type.
  * @tparam M, N, K Sizes known at compile time, or DynamicSize for sizes given to the constructor;
