@@ -12,18 +12,6 @@
 
 namespace sctl {
 
-  template <class ValueType, Integer N> template <class T, class... T2> struct Vec<ValueType,N>::InitVec {
-    template <class... T1> static inline VData apply(T1... start, T x, T2... rest) {
-      return InitVec<T2...>::template apply<ScalarType, T1...>(start..., (ScalarType)x, rest...);
-    }
-  };
-  template <class ValueType, Integer N> template <class T> struct Vec<ValueType,N>::InitVec<T> {
-    template <class... T1> static inline VData apply(T1... start, T x) {
-      return set_intrin<VData>(start..., (ScalarType)x);
-    }
-  };
-
-
   template <class ScalarType> constexpr Integer DefaultVecLen() {
     #if defined(__AVX512__) || defined(__AVX512F__)
     static_assert(SCTL_ALIGN_BYTES >= 64, "Insufficient memory alignment for SIMD vector types");
@@ -71,7 +59,7 @@ namespace sctl {
 
   template <class ValueType, Integer N> inline Vec<ValueType,N>::Vec(const VData& v_) : v(v_) {}
   template <class ValueType, Integer N> inline Vec<ValueType,N>::Vec(const ScalarType& a) : Vec(set1_intrin<VData>(a)) {}
-  template <class ValueType, Integer N> template <class T,class ...T1> inline Vec<ValueType,N>::Vec(T x, T1... args) : Vec(InitVec<T1...>::template apply<ScalarType>((ScalarType)x,args...)) {}
+  template <class ValueType, Integer N> template <class T0, class T1, class ...T2> inline Vec<ValueType,N>::Vec(T0 x0, T1 x1, T2... args) : Vec(set_intrin<VData>((ScalarType)x0, (ScalarType)x1, ((ScalarType)args)...)) {}
 
 
   template <class ValueType, Integer N> inline void Vec<ValueType,N>::Store(ScalarType* p) const {
@@ -185,29 +173,29 @@ namespace sctl {
     return sub_intrin(a.get(), b.get());
   }
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator*(const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator*(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a * Vec<ValueType,N>(b);
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator/(const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator/(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a / Vec<ValueType,N>(b);
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator+(const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator+(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a + Vec<ValueType,N>(b);
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator-(const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator-(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a - Vec<ValueType,N>(b);
   }
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator*(const ValueType& a, const Vec<ValueType,N>& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator*(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return Vec<ValueType,N>(a) * b;
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator/(const ValueType& a, const Vec<ValueType,N>& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator/(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return Vec<ValueType,N>(a) / b;
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator+(const ValueType& a, const Vec<ValueType,N>& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator+(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return Vec<ValueType,N>(a) + b;
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator-(const ValueType& a, const Vec<ValueType,N>& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator-(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return Vec<ValueType,N>(a) - b;
   }
 
@@ -232,51 +220,51 @@ namespace sctl {
     return comp_intrin<ComparisonType::ne>(a.get(), b.get());
   }
 
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator< (const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator< (const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a <  Vec<ValueType,N>(b);
   }
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator<=(const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator<=(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a <= Vec<ValueType,N>(b);
   }
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator>=(const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator>=(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a >= Vec<ValueType,N>(b);
   }
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator> (const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator> (const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a > Vec<ValueType,N>(b);
   }
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator==(const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator==(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a == Vec<ValueType,N>(b);
   }
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator!=(const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator!=(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a != Vec<ValueType,N>(b);
   }
 
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator< (const ValueType& a, const Vec<ValueType,N>& b) {
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator< (const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return Vec<ValueType,N>(a) <  b;
   }
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator<=(const ValueType& a, const Vec<ValueType,N>& b) {
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator<=(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return Vec<ValueType,N>(a) <= b;
   }
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator>=(const ValueType& a, const Vec<ValueType,N>& b) {
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator>=(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return Vec<ValueType,N>(a) >= b;
   }
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator> (const ValueType& a, const Vec<ValueType,N>& b) {
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator> (const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return Vec<ValueType,N>(a) >  b;
   }
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator==(const ValueType& a, const Vec<ValueType,N>& b) {
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator==(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return Vec<ValueType,N>(a) == b;
   }
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator!=(const ValueType& a, const Vec<ValueType,N>& b) {
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator!=(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return Vec<ValueType,N>(a) != b;
   }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> select(const typename Vec<ValueType,N>::MaskType& m, const Vec<ValueType,N>& a, const Vec<ValueType,N>& b) {
     return select_intrin(m, a.get(), b.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> select(const typename Vec<ValueType,N>::MaskType& m, const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> select(const typename Vec<ValueType,N>::MaskType& m, const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return select(m, a, Vec<ValueType,N>(b));
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> select(const typename Vec<ValueType,N>::MaskType& m, const ValueType& a, const Vec<ValueType,N>& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> select(const typename Vec<ValueType,N>::MaskType& m, const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b) {
     return select(m, Vec<ValueType,N>(a), b);
   }
 
@@ -295,29 +283,29 @@ namespace sctl {
     return andnot_intrin(a.get(), b.get());
   }
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator&(const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator&(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a & Vec<ValueType,N>(b);
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator^(const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator^(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a ^ Vec<ValueType,N>(b);
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator|(const Vec<ValueType,N>& a, const ValueType& b) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator|(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) {
     return a | Vec<ValueType,N>(b);
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> AndNot(const Vec<ValueType,N>& a, const ValueType& b) { // return a & ~b
+  template <class ValueType, Integer N> inline Vec<ValueType,N> AndNot(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b) { // return a & ~b
     return AndNot(a, Vec<ValueType,N>(b));
   }
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator&(const ValueType& b, const Vec<ValueType,N>& a) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator&(const typename Vec<ValueType,N>::ScalarType& b, const Vec<ValueType,N>& a) {
     return Vec<ValueType,N>(a) & b;
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator^(const ValueType& b, const Vec<ValueType,N>& a) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator^(const typename Vec<ValueType,N>::ScalarType& b, const Vec<ValueType,N>& a) {
     return Vec<ValueType,N>(a) ^ b;
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator|(const ValueType& b, const Vec<ValueType,N>& a) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator|(const typename Vec<ValueType,N>::ScalarType& b, const Vec<ValueType,N>& a) {
     return Vec<ValueType,N>(a) | b;
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> AndNot(const ValueType& b, const Vec<ValueType,N>& a) { // return a & ~b
+  template <class ValueType, Integer N> inline Vec<ValueType,N> AndNot(const typename Vec<ValueType,N>::ScalarType& b, const Vec<ValueType,N>& a) { // return a & ~b
     return AndNot(Vec<ValueType,N>(a), b);
   }
 
@@ -342,17 +330,17 @@ namespace sctl {
     return reduce_add_intrin(a.get());
   }
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> max(const Vec<ValueType,N>& lhs, const ValueType& rhs) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> max(const Vec<ValueType,N>& lhs, const typename Vec<ValueType,N>::ScalarType& rhs) {
     return max(lhs, Vec<ValueType,N>(rhs));
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> min(const Vec<ValueType,N>& lhs, const ValueType& rhs) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> min(const Vec<ValueType,N>& lhs, const typename Vec<ValueType,N>::ScalarType& rhs) {
     return min(lhs, Vec<ValueType,N>(rhs));
   }
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> max(const ValueType& lhs, const Vec<ValueType,N>& rhs) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> max(const typename Vec<ValueType,N>::ScalarType& lhs, const Vec<ValueType,N>& rhs) {
     return max(Vec<ValueType,N>(lhs), rhs);
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> min(const ValueType& lhs, const Vec<ValueType,N>& rhs) {
+  template <class ValueType, Integer N> inline Vec<ValueType,N> min(const typename Vec<ValueType,N>::ScalarType& lhs, const Vec<ValueType,N>& rhs) {
     return min(Vec<ValueType,N>(lhs), rhs);
   }
 

@@ -4,6 +4,7 @@
 #include <stdlib.h>                 // for rand, drand48
 #include <algorithm>                // for max
 #include <cstdint>                  // for int8_t, int16_t, int32_t, int64_t
+#include <type_traits>              // for is_arithmetic
 
 #include "sctl/common.hpp"          // for SCTL_ASSERT, Integer, sctl
 #include "sctl/intrin-wrapper.hpp"  // for IntegerType, TypeTraits, DataType
@@ -111,6 +112,12 @@ namespace sctl {
         VecType v1((ScalarType)2);
         for (Integer i = 0; i < N; i++) {
           SCTL_ASSERT(v1[i] == (ScalarType)2);
+        }
+
+        // Constructor: Vec(v) from another scalar type
+        VecType v_int(2);
+        for (Integer i = 0; i < N; i++) {
+          SCTL_ASSERT(v_int[i] == (ScalarType)2);
         }
 
         // Constructor: Vec(v1,..,vn)
@@ -266,6 +273,16 @@ namespace sctl {
             ScalarType max_val = myabs(u1.x[i]*u2.x[i]) + myabs(u3.x[i]);
             ScalarType rel_err = err / max_val;
             SCTL_ASSERT(rel_err < eps);
+          }
+        }
+
+        if constexpr (std::is_arithmetic<ScalarType>::value) { // QuadReal converts from any type, so 2 - Vec<QuadReal> is ambiguous
+          UnionType u18, u19;
+          u18.v = u1.v * 2;
+          u19.v = 2 - u1.v;
+          for (Integer i = 0; i < N; i++) {
+            SCTL_ASSERT(u18.x[i] == (ScalarType)(u1.x[i] * 2));
+            SCTL_ASSERT(u19.x[i] == (ScalarType)(2 - u1.x[i]));
           }
         }
       }

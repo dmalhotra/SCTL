@@ -156,6 +156,7 @@ namespace sctl { // Generic
     SetHelper<k-1,Size>(vec, rest...);
   }
   template <class VData, class T, class ...T2> inline VData set_intrin(T x, T2 ...args) {
+    static_assert(sizeof...(T2) + 1 == VData::Size, "set_intrin requires exactly one value per element");
     union {
       VData v;
       typename VData::ScalarType x[VData::Size];
