@@ -5,7 +5,6 @@
 #include <algorithm>                // for max
 #include <cstdint>                  // for int8_t, int16_t, int32_t, int64_t
 #include <limits>                   // for numeric_limits
-#include <type_traits>              // for is_arithmetic
 
 #include "sctl/common.hpp"          // for SCTL_ASSERT, Integer, sctl
 #include "sctl/intrin-wrapper.hpp"  // for IntegerType, TypeTraits, DataType
@@ -243,7 +242,7 @@ namespace sctl {
       }
 
       static void test_arithmetic() {
-        UnionType u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17;
+        UnionType u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17, u18, u19;
         for (Integer i = 0; i < N; i++) {
           u1.x[i] = (ScalarType)(rand()%100)+1;
           u2.x[i] = (ScalarType)(rand()%100)+2;
@@ -267,6 +266,9 @@ namespace sctl {
         u16.v = u1.v; u16.v *= u2.v[0];
         u17.v = u1.v; u17.v /= u2.v[0];
 
+        u18.v = u1.v * 2;
+        u19.v = 2 - u1.v;
+
         for (Integer i = 0; i < N; i++) {
           SCTL_ASSERT(u4.x[i] == (ScalarType)-u1.x[i]);
           SCTL_ASSERT(u5.x[i] == (ScalarType)(u1.x[i] + u2.x[i]));
@@ -284,6 +286,9 @@ namespace sctl {
           SCTL_ASSERT(u16.x[i] == (ScalarType)(u1.x[i] * u2.x[0]));
           SCTL_ASSERT(u17.x[i] == (ScalarType)(u1.x[i] / u2.x[0]));
 
+          SCTL_ASSERT(u18.x[i] == (ScalarType)(u1.x[i] * 2));
+          SCTL_ASSERT(u19.x[i] == (ScalarType)(2 - u1.x[i]));
+
           if (TypeTraits<ScalarType>::Type == DataType::Integer) {
             SCTL_ASSERT(u9.x[i] == (ScalarType)(u1.x[i]*u2.x[i] + u3.x[i]));
           } else {
@@ -295,16 +300,6 @@ namespace sctl {
             ScalarType max_val = myabs(u1.x[i]*u2.x[i]) + myabs(u3.x[i]);
             ScalarType rel_err = err / max_val;
             SCTL_ASSERT(rel_err < eps);
-          }
-        }
-
-        if constexpr (std::is_arithmetic<ScalarType>::value) { // QuadReal converts from any type, so 2 - Vec<QuadReal> is ambiguous
-          UnionType u18, u19;
-          u18.v = u1.v * 2;
-          u19.v = 2 - u1.v;
-          for (Integer i = 0; i < N; i++) {
-            SCTL_ASSERT(u18.x[i] == (ScalarType)(u1.x[i] * 2));
-            SCTL_ASSERT(u19.x[i] == (ScalarType)(2 - u1.x[i]));
           }
         }
       }
