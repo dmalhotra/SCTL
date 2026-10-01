@@ -66,6 +66,7 @@ namespace sctl {
           test_align();
           test_init();
           test_load_store_mask();
+          test_gather_scatter();
           test_convert();
           test_reduce();
           test_bitwise(); // TODO: fails for 'long double'
@@ -226,6 +227,39 @@ namespace sctl {
             SCTL_ASSERT(v3[i] == (i < n ? x[i] : (ScalarType)0));
             SCTL_ASSERT(y[i] == (i < n ? (ScalarType)2 : (ScalarType)-1));
           }
+        }
+      }
+
+      static void test_gather_scatter() {
+        test_gather_scatter_idx<int32_t>();
+        test_gather_scatter_idx<int64_t>();
+      }
+
+      template <class IndexType> static void test_gather_scatter_idx() {
+        constexpr Integer M = 4*N;
+        sctl::Vector<ScalarType> x(M), y(M);
+        IndexType idx[N];
+        ScalarType val[N];
+        for (Integer j = 0; j < M; j++) {
+          x[j] = (ScalarType)(rand()%100);
+          y[j] = (ScalarType)-1;
+        }
+        for (Integer i = 0; i < N; i++) {
+          idx[i] = (IndexType)(rand() % M); // repeated indices too
+          val[i] = (ScalarType)(rand()%100);
+        }
+        const Vec<IndexType,N> vidx = Vec<IndexType,N>::Load(idx);
+        const VecType g = VecType::Gather(&x[0], vidx);
+        VecType::Load(val).Scatter(&y[0], vidx);
+        for (Integer i = 0; i < N; i++) {
+          SCTL_ASSERT(g[i] == x[idx[i]]);
+        }
+        for (Integer j = 0; j < M; j++) {
+          ScalarType expected = (ScalarType)-1;
+          for (Integer i = 0; i < N; i++) {
+            if (idx[i] == (IndexType)j) expected = val[i]; // the last element with index j
+          }
+          SCTL_ASSERT(y[j] == expected);
         }
       }
 

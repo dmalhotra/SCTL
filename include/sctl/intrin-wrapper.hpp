@@ -813,6 +813,33 @@ namespace sctl { // Generic
     }
   }
 
+  // Gather and scatter
+  template <class VData, class IdxVData> inline VData gather_intrin(typename VData::ScalarType const* p, const IdxVData& idx) { // lane i is p[idx lane i]
+    static_assert(IdxVData::Size == VData::Size, "Gather requires one index per lane.");
+    union {
+      IdxVData v;
+      typename IdxVData::ScalarType x[VData::Size];
+    } idx_ = {idx};
+    union {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    } vec;
+    for (Integer i = 0; i < VData::Size; i++) vec.x[i] = p[idx_.x[i]];
+    return vec.v;
+  }
+  template <class VData, class IdxVData> inline void scatter_intrin(typename VData::ScalarType* p, const VData& vec, const IdxVData& idx) { // in lane order: of equal indices, the last lane is stored
+    static_assert(IdxVData::Size == VData::Size, "Scatter requires one index per lane.");
+    union {
+      IdxVData v;
+      typename IdxVData::ScalarType x[VData::Size];
+    } idx_ = {idx};
+    union {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    } vec_ = {vec};
+    for (Integer i = 0; i < VData::Size; i++) p[idx_.x[i]] = vec_.x[i];
+  }
+
   // Special functions
   template <Integer MAX_ITER, Integer ITER, class VData> struct rsqrt_newton_iter {
     static inline VData eval(const VData& y, const VData& x) {
@@ -2952,6 +2979,24 @@ namespace sctl { // AVX
   template <> inline VecData<int64_t, 4> fabs_intrin<VecData<int64_t, 4>>(const VecData<int64_t, 4>& x) { return _mm256_abs_epi64(x.v); }
   #endif
 
+  // Gather and scatter
+  #if defined(__AVX2__)
+  template <> inline VecData<double,2> gather_intrin<VecData<double,2>,VecData<int64_t,2>>(double const* p, const VecData<int64_t,2>& idx) { return _mm_i64gather_pd   (p, idx.v, 8); }
+  template <> inline VecData<double,4> gather_intrin<VecData<double,4>,VecData<int32_t,4>>(double const* p, const VecData<int32_t,4>& idx) { return _mm256_i32gather_pd(p, idx.v, 8); }
+  template <> inline VecData<double,4> gather_intrin<VecData<double,4>,VecData<int64_t,4>>(double const* p, const VecData<int64_t,4>& idx) { return _mm256_i64gather_pd(p, idx.v, 8); }
+  template <> inline VecData<float ,4> gather_intrin<VecData<float ,4>,VecData<int32_t,4>>(float  const* p, const VecData<int32_t,4>& idx) { return _mm_i32gather_ps   (p, idx.v, 4); }
+  template <> inline VecData<float ,4> gather_intrin<VecData<float ,4>,VecData<int64_t,4>>(float  const* p, const VecData<int64_t,4>& idx) { return _mm256_i64gather_ps(p, idx.v, 4); }
+  template <> inline VecData<float ,8> gather_intrin<VecData<float ,8>,VecData<int32_t,8>>(float  const* p, const VecData<int32_t,8>& idx) { return _mm256_i32gather_ps(p, idx.v, 4); }
+  #endif
+  #if defined(__AVX512F__) && defined(__AVX512VL__)
+  template <> inline void scatter_intrin<VecData<double,2>,VecData<int64_t,2>>(double* p, const VecData<double,2>& vec, const VecData<int64_t,2>& idx) { _mm_i64scatter_pd   (p, idx.v, vec.v, 8); }
+  template <> inline void scatter_intrin<VecData<double,4>,VecData<int32_t,4>>(double* p, const VecData<double,4>& vec, const VecData<int32_t,4>& idx) { _mm256_i32scatter_pd(p, idx.v, vec.v, 8); }
+  template <> inline void scatter_intrin<VecData<double,4>,VecData<int64_t,4>>(double* p, const VecData<double,4>& vec, const VecData<int64_t,4>& idx) { _mm256_i64scatter_pd(p, idx.v, vec.v, 8); }
+  template <> inline void scatter_intrin<VecData<float ,4>,VecData<int32_t,4>>(float * p, const VecData<float ,4>& vec, const VecData<int32_t,4>& idx) { _mm_i32scatter_ps   (p, idx.v, vec.v, 4); }
+  template <> inline void scatter_intrin<VecData<float ,4>,VecData<int64_t,4>>(float * p, const VecData<float ,4>& vec, const VecData<int64_t,4>& idx) { _mm256_i64scatter_ps(p, idx.v, vec.v, 4); }
+  template <> inline void scatter_intrin<VecData<float ,8>,VecData<int32_t,8>>(float * p, const VecData<float ,8>& vec, const VecData<int32_t,8>& idx) { _mm256_i32scatter_ps(p, idx.v, vec.v, 4); }
+  #endif
+
   // Conversion between element types
   template <> inline VecData<double ,4> convert_intrin<VecData<double ,4>,VecData<int32_t,4>>(const VecData<int32_t,4>& a) { return _mm256_cvtepi32_pd (a.v); }
   template <> inline VecData<int32_t,4> convert_intrin<VecData<int32_t,4>,VecData<double ,4>>(const VecData<double ,4>& a) { return _mm256_cvttpd_epi32(a.v); }
@@ -4214,6 +4259,16 @@ namespace sctl { // AVX512
   template <> inline Mask<VecData<float ,16>> isnan_intrin<VecData<float ,16>>(const VecData<float ,16>& x) { return Mask<VecData<float ,16>>(_mm512_cmp_ps_mask(x.v, x.v, _CMP_UNORD_Q)); }
   template <> inline Mask<VecData<double, 8>> isnan_intrin<VecData<double, 8>>(const VecData<double, 8>& x) { return Mask<VecData<double, 8>>(_mm512_cmp_pd_mask(x.v, x.v, _CMP_UNORD_Q)); }
 #endif
+
+  // Gather and scatter
+  template <> inline VecData<double, 8> gather_intrin<VecData<double, 8>,VecData<int32_t, 8>>(double const* p, const VecData<int32_t, 8>& idx) { return _mm512_i32gather_pd(idx.v, p, 8); }
+  template <> inline VecData<double, 8> gather_intrin<VecData<double, 8>,VecData<int64_t, 8>>(double const* p, const VecData<int64_t, 8>& idx) { return _mm512_i64gather_pd(idx.v, p, 8); }
+  template <> inline VecData<float , 8> gather_intrin<VecData<float , 8>,VecData<int64_t, 8>>(float  const* p, const VecData<int64_t, 8>& idx) { return _mm512_i64gather_ps(idx.v, p, 4); }
+  template <> inline VecData<float ,16> gather_intrin<VecData<float ,16>,VecData<int32_t,16>>(float  const* p, const VecData<int32_t,16>& idx) { return _mm512_i32gather_ps(idx.v, p, 4); }
+  template <> inline void scatter_intrin<VecData<double, 8>,VecData<int32_t, 8>>(double* p, const VecData<double, 8>& vec, const VecData<int32_t, 8>& idx) { _mm512_i32scatter_pd(p, idx.v, vec.v, 8); }
+  template <> inline void scatter_intrin<VecData<double, 8>,VecData<int64_t, 8>>(double* p, const VecData<double, 8>& vec, const VecData<int64_t, 8>& idx) { _mm512_i64scatter_pd(p, idx.v, vec.v, 8); }
+  template <> inline void scatter_intrin<VecData<float , 8>,VecData<int64_t, 8>>(float * p, const VecData<float , 8>& vec, const VecData<int64_t, 8>& idx) { _mm512_i64scatter_ps(p, idx.v, vec.v, 4); }
+  template <> inline void scatter_intrin<VecData<float ,16>,VecData<int32_t,16>>(float * p, const VecData<float ,16>& vec, const VecData<int32_t,16>& idx) { _mm512_i32scatter_ps(p, idx.v, vec.v, 4); }
 
 
   // Special functions
