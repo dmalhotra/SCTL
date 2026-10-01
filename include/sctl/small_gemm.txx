@@ -45,6 +45,12 @@ namespace detail_small_gemm {
   template <class Real> constexpr bool IsComplex<std::complex<Real>> = true;
 
   /**
+   * Real floating-point operations in one multiply-add: 2, or 8 for std::complex (4 real multiplies
+   * and 4 real adds).
+   */
+  template <class ValueType> constexpr Long MulAddFlops = (IsComplex<ValueType> ? 8 : 2);
+
+  /**
    * C (m x n) = A (m x k) B (k x n), updated as U says; all row-major, with row strides lda, ldb
    * and ldc. Each entry of C sums over k in order, starting from its first term. Real types in
    * blocks of 2 x 2 entries, whose sums proceed independently (1.5-1.8x faster than one entry at a
@@ -378,7 +384,7 @@ template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC>
 }
 
 template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC> inline void SmallGEMM<ValueType, M, N, K, LDA, LDB, LDC>::operator()(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B) const {
-  Profile::IncrementCounter(ProfileCounter::FLOP, 2 * m_ * n_ * k_);
+  Profile::IncrementCounter(ProfileCounter::FLOP, detail_small_gemm::MulAddFlops<ValueType> * m_ * n_ * k_);
 #if defined(SCTL_HAVE_LIBXSMM)
   if (kernel_) { // operands exchanged, as in the constructor
     libxsmm_gemm_param prm;

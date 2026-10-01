@@ -189,6 +189,27 @@ int main() {
     CHECK(nbad == 0);
   }
 
+#if SCTL_PROFILE >= 0
+  std::printf("FLOP counter :\n");
+  {
+    // 2 m n k per product, 8 m n k for std::complex (real operations)
+    const auto flops = [](auto zero) {
+      using T = decltype(zero);
+      constexpr Long m = 3, n = 5, k = 7;
+      std::vector<T> A(m * k), B(k * n), C(m * n);
+      const SmallGEMM<T> gemm(false, m, n, k);
+      const Long f0 = sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0);
+      gemm(sctl::Ptr2Itr<T>(C.data(), m * n), sctl::Ptr2ConstItr<T>(A.data(), m * k), sctl::Ptr2ConstItr<T>(B.data(), k * n));
+      return sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0) - f0;
+    };
+    CHECK(flops(double(0)) == 2 * 105);
+    CHECK(flops((long double)0) == 2 * 105);
+    CHECK(flops(std::complex<float>(0)) == 8 * 105);
+    CHECK(flops(std::complex<double>(0)) == 8 * 105);
+    CHECK(flops(std::complex<long double>(0)) == 8 * 105);
+  }
+#endif
+
   std::printf("Matrix overload :\n");
   {
     sctl::Matrix<double> A(7, 5), B(5, 9), C(7, 9);

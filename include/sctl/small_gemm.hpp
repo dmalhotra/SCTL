@@ -38,7 +38,8 @@ constexpr Long DynamicSize = -1;
  * @tparam LDA, LDB, LDC Row strides known at compile time, or DynamicSize for strides given to the
  * constructor; as for the sizes.
  *
- * Each product adds 2 m n k to the profiler's FLOP counter.
+ * Each product adds 2 m n k to the profiler's FLOP counter, or 8 m n k for std::complex (real
+ * operations).
  */
 template <class ValueType, Long M = DynamicSize, Long N = DynamicSize, Long K = DynamicSize, Long LDA = DynamicSize, Long LDB = DynamicSize, Long LDC = DynamicSize> class SmallGEMM {
   static_assert((LDA == DynamicSize || K == DynamicSize || LDA >= K) && (LDB == DynamicSize || N == DynamicSize || LDB >= N) && (LDC == DynamicSize || N == DynamicSize || LDC >= N), "a row stride shorter than its row");

@@ -23,6 +23,7 @@
 #include "sctl/profile.txx"       // for Profile::IncrementCounter
 #include "sctl/scratch_pool.hpp"  // for ScratchBuf
 #include "sctl/scratch_pool.txx"  // for ScratchBuf
+#include "sctl/small_gemm.txx"    // for detail_small_gemm::MulAddFlops
 #include "sctl/static-array.hpp"  // for StaticArray
 #include "sctl/static-array.txx"  // for StaticArray::operator[]
 
@@ -261,7 +262,7 @@ template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator-(const 
 
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::operator*(const Matrix<ValueType>& M) const {
   SCTL_ASSERT(dim[1] == M.dim[0]);
-  Profile::IncrementCounter(ProfileCounter::FLOP, 2 * (((Long)dim[0]) * dim[1]) * M.dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, detail_small_gemm::MulAddFlops<ValueType> * (((Long)dim[0]) * dim[1]) * M.dim[1]);
 
   Matrix<ValueType> M_r(dim[0], M.dim[1]);
   if (M.Dim(0) * M.Dim(1) == 0 || this->Dim(0) * this->Dim(1) == 0) return M_r;
@@ -274,7 +275,7 @@ template <class ValueType> void Matrix<ValueType>::GEMM(Matrix<ValueType>& M_r, 
   SCTL_ASSERT(M_r.dim[0] == A.dim[0]);
   SCTL_ASSERT(M_r.dim[1] == B.dim[1]);
   if (A.Dim(0) * A.Dim(1) == 0 || B.Dim(0) * B.Dim(1) == 0) return;
-  Profile::IncrementCounter(ProfileCounter::FLOP, 2 * (((Long)A.dim[0]) * A.dim[1]) * B.dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, detail_small_gemm::MulAddFlops<ValueType> * (((Long)A.dim[0]) * A.dim[1]) * B.dim[1]);
   mat::gemm<ValueType>('N', 'N', B.dim[1], A.dim[0], A.dim[1], 1.0, B.data_ptr, B.dim[1], A.data_ptr, A.dim[1], beta, M_r.data_ptr, M_r.dim[1]);
 }
 

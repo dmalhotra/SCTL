@@ -5,9 +5,11 @@
 // arithmetic, matrix multiplication (operator* and GEMM), element access
 // (operator() and operator[]), Transpose, SVD, pinv, Write/Read.
 
+#include <complex>
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
+#include <utility>
 
 #include "sctl/common.hpp"
 #include "sctl/iterator.hpp"
@@ -151,6 +153,27 @@ int main() {
     Matrix<double> R2 = R + R;
     CHECK(mat_approx(C, R2));
   }
+
+#if SCTL_PROFILE >= 0
+  // --- FLOP counter of operator* and GEMM: 2 m n k, 8 m n k for std::complex (real operations) ---
+  std::printf("FLOP counter of products :\n");
+  {
+    const auto flops = [](auto zero) { // 2 x 3 times 3 x 4: m n k = 24
+      using T = decltype(zero);
+      Matrix<T> A(2, 3), B(3, 4), C(2, 4);
+      A.SetZero();
+      B.SetZero();
+      const Long f0 = sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0);
+      const Matrix<T> D = A * B;
+      const Long f1 = sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0);
+      Matrix<T>::GEMM(C, A, B);
+      const Long f2 = sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0);
+      return std::make_pair(f1 - f0, f2 - f1);
+    };
+    CHECK(flops(double(0)) == std::make_pair(Long(2 * 24), Long(2 * 24)));
+    CHECK(flops(std::complex<double>(0)) == std::make_pair(Long(8 * 24), Long(8 * 24)));
+  }
+#endif
 
   // --- scalar ops ---
   std::printf("scalar ops :\n");
