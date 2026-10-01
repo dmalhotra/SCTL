@@ -66,6 +66,7 @@ namespace sctl {
           test_init();
           test_load_store_mask();
           test_convert();
+          test_reduce();
           test_bitwise(); // TODO: fails for 'long double'
           test_arithmetic();
           test_maxmin();
@@ -251,6 +252,40 @@ namespace sctl {
         const VecTo s = select(m, VecTo((ValueTo)1), VecTo((ValueTo)0));
         for (Integer i = 0; i < N; i++) {
           SCTL_ASSERT(s[i] == (u.x[i] < (ScalarType)0 ? (ValueTo)1 : (ValueTo)0));
+        }
+      }
+
+      static void test_reduce() {
+        UnionType u;
+        for (Integer i = 0; i < N; i++) {
+          u.x[i] = (TypeTraits<ScalarType>::Type == DataType::Real ? (ScalarType)(drand48()*200-100) : (ScalarType)(rand()%201-100));
+        }
+
+        // reduce, reduce_min, reduce_max
+        ScalarType x[N]; // pairwise sums in the order of reduce
+        ScalarType min_val = u.x[0];
+        ScalarType max_val = u.x[0];
+        for (Integer i = 0; i < N; i++) {
+          x[i] = u.x[i];
+          min_val = (u.x[i] < min_val ? u.x[i] : min_val);
+          max_val = (max_val < u.x[i] ? u.x[i] : max_val);
+        }
+        for (Integer len = N/2; len > 0; len /= 2) {
+          for (Integer i = 0; i < len; i++) x[i] = (ScalarType)(x[i] + x[i+len]);
+        }
+        SCTL_ASSERT(reduce(u.v) == x[0]);
+        SCTL_ASSERT(reduce_min(u.v) == min_val);
+        SCTL_ASSERT(reduce_max(u.v) == max_val);
+
+        // reduce_count, all_of, any_of, none_of
+        for (const ScalarType t : {(ScalarType)-101, (ScalarType)0, (ScalarType)101}) {
+          const MaskType m = (u.v < t);
+          Integer count = 0;
+          for (Integer i = 0; i < N; i++) count += (u.x[i] < t ? 1 : 0);
+          SCTL_ASSERT(reduce_count(m) == count);
+          SCTL_ASSERT(all_of(m) == (count == N));
+          SCTL_ASSERT(any_of(m) == (count > 0));
+          SCTL_ASSERT(none_of(m) == (count == 0));
         }
       }
 
@@ -510,7 +545,7 @@ namespace sctl {
             sum += a[i];
           }
 
-          SCTL_ASSERT(reduce_add(va) == sum); // small integers, so the summation order does not matter
+          SCTL_ASSERT(reduce(va) == sum); // small integers, so the summation order does not matter
           SCTL_ASSERT(mask_popcnt_intrin(lt) == cnt_lt);
           SCTL_ASSERT(mask_any(lt) == (cnt_lt > 0));
 

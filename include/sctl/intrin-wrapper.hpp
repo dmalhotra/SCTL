@@ -504,6 +504,30 @@ namespace sctl { // Generic
     return u.v;
   }
 
+  // Reductions: the two halves are combined lane by lane until one lane is left,
+  // so the order of the operations is the same on every instruction set.
+  template <class VData> inline typename VData::ScalarType reduce_add_intrin(const VData& a) {
+    if constexpr (VData::Size == 1) {
+      return extract_intrin(a, 0);
+    } else {
+      return reduce_add_intrin(add_intrin(get_low_intrin(a), get_high_intrin(a)));
+    }
+  }
+  template <class VData> inline typename VData::ScalarType reduce_min_intrin(const VData& a) {
+    if constexpr (VData::Size == 1) {
+      return extract_intrin(a, 0);
+    } else {
+      return reduce_min_intrin(min_intrin(get_low_intrin(a), get_high_intrin(a)));
+    }
+  }
+  template <class VData> inline typename VData::ScalarType reduce_max_intrin(const VData& a) {
+    if constexpr (VData::Size == 1) {
+      return extract_intrin(a, 0);
+    } else {
+      return reduce_max_intrin(max_intrin(get_low_intrin(a), get_high_intrin(a)));
+    }
+  }
+
 
   /////////////////////////////////////////////////////////////////////////////
   /////////////////////////////////////////////////////////////////////////////
@@ -564,6 +588,15 @@ namespace sctl { // Generic
       const IntFrom a = reinterpret_intrin<IntFrom>(convert_mask2vec_intrin(m));
       return convert_vec2mask_intrin(reinterpret_intrin<VDataTo>(convert_intrin<IntTo>(a))); // lanes of -1 and 0 keep their value
     }
+  }
+  template <class VData> inline Integer mask_count_intrin(const Mask<VData>& m) { // number of selected lanes
+    union {
+      VData v;
+      typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
+    } m_ = {convert_mask2vec_intrin(m)};
+    Integer count = 0;
+    for (Integer i = 0; i < VData::Size; i++) count += (m_.q[i] ? 1 : 0);
+    return count;
   }
 
   template <class VData> inline Integer mask_popcnt_intrin(const Mask<VData>& v) {
@@ -629,16 +662,6 @@ namespace sctl { // Generic
   template <class VData> inline Integer mask_compress_iota_store2(const Mask<VData>& mask_lo, const Mask<VData>& mask_hi, int32_t base, int32_t* ptr) {
     const Integer c = mask_compress_iota_store(mask_lo, base, ptr);
     return c + mask_compress_iota_store(mask_hi, base + (int32_t)VData::Size, ptr + c);
-  }
-
-  template <class VData> inline typename VData::ScalarType reduce_add_intrin(const VData& a) {
-    union {
-        VData vec;
-        typename VData::ScalarType s[VData::Size];
-    } v_ = {a};
-    typename VData::ScalarType sum = v_.s[0];
-    for (Integer i = 1; i < VData::Size; i++) sum += v_.s[i];
-    return sum;
   }
 
   template <class VData> inline VData mask_expand_load(const Mask<VData>& mask, const VData& zero, const typename VData::ScalarType* ptr) {
@@ -1793,6 +1816,16 @@ namespace sctl { // SSE
   template <> inline void storeu_mask_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec, const Mask<VecData<int64_t,2>>& m) { _mm_maskstore_epi64((long long*)p, m.v, vec.v); }
 #endif
 
+  // Number of selected lanes
+#if defined(__POPCNT__) || defined(__ARM_NEON)
+  template <> inline Integer mask_count_intrin<VecData<int8_t ,16>>(const Mask<VecData<int8_t ,16>>& m) { return _mm_popcnt_u32(_mm_movemask_epi8(m.v)); }
+  template <> inline Integer mask_count_intrin<VecData<int16_t, 8>>(const Mask<VecData<int16_t, 8>>& m) { return _mm_popcnt_u32(_mm_movemask_epi8(m.v)) / 2; } // two bits per lane
+  template <> inline Integer mask_count_intrin<VecData<int32_t, 4>>(const Mask<VecData<int32_t, 4>>& m) { return _mm_popcnt_u32(_mm_movemask_ps(_mm_castsi128_ps(m.v))); }
+  template <> inline Integer mask_count_intrin<VecData<int64_t, 2>>(const Mask<VecData<int64_t, 2>>& m) { return _mm_popcnt_u32(_mm_movemask_pd(_mm_castsi128_pd(m.v))); }
+  template <> inline Integer mask_count_intrin<VecData<float  , 4>>(const Mask<VecData<float  , 4>>& m) { return _mm_popcnt_u32(_mm_movemask_ps(m.v)); }
+  template <> inline Integer mask_count_intrin<VecData<double , 2>>(const Mask<VecData<double , 2>>& m) { return _mm_popcnt_u32(_mm_movemask_pd(m.v)); }
+#endif
+
 
   // Special functions
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,4>> {
@@ -2643,6 +2676,18 @@ namespace sctl { // AVX
   template <> inline void storeu_mask_intrin<VecData<int64_t,4>>(int64_t* p, VecData<int64_t,4> vec, const Mask<VecData<int64_t,4>>& m) { _mm256_maskstore_epi64((long long*)p, m.v, vec.v); }
   #endif
 
+  // Number of selected lanes
+  #if defined(__POPCNT__)
+  #if defined(__AVX2__)
+  template <> inline Integer mask_count_intrin<VecData<int8_t ,32>>(const Mask<VecData<int8_t ,32>>& m) { return _mm_popcnt_u32(_mm256_movemask_epi8(m.v)); }
+  template <> inline Integer mask_count_intrin<VecData<int16_t,16>>(const Mask<VecData<int16_t,16>>& m) { return _mm_popcnt_u32(_mm256_movemask_epi8(m.v)) / 2; } // two bits per lane
+  #endif
+  template <> inline Integer mask_count_intrin<VecData<int32_t, 8>>(const Mask<VecData<int32_t, 8>>& m) { return _mm_popcnt_u32(_mm256_movemask_ps(_mm256_castsi256_ps(m.v))); }
+  template <> inline Integer mask_count_intrin<VecData<int64_t, 4>>(const Mask<VecData<int64_t, 4>>& m) { return _mm_popcnt_u32(_mm256_movemask_pd(_mm256_castsi256_pd(m.v))); }
+  template <> inline Integer mask_count_intrin<VecData<float  , 8>>(const Mask<VecData<float  , 8>>& m) { return _mm_popcnt_u32(_mm256_movemask_ps(m.v)); }
+  template <> inline Integer mask_count_intrin<VecData<double , 4>>(const Mask<VecData<double , 4>>& m) { return _mm_popcnt_u32(_mm256_movemask_pd(m.v)); }
+  #endif
+
   // Conversion between element types
   template <> inline VecData<double ,4> convert_intrin<VecData<double ,4>,VecData<int32_t,4>>(const VecData<int32_t,4>& a) { return _mm256_cvtepi32_pd (a.v); }
   template <> inline VecData<int32_t,4> convert_intrin<VecData<int32_t,4>,VecData<double ,4>>(const VecData<double ,4>& a) { return _mm256_cvttpd_epi32(a.v); }
@@ -2757,12 +2802,6 @@ namespace sctl { // AVX
   #endif
 
 
-  template <> inline float reduce_add_intrin<VecData<float,8>>(const VecData<float,8>& a) {
-    __m128 t = _mm_add_ps(_mm256_castps256_ps128(a.v), _mm256_extractf128_ps(a.v, 1));
-    t = _mm_hadd_ps(t, t);
-    t = _mm_hadd_ps(t, t);
-    return _mm_cvtss_f32(t);
-  }
   template <> inline double reduce_add_intrin<VecData<double,4>>(const VecData<double,4>& a) {
     __m128d t = _mm_add_pd(_mm256_castpd256_pd128(a.v), _mm256_extractf128_pd(a.v, 1));
     t = _mm_hadd_pd(t, t);
@@ -3853,6 +3892,18 @@ namespace sctl { // AVX512
   template <> inline void storeu_mask_intrin<VecData<int64_t ,8>>(int64_t* p, VecData<int64_t ,8> vec, const Mask<VecData<int64_t ,8>>& m) { _mm512_mask_storeu_epi64(p, m.v, vec.v); }
   template <> inline void storeu_mask_intrin<VecData<float  ,16>>(float  * p, VecData<float  ,16> vec, const Mask<VecData<float  ,16>>& m) { _mm512_mask_storeu_ps   (p, m.v, vec.v); }
   template <> inline void storeu_mask_intrin<VecData<double  ,8>>(double * p, VecData<double  ,8> vec, const Mask<VecData<double  ,8>>& m) { _mm512_mask_storeu_pd   (p, m.v, vec.v); }
+#endif
+
+  // Number of selected lanes
+#if defined(__POPCNT__) && defined(__AVX512BW__)
+  template <> inline Integer mask_count_intrin<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& m) { return (Integer)_mm_popcnt_u64(m.v); }
+  template <> inline Integer mask_count_intrin<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& m) { return _mm_popcnt_u32(m.v); }
+#endif
+#if defined(__POPCNT__) && defined(__AVX512DQ__)
+  template <> inline Integer mask_count_intrin<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& m) { return _mm_popcnt_u32(m.v); }
+  template <> inline Integer mask_count_intrin<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& m) { return _mm_popcnt_u32(m.v); }
+  template <> inline Integer mask_count_intrin<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& m) { return _mm_popcnt_u32(m.v); }
+  template <> inline Integer mask_count_intrin<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& m) { return _mm_popcnt_u32(m.v); }
 #endif
 
 

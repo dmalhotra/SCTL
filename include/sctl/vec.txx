@@ -355,9 +355,6 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> min(const Vec<ValueType,N>& lhs, const Vec<ValueType,N>& rhs) {
     return min_intrin(lhs.get(), rhs.get());
   }
-  template <class ValueType, Integer N> inline ValueType reduce_add(const Vec<ValueType,N>& a) {
-    return reduce_add_intrin(a.get());
-  }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> max(const Vec<ValueType,N>& lhs, const typename Vec<ValueType,N>::ScalarType& rhs) {
     return max(lhs, Vec<ValueType,N>(rhs));
@@ -392,6 +389,30 @@ namespace sctl {
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> swap_pairs(const Vec<ValueType,N>& x) {
     return swap_pairs_intrin(x.get());
+  }
+
+
+  // Reductions
+  template <class ValueType, Integer N> inline ValueType reduce(const Vec<ValueType,N>& v) {
+    return reduce_add_intrin(v.get());
+  }
+  template <class ValueType, Integer N> inline ValueType reduce_min(const Vec<ValueType,N>& v) {
+    return reduce_min_intrin(v.get());
+  }
+  template <class ValueType, Integer N> inline ValueType reduce_max(const Vec<ValueType,N>& v) {
+    return reduce_max_intrin(v.get());
+  }
+  template <class VData> inline Integer reduce_count(const Mask<VData>& m) {
+    return mask_count_intrin(m);
+  }
+  template <class VData> inline bool all_of(const Mask<VData>& m) {
+    return mask_count_intrin(m) == VData::Size;
+  }
+  template <class VData> inline bool any_of(const Mask<VData>& m) {
+    return mask_count_intrin(m) != 0;
+  }
+  template <class VData> inline bool none_of(const Mask<VData>& m) {
+    return mask_count_intrin(m) == 0;
   }
 
 

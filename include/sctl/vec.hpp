@@ -462,9 +462,6 @@ namespace sctl {
    */
   template <class ValueType, Integer N, class ...T> inline void transpose(Vec<ValueType,N>& v0, T&... vs);
 
-  // Horizontal reduction: sum of all lanes.
-  template <class ValueType, Integer N> inline ValueType reduce_add(const Vec<ValueType,N>& a);
-
   /**
    * Exchange the elements of each pair of adjacent lanes: (x0, x1, x2, x3, ...) becomes
    * (x1, x0, x3, x2, ...). N must be even.
@@ -473,6 +470,58 @@ namespace sctl {
    * @return The vector with the elements of each pair exchanged.
    */
   template <class ValueType, Integer N> inline Vec<ValueType,N> swap_pairs(const Vec<ValueType,N>& x);
+
+
+  // Reductions
+
+  /**
+   * Sum of the elements. The two halves are added element by element until one
+   * element is left, so the order of the additions, and the rounding of a real
+   * result, is the same on every instruction set.
+   *
+   * @param v The vector to reduce.
+   * @return The sum of the elements of v.
+   */
+  template <class ValueType, Integer N> inline ValueType reduce(const Vec<ValueType,N>& v);
+
+  /**
+   * Smallest element, as the min of the two halves taken until one element is left.
+   *
+   * @param v The vector to reduce.
+   * @return The smallest element of v.
+   */
+  template <class ValueType, Integer N> inline ValueType reduce_min(const Vec<ValueType,N>& v);
+
+  /**
+   * Largest element, as the max of the two halves taken until one element is left.
+   *
+   * @param v The vector to reduce.
+   * @return The largest element of v.
+   */
+  template <class ValueType, Integer N> inline ValueType reduce_max(const Vec<ValueType,N>& v);
+
+  /**
+   * Number of elements selected by a mask.
+   *
+   * @param m The mask.
+   * @return The number of selected elements.
+   */
+  template <class VData> inline Integer reduce_count(const Mask<VData>& m);
+
+  /**
+   * Whether a mask selects every element.
+   */
+  template <class VData> inline bool all_of(const Mask<VData>& m);
+
+  /**
+   * Whether a mask selects at least one element.
+   */
+  template <class VData> inline bool any_of(const Mask<VData>& m);
+
+  /**
+   * Whether a mask selects no element.
+   */
+  template <class VData> inline bool none_of(const Mask<VData>& m);
 
 
   // Special functions
