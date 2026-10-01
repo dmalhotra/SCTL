@@ -658,6 +658,46 @@ namespace sctl { // Generic
     return or_intrin(and_intrin(a,s_.v), andnot_intrin(b,s_.v));
   }
 
+  // Masked load and store
+  template <class VData> inline Mask<VData> mask_first_intrin(Integer n) { // true in lanes i < n, for n >= 0
+    using ScalarType = typename VData::ScalarType;
+    union {
+      VData v;
+      ScalarType x[VData::Size];
+    } iota;
+    for (Integer i = 0; i < VData::Size; i++) iota.x[i] = (ScalarType)i;
+    return comp_intrin<ComparisonType::lt>(iota.v, set1_intrin<VData>((ScalarType)(n < VData::Size ? n : VData::Size)));
+  }
+  template <class VData> inline VData loadu_mask_intrin(typename VData::ScalarType const* p, const Mask<VData>& m) { // lanes not in m are zero and not read
+    using ScalarType = typename VData::ScalarType;
+    using IntType = typename IntegerType<sizeof(ScalarType)>::value;
+    union {
+      VData v;
+      IntType q[VData::Size];
+    } m_ = {convert_mask2vec_intrin(m)};
+    union {
+      VData v;
+      ScalarType x[VData::Size];
+    } vec;
+    for (Integer i = 0; i < VData::Size; i++) vec.x[i] = (m_.q[i] ? p[i] : (ScalarType)0);
+    return vec.v;
+  }
+  template <class VData> inline void storeu_mask_intrin(typename VData::ScalarType* p, VData vec, const Mask<VData>& m) { // lanes not in m are not written
+    using ScalarType = typename VData::ScalarType;
+    using IntType = typename IntegerType<sizeof(ScalarType)>::value;
+    union {
+      VData v;
+      IntType q[VData::Size];
+    } m_ = {convert_mask2vec_intrin(m)};
+    union {
+      VData v;
+      ScalarType x[VData::Size];
+    } vec_ = {vec};
+    for (Integer i = 0; i < VData::Size; i++) {
+      if (m_.q[i]) p[i] = vec_.x[i];
+    }
+  }
+
   // Special functions
   template <Integer MAX_ITER, Integer ITER, class VData> struct rsqrt_newton_iter {
     static inline VData eval(const VData& y, const VData& x) {
@@ -1687,6 +1727,20 @@ namespace sctl { // SSE
   template <> inline VecData<float  ,4> select_intrin(const Mask<VecData<float  ,4>>& s, const VecData<float  ,4>& a, const VecData<float  ,4>& b) { return _mm_blendv_ps  (b.v, a.v, s.v); }
   template <> inline VecData<double ,2> select_intrin(const Mask<VecData<double ,2>>& s, const VecData<double ,2>& a, const VecData<double ,2>& b) { return _mm_blendv_pd  (b.v, a.v, s.v); }
 
+  // Masked load and store
+#if defined(__AVX__)
+  template <> inline VecData<float ,4> loadu_mask_intrin<VecData<float ,4>>(float  const* p, const Mask<VecData<float ,4>>& m) { return _mm_maskload_ps(p, _mm_castps_si128(m.v)); }
+  template <> inline VecData<double,2> loadu_mask_intrin<VecData<double,2>>(double const* p, const Mask<VecData<double,2>>& m) { return _mm_maskload_pd(p, _mm_castpd_si128(m.v)); }
+  template <> inline void storeu_mask_intrin<VecData<float ,4>>(float * p, VecData<float ,4> vec, const Mask<VecData<float ,4>>& m) { _mm_maskstore_ps(p, _mm_castps_si128(m.v), vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<double,2>>(double* p, VecData<double,2> vec, const Mask<VecData<double,2>>& m) { _mm_maskstore_pd(p, _mm_castpd_si128(m.v), vec.v); }
+#endif
+#if defined(__AVX2__)
+  template <> inline VecData<int32_t,4> loadu_mask_intrin<VecData<int32_t,4>>(int32_t const* p, const Mask<VecData<int32_t,4>>& m) { return _mm_maskload_epi32((int const*)p, m.v); }
+  template <> inline VecData<int64_t,2> loadu_mask_intrin<VecData<int64_t,2>>(int64_t const* p, const Mask<VecData<int64_t,2>>& m) { return _mm_maskload_epi64((long long const*)p, m.v); }
+  template <> inline void storeu_mask_intrin<VecData<int32_t,4>>(int32_t* p, VecData<int32_t,4> vec, const Mask<VecData<int32_t,4>>& m) { _mm_maskstore_epi32((int*)p, m.v, vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec, const Mask<VecData<int64_t,2>>& m) { _mm_maskstore_epi64((long long*)p, m.v, vec.v); }
+#endif
+
 
   // Special functions
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,4>> {
@@ -2524,6 +2578,18 @@ namespace sctl { // AVX
   #endif
   template <> inline VecData<float   ,8> select_intrin(const Mask<VecData<float   ,8>>& s, const VecData<float   ,8>& a, const VecData<float   ,8>& b) { return _mm256_blendv_ps  (b.v, a.v, s.v); }
   template <> inline VecData<double  ,4> select_intrin(const Mask<VecData<double  ,4>>& s, const VecData<double  ,4>& a, const VecData<double  ,4>& b) { return _mm256_blendv_pd  (b.v, a.v, s.v); }
+
+  // Masked load and store
+  template <> inline VecData<float ,8> loadu_mask_intrin<VecData<float ,8>>(float  const* p, const Mask<VecData<float ,8>>& m) { return _mm256_maskload_ps(p, _mm256_castps_si256(m.v)); }
+  template <> inline VecData<double,4> loadu_mask_intrin<VecData<double,4>>(double const* p, const Mask<VecData<double,4>>& m) { return _mm256_maskload_pd(p, _mm256_castpd_si256(m.v)); }
+  template <> inline void storeu_mask_intrin<VecData<float ,8>>(float * p, VecData<float ,8> vec, const Mask<VecData<float ,8>>& m) { _mm256_maskstore_ps(p, _mm256_castps_si256(m.v), vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<double,4>>(double* p, VecData<double,4> vec, const Mask<VecData<double,4>>& m) { _mm256_maskstore_pd(p, _mm256_castpd_si256(m.v), vec.v); }
+  #if defined(__AVX2__)
+  template <> inline VecData<int32_t,8> loadu_mask_intrin<VecData<int32_t,8>>(int32_t const* p, const Mask<VecData<int32_t,8>>& m) { return _mm256_maskload_epi32((int const*)p, m.v); }
+  template <> inline VecData<int64_t,4> loadu_mask_intrin<VecData<int64_t,4>>(int64_t const* p, const Mask<VecData<int64_t,4>>& m) { return _mm256_maskload_epi64((long long const*)p, m.v); }
+  template <> inline void storeu_mask_intrin<VecData<int32_t,8>>(int32_t* p, VecData<int32_t,8> vec, const Mask<VecData<int32_t,8>>& m) { _mm256_maskstore_epi32((int*)p, m.v, vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<int64_t,4>>(int64_t* p, VecData<int64_t,4> vec, const Mask<VecData<int64_t,4>>& m) { _mm256_maskstore_epi64((long long*)p, m.v, vec.v); }
+  #endif
 
 
 
@@ -3650,6 +3716,24 @@ namespace sctl { // AVX512
   template <> inline VecData<int64_t ,8> select_intrin(const Mask<VecData<int64_t ,8>>& s, const VecData<int64_t ,8>& a, const VecData<int64_t ,8>& b) { return _mm512_mask_blend_epi64(s.v, b.v, a.v); }
   template <> inline VecData<float  ,16> select_intrin(const Mask<VecData<float  ,16>>& s, const VecData<float  ,16>& a, const VecData<float  ,16>& b) { return _mm512_mask_blend_ps   (s.v, b.v, a.v); }
   template <> inline VecData<double  ,8> select_intrin(const Mask<VecData<double  ,8>>& s, const VecData<double  ,8>& a, const VecData<double  ,8>& b) { return _mm512_mask_blend_pd   (s.v, b.v, a.v); }
+#endif
+
+  // Masked load and store
+#if defined(__AVX512BW__)
+  template <> inline VecData<int8_t ,64> loadu_mask_intrin<VecData<int8_t ,64>>(int8_t  const* p, const Mask<VecData<int8_t ,64>>& m) { return _mm512_maskz_loadu_epi8 (m.v, p); }
+  template <> inline VecData<int16_t,32> loadu_mask_intrin<VecData<int16_t,32>>(int16_t const* p, const Mask<VecData<int16_t,32>>& m) { return _mm512_maskz_loadu_epi16(m.v, p); }
+  template <> inline void storeu_mask_intrin<VecData<int8_t ,64>>(int8_t * p, VecData<int8_t ,64> vec, const Mask<VecData<int8_t ,64>>& m) { _mm512_mask_storeu_epi8 (p, m.v, vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<int16_t,32>>(int16_t* p, VecData<int16_t,32> vec, const Mask<VecData<int16_t,32>>& m) { _mm512_mask_storeu_epi16(p, m.v, vec.v); }
+#endif
+#if defined(__AVX512DQ__)
+  template <> inline VecData<int32_t,16> loadu_mask_intrin<VecData<int32_t,16>>(int32_t const* p, const Mask<VecData<int32_t,16>>& m) { return _mm512_maskz_loadu_epi32(m.v, p); }
+  template <> inline VecData<int64_t ,8> loadu_mask_intrin<VecData<int64_t ,8>>(int64_t const* p, const Mask<VecData<int64_t ,8>>& m) { return _mm512_maskz_loadu_epi64(m.v, p); }
+  template <> inline VecData<float  ,16> loadu_mask_intrin<VecData<float  ,16>>(float   const* p, const Mask<VecData<float  ,16>>& m) { return _mm512_maskz_loadu_ps   (m.v, p); }
+  template <> inline VecData<double  ,8> loadu_mask_intrin<VecData<double  ,8>>(double  const* p, const Mask<VecData<double  ,8>>& m) { return _mm512_maskz_loadu_pd   (m.v, p); }
+  template <> inline void storeu_mask_intrin<VecData<int32_t,16>>(int32_t* p, VecData<int32_t,16> vec, const Mask<VecData<int32_t,16>>& m) { _mm512_mask_storeu_epi32(p, m.v, vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<int64_t ,8>>(int64_t* p, VecData<int64_t ,8> vec, const Mask<VecData<int64_t ,8>>& m) { _mm512_mask_storeu_epi64(p, m.v, vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<float  ,16>>(float  * p, VecData<float  ,16> vec, const Mask<VecData<float  ,16>>& m) { _mm512_mask_storeu_ps   (p, m.v, vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<double  ,8>>(double * p, VecData<double  ,8> vec, const Mask<VecData<double  ,8>>& m) { _mm512_mask_storeu_pd   (p, m.v, vec.v); }
 #endif
 
 

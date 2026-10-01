@@ -79,6 +79,26 @@ namespace sctl {
       [[nodiscard]] static inline Vec LoadAligned(ScalarType const* p);
 
       /**
+       * Load the elements selected by a mask from unaligned memory. The other
+       * elements are zero, and their memory is not read.
+       *
+       * @param p Pointer to the scalar values.
+       * @param m Mask selecting the elements to load.
+       * @return Vector loaded with the selected scalar values.
+       */
+      [[nodiscard]] static inline Vec Load(ScalarType const* p, const MaskType& m);
+
+      /**
+       * Load the first n elements from unaligned memory. The other elements
+       * are zero, and their memory is not read.
+       *
+       * @param p Pointer to the scalar values.
+       * @param n Number of elements to load, n >= 0; all Size() elements if n >= Size().
+       * @return Vector loaded with the first n scalar values.
+       */
+      [[nodiscard]] static inline Vec Load(ScalarType const* p, Integer n);
+
+      /**
        * Default constructor.
        */
       Vec() = default;
@@ -143,6 +163,24 @@ namespace sctl {
        * @param p Pointer to the memory location to store the data.
        */
       inline void StoreAligned(ScalarType* p) const;
+
+      /**
+       * Store the elements selected by a mask into unaligned memory. The
+       * memory of the other elements is not written.
+       *
+       * @param p Pointer to the memory location to store the data.
+       * @param m Mask selecting the elements to store.
+       */
+      inline void Store(ScalarType* p, const MaskType& m) const;
+
+      /**
+       * Store the first n elements into unaligned memory. The memory of the
+       * other elements is not written.
+       *
+       * @param p Pointer to the memory location to store the data.
+       * @param n Number of elements to store, n >= 0; all Size() elements if n >= Size().
+       */
+      inline void Store(ScalarType* p, Integer n) const;
 
       // Element access
 

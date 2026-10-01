@@ -56,6 +56,14 @@ namespace sctl {
     r.v = load_intrin<VData>(p);
     return r;
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> Vec<ValueType,N>::Load(ScalarType const* p, const MaskType& m) {
+    Vec<ValueType,N> r;
+    r.v = loadu_mask_intrin<VData>(p, m);
+    return r;
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> Vec<ValueType,N>::Load(ScalarType const* p, Integer n) {
+    return Load(p, mask_first_intrin<VData>(n));
+  }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N>::Vec(const VData& v_) : v(v_) {}
   template <class ValueType, Integer N> inline Vec<ValueType,N>::Vec(const ScalarType& a) : Vec(set1_intrin<VData>(a)) {}
@@ -70,6 +78,12 @@ namespace sctl {
     SCTL_ASSERT(((uintptr_t)p) % (sizeof(ValueType)*N) == 0);
     #endif
     store_intrin(p,v);
+  }
+  template <class ValueType, Integer N> inline void Vec<ValueType,N>::Store(ScalarType* p, const MaskType& m) const {
+    storeu_mask_intrin(p, v, m);
+  }
+  template <class ValueType, Integer N> inline void Vec<ValueType,N>::Store(ScalarType* p, Integer n) const {
+    Store(p, mask_first_intrin<VData>(n));
   }
 
   template <class ValueType, Integer N> inline typename Vec<ValueType,N>::ScalarType Vec<ValueType,N>::operator[](Integer i) const {

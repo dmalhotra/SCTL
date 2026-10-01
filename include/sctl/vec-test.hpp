@@ -64,6 +64,7 @@ namespace sctl {
         if (N*sizeof(ScalarType)*8<=512) {
           test_align();
           test_init();
+          test_load_store_mask();
           test_bitwise(); // TODO: fails for 'long double'
           test_arithmetic();
           test_maxmin();
@@ -183,6 +184,42 @@ namespace sctl {
         //for (Integer i = 0; i < N; i++) {
         //  SCTL_ASSERT(v3[i] == (ScalarType)(N-i));
         //}
+      }
+
+      static void test_load_store_mask() {
+        sctl::Vector<ScalarType> x(N), y(N);
+        UnionType u;
+        for (Integer i = 0; i < N; i++) {
+          x[i] = (ScalarType)(i+1);
+          u.x[i] = (ScalarType)(rand()%2);
+        }
+        const MaskType m = (u.v == (ScalarType)1);
+        const VecType v1((ScalarType)2);
+
+        // Load, Store with a mask
+        const VecType v2 = VecType::Load(&x[0], m);
+        for (Integer i = 0; i < N; i++) {
+          y[i] = (ScalarType)-1;
+        }
+        v1.Store(&y[0], m);
+        for (Integer i = 0; i < N; i++) {
+          const bool sel = (u.x[i] == (ScalarType)1);
+          SCTL_ASSERT(v2[i] == (sel ? x[i] : (ScalarType)0));
+          SCTL_ASSERT(y[i] == (sel ? (ScalarType)2 : (ScalarType)-1));
+        }
+
+        // Load, Store of the first n elements
+        for (Integer n = 0; n <= N+1; n++) {
+          const VecType v3 = VecType::Load(&x[0], n);
+          for (Integer i = 0; i < N; i++) {
+            y[i] = (ScalarType)-1;
+          }
+          v1.Store(&y[0], n);
+          for (Integer i = 0; i < N; i++) {
+            SCTL_ASSERT(v3[i] == (i < n ? x[i] : (ScalarType)0));
+            SCTL_ASSERT(y[i] == (i < n ? (ScalarType)2 : (ScalarType)-1));
+          }
+        }
       }
 
       static void test_bitwise() {
