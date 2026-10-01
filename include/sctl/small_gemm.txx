@@ -53,13 +53,15 @@ namespace detail_small_gemm {
   /**
    * C (m x n) = A (m x k) B (k x n), updated as U says; all row-major, with row strides lda, ldb
    * and ldc, or k, n and n if Contiguous. A template size other than DynamicSize replaces the
-   * argument, so the loops are specialized for it. Tiles of 8 rows of C by 1 vector with AVX-512,
-   * and of 4 rows by 2 vectors and then 1 otherwise (for k = 8 on an AMD EPYC 9474F, 4 x 2 with
-   * AVX-512 was 1.6x slower for double and 2.2x for float, and 8 x 1 with AVX2 1.2x slower); the
-   * leftover rows in blocks of 4 (with AVX-512), 2 and 1. The leftover columns of C = A B in one
-   * full vector that ends at column n and writes some columns again, with the same values;
-   * otherwise in narrower vectors and then one at a time. Not inlined: unrolled for fixed sizes
-   * inside a caller's loop, the code was up to 1.9x slower.
+   * argument, so the loops are specialized for it. Tiles of 8 rows of C by 1 vector for AMD Zen 4,
+   * of 8 rows by 3 vectors and then 1 for other AVX-512 CPUs, and of 4 rows by 2 vectors and then 1
+   * otherwise. For k = 8: on an AMD EPYC 9474F, 4 x 2 was 1.6x slower than 8 x 1 for double and
+   * 2.2x for float, and 8 x 3 1.1x slower; on an Intel Xeon Platinum 8362 and a w5-3435X, 8 x 1 was
+   * up to 1.2x slower than 8 x 3 for 174 x 94 x 8 and up to 1.8x for 96 columns; with AVX2, 8 x 1
+   * was 1.2x slower than 4 x 2. The leftover rows in blocks of 4 (with AVX-512), 2 and 1. The
+   * leftover columns of C = A B in one full vector that ends at column n and writes some columns
+   * again, with the same values; otherwise in narrower vectors and then one at a time. Not inlined:
+   * unrolled for fixed sizes inside a caller's loop, the code was up to 1.9x slower.
    */
   template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous> [[gnu::noinline]] void VecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
     const Long m = (M != DynamicSize ? M : m_);
@@ -73,9 +75,12 @@ namespace detail_small_gemm {
     using I2 = std::integral_constant<Integer, 2>;
     using I4 = std::integral_constant<Integer, 4>;
     using IV = std::integral_constant<Integer, VL>;
-#if defined(__AVX512F__)
+#if defined(__AVX512F__) && defined(__znver4__)
     using IR = std::integral_constant<Integer, 8>; // rows per block
     using IT = std::integral_constant<Integer, 1>; // vectors per tile
+#elif defined(__AVX512F__)
+    using IR = std::integral_constant<Integer, 8>;
+    using IT = std::integral_constant<Integer, 3>;
 #else
     using IR = std::integral_constant<Integer, 4>;
     using IT = std::integral_constant<Integer, 2>;
