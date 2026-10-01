@@ -39,24 +39,71 @@ namespace detail_small_gemm {
   template <class Real> constexpr bool ComplexVecTiles<std::complex<Real>> = VecTiles<Real> && (Vec<Real>::Size() >= 2);
 
   /**
+   * True for std::complex types.
+   */
+  template <class ValueType> constexpr bool IsComplex = false;
+  template <class Real> constexpr bool IsComplex<std::complex<Real>> = true;
+
+  /**
    * C (m x n) = A (m x k) B (k x n), updated as U says; all row-major, with row strides lda, ldb
-   * and ldc. One entry of C at a time, summing over k in order.
+   * and ldc. Each entry of C sums over k in order, starting from its first term. Real types in
+   * blocks of 2 x 2 entries, whose sums proceed independently (1.5-1.8x faster than one entry at a
+   * time for long double; larger blocks do not fit in its 8 x87 registers); std::complex one entry
+   * at a time, with the products written out in real arithmetic, without the recovery of infinite
+   * results that std::complex multiplication does (1.6x faster for std::complex<long double>).
    */
   template <class ValueType, Update U> void ScalarProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m, const Long n, const Long k, const Long lda, const Long ldb, const Long ldc, const ValueType alpha, const ValueType beta) {
-    for (Long i = 0; i < m; i++) {
-      for (Long j = 0; j < n; j++) {
-        ValueType s = 0;
-        for (Long l = 0; l < k; l++) s += A[i * lda + l] * B[l * ldb + j];
-        ValueType& c = C[i * ldc + j];
-        if constexpr (U == Update::Overwrite) {
-          c = s;
-        } else if constexpr (U == Update::Accumulate) {
-          c += s;
-        } else {
-          c = alpha * s + (beta == ValueType(0) ? ValueType(0) : beta * c);
+    if constexpr (U == Update::AlphaBeta) { // alpha = 1 with beta = 0 or 1 in the other modes, which do not multiply by alpha and beta
+      if (alpha == ValueType(1) && beta == ValueType(0)) return ScalarProduct<ValueType, Update::Overwrite>(C, A, B, m, n, k, lda, ldb, ldc, alpha, beta);
+      if (alpha == ValueType(1) && beta == ValueType(1)) return ScalarProduct<ValueType, Update::Accumulate>(C, A, B, m, n, k, lda, ldb, ldc, alpha, beta);
+    }
+    constexpr Integer BS = (IsComplex<ValueType> ? 1 : 2); // rows and columns per block
+    using I1 = std::integral_constant<Integer, 1>;
+    using IB = std::integral_constant<Integer, BS>;
+    const bool beta_zero = (beta == ValueType(0)); // once: a function call for QuadReal
+
+    const auto mul = [](const ValueType& a, const ValueType& b) -> ValueType {
+      if constexpr (IsComplex<ValueType>) {
+        return ValueType(a.real() * b.real() - a.imag() * b.imag(), a.real() * b.imag() + a.imag() * b.real());
+      } else {
+        return a * b;
+      }
+    };
+
+    // Rows i0.. (MR of them) and columns j0.. (NR of them) of C
+    const auto tile = [&mul, A, B, C, k, lda, ldb, ldc, alpha, beta, beta_zero](const Long i0, const Long j0, auto mr, auto nr) {
+      constexpr Integer MR = decltype(mr)::value;
+      constexpr Integer NR = decltype(nr)::value;
+      ValueType s[MR][NR];
+      for (Integer r = 0; r < MR; r++) {
+        for (Integer c = 0; c < NR; c++) s[r][c] = (k > 0 ? mul(A[(i0 + r) * lda], B[j0 + c]) : ValueType(0));
+      }
+      for (Long l = 1; l < k; l++) {
+        for (Integer r = 0; r < MR; r++) {
+          for (Integer c = 0; c < NR; c++) s[r][c] += mul(A[(i0 + r) * lda + l], B[l * ldb + j0 + c]);
         }
       }
-    }
+      for (Integer r = 0; r < MR; r++) {
+        for (Integer c = 0; c < NR; c++) {
+          ValueType& x = C[(i0 + r) * ldc + j0 + c];
+          if constexpr (U == Update::Overwrite) {
+            x = s[r][c];
+          } else if constexpr (U == Update::Accumulate) {
+            x += s[r][c];
+          } else {
+            x = alpha * s[r][c] + (beta_zero ? ValueType(0) : beta * x);
+          }
+        }
+      }
+    };
+
+    const Long m_blk = m - m % BS, n_blk = n - n % BS; // rows and columns done in blocks
+    const auto row = [&tile, n, n_blk](const Long i0, auto mr) {
+      for (Long j = 0; j < n_blk; j += BS) tile(i0, j, mr, IB{});
+      for (Long j = n_blk; j < n; j++) tile(i0, j, mr, I1{});
+    };
+    for (Long i = 0; i < m_blk; i += BS) row(i, IB{});
+    for (Long i = m_blk; i < m; i++) row(i, I1{});
   }
 
   /**

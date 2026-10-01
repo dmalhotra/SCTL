@@ -55,7 +55,7 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
     }
 
     // Column-major C = A B is row-major C^T = B^T A^T: C^T is N x M, B^T is N x K and A^T is K x M,
-    // with row strides ldc, ldb and lda. One instantiation for every alpha and beta: with one per
+    // with row strides ldc, ldb and lda. One Vec instantiation for every alpha and beta: with one per
     // update mode, a loop calling two of them was up to 6% slower
     if constexpr (detail_small_gemm::VecTiles<ValueType>) {
       detail_small_gemm::VecProduct<ValueType, DynamicSize, DynamicSize, DynamicSize, detail_small_gemm::Update::AlphaBeta, false>(C, B, A, N, M, K, ldb, lda, ldc, alpha, beta);
