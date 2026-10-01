@@ -36,9 +36,13 @@ namespace sctl {
 
       static void test_all_types() {
         VecTest< int8_t,N>::test_all();
+        VecTest< int8_t,N>::test_ints();
         VecTest<int16_t,N>::test_all();
+        VecTest<int16_t,N>::test_ints();
         VecTest<int32_t,N>::test_all();
+        VecTest<int32_t,N>::test_ints();
         VecTest<int64_t,N>::test_all();
+        VecTest<int64_t,N>::test_ints();
 
         VecTest<float,N>::test_all();
         VecTest<float,N>::test_reals();
@@ -66,6 +70,12 @@ namespace sctl {
           test_swap_pairs();
           test_mask(); // TODO: fails for 'long double'
           test_comparison(); // TODO: fails for 'long double'
+        }
+      }
+
+      static void test_ints() {
+        if (N*sizeof(ScalarType)*8<=512) {
+          test_bitshift();
         }
       }
 
@@ -187,6 +197,19 @@ namespace sctl {
           SCTL_ASSERT(u5.c[i] == (int8_t)(u1.c[i] ^ u2.c[i]));
           SCTL_ASSERT(u6.c[i] == (int8_t)(u1.c[i] | u2.c[i]));
           SCTL_ASSERT(u7.c[i] == (int8_t)(u1.c[i] & (~u2.c[i])));
+        }
+      }
+
+      static void test_bitshift() {
+        UnionType u1, u2;
+        for (Integer i = 0; i < SizeBytes; i++) {
+          u1.c[i] = rand();
+        }
+        for (Integer k = 0; k < (Integer)sizeof(ScalarType)*8; k++) {
+          u2.v = u1.v >> k;
+          for (Integer i = 0; i < N; i++) {
+            SCTL_ASSERT(u2.x[i] == (ScalarType)(u1.x[i] >> k));
+          }
         }
       }
 
