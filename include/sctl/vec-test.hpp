@@ -760,6 +760,8 @@ namespace sctl {
         const VecType c = ceil(u1.v);
         const VecType cs = copysign(u1.v, u2.v);
         const VecType nan = select(isnan(u3.v), VecType((ScalarType)1), VecType((ScalarType)0));
+        const VecType ne = select(u3.v != u3.v, VecType((ScalarType)1), VecType((ScalarType)0));
+        const VecType eq = select(u3.v == u3.v, VecType((ScalarType)1), VecType((ScalarType)0));
         const VecType sn = sin(u1.v);
         const VecType cn = cos(u1.v);
         const VecType tn = tan(u1.v);
@@ -779,6 +781,8 @@ namespace sctl {
           SCTL_ASSERT(c[i] == ceil<ScalarType>(x));
           SCTL_ASSERT(cs[i] == (u2.x[i] < 0 ? -a[i] : a[i]));
           SCTL_ASSERT(nan[i] == (ScalarType)(i % 2));
+          SCTL_ASSERT(ne[i] == (ScalarType)(i % 2)); // NaN != NaN, as in C++
+          SCTL_ASSERT(eq[i] == (ScalarType)(1 - i % 2));
           SCTL_ASSERT(fabs(sn[i] - sin<ScalarType>(x)) < err_tol);
           SCTL_ASSERT(fabs(cn[i] - cos<ScalarType>(x)) < err_tol);
           SCTL_ASSERT(fabs(tn[i] - tan_x) < 4*err_tol*(1 + tan_x*tan_x));
