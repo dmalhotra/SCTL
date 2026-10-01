@@ -26,7 +26,8 @@ constexpr Long DynamicSize = -1;
  * for the sizes, the row strides and the mode (overwrite or accumulate); it is looked up when the
  * object is constructed, through a per-thread table after the first time, and LIBXSMM keeps it
  * until the program ends. Otherwise float and double products use a register-blocked loop over
- * Vec, and other types (long double, QuadReal, complex) a loop over the entries of C.
+ * Vec. Products of std::complex<float> and std::complex<double> use such a loop also with LIBXSMM,
+ * and other types (long double, QuadReal, std::complex<long double>) a scalar loop.
  *
  * Constructing an object takes a few ns, so it can be done where the product is needed. Applying
  * it does not change the object, so several threads can apply the same object at once.

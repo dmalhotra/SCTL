@@ -1,16 +1,18 @@
 // Tests for sctl/small_gemm.{hpp,txx}.
 //
 // SmallGEMM against a direct triple loop, with the sizes fixed at compile time, given at run time,
-// or mixed, in both modes (C = A B and C += A B), for float, double, long double and QuadReal, with
-// contiguous rows and with row strides beyond the row lengths, given at run time or fixed at compile
-// time; with one object applied by several threads at once; and through the Matrix overload, on whole
-// matrices and on leading blocks. In the overwrite mode C starts as NaN, which must not be read; so
-// are the values between the rows of A and B, and those of C must not change.
+// or mixed, in both modes (C = A B and C += A B), for float, double, long double, QuadReal and the
+// std::complex of float, double and long double, with contiguous rows and with row strides beyond
+// the row lengths, given at run time or fixed at compile time; with one object applied by several
+// threads at once; and through the Matrix overload, on whole matrices and on leading blocks. In the
+// overwrite mode C starts as NaN, which must not be read; so are the values between the rows of A and
+// B, and those of C must not change.
 
 #include <complex>
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <type_traits>
 #include <vector>
 
 #include "sctl.hpp"
@@ -21,23 +23,52 @@ using sctl::DynamicSize;
 using sctl::Long;
 using sctl::SmallGEMM;
 
+// Type of the parts of a std::complex, or T itself
+template <class T> struct RealOf {
+  using type = T;
+};
+template <class T> struct RealOf<std::complex<T>> {
+  using type = T;
+};
+
+// Random value, each part in [-0.5, 0.5]
+template <class T> static T random_value() {
+  using R = typename RealOf<T>::type;
+  const auto r = []() { return R(std::rand()) / R(RAND_MAX) - R(0.5); };
+  if constexpr (std::is_same<T, R>::value) {
+    return r();
+  } else {
+    const R re = r();
+    return T(re, r());
+  }
+}
+
+template <class T> static typename RealOf<T>::type abs_value(const T& x) {
+  if constexpr (std::is_same<T, typename RealOf<T>::type>::value) {
+    return sctl::fabs<T>(x);
+  } else {
+    return std::abs(x);
+  }
+}
+
 // One product of random m x k and k x n matrices, whose rows (and those of C) are pa, pb and pc
 // values longer than the matrices (as the fixed strides LDA, LDB and LDC say, if any); true if every
 // entry of C is within (4 k + 8) eps of the triple loop, relative to the sum of the absolute values
 // of its terms, and the values between the rows of C are unchanged
 template <class T, Long M, Long N, Long K, Long LDA = DynamicSize, Long LDB = DynamicSize, Long LDC = DynamicSize> static bool check(const bool accumulate, const Long m, const Long n, const Long k, const Long pa = 0, const Long pb = 0, const Long pc = 0) {
-  const T nan = T(std::numeric_limits<double>::quiet_NaN()); // numeric_limits<QuadReal> has no NaN
+  using R = typename RealOf<T>::type;
+  const T nan = T(R(std::numeric_limits<double>::quiet_NaN())); // numeric_limits<QuadReal> has no NaN
   const T fill = T(7);
   const Long lda = k + pa, ldb = n + pb, ldc = n + pc;
   std::vector<T> A(m * lda, nan), B(k * ldb, nan), C(m * ldc, fill);
   for (Long i = 0; i < m; i++) {
-    for (Long l = 0; l < k; l++) A[i * lda + l] = T(std::rand()) / T(RAND_MAX) - T(0.5);
+    for (Long l = 0; l < k; l++) A[i * lda + l] = random_value<T>();
   }
   for (Long l = 0; l < k; l++) {
-    for (Long j = 0; j < n; j++) B[l * ldb + j] = T(std::rand()) / T(RAND_MAX) - T(0.5);
+    for (Long j = 0; j < n; j++) B[l * ldb + j] = random_value<T>();
   }
   for (Long i = 0; i < m; i++) {
-    for (Long j = 0; j < n; j++) C[i * ldc + j] = (accumulate ? T(std::rand()) / T(RAND_MAX) : nan);
+    for (Long j = 0; j < n; j++) C[i * ldc + j] = (accumulate ? random_value<T>() : nan);
   }
   const std::vector<T> C0 = C;
 
@@ -50,13 +81,14 @@ template <class T, Long M, Long N, Long K, Long LDA = DynamicSize, Long LDB = Dy
   bool ok = true;
   for (Long i = 0; i < m; i++) {
     for (Long j = 0; j < n; j++) {
-      T ref = (accumulate ? C0[i * ldc + j] : T(0)), mag = sctl::fabs<T>(ref);
+      T ref = (accumulate ? C0[i * ldc + j] : T(0));
+      R mag = abs_value(ref);
       for (Long l = 0; l < k; l++) {
         ref += A[i * lda + l] * B[l * ldb + j];
-        mag += sctl::fabs<T>(A[i * lda + l] * B[l * ldb + j]);
+        mag += abs_value(A[i * lda + l] * B[l * ldb + j]);
       }
       const T c = C[i * ldc + j];
-      ok = ok && (c == c) && sctl::fabs<T>(c - ref) <= T(4 * k + 8) * sctl::machine_eps<T>() * mag;
+      ok = ok && (c == c) && abs_value(c - ref) <= R(4 * k + 8) * sctl::machine_eps<R>() * mag;
     }
     for (Long j = n; j < ldc; j++) ok = ok && (C[i * ldc + j] == fill);
   }
@@ -129,6 +161,9 @@ int main() {
 #ifdef SCTL_QUAD_T
   test_type(sctl::QuadReal(0), "QuadReal");
 #endif
+  test_type(std::complex<float>(0), "std::complex<float>");
+  test_type(std::complex<double>(0), "std::complex<double>");
+  test_type(std::complex<long double>(0), "std::complex<long double>");
 
   std::printf("one object, several threads :\n");
   {
@@ -152,32 +187,6 @@ int main() {
       }
     }
     CHECK(nbad == 0);
-  }
-
-  std::printf("std::complex<double> (no Vec arithmetic) :\n");
-  {
-    using Z = std::complex<double>;
-    constexpr Long m = 5, n = 7, k = 3;
-    std::vector<Z> A(m * k), B(k * n), C0(m * n);
-    for (Long i = 0; i < m * k; i++) A[i] = Z(std::sin(1.0 + (double)i), std::cos(2.0 + (double)i));
-    for (Long i = 0; i < k * n; i++) B[i] = Z(std::cos(3.0 + (double)i), std::sin(4.0 + (double)i));
-    for (Long i = 0; i < m * n; i++) C0[i] = Z(0.5, std::sin(5.0 + (double)i));
-    for (const bool acc : {false, true}) {
-      const SmallGEMM<Z, m, n, k> fixed(acc);
-      const SmallGEMM<Z> dynamic(acc, m, n, k);
-      std::vector<Z> C1 = C0, C2 = C0;
-      fixed(sctl::Ptr2Itr<Z>(C1.data(), m * n), sctl::Ptr2ConstItr<Z>(A.data(), m * k), sctl::Ptr2ConstItr<Z>(B.data(), k * n));
-      dynamic(sctl::Ptr2Itr<Z>(C2.data(), m * n), sctl::Ptr2ConstItr<Z>(A.data(), m * k), sctl::Ptr2ConstItr<Z>(B.data(), k * n));
-      int nbad = 0;
-      for (Long i = 0; i < m; i++) {
-        for (Long j = 0; j < n; j++) {
-          Z ref = (acc ? C0[i * n + j] : Z(0));
-          for (Long l = 0; l < k; l++) ref += A[i * k + l] * B[l * n + j];
-          nbad += !(std::abs(C1[i * n + j] - ref) <= 1e-14) + !(std::abs(C2[i * n + j] - ref) <= 1e-14);
-        }
-      }
-      CHECK(nbad == 0);
-    }
   }
 
   std::printf("Matrix overload :\n");

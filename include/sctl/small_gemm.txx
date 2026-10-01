@@ -1,6 +1,7 @@
 #ifndef _SCTL_SMALL_GEMM_TXX_
 #define _SCTL_SMALL_GEMM_TXX_
 
+#include <complex>              // for complex
 #include <type_traits>          // for integral_constant, is_same
 
 #include "sctl/common.hpp"      // for Long, Integer, SCTL_ASSERT, sctl
@@ -10,7 +11,7 @@
 #include "sctl/matrix.hpp"      // for Matrix
 #include "sctl/profile.hpp"     // for Profile, ProfileCounter
 #include "sctl/profile.txx"     // for Profile::IncrementCounter
-#include "sctl/vec.hpp"         // for Vec, FMA
+#include "sctl/vec.hpp"         // for Vec, FMA, swap_pairs
 #include "sctl/vec.txx"         // for Vec::Load, Vec::Store
 
 namespace sctl {
@@ -25,9 +26,17 @@ namespace detail_small_gemm {
 
   /**
    * True for float and double, whose products VecProduct computes; other types have no Vec
-   * arithmetic (complex, user types), or a slower one than a scalar loop (long double, 1.8-2.8x).
+   * arithmetic (complex types, see ComplexVecTiles, and user types), or a slower one than a scalar
+   * loop (long double, 1.8-2.8x).
    */
   template <class ValueType> constexpr bool VecTiles = std::is_same<ValueType, float>::value || std::is_same<ValueType, double>::value;
+
+  /**
+   * True for std::complex<float> and std::complex<double> when a vector holds at least one entry
+   * (two reals); ComplexVecProduct computes their products.
+   */
+  template <class ValueType> constexpr bool ComplexVecTiles = false;
+  template <class Real> constexpr bool ComplexVecTiles<std::complex<Real>> = VecTiles<Real> && (Vec<Real>::Size() >= 2);
 
   /**
    * C (m x n) = A (m x k) B (k x n), updated as U says; all row-major, with row strides lda, ldb
@@ -176,6 +185,110 @@ namespace detail_small_gemm {
     }
   }
 
+  /**
+   * As VecProduct, for std::complex<float> and std::complex<double>, with the same row strides and
+   * template sizes and strides: a row of B or C is a vector of interleaved real and imaginary parts.
+   * A tile sums re(A) B and im(A) B separately and combines them once, at the end, with the parts of
+   * each entry exchanged by swap_pairs. Rows of C in blocks of 4 with the 32 vector registers of
+   * AVX-512 and of 2 otherwise (16 or 8 accumulators; blocks of 4 with 16 registers were 30-50%
+   * slower), columns in tiles of 2 vectors and then 1, the leftover columns in narrower vectors down
+   * to a single entry.
+   */
+  template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous, Long LDA = DynamicSize, Long LDB = DynamicSize, Long LDC = DynamicSize> [[gnu::noinline]] void ComplexVecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
+    using Real = typename ValueType::value_type;
+    const Long m = (M != DynamicSize ? M : m_);
+    const Long n = (N != DynamicSize ? N : n_);
+    const Long k = (K != DynamicSize ? K : k_);
+    const Long lda = (LDA != DynamicSize ? LDA : Contiguous ? k : lda_);
+    const Long ldb = (LDB != DynamicSize ? LDB : Contiguous ? n : ldb_);
+    const Long ldc = (LDC != DynamicSize ? LDC : Contiguous ? n : ldc_);
+    constexpr Integer VL = Vec<Real>::Size();
+    constexpr Integer VE = VL / 2; // entries per vector
+    using I1 = std::integral_constant<Integer, 1>;
+    using I2 = std::integral_constant<Integer, 2>;
+#if defined(__AVX512F__)
+    using IR = std::integral_constant<Integer, 4>; // rows per block
+#else
+    using IR = std::integral_constant<Integer, 2>;
+#endif
+    using IV = std::integral_constant<Integer, VL>;
+    const bool alpha_one = (alpha == ValueType(1)), beta_zero = (beta == ValueType(0));
+
+    // Rows i0.. (MR of them) and entries j0.. (NV vectors of W reals) of C
+    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta, alpha_one, beta_zero](const Long i0, const Long j0, auto mr, auto nv, auto w) {
+      constexpr Integer MR = decltype(mr)::value;
+      constexpr Integer NV = decltype(nv)::value;
+      constexpr Integer W = decltype(w)::value;
+      using V = Vec<Real, W>;
+      V re[MR][NV], im[MR][NV]; // sums of re(A) B and im(A) B
+      for (Integer r = 0; r < MR; r++) {
+        for (Integer v = 0; v < NV; v++) {
+          re[r][v] = V((Real)0);
+          im[r][v] = V((Real)0);
+        }
+      }
+      for (Long l = 0; l < k; l++) {
+        const Real* Bl = reinterpret_cast<const Real*>(&B[l * ldb + j0]);
+        V b[NV];
+        for (Integer v = 0; v < NV; v++) b[v] = V::Load(Bl + v * W);
+        for (Integer r = 0; r < MR; r++) {
+          const ValueType a = A[(i0 + r) * lda + l];
+          const V a_re(a.real()), a_im(a.imag());
+          for (Integer v = 0; v < NV; v++) {
+            re[r][v] = FMA(a_re, b[v], re[r][v]);
+            im[r][v] = FMA(a_im, b[v], im[r][v]);
+          }
+        }
+      }
+
+      Real sign_[W]; // -1 for the real parts, 1 for the imaginary ones
+      for (Integer i = 0; i < W; i++) sign_[i] = (Real)(i % 2 ? 1 : -1);
+      const V sign = V::Load(sign_);
+      const auto scale = [&sign](const ValueType z, const V& x) { return FMA(V(z.real()), x, swap_pairs(x) * (sign * V(z.imag()))); }; // z times each entry of x
+      for (Integer r = 0; r < MR; r++) {
+        for (Integer v = 0; v < NV; v++) {
+          Real* Cv = reinterpret_cast<Real*>(&C[(i0 + r) * ldc + j0]) + v * W;
+          V c = FMA(sign, swap_pairs(im[r][v]), re[r][v]);
+          if constexpr (U == Update::Accumulate) {
+            c = c + V::Load(Cv);
+          } else if constexpr (U == Update::AlphaBeta) {
+            if (!alpha_one) c = scale(alpha, c);
+            if (!beta_zero) c = c + scale(beta, V::Load(Cv));
+          }
+          c.Store(Cv);
+        }
+      }
+    };
+
+    const Long n_full = n - n % VE; // entries done in full-width vectors
+    const Long n_pair = n_full - n_full % (2 * VE); // entries done in pairs of vectors
+    const auto cols = [&tile, n_full, n_pair](const Long i0, auto mr) {
+      for (Long j = 0; j < n_pair; j += 2 * VE) tile(i0, j, mr, I2{}, IV{});
+      for (Long j = n_pair; j < n_full; j += VE) tile(i0, j, mr, I1{}, IV{});
+    };
+    const auto cols_tail = [&tile, n, n_full](const Long i0, auto mr) { // entries n_full..
+      Long j = n_full;
+      if constexpr (VL > 8) {
+        for (; j + 4 <= n; j += 4) tile(i0, j, mr, I1{}, std::integral_constant<Integer, 8>{});
+      }
+      if constexpr (VL > 4) {
+        for (; j + 2 <= n; j += 2) tile(i0, j, mr, I1{}, std::integral_constant<Integer, 4>{});
+      }
+      if constexpr (VL > 2) {
+        for (; j < n; j++) tile(i0, j, mr, I1{}, I2{});
+      }
+    };
+
+    // The leftover columns in a second pass, as in VecProduct
+    const Long m_blk = m - m % IR::value; // rows done in blocks
+    for (Long i = 0; i < m_blk; i += IR::value) cols(i, IR{});
+    for (Long i = m_blk; i < m; i++) cols(i, I1{});
+    if (n_full < n) {
+      for (Long i = 0; i < m_blk; i += IR::value) cols_tail(i, IR{});
+      for (Long i = m_blk; i < m; i++) cols_tail(i, I1{});
+    }
+  }
+
 }  // namespace detail_small_gemm
 
 template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC> inline SmallGEMM<ValueType, M, N, K, LDA, LDB, LDC>::SmallGEMM(const bool accumulate, const Long m, const Long n, const Long k) : SmallGEMM(accumulate, m, n, k, (LDA != DynamicSize ? LDA : k), (LDB != DynamicSize ? LDB : n), (LDC != DynamicSize ? LDC : n)) {}
@@ -245,6 +358,22 @@ template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC>
       detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Accumulate, false, LDA, LDB, LDC>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, (ValueType)1, (ValueType)1);
     } else {
       detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Overwrite, false, LDA, LDB, LDC>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, (ValueType)1, (ValueType)0);
+    }
+  } else if constexpr (detail_small_gemm::ComplexVecTiles<ValueType>) {
+    if constexpr (LDA == DynamicSize && LDB == DynamicSize && LDC == DynamicSize) { // as for VecTiles
+      if (lda_ == k_ && ldb_ == n_ && ldc_ == n_) {
+        if (accumulate_) {
+          detail_small_gemm::ComplexVecProduct<ValueType, M, N, K, Update::Accumulate, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)1);
+        } else {
+          detail_small_gemm::ComplexVecProduct<ValueType, M, N, K, Update::Overwrite, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)0);
+        }
+        return;
+      }
+    }
+    if (accumulate_) {
+      detail_small_gemm::ComplexVecProduct<ValueType, M, N, K, Update::Accumulate, false, LDA, LDB, LDC>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, (ValueType)1, (ValueType)1);
+    } else {
+      detail_small_gemm::ComplexVecProduct<ValueType, M, N, K, Update::Overwrite, false, LDA, LDB, LDC>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, (ValueType)1, (ValueType)0);
     }
   } else {
     if (accumulate_) {
