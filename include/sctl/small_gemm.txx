@@ -53,9 +53,13 @@ namespace detail_small_gemm {
   /**
    * C (m x n) = A (m x k) B (k x n), updated as U says; all row-major, with row strides lda, ldb
    * and ldc, or k, n and n if Contiguous. A template size other than DynamicSize replaces the
-   * argument, so the loops are specialized for it. Rows of C in blocks of 4, columns in tiles of 2
-   * vectors and then 1, the leftover columns in narrower vectors and then one at a time. Not
-   * inlined: unrolled for fixed sizes inside a caller's loop, the code was up to 1.9x slower.
+   * argument, so the loops are specialized for it. Tiles of 8 rows of C by 1 vector with AVX-512,
+   * and of 4 rows by 2 vectors and then 1 otherwise (for k = 8 on an AMD EPYC 9474F, 4 x 2 with
+   * AVX-512 was 1.6x slower for double and 2.2x for float, and 8 x 1 with AVX2 1.2x slower); the
+   * leftover rows in blocks of 4 (with AVX-512), 2 and 1. The leftover columns of C = A B in one
+   * full vector that ends at column n and writes some columns again, with the same values;
+   * otherwise in narrower vectors and then one at a time. Not inlined: unrolled for fixed sizes
+   * inside a caller's loop, the code was up to 1.9x slower.
    */
   template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous> [[gnu::noinline]] void VecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
     const Long m = (M != DynamicSize ? M : m_);
@@ -69,6 +73,13 @@ namespace detail_small_gemm {
     using I2 = std::integral_constant<Integer, 2>;
     using I4 = std::integral_constant<Integer, 4>;
     using IV = std::integral_constant<Integer, VL>;
+#if defined(__AVX512F__)
+    using IR = std::integral_constant<Integer, 8>; // rows per block
+    using IT = std::integral_constant<Integer, 1>; // vectors per tile
+#else
+    using IR = std::integral_constant<Integer, 4>;
+    using IT = std::integral_constant<Integer, 2>;
+#endif
 
     // Rows i0.. (MR of them) and columns j0.. (NV vectors of W) of C
     const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta](const Long i0, const Long j0, auto mr, auto nv, auto w) {
@@ -103,13 +114,19 @@ namespace detail_small_gemm {
     };
 
     const Long n_full = n - n % VL; // columns done in full-width vectors
-    const Long n_pair = n_full - n_full % (2 * VL); // columns done in pairs of vectors
-    const auto cols = [&tile, n_full, n_pair](const Long i0, auto mr) {
-      for (Long j = 0; j < n_pair; j += 2 * VL) tile(i0, j, mr, I2{}, IV{});
-      for (Long j = n_pair; j < n_full; j += VL) tile(i0, j, mr, I1{}, IV{});
+    const Long n_tile = n_full - n_full % (IT::value * VL); // columns done in tiles of IT vectors
+    const auto cols = [&tile, n_full, n_tile](const Long i0, auto mr) {
+      for (Long j = 0; j < n_tile; j += IT::value * VL) tile(i0, j, mr, IT{}, IV{});
+      for (Long j = n_tile; j < n_full; j += VL) tile(i0, j, mr, I1{}, IV{});
     };
     const auto cols_tail = [&tile, A, B, C, n, k, lda, ldb, ldc, alpha, beta, n_full](const Long i0, auto mr) { // columns n_full..
       constexpr Integer MR = decltype(mr)::value;
+      if constexpr (U == Update::Overwrite) {
+        if (n >= VL) {
+          tile(i0, n - VL, mr, I1{}, IV{});
+          return;
+        }
+      }
       Long j = n_full;
       if constexpr (VL > 8) {
         for (; j + 8 <= n; j += 8) tile(i0, j, mr, I1{}, std::integral_constant<Integer, 8>{});
@@ -136,13 +153,21 @@ namespace detail_small_gemm {
       }
     };
 
-    // The leftover columns in a second pass: inside the first loop they slowed down its tiles
-    const Long m_quad = m - m % 4; // rows done in blocks of 4
-    for (Long i = 0; i < m_quad; i += 4) cols(i, I4{});
-    for (Long i = m_quad; i < m; i++) cols(i, I1{});
+    // Rows in blocks of IR, then of 4, 2 and 1 below IR; the leftover columns in a second pass:
+    // inside the first loop they slowed down its tiles. Through a lambda over the row blocks that
+    // takes cols or cols_tail, the code was up to 1.5x slower
+    const Long m_blk = m - m % IR::value;
+    const Long m_4 = (IR::value > 4 ? m - m % 4 : m_blk);
+    const Long m_2 = (IR::value > 2 ? m - m % 2 : m_4);
+    for (Long i = 0; i < m_blk; i += IR::value) cols(i, IR{});
+    for (Long i = m_blk; i < m_4; i += 4) cols(i, I4{});
+    for (Long i = m_4; i < m_2; i += 2) cols(i, I2{});
+    for (Long i = m_2; i < m; i++) cols(i, I1{});
     if (n_full < n) {
-      for (Long i = 0; i < m_quad; i += 4) cols_tail(i, I4{});
-      for (Long i = m_quad; i < m; i++) cols_tail(i, I1{});
+      for (Long i = 0; i < m_blk; i += IR::value) cols_tail(i, IR{});
+      for (Long i = m_blk; i < m_4; i += 4) cols_tail(i, I4{});
+      for (Long i = m_4; i < m_2; i += 2) cols_tail(i, I2{});
+      for (Long i = m_2; i < m; i++) cols_tail(i, I1{});
     }
   }
 
