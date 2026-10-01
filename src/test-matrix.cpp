@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 #include "sctl/common.hpp"
 #include "sctl/iterator.hpp"
@@ -155,6 +156,36 @@ int main() {
   }
 
 #if SCTL_PROFILE >= 0
+  // --- FLOP counter of entry-wise operations, per entry: 1, and for std::complex add 2, multiply 6,
+  // divide 11 (real operations) ---
+  std::printf("FLOP counter of entry-wise operations :\n");
+  {
+    const auto flops = [](auto zero) { // 2 x 3 entries: A + B, A -= B, A += s, A *= s, A /= s
+      using T = decltype(zero);
+      Matrix<T> A(2, 3), B(2, 3), C;
+      A.SetZero();
+      B.SetZero();
+      const T s = T(2);
+      std::vector<Long> f(1, sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0));
+      const auto count = [&f]() { f.push_back(sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0)); };
+      C = A + B;
+      count();
+      A -= B;
+      count();
+      A += s;
+      count();
+      A *= s;
+      count();
+      A /= s;
+      count();
+      std::vector<Long> df;
+      for (size_t i = 1; i < f.size(); i++) df.push_back(f[i] - f[i - 1]);
+      return df;
+    };
+    CHECK((flops(double(0)) == std::vector<Long>{6, 6, 6, 6, 6}));
+    CHECK((flops(std::complex<double>(0)) == std::vector<Long>{12, 12, 12, 36, 66}));
+  }
+
   // --- FLOP counter of operator* and GEMM: 2 m n k, 8 m n k for std::complex (real operations) ---
   std::printf("FLOP counter of products :\n");
   {

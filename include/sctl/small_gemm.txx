@@ -8,8 +8,9 @@
 #include "sctl/small_gemm.hpp"  // for SmallGEMM, DynamicSize
 #include "sctl/iterator.hpp"    // for Iterator, ConstIterator
 #include "sctl/iterator.txx"    // for Iterator::operator[]
+#include "sctl/math_utils.hpp"  // for IsComplex
 #include "sctl/matrix.hpp"      // for Matrix
-#include "sctl/profile.hpp"     // for Profile, ProfileCounter
+#include "sctl/profile.hpp"     // for Profile, ProfileCounter, FlopCount
 #include "sctl/profile.txx"     // for Profile::IncrementCounter
 #include "sctl/vec.hpp"         // for Vec, FMA, swap_pairs
 #include "sctl/vec.txx"         // for Vec::Load, Vec::Store
@@ -37,18 +38,6 @@ namespace detail_small_gemm {
    */
   template <class ValueType> constexpr bool ComplexVecTiles = false;
   template <class Real> constexpr bool ComplexVecTiles<std::complex<Real>> = VecTiles<Real> && (Vec<Real>::Size() >= 2);
-
-  /**
-   * True for std::complex types.
-   */
-  template <class ValueType> constexpr bool IsComplex = false;
-  template <class Real> constexpr bool IsComplex<std::complex<Real>> = true;
-
-  /**
-   * Real floating-point operations in one multiply-add: 2, or 8 for std::complex (4 real multiplies
-   * and 4 real adds).
-   */
-  template <class ValueType> constexpr Long MulAddFlops = (IsComplex<ValueType> ? 8 : 2);
 
   /**
    * C (m x n) = A (m x k) B (k x n), updated as U says; all row-major, with row strides lda, ldb
@@ -384,7 +373,7 @@ template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC>
 }
 
 template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC> inline void SmallGEMM<ValueType, M, N, K, LDA, LDB, LDC>::operator()(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B) const {
-  Profile::IncrementCounter(ProfileCounter::FLOP, detail_small_gemm::MulAddFlops<ValueType> * m_ * n_ * k_);
+  Profile::IncrementCounter(ProfileCounter::FLOP, FlopCount<ValueType>::MulAdd * m_ * n_ * k_);
 #if defined(SCTL_HAVE_LIBXSMM)
   if (kernel_) { // operands exchanged, as in the constructor
     libxsmm_gemm_param prm;
