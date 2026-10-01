@@ -44,6 +44,22 @@ static void test_growth_and_shrink() {
   std::cout << "test_growth_and_shrink OK\n";
 }
 
+// A zero-byte buffer keeps its chunk while it is alive, so a larger buffer after it does not free it
+static void test_zero_bytes() {
+  ScratchPool pool;
+  {
+    ScratchBuf<char> empty(0, pool);
+    SCTL_ASSERT(empty.Dim() == 0);
+    {
+      ScratchBuf<char> big(2 * SCTL_SCRATCH_POOL_INIT_BYTES, pool);
+      SCTL_ASSERT(pool.DebugChunkCount() == 2);
+    }
+  }
+  SCTL_ASSERT(pool.DebugChunkCount() == 1);
+  SCTL_ASSERT(pool.DebugLiveCount() == 0);
+  std::cout << "test_zero_bytes OK\n";
+}
+
 static void test_view() {
   ScratchPool pool;
   ScratchBuf<double> buf(8, pool);
@@ -123,6 +139,7 @@ static void test_multithread() {
 int main() {
   test_basic();
   test_growth_and_shrink();
+  test_zero_bytes();
   test_view();
   test_range_for();
   test_lifo_nested();

@@ -83,7 +83,9 @@ inline ScratchPool& ScratchPool::Instance() {
 #endif
 
   constexpr Long align_mask = (Long)SCTL_MEM_ALIGN - 1;
-  const Long bytes_padded = (bytes + redzone + align_mask) & ~align_mask;
+  // At least one byte: a zero-byte buffer that took no space would leave its chunk looking empty,
+  // and the chunk would be freed below while the buffer still refers to it
+  const Long bytes_padded = (std::max<Long>(bytes, 1) + redzone + align_mask) & ~align_mask;
   Iterator<char> alloc_start;
   if (__builtin_expect(bytes_padded > head_->end - head_->top, 0)) {
     // `std::aligned_alloc` (not `aligned_new`) so libc returns virtual pages
@@ -148,7 +150,7 @@ inline ScratchPool& ScratchPool::Instance() {
     // Strict LIFO: this alloc's end exactly matches the chunk's top (no
     // inter-allocation padding thanks to size-rounding in AllocBytes).
     constexpr Long align_mask = (Long)SCTL_MEM_ALIGN - 1;
-    const Long bytes_padded = (bytes + redzone + align_mask) & ~align_mask;
+    const Long bytes_padded = (std::max<Long>(bytes, 1) + redzone + align_mask) & ~align_mask; // as in AllocBytes
     SCTL_ASSERT_MSG(data + bytes_padded == chunk->top,
                     "ScratchBuf: LIFO violation (free out of order).");
 #endif
