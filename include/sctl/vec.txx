@@ -68,6 +68,7 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N>::Vec(const VData& v_) : v(v_) {}
   template <class ValueType, Integer N> inline Vec<ValueType,N>::Vec(const ScalarType& a) : Vec(set1_intrin<VData>(a)) {}
   template <class ValueType, Integer N> template <class T0, class T1, class ...T2> inline Vec<ValueType,N>::Vec(T0 x0, T1 x1, T2... args) : Vec(set_intrin<VData>((ScalarType)x0, (ScalarType)x1, ((ScalarType)args)...)) {}
+  template <class ValueType, Integer N> inline Vec<ValueType,N>::Vec(const Vec<ValueType,N/2>& lo, const Vec<ValueType,N/2>& hi) : Vec(concat_intrin(lo.get(), hi.get())) {}
 
 
   template <class ValueType, Integer N> inline void Vec<ValueType,N>::Store(ScalarType* p) const {
@@ -147,6 +148,14 @@ namespace sctl {
   template <class ValueType, Integer N> inline const typename Vec<ValueType,N>::VData& Vec<ValueType,N>::get() const {
     return v;
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N/2> Vec<ValueType,N>::get_low() const {
+    static_assert(N >= 2, "get_low requires at least two elements.");
+    return get_low_intrin(v);
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N/2> Vec<ValueType,N>::get_high() const {
+    static_assert(N >= 2, "get_high requires at least two elements.");
+    return get_high_intrin(v);
+  }
 
 
 
@@ -166,6 +175,12 @@ namespace sctl {
   }
   template <class MaskType> inline Vec<typename MaskType::ScalarType,MaskType::Size> convert2vec(const MaskType& a) {
     return convert_mask2vec_intrin(a);
+  }
+  template <class VecTo, class ValueType, Integer N> inline VecTo Convert(const Vec<ValueType,N>& x) {
+    return convert_intrin<typename VecTo::VData>(x.get());
+  }
+  template <class VecTo, class MaskType> inline typename VecTo::MaskType ConvertMask(const MaskType& m) {
+    return convert_mask_intrin<typename VecTo::VData>(m);
   }
   //template <class Vec1, class Vec2> friend Vec1 reinterpret(const Vec2& x);
 

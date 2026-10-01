@@ -65,6 +65,7 @@ namespace sctl {
           test_align();
           test_init();
           test_load_store_mask();
+          test_convert();
           test_bitwise(); // TODO: fails for 'long double'
           test_arithmetic();
           test_maxmin();
@@ -170,20 +171,21 @@ namespace sctl {
           SCTL_ASSERT(v1[i] == (ScalarType)3);
         }
 
+        if constexpr (N >= 2) {
+          // get_low, get_high
+          const auto v_low = v2.get_low();
+          const auto v_high = v2.get_high();
+          for (Integer i = 0; i < N/2; i++) {
+            SCTL_ASSERT(v_low[i] == (ScalarType)(i+1));
+            SCTL_ASSERT(v_high[i] == (ScalarType)(i+N/2+1));
+          }
 
-        //// get_low, get_high
-        //auto v_low = v2.get_low();
-        //auto v_high = v2.get_high();
-        //for (Integer i = 0; i < N/2; i++) {
-        //  SCTL_ASSERT(v_low[i] == (ScalarType)(N-i));
-        //  SCTL_ASSERT(v_high[i] == (ScalarType)(N-(i+N/2)));
-        //}
-
-        //// Constructor: Vec(v1, v2)
-        //VecType v3(v_low,v_high);
-        //for (Integer i = 0; i < N; i++) {
-        //  SCTL_ASSERT(v3[i] == (ScalarType)(N-i));
-        //}
+          // Constructor: Vec(v_low, v_high)
+          const VecType v3(v_low, v_high);
+          for (Integer i = 0; i < N; i++) {
+            SCTL_ASSERT(v3[i] == (ScalarType)(i+1));
+          }
+        }
       }
 
       static void test_load_store_mask() {
@@ -219,6 +221,36 @@ namespace sctl {
             SCTL_ASSERT(v3[i] == (i < n ? x[i] : (ScalarType)0));
             SCTL_ASSERT(y[i] == (i < n ? (ScalarType)2 : (ScalarType)-1));
           }
+        }
+      }
+
+      static void test_convert() {
+        test_convert_to<int8_t>();
+        test_convert_to<int16_t>();
+        test_convert_to<int32_t>();
+        test_convert_to<int64_t>();
+        test_convert_to<float>();
+        test_convert_to<double>();
+      }
+
+      template <class ValueTo> static void test_convert_to() {
+        using VecTo = Vec<ValueTo,N>;
+        UnionType u;
+        for (Integer i = 0; i < N; i++) {
+          u.x[i] = (ScalarType)(rand()%201-100) + (ScalarType)0.25 * (ScalarType)(rand()%4); // fractions only in the real types
+        }
+
+        // Convert
+        const VecTo w = Convert<VecTo>(u.v);
+        for (Integer i = 0; i < N; i++) {
+          SCTL_ASSERT(w[i] == (ValueTo)u.x[i]);
+        }
+
+        // ConvertMask
+        const auto m = ConvertMask<VecTo>(u.v < (ScalarType)0);
+        const VecTo s = select(m, VecTo((ValueTo)1), VecTo((ValueTo)0));
+        for (Integer i = 0; i < N; i++) {
+          SCTL_ASSERT(s[i] == (u.x[i] < (ScalarType)0 ? (ValueTo)1 : (ValueTo)0));
         }
       }
 

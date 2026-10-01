@@ -151,6 +151,14 @@ namespace sctl {
       template <class T0, class T1, class ...T2> inline Vec(T0 x0, T1 x1, T2... args);
 
       /**
+       * Constructor joining two vectors of N/2 elements.
+       *
+       * @param lo Elements 0, ..., N/2-1.
+       * @param hi Elements N/2, ..., N-1.
+       */
+      inline Vec(const Vec<ValueType,N/2>& lo, const Vec<ValueType,N/2>& hi);
+
+      /**
        * Store the vector data into unaligned memory.
        *
        * @param p Pointer to the memory location to store the data.
@@ -312,6 +320,20 @@ namespace sctl {
        */
       inline VData& get();
 
+      /**
+       * Get the low half of the vector.
+       *
+       * @return Vector of the elements 0, ..., N/2-1.
+       */
+      [[nodiscard]] inline Vec<ValueType,N/2> get_low() const;
+
+      /**
+       * Get the high half of the vector.
+       *
+       * @return Vector of the elements N/2, ..., N-1.
+       */
+      [[nodiscard]] inline Vec<ValueType,N/2> get_high() const;
+
     private:
       /**
        * Internal data representation of the vector.
@@ -325,6 +347,25 @@ namespace sctl {
   template <class RealVec, class IntVec> inline RealVec ConvertInt2Real(const IntVec& x);
   template <class IntVec, class RealVec> inline IntVec RoundReal2Int(const RealVec& x);
   template <class MaskType> inline Vec<typename MaskType::ScalarType,MaskType::Size> convert2vec(const MaskType& a);
+
+  /**
+   * Convert each element to the scalar type of VecTo as static_cast does; a
+   * real value converted to an integer type is truncated toward zero.
+   *
+   * @tparam VecTo The Vec type of the result, with the same number of elements.
+   * @param x The vector to convert.
+   * @return The converted vector.
+   */
+  template <class VecTo, class ValueType, Integer N> inline VecTo Convert(const Vec<ValueType,N>& x);
+
+  /**
+   * Convert a mask to the mask type of VecTo, selecting the same elements.
+   *
+   * @tparam VecTo The Vec type whose mask type is the result, with the same number of elements.
+   * @param m The mask to convert.
+   * @return The converted mask.
+   */
+  template <class VecTo, class MaskType> inline typename VecTo::MaskType ConvertMask(const MaskType& m);
 
 
   // Arithmetic operators
