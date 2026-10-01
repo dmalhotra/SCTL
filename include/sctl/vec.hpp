@@ -620,6 +620,54 @@ namespace sctl {
   /** x to the power y; vectorized with SVML or libmvec, otherwise one element at a time. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 
+  /** Integer value nearest x, not larger in magnitude. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> trunc(const Vec<ValueType,N>& x);
+
+  /** Integer value nearest x, halfway cases away from zero. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> round(const Vec<ValueType,N>& x);
+
+  /** Mask of the elements that are infinite. */
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType isinf(const Vec<ValueType,N>& x);
+
+  /** Mask of the elements that are neither infinite nor NaN. */
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType isfinite(const Vec<ValueType,N>& x);
+
+  /** Arc tangent. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> atan(const Vec<ValueType,N>& x);
+
+  /** Arc sine. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> asin(const Vec<ValueType,N>& x);
+
+  /** Arc cosine. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> acos(const Vec<ValueType,N>& x);
+
+  /** sqrt(x^2 + y^2) without overflow or underflow in between. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+
+  /** 2 to the power x. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> exp2(const Vec<ValueType,N>& x);
+
+  /** Base-2 logarithm; vectorized where log is. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> log2(const Vec<ValueType,N>& x);
+
+  /** Base-10 logarithm; vectorized where log is. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> log10(const Vec<ValueType,N>& x);
+
+  /** Cube root, one element at a time. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x);
+
+  /** Hyperbolic sine. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sinh(const Vec<ValueType,N>& x);
+
+  /** Hyperbolic cosine. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> cosh(const Vec<ValueType,N>& x);
+
+  /** Hyperbolic tangent. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x);
+
+  /** Remainder of x/y with the sign of x, as std::fmod, one element at a time. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+
 
   // Print
   template <class ValueType, Integer N> inline std::ostream& operator<<(std::ostream& os, const Vec<ValueType,N>& in);

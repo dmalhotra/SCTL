@@ -546,6 +546,56 @@ namespace sctl {
     return pow_intrin(x.get(), y.get());
   }
 
+  template <class ValueType, Integer N> inline Vec<ValueType,N> trunc(const Vec<ValueType,N>& x) {
+    return trunc_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> round(const Vec<ValueType,N>& x) {
+    static_assert(TypeTraits<ValueType>::Type == DataType::Real, "round requires a real type.");
+    return round_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType isinf(const Vec<ValueType,N>& x) {
+    return isinf_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType isfinite(const Vec<ValueType,N>& x) {
+    return isfinite_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> atan(const Vec<ValueType,N>& x) {
+    return atan_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> asin(const Vec<ValueType,N>& x) {
+    return asin_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> acos(const Vec<ValueType,N>& x) {
+    return acos_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
+    return hypot_intrin(x.get(), y.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> exp2(const Vec<ValueType,N>& x) {
+    return exp2_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> log2(const Vec<ValueType,N>& x) {
+    return log2_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> log10(const Vec<ValueType,N>& x) {
+    return log10_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x) {
+    return cbrt_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sinh(const Vec<ValueType,N>& x) {
+    return sinh_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> cosh(const Vec<ValueType,N>& x) {
+    return cosh_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x) {
+    return tanh_intrin(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
+    return fmod_intrin(x.get(), y.get());
+  }
+
 
   // Print
   template <class ValueType, Integer N> inline std::ostream& operator<<(std::ostream& os, const Vec<ValueType,N>& in) {

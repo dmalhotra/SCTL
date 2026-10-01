@@ -94,6 +94,7 @@ namespace sctl {
           test_reals_rsqrt();
           test_mask_helpers();
           test_reals_math();
+          test_reals_math2();
         }
       }
 
@@ -842,6 +843,57 @@ namespace sctl {
               SCTL_ASSERT(std::isnan(ref) ? std::isnan(at0) : (fabs(at0 - ref) <= 8*eps*fabs(ref) && std::signbit(at0) == std::signbit(ref)));
             }
           }
+        }
+      }
+
+      static void test_reals_math2() {
+        UnionType u1, u2, u3, u4, u5;
+        for (Integer i = 0; i < N; i++) {
+          u1.x[i] = (ScalarType)((drand48()-0.5)*20);
+          u2.x[i] = (ScalarType)((drand48()-0.5)*20);
+          u3.x[i] = (i % 3 == 0 ? u1.x[i] : (i % 3 == 1 ? (ScalarType)INFINITY : (ScalarType)NAN));
+          u4.x[i] = (ScalarType)(0.1 + 10*drand48());
+          u5.x[i] = (ScalarType)(2*drand48()-1);
+        }
+        const ScalarType eps = machine_eps<ScalarType>();
+        const ScalarType err_tol = std::max<ScalarType>((ScalarType)1.77e-15, (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5)));
+        const auto rel = [](ScalarType a, ScalarType b) { return fabs(a - b) / fabs(b); };
+        const ScalarType tol = std::max<ScalarType>(16*eps, (ScalarType)1e-17); // long double references; QuadReal scalar atan, asin lose digits
+
+        const VecType tr = trunc(u1.v);
+        const VecType rn = round(u1.v);
+        const VecType inf = select(isinf(u3.v), VecType((ScalarType)1), VecType((ScalarType)0));
+        const VecType fin = select(isfinite(u3.v), VecType((ScalarType)1), VecType((ScalarType)0));
+        const VecType at = atan(u1.v);
+        const VecType as = asin(u5.v);
+        const VecType ac = acos(u5.v);
+        const VecType hy = hypot(u1.v, u2.v);
+        const VecType e2 = exp2(u1.v);
+        const VecType l2 = log2(u4.v);
+        const VecType l10 = log10(u4.v);
+        const VecType cr = cbrt(u1.v);
+        const VecType sh = sinh(u1.v);
+        const VecType ch = cosh(u1.v);
+        const VecType th = tanh(u1.v);
+        const VecType fm = fmod(u1.v, u4.v);
+        SCTL_ASSERT(round(VecType((ScalarType)2.5))[0] == 3 && round(VecType((ScalarType)-0.5))[0] == -1);
+        for (Integer i = 0; i < N; i++) {
+          const ScalarType x = u1.x[i];
+          SCTL_ASSERT(tr[i] == trunc<ScalarType>(x));
+          SCTL_ASSERT(rn[i] == round<ScalarType>(x));
+          SCTL_ASSERT(inf[i] == (ScalarType)(i % 3 == 1) && fin[i] == (ScalarType)(i % 3 == 0));
+          SCTL_ASSERT(rel(at[i], (ScalarType)std::atan((long double)x)) <= tol);
+          SCTL_ASSERT(rel(as[i], (ScalarType)std::asin((long double)u5.x[i])) <= tol);
+          SCTL_ASSERT(rel(ac[i], (ScalarType)std::acos((long double)u5.x[i])) <= tol);
+          SCTL_ASSERT(rel(hy[i], (ScalarType)std::hypot((long double)x, (long double)u2.x[i])) <= tol);
+          SCTL_ASSERT(rel(e2[i], pow<ScalarType>((ScalarType)2, x)) <= err_tol);
+          SCTL_ASSERT(fabs(l2[i] - log2<ScalarType>(u4.x[i])) <= 8*eps*fabs(log2<ScalarType>(u4.x[i])));
+          SCTL_ASSERT(fabs(l10[i] - log<ScalarType>(u4.x[i])/log<ScalarType>((ScalarType)10)) <= 8*eps*fabs(log<ScalarType>(u4.x[i])/log<ScalarType>((ScalarType)10)));
+          SCTL_ASSERT(fabs(cr[i]*cr[i]*cr[i] - x) <= 16*eps*fabs(x));
+          SCTL_ASSERT(rel(sh[i], (ScalarType)std::sinh((long double)x)) <= err_tol);
+          SCTL_ASSERT(rel(ch[i], (ScalarType)std::cosh((long double)x)) <= err_tol);
+          SCTL_ASSERT(rel(th[i], (ScalarType)std::tanh((long double)x)) <= err_tol);
+          SCTL_ASSERT(fm[i] == fmod<ScalarType>(x, u4.x[i]));
         }
       }
 

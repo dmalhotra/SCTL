@@ -1278,6 +1278,182 @@ namespace sctl { // Generic
       return y_.v;
     }
   }
+  template <class VData> inline VData atan_intrin(const VData& x) {
+    return atan2_intrin(x, set1_intrin<VData>((typename VData::ScalarType)1));
+  }
+  template <class VData> inline VData asin_intrin(const VData& x) {
+    const VData one = set1_intrin<VData>((typename VData::ScalarType)1);
+    return atan2_intrin(x, sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))));
+  }
+  template <class VData> inline VData acos_intrin(const VData& x) {
+    const VData one = set1_intrin<VData>((typename VData::ScalarType)1);
+    return atan2_intrin(sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))), x);
+  }
+
+  template <class VData> inline VData trunc_intrin(const VData& x) {
+    union {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    } x_ = {x};
+    for (Integer i = 0; i < VData::Size; i++) x_.x[i] = trunc(x_.x[i]);
+    return x_.v;
+  }
+  template <class VData> inline VData round_intrin(const VData& x) { // halfway cases away from zero
+    using Real = typename VData::ScalarType;
+    const VData t = trunc_intrin(x);
+    const Mask<VData> up = comp_intrin<ComparisonType::ge>(fabs_intrin(sub_intrin(x, t)), set1_intrin<VData>((Real)0.5));
+    return add_intrin(t, select_intrin(up, copysign_intrin(set1_intrin<VData>((Real)1), x), zero_intrin<VData>()));
+  }
+  template <class VData> inline Mask<VData> isinf_intrin(const VData& x) {
+    return comp_intrin<ComparisonType::eq>(fabs_intrin(x), set1_intrin<VData>((typename VData::ScalarType)INFINITY));
+  }
+  template <class VData> inline Mask<VData> isfinite_intrin(const VData& x) {
+    return comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>((typename VData::ScalarType)INFINITY));
+  }
+
+  template <class VData> inline VData hypot_intrin(const VData& x, const VData& y) { // m sqrt(1 + (s/m)^2), m = max(|x|,|y|)
+    using Real = typename VData::ScalarType;
+    const VData zero = zero_intrin<VData>();
+    const VData inf = set1_intrin<VData>((Real)INFINITY);
+    const VData a = fabs_intrin(x);
+    const VData b = fabs_intrin(y);
+    const VData m = max_intrin(a, b);
+    const VData r = div_intrin(min_intrin(a, b), m);
+    VData h = mul_intrin(m, sqrt_intrin(fma_intrin(r, r, set1_intrin<VData>((Real)1))));
+    h = select_intrin(comp_intrin<ComparisonType::eq>(m, zero), zero, h);
+    h = select_intrin(isnan_intrin(add_intrin(a, b)), add_intrin(a, b), h);
+    return select_intrin(comp_intrin<ComparisonType::eq>(a, inf) | comp_intrin<ComparisonType::eq>(b, inf), inf, h); // inf even with NaN, as std::hypot
+  }
+
+  template <class VData> inline VData exp2_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) { // 2^f 2^n1 2^n2, f = x - n, n = n1 + n2
+      using Int = typename IntegerType<sizeof(Real)>::value;
+      using IntVec = VecData<Int,VData::Size>;
+      static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+      static constexpr Int max_exp = (((Int)1) << (sizeof(Real)*8 - SigBits - 2)) - 1;
+      const VData lim = set1_intrin<VData>((Real)(2*(max_exp-1)));
+      const VData xc = min_intrin(lim, max_intrin(unary_minus_intrin(lim), x)); // keeps NaN, the second operand
+      const VData n = round_real2real_intrin(xc);
+      const VData e = exp_intrin(mul_intrin(sub_intrin(xc, n), set1_intrin<VData>(const_ln2<Real>())));
+      const IntVec ni = round_real2int_intrin<IntVec>(n);
+      const IntVec n1 = bitshiftright_intrin(ni, 1);
+      const IntVec n2 = sub_intrin(ni, n1);
+      const VData p1 = reinterpret_intrin<VData>(bitshiftleft_intrin(add_intrin(n1, set1_intrin<IntVec>(max_exp)), SigBits));
+      const VData p2 = reinterpret_intrin<VData>(bitshiftleft_intrin(add_intrin(n2, set1_intrin<IntVec>(max_exp)), SigBits));
+      return mul_intrin(mul_intrin(e, p1), p2);
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) x_.x[i] = pow((Real)2, x_.x[i]);
+      return x_.v;
+    }
+  }
+  template <class VData> inline VData log2_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      return mul_intrin(log_intrin(x), set1_intrin<VData>((Real)1.44269504088896340736));
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) x_.x[i] = log2(x_.x[i]);
+      return x_.v;
+    }
+  }
+  template <class VData> inline VData log10_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      return mul_intrin(log_intrin(x), set1_intrin<VData>((Real)0.43429448190325182765));
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) x_.x[i] = log(x_.x[i]) / log((Real)10);
+      return x_.v;
+    }
+  }
+
+  template <class VData> inline VData cbrt_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    union {
+      VData v;
+      Real x[VData::Size];
+    } x_ = {x};
+    for (Integer i = 0; i < VData::Size; i++) {
+      if constexpr (std::is_floating_point<Real>::value) {
+        x_.x[i] = std::cbrt(x_.x[i]);
+      } else { // one Newton step corrects the rounding of 1/3
+        const Real a = fabs(x_.x[i]);
+        Real y = pow(a, 1/(Real)3);
+        y = (y == 0 || isinf(y) ? y : y - (y*y*y - a) / (3*y*y));
+        x_.x[i] = (x_.x[i] < 0 ? -y : y);
+      }
+    }
+    return x_.v;
+  }
+  template <class VData> inline VData fmod_intrin(const VData& x, const VData& y) {
+    union U {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    };
+    U x_ = {x};
+    U y_ = {y};
+    for (Integer i = 0; i < VData::Size; i++) x_.x[i] = fmod(x_.x[i], y_.x[i]);
+    return x_.v;
+  }
+
+  // Hyperbolic: e^|x|/2 = exp(|x| - 1) e/2 avoids overflow; sinh, tanh by series for |x| < 1
+  template <class VData> inline VData sinh_series_intrin(const VData& x) { // x (1 + x^2/3! + x^4/5! + ...), |x| < 1
+    using Real = typename VData::ScalarType;
+    constexpr Integer K = [] { // terms until 1/(2k+1)! < 2^-(SigBits+1)
+      Integer k = 1;
+      double term = 1.0/6;
+      while (term > pow<-(TypeTraits<Real>::SigBits+1),double>(2.0)) {
+        k++;
+        term /= (double)((2*k)*(2*k+1));
+      }
+      return k;
+    }();
+    Real c[K+1]; // c[k] = 1/(2k+1)!
+    c[0] = 1;
+    for (Integer k = 1; k <= K; k++) c[k] = c[k-1] / (Real)((2*k)*(2*k+1));
+    const VData z = mul_intrin(x, x);
+    VData p = set1_intrin<VData>(c[K]);
+    for (Integer k = K-1; k >= 1; k--) p = fma_intrin(p, z, set1_intrin<VData>(c[k]));
+    return fma_intrin(mul_intrin(x, z), p, x);
+  }
+  template <class VData> inline VData exp_half_intrin(const VData& a) { // e^a / 2 for a >= 0; inf beyond the overflow
+    using Real = typename VData::ScalarType;
+    constexpr Integer max_exp = (1 << (sizeof(Real)*8 - TypeTraits<Real>::SigBits - 2)) - 1;
+    const VData ac = min_intrin(set1_intrin<VData>((Real)((max_exp + 1.25) * 0.69314718055994530942 + 1)), a); // exp of larger values wraps
+    return mul_intrin(exp_intrin(sub_intrin(ac, set1_intrin<VData>((Real)1))), set1_intrin<VData>(const_e<Real>()/2));
+  }
+  template <class VData> inline VData cosh_intrin(const VData& x) {
+    const VData h = exp_half_intrin(fabs_intrin(x));
+    return add_intrin(h, div_intrin(set1_intrin<VData>((typename VData::ScalarType)0.25), h));
+  }
+  template <class VData> inline VData sinh_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    const VData a = fabs_intrin(x);
+    const VData h = exp_half_intrin(a);
+    const VData big = copysign_intrin(sub_intrin(h, div_intrin(set1_intrin<VData>((Real)0.25), h)), x);
+    return select_intrin(comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>((Real)1)), sinh_series_intrin(x), big);
+  }
+  template <class VData> inline VData tanh_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    const VData one = set1_intrin<VData>((Real)1);
+    const VData a = fabs_intrin(x);
+    const VData u = exp_intrin(mul_intrin(min_intrin(set1_intrin<VData>((Real)40), a), set1_intrin<VData>((Real)-2))); // tanh(40) rounds to 1
+    const VData big = copysign_intrin(div_intrin(sub_intrin(one, u), add_intrin(one, u)), x);
+    const VData s = sinh_series_intrin(x);
+    const VData small = div_intrin(s, sqrt_intrin(fma_intrin(s, s, one))); // sinh / cosh
+    return select_intrin(comp_intrin<ComparisonType::lt>(a, one), small, big);
+  }
 
   template <Integer ORDER, class VData> inline VData approx_sin_intrin(const VData& x) {
     VData sinx, cosx;
@@ -2076,6 +2252,8 @@ namespace sctl { // SSE
   template <> inline VecData<double,2> floor_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_floor_pd(x.v); }
   template <> inline VecData<float ,4> ceil_intrin <VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_ceil_ps (x.v); }
   template <> inline VecData<double,2> ceil_intrin <VecData<double,2>>(const VecData<double,2>& x) { return _mm_ceil_pd (x.v); }
+  template <> inline VecData<float ,4> trunc_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_round_ps(x.v, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC); }
+  template <> inline VecData<double,2> trunc_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_round_pd(x.v, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC); }
   template <> inline Mask<VecData<float ,4>> isnan_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return Mask<VecData<float ,4>>(_mm_cmpunord_ps(x.v, x.v)); }
   template <> inline Mask<VecData<double,2>> isnan_intrin<VecData<double,2>>(const VecData<double,2>& x) { return Mask<VecData<double,2>>(_mm_cmpunord_pd(x.v, x.v)); }
   template <> inline VecData<int8_t ,16> fabs_intrin<VecData<int8_t ,16>>(const VecData<int8_t ,16>& x) { return _mm_abs_epi8 (x.v); }
@@ -2968,6 +3146,8 @@ namespace sctl { // AVX
   template <> inline VecData<double,4> floor_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_floor_pd(x.v); }
   template <> inline VecData<float ,8> ceil_intrin <VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_ceil_ps (x.v); }
   template <> inline VecData<double,4> ceil_intrin <VecData<double,4>>(const VecData<double,4>& x) { return _mm256_ceil_pd (x.v); }
+  template <> inline VecData<float ,8> trunc_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_round_ps(x.v, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC); }
+  template <> inline VecData<double,4> trunc_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_round_pd(x.v, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC); }
   template <> inline Mask<VecData<float ,8>> isnan_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return Mask<VecData<float ,8>>(_mm256_cmp_ps(x.v, x.v, _CMP_UNORD_Q)); }
   template <> inline Mask<VecData<double,4>> isnan_intrin<VecData<double,4>>(const VecData<double,4>& x) { return Mask<VecData<double,4>>(_mm256_cmp_pd(x.v, x.v, _CMP_UNORD_Q)); }
   #if defined(__AVX2__)
@@ -4249,6 +4429,8 @@ namespace sctl { // AVX512
   template <> inline VecData<double, 8> floor_intrin<VecData<double, 8>>(const VecData<double, 8>& x) { return _mm512_roundscale_pd(x.v, _MM_FROUND_TO_NEG_INF | _MM_FROUND_NO_EXC); }
   template <> inline VecData<float ,16> ceil_intrin <VecData<float ,16>>(const VecData<float ,16>& x) { return _mm512_roundscale_ps(x.v, _MM_FROUND_TO_POS_INF | _MM_FROUND_NO_EXC); }
   template <> inline VecData<double, 8> ceil_intrin <VecData<double, 8>>(const VecData<double, 8>& x) { return _mm512_roundscale_pd(x.v, _MM_FROUND_TO_POS_INF | _MM_FROUND_NO_EXC); }
+  template <> inline VecData<float ,16> trunc_intrin<VecData<float ,16>>(const VecData<float ,16>& x) { return _mm512_roundscale_ps(x.v, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC); }
+  template <> inline VecData<double, 8> trunc_intrin<VecData<double, 8>>(const VecData<double, 8>& x) { return _mm512_roundscale_pd(x.v, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC); }
   template <> inline VecData<int32_t,16> fabs_intrin<VecData<int32_t,16>>(const VecData<int32_t,16>& x) { return _mm512_abs_epi32(x.v); }
   template <> inline VecData<int64_t, 8> fabs_intrin<VecData<int64_t, 8>>(const VecData<int64_t, 8>& x) { return _mm512_abs_epi64(x.v); }
 #if defined(__AVX512BW__)
