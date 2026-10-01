@@ -4,7 +4,6 @@
 #include <algorithm>              // for max, min
 #include <cassert>                // for assert
 #include <iostream>               // for basic_ostream, cout, operator<<
-#include <type_traits>            // for integral_constant
 #include <vector>                 // for vector
 
 #include "sctl/common.hpp"        // for Long, sctl
@@ -17,8 +16,8 @@
 #include "sctl/mem_mgr.txx"       // for aligned_delete, aligned_new
 #include "sctl/static-array.hpp"  // for StaticArray
 #include "sctl/static-array.txx"  // for StaticArray::operator[]
-#include "sctl/vec.hpp"           // for Vec, FMA
-#include "sctl/vec.txx"           // for Vec::Load, Vec::Store
+#include "sctl/small_gemm.hpp"    // for DynamicSize
+#include "sctl/small_gemm.txx"    // for detail_small_gemm::VecProduct
 
 #if defined(SCTL_HAVE_BLAS)
 #include "sctl/blas.h"
@@ -32,19 +31,10 @@ namespace mat {
 
 template <class ValueType> inline void gemm(char TransA, char TransB, int M, int N, int K, ValueType alpha, ConstIterator<ValueType> A, int lda, ConstIterator<ValueType> B, int ldb, ValueType beta, Iterator<ValueType> C, int ldc) {
   if ((TransA == 'N' || TransA == 'n') && (TransB == 'N' || TransB == 'n')) {
-    // Column n of C is the sum over k of B[k + ldb*n] times column k of A: vectors run down the
-    // columns, and a tile of 4 columns of C keeps its partial sums in registers
-    using I1 = std::integral_constant<Integer, 1>;
-    using I2 = std::integral_constant<Integer, 2>;
-    using I4 = std::integral_constant<Integer, 4>;
-    constexpr Integer VL = Vec<ValueType>::Size();
-    using IV = std::integral_constant<Integer, VL>;
     constexpr Long ParallelWork = 1 << 16; // multiply-adds per thread, enough to pay for starting it
     if (!SCTL_IN_PARALLEL()) { // from serial code, blocks of columns of C in parallel, each by a call that takes the serial path below
       const Long nchunk = std::min<Long>(std::min<Long>(N, SCTL_GET_MAX_THREADS()), (Long)M * N * K / ParallelWork);
       if (nchunk > 1) {
-        // Captures copies: if the threads got the arguments by address, the serial path would read
-        // them from memory again after every store
         const auto block = [=](const Long i) {
           const Long n0 = N * i / nchunk, n1 = N * (i + 1) / nchunk;
           gemm<ValueType>('N', 'N', M, (int)(n1 - n0), K, alpha, A, lda, B + ldb * n0, ldb, beta, C + ldc * n0, ldc);
@@ -55,76 +45,10 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
       }
     }
 
-    // Rows m0.. (NV vectors of W) of columns n0.. (NC of them) of C
-    const auto tile = [&A, &B, &C, K, lda, ldb, ldc, alpha, beta](const Long m0, const Long n0, auto nc, auto nv, auto w) {
-      constexpr Integer NC = decltype(nc)::value;
-      constexpr Integer NV = decltype(nv)::value;
-      constexpr Integer W = decltype(w)::value;
-      using V = Vec<ValueType, W>;
-      V acc[NC][NV];
-      for (Integer c = 0; c < NC; c++) {
-        for (Integer v = 0; v < NV; v++) acc[c][v] = V((ValueType)0);
-      }
-      for (Long k = 0; k < K; k++) {
-        V a[NV];
-        for (Integer v = 0; v < NV; v++) a[v] = V::Load(&A[m0 + v*W + lda*k]);
-        for (Integer c = 0; c < NC; c++) {
-          const V b(B[k + ldb*(n0 + c)]);
-          for (Integer v = 0; v < NV; v++) acc[c][v] = FMA(a[v], b, acc[c][v]);
-        }
-      }
-      // Copied to locals: the compiler assumes a vector store can overwrite any memory, so it would
-      // read the captured values again after each store
-      const V alpha_v(alpha), beta_v(beta);
-      const bool add_c = (beta != 0);
-      const Long ldc_ = ldc;
-      ValueType* const C0 = &C[m0 + ldc_*n0];
-      for (Integer c = 0; c < NC; c++) {
-        for (Integer v = 0; v < NV; v++) {
-          ValueType* Cv = C0 + v*W + ldc_*c;
-          acc[c][v] = acc[c][v] * alpha_v;
-          if (add_c) acc[c][v] = FMA(beta_v, V::Load(Cv), acc[c][v]);
-          acc[c][v].Store(Cv);
-        }
-      }
-    };
-
-    const Long M_full = M - M % VL; // rows done in full-width vectors
-    const auto cols = [&tile, M_full](const Long n0, auto nc) {
-      Long m = 0;
-      for (; m + 2*VL <= M_full; m += 2*VL) tile(m, n0, nc, I2{}, IV{});
-      for (; m < M_full; m += VL) tile(m, n0, nc, I1{}, IV{});
-    };
-    const auto cols_tail = [&tile, &A, &B, &C, M, M_full, K, lda, ldb, ldc, alpha, beta](const Long n0, auto nc) { // rows M_full..
-      constexpr Integer NC = decltype(nc)::value;
-      Long m = M_full;
-      if constexpr (VL > 8) {
-        for (; m + 8 <= M; m += 8) tile(m, n0, nc, I1{}, std::integral_constant<Integer, 8>{});
-      }
-      if constexpr (VL > 4) {
-        for (; m + 4 <= M; m += 4) tile(m, n0, nc, I1{}, std::integral_constant<Integer, 4>{});
-      }
-      if constexpr (VL > 2) {
-        for (; m + 2 <= M; m += 2) tile(m, n0, nc, I1{}, std::integral_constant<Integer, 2>{});
-      }
-      for (; m < M; m++) {
-        for (Integer c = 0; c < NC; c++) {
-          ValueType AxB = 0;
-          for (Long k = 0; k < K; k++) AxB += A[m + lda*k] * B[k + ldb*(n0 + c)];
-          C[m + ldc*(n0 + c)] = alpha * AxB + (beta == ValueType(0) ? ValueType(0) : beta * C[m + ldc*(n0 + c)]);
-        }
-      }
-    };
-    // The leftover rows in a second pass: inside the first loop they slowed down its tiles. Not in a
-    // lambda: GCC did not inline it, which also slowed the tiles down
-    Long n = 0;
-    for (; n + 4 <= N; n += 4) cols(n, I4{});
-    for (; n < N; n++) cols(n, I1{});
-    if (M_full < M) {
-      n = 0;
-      for (; n + 4 <= N; n += 4) cols_tail(n, I4{});
-      for (; n < N; n++) cols_tail(n, I1{});
-    }
+    // Column-major C = A B is row-major C^T = B^T A^T: C^T is N x M, B^T is N x K and A^T is K x M,
+    // with row strides ldc, ldb and lda. One instantiation for every alpha and beta: with one per
+    // update mode, a loop calling two of them was up to 6% slower
+    detail_small_gemm::VecProduct<ValueType, DynamicSize, DynamicSize, DynamicSize, detail_small_gemm::Update::AlphaBeta, false>(C, B, A, N, M, K, ldb, lda, ldc, alpha, beta);
   } else if (TransA == 'N' || TransA == 'n') {
     #pragma omp parallel for schedule(static)
     for (Long n = 0; n < N; n++) {    // Columns of C

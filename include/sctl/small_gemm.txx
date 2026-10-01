@@ -16,16 +16,25 @@ namespace sctl {
 namespace detail_small_gemm {
 
   /**
-   * C (m x n) = A (m x k) B (k x n), or C += A B if Accumulate; all row-major and contiguous. A
-   * template size other than DynamicSize replaces the argument, so the loops are specialized for
-   * it. Rows of C in blocks of 4, columns in tiles of 2 vectors and then 1, the leftover columns
-   * in narrower vectors and then one at a time. Not inlined: unrolled for fixed sizes inside a
-   * caller's loop, the code was up to 1.9x slower.
+   * How VecProduct updates C: C = A B; C += A B; or C = alpha A B + beta C, where C is not read if
+   * beta is 0.
    */
-  template <class ValueType, Long M, Long N, Long K, bool Accumulate> [[gnu::noinline]] void VecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_) {
+  enum class Update { Overwrite, Accumulate, AlphaBeta };
+
+  /**
+   * C (m x n) = A (m x k) B (k x n), updated as U says; all row-major, with row strides lda, ldb
+   * and ldc, or k, n and n if Contiguous. A template size other than DynamicSize replaces the
+   * argument, so the loops are specialized for it. Rows of C in blocks of 4, columns in tiles of 2
+   * vectors and then 1, the leftover columns in narrower vectors and then one at a time. Not
+   * inlined: unrolled for fixed sizes inside a caller's loop, the code was up to 1.9x slower.
+   */
+  template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous> [[gnu::noinline]] void VecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
     const Long m = (M != DynamicSize ? M : m_);
     const Long n = (N != DynamicSize ? N : n_);
     const Long k = (K != DynamicSize ? K : k_);
+    const Long lda = (Contiguous ? k : lda_);
+    const Long ldb = (Contiguous ? n : ldb_);
+    const Long ldc = (Contiguous ? n : ldc_);
     constexpr Integer VL = Vec<ValueType>::Size();
     using I1 = std::integral_constant<Integer, 1>;
     using I2 = std::integral_constant<Integer, 2>;
@@ -33,7 +42,7 @@ namespace detail_small_gemm {
     using IV = std::integral_constant<Integer, VL>;
 
     // Rows i0.. (MR of them) and columns j0.. (NV vectors of W) of C
-    const auto tile = [A, B, C, n, k](const Long i0, const Long j0, auto mr, auto nv, auto w) {
+    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta](const Long i0, const Long j0, auto mr, auto nv, auto w) {
       constexpr Integer MR = decltype(mr)::value;
       constexpr Integer NV = decltype(nv)::value;
       constexpr Integer W = decltype(w)::value;
@@ -44,16 +53,21 @@ namespace detail_small_gemm {
       }
       for (Long l = 0; l < k; l++) {
         V b[NV];
-        for (Integer v = 0; v < NV; v++) b[v] = V::Load(&B[l * n + j0 + v * W]);
+        for (Integer v = 0; v < NV; v++) b[v] = V::Load(&B[l * ldb + j0 + v * W]);
         for (Integer r = 0; r < MR; r++) {
-          const V a(A[(i0 + r) * k + l]);
+          const V a(A[(i0 + r) * lda + l]);
           for (Integer v = 0; v < NV; v++) acc[r][v] = FMA(a, b[v], acc[r][v]);
         }
       }
       for (Integer r = 0; r < MR; r++) {
         for (Integer v = 0; v < NV; v++) {
-          ValueType* Cv = &C[(i0 + r) * n + j0 + v * W];
-          if constexpr (Accumulate) acc[r][v] = acc[r][v] + V::Load(Cv);
+          ValueType* Cv = &C[(i0 + r) * ldc + j0 + v * W];
+          if constexpr (U == Update::Accumulate) {
+            acc[r][v] = acc[r][v] + V::Load(Cv);
+          } else if constexpr (U == Update::AlphaBeta) {
+            acc[r][v] = acc[r][v] * V(alpha);
+            if (beta != 0) acc[r][v] = FMA(V(beta), V::Load(Cv), acc[r][v]);
+          }
           acc[r][v].Store(Cv);
         }
       }
@@ -65,7 +79,7 @@ namespace detail_small_gemm {
       for (Long j = 0; j < n_pair; j += 2 * VL) tile(i0, j, mr, I2{}, IV{});
       for (Long j = n_pair; j < n_full; j += VL) tile(i0, j, mr, I1{}, IV{});
     };
-    const auto cols_tail = [&tile, A, B, C, n, k, n_full](const Long i0, auto mr) { // columns n_full..
+    const auto cols_tail = [&tile, A, B, C, n, k, lda, ldb, ldc, alpha, beta, n_full](const Long i0, auto mr) { // columns n_full..
       constexpr Integer MR = decltype(mr)::value;
       Long j = n_full;
       if constexpr (VL > 8) {
@@ -80,11 +94,14 @@ namespace detail_small_gemm {
       for (; j < n; j++) {
         for (Integer r = 0; r < MR; r++) {
           ValueType s = 0;
-          for (Long l = 0; l < k; l++) s += A[(i0 + r) * k + l] * B[l * n + j];
-          if constexpr (Accumulate) {
-            C[(i0 + r) * n + j] += s;
+          for (Long l = 0; l < k; l++) s += A[(i0 + r) * lda + l] * B[l * ldb + j];
+          ValueType& c = C[(i0 + r) * ldc + j];
+          if constexpr (U == Update::Overwrite) {
+            c = s;
+          } else if constexpr (U == Update::Accumulate) {
+            c += s;
           } else {
-            C[(i0 + r) * n + j] = s;
+            c = alpha * s + (beta != 0 ? beta * c : ValueType(0));
           }
         }
       }
@@ -129,10 +146,11 @@ template <class ValueType, Long M, Long N, Long K> inline void SmallGEMM<ValueTy
     return;
   }
 #endif
+  using detail_small_gemm::Update;
   if (accumulate_) {
-    detail_small_gemm::VecProduct<ValueType, M, N, K, true>(C, A, B, m_, n_, k_);
+    detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Accumulate, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)1);
   } else {
-    detail_small_gemm::VecProduct<ValueType, M, N, K, false>(C, A, B, m_, n_, k_);
+    detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Overwrite, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)0);
   }
 }
 
