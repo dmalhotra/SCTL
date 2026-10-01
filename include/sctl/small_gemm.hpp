@@ -24,8 +24,8 @@ constexpr Long DynamicSize = -1;
  * With SCTL_HAVE_LIBXSMM defined, float and double products use a kernel that LIBXSMM generates
  * for the sizes and the mode (overwrite or accumulate); it is looked up when the object is
  * constructed, through a per-thread table after the first time, and LIBXSMM keeps it until the
- * program ends. Other types, and sizes for which LIBXSMM has no kernel, use a register-blocked
- * loop over Vec.
+ * program ends. Otherwise float and double products use a register-blocked loop over Vec, and
+ * other types (long double, QuadReal, complex) a loop over the entries of C.
  *
  * Constructing an object takes a few ns, so it can be done where the product is needed. Applying
  * it does not change the object, so several threads can apply the same object at once.

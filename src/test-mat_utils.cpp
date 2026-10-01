@@ -10,6 +10,8 @@
 // reconstruction A = U * diag(S) * V^T; pinv via the Moore-Penrose
 // identity A * pinv(A) * A = A.
 
+#include <cmath>
+#include <complex>
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
@@ -118,6 +120,32 @@ int main() {
     CHECK(check_random(sctl::QuadReal(0), 30, 16) == 0);
 #endif
     CHECK(check_random(double(0), 4, 200) == 0);
+  }
+
+  // --- gemm no-transpose, std::complex<double>: a type with no Vec arithmetic ---
+  std::printf("gemm no-transpose, std::complex<double> :\n");
+  {
+    using Z = std::complex<double>;
+    const int M = 5, N = 7, K = 3, lda = 6, ldb = 4, ldc = 5;
+    const Z alpha(0.5, -1), beta(0.25, 2);
+    std::vector<Z> A(lda * K), B(ldb * N), C(ldc * N);
+    for (size_t i = 0; i < A.size(); ++i) A[i] = Z(std::sin(1.0 + (double)i), std::cos(2.0 + (double)i));
+    for (size_t i = 0; i < B.size(); ++i) B[i] = Z(std::cos(3.0 + (double)i), std::sin(4.0 + (double)i));
+    for (size_t i = 0; i < C.size(); ++i) C[i] = Z(std::sin(5.0 + (double)i), 0.5);
+    const std::vector<Z> C0 = C;
+    sctl::mat::gemm<Z>('N', 'N', M, N, K, alpha, sctl::Ptr2ConstItr<Z>(A.data(), (Long)A.size()), lda,
+                       sctl::Ptr2ConstItr<Z>(B.data(), (Long)B.size()), ldb, beta, sctl::Ptr2Itr<Z>(C.data(), (Long)C.size()), ldc);
+    double err = 0;
+    for (int n = 0; n < N; ++n) {
+      for (int m = 0; m < M; ++m) {
+        Z ref = 0;
+        for (int k = 0; k < K; ++k) ref += A[m + lda * k] * B[k + ldb * n];
+        ref = alpha * ref + beta * C0[m + ldc * n];
+        const double e = std::abs(C[m + ldc * n] - ref);
+        err = (e == e && e > err ? e : (e == e ? err : 1e300));
+      }
+    }
+    CHECK(err <= 1e-14);
   }
 
   // --- pinv: on a diagonal matrix, pinv is the reciprocal-diagonal. ---

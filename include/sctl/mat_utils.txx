@@ -4,6 +4,7 @@
 #include <algorithm>              // for max, min
 #include <cassert>                // for assert
 #include <iostream>               // for basic_ostream, cout, operator<<
+#include <type_traits>            // for is_same
 #include <vector>                 // for vector
 
 #include "sctl/common.hpp"        // for Long, sctl
@@ -31,7 +32,14 @@ namespace mat {
 
 template <class ValueType> inline void gemm(char TransA, char TransB, int M, int N, int K, ValueType alpha, ConstIterator<ValueType> A, int lda, ConstIterator<ValueType> B, int ldb, ValueType beta, Iterator<ValueType> C, int ldc) {
   if ((TransA == 'N' || TransA == 'n') && (TransB == 'N' || TransB == 'n')) {
-    constexpr Long ParallelWork = 1 << 16; // multiply-adds per thread, enough to pay for starting it
+    // Multiply-adds per thread, enough to pay for starting it (a few us): 2^16 with the Vec tiles of
+    // float and double, 2^7 for QuadReal (software arithmetic, about 30 ns each), 2^10 otherwise
+#ifdef SCTL_QUAD_T
+    constexpr bool software_arithmetic = std::is_same<ValueType, QuadReal>::value;
+#else
+    constexpr bool software_arithmetic = false;
+#endif
+    constexpr Long ParallelWork = (detail_small_gemm::VecTiles<ValueType> ? (Long)1 << 16 : (software_arithmetic ? (Long)1 << 7 : (Long)1 << 10));
     if (!SCTL_IN_PARALLEL()) { // from serial code, blocks of columns of C in parallel, each by a call that takes the serial path below
       const Long nchunk = std::min<Long>(std::min<Long>(N, SCTL_GET_MAX_THREADS()), (Long)M * N * K / ParallelWork);
       if (nchunk > 1) {
@@ -48,7 +56,11 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
     // Column-major C = A B is row-major C^T = B^T A^T: C^T is N x M, B^T is N x K and A^T is K x M,
     // with row strides ldc, ldb and lda. One instantiation for every alpha and beta: with one per
     // update mode, a loop calling two of them was up to 6% slower
-    detail_small_gemm::VecProduct<ValueType, DynamicSize, DynamicSize, DynamicSize, detail_small_gemm::Update::AlphaBeta, false>(C, B, A, N, M, K, ldb, lda, ldc, alpha, beta);
+    if constexpr (detail_small_gemm::VecTiles<ValueType>) {
+      detail_small_gemm::VecProduct<ValueType, DynamicSize, DynamicSize, DynamicSize, detail_small_gemm::Update::AlphaBeta, false>(C, B, A, N, M, K, ldb, lda, ldc, alpha, beta);
+    } else {
+      detail_small_gemm::ScalarProduct<ValueType, detail_small_gemm::Update::AlphaBeta>(C, B, A, N, M, K, ldb, lda, ldc, alpha, beta);
+    }
   } else if (TransA == 'N' || TransA == 'n') {
     #pragma omp parallel for schedule(static)
     for (Long n = 0; n < N; n++) {    // Columns of C

@@ -16,10 +16,37 @@ namespace sctl {
 namespace detail_small_gemm {
 
   /**
-   * How VecProduct updates C: C = A B; C += A B; or C = alpha A B + beta C, where C is not read if
+   * How a product updates C: C = A B; C += A B; or C = alpha A B + beta C, where C is not read if
    * beta is 0.
    */
   enum class Update { Overwrite, Accumulate, AlphaBeta };
+
+  /**
+   * True for float and double, whose products VecProduct computes; other types have no Vec
+   * arithmetic (complex, user types), or a slower one than a scalar loop (long double, 1.8-2.8x).
+   */
+  template <class ValueType> constexpr bool VecTiles = std::is_same<ValueType, float>::value || std::is_same<ValueType, double>::value;
+
+  /**
+   * C (m x n) = A (m x k) B (k x n), updated as U says; all row-major, with row strides lda, ldb
+   * and ldc. One entry of C at a time, summing over k in order.
+   */
+  template <class ValueType, Update U> void ScalarProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m, const Long n, const Long k, const Long lda, const Long ldb, const Long ldc, const ValueType alpha, const ValueType beta) {
+    for (Long i = 0; i < m; i++) {
+      for (Long j = 0; j < n; j++) {
+        ValueType s = 0;
+        for (Long l = 0; l < k; l++) s += A[i * lda + l] * B[l * ldb + j];
+        ValueType& c = C[i * ldc + j];
+        if constexpr (U == Update::Overwrite) {
+          c = s;
+        } else if constexpr (U == Update::Accumulate) {
+          c += s;
+        } else {
+          c = alpha * s + (beta == ValueType(0) ? ValueType(0) : beta * c);
+        }
+      }
+    }
+  }
 
   /**
    * C (m x n) = A (m x k) B (k x n), updated as U says; all row-major, with row strides lda, ldb
@@ -163,10 +190,18 @@ template <class ValueType, Long M, Long N, Long K> inline void SmallGEMM<ValueTy
   }
 #endif
   using detail_small_gemm::Update;
-  if (accumulate_) {
-    detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Accumulate, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)1);
+  if constexpr (detail_small_gemm::VecTiles<ValueType>) {
+    if (accumulate_) {
+      detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Accumulate, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)1);
+    } else {
+      detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Overwrite, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)0);
+    }
   } else {
-    detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Overwrite, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)0);
+    if (accumulate_) {
+      detail_small_gemm::ScalarProduct<ValueType, Update::Accumulate>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)1);
+    } else {
+      detail_small_gemm::ScalarProduct<ValueType, Update::Overwrite>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)0);
+    }
   }
 }
 

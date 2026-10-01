@@ -5,6 +5,7 @@
 // one object applied by several threads at once; and through the Matrix overload. In the overwrite
 // mode C starts as NaN, which must not be read.
 
+#include <complex>
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
@@ -112,6 +113,32 @@ int main() {
       }
     }
     CHECK(nbad == 0);
+  }
+
+  std::printf("std::complex<double> (no Vec arithmetic) :\n");
+  {
+    using Z = std::complex<double>;
+    constexpr Long m = 5, n = 7, k = 3;
+    std::vector<Z> A(m * k), B(k * n), C0(m * n);
+    for (Long i = 0; i < m * k; i++) A[i] = Z(std::sin(1.0 + (double)i), std::cos(2.0 + (double)i));
+    for (Long i = 0; i < k * n; i++) B[i] = Z(std::cos(3.0 + (double)i), std::sin(4.0 + (double)i));
+    for (Long i = 0; i < m * n; i++) C0[i] = Z(0.5, std::sin(5.0 + (double)i));
+    for (const bool acc : {false, true}) {
+      const SmallGEMM<Z, m, n, k> fixed(acc);
+      const SmallGEMM<Z> dynamic(acc, m, n, k);
+      std::vector<Z> C1 = C0, C2 = C0;
+      fixed(sctl::Ptr2Itr<Z>(C1.data(), m * n), sctl::Ptr2ConstItr<Z>(A.data(), m * k), sctl::Ptr2ConstItr<Z>(B.data(), k * n));
+      dynamic(sctl::Ptr2Itr<Z>(C2.data(), m * n), sctl::Ptr2ConstItr<Z>(A.data(), m * k), sctl::Ptr2ConstItr<Z>(B.data(), k * n));
+      int nbad = 0;
+      for (Long i = 0; i < m; i++) {
+        for (Long j = 0; j < n; j++) {
+          Z ref = (acc ? C0[i * n + j] : Z(0));
+          for (Long l = 0; l < k; l++) ref += A[i * k + l] * B[l * n + j];
+          nbad += !(std::abs(C1[i * n + j] - ref) <= 1e-14) + !(std::abs(C2[i * n + j] - ref) <= 1e-14);
+        }
+      }
+      CHECK(nbad == 0);
+    }
   }
 
   std::printf("Matrix overload :\n");
