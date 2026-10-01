@@ -434,6 +434,18 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator<<(const Vec<ValueType,N>& lhs, const Integer& rhs);
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator>>(const Vec<ValueType,N>& lhs, const Integer& rhs);
 
+  /**
+   * Bit shift each element of an integer vector left by the count in the same
+   * element of rhs, 0 <= count < bit width of ValueType.
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator<<(const Vec<ValueType,N>& lhs, const Vec<ValueType,N>& rhs);
+
+  /**
+   * Bit shift each element of an integer vector right by the count in the same
+   * element of rhs, 0 <= count < bit width of ValueType, filling with the sign bit.
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator>>(const Vec<ValueType,N>& lhs, const Vec<ValueType,N>& rhs);
+
 
   // Other operators
   template <class ValueType, Integer N> inline Vec<ValueType,N> max(const Vec<ValueType,N>& lhs, const Vec<ValueType,N>& rhs);

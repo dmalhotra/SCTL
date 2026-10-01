@@ -346,6 +346,14 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator>>(const Vec<ValueType,N>& lhs, const Integer& rhs) {
     return bitshiftright_intrin(lhs.get(), rhs);
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator<<(const Vec<ValueType,N>& lhs, const Vec<ValueType,N>& rhs) {
+    static_assert(TypeTraits<ValueType>::Type == DataType::Integer, "Bit shift counts per element require an integer type.");
+    return bitshiftleft_intrin(lhs.get(), rhs.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator>>(const Vec<ValueType,N>& lhs, const Vec<ValueType,N>& rhs) {
+    static_assert(TypeTraits<ValueType>::Type == DataType::Integer, "Bit shift counts per element require an integer type.");
+    return bitshiftright_intrin(lhs.get(), rhs.get());
+  }
 
 
   // Other operators

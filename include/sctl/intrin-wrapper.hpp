@@ -355,6 +355,31 @@ namespace sctl { // Generic
     for (Integer i = 0; i < N; i++) a_.x[i] = a_.x[i] >> rhs;
     return a_.v;
   }
+  template <class VData> inline VData bitshiftleft_intrin(const VData& a, const VData& rhs) { // lane i bit shifted by lane i of rhs
+    static constexpr Integer N = VData::Size;
+    using UInt = typename IntegerType<sizeof(typename VData::ScalarType)>::unsigned_value;
+    union {
+      VData v;
+      UInt x[N];
+    } a_ = {a};
+    union {
+      VData v;
+      typename VData::ScalarType x[N];
+    } k_ = {rhs};
+    for (Integer i = 0; i < N; i++) a_.x[i] <<= k_.x[i];
+    return a_.v;
+  }
+  template <class VData> inline VData bitshiftright_intrin(const VData& a, const VData& rhs) { // lane i bit shifted by lane i of rhs
+    static constexpr Integer N = VData::Size;
+    union U {
+      VData v;
+      typename VData::ScalarType x[N];
+    };
+    U a_ = {a};
+    U k_ = {rhs};
+    for (Integer i = 0; i < N; i++) a_.x[i] = a_.x[i] >> k_.x[i];
+    return a_.v;
+  }
 
   // Other functions
   template <class VData> inline VData max_intrin(const VData& a, const VData& b) {
@@ -1598,6 +1623,19 @@ namespace sctl { // SSE
   template <> inline VecData<float  ,4> bitshiftright_intrin<VecData<float  ,4>>(const VecData<float  ,4>& a, const Integer& rhs) { return _mm_castsi128_ps(_mm_srli_epi32(_mm_castps_si128(a.v), rhs)); }
   template <> inline VecData<double ,2> bitshiftright_intrin<VecData<double ,2>>(const VecData<double ,2>& a, const Integer& rhs) { return _mm_castsi128_pd(_mm_srli_epi64(_mm_castpd_si128(a.v), rhs)); }
 
+  #if defined(__AVX2__)
+  template <> inline VecData<int32_t,4> bitshiftleft_intrin <VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { return _mm_sllv_epi32(a.v, rhs.v); }
+  template <> inline VecData<int64_t,2> bitshiftleft_intrin <VecData<int64_t,2>>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& rhs) { return _mm_sllv_epi64(a.v, rhs.v); }
+  template <> inline VecData<int32_t,4> bitshiftright_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { return _mm_srav_epi32(a.v, rhs.v); }
+  #endif
+  #if defined(__AVX512F__) && defined(__AVX512VL__)
+  template <> inline VecData<int64_t,2> bitshiftright_intrin<VecData<int64_t,2>>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& rhs) { return _mm_srav_epi64(a.v, rhs.v); }
+  #endif
+  #if defined(__AVX512BW__) && defined(__AVX512VL__)
+  template <> inline VecData<int16_t,8> bitshiftleft_intrin <VecData<int16_t,8>>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& rhs) { return _mm_sllv_epi16(a.v, rhs.v); }
+  template <> inline VecData<int16_t,8> bitshiftright_intrin<VecData<int16_t,8>>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& rhs) { return _mm_srav_epi16(a.v, rhs.v); }
+  #endif
+
   // Other functions
   template <> inline VecData<int8_t,16> max_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) {
     return _mm_max_epi8(a.v, b.v);
@@ -2423,6 +2461,17 @@ namespace sctl { // AVX
   #endif
   template <> inline VecData<float   ,8> bitshiftright_intrin<VecData<float   ,8>>(const VecData<float   ,8>& a, const Integer& rhs) { return _mm256_castsi256_ps(_mm256_srli_epi32(_mm256_castps_si256(a.v), rhs)); }
   template <> inline VecData<double  ,4> bitshiftright_intrin<VecData<double  ,4>>(const VecData<double  ,4>& a, const Integer& rhs) { return _mm256_castsi256_pd(_mm256_srli_epi64(_mm256_castpd_si256(a.v), rhs)); }
+
+  template <> inline VecData<int32_t ,8> bitshiftleft_intrin <VecData<int32_t ,8>>(const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& rhs) { return _mm256_sllv_epi32(a.v, rhs.v); }
+  template <> inline VecData<int64_t ,4> bitshiftleft_intrin <VecData<int64_t ,4>>(const VecData<int64_t ,4>& a, const VecData<int64_t ,4>& rhs) { return _mm256_sllv_epi64(a.v, rhs.v); }
+  template <> inline VecData<int32_t ,8> bitshiftright_intrin<VecData<int32_t ,8>>(const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& rhs) { return _mm256_srav_epi32(a.v, rhs.v); }
+  #if defined(__AVX512F__) && defined(__AVX512VL__)
+  template <> inline VecData<int64_t ,4> bitshiftright_intrin<VecData<int64_t ,4>>(const VecData<int64_t ,4>& a, const VecData<int64_t ,4>& rhs) { return _mm256_srav_epi64(a.v, rhs.v); }
+  #endif
+  #if defined(__AVX512BW__) && defined(__AVX512VL__)
+  template <> inline VecData<int16_t,16> bitshiftleft_intrin <VecData<int16_t,16>>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& rhs) { return _mm256_sllv_epi16(a.v, rhs.v); }
+  template <> inline VecData<int16_t,16> bitshiftright_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& rhs) { return _mm256_srav_epi16(a.v, rhs.v); }
+  #endif
   #endif
 
   // Other functions
@@ -3336,6 +3385,15 @@ namespace sctl { // AVX512
   template <> inline VecData<int64_t ,8> bitshiftright_intrin<VecData<int64_t ,8>>(const VecData<int64_t ,8>& a, const Integer& rhs) { return _mm512_srai_epi64(a.v , rhs); }
   template <> inline VecData<float  ,16> bitshiftright_intrin<VecData<float  ,16>>(const VecData<float  ,16>& a, const Integer& rhs) { return _mm512_castsi512_ps(_mm512_srli_epi32(_mm512_castps_si512(a.v), rhs)); }
   template <> inline VecData<double  ,8> bitshiftright_intrin<VecData<double  ,8>>(const VecData<double  ,8>& a, const Integer& rhs) { return _mm512_castsi512_pd(_mm512_srli_epi64(_mm512_castpd_si512(a.v), rhs)); }
+
+  template <> inline VecData<int32_t,16> bitshiftleft_intrin <VecData<int32_t,16>>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& rhs) { return _mm512_sllv_epi32(a.v, rhs.v); }
+  template <> inline VecData<int64_t ,8> bitshiftleft_intrin <VecData<int64_t ,8>>(const VecData<int64_t ,8>& a, const VecData<int64_t ,8>& rhs) { return _mm512_sllv_epi64(a.v, rhs.v); }
+  template <> inline VecData<int32_t,16> bitshiftright_intrin<VecData<int32_t,16>>(const VecData<int32_t,16>& a, const VecData<int32_t,16>& rhs) { return _mm512_srav_epi32(a.v, rhs.v); }
+  template <> inline VecData<int64_t ,8> bitshiftright_intrin<VecData<int64_t ,8>>(const VecData<int64_t ,8>& a, const VecData<int64_t ,8>& rhs) { return _mm512_srav_epi64(a.v, rhs.v); }
+#if defined(__AVX512BW__)
+  template <> inline VecData<int16_t,32> bitshiftleft_intrin <VecData<int16_t,32>>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& rhs) { return _mm512_sllv_epi16(a.v, rhs.v); }
+  template <> inline VecData<int16_t,32> bitshiftright_intrin<VecData<int16_t,32>>(const VecData<int16_t,32>& a, const VecData<int16_t,32>& rhs) { return _mm512_srav_epi16(a.v, rhs.v); }
+#endif
 
   // Other functions
 #if defined(__AVX512BW__)

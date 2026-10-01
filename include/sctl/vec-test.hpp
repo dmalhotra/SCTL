@@ -343,6 +343,18 @@ namespace sctl {
             SCTL_ASSERT(u3.x[i] == (ScalarType)((UInt)u1.x[i] * ((UInt)1 << k))); // x * 2^k modulo 2^(bit width)
           }
         }
+
+        // counts per element
+        UnionType k_;
+        for (Integer i = 0; i < N; i++) {
+          k_.x[i] = (ScalarType)(rand() % (sizeof(ScalarType)*8));
+        }
+        u2.v = u1.v >> k_.v;
+        u3.v = u1.v << k_.v;
+        for (Integer i = 0; i < N; i++) {
+          SCTL_ASSERT(u2.x[i] == (ScalarType)(u1.x[i] >> k_.x[i]));
+          SCTL_ASSERT(u3.x[i] == (ScalarType)((UInt)u1.x[i] * ((UInt)1 << k_.x[i])));
+        }
       }
 
       static void test_arithmetic() {
