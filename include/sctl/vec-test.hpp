@@ -762,6 +762,10 @@ namespace sctl {
         const VecType nan = select(isnan(u3.v), VecType((ScalarType)1), VecType((ScalarType)0));
         const VecType ne = select(u3.v != u3.v, VecType((ScalarType)1), VecType((ScalarType)0));
         const VecType eq = select(u3.v == u3.v, VecType((ScalarType)1), VecType((ScalarType)0));
+        const VecType mx0 = max(u3.v, u1.v);
+        const VecType mx1 = max(u1.v, u3.v);
+        const VecType mn0 = min(u3.v, u1.v);
+        const VecType mn1 = min(u1.v, u3.v);
         const VecType sn = sin(u1.v);
         const VecType cn = cos(u1.v);
         const VecType tn = tan(u1.v);
@@ -783,6 +787,8 @@ namespace sctl {
           SCTL_ASSERT(nan[i] == (ScalarType)(i % 2));
           SCTL_ASSERT(ne[i] == (ScalarType)(i % 2)); // NaN != NaN, as in C++
           SCTL_ASSERT(eq[i] == (ScalarType)(1 - i % 2));
+          SCTL_ASSERT(mx0[i] == x && mn0[i] == x); // the second operand where the first is NaN
+          SCTL_ASSERT(i % 2 ? (isnan(mx1[i]) && isnan(mn1[i])) : (mx1[i] == x && mn1[i] == x));
           SCTL_ASSERT(fabs(sn[i] - sin<ScalarType>(x)) < err_tol);
           SCTL_ASSERT(fabs(cn[i] - cos<ScalarType>(x)) < err_tol);
           SCTL_ASSERT(fabs(tn[i] - tan_x) < 4*err_tol*(1 + tan_x*tan_x));

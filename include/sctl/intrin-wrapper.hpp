@@ -411,7 +411,7 @@ namespace sctl { // Generic
     };
     U a_ = {a};
     U b_ = {b};
-    for (Integer i = 0; i < VData::Size; i++) a_.x[i] = (a_.x[i] < b_.x[i] ? b_.x[i] : a_.x[i]);
+    for (Integer i = 0; i < VData::Size; i++) a_.x[i] = (b_.x[i] < a_.x[i] ? a_.x[i] : b_.x[i]); // b if either is NaN, as maxps/maxpd
     return a_.v;
   }
   template <class VData> inline VData min_intrin(const VData& a, const VData& b) {
