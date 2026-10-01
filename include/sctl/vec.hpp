@@ -548,10 +548,17 @@ namespace sctl {
 
 
   // Special functions
+
+  /** 1/sqrt(x) to the given digits (-1: full precision, within a few ulp), for 1e-300 <= x <= 1e300. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x);
+
+  /** As approx_rsqrt(x), with zero in the elements not in m; for x that can be zero. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x, const typename Vec<ValueType,N>::MaskType& m);
 
+  /** sqrt(x) as x * approx_rsqrt(x), to the given digits, for 1e-300 <= x <= 1e300. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sqrt(const Vec<ValueType,N>& x);
+
+  /** As approx_sqrt(x), with zero in the elements not in m; for x that can be zero. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sqrt(const Vec<ValueType,N>& x, const typename Vec<ValueType,N>::MaskType& m);
 
   template <class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
