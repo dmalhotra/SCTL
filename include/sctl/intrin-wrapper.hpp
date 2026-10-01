@@ -2,6 +2,7 @@
 #define _SCTL_INTRIN_WRAPPER_HPP_
 
 #include <stdint.h>             // for int8_t, int16_t, int32_t, int64_t, uint8_t, ...
+#include <type_traits>          // for is_same
 
 #include "sctl/common.hpp"      // for Integer, sctl, SCTL_ALIGN_B...
 #include "sctl/math_utils.hpp"  // for const_pi, QuadReal, cos, exp, sin, sqrt
@@ -351,12 +352,22 @@ namespace sctl { // Generic
   }
   template <class VData> inline VData bitshiftright_intrin(const VData& a, const Integer& rhs) {
     static constexpr Integer N = VData::Size;
-    union {
-      VData v;
-      typename VData::ScalarType x[N];
-    } a_ = {a};
-    for (Integer i = 0; i < N; i++) a_.x[i] = a_.x[i] >> rhs;
-    return a_.v;
+    using ScalarType = typename VData::ScalarType;
+    if constexpr (TypeTraits<ScalarType>::Type == DataType::Integer) { // fills with the sign bit
+      union {
+        VData v;
+        ScalarType x[N];
+      } a_ = {a};
+      for (Integer i = 0; i < N; i++) a_.x[i] = a_.x[i] >> rhs;
+      return a_.v;
+    } else { // the raw bits, filled with zeros, as in the SSE, AVX and AVX-512 paths
+      union {
+        VData v;
+        typename IntegerType<sizeof(ScalarType)>::unsigned_value x[N];
+      } a_ = {a};
+      for (Integer i = 0; i < N; i++) a_.x[i] >>= rhs;
+      return a_.v;
+    }
   }
   template <class VData> inline VData bitshiftleft_intrin(const VData& a, const VData& rhs) { // lane i bit shifted by lane i of rhs
     static constexpr Integer N = VData::Size;
@@ -818,6 +829,54 @@ namespace sctl { // Generic
   static inline constexpr Integer mylog2(Integer x) {
     return ((x<1) ? 0 : 1+mylog2(x/2));
   }
+
+  // 1/sqrt(x) for double lanes from the estimate with bits R - (bits(x) >> 1), correct for
+  // 1e-300 <= x <= 1e300. A first step y0 a (b - x y0^2) with tuned constants leaves a relative
+  // error below 6.5e-4; each Newton step then squares the error and multiplies it by 1.5. The steps
+  // leave out their constant factors (-a, then -1/2), so the iterate is s y; 1/s is applied at the end.
+  template <Integer digits, class VData> struct rsqrt_bittrick_intrin {
+    static_assert(std::is_same<typename VData::ScalarType, double>::value, "rsqrt_bittrick_intrin requires double lanes.");
+    using IntVData = VecData<int64_t,VData::Size>;
+    static constexpr double a = 0.703952253;
+    static constexpr double b = 2.38924456;
+
+    static constexpr Integer steps() {
+      Integer n = 1;
+      for (double d = 3.18; d < digits; d = 2*d - 0.18) n++;
+      return n;
+    }
+    static constexpr double scale(Integer k) { // s after k steps
+      double s = -1/a;
+      for (Integer i = 1; i < k; i++) s = -2*s*s*s;
+      return s;
+    }
+    template <Integer K> static inline VData newton(const VData& z, const VData& x) { // steps K+1, ..., steps() on z = s y
+      if constexpr (K == steps()) {
+        constexpr double c = 1/scale(K);
+        return mul_intrin(z, set1_intrin<VData>(c));
+      } else {
+        constexpr double c = -3*scale(K)*scale(K);
+        return newton<K+1>(mul_intrin(z, fma_intrin(x, mul_intrin(z, z), set1_intrin<VData>(c))), x);
+      }
+    }
+    static inline VData estimate(const VData& x) {
+      return reinterpret_intrin<VData>(sub_intrin(set1_intrin<IntVData>(0x5FE3FFFF20000000ll), reinterpret_intrin<IntVData>(bitshiftright_intrin(x, 1))));
+    }
+    static inline VData refine(const VData& y0, const VData& x) {
+      if constexpr (steps() == 1) { // -a x, apart from y0, keeps the factor a off the path from y0
+        return mul_intrin(y0, fma_intrin(mul_intrin(x, set1_intrin<VData>(-a)), mul_intrin(y0, y0), set1_intrin<VData>(a*b)));
+      } else {
+        return newton<1>(mul_intrin(y0, fma_intrin(x, mul_intrin(y0, y0), set1_intrin<VData>(-b))), x);
+      }
+    }
+
+    static inline VData eval(const VData& x) {
+      return refine(estimate(x), x);
+    }
+    static inline VData eval(const VData& x, const Mask<VData>& m) { // zero in the lanes not in m
+      return refine(and_intrin(estimate(x), convert_mask2vec_intrin(m)), x);
+    }
+  };
   template <Integer digits, class VData> struct rsqrt_approx_intrin {
     static inline VData eval(const VData& a) {
       union {
@@ -1895,8 +1954,7 @@ namespace sctl { // SSE
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(_mm_maskz_rsqrt14_pd(~__mmask8(0), a.v), a.v);
       #else
-      constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
-      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(_mm_cvtps_pd(_mm_rsqrt_ps(_mm_cvtpd_ps(a.v))), a.v);
+      return rsqrt_bittrick_intrin<digits,VecData<double,2>>::eval(a); // a float estimate would limit x to the float range
       #endif
     }
     static inline VecData<double,2> eval(const VecData<double,2>& a, const Mask<VecData<double,2>>& m) {
@@ -1904,8 +1962,7 @@ namespace sctl { // SSE
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(_mm_maskz_rsqrt14_pd(_mm_movepi64_mask(_mm_castpd_si128(m.v)), a.v), a.v);
       #else
-      constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
-      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,2>>::eval(and_intrin(VecData<double,2>(_mm_cvtps_pd(_mm_rsqrt_ps(_mm_cvtpd_ps(a.v)))), convert_mask2vec_intrin(m)), a.v);
+      return rsqrt_bittrick_intrin<digits,VecData<double,2>>::eval(a, m);
       #endif
     }
   };
@@ -2814,8 +2871,7 @@ namespace sctl { // AVX
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_maskz_rsqrt14_pd(~__mmask8(0), a.v), a.v);
       #else
-      constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
-      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_cvtps_pd(_mm_rsqrt_ps(_mm256_cvtpd_ps(a.v))), a.v);
+      return rsqrt_bittrick_intrin<digits,VecData<double,4>>::eval(a); // a float estimate would limit x to the float range
       #endif
     }
     static inline VecData<double,4> eval(const VecData<double,4>& a, const Mask<VecData<double,4>>& m) {
@@ -2823,8 +2879,7 @@ namespace sctl { // AVX
       constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
       return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(_mm256_maskz_rsqrt14_pd(_mm256_movepi64_mask(_mm256_castpd_si256(m.v)), a.v), a.v);
       #else
-      constexpr Integer newton_iter = mylog2((Integer)(digits/3.4362686889));
-      return rsqrt_newton_iter<newton_iter,newton_iter,VecData<double,4>>::eval(and_intrin(VecData<double,4>(_mm256_cvtps_pd(_mm_rsqrt_ps(_mm256_cvtpd_ps(a.v)))), convert_mask2vec_intrin(m)), a.v);
+      return rsqrt_bittrick_intrin<digits,VecData<double,4>>::eval(a, m);
       #endif
     }
   };

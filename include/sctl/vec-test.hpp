@@ -3,6 +3,7 @@
 
 #include <stdlib.h>                 // for rand, drand48
 #include <algorithm>                // for max
+#include <cmath>                    // for pow
 #include <cstdint>                  // for int8_t, int16_t, int32_t, int64_t
 #include <limits>                   // for numeric_limits
 
@@ -758,6 +759,19 @@ namespace sctl {
           rel_err = err / max_val;
           SCTL_ASSERT(rel_err < (pow<22,ScalarType>((ScalarType)0.5)));
           SCTL_ASSERT(b1.x[i]>b2.x[i] || (u5.x[i]==0));
+        }
+
+        // x = 10^e over the exponent range: |e| <= 300 for double, 30 for float
+        const double max_exp = (sizeof(ScalarType) >= sizeof(double) ? 300 : 30);
+        for (Integer i = 0; i < N; i++) {
+          u1.x[i] = (ScalarType)std::pow(10.0, (2*drand48()-1) * max_exp);
+        }
+        u2.v = approx_rsqrt<4>(u1.v);
+        u3.v = approx_rsqrt<-1>(u1.v);
+        for (Integer i = 0; i < N; i++) {
+          const ScalarType r = 1/sqrt<ScalarType>(u1.x[i]);
+          SCTL_ASSERT(fabs(u2.x[i]/r - 1) < (ScalarType)1e-4);
+          SCTL_ASSERT(fabs(u3.x[i]/r - 1) < 8*machine_eps<ScalarType>());
         }
       }
 
