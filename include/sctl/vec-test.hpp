@@ -186,7 +186,7 @@ namespace sctl {
       }
 
       static void test_bitwise() {
-        UnionType u1, u2, u3, u4, u5, u6, u7, u8, u9;
+        UnionType u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15;
         for (Integer i = 0; i < SizeBytes; i++) {
           u1.c[i] = rand();
           u2.c[i] = rand();
@@ -199,6 +199,12 @@ namespace sctl {
         u7.v = AndNot(u1.v, u2.v);
         u8.v = AndNot(u1.v, u2.x[0]);
         u9.v = AndNot(u2.x[0], u1.v);
+        u10.v = u1.v & u2.x[0];
+        u11.v = u2.x[0] & u1.v;
+        u12.v = u1.v ^ u2.x[0];
+        u13.v = u2.x[0] ^ u1.v;
+        u14.v = u1.v | u2.x[0];
+        u15.v = u2.x[0] | u1.v;
 
         for (Integer i = 0; i < SizeBytes; i++) {
           const int8_t s = u2.c[i % (Integer)sizeof(ScalarType)]; // byte i of the broadcast u2.x[0]
@@ -209,6 +215,12 @@ namespace sctl {
           SCTL_ASSERT(u7.c[i] == (int8_t)(u1.c[i] & (~u2.c[i])));
           SCTL_ASSERT(u8.c[i] == (int8_t)(u1.c[i] & (~s)));
           SCTL_ASSERT(u9.c[i] == (int8_t)(s & (~u1.c[i])));
+          SCTL_ASSERT(u10.c[i] == (int8_t)(u1.c[i] & s));
+          SCTL_ASSERT(u11.c[i] == (int8_t)(s & u1.c[i]));
+          SCTL_ASSERT(u12.c[i] == (int8_t)(u1.c[i] ^ s));
+          SCTL_ASSERT(u13.c[i] == (int8_t)(s ^ u1.c[i]));
+          SCTL_ASSERT(u14.c[i] == (int8_t)(u1.c[i] | s));
+          SCTL_ASSERT(u15.c[i] == (int8_t)(s | u1.c[i]));
         }
       }
 
