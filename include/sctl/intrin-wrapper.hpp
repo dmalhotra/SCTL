@@ -130,6 +130,10 @@ namespace sctl { // Traits
   };
 #endif
 
+  template <class Real> inline constexpr bool ieee_layout() { // the bits are sign, exponent and fraction, filling the type; false for x87 long double (leading bit stored, padded) and double-double
+    return TypeTraits<Real>::SigBits + TypeTraits<Real>::ExpBits + 1 == TypeTraits<Real>::Size * 8;
+  }
+
   template <Integer N> struct IntegerType {};
   template <> struct IntegerType<sizeof( int8_t)> {
     using value =  int8_t;
@@ -488,13 +492,26 @@ namespace sctl { // Generic
     static_assert(TypeTraits<Int>::Type == DataType::Integer, "Expected integer type!");
     static_assert(sizeof(RealVec) == sizeof(IntVec) && sizeof(Real) == sizeof(Int), "Real and integer types must have same size!");
 
-    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
-    union {
-      Int Cint = (((Int)1) << (SigBits - 1)) + ((SigBits + ((((Int)1)<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
-      Real Creal;
-    };
-    IntVec l(add_intrin(x, set1_intrin<IntVec>(Cint)));
-    return sub_intrin(reinterpret_intrin<RealVec>(l), set1_intrin<RealVec>(Creal));
+    if constexpr (!ieee_layout<Real>()) { // one element at a time
+      union {
+        IntVec v;
+        Int x[IntVec::Size];
+      } n = {x};
+      union {
+        RealVec v;
+        Real x[RealVec::Size];
+      } r;
+      for (Integer i = 0; i < RealVec::Size; i++) r.x[i] = (Real)n.x[i];
+      return r.v;
+    } else {
+      static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+      union {
+        Int Cint = (((Int)1) << (SigBits - 1)) + ((SigBits + ((((Int)1)<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
+        Real Creal;
+      };
+      IntVec l(add_intrin(x, set1_intrin<IntVec>(Cint)));
+      return sub_intrin(reinterpret_intrin<RealVec>(l), set1_intrin<RealVec>(Creal));
+    }
   }
   template <class IntVec, class RealVec> inline IntVec lrint_intrin(const RealVec& x) { // as rint_intrin, to Int, for |x| < 2^(SigBits-1); double on SSE, AVX2: |x| < 2^31
     using Int = typename IntVec::ScalarType;
@@ -503,13 +520,26 @@ namespace sctl { // Generic
     static_assert(TypeTraits<Int>::Type == DataType::Integer, "Expected integer type!");
     static_assert(sizeof(RealVec) == sizeof(IntVec) && sizeof(Real) == sizeof(Int), "Real and integer types must have same size!");
 
-    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
-    union {
-      Int Cint = (((Int)1) << (SigBits - 1)) + ((SigBits + ((((Int)1)<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
-      Real Creal;
-    };
-    RealVec d(add_intrin(x, set1_intrin<RealVec>(Creal)));
-    return sub_intrin(reinterpret_intrin<IntVec>(d), set1_intrin<IntVec>(Cint));
+    if constexpr (!ieee_layout<Real>()) { // one element at a time
+      union {
+        RealVec v;
+        Real x[RealVec::Size];
+      } r = {x};
+      union {
+        IntVec v;
+        Int x[IntVec::Size];
+      } n;
+      for (Integer i = 0; i < RealVec::Size; i++) n.x[i] = (Int)std::rint(r.x[i]);
+      return n.v;
+    } else {
+      static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+      union {
+        Int Cint = (((Int)1) << (SigBits - 1)) + ((SigBits + ((((Int)1)<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
+        Real Creal;
+      };
+      RealVec d(add_intrin(x, set1_intrin<RealVec>(Creal)));
+      return sub_intrin(reinterpret_intrin<IntVec>(d), set1_intrin<IntVec>(Cint));
+    }
   }
   template <class VData> inline VData rint_intrin(const VData& x) { // nearest integer, halves to even, as std::rint; generic: |x| < 2^(SigBits-1), zero results are +0
     using Real = typename VData::ScalarType;
@@ -1195,7 +1225,7 @@ namespace sctl { // Generic
     else if (ORDER >=  0) e1 = set1_intrin<VData>(1);
 
     VData e2;
-    if constexpr (std::is_same<Real,long double>::value && std::numeric_limits<long double>::digits == 64) { // x87: the leading bit is stored, and the format padded; 2^x_ one element at a time
+    if constexpr (!ieee_layout<Real>()) { // 2^x_ one element at a time
       union {
         VData v;
         Real x[VData::Size];

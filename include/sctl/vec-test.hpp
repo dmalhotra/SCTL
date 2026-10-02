@@ -54,7 +54,7 @@ namespace sctl {
 
         //VecTest<long double,N>::test_all();
         //VecTest<long double,N>::test_reals();
-        VecTest<long double,N>::test_approx_exp_sincos();
+        VecTest<long double,N>::test_reals_long_double();
 
         #ifdef SCTL_QUAD_T
         VecTest<QuadReal,N>::test_all();
@@ -90,7 +90,7 @@ namespace sctl {
 
       static void test_reals() {
         if (N*sizeof(ScalarType)*8<=512) {
-          test_reals_convert(); // TODO: fails for 'long double'
+          test_reals_convert();
           test_reals_specialfunc();
           test_reals_rsqrt();
           test_mask_helpers();
@@ -99,8 +99,9 @@ namespace sctl {
         }
       }
 
-      static void test_approx_exp_sincos() { // approx_exp over the whole range of the result
+      static void test_reals_long_double() { // the conversions, approx_exp over the whole range of the result, and approx_sincos
         if (N*sizeof(ScalarType)*8<=512) {
+          test_reals_convert();
           const ScalarType max_x = std::log(std::numeric_limits<ScalarType>::max());
           UnionType u, u1;
           for (Integer i = 0; i < N; i++) {
