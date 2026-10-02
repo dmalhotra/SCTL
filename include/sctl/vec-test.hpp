@@ -910,6 +910,13 @@ namespace sctl {
           SCTL_ASSERT(rel(th[i], (TypeTraits<ScalarType>::SigBits <= 64 ? (ScalarType)std::tanh((long double)x) : sinh_ref(x) / cosh_ref(x))) <= tol);
           SCTL_ASSERT(fm[i] == fmod<ScalarType>(x, u4.x[i]));
         }
+
+        for (const ScalarType x : {(ScalarType)1e6, (ScalarType)INFINITY}) { // exp and approx_exp beyond the range of the result
+          SCTL_ASSERT(isinf(exp(VecType(x))[0]) && exp(VecType(x))[0] > 0);
+          SCTL_ASSERT(isinf(approx_exp<8>(VecType(x))[0]) && approx_exp<8>(VecType(x))[0] > 0);
+          SCTL_ASSERT(exp(VecType(-x))[0] == 0 && approx_exp<8>(VecType(-x))[0] == 0);
+        }
+        SCTL_ASSERT(isnan(exp(VecType((ScalarType)NAN))[0]) && isnan(approx_exp<8>(VecType((ScalarType)NAN))[0]));
       }
 
       static void test_reals_rsqrt() {

@@ -1095,7 +1095,7 @@ namespace sctl { // Generic
     cosx = cosx_.v;
   }
 
-  template <Integer ORDER, class VData> inline VData approx_exp_intrin(const VData& x) {
+  template <Integer ORDER, bool RangeCheck = true, class VData> inline VData approx_exp_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
     using IntVec = VecData<Int, VData::Size>;
@@ -1169,7 +1169,14 @@ namespace sctl { // Generic
       e2 = reinterpret_intrin<VData>(select_intrin(comp_intrin<ComparisonType::gt>(int_x_, set1_intrin<IntVec>(max_exp)) , int_e2, zero_intrin<IntVec>()));
     }
 
-    return mul_intrin(e1, e2);
+    if constexpr (RangeCheck) { // 2^x_ is inf at x = max_x and wraps beyond; x = -inf gives e1 = NaN
+      static constexpr Real max_x = ((Real)(((Int)1) << (ExpBits - 1)) + (Real)0.25) * const_ln2<Real>();
+      const VData e = mul_intrin(e1, e2);
+      const VData e_hi = select_intrin(comp_intrin<ComparisonType::gt>(x, set1_intrin<VData>(max_x)), set1_intrin<VData>((Real)INFINITY), e);
+      return select_intrin(comp_intrin<ComparisonType::lt>(x, set1_intrin<VData>(-2*max_x)), zero_intrin<VData>(), e_hi);
+    } else {
+      return mul_intrin(e1, e2);
+    }
   }
   template <class VData> inline VData exp_intrin(const VData& x) {
     union U {
