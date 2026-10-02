@@ -366,7 +366,7 @@ namespace sctl {
 
     /** same as WeightedKernel, for j in [j0,j1) only, using vector type VecType */
     template <class Real, class Kernel, class VecType, bool HAS_N, bool TRG_DOT>
-    static void WeightedKernelVec(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Integer nq, const Integer run, const Integer j0, const Integer j1, const Real wj, const bool accum, ConstIterator<Real> ntrg, const void* ctx) {
+    static void WeightedKernelVec(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Integer nq, const Integer run, const Integer ldx, const Integer ldo, const Integer j0, const Integer j1, const Real wj, const bool accum, ConstIterator<Real> ntrg, const void* ctx) {
       static constexpr Integer CD = 3;
       static constexpr Integer KD0 = Kernel::SrcDim();
       static constexpr Integer KD1 = Kernel::TrgDim();
@@ -381,9 +381,9 @@ namespace sctl {
         for (Integer j = j0; j < j1; j += VL) {
           const Integer q = qb + j;
           VecType r[CD], n[CD], u[KD0][KD1];
-          for (Integer k = 0; k < CD; k++) r[k] = vXt[k] - VecType::Load(&Xs[k*nq+q]);
+          for (Integer k = 0; k < CD; k++) r[k] = vXt[k] - VecType::Load(&Xs[k*ldx+q]);
           if constexpr (HAS_N) {
-            for (Integer k = 0; k < CD; k++) n[k] = VecType::Load(&Xn[k*nq+q]);
+            for (Integer k = 0; k < CD; k++) n[k] = VecType::Load(&Xn[k*ldx+q]);
             Kernel::template uKerMatrix<digits,VecType>(u, r, n, ctx);
           } else {
             Kernel::template uKerMatrix<digits,VecType>(u, r, ctx);
@@ -398,7 +398,7 @@ namespace sctl {
               } else {
                 val = u[a][b];
               }
-              const Integer id = blk*C*run + (a*KD1o+b)*run + j;
+              const Integer id = blk*C*ldo + (a*KD1o+b)*ldo + j;
               if (accum) (VecType::Load(&out[id]) + val*vw).Store(&out[id]);
               else       (val*vw).Store(&out[id]);
             }
@@ -407,18 +407,18 @@ namespace sctl {
       }
     }
 
-    /** out[blk][c][j] = wj*wq*K(Xt-Xs) at point blk*run+j; dotted with normal_trg if non-empty; added if accum */
-    template <class Real, class Kernel> void WeightedKernel(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Integer nq, const Integer run, const Real wj, const bool accum, const Vector<Real>& normal_trg, const Kernel& ker) {
+    /** out[(blk*C + c)*ldo + j] = wj*wq*K(Xt-Xs) at point blk*run+j of nq; component k of the point at Xs[k*ldx + point]; dotted with normal_trg if non-empty; added if accum */
+    template <class Real, class Kernel> void WeightedKernel(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Integer nq, const Integer run, const Integer ldx, const Integer ldo, const Real wj, const bool accum, const Vector<Real>& normal_trg, const Kernel& ker) {
       static constexpr bool HAS_N = UKerNeedsN<Kernel, Vec<Real,1>>::value;
       using WVec = Vec<Real, DefaultVecLen<Real>()>;
       const Integer jmain = (run/WVec::Size())*WVec::Size();
       const ConstIterator<Real> nt = (normal_trg.Dim() ? normal_trg.begin() : ConstIterator<Real>(NullIterator<Real>()));
       if (normal_trg.Dim()) {
-        WeightedKernelVec<Real,Kernel,WVec,        HAS_N,true >(out, Xt, Xs, Xn, wq, nq, run,     0, jmain, wj, accum, nt, ker.GetCtxPtr());
-        WeightedKernelVec<Real,Kernel,Vec<Real,1>, HAS_N,true >(out, Xt, Xs, Xn, wq, nq, run, jmain,   run, wj, accum, nt, ker.GetCtxPtr());
+        WeightedKernelVec<Real,Kernel,WVec,        HAS_N,true >(out, Xt, Xs, Xn, wq, nq, run, ldx, ldo,     0, jmain, wj, accum, nt, ker.GetCtxPtr());
+        WeightedKernelVec<Real,Kernel,Vec<Real,1>, HAS_N,true >(out, Xt, Xs, Xn, wq, nq, run, ldx, ldo, jmain,   run, wj, accum, nt, ker.GetCtxPtr());
       } else {
-        WeightedKernelVec<Real,Kernel,WVec,        HAS_N,false>(out, Xt, Xs, Xn, wq, nq, run,     0, jmain, wj, accum, nt, ker.GetCtxPtr());
-        WeightedKernelVec<Real,Kernel,Vec<Real,1>, HAS_N,false>(out, Xt, Xs, Xn, wq, nq, run, jmain,   run, wj, accum, nt, ker.GetCtxPtr());
+        WeightedKernelVec<Real,Kernel,WVec,        HAS_N,false>(out, Xt, Xs, Xn, wq, nq, run, ldx, ldo,     0, jmain, wj, accum, nt, ker.GetCtxPtr());
+        WeightedKernelVec<Real,Kernel,Vec<Real,1>, HAS_N,false>(out, Xt, Xs, Xn, wq, nq, run, ldx, ldo, jmain,   run, wj, accum, nt, ker.GetCtxPtr());
       }
     }
 
@@ -463,11 +463,20 @@ namespace sctl {
         const Integer nu = std::min<Integer>(UBLK, Nu - a0);
         const Integer nqb = nu*Nv;
 
-        ScratchBuf<Real> Xs(COORD_DIM*nqb, pool), Xn(COORD_DIM*nqb, pool), wq(nqb, pool);
+        // The block's coordinates, normals, weights, and tangents (large rule) or later kernel values in
+        // the same space, nqb values per component. Consecutive components are an odd number of cache lines
+        // apart, and 25 lines modulo 64 (about 0.38 of 4 KB) for components of 4 KB or more, so that no two
+        // share an L1 set, lie a multiple of 4 KB apart, or cross 4 KB boundaries together (up to 1.9x slower)
+        constexpr Integer LineVals = std::max<Integer>(1, 64/(Integer)sizeof(Real));
+        Integer lines = (nqb + LineVals - 1)/LineVals;
+        lines = (lines < 64 ? (lines | 1) : lines + (25 - lines % 64 + 64) % 64);
+        const Integer ld = lines*LineVals;
+        ScratchBuf<Real> pts((2*COORD_DIM + 1 + std::max<Integer>(C, 2*COORD_DIM))*ld, pool);
+        const Iterator<Real> Xs = pts.begin(), Xn = Xs + COORD_DIM*ld, wq = Xn + COORD_DIM*ld, KW = wq + ld;
         { // Points, normals and weights of the block
-          const Integer nfused = (fused ? nqb : 0), nsplit = (fused ? 0 : nqb);
+          const Integer nfused = (fused ? nqb : 0);
           ScratchBuf<Real> XdU(2*COORD_DIM*nfused, pool), dV(COORD_DIM*nfused, pool); // row a: [k*Nv + b]; XdU: coordinates, then u-tangents
-          ScratchBuf<Real> dXu(COORD_DIM*nsplit, pool), dXv(COORD_DIM*nsplit, pool); // [k][a*Nv + b]
+          const Iterator<Real> dXu = KW, dXv = dXu + COORD_DIM*ld; // large rule: component k at k*ld, before the kernel values
           if (fused) { // Coordinates and u-tangents of all components in one product, v-tangents in another
             const Matrix<Real> MuD_m(2*nu, order, (Iterator<Real>)ru.MTD.begin(), false); // the only block: all of MTD
             const Matrix<Real> MuT_b(nu, order, (Iterator<Real>)ru.MTD.begin(), false);
@@ -485,18 +494,18 @@ namespace sctl {
             for (Integer k = 0; k < COORD_DIM; k++) {
               const Matrix<Real> Cv_k (order, Nv, Cv.begin()  + k*order*Nv, false);
               const Matrix<Real> Cdv_k(order, Nv, Cdv.begin() + k*order*Nv, false);
-              Matrix<Real> X_k(nu, Nv, Xs.begin() + k*nqb, false);
-              Matrix<Real> dXu_k(nu, Nv, dXu.begin() + k*nqb, false);
-              Matrix<Real> dXv_k(nu, Nv, dXv.begin() + k*nqb, false);
+              Matrix<Real> X_k(nu, Nv, Xs + k*ld, false);
+              Matrix<Real> dXu_k(nu, Nv, dXu + k*ld, false);
+              Matrix<Real> dXv_k(nu, Nv, dXv + k*ld, false);
               interp_u(X_k,   MuT_b,  Cv_k);
               interp_u(dXu_k, dMuT_b, Cv_k);
               interp_u(dXv_k, MuT_b,  Cdv_k);
             }
           }
-          const ConstIterator<Real> Xp = (fused ? XdU.begin() : Xs.begin());
-          const ConstIterator<Real> dUp = (fused ? XdU.begin() + nu*ldc : dXu.begin());
-          const ConstIterator<Real> dVp = (fused ? dV.begin() : dXv.begin());
-          const Integer sk = (fused ? Nv : nqb), sa = (fused ? ldc : Nv); // component and u-row strides
+          const ConstIterator<Real> Xp = (fused ? (ConstIterator<Real>)XdU.begin() : (ConstIterator<Real>)Xs);
+          const ConstIterator<Real> dUp = (fused ? (ConstIterator<Real>)XdU.begin() + nu*ldc : (ConstIterator<Real>)dXu);
+          const ConstIterator<Real> dVp = (fused ? (ConstIterator<Real>)dV.begin() : (ConstIterator<Real>)dXv);
+          const Integer sk = (fused ? Nv : ld), sa = (fused ? ldc : Nv); // component and u-row strides
           for (Integer a = 0; a < nu; a++) {
             for (Integer b = 0; b < Nv; b++) {
               const Integer q = a*Nv + b;
@@ -507,17 +516,16 @@ namespace sctl {
               const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
               const Real inv_area = (area > 0 ? nrm_sign/area : 0);
               if (fused) {
-                for (Integer k = 0; k < COORD_DIM; k++) Xs[k*nqb + q] = Xp[p + k*sk];
+                for (Integer k = 0; k < COORD_DIM; k++) Xs[k*ld + q] = Xp[p + k*sk];
               }
-              Xn[0*nqb+q] = n0*inv_area;
-              Xn[1*nqb+q] = n1*inv_area;
-              Xn[2*nqb+q] = n2*inv_area;
+              Xn[0*ld+q] = n0*inv_area;
+              Xn[1*ld+q] = n1*inv_area;
+              Xn[2*ld+q] = n2*inv_area;
               wq[q] = area*ru.w[a0+a]*rv.w[b];
             }
           }
         }
 
-        ScratchBuf<Real> KW(C*nqb, pool);
         const Integer np = std::max<Integer>(1, (Integer)proxy_w.Dim());
         for (Integer j = 0; j < np; j++) { // Weighted kernel, summed over the proxy points
           StaticArray<Real,COORD_DIM> Xtj{0, 0, 0};
@@ -527,29 +535,16 @@ namespace sctl {
           const Vector<Real> Xtj_v(COORD_DIM, Xtj, false);
           const Real wj = (proxy_w.Dim() ? proxy_w[j] : (Real)1);
           const bool accum = (j > 0);
-          WeightedKernel<Real>(KW.begin(), Xtj_v.begin(), Xs.begin(), Xn.begin(), wq.begin(), nqb, nqb, wj, accum, normal_trg, ker);
+          WeightedKernel<Real>(KW, Xtj_v.begin(), Xs, Xn, wq, nqb, nqb, ld, ld, wj, accum, normal_trg, ker);
         }
 
-        { // Project onto the v-nodes, then onto the u-nodes for a small rule, else store the block's rows
-          ScratchBuf<Real> Tblk(C*nu*order, pool);
-          const Matrix<Real> KW_m(C*nu, Nv, KW.begin(), false);
-          Matrix<Real> T_m(C*nu, order, Tblk.begin(), false);
-          const Matrix<Real> MvT(Nv, order, (Iterator<Real>)rv.MTD.begin(), false);
-          const SmallGEMM<Real, DynamicSize, order, DynamicSize> proj_v(false, C*nu, order, Nv);
-          proj_v(T_m, KW_m, MvT);
-          if (fused) {
+        { // Project onto the v-nodes: into rows (a,c) of Tall, or for a small rule into Tblk and then onto the u-nodes
+          ScratchBuf<Real> Tblk(fused ? C*nu*order : 0, pool); // [c][a*order + j]; rows (a,c) as in Tall, through strides known only at run time, made small rules up to 3.5% slower
+          const SmallGEMM<Real, DynamicSize, order, DynamicSize> proj_v(false, nu, order, Nv, Nv, order, (fused ? order : C*order));
+          for (Integer c = 0; c < C; c++) proj_v((fused ? Tblk.begin() + c*nu*order : Tall.begin() + (a0*C + c)*order), KW + c*ld, rv.MTD.begin());
+          if (fused) { // the only block: nu = Nu
             const SmallGEMM<Real, order, order, DynamicSize> proj_u(true, order, order, nu);
-            for (Integer c = 0; c < C; c++) {
-              const Matrix<Real> T_c(nu, order, Tblk.begin() + c*nu*order, false);
-              Matrix<Real> A_c(order, order, acc_cm.begin() + c*nnode, false);
-              proj_u(A_c, ru.M, T_c);
-            }
-          } else {
-            for (Integer a = 0; a < nu; a++) {
-              for (Integer c = 0; c < C; c++) {
-                for (Integer j = 0; j < order; j++) Tall[((a0 + a)*C + c)*order + j] = Tblk[(c*nu + a)*order + j];
-              }
-            }
+            for (Integer c = 0; c < C; c++) proj_u(acc_cm.begin() + c*nnode, ru.M.begin(), Tblk.begin() + c*nu*order);
           }
         }
       }
@@ -1324,7 +1319,7 @@ namespace sctl {
           StaticArray<Real,COORD_DIM> Xt0{0,0,0};
           const Vector<Real> Xt0_v(COORD_DIM, Xt0, false);
           const Vector<Real> normal_trg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-          WeightedKernel<Real>(KW_buf.begin(), Xt0_v.begin(), Xs.begin(), Xn.begin(), wq.begin(), ns*nt, nt, (Real)1, false, normal_trg, ker);
+          WeightedKernel<Real>(KW_buf.begin(), Xt0_v.begin(), Xs.begin(), Xn.begin(), wq.begin(), ns*nt, nt, ns*nt, nt, (Real)1, false, normal_trg, ker);
         }
 
         { // Project onto the element nodes and add into M_acc
