@@ -730,8 +730,8 @@ namespace sctl {
 
         RealVec a = RealVec::Zero();
         for (Integer i = 0; i < N; i++) a.insert(i, (ScalarType)(drand48()-0.5)*100);
-        IntVec b = RoundReal2Int<IntVec>(a);
-        RealVec c = RoundReal2Real(a);
+        IntVec b = lrint<IntVec>(a);
+        RealVec c = rint(a);
         RealVec d = ConvertInt2Real<RealVec>(b);
         for (Integer i = 0; i < N; i++) {
           SCTL_ASSERT(b[i] == (typename IntVec::ScalarType)round(a[i]));
@@ -742,8 +742,8 @@ namespace sctl {
         const ScalarType xs[] = {(ScalarType)2.5, (ScalarType)-2.5, (ScalarType)3.5, (ScalarType)-0.5}; // halves go to the even integer
         const ScalarType rs[] = {(ScalarType)2, (ScalarType)-2, (ScalarType)4, (ScalarType)0};
         for (Integer k = 0; k < 4; k++) {
-          SCTL_ASSERT(RoundReal2Real(RealVec(xs[k]))[0] == rs[k]);
-          SCTL_ASSERT(RoundReal2Int<IntVec>(RealVec(xs[k]))[0] == (typename IntVec::ScalarType)rs[k]);
+          SCTL_ASSERT(rint(RealVec(xs[k]))[0] == rs[k]);
+          SCTL_ASSERT(lrint<IntVec>(RealVec(xs[k]))[0] == (typename IntVec::ScalarType)rs[k]);
         }
       }
 

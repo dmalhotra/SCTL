@@ -358,10 +358,10 @@ namespace sctl {
   // Conversion operators
   template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType convert2mask(const Vec<ValueType,N>& a);
   /** Nearest integer, halves to even (std::rint); exact at native SSE, AVX, AVX-512 widths, elsewhere for |x| < 2^(SigBits-1). */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> RoundReal2Real(const Vec<ValueType,N>& x);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> rint(const Vec<ValueType,N>& x);
   template <class RealVec, class IntVec> inline RealVec ConvertInt2Real(const IntVec& x);
-  /** RoundReal2Real as an integer, for |x| < 2^(SigBits-1); double in 2 or 4 lanes without AVX-512DQ: |x| < 2^31. */
-  template <class IntVec, class RealVec> inline IntVec RoundReal2Int(const RealVec& x);
+  /** rint as an integer vector (std::lrint), for |x| < 2^(SigBits-1); double in 2 or 4 lanes without AVX-512DQ: |x| < 2^31. */
+  template <class IntVec, class RealVec> inline IntVec lrint(const RealVec& x);
   template <class MaskType> inline Vec<typename MaskType::ScalarType,MaskType::Size> convert2vec(const MaskType& a);
 
   /**
