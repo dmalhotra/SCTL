@@ -267,6 +267,13 @@ int main() {
     CHECK(sctl::round<Q>(Q(R(-0.5))) == Q(R(-1)) && sctl::round<Q>(below_half) == Q(R(0)) && sctl::round<Q>(two112p1) == two112p1);
     CHECK(std::signbit((double)sctl::trunc<Q>(Q(R(-0.3)))) && std::signbit((double)sctl::ceil<Q>(Q(R(-0.5)))) && std::signbit((double)sctl::round<Q>(Q(R(-0.3)))));
     for (const R x : {R(1e40), R(-1e40), R(1e300)}) CHECK(sctl::trunc<Q>(Q(x)) == Q(x) && sctl::floor<Q>(Q(x)) == Q(x) && sctl::ceil<Q>(Q(x)) == Q(x) && sctl::round<Q>(Q(x)) == Q(x));
+    // fmod, exact: a quotient near 2^103, beyond 2^127, a subnormal divisor, and the special values of std::fmod
+    CHECK(sctl::fmod<Q>(Q(R(1e30)), Q(R(0.1))) == Q(R(0x1.3305930336acep-4)) && sctl::fmod<Q>(Q(R(-1e30)), Q(R(0.1))) == Q(R(-0x1.3305930336acep-4)));
+    CHECK(sctl::fmod<Q>(Q(R(1e40)), Q(R(3))) == Q(R(1)));
+    Q min_subnormal = Q(R(1));
+    for (int i = 0; i < 16494; i++) min_subnormal = min_subnormal / 2;
+    CHECK(min_subnormal > Q(R(0)) && sctl::fmod<Q>(Q(R(1)), Q(R(3)) * min_subnormal) == min_subnormal); // 2^16494 mod 3 = 1
+    CHECK(std::signbit((double)sctl::fmod<Q>(Q(R(-6)), Q(R(3)))) && sctl::isnan<Q>(sctl::fmod<Q>(Q(R(5.5)), Q(R(0)))) && sctl::isnan<Q>(sctl::fmod<Q>(Q(R(INFINITY)), Q(R(3)))));
     // acos at 1 and just below, where (double)a rounds to 1
     CHECK((double)sctl::acos<Q>(Q(R(1))) == R(0));
     CHECK(test_utils::approx_eq((double)sctl::acos<Q>(Q(R(1)) - Q(R(1e-20))), std::sqrt(R(2e-20)), R(1e-20)));

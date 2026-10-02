@@ -8,9 +8,10 @@
 #include <ctype.h>              // for isspace
 #include <algorithm>            // for max
 #include <cmath>                // for acos, asin, atan, log, sqrt, NAN, pow
-#include <cstring>              // for strlen
+#include <cstring>              // for strlen, memcpy
 #include <istream>              // for basic_istream, ws
 #include <ostream>              // for basic_ostream, operator<<
+#include <type_traits>          // for is_trivially_copyable
 #include <string>               // for basic_string, string, to_string
 #include <charconv>             // for from_chars (defines __cpp_lib_to_chars, tested below)
 #include <system_error>         // for errc
@@ -156,6 +157,34 @@ template <class Real> static inline Real hypot_generic(const Real a, const Real 
   return m * sqrt_generic(ra * ra + rb * rb);
 }
 
+#ifdef __SIZEOF_INT128__
+template <class Real> static inline unsigned __int128 int_split_generic(Long& E, const Real a) { // |a| = M 2^E with an integer M < 2^113, for finite a; IEEE binary128
+  static_assert(sizeof(Real) == 16 && significant_bits<Real>() == 112 && std::is_trivially_copyable<Real>::value, "Expected IEEE binary128!");
+  using U128 = unsigned __int128;
+  U128 bits;
+  std::memcpy(&bits, &a, sizeof(bits));
+  const Long e = (Long)((bits >> 112) & 0x7FFF);
+  const U128 f = bits & ((((U128)1) << 112) - 1);
+  E = (e == 0 ? 1 : e) - 16383 - 112; // e = 0: subnormal, without the leading bit
+  return (e == 0 ? f : f | (((U128)1) << 112));
+}
+
+template <class Real> static inline Real int_join_generic(unsigned __int128 M, Long E) { // M 2^E for an integer M < 2^113, where M 2^E is a finite Real; IEEE binary128
+  static_assert(sizeof(Real) == 16 && significant_bits<Real>() == 112 && std::is_trivially_copyable<Real>::value, "Expected IEEE binary128!");
+  using U128 = unsigned __int128;
+  if (M == 0) return 0;
+  const uint64_t hi = (uint64_t)(M >> 64);
+  const Long nbits = (hi ? 128 - __builtin_clzll(hi) : 64 - __builtin_clzll((uint64_t)M));
+  const Long shift = std::min<Long>(113 - nbits, E - (1 - 16383 - 112)); // to 2^112 <= M < 2^113, or to the exponent of subnormals
+  M <<= shift;
+  E -= shift;
+  const U128 bits = ((M >> 112) ? ((U128)(E + 16383 + 112) << 112) | (M & ((((U128)1) << 112) - 1)) : M);
+  Real r;
+  std::memcpy(static_cast<void*>(&r), &bits, sizeof(r)); // Real is trivially copyable
+  return r;
+}
+#endif
+
 template <class Real> static inline void sincos_generic(const Real a, Real& sin_a, Real& cos_a) {
   const int N = 200;
   static std::vector<Real> theta;
@@ -260,16 +289,8 @@ template <class Real> static inline void sincos_generic(const Real a, Real& sin_
         0x4d7e6f5119a5abf9ull, 0xb5d6df8261dd9602ull, 0x36169f3ac4a1a283ull, 0x6ded727a8d39a9b8ull, 0x825c326b5b2746edull, 0x34007700d255f4fcull,
         0x4d59018071e0e13full, 0x89b295f364a8f1aeull, 0xa74b38fc4ceab2bbull
     };
-    Real m = fabs<Real>(a);
-    Long E = 0;
-    while (m > (Real)0x1p1000) {
-      m *= (Real)0x1p-1000;
-      E += 1000;
-    }
-    const int e = std::ilogb((double)m); // the exponent of m, or one more
-    m *= (Real)std::ldexp(1.0, 113 - e);
-    E += e - 113;
-    const U128 M = (U128)m;
+    Long E;
+    const U128 M = int_split_generic(E, a);
     const auto bits64 = [](const Long t) -> uint64_t { // bits t .. t+63 of 2/pi; bits before the first are 0
       const Long o = t - 1;
       if (o <= -64) return 0;
@@ -396,9 +417,22 @@ template <class Real> static inline Real atan2_generic(const Real y, const Real 
   }
 }
 
-template <class Real> static inline Real fmod_generic(const Real a, const Real b) {
-  if (isinf<Real>(b) && !isinf<Real>(a)) return a; // trunc(a/b) b would be 0 inf
-  return a - trunc<Real>(a/b) * b;
+template <class Real> static inline Real fmod_generic(const Real a, const Real b) { // as std::fmod
+  if (isinf<Real>(b) && !isinf<Real>(a)) return a;
+  if (!(fabs<Real>(a) < (Real)INFINITY) || !(fabs<Real>(b) > 0)) return (Real)NAN;
+  if (fabs<Real>(a) < fabs<Real>(b)) return a;
+#ifdef __SIZEOF_INT128__
+  // |a| = Ma 2^Ea, |b| = Mb 2^Eb, Ea >= Eb: |a| mod |b| = ((Ma 2^(Ea-Eb)) mod Mb) 2^Eb, 14 bits at a time (R 2^14 < 2^127)
+  Long Ea, Eb;
+  const unsigned __int128 Ma = int_split_generic(Ea, a);
+  const unsigned __int128 Mb = int_split_generic(Eb, b);
+  unsigned __int128 R = Ma % Mb;
+  for (Long g = Ea - Eb; g > 0; g -= 14) R = (R << std::min<Long>(g, 14)) % Mb;
+  const Real r = int_join_generic<Real>(R, Eb);
+  return (std::signbit((double)a) ? -r : r);
+#else
+  return a - trunc<Real>(a/b) * b; // not exact where trunc(a/b) b rounds
+#endif
 }
 
 template <class Real> static inline Real exp_generic(const Real a) {
