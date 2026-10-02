@@ -429,12 +429,38 @@ template <class Real> static inline Real exp_generic(const Real a) {
   return e * pow2(k1) * pow2((Long)k - k1); // two factors, so that a subnormal result is rounded once
 }
 
-template <class Real> static inline Real log_generic(const Real a) {
-  if (a == 0) return -(Real)INFINITY;
-  if (!(a > 0)) return (Real)NAN;
-  if (isinf<Real>(a)) return a;
-  // a = 2^k m with m in [1/sqrt(2), sqrt(2)]; first scale m into the range of double
-  Real m = a;
+namespace detail_double_word { // a value as hi + lo; sums and products with their rounding errors
+
+template <class Real> static inline void two_sum(Real& s, Real& e, const Real a, const Real b) { // s + e = a + b
+  s = a + b;
+  const Real bb = s - a;
+  e = (a - (s - bb)) + (b - bb);
+}
+
+template <class Real> static inline void fast_two_sum(Real& s, Real& e, const Real a, const Real b) { // s + e = a + b, for |a| >= |b|
+  s = a + b;
+  e = b - (s - a);
+}
+
+template <class Real> static inline void two_prod(Real& p, Real& e, const Real a, const Real b) { // p + e = a b, by Veltkamp splitting; for |a|, |b| well below the largest Real
+  const auto split = [](Real& hi, Real& lo, const Real x) { // x = hi + lo, each with half the significant bits
+    static const Real C = pow<(significant_bits<Real>() + 2) / 2, Real>((Real)2) + 1;
+    const Real c = C * x;
+    hi = c - (c - x);
+    lo = x - hi;
+  };
+  Real ah, al, bh, bl;
+  split(ah, al, a);
+  split(bh, bl, b);
+  p = a * b;
+  e = ((ah * bh - p) + ah * bl + al * bh) + al * bl;
+}
+
+}  // namespace detail_double_word
+
+template <class Real> static inline Integer log_split_generic(Real& m, const Real a) { // a = 2^k m with m in [1/sqrt(2), sqrt(2)], for finite a > 0; returns k
+  // first scale m into the range of double
+  m = a;
   Integer k = 0;
   while (m > (Real)0x1p1000) {
     m *= (Real)0x1p-1000;
@@ -446,7 +472,74 @@ template <class Real> static inline Real log_generic(const Real a) {
   }
   const int e = (int)std::lround(std::log2((double)m));
   m *= (Real)std::ldexp(1.0, -e);
-  k += e;
+  return k + e;
+}
+
+template <class Real> static inline Real log_generic(const Real a, Real& lo) { // log(a) = return value + lo, to about 2^-128; finite a > 0
+  namespace dw = detail_double_word;
+  Real m;
+  const Integer k = log_split_generic(m, a);
+
+  // log(m) = 2 atanh(s) = 2 s + 2 s^3 P(s^2), P(z) = 1/3 + z/5 + z^2/7 + ..., s = (m-1)/(m+1) = sh + sl, |s| <= 0.172
+  Real sh, sl;
+  { // m - 1 is exact, m + 1 = vh + vl
+    Real vh, vl, p, pe;
+    dw::two_sum(vh, vl, m, (Real)1);
+    sh = (m - 1) / vh;
+    dw::two_prod(p, pe, sh, vh);
+    sl = ((((m - 1) - p) - pe) - sh * vl) / vh;
+  }
+  Real ch, cl; // s^3
+  {
+    Real zh, zl;
+    dw::two_prod(zh, zl, sh, sh);
+    dw::two_prod(ch, cl, zh, sh);
+    cl += zl * sh + 3 * zh * sl;
+  }
+  Real ph, pl; // P(sh^2) to 2^-121 with 23 terms; the terms after 1/3 are summed in Real
+  {
+    static const std::vector<Real> coeff = [] { // 1/(2j+1)
+      std::vector<Real> c(24);
+      for (Integer j = 0; j < 24; j++) c[j] = 1 / (Real)(2 * j + 1);
+      return c;
+    }();
+    static const Real third_lo = [] { // 1/3 = coeff[1] + third_lo
+      Real p, pe;
+      dw::two_prod(p, pe, 1 / (Real)3, (Real)3);
+      return ((1 - p) - pe) / 3;
+    }();
+    const Real z = sh * sh;
+    Real q = coeff[23];
+    for (Integer j = 22; j >= 2; j--) q = q * z + coeff[j];
+    dw::fast_two_sum(ph, pl, coeff[1], q * z);
+    pl += third_lo;
+  }
+  Real mh, ml; // log(m)
+  {
+    Real rh, rl;
+    dw::two_prod(rh, rl, ch, ph);
+    rl += ch * pl + cl * ph;
+    dw::fast_two_sum(mh, ml, 2 * sh, 2 * rh);
+    ml += 2 * (sl + rl);
+  }
+
+  // k ln2 = kh + kl; ln2 in three parts of 53 significant bits, so k times each part is exact
+  Real kh, kl;
+  dw::fast_two_sum(kh, kl, (Real)k * (Real)0x1.62e42fefa39efp-1, (Real)k * (Real)0x1.abc9e3b39803fp-56);
+  kl += (Real)k * (Real)0x1.7b57a079a1934p-111;
+  Real h, l;
+  dw::two_sum(h, l, kh, mh);
+  l += kl + ml;
+  dw::fast_two_sum(h, lo, h, l);
+  return h;
+}
+
+template <class Real> static inline Real log_generic(const Real a) {
+  if (a == 0) return -(Real)INFINITY;
+  if (!(a > 0)) return (Real)NAN;
+  if (isinf<Real>(a)) return a;
+  Real m;
+  const Integer k = log_split_generic(m, a);
 
   // log(m) = 2 atanh(s) with s = (m-1)/(m+1); m-1 is exact, |s| <= 0.172, so 22 terms reach 2^-117
   static const std::vector<Real> coeff = [] {
@@ -467,15 +560,27 @@ template <class Real> static inline Real log2_generic(const Real a) {
   return log<Real>(a) * recip_log2;
 }
 
-template <class Real> static inline Real pow_generic(const Real b, const Real e) {
-  if (e == 0) return 1;
-  if (b == 0) return 0;
-  if (b < 0) {
-    Long e_ = (Long)e;
-    SCTL_ASSERT(e == (Real)e_);
-    return exp<Real>(log<Real>(-b) * e) * (e_ % 2 ? (Real)-1 : (Real)1.0);
-  }
-  return exp<Real>(log<Real>(b) * e);
+template <class Real> static inline Real pow_generic(const Real b, const Real e) { // as std::pow
+  if (e == 0 || b == 1) return 1;
+  if (!(b == b) || !(e == e)) return b + e;
+  static const Real even = pow<significant_bits<Real>() + 1, Real>((Real)2); // larger values are even integers
+  const bool e_int = (fabs<Real>(e) >= even || trunc<Real>(e) == e);
+  const bool e_odd = (fabs<Real>(e) < even && e_int && trunc<Real>(e / 2) != e / 2);
+  const Real sign = (std::signbit((double)b) && e_odd ? (Real)-1 : (Real)1);
+  const Real ab = fabs<Real>(b);
+  if (ab == 0 || isinf<Real>(ab)) return sign * ((ab == 0) == (e < 0) ? (Real)INFINITY : (Real)0);
+  if (isinf<Real>(e)) return (ab == 1 ? (Real)1 : ((ab < 1) == (e < 0) ? (Real)INFINITY : (Real)0));
+  if (b < 0 && !e_int) return (Real)NAN;
+
+  // e log|b| = th + tl, and e^(th + tl) = e^th (1 + tl)
+  Real ll;
+  const Real lh = log_generic(ab, ll);
+  if (fabs<Real>(e * lh) > (Real)0x1p15) return sign * (e * lh > 0 ? (Real)INFINITY : (Real)0); // beyond the range of Real; also keeps |e| small enough for two_prod
+  Real th, tl;
+  detail_double_word::two_prod(th, tl, e, lh);
+  tl += e * ll;
+  const Real r = exp<Real>(th);
+  return sign * (isinf<Real>(r) ? r : r + r * tl);
 }
 template <class ValueType> static inline constexpr ValueType pow_integer_exp(ValueType b, Long e) {
   return (e > 0) ? ((e & 1) ? b : ValueType(1)) * pow_integer_exp(b*b, e>>1) : ValueType(1);

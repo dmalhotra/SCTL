@@ -241,6 +241,25 @@ int main() {
     for (int i = 0; i < 15869; i++) exp_ref = exp_ref * 2;
     CHECK(sctl::fabs<Q>(sctl::exp<Q>(Q(R(11000))) - exp_ref) < exp_ref * Q(R(1e-32)));
     CHECK(sctl::exp<Q>(Q(R(-11433))) > Q(R(0)));
+    // pow with |y ln x| near the range of QuadReal, against the exact values (mpmath)
+    const auto pow2 = [](Q v, const int n) { // v 2^n
+      for (int i = 0; i < n; i++) v = v * 2;
+      for (int i = 0; i > n; i--) v = v / 2;
+      return v;
+    };
+    const Q pow_ref0 = pow2(Q(0x1.bf3645fa8c9fap+0) + Q(0x1.ed622aaa2a1b2p-54), 14562);
+    const Q pow_ref1 = pow2(Q(0x1.7769bead75eccp+0) + Q(-0x1.65e5237aee5d3p-54), -16278);
+    CHECK(sctl::fabs<Q>(sctl::pow<Q>(Q(R(1.4)), Q(R(30000))) - pow_ref0) < pow_ref0 * Q(R(1e-32)));
+    CHECK(sctl::fabs<Q>(sctl::pow<Q>(Q(R(1e-100)), Q(R(49))) - pow_ref1) < pow_ref1 * Q(R(1e-32)));
+    // pow at zeros, infinities, NaN and signs, as std::pow
+    const R pow_sv[] = {R(0), R(-0.0), R(1), R(-1), R(2), R(-2), R(0.5), R(3), R(-3), R(INFINITY), R(-INFINITY), R(NAN)};
+    for (const R x : pow_sv) {
+      for (const R y : pow_sv) {
+        const R p = (R)sctl::pow<Q>(Q(x), Q(y));
+        const R p_std = std::pow(x, y);
+        CHECK(std::isnan(p_std) ? std::isnan(p) : (p == p_std && std::signbit(p) == std::signbit(p_std)));
+      }
+    }
     // acos at 1 and just below, where (double)a rounds to 1
     CHECK((double)sctl::acos<Q>(Q(R(1))) == R(0));
     CHECK(test_utils::approx_eq((double)sctl::acos<Q>(Q(R(1)) - Q(R(1e-20))), std::sqrt(R(2e-20)), R(1e-20)));
