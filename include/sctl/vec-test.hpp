@@ -943,11 +943,12 @@ namespace sctl {
           SCTL_ASSERT(exp(VecType(-x))[0] == 0 && approx_exp<8>(VecType(-x))[0] == 0);
         }
         SCTL_ASSERT(isnan(exp(VecType((ScalarType)NAN))[0]) && isnan(approx_exp<8>(VecType((ScalarType)NAN))[0]));
-        if constexpr (sizeof(ScalarType) <= sizeof(double)) { // log at zeros, infinities, NaN and signs, as std
+        if constexpr (sizeof(ScalarType) <= sizeof(double)) { // log and pow at zeros, infinities, NaN and signs, as std
           const auto same = [eps](ScalarType a, ScalarType b) { return std::isnan(b) ? std::isnan(a) : (a == b ? std::signbit(a) == std::signbit(b) : std::isfinite(b) && fabs(a - b) <= 16*eps*fabs(b)); };
           const ScalarType sv[] = {(ScalarType)0, (ScalarType)-0.0, (ScalarType)1, (ScalarType)-1, (ScalarType)2, (ScalarType)-2, (ScalarType)0.5, (ScalarType)3, (ScalarType)INFINITY, -(ScalarType)INFINITY, (ScalarType)NAN};
           for (const ScalarType x : sv) {
             SCTL_ASSERT(same(log(VecType(x))[0], std::log(x)));
+            for (const ScalarType y : sv) SCTL_ASSERT(same(pow(VecType(x), VecType(y))[0], std::pow(x, y)));
           }
         }
         const VecType ae = approx_exp<8>(u1.v);

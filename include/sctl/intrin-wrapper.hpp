@@ -1271,6 +1271,57 @@ namespace sctl { // Generic
     r = select_intrin(comp_intrin<ComparisonType::eq>(x, set1_intrin<VData>((Real)INFINITY)), x, r);
     return select_intrin(comp_intrin<ComparisonType::ge>(x, zero), r, set1_intrin<VData>((Real)NAN)); // negative x and NaN
   }
+  template <class VData> inline VData pow_poly_intrin(const VData& x, const VData& y) { // exp(y log|x|), log|x| = L_hi + L_lo to about 1.5x the precision of Real; std::pow at signs, zeros, inf, NaN; needs FMA
+    using Real = typename VData::ScalarType;
+    static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
+    const VData zero = zero_intrin<VData>();
+    const VData one = set1_intrin<VData>((Real)1);
+    const VData two = set1_intrin<VData>((Real)2);
+    const VData inf = set1_intrin<VData>((Real)INFINITY);
+    const VData ax = fabs_intrin(x);
+
+    // log|x| = e ln2 + 2s + s R, s = f/(2+f) = s + s_lo
+    VData e, f;
+    log_split_intrin(e, f, ax);
+    const VData t = add_intrin(f, two);
+    const VData t_lo = add_intrin(sub_intrin(two, t), f); // 2 + f = t + t_lo
+    const VData s = div_intrin(f, t);
+    const VData p = mul_intrin(s, t);
+    const VData rem = sub_intrin(sub_intrin(sub_intrin(f, p), fma_intrin(s, t, unary_minus_intrin(p))), mul_intrin(s, t_lo)); // f - s (t + t_lo)
+    const VData s_lo = div_intrin(rem, t);
+    static constexpr Integer K = (std::is_same<Real,float>::value ? 6 : 12); // terms of R = sum_k 2/(2k+1) s^(2k), to about 2^-72 (float: 2^-41); fdlibm's R reaches only 2^-58
+    const VData z = mul_intrin(s, s);
+    VData R = set1_intrin<VData>((Real)2 / (2*K + 1));
+    for (Integer k = K - 1; k >= 1; k--) R = fma_intrin(R, z, set1_intrin<VData>((Real)2 / (2*k + 1)));
+    const VData Rz = mul_intrin(R, z);
+    const VData sR = mul_intrin(s, Rz);
+    const VData s2 = add_intrin(s, s);
+    const VData u_hi = add_intrin(s2, sR); // log(1+f) = u_hi + u_lo; s_lo also changes s R by about 3 s_lo R z
+    const VData u_lo = add_intrin(add_intrin(sub_intrin(s2, u_hi), sR), fma_intrin(mul_intrin(set1_intrin<VData>((Real)3), s_lo), Rz, add_intrin(s_lo, s_lo)));
+    const VData eh = mul_intrin(e, set1_intrin<VData>(Ln2Split<Real>::hi)); // exact
+    VData L_hi = add_intrin(eh, u_hi);
+    const VData L_lo = add_intrin(add_intrin(sub_intrin(eh, L_hi), u_hi), fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), u_lo)); // |eh| >= |u_hi| unless e = 0
+    L_hi = select_intrin(comp_intrin<ComparisonType::eq>(ax, zero), unary_minus_intrin(inf), select_intrin(comp_intrin<ComparisonType::eq>(ax, inf), inf, L_hi));
+
+    // y log|x| = T_hi + T_lo; e^(T_hi + T_lo) = e^T_hi (1 + T_lo)
+    const VData T_hi = mul_intrin(y, L_hi);
+    VData T_lo = add_intrin(fma_intrin(y, L_hi, unary_minus_intrin(T_hi)), mul_intrin(y, L_lo));
+    T_lo = select_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(T_hi), set1_intrin<VData>((Real)4096)), T_lo, zero); // beyond, e^T_hi is inf or 0; also inf, NaN
+    const Mask<VData> T_big = comp_intrin<ComparisonType::gt>(T_hi, set1_intrin<VData>((Real)(std::is_same<Real,float>::value ? 88 : 709))); // e^(T-1) e: exp gives inf early there
+    VData r = mul_intrin(exp_intrin(select_intrin(T_big, sub_intrin(T_hi, one), T_hi)), add_intrin(one, T_lo));
+    r = select_intrin(T_big, mul_intrin(r, set1_intrin<VData>(const_e<Real>())), r);
+
+    // signs and special values, as std::pow
+    const VData yr = rint_intrin(y);
+    const VData yh = mul_intrin(y, set1_intrin<VData>((Real)0.5));
+    const Mask<VData> y_odd = comp_intrin<ComparisonType::eq>(yr, y) & comp_intrin<ComparisonType::ne>(rint_intrin(yh), yh);
+    const Mask<VData> x_neg = comp_intrin<ComparisonType::lt>(copysign_intrin(one, x), zero); // sign bit, also of -0
+    r = select_intrin(y_odd & x_neg, unary_minus_intrin(r), r);
+    r = select_intrin(comp_intrin<ComparisonType::lt>(x, zero) & comp_intrin<ComparisonType::gt>(x, unary_minus_intrin(inf)) & comp_intrin<ComparisonType::ne>(yr, y), set1_intrin<VData>((Real)NAN), r); // finite x < 0, y not an integer
+    r = select_intrin(comp_intrin<ComparisonType::eq>(ax, one) & comp_intrin<ComparisonType::eq>(fabs_intrin(y), inf), one, r);
+    r = select_intrin(comp_intrin<ComparisonType::ne>(x, x), x, r);
+    return select_intrin(comp_intrin<ComparisonType::eq>(y, zero) | comp_intrin<ComparisonType::eq>(x, one), one, r);
+  }
   template <class VData> inline VData exp_intrin(const VData& x) {
     union U {
       VData v;
@@ -3436,6 +3487,10 @@ namespace sctl { // AVX
   template <> inline VecData<double,4> exp_intrin<VecData<double,4>>(const VecData<double,4>& x) {
     return approx_exp_intrin<(Integer)(TypeTraits<double>::SigBits/3.8)>(x); // TODO: determine constants more precisely
   }
+#if !defined(SCTL_HAVE_LIBMVEC) && defined(__FMA__) // slower than glibc's pow for each element without FMA, and with 128-bit vectors
+  template <> inline VecData<float,8> pow_intrin<VecData<float,8>>(const VecData<float,8>& x, const VecData<float,8>& y) { return pow_poly_intrin(x, y); }
+  template <> inline VecData<double,4> pow_intrin<VecData<double,4>>(const VecData<double,4>& x, const VecData<double,4>& y) { return pow_poly_intrin(x, y); }
+#endif
   #endif
 
 
@@ -4649,6 +4704,10 @@ namespace sctl { // AVX512
   template <> inline VecData<double,8> exp_intrin<VecData<double,8>>(const VecData<double,8>& x) {
     return approx_exp_intrin<(Integer)(TypeTraits<double>::SigBits/3.8)>(x); // TODO: determine constants more precisely
   }
+#ifndef SCTL_HAVE_LIBMVEC
+  template <> inline VecData<float,16> pow_intrin<VecData<float,16>>(const VecData<float,16>& x, const VecData<float,16>& y) { return pow_poly_intrin(x, y); }
+  template <> inline VecData<double,8> pow_intrin<VecData<double,8>>(const VecData<double,8>& x, const VecData<double,8>& y) { return pow_poly_intrin(x, y); }
+#endif
   #endif
 
 #endif
