@@ -840,6 +840,17 @@ namespace sctl {
           SCTL_ASSERT(fabs(at[i] - atan2<ScalarType>(x, u2.x[i])) <= 8*eps*fabs(atan2<ScalarType>(x, u2.x[i])));
           SCTL_ASSERT(fabs(pw[i] - pow<ScalarType>(u4.x[i], u2.x[i]/2)) <= 8*eps*pow<ScalarType>(u4.x[i], u2.x[i]/2));
         }
+        for (const ScalarType x : {(ScalarType)100000.25, (ScalarType)-3e7, (ScalarType)1e20}) { // beyond the reduction of FullRange = false
+          SCTL_ASSERT(fabs(sin(VecType(x))[0] - sin<ScalarType>(x)) < err_tol);
+          SCTL_ASSERT(fabs(cos(VecType(x))[0] - cos<ScalarType>(x)) < err_tol);
+          SCTL_ASSERT(fabs(approx_sin<8>(VecType(x))[0] - sin<ScalarType>(x)) < (ScalarType)1e-6);
+        }
+        { // the faster versions, for moderate arguments
+          const VecType snf = sin<false>(u1.v);
+          for (Integer i = 0; i < N; i++) {
+            SCTL_ASSERT(fabs(snf[i] - sin<ScalarType>(u1.x[i])) < err_tol);
+          }
+        }
 
         if constexpr (sizeof(ScalarType) <= sizeof(double)) { // atan2 at zeros, infinities and NaN
           const ScalarType sv[] = {(ScalarType)0, (ScalarType)-0.0, (ScalarType)1, (ScalarType)-1, (ScalarType)INFINITY, (ScalarType)-INFINITY, (ScalarType)NAN};

@@ -569,8 +569,10 @@ namespace sctl {
   /** As approx_sqrt(x), with zero in the elements not in m; for x that can be zero. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sqrt(const Vec<ValueType,N>& x, const typename Vec<ValueType,N>::MaskType& m);
 
-  template <class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
-  template <Integer digits, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
+  /** Sine and cosine. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
+  template <bool FullRange = true, class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
+  /** Sine and cosine to the given number of digits; -1 for full precision. FullRange = false: faster, with an error that grows like |x| eps. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
 
   /** e^x. Native float, double widths without SVML: inf from x = 709.44 (float: 88.38), and 0 for results below the smallest normal. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x);
@@ -606,23 +608,23 @@ namespace sctl {
   /** Mask of the elements that are NaN. */
   template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType isnan(const Vec<ValueType,N>& x);
 
-  /** Sine. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x);
+  /** Sine. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
+  template <bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x);
 
-  /** Cosine. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x);
+  /** Cosine. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
+  template <bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x);
 
-  /** Tangent. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x);
+  /** Tangent. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
+  template <bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x);
 
-  /** Sine to the given number of digits; -1 for full precision. */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x);
+  /** Sine to the given number of digits; -1 for full precision. FullRange = false: faster, with an error that grows like |x| eps. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x);
 
-  /** Cosine to the given number of digits; -1 for full precision. */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x);
+  /** Cosine to the given number of digits; -1 for full precision. FullRange = false: faster, with an error that grows like |x| eps. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x);
 
-  /** Tangent to the given number of digits; -1 for full precision. */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x);
+  /** Tangent to the given number of digits; -1 for full precision. FullRange = false: faster, with an error that grows like |x| eps. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x);
 
   /** Angle of the point (x, y), in [-pi, pi], as std::atan2. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);

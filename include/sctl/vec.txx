@@ -464,13 +464,19 @@ namespace sctl {
     return x*approx_rsqrt<digits>(x, m);
   }
 
-  template <class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
+  template <bool FullRange, class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
+#ifndef SCTL_HAVE_SVML
+    if constexpr (!FullRange && (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value)) { // the order of sincos_intrin for float, double
+      approx_sincos_intrin<(Integer)(TypeTraits<ValueType>::SigBits/3.2), false>(sinx.get(), cosx.get(), x.get());
+      return;
+    }
+#endif
     sincos_intrin(sinx.get(), cosx.get(), x.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
+  template <Integer digits, bool FullRange, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
     constexpr Integer ORDER = (digits>1?digits>9?digits>14?digits>17?digits-1:digits:digits+1:digits+2:1);
-    if (digits == -1 || ORDER > 20) sincos(sinx, cosx, x);
-    else approx_sincos_intrin<ORDER>(sinx.get(), cosx.get(), x.get());
+    if (digits == -1 || ORDER > 20) sincos<FullRange>(sinx, cosx, x);
+    else approx_sincos_intrin<ORDER, FullRange>(sinx.get(), cosx.get(), x.get());
   }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x) {
@@ -508,34 +514,34 @@ namespace sctl {
     return isnan_intrin(x.get());
   }
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x) {
+  template <bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x) {
     Vec<ValueType,N> sinx, cosx;
-    sincos(sinx, cosx, x);
+    sincos<FullRange>(sinx, cosx, x);
     return sinx;
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x) {
+  template <bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x) {
     Vec<ValueType,N> sinx, cosx;
-    sincos(sinx, cosx, x);
+    sincos<FullRange>(sinx, cosx, x);
     return cosx;
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x) {
+  template <bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x) {
     Vec<ValueType,N> sinx, cosx;
-    sincos(sinx, cosx, x);
+    sincos<FullRange>(sinx, cosx, x);
     return sinx / cosx;
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x) {
+  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x) {
     Vec<ValueType,N> sinx, cosx;
-    approx_sincos<digits>(sinx, cosx, x);
+    approx_sincos<digits, FullRange>(sinx, cosx, x);
     return sinx;
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x) {
+  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x) {
     Vec<ValueType,N> sinx, cosx;
-    approx_sincos<digits>(sinx, cosx, x);
+    approx_sincos<digits, FullRange>(sinx, cosx, x);
     return cosx;
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x) {
+  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x) {
     Vec<ValueType,N> sinx, cosx;
-    approx_sincos<digits>(sinx, cosx, x);
+    approx_sincos<digits, FullRange>(sinx, cosx, x);
     return sinx / cosx;
   }
 

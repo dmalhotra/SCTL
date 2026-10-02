@@ -1013,7 +1013,7 @@ namespace sctl { // Generic
     return fma_intrin(x8, fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c15), set1_intrin<VData>(c14)), fma_intrin(x1, set1_intrin<VData>(c13), set1_intrin<VData>(c12))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c11), set1_intrin<VData>(c10)), fma_intrin(x1, set1_intrin<VData>(c9), set1_intrin<VData>(c8)))), fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c7), set1_intrin<VData>(c6)), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)))));
   }
 
-  template <Integer ORDER, class VData> inline void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
+  template <Integer ORDER, bool FullRange = true, class VData> inline void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
     // ORDER    ERROR
     //     1 8.81e-02
     //     3 2.45e-03
@@ -1053,7 +1053,20 @@ namespace sctl { // Generic
 
     VData x_int(fma_intrin(x, set1_intrin<VData>(inv_pi_over_2), real_offset));
     VData x_(sub_intrin(x_int, real_offset)); // x_ <-- round(x*inv_pi_over_2)
-    VData x1 = fma_intrin(x_, set1_intrin<VData>(neg_pi_over_2), x);
+    VData x1;
+    static constexpr Integer H = std::min<Integer>((SigBits + 1) * 3 / 8, 32);
+    if constexpr (FullRange) { // pi/2 = hi + mid + lo from the integers of const_pi; x_ hi and x_ mid exact for |x_| < 2^(SigBits+1-H)
+      static constexpr uint64_t pi_A = 14488038916154245684ull; // pi = A 2^-62 + B 2^-125
+      static constexpr uint64_t pi_B = 7089564414062235240ull;
+      static constexpr Real pi2_hi = (Real)(pi_A >> (64 - H)) / (Real)(1ull << (H - 1));
+      static constexpr Real pi2_mid = (Real)((pi_A >> (64 - 2*H)) & ((1ull << H) - 1)) / (Real)(1ull << (H - 1)) / (Real)(1ull << H);
+      static constexpr Real pi2_lo = (Real)(pi_A & ((1ull << (64 - 2*H)) - 1)) / (Real)(1ull << 63) + (Real)pi_B / (Real)(1ull << 63) / (Real)(1ull << 63);
+      x1 = fma_intrin(x_, set1_intrin<VData>(-pi2_hi), x);
+      x1 = fma_intrin(x_, set1_intrin<VData>(-pi2_mid), x1);
+      x1 = fma_intrin(x_, set1_intrin<VData>(-pi2_lo), x1);
+    } else {
+      x1 = fma_intrin(x_, set1_intrin<VData>(neg_pi_over_2), x);
+    }
 
     VData s1;
     VData x2 = mul_intrin(x1,x1);
@@ -1080,6 +1093,27 @@ namespace sctl { // Generic
     VData c2(select_intrin(xAnd1, c1, unary_minus_intrin(s1)));
     sinx = select_intrin(xAnd2, s2, unary_minus_intrin(s2));
     cosx = select_intrin(xAnd2, c2, unary_minus_intrin(c2));
+
+    if constexpr (FullRange) { // |x| beyond the exact range of the reduction, inf and NaN: one element at a time
+      static constexpr Real lim = (Real)(((uint64_t)1) << std::min<Integer>(SigBits - H, 62));
+      if (mask_count_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(lim))) < VData::Size) {
+        union U {
+          VData v;
+          Real x[VData::Size];
+        };
+        U x_u = {x};
+        U s_u = {sinx};
+        U c_u = {cosx};
+        for (Integer i = 0; i < VData::Size; i++) {
+          if (!(fabs(x_u.x[i]) < lim)) {
+            s_u.x[i] = sin(x_u.x[i]);
+            c_u.x[i] = cos(x_u.x[i]);
+          }
+        }
+        sinx = s_u.v;
+        cosx = c_u.v;
+      }
+    }
   }
   template <class VData> inline void sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
     union U {
