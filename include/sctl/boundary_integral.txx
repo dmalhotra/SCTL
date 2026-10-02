@@ -34,11 +34,11 @@ namespace sctl {
 
   template <class VType> static void concat_vecs(Vector<VType>& v, const Vector<Vector<VType>>& vec_lst) {
     const Long N = vec_lst.Dim();
-    Vector<Long> dsp(N+1); dsp[0] = 0;
-    for (Long i = 0; i < N; i++) {
-      dsp[i+1] = dsp[i] + vec_lst[i].Dim();
-    }
-    if (v.Dim() != dsp[N]) v.ReInit(dsp[N]);
+    ScratchBuf<Long> cnt(N), dsp(N);
+    for (Long i = 0; i < N; i++) cnt[i] = vec_lst[i].Dim();
+    omp_par::scan(cnt.begin(), dsp.begin(), N, (Long)0);
+    const Long total = (N ? dsp[N-1] + cnt[N-1] : 0);
+    if (v.Dim() != total) v.ReInit(total);
     for (Long i = 0; i < N; i++) {
       Vector<VType> v_(vec_lst[i].Dim(), v.begin()+dsp[i], false);
       v_ = vec_lst[i];
@@ -726,12 +726,11 @@ namespace sctl {
       const Long elem_idx1 = elem_lst_dsp[i]+elem_lst_cnt[i];
 
       Vector<Real> X, Xn, wts, dist_far;
-      Vector<Long> element_wise_node_cnt, element_wise_node_dsp(elem_idx1-elem_idx0); element_wise_node_dsp = 0;
+      Vector<Long> element_wise_node_cnt;
       elem_lst_map.at(elem_lst_name[i])->GetFarFieldNodes(X, Xn, wts, dist_far, element_wise_node_cnt, 1);
       SCTL_ASSERT(element_wise_node_cnt.Dim() == elem_lst_cnt[i]);
-      for (Long j = 1; j < element_wise_node_cnt.Dim(); j++) {
-        element_wise_node_dsp[j] = element_wise_node_dsp[j-1] + element_wise_node_cnt[j-1];
-      }
+      ScratchBuf<Long> element_wise_node_dsp(elem_idx1-elem_idx0);
+      omp_par::scan(element_wise_node_cnt.begin(), element_wise_node_dsp.begin(), elem_idx1-elem_idx0, (Long)0);
 
       for (Long elem = elem_idx0; elem < elem_idx1; elem++) {
         const Long j0 = elem_nds_dsp[elem];
@@ -758,12 +757,11 @@ namespace sctl {
       const Long elem_idx1 = elem_lst_dsp[i]+elem_lst_cnt[i];
 
       Vector<Real> X, Xn, wts, dist_far;
-      Vector<Long> element_wise_node_cnt, element_wise_node_dsp(elem_idx1-elem_idx0); element_wise_node_dsp = 0;
+      Vector<Long> element_wise_node_cnt;
       elem_lst_map.at(elem_lst_name[i])->GetFarFieldNodes(X, Xn, wts, dist_far, element_wise_node_cnt, 1);
       SCTL_ASSERT(element_wise_node_cnt.Dim() == elem_lst_cnt[i]);
-      for (Long j = 1; j < element_wise_node_cnt.Dim(); j++) {
-        element_wise_node_dsp[j] = element_wise_node_dsp[j-1] + element_wise_node_cnt[j-1];
-      }
+      ScratchBuf<Long> element_wise_node_dsp(elem_idx1-elem_idx0);
+      omp_par::scan(element_wise_node_cnt.begin(), element_wise_node_dsp.begin(), elem_idx1-elem_idx0, (Long)0);
 
       for (Long elem = elem_idx0; elem < elem_idx1; elem++) {
         const Long j0 = elem_nds_dsp[elem];
@@ -887,15 +885,7 @@ namespace sctl {
     Profile::Tic("SetupSingular", &comm_, false, 6);
     { // Set K_self
       const Long Nlst = elem_lst_map.size();
-      Vector<Long> elem_cnt(Nlst), elem_dsp(Nlst);
-      for (Long i = 0; i < Nlst; i++) {
-        const auto& name = elem_lst_name[i];
-        const auto& elem_lst = elem_lst_map.at(name);
-        elem_cnt[i] = elem_lst->Size();
-        elem_dsp[i] = (i==0?0:elem_dsp[i-1]+elem_cnt[i-1]);
-      }
-
-      const Long Nelem = (Nlst ? elem_dsp[Nlst-1]+elem_cnt[Nlst-1] : 0);
+      const Long Nelem = elem_nds_cnt.Dim();
       if (K_self.Dim() != Nelem) K_self.ReInit(Nelem);
       { // Each element's matrix as a view into one buffer
         const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
@@ -903,8 +893,8 @@ namespace sctl {
         for (Long i = 0; i < Nlst; i++) {
           const bool matrix_free = elem_lst_map.at(elem_lst_name[i])->MatrixFree();
           #pragma omp parallel for schedule(static)
-          for (Long j = 0; j < elem_cnt[i]; j++) {
-            const Long e = elem_dsp[i] + j;
+          for (Long j = 0; j < elem_lst_cnt[i]; j++) {
+            const Long e = elem_lst_dsp[i] + j;
             cnt[e] = (matrix_free ? 0 : elem_nds_cnt[e]*KDIM0 * elem_nds_cnt[e]*KDIM1_);
           }
         }
@@ -919,7 +909,7 @@ namespace sctl {
         const auto& name = elem_lst_name[i];
         const auto& elem_lst = elem_lst_map.at(name);
         const auto& elem_data = elem_data_map.at(name);
-        Vector<Matrix<Real>> K_self_(elem_cnt[i], K_self.begin() + elem_dsp[i], false);
+        Vector<Matrix<Real>> K_self_(elem_lst_cnt[i], K_self.begin() + elem_lst_dsp[i], false);
         if (elem_lst->MatrixFree()) {
           for (auto& K : K_self_) K.ReInit(0,0);
           continue;
@@ -1026,7 +1016,7 @@ namespace sctl {
           const ConstIterator<Real> Xt_ = Xtrg_near.begin() + (near_elem_dsp[elem_idx]+k)*COORD_DIM;
           for (Long n = 0; n < elem_nds_cnt[elem_idx] && !trg_at_node; n++) {
             Real r2 = 0;
-            for (Long kk = 0; kk < COORD_DIM; kk++) {
+            for (Integer kk = 0; kk < COORD_DIM; kk++) {
               const Real d = Xt_[kk] - Xs[n*COORD_DIM+kk];
               r2 += d*d;
             }

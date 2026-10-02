@@ -2,8 +2,6 @@
 #define _SCTL_QUAD_ELEMENT_HPP_
 
 #include <string>
-#include <utility>
-#include <vector>
 #include <sctl.hpp>
 
 namespace sctl {
