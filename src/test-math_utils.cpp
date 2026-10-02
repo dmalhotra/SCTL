@@ -229,6 +229,10 @@ int main() {
     CHECK(sctl::fabs<Q>(sctl::log<Q>(Q(R(1)) + d) - (d - d*d/2)) < d * Q(R(1e-32)));
     CHECK(sctl::fabs<Q>(sctl::log<Q>(Q(R(1e300)) * Q(R(1e300))) - 2 * sctl::log<Q>(Q(R(1e300)))) < Q(R(1e-29)));
     CHECK(sctl::isinf<Q>(sctl::log<Q>(Q(R(INFINITY)))));
+    CHECK(sctl::isinf<Q>(sctl::log<Q>(Q(R(0)))) && sctl::log<Q>(Q(R(0))) < Q(R(0)));
+    // signed zero; exp beyond the range of QuadReal
+    CHECK(std::signbit((double)sctl::sin<Q>(-Q(R(0)))) && std::signbit((double)sctl::asin<Q>(-Q(R(0)))) && std::signbit((double)sctl::atan<Q>(-Q(R(0)))));
+    CHECK(sctl::isinf<Q>(sctl::exp<Q>(Q(R(1e100)))) && sctl::exp<Q>(-Q(R(INFINITY))) == Q(R(0)));
     // acos at 1 and just below, where (double)a rounds to 1
     CHECK((double)sctl::acos<Q>(Q(R(1))) == R(0));
     CHECK(test_utils::approx_eq((double)sctl::acos<Q>(Q(R(1)) - Q(R(1e-20))), std::sqrt(R(2e-20)), R(1e-20)));

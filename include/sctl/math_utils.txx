@@ -184,6 +184,11 @@ template <class Real> static inline void sincos_generic(const Real a, Real& sin_
     }
   }
 
+  if (a == 0) { // keeps the sign of zero
+    sin_a = a;
+    cos_a = 1;
+    return;
+  }
   if (!(fabs<Real>(a) < (Real)0x1p62)) { // NaN, inf, or too large for n * pi2[i] below to be exact
     sin_a = (Real)NAN;
     cos_a = (Real)NAN;
@@ -240,9 +245,9 @@ template <class Real> static inline Real asin_generic(const Real a) {
     return (a < 0 ? -b : b);
   }
   Real b = ::asin((double)a);
-  if (!(b!=b)) { // Newton iterations for greater accuracy
-    b += (a-sin<Real>(b))/cos<Real>(b);
-    b += (a-sin<Real>(b))/cos<Real>(b);
+  if (!(b!=b)) { // Newton iterations for greater accuracy; b -= keeps b = -0 at a = -0, b += would not
+    b -= (sin<Real>(b)-a)/cos<Real>(b);
+    b -= (sin<Real>(b)-a)/cos<Real>(b);
   }
   return b;
 }
@@ -260,11 +265,11 @@ template <class Real> static inline Real acos_generic(const Real a) {
 
 template <class Real> static inline Real atan_generic(const Real a) {
   Real b = ::atan((double)a);
-  if (!(b!=b)) { // Newton iterations for greater accuracy
+  if (!(b!=b)) { // Newton iterations for greater accuracy; b -= keeps b = -0 at a = -0, b += would not
     const auto cos_b0 = cos<Real>(b);
-    b += (a-tan<Real>(b)) * cos_b0 * cos_b0;
+    b -= (tan<Real>(b)-a) * cos_b0 * cos_b0;
     const auto cos_b1 = cos<Real>(b);
-    b += (a-tan<Real>(b)) * cos_b1 * cos_b1;
+    b -= (tan<Real>(b)-a) * cos_b1 * cos_b1;
   }
   return b;
 }
@@ -315,6 +320,7 @@ template <class Real> static inline Real exp_generic(const Real a) {
   }
 
   Real t = (a < 0.0 ? -a : a);
+  if (t > (Real)0x1p14) return (a < 0.0 ? (Real)0 : (Real)INFINITY); // beyond the range of QuadReal; the loop below would take t / 2^199 steps
   Real eval = 1.0;
   for (int i = N - 1; i > 0; i--) {
     while (theta1[i] <= t) {
@@ -333,6 +339,7 @@ template <class Real> static inline Real exp_generic(const Real a) {
 }
 
 template <class Real> static inline Real log_generic(const Real a) {
+  if (a == 0) return -(Real)INFINITY;
   if (!(a > 0)) return (Real)NAN;
   if (isinf<Real>(a)) return a;
   // a = 2^k m with m in [1/sqrt(2), sqrt(2)]; first scale m into the range of double
