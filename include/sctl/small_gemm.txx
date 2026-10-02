@@ -148,9 +148,12 @@ namespace detail_small_gemm {
 
 }  // namespace detail_small_gemm
 
-template <class ValueType, Long M, Long N, Long K> inline SmallGEMM<ValueType, M, N, K>::SmallGEMM(const bool accumulate, const Long m, const Long n, const Long k) : m_(m), n_(n), k_(k), accumulate_(accumulate) {
+template <class ValueType, Long M, Long N, Long K> inline SmallGEMM<ValueType, M, N, K>::SmallGEMM(const bool accumulate, const Long m, const Long n, const Long k) : SmallGEMM(accumulate, m, n, k, k, n, n) {}
+
+template <class ValueType, Long M, Long N, Long K> inline SmallGEMM<ValueType, M, N, K>::SmallGEMM(const bool accumulate, const Long m, const Long n, const Long k, const Long lda, const Long ldb, const Long ldc) : m_(m), n_(n), k_(k), lda_(lda), ldb_(ldb), ldc_(ldc), accumulate_(accumulate) {
   SCTL_ASSERT(m >= 0 && n >= 0 && k >= 0);
   SCTL_ASSERT((M == DynamicSize || m == M) && (N == DynamicSize || n == N) && (K == DynamicSize || k == K));
+  SCTL_ASSERT(lda >= k && ldb >= n && ldc >= n);
 #if defined(SCTL_HAVE_LIBXSMM)
   kernel_ = nullptr;
   if constexpr (std::is_same<ValueType, double>::value || std::is_same<ValueType, float>::value) {
@@ -158,20 +161,23 @@ template <class ValueType, Long M, Long N, Long K> inline SmallGEMM<ValueType, M
       // A per-thread table in front of LIBXSMM's lookup, which takes about 40 ns, as long as the
       // smallest products
       struct Entry {
-        Long m = -1, n = -1, k = -1;
+        Long m = -1, n = -1, k = -1, lda = -1, ldb = -1, ldc = -1;
         bool accumulate = false;
         libxsmm_gemmfunction kernel = nullptr;
       };
       thread_local Entry table[64];
-      Entry& e = table[(m * 31 + n * 17 + k * 7 + (accumulate ? 1 : 0)) % 64];
-      if (e.m != m || e.n != n || e.k != k || e.accumulate != accumulate) {
+      Entry& e = table[(m * 31 + n * 17 + k * 7 + (lda - k) * 13 + (ldb - n) * 11 + (ldc - n) * 5 + (accumulate ? 1 : 0)) % 64];
+      if (e.m != m || e.n != n || e.k != k || e.lda != lda || e.ldb != ldb || e.ldc != ldc || e.accumulate != accumulate) {
         constexpr libxsmm_datatype T = (std::is_same<ValueType, double>::value ? LIBXSMM_DATATYPE_F64 : LIBXSMM_DATATYPE_F32);
         // Row-major C = A B is column-major C^T (n x m) = B^T (n x k) A^T (k x m)
-        const libxsmm_gemm_shape shape = libxsmm_create_gemm_shape((libxsmm_blasint)n, (libxsmm_blasint)m, (libxsmm_blasint)k, (libxsmm_blasint)n, (libxsmm_blasint)k, (libxsmm_blasint)n, T, T, T, T);
+        const libxsmm_gemm_shape shape = libxsmm_create_gemm_shape((libxsmm_blasint)n, (libxsmm_blasint)m, (libxsmm_blasint)k, (libxsmm_blasint)ldb, (libxsmm_blasint)lda, (libxsmm_blasint)ldc, T, T, T, T);
         e.kernel = libxsmm_dispatch_gemm(shape, (libxsmm_bitfield)(accumulate ? 0 : LIBXSMM_GEMM_FLAG_BETA_0), (libxsmm_bitfield)LIBXSMM_GEMM_PREFETCH_NONE);
         e.m = m;
         e.n = n;
         e.k = k;
+        e.lda = lda;
+        e.ldb = ldb;
+        e.ldc = ldc;
         e.accumulate = accumulate;
       }
       kernel_ = e.kernel;
@@ -194,22 +200,31 @@ template <class ValueType, Long M, Long N, Long K> inline void SmallGEMM<ValueTy
 #endif
   using detail_small_gemm::Update;
   if constexpr (detail_small_gemm::VecTiles<ValueType>) {
-    if (accumulate_) {
-      detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Accumulate, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)1);
+    if (lda_ == k_ && ldb_ == n_ && ldc_ == n_) { // contiguous: strides from the sizes, so fixed with them
+      if (accumulate_) {
+        detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Accumulate, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)1);
+      } else {
+        detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Overwrite, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)0);
+      }
     } else {
-      detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Overwrite, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)0);
+      if (accumulate_) {
+        detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Accumulate, false>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, (ValueType)1, (ValueType)1);
+      } else {
+        detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Overwrite, false>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, (ValueType)1, (ValueType)0);
+      }
     }
   } else {
     if (accumulate_) {
-      detail_small_gemm::ScalarProduct<ValueType, Update::Accumulate>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)1);
+      detail_small_gemm::ScalarProduct<ValueType, Update::Accumulate>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, (ValueType)1, (ValueType)1);
     } else {
-      detail_small_gemm::ScalarProduct<ValueType, Update::Overwrite>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)0);
+      detail_small_gemm::ScalarProduct<ValueType, Update::Overwrite>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, (ValueType)1, (ValueType)0);
     }
   }
 }
 
 template <class ValueType, Long M, Long N, Long K> inline void SmallGEMM<ValueType, M, N, K>::operator()(Matrix<ValueType>& C, const Matrix<ValueType>& A, const Matrix<ValueType>& B) const {
-  SCTL_ASSERT(A.Dim(0) == m_ && A.Dim(1) == k_ && B.Dim(0) == k_ && B.Dim(1) == n_ && C.Dim(0) == m_ && C.Dim(1) == n_);
+  SCTL_ASSERT(A.Dim(1) == lda_ && B.Dim(1) == ldb_ && C.Dim(1) == ldc_);
+  SCTL_ASSERT(A.Dim(0) >= m_ && B.Dim(0) >= k_ && C.Dim(0) >= m_);
   (*this)(C.begin(), A.begin(), B.begin());
 }
 

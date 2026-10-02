@@ -19,13 +19,14 @@ constexpr Long DynamicSize = -1;
 
 /**
  * Product of small dense matrices, C = A B or C += A B, where A is m x k, B is k x n and C is
- * m x n, each stored contiguously row by row.
+ * m x n, each stored row by row: contiguously, or with the rows of each a given number of values
+ * apart (the row strides lda, ldb and ldc).
  *
  * With SCTL_HAVE_LIBXSMM defined, float and double products use a kernel that LIBXSMM generates
- * for the sizes and the mode (overwrite or accumulate); it is looked up when the object is
- * constructed, through a per-thread table after the first time, and LIBXSMM keeps it until the
- * program ends. Otherwise float and double products use a register-blocked loop over Vec, and
- * other types (long double, QuadReal, complex) a loop over the entries of C.
+ * for the sizes, the row strides and the mode (overwrite or accumulate); it is looked up when the
+ * object is constructed, through a per-thread table after the first time, and LIBXSMM keeps it
+ * until the program ends. Otherwise float and double products use a register-blocked loop over
+ * Vec, and other types (long double, QuadReal, complex) a loop over the entries of C.
  *
  * Constructing an object takes a few ns, so it can be done where the product is needed. Applying
  * it does not change the object, so several threads can apply the same object at once.
@@ -45,17 +46,27 @@ template <class ValueType, Long M = DynamicSize, Long N = DynamicSize, Long K = 
   explicit SmallGEMM(bool accumulate = false, Long m = M, Long n = N, Long k = K);
 
   /**
-   * C = A B, or C += A B, with each matrix stored contiguously row by row.
+   * @param accumulate, m, n, k As above.
+   * @param lda, ldb, ldc Row strides: row i of A starts at A + i lda, and so on; at least k, n and n
+   * (contiguous storage).
+   */
+  SmallGEMM(bool accumulate, Long m, Long n, Long k, Long lda, Long ldb, Long ldc);
+
+  /**
+   * C = A B, or C += A B, with the row strides of the object.
    */
   void operator()(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B) const;
 
   /**
-   * C = A B, or C += A B; the sizes of the matrices must match those of the object.
+   * C = A B, or C += A B, for the leading m x k, k x n and m x n blocks of A, B and C; their numbers
+   * of columns must equal the row strides of the object, and their numbers of rows be at least m, k
+   * and m.
    */
   void operator()(Matrix<ValueType>& C, const Matrix<ValueType>& A, const Matrix<ValueType>& B) const;
 
  private:
   Long m_, n_, k_;
+  Long lda_, ldb_, ldc_;
   bool accumulate_;
 #if defined(SCTL_HAVE_LIBXSMM)
   libxsmm_gemmfunction kernel_; // null when the loop over Vec is used
