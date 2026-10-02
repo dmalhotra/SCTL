@@ -1381,6 +1381,36 @@ namespace sctl { // Generic
     }
     return r;
   }
+  template <class IntVec> inline IntVec div_int64_intrin(const IntVec& a, const IntVec& b) { // through double, exact for |a|, |b| < 2^51; other lanes one element at a time
+    static_assert(std::is_same<typename IntVec::ScalarType, int64_t>::value, "Expected int64_t!");
+    using RealVec = VecData<double, IntVec::Size>;
+    union {
+      double d;
+      int64_t i;
+    } C = {0x1.8p52}; // x + 1.5 2^52 has the integer x in its low bits, for |x| < 2^51
+    const auto to_real = [&C](const IntVec& x) { return sub_intrin(reinterpret_intrin<RealVec>(add_intrin(x, set1_intrin<IntVec>(C.i))), set1_intrin<RealVec>(C.d)); };
+    const auto to_int = [&C](const RealVec& x) { return sub_intrin(reinterpret_intrin<IntVec>(add_intrin(x, set1_intrin<RealVec>(C.d))), set1_intrin<IntVec>(C.i)); };
+    IntVec q = to_int(trunc_intrin(div_intrin(to_real(a), to_real(b))));
+
+    static constexpr int64_t lim = ((int64_t)1) << 51;
+    const IntVec plim = set1_intrin<IntVec>(lim);
+    const IntVec nlim = set1_intrin<IntVec>(-lim);
+    const Mask<IntVec> ok = comp_intrin<ComparisonType::lt>(a, plim) & comp_intrin<ComparisonType::gt>(a, nlim) & comp_intrin<ComparisonType::lt>(b, plim) & comp_intrin<ComparisonType::gt>(b, nlim);
+    if (mask_count_intrin(ok) < IntVec::Size) {
+      union U {
+        IntVec v;
+        int64_t x[IntVec::Size];
+      };
+      U a_u = {a};
+      U b_u = {b};
+      U q_u = {q};
+      for (Integer i = 0; i < IntVec::Size; i++) {
+        if (!(a_u.x[i] < lim && a_u.x[i] > -lim && b_u.x[i] < lim && b_u.x[i] > -lim)) q_u.x[i] = a_u.x[i] / b_u.x[i];
+      }
+      q = q_u.v;
+    }
+    return q;
+  }
   template <class VData> inline VData exp_intrin(const VData& x) {
     union U {
       VData v;
@@ -2054,6 +2084,17 @@ namespace sctl { // SSE
     return _mm_mul_pd(a.v, b.v);
   }
 
+  template <> inline VecData<int16_t,8> div_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { // through float, exact for 16 bits; the low 16 bits of the quotient, as the C++ conversion
+    const auto q = [](const __m128i a4, const __m128i b4) { return _mm_and_si128(_mm_cvttps_epi32(_mm_div_ps(_mm_cvtepi32_ps(_mm_cvtepi16_epi32(a4)), _mm_cvtepi32_ps(_mm_cvtepi16_epi32(b4)))), _mm_set1_epi32(0xFFFF)); };
+    return _mm_packus_epi32(q(a.v, b.v), q(_mm_srli_si128(a.v, 8), _mm_srli_si128(b.v, 8)));
+  }
+  template <> inline VecData<int8_t,16> div_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { // through float, four lanes at a time; the low 8 bits of the quotient
+    const auto q = [](const __m128i a4, const __m128i b4) { return _mm_and_si128(_mm_cvttps_epi32(_mm_div_ps(_mm_cvtepi32_ps(_mm_cvtepi8_epi32(a4)), _mm_cvtepi32_ps(_mm_cvtepi8_epi32(b4)))), _mm_set1_epi32(0xFF)); };
+    const __m128i q01 = _mm_packus_epi32(q(a.v, b.v), q(_mm_srli_si128(a.v, 4), _mm_srli_si128(b.v, 4)));
+    const __m128i q23 = _mm_packus_epi32(q(_mm_srli_si128(a.v, 8), _mm_srli_si128(b.v, 8)), q(_mm_srli_si128(a.v, 12), _mm_srli_si128(b.v, 12)));
+    return _mm_packus_epi16(q01, q23);
+  }
+  template <> inline VecData<int64_t,2> div_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return div_int64_intrin(a, b); }
   template <> inline VecData<float,4> div_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
     return _mm_div_ps(a.v, b.v);
   }
@@ -3458,6 +3499,27 @@ namespace sctl { // AVX
 
   // int32_t division through double is exact: the rounding error of the quotient is
   // below 2^-22/|b|, and a quotient that is not an integer is at least 1/|b| from one.
+  #ifdef __AVX2__
+  template <> inline VecData<int16_t,16> div_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { // through float, exact for 16 bits; the low 16 bits of the quotient, as the C++ conversion
+    const auto q = [](const __m128i a8, const __m128i b8) { return _mm256_and_si256(_mm256_cvttps_epi32(_mm256_div_ps(_mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(a8)), _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(b8)))), _mm256_set1_epi32(0xFFFF)); };
+    const __m256i lo = q(_mm256_castsi256_si128(a.v), _mm256_castsi256_si128(b.v));
+    const __m256i hi = q(_mm256_extracti128_si256(a.v, 1), _mm256_extracti128_si256(b.v, 1));
+    return _mm256_permute4x64_epi64(_mm256_packus_epi32(lo, hi), 0xD8); // packus works within 128-bit lanes
+  }
+  template <> inline VecData<int8_t,32> div_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { // through float, eight lanes at a time; the low 8 bits of the quotient
+    const auto q = [](const __m128i a8, const __m128i b8) { return _mm256_and_si256(_mm256_cvttps_epi32(_mm256_div_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(a8)), _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(b8)))), _mm256_set1_epi32(0xFF)); };
+    const __m128i al = _mm256_castsi256_si128(a.v);
+    const __m128i ah = _mm256_extracti128_si256(a.v, 1);
+    const __m128i bl = _mm256_castsi256_si128(b.v);
+    const __m128i bh = _mm256_extracti128_si256(b.v, 1);
+    const __m256i w01 = _mm256_permute4x64_epi64(_mm256_packus_epi32(q(al, bl), q(_mm_srli_si128(al, 8), _mm_srli_si128(bl, 8))), 0xD8);
+    const __m256i w23 = _mm256_permute4x64_epi64(_mm256_packus_epi32(q(ah, bh), q(_mm_srli_si128(ah, 8), _mm_srli_si128(bh, 8))), 0xD8);
+    return _mm256_permute4x64_epi64(_mm256_packus_epi16(w01, w23), 0xD8);
+  }
+  #endif
+  #ifdef __AVX2__
+  template <> inline VecData<int64_t,4> div_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return div_int64_intrin(a, b); }
+  #endif
   template <> inline VecData<int32_t,4> div_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return _mm256_cvttpd_epi32(_mm256_div_pd(_mm256_cvtepi32_pd(a.v), _mm256_cvtepi32_pd(b.v))); }
   template <> inline VecData<int32_t,8> div_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     #if defined(__AVX512F__)
@@ -4357,6 +4419,20 @@ namespace sctl { // AVX512
   template <> inline VecData<double , 8> concat_intrin<VecData<double , 4>>(const VecData<double , 4>& lo, const VecData<double , 4>& hi) { return _mm512_insertf64x4(_mm512_castpd256_pd512(lo.v), hi.v, 1); }
 
   template <> inline VecData<int32_t,16> div_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return concat_intrin(div_intrin(get_low_intrin(a), get_low_intrin(b)), div_intrin(get_high_intrin(a), get_high_intrin(b))); } // halves through double
+  template <> inline VecData<int64_t,8> div_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return div_int64_intrin(a, b); }
+  #if defined(__AVX512BW__)
+  template <> inline VecData<int16_t,32> div_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { // through float, exact for 16 bits; the low 16 bits of the quotient, as the C++ conversion
+    const auto q = [](const __m256i a16, const __m256i b16) { return _mm512_cvtepi32_epi16(_mm512_cvttps_epi32(_mm512_div_ps(_mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(a16)), _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(b16))))); };
+    return _mm512_inserti64x4(_mm512_castsi256_si512(q(_mm512_castsi512_si256(a.v), _mm512_castsi512_si256(b.v))), q(_mm512_extracti64x4_epi64(a.v, 1), _mm512_extracti64x4_epi64(b.v, 1)), 1);
+  }
+  template <> inline VecData<int8_t,64> div_intrin(const VecData<int8_t,64>& a, const VecData<int8_t,64>& b) { // through float, sixteen lanes at a time; the low 8 bits of the quotient
+    const auto q = [](const __m128i a16, const __m128i b16) { return _mm512_cvtepi32_epi8(_mm512_cvttps_epi32(_mm512_div_ps(_mm512_cvtepi32_ps(_mm512_cvtepi8_epi32(a16)), _mm512_cvtepi32_ps(_mm512_cvtepi8_epi32(b16))))); };
+    __m512i r = _mm512_castsi128_si512(q(_mm512_extracti32x4_epi32(a.v, 0), _mm512_extracti32x4_epi32(b.v, 0)));
+    r = _mm512_inserti32x4(r, q(_mm512_extracti32x4_epi32(a.v, 1), _mm512_extracti32x4_epi32(b.v, 1)), 1);
+    r = _mm512_inserti32x4(r, q(_mm512_extracti32x4_epi32(a.v, 2), _mm512_extracti32x4_epi32(b.v, 2)), 2);
+    return _mm512_inserti32x4(r, q(_mm512_extracti32x4_epi32(a.v, 3), _mm512_extracti32x4_epi32(b.v, 3)), 3);
+  }
+  #endif
 
 
   /////////////////////////////////////////////////////////////////////////////
