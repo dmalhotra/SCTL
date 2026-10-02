@@ -3484,6 +3484,19 @@ namespace sctl { // AVX
   template <> inline VecData<float  ,4> convert_intrin<VecData<float  ,4>,VecData<double ,4>>(const VecData<double ,4>& a) { return _mm256_cvtpd_ps    (a.v); }
   template <> inline VecData<float  ,8> convert_intrin<VecData<float  ,8>,VecData<int32_t,8>>(const VecData<int32_t,8>& a) { return _mm256_cvtepi32_ps (a.v); }
   template <> inline VecData<int32_t,8> convert_intrin<VecData<int32_t,8>,VecData<float  ,8>>(const VecData<float  ,8>& a) { return _mm256_cvttps_epi32(a.v); }
+  #ifdef __AVX2__ // integers: the low bits; sign extension is as fast in the generic code
+  template <> inline VecData<int16_t,8> convert_intrin<VecData<int16_t,8>,VecData<int32_t,8>>(const VecData<int32_t,8>& a) {
+    const __m256i lo = _mm256_and_si256(a.v, _mm256_set1_epi32(0xFFFF));
+    return _mm256_castsi256_si128(_mm256_permute4x64_epi64(_mm256_packus_epi32(lo, lo), 0x08));
+  }
+  template <> inline VecData<int32_t,4> convert_intrin<VecData<int32_t,4>,VecData<int64_t,4>>(const VecData<int64_t,4>& a) { return _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(a.v, _mm256_setr_epi32(0, 2, 4, 6, 0, 2, 4, 6))); }
+  template <> inline VecData<int8_t,16> convert_intrin<VecData<int8_t,16>,VecData<int16_t,16>>(const VecData<int16_t,16>& a) {
+    const __m256i lo = _mm256_and_si256(a.v, _mm256_set1_epi16(0xFF));
+    return _mm256_castsi256_si128(_mm256_permute4x64_epi64(_mm256_packus_epi16(lo, lo), 0x08));
+  }
+  template <> inline VecData<float  ,8> convert_intrin<VecData<float  ,8>,VecData<int16_t,8>>(const VecData<int16_t,8>& a) { return _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(a.v)); }
+  template <> inline VecData<int16_t,8> convert_intrin<VecData<int16_t,8>,VecData<float  ,8>>(const VecData<float  ,8>& a) { return convert_intrin<VecData<int16_t,8>>(VecData<int32_t,8>(_mm256_cvttps_epi32(a.v))); }
+  #endif
   #if defined(__AVX512DQ__) && defined(__AVX512VL__)
   template <> inline VecData<double ,4> convert_intrin<VecData<double ,4>,VecData<int64_t,4>>(const VecData<int64_t,4>& a) { return _mm256_cvtepi64_pd (a.v); }
   template <> inline VecData<int64_t,4> convert_intrin<VecData<int64_t,4>,VecData<double ,4>>(const VecData<double ,4>& a) { return _mm256_cvttpd_epi64(a.v); }
@@ -4416,6 +4429,31 @@ namespace sctl { // AVX512
   template <> inline VecData<float  ,8> convert_intrin<VecData<float  ,8>,VecData<double ,8>>(const VecData<double ,8>& a) { return _mm512_cvtpd_ps    (a.v); }
   template <> inline VecData<float ,16> convert_intrin<VecData<float ,16>,VecData<int32_t,16>>(const VecData<int32_t,16>& a) { return _mm512_cvtepi32_ps (a.v); }
   template <> inline VecData<int32_t,16> convert_intrin<VecData<int32_t,16>,VecData<float ,16>>(const VecData<float ,16>& a) { return _mm512_cvttps_epi32(a.v); }
+  // integers: sign extension, or the low bits
+  template <> inline VecData<int32_t,16> convert_intrin<VecData<int32_t,16>,VecData<int8_t ,16>>(const VecData<int8_t ,16>& a) { return _mm512_cvtepi8_epi32(a.v); }
+  template <> inline VecData<int8_t ,16> convert_intrin<VecData<int8_t ,16>,VecData<int32_t,16>>(const VecData<int32_t,16>& a) { return _mm512_cvtepi32_epi8(a.v); }
+  template <> inline VecData<int32_t,16> convert_intrin<VecData<int32_t,16>,VecData<int16_t,16>>(const VecData<int16_t,16>& a) { return _mm512_cvtepi16_epi32(a.v); }
+  template <> inline VecData<int16_t,16> convert_intrin<VecData<int16_t,16>,VecData<int32_t,16>>(const VecData<int32_t,16>& a) { return _mm512_cvtepi32_epi16(a.v); }
+  template <> inline VecData<int64_t,8> convert_intrin<VecData<int64_t,8>,VecData<int32_t,8>>(const VecData<int32_t,8>& a) { return _mm512_cvtepi32_epi64(a.v); }
+  template <> inline VecData<int32_t,8> convert_intrin<VecData<int32_t,8>,VecData<int64_t,8>>(const VecData<int64_t,8>& a) { return _mm512_cvtepi64_epi32(a.v); }
+  template <> inline VecData<int64_t,8> convert_intrin<VecData<int64_t,8>,VecData<int16_t,8>>(const VecData<int16_t,8>& a) { return _mm512_cvtepi16_epi64(a.v); }
+  template <> inline VecData<int16_t,8> convert_intrin<VecData<int16_t,8>,VecData<int64_t,8>>(const VecData<int64_t,8>& a) { return _mm512_cvtepi64_epi16(a.v); }
+  template <> inline VecData<float ,16> convert_intrin<VecData<float ,16>,VecData<int16_t,16>>(const VecData<int16_t,16>& a) { return _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(a.v)); }
+  template <> inline VecData<int16_t,16> convert_intrin<VecData<int16_t,16>,VecData<float ,16>>(const VecData<float ,16>& a) { return _mm512_cvtepi32_epi16(_mm512_cvttps_epi32(a.v)); }
+  template <> inline VecData<float ,16> convert_intrin<VecData<float ,16>,VecData<int8_t ,16>>(const VecData<int8_t ,16>& a) { return _mm512_cvtepi32_ps(_mm512_cvtepi8_epi32(a.v)); }
+  template <> inline VecData<int8_t ,16> convert_intrin<VecData<int8_t ,16>,VecData<float ,16>>(const VecData<float ,16>& a) { return _mm512_cvtepi32_epi8(_mm512_cvttps_epi32(a.v)); }
+  template <> inline VecData<double ,8> convert_intrin<VecData<double ,8>,VecData<int16_t,8>>(const VecData<int16_t,8>& a) { return _mm512_cvtepi32_pd(_mm256_cvtepi16_epi32(a.v)); }
+  #if defined(__AVX512BW__)
+  template <> inline VecData<int16_t,32> convert_intrin<VecData<int16_t,32>,VecData<int8_t ,32>>(const VecData<int8_t ,32>& a) { return _mm512_cvtepi8_epi16(a.v); }
+  template <> inline VecData<int8_t ,32> convert_intrin<VecData<int8_t ,32>,VecData<int16_t,32>>(const VecData<int16_t,32>& a) { return _mm512_cvtepi16_epi8(a.v); }
+  #endif
+  #if defined(__AVX512VL__)
+  template <> inline VecData<int16_t,8> convert_intrin<VecData<int16_t,8>,VecData<double ,8>>(const VecData<double ,8>& a) { return _mm256_cvtepi32_epi16(_mm512_cvttpd_epi32(a.v)); }
+  #endif
+  #if defined(__AVX512DQ__)
+  template <> inline VecData<float  ,8> convert_intrin<VecData<float  ,8>,VecData<int64_t,8>>(const VecData<int64_t,8>& a) { return _mm512_cvtepi64_ps(a.v); }
+  template <> inline VecData<int64_t,8> convert_intrin<VecData<int64_t,8>,VecData<float  ,8>>(const VecData<float  ,8>& a) { return _mm512_cvttps_epi64(a.v); }
+  #endif
 #if defined(__AVX512DQ__)
   template <> inline VecData<double ,8> convert_intrin<VecData<double ,8>,VecData<int64_t,8>>(const VecData<int64_t,8>& a) { return _mm512_cvtepi64_pd (a.v); }
   template <> inline VecData<int64_t,8> convert_intrin<VecData<int64_t,8>,VecData<double ,8>>(const VecData<double ,8>& a) { return _mm512_cvttpd_epi64(a.v); }
