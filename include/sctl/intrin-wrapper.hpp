@@ -2260,14 +2260,21 @@ namespace sctl { // SSE
   }
 
   // Bitshift
-  //template <> inline VecData<int8_t,16> bitshiftleft_intrin<VecData<int8_t,16>>(const VecData<int8_t,16>& a, const Integer& rhs) { }
+  template <> inline VecData<int8_t,16> bitshiftleft_intrin<VecData<int8_t,16>>(const VecData<int8_t,16>& a, const Integer& rhs) { // 16-bit bit shift, then the bits from the next byte cleared
+    return _mm_and_si128(_mm_slli_epi16(a.v, (int)rhs), _mm_set1_epi8((char)(rhs < 8 ? (0xFF << rhs) & 0xFF : 0)));
+  }
   template <> inline VecData<int16_t,8> bitshiftleft_intrin<VecData<int16_t,8>>(const VecData<int16_t,8>& a, const Integer& rhs) { return _mm_slli_epi16(a.v , rhs); }
   template <> inline VecData<int32_t,4> bitshiftleft_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a, const Integer& rhs) { return _mm_slli_epi32(a.v , rhs); }
   template <> inline VecData<int64_t,2> bitshiftleft_intrin<VecData<int64_t,2>>(const VecData<int64_t,2>& a, const Integer& rhs) { return _mm_slli_epi64(a.v , rhs); }
   template <> inline VecData<float  ,4> bitshiftleft_intrin<VecData<float  ,4>>(const VecData<float  ,4>& a, const Integer& rhs) { return _mm_castsi128_ps(_mm_slli_epi32(_mm_castps_si128(a.v), rhs)); }
   template <> inline VecData<double ,2> bitshiftleft_intrin<VecData<double ,2>>(const VecData<double ,2>& a, const Integer& rhs) { return _mm_castsi128_pd(_mm_slli_epi64(_mm_castpd_si128(a.v), rhs)); }
 
-  //template <> inline VecData<int8_t,16> bitshiftright_intrin<VecData<int8_t,16>>(const VecData<int8_t,16>& a, const Integer& rhs) { }
+  template <> inline VecData<int8_t,16> bitshiftright_intrin<VecData<int8_t,16>>(const VecData<int8_t,16>& a, const Integer& rhs) { // logical 16-bit bit shift, the bits from the next byte cleared, then the sign extended: (u ^ m) - m
+    const int n = (int)(rhs < 7 ? rhs : 7); // larger bit shifts also give 0 or -1
+    const __m128i u = _mm_and_si128(_mm_srli_epi16(a.v, n), _mm_set1_epi8((char)(0xFF >> n)));
+    const __m128i m = _mm_set1_epi8((char)(0x80 >> n));
+    return _mm_sub_epi8(_mm_xor_si128(u, m), m);
+  }
   template <> inline VecData<int16_t,8> bitshiftright_intrin<VecData<int16_t,8>>(const VecData<int16_t,8>& a, const Integer& rhs) { return _mm_srai_epi16(a.v , rhs); }
   template <> inline VecData<int32_t,4> bitshiftright_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a, const Integer& rhs) { return _mm_srai_epi32(a.v , rhs); }
   #if defined(__AVX512F__) && defined(__AVX512VL__)
@@ -3128,15 +3135,22 @@ namespace sctl { // AVX
   }
 
   // Bitshift
-  //template <> inline VecData<int8_t ,32> bitshiftleft_intrin<VecData<int8_t ,32>>(const VecData<int8_t ,32>& a, const Integer& rhs) { }
   #ifdef __AVX2__
+  template <> inline VecData<int8_t ,32> bitshiftleft_intrin<VecData<int8_t ,32>>(const VecData<int8_t ,32>& a, const Integer& rhs) { // 16-bit bit shift, then the bits from the next byte cleared
+    return _mm256_and_si256(_mm256_slli_epi16(a.v, (int)rhs), _mm256_set1_epi8((char)(rhs < 8 ? (0xFF << rhs) & 0xFF : 0)));
+  }
   template <> inline VecData<int16_t,16> bitshiftleft_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a, const Integer& rhs) { return _mm256_slli_epi16(a.v , rhs); }
   template <> inline VecData<int32_t ,8> bitshiftleft_intrin<VecData<int32_t ,8>>(const VecData<int32_t ,8>& a, const Integer& rhs) { return _mm256_slli_epi32(a.v , rhs); }
   template <> inline VecData<int64_t ,4> bitshiftleft_intrin<VecData<int64_t ,4>>(const VecData<int64_t ,4>& a, const Integer& rhs) { return _mm256_slli_epi64(a.v , rhs); }
   template <> inline VecData<float   ,8> bitshiftleft_intrin<VecData<float   ,8>>(const VecData<float   ,8>& a, const Integer& rhs) { return _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_castps_si256(a.v), rhs)); }
   template <> inline VecData<double  ,4> bitshiftleft_intrin<VecData<double  ,4>>(const VecData<double  ,4>& a, const Integer& rhs) { return _mm256_castsi256_pd(_mm256_slli_epi64(_mm256_castpd_si256(a.v), rhs)); }
 
-  //template <> inline VecData<int8_t ,32> bitshiftright_intrin<VecData<int8_t ,32>>(const VecData<int8_t ,32>& a, const Integer& rhs) { }
+  template <> inline VecData<int8_t ,32> bitshiftright_intrin<VecData<int8_t ,32>>(const VecData<int8_t ,32>& a, const Integer& rhs) { // logical 16-bit bit shift, the bits from the next byte cleared, then the sign extended: (u ^ m) - m
+    const int n = (int)(rhs < 7 ? rhs : 7); // larger bit shifts also give 0 or -1
+    const __m256i u = _mm256_and_si256(_mm256_srli_epi16(a.v, n), _mm256_set1_epi8((char)(0xFF >> n)));
+    const __m256i m = _mm256_set1_epi8((char)(0x80 >> n));
+    return _mm256_sub_epi8(_mm256_xor_si256(u, m), m);
+  }
   template <> inline VecData<int16_t,16> bitshiftright_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a, const Integer& rhs) { return _mm256_srai_epi16(a.v , rhs); }
   template <> inline VecData<int32_t ,8> bitshiftright_intrin<VecData<int32_t ,8>>(const VecData<int32_t ,8>& a, const Integer& rhs) { return _mm256_srai_epi32(a.v , rhs); }
   #if defined(__AVX512F__) && defined(__AVX512VL__)
@@ -4148,14 +4162,25 @@ namespace sctl { // AVX512
   }
 
   // Bitshift
-  //template <> inline VecData<int8_t ,64> bitshiftleft_intrin<VecData<int8_t ,64>>(const VecData<int8_t ,64>& a, const Integer& rhs) { }
+  #if defined(__AVX512BW__)
+  template <> inline VecData<int8_t ,64> bitshiftleft_intrin<VecData<int8_t ,64>>(const VecData<int8_t ,64>& a, const Integer& rhs) { // 16-bit bit shift, then the bits from the next byte cleared
+    return _mm512_and_si512(_mm512_slli_epi16(a.v, (unsigned int)rhs), _mm512_set1_epi8((char)(rhs < 8 ? (0xFF << rhs) & 0xFF : 0)));
+  }
+  #endif
   template <> inline VecData<int16_t,32> bitshiftleft_intrin<VecData<int16_t,32>>(const VecData<int16_t,32>& a, const Integer& rhs) { return _mm512_slli_epi16(a.v , rhs); }
   template <> inline VecData<int32_t,16> bitshiftleft_intrin<VecData<int32_t,16>>(const VecData<int32_t,16>& a, const Integer& rhs) { return _mm512_slli_epi32(a.v , rhs); }
   template <> inline VecData<int64_t ,8> bitshiftleft_intrin<VecData<int64_t ,8>>(const VecData<int64_t ,8>& a, const Integer& rhs) { return _mm512_slli_epi64(a.v , rhs); }
   template <> inline VecData<float  ,16> bitshiftleft_intrin<VecData<float  ,16>>(const VecData<float  ,16>& a, const Integer& rhs) { return _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_castps_si512(a.v), rhs)); }
   template <> inline VecData<double  ,8> bitshiftleft_intrin<VecData<double  ,8>>(const VecData<double  ,8>& a, const Integer& rhs) { return _mm512_castsi512_pd(_mm512_slli_epi64(_mm512_castpd_si512(a.v), rhs)); }
 
-  //template <> inline VecData<int8_t ,64> bitshiftright_intrin<VecData<int8_t ,64>>(const VecData<int8_t ,64>& a, const Integer& rhs) { }
+  #if defined(__AVX512BW__)
+  template <> inline VecData<int8_t ,64> bitshiftright_intrin<VecData<int8_t ,64>>(const VecData<int8_t ,64>& a, const Integer& rhs) { // logical 16-bit bit shift, the bits from the next byte cleared, then the sign extended: (u ^ m) - m
+    const unsigned int n = (unsigned int)(rhs < 7 ? rhs : 7); // larger bit shifts also give 0 or -1
+    const __m512i u = _mm512_and_si512(_mm512_srli_epi16(a.v, n), _mm512_set1_epi8((char)(0xFF >> n)));
+    const __m512i m = _mm512_set1_epi8((char)(0x80 >> n));
+    return _mm512_sub_epi8(_mm512_xor_si512(u, m), m);
+  }
+  #endif
   template <> inline VecData<int16_t,32> bitshiftright_intrin<VecData<int16_t,32>>(const VecData<int16_t,32>& a, const Integer& rhs) { return _mm512_srai_epi16(a.v , rhs); }
   template <> inline VecData<int32_t,16> bitshiftright_intrin<VecData<int32_t,16>>(const VecData<int32_t,16>& a, const Integer& rhs) { return _mm512_srai_epi32(a.v , rhs); }
   template <> inline VecData<int64_t ,8> bitshiftright_intrin<VecData<int64_t ,8>>(const VecData<int64_t ,8>& a, const Integer& rhs) { return _mm512_srai_epi64(a.v , rhs); }
