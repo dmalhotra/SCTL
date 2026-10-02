@@ -333,13 +333,35 @@ template <class Real> static inline Real exp_generic(const Real a) {
 }
 
 template <class Real> static inline Real log_generic(const Real a) {
-  if (a == 0) return (Real)NAN;
-  Real y0 = ::log((double)a);
-  { // Newton iterations
-    y0 = y0 + (a / exp<Real>(y0) - 1.0);
-    y0 = y0 + (a / exp<Real>(y0) - 1.0);
+  if (!(a > 0)) return (Real)NAN;
+  if (isinf<Real>(a)) return a;
+  // a = 2^k m with m in [1/sqrt(2), sqrt(2)]; first scale m into the range of double
+  Real m = a;
+  Integer k = 0;
+  while (m > (Real)0x1p1000) {
+    m *= (Real)0x1p-1000;
+    k += 1000;
   }
-  return y0;
+  while (m < (Real)0x1p-1000) {
+    m *= (Real)0x1p1000;
+    k -= 1000;
+  }
+  const int e = (int)std::lround(std::log2((double)m));
+  m *= (Real)std::ldexp(1.0, -e);
+  k += e;
+
+  // log(m) = 2 atanh(s) with s = (m-1)/(m+1); m-1 is exact, |s| <= 0.172, so 22 terms reach 2^-117
+  static const std::vector<Real> coeff = [] {
+    std::vector<Real> c(22);
+    for (Integer j = 0; j < 22; j++) c[j] = 1 / (Real)(2 * j + 1);
+    return c;
+  }();
+  const Real s = (m - 1) / (m + 1);
+  const Real s2 = s * s;
+  Real p = 0;
+  for (Integer j = 21; j >= 0; j--) p = p * s2 + coeff[j];
+  const Real ln2 = (Real)0x1.62e42fefa39efp-1 + (Real)0x1.abc9e3b39803fp-56 + (Real)0x1.7b57a079a1934p-111;
+  return 2 * s * p + (Real)k * ln2;
 }
 
 template <class Real> static inline Real log2_generic(const Real a) {
