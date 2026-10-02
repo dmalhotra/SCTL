@@ -31,6 +31,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -100,12 +101,18 @@ template <class T> T GlobalReduce(const T x, const Comm& comm, const CommOp op) 
 }
 
 // Largest deviation over the largest reference value
+// The larger of a and b, or infinity if either is NaN: std::max(a, b) returns a when b is NaN, so a
+// NaN result would pass. Infinity, unlike NaN, also survives a maximum taken across processes.
+template <class Real> Real MaxErr(const Real a, const Real b) {
+  return (a != a || b != b ? (Real)std::numeric_limits<double>::infinity() : std::max<Real>(a, b));
+}
+
 template <class Real> Real RelErr(const Vector<Real>& U, const Vector<Real>& U_ref) {
   SCTL_ASSERT(U.Dim() == U_ref.Dim());
   Real err = 0, ref = 0;
   for (Long i = 0; i < U.Dim(); i++) {
-    err = std::max<Real>(err, fabs(U[i] - U_ref[i]));
-    ref = std::max<Real>(ref, fabs(U_ref[i]));
+    err = MaxErr<Real>(err, fabs(U[i] - U_ref[i]));
+    ref = MaxErr<Real>(ref, fabs(U_ref[i]));
   }
   return err / ref;
 }
@@ -219,8 +226,8 @@ template <class Real, class Map> Real DiscretizationError(const QuadElemList<Rea
         for (Integer i = 0; i < order; i++) {
           for (Integer j = 0; j < order; j++) s += sigma[e * order * order + i * order + j] * Lu[i * Ns + a] * Lv[j * Ns + b];
         }
-        err = std::max<Real>(err, sqrt<Real>(r2) / elem_size);
-        err = std::max<Real>(err, fabs(s - TestDensity(Vector<Real>{x[0], x[1], x[2]}, 1)[0]));
+        err = MaxErr<Real>(err, sqrt<Real>(r2) / elem_size);
+        err = MaxErr<Real>(err, fabs(s - TestDensity(Vector<Real>{x[0], x[1], x[2]}, 1)[0]));
       }
     }
   }
@@ -749,7 +756,7 @@ template <class Real> Real test_GetFarFieldNodes() {
       for (Long i = 0; i < wts.Dim(); i++) F[i] = sigma[i] * wts[i];
       ker.Eval(U, Xt, X, Xn, F);
       const Real err = RelErr(U, ReferencePotential(qel, 0, sigma, Xt, Vector<Real>{(Real)0.5, (Real)0.5}, Vector<Real>(), ker)) / tol;
-      worst = std::max(worst, err);
+      worst = MaxErr(worst, err);
       SCTL_ASSERT(err < 10);
     }
   }
@@ -922,7 +929,7 @@ template <class Real> std::array<Real,2> test_ReferenceFlat(const std::vector<In
         Pt.PushBack(std::min<Real>(1, std::max<Real>(0, Xt[t * COORD_DIM + 0])));
         Pt.PushBack(std::min<Real>(1, std::max<Real>(0, Xt[t * COORD_DIM + 1])));
       }
-      err[0] = std::max(err[0], RelErr(ReferencePotential(qel, 0, sigma, Xt, Pt, (trg_dot_prod ? Nt : Vector<Real>()), ker), FlatSquarePotential(flat_kernel, Xt)));
+      err[0] = MaxErr(err[0], RelErr(ReferencePotential(qel, 0, sigma, Xt, Pt, (trg_dot_prod ? Nt : Vector<Real>()), ker), FlatSquarePotential(flat_kernel, Xt)));
       if (self) {
         Vector<Real> Xnode, X, Pn;
         qel.GetNodeCoord(&Xnode, nullptr, nullptr);
@@ -934,7 +941,7 @@ template <class Real> std::array<Real,2> test_ReferenceFlat(const std::vector<In
           Pn.PushBack(nds[p / order]);
           Pn.PushBack(nds[p % order]);
         }
-        err[1] = std::max(err[1], RelErr(ReferencePotential(qel, 0, sigma, X, Pn, Vector<Real>(), ker), FlatSquarePotential(flat_kernel, X)));
+        err[1] = MaxErr(err[1], RelErr(ReferencePotential(qel, 0, sigma, X, Pn, Vector<Real>(), ker), FlatSquarePotential(flat_kernel, X)));
       }
     }
   };
@@ -1123,8 +1130,8 @@ template <class Real, class Kernel> std::vector<std::vector<Real>> test_BIO(cons
       const Vector<Real> U_expect = U_ref + (Schemes<Real>()[s].one_sided ? jump : 0) * sigma_t;
       Real e = 0, ref = 0;
       for (Long j = 0; j < U.Dim(); j++) {
-        e = std::max<Real>(e, fabs(U[j] - U_expect[j]));
-        ref = std::max<Real>(ref, fabs(U_expect[j]));
+        e = MaxErr<Real>(e, fabs(U[j] - U_expect[j]));
+        ref = MaxErr<Real>(ref, fabs(U_expect[j]));
       }
       err[i][s] = GlobalReduce(e, comm, CommOp::MAX) / GlobalReduce(ref, comm, CommOp::MAX);
     }
@@ -1163,7 +1170,7 @@ template <class Real> Real test_ReferenceSphere() {
     }
     const Vector<Real> U = SurfaceReference(qel, q, Xt, trg_elem, trg_node, Vector<Real>(), ker);
     for (Long t = 0; t < Ntrg; t++) {
-      for (Integer k = 0; k < KDIM0; k++) err = std::max<Real>(err, fabs(U[t * KDIM0 + k] + (t % 2 ? 1 : (Real)0.5) * (k + 1)) / ((Real)0.5 * (k + 1)));
+      for (Integer k = 0; k < KDIM0; k++) err = MaxErr<Real>(err, fabs(U[t * KDIM0 + k] + (t % 2 ? 1 : (Real)0.5) * (k + 1)) / ((Real)0.5 * (k + 1)));
     }
   };
   const auto greens_identity = [&](const auto& ker_sl, const auto& ker_dl, const auto& ker_grad) {
@@ -1186,11 +1193,11 @@ template <class Real> Real test_ReferenceSphere() {
     Real e = 0, ref = 0;
     for (Long t = 0; t < Ntrg; t++) {
       for (Integer k = 0; k < KDIM0; k++) {
-        e = std::max<Real>(e, fabs(U[t * KDIM0 + k] - (t % 2 ? 1 : (Real)0.5) * u_trg[t * KDIM0 + k]));
-        ref = std::max<Real>(ref, fabs(u_trg[t * KDIM0 + k]));
+        e = MaxErr<Real>(e, fabs(U[t * KDIM0 + k] - (t % 2 ? 1 : (Real)0.5) * u_trg[t * KDIM0 + k]));
+        ref = MaxErr<Real>(ref, fabs(u_trg[t * KDIM0 + k]));
       }
     }
-    err = std::max(err, e / ref);
+    err = MaxErr(err, e / ref);
   };
   dl_identity(Laplace3D_DxU());
   dl_identity(Stokes3D_DxU());
@@ -1231,7 +1238,7 @@ template <class Real, class KerDL> Real test_DLIdentity(const QuadElemList<Real>
   op.ComputePotential(U, q);
   Real err = 0;
   const Real expect = (one_sided ? 0 : (Real)-0.5);
-  for (Long i = 0; i < q.Dim(); i++) err = std::max<Real>(err, fabs(U[i] / q[i] - expect) / (Real)0.5);
+  for (Long i = 0; i < q.Dim(); i++) err = MaxErr<Real>(err, fabs(U[i] / q[i] - expect) / (Real)0.5);
   return GlobalReduce(err, comm, CommOp::MAX);
 }
 
@@ -1280,8 +1287,8 @@ template <class Real, class KerSL, class KerDL, class KerGrad> Real test_GreensI
   const Vector<Real> U = Us - Ud + (trg_dist > 0 ? (Real)0 : (one_sided ? (Real)1 : (Real)0.5)) * u_surf; // u at every target
   Real err = 0, ref = 0;
   for (Long i = 0; i < U.Dim(); i++) {
-    err = std::max<Real>(err, fabs(U[i] - u_trg[i]));
-    ref = std::max<Real>(ref, fabs(u_trg[i]));
+    err = MaxErr<Real>(err, fabs(U[i] - u_trg[i]));
+    ref = MaxErr<Real>(ref, fabs(u_trg[i]));
   }
   return GlobalReduce(err, comm, CommOp::MAX) / GlobalReduce(ref, comm, CommOp::MAX);
 }
