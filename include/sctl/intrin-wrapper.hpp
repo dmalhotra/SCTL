@@ -1129,6 +1129,15 @@ namespace sctl { // Generic
     cosx = cosx_.v;
   }
 
+  template <class Real> struct Ln2Split { // ln2 = hi + lo from the integers of const_ln2 (A 2^-63 + B 2^-126); n hi is exact for |n| < 2^ExpBits
+    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+    static constexpr Integer ExpBits = sizeof(Real)*8 - SigBits - 1;
+    static constexpr Integer HiBits = std::max<Integer>(0, std::min<Integer>(63, SigBits + 1 - ExpBits));
+    static constexpr uint64_t A = 6393154322601327829ull;
+    static constexpr uint64_t B = 8248603190132260267ull;
+    static constexpr Real hi = (Real)(A >> (63 - HiBits)) / (Real)(1ull << HiBits);
+    static constexpr Real lo = (Real)(A & ((1ull << (63 - HiBits)) - 1)) / (Real)(1ull << 63) + (Real)B / (Real)(1ull << 63) / (Real)(1ull << 63);
+  };
   template <Integer ORDER, bool RangeCheck = true, class VData> inline VData approx_exp_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
@@ -1162,14 +1171,9 @@ namespace sctl { // Generic
     VData x_(rint_intrin(mul_intrin(x, set1_intrin<VData>(invx0))));
     IntVec int_x_ = lrint_intrin<IntVec>(x_);
     VData x1;
-    if constexpr (split_ln2) { // ln2 = ln2_hi + ln2_lo from the integers of const_ln2; x_ * ln2_hi is exact
-      static constexpr Integer HiBits = std::max<Integer>(0, std::min<Integer>(63, SigBits + 1 - ExpBits));
-      static constexpr uint64_t ln2_A = 6393154322601327829ull;
-      static constexpr uint64_t ln2_B = 8248603190132260267ull;
-      static constexpr Real ln2_hi = (Real)(ln2_A >> (63 - HiBits)) / (Real)(1ull << HiBits);
-      static constexpr Real ln2_lo = (Real)(ln2_A & ((1ull << (63 - HiBits)) - 1)) / (Real)(1ull << 63) + (Real)ln2_B / (Real)(1ull << 63) / (Real)(1ull << 63);
-      x1 = fma_intrin(x_, set1_intrin<VData>(-ln2_hi), x);
-      x1 = fma_intrin(x_, set1_intrin<VData>(-ln2_lo), x1);
+    if constexpr (split_ln2) { // x_ * Ln2Split::hi is exact
+      x1 = fma_intrin(x_, set1_intrin<VData>(-Ln2Split<Real>::hi), x);
+      x1 = fma_intrin(x_, set1_intrin<VData>(-Ln2Split<Real>::lo), x1);
     } else {
       x1 = fma_intrin(x_, set1_intrin<VData>(x0), x);
     }
@@ -1211,6 +1215,61 @@ namespace sctl { // Generic
     } else {
       return mul_intrin(e1, e2);
     }
+  }
+  template <class VData> inline void log_split_intrin(VData& e, VData& f, const VData& x) { // x = 2^e (1+f), 1+f in [sqrt(1/2), sqrt(2)), for x > 0
+    using Real = typename VData::ScalarType;
+    using Int = typename IntegerType<sizeof(Real)>::value;
+    using IntVec = VecData<Int, VData::Size>;
+    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+    static constexpr Int Bias = (((Int)1) << (sizeof(Real)*8 - SigBits - 2)) - 1;
+    union U {
+      Int i;
+      Real r;
+    };
+    static const U min_normal = {((Int)1) << SigBits};
+    static const U one_bits = {Bias << SigBits};
+    static const U two_pow_sig = {(Bias + SigBits) << SigBits};
+    const VData zero = zero_intrin<VData>();
+    const VData one = set1_intrin<VData>((Real)1);
+
+    const Mask<VData> subnormal = comp_intrin<ComparisonType::lt>(x, set1_intrin<VData>(min_normal.r)); // scaled by 2^(SigBits+1) first
+    const VData xs = select_intrin(subnormal, mul_intrin(x, set1_intrin<VData>((Real)(((uint64_t)1) << (SigBits + 1)))), x);
+    const IntVec bits = reinterpret_intrin<IntVec>(xs);
+    const VData m = reinterpret_intrin<VData>(or_intrin(and_intrin(bits, set1_intrin<IntVec>((((Int)1) << SigBits) - 1)), set1_intrin<IntVec>(one_bits.i)));
+    e = sub_intrin(reinterpret_intrin<VData>(or_intrin(bitshiftright_intrin(bits, SigBits), set1_intrin<IntVec>(two_pow_sig.i))), set1_intrin<VData>(two_pow_sig.r + (Real)Bias)); // the exponent field as the low bits of 2^SigBits
+    e = sub_intrin(e, select_intrin(subnormal, set1_intrin<VData>((Real)(SigBits + 1)), zero));
+    const Mask<VData> big = comp_intrin<ComparisonType::gt>(m, set1_intrin<VData>((Real)1.41421356237309504880));
+    f = sub_intrin(select_intrin(big, mul_intrin(m, set1_intrin<VData>((Real)0.5)), m), one);
+    e = add_intrin(e, select_intrin(big, one, zero));
+  }
+  template <class VData> inline VData log_minimax_intrin(const VData& z) { // fdlibm's R(z) ~ 2/3 z + 2/5 z^2 + ..., for log(1+f) = 2s + s R(s^2), s = f/(2+f); two chains in z^2
+    using Real = typename VData::ScalarType;
+    const VData w = mul_intrin(z, z);
+    if constexpr (std::is_same<Real,float>::value) {
+      const VData t1 = mul_intrin(w, fma_intrin(w, set1_intrin<VData>(0.24279078841f), set1_intrin<VData>(0.40000972152f)));
+      const VData t2 = mul_intrin(z, fma_intrin(w, set1_intrin<VData>(0.28498786688f), set1_intrin<VData>(0.66666662693f)));
+      return add_intrin(t1, t2);
+    } else {
+      const VData t1 = mul_intrin(w, fma_intrin(w, fma_intrin(w, set1_intrin<VData>(1.531383769920937332e-01), set1_intrin<VData>(2.222219843214978396e-01)), set1_intrin<VData>(3.999999999940941908e-01)));
+      const VData t2 = mul_intrin(z, fma_intrin(w, fma_intrin(w, fma_intrin(w, set1_intrin<VData>(1.479819860511658591e-01), set1_intrin<VData>(1.818357216161805012e-01)), set1_intrin<VData>(2.857142874366239149e-01)), set1_intrin<VData>(6.666666666666735130e-01)));
+      return add_intrin(t1, t2);
+    }
+  }
+  template <class VData> inline VData log_poly_intrin(const VData& x) { // as fdlibm: log(1+f) = f - f^2/2 + s (f^2/2 + R)
+    using Real = typename VData::ScalarType;
+    static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
+    const VData zero = zero_intrin<VData>();
+    VData e, f;
+    log_split_intrin(e, f, x);
+    const VData s = div_intrin(f, add_intrin(f, set1_intrin<VData>((Real)2)));
+    const VData R = log_minimax_intrin(mul_intrin(s, s));
+    const VData hfsq = mul_intrin(set1_intrin<VData>((Real)0.5), mul_intrin(f, f));
+    VData r = sub_intrin(f, sub_intrin(hfsq, mul_intrin(s, add_intrin(hfsq, R))));
+    r = fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::hi), fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), r));
+
+    r = select_intrin(comp_intrin<ComparisonType::eq>(x, zero), set1_intrin<VData>(-(Real)INFINITY), r);
+    r = select_intrin(comp_intrin<ComparisonType::eq>(x, set1_intrin<VData>((Real)INFINITY)), x, r);
+    return select_intrin(comp_intrin<ComparisonType::ge>(x, zero), r, set1_intrin<VData>((Real)NAN)); // negative x and NaN
   }
   template <class VData> inline VData exp_intrin(const VData& x) {
     union U {
@@ -2396,6 +2455,9 @@ namespace sctl { // SSE
   template <> inline VecData<double,2> log_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _ZGVbN2v_log(x.v); }
   template <> inline VecData<float, 4> pow_intrin<VecData<float ,4>>(const VecData<float ,4>& x, const VecData<float ,4>& y) { return _ZGVbN4vv_powf(x.v, y.v); }
   template <> inline VecData<double,2> pow_intrin<VecData<double,2>>(const VecData<double,2>& x, const VecData<double,2>& y) { return _ZGVbN2vv_pow(x.v, y.v); }
+#else
+  template <> inline VecData<float ,4> log_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return log_poly_intrin(x); }
+  template <> inline VecData<double,2> log_intrin<VecData<double,2>>(const VecData<double,2>& x) { return log_poly_intrin(x); }
 #endif
 
   template <> inline VecData<float ,4> exp_intrin<VecData<float ,4>>(const VecData<float ,4>& x) {
@@ -3363,6 +3425,9 @@ namespace sctl { // AVX
   template <> inline VecData<float ,8> pow_intrin<VecData<float ,8>>(const VecData<float ,8>& x, const VecData<float ,8>& y) { return _ZGVcN8vv_powf(x.v, y.v); }
   template <> inline VecData<double,4> pow_intrin<VecData<double,4>>(const VecData<double,4>& x, const VecData<double,4>& y) { return _ZGVcN4vv_pow(x.v, y.v); }
 #endif
+#else
+  template <> inline VecData<float ,8> log_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return log_poly_intrin(x); }
+  template <> inline VecData<double,4> log_intrin<VecData<double,4>>(const VecData<double,4>& x) { return log_poly_intrin(x); }
 #endif
 
   template <> inline VecData<float ,8> exp_intrin<VecData<float ,8>>(const VecData<float ,8>& x) {
@@ -4573,6 +4638,9 @@ namespace sctl { // AVX512
   template <> inline VecData<double,8> log_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _ZGVeN8v_log(x.v); }
   template <> inline VecData<float,16> pow_intrin<VecData<float,16>>(const VecData<float,16>& x, const VecData<float,16>& y) { return _ZGVeN16vv_powf(x.v, y.v); }
   template <> inline VecData<double,8> pow_intrin<VecData<double,8>>(const VecData<double,8>& x, const VecData<double,8>& y) { return _ZGVeN8vv_pow(x.v, y.v); }
+#else
+  template <> inline VecData<float,16> log_intrin<VecData<float,16>>(const VecData<float,16>& x) { return log_poly_intrin(x); }
+  template <> inline VecData<double,8> log_intrin<VecData<double,8>>(const VecData<double,8>& x) { return log_poly_intrin(x); }
 #endif
 
   template <> inline VecData<float,16> exp_intrin<VecData<float,16>>(const VecData<float,16>& x) {

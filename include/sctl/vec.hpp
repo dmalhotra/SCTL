@@ -579,6 +579,7 @@ namespace sctl {
   /** e^x to the given digits (-1: exp), with the limits of exp. Without RangeCheck, x beyond the range of the result gives wrong values. */
   template <Integer digits, bool RangeCheck = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x);
 
+  /** Natural logarithm; float, double: within about 1.2 ulp, vectorized at native widths. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x);
 
   /**
