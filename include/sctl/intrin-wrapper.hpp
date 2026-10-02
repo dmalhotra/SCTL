@@ -1116,10 +1116,29 @@ namespace sctl { // Generic
     static constexpr Real coeff13 = 1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13); // err = 2^-57.2759
     static constexpr Real x0 = -const_ln2<Real>();
     static constexpr Real invx0 = -1 / x0; // 1/ln(2)
+    static constexpr Integer ExpBits = sizeof(Real)*8 - SigBits - 1;
+    static constexpr bool split_ln2 = [] { // Taylor error (ln2/2)^(ORDER+1)/(ORDER+1)! below the error 2^(ExpBits-1) eps of x1 with one-part ln2
+      double taylor_err = 1;
+      for (Integer k = 1; k <= std::min<Integer>(ORDER, 13) + 1; k++) taylor_err *= 0.34657359027997264 / k;
+      double x1_err = 1;
+      for (Integer k = ExpBits - 1; k < SigBits + 1; k++) x1_err *= 0.5;
+      return taylor_err < x1_err;
+    }();
 
     VData x_(round_real2real_intrin(mul_intrin(x, set1_intrin<VData>(invx0))));
     IntVec int_x_ = round_real2int_intrin<IntVec>(x_);
-    VData x1 = fma_intrin(x_, set1_intrin<VData>(x0), x);
+    VData x1;
+    if constexpr (split_ln2) { // ln2 = ln2_hi + ln2_lo from the integers of const_ln2; x_ * ln2_hi is exact
+      static constexpr Integer HiBits = std::max<Integer>(0, std::min<Integer>(63, SigBits + 1 - ExpBits));
+      static constexpr uint64_t ln2_A = 6393154322601327829ull;
+      static constexpr uint64_t ln2_B = 8248603190132260267ull;
+      static constexpr Real ln2_hi = (Real)(ln2_A >> (63 - HiBits)) / (Real)(1ull << HiBits);
+      static constexpr Real ln2_lo = (Real)(ln2_A & ((1ull << (63 - HiBits)) - 1)) / (Real)(1ull << 63) + (Real)ln2_B / (Real)(1ull << 63) / (Real)(1ull << 63);
+      x1 = fma_intrin(x_, set1_intrin<VData>(-ln2_hi), x);
+      x1 = fma_intrin(x_, set1_intrin<VData>(-ln2_lo), x1);
+    } else {
+      x1 = fma_intrin(x_, set1_intrin<VData>(x0), x);
+    }
 
     VData e1;
     if      (ORDER >= 13) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11, coeff12, coeff13);
