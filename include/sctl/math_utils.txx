@@ -118,17 +118,20 @@ template <class Real> static inline constexpr Real fabs_generic(const Real a) {
   return (a<0?-a:a);
 }
 
-template <class Real> static inline Real round_generic(const Real& x) {
-  return trunc(x+(Real)0.5) - (x<(Real)-0.5);
+template <class Real> static inline Real round_generic(const Real& x) { // halves away from zero, as std::round
+  const Real t = trunc(x);
+  const Real d = x - t; // exact
+  return (d >= (Real)0.5 ? t + 1 : (d <= (Real)-0.5 ? t - 1 : t));
 }
 
 template <class Real> static inline Real floor_generic(const Real& x) {
-  return trunc(x) - (x<0);
+  const Real t = trunc(x);
+  return (x < t ? t - 1 : t);
 }
 
 template <class Real> static inline Real ceil_generic(const Real& a) {
-  const auto trunc_a = trunc(a);
-  return (trunc_a == a ? trunc_a : trunc_a + (a>0));
+  const Real t = trunc(a);
+  return (a > t ? t + 1 : t);
 }
 
 template <class Real> static inline Real sqrt_generic(const Real a) {
@@ -668,12 +671,16 @@ template <> inline QuadReal floor<QuadReal>(const QuadReal a) { return floor_gen
 
 template <> inline QuadReal ceil<QuadReal>(const QuadReal a) { return ceil_generic(a); }
 
-template <> inline QuadReal trunc<QuadReal>(const QuadReal x) {
+template <> inline QuadReal trunc<QuadReal>(const QuadReal x) { // as std::trunc
+  const QuadReal ax = fabs<QuadReal>(x);
+  if (!(ax < (QuadReal)0x1p112)) return x; // inf, NaN, and from 2^112 up every value is an integer
   #ifdef __SIZEOF_INT128__
-  return (QuadReal)(__int128)(x.val);
+  const QuadReal t = (QuadReal)(__int128)(ax.val);
   #else
-  return (QuadReal)(int64_t)(x.val);
+  QuadReal t = (ax + (QuadReal)0x1p112) - (QuadReal)0x1p112; // the nearest integer
+  if (t > ax) t -= 1;
   #endif
+  return (std::signbit((double)x) ? -t : t);
 }
 
 template <> inline QuadReal sqrt<QuadReal>(const QuadReal a) { return sqrt_generic(a); }

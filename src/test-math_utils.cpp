@@ -260,6 +260,13 @@ int main() {
         CHECK(std::isnan(p_std) ? std::isnan(p) : (p == p_std && std::signbit(p) == std::signbit(p_std)));
       }
     }
+    // trunc, floor, ceil, round at negative integers, halves, just below 1/2, beyond 2^112 and 2^127, and the sign of zero
+    const Q below_half = Q(R(0.5)) - Q(R(0x1p-114));
+    const Q two112p1 = Q(R(0x1p112)) + Q(R(1));
+    CHECK(sctl::floor<Q>(Q(R(-3))) == Q(R(-3)) && sctl::ceil<Q>(Q(R(3))) == Q(R(3)));
+    CHECK(sctl::round<Q>(Q(R(-0.5))) == Q(R(-1)) && sctl::round<Q>(below_half) == Q(R(0)) && sctl::round<Q>(two112p1) == two112p1);
+    CHECK(std::signbit((double)sctl::trunc<Q>(Q(R(-0.3)))) && std::signbit((double)sctl::ceil<Q>(Q(R(-0.5)))) && std::signbit((double)sctl::round<Q>(Q(R(-0.3)))));
+    for (const R x : {R(1e40), R(-1e40), R(1e300)}) CHECK(sctl::trunc<Q>(Q(x)) == Q(x) && sctl::floor<Q>(Q(x)) == Q(x) && sctl::ceil<Q>(Q(x)) == Q(x) && sctl::round<Q>(Q(x)) == Q(x));
     // acos at 1 and just below, where (double)a rounds to 1
     CHECK((double)sctl::acos<Q>(Q(R(1))) == R(0));
     CHECK(test_utils::approx_eq((double)sctl::acos<Q>(Q(R(1)) - Q(R(1e-20))), std::sqrt(R(2e-20)), R(1e-20)));
