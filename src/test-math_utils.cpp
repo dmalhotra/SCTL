@@ -224,6 +224,7 @@ int main() {
     CHECK(sctl::isnan<Q>(sctl::sin<Q>(Q(R(NAN)))) && sctl::isnan<Q>(sctl::cos<Q>(Q(R(INFINITY)))));
     CHECK(sctl::fabs<Q>(sctl::sin<Q>(Q(R(1e6))) - (Q(-0x1.6664b2568d867p-2) + Q(-0x1.264732d26e9b9p-56))) < Q(R(1e-32)));
     CHECK(sctl::sin<Q>(Q(R(1e-70))) == Q(R(1e-70)));
+    CHECK(sctl::fabs<Q>(sctl::sin<Q>(Q(R(1e30))) - (Q(0x1.31c608f107767p-7) + Q(-0x1.7953f5862f0b8p-61))) < Q(R(1e-32)));
     // log near 1, beyond the range of double, and at inf
     const Q d = Q(R(0x1p-70));
     CHECK(sctl::fabs<Q>(sctl::log<Q>(Q(R(1)) + d) - (d - d*d/2)) < d * Q(R(1e-32)));
