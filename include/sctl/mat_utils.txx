@@ -41,28 +41,27 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
     constexpr bool software_arithmetic = false;
 #endif
     constexpr Long ParallelWork = (detail_small_gemm::VecTiles<ValueType> ? (Long)1 << 16 : (detail_small_gemm::ComplexVecTiles<ValueType> ? (Long)1 << 14 : (software_arithmetic ? (Long)1 << 7 : (Long)1 << 10)));
-    if (!SCTL_IN_PARALLEL()) { // from serial code, blocks of columns of C in parallel, each by a call that takes the serial path below
-      const Long nchunk = std::min<Long>(std::min<Long>(N, SCTL_GET_MAX_THREADS()), (Long)M * N * K / ParallelWork);
-      if (nchunk > 1) {
-        const auto block = [=](const Long i) {
-          const Long n0 = N * i / nchunk, n1 = N * (i + 1) / nchunk;
-          gemm<ValueType>('N', 'N', M, (int)(n1 - n0), K, alpha, A, lda, B + ldb * n0, ldb, beta, C + ldc * n0, ldc);
-        };
-        #pragma omp parallel for schedule(static) num_threads((int)nchunk)
-        for (Long i = 0; i < nchunk; i++) block(i);
-        return;
+    // Columns n0 to n1 of C. Column-major C = A B is row-major C^T = B^T A^T: C^T is N x M, B^T is
+    // N x K and A^T is K x M, with row strides ldc, ldb and lda. One Vec instantiation for every alpha
+    // and beta: with one per update mode, a loop calling two of them was up to 6% slower
+    const auto columns = [M, K, alpha, A, lda, B, ldb, beta, C, ldc](const Long n0, const Long n1) {
+      if constexpr (detail_small_gemm::VecTiles<ValueType>) {
+        detail_small_gemm::VecProduct<ValueType, DynamicSize, DynamicSize, DynamicSize, detail_small_gemm::Update::AlphaBeta, false>(C + ldc * n0, B + ldb * n0, A, n1 - n0, M, K, ldb, lda, ldc, alpha, beta);
+      } else if constexpr (detail_small_gemm::ComplexVecTiles<ValueType>) {
+        detail_small_gemm::ComplexVecProduct<ValueType, DynamicSize, DynamicSize, DynamicSize, detail_small_gemm::Update::AlphaBeta, false>(C + ldc * n0, B + ldb * n0, A, n1 - n0, M, K, ldb, lda, ldc, alpha, beta);
+      } else {
+        detail_small_gemm::ScalarProduct<ValueType, detail_small_gemm::Update::AlphaBeta>(C + ldc * n0, B + ldb * n0, A, n1 - n0, M, K, ldb, lda, ldc, alpha, beta);
       }
-    }
+    };
 
-    // Column-major C = A B is row-major C^T = B^T A^T: C^T is N x M, B^T is N x K and A^T is K x M,
-    // with row strides ldc, ldb and lda. One Vec instantiation for every alpha and beta: with one per
-    // update mode, a loop calling two of them was up to 6% slower
-    if constexpr (detail_small_gemm::VecTiles<ValueType>) {
-      detail_small_gemm::VecProduct<ValueType, DynamicSize, DynamicSize, DynamicSize, detail_small_gemm::Update::AlphaBeta, false>(C, B, A, N, M, K, ldb, lda, ldc, alpha, beta);
-    } else if constexpr (detail_small_gemm::ComplexVecTiles<ValueType>) {
-      detail_small_gemm::ComplexVecProduct<ValueType, DynamicSize, DynamicSize, DynamicSize, detail_small_gemm::Update::AlphaBeta, false>(C, B, A, N, M, K, ldb, lda, ldc, alpha, beta);
+    // From serial code, blocks of columns of C in parallel. The blocks call the product directly: a
+    // team of one thread does not count as parallel, and a call to gemm there would split again
+    const Long nchunk = (SCTL_IN_PARALLEL() ? 1 : std::min<Long>(std::min<Long>(N, SCTL_GET_MAX_THREADS()), (Long)M * N * K / ParallelWork));
+    if (nchunk > 1) {
+      #pragma omp parallel for schedule(static) num_threads((int)nchunk)
+      for (Long i = 0; i < nchunk; i++) columns(N * i / nchunk, N * (i + 1) / nchunk);
     } else {
-      detail_small_gemm::ScalarProduct<ValueType, detail_small_gemm::Update::AlphaBeta>(C, B, A, N, M, K, ldb, lda, ldc, alpha, beta);
+      columns(0, N);
     }
   } else if (TransA == 'N' || TransA == 'n') {
     #pragma omp parallel for schedule(static)
