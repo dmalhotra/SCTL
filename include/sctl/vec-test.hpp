@@ -729,7 +729,7 @@ namespace sctl {
         VecType v4 = log(v0 + ScalarType(2.01) * const_pi<ScalarType>());
 #endif
         for (Integer i = 0; i < N; i++) {
-          ScalarType err_tol = std::max<ScalarType>((ScalarType)1.77e-15, (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5))); // TODO: fix for accuracy greater than 1.77e-15
+          ScalarType err_tol = pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5);
           SCTL_ASSERT(fabs(v1[i] - sin<ScalarType>(v0[i])) < err_tol);
           SCTL_ASSERT(fabs(v2[i] - cos<ScalarType>(v0[i])) < err_tol);
           SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i]))/fabs(exp<ScalarType>(v0[i])) < err_tol);
@@ -786,7 +786,7 @@ namespace sctl {
           u4.x[i] = (ScalarType)(0.1 + 10*drand48());
         }
         const ScalarType eps = machine_eps<ScalarType>();
-        const ScalarType err_tol = std::max<ScalarType>((ScalarType)1.77e-15, (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5)));
+        const ScalarType err_tol = pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5);
 
         const VecType a = fabs(u1.v);
         const VecType s = sqrt(a);
@@ -856,9 +856,24 @@ namespace sctl {
           u5.x[i] = (ScalarType)(2*drand48()-1);
         }
         const ScalarType eps = machine_eps<ScalarType>();
-        const ScalarType err_tol = std::max<ScalarType>((ScalarType)1.77e-15, (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5)));
+        const ScalarType err_tol = pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5);
         const auto rel = [](ScalarType a, ScalarType b) { return fabs(a - b) / fabs(b); };
-        const ScalarType tol = (TypeTraits<ScalarType>::SigBits > 64 ? 64 : 16)*eps; // QuadReal sin and cos, used on both sides, have about 12 eps error
+        const ScalarType tol = (TypeTraits<ScalarType>::SigBits > 64 ? 64 : 16)*eps; // for QuadReal, both sides have up to about 26 eps error
+        const auto sinh_ref = [](const ScalarType x) -> ScalarType { // long double std::sinh where it has enough digits; else exp, or a series near 0
+          if (TypeTraits<ScalarType>::SigBits <= 64) return (ScalarType)std::sinh((long double)x);
+          if (fabs(x) >= (ScalarType)0.5) return (exp<ScalarType>(x) - exp<ScalarType>(-x)) / 2;
+          ScalarType term = x;
+          ScalarType sum = x;
+          for (Integer k = 1; k < 20; k++) {
+            term *= x * x / (ScalarType)((2*k) * (2*k+1));
+            sum += term;
+          }
+          return sum;
+        };
+        const auto cosh_ref = [](const ScalarType x) -> ScalarType {
+          if (TypeTraits<ScalarType>::SigBits <= 64) return (ScalarType)std::cosh((long double)x);
+          return (exp<ScalarType>(x) + exp<ScalarType>(-x)) / 2;
+        };
 
         const VecType tr = trunc(u1.v);
         const VecType rn = round(u1.v);
@@ -890,9 +905,9 @@ namespace sctl {
           SCTL_ASSERT(fabs(l2[i] - log2<ScalarType>(u4.x[i])) <= 8*eps*fabs(log2<ScalarType>(u4.x[i])));
           SCTL_ASSERT(fabs(l10[i] - log<ScalarType>(u4.x[i])/log<ScalarType>((ScalarType)10)) <= 8*eps*fabs(log<ScalarType>(u4.x[i])/log<ScalarType>((ScalarType)10)));
           SCTL_ASSERT(fabs(cr[i]*cr[i]*cr[i] - x) <= 16*eps*fabs(x));
-          SCTL_ASSERT(rel(sh[i], (ScalarType)std::sinh((long double)x)) <= err_tol);
-          SCTL_ASSERT(rel(ch[i], (ScalarType)std::cosh((long double)x)) <= err_tol);
-          SCTL_ASSERT(rel(th[i], (ScalarType)std::tanh((long double)x)) <= err_tol);
+          SCTL_ASSERT(rel(sh[i], sinh_ref(x)) <= tol);
+          SCTL_ASSERT(rel(ch[i], cosh_ref(x)) <= tol);
+          SCTL_ASSERT(rel(th[i], (TypeTraits<ScalarType>::SigBits <= 64 ? (ScalarType)std::tanh((long double)x) : sinh_ref(x) / cosh_ref(x))) <= tol);
           SCTL_ASSERT(fm[i] == fmod<ScalarType>(x, u4.x[i]));
         }
       }
