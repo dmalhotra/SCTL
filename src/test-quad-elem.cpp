@@ -1302,7 +1302,9 @@ int main(int argc, char** argv) {
     const auto passed = [root](const std::string& name) {
       if (root) std::cout << name << ": PASSED\n";
     };
-    constexpr Real ErrFactor = 100; // pass limit, relative to the requested tolerance
+    // Pass limits, relative to the requested tolerance: correct code reaches up to 3.3 on one element
+    // (order 4, curved, at 1e-10) and 0.31 on the sphere
+    constexpr Real ErrFactor = 10, ErrFactorSphere = 1;
     constexpr Real RefLimitNear = 1e-12, RefLimitSelf = 1e-11, RefLimitSphere = 1e-11; // limits for the adaptive reference itself
     const bool full = (argc > 1);
     const std::vector<Integer> orders = (full ? std::vector<Integer>{4, 8, 12, 16, 20} : std::vector<Integer>{8});
@@ -1404,7 +1406,7 @@ int main(int argc, char** argv) {
         err.push_back({"Stokes3D-FxU", test_BIO(Stokes3D_FxU(), false, (Real)0, bio_order, bio_tols, bio_nodes, comm)});
       }
       for (size_t i = 0; i < bio_tols.size(); i++) {
-        const Real limit = ErrFactor * bio_tols[i];
+        const Real limit = ErrFactorSphere * bio_tols[i];
         if (root) std::cout << "  order " << bio_order << ", tol " << bio_tols[i] << ", limit " << limit << "\n";
         for (size_t s = 0; s < Schemes<Real>().size(); s++) {
           bool over = false;
