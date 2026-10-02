@@ -639,7 +639,7 @@ namespace sctl {
         if (M.Dim(0) != nrow || M.Dim(1) != nnode*KDIM1_out) M.ReInit(nrow, nnode*KDIM1_out);
       }
 
-      const Integer chunk = [KDIM1_out, nelem, nnode]() { // Targets per task: whole cache lines of M, halved until each thread has 8 tasks
+      const Integer chunk = [KDIM1_out, nelem]() { // Targets per task: whole cache lines of M, halved until each thread has 8 tasks
         const Integer line = SCTL_MEM_ALIGN;
         const Long min_tasks = 8*(Long)SCTL_GET_MAX_THREADS();
         Integer c = line / std::gcd(line, KDIM1_out*(Integer)sizeof(Real));
@@ -1504,7 +1504,7 @@ namespace sctl {
       const Integer ord = 16;
       delta.ReInit(0);
       w.ReInit(0);
-      const auto add_alpert = [&delta, &w, ord](const Real a, const Real b, const bool log_a, const bool log_b) {
+      const auto add_alpert = [&delta, &w](const Real a, const Real b, const bool log_a, const bool log_b) {
         const auto& L = (log_a ? AlpertQuadRule<Real>::LogCorrection(ord) : AlpertQuadRule<Real>::SmoothCorrection(ord));
         const auto& R = (log_b ? AlpertQuadRule<Real>::LogCorrection(ord) : AlpertQuadRule<Real>::SmoothCorrection(ord));
         const Integer skipL = L.nskip, skipR = R.nskip;
