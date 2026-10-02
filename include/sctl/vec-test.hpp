@@ -716,6 +716,13 @@ namespace sctl {
           SCTL_ASSERT(c[i] == (ScalarType)(typename IntVec::ScalarType)round(a[i]));
           SCTL_ASSERT(d[i] == (ScalarType)b[i]);
         }
+
+        const ScalarType xs[] = {(ScalarType)2.5, (ScalarType)-2.5, (ScalarType)3.5, (ScalarType)-0.5}; // halves go to the even integer
+        const ScalarType rs[] = {(ScalarType)2, (ScalarType)-2, (ScalarType)4, (ScalarType)0};
+        for (Integer k = 0; k < 4; k++) {
+          SCTL_ASSERT(RoundReal2Real(RealVec(xs[k]))[0] == rs[k]);
+          SCTL_ASSERT(RoundReal2Int<IntVec>(RealVec(xs[k]))[0] == (typename IntVec::ScalarType)rs[k]);
+        }
       }
 
       static void test_reals_specialfunc() {

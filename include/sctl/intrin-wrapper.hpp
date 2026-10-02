@@ -487,7 +487,7 @@ namespace sctl { // Generic
     IntVec l(add_intrin(x, set1_intrin<IntVec>(Cint)));
     return sub_intrin(reinterpret_intrin<RealVec>(l), set1_intrin<RealVec>(Creal));
   }
-  template <class IntVec, class RealVec> inline IntVec round_real2int_intrin(const RealVec& x) {
+  template <class IntVec, class RealVec> inline IntVec lrint_intrin(const RealVec& x) { // as rint_intrin, to Int, for |x| < 2^(SigBits-1); double on SSE, AVX2: |x| < 2^31
     using Int = typename IntVec::ScalarType;
     using Real = typename RealVec::ScalarType;
     static_assert(TypeTraits<Real>::Type == DataType::Real, "Expected real type!");
@@ -502,7 +502,7 @@ namespace sctl { // Generic
     RealVec d(add_intrin(x, set1_intrin<RealVec>(Creal)));
     return sub_intrin(reinterpret_intrin<IntVec>(d), set1_intrin<IntVec>(Cint));
   }
-  template <class VData> inline VData round_real2real_intrin(const VData& x) {
+  template <class VData> inline VData rint_intrin(const VData& x) { // nearest integer, halves to even, as std::rint; generic: |x| < 2^(SigBits-1), zero results are +0
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
     static_assert(TypeTraits<Real>::Type == DataType::Real, "Expected real type!");
@@ -1125,8 +1125,8 @@ namespace sctl { // Generic
       return taylor_err < x1_err;
     }();
 
-    VData x_(round_real2real_intrin(mul_intrin(x, set1_intrin<VData>(invx0))));
-    IntVec int_x_ = round_real2int_intrin<IntVec>(x_);
+    VData x_(rint_intrin(mul_intrin(x, set1_intrin<VData>(invx0))));
+    IntVec int_x_ = lrint_intrin<IntVec>(x_);
     VData x1;
     if constexpr (split_ln2) { // ln2 = ln2_hi + ln2_lo from the integers of const_ln2; x_ * ln2_hi is exact
       static constexpr Integer HiBits = std::max<Integer>(0, std::min<Integer>(63, SigBits + 1 - ExpBits));
@@ -1360,9 +1360,9 @@ namespace sctl { // Generic
       static constexpr Int max_exp = (((Int)1) << (sizeof(Real)*8 - SigBits - 2)) - 1;
       const VData lim = set1_intrin<VData>((Real)(2*(max_exp-1)));
       const VData xc = min_intrin(lim, max_intrin(unary_minus_intrin(lim), x)); // keeps NaN, the second operand
-      const VData n = round_real2real_intrin(xc);
+      const VData n = rint_intrin(xc);
       const VData e = exp_intrin(mul_intrin(sub_intrin(xc, n), set1_intrin<VData>(const_ln2<Real>())));
-      const IntVec ni = round_real2int_intrin<IntVec>(n);
+      const IntVec ni = lrint_intrin<IntVec>(n);
       const IntVec n1 = bitshiftright_intrin(ni, 1);
       const IntVec n2 = sub_intrin(ni, n1);
       const VData p1 = reinterpret_intrin<VData>(bitshiftleft_intrin(add_intrin(n1, set1_intrin<IntVec>(max_exp)), SigBits));
@@ -2172,10 +2172,10 @@ namespace sctl { // SSE
   }
   #endif
 
-  template <> inline VecData<int32_t,4> round_real2int_intrin<VecData<int32_t,4>,VecData<float ,4>>(const VecData<float ,4>& x) {
+  template <> inline VecData<int32_t,4> lrint_intrin<VecData<int32_t,4>,VecData<float ,4>>(const VecData<float ,4>& x) {
     return _mm_cvtps_epi32(x.v);
   }
-  template <> inline VecData<int64_t,2> round_real2int_intrin<VecData<int64_t,2>,VecData<double,2>>(const VecData<double,2>& x) {
+  template <> inline VecData<int64_t,2> lrint_intrin<VecData<int64_t,2>,VecData<double,2>>(const VecData<double,2>& x) {
   #if defined(__AVX512DQ__) && defined(__AVX512VL__)
     return _mm_cvtpd_epi64(x.v);
   #else
@@ -2183,8 +2183,8 @@ namespace sctl { // SSE
   #endif
   }
 
-  template <> inline VecData<float ,4> round_real2real_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_round_ps(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
-  template <> inline VecData<double,2> round_real2real_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_round_pd(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
+  template <> inline VecData<float ,4> rint_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_round_ps(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
+  template <> inline VecData<double,2> rint_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_round_pd(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
 
   template <> inline VecData<float  ,4> convert_intrin<VecData<float  ,4>,VecData<int32_t,4>>(const VecData<int32_t,4>& a) { return _mm_cvtepi32_ps (a.v); }
   template <> inline VecData<int32_t,4> convert_intrin<VecData<int32_t,4>,VecData<float  ,4>>(const VecData<float  ,4>& a) { return _mm_cvttps_epi32(a.v); }
@@ -3067,21 +3067,21 @@ namespace sctl { // AVX
   }
   #endif
 
-  template <> inline VecData<int32_t,8> round_real2int_intrin<VecData<int32_t,8>,VecData<float ,8>>(const VecData<float ,8>& x) {
+  template <> inline VecData<int32_t,8> lrint_intrin<VecData<int32_t,8>,VecData<float ,8>>(const VecData<float ,8>& x) {
     return _mm256_cvtps_epi32(x.v);
   }
   #if defined(__AVX512DQ__) && defined(__AVX512VL__)
-  template <> inline VecData<int64_t,4> round_real2int_intrin<VecData<int64_t,4>,VecData<double,4>>(const VecData<double,4>& x) {
+  template <> inline VecData<int64_t,4> lrint_intrin<VecData<int64_t,4>,VecData<double,4>>(const VecData<double,4>& x) {
     return _mm256_cvtpd_epi64(x.v);
   }
   #elif defined(__AVX2__)
-  template <> inline VecData<int64_t,4> round_real2int_intrin<VecData<int64_t,4>,VecData<double,4>>(const VecData<double,4>& x) {
+  template <> inline VecData<int64_t,4> lrint_intrin<VecData<int64_t,4>,VecData<double,4>>(const VecData<double,4>& x) {
     return _mm256_cvtepi32_epi64(_mm256_cvtpd_epi32(x.v));
   }
   #endif
 
-  template <> inline VecData<float ,8> round_real2real_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_round_ps(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
-  template <> inline VecData<double,4> round_real2real_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_round_pd(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
+  template <> inline VecData<float ,8> rint_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return _mm256_round_ps(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
+  template <> inline VecData<double,4> rint_intrin<VecData<double,4>>(const VecData<double,4>& x) { return _mm256_round_pd(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
 
 
   /////////////////////////////////////////////////////////////////////////////
@@ -4083,13 +4083,13 @@ namespace sctl { // AVX512
 
   // Conversion operators
   template <> inline VecData<float,16> convert_int2real_intrin<VecData<float,16>,VecData<int32_t,16>>(const VecData<int32_t,16>& x) { return _mm512_cvtepi32_ps(x.v); }
-  template <> inline VecData<int32_t,16> round_real2int_intrin<VecData<int32_t,16>,VecData<float,16>>(const VecData<float,16>& x) { return _mm512_cvtps_epi32(x.v); }
+  template <> inline VecData<int32_t,16> lrint_intrin<VecData<int32_t,16>,VecData<float,16>>(const VecData<float,16>& x) { return _mm512_cvtps_epi32(x.v); }
 #if defined(__AVX512DQ__)
   template <> inline VecData<double,8> convert_int2real_intrin<VecData<double,8>,VecData<int64_t, 8>>(const VecData<int64_t, 8>& x) { return _mm512_cvtepi64_pd(x.v); }
-  template <> inline VecData<int64_t, 8> round_real2int_intrin<VecData<int64_t, 8>,VecData<double,8>>(const VecData<double,8>& x) { return _mm512_cvtpd_epi64(x.v); }
+  template <> inline VecData<int64_t, 8> lrint_intrin<VecData<int64_t, 8>,VecData<double,8>>(const VecData<double,8>& x) { return _mm512_cvtpd_epi64(x.v); }
 #endif
-  template <> inline VecData<float,16> round_real2real_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_roundscale_ps(x.v, _MM_FROUND_TO_NEAREST_INT); }
-  template <> inline VecData<double,8> round_real2real_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_roundscale_pd(x.v, _MM_FROUND_TO_NEAREST_INT); }
+  template <> inline VecData<float,16> rint_intrin<VecData<float,16>>(const VecData<float,16>& x) { return _mm512_roundscale_ps(x.v, _MM_FROUND_TO_NEAREST_INT); }
+  template <> inline VecData<double,8> rint_intrin<VecData<double,8>>(const VecData<double,8>& x) { return _mm512_roundscale_pd(x.v, _MM_FROUND_TO_NEAREST_INT); }
 
   template <> inline VecData<double ,8> convert_intrin<VecData<double ,8>,VecData<int32_t,8>>(const VecData<int32_t,8>& a) { return _mm512_cvtepi32_pd (a.v); }
   template <> inline VecData<int32_t,8> convert_intrin<VecData<int32_t,8>,VecData<double ,8>>(const VecData<double ,8>& a) { return _mm512_cvttpd_epi32(a.v); }

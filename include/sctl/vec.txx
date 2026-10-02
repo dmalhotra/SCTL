@@ -178,13 +178,13 @@ namespace sctl {
     return convert_vec2mask_intrin(a.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> RoundReal2Real(const Vec<ValueType,N>& x) {
-    return round_real2real_intrin(x.get());
+    return rint_intrin(x.get());
   }
   template <class RealVec, class IntVec> inline RealVec ConvertInt2Real(const IntVec& x) {
     return convert_int2real_intrin<typename RealVec::VData>(x.get());
   }
   template <class IntVec, class RealVec> inline IntVec RoundReal2Int(const RealVec& x) {
-    return round_real2int_intrin<typename IntVec::VData>(x.get());
+    return lrint_intrin<typename IntVec::VData>(x.get());
   }
   template <class MaskType> inline Vec<typename MaskType::ScalarType,MaskType::Size> convert2vec(const MaskType& a) {
     return convert_mask2vec_intrin(a);
