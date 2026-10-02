@@ -34,21 +34,27 @@ constexpr Long DynamicSize = -1;
  * @tparam ValueType Element type.
  * @tparam M, N, K Sizes known at compile time, or DynamicSize for sizes given to the constructor;
  * the loop over Vec is specialized for the fixed ones.
+ * @tparam LDA, LDB, LDC Row strides known at compile time, or DynamicSize for strides given to the
+ * constructor; as for the sizes.
  *
  * Each product adds 2 m n k to the profiler's FLOP counter.
  */
-template <class ValueType, Long M = DynamicSize, Long N = DynamicSize, Long K = DynamicSize> class SmallGEMM {
+template <class ValueType, Long M = DynamicSize, Long N = DynamicSize, Long K = DynamicSize, Long LDA = DynamicSize, Long LDB = DynamicSize, Long LDC = DynamicSize> class SmallGEMM {
+  static_assert((LDA == DynamicSize || K == DynamicSize || LDA >= K) && (LDB == DynamicSize || N == DynamicSize || LDB >= N) && (LDC == DynamicSize || N == DynamicSize || LDC >= N), "a row stride shorter than its row");
+
  public:
   /**
    * @param accumulate If true, C += A B; otherwise C = A B, and C is not read.
    * @param m, n, k Sizes; each must equal its template argument unless that is DynamicSize.
+   * The row strides are those of the template arguments, or of contiguous storage where these are
+   * DynamicSize.
    */
   explicit SmallGEMM(bool accumulate = false, Long m = M, Long n = N, Long k = K);
 
   /**
    * @param accumulate, m, n, k As above.
    * @param lda, ldb, ldc Row strides: row i of A starts at A + i lda, and so on; at least k, n and n
-   * (contiguous storage).
+   * (contiguous storage); each must equal its template argument unless that is DynamicSize.
    */
   SmallGEMM(bool accumulate, Long m, Long n, Long k, Long lda, Long ldb, Long ldc);
 

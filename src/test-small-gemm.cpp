@@ -2,10 +2,10 @@
 //
 // SmallGEMM against a direct triple loop, with the sizes fixed at compile time, given at run time,
 // or mixed, in both modes (C = A B and C += A B), for float, double, long double and QuadReal, with
-// contiguous rows and with row strides beyond the row lengths; with one object applied by several
-// threads at once; and through the Matrix overload, on whole matrices and on leading blocks. In the
-// overwrite mode C starts as NaN, which must not be read; so are the values between the rows of A and
-// B, and those of C must not change.
+// contiguous rows and with row strides beyond the row lengths, given at run time or fixed at compile
+// time; with one object applied by several threads at once; and through the Matrix overload, on whole
+// matrices and on leading blocks. In the overwrite mode C starts as NaN, which must not be read; so
+// are the values between the rows of A and B, and those of C must not change.
 
 #include <complex>
 #include <cstdio>
@@ -22,10 +22,10 @@ using sctl::Long;
 using sctl::SmallGEMM;
 
 // One product of random m x k and k x n matrices, whose rows (and those of C) are pa, pb and pc
-// values longer than the matrices; true if every entry of C is within (4 k + 8) eps of the triple
-// loop, relative to the sum of the absolute values of its terms, and the values between the rows of
-// C are unchanged
-template <class T, Long M, Long N, Long K> static bool check(const bool accumulate, const Long m, const Long n, const Long k, const Long pa = 0, const Long pb = 0, const Long pc = 0) {
+// values longer than the matrices (as the fixed strides LDA, LDB and LDC say, if any); true if every
+// entry of C is within (4 k + 8) eps of the triple loop, relative to the sum of the absolute values
+// of its terms, and the values between the rows of C are unchanged
+template <class T, Long M, Long N, Long K, Long LDA = DynamicSize, Long LDB = DynamicSize, Long LDC = DynamicSize> static bool check(const bool accumulate, const Long m, const Long n, const Long k, const Long pa = 0, const Long pb = 0, const Long pc = 0) {
   const T nan = T(std::numeric_limits<double>::quiet_NaN()); // numeric_limits<QuadReal> has no NaN
   const T fill = T(7);
   const Long lda = k + pa, ldb = n + pb, ldc = n + pc;
@@ -41,8 +41,10 @@ template <class T, Long M, Long N, Long K> static bool check(const bool accumula
   }
   const std::vector<T> C0 = C;
 
-  const bool strided = (pa || pb || pc);
-  const SmallGEMM<T, M, N, K> gemm = (strided ? SmallGEMM<T, M, N, K>(accumulate, m, n, k, lda, ldb, ldc) : SmallGEMM<T, M, N, K>(accumulate, m, n, k));
+  // The constructor with strides when the template arguments do not give them all
+  using GEMM = SmallGEMM<T, M, N, K, LDA, LDB, LDC>;
+  const bool given = ((LDA == DynamicSize && pa) || (LDB == DynamicSize && pb) || (LDC == DynamicSize && pc));
+  const GEMM gemm = (given ? GEMM(accumulate, m, n, k, lda, ldb, ldc) : GEMM(accumulate, m, n, k));
   gemm(sctl::Ptr2Itr<T>(C.data(), (Long)C.size()), sctl::Ptr2ConstItr<T>(A.data(), (Long)A.size()), sctl::Ptr2ConstItr<T>(B.data(), (Long)B.size()));
 
   bool ok = true;
@@ -105,6 +107,18 @@ int main() {
         nbad += !check<T, DynamicSize, DynamicSize, DynamicSize>(acc, m, n, k, pa, pb, pc);
         nbad += !check<T, DynamicSize, 24, 12>(acc, m, 24, 12, pa, pb, pc);
         nbad += !check<T, 6, DynamicSize, 8>(acc, 6, n, 8, pa, pb, pc);
+      }
+      CHECK(nbad == 0);
+
+      // Row strides fixed at compile time, all or some
+      nbad = 0;
+      for (int trial = 0; trial < 100; trial++) {
+        const Long m = std::rand() % 41, n = std::rand() % 41, k = std::rand() % 41;
+        const Long pa = std::rand() % 9, pb = std::rand() % 9, pc = std::rand() % 9;
+        nbad += !check<T, DynamicSize, 24, 12, 20, 30, 31>(acc, m, 24, 12, 8, 6, 7);
+        nbad += !check<T, DynamicSize, DynamicSize, DynamicSize, 48, DynamicSize, DynamicSize>(acc, m, n, k, 48 - k, pb, pc);
+        nbad += !check<T, 6, DynamicSize, 8, DynamicSize, DynamicSize, 45>(acc, 6, n, 8, pa, pb, 45 - n);
+        nbad += !check<T, 8, 8, DynamicSize, DynamicSize, 72, 8>(acc, 8, 8, k, pa, 64, 0);
       }
       CHECK(nbad == 0);
     }
@@ -191,23 +205,27 @@ int main() {
     sctl::Matrix<double> A(6, 6), B(5, 9), C(7, 8);
     for (Long i = 0; i < A.Dim(0) * A.Dim(1); i++) A[0][i] = std::sin(1.0 + (double)i);
     for (Long i = 0; i < B.Dim(0) * B.Dim(1); i++) B[0][i] = std::cos(2.0 + (double)i);
-    for (Long i = 0; i < C.Dim(0) * C.Dim(1); i++) C[0][i] = 7.0;
-    const SmallGEMM<double> gemm(true, m, n, k, A.Dim(1), B.Dim(1), C.Dim(1));
-    gemm(C, A, B);
-    double err = 0;
-    int nbad = 0;
-    for (Long i = 0; i < C.Dim(0); i++) {
-      for (Long j = 0; j < C.Dim(1); j++) {
-        if (i < m && j < n) {
-          double ref = 7.0;
-          for (Long l = 0; l < k; l++) ref += A[i][l] * B[l][j];
-          err = std::max(err, std::fabs(C[i][j] - ref));
-        } else {
-          nbad += (C[i][j] != 7.0);
+    const SmallGEMM<double> dynamic(true, m, n, k, A.Dim(1), B.Dim(1), C.Dim(1));
+    const SmallGEMM<double, m, n, k, 6, 9, 8> fixed(true); // the strides from the template arguments
+    for (const bool use_fixed : {false, true}) {
+      for (Long i = 0; i < C.Dim(0) * C.Dim(1); i++) C[0][i] = 7.0;
+      if (use_fixed) fixed(C, A, B);
+      else dynamic(C, A, B);
+      double err = 0;
+      int nbad = 0;
+      for (Long i = 0; i < C.Dim(0); i++) {
+        for (Long j = 0; j < C.Dim(1); j++) {
+          if (i < m && j < n) {
+            double ref = 7.0;
+            for (Long l = 0; l < k; l++) ref += A[i][l] * B[l][j];
+            err = std::max(err, std::fabs(C[i][j] - ref));
+          } else {
+            nbad += (C[i][j] != 7.0);
+          }
         }
       }
+      CHECK(err <= 1e-13 && nbad == 0);
     }
-    CHECK(err <= 1e-13 && nbad == 0);
   }
 
   TEST_SUMMARY_RETURN();

@@ -52,8 +52,8 @@ namespace detail_small_gemm {
 
   /**
    * C (m x n) = A (m x k) B (k x n), updated as U says; all row-major, with row strides lda, ldb
-   * and ldc, or k, n and n if Contiguous. A template size other than DynamicSize replaces the
-   * argument, so the loops are specialized for it. Tiles of 8 rows of C by 1 vector for AMD Zen 4,
+   * and ldc, or k, n and n if Contiguous. A template size or stride other than DynamicSize replaces
+   * the argument, so the loops are specialized for it. Tiles of 8 rows of C by 1 vector for AMD Zen 4,
    * of 8 rows by 3 vectors and then 1 for other AVX-512 CPUs, and of 4 rows by 2 vectors and then 1
    * otherwise. For k = 8: on an AMD EPYC 9474F, 4 x 2 was 1.6x slower than 8 x 1 for double and
    * 2.2x for float, and 8 x 3 1.1x slower; on an Intel Xeon Platinum 8362 and a w5-3435X, 8 x 1 was
@@ -63,13 +63,13 @@ namespace detail_small_gemm {
    * again, with the same values; otherwise in narrower vectors and then one at a time. Not inlined:
    * unrolled for fixed sizes inside a caller's loop, the code was up to 1.9x slower.
    */
-  template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous> [[gnu::noinline]] void VecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
+  template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous, Long LDA = DynamicSize, Long LDB = DynamicSize, Long LDC = DynamicSize> [[gnu::noinline]] void VecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
     const Long m = (M != DynamicSize ? M : m_);
     const Long n = (N != DynamicSize ? N : n_);
     const Long k = (K != DynamicSize ? K : k_);
-    const Long lda = (Contiguous ? k : lda_);
-    const Long ldb = (Contiguous ? n : ldb_);
-    const Long ldc = (Contiguous ? n : ldc_);
+    const Long lda = (LDA != DynamicSize ? LDA : Contiguous ? k : lda_);
+    const Long ldb = (LDB != DynamicSize ? LDB : Contiguous ? n : ldb_);
+    const Long ldc = (LDC != DynamicSize ? LDC : Contiguous ? n : ldc_);
     constexpr Integer VL = Vec<ValueType>::Size();
     using I1 = std::integral_constant<Integer, 1>;
     using I2 = std::integral_constant<Integer, 2>;
@@ -178,12 +178,13 @@ namespace detail_small_gemm {
 
 }  // namespace detail_small_gemm
 
-template <class ValueType, Long M, Long N, Long K> inline SmallGEMM<ValueType, M, N, K>::SmallGEMM(const bool accumulate, const Long m, const Long n, const Long k) : SmallGEMM(accumulate, m, n, k, k, n, n) {}
+template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC> inline SmallGEMM<ValueType, M, N, K, LDA, LDB, LDC>::SmallGEMM(const bool accumulate, const Long m, const Long n, const Long k) : SmallGEMM(accumulate, m, n, k, (LDA != DynamicSize ? LDA : k), (LDB != DynamicSize ? LDB : n), (LDC != DynamicSize ? LDC : n)) {}
 
-template <class ValueType, Long M, Long N, Long K> inline SmallGEMM<ValueType, M, N, K>::SmallGEMM(const bool accumulate, const Long m, const Long n, const Long k, const Long lda, const Long ldb, const Long ldc) : m_(m), n_(n), k_(k), lda_(lda), ldb_(ldb), ldc_(ldc), accumulate_(accumulate) {
+template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC> inline SmallGEMM<ValueType, M, N, K, LDA, LDB, LDC>::SmallGEMM(const bool accumulate, const Long m, const Long n, const Long k, const Long lda, const Long ldb, const Long ldc) : m_(m), n_(n), k_(k), lda_(lda), ldb_(ldb), ldc_(ldc), accumulate_(accumulate) {
   SCTL_ASSERT(m >= 0 && n >= 0 && k >= 0);
   SCTL_ASSERT((M == DynamicSize || m == M) && (N == DynamicSize || n == N) && (K == DynamicSize || k == K));
   SCTL_ASSERT(lda >= k && ldb >= n && ldc >= n);
+  SCTL_ASSERT((LDA == DynamicSize || lda == LDA) && (LDB == DynamicSize || ldb == LDB) && (LDC == DynamicSize || ldc == LDC));
 #if defined(SCTL_HAVE_LIBXSMM)
   kernel_ = nullptr;
   if constexpr (std::is_same<ValueType, double>::value || std::is_same<ValueType, float>::value) {
@@ -216,7 +217,7 @@ template <class ValueType, Long M, Long N, Long K> inline SmallGEMM<ValueType, M
 #endif
 }
 
-template <class ValueType, Long M, Long N, Long K> inline void SmallGEMM<ValueType, M, N, K>::operator()(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B) const {
+template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC> inline void SmallGEMM<ValueType, M, N, K, LDA, LDB, LDC>::operator()(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B) const {
   Profile::IncrementCounter(ProfileCounter::FLOP, 2 * m_ * n_ * k_);
 #if defined(SCTL_HAVE_LIBXSMM)
   if (kernel_) { // operands exchanged, as in the constructor
@@ -230,18 +231,20 @@ template <class ValueType, Long M, Long N, Long K> inline void SmallGEMM<ValueTy
 #endif
   using detail_small_gemm::Update;
   if constexpr (detail_small_gemm::VecTiles<ValueType>) {
-    if (lda_ == k_ && ldb_ == n_ && ldc_ == n_) { // contiguous: strides from the sizes, so fixed with them
-      if (accumulate_) {
-        detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Accumulate, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)1);
-      } else {
-        detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Overwrite, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)0);
+    if constexpr (LDA == DynamicSize && LDB == DynamicSize && LDC == DynamicSize) { // with a fixed stride, only the strided loop
+      if (lda_ == k_ && ldb_ == n_ && ldc_ == n_) { // contiguous: strides from the sizes, so fixed with them
+        if (accumulate_) {
+          detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Accumulate, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)1);
+        } else {
+          detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Overwrite, true>(C, A, B, m_, n_, k_, k_, n_, n_, (ValueType)1, (ValueType)0);
+        }
+        return;
       }
+    }
+    if (accumulate_) {
+      detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Accumulate, false, LDA, LDB, LDC>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, (ValueType)1, (ValueType)1);
     } else {
-      if (accumulate_) {
-        detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Accumulate, false>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, (ValueType)1, (ValueType)1);
-      } else {
-        detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Overwrite, false>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, (ValueType)1, (ValueType)0);
-      }
+      detail_small_gemm::VecProduct<ValueType, M, N, K, Update::Overwrite, false, LDA, LDB, LDC>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, (ValueType)1, (ValueType)0);
     }
   } else {
     if (accumulate_) {
@@ -252,7 +255,7 @@ template <class ValueType, Long M, Long N, Long K> inline void SmallGEMM<ValueTy
   }
 }
 
-template <class ValueType, Long M, Long N, Long K> inline void SmallGEMM<ValueType, M, N, K>::operator()(Matrix<ValueType>& C, const Matrix<ValueType>& A, const Matrix<ValueType>& B) const {
+template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC> inline void SmallGEMM<ValueType, M, N, K, LDA, LDB, LDC>::operator()(Matrix<ValueType>& C, const Matrix<ValueType>& A, const Matrix<ValueType>& B) const {
   SCTL_ASSERT(A.Dim(1) == lda_ && B.Dim(1) == ldb_ && C.Dim(1) == ldc_);
   SCTL_ASSERT(A.Dim(0) >= m_ && B.Dim(0) >= k_ && C.Dim(0) >= m_);
   (*this)(C.begin(), A.begin(), B.begin());
