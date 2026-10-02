@@ -96,7 +96,7 @@ namespace sctl {
        * @param n Number of elements to load, n >= 0; all Size() elements if n >= Size().
        * @return Vector loaded with the first n scalar values.
        */
-      [[nodiscard]] static inline Vec Load(ScalarType const* p, Integer n);
+      [[nodiscard]] static inline Vec LoadPartial(ScalarType const* p, Integer n);
 
       /** Load element i from p[idx[i]]. */
       template <class IndexType> [[nodiscard]] static inline Vec Gather(ScalarType const* p, const Vec<IndexType,N>& idx);
@@ -191,7 +191,7 @@ namespace sctl {
        * @param p Pointer to the memory location to store the data.
        * @param n Number of elements to store, n >= 0; all Size() elements if n >= Size().
        */
-      inline void Store(ScalarType* p, Integer n) const;
+      inline void StorePartial(ScalarType* p, Integer n) const;
 
       /** Store element i into p[idx[i]], in order of i: of equal indices, the last element is stored. */
       template <class IndexType> inline void Scatter(ScalarType* p, const Vec<IndexType,N>& idx) const;

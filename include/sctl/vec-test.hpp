@@ -240,13 +240,13 @@ namespace sctl {
           SCTL_ASSERT(y[i] == (sel ? (ScalarType)2 : (ScalarType)-1));
         }
 
-        // Load, Store of the first n elements
+        // LoadPartial, StorePartial: the first n elements
         for (Integer n = 0; n <= N+1; n++) {
-          const VecType v3 = VecType::Load(&x[0], n);
+          const VecType v3 = VecType::LoadPartial(&x[0], n);
           for (Integer i = 0; i < N; i++) {
             y[i] = (ScalarType)-1;
           }
-          v1.Store(&y[0], n);
+          v1.StorePartial(&y[0], n);
           for (Integer i = 0; i < N; i++) {
             SCTL_ASSERT(v3[i] == (i < n ? x[i] : (ScalarType)0));
             SCTL_ASSERT(y[i] == (i < n ? (ScalarType)2 : (ScalarType)-1));
