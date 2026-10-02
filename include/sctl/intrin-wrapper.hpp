@@ -1322,6 +1322,38 @@ namespace sctl { // Generic
     r = select_intrin(comp_intrin<ComparisonType::ne>(x, x), x, r);
     return select_intrin(comp_intrin<ComparisonType::eq>(y, zero) | comp_intrin<ComparisonType::eq>(x, one), one, r);
   }
+  template <class VData> inline VData cbrt_poly_intrin(const VData& x) { // cbrt(2^e m) = 2^q cbrt(2^r m), e = 3q + r; a cubic first guess, then two Halley steps
+    using Real = typename VData::ScalarType;
+    using Int = typename IntegerType<sizeof(Real)>::value;
+    using IntVec = VecData<Int, VData::Size>;
+    static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
+    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+    static constexpr Int Bias = (((Int)1) << (sizeof(Real)*8 - SigBits - 2)) - 1;
+    const VData zero = zero_intrin<VData>();
+    const VData one = set1_intrin<VData>((Real)1);
+    const VData two = set1_intrin<VData>((Real)2);
+    const VData ax = fabs_intrin(x);
+
+    VData e, f;
+    log_split_intrin(e, f, ax);
+    const VData q = floor_intrin(mul_intrin(add_intrin(e, set1_intrin<VData>((Real)0.5)), set1_intrin<VData>((Real)1/3)));
+    const VData r = fma_intrin(q, set1_intrin<VData>((Real)-3), e); // 0, 1 or 2
+    const VData a = mul_intrin(add_intrin(f, one), select_intrin(comp_intrin<ComparisonType::eq>(r, one), two, select_intrin(comp_intrin<ComparisonType::eq>(r, two), set1_intrin<VData>((Real)4), one))); // in [sqrt(1/2), 4 sqrt(2))
+    VData y = fma_intrin(fma_intrin(fma_intrin(set1_intrin<VData>((Real)0.00572303598344627), a, set1_intrin<VData>((Real)-0.07497777771481334)), a, set1_intrin<VData>((Real)0.4499148623215124)), a, set1_intrin<VData>((Real)0.616489421488996)); // relative error 0.0093
+    { // Halley: y - y (y^3 - a) / (2 y^3 + a)
+      const VData t = mul_intrin(mul_intrin(y, y), y);
+      y = sub_intrin(y, div_intrin(mul_intrin(y, sub_intrin(t, a)), fma_intrin(t, two, a)));
+    }
+    { // again, with the rounding errors of y^3 added to y^3 - a by FMA, so that cubes come out exact
+      const VData y2 = mul_intrin(y, y);
+      const VData t = mul_intrin(y2, y);
+      const VData d = add_intrin(sub_intrin(t, a), fma_intrin(fma_intrin(y, y, unary_minus_intrin(y2)), y, fma_intrin(y2, y, unary_minus_intrin(t))));
+      y = sub_intrin(y, div_intrin(mul_intrin(y, d), fma_intrin(t, two, a)));
+    }
+    const VData p2 = reinterpret_intrin<VData>(bitshiftleft_intrin(add_intrin(lrint_intrin<IntVec>(q), set1_intrin<IntVec>(Bias)), SigBits)); // 2^q
+    const VData c = copysign_intrin(mul_intrin(y, p2), x);
+    return select_intrin(comp_intrin<ComparisonType::gt>(ax, zero) & comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>((Real)INFINITY)), c, x); // zeros, inf, NaN as they are
+  }
   template <class VData> inline VData exp_intrin(const VData& x) {
     union U {
       VData v;
@@ -2517,6 +2549,8 @@ namespace sctl { // SSE
   template <> inline VecData<double,2> exp_intrin<VecData<double,2>>(const VecData<double,2>& x) {
     return approx_exp_intrin<(Integer)(TypeTraits<double>::SigBits/3.8)>(x); // TODO: determine constants more precisely
   }
+  template <> inline VecData<float ,4> cbrt_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return cbrt_poly_intrin(x); }
+  template <> inline VecData<double,2> cbrt_intrin<VecData<double,2>>(const VecData<double,2>& x) { return cbrt_poly_intrin(x); }
   #endif
 
 
@@ -3491,6 +3525,8 @@ namespace sctl { // AVX
   template <> inline VecData<float,8> pow_intrin<VecData<float,8>>(const VecData<float,8>& x, const VecData<float,8>& y) { return pow_poly_intrin(x, y); }
   template <> inline VecData<double,4> pow_intrin<VecData<double,4>>(const VecData<double,4>& x, const VecData<double,4>& y) { return pow_poly_intrin(x, y); }
 #endif
+  template <> inline VecData<float ,8> cbrt_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return cbrt_poly_intrin(x); }
+  template <> inline VecData<double,4> cbrt_intrin<VecData<double,4>>(const VecData<double,4>& x) { return cbrt_poly_intrin(x); }
   #endif
 
 
@@ -4708,6 +4744,8 @@ namespace sctl { // AVX512
   template <> inline VecData<float,16> pow_intrin<VecData<float,16>>(const VecData<float,16>& x, const VecData<float,16>& y) { return pow_poly_intrin(x, y); }
   template <> inline VecData<double,8> pow_intrin<VecData<double,8>>(const VecData<double,8>& x, const VecData<double,8>& y) { return pow_poly_intrin(x, y); }
 #endif
+  template <> inline VecData<float,16> cbrt_intrin<VecData<float,16>>(const VecData<float,16>& x) { return cbrt_poly_intrin(x); }
+  template <> inline VecData<double,8> cbrt_intrin<VecData<double,8>>(const VecData<double,8>& x) { return cbrt_poly_intrin(x); }
   #endif
 
 #endif

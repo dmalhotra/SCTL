@@ -943,6 +943,7 @@ namespace sctl {
           SCTL_ASSERT(exp(VecType(-x))[0] == 0 && approx_exp<8>(VecType(-x))[0] == 0);
         }
         SCTL_ASSERT(isnan(exp(VecType((ScalarType)NAN))[0]) && isnan(approx_exp<8>(VecType((ScalarType)NAN))[0]));
+        SCTL_ASSERT(cbrt(VecType((ScalarType)0))[0] == 0 && isinf(cbrt(VecType(-(ScalarType)INFINITY))[0]) && fabs(cbrt(VecType((ScalarType)-27))[0] + 3) <= 8*eps);
         if constexpr (sizeof(ScalarType) <= sizeof(double)) { // log and pow at zeros, infinities, NaN and signs, as std
           const auto same = [eps](ScalarType a, ScalarType b) { return std::isnan(b) ? std::isnan(a) : (a == b ? std::signbit(a) == std::signbit(b) : std::isfinite(b) && fabs(a - b) <= 16*eps*fabs(b)); };
           const ScalarType sv[] = {(ScalarType)0, (ScalarType)-0.0, (ScalarType)1, (ScalarType)-1, (ScalarType)2, (ScalarType)-2, (ScalarType)0.5, (ScalarType)3, (ScalarType)INFINITY, -(ScalarType)INFINITY, (ScalarType)NAN};
