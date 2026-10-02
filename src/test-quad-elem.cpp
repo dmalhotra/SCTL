@@ -887,8 +887,17 @@ template <class Real> void test_VTU(const Comm& comm) {
   VTUData vtu;
   qel.GetVTUData(vtu, F);
   SCTL_ASSERT(vtu.coord.Dim() == Nelem * Ng * Ng * COORD_DIM && vtu.value.Dim() == Nelem * Ng * Ng * dof);
-  SCTL_ASSERT(vtu.connect.Dim() == Nelem * (Ng - 1) * (Ng - 1) * 4 && vtu.offset.Dim() == Nelem * (Ng - 1) * (Ng - 1));
-  for (const auto t : vtu.types) SCTL_ASSERT(t == 9);
+  const Long Ncell = Nelem * (Ng - 1) * (Ng - 1);
+  SCTL_ASSERT(vtu.connect.Dim() == Ncell * 4 && vtu.offset.Dim() == Ncell && vtu.types.Dim() == Ncell);
+  for (Long e = 0; e < Nelem; e++) { // cell (i,j) of element e: grid points (i,j), (i,j+1), (i+1,j+1), (i+1,j)
+    for (Integer i = 0; i + 1 < Ng; i++) {
+      for (Integer j = 0; j + 1 < Ng; j++) {
+        const Long c = (e * (Ng - 1) + i) * (Ng - 1) + j, g = e * Ng * Ng + i * Ng + j;
+        SCTL_ASSERT(vtu.connect[4 * c] == g && vtu.connect[4 * c + 1] == g + 1 && vtu.connect[4 * c + 2] == g + Ng + 1 && vtu.connect[4 * c + 3] == g + Ng);
+        SCTL_ASSERT(vtu.offset[c] == 4 * (c + 1) && vtu.types[c] == 9); // 9: VTK_QUAD
+      }
+    }
+  }
   const Real tol = 1e-6; // VTUData stores float
   for (Long e = 0; e < Nelem; e++) {
     for (Integer i = 0; i < order; i++) {
