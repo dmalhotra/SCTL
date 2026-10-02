@@ -153,13 +153,13 @@ template <class Real> static inline Real hypot_generic(const Real a, const Real 
   return m * sqrt_generic(ra * ra + rb * rb);
 }
 
-template <class Real> static inline Real sin_generic(const Real a) {
+template <class Real> static inline void sincos_generic(const Real a, Real& sin_a, Real& cos_a) {
   const int N = 200;
   static std::vector<Real> theta;
   static std::vector<Real> sinval;
   static std::vector<Real> cosval;
   if (theta.size() == 0) {
-#pragma omp critical(SCTL_QUAD_SIN)
+#pragma omp critical(SCTL_QUAD_SINCOS)
     if (theta.size() == 0) {
       sinval.resize(N);
       cosval.resize(N);
@@ -184,7 +184,18 @@ template <class Real> static inline Real sin_generic(const Real a) {
     }
   }
 
-  Real t = (a < 0.0 ? -a : a);
+  if (!(fabs<Real>(a) < (Real)0x1p62)) { // NaN, inf, or too large for n * pi2[i] below to be exact
+    sin_a = (Real)NAN;
+    cos_a = (Real)NAN;
+    return;
+  }
+  // a = n pi/2 + r; pi/2 = sum of pi2[i], each with 51 significant bits, so n * pi2[i] is exact
+  const Real n = round<Real>(a * ((Real)2 / const_pi<Real>()));
+  const Real pi2[6] = {(Real)0x1.921fb54442d18p+0, (Real)0x1.1a62633145c04p-54, (Real)0x1.707344a409380p-105, (Real)0x1.114cf98e80414p-156, (Real)0x1.bea63b139b224p-207, (Real)0x1.14a08798e3404p-259};
+  Real r = a;
+  for (const Real& p : pi2) r -= n * p;
+
+  Real t = (r < 0.0 ? -r : r);
   Real sval = 0.0;
   Real cval = 1.0;
   for (int i = 0; i < N; i++) {
@@ -196,54 +207,27 @@ template <class Real> static inline Real sin_generic(const Real a) {
       t = t - theta[i];
     }
   }
-  return (a < 0.0 ? -sval : sval);
+  { // remaining angle t < theta[N-1], where sin(t) = t and cos(t) = 1
+    const Real sval_ = sval + cval * t;
+    cval = cval - sval * t;
+    sval = sval_;
+  }
+  if (r < 0.0) sval = -sval;
+  const Integer q = (Integer)((Long)n & 3);
+  sin_a = (q == 0 ? sval : (q == 1 ? cval : (q == 2 ? -sval : -cval)));
+  cos_a = (q == 0 ? cval : (q == 1 ? -sval : (q == 2 ? -cval : sval)));
+}
+
+template <class Real> static inline Real sin_generic(const Real a) {
+  Real sin_a, cos_a;
+  sincos_generic(a, sin_a, cos_a);
+  return sin_a;
 }
 
 template <class Real> static inline Real cos_generic(const Real a) {
-  const int N = 200;
-  static std::vector<Real> theta;
-  static std::vector<Real> sinval;
-  static std::vector<Real> cosval;
-  if (theta.size() == 0) {
-#pragma omp critical(SCTL_QUAD_COS)
-    if (theta.size() == 0) {
-      sinval.resize(N);
-      cosval.resize(N);
-
-      Real t = 1.0;
-      std::vector<Real> theta_(N);
-      for (int i = 0; i < N; i++) {
-        theta_[i] = t;
-        t = t * 0.5;
-      }
-
-      sinval[N - 1] = theta_[N - 1];
-      cosval[N - 1] = 1.0 - sinval[N - 1] * sinval[N - 1] / 2;
-      for (int i = N - 2; i >= 0; i--) {
-        sinval[i] = 2.0 * sinval[i + 1] * cosval[i + 1];
-        cosval[i] = cosval[i + 1] * cosval[i + 1] - sinval[i + 1] * sinval[i + 1];
-        Real s = 1 / sqrt<Real>(cosval[i] * cosval[i] + sinval[i] * sinval[i]);
-        sinval[i] *= s;
-        cosval[i] *= s;
-      }
-
-      theta_.swap(theta);
-    }
-  }
-
-  Real t = (a < 0.0 ? -a : a);
-  Real sval = 0.0;
-  Real cval = 1.0;
-  for (int i = 0; i < N; i++) {
-    while (theta[i] <= t) {
-      Real sval_ = sval * cosval[i] + cval * sinval[i];
-      Real cval_ = cval * cosval[i] - sval * sinval[i];
-      sval = sval_;
-      cval = cval_;
-      t = t - theta[i];
-    }
-  }
-  return cval;
+  Real sin_a, cos_a;
+  sincos_generic(a, sin_a, cos_a);
+  return cos_a;
 }
 
 template <class Real> static inline Real tan_generic(const Real a) {

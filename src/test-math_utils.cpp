@@ -220,6 +220,10 @@ int main() {
     Q q(R(-3.5));
     CHECK((double)sctl::fabs<Q>(q) == R(3.5));
     CHECK(test_utils::approx_eq((double)sctl::sqrt<Q>(Q(R(9))), R(3), tol));
+    // sin, cos: NaN, inf, a large argument (libquadmath reference), and a tiny one
+    CHECK(sctl::isnan<Q>(sctl::sin<Q>(Q(R(NAN)))) && sctl::isnan<Q>(sctl::cos<Q>(Q(R(INFINITY)))));
+    CHECK(sctl::fabs<Q>(sctl::sin<Q>(Q(R(1e6))) - (Q(-0x1.6664b2568d867p-2) + Q(-0x1.264732d26e9b9p-56))) < Q(R(1e-32)));
+    CHECK(sctl::sin<Q>(Q(R(1e-70))) == Q(R(1e-70)));
     // acos at 1 and just below, where (double)a rounds to 1
     CHECK((double)sctl::acos<Q>(Q(R(1))) == R(0));
     CHECK(test_utils::approx_eq((double)sctl::acos<Q>(Q(R(1)) - Q(R(1e-20))), std::sqrt(R(2e-20)), R(1e-20)));
