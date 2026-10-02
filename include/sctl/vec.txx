@@ -545,8 +545,8 @@ namespace sctl {
     return sinx / cosx;
   }
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x) {
-    return atan2_intrin(y.get(), x.get());
+  template <bool SpecialValues, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x) {
+    return atan2_intrin<SpecialValues>(y.get(), x.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
     return pow_intrin(x.get(), y.get());
@@ -574,8 +574,8 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> acos(const Vec<ValueType,N>& x) {
     return acos_intrin(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
-    return hypot_intrin(x.get(), y.get());
+  template <bool AvoidOverflow, class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
+    return hypot_intrin<AvoidOverflow>(x.get(), y.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp2(const Vec<ValueType,N>& x) {
     return exp2_intrin(x.get());

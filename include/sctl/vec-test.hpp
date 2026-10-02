@@ -847,8 +847,10 @@ namespace sctl {
         }
         { // the faster versions, for moderate arguments
           const VecType snf = sin<false>(u1.v);
+          const VecType atf = atan2<false>(u1.v, u2.v);
           for (Integer i = 0; i < N; i++) {
             SCTL_ASSERT(fabs(snf[i] - sin<ScalarType>(u1.x[i])) < err_tol);
+            SCTL_ASSERT(fabs(atf[i] - atan2<ScalarType>(u1.x[i], u2.x[i])) <= 8*eps*fabs(atan2<ScalarType>(u1.x[i], u2.x[i])));
           }
         }
 
@@ -928,6 +930,12 @@ namespace sctl {
           SCTL_ASSERT(rel(th[i], (TypeTraits<ScalarType>::SigBits <= 64 ? (ScalarType)std::tanh((long double)x) : sinh_ref(x) / cosh_ref(x))) <= tol);
           SCTL_ASSERT(fm[i] == fmod<ScalarType>(x, u4.x[i]));
         }
+
+        const ScalarType big = (ScalarType)(sizeof(ScalarType) == 4 ? 1e30 : 1e200); // big^2 overflows float
+        SCTL_ASSERT(rel(hypot(VecType(big), VecType(big))[0], big * sqrt<ScalarType>((ScalarType)2)) <= tol);
+        SCTL_ASSERT(isinf(hypot(VecType((ScalarType)INFINITY), VecType((ScalarType)NAN))[0]));
+        const VecType hyf = hypot<false>(u1.v, u2.v);
+        for (Integer i = 0; i < N; i++) SCTL_ASSERT(rel(hyf[i], hypot<ScalarType>(u1.x[i], u2.x[i])) <= tol);
 
         for (const ScalarType x : {(ScalarType)1e6, (ScalarType)INFINITY}) { // exp and approx_exp beyond the range of the result
           SCTL_ASSERT(isinf(exp(VecType(x))[0]) && exp(VecType(x))[0] > 0);

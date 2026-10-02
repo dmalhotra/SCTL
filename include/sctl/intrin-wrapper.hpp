@@ -1291,24 +1291,29 @@ namespace sctl { // Generic
     for (Integer i = 0; i < VData::Size; i++) m_.q[i] = (isnan(x_.x[i]) ? ~(IntType)0 : (IntType)0);
     return convert_vec2mask_intrin(m_.v);
   }
-  template <class VData> inline VData atan2_intrin(const VData& y, const VData& x) {
+  template <bool SpecialValues = true, class VData> inline VData atan2_intrin(const VData& y, const VData& x) { // SpecialValues: x, y both infinite or both zero
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       const VData zero = zero_intrin<VData>();
       const VData one = set1_intrin<VData>((Real)1);
-      const VData inf = set1_intrin<VData>((Real)INFINITY);
       const VData ay = fabs_intrin(y);
       const VData ax = fabs_intrin(x);
       const Mask<VData> swap = comp_intrin<ComparisonType::gt>(ay, ax); // angle above pi/4
-      const Mask<VData> inf_inf = comp_intrin<ComparisonType::eq>(ay, inf) & comp_intrin<ComparisonType::eq>(ax, inf);
-      const VData num = select_intrin(inf_inf, one, select_intrin(swap, ax, ay));
-      const VData den = select_intrin(inf_inf, one, select_intrin(swap, ay, ax));
+      VData num = select_intrin(swap, ax, ay);
+      VData den = select_intrin(swap, ay, ax);
+      if constexpr (SpecialValues) { // both infinite: atan(1)
+        const VData inf = set1_intrin<VData>((Real)INFINITY);
+        const Mask<VData> inf_inf = comp_intrin<ComparisonType::eq>(ay, inf) & comp_intrin<ComparisonType::eq>(ax, inf);
+        num = select_intrin(inf_inf, one, num);
+        den = select_intrin(inf_inf, one, den);
+      }
 
       // atan(num/den) with num/den in [0, 1]: reduce to |t| <= tan(pi/8), then Cephes atan rational
       const Mask<VData> big = comp_intrin<ComparisonType::gt>(num, mul_intrin(den, set1_intrin<VData>((Real)0.41421356237309504880)));
       const VData n2 = select_intrin(big, sub_intrin(num, den), num);
-      const VData d2 = select_intrin(big, add_intrin(num, den), den);
-      const VData t = div_intrin(n2, select_intrin(comp_intrin<ComparisonType::eq>(d2, zero), one, d2)); // 0 for atan2(0, 0)
+      VData d2 = select_intrin(big, add_intrin(num, den), den);
+      if constexpr (SpecialValues) d2 = select_intrin(comp_intrin<ComparisonType::eq>(d2, zero), one, d2); // 0 for atan2(0, 0)
+      const VData t = div_intrin(n2, d2);
       const VData z = mul_intrin(t, t);
       VData p = set1_intrin<VData>((Real)-8.750608600031904122785e-1);
       p = fma_intrin(p, z, set1_intrin<VData>((Real)-1.615753718733365076637e1));
@@ -1338,16 +1343,16 @@ namespace sctl { // Generic
       return y_.v;
     }
   }
-  template <class VData> inline VData atan_intrin(const VData& x) {
-    return atan2_intrin(x, set1_intrin<VData>((typename VData::ScalarType)1));
+  template <class VData> inline VData atan_intrin(const VData& x) { // atan2 without SpecialValues: its arguments are never both infinite or both zero, here and below
+    return atan2_intrin<false>(x, set1_intrin<VData>((typename VData::ScalarType)1));
   }
   template <class VData> inline VData asin_intrin(const VData& x) {
     const VData one = set1_intrin<VData>((typename VData::ScalarType)1);
-    return atan2_intrin(x, sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))));
+    return atan2_intrin<false>(x, sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))));
   }
   template <class VData> inline VData acos_intrin(const VData& x) {
     const VData one = set1_intrin<VData>((typename VData::ScalarType)1);
-    return atan2_intrin(sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))), x);
+    return atan2_intrin<false>(sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))), x);
   }
 
   template <class VData> inline VData trunc_intrin(const VData& x) {
@@ -1371,18 +1376,22 @@ namespace sctl { // Generic
     return comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>((typename VData::ScalarType)INFINITY));
   }
 
-  template <class VData> inline VData hypot_intrin(const VData& x, const VData& y) { // m sqrt(1 + (s/m)^2), m = max(|x|,|y|)
+  template <bool AvoidOverflow = true, class VData> inline VData hypot_intrin(const VData& x, const VData& y) {
     using Real = typename VData::ScalarType;
-    const VData zero = zero_intrin<VData>();
-    const VData inf = set1_intrin<VData>((Real)INFINITY);
-    const VData a = fabs_intrin(x);
-    const VData b = fabs_intrin(y);
-    const VData m = max_intrin(a, b);
-    const VData r = div_intrin(min_intrin(a, b), m);
-    VData h = mul_intrin(m, sqrt_intrin(fma_intrin(r, r, set1_intrin<VData>((Real)1))));
-    h = select_intrin(comp_intrin<ComparisonType::eq>(m, zero), zero, h);
-    h = select_intrin(isnan_intrin(add_intrin(a, b)), add_intrin(a, b), h);
-    return select_intrin(comp_intrin<ComparisonType::eq>(a, inf) | comp_intrin<ComparisonType::eq>(b, inf), inf, h); // inf even with NaN, as std::hypot
+    if constexpr (!AvoidOverflow) {
+      return sqrt_intrin(fma_intrin(x, x, mul_intrin(y, y)));
+    } else { // m sqrt(1 + (s/m)^2), m = max(|x|,|y|)
+      const VData zero = zero_intrin<VData>();
+      const VData inf = set1_intrin<VData>((Real)INFINITY);
+      const VData a = fabs_intrin(x);
+      const VData b = fabs_intrin(y);
+      const VData m = max_intrin(a, b);
+      const VData r = div_intrin(min_intrin(a, b), m);
+      VData h = mul_intrin(m, sqrt_intrin(fma_intrin(r, r, set1_intrin<VData>((Real)1))));
+      h = select_intrin(comp_intrin<ComparisonType::eq>(m, zero), zero, h);
+      h = select_intrin(isnan_intrin(add_intrin(a, b)), add_intrin(a, b), h);
+      return select_intrin(comp_intrin<ComparisonType::eq>(a, inf) | comp_intrin<ComparisonType::eq>(b, inf), inf, h); // inf even with NaN, as std::hypot
+    }
   }
 
   template <class VData> inline VData exp2_intrin(const VData& x) {

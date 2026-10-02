@@ -626,8 +626,8 @@ namespace sctl {
   /** Tangent to the given number of digits; -1 for full precision. FullRange = false: faster, with an error that grows like |x| eps. */
   template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x);
 
-  /** Angle of the point (x, y), in [-pi, pi], as std::atan2. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
+  /** Angle of the point (x, y), in [-pi, pi], as std::atan2. SpecialValues = false: faster, but x, y both infinite or both zero give NaN. */
+  template <bool SpecialValues = true, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
 
   /** x to the power y; vectorized with SVML or libmvec, otherwise one element at a time. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
@@ -653,8 +653,8 @@ namespace sctl {
   /** Arc cosine. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> acos(const Vec<ValueType,N>& x);
 
-  /** sqrt(x^2 + y^2) without overflow or underflow in between. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+  /** sqrt(x^2 + y^2) without overflow or underflow in between, and inf if x or y is inf, as std::hypot. AvoidOverflow = false: sqrt(x x + y y), faster. */
+  template <bool AvoidOverflow = true, class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 
   /** 2 to the power x. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp2(const Vec<ValueType,N>& x);
