@@ -13,6 +13,7 @@
 #include <ostream>              // for basic_ostream, operator<<
 #include <string>               // for basic_string, string, to_string
 #include <charconv>             // for from_chars (defines __cpp_lib_to_chars, tested below)
+#include <system_error>         // for errc
 #include <vector>               // for vector
 
 #include "sctl/common.hpp"      // for Long, Integer, SCTL_ASSERT, SCTL_NAME...
@@ -38,33 +39,9 @@ template <class Real> inline constexpr Real machine_eps() {
   return pow<-GetSigBits<Real>::value()-1,Real>(2);
 }
 
-#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
 namespace detail {
 
-// std::from_chars is correctly rounded and, unlike strtod / std::stod, independent of the
-// LC_NUMERIC decimal separator. It takes no leading whitespace and no leading '+', both of which
-// atoreal accepts, and it leaves the value at 0 when nothing parses.
-template <class ValueType> inline ValueType from_chars_parse(const char* str) {
-  const char* p = str;
-  while (std::isspace((unsigned char)*p)) p++; // cast: isspace is undefined for negative char
-  if (*p == '+') p++;
-  ValueType v = 0;
-  std::from_chars(p, p + std::strlen(p), v);
-  return v;
-}
-
-}  // namespace detail
-
-template <> inline int atoreal<int>(const char* str) { return detail::from_chars_parse<int>(str); }
-template <> inline long atoreal<long>(const char* str) { return detail::from_chars_parse<long>(str); }
-template <> inline long long atoreal<long long>(const char* str) { return detail::from_chars_parse<long long>(str); }
-
-template <> inline float atoreal<float>(const char* str) { return detail::from_chars_parse<float>(str); }
-template <> inline double atoreal<double>(const char* str) { return detail::from_chars_parse<double>(str); }
-template <> inline long double atoreal<long double>(const char* str) { return detail::from_chars_parse<long double>(str); }
-#endif
-
-template <class Real> inline Real atoreal(const char* str) { // Warning: does not do correct rounding
+template <class Real> inline Real atoreal_generic(const char* str) { // Warning: does not do correct rounding
   const auto get_num = [](const char* str, int& end) {
     Real val = 0, exp = 1;
     for (int i = end; i >= 0; i--) {
@@ -102,6 +79,33 @@ template <class Real> inline Real atoreal(const char* str) { // Warning: does no
   }
   return val;
 }
+
+}  // namespace detail
+
+#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
+namespace detail {
+
+// std::from_chars is correctly rounded and, unlike strtod / std::stod, independent of the
+// LC_NUMERIC decimal separator. It takes no leading whitespace and no leading '+', both of which
+// atoreal accepts, and it leaves the value at 0 when nothing parses. For a value out of range it sets
+// none, so those take atoreal_generic, which gives inf or 0.
+template <class ValueType> inline ValueType from_chars_parse(const char* str) {
+  const char* p = str;
+  while (std::isspace((unsigned char)*p)) p++; // cast: isspace is undefined for negative char
+  if (*p == '+') p++;
+  ValueType v = 0;
+  if (std::from_chars(p, p + std::strlen(p), v).ec == std::errc::result_out_of_range) return atoreal_generic<ValueType>(str);
+  return v;
+}
+
+}  // namespace detail
+
+template <> inline float atoreal<float>(const char* str) { return detail::from_chars_parse<float>(str); }
+template <> inline double atoreal<double>(const char* str) { return detail::from_chars_parse<double>(str); }
+template <> inline long double atoreal<long double>(const char* str) { return detail::from_chars_parse<long double>(str); }
+#endif
+
+template <class Real> inline Real atoreal(const char* str) { return detail::atoreal_generic<Real>(str); }
 
 template <class Real> static inline constexpr bool isinf_generic(const Real a) {
   return (a==2*a && a!=0);
