@@ -30,15 +30,17 @@ endif
 
 CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB
 
-CXXFLAGS += -DSCTL_PROFILE=25 -DSCTL_VERBOSE # Enable profiling
+CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
 CXXFLAGS += -DSCTL_SIG_HANDLER # Enable SCTL stack trace
 
 CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
 
-# CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
-# CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
+#CXXFLAGS += -DSCTL_HAVE_MPI #use MPI
+
+CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
+CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
 #CXXFLAGS += -qmkl -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK -DSCTL_HAVE_FFTW3_MKL # use MKL BLAS, LAPACK and FFTW (Intel compiler)
-CXXFLAGS += -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK (non-Intel compiler)
+#CXXFLAGS += -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK (non-Intel compiler)
 
 CXXFLAGS += -lfftw3_omp -DSCTL_FFTW_THREADS
 CXXFLAGS += -lfftw3 -DSCTL_HAVE_FFTW
