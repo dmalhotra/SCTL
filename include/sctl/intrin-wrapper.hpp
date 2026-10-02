@@ -1361,7 +1361,7 @@ namespace sctl { // Generic
       const VData lim = set1_intrin<VData>((Real)(2*(max_exp-1)));
       const VData xc = min_intrin(lim, max_intrin(unary_minus_intrin(lim), x)); // keeps NaN, the second operand
       const VData n = rint_intrin(xc);
-      const VData e = exp_intrin(mul_intrin(sub_intrin(xc, n), set1_intrin<VData>(const_ln2<Real>())));
+      const VData e = approx_exp_intrin<(Integer)(SigBits/3.8), false>(mul_intrin(sub_intrin(xc, n), set1_intrin<VData>(const_ln2<Real>()))); // |x| <= ln2/2: no range check
       const IntVec ni = lrint_intrin<IntVec>(n);
       const IntVec n1 = bitshiftright_intrin(ni, 1);
       const IntVec n2 = sub_intrin(ni, n1);
@@ -1455,9 +1455,7 @@ namespace sctl { // Generic
   }
   template <class VData> inline VData exp_half_intrin(const VData& a) { // e^a / 2 for a >= 0; inf beyond the overflow
     using Real = typename VData::ScalarType;
-    constexpr Integer max_exp = (1 << (sizeof(Real)*8 - TypeTraits<Real>::SigBits - 2)) - 1;
-    const VData ac = min_intrin(set1_intrin<VData>((Real)((max_exp + 1.25) * 0.69314718055994530942 + 1)), a); // exp of larger values wraps
-    return mul_intrin(exp_intrin(sub_intrin(ac, set1_intrin<VData>((Real)1))), set1_intrin<VData>(const_e<Real>()/2));
+    return mul_intrin(exp_intrin(sub_intrin(a, set1_intrin<VData>((Real)1))), set1_intrin<VData>(const_e<Real>()/2));
   }
   template <class VData> inline VData cosh_intrin(const VData& x) {
     const VData h = exp_half_intrin(fabs_intrin(x));
@@ -1474,7 +1472,7 @@ namespace sctl { // Generic
     using Real = typename VData::ScalarType;
     const VData one = set1_intrin<VData>((Real)1);
     const VData a = fabs_intrin(x);
-    const VData u = exp_intrin(mul_intrin(min_intrin(set1_intrin<VData>((Real)40), a), set1_intrin<VData>((Real)-2))); // tanh(40) rounds to 1
+    const VData u = exp_intrin(mul_intrin(a, set1_intrin<VData>((Real)-2)));
     const VData big = copysign_intrin(div_intrin(sub_intrin(one, u), add_intrin(one, u)), x);
     const VData s = sinh_series_intrin(x);
     const VData small = div_intrin(s, sqrt_intrin(fma_intrin(s, s, one))); // sinh / cosh
