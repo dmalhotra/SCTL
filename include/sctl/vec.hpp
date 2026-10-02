@@ -576,10 +576,10 @@ namespace sctl {
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x);
 
-  /** Square root, correctly rounded; faster than approx_sqrt when the result is needed at once or among other arithmetic. */
+  /** Square root, correctly rounded; faster than approx_sqrt when needed at once, or with 8+ other FMAs per call (double, Sapphire Rapids). */
   template <class ValueType, Integer N> inline Vec<ValueType,N> sqrt(const Vec<ValueType,N>& x);
 
-  /** 1/sqrt(x) with correctly rounded sqrt; faster than approx_rsqrt when needed at once or among much other arithmetic. */
+  /** 1/sqrt(x) with correctly rounded sqrt; faster than approx_rsqrt when needed at once, or with 26+ other FMAs per call (double, Sapphire Rapids). */
   template <class ValueType, Integer N> inline Vec<ValueType,N> rsqrt(const Vec<ValueType,N>& x);
 
   /** Absolute value. */
