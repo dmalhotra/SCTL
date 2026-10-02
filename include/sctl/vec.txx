@@ -476,10 +476,10 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x) {
     return exp_intrin(x.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x) {
+  template <Integer digits, bool RangeCheck, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x) {
     constexpr Integer ORDER = digits;
     if (digits == -1 || ORDER > 13) return exp(x);
-    else return approx_exp_intrin<ORDER>(x.get());
+    else return approx_exp_intrin<ORDER, RangeCheck>(x.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x) {
     return log_intrin(x.get());

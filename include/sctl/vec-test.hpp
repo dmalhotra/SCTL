@@ -917,6 +917,9 @@ namespace sctl {
           SCTL_ASSERT(exp(VecType(-x))[0] == 0 && approx_exp<8>(VecType(-x))[0] == 0);
         }
         SCTL_ASSERT(isnan(exp(VecType((ScalarType)NAN))[0]) && isnan(approx_exp<8>(VecType((ScalarType)NAN))[0]));
+        const VecType ae = approx_exp<8>(u1.v);
+        const VecType ae_unchecked = approx_exp<8, false>(u1.v);
+        for (Integer i = 0; i < N; i++) SCTL_ASSERT(fabs(ae_unchecked[i] - ae[i]) <= err_tol * ae[i]); // equal in the range, up to FMA contraction in generic code
       }
 
       static void test_reals_rsqrt() {
