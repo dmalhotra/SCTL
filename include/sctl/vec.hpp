@@ -557,13 +557,16 @@ namespace sctl {
 
   // Special functions
 
-  /** 1/sqrt(x) to the given digits (-1: full precision, within a few ulp), for 1e-300 <= x <= 1e300. */
+  /**
+   * 1/sqrt(x) to the given digits (-1: full precision, within a few ulp). At native SSE, AVX, AVX-512 widths, for double x from
+   * 8e-304 (AVX-512: 2.3e-308) and float x from 1.2e-38 up to the largest finite value; smaller x, 0 and inf give NaN or +-inf.
+   */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x);
 
   /** As approx_rsqrt(x), with zero in the elements not in m; for x that can be zero. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x, const typename Vec<ValueType,N>::MaskType& m);
 
-  /** sqrt(x) as x * approx_rsqrt(x), to the given digits, for 1e-300 <= x <= 1e300. */
+  /** sqrt(x) as x * approx_rsqrt(x), to the given digits, for x in the range of approx_rsqrt. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sqrt(const Vec<ValueType,N>& x);
 
   /** As approx_sqrt(x), with zero in the elements not in m; for x that can be zero. */
