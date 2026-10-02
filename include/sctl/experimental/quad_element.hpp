@@ -161,7 +161,7 @@ namespace sctl {
 
       /**
        * Set the quadrature scheme for the self- and near-interactions. The
-       * default is QuadScheme::TensorProduct.
+       * default is QuadScheme::Duffy.
        *
        * @param[in] s the quadrature scheme.
        */
@@ -248,7 +248,7 @@ namespace sctl {
       Vector<Real> dcoord_du, dcoord_dv; // derivatives of coord along 'u' and 'v', in the same layout
       Vector<Real> X_node, Xn_node; // node positions and unit normals in AoS order
       Vector<Long> node_cnt; // number of nodes of each element
-      QuadScheme scheme_ = QuadScheme::TensorProduct;
+      QuadScheme scheme_ = QuadScheme::Duffy;
   };
 
 }
