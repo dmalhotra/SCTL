@@ -905,6 +905,25 @@ template <class Real> void test_VTU(const Comm& comm) {
   }
 }
 
+// An empty, default-constructed list (order 0) next to a sphere, with the targets on the nodes, leaves
+// the potential unchanged
+template <class Real> void test_EmptyList(const Comm& comm) {
+  const QuadElemList<Real> qel = BuildTwistedSphere<Real>(4, 2, 1, (Real)0.3, comm);
+  Vector<Real> X;
+  qel.GetNodeCoord(&X, nullptr, nullptr);
+  const Vector<Real> sigma = TestDensity(X, 1);
+  const auto potential = [&qel, &sigma, &comm](const bool with_empty) {
+    BoundaryIntegralOp<Real,Laplace3D_FxU> op(Laplace3D_FxU(), false, comm);
+    op.SetAccuracy((Real)1e-6);
+    op.AddElemList(qel, "sphere");
+    if (with_empty) op.AddElemList(QuadElemList<Real>(), "empty");
+    Vector<Real> U;
+    op.ComputePotential(U, sigma);
+    return U;
+  };
+  SCTL_ASSERT(RelErr(potential(true), potential(false)) == 0);
+}
+
 // ============================================================================================
 // 2. One element: near- and self-interactions for every scheme and element order
 // ============================================================================================
@@ -1334,6 +1353,8 @@ int main(int argc, char** argv) {
     passed("test_Copy");
     test_VTU<Real>(comm);
     passed("test_VTU");
+    test_EmptyList<Real>(comm);
+    passed("test_EmptyList");
 
     if (root) std::cout << "\n==================== 2. One element, every scheme ====================\n";
     {

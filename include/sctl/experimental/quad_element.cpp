@@ -1891,6 +1891,7 @@ namespace sctl {
 
   template <class Real> template <class Kernel> void QuadElemList<Real>::SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const Real tol, const bool trg_dot_prod, const ElementListBase<Real>* self) {
     const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
+    if (!qel.Size()) return; // nothing to compute, also for a default-constructed list, whose order is 0
     const Integer order = qel.Order();
     const Integer digits = detail_quadelem::DigitsFromTol<Real>(tol);
     switch (order) {
