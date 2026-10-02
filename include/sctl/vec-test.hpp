@@ -54,6 +54,7 @@ namespace sctl {
 
         //VecTest<long double,N>::test_all();
         //VecTest<long double,N>::test_reals();
+        VecTest<long double,N>::test_approx_exp_sincos();
 
         #ifdef SCTL_QUAD_T
         VecTest<QuadReal,N>::test_all();
@@ -95,6 +96,27 @@ namespace sctl {
           test_mask_helpers();
           test_reals_math();
           test_reals_math2();
+        }
+      }
+
+      static void test_approx_exp_sincos() { // approx_exp over the whole range of the result
+        if (N*sizeof(ScalarType)*8<=512) {
+          const ScalarType max_x = std::log(std::numeric_limits<ScalarType>::max());
+          UnionType u, u1;
+          for (Integer i = 0; i < N; i++) {
+            u.x[i] = (ScalarType)((drand48()-0.5)*2) * max_x;
+            u1.x[i] = (ScalarType)((drand48()-0.5)*200);
+          }
+          const VecType e = approx_exp<12>(u.v);
+          VecType sn, cs;
+          approx_sincos<12>(sn, cs, u1.v);
+          for (Integer i = 0; i < N; i++) {
+            const ScalarType ref = std::exp(u.x[i]);
+            SCTL_ASSERT(fabs(e[i] - ref) <= (ScalarType)1e-12 * ref || ref < std::numeric_limits<ScalarType>::min());
+            SCTL_ASSERT(fabs(sn[i] - std::sin(u1.x[i])) <= (ScalarType)1e-12 && fabs(cs[i] - std::cos(u1.x[i])) <= (ScalarType)1e-12);
+          }
+          SCTL_ASSERT(isinf(approx_exp<12>(VecType((ScalarType)INFINITY))[0]) && approx_exp<12>(VecType(-(ScalarType)INFINITY))[0] == 0);
+          SCTL_ASSERT(isnan(approx_exp<12>(VecType((ScalarType)NAN))[0]));
         }
       }
 

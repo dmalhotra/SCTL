@@ -2,6 +2,7 @@
 #define _SCTL_INTRIN_WRAPPER_HPP_
 
 #include <stdint.h>             // for int8_t, int16_t, int32_t, int64_t, uint8_t, ...
+#include <limits>               // for numeric_limits
 #include <type_traits>          // for is_same
 
 #include "sctl/common.hpp"      // for Integer, sctl, SCTL_ALIGN_B...
@@ -99,18 +100,25 @@ namespace sctl { // Traits
       static constexpr DataType Type = DataType::Real;
       static constexpr Integer Size = sizeof(float);
       static constexpr Integer SigBits = 23;
+      static constexpr Integer ExpBits = 8;
   };
   template <> class TypeTraits<double> {
     public:
       static constexpr DataType Type = DataType::Real;
       static constexpr Integer Size = sizeof(double);
       static constexpr Integer SigBits = 52;
+      static constexpr Integer ExpBits = 11;
   };
   template <> class TypeTraits<long double> {
     public:
       static constexpr DataType Type = DataType::Real;
       static constexpr Integer Size = sizeof(long double);
       static constexpr Integer SigBits = significant_bits<long double>();
+      static constexpr Integer ExpBits = [] { // 15 for x87, which also stores the leading bit and pads to 128 bits
+        Integer b = 0;
+        for (long m = 2L * std::numeric_limits<long double>::max_exponent - 1; m > 0; m >>= 1) b++;
+        return b;
+      }();
   };
 #ifdef SCTL_QUAD_T
   template <> class TypeTraits<QuadReal> {
@@ -118,6 +126,7 @@ namespace sctl { // Traits
       static constexpr DataType Type = DataType::Real;
       static constexpr Integer Size = sizeof(QuadReal);
       static constexpr Integer SigBits = 112;
+      static constexpr Integer ExpBits = 15;
   };
 #endif
 
@@ -504,14 +513,9 @@ namespace sctl { // Generic
   }
   template <class VData> inline VData rint_intrin(const VData& x) { // nearest integer, halves to even, as std::rint; generic: |x| < 2^(SigBits-1), zero results are +0
     using Real = typename VData::ScalarType;
-    using Int = typename IntegerType<sizeof(Real)>::value;
     static_assert(TypeTraits<Real>::Type == DataType::Real, "Expected real type!");
 
-    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
-    union {
-      Int Cint = (((Int)1) << (SigBits - 1)) + ((SigBits + ((((Int)1)<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
-      Real Creal;
-    };
+    static constexpr Real Creal = (Real)1.5 * pow<TypeTraits<Real>::SigBits,Real>((Real)2);
     VData Vreal(set1_intrin<VData>(Creal));
     return sub_intrin(add_intrin(x, Vreal), Vreal);
   }
@@ -1045,10 +1049,7 @@ namespace sctl { // Generic
     static constexpr Real neg_pi_over_2 = -const_pi<Real>()/2;
     static constexpr Real inv_pi_over_2 = 1 / pi_over_2;
 
-    union {
-      Int Cint = 0 + (((Int)1) << (SigBits - 1)) + ((SigBits + ((((Int)1)<<(sizeof(Real)*8 - SigBits - 2))-1)) << SigBits);
-      Real Creal;
-    };
+    static constexpr Real Creal = (Real)1.5 * pow<SigBits,Real>((Real)2); // x + Creal: the integer in the low bits of the significand
     VData real_offset(set1_intrin<VData>(Creal));
 
     VData x_int(fma_intrin(x, set1_intrin<VData>(inv_pi_over_2), real_offset));
@@ -1131,7 +1132,7 @@ namespace sctl { // Generic
 
   template <class Real> struct Ln2Split { // ln2 = hi + lo from the integers of const_ln2 (A 2^-63 + B 2^-126); n hi is exact for |n| < 2^ExpBits
     static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
-    static constexpr Integer ExpBits = sizeof(Real)*8 - SigBits - 1;
+    static constexpr Integer ExpBits = TypeTraits<Real>::ExpBits;
     static constexpr Integer HiBits = std::max<Integer>(0, std::min<Integer>(63, SigBits + 1 - ExpBits));
     static constexpr uint64_t A = 6393154322601327829ull;
     static constexpr uint64_t B = 8248603190132260267ull;
@@ -1159,7 +1160,7 @@ namespace sctl { // Generic
     static constexpr Real coeff13 = 1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13); // err = 2^-57.2759
     static constexpr Real x0 = -const_ln2<Real>();
     static constexpr Real invx0 = -1 / x0; // 1/ln(2)
-    static constexpr Integer ExpBits = sizeof(Real)*8 - SigBits - 1;
+    static constexpr Integer ExpBits = TypeTraits<Real>::ExpBits;
     static constexpr bool split_ln2 = [] { // Taylor error (ln2/2)^(ORDER+1)/(ORDER+1)! below the error 2^(ExpBits-1) eps of x1 with one-part ln2
       double taylor_err = 1;
       for (Integer k = 1; k <= std::min<Integer>(ORDER, 13) + 1; k++) taylor_err *= 0.34657359027997264 / k;
@@ -1169,7 +1170,6 @@ namespace sctl { // Generic
     }();
 
     VData x_(rint_intrin(mul_intrin(x, set1_intrin<VData>(invx0))));
-    IntVec int_x_ = lrint_intrin<IntVec>(x_);
     VData x1;
     if constexpr (split_ln2) { // x_ * Ln2Split::hi is exact
       x1 = fma_intrin(x_, set1_intrin<VData>(-Ln2Split<Real>::hi), x);
@@ -1195,7 +1195,15 @@ namespace sctl { // Generic
     else if (ORDER >=  0) e1 = set1_intrin<VData>(1);
 
     VData e2;
-    { // set e2 = 2 ^ x_
+    if constexpr (std::is_same<Real,long double>::value && std::numeric_limits<long double>::digits == 64) { // x87: the leading bit is stored, and the format padded; 2^x_ one element at a time
+      union {
+        VData v;
+        Real x[VData::Size];
+      } u = {x_};
+      for (Integer i = 0; i < VData::Size; i++) u.x[i] = std::ldexp((Real)1, (int)std::max<Real>(-20000, std::min<Real>(20000, u.x[i])));
+      e2 = u.v;
+    } else { // set e2 = 2 ^ x_
+      const IntVec int_x_ = lrint_intrin<IntVec>(x_);
       union {
         Real real_one = 1.0;
         Int int_one;
@@ -1203,7 +1211,7 @@ namespace sctl { // Generic
       IntVec int_e2 = add_intrin(set1_intrin<IntVec>(int_one), bitshiftleft_intrin(int_x_, SigBits));
 
       // Handle underflow
-      static constexpr Int max_exp = -(Int)(((Int)1)<<((sizeof(Real)*8-SigBits-2)));
+      static constexpr Int max_exp = -(((Int)1) << (ExpBits - 1));
       e2 = reinterpret_intrin<VData>(select_intrin(comp_intrin<ComparisonType::gt>(int_x_, set1_intrin<IntVec>(max_exp)) , int_e2, zero_intrin<IntVec>()));
     }
 
