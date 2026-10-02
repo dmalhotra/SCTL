@@ -539,7 +539,7 @@ namespace sctl {
         }
 
         { // Project onto the v-nodes: into rows (a,c) of Tall, or for a small rule into Tblk and then onto the u-nodes
-          ScratchBuf<Real> Tblk(fused ? C*nu*order : 0, pool); // [c][a*order + j]; rows (a,c) as in Tall, through strides known only at run time, made small rules up to 3.5% slower
+          ScratchBuf<Real> Tblk(fused ? C*nu*order : 0, pool); // [c][a*order + j]; rows (a,c) as in Tall, through strides known only at run time, made small rules up to 1.7% slower
           const SmallGEMM<Real, DynamicSize, order, DynamicSize> proj_v(false, nu, order, Nv, Nv, order, (fused ? order : C*order));
           for (Integer c = 0; c < C; c++) proj_v((fused ? Tblk.begin() + c*nu*order : Tall.begin() + (a0*C + c)*order), KW + c*ld, rv.MTD.begin());
           if (fused) { // the only block: nu = Nu
