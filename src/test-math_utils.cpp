@@ -233,6 +233,11 @@ int main() {
     // signed zero; exp beyond the range of QuadReal
     CHECK(std::signbit((double)sctl::sin<Q>(-Q(R(0)))) && std::signbit((double)sctl::asin<Q>(-Q(R(0)))) && std::signbit((double)sctl::atan<Q>(-Q(R(0)))));
     CHECK(sctl::isinf<Q>(sctl::exp<Q>(Q(R(1e100)))) && sctl::exp<Q>(-Q(R(INFINITY))) == Q(R(0)));
+    // exp near the overflow, against libquadmath (e^11000 = 1.5642... 2^15869), and a subnormal result
+    Q exp_ref = Q(0x1.90712c344d656p+0) + Q(-0x1.12ce5d6c7d4aep-54);
+    for (int i = 0; i < 15869; i++) exp_ref = exp_ref * 2;
+    CHECK(sctl::fabs<Q>(sctl::exp<Q>(Q(R(11000))) - exp_ref) < exp_ref * Q(R(1e-32)));
+    CHECK(sctl::exp<Q>(Q(R(-11433))) > Q(R(0)));
     // acos at 1 and just below, where (double)a rounds to 1
     CHECK((double)sctl::acos<Q>(Q(R(1))) == R(0));
     CHECK(test_utils::approx_eq((double)sctl::acos<Q>(Q(R(1)) - Q(R(1e-20))), std::sqrt(R(2e-20)), R(1e-20)));

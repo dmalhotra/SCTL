@@ -292,50 +292,34 @@ template <class Real> static inline Real fmod_generic(const Real a, const Real b
 }
 
 template <class Real> static inline Real exp_generic(const Real a) {
-  const int N = 200;
-  static std::vector<Real> theta0;
-  static std::vector<Real> theta1;
-  static std::vector<Real> expval0;
-  static std::vector<Real> expval1;
-  if (theta0.size() == 0) {
-#pragma omp critical(SCTL_QUAD_EXP)
-    if (theta0.size() == 0) {
-      std::vector<Real> theta0_(N);
-      theta1.resize(N);
-      expval0.resize(N);
-      expval1.resize(N);
+  if (!(a == a)) return a;
+  if (fabs<Real>(a) > (Real)0x1p14) return (a < 0.0 ? (Real)0 : (Real)INFINITY); // beyond the range of QuadReal
+  // a = k ln2 + r, |r| <= ln2/2; ln2 = sum of ln2p[i], each with 51 significant bits, so k * ln2p[i] is exact
+  const Real k = round<Real>(a * (Real)1.44269504088896340736);
+  const Real ln2p[4] = {(Real)0x1.62e42fefa39ecp-1, (Real)0x1.9abc9e3b39800p-52, (Real)0x1.f97b57a079a18p-103, (Real)0x1.3394c5b16c508p-155};
+  Real r = a;
+  for (const Real& p : ln2p) r -= k * p;
 
-      theta0_[0] = 1.0;
-      theta1[0] = 1.0;
-      expval0[0] = const_e<Real>();
-      expval1[0] = const_e<Real>();
-      for (int i = 1; i < N; i++) {
-        theta0_[i] = theta0_[i - 1] * 0.5;
-        theta1[i] = theta1[i - 1] * 2.0;
-        expval0[i] = sqrt<Real>(expval0[i - 1]);
-        expval1[i] = expval1[i - 1] * expval1[i - 1];
-      }
-      theta0.swap(theta0_);
-    }
-  }
+  static const std::vector<Real> coeff = [] { // 1/n!; the first term left out, (ln2/2)^26/26!, is below 2^-128
+    std::vector<Real> c(26);
+    c[0] = 1;
+    for (Integer n = 1; n < 26; n++) c[n] = c[n-1] / n;
+    return c;
+  }();
+  Real e = coeff[25];
+  for (Integer n = 24; n >= 0; n--) e = e * r + coeff[n];
 
-  Real t = (a < 0.0 ? -a : a);
-  if (t > (Real)0x1p14) return (a < 0.0 ? (Real)0 : (Real)INFINITY); // beyond the range of QuadReal; the loop below would take t / 2^199 steps
-  Real eval = 1.0;
-  for (int i = N - 1; i > 0; i--) {
-    while (theta1[i] <= t) {
-      eval = eval * expval1[i];
-      t = t - theta1[i];
+  const auto pow2 = [](const Long j) { // 2^j, exact
+    Real b = (j < 0 ? (Real)0.5 : (Real)2);
+    Real p = 1;
+    for (Long m = (j < 0 ? -j : j); m > 0; m >>= 1) {
+      if (m & 1) p *= b;
+      b *= b;
     }
-  }
-  for (int i = 0; i < N; i++) {
-    while (theta0[i] <= t) {
-      eval = eval * expval0[i];
-      t = t - theta0[i];
-    }
-  }
-  eval = eval * (1.0 + t);
-  return (a < 0.0 ? 1.0 / eval : eval);
+    return p;
+  };
+  const Long k1 = (Long)k / 2;
+  return e * pow2(k1) * pow2((Long)k - k1); // two factors, so that a subnormal result is rounded once
 }
 
 template <class Real> static inline Real log_generic(const Real a) {
