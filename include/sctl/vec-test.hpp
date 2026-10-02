@@ -845,7 +845,7 @@ namespace sctl {
           const ScalarType tan_x = tan<ScalarType>(x);
           SCTL_ASSERT(a[i] == fabs(x));
           SCTL_ASSERT(s[i] == sqrt<ScalarType>(a[i])); // correctly rounded, as the scalar sqrt
-          SCTL_ASSERT(r[i] == 1/sqrt<ScalarType>(a[i]));
+          SCTL_ASSERT(r[i] == 1/sqrt<ScalarType>(a[i]) || fabs(r[i] - 1/sqrt<ScalarType>(a[i])) <= 4*eps/sqrt<ScalarType>(a[i])); // within 2 ulp
           SCTL_ASSERT(f[i] == floor<ScalarType>(x));
           SCTL_ASSERT(c[i] == ceil<ScalarType>(x));
           SCTL_ASSERT(cs[i] == (u2.x[i] < 0 ? -a[i] : a[i]));
@@ -874,6 +874,15 @@ namespace sctl {
           for (Integer i = 0; i < N; i++) {
             SCTL_ASSERT(fabs(snf[i] - sin<ScalarType>(u1.x[i])) < err_tol);
             SCTL_ASSERT(fabs(atf[i] - atan2<ScalarType>(u1.x[i], u2.x[i])) <= 8*eps*fabs(atan2<ScalarType>(u1.x[i], u2.x[i])));
+          }
+        }
+
+        if constexpr (sizeof(ScalarType) <= sizeof(double)) { // rsqrt at zeros, inf, a subnormal, a negative value and NaN, as 1/sqrt
+          const ScalarType sv[] = {(ScalarType)0, (ScalarType)-0.0, (ScalarType)INFINITY, std::numeric_limits<ScalarType>::denorm_min() * 8, (ScalarType)-1, (ScalarType)NAN};
+          for (const ScalarType x : sv) {
+            const ScalarType ref = 1/std::sqrt(x);
+            const ScalarType r0 = rsqrt(VecType(x))[0];
+            SCTL_ASSERT(std::isnan(ref) ? std::isnan(r0) : (r0 == ref || fabs(r0 - ref) <= 4*eps*ref));
           }
         }
 

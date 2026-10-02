@@ -1488,6 +1488,13 @@ namespace sctl { // Generic
   template <class VData> inline VData rsqrt_intrin(const VData& x) {
     return div_intrin(set1_intrin<VData>((typename VData::ScalarType)1), sqrt_intrin(x));
   }
+  template <class VData> inline VData rsqrt_full_intrin(const VData& x) { // 1/sqrt(x): rsqrt_approx_intrin at full precision for 2 min <= x <= max; if any x is outside, sqrt and division there
+    using Real = typename VData::ScalarType;
+    const VData r = rsqrt_approx_intrin<(Integer)(TypeTraits<Real>::SigBits*0.3010299957), VData>::eval(x);
+    const Mask<VData> in_range = comp_intrin<ComparisonType::ge>(x, set1_intrin<VData>(2 * std::numeric_limits<Real>::min())) & comp_intrin<ComparisonType::le>(x, set1_intrin<VData>(std::numeric_limits<Real>::max()));
+    if (mask_count_intrin(in_range) == VData::Size) return r;
+    return select_intrin(in_range, r, div_intrin(set1_intrin<VData>((Real)1), sqrt_intrin(x))); // 0, inf, subnormal and negative x, NaN
+  }
   template <class VData> inline VData fabs_intrin(const VData& x) {
     if constexpr (TypeTraits<typename VData::ScalarType>::Type == DataType::Real) {
       return andnot_intrin(x, set1_intrin<VData>((typename VData::ScalarType)-0.0)); // clears the sign bit
@@ -4915,6 +4922,8 @@ namespace sctl { // AVX512
       #endif
     }
   };
+  template <> inline VecData<float,16> rsqrt_intrin<VecData<float,16>>(const VecData<float,16>& x) { return rsqrt_full_intrin(x); } // faster than sqrt and division here, for dependent and independent calls
+  template <> inline VecData<double,8> rsqrt_intrin<VecData<double,8>>(const VecData<double,8>& x) { return rsqrt_full_intrin(x); }
 
   #ifdef SCTL_HAVE_SVML
   template <> inline void sincos_intrin<VecData<float,16>>(VecData<float,16>& sinx, VecData<float,16>& cosx, const VecData<float,16>& x) { sinx = _mm512_sincos_ps(&cosx.v, x.v); }

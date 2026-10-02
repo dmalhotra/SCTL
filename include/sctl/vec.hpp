@@ -592,8 +592,9 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> sqrt(const Vec<ValueType,N>& x);
 
   /**
-   * 1/sqrt(x) with correctly rounded sqrt. Cycles per call, dependent / independent calls, Sapphire Rapids:
-   * double x8 45 / 40, x4 26 / 20; approx_rsqrt<-1> 36 / 5.2, 57 / 7.3.
+   * 1/sqrt(x): 1 divided by the correctly rounded sqrt (within 1.5 ulp); at 512-bit widths (double x8, float x16), approx_rsqrt<-1>
+   * (within 1.8 ulp) for 2 min <= x <= max, the division elsewhere. Cycles per call, dependent / independent calls, Sapphire Rapids:
+   * double x8 35 / 7.1, x4 26 / 20; approx_rsqrt<-1> 36 / 5.2, 57 / 7.3.
    */
   template <class ValueType, Integer N> inline Vec<ValueType,N> rsqrt(const Vec<ValueType,N>& x);
 
