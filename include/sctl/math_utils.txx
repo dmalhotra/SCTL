@@ -251,6 +251,10 @@ template <class Real> static inline Real tan_generic(const Real a) {
 }
 
 template <class Real> static inline Real asin_generic(const Real a) {
+  if (fabs<Real>(a) > 0.5) { // Newton below divides by cos(b), which is near 0 at a = +-1
+    const Real b = const_pi<Real>()/2 - 2*asin_generic(sqrt<Real>((1-fabs<Real>(a))/2));
+    return (a < 0 ? -b : b);
+  }
   Real b = ::asin((double)a);
   if (!(b!=b)) { // Newton iterations for greater accuracy
     b += (a-sin<Real>(b))/cos<Real>(b);
@@ -260,6 +264,8 @@ template <class Real> static inline Real asin_generic(const Real a) {
 }
 
 template <class Real> static inline Real acos_generic(const Real a) {
+  if (a > 0.5) return 2*asin_generic(sqrt<Real>((1-a)/2)); // Newton below divides by sin(b), which is near 0 at a = +-1
+  if (a < -0.5) return const_pi<Real>() - 2*asin_generic(sqrt<Real>((1+a)/2));
   Real b = ::acos((double)a);
   if (!(b!=b)) { // Newton iterations for greater accuracy
     b += (cos<Real>(b)-a)/sin<Real>(b);

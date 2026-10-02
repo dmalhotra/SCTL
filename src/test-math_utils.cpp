@@ -220,6 +220,9 @@ int main() {
     Q q(R(-3.5));
     CHECK((double)sctl::fabs<Q>(q) == R(3.5));
     CHECK(test_utils::approx_eq((double)sctl::sqrt<Q>(Q(R(9))), R(3), tol));
+    // acos at 1 and just below, where (double)a rounds to 1
+    CHECK((double)sctl::acos<Q>(Q(R(1))) == R(0));
+    CHECK(test_utils::approx_eq((double)sctl::acos<Q>(Q(R(1)) - Q(R(1e-20))), std::sqrt(R(2e-20)), R(1e-20)));
   }
 #endif
 

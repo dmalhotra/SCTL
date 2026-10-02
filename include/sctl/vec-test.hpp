@@ -858,7 +858,7 @@ namespace sctl {
         const ScalarType eps = machine_eps<ScalarType>();
         const ScalarType err_tol = std::max<ScalarType>((ScalarType)1.77e-15, (pow<TypeTraits<ScalarType>::SigBits-3,ScalarType>((ScalarType)0.5)));
         const auto rel = [](ScalarType a, ScalarType b) { return fabs(a - b) / fabs(b); };
-        const ScalarType tol = std::max<ScalarType>(16*eps, (ScalarType)1e-17); // long double references; QuadReal scalar atan, asin lose digits
+        const ScalarType tol = (TypeTraits<ScalarType>::SigBits > 64 ? 64 : 16)*eps; // QuadReal sin and cos, used on both sides, have about 12 eps error
 
         const VecType tr = trunc(u1.v);
         const VecType rn = round(u1.v);
@@ -882,10 +882,10 @@ namespace sctl {
           SCTL_ASSERT(tr[i] == trunc<ScalarType>(x));
           SCTL_ASSERT(rn[i] == round<ScalarType>(x));
           SCTL_ASSERT(inf[i] == (ScalarType)(i % 3 == 1) && fin[i] == (ScalarType)(i % 3 == 0));
-          SCTL_ASSERT(rel(at[i], (ScalarType)std::atan((long double)x)) <= tol);
-          SCTL_ASSERT(rel(as[i], (ScalarType)std::asin((long double)u5.x[i])) <= tol);
-          SCTL_ASSERT(rel(ac[i], (ScalarType)std::acos((long double)u5.x[i])) <= tol);
-          SCTL_ASSERT(rel(hy[i], (ScalarType)std::hypot((long double)x, (long double)u2.x[i])) <= tol);
+          SCTL_ASSERT(rel(at[i], atan<ScalarType>(x)) <= tol);
+          SCTL_ASSERT(rel(as[i], asin<ScalarType>(u5.x[i])) <= tol);
+          SCTL_ASSERT(rel(ac[i], acos<ScalarType>(u5.x[i])) <= tol);
+          SCTL_ASSERT(rel(hy[i], hypot<ScalarType>(x, u2.x[i])) <= tol);
           SCTL_ASSERT(rel(e2[i], pow<ScalarType>((ScalarType)2, x)) <= err_tol);
           SCTL_ASSERT(fabs(l2[i] - log2<ScalarType>(u4.x[i])) <= 8*eps*fabs(log2<ScalarType>(u4.x[i])));
           SCTL_ASSERT(fabs(l10[i] - log<ScalarType>(u4.x[i])/log<ScalarType>((ScalarType)10)) <= 8*eps*fabs(log<ScalarType>(u4.x[i])/log<ScalarType>((ScalarType)10)));
