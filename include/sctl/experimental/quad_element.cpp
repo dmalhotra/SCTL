@@ -2082,9 +2082,23 @@ namespace sctl {
   }
 
   template <class Real> template <class ValueType> void QuadElemList<Real>::Copy(QuadElemList<ValueType>& elem_lst) const {
+    elem_lst.scheme_ = static_cast<typename QuadElemList<ValueType>::QuadScheme>(static_cast<int>(scheme_));
+    if constexpr (significant_bits<ValueType>() > significant_bits<Real>()) {
+      if (order > 0) { // to a higher precision: the tangents, nodes and normals again from the coordinates, at that precision
+        const Integer nnode = order * order;
+        ScratchBuf<Real> X0_buf(coord.Dim());
+        Vector<Real> X0(X0_buf); // the coordinates node by node, as Init takes them
+        for (Long e = 0; e < nelem; e++) {
+          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+            for (Integer p = 0; p < nnode; p++) X0[(e * nnode + p) * detail_quadelem::COORD_DIM + k] = coord[(e * detail_quadelem::COORD_DIM + k) * nnode + p];
+          }
+        }
+        elem_lst.Init(order, X0);
+        return;
+      }
+    }
     elem_lst.nelem = nelem;
     elem_lst.order = order;
-    elem_lst.scheme_ = static_cast<typename QuadElemList<ValueType>::QuadScheme>(static_cast<int>(scheme_));
 
     const auto convert = [](Vector<ValueType>& dst, const Vector<Real>& src) {
       dst.ReInit(src.Dim());

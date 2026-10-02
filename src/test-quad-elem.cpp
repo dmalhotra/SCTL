@@ -847,7 +847,8 @@ template <class Real> void test_WriteRead(const Comm& comm) {
   SCTL_ASSERT(X2.Dim() == X.Dim() && (X.Dim() == 0 || (RelErr(X2, X) == 0 && RelErr(Xn2, Xn) == 0)));
 }
 
-// Copy to ExtReal and back keeps the nodes and the scheme.
+// Copy to ExtReal and back keeps the nodes and the scheme, and the normals of the copy are those of a
+// list built in ExtReal from the same coordinates.
 template <class Real> void test_Copy() {
   QuadElemList<Real> qel = TestElem<Real>(8, true);
   qel.SetQuadScheme(QuadScheme<Real>::Hedgehog);
@@ -864,6 +865,11 @@ template <class Real> void test_Copy() {
   SCTL_ASSERT(qel_q.Size() == qel.Size() && qel_q.Order() == qel.Order() && Xq.Dim() == X.Dim());
   for (Long i = 0; i < X.Dim(); i++) SCTL_ASSERT(Xq[i] == (ExtReal)X[i] && X2[i] == X[i]);
   SCTL_ASSERT(QuadElemTestAccess<ExtReal>::Scheme(qel_q) == QuadScheme<ExtReal>::Hedgehog);
+  Vector<ExtReal> Xn_q, Xn_ext;
+  qel_q.GetNodeCoord(nullptr, &Xn_q, nullptr);
+  QuadElemList<ExtReal>(qel.Order(), X).GetNodeCoord(nullptr, &Xn_ext, nullptr);
+  SCTL_ASSERT(Xn_q.Dim() == Xn_ext.Dim());
+  for (Long i = 0; i < Xn_q.Dim(); i++) SCTL_ASSERT(Xn_q[i] == Xn_ext[i]);
   SCTL_ASSERT(QuadElemTestAccess<Real>::Scheme(qel2) == QuadScheme<Real>::Hedgehog);
 }
 
