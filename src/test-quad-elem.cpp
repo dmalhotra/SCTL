@@ -37,6 +37,14 @@
 
 using namespace sctl;
 
+// Extended precision for the references and the copy test: QuadReal where the build has it, else
+// long double, which on some systems (macOS on arm64) is no wider than double
+#ifdef SCTL_QUAD_T
+using ExtReal = QuadReal;
+#else
+using ExtReal = long double;
+#endif
+
 namespace sctl {
 template <class Real> struct QuadElemTestAccess {
   // The rule's nodes as absolute parameters v0 + delta
@@ -249,11 +257,11 @@ template <class Real> Integer ResolvedSpherePPF(const Integer order, const Real 
 // distance to the target, and dropped if still unresolved after 52 levels (a cell containing a
 // target on the element, whose contribution vanishes with its size). Each target has an expansion
 // point Pt (u,v) on the element; within 1/16 of it the source positions are taken relative to the
-// element's value there from a Taylor expansion with coefficients computed in QuadReal, so that
+// element's value there from a Taylor expansion with coefficients computed in ExtReal, so that
 // x_t - x_s stays accurate relative to its size as the cells shrink toward the target. With target
 // normals, the kernel's target values are contracted with them in consecutive triples.
 template <class Real, class Kernel> Vector<Real> ReferencePotential(const QuadElemList<Real>& qel, const Long elem_idx, const Vector<Real>& sigma, const Vector<Real>& Xt, const Vector<Real>& Pt, const Vector<Real>& normal_trg, const Kernel& ker) {
-  using QR = QuadReal;
+  using QR = ExtReal;
   constexpr Integer RefOrder = 12;
   constexpr Integer RefMaxDepth = 52;
   constexpr Integer KDIM0 = Kernel::SrcDim();
@@ -460,9 +468,9 @@ template <class Real, class Kernel> Vector<Real> SurfaceReference(const QuadElem
 enum class FlatKernel { LaplaceSL, LaplaceDL, LaplaceAdjointDL, StokesSL };
 
 // Their potentials at the targets Xt, as corner sums over the square of the antiderivatives of 1/R,
-// z/R^3 and x/R^3 (with (x,y) relative to the target, z its height and R the distance), in QuadReal.
+// z/R^3 and x/R^3 (with (x,y) relative to the target, z its height and R the distance), in ExtReal.
 template <class Real> Vector<Real> FlatSquarePotential(const FlatKernel kernel, const Vector<Real>& Xt) {
-  using QR = QuadReal;
+  using QR = ExtReal;
   const Integer dof = (kernel == FlatKernel::StokesSL ? 3 : 1);
   const QR pi = const_pi<QR>();
   const Long Ntrg = Xt.Dim() / COORD_DIM;
@@ -832,23 +840,23 @@ template <class Real> void test_WriteRead(const Comm& comm) {
   SCTL_ASSERT(X2.Dim() == X.Dim() && (X.Dim() == 0 || (RelErr(X2, X) == 0 && RelErr(Xn2, Xn) == 0)));
 }
 
-// Copy to QuadReal and back keeps the nodes and the scheme.
+// Copy to ExtReal and back keeps the nodes and the scheme.
 template <class Real> void test_Copy() {
   QuadElemList<Real> qel = TestElem<Real>(8, true);
   qel.SetQuadScheme(QuadScheme<Real>::Hedgehog);
-  QuadElemList<QuadReal> qel_q;
+  QuadElemList<ExtReal> qel_q;
   qel.Copy(qel_q);
   QuadElemList<Real> qel2;
   qel_q.Copy(qel2);
 
   Vector<Real> X, X2;
-  Vector<QuadReal> Xq;
+  Vector<ExtReal> Xq;
   qel.GetNodeCoord(&X, nullptr, nullptr);
   qel_q.GetNodeCoord(&Xq, nullptr, nullptr);
   qel2.GetNodeCoord(&X2, nullptr, nullptr);
   SCTL_ASSERT(qel_q.Size() == qel.Size() && qel_q.Order() == qel.Order() && Xq.Dim() == X.Dim());
-  for (Long i = 0; i < X.Dim(); i++) SCTL_ASSERT(Xq[i] == (QuadReal)X[i] && X2[i] == X[i]);
-  SCTL_ASSERT(QuadElemTestAccess<QuadReal>::Scheme(qel_q) == QuadScheme<QuadReal>::Hedgehog);
+  for (Long i = 0; i < X.Dim(); i++) SCTL_ASSERT(Xq[i] == (ExtReal)X[i] && X2[i] == X[i]);
+  SCTL_ASSERT(QuadElemTestAccess<ExtReal>::Scheme(qel_q) == QuadScheme<ExtReal>::Hedgehog);
   SCTL_ASSERT(QuadElemTestAccess<Real>::Scheme(qel2) == QuadScheme<Real>::Hedgehog);
 }
 
