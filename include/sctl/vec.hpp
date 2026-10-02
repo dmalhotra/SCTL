@@ -357,8 +357,10 @@ namespace sctl {
 
   // Conversion operators
   template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType convert2mask(const Vec<ValueType,N>& a);
+  /** Nearest integer, halves to even (std::rint); exact at native SSE, AVX, AVX-512 widths, elsewhere for |x| < 2^(SigBits-1). */
   template <class ValueType, Integer N> inline Vec<ValueType,N> RoundReal2Real(const Vec<ValueType,N>& x);
   template <class RealVec, class IntVec> inline RealVec ConvertInt2Real(const IntVec& x);
+  /** RoundReal2Real as an integer, for |x| < 2^(SigBits-1); double in 2 or 4 lanes without AVX-512DQ: |x| < 2^31. */
   template <class IntVec, class RealVec> inline IntVec RoundReal2Int(const RealVec& x);
   template <class MaskType> inline Vec<typename MaskType::ScalarType,MaskType::Size> convert2vec(const MaskType& a);
 
@@ -570,8 +572,9 @@ namespace sctl {
   template <class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
   template <Integer digits, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
 
+  /** e^x. Native float, double widths without SVML: inf from x = 709.44 (float: 88.38), and 0 for results below the smallest normal. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x);
-  /** e^x to the given digits (-1: exp). Without RangeCheck, x beyond the range of the result gives wrong values. */
+  /** e^x to the given digits (-1: exp), with the limits of exp. Without RangeCheck, x beyond the range of the result gives wrong values. */
   template <Integer digits, bool RangeCheck = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x);
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x);
