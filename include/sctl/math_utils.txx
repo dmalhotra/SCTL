@@ -292,10 +292,12 @@ template <class Real> static inline void sincos_generic(const Real a, Real& sin_
     }
     q = (Integer)(P[4] >> 62); // bits 318, 319
     const U128 F = ((U128)(P[4] & ((((uint64_t)1) << 62) - 1)) << 66) | ((U128)P[3] << 2) | (P[2] >> 62); // bits 190 .. 317
-    Real f = (Real)F * (Real)0x1p-128;
-    if (f >= 0.5) {
-      f -= 1;
+    Real f;
+    if (F >> 127) { // f - 1 = -(2^128 - F) 2^-128; rounding F first would lose the low bits of f - 1
+      f = -(Real)(-F) * (Real)0x1p-128;
       q = (q + 1) & 3;
+    } else {
+      f = (Real)F * (Real)0x1p-128;
     }
     r = f * (const_pi<Real>() / 2);
     if (a < 0) {
