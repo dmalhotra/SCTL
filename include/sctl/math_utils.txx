@@ -392,6 +392,7 @@ template <class Real> static inline Real atan2_generic(const Real y, const Real 
 }
 
 template <class Real> static inline Real fmod_generic(const Real a, const Real b) {
+  if (isinf<Real>(b) && !isinf<Real>(a)) return a; // trunc(a/b) b would be 0 inf
   return a - trunc<Real>(a/b) * b;
 }
 

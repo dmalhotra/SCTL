@@ -1354,6 +1354,33 @@ namespace sctl { // Generic
     const VData c = copysign_intrin(mul_intrin(y, p2), x);
     return select_intrin(comp_intrin<ComparisonType::gt>(ax, zero) & comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>((Real)INFINITY)), c, x); // zeros, inf, NaN as they are
   }
+  template <class VData> inline VData fmod_poly_intrin(const VData& x, const VData& y) { // |x| - q |y|, q = trunc(fl(|x|/|y|)), the quotient or one more; exact with FMA
+    using Real = typename VData::ScalarType;
+    static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
+    const VData zero = zero_intrin<VData>();
+    const VData ax = fabs_intrin(x);
+    const VData ay = fabs_intrin(y);
+    const VData qf = div_intrin(ax, ay);
+    VData r = fma_intrin(unary_minus_intrin(trunc_intrin(qf)), ay, ax);
+    r = add_intrin(r, select_intrin(comp_intrin<ComparisonType::lt>(r, zero), ay, zero));
+    r = copysign_intrin(select_intrin(comp_intrin<ComparisonType::lt>(qf, set1_intrin<VData>((Real)1)), ax, r), x); // |x| < |y|: x, also for inf y
+
+    static constexpr Real lim = (Real)(((uint64_t)1) << (TypeTraits<Real>::SigBits - 1));
+    if (mask_count_intrin(comp_intrin<ComparisonType::lt>(qf, set1_intrin<VData>(lim))) < VData::Size) { // |x/y| >= lim, y = 0, inf x, NaN: one element at a time
+      union U {
+        VData v;
+        Real x[VData::Size];
+      };
+      U x_u = {x};
+      U y_u = {y};
+      U r_u = {r};
+      for (Integer i = 0; i < VData::Size; i++) {
+        if (!(fabs(x_u.x[i]) / fabs(y_u.x[i]) < lim)) r_u.x[i] = fmod(x_u.x[i], y_u.x[i]);
+      }
+      r = r_u.v;
+    }
+    return r;
+  }
   template <class VData> inline VData exp_intrin(const VData& x) {
     union U {
       VData v;
@@ -2551,6 +2578,10 @@ namespace sctl { // SSE
   }
   template <> inline VecData<float ,4> cbrt_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return cbrt_poly_intrin(x); }
   template <> inline VecData<double,2> cbrt_intrin<VecData<double,2>>(const VecData<double,2>& x) { return cbrt_poly_intrin(x); }
+#if defined(__FMA__)
+  template <> inline VecData<float ,4> fmod_intrin<VecData<float ,4>>(const VecData<float ,4>& x, const VecData<float ,4>& y) { return fmod_poly_intrin(x, y); }
+  template <> inline VecData<double,2> fmod_intrin<VecData<double,2>>(const VecData<double,2>& x, const VecData<double,2>& y) { return fmod_poly_intrin(x, y); }
+#endif
   #endif
 
 
@@ -3527,6 +3558,10 @@ namespace sctl { // AVX
 #endif
   template <> inline VecData<float ,8> cbrt_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return cbrt_poly_intrin(x); }
   template <> inline VecData<double,4> cbrt_intrin<VecData<double,4>>(const VecData<double,4>& x) { return cbrt_poly_intrin(x); }
+#if defined(__FMA__)
+  template <> inline VecData<float ,8> fmod_intrin<VecData<float ,8>>(const VecData<float ,8>& x, const VecData<float ,8>& y) { return fmod_poly_intrin(x, y); }
+  template <> inline VecData<double,4> fmod_intrin<VecData<double,4>>(const VecData<double,4>& x, const VecData<double,4>& y) { return fmod_poly_intrin(x, y); }
+#endif
   #endif
 
 
@@ -4746,6 +4781,8 @@ namespace sctl { // AVX512
 #endif
   template <> inline VecData<float,16> cbrt_intrin<VecData<float,16>>(const VecData<float,16>& x) { return cbrt_poly_intrin(x); }
   template <> inline VecData<double,8> cbrt_intrin<VecData<double,8>>(const VecData<double,8>& x) { return cbrt_poly_intrin(x); }
+  template <> inline VecData<float,16> fmod_intrin<VecData<float,16>>(const VecData<float,16>& x, const VecData<float,16>& y) { return fmod_poly_intrin(x, y); }
+  template <> inline VecData<double,8> fmod_intrin<VecData<double,8>>(const VecData<double,8>& x, const VecData<double,8>& y) { return fmod_poly_intrin(x, y); }
   #endif
 
 #endif
