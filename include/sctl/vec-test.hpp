@@ -975,6 +975,12 @@ namespace sctl {
           SCTL_ASSERT(exp(VecType(-x))[0] == 0 && approx_exp<8>(VecType(-x))[0] == 0);
         }
         SCTL_ASSERT(isnan(exp(VecType((ScalarType)NAN))[0]) && isnan(approx_exp<8>(VecType((ScalarType)NAN))[0]));
+        if constexpr (sizeof(ScalarType) <= sizeof(double)) { // exp near the overflow and with subnormal results, as std
+          const ScalarType big = std::log(std::numeric_limits<ScalarType>::max()) - (ScalarType)0.3; // e^big within a factor 1.35 of the largest value
+          const ScalarType sub = std::log(std::numeric_limits<ScalarType>::denorm_min()) + (ScalarType)8; // e^sub subnormal
+          SCTL_ASSERT(rel(exp(VecType(big))[0], std::exp(big)) <= 8*eps);
+          SCTL_ASSERT(fabs(exp(VecType(sub))[0] - std::exp(sub)) <= std::numeric_limits<ScalarType>::denorm_min());
+        }
         SCTL_ASSERT(fmod(VecType((ScalarType)5.5), VecType((ScalarType)INFINITY))[0] == (ScalarType)5.5);
         SCTL_ASSERT(cbrt(VecType((ScalarType)0))[0] == 0 && isinf(cbrt(VecType(-(ScalarType)INFINITY))[0]) && fabs(cbrt(VecType((ScalarType)-27))[0] + 3) <= 8*eps);
         if constexpr (sizeof(ScalarType) <= sizeof(double)) { // log and pow at zeros, infinities, NaN and signs, as std

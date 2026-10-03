@@ -1169,6 +1169,9 @@ namespace sctl { // Generic
     static constexpr Real hi = (Real)(A >> (63 - HiBits)) / (Real)(1ull << HiBits);
     static constexpr Real lo = (Real)(A & ((1ull << (63 - HiBits)) - 1)) / (Real)(1ull << 63) + (Real)B / (Real)(1ull << 63) / (Real)(1ull << 63);
   };
+  template <class Real> inline constexpr Real exp_normal_lim() { // for |x| below, e^x and 2^round(x/ln2) are normal and finite
+    return (Real)((((Long)1) << (TypeTraits<Real>::ExpBits - 1)) - 2) * const_ln2<Real>();
+  }
   template <Integer ORDER, bool RangeCheck = true, class VData> inline VData approx_exp_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
@@ -1199,59 +1202,65 @@ namespace sctl { // Generic
       return taylor_err < x1_err;
     }();
 
-    VData x_(rint_intrin(mul_intrin(x, set1_intrin<VData>(invx0))));
-    VData x1;
-    if constexpr (split_ln2) { // x_ * Ln2Split::hi is exact
-      x1 = fma_intrin(x_, set1_intrin<VData>(-Ln2Split<Real>::hi), x);
-      x1 = fma_intrin(x_, set1_intrin<VData>(-Ln2Split<Real>::lo), x1);
-    } else {
-      x1 = fma_intrin(x_, set1_intrin<VData>(x0), x);
-    }
+    static constexpr Int Bias = (((Int)1) << (ExpBits - 1)) - 1;
+    static constexpr Real magic = (Real)1.5 * pow<SigBits,Real>((Real)2) + (Real)Bias; // y + magic: y rounded to an integer n, with n + Bias in the low bits
 
-    VData e1;
-    if      (ORDER >= 13) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11, coeff12, coeff13);
-    else if (ORDER >= 12) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11, coeff12);
-    else if (ORDER >= 11) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11);
-    else if (ORDER >= 10) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10);
-    else if (ORDER >=  9) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9);
-    else if (ORDER >=  8) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8);
-    else if (ORDER >=  7) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7);
-    else if (ORDER >=  6) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6);
-    else if (ORDER >=  5) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5);
-    else if (ORDER >=  4) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4);
-    else if (ORDER >=  3) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3);
-    else if (ORDER >=  2) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2);
-    else if (ORDER >=  1) e1 = EvalPolynomial(x1, (Real)1, (Real)1);
-    else if (ORDER >=  0) e1 = set1_intrin<VData>(1);
+    const auto reduce = [](VData& t, VData& e1, const VData& xx) { // e^xx = e1 2^n, t = n + magic
+      t = fma_intrin(xx, set1_intrin<VData>(invx0), set1_intrin<VData>(magic));
+      const VData n = sub_intrin(t, set1_intrin<VData>(magic));
+      VData x1;
+      if constexpr (split_ln2) { // n * Ln2Split::hi is exact
+        x1 = fma_intrin(n, set1_intrin<VData>(-Ln2Split<Real>::hi), xx);
+        x1 = fma_intrin(n, set1_intrin<VData>(-Ln2Split<Real>::lo), x1);
+      } else {
+        x1 = fma_intrin(n, set1_intrin<VData>(x0), xx);
+      }
+      if      (ORDER >= 13) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11, coeff12, coeff13);
+      else if (ORDER >= 12) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11, coeff12);
+      else if (ORDER >= 11) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11);
+      else if (ORDER >= 10) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10);
+      else if (ORDER >=  9) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9);
+      else if (ORDER >=  8) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8);
+      else if (ORDER >=  7) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7);
+      else if (ORDER >=  6) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6);
+      else if (ORDER >=  5) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5);
+      else if (ORDER >=  4) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4);
+      else if (ORDER >=  3) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3);
+      else if (ORDER >=  2) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2);
+      else if (ORDER >=  1) e1 = EvalPolynomial(x1, (Real)1, (Real)1);
+      else if (ORDER >=  0) e1 = set1_intrin<VData>(1);
+    };
+    const auto pow2 = [](const VData& t) { // 2^n for t = n + magic, -Bias < n <= Bias
+      return reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(t), SigBits));
+    };
 
-    VData e2;
-    if constexpr (!ieee_layout<Real>()) { // 2^x_ one element at a time
+    VData t, e1;
+    reduce(t, e1, x);
+    if constexpr (!ieee_layout<Real>()) { // 2^n one element at a time
       union {
         VData v;
         Real x[VData::Size];
-      } u = {x_};
+      } u = {sub_intrin(t, set1_intrin<VData>(magic))};
       for (Integer i = 0; i < VData::Size; i++) u.x[i] = std::ldexp((Real)1, (int)std::max<Real>(-20000, std::min<Real>(20000, u.x[i])));
-      e2 = u.v;
-    } else { // set e2 = 2 ^ x_
-      const IntVec int_x_ = lrint_intrin<IntVec>(x_);
-      union {
-        Real real_one = 1.0;
-        Int int_one;
-      };
-      IntVec int_e2 = add_intrin(set1_intrin<IntVec>(int_one), bitshiftleft_intrin(int_x_, SigBits));
-
-      // Handle underflow
-      static constexpr Int max_exp = -(((Int)1) << (ExpBits - 1));
-      e2 = reinterpret_intrin<VData>(select_intrin(comp_intrin<ComparisonType::gt>(int_x_, set1_intrin<IntVec>(max_exp)) , int_e2, zero_intrin<IntVec>()));
-    }
-
-    if constexpr (RangeCheck) { // 2^x_ is inf at x = max_x and wraps beyond; x = -inf gives e1 = NaN
-      static constexpr Real max_x = ((Real)(((Int)1) << (ExpBits - 1)) + (Real)0.25) * const_ln2<Real>();
-      const VData e = mul_intrin(e1, e2);
-      const VData e_hi = select_intrin(comp_intrin<ComparisonType::gt>(x, set1_intrin<VData>(max_x)), set1_intrin<VData>((Real)INFINITY), e);
-      return select_intrin(comp_intrin<ComparisonType::lt>(x, set1_intrin<VData>(-2*max_x)), zero_intrin<VData>(), e_hi);
+      const VData e = mul_intrin(e1, u.v);
+      if constexpr (!RangeCheck) return e;
+      static constexpr Real max_x = ((Real)(Bias + 1) + (Real)0.25) * const_ln2<Real>(); // x = -inf gives e1 = NaN
+      return select_intrin(comp_intrin<ComparisonType::lt>(x, set1_intrin<VData>(-2*max_x)), zero_intrin<VData>(), select_intrin(comp_intrin<ComparisonType::gt>(x, set1_intrin<VData>(max_x)), set1_intrin<VData>((Real)INFINITY), e));
     } else {
-      return mul_intrin(e1, e2);
+      if constexpr (!RangeCheck) return mul_intrin(e1, pow2(t));
+      if (mask_count_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(exp_normal_lim<Real>()))) == VData::Size) return mul_intrin(e1, pow2(t));
+
+      // some x near or beyond the range of the result, inf or NaN: x clamped to where e^x is 0 or inf, and 2^n = 2^hi 2^lo,
+      // hi >= lo; e1 2^hi is exact and normal, so the result is rounded once, also where it is subnormal
+      static constexpr Real xmax = (Real)(2 * (Bias - 2)) * const_ln2<Real>();
+      reduce(t, e1, min_intrin(set1_intrin<VData>(xmax), max_intrin(set1_intrin<VData>(-xmax), x))); // keeps NaN
+      const VData n = sub_intrin(t, set1_intrin<VData>(magic));
+      const VData th = fma_intrin(n, set1_intrin<VData>((Real)0.5), set1_intrin<VData>(magic));
+      const VData h = sub_intrin(th, set1_intrin<VData>(magic));
+      const VData k = sub_intrin(n, h);
+      const VData hi = max_intrin(h, k);
+      const VData lo = min_intrin(h, k);
+      return mul_intrin(mul_intrin(e1, pow2(add_intrin(hi, set1_intrin<VData>(magic)))), pow2(add_intrin(lo, set1_intrin<VData>(magic))));
     }
   }
   template <class VData> inline void log_split_intrin(VData& e, VData& f, const VData& x) { // x = 2^e (1+f), 1+f in [sqrt(1/2), sqrt(2)), for x > 0

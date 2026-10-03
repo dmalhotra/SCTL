@@ -577,9 +577,9 @@ namespace sctl {
   /** Sine and cosine to the given number of digits; -1 for full precision. FullRange = false: faster, with an error that grows like |x| eps. */
   template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
 
-  /** e^x. Native float, double widths without SVML: inf from x = 709.44 (float: 88.38), and 0 for results below the smallest normal. */
+  /** e^x; float, double at native widths without SVML: within about 2 ulp (float: 3.5), also near the overflow and for subnormal results. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x);
-  /** e^x to the given digits (-1: exp), with the limits of exp. Without RangeCheck, x beyond the range of the result gives wrong values. */
+  /** e^x to the given digits (-1: exp). Without RangeCheck, only for |x| < 708.4 (float: 87.3). */
   template <Integer digits, bool RangeCheck = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x);
 
   /** Natural logarithm; float, double: within about 1.2 ulp, vectorized at native widths. */
