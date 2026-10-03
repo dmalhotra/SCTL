@@ -564,18 +564,17 @@ namespace sctl {
       }
     }
 
-    /** sets M_acc[p][c] to the (ru,rv) integral at Xtrg of kernel component c times basis p */
-    template <Integer order, class Real, class Kernel> void IntegratePanel(Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const QuadRule1D<Real>& ru, const QuadRule1D<Real>& rv, const Kernel& ker) {
+    /** sets M_acc[p][c] to the (ru,rv) integral at the target of kernel component c times basis p; coord_shift are the nodal coordinates relative to the target */
+    template <Integer order, class Real, class Kernel> void IntegratePanel(Matrix<Real>& M_acc, const Vector<Real>& coord_shift, const Vector<Real>& normal_trg, const QuadRule1D<Real>& ru, const QuadRule1D<Real>& rv, const Kernel& ker) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer KDIM1full = Kernel::TrgDim();
-      SCTL_ASSERT(coord.Dim() == COORD_DIM*order*order);
+      SCTL_ASSERT(coord_shift.Dim() == COORD_DIM*order*order);
       const Integer nnode = order * order;
       const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full / COORD_DIM : KDIM1full;
       const Integer C = KDIM0 * KDIM1_out;
 
-      ScratchBuf<Real> coord_shift_buf(COORD_DIM*nnode), acc_buf(C*nnode);
-      Vector<Real> coord_shift(coord_shift_buf), acc(acc_buf);
-      ShiftedElemCoord(coord_shift, coord, Xtrg);
+      ScratchBuf<Real> acc_buf(C*nnode);
+      Vector<Real> acc(acc_buf);
       acc.SetZero();
       IntegrateTensorRule<order,Real>(acc, coord_shift, ru, rv, normal_trg, ker);
       for (Integer p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] = acc[c*nnode + p];
@@ -801,8 +800,13 @@ namespace sctl {
       if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != C) M_acc.ReInit(nnode, C);
       M_acc.SetZero();
 
+      ScratchBuf<Real> cs_buf(COORD_DIM*nnode, pool);
+      Vector<Real> cs(cs_buf); // relative to the target; the closest point too is found from these, so that it is on the surface that the quadrature integrates
+      ShiftedElemCoord(cs, coord, Xtrg);
+
       Real ustar, vstar;
-      const Real dist = GetClosestPoint(ustar, vstar, coord, dcoord_du, dcoord_dv, order, Xtrg);
+      StaticArray<Real,COORD_DIM> origin{(Real)0, (Real)0, (Real)0};
+      const Real dist = GetClosestPoint(ustar, vstar, cs, dcoord_du, dcoord_dv, order, Vector<Real>(COORD_DIM, origin, false));
       const Real slen[2][2] = {{ustar, 1-ustar}, {vstar, 1-vstar}};
 
       Real spd_u, spd_v;
@@ -850,9 +854,6 @@ namespace sctl {
 
       ScratchBuf<Real> Xsub_buf(4*COORD_DIM*nnode, pool);
       { // Coordinates of the sub-rectangles, relative to the target
-        ScratchBuf<Real> cs_buf(COORD_DIM*nnode, pool);
-        Vector<Real> cs(cs_buf);
-        ShiftedElemCoord(cs, coord, Xtrg);
         ScratchBuf<Real> Av(2*COORD_DIM*nnode, pool);
         const SmallGEMM<Real, COORD_DIM*order, order, order> sub_v;
         for (Integer sdv = 0; sdv < 2; sdv++) {
@@ -956,12 +957,16 @@ namespace sctl {
     using detail_quadelem::GetClosestPoint;
     using detail_quadelem::IntegratePanel;
     using detail_quadelem::NearInteracTargets;
+    using detail_quadelem::ShiftedElemCoord;
     using detail_quadelem::SinTangentAngle;
     using detail_dyadic_near::NearMaxQuadOrder;
 
     template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
       const auto near_interac_one_trg = [&ker, digits](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
         constexpr Integer MaxSegments = 4096;
+        ScratchBuf<Real> cs_buf(COORD_DIM*order*order);
+        Vector<Real> cs(cs_buf); // relative to the target; the closest point too is found from these, so that it is on the surface that the quadrature integrates
+        ShiftedElemCoord(cs, coord, Xtrg);
         ScratchBuf<Real> useg(2*MaxSegments), vseg(2*MaxSegments);
         Integer nseg_u, nseg_v, quad_order;
         { // Segments graded toward the closest point
@@ -969,7 +974,8 @@ namespace sctl {
           const Real b_ellipse = (rho + 1/rho)/4;
           Real ustar, vstar, h_param;
           { // Closest point, its distance in parameter units, and the Gauss-Legendre order for the tangents there
-            const Real dist = GetClosestPoint(ustar, vstar, coord, dcoord_du, dcoord_dv, order, Xtrg);
+            StaticArray<Real,COORD_DIM> origin{(Real)0, (Real)0, (Real)0};
+            const Real dist = GetClosestPoint(ustar, vstar, cs, dcoord_du, dcoord_dv, order, Vector<Real>(COORD_DIM, origin, false));
             Real Xc[COORD_DIM], dXdu[COORD_DIM], dXdv[COORD_DIM];
             EvalPoint<Real>(Xc, dXdu, dXdv, coord, dcoord_du, dcoord_dv, order, ustar, vstar, nullptr);
             Real su2 = 0, sv2 = 0, suv = 0;
@@ -1066,7 +1072,7 @@ namespace sctl {
           build_rule(ru, u_param, useg.begin(), nseg_u);
           build_rule(rv, v_param, vseg.begin(), nseg_v);
         }
-        IntegratePanel<order,Real>(M_acc, coord, Xtrg, ntrg, ru, rv, ker);
+        IntegratePanel<order,Real>(M_acc, cs, ntrg, ru, rv, ker);
       };
       NearInteracTargets<order,Real,Kernel>(M, Xt, normal_trg, qel, elem_idx, near_interac_one_trg);
     }
@@ -1456,6 +1462,7 @@ namespace sctl {
     using detail_quadelem::DiffMat;
     using detail_quadelem::IntegratePanel;
     using detail_quadelem::SelfInteracElems;
+    using detail_quadelem::ShiftedElemCoord;
     using detail_quadelem::SinTangentAngle;
 
     static constexpr Integer SelfMaxQuadOrder = 60;
@@ -1629,13 +1636,18 @@ namespace sctl {
           const Real lvl = std::max<Real>((Real)std::max<Integer>(1, digits - 5), (Real)1.5*digits - (Real)6.5 + (Real)2.5*log<Real>(1/s)/log<Real>(2));
           lvl_v = (Integer)ceil<Real>(std::min<Real>(lvl, (Real)lvl_max));
         }
-        StaticArray<Real,COORD_DIM> Xtrg_buf;
-        for (Integer k = 0; k < COORD_DIM; k++) Xtrg_buf[k] = coord[k*order*order + t];
-        const Vector<Real> Xtrg(COORD_DIM, Xtrg_buf, false);
+        ScratchBuf<Real> cs_buf(COORD_DIM*nnode);
+        Vector<Real> cs(cs_buf);
+        { // Coordinates relative to the target node
+          StaticArray<Real,COORD_DIM> Xtrg_buf;
+          for (Integer k = 0; k < COORD_DIM; k++) Xtrg_buf[k] = coord[k*nnode + t];
+          const Vector<Real> Xtrg(COORD_DIM, Xtrg_buf, false);
+          ShiftedElemCoord(cs, coord, Xtrg);
+        }
         const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
         const QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits, quad_order);
         const QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, lvl_v, quad_order);
-        IntegratePanel<order,Real>(M_acc, coord, Xtrg, ntrg, ru, rv, ker);
+        IntegratePanel<order,Real>(M_acc, cs, ntrg, ru, rv, ker);
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }
