@@ -634,7 +634,7 @@ namespace sctl {
   /** Angle of the point (x, y), in [-pi, pi], as std::atan2. SpecialValues = false: faster, but x, y both infinite or both zero give NaN. */
   template <bool SpecialValues = true, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
 
-  /** x to the power y; vectorized with SVML, libmvec, or AVX2 with FMA and AVX-512 (about 3 to 5 ulp), else one element at a time. */
+  /** x to the power y; vectorized with SVML, libmvec, or at 256- and 512-bit widths (double about 9 ulp, 14 near the ends of the range; float 4 ulp), else one element at a time. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 
   /** Integer value nearest x, not larger in magnitude. */
