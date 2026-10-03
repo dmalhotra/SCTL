@@ -75,10 +75,11 @@ int main() {
   }
 
   // --- gemm no-transpose, random shapes, against a direct triple loop ---
-  // Sizes up to 40 reach every tile and leftover width of the fallback; 200 reaches its threaded
-  // path. Leading dimensions exceed the sizes, alpha is 1 or -0.5, beta is 0, 1 or 0.7, each with
-  // an imaginary part for complex types. With beta = 0, C starts as NaN, which must not be read;
-  // rows M..ldc-1 of C must not be written.
+  // Sizes up to 40 reach every tile and leftover width of the fallback, except for float the widest
+  // tile on AVX-512 CPUs other than AMD Zen 4 (48 rows of C, computed as C^T), which sizes up to 100
+  // reach; 200 reaches its threaded path. Leading dimensions exceed the sizes, alpha is 1 or -0.5,
+  // beta is 0, 1 or 0.7, each with an imaginary part for complex types. With beta = 0, C starts as
+  // NaN, which must not be read; rows M..ldc-1 of C must not be written.
   std::printf("gemm no-transpose, random shapes :\n");
   {
     const auto check_random = [](auto zero, const int ntrial, const int maxdim) {
@@ -144,6 +145,7 @@ int main() {
     };
     std::srand(1);
     CHECK(check_random(float(0), 300, 40) == 0);
+    CHECK(check_random(float(0), 30, 100) == 0);
     CHECK(check_random(double(0), 300, 40) == 0);
     CHECK(check_random((long double)0, 100, 40) == 0);
 #ifdef SCTL_QUAD_T

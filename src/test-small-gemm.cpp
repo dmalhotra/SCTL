@@ -102,8 +102,10 @@ int main() {
     using T = decltype(zero);
     std::printf("%s :\n", name);
     for (const bool acc : {false, true}) {
-      // Sizes fixed at compile time: every tile width, leftover rows and columns, and a single row
+      // Sizes fixed at compile time: every tile width (the widest, 3 vectors of 16 floats, on AVX-512 CPUs
+      // other than AMD Zen 4), leftover rows and columns, and a single row
       CHECK(check<T, 6, 24, 12>(acc, 6, 24, 12));
+      CHECK(check<T, 17, 100, 9>(acc, 17, 100, 9));
       CHECK(check<T, 36, 12, 12>(acc, 36, 12, 12));
       CHECK(check<T, 1, 12, 12>(acc, 1, 12, 12));
       CHECK(check<T, 13, 23, 11>(acc, 13, 23, 11));
@@ -124,10 +126,13 @@ int main() {
       }
       CHECK(nbad == 0);
 
-      // All sizes given at run time, zero included
+      // All sizes given at run time, zero included; then wider than the widest tile
       nbad = 0;
       for (int trial = 0; trial < 200; trial++) {
         nbad += !check<T, DynamicSize, DynamicSize, DynamicSize>(acc, std::rand() % 41, std::rand() % 41, std::rand() % 41);
+      }
+      for (int trial = 0; trial < 20; trial++) {
+        nbad += !check<T, DynamicSize, DynamicSize, DynamicSize>(acc, std::rand() % 41, 41 + std::rand() % 60, std::rand() % 17);
       }
       CHECK(nbad == 0);
 
