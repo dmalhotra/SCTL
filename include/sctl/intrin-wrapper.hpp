@@ -3219,6 +3219,23 @@ namespace sctl { // AVX
   template <> inline VecData<int16_t,16> bitshiftleft_intrin <VecData<int16_t,16>>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& rhs) { return _mm256_sllv_epi16(a.v, rhs.v); }
   template <> inline VecData<int16_t,16> bitshiftright_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& rhs) { return _mm256_srav_epi16(a.v, rhs.v); }
   #endif
+  #else // AVX without AVX2: each 128-bit half with SSE
+  template <class F> inline __m256i avx_halves_intrin(const __m256i a, const F& f) { // f applied to each 128-bit half of a
+    return _mm256_insertf128_si256(_mm256_castsi128_si256(f(_mm256_castsi256_si128(a))), f(_mm256_extractf128_si256(a, 1)), 1);
+  }
+  template <> inline VecData<int32_t ,8> bitshiftleft_intrin<VecData<int32_t ,8>>(const VecData<int32_t ,8>& a, const Integer& rhs) { return avx_halves_intrin(a.v, [rhs](const __m128i h) { return _mm_slli_epi32(h, (int)rhs); }); }
+  template <> inline VecData<int64_t ,4> bitshiftleft_intrin<VecData<int64_t ,4>>(const VecData<int64_t ,4>& a, const Integer& rhs) { return avx_halves_intrin(a.v, [rhs](const __m128i h) { return _mm_slli_epi64(h, (int)rhs); }); }
+  template <> inline VecData<float   ,8> bitshiftleft_intrin<VecData<float   ,8>>(const VecData<float   ,8>& a, const Integer& rhs) { return _mm256_castsi256_ps(avx_halves_intrin(_mm256_castps_si256(a.v), [rhs](const __m128i h) { return _mm_slli_epi32(h, (int)rhs); })); }
+  template <> inline VecData<double  ,4> bitshiftleft_intrin<VecData<double  ,4>>(const VecData<double  ,4>& a, const Integer& rhs) { return _mm256_castsi256_pd(avx_halves_intrin(_mm256_castpd_si256(a.v), [rhs](const __m128i h) { return _mm_slli_epi64(h, (int)rhs); })); }
+  template <> inline VecData<int32_t ,8> bitshiftright_intrin<VecData<int32_t ,8>>(const VecData<int32_t ,8>& a, const Integer& rhs) { return avx_halves_intrin(a.v, [rhs](const __m128i h) { return _mm_srai_epi32(h, (int)rhs); }); }
+  template <> inline VecData<int64_t ,4> bitshiftright_intrin<VecData<int64_t ,4>>(const VecData<int64_t ,4>& a, const Integer& rhs) { // negative lanes: complement, logical bit shift, complement back
+    return avx_halves_intrin(a.v, [rhs](const __m128i h) {
+      const __m128i s = _mm_cmpgt_epi64(_mm_setzero_si128(), h);
+      return _mm_xor_si128(_mm_srli_epi64(_mm_xor_si128(h, s), (int)rhs), s);
+    });
+  }
+  template <> inline VecData<float   ,8> bitshiftright_intrin<VecData<float   ,8>>(const VecData<float   ,8>& a, const Integer& rhs) { return _mm256_castsi256_ps(avx_halves_intrin(_mm256_castps_si256(a.v), [rhs](const __m128i h) { return _mm_srli_epi32(h, (int)rhs); })); }
+  template <> inline VecData<double  ,4> bitshiftright_intrin<VecData<double  ,4>>(const VecData<double  ,4>& a, const Integer& rhs) { return _mm256_castsi256_pd(avx_halves_intrin(_mm256_castpd_si256(a.v), [rhs](const __m128i h) { return _mm_srli_epi64(h, (int)rhs); })); }
   #endif
 
   // Other functions
