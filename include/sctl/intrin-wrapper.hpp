@@ -1263,60 +1263,74 @@ namespace sctl { // Generic
       return mul_intrin(mul_intrin(e1, pow2(add_intrin(hi, set1_intrin<VData>(magic)))), pow2(add_intrin(lo, set1_intrin<VData>(magic))));
     }
   }
-  template <class VData> inline void log_split_intrin(VData& e, VData& f, const VData& x) { // x = 2^e (1+f), 1+f in [sqrt(1/2), sqrt(2)), for x > 0
+  template <class VData> inline Mask<VData> positive_normal_mask_intrin(const VData& x) { // x normal, positive and finite
+    using Real = typename VData::ScalarType;
+    return comp_intrin<ComparisonType::ge>(x, set1_intrin<VData>(std::numeric_limits<Real>::min())) & comp_intrin<ComparisonType::lt>(x, set1_intrin<VData>((Real)INFINITY));
+  }
+  template <class VData> inline void log_mant_intrin(VData& e, VData& m, const VData& x) { // x = 2^e m, m in [sqrt(1/2), sqrt(2)), for normal x > 0
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
-    using IntVec = VecData<Int, VData::Size>;
     static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
     static constexpr Int Bias = (((Int)1) << (sizeof(Real)*8 - SigBits - 2)) - 1;
     union U {
       Int i;
       Real r;
     };
-    static const U min_normal = {((Int)1) << SigBits};
-    static const U one_bits = {Bias << SigBits};
+    static const U frac_mask = {(((Int)1) << SigBits) - 1};
     static const U two_pow_sig = {(Bias + SigBits) << SigBits};
+    const VData one = set1_intrin<VData>((Real)1);
+    const VData m1 = or_intrin(and_intrin(x, set1_intrin<VData>(frac_mask.r)), one); // in [1, 2); bit operations on the real lanes, also without 256-bit integer instructions
+    const VData e1 = sub_intrin(or_intrin(bitshiftright_intrin(x, SigBits), set1_intrin<VData>(two_pow_sig.r)), set1_intrin<VData>(two_pow_sig.r + (Real)Bias)); // the exponent field as the low bits of 2^SigBits
+    const Mask<VData> big = comp_intrin<ComparisonType::gt>(m1, set1_intrin<VData>((Real)1.41421356237309504880));
+    m = select_intrin(big, mul_intrin(m1, set1_intrin<VData>((Real)0.5)), m1);
+    e = add_intrin(e1, select_intrin(big, one, zero_intrin<VData>()));
+  }
+  template <bool Subnormal = true, class VData> inline void log_split_intrin(VData& e, VData& f, const VData& x) { // x = 2^e (1+f), 1+f in [sqrt(1/2), sqrt(2)), for x > 0; without Subnormal, for normal x
+    using Real = typename VData::ScalarType;
+    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
     const VData zero = zero_intrin<VData>();
     const VData one = set1_intrin<VData>((Real)1);
 
-    const Mask<VData> subnormal = comp_intrin<ComparisonType::lt>(x, set1_intrin<VData>(min_normal.r)); // scaled by 2^(SigBits+1) first
-    const VData xs = select_intrin(subnormal, mul_intrin(x, set1_intrin<VData>((Real)(((uint64_t)1) << (SigBits + 1)))), x);
-    const IntVec bits = reinterpret_intrin<IntVec>(xs);
-    const VData m = reinterpret_intrin<VData>(or_intrin(and_intrin(bits, set1_intrin<IntVec>((((Int)1) << SigBits) - 1)), set1_intrin<IntVec>(one_bits.i)));
-    e = sub_intrin(reinterpret_intrin<VData>(or_intrin(bitshiftright_intrin(bits, SigBits), set1_intrin<IntVec>(two_pow_sig.i))), set1_intrin<VData>(two_pow_sig.r + (Real)Bias)); // the exponent field as the low bits of 2^SigBits
-    e = sub_intrin(e, select_intrin(subnormal, set1_intrin<VData>((Real)(SigBits + 1)), zero));
-    const Mask<VData> big = comp_intrin<ComparisonType::gt>(m, set1_intrin<VData>((Real)1.41421356237309504880));
-    f = sub_intrin(select_intrin(big, mul_intrin(m, set1_intrin<VData>((Real)0.5)), m), one);
-    e = add_intrin(e, select_intrin(big, one, zero));
-  }
-  template <class VData> inline VData log_minimax_intrin(const VData& z) { // fdlibm's R(z) ~ 2/3 z + 2/5 z^2 + ..., for log(1+f) = 2s + s R(s^2), s = f/(2+f); two chains in z^2
-    using Real = typename VData::ScalarType;
-    const VData w = mul_intrin(z, z);
-    if constexpr (std::is_same<Real,float>::value) {
-      const VData t1 = mul_intrin(w, fma_intrin(w, set1_intrin<VData>(0.24279078841f), set1_intrin<VData>(0.40000972152f)));
-      const VData t2 = mul_intrin(z, fma_intrin(w, set1_intrin<VData>(0.28498786688f), set1_intrin<VData>(0.66666662693f)));
-      return add_intrin(t1, t2);
-    } else {
-      const VData t1 = mul_intrin(w, fma_intrin(w, fma_intrin(w, set1_intrin<VData>(1.531383769920937332e-01), set1_intrin<VData>(2.222219843214978396e-01)), set1_intrin<VData>(3.999999999940941908e-01)));
-      const VData t2 = mul_intrin(z, fma_intrin(w, fma_intrin(w, fma_intrin(w, set1_intrin<VData>(1.479819860511658591e-01), set1_intrin<VData>(1.818357216161805012e-01)), set1_intrin<VData>(2.857142874366239149e-01)), set1_intrin<VData>(6.666666666666735130e-01)));
-      return add_intrin(t1, t2);
+    VData xs = x;
+    Mask<VData> subnormal;
+    if constexpr (Subnormal) { // scaled by 2^(SigBits+1) first
+      subnormal = comp_intrin<ComparisonType::lt>(x, set1_intrin<VData>(std::numeric_limits<Real>::min()));
+      xs = select_intrin(subnormal, mul_intrin(x, set1_intrin<VData>((Real)(((uint64_t)1) << (SigBits + 1)))), x);
     }
+    VData m;
+    log_mant_intrin(e, m, xs);
+    if constexpr (Subnormal) e = sub_intrin(e, select_intrin(subnormal, set1_intrin<VData>((Real)(SigBits + 1)), zero));
+    f = sub_intrin(m, one);
   }
-  template <class VData> inline VData log_poly_intrin(const VData& x) { // as fdlibm: log(1+f) = f - f^2/2 + s (f^2/2 + R)
+  template <class VData> inline VData log_poly_intrin(const VData& x) { // log(1+f) = f - f^2/2 + f^3 P(f)/Q(f) (float: f^3 P(f)), with Cephes's coefficients
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     const VData zero = zero_intrin<VData>();
+    const VData inf = set1_intrin<VData>((Real)INFINITY);
+    const auto log_split_poly = [](const VData& e, const VData& f) { // e ln2 + log(1+f), added as (e ln2_lo + f^3 P/Q) + (f - f^2/2), then e ln2_hi
+      const VData f2 = mul_intrin(f, f);
+      VData p;
+      if constexpr (std::is_same<Real,float>::value) {
+        p = mul_intrin(EvalPolynomial(f, 3.3333331174E-1f, -2.4999993993E-1f, 2.0000714765E-1f, -1.6668057665E-1f, 1.4249322787E-1f, -1.2420140846E-1f, 1.1676998740E-1f, -1.1514610310E-1f, 7.0376836292E-2f), mul_intrin(f, f2));
+      } else {
+        const VData P = EvalPolynomial(f, 7.70838733755885391666E0, 1.79368678507819816313E1, 1.44989225341610930846E1, 4.70579119878881725854E0, 4.97494994976747001425E-1, 1.01875663804580931796E-4);
+        const VData Q = EvalPolynomial(f, 2.31251620126765340583E1, 7.11544750618563894466E1, 8.29875266912776603211E1, 4.52279145837532221105E1, 1.12873587189167450590E1, 1.0);
+        p = div_intrin(mul_intrin(P, mul_intrin(f, f2)), Q);
+      }
+      const VData small = add_intrin(fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), p), fma_intrin(f2, set1_intrin<VData>((Real)-0.5), f));
+      return fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::hi), small);
+    };
     VData e, f;
-    log_split_intrin(e, f, x);
-    const VData s = div_intrin(f, add_intrin(f, set1_intrin<VData>((Real)2)));
-    const VData R = log_minimax_intrin(mul_intrin(s, s));
-    const VData hfsq = mul_intrin(set1_intrin<VData>((Real)0.5), mul_intrin(f, f));
-    VData r = sub_intrin(f, sub_intrin(hfsq, mul_intrin(s, add_intrin(hfsq, R))));
-    r = fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::hi), fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), r));
+    log_split_intrin<false>(e, f, x);
+    const VData r = log_split_poly(e, f);
+    if (mask_count_intrin(positive_normal_mask_intrin(x)) == VData::Size) return r;
 
-    r = select_intrin(comp_intrin<ComparisonType::eq>(x, zero), set1_intrin<VData>(-(Real)INFINITY), r);
-    r = select_intrin(comp_intrin<ComparisonType::eq>(x, set1_intrin<VData>((Real)INFINITY)), x, r);
-    return select_intrin(comp_intrin<ComparisonType::ge>(x, zero), r, set1_intrin<VData>((Real)NAN)); // negative x and NaN
+    // some x zero, subnormal, inf, negative or NaN
+    log_split_intrin<true>(e, f, x);
+    VData rs = log_split_poly(e, f);
+    rs = select_intrin(comp_intrin<ComparisonType::eq>(x, zero), unary_minus_intrin(inf), rs);
+    rs = select_intrin(comp_intrin<ComparisonType::eq>(x, inf), x, rs);
+    return select_intrin(comp_intrin<ComparisonType::ge>(x, zero), rs, set1_intrin<VData>((Real)NAN)); // negative x and NaN
   }
   template <class VData> inline VData pow_poly_intrin(const VData& x, const VData& y) { // exp(y log|x|), log|x| = L_hi + L_lo to about 1.5x the precision of Real; std::pow at signs, zeros, inf, NaN; needs FMA
     using Real = typename VData::ScalarType;
@@ -4922,6 +4936,21 @@ namespace sctl { // AVX512
 
 
   // Special functions
+  // log_mant_intrin: getmant and getexp, then m/2 and e + 1 where m > sqrt(2), as masked operations
+  template <> inline void log_mant_intrin<VecData<float,16>>(VecData<float,16>& e, VecData<float,16>& m, const VecData<float,16>& x) {
+    const __m512 m1 = _mm512_getmant_ps(x.v, _MM_MANT_NORM_1_2, _MM_MANT_SIGN_src);
+    const __mmask16 big = _mm512_cmp_ps_mask(m1, _mm512_set1_ps(1.41421356237309504880f), _CMP_GT_OQ);
+    const __m512 e1 = _mm512_getexp_ps(x.v);
+    m = _mm512_mask_mul_ps(m1, big, m1, _mm512_set1_ps(0.5f));
+    e = _mm512_mask_add_ps(e1, big, e1, _mm512_set1_ps(1.0f));
+  }
+  template <> inline void log_mant_intrin<VecData<double,8>>(VecData<double,8>& e, VecData<double,8>& m, const VecData<double,8>& x) {
+    const __m512d m1 = _mm512_getmant_pd(x.v, _MM_MANT_NORM_1_2, _MM_MANT_SIGN_src);
+    const __mmask8 big = _mm512_cmp_pd_mask(m1, _mm512_set1_pd(1.41421356237309504880), _CMP_GT_OQ);
+    const __m512d e1 = _mm512_getexp_pd(x.v);
+    m = _mm512_mask_mul_pd(m1, big, m1, _mm512_set1_pd(0.5));
+    e = _mm512_mask_add_pd(e1, big, e1, _mm512_set1_pd(1.0));
+  }
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,16>> {
     static constexpr Integer newton_iter = mylog2((Integer)(digits/4.2144199393));
     static inline VecData<float,16> eval(const VecData<float,16>& a) {
