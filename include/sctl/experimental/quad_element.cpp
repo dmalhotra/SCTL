@@ -1214,7 +1214,8 @@ namespace sctl {
       }
 
       const Integer ns = tbl.ns;
-      const Integer nt = std::max<Integer>(order/2, (Integer)ceil<Real>(KDIM0 > 1 ? (Real)4.75*digits - (Real)9.5 + (Real)0.625*order : (Real)3*digits - 6 + (Real)order/4)); // fitted to the smallest angular orders meeting the tolerance
+      static constexpr Integer MaxGLOrder = 128; // the largest angular rule
+      const Integer nt = std::min<Integer>(MaxGLOrder, std::max<Integer>(order/2, (Integer)ceil<Real>(KDIM0 > 1 ? (Real)4.75*digits - (Real)9.5 + (Real)0.625*order : (Real)3*digits - 6 + (Real)order/4))); // fitted to the smallest angular orders meeting the tolerance
       const Integer nq = ns*nt;
       ScratchBuf<Real> csT(COORD_DIM*nnode);
       { // cs with u and v exchanged, for the triangles with swap_ab
@@ -1245,7 +1246,6 @@ namespace sctl {
 
         ScratchBuf<Real> tw(nt), Tt_buf(order*nt), TtT_buf(nt*order);
         { // Rule along t, graded toward the closest edge point
-          static constexpr Integer MaxGLOrder = 128;
           const Vector<Real>& qn = LegQuadRule<Real>::template nds<MaxGLOrder>(nt);
           const Vector<Real>& qw = LegQuadRule<Real>::template wts<MaxGLOrder>(nt);
           const auto arcsinh = [](const Real x) { return log<Real>(x + sqrt<Real>(x*x + (Real)1)); };

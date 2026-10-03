@@ -939,6 +939,18 @@ template <class Real> void test_EmptyList(const Comm& comm) {
   SCTL_ASSERT(RelErr(potential(true), potential(false)) == 0);
 }
 
+#ifdef SCTL_QUAD_T
+// Duffy, Stokes single layer, at a tolerance of 1e-30, for which its angular rule would need more than
+// its largest (128 points): that rule is used, without an error
+void test_ManyDigits() {
+  QuadElemList<QuadReal> qel = TestElem<QuadReal>(4, true);
+  qel.SetQuadScheme(QuadScheme<QuadReal>::Duffy);
+  Vector<Matrix<QuadReal>> M(1);
+  QuadElemList<QuadReal>::SelfInterac(M, Stokes3D_FxU(), (QuadReal)1e-30, false, &qel);
+  for (Long i = 0; i < M[0].Dim(0) * M[0].Dim(1); i++) SCTL_ASSERT(fabs(M[0][0][i]) < (QuadReal)1e300); // fails on NaN too
+}
+#endif
+
 // ============================================================================================
 // 2. One element: near- and self-interactions for every scheme and element order
 // ============================================================================================
@@ -1370,6 +1382,10 @@ int main(int argc, char** argv) {
     passed("test_VTU");
     test_EmptyList<Real>(comm);
     passed("test_EmptyList");
+#ifdef SCTL_QUAD_T
+    test_ManyDigits();
+    passed("test_ManyDigits");
+#endif
 
     if (root) std::cout << "\n==================== 2. One element, every scheme ====================\n";
     {

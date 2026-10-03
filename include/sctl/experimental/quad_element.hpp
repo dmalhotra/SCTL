@@ -118,7 +118,9 @@ namespace sctl {
       /**
        * Compute self-interaction operator for each element, with the
        * quadrature scheme set by SetQuadScheme(). The element order must be
-       * one of {4, 8, 12, 16, 20}.
+       * one of {4, 8, 12, 16, 20}. For a tolerance smaller than the largest
+       * quadrature orders reach, those orders are used, and the result may miss
+       * the tolerance without an error.
        *
        * @see ElementListBase::SelfInterac()
        */
@@ -127,7 +129,9 @@ namespace sctl {
       /**
        * Compute near-interaction operator for a given element-idx and each
        * target, with the quadrature scheme set by SetQuadScheme(). The element
-       * order must be one of {4, 8, 12, 16, 20}.
+       * order must be one of {4, 8, 12, 16, 20}. As for SelfInterac(), a
+       * tolerance smaller than the largest quadrature orders reach may be missed
+       * without an error.
        *
        * @see ElementListBase::NearInterac()
        */
