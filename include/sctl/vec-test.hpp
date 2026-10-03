@@ -786,6 +786,24 @@ namespace sctl {
           SCTL_ASSERT(fabs(v3[i] - exp<ScalarType>(v0[i]))/fabs(exp<ScalarType>(v0[i])) < err_tol);
         }
 
+        { // approx_log, approx_pow to the given digits; zero and negative x as log and pow
+          const VecType xp = fabs(v0) + (ScalarType)0.5;
+          const auto check = [&xp, &v0](const VecType& l, const VecType& p, const ScalarType err_tol) {
+            for (Integer i = 0; i < N; i++) {
+              SCTL_ASSERT(fabs(l[i] - log<ScalarType>(xp[i])) <= err_tol * fabs(log<ScalarType>(xp[i])));
+              SCTL_ASSERT(fabs(p[i] - pow<ScalarType>(xp[i], v0[i])) <= err_tol * pow<ScalarType>(xp[i], v0[i]));
+            }
+          };
+          check(approx_log<3>(xp), approx_pow<3>(xp, v0), (ScalarType)1e-3);
+          check(approx_log<5>(xp), approx_pow<5>(xp, v0), (ScalarType)1e-5);
+          if constexpr (std::is_same<ScalarType,double>::value) {
+            check(approx_log<9>(xp), approx_pow<9>(xp, v0), (ScalarType)1e-9);
+            check(approx_log<12>(xp), approx_pow<12>(xp, v0), (ScalarType)1e-12);
+          }
+          SCTL_ASSERT(isinf(approx_log<5>(VecType((ScalarType)0))[0]) && approx_log<5>(VecType((ScalarType)0))[0] < 0 && isnan(approx_log<5>(VecType((ScalarType)-1))[0]));
+          SCTL_ASSERT(fabs(approx_pow<5>(VecType((ScalarType)-2), VecType((ScalarType)3))[0] + 8) <= (ScalarType)8e-5);
+        }
+
         if (sizeof(ScalarType) < 16) return;
 
         approx_sincos<8>(v1, v2, v0);

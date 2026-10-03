@@ -1530,6 +1530,77 @@ namespace sctl { // Generic
     for (Integer i = 0; i < VData::Size; i++) x_.x[i] = pow(x_.x[i], y_.x[i]);
     return x_.v;
   }
+  template <Integer n> struct LogPolyCoeffs; // log(1+f) ~ f P(f) for f in [sqrt(1/2)-1, sqrt(2)-1], P of degree n, lowest degree first: Chebyshev fits; correct digits in log_poly_digits
+  template <> struct LogPolyCoeffs<1> { static constexpr double c[] = {1.0185736191503331, -4.7559237223000092e-1}; };
+  template <> struct LogPolyCoeffs<2> { static constexpr double c[] = {1.001256323625206, -5.2002197457901172e-1, 3.075125773580589e-1}; };
+  template <> struct LogPolyCoeffs<3> { static constexpr double c[] = {9.9973106789736198e-1, -5.0232365594760311e-1, 3.536320724530045e-1, -2.2362563233616446e-1}; };
+  template <> struct LogPolyCoeffs<4> { static constexpr double c[] = {9.9996217037960094e-1, -4.9950210920242519e-1, 3.3668781598037975e-1, -2.7010228270533408e-1, 1.7348631544940763e-1}; };
+  template <> struct LogPolyCoeffs<5> { static constexpr double c[] = {1.0000037423879465, -4.998948024036182e-1, 3.3265905812990515e-1, -2.5433356361401844e-1, 2.196570849519215e-1, -1.40216232811136e-1}; };
+  template <> struct LogPolyCoeffs<6> { static constexpr double c[] = {1.0000010273533488, -5.000087739481974e-1, 3.3313563286165821e-1, -2.4920336264665573e-1, 2.0525443619698836e-1, -1.8573840134002429e-1, 1.1657806143415021e-1}; };
+  template <> struct LogPolyCoeffs<7> { static constexpr double c[] = {9.9999996811805992e-1, -5.0000375056289727e-1, 3.3334606023452299e-1, -2.4968906958952668e-1, 1.9913347882373827e-1, -1.7278206066426675e-1, 1.6126247905987103e-1, -9.895350736906514e-2}; };
+  template <> struct LogPolyCoeffs<8> { static constexpr double c[] = {9.9999997413106708e-1, -4.9999996382123888e-1, 3.3334193286135078e-1, -2.5001352185496062e-1, 1.9955933358383247e-1, -1.6577992896798863e-1, 1.4977401280127375e-1, -1.4269258206218832e-1, 8.5333130829961519e-2}; };
+  template <> struct LogPolyCoeffs<9> { static constexpr double c[] = {9.9999999938325496e-1, -4.9999988496142867e-1, 3.3333345349807466e-1, -2.500157909915946e-1, 2.0000939440373094e-1, -1.6608369414088408e-1, 1.4199650097916023e-1, -1.3266031360917081e-1, 1.2806610435006951e-1, -7.451186226757509e-2}; };
+  template <> struct LogPolyCoeffs<10> { static constexpr double c[] = {1.0000000006010194, -4.9999999414017125e-1, 3.333330266101698e-1, -2.5000062374435879e-1, 2.0002535640193383e-1, -1.6666555575670009e-1, 1.4212291250421291e-1, -1.2420821262732774e-1, 1.194587822735682e-1, -1.1620648400270368e-1, 6.5723271585220237e-2}; };
+  template <> struct LogPolyCoeffs<11> { static constexpr double c[] = {1.0000000000480121, -5.0000000308455383e-1, 3.3333330846280519e-1, -2.4999936585814818e-1, 2.0000169637942539e-1, -1.6670383652377297e-1, 1.4283798395270254e-1, -1.2410885665961422e-1, 1.1042736039719009e-1, -1.0898112577877182e-1, 1.0636542375579953e-1, -5.8456713350896371e-2}; };
+  template <> struct LogPolyCoeffs<12> { static constexpr double c[] = {9.9999999998746515e-1, -5.0000000035951705e-1, 3.3333334249206593e-1, -2.4999992728449305e-1, 1.9999888139973632e-1, -1.666702457200908e-1, 1.429081173942899e-1, -1.2495435324992145e-1, 1.1006038270379548e-1, -9.9459961867196613e-2, 1.004720511888933e-1, -9.8044200677862028e-2, 5.2358885169237832e-2}; };
+  template <> struct LogPolyCoeffs<13> { static constexpr double c[] = {9.9999999999808685e-1, -4.9999999992971808e-1, 3.3333333479574099e-1, -2.5000002048164391e-1, 1.999998295912731e-1, -1.6666490142581625e-1, 1.4286366102434627e-1, -1.2506640703431108e-1, 1.1102988279786334e-1, -9.8789698109920537e-2, 9.0545055509250049e-2, -9.3428814519668432e-2, 9.0897545094535187e-2, -4.7177590533593856e-2}; };
+  template <> struct LogPolyCoeffs<14> { static constexpr double c[] = {1.0000000000002172, -4.9999999998512559e-1, 3.3333333311417252e-1, -2.5000000433128149e-1, 2.0000003805512754e-1, -1.6666632233794296e-1, 1.4285458260944881e-1, -1.2501075399501756e-1, 1.1119413052789981e-1, -9.9873661691216533e-2, 8.9541627892867124e-2, -8.3174352109032835e-2, 8.7504052326932136e-2, -8.4678764114581239e-2, 4.2728007304351816e-2}; };
+  template <> struct LogPolyCoeffs<15> { static constexpr double c[] = {1.0000000000000617, -5.0000000000119965e-1, 3.3333333326964261e-1, -2.4999999950761742e-1, 2.000000104854377e-1, -1.666667282322684e-1, 1.4285651767534414e-1, -1.2499653070523752e-1, 1.1112762228270177e-1, -1.0010029904388152e-1, 9.0727875380103866e-2, -8.1813256819716009e-2, 7.6995122829726492e-2, -8.245025650742841e-2, 7.9206842719246771e-2, -3.8871612816231212e-2}; };
+  inline constexpr double log_poly_digits[] = {1.65, 2.48, 3.31, 4.13, 4.95, 5.77, 6.58, 7.39, 8.19, 8.99, 9.79, 10.59, 11.38, 12.17, 12.96};
+  inline constexpr Integer log_poly_degree(const Integer digits) { // the lowest degree of LogPolyCoeffs for the digits; 0 if none
+    for (Integer n = 1; n <= 15; n++) {
+      if (log_poly_digits[n - 1] >= digits) return n;
+    }
+    return 0;
+  }
+  inline constexpr Integer exp_taylor_order(const Integer digits) { // Taylor order k of e^r, |r| <= ln2/2: (ln2/2)^(k+1)/(k+1)! < 10^-digits
+    double err = 0.34657359027997264;
+    double lim = 1;
+    for (Integer d = 0; d < digits; d++) lim *= 0.1;
+    Integer k = 1;
+    for (; err * 0.34657359027997264 / (k + 1) >= lim && k < 30; k++) err *= 0.34657359027997264 / (k + 1);
+    return k;
+  }
+  inline constexpr Integer log_atanh_terms(const Integer digits) { // terms K of 2 atanh(s), s^2 <= 0.0295: 0.0295^K/(2K+1) < 10^-digits
+    double zk = 0.0295;
+    double lim = 1;
+    for (Integer d = 0; d < digits; d++) lim *= 0.1;
+    Integer K = 1;
+    for (; zk / (2*K + 1) >= lim && K < 30; K++) zk *= 0.0295;
+    return K;
+  }
+  template <class VData, class Coeffs, Integer... k> inline VData eval_coeffs_intrin(const VData& x, std::integer_sequence<Integer, k...>) { // sum Coeffs::c[k] x^k
+    return EvalPolynomial(x, ((typename VData::ScalarType)Coeffs::c[k])...);
+  }
+  template <class VData, Integer... k> inline VData atanh_series_intrin(const VData& z, std::integer_sequence<Integer, k...>) { // sum 1/(2k+3) z^k
+    return EvalPolynomial(z, ((typename VData::ScalarType)1 / (2*k + 3))...);
+  }
+  template <Integer DIGITS, class VData> inline VData approx_log_normal_intrin(const VData& x) { // log(x) to DIGITS digits, for normal x > 0: f P(f) without division up to 12.96 digits, else 2 atanh(s), s = f/(2+f)
+    using Real = typename VData::ScalarType;
+    VData e, f;
+    log_split_intrin<false>(e, f, x);
+    VData r;
+    if constexpr (log_poly_degree(DIGITS) > 0) {
+      static constexpr Integer n = log_poly_degree(DIGITS);
+      r = mul_intrin(f, eval_coeffs_intrin<VData, LogPolyCoeffs<n>>(f, std::make_integer_sequence<Integer, n + 1>()));
+    } else { // K terms of the series, relative error below 0.0295^K/(2K+1)
+      static constexpr Integer K = log_atanh_terms(DIGITS);
+      const VData s2 = div_intrin(add_intrin(f, f), add_intrin(f, set1_intrin<VData>((Real)2))); // 2s
+      const VData z = mul_intrin(mul_intrin(s2, s2), set1_intrin<VData>((Real)0.25));
+      r = fma_intrin(mul_intrin(s2, z), atanh_series_intrin(z, std::make_integer_sequence<Integer, K - 1>()), s2);
+    }
+    return fma_intrin(e, set1_intrin<VData>(const_ln2<Real>()), r);
+  }
+  template <Integer DIGITS, class VData> inline VData approx_log_intrin(const VData& x) { // approx_log_normal_intrin; log_intrin if some x is not positive, normal and finite
+    if (mask_count_intrin(positive_normal_mask_intrin(x)) < VData::Size) return log_intrin(x);
+    return approx_log_normal_intrin<DIGITS>(x);
+  }
+  template <Integer LOG_DIGITS, Integer ORDER, class VData> inline VData approx_pow_intrin(const VData& x, const VData& y) { // e^(y log x) with approx_log_normal_intrin<LOG_DIGITS> and approx_exp_intrin<ORDER>; pow_intrin if some x is not positive, normal and finite, or |y log x| >= 708.4 (float: 87.3)
+    using Real = typename VData::ScalarType;
+    const VData T = mul_intrin(y, approx_log_normal_intrin<LOG_DIGITS>(x));
+    if (mask_count_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T), set1_intrin<VData>(exp_normal_lim<Real>()))) < VData::Size) return pow_intrin(x, y);
+    return approx_exp_intrin<ORDER, false>(T);
+  }
   template <class VData> inline VData sqrt_intrin(const VData& x) {
     union {
       VData v;

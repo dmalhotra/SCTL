@@ -582,6 +582,12 @@ namespace sctl {
   /** e^x to the given digits (-1: exp). Without RangeCheck, only for |x| < 708.4 (float: 87.3). */
   template <Integer digits, bool RangeCheck = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x);
 
+  /** log(x) to the given digits (-1: log), for float and double; x not positive, normal and finite as log. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_log(const Vec<ValueType,N>& x);
+
+  /** x^y to the given digits for |y log x| <= 100 (-1: pow), for float and double; x not positive, normal and finite, or |y log x| >= 708.4 (float: 87.3) as pow. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+
   /** Natural logarithm; float, double: within about 1.2 ulp, vectorized at native widths. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x);
 

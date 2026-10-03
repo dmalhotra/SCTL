@@ -482,10 +482,26 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x) {
     return exp_intrin(x.get());
   }
+  namespace detail_approx_digits { // which of the approximate or the full-precision routines serves the given digits
+    template <class ValueType> inline constexpr bool full(const Integer digits) { // the full-precision routine is as accurate, or the type is not float or double
+      return digits < 0 || digits >= (std::is_same<ValueType,float>::value ? 7 : 15) || !(std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value);
+    }
+    template <class ValueType> inline constexpr bool full_exp(const Integer digits) { // as full, but the Taylor polynomial of approx_exp_intrin also serves other types, up to order 13
+      return digits < 0 || exp_taylor_order(digits) > 13 || ((std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) && full<ValueType>(digits));
+    }
+  }
+
   template <Integer digits, bool RangeCheck, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x) {
-    constexpr Integer ORDER = digits;
-    if (digits == -1 || ORDER > 13) return exp(x);
-    else return approx_exp_intrin<ORDER, RangeCheck>(x.get());
+    if constexpr (detail_approx_digits::full_exp<ValueType>(digits)) return exp(x);
+    else return approx_exp_intrin<exp_taylor_order(digits), RangeCheck>(x.get());
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_log(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits) || log_poly_degree(digits) == 0) return log(x); // beyond the polynomials, log is as fast
+    else return approx_log_intrin<digits>(x.get());
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits) || digits >= (std::is_same<ValueType,float>::value ? 6 : 14)) return pow(x, y); // from these digits, y log x rounded to ValueType is not accurate enough
+    else return approx_pow_intrin<digits + 2, exp_taylor_order(digits)>(x.get(), y.get()); // two more digits in log: |y log x| up to 100
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x) {
     return log_intrin(x.get());
