@@ -39,6 +39,7 @@ namespace sctl {
     template <class Real> static constexpr Integer MaxDigits = 1 + GetSigBits<Real>::value()*30103/100000;
 
     template <class Real> static constexpr Integer MaxRefineLvl = GetSigBits<Real>::value();
+    template <class Real> static constexpr Integer MaxNearRefineLvl = 2*GetSigBits<Real>::value(); // levels of the dyadic near rule: its pieces are stored as offsets from the closest point, so they can be smaller than the rounding of the parameters
 
     /** returns fname followed by the rank of comm, zero-padded to 6 digits */
     inline std::string RankFileName(const std::string& fname, const Comm& comm) {
@@ -687,7 +688,7 @@ namespace sctl {
   namespace detail_dyadic_near {
 
     using detail_quadelem::COORD_DIM;
-    using detail_quadelem::MaxRefineLvl;
+    using detail_quadelem::MaxNearRefineLvl;
     using detail_quadelem::MaxTableOrder;
     using detail_quadelem::PrecompReal;
     using detail_quadelem::QuadRule1D;
@@ -734,14 +735,14 @@ namespace sctl {
       return all[order];
     }
 
-    /** Returns 2*MaxRefineLvl rules for each (order, q), built the first time q is requested: q-point Gauss-Legendre on the dyadic intervals at offsets [2^-(k+1), 2^-k] from the refined end and on the tails [0, 2^-k], each with order x q interpolation matrices. */
+    /** Returns 2*MaxNearRefineLvl rules for each (order, q), built the first time q is requested: q-point Gauss-Legendre on the dyadic intervals at offsets [2^-(k+1), 2^-k] from the refined end and on the tails [0, 2^-k], each with order x q interpolation matrices. */
     template <Integer order, class Real> const Vector<QuadRule1D<Real>>& NearGradeTable(const Integer q) {
       const auto build = [](const Integer q, const Matrix<PrecompReal>& Dsub) {
         using W = PrecompReal;
         const Vector<W>& sig = NearSubOffsets<W>(order);
         Vector<W> qn, qw;
         LegQuadRule<W>::template ComputeNdsWts<W>(&qn, &qw, q);
-        Vector<QuadRule1D<Real>> tab(2*MaxRefineLvl<Real>);
+        Vector<QuadRule1D<Real>> tab(2*MaxNearRefineLvl<Real>);
         Vector<W> tq(q), Twts(order*q);
         Matrix<W> dT(order, q);
         const auto fill = [&qn, &qw, q, &tq, &Twts, &sig, &Dsub, &dT](QuadRule1D<Real>& r, const W t_hi, const W t_lo) { // offsets of the ends from the refined end
@@ -762,10 +763,10 @@ namespace sctl {
             r.MTD[q + j][i] = r.dM[i][j];
           }
         };
-        for (Integer k = 0; k < MaxRefineLvl<Real>; k++) { // Rules on dyadic interval k and on its tail
+        for (Integer k = 0; k < MaxNearRefineLvl<Real>; k++) { // Rules on dyadic interval k and on its tail
           const W off_k = pow<W>((W)0.5, k), off_k1 = pow<W>((W)0.5, k+1);
           fill(tab[k], off_k, off_k1);
-          fill(tab[MaxRefineLvl<Real> + k], off_k, (W)0);
+          fill(tab[MaxNearRefineLvl<Real> + k], off_k, (W)0);
         }
         return tab;
       };
@@ -891,23 +892,23 @@ namespace sctl {
       const auto refine = [&integrate_piece, dist, b_ellipse](const Integer sdu, const Integer sdv, Real hu, Real hv) {
         Integer ku = 0, kv = 0;
         const bool refine_to_max = !(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist);
-        constexpr Integer KMAX = MaxRefineLvl<Real>-1;
+        constexpr Integer KMAX = MaxNearRefineLvl<Real>-1;
         while ((refine_to_max || b_ellipse*std::max<Real>(hu,hv) > dist) && (ku < KMAX || kv < KMAX)) {
           if (hu >= hv && ku < KMAX) {
-            integrate_piece(sdu, sdv, ku, MaxRefineLvl<Real> + kv);
+            integrate_piece(sdu, sdv, ku, MaxNearRefineLvl<Real> + kv);
             ku++;
             hu *= (Real)0.5;
           } else if (kv < KMAX) {
-            integrate_piece(sdu, sdv, MaxRefineLvl<Real> + ku, kv);
+            integrate_piece(sdu, sdv, MaxNearRefineLvl<Real> + ku, kv);
             kv++;
             hv *= (Real)0.5;
           } else if (ku < KMAX) {
-            integrate_piece(sdu, sdv, ku, MaxRefineLvl<Real> + kv);
+            integrate_piece(sdu, sdv, ku, MaxNearRefineLvl<Real> + kv);
             ku++;
             hu *= (Real)0.5;
           } else break;
         }
-        integrate_piece(sdu, sdv, MaxRefineLvl<Real> + ku, MaxRefineLvl<Real> + kv);
+        integrate_piece(sdu, sdv, MaxNearRefineLvl<Real> + ku, MaxNearRefineLvl<Real> + kv);
       };
       for (Integer sdu = 0; sdu < 2; sdu++) { // Integrate each sub-rectangle, refining toward the closest point
         if (!(slen[0][sdu] > 0)) continue;
