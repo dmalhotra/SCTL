@@ -62,7 +62,9 @@ namespace sctl {
     return r;
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> Vec<ValueType,N>::LoadPartial(ScalarType const* p, Integer n) {
-    return Load(p, mask_first_intrin<VData>(n));
+    Vec<ValueType,N> r;
+    r.v = loadu_first_intrin<VData>(p, n);
+    return r;
   }
   template <class ValueType, Integer N> template <class IndexType> inline Vec<ValueType,N> Vec<ValueType,N>::Gather(ScalarType const* p, const Vec<IndexType,N>& idx) {
     Vec<ValueType,N> r;
@@ -89,7 +91,7 @@ namespace sctl {
     storeu_mask_intrin(p, v, m);
   }
   template <class ValueType, Integer N> inline void Vec<ValueType,N>::StorePartial(ScalarType* p, Integer n) const {
-    Store(p, mask_first_intrin<VData>(n));
+    storeu_first_intrin(p, v, n);
   }
   template <class ValueType, Integer N> template <class IndexType> inline void Vec<ValueType,N>::Scatter(ScalarType* p, const Vec<IndexType,N>& idx) const {
     scatter_intrin(p, v, idx.get());

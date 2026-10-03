@@ -846,6 +846,12 @@ namespace sctl { // Generic
       if (m_.q[i]) p[i] = vec_.x[i];
     }
   }
+  template <class VData> inline VData loadu_first_intrin(typename VData::ScalarType const* p, Integer n) { // lanes i < n, for n >= 0; the others are zero and not read
+    return loadu_mask_intrin<VData>(p, mask_first_intrin<VData>(n));
+  }
+  template <class VData> inline void storeu_first_intrin(typename VData::ScalarType* p, VData vec, Integer n) { // lanes i < n, for n >= 0; the others are not written
+    storeu_mask_intrin(p, vec, mask_first_intrin<VData>(n));
+  }
 
   // Gather and scatter
   template <class VData, class IdxVData> inline VData gather_intrin(typename VData::ScalarType const* p, const IdxVData& idx) { // lane i is p[idx lane i]
@@ -2680,6 +2686,38 @@ namespace sctl { // SSE
   template <> inline VecData<double,2> loadu_mask_intrin<VecData<double,2>>(double const* p, const Mask<VecData<double,2>>& m) { return _mm_maskload_pd(p, _mm_castpd_si128(m.v)); }
   template <> inline void storeu_mask_intrin<VecData<float ,4>>(float * p, VecData<float ,4> vec, const Mask<VecData<float ,4>>& m) { _mm_maskstore_ps(p, _mm_castps_si128(m.v), vec.v); }
   template <> inline void storeu_mask_intrin<VecData<double,2>>(double* p, VecData<double,2> vec, const Mask<VecData<double,2>>& m) { _mm_maskstore_pd(p, _mm_castpd_si128(m.v), vec.v); }
+#else // the first n lanes by their count: in the leftover columns of SmallGEMM, the generic loop over the lanes of a mask was 5-8x slower, and tests of each bit of a movemask 1.4-2x
+  template <> inline VecData<float,4> loadu_first_intrin<VecData<float,4>>(float const* p, Integer n) {
+    if (n >= 4) return _mm_loadu_ps(p);
+    if (n == 3) return _mm_movelh_ps(_mm_loadl_pi(_mm_setzero_ps(), (__m64 const*)p), _mm_load_ss(p + 2));
+    if (n == 2) return _mm_loadl_pi(_mm_setzero_ps(), (__m64 const*)p);
+    if (n == 1) return _mm_load_ss(p);
+    return _mm_setzero_ps();
+  }
+  template <> inline VecData<double,2> loadu_first_intrin<VecData<double,2>>(double const* p, Integer n) {
+    if (n >= 2) return _mm_loadu_pd(p);
+    if (n == 1) return _mm_load_sd(p);
+    return _mm_setzero_pd();
+  }
+  template <> inline void storeu_first_intrin<VecData<float,4>>(float* p, VecData<float,4> vec, Integer n) {
+    if (n >= 4) {
+      _mm_storeu_ps(p, vec.v);
+    } else if (n == 3) {
+      _mm_storel_pi((__m64*)p, vec.v);
+      _mm_store_ss(p + 2, _mm_movehl_ps(vec.v, vec.v));
+    } else if (n == 2) {
+      _mm_storel_pi((__m64*)p, vec.v);
+    } else if (n == 1) {
+      _mm_store_ss(p, vec.v);
+    }
+  }
+  template <> inline void storeu_first_intrin<VecData<double,2>>(double* p, VecData<double,2> vec, Integer n) {
+    if (n >= 2) {
+      _mm_storeu_pd(p, vec.v);
+    } else if (n == 1) {
+      _mm_store_sd(p, vec.v);
+    }
+  }
 #endif
 #if defined(__AVX2__)
   template <> inline VecData<int32_t,4> loadu_mask_intrin<VecData<int32_t,4>>(int32_t const* p, const Mask<VecData<int32_t,4>>& m) { return _mm_maskload_epi32((int const*)p, m.v); }
