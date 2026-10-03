@@ -712,10 +712,6 @@ namespace sctl {
       b_ellipse = b*b/(2*a);
     }
 
-    template <class Real> struct GradeRule : QuadRule1D<Real> {
-      Real a, b;
-    };
-
     static constexpr Integer NearMaxQuadOrder = 60;
 
     /** Returns 'order' values cos^2(pi i/(2(order-1))) for each order: one minus the Chebyshev extreme points sin^2(pi i/(2(order-1))) on [0, 1], computed as cos^2 so that they are accurate where small. */
@@ -738,23 +734,20 @@ namespace sctl {
       return all[order];
     }
 
-    /** Returns 2*MaxRefineLvl rules for each (order, q), built the first time q is requested: q-point Gauss-Legendre on the dyadic intervals [1-2^-k, 1-2^-(k+1)] and tails [1-2^-k, 1], each with order x q interpolation matrices. */
-    template <Integer order, class Real> const Vector<GradeRule<Real>>& NearGradeTable(const Integer q) {
+    /** Returns 2*MaxRefineLvl rules for each (order, q), built the first time q is requested: q-point Gauss-Legendre on the dyadic intervals at offsets [2^-(k+1), 2^-k] from the refined end and on the tails [0, 2^-k], each with order x q interpolation matrices. */
+    template <Integer order, class Real> const Vector<QuadRule1D<Real>>& NearGradeTable(const Integer q) {
       const auto build = [](const Integer q, const Matrix<PrecompReal>& Dsub) {
         using W = PrecompReal;
         const Vector<W>& sig = NearSubOffsets<W>(order);
         Vector<W> qn, qw;
         LegQuadRule<W>::template ComputeNdsWts<W>(&qn, &qw, q);
-        Vector<GradeRule<Real>> tab(2*MaxRefineLvl<Real>);
+        Vector<QuadRule1D<Real>> tab(2*MaxRefineLvl<Real>);
         Vector<W> tq(q), Twts(order*q);
         Matrix<W> dT(order, q);
-        const auto fill = [&qn, &qw, q, &tq, &Twts, &sig, &Dsub, &dT](GradeRule<Real>& r, const Real a, const Real b) {
-          r.a = a;
-          r.b = b;
-          const W aw = (W)a, w = (W)b - (W)a;
+        const auto fill = [&qn, &qw, q, &tq, &Twts, &sig, &Dsub, &dT](QuadRule1D<Real>& r, const W t_hi, const W t_lo) { // offsets of the ends from the refined end
+          const W t_w = t_hi - t_lo;
           r.w.ReInit(q);
-          for (Integer i = 0; i < q; i++) r.w[i] = (Real)(w*qw[i]);
-          const W t_hi = (W)1 - aw, t_w = t_hi - ((W)1 - (W)b);
+          for (Integer i = 0; i < q; i++) r.w[i] = (Real)(t_w*qw[i]);
           for (Integer j = 0; j < q; j++) tq[j] = t_hi - t_w*qn[j];
           LagrangeInterp<W>::Interpolate(Twts, sig, tq);
           const Matrix<W> T(order, q, Twts.begin(), false);
@@ -770,9 +763,9 @@ namespace sctl {
           }
         };
         for (Integer k = 0; k < MaxRefineLvl<Real>; k++) { // Rules on dyadic interval k and on its tail
-          const Real lo = 1 - pow<Real>((Real)0.5, k), hi = 1 - pow<Real>((Real)0.5, k+1);
-          fill(tab[k], lo, hi);
-          fill(tab[MaxRefineLvl<Real> + k], lo, (Real)1);
+          const W off_k = pow<W>((W)0.5, k), off_k1 = pow<W>((W)0.5, k+1);
+          fill(tab[k], off_k, off_k1);
+          fill(tab[MaxRefineLvl<Real> + k], off_k, (W)0);
         }
         return tab;
       };
@@ -790,7 +783,7 @@ namespace sctl {
         return D;
       }();
       static std::array<std::once_flag, NearMaxQuadOrder+1> built;
-      static std::array<Vector<GradeRule<Real>>, NearMaxQuadOrder+1> all;
+      static std::array<Vector<QuadRule1D<Real>>, NearMaxQuadOrder+1> all;
       SCTL_ASSERT(q > 0 && q <= NearMaxQuadOrder);
       std::call_once(built[q], [&build, q]() { all[q] = build(q, Dsub); });
       return all[q];
@@ -885,11 +878,10 @@ namespace sctl {
 
       ScratchBuf<Real> acc_buf(C*nnode, pool);
       Vector<Real> acc(acc_buf);
-      const Vector<GradeRule<Real>>& tab = NearGradeTable<order,Real>(q_near);
+      const Vector<QuadRule1D<Real>>& tab = NearGradeTable<order,Real>(q_near);
       const auto integrate_piece = [&tab, &normal_trg, &ker, &proxy_off, &proxy_w, &acc, &Xsub_buf](const Integer sdu, const Integer sdv, const Integer iu, const Integer iv) {
-        const GradeRule<Real>& gu = tab[iu];
-        const GradeRule<Real>& gv = tab[iv];
-        if (!(gu.b > gu.a) || !(gv.b > gv.a)) return;
+        const QuadRule1D<Real>& gu = tab[iu];
+        const QuadRule1D<Real>& gv = tab[iv];
         const Real nsign = ((sdu == 1) != (sdv == 1)) ? (Real)-1 : (Real)1;
         const Integer nsub = COORD_DIM*order*order;
         const Vector<Real> Xsub(nsub, Xsub_buf.begin() + (2*sdu+sdv)*nsub, false);
