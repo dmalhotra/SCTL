@@ -1111,7 +1111,7 @@ namespace sctl {
               const Long k = i - near_elem_dsp[elem_idx]; // target index in near-list of elem_idx
               Long min_Xt = -1, min_Xsurf = -1;
               const Vector<Real> Xt(COORD_DIM, Xtrg_near.begin()+(near_elem_dsp[elem_idx]+k)*COORD_DIM, false);
-              const Vector<Real> Xn((trg_normal_dot_prod_ ? COORD_DIM : 0), Xn_trg_near.begin()+(near_elem_dsp[elem_idx]+k)*COORD_DIM, false);
+              const Vector<Real> Xn((trg_normal_dot_prod_ ? COORD_DIM : 0), (trg_normal_dot_prod_ ? Xn_trg_near.begin()+(near_elem_dsp[elem_idx]+k)*COORD_DIM : NullIterator<Real>()), false);
               auto compute_min_dist2 = [](Long& min_idx, Long& min_idy, const Vector<Real>& X, const Vector<Real>& Y) {
                 const Long Nx = X.Dim() / COORD_DIM;
                 const Long Ny = Y.Dim() / COORD_DIM;
@@ -1188,7 +1188,7 @@ namespace sctl {
           const Long trg_cnt = near_blk_cnt[blk];
           const Long trg_dsp = near_elem_dsp[elem_idx] + t0;
           const Vector<Real> Xtrg_near_(trg_cnt*COORD_DIM, Xtrg_near.begin()+trg_dsp*COORD_DIM, false);
-          const Vector<Real> Xn_trg_near_((trg_normal_dot_prod_ ? trg_cnt*COORD_DIM : 0), Xn_trg_near.begin()+trg_dsp*COORD_DIM, false);
+          const Vector<Real> Xn_trg_near_((trg_normal_dot_prod_ ? trg_cnt*COORD_DIM : 0), (trg_normal_dot_prod_ ? Xn_trg_near.begin()+trg_dsp*COORD_DIM : NullIterator<Real>()), false);
           if (!trg_cnt) continue;
 
           const Long far_src_cnt = elem_nds_cnt_far[elem_idx];
@@ -1364,7 +1364,7 @@ namespace sctl {
         const Long j = elem_idx - elem_lst_dsp[i];
         if (j < 0 || j >= elem_lst_cnt[i]) continue; // block belongs to another element list
         const Vector<Real> Xt(nt*COORD_DIM, Xtrg_near.begin() + (near_elem_dsp[elem_idx]+t0)*COORD_DIM, false);
-        const Vector<Real> Xn(nt*(trg_normal_dot_prod_ ? COORD_DIM : 0), Xn_trg_near.begin() + (near_elem_dsp[elem_idx]+t0)*COORD_DIM, false);
+        const Vector<Real> Xn(nt*(trg_normal_dot_prod_ ? COORD_DIM : 0), (trg_normal_dot_prod_ ? Xn_trg_near.begin() + (near_elem_dsp[elem_idx]+t0)*COORD_DIM : NullIterator<Real>()), false);
 
         {
           const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
