@@ -1862,6 +1862,7 @@ namespace sctl {
       if (element_wise_node_cnt.Dim() != nelem) element_wise_node_cnt.ReInit(nelem);
       element_wise_node_cnt = nnode_per_elem;
     }
+    if (!nelem) return; // nothing to compute, also for a default-constructed list, whose order is 0
 
     const auto& nodes = ParamNodes(order);
     ScratchBuf<Real> dist_nodes(order);
