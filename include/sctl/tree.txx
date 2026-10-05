@@ -1190,9 +1190,7 @@ namespace sctl {
         Iterator<Vector<Long>> cnt_;
         GetData_(data_, cnt_, data_name);
         const Long dof = [this,&data_,&cnt_]() {
-          StaticArray<Long,2> Nl, Ng;
-          Nl[0] = data_->Dim();
-          Nl[1] = omp_par::reduce(cnt_->begin(), cnt_->Dim());
+          StaticArray<Long,2> Nl{data_->Dim(), omp_par::reduce(cnt_->begin(), cnt_->Dim())}, Ng;
           comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
           const Long dof = Ng[0] / std::max<Long>(Ng[1],1);
           SCTL_ASSERT(Nl[0] == Nl[1] * dof);
@@ -1236,9 +1234,7 @@ namespace sctl {
   template <Integer DIM> template <class ValueType> void Tree<DIM>::AddData(const std::string& name, const Vector<ValueType>& data, const Vector<Long>& cnt) {
     Long dof;
     { // Check dof
-      StaticArray<Long,2> Nl, Ng;
-      Nl[0] = data.Dim();
-      Nl[1] = omp_par::reduce(cnt.begin(), cnt.Dim());
+      StaticArray<Long,2> Nl{data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim())}, Ng;
       comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
       dof = Ng[0] / std::max<Long>(Ng[1],1);
       SCTL_ASSERT(Nl[0] == Nl[1] * dof);
@@ -1275,9 +1271,7 @@ namespace sctl {
 
     Long dof;
     { // Set dof
-      StaticArray<Long,2> Nl, Ng;
-      Nl[0] = data.Dim();
-      Nl[1] = omp_par::reduce(cnt.begin(), cnt.Dim());
+      StaticArray<Long,2> Nl{data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim())}, Ng;
       comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
       dof = Ng[0] / std::max<Long>(Ng[1],1);
       SCTL_ASSERT(Nl[0] == Nl[1] * dof);
@@ -1396,9 +1390,7 @@ namespace sctl {
 
     Long dof;
     { // Set dof
-      StaticArray<Long,2> Nl, Ng;
-      Nl[0] = data.Dim();
-      Nl[1] = omp_par::reduce(cnt.begin(), cnt.Dim());
+      StaticArray<Long,2> Nl{data.Dim(), omp_par::reduce(cnt.begin(), cnt.Dim())}, Ng;
       comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
       dof = Ng[0] / std::max<Long>(Ng[1],1);
       SCTL_ASSERT(Nl[0] == Nl[1] * dof);
@@ -1653,9 +1645,7 @@ namespace sctl {
 
           { // Update data
             const Long dof = [&comm,&cnt,&data]() {
-              StaticArray<Long,2> Nl, Ng;
-              Nl[0] = data->Dim();
-              Nl[1] = omp_par::reduce(cnt->begin(), cnt->Dim());
+              StaticArray<Long,2> Nl{data->Dim(), omp_par::reduce(cnt->begin(), cnt->Dim())}, Ng;
               comm.Allreduce((ConstIterator<Long>)Nl, (Iterator<Long>)Ng, 2, CommOp::SUM);
               const Long dof = Ng[0] / std::max<Long>(Ng[1],1);
               SCTL_ASSERT(Nl[0] == Nl[1] * dof);
