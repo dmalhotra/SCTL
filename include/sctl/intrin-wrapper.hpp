@@ -2011,6 +2011,15 @@ namespace sctl { // SSE
     return _mm_set1_epi64x(a);
   }
   template <> inline VecData<float,4> set1_intrin<VecData<float,4>>(float a) {
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 13) && !defined(__AVX__)
+    if (__builtin_constant_p(a)) { // GCC 13 and 14 make a constant of 4 equal floats by a load of one float and a shuffle, of 4 equal integers by one load; the empty asm keeps the constant an integer vector
+      int32_t b;
+      __builtin_memcpy(&b, &a, sizeof(b));
+      __m128i t = _mm_set1_epi32(b);
+      asm("" : "+x"(t));
+      return _mm_castsi128_ps(t);
+    }
+#endif
     return _mm_set1_ps(a);
   }
   template <> inline VecData<double,2> set1_intrin<VecData<double,2>>(double a) {
@@ -2815,9 +2824,9 @@ namespace sctl { // SSE
     approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
   }
 
-  // The bits of float x by integer instructions, as in Agner Fog's vectorclass: without AVX, GCC 13
-  // and 14 make each float constant by a load and a shuffle, and each integer constant by one load
-  // (log, x86-64-v2, w5-3435X: 23.8 cycles per call before, 20.5 after, vectorclass 21.8)
+  // The bits of float x by integer instructions, as in Agner Fog's vectorclass (log, w5-3435X,
+  // independent / dependent calls: x86-64-v2 18.0 / 57.1 -> 17.7 / 53.1 cycles, haswell 15.9 / 56.6
+  // -> 15.5 / 48.9)
   template <> inline Mask<VecData<float,4>> positive_normal_mask_intrin<VecData<float,4>>(const VecData<float,4>& x) {
     const __m128i t = _mm_sub_epi32(_mm_castps_si128(x.v), _mm_set1_epi32(0x00800000)); // below 0x7f000000 as unsigned for normal x > 0
     return Mask<VecData<float,4>>(_mm_castsi128_ps(_mm_cmpeq_epi32(_mm_min_epu32(t, _mm_set1_epi32(0x7effffff)), t)));
