@@ -352,8 +352,8 @@ namespace sctl {
             u[i][j] = (i==j ? rinv : VecType::Zero()) + r[i]*r[j]*rinv3;
           }
         }
-        for (Integer i = 0; i < 3; i++) {
-          u[i][3] = r[i]*rinv3;
+        for (Integer i = 0; i < 3; i++) { // pressure (f.r)/(4 pi r^3): twice the velocity's scale 1/(8 pi)
+          u[i][3] = (r[i] + r[i])*rinv3;
         }
       }
 
@@ -367,7 +367,7 @@ namespace sctl {
           VecType* v_ = v + k*4;
           const VecType fdotr_rinv3 = (f_[0]*r[0] + f_[1]*r[1] + f_[2]*r[2]) * rinv3;
           for (Integer i = 0; i < 3; i++) v_[i] += f_[i]*rinv + r[i]*fdotr_rinv3;
-          v_[3] += fdotr_rinv3;
+          v_[3] += fdotr_rinv3 + fdotr_rinv3;
         }
       }
 
