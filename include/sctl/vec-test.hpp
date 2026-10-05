@@ -6,6 +6,7 @@
 #include <cmath>                    // for pow
 #include <cstdint>                  // for int8_t, int16_t, int32_t, int64_t
 #include <limits>                   // for numeric_limits
+#include <type_traits>              // for is_same
 
 #include "sctl/common.hpp"          // for SCTL_ASSERT, Integer, sctl
 #include "sctl/intrin-wrapper.hpp"  // for IntegerType, TypeTraits, DataType
@@ -52,8 +53,8 @@ namespace sctl {
         VecTest<double,N>::test_all();
         VecTest<double,N>::test_reals();
 
-        //VecTest<long double,N>::test_all();
-        //VecTest<long double,N>::test_reals();
+        VecTest<long double,N>::test_all();
+        VecTest<long double,N>::test_reals();
         VecTest<long double,N>::test_reals_long_double();
 
         #ifdef SCTL_QUAD_T
@@ -70,13 +71,13 @@ namespace sctl {
           test_gather_scatter();
           test_convert();
           test_reduce();
-          test_bitwise(); // TODO: fails for 'long double'
+          test_bitwise();
           test_arithmetic();
           test_maxmin();
           test_transpose();
           test_swap_pairs();
-          test_mask(); // TODO: fails for 'long double'
-          test_comparison(); // TODO: fails for 'long double'
+          test_mask();
+          test_comparison();
         }
       }
 
@@ -99,9 +100,8 @@ namespace sctl {
         }
       }
 
-      static void test_reals_long_double() { // the conversions, approx_exp over the whole range of the result, and approx_sincos
+      static void test_reals_long_double() { // approx_exp over the whole range of the result, and approx_sincos
         if (N*sizeof(ScalarType)*8<=512) {
-          test_reals_convert();
           const ScalarType max_x = std::log(std::numeric_limits<ScalarType>::max());
           UnionType u, u1;
           for (Integer i = 0; i < N; i++) {
@@ -372,7 +372,9 @@ namespace sctl {
         u14.v = u1.v | u2.x[0];
         u15.v = u2.x[0] | u1.v;
 
+        constexpr Integer ValueBytes = (std::is_same<ScalarType, long double>::value && std::numeric_limits<long double>::digits == 64 ? 10 : (Integer)sizeof(ScalarType)); // bytes of the value of a lane: 10 of the 16 of an x87 long double, the others need not be copied
         for (Integer i = 0; i < SizeBytes; i++) {
+          if (i % (Integer)sizeof(ScalarType) >= ValueBytes) continue;
           const int8_t s = u2.c[i % (Integer)sizeof(ScalarType)]; // byte i of the broadcast u2.x[0]
           SCTL_ASSERT(u3.c[i] == (int8_t)~u1.c[i]);
           SCTL_ASSERT(u4.c[i] == (int8_t)(u1.c[i] & u2.c[i]));
@@ -610,6 +612,14 @@ namespace sctl {
           u2.c[i] = rand()%4;
           u3.c[i] = rand()%4;
           u4.c[i] = rand()%4;
+        }
+        if constexpr (std::is_same<ScalarType, long double>::value) { // random bytes make x87 unnormals, which compare unordered even with themselves
+          for (Integer i = 0; i < N; i++) {
+            u1.x[i] = (ScalarType)(rand()%4);
+            u2.x[i] = (ScalarType)(rand()%4);
+            u3.x[i] = (ScalarType)(rand()%4);
+            u4.x[i] = (ScalarType)(rand()%4);
+          }
         }
 
         u5 .v = select((u1.v <  u2.v), u3.v, u4.v);
