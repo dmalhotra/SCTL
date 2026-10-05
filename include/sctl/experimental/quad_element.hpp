@@ -143,8 +143,9 @@ namespace sctl {
        *
        * - TensorProduct: self, a tensor-product rule of Gauss-Legendre panels
        *   halving toward the target node, with Alpert panels corrected for the
-       *   log singularity at the node along 'v'; near, Gauss-Legendre segments
-       *   graded toward the target's closest point on the element.
+       *   log singularity at the node along 'v'; near, the element split at the
+       *   target's closest point into rectangles, each a tensor-product rule of
+       *   Gauss-Legendre segments graded geometrically toward it.
        *
        * - Duffy: self, the element split into four triangles joining the target
        *   node to the edges, each integrated with a Duffy transform; near, the

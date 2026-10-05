@@ -734,42 +734,9 @@ namespace sctl {
       return all[order];
     }
 
-    /** Returns 2*MaxNearRefineLvl rules for each (order, q), built the first time q is requested: q-point Gauss-Legendre on the dyadic intervals at offsets [2^-(k+1), 2^-k] from the refined end and on the tails [0, 2^-k], each with order x q interpolation matrices. */
-    template <Integer order, class Real> const Vector<QuadRule1D<Real>>& NearGradeTable(const Integer q) {
-      const auto build = [](const Integer q, const Matrix<PrecompReal>& Dsub) {
-        using W = PrecompReal;
-        const Vector<W>& sig = NearSubOffsets<W>(order);
-        Vector<W> qn, qw;
-        LegQuadRule<W>::template ComputeNdsWts<W>(&qn, &qw, q);
-        Vector<QuadRule1D<Real>> tab(2*MaxNearRefineLvl<Real>);
-        Vector<W> tq(q), Twts(order*q);
-        Matrix<W> dT(order, q);
-        const auto fill = [&qn, &qw, q, &tq, &Twts, &sig, &Dsub, &dT](QuadRule1D<Real>& r, const W t_hi, const W t_lo) { // offsets of the ends from the refined end
-          const W t_w = t_hi - t_lo;
-          r.w.ReInit(q);
-          for (Integer i = 0; i < q; i++) r.w[i] = (Real)(t_w*qw[i]);
-          for (Integer j = 0; j < q; j++) tq[j] = t_hi - t_w*qn[j];
-          LagrangeInterp<W>::Interpolate(Twts, sig, tq);
-          const Matrix<W> T(order, q, Twts.begin(), false);
-          Matrix<W>::GEMM(dT, Dsub, T);
-          r.M.ReInit(order, q);
-          r.dM.ReInit(order, q);
-          r.MTD.ReInit(2*q, order);
-          for (Integer i = 0; i < order; i++) for (Integer j = 0; j < q; j++) {
-            r.M[i][j] = (Real)T[i][j];
-            r.dM[i][j] = (Real)dT[i][j];
-            r.MTD[j][i] = r.M[i][j];
-            r.MTD[q + j][i] = r.dM[i][j];
-          }
-        };
-        for (Integer k = 0; k < MaxNearRefineLvl<Real>; k++) { // Rules on dyadic interval k and on its tail
-          const W off_k = pow<W>((W)0.5, k), off_k1 = pow<W>((W)0.5, k+1);
-          fill(tab[k], off_k, off_k1);
-          fill(tab[MaxNearRefineLvl<Real> + k], off_k, (W)0);
-        }
-        return tab;
-      };
-      static const Matrix<PrecompReal> Dsub = []() { // Derivatives of the Lagrange basis on the Chebyshev extreme points
+    /** Returns the derivatives of the Lagrange basis on the nodes NearSubOffsets(order), with respect to one minus the offset (order x order), computed in PrecompReal. */
+    template <Integer order, class Real> const Matrix<Real>& NearSubDiffMat() {
+      static const Matrix<Real> D = []() {
         using W = PrecompReal;
         Vector<W> sub_nds(order);
         for (Integer i = 0; i < order; i++) {
@@ -778,16 +745,179 @@ namespace sctl {
         }
         sub_nds[0] = 0;
         sub_nds[order-1] = 1;
-        Matrix<W> D;
-        LagrangeDiffMat(D, sub_nds);
-        return D;
+        Matrix<W> Dw;
+        LagrangeDiffMat(Dw, sub_nds);
+        Matrix<Real> D_(order, order);
+        for (Integer i = 0; i < order; i++) for (Integer j = 0; j < order; j++) D_[i][j] = (Real)Dw[i][j];
+        return D_;
       }();
+      return D;
+    }
+
+    /** sets r, already sized for nseg*q points, to the q-point Gauss-Legendre rule (nodes qn, weights qw on [0, 1]) on each segment [seg[2i], seg[2i+1]] of offsets from the refined end, with the interpolation matrices from the nodes NearSubOffsets(order); computed in W */
+    template <Integer order, class W, class Real> void NearSegmentRule(QuadRule1D<Real>& r, ConstIterator<W> seg, const Integer nseg, const Vector<W>& qn, const Vector<W>& qw) {
+      const Integer q = qn.Dim();
+      const Integer N = nseg*q;
+      ScratchBuf<W> tq_buf(N), T_buf(order*N), dT_buf(order*N);
+      Vector<W> tq(tq_buf), Twts(T_buf);
+      for (Integer s = 0; s < nseg; s++) {
+        const W t_lo = seg[2*s+0], t_hi = seg[2*s+1];
+        const W t_w = t_hi - t_lo;
+        for (Integer j = 0; j < q; j++) {
+          r.w[s*q + j] = (Real)(t_w*qw[j]);
+          tq[s*q + j] = t_hi - t_w*qn[j];
+        }
+      }
+      LagrangeInterp<W>::Interpolate(Twts, NearSubOffsets<W>(order), tq);
+      const Matrix<W> T(order, N, Twts.begin(), false);
+      Matrix<W> dT(order, N, dT_buf.begin(), false);
+      Matrix<W>::GEMM(dT, NearSubDiffMat<order,W>(), T);
+      for (Integer i = 0; i < order; i++) for (Integer j = 0; j < N; j++) {
+        r.M[i][j] = (Real)T[i][j];
+        r.dM[i][j] = (Real)dT[i][j];
+        r.MTD[j][i] = r.M[i][j];
+        r.MTD[N + j][i] = r.dM[i][j];
+      }
+    }
+
+    /** Returns 2*MaxNearRefineLvl rules for each (order, q), built the first time q is requested: q-point Gauss-Legendre on the dyadic intervals at offsets [2^-(k+1), 2^-k] from the refined end and on the tails [0, 2^-k], each with order x q interpolation matrices. */
+    template <Integer order, class Real> const Vector<QuadRule1D<Real>>& NearGradeTable(const Integer q) {
+      const auto build = [](const Integer q) {
+        using W = PrecompReal;
+        Vector<W> qn, qw;
+        LegQuadRule<W>::template ComputeNdsWts<W>(&qn, &qw, q);
+        Vector<QuadRule1D<Real>> tab(2*MaxNearRefineLvl<Real>);
+        for (Integer k = 0; k < MaxNearRefineLvl<Real>; k++) { // Rules on dyadic interval k and on its tail
+          const W off_k = pow<W>((W)0.5, k), off_k1 = pow<W>((W)0.5, k+1);
+          const StaticArray<W,4> seg{off_k1, off_k, (W)0, off_k};
+          for (Integer tail = 0; tail < 2; tail++) {
+            QuadRule1D<Real>& r = tab[tail*MaxNearRefineLvl<Real> + k];
+            r.w.ReInit(q);
+            r.M.ReInit(order, q);
+            r.dM.ReInit(order, q);
+            r.MTD.ReInit(2*q, order);
+            NearSegmentRule<order>(r, (ConstIterator<W>)seg + 2*tail, 1, qn, qw);
+          }
+        }
+        return tab;
+      };
       static std::array<std::once_flag, NearMaxQuadOrder+1> built;
       static std::array<Vector<QuadRule1D<Real>>, NearMaxQuadOrder+1> all;
       SCTL_ASSERT(q > 0 && q <= NearMaxQuadOrder);
-      std::call_once(built[q], [&build, q]() { all[q] = build(q, Dsub); });
+      std::call_once(built[q], [&build, q]() { all[q] = build(q); });
       return all[q];
     }
+
+    /**
+     * The element split at the target's closest point (ustar, vstar) into up to four sub-rectangles (sdu, sdv), whose
+     * parameters are the offsets from the closest point divided by the side lengths slen[0][sdu] and slen[1][sdv]: the
+     * distance dist of the closest point and the metric (guu, guv, gvv) there, the interpolation from the element to each
+     * side's sub-interval (Sf, and its transpose St), and the coordinates of each sub-rectangle at its nodes relative to
+     * the target (Xsub). The sub-rectangles have the closest point as a node, so that points near it are found from the
+     * small offsets and the small coordinates there, not from the parameters and coordinates of size 1.
+     */
+    template <Integer order, class Real> struct NearSplit {
+      ScratchBuf<Real> Sf, St, Xsub;
+      Real ustar, vstar, dist, guu, guv, gvv;
+      Real slen[2][2];
+
+      NearSplit(const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, ScratchPool& pool) : Sf(4*order*order, pool), St(4*order*order, pool), Xsub(4*COORD_DIM*order*order, pool) {
+        const Integer nnode = order*order;
+        ScratchBuf<Real> cs_buf(COORD_DIM*nnode, pool);
+        Vector<Real> cs(cs_buf); // relative to the target; the closest point too is found from these, so that it is on the surface that the quadrature integrates
+        ShiftedElemCoord(cs, coord, Xtrg);
+
+        { // Closest point, and the metric there
+          StaticArray<Real,COORD_DIM> origin{(Real)0, (Real)0, (Real)0};
+          dist = GetClosestPoint(ustar, vstar, cs, dcoord_du, dcoord_dv, order, Vector<Real>(COORD_DIM, origin, false));
+          Real Xc[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
+          EvalPoint<Real>(Xc, dXu, dXv, coord, dcoord_du, dcoord_dv, order, ustar, vstar, nullptr);
+          guu = 0;
+          guv = 0;
+          gvv = 0;
+          for (Integer k = 0; k < COORD_DIM; k++) {
+            guu += dXu[k]*dXu[k];
+            guv += dXu[k]*dXv[k];
+            gvv += dXv[k]*dXv[k];
+          }
+          slen[0][0] = ustar;
+          slen[0][1] = 1 - ustar;
+          slen[1][0] = vstar;
+          slen[1][1] = 1 - vstar;
+        }
+
+        { // Interpolation from the element to each side's sub-interval
+          const Vector<Real>& gnds = QuadElemList<Real>::ParamNodes(order);
+          const Vector<Real>& soff = NearSubOffsets<Real>(order);
+          ScratchBuf<Real> gsh_buf(order, pool), sub_buf(order, pool);
+          Vector<Real> gsh(gsh_buf), sub(sub_buf);
+          for (Integer d = 0; d < 2; d++) {
+            const Real xs = (d ? vstar : ustar);
+            for (Integer i = 0; i < order; i++) gsh[i] = gnds[i] - xs;
+            for (Integer sd = 0; sd < 2; sd++) {
+              if (!(slen[d][sd] > 0)) continue;
+              const Real sg = (sd ? slen[d][sd] : -slen[d][sd]);
+              for (Integer i = 0; i < order; i++) sub[i] = sg*soff[i];
+              Vector<Real> Sf_v(nnode, Sf.begin() + (2*d+sd)*nnode, false);
+              LagrangeInterp<Real>::Interpolate(Sf_v, gsh, sub);
+              const Matrix<Real> Sf_m(order, order, Sf.begin() + (2*d+sd)*nnode, false);
+              Matrix<Real> St_m(order, order, St.begin() + (2*d+sd)*nnode, false);
+              for (Integer i = 0; i < order; i++) for (Integer aa = 0; aa < order; aa++) St_m[aa][i] = Sf_m[i][aa];
+            }
+          }
+        }
+
+        { // Coordinates of the sub-rectangles, relative to the target
+          ScratchBuf<Real> Av(2*COORD_DIM*nnode, pool);
+          const SmallGEMM<Real, COORD_DIM*order, order, order> sub_v;
+          for (Integer sdv = 0; sdv < 2; sdv++) {
+            if (!(slen[1][sdv] > 0)) continue;
+            const Matrix<Real> cs_all(COORD_DIM*order, order, cs.begin(), false);
+            const Matrix<Real> Sf_v(order, order, Sf.begin() + (2+sdv)*nnode, false);
+            Matrix<Real> A_all(COORD_DIM*order, order, Av.begin() + sdv*COORD_DIM*nnode, false);
+            sub_v(A_all, cs_all, Sf_v);
+          }
+          const SmallGEMM<Real, order, order, order> sub_u;
+          for (Integer sdu = 0; sdu < 2; sdu++) {
+            if (!(slen[0][sdu] > 0)) continue;
+            const Matrix<Real> St_u(order, order, St.begin() + sdu*nnode, false);
+            for (Integer sdv = 0; sdv < 2; sdv++) {
+              if (!(slen[1][sdv] > 0)) continue;
+              for (Integer k = 0; k < COORD_DIM; k++) {
+                const Matrix<Real> A_k(order, order, Av.begin() + (sdv*COORD_DIM + k)*nnode, false);
+                Matrix<Real> X_k(order, order, Xsub.begin() + ((2*sdu+sdv)*COORD_DIM + k)*nnode, false);
+                sub_u(X_k, St_u, A_k);
+              }
+            }
+          }
+        }
+      }
+
+      /** Returns the coordinates of sub-rectangle (sdu, sdv) at its nodes, relative to the target */
+      Vector<Real> SubCoord(const Integer sdu, const Integer sdv) {
+        const Integer nsub = COORD_DIM*order*order;
+        return Vector<Real>(nsub, Xsub.begin() + (2*sdu+sdv)*nsub, false);
+      }
+
+      /** adds to M_acc (nnode x C) the values acc (C x nnode, component-major) at the nodes of sub-rectangle (sdu, sdv), interpolated to the nodes of the element */
+      void AddToElem(Matrix<Real>& M_acc, const Vector<Real>& acc, const Integer C, const Integer sdu, const Integer sdv, ScratchPool& pool) {
+        const Integer nnode = order*order;
+        ScratchBuf<Real> accB(C*nnode, pool), accE(nnode, pool);
+        const Matrix<Real> St_v(order, order, St.begin() + (2+sdv)*nnode, false);
+        const Matrix<Real> Sf_u(order, order, Sf.begin() + sdu*nnode, false);
+        const Matrix<Real> A_all(C*order, order, (Iterator<Real>)acc.begin(), false);
+        Matrix<Real> B_all(C*order, order, accB.begin(), false);
+        const SmallGEMM<Real, DynamicSize, order, order> map_v(false, C*order, order, order);
+        map_v(B_all, A_all, St_v);
+        const SmallGEMM<Real, order, order, order> map_u;
+        for (Integer c = 0; c < C; c++) {
+          const Matrix<Real> B_c(order, order, accB.begin() + c*nnode, false);
+          Matrix<Real> E_c(order, order, accE.begin(), false);
+          map_u(E_c, Sf_u, B_c);
+          for (Integer p = 0; p < nnode; p++) M_acc[p][c] += accE[p];
+        }
+      }
+    };
 
     /** quad_order: Gauss-Legendre order on each piece, or 0 to choose it from digits and the tangent angle at the closest point */
     template <Integer order, class Real, class Kernel> void NearInteracBlockDyadic(Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits, const Integer quad_order = 0, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
@@ -800,96 +930,26 @@ namespace sctl {
       if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != C) M_acc.ReInit(nnode, C);
       M_acc.SetZero();
 
-      ScratchBuf<Real> cs_buf(COORD_DIM*nnode, pool);
-      Vector<Real> cs(cs_buf); // relative to the target; the closest point too is found from these, so that it is on the surface that the quadrature integrates
-      ShiftedElemCoord(cs, coord, Xtrg);
-
-      Real ustar, vstar;
-      StaticArray<Real,COORD_DIM> origin{(Real)0, (Real)0, (Real)0};
-      const Real dist = GetClosestPoint(ustar, vstar, cs, dcoord_du, dcoord_dv, order, Vector<Real>(COORD_DIM, origin, false));
-      const Real slen[2][2] = {{ustar, 1-ustar}, {vstar, 1-vstar}};
-
-      Real spd_u, spd_v;
+      NearSplit<order,Real> split(coord, dcoord_du, dcoord_dv, Xtrg, pool);
+      const Real spd_u = sqrt<Real>(split.guu);
+      const Real spd_v = sqrt<Real>(split.gvv);
       Integer q_near = quad_order;
-      { // Speeds, and the quadrature order for the tangent angle there
-        Real Xc[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
-        EvalPoint<Real>(Xc, dXu, dXv, coord, dcoord_du, dcoord_dv, order, ustar, vstar, nullptr);
-        Real guu = 0, gvv = 0, guv = 0;
-        for (Integer k = 0; k < COORD_DIM; k++) {
-          guu += dXu[k]*dXu[k];
-          gvv += dXv[k]*dXv[k];
-          guv += dXu[k]*dXv[k];
-        }
-        spd_u = sqrt<Real>(guu);
-        spd_v = sqrt<Real>(gvv);
-        if (q_near <= 0) { // at least the order for orthogonal tangents, raised for skewed tangents (fitted to the smallest passing orders, targets on and off the surface), rounded up to even
-          const Real s = SinTangentAngle<Real>(guu, guv, gvv);
-          const Real q_iso = (Real)CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
-          const Real q = std::max<Real>(std::max<Real>(q_iso, 4 + (Real)order/2), ((Real)0.875 + (Real)1.3*digits)/pow<Real>(s, (Real)0.875));
-          q_near = 2*(Integer)ceil<Real>(std::min<Real>(q, (Real)NearMaxQuadOrder)/2);
-        }
-      }
-
-      ScratchBuf<Real> Sf_buf(4*nnode, pool), St_buf(4*nnode, pool);
-      { // Interpolation from the element to each side's sub-interval
-        const Vector<Real>& gnds = QuadElemList<Real>::ParamNodes(order);
-        const Vector<Real>& soff = NearSubOffsets<Real>(order);
-        ScratchBuf<Real> gsh_buf(order, pool), sub_buf(order, pool);
-        Vector<Real> gsh(gsh_buf), sub(sub_buf);
-        for (Integer d = 0; d < 2; d++) {
-          const Real xs = (d ? vstar : ustar);
-          for (Integer i = 0; i < order; i++) gsh[i] = gnds[i] - xs;
-          for (Integer sd = 0; sd < 2; sd++) {
-            if (!(slen[d][sd] > 0)) continue;
-            const Real sg = (sd ? slen[d][sd] : -slen[d][sd]);
-            for (Integer i = 0; i < order; i++) sub[i] = sg*soff[i];
-            Vector<Real> Sf_v(nnode, Sf_buf.begin() + (2*d+sd)*nnode, false);
-            LagrangeInterp<Real>::Interpolate(Sf_v, gsh, sub);
-            const Matrix<Real> Sf_m(order, order, Sf_buf.begin() + (2*d+sd)*nnode, false);
-            Matrix<Real> St_m(order, order, St_buf.begin() + (2*d+sd)*nnode, false);
-            for (Integer i = 0; i < order; i++) for (Integer aa = 0; aa < order; aa++) St_m[aa][i] = Sf_m[i][aa];
-          }
-        }
-      }
-
-      ScratchBuf<Real> Xsub_buf(4*COORD_DIM*nnode, pool);
-      { // Coordinates of the sub-rectangles, relative to the target
-        ScratchBuf<Real> Av(2*COORD_DIM*nnode, pool);
-        const SmallGEMM<Real, COORD_DIM*order, order, order> sub_v;
-        for (Integer sdv = 0; sdv < 2; sdv++) {
-          if (!(slen[1][sdv] > 0)) continue;
-          const Matrix<Real> cs_all(COORD_DIM*order, order, cs.begin(), false);
-          const Matrix<Real> Sf_v(order, order, Sf_buf.begin() + (2+sdv)*nnode, false);
-          Matrix<Real> A_all(COORD_DIM*order, order, Av.begin() + sdv*COORD_DIM*nnode, false);
-          sub_v(A_all, cs_all, Sf_v);
-        }
-        const SmallGEMM<Real, order, order, order> sub_u;
-        for (Integer sdu = 0; sdu < 2; sdu++) {
-          if (!(slen[0][sdu] > 0)) continue;
-          const Matrix<Real> St_u(order, order, St_buf.begin() + sdu*nnode, false);
-          for (Integer sdv = 0; sdv < 2; sdv++) {
-            if (!(slen[1][sdv] > 0)) continue;
-            for (Integer k = 0; k < COORD_DIM; k++) {
-              const Matrix<Real> A_k(order, order, Av.begin() + (sdv*COORD_DIM + k)*nnode, false);
-              Matrix<Real> X_k(order, order, Xsub_buf.begin() + ((2*sdu+sdv)*COORD_DIM + k)*nnode, false);
-              sub_u(X_k, St_u, A_k);
-            }
-          }
-        }
+      if (q_near <= 0) { // at least the order for orthogonal tangents, raised for skewed tangents (fitted to the smallest passing orders, targets on and off the surface), rounded up to even
+        const Real s = SinTangentAngle<Real>(split.guu, split.guv, split.gvv);
+        const Real q_iso = (Real)CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
+        const Real q = std::max<Real>(std::max<Real>(q_iso, 4 + (Real)order/2), ((Real)0.875 + (Real)1.3*digits)/pow<Real>(s, (Real)0.875));
+        q_near = 2*(Integer)ceil<Real>(std::min<Real>(q, (Real)NearMaxQuadOrder)/2);
       }
 
       ScratchBuf<Real> acc_buf(C*nnode, pool);
       Vector<Real> acc(acc_buf);
       const Vector<QuadRule1D<Real>>& tab = NearGradeTable<order,Real>(q_near);
-      const auto integrate_piece = [&tab, &normal_trg, &ker, &proxy_off, &proxy_w, &acc, &Xsub_buf](const Integer sdu, const Integer sdv, const Integer iu, const Integer iv) {
-        const QuadRule1D<Real>& gu = tab[iu];
-        const QuadRule1D<Real>& gv = tab[iv];
+      const auto integrate_piece = [&tab, &normal_trg, &ker, &proxy_off, &proxy_w, &acc, &split](const Integer sdu, const Integer sdv, const Integer iu, const Integer iv) {
         const Real nsign = ((sdu == 1) != (sdv == 1)) ? (Real)-1 : (Real)1;
-        const Integer nsub = COORD_DIM*order*order;
-        const Vector<Real> Xsub(nsub, Xsub_buf.begin() + (2*sdu+sdv)*nsub, false);
-        IntegrateTensorRule<order,Real>(acc, Xsub, gu, gv, normal_trg, ker, nsign, proxy_off, proxy_w);
+        IntegrateTensorRule<order,Real>(acc, split.SubCoord(sdu, sdv), tab[iu], tab[iv], normal_trg, ker, nsign, proxy_off, proxy_w);
       };
       const Real b_ellipse = CachedQuadParams<Real, QuadParams<Real>>(digits).b_ellipse;
+      const Real dist = split.dist;
       const auto refine = [&integrate_piece, dist, b_ellipse](const Integer sdu, const Integer sdv, Real hu, Real hv) {
         Integer ku = 0, kv = 0;
         const bool refine_to_max = !(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist);
@@ -912,27 +972,12 @@ namespace sctl {
         integrate_piece(sdu, sdv, MaxNearRefineLvl<Real> + ku, MaxNearRefineLvl<Real> + kv);
       };
       for (Integer sdu = 0; sdu < 2; sdu++) { // Integrate each sub-rectangle, refining toward the closest point
-        if (!(slen[0][sdu] > 0)) continue;
+        if (!(split.slen[0][sdu] > 0)) continue;
         for (Integer sdv = 0; sdv < 2; sdv++) {
-          if (!(slen[1][sdv] > 0)) continue;
+          if (!(split.slen[1][sdv] > 0)) continue;
           acc.SetZero();
-          refine(sdu, sdv, slen[0][sdu]*spd_u, slen[1][sdv]*spd_v);
-          { // Map the sub-rectangle's nodal values back to the element
-            ScratchBuf<Real> accB(C*nnode, pool), accE(nnode, pool);
-            const Matrix<Real> St_v(order, order, St_buf.begin() + (2+sdv)*nnode, false);
-            const Matrix<Real> Sf_u(order, order, Sf_buf.begin() + sdu*nnode, false);
-            const Matrix<Real> A_all(C*order, order, acc.begin(), false);
-            Matrix<Real> B_all(C*order, order, accB.begin(), false);
-            const SmallGEMM<Real, DynamicSize, order, order> map_v(false, C*order, order, order);
-            map_v(B_all, A_all, St_v);
-            const SmallGEMM<Real, order, order, order> map_u;
-            for (Integer c = 0; c < C; c++) {
-              const Matrix<Real> B_c(order, order, accB.begin() + c*nnode, false);
-              Matrix<Real> E_c(order, order, accE.begin(), false);
-              map_u(E_c, Sf_u, B_c);
-              for (Integer p = 0; p < nnode; p++) M_acc[p][c] += accE[p];
-            }
-          }
+          refine(sdu, sdv, split.slen[0][sdu]*spd_u, split.slen[1][sdv]*spd_v);
+          split.AddToElem(M_acc, acc, C, sdu, sdv, pool);
         }
       }
     }
@@ -949,130 +994,101 @@ namespace sctl {
   namespace detail_tensorprod_near {
 
     using detail_quadelem::COORD_DIM;
-    using detail_quadelem::MaxRefineLvl;
+    using detail_quadelem::MaxNearRefineLvl;
     using detail_quadelem::QuadRule1D;
 
-    using detail_quadelem::DiffMat;
-    using detail_quadelem::EvalPoint;
-    using detail_quadelem::GetClosestPoint;
-    using detail_quadelem::IntegratePanel;
+    using detail_quadelem::IntegrateTensorRule;
     using detail_quadelem::NearInteracTargets;
-    using detail_quadelem::ShiftedElemCoord;
     using detail_quadelem::SinTangentAngle;
     using detail_dyadic_near::NearMaxQuadOrder;
+    using detail_dyadic_near::NearSegmentRule;
+    using detail_dyadic_near::NearSplit;
 
     template <Integer order, class Real, class Kernel> void NearInteracTensorProduct(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Long elem_idx, const QuadElemList<Real>& qel, const Integer digits) {
       const auto near_interac_one_trg = [&ker, digits](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, const Vector<Real>& ntrg) {
+        static constexpr Integer KDIM0 = Kernel::SrcDim();
+        static constexpr Integer KDIM1full = Kernel::TrgDim();
         constexpr Integer MaxSegments = 4096;
-        ScratchBuf<Real> cs_buf(COORD_DIM*order*order);
-        Vector<Real> cs(cs_buf); // relative to the target; the closest point too is found from these, so that it is on the surface that the quadrature integrates
-        ShiftedElemCoord(cs, coord, Xtrg);
-        ScratchBuf<Real> useg(2*MaxSegments), vseg(2*MaxSegments);
-        Integer nseg_u, nseg_v, quad_order;
-        { // Segments graded toward the closest point
-          const Real rho = (Real)2.5;
-          const Real b_ellipse = (rho + 1/rho)/4;
-          Real ustar, vstar, h_param;
-          { // Closest point, its distance in parameter units, and the Gauss-Legendre order for the tangents there
-            StaticArray<Real,COORD_DIM> origin{(Real)0, (Real)0, (Real)0};
-            const Real dist = GetClosestPoint(ustar, vstar, cs, dcoord_du, dcoord_dv, order, Vector<Real>(COORD_DIM, origin, false));
-            Real Xc[COORD_DIM], dXdu[COORD_DIM], dXdv[COORD_DIM];
-            EvalPoint<Real>(Xc, dXdu, dXdv, coord, dcoord_du, dcoord_dv, order, ustar, vstar, nullptr);
-            Real su2 = 0, sv2 = 0, suv = 0;
-            for (Integer k = 0; k < COORD_DIM; k++) {
-              su2 += dXdu[k]*dXdu[k];
-              sv2 += dXdv[k]*dXdv[k];
-              suv += dXdu[k]*dXdv[k];
-            }
-            const Real L_phys = std::max<Real>(sqrt<Real>(su2), sqrt<Real>(sv2));
-            const bool degenerate = !(dist > 0) || isinf<Real>(dist) || isnan<Real>(dist) || !(L_phys > 0);
-            h_param = (degenerate ? 0 : dist/L_phys);
+        const Integer nnode = order*order;
+        const Integer C = KDIM0*((ntrg.Dim() > 0) ? KDIM1full/COORD_DIM : KDIM1full);
+        ScratchPool& pool = ScratchPool::Instance(); // looked up once per call, not once per buffer
+        if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != C) M_acc.ReInit(nnode, C);
+        M_acc.SetZero();
 
-            // at least digits + 1, the order for orthogonal tangents and targets off the surface, raised for skewed tangents (fitted to the smallest passing orders)
-            const Real s = SinTangentAngle<Real>(su2, suv, sv2);
-            const Real q = std::max<Real>(std::max<Real>((Real)digits + 1, (Real)digits - 8 + (Real)order/2), (1 + (Real)0.75*digits)/sqrt<Real>(s));
-            quad_order = (Integer)ceil<Real>(std::min<Real>(q, (Real)NearMaxQuadOrder));
-          }
+        NearSplit<order,Real> split(coord, dcoord_du, dcoord_dv, Xtrg, pool);
+        const Real rho = (Real)2.5;
+        const Real b_ellipse = (rho + 1/rho)/4;
+        Integer quad_order;
+        Real w_stop;
+        { // Gauss-Legendre order for the tangents at the closest point, and the smallest segment in parameter units
+          const Real L_phys = std::max<Real>(sqrt<Real>(split.guu), sqrt<Real>(split.gvv));
+          const bool degenerate = !(split.dist > 0) || isinf<Real>(split.dist) || isnan<Real>(split.dist) || !(L_phys > 0);
+          const Real h_param = (degenerate ? 0 : split.dist/L_phys);
+          const Real w_floor = pow<Real>((Real)0.5, MaxNearRefineLvl<Real>);
+          w_stop = std::max<Real>(std::max<Real>(h_param/b_ellipse, w_floor), (Real)1e-300);
 
-          const auto graded_segments = [b_ellipse](Iterator<Real> seg, const Real center, const Real w_min) {
-            const Real r = std::min<Real>((Real)0.9, b_ellipse/(1 + b_ellipse) * (Real)1.05);
-            const Real w_stop = std::max<Real>(w_min, (Real)1e-300);
+          // at least digits + 1, the order for orthogonal tangents and targets off the surface, raised for skewed tangents (fitted to the smallest passing orders)
+          const Real s = SinTangentAngle<Real>(split.guu, split.guv, split.gvv);
+          const Real q = std::max<Real>(std::max<Real>((Real)digits + 1, (Real)digits - 8 + (Real)order/2), (1 + (Real)0.75*digits)/sqrt<Real>(s));
+          quad_order = (Integer)ceil<Real>(std::min<Real>(q, (Real)NearMaxQuadOrder));
+        }
 
-            Integer nseg = 0;
-            const auto add = [&seg, &nseg](const Real e0, const Real e1) {
-              const Real lo = std::min<Real>(e0, e1);
-              const Real hi = std::max<Real>(e0, e1);
-              if (!(hi - lo > 0)) return;
-              SCTL_ASSERT(nseg < MaxSegments);
-              seg[2*nseg+0] = lo;
-              seg[2*nseg+1] = hi;
-              nseg++;
-            };
-            for (Integer side = 0; side < 2; side++) {
-              const Real sgn = (side ? (Real)1 : (Real)-1);
-              const Real span = (side ? 1 - center : center);
+        Integer nseg[2][2] = {{0, 0}, {0, 0}};
+        ScratchBuf<Real> seg_buf(4*2*MaxSegments, pool);
+        { // Segments of each side, offsets from the closest point in units of the side's length, graded geometrically toward it down to w_stop in parameter units
+          const Real r = std::min<Real>((Real)0.9, b_ellipse/(1 + b_ellipse) * (Real)1.05);
+          for (Integer d = 0; d < 2; d++) {
+            for (Integer sd = 0; sd < 2; sd++) {
+              const Real span = split.slen[d][sd];
               if (!(span > 0)) continue;
-
-              Real w = span;
-              while (w > w_stop) {
-                const Real w_next = w*r;
-                add(center + sgn*w, center + sgn*w_next);
-                w = w_next;
+              const Iterator<Real> seg = seg_buf.begin() + (2*d+sd)*2*MaxSegments;
+              Integer n = 0;
+              Real w = 1;
+              while (w*span > w_stop) {
+                SCTL_ASSERT(n + 1 < MaxSegments);
+                seg[2*n+0] = w*r;
+                seg[2*n+1] = w;
+                w *= r;
+                n++;
               }
-              add(center + sgn*w, center);
+              seg[2*n+0] = 0;
+              seg[2*n+1] = w;
+              nseg[d][sd] = n + 1;
             }
-            return nseg;
-          };
-          const Real w_floor = pow<Real>((Real)0.5, MaxRefineLvl<Real>);
-          const Real w_min = std::max<Real>(h_param/b_ellipse, w_floor);
-          nseg_u = graded_segments(useg.begin(), ustar, w_min);
-          nseg_v = graded_segments(vseg.begin(), vstar, w_min);
+          }
         }
-        const Vector<Real>& gl_nds = LegQuadRule<Real>::template nds<NearMaxQuadOrder>(quad_order);
-        const Vector<Real>& gl_wts = LegQuadRule<Real>::template wts<NearMaxQuadOrder>(quad_order);
-        const Integer Nu = nseg_u * quad_order;
-        const Integer Nv = nseg_v * quad_order;
-        SCTL_ASSERT(Nu > 0 && Nv > 0);
 
-        ScratchBuf<Real> rule_u(Nu*(1 + 4*order)), rule_v(Nv*(1 + 4*order));
-        const auto rule_view = [](Iterator<Real> buf, const Integer N) {
-          return QuadRule1D<Real>{Vector<Real>(N, buf, false),
-              Matrix<Real>(order, N, buf + N, false), Matrix<Real>(order, N, buf + N*(1 + order), false),
-              Matrix<Real>(2*N, order, buf + N*(1 + 2*order), false)};
+        ScratchBuf<Real> rule_buf((nseg[0][0] + nseg[0][1] + nseg[1][0] + nseg[1][1])*quad_order*(1 + 4*order), pool);
+        const auto rule_view = [&rule_buf, &nseg, quad_order](const Integer d, const Integer sd) { // the rule of side (d, sd) in rule_buf, after those of the sides before it
+          Integer offset = 0;
+          for (Integer i = 0; i < 2*d+sd; i++) offset += nseg[i/2][i%2]*quad_order*(1 + 4*order);
+          const Integer N = nseg[d][sd]*quad_order;
+          const Iterator<Real> buf = rule_buf.begin() + offset;
+          return QuadRule1D<Real>{Vector<Real>(N, buf, false), Matrix<Real>(order, N, buf + N, false), Matrix<Real>(order, N, buf + N*(1 + order), false), Matrix<Real>(2*N, order, buf + N*(1 + 2*order), false)};
         };
-        QuadRule1D<Real> ru = rule_view(rule_u.begin(), Nu);
-        QuadRule1D<Real> rv = rule_view(rule_v.begin(), Nv);
-        { // Gauss-Legendre rule on each segment, and its interpolation matrices
-          const auto build_rule = [&gl_nds, &gl_wts, quad_order](QuadRule1D<Real>& r, Vector<Real>& param, Iterator<Real> seg, const Integer nseg) {
-            { // Nodes and weights of every segment
-              Integer idx = 0;
-              for (Integer si = 0; si < nseg; si++) {
-                const Real a0 = seg[si*2+0], a1 = seg[si*2+1];
-                const Real len = a1 - a0;
-                for (Integer a = 0; a < quad_order; a++) {
-                  param[idx] = a0 + len*gl_nds[a];
-                  r.w[idx] = gl_wts[a]*len;
-                  idx++;
-                }
-              }
+        QuadRule1D<Real> rule[2][2] = {{rule_view(0, 0), rule_view(0, 1)}, {rule_view(1, 0), rule_view(1, 1)}};
+        { // Gauss-Legendre rule on the segments of each side, with its interpolation matrices from the sub-rectangle's nodes
+          const Vector<Real>& gl_nds = LegQuadRule<Real>::template nds<NearMaxQuadOrder>(quad_order);
+          const Vector<Real>& gl_wts = LegQuadRule<Real>::template wts<NearMaxQuadOrder>(quad_order);
+          for (Integer d = 0; d < 2; d++) {
+            for (Integer sd = 0; sd < 2; sd++) {
+              if (nseg[d][sd]) NearSegmentRule<order>(rule[d][sd], (ConstIterator<Real>)seg_buf.begin() + (2*d+sd)*2*MaxSegments, nseg[d][sd], gl_nds, gl_wts);
             }
-            const Integer N = (Integer)param.Dim();
-            Vector<Real> M_v(order*N, r.M.begin(), false);
-            LagrangeInterp<Real>::Interpolate(M_v, QuadElemList<Real>::ParamNodes(order), param);
-            Matrix<Real>::GEMM(r.dM, DiffMat<Real>(order), r.M);
-            for (Integer i = 0; i < order; i++) {
-              for (Integer a = 0; a < N; a++) {
-                r.MTD[a][i] = r.M[i][a];
-                r.MTD[N + a][i] = r.dM[i][a];
-              }
-            }
-          };
-          ScratchBuf<Real> param_u(Nu), param_v(Nv);
-          Vector<Real> u_param(param_u), v_param(param_v);
-          build_rule(ru, u_param, useg.begin(), nseg_u);
-          build_rule(rv, v_param, vseg.begin(), nseg_v);
+          }
         }
-        IntegratePanel<order,Real>(M_acc, cs, ntrg, ru, rv, ker);
+
+        ScratchBuf<Real> acc_buf(C*nnode, pool);
+        Vector<Real> acc(acc_buf);
+        for (Integer sdu = 0; sdu < 2; sdu++) { // Integrate each sub-rectangle
+          if (!nseg[0][sdu]) continue;
+          for (Integer sdv = 0; sdv < 2; sdv++) {
+            if (!nseg[1][sdv]) continue;
+            const Real nsign = ((sdu == 1) != (sdv == 1)) ? (Real)-1 : (Real)1;
+            acc.SetZero();
+            IntegrateTensorRule<order,Real>(acc, split.SubCoord(sdu, sdv), rule[0][sdu], rule[1][sdv], ntrg, ker, nsign);
+            split.AddToElem(M_acc, acc, C, sdu, sdv, pool);
+          }
+        }
       };
       NearInteracTargets<order,Real,Kernel>(M, Xt, normal_trg, qel, elem_idx, near_interac_one_trg);
     }
