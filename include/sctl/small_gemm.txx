@@ -17,6 +17,15 @@
 
 namespace sctl {
 
+// Clang checks the lambda captures of each instantiation: alpha and beta are read only for
+// Update::AlphaBeta, a size that the template fixes is a constant, which needs no capture, and some
+// captures are read only in one branch of an if constexpr.
+// With capture defaults instead, GCC did not inline the tiles and fixed sizes were up to 8% slower
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-lambda-capture"
+#endif
+
 namespace detail_small_gemm {
 
   /**
@@ -377,6 +386,9 @@ namespace detail_small_gemm {
   }
 
 }  // namespace detail_small_gemm
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC> inline SmallGEMM<ValueType, M, N, K, LDA, LDB, LDC>::SmallGEMM(const bool accumulate, const Long m, const Long n, const Long k) : SmallGEMM(accumulate, m, n, k, (LDA != DynamicSize ? LDA : k), (LDB != DynamicSize ? LDB : n), (LDC != DynamicSize ? LDC : n)) {}
 
