@@ -2063,20 +2063,36 @@ namespace sctl { // SSE
   template <> inline VecData<int16_t,8> set1_intrin<VecData<int16_t,8>>(int16_t a) {
     return _mm_set1_epi16(a);
   }
+#if defined(__GNUC__) && !defined(__clang__) && !defined(__AVX__)
+  // Two equal 64-bit halves known at compile time, by one load (movddup), for constants that GCC 12 to 15 (4
+  // floats) or 14 and 15 (4 or 2 integers) would make with two or three instructions: a load of one element,
+  // or a move from a general register, and a shuffle. The empty asm keeps GCC from seeing them as the constants.
+  inline __m128i dup64_const_intrin(const uint64_t bits) {
+    double d;
+    __builtin_memcpy(&d, &bits, sizeof(d));
+    __m128d t = _mm_set1_pd(d);
+    asm("" : "+x"(t));
+    return _mm_castpd_si128(t);
+  }
+#endif
   template <> inline VecData<int32_t,4> set1_intrin<VecData<int32_t,4>>(int32_t a) {
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14) && !defined(__AVX__)
+    if (__builtin_constant_p(a)) return dup64_const_intrin((((uint64_t)(uint32_t)a) << 32) | (uint32_t)a);
+#endif
     return _mm_set1_epi32(a);
   }
   template <> inline VecData<int64_t,2> set1_intrin<VecData<int64_t,2>>(int64_t a) {
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14) && !defined(__AVX__)
+    if (__builtin_constant_p(a)) return dup64_const_intrin((uint64_t)a);
+#endif
     return _mm_set1_epi64x(a);
   }
   template <> inline VecData<float,4> set1_intrin<VecData<float,4>>(float a) {
-#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 13) && !defined(__AVX__)
-    if (__builtin_constant_p(a)) { // GCC 13 and 14 make a constant of 4 equal floats by a load of one float and a shuffle, of 4 equal integers by one load; the empty asm keeps the constant an integer vector
-      int32_t b;
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 12) && !defined(__AVX__)
+    if (__builtin_constant_p(a)) {
+      uint32_t b;
       __builtin_memcpy(&b, &a, sizeof(b));
-      __m128i t = _mm_set1_epi32(b);
-      asm("" : "+x"(t));
-      return _mm_castsi128_ps(t);
+      return _mm_castsi128_ps(dup64_const_intrin((((uint64_t)b) << 32) | b));
     }
 #endif
     return _mm_set1_ps(a);
@@ -2887,14 +2903,14 @@ namespace sctl { // SSE
   // independent / dependent calls: x86-64-v2 18.0 / 57.1 -> 17.7 / 53.1 cycles, haswell 15.9 / 56.6
   // -> 15.5 / 48.9)
   template <> inline Mask<VecData<float,4>> positive_normal_mask_intrin<VecData<float,4>>(const VecData<float,4>& x) {
-    const __m128i t = _mm_sub_epi32(_mm_castps_si128(x.v), _mm_set1_epi32(0x00800000)); // below 0x7f000000 as unsigned for normal x > 0
-    return Mask<VecData<float,4>>(_mm_castsi128_ps(_mm_cmpeq_epi32(_mm_min_epu32(t, _mm_set1_epi32(0x7effffff)), t)));
+    const __m128i t = _mm_sub_epi32(_mm_castps_si128(x.v), set1_intrin<VecData<int32_t,4>>(0x00800000).v); // below 0x7f000000 as unsigned for normal x > 0
+    return Mask<VecData<float,4>>(_mm_castsi128_ps(_mm_cmpeq_epi32(_mm_min_epu32(t, set1_intrin<VecData<int32_t,4>>(0x7effffff).v), t)));
   }
   template <> inline void log_mant_intrin<VecData<float,4>>(VecData<float,4>& e, VecData<float,4>& m, const VecData<float,4>& x) {
     const __m128i t = _mm_castps_si128(x.v);
-    const __m128i m2 = _mm_or_si128(_mm_and_si128(t, _mm_set1_epi32(0x007fffff)), _mm_set1_epi32(0x3f000000)); // in [1/2, 1)
-    const __m128i e1 = _mm_sub_epi32(_mm_srli_epi32(_mm_slli_epi32(t, 1), 24), _mm_set1_epi32(127)); // x = 2^e1 (2 m2)
-    const __m128i big = _mm_cmpgt_epi32(m2, _mm_set1_epi32(0x3f3504f3)); // m2 > sqrt(1/2), on the bits: positive floats are in the order of their bits
+    const __m128i m2 = _mm_or_si128(_mm_and_si128(t, set1_intrin<VecData<int32_t,4>>(0x007fffff).v), set1_intrin<VecData<int32_t,4>>(0x3f000000).v); // in [1/2, 1)
+    const __m128i e1 = _mm_sub_epi32(_mm_srli_epi32(_mm_slli_epi32(t, 1), 24), set1_intrin<VecData<int32_t,4>>(127).v); // x = 2^e1 (2 m2)
+    const __m128i big = _mm_cmpgt_epi32(m2, set1_intrin<VecData<int32_t,4>>(0x3f3504f3).v); // m2 > sqrt(1/2), on the bits: positive floats are in the order of their bits
     m = _mm_add_ps(_mm_castsi128_ps(m2), _mm_andnot_ps(_mm_castsi128_ps(big), _mm_castsi128_ps(m2))); // 2 m2 where not big
     e = _mm_cvtepi32_ps(_mm_sub_epi32(e1, big)); // e1 + 1 where big: its lanes are -1
   }
