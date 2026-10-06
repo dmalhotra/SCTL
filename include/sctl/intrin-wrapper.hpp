@@ -2571,9 +2571,32 @@ namespace sctl { // SSE
   template <> inline VecData<int32_t,4> bitshiftleft_intrin <VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { return _mm_sllv_epi32(a.v, rhs.v); }
   template <> inline VecData<int64_t,2> bitshiftleft_intrin <VecData<int64_t,2>>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& rhs) { return _mm_sllv_epi64(a.v, rhs.v); }
   template <> inline VecData<int32_t,4> bitshiftright_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { return _mm_srav_epi32(a.v, rhs.v); }
+  #else // without AVX2: a multiply, or one bit shift for the count of each lane and blends
+  template <> inline VecData<int32_t,4> bitshiftleft_intrin <VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { // a times 2^rhs, made from the exponent bits of a float; 2^31 becomes 0x80000000
+    return _mm_mullo_epi32(a.v, _mm_cvttps_epi32(_mm_castsi128_ps(_mm_add_epi32(_mm_slli_epi32(rhs.v, 23), _mm_set1_epi32(127 << 23)))));
+  }
+  template <> inline VecData<int64_t,2> bitshiftleft_intrin <VecData<int64_t,2>>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& rhs) { return _mm_blend_epi16(_mm_sll_epi64(a.v, rhs.v), _mm_sll_epi64(a.v, _mm_unpackhi_epi64(rhs.v, rhs.v)), 0xF0); }
+  template <> inline VecData<int32_t,4> bitshiftright_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { // the count of lane i in the low 64 bits of the count of _mm_sra_epi32
+    const __m128i z = _mm_setzero_si128();
+    const __m128i r0 = _mm_sra_epi32(a.v, _mm_blend_epi16(rhs.v, z, 0xFC));
+    const __m128i r1 = _mm_sra_epi32(a.v, _mm_srli_epi64(rhs.v, 32));
+    const __m128i r2 = _mm_sra_epi32(a.v, _mm_unpackhi_epi32(rhs.v, z));
+    const __m128i r3 = _mm_sra_epi32(a.v, _mm_srli_si128(rhs.v, 12));
+    return _mm_blend_epi16(_mm_blend_epi16(r0, r1, 0x0C), _mm_blend_epi16(r2, r3, 0xC0), 0xF0);
+  }
   #endif
   #if defined(__AVX512F__) && defined(__AVX512VL__)
   template <> inline VecData<int64_t,2> bitshiftright_intrin<VecData<int64_t,2>>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& rhs) { return _mm_srav_epi64(a.v, rhs.v); }
+  #elif defined(__AVX2__) || !defined(__AVX__) // negative lanes: complement, logical bit shift, complement back; with AVX and without AVX2 the generic code is faster
+  template <> inline VecData<int64_t,2> bitshiftright_intrin<VecData<int64_t,2>>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& rhs) {
+    const __m128i s = _mm_cmpgt_epi64(_mm_setzero_si128(), a.v);
+    const __m128i t = _mm_xor_si128(a.v, s);
+    #if defined(__AVX2__)
+    return _mm_xor_si128(_mm_srlv_epi64(t, rhs.v), s);
+    #else
+    return _mm_xor_si128(_mm_blend_epi16(_mm_srl_epi64(t, rhs.v), _mm_srl_epi64(t, _mm_unpackhi_epi64(rhs.v, rhs.v)), 0xF0), s);
+    #endif
+  }
   #endif
   #if defined(__AVX512BW__) && defined(__AVX512VL__)
   template <> inline VecData<int16_t,8> bitshiftleft_intrin <VecData<int16_t,8>>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& rhs) { return _mm_sllv_epi16(a.v, rhs.v); }
@@ -3588,6 +3611,11 @@ namespace sctl { // AVX
   template <> inline VecData<int32_t ,8> bitshiftright_intrin<VecData<int32_t ,8>>(const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& rhs) { return _mm256_srav_epi32(a.v, rhs.v); }
   #if defined(__AVX512F__) && defined(__AVX512VL__)
   template <> inline VecData<int64_t ,4> bitshiftright_intrin<VecData<int64_t ,4>>(const VecData<int64_t ,4>& a, const VecData<int64_t ,4>& rhs) { return _mm256_srav_epi64(a.v, rhs.v); }
+  #else
+  template <> inline VecData<int64_t ,4> bitshiftright_intrin<VecData<int64_t ,4>>(const VecData<int64_t ,4>& a, const VecData<int64_t ,4>& rhs) { // negative lanes: complement, logical bit shift, complement back
+    const __m256i s = _mm256_cmpgt_epi64(_mm256_setzero_si256(), a.v);
+    return _mm256_xor_si256(_mm256_srlv_epi64(_mm256_xor_si256(a.v, s), rhs.v), s);
+  }
   #endif
   #if defined(__AVX512BW__) && defined(__AVX512VL__)
   template <> inline VecData<int16_t,16> bitshiftleft_intrin <VecData<int16_t,16>>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& rhs) { return _mm256_sllv_epi16(a.v, rhs.v); }
@@ -3611,6 +3639,8 @@ namespace sctl { // AVX
   }
   template <> inline VecData<float   ,8> bitshiftright_intrin<VecData<float   ,8>>(const VecData<float   ,8>& a, const Integer& rhs) { return _mm256_castsi256_ps(avx_halves_intrin([rhs](const __m128i h) { return _mm_srli_epi32(h, (int)rhs); }, _mm256_castps_si256(a.v))); }
   template <> inline VecData<double  ,4> bitshiftright_intrin<VecData<double  ,4>>(const VecData<double  ,4>& a, const Integer& rhs) { return _mm256_castsi256_pd(avx_halves_intrin([rhs](const __m128i h) { return _mm_srli_epi64(h, (int)rhs); }, _mm256_castpd_si256(a.v))); }
+
+  template <> inline VecData<int32_t ,8> bitshiftleft_intrin <VecData<int32_t ,8>>(const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& rhs) { return avx_halves_intrin([](const __m128i h, const __m128i k) { return bitshiftleft_intrin(VecData<int32_t,4>(h), VecData<int32_t,4>(k)).v; }, a.v, rhs.v); } // the other bit shifts by a vector are faster in the generic code
   #endif
 
   // Other functions
@@ -3969,6 +3999,18 @@ namespace sctl { // AVX
   #endif
   #if defined(__AVX512F__) && defined(__AVX512VL__)
   template <> inline VecData<int64_t, 4> fabs_intrin<VecData<int64_t, 4>>(const VecData<int64_t, 4>& x) { return _mm256_abs_epi64(x.v); }
+  #elif defined(__AVX2__) // negative lanes: complement and add 1
+  template <> inline VecData<int64_t, 4> fabs_intrin<VecData<int64_t, 4>>(const VecData<int64_t, 4>& x) {
+    const __m256i s = _mm256_cmpgt_epi64(_mm256_setzero_si256(), x.v);
+    return _mm256_sub_epi64(_mm256_xor_si256(x.v, s), s);
+  }
+  #else // AVX without AVX2: each 128-bit half with SSE
+  template <> inline VecData<int64_t, 4> fabs_intrin<VecData<int64_t, 4>>(const VecData<int64_t, 4>& x) {
+    return avx_halves_intrin([](const __m128i h) {
+      const __m128i s = _mm_cmpgt_epi64(_mm_setzero_si128(), h);
+      return _mm_sub_epi64(_mm_xor_si128(h, s), s);
+    }, x.v);
+  }
   #endif
 
   // Gather and scatter
@@ -4022,6 +4064,14 @@ namespace sctl { // AVX
   #if defined(__AVX512DQ__) && defined(__AVX512VL__)
   template <> inline VecData<double ,4> convert_intrin<VecData<double ,4>,VecData<int64_t,4>>(const VecData<int64_t,4>& a) { return _mm256_cvtepi64_pd (a.v); }
   template <> inline VecData<int64_t,4> convert_intrin<VecData<int64_t,4>,VecData<double ,4>>(const VecData<double ,4>& a) { return _mm256_cvttpd_epi64(a.v); }
+  #else
+  template <> inline VecData<double ,4> convert_intrin<VecData<double ,4>,VecData<int64_t,4>>(const VecData<int64_t,4>& a) { // the high 32 bits times 2^32 plus the low 32 bits, both exact: one rounding, as static_cast
+    const __m128 l = _mm_castsi128_ps(_mm256_castsi256_si128(a.v));
+    const __m128 h = _mm_castsi128_ps(_mm256_extractf128_si256(a.v, 1));
+    const __m256d hi = _mm256_cvtepi32_pd(_mm_castps_si128(_mm_shuffle_ps(l, h, 0xDD)));
+    const __m256d lo = _mm256_sub_pd(_mm256_castps_pd(_mm256_blend_ps(_mm256_castsi256_ps(a.v), _mm256_castpd_ps(_mm256_set1_pd(0x1p52)), 0xAA)), _mm256_set1_pd(0x1p52)); // 2^52 + the low bits, minus 2^52
+    return _mm256_add_pd(_mm256_mul_pd(hi, _mm256_set1_pd(0x1p32)), lo);
+  }
   #endif
 
   // Halves of a vector
