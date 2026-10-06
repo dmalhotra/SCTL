@@ -939,6 +939,41 @@ template <class Real> void test_EmptyList(const Comm& comm) {
   SCTL_ASSERT(RelErr(potential(true), potential(false)) == 0);
 }
 
+// SurfaceSingularDegree gives the growth exponent along the surface of every SCTL kernel, with and without
+// the target-normal contraction: 2 or more where the Duffy and TensorProduct self-interactions are wrong
+// (checked against the average of the one-sided Hedgehog limits on twisted-sphere elements), 1 or less elsewhere
+template <class Real> void test_SurfaceSingularDegree() {
+  Real mu = (Real)1.7;
+  Helmholtz3D_FxU h_fxu;
+  Helmholtz3D_DxU h_dxu;
+  Helmholtz3D_FxdU h_fxdu;
+  HelmholtzDiff3D_FxdU hd_fxdu;
+  h_fxu.SetCtxPtr(&mu);
+  h_dxu.SetCtxPtr(&mu);
+  h_fxdu.SetCtxPtr(&mu);
+  hd_fxdu.SetCtxPtr(&mu);
+  const auto check = [](const auto& ker, const Integer d, const Integer d_dot) { // d_dot < 0: no target-normal contraction for this kernel
+    SCTL_ASSERT(fabs(detail_dispatch::SurfaceSingularDegree<Real>(ker, false, (Real)1e-4) - d) < (Real)0.1);
+    if (d_dot >= 0) SCTL_ASSERT(fabs(detail_dispatch::SurfaceSingularDegree<Real>(ker, true, (Real)1e-4) - d_dot) < (Real)0.1);
+  };
+  check(Laplace3D_FxU(), 1, -1);
+  check(Laplace3D_DxU(), 1, -1);
+  check(Laplace3D_FxdU(), 2, 1);
+  check(Laplace3D_Fxd2U(), 3, 3);
+  check(Laplace3D_DxdU(), 3, 3);
+  check(Stokes3D_FxU(), 1, 1);
+  check(Stokes3D_DxU(), 1, 0);
+  check(Stokes3D_FxT(), 2, 1);
+  check(Stokes3D_FSxU(), 2, 1);
+  check(Stokes3D_FxUP(), 2, -1);
+  check(BiotSavart3D_FxU(), 2, 2);
+  check(BiotSavart3D_FxdU(), 3, 3);
+  check(h_fxu, 1, -1);
+  check(h_dxu, 1, -1);
+  check(h_fxdu, 2, 2);
+  check(hd_fxdu, 0, 0);
+}
+
 #ifdef SCTL_QUAD_T
 // Duffy, Stokes single layer, at a tolerance of 1e-30, for which its angular rule would need more than
 // its largest (128 points): that rule is used, without an error
@@ -1382,6 +1417,8 @@ int main(int argc, char** argv) {
     passed("test_VTU");
     test_EmptyList<Real>(comm);
     passed("test_EmptyList");
+    test_SurfaceSingularDegree<Real>();
+    passed("test_SurfaceSingularDegree");
 #ifdef SCTL_QUAD_T
     test_ManyDigits();
     passed("test_ManyDigits");

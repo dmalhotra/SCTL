@@ -1673,12 +1673,119 @@ namespace sctl {
   namespace detail_dispatch {
 
     using detail_quadelem::Access;
+    using detail_quadelem::COORD_DIM;
 
     using detail_dyadic_near::NearInteracDyadic;
     using detail_tensorprod_near::NearInteracTensorProduct;
     using detail_duffy::SelfInteracDuffy;
     using detail_hedgehog::SelfInteracHedgehog;
     using detail_tensorprod_singular::SelfInteracTensorProduct;
+    using detail_quadelem::WeightedKernel;
+
+    /**
+     * Returns d such that the kernel, dotted with the target normal if trg_dot_prod, grows like 1/r^d as a
+     * source approaches the target along a surface: the target at the origin of a curved model surface,
+     * whose normal and curvatures are in no special direction, the sources on it at distance h and 2h in 3
+     * directions, each with the surface normal there as its normal; for each kernel entry log2(A(h)/A(2h)),
+     * A the largest magnitude over the directions, and d the largest over the entries. A curved surface, as
+     * the factor n.r of a double layer vanishes on a plane but is of order r^2 on a curved surface.
+     */
+    template <class Real, class Kernel> Real SurfaceSingularDegree(const Kernel& ker, const bool trg_dot_prod, const Real h) {
+      static constexpr Integer KDIM0 = Kernel::SrcDim();
+      static constexpr Integer KDIM1 = Kernel::TrgDim();
+      constexpr Integer ndir = 3;
+      constexpr Integer nq = 2*ndir;
+      const Integer C = KDIM0*(trg_dot_prod ? KDIM1/COORD_DIM : KDIM1);
+      const Real ang[ndir] = {(Real)0.3, (Real)2.4, (Real)4.1};
+      const Real k11 = (Real)0.7, k12 = (Real)0.3, k22 = (Real)-0.4;
+
+      StaticArray<Real,COORD_DIM> n{(Real)0.36, (Real)-0.48, (Real)0.8}, a, b;
+      { // Tangents a, b completing n
+        const Real seed[COORD_DIM] = {(Real)0.6, (Real)0.7, (Real)0.2};
+        const Real sn = seed[0]*n[0] + seed[1]*n[1] + seed[2]*n[2];
+        for (Integer k = 0; k < COORD_DIM; k++) a[k] = seed[k] - sn*n[k];
+        const Real na = sqrt<Real>(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
+        for (Integer k = 0; k < COORD_DIM; k++) a[k] /= na;
+        b[0] = n[1]*a[2] - n[2]*a[1];
+        b[1] = n[2]*a[0] - n[0]*a[2];
+        b[2] = n[0]*a[1] - n[1]*a[0];
+      }
+
+      ScratchBuf<Real> Xs(COORD_DIM*nq), Xn(COORD_DIM*nq), wq(nq);
+      for (Integer s = 0; s < 2; s++) { // Sources at distance h and 2h, with the normals of the model surface there
+        for (Integer i = 0; i < ndir; i++) {
+          const Integer q = s*ndir + i;
+          const Real x1 = (s+1)*h*cos<Real>(ang[i]), x2 = (s+1)*h*sin<Real>(ang[i]);
+          const Real qn = (k11*x1*x1 + 2*k12*x1*x2 + k22*x2*x2)/2;
+          const Real pu = k11*x1 + k12*x2, pv = k12*x1 + k22*x2;
+          Real tu[COORD_DIM], tv[COORD_DIM], ns[COORD_DIM];
+          for (Integer k = 0; k < COORD_DIM; k++) {
+            Xs[k*nq + q] = x1*a[k] + x2*b[k] + qn*n[k];
+            tu[k] = a[k] + pu*n[k];
+            tv[k] = b[k] + pv*n[k];
+          }
+          ns[0] = tu[1]*tv[2] - tu[2]*tv[1];
+          ns[1] = tu[2]*tv[0] - tu[0]*tv[2];
+          ns[2] = tu[0]*tv[1] - tu[1]*tv[0];
+          const Real nn = sqrt<Real>(ns[0]*ns[0] + ns[1]*ns[1] + ns[2]*ns[2]);
+          for (Integer k = 0; k < COORD_DIM; k++) Xn[k*nq + q] = ns[k]/nn;
+          wq[q] = 1;
+        }
+      }
+
+      ScratchBuf<Real> K(C*nq);
+      {
+        StaticArray<Real,COORD_DIM> origin{(Real)0, (Real)0, (Real)0};
+        const Vector<Real> normal_trg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)n : NullIterator<Real>()), false);
+        WeightedKernel<Real>(K.begin(), (ConstIterator<Real>)origin, Xs.begin(), Xn.begin(), wq.begin(), nq, nq, nq, nq, (Real)1, false, normal_trg, ker);
+      }
+
+      Real Kmax = 0, d = -1;
+      for (Integer i = 0; i < C*nq; i++) Kmax = std::max<Real>(Kmax, fabs(K[i]));
+      for (Integer c = 0; c < C; c++) {
+        Real A1 = 0, A2 = 0;
+        for (Integer i = 0; i < ndir; i++) {
+          A1 = std::max<Real>(A1, fabs(K[c*nq + i]));
+          A2 = std::max<Real>(A2, fabs(K[c*nq + ndir + i]));
+        }
+        if (std::max<Real>(A1, A2) > Kmax*(Real)1e-12) d = std::max<Real>(d, log<Real>(A1/A2)/log<Real>((Real)2)); // entries that vanish are skipped
+      }
+      return d;
+    }
+
+    /** prints a warning, once per process for each kernel and trg_dot_prod and only on rank 0 of MPI_COMM_WORLD, when the self-interaction rule of the list's scheme (TensorProduct or Duffy) is wrong for the kernel: SurfaceSingularDegree above 1.5, with h 1e-4 times the size of the first element */
+    template <class Real, class Kernel> void WarnStronglySingular(const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel) {
+      const auto scheme = Access<Real>::Scheme(qel);
+      if (scheme == QuadElemList<Real>::QuadScheme::Hedgehog) return;
+      Real size = 1;
+      if (qel.Size()) { // diagonal of the bounding box of the first element's nodes
+        const Integer nnode = qel.Order()*qel.Order();
+        const Vector<Real>& coord = Access<Real>::Coord(qel);
+        Real diag2 = 0;
+        for (Integer k = 0; k < COORD_DIM; k++) {
+          Real lo = coord[k*nnode], hi = coord[k*nnode];
+          for (Integer p = 1; p < nnode; p++) {
+            lo = std::min<Real>(lo, coord[k*nnode + p]);
+            hi = std::max<Real>(hi, coord[k*nnode + p]);
+          }
+          diag2 += (hi - lo)*(hi - lo);
+        }
+        size = sqrt<Real>(diag2);
+      }
+      const Real d = SurfaceSingularDegree<Real>(ker, trg_dot_prod, (Real)1e-4*size);
+      if (!(d > (Real)1.5)) return;
+#ifdef SCTL_HAVE_MPI
+      { // rank in MPI_COMM_WORLD, without Comm::World(), whose MPI_Comm_dup is collective
+        int rank = 0;
+        if (comm_detail::MPIIsActive()) MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        if (rank != 0) return;
+      }
+#endif
+      static std::array<std::once_flag, 2> warned;
+      std::call_once(warned[trg_dot_prod ? 1 : 0], [&ker, trg_dot_prod, scheme, d]() {
+        SCTL_WARN("QuadElemList: the self-interaction integrand of " << ker.Name() << (trg_dot_prod ? " dotted with the target normal" : "") << " grows like 1/r^" << std::lround((double)d) << " along the surface, but the " << (scheme == QuadElemList<Real>::QuadScheme::Duffy ? "Duffy" : "TensorProduct") << " rule is accurate only up to 1/r, so the self-interactions are wrong; use QuadScheme::Hedgehog.");
+      });
+    }
 
     template <Integer order, class Real, class Kernel> void SelfInteracDispatch(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       switch (Access<Real>::Scheme(qel)) {
@@ -1930,6 +2037,7 @@ namespace sctl {
 
   template <class Real> template <class Kernel> void QuadElemList<Real>::SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const Real tol, const bool trg_dot_prod, const ElementListBase<Real>* self) {
     const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
+    detail_dispatch::WarnStronglySingular<Real>(ker, trg_dot_prod, qel); // also for an empty list, so that rank 0 checks
     if (!qel.Size()) return; // nothing to compute, also for a default-constructed list, whose order is 0
     const Integer order = qel.Order();
     const Integer digits = detail_quadelem::DigitsFromTol<Real>(tol);

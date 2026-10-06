@@ -120,7 +120,11 @@ namespace sctl {
        * quadrature scheme set by SetQuadScheme(). The element order must be
        * one of {4, 8, 12, 16, 20}. For a tolerance smaller than the largest
        * quadrature orders reach, those orders are used, and the result may miss
-       * the tolerance without an error.
+       * the tolerance without an error. TensorProduct and Duffy need a kernel
+       * that grows at most like 1/r along the surface, such as a single or
+       * double layer or a gradient dotted with the target normal; for a steeper
+       * kernel their result is wrong, and a warning is printed once, on rank 0
+       * of MPI_COMM_WORLD. Hedgehog handles these kernels.
        *
        * @see ElementListBase::SelfInterac()
        */
