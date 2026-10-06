@@ -123,8 +123,9 @@ namespace detail_small_gemm {
    * again, with the same values; otherwise in an SSE or AVX vector of half or a quarter of the width
    * if they fill it (masked loads and stores of the full width were up to 1.4x slower), or else in
    * one vector of which only the first n % VL lanes are loaded and stored (LoadPartial,
-   * StorePartial). For 16 x n x 8 on a w5-3435X, up to 5.9x faster than narrower vectors and then one
-   * column at a time, and at most 1.09x slower. Not inlined: unrolled for fixed sizes inside a
+   * StorePartial); with AVX-512, in the narrowest of these vectors that holds them. For 16 x n x 8,
+   * up to 5.9x faster than narrower vectors and then one column at a time, and at most 1.09x slower
+   * on a w5-3435X, 1.14x on a Xeon Platinum 8362. Not inlined: unrolled for fixed sizes inside a
    * caller's loop, the code was up to 1.9x slower.
    */
   template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous, Long LDA = DynamicSize, Long LDB = DynamicSize, Long LDC = DynamicSize> [[gnu::noinline]] void VecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
@@ -235,7 +236,23 @@ namespace detail_small_gemm {
       };
       if (U == Update::Overwrite && n >= VL) { // the last VL columns again, with the same values
         rows(n - VL, IV{}, std::false_type{}, VL);
-      } else if (IH::value * sizeof(ValueType) >= 16 && n - n_full == IH::value) { // in one SSE or AVX vector of half or a quarter of the width, if they fill it
+      } else if constexpr (VL * sizeof(ValueType) == 64) { // AVX-512: in the narrowest vector of a quarter, half or the full width that holds them, partial unless they fill it (a partial vector of the full width was up to 1.35x slower)
+        const Integer nc = (Integer)(n - n_full);
+        const auto in = [&rows, n_full, nc](auto w) __attribute__((always_inline)) {
+          if (nc == decltype(w)::value) {
+            rows(n_full, w, std::false_type{}, decltype(w)::value);
+          } else {
+            rows(n_full, w, std::true_type{}, nc);
+          }
+        };
+        if (nc <= IQ::value) {
+          in(IQ{});
+        } else if (nc <= IH::value) {
+          in(IH{});
+        } else {
+          rows(n_full, IV{}, std::true_type{}, nc);
+        }
+      } else if (IH::value * sizeof(ValueType) >= 16 && n - n_full == IH::value) { // in one SSE or AVX vector of half or a quarter of the width, if they fill it (with AVX2, a narrower partial vector was up to 1.2x slower than one of the full width)
         if constexpr (IH::value * sizeof(ValueType) >= 16) rows(n_full, IH{}, std::false_type{}, IH::value);
       } else if (IQ::value * sizeof(ValueType) >= 16 && n - n_full == IQ::value) {
         if constexpr (IQ::value * sizeof(ValueType) >= 16) rows(n_full, IQ{}, std::false_type{}, IQ::value);
@@ -361,7 +378,23 @@ namespace detail_small_gemm {
         for (Long i = 0; i < m_blk; i += IR::value) tile(i, j0, IR{}, I1{}, w, partial, nc);
         for (Long i = m_blk; i < m; i++) tile(i, j0, I1{}, I1{}, w, partial, nc);
       };
-      if (IH::value * sizeof(Real) >= 16 && 2 * (n - n_full) == IH::value) { // W reals
+      if constexpr (VL * sizeof(Real) == 64) { // as in VecProduct, for W reals
+        const Integer nr = (Integer)(2 * (n - n_full));
+        const auto in = [&rows, n_full, nr](auto w) __attribute__((always_inline)) {
+          if (nr == decltype(w)::value) {
+            rows(n_full, w, std::false_type{}, decltype(w)::value);
+          } else {
+            rows(n_full, w, std::true_type{}, nr);
+          }
+        };
+        if (nr <= IQ::value) {
+          in(IQ{});
+        } else if (nr <= IH::value) {
+          in(IH{});
+        } else {
+          rows(n_full, IV{}, std::true_type{}, nr);
+        }
+      } else if (IH::value * sizeof(Real) >= 16 && 2 * (n - n_full) == IH::value) {
         if constexpr (IH::value * sizeof(Real) >= 16) rows(n_full, IH{}, std::false_type{}, IH::value);
       } else if (IQ::value * sizeof(Real) >= 16 && 2 * (n - n_full) == IQ::value) {
         if constexpr (IQ::value * sizeof(Real) >= 16) rows(n_full, IQ{}, std::false_type{}, IQ::value);
