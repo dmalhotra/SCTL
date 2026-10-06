@@ -676,7 +676,7 @@ namespace sctl {
   /** Base-10 logarithm; vectorized where log is. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> log10(const Vec<ValueType,N>& x);
 
-  /** Cube root, one element at a time. */
+  /** Cube root. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x);
 
   /** Hyperbolic sine. */
