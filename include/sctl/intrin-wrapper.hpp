@@ -2936,9 +2936,9 @@ namespace sctl { // SSE
     approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
   }
 
-  // The bits of float x by integer instructions, as in Agner Fog's vectorclass (log, w5-3435X,
-  // independent / dependent calls: x86-64-v2 18.0 / 57.1 -> 17.7 / 53.1 cycles, haswell 15.9 / 56.6
-  // -> 15.5 / 48.9)
+  // The bits of x by integer instructions, as in Agner Fog's vectorclass (log, w5-3435X, independent /
+  // dependent calls; 4 floats: x86-64-v2 18.0 / 57.1 -> 17.7 / 53.1 cycles, haswell 15.9 / 56.6 -> 15.5 /
+  // 48.9; 2 doubles: x86-64-v2 20.8 / 63.0 -> 19.4 / 60.9, haswell 18.1 / 66.7 -> 16.4 / 60.5)
   template <> inline Mask<VecData<float,4>> positive_normal_mask_intrin<VecData<float,4>>(const VecData<float,4>& x) {
     const __m128i t = _mm_sub_epi32(_mm_castps_si128(x.v), set1_intrin<VecData<int32_t,4>>(0x00800000).v); // below 0x7f000000 as unsigned for normal x > 0
     return Mask<VecData<float,4>>(_mm_castsi128_ps(_mm_cmpeq_epi32(_mm_min_epu32(t, set1_intrin<VecData<int32_t,4>>(0x7effffff).v), t)));
@@ -2950,6 +2950,14 @@ namespace sctl { // SSE
     const __m128i big = _mm_cmpgt_epi32(m2, set1_intrin<VecData<int32_t,4>>(0x3f3504f3).v); // m2 > sqrt(1/2), on the bits: positive floats are in the order of their bits
     m = _mm_add_ps(_mm_castsi128_ps(m2), _mm_andnot_ps(_mm_castsi128_ps(big), _mm_castsi128_ps(m2))); // 2 m2 where not big
     e = _mm_cvtepi32_ps(_mm_sub_epi32(e1, big)); // e1 + 1 where big: its lanes are -1
+  }
+  template <> inline void log_mant_intrin<VecData<double,2>>(VecData<double,2>& e, VecData<double,2>& m, const VecData<double,2>& x) {
+    const __m128i t = _mm_castpd_si128(x.v);
+    const __m128i m2 = _mm_or_si128(_mm_and_si128(t, set1_intrin<VecData<int64_t,2>>(0x000fffffffffffffLL).v), set1_intrin<VecData<int64_t,2>>(0x3fe0000000000000LL).v); // in [1/2, 1)
+    const __m128i e1 = _mm_add_epi64(_mm_srli_epi64(_mm_slli_epi64(t, 1), 53), set1_intrin<VecData<int64_t,2>>(0x4338000000000000LL - 1023).v); // the bits of 1.5 2^52 + e1, x = 2^e1 (2 m2)
+    const __m128i big = _mm_cmpgt_epi64(m2, set1_intrin<VecData<int64_t,2>>(0x3fe6a09e667f3bcdLL).v); // m2 > sqrt(1/2)
+    m = _mm_add_pd(_mm_castsi128_pd(m2), _mm_andnot_pd(_mm_castsi128_pd(big), _mm_castsi128_pd(m2))); // 2 m2 where not big
+    e = _mm_sub_pd(_mm_castsi128_pd(_mm_sub_epi64(e1, big)), _mm_set1_pd(0x1.8p52)); // e1 + 1 where big
   }
 
 #ifdef SCTL_HAVE_LIBMVEC
@@ -3959,6 +3967,25 @@ namespace sctl { // AVX
       #endif
     }
   };
+
+  #if defined(__AVX2__) // log_mant_intrin by integer instructions, as for 4 floats and 2 doubles (log, haswell: 8 floats 17.0 / 56.5 -> 14.5 / 48.5 cycles, 4 doubles 20.6 / 71.1 -> 18.4 / 67.3)
+  template <> inline void log_mant_intrin<VecData<float,8>>(VecData<float,8>& e, VecData<float,8>& m, const VecData<float,8>& x) {
+    const __m256i t = _mm256_castps_si256(x.v);
+    const __m256i m2 = _mm256_or_si256(_mm256_and_si256(t, _mm256_set1_epi32(0x007fffff)), _mm256_set1_epi32(0x3f000000));
+    const __m256i e1 = _mm256_sub_epi32(_mm256_srli_epi32(_mm256_slli_epi32(t, 1), 24), _mm256_set1_epi32(127));
+    const __m256i big = _mm256_cmpgt_epi32(m2, _mm256_set1_epi32(0x3f3504f3));
+    m = _mm256_add_ps(_mm256_castsi256_ps(m2), _mm256_andnot_ps(_mm256_castsi256_ps(big), _mm256_castsi256_ps(m2)));
+    e = _mm256_cvtepi32_ps(_mm256_sub_epi32(e1, big));
+  }
+  template <> inline void log_mant_intrin<VecData<double,4>>(VecData<double,4>& e, VecData<double,4>& m, const VecData<double,4>& x) {
+    const __m256i t = _mm256_castpd_si256(x.v);
+    const __m256i m2 = _mm256_or_si256(_mm256_and_si256(t, _mm256_set1_epi64x(0x000fffffffffffffLL)), _mm256_set1_epi64x(0x3fe0000000000000LL));
+    const __m256i e1 = _mm256_add_epi64(_mm256_srli_epi64(_mm256_slli_epi64(t, 1), 53), _mm256_set1_epi64x(0x4338000000000000LL - 1023));
+    const __m256i big = _mm256_cmpgt_epi64(m2, _mm256_set1_epi64x(0x3fe6a09e667f3bcdLL));
+    m = _mm256_add_pd(_mm256_castsi256_pd(m2), _mm256_andnot_pd(_mm256_castsi256_pd(big), _mm256_castsi256_pd(m2)));
+    e = _mm256_sub_pd(_mm256_castsi256_pd(_mm256_sub_epi64(e1, big)), _mm256_set1_pd(0x1.8p52));
+  }
+  #endif
 
   #ifdef SCTL_HAVE_SVML
   template <> inline void sincos_intrin<VecData<float ,8>>(VecData<float ,8>& sinx, VecData<float ,8>& cosx, const VecData<float ,8>& x) { sinx = _mm256_sincos_ps(&cosx.v, x.v); }
