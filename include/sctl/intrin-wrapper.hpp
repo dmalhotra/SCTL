@@ -1567,6 +1567,21 @@ namespace sctl { // Generic
     }
     return q;
   }
+  template <class IntVec> inline IntVec div_int32_intrin(const IntVec& a, const IntVec& b) { // through float, exact: |a| / |b| by two estimates from a reciprocal scaled down so that they are at most the quotient, then the sign
+    static_assert(std::is_same<typename IntVec::ScalarType, int32_t>::value, "Expected int32_t!");
+    using RealVec = VecData<float, IntVec::Size>;
+    const IntVec ua = fabs_intrin(a); // as unsigned: 2^31 for INT32_MIN
+    const IntVec ub = fabs_intrin(b);
+    const RealVec rb = div_intrin(set1_intrin<RealVec>(1.0f - 0x1p-21f), fabs_intrin(convert_int2real_intrin<RealVec>(b)));
+    const auto quot = [&rb](const IntVec& r) { return convert_intrin<IntVec>(mul_intrin(fabs_intrin(convert_int2real_intrin<RealVec>(r)), rb)); }; // from floor(|r| / |b|) - 1537 to floor(|r| / |b|), |r| as unsigned
+    const IntVec q0 = quot(a);
+    const IntVec r0 = sub_intrin(ua, mul_intrin(q0, ub)); // in [0, |a|]
+    const IntVec q1 = quot(r0); // floor(r0 / |b|) - 1 or floor(r0 / |b|)
+    const IntVec r1 = sub_intrin(r0, mul_intrin(q1, ub)); // in [0, 2 |b|)
+    const IntVec q = add_intrin(add_intrin(q0, q1), add_intrin(set1_intrin<IntVec>(1), bitshiftright_intrin(sub_intrin(r1, ub), 31))); // + 1 where r1 >= |b|; r1 - |b| is in [-|b|, |b|) as signed
+    const IntVec s = bitshiftright_intrin(xor_intrin(a, b), 31); // -1 where the quotient is negative
+    return sub_intrin(xor_intrin(q, s), s);
+  }
   template <class VData> inline VData exp_intrin(const VData& x) {
     union U {
       VData v;
@@ -2352,6 +2367,11 @@ namespace sctl { // SSE
     const __m128i q01 = _mm_packus_epi32(q(a.v, b.v), q(_mm_srli_si128(a.v, 4), _mm_srli_si128(b.v, 4)));
     const __m128i q23 = _mm_packus_epi32(q(_mm_srli_si128(a.v, 8), _mm_srli_si128(b.v, 8)), q(_mm_srli_si128(a.v, 12), _mm_srli_si128(b.v, 12)));
     return _mm_packus_epi16(q01, q23);
+  }
+  template <> inline VecData<int32_t,4> div_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { // through double, two lanes at a time, exact: the rounding error of the quotient is below 2^-22/|b|, and a quotient that is not an integer is at least 1/|b| from one
+    const __m128i lo = _mm_cvttpd_epi32(_mm_div_pd(_mm_cvtepi32_pd(a.v), _mm_cvtepi32_pd(b.v)));
+    const __m128i hi = _mm_cvttpd_epi32(_mm_div_pd(_mm_cvtepi32_pd(_mm_unpackhi_epi64(a.v, a.v)), _mm_cvtepi32_pd(_mm_unpackhi_epi64(b.v, b.v))));
+    return _mm_unpacklo_epi64(lo, hi);
   }
   template <> inline VecData<int64_t,2> div_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return div_int64_intrin(a, b); }
   template <> inline VecData<float,4> div_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
@@ -4026,8 +4046,6 @@ namespace sctl { // AVX
   template <> inline VecData<float  , 8> concat_intrin<VecData<float  , 4>>(const VecData<float  , 4>& lo, const VecData<float  , 4>& hi) { return _mm256_insertf128_ps(_mm256_castps128_ps256(lo.v), hi.v, 1); }
   template <> inline VecData<double , 4> concat_intrin<VecData<double , 2>>(const VecData<double , 2>& lo, const VecData<double , 2>& hi) { return _mm256_insertf128_pd(_mm256_castpd128_pd256(lo.v), hi.v, 1); }
 
-  // int32_t division through double is exact: the rounding error of the quotient is
-  // below 2^-22/|b|, and a quotient that is not an integer is at least 1/|b| from one.
   #ifdef __AVX2__
   template <> inline VecData<int16_t,16> div_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { // through float, exact for 16 bits; the low 16 bits of the quotient, as the C++ conversion
     const auto q = [](const __m128i a8, const __m128i b8) { return _mm256_and_si256(_mm256_cvttps_epi32(_mm256_div_ps(_mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(a8)), _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(b8)))), _mm256_set1_epi32(0xFFFF)); };
@@ -4050,10 +4068,9 @@ namespace sctl { // AVX
   template <> inline VecData<int8_t ,32> div_intrin(const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return div_intrin(VecData<int8_t ,16>(x), VecData<int8_t ,16>(y)).v; }, a.v, b.v); }
   #endif
   template <> inline VecData<int64_t,4> div_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return div_int64_intrin(a, b); }
-  template <> inline VecData<int32_t,4> div_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return _mm256_cvttpd_epi32(_mm256_div_pd(_mm256_cvtepi32_pd(a.v), _mm256_cvtepi32_pd(b.v))); }
   template <> inline VecData<int32_t,8> div_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
-    #if defined(__AVX512F__)
-    return _mm512_cvttpd_epi32(_mm512_div_pd(_mm512_cvtepi32_pd(a.v), _mm512_cvtepi32_pd(b.v)));
+    #if defined(__AVX2__)
+    return div_int32_intrin(a, b);
     #else
     return concat_intrin(div_intrin(get_low_intrin(a), get_low_intrin(b)), div_intrin(get_high_intrin(a), get_high_intrin(b)));
     #endif
@@ -5003,7 +5020,7 @@ namespace sctl { // AVX512
   template <> inline VecData<float  ,16> concat_intrin<VecData<float  , 8>>(const VecData<float  , 8>& lo, const VecData<float  , 8>& hi) { return _mm512_castpd_ps(_mm512_insertf64x4(_mm512_castps_pd(_mm512_castps256_ps512(lo.v)), _mm256_castps_pd(hi.v), 1)); }
   template <> inline VecData<double , 8> concat_intrin<VecData<double , 4>>(const VecData<double , 4>& lo, const VecData<double , 4>& hi) { return _mm512_insertf64x4(_mm512_castpd256_pd512(lo.v), hi.v, 1); }
 
-  template <> inline VecData<int32_t,16> div_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return concat_intrin(div_intrin(get_low_intrin(a), get_low_intrin(b)), div_intrin(get_high_intrin(a), get_high_intrin(b))); } // halves through double
+  template <> inline VecData<int32_t,16> div_intrin(const VecData<int32_t,16>& a, const VecData<int32_t,16>& b) { return div_int32_intrin(a, b); }
   template <> inline VecData<int64_t,8> div_intrin(const VecData<int64_t,8>& a, const VecData<int64_t,8>& b) { return div_int64_intrin(a, b); }
   #if defined(__AVX512BW__)
   template <> inline VecData<int16_t,32> div_intrin(const VecData<int16_t,32>& a, const VecData<int16_t,32>& b) { // through float, exact for 16 bits; the low 16 bits of the quotient, as the C++ conversion
