@@ -1112,6 +1112,22 @@ namespace sctl { // Generic
     return fma_intrin(x8, fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c15), set1_intrin<VData>(c14)), fma_intrin(x1, set1_intrin<VData>(c13), set1_intrin<VData>(c12))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c11), set1_intrin<VData>(c10)), fma_intrin(x1, set1_intrin<VData>(c9), set1_intrin<VData>(c8)))), fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c7), set1_intrin<VData>(c6)), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)))));
   }
 
+  template <class Real> struct PiOver2Split { // pi/2 = hi + mid + lo from the integers of const_pi (A 2^-62 + B 2^-125); for |x| < lim, n hi and n mid are exact, with n = round(x 2/pi)
+    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+    static constexpr Integer H = std::min<Integer>((SigBits + 1) * 3 / 8, 32);
+    static constexpr uint64_t A = 14488038916154245684ull;
+    static constexpr uint64_t B = 7089564414062235240ull;
+    static constexpr Real hi = (Real)(A >> (64 - H)) / (Real)(1ull << (H - 1));
+    static constexpr Real mid = (Real)((A >> (64 - 2*H)) & ((1ull << H) - 1)) / (Real)(1ull << (H - 1)) / (Real)(1ull << H);
+    static constexpr Real lo = (Real)(A & ((1ull << (64 - 2*H)) - 1)) / (Real)(1ull << 63) + (Real)B / (Real)(1ull << 63) / (Real)(1ull << 63);
+    static constexpr Real lim = (Real)(((uint64_t)1) << std::min<Integer>(SigBits - H, 62));
+    template <class VData> static inline VData sub_n(const VData& x, const VData& n) { // x - n pi/2
+      VData x1 = fma_intrin(n, set1_intrin<VData>(-hi), x);
+      x1 = fma_intrin(n, set1_intrin<VData>(-mid), x1);
+      return fma_intrin(n, set1_intrin<VData>(-lo), x1);
+    }
+  };
+
   template <Integer ORDER, bool FullRange = true, class VData> inline void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
     // ORDER    ERROR
     //     1 8.81e-02
@@ -1150,18 +1166,32 @@ namespace sctl { // Generic
     VData x_int(fma_intrin(x, set1_intrin<VData>(inv_pi_over_2), real_offset));
     VData x_(sub_intrin(x_int, real_offset)); // x_ <-- round(x*inv_pi_over_2)
     VData x1;
-    static constexpr Integer H = std::min<Integer>((SigBits + 1) * 3 / 8, 32);
-    if constexpr (FullRange) { // pi/2 = hi + mid + lo from the integers of const_pi; x_ hi and x_ mid exact for |x_| < 2^(SigBits+1-H)
-      static constexpr uint64_t pi_A = 14488038916154245684ull; // pi = A 2^-62 + B 2^-125
-      static constexpr uint64_t pi_B = 7089564414062235240ull;
-      static constexpr Real pi2_hi = (Real)(pi_A >> (64 - H)) / (Real)(1ull << (H - 1));
-      static constexpr Real pi2_mid = (Real)((pi_A >> (64 - 2*H)) & ((1ull << H) - 1)) / (Real)(1ull << (H - 1)) / (Real)(1ull << H);
-      static constexpr Real pi2_lo = (Real)(pi_A & ((1ull << (64 - 2*H)) - 1)) / (Real)(1ull << 63) + (Real)pi_B / (Real)(1ull << 63) / (Real)(1ull << 63);
-      x1 = fma_intrin(x_, set1_intrin<VData>(-pi2_hi), x);
-      x1 = fma_intrin(x_, set1_intrin<VData>(-pi2_mid), x1);
-      x1 = fma_intrin(x_, set1_intrin<VData>(-pi2_lo), x1);
+    if constexpr (FullRange) {
+      x1 = PiOver2Split<Real>::sub_n(x, x_);
     } else {
       x1 = fma_intrin(x_, set1_intrin<VData>(neg_pi_over_2), x);
+    }
+    static constexpr bool reduce_in_double = FullRange && std::is_same<Real,float>::value && VData::Size % 2 == 0;
+    bool beyond_lim = true; // a lane can be at or beyond PiOver2Split<Real>::lim
+    if constexpr (reduce_in_double) { // these lanes: x1 and the low bits of x_int from the reduction in double
+      const Mask<VData> in_range = comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(PiOver2Split<float>::lim));
+      beyond_lim = (mask_count_intrin(in_range) < VData::Size);
+      if (beyond_lim) {
+        using HalfVec = VecData<float, VData::Size/2>;
+        using DoubleVec = VecData<double, VData::Size/2>;
+        const auto reduce = [](HalfVec& r, HalfVec& q, const HalfVec& h) { // r = h - n pi/2, q = n mod 4
+          static constexpr double offset = 1.5 * pow<TypeTraits<double>::SigBits,double>(2.0);
+          const DoubleVec xd = convert_intrin<DoubleVec>(h);
+          const DoubleVec n = sub_intrin(fma_intrin(xd, set1_intrin<DoubleVec>(2 / const_pi<double>()), set1_intrin<DoubleVec>(offset)), set1_intrin<DoubleVec>(offset));
+          r = convert_intrin<HalfVec>(PiOver2Split<double>::sub_n(xd, n));
+          q = convert_intrin<HalfVec>(fma_intrin(floor_intrin(mul_intrin(n, set1_intrin<DoubleVec>(0.25))), set1_intrin<DoubleVec>(-4.0), n));
+        };
+        HalfVec r_lo, q_lo, r_hi, q_hi;
+        reduce(r_lo, q_lo, get_low_intrin(x));
+        reduce(r_hi, q_hi, get_high_intrin(x));
+        x1 = select_intrin(in_range, x1, concat_intrin(r_lo, r_hi));
+        x_int = select_intrin(in_range, x_int, add_intrin(concat_intrin(q_lo, q_hi), real_offset));
+      }
     }
 
     VData s1;
@@ -1191,8 +1221,8 @@ namespace sctl { // Generic
     cosx = select_intrin(xAnd2, c2, unary_minus_intrin(c2));
 
     if constexpr (FullRange) { // |x| beyond the exact range of the reduction, inf and NaN: one element at a time
-      static constexpr Real lim = (Real)(((uint64_t)1) << std::min<Integer>(SigBits - H, 62));
-      if (mask_count_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(lim))) < VData::Size) {
+      static constexpr Real lim = (reduce_in_double ? (Real)PiOver2Split<double>::lim : PiOver2Split<Real>::lim);
+      if (beyond_lim && mask_count_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(lim))) < VData::Size) {
         union U {
           VData v;
           Real x[VData::Size];
