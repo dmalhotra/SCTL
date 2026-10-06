@@ -697,21 +697,37 @@ namespace sctl { // Generic
   template <class VData> inline Mask<VData> convert_vec2mask_intrin(const VData& v) {
     return Mask<VData>(v);
   }
+  template <class VData> using MaskIntVec = VecData<typename IntegerType<sizeof(typename VData::ScalarType)>::value, VData::Size>; // a mask as integers of all ones or all zeros
+  template <class VData> inline MaskIntVec<VData> mask2int_intrin(const Mask<VData>& m) {
+    if constexpr (sizeof(Mask<VData>) == sizeof(MaskIntVec<VData>)) { // lanes of the size of the data
+      return reinterpret_mask<MaskIntVec<VData>>(m);
+    } else { // bit masks of AVX-512
+      return reinterpret_intrin<MaskIntVec<VData>>(convert_mask2vec_intrin(m));
+    }
+  }
+  template <class VData> inline Mask<VData> int2mask_intrin(const MaskIntVec<VData>& q) {
+    if constexpr (sizeof(Mask<VData>) == sizeof(MaskIntVec<VData>)) {
+      union {
+        MaskIntVec<VData> q;
+        Mask<VData> m;
+      } u = {q};
+      return u.m;
+    } else {
+      return convert_vec2mask_intrin(reinterpret_intrin<VData>(q));
+    }
+  }
   template <class VDataTo, class VData> inline Mask<VDataTo> convert_mask_intrin(const Mask<VData>& m) { // same lanes, another element type
     if constexpr (sizeof(typename VDataTo::ScalarType) == sizeof(typename VData::ScalarType)) { // same mask layout
       return reinterpret_mask<Mask<VDataTo>>(m);
     } else {
-      using IntFrom = VecData<typename IntegerType<sizeof(typename VData::ScalarType)>::value, VData::Size>;
-      using IntTo = VecData<typename IntegerType<sizeof(typename VDataTo::ScalarType)>::value, VData::Size>;
-      const IntFrom a = reinterpret_intrin<IntFrom>(convert_mask2vec_intrin(m));
-      return convert_vec2mask_intrin(reinterpret_intrin<VDataTo>(convert_intrin<IntTo>(a))); // lanes of -1 and 0 keep their value
+      return int2mask_intrin<VDataTo>(convert_intrin<MaskIntVec<VDataTo>>(mask2int_intrin(m))); // lanes of -1 and 0 keep their value
     }
   }
   template <class VData> inline Integer mask_count_intrin(const Mask<VData>& m) { // number of selected lanes
     union {
-      Mask<VData> m;
-      typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
-    } m_ = {m};
+      MaskIntVec<VData> v;
+      typename MaskIntVec<VData>::ScalarType q[VData::Size];
+    } m_ = {mask2int_intrin(m)};
     Integer count = 0;
     for (Integer i = 0; i < VData::Size; i++) count += (m_.q[i] ? 1 : 0);
     return count;
@@ -864,9 +880,9 @@ namespace sctl { // Generic
     using ScalarType = typename VData::ScalarType;
     using IntType = typename IntegerType<sizeof(ScalarType)>::value;
     union {
-      Mask<VData> m;
+      MaskIntVec<VData> v;
       IntType q[VData::Size];
-    } m_ = {m};
+    } m_ = {mask2int_intrin(m)};
     union {
       VData v;
       ScalarType x[VData::Size];
@@ -878,9 +894,9 @@ namespace sctl { // Generic
     using ScalarType = typename VData::ScalarType;
     using IntType = typename IntegerType<sizeof(ScalarType)>::value;
     union {
-      Mask<VData> m;
+      MaskIntVec<VData> v;
       IntType q[VData::Size];
-    } m_ = {m};
+    } m_ = {mask2int_intrin(m)};
     union {
       VData v;
       ScalarType x[VData::Size];
@@ -1702,11 +1718,11 @@ namespace sctl { // Generic
       typename VData::ScalarType x[VData::Size];
     } x_ = {x};
     union {
-      VData v;
+      MaskIntVec<VData> v;
       IntType q[VData::Size];
     } m_;
     for (Integer i = 0; i < VData::Size; i++) m_.q[i] = (isnan(x_.x[i]) ? ~(IntType)0 : (IntType)0);
-    return convert_vec2mask_intrin(m_.v);
+    return int2mask_intrin<VData>(m_.v);
   }
   template <bool SpecialValues = true, class VData> inline VData atan2_intrin(const VData& y, const VData& x) { // SpecialValues: x, y both infinite or both zero
     using Real = typename VData::ScalarType;
