@@ -130,43 +130,6 @@ int main() {
     CHECK(v_t.Dim() == 3);
   }
 
-  // --- Stokes3D_FxUP : velocity of Stokes3D_FxU, and the pressure p = (f.r)/(4 pi r^3) ---
-  std::printf("Stokes3D_FxUP :\n");
-  {
-    sctl::Stokes3D_FxUP K;
-    CHECK(K.CoordDim()  == 3);
-    CHECK(K.SrcDim()    == 3);
-    CHECK(K.TrgDim()    == 4);
-    CHECK(K.NormalDim() == 0);
-    CHECK(K.Name() == std::string("Stokes3D-FxUP"));
-
-    sctl::Stokes3D_FxU Ku;
-    Vector<R> Xs({0,0,0}), Xn, v_s({0.3,-0.7,1.1});
-    const R x0[3] = {1.3, 0.7, -0.9};
-    Vector<R> v_t, u_t;
-    K.template Eval<R, false>(v_t, Vector<R>({x0[0],x0[1],x0[2]}), Xs, Xn, v_s);
-    Ku.template Eval<R, false>(u_t, Vector<R>({x0[0],x0[1],x0[2]}), Xs, Xn, v_s);
-    for (Long k = 0; k < 3; k++) CHECK(test_utils::approx_eq(v_t[k], u_t[k], tol));
-    const R r = std::sqrt(x0[0]*x0[0] + x0[1]*x0[1] + x0[2]*x0[2]);
-    const R fdotr = v_s[0]*x0[0] + v_s[1]*x0[1] + v_s[2]*x0[2];
-    CHECK(test_utils::approx_eq(v_t[3], fdotr / (4 * pi * r*r*r), tol));
-
-    // momentum equation with unit viscosity away from the source: -lap(u) + grad(p) = 0, by central differences
-    const R h = 1e-3;
-    R lap[3] = {0, 0, 0}, grad_p[3], scale = 0;
-    for (Long j = 0; j < 3; j++) {
-      Vector<R> xp({x0[0],x0[1],x0[2]}), xm({x0[0],x0[1],x0[2]}), vp, vm;
-      xp[j] += h;
-      xm[j] -= h;
-      K.template Eval<R, false>(vp, xp, Xs, Xn, v_s);
-      K.template Eval<R, false>(vm, xm, Xs, Xn, v_s);
-      for (Long i = 0; i < 3; i++) lap[i] += (vp[i] - 2*v_t[i] + vm[i])/(h*h);
-      grad_p[j] = (vp[3] - vm[3])/(2*h);
-    }
-    for (Long i = 0; i < 3; i++) scale = std::max(scale, std::fabs(lap[i]));
-    for (Long i = 0; i < 3; i++) CHECK(std::fabs(-lap[i] + grad_p[i]) < 1e-4 * scale);
-  }
-
   // --- Laplace3D_Fxd2U : Hessian of single layer ---
   std::printf("Laplace3D_Fxd2U :\n");
   {

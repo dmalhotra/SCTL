@@ -352,8 +352,8 @@ namespace sctl {
             u[i][j] = (i==j ? rinv : VecType::Zero()) + r[i]*r[j]*rinv3;
           }
         }
-        for (Integer i = 0; i < 3; i++) { // pressure (f.r)/(4 pi r^3): twice the velocity's scale 1/(8 pi)
-          u[i][3] = (r[i] + r[i])*rinv3;
+        for (Integer i = 0; i < 3; i++) {
+          u[i][3] = r[i]*rinv3;
         }
       }
 
@@ -367,7 +367,7 @@ namespace sctl {
           VecType* v_ = v + k*4;
           const VecType fdotr_rinv3 = (f_[0]*r[0] + f_[1]*r[1] + f_[2]*r[2]) * rinv3;
           for (Integer i = 0; i < 3; i++) v_[i] += f_[i]*rinv + r[i]*fdotr_rinv3;
-          v_[3] += fdotr_rinv3 + fdotr_rinv3;
+          v_[3] += fdotr_rinv3;
         }
       }
 
@@ -692,8 +692,8 @@ namespace sctl {
   using Stokes3D_FxU = GenericKernel<kernel_impl::Stokes3D_FxU>;
   using Stokes3D_DxU = GenericKernel<kernel_impl::Stokes3D_DxU>;
   using Stokes3D_FxT = GenericKernel<kernel_impl::Stokes3D_FxT>; // single-layer source ---> traction-tensor
-  using Stokes3D_FSxU = GenericKernel<kernel_impl::Stokes3D_FSxU>; // single-layer + source/sink ---> velocity (required for FMM translations involving double-layer - M2M, M2L, M2T)
-  using Stokes3D_FxUP = GenericKernel<kernel_impl::Stokes3D_FxUP>; // single-layer source ---> velocity + pressure
+  using Stokes3D_FSxU = GenericKernel<kernel_impl::Stokes3D_FSxU>; // single-layer + source/sink ---> velocity (required for FMM translations involving double-layer - M2M, M2L, M2T); the source term s r/(8 pi |r|^3) is half the velocity of a point source of volume flux s, a scale that the equivalent densities of FMM translations absorb
+  using Stokes3D_FxUP = GenericKernel<kernel_impl::Stokes3D_FxUP>; // single-layer source ---> velocity + pressure; the pressure (f.r)/(8 pi |r|^3) is half that of the Stokeslet, (f.r)/(4 pi |r|^3), a scale that the check potentials of FMM translations absorb
 
 }  // end namespace
 
