@@ -514,7 +514,7 @@ namespace sctl { // Generic
       return sub_intrin(reinterpret_intrin<RealVec>(l), set1_intrin<RealVec>(Creal));
     }
   }
-  template <class IntVec, class RealVec> inline IntVec lrint_intrin(const RealVec& x) { // as rint_intrin, to Int, for |x| < 2^(SigBits-1); double on SSE, AVX2: |x| < 2^31
+  template <class IntVec, class RealVec> inline IntVec lrint_intrin(const RealVec& x) { // as rint_intrin, to Int, for |x| < 2^(SigBits-1)
     using Int = typename IntVec::ScalarType;
     using Real = typename RealVec::ScalarType;
     static_assert(TypeTraits<Real>::Type == DataType::Real, "Expected real type!");
@@ -2735,13 +2735,11 @@ namespace sctl { // SSE
   template <> inline VecData<int32_t,4> lrint_intrin<VecData<int32_t,4>,VecData<float ,4>>(const VecData<float ,4>& x) {
     return _mm_cvtps_epi32(x.v);
   }
-  template <> inline VecData<int64_t,2> lrint_intrin<VecData<int64_t,2>,VecData<double,2>>(const VecData<double,2>& x) {
   #if defined(__AVX512DQ__) && defined(__AVX512VL__)
+  template <> inline VecData<int64_t,2> lrint_intrin<VecData<int64_t,2>,VecData<double,2>>(const VecData<double,2>& x) {
     return _mm_cvtpd_epi64(x.v);
-  #else
-    return _mm_cvtepi32_epi64(_mm_cvtpd_epi32(x.v));
-  #endif
   }
+  #endif
 
   template <> inline VecData<float ,4> rint_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return _mm_round_ps(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
   template <> inline VecData<double,2> rint_intrin<VecData<double,2>>(const VecData<double,2>& x) { return _mm_round_pd(x.v, (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)); }
@@ -3850,10 +3848,6 @@ namespace sctl { // AVX
   #if defined(__AVX512DQ__) && defined(__AVX512VL__)
   template <> inline VecData<int64_t,4> lrint_intrin<VecData<int64_t,4>,VecData<double,4>>(const VecData<double,4>& x) {
     return _mm256_cvtpd_epi64(x.v);
-  }
-  #elif defined(__AVX2__)
-  template <> inline VecData<int64_t,4> lrint_intrin<VecData<int64_t,4>,VecData<double,4>>(const VecData<double,4>& x) {
-    return _mm256_cvtepi32_epi64(_mm256_cvtpd_epi32(x.v));
   }
   #endif
 
