@@ -11,6 +11,7 @@
 #include "sctl/comm.txx"         // for Comm::Self
 #include "sctl/vector.hpp"       // for Vector
 #include "sctl/matrix.hpp"       // for Matrix
+#include "sctl/static-array.hpp" // for StaticArray
 
 #ifdef SCTL_HAVE_PVFMM
 namespace pvfmm {
@@ -198,6 +199,19 @@ template <class Real, Integer DIM> class ParticleFMM {
     void EvalDirect(Vector<Real>& U, const std::string& trg_name) const;
 
     /**
+     * Returns a function that sets M[s*SrcDim+i][t*TrgDim+j] to the source-to-target kernel of (src_name,
+     * trg_name) from the sources Xs, with normals Xn, to the targets Xt, computed as Eval() computes it: from the
+     * same coordinates (mapped into the unit box when Eval() uses PVFMM) and with the same kernel accuracy.
+     * Subtracting these interactions from a result of Eval() then cancels them up to rounding, also for a target
+     * very near a source, where they are large. Collective, as it decides how Eval() evaluates; the function
+     * returned may be called concurrently, with points on this process.
+     *
+     * @param[in] src_name name for the source type.
+     * @param[in] trg_name name for the target type.
+     */
+    std::function<void(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn)> KernelMatrixS2T(const std::string& src_name, const std::string& trg_name) const;
+
+    /**
      * Example code showing usage of class ParticleFMM.
      */
     static void test(const Comm& comm);
@@ -221,6 +235,12 @@ template <class Real, Integer DIM> class ParticleFMM {
     template <class SCTLKernel, bool use_dummy_normal=false> struct PVFMMKernelFn; // construct PVFMMKernel from SCTLKernel
 
     void EvalPVFMM(Vector<Real>& U, const std::string& trg_name) const;
+
+    /** Collective: whether Eval() for trg_name uses PVFMM, which it does for 3D, with periodicity or 40000 targets or more. */
+    bool UsePVFMM(const std::string& trg_name) const;
+
+    /** The map x -> (x - bbox_offset)*bbox_scale of the points of (src_name, trg_name) into the unit box of PVFMM. */
+    void PVFMMBox(StaticArray<Real,DIM>& bbox_offset, Real& bbox_scale, const std::string& src_name, const std::string& trg_name) const;
     #endif
 
     FMMKernels fmm_ker;

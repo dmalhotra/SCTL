@@ -1176,6 +1176,9 @@ namespace sctl {
       }
       Profile::Toc();
 
+      // the far-field kernel as ComputeFarField evaluates it, so that the part subtracted here cancels it up to
+      // rounding, also for a target very near a far-field node
+      const auto ker_far = fmm.KernelMatrixS2T("Src", "Trg");
       Profile::Tic("KNearSubtract", &comm_, false, 7);
       for (Long i = 0; i < Nlst; i++) { // Subtract direct-interaction part from K_near
         const auto& elem_lst = elem_lst_map.at(elem_lst_name[i]);
@@ -1208,7 +1211,7 @@ namespace sctl {
               constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
               ScratchBuf<Real> Mker__storage(far_src_cnt*KDIM0 * trg_cnt*KDIM1);
               Matrix<Real> Mker_(far_src_cnt*KDIM0, trg_cnt*KDIM1, Mker__storage.begin(), false);
-              ker_.template KernelMatrix<Real,false>(Mker_, Xtrg_near_, X, Xn);
+              ker_far(Mker_, Xtrg_near_, X, Xn);
               for (Long s = 0; s < far_src_cnt; s++) {
                 for (Long k0 = 0; k0 < KDIM0; k0++) {
                   for (Long t = 0; t < trg_cnt; t++) {
@@ -1222,7 +1225,7 @@ namespace sctl {
                 }
               }
             } else {
-              ker_.template KernelMatrix<Real,false>(Mker, Xtrg_near_, X, Xn);
+              ker_far(Mker, Xtrg_near_, X, Xn);
               for (Long s = 0; s < far_src_cnt; s++) {
                 for (Long k0 = 0; k0 < KDIM0; k0++) {
                   for (Long t = 0; t < trg_cnt*KDIM1; t++) {

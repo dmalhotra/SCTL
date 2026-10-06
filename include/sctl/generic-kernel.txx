@@ -210,6 +210,30 @@ template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKe
     Profile::IncrementCounter(ProfileCounter::FLOP, Ns*Nt*uKernel::FLOPS());
   }
 
+  template <class uKernel> template <class Real, bool enable_openmp> void GenericKernel<uKernel>::KernelMatrix(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn, Integer digits, ConstIterator<char> self) {
+    const GenericKernel<uKernel>& ker = *(ConstIterator<GenericKernel<uKernel>>)self;
+    switch (digits) {
+      case  0: return ker.template KernelMatrix<Real, enable_openmp, 0>(M, Xt, Xs, Xn);
+      case  1: return ker.template KernelMatrix<Real, enable_openmp, 1>(M, Xt, Xs, Xn);
+      case  2: return ker.template KernelMatrix<Real, enable_openmp, 2>(M, Xt, Xs, Xn);
+      case  3: return ker.template KernelMatrix<Real, enable_openmp, 3>(M, Xt, Xs, Xn);
+      case  4: return ker.template KernelMatrix<Real, enable_openmp, 4>(M, Xt, Xs, Xn);
+      case  5: return ker.template KernelMatrix<Real, enable_openmp, 5>(M, Xt, Xs, Xn);
+      case  6: return ker.template KernelMatrix<Real, enable_openmp, 6>(M, Xt, Xs, Xn);
+      case  7: return ker.template KernelMatrix<Real, enable_openmp, 7>(M, Xt, Xs, Xn);
+      case  8: return ker.template KernelMatrix<Real, enable_openmp, 8>(M, Xt, Xs, Xn);
+      case  9: return ker.template KernelMatrix<Real, enable_openmp, 9>(M, Xt, Xs, Xn);
+      case 10: return ker.template KernelMatrix<Real, enable_openmp,10>(M, Xt, Xs, Xn);
+      case 11: return ker.template KernelMatrix<Real, enable_openmp,11>(M, Xt, Xs, Xn);
+      case 12: return ker.template KernelMatrix<Real, enable_openmp,12>(M, Xt, Xs, Xn);
+      case 13: return ker.template KernelMatrix<Real, enable_openmp,13>(M, Xt, Xs, Xn);
+      case 14: return ker.template KernelMatrix<Real, enable_openmp,14>(M, Xt, Xs, Xn);
+      case 15: return ker.template KernelMatrix<Real, enable_openmp,15>(M, Xt, Xs, Xn);
+      default: SCTL_ASSERT(digits == -1 || digits >= 16);
+               return ker.template KernelMatrix<Real, enable_openmp,-1>(M, Xt, Xs, Xn);
+    }
+  }
+
   template <class uKernel> template <class Real, bool enable_openmp, Integer digits> void GenericKernel<uKernel>::KernelMatrix(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn) const {
     static constexpr Integer digits_ = (digits==-1 ? (Integer)(TypeTraits<Real>::SigBits*0.3010299957) : digits);
     static constexpr Integer VecLen = DefaultVecLen<Real>();

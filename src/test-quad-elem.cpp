@@ -1220,6 +1220,55 @@ template <class Real, class Kernel> std::vector<std::vector<Real>> test_BIO(cons
   return err;
 }
 
+// The normal derivative of the single layer of sigma = xyz (a spherical harmonic of degree 3) on the unit
+// twisted sphere, resolved to tol, at targets 1e-4 element sizes inside and outside the sphere directly
+// above nodes, against its closed form (3/7 r^2 Y inside, -4/7 r^-5 Y outside, Y = xyz on the unit sphere).
+// The far-field rule's term of the node under a target, about 1e8 times the result here, is added by the
+// far-field evaluation and subtracted by the near correction, which must compute it identically. Returns the
+// error for each scheme.
+template <class Real> std::vector<Real> test_NearNodeTargets(const Real tol, const Comm& comm) {
+  const Integer order = 8;
+  const Real R = 1, twist = (Real)0.3;
+  const Integer ppf = ResolvedSpherePPF<Real>(order, R, twist, tol);
+  const Real d = (Real)1e-4 * 2 * R / ppf;
+  QuadElemList<Real> qel = BuildTwistedSphere<Real>(order, ppf, R, twist, comm);
+
+  Vector<Real> X, sigma, Xt, Nt, U_ref;
+  qel.GetNodeCoord(&X, nullptr, nullptr);
+  const Long Nnode = X.Dim() / COORD_DIM;
+  for (Long n = 0; n < Nnode; n++) sigma.PushBack(X[n * COORD_DIM + 0] * X[n * COORD_DIM + 1] * X[n * COORD_DIM + 2]);
+  for (Long n = 0; n < Nnode; n += 7) {
+    const Real r = sqrt<Real>(X[n * COORD_DIM + 0] * X[n * COORD_DIM + 0] + X[n * COORD_DIM + 1] * X[n * COORD_DIM + 1] + X[n * COORD_DIM + 2] * X[n * COORD_DIM + 2]);
+    const Real Y = (X[n * COORD_DIM + 0] / r) * (X[n * COORD_DIM + 1] / r) * (X[n * COORD_DIM + 2] / r);
+    for (const Real rad : {R - d, R + d}) {
+      for (Integer k = 0; k < COORD_DIM; k++) {
+        Xt.PushBack(X[n * COORD_DIM + k] / r * rad);
+        Nt.PushBack(X[n * COORD_DIM + k] / r);
+      }
+      U_ref.PushBack(rad < R ? (Real)3 / 7 * rad * rad * Y : -(Real)4 / 7 * Y / pow<Real>(rad, 5));
+    }
+  }
+
+  std::vector<Real> err(Schemes<Real>().size());
+  for (size_t s = 0; s < Schemes<Real>().size(); s++) {
+    qel.SetQuadScheme(Schemes<Real>()[s].scheme);
+    Vector<Real> U;
+    BoundaryIntegralOp<Real,Laplace3D_FxdU> op(Laplace3D_FxdU(), true, comm);
+    op.SetAccuracy(tol);
+    op.AddElemList(qel);
+    op.SetTargetCoord(Xt);
+    op.SetTargetNormal(Nt);
+    op.ComputePotential(U, sigma);
+    Real e = 0, ref = 0;
+    for (Long j = 0; j < U.Dim(); j++) {
+      e = MaxErr<Real>(e, fabs(U[j] - U_ref[j]));
+      ref = MaxErr<Real>(ref, fabs(U_ref[j]));
+    }
+    err[s] = GlobalReduce(e, comm, CommOp::MAX) / GlobalReduce(ref, comm, CommOp::MAX);
+  }
+  return err;
+}
+
 // The reference summed over a closed twisted sphere (order 16, resolved to 1e-12) against exact
 // results, at 8 nodes and at points 0.1 inside them: the double-layer identity for a constant density
 // q (D[q] = -q/2 on the surface, -q inside) and Green's identity for the field u of a point source
@@ -1513,6 +1562,17 @@ int main(int argc, char** argv) {
     if (root && nfail) std::cout << "\n" << nfail << " rows exceed the limit\n";
     SCTL_ASSERT(nfail == 0);
     passed("single-element and sphere tests");
+    {
+      const Real tol = (Real)1e-6;
+      const std::vector<Real> e = test_NearNodeTargets<Real>(tol, comm);
+      if (root) std::cout << "  targets 1e-4 element sizes off nodes, Laplace3D-FxdU.n, tol " << tol << ", limit " << ErrFactorSphere * tol << ":";
+      for (size_t s = 0; s < e.size(); s++) {
+        if (root) std::cout << "  " << Schemes<Real>()[s].name << " " << std::scientific << std::setprecision(1) << e[s] << std::defaultfloat << std::setprecision(6);
+        SCTL_ASSERT(e[s] < ErrFactorSphere * tol);
+      }
+      if (root) std::cout << "\n";
+      passed("test_NearNodeTargets");
+    }
 
     if (full) {
       const Integer order = 12, ppf = 12;

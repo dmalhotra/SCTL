@@ -124,6 +124,20 @@ template <class uKernel> class GenericKernel : public uKernel {
     template <class Real, bool enable_openmp=false, Integer digits=-1> void KernelMatrix(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn) const;
 
     /**
+     * Computes the kernel matrix and stores it in `M`, with the number of digits given at run time, as Eval() with
+     * digits does: full accuracy for -1 or 16 and more.
+     * @tparam Real The type of the real numbers used.
+     * @tparam enable_openmp A boolean flag to enable OpenMP.
+     * @param M The matrix to store the kernel matrix.
+     * @param Xt The vector of target point coordinates.
+     * @param Xs The vector of source point coordinates.
+     * @param Xn The vector of source normals.
+     * @param digits The number of significant digits for evaluation.
+     * @param self Points to the kernel object.
+     */
+    template <class Real, bool enable_openmp> static void KernelMatrix(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn, Integer digits, ConstIterator<char> self);
+
+    /**
      * Static method for kernel matrix computation.
      * @tparam digits The number of significant digits for evaluation.
      * @tparam VecType The vector type.
