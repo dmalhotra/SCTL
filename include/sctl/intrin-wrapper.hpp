@@ -2808,6 +2808,43 @@ namespace sctl { // SSE
   template <> inline VecData<int64_t,2> loadu_mask_intrin<VecData<int64_t,2>>(int64_t const* p, const Mask<VecData<int64_t,2>>& m) { return _mm_maskload_epi64((long long const*)p, m.v); }
   template <> inline void storeu_mask_intrin<VecData<int32_t,4>>(int32_t* p, VecData<int32_t,4> vec, const Mask<VecData<int32_t,4>>& m) { _mm_maskstore_epi32((int*)p, m.v, vec.v); }
   template <> inline void storeu_mask_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec, const Mask<VecData<int64_t,2>>& m) { _mm_maskstore_epi64((long long*)p, m.v, vec.v); }
+#elif defined(__AVX__) // the masked load and store of float and double, on the bits of the integers
+  template <> inline VecData<int32_t,4> loadu_mask_intrin<VecData<int32_t,4>>(int32_t const* p, const Mask<VecData<int32_t,4>>& m) { return _mm_castps_si128(_mm_maskload_ps((float const*)p, m.v)); }
+  template <> inline VecData<int64_t,2> loadu_mask_intrin<VecData<int64_t,2>>(int64_t const* p, const Mask<VecData<int64_t,2>>& m) { return _mm_castpd_si128(_mm_maskload_pd((double const*)p, m.v)); }
+  template <> inline void storeu_mask_intrin<VecData<int32_t,4>>(int32_t* p, VecData<int32_t,4> vec, const Mask<VecData<int32_t,4>>& m) { _mm_maskstore_ps((float*)p, m.v, _mm_castsi128_ps(vec.v)); }
+  template <> inline void storeu_mask_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec, const Mask<VecData<int64_t,2>>& m) { _mm_maskstore_pd((double*)p, m.v, _mm_castsi128_pd(vec.v)); }
+#else // the first n lanes by their count, as for float and double
+  template <> inline VecData<int32_t,4> loadu_first_intrin<VecData<int32_t,4>>(int32_t const* p, Integer n) {
+    if (n >= 4) return _mm_loadu_si128((__m128i const*)p);
+    if (n == 3) return _mm_insert_epi32(_mm_loadl_epi64((__m128i const*)p), p[2], 2);
+    if (n == 2) return _mm_loadl_epi64((__m128i const*)p);
+    if (n == 1) return _mm_cvtsi32_si128(p[0]);
+    return _mm_setzero_si128();
+  }
+  template <> inline VecData<int64_t,2> loadu_first_intrin<VecData<int64_t,2>>(int64_t const* p, Integer n) {
+    if (n >= 2) return _mm_loadu_si128((__m128i const*)p);
+    if (n == 1) return _mm_loadl_epi64((__m128i const*)p);
+    return _mm_setzero_si128();
+  }
+  template <> inline void storeu_first_intrin<VecData<int32_t,4>>(int32_t* p, VecData<int32_t,4> vec, Integer n) {
+    if (n >= 4) {
+      _mm_storeu_si128((__m128i*)p, vec.v);
+    } else if (n == 3) {
+      _mm_storel_epi64((__m128i*)p, vec.v);
+      p[2] = _mm_extract_epi32(vec.v, 2);
+    } else if (n == 2) {
+      _mm_storel_epi64((__m128i*)p, vec.v);
+    } else if (n == 1) {
+      p[0] = _mm_cvtsi128_si32(vec.v);
+    }
+  }
+  template <> inline void storeu_first_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec, Integer n) {
+    if (n >= 2) {
+      _mm_storeu_si128((__m128i*)p, vec.v);
+    } else if (n == 1) {
+      _mm_storel_epi64((__m128i*)p, vec.v);
+    }
+  }
 #endif
 
   // Number of selected lanes
