@@ -1397,20 +1397,23 @@ namespace sctl { // Generic
     rs = select_intrin(comp_intrin<ComparisonType::eq>(x, inf), x, rs);
     return select_intrin(comp_intrin<ComparisonType::ge>(x, zero), rs, set1_intrin<VData>((Real)NAN)); // negative x and NaN
   }
-  template <class VData> inline VData mul_sub_exact_intrin(const VData& a, const VData& b, const VData& c) { // a b - c, the product to about twice the precision, for c near a b and native widths (generic fma_intrin rounds twice): by FMA, or else with a and b split in two halves
-#if defined(__FMA__) || defined(__FMA4__)
-    return fma_intrin(a, b, unary_minus_intrin(c));
-#else
+  template <class VData> inline void split_half_intrin(VData& hi, VData& lo, const VData& x) { // x = hi + lo exactly, hi with the low half of the significand cleared
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
     union {
       Int i;
       Real r;
-    } static const high = {~((((Int)1) << ((TypeTraits<Real>::SigBits + 2) / 2)) - 1)}; // clears the low half of the significand
-    const VData a_hi = and_intrin(a, set1_intrin<VData>(high.r));
-    const VData b_hi = and_intrin(b, set1_intrin<VData>(high.r));
-    const VData a_lo = sub_intrin(a, a_hi);
-    const VData b_lo = sub_intrin(b, b_hi);
+    } static const high = {~((((Int)1) << ((TypeTraits<Real>::SigBits + 2) / 2)) - 1)};
+    hi = and_intrin(x, set1_intrin<VData>(high.r));
+    lo = sub_intrin(x, hi);
+  }
+  template <class VData> inline VData mul_sub_exact_intrin(const VData& a, const VData& b, const VData& c) { // a b - c, the product to about twice the precision, for c near a b and native widths (generic fma_intrin rounds twice): by FMA, or else with a and b split in two halves
+#if defined(__FMA__) || defined(__FMA4__)
+    return fma_intrin(a, b, unary_minus_intrin(c));
+#else
+    VData a_hi, a_lo, b_hi, b_lo;
+    split_half_intrin(a_hi, a_lo, a);
+    split_half_intrin(b_hi, b_lo, b);
     const VData r = sub_intrin(mul_intrin(a_hi, b_hi), c); // a_hi b_hi is exact; for double, a_lo b_lo rounds, at about 2^-107 of a b
     return add_intrin(add_intrin(r, add_intrin(mul_intrin(a_hi, b_lo), mul_intrin(a_lo, b_hi))), mul_intrin(a_lo, b_lo));
 #endif
@@ -1510,28 +1513,44 @@ namespace sctl { // Generic
     const VData c = copysign_intrin(mul_intrin(y, p2), x);
     return select_intrin(comp_intrin<ComparisonType::gt>(ax, zero) & comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>((Real)INFINITY)), c, x); // zeros, inf, NaN as they are
   }
-  template <class VData> inline VData fmod_poly_intrin(const VData& x, const VData& y) { // |x| - q |y|, q = trunc(fl(|x|/|y|)), the quotient or one more; exact with FMA
+  template <class VData> inline VData fmod_poly_intrin(const VData& x, const VData& y) { // |x| - q |y|, q = trunc(fl(|x|/|y|)), the quotient or one more; exact
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
+    static constexpr Real lim = (Real)(((uint64_t)1) << (TypeTraits<Real>::SigBits - 1));
     const VData zero = zero_intrin<VData>();
     const VData ax = fabs_intrin(x);
     const VData ay = fabs_intrin(y);
     const VData qf = div_intrin(ax, ay);
-    VData r = fma_intrin(unary_minus_intrin(trunc_intrin(qf)), ay, ax);
+    const VData q = trunc_intrin(qf);
+    Mask<VData> vector_lanes = comp_intrin<ComparisonType::lt>(qf, set1_intrin<VData>(lim)); // the others: |x/y| >= lim, y = 0, inf x, NaN
+#if defined(__FMA__) || defined(__FMA4__)
+    VData r = fma_intrin(unary_minus_intrin(q), ay, ax);
+#else // p + e = q |y| exactly (Dekker's product): with q below lim, the halves of q have SigBits - 1 bits together, so that each partial product is exact
+    VData q_hi, q_lo, y_hi, y_lo;
+    split_half_intrin(q_hi, q_lo, q);
+    split_half_intrin(y_hi, y_lo, ay);
+    const VData p = mul_intrin(q, ay);
+    const VData e = add_intrin(add_intrin(add_intrin(sub_intrin(mul_intrin(q_hi, y_hi), p), mul_intrin(q_hi, y_lo)), mul_intrin(q_lo, y_hi)), mul_intrin(q_lo, y_lo));
+    VData r = sub_intrin(sub_intrin(ax, p), e);
+    vector_lanes = vector_lanes & comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>(std::numeric_limits<Real>::max() / 2)); // p is finite
+#endif
     r = add_intrin(r, select_intrin(comp_intrin<ComparisonType::lt>(r, zero), ay, zero));
     r = copysign_intrin(select_intrin(comp_intrin<ComparisonType::lt>(qf, set1_intrin<VData>((Real)1)), ax, r), x); // |x| < |y|: x, also for inf y
 
-    static constexpr Real lim = (Real)(((uint64_t)1) << (TypeTraits<Real>::SigBits - 1));
-    if (mask_count_intrin(comp_intrin<ComparisonType::lt>(qf, set1_intrin<VData>(lim))) < VData::Size) { // |x/y| >= lim, y = 0, inf x, NaN: one element at a time
+    if (mask_count_intrin(vector_lanes) < VData::Size) { // the other lanes one element at a time
       union U {
         VData v;
         Real x[VData::Size];
       };
+      union {
+        MaskIntVec<VData> v;
+        typename MaskIntVec<VData>::ScalarType q[VData::Size];
+      } m_ = {mask2int_intrin(vector_lanes)};
       U x_u = {x};
       U y_u = {y};
       U r_u = {r};
       for (Integer i = 0; i < VData::Size; i++) {
-        if (!(fabs(x_u.x[i]) / fabs(y_u.x[i]) < lim)) r_u.x[i] = fmod(x_u.x[i], y_u.x[i]);
+        if (!m_.q[i]) r_u.x[i] = fmod(x_u.x[i], y_u.x[i]);
       }
       r = r_u.v;
     }
@@ -3026,10 +3045,8 @@ namespace sctl { // SSE
   // pow: glibc's pow for each element; pow_poly_intrin is slower for double and less accurate at 128 bits
   template <> inline VecData<float ,4> cbrt_intrin<VecData<float ,4>>(const VecData<float ,4>& x) { return cbrt_poly_intrin(x); }
   template <> inline VecData<double,2> cbrt_intrin<VecData<double,2>>(const VecData<double,2>& x) { return cbrt_poly_intrin(x); }
-#if defined(__FMA__)
   template <> inline VecData<float ,4> fmod_intrin<VecData<float ,4>>(const VecData<float ,4>& x, const VecData<float ,4>& y) { return fmod_poly_intrin(x, y); }
   template <> inline VecData<double,2> fmod_intrin<VecData<double,2>>(const VecData<double,2>& x, const VecData<double,2>& y) { return fmod_poly_intrin(x, y); }
-#endif
   #endif
 
 
@@ -4236,10 +4253,8 @@ namespace sctl { // AVX
 #endif
   template <> inline VecData<float ,8> cbrt_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return cbrt_poly_intrin(x); }
   template <> inline VecData<double,4> cbrt_intrin<VecData<double,4>>(const VecData<double,4>& x) { return cbrt_poly_intrin(x); }
-#if defined(__FMA__)
   template <> inline VecData<float ,8> fmod_intrin<VecData<float ,8>>(const VecData<float ,8>& x, const VecData<float ,8>& y) { return fmod_poly_intrin(x, y); }
   template <> inline VecData<double,4> fmod_intrin<VecData<double,4>>(const VecData<double,4>& x, const VecData<double,4>& y) { return fmod_poly_intrin(x, y); }
-#endif
   #endif
 
 

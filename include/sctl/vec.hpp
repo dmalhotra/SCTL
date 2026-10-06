@@ -688,7 +688,7 @@ namespace sctl {
   /** Hyperbolic tangent. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x);
 
-  /** Remainder of x/y with the sign of x, as std::fmod, one element at a time. */
+  /** Remainder of x/y with the sign of x, as std::fmod. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 
 
