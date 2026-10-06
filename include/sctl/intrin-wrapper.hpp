@@ -3442,6 +3442,11 @@ namespace sctl { // AVX
   template <> inline VecData<int64_t,4> and_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_and_si256(a.v, b.v);
   }
+  #else // AVX without AVX2: the instruction for float on the bits
+  template <> inline VecData<int8_t ,32> and_intrin(const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return _mm256_castps_si256(_mm256_and_ps(_mm256_castsi256_ps(a.v), _mm256_castsi256_ps(b.v))); }
+  template <> inline VecData<int16_t,16> and_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return _mm256_castps_si256(_mm256_and_ps(_mm256_castsi256_ps(a.v), _mm256_castsi256_ps(b.v))); }
+  template <> inline VecData<int32_t ,8> and_intrin(const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& b) { return _mm256_castps_si256(_mm256_and_ps(_mm256_castsi256_ps(a.v), _mm256_castsi256_ps(b.v))); }
+  template <> inline VecData<int64_t ,4> and_intrin(const VecData<int64_t ,4>& a, const VecData<int64_t ,4>& b) { return _mm256_castps_si256(_mm256_and_ps(_mm256_castsi256_ps(a.v), _mm256_castsi256_ps(b.v))); }
   #endif
   template <> inline VecData<float,8> and_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_and_ps(a.v, b.v);
@@ -3463,6 +3468,11 @@ namespace sctl { // AVX
   template <> inline VecData<int64_t,4> xor_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_xor_si256(a.v, b.v);
   }
+  #else // AVX without AVX2: the instruction for float on the bits
+  template <> inline VecData<int8_t ,32> xor_intrin(const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return _mm256_castps_si256(_mm256_xor_ps(_mm256_castsi256_ps(a.v), _mm256_castsi256_ps(b.v))); }
+  template <> inline VecData<int16_t,16> xor_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return _mm256_castps_si256(_mm256_xor_ps(_mm256_castsi256_ps(a.v), _mm256_castsi256_ps(b.v))); }
+  template <> inline VecData<int32_t ,8> xor_intrin(const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& b) { return _mm256_castps_si256(_mm256_xor_ps(_mm256_castsi256_ps(a.v), _mm256_castsi256_ps(b.v))); }
+  template <> inline VecData<int64_t ,4> xor_intrin(const VecData<int64_t ,4>& a, const VecData<int64_t ,4>& b) { return _mm256_castps_si256(_mm256_xor_ps(_mm256_castsi256_ps(a.v), _mm256_castsi256_ps(b.v))); }
   #endif
   template <> inline VecData<float,8> xor_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_xor_ps(a.v, b.v);
@@ -3484,6 +3494,11 @@ namespace sctl { // AVX
   template <> inline VecData<int64_t,4> or_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_or_si256(a.v, b.v);
   }
+  #else // AVX without AVX2: the instruction for float on the bits
+  template <> inline VecData<int8_t ,32> or_intrin(const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return _mm256_castps_si256(_mm256_or_ps(_mm256_castsi256_ps(a.v), _mm256_castsi256_ps(b.v))); }
+  template <> inline VecData<int16_t,16> or_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return _mm256_castps_si256(_mm256_or_ps(_mm256_castsi256_ps(a.v), _mm256_castsi256_ps(b.v))); }
+  template <> inline VecData<int32_t ,8> or_intrin(const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& b) { return _mm256_castps_si256(_mm256_or_ps(_mm256_castsi256_ps(a.v), _mm256_castsi256_ps(b.v))); }
+  template <> inline VecData<int64_t ,4> or_intrin(const VecData<int64_t ,4>& a, const VecData<int64_t ,4>& b) { return _mm256_castps_si256(_mm256_or_ps(_mm256_castsi256_ps(a.v), _mm256_castsi256_ps(b.v))); }
   #endif
   template <> inline VecData<float,8> or_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_or_ps(a.v, b.v);
@@ -3505,6 +3520,11 @@ namespace sctl { // AVX
   template <> inline VecData<int64_t,4> andnot_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
     return _mm256_andnot_si256(b.v, a.v);
   }
+  #else // AVX without AVX2: the instruction for float on the bits
+  template <> inline VecData<int8_t ,32> andnot_intrin(const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return _mm256_castps_si256(_mm256_andnot_ps(_mm256_castsi256_ps(b.v), _mm256_castsi256_ps(a.v))); }
+  template <> inline VecData<int16_t,16> andnot_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return _mm256_castps_si256(_mm256_andnot_ps(_mm256_castsi256_ps(b.v), _mm256_castsi256_ps(a.v))); }
+  template <> inline VecData<int32_t ,8> andnot_intrin(const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& b) { return _mm256_castps_si256(_mm256_andnot_ps(_mm256_castsi256_ps(b.v), _mm256_castsi256_ps(a.v))); }
+  template <> inline VecData<int64_t ,4> andnot_intrin(const VecData<int64_t ,4>& a, const VecData<int64_t ,4>& b) { return _mm256_castps_si256(_mm256_andnot_ps(_mm256_castsi256_ps(b.v), _mm256_castsi256_ps(a.v))); }
   #endif
   template <> inline VecData<float,8> andnot_intrin(const VecData<float,8>& a, const VecData<float,8>& b) {
     return _mm256_andnot_ps(b.v, a.v);
@@ -3554,10 +3574,14 @@ namespace sctl { // AVX
   template <> inline VecData<int16_t,16> bitshiftright_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& rhs) { return _mm256_srav_epi16(a.v, rhs.v); }
   #endif
   #else // AVX without AVX2: each 128-bit half with SSE
+  template <> inline VecData<int8_t ,32> bitshiftleft_intrin<VecData<int8_t ,32>>(const VecData<int8_t ,32>& a, const Integer& rhs) { return avx_halves_intrin([rhs](const __m128i h) { return bitshiftleft_intrin(VecData<int8_t,16>(h), rhs).v; }, a.v); }
+  template <> inline VecData<int16_t,16> bitshiftleft_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a, const Integer& rhs) { return avx_halves_intrin([rhs](const __m128i h) { return _mm_slli_epi16(h, (int)rhs); }, a.v); }
   template <> inline VecData<int32_t ,8> bitshiftleft_intrin<VecData<int32_t ,8>>(const VecData<int32_t ,8>& a, const Integer& rhs) { return avx_halves_intrin([rhs](const __m128i h) { return _mm_slli_epi32(h, (int)rhs); }, a.v); }
   template <> inline VecData<int64_t ,4> bitshiftleft_intrin<VecData<int64_t ,4>>(const VecData<int64_t ,4>& a, const Integer& rhs) { return avx_halves_intrin([rhs](const __m128i h) { return _mm_slli_epi64(h, (int)rhs); }, a.v); }
   template <> inline VecData<float   ,8> bitshiftleft_intrin<VecData<float   ,8>>(const VecData<float   ,8>& a, const Integer& rhs) { return _mm256_castsi256_ps(avx_halves_intrin([rhs](const __m128i h) { return _mm_slli_epi32(h, (int)rhs); }, _mm256_castps_si256(a.v))); }
   template <> inline VecData<double  ,4> bitshiftleft_intrin<VecData<double  ,4>>(const VecData<double  ,4>& a, const Integer& rhs) { return _mm256_castsi256_pd(avx_halves_intrin([rhs](const __m128i h) { return _mm_slli_epi64(h, (int)rhs); }, _mm256_castpd_si256(a.v))); }
+  template <> inline VecData<int8_t ,32> bitshiftright_intrin<VecData<int8_t ,32>>(const VecData<int8_t ,32>& a, const Integer& rhs) { return avx_halves_intrin([rhs](const __m128i h) { return bitshiftright_intrin(VecData<int8_t,16>(h), rhs).v; }, a.v); }
+  template <> inline VecData<int16_t,16> bitshiftright_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a, const Integer& rhs) { return avx_halves_intrin([rhs](const __m128i h) { return _mm_srai_epi16(h, (int)rhs); }, a.v); }
   template <> inline VecData<int32_t ,8> bitshiftright_intrin<VecData<int32_t ,8>>(const VecData<int32_t ,8>& a, const Integer& rhs) { return avx_halves_intrin([rhs](const __m128i h) { return _mm_srai_epi32(h, (int)rhs); }, a.v); }
   template <> inline VecData<int64_t ,4> bitshiftright_intrin<VecData<int64_t ,4>>(const VecData<int64_t ,4>& a, const Integer& rhs) { // negative lanes: complement, logical bit shift, complement back
     return avx_halves_intrin([rhs](const __m128i h) {
@@ -3580,6 +3604,10 @@ namespace sctl { // AVX
   template <> inline VecData<int32_t,8> max_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_max_epi32(a.v, b.v);
   }
+  #else // AVX without AVX2: each 128-bit half with SSE
+  template <> inline VecData<int8_t ,32> max_intrin(const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_max_epi8 (x, y); }, a.v, b.v); }
+  template <> inline VecData<int16_t,16> max_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_max_epi16(x, y); }, a.v, b.v); }
+  template <> inline VecData<int32_t ,8> max_intrin(const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_max_epi32(x, y); }, a.v, b.v); }
   #endif
   #if defined(__AVX512F__) && defined(__AVX512VL__)
   template <> inline VecData<int64_t,4> max_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
@@ -3603,6 +3631,10 @@ namespace sctl { // AVX
   template <> inline VecData<int32_t,8> min_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_min_epi32(a.v, b.v);
   }
+  #else // AVX without AVX2: each 128-bit half with SSE
+  template <> inline VecData<int8_t ,32> min_intrin(const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_min_epi8 (x, y); }, a.v, b.v); }
+  template <> inline VecData<int16_t,16> min_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_min_epi16(x, y); }, a.v, b.v); }
+  template <> inline VecData<int32_t ,8> min_intrin(const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_min_epi32(x, y); }, a.v, b.v); }
   #endif
   #if defined(__AVX512F__) && defined(__AVX512VL__)
   template <> inline VecData<int64_t,4> min_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) {
@@ -3722,6 +3754,28 @@ namespace sctl { // AVX
   }
   template <> inline void transpose_intrin<VecData<int16_t,16>>(VecData<int16_t,16> (&v)[16]) { transpose256_intrin(v); }
   template <> inline void transpose_intrin<VecData<int8_t ,32>>(VecData<int8_t ,32> (&v)[32]) { transpose256_intrin(v); }
+  #else // AVX without AVX2: [[A,B],[C,D]] -> [[A^T,C^T],[B^T,D^T]] by the 128-bit transposes of the HxH blocks
+  template <class VData> inline void transpose256_intrin(VData (&v)[VData::Size]) {
+    using Half = VecData<typename VData::ScalarType, VData::Size/2>;
+    static constexpr Integer H = VData::Size/2;
+    Half a[H], b[H], c[H], d[H];
+    for (Integer i = 0; i < H; i++) {
+      a[i] = _mm256_castsi256_si128(v[i].v);
+      b[i] = _mm256_extractf128_si256(v[i].v, 1);
+      c[i] = _mm256_castsi256_si128(v[i+H].v);
+      d[i] = _mm256_extractf128_si256(v[i+H].v, 1);
+    }
+    transpose_intrin(a);
+    transpose_intrin(b);
+    transpose_intrin(c);
+    transpose_intrin(d);
+    for (Integer i = 0; i < H; i++) {
+      v[i  ].v = _mm256_insertf128_si256(_mm256_castsi128_si256(a[i].v), c[i].v, 1);
+      v[i+H].v = _mm256_insertf128_si256(_mm256_castsi128_si256(b[i].v), d[i].v, 1);
+    }
+  }
+  template <> inline void transpose_intrin<VecData<int16_t,16>>(VecData<int16_t,16> (&v)[16]) { transpose256_intrin(v); }
+  template <> inline void transpose_intrin<VecData<int8_t ,32>>(VecData<int8_t ,32> (&v)[32]) { transpose256_intrin(v); }
   #endif
 
   // Conversion operators
@@ -3783,6 +3837,34 @@ namespace sctl { // AVX
   template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::ge>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a));              }
   template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::eq>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(_mm256_cmpeq_epi64(a.v,b.v));}
   template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::ne>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));              }
+  #else // AVX without AVX2: each 128-bit half with SSE
+  template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::lt>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return Mask<VecData<int8_t,32>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpgt_epi8(y, x); }, a.v, b.v)); }
+  template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::le>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a)); }
+  template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::gt>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return Mask<VecData<int8_t,32>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpgt_epi8(x, y); }, a.v, b.v)); }
+  template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::ge>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a)); }
+  template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::eq>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return Mask<VecData<int8_t,32>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpeq_epi8(x, y); }, a.v, b.v)); }
+  template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::ne>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b)); }
+
+  template <> inline Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::lt>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return Mask<VecData<int16_t,16>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpgt_epi16(y, x); }, a.v, b.v)); }
+  template <> inline Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::le>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a)); }
+  template <> inline Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::gt>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return Mask<VecData<int16_t,16>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpgt_epi16(x, y); }, a.v, b.v)); }
+  template <> inline Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::ge>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a)); }
+  template <> inline Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::eq>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return Mask<VecData<int16_t,16>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpeq_epi16(x, y); }, a.v, b.v)); }
+  template <> inline Mask<VecData<int16_t,16>> comp_intrin<ComparisonType::ne>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b)); }
+
+  template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::lt>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return Mask<VecData<int32_t,8>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpgt_epi32(y, x); }, a.v, b.v)); }
+  template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::le>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a)); }
+  template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::gt>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return Mask<VecData<int32_t,8>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpgt_epi32(x, y); }, a.v, b.v)); }
+  template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::ge>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a)); }
+  template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::eq>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return Mask<VecData<int32_t,8>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpeq_epi32(x, y); }, a.v, b.v)); }
+  template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::ne>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b)); }
+
+  template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::lt>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpgt_epi64(y, x); }, a.v, b.v)); }
+  template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::le>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a)); }
+  template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::gt>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpgt_epi64(x, y); }, a.v, b.v)); }
+  template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::ge>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::gt>(b,a)); }
+  template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::eq>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpeq_epi64(x, y); }, a.v, b.v)); }
+  template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::ne>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b)); }
   #endif
 
   template <> inline Mask<VecData<float,8>> comp_intrin<ComparisonType::lt>(const VecData<float,8>& a, const VecData<float,8>& b) { return Mask<VecData<float,8>>(_mm256_cmp_ps(a.v, b.v, _CMP_LT_OS)); }
@@ -3804,6 +3886,11 @@ namespace sctl { // AVX
   template <> inline VecData<int16_t,16> select_intrin(const Mask<VecData<int16_t,16>>& s, const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return _mm256_blendv_epi8(b.v, a.v, s.v); }
   template <> inline VecData<int32_t ,8> select_intrin(const Mask<VecData<int32_t ,8>>& s, const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& b) { return _mm256_blendv_epi8(b.v, a.v, s.v); }
   template <> inline VecData<int64_t ,4> select_intrin(const Mask<VecData<int64_t ,4>>& s, const VecData<int64_t ,4>& a, const VecData<int64_t ,4>& b) { return _mm256_blendv_epi8(b.v, a.v, s.v); }
+  #else // AVX without AVX2: the instructions for float and double on the bits
+  template <> inline VecData<int8_t ,32> select_intrin(const Mask<VecData<int8_t ,32>>& s, const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return or_intrin(and_intrin(VecData<int8_t ,32>(s.v), a), andnot_intrin(b, VecData<int8_t ,32>(s.v))); }
+  template <> inline VecData<int16_t,16> select_intrin(const Mask<VecData<int16_t,16>>& s, const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return or_intrin(and_intrin(VecData<int16_t,16>(s.v), a), andnot_intrin(b, VecData<int16_t,16>(s.v))); }
+  template <> inline VecData<int32_t ,8> select_intrin(const Mask<VecData<int32_t ,8>>& s, const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& b) { return _mm256_castps_si256(_mm256_blendv_ps(_mm256_castsi256_ps(b.v), _mm256_castsi256_ps(a.v), _mm256_castsi256_ps(s.v))); }
+  template <> inline VecData<int64_t ,4> select_intrin(const Mask<VecData<int64_t ,4>>& s, const VecData<int64_t ,4>& a, const VecData<int64_t ,4>& b) { return _mm256_castpd_si256(_mm256_blendv_pd(_mm256_castsi256_pd(b.v), _mm256_castsi256_pd(a.v), _mm256_castsi256_pd(s.v))); }
   #endif
   template <> inline VecData<float   ,8> select_intrin(const Mask<VecData<float   ,8>>& s, const VecData<float   ,8>& a, const VecData<float   ,8>& b) { return _mm256_blendv_ps  (b.v, a.v, s.v); }
   template <> inline VecData<double  ,4> select_intrin(const Mask<VecData<double  ,4>>& s, const VecData<double  ,4>& a, const VecData<double  ,4>& b) { return _mm256_blendv_pd  (b.v, a.v, s.v); }
@@ -3830,6 +3917,9 @@ namespace sctl { // AVX
   #if defined(__AVX2__)
   template <> inline Integer mask_count_intrin<VecData<int8_t ,32>>(const Mask<VecData<int8_t ,32>>& m) { return _mm_popcnt_u32(_mm256_movemask_epi8(m.v)); }
   template <> inline Integer mask_count_intrin<VecData<int16_t,16>>(const Mask<VecData<int16_t,16>>& m) { return _mm_popcnt_u32(_mm256_movemask_epi8(m.v)) / 2; } // two bits per lane
+  #else // AVX without AVX2: each 128-bit half with SSE
+  template <> inline Integer mask_count_intrin<VecData<int8_t ,32>>(const Mask<VecData<int8_t ,32>>& m) { return _mm_popcnt_u32(_mm_movemask_epi8(_mm256_castsi256_si128(m.v))) + _mm_popcnt_u32(_mm_movemask_epi8(_mm256_extractf128_si256(m.v, 1))); }
+  template <> inline Integer mask_count_intrin<VecData<int16_t,16>>(const Mask<VecData<int16_t,16>>& m) { return (_mm_popcnt_u32(_mm_movemask_epi8(_mm256_castsi256_si128(m.v))) + _mm_popcnt_u32(_mm_movemask_epi8(_mm256_extractf128_si256(m.v, 1)))) / 2; } // two bits per lane
   #endif
   template <> inline Integer mask_count_intrin<VecData<int32_t, 8>>(const Mask<VecData<int32_t, 8>>& m) { return _mm_popcnt_u32(_mm256_movemask_ps(_mm256_castsi256_ps(m.v))); }
   template <> inline Integer mask_count_intrin<VecData<int64_t, 4>>(const Mask<VecData<int64_t, 4>>& m) { return _mm_popcnt_u32(_mm256_movemask_pd(_mm256_castsi256_pd(m.v))); }
@@ -3852,6 +3942,10 @@ namespace sctl { // AVX
   template <> inline VecData<int8_t ,32> fabs_intrin<VecData<int8_t ,32>>(const VecData<int8_t ,32>& x) { return _mm256_abs_epi8 (x.v); }
   template <> inline VecData<int16_t,16> fabs_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& x) { return _mm256_abs_epi16(x.v); }
   template <> inline VecData<int32_t, 8> fabs_intrin<VecData<int32_t, 8>>(const VecData<int32_t, 8>& x) { return _mm256_abs_epi32(x.v); }
+  #else // AVX without AVX2: each 128-bit half with SSE
+  template <> inline VecData<int8_t ,32> fabs_intrin<VecData<int8_t ,32>>(const VecData<int8_t ,32>& x) { return avx_halves_intrin([](const __m128i h) { return _mm_abs_epi8 (h); }, x.v); }
+  template <> inline VecData<int16_t,16> fabs_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& x) { return avx_halves_intrin([](const __m128i h) { return _mm_abs_epi16(h); }, x.v); }
+  template <> inline VecData<int32_t, 8> fabs_intrin<VecData<int32_t, 8>>(const VecData<int32_t, 8>& x) { return avx_halves_intrin([](const __m128i h) { return _mm_abs_epi32(h); }, x.v); }
   #endif
   #if defined(__AVX512F__) && defined(__AVX512VL__)
   template <> inline VecData<int64_t, 4> fabs_intrin<VecData<int64_t, 4>>(const VecData<int64_t, 4>& x) { return _mm256_abs_epi64(x.v); }
@@ -3893,8 +3987,18 @@ namespace sctl { // AVX
     return _mm256_castsi256_si128(_mm256_permute4x64_epi64(_mm256_packus_epi16(lo, lo), 0x08));
   }
   template <> inline VecData<float  ,8> convert_intrin<VecData<float  ,8>,VecData<int16_t,8>>(const VecData<int16_t,8>& a) { return _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(a.v)); }
-  template <> inline VecData<int16_t,8> convert_intrin<VecData<int16_t,8>,VecData<float  ,8>>(const VecData<float  ,8>& a) { return convert_intrin<VecData<int16_t,8>>(VecData<int32_t,8>(_mm256_cvttps_epi32(a.v))); }
+  #else // AVX without AVX2: each 128-bit half with SSE
+  template <> inline VecData<int16_t,8> convert_intrin<VecData<int16_t,8>,VecData<int32_t,8>>(const VecData<int32_t,8>& a) {
+    const __m128i m = _mm_set1_epi32(0xFFFF);
+    return _mm_packus_epi32(_mm_and_si128(_mm256_castsi256_si128(a.v), m), _mm_and_si128(_mm256_extractf128_si256(a.v, 1), m));
+  }
+  template <> inline VecData<int8_t,16> convert_intrin<VecData<int8_t,16>,VecData<int16_t,16>>(const VecData<int16_t,16>& a) {
+    const __m128i m = _mm_set1_epi16(0xFF);
+    return _mm_packus_epi16(_mm_and_si128(_mm256_castsi256_si128(a.v), m), _mm_and_si128(_mm256_extractf128_si256(a.v, 1), m));
+  }
+  template <> inline VecData<float  ,8> convert_intrin<VecData<float  ,8>,VecData<int16_t,8>>(const VecData<int16_t,8>& a) { return _mm256_cvtepi32_ps(_mm256_insertf128_si256(_mm256_castsi128_si256(_mm_cvtepi16_epi32(a.v)), _mm_cvtepi16_epi32(_mm_unpackhi_epi64(a.v, a.v)), 1)); }
   #endif
+  template <> inline VecData<int16_t,8> convert_intrin<VecData<int16_t,8>,VecData<float  ,8>>(const VecData<float  ,8>& a) { return convert_intrin<VecData<int16_t,8>>(VecData<int32_t,8>(_mm256_cvttps_epi32(a.v))); }
   #if defined(__AVX512DQ__) && defined(__AVX512VL__)
   template <> inline VecData<double ,4> convert_intrin<VecData<double ,4>,VecData<int64_t,4>>(const VecData<int64_t,4>& a) { return _mm256_cvtepi64_pd (a.v); }
   template <> inline VecData<int64_t,4> convert_intrin<VecData<int64_t,4>,VecData<double ,4>>(const VecData<double ,4>& a) { return _mm256_cvttpd_epi64(a.v); }
@@ -3941,10 +4045,11 @@ namespace sctl { // AVX
     const __m256i w23 = _mm256_permute4x64_epi64(_mm256_packus_epi32(q(ah, bh), q(_mm_srli_si128(ah, 8), _mm_srli_si128(bh, 8))), 0xD8);
     return _mm256_permute4x64_epi64(_mm256_packus_epi16(w01, w23), 0xD8);
   }
+  #else // AVX without AVX2: each 128-bit half with SSE
+  template <> inline VecData<int16_t,16> div_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return div_intrin(VecData<int16_t, 8>(x), VecData<int16_t, 8>(y)).v; }, a.v, b.v); }
+  template <> inline VecData<int8_t ,32> div_intrin(const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return div_intrin(VecData<int8_t ,16>(x), VecData<int8_t ,16>(y)).v; }, a.v, b.v); }
   #endif
-  #ifdef __AVX2__
   template <> inline VecData<int64_t,4> div_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return div_int64_intrin(a, b); }
-  #endif
   template <> inline VecData<int32_t,4> div_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { return _mm256_cvttpd_epi32(_mm256_div_pd(_mm256_cvtepi32_pd(a.v), _mm256_cvtepi32_pd(b.v))); }
   template <> inline VecData<int32_t,8> div_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     #if defined(__AVX512F__)
