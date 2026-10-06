@@ -2131,6 +2131,7 @@ namespace sctl { // SSE
   // Two equal 64-bit halves known at compile time, by one load (movddup), for constants that GCC 12 to 15 (4
   // floats) or 14 and 15 (4 or 2 integers) would make with two or three instructions: a load of one element,
   // or a move from a general register, and a shuffle. The empty asm keeps GCC from seeing them as the constants.
+  // Not for 0, nor -1 of integers: GCC makes them by one instruction (pxor, pcmpeqd), and knows their value.
   inline __m128i dup64_const_intrin(const uint64_t bits) {
     double d;
     __builtin_memcpy(&d, &bits, sizeof(d));
@@ -2141,13 +2142,13 @@ namespace sctl { // SSE
 #endif
   template <> inline VecData<int32_t,4> set1_intrin<VecData<int32_t,4>>(int32_t a) {
 #if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14) && !defined(__AVX__)
-    if (__builtin_constant_p(a)) return dup64_const_intrin((((uint64_t)(uint32_t)a) << 32) | (uint32_t)a);
+    if (__builtin_constant_p(a) && a != 0 && a != -1) return dup64_const_intrin((((uint64_t)(uint32_t)a) << 32) | (uint32_t)a);
 #endif
     return _mm_set1_epi32(a);
   }
   template <> inline VecData<int64_t,2> set1_intrin<VecData<int64_t,2>>(int64_t a) {
 #if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14) && !defined(__AVX__)
-    if (__builtin_constant_p(a)) return dup64_const_intrin((uint64_t)a);
+    if (__builtin_constant_p(a) && a != 0 && a != -1) return dup64_const_intrin((uint64_t)a);
 #endif
     return _mm_set1_epi64x(a);
   }
@@ -2156,7 +2157,7 @@ namespace sctl { // SSE
     if (__builtin_constant_p(a)) {
       uint32_t b;
       __builtin_memcpy(&b, &a, sizeof(b));
-      return _mm_castsi128_ps(dup64_const_intrin((((uint64_t)b) << 32) | b));
+      if (b != 0) return _mm_castsi128_ps(dup64_const_intrin((((uint64_t)b) << 32) | b));
     }
 #endif
     return _mm_set1_ps(a);
