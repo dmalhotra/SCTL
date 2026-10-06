@@ -2884,12 +2884,15 @@ namespace sctl { // SSE
   template <> inline void storeu_mask_intrin<VecData<double,2>>(double* p, VecData<double,2> vec, const Mask<VecData<double,2>>& m) { _mm_maskstore_pd(p, _mm_castpd_si128(m.v), vec.v); }
 #endif
   // The first n lanes by their count: in the leftover columns of SmallGEMM, the generic loop over the lanes of a mask
-  // was 5-8x slower, and tests of each bit of a movemask 1.4-2x. With AVX, for 2 lanes and not 4: n = 1 takes 1.1
-  // cycles, against 1.4 to 2.1 for the masked load and store; for 4 lanes, n = 3 would take 2.1 against 1.4.
-#if !defined(__AVX__)
+  // was 5-8x slower, and tests of each bit of a movemask 1.4-2x. With AVX, n = 3 of 4 lanes by the masked load and
+  // store (1.4 cycles with an add, against 2.1 for two loads and two stores).
   template <> inline VecData<float,4> loadu_first_intrin<VecData<float,4>>(float const* p, Integer n) {
     if (n >= 4) return _mm_loadu_ps(p);
+#if defined(__AVX__)
+    if (n == 3) return _mm_maskload_ps(p, _mm_setr_epi32(-1, -1, -1, 0));
+#else
     if (n == 3) return _mm_movelh_ps(_mm_loadl_pi(_mm_setzero_ps(), (__m64 const*)p), _mm_load_ss(p + 2));
+#endif
     if (n == 2) return _mm_loadl_pi(_mm_setzero_ps(), (__m64 const*)p);
     if (n == 1) return _mm_load_ss(p);
     return _mm_setzero_ps();
@@ -2898,15 +2901,18 @@ namespace sctl { // SSE
     if (n >= 4) {
       _mm_storeu_ps(p, vec.v);
     } else if (n == 3) {
+#if defined(__AVX__)
+      _mm_maskstore_ps(p, _mm_setr_epi32(-1, -1, -1, 0), vec.v);
+#else
       _mm_storel_pi((__m64*)p, vec.v);
       _mm_store_ss(p + 2, _mm_movehl_ps(vec.v, vec.v));
+#endif
     } else if (n == 2) {
       _mm_storel_pi((__m64*)p, vec.v);
     } else if (n == 1) {
       _mm_store_ss(p, vec.v);
     }
   }
-#endif
   template <> inline VecData<double,2> loadu_first_intrin<VecData<double,2>>(double const* p, Integer n) {
     if (n >= 2) return _mm_loadu_pd(p);
     if (n == 1) return _mm_load_sd(p);
@@ -2931,10 +2937,13 @@ namespace sctl { // SSE
   template <> inline void storeu_mask_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec, const Mask<VecData<int64_t,2>>& m) { _mm_maskstore_pd((double*)p, m.v, _mm_castsi128_pd(vec.v)); }
 #endif
   // The first n lanes by their count, as for float and double
-#if !defined(__AVX__)
   template <> inline VecData<int32_t,4> loadu_first_intrin<VecData<int32_t,4>>(int32_t const* p, Integer n) {
     if (n >= 4) return _mm_loadu_si128((__m128i const*)p);
+#if defined(__AVX__)
+    if (n == 3) return _mm_castps_si128(_mm_maskload_ps((float const*)p, _mm_setr_epi32(-1, -1, -1, 0)));
+#else
     if (n == 3) return _mm_insert_epi32(_mm_loadl_epi64((__m128i const*)p), p[2], 2);
+#endif
     if (n == 2) return _mm_loadl_epi64((__m128i const*)p);
     if (n == 1) return _mm_cvtsi32_si128(p[0]);
     return _mm_setzero_si128();
@@ -2943,15 +2952,18 @@ namespace sctl { // SSE
     if (n >= 4) {
       _mm_storeu_si128((__m128i*)p, vec.v);
     } else if (n == 3) {
+#if defined(__AVX__)
+      _mm_maskstore_ps((float*)p, _mm_setr_epi32(-1, -1, -1, 0), _mm_castsi128_ps(vec.v));
+#else
       _mm_storel_epi64((__m128i*)p, vec.v);
       p[2] = _mm_extract_epi32(vec.v, 2);
+#endif
     } else if (n == 2) {
       _mm_storel_epi64((__m128i*)p, vec.v);
     } else if (n == 1) {
       p[0] = _mm_cvtsi128_si32(vec.v);
     }
   }
-#endif
   template <> inline VecData<int64_t,2> loadu_first_intrin<VecData<int64_t,2>>(int64_t const* p, Integer n) {
     if (n >= 2) return _mm_loadu_si128((__m128i const*)p);
     if (n == 1) return _mm_loadl_epi64((__m128i const*)p);
