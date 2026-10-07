@@ -577,9 +577,9 @@ namespace sctl {
   /** As approx_sqrt(x), with zero in the elements not in m; for x that can be zero. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sqrt(const Vec<ValueType,N>& x, const typename Vec<ValueType,N>::MaskType& m);
 
-  /** Sine and cosine. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
+  /** Sine and cosine. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
   template <bool FullRange = true, class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
-  /** Sine and cosine to the given number of digits; -1 for full precision. FullRange = false: faster, with an error that grows like |x| eps. */
+  /** Sine and cosine to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
   template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
 
   /** e^x; float, double at native widths without SVML: within about 2 ulp (float: 3.5), also near the overflow and for subnormal results. */
@@ -624,22 +624,22 @@ namespace sctl {
   /** Mask of the elements that are NaN. */
   template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType isnan(const Vec<ValueType,N>& x);
 
-  /** Sine. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
+  /** Sine. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
   template <bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x);
 
-  /** Cosine. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
+  /** Cosine. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
   template <bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x);
 
-  /** Tangent. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
+  /** Tangent. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
   template <bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x);
 
-  /** Sine to the given number of digits; -1 for full precision. FullRange = false: faster, with an error that grows like |x| eps. */
+  /** Sine to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
   template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x);
 
-  /** Cosine to the given number of digits; -1 for full precision. FullRange = false: faster, with an error that grows like |x| eps. */
+  /** Cosine to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
   template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x);
 
-  /** Tangent to the given number of digits; -1 for full precision. FullRange = false: faster, with an error that grows like |x| eps. */
+  /** Tangent to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
   template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x);
 
   /** Angle of the point (x, y), in [-pi, pi], as std::atan2. SpecialValues = false: faster, but x, y both infinite or both zero give NaN. */
