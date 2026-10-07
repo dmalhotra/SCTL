@@ -52,14 +52,14 @@ namespace sctl {
      * out={out_0,...,out_{n-1}} are flattened arrays.  out is resized if its size differs.
      */
     template <class ValueType> void EvalTensorProduct(Vector<ValueType>& out, const Vector<ValueType>& in, const Matrix<ValueType>& MuT, const Matrix<ValueType>& Mv) {
-      const Integer Nu = (Integer)MuT.Dim(0);
+      const Long Nu = MuT.Dim(0);
       const Integer R  = (Integer)MuT.Dim(1);
       const Integer S  = (Integer)Mv.Dim(0);
-      const Integer Nv = (Integer)Mv.Dim(1);
+      const Long Nv = Mv.Dim(1);
       const Integer ncomp = (Integer)(in.Dim() / (R * S));
       SCTL_ASSERT(in.Dim() == ncomp * R * S);
 
-      const Integer Nout = Nu * Nv;
+      const Long Nout = Nu * Nv;
       if (out.Dim() != ncomp * Nout) out.ReInit(ncomp * Nout);
 
       ScratchBuf<ValueType> tmp_buf(R * Nv);
@@ -1945,9 +1945,9 @@ namespace sctl {
   template <class Real> void QuadElemList<Real>::GetGeom(Vector<Real>* X, Vector<Real>* Xn, Vector<Real>* Xa, Vector<Real>* dX_du, Vector<Real>* dX_dv, const Vector<Real>& u_param, const Vector<Real>& v_param, const Long elem_idx) const {
     SCTL_ASSERT(elem_idx >= 0 && elem_idx < nelem);
     const Integer nnode_per_elem = order * order;
-    const Integer Nu = (Integer)u_param.Dim();
-    const Integer Nv = (Integer)v_param.Dim();
-    const Integer N = Nu * Nv;
+    const Long Nu = u_param.Dim();
+    const Long Nv = v_param.Dim();
+    const Long N = Nu * Nv;
 
     { // Size the requested outputs
       if (X && X->Dim() != N * detail_quadelem::COORD_DIM) X->ReInit(N * detail_quadelem::COORD_DIM);
@@ -1964,7 +1964,7 @@ namespace sctl {
       Vector<Real> Mv_(Mv_buf);
       LagrangeInterp<Real>::Interpolate(Mu_, ParamNodes(order), u_param);
       LagrangeInterp<Real>::Interpolate(Mv_, ParamNodes(order), v_param);
-      for (Integer i = 0; i < order; i++) for (Integer a = 0; a < Nu; a++) MuT_buf[a * order + i] = Mu_buf[i * Nu + a];
+      for (Integer i = 0; i < order; i++) for (Long a = 0; a < Nu; a++) MuT_buf[a * order + i] = Mu_buf[i * Nu + a];
     }
     const Matrix<Real> MuT(Nu, order, MuT_buf.begin(), false);
     const Matrix<Real> Mv(order, Nv, Mv_buf.begin(), false);
@@ -1975,7 +1975,7 @@ namespace sctl {
       ScratchBuf<Real> X_soa_buf(N * detail_quadelem::COORD_DIM);
       Vector<Real> X_soa(X_soa_buf);
       detail_quadelem::EvalTensorProduct(X_soa, coord_, MuT, Mv);
-      for (Integer i = 0; i < N; i++) {
+      for (Long i = 0; i < N; i++) {
         (*X)[i * detail_quadelem::COORD_DIM + 0] = X_soa[0 * N + i];
         (*X)[i * detail_quadelem::COORD_DIM + 1] = X_soa[1 * N + i];
         (*X)[i * detail_quadelem::COORD_DIM + 2] = X_soa[2 * N + i];
@@ -1988,7 +1988,7 @@ namespace sctl {
       Vector<Real> dXdu_soa(dXdu_soa_buf), dXdv_soa(dXdv_soa_buf);
       detail_quadelem::EvalTensorProduct(dXdu_soa, dcoord_du_, MuT, Mv);
       detail_quadelem::EvalTensorProduct(dXdv_soa, dcoord_dv_, MuT, Mv);
-      for (Integer i = 0; i < N; i++) {
+      for (Long i = 0; i < N; i++) {
         Real du[detail_quadelem::COORD_DIM], dv[detail_quadelem::COORD_DIM], n[detail_quadelem::COORD_DIM];
         for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
           du[k] = dXdu_soa[k * N + i];
