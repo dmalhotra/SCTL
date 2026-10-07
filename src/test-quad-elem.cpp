@@ -954,8 +954,8 @@ template <class Real> void test_SurfaceSingularDegree() {
   h_fxdu.SetCtxPtr(&mu);
   hd_fxdu.SetCtxPtr(&mu);
   const auto check = [](const auto& ker, const Integer d, const Integer d_dot) { // d_dot < 0: no target-normal contraction for this kernel
-    SCTL_ASSERT(fabs(detail_dispatch::SurfaceSingularDegree<Real>(ker, false, (Real)1e-4) - d) < (Real)0.1);
-    if (d_dot >= 0) SCTL_ASSERT(fabs(detail_dispatch::SurfaceSingularDegree<Real>(ker, true, (Real)1e-4) - d_dot) < (Real)0.1);
+    SCTL_ASSERT(fabs(detail_singular_check::SurfaceSingularDegree<Real>(ker, false, (Real)1e-4) - d) < (Real)0.1);
+    if (d_dot >= 0) SCTL_ASSERT(fabs(detail_singular_check::SurfaceSingularDegree<Real>(ker, true, (Real)1e-4) - d_dot) < (Real)0.1);
   };
   check(Laplace3D_FxU(), 1, -1);
   check(Laplace3D_DxU(), 1, -1);
