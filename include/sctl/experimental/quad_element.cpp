@@ -117,44 +117,6 @@ namespace sctl {
       Matrix<Real> M, dM, MTD;
     };
 
-    /** evaluates position (minus origin, if given) and tangents dXu, dXv (if non-null) at (u,v) */
-    template <class Real> void EvalPoint(Real* X, Real* dXu, Real* dXv, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Integer order, const Real u, const Real v, const Vector<Real>* origin) {
-      const Integer nnode = order * order;
-
-      ScratchBuf<Real> L(2*order); // L[2*i], L[2*i+1]: i-th interpolation weight at u, at v
-      { // Interpolation weights at u and at v
-        StaticArray<Real,2> uv{u, v};
-        const Vector<Real> trg(2, uv, false);
-        Vector<Real> L_(L);
-        LagrangeInterp<Real>::Interpolate(L_, QuadElemList<Real>::ParamNodes(order), trg);
-      }
-
-      Real x[COORD_DIM] = {0, 0, 0}, xu[COORD_DIM] = {0, 0, 0}, xv[COORD_DIM] = {0, 0, 0};
-      // Interpolate the coordinates, and their derivatives if want_d (a template parameter: no branch in the loop)
-      const auto sum_nodes = [&coord, &dcoord_du, &dcoord_dv, &L, &x, &xu, &xv, order, nnode](const auto want_d) {
-        for (Integer i = 0; i < order; i++) {
-          for (Integer j = 0; j < order; j++) {
-            const Integer p = i*order + j;
-            const Real w = L[2*i]*L[2*j+1];
-            for (Integer k = 0; k < COORD_DIM; k++) x[k] += coord[k*nnode + p]*w;
-            if constexpr (decltype(want_d)::value) {
-              for (Integer k = 0; k < COORD_DIM; k++) {
-                xu[k] += dcoord_du[k*nnode + p]*w;
-                xv[k] += dcoord_dv[k*nnode + p]*w;
-              }
-            }
-          }
-        }
-      };
-      if (dXu || dXv) sum_nodes(std::true_type{});
-      else sum_nodes(std::false_type{});
-      for (Integer k = 0; k < COORD_DIM; k++) {
-        X[k] = (origin ? x[k] - (*origin)[k] : x[k]);
-        if (dXu) dXu[k] = xu[k];
-        if (dXv) dXv[k] = xv[k];
-      }
-    }
-
     /** sets out to coord minus Xtrg, for component-major nodal coordinates */
     template <class Real> void ShiftedElemCoord(Vector<Real>& out, const Vector<Real>& coord, const Vector<Real>& Xtrg) {
       const Integer nnode = (Integer)(coord.Dim() / COORD_DIM);
@@ -202,257 +164,6 @@ namespace sctl {
     /** returns a view of the normal of point t in Xn (COORD_DIM values per point) if use, else an empty vector */
     template <class Real> Vector<Real> NormalView(const Vector<Real>& Xn, const Long t, const bool use) {
       return Vector<Real>((use ? COORD_DIM : 0), (use ? (Iterator<Real>)Xn.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-    }
-
-    /** returns the distance from Xtrg to the nearest node; (ustar, vstar) are its parameters */
-    template <class Real> Real GetClosestNode(Real& ustar, Real& vstar, const Vector<Real>& coord, const Integer order, const Vector<Real>& Xtrg) {
-      const Integer nnode = order * order;
-      Integer seed = 0;
-      Real best_r2 = -1;
-      for (Integer p = 0; p < nnode; p++) {
-        Real r2 = 0;
-        for (Integer k = 0; k < COORD_DIM; k++) {
-          const Real d = coord[k*nnode + p] - Xtrg[k];
-          r2 += d*d;
-        }
-        if (best_r2 < 0 || r2 < best_r2) {
-          best_r2 = r2;
-          seed = p;
-        }
-      }
-
-      const auto& nds = QuadElemList<Real>::ParamNodes(order);
-      ustar = nds[seed/order];
-      vstar = nds[seed%order];
-      return sqrt<Real>(best_r2);
-    }
-
-    /** returns the distance from Xtrg to the element; (ustar, vstar) are the closest point's parameters, found to about 1% of the distance */
-    template <class Real> Real GetClosestPoint(Real& ustar, Real& vstar, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Integer order, const Vector<Real>& Xtrg) {
-      const auto dist2_at = [&coord, &dcoord_du, &dcoord_dv, order, &Xtrg](const Real uu, const Real vv) -> Real {
-        Real X[COORD_DIM];
-        EvalPoint<Real>(X, nullptr, nullptr, coord, dcoord_du, dcoord_dv, order, uu, vv, &Xtrg);
-        Real r2 = 0;
-        for (Integer k = 0; k < COORD_DIM; k++) r2 += X[k]*X[k];
-        return r2;
-      };
-
-      Real u, v, f;
-      { // Start from the nearest node
-        const Real dist_seed = GetClosestNode(u, v, coord, order, Xtrg);
-        f = dist_seed * dist_seed;
-      }
-
-      const Real dtol = [&coord, &Xtrg]() { // rounding error of a computed distance, from the largest coordinate
-        Real S = 0;
-        for (const auto& c : coord) S = std::max<Real>(S, fabs(c));
-        for (Integer k = 0; k < COORD_DIM; k++) S = std::max<Real>(S, fabs(Xtrg[k]));
-        return machine_eps<Real>() * 32 * S;
-      }();
-
-      constexpr Integer max_iter = 30;
-      const Real utol = machine_eps<Real>();
-      bool converged = false;
-      for (Integer it = 0; it < max_iter; it++) { // Projected Newton iterations
-        Real X[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM]; // the point relative to the target, and the tangents
-        EvalPoint<Real>(X, dXu, dXv, coord, dcoord_du, dcoord_dv, order, u, v, &Xtrg);
-        Real E = 0, F = 0, G = 0, gu = 0, gv = 0;
-        for (Integer k = 0; k < COORD_DIM; k++) { // Metric and gradient of the squared distance
-          const Real r = X[k], a = dXu[k], b = dXv[k];
-          E += a*a;
-          F += a*b;
-          G += b*b;
-          gu += r*a;
-          gv += r*b;
-        }
-
-        const Real rel_tol = machine_eps<Real>() * 10000; // singular values below rel_tol times the largest are taken as zero; the computed tangents carry rounding errors up to about 1000 eps
-        const Real zero_len2 = rel_tol * rel_tol * (E + G); // a tangent with squared length below this is taken as zero
-        Real step_u = 0, step_v = 0;
-        { // Newton step: the least-squares solution of [dXu dXv] step = X, fixing a coordinate held at its bound
-          const bool u_held = ((u <= 0 && gu >= 0) || (u >= 1 && gu <= 0));
-          const bool v_held = ((v <= 0 && gv >= 0) || (v >= 1 && gv <= 0));
-          if (!u_held && !v_held) { // from the SVD [dXu dXv] = [c1 c2] V^T, V the rotation making the columns c1, c2 orthogonal (one-sided Jacobi)
-            Real cs = 1, sn = 0;
-            if (F != 0) {
-              const Real zeta = (G - E) / (2*F);
-              const Real t = (zeta >= 0 ? 1 : -1) / (fabs(zeta) + sqrt<Real>(1 + zeta*zeta));
-              cs = 1 / sqrt<Real>(1 + t*t);
-              sn = cs * t;
-            }
-            Real len1_sq = 0, len2_sq = 0, b1 = 0, b2 = 0; // squared lengths of c1 and c2, and their dot products with X
-            for (Integer k = 0; k < COORD_DIM; k++) {
-              const Real c1 = cs*dXu[k] - sn*dXv[k];
-              const Real c2 = sn*dXu[k] + cs*dXv[k];
-              len1_sq += c1*c1;
-              len2_sq += c2*c2;
-              b1 += c1*X[k];
-              b2 += c2*X[k];
-            }
-            const Real len_min_sq = rel_tol * rel_tol * std::max<Real>(len1_sq, len2_sq);
-            const Real s1 = (len1_sq > len_min_sq ? b1 / len1_sq : 0); // the step's coefficients along c1 and c2
-            const Real s2 = (len2_sq > len_min_sq ? b2 / len2_sq : 0);
-            step_u = cs*s1 + sn*s2;
-            step_v = -sn*s1 + cs*s2;
-          } else if (u_held) {
-            step_v = (G > zero_len2 ? gv / G : 0);
-          } else {
-            step_u = (E > zero_len2 ? gu / E : 0);
-          }
-        }
-
-        Real un = u, vn = v, fn = f;
-        bool improved;
-        { // Line search along the step, else along the gradient; a step is rejected only if the distance grows by more than its rounding error
-          const Real fmax = f + dtol * (2 * sqrt<Real>(f) + dtol);
-          const auto line_search = [&dist2_at, u, v, fmax, &un, &vn, &fn](const Real step_u, const Real step_v) {
-            Real lambda = 1;
-            for (Integer ls = 0; ls < 40; ls++) {
-              un = std::min<Real>(1, std::max<Real>(0, u - lambda*step_u));
-              vn = std::min<Real>(1, std::max<Real>(0, v - lambda*step_v));
-              fn = dist2_at(un, vn);
-              if (fn <= fmax) return true;
-              lambda *= (Real)0.5;
-            }
-            return false;
-          };
-          improved = line_search(step_u, step_v);
-          if (!improved) { // along the gradient projected onto the parameter square
-            Real Pu = gu, Pv = gv;
-            if      (u <= 0) Pu = std::min<Real>(gu, (Real)0);
-            else if (u >= 1) Pu = std::max<Real>(gu, (Real)0);
-            if      (v <= 0) Pv = std::min<Real>(gv, (Real)0);
-            else if (v >= 1) Pv = std::max<Real>(gv, (Real)0);
-            improved = line_search((E > zero_len2 ? Pu / E : 0), (G > zero_len2 ? Pv / G : 0));
-          }
-        }
-        if (!improved) { // Every step grows the distance: a minimum
-          converged = true;
-          break;
-        }
-
-        const Real du = un - u, dv = vn - v;
-        const bool small_step = (fabs(du) < utol && fabs(dv) < utol) || (E*du*du + 2*F*du*dv + G*dv*dv < (Real)1e-4 * fn); // the update is below machine epsilon, or moved the point by less than 1% of the distance
-        u = un;
-        v = vn;
-        f = fn;
-        if (small_step) {
-          converged = true;
-          break;
-        }
-      }
-
-      if (!converged) { // Fall back to a grid search, from the nearest node: K x K grids on boxes centered at the closest grid point found, shrunk in their longer physical dimension; a box is moved to its closest grid point while that is on a side of the box inside the element, and enlarged in that direction when it is on a side twice in a row
-        constexpr Integer K = 8, max_rounds = 200;
-        const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-        Real ub, vb, fb; // the closest grid point found
-        Real cu, cv, Hu, Hv; // center and half-widths of the box
-        { // The nearest node, and a box reaching its neighbors
-          const Real dist = GetClosestNode(ub, vb, coord, order, Xtrg);
-          fb = dist*dist;
-          const auto neighbor_gap = [&nds, order](const Real x) {
-            Integer i = 0;
-            for (Integer j = 1; j < order; j++) if (fabs(nds[j] - x) < fabs(nds[i] - x)) i = j;
-            Real gap = 0;
-            if (i > 0) gap = std::max<Real>(gap, nds[i] - nds[i-1]);
-            if (i < order-1) gap = std::max<Real>(gap, nds[i+1] - nds[i]);
-            return gap;
-          };
-          cu = ub;
-          cv = vb;
-          Hu = neighbor_gap(ub);
-          Hv = neighbor_gap(vb);
-        }
-
-        ScratchBuf<Real> grid_buf(2*K), Lu_buf(order*K), LuT_buf(K*order), Lv_buf(order*K), Xg_buf(COORD_DIM*K*K);
-        Vector<Real> grid_u(K, grid_buf.begin(), false), grid_v(K, grid_buf.begin() + K, false), Lu(Lu_buf), Lv(Lv_buf), Xg(Xg_buf); // grid values; interpolation weights at them; coordinates on the grid
-        const Matrix<Real> LuT(K, order, LuT_buf.begin(), false);
-        Integer n_side = 0; // consecutive grids whose closest point is on a side of the box inside the element
-        for (Integer round = 0; round < max_rounds; round++) {
-          bool lo_u, hi_u, lo_v, hi_v; // whether each side of the box is inside the element
-          Real au, wu, av, wv; // lower corner and widths of the box
-          { // The box, of width 2H (at most 1) centered at (cu, cv), shifted into the element
-            const auto place = [](Real& a, Real& w, bool& lo, bool& hi, const Real c, const Real H) {
-              w = std::min<Real>(1, 2*H);
-              a = std::min<Real>(std::max<Real>(0, c - w/2), 1 - w);
-              lo = (w < 1 && c - w/2 > 0);
-              hi = (w < 1 && c - w/2 < 1 - w);
-            };
-            place(au, wu, lo_u, hi_u, cu, Hu);
-            place(av, wv, lo_v, hi_v, cv, Hv);
-          }
-          for (Integer a = 0; a < K; a++) {
-            grid_u[a] = au + wu*a/(K-1);
-            grid_v[a] = av + wv*a/(K-1);
-          }
-
-          Real fr = -1; // this grid's closest point: squared distance and indices
-          Integer ir = 0, jr = 0;
-          { // The grid point closest to Xtrg, from the coordinates on the grid by the tensor product of the interpolation in u and in v
-            LagrangeInterp<Real>::Interpolate(Lu, nds, grid_u);
-            LagrangeInterp<Real>::Interpolate(Lv, nds, grid_v);
-            for (Integer i = 0; i < order; i++) {
-              for (Integer a = 0; a < K; a++) LuT_buf[a*order + i] = Lu[i*K + a];
-            }
-            EvalTensorProduct(Xg, coord, LuT, Matrix<Real>(order, K, Lv_buf.begin(), false));
-            for (Integer a = 0; a < K; a++) {
-              for (Integer b = 0; b < K; b++) {
-                Real r2 = 0;
-                for (Integer k = 0; k < COORD_DIM; k++) r2 += (Xg[k*K*K + a*K + b] - Xtrg[k])*(Xg[k*K*K + a*K + b] - Xtrg[k]);
-                if (fr < 0 || r2 < fr) {
-                  fr = r2;
-                  ir = a;
-                  jr = b;
-                }
-              }
-            }
-          }
-
-          bool refine = true;
-          if (!(fr < fb)) { // no grid point closer than the closest found: refine around that
-            n_side = 0;
-          } else {
-            fb = fr;
-            ub = grid_u[ir];
-            vb = grid_v[jr];
-            const bool side_u = (ir == 0 && lo_u) || (ir == K-1 && hi_u);
-            const bool side_v = (jr == 0 && lo_v) || (jr == K-1 && hi_v);
-            if (!side_u && !side_v) { // refine around it
-              n_side = 0;
-            } else if (++n_side >= 2) { // enlarge the box around it, in the directions in which it is on a side
-              if (side_u) Hu = std::min<Real>((Real)0.5, Hu*(K-1)/2);
-              if (side_v) Hv = std::min<Real>((Real)0.5, Hv*(K-1)/2);
-              n_side = 0;
-              refine = false;
-            } else { // move the box to it
-              refine = false;
-            }
-          }
-          cu = ub;
-          cv = vb;
-          if (refine) { // Shrink the box to the grid spacing in its longer physical dimension; stop when the half-widths of the box are less than 1% of the distance at the closest point found, or its lengths 2 Hu, 2 Hv in parameter space are below machine epsilon
-            Real X[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
-            EvalPoint<Real>(X, dXu, dXv, coord, dcoord_du, dcoord_dv, order, ub, vb, &Xtrg);
-            Real guu = 0, gvv = 0;
-            for (Integer k = 0; k < COORD_DIM; k++) {
-              guu += dXu[k]*dXu[k];
-              gvv += dXv[k]*dXv[k];
-            }
-            if (guu*wu*wu >= gvv*wv*wv) Hu = wu/(K-1);
-            else Hv = wv/(K-1);
-            if (guu*Hu*Hu + gvv*Hv*Hv < (Real)1e-4 * fb || (2*Hu < utol && 2*Hv < utol)) break;
-          }
-        }
-        if (fb < f) {
-          f = fb;
-          u = ub;
-          v = vb;
-        }
-      }
-
-      ustar = u;
-      vstar = v;
-      return sqrt<Real>(f);
     }
 
     /** sin of the angle between tangents with metric guu, guv, gvv, at least 1e-6; 1 if a tangent vanishes */
@@ -766,12 +477,300 @@ namespace sctl {
     using detail_quadelem::PrecompReal;
     using detail_quadelem::QuadRule1D;
 
-    using detail_quadelem::EvalPoint;
-    using detail_quadelem::GetClosestPoint;
+    using detail_quadelem::EvalTensorProduct;
     using detail_quadelem::LagrangeDiffMat;
     using detail_quadelem::ShiftedElemCoord;
 
     static constexpr Integer NearMaxQuadOrder = 60;
+
+    /** evaluates position (minus origin, if given) and tangents dXu, dXv (if non-null) at (u,v) */
+    template <class Real> void EvalPoint(Real* X, Real* dXu, Real* dXv, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Integer order, const Real u, const Real v, const Vector<Real>* origin) {
+      const Integer nnode = order * order;
+
+      ScratchBuf<Real> L(2*order); // L[2*i], L[2*i+1]: i-th interpolation weight at u, at v
+      { // Interpolation weights at u and at v
+        StaticArray<Real,2> uv{u, v};
+        const Vector<Real> trg(2, uv, false);
+        Vector<Real> L_(L);
+        LagrangeInterp<Real>::Interpolate(L_, QuadElemList<Real>::ParamNodes(order), trg);
+      }
+
+      Real x[COORD_DIM] = {0, 0, 0}, xu[COORD_DIM] = {0, 0, 0}, xv[COORD_DIM] = {0, 0, 0};
+      // Interpolate the coordinates, and their derivatives if want_d (a template parameter: no branch in the loop)
+      const auto sum_nodes = [&coord, &dcoord_du, &dcoord_dv, &L, &x, &xu, &xv, order, nnode](const auto want_d) {
+        for (Integer i = 0; i < order; i++) {
+          for (Integer j = 0; j < order; j++) {
+            const Integer p = i*order + j;
+            const Real w = L[2*i]*L[2*j+1];
+            for (Integer k = 0; k < COORD_DIM; k++) x[k] += coord[k*nnode + p]*w;
+            if constexpr (decltype(want_d)::value) {
+              for (Integer k = 0; k < COORD_DIM; k++) {
+                xu[k] += dcoord_du[k*nnode + p]*w;
+                xv[k] += dcoord_dv[k*nnode + p]*w;
+              }
+            }
+          }
+        }
+      };
+      if (dXu || dXv) sum_nodes(std::true_type{});
+      else sum_nodes(std::false_type{});
+      for (Integer k = 0; k < COORD_DIM; k++) {
+        X[k] = (origin ? x[k] - (*origin)[k] : x[k]);
+        if (dXu) dXu[k] = xu[k];
+        if (dXv) dXv[k] = xv[k];
+      }
+    }
+
+    /** returns the distance from Xtrg to the nearest node; (ustar, vstar) are its parameters */
+    template <class Real> Real GetClosestNode(Real& ustar, Real& vstar, const Vector<Real>& coord, const Integer order, const Vector<Real>& Xtrg) {
+      const Integer nnode = order * order;
+      Integer seed = 0;
+      Real best_r2 = -1;
+      for (Integer p = 0; p < nnode; p++) {
+        Real r2 = 0;
+        for (Integer k = 0; k < COORD_DIM; k++) {
+          const Real d = coord[k*nnode + p] - Xtrg[k];
+          r2 += d*d;
+        }
+        if (best_r2 < 0 || r2 < best_r2) {
+          best_r2 = r2;
+          seed = p;
+        }
+      }
+
+      const auto& nds = QuadElemList<Real>::ParamNodes(order);
+      ustar = nds[seed/order];
+      vstar = nds[seed%order];
+      return sqrt<Real>(best_r2);
+    }
+
+    /** returns the distance from Xtrg to the element; (ustar, vstar) are the closest point's parameters, found to about 1% of the distance */
+    template <class Real> Real GetClosestPoint(Real& ustar, Real& vstar, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Integer order, const Vector<Real>& Xtrg) {
+      const auto dist2_at = [&coord, &dcoord_du, &dcoord_dv, order, &Xtrg](const Real uu, const Real vv) -> Real {
+        Real X[COORD_DIM];
+        EvalPoint<Real>(X, nullptr, nullptr, coord, dcoord_du, dcoord_dv, order, uu, vv, &Xtrg);
+        Real r2 = 0;
+        for (Integer k = 0; k < COORD_DIM; k++) r2 += X[k]*X[k];
+        return r2;
+      };
+
+      Real u, v, f;
+      { // Start from the nearest node
+        const Real dist_seed = GetClosestNode(u, v, coord, order, Xtrg);
+        f = dist_seed * dist_seed;
+      }
+
+      const Real dtol = [&coord, &Xtrg]() { // rounding error of a computed distance, from the largest coordinate
+        Real S = 0;
+        for (const auto& c : coord) S = std::max<Real>(S, fabs(c));
+        for (Integer k = 0; k < COORD_DIM; k++) S = std::max<Real>(S, fabs(Xtrg[k]));
+        return machine_eps<Real>() * 32 * S;
+      }();
+
+      constexpr Integer max_iter = 30;
+      const Real utol = machine_eps<Real>();
+      bool converged = false;
+      for (Integer it = 0; it < max_iter; it++) { // Projected Newton iterations
+        Real X[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM]; // the point relative to the target, and the tangents
+        EvalPoint<Real>(X, dXu, dXv, coord, dcoord_du, dcoord_dv, order, u, v, &Xtrg);
+        Real E = 0, F = 0, G = 0, gu = 0, gv = 0;
+        for (Integer k = 0; k < COORD_DIM; k++) { // Metric and gradient of the squared distance
+          const Real r = X[k], a = dXu[k], b = dXv[k];
+          E += a*a;
+          F += a*b;
+          G += b*b;
+          gu += r*a;
+          gv += r*b;
+        }
+
+        const Real rel_tol = machine_eps<Real>() * 10000; // singular values below rel_tol times the largest are taken as zero; the computed tangents carry rounding errors up to about 1000 eps
+        const Real zero_len2 = rel_tol * rel_tol * (E + G); // a tangent with squared length below this is taken as zero
+        Real step_u = 0, step_v = 0;
+        { // Newton step: the least-squares solution of [dXu dXv] step = X, fixing a coordinate held at its bound
+          const bool u_held = ((u <= 0 && gu >= 0) || (u >= 1 && gu <= 0));
+          const bool v_held = ((v <= 0 && gv >= 0) || (v >= 1 && gv <= 0));
+          if (!u_held && !v_held) { // from the SVD [dXu dXv] = [c1 c2] V^T, V the rotation making the columns c1, c2 orthogonal (one-sided Jacobi)
+            Real cs = 1, sn = 0;
+            if (F != 0) {
+              const Real zeta = (G - E) / (2*F);
+              const Real t = (zeta >= 0 ? 1 : -1) / (fabs(zeta) + sqrt<Real>(1 + zeta*zeta));
+              cs = 1 / sqrt<Real>(1 + t*t);
+              sn = cs * t;
+            }
+            Real len1_sq = 0, len2_sq = 0, b1 = 0, b2 = 0; // squared lengths of c1 and c2, and their dot products with X
+            for (Integer k = 0; k < COORD_DIM; k++) {
+              const Real c1 = cs*dXu[k] - sn*dXv[k];
+              const Real c2 = sn*dXu[k] + cs*dXv[k];
+              len1_sq += c1*c1;
+              len2_sq += c2*c2;
+              b1 += c1*X[k];
+              b2 += c2*X[k];
+            }
+            const Real len_min_sq = rel_tol * rel_tol * std::max<Real>(len1_sq, len2_sq);
+            const Real s1 = (len1_sq > len_min_sq ? b1 / len1_sq : 0); // the step's coefficients along c1 and c2
+            const Real s2 = (len2_sq > len_min_sq ? b2 / len2_sq : 0);
+            step_u = cs*s1 + sn*s2;
+            step_v = -sn*s1 + cs*s2;
+          } else if (u_held) {
+            step_v = (G > zero_len2 ? gv / G : 0);
+          } else {
+            step_u = (E > zero_len2 ? gu / E : 0);
+          }
+        }
+
+        Real un = u, vn = v, fn = f;
+        bool improved;
+        { // Line search along the step, else along the gradient; a step is rejected only if the distance grows by more than its rounding error
+          const Real fmax = f + dtol * (2 * sqrt<Real>(f) + dtol);
+          const auto line_search = [&dist2_at, u, v, fmax, &un, &vn, &fn](const Real step_u, const Real step_v) {
+            Real lambda = 1;
+            for (Integer ls = 0; ls < 40; ls++) {
+              un = std::min<Real>(1, std::max<Real>(0, u - lambda*step_u));
+              vn = std::min<Real>(1, std::max<Real>(0, v - lambda*step_v));
+              fn = dist2_at(un, vn);
+              if (fn <= fmax) return true;
+              lambda *= (Real)0.5;
+            }
+            return false;
+          };
+          improved = line_search(step_u, step_v);
+          if (!improved) { // along the gradient projected onto the parameter square
+            Real Pu = gu, Pv = gv;
+            if      (u <= 0) Pu = std::min<Real>(gu, (Real)0);
+            else if (u >= 1) Pu = std::max<Real>(gu, (Real)0);
+            if      (v <= 0) Pv = std::min<Real>(gv, (Real)0);
+            else if (v >= 1) Pv = std::max<Real>(gv, (Real)0);
+            improved = line_search((E > zero_len2 ? Pu / E : 0), (G > zero_len2 ? Pv / G : 0));
+          }
+        }
+        if (!improved) { // Every step grows the distance: a minimum
+          converged = true;
+          break;
+        }
+
+        const Real du = un - u, dv = vn - v;
+        const bool small_step = (fabs(du) < utol && fabs(dv) < utol) || (E*du*du + 2*F*du*dv + G*dv*dv < (Real)1e-4 * fn); // the update is below machine epsilon, or moved the point by less than 1% of the distance
+        u = un;
+        v = vn;
+        f = fn;
+        if (small_step) {
+          converged = true;
+          break;
+        }
+      }
+
+      if (!converged) { // Fall back to a grid search, from the nearest node: K x K grids on boxes centered at the closest grid point found, shrunk in their longer physical dimension; a box is moved to its closest grid point while that is on a side of the box inside the element, and enlarged in that direction when it is on a side twice in a row
+        constexpr Integer K = 8, max_rounds = 200;
+        const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+        Real ub, vb, fb; // the closest grid point found
+        Real cu, cv, Hu, Hv; // center and half-widths of the box
+        { // The nearest node, and a box reaching its neighbors
+          const Real dist = GetClosestNode(ub, vb, coord, order, Xtrg);
+          fb = dist*dist;
+          const auto neighbor_gap = [&nds, order](const Real x) {
+            Integer i = 0;
+            for (Integer j = 1; j < order; j++) if (fabs(nds[j] - x) < fabs(nds[i] - x)) i = j;
+            Real gap = 0;
+            if (i > 0) gap = std::max<Real>(gap, nds[i] - nds[i-1]);
+            if (i < order-1) gap = std::max<Real>(gap, nds[i+1] - nds[i]);
+            return gap;
+          };
+          cu = ub;
+          cv = vb;
+          Hu = neighbor_gap(ub);
+          Hv = neighbor_gap(vb);
+        }
+
+        ScratchBuf<Real> grid_buf(2*K), Lu_buf(order*K), LuT_buf(K*order), Lv_buf(order*K), Xg_buf(COORD_DIM*K*K);
+        Vector<Real> grid_u(K, grid_buf.begin(), false), grid_v(K, grid_buf.begin() + K, false), Lu(Lu_buf), Lv(Lv_buf), Xg(Xg_buf); // grid values; interpolation weights at them; coordinates on the grid
+        const Matrix<Real> LuT(K, order, LuT_buf.begin(), false);
+        Integer n_side = 0; // consecutive grids whose closest point is on a side of the box inside the element
+        for (Integer round = 0; round < max_rounds; round++) {
+          bool lo_u, hi_u, lo_v, hi_v; // whether each side of the box is inside the element
+          Real au, wu, av, wv; // lower corner and widths of the box
+          { // The box, of width 2H (at most 1) centered at (cu, cv), shifted into the element
+            const auto place = [](Real& a, Real& w, bool& lo, bool& hi, const Real c, const Real H) {
+              w = std::min<Real>(1, 2*H);
+              a = std::min<Real>(std::max<Real>(0, c - w/2), 1 - w);
+              lo = (w < 1 && c - w/2 > 0);
+              hi = (w < 1 && c - w/2 < 1 - w);
+            };
+            place(au, wu, lo_u, hi_u, cu, Hu);
+            place(av, wv, lo_v, hi_v, cv, Hv);
+          }
+          for (Integer a = 0; a < K; a++) {
+            grid_u[a] = au + wu*a/(K-1);
+            grid_v[a] = av + wv*a/(K-1);
+          }
+
+          Real fr = -1; // this grid's closest point: squared distance and indices
+          Integer ir = 0, jr = 0;
+          { // The grid point closest to Xtrg, from the coordinates on the grid by the tensor product of the interpolation in u and in v
+            LagrangeInterp<Real>::Interpolate(Lu, nds, grid_u);
+            LagrangeInterp<Real>::Interpolate(Lv, nds, grid_v);
+            for (Integer i = 0; i < order; i++) {
+              for (Integer a = 0; a < K; a++) LuT_buf[a*order + i] = Lu[i*K + a];
+            }
+            EvalTensorProduct(Xg, coord, LuT, Matrix<Real>(order, K, Lv_buf.begin(), false));
+            for (Integer a = 0; a < K; a++) {
+              for (Integer b = 0; b < K; b++) {
+                Real r2 = 0;
+                for (Integer k = 0; k < COORD_DIM; k++) r2 += (Xg[k*K*K + a*K + b] - Xtrg[k])*(Xg[k*K*K + a*K + b] - Xtrg[k]);
+                if (fr < 0 || r2 < fr) {
+                  fr = r2;
+                  ir = a;
+                  jr = b;
+                }
+              }
+            }
+          }
+
+          bool refine = true;
+          if (!(fr < fb)) { // no grid point closer than the closest found: refine around that
+            n_side = 0;
+          } else {
+            fb = fr;
+            ub = grid_u[ir];
+            vb = grid_v[jr];
+            const bool side_u = (ir == 0 && lo_u) || (ir == K-1 && hi_u);
+            const bool side_v = (jr == 0 && lo_v) || (jr == K-1 && hi_v);
+            if (!side_u && !side_v) { // refine around it
+              n_side = 0;
+            } else if (++n_side >= 2) { // enlarge the box around it, in the directions in which it is on a side
+              if (side_u) Hu = std::min<Real>((Real)0.5, Hu*(K-1)/2);
+              if (side_v) Hv = std::min<Real>((Real)0.5, Hv*(K-1)/2);
+              n_side = 0;
+              refine = false;
+            } else { // move the box to it
+              refine = false;
+            }
+          }
+          cu = ub;
+          cv = vb;
+          if (refine) { // Shrink the box to the grid spacing in its longer physical dimension; stop when the half-widths of the box are less than 1% of the distance at the closest point found, or its lengths 2 Hu, 2 Hv in parameter space are below machine epsilon
+            Real X[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
+            EvalPoint<Real>(X, dXu, dXv, coord, dcoord_du, dcoord_dv, order, ub, vb, &Xtrg);
+            Real guu = 0, gvv = 0;
+            for (Integer k = 0; k < COORD_DIM; k++) {
+              guu += dXu[k]*dXu[k];
+              gvv += dXv[k]*dXv[k];
+            }
+            if (guu*wu*wu >= gvv*wv*wv) Hu = wu/(K-1);
+            else Hv = wv/(K-1);
+            if (guu*Hu*Hu + gvv*Hv*Hv < (Real)1e-4 * fb || (2*Hu < utol && 2*Hv < utol)) break;
+          }
+        }
+        if (fb < f) {
+          f = fb;
+          u = ub;
+          v = vb;
+        }
+      }
+
+      ustar = u;
+      vstar = v;
+      return sqrt<Real>(f);
+    }
 
     /** Returns 'order' values cos^2(pi i/(2(order-1))) for each order: one minus the Chebyshev extreme points sin^2(pi i/(2(order-1))) on [0, 1], computed as cos^2 so that they are accurate where small. */
     template <class Real> static const Vector<Real>& NearSubOffsets(const Integer order) {
