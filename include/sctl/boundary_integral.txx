@@ -1308,7 +1308,8 @@ namespace sctl {
 
     if (trg_normal_dot_prod_) {
       constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
-      Vector<Real> U_(Ntrg * KDIM1); U_.SetZero();
+      ScratchBuf<Real> U_buf(Ntrg * KDIM1);
+      Vector<Real> U_(U_buf);
       fmm.Eval(U_, "Trg");
       #pragma omp parallel for schedule(static)
       for (Long i = 0; i < Ntrg; i++) {

@@ -564,6 +564,18 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
   if (U_.Dim() != Nt * TrgDim) U_.ReInit(Nt * TrgDim);
   U_.SetZero();
 
+  if (np == 1) { // one process: from the sources and targets as they are, without the copies that distributing them needs
+    for (auto& it : s2t_map) {
+      if (it.first.second != trg_name) continue;
+      SCTL_ASSERT_MSG(src_map.find(it.first.first) != src_map.end(), "Source name does not exist.");
+      const auto& src_data = src_map.at(it.first.first);
+      const Vector<Real> Xn_none;
+      const Vector<Real>& Xn = (src_data.dim_normal ? src_data.Xn : Xn_none);
+      it.second.ker_s2t_eval_omp(U_, Xt_, src_data.X, Xn, src_data.F, digits_, it.second.ker_s2t);
+    }
+    return;
+  }
+
   auto partition = [this](Vector<Real>& X, const Long dof) {
     StaticArray<Long,2> cnt{X.Dim()/dof, 0};
     comm_.Allreduce<Long>(cnt+0, cnt+1, 1, CommOp::SUM);
