@@ -124,9 +124,10 @@ namespace detail_small_gemm {
    * if they fill it (masked loads and stores of the full width were up to 1.4x slower), or else in
    * one vector of which only the first n % VL lanes are loaded and stored (LoadPartial,
    * StorePartial); with AVX-512, in the narrowest of these vectors that holds them. For 16 x n x 8,
-   * up to 5.9x faster than narrower vectors and then one column at a time, and at most 1.09x slower
-   * on a w5-3435X, 1.14x on a Xeon Platinum 8362. Not inlined: unrolled for fixed sizes inside a
-   * caller's loop, the code was up to 1.9x slower.
+   * up to 5.9x faster than narrower vectors and then one column at a time, and at most 1.14x slower
+   * on a Xeon Platinum 8362, 1.09x on an AMD EPYC 7742 and 1.06x on an EPYC 9474F; on AMD Zen with
+   * AVX2 and without SCTL_TUNE_ZEN, up to 2.6x for one leftover column (vmaskmovps). Not inlined:
+   * unrolled for fixed sizes inside a caller's loop, the code was up to 1.9x slower.
    */
   template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous, Long LDA = DynamicSize, Long LDB = DynamicSize, Long LDC = DynamicSize> [[gnu::noinline]] void VecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
     const Long m = (M != DynamicSize ? M : m_);
