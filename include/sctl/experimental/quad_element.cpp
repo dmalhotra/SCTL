@@ -243,13 +243,12 @@ namespace sctl {
         f = dist_seed * dist_seed;
       }
 
-      Real dtol = 0; // rounding error of a computed distance
-      {
+      const Real dtol = [&coord, &Xtrg]() { // rounding error of a computed distance, from the largest coordinate
         Real S = 0;
         for (const auto& c : coord) S = std::max<Real>(S, fabs(c));
         for (Integer k = 0; k < COORD_DIM; k++) S = std::max<Real>(S, fabs(Xtrg[k]));
-        dtol = machine_eps<Real>() * 32 * S;
-      }
+        return machine_eps<Real>() * 32 * S;
+      }();
 
       constexpr Integer max_iter = 30;
       const Real utol = machine_eps<Real>();
@@ -478,7 +477,7 @@ namespace sctl {
       static constexpr Integer KDIM1full = Kernel::TrgDim();
       static constexpr Integer KDIM1_out = (TRG_DOT ? KDIM1full/COORD_DIM : KDIM1full);
       static constexpr Integer C = KDIM0*KDIM1_out;
-      static constexpr Integer digits = (Integer)(TypeTraits<Real>::SigBits*0.3010299957);
+      static constexpr Integer digits = MaxDigits<Real>-1;
       static constexpr Integer VecLen = VecType::Size();
       const VecType vws(wj * Kernel::template uKerScaleFactor<Real>());
       VecType vXt[COORD_DIM];
@@ -827,11 +826,13 @@ namespace sctl {
       const Matrix<W> T(order, N, Twts.begin(), false);
       Matrix<W> dT(order, N, dT_buf.begin(), false);
       Matrix<W>::GEMM(dT, D_sub, T);
-      for (Integer i = 0; i < order; i++) for (Integer j = 0; j < N; j++) {
-        r.M[i][j] = (Real)T[i][j];
-        r.dM[i][j] = (Real)dT[i][j];
-        r.MTD[j][i] = r.M[i][j];
-        r.MTD[N + j][i] = r.dM[i][j];
+      for (Integer i = 0; i < order; i++) {
+        for (Integer j = 0; j < N; j++) {
+          r.M[i][j] = (Real)T[i][j];
+          r.dM[i][j] = (Real)dT[i][j];
+          r.MTD[j][i] = r.M[i][j];
+          r.MTD[N + j][i] = r.dM[i][j];
+        }
       }
     }
 
@@ -1248,55 +1249,61 @@ namespace sctl {
         tbl.tri.resize((size_t)(4*order*order));
         tbl.alpha.resize((size_t)(4*order));
         tbl.beta.resize((size_t)(4*order));
-        for (Integer ti = 0; ti < order; ti++) for (Integer tj = 0; tj < order; tj++) {
-          const Real u0 = nds[ti], v0 = nds[tj];
-          for (Integer kt = 0; kt < 4; kt++) { // Triangle joining node (ti, tj) to edge kt
-            DuffyTri<Real>& T = tbl.tri[(size_t)((ti*order + tj)*4 + kt)];
-            const Real a[2] = {CornerU[kt]-u0, CornerV[kt]-v0};
-            const Real b[2] = {CornerU[(kt+1)%4]-u0, CornerV[(kt+1)%4]-v0};
-            const Real e[2] = {b[0]-a[0], b[1]-a[1]};
-            T.J0 = a[0]*b[1] - a[1]*b[0];
-            SCTL_ASSERT_MSG(T.J0 > 0, "Duffy triangle orientation");
-            T.swap_ab = (fabs<Real>(e[0]) < fabs<Real>(e[1]));
-            T.nsign = (T.swap_ab ? (Real)-1 : (Real)1);
-            const Real alpha0 = (T.swap_ab ? v0 : u0), beta0 = (T.swap_ab ? u0 : v0);
-            const Real a_alpha = (T.swap_ab ? a[1] : a[0]), a_beta = (T.swap_ab ? a[0] : a[1]);
-            const Real e_alpha = (T.swap_ab ? e[1] : e[0]);
-            const Integer i_alpha = (T.swap_ab ? tj : ti), i_beta = (T.swap_ab ? ti : tj); // the index of the node each depends on
-            T.alpha = kt*order + i_alpha;
-            T.beta = kt*order + i_beta;
-            if (i_alpha == 0) { // Interpolation along beta, with its derivative, at the s-nodes, at the first node with this i_beta
-              DuffyBeta<Real>& B = tbl.beta[(size_t)T.beta];
-              Vector<Real> beta_vals(qs);
-              for (Integer i = 0; i < qs; i++) beta_vals[i] = beta0 + tbl.sn[i]*a_beta;
-              Matrix<Real> Mbeta(order, qs), dMbeta(order, qs);
-              Vector<Real> Mbeta_v(order*qs, Mbeta.begin(), false);
-              LagrangeInterp<Real>::Interpolate(Mbeta_v, nds, beta_vals);
-              Matrix<Real>::GEMM(dMbeta, D, Mbeta);
-              B.interp.ReInit(order, 2*qs);
-              for (Integer r = 0; r < order; r++) for (Integer i = 0; i < qs; i++) {
-                B.interp[r][i] = Mbeta[r][i];
-                B.interp[r][qs+i] = dMbeta[r][i];
-              }
-              B.interp_T = Mbeta.Transpose();
-            }
-            if (i_beta == 0) { // Interpolation along alpha, with its derivative, at each s-node, at the first node with this i_alpha
-              DuffyAlpha<Real>& A = tbl.alpha[(size_t)T.alpha];
-              A.interp.ReInit(qs);
-              A.interp_T.ReInit(qs);
-              Vector<Real> alpha_vals(order);
-              Matrix<Real> Malpha(order, order), dMalpha(order, order);
-              Vector<Real> Malpha_v(order*order, Malpha.begin(), false);
-              for (Integer i = 0; i < qs; i++) {
-                for (Integer k = 0; k < order; k++) alpha_vals[k] = alpha0 + tbl.sn[i]*(a_alpha + nds[k]*e_alpha);
-                LagrangeInterp<Real>::Interpolate(Malpha_v, nds, alpha_vals);
-                Matrix<Real>::GEMM(dMalpha, D, Malpha);
-                A.interp[i].ReInit(order, 2*order);
-                for (Integer r = 0; r < order; r++) for (Integer k = 0; k < order; k++) {
-                  A.interp[i][r][k] = Malpha[r][k];
-                  A.interp[i][r][order+k] = dMalpha[r][k];
+        for (Integer ti = 0; ti < order; ti++) {
+          for (Integer tj = 0; tj < order; tj++) {
+            const Real u0 = nds[ti], v0 = nds[tj];
+            for (Integer kt = 0; kt < 4; kt++) { // Triangle joining node (ti, tj) to edge kt
+              DuffyTri<Real>& T = tbl.tri[(size_t)((ti*order + tj)*4 + kt)];
+              const Real a[2] = {CornerU[kt]-u0, CornerV[kt]-v0};
+              const Real b[2] = {CornerU[(kt+1)%4]-u0, CornerV[(kt+1)%4]-v0};
+              const Real e[2] = {b[0]-a[0], b[1]-a[1]};
+              T.J0 = a[0]*b[1] - a[1]*b[0];
+              SCTL_ASSERT_MSG(T.J0 > 0, "Duffy triangle orientation");
+              T.swap_ab = (fabs<Real>(e[0]) < fabs<Real>(e[1]));
+              T.nsign = (T.swap_ab ? (Real)-1 : (Real)1);
+              const Real alpha0 = (T.swap_ab ? v0 : u0), beta0 = (T.swap_ab ? u0 : v0);
+              const Real a_alpha = (T.swap_ab ? a[1] : a[0]), a_beta = (T.swap_ab ? a[0] : a[1]);
+              const Real e_alpha = (T.swap_ab ? e[1] : e[0]);
+              const Integer i_alpha = (T.swap_ab ? tj : ti), i_beta = (T.swap_ab ? ti : tj); // the index of the node each depends on
+              T.alpha = kt*order + i_alpha;
+              T.beta = kt*order + i_beta;
+              if (i_alpha == 0) { // Interpolation along beta, with its derivative, at the s-nodes, at the first node with this i_beta
+                DuffyBeta<Real>& B = tbl.beta[(size_t)T.beta];
+                Vector<Real> beta_vals(qs);
+                for (Integer i = 0; i < qs; i++) beta_vals[i] = beta0 + tbl.sn[i]*a_beta;
+                Matrix<Real> Mbeta(order, qs), dMbeta(order, qs);
+                Vector<Real> Mbeta_v(order*qs, Mbeta.begin(), false);
+                LagrangeInterp<Real>::Interpolate(Mbeta_v, nds, beta_vals);
+                Matrix<Real>::GEMM(dMbeta, D, Mbeta);
+                B.interp.ReInit(order, 2*qs);
+                for (Integer r = 0; r < order; r++) {
+                  for (Integer i = 0; i < qs; i++) {
+                    B.interp[r][i] = Mbeta[r][i];
+                    B.interp[r][qs+i] = dMbeta[r][i];
+                  }
                 }
-                A.interp_T[i] = Malpha.Transpose();
+                B.interp_T = Mbeta.Transpose();
+              }
+              if (i_beta == 0) { // Interpolation along alpha, with its derivative, at each s-node, at the first node with this i_alpha
+                DuffyAlpha<Real>& A = tbl.alpha[(size_t)T.alpha];
+                A.interp.ReInit(qs);
+                A.interp_T.ReInit(qs);
+                Vector<Real> alpha_vals(order);
+                Matrix<Real> Malpha(order, order), dMalpha(order, order);
+                Vector<Real> Malpha_v(order*order, Malpha.begin(), false);
+                for (Integer i = 0; i < qs; i++) {
+                  for (Integer k = 0; k < order; k++) alpha_vals[k] = alpha0 + tbl.sn[i]*(a_alpha + nds[k]*e_alpha);
+                  LagrangeInterp<Real>::Interpolate(Malpha_v, nds, alpha_vals);
+                  Matrix<Real>::GEMM(dMalpha, D, Malpha);
+                  A.interp[i].ReInit(order, 2*order);
+                  for (Integer r = 0; r < order; r++) {
+                    for (Integer k = 0; k < order; k++) {
+                      A.interp[i][r][k] = Malpha[r][k];
+                      A.interp[i][r][order+k] = dMalpha[r][k];
+                    }
+                  }
+                  A.interp_T[i] = Malpha.Transpose();
+                }
               }
             }
           }
@@ -1307,8 +1314,8 @@ namespace sctl {
     }
 
     template <Integer order, class Real, class Kernel> void SelfInteracDuffy(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
-      DuffyTable<order,Real>(); // precomp cache
-      const auto self_interac_one_trg = [&ker, digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer ti, const Integer tj) {
+      const DuffySelfTable<Real>& tbl = DuffyTable<order,Real>();
+      const auto self_interac_one_trg = [&tbl, &ker, digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer ti, const Integer tj) {
         static constexpr Integer KDIM0 = Kernel::SrcDim();
         static constexpr Integer KDIM1full = Kernel::TrgDim();
         SCTL_ASSERT(coord.Dim() == COORD_DIM*order*order && Xnnodes.Dim() == coord.Dim());
@@ -1319,7 +1326,6 @@ namespace sctl {
         if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != C) M_acc.ReInit(nnode, C);
         M_acc.SetZero();
 
-        const DuffySelfTable<Real>& tbl = DuffyTable<order,Real>();
         ScratchBuf<Real> cs_buf(COORD_DIM*nnode);
         Vector<Real> cs(cs_buf);
         ShiftedElemCoord(cs, coord, t); // relative to the target node
@@ -1399,15 +1405,19 @@ namespace sctl {
               interp_beta(Gm, FS, Tbeta.interp);
               const SmallGEMM<Real, NA, 2*order, order> interp_alpha;
               for (Integer i = 0; i < ns; i++) {
-                for (Integer k = 0; k < COORD_DIM; k++) for (Integer m = 0; m < order; m++) {
-                  As[k][m] = Gm[k*order+m][i];
-                  As[COORD_DIM+k][m] = Gm[k*order+m][ns+i];
+                for (Integer k = 0; k < COORD_DIM; k++) {
+                  for (Integer m = 0; m < order; m++) {
+                    As[k][m] = Gm[k*order+m][i];
+                    As[COORD_DIM+k][m] = Gm[k*order+m][ns+i];
+                  }
                 }
                 interp_alpha(Tmp, As, Talpha.interp[i]);
-                for (Integer k = 0; k < COORD_DIM; k++) for (Integer m = 0; m < order; m++) {
-                  HG[i*NR + k][m]               = Tmp[k][m];
-                  HG[i*NR + COORD_DIM + k][m]   = Tmp[k][order+m];
-                  HG[i*NR + 2*COORD_DIM + k][m] = Tmp[COORD_DIM+k][m];
+                for (Integer k = 0; k < COORD_DIM; k++) {
+                  for (Integer m = 0; m < order; m++) {
+                    HG[i*NR + k][m]               = Tmp[k][m];
+                    HG[i*NR + COORD_DIM + k][m]   = Tmp[k][order+m];
+                    HG[i*NR + 2*COORD_DIM + k][m] = Tmp[COORD_DIM+k][m];
+                  }
                 }
               }
               const SmallGEMM<Real, DynamicSize, DynamicSize, order> interp_t(false, ns*NR, nt, order);
@@ -1794,7 +1804,7 @@ namespace sctl {
       }
 
       ScratchBuf<Real> K(C*nq);
-      {
+      { // Kernel from the sources to the target at the origin
         StaticArray<Real,COORD_DIM> origin{(Real)0, (Real)0, (Real)0};
         const Vector<Real> normal_trg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)n : NullIterator<Real>()), false);
         WeightedKernel<Real>(K.begin(), (ConstIterator<Real>)origin, Xs.begin(), Xn.begin(), wq.begin(), nq, nq, nq, nq, (Real)1, false, normal_trg, ker);
