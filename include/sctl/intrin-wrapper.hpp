@@ -50,6 +50,14 @@
   }
 #endif
 
+// Code for AMD Zen, where vmaskmovps and vmaskmovpd take about 6 cycles per load and store (1.4-1.8 on Intel);
+// defined by -march or -mtune znver1 to znver5, or by the user
+#if !defined(SCTL_TUNE_ZEN) && (defined(__tune_znver1__) || defined(__tune_znver2__) || defined(__tune_znver3__) || \
+    defined(__tune_znver4__) || defined(__tune_znver5__) || defined(__znver1__) || defined(__znver2__) || \
+    defined(__znver3__) || defined(__znver4__) || defined(__znver5__))
+#define SCTL_TUNE_ZEN
+#endif
+
 // TODO: Replace pointers with iterators
 
 
@@ -2884,11 +2892,14 @@ namespace sctl { // SSE
   template <> inline void storeu_mask_intrin<VecData<double,2>>(double* p, VecData<double,2> vec, const Mask<VecData<double,2>>& m) { _mm_maskstore_pd(p, _mm_castpd_si128(m.v), vec.v); }
 #endif
   // The first n lanes by their count: in the leftover columns of SmallGEMM, the generic loop over the lanes of a mask
-  // was 5-8x slower, and tests of each bit of a movemask 1.4-2x. With AVX, n = 3 of 4 lanes by the masked load and
-  // store (1.4 cycles with an add, against 2.1 for two loads and two stores).
+  // was 5-8x slower, and tests of each bit of a movemask 1.4-2x. n = 3 of 4 lanes with AVX-512VL by a mask register;
+  // with AVX, except on AMD Zen, by the masked load and store (1.4-1.7 cycles with an add on Intel, against 2.1 for two
+  // loads and two stores).
   template <> inline VecData<float,4> loadu_first_intrin<VecData<float,4>>(float const* p, Integer n) {
     if (n >= 4) return _mm_loadu_ps(p);
-#if defined(__AVX__)
+#if defined(__AVX512F__) && defined(__AVX512VL__)
+    if (n == 3) return _mm_maskz_loadu_ps(__mmask8(0x7), p);
+#elif defined(__AVX__) && !defined(SCTL_TUNE_ZEN)
     if (n == 3) return _mm_maskload_ps(p, _mm_setr_epi32(-1, -1, -1, 0));
 #else
     if (n == 3) return _mm_movelh_ps(_mm_loadl_pi(_mm_setzero_ps(), (__m64 const*)p), _mm_load_ss(p + 2));
@@ -2901,7 +2912,9 @@ namespace sctl { // SSE
     if (n >= 4) {
       _mm_storeu_ps(p, vec.v);
     } else if (n == 3) {
-#if defined(__AVX__)
+#if defined(__AVX512F__) && defined(__AVX512VL__)
+      _mm_mask_storeu_ps(p, __mmask8(0x7), vec.v);
+#elif defined(__AVX__) && !defined(SCTL_TUNE_ZEN)
       _mm_maskstore_ps(p, _mm_setr_epi32(-1, -1, -1, 0), vec.v);
 #else
       _mm_storel_pi((__m64*)p, vec.v);
@@ -2939,7 +2952,9 @@ namespace sctl { // SSE
   // The first n lanes by their count, as for float and double
   template <> inline VecData<int32_t,4> loadu_first_intrin<VecData<int32_t,4>>(int32_t const* p, Integer n) {
     if (n >= 4) return _mm_loadu_si128((__m128i const*)p);
-#if defined(__AVX__)
+#if defined(__AVX512F__) && defined(__AVX512VL__)
+    if (n == 3) return _mm_maskz_loadu_epi32(__mmask8(0x7), p);
+#elif defined(__AVX__) && !defined(SCTL_TUNE_ZEN)
     if (n == 3) return _mm_castps_si128(_mm_maskload_ps((float const*)p, _mm_setr_epi32(-1, -1, -1, 0)));
 #else
     if (n == 3) return _mm_insert_epi32(_mm_loadl_epi64((__m128i const*)p), p[2], 2);
@@ -2952,7 +2967,9 @@ namespace sctl { // SSE
     if (n >= 4) {
       _mm_storeu_si128((__m128i*)p, vec.v);
     } else if (n == 3) {
-#if defined(__AVX__)
+#if defined(__AVX512F__) && defined(__AVX512VL__)
+      _mm_mask_storeu_epi32(p, __mmask8(0x7), vec.v);
+#elif defined(__AVX__) && !defined(SCTL_TUNE_ZEN)
       _mm_maskstore_ps((float*)p, _mm_setr_epi32(-1, -1, -1, 0), _mm_castsi128_ps(vec.v));
 #else
       _mm_storel_epi64((__m128i*)p, vec.v);
@@ -4189,6 +4206,45 @@ namespace sctl { // AVX
   template <> inline VecData<int64_t, 4> concat_intrin<VecData<int64_t, 2>>(const VecData<int64_t, 2>& lo, const VecData<int64_t, 2>& hi) { return _mm256_insertf128_si256(_mm256_castsi128_si256(lo.v), hi.v, 1); }
   template <> inline VecData<float  , 8> concat_intrin<VecData<float  , 4>>(const VecData<float  , 4>& lo, const VecData<float  , 4>& hi) { return _mm256_insertf128_ps(_mm256_castps128_ps256(lo.v), hi.v, 1); }
   template <> inline VecData<double , 4> concat_intrin<VecData<double , 2>>(const VecData<double , 2>& lo, const VecData<double , 2>& hi) { return _mm256_insertf128_pd(_mm256_castpd128_pd256(lo.v), hi.v, 1); }
+
+  // The first n lanes by their count: with AVX-512VL by a mask register, on AMD Zen by those of the 128-bit halves,
+  // else by the masked load and store (with the halves, SmallGEMM was up to 1.6x slower on Ice Lake)
+  #if defined(__AVX512F__) && defined(__AVX512VL__)
+  template <> inline VecData<int32_t,8> loadu_first_intrin<VecData<int32_t,8>>(int32_t const* p, Integer n) { return _mm256_maskz_loadu_epi32(__mmask8((1u << (n < 8 ? n : 8)) - 1), p); }
+  template <> inline VecData<int64_t,4> loadu_first_intrin<VecData<int64_t,4>>(int64_t const* p, Integer n) { return _mm256_maskz_loadu_epi64(__mmask8((1u << (n < 4 ? n : 4)) - 1), p); }
+  template <> inline VecData<float  ,8> loadu_first_intrin<VecData<float  ,8>>(float   const* p, Integer n) { return _mm256_maskz_loadu_ps   (__mmask8((1u << (n < 8 ? n : 8)) - 1), p); }
+  template <> inline VecData<double ,4> loadu_first_intrin<VecData<double ,4>>(double  const* p, Integer n) { return _mm256_maskz_loadu_pd   (__mmask8((1u << (n < 4 ? n : 4)) - 1), p); }
+  template <> inline void storeu_first_intrin<VecData<int32_t,8>>(int32_t* p, VecData<int32_t,8> vec, Integer n) { _mm256_mask_storeu_epi32(p, __mmask8((1u << (n < 8 ? n : 8)) - 1), vec.v); }
+  template <> inline void storeu_first_intrin<VecData<int64_t,4>>(int64_t* p, VecData<int64_t,4> vec, Integer n) { _mm256_mask_storeu_epi64(p, __mmask8((1u << (n < 4 ? n : 4)) - 1), vec.v); }
+  template <> inline void storeu_first_intrin<VecData<float  ,8>>(float  * p, VecData<float  ,8> vec, Integer n) { _mm256_mask_storeu_ps   (p, __mmask8((1u << (n < 8 ? n : 8)) - 1), vec.v); }
+  template <> inline void storeu_first_intrin<VecData<double ,4>>(double * p, VecData<double ,4> vec, Integer n) { _mm256_mask_storeu_pd   (p, __mmask8((1u << (n < 4 ? n : 4)) - 1), vec.v); }
+  #elif defined(SCTL_TUNE_ZEN)
+  template <class VData> inline VData loadu_first_halves_intrin(typename VData::ScalarType const* p, Integer n) {
+    using HalfVec = VecData<typename VData::ScalarType, VData::Size/2>;
+    if (n >= VData::Size) return loadu_intrin<VData>(p);
+    if (n > HalfVec::Size) return concat_intrin(loadu_intrin<HalfVec>(p), loadu_first_intrin<HalfVec>(p + HalfVec::Size, n - HalfVec::Size));
+    return concat_intrin(loadu_first_intrin<HalfVec>(p, n), zero_intrin<HalfVec>());
+  }
+  template <class VData> inline void storeu_first_halves_intrin(typename VData::ScalarType* p, const VData& vec, Integer n) {
+    using HalfVec = VecData<typename VData::ScalarType, VData::Size/2>;
+    if (n >= VData::Size) {
+      storeu_intrin(p, vec);
+    } else if (n > HalfVec::Size) {
+      storeu_intrin(p, get_low_intrin(vec));
+      storeu_first_intrin(p + HalfVec::Size, get_high_intrin(vec), n - HalfVec::Size);
+    } else {
+      storeu_first_intrin(p, get_low_intrin(vec), n);
+    }
+  }
+  template <> inline VecData<int32_t,8> loadu_first_intrin<VecData<int32_t,8>>(int32_t const* p, Integer n) { return loadu_first_halves_intrin<VecData<int32_t,8>>(p, n); }
+  template <> inline VecData<int64_t,4> loadu_first_intrin<VecData<int64_t,4>>(int64_t const* p, Integer n) { return loadu_first_halves_intrin<VecData<int64_t,4>>(p, n); }
+  template <> inline VecData<float  ,8> loadu_first_intrin<VecData<float  ,8>>(float   const* p, Integer n) { return loadu_first_halves_intrin<VecData<float  ,8>>(p, n); }
+  template <> inline VecData<double ,4> loadu_first_intrin<VecData<double ,4>>(double  const* p, Integer n) { return loadu_first_halves_intrin<VecData<double ,4>>(p, n); }
+  template <> inline void storeu_first_intrin<VecData<int32_t,8>>(int32_t* p, VecData<int32_t,8> vec, Integer n) { storeu_first_halves_intrin(p, vec, n); }
+  template <> inline void storeu_first_intrin<VecData<int64_t,4>>(int64_t* p, VecData<int64_t,4> vec, Integer n) { storeu_first_halves_intrin(p, vec, n); }
+  template <> inline void storeu_first_intrin<VecData<float  ,8>>(float  * p, VecData<float  ,8> vec, Integer n) { storeu_first_halves_intrin(p, vec, n); }
+  template <> inline void storeu_first_intrin<VecData<double ,4>>(double * p, VecData<double ,4> vec, Integer n) { storeu_first_halves_intrin(p, vec, n); }
+  #endif
 
   #ifdef __AVX2__
   template <> inline VecData<int16_t,16> div_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { // through float, exact for 16 bits; the low 16 bits of the quotient, as the C++ conversion
