@@ -90,7 +90,7 @@ namespace sctl {
      * the i-th Lagrange basis function on ParamNodes(order) at j-th node.
      */
     template <class Real> inline const Matrix<Real>& DiffMat(const Integer order) {
-      SCTL_ASSERT(0 < order && order <= MaxTableOrder);
+      SCTL_ASSERT(1 < order && order <= MaxTableOrder);
       static const Vector<Matrix<Real>> all = []() {
         Vector<Matrix<Real>> D(MaxTableOrder + 1);
         for (Integer n = 2; n <= MaxTableOrder; n++) LagrangeDiffMat(D[n], QuadElemList<Real>::ParamNodes(n));
@@ -354,7 +354,7 @@ namespace sctl {
           const auto neighbor_gap = [&nds, order](const Real x) {
             Integer i = 0;
             for (Integer j = 1; j < order; j++) if (fabs(nds[j] - x) < fabs(nds[i] - x)) i = j;
-            Real gap = (order > 1 ? 0 : (Real)0.5);
+            Real gap = 0;
             if (i > 0) gap = std::max<Real>(gap, nds[i] - nds[i-1]);
             if (i < order-1) gap = std::max<Real>(gap, nds[i+1] - nds[i]);
             return gap;
@@ -976,8 +976,8 @@ namespace sctl {
           const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
           const Real d = -log<Real>(tol_)/log<Real>((Real)10);
           const Real rho = std::min<Real>(3, std::max<Real>(2, 2 + (Real)0.25*(d - 6)));
-          const Real C = std::max<Real>((Real)1e-3, (15*(rho*rho - 1))/64);
-          quad_order = std::max<Integer>(2, (Integer)ceil<Real>(-log<Real>(C*tol_)/log<Real>(rho)*(Real)0.5 + 1));
+          const Real C = (15*(rho*rho - 1))/64;
+          quad_order = (Integer)ceil<Real>(-log<Real>(C*tol_)/log<Real>(rho)*(Real)0.5 + 1);
 
           const Real a = (rho + 1/rho)/2, b = (rho - 1/rho)/2;
           b_ellipse = b*b/(2*a);
@@ -1138,7 +1138,7 @@ namespace sctl {
         Integer nseg[2][2] = {{0, 0}, {0, 0}};
         ScratchBuf<Real> seg_buf(4*2*MaxSegments, pool);
         { // Segments of each side, offsets from the closest point in units of the side's length, graded geometrically toward it down to w_stop in parameter units
-          const Real r = std::min<Real>((Real)0.9, b_ellipse/(1 + b_ellipse) * (Real)1.05);
+          const Real r = b_ellipse/(1 + b_ellipse) * (Real)1.05;
           for (Integer d = 0; d < 2; d++) {
             for (Integer sd = 0; sd < 2; sd++) {
               const Real span = split.slen[d][sd];
