@@ -802,26 +802,6 @@ namespace sctl {
       return all[order];
     }
 
-    /** Returns the derivatives of the Lagrange basis on the nodes NearSubOffsets(order), with respect to one minus the offset (order x order), computed in PrecompReal. */
-    template <Integer order, class Real> const Matrix<Real>& NearSubDiffMat() {
-      static const Matrix<Real> D = []() {
-        using W = PrecompReal;
-        Vector<W> sub_nds(order);
-        for (Integer i = 0; i < order; i++) {
-          const W sh = sin<W>(const_pi<W>()*i/(2*(order-1)));
-          sub_nds[i] = sh*sh;
-        }
-        sub_nds[0] = 0;
-        sub_nds[order-1] = 1;
-        Matrix<W> Dw;
-        LagrangeDiffMat(Dw, sub_nds);
-        Matrix<Real> D_(order, order);
-        for (Integer i = 0; i < order; i++) for (Integer j = 0; j < order; j++) D_[i][j] = (Real)Dw[i][j];
-        return D_;
-      }();
-      return D;
-    }
-
     /** sets r, already sized for nseg*q points, to the q-point Gauss-Legendre rule (nodes qn, weights qw on [0, 1]) on each segment [seg[2i], seg[2i+1]] of offsets from the refined end, with the interpolation matrices from the nodes NearSubOffsets(order); computed in W */
     template <Integer order, class W, class Real> void NearSegmentRule(QuadRule1D<Real>& r, ConstIterator<W> seg, const Integer nseg, const Vector<W>& qn, const Vector<W>& qw) {
       const Integer q = qn.Dim();
@@ -837,9 +817,24 @@ namespace sctl {
         }
       }
       LagrangeInterp<W>::Interpolate(Twts, NearSubOffsets<W>(order), tq);
+      static const Matrix<W> D_sub = []() { // derivatives of the Lagrange basis on the nodes NearSubOffsets(order), with respect to one minus the offset (order x order), computed in PrecompReal
+        using P = PrecompReal;
+        Vector<P> sub_nds(order);
+        for (Integer i = 0; i < order; i++) {
+          const P sh = sin<P>(const_pi<P>()*i/(2*(order-1)));
+          sub_nds[i] = sh*sh;
+        }
+        sub_nds[0] = 0;
+        sub_nds[order-1] = 1;
+        Matrix<P> Dp;
+        LagrangeDiffMat(Dp, sub_nds);
+        Matrix<W> D(order, order);
+        for (Integer i = 0; i < order; i++) for (Integer j = 0; j < order; j++) D[i][j] = (W)Dp[i][j];
+        return D;
+      }();
       const Matrix<W> T(order, N, Twts.begin(), false);
       Matrix<W> dT(order, N, dT_buf.begin(), false);
-      Matrix<W>::GEMM(dT, NearSubDiffMat<order,W>(), T);
+      Matrix<W>::GEMM(dT, D_sub, T);
       for (Integer i = 0; i < order; i++) for (Integer j = 0; j < N; j++) {
         r.M[i][j] = (Real)T[i][j];
         r.dM[i][j] = (Real)dT[i][j];
@@ -1315,167 +1310,163 @@ namespace sctl {
       return table;
     }
 
-    template <Integer order, class Real, class Kernel> void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer ti, const Integer tj, const bool trg_dot_prod, const Kernel& ker, const Integer digits) {
-      static constexpr Integer KDIM0 = Kernel::SrcDim();
-      static constexpr Integer KDIM1full = Kernel::TrgDim();
-      SCTL_ASSERT(coord.Dim() == COORD_DIM*order*order && Xnnodes.Dim() == coord.Dim());
-      const Integer nnode = order*order;
-      const Integer t = ti*order + tj;
-      const Integer KDIM1_out = trg_dot_prod ? KDIM1full/COORD_DIM : KDIM1full;
-      const Integer C = KDIM0*KDIM1_out;
-      if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != C) M_acc.ReInit(nnode, C);
-      M_acc.SetZero();
-
-      const DuffySelfTable<Real>& tbl = DuffyTable<order,Real>();
-      const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
-      ScratchBuf<Real> cs_buf(COORD_DIM*nnode);
-      Vector<Real> cs(cs_buf);
-      ShiftedElemCoord(cs, coord, t); // relative to the target node
-
-      Real guu, guv, gvv; // metric of the element at the target node
-      NodeMetric(guu, guv, gvv, dXu, dXv, t);
-
-      const Integer ns = tbl.ns;
-      static constexpr Integer MaxGLOrder = 128; // the largest angular rule
-      const Integer nt = std::min<Integer>(MaxGLOrder, std::max<Integer>(order/2, (Integer)ceil<Real>(KDIM0 > 1 ? (Real)4.75*digits - (Real)9.5 + (Real)0.625*order : (Real)3*digits - 6 + (Real)order/4))); // fitted to the smallest angular orders meeting the tolerance
-      const Integer nq = ns*nt;
-      ScratchBuf<Real> csT(COORD_DIM*nnode);
-      { // cs with u and v exchanged, for the triangles with swap_ab
-        for (Integer k = 0; k < COORD_DIM; k++) {
-          for (Integer i = 0; i < order; i++) {
-            for (Integer j = 0; j < order; j++) csT[k*nnode + j*order + i] = cs[k*nnode + i*order + j];
-          }
-        }
-      }
-      for (Integer kt = 0; kt < 4; kt++) { // Triangles joining the target node to each edge
-        const DuffyTri<Real>& T = tbl.tri[(size_t)((ti*order + tj)*4 + kt)];
-        const DuffyAlpha<Real>& Talpha = tbl.alpha[(size_t)T.alpha];
-        const DuffyBeta<Real>& Tbeta = tbl.beta[(size_t)T.beta];
-
-        Real tstar, dOverL;
-        { // Closest edge point, and its distance over edge length
-          const Real u0 = nds[ti], v0 = nds[tj];
-          const Real cu[4] = {0,1,1,0}, cv[4] = {0,0,1,1};
-          const Real a[2] = {cu[kt]-u0, cv[kt]-v0};
-          const Real e[2] = {cu[(kt+1)%4]-cu[kt], cv[(kt+1)%4]-cv[kt]};
-          const Real Me[2] = {guu*e[0]+guv*e[1], guv*e[0]+gvv*e[1]};
-          const Real am = e[0]*Me[0] + e[1]*Me[1];
-          Real ts = -(a[0]*Me[0] + a[1]*Me[1])/am;
-          ts = (ts < 0 ? (Real)0 : (ts > 1 ? (Real)1 : ts));
-          const Real c[2] = {a[0]+ts*e[0], a[1]+ts*e[1]};
-          const Real d2 = c[0]*(guu*c[0]+guv*c[1]) + c[1]*(guv*c[0]+gvv*c[1]);
-          tstar = ts;
-          dOverL = sqrt<Real>(d2)/sqrt<Real>(am);
-        }
-
-        ScratchBuf<Real> tw(nt), Tt_buf(order*nt), TtT_buf(nt*order);
-        { // Rule along t, graded toward the closest edge point
-          const Vector<Real>& qn = LegQuadRule<Real>::template nds<MaxGLOrder>(nt);
-          const Vector<Real>& qw = LegQuadRule<Real>::template wts<MaxGLOrder>(nt);
-          const auto arcsinh = [](const Real x) { return log<Real>(x + sqrt<Real>(x*x + (Real)1)); };
-          ScratchBuf<Real> tn_buf(nt);
-          Vector<Real> tn(tn_buf);
-          const Real x0 = -arcsinh(tstar/dOverL), x1 = arcsinh(((Real)1-tstar)/dOverL);
-          for (Integer i = 0; i < nt; i++) {
-            const Real xi = x0 + (x1-x0)*qn[i];
-            const Real ex = exp<Real>(xi), iex = (Real)1/ex;
-            tn[i] = tstar + dOverL*(ex-iex)/(Real)2;
-            tw[i] = dOverL*(ex+iex)/(Real)2*(x1-x0)*qw[i];
-          }
-          Vector<Real> Tt_v(Tt_buf);
-          LagrangeInterp<Real>::Interpolate(Tt_v, nds, tn);
-          for (Integer r = 0; r < order; r++) for (Integer j = 0; j < nt; j++) TtT_buf[j*order + r] = Tt_buf[r*nt + j];
-        }
-        const Matrix<Real> Tt(order, nt, Tt_buf.begin(), false);
-        const Matrix<Real> TtT(nt, order, TtT_buf.begin(), false);
-
-        ScratchBuf<Real> Xs(COORD_DIM*nq), Xn(COORD_DIM*nq), wq(nq);
-        { // Points, normals and weights of the triangle's rule
-          constexpr Integer NR = 3*COORD_DIM;
-          ScratchBuf<Real> XdX_buf(ns*NR*nt);
-          Matrix<Real> XdX(ns*NR, nt, XdX_buf.begin(), false);
-          { // Interpolate positions and tangents to the rule's points
-            constexpr Integer NA = 2*COORD_DIM;
-            ScratchBuf<Real> Gm_buf(2*COORD_DIM*order*ns);
-            ScratchBuf<Real> As_buf(NA*order), Tmp_buf(2*NA*order), HG_buf(ns*NR*order);
-            const Matrix<Real> FS(COORD_DIM*order, order, (T.swap_ab ? csT.begin() : cs.begin()), false);
-            Matrix<Real> Gm(COORD_DIM*order, 2*ns, Gm_buf.begin(), false);
-            Matrix<Real> As(NA, order, As_buf.begin(), false);
-            Matrix<Real> Tmp(NA, 2*order, Tmp_buf.begin(), false);
-            Matrix<Real> HG(ns*NR, order, HG_buf.begin(), false);
-            const SmallGEMM<Real, COORD_DIM*order, DynamicSize, order> interp_beta(false, COORD_DIM*order, 2*ns, order);
-            interp_beta(Gm, FS, Tbeta.interp);
-            const SmallGEMM<Real, NA, 2*order, order> interp_alpha;
-            for (Integer i = 0; i < ns; i++) {
-              for (Integer k = 0; k < COORD_DIM; k++) for (Integer m = 0; m < order; m++) {
-                As[k][m] = Gm[k*order+m][i];
-                As[COORD_DIM+k][m] = Gm[k*order+m][ns+i];
-              }
-              interp_alpha(Tmp, As, Talpha.interp[i]);
-              for (Integer k = 0; k < COORD_DIM; k++) for (Integer m = 0; m < order; m++) {
-                HG[i*NR + k][m]               = Tmp[k][m];
-                HG[i*NR + COORD_DIM + k][m]   = Tmp[k][order+m];
-                HG[i*NR + 2*COORD_DIM + k][m] = Tmp[COORD_DIM+k][m];
-              }
-            }
-            const SmallGEMM<Real, DynamicSize, DynamicSize, order> interp_t(false, ns*NR, nt, order);
-            interp_t(XdX, HG, Tt);
-          }
-          for (Integer i = 0; i < ns; i++) {
-            const Real jw = tbl.sn[i]*T.J0*tbl.sw[i];
-            for (Integer j = 0; j < nt; j++) {
-              const Integer q = i*nt + j;
-              const Real a0 = XdX[i*NR+COORD_DIM+0][j], a1 = XdX[i*NR+COORD_DIM+1][j], a2 = XdX[i*NR+COORD_DIM+2][j];
-              const Real b0 = XdX[i*NR+2*COORD_DIM+0][j], b1 = XdX[i*NR+2*COORD_DIM+1][j], b2 = XdX[i*NR+2*COORD_DIM+2][j];
-              const Real n0 = T.nsign*(a1*b2-a2*b1), n1 = T.nsign*(a2*b0-a0*b2), n2 = T.nsign*(a0*b1-a1*b0);
-              const Real ar = sqrt<Real>(n0*n0+n1*n1+n2*n2), ia = (ar > 0 ? (Real)1/ar : (Real)0);
-              for (Integer k = 0; k < COORD_DIM; k++) Xs[k*nq+q] = XdX[i*NR+k][j];
-              Xn[0*nq+q] = n0*ia;
-              Xn[1*nq+q] = n1*ia;
-              Xn[2*nq+q] = n2*ia;
-              wq[q] = ar*jw*tw[j];
-            }
-          }
-        }
-
-        ScratchBuf<Real> KW_buf(C*nq);
-        { // Weighted kernel at the rule's points
-          StaticArray<Real,COORD_DIM> Xt0{0,0,0};
-          const Vector<Real> Xt0_v(COORD_DIM, Xt0, false);
-          const Vector<Real> normal_trg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-          WeightedKernel<Real>(KW_buf.begin(), Xt0_v.begin(), Xs.begin(), Xn.begin(), wq.begin(), ns*nt, nt, ns*nt, nt, (Real)1, false, normal_trg, ker);
-        }
-
-        { // Project onto the element nodes and add into M_acc
-          ScratchBuf<Real> Zall_buf(ns*C*order), Yi_buf(C*order), Yall_buf(C*order*ns), Pc_buf(nnode);
-          const Matrix<Real> KW(ns*C, nt, KW_buf.begin(), false);
-          Matrix<Real> Zall(ns*C, order, Zall_buf.begin(), false);
-          Matrix<Real> Yi(C, order, Yi_buf.begin(), false);
-          Matrix<Real> Yall(C*order, ns, Yall_buf.begin(), false);
-          Matrix<Real> Pc(order, order, Pc_buf.begin(), false);
-          const SmallGEMM<Real, DynamicSize, order, DynamicSize> proj_t(false, ns*C, order, nt);
-          proj_t(Zall, KW, TtT);
-          const SmallGEMM<Real, DynamicSize, order, order> proj_alpha(false, C, order, order);
-          for (Integer i = 0; i < ns; i++) {
-            const Matrix<Real> Zi(C, order, (Iterator<Real>)Zall.begin() + i*C*order, false);
-            proj_alpha(Yi, Zi, Talpha.interp_T[i]);
-            for (Integer c = 0; c < C; c++) for (Integer m = 0; m < order; m++) Yall[c*order+m][i] = Yi[c][m];
-          }
-          const SmallGEMM<Real, order, order, DynamicSize> proj_beta(false, order, order, ns);
-          for (Integer c = 0; c < C; c++) {
-            const Matrix<Real> Yc(order, ns, (Iterator<Real>)Yall.begin() + c*order*ns, false);
-            proj_beta(Pc, Yc, Tbeta.interp_T);
-            for (Integer m = 0; m < order; m++) for (Integer n = 0; n < order; n++)
-              M_acc[T.swap_ab ? n*order+m : m*order+n][c] += Pc[m][n];
-          }
-        }
-      }
-    }
-
     template <Integer order, class Real, class Kernel> void SelfInteracDuffy(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       DuffyTable<order,Real>(); // precomp cache
       const auto self_interac_one_trg = [&ker, digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer ti, const Integer tj) {
-        SelfInteracBlockDuffy<order,Real>(M_acc, coord, Xnnodes, dXu, dXv, ti, tj, trg_dot_prod, ker, digits);
+        static constexpr Integer KDIM0 = Kernel::SrcDim();
+        static constexpr Integer KDIM1full = Kernel::TrgDim();
+        SCTL_ASSERT(coord.Dim() == COORD_DIM*order*order && Xnnodes.Dim() == coord.Dim());
+        const Integer nnode = order*order;
+        const Integer t = ti*order + tj;
+        const Integer KDIM1_out = trg_dot_prod ? KDIM1full/COORD_DIM : KDIM1full;
+        const Integer C = KDIM0*KDIM1_out;
+        if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != C) M_acc.ReInit(nnode, C);
+        M_acc.SetZero();
+
+        const DuffySelfTable<Real>& tbl = DuffyTable<order,Real>();
+        const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+        ScratchBuf<Real> cs_buf(COORD_DIM*nnode);
+        Vector<Real> cs(cs_buf);
+        ShiftedElemCoord(cs, coord, t); // relative to the target node
+
+        Real guu, guv, gvv; // metric of the element at the target node
+        NodeMetric(guu, guv, gvv, dXu, dXv, t);
+
+        const Integer ns = tbl.ns;
+        static constexpr Integer MaxGLOrder = 128; // the largest angular rule
+        const Integer nt = std::min<Integer>(MaxGLOrder, std::max<Integer>(order/2, (Integer)ceil<Real>(KDIM0 > 1 ? (Real)4.75*digits - (Real)9.5 + (Real)0.625*order : (Real)3*digits - 6 + (Real)order/4))); // fitted to the smallest angular orders meeting the tolerance
+        const Integer nq = ns*nt;
+        ScratchBuf<Real> csT(COORD_DIM*nnode);
+        { // cs with u and v exchanged, for the triangles with swap_ab
+          for (Integer k = 0; k < COORD_DIM; k++) {
+            for (Integer i = 0; i < order; i++) {
+              for (Integer j = 0; j < order; j++) csT[k*nnode + j*order + i] = cs[k*nnode + i*order + j];
+            }
+          }
+        }
+        for (Integer kt = 0; kt < 4; kt++) { // Triangles joining the target node to each edge
+          const DuffyTri<Real>& T = tbl.tri[(size_t)((ti*order + tj)*4 + kt)];
+          const DuffyAlpha<Real>& Talpha = tbl.alpha[(size_t)T.alpha];
+          const DuffyBeta<Real>& Tbeta = tbl.beta[(size_t)T.beta];
+
+          Real tstar, dOverL;
+          { // Closest edge point, and its distance over edge length
+            const Real u0 = nds[ti], v0 = nds[tj];
+            const Real cu[4] = {0,1,1,0}, cv[4] = {0,0,1,1};
+            const Real a[2] = {cu[kt]-u0, cv[kt]-v0};
+            const Real e[2] = {cu[(kt+1)%4]-cu[kt], cv[(kt+1)%4]-cv[kt]};
+            const Real Me[2] = {guu*e[0]+guv*e[1], guv*e[0]+gvv*e[1]};
+            const Real am = e[0]*Me[0] + e[1]*Me[1];
+            Real ts = -(a[0]*Me[0] + a[1]*Me[1])/am;
+            ts = (ts < 0 ? (Real)0 : (ts > 1 ? (Real)1 : ts));
+            const Real c[2] = {a[0]+ts*e[0], a[1]+ts*e[1]};
+            const Real d2 = c[0]*(guu*c[0]+guv*c[1]) + c[1]*(guv*c[0]+gvv*c[1]);
+            tstar = ts;
+            dOverL = sqrt<Real>(d2)/sqrt<Real>(am);
+          }
+
+          ScratchBuf<Real> tw(nt), Tt_buf(order*nt), TtT_buf(nt*order);
+          { // Rule along t, graded toward the closest edge point
+            const Vector<Real>& qn = LegQuadRule<Real>::template nds<MaxGLOrder>(nt);
+            const Vector<Real>& qw = LegQuadRule<Real>::template wts<MaxGLOrder>(nt);
+            const auto arcsinh = [](const Real x) { return log<Real>(x + sqrt<Real>(x*x + (Real)1)); };
+            ScratchBuf<Real> tn_buf(nt);
+            Vector<Real> tn(tn_buf);
+            const Real x0 = -arcsinh(tstar/dOverL), x1 = arcsinh(((Real)1-tstar)/dOverL);
+            for (Integer i = 0; i < nt; i++) {
+              const Real xi = x0 + (x1-x0)*qn[i];
+              const Real ex = exp<Real>(xi), iex = (Real)1/ex;
+              tn[i] = tstar + dOverL*(ex-iex)/(Real)2;
+              tw[i] = dOverL*(ex+iex)/(Real)2*(x1-x0)*qw[i];
+            }
+            Vector<Real> Tt_v(Tt_buf);
+            LagrangeInterp<Real>::Interpolate(Tt_v, nds, tn);
+            for (Integer r = 0; r < order; r++) for (Integer j = 0; j < nt; j++) TtT_buf[j*order + r] = Tt_buf[r*nt + j];
+          }
+          const Matrix<Real> Tt(order, nt, Tt_buf.begin(), false);
+          const Matrix<Real> TtT(nt, order, TtT_buf.begin(), false);
+
+          ScratchBuf<Real> Xs(COORD_DIM*nq), Xn(COORD_DIM*nq), wq(nq);
+          { // Points, normals and weights of the triangle's rule
+            constexpr Integer NR = 3*COORD_DIM;
+            ScratchBuf<Real> XdX_buf(ns*NR*nt);
+            Matrix<Real> XdX(ns*NR, nt, XdX_buf.begin(), false);
+            { // Interpolate positions and tangents to the rule's points
+              constexpr Integer NA = 2*COORD_DIM;
+              ScratchBuf<Real> Gm_buf(2*COORD_DIM*order*ns);
+              ScratchBuf<Real> As_buf(NA*order), Tmp_buf(2*NA*order), HG_buf(ns*NR*order);
+              const Matrix<Real> FS(COORD_DIM*order, order, (T.swap_ab ? csT.begin() : cs.begin()), false);
+              Matrix<Real> Gm(COORD_DIM*order, 2*ns, Gm_buf.begin(), false);
+              Matrix<Real> As(NA, order, As_buf.begin(), false);
+              Matrix<Real> Tmp(NA, 2*order, Tmp_buf.begin(), false);
+              Matrix<Real> HG(ns*NR, order, HG_buf.begin(), false);
+              const SmallGEMM<Real, COORD_DIM*order, DynamicSize, order> interp_beta(false, COORD_DIM*order, 2*ns, order);
+              interp_beta(Gm, FS, Tbeta.interp);
+              const SmallGEMM<Real, NA, 2*order, order> interp_alpha;
+              for (Integer i = 0; i < ns; i++) {
+                for (Integer k = 0; k < COORD_DIM; k++) for (Integer m = 0; m < order; m++) {
+                  As[k][m] = Gm[k*order+m][i];
+                  As[COORD_DIM+k][m] = Gm[k*order+m][ns+i];
+                }
+                interp_alpha(Tmp, As, Talpha.interp[i]);
+                for (Integer k = 0; k < COORD_DIM; k++) for (Integer m = 0; m < order; m++) {
+                  HG[i*NR + k][m]               = Tmp[k][m];
+                  HG[i*NR + COORD_DIM + k][m]   = Tmp[k][order+m];
+                  HG[i*NR + 2*COORD_DIM + k][m] = Tmp[COORD_DIM+k][m];
+                }
+              }
+              const SmallGEMM<Real, DynamicSize, DynamicSize, order> interp_t(false, ns*NR, nt, order);
+              interp_t(XdX, HG, Tt);
+            }
+            for (Integer i = 0; i < ns; i++) {
+              const Real jw = tbl.sn[i]*T.J0*tbl.sw[i];
+              for (Integer j = 0; j < nt; j++) {
+                const Integer q = i*nt + j;
+                const Real a0 = XdX[i*NR+COORD_DIM+0][j], a1 = XdX[i*NR+COORD_DIM+1][j], a2 = XdX[i*NR+COORD_DIM+2][j];
+                const Real b0 = XdX[i*NR+2*COORD_DIM+0][j], b1 = XdX[i*NR+2*COORD_DIM+1][j], b2 = XdX[i*NR+2*COORD_DIM+2][j];
+                const Real n0 = T.nsign*(a1*b2-a2*b1), n1 = T.nsign*(a2*b0-a0*b2), n2 = T.nsign*(a0*b1-a1*b0);
+                const Real ar = sqrt<Real>(n0*n0+n1*n1+n2*n2), ia = (ar > 0 ? (Real)1/ar : (Real)0);
+                for (Integer k = 0; k < COORD_DIM; k++) Xs[k*nq+q] = XdX[i*NR+k][j];
+                Xn[0*nq+q] = n0*ia;
+                Xn[1*nq+q] = n1*ia;
+                Xn[2*nq+q] = n2*ia;
+                wq[q] = ar*jw*tw[j];
+              }
+            }
+          }
+
+          ScratchBuf<Real> KW_buf(C*nq);
+          { // Weighted kernel at the rule's points
+            StaticArray<Real,COORD_DIM> Xt0{0,0,0};
+            const Vector<Real> Xt0_v(COORD_DIM, Xt0, false);
+            const Vector<Real> normal_trg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
+            WeightedKernel<Real>(KW_buf.begin(), Xt0_v.begin(), Xs.begin(), Xn.begin(), wq.begin(), ns*nt, nt, ns*nt, nt, (Real)1, false, normal_trg, ker);
+          }
+
+          { // Project onto the element nodes and add into M_acc
+            ScratchBuf<Real> Zall_buf(ns*C*order), Yi_buf(C*order), Yall_buf(C*order*ns), Pc_buf(nnode);
+            const Matrix<Real> KW(ns*C, nt, KW_buf.begin(), false);
+            Matrix<Real> Zall(ns*C, order, Zall_buf.begin(), false);
+            Matrix<Real> Yi(C, order, Yi_buf.begin(), false);
+            Matrix<Real> Yall(C*order, ns, Yall_buf.begin(), false);
+            Matrix<Real> Pc(order, order, Pc_buf.begin(), false);
+            const SmallGEMM<Real, DynamicSize, order, DynamicSize> proj_t(false, ns*C, order, nt);
+            proj_t(Zall, KW, TtT);
+            const SmallGEMM<Real, DynamicSize, order, order> proj_alpha(false, C, order, order);
+            for (Integer i = 0; i < ns; i++) {
+              const Matrix<Real> Zi(C, order, (Iterator<Real>)Zall.begin() + i*C*order, false);
+              proj_alpha(Yi, Zi, Talpha.interp_T[i]);
+              for (Integer c = 0; c < C; c++) for (Integer m = 0; m < order; m++) Yall[c*order+m][i] = Yi[c][m];
+            }
+            const SmallGEMM<Real, order, order, DynamicSize> proj_beta(false, order, order, ns);
+            for (Integer c = 0; c < C; c++) {
+              const Matrix<Real> Yc(order, ns, (Iterator<Real>)Yall.begin() + c*order*ns, false);
+              proj_beta(Pc, Yc, Tbeta.interp_T);
+              for (Integer m = 0; m < order; m++) for (Integer n = 0; n < order; n++)
+                M_acc[T.swap_ab ? n*order+m : m*order+n][c] += Pc[m][n];
+            }
+          }
+        }
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }
@@ -1573,22 +1564,6 @@ namespace sctl {
     template <class Real> static constexpr Integer MaxRefineLvl = GetSigBits<Real>::value();
     static constexpr Integer SelfMaxQuadOrder = 60;
     static constexpr Integer SelfMaxLvlV = 12;
-
-    /** sets M_acc[p][c] to the (ru,rv) integral at the target of kernel component c times basis p; coord_shift are the nodal coordinates relative to the target */
-    template <Integer order, class Real, class Kernel> void IntegratePanel(Matrix<Real>& M_acc, const Vector<Real>& coord_shift, const Vector<Real>& normal_trg, const QuadRule1D<Real>& ru, const QuadRule1D<Real>& rv, const Kernel& ker) {
-      static constexpr Integer KDIM0 = Kernel::SrcDim();
-      static constexpr Integer KDIM1full = Kernel::TrgDim();
-      SCTL_ASSERT(coord_shift.Dim() == COORD_DIM*order*order);
-      const Integer nnode = order * order;
-      const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full / COORD_DIM : KDIM1full;
-      const Integer C = KDIM0 * KDIM1_out;
-
-      ScratchBuf<Real> acc_buf(C*nnode);
-      Vector<Real> acc(acc_buf);
-      acc.SetZero();
-      IntegrateTensorRule<order,Real>(acc, coord_shift, ru, rv, normal_trg, ker);
-      for (Integer p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] = acc[c*nnode + p];
-    }
 
     template <Integer order, class Real> void LagrangeAtOffset(Matrix<Real>& M, Matrix<Real>& dM, Matrix<Real>& MTD, const Vector<Real>& delta, const Integer ti) {
       const Integer N = (Integer)delta.Dim();
@@ -1757,7 +1732,14 @@ namespace sctl {
         const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
         const QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits, quad_order);
         const QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, lvl_v, quad_order);
-        IntegratePanel<order,Real>(M_acc, cs, ntrg, ru, rv, ker);
+        { // M_acc[p][c]: the (ru, rv) integral at the target of kernel component c times basis p
+          const Integer C = Kernel::SrcDim() * (ntrg.Dim() > 0 ? Kernel::TrgDim()/COORD_DIM : Kernel::TrgDim());
+          ScratchBuf<Real> acc_buf(C*nnode);
+          Vector<Real> acc(acc_buf);
+          acc.SetZero();
+          IntegrateTensorRule<order,Real>(acc, cs, ru, rv, ntrg, ker);
+          for (Integer p = 0; p < nnode; p++) for (Integer c = 0; c < C; c++) M_acc[p][c] = acc[c*nnode + p];
+        }
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }
@@ -1766,7 +1748,6 @@ namespace sctl {
 
   namespace detail_singular_check {
 
-    using detail_quadelem::Access;
     using detail_quadelem::COORD_DIM;
 
     using detail_quadelem::WeightedKernel;
@@ -1840,40 +1821,6 @@ namespace sctl {
         if (std::max<Real>(A1, A2) > Kmax*(Real)1e-12) d = std::max<Real>(d, log<Real>(A1/A2)/log<Real>((Real)2)); // entries that vanish are skipped
       }
       return d;
-    }
-
-    /** prints a warning, once per process for each kernel and trg_dot_prod and only on rank 0 of MPI_COMM_WORLD, when the self-interaction rule of the list's scheme (TensorProduct or Duffy) is wrong for the kernel: SurfaceSingularDegree above 1.5, with h 1e-4 times the size of the first element */
-    template <class Real, class Kernel> void WarnStronglySingular(const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel) {
-      const auto scheme = Access<Real>::Scheme(qel);
-      if (scheme == QuadElemList<Real>::QuadScheme::Hedgehog) return;
-      Real size = 1;
-      if (qel.Size()) { // diagonal of the bounding box of the first element's nodes
-        const Integer nnode = qel.Order()*qel.Order();
-        const Vector<Real>& coord = Access<Real>::Coord(qel);
-        Real diag2 = 0;
-        for (Integer k = 0; k < COORD_DIM; k++) {
-          Real lo = coord[k*nnode], hi = coord[k*nnode];
-          for (Integer p = 1; p < nnode; p++) {
-            lo = std::min<Real>(lo, coord[k*nnode + p]);
-            hi = std::max<Real>(hi, coord[k*nnode + p]);
-          }
-          diag2 += (hi - lo)*(hi - lo);
-        }
-        size = sqrt<Real>(diag2);
-      }
-      const Real d = SurfaceSingularDegree<Real>(ker, trg_dot_prod, (Real)1e-4*size);
-      if (!(d > (Real)1.5)) return;
-#ifdef SCTL_HAVE_MPI
-      { // rank in MPI_COMM_WORLD, without Comm::World(), whose MPI_Comm_dup is collective
-        int rank = 0;
-        if (comm_detail::MPIIsActive()) MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-        if (rank != 0) return;
-      }
-#endif
-      static std::array<std::once_flag, 2> warned;
-      std::call_once(warned[trg_dot_prod ? 1 : 0], [&ker, trg_dot_prod, scheme, d]() {
-        SCTL_WARN("QuadElemList: the self-interaction integrand of " << ker.Name() << (trg_dot_prod ? " dotted with the target normal" : "") << " grows like 1/r^" << std::lround((double)d) << " along the surface, but the " << (scheme == QuadElemList<Real>::QuadScheme::Duffy ? "Duffy" : "TensorProduct") << " rule is accurate only up to 1/r, so the self-interactions are wrong; use QuadScheme::Hedgehog.");
-      });
     }
 
   }
@@ -2123,7 +2070,38 @@ namespace sctl {
 
   template <class Real> template <class Kernel> void QuadElemList<Real>::SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const Real tol, const bool trg_dot_prod, const ElementListBase<Real>* self) {
     const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
-    detail_singular_check::WarnStronglySingular<Real>(ker, trg_dot_prod, qel); // also for an empty list, so that rank 0 checks
+    [&ker, trg_dot_prod, &qel]() { // Prints a warning, once per process for each kernel and trg_dot_prod and only on rank 0 of MPI_COMM_WORLD, when the self-interaction rule of the list's scheme (TensorProduct or Duffy) is wrong for the kernel: SurfaceSingularDegree above 1.5, with h 1e-4 times the size of the first element; also for an empty list, so that rank 0 checks
+      const auto scheme = detail_quadelem::Access<Real>::Scheme(qel);
+      if (scheme == QuadElemList<Real>::QuadScheme::Hedgehog) return;
+      Real size = 1;
+      if (qel.Size()) { // diagonal of the bounding box of the first element's nodes
+        const Integer nnode = qel.Order()*qel.Order();
+        const Vector<Real>& coord = detail_quadelem::Access<Real>::Coord(qel);
+        Real diag2 = 0;
+        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+          Real lo = coord[k*nnode], hi = coord[k*nnode];
+          for (Integer p = 1; p < nnode; p++) {
+            lo = std::min<Real>(lo, coord[k*nnode + p]);
+            hi = std::max<Real>(hi, coord[k*nnode + p]);
+          }
+          diag2 += (hi - lo)*(hi - lo);
+        }
+        size = sqrt<Real>(diag2);
+      }
+      const Real d = detail_singular_check::SurfaceSingularDegree<Real>(ker, trg_dot_prod, (Real)1e-4*size);
+      if (!(d > (Real)1.5)) return;
+#ifdef SCTL_HAVE_MPI
+      { // rank in MPI_COMM_WORLD, without Comm::World(), whose MPI_Comm_dup is collective
+        int rank = 0;
+        if (comm_detail::MPIIsActive()) MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        if (rank != 0) return;
+      }
+#endif
+      static std::array<std::once_flag, 2> warned;
+      std::call_once(warned[trg_dot_prod ? 1 : 0], [&ker, trg_dot_prod, scheme, d]() {
+        SCTL_WARN("QuadElemList: the self-interaction integrand of " << ker.Name() << (trg_dot_prod ? " dotted with the target normal" : "") << " grows like 1/r^" << std::lround((double)d) << " along the surface, but the " << (scheme == QuadElemList<Real>::QuadScheme::Duffy ? "Duffy" : "TensorProduct") << " rule is accurate only up to 1/r, so the self-interactions are wrong; use QuadScheme::Hedgehog.");
+      });
+    }();
     if (!qel.Size()) return; // nothing to compute, also for a default-constructed list, whose order is 0
     const Integer order = qel.Order();
     const Integer digits = detail_quadelem::DigitsFromTol<Real>(tol);

@@ -336,7 +336,7 @@ template <class Real, class Kernel> Vector<Real> ReferencePotential(const QuadEl
     qel.GetGeom(&Xf, nullptr, nullptr, nullptr, nullptr, Vector<Real>{uf}, Vector<Real>{vf}, elem_idx);
     const Vector<Real> offset{Xt[t * COORD_DIM + 0] - Xf[0], Xt[t * COORD_DIM + 1] - Xf[1], Xt[t * COORD_DIM + 2] - Xf[2]}; // target relative to X(uf, vf)
 
-    const auto rel_pos = [&](Vector<Real>& dX, const Vector<Real>& du, const Vector<Real>& dv, const bool taylor) { // X(uf+du[a], vf+dv[b]) - X(uf, vf) at point a*Nv+b
+    const auto rel_pos = [&qel, elem_idx, uf, vf, &Xf, &T, order](Vector<Real>& dX, const Vector<Real>& du, const Vector<Real>& dv, const bool taylor) { // X(uf+du[a], vf+dv[b]) - X(uf, vf) at point a*Nv+b
       const Integer Nu = (Integer)du.Dim(), Nv = (Integer)dv.Dim();
       dX.ReInit(Nu * Nv * COORD_DIM);
       if (!taylor) {
@@ -1293,7 +1293,7 @@ template <class Real> Real test_ReferenceSphere() {
   const Long Ntrg = Xt.Dim() / COORD_DIM;
 
   Real err = 0;
-  const auto dl_identity = [&](const auto& ker) {
+  const auto dl_identity = [&qel, &Xt, &trg_elem, &trg_node, Nnode, Ntrg, &err](const auto& ker) {
     constexpr Integer KDIM0 = std::decay_t<decltype(ker)>::SrcDim();
     Vector<Real> q(Nnode * KDIM0);
     for (Long i = 0; i < Nnode; i++) {
@@ -1304,7 +1304,7 @@ template <class Real> Real test_ReferenceSphere() {
       for (Integer k = 0; k < KDIM0; k++) err = MaxErr<Real>(err, fabs(U[t * KDIM0 + k] + (t % 2 ? 1 : (Real)0.5) * (k + 1)) / ((Real)0.5 * (k + 1)));
     }
   };
-  const auto greens_identity = [&](const auto& ker_sl, const auto& ker_dl, const auto& ker_grad) {
+  const auto greens_identity = [&qel, &X, &Xn, &Xt, &trg_elem, &trg_node, Nnode, Ntrg, &err](const auto& ker_sl, const auto& ker_dl, const auto& ker_grad) {
     constexpr Integer KDIM0 = std::decay_t<decltype(ker_sl)>::SrcDim();
     const Vector<Real> X0{(Real)1.3, (Real)1.2, (Real)0.2}, Xn0{0, 0, 0};
     Vector<Real> F0(KDIM0), u_surf, du, u_trg;
