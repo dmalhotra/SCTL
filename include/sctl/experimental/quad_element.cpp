@@ -243,18 +243,16 @@ namespace sctl {
       const Real utol = machine_eps<Real>();
       bool converged = false;
       for (Integer it = 0; it < max_iter; it++) { // Projected Newton iterations
+        Real X[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM]; // the point relative to the target, and the tangents
+        EvalPoint<Real>(X, dXu, dXv, coord, dcoord_du, dcoord_dv, order, u, v, &Xtrg);
         Real E = 0, F = 0, G = 0, gu = 0, gv = 0;
-        { // Metric and gradient of the squared distance
-          Real X[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
-          EvalPoint<Real>(X, dXu, dXv, coord, dcoord_du, dcoord_dv, order, u, v, &Xtrg);
-          for (Integer k = 0; k < COORD_DIM; k++) {
-            const Real r = X[k], a = dXu[k], b = dXv[k];
-            E += a*a;
-            F += a*b;
-            G += b*b;
-            gu += r*a;
-            gv += r*b;
-          }
+        for (Integer k = 0; k < COORD_DIM; k++) { // Metric and gradient of the squared distance
+          const Real r = X[k], a = dXu[k], b = dXv[k];
+          E += a*a;
+          F += a*b;
+          G += b*b;
+          gu += r*a;
+          gv += r*b;
         }
 
         Real Pu = gu, Pv = gv;
@@ -265,24 +263,38 @@ namespace sctl {
           else if (v >= 1) Pv = std::max<Real>(gv, (Real)0);
         }
 
-        const Real cut = machine_eps<Real>() * 16 * (E + G); // eigenvalues of the metric below cut are taken as zero
+        const Real rel_tol = machine_eps<Real>() * 10000; // singular values below rel_tol times the largest are taken as zero; the computed tangents carry rounding errors up to about 1000 eps
+        const Real zero_len2 = rel_tol * rel_tol * (E + G); // a tangent with squared length below this is taken as zero
         Real step_u = 0, step_v = 0;
-        { // Minimum-norm Newton step, fixing a coordinate held at its bound
+        { // Newton step: the least-squares solution of [dXu dXv] step = X, fixing a coordinate held at its bound
           const bool u_act = ((u <= 0 && gu >= 0) || (u >= 1 && gu <= 0));
           const bool v_act = ((v <= 0 && gv >= 0) || (v >= 1 && gv <= 0));
-          if (!u_act && !v_act) {
-            const Real det = E*G - F*F, tr = E + G;
-            if (det > cut * tr) {
-              step_u = ( G*gu - F*gv) / det;
-              step_v = (-F*gu + E*gv) / det;
-            } else { // rank one: the pseudo-inverse is the metric divided by tr^2
-              step_u = (E*gu + F*gv) / (tr*tr);
-              step_v = (F*gu + G*gv) / (tr*tr);
+          if (!u_act && !v_act) { // from the SVD [dXu dXv] = [c1 c2] V^T, V the rotation making the columns c1, c2 orthogonal (one-sided Jacobi)
+            Real cs = 1, sn = 0;
+            if (F != 0) {
+              const Real zeta = (G - E) / (2*F);
+              const Real t = (zeta >= 0 ? 1 : -1) / (fabs(zeta) + sqrt<Real>(1 + zeta*zeta));
+              cs = 1 / sqrt<Real>(1 + t*t);
+              sn = cs * t;
             }
+            Real n1 = 0, n2 = 0, y1 = 0, y2 = 0; // squared lengths of c1 and c2, and their dot products with X
+            for (Integer k = 0; k < COORD_DIM; k++) {
+              const Real c1 = cs*dXu[k] - sn*dXv[k];
+              const Real c2 = sn*dXu[k] + cs*dXv[k];
+              n1 += c1*c1;
+              n2 += c2*c2;
+              y1 += c1*X[k];
+              y2 += c2*X[k];
+            }
+            const Real n_min = rel_tol * rel_tol * std::max<Real>(n1, n2);
+            y1 = (n1 > n_min ? y1 / n1 : 0);
+            y2 = (n2 > n_min ? y2 / n2 : 0);
+            step_u = cs*y1 + sn*y2;
+            step_v = -sn*y1 + cs*y2;
           } else if (u_act) {
-            step_v = (G > cut ? gv / G : 0);
+            step_v = (G > zero_len2 ? gv / G : 0);
           } else {
-            step_u = (E > cut ? gu / E : 0);
+            step_u = (E > zero_len2 ? gu / E : 0);
           }
         }
 
@@ -302,7 +314,7 @@ namespace sctl {
             return false;
           };
           improved = line_search(step_u, step_v);
-          if (!improved) improved = line_search((E > cut ? Pu / E : 0), (G > cut ? Pv / G : 0));
+          if (!improved) improved = line_search((E > zero_len2 ? Pu / E : 0), (G > zero_len2 ? Pv / G : 0));
         }
         if (!improved) { // Every step grows the distance: a minimum
           converged = true;
