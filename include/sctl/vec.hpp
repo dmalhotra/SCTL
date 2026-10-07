@@ -90,7 +90,10 @@ namespace sctl {
 
       /**
        * Load the first n elements from unaligned memory. The other elements
-       * are zero, and their memory is not read.
+       * are zero, and their memory is not read. With AVX and without
+       * AVX-512VL, some n use vmaskmovps or vmaskmovpd, about 6 cycles on AMD
+       * Zen, unless SCTL_TUNE_ZEN is defined, as by -march=native or
+       * -mtune=znverN there.
        *
        * @param p Pointer to the scalar values.
        * @param n Number of elements to load, n >= 0; all Size() elements if n >= Size().
@@ -186,7 +189,7 @@ namespace sctl {
 
       /**
        * Store the first n elements into unaligned memory. The memory of the
-       * other elements is not written.
+       * other elements is not written. On AMD Zen, as for LoadPartial.
        *
        * @param p Pointer to the memory location to store the data.
        * @param n Number of elements to store, n >= 0; all Size() elements if n >= Size().
