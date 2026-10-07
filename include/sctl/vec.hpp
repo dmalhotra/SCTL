@@ -80,7 +80,9 @@ namespace sctl {
 
       /**
        * Load the elements selected by a mask from unaligned memory. The other
-       * elements are zero, and their memory is not read.
+       * elements are zero, and their memory is not read. With AVX and without
+       * AVX-512VL, 32- and 64-bit lanes by vmaskmovps or vmaskmovpd, about 6
+       * cycles on AMD Zen.
        *
        * @param p Pointer to the scalar values.
        * @param m Mask selecting the elements to load.
@@ -180,7 +182,7 @@ namespace sctl {
 
       /**
        * Store the elements selected by a mask into unaligned memory. The
-       * memory of the other elements is not written.
+       * memory of the other elements is not written. On AMD Zen, as for Load.
        *
        * @param p Pointer to the memory location to store the data.
        * @param m Mask selecting the elements to store.
