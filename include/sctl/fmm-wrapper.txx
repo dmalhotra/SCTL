@@ -569,8 +569,8 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
       if (it.first.second != trg_name) continue;
       SCTL_ASSERT_MSG(src_map.find(it.first.first) != src_map.end(), "Source name does not exist.");
       const auto& src_data = src_map.at(it.first.first);
-      const Vector<Real> Xn_none;
-      const Vector<Real>& Xn = (src_data.dim_normal ? src_data.Xn : Xn_none);
+      const Vector<Real> Xn_dummy;
+      const Vector<Real>& Xn = (src_data.dim_normal ? src_data.Xn : Xn_dummy);
       it.second.ker_s2t_eval_omp(U_, Xt_, src_data.X, Xn, src_data.F, digits_, it.second.ker_s2t);
     }
     return;
@@ -650,11 +650,11 @@ template <class Real, Integer DIM> std::function<void(Matrix<Real>&, const Vecto
     Vector<Real> src_scal, trg_scal;
     PVFMMBox(bbox_offset, bbox_scale, src_scal, trg_scal, src_name, trg_name);
     return [ker_matrix, ker, bbox_offset, bbox_scale, src_scal, trg_scal](Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn) {
-      ScratchBuf<Real> Xt_buf(Xt.Dim()), Xs_buf(Xs.Dim());
-      Vector<Real> Xt_(Xt_buf), Xs_(Xs_buf);
-      for (Long i = 0; i < Xt.Dim(); i++) Xt_[i] = (Xt[i] - bbox_offset[i%DIM]) * bbox_scale;
-      for (Long i = 0; i < Xs.Dim(); i++) Xs_[i] = (Xs[i] - bbox_offset[i%DIM]) * bbox_scale;
-      ker_matrix(M, Xt_, Xs_, Xn, -1, ker);
+      ScratchBuf<Real> Xt_box_buf(Xt.Dim()), Xs_box_buf(Xs.Dim());
+      Vector<Real> Xt_box(Xt_box_buf), Xs_box(Xs_box_buf); // in PVFMM's box
+      for (Long i = 0; i < Xt.Dim(); i++) Xt_box[i] = (Xt[i] - bbox_offset[i%DIM]) * bbox_scale;
+      for (Long i = 0; i < Xs.Dim(); i++) Xs_box[i] = (Xs[i] - bbox_offset[i%DIM]) * bbox_scale;
+      ker_matrix(M, Xt_box, Xs_box, Xn, -1, ker);
       const Integer SrcDim = src_scal.Dim(), TrgDim = trg_scal.Dim();
       for (Long s = 0; s < M.Dim(0); s++) {
         for (Long t = 0; t < M.Dim(1); t++) M[s][t] *= src_scal[s%SrcDim] * trg_scal[t%TrgDim];

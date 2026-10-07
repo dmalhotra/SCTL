@@ -1308,14 +1308,14 @@ namespace sctl {
 
     if (trg_normal_dot_prod_) {
       constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
-      ScratchBuf<Real> U_buf(Ntrg * KDIM1);
-      Vector<Real> U_(U_buf);
-      fmm.Eval(U_, "Trg");
+      ScratchBuf<Real> U_full_buf(Ntrg * KDIM1);
+      Vector<Real> U_full(U_full_buf); // before the dot product with the target normals
+      fmm.Eval(U_full, "Trg");
       #pragma omp parallel for schedule(static)
       for (Long i = 0; i < Ntrg; i++) {
         for (Long k = 0; k < KDIM1_; k++) {
           for (Long l = 0; l < COORD_DIM; l++) {
-            U[i*KDIM1_+k] += U_[(i*KDIM1_+k)*COORD_DIM+l] * Xn_trg[i*COORD_DIM+l];
+            U[i*KDIM1_+k] += U_full[(i*KDIM1_+k)*COORD_DIM+l] * Xn_trg[i*COORD_DIM+l];
           }
         }
       }

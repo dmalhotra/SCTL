@@ -166,8 +166,8 @@ namespace sctl {
       const Integer nnode = (Integer)(coord.Dim() / COORD_DIM);
       if (out.Dim() != COORD_DIM*nnode) out.ReInit(COORD_DIM*nnode);
       for (Integer k = 0; k < COORD_DIM; k++) {
-        const Real ok = Xtrg[k];
-        for (Integer p = 0; p < nnode; p++) out[k*nnode + p] = coord[k*nnode + p] - ok;
+        const Real xk = Xtrg[k];
+        for (Integer p = 0; p < nnode; p++) out[k*nnode + p] = coord[k*nnode + p] - xk;
       }
     }
 
@@ -209,15 +209,15 @@ namespace sctl {
     template <class Real> Real GetClosestNode(Real& ustar, Real& vstar, const Vector<Real>& coord, const Integer order, const Vector<Real>& Xtrg) {
       const Integer nnode = order * order;
       Integer seed = 0;
-      Real best = -1;
+      Real best_r2 = -1;
       for (Integer p = 0; p < nnode; p++) {
         Real r2 = 0;
         for (Integer k = 0; k < COORD_DIM; k++) {
           const Real d = coord[k*nnode + p] - Xtrg[k];
           r2 += d*d;
         }
-        if (best < 0 || r2 < best) {
-          best = r2;
+        if (best_r2 < 0 || r2 < best_r2) {
+          best_r2 = r2;
           seed = p;
         }
       }
@@ -225,7 +225,7 @@ namespace sctl {
       const auto& nds = QuadElemList<Real>::ParamNodes(order);
       ustar = nds[seed/order];
       vstar = nds[seed%order];
-      return sqrt<Real>(best);
+      return sqrt<Real>(best_r2);
     }
 
     /** returns the distance from Xtrg to the element; (ustar, vstar) are the closest point's parameters, found to about 1% of the distance */
@@ -240,8 +240,8 @@ namespace sctl {
 
       Real u, v, f;
       { // Start from the nearest node
-        const Real f_seed = GetClosestNode(u, v, coord, order, Xtrg);
-        f = f_seed * f_seed;
+        const Real dist_seed = GetClosestNode(u, v, coord, order, Xtrg);
+        f = dist_seed * dist_seed;
       }
 
       Real dtol = 0; // rounding error of a computed distance
@@ -280,9 +280,9 @@ namespace sctl {
         const Real zero_len2 = rel_tol * rel_tol * (E + G); // a tangent with squared length below this is taken as zero
         Real step_u = 0, step_v = 0;
         { // Newton step: the least-squares solution of [dXu dXv] step = X, fixing a coordinate held at its bound
-          const bool u_act = ((u <= 0 && gu >= 0) || (u >= 1 && gu <= 0));
-          const bool v_act = ((v <= 0 && gv >= 0) || (v >= 1 && gv <= 0));
-          if (!u_act && !v_act) { // from the SVD [dXu dXv] = [c1 c2] V^T, V the rotation making the columns c1, c2 orthogonal (one-sided Jacobi)
+          const bool u_held = ((u <= 0 && gu >= 0) || (u >= 1 && gu <= 0));
+          const bool v_held = ((v <= 0 && gv >= 0) || (v >= 1 && gv <= 0));
+          if (!u_held && !v_held) { // from the SVD [dXu dXv] = [c1 c2] V^T, V the rotation making the columns c1, c2 orthogonal (one-sided Jacobi)
             Real cs = 1, sn = 0;
             if (F != 0) {
               const Real zeta = (G - E) / (2*F);
@@ -290,21 +290,21 @@ namespace sctl {
               cs = 1 / sqrt<Real>(1 + t*t);
               sn = cs * t;
             }
-            Real n1 = 0, n2 = 0, y1 = 0, y2 = 0; // squared lengths of c1 and c2, and their dot products with X
+            Real len1_sq = 0, len2_sq = 0, b1 = 0, b2 = 0; // squared lengths of c1 and c2, and their dot products with X
             for (Integer k = 0; k < COORD_DIM; k++) {
               const Real c1 = cs*dXu[k] - sn*dXv[k];
               const Real c2 = sn*dXu[k] + cs*dXv[k];
-              n1 += c1*c1;
-              n2 += c2*c2;
-              y1 += c1*X[k];
-              y2 += c2*X[k];
+              len1_sq += c1*c1;
+              len2_sq += c2*c2;
+              b1 += c1*X[k];
+              b2 += c2*X[k];
             }
-            const Real n_min = rel_tol * rel_tol * std::max<Real>(n1, n2);
-            y1 = (n1 > n_min ? y1 / n1 : 0);
-            y2 = (n2 > n_min ? y2 / n2 : 0);
-            step_u = cs*y1 + sn*y2;
-            step_v = -sn*y1 + cs*y2;
-          } else if (u_act) {
+            const Real len_min_sq = rel_tol * rel_tol * std::max<Real>(len1_sq, len2_sq);
+            const Real s1 = (len1_sq > len_min_sq ? b1 / len1_sq : 0); // the step's coefficients along c1 and c2
+            const Real s2 = (len2_sq > len_min_sq ? b2 / len2_sq : 0);
+            step_u = cs*s1 + sn*s2;
+            step_v = -sn*s1 + cs*s2;
+          } else if (u_held) {
             step_v = (G > zero_len2 ? gv / G : 0);
           } else {
             step_u = (E > zero_len2 ? gu / E : 0);
@@ -367,10 +367,9 @@ namespace sctl {
           Hv = neighbor_gap(vb);
         }
 
-        ScratchBuf<Real> g_buf(2*K), Mu_buf(order*K), MuT_buf(K*order), Mv_buf(order*K), Xg_buf(COORD_DIM*K*K);
-        Vector<Real> gu(K, g_buf.begin(), false), gv(K, g_buf.begin() + K, false), Mu(Mu_buf), Mv_(Mv_buf), Xg(Xg_buf);
-        const Matrix<Real> MuT(K, order, MuT_buf.begin(), false);
-        const Matrix<Real> Mv(order, K, Mv_buf.begin(), false);
+        ScratchBuf<Real> grid_buf(2*K), Lu_buf(order*K), LuT_buf(K*order), Lv_buf(order*K), Xg_buf(COORD_DIM*K*K);
+        Vector<Real> grid_u(K, grid_buf.begin(), false), grid_v(K, grid_buf.begin() + K, false), Lu(Lu_buf), Lv(Lv_buf), Xg(Xg_buf); // grid values; interpolation weights at them; coordinates on the grid
+        const Matrix<Real> LuT(K, order, LuT_buf.begin(), false);
         Integer n_side = 0; // consecutive grids whose closest point is on a side of the box inside the element
         for (Integer round = 0; round < max_rounds; round++) {
           bool lo_u, hi_u, lo_v, hi_v; // whether each side of the box is inside the element
@@ -386,27 +385,27 @@ namespace sctl {
             place(av, wv, lo_v, hi_v, cv, Hv);
           }
           for (Integer a = 0; a < K; a++) {
-            gu[a] = au + wu*a/(K-1);
-            gv[a] = av + wv*a/(K-1);
+            grid_u[a] = au + wu*a/(K-1);
+            grid_v[a] = av + wv*a/(K-1);
           }
 
-          Real fr = -1, ur = 0, vr = 0;
+          Real fr = -1, ur = 0, vr = 0; // this grid's closest point: squared distance, parameters and indices
           Integer ir = 0, jr = 0;
           { // The grid point closest to Xtrg, from the coordinates on the grid by the tensor product of the interpolation in u and in v
-            LagrangeInterp<Real>::Interpolate(Mu, nds, gu);
-            LagrangeInterp<Real>::Interpolate(Mv_, nds, gv);
+            LagrangeInterp<Real>::Interpolate(Lu, nds, grid_u);
+            LagrangeInterp<Real>::Interpolate(Lv, nds, grid_v);
             for (Integer i = 0; i < order; i++) {
-              for (Integer a = 0; a < K; a++) MuT_buf[a*order + i] = Mu[i*K + a];
+              for (Integer a = 0; a < K; a++) LuT_buf[a*order + i] = Lu[i*K + a];
             }
-            EvalTensorProduct(Xg, coord, MuT, Mv);
+            EvalTensorProduct(Xg, coord, LuT, Matrix<Real>(order, K, Lv_buf.begin(), false));
             for (Integer a = 0; a < K; a++) {
               for (Integer b = 0; b < K; b++) {
                 Real r2 = 0;
                 for (Integer k = 0; k < COORD_DIM; k++) r2 += (Xg[k*K*K + a*K + b] - Xtrg[k])*(Xg[k*K*K + a*K + b] - Xtrg[k]);
                 if (fr < 0 || r2 < fr) {
                   fr = r2;
-                  ur = gu[a];
-                  vr = gv[b];
+                  ur = grid_u[a];
+                  vr = grid_v[b];
                   ir = a;
                   jr = b;
                 }
@@ -479,38 +478,37 @@ namespace sctl {
     /** same as WeightedKernel, for j in [j0,j1) only, using vector type VecType */
     template <class Real, class Kernel, class VecType, bool HAS_N, bool TRG_DOT>
     static void WeightedKernelVec(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Integer nq, const Integer run, const Integer ldx, const Integer ldo, const Integer j0, const Integer j1, const Real wj, const bool accum, ConstIterator<Real> ntrg, const void* ctx) {
-      static constexpr Integer CD = 3;
-      static constexpr Integer KD0 = Kernel::SrcDim();
-      static constexpr Integer KD1 = Kernel::TrgDim();
-      static constexpr Integer KD1o = (TRG_DOT ? KD1/CD : KD1);
-      static constexpr Integer C = KD0*KD1o;
+      static constexpr Integer KDIM0 = Kernel::SrcDim();
+      static constexpr Integer KDIM1full = Kernel::TrgDim();
+      static constexpr Integer KDIM1_out = (TRG_DOT ? KDIM1full/COORD_DIM : KDIM1full);
+      static constexpr Integer C = KDIM0*KDIM1_out;
       static constexpr Integer digits = (Integer)(TypeTraits<Real>::SigBits*0.3010299957);
-      static constexpr Integer VL = VecType::Size();
+      static constexpr Integer VecLen = VecType::Size();
       const VecType vws(wj * Kernel::template uKerScaleFactor<Real>());
-      VecType vXt[CD];
-      for (Integer k = 0; k < CD; k++) vXt[k] = VecType(Xt[k]);
+      VecType vXt[COORD_DIM];
+      for (Integer k = 0; k < COORD_DIM; k++) vXt[k] = VecType(Xt[k]);
       for (Integer qb = 0, blk = 0; qb < nq; qb += run, blk++) {
-        for (Integer j = j0; j < j1; j += VL) {
+        for (Integer j = j0; j < j1; j += VecLen) {
           const Integer q = qb + j;
-          VecType r[CD], n[CD], u[KD0][KD1];
-          for (Integer k = 0; k < CD; k++) r[k] = vXt[k] - VecType::Load(&Xs[k*ldx+q]);
+          VecType r[COORD_DIM], n[COORD_DIM], u[KDIM0][KDIM1full];
+          for (Integer k = 0; k < COORD_DIM; k++) r[k] = vXt[k] - VecType::Load(&Xs[k*ldx+q]);
           if constexpr (HAS_N) {
-            for (Integer k = 0; k < CD; k++) n[k] = VecType::Load(&Xn[k*ldx+q]);
+            for (Integer k = 0; k < COORD_DIM; k++) n[k] = VecType::Load(&Xn[k*ldx+q]);
             Kernel::template uKerMatrix<digits,VecType>(u, r, n, ctx);
           } else {
             Kernel::template uKerMatrix<digits,VecType>(u, r, ctx);
           }
           const VecType vw = vws * VecType::Load(&wq[q]);
-          for (Integer a = 0; a < KD0; a++) {
-            for (Integer b = 0; b < KD1o; b++) {
+          for (Integer a = 0; a < KDIM0; a++) {
+            for (Integer b = 0; b < KDIM1_out; b++) {
               VecType val;
               if constexpr (TRG_DOT) {
-                val = u[a][b*CD+0] * VecType(ntrg[0]);
-                for (Integer l = 1; l < CD; l++) val = val + u[a][b*CD+l] * VecType(ntrg[l]);
+                val = u[a][b*COORD_DIM+0] * VecType(ntrg[0]);
+                for (Integer l = 1; l < COORD_DIM; l++) val = val + u[a][b*COORD_DIM+l] * VecType(ntrg[l]);
               } else {
                 val = u[a][b];
               }
-              const Integer id = blk*C*ldo + (a*KD1o+b)*ldo + j;
+              const Integer id = blk*C*ldo + (a*KDIM1_out+b)*ldo + j;
               if (accum) (VecType::Load(&out[id]) + val*vw).Store(&out[id]);
               else       (val*vw).Store(&out[id]);
             }
@@ -638,8 +636,8 @@ namespace sctl {
           }
         }
 
-        const Integer np = std::max<Integer>(1, (Integer)proxy_w.Dim());
-        for (Integer j = 0; j < np; j++) { // Weighted kernel, summed over the proxy points
+        const Integer nproxy = std::max<Integer>(1, (Integer)proxy_w.Dim());
+        for (Integer j = 0; j < nproxy; j++) { // Weighted kernel, summed over the proxy points
           StaticArray<Real,COORD_DIM> Xtj{0, 0, 0};
           if (proxy_w.Dim()) {
             for (Integer l = 0; l < COORD_DIM; l++) Xtj[l] = proxy_off[j*COORD_DIM+l];
@@ -904,7 +902,7 @@ namespace sctl {
               LagrangeInterp<Real>::Interpolate(Sf_v, gsh, sub);
               const Matrix<Real> Sf_m(order, order, Sf.begin() + (2*d+sd)*nnode, false);
               Matrix<Real> St_m(order, order, St.begin() + (2*d+sd)*nnode, false);
-              for (Integer i = 0; i < order; i++) for (Integer aa = 0; aa < order; aa++) St_m[aa][i] = Sf_m[i][aa];
+              for (Integer i = 0; i < order; i++) for (Integer j = 0; j < order; j++) St_m[j][i] = Sf_m[i][j];
             }
           }
         }
@@ -1049,8 +1047,8 @@ namespace sctl {
       M_acc.SetZero();
 
       NearSplit<order,Real> split(coord, dcoord_du, dcoord_dv, Xtrg, pool);
-      const Real spd_u = sqrt<Real>(split.guu);
-      const Real spd_v = sqrt<Real>(split.gvv);
+      const Real len_u = sqrt<Real>(split.guu);
+      const Real len_v = sqrt<Real>(split.gvv);
       Integer q_near = quad_order;
       if (q_near <= 0) { // at least the order for orthogonal tangents, raised for skewed tangents (fitted to the smallest passing orders, targets on and off the surface), rounded up to even
         const Real s = SinTangentAngle<Real>(split.guu, split.guv, split.gvv);
@@ -1094,7 +1092,7 @@ namespace sctl {
         for (Integer sdv = 0; sdv < 2; sdv++) {
           if (!(split.slen[1][sdv] > 0)) continue;
           acc.SetZero();
-          refine(sdu, sdv, split.slen[0][sdu]*spd_u, split.slen[1][sdv]*spd_v);
+          refine(sdu, sdv, split.slen[0][sdu]*len_u, split.slen[1][sdv]*len_v);
           split.AddToElem(M_acc, acc, C, sdu, sdv, pool);
         }
       }
@@ -1512,7 +1510,7 @@ namespace sctl {
         for (Integer j = 0; j < 5; j++) v.PushBack(pow<Real>((Real)4, (Real)j/(Real)4));
         return v;
       }();
-      static const Vector<Real> hh_w = []() { // Weights extrapolating the proxy values to distance 0
+      static const Vector<Real> proxy_wts = []() { // Weights extrapolating the proxy values to distance 0
         using W = PrecompReal;
         const Integer p = (Integer)proxy_dist.Dim();
         Vector<Real> wj(p);
@@ -1533,7 +1531,7 @@ namespace sctl {
         const Integer nnode = order*order;
         const Integer t = ti*order + tj;
         ScratchBuf<Real> hh_Xt1_buf(COORD_DIM), hh_off_buf(proxy_dist.Dim()*COORD_DIM);
-        Vector<Real> hh_Xt1(hh_Xt1_buf), hh_off(hh_off_buf);
+        Vector<Real> proxy0(hh_Xt1_buf), proxy_off(hh_off_buf);
         Integer q_proxy;
         { // Proxy points along the normal, sized by the distance to the nearer edge, and their quadrature order
           Real guu, guv, gvv;
@@ -1545,14 +1543,14 @@ namespace sctl {
           }
           const Real edge_u = std::min<Real>(nds[ti], 1-nds[ti]), edge_v = std::min<Real>(nds[tj], 1-nds[tj]);
           const Real rmin = rmin_coeff * s * std::min<Real>(edge_u*sqrt<Real>(guu), edge_v*sqrt<Real>(gvv));
-          for (Integer k = 0; k < COORD_DIM; k++) hh_Xt1[k] = coord[k*nnode + t] + rmin*Xnnodes[t*COORD_DIM+k];
+          for (Integer k = 0; k < COORD_DIM; k++) proxy0[k] = coord[k*nnode + t] + rmin*Xnnodes[t*COORD_DIM+k];
           for (Integer j = 0; j < proxy_dist.Dim(); j++) {
             const Real rj = rmin*proxy_dist[j];
-            for (Integer k = 0; k < COORD_DIM; k++) hh_off[j*COORD_DIM+k] = (rj-rmin)*Xnnodes[t*COORD_DIM+k];
+            for (Integer k = 0; k < COORD_DIM; k++) proxy_off[j*COORD_DIM+k] = (rj-rmin)*Xnnodes[t*COORD_DIM+k];
           }
         }
         const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-        NearInteracBlockDyadic<order,Real>(M_acc, coord, dXu, dXv, hh_Xt1, ntrg, ker, near_digits, q_proxy, hh_off, hh_w);
+        NearInteracBlockDyadic<order,Real>(M_acc, coord, dXu, dXv, proxy0, ntrg, ker, near_digits, q_proxy, proxy_off, proxy_wts);
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }
@@ -1625,14 +1623,14 @@ namespace sctl {
     }
 
     template <class Real> void BuildCenteredLogSingular1D(Vector<Real>& delta, Vector<Real>& w, const Real v0, const Integer Lvl, const Integer quad_order) {
-      const Integer ord = 16;
+      const Integer alpert_order = 16;
       delta.ReInit(0);
       w.ReInit(0);
       const auto add_alpert = [&delta, &w](const Real a, const Real b, const bool log_a, const bool log_b) {
-        const auto& L = (log_a ? AlpertQuadRule<Real>::LogCorrection(ord) : AlpertQuadRule<Real>::SmoothCorrection(ord));
-        const auto& R = (log_b ? AlpertQuadRule<Real>::LogCorrection(ord) : AlpertQuadRule<Real>::SmoothCorrection(ord));
+        const auto& L = (log_a ? AlpertQuadRule<Real>::LogCorrection(alpert_order) : AlpertQuadRule<Real>::SmoothCorrection(alpert_order));
+        const auto& R = (log_b ? AlpertQuadRule<Real>::LogCorrection(alpert_order) : AlpertQuadRule<Real>::SmoothCorrection(alpert_order));
         const Integer skipL = L.nskip, skipR = R.nskip;
-        const Integer N = std::max<Integer>(skipL + skipR + 2, 2 * ord);
+        const Integer N = std::max<Integer>(skipL + skipR + 2, 2 * alpert_order);
         const Integer N1 = N - 1;
         const Real h = (b - a) / (Real)N1;
         for (Integer i = skipL; i <= N1 - skipR; i++) {
