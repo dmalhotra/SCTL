@@ -203,8 +203,9 @@ template <class Real, Integer DIM> class ParticleFMM {
      * trg_name) from the sources Xs, with normals Xn, to the targets Xt, computed as Eval() computes it: from the
      * same coordinates (mapped into the unit box when Eval() uses PVFMM) and with the same kernel accuracy.
      * Subtracting these interactions from a result of Eval() then cancels them up to rounding, also for a target
-     * very near a source, where they are large. Collective, as it decides how Eval() evaluates; the function
-     * returned may be called concurrently, with points on this process.
+     * very near a source, where they are large. With periodicity, Eval() also wraps points into the periodic box
+     * and adds periodic images; this function does neither. Collective, as it decides how Eval() evaluates; the
+     * function returned may be called concurrently, with points on this process.
      *
      * @param[in] src_name name for the source type.
      * @param[in] trg_name name for the target type.

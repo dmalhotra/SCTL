@@ -6,9 +6,6 @@
 
 namespace sctl {
 
-  class VTUData;
-  template <class ValueType> class Matrix;
-
   namespace detail_quadelem {
     template <class Real> struct Access;
   }

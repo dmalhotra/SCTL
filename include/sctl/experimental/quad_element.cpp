@@ -141,7 +141,7 @@ namespace sctl {
     /** evaluates position (minus origin, if given) and tangents dXu, dXv (if non-null) at (u,v) */
     template <class Real> void EvalPoint(Real* X, Real* dXu, Real* dXv, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Integer order, const Real u, const Real v, const Vector<Real>* origin) {
       const Integer nnode = order * order;
-      ScratchPool& pool = ScratchPool::Instance(); // looked up once per call, not once per buffer
+      ScratchPool& pool = ScratchPool::Instance();
 
       ScratchBuf<Real> Luv(2*order, pool); // Luv[i], Luv[order+i]: i-th interpolation weight at u, at v
       { // Interpolation weights at u and at v
@@ -452,7 +452,7 @@ namespace sctl {
       const Integer Nu = (Integer)ru.M.Dim(1);
       const Integer Nv = (Integer)rv.M.Dim(1);
       SCTL_ASSERT(Nu > 0 && Nv > 0);
-      ScratchPool& pool = ScratchPool::Instance(); // looked up once per call, not once per buffer
+      ScratchPool& pool = ScratchPool::Instance();
 
       // Small rules (one block, where the cost per product call dominates) store the coordinates side
       // by side, so that one product along u covers all of them, and project each component into acc_cm
@@ -945,7 +945,7 @@ namespace sctl {
       const Integer nnode = order*order;
       const Integer KDIM1_out = (normal_trg.Dim() > 0) ? KDIM1full/COORD_DIM : KDIM1full;
       const Integer C = KDIM0*KDIM1_out;
-      ScratchPool& pool = ScratchPool::Instance(); // looked up once per call, not once per buffer
+      ScratchPool& pool = ScratchPool::Instance();
       if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != C) M_acc.ReInit(nnode, C);
       M_acc.SetZero();
 
@@ -1030,7 +1030,7 @@ namespace sctl {
         constexpr Integer MaxSegments = 4096;
         const Integer nnode = order*order;
         const Integer C = KDIM0*((ntrg.Dim() > 0) ? KDIM1full/COORD_DIM : KDIM1full);
-        ScratchPool& pool = ScratchPool::Instance(); // looked up once per call, not once per buffer
+        ScratchPool& pool = ScratchPool::Instance();
         if (M_acc.Dim(0) != nnode || M_acc.Dim(1) != C) M_acc.ReInit(nnode, C);
         M_acc.SetZero();
 
