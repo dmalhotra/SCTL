@@ -2135,10 +2135,10 @@ namespace sctl { // SSE
   template <> inline VecData<int16_t,8> set1_intrin<VecData<int16_t,8>>(int16_t a) {
     return _mm_set1_epi16(a);
   }
-#if defined(__GNUC__) && !defined(__clang__) && !defined(__AVX__)
-  // Two equal 64-bit halves known at compile time, by one load (movddup), for constants that GCC 12 to 15 (4
-  // floats) or 14 and 15 (4 or 2 integers) would make with two or three instructions: a load of one element,
-  // or a move from a general register, and a shuffle. The empty asm keeps GCC from seeing them as the constants.
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14) && !defined(__AVX__)
+  // Two equal 64-bit halves known at compile time, by one load (movddup), for constants of 4 floats or 4 or 2
+  // integers that GCC 14 and later would make with two or three instructions: a load of one element, or a move
+  // from a general register, and a shuffle. The empty asm keeps GCC from seeing them as the constants.
   // Not for 0, nor -1 of integers: GCC makes them by one instruction (pxor, pcmpeqd), and knows their value.
   inline __m128i dup64_const_intrin(const uint64_t bits) {
     double d;
@@ -2162,10 +2162,18 @@ namespace sctl { // SSE
   }
   template <> inline VecData<float,4> set1_intrin<VecData<float,4>>(float a) {
 #if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 12) && !defined(__AVX__)
-    if (__builtin_constant_p(a)) {
+    if (__builtin_constant_p(a)) { // GCC 12 and later make 4 equal floats by a load of one float and a shuffle (movss, shufps)
       uint32_t b;
       __builtin_memcpy(&b, &a, sizeof(b));
+#if __GNUC__ >= 14
       if (b != 0) return _mm_castsi128_ps(dup64_const_intrin((((uint64_t)b) << 32) | b));
+#else // as 4 equal integers, by one load (movdqa): in exp and log up to 1.1x faster than movddup on Ice Lake and Zen 2, 1.2x on Zen 4
+      if (b != 0) {
+        __m128i t = _mm_set1_epi32((int32_t)b);
+        asm("" : "+x"(t));
+        return _mm_castsi128_ps(t);
+      }
+#endif
     }
 #endif
     return _mm_set1_ps(a);
