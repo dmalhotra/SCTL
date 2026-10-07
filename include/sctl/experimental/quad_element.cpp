@@ -345,35 +345,114 @@ namespace sctl {
         }
       }
 
-      if (!converged) { // Fall back to a refining grid search
-        constexpr Integer K = 8, levels = 25;
-        Real u0 = 0, u1 = 1, v0 = 0, v1 = 1;
-        for (Integer L = 0; L < levels; L++) {
-          for (Integer i = 0; i <= K; i++) {
-            const Real ui = u0 + (u1-u0)*i/(Real)K;
-            for (Integer j = 0; j <= K; j++) {
-              const Real vj = v0 + (v1-v0)*j/(Real)K;
-              const Real r2 = dist2_at(ui, vj);
-              if (r2 < f) {
-                f = r2;
-                u = ui;
-                v = vj;
+      if (!converged) { // Fall back to a grid search, from the nearest node: K x K grids on boxes centered at the closest grid point found, shrunk in their longer physical dimension; a box is moved to its closest grid point while that is on a side of the box inside the element, and enlarged in that direction when it is on a side twice in a row
+        constexpr Integer K = 8, max_rounds = 200;
+        const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
+        Real ub, vb, fb; // the closest grid point found
+        Real cu, cv, Hu, Hv; // center and half-widths of the box
+        { // The nearest node, and a box reaching its neighbors
+          const Real dist = GetClosestNode(ub, vb, coord, order, Xtrg);
+          fb = dist*dist;
+          const auto neighbor_gap = [&nds, order](const Real x) {
+            Integer i = 0;
+            for (Integer j = 1; j < order; j++) if (fabs(nds[j] - x) < fabs(nds[i] - x)) i = j;
+            Real gap = (order > 1 ? 0 : (Real)0.5);
+            if (i > 0) gap = std::max<Real>(gap, nds[i] - nds[i-1]);
+            if (i < order-1) gap = std::max<Real>(gap, nds[i+1] - nds[i]);
+            return gap;
+          };
+          cu = ub;
+          cv = vb;
+          Hu = neighbor_gap(ub);
+          Hv = neighbor_gap(vb);
+        }
+
+        ScratchBuf<Real> g_buf(2*K), Mu_buf(order*K), MuT_buf(K*order), Mv_buf(order*K), Xg_buf(COORD_DIM*K*K);
+        Vector<Real> gu(K, g_buf.begin(), false), gv(K, g_buf.begin() + K, false), Mu(Mu_buf), Mv_(Mv_buf), Xg(Xg_buf);
+        const Matrix<Real> MuT(K, order, MuT_buf.begin(), false);
+        const Matrix<Real> Mv(order, K, Mv_buf.begin(), false);
+        Integer n_side = 0; // consecutive grids whose closest point is on a side of the box inside the element
+        for (Integer round = 0; round < max_rounds; round++) {
+          bool lo_u, hi_u, lo_v, hi_v; // whether each side of the box is inside the element
+          Real au, wu, av, wv; // lower corner and widths of the box
+          { // The box, of width 2H (at most 1) centered at (cu, cv), shifted into the element
+            const auto place = [](Real& a, Real& w, bool& lo, bool& hi, const Real c, const Real H) {
+              w = std::min<Real>(1, 2*H);
+              a = std::min<Real>(std::max<Real>(0, c - w/2), 1 - w);
+              lo = (w < 1 && c - w/2 > 0);
+              hi = (w < 1 && c - w/2 < 1 - w);
+            };
+            place(au, wu, lo_u, hi_u, cu, Hu);
+            place(av, wv, lo_v, hi_v, cv, Hv);
+          }
+          for (Integer a = 0; a < K; a++) {
+            gu[a] = au + wu*a/(K-1);
+            gv[a] = av + wv*a/(K-1);
+          }
+
+          Real fr = -1, ur = 0, vr = 0;
+          Integer ir = 0, jr = 0;
+          { // The grid point closest to Xtrg, from the coordinates on the grid by the tensor product of the interpolation in u and in v
+            LagrangeInterp<Real>::Interpolate(Mu, nds, gu);
+            LagrangeInterp<Real>::Interpolate(Mv_, nds, gv);
+            for (Integer i = 0; i < order; i++) {
+              for (Integer a = 0; a < K; a++) MuT_buf[a*order + i] = Mu[i*K + a];
+            }
+            EvalTensorProduct(Xg, coord, MuT, Mv);
+            for (Integer a = 0; a < K; a++) {
+              for (Integer b = 0; b < K; b++) {
+                Real r2 = 0;
+                for (Integer k = 0; k < COORD_DIM; k++) r2 += (Xg[k*K*K + a*K + b] - Xtrg[k])*(Xg[k*K*K + a*K + b] - Xtrg[k]);
+                if (fr < 0 || r2 < fr) {
+                  fr = r2;
+                  ur = gu[a];
+                  vr = gv[b];
+                  ir = a;
+                  jr = b;
+                }
               }
             }
           }
-          const Real hu = (u1-u0)/K, hv = (v1-v0)/K;
-          { // Stop when the grid spacing at the best point is less than 1% of the distance
-            Real X[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
-            EvalPoint<Real>(X, dXu, dXv, coord, dcoord_du, dcoord_dv, order, u, v, &Xtrg);
-            Real dX2 = 0;
-            for (Integer k = 0; k < COORD_DIM; k++) dX2 += dXu[k]*dXu[k]*hu*hu + dXv[k]*dXv[k]*hv*hv;
-            if (dX2 < (Real)1e-4 * f) break;
+
+          bool refine = true;
+          if (!(fr < fb)) { // no grid point closer than the closest found: refine around that
+            n_side = 0;
+          } else {
+            fb = fr;
+            ub = ur;
+            vb = vr;
+            const bool side_u = (ir == 0 && lo_u) || (ir == K-1 && hi_u);
+            const bool side_v = (jr == 0 && lo_v) || (jr == K-1 && hi_v);
+            if (!side_u && !side_v) { // refine around it
+              n_side = 0;
+            } else if (++n_side >= 2) { // enlarge the box around it, in the directions in which it is on a side
+              if (side_u) Hu = std::min<Real>((Real)0.5, Hu*(K-1)/2);
+              if (side_v) Hv = std::min<Real>((Real)0.5, Hv*(K-1)/2);
+              n_side = 0;
+              refine = false;
+            } else { // move the box to it
+              refine = false;
+            }
           }
-          u0 = std::max<Real>(0, u-hu);
-          u1 = std::min<Real>(1, u+hu);
-          v0 = std::max<Real>(0, v-hv);
-          v1 = std::min<Real>(1, v+hv);
-          if ((u1-u0) < utol && (v1-v0) < utol) break;
+          cu = ub;
+          cv = vb;
+          if (refine) { // Shrink the box to the grid spacing in its longer physical dimension; stop when the half-widths of the box are less than 1% of the distance at the closest point found, or its lengths 2 Hu, 2 Hv in parameter space are below machine epsilon
+            Real X[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
+            EvalPoint<Real>(X, dXu, dXv, coord, dcoord_du, dcoord_dv, order, ub, vb, &Xtrg);
+            Real guu = 0, gvv = 0;
+            for (Integer k = 0; k < COORD_DIM; k++) {
+              guu += dXu[k]*dXu[k];
+              gvv += dXv[k]*dXv[k];
+            }
+            if (guu*wu*wu >= gvv*wv*wv) Hu = wu/(K-1);
+            else Hv = wv/(K-1);
+            if (guu*Hu*Hu + gvv*Hv*Hv < (Real)1e-4 * fb || (2*Hu < utol && 2*Hv < utol)) break;
+          }
+        }
+        if (fb < f) {
+          f = fb;
+          u = ub;
+          v = vb;
         }
       }
 
