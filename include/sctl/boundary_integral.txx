@@ -223,7 +223,8 @@ namespace sctl {
             src_nodes0[i].mid.NbrList(nbr_lst, src_nodes0[i].mid.Depth(), Periodicity::NONE);
             for (const auto nbr : nbr_lst) if (nbr.Depth() != Morton<COORD_DIM>::INVALID_DEPTH) {
               const auto proc_split_srch = [&splitter_nodes,&comp_node_mid](const Morton<COORD_DIM>& m) {
-                NodeData srch_node; srch_node.mid = m;
+                NodeData srch_node;
+                srch_node.mid = m;
                 return  std::upper_bound(splitter_nodes.begin(), splitter_nodes.end(), srch_node, comp_node_mid) - splitter_nodes.begin() - 1;
               };
               Long p0 = proc_split_srch(nbr);
@@ -467,8 +468,10 @@ namespace sctl {
         Long idx0, idx1;
         { // Set index range [idx0, idx1] in near_lst for this thread
           NodeData srch_node0, srch_node1;
-          srch_node0.elem_idx = elem_offset + elem_idx0; srch_node0.idx = 0;
-          srch_node1.elem_idx = elem_offset + elem_idx1; srch_node1.idx = 0;
+          srch_node0.elem_idx = elem_offset + elem_idx0;
+          srch_node0.idx = 0;
+          srch_node1.elem_idx = elem_offset + elem_idx1;
+          srch_node1.idx = 0;
           idx0 = std::lower_bound(near_lst.begin(), near_lst.end(), srch_node0, comp_node_eid_idx) - near_lst.begin();
           idx1 = std::lower_bound(near_lst.begin(), near_lst.end(), srch_node1, comp_node_eid_idx) - near_lst.begin();
         }
@@ -1040,7 +1043,9 @@ namespace sctl {
       for (Long e = 0; e < Nelem; e++) blk_cnt[e] = (near_elem_cnt[e] + grain-1) / grain;
       omp_par::scan(blk_cnt.begin(), blk_dsp.begin(), Nelem, 0);
       const Long Nblk = (Nelem ? blk_dsp[Nelem-1] + blk_cnt[Nelem-1] : 0);
-      near_blk_elem.ReInit(Nblk); near_blk_t0.ReInit(Nblk); near_blk_cnt.ReInit(Nblk);
+      near_blk_elem.ReInit(Nblk);
+      near_blk_t0.ReInit(Nblk);
+      near_blk_cnt.ReInit(Nblk);
       #pragma omp parallel for schedule(static)
       for (Long e = 0; e < Nelem; e++) {
         Long b = blk_dsp[e];
