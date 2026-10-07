@@ -120,28 +120,22 @@ namespace sctl {
     /** evaluates position (minus origin, if given) and tangents dXu, dXv (if non-null) at (u,v) */
     template <class Real> void EvalPoint(Real* X, Real* dXu, Real* dXv, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Integer order, const Real u, const Real v, const Vector<Real>* origin) {
       const Integer nnode = order * order;
-      ScratchPool& pool = ScratchPool::Instance();
 
-      ScratchBuf<Real> Luv(2*order, pool); // Luv[i], Luv[order+i]: i-th interpolation weight at u, at v
+      ScratchBuf<Real> L(2*order); // L[2*i], L[2*i+1]: i-th interpolation weight at u, at v
       { // Interpolation weights at u and at v
-        ScratchBuf<Real> L(2*order, pool); // L[2*i], L[2*i+1]
         StaticArray<Real,2> uv{u, v};
         const Vector<Real> trg(2, uv, false);
         Vector<Real> L_(L);
         LagrangeInterp<Real>::Interpolate(L_, QuadElemList<Real>::ParamNodes(order), trg);
-        for (Integer i = 0; i < order; i++) {
-          Luv[i] = L[2*i];
-          Luv[order + i] = L[2*i+1];
-        }
       }
 
       Real x[COORD_DIM] = {0, 0, 0}, xu[COORD_DIM] = {0, 0, 0}, xv[COORD_DIM] = {0, 0, 0};
       // Interpolate the coordinates, and their derivatives if want_d (a template parameter: no branch in the loop)
-      const auto sum_nodes = [&coord, &dcoord_du, &dcoord_dv, &Luv, &x, &xu, &xv, order, nnode](const auto want_d) {
+      const auto sum_nodes = [&coord, &dcoord_du, &dcoord_dv, &L, &x, &xu, &xv, order, nnode](const auto want_d) {
         for (Integer i = 0; i < order; i++) {
           for (Integer j = 0; j < order; j++) {
             const Integer p = i*order + j;
-            const Real w = Luv[i]*Luv[order + j];
+            const Real w = L[2*i]*L[2*j+1];
             for (Integer k = 0; k < COORD_DIM; k++) x[k] += coord[k*nnode + p]*w;
             if constexpr (decltype(want_d)::value) {
               for (Integer k = 0; k < COORD_DIM; k++) {
@@ -192,17 +186,22 @@ namespace sctl {
       }
     }
 
-    /** sets n to the unit normal du x dv / |du x dv|, zero where |du x dv| = 0, and returns the area element |du x dv| */
-    template <class Real> Real UnitNormal(Real (&n)[COORD_DIM], const Real (&du)[COORD_DIM], const Real (&dv)[COORD_DIM]) {
+    /** sets n to the unit normal sign * du x dv / |du x dv|, zero where |du x dv| = 0, and returns the area element |du x dv| */
+    template <class Real> Real UnitNormal(Real (&n)[COORD_DIM], const Real (&du)[COORD_DIM], const Real (&dv)[COORD_DIM], const Real sign = 1) {
       const Real n0 = du[1]*dv[2] - du[2]*dv[1];
       const Real n1 = du[2]*dv[0] - du[0]*dv[2];
       const Real n2 = du[0]*dv[1] - du[1]*dv[0];
       const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
-      const Real inv_area = (area > 0 ? 1 / area : 0);
+      const Real inv_area = (area > 0 ? sign / area : 0);
       n[0] = n0*inv_area;
       n[1] = n1*inv_area;
       n[2] = n2*inv_area;
       return area;
+    }
+
+    /** returns a view of the normal of point t in Xn (COORD_DIM values per point) if use, else an empty vector */
+    template <class Real> Vector<Real> NormalView(const Vector<Real>& Xn, const Long t, const bool use) {
+      return Vector<Real>((use ? COORD_DIM : 0), (use ? (Iterator<Real>)Xn.begin() + t*COORD_DIM : NullIterator<Real>()), false);
     }
 
     /** returns the distance from Xtrg to the nearest node; (ustar, vstar) are its parameters */
@@ -388,7 +387,7 @@ namespace sctl {
             grid_v[a] = av + wv*a/(K-1);
           }
 
-          Real fr = -1, ur = 0, vr = 0; // this grid's closest point: squared distance, parameters and indices
+          Real fr = -1; // this grid's closest point: squared distance and indices
           Integer ir = 0, jr = 0;
           { // The grid point closest to Xtrg, from the coordinates on the grid by the tensor product of the interpolation in u and in v
             LagrangeInterp<Real>::Interpolate(Lu, nds, grid_u);
@@ -403,8 +402,6 @@ namespace sctl {
                 for (Integer k = 0; k < COORD_DIM; k++) r2 += (Xg[k*K*K + a*K + b] - Xtrg[k])*(Xg[k*K*K + a*K + b] - Xtrg[k]);
                 if (fr < 0 || r2 < fr) {
                   fr = r2;
-                  ur = grid_u[a];
-                  vr = grid_v[b];
                   ir = a;
                   jr = b;
                 }
@@ -417,8 +414,8 @@ namespace sctl {
             n_side = 0;
           } else {
             fb = fr;
-            ub = ur;
-            vb = vr;
+            ub = grid_u[ir];
+            vb = grid_v[jr];
             const bool side_u = (ir == 0 && lo_u) || (ir == K-1 && hi_u);
             const bool side_v = (jr == 0 && lo_v) || (jr == K-1 && hi_v);
             if (!side_u && !side_v) { // refine around it
@@ -619,17 +616,14 @@ namespace sctl {
             for (Integer b = 0; b < Nv; b++) {
               const Integer q = a*Nv + b;
               const Integer p = a*sa + b;
-              const Real du0 = dUp[p], du1 = dUp[p + sk], du2 = dUp[p + 2*sk];
-              const Real dv0 = dVp[p], dv1 = dVp[p + sk], dv2 = dVp[p + 2*sk];
-              const Real n0 = du1*dv2 - du2*dv1, n1 = du2*dv0 - du0*dv2, n2 = du0*dv1 - du1*dv0;
-              const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
-              const Real inv_area = (area > 0 ? nrm_sign/area : 0);
+              const Real du[COORD_DIM] = {dUp[p], dUp[p + sk], dUp[p + 2*sk]};
+              const Real dv[COORD_DIM] = {dVp[p], dVp[p + sk], dVp[p + 2*sk]};
+              Real n[COORD_DIM];
+              const Real area = UnitNormal(n, du, dv, nrm_sign);
               if (fused) {
                 for (Integer k = 0; k < COORD_DIM; k++) Xs[k*ld + q] = Xp[p + k*sk];
               }
-              Xn[0*ld+q] = n0*inv_area;
-              Xn[1*ld+q] = n1*inv_area;
-              Xn[2*ld+q] = n2*inv_area;
+              for (Integer k = 0; k < COORD_DIM; k++) Xn[k*ld + q] = n[k];
               wq[q] = area*ru.w[a0+a]*rv.w[b];
             }
           }
@@ -693,8 +687,7 @@ namespace sctl {
       Matrix<Real> M_acc(nnode, KDIM0*KDIM1_out, M_acc_buf.begin(), false);
       for (Long t = 0; t < Ntrg; t++) {
         const Vector<Real> Xtrg(COORD_DIM, (Iterator<Real>)Xt.begin() + t*COORD_DIM, false);
-        const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)normal_trg.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-        near_interac_one_trg(M_acc, coord, dcoord_du, dcoord_dv, Xtrg, ntrg);
+        near_interac_one_trg(M_acc, coord, dcoord_du, dcoord_dv, Xtrg, NormalView(normal_trg, t, trg_dot_prod));
         const ConstIterator<Real> acc = M_acc.begin();
         for (Integer r = 0; r < nnode*KDIM0; r++) { // Target t's columns of M
           for (Integer k1 = 0; k1 < KDIM1_out; k1++) M[r][t*KDIM1_out + k1] = acc[r*KDIM1_out + k1];
@@ -1213,9 +1206,15 @@ namespace sctl {
 
     using detail_quadelem::DiffMat;
     using detail_quadelem::NodeMetric;
+    using detail_quadelem::NormalView;
     using detail_quadelem::SelfInteracElems;
     using detail_quadelem::ShiftedElemCoord;
+    using detail_quadelem::UnitNormal;
     using detail_quadelem::WeightedKernel;
+
+    /** u and v of the corners of the parameter square, counterclockwise from (0, 0); edge kt joins corners kt and kt+1 */
+    static constexpr Integer CornerU[4] = {0, 1, 1, 0};
+    static constexpr Integer CornerV[4] = {0, 0, 1, 1};
 
     template <class Real> struct DuffyTri {
       bool swap_ab = false;
@@ -1252,13 +1251,12 @@ namespace sctl {
         tbl.tri.resize((size_t)(4*order*order));
         tbl.alpha.resize((size_t)(4*order));
         tbl.beta.resize((size_t)(4*order));
-        const Real cu[4] = {0,1,1,0}, cv[4] = {0,0,1,1};
         for (Integer ti = 0; ti < order; ti++) for (Integer tj = 0; tj < order; tj++) {
           const Real u0 = nds[ti], v0 = nds[tj];
           for (Integer kt = 0; kt < 4; kt++) { // Triangle joining node (ti, tj) to edge kt
             DuffyTri<Real>& T = tbl.tri[(size_t)((ti*order + tj)*4 + kt)];
-            const Real a[2] = {cu[kt]-u0, cv[kt]-v0};
-            const Real b[2] = {cu[(kt+1)%4]-u0, cv[(kt+1)%4]-v0};
+            const Real a[2] = {CornerU[kt]-u0, CornerV[kt]-v0};
+            const Real b[2] = {CornerU[(kt+1)%4]-u0, CornerV[(kt+1)%4]-v0};
             const Real e[2] = {b[0]-a[0], b[1]-a[1]};
             T.J0 = a[0]*b[1] - a[1]*b[0];
             SCTL_ASSERT_MSG(T.J0 > 0, "Duffy triangle orientation");
@@ -1353,9 +1351,8 @@ namespace sctl {
           Real tstar, dOverL;
           { // Closest edge point, and its distance over edge length
             const Real u0 = nds[ti], v0 = nds[tj];
-            const Real cu[4] = {0,1,1,0}, cv[4] = {0,0,1,1};
-            const Real a[2] = {cu[kt]-u0, cv[kt]-v0};
-            const Real e[2] = {cu[(kt+1)%4]-cu[kt], cv[(kt+1)%4]-cv[kt]};
+            const Real a[2] = {CornerU[kt]-u0, CornerV[kt]-v0};
+            const Real e[2] = {(Real)(CornerU[(kt+1)%4]-CornerU[kt]), (Real)(CornerV[(kt+1)%4]-CornerV[kt])};
             const Real Me[2] = {guu*e[0]+guv*e[1], guv*e[0]+gvv*e[1]};
             const Real am = e[0]*Me[0] + e[1]*Me[1];
             Real ts = -(a[0]*Me[0] + a[1]*Me[1])/am;
@@ -1423,14 +1420,12 @@ namespace sctl {
               const Real jw = tbl.sn[i]*T.J0*tbl.sw[i];
               for (Integer j = 0; j < nt; j++) {
                 const Integer q = i*nt + j;
-                const Real a0 = XdX[i*NR+COORD_DIM+0][j], a1 = XdX[i*NR+COORD_DIM+1][j], a2 = XdX[i*NR+COORD_DIM+2][j];
-                const Real b0 = XdX[i*NR+2*COORD_DIM+0][j], b1 = XdX[i*NR+2*COORD_DIM+1][j], b2 = XdX[i*NR+2*COORD_DIM+2][j];
-                const Real n0 = T.nsign*(a1*b2-a2*b1), n1 = T.nsign*(a2*b0-a0*b2), n2 = T.nsign*(a0*b1-a1*b0);
-                const Real ar = sqrt<Real>(n0*n0+n1*n1+n2*n2), ia = (ar > 0 ? (Real)1/ar : (Real)0);
+                const Real du[COORD_DIM] = {XdX[i*NR+COORD_DIM+0][j], XdX[i*NR+COORD_DIM+1][j], XdX[i*NR+COORD_DIM+2][j]};
+                const Real dv[COORD_DIM] = {XdX[i*NR+2*COORD_DIM+0][j], XdX[i*NR+2*COORD_DIM+1][j], XdX[i*NR+2*COORD_DIM+2][j]};
+                Real n[COORD_DIM];
+                const Real ar = UnitNormal(n, du, dv, T.nsign);
                 for (Integer k = 0; k < COORD_DIM; k++) Xs[k*nq+q] = XdX[i*NR+k][j];
-                Xn[0*nq+q] = n0*ia;
-                Xn[1*nq+q] = n1*ia;
-                Xn[2*nq+q] = n2*ia;
+                for (Integer k = 0; k < COORD_DIM; k++) Xn[k*nq+q] = n[k];
                 wq[q] = ar*jw*tw[j];
               }
             }
@@ -1440,8 +1435,7 @@ namespace sctl {
           { // Weighted kernel at the rule's points
             StaticArray<Real,COORD_DIM> Xt0{0,0,0};
             const Vector<Real> Xt0_v(COORD_DIM, Xt0, false);
-            const Vector<Real> normal_trg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-            WeightedKernel<Real>(KW_buf.begin(), Xt0_v.begin(), Xs.begin(), Xn.begin(), wq.begin(), ns*nt, nt, ns*nt, nt, (Real)1, false, normal_trg, ker);
+            WeightedKernel<Real>(KW_buf.begin(), Xt0_v.begin(), Xs.begin(), Xn.begin(), wq.begin(), ns*nt, nt, ns*nt, nt, (Real)1, false, NormalView(Xnnodes, t, trg_dot_prod), ker);
           }
 
           { // Project onto the element nodes and add into M_acc
@@ -1482,6 +1476,7 @@ namespace sctl {
     using detail_near_split::NearMaxQuadOrder;
 
     using detail_quadelem::NodeMetric;
+    using detail_quadelem::NormalView;
     using detail_quadelem::SelfInteracElems;
     using detail_quadelem::SinTangentAngle;
     using detail_dyadic_near::NearInteracBlockDyadic;
@@ -1541,8 +1536,7 @@ namespace sctl {
             for (Integer k = 0; k < COORD_DIM; k++) proxy_off[j*COORD_DIM+k] = (rj-rmin)*Xnnodes[t*COORD_DIM+k];
           }
         }
-        const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
-        NearInteracBlockDyadic<order,Real>(M_acc, coord, dXu, dXv, proxy0, ntrg, ker, near_digits, q_proxy, proxy_off, proxy_wts);
+        NearInteracBlockDyadic<order,Real>(M_acc, coord, dXu, dXv, proxy0, NormalView(Xnnodes, t, trg_dot_prod), ker, near_digits, q_proxy, proxy_off, proxy_wts);
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }
@@ -1558,6 +1552,7 @@ namespace sctl {
     using detail_quadelem::DiffMat;
     using detail_quadelem::IntegrateTensorRule;
     using detail_quadelem::NodeMetric;
+    using detail_quadelem::NormalView;
     using detail_quadelem::SelfInteracElems;
     using detail_quadelem::ShiftedElemCoord;
     using detail_quadelem::SinTangentAngle;
@@ -1730,7 +1725,7 @@ namespace sctl {
         ScratchBuf<Real> cs_buf(COORD_DIM*nnode);
         Vector<Real> cs(cs_buf);
         ShiftedElemCoord(cs, coord, t); // relative to the target node
-        const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
+        const Vector<Real> ntrg = NormalView(Xnnodes, t, trg_dot_prod);
         const QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits, quad_order);
         const QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, lvl_v, quad_order);
         { // M_acc[p][c]: the (ru, rv) integral at the target of kernel component c times basis p
@@ -1751,6 +1746,7 @@ namespace sctl {
 
     using detail_quadelem::COORD_DIM;
 
+    using detail_quadelem::UnitNormal;
     using detail_quadelem::WeightedKernel;
 
     /**
@@ -1795,11 +1791,8 @@ namespace sctl {
             tu[k] = a[k] + pu*n[k];
             tv[k] = b[k] + pv*n[k];
           }
-          ns[0] = tu[1]*tv[2] - tu[2]*tv[1];
-          ns[1] = tu[2]*tv[0] - tu[0]*tv[2];
-          ns[2] = tu[0]*tv[1] - tu[1]*tv[0];
-          const Real nn = sqrt<Real>(ns[0]*ns[0] + ns[1]*ns[1] + ns[2]*ns[2]);
-          for (Integer k = 0; k < COORD_DIM; k++) Xn[k*nq + q] = ns[k]/nn;
+          UnitNormal(ns, tu, tv);
+          for (Integer k = 0; k < COORD_DIM; k++) Xn[k*nq + q] = ns[k];
           wq[q] = 1;
         }
       }
