@@ -268,14 +268,6 @@ namespace sctl {
           gv += r*b;
         }
 
-        Real Pu = gu, Pv = gv;
-        { // Project the gradient onto the parameter square
-          if      (u <= 0) Pu = std::min<Real>(gu, (Real)0);
-          else if (u >= 1) Pu = std::max<Real>(gu, (Real)0);
-          if      (v <= 0) Pv = std::min<Real>(gv, (Real)0);
-          else if (v >= 1) Pv = std::max<Real>(gv, (Real)0);
-        }
-
         const Real rel_tol = machine_eps<Real>() * 10000; // singular values below rel_tol times the largest are taken as zero; the computed tangents carry rounding errors up to about 1000 eps
         const Real zero_len2 = rel_tol * rel_tol * (E + G); // a tangent with squared length below this is taken as zero
         Real step_u = 0, step_v = 0;
@@ -327,7 +319,14 @@ namespace sctl {
             return false;
           };
           improved = line_search(step_u, step_v);
-          if (!improved) improved = line_search((E > zero_len2 ? Pu / E : 0), (G > zero_len2 ? Pv / G : 0));
+          if (!improved) { // along the gradient projected onto the parameter square
+            Real Pu = gu, Pv = gv;
+            if      (u <= 0) Pu = std::min<Real>(gu, (Real)0);
+            else if (u >= 1) Pu = std::max<Real>(gu, (Real)0);
+            if      (v <= 0) Pv = std::min<Real>(gv, (Real)0);
+            else if (v >= 1) Pv = std::max<Real>(gv, (Real)0);
+            improved = line_search((E > zero_len2 ? Pu / E : 0), (G > zero_len2 ? Pv / G : 0));
+          }
         }
         if (!improved) { // Every step grows the distance: a minimum
           converged = true;
@@ -1042,8 +1041,6 @@ namespace sctl {
       M_acc.SetZero();
 
       NearSplit<order,Real> split(coord, dcoord_du, dcoord_dv, Xtrg, pool);
-      const Real len_u = sqrt<Real>(split.guu);
-      const Real len_v = sqrt<Real>(split.gvv);
       Integer q_near = quad_order;
       if (q_near <= 0) { // at least the order for orthogonal tangents, raised for skewed tangents (fitted to the smallest passing orders, targets on and off the surface), rounded up to even
         const Real s = SinTangentAngle<Real>(split.guu, split.guv, split.gvv);
@@ -1082,13 +1079,17 @@ namespace sctl {
         }
         integrate_piece(sdu, sdv, MaxNearRefineLvl<Real> + ku, MaxNearRefineLvl<Real> + kv);
       };
-      for (Integer sdu = 0; sdu < 2; sdu++) { // Integrate each sub-rectangle, refining toward the closest point
-        if (!(split.slen[0][sdu] > 0)) continue;
-        for (Integer sdv = 0; sdv < 2; sdv++) {
-          if (!(split.slen[1][sdv] > 0)) continue;
-          acc.SetZero();
-          refine(sdu, sdv, split.slen[0][sdu]*len_u, split.slen[1][sdv]*len_v);
-          split.AddToElem(M_acc, acc, C, sdu, sdv, pool);
+      { // Integrate each sub-rectangle, refining toward the closest point
+        const Real len_u = sqrt<Real>(split.guu); // tangent lengths at the closest point
+        const Real len_v = sqrt<Real>(split.gvv);
+        for (Integer sdu = 0; sdu < 2; sdu++) {
+          if (!(split.slen[0][sdu] > 0)) continue;
+          for (Integer sdv = 0; sdv < 2; sdv++) {
+            if (!(split.slen[1][sdv] > 0)) continue;
+            acc.SetZero();
+            refine(sdu, sdv, split.slen[0][sdu]*len_u, split.slen[1][sdv]*len_v);
+            split.AddToElem(M_acc, acc, C, sdu, sdv, pool);
+          }
         }
       }
     }
@@ -1324,7 +1325,6 @@ namespace sctl {
         M_acc.SetZero();
 
         const DuffySelfTable<Real>& tbl = DuffyTable<order,Real>();
-        const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
         ScratchBuf<Real> cs_buf(COORD_DIM*nnode);
         Vector<Real> cs(cs_buf);
         ShiftedElemCoord(cs, coord, t); // relative to the target node
@@ -1344,6 +1344,7 @@ namespace sctl {
             }
           }
         }
+        const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
         for (Integer kt = 0; kt < 4; kt++) { // Triangles joining the target node to each edge
           const DuffyTri<Real>& T = tbl.tri[(size_t)((ti*order + tj)*4 + kt)];
           const DuffyAlpha<Real>& Talpha = tbl.alpha[(size_t)T.alpha];
@@ -2023,9 +2024,9 @@ namespace sctl {
     }
     if (!nelem) return; // nothing to compute, also for a default-constructed list, whose order is 0
 
-    const auto& nodes = ParamNodes(order);
     ScratchBuf<Real> dist_nodes(order);
     { // Parameter distance from each node to the accuracy ellipse
+      const auto& nodes = ParamNodes(order);
       const Integer n = order;
       const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
       const Real rho = pow<Real>((64 / (15 * tol_)), 1 / (Real)(2 * n));
