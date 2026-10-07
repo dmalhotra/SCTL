@@ -159,8 +159,6 @@ template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::S2TData {
   void (*delete_ker_s2t)(Iterator<char> ker) = nullptr;
 
   #ifdef SCTL_HAVE_PVFMM
-  mutable Real bbox_scale = 0;
-  mutable StaticArray<Real,DIM> bbox_offset;
   mutable Vector<Real> src_scal_exp, trg_scal_exp;
   mutable Vector<Real> src_scal, trg_scal;
   mutable pvfmm::Kernel<Real> pvfmm_ker_s2t;
@@ -928,8 +926,6 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::PVFMMBox(StaticAr
 }
 
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<Real>& U, const std::string& trg_name) const {
-  if (DIM != 3) return EvalDirect(U, trg_name); // PVFMM only supports 3D
-
   SCTL_ASSERT_MSG(trg_map.find(trg_name) != trg_map.end(), "Target name does not exist.");
   const auto& trg_data = trg_map.at(trg_name);
   const Integer TrgDim = trg_data.dim_trg;
@@ -985,8 +981,8 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
       Vector<Real>& trg_scal = s2t_data.trg_scal;
       pvfmm::PtFMM_Tree<Real>*& tree_ptr = s2t_data.tree_ptr;
       if (s2t_data.setup_tree) { // Setup tree_ptr, src_scal, trg_scal
-        auto& bbox_scale = s2t_data.bbox_scale;
-        auto& bbox_offset = s2t_data.bbox_offset;
+        StaticArray<Real,DIM> bbox_offset;
+        Real bbox_scale;
         PVFMMBox(bbox_offset, bbox_scale, src_name, trg_name);
         { // Set src_scal, trg_scal
           src_scal.ReInit(SrcDim);

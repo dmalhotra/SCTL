@@ -982,11 +982,11 @@ namespace sctl {
             integrate_piece(sdu, sdv, MaxNearRefineLvl<Real> + ku, kv);
             kv++;
             hv *= (Real)0.5;
-          } else if (ku < KMAX) {
+          } else {
             integrate_piece(sdu, sdv, ku, MaxNearRefineLvl<Real> + kv);
             ku++;
             hu *= (Real)0.5;
-          } else break;
+          }
         }
         integrate_piece(sdu, sdv, MaxNearRefineLvl<Real> + ku, MaxNearRefineLvl<Real> + kv);
       };
@@ -1044,7 +1044,7 @@ namespace sctl {
           const bool degenerate = !(split.dist > 0) || isinf<Real>(split.dist) || isnan<Real>(split.dist) || !(L_phys > 0);
           const Real h_param = (degenerate ? 0 : split.dist/L_phys);
           const Real w_floor = pow<Real>((Real)0.5, MaxNearRefineLvl<Real>);
-          w_stop = std::max<Real>(std::max<Real>(h_param/b_ellipse, w_floor), (Real)1e-300);
+          w_stop = std::max<Real>(h_param/b_ellipse, w_floor);
 
           // at least digits + 1, the order for orthogonal tangents and targets off the surface, raised for skewed tangents (fitted to the smallest passing orders)
           const Real s = SinTangentAngle<Real>(split.guu, split.guv, split.gvv);
@@ -1600,16 +1600,13 @@ namespace sctl {
         const auto graded_rule = [Lvl, &qnds, &qwts](Vector<Real>& delta, Vector<Real>& w, const Real u0) {
           const Integer q = (Integer)qnds.Dim();
           const auto side = [&delta, &w, Lvl, q, &qnds, &qwts](const Real span, const Real sgn) {
-            if (!(span > 0)) return;
             Real a = 0;
             for (Integer k = Lvl; k >= 0; k--) {
               const Real b = span * pow<Real>((Real)0.5, (Integer)k);
               const Real len = b - a;
-              if (len > 0) {
-                for (Integer i = 0; i < q; i++) {
-                  delta.PushBack(sgn*(a + len*qnds[i]));
-                  w.PushBack(len*qwts[i]);
-                }
+              for (Integer i = 0; i < q; i++) {
+                delta.PushBack(sgn*(a + len*qnds[i]));
+                w.PushBack(len*qwts[i]);
               }
               a = b;
             }
