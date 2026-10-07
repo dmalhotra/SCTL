@@ -33,7 +33,7 @@ template <class ValueType> void Vector<ValueType>::Init(Long dim_, Iterator<Valu
     if (dim > 0) {
       data_ptr = aligned_new<ValueType>(capacity);
       if (data_ != NullIterator<ValueType>()) {
-        omp_par::copy(data_, data_ + dim, data_ptr);
+        omp_par::copy(data_, data_ + dim_, data_ptr);
       }
     } else
       data_ptr = NullIterator<ValueType>();
@@ -116,7 +116,7 @@ template <class ValueType> void Vector<ValueType>::ReInit(Long dim_, Iterator<Va
     dim = dim_;
     disable_reinit_ = disable_reinit;
     if (dim && (data_ptr != NullIterator<ValueType>()) && (data_ != NullIterator<ValueType>())) {
-      omp_par::copy(data_, data_ + dim, data_ptr);
+      omp_par::copy(data_, data_ + dim_, data_ptr);
     }
   } else {
     // Slow path: free old owned storage, then re-initialize. Avoids the

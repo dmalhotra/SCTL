@@ -52,7 +52,7 @@ template <class ValueType> void Matrix<ValueType>::Init(Long dim1, Long dim2, It
     if (dim[0] * dim[1] > 0) {
       data_ptr = aligned_new<ValueType>(capacity);
       if (data_ != NullIterator<ValueType>()) {
-        omp_par::copy(data_, data_ + dim[0] * dim[1], data_ptr);
+        omp_par::copy(data_, data_ + dim1 * dim2, data_ptr);
       }
     } else
       data_ptr = NullIterator<ValueType>();
@@ -115,7 +115,7 @@ template <class ValueType> void Matrix<ValueType>::ReInit(Long dim1, Long dim2, 
     dim[0] = dim1;
     dim[1] = dim2;
     if (data_ptr != NullIterator<ValueType>() && data_ != NullIterator<ValueType>()) {
-      omp_par::copy(data_, data_ + dim[0] * dim[1], data_ptr);
+      omp_par::copy(data_, data_ + dim1 * dim2, data_ptr);
     }
   } else {
     Matrix<ValueType> tmp(dim1, dim2, data_, own_data_);
