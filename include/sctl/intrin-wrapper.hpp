@@ -2897,7 +2897,12 @@ namespace sctl { // SSE
   template <> inline VecData<double ,2> select_intrin(const Mask<VecData<double ,2>>& s, const VecData<double ,2>& a, const VecData<double ,2>& b) { return _mm_blendv_pd  (b.v, a.v, s.v); }
 
   // Masked load and store
-#if defined(__AVX__)
+#if defined(__AVX512DQ__) && defined(__AVX512VL__) // with AVX-512VL by a mask register from the sign bits of the lanes: vmaskmovps and vmaskmovpd take about 6 cycles on AMD Zen 4
+  template <> inline VecData<float ,4> loadu_mask_intrin<VecData<float ,4>>(float  const* p, const Mask<VecData<float ,4>>& m) { return _mm_maskz_loadu_ps(_mm_movepi32_mask(_mm_castps_si128(m.v)), p); }
+  template <> inline VecData<double,2> loadu_mask_intrin<VecData<double,2>>(double const* p, const Mask<VecData<double,2>>& m) { return _mm_maskz_loadu_pd(_mm_movepi64_mask(_mm_castpd_si128(m.v)), p); }
+  template <> inline void storeu_mask_intrin<VecData<float ,4>>(float * p, VecData<float ,4> vec, const Mask<VecData<float ,4>>& m) { _mm_mask_storeu_ps(p, _mm_movepi32_mask(_mm_castps_si128(m.v)), vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<double,2>>(double* p, VecData<double,2> vec, const Mask<VecData<double,2>>& m) { _mm_mask_storeu_pd(p, _mm_movepi64_mask(_mm_castpd_si128(m.v)), vec.v); }
+#elif defined(__AVX__)
   template <> inline VecData<float ,4> loadu_mask_intrin<VecData<float ,4>>(float  const* p, const Mask<VecData<float ,4>>& m) { return _mm_maskload_ps(p, _mm_castps_si128(m.v)); }
   template <> inline VecData<double,2> loadu_mask_intrin<VecData<double,2>>(double const* p, const Mask<VecData<double,2>>& m) { return _mm_maskload_pd(p, _mm_castpd_si128(m.v)); }
   template <> inline void storeu_mask_intrin<VecData<float ,4>>(float * p, VecData<float ,4> vec, const Mask<VecData<float ,4>>& m) { _mm_maskstore_ps(p, _mm_castps_si128(m.v), vec.v); }
@@ -2950,7 +2955,12 @@ namespace sctl { // SSE
       _mm_store_sd(p, vec.v);
     }
   }
-#if defined(__AVX2__)
+#if defined(__AVX512DQ__) && defined(__AVX512VL__)
+  template <> inline VecData<int32_t,4> loadu_mask_intrin<VecData<int32_t,4>>(int32_t const* p, const Mask<VecData<int32_t,4>>& m) { return _mm_maskz_loadu_epi32(_mm_movepi32_mask(m.v), p); }
+  template <> inline VecData<int64_t,2> loadu_mask_intrin<VecData<int64_t,2>>(int64_t const* p, const Mask<VecData<int64_t,2>>& m) { return _mm_maskz_loadu_epi64(_mm_movepi64_mask(m.v), p); }
+  template <> inline void storeu_mask_intrin<VecData<int32_t,4>>(int32_t* p, VecData<int32_t,4> vec, const Mask<VecData<int32_t,4>>& m) { _mm_mask_storeu_epi32(p, _mm_movepi32_mask(m.v), vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec, const Mask<VecData<int64_t,2>>& m) { _mm_mask_storeu_epi64(p, _mm_movepi64_mask(m.v), vec.v); }
+#elif defined(__AVX2__)
   template <> inline VecData<int32_t,4> loadu_mask_intrin<VecData<int32_t,4>>(int32_t const* p, const Mask<VecData<int32_t,4>>& m) { return _mm_maskload_epi32((int const*)p, m.v); }
   template <> inline VecData<int64_t,2> loadu_mask_intrin<VecData<int64_t,2>>(int64_t const* p, const Mask<VecData<int64_t,2>>& m) { return _mm_maskload_epi64((long long const*)p, m.v); }
   template <> inline void storeu_mask_intrin<VecData<int32_t,4>>(int32_t* p, VecData<int32_t,4> vec, const Mask<VecData<int32_t,4>>& m) { _mm_maskstore_epi32((int*)p, m.v, vec.v); }
@@ -4069,6 +4079,16 @@ namespace sctl { // AVX
   template <> inline VecData<double  ,4> select_intrin(const Mask<VecData<double  ,4>>& s, const VecData<double  ,4>& a, const VecData<double  ,4>& b) { return _mm256_blendv_pd  (b.v, a.v, s.v); }
 
   // Masked load and store
+  #if defined(__AVX512DQ__) && defined(__AVX512VL__) // with AVX-512VL by a mask register from the sign bits of the lanes: vmaskmovps and vmaskmovpd take about 6 cycles on AMD Zen 4
+  template <> inline VecData<float  ,8> loadu_mask_intrin<VecData<float  ,8>>(float   const* p, const Mask<VecData<float  ,8>>& m) { return _mm256_maskz_loadu_ps   (_mm256_movepi32_mask(_mm256_castps_si256(m.v)), p); }
+  template <> inline VecData<double ,4> loadu_mask_intrin<VecData<double ,4>>(double  const* p, const Mask<VecData<double ,4>>& m) { return _mm256_maskz_loadu_pd   (_mm256_movepi64_mask(_mm256_castpd_si256(m.v)), p); }
+  template <> inline VecData<int32_t,8> loadu_mask_intrin<VecData<int32_t,8>>(int32_t const* p, const Mask<VecData<int32_t,8>>& m) { return _mm256_maskz_loadu_epi32(_mm256_movepi32_mask(m.v), p); }
+  template <> inline VecData<int64_t,4> loadu_mask_intrin<VecData<int64_t,4>>(int64_t const* p, const Mask<VecData<int64_t,4>>& m) { return _mm256_maskz_loadu_epi64(_mm256_movepi64_mask(m.v), p); }
+  template <> inline void storeu_mask_intrin<VecData<float  ,8>>(float  * p, VecData<float  ,8> vec, const Mask<VecData<float  ,8>>& m) { _mm256_mask_storeu_ps   (p, _mm256_movepi32_mask(_mm256_castps_si256(m.v)), vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<double ,4>>(double * p, VecData<double ,4> vec, const Mask<VecData<double ,4>>& m) { _mm256_mask_storeu_pd   (p, _mm256_movepi64_mask(_mm256_castpd_si256(m.v)), vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<int32_t,8>>(int32_t* p, VecData<int32_t,8> vec, const Mask<VecData<int32_t,8>>& m) { _mm256_mask_storeu_epi32(p, _mm256_movepi32_mask(m.v), vec.v); }
+  template <> inline void storeu_mask_intrin<VecData<int64_t,4>>(int64_t* p, VecData<int64_t,4> vec, const Mask<VecData<int64_t,4>>& m) { _mm256_mask_storeu_epi64(p, _mm256_movepi64_mask(m.v), vec.v); }
+  #else
   template <> inline VecData<float ,8> loadu_mask_intrin<VecData<float ,8>>(float  const* p, const Mask<VecData<float ,8>>& m) { return _mm256_maskload_ps(p, _mm256_castps_si256(m.v)); }
   template <> inline VecData<double,4> loadu_mask_intrin<VecData<double,4>>(double const* p, const Mask<VecData<double,4>>& m) { return _mm256_maskload_pd(p, _mm256_castpd_si256(m.v)); }
   template <> inline void storeu_mask_intrin<VecData<float ,8>>(float * p, VecData<float ,8> vec, const Mask<VecData<float ,8>>& m) { _mm256_maskstore_ps(p, _mm256_castps_si256(m.v), vec.v); }
@@ -4083,6 +4103,7 @@ namespace sctl { // AVX
   template <> inline VecData<int64_t,4> loadu_mask_intrin<VecData<int64_t,4>>(int64_t const* p, const Mask<VecData<int64_t,4>>& m) { return _mm256_castpd_si256(_mm256_maskload_pd((double const*)p, m.v)); }
   template <> inline void storeu_mask_intrin<VecData<int32_t,8>>(int32_t* p, VecData<int32_t,8> vec, const Mask<VecData<int32_t,8>>& m) { _mm256_maskstore_ps((float*)p, m.v, _mm256_castsi256_ps(vec.v)); }
   template <> inline void storeu_mask_intrin<VecData<int64_t,4>>(int64_t* p, VecData<int64_t,4> vec, const Mask<VecData<int64_t,4>>& m) { _mm256_maskstore_pd((double*)p, m.v, _mm256_castsi256_pd(vec.v)); }
+  #endif
   #endif
 
   // Number of selected lanes
