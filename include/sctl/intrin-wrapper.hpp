@@ -2129,17 +2129,12 @@ namespace sctl { // SSE
     return _mm_setzero_pd();
   }
 
-  template <> inline VecData<int8_t,16> set1_intrin<VecData<int8_t,16>>(int8_t a) {
-    return _mm_set1_epi8(a);
-  }
-  template <> inline VecData<int16_t,8> set1_intrin<VecData<int16_t,8>>(int16_t a) {
-    return _mm_set1_epi16(a);
-  }
-#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14) && !defined(__AVX__)
-  // Two equal 64-bit halves known at compile time, by one load (movddup), for constants of 4 floats or 4 or 2
-  // integers that GCC 14 and later would make with two or three instructions: a load of one element, or a move
-  // from a general register, and a shuffle. The empty asm keeps GCC from seeing them as the constants.
-  // Not for 0, nor -1 of integers: GCC makes them by one instruction (pxor, pcmpeqd), and knows their value.
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14 || (__GNUC__ >= 12 && defined(__AVX__)))
+  // Two equal 64-bit halves known at compile time, by one load (movddup), for constants that GCC would make with two
+  // or three instructions (a load of one element, or a move from a general register, and a shuffle): of 4 floats or
+  // equal integers with GCC 14 and later without AVX, and of equal integers with GCC 12 and later with AVX. The empty
+  // asm keeps GCC from seeing them as the constants. Not for 0, nor -1 of integers: GCC makes them by one instruction
+  // (pxor, pcmpeqd), and knows their value.
   inline __m128i dup64_const_intrin(const uint64_t bits) {
     double d;
     __builtin_memcpy(&d, &bits, sizeof(d));
@@ -2148,14 +2143,26 @@ namespace sctl { // SSE
     return _mm_castpd_si128(t);
   }
 #endif
+  template <> inline VecData<int8_t,16> set1_intrin<VecData<int8_t,16>>(int8_t a) {
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14 || (__GNUC__ >= 12 && defined(__AVX__)))
+    if (__builtin_constant_p(a) && a != 0 && a != -1) return dup64_const_intrin((uint8_t)a * 0x0101010101010101ULL);
+#endif
+    return _mm_set1_epi8(a);
+  }
+  template <> inline VecData<int16_t,8> set1_intrin<VecData<int16_t,8>>(int16_t a) {
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14 || (__GNUC__ >= 12 && defined(__AVX__)))
+    if (__builtin_constant_p(a) && a != 0 && a != -1) return dup64_const_intrin((uint16_t)a * 0x0001000100010001ULL);
+#endif
+    return _mm_set1_epi16(a);
+  }
   template <> inline VecData<int32_t,4> set1_intrin<VecData<int32_t,4>>(int32_t a) {
-#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14) && !defined(__AVX__)
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14 || (__GNUC__ >= 12 && defined(__AVX__)))
     if (__builtin_constant_p(a) && a != 0 && a != -1) return dup64_const_intrin((((uint64_t)(uint32_t)a) << 32) | (uint32_t)a);
 #endif
     return _mm_set1_epi32(a);
   }
   template <> inline VecData<int64_t,2> set1_intrin<VecData<int64_t,2>>(int64_t a) {
-#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14) && !defined(__AVX__)
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 14 || (__GNUC__ >= 12 && defined(__AVX__)))
     if (__builtin_constant_p(a) && a != 0 && a != -1) return dup64_const_intrin((uint64_t)a);
 #endif
     return _mm_set1_epi64x(a);
@@ -2357,7 +2364,7 @@ namespace sctl { // SSE
     return _mm_sub_epi64(_mm_setzero_si128(), a.v);
   }
   template <> inline VecData<float,4> unary_minus_intrin<VecData<float,4>>(const VecData<float,4>& a) {
-    return _mm_xor_ps(a.v, _mm_castsi128_ps(_mm_set1_epi32(0x80000000)));
+    return _mm_xor_ps(a.v, _mm_castsi128_ps(set1_intrin<VecData<int32_t,4>>(0x80000000).v));
   }
   template <> inline VecData<double,2> unary_minus_intrin<VecData<double,2>>(const VecData<double,2>& a) {
     return _mm_xor_pd(a.v, _mm_castsi128_pd(_mm_setr_epi32(0,0x80000000,0,0x80000000)));
@@ -2373,7 +2380,7 @@ namespace sctl { // SSE
     #if defined(__AVX512VL__) && defined(__AVX512BW__)
     return _mm_mask_mov_epi8(mulodd, 0x5555, muleven);
     #else
-    __m128i mask    = _mm_set1_epi32(0x00FF00FF);          // mask for even positions
+    __m128i mask    = set1_intrin<VecData<int32_t,4>>(0x00FF00FF).v; // mask for even positions
     return selectb(mask,muleven,mulodd);                   // interleave even and odd
     #endif
   }
@@ -2425,11 +2432,11 @@ namespace sctl { // SSE
   }
 
   template <> inline VecData<int16_t,8> div_intrin(const VecData<int16_t,8>& a, const VecData<int16_t,8>& b) { // through float, exact for 16 bits; the low 16 bits of the quotient, as the C++ conversion
-    const auto q = [](const __m128i a4, const __m128i b4) { return _mm_and_si128(_mm_cvttps_epi32(_mm_div_ps(_mm_cvtepi32_ps(_mm_cvtepi16_epi32(a4)), _mm_cvtepi32_ps(_mm_cvtepi16_epi32(b4)))), _mm_set1_epi32(0xFFFF)); };
+    const auto q = [](const __m128i a4, const __m128i b4) { return _mm_and_si128(_mm_cvttps_epi32(_mm_div_ps(_mm_cvtepi32_ps(_mm_cvtepi16_epi32(a4)), _mm_cvtepi32_ps(_mm_cvtepi16_epi32(b4)))), set1_intrin<VecData<int32_t,4>>(0xFFFF).v); };
     return _mm_packus_epi32(q(a.v, b.v), q(_mm_srli_si128(a.v, 8), _mm_srli_si128(b.v, 8)));
   }
   template <> inline VecData<int8_t,16> div_intrin(const VecData<int8_t,16>& a, const VecData<int8_t,16>& b) { // through float, four lanes at a time; the low 8 bits of the quotient
-    const auto q = [](const __m128i a4, const __m128i b4) { return _mm_and_si128(_mm_cvttps_epi32(_mm_div_ps(_mm_cvtepi32_ps(_mm_cvtepi8_epi32(a4)), _mm_cvtepi32_ps(_mm_cvtepi8_epi32(b4)))), _mm_set1_epi32(0xFF)); };
+    const auto q = [](const __m128i a4, const __m128i b4) { return _mm_and_si128(_mm_cvttps_epi32(_mm_div_ps(_mm_cvtepi32_ps(_mm_cvtepi8_epi32(a4)), _mm_cvtepi32_ps(_mm_cvtepi8_epi32(b4)))), set1_intrin<VecData<int32_t,4>>(0xFF).v); };
     const __m128i q01 = _mm_packus_epi32(q(a.v, b.v), q(_mm_srli_si128(a.v, 4), _mm_srli_si128(b.v, 4)));
     const __m128i q23 = _mm_packus_epi32(q(_mm_srli_si128(a.v, 8), _mm_srli_si128(b.v, 8)), q(_mm_srli_si128(a.v, 12), _mm_srli_si128(b.v, 12)));
     return _mm_packus_epi16(q01, q23);
@@ -2643,7 +2650,7 @@ namespace sctl { // SSE
   template <> inline VecData<int32_t,4> bitshiftright_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { return _mm_srav_epi32(a.v, rhs.v); }
   #else // without AVX2: a multiply, or one bit shift for the count of each lane and blends
   template <> inline VecData<int32_t,4> bitshiftleft_intrin <VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { // a times 2^rhs, made from the exponent bits of a float; 2^31 becomes 0x80000000
-    return _mm_mullo_epi32(a.v, _mm_cvttps_epi32(_mm_castsi128_ps(_mm_add_epi32(_mm_slli_epi32(rhs.v, 23), _mm_set1_epi32(127 << 23)))));
+    return _mm_mullo_epi32(a.v, _mm_cvttps_epi32(_mm_castsi128_ps(_mm_add_epi32(_mm_slli_epi32(rhs.v, 23), set1_intrin<VecData<int32_t,4>>(127 << 23).v))));
   }
   template <> inline VecData<int64_t,2> bitshiftleft_intrin <VecData<int64_t,2>>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& rhs) { return _mm_blend_epi16(_mm_sll_epi64(a.v, rhs.v), _mm_sll_epi64(a.v, _mm_unpackhi_epi64(rhs.v, rhs.v)), 0xF0); }
   template <> inline VecData<int32_t,4> bitshiftright_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { // the count of lane i in the low 64 bits of the count of _mm_sra_epi32
@@ -2674,7 +2681,7 @@ namespace sctl { // SSE
   #else
   template <> inline VecData<int16_t,8> bitshiftleft_intrin <VecData<int16_t,8>>(const VecData<int16_t,8>& a, const VecData<int16_t,8>& rhs) { // a times 2^rhs, made from the exponent bits of floats and packed with unsigned saturation (2^15 stays 0x8000)
     const __m128i z = _mm_setzero_si128();
-    const auto pow2 = [](const __m128i k) { return _mm_cvttps_epi32(_mm_castsi128_ps(_mm_add_epi32(_mm_slli_epi32(k, 23), _mm_set1_epi32(127 << 23)))); };
+    const auto pow2 = [](const __m128i k) { return _mm_cvttps_epi32(_mm_castsi128_ps(_mm_add_epi32(_mm_slli_epi32(k, 23), set1_intrin<VecData<int32_t,4>>(127 << 23).v))); };
     return _mm_mullo_epi16(a.v, _mm_packus_epi32(pow2(_mm_unpacklo_epi16(rhs.v, z)), pow2(_mm_unpackhi_epi16(rhs.v, z))));
   }
   #if defined(__AVX2__) // without AVX2, the generic code is faster
@@ -3244,16 +3251,40 @@ namespace sctl { // AVX
     return _mm256_setzero_pd();
   }
 
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 12)
+  // As dup64_const_intrin, for 256 bits, by one load (vbroadcastsd). The asm is volatile, so each use has its own
+  // load: otherwise GCC keeps the constants in registers through a function and moves other values to the stack
+  // (pow of 8 floats at haswell, GCC 15 and 16: 112 -> 118 cycles per dependent call).
+  inline __m256i dup64x4_const_intrin(const uint64_t bits) {
+    double d;
+    __builtin_memcpy(&d, &bits, sizeof(d));
+    __m256d t = _mm256_set1_pd(d);
+    asm volatile("" : "+x"(t));
+    return _mm256_castpd_si256(t);
+  }
+#endif
   template <> inline VecData<int8_t,32> set1_intrin<VecData<int8_t,32>>(int8_t a) {
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 12)
+    if (__builtin_constant_p(a) && a != 0 && a != -1) return dup64x4_const_intrin((uint8_t)a * 0x0101010101010101ULL);
+#endif
     return _mm256_set1_epi8(a);
   }
   template <> inline VecData<int16_t,16> set1_intrin<VecData<int16_t,16>>(int16_t a) {
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 12)
+    if (__builtin_constant_p(a) && a != 0 && a != -1) return dup64x4_const_intrin((uint16_t)a * 0x0001000100010001ULL);
+#endif
     return _mm256_set1_epi16(a);
   }
   template <> inline VecData<int32_t,8> set1_intrin<VecData<int32_t,8>>(int32_t a) {
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 12)
+    if (__builtin_constant_p(a) && a != 0 && a != -1) return dup64x4_const_intrin((((uint64_t)(uint32_t)a) << 32) | (uint32_t)a);
+#endif
     return _mm256_set1_epi32(a);
   }
   template <> inline VecData<int64_t,4> set1_intrin<VecData<int64_t,4>>(int64_t a) {
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 12)
+    if (__builtin_constant_p(a) && a != 0 && a != -1) return dup64x4_const_intrin((uint64_t)a);
+#endif
     return _mm256_set1_epi64x(a);
   }
   template <> inline VecData<float,8> set1_intrin<VecData<float,8>>(float a) {
@@ -3439,7 +3470,7 @@ namespace sctl { // AVX
     #if defined(__AVX512VL__) && defined(__AVX512BW__)
     return _mm256_mask_mov_epi8(mulodd, 0x55555555, muleven);
     #else
-    __m256i mask    = _mm256_set1_epi32(0x00FF00FF);          // mask for even positions
+    __m256i mask    = set1_intrin<VecData<int32_t,8>>(0x00FF00FF).v; // mask for even positions
     __m256i product = selectb(mask,muleven,mulodd);           // interleave even and odd
     return product;
     #endif
@@ -3747,7 +3778,7 @@ namespace sctl { // AVX
   #else // as for 8 lanes; unpack and pack work within each 128-bit half, in the same order
   template <> inline VecData<int16_t,16> bitshiftleft_intrin <VecData<int16_t,16>>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& rhs) {
     const __m256i z = _mm256_setzero_si256();
-    const auto pow2 = [](const __m256i k) { return _mm256_cvttps_epi32(_mm256_castsi256_ps(_mm256_add_epi32(_mm256_slli_epi32(k, 23), _mm256_set1_epi32(127 << 23)))); };
+    const auto pow2 = [](const __m256i k) { return _mm256_cvttps_epi32(_mm256_castsi256_ps(_mm256_add_epi32(_mm256_slli_epi32(k, 23), set1_intrin<VecData<int32_t,8>>(127 << 23).v))); };
     return _mm256_mullo_epi16(a.v, _mm256_packus_epi32(pow2(_mm256_unpacklo_epi16(rhs.v, z)), pow2(_mm256_unpackhi_epi16(rhs.v, z))));
   }
   template <> inline VecData<int16_t,16> bitshiftright_intrin<VecData<int16_t,16>>(const VecData<int16_t,16>& a, const VecData<int16_t,16>& rhs) {
@@ -4188,22 +4219,22 @@ namespace sctl { // AVX
   template <> inline VecData<int32_t,8> convert_intrin<VecData<int32_t,8>,VecData<float  ,8>>(const VecData<float  ,8>& a) { return _mm256_cvttps_epi32(a.v); }
   #ifdef __AVX2__ // integers: the low bits; sign extension is as fast in the generic code
   template <> inline VecData<int16_t,8> convert_intrin<VecData<int16_t,8>,VecData<int32_t,8>>(const VecData<int32_t,8>& a) {
-    const __m256i lo = _mm256_and_si256(a.v, _mm256_set1_epi32(0xFFFF));
+    const __m256i lo = _mm256_and_si256(a.v, set1_intrin<VecData<int32_t,8>>(0xFFFF).v);
     return _mm256_castsi256_si128(_mm256_permute4x64_epi64(_mm256_packus_epi32(lo, lo), 0x08));
   }
   template <> inline VecData<int32_t,4> convert_intrin<VecData<int32_t,4>,VecData<int64_t,4>>(const VecData<int64_t,4>& a) { return _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(a.v, _mm256_setr_epi32(0, 2, 4, 6, 0, 2, 4, 6))); }
   template <> inline VecData<int8_t,16> convert_intrin<VecData<int8_t,16>,VecData<int16_t,16>>(const VecData<int16_t,16>& a) {
-    const __m256i lo = _mm256_and_si256(a.v, _mm256_set1_epi16(0xFF));
+    const __m256i lo = _mm256_and_si256(a.v, set1_intrin<VecData<int16_t,16>>(0xFF).v);
     return _mm256_castsi256_si128(_mm256_permute4x64_epi64(_mm256_packus_epi16(lo, lo), 0x08));
   }
   template <> inline VecData<float  ,8> convert_intrin<VecData<float  ,8>,VecData<int16_t,8>>(const VecData<int16_t,8>& a) { return _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(a.v)); }
   #else // AVX without AVX2: each 128-bit half with SSE
   template <> inline VecData<int16_t,8> convert_intrin<VecData<int16_t,8>,VecData<int32_t,8>>(const VecData<int32_t,8>& a) {
-    const __m128i m = _mm_set1_epi32(0xFFFF);
+    const __m128i m = set1_intrin<VecData<int32_t,4>>(0xFFFF).v;
     return _mm_packus_epi32(_mm_and_si128(_mm256_castsi256_si128(a.v), m), _mm_and_si128(_mm256_extractf128_si256(a.v, 1), m));
   }
   template <> inline VecData<int8_t,16> convert_intrin<VecData<int8_t,16>,VecData<int16_t,16>>(const VecData<int16_t,16>& a) {
-    const __m128i m = _mm_set1_epi16(0xFF);
+    const __m128i m = set1_intrin<VecData<int16_t,8>>(0xFF).v;
     return _mm_packus_epi16(_mm_and_si128(_mm256_castsi256_si128(a.v), m), _mm_and_si128(_mm256_extractf128_si256(a.v, 1), m));
   }
   #if !defined(__clang__) // with clang the generic loop is faster
@@ -4287,13 +4318,13 @@ namespace sctl { // AVX
 
   #ifdef __AVX2__
   template <> inline VecData<int16_t,16> div_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { // through float, exact for 16 bits; the low 16 bits of the quotient, as the C++ conversion
-    const auto q = [](const __m128i a8, const __m128i b8) { return _mm256_and_si256(_mm256_cvttps_epi32(_mm256_div_ps(_mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(a8)), _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(b8)))), _mm256_set1_epi32(0xFFFF)); };
+    const auto q = [](const __m128i a8, const __m128i b8) { return _mm256_and_si256(_mm256_cvttps_epi32(_mm256_div_ps(_mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(a8)), _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(b8)))), set1_intrin<VecData<int32_t,8>>(0xFFFF).v); };
     const __m256i lo = q(_mm256_castsi256_si128(a.v), _mm256_castsi256_si128(b.v));
     const __m256i hi = q(_mm256_extracti128_si256(a.v, 1), _mm256_extracti128_si256(b.v, 1));
     return _mm256_permute4x64_epi64(_mm256_packus_epi32(lo, hi), 0xD8); // packus works within 128-bit lanes
   }
   template <> inline VecData<int8_t,32> div_intrin(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { // through float, eight lanes at a time; the low 8 bits of the quotient
-    const auto q = [](const __m128i a8, const __m128i b8) { return _mm256_and_si256(_mm256_cvttps_epi32(_mm256_div_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(a8)), _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(b8)))), _mm256_set1_epi32(0xFF)); };
+    const auto q = [](const __m128i a8, const __m128i b8) { return _mm256_and_si256(_mm256_cvttps_epi32(_mm256_div_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(a8)), _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(b8)))), set1_intrin<VecData<int32_t,8>>(0xFF).v); };
     const __m128i al = _mm256_castsi256_si128(a.v);
     const __m128i ah = _mm256_extracti128_si256(a.v, 1);
     const __m128i bl = _mm256_castsi256_si128(b.v);
@@ -4362,17 +4393,17 @@ namespace sctl { // AVX
   #if defined(__AVX2__) // log_mant_intrin by integer instructions, as for 4 floats and 2 doubles (log, haswell: 8 floats 17.0 / 56.5 -> 14.5 / 48.5 cycles, 4 doubles 20.6 / 71.1 -> 18.4 / 67.3)
   template <> inline void log_mant_intrin<VecData<float,8>>(VecData<float,8>& e, VecData<float,8>& m, const VecData<float,8>& x) {
     const __m256i t = _mm256_castps_si256(x.v);
-    const __m256i m2 = _mm256_or_si256(_mm256_and_si256(t, _mm256_set1_epi32(0x007fffff)), _mm256_set1_epi32(0x3f000000));
-    const __m256i e1 = _mm256_sub_epi32(_mm256_srli_epi32(_mm256_slli_epi32(t, 1), 24), _mm256_set1_epi32(127));
-    const __m256i big = _mm256_cmpgt_epi32(m2, _mm256_set1_epi32(0x3f3504f3));
+    const __m256i m2 = _mm256_or_si256(_mm256_and_si256(t, set1_intrin<VecData<int32_t,8>>(0x007fffff).v), set1_intrin<VecData<int32_t,8>>(0x3f000000).v);
+    const __m256i e1 = _mm256_sub_epi32(_mm256_srli_epi32(_mm256_slli_epi32(t, 1), 24), set1_intrin<VecData<int32_t,8>>(127).v);
+    const __m256i big = _mm256_cmpgt_epi32(m2, set1_intrin<VecData<int32_t,8>>(0x3f3504f3).v);
     m = _mm256_add_ps(_mm256_castsi256_ps(m2), _mm256_andnot_ps(_mm256_castsi256_ps(big), _mm256_castsi256_ps(m2)));
     e = _mm256_cvtepi32_ps(_mm256_sub_epi32(e1, big));
   }
   template <> inline void log_mant_intrin<VecData<double,4>>(VecData<double,4>& e, VecData<double,4>& m, const VecData<double,4>& x) {
     const __m256i t = _mm256_castpd_si256(x.v);
-    const __m256i m2 = _mm256_or_si256(_mm256_and_si256(t, _mm256_set1_epi64x(0x000fffffffffffffLL)), _mm256_set1_epi64x(0x3fe0000000000000LL));
-    const __m256i e1 = _mm256_add_epi64(_mm256_srli_epi64(_mm256_slli_epi64(t, 1), 53), _mm256_set1_epi64x(0x4338000000000000LL - 1023));
-    const __m256i big = _mm256_cmpgt_epi64(m2, _mm256_set1_epi64x(0x3fe6a09e667f3bcdLL));
+    const __m256i m2 = _mm256_or_si256(_mm256_and_si256(t, set1_intrin<VecData<int64_t,4>>(0x000fffffffffffffLL).v), set1_intrin<VecData<int64_t,4>>(0x3fe0000000000000LL).v);
+    const __m256i e1 = _mm256_add_epi64(_mm256_srli_epi64(_mm256_slli_epi64(t, 1), 53), set1_intrin<VecData<int64_t,4>>(0x4338000000000000LL - 1023).v);
+    const __m256i big = _mm256_cmpgt_epi64(m2, set1_intrin<VecData<int64_t,4>>(0x3fe6a09e667f3bcdLL).v);
     m = _mm256_add_pd(_mm256_castsi256_pd(m2), _mm256_andnot_pd(_mm256_castsi256_pd(big), _mm256_castsi256_pd(m2)));
     e = _mm256_sub_pd(_mm256_castsi256_pd(_mm256_sub_epi64(e1, big)), _mm256_set1_pd(0x1.8p52));
   }
