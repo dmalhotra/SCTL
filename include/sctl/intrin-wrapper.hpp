@@ -2426,10 +2426,14 @@ namespace sctl { // SSE
     const __m128i q23 = _mm_packus_epi32(q(_mm_srli_si128(a.v, 8), _mm_srli_si128(b.v, 8)), q(_mm_srli_si128(a.v, 12), _mm_srli_si128(b.v, 12)));
     return _mm_packus_epi16(q01, q23);
   }
-  template <> inline VecData<int32_t,4> div_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { // through double, two lanes at a time, exact: the rounding error of the quotient is below 2^-22/|b|, and a quotient that is not an integer is at least 1/|b| from one
+  template <> inline VecData<int32_t,4> div_intrin(const VecData<int32_t,4>& a, const VecData<int32_t,4>& b) { // through double, exact: the rounding error of the quotient is below 2^-22/|b|, and a quotient that is not an integer is at least 1/|b| from one
+#if defined(__AVX__)
+    return _mm256_cvttpd_epi32(_mm256_div_pd(_mm256_cvtepi32_pd(a.v), _mm256_cvtepi32_pd(b.v)));
+#else // two lanes at a time
     const __m128i lo = _mm_cvttpd_epi32(_mm_div_pd(_mm_cvtepi32_pd(a.v), _mm_cvtepi32_pd(b.v)));
     const __m128i hi = _mm_cvttpd_epi32(_mm_div_pd(_mm_cvtepi32_pd(_mm_unpackhi_epi64(a.v, a.v)), _mm_cvtepi32_pd(_mm_unpackhi_epi64(b.v, b.v))));
     return _mm_unpacklo_epi64(lo, hi);
+#endif
   }
   template <> inline VecData<int64_t,2> div_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return div_int64_intrin(a, b); }
   template <> inline VecData<float,4> div_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
@@ -4269,8 +4273,8 @@ namespace sctl { // AVX
   #endif
   template <> inline VecData<int64_t,4> div_intrin(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return div_int64_intrin(a, b); }
   template <> inline VecData<int32_t,8> div_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
-    #if defined(__AVX2__)
-    return div_int32_intrin(a, b);
+    #if defined(__AVX512F__)
+    return _mm512_cvttpd_epi32(_mm512_div_pd(_mm512_cvtepi32_pd(a.v), _mm512_cvtepi32_pd(b.v)));
     #else
     return concat_intrin(div_intrin(get_low_intrin(a), get_low_intrin(b)), div_intrin(get_high_intrin(a), get_high_intrin(b)));
     #endif
