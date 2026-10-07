@@ -3791,7 +3791,7 @@ namespace sctl { // AVX
   template <> inline VecData<int32_t,8> max_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_max_epi32(a.v, b.v);
   }
-  #else // AVX without AVX2: each 128-bit half with SSE
+  #elif !defined(__clang__) // AVX without AVX2: each 128-bit half with SSE; with clang the generic loop is faster
   template <> inline VecData<int8_t ,32> max_intrin(const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_max_epi8 (x, y); }, a.v, b.v); }
   template <> inline VecData<int16_t,16> max_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_max_epi16(x, y); }, a.v, b.v); }
   template <> inline VecData<int32_t ,8> max_intrin(const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_max_epi32(x, y); }, a.v, b.v); }
@@ -3818,7 +3818,7 @@ namespace sctl { // AVX
   template <> inline VecData<int32_t,8> min_intrin(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) {
     return _mm256_min_epi32(a.v, b.v);
   }
-  #else // AVX without AVX2: each 128-bit half with SSE
+  #elif !defined(__clang__) // AVX without AVX2: each 128-bit half with SSE; with clang the generic loop is faster
   template <> inline VecData<int8_t ,32> min_intrin(const VecData<int8_t ,32>& a, const VecData<int8_t ,32>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_min_epi8 (x, y); }, a.v, b.v); }
   template <> inline VecData<int16_t,16> min_intrin(const VecData<int16_t,16>& a, const VecData<int16_t,16>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_min_epi16(x, y); }, a.v, b.v); }
   template <> inline VecData<int32_t ,8> min_intrin(const VecData<int32_t ,8>& a, const VecData<int32_t ,8>& b) { return avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_min_epi32(x, y); }, a.v, b.v); }
@@ -4021,6 +4021,7 @@ namespace sctl { // AVX
   template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::eq>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(_mm256_cmpeq_epi64(a.v,b.v));}
   template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::ne>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b));              }
   #else // AVX without AVX2: each 128-bit half with SSE
+  #if !defined(__clang__) // with clang the generic loop is faster, but not for int64: div_int64_intrin was then 1.7x slower
   template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::lt>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return Mask<VecData<int8_t,32>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpgt_epi8(y, x); }, a.v, b.v)); }
   template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::le>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a)); }
   template <> inline Mask<VecData<int8_t,32>> comp_intrin<ComparisonType::gt>(const VecData<int8_t,32>& a, const VecData<int8_t,32>& b) { return Mask<VecData<int8_t,32>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpgt_epi8(x, y); }, a.v, b.v)); }
@@ -4042,6 +4043,7 @@ namespace sctl { // AVX
   template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::eq>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return Mask<VecData<int32_t,8>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpeq_epi32(x, y); }, a.v, b.v)); }
   template <> inline Mask<VecData<int32_t,8>> comp_intrin<ComparisonType::ne>(const VecData<int32_t,8>& a, const VecData<int32_t,8>& b) { return ~(comp_intrin<ComparisonType::eq>(a,b)); }
 
+  #endif
   template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::lt>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpgt_epi64(y, x); }, a.v, b.v)); }
   template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::le>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return ~(comp_intrin<ComparisonType::lt>(b,a)); }
   template <> inline Mask<VecData<int64_t,4>> comp_intrin<ComparisonType::gt>(const VecData<int64_t,4>& a, const VecData<int64_t,4>& b) { return Mask<VecData<int64_t,4>>(avx_halves_intrin([](const __m128i x, const __m128i y) { return _mm_cmpgt_epi64(x, y); }, a.v, b.v)); }
@@ -4113,7 +4115,9 @@ namespace sctl { // AVX
   template <> inline Integer mask_count_intrin<VecData<int16_t,16>>(const Mask<VecData<int16_t,16>>& m) { return _mm_popcnt_u32(_mm256_movemask_epi8(m.v)) / 2; } // two bits per lane
   #else // AVX without AVX2: each 128-bit half with SSE
   template <> inline Integer mask_count_intrin<VecData<int8_t ,32>>(const Mask<VecData<int8_t ,32>>& m) { return _mm_popcnt_u32(_mm_movemask_epi8(_mm256_castsi256_si128(m.v))) + _mm_popcnt_u32(_mm_movemask_epi8(_mm256_extractf128_si256(m.v, 1))); }
+  #if !defined(__clang__) // with clang the generic loop is faster
   template <> inline Integer mask_count_intrin<VecData<int16_t,16>>(const Mask<VecData<int16_t,16>>& m) { return (_mm_popcnt_u32(_mm_movemask_epi8(_mm256_castsi256_si128(m.v))) + _mm_popcnt_u32(_mm_movemask_epi8(_mm256_extractf128_si256(m.v, 1)))) / 2; } // two bits per lane
+  #endif
   #endif
   template <> inline Integer mask_count_intrin<VecData<int32_t, 8>>(const Mask<VecData<int32_t, 8>>& m) { return _mm_popcnt_u32(_mm256_movemask_ps(_mm256_castsi256_ps(m.v))); }
   template <> inline Integer mask_count_intrin<VecData<int64_t, 4>>(const Mask<VecData<int64_t, 4>>& m) { return _mm_popcnt_u32(_mm256_movemask_pd(_mm256_castsi256_pd(m.v))); }
@@ -4202,7 +4206,9 @@ namespace sctl { // AVX
     const __m128i m = _mm_set1_epi16(0xFF);
     return _mm_packus_epi16(_mm_and_si128(_mm256_castsi256_si128(a.v), m), _mm_and_si128(_mm256_extractf128_si256(a.v, 1), m));
   }
+  #if !defined(__clang__) // with clang the generic loop is faster
   template <> inline VecData<float  ,8> convert_intrin<VecData<float  ,8>,VecData<int16_t,8>>(const VecData<int16_t,8>& a) { return _mm256_cvtepi32_ps(_mm256_insertf128_si256(_mm256_castsi128_si256(_mm_cvtepi16_epi32(a.v)), _mm_cvtepi16_epi32(_mm_unpackhi_epi64(a.v, a.v)), 1)); }
+  #endif
   #endif
   template <> inline VecData<int16_t,8> convert_intrin<VecData<int16_t,8>,VecData<float  ,8>>(const VecData<float  ,8>& a) { return convert_intrin<VecData<int16_t,8>>(VecData<int32_t,8>(_mm256_cvttps_epi32(a.v))); }
   #if defined(__AVX512DQ__) && defined(__AVX512VL__)
