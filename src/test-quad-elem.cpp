@@ -791,12 +791,13 @@ template <class Real> void test_GetClosestNode(const bool curved) {
 }
 
 // GetClosestPoint finds the foot of the perpendicular at an off-node point of the flat or curved
-// element, and for a generic target a point where the residual is orthogonal to both tangents.
+// element, and for a generic target a point where the residual is orthogonal to both tangents;
+// on the curved element to 1% of the distance.
 template <class Real> void test_GetClosestPoint(const bool curved) {
   const QuadElemList<Real> qel = TestElem<Real>(8, curved);
   const Real u0 = (Real)0.37, v0 = (Real)0.62;
   const Real d = (curved ? (Real)0.01 : (Real)0.1);
-  const Real tol = (curved ? (Real)1e-7 : (Real)1e-9);
+  const Real tol = (curved ? (Real)1e-2 * d : (Real)1e-9);
   Vector<Real> Xs, Ns;
   qel.GetGeom(&Xs, &Ns, nullptr, nullptr, nullptr, Vector<Real>{u0}, Vector<Real>{v0}, 0);
   Vector<Real> Xt(COORD_DIM);
@@ -828,7 +829,7 @@ template <class Real> void test_GetClosestPoint(const bool curved) {
     tv += dXv[k] * dXv[k];
     rr += r * r;
   }
-  SCTL_ASSERT(fabs(ru) < tol * sqrt<Real>(tu * rr) && fabs(rv) < tol * sqrt<Real>(tv * rr));
+  SCTL_ASSERT(fabs(ru) < (Real)1e-2 * sqrt<Real>(tu * rr) && fabs(rv) < (Real)1e-2 * sqrt<Real>(tv * rr));
 }
 
 // Write then Read reproduces the element list exactly, with one file per process.

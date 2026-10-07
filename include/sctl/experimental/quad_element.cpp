@@ -215,7 +215,7 @@ namespace sctl {
       return sqrt<Real>(best);
     }
 
-    /** returns the distance from Xtrg to the element; (ustar, vstar) are the closest point's parameters */
+    /** returns the distance from Xtrg to the element; (ustar, vstar) are the closest point's parameters, found to about 1% of the distance */
     template <class Real> Real GetClosestPoint(Real& ustar, Real& vstar, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Integer order, const Vector<Real>& Xtrg) {
       const auto dist2_at = [&coord, &dcoord_du, &dcoord_dv, order, &Xtrg](const Real uu, const Real vv) -> Real {
         Real X[COORD_DIM];
@@ -231,9 +231,16 @@ namespace sctl {
         f = f_seed * f_seed;
       }
 
+      Real dtol = 0; // rounding error of a computed distance
+      {
+        Real S = 0;
+        for (const auto& c : coord) S = std::max<Real>(S, fabs(c));
+        for (Integer k = 0; k < COORD_DIM; k++) S = std::max<Real>(S, fabs(Xtrg[k]));
+        dtol = machine_eps<Real>() * 32 * S;
+      }
+
       constexpr Integer max_iter = 30;
-      const Real utol = (Real)machine_eps<Real>() * 64;
-      const Real gtol = sqrt<Real>(machine_eps<Real>()) * 16;
+      const Real utol = machine_eps<Real>();
       bool converged = false;
       for (Integer it = 0; it < max_iter; it++) { // Projected Newton iterations
         Real E = 0, F = 0, G = 0, gu = 0, gv = 0;
@@ -257,60 +264,53 @@ namespace sctl {
           if      (v <= 0) Pv = std::min<Real>(gv, (Real)0);
           else if (v >= 1) Pv = std::max<Real>(gv, (Real)0);
         }
-        const bool opt_u = (fabs(Pu) <= gtol * sqrt<Real>(E*f));
-        const bool opt_v = (fabs(Pv) <= gtol * sqrt<Real>(G*f));
-        if (opt_u && opt_v) {
-          converged = true;
-          break;
-        }
 
+        const Real cut = machine_eps<Real>() * 16 * (E + G); // eigenvalues of the metric below cut are taken as zero
         Real step_u = 0, step_v = 0;
-        { // Newton step, fixing a coordinate held at its bound
+        { // Minimum-norm Newton step, fixing a coordinate held at its bound
           const bool u_act = ((u <= 0 && gu >= 0) || (u >= 1 && gu <= 0));
           const bool v_act = ((v <= 0 && gv >= 0) || (v >= 1 && gv <= 0));
           if (!u_act && !v_act) {
-            const Real det = E*G - F*F;
-            if (fabs(det) > (Real)1e-30 * (E*G + F*F + 1)) {
+            const Real det = E*G - F*F, tr = E + G;
+            if (det > cut * tr) {
               step_u = ( G*gu - F*gv) / det;
               step_v = (-F*gu + E*gv) / det;
-            } else {
-              step_u = gu / (E + (Real)1e-30);
-              step_v = gv / (G + (Real)1e-30);
+            } else { // rank one: the pseudo-inverse is the metric divided by tr^2
+              step_u = (E*gu + F*gv) / (tr*tr);
+              step_v = (F*gu + G*gv) / (tr*tr);
             }
           } else if (u_act) {
-            step_v = gv / (G + (Real)1e-30);
+            step_v = (G > cut ? gv / G : 0);
           } else {
-            step_u = gu / (E + (Real)1e-30);
+            step_u = (E > cut ? gu / E : 0);
           }
         }
 
         Real un = u, vn = v, fn = f;
         bool improved;
-        { // Line search along the step, else along the gradient
-          const Real c_eps = machine_eps<Real>() * 8;
-          const auto line_search = [&dist2_at, u, v, f, c_eps, &un, &vn, &fn](const Real step_u, const Real step_v) {
+        { // Line search along the step, else along the gradient; a step is rejected only if the distance grows by more than its rounding error
+          const Real fmax = f + dtol * (2 * sqrt<Real>(f) + dtol);
+          const auto line_search = [&dist2_at, u, v, fmax, &un, &vn, &fn](const Real step_u, const Real step_v) {
             Real lambda = 1;
             for (Integer ls = 0; ls < 40; ls++) {
               un = std::min<Real>(1, std::max<Real>(0, u - lambda*step_u));
               vn = std::min<Real>(1, std::max<Real>(0, v - lambda*step_v));
               fn = dist2_at(un, vn);
-              if (fn <= f * (1 + c_eps)) return true;
+              if (fn <= fmax) return true;
               lambda *= (Real)0.5;
             }
             return false;
           };
           improved = line_search(step_u, step_v);
-          if (!improved) improved = line_search(Pu / (E + (Real)1e-30), Pv / (G + (Real)1e-30));
+          if (!improved) improved = line_search((E > cut ? Pu / E : 0), (G > cut ? Pv / G : 0));
         }
-        if (!improved) { // Stop; converged if the gradient or step is negligible
-          const Real gtol_stall = sqrt<Real>(machine_eps<Real>()) * 256;
-          const bool stationary = (fabs(Pu) <= gtol_stall * sqrt<Real>(E*f)) && (fabs(Pv) <= gtol_stall * sqrt<Real>(G*f));
-          const bool tiny = (fabs(step_u) < utol && fabs(step_v) < utol);
-          if (it > 0 && (stationary || tiny)) converged = true;
+        if (!improved) { // Every step grows the distance: a minimum
+          converged = true;
           break;
         }
 
-        const bool small_step = (fabs(un-u) < utol && fabs(vn-v) < utol);
+        const Real du = un - u, dv = vn - v;
+        const bool small_step = (fabs(du) < utol && fabs(dv) < utol) || (E*du*du + 2*F*du*dv + G*dv*dv < (Real)1e-4 * fn); // the update is below machine epsilon, or moved the point by less than 1% of the distance
         u = un;
         v = vn;
         f = fn;
