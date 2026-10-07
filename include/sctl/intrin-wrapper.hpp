@@ -2833,7 +2833,7 @@ namespace sctl { // SSE
   #if defined(__AVX512DQ__) && defined(__AVX512VL__)
   template <> inline VecData<double ,2> convert_intrin<VecData<double ,2>,VecData<int64_t,2>>(const VecData<int64_t,2>& a) { return _mm_cvtepi64_pd (a.v); }
   template <> inline VecData<int64_t,2> convert_intrin<VecData<int64_t,2>,VecData<double ,2>>(const VecData<double ,2>& a) { return _mm_cvttpd_epi64(a.v); }
-  #elif !defined(__AVX__) // with AVX, the generic code is faster
+  #elif !defined(__AVX__) && !defined(__clang__) // with AVX, and with clang, the generic code is faster
   template <> inline VecData<int64_t,2> convert_intrin<VecData<int64_t,2>,VecData<double ,2>>(const VecData<double ,2>& a) { // trunc(a) = hi 2^32 + lo with lo in [0, 2^32), all exact: hi by cvttpd2dq, lo as the low bits of 2^52 + lo
     const __m128d t = _mm_round_pd(a.v, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC);
     const __m128d hi = _mm_floor_pd(_mm_mul_pd(t, _mm_set1_pd(0x1p-32)));
