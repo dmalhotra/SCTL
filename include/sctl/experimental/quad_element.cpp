@@ -349,6 +349,13 @@ namespace sctl {
             }
           }
           const Real hu = (u1-u0)/K, hv = (v1-v0)/K;
+          { // Stop when the grid spacing at the best point is less than 1% of the distance
+            Real X[COORD_DIM], dXu[COORD_DIM], dXv[COORD_DIM];
+            EvalPoint<Real>(X, dXu, dXv, coord, dcoord_du, dcoord_dv, order, u, v, &Xtrg);
+            Real dX2 = 0;
+            for (Integer k = 0; k < COORD_DIM; k++) dX2 += dXu[k]*dXu[k]*hu*hu + dXv[k]*dXv[k]*hv*hv;
+            if (dX2 < (Real)1e-4 * f) break;
+          }
           u0 = std::max<Real>(0, u-hu);
           u1 = std::min<Real>(1, u+hu);
           v0 = std::max<Real>(0, v-hv);
