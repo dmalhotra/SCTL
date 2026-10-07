@@ -1514,8 +1514,8 @@ namespace sctl {
       const auto self_interac_one_trg = [&nds, rmin_coeff, &ker, digits, near_digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer ti, const Integer tj) {
         const Integer nnode = order*order;
         const Integer t = ti*order + tj;
-        ScratchBuf<Real> hh_Xt1_buf(COORD_DIM), hh_off_buf(proxy_dist.Dim()*COORD_DIM);
-        Vector<Real> proxy0(hh_Xt1_buf), proxy_off(hh_off_buf);
+        ScratchBuf<Real> proxy0_buf(COORD_DIM), proxy_off_buf(proxy_dist.Dim()*COORD_DIM);
+        Vector<Real> proxy0(proxy0_buf), proxy_off(proxy_off_buf);
         Integer q_proxy;
         { // Proxy points along the normal, sized by the distance to the nearer edge, and their quadrature order
           Real guu, guv, gvv;
@@ -1624,10 +1624,9 @@ namespace sctl {
         }
       };
       { // Left of v0: halving panels, then an Alpert panel
-        const Real Ll = v0;
-        Real prev = -Ll;
+        Real prev = -v0;
         for (Integer i = 1; i <= Lvl; i++) {
-          const Real bnd = -Ll*pow<Real,Long>((Real)0.5, (Long)i);
+          const Real bnd = -v0*pow<Real,Long>((Real)0.5, (Long)i);
           add_gl(prev, bnd);
           prev = bnd;
         }
@@ -1657,7 +1656,7 @@ namespace sctl {
           const auto side = [&delta, &w, Lvl, q, &qnds, &qwts](const Real span, const Real sgn) {
             Real a = 0;
             for (Integer k = Lvl; k >= 0; k--) {
-              const Real b = span * pow<Real>((Real)0.5, (Integer)k);
+              const Real b = span * pow<Real,Long>((Real)0.5, (Long)k);
               const Real len = b - a;
               for (Integer i = 0; i < q; i++) {
                 delta.PushBack(sgn*(a + len*qnds[i]));
@@ -2017,12 +2016,11 @@ namespace sctl {
     ScratchBuf<Real> dist_nodes(order);
     { // Parameter distance from each node to the accuracy ellipse
       const auto& nodes = ParamNodes(order);
-      const Integer n = order;
       const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
-      const Real rho = pow<Real>((64 / (15 * tol_)), 1 / (Real)(2 * n));
+      const Real rho = pow<Real>((64 / (15 * tol_)), 1 / (Real)(2 * order));
       const Real a = (rho - 1 / rho) / 4;
       const Real b = (rho + 1 / rho) / 4;
-      for (Integer i = 0; i < n; i++) {
+      for (Integer i = 0; i < order; i++) {
         dist_nodes[i] = b - fabs(nodes[i] - (Real)0.5);
         const Real cos_t = 4 * b * (nodes[i] - (Real)0.5);
         if (fabs(cos_t) <= 1) {
