@@ -84,7 +84,7 @@ namespace sctl {
       LagrangeInterp<Real>::Derivative(df, f, nds);
     }
 
-    // TODO: test the accuracy of dcoord_du, dcoord_dv in place of DiffMat in the rule builds and the Duffy node metric
+    // TODO: test the accuracy of dcoord_du, dcoord_dv in place of DiffMat in the rule builds
     /**
      * Returns an 'order' x 'order' matrix for the given 'order'; entry (i, j) is the derivative of
      * the i-th Lagrange basis function on ParamNodes(order) at j-th node.
@@ -169,6 +169,40 @@ namespace sctl {
         const Real ok = Xtrg[k];
         for (Integer p = 0; p < nnode; p++) out[k*nnode + p] = coord[k*nnode + p] - ok;
       }
+    }
+
+    /** sets out to coord minus the coordinates of node t, for component-major nodal coordinates */
+    template <class Real> void ShiftedElemCoord(Vector<Real>& out, const Vector<Real>& coord, const Integer t) {
+      const Integer nnode = (Integer)(coord.Dim() / COORD_DIM);
+      StaticArray<Real,COORD_DIM> Xt;
+      for (Integer k = 0; k < COORD_DIM; k++) Xt[k] = coord[k*nnode + t];
+      ShiftedElemCoord(out, coord, Vector<Real>(COORD_DIM, Xt, false));
+    }
+
+    /** sets guu, guv, gvv to the metric at node t from the component-major nodal tangents dXu, dXv */
+    template <class Real> void NodeMetric(Real& guu, Real& guv, Real& gvv, const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer t) {
+      const Integer nnode = (Integer)(dXu.Dim() / COORD_DIM);
+      guu = 0;
+      guv = 0;
+      gvv = 0;
+      for (Integer k = 0; k < COORD_DIM; k++) {
+        guu += dXu[k*nnode + t]*dXu[k*nnode + t];
+        guv += dXu[k*nnode + t]*dXv[k*nnode + t];
+        gvv += dXv[k*nnode + t]*dXv[k*nnode + t];
+      }
+    }
+
+    /** sets n to the unit normal du x dv / |du x dv|, zero where |du x dv| = 0, and returns the area element |du x dv| */
+    template <class Real> Real UnitNormal(Real (&n)[COORD_DIM], const Real (&du)[COORD_DIM], const Real (&dv)[COORD_DIM]) {
+      const Real n0 = du[1]*dv[2] - du[2]*dv[1];
+      const Real n1 = du[2]*dv[0] - du[0]*dv[2];
+      const Real n2 = du[0]*dv[1] - du[1]*dv[0];
+      const Real area = sqrt<Real>(n0*n0 + n1*n1 + n2*n2);
+      const Real inv_area = (area > 0 ? 1 / area : 0);
+      n[0] = n0*inv_area;
+      n[1] = n1*inv_area;
+      n[2] = n2*inv_area;
+      return area;
     }
 
     /** returns the distance from Xtrg to the nearest node; (ustar, vstar) are its parameters */
@@ -562,18 +596,6 @@ namespace sctl {
       }
     }
 
-    /** copies src, read as nrow x KDIM1_out, into columns t*KDIM1_out to (t+1)*KDIM1_out-1 of M */
-    template <class Real> void ScatterTargetBlock(Matrix<Real>& M, const Matrix<Real>& src, const Long t, const Integer KDIM1_out) {
-      const Integer nrow = (Integer)M.Dim(0);
-      SCTL_ASSERT(src.Dim(0)*src.Dim(1) == nrow*KDIM1_out);
-      const ConstIterator<Real> src_ = src.begin();
-      for (Integer r = 0; r < nrow; r++) {
-        for (Integer k1 = 0; k1 < KDIM1_out; k1++) {
-          M[r][t*KDIM1_out+k1] = src_[r*KDIM1_out+k1];
-        }
-      }
-    }
-
     /** sets M to the matrix from element elem_idx to targets Xt, by near_interac_one_trg per target */
     template <Integer order, class Real, class Kernel, class NearInteracOneTrg>
     void NearInteracTargets(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const QuadElemList<Real>& qel, const Long elem_idx, NearInteracOneTrg near_interac_one_trg) {
@@ -597,7 +619,10 @@ namespace sctl {
         const Vector<Real> Xtrg(COORD_DIM, (Iterator<Real>)Xt.begin() + t*COORD_DIM, false);
         const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)normal_trg.begin() + t*COORD_DIM : NullIterator<Real>()), false);
         near_interac_one_trg(M_acc, coord, dcoord_du, dcoord_dv, Xtrg, ntrg);
-        ScatterTargetBlock(M, M_acc, t, KDIM1_out);
+        const ConstIterator<Real> acc = M_acc.begin();
+        for (Integer r = 0; r < nnode*KDIM0; r++) { // Target t's columns of M
+          for (Integer k1 = 0; k1 < KDIM1_out; k1++) M[r][t*KDIM1_out + k1] = acc[r*KDIM1_out + k1];
+        }
       }
     }
 
@@ -1114,6 +1139,7 @@ namespace sctl {
     using detail_quadelem::COORD_DIM;
 
     using detail_quadelem::DiffMat;
+    using detail_quadelem::NodeMetric;
     using detail_quadelem::SelfInteracElems;
     using detail_quadelem::ShiftedElemCoord;
     using detail_quadelem::WeightedKernel;
@@ -1212,7 +1238,7 @@ namespace sctl {
       return table;
     }
 
-    template <Integer order, class Real, class Kernel> void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Integer ti, const Integer tj, const bool trg_dot_prod, const Kernel& ker, const Integer digits) {
+    template <Integer order, class Real, class Kernel> void SelfInteracBlockDuffy(Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer ti, const Integer tj, const bool trg_dot_prod, const Kernel& ker, const Integer digits) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer KDIM1full = Kernel::TrgDim();
       SCTL_ASSERT(coord.Dim() == COORD_DIM*order*order && Xnnodes.Dim() == coord.Dim());
@@ -1227,35 +1253,10 @@ namespace sctl {
       const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
       ScratchBuf<Real> cs_buf(COORD_DIM*nnode);
       Vector<Real> cs(cs_buf);
-      { // Coordinates relative to the target node
-        StaticArray<Real,COORD_DIM> Xtrg_buf;
-        for (Integer k = 0; k < COORD_DIM; k++) Xtrg_buf[k] = coord[k*nnode + t];
-        const Vector<Real> Xtrg(COORD_DIM, Xtrg_buf, false);
-        ShiftedElemCoord(cs, coord, Xtrg);
-      }
+      ShiftedElemCoord(cs, coord, t); // relative to the target node
 
-      Real G[4];
-      { // Metric of the element at the target node
-        const Matrix<Real>& D = DiffMat<Real>(order);
-        Real du[COORD_DIM], dv[COORD_DIM];
-        for (Integer k = 0; k < COORD_DIM; k++) {
-          Real su = 0, sv = 0;
-          for (Integer i = 0; i < order; i++) su += cs[k*nnode + i*order + tj]*D[i][ti];
-          for (Integer j = 0; j < order; j++) sv += cs[k*nnode + ti*order + j]*D[j][tj];
-          du[k] = su;
-          dv[k] = sv;
-        }
-        Real guu = 0, guv = 0, gvv = 0;
-        for (Integer k = 0; k < COORD_DIM; k++) {
-          guu += du[k]*du[k];
-          guv += du[k]*dv[k];
-          gvv += dv[k]*dv[k];
-        }
-        G[0] = guu;
-        G[1] = guv;
-        G[2] = guv;
-        G[3] = gvv;
-      }
+      Real guu, guv, gvv; // metric of the element at the target node
+      NodeMetric(guu, guv, gvv, dXu, dXv, t);
 
       const Integer ns = tbl.ns;
       static constexpr Integer MaxGLOrder = 128; // the largest angular rule
@@ -1280,12 +1281,12 @@ namespace sctl {
           const Real cu[4] = {0,1,1,0}, cv[4] = {0,0,1,1};
           const Real a[2] = {cu[kt]-u0, cv[kt]-v0};
           const Real e[2] = {cu[(kt+1)%4]-cu[kt], cv[(kt+1)%4]-cv[kt]};
-          const Real Me[2] = {G[0]*e[0]+G[1]*e[1], G[2]*e[0]+G[3]*e[1]};
+          const Real Me[2] = {guu*e[0]+guv*e[1], guv*e[0]+gvv*e[1]};
           const Real am = e[0]*Me[0] + e[1]*Me[1];
           Real ts = -(a[0]*Me[0] + a[1]*Me[1])/am;
           ts = (ts < 0 ? (Real)0 : (ts > 1 ? (Real)1 : ts));
           const Real c[2] = {a[0]+ts*e[0], a[1]+ts*e[1]};
-          const Real d2 = c[0]*(G[0]*c[0]+G[1]*c[1]) + c[1]*(G[2]*c[0]+G[3]*c[1]);
+          const Real d2 = c[0]*(guu*c[0]+guv*c[1]) + c[1]*(guv*c[0]+gvv*c[1]);
           tstar = ts;
           dOverL = sqrt<Real>(d2)/sqrt<Real>(am);
         }
@@ -1396,8 +1397,8 @@ namespace sctl {
 
     template <Integer order, class Real, class Kernel> void SelfInteracDuffy(Vector<Matrix<Real>>& M_lst, const Kernel& ker, const bool trg_dot_prod, const QuadElemList<Real>& qel, const Integer digits) {
       DuffyTable<order,Real>(); // precomp cache
-      const auto self_interac_one_trg = [&ker, digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>&, const Vector<Real>&, const Integer ti, const Integer tj) {
-        SelfInteracBlockDuffy<order,Real>(M_acc, coord, Xnnodes, ti, tj, trg_dot_prod, ker, digits);
+      const auto self_interac_one_trg = [&ker, digits, trg_dot_prod](Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& Xnnodes, const Vector<Real>& dXu, const Vector<Real>& dXv, const Integer ti, const Integer tj) {
+        SelfInteracBlockDuffy<order,Real>(M_acc, coord, Xnnodes, dXu, dXv, ti, tj, trg_dot_prod, ker, digits);
       };
       SelfInteracElems<order,Real,Kernel>(M_lst, trg_dot_prod, qel, self_interac_one_trg);
     }
@@ -1411,6 +1412,7 @@ namespace sctl {
     using detail_quadelem::PrecompReal;
     using detail_near_split::NearMaxQuadOrder;
 
+    using detail_quadelem::NodeMetric;
     using detail_quadelem::SelfInteracElems;
     using detail_quadelem::SinTangentAngle;
     using detail_dyadic_near::NearInteracBlockDyadic;
@@ -1455,19 +1457,15 @@ namespace sctl {
         Vector<Real> hh_Xt1(hh_Xt1_buf), hh_off(hh_off_buf);
         Integer q_proxy;
         { // Proxy points along the normal, sized by the distance to the nearer edge, and their quadrature order
-          Real su2 = 0, sv2 = 0, suv = 0;
-          for (Integer k = 0; k < COORD_DIM; k++) {
-            su2 += dXu[k*nnode+t]*dXu[k*nnode+t];
-            sv2 += dXv[k*nnode+t]*dXv[k*nnode+t];
-            suv += dXu[k*nnode+t]*dXv[k*nnode+t];
-          }
-          const Real s = SinTangentAngle<Real>(su2, suv, sv2);
+          Real guu, guv, gvv;
+          NodeMetric(guu, guv, gvv, dXu, dXv, t);
+          const Real s = SinTangentAngle<Real>(guu, guv, gvv);
           { // fitted to the smallest orders meeting the tolerance on skewed elements, rounded up to even
             const Real q = std::max<Real>(4 + (Real)digits + (Real)order/8, ((Real)0.75 + (Real)1.25*digits)/s);
             q_proxy = 2*(Integer)ceil<Real>(std::min<Real>(q, (Real)NearMaxQuadOrder)/2);
           }
           const Real edge_u = std::min<Real>(nds[ti], 1-nds[ti]), edge_v = std::min<Real>(nds[tj], 1-nds[tj]);
-          const Real rmin = rmin_coeff * s * std::min<Real>(edge_u*sqrt<Real>(su2), edge_v*sqrt<Real>(sv2));
+          const Real rmin = rmin_coeff * s * std::min<Real>(edge_u*sqrt<Real>(guu), edge_v*sqrt<Real>(gvv));
           for (Integer k = 0; k < COORD_DIM; k++) hh_Xt1[k] = coord[k*nnode + t] + rmin*Xnnodes[t*COORD_DIM+k];
           for (Integer j = 0; j < proxy_dist.Dim(); j++) {
             const Real rj = rmin*proxy_dist[j];
@@ -1490,6 +1488,7 @@ namespace sctl {
 
     using detail_quadelem::DiffMat;
     using detail_quadelem::IntegrateTensorRule;
+    using detail_quadelem::NodeMetric;
     using detail_quadelem::SelfInteracElems;
     using detail_quadelem::ShiftedElemCoord;
     using detail_quadelem::SinTangentAngle;
@@ -1665,12 +1664,8 @@ namespace sctl {
         const Integer t = ti*order + tj;
         Integer quad_order, lvl_v;
         { // Gauss-Legendre order and halving levels along v for the tangent angle at the node, fitted to the smallest values meeting the tolerance on skewed elements
-          Real guu = 0, guv = 0, gvv = 0;
-          for (Integer k = 0; k < COORD_DIM; k++) {
-            guu += dXu[k*nnode+t]*dXu[k*nnode+t];
-            guv += dXu[k*nnode+t]*dXv[k*nnode+t];
-            gvv += dXv[k*nnode+t]*dXv[k*nnode+t];
-          }
+          Real guu, guv, gvv;
+          NodeMetric(guu, guv, gvv, dXu, dXv, t);
           const Real s = SinTangentAngle<Real>(guu, guv, gvv);
           const Real q = std::max<Real>((Real)1.5 + (Real)digits/2 + (Real)order/8, ((Real)1.25 + (Real)digits/2)/pow<Real>(s, (Real)0.75));
           quad_order = (Integer)ceil<Real>(std::min<Real>(q, (Real)SelfMaxQuadOrder));
@@ -1681,12 +1676,7 @@ namespace sctl {
         }
         ScratchBuf<Real> cs_buf(COORD_DIM*nnode);
         Vector<Real> cs(cs_buf);
-        { // Coordinates relative to the target node
-          StaticArray<Real,COORD_DIM> Xtrg_buf;
-          for (Integer k = 0; k < COORD_DIM; k++) Xtrg_buf[k] = coord[k*nnode + t];
-          const Vector<Real> Xtrg(COORD_DIM, Xtrg_buf, false);
-          ShiftedElemCoord(cs, coord, Xtrg);
-        }
+        ShiftedElemCoord(cs, coord, t); // relative to the target node
         const Vector<Real> ntrg((trg_dot_prod ? COORD_DIM : 0), (trg_dot_prod ? (Iterator<Real>)Xnnodes.begin() + t*COORD_DIM : NullIterator<Real>()), false);
         const QuadRule1D<Real>& ru = CenteredURule<order,Real>(ti, digits, quad_order);
         const QuadRule1D<Real>& rv = CenteredVRule<order,Real>(tj, lvl_v, quad_order);
@@ -1902,12 +1892,19 @@ namespace sctl {
       Xn_node.ReInit(nelem * elem_stride);
       node_cnt.ReInit(nelem);
       node_cnt = nnode_per_elem;
-      const auto& nodes = ParamNodes(order);
       #pragma omp parallel for schedule(static)
       for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
-        Vector<Real> X_(elem_stride, X_node.begin() + elem_idx*elem_stride, false);
-        Vector<Real> Xn_(elem_stride, Xn_node.begin() + elem_idx*elem_stride, false);
-        GetGeom(&X_, &Xn_, nullptr, nullptr, nullptr, nodes, nodes, elem_idx);
+        const Long base = elem_idx * elem_stride;
+        for (Integer p = 0; p < nnode_per_elem; p++) {
+          Real du[detail_quadelem::COORD_DIM], dv[detail_quadelem::COORD_DIM], n[detail_quadelem::COORD_DIM];
+          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+            X_node[base + p * detail_quadelem::COORD_DIM + k] = coord[base + k * nnode_per_elem + p];
+            du[k] = dcoord_du[base + k * nnode_per_elem + p];
+            dv[k] = dcoord_dv[base + k * nnode_per_elem + p];
+          }
+          detail_quadelem::UnitNormal(n, du, dv);
+          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) Xn_node[base + p * detail_quadelem::COORD_DIM + k] = n[k];
+        }
       }
     }
   }
@@ -1967,37 +1964,18 @@ namespace sctl {
       detail_quadelem::EvalTensorProduct(dXdu_soa, dcoord_du_, MuT, Mv);
       detail_quadelem::EvalTensorProduct(dXdv_soa, dcoord_dv_, MuT, Mv);
       for (Integer i = 0; i < N; i++) {
-        const Real du0 = dXdu_soa[0 * N + i];
-        const Real du1 = dXdu_soa[1 * N + i];
-        const Real du2 = dXdu_soa[2 * N + i];
-        const Real dv0 = dXdv_soa[0 * N + i];
-        const Real dv1 = dXdv_soa[1 * N + i];
-        const Real dv2 = dXdv_soa[2 * N + i];
-
-        const Real n0 = du1 * dv2 - du2 * dv1;
-        const Real n1 = du2 * dv0 - du0 * dv2;
-        const Real n2 = du0 * dv1 - du1 * dv0;
-        const Real area = sqrt<Real>(n0 * n0 + n1 * n1 + n2 * n2);
-        const Real inv_area = (area > 0 ? 1 / area : 0);
-
-        if (Xn) {
-          (*Xn)[i * detail_quadelem::COORD_DIM + 0] = n0 * inv_area;
-          (*Xn)[i * detail_quadelem::COORD_DIM + 1] = n1 * inv_area;
-          (*Xn)[i * detail_quadelem::COORD_DIM + 2] = n2 * inv_area;
+        Real du[detail_quadelem::COORD_DIM], dv[detail_quadelem::COORD_DIM], n[detail_quadelem::COORD_DIM];
+        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+          du[k] = dXdu_soa[k * N + i];
+          dv[k] = dXdv_soa[k * N + i];
         }
-        if (Xa) {
-          (*Xa)[i] = area;
+        const Real area = detail_quadelem::UnitNormal(n, du, dv);
+        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+          if (Xn) (*Xn)[i * detail_quadelem::COORD_DIM + k] = n[k];
+          if (dX_du) (*dX_du)[i * detail_quadelem::COORD_DIM + k] = du[k];
+          if (dX_dv) (*dX_dv)[i * detail_quadelem::COORD_DIM + k] = dv[k];
         }
-        if (dX_du) {
-          (*dX_du)[i * detail_quadelem::COORD_DIM + 0] = du0;
-          (*dX_du)[i * detail_quadelem::COORD_DIM + 1] = du1;
-          (*dX_du)[i * detail_quadelem::COORD_DIM + 2] = du2;
-        }
-        if (dX_dv) {
-          (*dX_dv)[i * detail_quadelem::COORD_DIM + 0] = dv0;
-          (*dX_dv)[i * detail_quadelem::COORD_DIM + 1] = dv1;
-          (*dX_dv)[i * detail_quadelem::COORD_DIM + 2] = dv2;
-        }
+        if (Xa) (*Xa)[i] = area;
       }
     }
   }
@@ -2041,29 +2019,26 @@ namespace sctl {
     const auto& node_wts = LegQuadRule<Real>::wts(order);
     #pragma omp parallel for schedule(static)
     for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) { // Nodes, weights and far distances per element
-      Vector<Real> X_(nnode_per_elem * detail_quadelem::COORD_DIM, X.begin() + elem_idx * nnode_per_elem * detail_quadelem::COORD_DIM, false);
-      Vector<Real> Xn_(nnode_per_elem * detail_quadelem::COORD_DIM, Xn.begin() + elem_idx * nnode_per_elem * detail_quadelem::COORD_DIM, false);
-      Vector<Real> wts_(nnode_per_elem, wts.begin() + elem_idx * nnode_per_elem, false);
-      Vector<Real> dist_far_(nnode_per_elem, dist_far.begin() + elem_idx * nnode_per_elem, false);
-
-      ScratchBuf<Real> Xa_buf(nnode_per_elem), dXdu_buf(nnode_per_elem * detail_quadelem::COORD_DIM), dXdv_buf(nnode_per_elem * detail_quadelem::COORD_DIM);
-      Vector<Real> Xa(Xa_buf), dXdu(dXdu_buf), dXdv(dXdv_buf);
-      GetGeom(&X_, &Xn_, &Xa, &dXdu, &dXdv, nodes, nodes, elem_idx);
-
+      const Long base = elem_idx * nnode_per_elem * detail_quadelem::COORD_DIM;
       for (Integer i = 0; i < order; i++) {
         for (Integer j = 0; j < order; j++) {
           const Integer p = i * order + j;
-          const Real wu = node_wts[i];
-          const Real wv = node_wts[j];
-          wts_[p] = Xa[p] * wu * wv;
-
-          const Real len_u = sqrt<Real>(dXdu[p * detail_quadelem::COORD_DIM + 0] * dXdu[p * detail_quadelem::COORD_DIM + 0] +
-              dXdu[p * detail_quadelem::COORD_DIM + 1] * dXdu[p * detail_quadelem::COORD_DIM + 1] +
-              dXdu[p * detail_quadelem::COORD_DIM + 2] * dXdu[p * detail_quadelem::COORD_DIM + 2]);
-          const Real len_v = sqrt<Real>(dXdv[p * detail_quadelem::COORD_DIM + 0] * dXdv[p * detail_quadelem::COORD_DIM + 0] +
-              dXdv[p * detail_quadelem::COORD_DIM + 1] * dXdv[p * detail_quadelem::COORD_DIM + 1] +
-              dXdv[p * detail_quadelem::COORD_DIM + 2] * dXdv[p * detail_quadelem::COORD_DIM + 2]);
-          dist_far_[p] = std::max(dist_nodes[i] * len_u, dist_nodes[j] * len_v);
+          const Long node = elem_idx * nnode_per_elem + p;
+          Real du[detail_quadelem::COORD_DIM], dv[detail_quadelem::COORD_DIM], n[detail_quadelem::COORD_DIM];
+          Real len_u2 = 0, len_v2 = 0;
+          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+            du[k] = dcoord_du[base + k * nnode_per_elem + p];
+            dv[k] = dcoord_dv[base + k * nnode_per_elem + p];
+            len_u2 += du[k] * du[k];
+            len_v2 += dv[k] * dv[k];
+          }
+          const Real area = detail_quadelem::UnitNormal(n, du, dv);
+          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+            X[node * detail_quadelem::COORD_DIM + k] = X_node[node * detail_quadelem::COORD_DIM + k];
+            Xn[node * detail_quadelem::COORD_DIM + k] = n[k];
+          }
+          wts[node] = area * node_wts[i] * node_wts[j];
+          dist_far[node] = std::max(dist_nodes[i] * sqrt<Real>(len_u2), dist_nodes[j] * sqrt<Real>(len_v2));
         }
       }
     }

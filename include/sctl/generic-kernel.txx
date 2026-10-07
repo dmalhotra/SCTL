@@ -2,7 +2,7 @@
 #define _SCTL_GENERIC_KERNEL_TXX_
 
 #include <algorithm>                // for min
-#include <type_traits>              // for false_type, bool_constant, void_t
+#include <type_traits>              // for false_type, bool_constant, integral_constant, void_t
 
 #include "sctl/common.hpp"          // for Integer, Long, SCTL_ASSERT, SCTL_...
 #include "sctl/generic-kernel.hpp"  // for GenericKernel
@@ -69,34 +69,34 @@ template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKe
     return ctx_ptr;
   }
 
-  template <class uKernel> template <class Real, bool enable_openmp> void GenericKernel<uKernel>::Eval(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) {
-    if (digits < 8) {
-      if (digits < 4) {
-        if (digits == -1) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp,-1>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits ==  0) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp, 0>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits ==  1) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp, 1>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits ==  2) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp, 2>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits ==  3) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp, 3>(v_trg, r_trg, r_src, n_src, v_src);
-      } else {
-        if (digits ==  7) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp, 7>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits ==  6) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp, 6>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits ==  5) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp, 5>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits ==  4) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp, 4>(v_trg, r_trg, r_src, n_src, v_src);
-      }
-    } else {
-      if (digits < 12) {
-        if (digits ==  8) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp, 8>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits ==  9) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp, 9>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits == 10) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp,10>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits == 11) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp,11>(v_trg, r_trg, r_src, n_src, v_src);
-      } else {
-        if (digits == 12) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp,12>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits == 13) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp,13>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits == 14) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp,14>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits == 15) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp,15>(v_trg, r_trg, r_src, n_src, v_src);
-        if (digits >= 16) ((ConstIterator<GenericKernel<uKernel>>)self)->template Eval<Real, enable_openmp,-1>(v_trg, r_trg, r_src, n_src, v_src);
-      }
+  template <class uKernel> template <class F> void GenericKernel<uKernel>::DigitsDispatch(const Integer digits, const F& f) {
+    switch (digits) {
+      case  0: return f(std::integral_constant<Integer, 0>());
+      case  1: return f(std::integral_constant<Integer, 1>());
+      case  2: return f(std::integral_constant<Integer, 2>());
+      case  3: return f(std::integral_constant<Integer, 3>());
+      case  4: return f(std::integral_constant<Integer, 4>());
+      case  5: return f(std::integral_constant<Integer, 5>());
+      case  6: return f(std::integral_constant<Integer, 6>());
+      case  7: return f(std::integral_constant<Integer, 7>());
+      case  8: return f(std::integral_constant<Integer, 8>());
+      case  9: return f(std::integral_constant<Integer, 9>());
+      case 10: return f(std::integral_constant<Integer,10>());
+      case 11: return f(std::integral_constant<Integer,11>());
+      case 12: return f(std::integral_constant<Integer,12>());
+      case 13: return f(std::integral_constant<Integer,13>());
+      case 14: return f(std::integral_constant<Integer,14>());
+      case 15: return f(std::integral_constant<Integer,15>());
+      default: SCTL_ASSERT(digits == -1 || digits >= 16);
+               return f(std::integral_constant<Integer,-1>());
     }
+  }
+
+  template <class uKernel> template <class Real, bool enable_openmp> void GenericKernel<uKernel>::Eval(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) {
+    const GenericKernel<uKernel>& ker = *(ConstIterator<GenericKernel<uKernel>>)self;
+    DigitsDispatch(digits, [&ker, &v_trg, &r_trg, &r_src, &n_src, &v_src](const auto d) {
+      ker.template Eval<Real, enable_openmp, decltype(d)::value>(v_trg, r_trg, r_src, n_src, v_src);
+    });
   }
 
   template <class uKernel> template <class Real, bool enable_openmp, Integer digits> void GenericKernel<uKernel>::Eval(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src) const {
@@ -212,26 +212,9 @@ template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKe
 
   template <class uKernel> template <class Real, bool enable_openmp> void GenericKernel<uKernel>::KernelMatrix(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn, Integer digits, ConstIterator<char> self) {
     const GenericKernel<uKernel>& ker = *(ConstIterator<GenericKernel<uKernel>>)self;
-    switch (digits) {
-      case  0: return ker.template KernelMatrix<Real, enable_openmp, 0>(M, Xt, Xs, Xn);
-      case  1: return ker.template KernelMatrix<Real, enable_openmp, 1>(M, Xt, Xs, Xn);
-      case  2: return ker.template KernelMatrix<Real, enable_openmp, 2>(M, Xt, Xs, Xn);
-      case  3: return ker.template KernelMatrix<Real, enable_openmp, 3>(M, Xt, Xs, Xn);
-      case  4: return ker.template KernelMatrix<Real, enable_openmp, 4>(M, Xt, Xs, Xn);
-      case  5: return ker.template KernelMatrix<Real, enable_openmp, 5>(M, Xt, Xs, Xn);
-      case  6: return ker.template KernelMatrix<Real, enable_openmp, 6>(M, Xt, Xs, Xn);
-      case  7: return ker.template KernelMatrix<Real, enable_openmp, 7>(M, Xt, Xs, Xn);
-      case  8: return ker.template KernelMatrix<Real, enable_openmp, 8>(M, Xt, Xs, Xn);
-      case  9: return ker.template KernelMatrix<Real, enable_openmp, 9>(M, Xt, Xs, Xn);
-      case 10: return ker.template KernelMatrix<Real, enable_openmp,10>(M, Xt, Xs, Xn);
-      case 11: return ker.template KernelMatrix<Real, enable_openmp,11>(M, Xt, Xs, Xn);
-      case 12: return ker.template KernelMatrix<Real, enable_openmp,12>(M, Xt, Xs, Xn);
-      case 13: return ker.template KernelMatrix<Real, enable_openmp,13>(M, Xt, Xs, Xn);
-      case 14: return ker.template KernelMatrix<Real, enable_openmp,14>(M, Xt, Xs, Xn);
-      case 15: return ker.template KernelMatrix<Real, enable_openmp,15>(M, Xt, Xs, Xn);
-      default: SCTL_ASSERT(digits == -1 || digits >= 16);
-               return ker.template KernelMatrix<Real, enable_openmp,-1>(M, Xt, Xs, Xn);
-    }
+    DigitsDispatch(digits, [&ker, &M, &Xt, &Xs, &Xn](const auto d) {
+      ker.template KernelMatrix<Real, enable_openmp, decltype(d)::value>(M, Xt, Xs, Xn);
+    });
   }
 
   template <class uKernel> template <class Real, bool enable_openmp, Integer digits> void GenericKernel<uKernel>::KernelMatrix(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn) const {

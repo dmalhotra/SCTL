@@ -240,8 +240,8 @@ template <class Real, Integer DIM> class ParticleFMM {
     /** Collective: whether Eval() for trg_name uses PVFMM, which it does for 3D, with periodicity or 40000 targets or more. */
     bool UsePVFMM(const std::string& trg_name) const;
 
-    /** The map x -> (x - bbox_offset)*bbox_scale of the points of (src_name, trg_name) into the unit box of PVFMM. */
-    void PVFMMBox(StaticArray<Real,DIM>& bbox_offset, Real& bbox_scale, const std::string& src_name, const std::string& trg_name) const;
+    /** The map x -> (x - bbox_offset)*bbox_scale of the points of (src_name, trg_name) into the unit box of PVFMM, and the factors bbox_scale^e by which PVFMM's kernels in that box are multiplied for each density (src_scal) and potential (trg_scal) component. */
+    void PVFMMBox(StaticArray<Real,DIM>& bbox_offset, Real& bbox_scale, Vector<Real>& src_scal, Vector<Real>& trg_scal, const std::string& src_name, const std::string& trg_name) const;
     #endif
 
     FMMKernels fmm_ker;

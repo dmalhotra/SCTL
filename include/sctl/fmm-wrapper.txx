@@ -635,10 +635,8 @@ template <class Real, Integer DIM> std::function<void(Matrix<Real>&, const Vecto
   if (UsePVFMM(trg_name)) { // as PVFMM: in its unit box, at full accuracy, with the scaling of its densities and potentials
     StaticArray<Real,DIM> bbox_offset;
     Real bbox_scale;
-    PVFMMBox(bbox_offset, bbox_scale, src_name, trg_name);
-    Vector<Real> src_scal(s2t_data.dim_src), trg_scal(s2t_data.dim_trg);
-    for (Integer i = 0; i < src_scal.Dim(); i++) src_scal[i] = pow<Real>(bbox_scale, s2t_data.src_scal_exp[i]);
-    for (Integer i = 0; i < trg_scal.Dim(); i++) trg_scal[i] = pow<Real>(bbox_scale, s2t_data.trg_scal_exp[i]);
+    Vector<Real> src_scal, trg_scal;
+    PVFMMBox(bbox_offset, bbox_scale, src_scal, trg_scal, src_name, trg_name);
     return [ker_matrix, ker, bbox_offset, bbox_scale, src_scal, trg_scal](Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn) {
       ScratchBuf<Real> Xt_buf(Xt.Dim()), Xs_buf(Xs.Dim());
       Vector<Real> Xt_(Xt_buf), Xs_(Xs_buf);
@@ -895,7 +893,7 @@ template <class Real, Integer DIM> bool ParticleFMM<Real,DIM>::UsePVFMM(const st
   return (cnt[1] >= 40000); // direct evaluation for small problems
 }
 
-template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::PVFMMBox(StaticArray<Real,DIM>& bbox_offset, Real& bbox_scale, const std::string& src_name, const std::string& trg_name) const {
+template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::PVFMMBox(StaticArray<Real,DIM>& bbox_offset, Real& bbox_scale, Vector<Real>& src_scal, Vector<Real>& trg_scal, const std::string& src_name, const std::string& trg_name) const {
   const auto& src_data = src_map.at(src_name);
   const auto& trg_data = trg_map.at(trg_name);
   StaticArray<Real,DIM*2> bbox;
@@ -923,6 +921,12 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::PVFMMBox(StaticAr
   for (Integer k = 0; k < DIM; k++) {
     bbox_offset[k] -= 1/(2*bbox_scale);
   }
+
+  const auto& s2t_data = s2t_map.at(std::make_pair(src_name, trg_name));
+  src_scal.ReInit(s2t_data.dim_src);
+  trg_scal.ReInit(s2t_data.dim_trg);
+  for (Integer i = 0; i < src_scal.Dim(); i++) src_scal[i] = pow<Real>(bbox_scale, s2t_data.src_scal_exp[i]);
+  for (Integer i = 0; i < trg_scal.Dim(); i++) trg_scal[i] = pow<Real>(bbox_scale, s2t_data.trg_scal_exp[i]);
 }
 
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<Real>& U, const std::string& trg_name) const {
@@ -983,15 +987,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
       if (s2t_data.setup_tree) { // Setup tree_ptr, src_scal, trg_scal
         StaticArray<Real,DIM> bbox_offset;
         Real bbox_scale;
-        PVFMMBox(bbox_offset, bbox_scale, src_name, trg_name);
-        { // Set src_scal, trg_scal
-          src_scal.ReInit(SrcDim);
-          trg_scal.ReInit(TrgDim);
-          const Vector<Real>& src_scal_exp = s2t_data.src_scal_exp;
-          const Vector<Real>& trg_scal_exp = s2t_data.trg_scal_exp;
-          for (Integer i = 0; i < SrcDim; i++) src_scal[i] = pow<Real>(bbox_scale, src_scal_exp[i]);
-          for (Integer i = 0; i < TrgDim; i++) trg_scal[i] = pow<Real>(bbox_scale, trg_scal_exp[i]);
-        }
+        PVFMMBox(bbox_offset, bbox_scale, src_scal, trg_scal, src_name, trg_name);
 
         std::vector<Real> sl_coord_, dl_coord_, trg_coord_(Nt*DIM);
         auto& src_coord = (NorDim ? dl_coord_ : sl_coord_);
