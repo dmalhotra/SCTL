@@ -963,31 +963,27 @@ namespace sctl {
     using detail_near_split::NearSegmentRule;
     using detail_near_split::NearSplit;
 
-    template <class Real> void QuadParams(Real& b_ellipse, Integer& quad_order, const Real tol) {
-      const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
-      const Real d = -log<Real>(tol_)/log<Real>((Real)10);
-      const Real rho = std::min<Real>(3, std::max<Real>(2, 2 + (Real)0.25*(d - 6)));
-      const Real C = std::max<Real>((Real)1e-3, (15*(rho*rho - 1))/64);
-      quad_order = std::max<Integer>(2, (Integer)ceil<Real>(-log<Real>(C*tol_)/log<Real>(rho)*(Real)0.5 + 1));
-
-      const Real a = (rho + 1/rho)/2, b = (rho - 1/rho)/2;
-      b_ellipse = b*b/(2*a);
-    }
-
     /** Gauss-Legendre order, and the minimum ratio b_ellipse of target distance to panel size */
     template <class Real> struct QuadParamSet {
       Real b_ellipse;
       Integer quad_order;
     };
 
-    /**
-     * Returns the {b_ellipse, quad_order} pair for each digits, from QuadParams at tolerance
-     * 10^-digits; one table per QuadParams function.
-     * */
-    template <class Real, void (*QuadParams)(Real&, Integer&, Real)> const QuadParamSet<Real>& CachedQuadParams(const Integer digits) {
+    /** Returns the {b_ellipse, quad_order} pair for tolerance 10^-digits */
+    template <class Real> const QuadParamSet<Real>& CachedQuadParams(const Integer digits) {
       static const std::array<QuadParamSet<Real>, MaxDigits<Real>> table = []() {
+        const auto quad_params = [](Real& b_ellipse, Integer& quad_order, const Real tol) {
+          const Real tol_ = std::max<Real>(tol, machine_eps<Real>());
+          const Real d = -log<Real>(tol_)/log<Real>((Real)10);
+          const Real rho = std::min<Real>(3, std::max<Real>(2, 2 + (Real)0.25*(d - 6)));
+          const Real C = std::max<Real>((Real)1e-3, (15*(rho*rho - 1))/64);
+          quad_order = std::max<Integer>(2, (Integer)ceil<Real>(-log<Real>(C*tol_)/log<Real>(rho)*(Real)0.5 + 1));
+
+          const Real a = (rho + 1/rho)/2, b = (rho - 1/rho)/2;
+          b_ellipse = b*b/(2*a);
+        };
         std::array<QuadParamSet<Real>, MaxDigits<Real>> t{};
-        for (Integer d = 0; d < MaxDigits<Real>; d++) QuadParams(t[d].b_ellipse, t[d].quad_order, pow<Real,Long>((Real)0.1, (Long)d));
+        for (Integer d = 0; d < MaxDigits<Real>; d++) quad_params(t[d].b_ellipse, t[d].quad_order, pow<Real,Long>((Real)0.1, (Long)d));
         return t;
       }();
       SCTL_ASSERT(digits >= 0 && digits < MaxDigits<Real>);
@@ -1034,10 +1030,11 @@ namespace sctl {
       M_acc.SetZero();
 
       NearSplit<order,Real> split(coord, dcoord_du, dcoord_dv, Xtrg, pool);
+      const QuadParamSet<Real>& params = CachedQuadParams<Real>(digits);
       Integer q_near = quad_order;
       if (q_near <= 0) { // at least the order for orthogonal tangents, raised for skewed tangents (fitted to the smallest passing orders, targets on and off the surface), rounded up to even
         const Real s = SinTangentAngle<Real>(split.guu, split.guv, split.gvv);
-        const Real q_iso = (Real)CachedQuadParams<Real, QuadParams<Real>>(digits).quad_order;
+        const Real q_iso = (Real)params.quad_order;
         const Real q = std::max<Real>(std::max<Real>(q_iso, 4 + (Real)order/2), ((Real)0.875 + (Real)1.3*digits)/pow<Real>(s, (Real)0.875));
         q_near = 2*(Integer)ceil<Real>(std::min<Real>(q, (Real)NearMaxQuadOrder)/2);
       }
@@ -1049,7 +1046,7 @@ namespace sctl {
         const Real nsign = ((sdu == 1) != (sdv == 1)) ? (Real)-1 : (Real)1;
         IntegrateTensorRule<order,Real>(acc, split.SubCoord(sdu, sdv), tab[iu], tab[iv], normal_trg, ker, nsign, proxy_off, proxy_w);
       };
-      const Real b_ellipse = CachedQuadParams<Real, QuadParams<Real>>(digits).b_ellipse;
+      const Real b_ellipse = params.b_ellipse;
       const Real dist = split.dist;
       const auto refine = [&integrate_piece, dist, b_ellipse](const Integer sdu, const Integer sdv, Real hu, Real hv) {
         Integer ku = 0, kv = 0;
