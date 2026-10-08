@@ -114,16 +114,22 @@ TARGET_BIN = \
 
 all : $(TARGET_BIN)
 
-
-$(BINDIR)/%: $(SRCDIR)/%.cpp
-	-@$(MKDIRS) $(dir $@) $(dir $(OBJDIR)/$*)
-	$(CXX) $< $(CXXFLAGS) -MMD -MP -MT $@ -MF $(OBJDIR)/$*.d -I$(INCDIR) $(LDLIBS) -o $@
+$(BINDIR)/%: $(OBJDIR)/%.o
+	-@$(MKDIRS) $(dir $@)
+	$(CXX) $^ $(CXXFLAGS) $(LDLIBS) -o $@
 ifeq "$(OS)" "Darwin"
 	/usr/bin/dsymutil $@ -o $@.dSYM
 endif
 
-# Header dependencies of each binary, written by -MMD -MP, so that header edits rebuild it
+$(OBJDIR)/%.o: $(SRCDIR)/%.cpp
+	-@$(MKDIRS) $(dir $@)
+	$(CXX) $(CXXFLAGS) -MMD -MP -I$(INCDIR) -c $< -o $@
+
+# Header dependencies of each object, written by -MMD -MP, so that a header edit rebuilds the objects that include it
 -include $(wildcard $(OBJDIR)/*.d)
+
+# The objects are kept: the dependency files name them, so make would rebuild any it deleted
+.SECONDARY: $(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGET_BIN))
 
 # GPU tree: needs CUDA and a CUDA-aware MPI, so `gpu` is separate from `all`.
 NVCC = nvcc -ccbin mpicxx
