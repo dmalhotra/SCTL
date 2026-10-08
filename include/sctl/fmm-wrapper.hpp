@@ -199,13 +199,8 @@ template <class Real, Integer DIM> class ParticleFMM {
     void EvalDirect(Vector<Real>& U, const std::string& trg_name) const;
 
     /**
-     * Returns a function that sets M[s*SrcDim+i][t*TrgDim+j] to the source-to-target kernel of (src_name,
-     * trg_name) from the sources Xs, with normals Xn, to the targets Xt, computed as Eval() computes it: from the
-     * same coordinates (mapped into the unit box when Eval() uses PVFMM) and with the same kernel accuracy.
-     * Subtracting these interactions from a result of Eval() then cancels them up to rounding, also for a target
-     * very near a source, where they are large. With periodicity, Eval() also wraps points into the periodic box
-     * and adds periodic images; this function does neither. Collective, as it decides how Eval() evaluates; the
-     * function returned may be called concurrently, with points on this process.
+     * Returns a function setting M[s*SrcDim+i][t*TrgDim+j] to the (src_name, trg_name) kernel from Xs, Xn to Xt
+     * exactly as Eval() computes it, without periodic images. Collective; the returned function is thread-safe.
      *
      * @param[in] src_name name for the source type.
      * @param[in] trg_name name for the target type.
@@ -237,10 +232,13 @@ template <class Real, Integer DIM> class ParticleFMM {
 
     void EvalPVFMM(Vector<Real>& U, const std::string& trg_name) const;
 
-    /** Collective: whether Eval() for trg_name uses PVFMM, which it does for 3D, with periodicity or 40000 targets or more. */
+    /** Collective: whether Eval() for trg_name uses PVFMM: in 3D, with periodicity or 40000 targets or more */
     bool UsePVFMM(const std::string& trg_name) const;
 
-    /** The map x -> (x - bbox_offset)*bbox_scale of the points of (src_name, trg_name) into the unit box of PVFMM, and the factors bbox_scale^e by which PVFMM's kernels in that box are multiplied for each density (src_scal) and potential (trg_scal) component. */
+    /**
+     * The map x -> (x - bbox_offset)*bbox_scale of (src_name, trg_name) points into PVFMM's unit box, and the
+     * factors bbox_scale^e scaling PVFMM's kernels for each density (src_scal) and potential (trg_scal) component
+     */
     void PVFMMBox(StaticArray<Real,DIM>& bbox_offset, Real& bbox_scale, Vector<Real>& src_scal, Vector<Real>& trg_scal, const std::string& src_name, const std::string& trg_name) const;
     #endif
 

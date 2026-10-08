@@ -150,7 +150,10 @@ template <class uKernel> class GenericKernel : public uKernel {
     template <Integer digits, class VecType, class NormalType> static void uKerMatrix(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const NormalType& n, const void* ctx_ptr);
 
   private:
-    /** calls f(std::integral_constant<Integer,d>()) with d = digits for 0 <= digits <= 15, and d = -1 (machine precision) for digits = -1 or digits >= 16 */
+    /**
+     * calls f(std::integral_constant<Integer,d>()) with d = digits for 0 <= digits <= 15,
+     * and d = -1 (machine precision) for digits = -1 or digits >= 16
+     */
     template <class F> static void DigitsDispatch(const Integer digits, const F& f);
 
     void* ctx_ptr;
