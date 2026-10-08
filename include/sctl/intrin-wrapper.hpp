@@ -1136,6 +1136,20 @@ namespace sctl { // Generic
     }
   };
 
+  // x = n/2 + r exactly, n = round(2x), |r| <= 1/4; q = n mod 4, in [-2, 2]; NaN for inf and NaN x
+  template <class VData> inline void sincos_pi_reduce_intrin(VData& r, VData& q, const VData& x) {
+    using Real = typename VData::ScalarType;
+    static constexpr Real two_sig = pow<TypeTraits<Real>::SigBits,Real>((Real)2); // from here every value is an integer
+    const auto nearest = [](const VData& v) { // the nearest integer: v plus and minus 2^SigBits with the sign of v
+      const VData s = or_intrin(and_intrin(v, set1_intrin<VData>((Real)-0.0)), set1_intrin<VData>(two_sig));
+      return select_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(v), set1_intrin<VData>(two_sig)), sub_intrin(add_intrin(v, s), s), v);
+    };
+    const Mask<VData> m = comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(2 * two_sig)); // beyond, x is an even integer: n mod 4 = 0, r = 0
+    const VData z = mul_intrin(x, zero_intrin<VData>()); // +-0, NaN for inf and NaN
+    const VData n = select_intrin(m, nearest(add_intrin(x, x)), z);
+    r = select_intrin(m, fma_intrin(n, set1_intrin<VData>((Real)-0.5), x), z);
+    q = fma_intrin(nearest(mul_intrin(n, set1_intrin<VData>((Real)0.25))), set1_intrin<VData>((Real)-4), n);
+  }
   template <Integer ORDER, bool FullRange = true, class VData> inline void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
     // ORDER    ERROR
     //     1 8.81e-02
@@ -1275,7 +1289,8 @@ namespace sctl { // Generic
   template <class Real> inline constexpr Real exp_normal_lim() { // for |x| below, e^x and 2^round(x/ln2) are normal and finite
     return (Real)((((Long)1) << (TypeTraits<Real>::ExpBits - 1)) - 2) * const_ln2<Real>();
   }
-  template <Integer ORDER, bool RangeCheck = true, class VData> inline VData approx_exp_intrin(const VData& x) {
+  // e^x; with Sum, e^(x + x_lo) for |x_lo| <= ulp(x)/2, x_lo added to the reduced argument
+  template <Integer ORDER, bool RangeCheck = true, bool Sum = false, class VData> inline VData approx_exp_intrin(const VData& x, const VData& x_lo) {
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
     using IntVec = VecData<Int, VData::Size>;
@@ -1308,7 +1323,7 @@ namespace sctl { // Generic
     static constexpr Int Bias = (((Int)1) << (ExpBits - 1)) - 1;
     static constexpr Real magic = (Real)1.5 * pow<SigBits,Real>((Real)2) + (Real)Bias; // y + magic: y rounded to an integer n, with n + Bias in the low bits
 
-    const auto reduce = [](VData& t, VData& e1, const VData& xx) { // e^xx = e1 2^n, t = n + magic
+    const auto reduce = [](VData& t, VData& e1, const VData& xx, [[maybe_unused]] const VData& xx_lo) { // e^(xx + xx_lo) = e1 2^n, t = n + magic
       t = fma_intrin(xx, set1_intrin<VData>(invx0), set1_intrin<VData>(magic));
       const VData n = sub_intrin(t, set1_intrin<VData>(magic));
       VData x1;
@@ -1318,6 +1333,7 @@ namespace sctl { // Generic
       } else {
         x1 = fma_intrin(n, set1_intrin<VData>(x0), xx);
       }
+      if constexpr (Sum) x1 = add_intrin(x1, xx_lo);
       if      (ORDER >= 13) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11, coeff12, coeff13);
       else if (ORDER >= 12) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11, coeff12);
       else if (ORDER >= 11) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11);
@@ -1338,7 +1354,7 @@ namespace sctl { // Generic
     };
 
     VData t, e1;
-    reduce(t, e1, x);
+    reduce(t, e1, x, x_lo);
     if constexpr (!ieee_layout<Real>()) { // 2^n one element at a time
       union {
         VData v;
@@ -1356,7 +1372,7 @@ namespace sctl { // Generic
       // some x near or beyond the range of the result, inf or NaN: x clamped to where e^x is 0 or inf, and 2^n = 2^hi 2^lo,
       // hi >= lo; e1 2^hi is exact and normal, so the result is rounded once, also where it is subnormal
       static constexpr Real xmax = (Real)(2 * (Bias - 2)) * const_ln2<Real>();
-      reduce(t, e1, min_intrin(set1_intrin<VData>(xmax), max_intrin(set1_intrin<VData>(-xmax), x))); // keeps NaN
+      reduce(t, e1, min_intrin(set1_intrin<VData>(xmax), max_intrin(set1_intrin<VData>(-xmax), x)), x_lo); // keeps NaN
       const VData n = sub_intrin(t, set1_intrin<VData>(magic));
       const VData th = fma_intrin(n, set1_intrin<VData>((Real)0.5), set1_intrin<VData>(magic));
       const VData h = sub_intrin(th, set1_intrin<VData>(magic));
@@ -1365,6 +1381,9 @@ namespace sctl { // Generic
       const VData lo = min_intrin(h, k);
       return mul_intrin(mul_intrin(e1, pow2(add_intrin(hi, set1_intrin<VData>(magic)))), pow2(add_intrin(lo, set1_intrin<VData>(magic))));
     }
+  }
+  template <Integer ORDER, bool RangeCheck = true, class VData> inline VData approx_exp_intrin(const VData& x) {
+    return approx_exp_intrin<ORDER, RangeCheck, false>(x, x);
   }
   template <class VData> inline Mask<VData> positive_normal_mask_intrin(const VData& x) { // x normal, positive and finite
     using Real = typename VData::ScalarType;
@@ -1709,6 +1728,36 @@ namespace sctl { // Generic
   template <class VData, class Coeffs, Integer... k> inline VData eval_coeffs_intrin(const VData& x, std::integer_sequence<Integer, k...>) { // sum Coeffs::c[k] x^k
     return EvalPolynomial(x, ((typename VData::ScalarType)Coeffs::c[k])...);
   }
+  // sum c[Lo+k] x^k, k < Len, xp[j] = x^(2^j): split at the largest power of two below Len
+  template <Integer Lo, Integer Len, class VData, Integer K, class CType, Integer N> inline VData eval_poly_estrin_intrin(const VData (&xp)[K], const CType (&c)[N]) {
+    if constexpr (Len == 1) {
+      return set1_intrin<VData>((typename VData::ScalarType)c[Lo]);
+    } else {
+      static constexpr Integer j = [] {
+        Integer j_ = 0;
+        while ((((Integer)2) << j_) < Len) j_++;
+        return j_;
+      }();
+      static constexpr Integer H = ((Integer)1) << j;
+      return fma_intrin(xp[j], eval_poly_estrin_intrin<Lo + H, Len - H>(xp, c), eval_poly_estrin_intrin<Lo, H>(xp, c));
+    }
+  }
+  // sum c[k] x^k by Estrin's scheme, for any N
+  template <class VData, class CType, Integer N> inline VData eval_poly_intrin(const VData& x, const CType (&c)[N]) {
+    static constexpr Integer K = [] {
+      Integer k = 1;
+      while ((((Integer)1) << k) < N) k++;
+      return k;
+    }();
+    VData xp[K];
+    xp[0] = x;
+    for (Integer j = 1; j < K; j++) xp[j] = mul_intrin(xp[j - 1], xp[j - 1]);
+    return eval_poly_estrin_intrin<0, N>(xp, c);
+  }
+  // P(x)/Q(x), one division
+  template <class VData, class CType, Integer N, Integer M> inline VData eval_rational_intrin(const VData& x, const CType (&p)[N], const CType (&q)[M]) {
+    return div_intrin(eval_poly_intrin(x, p), eval_poly_intrin(x, q));
+  }
   template <class VData, Integer... k> inline VData atanh_series_intrin(const VData& z, std::integer_sequence<Integer, k...>) { // sum 1/(2k+3) z^k
     return EvalPolynomial(z, ((typename VData::ScalarType)1 / (2*k + 3))...);
   }
@@ -1948,6 +1997,63 @@ namespace sctl { // Generic
         Real x[VData::Size];
       } x_ = {x};
       for (Integer i = 0; i < VData::Size; i++) x_.x[i] = log(x_.x[i]) / log((Real)10);
+      return x_.v;
+    }
+  }
+
+  // expm1(r) = r + r^2/2 + r^3 P(r), |r| <= ln2/2, P of degree n, lowest degree first: minimax for the relative error
+  // of expm1
+  template <Integer n> struct Expm1PolyCoeffs;
+  template <> struct Expm1PolyCoeffs<3> { static constexpr double c[] = {0.16666548755272226, 0.04166685412507088, 0.008366034281379001, 0.0013898223046526785}; }; // 2^-26.1
+  template <> struct Expm1PolyCoeffs<8> { static constexpr double c[] = {0.16666666666666602, 0.041666666666620035, 0.00833333333338835, 0.0013888888920480966, 0.00019841269709401925, 2.4801516389454372e-05, 2.7557425050216553e-06, 2.762220823946014e-07, 2.5045897154552257e-08}; }; // 2^-55.2
+  // e^x - 1 = 2^n expm1(r) + (2^n - 1), x = n ln2 + r, rounded once; 2^n - 1 is exact for |n| <= SigBits
+  template <class VData> inline VData expm1_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      using Int = typename IntegerType<sizeof(Real)>::value;
+      using IntVec = VecData<Int,VData::Size>;
+      static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+      static constexpr Int Bias = (((Int)1) << (sizeof(Real)*8 - SigBits - 2)) - 1;
+      static constexpr Real magic = (Real)1.5 * pow<SigBits,Real>((Real)2) + (Real)Bias; // y + magic: y rounded to an integer n, with n + Bias in the low bits
+      static constexpr Real lo_lim = -(Real)(SigBits + 4) * const_ln2<Real>(); // below, e^x - 1 rounds to -1
+      static constexpr Real hi_lim = exp_normal_lim<Real>(); // up to here, 2^n is normal
+      using Coeffs = Expm1PolyCoeffs<std::is_same<Real,float>::value ? 3 : 8>;
+
+      const VData xc = min_intrin(set1_intrin<VData>(hi_lim), max_intrin(set1_intrin<VData>(lo_lim), x)); // keeps NaN, the second operand
+      const VData t = fma_intrin(xc, set1_intrin<VData>(1 / const_ln2<Real>()), set1_intrin<VData>(magic));
+      const VData n = sub_intrin(t, set1_intrin<VData>(magic));
+      VData r = fma_intrin(n, set1_intrin<VData>(-Ln2Split<Real>::hi), xc); // n Ln2Split::hi is exact
+      r = fma_intrin(n, set1_intrin<VData>(-Ln2Split<Real>::lo), r);
+      const VData er = fma_intrin(mul_intrin(r, r), fma_intrin(r, eval_poly_intrin(r, Coeffs::c), set1_intrin<VData>((Real)0.5)), r); // expm1(r)
+      const VData p2 = reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(t), SigBits)); // 2^n
+      const VData e = select_intrin(comp_intrin<ComparisonType::eq>(x, zero_intrin<VData>()), x, fma_intrin(p2, er, sub_intrin(p2, set1_intrin<VData>((Real)1)))); // x for +-0
+      const Mask<VData> big = comp_intrin<ComparisonType::gt>(x, set1_intrin<VData>(hi_lim));
+      if (mask_count_intrin(big) == 0) return e;
+      return select_intrin(big, exp_intrin(x), e); // e^x - 1 rounds to e^x
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) x_.x[i] = expm1(x_.x[i]);
+      return x_.v;
+    }
+  }
+  // log(u) + (x - (u - 1))/u, u = 1 + x rounded: the second term corrects the rounding of u
+  template <class VData> inline VData log1p_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      const VData one = set1_intrin<VData>((Real)1);
+      const VData u = add_intrin(one, x);
+      const VData c = div_intrin(sub_intrin(x, sub_intrin(u, one)), max_intrin(u, set1_intrin<VData>(std::numeric_limits<Real>::min()))); // u = 0 only for x = -1, where the numerator is 0
+      const VData l = add_intrin(log_intrin(u), c);
+      return select_intrin(comp_intrin<ComparisonType::eq>(u, one) | comp_intrin<ComparisonType::eq>(x, set1_intrin<VData>((Real)INFINITY)), x, l); // x where u = 1 (also +-0), and for x = inf
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) x_.x[i] = log1p(x_.x[i]);
       return x_.v;
     }
   }
