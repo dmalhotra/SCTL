@@ -125,7 +125,7 @@ namespace sctl {
             X0_local[k] = std::min<Real>(X0_local[k], Xsrc[i*COORD_DIM+k]);
           }
         }
-        comm_.Allreduce(X0_local, BBX0, COORD_DIM, CommOp::MIN);
+        comm_.Allreduce(X0_local + 0, BBX0 + 0, COORD_DIM, CommOp::MIN);
 
         Real BBlen, len_local = 0;
         for (Long i = 0; i < Ntrg; i++) {
