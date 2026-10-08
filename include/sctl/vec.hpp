@@ -582,6 +582,19 @@ namespace sctl {
   /** Sine and cosine to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
   template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
 
+  /** sin(pi x) and cos(pi x), exact argument reduction; float, double: within 1.3 ulp (float: 1), 1.6 without FMA. */
+  template <class ValueType, Integer N> inline void sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
+  /** sincospi to the given digits (-1: full). FullRange = false: only for |x| < 2^50 (float: 2^21), faster. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline void approx_sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
+  /** sin(pi x), as sincospi. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sinpi(const Vec<ValueType,N>& x);
+  /** sin(pi x), as approx_sincospi. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinpi(const Vec<ValueType,N>& x);
+  /** cos(pi x), as sincospi. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> cospi(const Vec<ValueType,N>& x);
+  /** cos(pi x), as approx_sincospi. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x);
+
   /** e^x; float, double at native widths without SVML: within about 2 ulp (float: 3.5), also near the overflow and for subnormal results. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x);
   /** e^x to the given digits (-1: exp). Without RangeCheck, only for |x| < 708.4 (float: 87.3). */

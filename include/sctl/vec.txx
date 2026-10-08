@@ -480,6 +480,28 @@ namespace sctl {
     if (digits == -1 || ORDER > 20) sincos<FullRange>(sinx, cosx, x);
     else approx_sincos_intrin<ORDER, FullRange>(sinx.get(), cosx.get(), x.get());
   }
+  template <class ValueType, Integer N> inline void sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
+    approx_sincospi_intrin<-1>(sinx.get(), cosx.get(), x.get());
+  }
+  template <Integer digits, bool FullRange, class ValueType, Integer N> inline void approx_sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
+    approx_sincospi_intrin<digits, FullRange>(sinx.get(), cosx.get(), x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sinpi(const Vec<ValueType,N>& x) {
+    return approx_sinpi<-1>(x);
+  }
+  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinpi(const Vec<ValueType,N>& x) {
+    typename Vec<ValueType,N>::VData sinx, cosx;
+    approx_sincospi_intrin<digits, FullRange, true, false>(sinx, cosx, x.get());
+    return sinx;
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> cospi(const Vec<ValueType,N>& x) {
+    return approx_cospi<-1>(x);
+  }
+  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x) {
+    typename Vec<ValueType,N>::VData sinx, cosx;
+    approx_sincospi_intrin<digits, FullRange, false, true>(sinx, cosx, x.get());
+    return cosx;
+  }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x) {
     return exp_intrin(x.get());

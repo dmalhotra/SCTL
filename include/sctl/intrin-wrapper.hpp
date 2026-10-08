@@ -1136,19 +1136,21 @@ namespace sctl { // Generic
     }
   };
 
-  // x = n/2 + r exactly, n = round(2x), |r| <= 1/4; q = n mod 4, in [-2, 2]; NaN for inf and NaN x
-  template <class VData> inline void sincos_pi_reduce_intrin(VData& r, VData& q, const VData& x) {
+  // x = (n + w)/2 exactly, n = round(2x) (halfway cases to even), |w| <= 1/2; t = n + 1.5 2^SigBits holds the low bits of n.
+  // FullRange = false: only for |x| < 2^(SigBits-2). w is NaN for inf and NaN
+  template <bool FullRange = true, class VData> inline void sincos_pi_reduce_intrin(VData& w, VData& t, const VData& x) {
     using Real = typename VData::ScalarType;
-    static constexpr Real two_sig = pow<TypeTraits<Real>::SigBits,Real>((Real)2); // from here every value is an integer
-    const auto nearest = [](const VData& v) { // the nearest integer: v plus and minus 2^SigBits with the sign of v
-      const VData s = or_intrin(and_intrin(v, set1_intrin<VData>((Real)-0.0)), set1_intrin<VData>(two_sig));
-      return select_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(v), set1_intrin<VData>(two_sig)), sub_intrin(add_intrin(v, s), s), v);
-    };
-    const Mask<VData> m = comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(2 * two_sig)); // beyond, x is an even integer: n mod 4 = 0, r = 0
-    const VData z = mul_intrin(x, zero_intrin<VData>()); // +-0, NaN for inf and NaN
-    const VData n = select_intrin(m, nearest(add_intrin(x, x)), z);
-    r = select_intrin(m, fma_intrin(n, set1_intrin<VData>((Real)-0.5), x), z);
-    q = fma_intrin(nearest(mul_intrin(n, set1_intrin<VData>((Real)0.25))), set1_intrin<VData>((Real)-4), n);
+    static constexpr Real c = (Real)1.5 * pow<TypeTraits<Real>::SigBits,Real>((Real)2); // v + c: round(v) in the low bits
+    VData y = x;
+    if constexpr (FullRange) { // x minus the nearest multiple of 4, exact: |y| <= 2 for |x| < 2^(SigBits+1), else y is even
+      if (mask_count_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(c / 6))) < VData::Size) {
+        const VData c4 = set1_intrin<VData>(4 * c);
+        y = sub_intrin(x, sub_intrin(add_intrin(x, c4), c4));
+      }
+    }
+    const VData z = add_intrin(y, y);
+    t = add_intrin(z, set1_intrin<VData>(c));
+    w = sub_intrin(z, sub_intrin(t, set1_intrin<VData>(c)));
   }
   template <Integer ORDER, bool FullRange = true, class VData> inline void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
     // ORDER    ERROR
@@ -2094,6 +2096,80 @@ namespace sctl { // Generic
       } x_ = {x};
       for (Integer i = 0; i < VData::Size; i++) x_.x[i] = log1p(x_.x[i]);
       return x_.v;
+    }
+  }
+
+  // sin(pi w/2) = (pi/2) w + w^3 Q(w^2), |w| <= 1/2: minimax Q of degree n, lowest degree first
+  template <Integer n> struct SinPiPolyCoeffs;
+  template <> struct SinPiPolyCoeffs<0> { static constexpr double c[] = {-0.6295356107990434}; };
+  template <> struct SinPiPolyCoeffs<1> { static constexpr double c[] = {-0.6458371155860916, 0.07806640499920597}; };
+  template <> struct SinPiPolyCoeffs<2> { static constexpr double c[] = {-0.645963630198311, 0.07968141280991331, -0.004604834191653698}; };
+  template <> struct SinPiPolyCoeffs<3> { static constexpr double c[] = {-0.6459640965035954, 0.07969258772124267, -0.004681292225850496, 0.00015825147962984448}; };
+  template <> struct SinPiPolyCoeffs<4> { static constexpr double c[] = {-0.6459640975048387, 0.07969262616721817, -0.0046817526929786545, 0.00016042965956748935, -3.556945908113985e-06}; };
+  template <> struct SinPiPolyCoeffs<5> { static constexpr double c[] = {-0.6459640975062448, 0.0796926262460598, -0.0046817541325625996, 0.00016044115216852262, -3.5986477759320474e-06, 5.63446316045072e-08}; };
+  // cos(pi w/2) = 1 + w^2 P(w^2), |w| <= 1/2: minimax P of degree n, lowest degree first
+  template <Integer n> struct CosPiPolyCoeffs;
+  template <> struct CosPiPolyCoeffs<0> { static constexpr double c[] = {-1.1806822290618728}; };
+  template <> struct CosPiPolyCoeffs<1> { static constexpr double c[] = {-1.2331097484257911, 0.24631381622482182}; };
+  template <> struct CosPiPolyCoeffs<2> { static constexpr double c[] = {-1.2336977063547245, 0.2536032111226791, -0.020417283010921}; };
+  template <> struct CosPiPolyCoeffs<3> { static constexpr double c[] = {-1.233700542597666, 0.25366922596542296, -0.02086016511085469, 0.0009037665417802849}; };
+  template <> struct CosPiPolyCoeffs<4> { static constexpr double c[] = {-1.2337005501235707, 0.2536695072116397, -0.02086346840130368, 0.0009191629222590091, -2.4852207181205153e-05}; };
+  template <> struct CosPiPolyCoeffs<5> { static constexpr double c[] = {-1.2337005501361553, 0.25366950789995935, -0.02086348073586745, 0.0009192599541479634, -2.520014305985118e-05, 4.655337261110899e-07}; };
+  inline constexpr double sinpi_poly_digits[] = {3.24, 5.73, 8.42, 11.29, 14.3, 17.12}; // correct digits of degrees 0 to 5
+  inline constexpr double cospi_poly_digits[] = {2.49, 4.83, 7.41, 10.2, 13.14, 16.11};
+  // the lowest degree with digits d[n] >= digits, at most full; full for digits = -1
+  inline constexpr Integer sincospi_poly_degree(const double (&d)[6], const Integer full, const Integer digits) {
+    Integer n = 0;
+    while (n < full && (digits < 0 || d[n] < digits)) n++;
+    return n;
+  }
+  // sin(pi x), cos(pi x) to the digits (-1: full): x = (n + w)/2, sin(pi w/2) and cos(pi w/2) by n mod 4; FullRange as
+  // sincos_pi_reduce_intrin
+  template <Integer digits, bool FullRange = true, bool Sin = true, bool Cos = true, class VData> inline void approx_sincospi_intrin(VData& sinx, VData& cosx, const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      using Int = typename IntegerType<sizeof(Real)>::value;
+      using IntVec = VecData<Int, VData::Size>;
+      static constexpr bool F = std::is_same<Real,float>::value;
+      static constexpr Integer Bits = sizeof(Real) * 8;
+      static constexpr Real pi_hi = (F ? (Real)1.57079625129699707031 : (Real)1.5707963267948966); // pi/2 rounded down: pi_lo > 0 keeps -0
+      static constexpr Real pi_lo = (Real)(1.570796326794896619231321691639751442L - (long double)pi_hi);
+      VData w, t;
+      sincos_pi_reduce_intrin<FullRange>(w, t, x);
+      const VData w2 = mul_intrin(w, w);
+      const auto poly = [](const VData& v, const auto& cf) { // by Horner's scheme: fewer operations than Estrin's
+        constexpr Integer N = sizeof(cf) / sizeof(cf[0]);
+        VData p = set1_intrin<VData>((Real)cf[N - 1]);
+        for (Integer k = N - 2; k >= 0; k--) p = fma_intrin(p, v, set1_intrin<VData>((Real)cf[k]));
+        return p;
+      };
+      const VData s = fma_intrin(w, set1_intrin<VData>(pi_hi), mul_intrin(w, fma_intrin(w2, poly(w2, SinPiPolyCoeffs<sincospi_poly_degree(sinpi_poly_digits, (F ? 2 : 5), digits)>::c), set1_intrin<VData>(pi_lo))));
+      const VData c = fma_intrin(w2, poly(w2, CosPiPolyCoeffs<sincospi_poly_degree(cospi_poly_digits, (F ? 3 : 5), digits)>::c), set1_intrin<VData>((Real)1));
+      const IntVec ti = reinterpret_intrin<IntVec>(t);
+      const Mask<VData> odd = reinterpret_mask<Mask<VData>>(comp_intrin<ComparisonType::ne>(and_intrin(ti, set1_intrin<IntVec>(1)), zero_intrin<IntVec>()));
+      const IntVec sign = set1_intrin<IntVec>(((Int)1) << (Bits - 1));
+      const IntVec t1 = bitshiftleft_intrin(ti, Bits - 2); // bit 1 of n at the sign
+      if constexpr (Sin) sinx = xor_intrin(select_intrin(odd, c, s), reinterpret_intrin<VData>(and_intrin(t1, sign))); // n mod 4 = 0: s, 1: c, 2: -s, 3: -c
+      if constexpr (Cos) cosx = xor_intrin(select_intrin(odd, s, c), reinterpret_intrin<VData>(and_intrin(xor_intrin(t1, bitshiftleft_intrin(ti, Bits - 1)), sign))); // c, -s, -c, s
+    } else { // sin(pi w/2) and cos(pi w/2) by sin and cos, one element at a time
+      static constexpr Real c = (Real)1.5 * pow<TypeTraits<Real>::SigBits,Real>((Real)2);
+      union U {
+        VData v;
+        Real x[VData::Size];
+      };
+      U w, t, s, co;
+      sincos_pi_reduce_intrin(w.v, t.v, x);
+      for (Integer i = 0; i < VData::Size; i++) {
+        const Real n = t.x[i] - c;
+        const Real m = n - 4 * floor(n / 4); // n mod 4; NaN for inf and NaN x, where the result is NaN
+        const Integer q = (m >= 0 && m < 4 ? (Integer)m : 0);
+        const Real sw = sin(const_pi<Real>() / 2 * w.x[i]);
+        const Real cw = cos(const_pi<Real>() / 2 * w.x[i]);
+        s.x[i] = (q == 0 ? sw : (q == 1 ? cw : (q == 2 ? -sw : -cw)));
+        co.x[i] = (q == 0 ? cw : (q == 1 ? -sw : (q == 2 ? -cw : sw)));
+      }
+      sinx = s.v;
+      cosx = co.v;
     }
   }
 

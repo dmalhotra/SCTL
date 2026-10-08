@@ -824,6 +824,20 @@ namespace sctl {
           SCTL_ASSERT(isinf(exp10(VecType((ScalarType)INFINITY))[0]) && exp10(VecType(-(ScalarType)INFINITY))[0] == 0 && isnan(exp10(VecType((ScalarType)NAN))[0]));
         }
 
+        { // sinpi, cospi, sincospi, and approx_sinpi, approx_cospi to 5 digits
+          VecType s, c;
+          sincospi(s, c, v0);
+          const VecType sp = sinpi(v0), cp = cospi(v0), as = approx_sinpi<5>(v0), ac = approx_cospi<5>(v0);
+          for (Integer i = 0; i < N; i++) {
+            const ScalarType tol = (4 + 4 * fabs(v0[i])) * machine_eps<ScalarType>(); // with the rounding of pi x in the reference
+            const ScalarType s_ref = sin<ScalarType>(const_pi<ScalarType>() * v0[i]), c_ref = cos<ScalarType>(const_pi<ScalarType>() * v0[i]);
+            SCTL_ASSERT(fabs(sp[i] - s_ref) <= tol && fabs(cp[i] - c_ref) <= tol && fabs(s[i] - s_ref) <= tol && fabs(c[i] - c_ref) <= tol);
+            SCTL_ASSERT(fabs(as[i] - s_ref) <= (ScalarType)1e-5 && fabs(ac[i] - c_ref) <= (ScalarType)1e-5);
+          }
+          const ScalarType h = pow<TypeTraits<ScalarType>::SigBits - 1, ScalarType>((ScalarType)2); // beyond 2^(SigBits-2): the range step
+          SCTL_ASSERT(sinpi(VecType((ScalarType)3))[0] == 0 && cospi(VecType((ScalarType)3))[0] == -1 && sinpi(VecType((ScalarType)2.5))[0] == 1 && cospi(VecType((ScalarType)2.5))[0] == 0);
+          SCTL_ASSERT(sinpi(VecType(h + (ScalarType)0.5))[0] == 1 && cospi(VecType(2 * h + 1))[0] == -1 && isnan(sinpi(VecType((ScalarType)INFINITY))[0]) && isnan(cospi(VecType((ScalarType)NAN))[0]));
+        }
 
         if (sizeof(ScalarType) < 16) return;
 
