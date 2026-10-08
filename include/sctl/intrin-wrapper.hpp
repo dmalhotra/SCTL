@@ -2918,8 +2918,13 @@ namespace sctl { // SSE
   // The first n lanes by their count: in the leftover columns of SmallGEMM, the generic loop over the lanes of a mask
   // was 5-8x slower, and tests of each bit of a movemask 1.4-2x. n = 3 of 4 lanes with AVX-512VL by a mask register;
   // with AVX, except on AMD Zen, by the masked load and store (1.4-1.7 cycles with an add on Intel, against 2.1 for two
-  // loads and two stores).
+  // loads and two stores). With clang and AVX-512VL, n = 1 by a mask register: from the load and store of one element,
+  // in a loop over rows, clang makes its own vector loop with scatter stores (add to 1 of 4 floats on Sapphire Rapids:
+  // 0.57 cycles, against 1.56).
   template <> inline VecData<float,4> loadu_first_intrin<VecData<float,4>>(float const* p, Integer n) {
+#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__clang__)
+    if (n == 1) return _mm_maskz_loadu_ps(__mmask8(1), p);
+#endif
     if (n >= 4) return _mm_loadu_ps(p);
 #if defined(__AVX512F__) && defined(__AVX512VL__)
     if (n == 3) return _mm_maskz_loadu_ps(__mmask8(0x7), p);
@@ -2933,6 +2938,12 @@ namespace sctl { // SSE
     return _mm_setzero_ps();
   }
   template <> inline void storeu_first_intrin<VecData<float,4>>(float* p, VecData<float,4> vec, Integer n) {
+#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__clang__)
+    if (n == 1) {
+      _mm_mask_storeu_ps(p, __mmask8(1), vec.v);
+      return;
+    }
+#endif
     if (n >= 4) {
       _mm_storeu_ps(p, vec.v);
     } else if (n == 3) {
@@ -2951,11 +2962,20 @@ namespace sctl { // SSE
     }
   }
   template <> inline VecData<double,2> loadu_first_intrin<VecData<double,2>>(double const* p, Integer n) {
+#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__clang__)
+    if (n == 1) return _mm_maskz_loadu_pd(__mmask8(1), p);
+#endif
     if (n >= 2) return _mm_loadu_pd(p);
     if (n == 1) return _mm_load_sd(p);
     return _mm_setzero_pd();
   }
   template <> inline void storeu_first_intrin<VecData<double,2>>(double* p, VecData<double,2> vec, Integer n) {
+#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__clang__)
+    if (n == 1) {
+      _mm_mask_storeu_pd(p, __mmask8(1), vec.v);
+      return;
+    }
+#endif
     if (n >= 2) {
       _mm_storeu_pd(p, vec.v);
     } else if (n == 1) {
@@ -2980,6 +3000,9 @@ namespace sctl { // SSE
 #endif
   // The first n lanes by their count, as for float and double
   template <> inline VecData<int32_t,4> loadu_first_intrin<VecData<int32_t,4>>(int32_t const* p, Integer n) {
+#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__clang__)
+    if (n == 1) return _mm_maskz_loadu_epi32(__mmask8(1), p);
+#endif
     if (n >= 4) return _mm_loadu_si128((__m128i const*)p);
 #if defined(__AVX512F__) && defined(__AVX512VL__)
     if (n == 3) return _mm_maskz_loadu_epi32(__mmask8(0x7), p);
@@ -2993,6 +3016,12 @@ namespace sctl { // SSE
     return _mm_setzero_si128();
   }
   template <> inline void storeu_first_intrin<VecData<int32_t,4>>(int32_t* p, VecData<int32_t,4> vec, Integer n) {
+#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__clang__)
+    if (n == 1) {
+      _mm_mask_storeu_epi32(p, __mmask8(1), vec.v);
+      return;
+    }
+#endif
     if (n >= 4) {
       _mm_storeu_si128((__m128i*)p, vec.v);
     } else if (n == 3) {
@@ -3011,11 +3040,20 @@ namespace sctl { // SSE
     }
   }
   template <> inline VecData<int64_t,2> loadu_first_intrin<VecData<int64_t,2>>(int64_t const* p, Integer n) {
+#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__clang__)
+    if (n == 1) return _mm_maskz_loadu_epi64(__mmask8(1), p);
+#endif
     if (n >= 2) return _mm_loadu_si128((__m128i const*)p);
     if (n == 1) return _mm_loadl_epi64((__m128i const*)p);
     return _mm_setzero_si128();
   }
   template <> inline void storeu_first_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec, Integer n) {
+#if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__clang__)
+    if (n == 1) {
+      _mm_mask_storeu_epi64(p, __mmask8(1), vec.v);
+      return;
+    }
+#endif
     if (n >= 2) {
       _mm_storeu_si128((__m128i*)p, vec.v);
     } else if (n == 1) {
