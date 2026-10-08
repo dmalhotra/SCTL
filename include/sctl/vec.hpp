@@ -715,6 +715,21 @@ namespace sctl {
   /** Hyperbolic tangent. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x);
 
+  /** Inverse hyperbolic sine; float, double: within 1.3 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> asinh(const Vec<ValueType,N>& x);
+  /** asinh to the given digits (-1: full). FullRange = false: only for |x| < 2^26 (float: 2^11). */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_asinh(const Vec<ValueType,N>& x);
+
+  /** Inverse hyperbolic cosine, NaN for x < 1; float, double: within 1.8 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> acosh(const Vec<ValueType,N>& x);
+  /** acosh to the given digits (-1: full). FullRange = false: only for 1 < x < 2^26 (float: 2^11). */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_acosh(const Vec<ValueType,N>& x);
+
+  /** Inverse hyperbolic tangent, +-inf at +-1, NaN for |x| > 1; float, double: within 1.7 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> atanh(const Vec<ValueType,N>& x);
+  /** atanh to the given digits (-1: full). FullRange = false: only for |x| < 1. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_atanh(const Vec<ValueType,N>& x);
+
   /** Remainder of x/y with the sign of x, as std::fmod. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 

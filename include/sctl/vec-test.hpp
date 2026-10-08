@@ -1006,6 +1006,11 @@ namespace sctl {
         const VecType sh = sinh(u1.v);
         const VecType ch = cosh(u1.v);
         const VecType th = tanh(u1.v);
+        const VecType ash = asinh(u1.v);
+        const VecType ach = acosh(VecType((ScalarType)1) + u4.v);
+        const VecType ath = atanh(u5.v);
+        const VecType ash5 = approx_asinh<5>(u1.v), ach5 = approx_acosh<5>(VecType((ScalarType)1) + u4.v), ath5 = approx_atanh<5>(u5.v);
+        const VecType ashn = approx_asinh<-1, false>(u1.v), achn = approx_acosh<-1, false>(VecType((ScalarType)1) + u4.v), athn = approx_atanh<-1, false>(u5.v);
         const VecType fm = fmod(u1.v, u4.v);
         SCTL_ASSERT(round(VecType((ScalarType)2.5))[0] == 3 && round(VecType((ScalarType)-0.5))[0] == -1);
         for (Integer i = 0; i < N; i++) {
@@ -1025,7 +1030,20 @@ namespace sctl {
           SCTL_ASSERT(rel(ch[i], cosh_ref(x)) <= tol);
           SCTL_ASSERT(rel(th[i], (TypeTraits<ScalarType>::SigBits <= 64 ? (ScalarType)std::tanh((long double)x) : sinh_ref(x) / cosh_ref(x))) <= tol);
           SCTL_ASSERT(fm[i] == fmod<ScalarType>(x, u4.x[i]));
+          if (TypeTraits<ScalarType>::SigBits <= 64) {
+            SCTL_ASSERT(rel(ash[i], (ScalarType)std::asinh((long double)x)) <= tol);
+            SCTL_ASSERT(rel(ach[i], (ScalarType)std::acosh((long double)((ScalarType)1 + u4.x[i]))) <= tol);
+            SCTL_ASSERT(rel(ath[i], (ScalarType)std::atanh((long double)u5.x[i])) <= tol);
+          } else { // through sinh and cosh, which multiply the relative error by at most 3 here
+            SCTL_ASSERT(rel(sinh_ref(ash[i]), x) <= 4*tol);
+            SCTL_ASSERT(rel(cosh_ref(ach[i]), (ScalarType)1 + u4.x[i]) <= 4*tol);
+            SCTL_ASSERT(rel(sinh_ref(ath[i]) / cosh_ref(ath[i]), u5.x[i]) <= 4*tol);
+          }
+          SCTL_ASSERT(rel(ash5[i], ash[i]) <= (ScalarType)1e-5 && rel(ach5[i], ach[i]) <= (ScalarType)1e-5 && rel(ath5[i], ath[i]) <= (ScalarType)1e-5);
+          SCTL_ASSERT(rel(ashn[i], ash[i]) <= tol && rel(achn[i], ach[i]) <= tol && rel(athn[i], ath[i]) <= tol);
         }
+        SCTL_ASSERT(asinh(VecType((ScalarType)-0.0))[0] == 0 && acosh(VecType((ScalarType)1))[0] == 0 && isnan(acosh(VecType((ScalarType)0.5))[0]));
+        SCTL_ASSERT(isinf(atanh(VecType((ScalarType)-1))[0]) && atanh(VecType((ScalarType)-1))[0] < 0 && isnan(atanh(VecType((ScalarType)2))[0]));
 
         const ScalarType big = (ScalarType)(sizeof(ScalarType) == 4 ? 1e30 : 1e200); // big^2 overflows float
         SCTL_ASSERT(rel(hypot(VecType(big), VecType(big))[0], big * sqrt<ScalarType>((ScalarType)2)) <= tol);

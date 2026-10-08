@@ -651,6 +651,24 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x) {
     return tanh_intrin(x.get());
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> asinh(const Vec<ValueType,N>& x) {
+    return asinh_intrin(x.get());
+  }
+  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_asinh(const Vec<ValueType,N>& x) {
+    return asinh_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), FullRange>(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> acosh(const Vec<ValueType,N>& x) {
+    return acosh_intrin(x.get());
+  }
+  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_acosh(const Vec<ValueType,N>& x) {
+    return acosh_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), FullRange>(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> atanh(const Vec<ValueType,N>& x) {
+    return atanh_intrin(x.get());
+  }
+  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_atanh(const Vec<ValueType,N>& x) {
+    return atanh_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), FullRange>(x.get());
+  }
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
     return fmod_intrin(x.get(), y.get());
   }
