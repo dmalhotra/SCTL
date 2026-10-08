@@ -497,6 +497,13 @@ namespace sctl {
     if constexpr (detail_approx_digits::full_exp<ValueType>(digits)) return exp(x);
     else return approx_exp_intrin<exp_taylor_order(digits), RangeCheck>(x.get());
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> exp10(const Vec<ValueType,N>& x) {
+    return exp10_intrin(x.get());
+  }
+  template <Integer digits, bool RangeCheck, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp10(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full_exp<ValueType>(digits)) return exp10(x);
+    else return approx_exp10_intrin<exp_taylor_order(digits), RangeCheck>(x.get());
+  }
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_log(const Vec<ValueType,N>& x) {
     if constexpr (detail_approx_digits::full<ValueType>(digits) || log_poly_degree(digits) == 0) return log(x); // beyond the polynomials, log is as fast
     else return approx_log_intrin<digits>(x.get());

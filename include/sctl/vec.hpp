@@ -587,6 +587,11 @@ namespace sctl {
   /** e^x to the given digits (-1: exp). Without RangeCheck, only for |x| < 708.4 (float: 87.3). */
   template <Integer digits, bool RangeCheck = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x);
 
+  /** 10^x; float, double: as accurate as exp, vectorized at every width. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> exp10(const Vec<ValueType,N>& x);
+  /** 10^x to the given digits (-1: exp10). Without RangeCheck, only for |x| < 307.6 (float: 37.9). */
+  template <Integer digits, bool RangeCheck = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp10(const Vec<ValueType,N>& x);
+
   /** log(x) to the given digits (-1: log), for float and double; x not positive, normal and finite as log. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_log(const Vec<ValueType,N>& x);
 

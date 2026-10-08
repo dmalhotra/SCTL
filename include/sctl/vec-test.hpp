@@ -814,6 +814,17 @@ namespace sctl {
           SCTL_ASSERT(fabs(approx_pow<5>(VecType((ScalarType)-2), VecType((ScalarType)3))[0] + 8) <= (ScalarType)8e-5);
         }
 
+        { // exp10, and approx_exp10 to 5 digits
+          const VecType e10 = exp10(v0), a10 = approx_exp10<5>(v0);
+          for (Integer i = 0; i < N; i++) {
+            const ScalarType ref = pow<ScalarType>((ScalarType)10, v0[i]);
+            SCTL_ASSERT(fabs(e10[i] - ref) <= 8 * machine_eps<ScalarType>() * ref);
+            SCTL_ASSERT(fabs(a10[i] - ref) <= (ScalarType)1e-5 * ref);
+          }
+          SCTL_ASSERT(isinf(exp10(VecType((ScalarType)INFINITY))[0]) && exp10(VecType(-(ScalarType)INFINITY))[0] == 0 && isnan(exp10(VecType((ScalarType)NAN))[0]));
+        }
+
+
         if (sizeof(ScalarType) < 16) return;
 
         approx_sincos<8>(v1, v2, v0);
