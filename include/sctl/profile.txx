@@ -588,6 +588,7 @@ namespace sctl {
       const std::string& name_ = prof.name.top();
       const Comm* comm_ = prof.comm.top();
       const bool sync_ = prof.sync.top();
+      SCTL_UNUSED(comm_);
       SCTL_UNUSED(sync_);
 
       prof.e_log.push_back(false);
