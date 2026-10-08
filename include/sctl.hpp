@@ -26,6 +26,8 @@
 #include "sctl/tensor.txx"
 
 // Tree
+#include "sctl/sort-scatter.hpp"
+#include "sctl/sort-scatter.txx"
 #include "sctl/tree.hpp"
 #include "sctl/tree.txx"
 #include "sctl/vtudata.hpp"
@@ -102,7 +104,6 @@
 #include "sctl/generic-kernel.hpp"
 #include "sctl/generic-kernel.txx"
 #include "sctl/kernel_functions.hpp"
-#include "sctl/boundary_quadrature.hpp"
 
 // FMM wrapper
 #include "sctl/fmm-wrapper.hpp"

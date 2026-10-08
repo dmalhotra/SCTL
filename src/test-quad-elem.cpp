@@ -1428,7 +1428,7 @@ int main(int argc, char** argv) {
   Comm::MPI_Init(&argc, &argv);
   {
     using Real = double;
-    const Comm comm = Comm::World();
+    const Comm& comm = Comm::World();
     const bool root = !comm.Rank();
     const auto passed = [root](const std::string& name) {
       if (root) std::cout << name << ": PASSED\n";

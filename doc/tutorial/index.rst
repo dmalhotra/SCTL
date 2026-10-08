@@ -85,7 +85,6 @@ Miscellaneous
 .. .. toctree::
 ..    :maxdepth: 1
 .. 
-..    Boundary quadrature <boundary_quadrature>
 ..    ChebBasis <cheb_utils>
 .. 
 

@@ -450,7 +450,7 @@ namespace sctl {
 
       Real cond_num, smallest_wt = 1;
       { // Set quad_wts, cond_num
-        const Matrix<Real> b = Matrix<Real>(1, sqrt_wts.Dim(), (Iterator<Real>)sqrt_wts.begin()) * M;
+        const Matrix<Real> b = Matrix<const Real>(1, sqrt_wts.Dim(), sqrt_wts.begin(), false) * M;
 
         Matrix<Real> MM(ORDER,ORDER);
         { // Set MM <-- M[quad_nds][:] / sqrt_wts

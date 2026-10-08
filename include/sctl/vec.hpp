@@ -385,6 +385,9 @@ namespace sctl {
    */
   template <class ValueType, Integer N, class ...T> inline void transpose(Vec<ValueType,N>& v0, T&... vs);
 
+  // Horizontal reduction: sum of all lanes.
+  template <class ValueType, Integer N> inline ValueType reduce_add(const Vec<ValueType,N>& a);
+
   /**
    * Exchange the elements of each pair of adjacent lanes: (x0, x1, x2, x3, ...) becomes
    * (x1, x0, x3, x2, ...). N must be even.

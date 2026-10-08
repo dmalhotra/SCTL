@@ -6,6 +6,7 @@
 #include <algorithm>          // for max
 #include <array>              // for array
 #include <atomic>             // for atomic, memory_order
+#include <deque>              // for deque
 #include <iomanip>            // for operator<<, setw
 #include <iostream>           // for basic_ostream, operator<<, cout, left
 #include <map>                // for map
@@ -250,14 +251,12 @@ namespace sctl {
 
     std::array<Long, Nfield> counters; // reduced snapshot, written on the master thread at Tic/Toc
     struct alignas(64) CounterRow { std::array<Long, Nfield> c; }; // padded to avoid false sharing
-    std::vector<CounterRow> thread_counters; // per-thread accumulators (lock-free increments)
+    std::deque<CounterRow> thread_counters; // per-thread accumulators; a deque so rows never move
     std::map<std::string, ProfExpr> prof_fields;
 
     inline ProfileData() : t0(SCTL_GET_WTIME()), enable_state(false) {
       constexpr double gb_scale = (1./1024/1024/1024);
       for (auto& x : counters) x = 0;
-      thread_counters.resize(std::max<Integer>(SCTL_GET_MAX_THREADS(), 1));
-      for (auto& r : thread_counters) r.c.fill(0);
 
       e_log.reserve(1e5);
       n_log.reserve(1e5);
@@ -358,6 +357,72 @@ namespace sctl {
     const bool orig_val = GetProfData().enable_state;
     GetProfData().enable_state = state;
     return orig_val;
+  }
+
+  inline Profile::ProfileTable Profile::get_table(const std::vector<std::string>& field_names_in, const Comm* comm_) {
+    ProfileTable result;
+    const std::vector<std::string> field_names_default = [&comm_]() -> std::vector<std::string> {
+      if (!comm_ || comm_->Size()==1) return {"t", "f", "f/s", "m"};
+      else return {"t_avg", "t_max", "f_avg", "f_max", "f/s_min", "f/s_avg", "f/s_total", "m_max"};
+    }();
+
+    const std::vector<std::string> &field_names = field_names_in.empty() ? field_names_default : field_names_in;
+
+    std::vector<std::string> name;
+    std::vector<Long> depth;
+    std::vector<double> counter;
+    {
+      std::stack<Long> idx_stack;
+      ProfileData& prof = GetProfData();
+      for (Long i = prof.e_log.size()-1; i >= 0; i--) {
+        if (prof.e_log[i]==0) {
+          idx_stack.push(i);
+        } else {
+        if (!idx_stack.size()) break;
+          const Long i0 = idx_stack.top();
+          name.push_back(prof.n_log[i]);
+          depth.push_back(idx_stack.size()-1);
+          for (Long k = 0; k < Nfield; k++) {
+            counter.push_back(prof.counter_log[i0*Nfield+k] - prof.counter_log[i*Nfield+k]);
+          }
+          idx_stack.pop();
+        }
+      }
+    }
+    if (name.empty()) return result;
+
+    const Long Nrow = name.size();
+    std::reverse(name.begin(), name.end());
+    std::reverse(depth.begin(), depth.end());
+    for (Long i = 0; i < Nrow/2; i++) {
+      for (Long k = 0; k < Nfield; k++) {
+        std::swap(counter[i*Nfield+k], counter[(Nrow-1-i)*Nfield+k]);
+      }
+    }
+
+    std::map<std::string, std::vector<double>> columns;
+    for (const auto& f : field_names) {
+      columns[f] = GetProfField(f)(counter, comm_);
+    }
+
+    std::vector<std::string> path_stack;
+    for (Long i = 0; i < Nrow; i++) {
+        path_stack.resize(depth[i]);
+        path_stack.push_back(name[i]);
+
+        std::string path;
+        for (Long j = 0; j < (Long)path_stack.size(); j++) {
+            if (j) path += "/";
+            path += path_stack[j];
+        }
+
+        std::map<std::string, double> row;
+        for (const auto& f : field_names) {
+            row[f] = columns[f][i];
+        }
+        result.emplace_back(path, std::move(row));
+    }
+    return result;
   }
 
   inline void Profile::print(const Comm* comm_, std::vector<std::string> field_lst, std::vector<std::string> format_lst) {
@@ -465,8 +530,17 @@ namespace sctl {
 
   inline Long Profile::IncrementCounter(const ProfileCounter prof_field, const Long x) {
     ProfileData& prof = GetProfData();
-    const Integer tid = SCTL_GET_THREAD_NUM(); // lock-free: each thread accumulates into its own row
-    Long& c = prof.thread_counters[tid].c[(Long)prof_field];
+    // Per thread, not by thread number: that numbers a position in the team, not a row.
+    static thread_local ProfileData::CounterRow* row = nullptr;
+    if (row == nullptr) {
+      #pragma omp critical(SCTL_PROFILE_COUNTERS)
+      {
+        prof.thread_counters.emplace_back();
+        row = &prof.thread_counters.back();
+        row->c.fill(0);
+      }
+    }
+    Long& c = row->c[(Long)prof_field];
     const Long old = c;
     c += x;
     return old;
@@ -492,7 +566,12 @@ namespace sctl {
 
       prof.e_log.push_back(true);
       prof.n_log.push_back(prof.name.top());
-      for (Long i = 0; i < Nfield; i++) { Long s = 0; for (const auto& r : prof.thread_counters) s += r.c[i]; prof.counters[i] = s; } // reduce per-thread counters
+      #pragma omp critical(SCTL_PROFILE_COUNTERS)
+      for (Long i = 0; i < Nfield; i++) { // reduce per-thread counters
+        Long s = 0;
+        for (const auto& r : prof.thread_counters) s += r.c[i];
+        prof.counters[i] = s;
+      }
       prof.counters[(Long)ProfileCounter::TIME] = (Long)((SCTL_GET_WTIME()-prof.t0)*1e9);
       for (Long i = 0; i < Nfield; i++) prof.counter_log.push_back(prof.counters[i]);
     }
@@ -513,7 +592,12 @@ namespace sctl {
 
       prof.e_log.push_back(false);
       prof.n_log.push_back(name_);
-      for (Long i = 0; i < Nfield; i++) { Long s = 0; for (const auto& r : prof.thread_counters) s += r.c[i]; prof.counters[i] = s; } // reduce per-thread counters
+      #pragma omp critical(SCTL_PROFILE_COUNTERS)
+      for (Long i = 0; i < Nfield; i++) { // reduce per-thread counters
+        Long s = 0;
+        for (const auto& r : prof.thread_counters) s += r.c[i];
+        prof.counters[i] = s;
+      }
       prof.counters[(Long)ProfileCounter::TIME] = (Long)((SCTL_GET_WTIME()-prof.t0)*1e9);
       for (Long i = 0; i < Nfield; i++) prof.counter_log.push_back(prof.counters[i]);
 

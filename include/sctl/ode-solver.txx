@@ -120,7 +120,7 @@ namespace sctl {
     { // Set M_time_step
       Vector<ValueType> qx, qw;
       ChebQuadRule<ValueType>::ComputeNdsWts(&qx, &qw, order);
-      const Matrix<ValueType> Mw(order, 1, (Iterator<ValueType>)qw.begin(), false);
+      const Matrix<const ValueType> Mw(order, 1, qw.begin(), false);
       SCTL_ASSERT(qw.Dim() == order);
       SCTL_ASSERT(qx.Dim() == order);
 

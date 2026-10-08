@@ -2,6 +2,7 @@
 #define _SCTL_OMPUTILS_HPP_
 
 #include <iterator>         // for iterator_traits
+#include <type_traits>      // for enable_if, false_type, true_type
 
 #include "sctl/common.hpp"   // for sctl
 #include "sctl/iterator.hpp" // for Iterator, ConstIterator
@@ -10,13 +11,17 @@ namespace sctl {
 namespace omp_par {
 
 /**
- * Parallel bytewise copy over generic random-access iterators (raw pointers
- * or sctl `Iterator` / `ConstIterator`, which are bounds-checked in MEMDEBUG).
- * Byte-wise (memcpy) semantics require contiguous, trivially-copyable storage;
- * value types of both iterators must match and be trivially copyable (asserted
- * at compile time — contiguity itself cannot be checked before C++20 and is
- * the caller's responsibility). For element-wise copy through arbitrary
- * iterators, use `omp_par::copy` (or plain `std::copy`).
+ * Parallel bytewise copy over contiguous ranges (raw pointers or sctl
+ * `Iterator` / `ConstIterator`, which are bounds-checked in MEMDEBUG).
+ * Byte-wise (memcpy) semantics require contiguous, trivially-copyable storage:
+ * the value types of both iterators must match and be trivially copyable, and
+ * both ranges must be contiguous, all asserted at compile time. For
+ * element-wise copy through arbitrary iterators, use `omp_par::copy` (or plain
+ * `std::copy`).
+ *
+ * Contiguity cannot be asked of an arbitrary iterator before C++20, so a C++17 build accepts only
+ * the two named above and refuses every other iterator, `std::vector`'s among them; pass `&v[0]`
+ * for those. A C++20 build accepts any `std::contiguous_iterator`.
  *
  * The thread count is chosen by an empirical heuristic when `nthreads < 0`:
  *   - bytes < 2 MB         → serial (`std::memcpy`)
@@ -32,6 +37,13 @@ namespace omp_par {
  * @param[in]  nthreads explicit thread count, or -1 for the heuristic.
  */
 template <class OutputIt, class InputIt> void memcpy(OutputIt dst, InputIt src, Long n, Integer nthreads = -1);
+
+/**
+ * Fault in the pages of a buffer about to be overwritten, one write per 4 KB page in parallel;
+ * otherwise the first writer takes every fault, which for an MPI receive is a single thread.
+ * Cheap when the pages are already mapped. The buffer's contents are discarded.
+ */
+template <class Iter> void prefault(Iter first, Long n, Integer nthreads = -1);
 
 /**
  * Parallel element-wise copy over random-access iterators. Each chunk is
@@ -205,6 +217,54 @@ template <class ConstIter, class Iter, class Int> void scan(ConstIter A, Iter B,
  * @return Number of unique elements written to `B`.
  */
 template <class ConstIter, class Iter, class StrictWeakOrdering> Long dedup_sorted(ConstIter A, Iter B, Long N, StrictWeakOrdering comp);
+
+/**
+ * Detects types that `radix_sort` can order through the type's own integer key: a member constant
+ * `IntKeyIsExact` that is true when the 64-bit key returned by `GetIntKey()` orders values exactly
+ * as `operator<` does. `MortonCode` is the motivating case; a type without the members is simply
+ * not radix-sortable and the trait is false.
+ */
+template <class T, class = void> struct is_radix_sortable : std::false_type {};
+template <class T> struct is_radix_sortable<T, typename std::enable_if<T::IntKeyIsExact>::type> : std::true_type {};
+
+/**
+ * Parallel LSD radix sort of A[0..N) by a 64-bit key, six passes of 11-bit digits. The sort is
+ * stable, and the result agrees with `operator<` whenever the key orders elements exactly as
+ * `operator<` does (see `is_radix_sortable`). A comparison sort moves the same data through
+ * O(N log N) compares. The team is capped at one thread per four buckets' worth of elements, so a
+ * short range does not pay for threads whose histograms would cost more than their share.
+ *
+ * @tparam Iter Random-access iterator over contiguous, trivially-copyable elements.
+ * @tparam KeyFn Functor mapping an element to its `std::uint64_t` key.
+ *
+ * @param[in,out] A Beginning iterator of the range; sorted in place.
+ * @param[in] N Number of elements in the range.
+ * @param[in] key Functor returning an element's key.
+ */
+template <class Iter, class KeyFn> void radix_sort(Iter A, Long N, KeyFn key);
+
+/**
+ * Sort A[0..N) in place with the fastest sort for the element type and the team: `radix_sort`
+ * through the type's integer key when `is_radix_sortable` holds for the element type, otherwise
+ * `merge_sort` for small elements on small teams and `sample_sort` beyond that. The `comp` overload
+ * is a comparison sort under that ordering, so it never takes the radix path.
+ *
+ * @tparam Iter Random-access iterator over contiguous, trivially-copyable elements.
+ *
+ * @param[in,out] A Beginning iterator of the range; sorted in place.
+ * @param[in] N Number of elements in the range.
+ * @param[in] comp Strict weak ordering.
+ */
+template <class Iter> void sort(Iter A, Long N);
+template <class Iter, class Compare> void sort(Iter A, Long N, Compare comp);
+
+/**
+ * Sort `in[0..N)` into `out[0..N)` (no overlap), choosing the sort as the in-place `sort` does.
+ * Where the chosen sort works in place, `in` is first copied to `out`; `sample_sort` writes `out`
+ * directly.
+ */
+template <class ConstIter, class Iter> void sort(ConstIter in, Iter out, Long N);
+template <class ConstIter, class Iter, class Compare> void sort(ConstIter in, Iter out, Long N, Compare comp);
 
 /**
  * dedup_sorted using the default (operator<) ordering.

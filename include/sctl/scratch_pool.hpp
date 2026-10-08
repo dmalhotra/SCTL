@@ -2,6 +2,13 @@
 #define _SCTL_SCRATCH_POOL_HPP_
 
 #include <cstddef>            // for size_t
+#include <deque>              // the holders made incomplete for ScratchBuf below
+#include <forward_list>
+#include <list>
+#include <map>
+#include <memory>
+#include <optional>
+#include <unordered_map>
 
 #include "sctl/common.hpp"    // for Long, Integer, sctl
 #include "sctl/iterator.hpp"  // for Iterator, ConstIterator
@@ -42,7 +49,7 @@ struct alignas(SCTL_MEM_ALIGN) ScratchChunk {
  *
  *     {
  *       ScratchBuf<double> buf(N);
- *       // ... use buf[i], buf.begin(), buf.end(), buf.Dim() ...
+ *       // ... use buf[i], buf.begin(), buf.end(), buf.size() ...
  *     }                                  // buf is freed here
  *
  * Rules:
@@ -83,9 +90,36 @@ template <class T> class ScratchBuf {
   Iterator<T>      end();
   ConstIterator<T> begin() const;
   ConstIterator<T> end()   const;
-  Long             Dim() const;
+  Long             size() const;
   T&               operator[](Long i);
   const T&         operator[](Long i) const;
+
+  /**
+   * Ask this buffer's pool to be ready to hand out `count` elements, so the chunk that needs is
+   * taken now rather than during the work that wants it. This buffer is unchanged -- it is the pool
+   * that is being asked.
+   *
+   * The question is what the pool can serve as it stands, buffers already live included, so asking
+   * from a full chunk does take a new one even where the chunk would be large enough empty. That is
+   * the case it is for: a caller that has just filled its chunk and wants the next round not to.
+   *
+   * For a caller that outgrew its buffer and put the rest elsewhere: telling the pool what was
+   * really needed lets the next round grow into the chunk instead.
+   */
+  void Reserve(Long count);
+
+  /**
+   * Try to grow in place to `count` elements, keeping what is already stored where it is.
+   *
+   * Best-effort, and never a reason for the pool to allocate: it grows only into what this buffer's
+   * chunk already has spare, and only while this is the chunk's top-most buffer. The return value
+   * is the size now held, which is the old one when nothing could be given. Shrinking is refused
+   * the same way, so a caller cannot hand back memory a neighbour would then overlap.
+   *
+   * A refusal cannot be reversed while this buffer lives -- nothing can free memory above the
+   * top-most buffer -- so one refusal is final and a caller should stop asking.
+   */
+  Long RequestResize(Long count);
 
  private:
   ScratchPool*            pool_;
@@ -110,7 +144,18 @@ template <class T> class ScratchBuf {
  */
 class ScratchPool {
  public:
+  /**
+   * Notified of a chunk after it is allocated and again before it is released, so a pool can hold
+   * memory the plain allocator cannot give it. `gpu_tree`'s staging pool registers its chunks with
+   * the CUDA driver this way, which keeps that knowledge out of core sctl.
+   */
+  using ChunkHook = void (*)(void* base, Long bytes);
+
   ScratchPool();
+
+  /** A pool whose chunks are passed to `on_new` once allocated and to `on_free` before release. */
+  ScratchPool(ChunkHook on_new, ChunkHook on_free);
+
   ~ScratchPool();
   ScratchPool(const ScratchPool&) = delete;
   ScratchPool& operator=(const ScratchPool&) = delete;
@@ -134,10 +179,39 @@ class ScratchPool {
 
   void AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data);
   void FreeBytes(Chunk* chunk, Iterator<char> data, Long bytes);
+  void ReleaseChunk(Chunk* chunk);
+
+  /** Take a chunk that can hold `bytes` if the current one cannot, and keep it. See
+   *  `ScratchBuf::Reserve`, which is how callers reach this. */
+  void Reserve(Long bytes);
+
+  /** Largest size the slice at `data` could grow to, or 0 when it is not the head chunk's top-most
+   *  slice. Counts only room the chunk already has. */
+  Long ResizableBytes(Chunk* chunk, Iterator<char> data, Long bytes) const;
+
+  /** Move `top` to fit `new_bytes`, which `ResizableBytes` must have allowed. */
+  void CommitResize(Chunk* chunk, Iterator<char> data, Long bytes, Long new_bytes);
+
+  /** What a slice of `bytes` consumes: the size rounded up to `SCTL_MEM_ALIGN` (plus the debug
+   *  redzone), and never zero, so that `top == base` means the chunk holds no live buffer. */
+  static Long PaddedBytes(Long bytes);
 
   Chunk* head_{nullptr};   // eagerly allocated by the ctor; never null after construction
+  ChunkHook on_new_{nullptr};
+  ChunkHook on_free_{nullptr};
 };
 
 }  // namespace sctl
+
+namespace std {
+// Incomplete on purpose: a `ScratchBuf` must be a named local, released in stack order.
+template <class T> class optional<sctl::ScratchBuf<T>>;
+template <class T> class shared_ptr<sctl::ScratchBuf<T>>;
+template <class T, class A> class list<sctl::ScratchBuf<T>, A>;
+template <class T, class A> class forward_list<sctl::ScratchBuf<T>, A>;
+template <class T, class A> class deque<sctl::ScratchBuf<T>, A>;
+template <class K, class T, class C, class A> class map<K, sctl::ScratchBuf<T>, C, A>;
+template <class K, class T, class H, class E, class A> class unordered_map<K, sctl::ScratchBuf<T>, H, E, A>;
+}  // namespace std
 
 #endif  // _SCTL_SCRATCH_POOL_HPP_

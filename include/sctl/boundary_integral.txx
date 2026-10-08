@@ -32,7 +32,7 @@
 
 namespace sctl {
 
-  template <class VType> static void concat_vecs(Vector<VType>& v, const Vector<Vector<VType>>& vec_lst) {
+  template <class VType> void concat_vecs(Vector<VType>& v, const Vector<Vector<VType>>& vec_lst) {
     const Long N = vec_lst.Dim();
     ScratchBuf<Long> cnt(N), dsp(N);
     for (Long i = 0; i < N; i++) cnt[i] = vec_lst[i].Dim();
@@ -76,7 +76,7 @@ namespace sctl {
     bool have_trg_normal;
     { // Set have_trg_normal
       StaticArray<Long,1> Nloc{Xn_trg.Dim()}, Nglb{0};
-      comm.Allreduce<Long>(Nloc, Nglb, 1, CommOp::SUM);
+      comm.Allreduce(Nloc + 0, Nglb + 0, 1, CommOp::SUM);
       have_trg_normal = (Nglb[0] > 0);
       SCTL_ASSERT(!have_trg_normal || (Xn_trg.Dim() == Xtrg.Dim()));
     }
@@ -125,7 +125,7 @@ namespace sctl {
             X0_local[k] = std::min<Real>(X0_local[k], Xsrc[i*COORD_DIM+k]);
           }
         }
-        comm_.Allreduce<Real>(X0_local, BBX0, COORD_DIM, CommOp::MIN);
+        comm_.Allreduce(X0_local, BBX0, COORD_DIM, CommOp::MIN);
 
         Real BBlen, len_local = 0;
         for (Long i = 0; i < Ntrg; i++) {
@@ -138,7 +138,7 @@ namespace sctl {
             len_local = std::max<Real>(len_local, Xsrc[i*COORD_DIM+k]-BBX0[k]);
           }
         }
-        comm_.Allreduce<Real>(Ptr2ConstItr<Real>(&len_local,1), Ptr2Itr<Real>(&BBlen,1), 1, CommOp::MAX);
+        comm_.Allreduce(Ptr2ConstItr<Real>(&len_local,1), Ptr2Itr<Real>(&BBlen,1), 1, CommOp::MAX);
         BBlen_inv = (BBlen > 0 ? 1/BBlen : (Real)1);
       }
       { // Expand bounding-box so that no points are on the boundary
@@ -246,6 +246,7 @@ namespace sctl {
           for (Integer t = 0; t < omp_p; t++) cnt[t] = proc_srcidx_omp[t].Dim();
           omp_par::scan(cnt.begin(), dsp.begin(), omp_p+1, (Long)0);
           proc_srcidx_lst.ReInit(dsp[omp_p]);
+          // Indexed by thread id: slots no thread filled are empty, so they add nothing to dsp.
           #pragma omp parallel num_threads(omp_p)
           {
             const Integer tid = SCTL_GET_THREAD_NUM();
@@ -265,10 +266,10 @@ namespace sctl {
 
       ScratchBuf<NodeData> sbuff(proc_srcidx_lst.Dim());
       #pragma omp parallel for schedule(static)
-      for (Long i = 0; i < sbuff.Dim(); i++) sbuff[i] = src_nodes0[proc_srcidx_lst[i].second];
+      for (Long i = 0; i < sbuff.size(); i++) sbuff[i] = src_nodes0[proc_srcidx_lst[i].second];
 
       ScratchBuf<Long> rcnt(np), rdsp(np);
-      comm_.Alltoall<Long>(scnt.begin(), 1, rcnt.begin(), 1);
+      comm_.Alltoall(scnt.begin(), 1, rcnt.begin(), 1);
       omp_par::scan(rcnt.begin(), rdsp.begin(), np, (Long)0);
 
       // Exchange data
@@ -276,11 +277,11 @@ namespace sctl {
       auto req_ptr = comm_.Ialltoallv_sparse(sbuff.begin(), scnt.begin(), sdsp.begin(), rbuff.begin(), rcnt.begin(), rdsp.begin());
 
       // Set src_nodes1
-      src_nodes1.ReInit(rbuff.Dim() + src_nodes0.Dim());
+      src_nodes1.ReInit(rbuff.size() + src_nodes0.Dim());
       omp_par::memcpy(src_nodes1.begin()+rdsp[rank], src_nodes0.begin(), src_nodes0.Dim());
       comm_.Wait(std::move(req_ptr));
       omp_par::memcpy(src_nodes1.begin(), rbuff.begin(), rdsp[rank]);
-      omp_par::memcpy(src_nodes1.begin()+src_nodes0.Dim()+rdsp[rank], rbuff.begin()+rdsp[rank], rbuff.Dim()-rdsp[rank]);
+      omp_par::memcpy(src_nodes1.begin()+src_nodes0.Dim()+rdsp[rank], rbuff.begin()+rdsp[rank], rbuff.size()-rdsp[rank]);
     } else { // src_nodes1 <- Allgather(src_nodes0)
       const Long Np = comm_.Size();
       ScratchBuf<Long> cnt0(1), cnt(Np), dsp(Np);
@@ -414,6 +415,7 @@ namespace sctl {
         for (Integer i = 0; i < omp_p; i++) cnt[i] = near_lst_omp[i].Dim();
         omp_par::scan(cnt.begin(), dsp.begin(), omp_p+1, (Long)0);
         near_lst.ReInit(dsp[omp_p]);
+        // Indexed by thread id: slots no thread filled are empty, so they add nothing to dsp.
         #pragma omp parallel num_threads(omp_p)
         {
           const Integer tid = SCTL_GET_THREAD_NUM();
@@ -1357,7 +1359,7 @@ namespace sctl {
       SCTL_ASSERT(src_dof * near_elem_cnt[elem_idx]*KDIM1_ == K_near_cnt[elem_idx]*KDIM0*KDIM1_);
       // target-major: K.F rather than F.K, and a target range is a contiguous row-block
       const Matrix<Real> K_near_(trg_dof, src_dof, K_near.begin() + K_near_dsp[elem_idx]*KDIM0*KDIM1_ + t0*KDIM1_*src_dof, false);
-      const Matrix<Real> F_(src_dof, 1, (Iterator<Real>)F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
+      const Matrix<const Real> F_(src_dof, 1, F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
       Matrix<Real> U_(trg_dof, 1, U_near.begin() + (near_elem_dsp[elem_idx]+t0)*KDIM1_, false);
       Matrix<Real>::GEMM(U_, K_near_, F_);
     }

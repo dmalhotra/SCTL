@@ -31,7 +31,7 @@ namespace sctl {
     #elif defined(__AVX__)
     static_assert(SCTL_ALIGN_BYTES >= 32, "Insufficient memory alignment for SIMD vector types");
     return 32/sizeof(ScalarType);
-    #elif defined(__SSE4_2__)
+    #elif defined(__SSE4_2__) || defined(__ARM_NEON)
     static_assert(SCTL_ALIGN_BYTES >= 16, "Insufficient memory alignment for SIMD vector types");
     return 16/sizeof(ScalarType);
     #else
@@ -338,6 +338,9 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> min(const Vec<ValueType,N>& lhs, const Vec<ValueType,N>& rhs) {
     return min_intrin(lhs.get(), rhs.get());
   }
+  template <class ValueType, Integer N> inline ValueType reduce_add(const Vec<ValueType,N>& a) {
+    return reduce_add_intrin(a.get());
+  }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> max(const Vec<ValueType,N>& lhs, const ValueType& rhs) {
     return max(lhs, Vec<ValueType,N>(rhs));
@@ -409,7 +412,6 @@ namespace sctl {
     if (digits == -1 || ORDER > 13) return exp(x);
     else return approx_exp_intrin<ORDER>(x.get());
   }
-
   template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x) {
     return log_intrin(x.get());
   }

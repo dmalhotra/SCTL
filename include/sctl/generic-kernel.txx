@@ -155,9 +155,9 @@ template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKe
         }
       }
     } else {
-      const Matrix<Real> Xs_(Ns, DIM, (Iterator<Real>)r_src.begin(), false);
-      const Matrix<Real> Ns_(Ns, N_DIM, (Iterator<Real>)n_src.begin(), false);
-      const Matrix<Real> Vs_(Ns, KDIM0, (Iterator<Real>)v_src.begin(), false);
+      const Matrix<const Real> Xs_(Ns, DIM, r_src.begin(), false);
+      const Matrix<const Real> Ns_(Ns, N_DIM, n_src.begin(), false);
+      const Matrix<const Real> Vs_(Ns, KDIM0, v_src.begin(), false);
 
       ScratchBuf<Real> buff_storage((DIM + KDIM1) * NNt);
       Iterator<Real> buff = buff_storage.begin();

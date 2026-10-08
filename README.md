@@ -72,6 +72,7 @@ The following list outlines the primary features and capabilities provided by th
   - [ChebQuadRule, LegQuadRule](include/sctl/quadrule.hpp): Clenshaw-Curtis and Gauss-Legendre quadrature rules.
   - [InterpQuadRule](include/sctl/quadrule.hpp): Generating special quadrature rules.
   - [Tree, PtTree](include/sctl/tree.hpp), [Morton](include/sctl/morton.hpp): Morton order based N-dimensional parallel tree structure.
+  - [SortScatter](include/sctl/sort-scatter.hpp): keys sorted into a rank-partitioned order, kept together with the permutation to and from the caller's order; the trees move particle data with it.
 
 - **Spectral Methods**:
   Methods for spectral representations and transformations.
@@ -105,8 +106,12 @@ The following list outlines the primary features and capabilities provided by th
   - [Stacktrace utility](include/sctl/stacktrace.h): Prints stack traces for debugging.
   - [GEMM, SVD (unoptimized)](include/sctl/mat_utils.hpp): Provides basic implementations of GEMM and SVD operations.
 
+- **Experimental**:
+  Components whose interfaces may still change.
+
+  - [GPUTree, PtTree](include/sctl/experimental/gpu-tree.hpp): The `Tree`/`PtTree` interface on a thrust backend, OpenMP host or CUDA device, with CUDA-aware MPI (`make gpu`).
+
 - **Legacy (Unmaintained)**:
   Older functionalities that are no longer actively maintained.
 
-  - [Boundary quadrature](include/sctl/boundary_quadrature.hpp): Boundary integrals on quad-patches using hedgehog quadrature.
   - [ChebBasis](include/sctl/cheb_utils.hpp): Tensor product Chebyshev basis for general-dimension computations.

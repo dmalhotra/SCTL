@@ -7,17 +7,21 @@
 #define _SCTL_TREE_HPP_
 
 #include <map>                  // for map
+#include <set>                  // for set
 #include <string>               // for basic_string, string
 
-#include "sctl/common.hpp"      // for Long, Integer, sctl
-#include "sctl/comm.hpp"        // for Comm
-#include "sctl/comm.txx"        // for Comm::Self
-#include "sctl/math_utils.txx"  // for pow
-#include "sctl/vector.hpp"      // for Vector
+#include "sctl/common.hpp"        // for Long, Integer, sctl
+#include "sctl/comm.hpp"          // for Comm
+#include "sctl/comm.txx"          // for Comm::Self
+#include "sctl/math_utils.txx"    // for pow
+#include "sctl/sort-scatter.hpp"  // for SortScatter
+#include "sctl/sort-scatter.txx"  // for SortScatter::Init
+#include "sctl/vector.hpp"        // for Vector
 
 namespace sctl {
 
 template <Integer DIM> class Morton;
+template <Integer DIM> class MortonCode;
 
 /**
  * Class template representing a tree data structure.
@@ -87,6 +91,16 @@ template <Integer DIM> class Tree {
     const Comm& GetComm() const;
 
     /**
+     * This rank's own nodes within `GetNodeMID()`; the rest are ghosts. The node data of a set that
+     * a `Broadcast` has filled covers the ghosts too, so a caller reading or writing only the
+     * owned items starts at `GetOwnedRange`'s `begin`-th node.
+     *
+     * @param[out] begin Index of this rank's first owned node.
+     * @param[out] end One past its last owned node.
+     */
+    void GetOwnedRange(Long& begin, Long& end) const;
+
+    /**
      * Update tree refinement and repartition node data among the new tree nodes.
      *
      * @param[in] coord Particle coordinates (in [0,1]^dim stored in AoS order) that describe the new tree refinement.
@@ -102,10 +116,12 @@ template <Integer DIM> class Tree {
     /**
      * Add named data to the tree nodes.
      *
-     * @param[in] name Name for the data. Must not already exist on this tree.
+     * @param[in] name Name for the data; an existing set of the name is replaced, reusing its
+     * storage when the new size fits.
      * @param[in] data Contiguous data for all nodes, concatenated in node
      * order. Must satisfy `data.Dim() == dof * sum(cnt)` for some `dof >= 0`.
-     * @param[in] cnt Number of data elements per node (length = number of tree nodes).
+     * @param[in] cnt Number of data elements per node. Must have one entry per tree node, whatever
+     * `dof` works out to -- an empty `data` and an empty `cnt` do not reserve the name.
      *
      * @note Collective; must be called from all processes.
      *
@@ -115,17 +131,35 @@ template <Integer DIM> class Tree {
     template <class ValueType> void AddData(const std::string& name, const Vector<ValueType>& data, const Vector<Long>& cnt);
 
     /**
+     * Add named data without values: `cnt[i] * dof` unwritten elements for node i, to be filled in
+     * place through the view `GetData` returns. No data moves; the ranks only agree on `dof`.
+     *
+     * @param[in] name Name for the data; an existing set of the name is replaced, reusing its
+     * storage when the new size fits.
+     * @tparam ValueType Element type. Must be given explicitly: it appears only in the size
+     * calculation, so it cannot be deduced from the arguments.
+     * @param[in] dof Elements per data item; must agree across processes, which is checked.
+     * @param[in] cnt Number of data items per node. Must have one entry per tree node.
+     *
+     * @note Collective; must be called from all processes.
+     */
+    template <class ValueType> void AddData(const std::string& name, Long dof, const Vector<Long>& cnt);
+
+    /**
      * Get node data.
      *
      * @param[out] data Non-owning view of the tree's internal buffer for this
-     * data. Must not be resized; in-place mutation aliases the stored data.
+     * data. Must not be resized; in-place mutation aliases the stored data. A
+     * const tree fills a `Vector<const ValueType>` and only that: the writable
+     * view is not available through a const reference.
      * @param[out] cnt Number of data elements per node (length = number of tree nodes). Non-owning view; must not be modified.
      * @param[in] name Name of the data.
      *
      * @warning `ValueType` must match the type used in the corresponding
-     * `AddData`; otherwise the bytes are silently reinterpreted.
+     * `AddData`; otherwise the bytes are reinterpreted, with no check.
      */
-    template <class ValueType> void GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name) const;
+    template <class ValueType> void GetData(Vector<ValueType>& data, Vector<Long>& cnt, const std::string& name);
+    template <class ValueType> void GetData(Vector<const ValueType>& data, Vector<Long>& cnt, const std::string& name) const;
 
     /**
      * Reduce data on nodes shared between processors and then broadcast the halo/ghost node data. The resulting tree
@@ -144,7 +178,7 @@ template <Integer DIM> class Tree {
      *
      * @note This is a collective operation and must be called from all processes in the communicator.
      */
-    template <class ValueType> void Broadcast(const std::string& name);
+    void Broadcast(const std::string& name);
 
     /**
      * Delete data from the tree nodes.
@@ -169,11 +203,13 @@ template <Integer DIM> class Tree {
 
     void GetData_(Iterator<Vector<char>>& data, Iterator<Vector<Long>>& cnt, const std::string& name);
 
-    static void scan(Vector<Long>& dsp, const Vector<Long>& cnt);
+    /** Exclusive scan of `cnt` into `dsp`, returning the total the scan already accumulated.
+     *  `dsp` is resized only when it is the wrong length, so it may be a non-owning view. */
+    static Long scan(Vector<Long>& dsp, const Vector<Long>& cnt);
+
+    std::set<std::string> data_moved_by_derived;  ///< payloads a derived class moves itself after a rebuild; UpdateRefinement skips them
 
   private:
-
-    template <class T> class NodeArena; // defined in tree.txx
 
     Vector<Morton<DIM>> mins;
     Vector<Morton<DIM>> node_mid;
@@ -226,7 +262,8 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
     void UpdateRefinement(const Vector<Real>& coord, Long M = 1, bool balance21 = 0, Periodicity periodicity = Periodicity::NONE, Integer halo_size = -1);
 
     /**
-     * Add particles to the point tree.
+     * Add particles to the point tree. An existing group of the name is replaced in place; the
+     * data sets attached to it are emptied (size zero, storage kept) and must be added again.
      *
      * @param name Name of the particle group.
      * @param coord Coordinates of the particles.
@@ -238,14 +275,21 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
     /**
      * Add particle data to the point tree.
      *
-     * @param data_name Name of the data. Must not already exist.
+     * @param data_name Name of the data; an existing set of the name is replaced, whatever group it was attached to.
      * @param particle_name Name of an existing particle group from `AddParticles`.
-     * @param data Local data values, sized `dof * Nlocal[particle_name]` for
-     * some implicit `dof`. Reordered to match the particle group.
+     * @param data Local data values, `dof` per local particle of `particle_name` for some
+     * implicit `dof`. Reordered to match the particle group.
      *
      * @note Collective; must be called from all processes.
      */
     void AddParticleData(const std::string& data_name, const std::string& particle_name, const Vector<Real>& data);
+
+    /**
+     * Add particle data without values: `dof` unwritten values per particle of `particle_name`, in
+     * the group's tree order, to be filled in place through the view `GetData` returns.
+     * `GetParticleData` maps that order back to the caller's. Local, no communication.
+     */
+    void AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof);
 
     /**
      * Get particle data from the point tree. The data scattered back to
@@ -287,10 +331,15 @@ template <class Real, Integer DIM, class BaseTree = Tree<DIM>> class PtTree : pu
 
   private:
 
-    std::map<std::string, Long> Nlocal;                    ///< Number of local particles for each group.
-    std::map<std::string, Vector<Morton<DIM>>> pt_mid;     ///< Morton indices for each particle group.
-    std::map<std::string, Vector<Long>> scatter_idx;       ///< Scatter indices for each particle group.
-    std::map<std::string, std::string> data_pt_name;       ///< Mapping of data name to particle name.
+    void SetPartitionCodes();  ///< partition_codes from GetPartitionMID()
+
+    Vector<MortonCode<DIM>> partition_codes;  ///< partition mins as codes: the SortScatter splitters; set with each partition
+    std::map<std::string, SortScatter<MortonCode<DIM>>> groups;  ///< per particle group: codes in tree order, maps to/from caller order
+    struct PtData {
+      std::string particle_name;
+      Long dof;
+    };
+    std::map<std::string, PtData> pt_data;  ///< particle group and dof of each particle data set
 };
 
 }

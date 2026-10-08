@@ -14,9 +14,9 @@ namespace sctl {
 
 #ifdef SCTL_MEMDEBUG
 
-template <class ValueType> ConstIterator<ValueType>::ConstIterator() : base(nullptr), len(0), offset(0), alloc_ctr(0), mem_head(nullptr) {}
+template <class ValueType> Iterator<ValueType>::Iterator() : base(nullptr), len(0), offset(0), alloc_ctr(0), mem_head(nullptr) {}
 
-template <class ValueType> inline ConstIterator<ValueType>::ConstIterator(const ValueType* base_, difference_type len_, bool dynamic_alloc) {
+template <class ValueType> inline Iterator<ValueType>::Iterator(pointer base_, difference_type len_, bool dynamic_alloc) {
   this->base = (char*)base_;
   this->len = len_ * (Long)sizeof(ValueType);
   this->offset = 0;
@@ -30,16 +30,7 @@ template <class ValueType> inline ConstIterator<ValueType>::ConstIterator(const 
     mem_head = nullptr;
 }
 
-template <class ValueType> template <class AnotherType> inline ConstIterator<ValueType>::ConstIterator(const ConstIterator<AnotherType>& I) {
-  this->base = I.base;
-  this->len = I.len;
-  this->offset = I.offset;
-  SCTL_ASSERT_MSG((uintptr_t)(this->base + this->offset) % alignof(ValueType) == 0, "invalid alignment during pointer type conversion.");
-  this->alloc_ctr = I.alloc_ctr;
-  this->mem_head = I.mem_head;
-}
-
-template <class ValueType> inline void ConstIterator<ValueType>::IteratorAssertChecks(Long j) const {
+template <class ValueType> inline void Iterator<ValueType>::IteratorAssertChecks(Long j) const {
   //const auto& base = this->base;
   const auto& offset = this->offset + j * (Long)sizeof(ValueType);
   const auto& len = this->len;
@@ -54,118 +45,12 @@ template <class ValueType> inline void ConstIterator<ValueType>::IteratorAssertC
   }
 }
 
-template <class ValueType> inline typename ConstIterator<ValueType>::reference ConstIterator<ValueType>::operator*() const {
-  this->IteratorAssertChecks();
-  return *(ValueType*)(base + offset);
-}
-
-template <class ValueType> inline typename ConstIterator<ValueType>::pointer ConstIterator<ValueType>::operator->() const {
-  this->IteratorAssertChecks();
-  return (ValueType*)(base + offset);
-}
-
-template <class ValueType> inline typename ConstIterator<ValueType>::reference ConstIterator<ValueType>::operator[](difference_type j) const {
-  this->IteratorAssertChecks(j);
-  return *(ValueType*)(base + offset + j * (Long)sizeof(ValueType));
-}
-
-template <class ValueType> inline ConstIterator<ValueType>& ConstIterator<ValueType>::operator++() {
-  offset += (Long)sizeof(ValueType);
-  return *this;
-}
-
-template <class ValueType> inline ConstIterator<ValueType> ConstIterator<ValueType>::operator++(int) {
-  ConstIterator<ValueType> tmp(*this);
-  ++*this;
-  return tmp;
-}
-
-template <class ValueType> inline ConstIterator<ValueType>& ConstIterator<ValueType>::operator--() {
-  offset -= (Long)sizeof(ValueType);
-  return *this;
-}
-
-template <class ValueType> inline ConstIterator<ValueType> ConstIterator<ValueType>::operator--(int) {
-  ConstIterator<ValueType> tmp(*this);
-  --*this;
-  return tmp;
-}
-
-template <class ValueType> inline ConstIterator<ValueType>& ConstIterator<ValueType>::operator+=(difference_type i) {
-  offset += i * (Long)sizeof(ValueType);
-  return *this;
-}
-
-template <class ValueType> inline ConstIterator<ValueType> ConstIterator<ValueType>::operator+(difference_type i) const {
-  ConstIterator<ValueType> tmp(*this);
-  tmp.offset += i * (Long)sizeof(ValueType);
-  return tmp;
-}
-
-template <class T> inline ConstIterator<T> operator+(typename ConstIterator<T>::difference_type i, const ConstIterator<T>& right) {
-  return (right + i);
-}
-
-template <class ValueType> inline ConstIterator<ValueType>& ConstIterator<ValueType>::operator-=(difference_type i) {
-  offset -= i * (Long)sizeof(ValueType);
-  return *this;
-}
-
-template <class ValueType> inline ConstIterator<ValueType> ConstIterator<ValueType>::operator-(difference_type i) const {
-  ConstIterator<ValueType> tmp(*this);
-  tmp.offset -= i * (Long)sizeof(ValueType);
-  return tmp;
-}
-
-template <class ValueType> inline typename ConstIterator<ValueType>::difference_type ConstIterator<ValueType>::operator-(const ConstIterator& I) const {
-  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
-  Long diff = ((pointer)(base + offset)) - ((pointer)(I.base + I.offset));
-  SCTL_ASSERT_MSG(I.base + I.offset + diff * (Long)sizeof(ValueType) == base + offset, "invalid memory address alignment.");
-  return diff;
-}
-
-template <class ValueType> inline bool ConstIterator<ValueType>::operator==(const ConstIterator& I) const {
-  return (base + offset == I.base + I.offset);
-}
-
-template <class ValueType> inline bool ConstIterator<ValueType>::operator!=(const ConstIterator& I) const {
-  return !(*this == I);
-}
-
-template <class ValueType> inline bool ConstIterator<ValueType>::operator<(const ConstIterator& I) const {
-  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
-  return (base + offset) < (I.base + I.offset);
-}
-
-template <class ValueType> inline bool ConstIterator<ValueType>::operator<=(const ConstIterator& I) const {
-  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
-  return (base + offset) <= (I.base + I.offset);
-}
-
-template <class ValueType> inline bool ConstIterator<ValueType>::operator>(const ConstIterator& I) const {
-  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
-  return (base + offset) > (I.base + I.offset);
-}
-
-template <class ValueType> inline bool ConstIterator<ValueType>::operator>=(const ConstIterator& I) const {
-  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
-  return (base + offset) >= (I.base + I.offset);
-}
-
-
-
-template <class ValueType> inline Iterator<ValueType>::Iterator() : ConstIterator<ValueType>() {}
-
-template <class ValueType> inline Iterator<ValueType>::Iterator(pointer base_, difference_type len_, bool dynamic_alloc) : ConstIterator<ValueType>(base_, len_, dynamic_alloc) {}
-
-template <class ValueType> template <class AnotherType> inline Iterator<ValueType>::Iterator(const ConstIterator<AnotherType>& I) : ConstIterator<ValueType>(I) {}
-
 template <class ValueType> inline typename Iterator<ValueType>::reference Iterator<ValueType>::operator*() const {
   this->IteratorAssertChecks();
   return *(ValueType*)(this->base + this->offset);
 }
 
-template <class ValueType> inline typename Iterator<ValueType>::value_type* Iterator<ValueType>::operator->() const {
+template <class ValueType> inline typename Iterator<ValueType>::pointer Iterator<ValueType>::operator->() const {
   this->IteratorAssertChecks();
   return (ValueType*)(this->base + this->offset);
 }
@@ -223,13 +108,42 @@ template <class ValueType> inline Iterator<ValueType> Iterator<ValueType>::opera
   return tmp;
 }
 
-template <class ValueType> inline typename Iterator<ValueType>::difference_type Iterator<ValueType>::operator-(const ConstIterator<ValueType>& I) const {
-  return static_cast<const ConstIterator<ValueType>&>(*this) - I;
+template <class ValueType> template <class AnotherType> inline typename Iterator<ValueType>::difference_type Iterator<ValueType>::operator-(const Iterator<AnotherType>& I) const {
+  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
+  Long diff = ((pointer)(this->base + this->offset)) - ((pointer)(I.base + I.offset));
+  SCTL_ASSERT_MSG(I.base + I.offset + diff * (Long)sizeof(ValueType) == this->base + this->offset, "invalid memory address alignment.");
+  return diff;
 }
 
+template <class ValueType> template <class AnotherType> inline bool Iterator<ValueType>::operator==(const Iterator<AnotherType>& I) const {
+  return (this->base + this->offset == I.base + I.offset);
+}
 
+template <class ValueType> template <class AnotherType> inline bool Iterator<ValueType>::operator!=(const Iterator<AnotherType>& I) const {
+  return !(*this == I);
+}
 
-template <class ValueType> inline Iterator<ValueType> Ptr2Itr(void* ptr, Long len) {
+template <class ValueType> template <class AnotherType> inline bool Iterator<ValueType>::operator<(const Iterator<AnotherType>& I) const {
+  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
+  return (this->base + this->offset) < (I.base + I.offset);
+}
+
+template <class ValueType> template <class AnotherType> inline bool Iterator<ValueType>::operator<=(const Iterator<AnotherType>& I) const {
+  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
+  return (this->base + this->offset) <= (I.base + I.offset);
+}
+
+template <class ValueType> template <class AnotherType> inline bool Iterator<ValueType>::operator>(const Iterator<AnotherType>& I) const {
+  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
+  return (this->base + this->offset) > (I.base + I.offset);
+}
+
+template <class ValueType> template <class AnotherType> inline bool Iterator<ValueType>::operator>=(const Iterator<AnotherType>& I) const {
+  // if (base != I.base) SCTL_WARN("comparing two unrelated memory addresses.");
+  return (this->base + this->offset) >= (I.base + I.offset);
+}
+
+template <class ValueType> inline Iterator<ValueType> Ptr2Itr(VoidPtr<ValueType> ptr, Long len) {
   return Iterator<ValueType>((ValueType*)ptr, len);
 }
 template <class ValueType> inline ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len) {
@@ -238,7 +152,7 @@ template <class ValueType> inline ConstIterator<ValueType> Ptr2ConstItr(const vo
 
 #else
 
-template <class ValueType> inline Iterator<ValueType> Ptr2Itr(void* ptr, Long len) {
+template <class ValueType> inline Iterator<ValueType> Ptr2Itr(VoidPtr<ValueType> ptr, Long len) {
   return (Iterator<ValueType>) ptr;
 }
 template <class ValueType> inline ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len) {
@@ -252,6 +166,7 @@ template <class ValueType> inline Iterator<ValueType> NullIterator() {
 }
 
 template <class ValueType> inline Iterator<ValueType> memset(Iterator<ValueType> ptr, int value, Long num) {
+  static_assert(!std::is_const<ValueType>::value, "memset into a const range");
   if (num) {
 #ifdef SCTL_MEMDEBUG
     SCTL_UNUSED(ptr[0]      );

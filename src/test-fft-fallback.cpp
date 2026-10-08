@@ -141,7 +141,7 @@ template <class ValueType> class OldMatrixFFT {
 
   void Execute(const Vector<ValueType>& in, Vector<ValueType>& out) const {
     const auto transpose = [](Iterator<ValueType> out, ConstIterator<ValueType> in, Long N0, Long N1) {
-      const Matrix<ComplexType> M0(N0, N1, (Iterator<ComplexType>)in, false);
+      const Matrix<const ComplexType> M0(N0, N1, (ConstIterator<ComplexType>)in, false);
       Matrix<ComplexType> M1(N1, N0, (Iterator<ComplexType>)out, false);
       M1 = M0.Transpose();
     };
@@ -194,11 +194,6 @@ template <class ValueType> class OldMatrixFFT {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-template <class T> T inf_norm(const Vector<T>& v) {
-  T m = 0;
-  for (const auto& x : v) m = std::max<T>(m, sctl::fabs(x));
-  return m;
-}
 template <class T> T inf_norm_diff(const Vector<T>& a, const Vector<T>& b) {
   SCTL_ASSERT(a.Dim() == b.Dim());
   T m = 0;

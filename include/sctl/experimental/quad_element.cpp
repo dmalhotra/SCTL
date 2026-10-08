@@ -66,7 +66,7 @@ namespace sctl {
       Matrix<ValueType> tmp(R, Nv, tmp_buf.begin(), false);
 
       for (Integer k = 0; k < ncomp; k++) {
-        const Matrix<ValueType> in_(R, S, (Iterator<ValueType>)in.begin() + k * R * S, false);
+        const Matrix<const ValueType> in_(R, S, in.begin() + k * R * S, false);
         Matrix<ValueType> out_(Nu, Nv, out.begin() + k * Nout, false);
         Matrix<ValueType>::GEMM(tmp, in_, Mv);
         Matrix<ValueType>::GEMM(out_, MuT, tmp);

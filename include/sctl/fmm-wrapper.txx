@@ -90,7 +90,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::test(const Comm& 
     StaticArray<Real,2> loc_err{0,0}, glb_err{0,0};
     for (const auto& a : Uerr) loc_err[0] = std::max<Real>(loc_err[0], fabs(a));
     for (const auto& a : Uref) loc_err[1] = std::max<Real>(loc_err[1], fabs(a));
-    comm.Allreduce<Real>(loc_err, glb_err, 2, CommOp::MAX);
+    comm.Allreduce(loc_err + 0, glb_err + 0, 2, CommOp::MAX);
     if (!comm.Rank()) std::cout<<"Maximum relative error: "<<glb_err[0]/glb_err[1]<<'\n';
   }
 }
@@ -578,7 +578,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
 
   auto partition = [this](Vector<Real>& X, const Long dof) {
     StaticArray<Long,2> cnt{X.Dim()/dof, 0};
-    comm_.Allreduce<Long>(cnt+0, cnt+1, 1, CommOp::SUM);
+    comm_.Allreduce(cnt+0, cnt+1, 1, CommOp::SUM);
     comm_.PartitionN(X, cnt[1]*(comm_.Rank()+1)/comm_.Size() - cnt[1]*comm_.Rank()/comm_.Size());
   };
   Vector<Real> Xt = Xt_;
@@ -711,6 +711,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::CheckKernelDims()
   }
 }
 
+#ifdef SCTL_HAVE_PVFMM
 template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(const S2TData& data, bool verbose) {
   const StaticArray<Integer,2> kdim{data.dim_src, data.dim_trg};
   const Integer dim_normal = data.dim_normal;
@@ -860,7 +861,6 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::BuildSrcTrgScal(c
   #endif
 }
 
-#ifdef SCTL_HAVE_PVFMM
 template <class SCTLKernel, bool use_dummy_normal> struct PVFMMKernelFn_ {
   static const int FLOPS = SCTLKernel::FLOPS() + 2*SCTLKernel::SrcDim()*SCTLKernel::TrgDim();;
 
@@ -901,7 +901,7 @@ template <class Real, Integer DIM> bool ParticleFMM<Real,DIM>::UsePVFMM(const st
   if (DIM != 3) return false; // PVFMM only supports 3D
   if (periodicity_ != Periodicity::NONE) return true;
   StaticArray<Long,2> cnt{trg_map.at(trg_name).X.Dim()/DIM, 0};
-  comm_.Allreduce<Long>(cnt+0, cnt+1, 1, CommOp::SUM);
+  comm_.Allreduce(cnt+0, cnt+1, 1, CommOp::SUM);
   return (cnt[1] >= 40000); // direct evaluation for small problems
 }
 
