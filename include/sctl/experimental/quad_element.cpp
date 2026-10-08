@@ -1218,11 +1218,11 @@ namespace sctl {
       Real J0 = 0;
       Integer alpha = 0, beta = 0; // indices of the interpolation matrices along alpha and beta in DuffySelfTable
     };
-    /** Interpolation along alpha (the triangle's edge), with its derivative, at each s-node, and the transposes without it */
+    /** Interpolation along alpha, the parameter (u, or v if swap_ab) along the triangle's side opposite the target node, a side of the parameter square: with its derivative, at each s-node, and the transposes without it */
     template <class Real> struct DuffyAlpha {
       Vector<Matrix<Real>> interp, interp_T;
     };
-    /** Interpolation along beta (toward the edge), with its derivative, at the s-nodes, and the transpose without it */
+    /** Interpolation along beta, the parameter (v, or u if swap_ab) that runs from the target node to the triangle's side opposite it, a side of the parameter square: with its derivative, at the s-nodes, and the transpose without it */
     template <class Real> struct DuffyBeta {
       Matrix<Real> interp, interp_T;
     };
