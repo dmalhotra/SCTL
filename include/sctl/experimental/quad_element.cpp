@@ -84,7 +84,6 @@ namespace sctl {
       LagrangeInterp<Real>::Derivative(df, f, nds);
     }
 
-    // TODO: test the accuracy of dcoord_du, dcoord_dv in place of DiffMat in the rule builds
     /**
      * Returns an 'order' x 'order' matrix for the given 'order'; entry (i, j) is the derivative of
      * the i-th Lagrange basis function on ParamNodes(order) at j-th node.
