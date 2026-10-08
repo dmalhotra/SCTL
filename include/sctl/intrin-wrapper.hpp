@@ -3291,14 +3291,16 @@ namespace sctl { // AVX
   }
 
 #if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 12)
-  // As dup64_const_intrin, for 256 bits, by one load (vbroadcastsd). A volatile asm, a load at each use, made the
-  // dependent chain of pow 6% faster with GCC 15 and 16, but log 4-8% slower on AMD Zen 2, and kept the asm, with a
-  // copy of the value, inside loops.
-  inline __m256i dup64x4_const_intrin(const uint64_t bits) {
+  // As dup64_const_intrin, for 256 bits, by one load (vbroadcastsd). With EachUse the asm is volatile: each use has
+  // its own load, and GCC does not keep the value in a register through a function, for code with many values at
+  // once (log in pow of 8 floats at haswell, GCC 15 and 16: 112 -> 118 cycles per dependent call without it); but
+  // in a loop the volatile asm stays inside and copies the value at each pass.
+  template <bool EachUse = false> inline __m256i dup64x4_const_intrin(const uint64_t bits) {
     double d;
     __builtin_memcpy(&d, &bits, sizeof(d));
     __m256d t = _mm256_set1_pd(d);
-    asm("" : "+x"(t));
+    if (EachUse) asm volatile("" : "+x"(t));
+    else asm("" : "+x"(t));
     return _mm256_castpd_si256(t);
   }
 #endif
@@ -4440,18 +4442,28 @@ namespace sctl { // AVX
 
   #if defined(__AVX2__) // log_mant_intrin by integer instructions, as for 4 floats and 2 doubles (log, haswell: 8 floats 17.0 / 56.5 -> 14.5 / 48.5 cycles, 4 doubles 20.6 / 71.1 -> 18.4 / 67.3)
   template <> inline void log_mant_intrin<VecData<float,8>>(VecData<float,8>& e, VecData<float,8>& m, const VecData<float,8>& x) {
+    #if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 12) // a load at each use, see dup64x4_const_intrin
+    const auto c = [](const int32_t a) { return dup64x4_const_intrin<true>((((uint64_t)(uint32_t)a) << 32) | (uint32_t)a); };
+    #else
+    const auto c = [](const int32_t a) { return _mm256_set1_epi32(a); };
+    #endif
     const __m256i t = _mm256_castps_si256(x.v);
-    const __m256i m2 = _mm256_or_si256(_mm256_and_si256(t, set1_intrin<VecData<int32_t,8>>(0x007fffff).v), set1_intrin<VecData<int32_t,8>>(0x3f000000).v);
-    const __m256i e1 = _mm256_sub_epi32(_mm256_srli_epi32(_mm256_slli_epi32(t, 1), 24), set1_intrin<VecData<int32_t,8>>(127).v);
-    const __m256i big = _mm256_cmpgt_epi32(m2, set1_intrin<VecData<int32_t,8>>(0x3f3504f3).v);
+    const __m256i m2 = _mm256_or_si256(_mm256_and_si256(t, c(0x007fffff)), c(0x3f000000));
+    const __m256i e1 = _mm256_sub_epi32(_mm256_srli_epi32(_mm256_slli_epi32(t, 1), 24), c(127));
+    const __m256i big = _mm256_cmpgt_epi32(m2, c(0x3f3504f3));
     m = _mm256_add_ps(_mm256_castsi256_ps(m2), _mm256_andnot_ps(_mm256_castsi256_ps(big), _mm256_castsi256_ps(m2)));
     e = _mm256_cvtepi32_ps(_mm256_sub_epi32(e1, big));
   }
   template <> inline void log_mant_intrin<VecData<double,4>>(VecData<double,4>& e, VecData<double,4>& m, const VecData<double,4>& x) {
+    #if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 12) // a load at each use, see dup64x4_const_intrin
+    const auto c = [](const int64_t a) { return dup64x4_const_intrin<true>((uint64_t)a); };
+    #else
+    const auto c = [](const int64_t a) { return _mm256_set1_epi64x(a); };
+    #endif
     const __m256i t = _mm256_castpd_si256(x.v);
-    const __m256i m2 = _mm256_or_si256(_mm256_and_si256(t, set1_intrin<VecData<int64_t,4>>(0x000fffffffffffffLL).v), set1_intrin<VecData<int64_t,4>>(0x3fe0000000000000LL).v);
-    const __m256i e1 = _mm256_add_epi64(_mm256_srli_epi64(_mm256_slli_epi64(t, 1), 53), set1_intrin<VecData<int64_t,4>>(0x4338000000000000LL - 1023).v);
-    const __m256i big = _mm256_cmpgt_epi64(m2, set1_intrin<VecData<int64_t,4>>(0x3fe6a09e667f3bcdLL).v);
+    const __m256i m2 = _mm256_or_si256(_mm256_and_si256(t, c(0x000fffffffffffffLL)), c(0x3fe0000000000000LL));
+    const __m256i e1 = _mm256_add_epi64(_mm256_srli_epi64(_mm256_slli_epi64(t, 1), 53), c(0x4338000000000000LL - 1023));
+    const __m256i big = _mm256_cmpgt_epi64(m2, c(0x3fe6a09e667f3bcdLL));
     m = _mm256_add_pd(_mm256_castsi256_pd(m2), _mm256_andnot_pd(_mm256_castsi256_pd(big), _mm256_castsi256_pd(m2)));
     e = _mm256_sub_pd(_mm256_castsi256_pd(_mm256_sub_epi64(e1, big)), _mm256_set1_pd(0x1.8p52));
   }
