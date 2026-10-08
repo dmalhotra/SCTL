@@ -2123,9 +2123,9 @@ namespace sctl { // Generic
     while (n < full && (digits < 0 || d[n] < digits)) n++;
     return n;
   }
-  // sin(pi x), cos(pi x) to the digits (-1: full): x = (n + w)/2, sin(pi w/2) and cos(pi w/2) by n mod 4; FullRange as
-  // sincos_pi_reduce_intrin
-  template <Integer digits, bool FullRange = true, bool Sin = true, bool Cos = true, class VData> inline void approx_sincospi_intrin(VData& sinx, VData& cosx, const VData& x) {
+  // sin(pi x), cos(pi x) to the digits (-1: full), divided by pi with DivPi: x = (n + w)/2, sin(pi w/2) and cos(pi w/2)
+  // by n mod 4; FullRange as sincos_pi_reduce_intrin
+  template <Integer digits, bool FullRange = true, bool Sin = true, bool Cos = true, bool DivPi = false, class VData> inline void approx_sincospi_intrin(VData& sinx, VData& cosx, const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       using Int = typename IntegerType<sizeof(Real)>::value;
@@ -2137,14 +2137,25 @@ namespace sctl { // Generic
       VData w, t;
       sincos_pi_reduce_intrin<FullRange>(w, t, x);
       const VData w2 = mul_intrin(w, w);
+      static constexpr double scale = (DivPi ? 0.318309886183790671537767526745028724 : 1.0); // of the coefficients
       const auto poly = [](const VData& v, const auto& cf) { // by Horner's scheme: fewer operations than Estrin's
         constexpr Integer N = sizeof(cf) / sizeof(cf[0]);
-        VData p = set1_intrin<VData>((Real)cf[N - 1]);
-        for (Integer k = N - 2; k >= 0; k--) p = fma_intrin(p, v, set1_intrin<VData>((Real)cf[k]));
+        VData p = set1_intrin<VData>((Real)(cf[N - 1] * scale));
+        for (Integer k = N - 2; k >= 0; k--) p = fma_intrin(p, v, set1_intrin<VData>((Real)(cf[k] * scale)));
         return p;
       };
-      const VData s = fma_intrin(w, set1_intrin<VData>(pi_hi), mul_intrin(w, fma_intrin(w2, poly(w2, SinPiPolyCoeffs<sincospi_poly_degree(sinpi_poly_digits, (F ? 2 : 5), digits)>::c), set1_intrin<VData>(pi_lo))));
-      const VData c = fma_intrin(w2, poly(w2, CosPiPolyCoeffs<sincospi_poly_degree(cospi_poly_digits, (F ? 3 : 5), digits)>::c), set1_intrin<VData>((Real)1));
+      using SinC = SinPiPolyCoeffs<sincospi_poly_degree(sinpi_poly_digits, (F ? 2 : 5), digits)>;
+      using CosC = CosPiPolyCoeffs<sincospi_poly_degree(cospi_poly_digits, (F ? 3 : 5), digits)>;
+      VData s, c;
+      if constexpr (DivPi) { // w/2 + w^3 Q/pi and 1/pi + w^2 P/pi, 1/pi = ipi_hi + ipi_lo
+        static constexpr Real ipi_hi = (Real)0.318309886183790671537767526745028724L;
+        static constexpr Real ipi_lo = (Real)(0.318309886183790671537767526745028724L - (long double)ipi_hi);
+        s = fma_intrin(mul_intrin(w, w2), poly(w2, SinC::c), mul_intrin(w, set1_intrin<VData>((Real)0.5)));
+        c = add_intrin(fma_intrin(w2, poly(w2, CosC::c), set1_intrin<VData>(ipi_lo)), set1_intrin<VData>(ipi_hi));
+      } else {
+        s = fma_intrin(w, set1_intrin<VData>(pi_hi), mul_intrin(w, fma_intrin(w2, poly(w2, SinC::c), set1_intrin<VData>(pi_lo))));
+        c = fma_intrin(w2, poly(w2, CosC::c), set1_intrin<VData>((Real)1));
+      }
       const IntVec ti = reinterpret_intrin<IntVec>(t);
       const Mask<VData> odd = reinterpret_mask<Mask<VData>>(comp_intrin<ComparisonType::ne>(and_intrin(ti, set1_intrin<IntVec>(1)), zero_intrin<IntVec>()));
       const IntVec sign = set1_intrin<IntVec>(((Int)1) << (Bits - 1));
@@ -2163,14 +2174,22 @@ namespace sctl { // Generic
         const Real n = t.x[i] - c;
         const Real m = n - 4 * floor(n / 4); // n mod 4; NaN for inf and NaN x, where the result is NaN
         const Integer q = (m >= 0 && m < 4 ? (Integer)m : 0);
-        const Real sw = sin(const_pi<Real>() / 2 * w.x[i]);
-        const Real cw = cos(const_pi<Real>() / 2 * w.x[i]);
+        const Real sw = sin(const_pi<Real>() / 2 * w.x[i]) / (DivPi ? const_pi<Real>() : (Real)1);
+        const Real cw = cos(const_pi<Real>() / 2 * w.x[i]) / (DivPi ? const_pi<Real>() : (Real)1);
         s.x[i] = (q == 0 ? sw : (q == 1 ? cw : (q == 2 ? -sw : -cw)));
         co.x[i] = (q == 0 ? cw : (q == 1 ? -sw : (q == 2 ? -cw : sw)));
       }
       sinx = s.v;
       cosx = co.v;
     }
+  }
+
+  // sin(pi x)/(pi x) to the digits (-1: full), 1 at x = 0; FullRange as sincos_pi_reduce_intrin
+  template <Integer digits, bool FullRange = true, class VData> inline VData approx_sincpi_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    VData s, c;
+    approx_sincospi_intrin<digits, FullRange, true, false, true>(s, c, x);
+    return select_intrin(comp_intrin<ComparisonType::eq>(x, zero_intrin<VData>()), set1_intrin<VData>((Real)1), div_intrin(s, x));
   }
 
   template <class VData> inline VData cbrt_intrin(const VData& x) {

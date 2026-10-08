@@ -839,6 +839,17 @@ namespace sctl {
           SCTL_ASSERT(sinpi(VecType(h + (ScalarType)0.5))[0] == 1 && cospi(VecType(2 * h + 1))[0] == -1 && isnan(sinpi(VecType((ScalarType)INFINITY))[0]) && isnan(cospi(VecType((ScalarType)NAN))[0]));
         }
 
+        { // sincpi, and approx_sincpi to 5 digits
+          const VecType sc = sincpi(v0), ac = approx_sincpi<5>(v0);
+          for (Integer i = 0; i < N; i++) {
+            const ScalarType px = const_pi<ScalarType>() * v0[i];
+            const ScalarType ref = sin<ScalarType>(px) / px;
+            SCTL_ASSERT(fabs(sc[i] - ref) <= (4 + 4 * fabs(v0[i])) * machine_eps<ScalarType>() / fabs(px) + 4 * machine_eps<ScalarType>()); // with the rounding of pi x in the reference
+            SCTL_ASSERT(fabs(ac[i] - ref) <= (ScalarType)1e-5);
+          }
+          SCTL_ASSERT(sincpi(VecType((ScalarType)0))[0] == 1 && sincpi(VecType((ScalarType)3))[0] == 0 && isnan(sincpi(VecType((ScalarType)NAN))[0]));
+        }
+
         if (sizeof(ScalarType) < 16) return;
 
         approx_sincos<8>(v1, v2, v0);

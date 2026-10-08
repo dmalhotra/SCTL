@@ -502,6 +502,12 @@ namespace sctl {
     approx_sincospi_intrin<digits, FullRange, false, true>(sinx, cosx, x.get());
     return cosx;
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sincpi(const Vec<ValueType,N>& x) {
+    return approx_sincpi_intrin<-1>(x.get());
+  }
+  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_sincpi(const Vec<ValueType,N>& x) {
+    return approx_sincpi_intrin<digits, FullRange>(x.get());
+  }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x) {
     return exp_intrin(x.get());

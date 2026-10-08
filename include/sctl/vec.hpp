@@ -594,6 +594,10 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> cospi(const Vec<ValueType,N>& x);
   /** cos(pi x), as approx_sincospi. */
   template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x);
+  /** sin(pi x)/(pi x), 1 at x = 0, NaN at +-inf; float, double: within 2.2 ulp (float: 1.8). */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sincpi(const Vec<ValueType,N>& x);
+  /** sincpi to the given digits (-1: full); FullRange as approx_sincospi. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sincpi(const Vec<ValueType,N>& x);
 
   /** e^x; float, double at native widths without SVML: within about 2 ulp (float: 3.5), also near the overflow and for subnormal results. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x);
