@@ -1424,32 +1424,35 @@ namespace sctl { // Generic
     if constexpr (Subnormal) e = sub_intrin(e, select_intrin(subnormal, set1_intrin<VData>((Real)(SigBits + 1)), zero));
     f = sub_intrin(m, one);
   }
-  template <class VData> inline VData log_poly_intrin(const VData& x) { // log(1+f) = f - f^2/2 + f^3 P(f)/Q(f) (float: f^3 P(f)), with Cephes's coefficients
+  // e ln2 + log(1+f), log(1+f) = f - f^2/2 + f^3 P(f)/Q(f) (float: f^3 P(f)) with Cephes's coefficients, added as
+  // (e ln2_lo + f^3 P/Q) + (f - f^2/2), then e ln2_hi
+  template <class VData> inline VData log_split_poly_intrin(const VData& e, const VData& f) {
+    using Real = typename VData::ScalarType;
+    const VData f2 = mul_intrin(f, f);
+    VData p;
+    if constexpr (std::is_same<Real,float>::value) {
+      p = mul_intrin(EvalPolynomial(f, 3.3333331174E-1f, -2.4999993993E-1f, 2.0000714765E-1f, -1.6668057665E-1f, 1.4249322787E-1f, -1.2420140846E-1f, 1.1676998740E-1f, -1.1514610310E-1f, 7.0376836292E-2f), mul_intrin(f, f2));
+    } else {
+      const VData P = EvalPolynomial(f, 7.70838733755885391666E0, 1.79368678507819816313E1, 1.44989225341610930846E1, 4.70579119878881725854E0, 4.97494994976747001425E-1, 1.01875663804580931796E-4);
+      const VData Q = EvalPolynomial(f, 2.31251620126765340583E1, 7.11544750618563894466E1, 8.29875266912776603211E1, 4.52279145837532221105E1, 1.12873587189167450590E1, 1.0);
+      p = div_intrin(mul_intrin(P, mul_intrin(f, f2)), Q);
+    }
+    const VData small = add_intrin(fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), p), fma_intrin(f2, set1_intrin<VData>((Real)-0.5), f));
+    return fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::hi), small);
+  }
+  template <class VData> inline VData log_poly_intrin(const VData& x) { // log_split_poly_intrin of log_split_intrin
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     const VData zero = zero_intrin<VData>();
     const VData inf = set1_intrin<VData>((Real)INFINITY);
-    const auto log_split_poly = [](const VData& e, const VData& f) { // e ln2 + log(1+f), added as (e ln2_lo + f^3 P/Q) + (f - f^2/2), then e ln2_hi
-      const VData f2 = mul_intrin(f, f);
-      VData p;
-      if constexpr (std::is_same<Real,float>::value) {
-        p = mul_intrin(EvalPolynomial(f, 3.3333331174E-1f, -2.4999993993E-1f, 2.0000714765E-1f, -1.6668057665E-1f, 1.4249322787E-1f, -1.2420140846E-1f, 1.1676998740E-1f, -1.1514610310E-1f, 7.0376836292E-2f), mul_intrin(f, f2));
-      } else {
-        const VData P = EvalPolynomial(f, 7.70838733755885391666E0, 1.79368678507819816313E1, 1.44989225341610930846E1, 4.70579119878881725854E0, 4.97494994976747001425E-1, 1.01875663804580931796E-4);
-        const VData Q = EvalPolynomial(f, 2.31251620126765340583E1, 7.11544750618563894466E1, 8.29875266912776603211E1, 4.52279145837532221105E1, 1.12873587189167450590E1, 1.0);
-        p = div_intrin(mul_intrin(P, mul_intrin(f, f2)), Q);
-      }
-      const VData small = add_intrin(fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), p), fma_intrin(f2, set1_intrin<VData>((Real)-0.5), f));
-      return fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::hi), small);
-    };
     VData e, f;
     log_split_intrin<false>(e, f, x);
-    const VData r = log_split_poly(e, f);
+    const VData r = log_split_poly_intrin(e, f);
     if (mask_count_intrin(positive_normal_mask_intrin(x)) == VData::Size) return r;
 
     // some x zero, subnormal, inf, negative or NaN
     log_split_intrin<true>(e, f, x);
-    VData rs = log_split_poly(e, f);
+    VData rs = log_split_poly_intrin(e, f);
     rs = select_intrin(comp_intrin<ComparisonType::eq>(x, zero), unary_minus_intrin(inf), rs);
     rs = select_intrin(comp_intrin<ComparisonType::eq>(x, inf), x, rs);
     return select_intrin(comp_intrin<ComparisonType::ge>(x, zero), rs, set1_intrin<VData>((Real)NAN)); // negative x and NaN
@@ -2039,15 +2042,28 @@ namespace sctl { // Generic
       return x_.v;
     }
   }
-  // log(u) + (x - (u - 1))/u, u = 1 + x rounded: the second term corrects the rounding of u
+  // 1 + x = u + c, u = 1 + x rounded, c its rounding error; u = 2^e (1+f): log(1+x) = e ln2 + log(1 + f + c 2^-e)
   template <class VData> inline VData log1p_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      using Int = typename IntegerType<sizeof(Real)>::value;
+      using IntVec = VecData<Int,VData::Size>;
+      static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+      static constexpr Int Bias = (((Int)1) << (sizeof(Real)*8 - SigBits - 2)) - 1;
+      static constexpr Real magic = (Real)1.5 * pow<SigBits,Real>((Real)2) + (Real)Bias; // magic - e: Bias - e in the low bits
       const VData one = set1_intrin<VData>((Real)1);
       const VData u = add_intrin(one, x);
-      const VData c = div_intrin(sub_intrin(x, sub_intrin(u, one)), max_intrin(u, set1_intrin<VData>(std::numeric_limits<Real>::min()))); // u = 0 only for x = -1, where the numerator is 0
-      const VData l = add_intrin(log_intrin(u), c);
-      return select_intrin(comp_intrin<ComparisonType::eq>(u, one) | comp_intrin<ComparisonType::eq>(x, set1_intrin<VData>((Real)INFINITY)), x, l); // x where u = 1 (also +-0), and for x = inf
+      const VData c = sub_intrin(x, sub_intrin(u, one));
+      VData e, f;
+      log_split_intrin<false>(e, f, u);
+      const VData t = sub_intrin(set1_intrin<VData>(magic), min_intrin(e, set1_intrin<VData>((Real)(Bias - 1)))); // c = 0 where e is larger
+      const VData s = reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(t), SigBits)); // 2^-e
+      const VData r = select_intrin(comp_intrin<ComparisonType::eq>(u, one), x, log_split_poly_intrin(e, fma_intrin(c, s, f))); // x where u = 1, also +-0
+      if (mask_count_intrin(positive_normal_mask_intrin(u)) == VData::Size) return r;
+
+      // u = 0 (x = -1), negative (x < -1), inf or NaN
+      const VData rs = select_intrin(comp_intrin<ComparisonType::eq>(u, zero_intrin<VData>()), set1_intrin<VData>((Real)-INFINITY), select_intrin(comp_intrin<ComparisonType::eq>(u, set1_intrin<VData>((Real)INFINITY)), u, r));
+      return select_intrin(comp_intrin<ComparisonType::ge>(u, zero_intrin<VData>()), rs, set1_intrin<VData>((Real)NAN));
     } else {
       union {
         VData v;
