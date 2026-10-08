@@ -1246,7 +1246,7 @@ template <class Real> std::vector<Real> test_NearNodeTargets(const Real tol, con
         Xt.PushBack(X[n * COORD_DIM + k] / r * rad);
         Nt.PushBack(X[n * COORD_DIM + k] / r);
       }
-      U_ref.PushBack(rad < R ? (Real)3 / 7 * rad * rad * Y : -(Real)4 / 7 * Y / pow<Real>(rad, 5));
+      U_ref.PushBack(rad < R ? (Real)3 / 7 * rad * rad * Y : -(Real)4 / 7 * Y / sctl::pow<Real>(rad, 5));
     }
   }
 
