@@ -93,7 +93,7 @@ template <class uKernel> class GenericKernel : public uKernel {
      * @param r_src The vector of source point coordinates.
      * @param n_src The vector of source normals.
      * @param v_src The vector of source densities.
-     * @param digits The number of significant digits for evaluation.
+     * @param digits The number of significant digits for evaluation: machine precision for -1 or 16 and more.
      * @param self A constant iterator pointing to the self interaction flag.
      */
     template <class Real, bool enable_openmp> static void Eval(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self);
@@ -124,6 +124,20 @@ template <class uKernel> class GenericKernel : public uKernel {
     template <class Real, bool enable_openmp=false, Integer digits=-1> void KernelMatrix(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn) const;
 
     /**
+     * Computes the kernel matrix and stores it in `M`, with the number of digits given at run time, as Eval() with
+     * digits does: full accuracy for -1 or 16 and more.
+     * @tparam Real The type of the real numbers used.
+     * @tparam enable_openmp A boolean flag to enable OpenMP.
+     * @param M The matrix to store the kernel matrix.
+     * @param Xt The vector of target point coordinates.
+     * @param Xs The vector of source point coordinates.
+     * @param Xn The vector of source normals.
+     * @param digits The number of significant digits for evaluation.
+     * @param self Points to the kernel object.
+     */
+    template <class Real, bool enable_openmp> static void KernelMatrix(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn, Integer digits, ConstIterator<char> self);
+
+    /**
      * Static method for kernel matrix computation.
      * @tparam digits The number of significant digits for evaluation.
      * @tparam VecType The vector type.
@@ -136,6 +150,12 @@ template <class uKernel> class GenericKernel : public uKernel {
     template <Integer digits, class VecType, class NormalType> static void uKerMatrix(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const NormalType& n, const void* ctx_ptr);
 
   private:
+    /**
+     * calls f(std::integral_constant<Integer,d>()) with d = digits for 0 <= digits <= 15,
+     * and d = -1 (machine precision) for digits = -1 or digits >= 16
+     */
+    template <class F> static void DigitsDispatch(const Integer digits, const F& f);
+
     void* ctx_ptr;
 };
 

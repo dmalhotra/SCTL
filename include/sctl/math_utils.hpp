@@ -4,10 +4,19 @@
 #include <istream>          // for istream
 #include <ostream>          // for ostream
 #include <cmath>            // for acos, asin, atan, atan2, ceil, cos, exp
+#include <complex>          // for complex
 
 #include "sctl/common.hpp"  // for Integer, Long, sctl
 
 namespace sctl {
+
+/**
+ * True for std::complex types.
+ *
+ * @tparam T The template type.
+ */
+template <class T> constexpr bool IsComplex = false;
+template <class Real> constexpr bool IsComplex<std::complex<Real>> = true;
 
 /**
  * Returns the number of significant bits in the representation of the template type.

@@ -20,7 +20,7 @@
 #include "sctl/mem_mgr.txx"       // for aligned_delete, aligned_new
 #include "sctl/ompUtils.txx"      // for omp_par::copy
 #include "sctl/permutation.hpp"   // for Permutation
-#include "sctl/profile.hpp"       // for Profile, ProfileCounter
+#include "sctl/profile.hpp"       // for Profile, ProfileCounter, FlopCount
 #include "sctl/profile.txx"       // for Profile::IncrementCounter
 #include "sctl/scratch_pool.hpp"  // for ScratchBuf
 #include "sctl/scratch_pool.txx"  // for ScratchBuf
@@ -59,7 +59,7 @@ template <class ValueType> void Matrix<ValueType>::Init(Long dim1, Long dim2, It
     } else if (dim[0] * dim[1] > 0) {
       data_ptr = aligned_new<ValueType>(capacity);
       if (data_ != NullIterator<ValueType>()) {
-        omp_par::copy(data_, data_ + dim[0] * dim[1], data_ptr);
+        omp_par::copy(data_, data_ + dim1 * dim2, data_ptr);
       }
     } else
       data_ptr = NullIterator<ValueType>();
@@ -125,7 +125,7 @@ template <class ValueType> void Matrix<ValueType>::ReInit(Long dim1, Long dim2, 
     if constexpr (std::is_const<ValueType>::value) {  // Matrix<const T> is a view
       SCTL_ASSERT_MSG(dim[0] * dim[1] == 0, "Matrix<const T> cannot own storage; use a non-owning view.");
     } else if (data_ptr != NullIterator<ValueType>() && data_ != NullIterator<ValueType>()) {
-      omp_par::copy(data_, data_ + dim[0] * dim[1], data_ptr);
+      omp_par::copy(data_, data_ + dim1 * dim2, data_ptr);
     }
   } else {
     Matrix<ValueType> tmp(dim1, dim2, data_, own_data_);
@@ -237,7 +237,7 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(const
 template <class ValueType> template <class VType> Matrix<ValueType>& Matrix<ValueType>::operator+=(const Matrix<VType>& M) {
   static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Matrix operands must have the same element type.");
   SCTL_ASSERT(M.Dim(0) == Dim(0) && M.Dim(1) == Dim(1));
-  Profile::IncrementCounter(ProfileCounter::FLOP, dim[0] * dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, FlopCount<ValueType>::Add * dim[0] * dim[1]);
 
   for (Long i = 0; i < M.Dim(0) * M.Dim(1); i++) data_ptr[i] += M.data_ptr[i];
   return *this;
@@ -246,7 +246,7 @@ template <class ValueType> template <class VType> Matrix<ValueType>& Matrix<Valu
 template <class ValueType> template <class VType> Matrix<ValueType>& Matrix<ValueType>::operator-=(const Matrix<VType>& M) {
   static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Matrix operands must have the same element type.");
   SCTL_ASSERT(M.Dim(0) == Dim(0) && M.Dim(1) == Dim(1));
-  Profile::IncrementCounter(ProfileCounter::FLOP, dim[0] * dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, FlopCount<ValueType>::Add * dim[0] * dim[1]);
 
   for (Long i = 0; i < M.Dim(0) * M.Dim(1); i++) data_ptr[i] -= M.data_ptr[i];
   return *this;
@@ -256,7 +256,7 @@ template <class ValueType> template <class VType> Matrix<typename Matrix<ValueTy
   static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Matrix operands must have the same element type.");
   const Matrix<ValueType>& M1 = *this;
   SCTL_ASSERT(M2.Dim(0) == M1.Dim(0) && M2.Dim(1) == M1.Dim(1));
-  Profile::IncrementCounter(ProfileCounter::FLOP, dim[0] * dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, FlopCount<ValueType>::Add * dim[0] * dim[1]);
 
   Matrix<value_type> M_r(M1.Dim(0), M1.Dim(1));
   for (Long i = 0; i < M1.Dim(0) * M1.Dim(1); i++) M_r[0][i] = M1[0][i] + M2[0][i];
@@ -267,7 +267,7 @@ template <class ValueType> template <class VType> Matrix<typename Matrix<ValueTy
   static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Matrix operands must have the same element type.");
   const Matrix<ValueType>& M1 = *this;
   SCTL_ASSERT(M2.Dim(0) == M1.Dim(0) && M2.Dim(1) == M1.Dim(1));
-  Profile::IncrementCounter(ProfileCounter::FLOP, dim[0] * dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, FlopCount<ValueType>::Add * dim[0] * dim[1]);
 
   Matrix<value_type> M_r(M1.Dim(0), M1.Dim(1));
   for (Long i = 0; i < M1.Dim(0) * M1.Dim(1); i++) M_r[0][i] = M1[0][i] - M2[0][i];
@@ -277,7 +277,7 @@ template <class ValueType> template <class VType> Matrix<typename Matrix<ValueTy
 template <class ValueType> template <class VType> Matrix<typename Matrix<ValueType>::value_type> Matrix<ValueType>::operator*(const Matrix<VType>& M) const {
   static_assert(std::is_same<typename std::remove_const<VType>::type, value_type>::value, "Matrix operands must have the same element type.");
   SCTL_ASSERT(dim[1] == M.dim[0]);
-  Profile::IncrementCounter(ProfileCounter::FLOP, 2 * (((Long)dim[0]) * dim[1]) * M.dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, FlopCount<ValueType>::MulAdd * (((Long)dim[0]) * dim[1]) * M.dim[1]);
 
   Matrix<value_type> M_r(dim[0], M.dim[1]);
   if (M.Dim(0) * M.Dim(1) == 0 || this->Dim(0) * this->Dim(1) == 0) return M_r;
@@ -292,7 +292,7 @@ template <class ValueType> template <class AType, class BType> void Matrix<Value
   SCTL_ASSERT(M_r.dim[0] == A.dim[0]);
   SCTL_ASSERT(M_r.dim[1] == B.dim[1]);
   if (A.Dim(0) * A.Dim(1) == 0 || B.Dim(0) * B.Dim(1) == 0) return;
-  Profile::IncrementCounter(ProfileCounter::FLOP, 2 * (((Long)A.dim[0]) * A.dim[1]) * B.dim[1]);
+  Profile::IncrementCounter(ProfileCounter::FLOP, FlopCount<ValueType>::MulAdd * (((Long)A.dim[0]) * A.dim[1]) * B.dim[1]);
   mat::gemm<value_type>('N', 'N', B.dim[1], A.dim[0], A.dim[1], 1.0, B.data_ptr, B.dim[1], A.data_ptr, A.dim[1], beta, M_r.data_ptr, M_r.dim[1]);
 }
 
@@ -362,28 +362,28 @@ template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator=(Value
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator+=(ValueType s) {
   Long N = dim[0] * dim[1];
   for (Long i = 0; i < N; i++) data_ptr[i] += s;
-  Profile::IncrementCounter(ProfileCounter::FLOP, N);
+  Profile::IncrementCounter(ProfileCounter::FLOP, FlopCount<ValueType>::Add * N);
   return *this;
 }
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator-=(ValueType s) {
   Long N = dim[0] * dim[1];
   for (Long i = 0; i < N; i++) data_ptr[i] -= s;
-  Profile::IncrementCounter(ProfileCounter::FLOP, N);
+  Profile::IncrementCounter(ProfileCounter::FLOP, FlopCount<ValueType>::Add * N);
   return *this;
 }
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator*=(ValueType s) {
   Long N = dim[0] * dim[1];
   for (Long i = 0; i < N; i++) data_ptr[i] *= s;
-  Profile::IncrementCounter(ProfileCounter::FLOP, N);
+  Profile::IncrementCounter(ProfileCounter::FLOP, FlopCount<ValueType>::Mul * N);
   return *this;
 }
 
 template <class ValueType> Matrix<ValueType>& Matrix<ValueType>::operator/=(ValueType s) {
   Long N = dim[0] * dim[1];
   for (Long i = 0; i < N; i++) data_ptr[i] /= s;
-  Profile::IncrementCounter(ProfileCounter::FLOP, N);
+  Profile::IncrementCounter(ProfileCounter::FLOP, FlopCount<ValueType>::Div * N);
   return *this;
 }
 

@@ -110,7 +110,7 @@ static void experiment_1_one_size(int iters) {
   // Pure stack allocation — just a frame-pointer adjustment, no allocator.
   auto s_static = measure([] {
     StaticArray<double, N> arr;
-    asm volatile("" : : "r"(&arr[0]) : "memory");
+    asm volatile("" : : "r"(&arr) : "memory");
   }, iters);
 
   printf("%-10ld  %10lu  %10lu  %10lu  %10lu  %10lu\n",
@@ -204,7 +204,7 @@ static void experiment_2_threads() {
 
     bench_per_thread([]{
       StaticArray<double, n> arr;
-      asm volatile("" : : "r"(&arr[0]) : "memory");
+      asm volatile("" : : "r"(&arr) : "memory");
     }, per_thread_static);
 
     auto median_of = [](std::vector<uint64_t>& v) {

@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <random>
 #include <string>
 
@@ -180,6 +181,16 @@ int main() {
     CHECK(test_utils::approx_eq(sctl::atoreal<R>("-2.5"),     R(-2.5),    tol));
     CHECK(test_utils::approx_eq(sctl::atoreal<R>("1e3"),      R(1000),    tol));
     CHECK(test_utils::approx_eq(sctl::atoreal<R>("0"),        R(0),       tol));
+    CHECK(test_utils::approx_eq(sctl::atoreal<R>(" +2.5"),    R(2.5),     tol));
+    // Out of range: infinite or zero, for each floating-point type
+    CHECK(sctl::atoreal<float>("1e40") == std::numeric_limits<float>::infinity());
+    CHECK(sctl::atoreal<double>("1e400") == std::numeric_limits<double>::infinity());
+    CHECK(sctl::atoreal<double>("-1e400") == -std::numeric_limits<double>::infinity());
+    CHECK(sctl::atoreal<double>("1e-400") == 0);
+    CHECK(sctl::atoreal<long double>("1e5000") == std::numeric_limits<long double>::infinity());
+    // Integers, also with an exponent
+    CHECK(sctl::atoreal<int>("1e3") == 1000);
+    CHECK(sctl::atoreal<long>("-12") == -12);
   }
 
 #ifdef SCTL_QUAD_T

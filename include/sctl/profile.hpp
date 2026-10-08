@@ -6,6 +6,7 @@
 #include <vector>            // for vector
 
 #include "sctl/common.hpp"   // for Long, Integer, sctl
+#include "sctl/math_utils.hpp"  // for IsComplex
 
 #ifndef SCTL_PROFILE
 #define SCTL_PROFILE -1
@@ -36,6 +37,21 @@ enum class ProfileCounter: Long {
   CUSTOM4,
   CUSTOM5,
   FIELD_COUNT
+};
+
+/**
+ * Real floating-point operations that ProfileCounter::FLOP counts for one operation on a value of
+ * type A and one of type B: 1 for real types, and for std::complex those of the usual formulas,
+ * fewer when one of the two values is real.
+ *
+ * @tparam A, B Types of the two values.
+ */
+template <class A, class B = A> struct FlopCount {
+  static constexpr bool ComplexA = IsComplex<std::remove_cv_t<A>>, ComplexB = IsComplex<std::remove_cv_t<B>>;
+  static constexpr Long Add = (ComplexA && ComplexB ? 2 : 1); // a + b or a - b
+  static constexpr Long Mul = (ComplexA && ComplexB ? 6 : (ComplexA || ComplexB ? 2 : 1)); // a b: 4 multiplies and 2 adds if both are complex
+  static constexpr Long Div = (ComplexB ? (ComplexA ? 11 : 7) : (ComplexA ? 2 : 1)); // a / b = a conj(b) / |b|^2: 6 multiplies, 3 adds and 2 divides if both are complex
+  static constexpr Long MulAdd = Mul + (ComplexA || ComplexB ? 2 : 1); // c + a b
 };
 
 /**

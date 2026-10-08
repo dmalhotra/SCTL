@@ -34,11 +34,11 @@ namespace sctl {
 
   template <class VType> void concat_vecs(Vector<VType>& v, const Vector<Vector<VType>>& vec_lst) {
     const Long N = vec_lst.Dim();
-    Vector<Long> dsp(N+1); dsp[0] = 0;
-    for (Long i = 0; i < N; i++) {
-      dsp[i+1] = dsp[i] + vec_lst[i].Dim();
-    }
-    if (v.Dim() != dsp[N]) v.ReInit(dsp[N]);
+    ScratchBuf<Long> cnt(N), dsp(N);
+    for (Long i = 0; i < N; i++) cnt[i] = vec_lst[i].Dim();
+    omp_par::scan(cnt.begin(), dsp.begin(), N, (Long)0);
+    const Long total = (N ? dsp[N-1] + cnt[N-1] : 0);
+    if (v.Dim() != total) v.ReInit(total);
     for (Long i = 0; i < N; i++) {
       Vector<VType> v_(vec_lst[i].Dim(), v.begin()+dsp[i], false);
       v_ = vec_lst[i];
@@ -98,7 +98,8 @@ namespace sctl {
       elem_offset = recv_buff[2] - send_buff[2];
     }
 
-    Vector<NodeData> trg_nodes(Ntrg), src_nodes(Nsrc);
+    ScratchBuf<NodeData> trg_nodes_buf(Ntrg), src_nodes_buf(Nsrc);
+    Vector<NodeData> trg_nodes(trg_nodes_buf), src_nodes(src_nodes_buf);
     { // Set trg_nodes, src_nodes
       Real BBlen_inv;
       StaticArray<Real,COORD_DIM> BBX0;
@@ -124,7 +125,7 @@ namespace sctl {
             X0_local[k] = std::min<Real>(X0_local[k], Xsrc[i*COORD_DIM+k]);
           }
         }
-        comm_.Allreduce(X0_local, BBX0, COORD_DIM, CommOp::MIN);
+        comm_.Allreduce(X0_local + 0, BBX0 + 0, COORD_DIM, CommOp::MIN);
 
         Real BBlen, len_local = 0;
         for (Long i = 0; i < Ntrg; i++) {
@@ -183,7 +184,8 @@ namespace sctl {
       }
     }
 
-    Vector<NodeData> trg_nodes0, src_nodes0, splitter_nodes(comm_.Size());
+    Vector<NodeData> trg_nodes0, src_nodes0;
+    ScratchBuf<NodeData> splitter_nodes(comm_.Size());
     { // Set trg_nodes0 <- sort(trg_nodes), src_nodes0 <- sort(src_nodes)
       comm_.SampleSort(src_nodes, src_nodes0, comp_node_mid);
       comm_.SampleSort(trg_nodes, trg_nodes0, comp_node_mid);
@@ -221,7 +223,8 @@ namespace sctl {
             src_nodes0[i].mid.NbrList(nbr_lst, src_nodes0[i].mid.Depth(), Periodicity::NONE);
             for (const auto nbr : nbr_lst) if (nbr.Depth() != Morton<COORD_DIM>::INVALID_DEPTH) {
               const auto proc_split_srch = [&splitter_nodes,&comp_node_mid](const Morton<COORD_DIM>& m) {
-                NodeData srch_node; srch_node.mid = m;
+                NodeData srch_node;
+                srch_node.mid = m;
                 return  std::upper_bound(splitter_nodes.begin(), splitter_nodes.end(), srch_node, comp_node_mid) - splitter_nodes.begin() - 1;
               };
               Long p0 = proc_split_srch(nbr);
@@ -239,11 +242,9 @@ namespace sctl {
         if (omp_p == 1) {
           proc_srcidx_lst.Swap(proc_srcidx_omp[0]);
         } else { // concatenate per-thread lists
-          Vector<Long> cnt(omp_p), dsp(omp_p+1); dsp[0] = 0;
-          for (Integer t = 0; t < omp_p; t++) {
-            cnt[t] = proc_srcidx_omp[t].Dim();
-            dsp[t+1] = dsp[t] + cnt[t];
-          }
+          ScratchBuf<Long> cnt(omp_p), dsp(omp_p+1);
+          for (Integer t = 0; t < omp_p; t++) cnt[t] = proc_srcidx_omp[t].Dim();
+          omp_par::scan(cnt.begin(), dsp.begin(), omp_p+1, (Long)0);
           proc_srcidx_lst.ReInit(dsp[omp_p]);
           // Indexed by thread id: slots no thread filled are empty, so they add nothing to dsp.
           #pragma omp parallel num_threads(omp_p)
@@ -257,36 +258,36 @@ namespace sctl {
       }
       omp_par::sample_sort(proc_srcidx_lst.begin(), proc_srcidx_lst.end());
 
-      Vector<Long> scnt(np), sdsp(np+1);
+      ScratchBuf<Long> scnt(np), sdsp(np+1);
       #pragma omp parallel for schedule(static)
       for (Long p = 0; p <= np; p++) sdsp[p] = std::lower_bound(proc_srcidx_lst.begin(), proc_srcidx_lst.end(), std::pair<Long,Long>(p,0)) - proc_srcidx_lst.begin();
       #pragma omp parallel for schedule(static)
       for (Long p = 0; p < np; p++) scnt[p] = sdsp[p+1] - sdsp[p];
 
-      Vector<NodeData> sbuff(proc_srcidx_lst.Dim());
+      ScratchBuf<NodeData> sbuff(proc_srcidx_lst.Dim());
       #pragma omp parallel for schedule(static)
-      for (Long i = 0; i < sbuff.Dim(); i++) sbuff[i] = src_nodes0[proc_srcidx_lst[i].second];
+      for (Long i = 0; i < sbuff.size(); i++) sbuff[i] = src_nodes0[proc_srcidx_lst[i].second];
 
-      Vector<Long> rcnt(np), rdsp(np); rdsp = 0;
+      ScratchBuf<Long> rcnt(np), rdsp(np);
       comm_.Alltoall(scnt.begin(), 1, rcnt.begin(), 1);
-      omp_par::scan(rcnt.begin(), rdsp.begin(), np);
+      omp_par::scan(rcnt.begin(), rdsp.begin(), np, (Long)0);
 
       // Exchange data
-      Vector<NodeData> rbuff(rdsp[np-1] + rcnt[np-1]);
+      ScratchBuf<NodeData> rbuff(rdsp[np-1] + rcnt[np-1]);
       auto req_ptr = comm_.Ialltoallv_sparse(sbuff.begin(), scnt.begin(), sdsp.begin(), rbuff.begin(), rcnt.begin(), rdsp.begin());
 
       // Set src_nodes1
-      src_nodes1.ReInit(rbuff.Dim() + src_nodes0.Dim());
+      src_nodes1.ReInit(rbuff.size() + src_nodes0.Dim());
       omp_par::memcpy(src_nodes1.begin()+rdsp[rank], src_nodes0.begin(), src_nodes0.Dim());
       comm_.Wait(std::move(req_ptr));
       omp_par::memcpy(src_nodes1.begin(), rbuff.begin(), rdsp[rank]);
-      omp_par::memcpy(src_nodes1.begin()+src_nodes0.Dim()+rdsp[rank], rbuff.begin()+rdsp[rank], rbuff.Dim()-rdsp[rank]);
+      omp_par::memcpy(src_nodes1.begin()+src_nodes0.Dim()+rdsp[rank], rbuff.begin()+rdsp[rank], rbuff.size()-rdsp[rank]);
     } else { // src_nodes1 <- Allgather(src_nodes0)
       const Long Np = comm_.Size();
-      Vector<Long> cnt0(1), cnt(Np), dsp(Np);
-      cnt0[0] = src_nodes0.Dim(); dsp[0] = 0;
+      ScratchBuf<Long> cnt0(1), cnt(Np), dsp(Np);
+      cnt0[0] = src_nodes0.Dim();
       comm_.Allgather(cnt0.begin(), 1, cnt.begin(), 1);
-      omp_par::scan(cnt.begin(), dsp.begin(), Np);
+      omp_par::scan(cnt.begin(), dsp.begin(), Np, (Long)0);
 
       src_nodes1.ReInit(dsp[Np-1] + cnt[Np-1]);
       comm_.Allgatherv(src_nodes0.begin(), src_nodes0.Dim(), src_nodes1.begin(), cnt.begin(), dsp.begin());
@@ -410,11 +411,9 @@ namespace sctl {
       if (omp_p == 1) {
         near_lst.Swap(near_lst_omp[0]);
       } else { // concatenate per-thread near-lists (re-sorted below)
-        Vector<Long> cnt(omp_p), dsp(omp_p+1); dsp[0] = 0;
-        for (Integer i = 0; i < omp_p; i++) {
-          cnt[i] = near_lst_omp[i].Dim();
-          dsp[i+1] = dsp[i] + cnt[i];
-        }
+        ScratchBuf<Long> cnt(omp_p), dsp(omp_p+1);
+        for (Integer i = 0; i < omp_p; i++) cnt[i] = near_lst_omp[i].Dim();
+        omp_par::scan(cnt.begin(), dsp.begin(), omp_p+1, (Long)0);
         near_lst.ReInit(dsp[omp_p]);
         // Indexed by thread id: slots no thread filled are empty, so they add nothing to dsp.
         #pragma omp parallel num_threads(omp_p)
@@ -466,14 +465,15 @@ namespace sctl {
         const Long elem_idx1 = Nelem*(tid+1)/omp_p;
         for (Long i = elem_idx0; i < elem_idx1; i++) {
           near_elem_cnt[i] = 0;
-          near_elem_dsp[i] = 0;
         }
 
         Long idx0, idx1;
         { // Set index range [idx0, idx1] in near_lst for this thread
           NodeData srch_node0, srch_node1;
-          srch_node0.elem_idx = elem_offset + elem_idx0; srch_node0.idx = 0;
-          srch_node1.elem_idx = elem_offset + elem_idx1; srch_node1.idx = 0;
+          srch_node0.elem_idx = elem_offset + elem_idx0;
+          srch_node0.idx = 0;
+          srch_node1.elem_idx = elem_offset + elem_idx1;
+          srch_node1.idx = 0;
           idx0 = std::lower_bound(near_lst.begin(), near_lst.end(), srch_node0, comp_node_eid_idx) - near_lst.begin();
           idx1 = std::lower_bound(near_lst.begin(), near_lst.end(), srch_node1, comp_node_eid_idx) - near_lst.begin();
         }
@@ -484,7 +484,7 @@ namespace sctl {
           near_elem_cnt[elem_idx_-elem_offset] = cnt;
         }
       }
-      omp_par::scan(near_elem_cnt.begin(), near_elem_dsp.begin(), Nelem);
+      omp_par::scan(near_elem_cnt.begin(), near_elem_dsp.begin(), Nelem, (Long)0);
     }
 
     { // Set scatter_index, near_trg_cnt, near_trg_dsp
@@ -697,11 +697,10 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::Setup() const {
-    if (setup_flag && setup_far_flag && setup_self_flag && setup_near_flag) return;
+    if (setup_flag && setup_far_flag && setup_near_flag) return;
     Profile::Tic("Setup", &comm_, true, 5);
     SetupBasic();
     SetupFar();
-    SetupSelf();
     SetupNear();
     Profile::Toc();
   }
@@ -732,12 +731,11 @@ namespace sctl {
       const Long elem_idx1 = elem_lst_dsp[i]+elem_lst_cnt[i];
 
       Vector<Real> X, Xn, wts, dist_far;
-      Vector<Long> element_wise_node_cnt, element_wise_node_dsp(elem_idx1-elem_idx0); element_wise_node_dsp = 0;
+      Vector<Long> element_wise_node_cnt;
       elem_lst_map.at(elem_lst_name[i])->GetFarFieldNodes(X, Xn, wts, dist_far, element_wise_node_cnt, 1);
       SCTL_ASSERT(element_wise_node_cnt.Dim() == elem_lst_cnt[i]);
-      for (Long j = 1; j < element_wise_node_cnt.Dim(); j++) {
-        element_wise_node_dsp[j] = element_wise_node_dsp[j-1] + element_wise_node_cnt[j-1];
-      }
+      ScratchBuf<Long> element_wise_node_dsp(elem_idx1-elem_idx0);
+      omp_par::scan(element_wise_node_cnt.begin(), element_wise_node_dsp.begin(), elem_idx1-elem_idx0, (Long)0);
 
       for (Long elem = elem_idx0; elem < elem_idx1; elem++) {
         const Long j0 = elem_nds_dsp[elem];
@@ -764,12 +762,11 @@ namespace sctl {
       const Long elem_idx1 = elem_lst_dsp[i]+elem_lst_cnt[i];
 
       Vector<Real> X, Xn, wts, dist_far;
-      Vector<Long> element_wise_node_cnt, element_wise_node_dsp(elem_idx1-elem_idx0); element_wise_node_dsp = 0;
+      Vector<Long> element_wise_node_cnt;
       elem_lst_map.at(elem_lst_name[i])->GetFarFieldNodes(X, Xn, wts, dist_far, element_wise_node_cnt, 1);
       SCTL_ASSERT(element_wise_node_cnt.Dim() == elem_lst_cnt[i]);
-      for (Long j = 1; j < element_wise_node_cnt.Dim(); j++) {
-        element_wise_node_dsp[j] = element_wise_node_dsp[j-1] + element_wise_node_cnt[j-1];
-      }
+      ScratchBuf<Long> element_wise_node_dsp(elem_idx1-elem_idx0);
+      omp_par::scan(element_wise_node_cnt.begin(), element_wise_node_dsp.begin(), elem_idx1-elem_idx0, (Long)0);
 
       for (Long elem = elem_idx0; elem < elem_idx1; elem++) {
         const Long j0 = elem_nds_dsp[elem];
@@ -822,10 +819,8 @@ namespace sctl {
       const Long Nelem = elem_nds_cnt.Dim();
       if (elem_lst_dsp.Dim() != Nlst ) elem_lst_dsp.ReInit(Nlst);
       if (elem_nds_dsp.Dim() != Nelem) elem_nds_dsp.ReInit(Nelem);
-      if (Nlst ) elem_lst_dsp[0] = 0;
-      if (Nelem) elem_nds_dsp[0] = 0;
-      omp_par::scan(elem_lst_cnt.begin(), elem_lst_dsp.begin(), Nlst);
-      omp_par::scan(elem_nds_cnt.begin(), elem_nds_dsp.begin(), Nelem);
+      omp_par::scan(elem_lst_cnt.begin(), elem_lst_dsp.begin(), Nlst, (Long)0);
+      omp_par::scan(elem_nds_cnt.begin(), elem_nds_dsp.begin(), Nelem, (Long)0);
       SCTL_ASSERT(Nelem == (Nlst ? elem_lst_dsp[Nlst-1] + elem_lst_cnt[Nlst-1] : 0));
     }
     { // Set Xtrg
@@ -878,8 +873,7 @@ namespace sctl {
       const Long Nelem = elem_nds_cnt.Dim();
       SCTL_ASSERT(elem_nds_cnt_far.Dim() == Nelem);
       if (elem_nds_dsp_far.Dim() != Nelem) elem_nds_dsp_far.ReInit(Nelem);
-      if (Nelem) elem_nds_dsp_far[0] = 0;
-      omp_par::scan(elem_nds_cnt_far.begin(), elem_nds_dsp_far.begin(), Nelem);
+      omp_par::scan(elem_nds_cnt_far.begin(), elem_nds_dsp_far.begin(), Nelem, (Long)0);
     }
 
     fmm.SetSrcCoord("Src", X_far, Xn_far);
@@ -890,28 +884,37 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetupSelf() const {
-    // TODO: skip SetupSelf when no on-surface targets.
     if (setup_self_flag) return;
     SetupBasic();
 
     Profile::Tic("SetupSingular", &comm_, false, 6);
     { // Set K_self
       const Long Nlst = elem_lst_map.size();
-      Vector<Long> elem_cnt(Nlst), elem_dsp(Nlst);
-      for (Long i = 0; i < Nlst; i++) {
-        const auto& name = elem_lst_name[i];
-        const auto& elem_lst = elem_lst_map.at(name);
-        elem_cnt[i] = elem_lst->Size();
-        elem_dsp[i] = (i==0?0:elem_dsp[i-1]+elem_cnt[i-1]);
+      const Long Nelem = elem_nds_cnt.Dim();
+      if (K_self.Dim() != Nelem) K_self.ReInit(Nelem);
+      { // Each element's matrix as a view into one buffer
+        const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
+        ScratchBuf<Long> cnt(Nelem), dsp(Nelem);
+        for (Long i = 0; i < Nlst; i++) {
+          const bool matrix_free = elem_lst_map.at(elem_lst_name[i])->MatrixFree();
+          #pragma omp parallel for schedule(static)
+          for (Long j = 0; j < elem_lst_cnt[i]; j++) {
+            const Long e = elem_lst_dsp[i] + j;
+            cnt[e] = (matrix_free ? 0 : elem_nds_cnt[e]*KDIM0 * elem_nds_cnt[e]*KDIM1_);
+          }
+        }
+        omp_par::scan(cnt.begin(), dsp.begin(), Nelem, 0);
+        K_self_data.ReInit(Nelem ? dsp[Nelem-1] + cnt[Nelem-1] : 0);
+        #pragma omp parallel for schedule(static)
+        for (Long e = 0; e < Nelem; e++) {
+          if (cnt[e]) K_self[e].ReInit(elem_nds_cnt[e]*KDIM0, elem_nds_cnt[e]*KDIM1_, K_self_data.begin() + dsp[e], false);
+        }
       }
-
-      if (K_self.Dim() != (Nlst ? elem_dsp[Nlst-1]+elem_cnt[Nlst-1] : 0)) K_self.ReInit((Nlst ? elem_dsp[Nlst-1]+elem_cnt[Nlst-1] : 0));
-      // TODO: also pre-allocate elements of K_self from a memory pool.
       for (Long i = 0; i < Nlst; i++) {
         const auto& name = elem_lst_name[i];
         const auto& elem_lst = elem_lst_map.at(name);
         const auto& elem_data = elem_data_map.at(name);
-        Vector<Matrix<Real>> K_self_(elem_cnt[i], K_self.begin() + elem_dsp[i], false);
+        Vector<Matrix<Real>> K_self_(elem_lst_cnt[i], K_self.begin() + elem_lst_dsp[i], false);
         if (elem_lst->MatrixFree()) {
           for (auto& K : K_self_) K.ReInit(0,0);
           continue;
@@ -940,7 +943,6 @@ namespace sctl {
     near_blk_cnt.ReInit(0);
     SetupBasic();
     SetupFar();
-    SetupSelf();
 
     Profile::Tic("SetupNear", &comm_, true, 6);
     Profile::Tic("BuildNearLst", &comm_, true, 7);
@@ -1006,20 +1008,46 @@ namespace sctl {
     }
     Profile::Toc();
 
+    { // Self-interaction matrices, used only for targets at a node of their near element
+      const Long Nelem = near_elem_cnt.Dim();
+      bool trg_at_node = false;
+      #pragma omp parallel for schedule(static) reduction(||:trg_at_node)
+      for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) {
+        if (trg_at_node) continue;
+        const Long elem_lst_idx = std::lower_bound(elem_lst_dsp.begin(), elem_lst_dsp.end(), elem_idx+1) - elem_lst_dsp.begin() - 1;
+        if (elem_lst_map.at(elem_lst_name[elem_lst_idx])->MatrixFree()) continue;
+        const ConstIterator<Real> Xs = Xsurf.begin() + elem_nds_dsp[elem_idx]*COORD_DIM;
+        for (Long k = 0; k < near_elem_cnt[elem_idx] && !trg_at_node; k++) {
+          const ConstIterator<Real> Xt_ = Xtrg_near.begin() + (near_elem_dsp[elem_idx]+k)*COORD_DIM;
+          for (Long n = 0; n < elem_nds_cnt[elem_idx] && !trg_at_node; n++) {
+            Real r2 = 0;
+            for (Integer kk = 0; kk < COORD_DIM; kk++) {
+              const Real d = Xt_[kk] - Xs[n*COORD_DIM+kk];
+              r2 += d*d;
+            }
+            trg_at_node = (r2 == 0);
+          }
+        }
+      }
+      StaticArray<Long,2> any_trg_at_node{(Long)trg_at_node, 0};
+      comm_.Allreduce(any_trg_at_node+0, any_trg_at_node+1, 1, CommOp::MAX); // same setup steps on every rank
+      if (any_trg_at_node[1]) SetupSelf();
+    }
+
     { // Set near_blk_elem, near_blk_t0, near_blk_cnt
       // grain is sized to cover the team; with many elements it exceeds the per-element target
       // count, leaving one block per element. Depends only on the near-list, so build once.
       const Long Nelem = near_elem_cnt.Dim();
       const Long N_near = (Nelem ? near_elem_dsp[Nelem-1] + near_elem_cnt[Nelem-1] : 0);
       const Long grain = std::max<Long>(1, N_near/(4*SCTL_GET_MAX_THREADS()));
-      ScratchBuf<Long> cnt_buf(Nelem), dsp_buf(Nelem);
-      Vector<Long> blk_cnt(Nelem, cnt_buf.begin(), false), blk_dsp(Nelem, dsp_buf.begin(), false);
+      ScratchBuf<Long> blk_cnt(Nelem), blk_dsp(Nelem);
       #pragma omp parallel for schedule(static)
       for (Long e = 0; e < Nelem; e++) blk_cnt[e] = (near_elem_cnt[e] + grain-1) / grain;
-      if (Nelem) blk_dsp[0] = 0; // omp_par::scan does not write B[0]
-      omp_par::scan(blk_cnt.begin(), blk_dsp.begin(), Nelem);
+      omp_par::scan(blk_cnt.begin(), blk_dsp.begin(), Nelem, 0);
       const Long Nblk = (Nelem ? blk_dsp[Nelem-1] + blk_cnt[Nelem-1] : 0);
-      near_blk_elem.ReInit(Nblk); near_blk_t0.ReInit(Nblk); near_blk_cnt.ReInit(Nblk);
+      near_blk_elem.ReInit(Nblk);
+      near_blk_t0.ReInit(Nblk);
+      near_blk_cnt.ReInit(Nblk);
       #pragma omp parallel for schedule(static)
       for (Long e = 0; e < Nelem; e++) {
         Long b = blk_dsp[e];
@@ -1039,7 +1067,6 @@ namespace sctl {
       if (Nelem) { // Set K_near_cnt, K_near_dsp
         K_near_cnt.ReInit(Nelem);
         K_near_dsp.ReInit(Nelem);
-        if (Nelem) K_near_dsp[0] = 0;
         #pragma omp parallel for schedule(static)
         for (Long elem_idx = 0; elem_idx < Nelem; elem_idx++) {
           const Long elem_lst_idx = std::lower_bound(elem_lst_dsp.begin(), elem_lst_dsp.end(), elem_idx+1) - elem_lst_dsp.begin() - 1;
@@ -1050,7 +1077,7 @@ namespace sctl {
             K_near_cnt[elem_idx] = elem_nds_cnt[elem_idx]*near_elem_cnt[elem_idx];
           }
         }
-        omp_par::scan(K_near_cnt.begin(), K_near_dsp.begin(), Nelem);
+        omp_par::scan(K_near_cnt.begin(), K_near_dsp.begin(), Nelem, (Long)0);
       }
       Profile::Tic("KNearBuild", &comm_, false, 7);
       if (Nelem) { // Set K_near
@@ -1091,7 +1118,7 @@ namespace sctl {
               const Long k = i - near_elem_dsp[elem_idx]; // target index in near-list of elem_idx
               Long min_Xt = -1, min_Xsurf = -1;
               const Vector<Real> Xt(COORD_DIM, Xtrg_near.begin()+(near_elem_dsp[elem_idx]+k)*COORD_DIM, false);
-              const Vector<Real> Xn((trg_normal_dot_prod_ ? COORD_DIM : 0), Xn_trg_near.begin()+(near_elem_dsp[elem_idx]+k)*COORD_DIM, false);
+              const Vector<Real> Xn((trg_normal_dot_prod_ ? COORD_DIM : 0), (trg_normal_dot_prod_ ? Xn_trg_near.begin()+(near_elem_dsp[elem_idx]+k)*COORD_DIM : NullIterator<Real>()), false);
               auto compute_min_dist2 = [](Long& min_idx, Long& min_idy, const Vector<Real>& X, const Vector<Real>& Y) {
                 const Long Nx = X.Dim() / COORD_DIM;
                 const Long Ny = Y.Dim() / COORD_DIM;
@@ -1156,6 +1183,9 @@ namespace sctl {
       }
       Profile::Toc();
 
+      // the far-field kernel as ComputeFarField evaluates it, so that the part subtracted here cancels it up to
+      // rounding, also for a target very near a far-field node
+      const auto ker_far = fmm.KernelMatrixS2T("Src", "Trg");
       Profile::Tic("KNearSubtract", &comm_, false, 7);
       for (Long i = 0; i < Nlst; i++) { // Subtract direct-interaction part from K_near
         const auto& elem_lst = elem_lst_map.at(elem_lst_name[i]);
@@ -1168,7 +1198,7 @@ namespace sctl {
           const Long trg_cnt = near_blk_cnt[blk];
           const Long trg_dsp = near_elem_dsp[elem_idx] + t0;
           const Vector<Real> Xtrg_near_(trg_cnt*COORD_DIM, Xtrg_near.begin()+trg_dsp*COORD_DIM, false);
-          const Vector<Real> Xn_trg_near_((trg_normal_dot_prod_ ? trg_cnt*COORD_DIM : 0), Xn_trg_near.begin()+trg_dsp*COORD_DIM, false);
+          const Vector<Real> Xn_trg_near_((trg_normal_dot_prod_ ? trg_cnt*COORD_DIM : 0), (trg_normal_dot_prod_ ? Xn_trg_near.begin()+trg_dsp*COORD_DIM : NullIterator<Real>()), false);
           if (!trg_cnt) continue;
 
           const Long far_src_cnt = elem_nds_cnt_far[elem_idx];
@@ -1188,7 +1218,7 @@ namespace sctl {
               constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
               ScratchBuf<Real> Mker__storage(far_src_cnt*KDIM0 * trg_cnt*KDIM1);
               Matrix<Real> Mker_(far_src_cnt*KDIM0, trg_cnt*KDIM1, Mker__storage.begin(), false);
-              ker_.template KernelMatrix<Real,false>(Mker_, Xtrg_near_, X, Xn);
+              ker_far(Mker_, Xtrg_near_, X, Xn);
               for (Long s = 0; s < far_src_cnt; s++) {
                 for (Long k0 = 0; k0 < KDIM0; k0++) {
                   for (Long t = 0; t < trg_cnt; t++) {
@@ -1202,7 +1232,7 @@ namespace sctl {
                 }
               }
             } else {
-              ker_.template KernelMatrix<Real,false>(Mker, Xtrg_near_, X, Xn);
+              ker_far(Mker, Xtrg_near_, X, Xn);
               for (Long s = 0; s < far_src_cnt; s++) {
                 for (Long k0 = 0; k0 < KDIM0; k0++) {
                   for (Long t = 0; t < trg_cnt*KDIM1; t++) {
@@ -1285,13 +1315,14 @@ namespace sctl {
 
     if (trg_normal_dot_prod_) {
       constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
-      Vector<Real> U_(Ntrg * KDIM1); U_.SetZero();
-      fmm.Eval(U_, "Trg");
+      ScratchBuf<Real> U_full_buf(Ntrg * KDIM1);
+      Vector<Real> U_full(U_full_buf); // before the dot product with the target normals
+      fmm.Eval(U_full, "Trg");
       #pragma omp parallel for schedule(static)
       for (Long i = 0; i < Ntrg; i++) {
         for (Long k = 0; k < KDIM1_; k++) {
           for (Long l = 0; l < COORD_DIM; l++) {
-            U[i*KDIM1_+k] += U_[(i*KDIM1_+k)*COORD_DIM+l] * Xn_trg[i*COORD_DIM+l];
+            U[i*KDIM1_+k] += U_full[(i*KDIM1_+k)*COORD_DIM+l] * Xn_trg[i*COORD_DIM+l];
           }
         }
       }
@@ -1344,7 +1375,7 @@ namespace sctl {
         const Long j = elem_idx - elem_lst_dsp[i];
         if (j < 0 || j >= elem_lst_cnt[i]) continue; // block belongs to another element list
         const Vector<Real> Xt(nt*COORD_DIM, Xtrg_near.begin() + (near_elem_dsp[elem_idx]+t0)*COORD_DIM, false);
-        const Vector<Real> Xn(nt*(trg_normal_dot_prod_ ? COORD_DIM : 0), Xn_trg_near.begin() + (near_elem_dsp[elem_idx]+t0)*COORD_DIM, false);
+        const Vector<Real> Xn(nt*(trg_normal_dot_prod_ ? COORD_DIM : 0), (trg_normal_dot_prod_ ? Xn_trg_near.begin() + (near_elem_dsp[elem_idx]+t0)*COORD_DIM : NullIterator<Real>()), false);
 
         {
           const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;

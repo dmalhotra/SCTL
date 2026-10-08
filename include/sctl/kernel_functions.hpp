@@ -29,7 +29,10 @@ namespace sctl {
      * identical results from uKerMatrix.
      */
 
+    // SingularOrder: kernel grows like 1/r^order toward the surface. Read by the on-surface
+    // hedgehog scheme; steeper needs a smaller proxy offset and tighter quadrature.
     struct Laplace3D_FxU {
+      static constexpr Integer SingularOrder() { return 1; }
       static const std::string& Name() {
         static const std::string name = "Laplace3D-FxU";
         return name;
@@ -59,6 +62,7 @@ namespace sctl {
     };
 
     struct Laplace3D_DxU {
+      static constexpr Integer SingularOrder() { return 2; }
       static const std::string& Name() {
         static const std::string name = "Laplace3D-DxU";
         return name;
@@ -79,6 +83,7 @@ namespace sctl {
     };
 
     struct Laplace3D_FxdU {
+      static constexpr Integer SingularOrder() { return 2; }
       static const std::string& Name() {
         static const std::string name = "Laplace3D-FxdU";
         return name;
@@ -123,6 +128,7 @@ namespace sctl {
     };
 
     struct Stokes3D_FxU {
+      static constexpr Integer SingularOrder() { return 1; }
       static const std::string& Name() {
         static const std::string name = "Stokes3D-FxU";
         return name;
@@ -178,6 +184,7 @@ namespace sctl {
     };
 
     struct Stokes3D_DxU {
+      static constexpr Integer SingularOrder() { return 2; }
       static const std::string& Name() {
         static const std::string name = "Stokes3D-DxU";
         return name;
@@ -218,6 +225,7 @@ namespace sctl {
     };
 
     struct Stokes3D_FxT {
+      static constexpr Integer SingularOrder() { return 2; }
       static const std::string& Name() {
         static const std::string name = "Stokes3D-FxT";
         return name;
@@ -262,6 +270,7 @@ namespace sctl {
     };
 
     struct Stokes3D_FSxU {
+      static constexpr Integer SingularOrder() { return 2; }   // 1/r velocity, 1/r^2 source column
       static const std::string& Name() {
         static const std::string name = "Stokes3D-FSxU";
         return name;
@@ -323,6 +332,7 @@ namespace sctl {
     };
 
     struct Stokes3D_FxUP {
+      static constexpr Integer SingularOrder() { return 2; }   // 1/r velocity, 1/r^2 pressure column
       static const std::string& Name() {
         static const std::string name = "Stokes3D-FxUP";
         return name;
@@ -390,6 +400,7 @@ namespace sctl {
     };
 
     struct Laplace3D_DxdU {
+      static constexpr Integer SingularOrder() { return 3; }
       static const std::string& Name() {
         static const std::string name = "Laplace3D-DxdU";
         return name;
@@ -414,6 +425,7 @@ namespace sctl {
     };
 
     struct BiotSavart3D_FxU {
+      static constexpr Integer SingularOrder() { return 2; }
       static const std::string& Name() {
         static const std::string name = "BiotSavart3D-FxU";
         return name;
@@ -680,8 +692,8 @@ namespace sctl {
   using Stokes3D_FxU = GenericKernel<kernel_impl::Stokes3D_FxU>;
   using Stokes3D_DxU = GenericKernel<kernel_impl::Stokes3D_DxU>;
   using Stokes3D_FxT = GenericKernel<kernel_impl::Stokes3D_FxT>; // single-layer source ---> traction-tensor
-  using Stokes3D_FSxU = GenericKernel<kernel_impl::Stokes3D_FSxU>; // single-layer + source/sink ---> velocity (required for FMM translations involving double-layer - M2M, M2L, M2T)
-  using Stokes3D_FxUP = GenericKernel<kernel_impl::Stokes3D_FxUP>; // single-layer source ---> velocity + pressure
+  using Stokes3D_FSxU = GenericKernel<kernel_impl::Stokes3D_FSxU>; // single-layer + source/sink ---> velocity (required for FMM translations involving double-layer - M2M, M2L, M2T); the source term s r/(8 pi |r|^3) is half the velocity of a point source of volume flux s, a scale that the equivalent densities of FMM translations absorb
+  using Stokes3D_FxUP = GenericKernel<kernel_impl::Stokes3D_FxUP>; // single-layer source ---> velocity + pressure; the pressure (f.r)/(8 pi |r|^3) is half that of the Stokeslet, (f.r)/(4 pi |r|^3), a scale that the check potentials of FMM translations absorb
 
 }  // end namespace
 

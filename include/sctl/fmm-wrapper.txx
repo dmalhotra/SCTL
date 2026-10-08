@@ -22,6 +22,8 @@
 #include "sctl/mem_mgr.txx"           // for aligned_new, aligned_delete
 #include "sctl/profile.hpp"           // for Profile
 #include "sctl/profile.txx"           // for Profile::Tic, Profile::Toc, Pro...
+#include "sctl/scratch_pool.hpp"      // for ScratchBuf
+#include "sctl/scratch_pool.txx"      // for ScratchBuf
 #include "sctl/static-array.hpp"      // for StaticArray
 #include "sctl/static-array.txx"      // for StaticArray::operator[], Static...
 #include "sctl/vector.hpp"            // for Vector
@@ -152,12 +154,11 @@ template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::S2TData {
 
   void (*ker_s2t_eval)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) = nullptr;
   void (*ker_s2t_eval_omp)(Vector<Real>& v_trg, const Vector<Real>& r_trg, const Vector<Real>& r_src, const Vector<Real>& n_src, const Vector<Real>& v_src, Integer digits, ConstIterator<char> self) = nullptr;
+  void (*ker_s2t_matrix)(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn, Integer digits, ConstIterator<char> self) = nullptr;
 
   void (*delete_ker_s2t)(Iterator<char> ker) = nullptr;
 
   #ifdef SCTL_HAVE_PVFMM
-  mutable Real bbox_scale = 0;
-  mutable StaticArray<Real,DIM> bbox_offset;
   mutable Vector<Real> src_scal_exp, trg_scal_exp;
   mutable Vector<Real> src_scal, trg_scal;
   mutable pvfmm::Kernel<Real> pvfmm_ker_s2t;
@@ -449,6 +450,7 @@ template <class Real, Integer DIM> template <class KerS2T> void ParticleFMM<Real
 
   data.ker_s2t_eval = KerS2T::template Eval<Real,false>;
   data.ker_s2t_eval_omp = KerS2T::template Eval<Real,true>;
+  data.ker_s2t_matrix = KerS2T::template KernelMatrix<Real,false>;
   data.delete_ker_s2t = DeleteKer<KerS2T>;
 
   #ifdef SCTL_HAVE_PVFMM
@@ -562,6 +564,18 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
   if (U_.Dim() != Nt * TrgDim) U_.ReInit(Nt * TrgDim);
   U_.SetZero();
 
+  if (np == 1) { // one process: from the sources and targets as they are, without the copies that distributing them needs
+    for (auto& it : s2t_map) {
+      if (it.first.second != trg_name) continue;
+      SCTL_ASSERT_MSG(src_map.find(it.first.first) != src_map.end(), "Source name does not exist.");
+      const auto& src_data = src_map.at(it.first.first);
+      const Vector<Real> Xn_dummy;
+      const Vector<Real>& Xn = (src_data.dim_normal ? src_data.Xn : Xn_dummy);
+      it.second.ker_s2t_eval_omp(U_, Xt_, src_data.X, Xn, src_data.F, digits_, it.second.ker_s2t);
+    }
+    return;
+  }
+
   auto partition = [this](Vector<Real>& X, const Long dof) {
     StaticArray<Long,2> cnt{X.Dim()/dof, 0};
     comm_.Allreduce(cnt+0, cnt+1, 1, CommOp::SUM);
@@ -620,6 +634,38 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalDirect(Vector
   }
   comm_.PartitionN(U, U_.Dim());
   U_ += U;
+}
+
+template <class Real, Integer DIM> std::function<void(Matrix<Real>&, const Vector<Real>&, const Vector<Real>&, const Vector<Real>&)> ParticleFMM<Real,DIM>::KernelMatrixS2T(const std::string& src_name, const std::string& trg_name) const {
+  const auto name = std::make_pair(src_name, trg_name);
+  SCTL_ASSERT_MSG(s2t_map.find(name) != s2t_map.end(), "Source-target pair does not exist.");
+  const auto& s2t_data = s2t_map.at(name);
+  const auto ker_matrix = s2t_data.ker_s2t_matrix;
+  const ConstIterator<char> ker = s2t_data.ker_s2t;
+
+  #ifdef SCTL_HAVE_PVFMM
+  if (UsePVFMM(trg_name)) { // as PVFMM: in its unit box, at full accuracy, with the scaling of its densities and potentials
+    StaticArray<Real,DIM> bbox_offset;
+    Real bbox_scale;
+    Vector<Real> src_scal, trg_scal;
+    PVFMMBox(bbox_offset, bbox_scale, src_scal, trg_scal, src_name, trg_name);
+    return [ker_matrix, ker, bbox_offset, bbox_scale, src_scal, trg_scal](Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn) {
+      ScratchBuf<Real> Xt_box_buf(Xt.Dim()), Xs_box_buf(Xs.Dim());
+      Vector<Real> Xt_box(Xt_box_buf), Xs_box(Xs_box_buf); // in PVFMM's box
+      for (Long i = 0; i < Xt.Dim(); i++) Xt_box[i] = (Xt[i] - bbox_offset[i%DIM]) * bbox_scale;
+      for (Long i = 0; i < Xs.Dim(); i++) Xs_box[i] = (Xs[i] - bbox_offset[i%DIM]) * bbox_scale;
+      ker_matrix(M, Xt_box, Xs_box, Xn, -1, ker);
+      const Integer SrcDim = src_scal.Dim(), TrgDim = trg_scal.Dim();
+      for (Long s = 0; s < M.Dim(0); s++) {
+        for (Long t = 0; t < M.Dim(1); t++) M[s][t] *= src_scal[s%SrcDim] * trg_scal[t%TrgDim];
+      }
+    };
+  }
+  #endif
+  const Integer digits = digits_;
+  return [ker_matrix, ker, digits](Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn) {
+    ker_matrix(M, Xt, Xs, Xn, digits, ker);
+  };
 }
 
 template <class Real, Integer DIM> template <class Ker> void ParticleFMM<Real,DIM>::DeleteKer(Iterator<char> ker) {
@@ -851,9 +897,51 @@ template <class SCTLKernel, bool use_dummy_normal> template <class VecType, int 
   }
 }
 
-template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<Real>& U, const std::string& trg_name) const {
-  if (DIM != 3) return EvalDirect(U, trg_name); // PVFMM only supports 3D
+template <class Real, Integer DIM> bool ParticleFMM<Real,DIM>::UsePVFMM(const std::string& trg_name) const {
+  if (DIM != 3) return false; // PVFMM only supports 3D
+  if (periodicity_ != Periodicity::NONE) return true;
+  StaticArray<Long,2> cnt{trg_map.at(trg_name).X.Dim()/DIM, 0};
+  comm_.Allreduce(cnt+0, cnt+1, 1, CommOp::SUM);
+  return (cnt[1] >= 40000); // direct evaluation for small problems
+}
 
+template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::PVFMMBox(StaticArray<Real,DIM>& bbox_offset, Real& bbox_scale, Vector<Real>& src_scal, Vector<Real>& trg_scal, const std::string& src_name, const std::string& trg_name) const {
+  const auto& src_data = src_map.at(src_name);
+  const auto& trg_data = trg_map.at(trg_name);
+  StaticArray<Real,DIM*2> bbox;
+  for (Integer k = 0; k < DIM; k++) {
+    bbox[k*2+0] = std::min<Real>(src_data.bbox[k*2+0], trg_data.bbox[k*2+0]);
+    bbox[k*2+1] = std::max<Real>(src_data.bbox[k*2+1], trg_data.bbox[k*2+1]);
+  }
+
+  Real bbox_len = 0;
+  for (Integer k = 0; k < DIM; k++) {
+    bbox_offset[k] = (bbox[k*2+0] + bbox[k*2+1])/2;
+    bbox_len = std::max<Real>(bbox_len, bbox[k*2+1]-bbox[k*2+0]);
+  }
+  if (periodicity_ != Periodicity::NONE) {
+    // Do not offset in periodic directions
+    if (periodicity_==Periodicity::XYZ || periodicity_==Periodicity::XY || periodicity_==Periodicity::X) bbox_offset[0] = 0;
+    if (periodicity_==Periodicity::XYZ || periodicity_==Periodicity::XY) bbox_offset[1] = 0;
+    if (periodicity_==Periodicity::XYZ) bbox_offset[2] = 0;
+    bbox_len = period_length_;
+  } else {
+    bbox_len *= (Real)1.1; // extra 5% padding so that points are not on boundary
+  }
+
+  bbox_scale = 1/bbox_len;
+  for (Integer k = 0; k < DIM; k++) {
+    bbox_offset[k] -= 1/(2*bbox_scale);
+  }
+
+  const auto& s2t_data = s2t_map.at(std::make_pair(src_name, trg_name));
+  src_scal.ReInit(s2t_data.dim_src);
+  trg_scal.ReInit(s2t_data.dim_trg);
+  for (Integer i = 0; i < src_scal.Dim(); i++) src_scal[i] = pow<Real>(bbox_scale, s2t_data.src_scal_exp[i]);
+  for (Integer i = 0; i < trg_scal.Dim(); i++) trg_scal[i] = pow<Real>(bbox_scale, s2t_data.trg_scal_exp[i]);
+}
+
+template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<Real>& U, const std::string& trg_name) const {
   SCTL_ASSERT_MSG(trg_map.find(trg_name) != trg_map.end(), "Target name does not exist.");
   const auto& trg_data = trg_map.at(trg_name);
   const Integer TrgDim = trg_data.dim_trg;
@@ -861,11 +949,7 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
 
   const Long Nt = Xt.Dim() / DIM;
   SCTL_ASSERT(Xt.Dim() == Nt * DIM);
-  if (periodicity_ == Periodicity::NONE) { // Use EvalDirect for small problems or with periodicity
-    StaticArray<Long,2> cnt{Nt,0};
-    comm_.Allreduce(cnt+0, cnt+1, 1, CommOp::SUM);
-    if (cnt[1] < 40000) return EvalDirect(U, trg_name);
-  }
+  if (!UsePVFMM(trg_name)) return EvalDirect(U, trg_name);
   if (U.Dim() != Nt * TrgDim) U.ReInit(Nt * TrgDim);
   U.SetZero();
 
@@ -913,43 +997,9 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
       Vector<Real>& trg_scal = s2t_data.trg_scal;
       pvfmm::PtFMM_Tree<Real>*& tree_ptr = s2t_data.tree_ptr;
       if (s2t_data.setup_tree) { // Setup tree_ptr, src_scal, trg_scal
-        auto& bbox_scale = s2t_data.bbox_scale;
-        auto& bbox_offset = s2t_data.bbox_offset;
-        { // Set bbox_scale, bbox_offset
-          StaticArray<Real,DIM*2> bbox;
-          for (Integer k = 0; k < DIM; k++) {
-            bbox[k*2+0] = std::min<Real>(src_data.bbox[k*2+0], trg_data.bbox[k*2+0]);
-            bbox[k*2+1] = std::max<Real>(src_data.bbox[k*2+1], trg_data.bbox[k*2+1]);
-          }
-
-          Real bbox_len = 0;
-          for (Integer k = 0; k < DIM; k++) {
-            bbox_offset[k] = (bbox[k*2+0] + bbox[k*2+1])/2;
-            bbox_len = std::max<Real>(bbox_len, bbox[k*2+1]-bbox[k*2+0]);
-          }
-          if (periodicity_ != Periodicity::NONE) {
-            // Do not offset in periodic directions
-            if (periodicity_==Periodicity::XYZ || periodicity_==Periodicity::XY || periodicity_==Periodicity::X) bbox_offset[0] = 0;
-            if (periodicity_==Periodicity::XYZ || periodicity_==Periodicity::XY) bbox_offset[1] = 0;
-            if (periodicity_==Periodicity::XYZ) bbox_offset[2] = 0;
-            bbox_len = period_length_;
-          } else {
-            bbox_len *= (Real)1.1; // extra 5% padding so that points are not on boundary
-          }
-
-          bbox_scale = 1/bbox_len;
-          for (Integer k = 0; k < DIM; k++) {
-            bbox_offset[k] -= 1/(2*bbox_scale);
-          }
-        }
-        { // Set src_scal, trg_scal
-          src_scal.ReInit(SrcDim);
-          trg_scal.ReInit(TrgDim);
-          const Vector<Real>& src_scal_exp = s2t_data.src_scal_exp;
-          const Vector<Real>& trg_scal_exp = s2t_data.trg_scal_exp;
-          for (Integer i = 0; i < SrcDim; i++) src_scal[i] = pow<Real>(bbox_scale, src_scal_exp[i]);
-          for (Integer i = 0; i < TrgDim; i++) trg_scal[i] = pow<Real>(bbox_scale, trg_scal_exp[i]);
-        }
+        StaticArray<Real,DIM> bbox_offset;
+        Real bbox_scale;
+        PVFMMBox(bbox_offset, bbox_scale, src_scal, trg_scal, src_name, trg_name);
 
         std::vector<Real> sl_coord_, dl_coord_, trg_coord_(Nt*DIM);
         auto& src_coord = (NorDim ? dl_coord_ : sl_coord_);

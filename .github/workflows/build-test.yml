@@ -65,7 +65,7 @@ jobs:
       - name: Build project
         run: |
           # Set compilation flags dynamically
-          CXXFLAGS="${CPPFLAGS} ${{ matrix.optflag }}"
+          CXXFLAGS="${CPPFLAGS} ${{ matrix.optflag }} ${{ matrix.memdbgflag }}"
           if [ "$(uname -s)" == "Darwin" ] && [ "$(uname -m)" == "arm64" ]; then
             CXXFLAGS+=" -mcpu=apple-m1 -lomp"
           else

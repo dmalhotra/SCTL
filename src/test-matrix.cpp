@@ -5,9 +5,12 @@
 // arithmetic, matrix multiplication (operator* and GEMM), element access
 // (operator() and operator[]), Transpose, SVD, pinv, Write/Read.
 
+#include <complex>
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
+#include <utility>
+#include <vector>
 
 #include "sctl/common.hpp"
 #include "sctl/iterator.hpp"
@@ -151,6 +154,57 @@ int main() {
     Matrix<double> R2 = R + R;
     CHECK(mat_approx(C, R2));
   }
+
+#if SCTL_PROFILE >= 0
+  // --- FLOP counter of entry-wise operations, per entry: 1, and for std::complex add 2, multiply 6,
+  // divide 11 (real operations) ---
+  std::printf("FLOP counter of entry-wise operations :\n");
+  {
+    const auto flops = [](auto zero) { // 2 x 3 entries: A + B, A -= B, A += s, A *= s, A /= s
+      using T = decltype(zero);
+      Matrix<T> A(2, 3), B(2, 3), C;
+      A.SetZero();
+      B.SetZero();
+      const T s = T(2);
+      std::vector<Long> f(1, sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0));
+      const auto count = [&f]() { f.push_back(sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0)); };
+      C = A + B;
+      count();
+      A -= B;
+      count();
+      A += s;
+      count();
+      A *= s;
+      count();
+      A /= s;
+      count();
+      std::vector<Long> df;
+      for (size_t i = 1; i < f.size(); i++) df.push_back(f[i] - f[i - 1]);
+      return df;
+    };
+    CHECK((flops(double(0)) == std::vector<Long>{6, 6, 6, 6, 6}));
+    CHECK((flops(std::complex<double>(0)) == std::vector<Long>{12, 12, 12, 36, 66}));
+  }
+
+  // --- FLOP counter of operator* and GEMM: 2 m n k, 8 m n k for std::complex (real operations) ---
+  std::printf("FLOP counter of products :\n");
+  {
+    const auto flops = [](auto zero) { // 2 x 3 times 3 x 4: m n k = 24
+      using T = decltype(zero);
+      Matrix<T> A(2, 3), B(3, 4), C(2, 4);
+      A.SetZero();
+      B.SetZero();
+      const Long f0 = sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0);
+      const Matrix<T> D = A * B;
+      const Long f1 = sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0);
+      Matrix<T>::GEMM(C, A, B);
+      const Long f2 = sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0);
+      return std::make_pair(f1 - f0, f2 - f1);
+    };
+    CHECK(flops(double(0)) == std::make_pair(Long(2 * 24), Long(2 * 24)));
+    CHECK(flops(std::complex<double>(0)) == std::make_pair(Long(8 * 24), Long(8 * 24)));
+  }
+#endif
 
   // --- scalar ops ---
   std::printf("scalar ops :\n");

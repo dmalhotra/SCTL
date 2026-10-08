@@ -11,6 +11,7 @@
 #include "sctl/comm.txx"         // for Comm::Self
 #include "sctl/vector.hpp"       // for Vector
 #include "sctl/matrix.hpp"       // for Matrix
+#include "sctl/static-array.hpp" // for StaticArray
 
 #ifdef SCTL_HAVE_PVFMM
 namespace pvfmm {
@@ -198,6 +199,15 @@ template <class Real, Integer DIM> class ParticleFMM {
     void EvalDirect(Vector<Real>& U, const std::string& trg_name) const;
 
     /**
+     * Returns a function setting M[s*SrcDim+i][t*TrgDim+j] to the (src_name, trg_name) kernel from Xs, Xn to Xt
+     * exactly as Eval() computes it, without periodic images. Collective; the returned function is thread-safe.
+     *
+     * @param[in] src_name name for the source type.
+     * @param[in] trg_name name for the target type.
+     */
+    std::function<void(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn)> KernelMatrixS2T(const std::string& src_name, const std::string& trg_name) const;
+
+    /**
      * Example code showing usage of class ParticleFMM.
      */
     static void test(const Comm& comm);
@@ -221,6 +231,15 @@ template <class Real, Integer DIM> class ParticleFMM {
     static void BuildSrcTrgScal(const S2TData& s2t_data, bool verbose);
 
     void EvalPVFMM(Vector<Real>& U, const std::string& trg_name) const;
+
+    /** Collective: whether Eval() for trg_name uses PVFMM: in 3D, with periodicity or 40000 targets or more */
+    bool UsePVFMM(const std::string& trg_name) const;
+
+    /**
+     * The map x -> (x - bbox_offset)*bbox_scale of (src_name, trg_name) points into PVFMM's unit box, and the
+     * factors bbox_scale^e scaling PVFMM's kernels for each density (src_scal) and potential (trg_scal) component
+     */
+    void PVFMMBox(StaticArray<Real,DIM>& bbox_offset, Real& bbox_scale, Vector<Real>& src_scal, Vector<Real>& trg_scal, const std::string& src_name, const std::string& trg_name) const;
     #endif
 
     FMMKernels fmm_ker;

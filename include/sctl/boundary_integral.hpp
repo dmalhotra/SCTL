@@ -510,6 +510,7 @@ namespace sctl {
 
       mutable bool setup_self_flag;
       mutable Vector<Matrix<Real>> K_self; // self-interaction matrix for each element (size=Nelem)
+      mutable Vector<Real> K_self_data; // storage of the K_self matrices
   };
 
 }

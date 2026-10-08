@@ -55,6 +55,8 @@ CXXFLAGS += -lfftw3l -DSCTL_HAVE_FFTWL
 #CXXFLAGS += -lmvec -lm -DSCTL_HAVE_LIBMVEC
 #CXXFLAGS += -DSCTL_HAVE_SVML
 
+#CXXFLAGS += -I$(LIBXSMM_DIR)/include -L$(LIBXSMM_DIR)/lib -l:libxsmm.a -lpthread -lrt -ldl -lm -DSCTL_HAVE_LIBXSMM # use LIBXSMM for SmallGEMM
+
 #CXXFLAGS += -I${PETSC_DIR}/include -I${PETSC_DIR}/../include -DSCTL_HAVE_PETSC
 #LDLIBS += -L${PETSC_DIR}/lib -lpetsc
 
@@ -103,9 +105,10 @@ TARGET_BIN = \
        $(BINDIR)/test-sph-harm \
        $(BINDIR)/test-tensor \
        $(BINDIR)/test-vec \
-       $(BINDIR)/test-quad-elem \
        $(BINDIR)/test-scratch-pool \
-       $(BINDIR)/test-scratch-pool-perf
+       $(BINDIR)/test-scratch-pool-perf \
+       $(BINDIR)/test-small-gemm \
+	   $(BINDIR)/test-quad-elem
 
 .PHONY: all gpu test clean
 
@@ -120,7 +123,13 @@ endif
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)
-	$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $^ -o $@
+	$(CXX) $(CXXFLAGS) -MMD -MP -I$(INCDIR) -c $< -o $@
+
+# Header dependencies of each object, written by -MMD -MP, so that a header edit rebuilds the objects that include it
+-include $(wildcard $(OBJDIR)/*.d)
+
+# The objects are kept: the dependency files name them, so make would rebuild any it deleted
+.SECONDARY: $(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGET_BIN))
 
 # GPU tree: needs CUDA and a CUDA-aware MPI, so `gpu` is separate from `all`.
 NVCC = nvcc -ccbin mpicxx
@@ -176,8 +185,9 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-sph-harm
 	./$(BINDIR)/test-tensor
 	./$(BINDIR)/test-vec
-	./$(BINDIR)/test-quad-elem
 	./$(BINDIR)/test-scratch-pool
+	./$(BINDIR)/test-small-gemm
+	./$(BINDIR)/test-quad-elem
 
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*

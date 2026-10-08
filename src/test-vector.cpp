@@ -7,6 +7,7 @@
 // vector free-function operators, Write/Read round-trip, operator<<.
 
 #include <unistd.h>
+#include <complex>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -240,6 +241,41 @@ int main() {
     CHECK(t[0] == 2.0  && t[2] == 6.0);
     CHECK(d[0] == 6.0  && d[2] == 2.0);
   }
+
+#if SCTL_PROFILE >= 0
+  // --- FLOP counter, per entry: 1 for real types; for std::complex, add 2, multiply 6 and
+  // divide 11, and with a real value add 1, multiply 2, divide 2 (7 for a real by a complex) ---
+  std::printf("FLOP counter :\n");
+  {
+    using Z = std::complex<double>;
+    const auto flops = [](auto op) {
+      const Long f0 = sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0);
+      op();
+      return sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, 0) - f0;
+    };
+    Vector<double> x({1.0, 2.0, 3.0, 4.0}), y;
+    Vector<Z> z(4), w;
+    z = Z(1.0, 2.0);
+    CHECK(flops([&]() { y = x + x; }) == 4);
+    CHECK(flops([&]() { y = x / x; }) == 4);
+    CHECK(flops([&]() { y = 2.0 * x; }) == 4);
+    CHECK(flops([&]() { w = z + z; }) == 8);
+    CHECK(flops([&]() { w = z * z; }) == 24);
+    CHECK(flops([&]() { w = z / z; }) == 44);
+    CHECK(flops([&]() { w = z - Z(1.0, 1.0); }) == 8);
+    CHECK(flops([&]() { w = z / Z(1.0, 1.0); }) == 44);
+    CHECK(flops([&]() { w = z + 1.0; }) == 4);
+    CHECK(flops([&]() { w = z * 2.0; }) == 8);
+    CHECK(flops([&]() { w = z / 2.0; }) == 8);
+    CHECK(flops([&]() { w = 2.0 * z; }) == 8);
+    CHECK(flops([&]() { w = 1.0 / z; }) == 28);
+    CHECK(flops([&]() { w = Z(1.0, 1.0) / z; }) == 44);
+    CHECK(flops([&]() { w += z; }) == 8);
+    CHECK(flops([&]() { w *= z; }) == 24);
+    CHECK(flops([&]() { w /= z; }) == 44);
+    CHECK(flops([&]() { w *= 2.0; }) == 8);
+  }
+#endif
 
   // --- operator<< (stream output) ---
   std::printf("operator<< :\n");
