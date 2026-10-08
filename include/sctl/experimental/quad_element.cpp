@@ -110,7 +110,10 @@ namespace sctl {
     using PrecompReal = long double;
     #endif
 
-    /** 1D rule: weights w; basis values M, derivatives dM at its N points; MTD: rows of M^T, then of dM^T (2N x order) */
+    /**
+     * 1D rule: weights w; basis values M, derivatives dM at its N points;
+     * MTD: rows of M^T, then of dM^T (2N x order)
+     */
     template <class Real> struct QuadRule1D {
       Vector<Real> w;
       Matrix<Real> M, dM, MTD;
@@ -147,7 +150,10 @@ namespace sctl {
       }
     }
 
-    /** sets n to the unit normal sign * du x dv / |du x dv|, zero where |du x dv| = 0, and returns the area element |du x dv| */
+    /**
+     * sets n to the unit normal sign * du x dv / |du x dv|, zero where |du x dv| = 0,
+     * and returns the area element |du x dv|
+     */
     template <class Real> Real UnitNormal(Real (&n)[COORD_DIM], const Real (&du)[COORD_DIM], const Real (&dv)[COORD_DIM], const Real sign = 1) {
       const Real n0 = du[1]*dv[2] - du[2]*dv[1];
       const Real n1 = du[2]*dv[0] - du[0]*dv[2];
@@ -222,7 +228,10 @@ namespace sctl {
       }
     }
 
-    /** out[(blk*C + c)*ldo + j] = wj*wq*K(Xt-Xs) at point blk*run+j of nq; component k of the point at Xs[k*ldx + point]; dotted with normal_trg if non-empty; added if accum */
+    /**
+     * out[(blk*C + c)*ldo + j] = wj*wq*K(Xt-Xs) at point blk*run+j of nq;
+     * component k of the point at Xs[k*ldx + point]; dotted with normal_trg if non-empty; added if accum
+     */
     template <class Real, class Kernel> void WeightedKernel(Iterator<Real> out, ConstIterator<Real> Xt, ConstIterator<Real> Xs, ConstIterator<Real> Xn, ConstIterator<Real> wq, const Integer nq, const Integer run, const Integer ldx, const Integer ldo, const Real wj, const bool accum, const Vector<Real>& normal_trg, const Kernel& ker) {
       static constexpr bool HAS_N = UKerNeedsN<Kernel, Vec<Real,1>>::value;
       using WVec = Vec<Real, DefaultVecLen<Real>()>;
@@ -543,7 +552,10 @@ namespace sctl {
       return sqrt<Real>(best_r2);
     }
 
-    /** returns the distance from Xtrg to the element; (ustar, vstar) are the closest point's parameters, found to about 1% of the distance */
+    /**
+     * returns the distance from Xtrg to the element; (ustar, vstar) are the closest point's parameters,
+     * found to about 1% of the distance
+     */
     template <class Real> Real GetClosestPoint(Real& ustar, Real& vstar, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Integer order, const Vector<Real>& Xtrg) {
       const auto dist2_at = [&coord, &dcoord_du, &dcoord_dv, order, &Xtrg](const Real uu, const Real vv) -> Real {
         Real X[COORD_DIM];
@@ -771,7 +783,10 @@ namespace sctl {
       return sqrt<Real>(f);
     }
 
-    /** Returns 'order' values cos^2(pi i/(2(order-1))) for each order: one minus the Chebyshev extreme points sin^2(pi i/(2(order-1))) on [0, 1], computed as cos^2 so that they are accurate where small. */
+    /**
+     * Returns 'order' values cos^2(pi i/(2(order-1))) for each order: one minus the Chebyshev extreme points
+     * sin^2(pi i/(2(order-1))) on [0, 1], computed as cos^2 so that they are accurate where small
+     */
     template <class Real> static const Vector<Real>& NearSubOffsets(const Integer order) {
       SCTL_ASSERT(1 < order && order <= MaxTableOrder);
       static const Vector<Vector<Real>> all = []() {
@@ -791,7 +806,10 @@ namespace sctl {
       return all[order];
     }
 
-    /** sets r, already sized for nseg*q points, to the q-point Gauss-Legendre rule (nodes qn, weights qw on [0, 1]) on each segment [seg[2i], seg[2i+1]] of offsets from the refined end, with the interpolation matrices from the nodes NearSubOffsets(order); computed in W */
+    /**
+     * sets r, sized for nseg*q points, to the q-point Gauss-Legendre rule qn, qw on each segment [seg[2i], seg[2i+1]]
+     * of offsets from the refined end, interpolating from NearSubOffsets(order); computed in W
+     */
     template <Integer order, class W, class Real> void NearSegmentRule(QuadRule1D<Real>& r, ConstIterator<W> seg, const Integer nseg, const Vector<W>& qn, const Vector<W>& qw) {
       const Integer q = qn.Dim();
       const Integer N = nseg*q;
@@ -835,17 +853,14 @@ namespace sctl {
     }
 
     /**
-     * The element split at the target's closest point (ustar, vstar) into up to four sub-rectangles (sdu, sdv), whose
-     * parameters are the offsets from the closest point divided by the side lengths slen[0][sdu] and slen[1][sdv]: the
-     * distance dist of the closest point and the metric (guu, guv, gvv) there, the interpolation from the element to each
-     * side's sub-interval (Sf, and its transpose St), and the coordinates of each sub-rectangle at its nodes relative to
-     * the target (Xsub). The sub-rectangles have the closest point as a node, so that points near it are found from the
-     * small offsets and the small coordinates there, not from the parameters and coordinates of size 1.
+     * The element split at the target's closest point into up to four sub-rectangles with it as a node,
+     * so that points near it are found from small offsets
      */
     template <Integer order, class Real> struct NearSplit {
-      ScratchBuf<Real> Sf, St, Xsub;
-      Real ustar, vstar, dist, guu, guv, gvv;
-      Real slen[2][2];
+      ScratchBuf<Real> Sf, St; // interpolation from the element to each side's sub-interval, and its transpose
+      ScratchBuf<Real> Xsub; // coordinates of each sub-rectangle at its nodes, relative to the target
+      Real ustar, vstar, dist, guu, guv, gvv; // the closest point, its distance, and the metric there
+      Real slen[2][2]; // lengths of the sub-intervals along u and v, the units of the sub-rectangle parameters
 
       NearSplit(const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, ScratchPool& pool) : Sf(4*order*order, pool), St(4*order*order, pool), Xsub(4*COORD_DIM*order*order, pool) {
         const Integer nnode = order*order;
@@ -925,7 +940,10 @@ namespace sctl {
         return Vector<Real>(nsub, Xsub.begin() + (2*sdu+sdv)*nsub, false);
       }
 
-      /** adds to M_acc (nnode x C) the values acc (C x nnode, component-major) at the nodes of sub-rectangle (sdu, sdv), interpolated to the nodes of the element */
+      /**
+       * adds to M_acc (nnode x C) the values acc (C x nnode, component-major) at the nodes of sub-rectangle (sdu, sdv),
+       * interpolated to the nodes of the element
+       */
       void AddToElem(Matrix<Real>& M_acc, const Vector<Real>& acc, const Integer C, const Integer sdu, const Integer sdv, ScratchPool& pool) {
         const Integer nnode = order*order;
         ScratchBuf<Real> accB(C*nnode, pool), accE(nnode, pool);
@@ -989,7 +1007,10 @@ namespace sctl {
       return table[digits];
     }
 
-    /** Returns 2*MaxNearRefineLvl rules for each (order, q), built the first time q is requested: q-point Gauss-Legendre on the dyadic intervals at offsets [2^-(k+1), 2^-k] from the refined end and on the tails [0, 2^-k], each with order x q interpolation matrices. */
+    /**
+     * Returns the 2*MaxNearRefineLvl q-point Gauss-Legendre rules of (order, q), built on first request:
+     * on intervals [2^-(k+1), 2^-k] of offsets from the refined end, and on tails [0, 2^-k]
+     */
     template <Integer order, class Real> const Vector<QuadRule1D<Real>>& NearGradeTable(const Integer q) {
       const auto build = [](const Integer q) {
         using W = PrecompReal;
@@ -1017,7 +1038,10 @@ namespace sctl {
       return all[q];
     }
 
-    /** quad_order: Gauss-Legendre order on each piece, or 0 to choose it from digits and the tangent angle at the closest point */
+    /**
+     * quad_order: Gauss-Legendre order on each piece, or 0 to choose it from digits and the tangent angle
+     * at the closest point
+     */
     template <Integer order, class Real, class Kernel> void NearInteracBlockDyadic(Matrix<Real>& M_acc, const Vector<Real>& coord, const Vector<Real>& dcoord_du, const Vector<Real>& dcoord_dv, const Vector<Real>& Xtrg, const Vector<Real>& normal_trg, const Kernel& ker, const Integer digits, const Integer quad_order = 0, const Vector<Real>& proxy_off = Vector<Real>(), const Vector<Real>& proxy_w = Vector<Real>()) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
       static constexpr Integer KDIM1full = Kernel::TrgDim();
@@ -1208,7 +1232,10 @@ namespace sctl {
     using detail_quadelem::UnitNormal;
     using detail_quadelem::WeightedKernel;
 
-    /** u and v of the corners of the parameter square, counterclockwise from (0, 0); edge kt joins corners kt and kt+1 */
+    /**
+     * u and v of the corners of the parameter square, counterclockwise from (0, 0);
+     * edge kt joins corners kt and kt+1
+     */
     static constexpr Integer CornerU[4] = {0, 1, 1, 0};
     static constexpr Integer CornerV[4] = {0, 0, 1, 1};
 
@@ -1218,11 +1245,17 @@ namespace sctl {
       Real J0 = 0;
       Integer alpha = 0, beta = 0; // indices of the interpolation matrices along alpha and beta in DuffySelfTable
     };
-    /** Interpolation along alpha, the parameter (u, or v if swap_ab) along the triangle's side opposite the target node, a side of the parameter square: with its derivative, at each s-node, and the transposes without it */
+    /**
+     * Interpolation along alpha, the parameter (u, or v if swap_ab) along the triangle's side opposite the target
+     * node, with its derivative, at each s-node; transposes without it
+     */
     template <class Real> struct DuffyAlpha {
       Vector<Matrix<Real>> interp, interp_T;
     };
-    /** Interpolation along beta, the parameter (v, or u if swap_ab) that runs from the target node to the triangle's side opposite it, a side of the parameter square: with its derivative, at the s-nodes, and the transpose without it */
+    /**
+     * Interpolation along beta, the parameter (v, or u if swap_ab) from the target node to the triangle's side
+     * opposite it, with its derivative, at the s-nodes; transpose without it
+     */
     template <class Real> struct DuffyBeta {
       Matrix<Real> interp, interp_T;
     };
@@ -1234,7 +1267,10 @@ namespace sctl {
       std::vector<DuffyBeta<Real>> beta;
     };
 
-    /** Returns, for each order, a (2 + ceil(order/2))-point radial rule and, for each of the 4*order^2 (node, triangle) pairs, its Jacobian, orientation and the indices of its interpolation matrices along alpha and beta. Those depend on the triangle and one index of the node only, and are stored once for each: 4*order of each kind. */
+    /**
+     * Returns the order's radial rule and, for each (node, triangle) pair, its Jacobian, orientation and the indices
+     * of its interpolation matrices, which depend on the triangle and one node index
+     */
     template <Integer order, class Real> const DuffySelfTable<Real>& DuffyTable() {
       static const DuffySelfTable<Real> table = []() {
         DuffySelfTable<Real> tbl;
@@ -1652,7 +1688,10 @@ namespace sctl {
       }
     }
 
-    /** Returns the rule toward node ti along u for each (order, digits, quad_order), built the first time it is requested: quad_order-point Gauss-Legendre on intervals halving min(MaxRefineLvl, 2*digits+6) times toward the node on each side, with order x N interpolation matrices. */
+    /**
+     * Returns the rule of (order, digits, quad_order) toward node ti along u, built on first request: quad_order-point
+     * Gauss-Legendre on intervals halving min(MaxRefineLvl, 2*digits+6) times toward the node on each side
+     */
     template <Integer order, class Real> const QuadRule1D<Real>& CenteredURule(const Integer ti, const Integer digits, const Integer quad_order) {
       const auto build = [](const Integer digits, const Integer quad_order) {
         const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
@@ -1691,7 +1730,10 @@ namespace sctl {
       return table[digits][quad_order][ti];
     }
 
-    /** Returns the rule toward node tj along v for each (order, Lvl, quad_order), built the first time it is requested: quad_order-point Gauss-Legendre on Lvl panels halving toward the node on each side, then one order-16 Alpert panel per side, log-corrected at the node, with order x N interpolation matrices. */
+    /**
+     * Returns the rule of (order, Lvl, quad_order) toward node tj along v, built on first request: per side,
+     * Lvl Gauss-Legendre panels halving toward the node, then a log-corrected Alpert panel
+     */
     template <Integer order, class Real> const QuadRule1D<Real>& CenteredVRule(const Integer tj, const Integer Lvl, const Integer quad_order) {
       const auto build = [](const Integer Lvl, const Integer quad_order) {
         const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(order);
@@ -1754,12 +1796,8 @@ namespace sctl {
     using detail_quadelem::WeightedKernel;
 
     /**
-     * Returns d such that the kernel, dotted with the target normal if trg_dot_prod, grows like 1/r^d as a
-     * source approaches the target along a surface: the target at the origin of a curved model surface,
-     * whose normal and curvatures are in no special direction, the sources on it at distance h and 2h in 3
-     * directions, each with the surface normal there as its normal; for each kernel entry log2(A(h)/A(2h)),
-     * A the largest magnitude over the directions, and d the largest over the entries. A curved surface, as
-     * the factor n.r of a double layer vanishes on a plane but is of order r^2 on a curved surface.
+     * Returns d such that the kernel, dotted with the target normal if trg_dot_prod, grows like 1/r^d
+     * along a curved model surface: from sources at distances h and 2h
      */
     template <class Real, class Kernel> Real SurfaceSingularDegree(const Kernel& ker, const bool trg_dot_prod, const Real h) {
       static constexpr Integer KDIM0 = Kernel::SrcDim();
@@ -1768,6 +1806,7 @@ namespace sctl {
       constexpr Integer nq = 2*ndir;
       const Integer C = KDIM0*(trg_dot_prod ? KDIM1/COORD_DIM : KDIM1);
       const Real ang[ndir] = {(Real)0.3, (Real)2.4, (Real)4.1};
+      // curved, as the factor n.r of a double layer vanishes on a plane
       const Real k11 = (Real)0.7, k12 = (Real)0.3, k22 = (Real)-0.4;
 
       StaticArray<Real,COORD_DIM> n{(Real)0.36, (Real)-0.48, (Real)0.8}, a, b;
