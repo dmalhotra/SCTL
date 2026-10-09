@@ -13,16 +13,16 @@
 \definecolor{cVec}{RGB}{110,55,150}
 \begin{document}
 \begin{tikzpicture}
-\begin{axis}[width=4.2in,height=6.2cm,xmode=log,
+\begin{axis}[width=4.2in,height=8.5cm,xmode=log,
              xlabel={error},ylabel={points/s/core},xmin=1e-14,xmax=1e-4,ymin=0,ymax=22000,
              scaled y ticks=false,ytick={0,5000,10000,15000,20000},yticklabels={0,{5,000},{10,000},{15,000},{20,000}},
-             legend style={at={(0.5,-0.26)},anchor=north,font=\scriptsize,draw=none},legend columns=3,
+             legend style={at={(0.5,-0.19)},anchor=north,font=\scriptsize,draw=none},legend columns=3,
              grid=major,grid style={cGrey!20},tick label style={font=\scriptsize},label style={font=\small}]
 \addplot[cElem,thick,mark=*,mark size=1.4]         table[x=lappi6_err,y=lappi6_pps] {data/convergence-genoa.dat}; \addlegendentry{Laplace, $\pi/6$}
-  \addplot[cElem,thick,dashed,mark=*,mark size=1.4]  table[x=stopi6_err,y=stopi6_pps] {data/convergence-genoa.dat}; \addlegendentry{Stokes, $\pi/6$}
   \addplot[cTrg,thick,mark=square*,mark size=1.4]        table[x=lappi2_err,y=lappi2_pps] {data/convergence-genoa.dat}; \addlegendentry{Laplace, $\pi/2$}
-  \addplot[cTrg,thick,dashed,mark=square*,mark size=1.4] table[x=stopi2_err,y=stopi2_pps] {data/convergence-genoa.dat}; \addlegendentry{Stokes, $\pi/2$}
   \addplot[black,thick,mark=triangle*,mark size=1.8]        table[x=lappi_err,y=lappi_pps] {data/convergence-genoa.dat}; \addlegendentry{Laplace, $\pi$}
+  \addplot[cElem,thick,dashed,mark=*,mark size=1.4]  table[x=stopi6_err,y=stopi6_pps] {data/convergence-genoa.dat}; \addlegendentry{Stokes, $\pi/6$}
+  \addplot[cTrg,thick,dashed,mark=square*,mark size=1.4] table[x=stopi2_err,y=stopi2_pps] {data/convergence-genoa.dat}; \addlegendentry{Stokes, $\pi/2$}
   \addplot[black,thick,dashed,mark=triangle*,mark size=1.8] table[x=stopi_err,y=stopi_pps] {data/convergence-genoa.dat}; \addlegendentry{Stokes, $\pi$}
 \end{axis}
 \end{tikzpicture}
