@@ -2198,7 +2198,7 @@ namespace sctl { // Generic
       return x_.v;
     }
   }
-  // acosh(x) = log(x + sqrt(x^2 - 1)) with the rounding errors (of x^2 - 1 and the square root only for x < 2); log(2x)
+  // acosh(x) = log(x + sqrt(x^2 - 1)), for x < 2 with the rounding errors of x^2 - 1, the square root and the sum; log(2x)
   // from 2^(SigBits/2). digits = -1: full. FullRange = false: 1 < x < 2^(SigBits/2)
   template <Integer digits = -1, bool FullRange = true, class VData> inline VData acosh_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
@@ -2208,7 +2208,8 @@ namespace sctl { // Generic
       const VData g = (fused_fma<VData> ? fma_intrin(x, x, unary_minus_intrin(one)) : mul_intrin(sub_intrin(x, one), add_intrin(x, one))); // x - 1 exact for x <= 2
       const VData s = sqrt_intrin(g);
       const VData v = add_intrin(x, s);
-      VData c = sub_intrin(s, sub_intrin(v, x)); // x >= s
+      VData e, f;
+      log_split_intrin<false>(e, f, v);
       if (mask_count_intrin(comp_intrin<ComparisonType::lt>(x, set1_intrin<VData>((Real)2))) > 0) {
         VData g_err;
         if constexpr (fused_fma<VData>) {
@@ -2218,11 +2219,9 @@ namespace sctl { // Generic
           const VData z = add_intrin(x, one);
           g_err = fma_intrin(sub_intrin(x, one), sub_intrin(one, sub_intrin(z, x)), mul_sub_exact_intrin(sub_intrin(x, one), z, g)); // (x - 1)(z + z_err) - g
         }
-        c = add_intrin(c, sqrt_err_intrin(s, g, g_err));
+        f = log_split_add_intrin(e, f, add_intrin(sub_intrin(s, sub_intrin(v, x)), sqrt_err_intrin(s, g, g_err))); // x >= s
       }
-      VData e, f;
-      log_split_intrin<false>(e, f, v);
-      const VData r = approx_log_split_poly_intrin<digits>(e, log_split_add_intrin(e, f, c));
+      const VData r = approx_log_split_poly_intrin<digits>(e, f);
       const VData vlim = set1_intrin<VData>(lim);
       if (!FullRange || mask_count_intrin(comp_intrin<ComparisonType::gt>(x, one) & comp_intrin<ComparisonType::lt>(x, vlim)) == VData::Size) return r;
 
@@ -2242,24 +2241,67 @@ namespace sctl { // Generic
       return x_.v;
     }
   }
-  // atanh(x) = sign(x) log(q)/2, q = (1+|x|)/(1-|x|) by one division, with the rounding errors of 1 +- |x| and q.
-  // digits = -1: full. FullRange = false: |x| < 1
+  // atanh(x) = x + x^3 Q(x^2), |x| <= 1/2: minimax Q of degree n, lowest degree first
+  template <Integer n> struct AtanhPolyCoeffs;
+  template <> struct AtanhPolyCoeffs<1> { static constexpr double c[] = {0.3280017677789941, 0.26360947271605506}; };
+  template <> struct AtanhPolyCoeffs<2> { static constexpr double c[] = {0.33384489990285793, 0.18822076209106758, 0.21632268596900586}; };
+  template <> struct AtanhPolyCoeffs<3> { static constexpr double c[] = {0.3332873471565446, 0.20171765188740268, 0.12336189734808355, 0.1933203138409883}; };
+  template <> struct AtanhPolyCoeffs<4> { static constexpr double c[] = {0.33333730030328274, 0.199782164503241, 0.14669143165616635, 0.08243703056405131, 0.18174007749956445}; };
+  template <> struct AtanhPolyCoeffs<5> { static constexpr double c[] = {0.333333000715283, 0.20002518278104284, 0.1422276216534014, 0.11823729600830118, 0.051358254086960146, 0.17669116831155193}; };
+  template <> struct AtanhPolyCoeffs<6> { static constexpr double c[] = {0.33333336064815317, 0.1999972753891939, 0.1429485304062475, 0.10967181892218987, 0.10282689994774834, 0.024521907743698612, 0.17594255725078464}; };
+  template <> struct AtanhPolyCoeffs<7> { static constexpr double c[] = {0.3333333311255742, 0.20000028044309062, 0.14284501834136498, 0.111362930679137, 0.08804667126869078, 0.09552867840528878, -0.0008787088266464228, 0.1783638880901236}; };
+  template <> struct AtanhPolyCoeffs<8> { static constexpr double c[] = {0.3333333335095571, 0.19999997223693067, 0.14285864413557667, 0.1110715043810897, 0.09149580462923146, 0.0717360160644831, 0.09433900326839616, -0.02653100494315919, 0.18335258800885093}; };
+  template <> struct AtanhPolyCoeffs<9> { static constexpr double c[] = {0.33333333331940895, 0.20000000266379014, 0.1428569668719607, 0.11111684609565606, 0.09080229565292998, 0.07814304300984987, 0.05787274326264876, 0.09852763312464456, -0.053626364971385954, 0.1905893319946147}; };
+  template <> struct AtanhPolyCoeffs<10> { static constexpr double c[] = {0.3333333333344244, 0.19999999975090232, 0.14285716258740408, 0.11111033398221813, 0.0909268037247804, 0.07667067905556711, 0.06900252171658791, 0.044642957368387484, 0.10804203109337505, -0.0831328856878387, 0.1999221341008489}; };
+  template <> struct AtanhPolyCoeffs<11> { static constexpr double c[] = {0.33333333333324844, 0.2000000000227984, 0.14285714072552522, 0.11111121083181769, 0.09090636585700751, 0.07697027490259652, 0.06612503367535068, 0.06302446967547175, 0.03064016482306227, 0.12326737634941974, -0.11593193499138618, 0.21130716453134404}; };
+  template <> struct AtanhPolyCoeffs<12> { static constexpr double c[] = {0.3333333333333399, 0.19999999999795112, 0.14285714308034816, 0.11111109888609831, 0.09090948485686924, 0.07691494750224992, 0.06677944404159813, 0.05774395536479686, 0.059824096280954496, 0.014564543866772328, 0.14492849982535477, -0.15289542825875824, 0.22477676335121333}; };
+  inline constexpr double atanh_poly_digits[] = {3.9, 5.18, 6.42, 7.65, 8.86, 10.07, 11.26, 12.45, 13.64, 14.82, 16.0, 16.96}; // degrees 1 to 12
+  // atanh(x) = x + x^3 P(x^2)/Q(x^2), |x| <= 1/2: Cephes's double coefficients, lowest degree first
+  struct AtanhRationalCoeffs {
+    static constexpr double p[] = {-3.09092539379866942570E1, 6.54566728676544377376E1, -4.61252884198732692637E1, 1.20426861384072379242E1, -8.54074331929669305196E-1};
+    static constexpr double q[] = {-9.27277618139601130017E1, 2.52006675691344555838E2, -2.49839401325893582852E2, 1.08938092147140262656E2, -1.95638849376911654834E1, 1.0};
+  };
+  // atanh(x) = sign(x) log(q)/2, q = (1+|x|)/(1-|x|): for double with fused FMA with the rounding errors of 1 +- |x| and q;
+  // else without, and x + x^3 Q(x^2) for |x| < 1/2 (P/Q for double). digits = -1: full. FullRange = false: |x| < 1
   template <Integer digits = -1, bool FullRange = true, class VData> inline VData atanh_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       const VData one = set1_intrin<VData>((Real)1);
       const VData sgn = and_intrin(x, set1_intrin<VData>((Real)-0.0));
       const VData ax = xor_intrin(x, sgn);
-      const VData a = add_intrin(one, ax);
-      const VData ea = sub_intrin(ax, sub_intrin(a, one)); // a + ea = 1 + |x|
-      const VData b = sub_intrin(one, ax);
-      const VData eb = sub_intrin(sub_intrin(one, b), ax); // b + eb = 1 - |x|
-      const VData ib = div_intrin(one, b);
-      const VData q = mul_intrin(a, ib);
-      const VData c = mul_intrin(sub_intrin(ea, fma_intrin(q, eb, mul_sub_exact_intrin(q, b, a))), ib); // (a + ea)/(b + eb) - q
-      VData e, f;
-      log_split_intrin<false>(e, f, q);
-      const VData r = xor_intrin(mul_intrin(approx_log_split_poly_intrin<digits>(e, log_split_add_intrin(e, f, c)), set1_intrin<VData>((Real)0.5)), sgn);
+      VData r;
+      if constexpr (std::is_same<Real,double>::value && fused_fma<VData>) { // faster than the polynomial here
+        const VData a = add_intrin(one, ax);
+        const VData ea = sub_intrin(ax, sub_intrin(a, one)); // a + ea = 1 + |x|
+        const VData b = sub_intrin(one, ax);
+        const VData eb = sub_intrin(sub_intrin(one, b), ax); // b + eb = 1 - |x|
+        const VData ib = div_intrin(one, b);
+        const VData q = mul_intrin(a, ib);
+        const VData c = mul_intrin(sub_intrin(ea, fma_intrin(q, eb, mul_sub_exact_intrin(q, b, a))), ib); // (a + ea)/(b + eb) - q
+        VData e, f;
+        log_split_intrin<false>(e, f, q);
+        r = mul_intrin(approx_log_split_poly_intrin<digits>(e, log_split_add_intrin(e, f, c)), set1_intrin<VData>((Real)0.5));
+      } else {
+        const Mask<VData> small = comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>((Real)0.5));
+        const Integer n_small = mask_count_intrin(small);
+        r = ax;
+        if (n_small < VData::Size) {
+          VData e, f;
+          log_split_intrin<false>(e, f, div_intrin(add_intrin(one, ax), sub_intrin(one, ax)));
+          r = mul_intrin(approx_log_split_poly_intrin<digits>(e, f), set1_intrin<VData>((Real)0.5));
+        }
+        if (n_small > 0) {
+          const VData x2 = mul_intrin(ax, ax);
+          VData t;
+          if constexpr (std::is_same<Real,double>::value && digits < 0) { // a division in place of 12 products without fused FMA
+            t = div_intrin(eval_poly_horner_intrin(x2, AtanhRationalCoeffs::p), eval_poly_horner_intrin(x2, AtanhRationalCoeffs::q));
+          } else {
+            t = eval_poly_horner_intrin(x2, AtanhPolyCoeffs<poly_degree(atanh_poly_digits, 1, (std::is_same<Real,float>::value ? 5 : 12), digits)>::c);
+          }
+          r = select_intrin(small, fma_intrin(mul_intrin(ax, x2), t, ax), r);
+        }
+      }
+      r = xor_intrin(r, sgn);
       if (!FullRange || mask_count_intrin(comp_intrin<ComparisonType::lt>(ax, one)) == VData::Size) return r;
 
       // |x| = 1, |x| > 1 or NaN
