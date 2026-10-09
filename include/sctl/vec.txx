@@ -792,6 +792,12 @@ namespace sctl {
   template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_neumann(const Vec<ValueType,N>& x) {
     return sph_neumann_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> riemann_zeta(const Vec<ValueType,N>& s) {
+    return riemann_zeta_intrin(s.get());
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_riemann_zeta(const Vec<ValueType,N>& s) {
+    return riemann_zeta_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(s.get());
+  }
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
     return fmod_intrin(x.get(), y.get());
   }

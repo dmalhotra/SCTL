@@ -3549,6 +3549,175 @@ namespace sctl { // Generic
     }
   }
 
+  // Minimax coefficients of zeta(s), s >= 0, on pieces of [0, inf) for the given digits (7: float), lowest degree
+  // first, from minimax.py zeta
+  template <Integer digits> struct ZetaCoeffs;
+  template <> struct ZetaCoeffs<7> {
+    static constexpr double bound[] = {0.0, 2.0, 8.0, 24.0}; // the pieces [bound[k], bound[k+1]], the last also beyond
+    static constexpr double p[][4] = {{0.07721566491880283, 0.003456362714870402, -0.00010479644523559637, 8.85370300715344e-06}, {1.1816880582160783, 0.28537816420258116, 0.024487970817811715, 0.0007597628745129845}, {1.001539057072135, 0.16721014857494867, 0.010078667822946497, 0.00022105575454182567}}; // zeta = 1/(s-1) + 1/2 + s p/q on piece 0, 1 + 2^-s p/q on the others, in s minus the middle of the piece
+    static constexpr double q[][4] = {{1.0, 0.10174337468187815, 0.010208011426600137, -5.151831713216234e-05}, {1.0, 0.3221286569368545, 0.02148777098179688, 0.0008639796388433123}, {1.0, 0.16758047511417035, 0.010039944922421648, 0.00022346419177095744}};
+  };
+  template <> struct ZetaCoeffs<16> {
+    static constexpr double bound[] = {0.0, 2.0, 6.0, 16.0, 56.0}; // the pieces [bound[k], bound[k+1]], the last also beyond
+    static constexpr double p[][7] = {{0.07721566490153287, 0.01627728668004219, 0.001570400209994251, 0.00010665422527260776, 6.318141926388837e-06, 1.0920227894874557e-07, 8.264217507560348e-10}, {1.317171739378211, 0.4223613741628973, 0.056632161827418294, 0.0042055620904412425, 0.00020038705662212325, 6.621329678410656e-06, 1.2104559491923736e-07}, {1.0120982612366625, 0.2127738803846578, 0.01930020706084039, 0.0010149043644009576, 3.37885388912219e-05, 6.502394460673083e-07, 4.86451539396763e-09}, {1.0000004578687474, 0.15336406528877736, 0.010229731485684563, 0.00037971817670110316, 8.263984399757733e-06, 9.98482542548548e-08, 5.224691293178791e-10}}; // zeta = 1/(s-1) + 1/2 + s p/q on piece 0, 1 + 2^-s p/q on the others, in s minus the middle of the piece
+    static constexpr double q[][7] = {{1.0, 0.267783825008387, 0.041364182587911115, 0.0039480784792415916, 0.00026782377715759694, 1.1386657282537153e-05, 3.1292678350619924e-07}, {1.0, 0.4645922264673974, 0.05472183640830018, 0.004209864129399663, 0.00020302381805482382, 6.532166103557671e-06, 1.2190716731550882e-07}, {1.0, 0.2152422782577208, 0.019071481714031356, 0.0010273198658372034, 3.3368397438079974e-05, 6.587324166991156e-07, 4.783417075541603e-09}, {1.0, 0.15336418064290988, 0.010229717580991417, 0.00037971919961093416, 8.263927462554568e-06, 9.984989722583438e-08, 5.223990080059563e-10}};
+  };
+  // Two-part constants of zeta: log(2 pi) and log(pi)
+  template <class Real> struct ZetaConsts {
+    static constexpr Real l2pi_hi = (Real)1.8378770664093456;
+    static constexpr Real l2pi_lo = (Real)((1.8378770664093456 - (double)l2pi_hi) - 7.756588316134483e-17);
+    static constexpr Real lpi_hi = (Real)1.1447298858494002;
+    static constexpr Real lpi_lo = (Real)((1.1447298858494002 - (double)lpi_hi) + 1.0265951162707826e-17);
+  };
+  // zeta(s) of one value: the alternating series of Borwein for s >= 0, with 1 - 2^(1-s) from u = s - 1, and the
+  // reflection formula below 0
+  template <class Real> inline Real riemann_zeta_generic(const Real s) {
+    const Real pi = const_pi<Real>();
+    const auto zeta_pos = [](const Real t, const Real u) { // zeta(t), t = 1 + u >= 0: eta(t)/(1 - 2^-u)
+      if (u == 0) return (Real)INFINITY;
+      if (!(t < (Real)INFINITY)) return (t == t ? (Real)1 : t);
+      static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+      static constexpr Integer n = SigBits * 2 / 5 + 2; // error about (3 + sqrt(8))^-n
+      Real d[n + 1]; // d_k = n sum_(i <= k) (n+i-1)! 4^i/((n-i)! (2i)!)
+      Real term = (Real)1 / n;
+      d[0] = n * term;
+      for (Integer i = 1; i <= n; i++) {
+        term *= (Real)(4 * (n + i - 1) * (n - i + 1)) / (Real)(2 * i * (2 * i - 1));
+        d[i] = d[i - 1] + n * term;
+      }
+      Real sum = 0;
+      for (Integer k = n - 1; k >= 0; k--) sum += (k % 2 ? -1 : 1) * (d[k] - d[n]) / pow((Real)(k + 1), t);
+      const Real x = -u * log((Real)2); // 1 - 2^-u = -expm1(x)
+      Real em1 = exp(x) - 1;
+      if (fabs(x) < (Real)0.5) {
+        Real xk = x;
+        em1 = 0;
+        for (Integer k = 1; k < 200 && xk != 0; k++) {
+          em1 += xk;
+          xk *= x / (k + 1);
+        }
+      }
+      return -sum / d[n] / (-em1);
+    };
+    if (!(s < 0)) return zeta_pos(s, s - 1); // also NaN
+    if (s == -(Real)INFINITY) return (Real)NAN;
+    const Real h = s / 2; // sinpi(s/2) = (-1)^k sin(pi (h - k)), k = round(h)
+    const Real k = round(h);
+    const Real sn = sin(pi * (h - k)) * (fmod(k, (Real)2) == 0 ? 1 : -1);
+    if (sn == 0) return 0;
+    Real g; // (2 pi)^s Gamma(1-s), with Gamma(1-s) = -s Gamma(-s) as 1-s can be inexact
+    if constexpr (std::is_floating_point<Real>::value) g = -s * std::tgamma(-s) * pow(2 * pi, s);
+    else g = -s * tgamma_generic(-s) * pow(2 * pi, s);
+    if (!(g < (Real)INFINITY)) g = exp(s * log(2 * pi) + log(-s) + lgamma_generic(-s));
+    return g / pi * sn * zeta_pos(1 - s, -s);
+  }
+  // zeta(s) for s >= 0, inf or NaN, given u = s - 1, by ZetaCoeffs with the coefficients of each lane's piece
+  template <Integer digits, class VData> inline VData zeta_pos_intrin(const VData& s, const VData& u) {
+    using Real = typename VData::ScalarType;
+    using Coeffs = ZetaCoeffs<((digits < 0 ? std::is_same<Real,double>::value : digits > 7) ? 16 : 7)>;
+    static constexpr Integer K = std::extent<decltype(Coeffs::p), 0>::value; // number of pieces
+    static constexpr Integer M = std::extent<decltype(Coeffs::p), 1>::value; // number of coefficients
+    const VData one = set1_intrin<VData>((Real)1);
+    Mask<VData> below[K - 1]; // s < bound[k+1]
+    bool any[K - 1]; // some lane in piece k
+    Integer n_prev = 0;
+    for (Integer k = 0; k < K - 1; k++) {
+      below[k] = comp_intrin<ComparisonType::lt>(s, set1_intrin<VData>((Real)Coeffs::bound[k + 1]));
+      const Integer n_k = mask_count_intrin(below[k]);
+      any[k] = (n_k > n_prev);
+      n_prev = n_k;
+    }
+    const auto piecewise = [&below, &any](const auto& c) { // c(k) of the piece k of each lane
+      VData r = set1_intrin<VData>((Real)c(K - 1));
+      for (Integer k = K - 2; k >= 0; k--) {
+        if (any[k]) r = select_intrin(below[k], set1_intrin<VData>((Real)c(k)), r);
+      }
+      return r;
+    };
+    const VData t = sub_intrin(min_intrin(set1_intrin<VData>((Real)Coeffs::bound[K]), s), piecewise([](const Integer k) { return (Coeffs::bound[k] + Coeffs::bound[k + 1]) / 2; })); // keeps NaN
+    const auto eval = [&piecewise, &t](const auto& c) { // sum_i c[k][i] t^i by Horner's scheme
+      VData r = piecewise([&c](const Integer k) { return c[k][M - 1]; });
+      for (Integer i = M - 2; i >= 0; i--) r = fma_intrin(r, t, piecewise([&c, i](const Integer k) { return c[k][i]; }));
+      return r;
+    };
+    const VData R = div_intrin(eval(Coeffs::p), eval(Coeffs::q));
+    const Integer n_pole = mask_count_intrin(below[0]);
+    VData r = zero_intrin<VData>();
+    if (n_pole < VData::Size) r = fma_intrin(exp2_intrin(unary_minus_intrin(s)), R, one);
+    if (n_pole) r = select_intrin(below[0], add_intrin(div_intrin(one, u), fma_intrin(s, R, set1_intrin<VData>((Real)0.5))), r);
+    return r;
+  }
+  // s1 + s2 = a + b exactly
+  template <class VData> inline void two_sum_intrin(VData& s1, VData& s2, const VData& a, const VData& b) {
+    s1 = add_intrin(a, b);
+    const VData bb = sub_intrin(s1, a);
+    s2 = add_intrin(sub_intrin(a, sub_intrin(s1, bb)), sub_intrin(b, bb));
+  }
+  // (2 pi)^s/pi sinpi(s/2) Gamma(1-s) for s < 0 where Gamma(1-s) overflows, in one exponential of
+  // lgamma(-s) + log(-s) + s log(2 pi) - log(pi) + log|sinpi(s/2)|, as 1-s can be inexact; arguments and result by value
+  template <Integer digits, class VData> [[gnu::noinline]] VData zeta_reflection_big_intrin(const VData s, const VData sn) {
+    using Real = typename VData::ScalarType;
+    using Consts = ZetaConsts<Real>;
+    static constexpr Real big_x = pow<TypeTraits<Real>::SigBits,Real>((Real)2);
+    const VData x = min_intrin(set1_intrin<VData>(big_x), unary_minus_intrin(s));
+    VData e, f, lh, ll, L_hi, L_lo;
+    log_split_intrin<false>(e, f, x);
+    log_hi_lo_intrin(lh, ll, e, f);
+    lgamma_stirling_intrin<GammaCoeffsOf<Real, digits>>(L_hi, L_lo, x, lh, ll);
+    const VData p_hi = mul_intrin(s, set1_intrin<VData>(Consts::l2pi_hi));
+    const VData p_lo = fma_intrin(s, set1_intrin<VData>(Consts::l2pi_lo), mul_sub_exact_intrin(s, set1_intrin<VData>(Consts::l2pi_hi), p_hi));
+    VData h, h_err, g, g_err, l, l_err;
+    two_sum_intrin(l, l_err, L_hi, lh); // lgamma(1-s) = lgamma(-s) + log(-s)
+    two_sum_intrin(h, h_err, l, p_hi);
+    two_sum_intrin(g, g_err, h, set1_intrin<VData>(-Consts::lpi_hi));
+    const VData a = fabs_intrin(sn);
+    const VData la = (digits < 0 ? log_intrin(a) : approx_log_intrin<digits>(a));
+    VData k, k_err;
+    two_sum_intrin(k, k_err, g, la);
+    const VData lo = add_intrin(add_intrin(add_intrin(h_err, g_err), add_intrin(k_err, l_err)), add_intrin(add_intrin(L_lo, ll), sub_intrin(p_lo, set1_intrin<VData>(Consts::lpi_lo))));
+    const VData T = add_intrin(k, lo);
+    static constexpr Integer order = (digits < 0 ? (Integer)(TypeTraits<Real>::SigBits / 3.8) : exp_taylor_order(digits));
+    return copysign_intrin(approx_exp_intrin<order, true, ExpArg::Sum>(T, sub_intrin(lo, sub_intrin(T, k))), sn);
+  }
+  // zeta(s), the Riemann zeta function, to the given digits (-1: full): ZetaCoeffs for s >= 0 and the reflection
+  // formula zeta(s) = (2 pi)^s/pi sinpi(s/2) Gamma(1-s) zeta(1-s) below
+  template <Integer digits = -1, class VData> inline VData riemann_zeta_intrin(const VData& s) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      using Consts = ZetaConsts<Real>;
+      const VData zero = zero_intrin<VData>();
+      const VData one = set1_intrin<VData>((Real)1);
+      const Mask<VData> neg = comp_intrin<ComparisonType::lt>(s, set1_intrin<VData>((Real)-1 / (1 << 20))); // above, s/2 can underflow and ZetaCoeffs hold
+      const Integer n_neg = mask_count_intrin(neg);
+      if (!n_neg) return zeta_pos_intrin<digits>(s, sub_intrin(s, one));
+      const VData z = zeta_pos_intrin<digits>(select_intrin(neg, sub_intrin(one, s), s), select_intrin(neg, unary_minus_intrin(s), sub_intrin(s, one))); // zeta(1-s) with 1-s - 1 = -s exact
+      VData sn, cs;
+      approx_sincospi_intrin<digits, true, true, false>(sn, cs, mul_intrin(s, set1_intrin<VData>((Real)0.5)));
+      static constexpr Real s_big = (std::is_same<Real,float>::value ? (Real)-34 : (Real)-170); // Gamma(1-s) is finite above
+      const Mask<VData> big = comp_intrin<ComparisonType::lt>(s, set1_intrin<VData>(s_big));
+      const Integer n_big = mask_count_intrin(big);
+      VData g = zero; // (2 pi)^s/pi sinpi(s/2) Gamma(1-s), with Gamma(1-s) = -s Gamma(-s) as 1-s can be inexact
+      if (n_big < n_neg) {
+        const VData p_hi = mul_intrin(s, set1_intrin<VData>(Consts::l2pi_hi));
+        const VData p_lo = fma_intrin(s, set1_intrin<VData>(Consts::l2pi_lo), mul_sub_exact_intrin(s, set1_intrin<VData>(Consts::l2pi_hi), p_hi));
+        const VData p = add_intrin(p_hi, p_lo);
+        static constexpr Integer order = (digits < 0 ? (Integer)(TypeTraits<Real>::SigBits / 3.8) : exp_taylor_order(digits));
+        const VData e = approx_exp_intrin<order, true, ExpArg::Sum>(p, sub_intrin(p_lo, sub_intrin(p, p_hi)));
+        const VData ms = select_intrin(neg, unary_minus_intrin(s), one);
+        g = mul_intrin(mul_intrin(mul_intrin(tgamma_intrin<digits>(ms), ms), e), mul_intrin(sn, set1_intrin<VData>(1 / const_pi<Real>())));
+      }
+      if (n_big) g = select_intrin(big, zeta_reflection_big_intrin<digits>(s, sn), g);
+      const VData r = select_intrin(comp_intrin<ComparisonType::eq>(sn, zero), zero, mul_intrin(g, z)); // the zeros at negative even s
+      return select_intrin(neg, r, z);
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {s};
+      for (Integer i = 0; i < VData::Size; i++) x_.x[i] = riemann_zeta_generic(x_.x[i]);
+      return x_.v;
+    }
+  }
   template <class VData> inline VData cbrt_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     union {

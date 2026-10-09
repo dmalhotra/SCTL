@@ -833,6 +833,11 @@ namespace sctl {
   /** sph_neumann to the given digits (-1: full). */
   template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_neumann(const Vec<ValueType,N>& x);
 
+  /** Riemann zeta function of real s, inf at 1; float, double: within 3 ulp for s >= 0, below within 7 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> riemann_zeta(const Vec<ValueType,N>& s);
+  /** riemann_zeta to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_riemann_zeta(const Vec<ValueType,N>& s);
+
   /** Remainder of x/y with the sign of x, as std::fmod. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 

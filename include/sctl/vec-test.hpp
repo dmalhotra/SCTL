@@ -1212,6 +1212,19 @@ namespace sctl {
           SCTL_ASSERT(sph_neumann<0>(VecType((ScalarType)0))[0] == -inf && sph_neumann<1>(VecType((ScalarType)-0.0))[0] == -inf && sph_neumann<2>(VecType((ScalarType)0))[0] == -inf);
           SCTL_ASSERT(sph_neumann<0>(VecType(inf))[0] == 0 && isnan(sph_neumann<1>(VecType((ScalarType)-1))[0]) && isnan(sph_neumann<2>(VecType((ScalarType)NAN))[0]));
         }
+        { // riemann_zeta on [-30, 30] against riemann_zeta_generic in long double, to long double precision for QuadReal
+          const VecType x = u1.v * (ScalarType)3;
+          const VecType zv = riemann_zeta(x), z5 = approx_riemann_zeta<5>(x);
+          const ScalarType tol_z = std::max<ScalarType>(tol, (ScalarType)(16 * std::numeric_limits<long double>::epsilon()));
+          for (Integer i = 0; i < N; i++) {
+            const ScalarType zr = (ScalarType)riemann_zeta_generic<long double>((long double)x[i]);
+            SCTL_ASSERT(rel(zv[i], zr) <= tol_z * (x[i] < 0 ? 4 : 1) && rel(z5[i], zv[i]) <= (ScalarType)1e-5); // below 0, the error of Gamma
+          }
+          const ScalarType inf = (ScalarType)INFINITY;
+          SCTL_ASSERT(riemann_zeta(VecType((ScalarType)1))[0] == inf && riemann_zeta(VecType((ScalarType)-2))[0] == 0 && riemann_zeta(VecType(inf))[0] == 1);
+          SCTL_ASSERT(rel(riemann_zeta(VecType((ScalarType)0))[0], (ScalarType)-0.5) <= tol_z && rel(riemann_zeta(VecType((ScalarType)-1))[0], (ScalarType)-1 / 12) <= 4 * tol_z);
+          SCTL_ASSERT(isnan(riemann_zeta(VecType(-inf))[0]) && isnan(riemann_zeta(VecType((ScalarType)NAN))[0]));
+        }
 
         const ScalarType big = (ScalarType)(sizeof(ScalarType) == 4 ? 1e30 : 1e200); // big^2 overflows float
         SCTL_ASSERT(rel(hypot(VecType(big), VecType(big))[0], big * sqrt<ScalarType>((ScalarType)2)) <= tol);
