@@ -738,6 +738,24 @@ namespace sctl {
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y) {
     return erfinv_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(y.get());
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> tgamma(const Vec<ValueType,N>& x) {
+    return tgamma_intrin(x.get());
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tgamma(const Vec<ValueType,N>& x) {
+    return tgamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> lgamma(const Vec<ValueType,N>& x) {
+    return lgamma_intrin(x.get());
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_lgamma(const Vec<ValueType,N>& x) {
+    return lgamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> digamma(const Vec<ValueType,N>& x) {
+    return digamma_intrin(x.get());
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_digamma(const Vec<ValueType,N>& x) {
+    return digamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  }
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
     return fmod_intrin(x.get(), y.get());
   }

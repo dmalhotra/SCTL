@@ -1103,6 +1103,28 @@ namespace sctl {
           SCTL_ASSERT(isnan(ndtri(VecType((ScalarType)-0.5))[0]) && isnan(ndtri(VecType((ScalarType)1.5))[0]) && isnan(ndtri(VecType((ScalarType)NAN))[0]));
           SCTL_ASSERT(isinf(erfinv(VecType((ScalarType)-1))[0]) && erfinv(VecType((ScalarType)-1))[0] < 0 && isnan(erfinv(VecType((ScalarType)2))[0]) && isnan(erfinv(VecType((ScalarType)NAN))[0]));
         }
+        { // tgamma, lgamma, digamma on [-10, 10] against long double (std::tgamma, std::lgamma, digamma_generic), to its
+          // precision for QuadReal; lgamma for x < 0 and digamma absolute, near their zeros
+          const VecType tg = tgamma(u1.v), lg = lgamma(u1.v), dg = digamma(u1.v);
+          const VecType tg5 = approx_tgamma<5>(u1.v), lg5 = approx_lgamma<5>(u1.v), dg5 = approx_digamma<5>(u1.v);
+          const ScalarType tol_g = std::max<ScalarType>(tol, (ScalarType)(16 * std::numeric_limits<long double>::epsilon()));
+          for (Integer i = 0; i < N; i++) {
+            const long double x = (long double)u1.x[i];
+            const ScalarType tr = (ScalarType)std::tgamma(x), lr = (ScalarType)std::lgamma(x), dr = (ScalarType)digamma_generic<long double>(x);
+            SCTL_ASSERT(rel(tg[i], tr) <= tol_g);
+            SCTL_ASSERT(x > 0 ? rel(lg[i], lr) <= tol_g : fabs(lg[i] - lr) <= tol_g * (16 + fabs(lr)));
+            SCTL_ASSERT(fabs(dg[i] - dr) <= tol_g * (x > 0 ? 1 + fabs(dr) : 16 + fabs(dr))); // the reference: absolute near the zero of digamma
+            SCTL_ASSERT(rel(tg5[i], tg[i]) <= (ScalarType)1e-5 && fabs(lg5[i] - lg[i]) <= (ScalarType)1e-5 * (1 + fabs(lg[i])) && fabs(dg5[i] - dg[i]) <= (ScalarType)1e-5 * (1 + fabs(dg[i])));
+          }
+          const ScalarType inf = (ScalarType)INFINITY;
+          if constexpr (sizeof(ScalarType) <= sizeof(double)) SCTL_ASSERT(tgamma(VecType((ScalarType)1))[0] == 1 && tgamma(VecType((ScalarType)2))[0] == 1 && lgamma(VecType((ScalarType)1))[0] == 0 && lgamma(VecType((ScalarType)2))[0] == 0);
+          SCTL_ASSERT(tgamma(VecType((ScalarType)0))[0] == inf && tgamma(VecType((ScalarType)-0.0))[0] == -inf && isnan(tgamma(VecType((ScalarType)-1))[0]) && isnan(tgamma(VecType(-inf))[0]));
+          SCTL_ASSERT(tgamma(VecType(inf))[0] == inf && isnan(tgamma(VecType((ScalarType)NAN))[0]));
+          SCTL_ASSERT(lgamma(VecType((ScalarType)0))[0] == inf && lgamma(VecType((ScalarType)-1))[0] == inf && lgamma(VecType(-inf))[0] == inf && lgamma(VecType(inf))[0] == inf);
+          SCTL_ASSERT(digamma(VecType((ScalarType)0))[0] == -inf && digamma(VecType((ScalarType)-0.0))[0] == inf && isnan(digamma(VecType((ScalarType)-1))[0]) && digamma(VecType(inf))[0] == inf);
+          SCTL_ASSERT(isnan(lgamma(VecType((ScalarType)NAN))[0]) && isnan(digamma(VecType((ScalarType)NAN))[0]) && isnan(digamma(VecType(-inf))[0]));
+          if constexpr (sizeof(ScalarType) <= sizeof(double)) SCTL_ASSERT(tgamma(VecType((ScalarType)200))[0] == inf && tgamma(VecType((ScalarType)-200.5))[0] == 0);
+        }
 
         const ScalarType big = (ScalarType)(sizeof(ScalarType) == 4 ? 1e30 : 1e200); // big^2 overflows float
         SCTL_ASSERT(rel(hypot(VecType(big), VecType(big))[0], big * sqrt<ScalarType>((ScalarType)2)) <= tol);

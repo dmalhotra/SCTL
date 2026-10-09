@@ -2619,6 +2619,317 @@ namespace sctl { // Generic
     return select_intrin(comp_intrin<ComparisonType::eq>(x, zero_intrin<VData>()), set1_intrin<VData>((Real)1), div_intrin(s, x));
   }
 
+  // Minimax coefficients of tgamma, lgamma and digamma for the given digits (7: float), lowest degree first; minimax.py
+  // gamma
+  template <Integer digits> struct GammaCoeffs;
+  template <> struct GammaCoeffs<7> {
+    static constexpr double tp[] = {-0.5772156647932086, 0.3535063035602683, 0.2347721166356489, -0.014168638283016337, 0.0031058826771362645}; // Gamma(1+z) = 1 + z tp(z)/tq(z), z in [0, 1]
+    static constexpr double tq[] = {1.0, 1.1010610247931785, -0.09223513593325558, -0.16376234074817483, 0.03052198370441707};
+    static constexpr double lp[] = {0.07721565145317047, -0.1347738947057954, -0.153532419797404, -0.022216882081451075}; // lgamma(1+z) = z (z-1) (1/2 + lp(z)/lq(z)), z in [0, 2]
+    static constexpr double lq[] = {1.0, 1.430750043268914, 0.5431894783640754, 0.047565462686810535};
+    static constexpr double dp[] = {0.2503801374139148, -0.39656506018397564, -0.5568685820142112, -0.15723957069988823, -0.009945382838752015}; // digamma(1+z) = (z - z0) (1 + dp(z)/dq(z)), z in [-1/2, 2]
+    static constexpr double dq[] = {1.0, 1.8297310299335572, 1.0165427267152791, 0.19697570425751226, 0.010169327525103255};
+    static constexpr double s[] = {0.08333327385367327, -0.0027624721006410434}; // lgamma(x) - (x - 1/2) log x + x - log(2 pi)/2 = s(w)/x, w = 1/x^2, x >= 8
+    static constexpr double a[] = {0.08333288938489247, -0.008245830346701113}; // log x - 1/(2x) - digamma(x) = a(w) w, w = 1/x^2, x >= 8
+  };
+  template <> struct GammaCoeffs<16> {
+    static constexpr double tp[] = {-0.5772156649015329, 0.29064333099394446, 0.28563499099867845, 0.0038869861075239392, -0.005842817405732664, 0.0029665165143425206, -8.07167982465156e-05, 7.374491022673913e-06}; // Gamma(1+z) = 1 + z tp(z)/tq(z), z in [0, 1]
+    static constexpr double tq[] = {1.0, 1.2099683130622767, 0.006258227784187291, -0.19748266604553685, 0.01854939266931247, 0.009877303810033473, -0.002297049003040702, 0.00014762238974642733};
+    static constexpr double lp[] = {0.07721566490153285, 0.0006387929430960195, -0.3199129596725109, -0.4031182170084245, -0.19610452957106866, -0.04149342543332065, -0.003443534399528478, -7.688680260007995e-05}; // lgamma(1+z) = z (z-1) (1/2 + lp(z)/lq(z)), z in [0, 2]
+    static constexpr double lq[] = {1.0, 3.184459549486992, 3.9583397665480424, 2.4326985769804454, 0.7731201784977569, 0.1213038073243519, 0.008099036046113608, 0.00015642352357189964};
+    static constexpr double dp[] = {0.2503801375034054, -0.27496469605001, -0.7362060356179951, -0.4483065976471182, -0.11647753373438799, -0.013873387364272589, -0.0006867206378828349, -9.857947806206267e-06}; // digamma(1+z) = (z - z0) (1 + dp(z)/dq(z)), z in [-1/2, 2]
+    static constexpr double dq[] = {1.0, 2.3153939858503856, 1.9581327970518727, 0.7891069342104603, 0.16220887818740337, 0.01656915244689783, 0.0007383170067187312, 9.919731367862371e-06};
+    static constexpr double s[] = {0.0833333333333331, -0.0027777777773586353, 0.0007936505764882301, -0.0005951896854021093, 0.0008364587473822234, -0.0016334355591652535}; // lgamma(x) - (x - 1/2) log x + x - log(2 pi)/2 = s(w)/x, w = 1/x^2, x >= 8
+    static constexpr double a[] = {0.08333333333332363, -0.008333333322128397, 0.003968249524774464, -0.004165839418727212, 0.007496258858457115, -0.017201963505816913}; // log x - 1/(2x) - digamma(x) = a(w) w, w = 1/x^2, x >= 8
+  };
+  // Two-part constants of the gamma functions: z0 + 1 is the zero of digamma, c = log(2 pi)/2
+  template <class Real> struct GammaConsts {
+    static constexpr Real z0_hi = (Real)0.46163214496836236;
+    static constexpr Real z0_lo = (Real)((0.46163214496836236 - (double)z0_hi) - 1.5522348162858677e-17);
+    static constexpr Real c_hi = (Real)0.9189385332046728;
+    static constexpr Real c_lo = (Real)((0.9189385332046728 - (double)c_hi) - 3.8782941580672414e-17);
+  };
+  // GammaCoeffs<16> for double at full precision or digits > 7, else <7>
+  template <class Real, Integer digits> using GammaCoeffsOf = GammaCoeffs<((digits < 0 ? std::is_same<Real,double>::value : digits > 7) ? 16 : 7)>;
+  // y = x - n, p = (x-1) ... (x-n) for the least n >= 0 with y < hi, in lanes with x < 8; elsewhere n = 0
+  template <class VData> inline void gamma_shift_intrin(VData& y, VData& p, const VData& x, const typename VData::ScalarType hi) {
+    using Real = typename VData::ScalarType;
+    const Mask<VData> mid = comp_intrin<ComparisonType::lt>(x, set1_intrin<VData>((Real)8));
+    y = x;
+    p = set1_intrin<VData>((Real)1);
+    for (Integer k = 0; k < 6; k++) { // x - k is exact
+      const Mask<VData> m = mid & comp_intrin<ComparisonType::ge>(y, set1_intrin<VData>(hi));
+      if (!mask_count_intrin(m)) break;
+      y = select_intrin(m, sub_intrin(y, set1_intrin<VData>((Real)1)), y);
+      p = select_intrin(m, mul_intrin(p, y), p);
+    }
+  }
+  // lgamma(x) = L_hi + L_lo, 8 <= x <= 2^SigBits, by Stirling's series given log x = lh + ll; Exact: (x - 1/2) lh
+  // exactly also without fused FMA
+  template <class Coeffs, bool Exact = true, class VData> inline void lgamma_stirling_intrin(VData& L_hi, VData& L_lo, const VData& x, const VData& lh, const VData& ll) {
+    using Real = typename VData::ScalarType;
+    const VData a = sub_intrin(x, set1_intrin<VData>((Real)0.5));
+    const VData t_hi = mul_intrin(a, lh); // (x - 1/2) log x = t_hi + t_lo
+    VData t_lo = mul_intrin(a, ll);
+    if constexpr (Exact || fused_fma<VData>) t_lo = fma_intrin(a, ll, mul_sub_exact_intrin(a, lh, t_hi));
+    const VData s = sub_intrin(t_hi, x); // t_hi > x: s + s_lo = t_hi - x exactly
+    const VData s_lo = sub_intrin(sub_intrin(t_hi, s), x);
+    const VData r = div_intrin(set1_intrin<VData>((Real)1), x);
+    const VData S = mul_intrin(r, eval_poly_intrin(mul_intrin(r, r), Coeffs::s));
+    const VData c = add_intrin(set1_intrin<VData>(GammaConsts<Real>::c_hi), S); // c + c_err = c_hi + S exactly
+    const VData c_err = add_intrin(sub_intrin(set1_intrin<VData>(GammaConsts<Real>::c_hi), c), S);
+    L_hi = add_intrin(s, c);
+    L_lo = add_intrin(add_intrin(sub_intrin(s, L_hi), c), add_intrin(add_intrin(s_lo, t_lo), add_intrin(c_err, set1_intrin<VData>(GammaConsts<Real>::c_lo))));
+  }
+  // lgamma(1 + z) for -1/1024 <= a < 8; lgamma(a) adds log(arg) xor sgn: arg = p of the shift to [2, 3), else |a| and
+  // sgn = -0
+  template <class Coeffs, class VData> inline VData lgamma_mid_intrin(VData& arg, VData& sgn, const VData& a) {
+    using Real = typename VData::ScalarType;
+    const VData one = set1_intrin<VData>((Real)1);
+    VData y, p;
+    gamma_shift_intrin(y, p, a, (Real)3);
+    const Mask<VData> below1 = comp_intrin<ComparisonType::lt>(y, one);
+    const VData z = select_intrin(below1, y, sub_intrin(y, one));
+    const VData u = fma_intrin(z, div_intrin(eval_poly_intrin(z, Coeffs::lp), eval_poly_intrin(z, Coeffs::lq)), mul_intrin(z, set1_intrin<VData>((Real)0.5)));
+    arg = select_intrin(below1, fabs_intrin(a), p);
+    sgn = select_intrin(below1, set1_intrin<VData>((Real)-0.0), zero_intrin<VData>());
+    return mul_intrin(u, sub_intrin(z, one)); // z - 1 exact for z >= 1/2
+  }
+  // sum_k B_2k/(2k (2k-1)) w^(k-1), k = 1 .. 14, w = 1/x^2, of one value (Bernoulli numbers B_2k); Digamma: B_2k/(2k)
+  template <bool Digamma, class Real> inline Real gamma_series_generic(const Real w) {
+    static constexpr double b[14][2] = {{1, 6}, {-1, 30}, {1, 42}, {-1, 30}, {5, 66}, {-691, 2730}, {7, 6}, {-3617, 510}, {43867, 798}, {-174611, 330}, {854513, 138}, {-236364091, 2730}, {8553103, 6}, {-23749461029, 870}};
+    Real s = 0;
+    for (Integer k = 14; k >= 1; k--) s = s * w + (Real)b[k - 1][0] / (Real)b[k - 1][1] / (Real)(Digamma ? 2 * k : 2 * k * (2 * k - 1));
+    return s;
+  }
+  // lgamma(x) of one value: the reflection formula below 1/2; else Stirling's series at y = x + n >= 32, less the log of
+  // x (x+1) ... (y-1)
+  template <class Real> inline Real lgamma_generic(const Real x) {
+    if (!(fabs(x) < (Real)INFINITY)) return fabs(x); // inf, NaN
+    if (x < (Real)0.5) {
+      if (x == floor(x)) return (Real)INFINITY;
+      return log(const_pi<Real>() / fabs(sin(const_pi<Real>() * (x - round(x))))) - lgamma_generic(1 - x);
+    }
+    Real y = x;
+    Real p = 1;
+    for (; y < 32; y += 1) p *= y;
+    return (y - (Real)0.5) * log(y) - y + log(2 * const_pi<Real>()) / 2 + gamma_series_generic<false>(1 / (y * y)) / y - log(p);
+  }
+  // Gamma(x) of one value: the reflection formula below 1/2; else e^lgamma(y) / (x (x+1) ... (y-1)), y = x + n >= 32
+  template <class Real> inline Real tgamma_generic(const Real x) {
+    if (x == 0 || !(x == x)) return 1 / x; // +-inf, NaN
+    if (x < (Real)0.5) {
+      if (x == floor(x)) return (Real)NAN; // also -inf
+      const Real n = round(x);
+      const Real s = sin(const_pi<Real>() * (x - n)) * (n - 2 * floor(n / 2) == 0 ? 1 : -1); // sin(pi x)
+      return const_pi<Real>() / (s * tgamma_generic(1 - x));
+    }
+    if (x > 2000) return (Real)INFINITY;
+    Real y = x;
+    Real p = 1;
+    for (; y < 32; y += 1) p *= y;
+    return exp((y - (Real)0.5) * log(y) - y + log(2 * const_pi<Real>()) / 2 + gamma_series_generic<false>(1 / (y * y)) / y) / p;
+  }
+  // digamma(x) of one value: the reflection formula below 0; else the asymptotic series at y = x + n >= 32, less
+  // 1/x + 1/(x+1) + ... + 1/(y-1)
+  template <class Real> inline Real digamma_generic(const Real x) {
+    if (x == 0 || !(x == x)) return -1 / x; // -+inf, NaN
+    if (x < 0) {
+      if (x == floor(x)) return (Real)NAN; // also -inf
+      const Real r = const_pi<Real>() * (x - round(x)); // cot(pi x) = cot(r)
+      return digamma_generic(1 - x) - const_pi<Real>() * cos(r) / sin(r);
+    }
+    if (x == (Real)INFINITY) return x;
+    Real y = x;
+    Real sum = 0;
+    for (; y < 32; y += 1) sum += 1 / y;
+    const Real w = 1 / (y * y);
+    return log(y) - 1 / (2 * y) - gamma_series_generic<true>(w) * w - sum;
+  }
+  // Gamma(x): a rational on [1, 2] (GammaCoeffs) with the shift to it below 8, Stirling's series beyond, and the
+  // reflection formula below -1/1024. digits = -1: full
+  template <Integer digits = -1, class VData> inline VData tgamma_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      using Coeffs = GammaCoeffsOf<Real, digits>;
+      const VData one = set1_intrin<VData>((Real)1);
+      const VData eight = set1_intrin<VData>((Real)8);
+      const VData tiny = set1_intrin<VData>((Real)-1 / 1024);
+      const auto mid_value = [&one](const VData& a) { // -1/1024 <= a < 8: Gamma(1 + z) = (Q + z P)/Q, times p, over a below 1
+        VData y, p;
+        gamma_shift_intrin(y, p, a, (Real)2);
+        const Mask<VData> below1 = comp_intrin<ComparisonType::lt>(y, one);
+        const VData z = select_intrin(below1, y, sub_intrin(y, one));
+        const VData q = eval_poly_intrin(z, Coeffs::tq);
+        const VData num = fma_intrin(z, eval_poly_intrin(z, Coeffs::tp), q);
+        return mul_intrin(div_intrin(num, select_intrin(below1, mul_intrin(z, q), q)), p);
+      };
+      if (mask_count_intrin(comp_intrin<ComparisonType::ge>(x, tiny) & comp_intrin<ComparisonType::lt>(x, eight)) == VData::Size) return mid_value(x);
+
+      // x >= 8 or x < -1/1024, inf or NaN: Gamma(a), a = |x|; Gamma(x) = -pi/(x sinpi(x) Gamma(-x)) for x < -1/1024
+      const Mask<VData> neg = comp_intrin<ComparisonType::lt>(x, tiny);
+      const VData a = select_intrin(neg, unary_minus_intrin(x), x);
+      const Mask<VData> big = comp_intrin<ComparisonType::ge>(a, eight);
+      const Integer n_big = mask_count_intrin(big);
+      VData r = (n_big < VData::Size ? mid_value(a) : one);
+      VData L_hi = one;
+      VData L_lo = one;
+      if (n_big) {
+        const VData ab = min_intrin(set1_intrin<VData>((Real)200), max_intrin(eight, a)); // Gamma(200) overflows
+        VData e, f, lh, ll;
+        log_split_intrin<false>(e, f, ab);
+        log_hi_lo_intrin(lh, ll, e, f);
+        lgamma_stirling_intrin<Coeffs>(L_hi, L_lo, ab, lh, ll);
+        const VData E = exp_intrin(L_hi);
+        r = select_intrin(big, select_intrin(comp_intrin<ComparisonType::eq>(E, set1_intrin<VData>((Real)INFINITY)), E, fma_intrin(E, L_lo, E)), r);
+      }
+      if (mask_count_intrin(neg)) {
+        VData s, c;
+        approx_sincospi_intrin<-1, true, true, false>(s, c, x);
+        const Mask<VData> ovf = big & comp_intrin<ComparisonType::gt>(L_hi, set1_intrin<VData>(std::is_same<Real,float>::value ? (Real)85 : (Real)704)); // log(max/a), a <= 40 (double: 200) where Gamma(a) is finite
+        VData h = one; // Gamma(a) = g h, h = e^(L_hi/2) where x sinpi(x) Gamma(a) could overflow
+        if (mask_count_intrin(neg & ovf)) h = select_intrin(ovf, exp_intrin(mul_intrin(L_hi, set1_intrin<VData>((Real)0.5))), one);
+        const VData g = select_intrin(ovf, fma_intrin(h, L_lo, h), r);
+        const VData rr = div_intrin(div_intrin(set1_intrin<VData>(-const_pi<Real>()), mul_intrin(mul_intrin(x, s), g)), h);
+        r = select_intrin(neg, select_intrin(comp_intrin<ComparisonType::eq>(s, zero_intrin<VData>()), set1_intrin<VData>((Real)NAN), rr), r);
+      }
+      return r;
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) {
+        if constexpr (std::is_floating_point<Real>::value) x_.x[i] = std::tgamma(x_.x[i]);
+        else x_.x[i] = tgamma_generic(x_.x[i]);
+      }
+      return x_.v;
+    }
+  }
+  // lgamma(x) for x >= 8 or x < -1/1024, inf or NaN: one log for the shift and Stirling's series, and the reflection
+  // formula; arguments and result by value
+  template <class Coeffs, class VData> [[gnu::noinline]] VData lgamma_general_intrin(const VData x) {
+    using Real = typename VData::ScalarType;
+    const VData zero = zero_intrin<VData>();
+    const VData one = set1_intrin<VData>((Real)1);
+    const VData eight = set1_intrin<VData>((Real)8);
+    const VData tiny = set1_intrin<VData>((Real)-1 / 1024);
+    VData arg = one;
+    VData sgn = zero;
+    const Mask<VData> neg = comp_intrin<ComparisonType::lt>(x, tiny);
+    const VData a = select_intrin(neg, unary_minus_intrin(x), x);
+    const Mask<VData> big = comp_intrin<ComparisonType::ge>(a, eight);
+    const Integer n_big = mask_count_intrin(big);
+    static constexpr Real big_x = pow<TypeTraits<Real>::SigBits,Real>((Real)2); // beyond, a (log a - 1)
+    const VData ab = min_intrin(set1_intrin<VData>(big_x), max_intrin(eight, a));
+    VData r = (n_big < VData::Size ? lgamma_mid_intrin<Coeffs>(arg, sgn, a) : zero);
+    const VData lh = log_intrin(select_intrin(big, ab, arg));
+    const VData ll = zero;
+    r = add_intrin(r, xor_intrin(lh, sgn));
+    if (n_big) {
+      VData L_hi, L_lo;
+      lgamma_stirling_intrin<Coeffs, false>(L_hi, L_lo, ab, lh, ll);
+      r = select_intrin(big, add_intrin(L_hi, L_lo), r);
+    }
+    const Mask<VData> huge = comp_intrin<ComparisonType::gt>(a, set1_intrin<VData>(big_x));
+    if (mask_count_intrin(huge)) r = select_intrin(huge, mul_intrin(a, sub_intrin(log_intrin(a), one)), r);
+    if (mask_count_intrin(neg)) { // lgamma(x) = log(pi) - log|x sinpi(x)| - lgamma(-x)
+      VData s, c;
+      approx_sincospi_intrin<-1, true, true, false>(s, c, x);
+      const VData rr = sub_intrin(sub_intrin(set1_intrin<VData>((Real)1.14472988584940017414342735135305871L), log_intrin(fabs_intrin(mul_intrin(x, s)))), r);
+      r = select_intrin(neg, select_intrin(comp_intrin<ComparisonType::eq>(x, set1_intrin<VData>(-(Real)INFINITY)), set1_intrin<VData>((Real)INFINITY), rr), r);
+    }
+    return r;
+  }
+  // log|Gamma(x)|: a rational on [1, 3] (GammaCoeffs) with the shift to it below 8, Stirling's series beyond, and the
+  // reflection formula below -1/1024. digits = -1: full
+  template <Integer digits = -1, class VData> inline VData lgamma_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      using Coeffs = GammaCoeffsOf<Real, digits>;
+      const VData zero = zero_intrin<VData>();
+      const VData one = set1_intrin<VData>((Real)1);
+      const VData eight = set1_intrin<VData>((Real)8);
+      const VData tiny = set1_intrin<VData>((Real)-1 / 1024);
+      VData arg = one;
+      VData sgn = zero;
+      if (mask_count_intrin(comp_intrin<ComparisonType::ge>(x, tiny) & comp_intrin<ComparisonType::lt>(x, eight)) == VData::Size) {
+        const VData base = lgamma_mid_intrin<Coeffs>(arg, sgn, x);
+        return add_intrin(base, xor_intrin(log_intrin(arg), sgn));
+      }
+      return lgamma_general_intrin<Coeffs>(x);
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) {
+        if constexpr (std::is_floating_point<Real>::value) x_.x[i] = std::lgamma(x_.x[i]);
+        else x_.x[i] = lgamma_generic(x_.x[i]);
+      }
+      return x_.v;
+    }
+  }
+  // digamma(x): a rational on [1/2, 3] (GammaCoeffs) with the shift to it below 8, the asymptotic series beyond, and the
+  // reflection formula below 0. digits = -1: full
+  template <Integer digits = -1, class VData> inline VData digamma_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      using Coeffs = GammaCoeffsOf<Real, digits>;
+      const VData zero = zero_intrin<VData>();
+      const VData one = set1_intrin<VData>((Real)1);
+      const VData eight = set1_intrin<VData>((Real)8);
+      const auto mid_value = [&zero, &one](const VData& a) { // 0 <= a < 8, also -0: (d (Q + P) D + N Q)/(Q D)
+        const Mask<VData> mid = comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>((Real)8));
+        VData y = a;
+        VData N = zero; // N/D = 1/(a-1) + 1/(a-2) + ... + 1/y for the shift down to y < 3, or -1/a below 1/2
+        VData D = one;
+        for (Integer k = 0; k < 5; k++) {
+          const Mask<VData> m = mid & comp_intrin<ComparisonType::ge>(y, set1_intrin<VData>((Real)3));
+          if (!mask_count_intrin(m)) break;
+          y = select_intrin(m, sub_intrin(y, one), y);
+          N = select_intrin(m, fma_intrin(N, y, D), N);
+          D = select_intrin(m, mul_intrin(D, y), D);
+        }
+        const Mask<VData> below = comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>((Real)0.5));
+        N = select_intrin(below, set1_intrin<VData>((Real)-1), N);
+        D = select_intrin(below, a, D);
+        const VData z = select_intrin(below, a, sub_intrin(y, one));
+        const VData d = sub_intrin(sub_intrin(z, set1_intrin<VData>(GammaConsts<Real>::z0_hi)), set1_intrin<VData>(GammaConsts<Real>::z0_lo));
+        const VData P = eval_poly_intrin(z, Coeffs::dp);
+        const VData Q = eval_poly_intrin(z, Coeffs::dq);
+        return div_intrin(fma_intrin(mul_intrin(d, add_intrin(Q, P)), D, mul_intrin(N, Q)), mul_intrin(Q, D));
+      };
+      if (mask_count_intrin(comp_intrin<ComparisonType::ge>(x, zero) & comp_intrin<ComparisonType::lt>(x, eight)) == VData::Size) return mid_value(x);
+
+      // x >= 8 or x < 0, inf or NaN: digamma(a), a = x or 1 - x; digamma(x) = digamma(1 - x) - pi cospi(x)/sinpi(x)
+      const Mask<VData> neg = comp_intrin<ComparisonType::lt>(x, zero);
+      const VData a = select_intrin(neg, sub_intrin(one, x), x);
+      const Mask<VData> big = comp_intrin<ComparisonType::ge>(a, eight);
+      const Integer n_big = mask_count_intrin(big);
+      VData r = (n_big < VData::Size ? mid_value(a) : zero);
+      if (n_big) {
+        const VData ri = div_intrin(one, a);
+        const VData w = mul_intrin(ri, ri);
+        r = select_intrin(big, sub_intrin(log_intrin(a), fma_intrin(w, eval_poly_intrin(w, Coeffs::a), mul_intrin(ri, set1_intrin<VData>((Real)0.5)))), r);
+      }
+      if (mask_count_intrin(neg)) {
+        VData s, c;
+        approx_sincospi_intrin<-1>(s, c, x);
+        const VData rr = sub_intrin(r, div_intrin(mul_intrin(set1_intrin<VData>(const_pi<Real>()), c), s));
+        r = select_intrin(neg, select_intrin(comp_intrin<ComparisonType::eq>(s, zero), set1_intrin<VData>((Real)NAN), rr), r);
+      }
+      return r;
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) x_.x[i] = digamma_generic(x_.x[i]);
+      return x_.v;
+    }
+  }
+
   template <class VData> inline VData cbrt_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     union {

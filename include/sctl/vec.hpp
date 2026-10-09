@@ -761,6 +761,27 @@ namespace sctl {
   /** erfinv to the given digits (-1: full). */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y);
 
+  /** Gamma function, as std::tgamma: NaN at negative integers, +-inf at +-0; float, double: within 4.5 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> tgamma(const Vec<ValueType,N>& x);
+  /** tgamma to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tgamma(const Vec<ValueType,N>& x);
+
+  /**
+   * log|Gamma(x)|, as std::lgamma: inf at non-positive integers; float, double: within 3 ulp for x >= 0, below within
+   * 13 eps (1 + |lgamma(x)|).
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> lgamma(const Vec<ValueType,N>& x);
+  /** lgamma to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_lgamma(const Vec<ValueType,N>& x);
+
+  /**
+   * Digamma function Gamma'(x)/Gamma(x): NaN at negative integers, -+inf at +-0; float, double: within 4 ulp for
+   * x >= 0, below within 6 eps (1 + |digamma(x)|).
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> digamma(const Vec<ValueType,N>& x);
+  /** digamma to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_digamma(const Vec<ValueType,N>& x);
+
   /** Remainder of x/y with the sign of x, as std::fmod. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 
