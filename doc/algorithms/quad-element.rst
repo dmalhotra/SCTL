@@ -353,9 +353,9 @@ than AVX2 at 4 and 7 digits. All errors stay below the requested tolerance.
    :align: center
    :width: 70%
 
-   Error against throughput on Genoa (per core, all 96 cores in use), Laplace solid and Stokes
+   Throughput against error on Genoa (per core, all 96 cores in use), Laplace solid and Stokes
    dashed, one curve per twist; the four points of a curve are the tolerances :math:`10^{-3}` to
-   :math:`10^{-12}`.
+   :math:`10^{-12}`, right to left.
 
 - **Convergence**: the error follows the tolerance over nine decades at twist :math:`\pi/6`,
   :math:`2.1\times10^{-7}` to :math:`1.7\times10^{-13}`, down to a floor set by the parametrisation,
