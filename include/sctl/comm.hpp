@@ -681,6 +681,17 @@ class Comm {
   }
 
   /**
+   * This process's lower splitter for a load-balanced distributed sort, by iterative exact-rank histogramming; the
+   * balance does not depend on the data distribution. Collective, O(npes) communication per round.
+   *
+   * @param[in] loc locally-sorted elements on this process.
+   * @param[in] totSize total element count across all processes.
+   * @param[in] comp comparison functor.
+   * @return the value at global rank Rank()*totSize/npes (rank 0's return value is unused).
+   */
+  template <class Type, class Compare> Type DetermineSplitter(const Vector<Type>& loc, Long totSize, Compare comp) const;
+
+  /**
    * Generates scatter indices corresponding to a sorted array.
    *
    * @tparam Type type of the elements in the array.
@@ -726,18 +737,6 @@ class Comm {
    * elements in [splitter_r, splitter_{r+1}).
    */
   template <class Type, class Compare> void DistributeAndMerge(const Vector<Type>& loc, const Type& splitter, Vector<Type>& SortedElem, Compare comp) const;
-
-  /**
-   * Determine this process's lower-boundary splitter for a load-balanced distributed sort via
-   * iterative exact-rank histogramming. Generic (uses only `comp` and actual elements), O(npes)
-   * communication per round; the resulting balance is independent of the data distribution.
-   *
-   * @param[in] loc locally-sorted elements on this process.
-   * @param[in] totSize total element count across all processes.
-   * @param[in] comp comparison functor.
-   * @return the value at global rank Rank()*totSize/npes (rank 0's return value is unused).
-   */
-  template <class Type, class Compare> Type DetermineSplitter(const Vector<Type>& loc, Long totSize, Compare comp) const;
 
 #ifdef SCTL_HAVE_MPI
   /**
