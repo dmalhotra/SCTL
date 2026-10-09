@@ -24,6 +24,8 @@
 #include "sctl/profile.txx"            // for Profile::Tic, Profile::Toc
 #include "sctl/scratch_pool.hpp"       // for ScratchBuf
 #include "sctl/scratch_pool.txx"       // for ScratchBuf
+#include "sctl/sort-scatter.hpp"       // for SortScatter
+#include "sctl/sort-scatter.txx"       // for SortScatter::Init, SortScatter::ScatterForward
 #include "sctl/static-array.hpp"       // for StaticArray
 #include "sctl/static-array.txx"       // for StaticArray::operator[], Stati...
 #include "sctl/tree.hpp"               // for Morton
@@ -45,9 +47,9 @@ namespace sctl {
     }
   }
 
-  template <class Real, Integer COORD_DIM> void BuildNearList(Vector<Real>& Xtrg_near, Vector<Real>& Xn_trg_near, Vector<Long>& near_elem_cnt, Vector<Long>& near_elem_dsp, Vector<Long>& near_scatter_index, Vector<Long>& near_trg_cnt, Vector<Long>& near_trg_dsp, const Vector<Real>& Xtrg, const Vector<Real>& Xn_trg, const Vector<Real>& Xsrc, const Vector<Real>& src_radius, const Vector<Long>& src_elem_nds_cnt, const Vector<Long>& src_elem_nds_dsp, const Comm& comm) {
+  template <class Real, Integer COORD_DIM> void BuildNearList(Vector<Real>& Xtrg_near, Vector<Real>& Xn_trg_near, Vector<Long>& near_elem_cnt, Vector<Long>& near_elem_dsp, SortScatter<Long>& near_sort_scatter, Vector<Long>& near_trg_cnt, Vector<Long>& near_trg_dsp, const Vector<Real>& Xtrg, const Vector<Real>& Xn_trg, const Vector<Real>& Xsrc, const Vector<Real>& src_radius, const Vector<Long>& src_elem_nds_cnt, const Vector<Long>& src_elem_nds_dsp, const Comm& comm) {
     // Input: Xtrg, Xn_trg, Xsrc, src_radius, src_elem_nds_cnt, src_elem_nds_dsp, comm
-    // Output: Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt, near_trg_dsp
+    // Output: Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_sort_scatter, near_trg_cnt, near_trg_dsp
 
     struct NodeData {
       Long idx;
@@ -185,25 +187,42 @@ namespace sctl {
     }
 
     Vector<NodeData> trg_nodes0, src_nodes0;
-    ScratchBuf<NodeData> splitter_nodes(comm_.Size());
-    { // Set trg_nodes0 <- sort(trg_nodes), and with more than one process src_nodes0 <- sort(src_nodes)
-      if (np > 1) comm_.SampleSort(src_nodes, src_nodes0, comp_node_mid);
-      comm_.SampleSort(trg_nodes, trg_nodes0, comp_node_mid);
+    ScratchBuf<NodeData> splitter_nodes(np);
+    static SortScatter<Morton<COORD_DIM>> sort_scatter;
+    { // Set trg_nodes0 <- sort(trg_nodes), if (np>1) src_nodes0 <- sort(src_nodes), partitioned by src splitter_nodes
+      const auto build_mid_sort_scatter = [&comm_](SortScatter<Morton<COORD_DIM>>& sort_scatter, const Vector<NodeData>& nodes, const Morton<COORD_DIM>* splitter) {
+        ScratchBuf<Morton<COORD_DIM>> mid_buf(nodes.Dim());
+        Vector<Morton<COORD_DIM>> mid(mid_buf);
+        #pragma omp parallel for schedule(static)
+        for (Long i = 0; i < nodes.Dim(); i++) mid[i] = nodes[i].mid;
+        sort_scatter.Init(mid, splitter, comm_);
+      };
 
-      StaticArray<NodeData,1> splitter_node;
-      SCTL_ASSERT(!rank || src_nodes0.Dim());
-      splitter_node[0].mid = (rank ? src_nodes0[0].mid : Morton<COORD_DIM>());
-      while (splitter_node[0].mid.Depth()) { // find coarsest ancestor with same coordinates
-        auto& mid = splitter_node[0].mid;
-        const Long depth = mid.Depth();
-        if (mid == mid.Ancestor(depth-1).Ancestor(depth)) {
-          mid = mid.Ancestor(depth-1);
-        } else break;
+      ScratchBuf<Morton<COORD_DIM>> splitters_buf(np);
+      Vector<Morton<COORD_DIM>> splitters(splitters_buf);
+      { // splitter_nodes, splitters <-- coarsest splitters of src_nodes
+        StaticArray<Morton<COORD_DIM>,1> splitter{Morton<COORD_DIM>()};
+        if (np > 1) {
+          build_mid_sort_scatter(sort_scatter, src_nodes, nullptr);
+          SCTL_ASSERT(!rank || sort_scatter.SortedCount());
+          if (rank) splitter[0] = sort_scatter.SortedKeys()[0];
+        }
+        while (splitter[0].Depth()) { // find coarsest ancestor with same coordinates
+          auto& mid = splitter[0];
+          const Long depth = mid.Depth();
+          if (mid == mid.Ancestor(depth-1).Ancestor(depth)) {
+            mid = mid.Ancestor(depth-1);
+          } else break;
+        }
+        comm_.Allgather(splitter + 0, 1, splitters.begin(), 1);
+        for (Long p = 0; p < np; p++) splitter_nodes[p].mid = splitters[p];
       }
-
-      comm_.Allgather((ConstIterator<NodeData>)splitter_node, 1, splitter_nodes.begin(), 1);
-      comm_.PartitionS(src_nodes0, splitter_node[0], comp_node_mid);
-      comm_.PartitionS(trg_nodes0, splitter_node[0], comp_node_mid);
+      if (np > 1) { // src_nodes0 <-- partition(dist_sort(src_nodes), splitter_nodes)
+        sort_scatter.Repartition(&splitters[rank]);
+        sort_scatter.ScatterForward(src_nodes0, src_nodes, 1);
+      }
+      build_mid_sort_scatter(sort_scatter, trg_nodes, &splitters[rank]);
+      sort_scatter.ScatterForward(trg_nodes0, trg_nodes, 1);
     }
 
     Vector<NodeData> src_nodes1;
@@ -485,14 +504,17 @@ namespace sctl {
       omp_par::scan(near_elem_cnt.begin(), near_elem_dsp.begin(), Nelem, (Long)0);
     }
 
-    { // Set scatter_index, near_trg_cnt, near_trg_dsp
-      Vector<Long> trg_idx(near_lst.Dim());
-      #pragma omp parallel for schedule(static)
-      for (Long i = 0; i < trg_idx.Dim(); i++) {
-        trg_idx[i] = near_lst[i].idx;
+    { // Set near_sort_scatter, near_trg_cnt, near_trg_dsp
+      { // near_sort_scatter <- the target index of each near pair, sorted and cut at the first target of each process
+        ScratchBuf<Long> trg_idx_buf(near_lst.Dim());
+        Vector<Long> trg_idx(trg_idx_buf);
+        #pragma omp parallel for schedule(static)
+        for (Long i = 0; i < trg_idx.Dim(); i++) {
+          trg_idx[i] = near_lst[i].idx;
+        }
+        near_sort_scatter.Init(trg_idx, &trg_offset, comm_);
       }
-      comm_.SortScatterIndex(trg_idx, near_scatter_index, &trg_offset);
-      comm_.ScatterForward(trg_idx, near_scatter_index);
+      const Vector<Long>& trg_idx = near_sort_scatter.SortedKeys();
 
       near_trg_cnt.ReInit(Ntrg);
       near_trg_dsp.ReInit(Ntrg);
@@ -928,7 +950,7 @@ namespace sctl {
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetupNear() const {
     if (setup_near_flag) return;
     Xtrg_near.ReInit(0);
-    near_scatter_index.ReInit(0);
+    near_sort_scatter = SortScatter<Long>(comm_);
     near_trg_cnt.ReInit(0);
     near_trg_dsp.ReInit(0);
     near_elem_cnt.ReInit(0);
@@ -945,7 +967,7 @@ namespace sctl {
     Profile::Tic("SetupNear", &comm_, true, 6);
     Profile::Tic("BuildNearLst", &comm_, true, 7);
     if (periodicity_ == Periodicity::NONE) {
-      BuildNearList<Real,COORD_DIM>(Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt, near_trg_dsp, Xtrg, Xn_trg, X_far, dist_far, elem_nds_cnt_far, elem_nds_dsp_far, comm_);
+      BuildNearList<Real,COORD_DIM>(Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_sort_scatter, near_trg_cnt, near_trg_dsp, Xtrg, Xn_trg, X_far, dist_far, elem_nds_cnt_far, elem_nds_dsp_far, comm_);
     } else {
       // TODO: build periodicity into BuildNearList, will be more efficient than duplicating targets
       const Long Ncopy = [this](){
@@ -991,7 +1013,7 @@ namespace sctl {
       }
 
       Vector<Long> near_trg_cnt_, near_trg_dsp_;
-      BuildNearList<Real,COORD_DIM>(Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_scatter_index, near_trg_cnt_, near_trg_dsp_, Xtrg_, Xn_trg_, X_far, dist_far, elem_nds_cnt_far, elem_nds_dsp_far, comm_);
+      BuildNearList<Real,COORD_DIM>(Xtrg_near, Xn_trg_near, near_elem_cnt, near_elem_dsp, near_sort_scatter, near_trg_cnt_, near_trg_dsp_, Xtrg_, Xn_trg_, X_far, dist_far, elem_nds_cnt_far, elem_nds_dsp_far, comm_);
       SCTL_ASSERT(near_trg_cnt_.Dim() == Ntrg*Ncopy);
 
       near_trg_cnt.ReInit(Ntrg);
@@ -1387,8 +1409,10 @@ namespace sctl {
     }
 
     SCTL_ASSERT(near_trg_cnt.Dim() == Ntrg);
+    ScratchBuf<Real> U_trg_buf(near_sort_scatter.SortedCount() * KDIM1_);
+    Vector<Real> U_trg(U_trg_buf);  // U_near in the order of the targets
     Profile::Tic("Comm", &comm_, true, 7);
-    comm_.ScatterForward(U_near, near_scatter_index);
+    near_sort_scatter.ScatterForward(U_trg, U_near, KDIM1_);
     Profile::Toc();
     #pragma omp parallel for // schedule(static)
     for (Long i = 0; i < Ntrg; i++) { // Accumulate result to U
@@ -1396,7 +1420,7 @@ namespace sctl {
       Long near_dsp = near_trg_dsp[i];
       for (Long j = 0; j < near_cnt; j++) {
         for (Long k = 0; k < KDIM1_; k++) {
-          U[i*KDIM1_+k] += U_near[(near_dsp+j)*KDIM1_+k];
+          U[i*KDIM1_+k] += U_trg[(near_dsp+j)*KDIM1_+k];
         }
       }
     }

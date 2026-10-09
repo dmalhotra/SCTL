@@ -10,6 +10,7 @@
 #include "sctl/comm.hpp"         // for Comm
 #include "sctl/comm.txx"         // for Comm::Self
 #include "sctl/fmm-wrapper.hpp"  // for ParticleFMM
+#include "sctl/sort-scatter.hpp" // for SortScatter
 #include "sctl/vector.hpp"       // for Vector
 
 namespace sctl {
@@ -45,18 +46,17 @@ namespace sctl {
    * @param[out] near_elem_dsp vector of length K, containing the offset of the first near target point (in Xtrg_near)
    * for each element.
    *
-   * @param[out] near_scatter_index the permutation map from the target points in the near list (Xtrg_near) to the
-   * original ordering of the targets (Xtrg). Once the near potential has been computed for each pair of element and
-   * its near targets, Comm::ScatterForward() can be used to reorder the potentials to the original ordering of the
-   * targets.
+   * @param[out] near_sort_scatter the target index of each target point in the near list (Xtrg_near), sorted and cut at
+   * the first target of each process. Once the near potential has been computed for each pair of element and its near
+   * targets, its ScatterForward() moves the potentials to the order of the targets (Xtrg).
    *
-   * @param[out] near_trg_cnt, near_trg_dsp vectors of length N.  After permuting the potential for element-target pairs
-   * with near_scatter_index, the potential at the i-th target is given by summing over near_trg_cnt[i] array elements
+   * @param[out] near_trg_cnt, near_trg_dsp vectors of length N.  After moving the potential for element-target pairs
+   * with near_sort_scatter, the potential at the i-th target is given by summing over near_trg_cnt[i] array elements
    * starting at index near_trg_dsp[i].
    *
    * @note this is a collective operation.
    */
-  template <class Real, Integer COORD_DIM=3> void BuildNearList(Vector<Real>& Xtrg_near, Vector<Real>& Xn_trg_near, Vector<Long>& near_elem_cnt, Vector<Long>& near_elem_dsp, Vector<Long>& near_scatter_index, Vector<Long>& near_trg_cnt, Vector<Long>& near_trg_dsp, const Vector<Real>& Xtrg, const Vector<Real>& Xn_trg, const Vector<Real>& Xsrc, const Vector<Real>& src_radius, const Vector<Long>& src_elem_nds_cnt, const Vector<Long>& src_elem_nds_dsp, const Comm& comm);
+  template <class Real, Integer COORD_DIM=3> void BuildNearList(Vector<Real>& Xtrg_near, Vector<Real>& Xn_trg_near, Vector<Long>& near_elem_cnt, Vector<Long>& near_elem_dsp, SortScatter<Long>& near_sort_scatter, Vector<Long>& near_trg_cnt, Vector<Long>& near_trg_dsp, const Vector<Real>& Xtrg, const Vector<Real>& Xn_trg, const Vector<Real>& Xsrc, const Vector<Real>& src_radius, const Vector<Long>& src_elem_nds_cnt, const Vector<Long>& src_elem_nds_dsp, const Comm& comm);
 
   /**
    * Abstract base class for an element-list. In addition to the functions
@@ -499,7 +499,7 @@ namespace sctl {
       mutable bool setup_near_flag;
       mutable Vector<Real> Xtrg_near; // position of near-interaction target points sorted by element (size=Nnear*COORD_DIM)
       mutable Vector<Real> Xn_trg_near; // normal at near-interaction target points sorted by element (size=Nnear*COORD_DIM)
-      mutable Vector<Long> near_scatter_index; // permutation vector that takes near-interactions sorted by elem-idx to sorted by trg-idx (size=Nnear)
+      mutable SortScatter<Long> near_sort_scatter; // the trg-idx of each near-interaction: moves near-interactions sorted by elem-idx to sorted by trg-idx
       mutable Vector<Long> near_trg_cnt, near_trg_dsp; // cnt and dsp of near-interactions for each target (size=Ntrg)
       mutable Vector<Long> near_elem_cnt, near_elem_dsp; // cnt and dsp of near-interaction for each element (size=Nelem)
       mutable Vector<Long> K_near_cnt, K_near_dsp; // cnt and dsp of element wise near-interaction matrix (size=Nelem)
