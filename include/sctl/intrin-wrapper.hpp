@@ -3435,6 +3435,120 @@ namespace sctl { // Generic
     }
   }
 
+  // Minimax coefficients of the spherical Bessel functions j_1 and j_2 for x < 2 and the given digits (7: float), lowest
+  // degree first, from minimax.py sph_bessel
+  template <Integer digits> struct SphBesselCoeffs;
+  template <> struct SphBesselCoeffs<7> {
+    static constexpr double j1[] = {0.33333333330846193, -0.033333332912193765, 0.00119047501321979, -2.2044637075596085e-05, 2.4994573198436495e-07, -1.8005195322060004e-09}; // j_1 = x j1(z), z = x^2 < 4
+    static constexpr double j2[] = {0.06666666638639736, -0.004761901425636761, 0.00013226866049139796, -1.999722272691627e-06, 1.8009557019454032e-08}; // j_2 = z j2(z)
+  };
+  template <> struct SphBesselCoeffs<16> {
+    static constexpr double j1[] = {0.3333333333333333, -0.0333333333333333, 0.0011904761904759594, -2.2045855378611925e-05, 2.5052108312941436e-07, -1.9270847464352463e-09, 1.0705814406494299e-11, -4.4930789235126065e-14, 1.4100555340568715e-16}; // j_1 = x j1(z), z = x^2 < 4
+    static constexpr double j2[] = {0.06666666666666667, -0.004761904761904761, 0.00013227513227512258, -2.00416867081094e-06, 1.9270852573300347e-08, -1.2847232866692714e-10, 6.297571716925392e-13, -2.3652706827617343e-15, 6.7438976692145565e-18}; // j_2 = z j2(z)
+  };
+  // j_n(x) and y_n(x), n = 0, 1, 2, of one value x >= 0 by their forms in sin x and cos x, with the power series of
+  // j_1 and j_2 below 2
+  template <class Real> inline void sph_bessel_generic(Real (&j)[3], Real (&y)[3], const Real x) {
+    if (x == 0 || !(x < (Real)INFINITY)) { // 0, inf, NaN
+      for (Integer n = 0; n < 3; n++) {
+        j[n] = (x == 0 ? (Real)(n == 0) : (x == x ? (Real)0 : x));
+        y[n] = (x == 0 ? -(Real)INFINITY : (x == x ? (Real)0 : x));
+      }
+      return;
+    }
+    const Real s = sin(x);
+    const Real c = cos(x);
+    j[0] = s / x;
+    j[1] = (s / x - c) / x;
+    j[2] = (3 * j[1] - s) / x;
+    y[0] = -c / x;
+    y[1] = -(c / x + s) / x;
+    y[2] = (3 * y[1] + c) / x;
+    if (x < 2) { // j_n = x^n/(2n+1)!! sum (-x^2/2)^k/(k! (2n+3) (2n+5) ... (2n+2k+1))
+      const Real eps = machine_eps<Real>();
+      for (Integer n = 1; n < 3; n++) {
+        Real t = (n == 1 ? x / 3 : x * x / 15);
+        Real sum = t;
+        for (Integer k = 1; fabs(t) > eps * fabs(sum); k++) {
+          t *= -x * x / (Real)(2 * k * (2 * n + 2 * k + 1));
+          sum += t;
+        }
+        j[n] = sum;
+      }
+    }
+  }
+  // j_n(a) and y_n(a) of order n = 0, 1, 2 for a >= 0, inf or NaN from one sincos, with SphBesselCoeffs for j_1 and j_2
+  // below 2, each computed only when its flag J or Y is set
+  template <Integer n, bool J, bool Y, Integer digits, class VData> inline void sph_bessel_jy_intrin(VData& j, VData& y, const VData& a) {
+    using Real = typename VData::ScalarType;
+    using Coeffs = SphBesselCoeffs<((digits < 0 ? std::is_same<Real,double>::value : digits > 7) ? 16 : 7)>;
+    VData s, c;
+    approx_sincos_intrin<digits>(s, c, a);
+    const Mask<VData> inf = comp_intrin<ComparisonType::eq>(a, set1_intrin<VData>((Real)INFINITY));
+    if constexpr (n == 0) { // j_0 = s/x, y_0 = -c/x, by division: 1/x can overflow
+      if constexpr (J) j = select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>((Real)1), select_intrin(inf, zero_intrin<VData>(), div_intrin(s, a)));
+      if constexpr (Y) y = select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>(-(Real)INFINITY), select_intrin(inf, zero_intrin<VData>(), div_intrin(unary_minus_intrin(c), a)));
+    } else { // j_(n+1) = (2n+1)/x j_n - j_(n-1) and y_(n+1) likewise, d = 1/x
+      const VData d = div_intrin(set1_intrin<VData>((Real)1), a);
+      if constexpr (J) {
+        VData jr = mul_intrin(fma_intrin(s, d, unary_minus_intrin(c)), d);
+        if constexpr (n == 2) jr = mul_intrin(fma_intrin(jr, set1_intrin<VData>((Real)3), unary_minus_intrin(s)), d);
+        const Mask<VData> small = comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>((Real)2));
+        if (mask_count_intrin(small)) {
+          const VData z = mul_intrin(a, a);
+          jr = select_intrin(small, (n == 1 ? mul_intrin(a, eval_poly_intrin(z, Coeffs::j1)) : mul_intrin(z, eval_poly_intrin(z, Coeffs::j2))), jr);
+        }
+        j = select_intrin(inf, zero_intrin<VData>(), jr);
+      }
+      if constexpr (Y) {
+        VData yr = mul_intrin(unary_minus_intrin(fma_intrin(c, d, s)), d);
+        if constexpr (n == 2) yr = mul_intrin(fma_intrin(yr, set1_intrin<VData>((Real)3), c), d);
+        y = select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>(-(Real)INFINITY), select_intrin(inf, zero_intrin<VData>(), yr)); // also at -0
+      }
+    }
+  }
+  // j_n(x), n = 0, 1, 2, to the given digits (-1: full)
+  template <Integer n, Integer digits = -1, class VData> inline VData sph_bessel_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      const VData sgn = and_intrin(x, set1_intrin<VData>((Real)-0.0));
+      VData j, y;
+      sph_bessel_jy_intrin<n, true, false, digits>(j, y, xor_intrin(x, sgn));
+      return (n == 1 ? xor_intrin(j, sgn) : j);
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) {
+        Real j[3], y[3];
+        sph_bessel_generic(j, y, fabs(x_.x[i]));
+        x_.x[i] = (n == 1 && x_.x[i] == 0 ? x_.x[i] : (n == 1 && x_.x[i] < 0 ? -j[n] : j[n])); // j_1 odd, also at -0
+      }
+      return x_.v;
+    }
+  }
+  // y_n(x), n = 0, 1, 2, to the given digits (-1: full), NaN for x < 0
+  template <Integer n, Integer digits = -1, class VData> inline VData sph_neumann_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      VData j, y;
+      sph_bessel_jy_intrin<n, false, true, digits>(j, y, x);
+      return select_intrin(comp_intrin<ComparisonType::lt>(x, zero_intrin<VData>()), set1_intrin<VData>((Real)NAN), y);
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) {
+        Real j[3], y[3];
+        sph_bessel_generic(j, y, fabs(x_.x[i]));
+        x_.x[i] = (x_.x[i] < 0 ? (Real)NAN : y[n]);
+      }
+      return x_.v;
+    }
+  }
+
   template <class VData> inline VData cbrt_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     union {

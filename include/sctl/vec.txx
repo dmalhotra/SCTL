@@ -780,6 +780,18 @@ namespace sctl {
   template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_k(const Vec<ValueType,N>& x) {
     return cyl_bessel_k_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
   }
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> sph_bessel(const Vec<ValueType,N>& x) {
+    return sph_bessel_intrin<n>(x.get());
+  }
+  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_bessel(const Vec<ValueType,N>& x) {
+    return sph_bessel_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  }
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> sph_neumann(const Vec<ValueType,N>& x) {
+    return sph_neumann_intrin<n>(x.get());
+  }
+  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_neumann(const Vec<ValueType,N>& x) {
+    return sph_neumann_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  }
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
     return fmod_intrin(x.get(), y.get());
   }

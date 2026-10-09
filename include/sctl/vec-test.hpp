@@ -1182,6 +1182,36 @@ namespace sctl {
           SCTL_ASSERT(cyl_bessel_k<0>(VecType(inf))[0] == 0 && isnan(cyl_bessel_k<1>(VecType((ScalarType)-1))[0]) && isnan(cyl_bessel_k<2>(VecType((ScalarType)NAN))[0]));
           if constexpr (sizeof(ScalarType) <= sizeof(double)) SCTL_ASSERT(cyl_bessel_i<0>(VecType((ScalarType)1000))[0] == inf && cyl_bessel_k<0>(VecType((ScalarType)1000))[0] == 0);
         }
+        { // j_n and y_n, n = 0, 1, 2, on [-30, 30] against sph_bessel_generic in long double, relative to the envelope
+          // max(|f|, 1/|x|) as the precision is absolute near the zeros, to long double precision for QuadReal
+          const VecType x = u1.v * (ScalarType)3;
+          const VecType jv[3] = {sph_bessel<0>(x), sph_bessel<1>(x), sph_bessel<2>(x)};
+          const VecType yv[3] = {sph_neumann<0>(x), sph_neumann<1>(x), sph_neumann<2>(x)};
+          const VecType j5[3] = {approx_sph_bessel<0, 5>(x), approx_sph_bessel<1, 5>(x), approx_sph_bessel<2, 5>(x)};
+          const VecType y5[3] = {approx_sph_neumann<0, 5>(x), approx_sph_neumann<1, 5>(x), approx_sph_neumann<2, 5>(x)};
+          const ScalarType tol_b = std::max<ScalarType>(tol, (ScalarType)(16 * std::numeric_limits<long double>::epsilon()));
+          for (Integer i = 0; i < N; i++) {
+            long double J[3], Y[3];
+            sph_bessel_generic<long double>(J, Y, fabs((long double)x[i]));
+            const ScalarType env = 1 / fabs(x[i]);
+            for (Integer n = 0; n < 3; n++) {
+              const ScalarType jr = (ScalarType)(n == 1 && x[i] < 0 ? -J[n] : J[n]);
+              const ScalarType scale_j = std::max<ScalarType>(fabs(jr), env);
+              SCTL_ASSERT(fabs(jv[n][i] - jr) <= tol_b * scale_j && fabs(j5[n][i] - jv[n][i]) <= (ScalarType)1e-5 * scale_j);
+              if (x[i] < 0) {
+                SCTL_ASSERT(isnan(yv[n][i]) && isnan(y5[n][i]));
+              } else {
+                const ScalarType scale_y = std::max<ScalarType>(fabs((ScalarType)Y[n]), env);
+                SCTL_ASSERT(fabs(yv[n][i] - (ScalarType)Y[n]) <= tol_b * scale_y && fabs(y5[n][i] - yv[n][i]) <= (ScalarType)1e-5 * scale_y);
+              }
+            }
+          }
+          const ScalarType inf = (ScalarType)INFINITY;
+          SCTL_ASSERT(sph_bessel<0>(VecType((ScalarType)0))[0] == 1 && sph_bessel<1>(VecType((ScalarType)0))[0] == 0 && sph_bessel<2>(VecType((ScalarType)0))[0] == 0);
+          SCTL_ASSERT(std::signbit((double)sph_bessel<1>(VecType((ScalarType)-0.0))[0]) && sph_bessel<0>(VecType(inf))[0] == 0 && sph_bessel<1>(VecType(-inf))[0] == 0 && isnan(sph_bessel<2>(VecType((ScalarType)NAN))[0]));
+          SCTL_ASSERT(sph_neumann<0>(VecType((ScalarType)0))[0] == -inf && sph_neumann<1>(VecType((ScalarType)-0.0))[0] == -inf && sph_neumann<2>(VecType((ScalarType)0))[0] == -inf);
+          SCTL_ASSERT(sph_neumann<0>(VecType(inf))[0] == 0 && isnan(sph_neumann<1>(VecType((ScalarType)-1))[0]) && isnan(sph_neumann<2>(VecType((ScalarType)NAN))[0]));
+        }
 
         const ScalarType big = (ScalarType)(sizeof(ScalarType) == 4 ? 1e30 : 1e200); // big^2 overflows float
         SCTL_ASSERT(rel(hypot(VecType(big), VecType(big))[0], big * sqrt<ScalarType>((ScalarType)2)) <= tol);
