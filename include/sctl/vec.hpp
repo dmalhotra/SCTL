@@ -804,6 +804,19 @@ namespace sctl {
   /** cyl_neumann to the given digits (-1: full). */
   template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_neumann(const Vec<ValueType,N>& x);
 
+  /** Modified Bessel function of the first kind I_n of order n = 0, 1, 2; float, double: within 6 ulp. */
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_i(const Vec<ValueType,N>& x);
+  /** cyl_bessel_i to the given digits (-1: full). */
+  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_i(const Vec<ValueType,N>& x);
+
+  /**
+   * Modified Bessel function of the second kind K_n of order n = 0, 1, 2, inf at 0, NaN for x < 0; float, double:
+   * within 7 ulp.
+   */
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_k(const Vec<ValueType,N>& x);
+  /** cyl_bessel_k to the given digits (-1: full). */
+  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_k(const Vec<ValueType,N>& x);
+
   /** Remainder of x/y with the sign of x, as std::fmod. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 

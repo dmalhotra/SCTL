@@ -1797,9 +1797,10 @@ namespace sctl { // Generic
     for (Integer k = N - 2; k >= 0; k--) p = fma_intrin(p, x, set1_intrin<VData>((Real)(c[k] * scale)));
     return p;
   }
-  // P(x)/Q(x), one division
+  // P(x)/Q(x), one division, none for a constant Q
   template <class VData, class CType, Integer N, Integer M> inline VData eval_rational_intrin(const VData& x, const CType (&p)[N], const CType (&q)[M]) {
-    return div_intrin(eval_poly_intrin(x, p), eval_poly_intrin(x, q));
+    if constexpr (M == 1) return mul_intrin(eval_poly_intrin(x, p), set1_intrin<VData>((typename VData::ScalarType)(1 / q[0])));
+    else return div_intrin(eval_poly_intrin(x, p), eval_poly_intrin(x, q));
   }
   template <class VData, Integer... k> inline VData atanh_series_intrin(const VData& z, std::integer_sequence<Integer, k...>) { // sum 1/(2k+3) z^k
     return EvalPolynomial(z, ((typename VData::ScalarType)1 / (2*k + 3))...);
@@ -3109,10 +3110,6 @@ namespace sctl { // Generic
       }
     }
     if (n_small < VData::Size) { // J_n = r (P c - Q s), Y_n = r (P s + Q c), c and s sqrt(2) cos and sin of x - pi/4 - n pi/2
-      const auto ratio = [](const VData& w, const auto& p, const auto& q) { // p(w)/q(w), without the division for q = 1
-        if constexpr (std::extent<std::remove_reference_t<decltype(q)>>::value == 1) return eval_poly_intrin(w, p);
-        else return div_intrin(eval_poly_intrin(w, p), eval_poly_intrin(w, q));
-      };
       const VData r = div_intrin(set1_intrin<VData>((Real)0.56418958354775628694807945156077259L), sqrt_intrin(a)); // 1/sqrt(pi x), not from 1/x, which can be subnormal
       const VData d = mul_intrin(mul_intrin(r, r), set1_intrin<VData>(const_pi<Real>())); // 1/x
       const VData w = mul_intrin(mul_intrin(d, d), set1_intrin<VData>((Real)25));
@@ -3123,8 +3120,8 @@ namespace sctl { // Generic
       const VData c = (n == 0 ? u : (n == 1 ? v : unary_minus_intrin(u)));
       const VData s = (n == 0 ? v : (n == 1 ? unary_minus_intrin(u) : unary_minus_intrin(v)));
       const VData ms = (n == 0 ? unary_minus_intrin(v) : (n == 1 ? u : v)); // -s
-      const VData P = fma_intrin(w, ratio(w, Coeffs::pp, Coeffs::pq), one);
-      const VData Q = mul_intrin(d, fma_intrin(w, ratio(w, Coeffs::qp, Coeffs::qq), set1_intrin<VData>((Real)(4 * n * n - 1) / 8)));
+      const VData P = fma_intrin(w, eval_rational_intrin(w, Coeffs::pp, Coeffs::pq), one);
+      const VData Q = mul_intrin(d, fma_intrin(w, eval_rational_intrin(w, Coeffs::qp, Coeffs::qq), set1_intrin<VData>((Real)(4 * n * n - 1) / 8)));
       const Mask<VData> inf = comp_intrin<ComparisonType::eq>(a, set1_intrin<VData>((Real)INFINITY));
       if constexpr (J) jr = select_intrin(small, jr, select_intrin(inf, zero_intrin<VData>(), mul_intrin(r, fma_intrin(P, c, mul_intrin(Q, ms)))));
       if constexpr (Y) yr = select_intrin(small, yr, select_intrin(inf, zero_intrin<VData>(), mul_intrin(r, fma_intrin(P, s, mul_intrin(Q, c)))));
@@ -3169,6 +3166,270 @@ namespace sctl { // Generic
         Real J[3], Y[3];
         bessel_jy_generic(J, Y, fabs(x_.x[i]));
         x_.x[i] = (x_.x[i] < 0 ? (Real)NAN : Y[n]);
+      }
+      return x_.v;
+    }
+  }
+  // Minimax coefficients of I_n and K_n of order n = 0, 1, 2 for the given digits (7: float), lowest degree first,
+  // from minimax.py bessel_ik
+  template <Integer digits, Integer n> struct BesselIKCoeffs;
+  template <> struct BesselIKCoeffs<7, 0> {
+    static constexpr double i_lo = 9; // the small form of I_n below
+    static constexpr double i_hi = 9; // the large form of I_n from
+    static constexpr double is[] = {0.24999998949324265, 0.015625011666181205, 0.000434023754350706, 6.782314522942107e-06, 6.776387246761016e-08, 4.735488366932798e-10, 2.3252676362009085e-12, 1.0800299103434303e-14, 1.3794041044946004e-17, 1.5692084666117342e-19}; // I_n = x^n (c_n + z is(z)), c_n = 1/(2^n n!), z = x^2, x < i_lo
+    static constexpr double il[] = {0.013888857094620304, 0.000868623489852085, 9.714254501959026e-05, 2.5774695540283596e-05, -6.871869805820262e-06, 6.554223842586333e-06}; // I_n = e^x/sqrt(2 pi x) (1 + t il(t)/il_q(t)), t = i_hi/x <= 1
+    static constexpr double il_q[] = {1.0};
+    static constexpr double ki[] = {0.24999999552363172, 0.015625044669084112, 0.0004338904458703124, 6.946942071661232e-06}; // I_n = x^n (c_n + z ki(z)) in K_n for x < 1
+    static constexpr double ks[] = {0.11593151690948186, 0.27898284813768, 0.025249115569834196, 0.0008455955425064991, 1.5361912259433705e-05}; // K_n = (-1)^(n+1) log(x) I_n + h_n + x^n ks(z), h_n = 0, 1/x, 2/z - 1/2, x < 1
+    static constexpr double kl[] = {-0.1249997134424807, -0.3582255942806568, -0.18607795489270473, -0.005294875846376951}; // K_n = e^-x sqrt(pi/(2x)) (1 + t kl(t)/kl_q(t)), t = 1/x <= 1
+    static constexpr double kl_q[] = {1.0, 3.4281923208453082, 2.8329960867065616, 0.5061533858267837};
+  };
+  template <> struct BesselIKCoeffs<7, 1> {
+    static constexpr double i_lo = 9; // the small form of I_n below
+    static constexpr double i_hi = 9; // the large form of I_n from
+    static constexpr double is[] = {0.062499999031606114, 0.0026041675688371416, 5.4253201382783656e-05, 6.782063743003412e-07, 5.648489424310336e-09, 3.3772003394884886e-11, 1.4645316969765351e-13, 5.859250823592211e-16, 7.855656053263318e-19, 6.860335551712824e-21}; // I_n = x^n (c_n + z is(z)), c_n = 1/(2^n n!), z = x^2, x < i_lo
+    static constexpr double il[] = {-0.0416666304425583, -0.001447402785957528, -0.00013690268977506115, -3.1746718397786e-05, 7.3425787259988336e-06, -7.4334130276771476e-06}; // I_n = e^x/sqrt(2 pi x) (1 + t il(t)/il_q(t)), t = i_hi/x <= 1
+    static constexpr double il_q[] = {1.0};
+    static constexpr double ki[] = {0.06249999961425392, 0.002604170464345117, 5.4241905617459677e-05, 6.919947766167127e-07}; // I_n = x^n (c_n + z ki(z)) in K_n for x < 1
+    static constexpr double ks[] = {-0.30796575824904937, -0.08537071411815494, -0.004642207524219038, -0.00011248793925601319, -1.6019658139721434e-06}; // K_n = (-1)^(n+1) log(x) I_n + h_n + x^n ks(z), h_n = 0, 1/x, 2/z - 1/2, x < 1
+    static constexpr double kl[] = {0.37499955686887604, 1.0469119387957126, 0.5628434006265577, 0.03131164886711576}; // K_n = e^-x sqrt(pi/(2x)) (1 + t kl(t)/kl_q(t)), t = 1/x <= 1
+    static constexpr double kl_q[] = {1.0, 3.1042078701525244, 2.1985201687671894, 0.29733718445336776};
+  };
+  template <> struct BesselIKCoeffs<7, 2> {
+    static constexpr double i_lo = 9; // the small form of I_n below
+    static constexpr double i_hi = 9; // the large form of I_n from
+    static constexpr double is[] = {0.010416666607474563, 0.0003255208834101739, 5.4253333333065294e-06, 5.651585715018534e-08, 4.0353918300352434e-10, 2.108218576951932e-12, 8.187607219311191e-15, 2.867876401709957e-17, 3.9758915049152666e-20, 2.74695378903463e-22}; // I_n = x^n (c_n + z is(z)), c_n = 1/(2^n n!), z = x^2, x < i_lo
+    static constexpr double il[] = {-0.2083333870202193, 0.010128253361721695, 0.0004165593880309206, 6.2320783158957e-05, -8.425572880100588e-06, 1.0931043846780383e-05}; // I_n = e^x/sqrt(2 pi x) (1 + t il(t)/il_q(t)), t = i_hi/x <= 1
+    static constexpr double il_q[] = {1.0};
+    static constexpr double ki[] = {0.010416666638819298, 0.0003255211062311442, 5.424518674721966e-06, 5.7502369870560336e-08}; // I_n = x^n (c_n + z ki(z)) in K_n for x < 1
+    static constexpr double ks[] = {0.1082414395275003, 0.01596456369727948, 0.0006209654967752508, 1.1791847586214284e-05, 1.380658444193391e-07}; // K_n = (-1)^(n+1) log(x) I_n + h_n + x^n ks(z), h_n = 0, 1/x, 2/z - 1/2, x < 1
+    static constexpr double kl[] = {1.875001309733612, 5.267282041539186, 3.6480751404252363, 0.5524996657495119}; // K_n = e^-x sqrt(pi/(2x)) (1 + t kl(t)/kl_q(t)), t = 1/x <= 1
+    static constexpr double kl_q[] = {1.0, 2.3717506618201534, 1.071505672678339, 0.05061525030155449};
+  };
+  template <> struct BesselIKCoeffs<16, 0> {
+    static constexpr double i_lo = 10; // the small form of I_n below
+    static constexpr double i_hi = 15; // the large form of I_n from
+    static constexpr double is[] = {0.24999999999999994, 0.01562500000000013, 0.0004340277777776944, 6.781684027803576e-06, 6.781684027322852e-08, 4.709502802110302e-10, 2.4028075121497727e-12, 9.385968919892172e-15, 2.896896266577768e-17, 7.242449683964901e-20, 1.4959591871369148e-22, 2.6031701195589564e-25, 3.7877598256166685e-28, 5.2957072847943906e-31, 3.6083078316642037e-34, 1.0186582713400755e-36}; // I_n = x^n (c_n + z is(z)), c_n = 1/(2^n n!), z = x^2, x < i_lo
+    static constexpr double im[] = {0.008763133441829449, 0.005639374927901772, -0.010184854921460554, 0.01646210881609423, -0.0043091100338171675, 8.41268692511977e-05}; // I_n = e^x/sqrt(2 pi x) (1 + t im(s)/im_q(s)), s = t - (1 + i_hi/i_lo)/2, t = i_hi/x, i_lo <= x < i_hi
+    static constexpr double im_q[] = {1.0, 0.6001270190475448, -1.1922214070992467, 1.9273408178543934, -0.5712311869670811, 0.02738788511770857};
+    static constexpr double il[] = {0.008333333333330507, -0.0020319429654162215, -0.0034262166700781667, 0.0013020797803199547, -0.00010863181644195718, 8.744376982368183e-07}; // I_n = e^x/sqrt(2 pi x) (1 + t il(t)/il_q(t)), t = i_hi/x <= 1
+    static constexpr double il_q[] = {1.0, -0.28133315586467433, -0.4032001735108669, 0.17183637495005316, -0.01839077351358782, 0.0004583330553854738};
+    static constexpr double ki[] = {0.25, 0.015624999999999393, 0.0004340277777831026, 6.7816840056890995e-06, 6.781688915274609e-08, 4.708909864674292e-10, 2.439987601973322e-12}; // I_n = x^n (c_n + z ki(z)) in K_n for x < 1
+    static constexpr double ks[] = {0.11593151565841245, 0.2789828789146034, 0.02524892993215875, 0.0008460350907346958, 1.491471920745097e-05, 1.6271073919471184e-07, 1.208230956608941e-09, 6.621479016797831e-12}; // K_n = (-1)^(n+1) log(x) I_n + h_n + x^n ks(z), h_n = 0, 1/x, 2/z - 1/2, x < 1
+    static constexpr double kl[] = {-0.1249999999999972, -2.012760571839541, -11.963851865937736, -33.32485521112417, -45.69426533179854, -29.70081077257051, -8.041036359816939, -0.6546635045199246, -0.0028344594225496803}; // K_n = e^-x sqrt(pi/(2x)) (1 + t kl(t)/kl_q(t)), t = 1/x <= 1
+    static constexpr double kl_q[] = {1.0, 16.664584574708623, 104.49870625169679, 316.5121756718166, 495.4973940773092, 398.9280842094767, 155.01817170672314, 25.043215608146454, 1.1635455494860518};
+  };
+  template <> struct BesselIKCoeffs<16, 1> {
+    static constexpr double i_lo = 10; // the small form of I_n below
+    static constexpr double i_hi = 15; // the large form of I_n from
+    static constexpr double is[] = {0.06249999999999999, 0.0026041666666666748, 5.425347222221769e-05, 6.781684027790427e-07, 5.651403356277039e-09, 3.363930571436781e-11, 1.5017547038479584e-13, 5.214426818165533e-16, 1.4484491932901303e-18, 3.2919999276935237e-21, 6.233514363735131e-24, 1.0008292236176047e-26, 1.3557964046940927e-29, 1.749697884011255e-32, 1.1750627824326902e-35, 2.930799504458559e-38}; // I_n = x^n (c_n + z is(z)), c_n = 1/(2^n n!), z = x^2, x < i_lo
+    static constexpr double im[] = {-0.025705214673601498, -0.0014623372525136044, 0.009732115952000082, -0.027647564785448154, 0.00751870372541552, -0.0001852767651770167}; // I_n = e^x/sqrt(2 pi x) (1 + t im(s)/im_q(s)), s = t - (1 + i_hi/i_lo)/2, t = i_hi/x, i_lo <= x < i_hi
+    static constexpr double im_q[] = {1.0, 0.033000355164859864, -0.3811985730200789, 1.0843521431304797, -0.31778375590647084, 0.012912660047938876};
+    static constexpr double il[] = {-0.02499999999999718, 0.013198408423778172, 0.003413486293853544, -0.002054020788778204, 0.00018966558309078705, -2.2438910248277577e-06}; // I_n = e^x/sqrt(2 pi x) (1 + t il(t)/il_q(t)), t = i_hi/x <= 1
+    static constexpr double il_q[] = {1.0, -0.5487696702892899, -0.12632202799606984, 0.08534551524355462, -0.009163235158050986, 0.0001969727301670331};
+    static constexpr double ki[] = {0.0625, 0.002604166666666632, 5.425347222252514e-05, 6.781684015297088e-07, 5.651406102632881e-09, 3.363598964391962e-11, 1.5224684378087743e-13}; // I_n = x^n (c_n + z ki(z)) in K_n for x < 1
+    static constexpr double ks[] = {-0.3079657578292062, -0.08537071972865083, -0.00464218276647104, -0.0001125360703690081, -1.559288762392873e-06, -1.4030176905251253e-08, -8.870598024438757e-11, -4.2304894080785285e-13}; // K_n = (-1)^(n+1) log(x) I_n + h_n + x^n ks(z), h_n = 0, 1/x, 2/z - 1/2, x < 1
+    static constexpr double kl[] = {0.37499999999999584, 5.894774568737717, 34.196045130396975, 93.08236041946775, 125.26024060421042, 80.7292355229297, 22.218683796625385, 1.992514208084416, 0.024592682192945782}; // K_n = e^-x sqrt(pi/(2x)) (1 + t kl(t)/kl_q(t)), t = 1/x <= 1
+    static constexpr double kl_q[] = {1.0, 16.03189884996348, 95.92598457211724, 274.19729707974045, 398.9086088920535, 291.7840282753018, 99.39563370899981, 13.213747164861601, 0.4402498874500776};
+  };
+  template <> struct BesselIKCoeffs<16, 2> {
+    static constexpr double i_lo = 10; // the small form of I_n below
+    static constexpr double i_hi = 15; // the large form of I_n from
+    static constexpr double is[] = {0.010416666666666666, 0.0003255208333333337, 5.425347222222041e-06, 5.651403356486246e-08, 4.036716683127968e-10, 2.102456606551816e-12, 8.343081721298338e-15, 2.6072132781658764e-17, 6.583863682008219e-20, 1.3716589787436715e-22, 2.397620396434177e-25, 3.573151270761884e-28, 4.528670505072395e-31, 5.420971772804902e-34, 3.5958831560574525e-37, 7.952937020062928e-40}; // I_n = x^n (c_n + z is(z)), c_n = 1/(2^n n!), z = x^2, x < i_lo
+    static constexpr double im[] = {-0.12028599744590364, 0.08088111808573983, -0.06497195015085086, -0.017888875460170654, 0.008373880296723599, -0.0003678045182839588}; // I_n = e^x/sqrt(2 pi x) (1 + t im(s)/im_q(s)), s = t - (1 + i_hi/i_lo)/2, t = i_hi/x, i_lo <= x < i_hi
+    static constexpr double im_q[] = {1.0, -0.6399001821705688, 0.5203760934897422, 0.16508045644893657, -0.06375968073976554, 0.0012040286010117798};
+    static constexpr double il[] = {-0.12500000000000305, 0.10979199512961965, -0.024595828834890667, 0.0008084900970517447, 0.00011470544133191579, -4.263477067042346e-06}; // I_n = e^x/sqrt(2 pi x) (1 + t il(t)/il_q(t)), t = i_hi/x <= 1
+    static constexpr double il_q[] = {1.0, -0.8491692943692646, 0.1727283595784068, -0.001999065917151219, -0.0008871405502266585, 1.1615516415656665e-05};
+    static constexpr double ki[] = {0.010416666666666666, 0.0003255208333333316, 5.425347222237485e-06, 5.6514033502075034e-08, 4.0367180610275344e-10, 2.1022904913353443e-12, 8.446717300669922e-15}; // I_n = x^n (c_n + z ki(z)) in K_n for x < 1
+    static constexpr double ks[] = {0.10824143945730155, 0.01596456439921958, 0.0006209629499755581, 1.1796141759082927e-05, 1.346502330733896e-07, 1.0309891024969893e-09, 5.6755701997945905e-12, 2.395922641322016e-14}; // K_n = (-1)^(n+1) log(x) I_n + h_n + x^n ks(z), h_n = 0, 1/x, 2/z - 1/2, x < 1
+    static constexpr double kl[] = {1.8750000000000098, 28.342994636547537, 159.7356462863714, 431.3252484697625, 598.3552246518645, 425.05186827425223, 144.6518602881335, 19.911677056414202, 0.7125516042561155}; // K_n = e^-x sqrt(pi/(2x)) (1 + t kl(t)/kl_q(t)), t = 1/x <= 1
+    static constexpr double kl_q[] = {1.0, 14.678763806160434, 78.93444802066675, 197.74535675399665, 243.35081618449985, 142.75033889779252, 35.67928827786996, 2.9082445568607764, 0.03277017661576984};
+  };
+  // BesselIKCoeffs<16, n> for double at full precision or digits > 7, else <7, n>
+  template <class Real, Integer digits, Integer n> using BesselIKCoeffsOf = BesselIKCoeffs<((digits < 0 ? std::is_same<Real,double>::value : digits > 7) ? 16 : 7), n>;
+  // I_n(x) and K_n(x), n = 0, 1, 2, of one value x >= 0: I by its power series below 0.4 SigBits and the asymptotic
+  // series beyond, K by its power series up to 1/2 and the trapezoidal rule beyond
+  template <class Real> inline void bessel_ik_generic(Real (&I)[3], Real (&K)[3], const Real x) {
+    if (x == 0 || !(x < (Real)INFINITY)) { // 0, inf, NaN
+      for (Integer n = 0; n < 3; n++) {
+        I[n] = (x == 0 ? (Real)(n == 0) : x);
+        K[n] = (x == 0 ? (Real)INFINITY : (x == x ? (Real)0 : x));
+      }
+      return;
+    }
+    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+    const Real eps = machine_eps<Real>();
+    const Real pi = const_pi<Real>();
+    const Real q = x * x / 4;
+    if (x < (Real)0.4 * SigBits) { // I_n = (x/2)^n sum q^k/(k! (k+n)!)
+      for (Integer n = 0; n < 3; n++) {
+        Real t = (n == 0 ? (Real)1 : (n == 1 ? x / 2 : x * x / 8));
+        Real s = t;
+        for (Integer k = 1; t > eps * s; k++) {
+          t *= q / (Real)(k * (k + n));
+          s += t;
+        }
+        I[n] = s;
+      }
+    } else { // e^x/sqrt(2 pi x) sum b_k, b_k = b_(k-1) ((2k-1)^2 - 4n^2)/(8 k x), to the smallest term, with e^(x/2) twice
+      const Real e = exp(x / 2);
+      for (Integer n = 0; n < 3; n++) {
+        Real s = 1;
+        Real b = 1;
+        for (Integer k = 1; k < 1000; k++) {
+          const Real b_next = b * (Real)((2 * k - 1) * (2 * k - 1) - 4 * n * n) / (8 * (Real)k * x);
+          if (fabs(b_next) > fabs(b) || fabs(b_next) < eps) break;
+          b = b_next;
+          s += b;
+        }
+        I[n] = e * (s / sqrt(2 * pi * x)) * e;
+      }
+    }
+    if (x <= (Real)0.5) { // K_0 and K_1 by their series in q with the harmonic numbers H_k, L = log(x/2) + Euler's constant
+      const Real L = log(x / 2) - digamma_generic<Real>(1);
+      Real H = 0;
+      Real t0 = 1;
+      Real t1 = 1;
+      Real s0 = 0; // sum H_k q^k/(k!)^2
+      Real s1 = 1; // sum (H_k + H_(k+1)) q^k/(k! (k+1)!)
+      for (Integer k = 1; k < 200; k++) {
+        H += (Real)1 / (Real)k;
+        t0 *= q / (Real)(k * k);
+        t1 *= q / (Real)(k * (k + 1));
+        s0 += H * t0;
+        s1 += (2 * H + (Real)1 / (Real)(k + 1)) * t1;
+        if (t0 <= eps * s0 && t1 <= eps * s1) break;
+      }
+      K[0] = s0 - L * I[0];
+      K[1] = 1 / x + L * I[1] - x / 4 * s1;
+    } else { // e^-x h (1/2 + sum_j e^(-x (cosh(jh) - 1)) cosh(n jh)), the trapezoidal rule for the integral of e^(-x cosh t) cosh(nt)
+      const Real c = (Real)(SigBits + 8) * log((Real)2) + (Real)0.3 * x; // error e^-c: within |Im t| < pi/4 the integrand grows by e^(0.3 x)
+      const Real h = pi * pi / (2 * c);
+      Real s0 = (Real)0.5;
+      Real s1 = (Real)0.5;
+      for (Integer j = 1; j < 100000; j++) { // u = e^(jh/2): cosh(jh) - 1 = 2 sinh(jh/2)^2 = (u - 1/u)^2/2
+        const Real u = exp((Real)j * h / 2);
+        const Real d = u - 1 / u;
+        const Real f = exp(-x * d * d / 2);
+        s0 += f;
+        s1 += f * (u * u + 1 / (u * u)) / 2;
+        if (f < eps * eps) break;
+      }
+      const Real e = exp(-x) * h;
+      K[0] = e * s0;
+      K[1] = e * s1;
+    }
+    K[2] = K[0] + 2 * K[1] / x;
+  }
+  // I_n(a) of order n = 0, 1, 2 for a >= 0, inf or NaN by the forms of BesselIKCoeffs
+  template <Integer n, Integer digits, class VData> inline VData bessel_i_intrin(const VData& a) {
+    using Real = typename VData::ScalarType;
+    using Coeffs = BesselIKCoeffsOf<Real, digits, n>;
+    const VData one = set1_intrin<VData>((Real)1);
+    const VData cn = set1_intrin<VData>((Real)(n == 0 ? 1 : (n == 1 ? 0.5 : 0.125)));
+    const Mask<VData> small = comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>((Real)Coeffs::i_lo));
+    const Integer n_small = mask_count_intrin(small);
+    VData r = zero_intrin<VData>();
+    if (n_small) {
+      const VData z = mul_intrin(a, a);
+      const VData xn = (n == 0 ? one : (n == 1 ? a : z));
+      r = mul_intrin(xn, fma_intrin(z, eval_poly_intrin(z, Coeffs::is), cn));
+    }
+    if (n_small < VData::Size) { // e^x/sqrt(2 pi x) (1 + t R), t = i_hi/x, with e^(x/2) twice where e^x can overflow
+      const auto exp_ = [](const VData& v) {
+        if constexpr (digits < 0) return exp_intrin(v);
+        else return approx_exp_intrin<exp_taylor_order(digits), true>(v);
+      };
+      const VData t = div_intrin(set1_intrin<VData>((Real)Coeffs::i_hi), a);
+      VData R;
+      if constexpr (Coeffs::i_hi > Coeffs::i_lo) { // im on [i_lo, i_hi), in s = t - (1 + i_hi/i_lo)/2
+        const Mask<VData> mid = comp_intrin<ComparisonType::gt>(t, one); // also the lanes of small
+        const Integer n_mid = mask_count_intrin(mid) - n_small;
+        R = (n_small + n_mid < VData::Size ? eval_rational_intrin(t, Coeffs::il, Coeffs::il_q) : one);
+        if (n_mid) R = select_intrin(mid, eval_rational_intrin(sub_intrin(t, set1_intrin<VData>((Real)((1 + Coeffs::i_hi / Coeffs::i_lo) / 2))), Coeffs::im, Coeffs::im_q), R);
+      } else {
+        R = eval_rational_intrin(t, Coeffs::il, Coeffs::il_q);
+      }
+      const VData g = mul_intrin(fma_intrin(t, R, one), sqrt_intrin(mul_intrin(t, set1_intrin<VData>((Real)(0.1591549430918953357688837633725143620345L / Coeffs::i_hi))))); // (1 + t R)/sqrt(2 pi x), 1/x = t/i_hi
+      static constexpr Real e_max = (std::is_same<Real,float>::value ? (Real)88 : (Real)709); // e^x is finite below
+      VData rb;
+      if (mask_count_intrin(comp_intrin<ComparisonType::gt>(a, set1_intrin<VData>(e_max)))) {
+        const VData e = exp_(mul_intrin(a, set1_intrin<VData>((Real)0.5)));
+        rb = mul_intrin(mul_intrin(e, g), e);
+      } else {
+        rb = mul_intrin(exp_(a), g);
+      }
+      rb = select_intrin(comp_intrin<ComparisonType::eq>(a, set1_intrin<VData>((Real)INFINITY)), a, rb);
+      r = select_intrin(small, r, rb);
+    }
+    return r;
+  }
+  // K_n(a) of order n = 0, 1, 2 for a >= 0, inf or NaN by the forms of BesselIKCoeffs
+  template <Integer n, Integer digits, class VData> inline VData bessel_k_intrin(const VData& a) {
+    using Real = typename VData::ScalarType;
+    using Coeffs = BesselIKCoeffsOf<Real, digits, n>;
+    const VData one = set1_intrin<VData>((Real)1);
+    const VData two = set1_intrin<VData>((Real)2);
+    const Mask<VData> small = comp_intrin<ComparisonType::lt>(a, one);
+    const Integer n_small = mask_count_intrin(small);
+    VData r = zero_intrin<VData>();
+    if (n_small) { // (-1)^(n+1) log(x) I_n + h_n + x^n ks(z), h_n = 0, 1/x, 2/x^2 - 1/2 without x^2, which can be subnormal
+      const VData z = mul_intrin(a, a);
+      const VData xn = (n == 0 ? one : (n == 1 ? a : z));
+      const VData I = mul_intrin(xn, fma_intrin(z, eval_poly_intrin(z, Coeffs::ki), set1_intrin<VData>((Real)(n == 0 ? 1 : (n == 1 ? 0.5 : 0.125)))));
+      VData L = (digits < 0 ? log_intrin(a) : approx_log_intrin<digits>(a));
+      if constexpr (n != 1) L = unary_minus_intrin(L);
+      VData h = zero_intrin<VData>();
+      if constexpr (n == 1) h = div_intrin(one, a);
+      if constexpr (n == 2) h = sub_intrin(div_intrin(div_intrin(two, a), a), set1_intrin<VData>((Real)0.5));
+      r = fma_intrin(L, I, fma_intrin(xn, eval_poly_intrin(z, Coeffs::ks), h));
+      r = select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>((Real)INFINITY), r);
+    }
+    if (n_small < VData::Size) { // e^-x sqrt(pi/(2x)) (1 + t R), t = 1/x
+      VData e;
+      if constexpr (digits < 0) e = exp_intrin(unary_minus_intrin(a));
+      else e = approx_exp_intrin<exp_taylor_order(digits), true>(unary_minus_intrin(a));
+      const VData t = div_intrin(one, a);
+      const VData g = mul_intrin(fma_intrin(t, eval_rational_intrin(t, Coeffs::kl, Coeffs::kl_q), one), sqrt_intrin(mul_intrin(t, set1_intrin<VData>((Real)1.570796326794896619231321691639751442099L)))); // (1 + t R) sqrt(pi/(2x))
+      const VData rb = select_intrin(comp_intrin<ComparisonType::eq>(a, set1_intrin<VData>((Real)INFINITY)), zero_intrin<VData>(), mul_intrin(e, g));
+      r = select_intrin(small, r, rb);
+    }
+    return r;
+  }
+  // I_n(x), n = 0, 1, 2, to the given digits (-1: full)
+  template <Integer n, Integer digits = -1, class VData> inline VData cyl_bessel_i_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      const VData sgn = and_intrin(x, set1_intrin<VData>((Real)-0.0));
+      const VData r = bessel_i_intrin<n, digits>(xor_intrin(x, sgn));
+      return (n == 1 ? xor_intrin(r, sgn) : r);
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) {
+        Real I[3], K[3];
+        bessel_ik_generic(I, K, fabs(x_.x[i]));
+        x_.x[i] = (n == 1 && x_.x[i] == 0 ? x_.x[i] : (n == 1 && x_.x[i] < 0 ? -I[n] : I[n])); // I_1 odd, also at -0
+      }
+      return x_.v;
+    }
+  }
+  // K_n(x), n = 0, 1, 2, to the given digits (-1: full), NaN for x < 0
+  template <Integer n, Integer digits = -1, class VData> inline VData cyl_bessel_k_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      return select_intrin(comp_intrin<ComparisonType::lt>(x, zero_intrin<VData>()), set1_intrin<VData>((Real)NAN), bessel_k_intrin<n, digits>(x));
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) {
+        Real I[3], K[3];
+        bessel_ik_generic(I, K, fabs(x_.x[i]));
+        x_.x[i] = (x_.x[i] < 0 ? (Real)NAN : K[n]);
       }
       return x_.v;
     }
