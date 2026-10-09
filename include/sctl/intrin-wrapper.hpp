@@ -3,7 +3,9 @@
 
 #include <stdint.h>             // for int8_t, int16_t, int32_t, int64_t, uint8_t, ...
 #include <limits>               // for numeric_limits
+#include <tuple>                // for tie
 #include <type_traits>          // for is_same
+#include <utility>              // for pair
 
 #include "sctl/common.hpp"      // for Integer, sctl, SCTL_ALIGN_B...
 #include "sctl/math_utils.hpp"  // for const_pi, QuadReal, cos, exp, sin, sqrt
@@ -1177,6 +1179,43 @@ namespace sctl { // Generic
     t = add_intrin(z, set1_intrin<VData>(c));
     w = sub_intrin(z, sub_intrin(t, set1_intrin<VData>(c)));
   }
+  // x1 = x - n pi/2 and the low bits of x_int = n + 1.5 2^SigBits by a reduction in double, in the lanes of float x not
+  // in in_range: the rare path of approx_sincos_intrin, not inlined; arguments and results by value
+  template <class VData> [[gnu::noinline, gnu::cold]] std::pair<VData, VData> sincos_reduce_double_intrin(VData x1, VData x_int, const VData x, const Mask<VData> in_range) {
+    using HalfVec = VecData<float, VData::Size/2>;
+    using DoubleVec = VecData<double, VData::Size/2>;
+    const auto reduce = [](HalfVec& r, HalfVec& q, const HalfVec& h) { // r = h - n pi/2, q = n mod 4
+      static constexpr double offset = 1.5 * pow<TypeTraits<double>::SigBits,double>(2.0);
+      const DoubleVec xd = convert_intrin<DoubleVec>(h);
+      const DoubleVec n = sub_intrin(fma_intrin(xd, set1_intrin<DoubleVec>(2 / const_pi<double>()), set1_intrin<DoubleVec>(offset)), set1_intrin<DoubleVec>(offset));
+      r = convert_intrin<HalfVec>(PiOver2Split<double>::sub_n(xd, n));
+      q = convert_intrin<HalfVec>(fma_intrin(floor_intrin(mul_intrin(n, set1_intrin<DoubleVec>(0.25))), set1_intrin<DoubleVec>(-4.0), n));
+    };
+    HalfVec r_lo, q_lo, r_hi, q_hi;
+    reduce(r_lo, q_lo, get_low_intrin(x));
+    reduce(r_hi, q_hi, get_high_intrin(x));
+    x1 = select_intrin(in_range, x1, concat_intrin(r_lo, r_hi));
+    x_int = select_intrin(in_range, x_int, add_intrin(concat_intrin(q_lo, q_hi), set1_intrin<VData>((float)1.5 * pow<TypeTraits<float>::SigBits,float>((float)2))));
+    return {x1, x_int};
+  }
+  // sin and cos one element at a time in the lanes with |x| >= lim, inf or NaN: the rare path of approx_sincos_intrin,
+  // not inlined; arguments and results by value
+  template <class VData> [[gnu::noinline, gnu::cold]] std::pair<VData, VData> sincos_beyond_intrin(const VData sinx, const VData cosx, const VData x, const typename VData::ScalarType lim) {
+    union U {
+      VData v;
+      typename VData::ScalarType x[VData::Size];
+    };
+    U x_u = {x};
+    U s_u = {sinx};
+    U c_u = {cosx};
+    for (Integer i = 0; i < VData::Size; i++) {
+      if (!(fabs(x_u.x[i]) < lim)) {
+        s_u.x[i] = sin(x_u.x[i]);
+        c_u.x[i] = cos(x_u.x[i]);
+      }
+    }
+    return {s_u.v, c_u.v};
+  }
   // sin(x), cos(x) to DIGITS digits (-1: full): x = n pi/2 + r, by PiOver2Split with FullRange, else by one product, and
   // minimax sin and cos polynomials of r chosen by n mod 4
   template <Integer DIGITS, bool FullRange = true, class VData> inline void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
@@ -1207,22 +1246,7 @@ namespace sctl { // Generic
     if constexpr (reduce_in_double) { // these lanes: x1 and the low bits of x_int from the reduction in double
       const Mask<VData> in_range = comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(PiOver2Split<float>::lim));
       beyond_lim = (mask_count_intrin(in_range) < VData::Size);
-      if (beyond_lim) {
-        using HalfVec = VecData<float, VData::Size/2>;
-        using DoubleVec = VecData<double, VData::Size/2>;
-        const auto reduce = [](HalfVec& r, HalfVec& q, const HalfVec& h) { // r = h - n pi/2, q = n mod 4
-          static constexpr double offset = 1.5 * pow<TypeTraits<double>::SigBits,double>(2.0);
-          const DoubleVec xd = convert_intrin<DoubleVec>(h);
-          const DoubleVec n = sub_intrin(fma_intrin(xd, set1_intrin<DoubleVec>(2 / const_pi<double>()), set1_intrin<DoubleVec>(offset)), set1_intrin<DoubleVec>(offset));
-          r = convert_intrin<HalfVec>(PiOver2Split<double>::sub_n(xd, n));
-          q = convert_intrin<HalfVec>(fma_intrin(floor_intrin(mul_intrin(n, set1_intrin<DoubleVec>(0.25))), set1_intrin<DoubleVec>(-4.0), n));
-        };
-        HalfVec r_lo, q_lo, r_hi, q_hi;
-        reduce(r_lo, q_lo, get_low_intrin(x));
-        reduce(r_hi, q_hi, get_high_intrin(x));
-        x1 = select_intrin(in_range, x1, concat_intrin(r_lo, r_hi));
-        x_int = select_intrin(in_range, x_int, add_intrin(concat_intrin(q_lo, q_hi), real_offset));
-      }
+      if (beyond_lim) std::tie(x1, x_int) = sincos_reduce_double_intrin(x1, x_int, x, in_range);
     }
 
     const VData r2 = mul_intrin(x1, x1);
@@ -1239,23 +1263,7 @@ namespace sctl { // Generic
 
     if constexpr (FullRange) { // |x| beyond the exact range of the reduction, inf and NaN: one element at a time
       static constexpr Real lim = (reduce_in_double ? (Real)PiOver2Split<double>::lim : PiOver2Split<Real>::lim);
-      if (beyond_lim && mask_count_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(lim))) < VData::Size) {
-        union U {
-          VData v;
-          Real x[VData::Size];
-        };
-        U x_u = {x};
-        U s_u = {sinx};
-        U c_u = {cosx};
-        for (Integer i = 0; i < VData::Size; i++) {
-          if (!(fabs(x_u.x[i]) < lim)) {
-            s_u.x[i] = sin(x_u.x[i]);
-            c_u.x[i] = cos(x_u.x[i]);
-          }
-        }
-        sinx = s_u.v;
-        cosx = c_u.v;
-      }
+      if (beyond_lim && mask_count_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(lim))) < VData::Size) std::tie(sinx, cosx) = sincos_beyond_intrin(sinx, cosx, x, lim);
     }
   }
   template <class VData> inline void sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
