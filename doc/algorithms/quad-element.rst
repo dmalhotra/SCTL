@@ -265,9 +265,32 @@ nodes through the adjoint of the sub-element interpolation and added to the node
 Numerical results
 -----------------
 
-All from ``bench-cubed-sphere``. The convergence runs are at commit cb85cb9 of master; the scaling
-run is at 8b37d40, master plus the near-list changes of the ``near-list-scaling`` branch. The surface
-is a cubed sphere twisted about :math:`z`.
+All from ``bench-cubed-sphere`` on one node of each kind in the table below, run ``--exclusive`` with
+``OMP_PLACES=cores`` and ``OMP_PROC_BIND=close``, built with g++ 13.3.0, ``-O3 -march=native`` and
+LIBXSMM. The convergence runs are at commit cb85cb9 of master; the scaling run is at 8b37d40, master
+plus the near-list changes of the ``near-list-scaling`` branch. The surface is a cubed sphere twisted
+about :math:`z`.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 12 46 12 16
+
+   * - node
+     - processor
+     - cores
+     - SIMD
+   * - Rome
+     - 2 × AMD EPYC 7742
+     - 128
+     - AVX2
+   * - Genoa
+     - 2 × AMD EPYC 9474F
+     - 96
+     - AVX-512
+   * - Icelake
+     - 2 × Intel Xeon Platinum 8362
+     - 64
+     - AVX-512
 
 .. figure:: quad-element/cubed-sphere.svg
    :align: center
@@ -283,7 +306,8 @@ Convergence
 ~~~~~~~~~~~
 
 Order 12, 12 patches per face (864 elements, 124,416 nodes), tolerances :math:`10^{-3}` to
-:math:`10^{-12}`, three twists, Laplace and Stokes, on Rome, Genoa and Icelake with all cores in use.
+:math:`10^{-12}`, three twists, Laplace and Stokes, on each node with all of its cores in use (one process with 128, 96
+or 64 threads).
 
 .. table:: Order 12, 12 patches per face (864 elements, 124,416 nodes), Laplace, single point source
    outside the surface. *error* is :math:`\max|(S[\partial_n u]-D[u])-u|/\max|u|` at the surface nodes;
@@ -346,9 +370,8 @@ OpenMP scaling
 ~~~~~~~~~~~~~~
 
 Order 12, 8 patches per face (384 elements, 55,296 nodes), twist :math:`\pi/6`, tol :math:`10^{-3}`, on
-one Genoa node (AMD EPYC 9474F, :math:`2\times48` cores, AVX-512, ``-march=native``, ``--exclusive``,
-``OMP_PLACES=cores``, ``OMP_PROC_BIND=close``). Single-layer setup only; the double layer costs about
-the same again. Times are the minimum of 10 runs.
+the Genoa node, one process with 1 to 96 threads. Single-layer setup only; the double layer costs
+about the same again. Times are the minimum of 10 runs.
 
 .. table:: *setup* is the wall time of the single-layer self- and near-interaction setup; *speedup* is
    against one thread, with the parallel efficiency in parentheses.

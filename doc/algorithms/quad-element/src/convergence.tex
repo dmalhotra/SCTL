@@ -13,9 +13,9 @@
 \definecolor{cVec}{RGB}{110,55,150}
 \begin{document}
 \begin{tikzpicture}
-\begin{axis}[width=4.2in,height=6.2cm,xmode=log,ymode=log,
-             xlabel={points/s/core},ylabel={error},xmin=400,xmax=30000,ymin=1e-14,ymax=1e-4,
-             xtick={500,1000,2000,5000,10000,20000},xticklabels={500,{1,000},{2,000},{5,000},{10,000},{20,000}},
+\begin{axis}[width=4.2in,height=6.2cm,ymode=log,
+             xlabel={points/s/core},ylabel={error},xmin=0,xmax=22000,ymin=1e-14,ymax=1e-4,
+             scaled x ticks=false,xtick={0,5000,10000,15000,20000},xticklabels={0,{5,000},{10,000},{15,000},{20,000}},
              legend style={at={(0.5,-0.26)},anchor=north,font=\scriptsize,draw=none},legend columns=3,
              grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},label style={font=\small}]
 \addplot[cElem,thick,mark=*,mark size=1.4]         table[x=lappi6_pps,y=lappi6_err] {data/convergence-genoa.dat}; \addlegendentry{Laplace, $\pi/6$}

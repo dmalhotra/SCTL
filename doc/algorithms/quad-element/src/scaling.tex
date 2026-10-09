@@ -13,7 +13,7 @@
 \definecolor{cVec}{RGB}{110,55,150}
 \begin{document}
 \begin{tikzpicture}
-\begin{axis}[width=4.2in,height=5.6cm,xmode=log,log basis x=2,
+\begin{axis}[width=4.2in,height=5.6cm,xmode=log,log basis x=2,xtick={1,2,4,8,16,32,64,96},xticklabels={1,2,4,8,16,32,64,96},
              xlabel={threads},ylabel={points/s/core},xmin=0.8,xmax=128,ymin=0,ymax=30000,scaled y ticks=false,
              legend pos=south west,legend style={font=\scriptsize,draw=none},
              grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},label style={font=\small}]
