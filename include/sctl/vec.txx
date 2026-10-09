@@ -596,6 +596,12 @@ namespace sctl {
     approx_sincos<digits, FullRange>(sinx, cosx, x);
     return sinx / cosx;
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sinc(const Vec<ValueType,N>& x) {
+    return approx_sinc<-1>(x);
+  }
+  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinc(const Vec<ValueType,N>& x) {
+    return select(x == Vec<ValueType,N>((ValueType)0), Vec<ValueType,N>((ValueType)1), approx_sin<digits, FullRange>(x) / x);
+  }
 
   template <bool SpecialValues, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x) {
     return atan2_intrin<SpecialValues>(y.get(), x.get());

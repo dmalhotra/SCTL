@@ -664,6 +664,11 @@ namespace sctl {
   /** Tangent to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
   template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x);
 
+  /** sin(x)/x, 1 at x = 0, NaN at +-inf: sin and one division. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sinc(const Vec<ValueType,N>& x);
+  /** sinc to the given digits (-1: full); FullRange as approx_sin. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinc(const Vec<ValueType,N>& x);
+
   /** Angle of the point (x, y), in [-pi, pi], as std::atan2. SpecialValues = false: faster, but x, y both infinite or both zero give NaN. */
   template <bool SpecialValues = true, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
 

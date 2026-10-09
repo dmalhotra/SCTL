@@ -839,6 +839,15 @@ namespace sctl {
           SCTL_ASSERT(sinpi(VecType(h + (ScalarType)0.5))[0] == 1 && cospi(VecType(2 * h + 1))[0] == -1 && isnan(sinpi(VecType((ScalarType)INFINITY))[0]) && isnan(cospi(VecType((ScalarType)NAN))[0]));
         }
 
+        { // sinc, and approx_sinc to 5 digits
+          const VecType sc = sinc(v0), ac = approx_sinc<5>(v0);
+          for (Integer i = 0; i < N; i++) {
+            const ScalarType ref = sin<ScalarType>(v0[i]) / v0[i];
+            SCTL_ASSERT(fabs(sc[i] - ref) <= 8 * machine_eps<ScalarType>() / fabs(v0[i]) && fabs(ac[i] - ref) <= (ScalarType)1e-5);
+          }
+          SCTL_ASSERT(sinc(VecType((ScalarType)0))[0] == 1 && isnan(sinc(VecType((ScalarType)NAN))[0]));
+        }
+
         { // sincpi, and approx_sincpi to 5 digits
           const VecType sc = sincpi(v0), ac = approx_sincpi<5>(v0);
           for (Integer i = 0; i < N; i++) {
