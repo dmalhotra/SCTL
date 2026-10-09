@@ -1120,6 +1120,31 @@ namespace sctl { // Generic
     return fma_intrin(x8, fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c15), set1_intrin<VData>(c14)), fma_intrin(x1, set1_intrin<VData>(c13), set1_intrin<VData>(c12))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c11), set1_intrin<VData>(c10)), fma_intrin(x1, set1_intrin<VData>(c9), set1_intrin<VData>(c8)))), fma_intrin(x4, fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c7), set1_intrin<VData>(c6)), fma_intrin(x1, set1_intrin<VData>(c5), set1_intrin<VData>(c4))), fma_intrin(x2, fma_intrin(x1, set1_intrin<VData>(c3), set1_intrin<VData>(c2)), fma_intrin(x1, set1_intrin<VData>(c1), set1_intrin<VData>(c0)))));
   }
 
+  // the lowest degree n >= first with d[n - first] >= digits, at most full, for the correct digits d of polynomials of
+  // degrees first, first + 1, ...; full for digits = -1
+  template <Integer K> inline constexpr Integer poly_degree(const double (&d)[K], const Integer first, const Integer full, const Integer digits) {
+    Integer n = first;
+    while (n < full && (digits < 0 || d[n - first] < digits)) n++;
+    return n;
+  }
+  // sin(r) = r + r^3 Q(r^2), |r| <= pi/4: minimax Q of degree n, lowest degree first
+  template <Integer n> struct SinPolyCoeffs;
+  template <> struct SinPolyCoeffs<0> { static constexpr double c[] = {-0.16242791542888496}; };
+  template <> struct SinPolyCoeffs<1> { static constexpr double c[] = {-0.16663390377250456, 0.008163281920009162}; };
+  template <> struct SinPolyCoeffs<2> { static constexpr double c[] = {-0.16666654609548295, 0.008332160761835617, -0.00019515283188763054}; };
+  template <> struct SinPolyCoeffs<3> { static constexpr double c[] = {-0.16666666640797043, 0.008333329304842221, -0.00019839312269356467, 2.718121626693011e-06}; };
+  template <> struct SinPolyCoeffs<4> { static constexpr double c[] = {-0.1666666666663035, 0.008333333325077774, -0.0001984126372863407, 2.7555339656435837e-06, -2.4760454564777297e-08}; };
+  template <> struct SinPolyCoeffs<5> { static constexpr double c[] = {-0.1666666666666663, 0.008333333333322118, -0.00019841269829589542, 2.755731362138634e-06, -2.5050747762944872e-08, 1.5896230162198227e-10}; };
+  // cos(r) = 1 - r^2/2 + r^4 P(r^2), |r| <= pi/4: minimax P of degree n, lowest degree first
+  template <Integer n> struct CosPolyCoeffs;
+  template <> struct CosPolyCoeffs<0> { static constexpr double c[] = {0.040899305420584016}; };
+  template <> struct CosPolyCoeffs<1> { static constexpr double c[] = {0.04166107130733634, -0.0013648714373470025}; };
+  template <> struct CosPolyCoeffs<2> { static constexpr double c[] = {0.0416666456829738, -0.0013887316254283283, 2.4433157050415554e-05}; };
+  template <> struct CosPolyCoeffs<3> { static constexpr double c[] = {0.04166666661949214, -0.001388888350013995, 2.4799460170717853e-05, -2.720575549271016e-07}; };
+  template <> struct CosPolyCoeffs<4> { static constexpr double c[] = {0.04166666666659654, -0.0013888888877611816, 2.4801580707332747e-05, -2.7555523112319636e-07, 2.0645119045192055e-09}; };
+  inline constexpr double sin_poly_digits[] = {3.24, 5.73, 8.42, 11.29, 14.3, 16.97}; // correct digits of degrees 0 to 5
+  inline constexpr double cos_poly_digits[] = {4.36, 7.08, 9.93, 12.92, 16.03}; // degrees 0 to 4
+
   template <class Real> struct PiOver2Split { // pi/2 = hi + mid + lo from the integers of const_pi (A 2^-62 + B 2^-125); for |x| < lim, n hi and n mid are exact, with n = round(x 2/pi)
     static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
     static constexpr Integer H = std::min<Integer>((SigBits + 1) * 3 / 8, 32);
@@ -1152,34 +1177,16 @@ namespace sctl { // Generic
     t = add_intrin(z, set1_intrin<VData>(c));
     w = sub_intrin(z, sub_intrin(t, set1_intrin<VData>(c)));
   }
-  template <Integer ORDER, bool FullRange = true, class VData> inline void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
-    // ORDER    ERROR
-    //     1 8.81e-02
-    //     3 2.45e-03
-    //     5 3.63e-05
-    //     7 3.11e-07
-    //     9 1.75e-09
-    //    11 6.93e-12
-    //    13 2.09e-14
-    //    15 6.66e-16
-    //    17 6.66e-16
-
+  // sin(x), cos(x) to DIGITS digits (-1: full): x = n pi/2 + r, by PiOver2Split with FullRange, else by one product, and
+  // minimax sin and cos polynomials of r chosen by n mod 4
+  template <Integer DIGITS, bool FullRange = true, class VData> inline void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
     using Real = typename VData::ScalarType;
+    static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     using Int = typename IntegerType<sizeof(Real)>::value;
     using IntVec = VecData<Int, VData::Size>;
-    static_assert(TypeTraits<Real>::Type == DataType::Real, "Expected real type!");
-
+    static constexpr bool F = std::is_same<Real,float>::value;
+    static constexpr Integer Bits = sizeof(Real) * 8;
     static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
-    static constexpr Real coeff1  =  1;
-    static constexpr Real coeff3  = -1/(((Real)2)*3);
-    static constexpr Real coeff5  =  1/(((Real)2)*3*4*5);
-    static constexpr Real coeff7  = -1/(((Real)2)*3*4*5*6*7);
-    static constexpr Real coeff9  =  1/(((Real)2)*3*4*5*6*7*8*9);
-    static constexpr Real coeff11 = -1/(((Real)2)*3*4*5*6*7*8*9*10*11);
-    static constexpr Real coeff13 =  1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13);
-    static constexpr Real coeff15 = -1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13*14*15);
-    static constexpr Real coeff17 =  1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13*14*15*16*17);
-    static constexpr Real coeff19 = -1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13*14*15*16*17*18*19); // err = 2^-72.7991
     static constexpr Real pi_over_2 = const_pi<Real>()/2;
     static constexpr Real neg_pi_over_2 = -const_pi<Real>()/2;
     static constexpr Real inv_pi_over_2 = 1 / pi_over_2;
@@ -1218,31 +1225,17 @@ namespace sctl { // Generic
       }
     }
 
-    VData s1;
-    VData x2 = mul_intrin(x1,x1);
-    if      (ORDER >= 19) s1 = mul_intrin(EvalPolynomial(x2, coeff1, coeff3, coeff5, coeff7, coeff9, coeff11, coeff13, coeff15, coeff17, coeff19), x1);
-    else if (ORDER >= 17) s1 = mul_intrin(EvalPolynomial(x2, coeff1, coeff3, coeff5, coeff7, coeff9, coeff11, coeff13, coeff15, coeff17), x1);
-    else if (ORDER >= 15) s1 = mul_intrin(EvalPolynomial(x2, coeff1, coeff3, coeff5, coeff7, coeff9, coeff11, coeff13, coeff15), x1);
-    else if (ORDER >= 13) s1 = mul_intrin(EvalPolynomial(x2, coeff1, coeff3, coeff5, coeff7, coeff9, coeff11, coeff13), x1);
-    else if (ORDER >= 11) s1 = mul_intrin(EvalPolynomial(x2, coeff1, coeff3, coeff5, coeff7, coeff9, coeff11), x1);
-    else if (ORDER >=  9) s1 = mul_intrin(EvalPolynomial(x2, coeff1, coeff3, coeff5, coeff7, coeff9), x1);
-    else if (ORDER >=  7) s1 = mul_intrin(EvalPolynomial(x2, coeff1, coeff3, coeff5, coeff7), x1);
-    else if (ORDER >=  5) s1 = mul_intrin(EvalPolynomial(x2, coeff1, coeff3, coeff5), x1);
-    else if (ORDER >=  3) s1 = mul_intrin(EvalPolynomial(x2, coeff1, coeff3), x1);
-    else                  s1 = mul_intrin(EvalPolynomial(x2, coeff1), x1);
-
-    VData cos_squared = sub_intrin(set1_intrin<VData>(1), mul_intrin(s1, s1));
-    VData inv_cos = rsqrt_approx_intrin<ORDER,VData>::eval(cos_squared, comp_intrin<ComparisonType::ne>(cos_squared,zero_intrin<VData>()));
-    VData c1 = mul_intrin(cos_squared, inv_cos);
-
-    IntVec vec_zero(zero_intrin<IntVec>());
-    auto xAnd1 = reinterpret_mask<Mask<VData>>(comp_intrin<ComparisonType::eq>(and_intrin(reinterpret_intrin<IntVec>(x_int), set1_intrin<IntVec>(1)), vec_zero));
-    auto xAnd2 = reinterpret_mask<Mask<VData>>(comp_intrin<ComparisonType::eq>(and_intrin(reinterpret_intrin<IntVec>(x_int), set1_intrin<IntVec>(2)), vec_zero));
-
-    VData s2(select_intrin(xAnd1, s1,                    c1 ));
-    VData c2(select_intrin(xAnd1, c1, unary_minus_intrin(s1)));
-    sinx = select_intrin(xAnd2, s2, unary_minus_intrin(s2));
-    cosx = select_intrin(xAnd2, c2, unary_minus_intrin(c2));
+    const VData r2 = mul_intrin(x1, x1);
+    using SinC = SinPolyCoeffs<poly_degree(sin_poly_digits, 0, (F ? 2 : 5), DIGITS)>;
+    using CosC = CosPolyCoeffs<poly_degree(cos_poly_digits, 0, (F ? 2 : 4), DIGITS)>;
+    const VData s = fma_intrin(mul_intrin(x1, r2), eval_poly_horner_intrin(r2, SinC::c), x1);
+    const VData c = fma_intrin(r2, fma_intrin(r2, eval_poly_horner_intrin(r2, CosC::c), set1_intrin<VData>((Real)-0.5)), set1_intrin<VData>((Real)1)); // 1 + r^2 (-1/2 + r^2 P)
+    const IntVec ti = reinterpret_intrin<IntVec>(x_int);
+    const Mask<VData> odd = reinterpret_mask<Mask<VData>>(comp_intrin<ComparisonType::ne>(and_intrin(ti, set1_intrin<IntVec>(1)), zero_intrin<IntVec>()));
+    const IntVec sign = set1_intrin<IntVec>(((Int)1) << (Bits - 1));
+    const IntVec t1 = bitshiftleft_intrin(ti, Bits - 2); // bit 1 of n at the sign
+    sinx = xor_intrin(select_intrin(odd, c, s), reinterpret_intrin<VData>(and_intrin(t1, sign))); // n mod 4 = 0: s, 1: c, 2: -s, 3: -c
+    cosx = xor_intrin(select_intrin(odd, s, c), reinterpret_intrin<VData>(and_intrin(xor_intrin(t1, bitshiftleft_intrin(ti, Bits - 1)), sign))); // c, -s, -c, s
 
     if constexpr (FullRange) { // |x| beyond the exact range of the reduction, inf and NaN: one element at a time
       static constexpr Real lim = (reduce_in_double ? (Real)PiOver2Split<double>::lim : PiOver2Split<Real>::lim);
@@ -2149,12 +2142,6 @@ namespace sctl { // Generic
   template <> struct AsinhPolyCoeffs<9> { static constexpr double c[] = {-0.16666666666649935, 0.07499999996692068, -0.04464285487410398, 0.03038186715686761, -0.022370638802534055, 0.01733412175430722, -0.013816769658281845, 0.01078045378128307, -0.007150650856619543, 0.0028101369867868362}; };
   template <> struct AsinhPolyCoeffs<10> { static constexpr double c[] = {-0.16666666666665694, 0.07499999999770973, -0.044642856955217046, 0.030381936758338737, -0.0223719754666556, 0.017349989917625097, -0.013937130674525018, 0.011364956876270108, -0.008909098636713858, 0.0057946862371079984, -0.002184703164205562}; };
   inline constexpr double asinh_poly_digits[] = {4.69, 6.13, 7.53, 8.9, 10.26, 11.6, 12.93, 14.26, 15.57, 16.81}; // degrees 1 to 10
-  // the lowest degree of AsinhPolyCoeffs for the digits, at most full; full for digits = -1
-  inline constexpr Integer asinh_poly_degree(const Integer full, const Integer digits) {
-    Integer n = 1;
-    while (n < full && (digits < 0 || asinh_poly_digits[n - 1] < digits)) n++;
-    return n;
-  }
   // asinh(x) = sign(x) log(|x| + sqrt(x^2 + 1)), with the rounding errors for |x| < 5/4; x + x^3 Q(x^2) for |x| < 1/2;
   // log(2|x|) from 2^(SigBits/2). digits = -1: full. FullRange = false: |x| < 2^(SigBits/2)
   template <Integer digits = -1, bool FullRange = true, class VData> inline VData asinh_intrin(const VData& x) {
@@ -2183,7 +2170,7 @@ namespace sctl { // Generic
       }
       if (n_small > 0) {
         const VData x2 = mul_intrin(ax, ax);
-        r = select_intrin(small, fma_intrin(mul_intrin(ax, x2), eval_poly_horner_intrin(x2, AsinhPolyCoeffs<asinh_poly_degree((std::is_same<Real,float>::value ? 4 : 10), digits)>::c), ax), r);
+        r = select_intrin(small, fma_intrin(mul_intrin(ax, x2), eval_poly_horner_intrin(x2, AsinhPolyCoeffs<poly_degree(asinh_poly_digits, 1, (std::is_same<Real,float>::value ? 4 : 10), digits)>::c), ax), r);
       }
       if (FullRange && mask_count_intrin(comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>(lim))) < VData::Size) { // |x| >= lim, inf, NaN
         const VData big = add_intrin(log_intrin(ax), set1_intrin<VData>(const_ln2<Real>()));
@@ -2301,12 +2288,6 @@ namespace sctl { // Generic
   template <> struct CosPiPolyCoeffs<5> { static constexpr double c[] = {-1.2337005501361553, 0.25366950789995935, -0.02086348073586745, 0.0009192599541479634, -2.520014305985118e-05, 4.655337261110899e-07}; };
   inline constexpr double sinpi_poly_digits[] = {3.24, 5.73, 8.42, 11.29, 14.3, 17.12}; // correct digits of degrees 0 to 5
   inline constexpr double cospi_poly_digits[] = {2.49, 4.83, 7.41, 10.2, 13.14, 16.11};
-  // the lowest degree with digits d[n] >= digits, at most full; full for digits = -1
-  inline constexpr Integer sincospi_poly_degree(const double (&d)[6], const Integer full, const Integer digits) {
-    Integer n = 0;
-    while (n < full && (digits < 0 || d[n] < digits)) n++;
-    return n;
-  }
   // sin(pi x), cos(pi x) to the digits (-1: full), divided by pi with DivPi: x = (n + w)/2, sin(pi w/2) and cos(pi w/2)
   // by n mod 4; FullRange as sincos_pi_reduce_intrin
   template <Integer digits, bool FullRange = true, bool Sin = true, bool Cos = true, bool DivPi = false, class VData> inline void approx_sincospi_intrin(VData& sinx, VData& cosx, const VData& x) {
@@ -2323,8 +2304,8 @@ namespace sctl { // Generic
       const VData w2 = mul_intrin(w, w);
       static constexpr double scale = (DivPi ? 0.318309886183790671537767526745028724 : 1.0); // of the coefficients
       const auto poly = [](const VData& v, const auto& cf) { return eval_poly_horner_intrin(v, cf, scale); };
-      using SinC = SinPiPolyCoeffs<sincospi_poly_degree(sinpi_poly_digits, (F ? 2 : 5), digits)>;
-      using CosC = CosPiPolyCoeffs<sincospi_poly_degree(cospi_poly_digits, (F ? 3 : 5), digits)>;
+      using SinC = SinPiPolyCoeffs<poly_degree(sinpi_poly_digits, 0, (F ? 2 : 5), digits)>;
+      using CosC = CosPiPolyCoeffs<poly_degree(cospi_poly_digits, 0, (F ? 3 : 5), digits)>;
       VData s, c;
       if constexpr (DivPi) { // w/2 + w^3 Q/pi and 1/pi + w^2 P/pi, 1/pi = ipi_hi + ipi_lo
         static constexpr Real ipi_hi = (Real)0.318309886183790671537767526745028724L;
@@ -2446,20 +2427,19 @@ namespace sctl { // Generic
     return select_intrin(comp_intrin<ComparisonType::lt>(a, one), small, big);
   }
 
-  template <Integer ORDER, class VData> inline VData approx_sin_intrin(const VData& x) {
+  template <Integer DIGITS, class VData> inline VData approx_sin_intrin(const VData& x) {
     VData sinx, cosx;
-    approx_sincos_intrin<ORDER>(sinx, cosx, x);
+    approx_sincos_intrin<DIGITS>(sinx, cosx, x);
     return sinx;
   }
-  template <Integer ORDER, class VData> inline VData approx_cos_intrin(const VData& x) {
+  template <Integer DIGITS, class VData> inline VData approx_cos_intrin(const VData& x) {
     VData sinx, cosx;
-    approx_sincos_intrin<ORDER>(sinx, cosx, x);
+    approx_sincos_intrin<DIGITS>(sinx, cosx, x);
     return cosx;
   }
-  template <Integer ORDER, class VData> inline VData approx_tan_intrin(const VData& x) {
-    //constexpr Integer digits = ORDER;
+  template <Integer DIGITS, class VData> inline VData approx_tan_intrin(const VData& x) {
     VData sinx, cosx;
-    approx_sincos_intrin<ORDER>(sinx, cosx, x);
+    approx_sincos_intrin<DIGITS>(sinx, cosx, x);
     return div_intrin(sinx, cosx);
     //VData cos2_x = mul_intrin(cosx, cosx);
     //VData cos4_x = mul_intrin(cos2_x, cos2_x);
@@ -3564,10 +3544,10 @@ namespace sctl { // SSE
   template <> inline VecData<double,2> pow_intrin<VecData<double,2>>(const VecData<double,2>& x, const VecData<double,2>& y) { return _mm_pow_pd(x.v, y.v); }
   #else
   template <> inline void sincos_intrin<VecData<float ,4>>(VecData<float ,4>& sinx, VecData<float ,4>& cosx, const VecData<float ,4>& x) {
-    approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+    approx_sincos_intrin<-1>(sinx, cosx, x);
   }
   template <> inline void sincos_intrin<VecData<double,2>>(VecData<double,2>& sinx, VecData<double,2>& cosx, const VecData<double,2>& x) {
-    approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+    approx_sincos_intrin<-1>(sinx, cosx, x);
   }
 
   // The bits of x by integer instructions, as in Agner Fog's vectorclass (log, w5-3435X, independent /
@@ -4902,10 +4882,10 @@ namespace sctl { // AVX
   template <> inline VecData<double,4> pow_intrin<VecData<double,4>>(const VecData<double,4>& x, const VecData<double,4>& y) { return _mm256_pow_pd(x.v, y.v); }
   #else
   template <> inline void sincos_intrin<VecData<float ,8>>(VecData<float ,8>& sinx, VecData<float ,8>& cosx, const VecData<float ,8>& x) {
-    approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+    approx_sincos_intrin<-1>(sinx, cosx, x);
   }
   template <> inline void sincos_intrin<VecData<double,4>>(VecData<double,4>& sinx, VecData<double,4>& cosx, const VecData<double,4>& x) {
-    approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+    approx_sincos_intrin<-1>(sinx, cosx, x);
   }
 
 #ifdef SCTL_HAVE_LIBMVEC
@@ -6197,10 +6177,10 @@ namespace sctl { // AVX512
   template <> inline VecData<double,8> pow_intrin<VecData<double,8>>(const VecData<double,8>& x, const VecData<double,8>& y) { return _mm512_pow_pd(x.v, y.v); }
   #else
   template <> inline void sincos_intrin<VecData<float,16>>(VecData<float,16>& sinx, VecData<float,16>& cosx, const VecData<float,16>& x) {
-    approx_sincos_intrin<(Integer)(TypeTraits<float>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+    approx_sincos_intrin<-1>(sinx, cosx, x);
   }
   template <> inline void sincos_intrin<VecData<double,8>>(VecData<double,8>& sinx, VecData<double,8>& cosx, const VecData<double,8>& x) {
-    approx_sincos_intrin<(Integer)(TypeTraits<double>::SigBits/3.2)>(sinx, cosx, x); // TODO: determine constants more precisely
+    approx_sincos_intrin<-1>(sinx, cosx, x);
   }
 
 #ifdef SCTL_HAVE_LIBMVEC

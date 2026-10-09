@@ -466,19 +466,26 @@ namespace sctl {
     return x*approx_rsqrt<digits>(x, m);
   }
 
+  namespace detail_approx_digits { // which of the approximate or the full-precision routines serves the given digits
+    template <class ValueType> inline constexpr bool full(const Integer digits) { // the full-precision routine is as accurate, or the type is not float or double
+      return digits < 0 || digits >= (std::is_same<ValueType,float>::value ? 7 : 15) || !(std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value);
+    }
+    template <class ValueType> inline constexpr bool full_exp(const Integer digits) { // as full, but the Taylor polynomial of approx_exp_intrin also serves other types, up to order 13
+      return digits < 0 || exp_taylor_order(digits) > 13 || ((std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) && full<ValueType>(digits));
+    }
+  }
   template <bool FullRange, class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
 #ifndef SCTL_HAVE_SVML
-    if constexpr (!FullRange && (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value)) { // the order of sincos_intrin for float, double
-      approx_sincos_intrin<(Integer)(TypeTraits<ValueType>::SigBits/3.2), false>(sinx.get(), cosx.get(), x.get());
+    if constexpr (!FullRange && (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value)) {
+      approx_sincos_intrin<-1, false>(sinx.get(), cosx.get(), x.get());
       return;
     }
 #endif
     sincos_intrin(sinx.get(), cosx.get(), x.get());
   }
   template <Integer digits, bool FullRange, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
-    constexpr Integer ORDER = (digits>1?digits>9?digits>14?digits>17?digits-1:digits:digits+1:digits+2:1);
-    if (digits == -1 || ORDER > 20) sincos<FullRange>(sinx, cosx, x);
-    else approx_sincos_intrin<ORDER, FullRange>(sinx.get(), cosx.get(), x.get());
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) sincos<FullRange>(sinx, cosx, x);
+    else approx_sincos_intrin<digits, FullRange>(sinx.get(), cosx.get(), x.get());
   }
   template <class ValueType, Integer N> inline void sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
     approx_sincospi_intrin<-1>(sinx.get(), cosx.get(), x.get());
@@ -511,14 +518,6 @@ namespace sctl {
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x) {
     return exp_intrin(x.get());
-  }
-  namespace detail_approx_digits { // which of the approximate or the full-precision routines serves the given digits
-    template <class ValueType> inline constexpr bool full(const Integer digits) { // the full-precision routine is as accurate, or the type is not float or double
-      return digits < 0 || digits >= (std::is_same<ValueType,float>::value ? 7 : 15) || !(std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value);
-    }
-    template <class ValueType> inline constexpr bool full_exp(const Integer digits) { // as full, but the Taylor polynomial of approx_exp_intrin also serves other types, up to order 13
-      return digits < 0 || exp_taylor_order(digits) > 13 || ((std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) && full<ValueType>(digits));
-    }
   }
 
   template <Integer digits, bool RangeCheck, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x) {
