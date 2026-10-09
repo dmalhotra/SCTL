@@ -1,0 +1,80 @@
+\documentclass[11pt,border=2pt]{standalone}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{calc,arrows,positioning,fit,backgrounds,decorations.pathreplacing,patterns}
+\definecolor{cElem}{RGB}{40,80,140}
+\definecolor{cTrg}{RGB}{190,40,40}
+\definecolor{cCell}{RGB}{225,238,248}
+\definecolor{cAcc}{RGB}{240,200,120}
+\definecolor{cGrey}{RGB}{120,120,120}
+\definecolor{cVec}{RGB}{110,55,150}
+\begin{document}
+\begin{minipage}{6.6in}\centering
+\begin{tikzpicture}
+\begin{axis}[width=3.2in,height=4.9cm,xmode=log,ymode=log,log basis x=2,log basis y=2,
+             xlabel={threads},ylabel={speedup},xmin=0.8,xmax=160,ymin=0.8,ymax=160,
+             legend pos=north west,legend style={font=\scriptsize,draw=none},
+             grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
+             label style={font=\small},title style={font=\small},title={Laplace}]
+  \addplot[dashed,cGrey,thick,domain=1:128,samples=2]{x}; \addlegendentry{ideal}
+  \addplot[cElem,thick,mark=*,mark size=1.4] table[x=thr,y=speedup] {data/scaling-rome-laplace.dat};
+  \addlegendentry{Rome}
+  \addplot[cTrg,thick,mark=square*,mark size=1.4] table[x=thr,y=speedup] {data/scaling-genoa-laplace.dat};
+  \addlegendentry{Genoa}
+  \addplot[black,thick,mark=triangle*,mark size=1.8] table[x=thr,y=speedup] {data/scaling-icelake-laplace.dat};
+  \addlegendentry{Icelake}
+\end{axis}
+\end{tikzpicture}
+\hfill
+\begin{tikzpicture}
+\begin{axis}[width=3.2in,height=4.9cm,xmode=log,log basis x=2,
+             xlabel={threads},ylabel={points/s/core},xmin=0.8,xmax=160,ymin=0,ymax=11000,scaled y ticks=false,
+             legend pos=south west,legend style={font=\scriptsize,draw=none},
+             grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
+             label style={font=\small},title style={font=\small},title={Laplace}]
+  \addplot[cElem,thick,mark=*,mark size=1.4] table[x=thr,y=pps] {data/scaling-rome-laplace.dat};
+  \addlegendentry{Rome}
+  \addplot[cTrg,thick,mark=square*,mark size=1.4] table[x=thr,y=pps] {data/scaling-genoa-laplace.dat};
+  \addlegendentry{Genoa}
+  \addplot[black,thick,mark=triangle*,mark size=1.8] table[x=thr,y=pps] {data/scaling-icelake-laplace.dat};
+  \addlegendentry{Icelake}
+\end{axis}
+\end{tikzpicture}
+
+\vspace{4pt}
+
+\begin{tikzpicture}
+\begin{axis}[width=3.2in,height=4.9cm,xmode=log,log basis x=2,
+             xlabel={threads},ylabel={parallel efficiency (\%)},xmin=0.8,xmax=160,ymin=0,ymax=105,
+             legend pos=south west,legend style={font=\scriptsize,draw=none},
+             grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
+             label style={font=\small},title style={font=\small},title={Laplace}]
+  \addplot[dashed,cGrey,thick,domain=1:128,samples=2,forget plot]{100};
+  \addplot[cElem,thick,mark=*,mark size=1.4] table[x=thr,y=eff] {data/scaling-rome-laplace.dat};
+  \addlegendentry{Rome}
+  \addplot[cTrg,thick,mark=square*,mark size=1.4] table[x=thr,y=eff] {data/scaling-genoa-laplace.dat};
+  \addlegendentry{Genoa}
+  \addplot[black,thick,mark=triangle*,mark size=1.8] table[x=thr,y=eff] {data/scaling-icelake-laplace.dat};
+  \addlegendentry{Icelake}
+\end{axis}
+\end{tikzpicture}
+\hfill
+\begin{tikzpicture}
+\begin{axis}[width=3.2in,height=4.9cm,xmode=log,log basis x=2,
+             xlabel={threads},ylabel={points/s/core},xmin=0.8,xmax=160,ymin=0,ymax=6000,
+             legend pos=south west,legend style={font=\scriptsize,draw=none},
+             grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},
+             label style={font=\small},title style={font=\small},title={Stokes}]
+  \addplot[cElem,thick,mark=*,mark size=1.4] table[x=thr,y=pps] {data/scaling-rome-stokes.dat};
+  \addlegendentry{Rome}
+  \addplot[cTrg,thick,mark=square*,mark size=1.4] table[x=thr,y=pps] {data/scaling-genoa-stokes.dat};
+  \addlegendentry{Genoa}
+  \addplot[black,thick,mark=triangle*,mark size=1.8] table[x=thr,y=pps] {data/scaling-icelake-stokes.dat};
+  \addlegendentry{Icelake}
+\end{axis}
+\end{tikzpicture}
+\end{minipage}
+\end{document}

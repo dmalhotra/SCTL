@@ -162,6 +162,13 @@ The following list outlines the primary features and capabilities provided by th
    tutorial/index
 
 .. toctree::
+   :caption: Algorithms
+   :hidden:
+   :maxdepth: 1
+
+   algorithms/quad-element
+
+.. toctree::
    :caption: API Reference
    :hidden:
    :maxdepth: 1
