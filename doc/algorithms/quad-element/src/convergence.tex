@@ -1,0 +1,29 @@
+\documentclass[11pt,border=2pt]{standalone}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{calc,arrows,positioning,fit,backgrounds,decorations.pathreplacing,patterns}
+\definecolor{cElem}{RGB}{40,80,140}
+\definecolor{cTrg}{RGB}{190,40,40}
+\definecolor{cCell}{RGB}{225,238,248}
+\definecolor{cAcc}{RGB}{240,200,120}
+\definecolor{cGrey}{RGB}{120,120,120}
+\definecolor{cVec}{RGB}{110,55,150}
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[width=4.2in,height=6.2cm,xmode=log,ymode=log,
+             xlabel={points/s/core},ylabel={error},xmin=400,xmax=30000,ymin=1e-14,ymax=1e-4,
+             xtick={500,1000,2000,5000,10000,20000},xticklabels={500,{1,000},{2,000},{5,000},{10,000},{20,000}},
+             legend style={at={(0.5,-0.26)},anchor=north,font=\scriptsize,draw=none},legend columns=3,
+             grid=both,grid style={cGrey!20},tick label style={font=\scriptsize},label style={font=\small}]
+\addplot[cElem,thick,mark=*,mark size=1.4]         table[x=lappi6_pps,y=lappi6_err] {data/convergence-genoa.dat}; \addlegendentry{Laplace, $\pi/6$}
+  \addplot[cElem,thick,dashed,mark=*,mark size=1.4]  table[x=stopi6_pps,y=stopi6_err] {data/convergence-genoa.dat}; \addlegendentry{Stokes, $\pi/6$}
+  \addplot[cTrg,thick,mark=square*,mark size=1.4]        table[x=lappi2_pps,y=lappi2_err] {data/convergence-genoa.dat}; \addlegendentry{Laplace, $\pi/2$}
+  \addplot[cTrg,thick,dashed,mark=square*,mark size=1.4] table[x=stopi2_pps,y=stopi2_err] {data/convergence-genoa.dat}; \addlegendentry{Stokes, $\pi/2$}
+  \addplot[black,thick,mark=triangle*,mark size=1.8]        table[x=lappi_pps,y=lappi_err] {data/convergence-genoa.dat}; \addlegendentry{Laplace, $\pi$}
+  \addplot[black,thick,dashed,mark=triangle*,mark size=1.8] table[x=stopi_pps,y=stopi_err] {data/convergence-genoa.dat}; \addlegendentry{Stokes, $\pi$}
+\end{axis}
+\end{tikzpicture}
+\end{document}

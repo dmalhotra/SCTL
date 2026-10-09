@@ -1,0 +1,338 @@
+host        : worker7100
+date        : Fri Oct  9 12:14:42 PM EDT 2026
+cpu         :  AMD EPYC 9474F 48-Core Processor
+mpi         : mpirun (Open MPI) 4.1.8
+new         : branch-8b37d40/include
+old         : master-8301f6a/include
+bench       : src/bench-cubed-sphere.cpp md5 baf194bd6be1
+config      : order 12, ppf 8, twist pi/6, tol 1e-3; setup time the minimum of 10
+openmp      : 1 process, threads 96 64 32 16 8 4 2 1
+mpi         : processes 1 2 4 8 16 32 48 96, 96/processes threads each
+
+# OpenMP scaling
+== old laplace processes 1 threads 96
+threads/rank = 96, ranks = 1
+SL[1]abs compares S[1] against its exact value: R (Laplace), 2R/3 (Stokes).
+
+#kernel  scheme         thr order  ppf    twist       tol | geom_area geom_surf | SL[1]sprd  SL[1]abs     DL[1] | greens_den greens_sol | setup_sl setup_dl   pps/c_sl   pps/c_dl
+# distinct cores: 96 for 1 processes x 96 threads
+ laplace TensorProduct   96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.075    0.077     7682.6     7517.6
+ laplace Duffy           96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.030    0.030    19174.2    18905.4
+ laplace Hedgehog        96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.082    0.128     6983.9     4510.8
+== new laplace processes 1 threads 96
+# distinct cores: 96 for 1 processes x 96 threads
+ laplace TensorProduct   96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.072    0.074     7946.3     7794.5
+ laplace Duffy           96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.028    0.028    20781.1    20463.9
+ laplace Hedgehog        96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.080    0.125     7185.4     4609.0
+== new laplace processes 1 threads 64
+# distinct cores: 64 for 1 processes x 64 threads
+ laplace TensorProduct   64    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.105    0.107     8232.9     8085.1
+ laplace Duffy           64    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.037    0.037    23490.1    23164.7
+ laplace Hedgehog        64    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.117    0.185     7414.0     4673.3
+== old laplace processes 1 threads 64
+# distinct cores: 64 for 1 processes x 64 threads
+ laplace TensorProduct   64    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.108    0.110     8013.9     7860.1
+ laplace Duffy           64    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.039    0.040    22056.0    21683.7
+ laplace Hedgehog        64    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.119    0.187     7288.8     4626.7
+== old laplace processes 1 threads 32
+# distinct cores: 32 for 1 processes x 32 threads
+ laplace TensorProduct   32    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.206    0.210     8374.3     8209.8
+ laplace Duffy           32    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.070    0.070    24803.5    24515.1
+ laplace Hedgehog        32    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.228    0.363     7595.4     4760.5
+== new laplace processes 1 threads 32
+# distinct cores: 32 for 1 processes x 32 threads
+ laplace TensorProduct   32    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.204    0.208     8478.1     8310.4
+ laplace Duffy           32    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.067    0.068    25740.8    25523.2
+ laplace Hedgehog        32    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.228    0.366     7568.3     4723.6
+== new laplace processes 1 threads 16
+# distinct cores: 16 for 1 processes x 16 threads
+ laplace TensorProduct   16    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.403    0.412     8567.6     8392.6
+ laplace Duffy           16    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.130    0.131    26656.6    26376.6
+ laplace Hedgehog        16    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.441    0.705     7836.2     4898.9
+== old laplace processes 1 threads 16
+# distinct cores: 16 for 1 processes x 16 threads
+ laplace TensorProduct   16    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.407    0.415     8499.0     8320.9
+ laplace Duffy           16    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.134    0.135    25806.1    25562.1
+ laplace Hedgehog        16    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.459    0.735     7523.0     4699.0
+== old laplace processes 1 threads 8
+# distinct cores: 8 for 1 processes x 8 threads
+ laplace TensorProduct    8    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.809    0.825     8546.3     8378.9
+ laplace Duffy            8    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.260    0.263    26547.1    26254.9
+ laplace Hedgehog         8    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.881    1.411     7849.8     4897.9
+== new laplace processes 1 threads 8
+# distinct cores: 8 for 1 processes x 8 threads
+ laplace TensorProduct    8    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.803    0.819     8612.4     8438.5
+ laplace Duffy            8    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.257    0.260    26856.1    26556.4
+ laplace Hedgehog         8    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.900    1.447     7678.6     4777.9
+== new laplace processes 1 threads 4
+# distinct cores: 4 for 1 processes x 4 threads
+ laplace TensorProduct    4    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    1.600    1.634     8638.5     8458.0
+ laplace Duffy            4    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.504    0.509    27416.5    27182.2
+ laplace Hedgehog         4    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    1.738    2.789     7952.5     4956.0
+== old laplace processes 1 threads 4
+# distinct cores: 4 for 1 processes x 4 threads
+ laplace TensorProduct    4    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    1.606    1.639     8605.3     8435.6
+ laplace Duffy            4    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.512    0.516    27000.8    26780.3
+ laplace Hedgehog         4    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    1.846    2.986     7490.0     4629.2
+== old laplace processes 1 threads 2
+# distinct cores: 2 for 1 processes x 2 threads
+ laplace TensorProduct    2    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    3.212    3.274     8608.3     8444.0
+ laplace Duffy            2    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    1.018    1.027    27150.1    26922.9
+ laplace Hedgehog         2    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    3.496    5.621     7909.5     4918.6
+== new laplace processes 1 threads 2
+# distinct cores: 2 for 1 processes x 2 threads
+ laplace TensorProduct    2    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    3.200    3.263     8641.2     8473.2
+ laplace Duffy            2    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    1.007    1.016    27459.6    27212.9
+ laplace Hedgehog         2    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    3.470    5.563     7966.7     4970.3
+== new laplace processes 1 threads 1
+# distinct cores: 1 for 1 processes x 1 threads
+ laplace TensorProduct    1    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    6.378    6.507     8669.4     8498.2
+ laplace Duffy            1    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    2.038    2.061    27127.8    26830.4
+ laplace Hedgehog         1    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    6.987   11.182     7914.7     4945.3
+== old laplace processes 1 threads 1
+# distinct cores: 1 for 1 processes x 1 threads
+ laplace TensorProduct    1    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    6.410    6.542     8626.7     8452.3
+ laplace Duffy            1    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    2.035    2.050    27166.2    26973.1
+ laplace Hedgehog         1    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    6.972   11.197     7931.6     4938.7
+== old stokes processes 1 threads 96
+# distinct cores: 96 for 1 processes x 96 threads
+ stokes  TensorProduct   96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.127    0.130     4541.7     4425.4
+ stokes  Duffy           96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.060    0.061     9616.4     9419.0
+ stokes  Hedgehog        96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.156    0.235     3693.6     2452.0
+== new stokes processes 1 threads 96
+# distinct cores: 96 for 1 processes x 96 threads
+ stokes  TensorProduct   96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.124    0.123     4637.9     4677.6
+ stokes  Duffy           96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.058    0.058     9985.2     9886.3
+ stokes  Hedgehog        96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.153    0.233     3756.0     2476.5
+== new stokes processes 1 threads 64
+# distinct cores: 64 for 1 processes x 64 threads
+ stokes  TensorProduct   64    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.176    0.177     4917.6     4870.2
+ stokes  Duffy           64    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.074    0.074    11698.0    11624.2
+ stokes  Hedgehog        64    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.221    0.338     3913.6     2552.6
+== old stokes processes 1 threads 64
+# distinct cores: 64 for 1 processes x 64 threads
+ stokes  TensorProduct   64    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.179    0.181     4828.4     4771.8
+ stokes  Duffy           64    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.077    0.077    11273.1    11159.5
+ stokes  Hedgehog        64    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.224    0.343     3861.4     2519.6
+== old stokes processes 1 threads 32
+# distinct cores: 32 for 1 processes x 32 threads
+ stokes  TensorProduct   32    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.341    0.345     5074.0     5014.9
+ stokes  Duffy           32    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.137    0.138    12606.4    12509.1
+ stokes  Hedgehog        32    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.431    0.667     4005.6     2589.5
+== new stokes processes 1 threads 32
+# distinct cores: 32 for 1 processes x 32 threads
+ stokes  TensorProduct   32    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.338    0.341     5113.2     5061.7
+ stokes  Duffy           32    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.135    0.135    12822.3    12775.5
+ stokes  Hedgehog        32    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.430    0.665     4016.0     2596.8
+== new stokes processes 1 threads 16
+# distinct cores: 16 for 1 processes x 16 threads
+ stokes  TensorProduct   16    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.666    0.673     5191.8     5135.6
+ stokes  Duffy           16    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.260    0.261    13292.2    13248.2
+ stokes  Hedgehog        16    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.843    1.308     4098.8     2643.0
+== old stokes processes 1 threads 16
+# distinct cores: 16 for 1 processes x 16 threads
+ stokes  TensorProduct   16    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.669    0.677     5163.1     5101.6
+ stokes  Duffy           16    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.263    0.265    13156.0    13051.1
+ stokes  Hedgehog        16    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.850    1.319     4065.1     2620.8
+== old stokes processes 1 threads 8
+# distinct cores: 8 for 1 processes x 8 threads
+ stokes  TensorProduct    8    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    1.329    1.346     5199.5     5135.0
+ stokes  Duffy            8    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.519    0.524    13327.2    13202.5
+ stokes  Hedgehog         8    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    1.690    2.630     4089.1     2628.6
+== new stokes processes 1 threads 8
+# distinct cores: 8 for 1 processes x 8 threads
+ stokes  TensorProduct    8    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    1.325    1.339     5214.8     5160.7
+ stokes  Duffy            8    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.514    0.517    13449.8    13374.4
+ stokes  Hedgehog         8    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    1.697    2.652     4072.4     2606.7
+== new stokes processes 1 threads 4
+# distinct cores: 4 for 1 processes x 4 threads
+ stokes  TensorProduct    4    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    2.636    2.664     5244.6     5188.5
+ stokes  Duffy            4    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    1.004    1.010    13775.7    13684.6
+ stokes  Hedgehog         4    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    3.330    5.241     4151.1     2637.9
+== old stokes processes 1 threads 4
+# distinct cores: 4 for 1 processes x 4 threads
+ stokes  TensorProduct    4    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    2.644    2.674     5227.8     5169.0
+ stokes  Duffy            4    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    1.024    1.027    13495.4    13456.1
+ stokes  Hedgehog         4    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    3.434    5.348     4026.2     2584.7
+== old stokes processes 1 threads 2
+# distinct cores: 2 for 1 processes x 2 threads
+ stokes  TensorProduct    2    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    5.275    5.337     5241.2     5180.5
+ stokes  Duffy            2    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    1.997    2.014    13844.8    13728.5
+ stokes  Hedgehog         2    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    6.778   10.561     4079.2     2617.8
+== new stokes processes 1 threads 2
+# distinct cores: 2 for 1 processes x 2 threads
+ stokes  TensorProduct    2    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    5.257    5.314     5259.2     5202.6
+ stokes  Duffy            2    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    1.988    2.000    13908.0    13822.2
+ stokes  Hedgehog         2    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    6.647   10.347     4159.7     2672.0
+== new stokes processes 1 threads 1
+# distinct cores: 1 for 1 processes x 1 threads
+ stokes  TensorProduct    1    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |   10.495   10.606     5268.9     5213.9
+ stokes  Duffy            1    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    4.044    4.075    13674.8    13568.7
+ stokes  Hedgehog         1    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |   13.302   20.645     4157.0     2678.4
+== old stokes processes 1 threads 1
+# distinct cores: 1 for 1 processes x 1 threads
+ stokes  TensorProduct    1    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |   10.541   10.660     5245.8     5187.4
+ stokes  Duffy            1    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    4.000    4.034    13825.1    13706.0
+ stokes  Hedgehog         1    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |   13.315   20.858     4152.8     2651.0
+# MPI scaling
+== old laplace processes 1 threads 96
+# distinct cores: 96 for 1 processes x 96 threads
+ laplace TensorProduct   96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.076    0.077     7617.0     7479.6
+ laplace Duffy           96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.031    0.031    18860.1    18753.8
+ laplace Hedgehog        96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.084    0.130     6869.1     4438.7
+== new laplace processes 1 threads 96
+# distinct cores: 96 for 1 processes x 96 threads
+ laplace TensorProduct   96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.073    0.074     7942.6     7788.7
+ laplace Duffy           96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.028    0.028    20873.5    20556.8
+ laplace Hedgehog        96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.080    0.128     7162.1     4516.4
+== new laplace processes 2 threads 48
+# distinct cores: 96 for 2 processes x 48 threads
+ laplace TensorProduct   48    12    8   0.5236     1e-03 |  1.94e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.073    0.074     7925.0     7786.2
+ laplace Duffy           48    12    8   0.5236     1e-03 |  1.94e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.027    0.027    21218.1    20966.7
+ laplace Hedgehog        48    12    8   0.5236     1e-03 |  1.94e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.080    0.126     7208.1     4557.9
+== old laplace processes 2 threads 48
+# distinct cores: 96 for 2 processes x 48 threads
+ laplace TensorProduct   48    12    8   0.5236     1e-03 |  1.94e-14  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.073    0.074     7895.5     7743.7
+ laplace Duffy           48    12    8   0.5236     1e-03 |  1.94e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.028    0.028    20487.2    20486.4
+ laplace Hedgehog        48    12    8   0.5236     1e-03 |  1.94e-14  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.082    0.127     7063.9     4531.5
+== old laplace processes 4 threads 24
+# distinct cores: 96 for 4 processes x 24 threads
+ laplace TensorProduct   24    12    8   0.5236     1e-03 |  3.39e-15  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.073    0.074     7928.8     7817.0
+ laplace Duffy           24    12    8   0.5236     1e-03 |  3.39e-15  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.027    0.027    21615.2    21393.4
+ laplace Hedgehog        24    12    8   0.5236     1e-03 |  3.39e-15  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.082    0.128     7031.4     4502.1
+== new laplace processes 4 threads 24
+# distinct cores: 96 for 4 processes x 24 threads
+ laplace TensorProduct   24    12    8   0.5236     1e-03 |  3.39e-15  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.072    0.073     8038.1     7894.4
+ laplace Duffy           24    12    8   0.5236     1e-03 |  3.39e-15  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.026    0.026    22086.3    22002.5
+ laplace Hedgehog        24    12    8   0.5236     1e-03 |  3.39e-15  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.081    0.126     7143.5     4564.4
+== new laplace processes 8 threads 12
+# distinct cores: 96 for 8 processes x 12 threads
+ laplace TensorProduct   12    12    8   0.5236     1e-03 |  1.98e-15  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.071    0.073     8118.1     7944.3
+ laplace Duffy           12    12    8   0.5236     1e-03 |  1.98e-15  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.025    0.025    22862.5    22648.5
+ laplace Hedgehog        12    12    8   0.5236     1e-03 |  1.98e-15  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.079    0.125     7247.9     4612.2
+== old laplace processes 8 threads 12
+# distinct cores: 96 for 8 processes x 12 threads
+ laplace TensorProduct   12    12    8   0.5236     1e-03 |  1.98e-15  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.072    0.073     8027.3     7861.0
+ laplace Duffy           12    12    8   0.5236     1e-03 |  1.98e-15  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.026    0.026    22295.1    22199.7
+ laplace Hedgehog        12    12    8   0.5236     1e-03 |  1.98e-15  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.083    0.130     6981.8     4416.1
+== old laplace processes 16 threads 6
+# distinct cores: 96 for 16 processes x 6 threads
+ laplace TensorProduct    6    12    8   0.5236     1e-03 |  1.13e-15  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.071    0.073     8092.7     7938.6
+ laplace Duffy            6    12    8   0.5236     1e-03 |  1.13e-15  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.025    0.026    22786.9    22542.1
+ laplace Hedgehog         6    12    8   0.5236     1e-03 |  1.13e-15  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.083    0.133     6898.4     4340.0
+== new laplace processes 16 threads 6
+# distinct cores: 96 for 16 processes x 6 threads
+ laplace TensorProduct    6    12    8   0.5236     1e-03 |  1.13e-15  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.071    0.072     8158.4     8006.6
+ laplace Duffy            6    12    8   0.5236     1e-03 |  1.13e-15  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.025    0.025    23133.0    22925.4
+ laplace Hedgehog         6    12    8   0.5236     1e-03 |  1.13e-15  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.081    0.127     7102.5     4520.7
+== new laplace processes 32 threads 3
+# distinct cores: 96 for 32 processes x 3 threads
+ laplace TensorProduct    3    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.071    0.072     8142.1     7999.4
+ laplace Duffy            3    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.025    0.025    22885.5    22671.7
+ laplace Hedgehog         3    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.085    0.133     6753.0     4334.9
+== old laplace processes 32 threads 3
+# distinct cores: 96 for 32 processes x 3 threads
+ laplace TensorProduct    3    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.072    0.073     8024.8     7857.8
+ laplace Duffy            3    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.026    0.026    22149.5    22036.6
+ laplace Hedgehog         3    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.088    0.144     6549.2     3996.5
+== old laplace processes 48 threads 2
+# distinct cores: 96 for 48 processes x 2 threads
+ laplace TensorProduct    2    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.072    0.074     8003.5     7815.7
+ laplace Duffy            2    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.026    0.027    21943.2    21731.8
+ laplace Hedgehog         2    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.088    0.140     6582.2     4126.8
+== new laplace processes 48 threads 2
+# distinct cores: 96 for 48 processes x 2 threads
+ laplace TensorProduct    2    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.070    0.072     8176.2     8016.5
+ laplace Duffy            2    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.025    0.025    23096.9    22924.4
+ laplace Hedgehog         2    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.087    0.138     6628.7     4188.1
+== new laplace processes 96 threads 1
+# distinct cores: 96 for 96 processes x 1 threads
+ laplace TensorProduct    1    12    8   0.5236     1e-03 |  2.83e-16  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.071    0.073     8073.6     7917.8
+ laplace Duffy            1    12    8   0.5236     1e-03 |  2.83e-16  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.027    0.027    21414.7    21159.9
+ laplace Hedgehog         1    12    8   0.5236     1e-03 |  2.83e-16  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.103    0.163     5606.7     3541.6
+== old laplace processes 96 threads 1
+# distinct cores: 96 for 96 processes x 1 threads
+ laplace TensorProduct    1    12    8   0.5236     1e-03 |  2.83e-16  1.67e-15 |  8.03e-07  8.10e-06  2.60e-05 |   7.94e-12   8.97e-06 |    0.073    0.075     7872.0     7723.9
+ laplace Duffy            1    12    8   0.5236     1e-03 |  2.83e-16  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.028    0.028    20477.4    20321.7
+ laplace Hedgehog         1    12    8   0.5236     1e-03 |  2.83e-16  1.67e-15 |  7.34e-07  8.12e-06  2.61e-05 |   7.94e-12   8.95e-06 |    0.104    0.164     5527.1     3509.0
+== old stokes processes 1 threads 96
+# distinct cores: 96 for 1 processes x 96 threads
+ stokes  TensorProduct   96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.127    0.129     4551.0     4452.0
+ stokes  Duffy           96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.060    0.060     9566.7     9603.4
+ stokes  Hedgehog        96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.156    0.236     3689.4     2445.2
+== new stokes processes 1 threads 96
+# distinct cores: 96 for 1 processes x 96 threads
+ stokes  TensorProduct   96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.123    0.123     4678.8     4679.8
+ stokes  Duffy           96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.058    0.057     9962.3    10080.0
+ stokes  Hedgehog        96    12    8   0.5236     1e-03 |  3.77e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.153    0.231     3776.9     2496.2
+== new stokes processes 2 threads 48
+# distinct cores: 96 for 2 processes x 48 threads
+ stokes  TensorProduct   48    12    8   0.5236     1e-03 |  1.94e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.120    0.120     4812.6     4782.9
+ stokes  Duffy           48    12    8   0.5236     1e-03 |  1.94e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.052    0.054    11084.8    10644.5
+ stokes  Hedgehog        48    12    8   0.5236     1e-03 |  1.94e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.154    0.234     3737.7     2465.2
+== old stokes processes 2 threads 48
+# distinct cores: 96 for 2 processes x 48 threads
+ stokes  TensorProduct   48    12    8   0.5236     1e-03 |  1.94e-14  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.123    0.124     4692.1     4643.8
+ stokes  Duffy           48    12    8   0.5236     1e-03 |  1.94e-14  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.055    0.055    10494.4    10491.9
+ stokes  Hedgehog        48    12    8   0.5236     1e-03 |  1.94e-14  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.156    0.234     3702.0     2462.8
+== old stokes processes 4 threads 24
+# distinct cores: 96 for 4 processes x 24 threads
+ stokes  TensorProduct   24    12    8   0.5236     1e-03 |  3.39e-15  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.121    0.122     4763.0     4717.0
+ stokes  Duffy           24    12    8   0.5236     1e-03 |  3.39e-15  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.053    0.054    10816.2    10752.0
+ stokes  Hedgehog        24    12    8   0.5236     1e-03 |  3.39e-15  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.154    0.233     3732.8     2476.5
+== new stokes processes 4 threads 24
+# distinct cores: 96 for 4 processes x 24 threads
+ stokes  TensorProduct   24    12    8   0.5236     1e-03 |  3.39e-15  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.120    0.121     4793.3     4743.6
+ stokes  Duffy           24    12    8   0.5236     1e-03 |  3.39e-15  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.052    0.052    11048.9    11013.3
+ stokes  Hedgehog        24    12    8   0.5236     1e-03 |  3.39e-15  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.150    0.229     3832.7     2519.4
+== new stokes processes 8 threads 12
+# distinct cores: 96 for 8 processes x 12 threads
+ stokes  TensorProduct   12    12    8   0.5236     1e-03 |  1.98e-15  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.119    0.120     4846.1     4816.7
+ stokes  Duffy           12    12    8   0.5236     1e-03 |  1.98e-15  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.050    0.050    11631.4    11580.8
+ stokes  Hedgehog        12    12    8   0.5236     1e-03 |  1.98e-15  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.149    0.226     3863.1     2543.6
+== old stokes processes 8 threads 12
+# distinct cores: 96 for 8 processes x 12 threads
+ stokes  TensorProduct   12    12    8   0.5236     1e-03 |  1.98e-15  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.120    0.122     4793.5     4738.0
+ stokes  Duffy           12    12    8   0.5236     1e-03 |  1.98e-15  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.051    0.051    11292.3    11219.3
+ stokes  Hedgehog        12    12    8   0.5236     1e-03 |  1.98e-15  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.150    0.229     3829.1     2519.3
+== old stokes processes 16 threads 6
+# distinct cores: 96 for 16 processes x 6 threads
+ stokes  TensorProduct    6    12    8   0.5236     1e-03 |  1.13e-15  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.118    0.119     4899.5     4844.4
+ stokes  Duffy            6    12    8   0.5236     1e-03 |  1.13e-15  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.049    0.049    11843.0    11776.4
+ stokes  Hedgehog         6    12    8   0.5236     1e-03 |  1.13e-15  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.150    0.230     3849.5     2503.3
+== new stokes processes 16 threads 6
+# distinct cores: 96 for 16 processes x 6 threads
+ stokes  TensorProduct    6    12    8   0.5236     1e-03 |  1.13e-15  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.117    0.118     4933.8     4883.4
+ stokes  Duffy            6    12    8   0.5236     1e-03 |  1.13e-15  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.048    0.048    11984.8    11928.1
+ stokes  Hedgehog         6    12    8   0.5236     1e-03 |  1.13e-15  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.151    0.233     3809.3     2470.5
+== new stokes processes 32 threads 3
+# distinct cores: 96 for 32 processes x 3 threads
+ stokes  TensorProduct    3    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.117    0.118     4940.4     4892.1
+ stokes  Duffy            3    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.048    0.048    12006.1    11942.1
+ stokes  Hedgehog         3    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.154    0.235     3745.6     2450.3
+== old stokes processes 32 threads 3
+# distinct cores: 96 for 32 processes x 3 threads
+ stokes  TensorProduct    3    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.118    0.119     4871.8     4820.8
+ stokes  Duffy            3    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.049    0.049    11749.3    11658.0
+ stokes  Hedgehog         3    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.153    0.233     3772.0     2473.7
+== old stokes processes 48 threads 2
+# distinct cores: 96 for 48 processes x 2 threads
+ stokes  TensorProduct    2    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.118    0.119     4893.9     4821.1
+ stokes  Duffy            2    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.049    0.049    11824.8    11709.2
+ stokes  Hedgehog         2    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.154    0.238     3751.2     2420.1
+== new stokes processes 48 threads 2
+# distinct cores: 96 for 48 processes x 2 threads
+ stokes  TensorProduct    2    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.116    0.118     4949.2     4894.1
+ stokes  Duffy            2    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.048    0.048    12078.9    12024.0
+ stokes  Hedgehog         2    12    8   0.5236     1e-03 |  7.07e-16  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.151    0.235     3802.3     2450.4
+== new stokes processes 96 threads 1
+# distinct cores: 96 for 96 processes x 1 threads
+ stokes  TensorProduct    1    12    8   0.5236     1e-03 |  2.83e-16  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.117    0.118     4926.3     4875.9
+ stokes  Duffy            1    12    8   0.5236     1e-03 |  2.83e-16  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.049    0.049    11860.9    11788.3
+ stokes  Hedgehog         1    12    8   0.5236     1e-03 |  2.83e-16  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.161    0.250     3568.9     2304.8
+== old stokes processes 96 threads 1
+# distinct cores: 96 for 96 processes x 1 threads
+ stokes  TensorProduct    1    12    8   0.5236     1e-03 |  2.83e-16  1.67e-15 |  1.82e-06  1.22e-05  6.06e-05 |   2.83e-11   1.27e-05 |    0.119    0.120     4848.3     4796.5
+ stokes  Duffy            1    12    8   0.5236     1e-03 |  2.83e-16  1.67e-15 |  2.19e-06  1.22e-05  6.27e-05 |   2.83e-11   1.32e-05 |    0.051    0.051    11351.2    11260.2
+ stokes  Hedgehog         1    12    8   0.5236     1e-03 |  2.83e-16  1.67e-15 |  1.62e-06  1.22e-05  5.88e-05 |   2.83e-11   1.28e-05 |    0.155    0.232     3709.1     2478.5
+done        : Fri Oct  9 01:42:01 PM EDT 2026
