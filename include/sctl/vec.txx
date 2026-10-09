@@ -615,14 +615,14 @@ namespace sctl {
     } else if constexpr (e == 0) {
       return Vec<ValueType,N>((ValueType)1);
     } else { // the product of the set bits from the lowest, alongside the squarings
-      Vec<ValueType,N> r, p = x;
-      bool first = true;
-      for (Long k = e; k > 0; k >>= 1) {
-        if (k & 1) {
-          r = (first ? p : r * p);
-          first = false;
-        }
-        if (k > 1) p = p * p;
+      constexpr Long low = e & -e; // the lowest set bit
+      Vec<ValueType,N> r = x;
+      for (Long k = 1; k < low; k <<= 1) r = r * r;
+      Vec<ValueType,N> p = r;
+      for (Long k = e / low; k > 1;) {
+        k >>= 1;
+        p = p * p;
+        if (k & 1) r = r * p;
       }
       return r;
     }
