@@ -135,7 +135,7 @@ scal_tab = grid(
 if len(sys.argv) > 1:
     p = pathlib.Path(sys.argv[1])
     rst = p.read_text()
-    for start, end, new in [('.. table:: Order 12, 12 patches per face', '- **The geometry is never the limit**', conv_tab),
+    for start, end, new in [('.. table:: Order 12, 12 patches per face', 'The larger errors at', conv_tab),
                             ('.. table:: *setup* is the total wall time', '- **Per core at one thread**', scal_tab)]:
         a = rst.index(start)
         b = rst.index(end, a)

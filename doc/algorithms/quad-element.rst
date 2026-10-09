@@ -350,6 +350,14 @@ machines, in points per second per core for the single-layer setup.
    |                        | :math:`10^{-12}` | :math:`1.58\times10^{-7}`   | :math:`3.19\times10^{-10}` | 171      | 338      | 289       |
    +------------------------+------------------+-----------------------------+----------------------------+----------+----------+-----------+
 
+The larger errors at :math:`10^{-3}` and :math:`10^{-6}` on Genoa and Icelake come from the kernel's
+reciprocal square root, ``approx_rsqrt<digits>``: a Newton iteration from the hardware estimate, with
+the number of iterations chosen from the requested digits and the estimate's accuracy. The AVX-512
+estimate has about 4.2 correct digits and the AVX2 one about 3.4, so for 4 digits AVX-512 takes no
+iteration where AVX2 takes one, and for 7 digits one against two; at 10 and 13 digits both take two.
+Every error is still far below the requested tolerance, so the results are correct on every machine;
+Rome does one iteration more than it needs.
+
 - **The geometry is never the limit** — it resolves to :math:`3\times10^{-15}` or better at every
   twist (not shown).
 - **The error tracks the tolerance over nine decades**: at twist :math:`\pi/6`,
