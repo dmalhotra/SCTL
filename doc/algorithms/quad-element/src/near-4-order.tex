@@ -18,9 +18,9 @@
   \foreach \x/\l in {0/0,2/60,4/120,5.5/165} \draw (\x,0.06)--(\x,-0.06) node[below,font=\small] {\l};
   \draw[cTrg,very thick] (0,0.55) -- (4,0.55)
         plot[domain=4:5.72,samples=60] (\x,{0.55+0.55/(6.0-\x)-0.55/2.0});
-  \node[cTrg,font=\small,anchor=west] at (2.55,2.05) {$\propto 1/(180^\circ-\varphi)$};
+  \node[cTrg,font=\small,anchor=west] at (2.55,2.05) {$\propto \sin^{-0.875}\varphi$};
   \draw[cTrg,thin] (4.6,1.95) -- (5.3,1.35);
   \draw[dashed,cGrey] (4,0)--(4,0.55);
-  \node[cGrey,font=\small,anchor=east] at (3.9,0.30) {flat to $\sim$120$^\circ$};
+  \node[cGrey,font=\small,anchor=east] at (3.9,0.30) {ellipse order dominates};
 \end{tikzpicture}
 \end{document}

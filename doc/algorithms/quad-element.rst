@@ -41,8 +41,11 @@ algorithm:
      - ``SelfInterac``
      - ``NearInterac``
 
-Both entry points map the runtime element order to a compile-time ``order`` and the runtime
-tolerance to a runtime ``digits``; both are independent and may be called in either order.
+``QuadElemList`` has three schemes, selected with ``SetQuadScheme``; this page describes the default,
+``QuadScheme::Duffy``, whose near interaction is the split-at-foot scheme. The ``TensorProduct`` and
+``Hedgehog`` schemes are not covered. Both entry points map the runtime element order to a
+compile-time ``order`` and the runtime tolerance to a runtime ``digits``; both are independent and
+may be called in either order.
 
 Self interaction: the Duffy edge-collapse
 -----------------------------------------
@@ -99,8 +102,8 @@ which is bounded as :math:`s\to0`. The singularity is gone.
 
 .. rubric:: Step 3 — pick the two rules
 
-The :math:`s`-direction is now smooth, so it takes a plain Gauss–Legendre rule with :math:`q_s=N`
-nodes. The :math:`t`-direction keeps a residual peak: :math:`1/\|\mathbf{c}(t)\|_G` is largest where
+The :math:`s`-direction is now smooth, so it takes a plain Gauss–Legendre rule with
+:math:`q_s = 2 + \lceil N/2 \rceil` nodes (8 at :math:`N=12`). The :math:`t`-direction keeps a residual peak: :math:`1/\|\mathbf{c}(t)\|_G` is largest where
 :math:`\mathbf{c}(t)` is shortest, at the foot :math:`t^\ast` of the perpendicular from the target to
 the far edge. The peak has height :math:`\sim 1/d` and width :math:`\sim d/L`, where :math:`d` is the
 distance to that edge and :math:`L` its length.
@@ -114,7 +117,7 @@ patch. The peak is then resolved by a :math:`\sinh` substitution,
    t = t^\ast + \tfrac{d}{L}\sinh\xi ,
 
 with one GL rule of :math:`n_t` points in :math:`\xi`. :math:`n_t` grows with the requested digits and
-is larger for vector kernels than scalar ones.
+with :math:`N`, and is larger for vector kernels than scalar ones.
 
 .. figure:: quad-element/self-3-rules.svg
    :align: center
@@ -134,7 +137,7 @@ operator rather than :math:`(N \times n_s n_t)`. The evaluation is then a chain 
    :width: 100%
 
    Step 4. One target, one triangle. Blue boxes are GEMMs against operators cached per
-   :math:`(N,\text{digits})`; the kernel sees the target at the origin because the nodal coordinates
+   :math:`N`; the kernel sees the target at the origin because the nodal coordinates
    are stored target-shifted.
 
 The projection reuses the same operators in reverse order, so it is the exact adjoint of the
@@ -154,9 +157,10 @@ every operator can be precomputed.
 
 Locate :math:`(u^\ast,v^\ast)` minimising :math:`|\mathbf{X}(u,v)-\mathbf{y}|^2` over :math:`[0,1]^2`:
 seed at the nearest nodal point, then Gauss–Newton on the first fundamental form, clamped to the box
-with a backtracking line search, falling back to a shrinking grid search if it stalls. Optimality is
-tested on the *projected* gradient, since at a box edge the constrained gradient is large — it
-balances the constraint — and near-pair feet usually do lie on a shared patch edge.
+with a backtracking line search, falling back to a shrinking grid search if it stalls. The iteration stops when neither the
+Gauss–Newton step nor a step along the gradient projected onto the box shortens the distance, or when
+a step moves the point by less than 1% of the distance. Near-pair feet usually lie on a shared patch
+edge, where only the projected gradient can vanish.
 
 .. figure:: quad-element/near-1-foot.svg
    :align: center
@@ -224,20 +228,20 @@ Each leaf gets a Gauss–Legendre rule whose order comes from the tolerance, via
 argument evaluated at the *end-foot* reach (the foot lands on a cell endpoint, which is a
 weaker requirement than the semi-major reach by :math:`a^2/b^2\approx1.9`).
 
-That test lives in parameter space and cannot see one thing: how skewed the patch is where the
-target sits. The required order is flat up to a corner angle of about :math:`120^\circ` and then
-grows like :math:`1/(180^\circ-\varphi)` as the corner flattens and the element wraps around the
-target. So the order is corrected per (element, target) using :math:`\varphi`, the acute angle
-between the surface tangents *at the foot*. An orthogonal parametrisation gives
-:math:`\varphi=90^\circ`, a correction factor of :math:`1`, and costs a well-shaped mesh nothing.
+That test lives in parameter space and cannot see how skewed the patch is where the target sits. The
+order used on each leaf is the largest of three: the Bernstein-ellipse order, a floor of
+:math:`4 + N/2`, and a skew term :math:`(0.875 + 1.3\,\text{digits})/\sin^{0.875}\varphi`, where
+:math:`\varphi` is the angle between the surface tangents *at the foot*; it is rounded up to even
+and capped at 60. For orthogonal tangents the skew term is close to the ellipse order, so a
+well-shaped mesh pays almost nothing; as the corner flattens it grows like
+:math:`1/\sin^{0.875}\varphi`.
 
 .. figure:: quad-element/near-4-order.svg
    :align: center
    :width: 480px
 
-   Near, step 4. Schematic, not measured. :math:`\varphi` is the acute angle between the surface
-   tangents at the foot; an orthogonal parametrisation sits at :math:`\varphi=90^\circ` and needs no
-   correction.
+   Near, step 4. Schematic of the leaf order against :math:`\varphi`, the angle between the surface
+   tangents at the foot: flat while the ellipse order dominates, then the skew term takes over.
 
 .. rubric:: Step 5 — integrate each leaf and accumulate
 
@@ -251,12 +255,12 @@ tensor-product block:
    :width: 100%
 
    Near, step 5. :math:`X_{\text{sub}}` is built once per target, so nothing depending on
-   :math:`(u^\ast,v^\ast)` enters the loop. The channel-major accumulator lets the projection's
+   :math:`(u^\ast,v^\ast)` enters the loop. The component-major accumulator lets the projection's
    final GEMM add in place (:math:`\beta=1`).
 
-Cells accumulate into a channel-major buffer so the projection's last GEMM can add in place
-(:math:`\beta=1`); a single transpose into the node-major layout at the end replaces a per-cell
-sweep.
+Leaves accumulate into a component-major buffer per sub-rectangle, so the projection's last GEMM
+adds in place (:math:`\beta=1`). Once per sub-rectangle, the buffer is mapped back to the element's
+nodes through the adjoint of the sub-element interpolation and added to the node-major result.
 
 Numerical results
 -----------------

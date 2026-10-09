@@ -22,10 +22,10 @@
   \node[b,right=of gt] (as) {normal, area,\\ weights};
   \node[k,right=of as] (kk) {kernel};
   \node[b,right=of kk] (pr) {projection\\ (adjoint)};
-  \node[o,right=of pr] (ac) {channel-major\\ accumulator};
+  \node[o,right=of pr] (ac) {component-major\\ accumulator};
   \draw[a] (x)--(gt); \draw[a] (gt)--(as); \draw[a] (as)--(kk); \draw[a] (kk)--(pr); \draw[a] (pr)--(ac);
   \node[o,below=10mm of ac] (mm) {$M_{\text{acc}}$};
-  \draw[a] (ac)--(mm) node[midway,left,align=right,font=\small] {transpose,\\once per target};
+  \draw[a] (ac)--(mm) node[midway,left,align=right,font=\small] {sub-element adjoint,\\once per sub-rectangle};
   \draw[a,dashed] (ac.north) -- ++(0,0.42) -| (x.north)
         node[pos=0.25,above,font=\small] {next leaf};
 \end{tikzpicture}
