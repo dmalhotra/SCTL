@@ -1397,7 +1397,8 @@ namespace sctl { // Generic
   }
   template <class VData> inline Mask<VData> positive_normal_mask_intrin(const VData& x) { // x normal, positive and finite
     using Real = typename VData::ScalarType;
-    return comp_intrin<ComparisonType::ge>(x, set1_intrin<VData>(std::numeric_limits<Real>::min())) & comp_intrin<ComparisonType::lt>(x, set1_intrin<VData>((Real)INFINITY));
+    // x <= max, not x < inf: clang turns the pair of compares into a class test of integer instructions on x86
+    return comp_intrin<ComparisonType::ge>(x, set1_intrin<VData>(std::numeric_limits<Real>::min())) & comp_intrin<ComparisonType::le>(x, set1_intrin<VData>(std::numeric_limits<Real>::max()));
   }
   template <class VData> inline void log_mant_intrin(VData& e, VData& m, const VData& x) { // x = 2^e m, m in [sqrt(1/2), sqrt(2)), for normal x > 0
     using Real = typename VData::ScalarType;
@@ -1566,7 +1567,7 @@ namespace sctl { // Generic
     const Mask<VData> y_odd = comp_intrin<ComparisonType::eq>(yr, y) & comp_intrin<ComparisonType::ne>(rint_intrin(yh), yh);
     const Mask<VData> x_neg = comp_intrin<ComparisonType::lt>(copysign_intrin(one, x), zero); // sign bit, also of -0
     r = select_intrin(y_odd & x_neg, unary_minus_intrin(r), r);
-    r = select_intrin(comp_intrin<ComparisonType::lt>(x, zero) & comp_intrin<ComparisonType::gt>(x, unary_minus_intrin(inf)) & comp_intrin<ComparisonType::ne>(yr, y), set1_intrin<VData>((Real)NAN), r); // finite x < 0, y not an integer
+    r = select_intrin(comp_intrin<ComparisonType::lt>(x, zero) & comp_intrin<ComparisonType::ge>(x, set1_intrin<VData>(-std::numeric_limits<Real>::max())) & comp_intrin<ComparisonType::ne>(yr, y), set1_intrin<VData>((Real)NAN), r); // finite x < 0, y not an integer; -max as in positive_normal_mask_intrin
     r = select_intrin(comp_intrin<ComparisonType::eq>(ax, one) & comp_intrin<ComparisonType::eq>(fabs_intrin(y), inf), one, r);
     r = select_intrin(comp_intrin<ComparisonType::ne>(x, x), x, r);
     return select_intrin(comp_intrin<ComparisonType::eq>(y, zero) | comp_intrin<ComparisonType::eq>(x, one), one, r);
@@ -1601,7 +1602,7 @@ namespace sctl { // Generic
     }
     const VData p2 = reinterpret_intrin<VData>(bitshiftleft_intrin(add_intrin(lrint_intrin<IntVec>(q), set1_intrin<IntVec>(Bias)), SigBits)); // 2^q
     const VData c = copysign_intrin(mul_intrin(y, p2), x);
-    return select_intrin(comp_intrin<ComparisonType::gt>(ax, zero) & comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>((Real)INFINITY)), c, x); // zeros, inf, NaN as they are
+    return select_intrin(comp_intrin<ComparisonType::gt>(ax, zero) & comp_intrin<ComparisonType::le>(ax, set1_intrin<VData>(std::numeric_limits<Real>::max())), c, x); // zeros, inf, NaN as they are; max as in positive_normal_mask_intrin
   }
   template <class VData> inline VData fmod_poly_intrin(const VData& x, const VData& y) { // |x| - q |y|, q = trunc(fl(|x|/|y|)), the quotient or one more; exact
     using Real = typename VData::ScalarType;
