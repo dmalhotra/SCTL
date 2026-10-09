@@ -54,7 +54,7 @@ template <class Key> void sortWithIndex(ConstIterator<Key> src, Iterator<Key> ds
 
 /** `scnt[r]`: the `n` sorted `keys` in `[splitters[r], splitters[r+1])` (ends open); `rcnt`: what
  *  comes back. Both sized np by the caller. Returns the receive total. */
-template <class Key> Long splitCounts(Vector<Long>& scnt, Vector<Long>& rcnt, ConstIterator<Key> keys, Long n, const Vector<Key>& splitters, const Comm& comm) {
+template <class Key> Long splitCounts(Vector<Long>& scnt, Vector<Long>& rcnt, ConstIterator<Key> keys, Long n, ConstIterator<Key> splitters, const Comm& comm) {
   const Integer np = comm.Size();
   ScratchBuf<Long> pos(np + 1);
   pos[0] = 0;
@@ -138,13 +138,33 @@ inline bool recordRecut(PlanBase& s, Long n, Long nkeep, Long Nnew, const Comm& 
   return true;
 }
 
+/** `dof` if it is not negative; otherwise `n/count` from the ranks that have keys, the same on every rank, since a rank
+ *  without keys cannot tell. */
+inline Long resolveDof(Long dof, Long n, Long count, const Comm& comm) {
+  if (dof >= 0) return dof;
+  StaticArray<Long, 2> d{count ? n / count : 0, 0};
+  comm.Allreduce(d + 0, d + 1, 1, CommOp::MAX);
+  return d[1];
+}
+
+/** Every rank's splitter, into `spl` (np values): each rank's `splitter`, or with null on every rank, one for
+ *  near-equal counts of the sorted `keys` (Comm::DetermineSplitter). */
+template <class Key> void gatherSplitters(Iterator<Key> spl, const Key* splitter, const Vector<Key>& keys, const Comm& comm) {
+  StaticArray<Key, 1> s{splitter ? *splitter : Key()};
+  if (!splitter) {
+    StaticArray<Long, 2> N{keys.Dim(), 0};
+    comm.Allreduce(N + 0, N + 1, 1, CommOp::SUM);
+    s[0] = comm.DetermineSplitter(keys, N[1], std::less<Key>());
+  }
+  comm.Allgather(s + 0, 1, spl, 1);
+}
+
 }  // namespace sort_scatter_detail
 
 template <class Key> SortScatter<Key>::SortScatter(const Comm& comm) : comm_(comm) {}
 
-template <class Key> void SortScatter<Key>::Init(const Vector<Key>& keys, const Vector<Key>& splitters) {
+template <class Key> void SortScatter<Key>::Init(const Vector<Key>& keys, const Key* splitter) {
   const Integer np = comm_.Size();
-  SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Init: one splitter per rank.");
   const Long Nloc = keys.Dim();
   plan_.Reset();
   plan_.Nloc = Nloc;
@@ -160,9 +180,11 @@ template <class Key> void SortScatter<Key>::Init(const Vector<Key>& keys, const 
   sort_scatter_detail::sortWithIndex<Key>(keys.begin(), sorted.begin(), plan_.pre, Nloc);  // stage 1: this rank's own keys, carrying their handed positions
 
   { // stage 2: each key to the rank owning its stretch; the sort left each destination's keys contiguous
+    ScratchBuf<Key> splitters(np);
+    sort_scatter_detail::gatherSplitters<Key>(splitters.begin(), splitter, Vector<Key>(sorted), comm_);
     plan_.scnt.ReInit(np);
     plan_.rcnt.ReInit(np);
-    plan_.Nmid = sort_scatter_detail::splitCounts<Key>(plan_.scnt, plan_.rcnt, sorted.begin(), Nloc, splitters, comm_);
+    plan_.Nmid = sort_scatter_detail::splitCounts<Key>(plan_.scnt, plan_.rcnt, sorted.begin(), Nloc, splitters.begin(), comm_);
     keys_.ReInit(plan_.Nmid);
     sort_scatter_detail::exchange<Key>(sorted.begin(), keys_.begin(), plan_.scnt, plan_.rcnt, 1, comm_);
   }
@@ -170,22 +192,29 @@ template <class Key> void SortScatter<Key>::Init(const Vector<Key>& keys, const 
   plan_.Ntree = plan_.Nmid;
 }
 
-/** The keys are globally sorted, so this is a contiguous chunk move (no merge). */
-template <class Key> void SortScatter<Key>::Repartition(const Vector<Key>& splitters) {
-  const Integer np = comm_.Size();
-  if (np == 1) return;
-  SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Repartition: one splitter per rank.");
-
-  const Long n = keys_.Dim();
-  Vector<Long> scnt(np), rcnt(np);
-  const Long Nnew = sort_scatter_detail::splitCounts<Key>(scnt, rcnt, keys_.begin(), n, splitters, comm_);
-  if (!sort_scatter_detail::recordRecut(plan_, n, scnt[comm_.Rank()], Nnew, comm_)) return;
-  Vector<Key> recv(Nnew);
-  sort_scatter_detail::exchange<Key>(keys_.begin(), recv.begin(), scnt, rcnt, 1, comm_);
-  keys_.Swap(recv);
+template <class Key> void SortScatter<Key>::Init(const Vector<Key>& keys, const Key* splitter, const Comm& comm) {
+  comm_ = comm;
+  Init(keys, splitter);
 }
 
-template <class Key> template <class SIter, class DIter> void SortScatter<Key>::ScatterForward(SIter src, DIter dst, Long dof) const {
+/** The keys are globally sorted, so this is a contiguous chunk move (no merge). */
+template <class Key> void SortScatter<Key>::Repartition(const Key* splitter) {
+  const Integer np = comm_.Size();
+  if (np == 1) return;
+
+  const Long n = keys_.Dim();
+  ScratchBuf<Key> splitters(np);
+  sort_scatter_detail::gatherSplitters<Key>(splitters.begin(), splitter, keys_, comm_);
+  ScratchBuf<Long> scnt_buf(np), rcnt_buf(np);
+  Vector<Long> scnt(scnt_buf), rcnt(rcnt_buf);
+  const Long Nnew = sort_scatter_detail::splitCounts<Key>(scnt, rcnt, keys_.begin(), n, splitters.begin(), comm_);
+  if (!sort_scatter_detail::recordRecut(plan_, n, scnt[comm_.Rank()], Nnew, comm_)) return;
+  ScratchBuf<Key> recv(Nnew);
+  sort_scatter_detail::exchange<Key>(keys_.begin(), recv.begin(), scnt, rcnt, 1, comm_);
+  keys_.ReInit(Nnew, recv.begin());  // reuses the storage of keys_ when it fits
+}
+
+template <class Key> template <class DIter, class SIter> void SortScatter<Key>::ScatterForward(DIter dst, SIter src, Long dof) const {
   using T = typename std::iterator_traits<SIter>::value_type;
   static_assert(std::is_same<T, typename std::iterator_traits<DIter>::value_type>::value,
                 "SortScatter::ScatterForward: the source and destination must hold the same type");
@@ -206,7 +235,7 @@ template <class Key> template <class SIter, class DIter> void SortScatter<Key>::
   sort_scatter_detail::exchange<T>(c.begin(), dst, plan_.rscnt, plan_.rrcnt, dof, comm_);
 }
 
-template <class Key> template <class SIter, class DIter> void SortScatter<Key>::ScatterReverse(SIter src, DIter dst, Long dof) const {
+template <class Key> template <class DIter, class SIter> void SortScatter<Key>::ScatterReverse(DIter dst, SIter src, Long dof) const {
   using T = typename std::iterator_traits<SIter>::value_type;
   static_assert(std::is_same<T, typename std::iterator_traits<DIter>::value_type>::value,
                 "SortScatter::ScatterReverse: the source and destination must hold the same type");
@@ -234,17 +263,33 @@ template <class Key> template <class SIter, class DIter> void SortScatter<Key>::
 }
 
 template <class Key> template <class T> void SortScatter<Key>::ScatterForward(Vector<T>& data, Long dof) const {
+  dof = sort_scatter_detail::resolveDof(dof, data.Dim(), plan_.Nloc, comm_);
   SCTL_ASSERT_MSG(data.Dim() == plan_.Nloc * dof, "SortScatter::ScatterForward: data holds LocalCount()*dof values.");
   Vector<T> out(plan_.Ntree * dof);
-  ScatterForward(data.begin(), out.begin(), dof);
+  ScatterForward(out.begin(), data.begin(), dof);
   data.Swap(out);
 }
 
 template <class Key> template <class T> void SortScatter<Key>::ScatterReverse(Vector<T>& data, Long dof) const {
+  dof = sort_scatter_detail::resolveDof(dof, data.Dim(), plan_.Ntree, comm_);
   SCTL_ASSERT_MSG(data.Dim() == plan_.Ntree * dof, "SortScatter::ScatterReverse: data holds SortedCount()*dof values.");
   Vector<T> out(plan_.Nloc * dof);
-  ScatterReverse(data.begin(), out.begin(), dof);
+  ScatterReverse(out.begin(), data.begin(), dof);
   data.Swap(out);
+}
+
+template <class Key> template <class T> void SortScatter<Key>::ScatterForward(Vector<T>& dst, const Vector<T>& src, Long dof) const {
+  dof = sort_scatter_detail::resolveDof(dof, src.Dim(), plan_.Nloc, comm_);
+  SCTL_ASSERT_MSG(src.Dim() == plan_.Nloc * dof, "SortScatter::ScatterForward: src holds LocalCount()*dof values.");
+  if (dst.Dim() != plan_.Ntree * dof) dst.ReInit(plan_.Ntree * dof);
+  ScatterForward(dst.begin(), src.begin(), dof);
+}
+
+template <class Key> template <class T> void SortScatter<Key>::ScatterReverse(Vector<T>& dst, const Vector<T>& src, Long dof) const {
+  dof = sort_scatter_detail::resolveDof(dof, src.Dim(), plan_.Ntree, comm_);
+  SCTL_ASSERT_MSG(src.Dim() == plan_.Ntree * dof, "SortScatter::ScatterReverse: src holds SortedCount()*dof values.");
+  if (dst.Dim() != plan_.Nloc * dof) dst.ReInit(plan_.Nloc * dof);
+  ScatterReverse(dst.begin(), src.begin(), dof);
 }
 
 template <class Key> void SortScatter<Key>::test() {
@@ -297,21 +342,30 @@ template <class Key> void SortScatter<Key>::test() {
     for (Long i = 0; i < q.Dim(); i++) SCTL_ASSERT(q[i] == payload[i]);
     { // the raw form, into caller-sized buffers
       Vector<Long> fwd(ss.SortedCount() * dof), back(N * dof);
-      ss.ScatterForward(payload.begin(), fwd.begin(), dof);
+      ss.ScatterForward(fwd.begin(), payload.begin(), dof);
       check(ss, spl, fwd);
-      ss.ScatterReverse(fwd.begin(), back.begin(), dof);
+      ss.ScatterReverse(back.begin(), fwd.begin(), dof);
+      for (Long i = 0; i < back.Dim(); i++) SCTL_ASSERT(back[i] == payload[i]);
+    }
+    { // out of place, dof from the sizes: into a ScratchBuf view of the right size, which a resize would abort on, and back into an empty Vector
+      ScratchBuf<Long> fwd_buf(ss.SortedCount() * dof);
+      Vector<Long> fwd(fwd_buf), back;
+      ss.ScatterForward(fwd, payload);
+      check(ss, spl, fwd);
+      ss.ScatterReverse(back, fwd);
+      SCTL_ASSERT(back.Dim() == payload.Dim());
       for (Long i = 0; i < back.Dim(); i++) SCTL_ASSERT(back[i] == payload[i]);
     }
   };
 
-  SortScatter ss(comm);
+  SortScatter ss;  // on Comm::Self() until Init is given comm
   Vector<Key> splA = splitters(0), splB = splitters(KMAX / (3 * np));
-  ss.Init(keys, splA);
+  ss.Init(keys, &splA[rank], comm);
   SCTL_ASSERT(ss.LocalCount() == N);
   roundTrip(ss, splA);
   Vector<Long> q = payload;
   ss.ScatterForward(q, dof);  // in the first layout
-  ss.Repartition(splB);  // re-cut
+  ss.Repartition(&splB[rank]);  // re-cut
   comm.PartitionN(q, ss.SortedCount());  // the payload follows the keys
   {
     Vector<Long> q2 = payload;
@@ -320,10 +374,36 @@ template <class Key> void SortScatter<Key>::test() {
     for (Long i = 0; i < q.Dim(); i++) SCTL_ASSERT(q2[i] == q[i]);
   }
   roundTrip(ss, splB);
-  ss.Repartition(splA);  // re-cut of a re-cut
+  ss.Repartition(&splA[rank]);  // re-cut of a re-cut
   roundTrip(ss, splA);
-  ss.Repartition(splA);  // nothing moves
+  ss.Repartition(&splA[rank]);  // nothing moves
   roundTrip(ss, splA);
+  { // no splitter: near-equal counts per rank; then a re-cut, and a re-cut back to near-equal counts
+    ScratchBuf<Long> cnt(np);
+    ScratchBuf<Key> splE_buf(np);
+    Vector<Key> splE(splE_buf);
+    // splE <- each rank's first key (an empty rank's range is empty), checking the counts are within 5% of the average
+    const auto checkBalanced = [&comm, &cnt, &splE, np, KMAX](const SortScatter& ss) {
+      const Long n = ss.SortedCount();
+      comm.Allgather(Ptr2ConstItr<Long>(&n, 1), 1, cnt.begin(), 1);
+      const StaticArray<Key, 1> first{n ? ss.SortedKeys()[0] : Key()};
+      comm.Allgather(first + 0, 1, splE.begin(), 1);
+      Long Ng = 0;
+      for (Integer r = 0; r < np; r++) Ng += cnt[r];
+      for (Integer r = np - 1; r >= 0; r--) {
+        if (!cnt[r]) splE[r] = (r + 1 < np ? splE[r + 1] : (Key)KMAX);
+        SCTL_ASSERT(std::max(cnt[r] * np - Ng, Ng - cnt[r] * np) <= Ng / 20);
+      }
+    };
+    ss.Init(keys);
+    checkBalanced(ss);
+    roundTrip(ss, splE);
+    ss.Repartition(&splA[rank]);
+    roundTrip(ss, splA);
+    ss.Repartition();
+    checkBalanced(ss);
+    roundTrip(ss, splE);
+  }
   if (!rank) std::cout << "SortScatter::test passed on " << np << " ranks\n";
 }
 

@@ -1748,7 +1748,7 @@ namespace sctl {
     for (auto& pair : groups) {  // payloads follow their keys' re-cut; per-node counts come from the particles
       const auto& pt_name = pair.first;
       auto& group = pair.second;
-      group.Repartition(partition_codes);
+      group.Repartition(&partition_codes[this->GetComm().Rank()]);
 
       ScratchBuf<Long> pt_cnt(node_mid.Dim());
       tree_detail::pt_node_counts(node_mid, group.SortedKeys(), pt_cnt.begin());
@@ -1790,7 +1790,7 @@ namespace sctl {
       pt_mid[i] = MortonCode<DIM>(&coord[i*DIM]);
     }
     auto& group = groups.try_emplace(name, this->GetComm()).first->second;
-    group.Init(pt_mid, partition_codes);
+    group.Init(pt_mid, &partition_codes[this->GetComm().Rank()]);
     for (auto& kv : pt_data) { // an existing group's data sets no longer match its particles: emptied, storage kept
       if (kv.second.particle_name == name && kv.first != name) {
         Iterator<Vector<char>> data_;
@@ -1819,7 +1819,7 @@ namespace sctl {
     Long owned0 = 0, owned1 = 0;
     this->GetOwnedRange(owned0, owned1);
     const Long begin = omp_par::reduce(cnt_->begin(), owned0) * dof * (Long)sizeof(Real);
-    group->second.ScatterForward((ConstIterator<char>)data.begin(), data_[0].begin() + begin, dof * (Long)sizeof(Real));
+    group->second.ScatterForward(data_[0].begin() + begin, (ConstIterator<char>)data.begin(), dof * (Long)sizeof(Real));
   }
 
   template <class Real, Integer DIM, class BaseTree> void PtTree<Real,DIM,BaseTree>::AddParticleData(const std::string& data_name, const std::string& particle_name, Long dof) {
@@ -1871,7 +1871,7 @@ namespace sctl {
       SCTL_ASSERT(omp_par::reduce(cnt_.begin() + owned0, owned1 - owned0) == group.SortedCount());
       const Long Nout = group.LocalCount() * dof;
       if (data.Dim() != Nout) data.ReInit(Nout);
-      group.ScatterReverse((ConstIterator<Real>)data_.begin() + start, data.begin(), dof);
+      group.ScatterReverse(data.begin(), (ConstIterator<Real>)data_.begin() + start, dof);
     }
   }
 

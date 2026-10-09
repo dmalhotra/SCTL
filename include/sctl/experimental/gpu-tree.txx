@@ -2417,7 +2417,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticles(const std::string& name, 
   DeviceScratch<MortonCode<DIM>, DevVec> key(Nloc);
   thrust::transform(pol, thrust::counting_iterator<Long>(0), thrust::counting_iterator<Long>(Nloc), key.begin(),
                     detail::MakeMortonFunctor<Real, DIM>{thrust::raw_pointer_cast(coord.data())});
-  groups_.try_emplace(name, this->GetComm()).first->second.Init(DataView<const MortonCode<DIM>, DevVec>{thrust::raw_pointer_cast(key.data()), Nloc}, partition_codes_);
+  groups_.try_emplace(name, this->GetComm()).first->second.Init(DataView<const MortonCode<DIM>, DevVec>{thrust::raw_pointer_cast(key.data()), Nloc}, &partition_codes_[this->GetComm().Rank()]);
   for (auto& kv : pt_data_) {  // an existing group's data sets no longer match its particles: emptied, storage kept
     if (kv.second.particle_name == name && kv.first != name) {
       this->NodeData_(kv.first).resize(0);
@@ -2442,7 +2442,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::AddParticleData(const std::string& dat
   this->GetOwnedRange(owned0, owned1);
   const Long begin = sctl::omp_par::reduce(this->NodeCnt_(data_name).begin(), owned0) * dof;
   // the forward scatter reads the caller's array and writes the stored buffer, so neither end is copied
-  it->second.ScatterForward((const Real*)thrust::raw_pointer_cast(data.data()), (Real*)thrust::raw_pointer_cast(this->NodeData_(data_name).data()) + begin, dof);
+  it->second.ScatterForward((Real*)thrust::raw_pointer_cast(this->NodeData_(data_name).data()) + begin, (const Real*)thrust::raw_pointer_cast(data.data()), dof);
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
@@ -2479,7 +2479,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::scatterParticleData(const std::string&
   const Long begin = sctl::omp_par::reduce(cnt.begin(), owned0) * dof;
   SCTL_ASSERT_MSG(sctl::omp_par::reduce(cnt.begin() + owned0, owned1 - owned0) == g.SortedCount(),
                   "PtTree::GetParticleData: the owned items do not match the group's sorted keys.");
-  g.ScatterReverse(raw.data() + begin, out, dof);
+  g.ScatterReverse(out, raw.data() + begin, dof);
 }
 
 template <class Real, Integer DIM, template <class...> class DevVec, class BaseTree>
@@ -2534,7 +2534,7 @@ void PtTree<Real, DIM, DevVec, BaseTree>::UpdateRefinement(DataView<const Real, 
 
   for (auto& kv : groups_) {  // payloads follow their keys' re-cut; per-node counts come from the particles
     const std::string& group = kv.first;
-    kv.second.Repartition(partition_codes_);
+    kv.second.Repartition(&partition_codes_[comm.Rank()]);
     sctl::ScratchBuf<Long> cnt_new_buf((Long)this->GetNodeMID().size());  // copied into each name's counts below
     sctl::Vector<Long> cnt_new(cnt_new_buf.size(), cnt_new_buf.begin(), false);
     nodeCounts(group, cnt_new);

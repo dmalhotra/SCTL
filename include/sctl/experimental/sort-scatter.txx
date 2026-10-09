@@ -66,12 +66,25 @@ void exchange(const Policy& pol, const T* src, T* dst,
   detail::alltoallv<DevVec>(pol, src, dst, sc, rc, (Long)sizeof(T), comm);
 }
 
+/** Every rank's splitter, into `spl`: each rank's `splitter` (np values), or with null on every rank, the np-1 cuts for
+ *  near-equal counts of the sorted `keys` (determineSplitters). */
+template <class Key, template <class...> class DevVec>
+void gatherSplitters(DeviceScratch<Key, DevVec>& spl, const Key* splitter, const DevVec<Key>& keys, const Comm& comm) {
+  sctl::ScratchBuf<Key> h((Long)spl.size());
+  if (splitter) {
+    const sctl::StaticArray<Key, 1> s{*splitter};
+    comm.Allgather(s + 0, 1, h.begin(), 1);
+  } else {
+    detail_determineSplitters::determineSplitters(h, keys, comm);
+  }
+  thrust::copy(h.begin(), h.end(), spl.begin());
+}
+
 }  // namespace detail_sortScatter
 
 template <class Key, template <class...> class DevVec>
-void SortScatter<Key, DevVec>::Init(DataView<const Key, DevVec> keys, const sctl::Vector<Key>& splitters) {
+void SortScatter<Key, DevVec>::Init(DataView<const Key, DevVec> keys, const Key* splitter) {
   const Long np = comm_.Size();
-  SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Init: one splitter per rank.");
   const auto pol = detail::scratch_policy<DevVec, Key>();
   const Long Nloc = keys.size();
   detail_sortScatter::resizeDiscard(keys_, Nloc);
@@ -88,8 +101,8 @@ void SortScatter<Key, DevVec>::Init(DataView<const Key, DevVec> keys, const sctl
   plan_.Nmid = Nloc;
   if (np > 1) {
     { // stage 2: each key to the rank owning its stretch; the sort left each destination's keys contiguous
-      DeviceScratch<Key, DevVec> spl(np);
-      thrust::copy(splitters.begin(), splitters.end(), spl.begin());
+      DeviceScratch<Key, DevVec> spl(splitter ? np : np - 1);
+      detail_sortScatter::gatherSplitters(spl, splitter, keys_, comm_);
       plan_.scnt.ReInit(np);
       plan_.rcnt.ReInit(np);
       plan_.Nmid = detail::splitCounts(plan_.scnt.begin(), plan_.rcnt.begin(), keys_, Nloc, spl, comm_);
@@ -108,18 +121,24 @@ void SortScatter<Key, DevVec>::Init(DataView<const Key, DevVec> keys, const sctl
   plan_.Ntree = plan_.Nmid;
 }
 
+template <class Key, template <class...> class DevVec>
+void SortScatter<Key, DevVec>::Init(DataView<const Key, DevVec> keys, const Key* splitter, const Comm& comm) {
+  comm_ = comm;
+  Init(keys, splitter);
+}
+
 /** The keys are globally sorted, so this is a contiguous chunk move (no merge). */
 template <class Key, template <class...> class DevVec>
-void SortScatter<Key, DevVec>::Repartition(const sctl::Vector<Key>& splitters) {
+void SortScatter<Key, DevVec>::Repartition(const Key* splitter) {
   const Long np = comm_.Size();
   if (np == 1) return;
-  SCTL_ASSERT_MSG(splitters.Dim() == np, "SortScatter::Repartition: one splitter per rank.");
   const auto pol = detail::scratch_policy<DevVec, Key>();
   const Long N = (Long)keys_.size();
 
-  DeviceScratch<Key, DevVec> spl(np);
-  thrust::copy(splitters.begin(), splitters.end(), spl.begin());
-  sctl::Vector<Long> scnt(np), rcnt(np);
+  DeviceScratch<Key, DevVec> spl(splitter ? np : np - 1);
+  detail_sortScatter::gatherSplitters(spl, splitter, keys_, comm_);
+  sctl::ScratchBuf<Long> scnt_buf(np), rcnt_buf(np);
+  sctl::Vector<Long> scnt(scnt_buf), rcnt(rcnt_buf);
   const Long Nnew = detail::splitCounts(scnt.begin(), rcnt.begin(), keys_, N, spl, comm_);
   if (!sctl::sort_scatter_detail::recordRecut(plan_, N, scnt[comm_.Rank()], Nnew, comm_)) return;
   DevVec<Key>& k2 = detail::PersistentBuffer<Key, DevVec, detail::Buf::PtSortK>();
@@ -130,7 +149,7 @@ void SortScatter<Key, DevVec>::Repartition(const sctl::Vector<Key>& splitters) {
 }
 
 template <class Key, template <class...> class DevVec> template <class T>
-void SortScatter<Key, DevVec>::ScatterForward(const T* src, T* dst, Long dof) const {
+void SortScatter<Key, DevVec>::ScatterForward(T* dst, const T* src, Long dof) const {
   const auto pol = detail::scratch_policy<DevVec, T>();
   if (comm_.Size() == 1) {  // stages 2-4 are absent, so the sort alone is the map
     detail_sortScatter::localMove<DevVec>(pol, src, dst, plan_.pre, plan_.Nloc, dof);
@@ -154,7 +173,7 @@ void SortScatter<Key, DevVec>::ScatterForward(const T* src, T* dst, Long dof) co
 }
 
 template <class Key, template <class...> class DevVec> template <class T>
-void SortScatter<Key, DevVec>::ScatterReverse(const T* src, T* dst, Long dof) const {
+void SortScatter<Key, DevVec>::ScatterReverse(T* dst, const T* src, Long dof) const {
   const auto pol = detail::scratch_policy<DevVec, T>();
   if (!plan_.inv) {  // inverses on the first move back: a caller that only moves data into sorted order never pays for them
     detail_sortScatter::buildInverse(pol, plan_.pre, plan_.pre_inv, plan_.Nloc);
@@ -185,20 +204,38 @@ void SortScatter<Key, DevVec>::ScatterReverse(const T* src, T* dst, Long dof) co
 
 template <class Key, template <class...> class DevVec> template <class T>
 void SortScatter<Key, DevVec>::ScatterForward(DevVec<T>& data, Long dof) const {
+  dof = sctl::sort_scatter_detail::resolveDof(dof, (Long)data.size(), plan_.Nloc, comm_);
   SCTL_ASSERT_MSG((Long)data.size() == plan_.Nloc * dof, "SortScatter::ScatterForward: data holds LocalCount()*dof values.");
   DevVec<T>& out = detail::PersistentBuffer<T, DevVec, detail::Buf::SwapOut>();
   detail_sortScatter::resizeDiscard(out, plan_.Ntree * dof);
-  ScatterForward(thrust::raw_pointer_cast(data.data()), thrust::raw_pointer_cast(out.data()), dof);
+  ScatterForward(thrust::raw_pointer_cast(out.data()), thrust::raw_pointer_cast(data.data()), dof);
   data.swap(out);
 }
 
 template <class Key, template <class...> class DevVec> template <class T>
 void SortScatter<Key, DevVec>::ScatterReverse(DevVec<T>& data, Long dof) const {
+  dof = sctl::sort_scatter_detail::resolveDof(dof, (Long)data.size(), plan_.Ntree, comm_);
   SCTL_ASSERT_MSG((Long)data.size() == plan_.Ntree * dof, "SortScatter::ScatterReverse: data holds SortedCount()*dof values.");
   DevVec<T>& out = detail::PersistentBuffer<T, DevVec, detail::Buf::SwapOut>();
   detail_sortScatter::resizeDiscard(out, plan_.Nloc * dof);
-  ScatterReverse(thrust::raw_pointer_cast(data.data()), thrust::raw_pointer_cast(out.data()), dof);
+  ScatterReverse(thrust::raw_pointer_cast(out.data()), thrust::raw_pointer_cast(data.data()), dof);
   data.swap(out);
+}
+
+template <class Key, template <class...> class DevVec> template <class T>
+void SortScatter<Key, DevVec>::ScatterForward(DevVec<T>& dst, const DevVec<T>& src, Long dof) const {
+  dof = sctl::sort_scatter_detail::resolveDof(dof, (Long)src.size(), plan_.Nloc, comm_);
+  SCTL_ASSERT_MSG((Long)src.size() == plan_.Nloc * dof, "SortScatter::ScatterForward: src holds LocalCount()*dof values.");
+  if ((Long)dst.size() != plan_.Ntree * dof) detail_sortScatter::resizeDiscard(dst, plan_.Ntree * dof);
+  ScatterForward(thrust::raw_pointer_cast(dst.data()), thrust::raw_pointer_cast(src.data()), dof);
+}
+
+template <class Key, template <class...> class DevVec> template <class T>
+void SortScatter<Key, DevVec>::ScatterReverse(DevVec<T>& dst, const DevVec<T>& src, Long dof) const {
+  dof = sctl::sort_scatter_detail::resolveDof(dof, (Long)src.size(), plan_.Ntree, comm_);
+  SCTL_ASSERT_MSG((Long)src.size() == plan_.Ntree * dof, "SortScatter::ScatterReverse: src holds SortedCount()*dof values.");
+  if ((Long)dst.size() != plan_.Nloc * dof) detail_sortScatter::resizeDiscard(dst, plan_.Nloc * dof);
+  ScatterReverse(thrust::raw_pointer_cast(dst.data()), thrust::raw_pointer_cast(src.data()), dof);
 }
 
 
@@ -264,23 +301,31 @@ template <class Key, template <class...> class DevVec> void SortScatter<Key, Dev
     { // the raw form, into caller-sized buffers
       const DevVec<Long> src(payload.begin(), payload.end());
       DevVec<Long> fwd(ss.SortedCount() * dof), back(N * dof);
-      ss.template ScatterForward<Long>(thrust::raw_pointer_cast(src.data()), thrust::raw_pointer_cast(fwd.data()), dof);
+      ss.template ScatterForward<Long>(thrust::raw_pointer_cast(fwd.data()), thrust::raw_pointer_cast(src.data()), dof);
       check(ss, spl, fwd);
-      ss.template ScatterReverse<Long>(thrust::raw_pointer_cast(fwd.data()), thrust::raw_pointer_cast(back.data()), dof);
+      ss.template ScatterReverse<Long>(thrust::raw_pointer_cast(back.data()), thrust::raw_pointer_cast(fwd.data()), dof);
+      same(back, payload);
+    }
+    { // out of place, dof from the sizes: into a vector of the right size, and back into an empty one
+      const DevVec<Long> src(payload.begin(), payload.end());
+      DevVec<Long> fwd(ss.SortedCount() * dof), back;
+      ss.ScatterForward(fwd, src);
+      check(ss, spl, fwd);
+      ss.ScatterReverse(back, fwd);
       same(back, payload);
     }
   };
 
-  SortScatter ss(comm);
+  SortScatter ss;  // on Comm::Self() until Init is given comm
   const sctl::Vector<Key> splA = splitters(0), splB = splitters(KMAX / (3 * np));
   const DevVec<Key> kd(keys.begin(), keys.end());
-  ss.Init(kd, splA);
+  ss.Init(kd, &splA[rank], comm);
   SCTL_ASSERT(ss.LocalCount() == N);
   roundTrip(ss, splA);
 
   DevVec<Long> q(payload.begin(), payload.end());
   ss.ScatterForward(q, dof);  // in the first layout
-  ss.Repartition(splB);       // re-cut
+  ss.Repartition(&splB[rank]);  // re-cut
   { // the payload follows the keys
     DevVec<Long> tmp;
     detail::partitionN(detail::scratch_policy<DevVec, Long>(), q, 0, (Long)q.size(), ss.SortedCount() * dof, comm, tmp);
@@ -292,16 +337,43 @@ template <class Key, template <class...> class DevVec> void SortScatter<Key, Dev
     same(q2, toHost(q, (Long)q.size()));
   }
   roundTrip(ss, splB);
-  ss.Repartition(splA);  // re-cut of a re-cut
+  ss.Repartition(&splA[rank]);  // re-cut of a re-cut
   roundTrip(ss, splA);
-  ss.Repartition(splA);  // nothing moves
+  ss.Repartition(&splA[rank]);  // nothing moves
   roundTrip(ss, splA);
   { // a first splitter above some keys: the contract says it is not consulted, so rank 0 keeps
     // them. Dropping them instead shows up as a global count short of the input.
     sctl::Vector<Key> splC = splA;
     splC[0] = (Key)(np > 1 ? (Long)splA[1] / 2 : KMAX / 2);
-    ss.Repartition(splC);
+    ss.Repartition(&splC[rank]);
     roundTrip(ss, splC);
+  }
+  { // no splitter: near-equal counts per rank; then a re-cut, and a re-cut back to near-equal counts
+    sctl::ScratchBuf<Long> cnt(np);
+    sctl::ScratchBuf<Key> splE_buf(np);
+    sctl::Vector<Key> splE(splE_buf);
+    // splE <- each rank's first key (an empty rank's range is empty), checking the counts are within 5% of the average
+    const auto checkBalanced = [&comm, &cnt, &splE, np, KMAX](const SortScatter& ss) {
+      const Long n = ss.SortedCount();
+      comm.Allgather(sctl::Ptr2ConstItr<Long>(&n, 1), 1, cnt.begin(), 1);
+      sctl::StaticArray<Key, 1> first{Key()};
+      if (n) detail::deviceToHost(ss.SortedKeys().data(), 1, first + 0);
+      comm.Allgather(first + 0, 1, splE.begin(), 1);
+      Long Ng = 0;
+      for (Integer r = 0; r < np; r++) Ng += cnt[r];
+      for (Integer r = np - 1; r >= 0; r--) {
+        if (!cnt[r]) splE[r] = (r + 1 < np ? splE[r + 1] : (Key)KMAX);
+        SCTL_ASSERT(std::max(cnt[r] * np - Ng, Ng - cnt[r] * np) <= Ng / 20);
+      }
+    };
+    ss.Init(kd);
+    checkBalanced(ss);
+    roundTrip(ss, splE);
+    ss.Repartition(&splA[rank]);
+    roundTrip(ss, splA);
+    ss.Repartition();
+    checkBalanced(ss);
+    roundTrip(ss, splE);
   }
   if (!rank) std::printf("gpu_tree::SortScatter::test passed on %d ranks\n", (int)np);
 }

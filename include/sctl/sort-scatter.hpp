@@ -12,99 +12,144 @@ namespace sctl {
 namespace sort_scatter_detail {
 
 /**
- * The sorted order as the stages that produced it, replayed to move a payload either way:
- *
- *   1. local sort of this rank's keys      (`pre`)
- *   2. exchange to the owning ranks        (`scnt`/`rcnt`)
- *   3. local merge of the arriving runs    (`post`)
- *   4. re-cut to the current partition     (`rscnt`/`rrcnt`; only after a repartition)
- *
- * Counts alone describe both exchanges: stage 1 leaves each destination's keys contiguous, and a
- * re-cut of a sorted block is contiguous too. Stage 4 is always recomputed from the stage-3 layout,
- * since two re-cuts compose to one. Each local map is kept with its inverse so both directions are
- * gathers; the inverses are built on the first move back.
- *
- * The local maps live where the keys do -- host `Vector`s in `Plan`, backend vectors in
- * `gpu_tree::detail_sortScatter::Plan` -- so each adds them to this shared record.
+ * Counts and flags of a SortScatter: how many keys this rank has at each step, and the Alltoallv counts. The
+ * permutations of the local sorts are in the derived struct.
  */
 struct PlanBase {
-  Long Nloc = 0;   ///< keys this rank was handed
-  Long Nmid = 0;   ///< keys held after stages 1-3
-  Long Ntree = 0;  ///< keys held now; differs from `Nmid` once the partition has changed
+  Long Nloc = 0;   ///< number of keys passed to Init on this rank
+  Long Nmid = 0;   ///< number of keys on this rank after the Alltoallv in Init
+  Long Ntree = 0;  ///< number of keys on this rank now (changed by Repartition)
 
-  Vector<Long> scnt, rcnt;      ///< stage 2; unused at np=1
+  Vector<Long> scnt, rcnt;      ///< send and receive counts of the Alltoallv in Init
 
-  bool recut = false;           ///< stage 4 present
-  bool recut_cnt = false;       ///< stage-4 counts computed; done on the first move after a repartition
-  Vector<Long> rscnt, rrcnt;    ///< stage 4
+  bool recut = false;           ///< the layout has changed since Init
+  bool recut_cnt = false;       ///< rscnt and rrcnt are up to date
+  Vector<Long> rscnt, rrcnt;    ///< send and receive counts to go from the layout after Init to the current one
 
-  bool inv = false;             ///< the inverses exist; built on the first move back
+  bool inv = false;             ///< the inverse permutations are up to date
 
-  /** The state before `Init`; the vectors keep their storage. */
+  /** Resets the counts and flags; the vectors are left as they are. */
   void Reset();
 };
 
+/** PlanBase plus the permutations of the local sorts, in host memory. */
 struct Plan : PlanBase {
-  Vector<Long> pre, pre_inv;    ///< Nloc: stage 1 and its inverse
-  Vector<Long> post, post_inv;  ///< Nmid: stage 3 and its inverse; unused at np=1
+  Vector<Long> pre, pre_inv;    ///< permutation of the local sort before the Alltoallv, and its inverse
+  Vector<Long> post, post_inv;  ///< permutation of the local sort after the Alltoallv, and its inverse
 };
 
 }  // namespace sort_scatter_detail
 
 /**
- * Keys sorted globally and cut at rank splitters, with the permutation to and from the caller's
- * order: `Comm::SortScatterIndex` plus `ScatterForward`/`ScatterReverse` as an object. Those rebuild
- * the exchange from a global index on every move; here the sort's stages are recorded once
- * (`sort_scatter_detail::Plan`) and replayed, and the sorted keys are kept for reuse.
+ * Sorts keys across all ranks and stores the permutation, so that other data can be rearranged the same way
+ * (ScatterForward) or back (ScatterReverse). Init, Repartition and the scatters are collective.
  *
- * @tparam Key Trivially copyable, ordered by `operator<`; radix-sorted when
- *             `omp_par::is_radix_sortable<Key>` holds (as for `MortonCode`).
- *
- * Every member that moves keys or data is collective.
+ * @tparam Key type of the keys; trivially copyable, with operator<.
  */
 template <class Key> class SortScatter {
  public:
   explicit SortScatter(const Comm& comm = Comm::Self());
 
   /**
-   * Sort `keys` (caller order) into the global order cut at `splitters`: np entries, `splitters[r]`
-   * the first key of rank r's range; `splitters[0]` is not consulted.
+   * Sorts the keys across all ranks.
+   *
+   * @param[in] keys keys on this rank, in any order.
+   * @param[in] splitter this rank gets the keys >= *splitter and < the next rank's *splitter (ignored on rank 0). If
+   *                     null on all ranks, every rank gets about the same number of keys.
    */
-  void Init(const Vector<Key>& keys, const Vector<Key>& splitters);
+  void Init(const Vector<Key>& keys, const Key* splitter = nullptr);
 
   /**
-   * Move the sorted keys to the partition given by new `splitters`; the operators follow.
+   * Sorts the keys across all ranks of comm.
    *
-   * A payload already in the old layout is moved to the new one with `Comm::PartitionN`, which
-   * derives that move from the block sizes: the keys are globally sorted, so a re-cut of them moves
-   * the payload the same way.
+   * @param[in] keys keys on this rank, in any order.
+   * @param[in] splitter this rank gets the keys >= *splitter and < the next rank's *splitter (ignored on rank 0). If
+   *                     null on all ranks, every rank gets about the same number of keys.
+   * @param[in] comm communicator to use from now on.
    */
-  void Repartition(const Vector<Key>& splitters);
+  void Init(const Vector<Key>& keys, const Key* splitter, const Comm& comm);
 
-  const Vector<Key>& SortedKeys() const { return keys_; }  ///< this rank's stretch of the global order
-  Long LocalCount() const { return plan_.Nloc; }           ///< keys the caller handed in
-  Long SortedCount() const { return plan_.Ntree; }         ///< keys held now
+  /**
+   * Moves the sorted keys between ranks according to new splitters. Data already in the order of SortedKeys() can be
+   * moved along with Comm::PartitionN(data, SortedCount()).
+   *
+   * @param[in] splitter this rank gets the keys >= *splitter and < the next rank's *splitter (ignored on rank 0). If
+   *                     null on all ranks, every rank gets about the same number of keys.
+   */
+  void Repartition(const Key* splitter = nullptr);
+
+  const Vector<Key>& SortedKeys() const { return keys_; }  ///< the sorted keys on this rank
+  Long LocalCount() const { return plan_.Nloc; }           ///< number of keys passed to Init on this rank
+  Long SortedCount() const { return plan_.Ntree; }         ///< number of keys in SortedKeys()
   const Comm& GetComm() const { return comm_; }
 
-  /** Caller order -> sorted order, `dof` values per key (agreed across ranks): `LocalCount()*dof` values in, `SortedCount()*dof` out. */
-  template <class T> void ScatterForward(Vector<T>& data, Long dof) const;
+  /**
+   * Rearranges data from the order of the keys passed to Init to the order of SortedKeys().
+   *
+   * @param[in,out] data LocalCount()*dof values on input, SortedCount()*dof values on output. Replaced by a new
+   *                     Vector, so it must not be a fixed-size Vector (as a view of a ScratchBuf is by default).
+   * @param[in] dof number of values per key, the same on all ranks. If -1, it is data.Dim()/LocalCount() (taken from a
+   *                rank that has keys).
+   */
+  template <class T> void ScatterForward(Vector<T>& data, Long dof = -1) const;
 
-  /** Sorted order -> caller order: the inverse of `ScatterForward`. */
-  template <class T> void ScatterReverse(Vector<T>& data, Long dof) const;
+  /**
+   * Rearranges data from the order of SortedKeys() back to the order of the keys passed to Init.
+   *
+   * @param[in,out] data SortedCount()*dof values on input, LocalCount()*dof values on output. Replaced by a new
+   *                     Vector, so it must not be a fixed-size Vector (as a view of a ScratchBuf is by default).
+   * @param[in] dof number of values per key, the same on all ranks. If -1, it is data.Dim()/SortedCount() (taken from
+   *                a rank that has keys).
+   */
+  template <class T> void ScatterReverse(Vector<T>& data, Long dof = -1) const;
 
-  /** Same between caller-sized buffers: `src` `LocalCount()*dof` values, `dst` `SortedCount()*dof`, no overlap. */
-  template <class SIter, class DIter> void ScatterForward(SIter src, DIter dst, Long dof) const;
+  /**
+   * Rearranges src from the order of the keys passed to Init to the order of SortedKeys(), writing the result to dst.
+   *
+   * @param[out] dst SortedCount()*dof values; resized only if its size differs. Must not overlap src.
+   * @param[in] src LocalCount()*dof values.
+   * @param[in] dof number of values per key, the same on all ranks. If -1, it is src.Dim()/LocalCount() (taken from a
+   *                rank that has keys).
+   */
+  template <class T> void ScatterForward(Vector<T>& dst, const Vector<T>& src, Long dof = -1) const;
 
-  /** `src` `SortedCount()*dof` values, `dst` `LocalCount()*dof`, no overlap. */
-  template <class SIter, class DIter> void ScatterReverse(SIter src, DIter dst, Long dof) const;
+  /**
+   * Rearranges src from the order of SortedKeys() back to the order of the keys passed to Init, writing the result to
+   * dst.
+   *
+   * @param[out] dst LocalCount()*dof values; resized only if its size differs. Must not overlap src.
+   * @param[in] src SortedCount()*dof values.
+   * @param[in] dof number of values per key, the same on all ranks. If -1, it is src.Dim()/SortedCount() (taken from
+   *                a rank that has keys).
+   */
+  template <class T> void ScatterReverse(Vector<T>& dst, const Vector<T>& src, Long dof = -1) const;
 
-  /** Round trips through Init, Repartition and both scatters on Comm::World(); Key constructible from Long. */
+  /**
+   * Rearranges src from the order of the keys passed to Init to the order of SortedKeys(), writing the result to dst.
+   *
+   * @param[out] dst iterator to SortedCount()*dof values. Must not overlap src.
+   * @param[in] src iterator to LocalCount()*dof values.
+   * @param[in] dof number of values per key, the same on all ranks.
+   */
+  template <class DIter, class SIter> void ScatterForward(DIter dst, SIter src, Long dof) const;
+
+  /**
+   * Rearranges src from the order of SortedKeys() back to the order of the keys passed to Init, writing the result to
+   * dst.
+   *
+   * @param[out] dst iterator to LocalCount()*dof values. Must not overlap src.
+   * @param[in] src iterator to SortedCount()*dof values.
+   * @param[in] dof number of values per key, the same on all ranks.
+   */
+  template <class DIter, class SIter> void ScatterReverse(DIter dst, SIter src, Long dof) const;
+
+  /** Test on Comm::World(); Key must be constructible from Long. */
   static void test();
 
  private:
   Comm comm_;
   Vector<Key> keys_;
-  mutable sort_scatter_detail::Plan plan_;  ///< inverses and stage-4 counts are built on first use
+  mutable sort_scatter_detail::Plan plan_;  ///< some entries are computed on first use, hence mutable
 };
 
 }  // namespace sctl

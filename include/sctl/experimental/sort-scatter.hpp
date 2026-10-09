@@ -1,7 +1,6 @@
 /**
  * @file sort-scatter.hpp
- * SortScatter: keys sorted globally and cut at rank splitters, with the permutation to and from the
- * order the caller handed them in (experimental).
+ * SortScatter with the keys and data in host or device memory (experimental).
  */
 
 #ifndef _SCTL_EXPERIMENTAL_SORT_SCATTER_HPP_
@@ -19,26 +18,20 @@ using sctl::Comm;
 
 namespace detail_sortScatter {
 
-/** `sctl::sort_scatter_detail::PlanBase` -- the stages, their counts and flags -- with the local maps in backend memory. */
+/** sctl::sort_scatter_detail::PlanBase plus the permutations of the local sorts, in DevVec memory. */
 template <template <class...> class DevVec> struct Plan : sctl::sort_scatter_detail::PlanBase {
-  DevVec<Long> pre, pre_inv;    ///< Nloc: stage 1 and its inverse
-  DevVec<Long> post, post_inv;  ///< Nmid: stage 3 and its inverse; unused at np=1
+  DevVec<Long> pre, pre_inv;    ///< permutation of the local sort before the Alltoallv, and its inverse
+  DevVec<Long> post, post_inv;  ///< permutation of the local sort after the Alltoallv, and its inverse
 };
 
 }  // namespace detail_sortScatter
 
 /**
- * Keys sorted globally and cut at rank splitters, with the permutation to and from the caller's
- * order: the backend-side `Comm::SortScatterIndex` plus `ScatterForward`/`ScatterReverse` as an
- * object. Those rebuild the exchange from a global index on every move; here the sort's stages are
- * recorded once (`detail_sortScatter::Plan`) and replayed, the payload never leaves backend memory,
- * and the sorted keys are kept for reuse.
+ * Sorts keys across all ranks and stores the permutation, so that other data can be rearranged the same way
+ * (ScatterForward) or back (ScatterReverse). Init, Repartition and the scatters are collective.
  *
- * @tparam Key Trivially copyable, ordered by `operator<`, with `GetIntKey`/`FromIntKey` for the
- *             radix path (as `MortonCode` has).
- * @tparam DevVec Backend container: `HostVector` or `gpu_tree::DeviceVector`.
- *
- * Every member that moves keys or data is collective.
+ * @tparam Key type of the keys; trivially copyable, with operator<, GetIntKey() and FromIntKey() (e.g. MortonCode).
+ * @tparam DevVec container for the keys and data: HostVector or DeviceVector.
  */
 template <class Key, template <class...> class DevVec = HostVector>
 class SortScatter {
@@ -46,45 +39,105 @@ class SortScatter {
   explicit SortScatter(const Comm& comm = Comm::Self()) : comm_(comm) {}
 
   /**
-   * Sort `keys` (caller order) into the global order cut at `splitters`: np entries, `splitters[r]`
-   * the first key of rank r's range; `splitters[0]` is not consulted. A `DevVec<Key>` converts to
-   * the view. Storage from a previous `Init` is reused.
+   * Sorts the keys across all ranks.
+   *
+   * @param[in] keys keys on this rank, in any order; a DevVec<Key> converts to the view.
+   * @param[in] splitter this rank gets the keys >= *splitter and < the next rank's *splitter (ignored on rank 0). If
+   *                     null on all ranks, every rank gets about the same number of keys.
    */
-  void Init(DataView<const Key, DevVec> keys, const sctl::Vector<Key>& splitters);
+  void Init(DataView<const Key, DevVec> keys, const Key* splitter = nullptr);
 
   /**
-   * Move the sorted keys to the partition given by new `splitters`; the operators follow.
+   * Sorts the keys across all ranks of comm.
    *
-   * A payload already in the old layout is moved to the new one with `detail::partitionN`, which
-   * derives that move from the block sizes: the keys are globally sorted, so a re-cut of them moves
-   * the payload the same way.
+   * @param[in] keys keys on this rank, in any order; a DevVec<Key> converts to the view.
+   * @param[in] splitter this rank gets the keys >= *splitter and < the next rank's *splitter (ignored on rank 0). If
+   *                     null on all ranks, every rank gets about the same number of keys.
+   * @param[in] comm communicator to use from now on.
    */
-  void Repartition(const sctl::Vector<Key>& splitters);
+  void Init(DataView<const Key, DevVec> keys, const Key* splitter, const Comm& comm);
 
-  const DevVec<Key>& SortedKeys() const { return keys_; }  ///< this rank's stretch of the global order
-  Long LocalCount() const { return plan_.Nloc; }                 ///< keys the caller handed in
-  Long SortedCount() const { return plan_.Ntree; }               ///< keys held now
+  /**
+   * Moves the sorted keys between ranks according to new splitters. Data already in the order of SortedKeys() can be
+   * moved along with detail::partitionN.
+   *
+   * @param[in] splitter this rank gets the keys >= *splitter and < the next rank's *splitter (ignored on rank 0). If
+   *                     null on all ranks, every rank gets about the same number of keys.
+   */
+  void Repartition(const Key* splitter = nullptr);
+
+  const DevVec<Key>& SortedKeys() const { return keys_; }  ///< the sorted keys on this rank
+  Long LocalCount() const { return plan_.Nloc; }                 ///< number of keys passed to Init on this rank
+  Long SortedCount() const { return plan_.Ntree; }               ///< number of keys in SortedKeys()
   const Comm& GetComm() const { return comm_; }
 
-  /** Caller order -> sorted order, `dof` values per key (agreed across ranks): `LocalCount()*dof` values in, `SortedCount()*dof` out. */
-  template <class T> void ScatterForward(DevVec<T>& data, Long dof) const;
+  /**
+   * Rearranges data from the order of the keys passed to Init to the order of SortedKeys().
+   *
+   * @param[in,out] data LocalCount()*dof values on input, SortedCount()*dof values on output. Its storage is swapped
+   *                     with an internal buffer.
+   * @param[in] dof number of values per key, the same on all ranks. If -1, it is data.size()/LocalCount() (taken from
+   *                a rank that has keys).
+   */
+  template <class T> void ScatterForward(DevVec<T>& data, Long dof = -1) const;
 
-  /** Sorted order -> caller order: the inverse of `ScatterForward`. */
-  template <class T> void ScatterReverse(DevVec<T>& data, Long dof) const;
+  /**
+   * Rearranges data from the order of SortedKeys() back to the order of the keys passed to Init.
+   *
+   * @param[in,out] data SortedCount()*dof values on input, LocalCount()*dof values on output. Its storage is swapped
+   *                     with an internal buffer.
+   * @param[in] dof number of values per key, the same on all ranks. If -1, it is data.size()/SortedCount() (taken
+   *                from a rank that has keys).
+   */
+  template <class T> void ScatterReverse(DevVec<T>& data, Long dof = -1) const;
 
-  /** Same between caller-sized raw buffers: `src` `LocalCount()*dof` values, `dst` `SortedCount()*dof`, no overlap. */
-  template <class T> void ScatterForward(const T* src, T* dst, Long dof) const;
+  /**
+   * Rearranges src from the order of the keys passed to Init to the order of SortedKeys(), writing the result to dst.
+   *
+   * @param[out] dst SortedCount()*dof values; resized only if its size differs. Must not overlap src.
+   * @param[in] src LocalCount()*dof values.
+   * @param[in] dof number of values per key, the same on all ranks. If -1, it is src.size()/LocalCount() (taken from
+   *                a rank that has keys).
+   */
+  template <class T> void ScatterForward(DevVec<T>& dst, const DevVec<T>& src, Long dof = -1) const;
 
-  /** `src` `SortedCount()*dof` values, `dst` `LocalCount()*dof`, no overlap. */
-  template <class T> void ScatterReverse(const T* src, T* dst, Long dof) const;
+  /**
+   * Rearranges src from the order of SortedKeys() back to the order of the keys passed to Init, writing the result to
+   * dst.
+   *
+   * @param[out] dst LocalCount()*dof values; resized only if its size differs. Must not overlap src.
+   * @param[in] src SortedCount()*dof values.
+   * @param[in] dof number of values per key, the same on all ranks. If -1, it is src.size()/SortedCount() (taken
+   *                from a rank that has keys).
+   */
+  template <class T> void ScatterReverse(DevVec<T>& dst, const DevVec<T>& src, Long dof = -1) const;
 
-  /** Round-trips every stage against its inverse, as `sctl::SortScatter::test` does. Collective. */
+  /**
+   * Rearranges src from the order of the keys passed to Init to the order of SortedKeys(), writing the result to dst.
+   *
+   * @param[out] dst SortedCount()*dof values in DevVec memory. Must not overlap src.
+   * @param[in] src LocalCount()*dof values in DevVec memory.
+   * @param[in] dof number of values per key, the same on all ranks.
+   */
+  template <class T> void ScatterForward(T* dst, const T* src, Long dof) const;
+
+  /**
+   * Rearranges src from the order of SortedKeys() back to the order of the keys passed to Init, writing the result to
+   * dst.
+   *
+   * @param[out] dst LocalCount()*dof values in DevVec memory. Must not overlap src.
+   * @param[in] src SortedCount()*dof values in DevVec memory.
+   * @param[in] dof number of values per key, the same on all ranks.
+   */
+  template <class T> void ScatterReverse(T* dst, const T* src, Long dof) const;
+
+  /** Test on Comm::World(); Key must be constructible from Long. */
   static void test();
 
  private:
   Comm comm_;
   DevVec<Key> keys_;
-  mutable detail_sortScatter::Plan<DevVec> plan_;  ///< inverses and stage-4 counts are built on first use
+  mutable detail_sortScatter::Plan<DevVec> plan_;  ///< some entries are computed on first use, hence mutable
 };
 
 }  // namespace gpu_tree
