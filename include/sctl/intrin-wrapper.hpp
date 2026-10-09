@@ -2321,6 +2321,130 @@ namespace sctl { // Generic
     }
   }
 
+  // erf(x) = x + x Q(x^2), |x| <= 1: minimax Q of degree n, lowest degree first
+  template <Integer n> struct ErfPolyCoeffs;
+  template <> struct ErfPolyCoeffs<2> { static constexpr double c[] = {0.12771143407390823, -0.36434310773011075, 0.07983114574072726}; };
+  template <> struct ErfPolyCoeffs<3> { static constexpr double c[] = {0.1283474151683488, -0.3751365417937819, 0.10783366841996714, -0.018367461950288377}; };
+  template <> struct ErfPolyCoeffs<4> { static constexpr double c[] = {0.12837788781796353, -0.3760641422947072, 0.11234174300591122, -0.0254478102265399, 0.0034940700424334107}; };
+  template <> struct ErfPolyCoeffs<5> { static constexpr double c[] = {0.12837912249389816, -0.3761232618671417, 0.11280180112663808, -0.026711311332550714, 0.0049175514493777165, -0.000563142230068688}; };
+  template <> struct ErfPolyCoeffs<6> { static constexpr double c[] = {0.12837916572671065, -0.37612625824234047, 0.112835851486209, -0.026853811935397306, 0.005188327685588843, -0.0008010193621267156, 7.853861332517134e-05}; };
+  template <> struct ErfPolyCoeffs<7> { static constexpr double c[] = {0.12837916705802271, -0.3761263843465518, 0.1128378197417088, -0.02686540004602393, 0.005220945443805413, -0.0008482829005328025, 0.00011256949066594243, -9.641519377778401e-06}; };
+  template <> struct ErfPolyCoeffs<8> { static constexpr double c[] = {0.12837916709458586, -0.3761263888850547, 0.11283791285400693, -0.026866131411195447, 0.005223776413541104, -0.0008542489078869606, 0.00011954820078366617, -1.3898707871346391e-05, 1.0562994978617774e-06}; };
+  template <> struct ErfPolyCoeffs<9> { static constexpr double c[] = {0.12837916709549171, -0.37612638902775164, 0.11283791657674758, -0.02686616896234274, 0.005223966745806345, -0.0008547920949485678, 0.00012046046391363172, -1.4792924109333755e-05, 1.5295216780453957e-06, -1.0444478572724252e-07}; };
+  template <> struct ErfPolyCoeffs<10> { static constexpr double c[] = {0.12837916709551214, -0.3761263890317352, 0.11283791670551899, -0.026866170582901992, 0.005223977131040907, -0.0008548304020210763, 0.00012054662748637538, -1.4913033504820654e-05, 1.6308100195376958e-06, -1.5177732006451187e-07, 9.407620393468255e-09}; };
+  template <> struct ErfPolyCoeffs<11> { static constexpr double c[] = {0.12837916709551256, -0.3761263890318352, 0.11283791670944185, -0.02686617064311147, 0.005223977606118472, -0.0008548325929314416, 0.00012055293576898172, -1.492471230196162e-05, 1.6447131570692952e-06, -1.6206313754170574e-07, 1.3710980380255295e-08, -7.779468457668766e-10}; };
+  inline constexpr double erf_poly_digits[] = {3.23, 4.55, 5.95, 7.4, 8.92, 10.48, 12.09, 13.73, 15.39, 16.53}; // degrees 2 to 11
+  // e^(x^2) erfc(x) = 1/(s x + P(x)/Q(x)), s = sqrt(pi) rounded to double, x in [13/16, 27.5]: minimax, P of degree n,
+  // Q of degree n + 1 with Q(0) = 1, lowest degree first
+  template <Integer n> struct ErfcRationalCoeffs;
+  template <> struct ErfcRationalCoeffs<1> { static constexpr double p[] = {0.9793030924700097, 0.42288936170840685}; static constexpr double q[] = {1.0, 0.9893711728659675, 0.4866411428373295}; };
+  template <> struct ErfcRationalCoeffs<2> { static constexpr double p[] = {1.0026085224236734, 0.6273078682410291, 0.1874267755450747}; static constexpr double q[] = {1.0, 1.2841227654125438, 0.7139553650922655, 0.21124494297149213}; };
+  template <> struct ErfcRationalCoeffs<3> { static constexpr double p[] = {0.9996951439268782, 0.8527665297863873, 0.3511403040704106, 0.07102392688056385}; static constexpr double q[] = {1.0, 1.495027167004807, 1.0456590119940157, 0.3960233358200523, 0.08014650011259258}; };
+  template <> struct ErfcRationalCoeffs<4> { static constexpr double p[] = {1.0000317531399276, 1.0520435581200038, 0.5528099550068913, 0.16178732187790418, 0.024035505680954874}; static constexpr double q[] = {1.0, 1.696340192468083, 1.3714321008545873, 0.6507708278262218, 0.18256267214267471, 0.02712107825684264}; };
+  template <> struct ErfcRationalCoeffs<5> { static constexpr double p[] = {0.9999969607119215, 1.2373352468770282, 0.7714360638269159, 0.28840933813157793, 0.06464478303669897, 0.007408209175780033}; static constexpr double q[] = {1.0, 1.881385612644955, 1.7100391936255317, 0.9433374013747173, 0.3337985231622568, 0.07294370145734384, 0.008359270480400931}; };
+  template <> struct ErfcRationalCoeffs<6> { static constexpr double p[] = {1.0000002724799562, 1.4108382913499842, 1.006724340002467, 0.4462183030169594, 0.12857429554941077, 0.023036306295101394, 0.00211196475435353}; static constexpr double q[] = {1.0, 2.0549154238390877, 2.0569935490106483, 1.2774268507327922, 0.5294999660476738, 0.14746353780316065, 0.02599369085245512, 0.0023830970022584567}; };
+  template <> struct ErfcRationalCoeffs<7> { static constexpr double p[] = {0.9999999769071137, 1.5745913557853748, 1.2556282160586023, 0.6350820624133369, 0.21765414783566892, 0.05056690316760704, 0.007461104100531597, 0.0005625057240145419}; static constexpr double q[] = {1.0, 2.21866580983234, 2.411376223193842, 1.6497666559761162, 0.7727217182739154, 0.2540152725786248, 0.05769336270708144, 0.008418954374339196, 0.0006347197408355777}; };
+  template <> struct ErfcRationalCoeffs<8> { static constexpr double p[] = {1.0000000018668276, 1.7301586167186165, 1.5163885527850856, 0.8542208424641358, 0.33441685345061367, 0.09286375148410286, 0.017929724156315274, 0.002227764627242449, 0.00014113643680621653}; static constexpr double q[] = {1.0, 2.374233320862175, 2.772332479051487, 2.058884492027341, 1.064900953800876, 0.39734159494254195, 0.10729928815248248, 0.020390782559139904, 0.0025137631956481526, 0.00015925541500232633}; };
+  inline constexpr double erfc_rational_digits[] = {4.76, 6.58, 8.37, 10.2, 12, 13.8, 15.7, 17.1}; // degrees 1 to 8
+  // erf(x) = x + x Q(x^2), for |x| <= 1
+  template <Integer digits, class VData> inline VData erf_poly_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    return fma_intrin(x, eval_poly_intrin(mul_intrin(x, x), ErfPolyCoeffs<poly_degree(erf_poly_digits, 2, (std::is_same<Real,float>::value ? 6 : 11), digits)>::c), x);
+  }
+  // erfc(a) = e^(-a^2) Q(a)/(s a Q(a) + P(a)) for a >= 13/16, with a^2 = hi + lo exactly; a clamped to 27.5, where
+  // e^(-a^2) is 0; keeps NaN
+  template <Integer digits, class VData> inline VData erfc_rational_intrin(const VData& a) {
+    using Real = typename VData::ScalarType;
+    static constexpr Integer digits1 = (digits < 0 ? digits : digits + 1); // each of the two factors to one more digit
+    static constexpr Integer n = poly_degree(erfc_rational_digits, 1, (std::is_same<Real,float>::value ? 3 : 8), digits1);
+    static constexpr Integer order = (digits < 0 ? (Integer)(TypeTraits<Real>::SigBits/3.8) : exp_taylor_order(digits1));
+    const VData b = min_intrin(set1_intrin<VData>((Real)27.5), a);
+    const VData hi = mul_intrin(b, b);
+    const VData e = approx_exp_intrin<order, true, ExpArg::Sum>(unary_minus_intrin(hi), unary_minus_intrin(mul_sub_exact_intrin(b, b, hi)));
+    const VData q = eval_poly_intrin(b, ErfcRationalCoeffs<n>::q);
+    const VData d = fma_intrin(mul_intrin(b, set1_intrin<VData>((Real)1.7724538509055160273L)), q, eval_poly_intrin(b, ErfcRationalCoeffs<n>::p));
+    return mul_intrin(e, div_intrin(q, d));
+  }
+  // e^(-x^2) of one value, x^2 = hi + lo exactly by Dekker's split of x; 0 for |x| > 1000
+  template <class Real> inline Real exp_neg_sq_generic(const Real x) {
+    if (fabs(x) > 1000) return 0;
+    static constexpr Real split = (Real)(((Long)1) << ((TypeTraits<Real>::SigBits + 2) / 2)) + 1;
+    const Real c = split * x;
+    const Real xh = c - (c - x);
+    const Real xl = x - xh;
+    const Real hi = x * x;
+    return exp<Real>(-hi) * (1 - (((xh * xh - hi) + 2 * xh * xl) + xl * xl));
+  }
+  // erf(x) of one value, small |x|: 2/sqrt(pi) e^(-x^2) sum_k (2x^2)^k x/(1 3 ... (2k+1)), terms of one sign
+  template <class Real> inline Real erf_series_generic(const Real x) {
+    const Real x2 = x * x;
+    Real term = x;
+    Real sum = x;
+    for (Integer k = 1; fabs(term) > machine_eps<Real>() * fabs(sum); k++) {
+      term *= 2 * x2 / (2 * k + 1);
+      sum += term;
+    }
+    return 2 / sqrt<Real>(const_pi<Real>()) * exp_neg_sq_generic(x) * sum;
+  }
+  // erfc(a) of one value, a >= 1/2: e^(-a^2)/sqrt(pi) / (a + (1/2)/(a + 1/(a + (3/2)/(a + ...)))), from the last of
+  // about 0.75 d^2/a^2 terms for d digits
+  template <class Real> inline Real erfc_cf_generic(const Real a) {
+    static constexpr Integer d = (Integer)(TypeTraits<Real>::SigBits * 0.30103) + 2;
+    const Integer n = (a >= (Real)0.5 && a < d ? (Integer)(d * d / (a * a)) : 0) + 8; // NaN: 8
+    Real t = 0;
+    for (Integer k = n; k > 0; k--) t = (Real)k / 2 / (a + t);
+    return exp_neg_sq_generic(a) / sqrt<Real>(const_pi<Real>()) / (a + t);
+  }
+  // erf(x) = x + x Q(x^2) for |x| <= 1, else sign(x) (1 - erfc(|x|)). digits = -1: full
+  template <Integer digits = -1, class VData> inline VData erf_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      const VData one = set1_intrin<VData>((Real)1);
+      const VData sgn = and_intrin(x, set1_intrin<VData>((Real)-0.0));
+      const VData ax = xor_intrin(x, sgn);
+      const Mask<VData> small = comp_intrin<ComparisonType::le>(ax, one);
+      const Integer n_small = mask_count_intrin(small);
+      if (n_small == VData::Size) return erf_poly_intrin<digits>(x);
+      const VData r = xor_intrin(sub_intrin(one, erfc_rational_intrin<digits>(ax)), sgn);
+      return (n_small ? select_intrin(small, erf_poly_intrin<digits>(x), r) : r);
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) {
+        const Real a = fabs(x_.x[i]);
+        x_.x[i] = (a < 1 ? erf_series_generic(x_.x[i]) : (x_.x[i] < 0 ? -1 : 1) * (1 - erfc_cf_generic(a)));
+      }
+      return x_.v;
+    }
+  }
+  // erfc(x) = 1 - erf(x) for -1 <= x < 13/16 (where erfc > 1/4), else erfc_rational_intrin(|x|), subtracted from 2 for
+  // x < 0. digits = -1: full
+  template <Integer digits = -1, class VData> inline VData erfc_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      const VData one = set1_intrin<VData>((Real)1);
+      const Mask<VData> small = comp_intrin<ComparisonType::ge>(x, set1_intrin<VData>((Real)-1)) & comp_intrin<ComparisonType::lt>(x, set1_intrin<VData>((Real)13/16));
+      const Integer n_small = mask_count_intrin(small);
+      static constexpr Integer digits1 = (digits < 0 ? digits : digits + 1); // 1 - erf: up to 3 times the relative error of erf
+      if (n_small == VData::Size) return sub_intrin(one, erf_poly_intrin<digits1>(x));
+      const VData c = erfc_rational_intrin<digits>(fabs_intrin(x));
+      const VData r = select_intrin(comp_intrin<ComparisonType::lt>(x, zero_intrin<VData>()), sub_intrin(set1_intrin<VData>((Real)2), c), c);
+      return (n_small ? select_intrin(small, sub_intrin(one, erf_poly_intrin<digits1>(x)), r) : r);
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) {
+        const Real a = x_.x[i];
+        x_.x[i] = (a < (Real)0.5 ? (a > -3 ? 1 - erf_series_generic(a) : 2 - erfc_cf_generic(-a)) : erfc_cf_generic(a)); // NaN: the last
+      }
+      return x_.v;
+    }
+  }
+
   // sin(pi w/2) = (pi/2) w + w^3 Q(w^2), |w| <= 1/2: minimax Q of degree n, lowest degree first
   template <Integer n> struct SinPiPolyCoeffs;
   template <> struct SinPiPolyCoeffs<0> { static constexpr double c[] = {-0.6295356107990434}; };

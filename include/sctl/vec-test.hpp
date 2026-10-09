@@ -1067,6 +1067,21 @@ namespace sctl {
         SCTL_ASSERT(asinh(VecType((ScalarType)-0.0))[0] == 0 && acosh(VecType((ScalarType)1))[0] == 0 && isnan(acosh(VecType((ScalarType)0.5))[0]));
         SCTL_ASSERT(isinf(atanh(VecType((ScalarType)-1))[0]) && atanh(VecType((ScalarType)-1))[0] < 0 && isnan(atanh(VecType((ScalarType)2))[0]));
 
+        { // erf, erfc on [-5, 5] (exact in long double); against long double, to its precision for QuadReal
+          const VecType xe = u1.v * (ScalarType)0.5;
+          const VecType ef = erf(xe), efc = erfc(xe), ef5 = approx_erf<5>(xe), efc5 = approx_erfc<5>(xe);
+          const ScalarType tol_e = std::max<ScalarType>(tol, (ScalarType)(16 * std::numeric_limits<long double>::epsilon()));
+          for (Integer i = 0; i < N; i++) {
+            SCTL_ASSERT(rel(ef[i], (ScalarType)std::erf((long double)xe[i])) <= tol_e);
+            SCTL_ASSERT(rel(efc[i], (ScalarType)std::erfc((long double)xe[i])) <= tol_e);
+            SCTL_ASSERT(rel(ef5[i], ef[i]) <= (ScalarType)1e-5 && rel(efc5[i], efc[i]) <= (ScalarType)1e-5);
+          }
+          SCTL_ASSERT(erf(VecType((ScalarType)-0.0))[0] == 0 && std::signbit((double)erf(VecType((ScalarType)-0.0))[0]) && erfc(VecType((ScalarType)-0.0))[0] == 1);
+          SCTL_ASSERT(erf(VecType((ScalarType)INFINITY))[0] == 1 && erf(VecType(-(ScalarType)INFINITY))[0] == -1 && isnan(erf(VecType((ScalarType)NAN))[0]));
+          SCTL_ASSERT(erfc(VecType((ScalarType)INFINITY))[0] == 0 && erfc(VecType(-(ScalarType)INFINITY))[0] == 2 && isnan(erfc(VecType((ScalarType)NAN))[0]));
+          if constexpr (sizeof(ScalarType) <= sizeof(double)) SCTL_ASSERT(erfc(VecType((ScalarType)30))[0] == 0 && erfc(VecType((ScalarType)-30))[0] == 2);
+        }
+
         const ScalarType big = (ScalarType)(sizeof(ScalarType) == 4 ? 1e30 : 1e200); // big^2 overflows float
         SCTL_ASSERT(rel(hypot(VecType(big), VecType(big))[0], big * sqrt<ScalarType>((ScalarType)2)) <= tol);
         SCTL_ASSERT(isinf(hypot(VecType((ScalarType)INFINITY), VecType((ScalarType)NAN))[0]));

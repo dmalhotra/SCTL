@@ -741,6 +741,16 @@ namespace sctl {
   /** atanh to the given digits (-1: full). FullRange = false: only for |x| < 1. */
   template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_atanh(const Vec<ValueType,N>& x);
 
+  /** Error function; float, double: within 1.3 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> erf(const Vec<ValueType,N>& x);
+  /** erf to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erf(const Vec<ValueType,N>& x);
+
+  /** Complementary error function 1 - erf(x), with its relative precision also where it is small; float, double: within 5.5 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> erfc(const Vec<ValueType,N>& x);
+  /** erfc to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x);
+
   /** Remainder of x/y with the sign of x, as std::fmod. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 
