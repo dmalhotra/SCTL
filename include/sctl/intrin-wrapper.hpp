@@ -2928,6 +2928,252 @@ namespace sctl { // Generic
     }
   }
 
+  // Minimax coefficients of J_n and Y_n of order n = 0, 1, 2 for the given digits (7: float), lowest degree first, from
+  // minimax.py bessel
+  template <Integer digits, Integer n> struct BesselCoeffs;
+  template <> struct BesselCoeffs<7, 0> {
+    static constexpr double j[] = {0.003187355638722544, -0.00015368697111522376, 3.1211684312205528e-06, -3.646271661237845e-08, 2.8079483703369514e-10, -1.5476463123200065e-12, 6.3078292704098234e-15}; // J_n = x^n (z - z1) (z - z2) j(z - 25/2), z = x^2 <= 25
+    static constexpr double y[] = {0.4837248577722562, -0.034612466604259096, -0.0030116887294084774, 0.00019892046666336222, -4.567729458929836e-06, 5.778588535392605e-08, -4.725888784942176e-10, 2.7389413243148166e-12, -1.1764631586313662e-14}; // Y_n = x^n y(z - 25/2) + 2/pi (log(x) J_n - h_n)
+    static constexpr double pp[] = {-0.002812497637976186, 0.00017930821499641096, -3.536632827203849e-05, 1.0922051254024614e-05, -2.382850787994649e-06}; // P_n = 1 + w pp(w)/pq(w), w = 25/x^2 < 1
+    static constexpr double pq[] = {1.0};
+    static constexpr double qp[] = {0.0029296765326287575, -0.00036273899528400916, 0.00010449660321156088, -3.9576420654209763e-05, 9.466001802055049e-06}; // x Q_n = (4n^2 - 1)/8 + w qp(w)/qq(w)
+    static constexpr double qq[] = {1.0};
+  };
+  template <> struct BesselCoeffs<7, 1> {
+    static constexpr double j[] = {0.0004323698737371032, -1.67461381572909e-05, 2.8299956637321187e-07, -2.8239126654918323e-09, 1.8948619263226792e-11, -9.238391490840878e-14, 3.3868220068672783e-16}; // J_n = x^n (z - z1) (z - z2) j(z - 25/2), z = x^2 <= 25
+    static constexpr double y[] = {0.13974939197560665, 0.007286921640085689, -0.0010439697196727017, 3.3969579096620435e-05, -5.502175233952695e-07, 5.469244709394378e-09, -3.7261451238537214e-11, 1.796220419835852e-13}; // Y_n = x^n y(z - 25/2) + 2/pi (log(x) J_n - h_n)
+    static constexpr double pp[] = {0.004687497385189045, -0.00023056320149796692, 4.189192099918531e-05, -1.2512171143573935e-05, 2.6951709665446858e-06}; // P_n = 1 + w pp(w)/pq(w), w = 25/x^2 < 1
+    static constexpr double pq[] = {1.0};
+    static constexpr double qp[] = {-0.004101550452257082, 0.00044342560690108115, -0.00012090843653232402, 4.4722824253863605e-05, -1.059828709863941e-05}; // x Q_n = (4n^2 - 1)/8 + w qp(w)/qq(w)
+    static constexpr double qq[] = {1.0};
+  };
+  template <> struct BesselCoeffs<7, 2> {
+    static constexpr double j[] = {4.4865147979947535e-05, -1.4643735869771537e-06, 2.1317358891054606e-08, -1.8644977724611279e-10, 1.1120765267503724e-12, -4.872986103327627e-15, 1.625230313970517e-17}; // J_n = x^n (z - z1) (z - z2) j(z - 25/2), z = x^2 <= 25
+    static constexpr double y[] = {0.00912670473250634, 0.003204768253714236, -0.00018248145188007588, 4.120021616640511e-06, -5.2220669118471704e-08, 4.297059906595613e-10, -2.5015154243125832e-12, 1.0410699796420331e-14}; // Y_n = x^n y(z - 25/2) + 2/pi (log(x) J_n - h_n)
+    static constexpr double pp[] = {-0.032812496437927365, 0.0005073643989641904, -7.025374050396454e-05, 1.8862303001006003e-05, -3.902533782540046e-06}; // P_n = 1 + w pp(w)/pq(w), w = 25/x^2 < 1
+    static constexpr double pq[] = {1.0};
+    static constexpr double qp[] = {0.012304671492116339, -0.0008238717174245483, 0.0001883127450438455, -6.465315181512669e-05, 1.4882783060313914e-05}; // x Q_n = (4n^2 - 1)/8 + w qp(w)/qq(w)
+    static constexpr double qq[] = {1.0};
+  };
+  template <> struct BesselCoeffs<16, 0> {
+    static constexpr double j[] = {0.0031873556303932387, -0.00015368696349731236, 3.1211693936997383e-06, -3.646313083174819e-08, 2.807789505412937e-10, -1.5421576526531107e-12, 6.366486955227784e-15, -2.0513164152600907e-17, 5.307848171067075e-20, -1.1279968456660394e-22, 2.006655830065238e-25, -3.012868259515063e-28}; // J_n = x^n (z - z1) (z - z2) j(z - 25/2), z = x^2 <= 25
+    static constexpr double y[] = {0.4837248578102995, -0.03461246578284103, -0.003011688739390264, 0.00019892039657764854, -4.567729022701026e-06, 5.778749977151347e-08, -4.725957372279627e-10, 2.7251712449352726e-12, -1.1719731578016508e-14, 3.9113944366226573e-17, -1.0437794621378697e-19, 2.283023354338751e-22, -4.157816687325966e-25}; // Y_n = x^n y(z - 25/2) + 2/pi (log(x) J_n - h_n)
+    static constexpr double pp[] = {-0.0028125, -0.026587563394949693, -0.08528320776581748, -0.11651485337344465, -0.06971133349576555, -0.016765520348913952, -0.0012434313289263871, -9.989190600808682e-06}; // P_n = 1 + w pp(w)/pq(w), w = 25/x^2 < 1
+    static constexpr double pq[] = {1.0, 9.517157957093195, 30.91710523392409, 43.28162226218273, 27.19354646047617, 7.269458316050991, 0.7022895844532588, 0.016069189801276397};
+    static constexpr double qp[] = {0.0029296874999999996, 0.030654070151767077, 0.10948526940123919, 0.16753388214568266, 0.11277777030519183, 0.03050999740819592, 0.0024971089612372457, 1.660598928903254e-05}; // x Q_n = (4n^2 - 1)/8 + w qp(w)/qq(w)
+    static constexpr double qq[] = {1.0, 10.587287195136332, 38.646383637369865, 61.599968054272146, 44.88279261064361, 14.30081888686441, 1.7233854342947574, 0.053822004023966606};
+  };
+  template <> struct BesselCoeffs<16, 1> {
+    static constexpr double j[] = {0.0004323698734106474, -1.6746137771888152e-05, 2.829996036544929e-07, -2.823933163314925e-09, 1.8948010865408882e-11, -9.211567323238196e-14, 3.408637110659347e-16, -9.94652867132839e-19, 2.3509934749991738e-21, -4.60159304791747e-24, 7.539169825622234e-27}; // J_n = x^n (z - z1) (z - z2) j(z - 25/2), z = x^2 <= 25
+    static constexpr double y[] = {0.13974939033568806, 0.007286920670758755, -0.001043969302919598, 3.3969640216469146e-05, -5.502334460238883e-07, 5.468334105760503e-09, -3.7071974025823e-11, 1.8314634593070199e-13, -6.901774241479743e-16, 2.0520396902102843e-18, -4.940672084225741e-21, 9.845598975820887e-24, -1.6331571308703538e-26}; // Y_n = x^n y(z - 25/2) + 2/pi (log(x) J_n - h_n)
+    static constexpr double pp[] = {0.0046875, 0.043860427067950104, 0.13907713558784354, 0.18761211795718716, 0.110773474910082, 0.026341274425374903, 0.001956242356992678, 1.802970144970018e-05}; // P_n = 1 + w pp(w)/pq(w), w = 25/x^2 < 1
+    static constexpr double pq[] = {1.0, 9.406109857829337, 30.123508150834166, 41.42342821295195, 25.42491700396801, 6.57934539833196, 0.6046872269487391, 0.012618933160073897};
+    static constexpr double qp[] = {-0.004101562499999999, -0.042525925094907255, -0.15035693214398083, -0.227550131124614, -0.15142909829784024, -0.040544916551061724, -0.0033109419743992926, -2.5013599793140416e-05}; // x Q_n = (4n^2 - 1)/8 + w qp(w)/qq(w)
+    static constexpr double qq[] = {1.0, 10.476506796948685, 37.76175458966129, 59.258897076889056, 42.324943404849705, 13.128866950499521, 1.5215757547778297, 0.04453053839891092};
+  };
+  template <> struct BesselCoeffs<16, 2> {
+    static constexpr double j[] = {4.486514796785987e-05, -1.4643735697056801e-06, 2.1317360261500442e-08, -1.8645068552754918e-10, 1.1120543402311745e-12, -4.8611769275487106e-15, 1.633003118432335e-17, -4.360898008775409e-20, 9.498105879108946e-23, -1.7230322847483982e-25, 2.632670851578099e-28}; // J_n = x^n (z - z1) (z - z2) j(z - 25/2), z = x^2 <= 25
+    static constexpr double y[] = {0.009126704723589382, 0.0032047681920615327, -0.0001824814446808372, 4.120026282890154e-06, -5.222113217895149e-08, 4.296240495168117e-10, -2.493780827267649e-12, 1.0792181934091186e-14, -3.622441597979738e-17, 9.716408906610672e-20, -2.134011846917858e-22, 3.831805762143809e-25}; // Y_n = x^n y(z - 25/2) + 2/pi (log(x) J_n - h_n)
+    static constexpr double pp[] = {-0.0328125, -0.29803160194673267, -0.9137290854149711, -1.1870041120777062, -0.6730754850760635, -0.15419163418765874, -0.011356858334499412, -0.0001334052404848676}; // P_n = 1 + w pp(w)/pq(w), w = 25/x^2 < 1
+    static constexpr double pq[] = {1.0, 9.098336618852802, 27.985522082424854, 36.589037964481975, 21.02383865246782, 4.961736125735502, 0.39500950975321075, 0.006221914988442327};
+    static constexpr double qp[] = {0.0123046875, 0.12426087137836113, 0.42667643451598697, 0.6254722133654043, 0.4027086355379197, 0.1047245300475318, 0.008512266481928902, 8.484832992412702e-05}; // x Q_n = (4n^2 - 1)/8 + w qp(w)/qq(w)
+    static constexpr double qq[] = {1.0, 10.165692542971511, 35.34132052677422, 53.0460354375923, 35.79154730555239, 10.281609251057063, 1.0644201137787792, 0.02565899800156392};
+  };
+  // The squares z1 and z2 of the first two zeros of J_n, n = 0, 1, 2, each the sum of two doubles
+  inline constexpr double bessel_zeros_sq[3][2][2] = {{{5.783185962946784, 4.123247343506204e-16}, {30.471262343662087, -2.366534485750659e-16}},
+                                                      {{14.681970642123893, -9.858177825793294e-17}, {49.2184563216946, 5.086354069436341e-16}},
+                                                      {{26.374616427163392, -1.5036561242658726e-15}, {70.84999891909585, 6.850461574080647e-15}}};
+  // BesselCoeffs<16, n> for double at full precision or digits > 7, else <7, n>
+  template <class Real, Integer digits, Integer n> using BesselCoeffsOf = BesselCoeffs<((digits < 0 ? std::is_same<Real,double>::value : digits > 7) ? 16 : 7), n>;
+  // J_n(x) and Y_n(x), n = 0, 1, 2, of one value x >= 0 by power series below 2, Miller's recurrence with Neumann series
+  // below 0.4 SigBits, and the Hankel expansion beyond
+  template <class Real> inline void bessel_jy_generic(Real (&J)[3], Real (&Y)[3], const Real x) {
+    if (x == 0 || !(x < (Real)INFINITY)) { // 0, inf, NaN
+      for (Integer n = 0; n < 3; n++) {
+        J[n] = (x == 0 ? (Real)(n == 0) : (x == x ? (Real)0 : x));
+        Y[n] = (x == 0 ? -(Real)INFINITY : (x == x ? (Real)0 : x));
+      }
+      return;
+    }
+    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+    const Real eps = machine_eps<Real>();
+    const Real pi = const_pi<Real>();
+    const Real L = log(x / 2) - digamma_generic<Real>(1); // log(x/2) + Euler's constant
+    if (x < 2) { // in q = -x^2/4: J_n = (x/2)^n sum q^k/(k! (k+n)!), Y_0 and Y_1 with the harmonic numbers H_k
+      const Real q = -x * x / 4;
+      for (Integer n = 0; n < 3; n++) {
+        Real t = (n == 0 ? (Real)1 : (n == 1 ? x / 2 : x * x / 8));
+        Real s = t;
+        for (Integer k = 1; fabs(t) > eps * fabs(s); k++) {
+          t *= q / (Real)(k * (k + n));
+          s += t;
+        }
+        J[n] = s;
+      }
+      Real H = 0;
+      Real t0 = 1;
+      Real t1 = 1;
+      Real s0 = 0; // sum H_k q^k/(k!)^2
+      Real s1 = 1; // sum (H_k + H_(k+1)) q^k/(k! (k+1)!)
+      for (Integer k = 1; k < 200; k++) {
+        H += (Real)1 / (Real)k;
+        t0 *= q / (Real)(k * k);
+        t1 *= q / (Real)(k * (k + 1));
+        s0 += H * t0;
+        s1 += (2 * H + (Real)1 / (Real)(k + 1)) * t1;
+        if (fabs(t0) <= eps * fabs(s0) && fabs(t1) <= eps * fabs(s1)) break;
+      }
+      Y[0] = 2 / pi * (L * J[0] - s0);
+      Y[1] = 2 / pi * (L * J[1] - 1 / x) - x / (2 * pi) * s1;
+    } else if (x < (Real)0.4 * SigBits) { // J_(k-1) = (2k/x) J_k - J_(k+1) from k = N, with J_0 + 2 (J_2 + J_4 + ...) = 1
+      const Integer N = 2 * (Integer)((x + SigBits) / 2) + 2;
+      Real jp = 0;
+      Real jk = 1;
+      Real norm = 0;
+      Real s0 = 0; // sum (-1)^m J_2m/m
+      Real s1 = 0; // sum (-1)^m (2m+1)/(m (m+1)) J_(2m+1)
+      for (Integer k = N; k > 0; k--) {
+        const Integer m = k / 2;
+        if (k % 2 == 0) {
+          norm += 2 * jk;
+          s0 += (m % 2 ? -jk : jk) / (Real)m;
+        } else if (k >= 3) {
+          s1 += (m % 2 ? -jk : jk) * (Real)(2 * m + 1) / (Real)(m * (m + 1));
+        }
+        if (k <= 2) J[k] = jk;
+        const Real jm = 2 * (Real)k / x * jk - jp;
+        jp = jk;
+        jk = jm;
+      }
+      norm += jk;
+      J[0] = jk / norm;
+      J[1] /= norm;
+      J[2] /= norm;
+      Y[0] = 2 / pi * (L * J[0] - 2 * s0 / norm);
+      Y[1] = 2 / pi * ((L - 1) * J[1] - J[0] / x - s1 / norm);
+    } else { // sqrt(2/(pi x)) (P cos xi - Q sin xi) and (P sin xi + Q cos xi), xi = x - pi/4 - n pi/2, by sin x and cos x
+      const Real r = sqrt(2 / (pi * x));
+      const Real sin_x = sin(x);
+      const Real cos_x = cos(x);
+      const Real u = (cos_x + sin_x) / sqrt<Real>((Real)2); // cos(x - pi/4)
+      const Real v = (sin_x - cos_x) / sqrt<Real>((Real)2); // sin(x - pi/4)
+      for (Integer n = 0; n < 2; n++) {
+        Real P = 1;
+        Real Q = 0;
+        Real a = 1;
+        for (Integer k = 1; k < 1000; k++) { // the terms a_k = a_(k-1) (4n^2 - (2k-1)^2)/(8 k x), to the smallest
+          const Real a_next = a * (Real)(4 * n * n - (2 * k - 1) * (2 * k - 1)) / (8 * (Real)k * x);
+          if (fabs(a_next) > fabs(a) || fabs(a_next) < eps) break;
+          a = a_next;
+          if (k % 2) Q += ((k / 2) % 2 ? -a : a);
+          else P += ((k / 2) % 2 ? -a : a);
+        }
+        const Real c = (n == 0 ? u : v);
+        const Real s = (n == 0 ? v : -u);
+        J[n] = r * (P * c - Q * s);
+        Y[n] = r * (P * s + Q * c);
+      }
+      J[2] = 2 * J[1] / x - J[0];
+    }
+    Y[2] = 2 * Y[1] / x - Y[0];
+  }
+  // J_n(a) and Y_n(a) of order n = 0, 1, 2 for a >= 0, inf or NaN by the forms of BesselCoeffs, each computed only when
+  // its flag J or Y is set
+  template <Integer n, bool J, bool Y, Integer digits, class VData> inline void bessel_jy_intrin(VData& j, VData& y, const VData& a) {
+    using Real = typename VData::ScalarType;
+    using Coeffs = BesselCoeffsOf<Real, digits, n>;
+    const VData one = set1_intrin<VData>((Real)1);
+    const Mask<VData> small = comp_intrin<ComparisonType::le>(a, set1_intrin<VData>((Real)5));
+    const Integer n_small = mask_count_intrin(small);
+    VData jr = zero_intrin<VData>();
+    VData yr = jr;
+    if (n_small) { // z = x^2 = zh + zl
+      const VData zh = mul_intrin(a, a);
+      const VData zl = mul_sub_exact_intrin(a, a, zh);
+      const auto factor = [&zh, &zl](const double (&c)[2]) { // z - c to about twice the precision
+        const Real hi = (Real)c[0];
+        const Real lo = (Real)((c[0] - (double)hi) + c[1]);
+        return add_intrin(sub_intrin(zh, set1_intrin<VData>(hi)), sub_intrin(zl, set1_intrin<VData>(lo)));
+      };
+      const VData t = sub_intrin(zh, set1_intrin<VData>((Real)12.5));
+      const VData xn = (n == 0 ? one : (n == 1 ? a : zh));
+      const VData f = mul_intrin(mul_intrin(factor(bessel_zeros_sq[n][0]), factor(bessel_zeros_sq[n][1])), xn);
+      jr = mul_intrin(f, eval_poly_intrin(t, Coeffs::j));
+      if constexpr (Y) { // -2/pi h_n = 0, -2/(pi x), -4/(pi x^2) - 1/pi, without x^2, which can be subnormal
+        const VData log_a = (digits < 0 ? log_intrin(a) : approx_log_intrin<digits>(a));
+        VData mh = zero_intrin<VData>();
+        if constexpr (n == 1) mh = div_intrin(set1_intrin<VData>(-2 / const_pi<Real>()), a);
+        if constexpr (n == 2) mh = sub_intrin(div_intrin(div_intrin(set1_intrin<VData>(-4 / const_pi<Real>()), a), a), set1_intrin<VData>(1 / const_pi<Real>()));
+        const VData ys = fma_intrin(xn, eval_poly_intrin(t, Coeffs::y), fma_intrin(mul_intrin(log_a, set1_intrin<VData>(2 / const_pi<Real>())), jr, mh));
+        yr = select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>(-(Real)INFINITY), ys);
+      }
+    }
+    if (n_small < VData::Size) { // J_n = r (P c - Q s), Y_n = r (P s + Q c), c and s sqrt(2) cos and sin of x - pi/4 - n pi/2
+      const auto ratio = [](const VData& w, const auto& p, const auto& q) { // p(w)/q(w), without the division for q = 1
+        if constexpr (std::extent<std::remove_reference_t<decltype(q)>>::value == 1) return eval_poly_intrin(w, p);
+        else return div_intrin(eval_poly_intrin(w, p), eval_poly_intrin(w, q));
+      };
+      const VData r = div_intrin(set1_intrin<VData>((Real)0.56418958354775628694807945156077259L), sqrt_intrin(a)); // 1/sqrt(pi x), not from 1/x, which can be subnormal
+      const VData d = mul_intrin(mul_intrin(r, r), set1_intrin<VData>(const_pi<Real>())); // 1/x
+      const VData w = mul_intrin(mul_intrin(d, d), set1_intrin<VData>((Real)25));
+      VData sin_a, cos_a;
+      approx_sincos_intrin<digits>(sin_a, cos_a, a);
+      const VData u = add_intrin(cos_a, sin_a); // sqrt(2) cos(x - pi/4)
+      const VData v = sub_intrin(sin_a, cos_a); // sqrt(2) sin(x - pi/4)
+      const VData c = (n == 0 ? u : (n == 1 ? v : unary_minus_intrin(u)));
+      const VData s = (n == 0 ? v : (n == 1 ? unary_minus_intrin(u) : unary_minus_intrin(v)));
+      const VData ms = (n == 0 ? unary_minus_intrin(v) : (n == 1 ? u : v)); // -s
+      const VData P = fma_intrin(w, ratio(w, Coeffs::pp, Coeffs::pq), one);
+      const VData Q = mul_intrin(d, fma_intrin(w, ratio(w, Coeffs::qp, Coeffs::qq), set1_intrin<VData>((Real)(4 * n * n - 1) / 8)));
+      const Mask<VData> inf = comp_intrin<ComparisonType::eq>(a, set1_intrin<VData>((Real)INFINITY));
+      if constexpr (J) jr = select_intrin(small, jr, select_intrin(inf, zero_intrin<VData>(), mul_intrin(r, fma_intrin(P, c, mul_intrin(Q, ms)))));
+      if constexpr (Y) yr = select_intrin(small, yr, select_intrin(inf, zero_intrin<VData>(), mul_intrin(r, fma_intrin(P, s, mul_intrin(Q, c)))));
+    }
+    if constexpr (J) j = jr;
+    if constexpr (Y) y = yr;
+  }
+  // J_n(x), n = 0, 1, 2, to the given digits (-1: full)
+  template <Integer n, Integer digits = -1, class VData> inline VData cyl_bessel_j_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      const VData sgn = and_intrin(x, set1_intrin<VData>((Real)-0.0));
+      VData j, y;
+      bessel_jy_intrin<n, true, false, digits>(j, y, xor_intrin(x, sgn));
+      return (n == 1 ? xor_intrin(j, sgn) : j);
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) {
+        Real J[3], Y[3];
+        bessel_jy_generic(J, Y, fabs(x_.x[i]));
+        x_.x[i] = (n == 1 && x_.x[i] == 0 ? x_.x[i] : (n == 1 && x_.x[i] < 0 ? -J[n] : J[n])); // J_1 odd, also at -0
+      }
+      return x_.v;
+    }
+  }
+  // Y_n(x), n = 0, 1, 2, to the given digits (-1: full), NaN for x < 0
+  template <Integer n, Integer digits = -1, class VData> inline VData cyl_neumann_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      VData j, y;
+      bessel_jy_intrin<n, false, true, digits>(j, y, x);
+      return select_intrin(comp_intrin<ComparisonType::lt>(x, zero_intrin<VData>()), set1_intrin<VData>((Real)NAN), y);
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {x};
+      for (Integer i = 0; i < VData::Size; i++) {
+        Real J[3], Y[3];
+        bessel_jy_generic(J, Y, fabs(x_.x[i]));
+        x_.x[i] = (x_.x[i] < 0 ? (Real)NAN : Y[n]);
+      }
+      return x_.v;
+    }
+  }
+
   template <class VData> inline VData cbrt_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     union {
