@@ -746,12 +746,18 @@ namespace sctl {
   /** erf to the given digits (-1: full). */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erf(const Vec<ValueType,N>& x);
 
-  /** Complementary error function 1 - erf(x), with its relative precision also where it is small; float, double: within 5.5 ulp. */
+  /**
+   * Complementary error function 1 - erf(x), with its relative precision also where it is small; float, double: within
+   * 5.5 ulp.
+   */
   template <class ValueType, Integer N> inline Vec<ValueType,N> erfc(const Vec<ValueType,N>& x);
   /** erfc to the given digits (-1: full). */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x);
 
-  /** Inverse of the standard normal distribution function, -inf at 0, inf at 1, NaN outside [0, 1]; float, double: within about 4 ulp. */
+  /**
+   * Inverse of the standard normal distribution function, -inf at 0, inf at 1, NaN outside [0, 1]; float, double:
+   * within about 4 ulp.
+   */
   template <class ValueType, Integer N> inline Vec<ValueType,N> ndtri(const Vec<ValueType,N>& p);
   /** ndtri to the given digits (-1: full). */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_ndtri(const Vec<ValueType,N>& p);
