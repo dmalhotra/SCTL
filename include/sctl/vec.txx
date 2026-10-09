@@ -604,6 +604,46 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
     return pow_intrin(x.get(), y.get());
   }
+  template <Long e, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x) {
+    if constexpr (e < 0) {
+      return (ValueType)1 / pow<-e>(x);
+    } else if constexpr (e == 0) {
+      return Vec<ValueType,N>((ValueType)1);
+    } else { // the product of the set bits from the lowest, alongside the squarings
+      Vec<ValueType,N> r, p = x;
+      bool first = true;
+      for (Long k = e; k > 0; k >>= 1) {
+        if (k & 1) {
+          r = (first ? p : r * p);
+          first = false;
+        }
+        if (k > 1) p = p * p;
+      }
+      return r;
+    }
+  }
+  template <Long e, Long d, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x) {
+    static_assert(d == 1 || d == 2, "pow<e, d> requires d = 1 or 2.");
+    if constexpr (d == 1 || e % 2 == 0) return pow<e / d>(x);
+    else if constexpr (e > 0) return pow<(e - 1) / 2>(x) * sqrt(x);
+    else return (ValueType)1 / (pow<(-e - 1) / 2>(x) * sqrt(x));
+  }
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> hermite(const Vec<ValueType,N>& x) {
+    static_assert(n >= 0, "hermite<n> requires n >= 0.");
+    Vec<ValueType,N> h0((ValueType)1);
+    if constexpr (n == 0) {
+      return h0;
+    } else {
+      const Vec<ValueType,N> x2 = x + x;
+      Vec<ValueType,N> h1 = x2;
+      for (Integer k = 1; k < n; k++) {
+        const Vec<ValueType,N> h2 = FMA(x2, h1, h0 * (ValueType)(-2 * k));
+        h0 = h1;
+        h1 = h2;
+      }
+      return h1;
+    }
+  }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> trunc(const Vec<ValueType,N>& x) {
     return trunc_intrin(x.get());

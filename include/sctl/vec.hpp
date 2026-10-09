@@ -669,6 +669,12 @@ namespace sctl {
 
   /** x to the power y; vectorized with SVML, libmvec, or at 256- and 512-bit widths (double about 9 ulp, 14 near the ends of the range; float 4 ulp), else one element at a time. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+  /** x^e for a compile-time integer e by squaring (2 log2|e| products, error up to |e|/2 ulp); e < 0: 1/x^|e|. */
+  template <Long e, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x);
+  /** x^(e/d) for compile-time integers e and d = 1 or 2; for odd e and d = 2, x^((e-1)/2) sqrt(x). */
+  template <Long e, Long d, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x);
+  /** Hermite polynomial H_n(x) (physicists') for a compile-time n >= 0, by H_(k+1) = 2x H_k - 2k H_(k-1). */
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> hermite(const Vec<ValueType,N>& x);
 
   /** Integer value nearest x, not larger in magnitude. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> trunc(const Vec<ValueType,N>& x);

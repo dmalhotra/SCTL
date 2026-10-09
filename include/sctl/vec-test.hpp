@@ -850,6 +850,19 @@ namespace sctl {
           SCTL_ASSERT(sincpi(VecType((ScalarType)0))[0] == 1 && sincpi(VecType((ScalarType)3))[0] == 0 && isnan(sincpi(VecType((ScalarType)NAN))[0]));
         }
 
+        { // pow<e>, pow<e, 2>, hermite<n>
+          const VecType a = fabs(v0);
+          const VecType p13 = pow<13>(v0), pm3 = pow<-3>(v0), p72 = pow<7, 2>(a), pm32 = pow<-3, 2>(a), h3 = hermite<3>(v0), h4 = hermite<4>(v0);
+          const ScalarType eps = machine_eps<ScalarType>();
+          for (Integer i = 0; i < N; i++) {
+            const ScalarType x = v0[i], x2 = x * x;
+            SCTL_ASSERT(fabs(p13[i] - pow<13>(x)) <= 8 * eps * fabs(pow<13>(x)) && fabs(pm3[i] - 1 / (x * x2)) <= 4 * eps / fabs(x * x2));
+            SCTL_ASSERT(fabs(p72[i] - pow<ScalarType>(a[i], (ScalarType)3.5)) <= 8 * eps * p72[i] && fabs(pm32[i] - pow<ScalarType>(a[i], (ScalarType)-1.5)) <= 8 * eps * pm32[i]);
+            SCTL_ASSERT(fabs(h3[i] - (8 * x2 - 12) * x) <= 8 * eps * (8 * x2 + 12) * fabs(x) && fabs(h4[i] - ((16 * x2 - 48) * x2 + 12)) <= 8 * eps * ((16 * x2 + 48) * x2 + 12));
+          }
+          SCTL_ASSERT(hermite<0>(v0)[0] == 1 && hermite<1>(v0)[0] == 2 * v0[0] && pow<0>(v0)[0] == 1 && (pow<6, 2>(v0)[0] == v0[0] * v0[0] * v0[0]));
+        }
+
         if (sizeof(ScalarType) < 16) return;
 
         approx_sincos<8>(v1, v2, v0);
