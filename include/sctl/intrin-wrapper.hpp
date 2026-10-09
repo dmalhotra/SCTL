@@ -1509,6 +1509,32 @@ namespace sctl { // Generic
       return add_intrin(add_intrin(r, add_intrin(mul_intrin(a_hi, b_lo), mul_intrin(a_lo, b_hi))), mul_intrin(a_lo, b_lo));
     }
   }
+  // log(2^e (1+f)) = L_hi + L_lo to about 1.5 times the precision of Real (e, f from log_split_intrin): 2s + s R,
+  // s = f/(2+f)
+  template <class VData> inline void log_hi_lo_intrin(VData& L_hi, VData& L_lo, const VData& e, const VData& f) {
+    using Real = typename VData::ScalarType;
+    const VData two = set1_intrin<VData>((Real)2);
+    const VData t = add_intrin(f, two);
+    const VData t_lo = add_intrin(sub_intrin(two, t), f); // 2 + f = t + t_lo
+    const VData s = div_intrin(f, t);
+    const VData inv = div_intrin(set1_intrin<VData>((Real)1), t); // in parallel with s; s_lo = rem inv
+    const VData p = mul_intrin(s, t);
+    const VData rem = sub_intrin(sub_intrin(sub_intrin(f, p), mul_sub_exact_intrin(s, t, p)), mul_intrin(s, t_lo)); // f - s (t + t_lo)
+    const VData s_lo = mul_intrin(rem, inv);
+    const VData z = mul_intrin(s, s);
+    VData R; // sum_k 2/(2k+1) z^(k-1), k = 1 .. 12 (float: 6), to about 2^-72 (float: 2^-41); fdlibm's R reaches only 2^-58
+    if constexpr (std::is_same<Real,float>::value) R = EvalPolynomial(z, 2.f/7, 2.f/9, 2.f/11, 2.f/13);
+    else R = EvalPolynomial(z, 2./7, 2./9, 2./11, 2./13, 2./15, 2./17, 2./19, 2./21, 2./23, 2./25);
+    R = fma_intrin(z, fma_intrin(z, R, set1_intrin<VData>((Real)2/5)), set1_intrin<VData>((Real)2/3)); // the two largest terms last, so that the rounding errors of the rest are scaled by z^2
+    const VData Rz = mul_intrin(R, z);
+    const VData sR = mul_intrin(s, Rz);
+    const VData s2 = add_intrin(s, s);
+    const VData u_hi = add_intrin(s2, sR); // log(1+f) = u_hi + u_lo; s_lo also changes s R by about 3 s_lo R z
+    const VData u_lo = add_intrin(add_intrin(sub_intrin(s2, u_hi), sR), fma_intrin(mul_intrin(set1_intrin<VData>((Real)3), s_lo), Rz, add_intrin(s_lo, s_lo)));
+    const VData eh = mul_intrin(e, set1_intrin<VData>(Ln2Split<Real>::hi)); // exact
+    L_hi = add_intrin(eh, u_hi);
+    L_lo = add_intrin(add_intrin(sub_intrin(eh, L_hi), u_hi), fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), u_lo)); // |eh| >= |u_hi| unless e = 0
+  }
   template <class VData> inline VData pow_poly_intrin(const VData& x, const VData& y) { // exp(y log|x|), log|x| = L_hi + L_lo to about 1.5x the precision of Real; std::pow at signs, zeros, inf, NaN
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
@@ -1517,34 +1543,10 @@ namespace sctl { // Generic
     const VData inf = set1_intrin<VData>((Real)INFINITY);
     const VData ax = fabs_intrin(x);
 
-    const auto log_hi_lo = [](VData& L_hi, VData& L_lo, const VData& e, const VData& f) { // log(2^e (1+f)) = L_hi + L_lo; log(1+f) = 2s + s R, s = f/(2+f) = s + s_lo
-      const VData two = set1_intrin<VData>((Real)2);
-      const VData t = add_intrin(f, two);
-      const VData t_lo = add_intrin(sub_intrin(two, t), f); // 2 + f = t + t_lo
-      const VData s = div_intrin(f, t);
-      const VData inv = div_intrin(set1_intrin<VData>((Real)1), t); // in parallel with s; s_lo = rem inv
-      const VData p = mul_intrin(s, t);
-      const VData rem = sub_intrin(sub_intrin(sub_intrin(f, p), mul_sub_exact_intrin(s, t, p)), mul_intrin(s, t_lo)); // f - s (t + t_lo)
-      const VData s_lo = mul_intrin(rem, inv);
-      const VData z = mul_intrin(s, s);
-      VData R; // sum_k 2/(2k+1) z^(k-1), k = 1 .. 12 (float: 6), to about 2^-72 (float: 2^-41); fdlibm's R reaches only 2^-58
-      if constexpr (std::is_same<Real,float>::value) R = EvalPolynomial(z, 2.f/7, 2.f/9, 2.f/11, 2.f/13);
-      else R = EvalPolynomial(z, 2./7, 2./9, 2./11, 2./13, 2./15, 2./17, 2./19, 2./21, 2./23, 2./25);
-      R = fma_intrin(z, fma_intrin(z, R, set1_intrin<VData>((Real)2/5)), set1_intrin<VData>((Real)2/3)); // the two largest terms last, so that the rounding errors of the rest are scaled by z^2
-      const VData Rz = mul_intrin(R, z);
-      const VData sR = mul_intrin(s, Rz);
-      const VData s2 = add_intrin(s, s);
-      const VData u_hi = add_intrin(s2, sR); // log(1+f) = u_hi + u_lo; s_lo also changes s R by about 3 s_lo R z
-      const VData u_lo = add_intrin(add_intrin(sub_intrin(s2, u_hi), sR), fma_intrin(mul_intrin(set1_intrin<VData>((Real)3), s_lo), Rz, add_intrin(s_lo, s_lo)));
-      const VData eh = mul_intrin(e, set1_intrin<VData>(Ln2Split<Real>::hi)); // exact
-      L_hi = add_intrin(eh, u_hi);
-      L_lo = add_intrin(add_intrin(sub_intrin(eh, L_hi), u_hi), fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), u_lo)); // |eh| >= |u_hi| unless e = 0
-    };
-
     // y log|x| = T_hi + T_lo; e^(T_hi + T_lo) = e^T_hi (1 + T_lo)
     VData e, f, L_hi, L_lo;
     log_split_intrin<false>(e, f, ax);
-    log_hi_lo(L_hi, L_lo, e, f);
+    log_hi_lo_intrin(L_hi, L_lo, e, f);
     VData T_hi = mul_intrin(y, L_hi);
     VData T_lo = add_intrin(mul_sub_exact_intrin(y, L_hi, T_hi), mul_intrin(y, L_lo));
     if (mask_count_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T_hi), set1_intrin<VData>(exp_normal_lim<Real>()))) == VData::Size) {
@@ -1554,7 +1556,7 @@ namespace sctl { // Generic
 
     // some x not positive and normal, or |y log x| large, or inf or NaN
     log_split_intrin<true>(e, f, ax);
-    log_hi_lo(L_hi, L_lo, e, f);
+    log_hi_lo_intrin(L_hi, L_lo, e, f);
     L_hi = select_intrin(comp_intrin<ComparisonType::eq>(ax, zero), unary_minus_intrin(inf), select_intrin(comp_intrin<ComparisonType::eq>(ax, inf), inf, L_hi));
     T_hi = mul_intrin(y, L_hi);
     T_lo = add_intrin(mul_sub_exact_intrin(y, L_hi, T_hi), mul_intrin(y, L_lo));
