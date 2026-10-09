@@ -726,6 +726,18 @@ namespace sctl {
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x) {
     return erfc_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
   }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> ndtri(const Vec<ValueType,N>& p) {
+    return ndtri_intrin(p.get());
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_ndtri(const Vec<ValueType,N>& p) {
+    return ndtri_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(p.get());
+  }
+  template <class ValueType, Integer N> inline Vec<ValueType,N> erfinv(const Vec<ValueType,N>& y) {
+    return erfinv_intrin(y.get());
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y) {
+    return erfinv_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(y.get());
+  }
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
     return fmod_intrin(x.get(), y.get());
   }

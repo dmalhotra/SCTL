@@ -2444,6 +2444,96 @@ namespace sctl { // Generic
       return x_.v;
     }
   }
+  // erfinv(y) of one value, with t = (1 - |y|)/2 given separately (more precise than y near +-1): for |y| <= 0.85,
+  // Newton's method on erf(z) = |y|; beyond, on erfc(z) = 2t, from Abramowitz and Stegun 26.2.23 (error below 5e-4)
+  template <class Real> inline Real erfinv_generic(const Real y, const Real t) {
+    if (!(t > 0)) return (t == 0 ? (y < 0 ? -(Real)INFINITY : (Real)INFINITY) : (Real)NAN); // also NaN
+    if (y == 0) return y;
+    const Real ay = fabs(y);
+    const Real c = 2 / sqrt<Real>(const_pi<Real>());
+    const bool central = (ay <= (Real)0.85);
+    const Real u = sqrt<Real>(-2 * log(t));
+    Real z = (central ? ay / c : (u - (2.515517 + 0.802853 * u + 0.010328 * u * u) / (1 + 1.432788 * u + 0.189269 * u * u + 0.001308 * u * u * u)) / sqrt<Real>((Real)2));
+    for (Integer k = 0; k < 100; k++) {
+      const Real r = (central ? erf_series_generic(z) - ay : (z < (Real)0.5 ? 1 - erf_series_generic(z) : erfc_cf_generic(z)) - 2 * t);
+      const Real dz = r / (central ? c : -c) / exp<Real>(-z * z);
+      z -= dz;
+      if (fabs(dz) <= machine_eps<Real>() * z) break;
+    }
+    return (y < 0 ? -z : z);
+  }
+  // ndtri(1/2 + q) = q (c + P0(r)/Q0(r)), r = 0.180625 - q^2, |q| <= 0.425; ndtri(t) = -(a u + P(s)/Q(s)), u =
+  // sqrt(-log t): P1, Q1 and s = u - 1.6 for u <= 5, P2, Q2 and s = u - 5 beyond; c = sqrt(2 pi), a = sqrt(2) rounded to
+  // double. Minimax for the given digits, lowest degree first
+  template <Integer digits> struct NdtriCoeffs;
+  template <> struct NdtriCoeffs<7> {
+    static constexpr double p0[] = {0.8805045814976765, 7.505611139468174, -35.35711021253784, -183.7219247484125};
+    static constexpr double q0[] = {1.0, 20.084840481351875, 107.19082725442411, 127.0972692689975, -15.903298231941674};
+    static constexpr double p1[] = {-0.8393045825961606, -0.526598973398611, -0.06393715152892002, -0.0003490320067989722};
+    static constexpr double q1[] = {1.0, 0.9771585376142381, 0.27130299973203253, 0.01853277938138593};
+    static constexpr double p2[] = {-0.41316313942633054, -0.06741718853790997, -0.00198822815257825, -2.098635073699726e-06};
+    static constexpr double q2[] = {1.0, 0.29858043429691744, 0.024216132140794384, 0.0004510690126461227};
+  };
+  template <> struct NdtriCoeffs<16> {
+    static constexpr double p0[] = {0.880504598165366, 27.0778750783357, 249.0685268758211, 210.44927209638936, -7253.1419312903845, -31264.50381461276, -38582.54746523508, -10591.794084564011};
+    static constexpr double q0[] = {1.0, 42.313328790192564, 687.1869394075856, 5394.195138469813, 21213.78918659876, 39307.88270057975, 28729.073062315376, 5226.492330320501};
+    static constexpr double p1[] = {-0.8393045890472687, -1.4224023958229681, -0.9247258467831433, -0.29088013150488945, -0.045381505185371665, -0.0031144374873346287, -6.611016465678944e-05, -7.037921733600937e-08};
+    static constexpr double q1[] = {1.0, 2.0444753253613954, 1.670174001443069, 0.6974481813956763, 0.15736473035764298, 0.01843048179093454, 0.0009585114615217301, 1.4746843780033622e-05};
+    static constexpr double p2[] = {-0.41316316836437206, -0.1966189876546412, -0.033795467095799676, -0.002594558288012549, -8.96827790196168e-05, -1.2422452094540746e-06, -4.9296658523336505e-09, -7.941865589400861e-13};
+    static constexpr double q2[] = {1.0, 0.6112953003423831, 0.14354228752237055, 0.01630987080431471, 0.0009322459281457903, 2.5430086628035514e-05, 2.8354433355158357e-07, 8.735983700824607e-10};
+  };
+  // ndtri(p) = q (c + T), q = p - 1/2, for |q| <= 0.425, else sign(q) (a u + U), u = sqrt(-log t), t = min(p, 1 - p);
+  // Erfinv: erfinv(p) = p (c + T)/sqrt(8), q = p/2, else sign(p) (a u + U)/sqrt(2), t = (1 - |p|)/2 (NdtriCoeffs).
+  // t and q are exact; t = 0: +-inf. digits = -1: full
+  template <bool Erfinv, Integer digits, class VData> inline VData ndtri_erfinv_intrin(const VData& p) {
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      using Coeffs = NdtriCoeffs<((digits < 0 ? std::is_same<Real,double>::value : digits > 7) ? 16 : 7)>;
+      const VData one = set1_intrin<VData>((Real)1);
+      const VData half = set1_intrin<VData>((Real)0.5);
+      const VData q = (Erfinv ? mul_intrin(p, half) : sub_intrin(p, half));
+      const Mask<VData> central = comp_intrin<ComparisonType::le>(fabs_intrin(q), set1_intrin<VData>((Real)0.425));
+      const Integer n_central = mask_count_intrin(central);
+      const auto central_value = [&q, &p]() {
+        const VData r = fma_intrin(unary_minus_intrin(q), q, set1_intrin<VData>((Real)0.180625));
+        const VData T = div_intrin(eval_poly_intrin(r, Coeffs::p0), eval_poly_intrin(r, Coeffs::q0));
+        if constexpr (Erfinv) return mul_intrin(p, fma_intrin(T, set1_intrin<VData>((Real)0.35355339059327376220L), set1_intrin<VData>((Real)0.88622692545275801365L)));
+        else return mul_intrin(q, add_intrin(set1_intrin<VData>((Real)2.5066282746310005024L), T));
+      };
+      if (n_central == VData::Size) return central_value();
+
+      const VData t = (Erfinv ? mul_intrin(sub_intrin(one, fabs_intrin(p)), half) : min_intrin(p, sub_intrin(one, p))); // keeps NaN
+      const VData u = sqrt_intrin(unary_minus_intrin(log_intrin(t)));
+      const auto tail_value = [&u](const auto& P, const auto& Q, const Real shift) { // a u + U, divided by sqrt(2) for Erfinv
+        const VData s = sub_intrin(u, set1_intrin<VData>(shift));
+        const VData den = eval_poly_intrin(s, Q);
+        const VData num = fma_intrin(mul_intrin(u, set1_intrin<VData>((Real)1.4142135623730950488L)), den, eval_poly_intrin(s, P));
+        return div_intrin(num, (Erfinv ? mul_intrin(den, set1_intrin<VData>((Real)1.4142135623730950488L)) : den));
+      };
+      VData x = tail_value(Coeffs::p1, Coeffs::q1, (Real)1.6);
+      const Mask<VData> far = comp_intrin<ComparisonType::gt>(u, set1_intrin<VData>((Real)5));
+      if (mask_count_intrin(far)) x = select_intrin(far, tail_value(Coeffs::p2, Coeffs::q2, (Real)5), x);
+      x = select_intrin(comp_intrin<ComparisonType::eq>(t, zero_intrin<VData>()), set1_intrin<VData>((Real)INFINITY), x);
+      x = xor_intrin(x, and_intrin(q, set1_intrin<VData>((Real)-0.0)));
+      return (n_central ? select_intrin(central, central_value(), x) : x);
+    } else {
+      union {
+        VData v;
+        Real x[VData::Size];
+      } x_ = {p};
+      for (Integer i = 0; i < VData::Size; i++) {
+        const Real a = x_.x[i];
+        x_.x[i] = (Erfinv ? erfinv_generic(a, (1 - fabs(a)) / 2) : sqrt<Real>((Real)2) * erfinv_generic(2 * a - 1, (a < 1 - a ? a : 1 - a)));
+      }
+      return x_.v;
+    }
+  }
+  template <Integer digits = -1, class VData> inline VData ndtri_intrin(const VData& p) {
+    return ndtri_erfinv_intrin<false, digits>(p);
+  }
+  template <Integer digits = -1, class VData> inline VData erfinv_intrin(const VData& y) {
+    return ndtri_erfinv_intrin<true, digits>(y);
+  }
 
   // sin(pi w/2) = (pi/2) w + w^3 Q(w^2), |w| <= 1/2: minimax Q of degree n, lowest degree first
   template <Integer n> struct SinPiPolyCoeffs;

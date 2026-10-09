@@ -1081,6 +1081,28 @@ namespace sctl {
           SCTL_ASSERT(erfc(VecType((ScalarType)INFINITY))[0] == 0 && erfc(VecType(-(ScalarType)INFINITY))[0] == 2 && isnan(erfc(VecType((ScalarType)NAN))[0]));
           if constexpr (sizeof(ScalarType) <= sizeof(double)) SCTL_ASSERT(erfc(VecType((ScalarType)30))[0] == 0 && erfc(VecType((ScalarType)-30))[0] == 2);
         }
+        { // erfinv on (-1, 1), ndtri on (0, 1) with tails to 1e-30: against the long double iteration for float and double;
+          // else through erf and erfc, where an error e of z gives about 2 z^2 e in erfc
+          VecType y = u5.v, p = (u5.v + (ScalarType)1) * (ScalarType)0.5;
+          for (Integer i = 0; i < N; i += 4) p.insert(i, (ScalarType)std::pow(10.0, -30 * drand48()));
+          const VecType ei = erfinv(y), nd = ndtri(p), ei5 = approx_erfinv<5>(y), nd5 = approx_ndtri<5>(p);
+          for (Integer i = 0; i < N; i++) {
+            const ScalarType t = std::min(p[i], 1 - p[i]);
+            if constexpr (TypeTraits<ScalarType>::SigBits <= 53) {
+              SCTL_ASSERT(rel(ei[i], (ScalarType)erfinv_generic<long double>(y[i], (1 - fabs((long double)y[i])) / 2)) <= tol);
+              SCTL_ASSERT(rel(nd[i], (ScalarType)(std::sqrt(2.0L) * erfinv_generic<long double>(2 * (long double)p[i] - 1, t))) <= tol);
+            } else {
+              const ScalarType z = fabs(nd[i]) / sqrt<ScalarType>((ScalarType)2);
+              SCTL_ASSERT(rel(erf(VecType(ei[i]))[0], y[i]) <= tol);
+              SCTL_ASSERT(rel(erfc(VecType(z))[0] / 2, t) <= tol * (1 + 2 * z * z));
+            }
+            SCTL_ASSERT(rel(ei5[i], ei[i]) <= (ScalarType)1e-5 && rel(nd5[i], nd[i]) <= (ScalarType)1e-5);
+          }
+          SCTL_ASSERT(ndtri(VecType((ScalarType)0.5))[0] == 0 && erfinv(VecType((ScalarType)-0.0))[0] == 0 && std::signbit((double)erfinv(VecType((ScalarType)-0.0))[0]));
+          SCTL_ASSERT(isinf(ndtri(VecType((ScalarType)0))[0]) && ndtri(VecType((ScalarType)0))[0] < 0 && isinf(ndtri(VecType((ScalarType)1))[0]) && ndtri(VecType((ScalarType)1))[0] > 0);
+          SCTL_ASSERT(isnan(ndtri(VecType((ScalarType)-0.5))[0]) && isnan(ndtri(VecType((ScalarType)1.5))[0]) && isnan(ndtri(VecType((ScalarType)NAN))[0]));
+          SCTL_ASSERT(isinf(erfinv(VecType((ScalarType)-1))[0]) && erfinv(VecType((ScalarType)-1))[0] < 0 && isnan(erfinv(VecType((ScalarType)2))[0]) && isnan(erfinv(VecType((ScalarType)NAN))[0]));
+        }
 
         const ScalarType big = (ScalarType)(sizeof(ScalarType) == 4 ? 1e30 : 1e200); // big^2 overflows float
         SCTL_ASSERT(rel(hypot(VecType(big), VecType(big))[0], big * sqrt<ScalarType>((ScalarType)2)) <= tol);

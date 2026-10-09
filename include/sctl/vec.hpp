@@ -751,6 +751,16 @@ namespace sctl {
   /** erfc to the given digits (-1: full). */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x);
 
+  /** Inverse of the standard normal distribution function, -inf at 0, inf at 1, NaN outside [0, 1]; float, double: within about 4 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> ndtri(const Vec<ValueType,N>& p);
+  /** ndtri to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_ndtri(const Vec<ValueType,N>& p);
+
+  /** Inverse error function, +-inf at +-1, NaN for |y| > 1; float, double: within about 4 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> erfinv(const Vec<ValueType,N>& y);
+  /** erfinv to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y);
+
   /** Remainder of x/y with the sign of x, as std::fmod. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 
