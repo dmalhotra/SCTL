@@ -186,8 +186,8 @@ namespace sctl {
 
     Vector<NodeData> trg_nodes0, src_nodes0;
     ScratchBuf<NodeData> splitter_nodes(comm_.Size());
-    { // Set trg_nodes0 <- sort(trg_nodes), src_nodes0 <- sort(src_nodes)
-      comm_.SampleSort(src_nodes, src_nodes0, comp_node_mid);
+    { // Set trg_nodes0 <- sort(trg_nodes), and with more than one process src_nodes0 <- sort(src_nodes)
+      if (np > 1) comm_.SampleSort(src_nodes, src_nodes0, comp_node_mid);
       comm_.SampleSort(trg_nodes, trg_nodes0, comp_node_mid);
 
       StaticArray<NodeData,1> splitter_node;
@@ -207,7 +207,7 @@ namespace sctl {
     }
 
     Vector<NodeData> src_nodes1;
-    if (1) { // Set src_nodes1 <- src_nodes0 + halo
+    if (np > 1) { // Set src_nodes1 <- src_nodes0 + halo
       Vector<std::pair<Long,Long>> proc_srcidx_lst;
       { // per-node: list ranks overlapping its neighbor cells (order irrelevant; sorted below)
         const Integer omp_p = SCTL_GET_MAX_THREADS();
@@ -282,29 +282,28 @@ namespace sctl {
       comm_.Wait(std::move(req_ptr));
       omp_par::memcpy(src_nodes1.begin(), rbuff.begin(), rdsp[rank]);
       omp_par::memcpy(src_nodes1.begin()+src_nodes0.Dim()+rdsp[rank], rbuff.begin()+rdsp[rank], rbuff.size()-rdsp[rank]);
-    } else { // src_nodes1 <- Allgather(src_nodes0)
-      const Long Np = comm_.Size();
-      ScratchBuf<Long> cnt0(1), cnt(Np), dsp(Np);
-      cnt0[0] = src_nodes0.Dim();
-      comm_.Allgather(cnt0.begin(), 1, cnt.begin(), 1);
-      omp_par::scan(cnt.begin(), dsp.begin(), Np, (Long)0);
-
-      src_nodes1.ReInit(dsp[Np-1] + cnt[Np-1]);
-      comm_.Allgatherv(src_nodes0.begin(), src_nodes0.Dim(), src_nodes1.begin(), cnt.begin(), dsp.begin());
+    } else { // One process: no halo; src_nodes1 is a view of src_nodes, the nodes of each element contiguous
+      src_nodes1.ReInit(src_nodes.Dim(), src_nodes.begin(), false);
     }
 
     Vector<NodeData> near_lst;
     if (src_nodes1.Dim()) { // Set near_lst
-      // sort by elem_idx and mid
-      auto comp_elem_idx_mid = [](const NodeData& A, const NodeData& B) {
-        return (A.elem_idx<B.elem_idx) || (A.elem_idx==B.elem_idx && A.mid<B.mid);
-      };
-      omp_par::sample_sort(src_nodes1.begin(), src_nodes1.end(), comp_elem_idx_mid);
+      if (np > 1) { // sort by elem_idx and mid
+        auto comp_elem_idx_mid = [](const NodeData& A, const NodeData& B) {
+          return (A.elem_idx<B.elem_idx) || (A.elem_idx==B.elem_idx && A.mid<B.mid);
+        };
+        omp_par::sample_sort(src_nodes1.begin(), src_nodes1.end(), comp_elem_idx_mid);
+      } else { // sort the nodes of each element by mid
+        #pragma omp parallel for schedule(static)
+        for (Long i = 0; i < Nelem; i++) std::sort(src_nodes1.begin() + src_elem_nds_dsp[i], src_nodes1.begin() + src_elem_nds_dsp[i] + src_elem_nds_cnt[i], comp_node_mid);
+      }
 
       const Long eid0 = src_nodes1[0].elem_idx;
       const Long eid1 = src_nodes1[src_nodes1.Dim()-1].elem_idx + 1;
 
-      // Build per-thread near-lists and concatenate.
+      // Build per-thread near-lists, each element's near targets sorted by idx, then copy them in element order.
+      const Long Nelem1 = eid1 - eid0;
+      ScratchBuf<Long> elem_cnt(Nelem1), elem_tid(Nelem1), elem_off(Nelem1); // the near targets of each element: their count, and where they are in near_lst_omp
       const Integer omp_p = SCTL_GET_MAX_THREADS();
       Vector<Vector<NodeData>> near_lst_omp(omp_p);
       #pragma omp parallel num_threads(omp_p)
@@ -380,6 +379,7 @@ namespace sctl {
               std::sort(trg_src_near_mid.begin(), trg_src_near_mid.end());
             }
             { // build near_lst
+              const Long off = near_lst_local.Dim();
               for (Long i = 0; i < trg_mid_lst.Dim(); i++) { // loop over trg_mid
                 const Long j0 = std::lower_bound(trg_src_near_mid.begin(), trg_src_near_mid.end(), std::pair<Long,Long>(i+0,0)) - trg_src_near_mid.begin();
                 const Long j1 = std::lower_bound(trg_src_near_mid.begin(), trg_src_near_mid.end(), std::pair<Long,Long>(i+1,0)) - trg_src_near_mid.begin();
@@ -404,28 +404,26 @@ namespace sctl {
                   }
                 }
               }
+              std::sort(near_lst_local.begin() + off, near_lst_local.end(), comp_node_eid_idx);
+              elem_cnt[eid-eid0] = near_lst_local.Dim() - off;
+              elem_tid[eid-eid0] = tid;
+              elem_off[eid-eid0] = off;
             }
           }
         }
       }
-      if (omp_p == 1) {
-        near_lst.Swap(near_lst_omp[0]);
-      } else { // concatenate per-thread near-lists (re-sorted below)
-        ScratchBuf<Long> cnt(omp_p), dsp(omp_p+1);
-        for (Integer i = 0; i < omp_p; i++) cnt[i] = near_lst_omp[i].Dim();
-        omp_par::scan(cnt.begin(), dsp.begin(), omp_p+1, (Long)0);
-        near_lst.ReInit(dsp[omp_p]);
-        // Indexed by thread id: slots no thread filled are empty, so they add nothing to dsp.
-        #pragma omp parallel num_threads(omp_p)
-        {
-          const Integer tid = SCTL_GET_THREAD_NUM();
-          const Vector<NodeData>& v = near_lst_omp[tid];
-          const Long off = dsp[tid];
-          for (Long i = 0; i < v.Dim(); i++) near_lst[off+i] = v[i];
+      { // near_lst <- the near targets of each element in element order, so sorted by elem_idx and idx
+        ScratchBuf<Long> elem_dsp(Nelem1);
+        omp_par::scan(elem_cnt.begin(), elem_dsp.begin(), Nelem1, (Long)0);
+        near_lst.ReInit(elem_dsp[Nelem1-1] + elem_cnt[Nelem1-1]);
+        #pragma omp parallel for schedule(static)
+        for (Long i = 0; i < Nelem1; i++) {
+          const auto seg = near_lst_omp[elem_tid[i]].begin() + elem_off[i];
+          std::copy(seg, seg + elem_cnt[i], near_lst.begin() + elem_dsp[i]);
         }
       }
     }
-    { // sort and partition by elem-ID
+    if (np > 1) { // sort and partition by elem-ID
       Vector<NodeData> near_lst0;
       { // near_lst0 <-- partition(dist_sort(near_lst), elem_offset)
         NodeData split_node;
