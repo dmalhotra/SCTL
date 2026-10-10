@@ -7,6 +7,7 @@
 #include <cstdint>                  // for int8_t, int16_t, int32_t, int64_t
 #include <limits>                   // for numeric_limits
 #include <type_traits>              // for is_same
+#include <utility>                  // for integer_sequence, make_integer_sequence
 
 #include "sctl/common.hpp"          // for SCTL_ASSERT, Integer, sctl
 #include "sctl/intrin-wrapper.hpp"  // for IntegerType, TypeTraits, DataType
@@ -76,6 +77,7 @@ namespace sctl {
           test_maxmin();
           test_transpose();
           test_swap_pairs();
+          test_permute_blend(std::make_integer_sequence<Integer, N>());
           test_mask();
           test_comparison();
         }
@@ -578,6 +580,29 @@ namespace sctl {
           w.v = swap_pairs(u.v);
           for (Integer i = 0; i < N; i++) SCTL_ASSERT(w.x[i] == u.x[i ^ 1]);
         }
+      }
+
+      template <Integer... K> static void test_permute_blend(std::integer_sequence<Integer, K...>) {
+        UnionType a, b, r;
+        for (Integer i = 0; i < N; i++) {
+          a.x[i] = (ScalarType)(rand() % 100 + 1);
+          b.x[i] = (ScalarType)(rand() % 100 + 101);
+        }
+        const auto check = [&a, &b, &r](const Integer (&idx)[N]) { // r against the definition, for the indices idx
+          for (Integer k = 0; k < N; k++) SCTL_ASSERT(r.x[k] == (idx[k] < 0 ? (ScalarType)0 : (idx[k] < N ? a.x[idx[k]] : b.x[idx[k] - N])));
+        };
+        r.v = permute<(N - 1 - K)...>(a.v); // reverse
+        check({(N - 1 - K)...});
+        r.v = permute<((K + 1) % N)...>(a.v); // rotate
+        check({((K + 1) % N)...});
+        r.v = permute<(K % 2 ? -1 : K / 2)...>(a.v); // zeros between the first half
+        check({(K % 2 ? -1 : K / 2)...});
+        r.v = blend<(K % 2 ? N + K : K)...>(a.v, b.v); // alternate
+        check({(K % 2 ? N + K : K)...});
+        r.v = blend<(2 * K < N ? K : 2 * N - 1 - K)...>(a.v, b.v); // the first half of a, then b reversed
+        check({(2 * K < N ? K : 2 * N - 1 - K)...});
+        r.v = blend<(K % 3 == 2 ? -1 : (K % 3 == 1 ? N + (N - 1 - K) : K))...>(a.v, b.v); // a, b reversed and zeros
+        check({(K % 3 == 2 ? -1 : (K % 3 == 1 ? N + (N - 1 - K) : K))...});
       }
 
       static void test_mask() {

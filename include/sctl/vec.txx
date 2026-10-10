@@ -424,6 +424,14 @@ namespace sctl {
     return swap_pairs_intrin(x.get());
   }
 
+  template <Integer... I, class ValueType, Integer N> inline Vec<ValueType,N> permute(const Vec<ValueType,N>& x) {
+    return permute_intrin<I...>(x.get());
+  }
+
+  template <Integer... I, class ValueType, Integer N> inline Vec<ValueType,N> blend(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b) {
+    return blend_intrin<I...>(a.get(), b.get());
+  }
+
 
   // Reductions
   template <class ValueType, Integer N> inline ValueType reduce(const Vec<ValueType,N>& v) {

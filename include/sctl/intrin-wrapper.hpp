@@ -477,6 +477,57 @@ namespace sctl { // Generic
     return vec_.v;
   }
 
+  // Element k of the result is a[I_k] for 0 <= I_k < N, b[I_k - N] for N <= I_k < 2N, and 0 for I_k = -1. With GCC 12+
+  // and clang by __builtin_shufflevector on a vector of the scalar type, mapped by the compiler to the shuffle, permute
+  // and blend instructions of the target; else lane by lane.
+  template <Integer... I> struct BlendIntrin {
+    template <class VData> static inline VData apply(const VData& a, const VData& b) {
+      using T = typename VData::ScalarType;
+      static constexpr Integer N = VData::Size;
+      static_assert(sizeof...(I) == N, "blend and permute take one index per lane.");
+      static_assert(((-1 <= I && I < 2 * N) && ...), "a blend index outside [-1, 2N).");
+#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 12)
+      if constexpr (std::is_arithmetic<T>::value && sizeof(T) <= 8 && (N & (N - 1)) == 0 && sizeof(VData) == N * sizeof(T)) {
+        return lanes(a, b, std::make_integer_sequence<Integer, N>());
+      }
+#endif
+      union U {
+        VData v;
+        T x[N];
+      };
+      const U a_ = {a};
+      const U b_ = {b};
+      U r_ = {a};
+      static constexpr Integer idx[N] = {I...};
+      for (Integer k = 0; k < N; k++) r_.x[k] = (idx[k] < 0 ? (T)0 : (idx[k] < N ? a_.x[idx[k]] : b_.x[idx[k] - N]));
+      return r_.v;
+    }
+#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 12)
+    template <class VData, Integer... K> static inline VData lanes(const VData& a, const VData& b, std::integer_sequence<Integer, K...>) {
+      using T = typename VData::ScalarType;
+      static constexpr Integer N = VData::Size;
+      typedef T V __attribute__((vector_size(N * sizeof(T))));
+      union U {
+        VData v;
+        V w;
+      };
+      const U a_ = {a};
+      const U b_ = {b};
+      U r_ = {a};
+      r_.w = __builtin_shufflevector(a_.w, b_.w, (I < 0 ? -1 : I)...);
+      if constexpr (((I < 0) || ...)) r_.w = __builtin_shufflevector(r_.w, V{}, (I < 0 ? N + K : K)...); // the zeros, from a second operand
+      return r_.v;
+    }
+#endif
+  };
+  template <Integer... I, class VData> inline VData blend_intrin(const VData& a, const VData& b) {
+    return BlendIntrin<I...>::apply(a, b);
+  }
+  template <Integer... I, class VData> inline VData permute_intrin(const VData& a) {
+    static_assert(((I < VData::Size) && ...), "a permute index outside [-1, N).");
+    return BlendIntrin<I...>::apply(a, a);
+  }
+
   // Conversion operators
   template <class RetType, class ValueType, Integer N> inline RetType reinterpret_intrin(const VecData<ValueType,N>& v) {
     static_assert(sizeof(RetType) == sizeof(VecData<ValueType,N>), "Illegal type cast -- size of types does not match.");

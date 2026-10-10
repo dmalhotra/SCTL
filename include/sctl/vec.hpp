@@ -507,6 +507,27 @@ namespace sctl {
    */
   template <class ValueType, Integer N> inline Vec<ValueType,N> swap_pairs(const Vec<ValueType,N>& x);
 
+  /**
+   * The elements of x in the order given by the indices, as permute8 of VCL: element k of the result is x[I_k], or 0
+   * where I_k is -1. For example, permute<1, 0, 3, 2>(x) is swap_pairs(x).
+   *
+   * @tparam I one index in [-1, N) per lane, constants.
+   * @param x The input vector.
+   * @return The permuted vector.
+   */
+  template <Integer... I, class ValueType, Integer N> inline Vec<ValueType,N> permute(const Vec<ValueType,N>& x);
+
+  /**
+   * The elements of a and b in the order given by the indices, as blend8 of VCL: element k of the result is a[I_k]
+   * for I_k < N, b[I_k - N] for I_k >= N, or 0 where I_k is -1.
+   *
+   * @tparam I one index in [-1, 2N) per lane, constants.
+   * @param a The first input vector, indices 0 to N-1.
+   * @param b The second input vector, indices N to 2N-1.
+   * @return The vector of the selected elements.
+   */
+  template <Integer... I, class ValueType, Integer N> inline Vec<ValueType,N> blend(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b);
+
 
   // Reductions
 
