@@ -517,7 +517,7 @@ namespace sctl {
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         VecType sin_rmu, cos_rmu;
-        sincos(sin_rmu, cos_rmu, r2 * rinv * mu);
+        approx_sincos<digits, false>(sin_rmu, cos_rmu, r2 * rinv * mu);
         u[0][0] = cos_rmu * rinv; u[0][1] = sin_rmu * rinv;
         u[1][0] = -u[0][1];       u[1][1] = u[0][0];
       }
@@ -529,7 +529,7 @@ namespace sctl {
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         VecType sin_rmu, cos_rmu;
-        sincos(sin_rmu, cos_rmu, r2 * rinv * mu);
+        approx_sincos<digits, false>(sin_rmu, cos_rmu, r2 * rinv * mu);
         const VecType G0 = cos_rmu * rinv, G1 = sin_rmu * rinv;
         for (Integer k = 0; k < DOF; k++) {
           v[k*2+0] += f[k*2+0]*G0 - f[k*2+1]*G1;
@@ -557,7 +557,7 @@ namespace sctl {
         const VecType rinv2 = rinv * rinv;
         const VecType ndotr = n[0]*r[0] + n[1]*r[1] + n[2]*r[2];
         VecType sin_rmu, cos_rmu;
-        sincos(sin_rmu, cos_rmu, r2 * rinv * mu);
+        approx_sincos<digits, false>(sin_rmu, cos_rmu, r2 * rinv * mu);
         u[0][0] = (-mu*sin_rmu - cos_rmu * rinv) * rinv2 * ndotr;
         u[0][1] = ( mu*cos_rmu - sin_rmu * rinv) * rinv2 * ndotr;
         u[1][0] = -u[0][1];  u[1][1] = u[0][0];
@@ -572,7 +572,7 @@ namespace sctl {
         const VecType rinv2 = rinv * rinv;
         const VecType ndotr = n[0]*r[0] + n[1]*r[1] + n[2]*r[2];
         VecType sin_rmu, cos_rmu;
-        sincos(sin_rmu, cos_rmu, r2 * rinv * mu);
+        approx_sincos<digits, false>(sin_rmu, cos_rmu, r2 * rinv * mu);
         const VecType G0 = (-mu*sin_rmu - cos_rmu * rinv) * rinv2 * ndotr;
         const VecType G1 = ( mu*cos_rmu - sin_rmu * rinv) * rinv2 * ndotr;
         for (Integer k = 0; k < DOF; k++) {
@@ -600,7 +600,7 @@ namespace sctl {
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         const VecType rinv2 = rinv * rinv;
         VecType sin_rmu, cos_rmu;
-        sincos(sin_rmu, cos_rmu, r2 * rinv * mu);
+        approx_sincos<digits, false>(sin_rmu, cos_rmu, r2 * rinv * mu);
         const VecType G0 = (-mu*sin_rmu - cos_rmu * rinv) * rinv2;
         const VecType G1 = ( mu*cos_rmu - sin_rmu * rinv) * rinv2;
         for (Integer i = 0; i < 3; i++) {
@@ -617,7 +617,7 @@ namespace sctl {
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         const VecType rinv2 = rinv * rinv;
         VecType sin_rmu, cos_rmu;
-        sincos(sin_rmu, cos_rmu, r2 * rinv * mu);
+        approx_sincos<digits, false>(sin_rmu, cos_rmu, r2 * rinv * mu);
         const VecType G0 = (-mu*sin_rmu - cos_rmu * rinv) * rinv2;
         const VecType G1 = ( mu*cos_rmu - sin_rmu * rinv) * rinv2;
         for (Integer k = 0; k < DOF; k++) {
@@ -655,7 +655,7 @@ namespace sctl {
         const VecType rinv2 = rinv * rinv;
 
         VecType sin_h, cos_h;
-        sincos(sin_h, cos_h, r2 * rinv * mu * VecType((Real)0.5));
+        approx_sincos<digits, false>(sin_h, cos_h, r2 * rinv * mu * VecType((Real)0.5));
         const VecType two((Real)2);
         const VecType sin_rmu = two * sin_h * cos_h;
         const VecType cos_rmu_m1 = -two * sin_h * sin_h;

@@ -5,6 +5,7 @@
 #include <ostream>          // for ostream
 #include <cmath>            // for acos, asin, atan, atan2, ceil, cos, exp
 #include <complex>          // for complex
+#include <utility>          // for declval
 
 #include "sctl/common.hpp"  // for Integer, Long, sctl
 
@@ -293,12 +294,13 @@ class QuadReal {
     ~QuadReal() = default;
 
     /**
-     * Constructor with explicit conversion from another type.
+     * Converting constructor from any type that can be cast to the
+     * underlying quadruple-precision type.
      *
      * @tparam ValueType The template type of the value.
      * @param v The value to convert.
      */
-    template <class ValueType> constexpr QuadReal(ValueType v) : val((QuadRealType)v) {}
+    template <class ValueType, class = decltype((QuadRealType)std::declval<ValueType>())> constexpr QuadReal(ValueType v) : val((QuadRealType)v) {}
 
     /**
      * Explicit conversion operator to another type.

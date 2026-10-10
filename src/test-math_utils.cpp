@@ -220,6 +220,63 @@ int main() {
     Q q(R(-3.5));
     CHECK((double)sctl::fabs<Q>(q) == R(3.5));
     CHECK(test_utils::approx_eq((double)sctl::sqrt<Q>(Q(R(9))), R(3), tol));
+    // sin, cos: NaN, inf, a large argument (libquadmath reference), and a tiny one
+    CHECK(sctl::isnan<Q>(sctl::sin<Q>(Q(R(NAN)))) && sctl::isnan<Q>(sctl::cos<Q>(Q(R(INFINITY)))));
+    CHECK(sctl::fabs<Q>(sctl::sin<Q>(Q(R(1e6))) - (Q(-0x1.6664b2568d867p-2) + Q(-0x1.264732d26e9b9p-56))) < Q(R(1e-32)));
+    CHECK(sctl::sin<Q>(Q(R(1e-70))) == Q(R(1e-70)));
+    CHECK(sctl::fabs<Q>(sctl::sin<Q>(Q(R(1e30))) - (Q(0x1.31c608f107767p-7) + Q(-0x1.7953f5862f0b8p-61))) < Q(R(1e-32)));
+    const Q sin_ref = Q(0x1.72cf51e44f958p-20) + Q(-0x1.b659fc3f263f7p-74); // x just below a multiple of pi/2
+    CHECK(sctl::fabs<Q>(sctl::sin<Q>(Q(R(0x1.53a4642bea0d7p+99))) - sin_ref) < sin_ref * Q(R(1e-32)));
+    // log near 1, beyond the range of double, and at inf
+    const Q d = Q(R(0x1p-70));
+    CHECK(sctl::fabs<Q>(sctl::log<Q>(Q(R(1)) + d) - (d - d*d/2)) < d * Q(R(1e-32)));
+    CHECK(sctl::fabs<Q>(sctl::log<Q>(Q(R(1e300)) * Q(R(1e300))) - 2 * sctl::log<Q>(Q(R(1e300)))) < Q(R(1e-29)));
+    CHECK(sctl::isinf<Q>(sctl::log<Q>(Q(R(INFINITY)))));
+    CHECK(sctl::isinf<Q>(sctl::log<Q>(Q(R(0)))) && sctl::log<Q>(Q(R(0))) < Q(R(0)));
+    // signed zero; exp beyond the range of QuadReal
+    CHECK(std::signbit((double)sctl::sin<Q>(-Q(R(0)))) && std::signbit((double)sctl::asin<Q>(-Q(R(0)))) && std::signbit((double)sctl::atan<Q>(-Q(R(0)))));
+    CHECK(sctl::isinf<Q>(sctl::exp<Q>(Q(R(1e100)))) && sctl::exp<Q>(-Q(R(INFINITY))) == Q(R(0)));
+    // exp near the overflow, against libquadmath (e^11000 = 1.5642... 2^15869), and a subnormal result
+    Q exp_ref = Q(0x1.90712c344d656p+0) + Q(-0x1.12ce5d6c7d4aep-54);
+    for (int i = 0; i < 15869; i++) exp_ref = exp_ref * 2;
+    CHECK(sctl::fabs<Q>(sctl::exp<Q>(Q(R(11000))) - exp_ref) < exp_ref * Q(R(1e-32)));
+    CHECK(sctl::exp<Q>(Q(R(-11433))) > Q(R(0)));
+    // pow with |y ln x| near the range of QuadReal, against the exact values (mpmath)
+    const auto pow2 = [](Q v, const int n) { // v 2^n
+      for (int i = 0; i < n; i++) v = v * 2;
+      for (int i = 0; i > n; i--) v = v / 2;
+      return v;
+    };
+    const Q pow_ref0 = pow2(Q(0x1.bf3645fa8c9fap+0) + Q(0x1.ed622aaa2a1b2p-54), 14562);
+    const Q pow_ref1 = pow2(Q(0x1.7769bead75eccp+0) + Q(-0x1.65e5237aee5d3p-54), -16278);
+    CHECK(sctl::fabs<Q>(sctl::pow<Q>(Q(R(1.4)), Q(R(30000))) - pow_ref0) < pow_ref0 * Q(R(1e-32)));
+    CHECK(sctl::fabs<Q>(sctl::pow<Q>(Q(R(1e-100)), Q(R(49))) - pow_ref1) < pow_ref1 * Q(R(1e-32)));
+    // pow at zeros, infinities, NaN and signs, as std::pow
+    const R pow_sv[] = {R(0), R(-0.0), R(1), R(-1), R(2), R(-2), R(0.5), R(3), R(-3), R(INFINITY), R(-INFINITY), R(NAN)};
+    for (const R x : pow_sv) {
+      for (const R y : pow_sv) {
+        const R p = (R)sctl::pow<Q>(Q(x), Q(y));
+        const R p_std = std::pow(x, y);
+        CHECK(std::isnan(p_std) ? std::isnan(p) : (p == p_std && std::signbit(p) == std::signbit(p_std)));
+      }
+    }
+    // trunc, floor, ceil, round at negative integers, halves, just below 1/2, beyond 2^112 and 2^127, and the sign of zero
+    const Q below_half = Q(R(0.5)) - Q(R(0x1p-114));
+    const Q two112p1 = Q(R(0x1p112)) + Q(R(1));
+    CHECK(sctl::floor<Q>(Q(R(-3))) == Q(R(-3)) && sctl::ceil<Q>(Q(R(3))) == Q(R(3)));
+    CHECK(sctl::round<Q>(Q(R(-0.5))) == Q(R(-1)) && sctl::round<Q>(below_half) == Q(R(0)) && sctl::round<Q>(two112p1) == two112p1);
+    CHECK(std::signbit((double)sctl::trunc<Q>(Q(R(-0.3)))) && std::signbit((double)sctl::ceil<Q>(Q(R(-0.5)))) && std::signbit((double)sctl::round<Q>(Q(R(-0.3)))));
+    for (const R x : {R(1e40), R(-1e40), R(1e300)}) CHECK(sctl::trunc<Q>(Q(x)) == Q(x) && sctl::floor<Q>(Q(x)) == Q(x) && sctl::ceil<Q>(Q(x)) == Q(x) && sctl::round<Q>(Q(x)) == Q(x));
+    // fmod, exact: a quotient near 2^103, beyond 2^127, a subnormal divisor, and the special values of std::fmod
+    CHECK(sctl::fmod<Q>(Q(R(1e30)), Q(R(0.1))) == Q(R(0x1.3305930336acep-4)) && sctl::fmod<Q>(Q(R(-1e30)), Q(R(0.1))) == Q(R(-0x1.3305930336acep-4)));
+    CHECK(sctl::fmod<Q>(Q(R(1e40)), Q(R(3))) == Q(R(1)));
+    Q min_subnormal = Q(R(1));
+    for (int i = 0; i < 16494; i++) min_subnormal = min_subnormal / 2;
+    CHECK(min_subnormal > Q(R(0)) && sctl::fmod<Q>(Q(R(1)), Q(R(3)) * min_subnormal) == min_subnormal); // 2^16494 mod 3 = 1
+    CHECK(std::signbit((double)sctl::fmod<Q>(Q(R(-6)), Q(R(3)))) && sctl::isnan<Q>(sctl::fmod<Q>(Q(R(5.5)), Q(R(0)))) && sctl::isnan<Q>(sctl::fmod<Q>(Q(R(INFINITY)), Q(R(3)))));
+    // acos at 1 and just below, where (double)a rounds to 1
+    CHECK((double)sctl::acos<Q>(Q(R(1))) == R(0));
+    CHECK(test_utils::approx_eq((double)sctl::acos<Q>(Q(R(1)) - Q(R(1e-20))), std::sqrt(R(2e-20)), R(1e-20)));
   }
 #endif
 

@@ -18,7 +18,8 @@
 namespace sctl {
 
 // Clang checks the lambda captures of each instantiation: alpha and beta are read only for
-// Update::AlphaBeta, and a size that the template fixes is a constant, which needs no capture.
+// Update::AlphaBeta, a size that the template fixes is a constant, which needs no capture, and some
+// captures are read only in one branch of an if constexpr.
 // With capture defaults instead, GCC did not inline the tiles and fixed sizes were up to 8% slower
 #if defined(__clang__)
 #pragma clang diagnostic push
@@ -119,7 +120,13 @@ namespace detail_small_gemm {
    * up to 1.2x slower than 8 x 3 for 174 x 94 x 8 and up to 1.8x for 96 columns; with AVX2, 8 x 1
    * was 1.2x slower than 4 x 2. The leftover rows in blocks of 4 (with AVX-512), 2 and 1. The
    * leftover columns of C = A B in one full vector that ends at column n and writes some columns
-   * again, with the same values; otherwise in narrower vectors and then one at a time. Not inlined:
+   * again, with the same values; otherwise in an SSE or AVX vector of half or a quarter of the width
+   * if they fill it (masked loads and stores of the full width were up to 1.4x slower), or else in
+   * one vector of which only the first n % VL lanes are loaded and stored (LoadPartial,
+   * StorePartial); with AVX-512, in the narrowest of these vectors that holds them. For 16 x n x 8,
+   * up to 5.9x faster than narrower vectors and then one column at a time, and at most 1.14x slower
+   * on a Xeon Platinum 8362, 1.09x on an AMD EPYC 7742 and 1.06x on an EPYC 9474F; on AMD Zen with
+   * AVX2 and without SCTL_TUNE_ZEN, up to 2.6x for one leftover column (vmaskmovps). Not inlined:
    * unrolled for fixed sizes inside a caller's loop, the code was up to 1.9x slower.
    */
   template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous, Long LDA = DynamicSize, Long LDB = DynamicSize, Long LDC = DynamicSize> [[gnu::noinline]] void VecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
@@ -134,6 +141,8 @@ namespace detail_small_gemm {
     using I2 = std::integral_constant<Integer, 2>;
     using I4 = std::integral_constant<Integer, 4>;
     using IV = std::integral_constant<Integer, VL>;
+    using IH = std::integral_constant<Integer, VL / 2>;
+    using IQ = std::integral_constant<Integer, VL / 4>;
 #if defined(__AVX512F__) && defined(__znver4__)
     using IR = std::integral_constant<Integer, 8>; // rows per block
     using IT = std::integral_constant<Integer, 1>; // vectors per tile
@@ -145,81 +154,73 @@ namespace detail_small_gemm {
     using IT = std::integral_constant<Integer, 2>;
 #endif
 
-    // Rows i0.. (MR of them) and columns j0.. (NV vectors of W) of C
-    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta](const Long i0, const Long j0, auto mr, auto nv, auto w) {
+    // Rows i0.. (MR of them) and columns j0.. (NV vectors of W) of C; if Partial, only the first nc
+    // columns of the one vector. Always inlined, as are cols and rows: GCC left some out of line,
+    // and kept acc on the stack there
+    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta](const Long i0, const Long j0, auto mr, auto nv, auto w, auto partial, const Integer nc) __attribute__((always_inline)) {
       constexpr Integer MR = decltype(mr)::value;
       constexpr Integer NV = decltype(nv)::value;
       constexpr Integer W = decltype(w)::value;
+      constexpr bool Partial = decltype(partial)::value;
       using V = Vec<ValueType, W>;
+      const auto load = [nc](const ValueType* p) {
+        if constexpr (Partial) {
+          return V::LoadPartial(p, nc);
+        } else {
+          return V::Load(p);
+        }
+      };
       V acc[MR][NV];
       for (Integer r = 0; r < MR; r++) {
         for (Integer v = 0; v < NV; v++) acc[r][v] = V((ValueType)0);
       }
       for (Long l = 0; l < k; l++) {
         V b[NV];
-        for (Integer v = 0; v < NV; v++) b[v] = V::Load(&B[l * ldb + j0 + v * W]);
+        for (Integer v = 0; v < NV; v++) b[v] = load(&B[l * ldb + j0 + v * W]);
         for (Integer r = 0; r < MR; r++) {
           const V a(A[(i0 + r) * lda + l]);
           for (Integer v = 0; v < NV; v++) acc[r][v] = FMA(a, b[v], acc[r][v]);
         }
       }
+      // All rows of C read before any is written: a partial load of a row shorter than a vector
+      // overlaps the partial store of the row before, and waits for it. Both loops unrolled first:
+      // otherwise GCC 11-14 keep acc on the stack and, with masked loads in the l loop, store it
+      // there in every iteration
+#pragma GCC unroll 8
+      for (Integer r = 0; r < MR; r++) {
+        for (Integer v = 0; v < NV; v++) {
+          const ValueType* Cv = &C[(i0 + r) * ldc + j0 + v * W];
+          if constexpr (U == Update::Accumulate) {
+            acc[r][v] = acc[r][v] + load(Cv);
+          } else if constexpr (U == Update::AlphaBeta) {
+            acc[r][v] = acc[r][v] * V(alpha);
+            if (beta != 0) acc[r][v] = FMA(V(beta), load(Cv), acc[r][v]);
+          }
+        }
+      }
+#pragma GCC unroll 8
       for (Integer r = 0; r < MR; r++) {
         for (Integer v = 0; v < NV; v++) {
           ValueType* Cv = &C[(i0 + r) * ldc + j0 + v * W];
-          if constexpr (U == Update::Accumulate) {
-            acc[r][v] = acc[r][v] + V::Load(Cv);
-          } else if constexpr (U == Update::AlphaBeta) {
-            acc[r][v] = acc[r][v] * V(alpha);
-            if (beta != 0) acc[r][v] = FMA(V(beta), V::Load(Cv), acc[r][v]);
+          if constexpr (Partial) {
+            acc[r][v].StorePartial(Cv, nc);
+          } else {
+            acc[r][v].Store(Cv);
           }
-          acc[r][v].Store(Cv);
         }
       }
     };
 
     const Long n_full = n - n % VL; // columns done in full-width vectors
     const Long n_tile = n_full - n_full % (IT::value * VL); // columns done in tiles of IT vectors
-    const auto cols = [&tile, n_full, n_tile](const Long i0, auto mr) {
-      for (Long j = 0; j < n_tile; j += IT::value * VL) tile(i0, j, mr, IT{}, IV{});
-      for (Long j = n_tile; j < n_full; j += VL) tile(i0, j, mr, I1{}, IV{});
-    };
-    const auto cols_tail = [&tile, A, B, C, n, k, lda, ldb, ldc, alpha, beta, n_full](const Long i0, auto mr) { // columns n_full..
-      constexpr Integer MR = decltype(mr)::value;
-      if constexpr (U == Update::Overwrite) {
-        if (n >= VL) {
-          tile(i0, n - VL, mr, I1{}, IV{});
-          return;
-        }
-      }
-      Long j = n_full;
-      if constexpr (VL > 8) {
-        for (; j + 8 <= n; j += 8) tile(i0, j, mr, I1{}, std::integral_constant<Integer, 8>{});
-      }
-      if constexpr (VL > 4) {
-        for (; j + 4 <= n; j += 4) tile(i0, j, mr, I1{}, std::integral_constant<Integer, 4>{});
-      }
-      if constexpr (VL > 2) {
-        for (; j + 2 <= n; j += 2) tile(i0, j, mr, I1{}, std::integral_constant<Integer, 2>{});
-      }
-      for (; j < n; j++) {
-        for (Integer r = 0; r < MR; r++) {
-          ValueType s = 0;
-          for (Long l = 0; l < k; l++) s += A[(i0 + r) * lda + l] * B[l * ldb + j];
-          ValueType& c = C[(i0 + r) * ldc + j];
-          if constexpr (U == Update::Overwrite) {
-            c = s;
-          } else if constexpr (U == Update::Accumulate) {
-            c += s;
-          } else {
-            c = alpha * s + (beta != 0 ? beta * c : ValueType(0));
-          }
-        }
-      }
+    const auto cols = [&tile, n_full, n_tile](const Long i0, auto mr) __attribute__((always_inline)) {
+      for (Long j = 0; j < n_tile; j += IT::value * VL) tile(i0, j, mr, IT{}, IV{}, std::false_type{}, VL);
+      for (Long j = n_tile; j < n_full; j += VL) tile(i0, j, mr, I1{}, IV{}, std::false_type{}, VL);
     };
 
     // Rows in blocks of IR, then of 4, 2 and 1 below IR; the leftover columns in a second pass:
     // inside the first loop they slowed down its tiles. Through a lambda over the row blocks that
-    // takes cols or cols_tail, the code was up to 1.5x slower
+    // takes cols, the code was up to 1.5x slower
     const Long m_blk = m - m % IR::value;
     const Long m_4 = (IR::value > 4 ? m - m % 4 : m_blk);
     const Long m_2 = (IR::value > 2 ? m - m % 2 : m_4);
@@ -227,11 +228,38 @@ namespace detail_small_gemm {
     for (Long i = m_blk; i < m_4; i += 4) cols(i, I4{});
     for (Long i = m_4; i < m_2; i += 2) cols(i, I2{});
     for (Long i = m_2; i < m; i++) cols(i, I1{});
-    if (n_full < n) {
-      for (Long i = 0; i < m_blk; i += IR::value) cols_tail(i, IR{});
-      for (Long i = m_blk; i < m_4; i += 4) cols_tail(i, I4{});
-      for (Long i = m_4; i < m_2; i += 2) cols_tail(i, I2{});
-      for (Long i = m_2; i < m; i++) cols_tail(i, I1{});
+    if (n_full < n) { // the kind of tile chosen once: chosen in each block of rows, the tiles of all kinds there made GCC's code up to 1.13x slower
+      const auto rows = [&tile, m, m_blk, m_4, m_2](const Long j0, auto w, auto partial, const Integer nc) __attribute__((always_inline)) {
+        for (Long i = 0; i < m_blk; i += IR::value) tile(i, j0, IR{}, I1{}, w, partial, nc);
+        for (Long i = m_blk; i < m_4; i += 4) tile(i, j0, I4{}, I1{}, w, partial, nc);
+        for (Long i = m_4; i < m_2; i += 2) tile(i, j0, I2{}, I1{}, w, partial, nc);
+        for (Long i = m_2; i < m; i++) tile(i, j0, I1{}, I1{}, w, partial, nc);
+      };
+      if (U == Update::Overwrite && n >= VL) { // the last VL columns again, with the same values
+        rows(n - VL, IV{}, std::false_type{}, VL);
+      } else if constexpr (VL * sizeof(ValueType) == 64) { // AVX-512: in the narrowest vector of a quarter, half or the full width that holds them, partial unless they fill it (a partial vector of the full width was up to 1.35x slower)
+        const Integer nc = (Integer)(n - n_full);
+        const auto in = [&rows, n_full, nc](auto w) __attribute__((always_inline)) {
+          if (nc == decltype(w)::value) {
+            rows(n_full, w, std::false_type{}, decltype(w)::value);
+          } else {
+            rows(n_full, w, std::true_type{}, nc);
+          }
+        };
+        if (nc <= IQ::value) {
+          in(IQ{});
+        } else if (nc <= IH::value) {
+          in(IH{});
+        } else {
+          rows(n_full, IV{}, std::true_type{}, nc);
+        }
+      } else if (IH::value * sizeof(ValueType) >= 16 && n - n_full == IH::value) { // in one SSE or AVX vector of half or a quarter of the width, if they fill it (with AVX2, a narrower partial vector was up to 1.2x slower than one of the full width)
+        if constexpr (IH::value * sizeof(ValueType) >= 16) rows(n_full, IH{}, std::false_type{}, IH::value);
+      } else if (IQ::value * sizeof(ValueType) >= 16 && n - n_full == IQ::value) {
+        if constexpr (IQ::value * sizeof(ValueType) >= 16) rows(n_full, IQ{}, std::false_type{}, IQ::value);
+      } else {
+        rows(n_full, IV{}, std::true_type{}, (Integer)(n - n_full));
+      }
     }
   }
 
@@ -241,8 +269,9 @@ namespace detail_small_gemm {
    * A tile sums re(A) B and im(A) B separately and combines them once, at the end, with the parts of
    * each entry exchanged by swap_pairs. Rows of C in blocks of 4 with the 32 vector registers of
    * AVX-512 and of 2 otherwise (16 or 8 accumulators; blocks of 4 with 16 registers were 30-50%
-   * slower), columns in tiles of 2 vectors and then 1, the leftover columns in narrower vectors down
-   * to a single entry.
+   * slower), columns in tiles of 2 vectors and then 1, the leftover columns as in VecProduct: in a
+   * vector of half or a quarter of the width if they fill it, or else in one vector of which only
+   * their reals are loaded and stored.
    */
   template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous, Long LDA = DynamicSize, Long LDB = DynamicSize, Long LDC = DynamicSize> [[gnu::noinline]] void ComplexVecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
     using Real = typename ValueType::value_type;
@@ -262,14 +291,25 @@ namespace detail_small_gemm {
     using IR = std::integral_constant<Integer, 2>;
 #endif
     using IV = std::integral_constant<Integer, VL>;
+    using IH = std::integral_constant<Integer, VL / 2>;
+    using IQ = std::integral_constant<Integer, VL / 4>;
     const bool alpha_one = (alpha == ValueType(1)), beta_zero = (beta == ValueType(0));
 
-    // Rows i0.. (MR of them) and entries j0.. (NV vectors of W reals) of C
-    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta, alpha_one, beta_zero](const Long i0, const Long j0, auto mr, auto nv, auto w) {
+    // Rows i0.. (MR of them) and entries j0.. (NV vectors of W reals) of C; if Partial, only the first
+    // nc reals of the one vector. Inlined, as in VecProduct
+    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta, alpha_one, beta_zero](const Long i0, const Long j0, auto mr, auto nv, auto w, auto partial, const Integer nc) __attribute__((always_inline)) {
       constexpr Integer MR = decltype(mr)::value;
       constexpr Integer NV = decltype(nv)::value;
       constexpr Integer W = decltype(w)::value;
+      constexpr bool Partial = decltype(partial)::value;
       using V = Vec<Real, W>;
+      const auto load = [nc](const Real* p) {
+        if constexpr (Partial) {
+          return V::LoadPartial(p, nc);
+        } else {
+          return V::Load(p);
+        }
+      };
       V re[MR][NV], im[MR][NV]; // sums of re(A) B and im(A) B
       for (Integer r = 0; r < MR; r++) {
         for (Integer v = 0; v < NV; v++) {
@@ -280,7 +320,7 @@ namespace detail_small_gemm {
       for (Long l = 0; l < k; l++) {
         const Real* Bl = reinterpret_cast<const Real*>(&B[l * ldb + j0]);
         V b[NV];
-        for (Integer v = 0; v < NV; v++) b[v] = V::Load(Bl + v * W);
+        for (Integer v = 0; v < NV; v++) b[v] = load(Bl + v * W);
         for (Integer r = 0; r < MR; r++) {
           const ValueType a = A[(i0 + r) * lda + l];
           const V a_re(a.real()), a_im(a.imag());
@@ -295,52 +335,77 @@ namespace detail_small_gemm {
       for (Integer i = 0; i < W; i++) sign_[i] = (Real)(i % 2 ? 1 : -1);
       const V sign = V::Load(sign_);
       const auto scale = [&sign](const ValueType z, const V& x) { return FMA(V(z.real()), x, swap_pairs(x) * (sign * V(z.imag()))); }; // z times each entry of x
+      // As in VecProduct, all rows of C read before any is written, and both loops unrolled first; re
+      // holds the result
+#pragma GCC unroll 8
+      for (Integer r = 0; r < MR; r++) {
+        for (Integer v = 0; v < NV; v++) {
+          const Real* Cv = reinterpret_cast<const Real*>(&C[(i0 + r) * ldc + j0]) + v * W;
+          re[r][v] = FMA(sign, swap_pairs(im[r][v]), re[r][v]);
+          if constexpr (U == Update::Accumulate) {
+            re[r][v] = re[r][v] + load(Cv);
+          } else if constexpr (U == Update::AlphaBeta) {
+            if (!alpha_one) re[r][v] = scale(alpha, re[r][v]);
+            if (!beta_zero) re[r][v] = re[r][v] + scale(beta, load(Cv));
+          }
+        }
+      }
+#pragma GCC unroll 8
       for (Integer r = 0; r < MR; r++) {
         for (Integer v = 0; v < NV; v++) {
           Real* Cv = reinterpret_cast<Real*>(&C[(i0 + r) * ldc + j0]) + v * W;
-          V c = FMA(sign, swap_pairs(im[r][v]), re[r][v]);
-          if constexpr (U == Update::Accumulate) {
-            c = c + V::Load(Cv);
-          } else if constexpr (U == Update::AlphaBeta) {
-            if (!alpha_one) c = scale(alpha, c);
-            if (!beta_zero) c = c + scale(beta, V::Load(Cv));
+          if constexpr (Partial) {
+            re[r][v].StorePartial(Cv, nc);
+          } else {
+            re[r][v].Store(Cv);
           }
-          c.Store(Cv);
         }
       }
     };
 
     const Long n_full = n - n % VE; // entries done in full-width vectors
     const Long n_pair = n_full - n_full % (2 * VE); // entries done in pairs of vectors
-    const auto cols = [&tile, n_full, n_pair](const Long i0, auto mr) {
-      for (Long j = 0; j < n_pair; j += 2 * VE) tile(i0, j, mr, I2{}, IV{});
-      for (Long j = n_pair; j < n_full; j += VE) tile(i0, j, mr, I1{}, IV{});
-    };
-    const auto cols_tail = [&tile, n, n_full](const Long i0, auto mr) { // entries n_full..
-      Long j = n_full;
-      if constexpr (VL > 8) {
-        for (; j + 4 <= n; j += 4) tile(i0, j, mr, I1{}, std::integral_constant<Integer, 8>{});
-      }
-      if constexpr (VL > 4) {
-        for (; j + 2 <= n; j += 2) tile(i0, j, mr, I1{}, std::integral_constant<Integer, 4>{});
-      }
-      if constexpr (VL > 2) {
-        for (; j < n; j++) tile(i0, j, mr, I1{}, I2{});
-      }
+    const auto cols = [&tile, n_full, n_pair](const Long i0, auto mr) __attribute__((always_inline)) {
+      for (Long j = 0; j < n_pair; j += 2 * VE) tile(i0, j, mr, I2{}, IV{}, std::false_type{}, VL);
+      for (Long j = n_pair; j < n_full; j += VE) tile(i0, j, mr, I1{}, IV{}, std::false_type{}, VL);
     };
 
-    // The leftover columns in a second pass, as in VecProduct
+    // The leftover columns in a second pass, with the kind of tile chosen once, as in VecProduct
     const Long m_blk = m - m % IR::value; // rows done in blocks
     for (Long i = 0; i < m_blk; i += IR::value) cols(i, IR{});
     for (Long i = m_blk; i < m; i++) cols(i, I1{});
     if (n_full < n) {
-      for (Long i = 0; i < m_blk; i += IR::value) cols_tail(i, IR{});
-      for (Long i = m_blk; i < m; i++) cols_tail(i, I1{});
+      const auto rows = [&tile, m, m_blk](const Long j0, auto w, auto partial, const Integer nc) __attribute__((always_inline)) {
+        for (Long i = 0; i < m_blk; i += IR::value) tile(i, j0, IR{}, I1{}, w, partial, nc);
+        for (Long i = m_blk; i < m; i++) tile(i, j0, I1{}, I1{}, w, partial, nc);
+      };
+      if constexpr (VL * sizeof(Real) == 64) { // as in VecProduct, for W reals
+        const Integer nr = (Integer)(2 * (n - n_full));
+        const auto in = [&rows, n_full, nr](auto w) __attribute__((always_inline)) {
+          if (nr == decltype(w)::value) {
+            rows(n_full, w, std::false_type{}, decltype(w)::value);
+          } else {
+            rows(n_full, w, std::true_type{}, nr);
+          }
+        };
+        if (nr <= IQ::value) {
+          in(IQ{});
+        } else if (nr <= IH::value) {
+          in(IH{});
+        } else {
+          rows(n_full, IV{}, std::true_type{}, nr);
+        }
+      } else if (IH::value * sizeof(Real) >= 16 && 2 * (n - n_full) == IH::value) {
+        if constexpr (IH::value * sizeof(Real) >= 16) rows(n_full, IH{}, std::false_type{}, IH::value);
+      } else if (IQ::value * sizeof(Real) >= 16 && 2 * (n - n_full) == IQ::value) {
+        if constexpr (IQ::value * sizeof(Real) >= 16) rows(n_full, IQ{}, std::false_type{}, IQ::value);
+      } else {
+        rows(n_full, IV{}, std::true_type{}, (Integer)(2 * (n - n_full)));
+      }
     }
   }
 
 }  // namespace detail_small_gemm
-
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #endif

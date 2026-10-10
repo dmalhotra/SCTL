@@ -79,6 +79,34 @@ namespace sctl {
       [[nodiscard]] static inline Vec LoadAligned(ScalarType const* p);
 
       /**
+       * Load the elements selected by a mask from unaligned memory. The other
+       * elements are zero, and their memory is not read. With AVX and without
+       * AVX-512VL, 32- and 64-bit lanes by vmaskmovps or vmaskmovpd, about 6
+       * cycles on AMD Zen.
+       *
+       * @param p Pointer to the scalar values.
+       * @param m Mask selecting the elements to load.
+       * @return Vector loaded with the selected scalar values.
+       */
+      [[nodiscard]] static inline Vec Load(ScalarType const* p, const MaskType& m);
+
+      /**
+       * Load the first n elements from unaligned memory. The other elements
+       * are zero, and their memory is not read. With AVX and without
+       * AVX-512VL, some n use vmaskmovps or vmaskmovpd, about 6 cycles on AMD
+       * Zen, unless SCTL_TUNE_ZEN is defined, as by -march=native or
+       * -mtune=znverN there.
+       *
+       * @param p Pointer to the scalar values.
+       * @param n Number of elements to load, n >= 0; all Size() elements if n >= Size().
+       * @return Vector loaded with the first n scalar values.
+       */
+      [[nodiscard]] static inline Vec LoadPartial(ScalarType const* p, Integer n);
+
+      /** Load element i from p[idx[i]]. */
+      template <class IndexType> [[nodiscard]] static inline Vec Gather(ScalarType const* p, const Vec<IndexType,N>& idx);
+
+      /**
        * Default constructor.
        */
       Vec() = default;
@@ -118,14 +146,25 @@ namespace sctl {
       inline Vec(const ScalarType& a);
 
       /**
-       * Constructor initializing vector with multiple scalar values.
+       * Constructor initializing each of the N elements with its own scalar
+       * value; exactly N values must be given (N >= 2).
        *
-       * @tparam T Data type of scalar values.
-       * @tparam T1 Variadic template parameter pack for scalar values.
-       * @param x First scalar value.
-       * @param args Remaining scalar values.
+       * @tparam T0 Data type of the first value.
+       * @tparam T1 Data type of the second value.
+       * @tparam T2 Data types of the remaining values.
+       * @param x0 First value.
+       * @param x1 Second value.
+       * @param args Remaining values.
        */
-      template <class T,class ...T1> inline Vec(T x, T1... args);
+      template <class T0, class T1, class ...T2> inline Vec(T0 x0, T1 x1, T2... args);
+
+      /**
+       * Constructor joining two vectors of N/2 elements.
+       *
+       * @param lo Elements 0, ..., N/2-1.
+       * @param hi Elements N/2, ..., N-1.
+       */
+      inline Vec(const Vec<ValueType,N/2>& lo, const Vec<ValueType,N/2>& hi);
 
       /**
        * Store the vector data into unaligned memory.
@@ -140,6 +179,27 @@ namespace sctl {
        * @param p Pointer to the memory location to store the data.
        */
       inline void StoreAligned(ScalarType* p) const;
+
+      /**
+       * Store the elements selected by a mask into unaligned memory. The
+       * memory of the other elements is not written. On AMD Zen, as for Load.
+       *
+       * @param p Pointer to the memory location to store the data.
+       * @param m Mask selecting the elements to store.
+       */
+      inline void Store(ScalarType* p, const MaskType& m) const;
+
+      /**
+       * Store the first n elements into unaligned memory. The memory of the
+       * other elements is not written. On AMD Zen, as for LoadPartial.
+       *
+       * @param p Pointer to the memory location to store the data.
+       * @param n Number of elements to store, n >= 0; all Size() elements if n >= Size().
+       */
+      inline void StorePartial(ScalarType* p, Integer n) const;
+
+      /** Store element i into p[idx[i]], in order of i: of equal indices, the last element is stored. */
+      template <class IndexType> inline void Scatter(ScalarType* p, const Vec<IndexType,N>& idx) const;
 
       // Element access
 
@@ -211,6 +271,14 @@ namespace sctl {
       inline Vec& operator/=(const Vec& rhs);
 
       /**
+       * Remainder assignment operator with another vector, for integer types.
+       *
+       * @param rhs Vector to divide by.
+       * @return Reference to the modified vector.
+       */
+      inline Vec& operator%=(const Vec& rhs);
+
+      /**
        * Addition assignment operator with another vector.
        *
        * @param rhs Vector to add.
@@ -271,12 +339,21 @@ namespace sctl {
        */
       inline VData& get();
 
-    private:
       /**
-       * Helper struct for initializing vectors with multiple scalar values.
+       * Get the low half of the vector.
+       *
+       * @return Vector of the elements 0, ..., N/2-1.
        */
-      template <class T, class... T2> struct InitVec;
+      [[nodiscard]] inline Vec<ValueType,N/2> get_low() const;
 
+      /**
+       * Get the high half of the vector.
+       *
+       * @return Vector of the elements N/2, ..., N-1.
+       */
+      [[nodiscard]] inline Vec<ValueType,N/2> get_high() const;
+
+    private:
       /**
        * Internal data representation of the vector.
        */
@@ -285,10 +362,31 @@ namespace sctl {
 
   // Conversion operators
   template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType convert2mask(const Vec<ValueType,N>& a);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> RoundReal2Real(const Vec<ValueType,N>& x);
+  /** Nearest integer, halves to even (std::rint); exact at native SSE, AVX, AVX-512 widths; elsewhere for |x| < 2^(SigBits-1), and +0 where std::rint gives -0. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> rint(const Vec<ValueType,N>& x);
   template <class RealVec, class IntVec> inline RealVec ConvertInt2Real(const IntVec& x);
-  template <class IntVec, class RealVec> inline IntVec RoundReal2Int(const RealVec& x);
+  /** rint as an integer vector (std::lrint), for |x| < 2^(SigBits-1). */
+  template <class IntVec, class RealVec> inline IntVec lrint(const RealVec& x);
   template <class MaskType> inline Vec<typename MaskType::ScalarType,MaskType::Size> convert2vec(const MaskType& a);
+
+  /**
+   * Convert each element to the scalar type of VecTo as static_cast does; a
+   * real value converted to an integer type is truncated toward zero.
+   *
+   * @tparam VecTo The Vec type of the result, with the same number of elements.
+   * @param x The vector to convert.
+   * @return The converted vector.
+   */
+  template <class VecTo, class ValueType, Integer N> inline VecTo Convert(const Vec<ValueType,N>& x);
+
+  /**
+   * Convert a mask to the mask type of VecTo, selecting the same elements.
+   *
+   * @tparam VecTo The Vec type whose mask type is the result, with the same number of elements.
+   * @param m The mask to convert.
+   * @return The converted mask.
+   */
+  template <class VecTo, class MaskType> inline typename VecTo::MaskType ConvertMask(const MaskType& m);
 
 
   // Arithmetic operators
@@ -297,16 +395,19 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator/(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b);
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator+(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b);
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator-(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator%(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b); // integer types
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator*(const Vec<ValueType,N>& a, const ValueType& b);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator/(const Vec<ValueType,N>& a, const ValueType& b);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator+(const Vec<ValueType,N>& a, const ValueType& b);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator-(const Vec<ValueType,N>& a, const ValueType& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator*(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator/(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator+(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator-(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator%(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator*(const ValueType& a, const Vec<ValueType,N>& b);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator/(const ValueType& a, const Vec<ValueType,N>& b);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator+(const ValueType& a, const Vec<ValueType,N>& b);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator-(const ValueType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator*(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator/(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator+(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator-(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator%(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
 
 
   // Comparison operators
@@ -317,23 +418,23 @@ namespace sctl {
   template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator==(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b);
   template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator!=(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b);
 
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator< (const Vec<ValueType,N>& a, const ValueType& b);
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator<=(const Vec<ValueType,N>& a, const ValueType& b);
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator>=(const Vec<ValueType,N>& a, const ValueType& b);
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator> (const Vec<ValueType,N>& a, const ValueType& b);
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator==(const Vec<ValueType,N>& a, const ValueType& b);
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator!=(const Vec<ValueType,N>& a, const ValueType& b);
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator< (const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator<=(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator>=(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator> (const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator==(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator!=(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
 
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator< (const ValueType& a, const Vec<ValueType,N>& b);
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator<=(const ValueType& a, const Vec<ValueType,N>& b);
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator>=(const ValueType& a, const Vec<ValueType,N>& b);
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator> (const ValueType& a, const Vec<ValueType,N>& b);
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator==(const ValueType& a, const Vec<ValueType,N>& b);
-  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator!=(const ValueType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator< (const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator<=(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator>=(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator> (const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator==(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType operator!=(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> select(const typename Vec<ValueType,N>::MaskType& m, const Vec<ValueType,N>& a, const Vec<ValueType,N>& b);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> select(const typename Vec<ValueType,N>::MaskType& m, const Vec<ValueType,N>& a, const ValueType& b);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> select(const typename Vec<ValueType,N>::MaskType& m, const ValueType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> select(const typename Vec<ValueType,N>::MaskType& m, const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> select(const typename Vec<ValueType,N>::MaskType& m, const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
 
 
   // Bitwise operators
@@ -342,31 +443,43 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator|(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b);
   template <class ValueType, Integer N> inline Vec<ValueType,N> AndNot(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b);
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator&(const Vec<ValueType,N>& a, const ValueType& b);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator^(const Vec<ValueType,N>& a, const ValueType& b);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator|(const Vec<ValueType,N>& a, const ValueType& b);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> AndNot(const Vec<ValueType,N>& a, const ValueType& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator&(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator^(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator|(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> AndNot(const Vec<ValueType,N>& a, const typename Vec<ValueType,N>::ScalarType& b);
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator&(const ValueType& b, const Vec<ValueType,N>& a);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator^(const ValueType& b, const Vec<ValueType,N>& a);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> operator|(const ValueType& b, const Vec<ValueType,N>& a);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> AndNot(const ValueType& b, const Vec<ValueType,N>& a);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator&(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator^(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator|(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> AndNot(const typename Vec<ValueType,N>::ScalarType& a, const Vec<ValueType,N>& b);
 
 
   // Bitshift
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator<<(const Vec<ValueType,N>& lhs, const Integer& rhs);
   template <class ValueType, Integer N> inline Vec<ValueType,N> operator>>(const Vec<ValueType,N>& lhs, const Integer& rhs);
 
+  /**
+   * Bit shift each element of an integer vector left by the count in the same
+   * element of rhs, 0 <= count < bit width of ValueType.
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator<<(const Vec<ValueType,N>& lhs, const Vec<ValueType,N>& rhs);
+
+  /**
+   * Bit shift each element of an integer vector right by the count in the same
+   * element of rhs, 0 <= count < bit width of ValueType, filling with the sign bit.
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> operator>>(const Vec<ValueType,N>& lhs, const Vec<ValueType,N>& rhs);
+
 
   // Other operators
   template <class ValueType, Integer N> inline Vec<ValueType,N> max(const Vec<ValueType,N>& lhs, const Vec<ValueType,N>& rhs);
   template <class ValueType, Integer N> inline Vec<ValueType,N> min(const Vec<ValueType,N>& lhs, const Vec<ValueType,N>& rhs);
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> max(const Vec<ValueType,N>& lhs, const ValueType& rhs);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> min(const Vec<ValueType,N>& lhs, const ValueType& rhs);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> max(const Vec<ValueType,N>& lhs, const typename Vec<ValueType,N>::ScalarType& rhs);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> min(const Vec<ValueType,N>& lhs, const typename Vec<ValueType,N>::ScalarType& rhs);
 
-  template <class ValueType, Integer N> inline Vec<ValueType,N> max(const ValueType& lhs, const Vec<ValueType,N>& rhs);
-  template <class ValueType, Integer N> inline Vec<ValueType,N> min(const ValueType& lhs, const Vec<ValueType,N>& rhs);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> max(const typename Vec<ValueType,N>::ScalarType& lhs, const Vec<ValueType,N>& rhs);
+  template <class ValueType, Integer N> inline Vec<ValueType,N> min(const typename Vec<ValueType,N>::ScalarType& lhs, const Vec<ValueType,N>& rhs);
 
   /**
    * Transpose an NxN matrix of scalars held in N vectors, in-place. On return,
@@ -385,9 +498,6 @@ namespace sctl {
    */
   template <class ValueType, Integer N, class ...T> inline void transpose(Vec<ValueType,N>& v0, T&... vs);
 
-  // Horizontal reduction: sum of all lanes.
-  template <class ValueType, Integer N> inline ValueType reduce_add(const Vec<ValueType,N>& a);
-
   /**
    * Exchange the elements of each pair of adjacent lanes: (x0, x1, x2, x3, ...) becomes
    * (x1, x0, x3, x2, ...). N must be even.
@@ -397,21 +507,360 @@ namespace sctl {
    */
   template <class ValueType, Integer N> inline Vec<ValueType,N> swap_pairs(const Vec<ValueType,N>& x);
 
+  /**
+   * The elements of x in the order given by the indices, as permute8 of VCL: element k of the result is x[I_k], or 0
+   * where I_k is -1. For example, permute<1, 0, 3, 2>(x) is swap_pairs(x).
+   *
+   * @tparam I one index in [-1, N) per lane, constants.
+   * @param x The input vector.
+   * @return The permuted vector.
+   */
+  template <Integer... I, class ValueType, Integer N> inline Vec<ValueType,N> permute(const Vec<ValueType,N>& x);
+
+  /**
+   * The elements of a and b in the order given by the indices, as blend8 of VCL: element k of the result is a[I_k]
+   * for I_k < N, b[I_k - N] for I_k >= N, or 0 where I_k is -1.
+   *
+   * @tparam I one index in [-1, 2N) per lane, constants.
+   * @param a The first input vector, indices 0 to N-1.
+   * @param b The second input vector, indices N to 2N-1.
+   * @return The vector of the selected elements.
+   */
+  template <Integer... I, class ValueType, Integer N> inline Vec<ValueType,N> blend(const Vec<ValueType,N>& a, const Vec<ValueType,N>& b);
+
+
+  // Reductions
+
+  /**
+   * Sum of the elements. The two halves are added element by element until one
+   * element is left, so the order of the additions, and the rounding of a real
+   * result, is the same on every instruction set.
+   *
+   * @param v The vector to reduce.
+   * @return The sum of the elements of v.
+   */
+  template <class ValueType, Integer N> inline ValueType reduce(const Vec<ValueType,N>& v);
+
+  /**
+   * Smallest element, as the min of the two halves taken until one element is left.
+   *
+   * @param v The vector to reduce.
+   * @return The smallest element of v.
+   */
+  template <class ValueType, Integer N> inline ValueType reduce_min(const Vec<ValueType,N>& v);
+
+  /**
+   * Largest element, as the max of the two halves taken until one element is left.
+   *
+   * @param v The vector to reduce.
+   * @return The largest element of v.
+   */
+  template <class ValueType, Integer N> inline ValueType reduce_max(const Vec<ValueType,N>& v);
+
+  /**
+   * Number of elements selected by a mask.
+   *
+   * @param m The mask.
+   * @return The number of selected elements.
+   */
+  template <class VData> inline Integer reduce_count(const Mask<VData>& m);
+
+  /**
+   * Whether a mask selects every element.
+   */
+  template <class VData> inline bool all_of(const Mask<VData>& m);
+
+  /**
+   * Whether a mask selects at least one element.
+   */
+  template <class VData> inline bool any_of(const Mask<VData>& m);
+
+  /**
+   * Whether a mask selects no element.
+   */
+  template <class VData> inline bool none_of(const Mask<VData>& m);
+
 
   // Special functions
+
+  /**
+   * 1/sqrt(x) to the given digits (-1: full precision, within a few ulp). At native SSE, AVX, AVX-512 widths, for double x from
+   * 8e-304 (AVX-512: 2.3e-308) and float x from 1.2e-38 up to the largest finite value; smaller x, 0 and inf give NaN or +-inf.
+   */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x);
+
+  /** As approx_rsqrt(x), with zero in the elements not in m; for x that can be zero. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x, const typename Vec<ValueType,N>::MaskType& m);
 
+  /** sqrt(x) as x * approx_rsqrt(x), to the given digits, for x in the range of approx_rsqrt. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sqrt(const Vec<ValueType,N>& x);
+
+  /** As approx_sqrt(x), with zero in the elements not in m; for x that can be zero. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sqrt(const Vec<ValueType,N>& x, const typename Vec<ValueType,N>::MaskType& m);
 
-  template <class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
-  template <Integer digits, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
+  /** Sine and cosine. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
+  template <bool FullRange = true, class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
+  /** Sine and cosine to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
 
+  /** sin(pi x) and cos(pi x), exact argument reduction; float, double: within 1.3 ulp (float: 1), 1.6 without FMA. */
+  template <class ValueType, Integer N> inline void sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
+  /** sincospi to the given digits (-1: full). FullRange = false: only for |x| < 2^50 (float: 2^21), faster. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline void approx_sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
+  /** sin(pi x), as sincospi. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sinpi(const Vec<ValueType,N>& x);
+  /** sin(pi x), as approx_sincospi. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinpi(const Vec<ValueType,N>& x);
+  /** cos(pi x), as sincospi. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> cospi(const Vec<ValueType,N>& x);
+  /** cos(pi x), as approx_sincospi. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x);
+  /** sin(pi x)/(pi x), 1 at x = 0, NaN at +-inf; float, double: within 2.2 ulp (float: 1.8). */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sincpi(const Vec<ValueType,N>& x);
+  /** sincpi to the given digits (-1: full); FullRange as approx_sincospi. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sincpi(const Vec<ValueType,N>& x);
+
+  /** e^x; float, double at native widths without SVML: within about 2 ulp (float: 3.5), also near the overflow and for subnormal results. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x);
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x);
+  /** e^x to the given digits (-1: exp). Without RangeCheck, only for |x| < 708.4 (float: 87.3). */
+  template <Integer digits, bool RangeCheck = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x);
 
+  /** 10^x; float, double: as accurate as exp, vectorized at every width. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> exp10(const Vec<ValueType,N>& x);
+  /** 10^x to the given digits (-1: exp10). Without RangeCheck, only for |x| < 307.6 (float: 37.9). */
+  template <Integer digits, bool RangeCheck = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp10(const Vec<ValueType,N>& x);
+
+  /** log(x) to the given digits (-1: log), for float and double; x not positive, normal and finite as log. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_log(const Vec<ValueType,N>& x);
+
+  /** x^y to the given digits for |y log x| <= 100 (-1: pow), for float and double; x not positive, normal and finite, or |y log x| >= 708.4 (float: 87.3) as pow. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+
+  /** Natural logarithm; float, double: within about 1.2 ulp, vectorized at native widths. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x);
+
+  /**
+   * Square root, correctly rounded. Cycles per call, dependent / independent calls, Sapphire Rapids:
+   * double x8 23 / 24, x4 13 / 12; approx_sqrt<-1> 39 / 5.9, 61 / 7.8.
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sqrt(const Vec<ValueType,N>& x);
+
+  /**
+   * 1/sqrt(x): 1 divided by the correctly rounded sqrt (within 1.5 ulp); at 512-bit widths (double x8, float x16), approx_rsqrt<-1>
+   * (within 1.8 ulp) for 2 min <= x <= max, the division elsewhere. Cycles per call, dependent / independent calls, Sapphire Rapids:
+   * double x8 35 / 7.1, x4 26 / 20; approx_rsqrt<-1> 36 / 5.2, 57 / 7.3.
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> rsqrt(const Vec<ValueType,N>& x);
+
+  /** Absolute value. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> fabs(const Vec<ValueType,N>& x);
+
+  /** Largest integer value not greater than x. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> floor(const Vec<ValueType,N>& x);
+
+  /** Smallest integer value not less than x. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> ceil(const Vec<ValueType,N>& x);
+
+  /** Magnitude of x with the sign of y. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> copysign(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+
+  /** Mask of the elements that are NaN. */
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType isnan(const Vec<ValueType,N>& x);
+
+  /** Sine. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
+  template <bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x);
+
+  /** Cosine. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
+  template <bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x);
+
+  /** Tangent. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
+  template <bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x);
+
+  /** Sine to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x);
+
+  /** Cosine to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x);
+
+  /** Tangent to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x);
+
+  /** sin(x)/x, 1 at x = 0, NaN at +-inf: sin and one division. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sinc(const Vec<ValueType,N>& x);
+  /** sinc to the given digits (-1: full); FullRange as approx_sin. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinc(const Vec<ValueType,N>& x);
+
+  /** Angle of the point (x, y), in [-pi, pi], as std::atan2. SpecialValues = false: faster, but x, y both infinite or both zero give NaN. */
+  template <bool SpecialValues = true, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
+
+  /** x to the power y; vectorized with SVML, libmvec, or at 256- and 512-bit widths (double about 9 ulp, 14 near the ends of the range; float 4 ulp), else one element at a time. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+  /** x^e for a compile-time integer e by squaring (2 log2|e| products, error up to |e|/2 ulp); e < 0: 1/x^|e|. */
+  template <Long e, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x);
+  /** x^(e/d) for compile-time integers e and d = 1 or 2; for odd e and d = 2, x^((e-1)/2) sqrt(x). */
+  template <Long e, Long d, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x);
+  /** Hermite polynomial H_n(x) (physicists') for a compile-time n >= 0, by H_(k+1) = 2x H_k - 2k H_(k-1). */
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> hermite(const Vec<ValueType,N>& x);
+
+  /** Integer value nearest x, not larger in magnitude. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> trunc(const Vec<ValueType,N>& x);
+
+  /** Integer value nearest x, halfway cases away from zero. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> round(const Vec<ValueType,N>& x);
+
+  /** Mask of the elements that are infinite. */
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType isinf(const Vec<ValueType,N>& x);
+
+  /** Mask of the elements that are neither infinite nor NaN. */
+  template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType isfinite(const Vec<ValueType,N>& x);
+
+  /** Arc tangent. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> atan(const Vec<ValueType,N>& x);
+
+  /** Arc sine. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> asin(const Vec<ValueType,N>& x);
+
+  /** Arc cosine. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> acos(const Vec<ValueType,N>& x);
+
+  /** sqrt(x^2 + y^2) without overflow or underflow in between, and inf if x or y is inf, as std::hypot. AvoidOverflow = false: sqrt(x x + y y), faster. */
+  template <bool AvoidOverflow = true, class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+
+  /** 2 to the power x. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> exp2(const Vec<ValueType,N>& x);
+
+  /** Base-2 logarithm; vectorized where log is. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> log2(const Vec<ValueType,N>& x);
+
+  /** Base-10 logarithm; vectorized where log is. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> log10(const Vec<ValueType,N>& x);
+
+  /** Cube root. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x);
+
+  /** Hyperbolic sine. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> sinh(const Vec<ValueType,N>& x);
+
+  /** Hyperbolic cosine. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> cosh(const Vec<ValueType,N>& x);
+
+  /** Hyperbolic tangent. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x);
+
+  /** Inverse hyperbolic sine; float, double: within 1.3 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> asinh(const Vec<ValueType,N>& x);
+  /** asinh to the given digits (-1: full). FullRange = false: only for |x| < 2^26 (float: 2^11). */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_asinh(const Vec<ValueType,N>& x);
+
+  /** Inverse hyperbolic cosine, NaN for x < 1; float, double: within 1.8 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> acosh(const Vec<ValueType,N>& x);
+  /** acosh to the given digits (-1: full). FullRange = false: only for 1 < x < 2^26 (float: 2^11). */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_acosh(const Vec<ValueType,N>& x);
+
+  /** Inverse hyperbolic tangent, +-inf at +-1, NaN for |x| > 1; float, double: within 1.7 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> atanh(const Vec<ValueType,N>& x);
+  /** atanh to the given digits (-1: full). FullRange = false: only for |x| < 1. */
+  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_atanh(const Vec<ValueType,N>& x);
+
+  /** Error function; float, double: within 1.3 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> erf(const Vec<ValueType,N>& x);
+  /** erf to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erf(const Vec<ValueType,N>& x);
+
+  /**
+   * Complementary error function 1 - erf(x), with its relative precision also where it is small; float, double: within
+   * 5.5 ulp.
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> erfc(const Vec<ValueType,N>& x);
+  /** erfc to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x);
+
+  /**
+   * Inverse of the standard normal distribution function, -inf at 0, inf at 1, NaN outside [0, 1]; float, double:
+   * within about 4 ulp.
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> ndtri(const Vec<ValueType,N>& p);
+  /** ndtri to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_ndtri(const Vec<ValueType,N>& p);
+
+  /** Inverse error function, +-inf at +-1, NaN for |y| > 1; float, double: within about 4 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> erfinv(const Vec<ValueType,N>& y);
+  /** erfinv to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y);
+
+  /** Gamma function, as std::tgamma: NaN at negative integers, +-inf at +-0; float, double: within 4.5 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> tgamma(const Vec<ValueType,N>& x);
+  /** tgamma to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tgamma(const Vec<ValueType,N>& x);
+
+  /**
+   * log|Gamma(x)|, as std::lgamma: inf at non-positive integers; float, double: within 3 ulp for x >= 0, below within
+   * 13 eps (1 + |lgamma(x)|).
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> lgamma(const Vec<ValueType,N>& x);
+  /** lgamma to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_lgamma(const Vec<ValueType,N>& x);
+
+  /**
+   * Digamma function Gamma'(x)/Gamma(x): NaN at negative integers, -+inf at +-0; float, double: within 4 ulp for
+   * x >= 0, below within 6 eps (1 + |digamma(x)|).
+   */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> digamma(const Vec<ValueType,N>& x);
+  /** digamma to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_digamma(const Vec<ValueType,N>& x);
+
+  /**
+   * Bessel function of the first kind J_n of order n = 0, 1, 2; float, double: within 6.5 ulp for |x| <= 5, beyond
+   * within 3 eps sqrt(2/(pi |x|)).
+   */
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_j(const Vec<ValueType,N>& x);
+  /** cyl_bessel_j to the given digits (-1: full). */
+  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_j(const Vec<ValueType,N>& x);
+
+  /**
+   * Bessel function of the second kind Y_n of order n = 0, 1, 2, -inf at 0, NaN for x < 0; float, double: within
+   * 4.5 eps max(|Y_n(x)|, sqrt(2/(pi x))).
+   */
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_neumann(const Vec<ValueType,N>& x);
+  /** cyl_neumann to the given digits (-1: full). */
+  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_neumann(const Vec<ValueType,N>& x);
+
+  /** Modified Bessel function of the first kind I_n of order n = 0, 1, 2; float, double: within 6 ulp. */
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_i(const Vec<ValueType,N>& x);
+  /** cyl_bessel_i to the given digits (-1: full). */
+  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_i(const Vec<ValueType,N>& x);
+
+  /**
+   * Modified Bessel function of the second kind K_n of order n = 0, 1, 2, inf at 0, NaN for x < 0; float, double:
+   * within 7 ulp.
+   */
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_k(const Vec<ValueType,N>& x);
+  /** cyl_bessel_k to the given digits (-1: full). */
+  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_k(const Vec<ValueType,N>& x);
+
+  /**
+   * Spherical Bessel function of the first kind j_n of order n = 0, 1, 2; float, double: within 4 ulp for |x| < 2,
+   * beyond within 2.5 eps max(|j_n(x)|, 1/|x|).
+   */
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> sph_bessel(const Vec<ValueType,N>& x);
+  /** sph_bessel to the given digits (-1: full). */
+  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_bessel(const Vec<ValueType,N>& x);
+
+  /**
+   * Spherical Bessel function of the second kind y_n of order n = 0, 1, 2, -inf at 0, NaN for x < 0; float, double:
+   * within 3 eps max(|y_n(x)|, 1/x).
+   */
+  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> sph_neumann(const Vec<ValueType,N>& x);
+  /** sph_neumann to the given digits (-1: full). */
+  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_neumann(const Vec<ValueType,N>& x);
+
+  /** Riemann zeta function of real s, inf at 1; float, double: within 3 ulp for s >= 0, below within 7 ulp. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> riemann_zeta(const Vec<ValueType,N>& s);
+  /** riemann_zeta to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_riemann_zeta(const Vec<ValueType,N>& s);
+
+  /** Remainder of x/y with the sign of x, as std::fmod. */
+  template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 
 
   // Print

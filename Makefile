@@ -78,6 +78,7 @@ TARGET_BIN = \
        $(BINDIR)/test-boundary_integral \
        $(BINDIR)/test-cheb_utils \
        $(BINDIR)/test-fft-fallback \
+       $(BINDIR)/test-function-table \
        $(BINDIR)/test-generic-kernel \
        $(BINDIR)/test-intrin-wrapper \
        $(BINDIR)/test-iterator \
@@ -158,6 +159,7 @@ test: $(TARGET_BIN)
 	./$(BINDIR)/test-boundary_integral
 	./$(BINDIR)/test-cheb_utils
 	./$(BINDIR)/test-fft-fallback
+	./$(BINDIR)/test-function-table
 	./$(BINDIR)/test-generic-kernel
 	./$(BINDIR)/test-intrin-wrapper
 	./$(BINDIR)/test-iterator
