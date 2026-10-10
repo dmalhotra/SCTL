@@ -4659,26 +4659,6 @@ namespace sctl { // SSE
   template <> inline VecData<float,4> swap_pairs_intrin(const VecData<float,4>& vec) { return _mm_shuffle_ps(vec.v, vec.v, 0xB1); }
   template <> inline VecData<double,2> swap_pairs_intrin(const VecData<double,2>& vec) { return _mm_shuffle_pd(vec.v, vec.v, 0x1); }
 
-  // The rows transposed and evaluated by Estrin's scheme together: one step of the scheme after each stage of the
-  // transpose, q_k = c_2k + c_2k+1 t after the first, s_k = q_2k + q_2k+1 t^2 after the second.
-  template <> inline VecData<double,2> eval_poly_rows_intrin<2, VecData<double,2>>(const double* const (&p)[2], const VecData<double,2>& t) {
-    using V = VecData<double,2>;
-    const __m128d r0 = _mm_loadu_pd(p[0]);
-    const __m128d r1 = _mm_loadu_pd(p[1]);
-    return fma_intrin(V(_mm_unpackhi_pd(r0, r1)), t, V(_mm_unpacklo_pd(r0, r1)));
-  }
-  template <> inline VecData<float,4> eval_poly_rows_intrin<4, VecData<float,4>>(const float* const (&p)[4], const VecData<float,4>& t) {
-    using V = VecData<float,4>;
-    const __m128 tp[2] = {_mm_unpacklo_ps(t.v, t.v), _mm_unpackhi_ps(t.v, t.v)}; // (t_a, t_a, t_b, t_b) of lanes a, b = 2j, 2j+1
-    V q[2]; // (q_0, q_1 of lane 2j, q_0, q_1 of lane 2j+1)
-    for (Integer j = 0; j < 2; j++) {
-      const __m128 ra = _mm_loadu_ps(p[2 * j]);
-      const __m128 rb = _mm_loadu_ps(p[2 * j + 1]);
-      q[j] = fma_intrin(V(_mm_shuffle_ps(ra, rb, _MM_SHUFFLE(3,1,3,1))), V(tp[j]), V(_mm_shuffle_ps(ra, rb, _MM_SHUFFLE(2,0,2,0))));
-    }
-    return fma_intrin(V(_mm_shuffle_ps(q[0].v, q[1].v, _MM_SHUFFLE(3,1,3,1))), mul_intrin(t, t), V(_mm_shuffle_ps(q[0].v, q[1].v, _MM_SHUFFLE(2,0,2,0))));
-  }
-
   // Conversion operators
   template <> inline VecData<float ,4> convert_int2real_intrin<VecData<float ,4>,VecData<int32_t,4>>(const VecData<int32_t,4>& x) {
     return _mm_cvtepi32_ps(x.v);
@@ -5822,17 +5802,6 @@ namespace sctl { // AVX
 
   // The rows transposed and evaluated by Estrin's scheme together: one step of the scheme after each stage of the
   // transpose, q_k = c_2k + c_2k+1 t after the first, s_k = q_2k + q_2k+1 t^2 after the second.
-  template <> inline VecData<double,4> eval_poly_rows_intrin<4, VecData<double,4>>(const double* const (&p)[4], const VecData<double,4>& t) {
-    using V = VecData<double,4>;
-    const __m256d tp[2] = {_mm256_permute2f128_pd(t.v, t.v, 0x00), _mm256_permute2f128_pd(t.v, t.v, 0x11)}; // (t_a, t_b, t_a, t_b) of lanes a, b = 2j, 2j+1
-    V q[2]; // (q_0 of lanes 2j, 2j+1, q_1 of lanes 2j, 2j+1)
-    for (Integer j = 0; j < 2; j++) {
-      const __m256d ra = _mm256_loadu_pd(p[2 * j]);
-      const __m256d rb = _mm256_loadu_pd(p[2 * j + 1]);
-      q[j] = fma_intrin(V(_mm256_unpackhi_pd(ra, rb)), V(tp[j]), V(_mm256_unpacklo_pd(ra, rb)));
-    }
-    return fma_intrin(V(_mm256_permute2f128_pd(q[0].v, q[1].v, 0x31)), mul_intrin(t, t), V(_mm256_permute2f128_pd(q[0].v, q[1].v, 0x20)));
-  }
   template <> inline VecData<float,8> eval_poly_rows_intrin<8, VecData<float,8>>(const float* const (&p)[8], const VecData<float,8>& t) {
     using V = VecData<float,8>;
     const __m256 tl = _mm256_permute2f128_ps(t.v, t.v, 0x00);
@@ -7117,25 +7086,9 @@ namespace sctl { // AVX512
   template <> inline void transpose_intrin<VecData<int32_t,16>>(VecData<int32_t,16> (&v)[16]) { transpose_reinterpret_intrin<VecData<float ,16>>(v); }
   template <> inline void transpose_intrin<VecData<int64_t, 8>>(VecData<int64_t, 8> (&v)[ 8]) { transpose_reinterpret_intrin<VecData<double, 8>>(v); }
 
-  // The rows transposed and evaluated by Estrin's scheme together: one step of the scheme after each stage of the
-  // transpose, q_k = c_2k + c_2k+1 t after the first, s_k = q_2k + q_2k+1 t^2 after the second.
-  template <> inline VecData<double,8> eval_poly_rows_intrin<8, VecData<double,8>>(const double* const (&p)[8], const VecData<double,8>& t) {
-    __m512d q[4]; // (q_0 of lanes 2j, 2j+1, q_1 of the two lanes, ..., q_3 of the two lanes)
-    for (Integer j = 0; j < 4; j++) {
-      const __m512d ra = _mm512_loadu_pd(p[2 * j]);
-      const __m512d rb = _mm512_loadu_pd(p[2 * j + 1]);
-      const __m512d tj = _mm512_permutexvar_pd(_mm512_setr_epi64(2 * j, 2 * j + 1, 2 * j, 2 * j + 1, 2 * j, 2 * j + 1, 2 * j, 2 * j + 1), t.v);
-      q[j] = _mm512_fmadd_pd(_mm512_unpackhi_pd(ra, rb), tj, _mm512_unpacklo_pd(ra, rb));
-    }
-    const __m512d t2 = _mm512_mul_pd(t.v, t.v);
-    __m512d s[2]; // (s_0, s_1 of lanes 4j, 4j+1, then s_0, s_1 of lanes 4j+2, 4j+3), each pair of lanes in a 128-bit lane
-    for (Integer j = 0; j < 2; j++) {
-      const __m512d tj = _mm512_permutexvar_pd(_mm512_setr_epi64(4 * j, 4 * j + 1, 4 * j, 4 * j + 1, 4 * j + 2, 4 * j + 3, 4 * j + 2, 4 * j + 3), t2);
-      s[j] = _mm512_fmadd_pd(_mm512_shuffle_f64x2(q[2 * j], q[2 * j + 1], 0xDD), tj, _mm512_shuffle_f64x2(q[2 * j], q[2 * j + 1], 0x88));
-    }
-    return _mm512_fmadd_pd(_mm512_shuffle_f64x2(s[0], s[1], 0xDD), _mm512_mul_pd(t2, t2), _mm512_shuffle_f64x2(s[0], s[1], 0x88));
-  }
-  // Rows of 8 values: the 256-bit halves hold lanes 0..7 and 8..15, each as in the 8-lane kernel for AVX.
+  // Rows of 8 values, transposed and evaluated by Estrin's scheme together: one step of the scheme after each stage of
+  // the transpose, q_k = c_2k + c_2k+1 t after the first, s_k = q_2k + q_2k+1 t^2 after the second; the 256-bit halves
+  // hold lanes 0..7 and 8..15.
   template <> inline VecData<float,16> eval_poly_rows_intrin<8, VecData<float,16>>(const float* const (&p)[16], const VecData<float,16>& t) {
     const auto rows = [&p](const Integer l) { // the rows of lanes l and l + 8
       return _mm512_castpd_ps(_mm512_insertf64x4(_mm512_castpd256_pd512(_mm256_castps_pd(_mm256_loadu_ps(p[l]))), _mm256_castps_pd(_mm256_loadu_ps(p[l + 8])), 1));

@@ -3,7 +3,8 @@
 
 #include <algorithm>               // for max, max_element
 #include <cmath>                   // for cos, floor, pow, fabs
-#include <type_traits>             // for conditional
+#include <type_traits>             // for conditional, integral_constant, is_same
+#include <utility>                 // for integer_sequence, make_integer_sequence
 #include <vector>                  // for vector
 
 #include "sctl/common.hpp"         // for Integer, Long, SCTL_ASSERT_MSG, sctl
@@ -11,7 +12,7 @@
 #include "sctl/intrin-wrapper.hpp" // for eval_poly_rows_intrin
 #include "sctl/math_utils.hpp"     // for const_pi, machine_eps
 #include "sctl/vector.hpp"         // for Vector
-#include "sctl/vec.hpp"            // for Vec, max, min, floor, FMA, Convert
+#include "sctl/vec.hpp"            // for Vec, max, min, floor, FMA, Convert, permute, blend
 
 namespace sctl {
 
@@ -28,6 +29,82 @@ namespace sctl {
       }
       return c[0];
     }
+    // The indices of rows_poly for the rows of N coefficients of the N lanes: the even and the odd part at each stage,
+    // and the lane and the coefficient group of each element after it.
+    template <class Real, Integer N> struct RowsPlan {
+      static constexpr Integer E = ((Integer)(16 / sizeof(Real)) < N ? (Integer)(16 / sizeof(Real)) : N); // elements of a 128-bit lane, at most N
+      // the element of the pair (a, b) = (v[2j], v[2j+1]), N and above in b, of the even (parity 0) or odd (1) part of
+      // element k at stage s >= 1: the first half from a and the second from b, of the even scalars of each 128-bit
+      // lane in the first log2(E) stages, then of the even 128-bit lanes
+      static constexpr Integer source(const Integer s, const Integer k, const Integer parity) {
+        const bool in_lane = ((((Integer)1) << s) <= E);
+        const Integer gs = (in_lane ? E : N); // size of the group of elements split in two halves
+        const Integer z = (in_lane ? 1 : E); // size of the parts moved
+        const Integer g = k / gs;
+        const Integer r = k % gs;
+        const Integer sub = r / z;
+        const Integer off = r % z;
+        const Integer half = gs / z / 2;
+        return (sub < half ? g * gs + (2 * sub + parity) * z + off : N + g * gs + (2 * (sub - half) + parity) * z + off);
+      }
+      static constexpr Integer lane(const Integer s, const Integer j, const Integer k) { // the lane of element k of vector j after stage s
+        if (s == 0) return j;
+        const Integer i = source(s, k, 0);
+        return (i < N ? lane(s - 1, 2 * j, i) : lane(s - 1, 2 * j + 1, i - N));
+      }
+      static constexpr Integer group(const Integer s, const Integer j, const Integer k) { // the coefficient group of element k of vector j after stage s
+        if (s == 0) return k;
+        const Integer i = source(s, k, 0);
+        return (i < N ? group(s - 1, 2 * j, i) : group(s - 1, 2 * j + 1, i - N)) / 2;
+      }
+      static constexpr Integer stages() {
+        Integer s = 0;
+        while ((((Integer)1) << s) < N) s++;
+        return s;
+      }
+      static constexpr bool natural() { // the lanes in order after the last stage, in one coefficient group
+        for (Integer k = 0; k < N; k++) {
+          if (lane(stages(), 0, k) != k || group(stages(), 0, k) != 0) return false;
+        }
+        return true;
+      }
+    };
+    // v[j] = even + odd t^(2^(s-1)) of the pair (v[2j], v[2j+1]); K: the elements
+    template <class Plan, Integer s, Integer j, class VecR, Integer V, Integer... K> inline void rows_pair(VecR (&v)[V], const VecR& tp, std::integer_sequence<Integer, K...>) {
+      v[j] = FMA(blend<Plan::source(s, K, 1)...>(v[2 * j], v[2 * j + 1]), permute<Plan::lane(s, j, K)...>(tp), blend<Plan::source(s, K, 0)...>(v[2 * j], v[2 * j + 1]));
+    }
+    // stage s for the pairs J
+    template <class Plan, Integer s, class VecR, Integer V, Integer... J> inline void rows_stage(VecR (&v)[V], const VecR& tp, std::integer_sequence<Integer, J...>) {
+      (rows_pair<Plan, s, J>(v, tp, std::make_integer_sequence<Integer, VecR::Size()>()), ...);
+    }
+    // sum_{i<B} p[l][i] t_l^i in each lane l: for B = N in vector registers, the rows transposed by blend and evaluated by
+    // Estrin's scheme together, one step of the scheme after each stage of the transpose; else eval_poly_rows_intrin,
+    // also for 8 floats, where its AVX kernel builds the arrangements of t in fewer instructions
+    template <Integer B, class Real, Integer N> inline Vec<Real,N> rows_poly(const Real* const (&p)[N], const Vec<Real,N>& t) {
+      using VecR = Vec<Real,N>;
+      if constexpr (B != N || array_lanes<typename VecR::VData> || (std::is_same<Real,float>::value && N == 8)) {
+        return VecR(eval_poly_rows_intrin<B>(p, t.get()));
+      } else {
+        using Plan = RowsPlan<Real, N>;
+        static_assert(Plan::natural(), "rows_poly: the lanes out of order.");
+        static_assert(Plan::stages() <= 4, "rows_poly: at most 16 coefficients.");
+        VecR v[N];
+        for (Integer j = 0; j < N; j++) v[j] = VecR::Load(p[j]);
+        VecR tp = t;
+        const auto stage = [&v, &tp](auto sc) {
+          static constexpr Integer s = decltype(sc)::value;
+          if constexpr (s <= Plan::stages()) {
+            rows_stage<Plan, s>(v, tp, std::make_integer_sequence<Integer, (N >> s)>());
+            tp = tp * tp;
+          }
+        };
+        stage(std::integral_constant<Integer, 1>());
+        stage(std::integral_constant<Integer, 2>());
+        stage(std::integral_constant<Integer, 3>());
+        stage(std::integral_constant<Integer, 4>());
+        return v[0];
+      }
+    }
     // sum c_i t^i of the rows idx[l] of R coefficients of the lanes l, by blocks of B coefficients
     template <Integer R, class Real, Integer N, class Idx> inline Vec<Real,N> eval_rows(const Real* coef, const Idx (&idx)[N], const Vec<Real,N>& t) {
       using VecR = Vec<Real,N>;
@@ -36,7 +113,7 @@ namespace sctl {
       for (Integer b = 0; b < R / B; b++) {
         const Real* p[N];
         for (Integer l = 0; l < N; l++) p[l] = coef + (Long)idx[l] * R + b * B;
-        q[b] = VecR(eval_poly_rows_intrin<B>(p, t.get()));
+        q[b] = rows_poly<B>(p, t);
       }
       VecR tb = t; // t^B
       for (Integer i = 1; i < B; i *= 2) tb = tb * tb;

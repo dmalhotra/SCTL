@@ -5,7 +5,7 @@
 // `test-vec` via the existing VecTest framework on the high-level Vec<T,N>.
 // This test exercises the *generic / scalar-fallback* path that's compiled
 // regardless of host ISA: VecData<double, 1> and VecData<int32_t, 1>; and
-// eval_poly_rows_intrin, which has no Vec counterpart, at the widths of each ISA.
+// eval_poly_rows_intrin, which has no Vec counterpart, at several widths.
 
 #include <cmath>
 #include <cstdint>
@@ -146,7 +146,7 @@ int main() {
     CHECK(sctl::extract_intrin(i, 0) == (int64_t)0x3FF0000000000000ll);
   }
 
-  // --- eval_poly_rows_intrin: the specializations of each ISA, and the generic routine ---
+  // --- eval_poly_rows_intrin: the generic routine, and the kernels of 8 floats for AVX and 16 floats for AVX-512 ---
   std::printf("eval_poly_rows_intrin :\n");
   {
     check_poly_rows<double, 2, 2>();
