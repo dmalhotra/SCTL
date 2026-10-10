@@ -52,20 +52,15 @@ int main() {
     CHECK(Profile::IncrementCounter(ProfileCounter::CUSTOM3, 0) == b0 + 200);
   }
 
-  // --- IncrementCounter from many threads: each thread's counter has its own increments only ---
-  // (more OpenMP threads than at start, and std::thread, which all have OpenMP thread number 0)
-  std::printf("IncrementCounter, many threads :\n");
+  // --- IncrementCounter from std::thread: each thread's counter has its own increments only ---
+  // (all have OpenMP thread number 0; a team larger than at start is tested below)
+  std::printf("IncrementCounter, std::thread :\n");
   {
     const auto count = []() { // 1000 increments of 1; true where the thread's counter grew by exactly 1000
       const Long c0 = Profile::IncrementCounter(ProfileCounter::CUSTOM4, 0);
       for (Long i = 0; i < 1000; i++) Profile::IncrementCounter(ProfileCounter::CUSTOM4, 1);
       return Profile::IncrementCounter(ProfileCounter::CUSTOM4, 0) == c0 + 1000;
     };
-    int nbad = 0;
-    #pragma omp parallel num_threads(2 * SCTL_GET_MAX_THREADS() + 1) reduction(+:nbad)
-    nbad += !count();
-    CHECK(nbad == 0);
-
     std::vector<std::thread> threads;
     std::vector<int> ok(8, 0);
     for (int t = 0; t < 8; t++) threads.emplace_back([&count, &ok, t]() { ok[t] = count(); });
