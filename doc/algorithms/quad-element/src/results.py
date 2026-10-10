@@ -88,15 +88,18 @@ for key, r0 in conv['Rome'].items():
 print('Genoa/Icelake vs Rome: error-density within %.1f%%; error within %.1f%% at 1e-9 and 1e-12, up to %.0fx larger at 1e-3 and 1e-6'
       % (100 * worst_den, 100 * worst_tight, worst_loose))
 
+# error columns: the maximum over the three machines
+errmax = {key: {col: max(float(conv[name][key][col]) for name, _, _ in MACHINES) for col in ('greens_den', 'greens_sol')}
+          for key in conv['Rome']}
 groups = []
 for kernel in ('laplace',):
     for tw in ('0.5236', '1.5708', '3.1416'):
         g = []
         for tol in ('1e-03', '1e-06', '1e-09', '1e-12'):
-            r = conv['Rome'][(kernel, tw, tol)]
+            e = errmax[(kernel, tw, tol)]
             pps = [conv[name][(kernel, tw, tol)]['pps/c_sl'] for name, _, _ in MACHINES]
-            g.append([f'{kernel}, :math:`{TWIST[tw]}`', ':math:`10^{%d}`' % int(tol[2:]), sci(r['greens_den']),
-                      sci(r['greens_sol'])] + ['%.0f' % float(p) for p in pps])
+            g.append([f'{kernel}, :math:`{TWIST[tw]}`', ':math:`10^{%d}`' % int(tol[2:]), sci('%.2e' % e['greens_den']),
+                      sci('%.2e' % e['greens_sol'])] + ['%.0f' % float(p) for p in pps])
         groups.append(g)
 conv_tab = grid(
     [22, 16, 27, 26, 8, 8, 9],
@@ -104,15 +107,15 @@ conv_tab = grid(
      [None, None, None, None, 'Rome', 'Genoa', 'Icelake']], groups, {4: 3},
     """Order 12, 12 patches per face (864 elements, 124,416 nodes), Laplace, single point source
    outside the surface. *error* is :math:`\\max|(S[\\partial_n u]-D[u])-u|/\\max|u|` at the surface nodes;
-   *error-density* is the interpolation error of the densities at off-node parameters. Errors from
-   Rome; throughput per core with every core of the machine in use.""")
+   *error-density* is the interpolation error of the densities at off-node parameters. Errors are the
+   maximum over the three machines; throughput is per core with every core of the machine in use.""")
 
 # accuracy against throughput on Genoa, for the plot: one row per tolerance, a (pps, err) pair per kernel and twist
 with open(HERE / 'data' / 'convergence-genoa.dat', 'w') as out:
     cols = [(k, tw) for k in ('laplace', 'stokes') for tw in ('0.5236', '1.5708', '3.1416')]
     out.write('tol ' + ' '.join(f'{k[:3]}{i}_pps {k[:3]}{i}_err' for k, tw in cols for i in [TWIST[tw].strip(chr(92)).replace("/", "")]) + '\n')
     for tol in ('1e-03', '1e-06', '1e-09', '1e-12'):
-        out.write(tol + ' ' + ' '.join('%s %s' % (conv['Genoa'][(k, tw, tol)]['pps/c_sl'], conv['Genoa'][(k, tw, tol)]['greens_sol']) for k, tw in cols) + '\n')
+        out.write(tol + ' ' + ' '.join('%s %.2e' % (conv['Genoa'][(k, tw, tol)]['pps/c_sl'], errmax[(k, tw, tol)]['greens_sol']) for k, tw in cols) + '\n')
 
 # OpenMP scaling: the one-process thread sweep of the new code; the full-node point also appears in the MPI
 # part of the file, so each thread count takes the smaller of its setup times
@@ -144,8 +147,8 @@ scal_tab = grid(
 if len(sys.argv) > 1:
     p = pathlib.Path(sys.argv[1])
     rst = p.read_text()
-    for start, end, new in [('.. table:: Order 12, 12 patches per face', 'Genoa and Icelake match', conv_tab),
-                            ('.. table:: *setup* is the total wall time', '- **', scal_tab)]:
+    for start, end, new in [('.. table:: Order 12, 12 patches per face', 'At :math:`10^{-3}` and :math:`10^{-6}` the maxima', conv_tab),
+                            ('.. table:: *setup* is the wall time', '- **', scal_tab)]:
         a = rst.index(start)
         b = rst.index(end, a)
         rst = rst[:a] + new + '\n' + rst[b:]
@@ -161,7 +164,7 @@ f = lambda name, k, tw, tol, col='pps/c_sl': float(conv[name][(k, tw, tol)][col]
 print('\n== convergence quantities (Duffy)')
 for tw in TWIST:
     print('Genoa laplace %-6s pps/c by tol: %s' % (TWIST[tw], ' '.join('%.0f' % f('Genoa', 'laplace', tw, tol) for tol in ('1e-03', '1e-06', '1e-09', '1e-12'))))
-print('laplace pi/6 error: 1e-3 %s -> 1e-12 %s' % (R[('laplace', '0.5236', '1e-03')]['greens_sol'], R[('laplace', '0.5236', '1e-12')]['greens_sol']))
+print('laplace pi/6 max error: 1e-3 %.2e -> 1e-12 %.2e; pi at 1e-12 %.2e' % (errmax[('laplace', '0.5236', '1e-03')]['greens_sol'], errmax[('laplace', '0.5236', '1e-12')]['greens_sol'], errmax[('laplace', '3.1416', '1e-12')]['greens_sol']))
 print('laplace 1e-12 error: pi %s vs pi/6 %s, ratio %.0f' % (R[('laplace', '3.1416', '1e-12')]['greens_sol'], R[('laplace', '0.5236', '1e-12')]['greens_sol'],
       float(R[('laplace', '3.1416', '1e-12')]['greens_sol']) / float(R[('laplace', '0.5236', '1e-12')]['greens_sol'])))
 print('tolerance cost, laplace pi/6 Rome pps/c: 1e-3 %.0f, 1e-12 %.0f, ratio %.2f' % (f('Rome', 'laplace', '0.5236', '1e-03'), f('Rome', 'laplace', '0.5236', '1e-12'),

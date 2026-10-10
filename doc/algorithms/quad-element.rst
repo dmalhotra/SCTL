@@ -311,31 +311,31 @@ or 64 threads).
 
 .. table:: Order 12, 12 patches per face (864 elements, 124,416 nodes), Laplace, single point source
    outside the surface. *error* is :math:`\max|(S[\partial_n u]-D[u])-u|/\max|u|` at the surface nodes;
-   *error-density* is the interpolation error of the densities at off-node parameters. Errors from
-   Rome; throughput per core with every core of the machine in use.
+   *error-density* is the interpolation error of the densities at off-node parameters. Errors are the
+   maximum over the three machines; throughput is per core with every core of the machine in use.
 
    +------------------------+------------------+-----------------------------+----------------------------+----------+----------+-----------+
    | kernel, twist          | tol              | error-density               | error                      | pts/s/core, SL setup            |
    |                        |                  |                             |                            +----------+----------+-----------+
    |                        |                  |                             |                            | Rome     | Genoa    | Icelake   |
    +========================+==================+=============================+============================+==========+==========+===========+
-   | laplace, :math:`\pi/6` | :math:`10^{-3}`  | :math:`7.2\times10^{-14}`   | :math:`2.1\times10^{-7}`   | 9718     | 20503    | 18357     |
+   | laplace, :math:`\pi/6` | :math:`10^{-3}`  | :math:`7.2\times10^{-14}`   | :math:`9.2\times10^{-6}`   | 9718     | 20503    | 18357     |
    |                        +------------------+-----------------------------+----------------------------+----------+----------+-----------+
-   |                        | :math:`10^{-6}`  | :math:`7.2\times10^{-14}`   | :math:`3.7\times10^{-10}`  | 7340     | 14843    | 12569     |
+   |                        | :math:`10^{-6}`  | :math:`7.2\times10^{-14}`   | :math:`9.0\times10^{-10}`  | 7340     | 14843    | 12569     |
    |                        +------------------+-----------------------------+----------------------------+----------+----------+-----------+
    |                        | :math:`10^{-9}`  | :math:`7.2\times10^{-14}`   | :math:`2.1\times10^{-13}`  | 4346     | 8987     | 7316      |
    |                        +------------------+-----------------------------+----------------------------+----------+----------+-----------+
    |                        | :math:`10^{-12}` | :math:`7.2\times10^{-14}`   | :math:`1.7\times10^{-13}`  | 2651     | 5257     | 4384      |
    +------------------------+------------------+-----------------------------+----------------------------+----------+----------+-----------+
-   | laplace, :math:`\pi/2` | :math:`10^{-3}`  | :math:`4.9\times10^{-11}`   | :math:`6.1\times10^{-7}`   | 8351     | 17980    | 15559     |
+   | laplace, :math:`\pi/2` | :math:`10^{-3}`  | :math:`4.9\times10^{-11}`   | :math:`9.0\times10^{-6}`   | 8351     | 17980    | 15559     |
    |                        +------------------+-----------------------------+----------------------------+----------+----------+-----------+
-   |                        | :math:`10^{-6}`  | :math:`4.9\times10^{-11}`   | :math:`8.5\times10^{-10}`  | 5112     | 10529    | 8733      |
+   |                        | :math:`10^{-6}`  | :math:`4.9\times10^{-11}`   | :math:`1.4\times10^{-9}`   | 5112     | 10529    | 8733      |
    |                        +------------------+-----------------------------+----------------------------+----------+----------+-----------+
    |                        | :math:`10^{-9}`  | :math:`4.9\times10^{-11}`   | :math:`7.2\times10^{-12}`  | 2461     | 4859     | 4024      |
    |                        +------------------+-----------------------------+----------------------------+----------+----------+-----------+
    |                        | :math:`10^{-12}` | :math:`4.9\times10^{-11}`   | :math:`2.6\times10^{-13}`  | 1321     | 2541     | 2102      |
    +------------------------+------------------+-----------------------------+----------------------------+----------+----------+-----------+
-   | laplace, :math:`\pi`   | :math:`10^{-3}`  | :math:`4.3\times10^{-8}`    | :math:`1.2\times10^{-5}`   | 4582     | 9675     | 7976      |
+   | laplace, :math:`\pi`   | :math:`10^{-3}`  | :math:`4.3\times10^{-8}`    | :math:`2.0\times10^{-5}`   | 4582     | 9675     | 7976      |
    |                        +------------------+-----------------------------+----------------------------+----------+----------+-----------+
    |                        | :math:`10^{-6}`  | :math:`4.3\times10^{-8}`    | :math:`1.6\times10^{-8}`   | 1870     | 3672     | 3078      |
    |                        +------------------+-----------------------------+----------------------------+----------+----------+-----------+
@@ -344,22 +344,23 @@ or 64 threads).
    |                        | :math:`10^{-12}` | :math:`4.3\times10^{-8}`    | :math:`4.7\times10^{-11}`  | 302      | 580      | 499       |
    +------------------------+------------------+-----------------------------+----------------------------+----------+----------+-----------+
 
-Genoa and Icelake match these errors at :math:`10^{-9}` and :math:`10^{-12}` but are up to 43× above
-them at :math:`10^{-3}` and :math:`10^{-6}`: ``approx_rsqrt<digits>`` in the kernel picks its Newton
-iteration count from the accuracy of the hardware estimate, and AVX-512 takes one iteration fewer
-than AVX2 at 4 and 7 digits. All errors stay below the requested tolerance.
+At :math:`10^{-3}` and :math:`10^{-6}` the maxima come from Genoa and Icelake, whose errors are up to
+43× Rome's: ``approx_rsqrt<digits>`` in the kernel picks its Newton iteration count from the accuracy
+of the hardware estimate, and AVX-512 takes one iteration fewer than AVX2 at 4 and 7 digits. At
+:math:`10^{-9}` and :math:`10^{-12}` the three machines agree to within 1%. All errors stay below the
+requested tolerance.
 
 .. figure:: quad-element/convergence.svg
    :align: center
    :width: 70%
 
-   Throughput against error on Genoa (per core, all 96 cores in use), Laplace solid and Stokes
+   Throughput on Genoa (per core, all 96 cores in use) against the error, Laplace solid and Stokes
    dashed, one curve per twist; the four points of a curve are the tolerances :math:`10^{-3}` to
    :math:`10^{-12}`, right to left.
 
-- **Convergence**: the error follows the tolerance over nine decades at twist :math:`\pi/6`,
-  :math:`2.1\times10^{-7}` to :math:`1.7\times10^{-13}`, down to a floor set by the parametrisation,
-  which rises to :math:`4.7\times10^{-11}` at twist :math:`\pi`.
+- **Convergence**: the error follows the tolerance; at twist :math:`\pi/6` it falls from
+  :math:`9.2\times10^{-6}` at tol :math:`10^{-3}` to :math:`1.7\times10^{-13}` at :math:`10^{-12}`, down to
+  a floor set by the parametrisation, which rises to :math:`4.7\times10^{-11}` at twist :math:`\pi`.
 - **Cost of accuracy**: nine decades of tolerance cost 3.9× in throughput (Genoa, :math:`\pi/6`:
   20,500 pts/s/core at :math:`10^{-3}`, 5,300 at :math:`10^{-12}`).
 - **Cost of twist**: at :math:`10^{-9}` the rate falls 7.8× from :math:`\pi/6` to :math:`\pi` (8,990 to
