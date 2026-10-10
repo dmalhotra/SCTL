@@ -1137,7 +1137,7 @@ namespace sctl {
             const long double x = (long double)u1.x[i];
             const ScalarType tr = (ScalarType)std::tgamma(x), lr = (ScalarType)std::lgamma(x), dr = (ScalarType)digamma_generic<long double>(x);
             SCTL_ASSERT(rel(tg[i], tr) <= tol_g);
-            SCTL_ASSERT(x > 0 ? rel(lg[i], lr) <= tol_g : fabs(lg[i] - lr) <= tol_g * (16 + fabs(lr)));
+            SCTL_ASSERT_MSG(x > 0 ? rel(lg[i], lr) <= tol_g : fabs(lg[i] - lr) <= tol_g * (16 + fabs(lr)), __FILE__ << ':' << __LINE__ << ": " << __PRETTY_FUNCTION__ << ": lgamma(" << std::hexfloat << x << ") = " << lg[i] << ", reference " << lr << ", tolerance " << tol_g);
             SCTL_ASSERT(fabs(dg[i] - dr) <= tol_g * (x > 0 ? 1 + fabs(dr) : 16 + fabs(dr))); // the reference: absolute near the zero of digamma
             SCTL_ASSERT(rel(tg5[i], tg[i]) <= (ScalarType)1e-5 && fabs(lg5[i] - lg[i]) <= (ScalarType)1e-5 * (1 + fabs(lg[i])) && fabs(dg5[i] - dg[i]) <= (ScalarType)1e-5 * (1 + fabs(dg[i])));
           }
