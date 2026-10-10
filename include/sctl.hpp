@@ -80,6 +80,10 @@
 // Chebyshev basis
 #include "sctl/cheb_utils.hpp"
 
+// Piecewise Chebyshev table of a function
+#include "sctl/function-table.hpp"
+#include "sctl/function-table.txx"
+
 // Morton
 #include "sctl/morton.hpp"
 #include "sctl/morton.txx"

@@ -4,8 +4,10 @@
 // (ScalarType, lane count, ISA). The full (T,N) sweep is already covered by
 // `test-vec` via the existing VecTest framework on the high-level Vec<T,N>.
 // This test exercises the *generic / scalar-fallback* path that's compiled
-// regardless of host ISA: VecData<double, 1> and VecData<int32_t, 1>.
+// regardless of host ISA: VecData<double, 1> and VecData<int32_t, 1>; and
+// eval_poly_rows_intrin, which has no Vec counterpart, at the widths of each ISA.
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 
@@ -18,6 +20,26 @@ using sctl::Long;
 using sctl::Integer;
 
 template <class T> using VD = sctl::VecData<T, 1>;
+
+// eval_poly_rows_intrin<B> on VecData<Real,N> against Horner's scheme in each lane, coefficients and t in [-1, 1]
+template <class Real, Integer N, Integer B> static void check_poly_rows() {
+  using V = sctl::VecData<Real,N>;
+  Real rows[N][B];
+  Real tv[N];
+  const Real* p[N];
+  for (Integer l = 0; l < N; l++) {
+    for (Integer k = 0; k < B; k++) rows[l][k] = (Real)std::sin((double)(l * B + k + 1));
+    tv[l] = (Real)std::cos((double)(3 * l + 1));
+    p[l] = rows[l];
+  }
+  Real r[N];
+  sctl::storeu_intrin(r, sctl::eval_poly_rows_intrin<B>(p, sctl::loadu_intrin<V>(tv)));
+  for (Integer l = 0; l < N; l++) {
+    double h = rows[l][B - 1];
+    for (Integer k = B - 2; k >= 0; k--) h = h * tv[l] + rows[l][k];
+    CHECK(std::fabs(r[l] - h) <= 4 * B * (double)sctl::machine_eps<Real>());
+  }
+}
 
 int main() {
   using D = VD<double>;
@@ -122,6 +144,20 @@ int main() {
     I64 i = sctl::reinterpret_intrin<I64>(d);
     // 1.0 in IEEE-754 double has the bit pattern 0x3FF0000000000000.
     CHECK(sctl::extract_intrin(i, 0) == (int64_t)0x3FF0000000000000ll);
+  }
+
+  // --- eval_poly_rows_intrin: the specializations of each ISA, and the generic routine ---
+  std::printf("eval_poly_rows_intrin :\n");
+  {
+    check_poly_rows<double, 2, 2>();
+    check_poly_rows<double, 4, 4>();
+    check_poly_rows<double, 8, 8>();
+    check_poly_rows<float, 4, 4>();
+    check_poly_rows<float, 8, 8>();
+    check_poly_rows<float, 16, 8>();
+    check_poly_rows<double, 1, 1>();
+    check_poly_rows<double, 4, 8>();
+    check_poly_rows<float, 16, 4>();
   }
 
   TEST_SUMMARY_RETURN();
