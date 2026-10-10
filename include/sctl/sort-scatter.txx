@@ -383,7 +383,7 @@ template <class Key> void SortScatter<Key>::test() {
     ScratchBuf<Key> splE_buf(np);
     Vector<Key> splE(splE_buf);
     // splE <- each rank's first key (an empty rank's range is empty), checking the counts are within 5% of the average
-    const auto checkBalanced = [&comm, &cnt, &splE, np, KMAX](const SortScatter& ss) {
+    const auto checkBalanced = [&comm, &cnt, &splE, np](const SortScatter& ss) {
       const Long n = ss.SortedCount();
       comm.Allgather(Ptr2ConstItr<Long>(&n, 1), 1, cnt.begin(), 1);
       const StaticArray<Key, 1> first{n ? ss.SortedKeys()[0] : Key()};
