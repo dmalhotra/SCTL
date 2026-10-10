@@ -246,9 +246,13 @@ namespace sctl {
     return r;
   }
 
-  template <class Real> template <Integer N> inline Vec<Real,N> FunctionTable<Real>::operator()(const Vec<Real,N>& x) const {
+  template <class Real> template <Integer N> __attribute__((always_inline)) inline Vec<Real,N> FunctionTable<Real>::operator()(const Vec<Real,N>& x) const {
     using VecR = Vec<Real,N>;
+#if defined(__AVX512DQ__) && defined(__AVX512VL__)
+    using Idx = typename std::conditional<(N >= 4 && sizeof(Real) == 4), int32_t, int64_t>::type; // native conversions, vcvttpd2qq for double
+#else
     using Idx = typename std::conditional<(N >= 4), int32_t, int64_t>::type; // native conversions
+#endif
     using VecI = Vec<Idx,N>;
     const VecR u = FMA(x, VecR(inv_h_), VecR(-lb_ * inv_h_));
     const VecR uc = max(min(u, VecR((Real)(n_cell_ - 1))), VecR::Zero()); // min gives n_cell_ - 1 for NaN
