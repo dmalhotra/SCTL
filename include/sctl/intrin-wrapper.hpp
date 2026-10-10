@@ -1668,8 +1668,8 @@ namespace sctl { // Generic
       y = sub_intrin(y, div_intrin(mul_intrin(y, d), fma_intrin(t, two, a)));
     }
     const VData p2 = reinterpret_intrin<VData>(bitshiftleft_intrin(add_intrin(lrint_intrin<IntVec>(q), set1_intrin<IntVec>(Bias)), SigBits)); // 2^q
-    const VData c = copysign_intrin(mul_intrin(y, p2), x);
-    return select_intrin(comp_intrin<ComparisonType::gt>(ax, zero) & comp_intrin<ComparisonType::le>(ax, set1_intrin<VData>(std::numeric_limits<Real>::max())), c, x); // zeros, inf, NaN as they are; max as in positive_normal_mask_intrin
+    const VData c = select_intrin(comp_intrin<ComparisonType::gt>(ax, zero) & comp_intrin<ComparisonType::le>(ax, set1_intrin<VData>(std::numeric_limits<Real>::max())), mul_intrin(y, p2), ax); // zeros, inf, NaN as they are; max as in positive_normal_mask_intrin
+    return copysign_intrin(c, x); // after the select: clang 18 and 19 compile select(m, copysign(c, x), x) for AVX-512 at -O2 to a vpternlogq with a wrong immediate
   }
   template <class VData> inline VData fmod_poly_intrin(const VData& x, const VData& y) { // |x| - q |y|, q = trunc(fl(|x|/|y|)), the quotient or one more; exact
     using Real = typename VData::ScalarType;
