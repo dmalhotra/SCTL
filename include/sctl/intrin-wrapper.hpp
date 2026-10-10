@@ -4498,8 +4498,8 @@ namespace sctl { // SSE
   template <> inline VecData<int64_t,2> bitshiftleft_intrin <VecData<int64_t,2>>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& rhs) { return _mm_sllv_epi64(a.v, rhs.v); }
   template <> inline VecData<int32_t,4> bitshiftright_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { return _mm_srav_epi32(a.v, rhs.v); }
   #else // without AVX2: a multiply, or one bit shift for the count of each lane and blends
-  template <> inline VecData<int32_t,4> bitshiftleft_intrin <VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { // a times 2^rhs, made from the exponent bits of a float; 2^31 becomes 0x80000000
-    return _mm_mullo_epi32(a.v, _mm_cvttps_epi32(_mm_castsi128_ps(_mm_add_epi32(_mm_slli_epi32(rhs.v, 23), set1_intrin<VecData<int32_t,4>>(127 << 23).v))));
+  template <> inline VecData<int32_t,4> bitshiftleft_intrin <VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { // -a times -2^rhs, made from the exponent bits of a float; -2^31 is in the range of int32, 2^31 is not
+    return _mm_mullo_epi32(_mm_sub_epi32(_mm_setzero_si128(), a.v), _mm_cvttps_epi32(_mm_castsi128_ps(_mm_add_epi32(_mm_slli_epi32(rhs.v, 23), set1_intrin<VecData<int32_t,4>>((int32_t)0xBF800000).v))));
   }
   template <> inline VecData<int64_t,2> bitshiftleft_intrin <VecData<int64_t,2>>(const VecData<int64_t,2>& a, const VecData<int64_t,2>& rhs) { return _mm_blend_epi16(_mm_sll_epi64(a.v, rhs.v), _mm_sll_epi64(a.v, _mm_unpackhi_epi64(rhs.v, rhs.v)), 0xF0); }
   template <> inline VecData<int32_t,4> bitshiftright_intrin<VecData<int32_t,4>>(const VecData<int32_t,4>& a, const VecData<int32_t,4>& rhs) { // the count of lane i in the low 64 bits of the count of _mm_sra_epi32
