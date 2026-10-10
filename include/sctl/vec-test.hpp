@@ -1129,13 +1129,15 @@ namespace sctl {
           SCTL_ASSERT(isinf(erfinv(VecType((ScalarType)-1))[0]) && erfinv(VecType((ScalarType)-1))[0] < 0 && isnan(erfinv(VecType((ScalarType)2))[0]) && isnan(erfinv(VecType((ScalarType)NAN))[0]));
         }
         { // tgamma, lgamma, digamma on [-10, 10] against long double (std::tgamma, std::lgamma, digamma_generic), to its
-          // precision for QuadReal; lgamma for x < 0 and digamma absolute, near their zeros
+          // precision for QuadReal; lgamma for x < 0 and digamma absolute, near their zeros; lgamma for x < 0 by the
+          // reflection formula, as std::lgamma (macOS) can be wrong by hundreds of ulp near the negative integers
           const VecType tg = tgamma(u1.v), lg = lgamma(u1.v), dg = digamma(u1.v);
           const VecType tg5 = approx_tgamma<5>(u1.v), lg5 = approx_lgamma<5>(u1.v), dg5 = approx_digamma<5>(u1.v);
           const ScalarType tol_g = std::max<ScalarType>(tol, (ScalarType)(16 * std::numeric_limits<long double>::epsilon()));
           for (Integer i = 0; i < N; i++) {
             const long double x = (long double)u1.x[i];
-            const ScalarType tr = (ScalarType)std::tgamma(x), lr = (ScalarType)std::lgamma(x), dr = (ScalarType)digamma_generic<long double>(x);
+            const ScalarType tr = (ScalarType)std::tgamma(x), dr = (ScalarType)digamma_generic<long double>(x);
+            const ScalarType lr = (ScalarType)(x < 0 ? std::log(const_pi<long double>() / std::fabs(std::sin(const_pi<long double>() * (x - std::round(x))))) - std::lgamma(1 - x) : std::lgamma(x));
             SCTL_ASSERT(rel(tg[i], tr) <= tol_g);
             SCTL_ASSERT_MSG(x > 0 ? rel(lg[i], lr) <= tol_g : fabs(lg[i] - lr) <= tol_g * (16 + fabs(lr)), __FILE__ << ':' << __LINE__ << ": " << __PRETTY_FUNCTION__ << ": lgamma(" << std::hexfloat << x << ") = " << lg[i] << ", reference " << lr << ", tolerance " << tol_g);
             SCTL_ASSERT(fabs(dg[i] - dr) <= tol_g * (x > 0 ? 1 + fabs(dr) : 16 + fabs(dr))); // the reference: absolute near the zero of digamma
