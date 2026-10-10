@@ -13,6 +13,9 @@
 #include "sctl/math_utils.txx"  // for pow, significant_bits
 
 #if defined(__ARM_NEON)
+#  ifndef SSE2NEON_PRECISE_MINMAX
+#    define SSE2NEON_PRECISE_MINMAX 1 // _mm_max_* and _mm_min_* give the second operand if either is NaN, as on x86
+#  endif
 #  include "sctl/sse2neon.h"
 #  define _MM_SHUFFLE2(fp1, fp0) (((fp1) << 1) | (fp0))
 #elif defined(__MMX__) || defined(__SSE__) || defined(__SSE2__) || defined(__SSE4_2__) || defined(__AVX__) || defined(__AVX512F__)
