@@ -10,6 +10,7 @@
 #include <iomanip>            // for operator<<, setw
 #include <iostream>           // for basic_ostream, operator<<, cout, left
 #include <map>                // for map
+#include <mutex>              // for mutex, lock_guard
 #include <sstream>            // for basic_stringstream
 #include <stack>              // for stack
 #include <string>             // for basic_string, allocator, char_traits
@@ -250,8 +251,12 @@ namespace sctl {
     std::vector<double> counter_log;
 
     std::array<Long, Nfield> counters; // reduced snapshot, written on the master thread at Tic/Toc
-    struct alignas(64) CounterRow { std::array<Long, Nfield> c; }; // padded to avoid false sharing
-    std::deque<CounterRow> thread_counters; // per-thread accumulators; a deque so rows never move
+    struct alignas(64) CounterRow { std::array<std::atomic<Long>, Nfield> c; }; // one thread's counters, written by it alone
+    std::deque<CounterRow> thread_counters; // the row of each thread that has counted; adding a row moves no other
+    std::mutex thread_counters_mutex; // for adding a row and reading all of them
+
+    inline CounterRow* AddCounterRow(); // a new row of zeros for the calling thread
+    inline void SumCounters(); // counters = the sum of the rows of all threads
     std::map<std::string, ProfExpr> prof_fields;
 
     inline ProfileData() : t0(SCTL_GET_WTIME()), enable_state(false) {
@@ -315,6 +320,22 @@ namespace sctl {
   inline Profile::ProfileData& Profile::GetProfData() {
     static ProfileData p;
     return p;
+  }
+
+  inline Profile::ProfileData::CounterRow* Profile::ProfileData::AddCounterRow() {
+    std::lock_guard<std::mutex> lock(thread_counters_mutex);
+    CounterRow& r = thread_counters.emplace_back();
+    for (auto& x : r.c) x.store(0, std::memory_order_relaxed);
+    return &r;
+  }
+
+  inline void Profile::ProfileData::SumCounters() {
+    std::lock_guard<std::mutex> lock(thread_counters_mutex);
+    for (Long i = 0; i < Nfield; i++) {
+      Long sum = 0;
+      for (const auto& r : thread_counters) sum += r.c[i].load(std::memory_order_relaxed);
+      counters[i] = sum;
+    }
   }
 
 
@@ -529,20 +550,12 @@ namespace sctl {
   #if SCTL_PROFILE >= 0
 
   inline Long Profile::IncrementCounter(const ProfileCounter prof_field, const Long x) {
-    ProfileData& prof = GetProfData();
     // Per thread, not by thread number: that numbers a position in the team, not a row.
-    static thread_local ProfileData::CounterRow* row = nullptr;
-    if (row == nullptr) {
-      #pragma omp critical(SCTL_PROFILE_COUNTERS)
-      {
-        prof.thread_counters.emplace_back();
-        row = &prof.thread_counters.back();
-        row->c.fill(0);
-      }
-    }
-    Long& c = row->c[(Long)prof_field];
-    const Long old = c;
-    c += x;
+    static thread_local ProfileData::CounterRow* row = nullptr; // the calling thread's row, added at its first count
+    if (!row) row = GetProfData().AddCounterRow();
+    std::atomic<Long>& c = row->c[(Long)prof_field];
+    const Long old = c.load(std::memory_order_relaxed);
+    c.store(old + x, std::memory_order_relaxed); // the only writer: no locked read-modify-write
     return old;
   }
 
@@ -566,12 +579,7 @@ namespace sctl {
 
       prof.e_log.push_back(true);
       prof.n_log.push_back(prof.name.top());
-      #pragma omp critical(SCTL_PROFILE_COUNTERS)
-      for (Long i = 0; i < Nfield; i++) { // reduce per-thread counters
-        Long s = 0;
-        for (const auto& r : prof.thread_counters) s += r.c[i];
-        prof.counters[i] = s;
-      }
+      prof.SumCounters();
       prof.counters[(Long)ProfileCounter::TIME] = (Long)((SCTL_GET_WTIME()-prof.t0)*1e9);
       for (Long i = 0; i < Nfield; i++) prof.counter_log.push_back(prof.counters[i]);
     }
@@ -593,12 +601,7 @@ namespace sctl {
 
       prof.e_log.push_back(false);
       prof.n_log.push_back(name_);
-      #pragma omp critical(SCTL_PROFILE_COUNTERS)
-      for (Long i = 0; i < Nfield; i++) { // reduce per-thread counters
-        Long s = 0;
-        for (const auto& r : prof.thread_counters) s += r.c[i];
-        prof.counters[i] = s;
-      }
+      prof.SumCounters();
       prof.counters[(Long)ProfileCounter::TIME] = (Long)((SCTL_GET_WTIME()-prof.t0)*1e9);
       for (Long i = 0; i < Nfield; i++) prof.counter_log.push_back(prof.counters[i]);
 
