@@ -950,7 +950,7 @@ namespace sctl {
         const VecType tn5 = approx_tan<5>(u1.v);
         const VecType at = atan2(u1.v, u2.v);
         const VecType pw = pow(u4.v, u2.v / (ScalarType)2);
-        SCTL_ASSERT(1/fabs(VecType((ScalarType)-0.0))[0] > 0);
+        SCTL_ASSERT(!std::signbit((double)fabs(VecType((ScalarType)-0.0))[0]));
         for (Integer i = 0; i < N; i++) {
           const ScalarType x = u1.x[i];
           const ScalarType tan_x = tan<ScalarType>(x);
@@ -991,7 +991,7 @@ namespace sctl {
         if constexpr (sizeof(ScalarType) <= sizeof(double)) { // rsqrt at zeros, inf, a subnormal, a negative value and NaN, as 1/sqrt
           const ScalarType sv[] = {(ScalarType)0, (ScalarType)-0.0, (ScalarType)INFINITY, std::numeric_limits<ScalarType>::denorm_min() * 8, (ScalarType)-1, (ScalarType)NAN};
           for (const ScalarType x : sv) {
-            const ScalarType ref = 1/std::sqrt(x);
+            const ScalarType ref = (x == 0 ? std::copysign((ScalarType)INFINITY, x) : 1/std::sqrt(x));
             const ScalarType r0 = rsqrt(VecType(x))[0];
             SCTL_ASSERT(std::isnan(ref) ? std::isnan(r0) : (r0 == ref || fabs(r0 - ref) <= 4*eps*ref));
           }

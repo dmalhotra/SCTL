@@ -2,6 +2,7 @@
 #define _SCTL_INTRIN_WRAPPER_HPP_
 
 #include <stdint.h>             // for int8_t, int16_t, int32_t, int64_t, uint8_t, ...
+#include <cmath>                // for signbit
 #include <limits>               // for numeric_limits
 #include <tuple>                // for tie
 #include <type_traits>          // for is_same
@@ -280,13 +281,23 @@ namespace sctl { // Generic
     return a_.v;
   }
   template <class VData> inline VData div_intrin(const VData& a, const VData& b) {
+    using Real = typename VData::ScalarType;
     union U {
       VData v;
-      typename VData::ScalarType x[VData::Size];
+      Real x[VData::Size];
     };
     U a_ = {a};
     U b_ = {b};
-    for (Integer i = 0; i < VData::Size; i++) a_.x[i] /= b_.x[i];
+    for (Integer i = 0; i < VData::Size; i++) {
+      if constexpr (!std::is_integral<Real>::value) { // the IEEE 754 quotient by zero, as the vector instructions; undefined in C++
+        if (b_.x[i] == 0) {
+          const Real q = (a_.x[i] == 0 || !(a_.x[i] == a_.x[i]) ? (Real)NAN : (Real)INFINITY);
+          a_.x[i] = (std::signbit((double)a_.x[i]) != std::signbit((double)b_.x[i]) ? -q : q);
+          continue;
+        }
+      }
+      a_.x[i] /= b_.x[i];
+    }
     return a_.v;
   }
   template <class VData> inline VData add_intrin(const VData& a, const VData& b) {
@@ -2563,6 +2574,7 @@ namespace sctl { // Generic
       const Mask<VData> central = comp_intrin<ComparisonType::le>(fabs_intrin(q), set1_intrin<VData>((Real)0.425));
       const Integer n_central = mask_count_intrin(central);
       const auto central_value = [&q, &p]() {
+        SCTL_UNUSED(p); // read for erfinv only
         const VData r = fma_intrin(unary_minus_intrin(q), q, set1_intrin<VData>((Real)0.180625));
         const VData T = div_intrin(eval_poly_intrin(r, Coeffs::p0), eval_poly_intrin(r, Coeffs::q0));
         if constexpr (Erfinv) return mul_intrin(p, fma_intrin(T, set1_intrin<VData>((Real)0.35355339059327376220L), set1_intrin<VData>((Real)0.88622692545275801365L)));
@@ -2783,7 +2795,8 @@ namespace sctl { // Generic
   }
   // Gamma(x) of one value: the reflection formula below 1/2; else e^lgamma(y) / (x (x+1) ... (y-1)), y = x + n >= 32
   template <class Real> inline Real tgamma_generic(const Real x) {
-    if (x == 0 || !(x == x)) return 1 / x; // +-inf, NaN
+    if (x == 0) return (std::signbit((double)x) ? -(Real)INFINITY : (Real)INFINITY); // 1/x
+    if (!(x == x)) return x;
     if (x < (Real)0.5) {
       if (x == floor(x)) return (Real)NAN; // also -inf
       const Real n = round(x);
@@ -2799,7 +2812,8 @@ namespace sctl { // Generic
   // digamma(x) of one value: the reflection formula below 0; else the asymptotic series at y = x + n >= 32, less
   // 1/x + 1/(x+1) + ... + 1/(y-1)
   template <class Real> inline Real digamma_generic(const Real x) {
-    if (x == 0 || !(x == x)) return -1 / x; // -+inf, NaN
+    if (x == 0) return (std::signbit((double)x) ? (Real)INFINITY : -(Real)INFINITY); // -1/x
+    if (!(x == x)) return x;
     if (x < 0) {
       if (x == floor(x)) return (Real)NAN; // also -inf
       const Real r = const_pi<Real>() * (x - round(x)); // cot(pi x) = cot(r)
