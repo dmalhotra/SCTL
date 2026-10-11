@@ -4,9 +4,8 @@
 #include <stdint.h>             // for int8_t, int16_t, int32_t, int64_t, uint8_t, ...
 #include <cmath>                // for signbit
 #include <limits>               // for numeric_limits
-#include <tuple>                // for tie
 #include <type_traits>          // for is_same
-#include <utility>              // for pair
+#include <utility>              // for integer_sequence
 
 #include "sctl/common.hpp"      // for Integer, sctl, SCTL_ALIGN_B...
 #include "sctl/math_utils.hpp"  // for const_pi, QuadReal, cos, exp, sin, sqrt
@@ -1274,9 +1273,15 @@ namespace sctl { // Generic
     t = add_intrin(z, set1_intrin<VData>(c));
     w = sub_intrin(z, sub_intrin(t, set1_intrin<VData>(c)));
   }
+  // Two VData returned by value; not std::pair, whose passing GCC for ARM notes as changed in GCC 10.1 (an empty base in
+  // C++17)
+  template <class VData> struct VDataPair {
+    VData first;
+    VData second;
+  };
   // x1 = x - n pi/2 and the low bits of x_int = n + 1.5 2^SigBits by a reduction in double, in the lanes of float x not
   // in in_range: the rare path of approx_sincos_intrin, not inlined; arguments and results by value
-  template <class VData> [[gnu::noinline, gnu::cold]] std::pair<VData, VData> sincos_reduce_double_intrin(VData x1, VData x_int, const VData x, const Mask<VData> in_range) {
+  template <class VData> [[gnu::noinline, gnu::cold]] VDataPair<VData> sincos_reduce_double_intrin(VData x1, VData x_int, const VData x, const Mask<VData> in_range) {
     using HalfVec = VecData<float, VData::Size/2>;
     using DoubleVec = VecData<double, VData::Size/2>;
     const auto reduce = [](HalfVec& r, HalfVec& q, const HalfVec& h) { // r = h - n pi/2, q = n mod 4
@@ -1295,7 +1300,7 @@ namespace sctl { // Generic
   }
   // sin and cos one element at a time in the lanes with |x| >= lim, inf or NaN: the rare path of approx_sincos_intrin,
   // not inlined; arguments and results by value
-  template <class VData> [[gnu::noinline, gnu::cold]] std::pair<VData, VData> sincos_beyond_intrin(const VData sinx, const VData cosx, const VData x, const typename VData::ScalarType lim) {
+  template <class VData> [[gnu::noinline, gnu::cold]] VDataPair<VData> sincos_beyond_intrin(const VData sinx, const VData cosx, const VData x, const typename VData::ScalarType lim) {
     union U {
       VData v;
       typename VData::ScalarType x[VData::Size];
@@ -1341,7 +1346,11 @@ namespace sctl { // Generic
     if constexpr (reduce_in_double) { // these lanes: x1 and the low bits of x_int from the reduction in double
       const Mask<VData> in_range = comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(PiOver2Split<float>::lim));
       beyond_lim = (mask_count_intrin(in_range) < VData::Size);
-      if (beyond_lim) std::tie(x1, x_int) = sincos_reduce_double_intrin(x1, x_int, x, in_range);
+      if (beyond_lim) {
+        const VDataPair<VData> p = sincos_reduce_double_intrin(x1, x_int, x, in_range);
+        x1 = p.first;
+        x_int = p.second;
+      }
     }
 
     const VData r2 = mul_intrin(x1, x1);
@@ -1358,7 +1367,11 @@ namespace sctl { // Generic
 
     if constexpr (FullRange) { // |x| beyond the exact range of the reduction, inf and NaN: one element at a time
       static constexpr Real lim = (reduce_in_double ? (Real)PiOver2Split<double>::lim : PiOver2Split<Real>::lim);
-      if (beyond_lim && mask_count_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(lim))) < VData::Size) std::tie(sinx, cosx) = sincos_beyond_intrin(sinx, cosx, x, lim);
+      if (beyond_lim && mask_count_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(lim))) < VData::Size) {
+        const VDataPair<VData> p = sincos_beyond_intrin(sinx, cosx, x, lim);
+        sinx = p.first;
+        cosx = p.second;
+      }
     }
   }
   template <class VData> inline void sincos_intrin(VData& sinx, VData& cosx, const VData& x) {

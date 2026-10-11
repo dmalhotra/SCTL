@@ -26,8 +26,10 @@ template <class ValueType> inline Iterator<ValueType>::Iterator(pointer base_, d
     MemoryManager::CheckMemHead(mh);
     alloc_ctr = mh.alloc_ctr;
     mem_head = &mh;
-  } else
+  } else {
+    alloc_ctr = 0;
     mem_head = nullptr;
+  }
 }
 
 template <class ValueType> inline void Iterator<ValueType>::IteratorAssertChecks(Long j) const {
