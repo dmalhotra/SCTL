@@ -3,6 +3,7 @@
 
 #include <stdint.h>             // for int8_t, int16_t, int32_t, int64_t, uint8_t, ...
 #include <cmath>                // for signbit
+#include <cstring>              // for memcpy
 #include <limits>               // for numeric_limits
 #include <type_traits>          // for is_same
 #include <utility>              // for integer_sequence
@@ -188,22 +189,50 @@ namespace sctl { // Generic
   template <class VData, class = void> struct HasArrayLanes : std::false_type {};
   template <class VData> struct HasArrayLanes<VData, std::enable_if_t<VData::ArrayLanes>> : std::true_type {};
 
+  /**
+   * The bytes of a VData with array lanes as an array of T, and back: by memcpy, as GCC does not move accesses across
+   * it as it does across unions (see HasArrayLanes).
+   */
+  template <class T, class VData> struct LaneBits {
+    static constexpr Integer N = VData::Size * sizeof(typename VData::ScalarType) / sizeof(T);
+    T x[N];
+    LaneBits() = default;
+    explicit LaneBits(const VData& v) { std::memcpy(x, &v, sizeof(x)); }
+    VData get() const {
+      VData v;
+      std::memcpy(&v, x, sizeof(x));
+      return v;
+    }
+  };
+
 
   template <class VData> inline VData zero_intrin() {
-    union {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    } a_;
-    for (Integer i = 0; i < VData::Size; i++) a_.x[i] = (typename VData::ScalarType)0;
-    return a_.v;
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = (typename VData::ScalarType)0;
+      return r;
+    } else {
+      union {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      } a_;
+      for (Integer i = 0; i < VData::Size; i++) a_.x[i] = (typename VData::ScalarType)0;
+      return a_.v;
+    }
   }
   template <class VData> inline VData set1_intrin(typename VData::ScalarType a) {
-    union {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    } a_;
-    for (Integer i = 0; i < VData::Size; i++) a_.x[i] = a;
-    return a_.v;
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = a;
+      return r;
+    } else {
+      union {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      } a_;
+      for (Integer i = 0; i < VData::Size; i++) a_.x[i] = a;
+      return a_.v;
+    }
   }
 
   template <Integer k, Integer Size, class Data, class T> inline void SetHelper(Data& vec, T x) {
@@ -224,31 +253,47 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline VData load1_intrin(typename VData::ScalarType const* p) {
-    union {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    } vec;
-    for (Integer i = 0; i < VData::Size; i++) vec.x[i] = p[0];
-    return vec.v;
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = p[0];
+      return r;
+    } else {
+      union {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      } vec;
+      for (Integer i = 0; i < VData::Size; i++) vec.x[i] = p[0];
+      return vec.v;
+    }
   }
   template <class VData> inline VData loadu_intrin(typename VData::ScalarType const* p) {
-    union {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    } vec;
-    for (Integer i = 0; i < VData::Size; i++) vec.x[i] = p[i];
-    return vec.v;
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = p[i];
+      return r;
+    } else {
+      union {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      } vec;
+      for (Integer i = 0; i < VData::Size; i++) vec.x[i] = p[i];
+      return vec.v;
+    }
   }
   template <class VData> inline VData load_intrin(typename VData::ScalarType const* p) {
     return loadu_intrin<VData>(p);
   }
 
   template <class VData> inline void storeu_intrin(typename VData::ScalarType* p, VData vec) {
-    union {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    } vec_ = {vec};
-    for (Integer i = 0; i < VData::Size; i++) p[i] = vec_.x[i];
+    if constexpr (HasArrayLanes<VData>::value) {
+      for (Integer i = 0; i < VData::Size; i++) p[i] = vec.v[i];
+    } else {
+      union {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      } vec_ = {vec};
+      for (Integer i = 0; i < VData::Size; i++) p[i] = vec_.x[i];
+    }
   }
   template <class VData> inline void store_intrin(typename VData::ScalarType* p, VData vec) {
     storeu_intrin(p,vec);
@@ -280,62 +325,92 @@ namespace sctl { // Generic
 
   // Arithmetic operators
   template <class VData> inline VData unary_minus_intrin(const VData& vec) {
-    union {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    } vec_ = {vec};
-    for (Integer i = 0; i < VData::Size; i++) vec_.x[i] = -vec_.x[i];
-    return vec_.v;
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = -vec.v[i];
+      return r;
+    } else {
+      union {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      } vec_ = {vec};
+      for (Integer i = 0; i < VData::Size; i++) vec_.x[i] = -vec_.x[i];
+      return vec_.v;
+    }
   }
   template <class VData> inline VData mul_intrin(const VData& a, const VData& b) {
-    union U {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    };
-    U a_ = {a};
-    U b_ = {b};
-    for (Integer i = 0; i < VData::Size; i++) a_.x[i] *= b_.x[i];
-    return a_.v;
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = a.v[i] * b.v[i];
+      return r;
+    } else {
+      union U {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      };
+      U a_ = {a};
+      U b_ = {b};
+      for (Integer i = 0; i < VData::Size; i++) a_.x[i] *= b_.x[i];
+      return a_.v;
+    }
   }
   template <class VData> inline VData div_intrin(const VData& a, const VData& b) {
     using Real = typename VData::ScalarType;
-    union U {
-      VData v;
-      Real x[VData::Size];
-    };
-    U a_ = {a};
-    U b_ = {b};
-    for (Integer i = 0; i < VData::Size; i++) {
+    const auto lane = [](const Real x, const Real y) {
       if constexpr (!std::is_integral<Real>::value) { // the IEEE 754 quotient by zero, as the vector instructions; undefined in C++
-        if (b_.x[i] == 0) {
-          const Real q = (a_.x[i] == 0 || !(a_.x[i] == a_.x[i]) ? (Real)NAN : (Real)INFINITY);
-          a_.x[i] = (std::signbit((double)a_.x[i]) != std::signbit((double)b_.x[i]) ? -q : q);
-          continue;
+        if (y == 0) {
+          const Real q = (x == 0 || !(x == x) ? (Real)NAN : (Real)INFINITY);
+          return (std::signbit((double)x) != std::signbit((double)y) ? -q : q);
         }
       }
-      a_.x[i] /= b_.x[i];
+      return (Real)(x / y);
+    };
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = lane(a.v[i], b.v[i]);
+      return r;
+    } else {
+      union U {
+        VData v;
+        Real x[VData::Size];
+      };
+      U a_ = {a};
+      U b_ = {b};
+      for (Integer i = 0; i < VData::Size; i++) a_.x[i] = lane(a_.x[i], b_.x[i]);
+      return a_.v;
     }
-    return a_.v;
   }
   template <class VData> inline VData add_intrin(const VData& a, const VData& b) {
-    union U {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    };
-    U a_ = {a};
-    U b_ = {b};
-    for (Integer i = 0; i < VData::Size; i++) a_.x[i] += b_.x[i];
-    return a_.v;
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = a.v[i] + b.v[i];
+      return r;
+    } else {
+      union U {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      };
+      U a_ = {a};
+      U b_ = {b};
+      for (Integer i = 0; i < VData::Size; i++) a_.x[i] += b_.x[i];
+      return a_.v;
+    }
   }
   template <class VData> inline VData sub_intrin(const VData& a, const VData& b) {
-    union U {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    };
-    U a_ = {a};
-    U b_ = {b};
-    for (Integer i = 0; i < VData::Size; i++) a_.x[i] -= b_.x[i];
-    return a_.v;
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = a.v[i] - b.v[i];
+      return r;
+    } else {
+      union U {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      };
+      U a_ = {a};
+      U b_ = {b};
+      for (Integer i = 0; i < VData::Size; i++) a_.x[i] -= b_.x[i];
+      return a_.v;
+    }
   }
   template <class VData> inline VData rem_intrin(const VData& a, const VData& b) { // remainder of the integer division, a - (a/b)*b
     return sub_intrin(a, mul_intrin(div_intrin(a, b), b));
@@ -347,6 +422,11 @@ namespace sctl { // Generic
   // Bitwise operators
   template <class VData> inline VData not_intrin(const VData& vec) {
     static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
+    if constexpr (HasArrayLanes<VData>::value) {
+      LaneBits<int8_t,VData> vec_(vec);
+      for (Integer i = 0; i < N; i++) vec_.x[i] = (int8_t)~vec_.x[i];
+      return vec_.get();
+    }
     union {
       VData v;
       int8_t x[N];
@@ -356,6 +436,12 @@ namespace sctl { // Generic
   }
   template <class VData> inline VData and_intrin(const VData& a, const VData& b) {
     static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
+    if constexpr (HasArrayLanes<VData>::value) {
+      LaneBits<int8_t,VData> a_(a);
+      const LaneBits<int8_t,VData> b_(b);
+      for (Integer i = 0; i < N; i++) a_.x[i] = (int8_t)(a_.x[i] & b_.x[i]);
+      return a_.get();
+    }
     union U {
       VData v;
       int8_t x[N];
@@ -367,6 +453,12 @@ namespace sctl { // Generic
   }
   template <class VData> inline VData xor_intrin(const VData& a, const VData& b) {
     static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
+    if constexpr (HasArrayLanes<VData>::value) {
+      LaneBits<int8_t,VData> a_(a);
+      const LaneBits<int8_t,VData> b_(b);
+      for (Integer i = 0; i < N; i++) a_.x[i] = (int8_t)(a_.x[i] ^ b_.x[i]);
+      return a_.get();
+    }
     union U {
       VData v;
       int8_t x[N];
@@ -378,6 +470,12 @@ namespace sctl { // Generic
   }
   template <class VData> inline VData or_intrin(const VData& a, const VData& b) {
     static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
+    if constexpr (HasArrayLanes<VData>::value) {
+      LaneBits<int8_t,VData> a_(a);
+      const LaneBits<int8_t,VData> b_(b);
+      for (Integer i = 0; i < N; i++) a_.x[i] = (int8_t)(a_.x[i] | b_.x[i]);
+      return a_.get();
+    }
     union U {
       VData v;
       int8_t x[N];
@@ -389,6 +487,12 @@ namespace sctl { // Generic
   }
   template <class VData> inline VData andnot_intrin(const VData& a, const VData& b) {
     static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
+    if constexpr (HasArrayLanes<VData>::value) {
+      LaneBits<int8_t,VData> a_(a);
+      const LaneBits<int8_t,VData> b_(b);
+      for (Integer i = 0; i < N; i++) a_.x[i] = (int8_t)(a_.x[i] & (~b_.x[i]));
+      return a_.get();
+    }
     union U {
       VData v;
       int8_t x[N];
@@ -403,6 +507,11 @@ namespace sctl { // Generic
   template <class VData> inline VData bitshiftleft_intrin(const VData& a, const Integer& rhs) {
     static constexpr Integer N = VData::Size;
     using UInt = typename IntegerType<sizeof(typename VData::ScalarType)>::unsigned_value;
+    if constexpr (HasArrayLanes<VData>::value) {
+      LaneBits<UInt,VData> a_(a); // unsigned: defined for negative values, unlike a signed bit shift in C++17
+      for (Integer i = 0; i < N; i++) a_.x[i] <<= rhs;
+      return a_.get();
+    }
     union {
       VData v;
       UInt x[N]; // unsigned: defined for negative values, unlike a signed bit shift in C++17
@@ -413,7 +522,17 @@ namespace sctl { // Generic
   template <class VData> inline VData bitshiftright_intrin(const VData& a, const Integer& rhs) {
     static constexpr Integer N = VData::Size;
     using ScalarType = typename VData::ScalarType;
-    if constexpr (TypeTraits<ScalarType>::Type == DataType::Integer) { // fills with the sign bit
+    if constexpr (HasArrayLanes<VData>::value) {
+      if constexpr (TypeTraits<ScalarType>::Type == DataType::Integer) {
+        VData r;
+        for (Integer i = 0; i < N; i++) r.v[i] = (ScalarType)(a.v[i] >> rhs);
+        return r;
+      } else {
+        LaneBits<typename IntegerType<sizeof(ScalarType)>::unsigned_value,VData> a_(a);
+        for (Integer i = 0; i < N; i++) a_.x[i] >>= rhs;
+        return a_.get();
+      }
+    } else if constexpr (TypeTraits<ScalarType>::Type == DataType::Integer) { // fills with the sign bit
       union {
         VData v;
         ScalarType x[N];
@@ -432,6 +551,11 @@ namespace sctl { // Generic
   template <class VData> inline VData bitshiftleft_intrin(const VData& a, const VData& rhs) { // lane i bit shifted by lane i of rhs
     static constexpr Integer N = VData::Size;
     using UInt = typename IntegerType<sizeof(typename VData::ScalarType)>::unsigned_value;
+    if constexpr (HasArrayLanes<VData>::value) {
+      LaneBits<UInt,VData> a_(a);
+      for (Integer i = 0; i < N; i++) a_.x[i] <<= rhs.v[i];
+      return a_.get();
+    }
     union {
       VData v;
       UInt x[N];
@@ -445,6 +569,11 @@ namespace sctl { // Generic
   }
   template <class VData> inline VData bitshiftright_intrin(const VData& a, const VData& rhs) { // lane i bit shifted by lane i of rhs
     static constexpr Integer N = VData::Size;
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < N; i++) r.v[i] = (typename VData::ScalarType)(a.v[i] >> rhs.v[i]);
+      return r;
+    }
     union U {
       VData v;
       typename VData::ScalarType x[N];
@@ -505,6 +634,14 @@ namespace sctl { // Generic
 
   template <class VData> inline VData swap_pairs_intrin(const VData& vec) {
     static_assert(VData::Size % 2 == 0, "swap_pairs requires an even number of lanes.");
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < VData::Size; i += 2) {
+        r.v[i] = vec.v[i + 1];
+        r.v[i + 1] = vec.v[i];
+      }
+      return r;
+    }
     union {
       VData v;
       typename VData::ScalarType x[VData::Size];
@@ -571,6 +708,11 @@ namespace sctl { // Generic
   // Conversion operators
   template <class RetType, class ValueType, Integer N> inline RetType reinterpret_intrin(const VecData<ValueType,N>& v) {
     static_assert(sizeof(RetType) == sizeof(VecData<ValueType,N>), "Illegal type cast -- size of types does not match.");
+    if constexpr (HasArrayLanes<VecData<ValueType,N>>::value || HasArrayLanes<RetType>::value) { // by memcpy (see LaneBits)
+      RetType r;
+      std::memcpy(&r, &v, sizeof(RetType));
+      return r;
+    }
     union {
       VecData<ValueType,N> v;
       RetType r;
@@ -595,6 +737,13 @@ namespace sctl { // Generic
     static_assert(sizeof(RealVec) == sizeof(IntVec) && sizeof(Real) == sizeof(Int), "Real and integer types must have same size!");
 
     if constexpr (!ieee_layout<Real>()) { // one element at a time
+      if constexpr (HasArrayLanes<IntVec>::value || HasArrayLanes<RealVec>::value) { // through arrays, not unions (see HasArrayLanes)
+        Int n[IntVec::Size];
+        Real r[RealVec::Size];
+        storeu_intrin(n, x);
+        for (Integer i = 0; i < RealVec::Size; i++) r[i] = (Real)n[i];
+        return loadu_intrin<RealVec>(r);
+      }
       union {
         IntVec v;
         Int x[IntVec::Size];
@@ -623,6 +772,13 @@ namespace sctl { // Generic
     static_assert(sizeof(RealVec) == sizeof(IntVec) && sizeof(Real) == sizeof(Int), "Real and integer types must have same size!");
 
     if constexpr (!ieee_layout<Real>()) { // one element at a time
+      if constexpr (HasArrayLanes<IntVec>::value || HasArrayLanes<RealVec>::value) { // through arrays, not unions (see HasArrayLanes)
+        Real r[RealVec::Size];
+        Int n[IntVec::Size];
+        storeu_intrin(r, x);
+        for (Integer i = 0; i < RealVec::Size; i++) n[i] = (Int)std::rint(r[i]);
+        return loadu_intrin<IntVec>(n);
+      }
       union {
         RealVec v;
         Real x[RealVec::Size];
@@ -653,6 +809,13 @@ namespace sctl { // Generic
   }
   template <class VDataTo, class VData> inline VDataTo convert_intrin(const VData& a) { // static_cast of each lane
     static_assert(VDataTo::Size == VData::Size, "Conversion requires the same number of lanes.");
+    if constexpr (HasArrayLanes<VData>::value || HasArrayLanes<VDataTo>::value) { // through arrays, not unions (see HasArrayLanes)
+      typename VData::ScalarType x[VData::Size];
+      typename VDataTo::ScalarType y[VData::Size];
+      storeu_intrin(x, a);
+      for (Integer i = 0; i < VData::Size; i++) y[i] = (typename VDataTo::ScalarType)x[i];
+      return loadu_intrin<VDataTo>(y);
+    }
     union {
       VData v;
       typename VData::ScalarType x[VData::Size];
@@ -666,6 +829,7 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline VecData<typename VData::ScalarType,VData::Size/2> get_low_intrin(const VData& a) {
+    if constexpr (HasArrayLanes<VData>::value) return loadu_intrin<VecData<typename VData::ScalarType,VData::Size/2>>(&a.v[0]);
     union {
       VData v;
       VecData<typename VData::ScalarType,VData::Size/2> h[2];
@@ -673,6 +837,7 @@ namespace sctl { // Generic
     return u.h[0];
   }
   template <class VData> inline VecData<typename VData::ScalarType,VData::Size/2> get_high_intrin(const VData& a) {
+    if constexpr (HasArrayLanes<VData>::value) return loadu_intrin<VecData<typename VData::ScalarType,VData::Size/2>>(&a.v[VData::Size/2]);
     union {
       VData v;
       VecData<typename VData::ScalarType,VData::Size/2> h[2];
@@ -680,6 +845,13 @@ namespace sctl { // Generic
     return u.h[1];
   }
   template <class VData> inline VecData<typename VData::ScalarType,VData::Size*2> concat_intrin(const VData& lo, const VData& hi) {
+    using VDataFull = VecData<typename VData::ScalarType,VData::Size*2>;
+    if constexpr (HasArrayLanes<VDataFull>::value) {
+      VDataFull r;
+      storeu_intrin(&r.v[0], lo);
+      storeu_intrin(&r.v[VData::Size], hi);
+      return r;
+    }
     union {
       VData h[2];
       VecData<typename VData::ScalarType,VData::Size*2> v;
@@ -751,6 +923,15 @@ namespace sctl { // Generic
       } else {
         using Int = typename MaskLanes<VData>::ScalarType;
         constexpr Integer K = (sizeof(Int) < 8 ? sizeof(Int) : 8); // bytes read per lane
+        if constexpr (HasArrayLanes<VData>::value) { // by memcpy (see LaneBits)
+          MaskLanes<VData> m;
+          for (Integer i = 0; i < VData::Size; i++) {
+            typename IntegerType<K>::value w;
+            std::memcpy(&w, &v.v[i], K);
+            m.v[i] = (w ? ~(Int)0 : (Int)0);
+          }
+          return m;
+        }
         union {
           VData v;
           typename IntegerType<K>::value w[VData::Size * (sizeof(Int) / K)];
@@ -764,6 +945,11 @@ namespace sctl { // Generic
 
   template <class RetType, class VData> inline RetType reinterpret_mask(const Mask<VData>& v) {
     static_assert(sizeof(RetType) == sizeof(Mask<VData>), "Illegal type cast -- size of types does not match.");
+    if constexpr (HasArrayLanes<MaskLanes<VData>>::value || HasArrayLanes<RetType>::value) { // by memcpy (see LaneBits)
+      RetType r;
+      std::memcpy((void*)&r, (const void*)&v, sizeof(RetType));
+      return r;
+    }
     union {
       Mask<VData> v;
       RetType r;
@@ -807,7 +993,11 @@ namespace sctl { // Generic
     }
   }
   template <class VData> inline Mask<VData> int2mask_intrin(const MaskIntVec<VData>& q) {
-    if constexpr (sizeof(Mask<VData>) == sizeof(MaskIntVec<VData>)) {
+    if constexpr (sizeof(Mask<VData>) == sizeof(MaskIntVec<VData>) && (HasArrayLanes<MaskLanes<VData>>::value || HasArrayLanes<MaskIntVec<VData>>::value)) { // by memcpy (see LaneBits)
+      Mask<VData> m;
+      std::memcpy((void*)&m, (const void*)&q, sizeof(m));
+      return m;
+    } else if constexpr (sizeof(Mask<VData>) == sizeof(MaskIntVec<VData>)) {
       union {
         MaskIntVec<VData> q;
         Mask<VData> m;
@@ -830,71 +1020,54 @@ namespace sctl { // Generic
     }
   }
   template <class VData> inline Integer mask_count_intrin(const Mask<VData>& m) { // number of selected lanes
-    union {
-      MaskIntVec<VData> v;
-      typename MaskIntVec<VData>::ScalarType q[VData::Size];
-    } m_ = {mask2int_intrin(m)};
+    using IntType = typename IntegerType<sizeof(typename VData::ScalarType)>::value;
+    IntType q[VData::Size]; // the lanes of the mask, through a store rather than a union (see HasArrayLanes)
+    storeu_intrin(q, mask2int_intrin(m));
     Integer count = 0;
-    for (Integer i = 0; i < VData::Size; i++) count += (m_.q[i] ? 1 : 0);
+    for (Integer i = 0; i < VData::Size; i++) count += (q[i] ? 1 : 0);
     return count;
   }
 
   template <class VData> inline Integer mask_popcnt_intrin(const Mask<VData>& v) {
     static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
-    union {
-        Mask<VData> m;
-        typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
-    } v_ = {v};
-
+    using IntType = typename IntegerType<sizeof(typename VData::ScalarType)>::value;
+    IntType q[VData::Size]; // the lanes of the mask, through a store rather than a union (see HasArrayLanes)
+    storeu_intrin(q, mask2int_intrin(v));
     Integer cnt = 0;
-    for (Integer i = 0; i < VData::Size; i++) cnt += (v_.q[i]!=0);
-
+    for (Integer i = 0; i < VData::Size; i++) cnt += (q[i]!=0);
     return cnt;
   }
 
   template <class VData> inline bool mask_any(const Mask<VData>& v) {
     static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
-    union {
-        Mask<VData> m;
-        typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
-    } v_ = {v};
-
-    for (Integer i = 0; i < VData::Size; i++) if (v_.q[i]) return true;
+    using IntType = typename IntegerType<sizeof(typename VData::ScalarType)>::value;
+    IntType q[VData::Size]; // the lanes of the mask, through a store rather than a union (see HasArrayLanes)
+    storeu_intrin(q, mask2int_intrin(v));
+    for (Integer i = 0; i < VData::Size; i++) if (q[i]) return true;
     return false;
   }
 
   template <class VData> inline void mask_compress_store(const Mask<VData>& mask, const VData& v, typename VData::ScalarType* ptr) {
     static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
-    union {
-        Mask<VData> m;
-        typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
-    } mask_ = {mask};
-
-    union {
-        VData vec;
-        typename VData::ScalarType s[VData::Size];
-    } v_ = {v};
-
+    using IntType = typename IntegerType<sizeof(typename VData::ScalarType)>::value;
+    IntType q[VData::Size]; // the lanes of the mask, through a store rather than a union (see HasArrayLanes)
+    storeu_intrin(q, mask2int_intrin(mask));
+    typename VData::ScalarType s[VData::Size];
+    storeu_intrin(s, v);
     Integer idx = 0;
     for (Integer i = 0; i < VData::Size; i++) {
-        if (mask_.q[i]) {
-            ptr[idx++] = v_.s[i];
-        }
+      if (q[i]) ptr[idx++] = s[i];
     }
   }
 
   template <class VData> inline Integer mask_compress_iota_store(const Mask<VData>& mask, int32_t base, int32_t* ptr) {
     static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
-    union {
-        Mask<VData> m;
-        typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
-    } mask_ = {mask};
-
+    using IntType = typename IntegerType<sizeof(typename VData::ScalarType)>::value;
+    IntType q[VData::Size]; // the lanes of the mask, through a store rather than a union (see HasArrayLanes)
+    storeu_intrin(q, mask2int_intrin(mask));
     Integer idx = 0;
     for (Integer i = 0; i < VData::Size; i++) {
-        if (mask_.q[i]) {
-            ptr[idx++] = base + (int32_t)i;
-        }
+      if (q[i]) ptr[idx++] = base + (int32_t)i;
     }
     return idx;
   }
@@ -906,23 +1079,16 @@ namespace sctl { // Generic
 
   template <class VData> inline VData mask_expand_load(const Mask<VData>& mask, const VData& zero, const typename VData::ScalarType* ptr) {
     static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
-    union {
-        Mask<VData> m;
-        typename IntegerType<sizeof(typename VData::ScalarType)>::value q[VData::Size];
-    } mask_ = {mask};
-
-    union {
-        VData vec;
-        typename VData::ScalarType s[VData::Size];
-    } z_ = {zero};
-
+    using IntType = typename IntegerType<sizeof(typename VData::ScalarType)>::value;
+    IntType q[VData::Size]; // the lanes of the mask, through a store rather than a union (see HasArrayLanes)
+    storeu_intrin(q, mask2int_intrin(mask));
+    typename VData::ScalarType s[VData::Size];
+    storeu_intrin(s, zero);
     Integer idx = 0;
     for (Integer i = 0; i < VData::Size; i++) {
-        if (mask_.q[i]) {
-            z_.s[i] = ptr[idx++];
-        }
+      if (q[i]) s[i] = ptr[idx++];
     }
-    return z_.vec;
+    return loadu_intrin<VData>(s);
   }
 
 
@@ -985,40 +1151,26 @@ namespace sctl { // Generic
   // Masked load and store
   template <class VData> inline Mask<VData> mask_first_intrin(Integer n) { // true in lanes i < n, for n >= 0
     using ScalarType = typename VData::ScalarType;
-    union {
-      VData v;
-      ScalarType x[VData::Size];
-    } iota;
-    for (Integer i = 0; i < VData::Size; i++) iota.x[i] = (ScalarType)i;
-    return comp_intrin<ComparisonType::lt>(iota.v, set1_intrin<VData>((ScalarType)(n < VData::Size ? n : VData::Size)));
+    ScalarType iota[VData::Size];
+    for (Integer i = 0; i < VData::Size; i++) iota[i] = (ScalarType)i;
+    return comp_intrin<ComparisonType::lt>(loadu_intrin<VData>(iota), set1_intrin<VData>((ScalarType)(n < VData::Size ? n : VData::Size)));
   }
   template <class VData> inline VData loadu_mask_intrin(typename VData::ScalarType const* p, const Mask<VData>& m) { // lanes not in m are zero and not read
-    using ScalarType = typename VData::ScalarType;
-    using IntType = typename IntegerType<sizeof(ScalarType)>::value;
-    union {
-      MaskIntVec<VData> v;
-      IntType q[VData::Size];
-    } m_ = {mask2int_intrin(m)};
-    union {
-      VData v;
-      ScalarType x[VData::Size];
-    } vec;
-    for (Integer i = 0; i < VData::Size; i++) vec.x[i] = (m_.q[i] ? p[i] : (ScalarType)0);
-    return vec.v;
+    using IntType = typename IntegerType<sizeof(typename VData::ScalarType)>::value;
+    IntType q[VData::Size]; // the lanes of the mask, through a store rather than a union (see HasArrayLanes)
+    storeu_intrin(q, mask2int_intrin(m));
+    typename VData::ScalarType x[VData::Size];
+    for (Integer i = 0; i < VData::Size; i++) x[i] = (q[i] ? p[i] : (typename VData::ScalarType)0);
+    return loadu_intrin<VData>(x);
   }
   template <class VData> inline void storeu_mask_intrin(typename VData::ScalarType* p, VData vec, const Mask<VData>& m) { // lanes not in m are not written
-    using ScalarType = typename VData::ScalarType;
-    using IntType = typename IntegerType<sizeof(ScalarType)>::value;
-    union {
-      MaskIntVec<VData> v;
-      IntType q[VData::Size];
-    } m_ = {mask2int_intrin(m)};
-    union {
-      VData v;
-      ScalarType x[VData::Size];
-    } vec_ = {vec};
+    using IntType = typename IntegerType<sizeof(typename VData::ScalarType)>::value;
+    IntType q[VData::Size]; // the lanes of the mask, through a store rather than a union (see HasArrayLanes)
+    storeu_intrin(q, mask2int_intrin(m));
+    typename VData::ScalarType x[VData::Size];
+    storeu_intrin(x, vec);
     for (Integer i = 0; i < VData::Size; i++) {
-      if (m_.q[i]) p[i] = vec_.x[i];
+      if (q[i]) p[i] = x[i];
     }
   }
   template <class VData> inline VData loadu_first_intrin(typename VData::ScalarType const* p, Integer n) { // lanes i < n, for n >= 0; the others are zero and not read
@@ -1031,28 +1183,19 @@ namespace sctl { // Generic
   // Gather and scatter
   template <class VData, class IdxVData> inline VData gather_intrin(typename VData::ScalarType const* p, const IdxVData& idx) { // lane i is p[idx lane i]
     static_assert(IdxVData::Size == VData::Size, "Gather requires one index per lane.");
-    union {
-      IdxVData v;
-      typename IdxVData::ScalarType x[VData::Size];
-    } idx_ = {idx};
-    union {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    } vec;
-    for (Integer i = 0; i < VData::Size; i++) vec.x[i] = p[idx_.x[i]];
-    return vec.v;
+    typename IdxVData::ScalarType k[VData::Size]; // through a store rather than a union (see HasArrayLanes)
+    typename VData::ScalarType x[VData::Size];
+    storeu_intrin(k, idx);
+    for (Integer i = 0; i < VData::Size; i++) x[i] = p[k[i]];
+    return loadu_intrin<VData>(x);
   }
   template <class VData, class IdxVData> inline void scatter_intrin(typename VData::ScalarType* p, const VData& vec, const IdxVData& idx) { // in lane order: of equal indices, the last lane is stored
     static_assert(IdxVData::Size == VData::Size, "Scatter requires one index per lane.");
-    union {
-      IdxVData v;
-      typename IdxVData::ScalarType x[VData::Size];
-    } idx_ = {idx};
-    union {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    } vec_ = {vec};
-    for (Integer i = 0; i < VData::Size; i++) p[idx_.x[i]] = vec_.x[i];
+    typename IdxVData::ScalarType k[VData::Size]; // through a store rather than a union (see HasArrayLanes)
+    typename VData::ScalarType x[VData::Size];
+    storeu_intrin(k, idx);
+    storeu_intrin(x, vec);
+    for (Integer i = 0; i < VData::Size; i++) p[k[i]] = x[i];
   }
 
   // Special functions
