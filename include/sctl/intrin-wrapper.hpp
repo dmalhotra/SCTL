@@ -457,24 +457,36 @@ namespace sctl { // Generic
 
   // Other functions
   template <class VData> inline VData max_intrin(const VData& a, const VData& b) {
-    union U {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    };
-    U a_ = {a};
-    U b_ = {b};
-    for (Integer i = 0; i < VData::Size; i++) a_.x[i] = (b_.x[i] < a_.x[i] ? a_.x[i] : b_.x[i]); // b if either is NaN, as maxps/maxpd
-    return a_.v;
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = (b.v[i] < a.v[i] ? a.v[i] : b.v[i]); // b if either is NaN, as maxps/maxpd
+      return r;
+    } else {
+      union U {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      };
+      U a_ = {a};
+      U b_ = {b};
+      for (Integer i = 0; i < VData::Size; i++) a_.x[i] = (b_.x[i] < a_.x[i] ? a_.x[i] : b_.x[i]); // b if either is NaN, as maxps/maxpd
+      return a_.v;
+    }
   }
   template <class VData> inline VData min_intrin(const VData& a, const VData& b) {
-    union U {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    };
-    U a_ = {a};
-    U b_ = {b};
-    for (Integer i = 0; i < VData::Size; i++) a_.x[i] = (a_.x[i] < b_.x[i] ? a_.x[i] : b_.x[i]);
-    return a_.v;
+    if constexpr (HasArrayLanes<VData>::value) {
+      VData r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = (a.v[i] < b.v[i] ? a.v[i] : b.v[i]); // b if either is NaN, as minps/minpd
+      return r;
+    } else {
+      union U {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      };
+      U a_ = {a};
+      U b_ = {b};
+      for (Integer i = 0; i < VData::Size; i++) a_.x[i] = (a_.x[i] < b_.x[i] ? a_.x[i] : b_.x[i]);
+      return a_.v;
+    }
   }
 
   template <class VData> inline void transpose_intrin(VData (&v)[VData::Size]) {
@@ -4823,6 +4835,11 @@ namespace sctl { // SSE
   // store of one element, in a loop over rows, clang makes its own vector loop with scatter stores (add to 1 of 4 floats
   // on Sapphire Rapids: 0.57 cycles, against 1.56). On AMD Zen 4, SmallGEMM with one column was 12-31% slower with the
   // mask register.
+  //
+  // Under sse2neon, _mm_storel_pi, _mm_storel_epi64 and _mm_loadl_epi64 access the low half through pointers to other
+  // types (int64x1_t, uint64_t, int32_t), which GCC (-O2 and above) takes not to alias the lanes: with g++-13 -O3 on the
+  // macOS runner (ARM), StorePartial of 2 or 3 int32_t lanes was reordered before the test's stores to the same
+  // elements and lost. On ARM, the low half is loaded and stored with the type of the lanes.
   template <> inline VecData<float,4> loadu_first_intrin<VecData<float,4>>(float const* p, Integer n) {
 #if defined(__AVX512F__) && defined(__AVX512VL__) && defined(__clang__) && !defined(SCTL_TUNE_ZEN)
     if (n == 1) return _mm_maskz_loadu_ps(__mmask8(1), p);
@@ -4853,12 +4870,19 @@ namespace sctl { // SSE
       _mm_mask_storeu_ps(p, __mmask8(0x7), vec.v);
 #elif defined(__AVX__) && !defined(SCTL_TUNE_ZEN)
       _mm_maskstore_ps(p, _mm_setr_epi32(-1, -1, -1, 0), vec.v);
+#elif defined(__ARM_NEON)
+      vst1_f32(p, vget_low_f32(vec.v));
+      _mm_store_ss(p + 2, _mm_movehl_ps(vec.v, vec.v));
 #else
       _mm_storel_pi((__m64*)p, vec.v);
       _mm_store_ss(p + 2, _mm_movehl_ps(vec.v, vec.v));
 #endif
     } else if (n == 2) {
+#if defined(__ARM_NEON)
+      vst1_f32(p, vget_low_f32(vec.v));
+#else
       _mm_storel_pi((__m64*)p, vec.v);
+#endif
     } else if (n == 1) {
       _mm_store_ss(p, vec.v);
     }
@@ -4931,12 +4955,19 @@ namespace sctl { // SSE
       _mm_mask_storeu_epi32(p, __mmask8(0x7), vec.v);
 #elif defined(__AVX__) && !defined(SCTL_TUNE_ZEN)
       _mm_maskstore_ps((float*)p, _mm_setr_epi32(-1, -1, -1, 0), _mm_castsi128_ps(vec.v));
+#elif defined(__ARM_NEON)
+      vst1_s32(p, vget_low_s32(vreinterpretq_s32_m128i(vec.v)));
+      p[2] = _mm_extract_epi32(vec.v, 2);
 #else
       _mm_storel_epi64((__m128i*)p, vec.v);
       p[2] = _mm_extract_epi32(vec.v, 2);
 #endif
     } else if (n == 2) {
+#if defined(__ARM_NEON)
+      vst1_s32(p, vget_low_s32(vreinterpretq_s32_m128i(vec.v)));
+#else
       _mm_storel_epi64((__m128i*)p, vec.v);
+#endif
     } else if (n == 1) {
       p[0] = _mm_cvtsi128_si32(vec.v);
     }
@@ -4946,7 +4977,11 @@ namespace sctl { // SSE
     if (n == 1) return _mm_maskz_loadu_epi64(__mmask8(1), p);
 #endif
     if (n >= 2) return _mm_loadu_si128((__m128i const*)p);
+#if defined(__ARM_NEON)
+    if (n == 1) return vreinterpretq_m128i_s64(vcombine_s64(vld1_s64(p), vcreate_s64(0)));
+#else
     if (n == 1) return _mm_loadl_epi64((__m128i const*)p);
+#endif
     return _mm_setzero_si128();
   }
   template <> inline void storeu_first_intrin<VecData<int64_t,2>>(int64_t* p, VecData<int64_t,2> vec, Integer n) {
@@ -4959,7 +4994,11 @@ namespace sctl { // SSE
     if (n >= 2) {
       _mm_storeu_si128((__m128i*)p, vec.v);
     } else if (n == 1) {
+#if defined(__ARM_NEON)
+      vst1_s64(p, vget_low_s64(vreinterpretq_s64_m128i(vec.v)));
+#else
       _mm_storel_epi64((__m128i*)p, vec.v);
+#endif
     }
   }
 
