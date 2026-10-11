@@ -2979,7 +2979,12 @@ namespace sctl { // Generic
       for (Integer i = 0; i < VData::Size; i++) {
         const Real xi = x_.x[i];
         if constexpr (std::is_floating_point<Real>::value) { // reflection below 0, as std::lgamma there (macOS) can be wrong by hundreds of ulp near the negative integers
-          x_.x[i] = (xi < 0 && xi > -std::numeric_limits<Real>::infinity() ? std::log(const_pi<Real>() / std::fabs(std::sin(const_pi<Real>() * (xi - std::round(xi))))) - std::lgamma(1 - xi) : std::lgamma(xi));
+          if (xi < 0 && xi > -std::numeric_limits<Real>::infinity()) {
+            const Real r = xi - std::round(xi);
+            x_.x[i] = (r == 0 ? std::numeric_limits<Real>::infinity() : std::log(const_pi<Real>() / std::fabs(std::sin(const_pi<Real>() * r))) - std::lgamma(1 - xi));
+          } else {
+            x_.x[i] = std::lgamma(xi);
+          }
         } else {
           x_.x[i] = lgamma_generic(xi);
         }
