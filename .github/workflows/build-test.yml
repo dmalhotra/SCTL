@@ -8,6 +8,11 @@ on:
     branches:
       - master
 
+# A new push to a branch or pull request cancels its run still in progress, which it makes obsolete
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     strategy:
