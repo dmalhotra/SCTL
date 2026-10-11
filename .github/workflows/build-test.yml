@@ -11,6 +11,8 @@ on:
 jobs:
   build:
     strategy:
+      # Run every configuration to the end: a failure in one should not hide the others
+      fail-fast: false
       matrix:
         os:
           - ubuntu-latest
@@ -75,7 +77,9 @@ jobs:
           if [ "${{ matrix.compiler }}" != "clang++" ] || [ "$(uname -s)" != "Darwin" ] && [ "$(uname -m)" != "arm64" ]; then
             CXXFLAGS+=" -DSCTL_QUAD_T=__float128"
           fi
-          make -j CXX="${{ matrix.compiler }}" CXXFLAGS="${CXXFLAGS}"
+          # One compile per core: test-vec and test-quad-elem each take about 3 GB at -O3, and an unbounded -j ran
+          # the 16 GB ubuntu runner out of memory (cc1plus killed)
+          make -j$(getconf _NPROCESSORS_ONLN) CXX="${{ matrix.compiler }}" CXXFLAGS="${CXXFLAGS}"
 
       # Step 4: Run tests
       - name: Run tests
