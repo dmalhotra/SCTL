@@ -182,6 +182,13 @@ namespace sctl { // Generic
     ScalarType v[N];
   };
 
+  /**
+   * Whether VData keeps its lanes in an array; such lanes are read and written directly, as GCC 11 to 14 can reorder
+   * accesses through two unions that share a stack slot.
+   */
+  template <class VData, class = void> struct HasArrayLanes : std::false_type {};
+  template <class VData> struct HasArrayLanes<VData, std::enable_if_t<VData::ArrayLanes>> : std::true_type {};
+
 
   template <class VData> inline VData zero_intrin() {
     union {
@@ -249,19 +256,27 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline typename VData::ScalarType extract_intrin(VData vec, Integer i) {
-    union {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    } vec_ = {vec};
-    return vec_.x[i];
+    if constexpr (HasArrayLanes<VData>::value) {
+      return vec.v[i];
+    } else {
+      union {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      } vec_ = {vec};
+      return vec_.x[i];
+    }
   }
   template <class VData> inline void insert_intrin(VData& vec, Integer i, typename VData::ScalarType value) {
-    union {
-      VData v;
-      typename VData::ScalarType x[VData::Size];
-    } vec_ = {vec};
-    vec_.x[i] = value;
-    vec = vec_.v;
+    if constexpr (HasArrayLanes<VData>::value) {
+      vec.v[i] = value;
+    } else {
+      union {
+        VData v;
+        typename VData::ScalarType x[VData::Size];
+      } vec_ = {vec};
+      vec_.x[i] = value;
+      vec = vec_.v;
+    }
   }
 
   // Arithmetic operators
@@ -794,6 +809,11 @@ namespace sctl { // Generic
   template <class VDataTo, class VData> inline Mask<VDataTo> convert_mask_intrin(const Mask<VData>& m) { // same lanes, another element type
     if constexpr (sizeof(typename VDataTo::ScalarType) == sizeof(typename VData::ScalarType)) { // same mask layout
       return reinterpret_mask<Mask<VDataTo>>(m);
+    } else if constexpr (HasArrayLanes<VData>::value && HasArrayLanes<VDataTo>::value) {
+      using IntTo = typename MaskLanes<VDataTo>::ScalarType;
+      Mask<VDataTo> r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = (m.v[i] ? ~(IntTo)0 : (IntTo)0);
+      return r;
     } else {
       return int2mask_intrin<VDataTo>(convert_intrin<MaskIntVec<VDataTo>>(mask2int_intrin(m))); // lanes of -1 and 0 keep their value
     }
@@ -905,36 +925,46 @@ namespace sctl { // Generic
     using ScalarType = typename VData::ScalarType;
     using IntType = typename IntegerType<sizeof(ScalarType)>::value;
 
-    union U {
-      VData v;
-      Mask<VData> m;
-      ScalarType x[VData::Size];
-      IntType q[VData::Size];
-    };
-    U a_ = {a};
-    U b_ = {b};
-    U c_;
-
     static constexpr IntType zero_const = (IntType)0;
     static constexpr IntType  one_const =~(IntType)0;
-    if (TYPE == ComparisonType::lt) for (Integer i = 0; i < VData::Size; i++) c_.q[i] = (a_.x[i] <  b_.x[i] ? one_const : zero_const);
-    if (TYPE == ComparisonType::le) for (Integer i = 0; i < VData::Size; i++) c_.q[i] = (a_.x[i] <= b_.x[i] ? one_const : zero_const);
-    if (TYPE == ComparisonType::gt) for (Integer i = 0; i < VData::Size; i++) c_.q[i] = (a_.x[i] >  b_.x[i] ? one_const : zero_const);
-    if (TYPE == ComparisonType::ge) for (Integer i = 0; i < VData::Size; i++) c_.q[i] = (a_.x[i] >= b_.x[i] ? one_const : zero_const);
-    if (TYPE == ComparisonType::eq) for (Integer i = 0; i < VData::Size; i++) c_.q[i] = (a_.x[i] == b_.x[i] ? one_const : zero_const);
-    if (TYPE == ComparisonType::ne) for (Integer i = 0; i < VData::Size; i++) c_.q[i] = (a_.x[i] != b_.x[i] ? one_const : zero_const);
-    return c_.m;
+    const auto lane = [](const ScalarType& x, const ScalarType& y) {
+      bool c = false;
+      if constexpr (TYPE == ComparisonType::lt) c = (x <  y);
+      if constexpr (TYPE == ComparisonType::le) c = (x <= y);
+      if constexpr (TYPE == ComparisonType::gt) c = (x >  y);
+      if constexpr (TYPE == ComparisonType::ge) c = (x >= y);
+      if constexpr (TYPE == ComparisonType::eq) c = (x == y);
+      if constexpr (TYPE == ComparisonType::ne) c = (x != y);
+      return (c ? one_const : zero_const);
+    };
+    if constexpr (HasArrayLanes<VData>::value) {
+      Mask<VData> c;
+      for (Integer i = 0; i < VData::Size; i++) c.v[i] = lane(a.v[i], b.v[i]);
+      return c;
+    } else {
+      union U {
+        VData v;
+        Mask<VData> m;
+        ScalarType x[VData::Size];
+        IntType q[VData::Size];
+      };
+      U a_ = {a};
+      U b_ = {b};
+      U c_;
+      for (Integer i = 0; i < VData::Size; i++) c_.q[i] = lane(a_.x[i], b_.x[i]);
+      return c_.m;
+    }
   }
 
   template <class VData> inline VData select_intrin(const Mask<VData>& s, const VData& a, const VData& b) {
     static_assert(sizeof(Mask<VData>) == sizeof(VData), "Invalid operation on Mask");
-    if constexpr (std::is_same<MaskLanes<VData>, VData>::value) {
+    if constexpr (std::is_same<MaskLanes<VData>, VData>::value && !HasArrayLanes<VData>::value) {
       union U {
         Mask<VData> m;
         VData v;
       } s_ = {s};
       return or_intrin(and_intrin(a,s_.v), andnot_intrin(b,s_.v));
-    } else { // integer lanes: a or b in each lane
+    } else { // array lanes: a or b in each lane
       VData r;
       for (Integer i = 0; i < VData::Size; i++) r.v[i] = (s.v[i] ? a.v[i] : b.v[i]);
       return r;
