@@ -23,7 +23,7 @@ namespace sctl {
       Integer len = R;
       while (len > 1) {
         for (Integer i = 0; i < len / 2; i++) c[i] = FMA(c[2 * i + 1], p, c[2 * i]);
-        if (len % 2) c[len / 2] = c[len - 1];
+        if (len % 2 && len <= R) c[len / 2] = c[len - 1]; // len <= R always, for GCC 14, 15 -Warray-bounds
         len = (len + 1) / 2;
         p = p * p;
       }
@@ -327,13 +327,27 @@ namespace sctl {
     using VecR = Vec<Real,N>;
 #if defined(__AVX512DQ__) && defined(__AVX512VL__)
     using Idx = typename std::conditional<(N >= 4 && sizeof(Real) == 4), int32_t, int64_t>::type; // native conversions, vcvttpd2qq for double
+    static constexpr bool convert_int64 = true;
 #else
     using Idx = typename std::conditional<(N >= 4), int32_t, int64_t>::type; // native conversions
+  #if defined(__aarch64__) && defined(__clang__)
+    static constexpr bool convert_int64 = true; // fcvtzs
+  #else
+    static constexpr bool convert_int64 = false;
+  #endif
 #endif
     using VecI = Vec<Idx,N>;
+    // integer part of v >= 0; to int64 without a native conversion, the low bits of floor(v) + 2^52
+    const auto index = [](const VecR& v) {
+      if constexpr (sizeof(Real) == 8 && sizeof(Idx) == 8 && !convert_int64) {
+        return VecI(reinterpret_intrin<typename VecI::VData>((floor(v) + VecR((Real)0x1p52)).get())) - VecI((Idx)0x4330000000000000);
+      } else {
+        return Convert<VecI>(v);
+      }
+    };
     const VecR u = FMA(x, VecR(inv_h_), VecR(-lb_ * inv_h_));
     const VecR uc = max(min(u, VecR((Real)(n_cell_ - 1))), VecR::Zero()); // min gives n_cell_ - 1 for NaN
-    const VecI ci = Convert<VecI>(uc);
+    const VecI ci = index(uc);
     VecR t; // the local variable in [-1, 1]
     alignas(sizeof(VecI)) Idx idx[N]; // the piece of each lane
     if (uniform_) {
@@ -344,7 +358,7 @@ namespace sctl {
       const VecR v = (u - floor(uc)) * sub;
       const VecR k = floor(max(min(v, sub - (Real)1), VecR::Zero()));
       t = FMA(v - k, VecR((Real)2), VecR((Real)-1));
-      Convert<VecI>(VecR::Gather(&off_[0], ci) + k).StoreAligned(idx);
+      index(VecR::Gather(&off_[0], ci) + k).StoreAligned(idx);
     }
     switch (row_) {
       case 8: return detail_function_table::eval_rows<8>(&coef_[0], idx, t);

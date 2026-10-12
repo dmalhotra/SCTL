@@ -2933,32 +2933,36 @@ FORCE_INLINE __m128 _mm_xor_ps(__m128 a, __m128 b)
 // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_add_epi16
 FORCE_INLINE __m128i _mm_add_epi16(__m128i a, __m128i b)
 {
-    return vreinterpretq_m128i_s16(
-        vaddq_s16(vreinterpretq_s16_m128i(a), vreinterpretq_s16_m128i(b)));
+    // SCTL: unsigned, as SSE wraps
+    return vreinterpretq_m128i_u16(
+        vaddq_u16(vreinterpretq_u16_m128i(a), vreinterpretq_u16_m128i(b)));
 }
 
 // Add packed 32-bit integers in a and b, and store the results in dst.
 // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_add_epi32
 FORCE_INLINE __m128i _mm_add_epi32(__m128i a, __m128i b)
 {
-    return vreinterpretq_m128i_s32(
-        vaddq_s32(vreinterpretq_s32_m128i(a), vreinterpretq_s32_m128i(b)));
+    // SCTL: unsigned, as SSE wraps
+    return vreinterpretq_m128i_u32(
+        vaddq_u32(vreinterpretq_u32_m128i(a), vreinterpretq_u32_m128i(b)));
 }
 
 // Add packed 64-bit integers in a and b, and store the results in dst.
 // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_add_epi64
 FORCE_INLINE __m128i _mm_add_epi64(__m128i a, __m128i b)
 {
-    return vreinterpretq_m128i_s64(
-        vaddq_s64(vreinterpretq_s64_m128i(a), vreinterpretq_s64_m128i(b)));
+    // SCTL: unsigned, as SSE wraps
+    return vreinterpretq_m128i_u64(
+        vaddq_u64(vreinterpretq_u64_m128i(a), vreinterpretq_u64_m128i(b)));
 }
 
 // Add packed 8-bit integers in a and b, and store the results in dst.
 // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_add_epi8
 FORCE_INLINE __m128i _mm_add_epi8(__m128i a, __m128i b)
 {
-    return vreinterpretq_m128i_s8(
-        vaddq_s8(vreinterpretq_s8_m128i(a), vreinterpretq_s8_m128i(b)));
+    // SCTL: unsigned, as SSE wraps
+    return vreinterpretq_m128i_u8(
+        vaddq_u8(vreinterpretq_u8_m128i(a), vreinterpretq_u8_m128i(b)));
 }
 
 // Add packed double-precision (64-bit) floating-point elements in a and b, and
@@ -4764,8 +4768,9 @@ FORCE_INLINE __m128i _mm_mulhi_epu16(__m128i a, __m128i b)
 // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_mullo_epi16
 FORCE_INLINE __m128i _mm_mullo_epi16(__m128i a, __m128i b)
 {
-    return vreinterpretq_m128i_s16(
-        vmulq_s16(vreinterpretq_s16_m128i(a), vreinterpretq_s16_m128i(b)));
+    // SCTL: unsigned, as SSE wraps
+    return vreinterpretq_m128i_u16(
+        vmulq_u16(vreinterpretq_u16_m128i(a), vreinterpretq_u16_m128i(b)));
 }
 
 // Compute the bitwise OR of packed double-precision (64-bit) floating-point
@@ -5537,7 +5542,8 @@ FORCE_INLINE void _mm_storeu_pd(double *mem_addr, __m128d a)
 // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_storeu_si128
 FORCE_INLINE void _mm_storeu_si128(__m128i *p, __m128i a)
 {
-    vst1q_s32((int32_t *) p, vreinterpretq_s32_m128i(a));
+    // SCTL: bytes, as p may be unaligned
+    vst1q_u8((uint8_t *) p, vreinterpretq_u8_m128i(a));
 }
 
 // Store 32-bit integer from the first element of a into memory. mem_addr does
@@ -5600,8 +5606,9 @@ FORCE_INLINE void _mm_stream_si64(__int64 *p, __int64 a)
 // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_sub_epi16
 FORCE_INLINE __m128i _mm_sub_epi16(__m128i a, __m128i b)
 {
-    return vreinterpretq_m128i_s16(
-        vsubq_s16(vreinterpretq_s16_m128i(a), vreinterpretq_s16_m128i(b)));
+    // SCTL: unsigned, as SSE wraps
+    return vreinterpretq_m128i_u16(
+        vsubq_u16(vreinterpretq_u16_m128i(a), vreinterpretq_u16_m128i(b)));
 }
 
 // Subtract packed 32-bit integers in b from packed 32-bit integers in a, and
@@ -5609,8 +5616,9 @@ FORCE_INLINE __m128i _mm_sub_epi16(__m128i a, __m128i b)
 // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_sub_epi32
 FORCE_INLINE __m128i _mm_sub_epi32(__m128i a, __m128i b)
 {
-    return vreinterpretq_m128i_s32(
-        vsubq_s32(vreinterpretq_s32_m128i(a), vreinterpretq_s32_m128i(b)));
+    // SCTL: unsigned, as SSE wraps
+    return vreinterpretq_m128i_u32(
+        vsubq_u32(vreinterpretq_u32_m128i(a), vreinterpretq_u32_m128i(b)));
 }
 
 // Subtract packed 64-bit integers in b from packed 64-bit integers in a, and
@@ -5618,8 +5626,9 @@ FORCE_INLINE __m128i _mm_sub_epi32(__m128i a, __m128i b)
 // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_sub_epi64
 FORCE_INLINE __m128i _mm_sub_epi64(__m128i a, __m128i b)
 {
-    return vreinterpretq_m128i_s64(
-        vsubq_s64(vreinterpretq_s64_m128i(a), vreinterpretq_s64_m128i(b)));
+    // SCTL: unsigned, as SSE wraps
+    return vreinterpretq_m128i_u64(
+        vsubq_u64(vreinterpretq_u64_m128i(a), vreinterpretq_u64_m128i(b)));
 }
 
 // Subtract packed 8-bit integers in b from packed 8-bit integers in a, and
@@ -5627,8 +5636,9 @@ FORCE_INLINE __m128i _mm_sub_epi64(__m128i a, __m128i b)
 // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_sub_epi8
 FORCE_INLINE __m128i _mm_sub_epi8(__m128i a, __m128i b)
 {
-    return vreinterpretq_m128i_s8(
-        vsubq_s8(vreinterpretq_s8_m128i(a), vreinterpretq_s8_m128i(b)));
+    // SCTL: unsigned, as SSE wraps
+    return vreinterpretq_m128i_u8(
+        vsubq_u8(vreinterpretq_u8_m128i(a), vreinterpretq_u8_m128i(b)));
 }
 
 // Subtract packed double-precision (64-bit) floating-point elements in b from
@@ -7403,8 +7413,9 @@ FORCE_INLINE __m128i _mm_mul_epi32(__m128i a, __m128i b)
 // https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_mullo_epi32
 FORCE_INLINE __m128i _mm_mullo_epi32(__m128i a, __m128i b)
 {
-    return vreinterpretq_m128i_s32(
-        vmulq_s32(vreinterpretq_s32_m128i(a), vreinterpretq_s32_m128i(b)));
+    // SCTL: unsigned, as SSE wraps
+    return vreinterpretq_m128i_u32(
+        vmulq_u32(vreinterpretq_u32_m128i(a), vreinterpretq_u32_m128i(b)));
 }
 
 // Convert packed signed 32-bit integers from a and b to packed 16-bit integers

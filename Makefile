@@ -12,18 +12,13 @@ endif
 
 OS = $(shell uname -s)
 ifeq "$(OS)" "Darwin"
-	CXXFLAGS += -g -rdynamic -Wl,-no_pie # for stack trace (on Mac)
+	CXXFLAGS += -g -rdynamic # for stack trace
 else
 	CXXFLAGS += -gdwarf-4 -g -rdynamic # for stack trace
-	CXXFLAGS += -ldl # dladdr() in stacktrace.h (libc on glibc >=2.34, libdl otherwise)
+	CXXFLAGS += -ldl # dladdr(), for glibc < 2.34
 endif
 
-# GCC `-march=native` on Sapphire Rapids and newer Intel CPUs emits AVX-512-FP16
-# instructions (e.g. `vmovw`) that pre-2.38 binutils' system assembler can't
-# decode. Disable just the FP16 subset; the rest of -march=native is fine. If a
-# newer binutils is available (e.g. `module load binutils/2.43.1`), the user can
-# remove this flag manually. macOS clang doesn't emit avx512fp16 and doesn't
-# recognise the flag on Apple Silicon — skip there.
+# AVX-512-FP16 of -march=native (Sapphire Rapids), which binutils before 2.38 can't assemble
 ifneq "$(OS)" "Darwin"
        CXXFLAGS += -mno-avx512fp16
 endif
@@ -33,7 +28,7 @@ CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB
 CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
 CXXFLAGS += -DSCTL_SIG_HANDLER # Enable SCTL stack trace
 
-CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
+CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision (GCC, or clang on x86)
 
 #CXXFLAGS += -DSCTL_MAX_DEPTH=20 # Morton/Tree depth limit
 
@@ -62,7 +57,6 @@ CXXFLAGS += -lfftw3l -DSCTL_HAVE_FFTWL
 
 #PVFMM_INC_DIR = ../include
 #CXXFLAGS += -DSCTL_HAVE_PVFMM -I$(PVFMM_INC_DIR)
-
 
 RM = rm -f
 MKDIRS = mkdir -p
@@ -122,17 +116,20 @@ ifeq "$(OS)" "Darwin"
 	/usr/bin/dsymutil $@ -o $@.dSYM
 endif
 
+# link-only flags of CXXFLAGS, left out of compiles (clang warns of them)
+LINK_ONLY_FLAGS = -l% -L% -Wl,% -rdynamic
+
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)
-	$(CXX) $(CXXFLAGS) -MMD -MP -I$(INCDIR) -c $< -o $@
+	$(CXX) $(filter-out $(LINK_ONLY_FLAGS),$(CXXFLAGS)) -MMD -MP -I$(INCDIR) -c $< -o $@
 
-# Header dependencies of each object, written by -MMD -MP, so that a header edit rebuilds the objects that include it
+# header dependencies (-MMD -MP)
 -include $(wildcard $(OBJDIR)/*.d)
 
-# The objects are kept: the dependency files name them, so make would rebuild any it deleted
+# keep the objects, which the dependency files name
 .SECONDARY: $(patsubst $(BINDIR)/%,$(OBJDIR)/%.o,$(TARGET_BIN))
 
-# GPU tree: needs CUDA and a CUDA-aware MPI, so `gpu` is separate from `all`.
+# GPU tree: needs CUDA and a CUDA-aware MPI (not in `all`)
 NVCC = nvcc -ccbin mpicxx
 NVCCFLAGS = -x cu -std=c++17 -O3 -arch=native -rdc=true --expt-relaxed-constexpr -Xcompiler "-fopenmp" \
             -DSCTL_HAVE_MPI -DSCTL_MAX_DEPTH=20 -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP

@@ -470,6 +470,17 @@ namespace sctl {
           u2.x[i] = (ScalarType)(rand()%100)+2;
           u3.x[i] = (ScalarType)(rand()%100)+5;
         }
+        if constexpr (TypeTraits<ScalarType>::Type == DataType::Real) { // NaN, inf, -0 and subnormals in about half the lanes of u1, and of u2 but for lane 0; no zero divisors
+          const ScalarType sub = pow<(1L << (TypeTraits<ScalarType>::ExpBits - 1)),ScalarType>((ScalarType)0.5); // 2^-1024 for double
+          const ScalarType sv[] = {(ScalarType)NAN, (ScalarType)INFINITY, -(ScalarType)INFINITY, sub, -sub, (ScalarType)-0.0};
+          for (Integer i = 0; i < N; i++) {
+            if (rand() % 2) u1.x[i] = sv[rand() % 6];
+            if (i > 0 && rand() % 2) u2.x[i] = sv[rand() % 5];
+          }
+        }
+        const auto same = [](const ScalarType a, const ScalarType b) { // equal with the same sign, or both NaN
+          return (a == b && std::signbit((double)a) == std::signbit((double)b)) || (a != a && b != b);
+        };
 
         u4.v = -u1.v;
         u5.v = u1.v + u2.v;
@@ -492,24 +503,24 @@ namespace sctl {
         u19.v = 2 - u1.v;
 
         for (Integer i = 0; i < N; i++) {
-          SCTL_ASSERT(u4.x[i] == (ScalarType)-u1.x[i]);
-          SCTL_ASSERT(u5.x[i] == (ScalarType)(u1.x[i] + u2.x[i]));
-          SCTL_ASSERT(u6.x[i] == (ScalarType)(u1.x[i] - u2.x[i]));
-          SCTL_ASSERT(u7.x[i] == (ScalarType)(u1.x[i] * u2.x[i]));
-          SCTL_ASSERT(u8.x[i] == (ScalarType)(u1.x[i] / u2.x[i]));
+          SCTL_ASSERT(same(u4.x[i], (ScalarType)-u1.x[i]));
+          SCTL_ASSERT(same(u5.x[i], (ScalarType)(u1.x[i] + u2.x[i])));
+          SCTL_ASSERT(same(u6.x[i], (ScalarType)(u1.x[i] - u2.x[i])));
+          SCTL_ASSERT(same(u7.x[i], (ScalarType)(u1.x[i] * u2.x[i])));
+          SCTL_ASSERT(same(u8.x[i], (ScalarType)(u1.x[i] / u2.x[i])));
 
-          SCTL_ASSERT(u10.x[i] == (ScalarType)(u1.x[i] + u2.x[i]));
-          SCTL_ASSERT(u11.x[i] == (ScalarType)(u1.x[i] - u2.x[i]));
-          SCTL_ASSERT(u12.x[i] == (ScalarType)(u1.x[i] * u2.x[i]));
-          SCTL_ASSERT(u13.x[i] == (ScalarType)(u1.x[i] / u2.x[i]));
+          SCTL_ASSERT(same(u10.x[i], (ScalarType)(u1.x[i] + u2.x[i])));
+          SCTL_ASSERT(same(u11.x[i], (ScalarType)(u1.x[i] - u2.x[i])));
+          SCTL_ASSERT(same(u12.x[i], (ScalarType)(u1.x[i] * u2.x[i])));
+          SCTL_ASSERT(same(u13.x[i], (ScalarType)(u1.x[i] / u2.x[i])));
 
-          SCTL_ASSERT(u14.x[i] == (ScalarType)(u1.x[i] + u2.x[0]));
-          SCTL_ASSERT(u15.x[i] == (ScalarType)(u1.x[i] - u2.x[0]));
-          SCTL_ASSERT(u16.x[i] == (ScalarType)(u1.x[i] * u2.x[0]));
-          SCTL_ASSERT(u17.x[i] == (ScalarType)(u1.x[i] / u2.x[0]));
+          SCTL_ASSERT(same(u14.x[i], (ScalarType)(u1.x[i] + u2.x[0])));
+          SCTL_ASSERT(same(u15.x[i], (ScalarType)(u1.x[i] - u2.x[0])));
+          SCTL_ASSERT(same(u16.x[i], (ScalarType)(u1.x[i] * u2.x[0])));
+          SCTL_ASSERT(same(u17.x[i], (ScalarType)(u1.x[i] / u2.x[0])));
 
-          SCTL_ASSERT(u18.x[i] == (ScalarType)(u1.x[i] * 2));
-          SCTL_ASSERT(u19.x[i] == (ScalarType)(2 - u1.x[i]));
+          SCTL_ASSERT(same(u18.x[i], (ScalarType)(u1.x[i] * 2)));
+          SCTL_ASSERT(same(u19.x[i], (ScalarType)(2 - u1.x[i])));
 
           if (TypeTraits<ScalarType>::Type == DataType::Integer) {
             SCTL_ASSERT(u9.x[i] == (ScalarType)(u1.x[i]*u2.x[i] + u3.x[i]));
@@ -518,10 +529,15 @@ namespace sctl {
               return (a < 0 ? -a : a);
             };
             static const ScalarType eps = machine_eps<ScalarType>();
-            ScalarType err = myabs(u9.x[i] - (ScalarType)(u1.x[i]*u2.x[i] + u3.x[i]));
-            ScalarType max_val = myabs(u1.x[i]*u2.x[i]) + myabs(u3.x[i]);
-            ScalarType rel_err = err / max_val;
-            SCTL_ASSERT(rel_err < eps);
+            const ScalarType ref = (ScalarType)(u1.x[i]*u2.x[i] + u3.x[i]);
+            if (ref - ref == 0) { // finite
+              ScalarType err = myabs(u9.x[i] - ref);
+              ScalarType max_val = myabs(u1.x[i]*u2.x[i]) + myabs(u3.x[i]);
+              ScalarType rel_err = err / max_val;
+              SCTL_ASSERT(rel_err < eps);
+            } else {
+              SCTL_ASSERT(same(u9.x[i], ref));
+            }
           }
         }
       }
@@ -1106,14 +1122,15 @@ namespace sctl {
           SCTL_ASSERT(erfc(VecType((ScalarType)INFINITY))[0] == 0 && erfc(VecType(-(ScalarType)INFINITY))[0] == 2 && isnan(erfc(VecType((ScalarType)NAN))[0]));
           if constexpr (sizeof(ScalarType) <= sizeof(double)) SCTL_ASSERT(erfc(VecType((ScalarType)30))[0] == 0 && erfc(VecType((ScalarType)-30))[0] == 2);
         }
-        { // erfinv on (-1, 1), ndtri on (0, 1) with tails to 1e-30: against the long double iteration for float and double;
+        { // erfinv on (-1, 1), ndtri on (0, 1) with tails to 1e-30: against the long double iteration where long double is
+          // wider (not for double where long double is double, as on ARM macOS: the reference itself was off by 8 eps);
           // else through erf and erfc, where an error e of z gives about 2 z^2 e in erfc
           VecType y = u5.v, p = (u5.v + (ScalarType)1) * (ScalarType)0.5;
           for (Integer i = 0; i < N; i += 4) p.insert(i, (ScalarType)std::pow(10.0, -30 * drand48()));
           const VecType ei = erfinv(y), nd = ndtri(p), ei5 = approx_erfinv<5>(y), nd5 = approx_ndtri<5>(p);
           for (Integer i = 0; i < N; i++) {
             const ScalarType t = std::min(p[i], 1 - p[i]);
-            if constexpr (TypeTraits<ScalarType>::SigBits <= 53) {
+            if constexpr (TypeTraits<ScalarType>::SigBits < TypeTraits<long double>::SigBits) {
               SCTL_ASSERT(rel(ei[i], (ScalarType)erfinv_generic<long double>(y[i], (1 - fabs((long double)y[i])) / 2)) <= tol);
               SCTL_ASSERT(rel(nd[i], (ScalarType)(std::sqrt(2.0L) * erfinv_generic<long double>(2 * (long double)p[i] - 1, t))) <= tol);
             } else {
