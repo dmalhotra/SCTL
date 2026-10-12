@@ -226,7 +226,7 @@ namespace sctl { // Generic
     }
 
    private:
-    std::conditional_t<Direct, VData, T[sizeof(VData) / sizeof(T)]> a_;
+    alignas(alignof(VData)) std::conditional_t<Direct, VData, T[sizeof(VData) / sizeof(T)]> a_; // the vector copies to it may assume the alignment of VData
   };
 
   template <class VData> inline VData zero_intrin() {
