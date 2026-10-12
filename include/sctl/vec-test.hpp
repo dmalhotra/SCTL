@@ -1106,14 +1106,15 @@ namespace sctl {
           SCTL_ASSERT(erfc(VecType((ScalarType)INFINITY))[0] == 0 && erfc(VecType(-(ScalarType)INFINITY))[0] == 2 && isnan(erfc(VecType((ScalarType)NAN))[0]));
           if constexpr (sizeof(ScalarType) <= sizeof(double)) SCTL_ASSERT(erfc(VecType((ScalarType)30))[0] == 0 && erfc(VecType((ScalarType)-30))[0] == 2);
         }
-        { // erfinv on (-1, 1), ndtri on (0, 1) with tails to 1e-30: against the long double iteration for float and double;
+        { // erfinv on (-1, 1), ndtri on (0, 1) with tails to 1e-30: against the long double iteration where long double is
+          // wider (not for double where long double is double, as on ARM macOS: the reference itself was off by 8 eps);
           // else through erf and erfc, where an error e of z gives about 2 z^2 e in erfc
           VecType y = u5.v, p = (u5.v + (ScalarType)1) * (ScalarType)0.5;
           for (Integer i = 0; i < N; i += 4) p.insert(i, (ScalarType)std::pow(10.0, -30 * drand48()));
           const VecType ei = erfinv(y), nd = ndtri(p), ei5 = approx_erfinv<5>(y), nd5 = approx_ndtri<5>(p);
           for (Integer i = 0; i < N; i++) {
             const ScalarType t = std::min(p[i], 1 - p[i]);
-            if constexpr (TypeTraits<ScalarType>::SigBits <= 53) {
+            if constexpr (TypeTraits<ScalarType>::SigBits < TypeTraits<long double>::SigBits) {
               SCTL_ASSERT(rel(ei[i], (ScalarType)erfinv_generic<long double>(y[i], (1 - fabs((long double)y[i])) / 2)) <= tol);
               SCTL_ASSERT(rel(nd[i], (ScalarType)(std::sqrt(2.0L) * erfinv_generic<long double>(2 * (long double)p[i] - 1, t))) <= tol);
             } else {
