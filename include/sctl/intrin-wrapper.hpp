@@ -7382,10 +7382,10 @@ namespace sctl { // AVX512
   template <> inline Integer mask_count_intrin<VecData<int16_t,32>>(const Mask<VecData<int16_t,32>>& m) { return _mm_popcnt_u32(m.v); }
 #endif
 #if defined(__POPCNT__) && defined(__AVX512DQ__)
-  template <> inline Integer mask_count_intrin<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& m) { return _mm_popcnt_u32(m.v); }
-  template <> inline Integer mask_count_intrin<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& m) { return _mm_popcnt_u32(m.v); }
-  template <> inline Integer mask_count_intrin<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& m) { return _mm_popcnt_u32(m.v); }
-  template <> inline Integer mask_count_intrin<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& m) { return _mm_popcnt_u32(m.v); }
+  template <> inline Integer mask_count_intrin<VecData<int32_t,16>>(const Mask<VecData<int32_t,16>>& m) { return _mm_popcnt_u32(mask_to_u32(m.v)); }
+  template <> inline Integer mask_count_intrin<VecData<int64_t ,8>>(const Mask<VecData<int64_t ,8>>& m) { return _mm_popcnt_u32(mask_to_u32(m.v)); }
+  template <> inline Integer mask_count_intrin<VecData<float  ,16>>(const Mask<VecData<float  ,16>>& m) { return _mm_popcnt_u32(mask_to_u32(m.v)); }
+  template <> inline Integer mask_count_intrin<VecData<double  ,8>>(const Mask<VecData<double  ,8>>& m) { return _mm_popcnt_u32(mask_to_u32(m.v)); }
 #endif
 
   // Math functions
