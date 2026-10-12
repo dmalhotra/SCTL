@@ -416,7 +416,6 @@ namespace sctl { // Generic
 
   // Other functions
   // lanes in an array read in place (through copies, GCC 14 -O3 on ARM gave wrong lanes)
-  // from copies of the arguments (LaneArray)
   template <class VData> inline VData max_intrin(const VData& a, const VData& b) {
     if constexpr (array_lanes<VData>) {
       VData r;
