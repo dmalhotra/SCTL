@@ -1605,7 +1605,9 @@ namespace sctl { // Generic
       double d;
       int64_t i;
     } C = {0x1.8p52}; // x + 1.5 2^52 has the integer x in its low bits, for |x| < 2^51
-    const auto to_real = [&C](const IntVec& x) { return sub_intrin(reinterpret_intrin<RealVec>(add_intrin(x, set1_intrin<IntVec>(C.i))), set1_intrin<RealVec>(C.d)); };
+    const auto to_real = [&C](const IntVec& x) { // the bits of x + 1.5 2^52 for |x| < 2^51, by and/xor, which can't overflow
+      return sub_intrin(reinterpret_intrin<RealVec>(xor_intrin(and_intrin(x, set1_intrin<IntVec>((((int64_t)1) << 52) - 1)), set1_intrin<IntVec>(C.i))), set1_intrin<RealVec>(C.d));
+    };
     const auto to_int = [&C](const RealVec& x) { return sub_intrin(reinterpret_intrin<IntVec>(add_intrin(x, set1_intrin<RealVec>(C.d))), set1_intrin<IntVec>(C.i)); };
     IntVec q = to_int(trunc_intrin(div_intrin(to_real(a), to_real(b))));
 
