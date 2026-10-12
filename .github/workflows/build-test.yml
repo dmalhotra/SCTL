@@ -24,6 +24,7 @@ jobs:
           - macos-latest
         compiler:
           - g++-13
+          - g++-14
           - clang++
         vecflag:
           - -march=native
@@ -57,12 +58,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libomp-dev
+          sudo apt-get install -y libomp-dev g++-14
 
       - name: Setup dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install gcc@13 llvm libomp
+          brew install gcc@13 gcc@14 llvm libomp
           echo "PATH=$(brew --prefix llvm)/bin:$PATH" >> $GITHUB_ENV
           echo "LDFLAGS=-L$(brew --prefix llvm)/lib" >> $GITHUB_ENV
           echo "CPPFLAGS=$CPPFLAGS -I$(brew --prefix llvm)/include" >> $GITHUB_ENV
