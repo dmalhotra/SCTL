@@ -11,6 +11,8 @@
 
 The only requirement to use SCTL is a working C++17 compliant compiler with OpenMP 4.0 support. It has been tested with GCC-9 and newer.
 
+**GCC 14 on AArch64 (ARM, including Apple silicon):** compile with `-mearly-ra=none`. GCC 14's early register allocator for vector registers can assign one register to two values in use at the same time, which gave wrong results in `Vec` at `-O3`. Other GCC versions don't need the flag (GCC 11 to 13 reject it).
+
 ## Getting Started
 
 To get started, download the latest version of SCTL from the [SCTL GitHub](https://github.com/dmalhotra/SCTL).
