@@ -8,15 +8,22 @@ on:
     branches:
       - master
 
+# a new push cancels the run in progress
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         os:
-          - ubuntu-latest
+          - ubuntu-24.04 # GCC 13.3, 14.2 (bug 117159)
           - macos-latest
         compiler:
           - g++-13
+          - g++-14
           - clang++
         vecflag:
           - -march=native
@@ -26,57 +33,75 @@ jobs:
         optflag:
           - -O0
           - -O3
+        earlyra: # GCC 14 on Apple silicon: off adds -mearly-ra=none
+          - "off"
+        include:
+          # GCC 14 with its early register allocator: tests the workarounds in the code
+          - os: macos-latest
+            compiler: g++-14
+            vecflag: -march=native
+            memdbgflag: ""
+            optflag: -O3
+            earlyra: "on"
 
     runs-on: ${{ matrix.os }}
 
     env:
-      # Common compiler flags
       CPPFLAGS: >-
         -std=c++17 -g -rdynamic -fopenmp -Wall -Wfloat-conversion
         -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_PROFILE=5 -DSCTL_VERBOSE
         -DSCTL_SIG_HANDLER -fstack-protector
-      # Address sanitizer flags
       ASANFLAGS: >-
         -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract,float-divide-by-zero,float-cast-overflow
         -fno-sanitize-recover=all
 
     steps:
-      # Step 1: Checkout the repository
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
-      # Step 2: Setup dependencies based on OS
       - name: Setup dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libomp-dev
+          sudo apt-get install -y libomp-dev g++-14
 
       - name: Setup dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install gcc@13 llvm libomp
+          brew install gcc@13 gcc@14 llvm libomp
           echo "PATH=$(brew --prefix llvm)/bin:$PATH" >> $GITHUB_ENV
           echo "LDFLAGS=-L$(brew --prefix llvm)/lib" >> $GITHUB_ENV
           echo "CPPFLAGS=$CPPFLAGS -I$(brew --prefix llvm)/include" >> $GITHUB_ENV
           echo "LIBRARY_PATH=$(brew --prefix llvm)/lib:$LIBRARY_PATH" >> $GITHUB_ENV
 
-      # Step 3: Build the project
+      - name: CPU
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            echo "::notice::CPU: $(lscpu | sed -n 's/^Model name: *//p'); AVX-512: $(grep -q -w avx512f /proc/cpuinfo && echo yes || echo no)"
+          else
+            echo "::notice::CPU: $(sysctl -n machdep.cpu.brand_string)"
+          fi
+
       - name: Build project
         run: |
-          # Set compilation flags dynamically
           CXXFLAGS="${CPPFLAGS} ${{ matrix.optflag }} ${{ matrix.memdbgflag }}"
           if [ "$(uname -s)" == "Darwin" ] && [ "$(uname -m)" == "arm64" ]; then
-            CXXFLAGS+=" -mcpu=apple-m1 -lomp"
+            CXXFLAGS+=" -mcpu=apple-m1"
+            if [[ "${{ matrix.compiler }}" == g++* ]]; then
+              CXXFLAGS+=" -lomp" # clang's -fopenmp links libomp
+            fi
+            if [ "${{ matrix.compiler }}" == "g++-14" ] && [ "${{ matrix.earlyra }}" == "off" ]; then
+              CXXFLAGS+=" -mearly-ra=none" # see README
+            fi
           else
             CXXFLAGS+=" ${{ matrix.vecflag }} ${ASANFLAGS}"
           fi
-          # Enable extended precision on non-clang or non-Apple systems
-          if [ "${{ matrix.compiler }}" != "clang++" ] || [ "$(uname -s)" != "Darwin" ] && [ "$(uname -m)" != "arm64" ]; then
+          # __float128: x86, and GCC on Apple silicon
+          if [ "$(uname -m)" == "x86_64" ] || [[ "${{ matrix.compiler }}" == g++* ]]; then
             CXXFLAGS+=" -DSCTL_QUAD_T=__float128"
           fi
-          make -j CXX="${{ matrix.compiler }}" CXXFLAGS="${CXXFLAGS}"
+          # one compile per core: test-vec and test-quad-elem take about 3 GB each at -O3
+          make -j$(getconf _NPROCESSORS_ONLN) CXX="${{ matrix.compiler }}" CXXFLAGS="${CXXFLAGS}"
 
-      # Step 4: Run tests
       - name: Run tests
-        run: make test
+        run: bash .github/run-tests.sh
