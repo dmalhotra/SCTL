@@ -19,15 +19,17 @@ namespace sctl {
   namespace detail_function_table {
     // sum c[i] t^i, i < R, by Estrin's scheme; c is overwritten
     template <Integer R, class VecR> inline VecR estrin(VecR (&c)[R], const VecR& t) {
-      VecR p = t;
-      Integer len = R;
-      while (len > 1) {
-        for (Integer i = 0; i < len / 2; i++) c[i] = FMA(c[2 * i + 1], p, c[2 * i]);
-        if (len % 2 && len <= R) c[len / 2] = c[len - 1]; // len <= R always, for GCC 14, 15 -Warray-bounds
-        len = (len + 1) / 2;
-        p = p * p;
-      }
-      return c[0];
+      const auto step = [&c](const auto& self, auto len_c, const VecR& p) -> VecR { // sum c[i] p^i, i < len
+        static constexpr Integer len = decltype(len_c)::value;
+        if constexpr (len == 1) {
+          return c[0];
+        } else {
+          for (Integer i = 0; i < len / 2; i++) c[i] = FMA(c[2 * i + 1], p, c[2 * i]);
+          if constexpr (len % 2 == 1) c[len / 2] = c[len - 1];
+          return self(self, std::integral_constant<Integer, (len + 1) / 2>(), p * p);
+        }
+      };
+      return step(step, std::integral_constant<Integer, R>(), t);
     }
     // The indices of rows_poly for the rows of N coefficients of the N lanes: the even and the odd part at each stage,
     // and the lane and the coefficient group of each element after it.
