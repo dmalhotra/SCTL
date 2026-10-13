@@ -619,6 +619,10 @@ namespace sctl {
         check({(2 * K < N ? K : 2 * N - 1 - K)...});
         r.v = blend<(K % 3 == 2 ? -1 : (K % 3 == 1 ? N + (N - 1 - K) : K))...>(a.v, b.v); // a, b reversed and zeros
         check({(K % 3 == 2 ? -1 : (K % 3 == 1 ? N + (N - 1 - K) : K))...});
+        r.v = blend<(K % 4 == 0 ? K : (K % 4 == 1 ? N + K : (K % 4 == 2 ? (K + N / 2) % N : N + (K + N / 2) % N)))...>(a.v, b.v); // each half from both halves of a and b
+        check({(K % 4 == 0 ? K : (K % 4 == 1 ? N + K : (K % 4 == 2 ? (K + N / 2) % N : N + (K + N / 2) % N)))...});
+        r.v = blend<(K % 4 == 3 ? -1 : (K % 4 == 1 ? N + K : (K % 4 == 2 ? (K + N / 2) % N : K)))...>(a.v, b.v); // three of the halves and zeros
+        check({(K % 4 == 3 ? -1 : (K % 4 == 1 ? N + K : (K % 4 == 2 ? (K + N / 2) % N : K)))...});
       }
 
       static void test_mask() {

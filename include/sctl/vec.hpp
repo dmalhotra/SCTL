@@ -20,6 +20,9 @@ namespace sctl {
    * `SCTL_HAVE_SVML`) and **libmvec** (by defining the macro `SCTL_HAVE_LIBMVEC`)
    * libraries when they are available.
    *
+   * A vector of a power of 2 times a native SSE, AVX, AVX-512 or NEON length is held and computed as two halves, with
+   * the results of the halves; the native widths below include these lengths.
+   *
    * @tparam ValueType Data type of the vector elements.
    * @tparam N Number of elements in the vector. Defaults to DefaultVecLen<ValueType>().
    */

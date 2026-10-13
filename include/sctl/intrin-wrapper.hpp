@@ -175,22 +175,45 @@ namespace sctl { // Traits
 
 namespace sctl { // Generic
 
-  template <class ValueType, Integer N> struct alignas(sizeof(ValueType)*N>SCTL_ALIGN_BYTES?SCTL_ALIGN_BYTES:sizeof(ValueType)*N) VecData {
-    using ScalarType = ValueType;
-    static constexpr Integer Size = N;
-    static constexpr bool ArrayLanes = true; // the lanes in an array, not in a vector register
-    ScalarType v[N];
-  };
+  template <class ValueType, Integer N> struct VecData;
 
   template <class VData, class = void> inline constexpr bool array_lanes = false; // VData holds its lanes in an array
   template <class VData> inline constexpr bool array_lanes<VData, std::enable_if_t<VData::ArrayLanes>> = true;
+
+  // VecData<ValueType,N> holds two halves when the half is in vector registers, or is itself two halves
+  template <class ValueType, Integer N, bool = (N % 2 == 0)> struct SplitLanes : std::false_type {};
+  template <class ValueType, Integer N> struct SplitLanes<ValueType, N, true> : std::bool_constant<!array_lanes<VecData<ValueType, N/2>>> {};
+
+  template <class ValueType, Integer N, bool = SplitLanes<ValueType, N>::value> struct VecDataLanes {
+    static constexpr bool ArrayLanes = true; // the lanes in an array, not in a vector register
+    ValueType v[N];
+  };
+  template <class ValueType, Integer N> struct VecDataLanes<ValueType, N, true> {
+    static constexpr bool SplitLanes = true;
+    VecData<ValueType, N/2> lo, hi;
+  };
+
+  template <class ValueType, Integer N> struct alignas(sizeof(ValueType)*N>SCTL_ALIGN_BYTES?SCTL_ALIGN_BYTES:sizeof(ValueType)*N) VecData : VecDataLanes<ValueType, N> {
+    using ScalarType = ValueType;
+    static constexpr Integer Size = N;
+  };
+
+  template <class VData, class = void> inline constexpr bool split_lanes = false; // VData holds two halves, lo and hi
+  template <class VData> inline constexpr bool split_lanes<VData, std::enable_if_t<VData::SplitLanes>> = true;
+  template <class VData> using HalfVData = VecData<typename VData::ScalarType, VData::Size/2>;
 
   /**
    * The lanes of a VData as an array of T, copied by memcpy or directly, not through a union, whose accesses GCC 11 to
    * 14 can reorder.
    */
   template <class VData, class T = typename VData::ScalarType> class LaneArray {
-    static constexpr bool Direct = array_lanes<VData> && std::is_same<T, std::remove_extent_t<decltype(VData::v)>>::value; // the lanes are an array of T
+    static constexpr bool Direct = [] { // the lanes are an array of T
+      if constexpr (array_lanes<VData>) {
+        return std::is_same<T, std::remove_extent_t<decltype(VData::v)>>::value;
+      } else {
+        return false;
+      }
+    }();
 
    public:
     LaneArray() = default;
@@ -231,14 +254,22 @@ namespace sctl { // Generic
   };
 
   template <class VData> inline VData zero_intrin() {
-    LaneArray<VData> a_;
-    for (Integer i = 0; i < VData::Size; i++) a_[i] = (typename VData::ScalarType)0;
-    return a_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(zero_intrin<HalfVData<VData>>(), zero_intrin<HalfVData<VData>>());
+    } else {
+      LaneArray<VData> a_;
+      for (Integer i = 0; i < VData::Size; i++) a_[i] = (typename VData::ScalarType)0;
+      return a_.value();
+    }
   }
   template <class VData> inline VData set1_intrin(typename VData::ScalarType a) {
-    LaneArray<VData> a_;
-    for (Integer i = 0; i < VData::Size; i++) a_[i] = a;
-    return a_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(set1_intrin<HalfVData<VData>>(a), set1_intrin<HalfVData<VData>>(a));
+    } else {
+      LaneArray<VData> a_;
+      for (Integer i = 0; i < VData::Size; i++) a_[i] = a;
+      return a_.value();
+    }
   }
 
   template <Integer k, Integer Size, class Data, class T> inline void SetHelper(Data& vec, T x) {
@@ -256,25 +287,47 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline VData load1_intrin(typename VData::ScalarType const* p) {
-    LaneArray<VData> vec;
-    for (Integer i = 0; i < VData::Size; i++) vec[i] = p[0];
-    return vec.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(load1_intrin<HalfVData<VData>>(p), load1_intrin<HalfVData<VData>>(p));
+    } else {
+      LaneArray<VData> vec;
+      for (Integer i = 0; i < VData::Size; i++) vec[i] = p[0];
+      return vec.value();
+    }
   }
   template <class VData> inline VData loadu_intrin(typename VData::ScalarType const* p) {
-    LaneArray<VData> vec;
-    for (Integer i = 0; i < VData::Size; i++) vec[i] = p[i];
-    return vec.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(loadu_intrin<HalfVData<VData>>(p), loadu_intrin<HalfVData<VData>>(p + VData::Size/2));
+    } else {
+      LaneArray<VData> vec;
+      for (Integer i = 0; i < VData::Size; i++) vec[i] = p[i];
+      return vec.value();
+    }
   }
   template <class VData> inline VData load_intrin(typename VData::ScalarType const* p) {
-    return loadu_intrin<VData>(p);
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(load_intrin<HalfVData<VData>>(p), load_intrin<HalfVData<VData>>(p + VData::Size/2));
+    } else {
+      return loadu_intrin<VData>(p);
+    }
   }
 
   template <class VData> inline void storeu_intrin(typename VData::ScalarType* p, VData vec) {
-    LaneArray<VData> vec_(vec);
-    for (Integer i = 0; i < VData::Size; i++) p[i] = vec_[i];
+    if constexpr (split_lanes<VData>) {
+      storeu_intrin(p, vec.lo);
+      storeu_intrin(p + VData::Size/2, vec.hi);
+    } else {
+      LaneArray<VData> vec_(vec);
+      for (Integer i = 0; i < VData::Size; i++) p[i] = vec_[i];
+    }
   }
   template <class VData> inline void store_intrin(typename VData::ScalarType* p, VData vec) {
-    storeu_intrin(p,vec);
+    if constexpr (split_lanes<VData>) {
+      store_intrin(p, vec.lo);
+      store_intrin(p + VData::Size/2, vec.hi);
+    } else {
+      storeu_intrin(p,vec);
+    }
   }
 
   template <class VData> inline typename VData::ScalarType extract_intrin(VData vec, Integer i) {
@@ -296,128 +349,190 @@ namespace sctl { // Generic
 
   // Arithmetic operators
   template <class VData> inline VData unary_minus_intrin(const VData& vec) {
-    LaneArray<VData> vec_(vec);
-    for (Integer i = 0; i < VData::Size; i++) vec_[i] = -vec_[i];
-    return vec_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(unary_minus_intrin(vec.lo), unary_minus_intrin(vec.hi));
+    } else {
+      LaneArray<VData> vec_(vec);
+      for (Integer i = 0; i < VData::Size; i++) vec_[i] = -vec_[i];
+      return vec_.value();
+    }
   }
   template <class VData> inline VData mul_intrin(const VData& a, const VData& b) {
-    LaneArray<VData> a_(a);
-    LaneArray<VData> b_(b);
-    for (Integer i = 0; i < VData::Size; i++) a_[i] *= b_[i];
-    return a_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(mul_intrin(a.lo, b.lo), mul_intrin(a.hi, b.hi));
+    } else {
+      LaneArray<VData> a_(a);
+      LaneArray<VData> b_(b);
+      for (Integer i = 0; i < VData::Size; i++) a_[i] *= b_[i];
+      return a_.value();
+    }
   }
   template <class VData> inline VData div_intrin(const VData& a, const VData& b) {
-    using Real = typename VData::ScalarType;
-    LaneArray<VData> a_(a);
-    LaneArray<VData> b_(b);
-    for (Integer i = 0; i < VData::Size; i++) {
-      if constexpr (!std::is_integral<Real>::value) { // the IEEE 754 quotient by zero, as the vector instructions; undefined in C++
-        if (b_[i] == 0) {
-          const Real q = (a_[i] == 0 || !(a_[i] == a_[i]) ? (Real)NAN : (Real)INFINITY);
-          a_[i] = (std::signbit((double)a_[i]) != std::signbit((double)b_[i]) ? -q : q);
-          continue;
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(div_intrin(a.lo, b.lo), div_intrin(a.hi, b.hi));
+    } else {
+      using Real = typename VData::ScalarType;
+      LaneArray<VData> a_(a);
+      LaneArray<VData> b_(b);
+      for (Integer i = 0; i < VData::Size; i++) {
+        if constexpr (!std::is_integral<Real>::value) { // the IEEE 754 quotient by zero, as the vector instructions; undefined in C++
+          if (b_[i] == 0) {
+            const Real q = (a_[i] == 0 || !(a_[i] == a_[i]) ? (Real)NAN : (Real)INFINITY);
+            a_[i] = (std::signbit((double)a_[i]) != std::signbit((double)b_[i]) ? -q : q);
+            continue;
+          }
         }
+        a_[i] /= b_[i];
       }
-      a_[i] /= b_[i];
+      return a_.value();
     }
-    return a_.value();
   }
   template <class VData> inline VData add_intrin(const VData& a, const VData& b) {
-    LaneArray<VData> a_(a);
-    LaneArray<VData> b_(b);
-    for (Integer i = 0; i < VData::Size; i++) a_[i] += b_[i];
-    return a_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(add_intrin(a.lo, b.lo), add_intrin(a.hi, b.hi));
+    } else {
+      LaneArray<VData> a_(a);
+      LaneArray<VData> b_(b);
+      for (Integer i = 0; i < VData::Size; i++) a_[i] += b_[i];
+      return a_.value();
+    }
   }
   template <class VData> inline VData sub_intrin(const VData& a, const VData& b) {
-    LaneArray<VData> a_(a);
-    LaneArray<VData> b_(b);
-    for (Integer i = 0; i < VData::Size; i++) a_[i] -= b_[i];
-    return a_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(sub_intrin(a.lo, b.lo), sub_intrin(a.hi, b.hi));
+    } else {
+      LaneArray<VData> a_(a);
+      LaneArray<VData> b_(b);
+      for (Integer i = 0; i < VData::Size; i++) a_[i] -= b_[i];
+      return a_.value();
+    }
   }
   template <class VData> inline VData rem_intrin(const VData& a, const VData& b) { // remainder of the integer division, a - (a/b)*b
     return sub_intrin(a, mul_intrin(div_intrin(a, b), b));
   }
   template <class VData> inline VData fma_intrin(const VData& a, const VData& b, const VData& c) {
-    return add_intrin(mul_intrin(a,b), c);
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(fma_intrin(a.lo, b.lo, c.lo), fma_intrin(a.hi, b.hi, c.hi));
+    } else {
+      return add_intrin(mul_intrin(a,b), c);
+    }
   }
 
   // Bitwise operators
   template <class VData> inline VData not_intrin(const VData& vec) {
-    static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
-    LaneArray<VData, int8_t> vec_(vec);
-    for (Integer i = 0; i < N; i++) vec_[i] = ~vec_[i];
-    return vec_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(not_intrin(vec.lo), not_intrin(vec.hi));
+    } else {
+      static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
+      LaneArray<VData, int8_t> vec_(vec);
+      for (Integer i = 0; i < N; i++) vec_[i] = ~vec_[i];
+      return vec_.value();
+    }
   }
   template <class VData> inline VData and_intrin(const VData& a, const VData& b) {
-    static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
-    LaneArray<VData, int8_t> a_(a);
-    LaneArray<VData, int8_t> b_(b);
-    for (Integer i = 0; i < N; i++) a_[i] = a_[i] & b_[i];
-    return a_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(and_intrin(a.lo, b.lo), and_intrin(a.hi, b.hi));
+    } else {
+      static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
+      LaneArray<VData, int8_t> a_(a);
+      LaneArray<VData, int8_t> b_(b);
+      for (Integer i = 0; i < N; i++) a_[i] = a_[i] & b_[i];
+      return a_.value();
+    }
   }
   template <class VData> inline VData xor_intrin(const VData& a, const VData& b) {
-    static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
-    LaneArray<VData, int8_t> a_(a);
-    LaneArray<VData, int8_t> b_(b);
-    for (Integer i = 0; i < N; i++) a_[i] = a_[i] ^ b_[i];
-    return a_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(xor_intrin(a.lo, b.lo), xor_intrin(a.hi, b.hi));
+    } else {
+      static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
+      LaneArray<VData, int8_t> a_(a);
+      LaneArray<VData, int8_t> b_(b);
+      for (Integer i = 0; i < N; i++) a_[i] = a_[i] ^ b_[i];
+      return a_.value();
+    }
   }
   template <class VData> inline VData or_intrin(const VData& a, const VData& b) {
-    static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
-    LaneArray<VData, int8_t> a_(a);
-    LaneArray<VData, int8_t> b_(b);
-    for (Integer i = 0; i < N; i++) a_[i] = a_[i] | b_[i];
-    return a_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(or_intrin(a.lo, b.lo), or_intrin(a.hi, b.hi));
+    } else {
+      static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
+      LaneArray<VData, int8_t> a_(a);
+      LaneArray<VData, int8_t> b_(b);
+      for (Integer i = 0; i < N; i++) a_[i] = a_[i] | b_[i];
+      return a_.value();
+    }
   }
   template <class VData> inline VData andnot_intrin(const VData& a, const VData& b) {
-    static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
-    LaneArray<VData, int8_t> a_(a);
-    LaneArray<VData, int8_t> b_(b);
-    for (Integer i = 0; i < N; i++) a_[i] = a_[i] & (~b_[i]);
-    return a_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(andnot_intrin(a.lo, b.lo), andnot_intrin(a.hi, b.hi));
+    } else {
+      static constexpr Integer N = VData::Size*sizeof(typename VData::ScalarType);
+      LaneArray<VData, int8_t> a_(a);
+      LaneArray<VData, int8_t> b_(b);
+      for (Integer i = 0; i < N; i++) a_[i] = a_[i] & (~b_[i]);
+      return a_.value();
+    }
   }
 
   // Bitshift
   template <class VData> inline VData bitshiftleft_intrin(const VData& a, const Integer& rhs) {
-    static constexpr Integer N = VData::Size;
-    using UInt = typename IntegerType<sizeof(typename VData::ScalarType)>::unsigned_value;
-    LaneArray<VData, UInt> a_(a);
-    for (Integer i = 0; i < N; i++) a_[i] <<= rhs;
-    return a_.value();
-  }
-  template <class VData> inline VData bitshiftright_intrin(const VData& a, const Integer& rhs) {
-    static constexpr Integer N = VData::Size;
-    using ScalarType = typename VData::ScalarType;
-    if constexpr (TypeTraits<ScalarType>::Type == DataType::Integer) { // fills with the sign bit
-      LaneArray<VData> a_(a);
-      for (Integer i = 0; i < N; i++) a_[i] = a_[i] >> rhs;
-      return a_.value();
-    } else { // the raw bits, filled with zeros, as in the SSE, AVX and AVX-512 paths
-      LaneArray<VData, typename IntegerType<sizeof(ScalarType)>::unsigned_value> a_(a);
-      for (Integer i = 0; i < N; i++) a_[i] >>= rhs;
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(bitshiftleft_intrin(a.lo, rhs), bitshiftleft_intrin(a.hi, rhs));
+    } else {
+      static constexpr Integer N = VData::Size;
+      using UInt = typename IntegerType<sizeof(typename VData::ScalarType)>::unsigned_value;
+      LaneArray<VData, UInt> a_(a);
+      for (Integer i = 0; i < N; i++) a_[i] <<= rhs;
       return a_.value();
     }
   }
+  template <class VData> inline VData bitshiftright_intrin(const VData& a, const Integer& rhs) {
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(bitshiftright_intrin(a.lo, rhs), bitshiftright_intrin(a.hi, rhs));
+    } else {
+      static constexpr Integer N = VData::Size;
+      using ScalarType = typename VData::ScalarType;
+      if constexpr (TypeTraits<ScalarType>::Type == DataType::Integer) { // fills with the sign bit
+        LaneArray<VData> a_(a);
+        for (Integer i = 0; i < N; i++) a_[i] = a_[i] >> rhs;
+        return a_.value();
+      } else { // the raw bits, filled with zeros, as in the SSE, AVX and AVX-512 paths
+        LaneArray<VData, typename IntegerType<sizeof(ScalarType)>::unsigned_value> a_(a);
+        for (Integer i = 0; i < N; i++) a_[i] >>= rhs;
+        return a_.value();
+      }
+    }
+  }
   template <class VData> inline VData bitshiftleft_intrin(const VData& a, const VData& rhs) { // lane i bit shifted by lane i of rhs
-    static constexpr Integer N = VData::Size;
-    using UInt = typename IntegerType<sizeof(typename VData::ScalarType)>::unsigned_value;
-    LaneArray<VData, UInt> a_(a);
-    LaneArray<VData> k_(rhs);
-    for (Integer i = 0; i < N; i++) a_[i] <<= k_[i];
-    return a_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(bitshiftleft_intrin(a.lo, rhs.lo), bitshiftleft_intrin(a.hi, rhs.hi));
+    } else {
+      static constexpr Integer N = VData::Size;
+      using UInt = typename IntegerType<sizeof(typename VData::ScalarType)>::unsigned_value;
+      LaneArray<VData, UInt> a_(a);
+      LaneArray<VData> k_(rhs);
+      for (Integer i = 0; i < N; i++) a_[i] <<= k_[i];
+      return a_.value();
+    }
   }
   template <class VData> inline VData bitshiftright_intrin(const VData& a, const VData& rhs) { // lane i bit shifted by lane i of rhs
-    static constexpr Integer N = VData::Size;
-    LaneArray<VData> a_(a);
-    LaneArray<VData> k_(rhs);
-    for (Integer i = 0; i < N; i++) a_[i] = a_[i] >> k_[i];
-    return a_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(bitshiftright_intrin(a.lo, rhs.lo), bitshiftright_intrin(a.hi, rhs.hi));
+    } else {
+      static constexpr Integer N = VData::Size;
+      LaneArray<VData> a_(a);
+      LaneArray<VData> k_(rhs);
+      for (Integer i = 0; i < N; i++) a_[i] = a_[i] >> k_[i];
+      return a_.value();
+    }
   }
 
   // Other functions
   // lanes in an array read in place (through copies, GCC 14 -O3 on ARM gave wrong lanes)
   template <class VData> inline VData max_intrin(const VData& a, const VData& b) {
-    if constexpr (array_lanes<VData>) {
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(max_intrin(a.lo, b.lo), max_intrin(a.hi, b.hi));
+    } else if constexpr (array_lanes<VData>) {
       VData r;
       for (Integer i = 0; i < VData::Size; i++) r.v[i] = (b.v[i] < a.v[i] ? a.v[i] : b.v[i]); // b if either is NaN, as maxps/maxpd
       return r;
@@ -429,7 +544,9 @@ namespace sctl { // Generic
     }
   }
   template <class VData> inline VData min_intrin(const VData& a, const VData& b) {
-    if constexpr (array_lanes<VData>) {
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(min_intrin(a.lo, b.lo), min_intrin(a.hi, b.hi));
+    } else if constexpr (array_lanes<VData>) {
       VData r;
       for (Integer i = 0; i < VData::Size; i++) r.v[i] = (a.v[i] < b.v[i] ? a.v[i] : b.v[i]); // b if either is NaN, as minps/minpd
       return r;
@@ -442,50 +559,113 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline void transpose_intrin(VData (&v)[VData::Size]) {
-    static constexpr Integer N = VData::Size;
-    typename VData::ScalarType buf[N][N];
-    for (Integer i = 0; i < N; i++) storeu_intrin(buf[i], v[i]);
-    for (Integer i = 0; i < N; i++) {
-      for (Integer j = 0; j < i; j++) {
-        const typename VData::ScalarType t = buf[i][j];
-        buf[i][j] = buf[j][i];
-        buf[j][i] = t;
+    if constexpr (split_lanes<VData>) {
+      static constexpr Integer H = VData::Size/2; // the blocks [A B; C D] to [A' C'; B' D']
+      HalfVData<VData> a[H], b[H], c[H], d[H];
+      for (Integer i = 0; i < H; i++) {
+        a[i] = v[i].lo;
+        b[i] = v[i].hi;
+        c[i] = v[H + i].lo;
+        d[i] = v[H + i].hi;
       }
+      transpose_intrin(a);
+      transpose_intrin(b);
+      transpose_intrin(c);
+      transpose_intrin(d);
+      for (Integer i = 0; i < H; i++) {
+        v[i] = concat_intrin(a[i], c[i]);
+        v[H + i] = concat_intrin(b[i], d[i]);
+      }
+    } else {
+      static constexpr Integer N = VData::Size;
+      typename VData::ScalarType buf[N][N];
+      for (Integer i = 0; i < N; i++) storeu_intrin(buf[i], v[i]);
+      for (Integer i = 0; i < N; i++) {
+        for (Integer j = 0; j < i; j++) {
+          const typename VData::ScalarType t = buf[i][j];
+          buf[i][j] = buf[j][i];
+          buf[j][i] = t;
+        }
+      }
+      for (Integer i = 0; i < N; i++) v[i] = loadu_intrin<VData>(buf[i]);
     }
-    for (Integer i = 0; i < N; i++) v[i] = loadu_intrin<VData>(buf[i]);
   }
 
   template <class VData> inline VData swap_pairs_intrin(const VData& vec) {
-    static_assert(VData::Size % 2 == 0, "swap_pairs requires an even number of lanes.");
-    LaneArray<VData> vec_(vec);
-    for (Integer i = 0; i < VData::Size; i += 2) {
-      const typename VData::ScalarType t = vec_[i];
-      vec_[i] = vec_[i + 1];
-      vec_[i + 1] = t;
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(swap_pairs_intrin(vec.lo), swap_pairs_intrin(vec.hi));
+    } else {
+      static_assert(VData::Size % 2 == 0, "swap_pairs requires an even number of lanes.");
+      LaneArray<VData> vec_(vec);
+      for (Integer i = 0; i < VData::Size; i += 2) {
+        const typename VData::ScalarType t = vec_[i];
+        vec_[i] = vec_[i + 1];
+        vec_[i + 1] = t;
+      }
+      return vec_.value();
     }
-    return vec_.value();
   }
 
-  // Element k of the result is a[I_k] for 0 <= I_k < N, b[I_k - N] for N <= I_k < 2N, and 0 for I_k = -1. With GCC 12+
-  // and clang by __builtin_shufflevector on a vector of the scalar type, mapped by the compiler to the shuffle, permute
-  // and blend instructions of the target; else lane by lane.
+  // Element k of the result is a[I_k] for 0 <= I_k < N, b[I_k - N] for N <= I_k < 2N, and 0 for I_k = -1. Where VData
+  // holds two halves, each half of the result by blends of the halves of a and b it takes lanes from; with GCC 12+ and
+  // clang by __builtin_shufflevector on a vector of the scalar type, mapped by the compiler to the shuffle, permute and
+  // blend instructions of the target; else lane by lane.
   template <Integer... I> struct BlendIntrin {
     template <class VData> static inline VData apply(const VData& a, const VData& b) {
       using T = typename VData::ScalarType;
       static constexpr Integer N = VData::Size;
       static_assert(sizeof...(I) == N, "blend and permute take one index per lane.");
       static_assert(((-1 <= I && I < 2 * N) && ...), "a blend index outside [-1, 2N).");
+      if constexpr (split_lanes<VData>) {
+        return concat_intrin(half<0>(a, b, std::make_integer_sequence<Integer, N/2>()), half<1>(a, b, std::make_integer_sequence<Integer, N/2>()));
+      } else {
 #if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 12)
-      if constexpr (std::is_arithmetic<T>::value && sizeof(T) <= 8 && (N & (N - 1)) == 0 && sizeof(VData) == N * sizeof(T)) {
-        return lanes(a, b, std::make_integer_sequence<Integer, N>());
-      }
+        if constexpr (std::is_arithmetic<T>::value && sizeof(T) <= 8 && (N & (N - 1)) == 0 && sizeof(VData) == N * sizeof(T)) {
+          return lanes(a, b, std::make_integer_sequence<Integer, N>());
+        }
 #endif
-      const LaneArray<VData> a_(a);
-      const LaneArray<VData> b_(b);
-      LaneArray<VData> r_(a);
-      static constexpr Integer idx[N] = {I...};
-      for (Integer k = 0; k < N; k++) r_[k] = (idx[k] < 0 ? (T)0 : (idx[k] < N ? a_[idx[k]] : b_[idx[k] - N]));
-      return r_.value();
+        const LaneArray<VData> a_(a);
+        const LaneArray<VData> b_(b);
+        LaneArray<VData> r_(a);
+        static constexpr Integer idx[N] = {I...};
+        for (Integer k = 0; k < N; k++) r_[k] = (idx[k] < 0 ? (T)0 : (idx[k] < N ? a_[idx[k]] : b_[idx[k] - N]));
+        return r_.value();
+      }
+    }
+    // the n-th distinct half (a.lo, a.hi, b.lo, b.hi: 0 to 3) read by half h of the result; -1 past the last
+    template <Integer h, Integer H> static constexpr Integer source(const Integer n) {
+      const Integer idx[] = {I...};
+      Integer s[4] = {-1, -1, -1, -1};
+      Integer m = 0;
+      for (Integer k = h * H; k < (h + 1) * H; k++) {
+        bool seen = (idx[k] < 0);
+        for (Integer j = 0; j < m; j++) seen = seen || (s[j] == idx[k] / H);
+        if (!seen) s[m++] = idx[k] / H;
+      }
+      return s[n];
+    }
+    // index i of a blend of the halves p and q; -1 if it is in neither
+    template <Integer H> static constexpr Integer lane(const Integer i, const Integer p, const Integer q) {
+      return (i < 0 ? -1 : (i / H == p ? i % H : (i / H == q ? H + i % H : -1)));
+    }
+    template <Integer s, class VData> static inline const HalfVData<VData>& part(const VData& a, const VData& b) {
+      if constexpr (s <= 0) return a.lo;
+      else if constexpr (s == 1) return a.hi;
+      else if constexpr (s == 2) return b.lo;
+      else return b.hi;
+    }
+    // half h of the result: a blend of the two halves it reads, or of two such blends where it reads more
+    template <Integer h, class VData, Integer... K> static inline HalfVData<VData> half(const VData& a, const VData& b, std::integer_sequence<Integer, K...>) {
+      static constexpr Integer H = VData::Size / 2;
+      static constexpr Integer idx[] = {I...};
+      static constexpr Integer s0 = source<h, H>(0), s1 = source<h, H>(1), s2 = source<h, H>(2), s3 = source<h, H>(3);
+      const HalfVData<VData> x = BlendIntrin<lane<H>(idx[h * H + K], s0, s1)...>::apply(part<s0>(a, b), part<(s1 < 0 ? s0 : s1)>(a, b));
+      if constexpr (s2 < 0) {
+        return x;
+      } else {
+        const HalfVData<VData> y = BlendIntrin<lane<H>(idx[h * H + K], s2, s3)...>::apply(part<s2>(a, b), part<(s3 < 0 ? s2 : s3)>(a, b));
+        return BlendIntrin<(idx[h * H + K] < 0 ? -1 : (lane<H>(idx[h * H + K], s0, s1) >= 0 ? K : H + K))...>::apply(x, y);
+      }
     }
 #if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 12)
     template <class VData, Integer... K> static inline VData lanes(const VData& a, const VData& b, std::integer_sequence<Integer, K...>) {
@@ -513,10 +693,14 @@ namespace sctl { // Generic
 
   // Conversion operators
   template <class RetType, class ValueType, Integer N> inline RetType reinterpret_intrin(const VecData<ValueType,N>& v) {
-    static_assert(sizeof(RetType) == sizeof(VecData<ValueType,N>), "Illegal type cast -- size of types does not match.");
-    RetType r;
-    std::memcpy(&r, &v, sizeof(RetType));
-    return r;
+    if constexpr (split_lanes<RetType> && split_lanes<VecData<ValueType,N>>) {
+      return concat_intrin(reinterpret_intrin<HalfVData<RetType>>(v.lo), reinterpret_intrin<HalfVData<RetType>>(v.hi));
+    } else {
+      static_assert(sizeof(RetType) == sizeof(VecData<ValueType,N>), "Illegal type cast -- size of types does not match.");
+      RetType r;
+      std::memcpy(&r, &v, sizeof(RetType));
+      return r;
+    }
   }
   // Lane movement is bit-level, so a type can borrow the transpose of any
   // same-layout type -- integer widths reuse the float/double specializations.
@@ -535,7 +719,9 @@ namespace sctl { // Generic
     static_assert(TypeTraits<Int>::Type == DataType::Integer, "Expected integer type!");
     static_assert(sizeof(RealVec) == sizeof(IntVec) && sizeof(Real) == sizeof(Int), "Real and integer types must have same size!");
 
-    if constexpr (!ieee_layout<Real>()) { // one element at a time
+    if constexpr (split_lanes<RealVec> && split_lanes<IntVec>) {
+      return concat_intrin(convert_int2real_intrin<HalfVData<RealVec>>(x.lo), convert_int2real_intrin<HalfVData<RealVec>>(x.hi));
+    } else if constexpr (!ieee_layout<Real>()) { // one element at a time
       LaneArray<IntVec> n(x);
       LaneArray<RealVec> r;
       for (Integer i = 0; i < RealVec::Size; i++) r[i] = (Real)n[i];
@@ -557,7 +743,9 @@ namespace sctl { // Generic
     static_assert(TypeTraits<Int>::Type == DataType::Integer, "Expected integer type!");
     static_assert(sizeof(RealVec) == sizeof(IntVec) && sizeof(Real) == sizeof(Int), "Real and integer types must have same size!");
 
-    if constexpr (!ieee_layout<Real>()) { // one element at a time
+    if constexpr (split_lanes<IntVec> && split_lanes<RealVec>) {
+      return concat_intrin(lrint_intrin<HalfVData<IntVec>>(x.lo), lrint_intrin<HalfVData<IntVec>>(x.hi));
+    } else if constexpr (!ieee_layout<Real>()) { // one element at a time
       LaneArray<RealVec> r(x);
       LaneArray<IntVec> n;
       for (Integer i = 0; i < RealVec::Size; i++) n[i] = (Int)std::rint(r[i]);
@@ -573,35 +761,56 @@ namespace sctl { // Generic
     }
   }
   template <class VData> inline VData rint_intrin(const VData& x) { // nearest integer, halves to even, as std::rint; generic: |x| < 2^(SigBits-1), zero results are +0
-    using Real = typename VData::ScalarType;
-    static_assert(TypeTraits<Real>::Type == DataType::Real, "Expected real type!");
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(rint_intrin(x.lo), rint_intrin(x.hi));
+    } else {
+      using Real = typename VData::ScalarType;
+      static_assert(TypeTraits<Real>::Type == DataType::Real, "Expected real type!");
 
-    static constexpr Real Creal = (Real)1.5 * pow<TypeTraits<Real>::SigBits,Real>((Real)2);
-    VData Vreal(set1_intrin<VData>(Creal));
-    return sub_intrin(add_intrin(x, Vreal), Vreal);
+      static constexpr Real Creal = (Real)1.5 * pow<TypeTraits<Real>::SigBits,Real>((Real)2);
+      VData Vreal(set1_intrin<VData>(Creal));
+      return sub_intrin(add_intrin(x, Vreal), Vreal);
+    }
   }
   template <class VDataTo, class VData> inline VDataTo convert_intrin(const VData& a) { // static_cast of each lane
     static_assert(VDataTo::Size == VData::Size, "Conversion requires the same number of lanes.");
-    LaneArray<VData> a_(a);
-    LaneArray<VDataTo> b_;
-    for (Integer i = 0; i < VData::Size; i++) b_[i] = (typename VDataTo::ScalarType)a_[i];
-    return b_.value();
+    if constexpr (split_lanes<VDataTo> || split_lanes<VData>) {
+      return concat_intrin(convert_intrin<HalfVData<VDataTo>>(get_low_intrin(a)), convert_intrin<HalfVData<VDataTo>>(get_high_intrin(a)));
+    } else {
+      LaneArray<VData> a_(a);
+      LaneArray<VDataTo> b_;
+      for (Integer i = 0; i < VData::Size; i++) b_[i] = (typename VDataTo::ScalarType)a_[i];
+      return b_.value();
+    }
   }
 
   template <class VData> inline VecData<typename VData::ScalarType,VData::Size/2> get_low_intrin(const VData& a) {
-    VecData<typename VData::ScalarType,VData::Size/2> h;
-    std::memcpy(&h, &a, sizeof(h));
-    return h;
+    if constexpr (split_lanes<VData>) {
+      return a.lo;
+    } else {
+      VecData<typename VData::ScalarType,VData::Size/2> h;
+      std::memcpy(&h, &a, sizeof(h));
+      return h;
+    }
   }
   template <class VData> inline VecData<typename VData::ScalarType,VData::Size/2> get_high_intrin(const VData& a) {
-    VecData<typename VData::ScalarType,VData::Size/2> h;
-    std::memcpy(&h, reinterpret_cast<const char*>(&a) + sizeof(h), sizeof(h));
-    return h;
+    if constexpr (split_lanes<VData>) {
+      return a.hi;
+    } else {
+      VecData<typename VData::ScalarType,VData::Size/2> h;
+      std::memcpy(&h, reinterpret_cast<const char*>(&a) + sizeof(h), sizeof(h));
+      return h;
+    }
   }
   template <class VData> inline VecData<typename VData::ScalarType,VData::Size*2> concat_intrin(const VData& lo, const VData& hi) {
     VecData<typename VData::ScalarType,VData::Size*2> v;
-    std::memcpy(&v, &lo, sizeof(lo));
-    std::memcpy(reinterpret_cast<char*>(&v) + sizeof(lo), &hi, sizeof(hi));
+    if constexpr (split_lanes<decltype(v)>) {
+      v.lo = lo;
+      v.hi = hi;
+    } else {
+      std::memcpy(&v, &lo, sizeof(lo));
+      std::memcpy(reinterpret_cast<char*>(&v) + sizeof(lo), &hi, sizeof(hi));
+    }
     return v;
   }
 
@@ -635,14 +844,20 @@ namespace sctl { // Generic
 
   /**
    * Storage of the lanes of a Mask<VData>, each all ones or all zeros: VData itself where it is a vector
-   * register, and integers of the lane size where VData holds an array, whose element copies need not keep
-   * all bytes (a copy of an x87 long double keeps 10 of its 16).
+   * register, the masks of the halves where VData holds two halves, and integers of the lane size where VData
+   * holds an array, whose element copies need not keep all bytes (a copy of an x87 long double keeps 10 of its 16).
    */
   template <class VData, class = void> struct MaskLanesType {
     using type = VData;
   };
   template <class VData> struct MaskLanesType<VData, std::enable_if_t<VData::ArrayLanes>> {
     using type = VecData<typename IntegerType<sizeof(typename VData::ScalarType)>::value, VData::Size>;
+  };
+  template <class VData> struct Mask;
+  template <class VData> struct MaskLanesType<VData, std::enable_if_t<VData::SplitLanes>> {
+    struct type {
+      Mask<HalfVData<VData>> lo, hi;
+    };
   };
   template <class VData> using MaskLanes = typename MaskLanesType<VData>::type;
 
@@ -664,7 +879,12 @@ namespace sctl { // Generic
 
    private:
     static inline MaskLanes<VData> lanes(const VData& v) { // integer lanes from the first bytes of each lane of v, which every copy keeps
-      if constexpr (std::is_same<MaskLanes<VData>, VData>::value) {
+      if constexpr (split_lanes<VData>) {
+        MaskLanes<VData> m;
+        m.lo = convert_vec2mask_intrin(v.lo);
+        m.hi = convert_vec2mask_intrin(v.hi);
+        return m;
+      } else if constexpr (std::is_same<MaskLanes<VData>, VData>::value) {
         return v;
       } else {
         using Int = typename MaskLanes<VData>::ScalarType;
@@ -680,6 +900,13 @@ namespace sctl { // Generic
     }
   };
 
+  template <class VData> inline Mask<VecData<typename VData::ScalarType,VData::Size*2>> concat_mask_intrin(const Mask<VData>& lo, const Mask<VData>& hi) {
+    Mask<VecData<typename VData::ScalarType,VData::Size*2>> m;
+    m.lo = lo;
+    m.hi = hi;
+    return m;
+  }
+
   template <class RetType, class VData> inline RetType reinterpret_mask(const Mask<VData>& v) {
     static_assert(sizeof(RetType) == sizeof(Mask<VData>), "Illegal type cast -- size of types does not match.");
     RetType r;
@@ -689,23 +916,45 @@ namespace sctl { // Generic
 
   // Bitwise operators
   template <class VData> inline Mask<VData> operator~(const Mask<VData>& vec) {
-    return Mask<VData>(not_intrin(vec));
+    if constexpr (split_lanes<VData>) {
+      return concat_mask_intrin(~vec.lo, ~vec.hi);
+    } else {
+      return Mask<VData>(not_intrin(vec));
+    }
   }
   template <class VData> inline Mask<VData> operator&(const Mask<VData>& a, const Mask<VData>& b) {
-    return Mask<VData>(and_intrin(a,b));
+    if constexpr (split_lanes<VData>) {
+      return concat_mask_intrin(a.lo & b.lo, a.hi & b.hi);
+    } else {
+      return Mask<VData>(and_intrin(a,b));
+    }
   }
   template <class VData> inline Mask<VData> operator^(const Mask<VData>& a, const Mask<VData>& b) {
-    return Mask<VData>(xor_intrin(a,b));
+    if constexpr (split_lanes<VData>) {
+      return concat_mask_intrin(a.lo ^ b.lo, a.hi ^ b.hi);
+    } else {
+      return Mask<VData>(xor_intrin(a,b));
+    }
   }
   template <class VData> inline Mask<VData> operator|(const Mask<VData>& a, const Mask<VData>& b) {
-    return Mask<VData>(or_intrin(a,b));
+    if constexpr (split_lanes<VData>) {
+      return concat_mask_intrin(a.lo | b.lo, a.hi | b.hi);
+    } else {
+      return Mask<VData>(or_intrin(a,b));
+    }
   }
   template <class VData> inline Mask<VData> AndNot(const Mask<VData>& a, const Mask<VData>& b) {
-    return Mask<VData>(andnot_intrin(a,b));
+    if constexpr (split_lanes<VData>) {
+      return concat_mask_intrin(AndNot(a.lo, b.lo), AndNot(a.hi, b.hi));
+    } else {
+      return Mask<VData>(andnot_intrin(a,b));
+    }
   }
 
   template <class VData> inline VData convert_mask2vec_intrin(const Mask<VData>& v) {
-    if constexpr (std::is_same<MaskLanes<VData>, VData>::value) {
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(convert_mask2vec_intrin(v.lo), convert_mask2vec_intrin(v.hi));
+    } else if constexpr (std::is_same<MaskLanes<VData>, VData>::value) {
       return v;
     } else {
       return reinterpret_intrin<VData>(static_cast<const MaskLanes<VData>&>(v));
@@ -716,14 +965,18 @@ namespace sctl { // Generic
   }
   template <class VData> using MaskIntVec = VecData<typename IntegerType<sizeof(typename VData::ScalarType)>::value, VData::Size>; // a mask as integers of all ones or all zeros
   template <class VData> inline MaskIntVec<VData> mask2int_intrin(const Mask<VData>& m) {
-    if constexpr (sizeof(Mask<VData>) == sizeof(MaskIntVec<VData>)) { // lanes of the size of the data
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(mask2int_intrin(m.lo), mask2int_intrin(m.hi));
+    } else if constexpr (sizeof(Mask<VData>) == sizeof(MaskIntVec<VData>)) { // lanes of the size of the data
       return reinterpret_mask<MaskIntVec<VData>>(m);
     } else { // bit masks of AVX-512
       return reinterpret_intrin<MaskIntVec<VData>>(convert_mask2vec_intrin(m));
     }
   }
   template <class VData> inline Mask<VData> int2mask_intrin(const MaskIntVec<VData>& q) {
-    if constexpr (sizeof(Mask<VData>) == sizeof(MaskIntVec<VData>)) {
+    if constexpr (split_lanes<VData>) {
+      return concat_mask_intrin(int2mask_intrin<HalfVData<VData>>(get_low_intrin(q)), int2mask_intrin<HalfVData<VData>>(get_high_intrin(q)));
+    } else if constexpr (sizeof(Mask<VData>) == sizeof(MaskIntVec<VData>)) {
       Mask<VData> m;
       std::memcpy(&m, &q, sizeof(m));
       return m;
@@ -732,7 +985,9 @@ namespace sctl { // Generic
     }
   }
   template <class VDataTo, class VData> inline Mask<VDataTo> convert_mask_intrin(const Mask<VData>& m) { // same lanes, another element type
-    if constexpr (sizeof(typename VDataTo::ScalarType) == sizeof(typename VData::ScalarType)) { // same mask layout
+    if constexpr (split_lanes<VDataTo> && split_lanes<VData>) {
+      return concat_mask_intrin(convert_mask_intrin<HalfVData<VDataTo>>(m.lo), convert_mask_intrin<HalfVData<VDataTo>>(m.hi));
+    } else if constexpr (sizeof(typename VDataTo::ScalarType) == sizeof(typename VData::ScalarType)) { // same mask layout
       return reinterpret_mask<Mask<VDataTo>>(m);
     } else if constexpr (array_lanes<VData> && array_lanes<VDataTo>) {
       using IntTo = typename MaskLanes<VDataTo>::ScalarType;
@@ -744,55 +999,76 @@ namespace sctl { // Generic
     }
   }
   template <class VData> inline Integer mask_count_intrin(const Mask<VData>& m) { // number of selected lanes
-    LaneArray<MaskIntVec<VData>> m_(mask2int_intrin(m));
-    Integer count = 0;
-    for (Integer i = 0; i < VData::Size; i++) count += (m_[i] ? 1 : 0);
-    return count;
+    if constexpr (split_lanes<VData>) {
+      return mask_count_intrin(m.lo) + mask_count_intrin(m.hi);
+    } else {
+      LaneArray<MaskIntVec<VData>> m_(mask2int_intrin(m));
+      Integer count = 0;
+      for (Integer i = 0; i < VData::Size; i++) count += (m_[i] ? 1 : 0);
+      return count;
+    }
   }
 
   template <class VData> inline Integer mask_popcnt_intrin(const Mask<VData>& v) {
-    static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
-    const LaneArray<MaskIntVec<VData>> v_(mask2int_intrin(v));
+    if constexpr (split_lanes<VData>) {
+      return mask_popcnt_intrin(v.lo) + mask_popcnt_intrin(v.hi);
+    } else {
+      static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
+      const LaneArray<MaskIntVec<VData>> v_(mask2int_intrin(v));
 
-    Integer cnt = 0;
-    for (Integer i = 0; i < VData::Size; i++) cnt += (v_[i]!=0);
+      Integer cnt = 0;
+      for (Integer i = 0; i < VData::Size; i++) cnt += (v_[i]!=0);
 
-    return cnt;
+      return cnt;
+    }
   }
 
   template <class VData> inline bool mask_any(const Mask<VData>& v) {
-    static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
-    const LaneArray<MaskIntVec<VData>> v_(mask2int_intrin(v));
+    if constexpr (split_lanes<VData>) {
+      return mask_any(v.lo) || mask_any(v.hi);
+    } else {
+      static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
+      const LaneArray<MaskIntVec<VData>> v_(mask2int_intrin(v));
 
-    for (Integer i = 0; i < VData::Size; i++) if (v_[i]) return true;
-    return false;
+      for (Integer i = 0; i < VData::Size; i++) if (v_[i]) return true;
+      return false;
+    }
   }
 
   template <class VData> inline void mask_compress_store(const Mask<VData>& mask, const VData& v, typename VData::ScalarType* ptr) {
-    static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
-    const LaneArray<MaskIntVec<VData>> mask_(mask2int_intrin(mask));
+    if constexpr (split_lanes<VData>) {
+      mask_compress_store(mask.lo, v.lo, ptr);
+      mask_compress_store(mask.hi, v.hi, ptr + mask_popcnt_intrin(mask.lo));
+    } else {
+      static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
+      const LaneArray<MaskIntVec<VData>> mask_(mask2int_intrin(mask));
 
-    LaneArray<VData> v_(v);
+      LaneArray<VData> v_(v);
 
-    Integer idx = 0;
-    for (Integer i = 0; i < VData::Size; i++) {
-        if (mask_[i]) {
-            ptr[idx++] = v_[i];
-        }
+      Integer idx = 0;
+      for (Integer i = 0; i < VData::Size; i++) {
+          if (mask_[i]) {
+              ptr[idx++] = v_[i];
+          }
+      }
     }
   }
 
   template <class VData> inline Integer mask_compress_iota_store(const Mask<VData>& mask, int32_t base, int32_t* ptr) {
-    static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
-    const LaneArray<MaskIntVec<VData>> mask_(mask2int_intrin(mask));
+    if constexpr (split_lanes<VData>) {
+      return mask_compress_iota_store2(mask.lo, mask.hi, base, ptr);
+    } else {
+      static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
+      const LaneArray<MaskIntVec<VData>> mask_(mask2int_intrin(mask));
 
-    Integer idx = 0;
-    for (Integer i = 0; i < VData::Size; i++) {
-        if (mask_[i]) {
-            ptr[idx++] = base + (int32_t)i;
-        }
+      Integer idx = 0;
+      for (Integer i = 0; i < VData::Size; i++) {
+          if (mask_[i]) {
+              ptr[idx++] = base + (int32_t)i;
+          }
+      }
+      return idx;
     }
-    return idx;
   }
 
   template <class VData> inline Integer mask_compress_iota_store2(const Mask<VData>& mask_lo, const Mask<VData>& mask_hi, int32_t base, int32_t* ptr) {
@@ -801,18 +1077,22 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline VData mask_expand_load(const Mask<VData>& mask, const VData& zero, const typename VData::ScalarType* ptr) {
-    static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
-    const LaneArray<MaskIntVec<VData>> mask_(mask2int_intrin(mask));
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(mask_expand_load(mask.lo, zero.lo, ptr), mask_expand_load(mask.hi, zero.hi, ptr + mask_popcnt_intrin(mask.lo)));
+    } else {
+      static_assert(sizeof(Mask<VData>) == sizeof(VData), "reads one lane per element; register masks need a specialization");
+      const LaneArray<MaskIntVec<VData>> mask_(mask2int_intrin(mask));
 
-    LaneArray<VData> z_(zero);
+      LaneArray<VData> z_(zero);
 
-    Integer idx = 0;
-    for (Integer i = 0; i < VData::Size; i++) {
-        if (mask_[i]) {
-            z_[i] = ptr[idx++];
-        }
+      Integer idx = 0;
+      for (Integer i = 0; i < VData::Size; i++) {
+          if (mask_[i]) {
+              z_[i] = ptr[idx++];
+          }
+      }
+      return z_.value();
     }
-    return z_.value();
   }
 
 
@@ -822,7 +1102,7 @@ namespace sctl { // Generic
   // Comparison operators
   enum class ComparisonType { lt, le, gt, ge, eq, ne};
   template <ComparisonType TYPE, class VData> inline Mask<VData> comp_intrin(const VData& a, const VData& b) {
-    static_assert(sizeof(Mask<VData>) == sizeof(VData), "Invalid operation on Mask");
+    static_assert(split_lanes<VData> || sizeof(Mask<VData>) == sizeof(VData), "Invalid operation on Mask");
     using ScalarType = typename VData::ScalarType;
     using IntType = typename IntegerType<sizeof(ScalarType)>::value;
 
@@ -838,7 +1118,9 @@ namespace sctl { // Generic
       if constexpr (TYPE == ComparisonType::ne) c = (x != y);
       return (c ? one_const : zero_const);
     };
-    if constexpr (array_lanes<VData>) {
+    if constexpr (split_lanes<VData>) {
+      return concat_mask_intrin(comp_intrin<TYPE>(a.lo, b.lo), comp_intrin<TYPE>(a.hi, b.hi));
+    } else if constexpr (array_lanes<VData>) {
       Mask<VData> c;
       for (Integer i = 0; i < VData::Size; i++) c.v[i] = lane(a.v[i], b.v[i]);
       return c;
@@ -852,8 +1134,10 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline VData select_intrin(const Mask<VData>& s, const VData& a, const VData& b) {
-    static_assert(sizeof(Mask<VData>) == sizeof(VData), "Invalid operation on Mask");
-    if constexpr (std::is_same<MaskLanes<VData>, VData>::value && !array_lanes<VData>) {
+    static_assert(split_lanes<VData> || sizeof(Mask<VData>) == sizeof(VData), "Invalid operation on Mask");
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(select_intrin(s.lo, a.lo, b.lo), select_intrin(s.hi, a.hi, b.hi));
+    } else if constexpr (std::is_same<MaskLanes<VData>, VData>::value && !array_lanes<VData>) {
       const VData& s_ = s;
       return or_intrin(and_intrin(a,s_), andnot_intrin(b,s_));
     } else { // array lanes: a or b in each lane
@@ -865,45 +1149,76 @@ namespace sctl { // Generic
 
   // Masked load and store
   template <class VData> inline Mask<VData> mask_first_intrin(Integer n) { // true in lanes i < n, for n >= 0
-    using ScalarType = typename VData::ScalarType;
-    LaneArray<VData> iota;
-    for (Integer i = 0; i < VData::Size; i++) iota[i] = (ScalarType)i;
-    return comp_intrin<ComparisonType::lt>(iota.value(), set1_intrin<VData>((ScalarType)(n < VData::Size ? n : VData::Size)));
+    if constexpr (split_lanes<VData>) {
+      return concat_mask_intrin(mask_first_intrin<HalfVData<VData>>(n), mask_first_intrin<HalfVData<VData>>(n > VData::Size/2 ? n - VData::Size/2 : 0));
+    } else {
+      using ScalarType = typename VData::ScalarType;
+      LaneArray<VData> iota;
+      for (Integer i = 0; i < VData::Size; i++) iota[i] = (ScalarType)i;
+      return comp_intrin<ComparisonType::lt>(iota.value(), set1_intrin<VData>((ScalarType)(n < VData::Size ? n : VData::Size)));
+    }
   }
   template <class VData> inline VData loadu_mask_intrin(typename VData::ScalarType const* p, const Mask<VData>& m) { // lanes not in m are zero and not read
-    using ScalarType = typename VData::ScalarType;
-    LaneArray<MaskIntVec<VData>> m_(mask2int_intrin(m));
-    LaneArray<VData> vec;
-    for (Integer i = 0; i < VData::Size; i++) vec[i] = (m_[i] ? p[i] : (ScalarType)0);
-    return vec.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(loadu_mask_intrin<HalfVData<VData>>(p, m.lo), loadu_mask_intrin<HalfVData<VData>>(p + VData::Size/2, m.hi));
+    } else {
+      using ScalarType = typename VData::ScalarType;
+      LaneArray<MaskIntVec<VData>> m_(mask2int_intrin(m));
+      LaneArray<VData> vec;
+      for (Integer i = 0; i < VData::Size; i++) vec[i] = (m_[i] ? p[i] : (ScalarType)0);
+      return vec.value();
+    }
   }
   template <class VData> inline void storeu_mask_intrin(typename VData::ScalarType* p, VData vec, const Mask<VData>& m) { // lanes not in m are not written
-    LaneArray<MaskIntVec<VData>> m_(mask2int_intrin(m));
-    LaneArray<VData> vec_(vec);
-    for (Integer i = 0; i < VData::Size; i++) {
-      if (m_[i]) p[i] = vec_[i];
+    if constexpr (split_lanes<VData>) {
+      storeu_mask_intrin(p, vec.lo, m.lo);
+      storeu_mask_intrin(p + VData::Size/2, vec.hi, m.hi);
+    } else {
+      LaneArray<MaskIntVec<VData>> m_(mask2int_intrin(m));
+      LaneArray<VData> vec_(vec);
+      for (Integer i = 0; i < VData::Size; i++) {
+        if (m_[i]) p[i] = vec_[i];
+      }
     }
   }
   template <class VData> inline VData loadu_first_intrin(typename VData::ScalarType const* p, Integer n) { // lanes i < n, for n >= 0; the others are zero and not read
-    return loadu_mask_intrin<VData>(p, mask_first_intrin<VData>(n));
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(loadu_first_intrin<HalfVData<VData>>(p, n), loadu_first_intrin<HalfVData<VData>>(p + VData::Size/2, n > VData::Size/2 ? n - VData::Size/2 : 0));
+    } else {
+      return loadu_mask_intrin<VData>(p, mask_first_intrin<VData>(n));
+    }
   }
   template <class VData> inline void storeu_first_intrin(typename VData::ScalarType* p, VData vec, Integer n) { // lanes i < n, for n >= 0; the others are not written
-    storeu_mask_intrin(p, vec, mask_first_intrin<VData>(n));
+    if constexpr (split_lanes<VData>) {
+      storeu_first_intrin(p, vec.lo, n);
+      storeu_first_intrin(p + VData::Size/2, vec.hi, n > VData::Size/2 ? n - VData::Size/2 : 0);
+    } else {
+      storeu_mask_intrin(p, vec, mask_first_intrin<VData>(n));
+    }
   }
 
   // Gather and scatter
   template <class VData, class IdxVData> inline VData gather_intrin(typename VData::ScalarType const* p, const IdxVData& idx) { // lane i is p[idx lane i]
     static_assert(IdxVData::Size == VData::Size, "Gather requires one index per lane.");
-    LaneArray<IdxVData> idx_(idx);
-    LaneArray<VData> vec;
-    for (Integer i = 0; i < VData::Size; i++) vec[i] = p[idx_[i]];
-    return vec.value();
+    if constexpr (split_lanes<VData> || split_lanes<IdxVData>) {
+      return concat_intrin(gather_intrin<HalfVData<VData>>(p, get_low_intrin(idx)), gather_intrin<HalfVData<VData>>(p, get_high_intrin(idx)));
+    } else {
+      LaneArray<IdxVData> idx_(idx);
+      LaneArray<VData> vec;
+      for (Integer i = 0; i < VData::Size; i++) vec[i] = p[idx_[i]];
+      return vec.value();
+    }
   }
   template <class VData, class IdxVData> inline void scatter_intrin(typename VData::ScalarType* p, const VData& vec, const IdxVData& idx) { // in lane order: of equal indices, the last lane is stored
     static_assert(IdxVData::Size == VData::Size, "Scatter requires one index per lane.");
-    LaneArray<IdxVData> idx_(idx);
-    LaneArray<VData> vec_(vec);
-    for (Integer i = 0; i < VData::Size; i++) p[idx_[i]] = vec_[i];
+    if constexpr (split_lanes<VData> || split_lanes<IdxVData>) {
+      scatter_intrin(p, get_low_intrin(vec), get_low_intrin(idx));
+      scatter_intrin(p, get_high_intrin(vec), get_high_intrin(idx));
+    } else {
+      LaneArray<IdxVData> idx_(idx);
+      LaneArray<VData> vec_(vec);
+      for (Integer i = 0; i < VData::Size; i++) p[idx_[i]] = vec_[i];
+    }
   }
 
   // Special functions
@@ -980,16 +1295,24 @@ namespace sctl { // Generic
   };
   template <Integer digits, class VData> struct rsqrt_approx_intrin {
     static inline VData eval(const VData& a) {
-      LaneArray<VData> a_(a), b_;
-      for (Integer i = 0; i < VData::Size; i++) b_[i] = (a_[i]==0 ? 0 : 1/sqrt<typename VData::ScalarType>((typename VData::ScalarType)a_[i]));
-      return b_.value();
+      if constexpr (split_lanes<VData>) {
+        return concat_intrin(rsqrt_approx_intrin<digits,HalfVData<VData>>::eval(a.lo), rsqrt_approx_intrin<digits,HalfVData<VData>>::eval(a.hi));
+      } else {
+        LaneArray<VData> a_(a), b_;
+        for (Integer i = 0; i < VData::Size; i++) b_[i] = (a_[i]==0 ? 0 : 1/sqrt<typename VData::ScalarType>((typename VData::ScalarType)a_[i]));
+        return b_.value();
 
-      //for (Integer i = 0; i < VData::Size; i++) b_.x[i] = (a_.x[i]==0 ? 0 : (typename VData::ScalarType)1/sqrt<float>((float)a_.x[i])); // converting to float results in overflow / underflow
-      //constexpr Integer newton_iter = mylog2((Integer)(digits/7.2247198959));
-      //return rsqrt_newton_iter<newton_iter,newton_iter,VData>::eval(b_.v, a);
+        //for (Integer i = 0; i < VData::Size; i++) b_.x[i] = (a_.x[i]==0 ? 0 : (typename VData::ScalarType)1/sqrt<float>((float)a_.x[i])); // converting to float results in overflow / underflow
+        //constexpr Integer newton_iter = mylog2((Integer)(digits/7.2247198959));
+        //return rsqrt_newton_iter<newton_iter,newton_iter,VData>::eval(b_.v, a);
+      }
     }
     static inline VData eval(const VData& a, const Mask<VData>& m) {
-      return and_intrin(rsqrt_approx_intrin<digits,VData>::eval(a), convert_mask2vec_intrin(m));
+      if constexpr (split_lanes<VData>) {
+        return concat_intrin(rsqrt_approx_intrin<digits,HalfVData<VData>>::eval(a.lo, m.lo), rsqrt_approx_intrin<digits,HalfVData<VData>>::eval(a.hi, m.hi));
+      } else {
+        return and_intrin(rsqrt_approx_intrin<digits,VData>::eval(a), convert_mask2vec_intrin(m));
+      }
     }
   };
 
@@ -1231,13 +1554,18 @@ namespace sctl { // Generic
     }
   }
   template <class VData> inline void sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
-    LaneArray<VData> sinx_, cosx_, x_(x);
-    for (Integer i = 0; i < VData::Size; i++) {
-      sinx_[i] = sin(x_[i]);
-      cosx_[i] = cos(x_[i]);
+    if constexpr (split_lanes<VData>) {
+      sincos_intrin(sinx.lo, cosx.lo, x.lo);
+      sincos_intrin(sinx.hi, cosx.hi, x.hi);
+    } else {
+      LaneArray<VData> sinx_, cosx_, x_(x);
+      for (Integer i = 0; i < VData::Size; i++) {
+        sinx_[i] = sin(x_[i]);
+        cosx_[i] = cos(x_[i]);
+      }
+      sinx = sinx_.value();
+      cosx = cosx_.value();
     }
-    sinx = sinx_.value();
-    cosx = cosx_.value();
   }
 
   template <class Real, uint64_t A, uint64_t B> struct ConstSplit { // c = A 2^-63 + B 2^-126 = hi + lo; n hi is exact for |n| < 2^ExpBits
@@ -1353,27 +1681,36 @@ namespace sctl { // Generic
     return approx_exp_intrin<ORDER, RangeCheck, ExpArg::Plain>(x, x);
   }
   template <class VData> inline Mask<VData> positive_normal_mask_intrin(const VData& x) { // x normal, positive and finite
-    using Real = typename VData::ScalarType;
-    // x <= max, not x < inf: clang turns the pair of compares into a class test of integer instructions on x86
-    return comp_intrin<ComparisonType::ge>(x, set1_intrin<VData>(std::numeric_limits<Real>::min())) & comp_intrin<ComparisonType::le>(x, set1_intrin<VData>(std::numeric_limits<Real>::max()));
+    if constexpr (split_lanes<VData>) {
+      return concat_mask_intrin(positive_normal_mask_intrin(x.lo), positive_normal_mask_intrin(x.hi));
+    } else {
+      using Real = typename VData::ScalarType;
+      // x <= max, not x < inf: clang turns the pair of compares into a class test of integer instructions on x86
+      return comp_intrin<ComparisonType::ge>(x, set1_intrin<VData>(std::numeric_limits<Real>::min())) & comp_intrin<ComparisonType::le>(x, set1_intrin<VData>(std::numeric_limits<Real>::max()));
+    }
   }
   template <class VData> inline void log_mant_intrin(VData& e, VData& m, const VData& x) { // x = 2^e m, m in [sqrt(1/2), sqrt(2)), for normal x > 0
-    using Real = typename VData::ScalarType;
-    using Int = typename IntegerType<sizeof(Real)>::value;
-    static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
-    static constexpr Int Bias = (((Int)1) << (sizeof(Real)*8 - SigBits - 2)) - 1;
-    union U {
-      Int i;
-      Real r;
-    };
-    static const U frac_mask = {(((Int)1) << SigBits) - 1};
-    static const U two_pow_sig = {(Bias + SigBits) << SigBits};
-    const VData one = set1_intrin<VData>((Real)1);
-    const VData m1 = or_intrin(and_intrin(x, set1_intrin<VData>(frac_mask.r)), one); // in [1, 2); bit operations on the real lanes, also without 256-bit integer instructions
-    const VData e1 = sub_intrin(or_intrin(bitshiftright_intrin(x, SigBits), set1_intrin<VData>(two_pow_sig.r)), set1_intrin<VData>(two_pow_sig.r + (Real)Bias)); // the exponent field as the low bits of 2^SigBits
-    const Mask<VData> big = comp_intrin<ComparisonType::gt>(m1, set1_intrin<VData>((Real)1.41421356237309504880));
-    m = select_intrin(big, mul_intrin(m1, set1_intrin<VData>((Real)0.5)), m1);
-    e = add_intrin(e1, select_intrin(big, one, zero_intrin<VData>()));
+    if constexpr (split_lanes<VData>) {
+      log_mant_intrin(e.lo, m.lo, x.lo);
+      log_mant_intrin(e.hi, m.hi, x.hi);
+    } else {
+      using Real = typename VData::ScalarType;
+      using Int = typename IntegerType<sizeof(Real)>::value;
+      static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+      static constexpr Int Bias = (((Int)1) << (sizeof(Real)*8 - SigBits - 2)) - 1;
+      union U {
+        Int i;
+        Real r;
+      };
+      static const U frac_mask = {(((Int)1) << SigBits) - 1};
+      static const U two_pow_sig = {(Bias + SigBits) << SigBits};
+      const VData one = set1_intrin<VData>((Real)1);
+      const VData m1 = or_intrin(and_intrin(x, set1_intrin<VData>(frac_mask.r)), one); // in [1, 2); bit operations on the real lanes, also without 256-bit integer instructions
+      const VData e1 = sub_intrin(or_intrin(bitshiftright_intrin(x, SigBits), set1_intrin<VData>(two_pow_sig.r)), set1_intrin<VData>(two_pow_sig.r + (Real)Bias)); // the exponent field as the low bits of 2^SigBits
+      const Mask<VData> big = comp_intrin<ComparisonType::gt>(m1, set1_intrin<VData>((Real)1.41421356237309504880));
+      m = select_intrin(big, mul_intrin(m1, set1_intrin<VData>((Real)0.5)), m1);
+      e = add_intrin(e1, select_intrin(big, one, zero_intrin<VData>()));
+    }
   }
   template <bool Subnormal = true, class VData> inline void log_split_intrin(VData& e, VData& f, const VData& x) { // x = 2^e (1+f), 1+f in [sqrt(1/2), sqrt(2)), for x > 0; without Subnormal, for normal x
     using Real = typename VData::ScalarType;
@@ -1641,20 +1978,32 @@ namespace sctl { // Generic
     return sub_intrin(xor_intrin(q, s), s);
   }
   template <class VData> inline VData exp_intrin(const VData& x) {
-    LaneArray<VData> expx_, x_(x);
-    for (Integer i = 0; i < VData::Size; i++) expx_[i] = exp(x_[i]);
-    return expx_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(exp_intrin(x.lo), exp_intrin(x.hi));
+    } else {
+      LaneArray<VData> expx_, x_(x);
+      for (Integer i = 0; i < VData::Size; i++) expx_[i] = exp(x_[i]);
+      return expx_.value();
+    }
   }
   template <class VData> inline VData log_intrin(const VData& x) {
-    LaneArray<VData> logx_, x_(x);
-    for (Integer i = 0; i < VData::Size; i++) logx_[i] = log(x_[i]);
-    return logx_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(log_intrin(x.lo), log_intrin(x.hi));
+    } else {
+      LaneArray<VData> logx_, x_(x);
+      for (Integer i = 0; i < VData::Size; i++) logx_[i] = log(x_[i]);
+      return logx_.value();
+    }
   }
   template <class VData> inline VData pow_intrin(const VData& x, const VData& y) {
-    LaneArray<VData> x_(x);
-    LaneArray<VData> y_(y);
-    for (Integer i = 0; i < VData::Size; i++) x_[i] = pow(x_[i], y_[i]);
-    return x_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(pow_intrin(x.lo, y.lo), pow_intrin(x.hi, y.hi));
+    } else {
+      LaneArray<VData> x_(x);
+      LaneArray<VData> y_(y);
+      for (Integer i = 0; i < VData::Size; i++) x_[i] = pow(x_[i], y_[i]);
+      return x_.value();
+    }
   }
   template <Integer n> struct LogPolyCoeffs; // log(1+f) ~ f P(f) for f in [sqrt(1/2)-1, sqrt(2)-1], P of degree n, lowest degree first: Chebyshev fits; correct digits in log_poly_digits
   template <> struct LogPolyCoeffs<1> { static constexpr double c[] = {1.0185736191503331, -4.7559237223000092e-1}; };
@@ -1733,15 +2082,20 @@ namespace sctl { // Generic
   }
   // sum p[l][k] t_l^k, k < B, in each lane l: a polynomial per lane, with its coefficients in a row at p[l]
   template <Integer B, class VData> inline VData eval_poly_rows_intrin(const typename VData::ScalarType* const (&p)[VData::Size], const VData& t) {
-    using Real = typename VData::ScalarType;
-    const LaneArray<VData> t_(t);
-    LaneArray<VData> r_(t);
-    for (Integer l = 0; l < VData::Size; l++) {
-      Real r = p[l][B - 1];
-      for (Integer k = B - 2; k >= 0; k--) r = r * t_[l] + p[l][k];
-      r_[l] = r;
+    if constexpr (split_lanes<VData>) {
+      using Rows = const typename VData::ScalarType* const [VData::Size/2]; // the rows of each half
+      return concat_intrin(eval_poly_rows_intrin<B>(reinterpret_cast<Rows&>(p[0]), t.lo), eval_poly_rows_intrin<B>(reinterpret_cast<Rows&>(p[VData::Size/2]), t.hi));
+    } else {
+      using Real = typename VData::ScalarType;
+      const LaneArray<VData> t_(t);
+      LaneArray<VData> r_(t);
+      for (Integer l = 0; l < VData::Size; l++) {
+        Real r = p[l][B - 1];
+        for (Integer k = B - 2; k >= 0; k--) r = r * t_[l] + p[l][k];
+        r_[l] = r;
+      }
+      return r_.value();
     }
-    return r_.value();
   }
   // P(x)/Q(x), one division, none for a constant Q
   template <class VData, class CType, Integer N, Integer M> inline VData eval_rational_intrin(const VData& x, const CType (&p)[N], const CType (&q)[M]) {
@@ -1784,12 +2138,20 @@ namespace sctl { // Generic
     return approx_exp_intrin<ORDER, false>(T);
   }
   template <class VData> inline VData sqrt_intrin(const VData& x) {
-    LaneArray<VData> x_(x);
-    for (Integer i = 0; i < VData::Size; i++) x_[i] = sqrt(x_[i]);
-    return x_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(sqrt_intrin(x.lo), sqrt_intrin(x.hi));
+    } else {
+      LaneArray<VData> x_(x);
+      for (Integer i = 0; i < VData::Size; i++) x_[i] = sqrt(x_[i]);
+      return x_.value();
+    }
   }
   template <class VData> inline VData rsqrt_intrin(const VData& x) {
-    return div_intrin(set1_intrin<VData>((typename VData::ScalarType)1), sqrt_intrin(x));
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(rsqrt_intrin(x.lo), rsqrt_intrin(x.hi));
+    } else {
+      return div_intrin(set1_intrin<VData>((typename VData::ScalarType)1), sqrt_intrin(x));
+    }
   }
   template <class VData> inline VData rsqrt_full_intrin(const VData& x) { // 1/sqrt(x): rsqrt_approx_intrin at full precision for 2 min <= x <= max; if any x is outside, sqrt and division there
     using Real = typename VData::ScalarType;
@@ -1799,32 +2161,46 @@ namespace sctl { // Generic
     return select_intrin(in_range, r, div_intrin(set1_intrin<VData>((Real)1), sqrt_intrin(x))); // 0, inf, subnormal and negative x, NaN
   }
   template <class VData> inline VData fabs_intrin(const VData& x) {
-    if constexpr (TypeTraits<typename VData::ScalarType>::Type == DataType::Real) {
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(fabs_intrin(x.lo), fabs_intrin(x.hi));
+    } else if constexpr (TypeTraits<typename VData::ScalarType>::Type == DataType::Real) {
       return andnot_intrin(x, set1_intrin<VData>((typename VData::ScalarType)-0.0)); // clears the sign bit
     } else {
       return max_intrin(x, unary_minus_intrin(x));
     }
   }
   template <class VData> inline VData floor_intrin(const VData& x) {
-    LaneArray<VData> x_(x);
-    for (Integer i = 0; i < VData::Size; i++) x_[i] = floor(x_[i]);
-    return x_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(floor_intrin(x.lo), floor_intrin(x.hi));
+    } else {
+      LaneArray<VData> x_(x);
+      for (Integer i = 0; i < VData::Size; i++) x_[i] = floor(x_[i]);
+      return x_.value();
+    }
   }
   template <class VData> inline VData ceil_intrin(const VData& x) {
-    LaneArray<VData> x_(x);
-    for (Integer i = 0; i < VData::Size; i++) x_[i] = ceil(x_[i]);
-    return x_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(ceil_intrin(x.lo), ceil_intrin(x.hi));
+    } else {
+      LaneArray<VData> x_(x);
+      for (Integer i = 0; i < VData::Size; i++) x_[i] = ceil(x_[i]);
+      return x_.value();
+    }
   }
   template <class VData> inline VData copysign_intrin(const VData& x, const VData& y) {
     const VData sign = set1_intrin<VData>((typename VData::ScalarType)-0.0);
     return or_intrin(andnot_intrin(x, sign), and_intrin(y, sign));
   }
   template <class VData> inline Mask<VData> isnan_intrin(const VData& x) {
-    using IntType = typename IntegerType<sizeof(typename VData::ScalarType)>::value;
-    LaneArray<VData> x_(x);
-    LaneArray<MaskIntVec<VData>> m_;
-    for (Integer i = 0; i < VData::Size; i++) m_[i] = (isnan(x_[i]) ? ~(IntType)0 : (IntType)0);
-    return int2mask_intrin<VData>(m_.value());
+    if constexpr (split_lanes<VData>) {
+      return concat_mask_intrin(isnan_intrin(x.lo), isnan_intrin(x.hi));
+    } else {
+      using IntType = typename IntegerType<sizeof(typename VData::ScalarType)>::value;
+      LaneArray<VData> x_(x);
+      LaneArray<MaskIntVec<VData>> m_;
+      for (Integer i = 0; i < VData::Size; i++) m_[i] = (isnan(x_[i]) ? ~(IntType)0 : (IntType)0);
+      return int2mask_intrin<VData>(m_.value());
+    }
   }
   template <bool SpecialValues = true, class VData> inline VData atan2_intrin(const VData& y, const VData& x) { // SpecialValues: x, y both infinite or both zero
     using Real = typename VData::ScalarType;
@@ -1887,9 +2263,13 @@ namespace sctl { // Generic
   }
 
   template <class VData> inline VData trunc_intrin(const VData& x) {
-    LaneArray<VData> x_(x);
-    for (Integer i = 0; i < VData::Size; i++) x_[i] = trunc(x_[i]);
-    return x_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(trunc_intrin(x.lo), trunc_intrin(x.hi));
+    } else {
+      LaneArray<VData> x_(x);
+      for (Integer i = 0; i < VData::Size; i++) x_[i] = trunc(x_[i]);
+      return x_.value();
+    }
   }
   template <class VData> inline VData round_intrin(const VData& x) { // halfway cases away from zero
     using Real = typename VData::ScalarType;
@@ -3588,25 +3968,33 @@ namespace sctl { // Generic
     }
   }
   template <class VData> inline VData cbrt_intrin(const VData& x) {
-    using Real = typename VData::ScalarType;
-    LaneArray<VData> x_(x);
-    for (Integer i = 0; i < VData::Size; i++) {
-      if constexpr (std::is_floating_point<Real>::value) {
-        x_[i] = std::cbrt(x_[i]);
-      } else { // one Newton step corrects the rounding of 1/3
-        const Real a = fabs(x_[i]);
-        Real y = pow(a, 1/(Real)3);
-        y = (y == 0 || isinf(y) ? y : y - (y*y*y - a) / (3*y*y));
-        x_[i] = (x_[i] < 0 ? -y : y);
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(cbrt_intrin(x.lo), cbrt_intrin(x.hi));
+    } else {
+      using Real = typename VData::ScalarType;
+      LaneArray<VData> x_(x);
+      for (Integer i = 0; i < VData::Size; i++) {
+        if constexpr (std::is_floating_point<Real>::value) {
+          x_[i] = std::cbrt(x_[i]);
+        } else { // one Newton step corrects the rounding of 1/3
+          const Real a = fabs(x_[i]);
+          Real y = pow(a, 1/(Real)3);
+          y = (y == 0 || isinf(y) ? y : y - (y*y*y - a) / (3*y*y));
+          x_[i] = (x_[i] < 0 ? -y : y);
+        }
       }
+      return x_.value();
     }
-    return x_.value();
   }
   template <class VData> inline VData fmod_intrin(const VData& x, const VData& y) {
-    LaneArray<VData> x_(x);
-    LaneArray<VData> y_(y);
-    for (Integer i = 0; i < VData::Size; i++) x_[i] = fmod(x_[i], y_[i]);
-    return x_.value();
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(fmod_intrin(x.lo, y.lo), fmod_intrin(x.hi, y.hi));
+    } else {
+      LaneArray<VData> x_(x);
+      LaneArray<VData> y_(y);
+      for (Integer i = 0; i < VData::Size; i++) x_[i] = fmod(x_[i], y_[i]);
+      return x_.value();
+    }
   }
 
   // Hyperbolic: e^|x|/2 = exp(|x| - 1) e/2 avoids overflow; sinh, tanh by series for |x| < 1
