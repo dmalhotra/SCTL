@@ -1377,8 +1377,13 @@ namespace sctl {
           check(exp10<FM>(u2.v), exp10(u2.v), t);
           check(approx_exp10<8, FM>(u2.v), approx_exp10<8>(u2.v), t);
           check(exp2<FM>(u1.v), exp2(u1.v), t);
-          check(pow<All>(u4.v, u2.v), pow(u4.v, u2.v), t);
-          check(approx_pow<8, All>(u4.v, u2.v), approx_pow<8>(u4.v, u2.v), t);
+          { // y log x rounded differently by a contraction: up to |y log x| ulp
+            const VecType p0 = pow<All>(u4.v, u2.v), p1 = pow(u4.v, u2.v), a0 = approx_pow<8, All>(u4.v, u2.v), a1 = approx_pow<8>(u4.v, u2.v);
+            for (Integer i = 0; i < N; i++) {
+              const ScalarType tp = t * (1 + fabs(u2.x[i] * log<ScalarType>(u4.x[i])));
+              SCTL_ASSERT((p0[i] == p1[i] || rel(p0[i], p1[i]) <= tp) && (a0[i] == a1[i] || rel(a0[i], a1[i]) <= tp));
+            }
+          }
           check(cbrt<All>(u1.v), cbrt(u1.v), t);
           check(sinh<FM>(u1.v), sinh(u1.v), t);
           check(cosh<FM>(u1.v), cosh(u1.v), t);
