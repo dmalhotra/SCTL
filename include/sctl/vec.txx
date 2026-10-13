@@ -815,68 +815,6 @@ namespace sctl {
     return fmod_intrin(x.get(), y.get());
   }
 
-  // Deprecated: the flags before Assume
-  template <bool FullRange, class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
-    approx_sincos<-1, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(sinx, cosx, x);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
-    approx_sincos<digits, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(sinx, cosx, x);
-  }
-  template <bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x) {
-    return approx_sin<-1, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x) {
-    return approx_cos<-1, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x) {
-    return approx_tan<-1, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x) {
-    return approx_sin<digits, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x) {
-    return approx_cos<digits, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x) {
-    return approx_tan<digits, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinc(const Vec<ValueType,N>& x) {
-    return approx_sinc<digits, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinpi(const Vec<ValueType,N>& x) {
-    return approx_sinpi<digits, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x) {
-    return approx_cospi<digits, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_sincpi(const Vec<ValueType,N>& x) {
-    return approx_sincpi<digits, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline void approx_sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
-    approx_sincospi<digits, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(sinx, cosx, x);
-  }
-  template <Integer digits, bool RangeCheck, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x) {
-    return approx_exp<digits, (RangeCheck ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <Integer digits, bool RangeCheck, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp10(const Vec<ValueType,N>& x) {
-    return approx_exp10<digits, (RangeCheck ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <bool SpecialValues, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x) {
-    return atan2<(SpecialValues ? Assume::None : Assume::Finite | Assume::Normal)>(y, x);
-  }
-  template <bool AvoidOverflow, class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
-    return hypot<(AvoidOverflow ? Assume::None : Assume::Moderate)>(x, y);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_asinh(const Vec<ValueType,N>& x) {
-    return approx_asinh<digits, (FullRange ? Assume::None : Assume::Finite | Assume::Moderate)>(x);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_acosh(const Vec<ValueType,N>& x) {
-    return approx_acosh<digits, (FullRange ? Assume::None : Assume::Finite | Assume::Domain | Assume::Moderate)>(x);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_atanh(const Vec<ValueType,N>& x) {
-    return approx_atanh<digits, (FullRange ? Assume::None : Assume::Domain)>(x);
-  }
-
 
   // Print
   template <class ValueType, Integer N> inline std::ostream& operator<<(std::ostream& os, const Vec<ValueType,N>& in) {

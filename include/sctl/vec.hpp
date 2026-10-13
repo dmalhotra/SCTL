@@ -869,30 +869,6 @@ namespace sctl {
   /** Remainder of x/y with the sign of x, as std::fmod. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> fmod(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 
-  // Deprecated: the flags before Assume. FullRange = false and RangeCheck = false are Assume::Finite | Assume::Moderate
-  // (acosh: | Assume::Domain; atanh: Assume::Domain), SpecialValues = false Assume::Finite | Assume::Normal,
-  // AvoidOverflow = false Assume::Moderate; sincos, sin, cos and tan with FullRange = false are approx_ with digits -1
-  template <bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: approx_sincos<-1, Assume::Finite | Assume::Moderate>")]] inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
-  template <Integer digits, bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: Assume::Finite | Assume::Moderate")]] inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
-  template <bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: approx_sin<-1, Assume::Finite | Assume::Moderate>")]] inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x);
-  template <bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: approx_cos<-1, Assume::Finite | Assume::Moderate>")]] inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x);
-  template <bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: approx_tan<-1, Assume::Finite | Assume::Moderate>")]] inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x);
-  template <Integer digits, bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: Assume::Finite | Assume::Moderate")]] inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x);
-  template <Integer digits, bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: Assume::Finite | Assume::Moderate")]] inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x);
-  template <Integer digits, bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: Assume::Finite | Assume::Moderate")]] inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x);
-  template <Integer digits, bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: Assume::Finite | Assume::Moderate")]] inline Vec<ValueType,N> approx_sinc(const Vec<ValueType,N>& x);
-  template <Integer digits, bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: Assume::Finite | Assume::Moderate")]] inline void approx_sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
-  template <Integer digits, bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: Assume::Finite | Assume::Moderate")]] inline Vec<ValueType,N> approx_sinpi(const Vec<ValueType,N>& x);
-  template <Integer digits, bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: Assume::Finite | Assume::Moderate")]] inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x);
-  template <Integer digits, bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: Assume::Finite | Assume::Moderate")]] inline Vec<ValueType,N> approx_sincpi(const Vec<ValueType,N>& x);
-  template <Integer digits, bool RangeCheck, class ValueType, Integer N> [[deprecated("RangeCheck = false: Assume::Finite | Assume::Moderate")]] inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x);
-  template <Integer digits, bool RangeCheck, class ValueType, Integer N> [[deprecated("RangeCheck = false: Assume::Finite | Assume::Moderate")]] inline Vec<ValueType,N> approx_exp10(const Vec<ValueType,N>& x);
-  template <bool SpecialValues, class ValueType, Integer N> [[deprecated("SpecialValues = false: Assume::Finite | Assume::Normal")]] inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
-  template <bool AvoidOverflow, class ValueType, Integer N> [[deprecated("AvoidOverflow = false: Assume::Moderate")]] inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
-  template <Integer digits, bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: Assume::Finite | Assume::Moderate")]] inline Vec<ValueType,N> approx_asinh(const Vec<ValueType,N>& x);
-  template <Integer digits, bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: Assume::Finite | Assume::Domain | Assume::Moderate")]] inline Vec<ValueType,N> approx_acosh(const Vec<ValueType,N>& x);
-  template <Integer digits, bool FullRange, class ValueType, Integer N> [[deprecated("FullRange = false: Assume::Domain")]] inline Vec<ValueType,N> approx_atanh(const Vec<ValueType,N>& x);
-
 
   // Print
   template <class ValueType, Integer N> inline std::ostream& operator<<(std::ostream& os, const Vec<ValueType,N>& in);
