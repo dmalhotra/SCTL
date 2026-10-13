@@ -886,16 +886,22 @@ namespace sctl { // Generic
     }
   }
   template <class VData> inline VData loadu_first_intrin(typename VData::ScalarType const* p, Integer n) {
-    if constexpr (split_lanes<VData>) {
-      return concat_intrin(loadu_first_intrin<HalfVData<VData>>(p, n), loadu_first_intrin<HalfVData<VData>>(p + VData::Size/2, n > VData::Size/2 ? n - VData::Size/2 : 0));
+    if constexpr (split_lanes<VData>) { // one half by the count: the other whole or zero
+      using HalfVec = HalfVData<VData>;
+      if (n > HalfVec::Size) return concat_intrin(loadu_intrin<HalfVec>(p), loadu_first_intrin<HalfVec>(p + HalfVec::Size, n - HalfVec::Size));
+      return concat_intrin(loadu_first_intrin<HalfVec>(p, n), zero_intrin<HalfVec>());
     } else {
       return loadu_mask_intrin<VData>(p, mask_first_intrin<VData>(n));
     }
   }
   template <class VData> inline void storeu_first_intrin(typename VData::ScalarType* p, VData vec, Integer n) {
-    if constexpr (split_lanes<VData>) {
-      storeu_first_intrin(p, vec.lo, n);
-      storeu_first_intrin(p + VData::Size/2, vec.hi, n > VData::Size/2 ? n - VData::Size/2 : 0);
+    if constexpr (split_lanes<VData>) { // one half by the count: the other whole or not at all
+      if (n > VData::Size/2) {
+        storeu_intrin(p, vec.lo);
+        storeu_first_intrin(p + VData::Size/2, vec.hi, n - VData::Size/2);
+      } else {
+        storeu_first_intrin(p, vec.lo, n);
+      }
     } else {
       storeu_mask_intrin(p, vec, mask_first_intrin<VData>(n));
     }
