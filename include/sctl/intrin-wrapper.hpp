@@ -2,7 +2,7 @@
 #define _SCTL_INTRIN_WRAPPER_HPP_
 
 #include <stdint.h>             // for int8_t, int16_t, int32_t, int64_t, uint8_t, ...
-#include <cmath>                // for signbit
+#include <cmath>                // for signbit, copysign
 #include <cstring>              // for memcpy
 #include <limits>               // for numeric_limits
 #include <type_traits>          // for is_same
@@ -2175,10 +2175,17 @@ namespace sctl { // Generic
     return select_intrin(in_range, r, div_intrin(set1_intrin<VData>((Real)1), sqrt_intrin(x))); // 0, inf, subnormal and negative x, NaN
   }
   template <class VData> inline VData fabs_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
     if constexpr (split_lanes<VData>) {
       return concat_intrin(fabs_intrin(x.lo), fabs_intrin(x.hi));
-    } else if constexpr (TypeTraits<typename VData::ScalarType>::Type == DataType::Real) {
-      return andnot_intrin(x, set1_intrin<VData>((typename VData::ScalarType)-0.0)); // clears the sign bit
+    } else if constexpr (TypeTraits<Real>::Type == DataType::Real) {
+      if constexpr (!ieee_layout<Real>()) { // one element at a time, as for copysign_intrin
+        LaneArray<VData> x_(x);
+        for (Integer i = 0; i < VData::Size; i++) x_[i] = fabs(x_[i]);
+        return x_.value();
+      } else {
+        return andnot_intrin(x, set1_intrin<VData>((Real)-0.0)); // clears the sign bit
+      }
     } else {
       return max_intrin(x, unary_minus_intrin(x));
     }
@@ -2201,9 +2208,20 @@ namespace sctl { // Generic
       return x_.value();
     }
   }
+  // by the sign bit, or one element at a time where Real has more bits than sign, exponent and fraction: the padding of
+  // x87 long double, uninitialized, made AOCC and icpx fold copysign of constants to NaN
   template <class VData> inline VData copysign_intrin(const VData& x, const VData& y) {
-    const VData sign = set1_intrin<VData>((typename VData::ScalarType)-0.0);
-    return or_intrin(andnot_intrin(x, sign), and_intrin(y, sign));
+    using Real = typename VData::ScalarType;
+    static_assert(TypeTraits<Real>::Type == DataType::Real, "Expected real type!");
+    if constexpr (!ieee_layout<Real>()) {
+      LaneArray<VData> x_(x);
+      const LaneArray<VData> y_(y);
+      for (Integer i = 0; i < VData::Size; i++) x_[i] = std::copysign(x_[i], y_[i]);
+      return x_.value();
+    } else {
+      const VData sign = set1_intrin<VData>((Real)-0.0);
+      return or_intrin(andnot_intrin(x, sign), and_intrin(y, sign));
+    }
   }
   template <class VData> inline Mask<VData> isnan_intrin(const VData& x) {
     if constexpr (split_lanes<VData>) {
