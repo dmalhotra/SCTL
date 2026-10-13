@@ -607,9 +607,9 @@ namespace sctl { // Generic
   }
 
   // Element k of the result is a[I_k] for 0 <= I_k < N, b[I_k - N] for N <= I_k < 2N, and 0 for I_k = -1. Where VData
-  // holds two halves, each half of the result by blends of the halves of a and b it takes lanes from; with GCC 12+ and
-  // clang by __builtin_shufflevector on a vector of the scalar type, mapped by the compiler to the shuffle, permute and
-  // blend instructions of the target; else lane by lane.
+  // holds two halves, each half of the result by blends of the halves of a and b it takes lanes from; with GCC and
+  // clang by __builtin_shufflevector (GCC 12+, clang) or __builtin_shuffle (GCC before 12) on a vector of the scalar
+  // type, mapped by the compiler to the shuffle, permute and blend instructions of the target; else lane by lane.
   template <Integer... I> struct BlendIntrin {
     template <class VData> static inline VData apply(const VData& a, const VData& b) {
       using T = typename VData::ScalarType;
@@ -619,7 +619,7 @@ namespace sctl { // Generic
       if constexpr (split_lanes<VData>) {
         return concat_intrin(half<0>(a, b, std::make_integer_sequence<Integer, N/2>()), half<1>(a, b, std::make_integer_sequence<Integer, N/2>()));
       } else {
-#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 12)
+#if defined(__clang__) || (defined(__GNUC__) && !defined(__INTEL_COMPILER))
   #if defined(__clang__) && __clang_major__ == 18 && defined(__AVX512BW__) && !defined(__AVX512VBMI__)
         static constexpr bool shuffle = !(sizeof(T) == 1 && N == 64); // clang 18 gives wrong lanes for some shuffles of 64 bytes from two vectors
   #else
@@ -672,7 +672,7 @@ namespace sctl { // Generic
         return BlendIntrin<(idx[h * H + K] < 0 ? -1 : (lane<H>(idx[h * H + K], s0, s1) >= 0 ? K : H + K))...>::apply(x, y);
       }
     }
-#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 12)
+#if defined(__clang__) || (defined(__GNUC__) && !defined(__INTEL_COMPILER))
     template <class VData, Integer... K> static inline VData lanes(const VData& a, const VData& b, std::integer_sequence<Integer, K...>) {
       using T = typename VData::ScalarType;
       static constexpr Integer N = VData::Size;
@@ -680,8 +680,14 @@ namespace sctl { // Generic
       V a_, b_;
       std::memcpy(&a_, &a, sizeof(V));
       std::memcpy(&b_, &b, sizeof(V));
+  #if defined(__clang__) || __GNUC__ >= 12
       V r = __builtin_shufflevector(a_, b_, (I < 0 ? -1 : I)...);
       if constexpr (((I < 0) || ...)) r = __builtin_shufflevector(r, V{}, (I < 0 ? N + K : K)...); // the zeros, from a second operand
+  #else
+      typedef typename IntegerType<sizeof(T)>::value M __attribute__((vector_size(N * sizeof(T)))); // the indices
+      V r = __builtin_shuffle(a_, b_, M{(I < 0 ? 0 : I)...});
+      if constexpr (((I < 0) || ...)) r = __builtin_shuffle(r, V{}, M{(I < 0 ? N + K : K)...});
+  #endif
       VData r_;
       std::memcpy(&r_, &r, sizeof(V));
       return r_;
