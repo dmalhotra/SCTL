@@ -1909,6 +1909,18 @@ namespace sctl { // Generic
     const VData c = select_intrin(comp_intrin<ComparisonType::gt>(ax, zero) & comp_intrin<ComparisonType::le>(ax, set1_intrin<VData>(std::numeric_limits<Real>::max())), mul_intrin(y, p2), ax); // zeros, inf, NaN as they are; max as in positive_normal_mask_intrin
     return copysign_intrin(c, x); // after the select: clang 18 and 19 compile select(m, copysign(c, x), x) for AVX-512 at -O2 to a vpternlogq with a wrong immediate
   }
+  // r with fmod in the lanes not in m, one element at a time; out of line, so that its copies through memory are not
+  // made on the vector path (with AOCC they were, and conflicts of their addresses made fmod up to 4x slower)
+  template <class VData> [[gnu::noinline, gnu::cold]] VData fmod_lanes_intrin(const VData x, const VData y, const VData r, const Mask<VData> m) {
+    LaneArray<MaskIntVec<VData>> m_(mask2int_intrin(m));
+    LaneArray<VData> x_u(x);
+    LaneArray<VData> y_u(y);
+    LaneArray<VData> r_u(r);
+    for (Integer i = 0; i < VData::Size; i++) {
+      if (!m_[i]) r_u[i] = fmod(x_u[i], y_u[i]);
+    }
+    return r_u.value();
+  }
   template <class VData> inline VData fmod_poly_intrin(const VData& x, const VData& y) { // |x| - q |y|, q = trunc(fl(|x|/|y|)), the quotient or one more; exact
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
@@ -1933,16 +1945,7 @@ namespace sctl { // Generic
     r = add_intrin(r, select_intrin(comp_intrin<ComparisonType::lt>(r, zero), ay, zero));
     r = copysign_intrin(select_intrin(comp_intrin<ComparisonType::lt>(qf, set1_intrin<VData>((Real)1)), ax, r), x); // |x| < |y|: x, also for inf y
 
-    if (mask_count_intrin(vector_lanes) < VData::Size) { // the other lanes one element at a time
-      LaneArray<MaskIntVec<VData>> m_(mask2int_intrin(vector_lanes));
-      LaneArray<VData> x_u(x);
-      LaneArray<VData> y_u(y);
-      LaneArray<VData> r_u(r);
-      for (Integer i = 0; i < VData::Size; i++) {
-        if (!m_[i]) r_u[i] = fmod(x_u[i], y_u[i]);
-      }
-      r = r_u.value();
-    }
+    if (mask_count_intrin(vector_lanes) < VData::Size) r = fmod_lanes_intrin(x, y, r, vector_lanes);
     return r;
   }
   template <class IntVec> inline IntVec div_int64_intrin(const IntVec& a, const IntVec& b) { // through double, exact for |a|, |b| < 2^51; other lanes one element at a time
