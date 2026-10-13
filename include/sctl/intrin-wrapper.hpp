@@ -198,8 +198,8 @@ namespace sctl { // Generic
     static constexpr Integer Size = N;
   };
 
-  template <class VData, class = void> inline constexpr bool split_lanes = false; // VData holds two halves, lo and hi
-  template <class VData> inline constexpr bool split_lanes<VData, std::enable_if_t<VData::SplitLanes>> = true;
+  template <class VData, class = void> inline constexpr bool split_lanes = false; // VData holds two halves, lo and hi; not a Mask derived from one
+  template <class VData> inline constexpr bool split_lanes<VData, std::enable_if_t<VData::SplitLanes>> = std::is_same<VData, VecData<typename VData::ScalarType, VData::Size>>::value;
   template <class VData> using HalfVData = VecData<typename VData::ScalarType, VData::Size/2>;
 
   /**
@@ -889,13 +889,13 @@ namespace sctl { // Generic
       } else {
         using Int = typename MaskLanes<VData>::ScalarType;
         constexpr Integer K = (sizeof(Int) < 8 ? sizeof(Int) : 8); // bytes read per lane
-        MaskLanes<VData> m;
+        LaneArray<MaskLanes<VData>> m; // the integer lanes can be two halves, as for 8-byte long double
         for (Integer i = 0; i < VData::Size; i++) {
           typename IntegerType<K>::value w;
           std::memcpy(&w, &v.v[i], K);
-          m.v[i] = (w ? ~(Int)0 : (Int)0);
+          m[i] = (w ? ~(Int)0 : (Int)0);
         }
-        return m;
+        return m.value();
       }
     }
   };
@@ -987,9 +987,9 @@ namespace sctl { // Generic
   template <class VDataTo, class VData> inline Mask<VDataTo> convert_mask_intrin(const Mask<VData>& m) { // same lanes, another element type
     if constexpr (split_lanes<VDataTo> && split_lanes<VData>) {
       return concat_mask_intrin(convert_mask_intrin<HalfVData<VDataTo>>(m.lo), convert_mask_intrin<HalfVData<VDataTo>>(m.hi));
-    } else if constexpr (sizeof(typename VDataTo::ScalarType) == sizeof(typename VData::ScalarType)) { // same mask layout
+    } else if constexpr (sizeof(typename VDataTo::ScalarType) == sizeof(typename VData::ScalarType) && sizeof(Mask<VDataTo>) == sizeof(Mask<VData>)) { // same mask layout
       return reinterpret_mask<Mask<VDataTo>>(m);
-    } else if constexpr (array_lanes<VData> && array_lanes<VDataTo>) {
+    } else if constexpr (array_lanes<MaskLanes<VData>> && array_lanes<MaskLanes<VDataTo>>) {
       using IntTo = typename MaskLanes<VDataTo>::ScalarType;
       Mask<VDataTo> r;
       for (Integer i = 0; i < VData::Size; i++) r.v[i] = (m.v[i] ? ~(IntTo)0 : (IntTo)0);
@@ -1121,9 +1121,9 @@ namespace sctl { // Generic
     if constexpr (split_lanes<VData>) {
       return concat_mask_intrin(comp_intrin<TYPE>(a.lo, b.lo), comp_intrin<TYPE>(a.hi, b.hi));
     } else if constexpr (array_lanes<VData>) {
-      Mask<VData> c;
-      for (Integer i = 0; i < VData::Size; i++) c.v[i] = lane(a.v[i], b.v[i]);
-      return c;
+      LaneArray<MaskIntVec<VData>> c; // the integer lanes can be two halves, as for 8-byte long double
+      for (Integer i = 0; i < VData::Size; i++) c[i] = lane(a.v[i], b.v[i]);
+      return int2mask_intrin<VData>(c.value());
     } else {
       const LaneArray<VData> a_(a);
       const LaneArray<VData> b_(b);
@@ -1141,8 +1141,9 @@ namespace sctl { // Generic
       const VData& s_ = s;
       return or_intrin(and_intrin(a,s_), andnot_intrin(b,s_));
     } else { // array lanes: a or b in each lane
+      const LaneArray<MaskIntVec<VData>> s_(mask2int_intrin(s)); // the integer lanes can be two halves, as for 8-byte long double
       VData r;
-      for (Integer i = 0; i < VData::Size; i++) r.v[i] = (s.v[i] ? a.v[i] : b.v[i]);
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = (s_[i] ? a.v[i] : b.v[i]);
       return r;
     }
   }
