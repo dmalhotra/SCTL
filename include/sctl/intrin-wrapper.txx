@@ -1530,7 +1530,9 @@ namespace sctl { // Generic
     L_hi = add_intrin(eh, u_hi);
     L_lo = add_intrin(add_intrin(sub_intrin(eh, L_hi), u_hi), fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), u_lo)); // |eh| >= |u_hi| unless e = 0
   }
-  template <bool Check, class VData> inline VData pow_poly_intrin(const VData& x, const VData& y) {
+  // always inlined, as the pow_intrin that call it: called at several lengths, GCC 14 kept it out of line, and pow was up
+  // to 1.3x slower
+  template <bool Check, class VData> [[gnu::always_inline]] inline VData pow_poly_intrin(const VData& x, const VData& y) {
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     const VData zero = zero_intrin<VData>();
@@ -6393,8 +6395,8 @@ namespace sctl { // AVX
     return approx_exp_intrin<(Integer)(TypeTraits<double>::SigBits/3.8)>(x); // TODO: determine constants more precisely
   }
 #if !defined(SCTL_HAVE_LIBMVEC)
-  template <> inline VecData<float,8> pow_intrin<VecData<float,8>>(const VecData<float,8>& x, const VecData<float,8>& y) { return pow_poly_intrin(x, y); }
-  template <> inline VecData<double,4> pow_intrin<VecData<double,4>>(const VecData<double,4>& x, const VecData<double,4>& y) { return pow_poly_intrin(x, y); }
+  template <> [[gnu::always_inline]] inline VecData<float,8> pow_intrin<VecData<float,8>>(const VecData<float,8>& x, const VecData<float,8>& y) { return pow_poly_intrin(x, y); }
+  template <> [[gnu::always_inline]] inline VecData<double,4> pow_intrin<VecData<double,4>>(const VecData<double,4>& x, const VecData<double,4>& y) { return pow_poly_intrin(x, y); }
 #endif
   template <> inline VecData<float ,8> cbrt_intrin<VecData<float ,8>>(const VecData<float ,8>& x) { return cbrt_poly_intrin(x); }
   template <> inline VecData<double,4> cbrt_intrin<VecData<double,4>>(const VecData<double,4>& x) { return cbrt_poly_intrin(x); }
@@ -7579,8 +7581,8 @@ namespace sctl { // AVX512
     return approx_exp_intrin<(Integer)(TypeTraits<double>::SigBits/3.8)>(x); // TODO: determine constants more precisely
   }
 #ifndef SCTL_HAVE_LIBMVEC
-  template <> inline VecData<float,16> pow_intrin<VecData<float,16>>(const VecData<float,16>& x, const VecData<float,16>& y) { return pow_poly_intrin(x, y); }
-  template <> inline VecData<double,8> pow_intrin<VecData<double,8>>(const VecData<double,8>& x, const VecData<double,8>& y) { return pow_poly_intrin(x, y); }
+  template <> [[gnu::always_inline]] inline VecData<float,16> pow_intrin<VecData<float,16>>(const VecData<float,16>& x, const VecData<float,16>& y) { return pow_poly_intrin(x, y); }
+  template <> [[gnu::always_inline]] inline VecData<double,8> pow_intrin<VecData<double,8>>(const VecData<double,8>& x, const VecData<double,8>& y) { return pow_poly_intrin(x, y); }
 #endif
   template <> inline VecData<float,16> cbrt_intrin<VecData<float,16>>(const VecData<float,16>& x) { return cbrt_poly_intrin(x); }
   template <> inline VecData<double,8> cbrt_intrin<VecData<double,8>>(const VecData<double,8>& x) { return cbrt_poly_intrin(x); }
