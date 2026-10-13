@@ -2287,10 +2287,10 @@ namespace sctl { // Generic
     return 2 / sqrt<Real>(const_pi<Real>()) * exp_neg_sq_generic(x) * sum;
   }
   // erfc(a) of one value, a >= 1/2: e^(-a^2)/sqrt(pi) / (a + (1/2)/(a + 1/(a + (3/2)/(a + ...)))), from the last of
-  // d^2/a^2 + 16 terms for d digits (quad needs up to 13 more than d^2/a^2 for a in [8, 40])
+  // d^2/a^2 + d/2 terms for d digits (beyond d^2/a^2, 53 bits need up to 7 terms, 64 bits 8 and quad 15)
   template <class Real> inline Real erfc_cf_generic(const Real a) {
     static constexpr Integer d = (Integer)(TypeTraits<Real>::SigBits * 0.30103) + 2;
-    const Integer n = (a >= (Real)0.5 && a < d ? (Integer)(d * d / (a * a)) : 0) + 16; // NaN: 16
+    const Integer n = (a >= (Real)0.5 && a < d ? (Integer)(d * d / (a * a)) : 0) + d / 2; // NaN: d/2
     Real t = 0;
     for (Integer k = n; k > 0; k--) t = (Real)k / 2 / (a + t);
     return exp_neg_sq_generic(a) / sqrt<Real>(const_pi<Real>()) / (a + t);
