@@ -1448,7 +1448,7 @@ namespace sctl { // Generic
     hi = and_intrin(x, set1_intrin<VData>(high.r));
     lo = sub_intrin(x, hi);
   }
-#if defined(__FMA__) || defined(__FMA4__)
+#if defined(__FMA__) || defined(__FMA4__) || defined(__aarch64__)
   template <class VData> inline constexpr bool fused_fma = !array_lanes<VData>; // fma_intrin rounds once
 #else
   template <class VData> inline constexpr bool fused_fma = false;
@@ -1571,7 +1571,7 @@ namespace sctl { // Generic
     const VData qf = div_intrin(ax, ay);
     const VData q = trunc_intrin(qf);
     Mask<VData> vector_lanes = comp_intrin<ComparisonType::lt>(qf, set1_intrin<VData>(lim)); // the others: |x/y| >= lim, y = 0, inf x, NaN
-#if defined(__FMA__) || defined(__FMA4__)
+#if defined(__FMA__) || defined(__FMA4__) || defined(__aarch64__)
     VData r = fma_intrin(unary_minus_intrin(q), ay, ax);
 #else // p + e = q |y| exactly (Dekker's product): with q below lim, the halves of q have SigBits - 1 bits together, so that each partial product is exact
     VData q_hi, q_lo, y_hi, y_lo;
@@ -4132,6 +4132,8 @@ namespace sctl { // SSE
     return _mm_fmadd_ps(a.v, b.v, c.v);
     #elif defined(__FMA4__)
     return _mm_macc_ps(a.v, b.v, c.v);
+    #elif defined(__aarch64__)
+    return vreinterpretq_m128_f32(vfmaq_f32(vreinterpretq_f32_m128(c.v), vreinterpretq_f32_m128(a.v), vreinterpretq_f32_m128(b.v)));
     #else
     return add_intrin(mul_intrin(a,b), c);
     #endif
@@ -4141,6 +4143,8 @@ namespace sctl { // SSE
     return _mm_fmadd_pd(a.v, b.v, c.v);
     #elif defined(__FMA4__)
     return _mm_macc_pd(a.v, b.v, c.v);
+    #elif defined(__aarch64__)
+    return vreinterpretq_m128d_f64(vfmaq_f64(vreinterpretq_f64_m128d(c.v), vreinterpretq_f64_m128d(a.v), vreinterpretq_f64_m128d(b.v)));
     #else
     return add_intrin(mul_intrin(a,b), c);
     #endif
