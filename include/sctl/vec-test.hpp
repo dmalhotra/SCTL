@@ -780,9 +780,13 @@ namespace sctl {
       }
 
       static void test_reals_convert() {
-        using IntVec = Vec<typename IntegerType<sizeof(ScalarType)>::value,N>;
+        using Int = typename IntegerType<sizeof(ScalarType)>::value;
+        using IntVec = Vec<Int,N>;
         using RealVec = Vec<ScalarType,N>;
         static_assert(TypeTraits<ScalarType>::Type == DataType::Real, "Expected real type!");
+        const auto nearest_even = [](const ScalarType x) { // halves to the even integer, as lrint and rint
+          return (fabs(x - trunc(x)) == (ScalarType)0.5 ? 2 * round(x / 2) : round(x));
+        };
 
         RealVec a = RealVec::Zero();
         for (Integer i = 0; i < N; i++) a.insert(i, (ScalarType)(drand48()-0.5)*100);
@@ -790,9 +794,30 @@ namespace sctl {
         RealVec c = rint(a);
         RealVec d = ConvertInt2Real<RealVec>(b);
         for (Integer i = 0; i < N; i++) {
-          SCTL_ASSERT(b[i] == (typename IntVec::ScalarType)round(a[i]));
-          SCTL_ASSERT(c[i] == (ScalarType)(typename IntVec::ScalarType)round(a[i]));
+          SCTL_ASSERT(b[i] == (Int)nearest_even(a[i]));
+          SCTL_ASSERT(c[i] == nearest_even(a[i]));
           SCTL_ASSERT(d[i] == (ScalarType)b[i]);
+        }
+
+        { // an exact half in every lane, up to the largest in the range of lrint, 2^(SigBits-1) - 1/2; from a sequence of its own, not drand48
+          static uint32_t seq = 1;
+          ScalarType max_half = 1;
+          for (Integer k = 0; k < TypeTraits<ScalarType>::SigBits - 1; k++) max_half *= 2;
+          max_half -= (ScalarType)0.5;
+          RealVec h = RealVec::Zero();
+          for (Integer i = 0; i < N; i++) {
+            seq = seq * 1664525u + 1013904223u;
+            const ScalarType x = ((seq >> 8) % 8 == 0 ? max_half : (ScalarType)((Integer)((seq >> 8) % 2001) - 1000) + (ScalarType)0.5);
+            h.insert(i, (seq >> 31) ? -x : x);
+          }
+          const IntVec hb = lrint<IntVec>(h);
+          const RealVec hc = rint(h), hr = round(h);
+          for (Integer i = 0; i < N; i++) {
+            const ScalarType x = h[i];
+            SCTL_ASSERT(hb[i] == (Int)nearest_even(x));
+            SCTL_ASSERT(hc[i] == nearest_even(x));
+            SCTL_ASSERT(hr[i] == x + (x < 0 ? (ScalarType)-0.5 : (ScalarType)0.5)); // away from zero
+          }
         }
 
         const ScalarType xs[] = {(ScalarType)2.5, (ScalarType)-2.5, (ScalarType)3.5, (ScalarType)-0.5}; // halves go to the even integer
