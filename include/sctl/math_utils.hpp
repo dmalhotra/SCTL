@@ -264,6 +264,11 @@ template <Long e, class ValueType> [[nodiscard]] inline constexpr ValueType pow(
  * `SCTL_QUAD_T` must be defined and set equal to the compiler supported quad-precision floating
  * point type (e.g.  with GCC use the compiler flag: `-DSCTL_QUAD_T=__float128`).
  */
+#if defined(__INTEL_LLVM_COMPILER) // icpx 2025.0 miscompiled speculated quad operations; maytrap stops their speculation
+#define SCTL_QUAD_OP _Pragma("clang fp exceptions(maytrap)")
+#else
+#define SCTL_QUAD_OP
+#endif
 class QuadReal {
   typedef SCTL_QUAD_T QuadRealType;
 
@@ -316,7 +321,7 @@ class QuadReal {
      * @param x The value to add.
      * @return QuadReal& The reference to the modified object.
      */
-    QuadReal& operator+=(const QuadReal& x) { val += x.val; return *this; }
+    QuadReal& operator+=(const QuadReal& x) { SCTL_QUAD_OP val += x.val; return *this; }
 
     /**
      * Subtraction assignment operator.
@@ -324,7 +329,7 @@ class QuadReal {
      * @param x The value to subtract.
      * @return QuadReal& The reference to the modified object.
      */
-    QuadReal& operator-=(const QuadReal& x) { val -= x.val; return *this; }
+    QuadReal& operator-=(const QuadReal& x) { SCTL_QUAD_OP val -= x.val; return *this; }
 
     /**
      * Multiplication assignment operator.
@@ -332,7 +337,7 @@ class QuadReal {
      * @param x The value to multiply by.
      * @return QuadReal& The reference to the modified object.
      */
-    QuadReal& operator*=(const QuadReal& x) { val *= x.val; return *this; }
+    QuadReal& operator*=(const QuadReal& x) { SCTL_QUAD_OP val *= x.val; return *this; }
 
     /**
      * Division assignment operator.
@@ -340,7 +345,7 @@ class QuadReal {
      * @param x The value to divide by.
      * @return QuadReal& The reference to the modified object.
      */
-    QuadReal& operator/=(const QuadReal& x) { val /= x.val; return *this; }
+    QuadReal& operator/=(const QuadReal& x) { SCTL_QUAD_OP val /= x.val; return *this; }
 
     /**
      * Addition operator.
@@ -348,7 +353,7 @@ class QuadReal {
      * @param x The value to add.
      * @return constexpr QuadReal The result of the addition.
      */
-    constexpr QuadReal operator+(const QuadReal& x) const { return QuadReal(val + x.val); }
+    constexpr QuadReal operator+(const QuadReal& x) const { SCTL_QUAD_OP return QuadReal(val + x.val); }
 
     /**
      * Subtraction operator.
@@ -356,7 +361,7 @@ class QuadReal {
      * @param x The value to subtract.
      * @return constexpr QuadReal The result of the subtraction.
      */
-    constexpr QuadReal operator-(const QuadReal& x) const { return QuadReal(val - x.val); }
+    constexpr QuadReal operator-(const QuadReal& x) const { SCTL_QUAD_OP return QuadReal(val - x.val); }
 
     /**
      * Multiplication operator.
@@ -364,7 +369,7 @@ class QuadReal {
      * @param x The value to multiply by.
      * @return constexpr QuadReal The result of the multiplication.
      */
-    constexpr QuadReal operator*(const QuadReal& x) const { return QuadReal(val * x.val); }
+    constexpr QuadReal operator*(const QuadReal& x) const { SCTL_QUAD_OP return QuadReal(val * x.val); }
 
     /**
      * Division operator.
@@ -372,14 +377,14 @@ class QuadReal {
      * @param x The value to divide by.
      * @return constexpr QuadReal The result of the division.
      */
-    constexpr QuadReal operator/(const QuadReal& x) const { return QuadReal(val / x.val); }
+    constexpr QuadReal operator/(const QuadReal& x) const { SCTL_QUAD_OP return QuadReal(val / x.val); }
 
     /**
      * Unary negation operator.
      *
      * @return constexpr QuadReal The negated value.
      */
-    constexpr QuadReal operator-() const { return QuadReal(-val); }
+    constexpr QuadReal operator-() const { SCTL_QUAD_OP return QuadReal(-val); }
 
     /**
      * Less than comparison operator.
@@ -530,6 +535,7 @@ class QuadReal {
   private:
     QuadRealType val; ///< The value of the QuadReal.
 };
+#undef SCTL_QUAD_OP
 
 /**
  * Overloads the output stream operator for QuadReal objects.
