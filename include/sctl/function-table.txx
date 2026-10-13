@@ -332,7 +332,7 @@ namespace sctl {
     static constexpr bool convert_int64 = true;
 #else
     using Idx = typename std::conditional<(N >= 4), int32_t, int64_t>::type; // native conversions
-  #if defined(__aarch64__) && defined(__clang__)
+  #if defined(__aarch64__)
     static constexpr bool convert_int64 = true; // fcvtzs
   #else
     static constexpr bool convert_int64 = false;
