@@ -1769,20 +1769,20 @@ namespace sctl { // Generic
     const VData s = reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(t), SigBits)); // 2^-e
     return fma_intrin(c, s, f);
   }
-  template <class VData> inline VData log_poly_intrin(const VData& x) { // log_split_poly_intrin of log_split_intrin
+  // log_split_poly_intrin of log_split_intrin, one polynomial for all x: with a second one for x zero, subnormal, inf,
+  // negative or NaN, GCC 14 left this function out of line in large programs, and log was 1.5x slower
+  template <class VData> inline VData log_poly_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
+    const bool normal = (mask_count_intrin(positive_normal_mask_intrin(x)) == VData::Size);
+    VData e, f;
+    if (normal) log_split_intrin<false>(e, f, x);
+    else log_split_intrin<true>(e, f, x);
+    const VData r = log_split_poly_intrin(e, f);
+    if (normal) return r;
     const VData zero = zero_intrin<VData>();
     const VData inf = set1_intrin<VData>((Real)INFINITY);
-    VData e, f;
-    log_split_intrin<false>(e, f, x);
-    const VData r = log_split_poly_intrin(e, f);
-    if (mask_count_intrin(positive_normal_mask_intrin(x)) == VData::Size) return r;
-
-    // some x zero, subnormal, inf, negative or NaN
-    log_split_intrin<true>(e, f, x);
-    VData rs = log_split_poly_intrin(e, f);
-    rs = select_intrin(comp_intrin<ComparisonType::eq>(x, zero), unary_minus_intrin(inf), rs);
+    VData rs = select_intrin(comp_intrin<ComparisonType::eq>(x, zero), unary_minus_intrin(inf), r);
     rs = select_intrin(comp_intrin<ComparisonType::eq>(x, inf), x, rs);
     return select_intrin(comp_intrin<ComparisonType::ge>(x, zero), rs, set1_intrin<VData>((Real)NAN)); // negative x and NaN
   }
