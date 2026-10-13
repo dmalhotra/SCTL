@@ -591,21 +591,6 @@ namespace sctl { // Generic
     }
   }
 
-  template <class VData> inline VData swap_pairs_intrin(const VData& vec) {
-    if constexpr (split_lanes<VData>) {
-      return concat_intrin(swap_pairs_intrin(vec.lo), swap_pairs_intrin(vec.hi));
-    } else {
-      static_assert(VData::Size % 2 == 0, "swap_pairs requires an even number of lanes.");
-      LaneArray<VData> vec_(vec);
-      for (Integer i = 0; i < VData::Size; i += 2) {
-        const typename VData::ScalarType t = vec_[i];
-        vec_[i] = vec_[i + 1];
-        vec_[i + 1] = t;
-      }
-      return vec_.value();
-    }
-  }
-
   // Element k of the result is a[I_k] for 0 <= I_k < N, b[I_k - N] for N <= I_k < 2N, and 0 for I_k = -1. Where VData
   // holds two halves, each half of the result by blends of the halves of a and b it takes lanes from; with GCC and
   // clang by __builtin_shufflevector (GCC 12+, clang) or __builtin_shuffle (GCC before 12) on a vector of the scalar
@@ -696,6 +681,17 @@ namespace sctl { // Generic
   };
   template <Integer... I, class VData> inline VData blend_intrin(const VData& a, const VData& b) {
     return BlendIntrin<I...>::apply(a, b);
+  }
+  template <class VData, Integer... K> inline VData swap_pairs_lanes(const VData& vec, std::integer_sequence<Integer, K...>) {
+    return BlendIntrin<(K ^ 1)...>::apply(vec, vec);
+  }
+  template <class VData> inline VData swap_pairs_intrin(const VData& vec) { // as a permute, for the shuffle of the compiler
+    if constexpr (split_lanes<VData>) {
+      return concat_intrin(swap_pairs_intrin(vec.lo), swap_pairs_intrin(vec.hi));
+    } else {
+      static_assert(VData::Size % 2 == 0, "swap_pairs requires an even number of lanes.");
+      return swap_pairs_lanes(vec, std::make_integer_sequence<Integer, VData::Size>());
+    }
   }
   template <Integer... I, class VData> inline VData permute_intrin(const VData& a) {
     static_assert(((I < VData::Size) && ...), "a permute index outside [-1, N).");
