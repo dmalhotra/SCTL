@@ -4848,6 +4848,23 @@ namespace sctl { // SSE
   template <> inline VecData<float,4> swap_pairs_intrin(const VecData<float,4>& vec) { return _mm_shuffle_ps(vec.v, vec.v, 0xB1); }
   template <> inline VecData<double,2> swap_pairs_intrin(const VecData<double,2>& vec) { return _mm_shuffle_pd(vec.v, vec.v, 0x1); }
 
+  // Integer reductions by NEON across the lanes, for GCC: through the generic halves of 64 bits it went lane by lane,
+  // 2.6x slower; with Apple clang the generic code is faster
+#if defined(__aarch64__) && !defined(__clang__)
+  template <> inline int8_t  reduce_add_intrin<VecData<int8_t ,16>>(const VecData<int8_t ,16>& a) { return vaddvq_s8 (vreinterpretq_s8_m128i (a.v)); }
+  template <> inline int16_t reduce_add_intrin<VecData<int16_t, 8>>(const VecData<int16_t, 8>& a) { return vaddvq_s16(vreinterpretq_s16_m128i(a.v)); }
+  template <> inline int32_t reduce_add_intrin<VecData<int32_t, 4>>(const VecData<int32_t, 4>& a) { return vaddvq_s32(vreinterpretq_s32_m128i(a.v)); }
+  template <> inline int64_t reduce_add_intrin<VecData<int64_t, 2>>(const VecData<int64_t, 2>& a) { return vaddvq_s64(vreinterpretq_s64_m128i(a.v)); }
+  template <> inline int8_t  reduce_min_intrin<VecData<int8_t ,16>>(const VecData<int8_t ,16>& a) { return vminvq_s8 (vreinterpretq_s8_m128i (a.v)); }
+  template <> inline int16_t reduce_min_intrin<VecData<int16_t, 8>>(const VecData<int16_t, 8>& a) { return vminvq_s16(vreinterpretq_s16_m128i(a.v)); }
+  template <> inline int32_t reduce_min_intrin<VecData<int32_t, 4>>(const VecData<int32_t, 4>& a) { return vminvq_s32(vreinterpretq_s32_m128i(a.v)); }
+  template <> inline int64_t reduce_min_intrin<VecData<int64_t, 2>>(const VecData<int64_t, 2>& a) { const int64_t x = vgetq_lane_s64(vreinterpretq_s64_m128i(a.v), 0), y = vgetq_lane_s64(vreinterpretq_s64_m128i(a.v), 1); return (y < x ? y : x); }
+  template <> inline int8_t  reduce_max_intrin<VecData<int8_t ,16>>(const VecData<int8_t ,16>& a) { return vmaxvq_s8 (vreinterpretq_s8_m128i (a.v)); }
+  template <> inline int16_t reduce_max_intrin<VecData<int16_t, 8>>(const VecData<int16_t, 8>& a) { return vmaxvq_s16(vreinterpretq_s16_m128i(a.v)); }
+  template <> inline int32_t reduce_max_intrin<VecData<int32_t, 4>>(const VecData<int32_t, 4>& a) { return vmaxvq_s32(vreinterpretq_s32_m128i(a.v)); }
+  template <> inline int64_t reduce_max_intrin<VecData<int64_t, 2>>(const VecData<int64_t, 2>& a) { const int64_t x = vgetq_lane_s64(vreinterpretq_s64_m128i(a.v), 0), y = vgetq_lane_s64(vreinterpretq_s64_m128i(a.v), 1); return (y > x ? y : x); }
+#endif
+
   // Conversion operators
   template <> inline VecData<float ,4> convert_int2real_intrin<VecData<float ,4>,VecData<int32_t,4>>(const VecData<int32_t,4>& x) {
     return _mm_cvtepi32_ps(x.v);
