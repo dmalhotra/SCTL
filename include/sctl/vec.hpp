@@ -747,12 +747,18 @@ namespace sctl {
 
   /** Cube root. A: Normal leaves out subnormal x; Finite | Normal also 0, inf and NaN. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x);
+  /** cbrt to the given digits (-1: full); up to 5 digits without a division. A as cbrt. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cbrt(const Vec<ValueType,N>& x);
 
   /** Hyperbolic sine. A: Finite | Moderate, |x| < 709.4 (float: 88.3). */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> sinh(const Vec<ValueType,N>& x);
+  /** sinh to the given digits (-1: full); A as sinh. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinh(const Vec<ValueType,N>& x);
 
   /** Hyperbolic cosine. A as sinh. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cosh(const Vec<ValueType,N>& x);
+  /** cosh to the given digits (-1: full); A as sinh. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cosh(const Vec<ValueType,N>& x);
 
   /** Hyperbolic tangent. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x);

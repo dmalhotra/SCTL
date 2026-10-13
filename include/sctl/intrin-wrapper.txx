@@ -1555,7 +1555,13 @@ namespace sctl { // Generic
     r = select_intrin(comp_intrin<ComparisonType::ne>(x, x), x, r);
     return select_intrin(comp_intrin<ComparisonType::eq>(y, zero) | comp_intrin<ComparisonType::eq>(x, one), one, r);
   }
-  template <bool Subnormal, bool Special, class VData> inline VData cbrt_poly_intrin(const VData& x) {
+  // cbrt(m) ~ P(m) for m in [sqrt(1/2), sqrt(2)], minimax for the relative error, P of degree n, lowest degree first:
+  // correct digits 3.20, 4.14, 5.04 for n = 2, 3, 4; 9.77, 12.59, 15.18 after one Halley step
+  template <Integer n> struct CbrtPolyCoeffs;
+  template <> struct CbrtPolyCoeffs<2> { static constexpr double c[] = {0.5537056625872334, 0.5536620346312702, -0.10747695195781526}; };
+  template <> struct CbrtPolyCoeffs<3> { static constexpr double c[] = {0.4925096743630478, 0.739717656579689, -0.29037894534136116, 0.058220861837140744}; };
+  template <> struct CbrtPolyCoeffs<4> { static constexpr double c[] = {0.4516672773919226, 0.9048172656293748, -0.5356289071572605, 0.21693660187728658, -0.0377879919103263}; };
+  template <bool Subnormal, bool Special, Integer DIGITS, class VData> inline VData cbrt_poly_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
     using IntVec = VecData<Int, VData::Size>;
@@ -1572,16 +1578,27 @@ namespace sctl { // Generic
     const VData q = floor_intrin(mul_intrin(add_intrin(e, set1_intrin<VData>((Real)0.5)), set1_intrin<VData>((Real)1/3)));
     const VData r = fma_intrin(q, set1_intrin<VData>((Real)-3), e); // 0, 1 or 2
     const VData a = mul_intrin(add_intrin(f, one), select_intrin(comp_intrin<ComparisonType::eq>(r, one), two, select_intrin(comp_intrin<ComparisonType::eq>(r, two), set1_intrin<VData>((Real)4), one))); // in [sqrt(1/2), 4 sqrt(2))
-    VData y = fma_intrin(fma_intrin(fma_intrin(set1_intrin<VData>((Real)0.00572303598344627), a, set1_intrin<VData>((Real)-0.07497777771481334)), a, set1_intrin<VData>((Real)0.4499148623215124)), a, set1_intrin<VData>((Real)0.616489421488996)); // relative error 0.0093
-    { // Halley: y - y (y^3 - a) / (2 y^3 + a)
-      const VData t = mul_intrin(mul_intrin(y, y), y);
-      y = sub_intrin(y, div_intrin(mul_intrin(y, sub_intrin(t, a)), fma_intrin(t, two, a)));
-    }
-    { // again, with the rounding errors of y^3 added to y^3 - a by FMA, so that cubes come out exact
-      const VData y2 = mul_intrin(y, y);
-      const VData t = mul_intrin(y2, y);
-      const VData d = add_intrin(sub_intrin(t, a), fma_intrin(fma_intrin(y, y, unary_minus_intrin(y2)), y, fma_intrin(y2, y, unary_minus_intrin(t))));
-      y = sub_intrin(y, div_intrin(mul_intrin(y, d), fma_intrin(t, two, a)));
+    VData y;
+    if constexpr (DIGITS < 0) {
+      y = fma_intrin(fma_intrin(fma_intrin(set1_intrin<VData>((Real)0.00572303598344627), a, set1_intrin<VData>((Real)-0.07497777771481334)), a, set1_intrin<VData>((Real)0.4499148623215124)), a, set1_intrin<VData>((Real)0.616489421488996)); // relative error 0.0093
+      { // Halley: y - y (y^3 - a) / (2 y^3 + a)
+        const VData t = mul_intrin(mul_intrin(y, y), y);
+        y = sub_intrin(y, div_intrin(mul_intrin(y, sub_intrin(t, a)), fma_intrin(t, two, a)));
+      }
+      { // again, with the rounding errors of y^3 added to y^3 - a by FMA, so that cubes come out exact
+        const VData y2 = mul_intrin(y, y);
+        const VData t = mul_intrin(y2, y);
+        const VData d = add_intrin(sub_intrin(t, a), fma_intrin(fma_intrin(y, y, unary_minus_intrin(y2)), y, fma_intrin(y2, y, unary_minus_intrin(t))));
+        y = sub_intrin(y, div_intrin(mul_intrin(y, d), fma_intrin(t, two, a)));
+      }
+    } else { // cbrt(1+f) P times cbrt(2^r); one Halley step from 6 digits
+      static constexpr Integer n = (DIGITS <= 3 ? 2 : (DIGITS <= 5 ? 4 : (DIGITS <= 9 ? 2 : (DIGITS <= 12 ? 3 : 4))));
+      const VData c = select_intrin(comp_intrin<ComparisonType::eq>(r, one), set1_intrin<VData>((Real)1.2599210498948731648L), select_intrin(comp_intrin<ComparisonType::eq>(r, two), set1_intrin<VData>((Real)1.5874010519681994748L), one));
+      y = mul_intrin(eval_poly_intrin(add_intrin(f, one), CbrtPolyCoeffs<n>::c), c);
+      if constexpr (DIGITS > 5) {
+        const VData t = mul_intrin(mul_intrin(y, y), y);
+        y = sub_intrin(y, div_intrin(mul_intrin(y, sub_intrin(t, a)), fma_intrin(t, two, a)));
+      }
     }
     const VData p2 = reinterpret_intrin<VData>(bitshiftleft_intrin(add_intrin(lrint_intrin<IntVec>(q), set1_intrin<IntVec>(Bias)), SigBits)); // 2^q
     if constexpr (!Special) return copysign_intrin(mul_intrin(y, p2), x);
@@ -1712,8 +1729,8 @@ namespace sctl { // Generic
     if constexpr (assumes(A, Assume::All) && sctl_poly<PolyOf::Pow, VData>()) return pow_poly_intrin<false>(x, y);
     else return pow_intrin(x, y);
   }
-  template <Assume A, class VData> inline VData cbrt_assume_intrin(const VData& x) {
-    if constexpr (sctl_poly<PolyOf::Cbrt, VData>()) return cbrt_poly_intrin<!assumes(A, Assume::Normal), !assumes(A, Assume::Finite | Assume::Normal)>(x);
+  template <Assume A, Integer DIGITS, class VData> inline VData cbrt_assume_intrin(const VData& x) {
+    if constexpr (sctl_poly<PolyOf::Cbrt, VData>()) return cbrt_poly_intrin<!assumes(A, Assume::Normal), !assumes(A, Assume::Finite | Assume::Normal), DIGITS>(x);
     else return cbrt_intrin(x);
   }
   template <class VData> inline VData log_intrin(const VData& x) {
@@ -3771,12 +3788,17 @@ namespace sctl { // Generic
   }
 
   // Hyperbolic: e^|x|/2 = exp(|x| - 1) e/2 avoids overflow; sinh, tanh by series for |x| < 1
-  template <class VData> inline VData sinh_series_intrin(const VData& x) {
+  template <Integer DIGITS, class VData> inline VData sinh_series_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
-    constexpr Integer K = [] { // terms until 1/(2k+1)! < 2^-(SigBits+1)
+    constexpr Integer K = [] { // terms until 1/(2k+1)! < 2^-(SigBits+1), or 10^-(DIGITS+1)
       Integer k = 1;
       double term = 1.0/6;
-      while (term > pow<-(TypeTraits<Real>::SigBits+1),double>(2.0)) {
+      double tol = pow<-(TypeTraits<Real>::SigBits+1),double>(2.0);
+      if (DIGITS >= 0) { // 10^-(DIGITS+1)
+        tol = 0.1;
+        for (Integer d = 0; d < DIGITS; d++) tol *= 0.1;
+      }
+      while (term > tol) {
         k++;
         term /= (double)((2*k)*(2*k+1));
       }
@@ -3790,20 +3812,22 @@ namespace sctl { // Generic
     for (Integer k = K-1; k >= 1; k--) p = fma_intrin(p, z, set1_intrin<VData>(c[k]));
     return fma_intrin(mul_intrin(x, z), p, x);
   }
-  template <Assume A, class VData> inline VData exp_half_intrin(const VData& a) {
+  template <Assume A, Integer DIGITS, class VData> inline VData exp_half_intrin(const VData& a) {
     using Real = typename VData::ScalarType;
-    return mul_intrin(exp_assume_intrin<A>(sub_intrin(a, set1_intrin<VData>((Real)1))), set1_intrin<VData>(const_e<Real>()/2));
+    const VData a1 = sub_intrin(a, set1_intrin<VData>((Real)1));
+    if constexpr (DIGITS < 0) return mul_intrin(exp_assume_intrin<A>(a1), set1_intrin<VData>(const_e<Real>()/2));
+    else return mul_intrin(approx_exp_intrin<exp_taylor_order(DIGITS + 1), !assumes(A, Assume::Finite | Assume::Moderate)>(a1), set1_intrin<VData>(const_e<Real>()/2));
   }
-  template <Assume A, class VData> inline VData cosh_intrin(const VData& x) {
-    const VData h = exp_half_intrin<A>(fabs_intrin(x));
+  template <Assume A, Integer DIGITS, class VData> inline VData cosh_intrin(const VData& x) {
+    const VData h = exp_half_intrin<A, DIGITS>(fabs_intrin(x));
     return add_intrin(h, div_intrin(set1_intrin<VData>((typename VData::ScalarType)0.25), h));
   }
-  template <Assume A, class VData> inline VData sinh_intrin(const VData& x) {
+  template <Assume A, Integer DIGITS, class VData> inline VData sinh_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     const VData a = fabs_intrin(x);
-    const VData h = exp_half_intrin<A>(a);
+    const VData h = exp_half_intrin<A, DIGITS>(a);
     const VData big = copysign_intrin(sub_intrin(h, div_intrin(set1_intrin<VData>((Real)0.25), h)), x);
-    return select_intrin(comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>((Real)1)), sinh_series_intrin(x), big);
+    return select_intrin(comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>((Real)1)), sinh_series_intrin<DIGITS>(x), big);
   }
   template <class VData> inline VData tanh_intrin(const VData& x) {
     using Real = typename VData::ScalarType;

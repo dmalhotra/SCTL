@@ -506,7 +506,7 @@ namespace sctl { // Generic
   template <class VData> inline VData mul_sub_exact_intrin(const VData& a, const VData& b, const VData& c); // a b - c, the product to about twice the precision, for c near a b: by FMA, or else with a and b split in two halves
   template <class VData> inline void log_hi_lo_intrin(VData& L_hi, VData& L_lo, const VData& e, const VData& f);
   template <bool Check = true, class VData> inline VData pow_poly_intrin(const VData& x, const VData& y); // exp(y log|x|), log|x| = L_hi + L_lo to about 1.5x the precision of Real; std::pow at signs, zeros, inf, NaN. Check = false: only for positive normal x and |y log x| < exp_normal_lim
-  template <bool Subnormal = true, bool Special = true, class VData> inline VData cbrt_poly_intrin(const VData& x); // cbrt(2^e m) = 2^q cbrt(2^r m), e = 3q + r; a cubic first guess, then two Halley steps. Without Subnormal, for no subnormal x; without Special, for x not 0, inf or NaN
+  template <bool Subnormal = true, bool Special = true, Integer DIGITS = -1, class VData> inline VData cbrt_poly_intrin(const VData& x); // cbrt(2^e m) = 2^q cbrt(2^r m), e = 3q + r; a cubic first guess, then two Halley steps. Without Subnormal, for no subnormal x; without Special, for x not 0, inf or NaN
   template <class VData> [[gnu::noinline, gnu::cold]] VData fmod_lanes_intrin(const VData x, const VData y, const VData r, const Mask<VData> m);
   template <class VData> inline VData fmod_poly_intrin(const VData& x, const VData& y); // |x| - q |y|, q = trunc(fl(|x|/|y|)), the quotient or one more; exact
   template <class IntVec> inline IntVec div_int64_intrin(const IntVec& a, const IntVec& b); // through double, exact for |a|, |b| < 2^51; other lanes one element at a time
@@ -521,7 +521,7 @@ namespace sctl { // Generic
   template <Assume A, class VData> inline VData exp_assume_intrin(const VData& x);
   template <Assume A, class VData> inline VData log_assume_intrin(const VData& x);
   template <Assume A, class VData> inline VData pow_assume_intrin(const VData& x, const VData& y);
-  template <Assume A, class VData> inline VData cbrt_assume_intrin(const VData& x); // Normal: no subnormal handling; Finite | Normal: also no fix of 0, inf, NaN
+  template <Assume A, Integer DIGITS = -1, class VData> inline VData cbrt_assume_intrin(const VData& x); // Normal: no subnormal handling; Finite | Normal: also no fix of 0, inf, NaN
   template <class VData> inline VData log_intrin(const VData& x);
   template <class VData> inline VData pow_intrin(const VData& x, const VData& y);
   inline constexpr Integer log_poly_degree(const Integer digits); // the lowest degree of LogPolyCoeffs for the digits; 0 if none
@@ -624,10 +624,10 @@ namespace sctl { // Generic
   template <class VData> inline VData cbrt_intrin(const VData& x);
   template <class VData> inline VData fmod_intrin(const VData& x, const VData& y);
 
-  template <class VData> inline VData sinh_series_intrin(const VData& x); // x (1 + x^2/3! + x^4/5! + ...), |x| < 1
-  template <Assume A = Assume::None, class VData> inline VData exp_half_intrin(const VData& a); // e^a / 2 for a >= 0; inf beyond the overflow. Finite | Moderate: a < exp_normal_lim + 1
-  template <Assume A = Assume::None, class VData> inline VData cosh_intrin(const VData& x);
-  template <Assume A = Assume::None, class VData> inline VData sinh_intrin(const VData& x);
+  template <Integer DIGITS = -1, class VData> inline VData sinh_series_intrin(const VData& x); // x (1 + x^2/3! + x^4/5! + ...), |x| < 1
+  template <Assume A = Assume::None, Integer DIGITS = -1, class VData> inline VData exp_half_intrin(const VData& a); // e^a / 2 for a >= 0; inf beyond the overflow. Finite | Moderate: a < exp_normal_lim + 1
+  template <Assume A = Assume::None, Integer DIGITS = -1, class VData> inline VData cosh_intrin(const VData& x);
+  template <Assume A = Assume::None, Integer DIGITS = -1, class VData> inline VData sinh_intrin(const VData& x);
   template <class VData> inline VData tanh_intrin(const VData& x);
 
   template <Integer DIGITS, class VData> inline VData approx_sin_intrin(const VData& x);

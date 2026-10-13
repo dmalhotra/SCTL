@@ -912,6 +912,26 @@ namespace sctl {
           }
         }
 
+        { // approx_cbrt, approx_sinh, approx_cosh to the given digits; cbrt also of tiny, huge and negative x
+          const VecType rc = cbrt(v0), rs = sinh(v0), rh = cosh(v0); // tested against references in test_reals_math2
+          const auto check = [&rc, &rs, &rh](const VecType& c, const VecType& s, const VecType& h, const ScalarType err_tol) {
+            for (Integer i = 0; i < N; i++) {
+              SCTL_ASSERT(fabs(c[i] - rc[i]) <= err_tol * fabs(rc[i]) && fabs(s[i] - rs[i]) <= err_tol * fabs(rs[i]) && fabs(h[i] - rh[i]) <= err_tol * rh[i]);
+            }
+          };
+          check(approx_cbrt<2>(v0), approx_sinh<2>(v0), approx_cosh<2>(v0), (ScalarType)1e-2);
+          check(approx_cbrt<4>(v0), approx_sinh<4>(v0), approx_cosh<4>(v0), (ScalarType)1e-4);
+          check(approx_cbrt<5>(v0), approx_sinh<5>(v0), approx_cosh<5>(v0), (ScalarType)1e-5);
+          if constexpr (std::is_same<ScalarType,double>::value) {
+            check(approx_cbrt<8>(v0), approx_sinh<8>(v0), approx_cosh<8>(v0), (ScalarType)1e-8);
+            check(approx_cbrt<11>(v0), approx_sinh<11>(v0), approx_cosh<11>(v0), (ScalarType)1e-11);
+            check(approx_cbrt<14>(v0), approx_sinh<14>(v0), approx_cosh<14>(v0), (ScalarType)1e-14);
+          }
+          for (const ScalarType x : {(ScalarType)1e-30, (ScalarType)-7e25, (ScalarType)0.002}) {
+            SCTL_ASSERT(fabs(approx_cbrt<5>(VecType(x))[0] - cbrt(VecType(x))[0]) <= (ScalarType)1e-5 * fabs(cbrt(VecType(x))[0]));
+          }
+        }
+
         { // sinpi, cospi, sincospi, and approx_sinpi, approx_cospi to 5 digits
           VecType s, c;
           sincospi(s, c, v0);

@@ -713,11 +713,23 @@ namespace sctl {
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x) {
     return cbrt_assume_intrin<A>(x.get());
   }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cbrt(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return cbrt<A>(x);
+    else return cbrt_assume_intrin<A, digits>(x.get());
+  }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> sinh(const Vec<ValueType,N>& x) {
     return sinh_intrin<A>(x.get());
   }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinh(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return sinh<A>(x);
+    else return sinh_intrin<A, digits>(x.get());
+  }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cosh(const Vec<ValueType,N>& x) {
     return cosh_intrin<A>(x.get());
+  }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cosh(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return cosh<A>(x);
+    else return cosh_intrin<A, digits>(x.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x) {
     return tanh_intrin(x.get());
