@@ -73,6 +73,7 @@ jobs:
           echo "LDFLAGS=-L$(brew --prefix llvm)/lib" >> $GITHUB_ENV
           echo "CPPFLAGS=$CPPFLAGS -I$(brew --prefix llvm)/include" >> $GITHUB_ENV
           echo "LIBRARY_PATH=$(brew --prefix llvm)/lib:$LIBRARY_PATH" >> $GITHUB_ENV
+          echo "MACOSX_DEPLOYMENT_TARGET=$(sw_vers -productVersion | cut -d. -f1).0" >> $GITHUB_ENV # GCC 13 assumes 16.0 on macOS 26
 
       - name: CPU
         run: |
