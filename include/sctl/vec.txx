@@ -9,6 +9,7 @@
 #include "sctl/common.hpp"          // for Integer, SCTL_ASSERT, SCTL_ALIGN_...
 #include "sctl/vec.hpp"             // for Vec, AndNot, max, min, operator!=
 #include "sctl/intrin-wrapper.hpp"  // for ComparisonType, comp_intrin, Type...
+#include "sctl/intrin-wrapper.txx"  // for the definitions of the *_intrin
 
 namespace sctl {
 

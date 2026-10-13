@@ -13,6 +13,7 @@
 
 #include "sctl/common.hpp"
 #include "sctl/intrin-wrapper.hpp"
+#include "sctl/intrin-wrapper.txx"
 
 #include "test-utils.hpp"
 
