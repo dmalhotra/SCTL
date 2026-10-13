@@ -7329,6 +7329,11 @@ namespace sctl { // AVX512
   template <> inline VecData<float,16> swap_pairs_intrin(const VecData<float,16>& vec) { return _mm512_permute_ps(vec.v, 0xB1); }
   template <> inline VecData<double,8> swap_pairs_intrin(const VecData<double,8>& vec) { return _mm512_permute_pd(vec.v, 0x55); }
 
+#if defined(__INTEL_LLVM_COMPILER) // a lane by a permute to lane 0: through a copy in memory, icpx read lanes of integer vectors 10x slower
+  template <> inline int32_t extract_intrin<VecData<int32_t,16>>(VecData<int32_t,16> vec, Integer i) { return _mm_cvtsi128_si32(_mm512_castsi512_si128(_mm512_permutexvar_epi32(_mm512_set1_epi32((int32_t)i), vec.v))); }
+  template <> inline int64_t extract_intrin<VecData<int64_t, 8>>(VecData<int64_t, 8> vec, Integer i) { return _mm_cvtsi128_si64(_mm512_castsi512_si128(_mm512_permutexvar_epi64(_mm512_set1_epi64(i), vec.v))); }
+#endif
+
 #if defined(__AVX512BW__)
   template <Integer Bits> struct UnpackIntrin512;
   template <> struct UnpackIntrin512< 8> {
