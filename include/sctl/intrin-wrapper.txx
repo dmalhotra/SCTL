@@ -2712,6 +2712,16 @@ namespace sctl { // Generic
     static constexpr double s[] = {0.08333327385367327, -0.0027624721006410434}; // lgamma(x) - (x - 1/2) log x + x - log(2 pi)/2 = s(w)/x, w = 1/x^2, x >= 8
     static constexpr double a[] = {0.08333288938489247, -0.008245830346701113}; // log x - 1/(2x) - digamma(x) = a(w) w, w = 1/x^2, x >= 8
   };
+  template <> struct GammaCoeffs<12> { // degrees 5/5, 5/5, 5/5, 3, 3: 13.5, 12.3, 12.0 digits; s, a 13.7, 14.3 in lgamma, digamma
+    static constexpr double tp[] = {-0.5772156648947876, 0.4076738049183739, 0.184224998156294, -0.019786177290944798, 0.0045197344959263235, 0.0005833046150817896};
+    static constexpr double tq[] = {1.0, 1.0072183159904182, -0.16546458421288598, -0.13195958575518038, 0.038011354015866854, -0.0028006141316110453};
+    static constexpr double lp[] = {0.07721566490124625, -0.06664218972372822, -0.26701845968301774, -0.16661817889652364, -0.03186632894763714, -0.0014417006641278388};
+    static constexpr double lq[] = {1.0, 2.313121035286333, 1.875828903775398, 0.6351000236388925, 0.08332273000312229, 0.002971971108658461};
+    static constexpr double dp[] = {0.2503801375024749, -0.3492262234805614, -0.6347015424784667, -0.257297106721234, -0.03467078122045119, -0.0012080508361209353};
+    static constexpr double dq[] = {1.0, 2.0187988638069116, 1.3510822935503044, 0.3711259965048686, 0.0400673004582173, 0.0012246565192880724};
+    static constexpr double s[] = {0.08333333333172148, -0.0027777763915706444, 0.0007933280671642811, -0.0005671786874588516};
+    static constexpr double a[] = {0.0833333332994358, -0.008333313662231733, 0.003964589374468802, -0.00389048963332067};
+  };
   template <> struct GammaCoeffs<16> {
     static constexpr double tp[] = {-0.5772156649015329, 0.29064333099394446, 0.28563499099867845, 0.0038869861075239392, -0.005842817405732664, 0.0029665165143425206, -8.07167982465156e-05, 7.374491022673913e-06}; // Gamma(1+z) = 1 + z tp(z)/tq(z), z in [0, 1]
     static constexpr double tq[] = {1.0, 1.2099683130622767, 0.006258227784187291, -0.19748266604553685, 0.01854939266931247, 0.009877303810033473, -0.002297049003040702, 0.00014762238974642733};
@@ -2729,8 +2739,8 @@ namespace sctl { // Generic
     static constexpr Real c_hi = (Real)0.9189385332046728;
     static constexpr Real c_lo = (Real)((0.9189385332046728 - (double)c_hi) - 3.8782941580672414e-17);
   };
-  // GammaCoeffs<16> for double at full precision or digits > 7, else <7>
-  template <class Real, Integer digits> using GammaCoeffsOf = GammaCoeffs<((digits < 0 ? std::is_same<Real,double>::value : digits > 7) ? 16 : 7)>;
+  // GammaCoeffs<16> for double at full precision or digits > 11, <12> for digits 8 to 11, else <7>
+  template <class Real, Integer digits> using GammaCoeffsOf = GammaCoeffs<(digits < 0 ? (std::is_same<Real,double>::value ? 16 : 7) : (digits <= 7 ? 7 : (digits <= 11 ? 12 : 16)))>;
   // y = x - n, p = (x-1) ... (x-n) for the least n >= 0 with y < hi, in lanes with x < 8; elsewhere n = 0
   template <class VData> inline void gamma_shift_intrin(VData& y, VData& p, const VData& x, const typename VData::ScalarType hi) {
     using Real = typename VData::ScalarType;
