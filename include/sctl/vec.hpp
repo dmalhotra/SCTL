@@ -773,37 +773,38 @@ namespace sctl {
 
   /**
    * Complementary error function 1 - erf(x), with its relative precision also where it is small; float, double: within
-   * 5.5 ulp.
+   * 5.5 ulp. A: Finite | Moderate, |x| < 26.6 (float: 9.3).
    */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> erfc(const Vec<ValueType,N>& x);
-  /** erfc to the given digits (-1: full). */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x);
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> erfc(const Vec<ValueType,N>& x);
+  /** erfc to the given digits (-1: full); A as erfc. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x);
 
   /**
    * Inverse of the standard normal distribution function, -inf at 0, inf at 1, NaN outside [0, 1]; float, double:
-   * within about 4 ulp.
+   * within about 4 ulp. A: Normal | Domain, 0 < p < 1 not subnormal.
    */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> ndtri(const Vec<ValueType,N>& p);
-  /** ndtri to the given digits (-1: full). */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_ndtri(const Vec<ValueType,N>& p);
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> ndtri(const Vec<ValueType,N>& p);
+  /** ndtri to the given digits (-1: full); A as ndtri. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_ndtri(const Vec<ValueType,N>& p);
 
-  /** Inverse error function, +-inf at +-1, NaN for |y| > 1; float, double: within about 4 ulp. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> erfinv(const Vec<ValueType,N>& y);
-  /** erfinv to the given digits (-1: full). */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y);
+  /** Inverse error function, +-inf at +-1, NaN for |y| > 1; float, double: within about 4 ulp. A: Domain, |y| < 1. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> erfinv(const Vec<ValueType,N>& y);
+  /** erfinv to the given digits (-1: full); A as erfinv. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y);
 
-  /** Gamma function, as std::tgamma: NaN at negative integers, +-inf at +-0; float, double: within 4.5 ulp. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> tgamma(const Vec<ValueType,N>& x);
-  /** tgamma to the given digits (-1: full). */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tgamma(const Vec<ValueType,N>& x);
+  /** Gamma function, as std::tgamma: NaN at negative integers, +-inf at +-0; float, double: within 4.5 ulp. A: Moderate, |x| < 170 (float: 33); Domain, x not a negative integer. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> tgamma(const Vec<ValueType,N>& x);
+  /** tgamma to the given digits (-1: full); A as tgamma. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_tgamma(const Vec<ValueType,N>& x);
 
   /**
    * log|Gamma(x)|, as std::lgamma: inf at non-positive integers; float, double: within 3 ulp for x >= 0, below within
-   * 13 eps (1 + |lgamma(x)|).
+   * 13 eps (1 + |lgamma(x)|). A: Finite | Normal, its logs without tests; Moderate, |x| < 2^52 (float: 2^23); Finite | Normal |
+   * Domain, x not a non-positive integer.
    */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> lgamma(const Vec<ValueType,N>& x);
-  /** lgamma to the given digits (-1: full). */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_lgamma(const Vec<ValueType,N>& x);
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> lgamma(const Vec<ValueType,N>& x);
+  /** lgamma to the given digits (-1: full); A as lgamma. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_lgamma(const Vec<ValueType,N>& x);
 
   /**
    * Digamma function Gamma'(x)/Gamma(x): NaN at negative integers, -+inf at +-0; float, double: within 4 ulp for
@@ -815,48 +816,50 @@ namespace sctl {
 
   /**
    * Bessel function of the first kind J_n of order n = 0, 1, 2; float, double: within 6.5 ulp for |x| <= 5, beyond
-   * within 3 eps sqrt(2/(pi |x|)).
+   * within 3 eps sqrt(2/(pi |x|)). A: Finite | Moderate, |x| < 2^33 (float: 2^14).
    */
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_j(const Vec<ValueType,N>& x);
-  /** cyl_bessel_j to the given digits (-1: full). */
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_j(const Vec<ValueType,N>& x);
+  template <Integer n, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_j(const Vec<ValueType,N>& x);
+  /** cyl_bessel_j to the given digits (-1: full); A as cyl_bessel_j. */
+  template <Integer n, Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_j(const Vec<ValueType,N>& x);
 
   /**
    * Bessel function of the second kind Y_n of order n = 0, 1, 2, -inf at 0, NaN for x < 0; float, double: within
-   * 4.5 eps max(|Y_n(x)|, sqrt(2/(pi x))).
+   * 4.5 eps max(|Y_n(x)|, sqrt(2/(pi x))). A: Finite | Normal | Domain | Moderate, 0 < x < 2^33 (float: 2^14).
    */
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_neumann(const Vec<ValueType,N>& x);
-  /** cyl_neumann to the given digits (-1: full). */
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_neumann(const Vec<ValueType,N>& x);
+  template <Integer n, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cyl_neumann(const Vec<ValueType,N>& x);
+  /** cyl_neumann to the given digits (-1: full); A as cyl_neumann. */
+  template <Integer n, Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_neumann(const Vec<ValueType,N>& x);
 
-  /** Modified Bessel function of the first kind I_n of order n = 0, 1, 2; float, double: within 6 ulp. */
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_i(const Vec<ValueType,N>& x);
-  /** cyl_bessel_i to the given digits (-1: full). */
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_i(const Vec<ValueType,N>& x);
+  /** Modified Bessel function of the first kind I_n of order n = 0, 1, 2; float, double: within 6 ulp. A: Finite | Moderate, |x| < 708.4 (float: 87.3). */
+  template <Integer n, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_i(const Vec<ValueType,N>& x);
+  /** cyl_bessel_i to the given digits (-1: full); A as cyl_bessel_i. */
+  template <Integer n, Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_i(const Vec<ValueType,N>& x);
 
   /**
    * Modified Bessel function of the second kind K_n of order n = 0, 1, 2, inf at 0, NaN for x < 0; float, double:
-   * within 7 ulp.
+   * within 7 ulp. A: Finite | Normal | Domain | Moderate, 0 < x < 708.4 (float: 87.3).
    */
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_k(const Vec<ValueType,N>& x);
-  /** cyl_bessel_k to the given digits (-1: full). */
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_k(const Vec<ValueType,N>& x);
+  template <Integer n, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_k(const Vec<ValueType,N>& x);
+  /** cyl_bessel_k to the given digits (-1: full); A as cyl_bessel_k. */
+  template <Integer n, Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_k(const Vec<ValueType,N>& x);
 
   /**
    * Spherical Bessel function of the first kind j_n of order n = 0, 1, 2; float, double: within 4 ulp for |x| < 2,
    * beyond within 2.5 eps max(|j_n(x)|, 1/|x|).
+   * A: Finite | Moderate, |x| < 2^33 (float: 2^14); for n = 0 also Normal.
    */
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> sph_bessel(const Vec<ValueType,N>& x);
-  /** sph_bessel to the given digits (-1: full). */
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_bessel(const Vec<ValueType,N>& x);
+  template <Integer n, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> sph_bessel(const Vec<ValueType,N>& x);
+  /** sph_bessel to the given digits (-1: full); A as sph_bessel. */
+  template <Integer n, Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_bessel(const Vec<ValueType,N>& x);
 
   /**
    * Spherical Bessel function of the second kind y_n of order n = 0, 1, 2, -inf at 0, NaN for x < 0; float, double:
    * within 3 eps max(|y_n(x)|, 1/x).
+   * A: Finite | Normal | Domain | Moderate, 0 < x < 2^33 (float: 2^14).
    */
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> sph_neumann(const Vec<ValueType,N>& x);
-  /** sph_neumann to the given digits (-1: full). */
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_neumann(const Vec<ValueType,N>& x);
+  template <Integer n, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> sph_neumann(const Vec<ValueType,N>& x);
+  /** sph_neumann to the given digits (-1: full); A as sph_neumann. */
+  template <Integer n, Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_neumann(const Vec<ValueType,N>& x);
 
   /** Riemann zeta function of real s, inf at 1; float, double: within 3 ulp for s >= 0, below within 7 ulp. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> riemann_zeta(const Vec<ValueType,N>& s);

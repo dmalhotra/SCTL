@@ -1341,6 +1341,27 @@ namespace sctl {
           check(sincpi<FM>(u1.v), sincpi(u1.v), t);
           check(atan2<All>(u1.v, u2.v), atan2(u1.v, u2.v), t);
           check(hypot<Assume::Finite | Assume::Normal>(u1.v, u2.v), hypot(u1.v, u2.v), t);
+          // longer evaluations, where a contraction can move the result by a few ulp
+          const ScalarType t3 = 16 * eps;
+          const VecType x4 = u5.v * (ScalarType)4, p = (u5.v + (ScalarType)1) * (ScalarType)0.5;
+          check(erfc<FM>(x4), erfc(x4), t3);
+          check(approx_erfc<5, FM>(x4), approx_erfc<5>(x4), t3);
+          check(ndtri<Assume::Normal | Assume::Domain>(p), ndtri(p), t3);
+          check(erfinv<Assume::Domain>(u5.v), erfinv(u5.v), t3);
+          check(tgamma<Assume::Moderate | Assume::Domain>(u1.v), tgamma(u1.v), t3);
+          const auto check_abs = [](const VecType& a, const VecType& b, const ScalarType t_) { // relative, or absolute below 1: at the zeros of lgamma and the Bessel functions
+            for (Integer i = 0; i < N; i++) SCTL_ASSERT(a[i] == b[i] || fabs(a[i] - b[i]) <= t_ * (fabs(b[i]) > 1 ? fabs(b[i]) : (ScalarType)1));
+          };
+          check_abs(lgamma<All>(u1.v), lgamma(u1.v), t3);
+          check_abs(cyl_bessel_j<0, FM>(u1.v), cyl_bessel_j<0>(u1.v), t3);
+          check_abs(approx_cyl_bessel_j<1, 5, FM>(u1.v), approx_cyl_bessel_j<1, 5>(u1.v), t3);
+          check_abs(cyl_neumann<1, All>(u4.v), cyl_neumann<1>(u4.v), t3);
+          check_abs(cyl_bessel_i<0, FM>(u1.v), cyl_bessel_i<0>(u1.v), t3);
+          check_abs(cyl_bessel_k<1, All>(u4.v), cyl_bessel_k<1>(u4.v), t3);
+          check_abs(approx_cyl_bessel_k<0, 5, All>(u4.v), approx_cyl_bessel_k<0, 5>(u4.v), t3);
+          check_abs(sph_bessel<0, All>(u1.v), sph_bessel<0>(u1.v), t3);
+          check_abs(sph_bessel<2, FM>(u1.v), sph_bessel<2>(u1.v), t3);
+          check_abs(sph_neumann<1, All>(u4.v), sph_neumann<1>(u4.v), t3);
         }
 
         for (const ScalarType x : {(ScalarType)1e6, (ScalarType)INFINITY}) { // exp and approx_exp beyond the range of the result

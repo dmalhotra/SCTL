@@ -733,35 +733,35 @@ namespace sctl {
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erf(const Vec<ValueType,N>& x) {
     return erf_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> erfc(const Vec<ValueType,N>& x) {
-    return erfc_intrin(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> erfc(const Vec<ValueType,N>& x) {
+    return erfc_intrin<-1, A>(x.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x) {
-    return erfc_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x) {
+    return erfc_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> ndtri(const Vec<ValueType,N>& p) {
-    return ndtri_intrin(p.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> ndtri(const Vec<ValueType,N>& p) {
+    return ndtri_intrin<-1, A>(p.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_ndtri(const Vec<ValueType,N>& p) {
-    return ndtri_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(p.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_ndtri(const Vec<ValueType,N>& p) {
+    return ndtri_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(p.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> erfinv(const Vec<ValueType,N>& y) {
-    return erfinv_intrin(y.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> erfinv(const Vec<ValueType,N>& y) {
+    return erfinv_intrin<-1, A>(y.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y) {
-    return erfinv_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(y.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y) {
+    return erfinv_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(y.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> tgamma(const Vec<ValueType,N>& x) {
-    return tgamma_intrin(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> tgamma(const Vec<ValueType,N>& x) {
+    return tgamma_intrin<-1, A>(x.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tgamma(const Vec<ValueType,N>& x) {
-    return tgamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_tgamma(const Vec<ValueType,N>& x) {
+    return tgamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> lgamma(const Vec<ValueType,N>& x) {
-    return lgamma_intrin(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> lgamma(const Vec<ValueType,N>& x) {
+    return lgamma_intrin<-1, A>(x.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_lgamma(const Vec<ValueType,N>& x) {
-    return lgamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_lgamma(const Vec<ValueType,N>& x) {
+    return lgamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> digamma(const Vec<ValueType,N>& x) {
     return digamma_intrin(x.get());
@@ -769,41 +769,41 @@ namespace sctl {
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_digamma(const Vec<ValueType,N>& x) {
     return digamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
   }
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_j(const Vec<ValueType,N>& x) {
-    return cyl_bessel_j_intrin<n>(x.get());
+  template <Integer n, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_j(const Vec<ValueType,N>& x) {
+    return cyl_bessel_j_intrin<n, -1, A>(x.get());
   }
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_j(const Vec<ValueType,N>& x) {
-    return cyl_bessel_j_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer n, Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_j(const Vec<ValueType,N>& x) {
+    return cyl_bessel_j_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_neumann(const Vec<ValueType,N>& x) {
-    return cyl_neumann_intrin<n>(x.get());
+  template <Integer n, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cyl_neumann(const Vec<ValueType,N>& x) {
+    return cyl_neumann_intrin<n, -1, A>(x.get());
   }
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_neumann(const Vec<ValueType,N>& x) {
-    return cyl_neumann_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer n, Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_neumann(const Vec<ValueType,N>& x) {
+    return cyl_neumann_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_i(const Vec<ValueType,N>& x) {
-    return cyl_bessel_i_intrin<n>(x.get());
+  template <Integer n, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_i(const Vec<ValueType,N>& x) {
+    return cyl_bessel_i_intrin<n, -1, A>(x.get());
   }
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_i(const Vec<ValueType,N>& x) {
-    return cyl_bessel_i_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer n, Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_i(const Vec<ValueType,N>& x) {
+    return cyl_bessel_i_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_k(const Vec<ValueType,N>& x) {
-    return cyl_bessel_k_intrin<n>(x.get());
+  template <Integer n, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_k(const Vec<ValueType,N>& x) {
+    return cyl_bessel_k_intrin<n, -1, A>(x.get());
   }
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_k(const Vec<ValueType,N>& x) {
-    return cyl_bessel_k_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer n, Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_k(const Vec<ValueType,N>& x) {
+    return cyl_bessel_k_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> sph_bessel(const Vec<ValueType,N>& x) {
-    return sph_bessel_intrin<n>(x.get());
+  template <Integer n, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> sph_bessel(const Vec<ValueType,N>& x) {
+    return sph_bessel_intrin<n, -1, A>(x.get());
   }
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_bessel(const Vec<ValueType,N>& x) {
-    return sph_bessel_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer n, Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_bessel(const Vec<ValueType,N>& x) {
+    return sph_bessel_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> sph_neumann(const Vec<ValueType,N>& x) {
-    return sph_neumann_intrin<n>(x.get());
+  template <Integer n, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> sph_neumann(const Vec<ValueType,N>& x) {
+    return sph_neumann_intrin<n, -1, A>(x.get());
   }
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_neumann(const Vec<ValueType,N>& x) {
-    return sph_neumann_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer n, Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_neumann(const Vec<ValueType,N>& x) {
+    return sph_neumann_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> riemann_zeta(const Vec<ValueType,N>& s) {
     return riemann_zeta_intrin(s.get());

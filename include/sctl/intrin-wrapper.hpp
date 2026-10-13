@@ -2730,15 +2730,16 @@ namespace sctl { // Generic
     return fma_intrin(x, eval_poly_intrin(mul_intrin(x, x), ErfPolyCoeffs<poly_degree(erf_poly_digits, 2, (std::is_same<Real,float>::value ? 6 : 11), digits)>::c), x);
   }
   // erfc(a) = e^(-a^2) Q(a)/(s a Q(a) + P(a)) for a >= 13/16, with a^2 = hi + lo exactly; a clamped to 27.5, where
-  // e^(-a^2) is 0, or for Erf (1 - erfc) to 6, where erfc < eps/4 and e^(-a^2) is normal: without its range check; keeps NaN
-  template <Integer digits, bool Erf = false, class VData> inline VData erfc_rational_intrin(const VData& a) {
+  // e^(-a^2) is 0, or for Erf (1 - erfc) to 6, where erfc < eps/4 and e^(-a^2) is normal: without its range check; keeps NaN.
+  // RangeCheck = false: only for a^2 < exp_normal_lim
+  template <Integer digits, bool Erf = false, bool RangeCheck = !Erf, class VData> inline VData erfc_rational_intrin(const VData& a) {
     using Real = typename VData::ScalarType;
     static constexpr Integer digits1 = (digits < 0 ? digits : digits + 1); // each of the two factors to one more digit
     static constexpr Integer n = poly_degree(erfc_rational_digits, 1, (std::is_same<Real,float>::value ? 3 : 8), digits1);
     static constexpr Integer order = (digits < 0 ? (Integer)(TypeTraits<Real>::SigBits/3.8) : exp_taylor_order(digits1));
     const VData b = min_intrin(set1_intrin<VData>((Real)(Erf ? 6 : 27.5)), a);
     const VData hi = mul_intrin(b, b);
-    const VData e = approx_exp_intrin<order, !Erf, ExpArg::Sum>(unary_minus_intrin(hi), unary_minus_intrin(mul_sub_exact_intrin(b, b, hi)));
+    const VData e = approx_exp_intrin<order, RangeCheck, ExpArg::Sum>(unary_minus_intrin(hi), unary_minus_intrin(mul_sub_exact_intrin(b, b, hi)));
     const VData q = eval_poly_intrin(b, ErfcRationalCoeffs<n>::q);
     const VData d = fma_intrin(mul_intrin(b, set1_intrin<VData>((Real)1.7724538509055160273L)), q, eval_poly_intrin(b, ErfcRationalCoeffs<n>::p));
     return mul_intrin(e, div_intrin(q, d));
@@ -2796,7 +2797,7 @@ namespace sctl { // Generic
   }
   // erfc(x) = 1 - erf(x) for -1 <= x < 13/16 (where erfc > 1/4), else erfc_rational_intrin(|x|), subtracted from 2 for
   // x < 0. digits = -1: full
-  template <Integer digits = -1, class VData> inline VData erfc_intrin(const VData& x) {
+  template <Integer digits = -1, Assume A = Assume::None, class VData> inline VData erfc_intrin(const VData& x) { // A: Finite | Moderate, x^2 < exp_normal_lim
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       const VData one = set1_intrin<VData>((Real)1);
@@ -2804,7 +2805,7 @@ namespace sctl { // Generic
       const Integer n_small = mask_count_intrin(small);
       static constexpr Integer digits1 = (digits < 0 ? digits : digits + 1); // 1 - erf: up to 3 times the relative error of erf
       if (n_small == VData::Size) return sub_intrin(one, erf_poly_intrin<digits1>(x));
-      const VData c = erfc_rational_intrin<digits>(fabs_intrin(x));
+      const VData c = erfc_rational_intrin<digits, false, !assumes(A, Assume::Finite | Assume::Moderate)>(fabs_intrin(x));
       const VData r = select_intrin(comp_intrin<ComparisonType::lt>(x, zero_intrin<VData>()), sub_intrin(set1_intrin<VData>((Real)2), c), c);
       return (n_small ? select_intrin(small, sub_intrin(one, erf_poly_intrin<digits1>(x)), r) : r);
     } else {
@@ -2855,7 +2856,7 @@ namespace sctl { // Generic
   };
   // ndtri(p), or erfinv(p) for Erfinv, from NdtriCoeffs: central in q = p - 1/2 (Erfinv: p/2), tails in sqrt(-log t),
   // t = min(p, 1 - p) (Erfinv: (1 - |p|)/2)
-  template <bool Erfinv, Integer digits, class VData> inline VData ndtri_erfinv_intrin(const VData& p) {
+  template <bool Erfinv, Integer digits, bool Check = true, class VData> inline VData ndtri_erfinv_intrin(const VData& p) { // Check = false: only for t > 0 normal
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       using Coeffs = NdtriCoeffs<((digits < 0 ? std::is_same<Real,double>::value : digits > 7) ? 16 : 7)>;
@@ -2874,7 +2875,7 @@ namespace sctl { // Generic
       if (n_central == VData::Size) return central_value();
 
       const VData t = (Erfinv ? mul_intrin(sub_intrin(one, fabs_intrin(p)), half) : min_intrin(p, sub_intrin(one, p))); // keeps NaN
-      const VData u = sqrt_intrin(unary_minus_intrin(log_intrin(t)));
+      const VData u = sqrt_intrin(unary_minus_intrin(Check ? log_intrin(t) : log_assume_intrin<Assume::All>(t)));
       const auto tail_value = [&u](const auto& P, const auto& Q, const Real shift) { // a u + U, divided by sqrt(2) for Erfinv
         const VData s = sub_intrin(u, set1_intrin<VData>(shift));
         const VData den = eval_poly_intrin(s, Q);
@@ -2884,7 +2885,7 @@ namespace sctl { // Generic
       VData x = tail_value(Coeffs::p1, Coeffs::q1, (Real)1.6);
       const Mask<VData> far = comp_intrin<ComparisonType::gt>(u, set1_intrin<VData>((Real)5));
       if (mask_count_intrin(far)) x = select_intrin(far, tail_value(Coeffs::p2, Coeffs::q2, (Real)5), x);
-      x = select_intrin(comp_intrin<ComparisonType::eq>(t, zero_intrin<VData>()), set1_intrin<VData>((Real)INFINITY), x); // +-inf at p = 0, 1
+      if constexpr (Check) x = select_intrin(comp_intrin<ComparisonType::eq>(t, zero_intrin<VData>()), set1_intrin<VData>((Real)INFINITY), x); // +-inf at p = 0, 1
       x = xor_intrin(x, and_intrin(q, set1_intrin<VData>((Real)-0.0)));
       return (n_central ? select_intrin(central, central_value(), x) : x);
     } else {
@@ -2896,11 +2897,11 @@ namespace sctl { // Generic
       return x_.value();
     }
   }
-  template <Integer digits = -1, class VData> inline VData ndtri_intrin(const VData& p) {
-    return ndtri_erfinv_intrin<false, digits>(p);
+  template <Integer digits = -1, Assume A = Assume::None, class VData> inline VData ndtri_intrin(const VData& p) { // A: Normal | Domain, 0 < p < 1 normal
+    return ndtri_erfinv_intrin<false, digits, !assumes(A, Assume::Normal | Assume::Domain)>(p);
   }
-  template <Integer digits = -1, class VData> inline VData erfinv_intrin(const VData& y) {
-    return ndtri_erfinv_intrin<true, digits>(y);
+  template <Integer digits = -1, Assume A = Assume::None, class VData> inline VData erfinv_intrin(const VData& y) { // A: Domain, |y| < 1
+    return ndtri_erfinv_intrin<true, digits, !assumes(A, Assume::Domain)>(y);
   }
 
   // sin(pi w/2) = (pi/2) w + w^3 Q(w^2), |w| <= 1/2: minimax Q of degree n, lowest degree first
@@ -3115,7 +3116,7 @@ namespace sctl { // Generic
   }
   // Gamma(x): a rational on [1, 2] (GammaCoeffs) with the shift to it below 8, Stirling's series beyond, and the
   // reflection formula below -1/1024. digits = -1: full
-  template <Integer digits = -1, class VData> inline VData tgamma_intrin(const VData& x) {
+  template <Integer digits = -1, Assume A = Assume::None, class VData> inline VData tgamma_intrin(const VData& x) { // A: Moderate, |x| < 170 (float: 33); Domain, not a pole
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       using Coeffs = GammaCoeffsOf<Real, digits>;
@@ -3147,18 +3148,23 @@ namespace sctl { // Generic
         log_split_intrin<false>(e, f, ab);
         log_hi_lo_intrin(lh, ll, e, f);
         lgamma_stirling_intrin<Coeffs>(L_hi, L_lo, ab, lh, ll);
-        const VData E = exp_intrin(L_hi);
-        r = select_intrin(big, select_intrin(comp_intrin<ComparisonType::eq>(E, set1_intrin<VData>((Real)INFINITY)), E, fma_intrin(E, L_lo, E)), r);
+        if constexpr (assumes(A, Assume::Moderate)) { // L_hi < exp_normal_lim
+          const VData E = exp_normal_intrin(L_hi);
+          r = select_intrin(big, fma_intrin(E, L_lo, E), r);
+        } else {
+          const VData E = exp_intrin(L_hi);
+          r = select_intrin(big, select_intrin(comp_intrin<ComparisonType::eq>(E, set1_intrin<VData>((Real)INFINITY)), E, fma_intrin(E, L_lo, E)), r);
+        }
       }
       if (mask_count_intrin(neg)) {
         VData s, c;
         approx_sincospi_intrin<-1, true, true, false>(s, c, x);
         const Mask<VData> ovf = big & comp_intrin<ComparisonType::gt>(L_hi, set1_intrin<VData>(std::is_same<Real,float>::value ? (Real)85 : (Real)704)); // log(max/a), a <= 40 (double: 200) where Gamma(a) is finite
         VData h = one; // Gamma(a) = g h, h = e^(L_hi/2) where x sinpi(x) Gamma(a) could overflow
-        if (mask_count_intrin(neg & ovf)) h = select_intrin(ovf, exp_intrin(mul_intrin(L_hi, set1_intrin<VData>((Real)0.5))), one);
-        const VData g = select_intrin(ovf, fma_intrin(h, L_lo, h), r);
+        if (!assumes(A, Assume::Moderate) && mask_count_intrin(neg & ovf)) h = select_intrin(ovf, exp_intrin(mul_intrin(L_hi, set1_intrin<VData>((Real)0.5))), one);
+        const VData g = (assumes(A, Assume::Moderate) ? r : select_intrin(ovf, fma_intrin(h, L_lo, h), r));
         const VData rr = div_intrin(div_intrin(set1_intrin<VData>(-const_pi<Real>()), mul_intrin(mul_intrin(x, s), g)), h);
-        r = select_intrin(neg, select_intrin(comp_intrin<ComparisonType::eq>(s, zero_intrin<VData>()), set1_intrin<VData>((Real)NAN), rr), r);
+        r = select_intrin(neg, (assumes(A, Assume::Domain) ? rr : select_intrin(comp_intrin<ComparisonType::eq>(s, zero_intrin<VData>()), set1_intrin<VData>((Real)NAN), rr)), r);
       }
       return r;
     } else {
@@ -3172,7 +3178,7 @@ namespace sctl { // Generic
   }
   // lgamma(x) for x >= 8 or x < -1/1024, inf or NaN: one log for the shift and Stirling's series, and the reflection
   // formula; arguments and result by value
-  template <class Coeffs, class VData> [[gnu::noinline]] VData lgamma_general_intrin(const VData x) {
+  template <class Coeffs, Assume A, class VData> [[gnu::noinline]] VData lgamma_general_intrin(const VData x) {
     using Real = typename VData::ScalarType;
     const VData zero = zero_intrin<VData>();
     const VData one = set1_intrin<VData>((Real)1);
@@ -3187,7 +3193,7 @@ namespace sctl { // Generic
     static constexpr Real big_x = pow<TypeTraits<Real>::SigBits,Real>((Real)2); // beyond, a (log a - 1)
     const VData ab = min_intrin(set1_intrin<VData>(big_x), max_intrin(eight, a));
     VData r = (n_big < VData::Size ? lgamma_mid_intrin<Coeffs>(arg, sgn, a) : zero);
-    const VData lh = log_intrin(select_intrin(big, ab, arg));
+    const VData lh = (assumes(A, Assume::Finite | Assume::Normal) ? log_assume_intrin<Assume::All>(select_intrin(big, ab, arg)) : log_intrin(select_intrin(big, ab, arg)));
     const VData ll = zero;
     r = add_intrin(r, xor_intrin(lh, sgn));
     if (n_big) {
@@ -3196,18 +3202,18 @@ namespace sctl { // Generic
       r = select_intrin(big, add_intrin(L_hi, L_lo), r);
     }
     const Mask<VData> huge = comp_intrin<ComparisonType::gt>(a, set1_intrin<VData>(big_x));
-    if (mask_count_intrin(huge)) r = select_intrin(huge, mul_intrin(a, sub_intrin(log_intrin(a), one)), r);
+    if (!assumes(A, Assume::Moderate) && mask_count_intrin(huge)) r = select_intrin(huge, mul_intrin(a, sub_intrin(log_intrin(a), one)), r);
     if (mask_count_intrin(neg)) { // lgamma(x) = log(pi) - log|x sinpi(x)| - lgamma(-x)
       VData s, c;
       approx_sincospi_intrin<-1, true, true, false>(s, c, x);
-      const VData rr = sub_intrin(sub_intrin(set1_intrin<VData>((Real)1.14472988584940017414342735135305871L), log_intrin(fabs_intrin(mul_intrin(x, s)))), r);
-      r = select_intrin(neg, select_intrin(comp_intrin<ComparisonType::eq>(x, set1_intrin<VData>(-(Real)INFINITY)), set1_intrin<VData>((Real)INFINITY), rr), r);
+      const VData rr = sub_intrin(sub_intrin(set1_intrin<VData>((Real)1.14472988584940017414342735135305871L), log_assume_intrin<A & (Assume::Finite | Assume::Normal | Assume::Domain)>(fabs_intrin(mul_intrin(x, s)))), r);
+      r = select_intrin(neg, (assumes(A, Assume::Finite) ? rr : select_intrin(comp_intrin<ComparisonType::eq>(x, set1_intrin<VData>(-(Real)INFINITY)), set1_intrin<VData>((Real)INFINITY), rr)), r);
     }
     return r;
   }
   // log|Gamma(x)|: a rational on [1, 3] (GammaCoeffs) with the shift to it below 8, Stirling's series beyond, and the
   // reflection formula below -1/1024. digits = -1: full
-  template <Integer digits = -1, class VData> inline VData lgamma_intrin(const VData& x) {
+  template <Integer digits = -1, Assume A = Assume::None, class VData> inline VData lgamma_intrin(const VData& x) { // A: Finite | Normal, the logs without tests; Moderate, |x| < 2^SigBits; Domain, not a pole
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       using Coeffs = GammaCoeffsOf<Real, digits>;
@@ -3219,9 +3225,9 @@ namespace sctl { // Generic
       VData sgn = zero;
       if (mask_count_intrin(comp_intrin<ComparisonType::ge>(x, tiny) & comp_intrin<ComparisonType::lt>(x, eight)) == VData::Size) {
         const VData base = lgamma_mid_intrin<Coeffs>(arg, sgn, x);
-        return add_intrin(base, xor_intrin(log_intrin(arg), sgn));
+        return add_intrin(base, xor_intrin((assumes(A, Assume::Finite | Assume::Normal) ? log_assume_intrin<Assume::All>(arg) : log_intrin(arg)), sgn));
       }
-      return lgamma_general_intrin<Coeffs>(x);
+      return lgamma_general_intrin<Coeffs, A>(x);
     } else {
       LaneArray<VData> x_(x);
       for (Integer i = 0; i < VData::Size; i++) {
@@ -3448,7 +3454,7 @@ namespace sctl { // Generic
   }
   // J_n(a) and Y_n(a) of order n = 0, 1, 2 for a >= 0, inf or NaN by the forms of BesselCoeffs, each computed only when
   // its flag J or Y is set
-  template <Integer n, bool J, bool Y, Integer digits, class VData> inline void bessel_jy_intrin(VData& j, VData& y, const VData& a) {
+  template <Integer n, bool J, bool Y, Integer digits, Assume A = Assume::None, class VData> inline void bessel_jy_intrin(VData& j, VData& y, const VData& a) { // A as cyl_neumann_intrin
     using Real = typename VData::ScalarType;
     using Coeffs = BesselCoeffsOf<Real, digits, n>;
     const VData one = set1_intrin<VData>((Real)1);
@@ -3469,12 +3475,12 @@ namespace sctl { // Generic
       const VData f = mul_intrin(mul_intrin(factor(bessel_zeros_sq[n][0]), factor(bessel_zeros_sq[n][1])), xn);
       jr = mul_intrin(f, eval_poly_intrin(t, Coeffs::j));
       if constexpr (Y) { // -2/pi h_n = 0, -2/(pi x), -4/(pi x^2) - 1/pi, without x^2, which can be subnormal
-        const VData log_a = (digits < 0 ? log_intrin(a) : approx_log_intrin<digits>(a));
+        const VData log_a = (digits < 0 ? log_assume_intrin<A>(a) : approx_log_intrin<digits, !assumes(A, Assume::Finite | Assume::Normal | Assume::Domain)>(a));
         VData mh = zero_intrin<VData>();
         if constexpr (n == 1) mh = div_intrin(set1_intrin<VData>(-2 / const_pi<Real>()), a);
         if constexpr (n == 2) mh = sub_intrin(div_intrin(div_intrin(set1_intrin<VData>(-4 / const_pi<Real>()), a), a), set1_intrin<VData>(1 / const_pi<Real>()));
         const VData ys = fma_intrin(xn, eval_poly_intrin(t, Coeffs::y), fma_intrin(mul_intrin(log_a, set1_intrin<VData>(2 / const_pi<Real>())), jr, mh));
-        yr = select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>(-(Real)INFINITY), ys);
+        yr = (assumes(A, Assume::Normal) ? ys : select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>(-(Real)INFINITY), ys));
       }
     }
     if (n_small < VData::Size) { // J_n = r (P c - Q s), Y_n = r (P s + Q c), c and s sqrt(2) cos and sin of x - pi/4 - n pi/2
@@ -3482,7 +3488,7 @@ namespace sctl { // Generic
       const VData d = mul_intrin(mul_intrin(r, r), set1_intrin<VData>(const_pi<Real>())); // 1/x
       const VData w = mul_intrin(mul_intrin(d, d), set1_intrin<VData>((Real)25));
       VData sin_a, cos_a;
-      approx_sincos_intrin<digits>(sin_a, cos_a, a);
+      approx_sincos_intrin<digits, !assumes(A, Assume::Finite | Assume::Moderate), true>(sin_a, cos_a, a);
       const VData u = add_intrin(cos_a, sin_a); // sqrt(2) cos(x - pi/4)
       const VData v = sub_intrin(sin_a, cos_a); // sqrt(2) sin(x - pi/4)
       const VData c = (n == 0 ? u : (n == 1 ? v : unary_minus_intrin(u)));
@@ -3491,19 +3497,20 @@ namespace sctl { // Generic
       const VData P = fma_intrin(w, eval_rational_intrin(w, Coeffs::pp, Coeffs::pq), one);
       const VData Q = mul_intrin(d, fma_intrin(w, eval_rational_intrin(w, Coeffs::qp, Coeffs::qq), set1_intrin<VData>((Real)(4 * n * n - 1) / 8)));
       const Mask<VData> inf = comp_intrin<ComparisonType::eq>(a, set1_intrin<VData>((Real)INFINITY));
-      if constexpr (J) jr = select_intrin(small, jr, select_intrin(inf, zero_intrin<VData>(), mul_intrin(r, fma_intrin(P, c, mul_intrin(Q, ms)))));
-      if constexpr (Y) yr = select_intrin(small, yr, select_intrin(inf, zero_intrin<VData>(), mul_intrin(r, fma_intrin(P, s, mul_intrin(Q, c)))));
+      const auto fix_inf = [&inf](const VData& v) { return (assumes(A, Assume::Finite) ? v : select_intrin(inf, zero_intrin<VData>(), v)); };
+      if constexpr (J) jr = select_intrin(small, jr, fix_inf(mul_intrin(r, fma_intrin(P, c, mul_intrin(Q, ms)))));
+      if constexpr (Y) yr = select_intrin(small, yr, fix_inf(mul_intrin(r, fma_intrin(P, s, mul_intrin(Q, c)))));
     }
     if constexpr (J) j = jr;
     if constexpr (Y) y = yr;
   }
   // J_n(x), n = 0, 1, 2, to the given digits (-1: full)
-  template <Integer n, Integer digits = -1, class VData> inline VData cyl_bessel_j_intrin(const VData& x) {
+  template <Integer n, Integer digits = -1, Assume A = Assume::None, class VData> inline VData cyl_bessel_j_intrin(const VData& x) { // A: Finite | Moderate, |x| < PiOver2Split<Real>::lim
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       const VData sgn = and_intrin(x, set1_intrin<VData>((Real)-0.0));
       VData j, y;
-      bessel_jy_intrin<n, true, false, digits>(j, y, xor_intrin(x, sgn));
+      bessel_jy_intrin<n, true, false, digits, A>(j, y, xor_intrin(x, sgn));
       return (n == 1 ? xor_intrin(j, sgn) : j);
     } else {
       LaneArray<VData> x_(x);
@@ -3516,11 +3523,12 @@ namespace sctl { // Generic
     }
   }
   // Y_n(x), n = 0, 1, 2, to the given digits (-1: full), NaN for x < 0
-  template <Integer n, Integer digits = -1, class VData> inline VData cyl_neumann_intrin(const VData& x) {
+  template <Integer n, Integer digits = -1, Assume A = Assume::None, class VData> inline VData cyl_neumann_intrin(const VData& x) { // A: all four, 0 < x < PiOver2Split<Real>::lim normal
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       VData j, y;
-      bessel_jy_intrin<n, false, true, digits>(j, y, x);
+      bessel_jy_intrin<n, false, true, digits, A>(j, y, x);
+      if constexpr (assumes(A, Assume::Domain)) return y;
       return select_intrin(comp_intrin<ComparisonType::lt>(x, zero_intrin<VData>()), set1_intrin<VData>((Real)NAN), y);
     } else {
       LaneArray<VData> x_(x);
@@ -3684,7 +3692,7 @@ namespace sctl { // Generic
     K[2] = K[0] + 2 * K[1] / x;
   }
   // I_n(a) of order n = 0, 1, 2 for a >= 0, inf or NaN by the forms of BesselIKCoeffs
-  template <Integer n, Integer digits, class VData> inline VData bessel_i_intrin(const VData& a) {
+  template <Integer n, Integer digits, Assume A = Assume::None, class VData> inline VData bessel_i_intrin(const VData& a) { // A as cyl_bessel_i_intrin
     using Real = typename VData::ScalarType;
     using Coeffs = BesselIKCoeffsOf<Real, digits, n>;
     const VData one = set1_intrin<VData>((Real)1);
@@ -3719,7 +3727,7 @@ namespace sctl { // Generic
       const VData g = mul_intrin(fma_intrin(t, R, one), sqrt_intrin(mul_intrin(t, set1_intrin<VData>((Real)(0.1591549430918953357688837633725143620345L / Coeffs::i_hi))))); // (1 + t R)/sqrt(2 pi x), 1/x = t/i_hi
       static constexpr Real e_max = (std::is_same<Real,float>::value ? (Real)88 : (Real)709); // e^x is finite below
       VData rb;
-      if (!mask_count_intrin(comp_intrin<ComparisonType::ge>(a, set1_intrin<VData>(exp_normal_lim<Real>())))) {
+      if (assumes(A, Assume::Moderate) || !mask_count_intrin(comp_intrin<ComparisonType::ge>(a, set1_intrin<VData>(exp_normal_lim<Real>())))) {
         rb = mul_intrin(exp_normal_(a), g);
       } else if (mask_count_intrin(comp_intrin<ComparisonType::gt>(a, set1_intrin<VData>(e_max)))) {
         const VData e = exp_(mul_intrin(a, set1_intrin<VData>((Real)0.5)));
@@ -3727,13 +3735,13 @@ namespace sctl { // Generic
       } else {
         rb = mul_intrin(exp_(a), g);
       }
-      rb = select_intrin(comp_intrin<ComparisonType::eq>(a, set1_intrin<VData>((Real)INFINITY)), a, rb);
+      if constexpr (!assumes(A, Assume::Finite)) rb = select_intrin(comp_intrin<ComparisonType::eq>(a, set1_intrin<VData>((Real)INFINITY)), a, rb);
       r = select_intrin(small, r, rb);
     }
     return r;
   }
   // K_n(a) of order n = 0, 1, 2 for a >= 0, inf or NaN by the forms of BesselIKCoeffs
-  template <Integer n, Integer digits, class VData> inline VData bessel_k_intrin(const VData& a) {
+  template <Integer n, Integer digits, Assume A = Assume::None, class VData> inline VData bessel_k_intrin(const VData& a) { // A as cyl_bessel_k_intrin
     using Real = typename VData::ScalarType;
     using Coeffs = BesselIKCoeffsOf<Real, digits, n>;
     const VData one = set1_intrin<VData>((Real)1);
@@ -3745,31 +3753,31 @@ namespace sctl { // Generic
       const VData z = mul_intrin(a, a);
       const VData xn = (n == 0 ? one : (n == 1 ? a : z));
       const VData I = mul_intrin(xn, fma_intrin(z, eval_poly_intrin(z, Coeffs::ki), set1_intrin<VData>((Real)(n == 0 ? 1 : (n == 1 ? 0.5 : 0.125)))));
-      VData L = (digits < 0 ? log_intrin(a) : approx_log_intrin<digits>(a));
+      VData L = (digits < 0 ? log_assume_intrin<A>(a) : approx_log_intrin<digits, !assumes(A, Assume::Finite | Assume::Normal | Assume::Domain)>(a));
       if constexpr (n != 1) L = unary_minus_intrin(L);
       VData h = zero_intrin<VData>();
       if constexpr (n == 1) h = div_intrin(one, a);
       if constexpr (n == 2) h = sub_intrin(div_intrin(div_intrin(two, a), a), set1_intrin<VData>((Real)0.5));
       r = fma_intrin(L, I, fma_intrin(xn, eval_poly_intrin(z, Coeffs::ks), h));
-      r = select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>((Real)INFINITY), r);
+      if constexpr (!assumes(A, Assume::Normal)) r = select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>((Real)INFINITY), r);
     }
     if (n_small < VData::Size) { // e^-x sqrt(pi/(2x)) (1 + t R), t = 1/x
       VData e;
-      if constexpr (digits < 0) e = exp_intrin(unary_minus_intrin(a));
-      else e = approx_exp_intrin<exp_taylor_order(digits), true>(unary_minus_intrin(a));
+      if constexpr (digits < 0) e = exp_assume_intrin<A>(unary_minus_intrin(a));
+      else e = approx_exp_intrin<exp_taylor_order(digits), !assumes(A, Assume::Finite | Assume::Moderate)>(unary_minus_intrin(a));
       const VData t = div_intrin(one, a);
       const VData g = mul_intrin(fma_intrin(t, eval_rational_intrin(t, Coeffs::kl, Coeffs::kl_q), one), sqrt_intrin(mul_intrin(t, set1_intrin<VData>((Real)1.570796326794896619231321691639751442099L)))); // (1 + t R) sqrt(pi/(2x))
-      const VData rb = select_intrin(comp_intrin<ComparisonType::eq>(a, set1_intrin<VData>((Real)INFINITY)), zero_intrin<VData>(), mul_intrin(e, g));
+      const VData rb = (assumes(A, Assume::Finite) ? mul_intrin(e, g) : select_intrin(comp_intrin<ComparisonType::eq>(a, set1_intrin<VData>((Real)INFINITY)), zero_intrin<VData>(), mul_intrin(e, g)));
       r = select_intrin(small, r, rb);
     }
     return r;
   }
   // I_n(x), n = 0, 1, 2, to the given digits (-1: full)
-  template <Integer n, Integer digits = -1, class VData> inline VData cyl_bessel_i_intrin(const VData& x) {
+  template <Integer n, Integer digits = -1, Assume A = Assume::None, class VData> inline VData cyl_bessel_i_intrin(const VData& x) { // A: Finite | Moderate, |x| < exp_normal_lim
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       const VData sgn = and_intrin(x, set1_intrin<VData>((Real)-0.0));
-      const VData r = bessel_i_intrin<n, digits>(xor_intrin(x, sgn));
+      const VData r = bessel_i_intrin<n, digits, A>(xor_intrin(x, sgn));
       return (n == 1 ? xor_intrin(r, sgn) : r);
     } else {
       LaneArray<VData> x_(x);
@@ -3782,10 +3790,11 @@ namespace sctl { // Generic
     }
   }
   // K_n(x), n = 0, 1, 2, to the given digits (-1: full), NaN for x < 0
-  template <Integer n, Integer digits = -1, class VData> inline VData cyl_bessel_k_intrin(const VData& x) {
+  template <Integer n, Integer digits = -1, Assume A = Assume::None, class VData> inline VData cyl_bessel_k_intrin(const VData& x) { // A: all four, 0 < x < exp_normal_lim normal
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
-      return select_intrin(comp_intrin<ComparisonType::lt>(x, zero_intrin<VData>()), set1_intrin<VData>((Real)NAN), bessel_k_intrin<n, digits>(x));
+      if constexpr (assumes(A, Assume::Domain)) return bessel_k_intrin<n, digits, A>(x);
+      return select_intrin(comp_intrin<ComparisonType::lt>(x, zero_intrin<VData>()), set1_intrin<VData>((Real)NAN), bessel_k_intrin<n, digits, A>(x));
     } else {
       LaneArray<VData> x_(x);
       for (Integer i = 0; i < VData::Size; i++) {
@@ -3841,15 +3850,17 @@ namespace sctl { // Generic
   }
   // j_n(a) and y_n(a) of order n = 0, 1, 2 for a >= 0, inf or NaN from one sincos, with SphBesselCoeffs for j_1 and j_2
   // below 2, each computed only when its flag J or Y is set
-  template <Integer n, bool J, bool Y, Integer digits, class VData> inline void sph_bessel_jy_intrin(VData& j, VData& y, const VData& a) {
+  template <Integer n, bool J, bool Y, Integer digits, Assume A = Assume::None, class VData> inline void sph_bessel_jy_intrin(VData& j, VData& y, const VData& a) { // A: Finite | Moderate, Normal
     using Real = typename VData::ScalarType;
     using Coeffs = SphBesselCoeffs<((digits < 0 ? std::is_same<Real,double>::value : digits > 7) ? 16 : 7)>;
     VData s, c;
-    approx_sincos_intrin<digits>(s, c, a);
+    approx_sincos_intrin<digits, !assumes(A, Assume::Finite | Assume::Moderate), true>(s, c, a);
     const Mask<VData> inf = comp_intrin<ComparisonType::eq>(a, set1_intrin<VData>((Real)INFINITY));
+    const auto fix_inf = [&inf](const VData& v) { return (assumes(A, Assume::Finite) ? v : select_intrin(inf, zero_intrin<VData>(), v)); };
+    const auto fix_zero = [&a](const VData& v, const Real at0) { return (assumes(A, Assume::Normal) ? v : select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>(at0), v)); };
     if constexpr (n == 0) { // j_0 = s/x, y_0 = -c/x, by division: 1/x can overflow
-      if constexpr (J) j = select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>((Real)1), select_intrin(inf, zero_intrin<VData>(), div_intrin(s, a)));
-      if constexpr (Y) y = select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>(-(Real)INFINITY), select_intrin(inf, zero_intrin<VData>(), div_intrin(unary_minus_intrin(c), a)));
+      if constexpr (J) j = fix_zero(fix_inf(div_intrin(s, a)), (Real)1);
+      if constexpr (Y) y = fix_zero(fix_inf(div_intrin(unary_minus_intrin(c), a)), -(Real)INFINITY);
     } else { // j_(n+1) = (2n+1)/x j_n - j_(n-1) and y_(n+1) likewise, d = 1/x
       const VData d = div_intrin(set1_intrin<VData>((Real)1), a);
       if constexpr (J) {
@@ -3860,22 +3871,22 @@ namespace sctl { // Generic
           const VData z = mul_intrin(a, a);
           jr = select_intrin(small, (n == 1 ? mul_intrin(a, eval_poly_intrin(z, Coeffs::j1)) : mul_intrin(z, eval_poly_intrin(z, Coeffs::j2))), jr);
         }
-        j = select_intrin(inf, zero_intrin<VData>(), jr);
+        j = fix_inf(jr);
       }
       if constexpr (Y) {
         VData yr = mul_intrin(unary_minus_intrin(fma_intrin(c, d, s)), d);
         if constexpr (n == 2) yr = mul_intrin(fma_intrin(yr, set1_intrin<VData>((Real)3), c), d);
-        y = select_intrin(comp_intrin<ComparisonType::eq>(a, zero_intrin<VData>()), set1_intrin<VData>(-(Real)INFINITY), select_intrin(inf, zero_intrin<VData>(), yr)); // also at -0
+        y = fix_zero(fix_inf(yr), -(Real)INFINITY); // also at -0
       }
     }
   }
   // j_n(x), n = 0, 1, 2, to the given digits (-1: full)
-  template <Integer n, Integer digits = -1, class VData> inline VData sph_bessel_intrin(const VData& x) {
+  template <Integer n, Integer digits = -1, Assume A = Assume::None, class VData> inline VData sph_bessel_intrin(const VData& x) { // A: Finite | Moderate, |x| < PiOver2Split<Real>::lim; Normal for n = 0
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       const VData sgn = and_intrin(x, set1_intrin<VData>((Real)-0.0));
       VData j, y;
-      sph_bessel_jy_intrin<n, true, false, digits>(j, y, xor_intrin(x, sgn));
+      sph_bessel_jy_intrin<n, true, false, digits, A>(j, y, xor_intrin(x, sgn));
       return (n == 1 ? xor_intrin(j, sgn) : j);
     } else {
       LaneArray<VData> x_(x);
@@ -3888,11 +3899,12 @@ namespace sctl { // Generic
     }
   }
   // y_n(x), n = 0, 1, 2, to the given digits (-1: full), NaN for x < 0
-  template <Integer n, Integer digits = -1, class VData> inline VData sph_neumann_intrin(const VData& x) {
+  template <Integer n, Integer digits = -1, Assume A = Assume::None, class VData> inline VData sph_neumann_intrin(const VData& x) { // A: all four, 0 < x < PiOver2Split<Real>::lim normal
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       VData j, y;
-      sph_bessel_jy_intrin<n, false, true, digits>(j, y, x);
+      sph_bessel_jy_intrin<n, false, true, digits, A>(j, y, x);
+      if constexpr (assumes(A, Assume::Domain)) return y;
       return select_intrin(comp_intrin<ComparisonType::lt>(x, zero_intrin<VData>()), set1_intrin<VData>((Real)NAN), y);
     } else {
       LaneArray<VData> x_(x);
