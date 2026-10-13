@@ -74,6 +74,24 @@ namespace sctl { // Traits
     Real
   };
 
+  /**
+   * Promises about the arguments of a special function of Vec, given as its template argument A, e.g. log<Assume::All>(x)
+   * or approx_exp<8, Assume::Finite | Assume::Moderate>(x): with all the promises that a function lists, it leaves out
+   * its tests and code for other arguments, and its results for them are unspecified. Bits a function does not list
+   * change nothing. Each function documents its Domain and Moderate.
+   */
+  enum class Assume : unsigned {
+    None     = 0,
+    Finite   = 1, ///< no inf or NaN
+    Normal   = 2, ///< no zero or subnormal
+    Domain   = 4, ///< inside the open domain that the function documents, e.g. x > 0 for log
+    Moderate = 8, ///< inside the range that the function documents, e.g. |x| < 708.4 for exp of double
+    All      = 15
+  };
+  constexpr Assume operator|(Assume a, Assume b) { return (Assume)((unsigned)a | (unsigned)b); }
+  constexpr Assume operator&(Assume a, Assume b) { return (Assume)((unsigned)a & (unsigned)b); }
+  constexpr bool assumes(Assume a, Assume b) { return ((unsigned)a & (unsigned)b) == (unsigned)b; } ///< a has every bit of b
+
   template <class ValueType> class TypeTraits {
   };
   template <> class TypeTraits<int8_t> {
@@ -1506,9 +1524,9 @@ namespace sctl { // Generic
     }
     return {s_u.value(), c_u.value()};
   }
-  // sin(x), cos(x) to DIGITS digits (-1: full): x = n pi/2 + r, by PiOver2Split with FullRange, else by one product, and
-  // minimax sin and cos polynomials of r chosen by n mod 4
-  template <Integer DIGITS, bool FullRange = true, class VData> inline void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
+  // sin(x), cos(x) to DIGITS digits (-1: full): x = n pi/2 + r, by PiOver2Split with ExactReduction, else by one product,
+  // and minimax sin and cos polynomials of r chosen by n mod 4. FullRange = false: only for |x| < PiOver2Split<Real>::lim
+  template <Integer DIGITS, bool FullRange = true, bool ExactReduction = FullRange, class VData> inline void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     using Int = typename IntegerType<sizeof(Real)>::value;
@@ -1526,7 +1544,7 @@ namespace sctl { // Generic
     VData x_int(fma_intrin(x, set1_intrin<VData>(inv_pi_over_2), real_offset));
     VData x_(sub_intrin(x_int, real_offset)); // x_ <-- round(x*inv_pi_over_2)
     VData x1;
-    if constexpr (FullRange) {
+    if constexpr (ExactReduction) {
       x1 = PiOver2Split<Real>::sub_n(x, x_);
     } else {
       x1 = fma_intrin(x_, set1_intrin<VData>(neg_pi_over_2), x);
@@ -1771,10 +1789,10 @@ namespace sctl { // Generic
   }
   // log_split_poly_intrin of log_split_intrin, one polynomial for all x: with a second one for x zero, subnormal, inf,
   // negative or NaN, GCC 14 left this function out of line in large programs, and log was 1.5x slower
-  template <class VData> inline VData log_poly_intrin(const VData& x) {
+  template <bool Check = true, class VData> inline VData log_poly_intrin(const VData& x) { // Check = false: only for positive normal x
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
-    const bool normal = (mask_count_intrin(positive_normal_mask_intrin(x)) == VData::Size);
+    const bool normal = (!Check || mask_count_intrin(positive_normal_mask_intrin(x)) == VData::Size);
     VData e, f;
     if (normal) log_split_intrin<false>(e, f, x);
     else log_split_intrin<true>(e, f, x);
@@ -1838,7 +1856,7 @@ namespace sctl { // Generic
     L_hi = add_intrin(eh, u_hi);
     L_lo = add_intrin(add_intrin(sub_intrin(eh, L_hi), u_hi), fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), u_lo)); // |eh| >= |u_hi| unless e = 0
   }
-  template <class VData> inline VData pow_poly_intrin(const VData& x, const VData& y) { // exp(y log|x|), log|x| = L_hi + L_lo to about 1.5x the precision of Real; std::pow at signs, zeros, inf, NaN
+  template <bool Check = true, class VData> inline VData pow_poly_intrin(const VData& x, const VData& y) { // exp(y log|x|), log|x| = L_hi + L_lo to about 1.5x the precision of Real; std::pow at signs, zeros, inf, NaN. Check = false: only for positive normal x and |y log x| < exp_normal_lim
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     const VData zero = zero_intrin<VData>();
@@ -1852,7 +1870,7 @@ namespace sctl { // Generic
     log_hi_lo_intrin(L_hi, L_lo, e, f);
     VData T_hi = mul_intrin(y, L_hi);
     VData T_lo = add_intrin(mul_sub_exact_intrin(y, L_hi, T_hi), mul_intrin(y, L_lo));
-    if (mask_count_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T_hi), set1_intrin<VData>(exp_normal_lim<Real>()))) == VData::Size) {
+    if (!Check || mask_count_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T_hi), set1_intrin<VData>(exp_normal_lim<Real>()))) == VData::Size) {
       const VData r = exp_normal_intrin(T_hi);
       return fma_intrin(r, T_lo, r);
     }
@@ -1877,7 +1895,7 @@ namespace sctl { // Generic
     r = select_intrin(comp_intrin<ComparisonType::ne>(x, x), x, r);
     return select_intrin(comp_intrin<ComparisonType::eq>(y, zero) | comp_intrin<ComparisonType::eq>(x, one), one, r);
   }
-  template <class VData> inline VData cbrt_poly_intrin(const VData& x) { // cbrt(2^e m) = 2^q cbrt(2^r m), e = 3q + r; a cubic first guess, then two Halley steps
+  template <bool Subnormal = true, bool Special = true, class VData> inline VData cbrt_poly_intrin(const VData& x) { // cbrt(2^e m) = 2^q cbrt(2^r m), e = 3q + r; a cubic first guess, then two Halley steps. Without Subnormal, for no subnormal x; without Special, for x not 0, inf or NaN
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
     using IntVec = VecData<Int, VData::Size>;
@@ -1890,7 +1908,7 @@ namespace sctl { // Generic
     const VData ax = fabs_intrin(x);
 
     VData e, f;
-    log_split_intrin(e, f, ax);
+    log_split_intrin<Subnormal>(e, f, ax);
     const VData q = floor_intrin(mul_intrin(add_intrin(e, set1_intrin<VData>((Real)0.5)), set1_intrin<VData>((Real)1/3)));
     const VData r = fma_intrin(q, set1_intrin<VData>((Real)-3), e); // 0, 1 or 2
     const VData a = mul_intrin(add_intrin(f, one), select_intrin(comp_intrin<ComparisonType::eq>(r, one), two, select_intrin(comp_intrin<ComparisonType::eq>(r, two), set1_intrin<VData>((Real)4), one))); // in [sqrt(1/2), 4 sqrt(2))
@@ -1906,6 +1924,7 @@ namespace sctl { // Generic
       y = sub_intrin(y, div_intrin(mul_intrin(y, d), fma_intrin(t, two, a)));
     }
     const VData p2 = reinterpret_intrin<VData>(bitshiftleft_intrin(add_intrin(lrint_intrin<IntVec>(q), set1_intrin<IntVec>(Bias)), SigBits)); // 2^q
+    if constexpr (!Special) return copysign_intrin(mul_intrin(y, p2), x);
     const VData c = select_intrin(comp_intrin<ComparisonType::gt>(ax, zero) & comp_intrin<ComparisonType::le>(ax, set1_intrin<VData>(std::numeric_limits<Real>::max())), mul_intrin(y, p2), ax); // zeros, inf, NaN as they are; max as in positive_normal_mask_intrin
     return copysign_intrin(c, x); // after the select: clang 18 and 19 compile select(m, copysign(c, x), x) for AVX-512 at -O2 to a vpternlogq with a wrong immediate
   }
@@ -2000,17 +2019,46 @@ namespace sctl { // Generic
       return expx_.value();
     }
   }
+  // exp_intrin, log_intrin, pow_intrin, cbrt_intrin or sincos_intrin of VData is SCTL's polynomial (approx_exp_intrin,
+  // log_poly_intrin, pow_poly_intrin, cbrt_poly_intrin, approx_sincos_intrin), not SVML, libmvec or std one element at a
+  // time: an Assume can leave out its tests
+  enum class PolyOf { Exp, Log, Pow, Cbrt, Sincos };
+  template <PolyOf F, class VData> inline constexpr bool sctl_poly() {
+    using Real = typename VData::ScalarType;
+#if defined(SCTL_HAVE_SVML)
+    constexpr bool other = true;
+#elif defined(SCTL_HAVE_LIBMVEC)
+    constexpr bool other = (F == PolyOf::Log || F == PolyOf::Pow);
+#else
+    constexpr bool other = false;
+#endif
+    if constexpr (split_lanes<VData>) return sctl_poly<F, HalfVData<VData>>();
+    else return !other && !array_lanes<VData> && (std::is_same<Real,float>::value || std::is_same<Real,double>::value) && (F != PolyOf::Pow || sizeof(VData) >= 32); // pow at 128 bits: std one element at a time
+  }
   // e^x for |x| < exp_normal_lim and NaN: exp_intrin without its range check, where exp_intrin is approx_exp_intrin
   template <class VData> inline VData exp_normal_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
-#if !defined(SCTL_HAVE_SVML)
-    if constexpr ((std::is_same<Real,float>::value || std::is_same<Real,double>::value) && !array_lanes<VData>) {
-      return approx_exp_intrin<(Integer)(TypeTraits<Real>::SigBits/3.8), false>(x);
-    } else
-#endif
-    {
-      return exp_intrin(x);
-    }
+    if constexpr (sctl_poly<PolyOf::Exp, VData>()) return approx_exp_intrin<(Integer)(TypeTraits<Real>::SigBits/3.8), false>(x);
+    else return exp_intrin(x);
+  }
+  // exp_intrin, log_intrin and pow_intrin with the promises of A: without the tests of the arguments that they make
+  // unnecessary. exp: Finite | Moderate (|x| < exp_normal_lim); log: Finite | Normal | Domain (x > 0); pow: all four
+  // (x > 0, |y log x| < exp_normal_lim)
+  template <Assume A, class VData> inline VData exp_assume_intrin(const VData& x) {
+    if constexpr (assumes(A, Assume::Finite | Assume::Moderate)) return exp_normal_intrin(x);
+    else return exp_intrin(x);
+  }
+  template <Assume A, class VData> inline VData log_assume_intrin(const VData& x) {
+    if constexpr (assumes(A, Assume::Finite | Assume::Normal | Assume::Domain) && sctl_poly<PolyOf::Log, VData>()) return log_poly_intrin<false>(x);
+    else return log_intrin(x);
+  }
+  template <Assume A, class VData> inline VData pow_assume_intrin(const VData& x, const VData& y) {
+    if constexpr (assumes(A, Assume::All) && sctl_poly<PolyOf::Pow, VData>()) return pow_poly_intrin<false>(x, y);
+    else return pow_intrin(x, y);
+  }
+  template <Assume A, class VData> inline VData cbrt_assume_intrin(const VData& x) { // Normal: no subnormal handling; Finite | Normal: also no fix of 0, inf, NaN
+    if constexpr (sctl_poly<PolyOf::Cbrt, VData>()) return cbrt_poly_intrin<!assumes(A, Assume::Normal), !assumes(A, Assume::Finite | Assume::Normal)>(x);
+    else return cbrt_intrin(x);
   }
   template <class VData> inline VData log_intrin(const VData& x) {
     if constexpr (split_lanes<VData>) {
@@ -2153,14 +2201,14 @@ namespace sctl { // Generic
     log_split_intrin<false>(e, f, x);
     return approx_log_split_poly_intrin<DIGITS>(e, f);
   }
-  template <Integer DIGITS, class VData> inline VData approx_log_intrin(const VData& x) { // approx_log_normal_intrin; log_intrin if some x is not positive, normal and finite
-    if (mask_count_intrin(positive_normal_mask_intrin(x)) < VData::Size) return log_intrin(x);
+  template <Integer DIGITS, bool Check = true, class VData> inline VData approx_log_intrin(const VData& x) { // approx_log_normal_intrin; log_intrin if some x is not positive, normal and finite, unless !Check
+    if (Check && mask_count_intrin(positive_normal_mask_intrin(x)) < VData::Size) return log_intrin(x);
     return approx_log_normal_intrin<DIGITS>(x);
   }
-  template <Integer LOG_DIGITS, Integer ORDER, class VData> inline VData approx_pow_intrin(const VData& x, const VData& y) { // e^(y log x) with approx_log_normal_intrin<LOG_DIGITS> and approx_exp_intrin<ORDER>; pow_intrin if some x is not positive, normal and finite, or |y log x| >= 708.4 (float: 87.3)
+  template <Integer LOG_DIGITS, Integer ORDER, bool Check = true, class VData> inline VData approx_pow_intrin(const VData& x, const VData& y) { // e^(y log x) with approx_log_normal_intrin<LOG_DIGITS> and approx_exp_intrin<ORDER>; pow_intrin if some x is not positive, normal and finite, or |y log x| >= 708.4 (float: 87.3)
     using Real = typename VData::ScalarType;
     const VData T = mul_intrin(y, approx_log_normal_intrin<LOG_DIGITS>(x));
-    if (mask_count_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T), set1_intrin<VData>(exp_normal_lim<Real>()))) < VData::Size) return pow_intrin(x, y);
+    if (Check && mask_count_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T), set1_intrin<VData>(exp_normal_lim<Real>()))) < VData::Size) return pow_intrin(x, y);
     return approx_exp_intrin<ORDER, false>(T);
   }
   template <class VData> inline VData sqrt_intrin(const VData& x) {
@@ -2328,7 +2376,7 @@ namespace sctl { // Generic
     return comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>((typename VData::ScalarType)INFINITY));
   }
 
-  template <bool AvoidOverflow = true, class VData> inline VData hypot_intrin(const VData& x, const VData& y) {
+  template <bool AvoidOverflow = true, bool SpecialValues = true, class VData> inline VData hypot_intrin(const VData& x, const VData& y) { // SpecialValues: zeros, inf, NaN
     using Real = typename VData::ScalarType;
     if constexpr (!AvoidOverflow) {
       return sqrt_intrin(fma_intrin(x, x, mul_intrin(y, y)));
@@ -2340,19 +2388,25 @@ namespace sctl { // Generic
       const VData m = max_intrin(a, b);
       const VData r = div_intrin(min_intrin(a, b), m);
       VData h = mul_intrin(m, sqrt_intrin(fma_intrin(r, r, set1_intrin<VData>((Real)1))));
+      if constexpr (!SpecialValues) return h;
       h = select_intrin(comp_intrin<ComparisonType::eq>(m, zero), zero, h);
       h = select_intrin(isnan_intrin(add_intrin(a, b)), add_intrin(a, b), h);
       return select_intrin(comp_intrin<ComparisonType::eq>(a, inf) | comp_intrin<ComparisonType::eq>(b, inf), inf, h); // inf even with NaN, as std::hypot
     }
   }
 
-  template <class VData> inline VData exp2_intrin(const VData& x) {
+  template <bool Clamp = true, class VData> inline VData exp2_intrin(const VData& x) { // Clamp = false: only for |x| < max_exp - 1
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) { // 2^f 2^n1 2^n2, f = x - n, n = n1 + n2
       using Int = typename IntegerType<sizeof(Real)>::value;
       using IntVec = VecData<Int,VData::Size>;
       static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
       static constexpr Int max_exp = (((Int)1) << (sizeof(Real)*8 - SigBits - 2)) - 1;
+      if constexpr (!Clamp) { // 2^f 2^n, 2^n normal
+        const VData n = rint_intrin(x);
+        const VData e = approx_exp_intrin<(Integer)(SigBits/3.8), false>(mul_intrin(sub_intrin(x, n), set1_intrin<VData>(const_ln2<Real>())));
+        return mul_intrin(e, reinterpret_intrin<VData>(bitshiftleft_intrin(add_intrin(lrint_intrin<IntVec>(n), set1_intrin<IntVec>(max_exp)), SigBits)));
+      }
       const VData lim = set1_intrin<VData>((Real)(2*(max_exp-1)));
       const VData xc = min_intrin(lim, max_intrin(unary_minus_intrin(lim), x)); // keeps NaN, the second operand
       const VData n = rint_intrin(xc);
@@ -2372,30 +2426,30 @@ namespace sctl { // Generic
   template <Integer ORDER, bool RangeCheck = true, class VData> inline VData approx_exp10_intrin(const VData& x) { // as approx_exp_intrin
     return approx_exp_intrin<ORDER, RangeCheck, ExpArg::Base10>(x, x);
   }
-  template <class VData> inline VData exp10_intrin(const VData& x) {
+  template <Assume A = Assume::None, class VData> inline VData exp10_intrin(const VData& x) { // Finite | Moderate: |x| < exp_normal_lim / ln10
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
-      return approx_exp10_intrin<(Integer)(TypeTraits<Real>::SigBits/3.8)>(x);
+      return approx_exp10_intrin<(Integer)(TypeTraits<Real>::SigBits/3.8), !assumes(A, Assume::Finite | Assume::Moderate)>(x);
     } else {
       LaneArray<VData> x_(x);
       for (Integer i = 0; i < VData::Size; i++) x_[i] = pow((Real)10, x_[i]);
       return x_.value();
     }
   }
-  template <class VData> inline VData log2_intrin(const VData& x) {
+  template <Assume A = Assume::None, class VData> inline VData log2_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
-      return mul_intrin(log_intrin(x), set1_intrin<VData>((Real)1.44269504088896340736));
+      return mul_intrin(log_assume_intrin<A>(x), set1_intrin<VData>((Real)1.44269504088896340736));
     } else {
       LaneArray<VData> x_(x);
       for (Integer i = 0; i < VData::Size; i++) x_[i] = log2(x_[i]);
       return x_.value();
     }
   }
-  template <class VData> inline VData log10_intrin(const VData& x) {
+  template <Assume A = Assume::None, class VData> inline VData log10_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
-      return mul_intrin(log_intrin(x), set1_intrin<VData>((Real)0.43429448190325182765));
+      return mul_intrin(log_assume_intrin<A>(x), set1_intrin<VData>((Real)0.43429448190325182765));
     } else {
       LaneArray<VData> x_(x);
       for (Integer i = 0; i < VData::Size; i++) x_[i] = log(x_[i]) / log((Real)10);
@@ -4067,18 +4121,18 @@ namespace sctl { // Generic
     for (Integer k = K-1; k >= 1; k--) p = fma_intrin(p, z, set1_intrin<VData>(c[k]));
     return fma_intrin(mul_intrin(x, z), p, x);
   }
-  template <class VData> inline VData exp_half_intrin(const VData& a) { // e^a / 2 for a >= 0; inf beyond the overflow
+  template <Assume A = Assume::None, class VData> inline VData exp_half_intrin(const VData& a) { // e^a / 2 for a >= 0; inf beyond the overflow. Finite | Moderate: a < exp_normal_lim + 1
     using Real = typename VData::ScalarType;
-    return mul_intrin(exp_intrin(sub_intrin(a, set1_intrin<VData>((Real)1))), set1_intrin<VData>(const_e<Real>()/2));
+    return mul_intrin(exp_assume_intrin<A>(sub_intrin(a, set1_intrin<VData>((Real)1))), set1_intrin<VData>(const_e<Real>()/2));
   }
-  template <class VData> inline VData cosh_intrin(const VData& x) {
-    const VData h = exp_half_intrin(fabs_intrin(x));
+  template <Assume A = Assume::None, class VData> inline VData cosh_intrin(const VData& x) {
+    const VData h = exp_half_intrin<A>(fabs_intrin(x));
     return add_intrin(h, div_intrin(set1_intrin<VData>((typename VData::ScalarType)0.25), h));
   }
-  template <class VData> inline VData sinh_intrin(const VData& x) {
+  template <Assume A = Assume::None, class VData> inline VData sinh_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     const VData a = fabs_intrin(x);
-    const VData h = exp_half_intrin(a);
+    const VData h = exp_half_intrin<A>(a);
     const VData big = copysign_intrin(sub_intrin(h, div_intrin(set1_intrin<VData>((Real)0.25), h)), x);
     return select_intrin(comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>((Real)1)), sinh_series_intrin(x), big);
   }

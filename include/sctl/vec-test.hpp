@@ -1019,14 +1019,14 @@ namespace sctl {
           SCTL_ASSERT(fabs(at[i] - atan2<ScalarType>(x, u2.x[i])) <= 8*eps*fabs(atan2<ScalarType>(x, u2.x[i])));
           SCTL_ASSERT(fabs(pw[i] - pow<ScalarType>(u4.x[i], u2.x[i]/2)) <= 8*eps*pow<ScalarType>(u4.x[i], u2.x[i]/2));
         }
-        for (const ScalarType x : {(ScalarType)100000.25, (ScalarType)-3e7, (ScalarType)1e20}) { // beyond the reduction of FullRange = false
+        for (const ScalarType x : {(ScalarType)100000.25, (ScalarType)-3e7, (ScalarType)1e20}) { // beyond the reduction of approx_sin with Assume::Moderate
           SCTL_ASSERT(fabs(sin(VecType(x))[0] - sin<ScalarType>(x)) < err_tol);
           SCTL_ASSERT(fabs(cos(VecType(x))[0] - cos<ScalarType>(x)) < err_tol);
           SCTL_ASSERT(fabs(approx_sin<8>(VecType(x))[0] - sin<ScalarType>(x)) < (ScalarType)1e-6);
         }
         { // the faster versions, for moderate arguments
-          const VecType snf = sin<false>(u1.v);
-          const VecType atf = atan2<false>(u1.v, u2.v);
+          const VecType snf = approx_sin<-1, Assume::Finite | Assume::Moderate>(u1.v);
+          const VecType atf = atan2<Assume::Finite | Assume::Normal>(u1.v, u2.v);
           for (Integer i = 0; i < N; i++) {
             SCTL_ASSERT(fabs(snf[i] - sin<ScalarType>(u1.x[i])) < err_tol);
             SCTL_ASSERT(fabs(atf[i] - atan2<ScalarType>(u1.x[i], u2.x[i])) <= 8*eps*fabs(atan2<ScalarType>(u1.x[i], u2.x[i])));
@@ -1102,7 +1102,7 @@ namespace sctl {
         const VecType ach = acosh(VecType((ScalarType)1) + u4.v);
         const VecType ath = atanh(u5.v);
         const VecType ash5 = approx_asinh<5>(u1.v), ach5 = approx_acosh<5>(VecType((ScalarType)1) + u4.v), ath5 = approx_atanh<5>(u5.v);
-        const VecType ashn = approx_asinh<-1, false>(u1.v), achn = approx_acosh<-1, false>(VecType((ScalarType)1) + u4.v), athn = approx_atanh<-1, false>(u5.v);
+        const VecType ashn = approx_asinh<-1, Assume::Finite | Assume::Moderate>(u1.v), achn = approx_acosh<-1, Assume::All>(VecType((ScalarType)1) + u4.v), athn = approx_atanh<-1, Assume::Domain>(u5.v);
         const VecType fm = fmod(u1.v, u4.v);
         SCTL_ASSERT(round(VecType((ScalarType)2.5))[0] == 3 && round(VecType((ScalarType)-0.5))[0] == -1);
         for (Integer i = 0; i < N; i++) {
@@ -1302,8 +1302,46 @@ namespace sctl {
         const ScalarType big = (ScalarType)(sizeof(ScalarType) == 4 ? 1e30 : 1e200); // big^2 overflows float
         SCTL_ASSERT(rel(hypot(VecType(big), VecType(big))[0], big * sqrt<ScalarType>((ScalarType)2)) <= tol);
         SCTL_ASSERT(isinf(hypot(VecType((ScalarType)INFINITY), VecType((ScalarType)NAN))[0]));
-        const VecType hyf = hypot<false>(u1.v, u2.v);
+        const VecType hyf = hypot<Assume::Moderate>(u1.v, u2.v);
         for (Integer i = 0; i < N; i++) SCTL_ASSERT(rel(hyf[i], hypot<ScalarType>(u1.x[i], u2.x[i])) <= tol);
+
+        { // with the promises of Assume, the same results for arguments inside them, up to FMA contraction in generic code
+          constexpr Assume FM = Assume::Finite | Assume::Moderate;
+          constexpr Assume All = Assume::All;
+          const auto check = [&rel](const VecType& a, const VecType& b, const ScalarType t) {
+            for (Integer i = 0; i < N; i++) SCTL_ASSERT(a[i] == b[i] || rel(a[i], b[i]) <= t);
+          };
+          const ScalarType t = 4 * eps;
+          const VecType x1 = VecType((ScalarType)1) + u4.v;
+          check(log<All>(u4.v), log(u4.v), t);
+          check(log2<All>(u4.v), log2(u4.v), t);
+          check(log10<All>(u4.v), log10(u4.v), t);
+          check(approx_log<8, All>(u4.v), approx_log<8>(u4.v), t);
+          check(exp<FM>(u1.v), exp(u1.v), t);
+          check(approx_exp<8, FM>(u1.v), approx_exp<8>(u1.v), t);
+          check(exp10<FM>(u2.v), exp10(u2.v), t);
+          check(approx_exp10<8, FM>(u2.v), approx_exp10<8>(u2.v), t);
+          check(exp2<FM>(u1.v), exp2(u1.v), t);
+          check(pow<All>(u4.v, u2.v), pow(u4.v, u2.v), t);
+          check(approx_pow<8, All>(u4.v, u2.v), approx_pow<8>(u4.v, u2.v), t);
+          check(cbrt<All>(u1.v), cbrt(u1.v), t);
+          check(sinh<FM>(u1.v), sinh(u1.v), t);
+          check(cosh<FM>(u1.v), cosh(u1.v), t);
+          check(asinh<FM>(u1.v), asinh(u1.v), t);
+          check(acosh<All>(x1), acosh(x1), t);
+          check(atanh<Assume::Domain>(u5.v), atanh(u5.v), t);
+          check(sin<FM>(u1.v), sin(u1.v), t);
+          check(cos<FM>(u1.v), cos(u1.v), t);
+          check(tan<FM>(u1.v), tan(u1.v), t);
+          check(sinc<FM>(u1.v), sinc(u1.v), t);
+          const VecType as8 = approx_sin<8, FM>(u1.v), as8_ref = approx_sin<8>(u1.v); // x - n pi/2 by one product: an absolute error
+          for (Integer i = 0; i < N; i++) SCTL_ASSERT(fabs(as8[i] - as8_ref[i]) <= (sizeof(ScalarType) == 4 ? (ScalarType)1e-6 : (ScalarType)1e-8));
+          check(sinpi<FM>(u1.v), sinpi(u1.v), t);
+          check(cospi<FM>(u1.v), cospi(u1.v), t);
+          check(sincpi<FM>(u1.v), sincpi(u1.v), t);
+          check(atan2<All>(u1.v, u2.v), atan2(u1.v, u2.v), t);
+          check(hypot<Assume::Finite | Assume::Normal>(u1.v, u2.v), hypot(u1.v, u2.v), t);
+        }
 
         for (const ScalarType x : {(ScalarType)1e6, (ScalarType)INFINITY}) { // exp and approx_exp beyond the range of the result
           SCTL_ASSERT(isinf(exp(VecType(x))[0]) && exp(VecType(x))[0] > 0);
@@ -1332,7 +1370,7 @@ namespace sctl {
           }
         }
         const VecType ae = approx_exp<8>(u1.v);
-        const VecType ae_unchecked = approx_exp<8, false>(u1.v);
+        const VecType ae_unchecked = approx_exp<8, Assume::Finite | Assume::Moderate>(u1.v);
         for (Integer i = 0; i < N; i++) SCTL_ASSERT(fabs(ae_unchecked[i] - ae[i]) <= err_tol * ae[i]); // equal in the range, up to FMA contraction in generic code
       }
 
