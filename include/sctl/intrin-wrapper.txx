@@ -2051,22 +2051,23 @@ namespace sctl { // Generic
     }
   }
 
-  template <bool Clamp, class VData> inline VData exp2_intrin(const VData& x) {
+  template <bool Clamp, Integer DIGITS, class VData> inline VData exp2_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) { // 2^f 2^n1 2^n2, f = x - n, n = n1 + n2
       using Int = typename IntegerType<sizeof(Real)>::value;
       using IntVec = VecData<Int,VData::Size>;
       static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
       static constexpr Int max_exp = (((Int)1) << (sizeof(Real)*8 - SigBits - 2)) - 1;
+      static constexpr Integer ORDER = (DIGITS < 0 ? (Integer)(SigBits/3.8) : exp_taylor_order(DIGITS));
       if constexpr (!Clamp) { // 2^f 2^n, 2^n normal
         const VData n = rint_intrin(x);
-        const VData e = approx_exp_intrin<(Integer)(SigBits/3.8), false>(mul_intrin(sub_intrin(x, n), set1_intrin<VData>(const_ln2<Real>())));
+        const VData e = approx_exp_intrin<ORDER, false>(mul_intrin(sub_intrin(x, n), set1_intrin<VData>(const_ln2<Real>())));
         return mul_intrin(e, reinterpret_intrin<VData>(bitshiftleft_intrin(add_intrin(lrint_intrin<IntVec>(n), set1_intrin<IntVec>(max_exp)), SigBits)));
       }
       const VData lim = set1_intrin<VData>((Real)(2*(max_exp-1)));
       const VData xc = min_intrin(lim, max_intrin(unary_minus_intrin(lim), x)); // keeps NaN, the second operand
       const VData n = rint_intrin(xc);
-      const VData e = approx_exp_intrin<(Integer)(SigBits/3.8), false>(mul_intrin(sub_intrin(xc, n), set1_intrin<VData>(const_ln2<Real>()))); // |x| <= ln2/2: no range check
+      const VData e = approx_exp_intrin<ORDER, false>(mul_intrin(sub_intrin(xc, n), set1_intrin<VData>(const_ln2<Real>()))); // |x| <= ln2/2: no range check
       const IntVec ni = lrint_intrin<IntVec>(n);
       const IntVec n1 = bitshiftright_intrin(ni, 1);
       const IntVec n2 = sub_intrin(ni, n1);

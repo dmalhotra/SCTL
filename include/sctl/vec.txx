@@ -692,11 +692,23 @@ namespace sctl {
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> exp2(const Vec<ValueType,N>& x) {
     return exp2_intrin<!assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
   }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp2(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return exp2<A>(x);
+    else return exp2_intrin<!assumes(A, Assume::Finite | Assume::Moderate), digits>(x.get());
+  }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> log2(const Vec<ValueType,N>& x) {
     return log2_intrin<A>(x.get());
   }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_log2(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits) || log_poly_degree(digits) == 0) return log2<A>(x);
+    else return approx_log<digits, A>(x) * (ValueType)1.44269504088896340736;
+  }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> log10(const Vec<ValueType,N>& x) {
     return log10_intrin<A>(x.get());
+  }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_log10(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits) || log_poly_degree(digits) == 0) return log10<A>(x);
+    else return approx_log<digits, A>(x) * (ValueType)0.43429448190325182765;
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x) {
     return cbrt_assume_intrin<A>(x.get());

@@ -558,7 +558,7 @@ namespace sctl { // Generic
 
   template <bool AvoidOverflow = true, bool SpecialValues = true, class VData> inline VData hypot_intrin(const VData& x, const VData& y); // SpecialValues: zeros, inf, NaN
 
-  template <bool Clamp = true, class VData> inline VData exp2_intrin(const VData& x); // Clamp = false: only for |x| < max_exp - 1
+  template <bool Clamp = true, Integer DIGITS = -1, class VData> inline VData exp2_intrin(const VData& x); // Clamp = false: only for |x| < max_exp - 1; DIGITS = -1: full
   template <Integer ORDER, bool RangeCheck = true, class VData> inline VData approx_exp10_intrin(const VData& x); // as approx_exp_intrin
   template <Assume A = Assume::None, class VData> inline VData exp10_intrin(const VData& x); // Finite | Moderate: |x| < exp_normal_lim / ln10
   template <Assume A = Assume::None, class VData> inline VData log2_intrin(const VData& x);

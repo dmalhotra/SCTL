@@ -732,12 +732,18 @@ namespace sctl {
 
   /** 2 to the power x. A: Finite | Moderate, |x| < 1022 (float: 126). */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> exp2(const Vec<ValueType,N>& x);
+  /** exp2 to the given digits (-1: full); A as exp2. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp2(const Vec<ValueType,N>& x);
 
   /** Base-2 logarithm; vectorized where log is. A as log. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> log2(const Vec<ValueType,N>& x);
+  /** log2 to the given digits (-1: full), as approx_log; A as log. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_log2(const Vec<ValueType,N>& x);
 
   /** Base-10 logarithm; vectorized where log is. A as log. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> log10(const Vec<ValueType,N>& x);
+  /** log10 to the given digits (-1: full), as approx_log; A as log. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_log10(const Vec<ValueType,N>& x);
 
   /** Cube root. A: Normal leaves out subnormal x; Finite | Normal also 0, inf and NaN. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x);

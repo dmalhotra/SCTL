@@ -894,6 +894,24 @@ namespace sctl {
           SCTL_ASSERT(isinf(exp10(VecType((ScalarType)INFINITY))[0]) && exp10(VecType(-(ScalarType)INFINITY))[0] == 0 && isnan(exp10(VecType((ScalarType)NAN))[0]));
         }
 
+        { // approx_exp2, approx_log2, approx_log10 to the given digits
+          const VecType xp = fabs(v0) + (ScalarType)0.5;
+          const auto check = [&xp, &v0](const VecType& e2, const VecType& l2, const VecType& l10, const ScalarType err_tol) {
+            for (Integer i = 0; i < N; i++) {
+              const ScalarType e = pow<ScalarType>((ScalarType)2, v0[i]), l = log<ScalarType>(xp[i]);
+              const ScalarType r2 = l / const_ln2<ScalarType>(), r10 = l / log<ScalarType>((ScalarType)10);
+              SCTL_ASSERT(fabs(e2[i] - e) <= err_tol * e);
+              SCTL_ASSERT(fabs(l2[i] - r2) <= err_tol * fabs(r2) && fabs(l10[i] - r10) <= err_tol * fabs(r10));
+            }
+          };
+          check(approx_exp2<3>(v0), approx_log2<3>(xp), approx_log10<3>(xp), (ScalarType)1e-3);
+          check(approx_exp2<5>(v0), approx_log2<5>(xp), approx_log10<5>(xp), (ScalarType)1e-5);
+          if constexpr (std::is_same<ScalarType,double>::value) {
+            check(approx_exp2<9>(v0), approx_log2<9>(xp), approx_log10<9>(xp), (ScalarType)1e-9);
+            check(approx_exp2<12>(v0), approx_log2<12>(xp), approx_log10<12>(xp), (ScalarType)1e-12);
+          }
+        }
+
         { // sinpi, cospi, sincospi, and approx_sinpi, approx_cospi to 5 digits
           VecType s, c;
           sincospi(s, c, v0);
