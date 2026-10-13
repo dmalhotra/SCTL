@@ -1967,7 +1967,20 @@ namespace sctl { // Generic
       return int2mask_intrin<VData>(m_.value());
     }
   }
-  template <bool SpecialValues, class VData> inline VData atan2_intrin(const VData& y, const VData& x) {
+  // atan(t) ~ t + t z P(z), z = t^2, |t| <= tan(pi/8): P of degree n minimax for the relative error of atan, lowest
+  // degree first; correct digits in atan_poly_digits
+  template <Integer n> struct AtanPolyCoeffs;
+  template <> struct AtanPolyCoeffs<0> { static constexpr double c[] = {-0.30762642152004627}; };
+  template <> struct AtanPolyCoeffs<1> { static constexpr double c[] = {-0.3318337752756678, 0.1703417784785131}; };
+  template <> struct AtanPolyCoeffs<2> { static constexpr double c[] = {-0.3332550778458378, 0.19714143725519054, -0.11225162872826532}; };
+  template <> struct AtanPolyCoeffs<3> { static constexpr double c[] = {-0.33332949138759105, 0.1997771002828487, -0.13877678748391506, 0.08053722707244332}; };
+  template <> struct AtanPolyCoeffs<4> { static constexpr double c[] = {-0.333333151885933, 0.1999847151464903, -0.1424353333206836, 0.10593813649561637, -0.06078221227924526}; };
+  template <> struct AtanPolyCoeffs<5> { static constexpr double c[] = {-0.33333332499116497, 0.199999039072296, -0.14282007742636155, 0.11044691528329345, -0.08476269309611288, 0.047440498076383376}; };
+  template <> struct AtanPolyCoeffs<6> { static constexpr double c[] = {-0.3333333329572931, 0.19999994326773302, -0.14285423642444056, 0.11104004306779934, -0.0899684466135173, 0.06991240012039009, -0.03792474588086008}; };
+  template <> struct AtanPolyCoeffs<7> { static constexpr double c[] = {-0.3333333333166368, 0.1999999968064304, -0.1428569334574923, 0.11110444020558093, -0.09079061659531835, 0.07568008531159959, -0.05889131121502296, 0.03086640025760975}; };
+  template <> struct AtanPolyCoeffs<8> { static constexpr double c[] = {-0.33333333333260085, 0.19999999982683608, -0.14285712872908005, 0.11111054409838247, -0.09089615070512584, 0.07674318804795639, -0.06510249257840772, 0.05037426627444555, -0.025474366542937287}; };
+  inline constexpr double atan_poly_digits[] = {3.05, 4.65, 6.18, 7.69, 9.17, 10.64, 12.10, 13.56, 14.95}; // degrees 0 to 8
+  template <bool SpecialValues, Integer DIGITS, class VData> inline VData atan2_intrin(const VData& y, const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       const VData zero = zero_intrin<VData>();
@@ -1984,24 +1997,29 @@ namespace sctl { // Generic
         den = select_intrin(inf_inf, one, den);
       }
 
-      // atan(num/den) with num/den in [0, 1]: reduce to |t| <= tan(pi/8), then Cephes atan rational
+      // atan(num/den) with num/den in [0, 1]: reduce to |t| <= tan(pi/8), then Cephes atan rational, or for DIGITS a polynomial
       const Mask<VData> big = comp_intrin<ComparisonType::gt>(num, mul_intrin(den, set1_intrin<VData>((Real)0.41421356237309504880)));
       const VData n2 = select_intrin(big, sub_intrin(num, den), num);
       VData d2 = select_intrin(big, add_intrin(num, den), den);
       if constexpr (SpecialValues) d2 = select_intrin(comp_intrin<ComparisonType::eq>(d2, zero), one, d2); // 0 for atan2(0, 0)
       const VData t = div_intrin(n2, d2);
       const VData z = mul_intrin(t, t);
-      VData p = set1_intrin<VData>((Real)-8.750608600031904122785e-1);
-      p = fma_intrin(p, z, set1_intrin<VData>((Real)-1.615753718733365076637e1));
-      p = fma_intrin(p, z, set1_intrin<VData>((Real)-7.500855792314704667340e1));
-      p = fma_intrin(p, z, set1_intrin<VData>((Real)-1.228866684490136173410e2));
-      p = fma_intrin(p, z, set1_intrin<VData>((Real)-6.485021904942025371773e1));
-      VData q = add_intrin(z, set1_intrin<VData>((Real)2.485846490142306297962e1));
-      q = fma_intrin(q, z, set1_intrin<VData>((Real)1.650270098316988542046e2));
-      q = fma_intrin(q, z, set1_intrin<VData>((Real)4.328810604912902668951e2));
-      q = fma_intrin(q, z, set1_intrin<VData>((Real)4.853903996359136964868e2));
-      q = fma_intrin(q, z, set1_intrin<VData>((Real)1.945506571482613964425e2));
-      VData r = fma_intrin(mul_intrin(t, z), div_intrin(p, q), t);
+      VData r;
+      if constexpr (DIGITS >= 0) { // t + t z P(z)
+        r = fma_intrin(mul_intrin(t, z), eval_poly_intrin(z, AtanPolyCoeffs<poly_degree(atan_poly_digits, 0, 8, DIGITS)>::c), t);
+      } else {
+        VData p = set1_intrin<VData>((Real)-8.750608600031904122785e-1);
+        p = fma_intrin(p, z, set1_intrin<VData>((Real)-1.615753718733365076637e1));
+        p = fma_intrin(p, z, set1_intrin<VData>((Real)-7.500855792314704667340e1));
+        p = fma_intrin(p, z, set1_intrin<VData>((Real)-1.228866684490136173410e2));
+        p = fma_intrin(p, z, set1_intrin<VData>((Real)-6.485021904942025371773e1));
+        VData q = add_intrin(z, set1_intrin<VData>((Real)2.485846490142306297962e1));
+        q = fma_intrin(q, z, set1_intrin<VData>((Real)1.650270098316988542046e2));
+        q = fma_intrin(q, z, set1_intrin<VData>((Real)4.328810604912902668951e2));
+        q = fma_intrin(q, z, set1_intrin<VData>((Real)4.853903996359136964868e2));
+        q = fma_intrin(q, z, set1_intrin<VData>((Real)1.945506571482613964425e2));
+        r = fma_intrin(mul_intrin(t, z), div_intrin(p, q), t);
+      }
       r = add_intrin(r, select_intrin(big, set1_intrin<VData>((Real)0.78539816339744830962), zero));
 
       // quadrant
@@ -2015,16 +2033,16 @@ namespace sctl { // Generic
       return y_.value();
     }
   }
-  template <class VData> inline VData atan_intrin(const VData& x) {
-    return atan2_intrin<false>(x, set1_intrin<VData>((typename VData::ScalarType)1));
+  template <Integer DIGITS, class VData> inline VData atan_intrin(const VData& x) {
+    return atan2_intrin<false, DIGITS>(x, set1_intrin<VData>((typename VData::ScalarType)1));
   }
-  template <class VData> inline VData asin_intrin(const VData& x) {
+  template <Integer DIGITS, class VData> inline VData asin_intrin(const VData& x) {
     const VData one = set1_intrin<VData>((typename VData::ScalarType)1);
-    return atan2_intrin<false>(x, sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))));
+    return atan2_intrin<false, DIGITS>(x, sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))));
   }
-  template <class VData> inline VData acos_intrin(const VData& x) {
+  template <Integer DIGITS, class VData> inline VData acos_intrin(const VData& x) {
     const VData one = set1_intrin<VData>((typename VData::ScalarType)1);
-    return atan2_intrin<false>(sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))), x);
+    return atan2_intrin<false, DIGITS>(sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))), x);
   }
 
   template <class VData> inline VData trunc_intrin(const VData& x) {
@@ -2136,8 +2154,9 @@ namespace sctl { // Generic
   template <Integer n> struct Expm1PolyCoeffs;
   template <> struct Expm1PolyCoeffs<3> { static constexpr double c[] = {0.16666548755272226, 0.04166685412507088, 0.008366034281379001, 0.0013898223046526785}; }; // 2^-26.1
   template <> struct Expm1PolyCoeffs<8> { static constexpr double c[] = {0.16666666666666602, 0.041666666666620035, 0.00833333333338835, 0.0013888888920480966, 0.00019841269709401925, 2.4801516389454372e-05, 2.7557425050216553e-06, 2.762220823946014e-07, 2.5045897154552257e-08}; }; // 2^-55.2
-  // e^x - 1 = 2^n expm1(r) + (2^n - 1), x = n ln2 + r, rounded once; 2^n - 1 is exact for |n| <= SigBits
-  template <class VData> inline VData expm1_intrin(const VData& x) {
+  // e^x - 1 = 2^n expm1(r) + (2^n - 1), x = n ln2 + r, rounded once; 2^n - 1 is exact for |n| <= SigBits. For DIGITS,
+  // expm1(r) by its Taylor series
+  template <Integer DIGITS, bool Upper, class VData> inline VData expm1_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       using Int = typename IntegerType<sizeof(Real)>::value;
@@ -2147,16 +2166,37 @@ namespace sctl { // Generic
       static constexpr Real magic = (Real)1.5 * pow<SigBits,Real>((Real)2) + (Real)Bias; // y + magic: y rounded to an integer n, with n + Bias in the low bits
       static constexpr Real lo_lim = -(Real)(SigBits + 4) * const_ln2<Real>(); // below, e^x - 1 rounds to -1
       static constexpr Real hi_lim = exp_normal_lim<Real>(); // up to here, 2^n is normal
-      using Coeffs = Expm1PolyCoeffs<std::is_same<Real,float>::value ? 3 : 8>;
+      const auto P = [](const VData& r) { // expm1(r) = r + r^2 (1/2 + r P(r))
+        if constexpr (DIGITS < 0) {
+          return eval_poly_intrin(r, Expm1PolyCoeffs<std::is_same<Real,float>::value ? 3 : 8>::c);
+        } else { // Taylor: 1/3! + r/4! + ... + r^(K-3)/K!, for the relative error (ln2/2)^K/(K+1)! < 10^-(DIGITS+1)
+          constexpr Integer K = [] {
+            double tol = 0.1;
+            for (Integer d = 0; d < DIGITS; d++) tol *= 0.1;
+            Integer k = 3;
+            double err = 0.34657359027997264 * 0.34657359027997264 * 0.34657359027997264 / 24;
+            while (err > tol) { k++; err *= 0.34657359027997264 / (k + 1); }
+            return k;
+          }();
+          Real c[K - 2];
+          c[0] = (Real)1 / 6;
+          for (Integer k = 4; k <= K; k++) c[k-3] = c[k-4] / (Real)k;
+          VData p = set1_intrin<VData>(c[K-3]);
+          for (Integer i = K - 4; i >= 0; i--) p = fma_intrin(p, r, set1_intrin<VData>(c[i]));
+          return p;
+        }
+      };
 
-      const VData xc = min_intrin(set1_intrin<VData>(hi_lim), max_intrin(set1_intrin<VData>(lo_lim), x)); // keeps NaN, the second operand
+      const VData xm = max_intrin(set1_intrin<VData>(lo_lim), x); // keeps NaN, the second operand
+      const VData xc = (Upper ? min_intrin(set1_intrin<VData>(hi_lim), xm) : xm);
       const VData t = fma_intrin(xc, set1_intrin<VData>(1 / const_ln2<Real>()), set1_intrin<VData>(magic));
       const VData n = sub_intrin(t, set1_intrin<VData>(magic));
       VData r = fma_intrin(n, set1_intrin<VData>(-Ln2Split<Real>::hi), xc); // n Ln2Split::hi is exact
       r = fma_intrin(n, set1_intrin<VData>(-Ln2Split<Real>::lo), r);
-      const VData er = fma_intrin(mul_intrin(r, r), fma_intrin(r, eval_poly_intrin(r, Coeffs::c), set1_intrin<VData>((Real)0.5)), r); // expm1(r)
+      const VData er = fma_intrin(mul_intrin(r, r), fma_intrin(r, P(r), set1_intrin<VData>((Real)0.5)), r); // expm1(r)
       const VData p2 = reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(t), SigBits)); // 2^n
       const VData e = select_intrin(comp_intrin<ComparisonType::eq>(x, zero_intrin<VData>()), x, fma_intrin(p2, er, sub_intrin(p2, set1_intrin<VData>((Real)1)))); // x for +-0
+      if constexpr (!Upper) return e;
       const Mask<VData> big = comp_intrin<ComparisonType::gt>(x, set1_intrin<VData>(hi_lim));
       if (mask_count_intrin(big) == 0) return e;
       return select_intrin(big, exp_intrin(x), e); // e^x - 1 rounds to e^x
@@ -3829,16 +3869,23 @@ namespace sctl { // Generic
     const VData big = copysign_intrin(sub_intrin(h, div_intrin(set1_intrin<VData>((Real)0.25), h)), x);
     return select_intrin(comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>((Real)1)), sinh_series_intrin<DIGITS>(x), big);
   }
-  template <class VData> inline VData tanh_intrin(const VData& x) {
+  // float, double: tanh|x| = -v/(2+v), v = expm1(-2|x|) in (-1, 0], one form for all x, as accurate as below (2.5 ulp)
+  // with one division instead of two and a square root. Else sinh/cosh by series below 1, and (1-u)/(1+u), u = e^(-2|x|)
+  template <Integer DIGITS, class VData> inline VData tanh_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
-    const VData one = set1_intrin<VData>((Real)1);
-    const VData a = fabs_intrin(x);
-    static constexpr Real a_max = (Real)((TypeTraits<Real>::SigBits + 6) * 0.35); // beyond, tanh rounds to 1 and e^(-2a) < eps/16
-    const VData u = exp_normal_intrin(mul_intrin(min_intrin(set1_intrin<VData>(a_max), a), set1_intrin<VData>((Real)-2))); // keeps NaN
-    const VData big = copysign_intrin(div_intrin(sub_intrin(one, u), add_intrin(one, u)), x);
-    const VData s = sinh_series_intrin(x);
-    const VData small = div_intrin(s, sqrt_intrin(fma_intrin(s, s, one))); // sinh / cosh
-    return select_intrin(comp_intrin<ComparisonType::lt>(a, one), small, big);
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      const VData v = expm1_intrin<DIGITS, false>(mul_intrin(fabs_intrin(x), set1_intrin<VData>((Real)-2))); // keeps NaN
+      return copysign_intrin(div_intrin(unary_minus_intrin(v), add_intrin(v, set1_intrin<VData>((Real)2))), x);
+    } else {
+      const VData one = set1_intrin<VData>((Real)1);
+      const VData a = fabs_intrin(x);
+      static constexpr Real a_max = (Real)((TypeTraits<Real>::SigBits + 6) * 0.35); // beyond, tanh rounds to 1 and e^(-2a) < eps/16
+      const VData u = exp_normal_intrin(mul_intrin(min_intrin(set1_intrin<VData>(a_max), a), set1_intrin<VData>((Real)-2))); // keeps NaN
+      const VData big = copysign_intrin(div_intrin(sub_intrin(one, u), add_intrin(one, u)), x);
+      const VData s = sinh_series_intrin(x);
+      const VData small = div_intrin(s, sqrt_intrin(fma_intrin(s, s, one))); // sinh / cosh
+      return select_intrin(comp_intrin<ComparisonType::lt>(a, one), small, big);
+    }
   }
 
   template <Integer DIGITS, class VData> inline VData approx_sin_intrin(const VData& x) {

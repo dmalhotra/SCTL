@@ -546,10 +546,10 @@ namespace sctl { // Generic
   template <class VData> inline VData ceil_intrin(const VData& x);
   template <class VData> inline VData copysign_intrin(const VData& x, const VData& y);
   template <class VData> inline Mask<VData> isnan_intrin(const VData& x);
-  template <bool SpecialValues = true, class VData> inline VData atan2_intrin(const VData& y, const VData& x); // SpecialValues: x, y both infinite or both zero
-  template <class VData> inline VData atan_intrin(const VData& x); // atan2 without SpecialValues: its arguments are never both infinite or both zero, here and below
-  template <class VData> inline VData asin_intrin(const VData& x);
-  template <class VData> inline VData acos_intrin(const VData& x);
+  template <bool SpecialValues = true, Integer DIGITS = -1, class VData> inline VData atan2_intrin(const VData& y, const VData& x); // SpecialValues: x, y both infinite or both zero; DIGITS = -1: full
+  template <Integer DIGITS = -1, class VData> inline VData atan_intrin(const VData& x); // atan2 without SpecialValues: its arguments are never both infinite or both zero, here and below
+  template <Integer DIGITS = -1, class VData> inline VData asin_intrin(const VData& x);
+  template <Integer DIGITS = -1, class VData> inline VData acos_intrin(const VData& x);
 
   template <class VData> inline VData trunc_intrin(const VData& x);
   template <class VData> inline VData round_intrin(const VData& x); // halfway cases away from zero
@@ -564,7 +564,7 @@ namespace sctl { // Generic
   template <Assume A = Assume::None, class VData> inline VData log2_intrin(const VData& x);
   template <Assume A = Assume::None, class VData> inline VData log10_intrin(const VData& x);
 
-  template <class VData> inline VData expm1_intrin(const VData& x);
+  template <Integer DIGITS = -1, bool Upper = true, class VData> inline VData expm1_intrin(const VData& x); // Upper = false: only for x <= 0; DIGITS = -1: full
   template <class VData> inline VData log1p_intrin(const VData& x);
 
   template <class Real> inline Real log1p_generic(const Real w); // log(1 + w) as log(u) w/(u-1), u = 1 + w rounded
@@ -628,7 +628,7 @@ namespace sctl { // Generic
   template <Assume A = Assume::None, Integer DIGITS = -1, class VData> inline VData exp_half_intrin(const VData& a); // e^a / 2 for a >= 0; inf beyond the overflow. Finite | Moderate: a < exp_normal_lim + 1
   template <Assume A = Assume::None, Integer DIGITS = -1, class VData> inline VData cosh_intrin(const VData& x);
   template <Assume A = Assume::None, Integer DIGITS = -1, class VData> inline VData sinh_intrin(const VData& x);
-  template <class VData> inline VData tanh_intrin(const VData& x);
+  template <Integer DIGITS = -1, class VData> inline VData tanh_intrin(const VData& x); // -v/(2+v), v = expm1(-2|x|)
 
   template <Integer DIGITS, class VData> inline VData approx_sin_intrin(const VData& x);
   template <Integer DIGITS, class VData> inline VData approx_cos_intrin(const VData& x);

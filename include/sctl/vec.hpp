@@ -696,6 +696,8 @@ namespace sctl {
 
   /** Angle of the point (x, y), in [-pi, pi], as std::atan2. A: Finite | Normal; without it, x, y both infinite or both zero also as std::atan2. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
+  /** atan2 to the given digits (-1: full), by a polynomial instead of a rational: one division less; A as atan2. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
 
   /** x to the power y; vectorized with SVML, libmvec, or at 256- and 512-bit widths (double about 9 ulp, 14 near the ends of the range; float 4 ulp), else one element at a time. A: Finite | Normal | Domain | Moderate, x > 0 and |y log x| < 708.4 (float: 87.3). */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
@@ -720,12 +722,18 @@ namespace sctl {
 
   /** Arc tangent. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> atan(const Vec<ValueType,N>& x);
+  /** atan to the given digits (-1: full), as approx_atan2. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_atan(const Vec<ValueType,N>& x);
 
   /** Arc sine. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> asin(const Vec<ValueType,N>& x);
+  /** asin to the given digits (-1: full), as approx_atan2. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_asin(const Vec<ValueType,N>& x);
 
   /** Arc cosine. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> acos(const Vec<ValueType,N>& x);
+  /** acos to the given digits (-1: full), as approx_atan2. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_acos(const Vec<ValueType,N>& x);
 
   /** sqrt(x^2 + y^2) without overflow or underflow in between, and inf if x or y is inf, as std::hypot. A: Moderate, |x|, |y| < 2^511 and hypot > 2^-511 (float: 2^63, 2^-63): sqrt(x x + y y); Finite | Normal: without the tests for zeros, inf and NaN. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
@@ -760,8 +768,10 @@ namespace sctl {
   /** cosh to the given digits (-1: full); A as sinh. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cosh(const Vec<ValueType,N>& x);
 
-  /** Hyperbolic tangent. */
+  /** Hyperbolic tangent; float, double: within 2.5 ulp. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x);
+  /** tanh to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tanh(const Vec<ValueType,N>& x);
 
   /** Inverse hyperbolic sine; float, double: within 1.3 ulp. A: Finite | Moderate, |x| < 2^26 (float: 2^11). */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> asinh(const Vec<ValueType,N>& x);

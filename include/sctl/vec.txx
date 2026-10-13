@@ -620,6 +620,10 @@ namespace sctl {
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x) {
     return atan2_intrin<!assumes(A, Assume::Finite | Assume::Normal)>(y.get(), x.get());
   }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return atan2<A>(y, x);
+    else return atan2_intrin<!assumes(A, Assume::Finite | Assume::Normal), digits>(y.get(), x.get());
+  }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
     return pow_assume_intrin<A>(x.get(), y.get());
   }
@@ -680,11 +684,23 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> atan(const Vec<ValueType,N>& x) {
     return atan_intrin(x.get());
   }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_atan(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return atan(x);
+    else return atan_intrin<digits>(x.get());
+  }
   template <class ValueType, Integer N> inline Vec<ValueType,N> asin(const Vec<ValueType,N>& x) {
     return asin_intrin(x.get());
   }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_asin(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return asin(x);
+    else return asin_intrin<digits>(x.get());
+  }
   template <class ValueType, Integer N> inline Vec<ValueType,N> acos(const Vec<ValueType,N>& x) {
     return acos_intrin(x.get());
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_acos(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return acos(x);
+    else return acos_intrin<digits>(x.get());
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
     return hypot_intrin<!assumes(A, Assume::Moderate), !assumes(A, Assume::Finite | Assume::Normal)>(x.get(), y.get());
@@ -733,6 +749,10 @@ namespace sctl {
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x) {
     return tanh_intrin(x.get());
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tanh(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return tanh(x);
+    else return tanh_intrin<digits>(x.get());
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> asinh(const Vec<ValueType,N>& x) {
     return approx_asinh<-1, A>(x);

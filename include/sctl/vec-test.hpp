@@ -932,6 +932,23 @@ namespace sctl {
           }
         }
 
+        { // approx_atan, approx_asin, approx_acos, approx_atan2, approx_tanh to the given digits
+          const VecType w = v0 * (ScalarType)(1 / 6.3), w2 = v0 * (ScalarType)0.7 + (ScalarType)0.5;
+          const VecType ra = atan(v0), rs = asin(w), rc = acos(w), r2 = atan2(v0, w2), rt = tanh(v0);
+          const auto check = [&](const VecType& a, const VecType& s, const VecType& c, const VecType& a2, const VecType& t, const ScalarType err_tol) {
+            for (Integer i = 0; i < N; i++) {
+              SCTL_ASSERT(fabs(a[i] - ra[i]) <= err_tol * fabs(ra[i]) && fabs(s[i] - rs[i]) <= err_tol * fabs(rs[i]) && fabs(c[i] - rc[i]) <= err_tol * fabs(rc[i]));
+              SCTL_ASSERT(fabs(a2[i] - r2[i]) <= err_tol * fabs(r2[i]) && fabs(t[i] - rt[i]) <= err_tol * fabs(rt[i]));
+            }
+          };
+          check(approx_atan<3>(v0), approx_asin<3>(w), approx_acos<3>(w), approx_atan2<3>(v0, w2), approx_tanh<3>(v0), (ScalarType)1e-3);
+          check(approx_atan<5>(v0), approx_asin<5>(w), approx_acos<5>(w), approx_atan2<5>(v0, w2), approx_tanh<5>(v0), (ScalarType)1e-5);
+          if constexpr (std::is_same<ScalarType,double>::value) {
+            check(approx_atan<9>(v0), approx_asin<9>(w), approx_acos<9>(w), approx_atan2<9>(v0, w2), approx_tanh<9>(v0), (ScalarType)1e-9);
+            check(approx_atan<13>(v0), approx_asin<13>(w), approx_acos<13>(w), approx_atan2<13>(v0, w2), approx_tanh<13>(v0), (ScalarType)1e-13);
+          }
+        }
+
         { // sinpi, cospi, sincospi, and approx_sinpi, approx_cospi to 5 digits
           VecType s, c;
           sincospi(s, c, v0);
