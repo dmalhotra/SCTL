@@ -5,6 +5,11 @@ on:
     branches:
       - master
 
+# a new push cancels the run in progress
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-24.04
