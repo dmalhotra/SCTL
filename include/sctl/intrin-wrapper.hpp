@@ -620,7 +620,12 @@ namespace sctl { // Generic
         return concat_intrin(half<0>(a, b, std::make_integer_sequence<Integer, N/2>()), half<1>(a, b, std::make_integer_sequence<Integer, N/2>()));
       } else {
 #if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 12)
-        if constexpr (std::is_arithmetic<T>::value && sizeof(T) <= 8 && (N & (N - 1)) == 0 && sizeof(VData) == N * sizeof(T)) {
+  #if defined(__clang__) && __clang_major__ == 18 && defined(__AVX512BW__) && !defined(__AVX512VBMI__)
+        static constexpr bool shuffle = !(sizeof(T) == 1 && N == 64); // clang 18 gives wrong lanes for some shuffles of 64 bytes from two vectors
+  #else
+        static constexpr bool shuffle = true;
+  #endif
+        if constexpr (shuffle && std::is_arithmetic<T>::value && sizeof(T) <= 8 && (N & (N - 1)) == 0 && sizeof(VData) == N * sizeof(T)) {
           return lanes(a, b, std::make_integer_sequence<Integer, N>());
         }
 #endif
