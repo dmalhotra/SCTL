@@ -48,7 +48,7 @@ jobs:
 
     env:
       CPPFLAGS: >-
-        -std=c++17 -g -rdynamic -fopenmp -Wall -Wfloat-conversion
+        -std=c++17 -g1 -rdynamic -fopenmp -Wall -Wfloat-conversion
         -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_PROFILE=5 -DSCTL_VERBOSE
         -DSCTL_SIG_HANDLER -fstack-protector
       ASANFLAGS: >-
@@ -100,7 +100,7 @@ jobs:
           if [ "$(uname -m)" == "x86_64" ] || [[ "${{ matrix.compiler }}" == g++* ]]; then
             CXXFLAGS+=" -DSCTL_QUAD_T=__float128"
           fi
-          # one compile per core: test-vec and test-quad-elem take about 3 GB each at -O3
+          # one compile per core: the sanitizer builds of the largest tests come close to the runner's memory
           make -j$(getconf _NPROCESSORS_ONLN) CXX="${{ matrix.compiler }}" CXXFLAGS="${CXXFLAGS}"
 
       - name: Run tests
@@ -135,7 +135,7 @@ jobs:
 
     env:
       CPPFLAGS: >-
-        -std=c++17 -g -rdynamic -fopenmp -Wall -Wfloat-conversion
+        -std=c++17 -g1 -rdynamic -fopenmp -Wall -Wfloat-conversion
         -DSCTL_GLOBAL_MEM_BUFF=500 -DSCTL_PROFILE=5 -DSCTL_VERBOSE
         -DSCTL_SIG_HANDLER -fstack-protector
 
