@@ -815,8 +815,12 @@ namespace sctl { // Generic
     };
     if constexpr (split_lanes<VData>) {
       return concat_mask_intrin(comp_intrin<TYPE>(a.lo, b.lo), comp_intrin<TYPE>(a.hi, b.hi));
-    } else if constexpr (array_lanes<VData>) {
-      LaneArray<MaskIntVec<VData>> c; // the integer lanes can be two halves, as for 8-byte long double
+    } else if constexpr (array_lanes<VData> && array_lanes<MaskLanes<VData>>) { // in place: GCC compiles each lane to a compare and a branch
+      Mask<VData> c;
+      for (Integer i = 0; i < VData::Size; i++) c.v[i] = lane(a.v[i], b.v[i]);
+      return c;
+    } else if constexpr (array_lanes<VData>) { // the integer lanes are two halves, as for 8-byte long double
+      LaneArray<MaskIntVec<VData>> c;
       for (Integer i = 0; i < VData::Size; i++) c[i] = lane(a.v[i], b.v[i]);
       return int2mask_intrin<VData>(c.value());
     } else {
@@ -835,8 +839,12 @@ namespace sctl { // Generic
     } else if constexpr (std::is_same<MaskLanes<VData>, VData>::value && !array_lanes<VData>) {
       const VData& s_ = s;
       return or_intrin(and_intrin(a,s_), andnot_intrin(b,s_));
-    } else { // array lanes: a or b in each lane
-      const LaneArray<MaskIntVec<VData>> s_(mask2int_intrin(s)); // the integer lanes can be two halves, as for 8-byte long double
+    } else if constexpr (array_lanes<MaskLanes<VData>>) { // array lanes: a or b in each lane, the mask in place
+      VData r;
+      for (Integer i = 0; i < VData::Size; i++) r.v[i] = (s.v[i] ? a.v[i] : b.v[i]);
+      return r;
+    } else { // the integer lanes are two halves, as for 8-byte long double
+      const LaneArray<MaskIntVec<VData>> s_(mask2int_intrin(s));
       VData r;
       for (Integer i = 0; i < VData::Size; i++) r.v[i] = (s_[i] ? a.v[i] : b.v[i]);
       return r;
