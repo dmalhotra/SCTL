@@ -28,7 +28,7 @@ CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB
 CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
 CXXFLAGS += -DSCTL_SIG_HANDLER # Enable SCTL stack trace
 
-CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision (GCC, or clang on x86)
+CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision (x86, or GCC on Apple silicon)
 
 #CXXFLAGS += -DSCTL_MAX_DEPTH=20 # Morton/Tree depth limit
 

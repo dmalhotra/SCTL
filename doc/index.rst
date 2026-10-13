@@ -27,7 +27,7 @@ Requirements
 
 The only requirement to use SCTL is a working C++17 compliant compiler with OpenMP 4.0 support. It has been tested with GCC-9 and newer.
 
-**GCC 14 on AArch64 (ARM, including Apple silicon):** compile with ``-mearly-ra=none``. GCC 14's early register allocator for vector registers can assign one register to two values in use at the same time, which gave wrong results in ``Vec`` at ``-O3``. Other GCC versions don't need the flag (GCC 11 to 13 reject it).
+**GCC 14 and newer on AArch64 (ARM, including Apple silicon):** compile with ``-mearly-ra=none``. GCC's early register allocator for vector registers can assign one register to two values in use at the same time, which gave wrong results in ``Vec`` at ``-O3`` with GCC 14. GCC 15 and 16 have the same bug, hidden in the cases found so far. GCC 11 to 13 reject the flag.
 
 Getting Started
 ---------------
@@ -49,6 +49,8 @@ Since SCTL is a header-only library, it does not require compilation or installa
    #include <sctl.hpp>
 
 Ensure the compiler can locate the header file by providing the path to ``SCTL_ROOT/include`` using the flag ``-I ${SCTL_ROOT}/include``.
+
+The included ``Makefile`` builds the tests (``make test``). On Apple silicon with Homebrew: ``CPATH=/opt/homebrew/include LIBRARY_PATH=/opt/homebrew/lib make CXX=g++-15``.
 
 Optional Dependencies
 ---------------------
@@ -75,7 +77,7 @@ The following compiler flags can be used to enable or disable specific features 
 - ``-DSCTL_PROFILE=<level>``: Enable :ref:`profiling <profile_hpp>`.
 - ``-DSCTL_VERBOSE``: Enable verbose :ref:`profiling <profile_hpp>` output.
 - ``-DSCTL_SIG_HANDLER``: Enable :ref:`stack trace <stacktrace_h>`. On Linux with glibc < 2.34, link with ``-ldl`` (newer glibc has it merged into libc).
-- ``-DSCTL_QUAD_T``: Enable support for :ref:`quad-precision type <math_utils_hpp>`.
+- ``-DSCTL_QUAD_T=<type>``: Enable support for :ref:`quad-precision type <math_utils_hpp>`, e.g. ``__float128`` on x86 and with GCC on Apple silicon.
 - ``-DSCTL_MAX_DEPTH=<levels>``: Set the maximum depth of a :ref:`Morton <morton_hpp>` code, and so of a :ref:`Tree <tree_hpp>` (default 20).
 - ``-DSCTL_COMM_PTRACER``: Let :ref:`Comm <comm_hpp>` read node-local peers' buffers where the kernel would otherwise refuse; this exposes a rank's memory to the same user.
 - ``-DSCTL_COMM_NO_DIRECT``: Disable those reads, so every :ref:`Comm <comm_hpp>` exchange goes through MPI. Each :ref:`Comm <comm_hpp>` then skips finding its node group, and ``SameNode`` reports only the calling rank.
