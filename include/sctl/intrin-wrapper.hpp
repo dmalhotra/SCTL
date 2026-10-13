@@ -7784,6 +7784,19 @@ namespace sctl { // AVX512
   template <> inline void storeu_mask_intrin<VecData<double  ,8>>(double * p, VecData<double  ,8> vec, const Mask<VecData<double  ,8>>& m) { _mm512_mask_storeu_pd   (p, m.v, vec.v); }
 #endif
 
+  // The first n lanes as the bits of a mask register, not by comparing the lane indices with n, which GCC 13 built
+  // through memory on each call (LoadPartial 20x slower on Sapphire Rapids)
+#if defined(__AVX512BW__)
+  template <> inline Mask<VecData<int8_t ,64>> mask_first_intrin<VecData<int8_t ,64>>(Integer n) { return Mask<VecData<int8_t ,64>>(__mmask64(n < 64 ? (((uint64_t)1) << n) - 1 : ~(uint64_t)0)); }
+  template <> inline Mask<VecData<int16_t,32>> mask_first_intrin<VecData<int16_t,32>>(Integer n) { return Mask<VecData<int16_t,32>>(__mmask32((((uint64_t)1) << (n < 32 ? n : 32)) - 1)); }
+#endif
+#if defined(__AVX512DQ__)
+  template <> inline Mask<VecData<int32_t,16>> mask_first_intrin<VecData<int32_t,16>>(Integer n) { return Mask<VecData<int32_t,16>>(__mmask16((1u << (n < 16 ? n : 16)) - 1)); }
+  template <> inline Mask<VecData<int64_t ,8>> mask_first_intrin<VecData<int64_t ,8>>(Integer n) { return Mask<VecData<int64_t ,8>>(__mmask8((1u << (n < 8 ? n : 8)) - 1)); }
+  template <> inline Mask<VecData<float  ,16>> mask_first_intrin<VecData<float  ,16>>(Integer n) { return Mask<VecData<float  ,16>>(__mmask16((1u << (n < 16 ? n : 16)) - 1)); }
+  template <> inline Mask<VecData<double  ,8>> mask_first_intrin<VecData<double  ,8>>(Integer n) { return Mask<VecData<double  ,8>>(__mmask8((1u << (n < 8 ? n : 8)) - 1)); }
+#endif
+
   // Number of selected lanes
 #if defined(__POPCNT__) && defined(__AVX512BW__)
   template <> inline Integer mask_count_intrin<VecData<int8_t ,64>>(const Mask<VecData<int8_t ,64>>& m) { return (Integer)_mm_popcnt_u64(m.v); }
