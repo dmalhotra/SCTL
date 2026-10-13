@@ -4077,7 +4077,9 @@ namespace sctl { // SSE
     return _mm_unpacklo_epi64(lo, hi);
 #endif
   }
+#if !defined(__aarch64__) // on AArch64, sdiv one lane at a time is faster
   template <> inline VecData<int64_t,2> div_intrin(const VecData<int64_t,2>& a, const VecData<int64_t,2>& b) { return div_int64_intrin(a, b); }
+#endif
   template <> inline VecData<float,4> div_intrin(const VecData<float,4>& a, const VecData<float,4>& b) {
     return _mm_div_ps(a.v, b.v);
   }
@@ -4471,6 +4473,8 @@ namespace sctl { // SSE
   #if defined(__AVX512DQ__) && defined(__AVX512VL__)
   template <> inline VecData<double ,2> convert_intrin<VecData<double ,2>,VecData<int64_t,2>>(const VecData<int64_t,2>& a) { return _mm_cvtepi64_pd (a.v); }
   template <> inline VecData<int64_t,2> convert_intrin<VecData<int64_t,2>,VecData<double ,2>>(const VecData<double ,2>& a) { return _mm_cvttpd_epi64(a.v); }
+  #elif defined(__aarch64__)
+  template <> inline VecData<int64_t,2> convert_intrin<VecData<int64_t,2>,VecData<double ,2>>(const VecData<double ,2>& a) { return vreinterpretq_m128i_s64(vcvtq_s64_f64(vreinterpretq_f64_m128d(a.v))); }
   #elif !defined(__AVX__) && !defined(__clang__) // with AVX, and with clang, the generic code is faster
   template <> inline VecData<int64_t,2> convert_intrin<VecData<int64_t,2>,VecData<double ,2>>(const VecData<double ,2>& a) { // trunc(a) = hi 2^32 + lo with lo in [0, 2^32), all exact: hi by cvttpd2dq, lo as the low bits of 2^52 + lo
     const __m128d t = _mm_round_pd(a.v, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC);
