@@ -920,39 +920,42 @@ namespace sctl { // Generic
   }
 
   // Bitwise operators
+  // the type whose bitwise intrinsics a Mask<VData> uses: VData where the Mask is a VData, for the intrinsics of the
+  // target; deduced from the Mask itself, they would be the generic ones, byte by byte
+  template <class VData> using MaskBits = std::conditional_t<std::is_base_of<VData, Mask<VData>>::value, VData, Mask<VData>>;
   template <class VData> inline Mask<VData> operator~(const Mask<VData>& vec) {
     if constexpr (split_lanes<VData>) {
       return concat_mask_intrin(~vec.lo, ~vec.hi);
     } else {
-      return Mask<VData>(not_intrin(vec));
+      return Mask<VData>(not_intrin<MaskBits<VData>>(vec));
     }
   }
   template <class VData> inline Mask<VData> operator&(const Mask<VData>& a, const Mask<VData>& b) {
     if constexpr (split_lanes<VData>) {
       return concat_mask_intrin(a.lo & b.lo, a.hi & b.hi);
     } else {
-      return Mask<VData>(and_intrin(a,b));
+      return Mask<VData>(and_intrin<MaskBits<VData>>(a,b));
     }
   }
   template <class VData> inline Mask<VData> operator^(const Mask<VData>& a, const Mask<VData>& b) {
     if constexpr (split_lanes<VData>) {
       return concat_mask_intrin(a.lo ^ b.lo, a.hi ^ b.hi);
     } else {
-      return Mask<VData>(xor_intrin(a,b));
+      return Mask<VData>(xor_intrin<MaskBits<VData>>(a,b));
     }
   }
   template <class VData> inline Mask<VData> operator|(const Mask<VData>& a, const Mask<VData>& b) {
     if constexpr (split_lanes<VData>) {
       return concat_mask_intrin(a.lo | b.lo, a.hi | b.hi);
     } else {
-      return Mask<VData>(or_intrin(a,b));
+      return Mask<VData>(or_intrin<MaskBits<VData>>(a,b));
     }
   }
   template <class VData> inline Mask<VData> AndNot(const Mask<VData>& a, const Mask<VData>& b) {
     if constexpr (split_lanes<VData>) {
       return concat_mask_intrin(AndNot(a.lo, b.lo), AndNot(a.hi, b.hi));
     } else {
-      return Mask<VData>(andnot_intrin(a,b));
+      return Mask<VData>(andnot_intrin<MaskBits<VData>>(a,b));
     }
   }
 
