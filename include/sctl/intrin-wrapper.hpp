@@ -1853,7 +1853,7 @@ namespace sctl { // Generic
     VData T_hi = mul_intrin(y, L_hi);
     VData T_lo = add_intrin(mul_sub_exact_intrin(y, L_hi, T_hi), mul_intrin(y, L_lo));
     if (mask_count_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T_hi), set1_intrin<VData>(exp_normal_lim<Real>()))) == VData::Size) {
-      const VData r = exp_intrin(T_hi);
+      const VData r = exp_normal_intrin(T_hi);
       return fma_intrin(r, T_lo, r);
     }
 
@@ -1998,6 +1998,18 @@ namespace sctl { // Generic
       LaneArray<VData> expx_, x_(x);
       for (Integer i = 0; i < VData::Size; i++) expx_[i] = exp(x_[i]);
       return expx_.value();
+    }
+  }
+  // e^x for |x| < exp_normal_lim and NaN: exp_intrin without its range check, where exp_intrin is approx_exp_intrin
+  template <class VData> inline VData exp_normal_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+#if !defined(SCTL_HAVE_SVML)
+    if constexpr ((std::is_same<Real,float>::value || std::is_same<Real,double>::value) && !array_lanes<VData>) {
+      return approx_exp_intrin<(Integer)(TypeTraits<Real>::SigBits/3.8), false>(x);
+    } else
+#endif
+    {
+      return exp_intrin(x);
     }
   }
   template <class VData> inline VData log_intrin(const VData& x) {
@@ -2664,15 +2676,15 @@ namespace sctl { // Generic
     return fma_intrin(x, eval_poly_intrin(mul_intrin(x, x), ErfPolyCoeffs<poly_degree(erf_poly_digits, 2, (std::is_same<Real,float>::value ? 6 : 11), digits)>::c), x);
   }
   // erfc(a) = e^(-a^2) Q(a)/(s a Q(a) + P(a)) for a >= 13/16, with a^2 = hi + lo exactly; a clamped to 27.5, where
-  // e^(-a^2) is 0; keeps NaN
-  template <Integer digits, class VData> inline VData erfc_rational_intrin(const VData& a) {
+  // e^(-a^2) is 0, or for Erf (1 - erfc) to 6, where erfc < eps/4 and e^(-a^2) is normal: without its range check; keeps NaN
+  template <Integer digits, bool Erf = false, class VData> inline VData erfc_rational_intrin(const VData& a) {
     using Real = typename VData::ScalarType;
     static constexpr Integer digits1 = (digits < 0 ? digits : digits + 1); // each of the two factors to one more digit
     static constexpr Integer n = poly_degree(erfc_rational_digits, 1, (std::is_same<Real,float>::value ? 3 : 8), digits1);
     static constexpr Integer order = (digits < 0 ? (Integer)(TypeTraits<Real>::SigBits/3.8) : exp_taylor_order(digits1));
-    const VData b = min_intrin(set1_intrin<VData>((Real)27.5), a);
+    const VData b = min_intrin(set1_intrin<VData>((Real)(Erf ? 6 : 27.5)), a);
     const VData hi = mul_intrin(b, b);
-    const VData e = approx_exp_intrin<order, true, ExpArg::Sum>(unary_minus_intrin(hi), unary_minus_intrin(mul_sub_exact_intrin(b, b, hi)));
+    const VData e = approx_exp_intrin<order, !Erf, ExpArg::Sum>(unary_minus_intrin(hi), unary_minus_intrin(mul_sub_exact_intrin(b, b, hi)));
     const VData q = eval_poly_intrin(b, ErfcRationalCoeffs<n>::q);
     const VData d = fma_intrin(mul_intrin(b, set1_intrin<VData>((Real)1.7724538509055160273L)), q, eval_poly_intrin(b, ErfcRationalCoeffs<n>::p));
     return mul_intrin(e, div_intrin(q, d));
@@ -2717,7 +2729,7 @@ namespace sctl { // Generic
       const Mask<VData> small = comp_intrin<ComparisonType::le>(ax, one);
       const Integer n_small = mask_count_intrin(small);
       if (n_small == VData::Size) return erf_poly_intrin<digits>(x);
-      const VData r = xor_intrin(sub_intrin(one, erfc_rational_intrin<digits>(ax)), sgn);
+      const VData r = xor_intrin(sub_intrin(one, erfc_rational_intrin<digits, true>(ax)), sgn);
       return (n_small ? select_intrin(small, erf_poly_intrin<digits>(x), r) : r);
     } else {
       LaneArray<VData> x_(x);
@@ -3215,7 +3227,7 @@ namespace sctl { // Generic
       if (n_big) {
         const VData ri = div_intrin(one, a);
         const VData w = mul_intrin(ri, ri);
-        r = select_intrin(big, sub_intrin(log_intrin(a), fma_intrin(w, eval_poly_intrin(w, Coeffs::a), mul_intrin(ri, set1_intrin<VData>((Real)0.5)))), r);
+        r = select_intrin(big, sub_intrin(log_intrin(max_intrin(a, eight)), fma_intrin(w, eval_poly_intrin(w, Coeffs::a), mul_intrin(ri, set1_intrin<VData>((Real)0.5)))), r); // log of a in big: the other lanes kept off log's check
       }
       if (mask_count_intrin(neg)) {
         VData s, c;
@@ -3636,6 +3648,10 @@ namespace sctl { // Generic
         if constexpr (digits < 0) return exp_intrin(v);
         else return approx_exp_intrin<exp_taylor_order(digits), true>(v);
       };
+      const auto exp_normal_ = [](const VData& v) { // for |v| < exp_normal_lim and NaN
+        if constexpr (digits < 0) return exp_normal_intrin(v);
+        else return approx_exp_intrin<exp_taylor_order(digits), false>(v);
+      };
       const VData t = div_intrin(set1_intrin<VData>((Real)Coeffs::i_hi), a);
       VData R;
       if constexpr (Coeffs::i_hi > Coeffs::i_lo) { // im on [i_lo, i_hi), in s = t - (1 + i_hi/i_lo)/2
@@ -3649,7 +3665,9 @@ namespace sctl { // Generic
       const VData g = mul_intrin(fma_intrin(t, R, one), sqrt_intrin(mul_intrin(t, set1_intrin<VData>((Real)(0.1591549430918953357688837633725143620345L / Coeffs::i_hi))))); // (1 + t R)/sqrt(2 pi x), 1/x = t/i_hi
       static constexpr Real e_max = (std::is_same<Real,float>::value ? (Real)88 : (Real)709); // e^x is finite below
       VData rb;
-      if (mask_count_intrin(comp_intrin<ComparisonType::gt>(a, set1_intrin<VData>(e_max)))) {
+      if (!mask_count_intrin(comp_intrin<ComparisonType::ge>(a, set1_intrin<VData>(exp_normal_lim<Real>())))) {
+        rb = mul_intrin(exp_normal_(a), g);
+      } else if (mask_count_intrin(comp_intrin<ComparisonType::gt>(a, set1_intrin<VData>(e_max)))) {
         const VData e = exp_(mul_intrin(a, set1_intrin<VData>((Real)0.5)));
         rb = mul_intrin(mul_intrin(e, g), e);
       } else {
@@ -4068,7 +4086,8 @@ namespace sctl { // Generic
     using Real = typename VData::ScalarType;
     const VData one = set1_intrin<VData>((Real)1);
     const VData a = fabs_intrin(x);
-    const VData u = exp_intrin(mul_intrin(a, set1_intrin<VData>((Real)-2)));
+    static constexpr Real a_max = (Real)((TypeTraits<Real>::SigBits + 6) * 0.35); // beyond, tanh rounds to 1 and e^(-2a) < eps/16
+    const VData u = exp_normal_intrin(mul_intrin(min_intrin(set1_intrin<VData>(a_max), a), set1_intrin<VData>((Real)-2))); // keeps NaN
     const VData big = copysign_intrin(div_intrin(sub_intrin(one, u), add_intrin(one, u)), x);
     const VData s = sinh_series_intrin(x);
     const VData small = div_intrin(s, sqrt_intrin(fma_intrin(s, s, one))); // sinh / cosh
@@ -5159,8 +5178,17 @@ namespace sctl { // SSE
     }
   }
 
-  // Number of selected lanes
-#if defined(__POPCNT__) || defined(__ARM_NEON)
+  // Number of selected lanes; with GCC on AArch64 minus the sum of the lanes of -1 and 0, not by sse2neon's movemask in
+  // general registers: special functions up to 1.5x faster. Not with clang, which turns tests of the count into selects
+  // and was 1.1-2x slower with it
+#if defined(__aarch64__) && !defined(__clang__)
+  template <> inline Integer mask_count_intrin<VecData<int8_t ,16>>(const Mask<VecData<int8_t ,16>>& m) { return -vaddvq_s8 (vreinterpretq_s8_m128i (m.v)); }
+  template <> inline Integer mask_count_intrin<VecData<int16_t, 8>>(const Mask<VecData<int16_t, 8>>& m) { return -vaddvq_s16(vreinterpretq_s16_m128i(m.v)); }
+  template <> inline Integer mask_count_intrin<VecData<int32_t, 4>>(const Mask<VecData<int32_t, 4>>& m) { return -vaddvq_s32(vreinterpretq_s32_m128i(m.v)); }
+  template <> inline Integer mask_count_intrin<VecData<int64_t, 2>>(const Mask<VecData<int64_t, 2>>& m) { return -vaddvq_s64(vreinterpretq_s64_m128i(m.v)); }
+  template <> inline Integer mask_count_intrin<VecData<float  , 4>>(const Mask<VecData<float  , 4>>& m) { return -vaddvq_s32(vreinterpretq_s32_m128 (m.v)); }
+  template <> inline Integer mask_count_intrin<VecData<double , 2>>(const Mask<VecData<double , 2>>& m) { return -vaddvq_s64(vreinterpretq_s64_m128d(m.v)); }
+#elif defined(__POPCNT__) || defined(__ARM_NEON)
   template <> inline Integer mask_count_intrin<VecData<int8_t ,16>>(const Mask<VecData<int8_t ,16>>& m) { return _mm_popcnt_u32(_mm_movemask_epi8(m.v)); }
   template <> inline Integer mask_count_intrin<VecData<int16_t, 8>>(const Mask<VecData<int16_t, 8>>& m) { return _mm_popcnt_u32(_mm_movemask_epi8(m.v)) / 2; } // two bits per lane
   template <> inline Integer mask_count_intrin<VecData<int32_t, 4>>(const Mask<VecData<int32_t, 4>>& m) { return _mm_popcnt_u32(_mm_movemask_ps(_mm_castsi128_ps(m.v))); }
