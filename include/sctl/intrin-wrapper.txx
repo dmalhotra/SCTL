@@ -1661,15 +1661,14 @@ namespace sctl { // Generic
 #else
   template <class VData> inline constexpr bool fused_fma = false;
 #endif
-  // pow_poly_intrin by pow_table_intrin (double) and powf_table_intrin (float at 128 bits), with FMA, which their exact steps
-  // need. Double: faster than log_hi_lo_intrin's double-double log and more accurate (0.53 ulp from 1.40 on SCTL's comparison,
-  // 1.0 from 5.7 near 1 with |y log x| near 708), 1.7x on Sapphire Rapids, 1.5-1.8x on Ice Lake and Zen 4 (AVX-512),
-  // 1.0-1.2x with AVX2. At 128 bits, double and float 1.6-2.3x faster than std::pow one element at a time (Sapphire Rapids,
-  // Zen 4, M4). Float in double at 256 and 512 bits was 1.4x slower with AVX2, and 0.9-1.14x with AVX-512
+  // pow_poly_intrin by pow_table_intrin (double) and powf_float_table_intrin (float; on AArch64 powf_table_intrin, in double),
+  // with FMA, which their exact steps need. Double: faster than log_hi_lo_intrin's double-double log and more accurate (0.53
+  // ulp from 1.40 on SCTL's comparison, 1.0 from 5.7 near 1 with |y log x| near 708), 1.7x on Sapphire Rapids, 1.5-1.8x on
+  // Ice Lake and Zen 4 (AVX-512), 1.0-1.2x with AVX2. Float: 0.55 ulp from 1.54; 1.4-1.6x with AVX-512, 1.1-1.3x with AVX2.
+  // At 128 bits, both 1.6-2.3x faster than std::pow one element at a time (Sapphire Rapids, Zen 4, M4)
   template <class VData> inline constexpr bool pow_table() {
     using Real = typename VData::ScalarType;
-    if constexpr (split_lanes<VData>) return pow_table<HalfVData<VData>>();
-    else return fused_fma<VData> && (std::is_same<Real,double>::value || (std::is_same<Real,float>::value && sizeof(VData) == 16));
+    return fused_fma<VData> && (std::is_same<Real,double>::value || std::is_same<Real,float>::value);
   }
   template <class VData> inline VData mul_sub_exact_intrin(const VData& a, const VData& b, const VData& c) {
     if constexpr (fused_fma<VData>) {
@@ -1912,6 +1911,61 @@ namespace sctl { // Generic
     };
     return pow_signs_intrin(double_to_float_intrin<VData>(t(x0, y0), t(x1, y1)), x, y);
   }
+  // powf_float_table_intrin's tables: PowTable's intervals in float bit patterns and its 1/c (r exact in float too); log c =
+  // logc + logc_lo, logc and ln2_hi multiples of 2^-16 so that k ln2_hi + logc is exact; log1p(r) = r - r^2/2 + r^3 Q(r),
+  // relative error 2^-35; 2^(j/16) = scale (1 + exp_tail), exp_sbits the bits of scale minus j 2^19; e^r = 1 + r + r^2 C(r),
+  // |r| <= ln2/32, relative error 2^-29
+  struct PowfFloatTable {
+    static constexpr int32_t off = 0x3f31999a;
+    static constexpr float ln2_hi = 0.693145751953125f, ln2_lo = 1.428606765330187e-06f;
+    alignas(64) static constexpr float invc[16] = {1.40625f, 1.34375f, 1.28125f, 1.25f, 1.1875f, 1.15625f, 1.125f, 1.0625f, 1.03125f, 1.0f, 0.96875f, 0.90625f, 0.859375f, 0.8125f, 0.78125f, 0.734375f};
+    alignas(64) static constexpr float logc[16] = {-0.3409271240234375f, -0.29547119140625f, -0.247833251953125f, -0.22314453125f, -0.171844482421875f, -0.1451873779296875f, -0.1177825927734375f, -0.0606231689453125f, -0.0307769775390625f, 0.0f, 0.0317535400390625f, 0.0984344482421875f, 0.15155029296875f, 0.2076416015625f, 0.246856689453125f, 0.3087310791015625f};
+    alignas(64) static constexpr float logc_lo[16] = {5.370528697312693e-07f, 6.9785123741894495e-06f, -2.9119514692865778e-06f, 9.799357485462679e-07f, -5.774504643341061e-06f, 5.368085112422705e-06f, -4.428829356584174e-07f, -1.452871174478787e-06f, 5.3188723541097715e-06f, 0.0f, -4.841724603465991e-06f, 5.624571258522337e-06f, -3.9484154967794893e-07f, -2.236784212072962e-06f, 3.388478489796398e-06f, 4.40254825662123e-06f};
+    static constexpr float Q[4] = {0.333333283662796f, -0.25000348687171936f, 0.20019111037254333f, -0.16288739442825317f};
+    static constexpr float inv_ln2_16 = 23.083120346069336f, ln2_16_hi = 0.043321698904037476f, ln2_16_lo = -1.1904088825787085e-10f;
+    alignas(64) static constexpr float exp_tail[16] = {0.0f, 4.6285471455576044e-08f, -1.199215748926008e-08f, 4.7297824323777604e-08f, 3.1934181521364735e-08f, 3.621057231839586e-08f, -3.0990719324108795e-08f, -7.475213337215791e-09f, 1.7114270889351246e-08f, -3.047683350132502e-08f, 5.233334210430485e-09f, 6.10759176566944e-09f, -1.4719605090363075e-08f, -5.258795177098818e-09f, -6.128259677495862e-09f, 5.140609271592211e-09f};
+    alignas(64) static constexpr int32_t exp_sbits[16] = {0x3f800000, 0x3f7daac3, 0x3f7b95c2, 0x3f79c3d3, 0x3f7837f0, 0x3f76f532, 0x3f75fed7, 0x3f75583f, 0x3f7504f3, 0x3f7508a4, 0x3f75672a, 0x3f76248c, 0x3f7744fd, 0x3f78ccdf, 0x3f7ac0c7, 0x3f7d257d};
+    static constexpr float C[2] = {0.5000162124633789f, 0.16667024791240692f};
+  };
+  // pow of float in float by 16-entry tables, as pow_table_intrin: log x = L + L_lo by PowTable's intervals, y log x as
+  // ehi + elo, then 2^(n/16) e^re; the rare path as powf_table_intrin's
+  template <bool Check, class VData> [[gnu::always_inline]] inline VData powf_float_table_intrin(const VData& x, const VData& y) {
+    using IntVec = VecData<int32_t,VData::Size>;
+    using T = PowfFloatTable;
+    static_assert(std::is_same<typename VData::ScalarType,float>::value, "Expected float!");
+    const auto c = [](float a) { return set1_intrin<VData>(a); };
+    const VData tb = reinterpret_intrin<VData>(sub_intrin(reinterpret_intrin<IntVec>(x), set1_intrin<IntVec>(T::off - (127 << 23)))); // k + 127 from bit 23, positive: logical bit shifts
+    const IntVec i = reinterpret_intrin<IntVec>(bitshiftright_intrin(tb, 19));
+    const VData kd = sub_intrin(or_intrin(bitshiftright_intrin(tb, 23), c(0x1p23f)), c(0x1p23f + 127));
+    const VData z = reinterpret_intrin<VData>(add_intrin(and_intrin(reinterpret_intrin<IntVec>(tb), set1_intrin<IntVec>((1 << 23) - 1)), set1_intrin<IntVec>(T::off)));
+    const VData r = fma_intrin(z, lookup16_intrin<VData>(T::invc, i), c(-1.0f)); // exact
+    const VData t1 = fma_intrin(kd, c(T::ln2_hi), lookup16_intrin<VData>(T::logc, i)); // exact
+    const VData t2 = add_intrin(t1, r);
+    const VData lo1 = fma_intrin(kd, c(T::ln2_lo), lookup16_intrin<VData>(T::logc_lo, i));
+    const VData lo2 = add_intrin(sub_intrin(t1, t2), r); // t1 = 0 or of an exponent at least r's
+    const VData ar = mul_intrin(r, c(-0.5f));
+    const VData ar2 = mul_intrin(r, ar);
+    const VData ar3 = mul_intrin(r, ar2);
+    const VData hi = add_intrin(t2, ar2);
+    const VData lo3 = fma_intrin(unary_minus_intrin(ar), r, ar2);
+    const VData lo4 = add_intrin(sub_intrin(t2, hi), ar2);
+    const VData q = fma_intrin(fma_intrin(r, c(4 * T::Q[3]), c(4 * T::Q[2])), ar2, fma_intrin(r, c(-2 * T::Q[1]), c(-2 * T::Q[0]))); // r^3 Q(r) = ar3 q
+    const VData lo = add_intrin(add_intrin(add_intrin(lo1, lo2), sub_intrin(lo4, lo3)), mul_intrin(ar3, q));
+    const VData L = add_intrin(hi, lo);
+    const VData L_lo = add_intrin(sub_intrin(hi, L), lo);
+    const VData ehi = mul_intrin(y, L);
+    const VData ny = unary_minus_intrin(y);
+    const VData nelo = fma_intrin(ny, L_lo, fma_intrin(ny, L, ehi)); // -(y log x - ehi)
+    if (Check && !mask_all_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(ehi), c(exp_normal_lim<float>())))) return powf_table_special_intrin(x, y);
+    const VData sh = c(0x1.8p23f);
+    const VData nd = fma_intrin(ehi, c(T::inv_ln2_16), sh);
+    const IntVec ni = reinterpret_intrin<IntVec>(nd); // n = round(16 ehi / ln2) in the low bits
+    const VData n = sub_intrin(nd, sh);
+    const VData re = sub_intrin(fma_intrin(n, c(-T::ln2_16_lo), fma_intrin(n, c(-T::ln2_16_hi), ehi)), nelo);
+    const VData scale = reinterpret_intrin<VData>(add_intrin(lookup16_intrin<IntVec>(T::exp_sbits, ni), bitshiftleft_intrin(ni, 19)));
+    const VData e = fma_intrin(mul_intrin(re, re), fma_intrin(re, c(T::C[1]), c(T::C[0])), add_intrin(lookup16_intrin<VData>(T::exp_tail, ni), re));
+    return fma_intrin(scale, e, scale);
+  }
   template <bool Check, class VData> [[gnu::always_inline]] inline VData powf_table_intrin(const VData& x, const VData& y) {
     using DVec = VecData<double,VData::Size/2>;
     static_assert(std::is_same<typename VData::ScalarType,float>::value, "Expected float!");
@@ -1931,7 +1985,11 @@ namespace sctl { // Generic
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     if constexpr (pow_table<VData>()) {
       if constexpr (std::is_same<Real,double>::value) return pow_table_intrin<Check>(x, y);
+#if defined(__aarch64__) // faster on the M4 (2.27 ns against 2.30-2.43)
       else return powf_table_intrin<Check>(x, y);
+#else
+      else return powf_float_table_intrin<Check>(x, y);
+#endif
     }
     const VData ax = fabs_intrin(x);
 
@@ -1941,10 +1999,7 @@ namespace sctl { // Generic
     log_hi_lo_intrin(L_hi, L_lo, e, f);
     const VData T_hi = mul_intrin(y, L_hi);
     const VData T_lo = add_intrin(mul_sub_exact_intrin(y, L_hi, T_hi), mul_intrin(y, L_lo));
-    if (Check && !mask_all_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T_hi), set1_intrin<VData>(exp_normal_lim<Real>())))) {
-      if constexpr (std::is_same<Real,float>::value && fused_fma<VData>) return powf_table_special_intrin(x, y); // within 0.6 ulp, from 3.4
-      else return pow_special_intrin(x, y);
-    }
+    if (Check && !mask_all_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T_hi), set1_intrin<VData>(exp_normal_lim<Real>())))) return pow_special_intrin(x, y);
     const VData r = exp_normal_intrin(T_hi);
     return fma_intrin(r, T_lo, r);
   }
@@ -5697,8 +5752,8 @@ namespace sctl { // SSE
     return _mm_castpd_si128(_mm_loadh_pd(_mm_load_sd((double const*)t + _mm_cvtsi128_si64(j)), (double const*)t + _mm_extract_epi64(j, 1)));
   }
   #endif
-  // pow: with FMA pow_table_intrin and powf_table_intrin; else glibc's pow for each element (pow_poly_intrin was slower and
-  // less accurate at 128 bits)
+  // pow: with FMA pow_poly_intrin by its tables; else glibc's pow for each element (pow_poly_intrin was slower and less
+  // accurate at 128 bits)
   #if (defined(__FMA__) || defined(__aarch64__)) && !defined(SCTL_HAVE_LIBMVEC)
   template <> [[gnu::always_inline]] inline VecData<float,4> pow_intrin<VecData<float,4>>(const VecData<float,4>& x, const VecData<float,4>& y) { return pow_poly_intrin(x, y); }
   template <> [[gnu::always_inline]] inline VecData<double,2> pow_intrin<VecData<double,2>>(const VecData<double,2>& x, const VecData<double,2>& y) { return pow_poly_intrin(x, y); }
@@ -6929,6 +6984,14 @@ namespace sctl { // AVX
       #endif
     }
   };
+#if defined(__AVX2__) // lookup16_intrin of float: a permute of each half of the table, blended by bit 3
+  template <> inline VecData<float,8> lookup16_intrin<VecData<float,8>,VecData<int32_t,8>>(float const* t, const VecData<int32_t,8>& i) {
+    return _mm256_blendv_ps(_mm256_permutevar8x32_ps(_mm256_load_ps(t), i.v), _mm256_permutevar8x32_ps(_mm256_load_ps(t + 8), i.v), _mm256_castsi256_ps(_mm256_slli_epi32(i.v, 28)));
+  }
+  template <> inline VecData<int32_t,8> lookup16_intrin<VecData<int32_t,8>,VecData<int32_t,8>>(int32_t const* t, const VecData<int32_t,8>& i) {
+    return _mm256_castps_si256(lookup16_intrin<VecData<float,8>>((float const*)t, i).v);
+  }
+#endif
 #if defined(__AVX2__) // lookup16_intrin by loads of the lanes of each half
   template <> inline VecData<double,4> lookup16_intrin<VecData<double,4>,VecData<int64_t,4>>(double const* t, const VecData<int64_t,4>& i) {
     const __m256i j = _mm256_and_si256(i.v, _mm256_set1_epi64x(15));
@@ -8172,6 +8235,7 @@ namespace sctl { // AVX512
   template <> inline VecData<double,8> lookup16_intrin<VecData<double,8>,VecData<int64_t,8>>(double const* t, const VecData<int64_t,8>& i) { return _mm512_permutex2var_pd(_mm512_load_pd(t), i.v, _mm512_load_pd(t + 8)); }
   template <> inline VecData<int64_t,8> lookup16_intrin<VecData<int64_t,8>,VecData<int64_t,8>>(int64_t const* t, const VecData<int64_t,8>& i) { return _mm512_permutex2var_epi64(_mm512_load_si512(t), i.v, _mm512_load_si512(t + 8)); }
   template <> inline VecData<float,16> lookup16_intrin<VecData<float,16>,VecData<int32_t,16>>(float const* t, const VecData<int32_t,16>& i) { return _mm512_permutexvar_ps(i.v, _mm512_load_ps(t)); }
+  template <> inline VecData<int32_t,16> lookup16_intrin<VecData<int32_t,16>,VecData<int32_t,16>>(int32_t const* t, const VecData<int32_t,16>& i) { return _mm512_permutexvar_epi32(i.v, _mm512_load_si512(t)); }
   template <> struct rcp_estimate_intrin<VecData<float,16>> { static constexpr Integer bits = 14, max_steps = 0; static inline VecData<float,16> eval(const VecData<float,16>& b) { return _mm512_rcp14_ps(b.v); } };
   template <> struct rcp_estimate_intrin<VecData<double,8>> { static constexpr Integer bits = 14, max_steps = 0; static inline VecData<double,8> eval(const VecData<double,8>& b) { return _mm512_rcp14_pd(b.v); } };
   template <> inline VecData<double,8> hypot_sqrt_intrin<VecData<double,8>>(const VecData<double,8>& s) {
