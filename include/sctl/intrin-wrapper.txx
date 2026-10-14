@@ -706,6 +706,11 @@ namespace sctl { // Generic
     }
   }
 
+  template <class VData> inline bool mask_all_intrin(const Mask<VData>& m) {
+    if constexpr (split_lanes<VData>) return mask_all_intrin<HalfVData<VData>>(m.lo & m.hi);
+    else return mask_count_intrin(m) == VData::Size;
+  }
+
   template <class VData> inline Integer mask_popcnt_intrin(const Mask<VData>& v) {
     if constexpr (split_lanes<VData>) {
       return mask_popcnt_intrin(v.lo) + mask_popcnt_intrin(v.hi);
@@ -1683,7 +1688,7 @@ namespace sctl { // Generic
     r = add_intrin(r, select_intrin(comp_intrin<ComparisonType::lt>(r, zero), ay, zero));
     r = copysign_intrin(select_intrin(comp_intrin<ComparisonType::lt>(qf, set1_intrin<VData>((Real)1)), ax, r), x); // |x| < |y|: x, also for inf y
 
-    if (mask_count_intrin(vector_lanes) < VData::Size) r = fmod_lanes_intrin(x, y, r, vector_lanes);
+    if (!mask_all_intrin(vector_lanes)) r = fmod_lanes_intrin(x, y, r, vector_lanes);
     return r;
   }
   template <class IntVec> inline IntVec div_int64_intrin(const IntVec& a, const IntVec& b) {
@@ -1917,13 +1922,13 @@ namespace sctl { // Generic
     return approx_log_split_poly_intrin<DIGITS>(e, f);
   }
   template <Integer DIGITS, bool Check, class VData> inline VData approx_log_intrin(const VData& x) {
-    if (Check && mask_count_intrin(positive_normal_mask_intrin(x)) < VData::Size) return log_intrin(x);
+    if (Check && !mask_all_intrin(positive_normal_mask_intrin(x))) return log_intrin(x);
     return approx_log_normal_intrin<DIGITS>(x);
   }
   template <Integer LOG_DIGITS, Integer ORDER, bool Check, class VData> inline VData approx_pow_intrin(const VData& x, const VData& y) {
     using Real = typename VData::ScalarType;
     const VData T = mul_intrin(y, approx_log_normal_intrin<LOG_DIGITS>(x));
-    if (Check && mask_count_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T), set1_intrin<VData>(exp_normal_lim<Real>()))) < VData::Size) return pow_intrin(x, y);
+    if (Check && !mask_all_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T), set1_intrin<VData>(exp_normal_lim<Real>())))) return pow_intrin(x, y);
     return approx_exp_intrin<ORDER, false>(T);
   }
   template <class VData> inline VData sqrt_intrin(const VData& x) {
@@ -1946,7 +1951,7 @@ namespace sctl { // Generic
     using Real = typename VData::ScalarType;
     const VData r = rsqrt_approx_intrin<(Integer)(TypeTraits<Real>::SigBits*0.3010299957), VData>::eval(x);
     const Mask<VData> in_range = comp_intrin<ComparisonType::ge>(x, set1_intrin<VData>(2 * std::numeric_limits<Real>::min())) & comp_intrin<ComparisonType::le>(x, set1_intrin<VData>(std::numeric_limits<Real>::max()));
-    if (mask_count_intrin(in_range) == VData::Size) return r;
+    if (mask_all_intrin(in_range)) return r;
     return select_intrin(in_range, r, div_intrin(set1_intrin<VData>((Real)1), sqrt_intrin(x))); // 0, inf, subnormal and negative x, NaN
   }
   template <class VData> inline VData fabs_intrin(const VData& x) {
@@ -2286,7 +2291,7 @@ namespace sctl { // Generic
       VData e, f;
       log_split_intrin<false>(e, f, u);
       const VData r = select_intrin(comp_intrin<ComparisonType::eq>(u, one), x, log_split_poly_intrin(e, log_split_add_intrin(e, f, c))); // x where u = 1, also +-0
-      if (mask_count_intrin(positive_normal_mask_intrin(u)) == VData::Size) return r;
+      if (mask_all_intrin(positive_normal_mask_intrin(u))) return r;
 
       // u = 0 (x = -1), negative (x < -1), inf or NaN
       const VData rs = select_intrin(comp_intrin<ComparisonType::eq>(u, zero_intrin<VData>()), set1_intrin<VData>((Real)-INFINITY), select_intrin(comp_intrin<ComparisonType::eq>(u, set1_intrin<VData>((Real)INFINITY)), u, r));
@@ -2926,7 +2931,7 @@ namespace sctl { // Generic
         const VData num = fma_intrin(z, eval_poly_intrin(z, Coeffs::tp), q);
         return mul_intrin(div_intrin(num, select_intrin(below1, mul_intrin(z, q), q)), p);
       };
-      if (mask_count_intrin(comp_intrin<ComparisonType::ge>(x, tiny) & comp_intrin<ComparisonType::lt>(x, eight)) == VData::Size) return mid_value(x);
+      if (mask_all_intrin(comp_intrin<ComparisonType::ge>(x, tiny) & comp_intrin<ComparisonType::lt>(x, eight))) return mid_value(x);
 
       // x >= 8 or x < -1/1024, inf or NaN: Gamma(a), a = |x|; Gamma(x) = -pi/(x sinpi(x) Gamma(-x)) for x < -1/1024
       const Mask<VData> neg = comp_intrin<ComparisonType::lt>(x, tiny);
@@ -3017,7 +3022,7 @@ namespace sctl { // Generic
       const VData tiny = set1_intrin<VData>((Real)-1 / 1024);
       VData arg = one;
       VData sgn = zero;
-      if (mask_count_intrin(comp_intrin<ComparisonType::ge>(x, tiny) & comp_intrin<ComparisonType::lt>(x, eight)) == VData::Size) {
+      if (mask_all_intrin(comp_intrin<ComparisonType::ge>(x, tiny) & comp_intrin<ComparisonType::lt>(x, eight))) {
         const VData base = lgamma_mid_intrin<Coeffs>(arg, sgn, x);
         return add_intrin(base, xor_intrin((assumes(A, Assume::Finite | Assume::Normal) ? log_assume_intrin<Assume::All>(arg) : log_intrin(arg)), sgn));
       }
@@ -3070,7 +3075,7 @@ namespace sctl { // Generic
         const VData Q = eval_poly_intrin(z, Coeffs::dq);
         return div_intrin(fma_intrin(mul_intrin(d, add_intrin(Q, P)), D, mul_intrin(N, Q)), mul_intrin(Q, D));
       };
-      if (mask_count_intrin(comp_intrin<ComparisonType::ge>(x, zero) & comp_intrin<ComparisonType::lt>(x, eight)) == VData::Size) return mid_value(x);
+      if (mask_all_intrin(comp_intrin<ComparisonType::ge>(x, zero) & comp_intrin<ComparisonType::lt>(x, eight))) return mid_value(x);
 
       // x >= 8 or x < 0, inf or NaN: digamma(a), a = x or 1 - x; digamma(x) = digamma(1 - x) - pi cospi(x)/sinpi(x)
       const Mask<VData> neg = comp_intrin<ComparisonType::lt>(x, zero);
@@ -5027,6 +5032,12 @@ namespace sctl { // SSE
   template <> inline Integer mask_count_intrin<VecData<int64_t, 2>>(const Mask<VecData<int64_t, 2>>& m) { return _mm_popcnt_u32(_mm_movemask_pd(_mm_castsi128_pd(m.v))); }
   template <> inline Integer mask_count_intrin<VecData<float  , 4>>(const Mask<VecData<float  , 4>>& m) { return _mm_popcnt_u32(_mm_movemask_ps(m.v)); }
   template <> inline Integer mask_count_intrin<VecData<double , 2>>(const Mask<VecData<double , 2>>& m) { return _mm_popcnt_u32(_mm_movemask_pd(m.v)); }
+#endif
+#if defined(__aarch64__) // every lane selected: the minimum of the 32-bit pieces of lanes of -1 and 0, one instruction
+  template <> inline bool mask_all_intrin<VecData<int32_t, 4>>(const Mask<VecData<int32_t, 4>>& m) { return vminvq_u32(vreinterpretq_u32_m128i(m.v)) != 0; }
+  template <> inline bool mask_all_intrin<VecData<int64_t, 2>>(const Mask<VecData<int64_t, 2>>& m) { return vminvq_u32(vreinterpretq_u32_m128i(m.v)) != 0; }
+  template <> inline bool mask_all_intrin<VecData<float  , 4>>(const Mask<VecData<float  , 4>>& m) { return vminvq_u32(vreinterpretq_u32_m128 (m.v)) != 0; }
+  template <> inline bool mask_all_intrin<VecData<double , 2>>(const Mask<VecData<double , 2>>& m) { return vminvq_u32(vreinterpretq_u32_m128d(m.v)) != 0; }
 #endif
 
   // Math functions

@@ -427,6 +427,7 @@ namespace sctl { // Generic
   template <class VData> inline Mask<VData> int2mask_intrin(const MaskIntVec<VData>& q);
   template <class VDataTo, class VData> inline Mask<VDataTo> convert_mask_intrin(const Mask<VData>& m); // same lanes, another element type
   template <class VData> inline Integer mask_count_intrin(const Mask<VData>& m); // number of selected lanes
+  template <class VData> inline bool mask_all_intrin(const Mask<VData>& m); // whether every lane is selected
 
   template <class VData> inline Integer mask_popcnt_intrin(const Mask<VData>& v);
 
