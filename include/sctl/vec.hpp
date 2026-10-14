@@ -744,12 +744,12 @@ namespace sctl {
   /** exp2 to the given digits (-1: full); A as exp2. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp2(const Vec<ValueType,N>& x);
 
-  /** Base-2 logarithm; vectorized where log is. A as log. */
+  /** Base-2 logarithm; vectorized where log is, by its polynomial within 1.1 ulp and exact at the powers of 2. A as log. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> log2(const Vec<ValueType,N>& x);
   /** log2 to the given digits (-1: full), as approx_log; A as log. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_log2(const Vec<ValueType,N>& x);
 
-  /** Base-10 logarithm; vectorized where log is. A as log. */
+  /** Base-10 logarithm; vectorized where log is, by its polynomial within 1.2 ulp. A as log. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> log10(const Vec<ValueType,N>& x);
   /** log10 to the given digits (-1: full), as approx_log; A as log. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_log10(const Vec<ValueType,N>& x);

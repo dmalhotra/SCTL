@@ -1584,20 +1584,29 @@ namespace sctl { // Generic
     f = sub_intrin(m, one);
   }
   // e ln2 + log(1+f), log(1+f) = f - f^2/2 + f^3 P(f)/Q(f) (float: f^3 P(f)) with Cephes's coefficients, added as
-  // (e ln2_lo + f^3 P/Q) + (f - f^2/2), then e ln2_hi
-  template <class VData> inline VData log_split_poly_intrin(const VData& e, const VData& f) {
+  // (e ln2_lo + f^3 P/Q) + (f - f^2/2), then e ln2_hi. B = Two, Ten: log2 x = e + c log(1+f), log10 x = e log10(2) +
+  // c log(1+f), c = 1/ln2 or 1/ln10 in P and the f^2 term, c f by an FMA (not log(x) c: an operation less, e exact)
+  template <LogBase B, class VData> inline VData log_split_poly_intrin(const VData& e, const VData& f) {
     using Real = typename VData::ScalarType;
+    static constexpr bool F = std::is_same<Real,float>::value;
+    static constexpr double c = (B == LogBase::Two ? 1.44269504088896340736 : B == LogBase::Ten ? 0.43429448190325182765 : 1.0);
     const VData f2 = mul_intrin(f, f);
-    VData p;
-    if constexpr (std::is_same<Real,float>::value) {
-      p = mul_intrin(EvalPolynomial(f, 3.3333331174E-1f, -2.4999993993E-1f, 2.0000714765E-1f, -1.6668057665E-1f, 1.4249322787E-1f, -1.2420140846E-1f, 1.1676998740E-1f, -1.1514610310E-1f, 7.0376836292E-2f), mul_intrin(f, f2));
+    VData p; // c f^3 P/Q
+    if constexpr (F) {
+      p = mul_intrin(EvalPolynomial(f, (Real)(c * 3.3333331174E-1), (Real)(c * -2.4999993993E-1), (Real)(c * 2.0000714765E-1), (Real)(c * -1.6668057665E-1), (Real)(c * 1.4249322787E-1), (Real)(c * -1.2420140846E-1), (Real)(c * 1.1676998740E-1), (Real)(c * -1.1514610310E-1), (Real)(c * 7.0376836292E-2)), mul_intrin(f, f2));
     } else {
-      const VData P = EvalPolynomial(f, 7.70838733755885391666E0, 1.79368678507819816313E1, 1.44989225341610930846E1, 4.70579119878881725854E0, 4.97494994976747001425E-1, 1.01875663804580931796E-4);
+      const VData P = EvalPolynomial(f, c * 7.70838733755885391666E0, c * 1.79368678507819816313E1, c * 1.44989225341610930846E1, c * 4.70579119878881725854E0, c * 4.97494994976747001425E-1, c * 1.01875663804580931796E-4);
       const VData Q = EvalPolynomial(f, 2.31251620126765340583E1, 7.11544750618563894466E1, 8.29875266912776603211E1, 4.52279145837532221105E1, 1.12873587189167450590E1, 1.0);
       p = div_intrin(mul_intrin(P, mul_intrin(f, f2)), Q);
     }
-    const VData small = add_intrin(fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), p), fma_intrin(f2, set1_intrin<VData>((Real)-0.5), f));
-    return fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::hi), small);
+    if constexpr (B == LogBase::E) {
+      const VData small = add_intrin(fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), p), fma_intrin(f2, set1_intrin<VData>((Real)-0.5), f));
+      return fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::hi), small);
+    } else { // c f with c rounded: 0.72 ulp for log2 (0.70 with c - (Real)c f added, an operation more), from 1.41 for log(x) c
+      const VData s = fma_intrin(f2, set1_intrin<VData>((Real)(-c / 2)), p);
+      if constexpr (B == LogBase::Two) return add_intrin(fma_intrin(f, set1_intrin<VData>((Real)c), s), e);
+      else return fma_intrin(e, set1_intrin<VData>(Log10Of2Split<Real>::hi), fma_intrin(f, set1_intrin<VData>((Real)c), fma_intrin(e, set1_intrin<VData>(Log10Of2Split<Real>::lo), s)));
+    }
   }
   // f + c 2^-e for 2^e (1+f) from log_split_intrin and a small correction c: log(2^e (1+f) + c) = e ln2 + log(1 + f + c 2^-e).
   // c = 0 where e >= Bias - 1
@@ -1612,7 +1621,7 @@ namespace sctl { // Generic
     const VData s = reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(t), SigBits)); // 2^-e
     return fma_intrin(c, s, f);
   }
-  // log x from r = log_split_poly_intrin of log_split_intrin<true>: -inf at 0, inf at inf, NaN for negative x and NaN
+  // log x from r = log_split_poly_intrin of log_split_intrin<true>: -inf at 0, inf at inf, NaN for negative x and NaN (any base)
   template <class VData> inline VData log_special_values_intrin(const VData& x, const VData& r) {
     using Real = typename VData::ScalarType;
     const VData zero = zero_intrin<VData>();
@@ -1621,28 +1630,28 @@ namespace sctl { // Generic
     rs = select_intrin(comp_intrin<ComparisonType::eq>(x, inf), x, rs);
     return select_intrin(comp_intrin<ComparisonType::ge>(x, zero), rs, set1_intrin<VData>((Real)NAN));
   }
-  template <class VData> [[gnu::noinline, gnu::cold]] VData log_special_intrin(const VData x) { // the rare path of log_poly_intrin on AArch64
+  template <LogBase B, class VData> [[gnu::noinline, gnu::cold]] VData log_special_intrin(const VData x) { // the rare path of log_poly_intrin on AArch64
     VData e, f;
     log_split_intrin<true>(e, f, x);
-    return log_special_values_intrin(x, log_split_poly_intrin(e, f));
+    return log_special_values_intrin(x, log_split_poly_intrin<B>(e, f));
   }
   // log_split_poly_intrin of log_split_intrin, one polynomial inline (with a second one, GCC 14 left this function out of
   // line in large programs, and log was 1.5x slower). Vectors with some x zero, subnormal, inf, negative or NaN: on
   // AArch64 out of line (clang turned the test into selects of both paths, and log was 1.15x slower), elsewhere by selects
   // (a call cost up to 1.15x on x86, where the callers' vector registers are not preserved across it)
-  template <bool Check, class VData> inline VData log_poly_intrin(const VData& x) {
+  template <bool Check, LogBase B, class VData> inline VData log_poly_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     VData e, f;
 #if defined(__aarch64__)
-    if (Check && !mask_all_intrin(positive_normal_mask_intrin(x))) return log_special_intrin(x);
+    if (Check && !mask_all_intrin(positive_normal_mask_intrin(x))) return log_special_intrin<B>(x);
     log_split_intrin<false>(e, f, x);
-    return log_split_poly_intrin(e, f);
+    return log_split_poly_intrin<B>(e, f);
 #else
     const bool normal = (!Check || mask_all_intrin(positive_normal_mask_intrin(x)));
     if (normal) log_split_intrin<false>(e, f, x);
     else log_split_intrin<true>(e, f, x);
-    const VData r = log_split_poly_intrin(e, f);
+    const VData r = log_split_poly_intrin<B>(e, f);
     return (normal ? r : log_special_values_intrin(x, r));
 #endif
   }
@@ -2654,7 +2663,8 @@ namespace sctl { // Generic
   template <Assume A, class VData> inline VData log2_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
-      return mul_intrin(log_assume_intrin<A>(x), set1_intrin<VData>((Real)1.44269504088896340736));
+      if constexpr (sctl_poly<PolyOf::Log, VData>()) return log_poly_intrin<!assumes(A, Assume::Finite | Assume::Normal | Assume::Domain), LogBase::Two>(x);
+      else return mul_intrin(log_assume_intrin<A>(x), set1_intrin<VData>((Real)1.44269504088896340736));
     } else {
       LaneArray<VData> x_(x);
       for (Integer i = 0; i < VData::Size; i++) x_[i] = log2(x_[i]);
@@ -2664,7 +2674,8 @@ namespace sctl { // Generic
   template <Assume A, class VData> inline VData log10_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
-      return mul_intrin(log_assume_intrin<A>(x), set1_intrin<VData>((Real)0.43429448190325182765));
+      if constexpr (sctl_poly<PolyOf::Log, VData>()) return log_poly_intrin<!assumes(A, Assume::Finite | Assume::Normal | Assume::Domain), LogBase::Ten>(x);
+      else return mul_intrin(log_assume_intrin<A>(x), set1_intrin<VData>((Real)0.43429448190325182765));
     } else {
       LaneArray<VData> x_(x);
       for (Integer i = 0; i < VData::Size; i++) x_[i] = log(x_[i]) / log((Real)10);

@@ -498,15 +498,16 @@ namespace sctl { // Generic
 
   template <class Real> inline constexpr Real exp_normal_lim(); // for |x| below, e^x and 2^round(x/ln2) are normal and finite
   enum class ExpArg { Plain, Sum, Base10, Base2, Half }; // approx_exp_intrin of x: e^x, e^(x + x_lo), 10^x, 2^x, e^x/2
+  enum class LogBase { E, Two, Ten }; // log_split_poly_intrin of x: log x, log2 x, log10 x
   template <Integer ORDER, bool RangeCheck = true, ExpArg Arg = ExpArg::Plain, class VData> inline VData approx_exp_intrin(const VData& x, const VData& x_lo);
   template <Integer ORDER, bool RangeCheck = true, class VData> inline VData approx_exp_intrin(const VData& x);
   template <class VData> inline Mask<VData> positive_normal_mask_intrin(const VData& x); // x normal, positive and finite
   template <class VData> inline void exp_mant_intrin(VData& e, VData& m, const VData& x); // x = 2^e m, m in [1, 2), for normal x > 0
   template <class VData> inline void log_mant_intrin(VData& e, VData& m, const VData& x); // x = 2^e m, m in [sqrt(1/2), sqrt(2)), for normal x > 0
   template <bool Subnormal = true, class VData> inline void log_split_intrin(VData& e, VData& f, const VData& x); // x = 2^e (1+f), 1+f in [sqrt(1/2), sqrt(2)), for x > 0; without Subnormal, for normal x
-  template <class VData> inline VData log_split_poly_intrin(const VData& e, const VData& f);
+  template <LogBase B = LogBase::E, class VData> inline VData log_split_poly_intrin(const VData& e, const VData& f);
   template <class VData> inline VData log_split_add_intrin(const VData& e, const VData& f, const VData& c);
-  template <bool Check = true, class VData> inline VData log_poly_intrin(const VData& x); // Check = false: only for positive normal x
+  template <bool Check = true, LogBase B = LogBase::E, class VData> inline VData log_poly_intrin(const VData& x); // Check = false: only for positive normal x
   template <class VData> inline void split_half_intrin(VData& hi, VData& lo, const VData& x); // x = hi + lo exactly, hi with the low half of the significand cleared
   template <class VData> inline VData mul_sub_exact_intrin(const VData& a, const VData& b, const VData& c); // a b - c, the product to about twice the precision, for c near a b: by FMA, or else with a and b split in two halves
   template <class VData> inline void log_hi_lo_intrin(VData& L_hi, VData& L_lo, const VData& e, const VData& f);
