@@ -1492,22 +1492,39 @@ namespace sctl { // Generic
     const VData s = reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(t), SigBits)); // 2^-e
     return fma_intrin(c, s, f);
   }
-  // log_split_poly_intrin of log_split_intrin, one polynomial for all x: with a second one for x zero, subnormal, inf,
-  // negative or NaN, GCC 14 left this function out of line in large programs, and log was 1.5x slower
-  template <bool Check, class VData> inline VData log_poly_intrin(const VData& x) {
+  // log x from r = log_split_poly_intrin of log_split_intrin<true>: -inf at 0, inf at inf, NaN for negative x and NaN
+  template <class VData> inline VData log_special_values_intrin(const VData& x, const VData& r) {
     using Real = typename VData::ScalarType;
-    static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
-    const bool normal = (!Check || mask_count_intrin(positive_normal_mask_intrin(x)) == VData::Size);
-    VData e, f;
-    if (normal) log_split_intrin<false>(e, f, x);
-    else log_split_intrin<true>(e, f, x);
-    const VData r = log_split_poly_intrin(e, f);
-    if (normal) return r;
     const VData zero = zero_intrin<VData>();
     const VData inf = set1_intrin<VData>((Real)INFINITY);
     VData rs = select_intrin(comp_intrin<ComparisonType::eq>(x, zero), unary_minus_intrin(inf), r);
     rs = select_intrin(comp_intrin<ComparisonType::eq>(x, inf), x, rs);
-    return select_intrin(comp_intrin<ComparisonType::ge>(x, zero), rs, set1_intrin<VData>((Real)NAN)); // negative x and NaN
+    return select_intrin(comp_intrin<ComparisonType::ge>(x, zero), rs, set1_intrin<VData>((Real)NAN));
+  }
+  template <class VData> [[gnu::noinline, gnu::cold]] VData log_special_intrin(const VData x) { // the rare path of log_poly_intrin on AArch64
+    VData e, f;
+    log_split_intrin<true>(e, f, x);
+    return log_special_values_intrin(x, log_split_poly_intrin(e, f));
+  }
+  // log_split_poly_intrin of log_split_intrin, one polynomial inline (with a second one, GCC 14 left this function out of
+  // line in large programs, and log was 1.5x slower). Vectors with some x zero, subnormal, inf, negative or NaN: on
+  // AArch64 out of line (clang turned the test into selects of both paths, and log was 1.15x slower), elsewhere by selects
+  // (a call cost up to 1.15x on x86, where the callers' vector registers are not preserved across it)
+  template <bool Check, class VData> inline VData log_poly_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
+    VData e, f;
+#if defined(__aarch64__)
+    if (Check && !mask_all_intrin(positive_normal_mask_intrin(x))) return log_special_intrin(x);
+    log_split_intrin<false>(e, f, x);
+    return log_split_poly_intrin(e, f);
+#else
+    const bool normal = (!Check || mask_all_intrin(positive_normal_mask_intrin(x)));
+    if (normal) log_split_intrin<false>(e, f, x);
+    else log_split_intrin<true>(e, f, x);
+    const VData r = log_split_poly_intrin(e, f);
+    return (normal ? r : log_special_values_intrin(x, r));
+#endif
   }
   template <class VData> inline void split_half_intrin(VData& hi, VData& lo, const VData& x) {
     using Real = typename VData::ScalarType;
