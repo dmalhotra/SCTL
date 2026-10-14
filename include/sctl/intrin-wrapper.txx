@@ -2324,12 +2324,19 @@ namespace sctl { // Generic
     return comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>((typename VData::ScalarType)INFINITY));
   }
 
+  // sqrt(s) for s in hypot_intrin's fast range: with AVX-512 by rsqrt14 and Goldschmidt or Markstein steps (hypot still within 1.17
+  // ulp), where vsqrtpd takes about 36 FMAs on Intel
+  template <class VData> inline VData hypot_sqrt_intrin(const VData& s) { return sqrt_intrin(s); }
   template <bool AvoidOverflow, bool SpecialValues, class VData> inline VData hypot_intrin(const VData& x, const VData& y) {
     using Real = typename VData::ScalarType;
-    if constexpr (!AvoidOverflow) {
-      return sqrt_intrin(fma_intrin(x, x, mul_intrin(y, y)));
+    if constexpr (!AvoidOverflow) { // hypot > 2^-511 (float: 2^-63): x^2 + y^2 normal
+      return hypot_sqrt_intrin(fma_intrin(x, x, mul_intrin(y, y)));
     } else { // sqrt(x^2 + y^2); where max(|x|,|y|) is beyond 2^(+-lim), x and y scaled by a power of 2 first
       static constexpr bool F = std::is_same<Real,float>::value;
+      // fast: x^2 + y^2 finite (not NaN) and above 2^-900 (float: 2^-100), where squares below the normal range change it by less
+      // than 2^-26 ulp and the remainder s - q^2 of hypot_sqrt_intrin is normal (float: but for 1 in 2^13), as subnormals stall Intel
+      const VData s0 = fma_intrin(x, x, mul_intrin(y, y));
+      if (mask_all_intrin(comp_intrin<ComparisonType::ge>(s0, set1_intrin<VData>(F ? (Real)0x1p-100 : (Real)0x1p-900)) & comp_intrin<ComparisonType::le>(s0, set1_intrin<VData>(std::numeric_limits<Real>::max())))) return hypot_sqrt_intrin(s0);
       static constexpr Real lim = (F ? (Real)0x1p60 : (Real)0x1p500), down = (F ? (Real)0x1p-70 : (Real)0x1p-600), up = (F ? (Real)0x1p100 : (Real)0x1p600); // squares normal and finite after
       const VData one = set1_intrin<VData>((Real)1);
       const VData a = fabs_intrin(x);
@@ -2337,15 +2344,10 @@ namespace sctl { // Generic
       const VData m = max_intrin(a, b);
       const Mask<VData> big = comp_intrin<ComparisonType::gt>(m, set1_intrin<VData>(lim));
       const Mask<VData> small = comp_intrin<ComparisonType::lt>(m, set1_intrin<VData>(1 / lim)); // also zeros
-      VData h;
-      if (mask_count_intrin(big | small) == 0) {
-        h = sqrt_intrin(fma_intrin(a, a, mul_intrin(b, b)));
-      } else {
-        const VData s = select_intrin(big, set1_intrin<VData>(down), select_intrin(small, set1_intrin<VData>(up), one));
-        const VData as = mul_intrin(a, s);
-        const VData bs = mul_intrin(b, s);
-        h = mul_intrin(sqrt_intrin(fma_intrin(as, as, mul_intrin(bs, bs))), select_intrin(big, set1_intrin<VData>(1 / down), select_intrin(small, set1_intrin<VData>(1 / up), one)));
-      }
+      const VData s = select_intrin(big, set1_intrin<VData>(down), select_intrin(small, set1_intrin<VData>(up), one));
+      const VData as = mul_intrin(a, s);
+      const VData bs = mul_intrin(b, s);
+      const VData h = mul_intrin(sqrt_intrin(fma_intrin(as, as, mul_intrin(bs, bs))), select_intrin(big, set1_intrin<VData>(1 / down), select_intrin(small, set1_intrin<VData>(1 / up), one)));
       if constexpr (!SpecialValues) return h;
       const VData inf = set1_intrin<VData>((Real)INFINITY);
       return select_intrin(comp_intrin<ComparisonType::eq>(a, inf) | comp_intrin<ComparisonType::eq>(b, inf), inf, h); // inf even with NaN, as std::hypot; NaN and zeros as they come
@@ -7910,6 +7912,18 @@ namespace sctl { // AVX512
   };
   template <> struct rcp_estimate_intrin<VecData<float,16>> { static constexpr Integer bits = 14, max_steps = 0; static inline VecData<float,16> eval(const VecData<float,16>& b) { return _mm512_rcp14_ps(b.v); } };
   template <> struct rcp_estimate_intrin<VecData<double,8>> { static constexpr Integer bits = 14, max_steps = 0; static inline VecData<double,8> eval(const VecData<double,8>& b) { return _mm512_rcp14_pd(b.v); } };
+  template <> inline VecData<double,8> hypot_sqrt_intrin<VecData<double,8>>(const VecData<double,8>& s) {
+    const __m512d r = _mm512_rsqrt14_pd(s.v); // 14 bits
+    const __m512d g = _mm512_mul_pd(s.v, r), h = _mm512_mul_pd(r, _mm512_set1_pd(0.5)); // sqrt(s) and 1/(2 sqrt(s)), both times (1 - 2e)^(1/2)
+    const __m512d e = _mm512_fnmadd_pd(g, h, _mm512_set1_pd(0.5));
+    const __m512d p = _mm512_mul_pd(e, _mm512_fmadd_pd(e, _mm512_set1_pd(1.5), _mm512_set1_pd(1.0))); // (1 - 2e)^(-1/2) - 1 to e^2: 40 bits
+    const __m512d g1 = _mm512_fmadd_pd(g, p, g), h1 = _mm512_fmadd_pd(h, p, h);
+    return _mm512_fmadd_pd(h1, _mm512_fnmadd_pd(g1, g1, s.v), g1); // g1 + h1 (s - g1^2)
+  }
+  template <> inline VecData<float,16> hypot_sqrt_intrin<VecData<float,16>>(const VecData<float,16>& s) { // q + (s - q^2) r/2, q = s r: 14 bits to 27
+    const __m512 r = _mm512_rsqrt14_ps(s.v), q = _mm512_mul_ps(s.v, r);
+    return _mm512_fmadd_ps(_mm512_mul_ps(r, _mm512_set1_ps(0.5f)), _mm512_fnmadd_ps(q, q, s.v), q);
+  }
   template <> inline VecData<float,16> rsqrt_intrin<VecData<float,16>>(const VecData<float,16>& x) { return rsqrt_full_intrin(x); } // faster than sqrt and division here, for dependent and independent calls
   template <> inline VecData<double,8> rsqrt_intrin<VecData<double,8>>(const VecData<double,8>& x) { return rsqrt_full_intrin(x); }
 
