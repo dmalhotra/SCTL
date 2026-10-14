@@ -1289,6 +1289,11 @@ namespace sctl { // Generic
   template <class Real> inline constexpr Real exp_normal_lim() {
     return (Real)((((Long)1) << (TypeTraits<Real>::ExpBits - 1)) - 2) * const_ln2<Real>();
   }
+  // e^r ~ 1 + r + r^2 Q(r), |r| <= ln2/2: Q minimax for the relative error of e^r, lowest degree first; float degree 4
+  // (relative error 2.5e-8), double 9 (7.7e-18): the polynomials of approx_exp_intrin at full precision
+  template <class Real> struct ExpPolyCoeffs;
+  template <> struct ExpPolyCoeffs<float> { static constexpr double c[] = {0.49999983719650143, 0.16666600335171258, 0.04167370812750387, 0.008359227492413222, 0.0013344549766889703}; };
+  template <> struct ExpPolyCoeffs<double> { static constexpr double c[] = {0.500000000000001, 0.16666666666666674, 0.041666666666522106, 0.008333333333322215, 0.0013888888947785523, 0.00019841269886563802, 2.4801487366025675e-05, 2.755724236744966e-06, 2.7632640675430235e-07, 2.5110038296727242e-08}; };
   // e^x; with ExpArg::Sum, e^(x + x_lo) for |x_lo| <= ulp(x)/2, x_lo added to the reduced argument; with ExpArg::Base10,
   // 10^x, x reduced by n log10(2); with ExpArg::Base2, 2^x, x - n exact
   template <Integer ORDER, bool RangeCheck, ExpArg Arg, class VData> inline VData approx_exp_intrin(const VData& x, const VData& x_lo) {
@@ -1312,6 +1317,7 @@ namespace sctl { // Generic
     static constexpr Real coeff13 = 1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13); // err = 2^-57.2759
     static constexpr bool B10 = (Arg == ExpArg::Base10);
     static constexpr bool B2 = (Arg == ExpArg::Base2);
+    static constexpr bool Minimax = ((std::is_same<Real,float>::value || std::is_same<Real,double>::value) && ORDER == (Integer)(TypeTraits<Real>::SigBits/3.8)); // full precision
     static constexpr Real U = (B10 ? (Real)0.30102999566398119521373889472449302677L : B2 ? (Real)1 : const_ln2<Real>()); // the unit of x: n U = n ln2 in base e
     static constexpr Real x0 = -U;
     static constexpr Real invx0 = -1 / x0; // 1/ln(2), log2(10), or 1
@@ -1343,7 +1349,10 @@ namespace sctl { // Generic
         x1 = fma_intrin(n, set1_intrin<VData>(x0), xx);
       }
       if constexpr (Arg == ExpArg::Sum) x1 = add_intrin(x1, xx_lo);
-      if      (ORDER >= 13) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11, coeff12, coeff13);
+      if constexpr (Minimax) { // 1 rounded once; Q by Horner in float, by Estrin in double, where Horner's longer chain made erfc, tgamma and zeta up to 1.15x slower
+        const VData Q = (std::is_same<Real,float>::value ? eval_poly_horner_intrin(x1, ExpPolyCoeffs<Real>::c, 1.0) : eval_poly_intrin(x1, ExpPolyCoeffs<Real>::c));
+        e1 = add_intrin(set1_intrin<VData>((Real)1), fma_intrin(mul_intrin(x1, x1), Q, x1));
+      } else if (ORDER >= 13) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11, coeff12, coeff13);
       else if (ORDER >= 12) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11, coeff12);
       else if (ORDER >= 11) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10, coeff11);
       else if (ORDER >= 10) e1 = EvalPolynomial(x1, (Real)1, (Real)1, coeff2, coeff3, coeff4, coeff5, coeff6, coeff7, coeff8, coeff9, coeff10);

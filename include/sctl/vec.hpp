@@ -624,12 +624,12 @@ namespace sctl {
   /** sincpi to the given digits (-1: full); A as sincospi. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_sincpi(const Vec<ValueType,N>& x);
 
-  /** e^x; float, double at native widths without SVML: within about 2 ulp (float: 3.5), also near the overflow and for subnormal results. A: Finite | Moderate, |x| < 708.4 (float: 87.3). */
+  /** e^x; float, double at native widths without SVML: within 1.1 ulp (float: 1.2), also near the overflow and for subnormal results. A: Finite | Moderate, |x| < 708.4 (float: 87.3). */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x);
   /** e^x to the given digits (-1: exp); A as exp. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x);
 
-  /** 10^x; float, double: as accurate as exp, vectorized at every width. A: Finite | Moderate, |x| < 307.6 (float: 37.9). */
+  /** 10^x; float, double: within 1.5 ulp (float: 1.3), vectorized at every width. A: Finite | Moderate, |x| < 307.6 (float: 37.9). */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> exp10(const Vec<ValueType,N>& x);
   /** 10^x to the given digits (-1: exp10); A as exp10. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp10(const Vec<ValueType,N>& x);
