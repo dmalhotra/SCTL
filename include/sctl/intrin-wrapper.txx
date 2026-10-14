@@ -1291,6 +1291,38 @@ namespace sctl { // Generic
     const IntVec sign = bitshiftleft_intrin(reinterpret_intrin<IntVec>(Cos ? add_intrin(t, set1_intrin<VData>((Real)1)) : t), sizeof(Real) * 8 - 1); // the parity of n (cos: n + 1) at the sign
     return xor_intrin(sr, reinterpret_intrin<VData>(sign));
   }
+  template <class VData> [[gnu::noinline, gnu::cold]] VData tan_full_intrin(const VData x) { // the rare path of tan_poly_intrin
+    VData sinx, cosx;
+    approx_sincos_intrin<-1, true>(sinx, cosx, x);
+    return div_intrin(sinx, cosx);
+  }
+  // tan(x) at full precision: x = n pi/2 + r by PiOver2Split, |r| <= pi/4; tan(r) for even n, -1/tan(r) for odd, with one
+  // division. tan(r) = r + r^3 P(r^2): float, P of degree 5 minimax for the relative error (1.8e-8); double, P/Q of
+  // Cephes (degrees 2 and 4), as (r Q + r^3 P)/Q. FullRange = false: only for |x| < PiOver2Split::lim
+  template <bool FullRange, class VData> inline VData tan_poly_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
+    using Int = typename IntegerType<sizeof(Real)>::value;
+    using IntVec = VecData<Int, VData::Size>;
+    static constexpr Real magic = (Real)1.5 * pow<TypeTraits<Real>::SigBits,Real>((Real)2);
+    if (FullRange && !mask_all_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(PiOver2Split<Real>::lim)))) return tan_full_intrin(x); // also inf, NaN
+    const VData t = fma_intrin(x, set1_intrin<VData>(2 / const_pi<Real>()), set1_intrin<VData>(magic));
+    const VData r = PiOver2Split<Real>::sub_n(x, sub_intrin(t, set1_intrin<VData>(magic)));
+    const VData z = mul_intrin(r, r);
+    const Mask<VData> odd = reinterpret_mask<Mask<VData>>(comp_intrin<ComparisonType::ne>(and_intrin(reinterpret_intrin<IntVec>(t), set1_intrin<IntVec>(1)), zero_intrin<IntVec>()));
+    VData num, den;
+    if constexpr (std::is_same<Real,float>::value) {
+      static constexpr double c[] = {0.33333156816115367, 0.13338800424641623, 0.05341119587000952, 0.024430439175673366, 0.003119436039761998, 0.009385687636019234};
+      num = fma_intrin(mul_intrin(r, z), eval_poly_horner_intrin(z, c, 1.0), r);
+      den = set1_intrin<VData>((Real)1);
+    } else {
+      static constexpr double p[] = {-1.79565251976484877988E7, 1.15351664838587416140E6, -1.30936939181383777646E4};
+      static constexpr double q[] = {-5.38695755929454629881E7, 2.50083801823357915839E7, -1.32089234440210967447E6, 1.36812963470692954678E4, 1.0};
+      den = eval_poly_horner_intrin(z, q, 1.0);
+      num = fma_intrin(mul_intrin(r, z), eval_poly_horner_intrin(z, p, 1.0), mul_intrin(r, den));
+    }
+    return div_intrin(select_intrin(odd, unary_minus_intrin(den), num), select_intrin(odd, num, den));
+  }
   template <class VData> inline void sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
     if constexpr (split_lanes<VData>) {
       sincos_intrin(sinx.lo, cosx.lo, x.lo);

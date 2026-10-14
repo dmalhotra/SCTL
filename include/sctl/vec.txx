@@ -593,6 +593,7 @@ namespace sctl {
     return cosx;
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x) {
+    if constexpr (sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) return tan_poly_intrin<!assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
     Vec<ValueType,N> sinx, cosx;
     sincos<A>(sinx, cosx, x);
     return sinx / cosx;
