@@ -1264,20 +1264,30 @@ namespace sctl { // Generic
       }
     }
   }
-  // sin(r) = r + r^3 P(r^2) for |r| <= pi/2 (and a little beyond): P minimax for the relative error, lowest degree first;
-  // float degree 3 (relative error 6.1e-9), double 7 (2.8e-19)
-  template <class Real> struct SinHalfPiPolyCoeffs;
-  template <> struct SinHalfPiPolyCoeffs<float> { static constexpr double c[] = {-0.16666659527947375, 0.00833306561883192, -0.0001980955376207339, 2.6056657105876454e-06}; };
-  template <> struct SinHalfPiPolyCoeffs<double> { static constexpr double c[] = {-0.16666666666666666, 0.008333333333333193, -0.00019841269841208933, 2.7557319211087165e-06, -2.5052106868096306e-08, 1.605893946368988e-10, -7.64298504556611e-13, 2.721105696322979e-15}; };
+  // sin(r) = r + r^3 P(r^2) for |r| <= pi/2 (and a little beyond): P of degree n minimax for the relative error, lowest degree
+  // first; full precision: float degree 3 (relative error 6.1e-9), double 7 (2.8e-19)
+  template <Integer n> struct SinHalfPiPolyCoeffs;
+  template <> struct SinHalfPiPolyCoeffs<0> { static constexpr double c[] = {-0.14995023053074724}; };
+  template <> struct SinHalfPiPolyCoeffs<1> { static constexpr double c[] = {-0.1661291891745027, 0.007656543758422961}; };
+  template <> struct SinHalfPiPolyCoeffs<2> { static constexpr double c[] = {-0.16665853247975715, 0.008314274668291377, -0.0001854222031580402}; };
+  template <> struct SinHalfPiPolyCoeffs<3> { static constexpr double c[] = {-0.16666659527947375, 0.00833306561883192, -0.0001980955376207339, 2.6056657105876454e-06}; };
+  template <> struct SinHalfPiPolyCoeffs<4> { static constexpr double c[] = {-0.16666666626149126, 0.008333331108580554, -0.0001984086820687018, 2.75253842655536e-06, -2.3888906414855373e-08}; };
+  template <> struct SinHalfPiPolyCoeffs<5> { static constexpr double c[] = {-0.16666666666504604, 0.008333333321087207, -0.0001984126672970343, 2.7556953110048312e-06, -2.5030196816469536e-08, 1.540952679793164e-10}; };
+  template <> struct SinHalfPiPolyCoeffs<6> { static constexpr double c[] = {-0.16666666666666186, 0.008333333333285542, -0.0001984126982505609, 2.755731660053137e-06, -2.5051880272486254e-08, 1.6048095361181545e-10, -7.373343989892415e-13}; };
+  template <> struct SinHalfPiPolyCoeffs<7> { static constexpr double c[] = {-0.16666666666666666, 0.008333333333333193, -0.00019841269841208933, 2.7557319211087165e-06, -2.5052106868096306e-08, 1.605893946368988e-10, -7.64298504556611e-13, 2.721105696322979e-15}; };
+  inline constexpr double sin_halfpi_poly_digits[] = {1.98, 3.87, 5.96, 8.21, 10.63, 13.16, 15.81, 17.0}; // degrees 0 to 7
+  template <class Real> inline constexpr Integer sin_halfpi_degree(const Integer digits) { // -1: full precision
+    return poly_degree(sin_halfpi_poly_digits, 0, (std::is_same<Real,float>::value ? 3 : 7), digits);
+  }
   // sin or cos (Cos) at full precision, the rare path of sin_or_cos_intrin: by approx_sincos_intrin; not inlined
   template <bool Cos, class VData> [[gnu::noinline, gnu::cold]] VData sin_or_cos_full_intrin(const VData x) {
     VData sinx, cosx;
     approx_sincos_intrin<-1, true>(sinx, cosx, x);
     return (Cos ? cosx : sinx);
   }
-  // sin(x) or cos(x) at full precision by one polynomial: x = n pi + r (cos: (n + 1/2) pi + r), |r| <= pi/2, by
+  // sin(x) or cos(x) to the digits (-1: full) by one polynomial: x = n pi + r (cos: (n + 1/2) pi + r), |r| <= pi/2, by
   // PiOver2Split; sin(x) = (-1)^n sin(r), cos(x) = (-1)^(n+1) sin(r). FullRange = false: only for |x| < PiOver2Split::lim
-  template <bool Cos, bool FullRange, class VData> inline VData sin_or_cos_intrin(const VData& x) {
+  template <bool Cos, bool FullRange, Integer DIGITS, class VData> inline VData sin_or_cos_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     using Int = typename IntegerType<sizeof(Real)>::value;
@@ -1289,7 +1299,7 @@ namespace sctl { // Generic
     const VData n = sub_intrin(t, set1_intrin<VData>(magic));
     const VData r = PiOver2Split<Real>::sub_n(x, (Cos ? fma_intrin(n, set1_intrin<VData>((Real)2), set1_intrin<VData>((Real)1)) : add_intrin(n, n)));
     const VData z = mul_intrin(r, r);
-    const VData sr = fma_intrin(mul_intrin(r, z), eval_poly_horner_intrin(z, SinHalfPiPolyCoeffs<Real>::c, 1.0), r);
+    const VData sr = fma_intrin(mul_intrin(r, z), eval_poly_horner_intrin(z, SinHalfPiPolyCoeffs<sin_halfpi_degree<Real>(DIGITS)>::c, 1.0), r);
     const IntVec sign = bitshiftleft_intrin(reinterpret_intrin<IntVec>(Cos ? add_intrin(t, set1_intrin<VData>((Real)1)) : t), sizeof(Real) * 8 - 1); // the parity of n (cos: n + 1) at the sign
     return xor_intrin(sr, reinterpret_intrin<VData>(sign));
   }
@@ -1298,10 +1308,26 @@ namespace sctl { // Generic
     approx_sincos_intrin<-1, true>(sinx, cosx, x);
     return div_intrin(sinx, cosx);
   }
-  // tan(x) at full precision: x = n pi/2 + r by PiOver2Split, |r| <= pi/4; tan(r) for even n, -1/tan(r) for odd, with one
-  // division. tan(r) = r + r^3 P(r^2): float, P of degree 5 minimax for the relative error (1.8e-8); double, P/Q of
-  // Cephes (degrees 2 and 4), as (r Q + r^3 P)/Q. FullRange = false: only for |x| < PiOver2Split::lim
-  template <bool FullRange, class VData> inline VData tan_poly_intrin(const VData& x) {
+  // tan(r) = r + r^3 P(r^2) for |r| <= pi/4 (and a little beyond): P of degree n minimax for the relative error, lowest degree
+  // first; full precision in float: degree 5 (1.8e-8)
+  template <Integer n> struct TanPolyCoeffs;
+  template <> struct TanPolyCoeffs<0> { static constexpr double c[] = {0.41967071385222937}; };
+  template <> struct TanPolyCoeffs<1> { static constexpr double c[] = {0.32016214921084496, 0.19660599905849346}; };
+  template <> struct TanPolyCoeffs<2> { static constexpr double c[] = {0.33496167295127227, 0.11806625058265818, 0.09215172326755044}; };
+  template <> struct TanPolyCoeffs<3> { static constexpr double c[] = {0.3331543312483281, 0.13606508308595117, 0.041398477050437726, 0.04308887342760988}; };
+  template <> struct TanPolyCoeffs<4> { static constexpr double c[] = {0.33335158229194456, 0.1329234683957065, 0.056904204466969505, 0.012986694846604125, 0.020118578108678366}; };
+  template <> struct TanPolyCoeffs<5> { static constexpr double c[] = {0.33333156816115367, 0.13338800424641623, 0.05341119587000952, 0.024430439175673366, 0.003119436039761998, 0.009385687636019234}; };
+  template <> struct TanPolyCoeffs<6> { static constexpr double c[] = {0.33333349756989816, 0.1333266327683402, 0.054059922588315185, 0.021282159509653082, 0.010835876208624367, 8.946714588712004e-05, 0.004376303682698689}; };
+  template <> struct TanPolyCoeffs<7> { static constexpr double c[] = {0.3333333185011082, 0.13333410369063234, 0.0539546664637688, 0.021984389872410637, 0.008332547914059015, 0.004990174331719501, -0.0005929608238471667, 0.0020398654894408044}; };
+  template <> struct TanPolyCoeffs<8> { static constexpr double c[] = {0.3333333346415002, 0.1333332490980127, 0.05397011230202831, 0.021849519008440517, 0.008983540517900356, 0.0031603192130459693, 0.0023889875743597832, -0.0005715552023426152, 0.0009505876171998511}; };
+  template <> struct TanPolyCoeffs<9> { static constexpr double c[] = {0.33333333322015707, 0.1333333421792646, 0.05396801556213866, 0.021872653643869727, 0.008839253975961475, 0.0037034503516986247, 0.001130240060822104, 0.001185281323920661, -0.00040368190524646565, 0.00044290246486493806}; };
+  template <> struct TanPolyCoeffs<10> { static constexpr double c[] = {0.3333333333429708, 0.1333333324347298, 0.05396828299904843, 0.021869022679184856, 0.008867556946029906, 0.0035670925345406817, 0.0015499298519818035, 0.0003583472372288323, 0.0006056017427289832, -0.0002520023742765651, 0.0002063332688209407}; };
+  template <> struct TanPolyCoeffs<11> { static constexpr double c[] = {0.3333333333325237, 0.13333333342210085, 0.0539682505836185, 0.021869553044006222, 0.008862518004154793, 0.0035971822027688473, 0.0014322668212315211, 0.0006642296008419912, 8.163790977851074e-05, 0.0003161827794595525, -0.00014714934149886292, 9.611382360844492e-05}; };
+  inline constexpr double tan_poly_digits[] = {1.95, 3.13, 4.3, 5.45, 6.6, 7.75, 8.9, 10.05, 11.2, 12.34, 13.49, 14.63}; // degrees 0 to 11
+  // tan(x) to the digits (-1: full): x = n pi/2 + r by PiOver2Split, |r| <= pi/4; tan(r) for even n, -1/tan(r) for odd, with
+  // one division. tan(r) = r + r^3 P(r^2) by TanPolyCoeffs, or in double above 8 digits P/Q of Cephes (degrees 2 and 4), as
+  // (r Q + r^3 P)/Q: faster than the polynomial of degree 7 and up. FullRange = false: only for |x| < PiOver2Split::lim
+  template <bool FullRange, Integer DIGITS, class VData> inline VData tan_poly_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     using Int = typename IntegerType<sizeof(Real)>::value;
@@ -1313,9 +1339,9 @@ namespace sctl { // Generic
     const VData z = mul_intrin(r, r);
     const Mask<VData> odd = reinterpret_mask<Mask<VData>>(comp_intrin<ComparisonType::ne>(and_intrin(reinterpret_intrin<IntVec>(t), set1_intrin<IntVec>(1)), zero_intrin<IntVec>()));
     VData num, den;
-    if constexpr (std::is_same<Real,float>::value) {
-      static constexpr double c[] = {0.33333156816115367, 0.13338800424641623, 0.05341119587000952, 0.024430439175673366, 0.003119436039761998, 0.009385687636019234};
-      num = fma_intrin(mul_intrin(r, z), eval_poly_horner_intrin(z, c, 1.0), r);
+    if constexpr (std::is_same<Real,float>::value || (DIGITS >= 0 && DIGITS <= 8)) {
+      static constexpr Integer n = poly_degree(tan_poly_digits, 0, (std::is_same<Real,float>::value ? 5 : 6), DIGITS);
+      num = fma_intrin(mul_intrin(r, z), eval_poly_horner_intrin(z, TanPolyCoeffs<n>::c, 1.0), r);
       den = set1_intrin<VData>((Real)1);
     } else {
       static constexpr double p[] = {-1.79565251976484877988E7, 1.15351664838587416140E6, -1.30936939181383777646E4};
@@ -2841,18 +2867,25 @@ namespace sctl { // Generic
   template <> struct CosPiPolyCoeffs<5> { static constexpr double c[] = {-1.2337005501361553, 0.25366950789995935, -0.02086348073586745, 0.0009192599541479634, -2.520014305985118e-05, 4.655337261110899e-07}; };
   inline constexpr double sinpi_poly_digits[] = {3.24, 5.73, 8.42, 11.29, 14.3, 17.12}; // correct digits of degrees 0 to 5
   inline constexpr double cospi_poly_digits[] = {2.49, 4.83, 7.41, 10.2, 13.14, 16.11};
-  // sin(pi r) = pi r + r^3 P(r^2) for |r| <= 1/2: SinHalfPiPolyCoeffs scaled by powers of pi; float degree 3, double 7
-  template <class Real> struct SinPiHalfPolyCoeffs;
-  template <> struct SinPiHalfPolyCoeffs<float> { static constexpr double c[] = {-5.167710573568438, 2.550082305905512, -0.5983080948067624, 0.07767597371243987}; };
-  template <> struct SinPiHalfPolyCoeffs<double> { static constexpr double c[] = {-5.167712780049969, 2.550164039877303, -0.5992645293189611, 0.08214588657282759, -0.007370430500689203, 0.00046629978213948267, -2.1903396569912295e-05, 7.696695409726181e-07}; };
+  // sin(pi r) = pi r + r^3 P(r^2) for |r| <= 1/2, P of degree n: SinHalfPiPolyCoeffs<n> scaled by powers of pi (full
+  // precision, degrees 3 and 7: minimax of their own)
+  template <Integer n> struct SinPiHalfPolyCoeffs;
+  template <> struct SinPiHalfPolyCoeffs<0> { static constexpr double c[] = {-4.649398336111091}; };
+  template <> struct SinPiHalfPolyCoeffs<1> { static constexpr double c[] = {-5.1510476042185, 2.3430531074973087}; };
+  template <> struct SinPiHalfPolyCoeffs<2> { static constexpr double c[] = {-5.167460569200085, 2.5443317132087775, -0.5600294244776813}; };
+  template <> struct SinPiHalfPolyCoeffs<3> { static constexpr double c[] = {-5.167710573568438, 2.550082305905512, -0.5983080948067624, 0.07767597371243987}; };
+  template <> struct SinPiHalfPolyCoeffs<4> { static constexpr double c[] = {-5.167712767486989, 2.550163359059201, -0.5992523987842187, 0.08205069137631646, -0.0070282122522527}; };
+  template <> struct SinPiHalfPolyCoeffs<5> { static constexpr double c[] = {-5.167712779999721, 2.55016403612979, -0.5992644353423625, 0.08214479525845496, -0.007363984474082623, 0.0004474429271406039}; };
+  template <> struct SinPiHalfPolyCoeffs<6> { static constexpr double c[] = {-5.167712780049821, 2.5501640398627203, -0.5992645288310893, 0.08214587879084659, -0.007370363833966301, 0.00046598489736897325, -2.1130636834484655e-05}; };
+  template <> struct SinPiHalfPolyCoeffs<7> { static constexpr double c[] = {-5.167712780049969, 2.550164039877303, -0.5992645293189611, 0.08214588657282759, -0.007370430500689203, 0.00046629978213948267, -2.1903396569912295e-05, 7.696695409726181e-07}; };
   template <bool Cos, class VData> [[gnu::noinline, gnu::cold]] VData sinpi_or_cospi_full_intrin(const VData x) { // the rare path of sinpi_or_cospi_intrin
     VData sinx, cosx;
     approx_sincospi_intrin<-1, true, !Cos, Cos, false>(sinx, cosx, x);
     return (Cos ? cosx : sinx);
   }
-  // sin(pi x) or cos(pi x) by one polynomial: x = n + r, |r| <= 1/2, (-1)^n sin(pi r) or (-1)^n sin(pi (1/2 - |r|)); within
-  // 2.7 ulp, 3.7 without FMA. FullRange = false: only for |x| < 2^(SigBits-1)
-  template <bool Cos, bool FullRange, class VData> inline VData sinpi_or_cospi_intrin(const VData& x) {
+  // sin(pi x) or cos(pi x) to the digits (-1: full, within 2.7 ulp, 3.7 without FMA, exactly +-1 at the half-integers) by one
+  // polynomial: x = n + r, |r| <= 1/2, (-1)^n sin(pi r) or (-1)^n sin(pi (1/2 - |r|)). FullRange = false: only for |x| < 2^(SigBits-1)
+  template <bool Cos, bool FullRange, Integer DIGITS, class VData> inline VData sinpi_or_cospi_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     using Int = typename IntegerType<sizeof(Real)>::value;
@@ -2864,9 +2897,9 @@ namespace sctl { // Generic
     const VData r = sub_intrin(x, sub_intrin(t, set1_intrin<VData>(magic))); // exact
     const VData w = (Cos ? sub_intrin(set1_intrin<VData>((Real)0.5), fabs_intrin(r)) : r); // exact where |r| >= 1/4; elsewhere its rounding error hardly changes sin(pi w)
     const VData z = mul_intrin(w, w);
-    const VData sp = fma_intrin(w, set1_intrin<VData>(pi_hi), mul_intrin(w, fma_intrin(z, eval_poly_horner_intrin(z, SinPiHalfPolyCoeffs<Real>::c, 1.0), set1_intrin<VData>(pi_lo))));
+    const VData sp = fma_intrin(w, set1_intrin<VData>(pi_hi), mul_intrin(w, fma_intrin(z, eval_poly_horner_intrin(z, SinPiHalfPolyCoeffs<sin_halfpi_degree<Real>(DIGITS)>::c, 1.0), set1_intrin<VData>(pi_lo))));
     const VData half = set1_intrin<VData>((Real)0.5), one = set1_intrin<VData>((Real)1);
-    const VData sw = (Cos ? select_intrin(comp_intrin<ComparisonType::eq>(w, half), one, sp) : select_intrin(comp_intrin<ComparisonType::eq>(fabs_intrin(w), half), copysign_intrin(one, w), sp)); // exactly +-1 at w = +-1/2
+    const VData sw = (DIGITS >= 0 ? sp : Cos ? select_intrin(comp_intrin<ComparisonType::eq>(w, half), one, sp) : select_intrin(comp_intrin<ComparisonType::eq>(fabs_intrin(w), half), copysign_intrin(one, w), sp)); // exactly +-1 at w = +-1/2
     return xor_intrin(sw, reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(t), sizeof(Real) * 8 - 1))); // (-1)^n
   }
   // sin(pi x), cos(pi x) to the digits (-1: full), divided by pi with DivPi: x = (n + w)/2, sin(pi w/2) and cos(pi w/2)

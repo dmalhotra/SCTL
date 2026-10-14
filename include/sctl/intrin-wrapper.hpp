@@ -491,9 +491,9 @@ namespace sctl { // Generic
   template <class VData> [[gnu::noinline, gnu::cold]] VDataPair<VData> sincos_reduce_double_intrin(VData x1, VData x_int, const VData x, const Mask<VData> in_range);
   template <class VData> [[gnu::noinline, gnu::cold]] VDataPair<VData> sincos_beyond_intrin(const VData sinx, const VData cosx, const VData x, const typename VData::ScalarType lim);
   template <Integer DIGITS, bool FullRange = true, bool ExactReduction = FullRange, class VData> inline void approx_sincos_intrin(VData& sinx, VData& cosx, const VData& x);
-  template <bool Cos, bool FullRange = true, class VData> inline VData sin_or_cos_intrin(const VData& x); // sin or cos by one polynomial, float and double
-  template <bool FullRange = true, class VData> inline VData tan_poly_intrin(const VData& x); // tan, float and double
-  template <bool Cos, bool FullRange = true, class VData> inline VData sinpi_or_cospi_intrin(const VData& x); // sinpi or cospi by one polynomial, float and double
+  template <bool Cos, bool FullRange = true, Integer DIGITS = -1, class VData> inline VData sin_or_cos_intrin(const VData& x); // sin or cos by one polynomial, float and double
+  template <bool FullRange = true, Integer DIGITS = -1, class VData> inline VData tan_poly_intrin(const VData& x); // tan, float and double
+  template <bool Cos, bool FullRange = true, Integer DIGITS = -1, class VData> inline VData sinpi_or_cospi_intrin(const VData& x); // sinpi or cospi by one polynomial, float and double
   template <class VData> inline void sincos_intrin(VData& sinx, VData& cosx, const VData& x);
 
   template <class Real> inline constexpr Real exp_normal_lim(); // for |x| below, e^x and 2^round(x/ln2) are normal and finite

@@ -512,6 +512,7 @@ namespace sctl {
     else return approx_sinpi<-1, A>(x);
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinpi(const Vec<ValueType,N>& x) {
+    if constexpr (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) return sinpi_or_cospi_intrin<false, !assumes(A, Assume::Finite | Assume::Moderate), (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
     typename Vec<ValueType,N>::VData sinx, cosx;
     approx_sincospi_intrin<digits, !assumes(A, Assume::Finite | Assume::Moderate), true, false>(sinx, cosx, x.get());
     return sinx;
@@ -521,6 +522,7 @@ namespace sctl {
     else return approx_cospi<-1, A>(x);
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x) {
+    if constexpr (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) return sinpi_or_cospi_intrin<true, !assumes(A, Assume::Finite | Assume::Moderate), (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
     typename Vec<ValueType,N>::VData sinx, cosx;
     approx_sincospi_intrin<digits, !assumes(A, Assume::Finite | Assume::Moderate), false, true>(sinx, cosx, x.get());
     return cosx;
@@ -601,16 +603,19 @@ namespace sctl {
     return sinx / cosx;
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x) {
+    if constexpr (sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) return sin_or_cos_intrin<false, !assumes(A, Assume::Finite | Assume::Moderate), (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
     Vec<ValueType,N> sinx, cosx;
     approx_sincos<digits, A>(sinx, cosx, x);
     return sinx;
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x) {
+    if constexpr (sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) return sin_or_cos_intrin<true, !assumes(A, Assume::Finite | Assume::Moderate), (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
     Vec<ValueType,N> sinx, cosx;
     approx_sincos<digits, A>(sinx, cosx, x);
     return cosx;
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x) {
+    if constexpr (sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) return tan_poly_intrin<!assumes(A, Assume::Finite | Assume::Moderate), (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
     Vec<ValueType,N> sinx, cosx;
     approx_sincos<digits, A>(sinx, cosx, x);
     return sinx / cosx;

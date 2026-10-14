@@ -611,13 +611,13 @@ namespace sctl {
   template <Assume A = Assume::None, class ValueType, Integer N> inline void sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
   /** sincospi to the given digits (-1: full); A as sincospi. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline void approx_sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
-  /** sin(pi x) by one polynomial; float, double: within 2.7 ulp, 3.7 without FMA (approx_sinpi<-1>: as sincospi). A as sincospi. */
+  /** sin(pi x) by one polynomial; float, double: within 2.7 ulp, 3.7 without FMA (sincospi: 1.3). A as sincospi. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> sinpi(const Vec<ValueType,N>& x);
-  /** sin(pi x), as approx_sincospi. */
+  /** sin(pi x) to the given digits (-1: sinpi) by one polynomial. A as sincospi. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinpi(const Vec<ValueType,N>& x);
-  /** cos(pi x) by one polynomial; float, double: within 2.7 ulp, 3.7 without FMA (approx_cospi<-1>: as sincospi). A as sincospi. */
+  /** cos(pi x) by one polynomial; float, double: within 2.7 ulp, 3.7 without FMA (sincospi: 1.3). A as sincospi. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cospi(const Vec<ValueType,N>& x);
-  /** cos(pi x), as approx_sincospi. */
+  /** cos(pi x) to the given digits (-1: cospi) by one polynomial. A as sincospi. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x);
   /** sin(pi x)/(pi x), 1 at x = 0, NaN at +-inf; float, double: within 2.2 ulp (float: 1.8). A as sincospi. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> sincpi(const Vec<ValueType,N>& x);
