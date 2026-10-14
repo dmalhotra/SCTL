@@ -589,7 +589,8 @@ namespace sctl {
 
   /**
    * 1/sqrt(x) to the given digits (-1: full precision, within a few ulp). At native SSE, AVX, AVX-512 widths, for double x from
-   * 8e-304 (AVX-512: 2.3e-308) and float x from 1.2e-38 up to the largest finite value; smaller x, 0 and inf give NaN or +-inf.
+   * 8e-304 (AVX-512: 2.3e-308) and float x from 1.2e-38 up to the largest finite value; smaller x, 0 and inf give NaN or +-inf. On AArch64, the NEON estimate and a Newton step up to 4
+   * digits, 1/sqrt from 5.
    */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x);
 

@@ -460,11 +460,13 @@ namespace sctl {
 
   // Special functions
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x) {
-    static constexpr Integer digits_ = (digits==-1 ? (Integer)(TypeTraits<ValueType>::SigBits*0.3010299957) : digits);
+    static constexpr Integer full_digits = (Integer)(TypeTraits<ValueType>::SigBits*0.3010299957);
+    static constexpr Integer digits_ = (digits==-1 || digits > full_digits ? full_digits : digits); // no more steps than the type holds
     return rsqrt_approx_intrin<digits_, typename Vec<ValueType,N>::VData>::eval(x.get());
   }
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x, const typename Vec<ValueType,N>::MaskType& m) {
-    static constexpr Integer digits_ = (digits==-1 ? (Integer)(TypeTraits<ValueType>::SigBits*0.3010299957) : digits);
+    static constexpr Integer full_digits = (Integer)(TypeTraits<ValueType>::SigBits*0.3010299957);
+    static constexpr Integer digits_ = (digits==-1 || digits > full_digits ? full_digits : digits);
     return rsqrt_approx_intrin<digits_, typename Vec<ValueType,N>::VData>::eval(x.get(), m);
   }
 

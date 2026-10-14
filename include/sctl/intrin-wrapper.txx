@@ -5303,6 +5303,31 @@ namespace sctl { // SSE
 
 
   // Special functions
+#if defined(__aarch64__) // fastest on the M4 for the digits: float, the NEON estimate (2.5 digits) and a Newton step (4.9 digits), then
+  // 1/sqrt; double, the estimate, then rsqrt_bittrick_intrin (its double estimate is slow) to 6 digits, then 1/sqrt
+  template <Integer digits, class VData> inline VData rsqrt_neon_intrin(const VData& a) {
+    static constexpr bool F = std::is_same<typename VData::ScalarType,float>::value;
+    if constexpr (digits > (F ? 4 : 6)) {
+      return div_intrin(set1_intrin<VData>((typename VData::ScalarType)1), sqrt_intrin(a));
+    } else if constexpr (F) {
+      float32x4_t r = vrsqrteq_f32(a.v);
+      if constexpr (digits > 2) r = vmulq_f32(r, vrsqrtsq_f32(vmulq_f32(a.v, r), r));
+      return r;
+    } else if constexpr (digits > 2) {
+      return rsqrt_bittrick_intrin<digits, VData>::eval(a);
+    } else {
+      return vrsqrteq_f64(a.v);
+    }
+  }
+  template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,4>> {
+    static inline VecData<float,4> eval(const VecData<float,4>& a) { return rsqrt_neon_intrin<digits>(a); }
+    static inline VecData<float,4> eval(const VecData<float,4>& a, const Mask<VecData<float,4>>& m) { return and_intrin(eval(a), convert_mask2vec_intrin(m)); }
+  };
+  template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<double,2>> {
+    static inline VecData<double,2> eval(const VecData<double,2>& a) { return rsqrt_neon_intrin<digits>(a); }
+    static inline VecData<double,2> eval(const VecData<double,2>& a, const Mask<VecData<double,2>>& m) { return and_intrin(eval(a), convert_mask2vec_intrin(m)); }
+  };
+#else
   template <Integer digits> struct rsqrt_approx_intrin<digits, VecData<float,4>> {
     static inline VecData<float,4> eval(const VecData<float,4>& a) {
       #if defined(__AVX512F__) && defined(__AVX512VL__)
@@ -5341,6 +5366,8 @@ namespace sctl { // SSE
       #endif
     }
   };
+
+#endif
 
   #ifdef SCTL_HAVE_SVML
   template <> inline void sincos_intrin<VecData<float ,4>>(VecData<float ,4>& sinx, VecData<float ,4>& cosx, const VecData<float ,4>& x) { sinx = _mm_sincos_ps(&cosx.v, x.v); }
