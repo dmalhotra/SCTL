@@ -700,7 +700,7 @@ namespace sctl {
   /** atan2 to the given digits (-1: full); A as atan2. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
 
-  /** x to the power y; vectorized with SVML, libmvec, with FMA, or at 256- and 512-bit widths, else one element at a time. With FMA, double within 1 ulp; else double about 9 ulp, 14 near the ends of the range, float 4 ulp. A: Finite | Normal | Domain | Moderate, x > 0 and |y log x| < 708.4 (float: 87.3). */
+  /** x to the power y; vectorized with SVML, libmvec, with FMA, or at 256- and 512-bit widths, else one element at a time. With FMA, double and float at 128 bits within 1 ulp, float at 256 and 512 bits 2 ulp; without, double about 9 ulp, 14 near the ends of the range, float 4 ulp. A: Finite | Normal | Domain | Moderate, x > 0 and |y log x| < 708.4 (float: 87.3). */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
   /** x^e for a compile-time integer e by squaring (2 log2|e| products, error up to |e|/2 ulp); e < 0: 1/x^|e|. */
   template <Long e, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x);
