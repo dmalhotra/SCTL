@@ -2765,7 +2765,7 @@ namespace sctl { // Generic
       static constexpr bool F = std::is_same<Real,float>::value;
       static constexpr Integer Bits = sizeof(Real) * 8;
       static constexpr Real pi_hi = (F ? (Real)1.57079625129699707031 : (Real)1.5707963267948966); // pi/2 rounded down: pi_lo > 0 keeps -0
-      static constexpr Real pi_lo = (Real)(1.570796326794896619231321691639751442L - (long double)pi_hi);
+      static constexpr Real pi_lo = (Real)(F ? 7.5497899548921322e-8 : 6.1232339957367658861e-17); // pi/2 - pi_hi
       VData w, t;
       sincos_pi_reduce_intrin<FullRange>(w, t, x);
       const VData w2 = mul_intrin(w, w);
@@ -2776,7 +2776,7 @@ namespace sctl { // Generic
       VData s, c;
       if constexpr (DivPi) { // w/2 + w^3 Q/pi and 1/pi + w^2 P/pi, 1/pi = ipi_hi + ipi_lo
         static constexpr Real ipi_hi = (Real)0.318309886183790671537767526745028724L;
-        static constexpr Real ipi_lo = (Real)(0.318309886183790671537767526745028724L - (long double)ipi_hi);
+        static constexpr Real ipi_lo = (Real)(F ? 1.284127663345183e-8 : -1.9678676675182486954e-17); // 1/pi - ipi_hi
         s = fma_intrin(mul_intrin(w, w2), poly(w2, SinC::c), mul_intrin(w, set1_intrin<VData>((Real)0.5)));
         c = add_intrin(fma_intrin(w2, poly(w2, CosC::c), set1_intrin<VData>(ipi_lo)), set1_intrin<VData>(ipi_hi));
       } else {
