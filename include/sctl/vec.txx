@@ -479,8 +479,8 @@ namespace sctl {
     template <class ValueType> inline constexpr bool full(const Integer digits) { // the full-precision routine is as accurate, or the type is not float or double
       return digits < 0 || digits >= (std::is_same<ValueType,float>::value ? 7 : 15) || !(std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value);
     }
-    template <class ValueType> inline constexpr bool full_exp(const Integer digits) { // as full, but the Taylor polynomial of approx_exp_intrin also serves other types, up to order 13
-      return digits < 0 || exp_taylor_order(digits) > 13 || ((std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) && full<ValueType>(digits));
+    template <class ValueType> inline constexpr bool full_exp(const Integer digits) { // as full, but the Taylor polynomial of approx_exp_intrin also serves other types, up to order 13; in float and double, from the degree of the full-precision polynomial (6, 11), which is no slower
+      return digits < 0 || exp_taylor_order(digits) > 13 || ((std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) && (full<ValueType>(digits) || exp_taylor_order(digits) >= (std::is_same<ValueType,float>::value ? 6 : 11)));
     }
   }
   template <Assume A, class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
@@ -719,7 +719,7 @@ namespace sctl {
     return exp2_intrin<!assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp2(const Vec<ValueType,N>& x) {
-    if constexpr (detail_approx_digits::full<ValueType>(digits)) return exp2<A>(x);
+    if constexpr (detail_approx_digits::full_exp<ValueType>(digits)) return exp2<A>(x);
     else return exp2_intrin<!assumes(A, Assume::Finite | Assume::Moderate), digits>(x.get());
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> log2(const Vec<ValueType,N>& x) {
@@ -747,21 +747,21 @@ namespace sctl {
     return sinh_intrin<A>(x.get());
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinh(const Vec<ValueType,N>& x) {
-    if constexpr (detail_approx_digits::full<ValueType>(digits)) return sinh<A>(x);
+    if constexpr (detail_approx_digits::full_exp<ValueType>(digits + 1)) return sinh<A>(x); // the polynomial of digits + 1, as exp_half_pm_intrin
     else return sinh_intrin<A, digits>(x.get());
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cosh(const Vec<ValueType,N>& x) {
     return cosh_intrin<A>(x.get());
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cosh(const Vec<ValueType,N>& x) {
-    if constexpr (detail_approx_digits::full<ValueType>(digits)) return cosh<A>(x);
+    if constexpr (detail_approx_digits::full_exp<ValueType>(digits + 1)) return cosh<A>(x); // the polynomial of digits + 1, as exp_half_pm_intrin
     else return cosh_intrin<A, digits>(x.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x) {
     return tanh_intrin(x.get());
   }
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tanh(const Vec<ValueType,N>& x) {
-    if constexpr (detail_approx_digits::full<ValueType>(digits)) return tanh(x);
+    if constexpr (detail_approx_digits::full<ValueType>(digits) || digits >= (std::is_same<ValueType,float>::value ? 6 : 13)) return tanh(x); // from these digits, no faster than tanh
     else return tanh_intrin<digits>(x.get());
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> asinh(const Vec<ValueType,N>& x) {
@@ -786,7 +786,7 @@ namespace sctl {
     return erf_intrin(x.get());
   }
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erf(const Vec<ValueType,N>& x) {
-    return erf_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+    return erf_intrin<(detail_approx_digits::full<ValueType>(digits) || (std::is_same<ValueType,float>::value && digits >= 6) ? -1 : digits)>(x.get()); // float from 6 digits: no slower
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> erfc(const Vec<ValueType,N>& x) {
     return erfc_intrin<-1, A>(x.get());
