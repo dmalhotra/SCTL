@@ -2055,13 +2055,59 @@ namespace sctl { // Generic
   template <Integer DIGITS, class VData> inline VData atan_intrin(const VData& x) {
     return atan2_intrin<false, DIGITS>(x, set1_intrin<VData>((typename VData::ScalarType)1));
   }
+  // asin(s) ~ s + s z P(z), z = s^2, |s| <= 1/2: P of degree n minimax for the relative error of asin, lowest degree
+  // first; correct digits of asin and acos in asin_poly_digits, one less bit than P for asin near |x| = 1/2
+  template <Integer n> struct AsinPolyCoeffs;
+  template <> struct AsinPolyCoeffs<0> { static constexpr double c[] = {0.18465114045886524}; };
+  template <> struct AsinPolyCoeffs<1> { static constexpr double c[] = {0.1650577585788184, 0.09429868164188428}; };
+  template <> struct AsinPolyCoeffs<2> { static constexpr double c[] = {0.16680125935430234, 0.07189979739371152, 0.06410730781203554}; };
+  template <> struct AsinPolyCoeffs<3> { static constexpr double c[] = {0.16665580008140513, 0.07540531253987588, 0.04003497984864669, 0.0499531262365556}; };
+  template <> struct AsinPolyCoeffs<4> { static constexpr double c[] = {0.16666752482028838, 0.07495297642876385, 0.04547037594452425, 0.024179514901493383, 0.04216630790340069}; };
+  template <> struct AsinPolyCoeffs<5> { static constexpr double c[] = {0.16666659991283972, 0.07500504185972516, 0.04451695474391222, 0.03180772276670099, 0.014438586913200623, 0.03751647655674711}; };
+  template <> struct AsinPolyCoeffs<6> { static constexpr double c[] = {0.16666667180257885, 0.07499948897793743, 0.044659972100250946, 0.030112526211811676, 0.024604706675193197, 0.0075094901316445604, 0.03464630816290312}; };
+  template <> struct AsinPolyCoeffs<7> { static constexpr double c[] = {0.16666666627479712, 0.07500004965332784, 0.04464071411220885, 0.03042641169268738, 0.021866765762420984, 0.020640997655028734, 0.0019933587322834333, 0.0328964767437954}; };
+  template <> struct AsinPolyCoeffs<8> { static constexpr double c[] = {0.1666666666963706, 0.07499999533178031, 0.04464310912019581, 0.030375304816588462, 0.022470455938290734, 0.016483635456295716, 0.018606724492124194, -0.0028072223905179065, 0.031913555106521725}; };
+  template <> struct AsinPolyCoeffs<9> { static constexpr double c[] = {0.1666666666644269, 0.0750000004274524, 0.04464282895504744, 0.030382861778436635, 0.022355091797039064, 0.01754766052363762, 0.012559575411550932, 0.017904196212682986, -0.007288011354625444, 0.031494968049419717}; };
+  template <> struct AsinPolyCoeffs<10> { static constexpr double c[] = {0.1666666666668348, 0.07499999996170097, 0.044642860170827955, 0.030381825350410046, 0.022374870728089597, 0.017314149885222826, 0.01432214157756735, 0.009381840309719334, 0.01825150238623254, -0.011700666398239084, 0.03151921308789054}; };
+  template <> struct AsinPolyCoeffs<11> { static constexpr double c[] = {0.16666666666665408, 0.07500000000337013, 0.0446428568283291, 0.030381959136916256, 0.022371758052064487, 0.017359704732462882, 0.01388523583653859, 0.012169208781023478, 0.00652798925450439, 0.019528223413133924, -0.01622418304145986, 0.03191221989870703}; };
+  inline constexpr double asin_poly_digits[] = {2.71, 4.12, 5.46, 6.75, 8.01, 9.26, 10.49, 11.71, 12.92, 14.13, 15.33, 16.53}; // degrees 0 to 11
+  // asin or acos (Acos) of x: |x| <= 1/2 by the polynomial, beyond by asin(|x|) = pi/2 - 2 asin(s), s = sqrt((1 - |x|)/2)
+  template <bool Acos, Integer DIGITS, class VData> inline VData asin_acos_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    static constexpr bool F = std::is_same<Real,float>::value;
+    static constexpr Real pio2_hi = (Real)1.57079632679489661923, pio2_lo = (Real)(F ? -4.3711390001862e-8 : 6.1232339957367658861e-17); // pi/2 - pio2_hi
+    static constexpr Real pi_hi = (Real)3.14159265358979323846, pi_lo = (Real)(F ? -8.7422780003725e-8 : 1.2246467991473531772e-16);
+    const VData half = set1_intrin<VData>((Real)0.5);
+    const VData a = fabs_intrin(x);
+    const Mask<VData> big = comp_intrin<ComparisonType::gt>(a, half);
+    const VData z = select_intrin(big, mul_intrin(sub_intrin(set1_intrin<VData>((Real)1), a), half), mul_intrin(x, x));
+    const VData s = select_intrin(big, sqrt_intrin(z), (Acos ? x : a)); // NaN for |x| > 1
+    const VData r = fma_intrin(mul_intrin(s, z), eval_poly_intrin(z, AsinPolyCoeffs<poly_degree(asin_poly_digits, 0, (F ? 4 : 11), DIGITS)>::c), s);
+    const VData r2 = add_intrin(r, r);
+    if constexpr (!Acos) {
+      return copysign_intrin(select_intrin(big, sub_intrin(set1_intrin<VData>(pio2_hi), sub_intrin(r2, set1_intrin<VData>(pio2_lo))), r), x);
+    } else { // pi/2 - asin(x); 2 asin(s) for x > 1/2, pi - 2 asin(s) for x < -1/2
+      const VData neg = sub_intrin(set1_intrin<VData>(pi_hi), sub_intrin(r2, set1_intrin<VData>(pi_lo)));
+      return select_intrin(big, select_intrin(comp_intrin<ComparisonType::gt>(x, zero_intrin<VData>()), r2, neg), sub_intrin(set1_intrin<VData>(pio2_hi), sub_intrin(r, set1_intrin<VData>(pio2_lo))));
+    }
+  }
   template <Integer DIGITS, class VData> inline VData asin_intrin(const VData& x) {
-    const VData one = set1_intrin<VData>((typename VData::ScalarType)1);
-    return atan2_intrin<false, DIGITS>(x, sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))));
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      return asin_acos_intrin<false, DIGITS>(x);
+    } else {
+      const VData one = set1_intrin<VData>((Real)1);
+      return atan2_intrin<false, DIGITS>(x, sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))));
+    }
   }
   template <Integer DIGITS, class VData> inline VData acos_intrin(const VData& x) {
-    const VData one = set1_intrin<VData>((typename VData::ScalarType)1);
-    return atan2_intrin<false, DIGITS>(sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))), x);
+    using Real = typename VData::ScalarType;
+    if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
+      return asin_acos_intrin<true, DIGITS>(x);
+    } else {
+      const VData one = set1_intrin<VData>((Real)1);
+      return atan2_intrin<false, DIGITS>(sqrt_intrin(mul_intrin(sub_intrin(one, x), add_intrin(one, x))), x);
+    }
   }
 
   template <class VData> inline VData trunc_intrin(const VData& x) {

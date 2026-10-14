@@ -725,14 +725,14 @@ namespace sctl {
   /** atan to the given digits (-1: full), as approx_atan2. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_atan(const Vec<ValueType,N>& x);
 
-  /** Arc sine. */
+  /** Arc sine, NaN for |x| > 1; float, double: within 2.2 ulp (float: 2.3). */
   template <class ValueType, Integer N> inline Vec<ValueType,N> asin(const Vec<ValueType,N>& x);
-  /** asin to the given digits (-1: full), as approx_atan2. */
+  /** asin to the given digits (-1: full): a polynomial in x^2, for |x| > 1/2 of (1 - |x|)/2 with a square root. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_asin(const Vec<ValueType,N>& x);
 
-  /** Arc cosine. */
+  /** Arc cosine, NaN for |x| > 1; float, double: within 1.2 ulp. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> acos(const Vec<ValueType,N>& x);
-  /** acos to the given digits (-1: full), as approx_atan2. */
+  /** acos to the given digits (-1: full), as approx_asin. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_acos(const Vec<ValueType,N>& x);
 
   /** sqrt(x^2 + y^2) without overflow or underflow in between, and inf if x or y is inf, as std::hypot. A: Moderate, |x|, |y| < 2^511 and hypot > 2^-511 (float: 2^63, 2^-63): sqrt(x x + y y); Finite | Normal: without the tests for zeros, inf and NaN. */
