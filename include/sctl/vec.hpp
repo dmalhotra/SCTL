@@ -753,9 +753,9 @@ namespace sctl {
   /** log10 to the given digits (-1: full), as approx_log; A as log. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_log10(const Vec<ValueType,N>& x);
 
-  /** Cube root. A: Normal leaves out subnormal x; Finite | Normal also 0, inf and NaN. */
+  /** Cube root; float, double: within 0.51 ulp. A: Normal leaves out subnormal x; Finite | Normal also 0, inf and NaN. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x);
-  /** cbrt to the given digits (-1: full); up to 5 digits without a division. A as cbrt. */
+  /** cbrt to the given digits (-1: full); up to 5 digits by a polynomial alone. A as cbrt. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cbrt(const Vec<ValueType,N>& x);
 
   /** Hyperbolic sine. A: Finite | Moderate, |x| < 709.4 (float: 88.3). */

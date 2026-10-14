@@ -497,6 +497,7 @@ namespace sctl { // Generic
   template <Integer ORDER, bool RangeCheck = true, ExpArg Arg = ExpArg::Plain, class VData> inline VData approx_exp_intrin(const VData& x, const VData& x_lo);
   template <Integer ORDER, bool RangeCheck = true, class VData> inline VData approx_exp_intrin(const VData& x);
   template <class VData> inline Mask<VData> positive_normal_mask_intrin(const VData& x); // x normal, positive and finite
+  template <class VData> inline void exp_mant_intrin(VData& e, VData& m, const VData& x); // x = 2^e m, m in [1, 2), for normal x > 0
   template <class VData> inline void log_mant_intrin(VData& e, VData& m, const VData& x); // x = 2^e m, m in [sqrt(1/2), sqrt(2)), for normal x > 0
   template <bool Subnormal = true, class VData> inline void log_split_intrin(VData& e, VData& f, const VData& x); // x = 2^e (1+f), 1+f in [sqrt(1/2), sqrt(2)), for x > 0; without Subnormal, for normal x
   template <class VData> inline VData log_split_poly_intrin(const VData& e, const VData& f);
@@ -506,7 +507,7 @@ namespace sctl { // Generic
   template <class VData> inline VData mul_sub_exact_intrin(const VData& a, const VData& b, const VData& c); // a b - c, the product to about twice the precision, for c near a b: by FMA, or else with a and b split in two halves
   template <class VData> inline void log_hi_lo_intrin(VData& L_hi, VData& L_lo, const VData& e, const VData& f);
   template <bool Check = true, class VData> inline VData pow_poly_intrin(const VData& x, const VData& y); // exp(y log|x|), log|x| = L_hi + L_lo to about 1.5x the precision of Real; std::pow at signs, zeros, inf, NaN. Check = false: only for positive normal x and |y log x| < exp_normal_lim
-  template <bool Subnormal = true, bool Special = true, Integer DIGITS = -1, class VData> inline VData cbrt_poly_intrin(const VData& x); // cbrt(2^e m) = 2^q cbrt(2^r m), e = 3q + r; a cubic first guess, then two Halley steps. Without Subnormal, for no subnormal x; without Special, for x not 0, inf or NaN
+  template <bool Subnormal = true, bool Special = true, Integer DIGITS = -1, class VData> inline VData cbrt_poly_intrin(const VData& x); // cbrt(2^e m) = 2^q cbrt(2^r m), e = 3q + r, r in {-1, 0, 1}; (2^r m)^(-1/3) by a polynomial, a series in its residual, then a Newton step on the exact residual; no division. Without Subnormal, for no subnormal x; without Special, for x not 0, inf or NaN
   template <class VData> [[gnu::noinline, gnu::cold]] VData fmod_lanes_intrin(const VData x, const VData y, const VData r, const Mask<VData> m);
   template <class VData> inline VData fmod_poly_intrin(const VData& x, const VData& y); // |x| - q |y|, q = trunc(fl(|x|/|y|)), the quotient or one more; exact
   template <class IntVec> inline IntVec div_int64_intrin(const IntVec& a, const IntVec& b); // through double, exact for |a|, |b| < 2^51; other lanes one element at a time

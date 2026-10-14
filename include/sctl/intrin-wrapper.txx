@@ -1395,10 +1395,10 @@ namespace sctl { // Generic
       return comp_intrin<ComparisonType::ge>(x, set1_intrin<VData>(std::numeric_limits<Real>::min())) & comp_intrin<ComparisonType::le>(x, set1_intrin<VData>(std::numeric_limits<Real>::max()));
     }
   }
-  template <class VData> inline void log_mant_intrin(VData& e, VData& m, const VData& x) {
+  template <class VData> inline void exp_mant_intrin(VData& e, VData& m, const VData& x) {
     if constexpr (split_lanes<VData>) {
-      log_mant_intrin(e.lo, m.lo, x.lo);
-      log_mant_intrin(e.hi, m.hi, x.hi);
+      exp_mant_intrin(e.lo, m.lo, x.lo);
+      exp_mant_intrin(e.hi, m.hi, x.hi);
     } else {
       using Real = typename VData::ScalarType;
       using Int = typename IntegerType<sizeof(Real)>::value;
@@ -1411,8 +1411,19 @@ namespace sctl { // Generic
       static const U frac_mask = {(((Int)1) << SigBits) - 1};
       static const U two_pow_sig = {(Bias + SigBits) << SigBits};
       const VData one = set1_intrin<VData>((Real)1);
-      const VData m1 = or_intrin(and_intrin(x, set1_intrin<VData>(frac_mask.r)), one); // in [1, 2); bit operations on the real lanes, also without 256-bit integer instructions
-      const VData e1 = sub_intrin(or_intrin(bitshiftright_intrin(x, SigBits), set1_intrin<VData>(two_pow_sig.r)), set1_intrin<VData>(two_pow_sig.r + (Real)Bias)); // the exponent field as the low bits of 2^SigBits
+      m = or_intrin(and_intrin(x, set1_intrin<VData>(frac_mask.r)), one); // in [1, 2); bit operations on the real lanes, also without 256-bit integer instructions
+      e = sub_intrin(or_intrin(bitshiftright_intrin(x, SigBits), set1_intrin<VData>(two_pow_sig.r)), set1_intrin<VData>(two_pow_sig.r + (Real)Bias)); // the exponent field as the low bits of 2^SigBits
+    }
+  }
+  template <class VData> inline void log_mant_intrin(VData& e, VData& m, const VData& x) {
+    if constexpr (split_lanes<VData>) {
+      log_mant_intrin(e.lo, m.lo, x.lo);
+      log_mant_intrin(e.hi, m.hi, x.hi);
+    } else {
+      using Real = typename VData::ScalarType;
+      const VData one = set1_intrin<VData>((Real)1);
+      VData e1, m1;
+      exp_mant_intrin(e1, m1, x);
       const Mask<VData> big = comp_intrin<ComparisonType::gt>(m1, set1_intrin<VData>((Real)1.41421356237309504880));
       m = select_intrin(big, mul_intrin(m1, set1_intrin<VData>((Real)0.5)), m1);
       e = add_intrin(e1, select_intrin(big, one, zero_intrin<VData>()));
@@ -1574,52 +1585,71 @@ namespace sctl { // Generic
     r = select_intrin(comp_intrin<ComparisonType::ne>(x, x), x, r);
     return select_intrin(comp_intrin<ComparisonType::eq>(y, zero) | comp_intrin<ComparisonType::eq>(x, one), one, r);
   }
-  // cbrt(m) ~ P(m) for m in [sqrt(1/2), sqrt(2)], minimax for the relative error, P of degree n, lowest degree first:
-  // correct digits 3.20, 4.14, 5.04 for n = 2, 3, 4; 9.77, 12.59, 15.18 after one Halley step
+  // cbrt(m) ~ P(m) for m in [1, 2], minimax for the relative error, P of degree n, lowest degree first: correct digits
+  // 3.20, 4.14, 5.04 for n = 2, 3, 4
   template <Integer n> struct CbrtPolyCoeffs;
-  template <> struct CbrtPolyCoeffs<2> { static constexpr double c[] = {0.5537056625872334, 0.5536620346312702, -0.10747695195781526}; };
-  template <> struct CbrtPolyCoeffs<3> { static constexpr double c[] = {0.4925096743630478, 0.739717656579689, -0.29037894534136116, 0.058220861837140744}; };
-  template <> struct CbrtPolyCoeffs<4> { static constexpr double c[] = {0.4516672773919226, 0.9048172656293748, -0.5356289071572605, 0.21693660187728658, -0.0377879919103263}; };
+  template <> struct CbrtPolyCoeffs<2> { static constexpr double c[] = {0.6215135921881646, 0.43944184810426595, -0.0603193998203087}; };
+  template <> struct CbrtPolyCoeffs<3> { static constexpr double c[] = {0.5528234178977289, 0.5871142931070248, -0.16296967288688988, 0.023104964331693102}; };
+  template <> struct CbrtPolyCoeffs<4> { static constexpr double c[] = {0.5069793773356551, 0.7181539396495297, -0.3006115601307248, 0.08609134750760279, -0.01060389670029072}; };
+  // m^(-1/3) as CbrtPolyCoeffs: relative errors 1.77e-3, 2.53e-4, 3.77e-5 for n = 2, 3, 4
+  template <Integer n> struct RcbrtPolyCoeffs;
+  template <> struct RcbrtPolyCoeffs<2> { static constexpr double c[] = {1.388156868886205, -0.4833224825961902, 0.09339791201403376}; };
+  template <> struct RcbrtPolyCoeffs<3> { static constexpr double c[] = {1.541887011325251, -0.8099603142423168, 0.3177571176728125, -0.049936900199721135}; };
+  template <> struct RcbrtPolyCoeffs<4> { static constexpr double c[] = {1.67000676055117, -1.172880286387351, 0.6954827215045244, -0.22123789700567387, 0.028591032857927533}; };
   template <bool Subnormal, bool Special, Integer DIGITS, class VData> inline VData cbrt_poly_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
     using IntVec = VecData<Int, VData::Size>;
     static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
-    static constexpr Int Bias = (((Int)1) << (sizeof(Real)*8 - SigBits - 2)) - 1;
+    static constexpr Real magic = (Real)1.5 * pow<SigBits,Real>((Real)2) + (Real)((((Int)1) << (TypeTraits<Real>::ExpBits - 1)) - 1); // y + magic: y rounded to an integer n, with n + Bias in the low bits
     const VData zero = zero_intrin<VData>();
     const VData one = set1_intrin<VData>((Real)1);
-    const VData two = set1_intrin<VData>((Real)2);
     const VData ax = fabs_intrin(x);
 
-    VData e, f;
-    log_split_intrin<Subnormal>(e, f, ax);
-    const VData q = floor_intrin(mul_intrin(add_intrin(e, set1_intrin<VData>((Real)0.5)), set1_intrin<VData>((Real)1/3)));
-    const VData r = fma_intrin(q, set1_intrin<VData>((Real)-3), e); // 0, 1 or 2
-    const VData a = mul_intrin(add_intrin(f, one), select_intrin(comp_intrin<ComparisonType::eq>(r, one), two, select_intrin(comp_intrin<ComparisonType::eq>(r, two), set1_intrin<VData>((Real)4), one))); // in [sqrt(1/2), 4 sqrt(2))
+    // ax = 2^e m, m in [1, 2); where there are subnormal x (or zeros), these scaled by 2^(SigBits+1) first
+    VData xs = ax, e, m;
+    Mask<VData> sub;
+    bool scaled = false;
+    if constexpr (Subnormal) {
+      sub = comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>(std::numeric_limits<Real>::min()));
+      scaled = (mask_count_intrin(sub) > 0);
+      if (scaled) xs = select_intrin(sub, mul_intrin(ax, set1_intrin<VData>((Real)(((uint64_t)1) << (SigBits + 1)))), ax);
+    }
+    exp_mant_intrin(e, m, xs);
+    if constexpr (Subnormal) {
+      if (scaled) e = sub_intrin(e, select_intrin(sub, set1_intrin<VData>((Real)(SigBits + 1)), zero));
+    }
+
+    // e = 3q + r, q = round(e/3), r in {-1, 0, 1}: cbrt(ax) = 2^q cbrt(a), a = 2^r m in [1/2, 4); 2^(r/3) and 2^r as
+    // quadratics in r
+    const VData tq = fma_intrin(e, set1_intrin<VData>((Real)1/3), set1_intrin<VData>(magic));
+    const VData r = fma_intrin(sub_intrin(tq, set1_intrin<VData>(magic)), set1_intrin<VData>((Real)-3), e);
+    const VData a = mul_intrin(m, fma_intrin(fma_intrin(r, set1_intrin<VData>((Real)0.25), set1_intrin<VData>((Real)0.75)), r, one));
     VData y;
-    if constexpr (DIGITS < 0) {
-      y = fma_intrin(fma_intrin(fma_intrin(set1_intrin<VData>((Real)0.00572303598344627), a, set1_intrin<VData>((Real)-0.07497777771481334)), a, set1_intrin<VData>((Real)0.4499148623215124)), a, set1_intrin<VData>((Real)0.616489421488996)); // relative error 0.0093
-      { // Halley: y - y (y^3 - a) / (2 y^3 + a)
-        const VData t = mul_intrin(mul_intrin(y, y), y);
-        y = sub_intrin(y, div_intrin(mul_intrin(y, sub_intrin(t, a)), fma_intrin(t, two, a)));
-      }
-      { // again, with the rounding errors of y^3 added to y^3 - a by FMA, so that cubes come out exact
+    if constexpr (DIGITS >= 0 && DIGITS <= 5) { // cbrt(m) P times 2^(r/3)
+      static constexpr Integer n = (DIGITS <= 3 ? 2 : 4);
+      y = mul_intrin(eval_poly_intrin(m, CbrtPolyCoeffs<n>::c), fma_intrin(fma_intrin(r, set1_intrin<VData>((Real)0.02681078793948645), set1_intrin<VData>((Real)0.23311026195538673)), r, one));
+    } else { // u ~ a^(-1/3), y0 = a u^2, E = 1 - y0 u: cbrt(a) = y0 (1 - E)^(-2/3), up to the rounding of y0 over 3; no division
+      static constexpr bool F = std::is_same<Real,float>::value;
+      static constexpr Integer n = (DIGITS < 0 ? (F ? 2 : 4) : (DIGITS <= 9 ? 2 : (DIGITS <= 12 ? 3 : 4))); // E below 5.3e-3, 7.6e-4, 1.1e-4: 3 times the error of u
+      static constexpr Integer k = (DIGITS < 0 ? (F ? 2 : 3) : (DIGITS <= 7 ? 2 : 3)); // terms of (1 - E)^(-2/3) - 1 = 2/3 E + 5/9 E^2 + 40/81 E^3 + ...: 7.1, 9.4, 12.8, 16 digits
+      const VData u = mul_intrin(eval_poly_intrin(m, RcbrtPolyCoeffs<n>::c), fma_intrin(fma_intrin(r, set1_intrin<VData>((Real)0.02681078793948645), set1_intrin<VData>((Real)-0.23311026195538673)), r, one));
+      const VData u2 = mul_intrin(u, u);
+      const VData y0 = mul_intrin(a, u2);
+      const VData E = fma_intrin(unary_minus_intrin(y0), u, one);
+      VData s = set1_intrin<VData>((Real)(k >= 3 ? 40.0/81 : 5.0/9));
+      if constexpr (k >= 3) s = fma_intrin(s, E, set1_intrin<VData>((Real)(5.0/9)));
+      s = fma_intrin(s, E, set1_intrin<VData>((Real)(2.0/3)));
+      y = fma_intrin(mul_intrin(y0, E), s, y0);
+      if constexpr (DIGITS < 0) { // a Newton step on y^3 - a with the rounding errors of y^3 added by FMA, so that cubes come out exact; 1/(3 y^2) by u^2/3
         const VData y2 = mul_intrin(y, y);
         const VData t = mul_intrin(y2, y);
         const VData d = add_intrin(sub_intrin(t, a), fma_intrin(fma_intrin(y, y, unary_minus_intrin(y2)), y, fma_intrin(y2, y, unary_minus_intrin(t))));
-        y = sub_intrin(y, div_intrin(mul_intrin(y, d), fma_intrin(t, two, a)));
-      }
-    } else { // cbrt(1+f) P times cbrt(2^r); one Halley step from 6 digits
-      static constexpr Integer n = (DIGITS <= 3 ? 2 : (DIGITS <= 5 ? 4 : (DIGITS <= 9 ? 2 : (DIGITS <= 12 ? 3 : 4))));
-      const VData c = select_intrin(comp_intrin<ComparisonType::eq>(r, one), set1_intrin<VData>((Real)1.2599210498948731648L), select_intrin(comp_intrin<ComparisonType::eq>(r, two), set1_intrin<VData>((Real)1.5874010519681994748L), one));
-      y = mul_intrin(eval_poly_intrin(add_intrin(f, one), CbrtPolyCoeffs<n>::c), c);
-      if constexpr (DIGITS > 5) {
-        const VData t = mul_intrin(mul_intrin(y, y), y);
-        y = sub_intrin(y, div_intrin(mul_intrin(y, sub_intrin(t, a)), fma_intrin(t, two, a)));
+        y = fma_intrin(unary_minus_intrin(d), mul_intrin(u2, set1_intrin<VData>((Real)1/3)), y);
       }
     }
-    const VData p2 = reinterpret_intrin<VData>(bitshiftleft_intrin(add_intrin(lrint_intrin<IntVec>(q), set1_intrin<IntVec>(Bias)), SigBits)); // 2^q
+    const VData p2 = reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(tq), SigBits)); // 2^q
     if constexpr (!Special) return copysign_intrin(mul_intrin(y, p2), x);
     const VData c = select_intrin(comp_intrin<ComparisonType::gt>(ax, zero) & comp_intrin<ComparisonType::le>(ax, set1_intrin<VData>(std::numeric_limits<Real>::max())), mul_intrin(y, p2), ax); // zeros, inf, NaN as they are; max as in positive_normal_mask_intrin
     return copysign_intrin(c, x); // after the select: clang 18 and 19 compile select(m, copysign(c, x), x) for AVX-512 at -O2 to a vpternlogq with a wrong immediate
