@@ -2383,28 +2383,29 @@ namespace sctl { // Generic
   template <> struct AsinhPolyCoeffs<10> { static constexpr double c[] = {-0.16666666666665694, 0.07499999999770973, -0.044642856955217046, 0.030381936758338737, -0.0223719754666556, 0.017349989917625097, -0.013937130674525018, 0.011364956876270108, -0.008909098636713858, 0.0057946862371079984, -0.002184703164205562}; };
   inline constexpr double asinh_poly_digits[] = {4.69, 6.13, 7.53, 8.9, 10.26, 11.6, 12.93, 14.26, 15.57, 16.81}; // degrees 1 to 10
   // asinh(x) = sign(x) log(|x| + sqrt(x^2 + 1)), with the rounding errors for |x| < 5/4; x + x^3 Q(x^2) for |x| < 1/2;
-  // log(2|x|) from 2^(SigBits/2). digits = -1: full. FullRange = false: |x| < 2^(SigBits/2)
+  // log(2|x|) from 2^62 (double: 2^510), where x^2 would overflow. digits = -1: full. FullRange = false: |x| < 2^(SigBits/2)
   template <Integer digits, bool FullRange, class VData> inline VData asinh_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
-      static constexpr Real lim = pow<TypeTraits<Real>::SigBits/2,Real>((Real)2); // below, 1 - g is exact
+      static constexpr Real lim = (std::is_same<Real,float>::value ? (Real)0x1p62 : (Real)0x1p510); // below, x^2 + 1 and 2|x| are finite
       const VData one = set1_intrin<VData>((Real)1);
       const VData sgn = and_intrin(x, set1_intrin<VData>((Real)-0.0));
       const VData ax = xor_intrin(x, sgn);
       const Mask<VData> small = comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>((Real)0.5));
       const Integer n_small = mask_count_intrin(small);
       VData r = ax;
-      if (n_small < VData::Size) {
-        const VData g = fma_intrin(ax, ax, one);
+      if (n_small < VData::Size) { // a = max(|x|, 1/2): small lanes, from the series below, without a log of 1 + tiny f (subnormal powers of f stall Intel cores)
+        const VData a = max_intrin(ax, set1_intrin<VData>((Real)0.5));
+        const VData g = fma_intrin(a, a, one);
         const VData s = sqrt_intrin(g);
-        const VData v = add_intrin(ax, s);
+        const VData v = add_intrin(a, s);
         VData e, f;
         log_split_intrin<false>(e, f, v);
-        if (mask_count_intrin(comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>((Real)1.25))) == 0) {
+        if (mask_count_intrin(comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>((Real)1.25))) == 0) {
           r = approx_log_split_poly_intrin<digits>(e, f);
         } else {
-          const VData g_err = mul_sub_exact_intrin(ax, ax, sub_intrin(g, one)); // g - 1 is exact
-          const VData c = add_intrin(sub_intrin(ax, sub_intrin(v, s)), sqrt_err_intrin(s, g, g_err)); // s >= |x|
+          const VData g_err = mul_sub_exact_intrin(a, a, sub_intrin(g, one)); // g - 1 is exact
+          const VData c = add_intrin(sub_intrin(a, sub_intrin(v, s)), sqrt_err_intrin(s, g, g_err)); // s >= a
           r = approx_log_split_poly_intrin<digits>(e, log_split_add_intrin(e, f, c));
         }
       }
@@ -2412,7 +2413,7 @@ namespace sctl { // Generic
         const VData x2 = mul_intrin(ax, ax);
         r = select_intrin(small, fma_intrin(mul_intrin(ax, x2), eval_poly_horner_intrin(x2, AsinhPolyCoeffs<poly_degree(asinh_poly_digits, 1, (std::is_same<Real,float>::value ? 4 : 10), digits)>::c), ax), r);
       }
-      if (FullRange && mask_count_intrin(comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>(lim))) < VData::Size) { // |x| >= lim, inf, NaN
+      if (FullRange && !mask_all_intrin(comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>(lim)))) { // |x| >= lim, inf, NaN
         const VData big = add_intrin(log_intrin(ax), set1_intrin<VData>(const_ln2<Real>()));
         r = select_intrin(comp_intrin<ComparisonType::ge>(ax, set1_intrin<VData>(lim)), big, select_intrin(comp_intrin<ComparisonType::lt>(ax, set1_intrin<VData>(lim)), r, ax));
       }
@@ -2428,11 +2429,11 @@ namespace sctl { // Generic
     }
   }
   // acosh(x) = log(x + sqrt(x^2 - 1)), for x < 2 with the rounding errors of x^2 - 1, the square root and the sum; log(2x)
-  // from 2^(SigBits/2). digits = -1: full. FullRange = false: 1 < x < 2^(SigBits/2)
+  // from 2^62 (double: 2^510), where x^2 would overflow. digits = -1: full. FullRange = false: 1 < x < 2^(SigBits/2)
   template <Integer digits, bool FullRange, class VData> inline VData acosh_intrin(const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
-      static constexpr Real lim = pow<TypeTraits<Real>::SigBits/2,Real>((Real)2); // below, ph - 1 is exact
+      static constexpr Real lim = (std::is_same<Real,float>::value ? (Real)0x1p62 : (Real)0x1p510); // below, x^2 and 2x are finite
       const VData one = set1_intrin<VData>((Real)1);
       const VData g = (fused_fma<VData> ? fma_intrin(x, x, unary_minus_intrin(one)) : mul_intrin(sub_intrin(x, one), add_intrin(x, one))); // x - 1 exact for x <= 2
       const VData s = sqrt_intrin(g);
@@ -2452,7 +2453,7 @@ namespace sctl { // Generic
       }
       const VData r = approx_log_split_poly_intrin<digits>(e, f);
       const VData vlim = set1_intrin<VData>(lim);
-      if (!FullRange || mask_count_intrin(comp_intrin<ComparisonType::gt>(x, one) & comp_intrin<ComparisonType::lt>(x, vlim)) == VData::Size) return r;
+      if (!FullRange || mask_all_intrin(comp_intrin<ComparisonType::gt>(x, one) & comp_intrin<ComparisonType::lt>(x, vlim))) return r;
 
       // x = 1, x < 1, x >= lim, inf or NaN
       const VData big = add_intrin(log_intrin(x), set1_intrin<VData>(const_ln2<Real>()));
