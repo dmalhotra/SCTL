@@ -2072,7 +2072,9 @@ namespace sctl { // Generic
   template <> struct AtanPolyCoeffs<6> { static constexpr double c[] = {-0.3333333329572931, 0.19999994326773302, -0.14285423642444056, 0.11104004306779934, -0.0899684466135173, 0.06991240012039009, -0.03792474588086008}; };
   template <> struct AtanPolyCoeffs<7> { static constexpr double c[] = {-0.3333333333166368, 0.1999999968064304, -0.1428569334574923, 0.11110444020558093, -0.09079061659531835, 0.07568008531159959, -0.05889131121502296, 0.03086640025760975}; };
   template <> struct AtanPolyCoeffs<8> { static constexpr double c[] = {-0.33333333333260085, 0.19999999982683608, -0.14285712872908005, 0.11111054409838247, -0.09089615070512584, 0.07674318804795639, -0.06510249257840772, 0.05037426627444555, -0.025474366542937287}; };
-  inline constexpr double atan_poly_digits[] = {3.05, 4.65, 6.18, 7.69, 9.17, 10.64, 12.10, 13.56, 14.95}; // degrees 0 to 8
+  template <> struct AtanPolyCoeffs<9> { static constexpr double c[] = {-0.3333333333333015, 0.19999999999088963, -0.1428571419526196, 0.1111110665361545, -0.0909078241313454, 0.07690068309805519, -0.06641121267638711, 0.05692539356211354, -0.04359096199725628, 0.02125985465703717}; };
+  template <> struct AtanPolyCoeffs<10> { static constexpr double c[] = {-0.333333333333332, 0.19999999999953247, -0.1428571428016658, 0.11111110782155925, -0.0909089772527845, 0.07692059717920913, -0.06663099209550209, 0.05847859316805358, -0.05039190627763842, 0.03806214515804, -0.017905045392085674}; };
+  inline constexpr double atan_poly_digits[] = {3.05, 4.65, 6.18, 7.69, 9.17, 10.64, 12.10, 13.56, 14.95, 16.45, 17.89}; // degrees 0 to 10
   template <bool SpecialValues, Integer DIGITS, class VData> inline VData atan2_intrin(const VData& y, const VData& x) {
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
@@ -2090,29 +2092,15 @@ namespace sctl { // Generic
         den = select_intrin(inf_inf, one, den);
       }
 
-      // atan(num/den) with num/den in [0, 1]: reduce to |t| <= tan(pi/8), then Cephes atan rational, or for DIGITS a polynomial
+      // atan(num/den) with num/den in [0, 1]: reduce to |t| <= tan(pi/8), then a polynomial (float: degree 4, double: 10)
       const Mask<VData> big = comp_intrin<ComparisonType::gt>(num, mul_intrin(den, set1_intrin<VData>((Real)0.41421356237309504880)));
       const VData n2 = select_intrin(big, sub_intrin(num, den), num);
       VData d2 = select_intrin(big, add_intrin(num, den), den);
       if constexpr (SpecialValues) d2 = select_intrin(comp_intrin<ComparisonType::eq>(d2, zero), one, d2); // 0 for atan2(0, 0)
       const VData t = div_intrin(n2, d2);
       const VData z = mul_intrin(t, t);
-      VData r;
-      if constexpr (DIGITS >= 0) { // t + t z P(z)
-        r = fma_intrin(mul_intrin(t, z), eval_poly_intrin(z, AtanPolyCoeffs<poly_degree(atan_poly_digits, 0, 8, DIGITS)>::c), t);
-      } else {
-        VData p = set1_intrin<VData>((Real)-8.750608600031904122785e-1);
-        p = fma_intrin(p, z, set1_intrin<VData>((Real)-1.615753718733365076637e1));
-        p = fma_intrin(p, z, set1_intrin<VData>((Real)-7.500855792314704667340e1));
-        p = fma_intrin(p, z, set1_intrin<VData>((Real)-1.228866684490136173410e2));
-        p = fma_intrin(p, z, set1_intrin<VData>((Real)-6.485021904942025371773e1));
-        VData q = add_intrin(z, set1_intrin<VData>((Real)2.485846490142306297962e1));
-        q = fma_intrin(q, z, set1_intrin<VData>((Real)1.650270098316988542046e2));
-        q = fma_intrin(q, z, set1_intrin<VData>((Real)4.328810604912902668951e2));
-        q = fma_intrin(q, z, set1_intrin<VData>((Real)4.853903996359136964868e2));
-        q = fma_intrin(q, z, set1_intrin<VData>((Real)1.945506571482613964425e2));
-        r = fma_intrin(mul_intrin(t, z), div_intrin(p, q), t);
-      }
+      static constexpr Integer n = (DIGITS < 0 ? (std::is_same<Real,float>::value ? 4 : 10) : poly_degree(atan_poly_digits, 0, 10, DIGITS));
+      VData r = fma_intrin(mul_intrin(t, z), eval_poly_horner_intrin(z, AtanPolyCoeffs<n>::c, 1.0), t); // t + t z P(z), by Horner: the powers of Estrin can be subnormal
       r = add_intrin(r, select_intrin(big, set1_intrin<VData>((Real)0.78539816339744830962), zero));
 
       // quadrant

@@ -696,7 +696,7 @@ namespace sctl {
 
   /** Angle of the point (x, y), in [-pi, pi], as std::atan2. A: Finite | Normal; without it, x, y both infinite or both zero also as std::atan2. */
   template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
-  /** atan2 to the given digits (-1: full), by a polynomial instead of a rational: one division less; A as atan2. */
+  /** atan2 to the given digits (-1: full); A as atan2. */
   template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
 
   /** x to the power y; vectorized with SVML, libmvec, or at 256- and 512-bit widths (double about 9 ulp, 14 near the ends of the range; float 4 ulp), else one element at a time. A: Finite | Normal | Domain | Moderate, x > 0 and |y log x| < 708.4 (float: 87.3). */
