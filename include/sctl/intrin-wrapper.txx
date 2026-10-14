@@ -3182,13 +3182,14 @@ namespace sctl { // Generic
   template <> struct SinPiHalfPolyCoeffs<5> { static constexpr double c[] = {-5.167712779999721, 2.55016403612979, -0.5992644353423625, 0.08214479525845496, -0.007363984474082623, 0.0004474429271406039}; };
   template <> struct SinPiHalfPolyCoeffs<6> { static constexpr double c[] = {-5.167712780049821, 2.5501640398627203, -0.5992645288310893, 0.08214587879084659, -0.007370363833966301, 0.00046598489736897325, -2.1130636834484655e-05}; };
   template <> struct SinPiHalfPolyCoeffs<7> { static constexpr double c[] = {-5.167712780049969, 2.550164039877303, -0.5992645293189611, 0.08214588657282759, -0.007370430500689203, 0.00046629978213948267, -2.1903396569912295e-05, 7.696695409726181e-07}; };
-  // SinPiHalfPolyCoeffs<3> of float at full precision with its w^3 coefficient one float ulp toward 0, so that sin(pi/2)
-  // evaluates to exactly 1 (from 1 - 2^-24); SinPiHalfPolyCoeffs<7> of double gives exactly 1 as it is. At w = 1/2 every
-  // product is by 1/2 or 1/4, exact, so that this holds with FMA and without. Near 1/2 the rounding then gives 1 + ulp
-  // (float: 1.2% of the w in [0, 1/2]; double also before), hence the clamp of sinpi_or_cospi_intrin
-  struct SinPiHalfFloatCoeffs {
-    static constexpr double c[] = {-5.167710304260254, 2.550082305905512, -0.5983080948067624, 0.07767597371243987}; // max error unchanged, 2.6 ulp (2 ulp toward 0: 3.7)
-  };
+  // SinPiHalfPolyCoeffs<7> (double) and <3> (float) at full precision, nudged so that sin(pi w) evaluates to exactly 1 at w =
+  // 1/2 and to at most 1 near it: float c[0..3] by 1, -5, -5, -6 ulps (with FMA and without), double c[0] by -1 ulp and c[4] by
+  // 98304 (with FMA; 2^-34 of it). Found by searches of the nudges with every float in [1/2 - 2^-9, 1/2] and every double in
+  // [1/2 - 2^-26, 1/2], beyond which 1 - sin(pi w) exceeds the rounding errors (at w = 1/2 every product is by 1/2 or 1/4,
+  // exact). Max error 2.27 ulp over every float (2.59 before), double 2.34 against quad (2.31 with the clamp of before)
+  template <class Real> struct SinPiHalfExactCoeffs;
+  template <> struct SinPiHalfExactCoeffs<double> { static constexpr double c[] = {-5.16771278004997, 2.550164039877303, -0.5992645293189611, 0.08214588657282759, -0.0073704305006039375, 0.00046629978213948267, -2.1903396569912295e-05, 7.696695409726181e-07}; };
+  template <> struct SinPiHalfExactCoeffs<float> { static constexpr double c[] = {-5.167710304260254, 2.5500810146331787, -0.5983083844184875, 0.07767593115568161}; };
   template <bool Cos, class VData> [[gnu::noinline, gnu::cold]] VData sinpi_or_cospi_full_intrin(const VData x) { // the rare path of sinpi_or_cospi_intrin
     VData sinx, cosx;
     approx_sincospi_intrin<-1, true, !Cos, Cos, false>(sinx, cosx, x);
@@ -3208,11 +3209,13 @@ namespace sctl { // Generic
     const VData r = sub_intrin(x, sub_intrin(t, set1_intrin<VData>(magic))); // exact
     const VData w = (Cos ? sub_intrin(set1_intrin<VData>((Real)0.5), fabs_intrin(r)) : r); // exact where |r| >= 1/4; elsewhere its rounding error hardly changes sin(pi w)
     const VData z = mul_intrin(w, w);
-    using C = std::conditional_t<std::is_same<Real,float>::value && DIGITS < 0, SinPiHalfFloatCoeffs, SinPiHalfPolyCoeffs<sin_halfpi_degree<Real>(DIGITS)>>; // full precision: 1 at w = 1/2
-    const VData sp = fma_intrin(w, set1_intrin<VData>(pi_hi), mul_intrin(w, fma_intrin(z, eval_poly_horner_intrin(z, C::c, 1.0), set1_intrin<VData>(pi_lo))));
-    const VData one = set1_intrin<VData>((Real)1);
-    const VData sc = (DIGITS >= 0 ? sp : Cos ? min_intrin(sp, one) : max_intrin(min_intrin(sp, one), unary_minus_intrin(one))); // |sin| <= 1, exactly +-1 at w = +-1/2 (2 or 1 operations, 4 or 2 for a test of w)
-    return xor_intrin(sc, reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(t), sizeof(Real) * 8 - 1))); // (-1)^n
+    using C = std::conditional_t<DIGITS < 0, SinPiHalfExactCoeffs<Real>, SinPiHalfPolyCoeffs<sin_halfpi_degree<Real>(DIGITS)>>; // full precision: exactly +-1 at w = +-1/2, |sin| <= 1
+    VData sp = fma_intrin(w, set1_intrin<VData>(pi_hi), mul_intrin(w, fma_intrin(z, eval_poly_horner_intrin(z, C::c, 1.0), set1_intrin<VData>(pi_lo))));
+    if constexpr (DIGITS < 0 && std::is_same<Real,double>::value && !fused_fma<VData>) { // double without FMA: 1 + 2^-52 near w = 1/2, clamped
+      const VData one = set1_intrin<VData>((Real)1);
+      sp = (Cos ? min_intrin(sp, one) : max_intrin(min_intrin(sp, one), unary_minus_intrin(one)));
+    }
+    return xor_intrin(sp, reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(t), sizeof(Real) * 8 - 1))); // (-1)^n
   }
   // sin(pi x), cos(pi x) to the digits (-1: full), divided by pi with DivPi: x = (n + w)/2, sin(pi w/2) and cos(pi w/2)
   // by n mod 4; FullRange as sincos_pi_reduce_intrin
