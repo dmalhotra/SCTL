@@ -581,11 +581,13 @@ namespace sctl {
   }
 
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x) {
+    if constexpr (sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) return sin_or_cos_intrin<false, !assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
     Vec<ValueType,N> sinx, cosx;
     sincos<A>(sinx, cosx, x);
     return sinx;
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x) {
+    if constexpr (sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) return sin_or_cos_intrin<true, !assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
     Vec<ValueType,N> sinx, cosx;
     sincos<A>(sinx, cosx, x);
     return cosx;

@@ -1262,6 +1262,35 @@ namespace sctl { // Generic
       }
     }
   }
+  // sin(r) = r + r^3 P(r^2) for |r| <= pi/2 (and a little beyond): P minimax for the relative error, lowest degree first;
+  // float degree 3 (relative error 6.1e-9), double 7 (2.8e-19)
+  template <class Real> struct SinHalfPiPolyCoeffs;
+  template <> struct SinHalfPiPolyCoeffs<float> { static constexpr double c[] = {-0.16666659527947375, 0.00833306561883192, -0.0001980955376207339, 2.6056657105876454e-06}; };
+  template <> struct SinHalfPiPolyCoeffs<double> { static constexpr double c[] = {-0.16666666666666666, 0.008333333333333193, -0.00019841269841208933, 2.7557319211087165e-06, -2.5052106868096306e-08, 1.605893946368988e-10, -7.64298504556611e-13, 2.721105696322979e-15}; };
+  // sin or cos (Cos) at full precision, the rare path of sin_or_cos_intrin: by approx_sincos_intrin; not inlined
+  template <bool Cos, class VData> [[gnu::noinline, gnu::cold]] VData sin_or_cos_full_intrin(const VData x) {
+    VData sinx, cosx;
+    approx_sincos_intrin<-1, true>(sinx, cosx, x);
+    return (Cos ? cosx : sinx);
+  }
+  // sin(x) or cos(x) at full precision by one polynomial: x = n pi + r (cos: (n + 1/2) pi + r), |r| <= pi/2, by
+  // PiOver2Split; sin(x) = (-1)^n sin(r), cos(x) = (-1)^(n+1) sin(r). FullRange = false: only for |x| < PiOver2Split::lim
+  template <bool Cos, bool FullRange, class VData> inline VData sin_or_cos_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
+    using Int = typename IntegerType<sizeof(Real)>::value;
+    using IntVec = VecData<Int, VData::Size>;
+    static constexpr Real magic = (Real)1.5 * pow<TypeTraits<Real>::SigBits,Real>((Real)2); // y + magic: round(y) in the low bits
+    if (FullRange && !mask_all_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(PiOver2Split<Real>::lim)))) return sin_or_cos_full_intrin<Cos>(x); // also inf, NaN
+    const VData y = (Cos ? fma_intrin(x, set1_intrin<VData>(1 / const_pi<Real>()), set1_intrin<VData>((Real)-0.5)) : mul_intrin(x, set1_intrin<VData>(1 / const_pi<Real>())));
+    const VData t = add_intrin(y, set1_intrin<VData>(magic));
+    const VData n = sub_intrin(t, set1_intrin<VData>(magic));
+    const VData r = PiOver2Split<Real>::sub_n(x, (Cos ? fma_intrin(n, set1_intrin<VData>((Real)2), set1_intrin<VData>((Real)1)) : add_intrin(n, n)));
+    const VData z = mul_intrin(r, r);
+    const VData sr = fma_intrin(mul_intrin(r, z), eval_poly_horner_intrin(z, SinHalfPiPolyCoeffs<Real>::c, 1.0), r);
+    const IntVec sign = bitshiftleft_intrin(reinterpret_intrin<IntVec>(Cos ? add_intrin(t, set1_intrin<VData>((Real)1)) : t), sizeof(Real) * 8 - 1); // the parity of n (cos: n + 1) at the sign
+    return xor_intrin(sr, reinterpret_intrin<VData>(sign));
+  }
   template <class VData> inline void sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
     if constexpr (split_lanes<VData>) {
       sincos_intrin(sinx.lo, cosx.lo, x.lo);
