@@ -1295,7 +1295,8 @@ namespace sctl { // Generic
   template <> struct ExpPolyCoeffs<float> { static constexpr double c[] = {0.49999983719650143, 0.16666600335171258, 0.04167370812750387, 0.008359227492413222, 0.0013344549766889703}; };
   template <> struct ExpPolyCoeffs<double> { static constexpr double c[] = {0.500000000000001, 0.16666666666666674, 0.041666666666522106, 0.008333333333322215, 0.0013888888947785523, 0.00019841269886563802, 2.4801487366025675e-05, 2.755724236744966e-06, 2.7632640675430235e-07, 2.5110038296727242e-08}; };
   // e^x; with ExpArg::Sum, e^(x + x_lo) for |x_lo| <= ulp(x)/2, x_lo added to the reduced argument; with ExpArg::Base10,
-  // 10^x, x reduced by n log10(2); with ExpArg::Base2, 2^x, x - n exact
+  // 10^x, x reduced by n log10(2); with ExpArg::Base2, 2^x, x - n exact; with ExpArg::Half, e^x/2 by 2^(n-1) (without RangeCheck for
+  // -708 < x < 709.7, float: -86.6 < x < 88.3)
   template <Integer ORDER, bool RangeCheck, ExpArg Arg, class VData> inline VData approx_exp_intrin(const VData& x, const VData& x_lo) {
     using Real = typename VData::ScalarType;
     using Int = typename IntegerType<sizeof(Real)>::value;
@@ -1317,6 +1318,7 @@ namespace sctl { // Generic
     static constexpr Real coeff13 = 1/(((Real)2)*3*4*5*6*7*8*9*10*11*12*13); // err = 2^-57.2759
     static constexpr bool B10 = (Arg == ExpArg::Base10);
     static constexpr bool B2 = (Arg == ExpArg::Base2);
+    static constexpr bool Hf = (Arg == ExpArg::Half);
     static constexpr bool Minimax = ((std::is_same<Real,float>::value || std::is_same<Real,double>::value) && ORDER == (Integer)(TypeTraits<Real>::SigBits/3.8)); // full precision
     static constexpr Real U = (B10 ? (Real)0.30102999566398119521373889472449302677L : B2 ? (Real)1 : const_ln2<Real>()); // the unit of x: n U = n ln2 in base e
     static constexpr Real x0 = -U;
@@ -1374,23 +1376,24 @@ namespace sctl { // Generic
     VData t, e1;
     reduce(t, e1, x, x_lo);
     if constexpr (!ieee_layout<Real>()) { // 2^n one element at a time
-      LaneArray<VData> u(sub_intrin(t, set1_intrin<VData>(magic)));
+      LaneArray<VData> u(sub_intrin(t, set1_intrin<VData>(magic + (Hf ? 1 : 0))));
       for (Integer i = 0; i < VData::Size; i++) u[i] = std::ldexp((Real)1, (int)std::max<Real>(-20000, std::min<Real>(20000, u[i])));
       const VData e = mul_intrin(e1, u.value());
       if constexpr (!RangeCheck) return e;
       static constexpr Real max_x = ((Real)(Bias + 1) + (Real)0.25) * U; // x = -inf gives e1 = NaN
       return select_intrin(comp_intrin<ComparisonType::lt>(x, set1_intrin<VData>(-2*max_x)), zero_intrin<VData>(), select_intrin(comp_intrin<ComparisonType::gt>(x, set1_intrin<VData>(max_x)), set1_intrin<VData>((Real)INFINITY), e));
     } else {
-      if constexpr (!RangeCheck) return mul_intrin(e1, pow2(t));
-      if (mask_count_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(exp_normal_lim<Real>() / const_ln2<Real>() * U))) == VData::Size) return mul_intrin(e1, pow2(t));
+      const VData th = (Hf ? sub_intrin(t, set1_intrin<VData>((Real)1)) : t);
+      if constexpr (!RangeCheck) return mul_intrin(e1, pow2(th));
+      if (mask_all_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(exp_normal_lim<Real>() / const_ln2<Real>() * U - (Hf ? const_ln2<Real>() : 0))))) return mul_intrin(e1, pow2(th));
 
       // some x near or beyond the range of the result, inf or NaN: x clamped to where e^x is 0 or inf, and 2^n = 2^hi 2^lo,
       // hi >= lo; e1 2^hi is exact and normal, so the result is rounded once, also where it is subnormal
       static constexpr Real xmax = (Real)(2 * (Bias - 2)) * U;
       reduce(t, e1, min_intrin(set1_intrin<VData>(xmax), max_intrin(set1_intrin<VData>(-xmax), x)), x_lo); // keeps NaN
-      const VData n = sub_intrin(t, set1_intrin<VData>(magic));
-      const VData th = fma_intrin(n, set1_intrin<VData>((Real)0.5), set1_intrin<VData>(magic));
-      const VData h = sub_intrin(th, set1_intrin<VData>(magic));
+      const VData n = sub_intrin(t, set1_intrin<VData>(magic + (Hf ? 1 : 0)));
+      const VData tn = fma_intrin(n, set1_intrin<VData>((Real)0.5), set1_intrin<VData>(magic));
+      const VData h = sub_intrin(tn, set1_intrin<VData>(magic));
       const VData k = sub_intrin(n, h);
       const VData hi = max_intrin(h, k);
       const VData lo = min_intrin(h, k);
@@ -3946,22 +3949,74 @@ namespace sctl { // Generic
     for (Integer k = K-1; k >= 1; k--) p = fma_intrin(p, z, set1_intrin<VData>(c[k]));
     return fma_intrin(mul_intrin(x, z), p, x);
   }
-  template <Assume A, Integer DIGITS, class VData> inline VData exp_half_intrin(const VData& a) {
+  template <Assume A, Integer DIGITS, class VData> inline VData exp_half_intrin(const VData& a) { // e^a/2, a >= 0
     using Real = typename VData::ScalarType;
-    const VData a1 = sub_intrin(a, set1_intrin<VData>((Real)1));
-    if constexpr (DIGITS < 0) return mul_intrin(exp_assume_intrin<A>(a1), set1_intrin<VData>(const_e<Real>()/2));
-    else return mul_intrin(approx_exp_intrin<exp_taylor_order(DIGITS + 1), !assumes(A, Assume::Finite | Assume::Moderate)>(a1), set1_intrin<VData>(const_e<Real>()/2));
+    if constexpr (DIGITS < 0 && !sctl_poly<PolyOf::Exp, VData>()) return mul_intrin(exp_assume_intrin<A>(sub_intrin(a, set1_intrin<VData>((Real)1))), set1_intrin<VData>(const_e<Real>()/2));
+    else return approx_exp_intrin<(DIGITS < 0 ? (Integer)(TypeTraits<Real>::SigBits/3.8) : exp_taylor_order(DIGITS + 1)), !assumes(A, Assume::Finite | Assume::Moderate), ExpArg::Half>(a, a);
+  }
+  // e^-|x|/2 = 1/(4h), h = e^|x|/2; h capped where e^-|x| is below its ulp, so that it is not subnormal
+  template <class VData> inline VData exp_half_neg_intrin(const VData& h) {
+    using Real = typename VData::ScalarType;
+    static constexpr Real cap = (std::is_same<Real,float>::value ? (Real)0x1p30 : (Real)0x1p100);
+    return div_intrin(set1_intrin<VData>((Real)0.25), min_intrin(h, set1_intrin<VData>(cap)));
+  }
+  // e^a/2 and e^-a/2 for a >= 0 from one reduction a = n ln2 + r: e^(+-r) = E(r^2) +- r O(r^2), the even and odd parts
+  // of the polynomial of approx_exp_intrin, times 2^(n-1) and 2^(-n-1); the second scale at least 2^-(SigBits+10),
+  // where e^-a/2 is below an ulp of e^a/2, so that it is not subnormal
+  template <Assume A, Integer DIGITS, class VData> inline void exp_half_pm_intrin(VData& ep, VData& en, const VData& a) {
+    using Real = typename VData::ScalarType;
+    if constexpr (!(std::is_same<Real,float>::value || std::is_same<Real,double>::value) || (DIGITS < 0 && !sctl_poly<PolyOf::Exp, VData>())) {
+      ep = exp_half_intrin<A, DIGITS>(a);
+      en = exp_half_neg_intrin(ep);
+    } else {
+      using Int = typename IntegerType<sizeof(Real)>::value;
+      using IntVec = VecData<Int, VData::Size>;
+      static constexpr Integer SigBits = TypeTraits<Real>::SigBits;
+      static constexpr Integer ORDER = (DIGITS < 0 ? (Integer)(SigBits/3.8) : exp_taylor_order(DIGITS + 1));
+      static constexpr Real magic = (Real)1.5 * pow<SigBits,Real>((Real)2) + (Real)((((Int)1) << (TypeTraits<Real>::ExpBits - 1)) - 1);
+      if (!assumes(A, Assume::Finite | Assume::Moderate) && !mask_all_intrin(comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>(exp_normal_lim<Real>() - const_ln2<Real>())))) {
+        ep = approx_exp_intrin<ORDER, true, ExpArg::Half>(a, a); // near the overflow, inf, NaN
+        en = exp_half_neg_intrin(ep);
+        return;
+      }
+      static constexpr bool Minimax = (ORDER == (Integer)(SigBits/3.8));
+      static constexpr Integer D = (Minimax ? (Integer)(sizeof(ExpPolyCoeffs<Real>::c) / sizeof(double)) + 1 : ORDER); // degree
+      static constexpr auto c = [] { // ExpPolyCoeffs or 1/k!, as their even and odd parts
+        struct { double e[D/2 + 1], o[(D + 1)/2]; } c{};
+        double f = 1;
+        for (Integer k = 0; k <= D; k++) {
+          if (k) f /= (double)k;
+          const double ck = (Minimax && k >= 2 ? ExpPolyCoeffs<Real>::c[k - 2] : f);
+          if (k % 2) c.o[k/2] = ck; else c.e[k/2] = ck;
+        }
+        return c;
+      }();
+      const VData t = fma_intrin(a, set1_intrin<VData>((Real)1/const_ln2<Real>()), set1_intrin<VData>(magic));
+      const VData n = sub_intrin(t, set1_intrin<VData>(magic));
+      const VData r = fma_intrin(n, set1_intrin<VData>(-Ln2Split<Real>::lo), fma_intrin(n, set1_intrin<VData>(-Ln2Split<Real>::hi), a));
+      const VData z = mul_intrin(r, r);
+      const VData E = eval_poly_horner_intrin(z, c.e, 1.0);
+      const VData ro = mul_intrin(r, eval_poly_horner_intrin(z, c.o, 1.0));
+      const auto pow2 = [](const VData& tk) { return reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(tk), SigBits)); }; // 2^k, tk = k + magic
+      ep = mul_intrin(add_intrin(E, ro), pow2(sub_intrin(t, set1_intrin<VData>((Real)1))));
+      en = mul_intrin(sub_intrin(E, ro), pow2(max_intrin(sub_intrin(set1_intrin<VData>(magic - 1), n), set1_intrin<VData>(magic - (Real)(SigBits + 10)))));
+    }
   }
   template <Assume A, Integer DIGITS, class VData> inline VData cosh_intrin(const VData& x) {
-    const VData h = exp_half_intrin<A, DIGITS>(fabs_intrin(x));
-    return add_intrin(h, div_intrin(set1_intrin<VData>((typename VData::ScalarType)0.25), h));
+    VData ep, en;
+    exp_half_pm_intrin<A, DIGITS>(ep, en, fabs_intrin(x));
+    return add_intrin(ep, en);
   }
-  template <Assume A, Integer DIGITS, class VData> inline VData sinh_intrin(const VData& x) {
+  template <Assume A, Integer DIGITS, class VData> inline VData sinh_intrin(const VData& x) { // the series and e^|x| where needed
     using Real = typename VData::ScalarType;
     const VData a = fabs_intrin(x);
-    const VData h = exp_half_intrin<A, DIGITS>(a);
-    const VData big = copysign_intrin(sub_intrin(h, div_intrin(set1_intrin<VData>((Real)0.25), h)), x);
-    return select_intrin(comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>((Real)1)), sinh_series_intrin<DIGITS>(x), big);
+    const Mask<VData> small = comp_intrin<ComparisonType::lt>(a, set1_intrin<VData>((Real)1));
+    const Integer n_small = mask_count_intrin(small);
+    if (n_small == VData::Size) return sinh_series_intrin<DIGITS>(x);
+    VData ep, en;
+    exp_half_pm_intrin<A, DIGITS>(ep, en, a);
+    const VData big = copysign_intrin(sub_intrin(ep, en), x);
+    return (n_small == 0 ? big : select_intrin(small, sinh_series_intrin<DIGITS>(x), big));
   }
   // float, double: tanh|x| = -v/(2+v), v = expm1(-2|x|) in (-1, 0], one form for all x, as accurate as below (2.5 ulp)
   // with one division instead of two and a square root. Else sinh/cosh by series below 1, and (1-u)/(1+u), u = e^(-2|x|)

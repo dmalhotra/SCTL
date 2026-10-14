@@ -494,7 +494,7 @@ namespace sctl { // Generic
   template <class VData> inline void sincos_intrin(VData& sinx, VData& cosx, const VData& x);
 
   template <class Real> inline constexpr Real exp_normal_lim(); // for |x| below, e^x and 2^round(x/ln2) are normal and finite
-  enum class ExpArg { Plain, Sum, Base10, Base2 }; // approx_exp_intrin of x: e^x, e^(x + x_lo), 10^x, 2^x
+  enum class ExpArg { Plain, Sum, Base10, Base2, Half }; // approx_exp_intrin of x: e^x, e^(x + x_lo), 10^x, 2^x, e^x/2
   template <Integer ORDER, bool RangeCheck = true, ExpArg Arg = ExpArg::Plain, class VData> inline VData approx_exp_intrin(const VData& x, const VData& x_lo);
   template <Integer ORDER, bool RangeCheck = true, class VData> inline VData approx_exp_intrin(const VData& x);
   template <class VData> inline Mask<VData> positive_normal_mask_intrin(const VData& x); // x normal, positive and finite
