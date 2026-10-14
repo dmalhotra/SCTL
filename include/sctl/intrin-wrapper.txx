@@ -2210,18 +2210,27 @@ namespace sctl { // Generic
     using Real = typename VData::ScalarType;
     if constexpr (!AvoidOverflow) {
       return sqrt_intrin(fma_intrin(x, x, mul_intrin(y, y)));
-    } else { // m sqrt(1 + (s/m)^2), m = max(|x|,|y|)
-      const VData zero = zero_intrin<VData>();
-      const VData inf = set1_intrin<VData>((Real)INFINITY);
+    } else { // sqrt(x^2 + y^2); where max(|x|,|y|) is beyond 2^(+-lim), x and y scaled by a power of 2 first
+      static constexpr bool F = std::is_same<Real,float>::value;
+      static constexpr Real lim = (F ? (Real)0x1p60 : (Real)0x1p500), down = (F ? (Real)0x1p-70 : (Real)0x1p-600), up = (F ? (Real)0x1p100 : (Real)0x1p600); // squares normal and finite after
+      const VData one = set1_intrin<VData>((Real)1);
       const VData a = fabs_intrin(x);
       const VData b = fabs_intrin(y);
       const VData m = max_intrin(a, b);
-      const VData r = div_intrin(min_intrin(a, b), m);
-      VData h = mul_intrin(m, sqrt_intrin(fma_intrin(r, r, set1_intrin<VData>((Real)1))));
+      const Mask<VData> big = comp_intrin<ComparisonType::gt>(m, set1_intrin<VData>(lim));
+      const Mask<VData> small = comp_intrin<ComparisonType::lt>(m, set1_intrin<VData>(1 / lim)); // also zeros
+      VData h;
+      if (mask_count_intrin(big | small) == 0) {
+        h = sqrt_intrin(fma_intrin(a, a, mul_intrin(b, b)));
+      } else {
+        const VData s = select_intrin(big, set1_intrin<VData>(down), select_intrin(small, set1_intrin<VData>(up), one));
+        const VData as = mul_intrin(a, s);
+        const VData bs = mul_intrin(b, s);
+        h = mul_intrin(sqrt_intrin(fma_intrin(as, as, mul_intrin(bs, bs))), select_intrin(big, set1_intrin<VData>(1 / down), select_intrin(small, set1_intrin<VData>(1 / up), one)));
+      }
       if constexpr (!SpecialValues) return h;
-      h = select_intrin(comp_intrin<ComparisonType::eq>(m, zero), zero, h);
-      h = select_intrin(isnan_intrin(add_intrin(a, b)), add_intrin(a, b), h);
-      return select_intrin(comp_intrin<ComparisonType::eq>(a, inf) | comp_intrin<ComparisonType::eq>(b, inf), inf, h); // inf even with NaN, as std::hypot
+      const VData inf = set1_intrin<VData>((Real)INFINITY);
+      return select_intrin(comp_intrin<ComparisonType::eq>(a, inf) | comp_intrin<ComparisonType::eq>(b, inf), inf, h); // inf even with NaN, as std::hypot; NaN and zeros as they come
     }
   }
 
