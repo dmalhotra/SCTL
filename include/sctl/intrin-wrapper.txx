@@ -1801,6 +1801,18 @@ namespace sctl { // Generic
     if constexpr (assumes(A, Assume::Finite | Assume::Normal | Assume::Domain) && sctl_poly<PolyOf::Log, VData>()) return log_poly_intrin<false>(x);
     else return log_intrin(x);
   }
+  // inline, so that a caller with its own rare path out of line keeps its stack frame there (cyl_neumann was 1.05x slower on
+  // the M4 with log_intrin)
+  template <Integer DIGITS, Assume A, class VData> inline VData log_lanes_intrin(const VData& x) {
+    if constexpr (DIGITS >= 0 || sctl_poly<PolyOf::Log, VData>()) {
+      VData e, f;
+      log_split_intrin<!assumes(A, Assume::Normal)>(e, f, x);
+      if constexpr (DIGITS < 0) return log_split_poly_intrin(e, f);
+      else return approx_log_split_poly_intrin<DIGITS>(e, f);
+    } else {
+      return log_intrin(x);
+    }
+  }
   template <Assume A, class VData> inline VData pow_assume_intrin(const VData& x, const VData& y) {
     if constexpr (assumes(A, Assume::All) && sctl_poly<PolyOf::Pow, VData>()) return pow_poly_intrin<false>(x, y);
     else return pow_intrin(x, y);
@@ -3303,7 +3315,7 @@ namespace sctl { // Generic
       const VData f = mul_intrin(mul_intrin(factor(bessel_zeros_sq[n][0]), factor(bessel_zeros_sq[n][1])), xn);
       jr = mul_intrin(f, eval_poly_intrin(t, Coeffs::j));
       if constexpr (Y) { // -2/pi h_n = 0, -2/(pi x), -4/(pi x^2) - 1/pi, without x^2, which can be subnormal
-        const VData log_a = (digits < 0 ? log_assume_intrin<A>(a) : approx_log_intrin<digits, !assumes(A, Assume::Finite | Assume::Normal | Assume::Domain)>(a));
+        const VData log_a = log_lanes_intrin<digits, A>(a);
         VData mh = zero_intrin<VData>();
         if constexpr (n == 1) mh = div_intrin(set1_intrin<VData>(-2 / const_pi<Real>()), a);
         if constexpr (n == 2) mh = sub_intrin(div_intrin(div_intrin(set1_intrin<VData>(-4 / const_pi<Real>()), a), a), set1_intrin<VData>(1 / const_pi<Real>()));
@@ -3581,7 +3593,7 @@ namespace sctl { // Generic
       const VData z = mul_intrin(a, a);
       const VData xn = (n == 0 ? one : (n == 1 ? a : z));
       const VData I = mul_intrin(xn, fma_intrin(z, eval_poly_intrin(z, Coeffs::ki), set1_intrin<VData>((Real)(n == 0 ? 1 : (n == 1 ? 0.5 : 0.125)))));
-      VData L = (digits < 0 ? log_assume_intrin<A>(a) : approx_log_intrin<digits, !assumes(A, Assume::Finite | Assume::Normal | Assume::Domain)>(a));
+      VData L = log_lanes_intrin<digits, A>(a);
       if constexpr (n != 1) L = unary_minus_intrin(L);
       VData h = zero_intrin<VData>();
       if constexpr (n == 1) h = div_intrin(one, a);

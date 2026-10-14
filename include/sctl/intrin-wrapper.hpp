@@ -522,6 +522,7 @@ namespace sctl { // Generic
   template <class VData> inline VData exp_normal_intrin(const VData& x);
   template <Assume A, class VData> inline VData exp_assume_intrin(const VData& x);
   template <Assume A, class VData> inline VData log_assume_intrin(const VData& x);
+  template <Integer DIGITS, Assume A, class VData> inline VData log_lanes_intrin(const VData& x); // log of the x > 0 among lanes of any value, without a branch
   template <Assume A, class VData> inline VData pow_assume_intrin(const VData& x, const VData& y);
   template <Assume A, Integer DIGITS = -1, class VData> inline VData cbrt_assume_intrin(const VData& x); // Normal: no subnormal handling; Finite | Normal: also no fix of 0, inf, NaN
   template <class VData> inline VData log_intrin(const VData& x);
