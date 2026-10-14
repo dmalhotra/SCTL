@@ -1632,22 +1632,15 @@ namespace sctl { // Generic
       y = mul_intrin(eval_poly_intrin(m, CbrtPolyCoeffs<n>::c), fma_intrin(fma_intrin(r, set1_intrin<VData>((Real)0.02681078793948645), set1_intrin<VData>((Real)0.23311026195538673)), r, one));
     } else { // u ~ a^(-1/3), y0 = a u^2, E = 1 - y0 u: cbrt(a) = y0 (1 - E)^(-2/3), up to the rounding of y0 over 3; no division
       static constexpr bool F = std::is_same<Real,float>::value;
-      static constexpr Integer n = (DIGITS < 0 ? (F ? 2 : 4) : (DIGITS <= 9 ? 2 : (DIGITS <= 12 ? 3 : 4))); // E below 5.3e-3, 7.6e-4, 1.1e-4: 3 times the error of u
-      static constexpr Integer k = (DIGITS < 0 ? (F ? 2 : 3) : (DIGITS <= 7 ? 2 : 3)); // terms of (1 - E)^(-2/3) - 1 = 2/3 E + 5/9 E^2 + 40/81 E^3 + ...: 7.1, 9.4, 12.8, 16 digits
+      static constexpr Integer n = (DIGITS < 0 ? (F ? 3 : 4) : (DIGITS <= 9 ? 2 : (DIGITS <= 12 ? 3 : 4))); // E below 5.3e-3, 7.6e-4, 1.1e-4: 3 times the error of u
+      static constexpr Integer k = (DIGITS < 0 ? (F ? 2 : 4) : (DIGITS <= 7 ? 2 : 3)); // terms of (1 - E)^(-2/3) - 1; (n, k) = (2, 2), (2, 3), (3, 3), (4, 3): 7.1, 9.4, 12.8, 16 digits
+      static constexpr double sc[] = {2.0/3, 5.0/9, 40.0/81, 110.0/243}; // E^j in (1 - E)^(-2/3) - 1, j = 1, 2, ...
       const VData u = mul_intrin(eval_poly_intrin(m, RcbrtPolyCoeffs<n>::c), fma_intrin(fma_intrin(r, set1_intrin<VData>((Real)0.02681078793948645), set1_intrin<VData>((Real)-0.23311026195538673)), r, one));
-      const VData u2 = mul_intrin(u, u);
-      const VData y0 = mul_intrin(a, u2);
+      const VData y0 = mul_intrin(a, mul_intrin(u, u));
       const VData E = fma_intrin(unary_minus_intrin(y0), u, one);
-      VData s = set1_intrin<VData>((Real)(k >= 3 ? 40.0/81 : 5.0/9));
-      if constexpr (k >= 3) s = fma_intrin(s, E, set1_intrin<VData>((Real)(5.0/9)));
-      s = fma_intrin(s, E, set1_intrin<VData>((Real)(2.0/3)));
+      VData s = set1_intrin<VData>((Real)sc[k - 1]);
+      for (Integer j = k - 2; j >= 0; j--) s = fma_intrin(s, E, set1_intrin<VData>((Real)sc[j]));
       y = fma_intrin(mul_intrin(y0, E), s, y0);
-      if constexpr (DIGITS < 0) { // a Newton step on y^3 - a with the rounding errors of y^3 added by FMA, so that cubes come out exact; 1/(3 y^2) by u^2/3
-        const VData y2 = mul_intrin(y, y);
-        const VData t = mul_intrin(y2, y);
-        const VData d = add_intrin(sub_intrin(t, a), fma_intrin(fma_intrin(y, y, unary_minus_intrin(y2)), y, fma_intrin(y2, y, unary_minus_intrin(t))));
-        y = fma_intrin(unary_minus_intrin(d), mul_intrin(u2, set1_intrin<VData>((Real)1/3)), y);
-      }
     }
     const VData p2 = reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(tq), SigBits)); // 2^q
     if constexpr (!Special) return copysign_intrin(mul_intrin(y, p2), x);
