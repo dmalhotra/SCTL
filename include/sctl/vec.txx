@@ -626,6 +626,10 @@ namespace sctl {
     return select(x == Vec<ValueType,N>((ValueType)0), Vec<ValueType,N>((ValueType)1), sin<A>(x) / x);
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinc(const Vec<ValueType,N>& x) {
+    if constexpr (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) { // 1 below 2^-60, so that 1/x is normal
+      static constexpr Integer d = (detail_approx_digits::full<ValueType>(digits) ? -1 : digits);
+      return select(fabs(x) < Vec<ValueType,N>((ValueType)0x1p-60), Vec<ValueType,N>((ValueType)1), Vec<ValueType,N>(div_approx_intrin<d>(approx_sin<digits, A>(x).get(), x.get())));
+    }
     return select(x == Vec<ValueType,N>((ValueType)0), Vec<ValueType,N>((ValueType)1), approx_sin<digits, A>(x) / x);
   }
 

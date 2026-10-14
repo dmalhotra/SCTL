@@ -1008,6 +1008,24 @@ namespace sctl { // Generic
       return refine(and_intrin(estimate(x), convert_mask2vec_intrin(m)), x);
     }
   };
+  // the reciprocal estimate of the ISA for VData: its bits (0: none), and the Newton steps up to which it beats a division (on
+  // Sapphire Rapids, Ice Lake and Zen 4 none: one step made tan, tanh and sinc up to 1.2x slower, or no faster)
+  template <class VData> struct rcp_estimate_intrin { static constexpr Integer bits = 0, max_steps = -1; static VData eval(const VData& b) { return b; } };
+  // a/b to about the digits (-1: full) for b and 1/b normal: a times the estimate of 1/b after Newton steps r + r (1 - b r),
+  // each doubling its bits, to 4 bits beyond the digits; a division where the ISA has no estimate or the division is faster
+  template <Integer digits, class VData> inline VData div_approx_intrin(const VData& a, const VData& b) {
+    using E = rcp_estimate_intrin<VData>;
+    static constexpr Integer bits = (Integer)(digits * 3.3219280949 + 4);
+    static constexpr Integer steps = [] { Integer k = 0; for (Integer e = E::bits; e > 0 && e < bits; e *= 2) k++; return k; }();
+    if constexpr (digits < 0 || E::bits == 0 || steps > E::max_steps) {
+      return div_intrin(a, b);
+    } else {
+      const VData nb = unary_minus_intrin(b);
+      VData r = E::eval(b);
+      for (Integer k = 0; k < steps; k++) r = fma_intrin(r, fma_intrin(nb, r, set1_intrin<VData>((typename VData::ScalarType)1)), r);
+      return mul_intrin(a, r);
+    }
+  }
   template <Integer digits, class VData> struct rsqrt_approx_intrin {
     static inline VData eval(const VData& a) {
       if constexpr (split_lanes<VData>) {
@@ -1349,7 +1367,7 @@ namespace sctl { // Generic
       den = eval_poly_horner_intrin(z, q, 1.0);
       num = fma_intrin(mul_intrin(r, z), eval_poly_horner_intrin(z, p, 1.0), mul_intrin(r, den));
     }
-    return div_intrin(select_intrin(odd, unary_minus_intrin(den), num), select_intrin(odd, num, den));
+    return div_approx_intrin<DIGITS>(select_intrin(odd, unary_minus_intrin(den), num), select_intrin(odd, num, den));
   }
   template <class VData> inline void sincos_intrin(VData& sinx, VData& cosx, const VData& x) {
     if constexpr (split_lanes<VData>) {
@@ -4203,7 +4221,7 @@ namespace sctl { // Generic
     using Real = typename VData::ScalarType;
     if constexpr (std::is_same<Real,float>::value || std::is_same<Real,double>::value) {
       const VData v = expm1_intrin<DIGITS, false>(mul_intrin(fabs_intrin(x), set1_intrin<VData>((Real)-2))); // keeps NaN
-      return copysign_intrin(div_intrin(unary_minus_intrin(v), add_intrin(v, set1_intrin<VData>((Real)2))), x);
+      return copysign_intrin(div_approx_intrin<DIGITS>(unary_minus_intrin(v), add_intrin(v, set1_intrin<VData>((Real)2))), x); // v + 2 in [1, 2]
     } else {
       const VData one = set1_intrin<VData>((Real)1);
       const VData a = fabs_intrin(x);
@@ -5367,6 +5385,14 @@ namespace sctl { // SSE
     }
   };
 
+#endif
+
+#if defined(__aarch64__) // none: a division is faster on the M4 than the NEON estimate alone
+#elif defined(__AVX512F__) && defined(__AVX512VL__)
+  template <> struct rcp_estimate_intrin<VecData<float,4>> { static constexpr Integer bits = 14, max_steps = 0; static inline VecData<float,4> eval(const VecData<float,4>& b) { return _mm_rcp14_ps(b.v); } };
+  template <> struct rcp_estimate_intrin<VecData<double,2>> { static constexpr Integer bits = 14, max_steps = 0; static inline VecData<double,2> eval(const VecData<double,2>& b) { return _mm_rcp14_pd(b.v); } };
+#else
+  template <> struct rcp_estimate_intrin<VecData<float,4>> { static constexpr Integer bits = 12, max_steps = 0; static inline VecData<float,4> eval(const VecData<float,4>& b) { return _mm_rcp_ps(b.v); } };
 #endif
 
   #ifdef SCTL_HAVE_SVML
@@ -6656,6 +6682,12 @@ namespace sctl { // AVX
       #endif
     }
   };
+#if defined(__AVX512F__) && defined(__AVX512VL__)
+  template <> struct rcp_estimate_intrin<VecData<float,8>> { static constexpr Integer bits = 14, max_steps = 0; static inline VecData<float,8> eval(const VecData<float,8>& b) { return _mm256_rcp14_ps(b.v); } };
+  template <> struct rcp_estimate_intrin<VecData<double,4>> { static constexpr Integer bits = 14, max_steps = 0; static inline VecData<double,4> eval(const VecData<double,4>& b) { return _mm256_rcp14_pd(b.v); } };
+#else
+  template <> struct rcp_estimate_intrin<VecData<float,8>> { static constexpr Integer bits = 12, max_steps = 0; static inline VecData<float,8> eval(const VecData<float,8>& b) { return _mm256_rcp_ps(b.v); } };
+#endif
 
   #if defined(__AVX2__) // log_mant_intrin by integer instructions, as for 4 floats and 2 doubles (log, haswell: 8 floats 17.0 / 56.5 -> 14.5 / 48.5 cycles, 4 doubles 20.6 / 71.1 -> 18.4 / 67.3)
   template <> inline void log_mant_intrin<VecData<float,8>>(VecData<float,8>& e, VecData<float,8>& m, const VecData<float,8>& x) {
@@ -7876,6 +7908,8 @@ namespace sctl { // AVX512
       #endif
     }
   };
+  template <> struct rcp_estimate_intrin<VecData<float,16>> { static constexpr Integer bits = 14, max_steps = 0; static inline VecData<float,16> eval(const VecData<float,16>& b) { return _mm512_rcp14_ps(b.v); } };
+  template <> struct rcp_estimate_intrin<VecData<double,8>> { static constexpr Integer bits = 14, max_steps = 0; static inline VecData<double,8> eval(const VecData<double,8>& b) { return _mm512_rcp14_pd(b.v); } };
   template <> inline VecData<float,16> rsqrt_intrin<VecData<float,16>>(const VecData<float,16>& x) { return rsqrt_full_intrin(x); } // faster than sqrt and division here, for dependent and independent calls
   template <> inline VecData<double,8> rsqrt_intrin<VecData<double,8>>(const VecData<double,8>& x) { return rsqrt_full_intrin(x); }
 
