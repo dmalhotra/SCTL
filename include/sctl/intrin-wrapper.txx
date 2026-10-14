@@ -1578,33 +1578,20 @@ namespace sctl { // Generic
     L_hi = add_intrin(eh, u_hi);
     L_lo = add_intrin(add_intrin(sub_intrin(eh, L_hi), u_hi), fma_intrin(e, set1_intrin<VData>(Ln2Split<Real>::lo), u_lo)); // |eh| >= |u_hi| unless e = 0
   }
-  // always inlined, as the pow_intrin that call it: called at several lengths, GCC 14 kept it out of line, and pow was up
-  // to 1.3x slower
-  template <bool Check, class VData> [[gnu::always_inline]] inline VData pow_poly_intrin(const VData& x, const VData& y) {
+  // pow_poly_intrin of vectors with some x not positive and normal, or |y log x| large, or inf or NaN: out of line, so that
+  // the others take a branch, not selects of both
+  template <class VData> [[gnu::noinline, gnu::cold]] VData pow_special_intrin(const VData x, const VData y) {
     using Real = typename VData::ScalarType;
-    static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
     const VData zero = zero_intrin<VData>();
     const VData one = set1_intrin<VData>((Real)1);
     const VData inf = set1_intrin<VData>((Real)INFINITY);
     const VData ax = fabs_intrin(x);
-
-    // y log|x| = T_hi + T_lo; e^(T_hi + T_lo) = e^T_hi (1 + T_lo)
     VData e, f, L_hi, L_lo;
-    log_split_intrin<false>(e, f, ax);
-    log_hi_lo_intrin(L_hi, L_lo, e, f);
-    VData T_hi = mul_intrin(y, L_hi);
-    VData T_lo = add_intrin(mul_sub_exact_intrin(y, L_hi, T_hi), mul_intrin(y, L_lo));
-    if (!Check || mask_count_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T_hi), set1_intrin<VData>(exp_normal_lim<Real>()))) == VData::Size) {
-      const VData r = exp_normal_intrin(T_hi);
-      return fma_intrin(r, T_lo, r);
-    }
-
-    // some x not positive and normal, or |y log x| large, or inf or NaN
     log_split_intrin<true>(e, f, ax);
     log_hi_lo_intrin(L_hi, L_lo, e, f);
     L_hi = select_intrin(comp_intrin<ComparisonType::eq>(ax, zero), unary_minus_intrin(inf), select_intrin(comp_intrin<ComparisonType::eq>(ax, inf), inf, L_hi));
-    T_hi = mul_intrin(y, L_hi);
-    T_lo = add_intrin(mul_sub_exact_intrin(y, L_hi, T_hi), mul_intrin(y, L_lo));
+    const VData T_hi = mul_intrin(y, L_hi);
+    VData T_lo = add_intrin(mul_sub_exact_intrin(y, L_hi, T_hi), mul_intrin(y, L_lo));
     T_lo = select_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(T_hi), set1_intrin<VData>((Real)4096)), T_lo, zero); // beyond, e^T_hi is inf or 0; also inf and NaN
     VData r = mul_intrin(exp_intrin(T_hi), add_intrin(one, T_lo)); // keeps inf
 
@@ -1619,6 +1606,24 @@ namespace sctl { // Generic
     r = select_intrin(comp_intrin<ComparisonType::ne>(x, x), x, r);
     return select_intrin(comp_intrin<ComparisonType::eq>(y, zero) | comp_intrin<ComparisonType::eq>(x, one), one, r);
   }
+  // always inlined, as the pow_intrin that call it: called at several lengths, GCC 14 kept it out of line, and pow was up
+  // to 1.3x slower
+  template <bool Check, class VData> [[gnu::always_inline]] inline VData pow_poly_intrin(const VData& x, const VData& y) {
+    using Real = typename VData::ScalarType;
+    static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
+    const VData ax = fabs_intrin(x);
+
+    // y log|x| = T_hi + T_lo; e^(T_hi + T_lo) = e^T_hi (1 + T_lo)
+    VData e, f, L_hi, L_lo;
+    log_split_intrin<false>(e, f, ax);
+    log_hi_lo_intrin(L_hi, L_lo, e, f);
+    const VData T_hi = mul_intrin(y, L_hi);
+    const VData T_lo = add_intrin(mul_sub_exact_intrin(y, L_hi, T_hi), mul_intrin(y, L_lo));
+    if (Check && !mask_all_intrin(positive_normal_mask_intrin(x) & comp_intrin<ComparisonType::lt>(fabs_intrin(T_hi), set1_intrin<VData>(exp_normal_lim<Real>())))) return pow_special_intrin(x, y);
+    const VData r = exp_normal_intrin(T_hi);
+    return fma_intrin(r, T_lo, r);
+  }
+
   // cbrt(m) ~ P(m) for m in [1, 2], minimax for the relative error, P of degree n, lowest degree first: correct digits
   // 3.20, 4.14, 5.04 for n = 2, 3, 4
   template <Integer n> struct CbrtPolyCoeffs;
