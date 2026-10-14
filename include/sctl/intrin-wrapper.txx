@@ -1162,10 +1162,12 @@ namespace sctl { // Generic
     static constexpr Real c = (Real)1.5 * pow<TypeTraits<Real>::SigBits,Real>((Real)2); // v + c: round(v) in the low bits
     VData y = x;
     if constexpr (FullRange) { // x minus the nearest multiple of 4, exact: |y| <= 2 for |x| < 2^(SigBits+1), else y is even
-      if (mask_count_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(c / 6))) < VData::Size) {
-        const VData c4 = set1_intrin<VData>(4 * c);
-        y = sub_intrin(x, sub_intrin(add_intrin(x, c4), c4));
-      }
+      const VData c4 = set1_intrin<VData>(4 * c);
+#if defined(__aarch64__) // without the test, which clang turns into selects that cost more than these three operations
+      y = sub_intrin(x, sub_intrin(add_intrin(x, c4), c4));
+#else
+      if (mask_count_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(c / 6))) < VData::Size) y = sub_intrin(x, sub_intrin(add_intrin(x, c4), c4));
+#endif
     }
     const VData z = add_intrin(y, y);
     t = add_intrin(z, set1_intrin<VData>(c));
@@ -2816,6 +2818,34 @@ namespace sctl { // Generic
   template <> struct CosPiPolyCoeffs<5> { static constexpr double c[] = {-1.2337005501361553, 0.25366950789995935, -0.02086348073586745, 0.0009192599541479634, -2.520014305985118e-05, 4.655337261110899e-07}; };
   inline constexpr double sinpi_poly_digits[] = {3.24, 5.73, 8.42, 11.29, 14.3, 17.12}; // correct digits of degrees 0 to 5
   inline constexpr double cospi_poly_digits[] = {2.49, 4.83, 7.41, 10.2, 13.14, 16.11};
+  // sin(pi r) = pi r + r^3 P(r^2) for |r| <= 1/2: SinHalfPiPolyCoeffs scaled by powers of pi; float degree 3, double 7
+  template <class Real> struct SinPiHalfPolyCoeffs;
+  template <> struct SinPiHalfPolyCoeffs<float> { static constexpr double c[] = {-5.167710573568438, 2.550082305905512, -0.5983080948067624, 0.07767597371243987}; };
+  template <> struct SinPiHalfPolyCoeffs<double> { static constexpr double c[] = {-5.167712780049969, 2.550164039877303, -0.5992645293189611, 0.08214588657282759, -0.007370430500689203, 0.00046629978213948267, -2.1903396569912295e-05, 7.696695409726181e-07}; };
+  template <bool Cos, class VData> [[gnu::noinline, gnu::cold]] VData sinpi_or_cospi_full_intrin(const VData x) { // the rare path of sinpi_or_cospi_intrin
+    VData sinx, cosx;
+    approx_sincospi_intrin<-1, true, !Cos, Cos, false>(sinx, cosx, x);
+    return (Cos ? cosx : sinx);
+  }
+  // sin(pi x) or cos(pi x) by one polynomial: x = n + r, |r| <= 1/2, (-1)^n sin(pi r) or (-1)^n sin(pi (1/2 - |r|)); within
+  // 2.7 ulp, 3.7 without FMA. FullRange = false: only for |x| < 2^(SigBits-1)
+  template <bool Cos, bool FullRange, class VData> inline VData sinpi_or_cospi_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    static_assert(std::is_same<Real,float>::value || std::is_same<Real,double>::value, "Expected float or double!");
+    using Int = typename IntegerType<sizeof(Real)>::value;
+    using IntVec = VecData<Int, VData::Size>;
+    static constexpr Real magic = (Real)1.5 * pow<TypeTraits<Real>::SigBits,Real>((Real)2);
+    static constexpr Real pi_hi = (Real)3.14159265358979323846, pi_lo = (Real)(std::is_same<Real,float>::value ? -8.7422780003725e-8 : 1.2246467991473531772e-16); // pi - pi_hi
+    if (FullRange && !mask_all_intrin(comp_intrin<ComparisonType::lt>(fabs_intrin(x), set1_intrin<VData>(magic / 3)))) return sinpi_or_cospi_full_intrin<Cos>(x); // |x| >= 2^(SigBits-1), inf, NaN
+    const VData t = add_intrin(x, set1_intrin<VData>(magic));
+    const VData r = sub_intrin(x, sub_intrin(t, set1_intrin<VData>(magic))); // exact
+    const VData w = (Cos ? sub_intrin(set1_intrin<VData>((Real)0.5), fabs_intrin(r)) : r); // exact where |r| >= 1/4; elsewhere its rounding error hardly changes sin(pi w)
+    const VData z = mul_intrin(w, w);
+    const VData sp = fma_intrin(w, set1_intrin<VData>(pi_hi), mul_intrin(w, fma_intrin(z, eval_poly_horner_intrin(z, SinPiHalfPolyCoeffs<Real>::c, 1.0), set1_intrin<VData>(pi_lo))));
+    const VData half = set1_intrin<VData>((Real)0.5), one = set1_intrin<VData>((Real)1);
+    const VData sw = (Cos ? select_intrin(comp_intrin<ComparisonType::eq>(w, half), one, sp) : select_intrin(comp_intrin<ComparisonType::eq>(fabs_intrin(w), half), copysign_intrin(one, w), sp)); // exactly +-1 at w = +-1/2
+    return xor_intrin(sw, reinterpret_intrin<VData>(bitshiftleft_intrin(reinterpret_intrin<IntVec>(t), sizeof(Real) * 8 - 1))); // (-1)^n
+  }
   // sin(pi x), cos(pi x) to the digits (-1: full), divided by pi with DivPi: x = (n + w)/2, sin(pi w/2) and cos(pi w/2)
   // by n mod 4; FullRange as sincos_pi_reduce_intrin
   template <Integer digits, bool FullRange, bool Sin, bool Cos, bool DivPi, class VData> inline void approx_sincospi_intrin(VData& sinx, VData& cosx, const VData& x) {

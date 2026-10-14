@@ -508,7 +508,8 @@ namespace sctl {
     approx_sincospi_intrin<digits, !assumes(A, Assume::Finite | Assume::Moderate)>(sinx.get(), cosx.get(), x.get());
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> sinpi(const Vec<ValueType,N>& x) {
-    return approx_sinpi<-1, A>(x);
+    if constexpr (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) return sinpi_or_cospi_intrin<false, !assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
+    else return approx_sinpi<-1, A>(x);
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinpi(const Vec<ValueType,N>& x) {
     typename Vec<ValueType,N>::VData sinx, cosx;
@@ -516,7 +517,8 @@ namespace sctl {
     return sinx;
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cospi(const Vec<ValueType,N>& x) {
-    return approx_cospi<-1, A>(x);
+    if constexpr (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) return sinpi_or_cospi_intrin<true, !assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
+    else return approx_cospi<-1, A>(x);
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x) {
     typename Vec<ValueType,N>::VData sinx, cosx;
