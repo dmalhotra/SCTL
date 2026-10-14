@@ -493,7 +493,7 @@ namespace sctl { // Generic
   template <class VData> inline void sincos_intrin(VData& sinx, VData& cosx, const VData& x);
 
   template <class Real> inline constexpr Real exp_normal_lim(); // for |x| below, e^x and 2^round(x/ln2) are normal and finite
-  enum class ExpArg { Plain, Sum, Base10 }; // approx_exp_intrin of x: e^x, e^(x + x_lo), 10^x
+  enum class ExpArg { Plain, Sum, Base10, Base2 }; // approx_exp_intrin of x: e^x, e^(x + x_lo), 10^x, 2^x
   template <Integer ORDER, bool RangeCheck = true, ExpArg Arg = ExpArg::Plain, class VData> inline VData approx_exp_intrin(const VData& x, const VData& x_lo);
   template <Integer ORDER, bool RangeCheck = true, class VData> inline VData approx_exp_intrin(const VData& x);
   template <class VData> inline Mask<VData> positive_normal_mask_intrin(const VData& x); // x normal, positive and finite
@@ -558,7 +558,7 @@ namespace sctl { // Generic
 
   template <bool AvoidOverflow = true, bool SpecialValues = true, class VData> inline VData hypot_intrin(const VData& x, const VData& y); // SpecialValues: zeros, inf, NaN
 
-  template <bool Clamp = true, Integer DIGITS = -1, class VData> inline VData exp2_intrin(const VData& x); // Clamp = false: only for |x| < max_exp - 1; DIGITS = -1: full
+  template <bool RangeCheck = true, Integer DIGITS = -1, class VData> inline VData exp2_intrin(const VData& x); // as approx_exp_intrin; RangeCheck = false: only for |x| < 1022 (float: 126); DIGITS = -1: full
   template <Integer ORDER, bool RangeCheck = true, class VData> inline VData approx_exp10_intrin(const VData& x); // as approx_exp_intrin
   template <Assume A = Assume::None, class VData> inline VData exp10_intrin(const VData& x); // Finite | Moderate: |x| < exp_normal_lim / ln10
   template <Assume A = Assume::None, class VData> inline VData log2_intrin(const VData& x);
