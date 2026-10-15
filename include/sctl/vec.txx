@@ -556,7 +556,7 @@ namespace sctl {
     else return approx_log_intrin<digits, !assumes(A, Assume::Finite | Assume::Normal | Assume::Domain)>(x.get());
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
-    if constexpr (detail_approx_digits::full<ValueType>(digits) || digits >= (std::is_same<ValueType,float>::value ? 6 : 14)) return pow<A>(x, y); // from these digits, y log x rounded to ValueType is not accurate enough
+    if constexpr (detail_approx_digits::full<ValueType>(digits) || digits >= (std::is_same<ValueType,float>::value ? 6 : pow_table<typename Vec<ValueType,N>::VData>() ? 11 : 14)) return pow<A>(x, y); // from these digits, y log x rounded to ValueType is not accurate enough; pow_table_intrin no slower from 11 (approx_pow_intrin was 1.07-1.19x slower at 11-13 on Ice Lake and Zen 4)
     else return approx_pow_intrin<digits + 2, exp_taylor_order(digits), !assumes(A, Assume::All)>(x.get(), y.get()); // two more digits in log: |y log x| up to 100
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x) {
