@@ -541,9 +541,9 @@ namespace sctl { // Generic
   template <Integer B, class VData> inline VData eval_poly_rows_intrin(const typename VData::ScalarType* const (&p)[VData::Size], const VData& t);
   template <class VData, class CType, Integer N, Integer M> inline VData eval_rational_intrin(const VData& x, const CType (&p)[N], const CType (&q)[M]);
   template <class VData, Integer... k> inline VData atanh_series_intrin(const VData& z, std::integer_sequence<Integer, k...>); // sum 1/(2k+3) z^k
-  template <Integer DIGITS, class VData> inline VData approx_log_split_poly_intrin(const VData& e, const VData& f);
-  template <Integer DIGITS, class VData> inline VData approx_log_normal_intrin(const VData& x);
-  template <Integer DIGITS, bool Check = true, class VData> inline VData approx_log_intrin(const VData& x); // approx_log_normal_intrin; log_intrin if some x is not positive, normal and finite, unless !Check
+  template <Integer DIGITS, LogBase B = LogBase::E, class VData> inline VData approx_log_split_poly_intrin(const VData& e, const VData& f);
+  template <Integer DIGITS, LogBase B = LogBase::E, class VData> inline VData approx_log_normal_intrin(const VData& x);
+  template <Integer DIGITS, bool Check = true, LogBase B = LogBase::E, class VData> inline VData approx_log_intrin(const VData& x); // approx_log_normal_intrin; log_intrin if some x is not positive, normal and finite, unless !Check
   template <Integer LOG_DIGITS, Integer ORDER, bool Check = true, class VData> inline VData approx_pow_intrin(const VData& x, const VData& y); // e^(y log x) with approx_log_normal_intrin<LOG_DIGITS> and approx_exp_intrin<ORDER>; pow_intrin if some x is not positive, normal and finite, or |y log x| >= 708.4 (float: 87.3)
   template <class VData> inline VData sqrt_intrin(const VData& x);
   template <class VData> inline VData rsqrt_intrin(const VData& x);

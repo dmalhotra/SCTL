@@ -2273,8 +2273,8 @@ namespace sctl { // Generic
     for (; zk / (2*K + 1) >= lim && K < 30; K++) zk *= 0.0295;
     return K;
   }
-  template <class VData, class Coeffs, Integer... k> inline VData eval_coeffs_intrin(const VData& x, std::integer_sequence<Integer, k...>) {
-    return EvalPolynomial(x, ((typename VData::ScalarType)Coeffs::c[k])...);
+  template <class VData, class Coeffs, Integer... k> inline VData eval_coeffs_intrin(const VData& x, std::integer_sequence<Integer, k...>, const double scale = 1.0) {
+    return EvalPolynomial(x, ((typename VData::ScalarType)(Coeffs::c[k] * scale))...);
   }
   // sum c[Lo+k] x^k, k < Len, xp[j] = x^(2^j): split at the largest power of two below Len
   template <Integer Lo, Integer Len, class VData, Integer K, class CType, Integer N> inline VData eval_poly_estrin_intrin(const VData (&xp)[K], const CType (&c)[N]) {
@@ -2335,14 +2335,20 @@ namespace sctl { // Generic
     return EvalPolynomial(z, ((typename VData::ScalarType)1 / (2*k + 3))...);
   }
   // e ln2 + log(1 + f) for f from log_split_intrin, to DIGITS digits: f P(f) without division up to 12.96 digits, else
-  // 2 atanh(s), s = f/(2+f); DIGITS = -1: log_split_poly_intrin
-  template <Integer DIGITS, class VData> inline VData approx_log_split_poly_intrin(const VData& e, const VData& f) {
+  // 2 atanh(s), s = f/(2+f); DIGITS = -1: log_split_poly_intrin. B = Two, Ten: e + f c P(f), e log10(2) + f c P(f), c = 1/ln2
+  // or 1/ln10 in P (as log_split_poly_intrin; with the series, log times c)
+  template <Integer DIGITS, LogBase B, class VData> inline VData approx_log_split_poly_intrin(const VData& e, const VData& f) {
     using Real = typename VData::ScalarType;
     if constexpr (DIGITS < 0) {
-      return log_split_poly_intrin(e, f);
+      return log_split_poly_intrin<B>(e, f);
     } else if constexpr (log_poly_degree(DIGITS) > 0) {
       static constexpr Integer n = log_poly_degree(DIGITS);
-      return fma_intrin(e, set1_intrin<VData>(const_ln2<Real>()), mul_intrin(f, eval_coeffs_intrin<VData, LogPolyCoeffs<n>>(f, std::make_integer_sequence<Integer, n + 1>())));
+      static constexpr double c = (B == LogBase::Two ? 1.44269504088896340736 : B == LogBase::Ten ? 0.43429448190325182765 : 1.0);
+      const VData p = eval_coeffs_intrin<VData, LogPolyCoeffs<n>>(f, std::make_integer_sequence<Integer, n + 1>(), c);
+      if constexpr (B == LogBase::Two) return fma_intrin(f, p, e);
+      else return fma_intrin(e, set1_intrin<VData>((Real)(B == LogBase::Ten ? 0.30102999566398119521 : const_ln2<double>())), mul_intrin(f, p));
+    } else if constexpr (B != LogBase::E) {
+      return mul_intrin(approx_log_split_poly_intrin<DIGITS, LogBase::E>(e, f), set1_intrin<VData>((Real)(B == LogBase::Two ? 1.44269504088896340736 : 0.43429448190325182765)));
     } else { // K terms of the series, relative error below 0.0295^K/(2K+1)
       static constexpr Integer K = log_atanh_terms(DIGITS);
       const VData s2 = div_intrin(add_intrin(f, f), add_intrin(f, set1_intrin<VData>((Real)2))); // 2s
@@ -2350,15 +2356,16 @@ namespace sctl { // Generic
       return fma_intrin(e, set1_intrin<VData>(const_ln2<Real>()), fma_intrin(mul_intrin(s2, z), atanh_series_intrin(z, std::make_integer_sequence<Integer, K - 1>()), s2));
     }
   }
-  // log(x) to DIGITS digits for normal x > 0, by approx_log_split_poly_intrin
-  template <Integer DIGITS, class VData> inline VData approx_log_normal_intrin(const VData& x) {
+  // log(x) (B: log2, log10) to DIGITS digits for normal x > 0, by approx_log_split_poly_intrin
+  template <Integer DIGITS, LogBase B, class VData> inline VData approx_log_normal_intrin(const VData& x) {
     VData e, f;
     log_split_intrin<false>(e, f, x);
-    return approx_log_split_poly_intrin<DIGITS>(e, f);
+    return approx_log_split_poly_intrin<DIGITS, B>(e, f);
   }
-  template <Integer DIGITS, bool Check, class VData> inline VData approx_log_intrin(const VData& x) {
-    if (Check && !mask_all_intrin(positive_normal_mask_intrin(x))) return log_intrin(x);
-    return approx_log_normal_intrin<DIGITS>(x);
+  template <Integer DIGITS, bool Check, LogBase B, class VData> inline VData approx_log_intrin(const VData& x) {
+    using Real = typename VData::ScalarType;
+    if (Check && !mask_all_intrin(positive_normal_mask_intrin(x))) return (B == LogBase::E ? log_intrin(x) : mul_intrin(log_intrin(x), set1_intrin<VData>((Real)(B == LogBase::Two ? 1.44269504088896340736 : 0.43429448190325182765))));
+    return approx_log_normal_intrin<DIGITS, B>(x);
   }
   template <Integer LOG_DIGITS, Integer ORDER, bool Check, class VData> inline VData approx_pow_intrin(const VData& x, const VData& y) {
     using Real = typename VData::ScalarType;

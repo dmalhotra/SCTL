@@ -733,14 +733,14 @@ namespace sctl {
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_log2(const Vec<ValueType,N>& x) {
     if constexpr (detail_approx_digits::full<ValueType>(digits) || log_poly_degree(digits) == 0) return log2<A>(x);
-    else return approx_log<digits, A>(x) * (ValueType)1.44269504088896340736;
+    else return approx_log_intrin<digits, !assumes(A, Assume::Finite | Assume::Normal | Assume::Domain), LogBase::Two>(x.get());
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> log10(const Vec<ValueType,N>& x) {
     return log10_intrin<A>(x.get());
   }
   template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_log10(const Vec<ValueType,N>& x) {
     if constexpr (detail_approx_digits::full<ValueType>(digits) || log_poly_degree(digits) == 0) return log10<A>(x);
-    else return approx_log<digits, A>(x) * (ValueType)0.43429448190325182765;
+    else return approx_log_intrin<digits, !assumes(A, Assume::Finite | Assume::Normal | Assume::Domain), LogBase::Ten>(x.get());
   }
   template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x) {
     return cbrt_assume_intrin<A>(x.get());
