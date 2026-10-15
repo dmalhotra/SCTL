@@ -584,11 +584,13 @@ namespace sctl {
   template <class VData> inline bool none_of(const Mask<VData>& m);
 
 
-  // Special functions
+  // Special functions: those with the template argument A leave out their tests and code for arguments outside the
+  // promises of Assume they list; see Assume
 
   /**
    * 1/sqrt(x) to the given digits (-1: full precision, within a few ulp). At native SSE, AVX, AVX-512 widths, for double x from
-   * 8e-304 (AVX-512: 2.3e-308) and float x from 1.2e-38 up to the largest finite value; smaller x, 0 and inf give NaN or +-inf.
+   * 8e-304 (AVX-512: 2.3e-308) and float x from 1.2e-38 up to the largest finite value; smaller x, 0 and inf give NaN or +-inf. On AArch64, the NEON estimate and a Newton step up to 4
+   * digits, 1/sqrt from 5.
    */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x);
 
@@ -601,46 +603,46 @@ namespace sctl {
   /** As approx_sqrt(x), with zero in the elements not in m; for x that can be zero. */
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sqrt(const Vec<ValueType,N>& x, const typename Vec<ValueType,N>::MaskType& m);
 
-  /** Sine and cosine. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
-  template <bool FullRange = true, class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
-  /** Sine and cosine to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
-  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
+  /** Sine and cosine. Without SVML, lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes: 2^14), inf and NaN one element at a time. A: Finite | Moderate, |x| < 2^33 (float: 2^14). */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
+  /** Sine and cosine to the given number of digits; -1 for full precision. A: Finite | Moderate as sincos, and then x - n pi/2 by one product, with an error that grows like |x| eps. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
 
-  /** sin(pi x) and cos(pi x), exact argument reduction; float, double: within 1.3 ulp (float: 1), 1.6 without FMA. */
-  template <class ValueType, Integer N> inline void sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
-  /** sincospi to the given digits (-1: full). FullRange = false: only for |x| < 2^50 (float: 2^21), faster. */
-  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline void approx_sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
-  /** sin(pi x), as sincospi. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> sinpi(const Vec<ValueType,N>& x);
-  /** sin(pi x), as approx_sincospi. */
-  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinpi(const Vec<ValueType,N>& x);
-  /** cos(pi x), as sincospi. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> cospi(const Vec<ValueType,N>& x);
-  /** cos(pi x), as approx_sincospi. */
-  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x);
-  /** sin(pi x)/(pi x), 1 at x = 0, NaN at +-inf; float, double: within 2.2 ulp (float: 1.8). */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> sincpi(const Vec<ValueType,N>& x);
-  /** sincpi to the given digits (-1: full); FullRange as approx_sincospi. */
-  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sincpi(const Vec<ValueType,N>& x);
+  /** sin(pi x) and cos(pi x), exact argument reduction; float, double: within 1.3 ulp (float: 1), 1.6 without FMA. A: Finite | Moderate, |x| < 2^50 (float: 2^21). */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline void sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
+  /** sincospi to the given digits (-1: full); A as sincospi. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline void approx_sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x);
+  /** sin(pi x) by one polynomial; float, double: within 2.7 ulp, 3.7 without FMA (sincospi: 1.3), exact at the integers and half-integers. A as sincospi. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> sinpi(const Vec<ValueType,N>& x);
+  /** sin(pi x) to the given digits (-1: sinpi) by one polynomial. A as sincospi. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinpi(const Vec<ValueType,N>& x);
+  /** cos(pi x) by one polynomial; float, double: within 2.7 ulp, 3.7 without FMA (sincospi: 1.3), exact at the integers and half-integers. A as sincospi. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cospi(const Vec<ValueType,N>& x);
+  /** cos(pi x) to the given digits (-1: cospi) by one polynomial. A as sincospi. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x);
+  /** sin(pi x)/(pi x), 1 at x = 0, NaN at +-inf; float, double: within 2.2 ulp (float: 1.8). A as sincospi. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> sincpi(const Vec<ValueType,N>& x);
+  /** sincpi to the given digits (-1: full); A as sincospi. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_sincpi(const Vec<ValueType,N>& x);
 
-  /** e^x; float, double at native widths without SVML: within about 2 ulp (float: 3.5), also near the overflow and for subnormal results. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x);
-  /** e^x to the given digits (-1: exp). Without RangeCheck, only for |x| < 708.4 (float: 87.3). */
-  template <Integer digits, bool RangeCheck = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x);
+  /** e^x; float, double at native widths without SVML: within 1.1 ulp (float: 1.2), also near the overflow and for subnormal results. A: Finite | Moderate, |x| < 708.4 (float: 87.3). */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x);
+  /** e^x to the given digits (-1: exp); A as exp. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x);
 
-  /** 10^x; float, double: as accurate as exp, vectorized at every width. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> exp10(const Vec<ValueType,N>& x);
-  /** 10^x to the given digits (-1: exp10). Without RangeCheck, only for |x| < 307.6 (float: 37.9). */
-  template <Integer digits, bool RangeCheck = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp10(const Vec<ValueType,N>& x);
+  /** 10^x; float, double: within 1.5 ulp (float: 1.3), vectorized at every width. A: Finite | Moderate, |x| < 307.6 (float: 37.9). */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> exp10(const Vec<ValueType,N>& x);
+  /** 10^x to the given digits (-1: exp10); A as exp10. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp10(const Vec<ValueType,N>& x);
 
-  /** log(x) to the given digits (-1: log), for float and double; x not positive, normal and finite as log. */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_log(const Vec<ValueType,N>& x);
+  /** log(x) to the given digits (-1: log), for float and double; x not positive, normal and finite as log. A as log. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_log(const Vec<ValueType,N>& x);
 
-  /** x^y to the given digits for |y log x| <= 100 (-1: pow), for float and double; x not positive, normal and finite, or |y log x| >= 708.4 (float: 87.3) as pow. */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+  /** x^y to the given digits for |y log x| <= 100 (-1: pow), for float and double; x not positive, normal and finite, or |y log x| >= 708.4 (float: 87.3) as pow. A as pow. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 
-  /** Natural logarithm; float, double: within about 1.2 ulp, vectorized at native widths. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x);
+  /** Natural logarithm; float, double: within about 1.2 ulp, vectorized at native widths. A: Finite | Normal | Domain, x > 0. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x);
 
   /**
    * Square root, correctly rounded. Cycles per call, dependent / independent calls, Sapphire Rapids:
@@ -670,34 +672,36 @@ namespace sctl {
   /** Mask of the elements that are NaN. */
   template <class ValueType, Integer N> inline typename Vec<ValueType,N>::MaskType isnan(const Vec<ValueType,N>& x);
 
-  /** Sine. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
-  template <bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x);
+  /** Sine; A as sincos. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x);
 
-  /** Cosine. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
-  template <bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x);
+  /** Cosine; A as sincos. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x);
 
-  /** Tangent. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster at native float, double widths without SVML, with an error that grows like |x| eps. */
-  template <bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x);
+  /** Tangent; A as sincos. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x);
 
-  /** Sine to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
-  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x);
+  /** Sine to the given number of digits; -1 for full precision. A as approx_sincos. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x);
 
-  /** Cosine to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
-  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x);
+  /** Cosine to the given number of digits; -1 for full precision. A as approx_sincos. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x);
 
-  /** Tangent to the given number of digits; -1 for full precision. FullRange without SVML: lanes with |x| >= 2^33 (double, and float vectors of 2 or more lanes), inf and NaN one element at a time. FullRange = false: faster, with an error that grows like |x| eps. */
-  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x);
+  /** Tangent to the given number of digits; -1 for full precision. A as approx_sincos. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x);
 
-  /** sin(x)/x, 1 at x = 0, NaN at +-inf: sin and one division. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> sinc(const Vec<ValueType,N>& x);
-  /** sinc to the given digits (-1: full); FullRange as approx_sin. */
-  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinc(const Vec<ValueType,N>& x);
+  /** sin(x)/x, 1 at x = 0, NaN at +-inf: sin and one division; A as sin. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> sinc(const Vec<ValueType,N>& x);
+  /** sinc to the given digits (-1: full); A as approx_sin. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinc(const Vec<ValueType,N>& x);
 
-  /** Angle of the point (x, y), in [-pi, pi], as std::atan2. SpecialValues = false: faster, but x, y both infinite or both zero give NaN. */
-  template <bool SpecialValues = true, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
+  /** Angle of the point (x, y), in [-pi, pi], as std::atan2. A: Finite | Normal; without it, x, y both infinite or both zero also as std::atan2. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
+  /** atan2 to the given digits (-1: full); A as atan2. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x);
 
-  /** x to the power y; vectorized with SVML, libmvec, or at 256- and 512-bit widths (double about 9 ulp, 14 near the ends of the range; float 4 ulp), else one element at a time. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+  /** x to the power y; vectorized with SVML, libmvec, with FMA, or at 256- and 512-bit widths, else one element at a time. With FMA within 1 ulp; without, double about 9 ulp, 14 near the ends of the range, float 4 ulp. A: Finite | Normal | Domain | Moderate, x > 0 and |y log x| < 708.4 (float: 87.3). */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
   /** x^e for a compile-time integer e by squaring (2 log2|e| products, error up to |e|/2 ulp); e < 0: 1/x^|e|. */
   template <Long e, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x);
   /** x^(e/d) for compile-time integers e and d = 1 or 2; for odd e and d = 2, x^((e-1)/2) sqrt(x). */
@@ -719,51 +723,71 @@ namespace sctl {
 
   /** Arc tangent. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> atan(const Vec<ValueType,N>& x);
+  /** atan to the given digits (-1: full), as approx_atan2. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_atan(const Vec<ValueType,N>& x);
 
-  /** Arc sine. */
+  /** Arc sine, NaN for |x| > 1; float, double: within 2.2 ulp (float: 2.3). */
   template <class ValueType, Integer N> inline Vec<ValueType,N> asin(const Vec<ValueType,N>& x);
+  /** asin to the given digits (-1: full): a polynomial in x^2, for |x| > 1/2 of (1 - |x|)/2 with a square root. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_asin(const Vec<ValueType,N>& x);
 
-  /** Arc cosine. */
+  /** Arc cosine, NaN for |x| > 1; float, double: within 1.2 ulp. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> acos(const Vec<ValueType,N>& x);
+  /** acos to the given digits (-1: full), as approx_asin. */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_acos(const Vec<ValueType,N>& x);
 
-  /** sqrt(x^2 + y^2) without overflow or underflow in between, and inf if x or y is inf, as std::hypot. AvoidOverflow = false: sqrt(x x + y y), faster. */
-  template <bool AvoidOverflow = true, class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
+  /** sqrt(x^2 + y^2) without overflow or underflow in between, and inf if x or y is inf, as std::hypot. A: Moderate, |x|, |y| < 2^511 and hypot > 2^-511 (float: 2^63, 2^-63): sqrt(x x + y y); Finite | Normal: without the tests for zeros, inf and NaN. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y);
 
-  /** 2 to the power x. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> exp2(const Vec<ValueType,N>& x);
+  /** 2 to the power x. A: Finite | Moderate, |x| < 1022 (float: 126). */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> exp2(const Vec<ValueType,N>& x);
+  /** exp2 to the given digits (-1: full); A as exp2. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp2(const Vec<ValueType,N>& x);
 
-  /** Base-2 logarithm; vectorized where log is. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> log2(const Vec<ValueType,N>& x);
+  /** Base-2 logarithm; vectorized where log is, by its polynomial within 1.1 ulp and exact at the powers of 2. A as log. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> log2(const Vec<ValueType,N>& x);
+  /** log2 to the given digits (-1: full), as approx_log; A as log. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_log2(const Vec<ValueType,N>& x);
 
-  /** Base-10 logarithm; vectorized where log is. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> log10(const Vec<ValueType,N>& x);
+  /** Base-10 logarithm; vectorized where log is, by its polynomial within 1.2 ulp. A as log. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> log10(const Vec<ValueType,N>& x);
+  /** log10 to the given digits (-1: full), as approx_log; A as log. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_log10(const Vec<ValueType,N>& x);
 
-  /** Cube root. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x);
+  /** Cube root; float, double: within 1.2 ulp (float: 1). A: Normal leaves out subnormal x; Finite | Normal also 0, inf and NaN. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x);
+  /** cbrt to the given digits (-1: full); up to 5 digits by a polynomial alone. A as cbrt. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cbrt(const Vec<ValueType,N>& x);
 
-  /** Hyperbolic sine. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> sinh(const Vec<ValueType,N>& x);
+  /** Hyperbolic sine. A: Finite | Moderate, |x| < 709.4 (float: 88.3). */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> sinh(const Vec<ValueType,N>& x);
+  /** sinh to the given digits (-1: full); A as sinh. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinh(const Vec<ValueType,N>& x);
 
-  /** Hyperbolic cosine. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> cosh(const Vec<ValueType,N>& x);
+  /** Hyperbolic cosine. A as sinh. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cosh(const Vec<ValueType,N>& x);
+  /** cosh to the given digits (-1: full); A as sinh. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cosh(const Vec<ValueType,N>& x);
 
-  /** Hyperbolic tangent. */
+  /** Hyperbolic tangent; float, double: within 2.5 ulp. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x);
+  /** tanh to the given digits (-1: full). */
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tanh(const Vec<ValueType,N>& x);
 
-  /** Inverse hyperbolic sine; float, double: within 1.3 ulp. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> asinh(const Vec<ValueType,N>& x);
-  /** asinh to the given digits (-1: full). FullRange = false: only for |x| < 2^26 (float: 2^11). */
-  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_asinh(const Vec<ValueType,N>& x);
+  /** Inverse hyperbolic sine; float, double: within 1.3 ulp. A: Finite | Moderate, |x| < 2^26 (float: 2^11). */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> asinh(const Vec<ValueType,N>& x);
+  /** asinh to the given digits (-1: full); A as asinh. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_asinh(const Vec<ValueType,N>& x);
 
-  /** Inverse hyperbolic cosine, NaN for x < 1; float, double: within 1.8 ulp. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> acosh(const Vec<ValueType,N>& x);
-  /** acosh to the given digits (-1: full). FullRange = false: only for 1 < x < 2^26 (float: 2^11). */
-  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_acosh(const Vec<ValueType,N>& x);
+  /** Inverse hyperbolic cosine, NaN for x < 1; float, double: within 1.8 ulp. A: Finite | Domain | Moderate, 1 < x < 2^26 (float: 2^11). */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> acosh(const Vec<ValueType,N>& x);
+  /** acosh to the given digits (-1: full); A as acosh. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_acosh(const Vec<ValueType,N>& x);
 
-  /** Inverse hyperbolic tangent, +-inf at +-1, NaN for |x| > 1; float, double: within 1.7 ulp. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> atanh(const Vec<ValueType,N>& x);
-  /** atanh to the given digits (-1: full). FullRange = false: only for |x| < 1. */
-  template <Integer digits, bool FullRange = true, class ValueType, Integer N> inline Vec<ValueType,N> approx_atanh(const Vec<ValueType,N>& x);
+  /** Inverse hyperbolic tangent, +-inf at +-1, NaN for |x| > 1; float, double: within 1.7 ulp. A: Domain, |x| < 1. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> atanh(const Vec<ValueType,N>& x);
+  /** atanh to the given digits (-1: full); A as atanh. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_atanh(const Vec<ValueType,N>& x);
 
   /** Error function; float, double: within 1.3 ulp. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> erf(const Vec<ValueType,N>& x);
@@ -772,37 +796,38 @@ namespace sctl {
 
   /**
    * Complementary error function 1 - erf(x), with its relative precision also where it is small; float, double: within
-   * 5.5 ulp.
+   * 5.5 ulp. A: Finite | Moderate, |x| < 26.6 (float: 9.3).
    */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> erfc(const Vec<ValueType,N>& x);
-  /** erfc to the given digits (-1: full). */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x);
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> erfc(const Vec<ValueType,N>& x);
+  /** erfc to the given digits (-1: full); A as erfc. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x);
 
   /**
    * Inverse of the standard normal distribution function, -inf at 0, inf at 1, NaN outside [0, 1]; float, double:
-   * within about 4 ulp.
+   * within about 4 ulp. A: Normal | Domain, 0 < p < 1 not subnormal.
    */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> ndtri(const Vec<ValueType,N>& p);
-  /** ndtri to the given digits (-1: full). */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_ndtri(const Vec<ValueType,N>& p);
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> ndtri(const Vec<ValueType,N>& p);
+  /** ndtri to the given digits (-1: full); A as ndtri. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_ndtri(const Vec<ValueType,N>& p);
 
-  /** Inverse error function, +-inf at +-1, NaN for |y| > 1; float, double: within about 4 ulp. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> erfinv(const Vec<ValueType,N>& y);
-  /** erfinv to the given digits (-1: full). */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y);
+  /** Inverse error function, +-inf at +-1, NaN for |y| > 1; float, double: within about 4 ulp. A: Domain, |y| < 1. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> erfinv(const Vec<ValueType,N>& y);
+  /** erfinv to the given digits (-1: full); A as erfinv. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y);
 
-  /** Gamma function, as std::tgamma: NaN at negative integers, +-inf at +-0; float, double: within 4.5 ulp. */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> tgamma(const Vec<ValueType,N>& x);
-  /** tgamma to the given digits (-1: full). */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tgamma(const Vec<ValueType,N>& x);
+  /** Gamma function, as std::tgamma: NaN at negative integers, +-inf at +-0; float, double: within 4.5 ulp. A: Moderate, |x| < 170 (float: 33); Domain, x not a negative integer. */
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> tgamma(const Vec<ValueType,N>& x);
+  /** tgamma to the given digits (-1: full); A as tgamma. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_tgamma(const Vec<ValueType,N>& x);
 
   /**
    * log|Gamma(x)|, as std::lgamma: inf at non-positive integers; float, double: within 3 ulp for x >= 0, below within
-   * 13 eps (1 + |lgamma(x)|).
+   * 13 eps (1 + |lgamma(x)|). A: Finite | Normal, its logs without tests; Moderate, |x| < 2^52 (float: 2^23); Finite | Normal |
+   * Domain, x not a non-positive integer.
    */
-  template <class ValueType, Integer N> inline Vec<ValueType,N> lgamma(const Vec<ValueType,N>& x);
-  /** lgamma to the given digits (-1: full). */
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_lgamma(const Vec<ValueType,N>& x);
+  template <Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> lgamma(const Vec<ValueType,N>& x);
+  /** lgamma to the given digits (-1: full); A as lgamma. */
+  template <Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_lgamma(const Vec<ValueType,N>& x);
 
   /**
    * Digamma function Gamma'(x)/Gamma(x): NaN at negative integers, -+inf at +-0; float, double: within 4 ulp for
@@ -814,48 +839,50 @@ namespace sctl {
 
   /**
    * Bessel function of the first kind J_n of order n = 0, 1, 2; float, double: within 6.5 ulp for |x| <= 5, beyond
-   * within 3 eps sqrt(2/(pi |x|)).
+   * within 3 eps sqrt(2/(pi |x|)). A: Finite | Moderate, |x| < 2^33 (float: 2^14).
    */
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_j(const Vec<ValueType,N>& x);
-  /** cyl_bessel_j to the given digits (-1: full). */
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_j(const Vec<ValueType,N>& x);
+  template <Integer n, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_j(const Vec<ValueType,N>& x);
+  /** cyl_bessel_j to the given digits (-1: full); A as cyl_bessel_j. */
+  template <Integer n, Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_j(const Vec<ValueType,N>& x);
 
   /**
    * Bessel function of the second kind Y_n of order n = 0, 1, 2, -inf at 0, NaN for x < 0; float, double: within
-   * 4.5 eps max(|Y_n(x)|, sqrt(2/(pi x))).
+   * 4.5 eps max(|Y_n(x)|, sqrt(2/(pi x))). A: Finite | Normal | Domain | Moderate, 0 < x < 2^33 (float: 2^14).
    */
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_neumann(const Vec<ValueType,N>& x);
-  /** cyl_neumann to the given digits (-1: full). */
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_neumann(const Vec<ValueType,N>& x);
+  template <Integer n, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cyl_neumann(const Vec<ValueType,N>& x);
+  /** cyl_neumann to the given digits (-1: full); A as cyl_neumann. */
+  template <Integer n, Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_neumann(const Vec<ValueType,N>& x);
 
-  /** Modified Bessel function of the first kind I_n of order n = 0, 1, 2; float, double: within 6 ulp. */
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_i(const Vec<ValueType,N>& x);
-  /** cyl_bessel_i to the given digits (-1: full). */
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_i(const Vec<ValueType,N>& x);
+  /** Modified Bessel function of the first kind I_n of order n = 0, 1, 2; float, double: within 6 ulp. A: Finite | Moderate, |x| < 708.4 (float: 87.3). */
+  template <Integer n, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_i(const Vec<ValueType,N>& x);
+  /** cyl_bessel_i to the given digits (-1: full); A as cyl_bessel_i. */
+  template <Integer n, Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_i(const Vec<ValueType,N>& x);
 
   /**
    * Modified Bessel function of the second kind K_n of order n = 0, 1, 2, inf at 0, NaN for x < 0; float, double:
-   * within 7 ulp.
+   * within 7 ulp. A: Finite | Normal | Domain | Moderate, 0 < x < 708.4 (float: 87.3).
    */
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_k(const Vec<ValueType,N>& x);
-  /** cyl_bessel_k to the given digits (-1: full). */
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_k(const Vec<ValueType,N>& x);
+  template <Integer n, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_k(const Vec<ValueType,N>& x);
+  /** cyl_bessel_k to the given digits (-1: full); A as cyl_bessel_k. */
+  template <Integer n, Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_k(const Vec<ValueType,N>& x);
 
   /**
    * Spherical Bessel function of the first kind j_n of order n = 0, 1, 2; float, double: within 4 ulp for |x| < 2,
    * beyond within 2.5 eps max(|j_n(x)|, 1/|x|).
+   * A: Finite | Moderate, |x| < 2^33 (float: 2^14); for n = 0 also Normal.
    */
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> sph_bessel(const Vec<ValueType,N>& x);
-  /** sph_bessel to the given digits (-1: full). */
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_bessel(const Vec<ValueType,N>& x);
+  template <Integer n, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> sph_bessel(const Vec<ValueType,N>& x);
+  /** sph_bessel to the given digits (-1: full); A as sph_bessel. */
+  template <Integer n, Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_bessel(const Vec<ValueType,N>& x);
 
   /**
    * Spherical Bessel function of the second kind y_n of order n = 0, 1, 2, -inf at 0, NaN for x < 0; float, double:
    * within 3 eps max(|y_n(x)|, 1/x).
+   * A: Finite | Normal | Domain | Moderate, 0 < x < 2^33 (float: 2^14).
    */
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> sph_neumann(const Vec<ValueType,N>& x);
-  /** sph_neumann to the given digits (-1: full). */
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_neumann(const Vec<ValueType,N>& x);
+  template <Integer n, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> sph_neumann(const Vec<ValueType,N>& x);
+  /** sph_neumann to the given digits (-1: full); A as sph_neumann. */
+  template <Integer n, Integer digits, Assume A = Assume::None, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_neumann(const Vec<ValueType,N>& x);
 
   /** Riemann zeta function of real s, inf at 1; float, double: within 3 ulp for s >= 0, below within 7 ulp. */
   template <class ValueType, Integer N> inline Vec<ValueType,N> riemann_zeta(const Vec<ValueType,N>& s);

@@ -894,6 +894,61 @@ namespace sctl {
           SCTL_ASSERT(isinf(exp10(VecType((ScalarType)INFINITY))[0]) && exp10(VecType(-(ScalarType)INFINITY))[0] == 0 && isnan(exp10(VecType((ScalarType)NAN))[0]));
         }
 
+        { // approx_exp2, approx_log2, approx_log10 to the given digits
+          const VecType xp = fabs(v0) + (ScalarType)0.5;
+          const auto check = [&xp, &v0](const VecType& e2, const VecType& l2, const VecType& l10, const ScalarType err_tol) {
+            for (Integer i = 0; i < N; i++) {
+              const ScalarType e = pow<ScalarType>((ScalarType)2, v0[i]), l = log<ScalarType>(xp[i]);
+              const ScalarType r2 = l / const_ln2<ScalarType>(), r10 = l / log<ScalarType>((ScalarType)10);
+              SCTL_ASSERT(fabs(e2[i] - e) <= err_tol * e);
+              SCTL_ASSERT(fabs(l2[i] - r2) <= err_tol * fabs(r2) && fabs(l10[i] - r10) <= err_tol * fabs(r10));
+            }
+          };
+          check(approx_exp2<3>(v0), approx_log2<3>(xp), approx_log10<3>(xp), (ScalarType)1e-3);
+          check(approx_exp2<5>(v0), approx_log2<5>(xp), approx_log10<5>(xp), (ScalarType)1e-5);
+          if constexpr (std::is_same<ScalarType,double>::value) {
+            check(approx_exp2<9>(v0), approx_log2<9>(xp), approx_log10<9>(xp), (ScalarType)1e-9);
+            check(approx_exp2<12>(v0), approx_log2<12>(xp), approx_log10<12>(xp), (ScalarType)1e-12);
+          }
+        }
+
+        { // approx_cbrt, approx_sinh, approx_cosh to the given digits; cbrt also of tiny, huge and negative x
+          const VecType rc = cbrt(v0), rs = sinh(v0), rh = cosh(v0); // tested against references in test_reals_math2
+          const auto check = [&rc, &rs, &rh](const VecType& c, const VecType& s, const VecType& h, const ScalarType err_tol) {
+            for (Integer i = 0; i < N; i++) {
+              SCTL_ASSERT(fabs(c[i] - rc[i]) <= err_tol * fabs(rc[i]) && fabs(s[i] - rs[i]) <= err_tol * fabs(rs[i]) && fabs(h[i] - rh[i]) <= err_tol * rh[i]);
+            }
+          };
+          check(approx_cbrt<2>(v0), approx_sinh<2>(v0), approx_cosh<2>(v0), (ScalarType)1e-2);
+          check(approx_cbrt<4>(v0), approx_sinh<4>(v0), approx_cosh<4>(v0), (ScalarType)1e-4);
+          check(approx_cbrt<5>(v0), approx_sinh<5>(v0), approx_cosh<5>(v0), (ScalarType)1e-5);
+          if constexpr (std::is_same<ScalarType,double>::value) {
+            check(approx_cbrt<8>(v0), approx_sinh<8>(v0), approx_cosh<8>(v0), (ScalarType)1e-8);
+            check(approx_cbrt<11>(v0), approx_sinh<11>(v0), approx_cosh<11>(v0), (ScalarType)1e-11);
+            check(approx_cbrt<14>(v0), approx_sinh<14>(v0), approx_cosh<14>(v0), (ScalarType)1e-14);
+          }
+          for (const ScalarType x : {(ScalarType)1e-30, (ScalarType)-7e25, (ScalarType)0.002}) {
+            SCTL_ASSERT(fabs(approx_cbrt<5>(VecType(x))[0] - cbrt(VecType(x))[0]) <= (ScalarType)1e-5 * fabs(cbrt(VecType(x))[0]));
+          }
+        }
+
+        { // approx_atan, approx_asin, approx_acos, approx_atan2, approx_tanh to the given digits
+          const VecType w = v0 * (ScalarType)(1 / 6.3), w2 = v0 * (ScalarType)0.7 + (ScalarType)0.5;
+          const VecType ra = atan(v0), rs = asin(w), rc = acos(w), r2 = atan2(v0, w2), rt = tanh(v0);
+          const auto check = [&](const VecType& a, const VecType& s, const VecType& c, const VecType& a2, const VecType& t, const ScalarType err_tol) {
+            for (Integer i = 0; i < N; i++) {
+              SCTL_ASSERT(fabs(a[i] - ra[i]) <= err_tol * fabs(ra[i]) && fabs(s[i] - rs[i]) <= err_tol * fabs(rs[i]) && fabs(c[i] - rc[i]) <= err_tol * fabs(rc[i]));
+              SCTL_ASSERT(fabs(a2[i] - r2[i]) <= err_tol * fabs(r2[i]) && fabs(t[i] - rt[i]) <= err_tol * fabs(rt[i]));
+            }
+          };
+          check(approx_atan<3>(v0), approx_asin<3>(w), approx_acos<3>(w), approx_atan2<3>(v0, w2), approx_tanh<3>(v0), (ScalarType)1e-3);
+          check(approx_atan<5>(v0), approx_asin<5>(w), approx_acos<5>(w), approx_atan2<5>(v0, w2), approx_tanh<5>(v0), (ScalarType)1e-5);
+          if constexpr (std::is_same<ScalarType,double>::value) {
+            check(approx_atan<9>(v0), approx_asin<9>(w), approx_acos<9>(w), approx_atan2<9>(v0, w2), approx_tanh<9>(v0), (ScalarType)1e-9);
+            check(approx_atan<13>(v0), approx_asin<13>(w), approx_acos<13>(w), approx_atan2<13>(v0, w2), approx_tanh<13>(v0), (ScalarType)1e-13);
+          }
+        }
+
         { // sinpi, cospi, sincospi, and approx_sinpi, approx_cospi to 5 digits
           VecType s, c;
           sincospi(s, c, v0);
@@ -1019,14 +1074,14 @@ namespace sctl {
           SCTL_ASSERT(fabs(at[i] - atan2<ScalarType>(x, u2.x[i])) <= 8*eps*fabs(atan2<ScalarType>(x, u2.x[i])));
           SCTL_ASSERT(fabs(pw[i] - pow<ScalarType>(u4.x[i], u2.x[i]/2)) <= 8*eps*pow<ScalarType>(u4.x[i], u2.x[i]/2));
         }
-        for (const ScalarType x : {(ScalarType)100000.25, (ScalarType)-3e7, (ScalarType)1e20}) { // beyond the reduction of FullRange = false
+        for (const ScalarType x : {(ScalarType)100000.25, (ScalarType)-3e7, (ScalarType)1e20}) { // beyond the reduction of approx_sin with Assume::Moderate
           SCTL_ASSERT(fabs(sin(VecType(x))[0] - sin<ScalarType>(x)) < err_tol);
           SCTL_ASSERT(fabs(cos(VecType(x))[0] - cos<ScalarType>(x)) < err_tol);
           SCTL_ASSERT(fabs(approx_sin<8>(VecType(x))[0] - sin<ScalarType>(x)) < (ScalarType)1e-6);
         }
         { // the faster versions, for moderate arguments
-          const VecType snf = sin<false>(u1.v);
-          const VecType atf = atan2<false>(u1.v, u2.v);
+          const VecType snf = approx_sin<-1, Assume::Finite | Assume::Moderate>(u1.v);
+          const VecType atf = atan2<Assume::Finite | Assume::Normal>(u1.v, u2.v);
           for (Integer i = 0; i < N; i++) {
             SCTL_ASSERT(fabs(snf[i] - sin<ScalarType>(u1.x[i])) < err_tol);
             SCTL_ASSERT(fabs(atf[i] - atan2<ScalarType>(u1.x[i], u2.x[i])) <= 8*eps*fabs(atan2<ScalarType>(u1.x[i], u2.x[i])));
@@ -1102,7 +1157,7 @@ namespace sctl {
         const VecType ach = acosh(VecType((ScalarType)1) + u4.v);
         const VecType ath = atanh(u5.v);
         const VecType ash5 = approx_asinh<5>(u1.v), ach5 = approx_acosh<5>(VecType((ScalarType)1) + u4.v), ath5 = approx_atanh<5>(u5.v);
-        const VecType ashn = approx_asinh<-1, false>(u1.v), achn = approx_acosh<-1, false>(VecType((ScalarType)1) + u4.v), athn = approx_atanh<-1, false>(u5.v);
+        const VecType ashn = approx_asinh<-1, Assume::Finite | Assume::Moderate>(u1.v), achn = approx_acosh<-1, Assume::All>(VecType((ScalarType)1) + u4.v), athn = approx_atanh<-1, Assume::Domain>(u5.v);
         const VecType fm = fmod(u1.v, u4.v);
         SCTL_ASSERT(round(VecType((ScalarType)2.5))[0] == 3 && round(VecType((ScalarType)-0.5))[0] == -1);
         for (Integer i = 0; i < N; i++) {
@@ -1302,8 +1357,72 @@ namespace sctl {
         const ScalarType big = (ScalarType)(sizeof(ScalarType) == 4 ? 1e30 : 1e200); // big^2 overflows float
         SCTL_ASSERT(rel(hypot(VecType(big), VecType(big))[0], big * sqrt<ScalarType>((ScalarType)2)) <= tol);
         SCTL_ASSERT(isinf(hypot(VecType((ScalarType)INFINITY), VecType((ScalarType)NAN))[0]));
-        const VecType hyf = hypot<false>(u1.v, u2.v);
+        const VecType hyf = hypot<Assume::Moderate>(u1.v, u2.v);
         for (Integer i = 0; i < N; i++) SCTL_ASSERT(rel(hyf[i], hypot<ScalarType>(u1.x[i], u2.x[i])) <= tol);
+
+        { // with the promises of Assume, the same results for arguments inside them, up to FMA contraction in generic code
+          constexpr Assume FM = Assume::Finite | Assume::Moderate;
+          constexpr Assume All = Assume::All;
+          const auto check = [&rel](const VecType& a, const VecType& b, const ScalarType t) {
+            for (Integer i = 0; i < N; i++) SCTL_ASSERT(a[i] == b[i] || rel(a[i], b[i]) <= t);
+          };
+          const ScalarType t = 4 * eps;
+          const VecType x1 = VecType((ScalarType)1) + u4.v;
+          check(log<All>(u4.v), log(u4.v), t);
+          check(log2<All>(u4.v), log2(u4.v), t);
+          check(log10<All>(u4.v), log10(u4.v), t);
+          check(approx_log<8, All>(u4.v), approx_log<8>(u4.v), t);
+          check(exp<FM>(u1.v), exp(u1.v), t);
+          check(approx_exp<8, FM>(u1.v), approx_exp<8>(u1.v), t);
+          check(exp10<FM>(u2.v), exp10(u2.v), t);
+          check(approx_exp10<8, FM>(u2.v), approx_exp10<8>(u2.v), t);
+          check(exp2<FM>(u1.v), exp2(u1.v), t);
+          { // y log x rounded differently by a contraction: up to |y log x| ulp
+            const VecType p0 = pow<All>(u4.v, u2.v), p1 = pow(u4.v, u2.v), a0 = approx_pow<8, All>(u4.v, u2.v), a1 = approx_pow<8>(u4.v, u2.v);
+            for (Integer i = 0; i < N; i++) {
+              const ScalarType tp = t * (1 + fabs(u2.x[i] * log<ScalarType>(u4.x[i])));
+              SCTL_ASSERT((p0[i] == p1[i] || rel(p0[i], p1[i]) <= tp) && (a0[i] == a1[i] || rel(a0[i], a1[i]) <= tp));
+            }
+          }
+          check(cbrt<All>(u1.v), cbrt(u1.v), t);
+          check(sinh<FM>(u1.v), sinh(u1.v), t);
+          check(cosh<FM>(u1.v), cosh(u1.v), t);
+          check(asinh<FM>(u1.v), asinh(u1.v), t);
+          check(acosh<All>(x1), acosh(x1), t);
+          check(atanh<Assume::Domain>(u5.v), atanh(u5.v), t);
+          check(sin<FM>(u1.v), sin(u1.v), t);
+          check(cos<FM>(u1.v), cos(u1.v), t);
+          check(tan<FM>(u1.v), tan(u1.v), t);
+          check(sinc<FM>(u1.v), sinc(u1.v), t);
+          const VecType as8 = approx_sin<8, FM>(u1.v), as8_ref = approx_sin<8>(u1.v); // x - n pi/2 by one product: an absolute error
+          for (Integer i = 0; i < N; i++) SCTL_ASSERT(fabs(as8[i] - as8_ref[i]) <= (sizeof(ScalarType) == 4 ? (ScalarType)1e-6 : (ScalarType)1e-8));
+          check(sinpi<FM>(u1.v), sinpi(u1.v), t);
+          check(cospi<FM>(u1.v), cospi(u1.v), t);
+          check(sincpi<FM>(u1.v), sincpi(u1.v), t);
+          check(atan2<All>(u1.v, u2.v), atan2(u1.v, u2.v), t);
+          check(hypot<Assume::Finite | Assume::Normal>(u1.v, u2.v), hypot(u1.v, u2.v), t);
+          // longer evaluations, where a contraction can move the result by a few ulp
+          const ScalarType t3 = 16 * eps;
+          const VecType x4 = u5.v * (ScalarType)4, p = (u5.v + (ScalarType)1) * (ScalarType)0.5;
+          check(erfc<FM>(x4), erfc(x4), t3);
+          check(approx_erfc<5, FM>(x4), approx_erfc<5>(x4), t3);
+          check(ndtri<Assume::Normal | Assume::Domain>(p), ndtri(p), t3);
+          check(erfinv<Assume::Domain>(u5.v), erfinv(u5.v), t3);
+          check(tgamma<Assume::Moderate | Assume::Domain>(u1.v), tgamma(u1.v), t3);
+          const auto check_abs = [](const VecType& a, const VecType& b, const ScalarType t_) { // relative, or absolute below 1: at the zeros of lgamma and the Bessel functions
+            for (Integer i = 0; i < N; i++) SCTL_ASSERT(a[i] == b[i] || fabs(a[i] - b[i]) <= t_ * (fabs(b[i]) > 1 ? fabs(b[i]) : (ScalarType)1));
+          };
+          check_abs(lgamma<All>(u1.v), lgamma(u1.v), t3);
+          check_abs(cyl_bessel_j<0, FM>(u1.v), cyl_bessel_j<0>(u1.v), t3);
+          check_abs(approx_cyl_bessel_j<1, 5, FM>(u1.v), approx_cyl_bessel_j<1, 5>(u1.v), t3);
+          check_abs(cyl_neumann<1, All>(u4.v), cyl_neumann<1>(u4.v), t3);
+          check_abs(cyl_bessel_i<0, FM>(u1.v), cyl_bessel_i<0>(u1.v), t3);
+          check_abs(cyl_bessel_k<1, All>(u4.v), cyl_bessel_k<1>(u4.v), t3);
+          check_abs(approx_cyl_bessel_k<0, 5, All>(u4.v), approx_cyl_bessel_k<0, 5>(u4.v), t3);
+          check_abs(sph_bessel<0, All>(u1.v), sph_bessel<0>(u1.v), t3);
+          check_abs(sph_bessel<2, FM>(u1.v), sph_bessel<2>(u1.v), t3);
+          check_abs(sph_neumann<1, All>(u4.v), sph_neumann<1>(u4.v), t3);
+        }
 
         for (const ScalarType x : {(ScalarType)1e6, (ScalarType)INFINITY}) { // exp and approx_exp beyond the range of the result
           SCTL_ASSERT(isinf(exp(VecType(x))[0]) && exp(VecType(x))[0] > 0);
@@ -1332,7 +1451,7 @@ namespace sctl {
           }
         }
         const VecType ae = approx_exp<8>(u1.v);
-        const VecType ae_unchecked = approx_exp<8, false>(u1.v);
+        const VecType ae_unchecked = approx_exp<8, Assume::Finite | Assume::Moderate>(u1.v);
         for (Integer i = 0; i < N; i++) SCTL_ASSERT(fabs(ae_unchecked[i] - ae[i]) <= err_tol * ae[i]); // equal in the range, up to FMA contraction in generic code
       }
 

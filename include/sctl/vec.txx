@@ -9,6 +9,7 @@
 #include "sctl/common.hpp"          // for Integer, SCTL_ASSERT, SCTL_ALIGN_...
 #include "sctl/vec.hpp"             // for Vec, AndNot, max, min, operator!=
 #include "sctl/intrin-wrapper.hpp"  // for ComparisonType, comp_intrin, Type...
+#include "sctl/intrin-wrapper.txx"  // for the definitions of the *_intrin
 
 namespace sctl {
 
@@ -459,11 +460,13 @@ namespace sctl {
 
   // Special functions
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x) {
-    static constexpr Integer digits_ = (digits==-1 ? (Integer)(TypeTraits<ValueType>::SigBits*0.3010299957) : digits);
+    static constexpr Integer full_digits = (Integer)(TypeTraits<ValueType>::SigBits*0.3010299957);
+    static constexpr Integer digits_ = (digits==-1 || digits > full_digits ? full_digits : digits); // no more steps than the type holds
     return rsqrt_approx_intrin<digits_, typename Vec<ValueType,N>::VData>::eval(x.get());
   }
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_rsqrt(const Vec<ValueType,N>& x, const typename Vec<ValueType,N>::MaskType& m) {
-    static constexpr Integer digits_ = (digits==-1 ? (Integer)(TypeTraits<ValueType>::SigBits*0.3010299957) : digits);
+    static constexpr Integer full_digits = (Integer)(TypeTraits<ValueType>::SigBits*0.3010299957);
+    static constexpr Integer digits_ = (digits==-1 || digits > full_digits ? full_digits : digits);
     return rsqrt_approx_intrin<digits_, typename Vec<ValueType,N>::VData>::eval(x.get(), m);
   }
 
@@ -478,77 +481,86 @@ namespace sctl {
     template <class ValueType> inline constexpr bool full(const Integer digits) { // the full-precision routine is as accurate, or the type is not float or double
       return digits < 0 || digits >= (std::is_same<ValueType,float>::value ? 7 : 15) || !(std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value);
     }
-    template <class ValueType> inline constexpr bool full_exp(const Integer digits) { // as full, but the Taylor polynomial of approx_exp_intrin also serves other types, up to order 13
-      return digits < 0 || exp_taylor_order(digits) > 13 || ((std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) && full<ValueType>(digits));
+    template <class ValueType> inline constexpr bool full_exp(const Integer digits) { // as full, but the Taylor polynomial of approx_exp_intrin also serves other types, up to order 13; in float and double, from the degree of the full-precision polynomial (6, 11), which is no slower
+      return digits < 0 || exp_taylor_order(digits) > 13 || ((std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) && (full<ValueType>(digits) || exp_taylor_order(digits) >= (std::is_same<ValueType,float>::value ? 6 : 11)));
     }
   }
-  template <bool FullRange, class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
+  template <Assume A, class ValueType, Integer N> inline void sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
+    if constexpr (assumes(A, Assume::Finite | Assume::Moderate) && sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) approx_sincos_intrin<-1, false, true>(sinx.get(), cosx.get(), x.get());
+    else sincos_intrin(sinx.get(), cosx.get(), x.get());
+  }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
+    static constexpr bool full_range = !assumes(A, Assume::Finite | Assume::Moderate); // else also x - n pi/2 by one product
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) {
 #ifndef SCTL_HAVE_SVML
-    if constexpr (!FullRange && (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value)) {
-      approx_sincos_intrin<-1, false>(sinx.get(), cosx.get(), x.get());
-      return;
-    }
+      if constexpr (!full_range && (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value)) {
+        approx_sincos_intrin<-1, false>(sinx.get(), cosx.get(), x.get());
+        return;
+      }
 #endif
-    sincos_intrin(sinx.get(), cosx.get(), x.get());
+      sincos<A>(sinx, cosx, x);
+    } else {
+      approx_sincos_intrin<digits, full_range>(sinx.get(), cosx.get(), x.get());
+    }
   }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline void approx_sincos(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
-    if constexpr (detail_approx_digits::full<ValueType>(digits)) sincos<FullRange>(sinx, cosx, x);
-    else approx_sincos_intrin<digits, FullRange>(sinx.get(), cosx.get(), x.get());
+  template <Assume A, class ValueType, Integer N> inline void sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
+    approx_sincospi<-1, A>(sinx, cosx, x);
   }
-  template <class ValueType, Integer N> inline void sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
-    approx_sincospi_intrin<-1>(sinx.get(), cosx.get(), x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline void approx_sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
+    approx_sincospi_intrin<digits, !assumes(A, Assume::Finite | Assume::Moderate)>(sinx.get(), cosx.get(), x.get());
   }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline void approx_sincospi(Vec<ValueType,N>& sinx, Vec<ValueType,N>& cosx, const Vec<ValueType,N>& x) {
-    approx_sincospi_intrin<digits, FullRange>(sinx.get(), cosx.get(), x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> sinpi(const Vec<ValueType,N>& x) {
+    if constexpr (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) return sinpi_or_cospi_intrin<false, !assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
+    else return approx_sinpi<-1, A>(x);
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> sinpi(const Vec<ValueType,N>& x) {
-    return approx_sinpi<-1>(x);
-  }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinpi(const Vec<ValueType,N>& x) {
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinpi(const Vec<ValueType,N>& x) {
+    if constexpr (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) return sinpi_or_cospi_intrin<false, !assumes(A, Assume::Finite | Assume::Moderate), (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
     typename Vec<ValueType,N>::VData sinx, cosx;
-    approx_sincospi_intrin<digits, FullRange, true, false>(sinx, cosx, x.get());
+    approx_sincospi_intrin<digits, !assumes(A, Assume::Finite | Assume::Moderate), true, false>(sinx, cosx, x.get());
     return sinx;
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> cospi(const Vec<ValueType,N>& x) {
-    return approx_cospi<-1>(x);
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cospi(const Vec<ValueType,N>& x) {
+    if constexpr (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) return sinpi_or_cospi_intrin<true, !assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
+    else return approx_cospi<-1, A>(x);
   }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x) {
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cospi(const Vec<ValueType,N>& x) {
+    if constexpr (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) return sinpi_or_cospi_intrin<true, !assumes(A, Assume::Finite | Assume::Moderate), (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
     typename Vec<ValueType,N>::VData sinx, cosx;
-    approx_sincospi_intrin<digits, FullRange, false, true>(sinx, cosx, x.get());
+    approx_sincospi_intrin<digits, !assumes(A, Assume::Finite | Assume::Moderate), false, true>(sinx, cosx, x.get());
     return cosx;
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> sincpi(const Vec<ValueType,N>& x) {
-    return approx_sincpi_intrin<-1>(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> sincpi(const Vec<ValueType,N>& x) {
+    return approx_sincpi<-1, A>(x);
   }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_sincpi(const Vec<ValueType,N>& x) {
-    return approx_sincpi_intrin<digits, FullRange>(x.get());
-  }
-
-  template <class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x) {
-    return exp_intrin(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sincpi(const Vec<ValueType,N>& x) {
+    return approx_sincpi_intrin<digits, !assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
   }
 
-  template <Integer digits, bool RangeCheck, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x) {
-    if constexpr (detail_approx_digits::full_exp<ValueType>(digits)) return exp(x);
-    else return approx_exp_intrin<exp_taylor_order(digits), RangeCheck>(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> exp(const Vec<ValueType,N>& x) {
+    return exp_assume_intrin<A>(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> exp10(const Vec<ValueType,N>& x) {
-    return exp10_intrin(x.get());
+
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full_exp<ValueType>(digits)) return exp<A>(x);
+    else return approx_exp_intrin<exp_taylor_order(digits), !assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
   }
-  template <Integer digits, bool RangeCheck, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp10(const Vec<ValueType,N>& x) {
-    if constexpr (detail_approx_digits::full_exp<ValueType>(digits)) return exp10(x);
-    else return approx_exp10_intrin<exp_taylor_order(digits), RangeCheck>(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> exp10(const Vec<ValueType,N>& x) {
+    return exp10_intrin<A>(x.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_log(const Vec<ValueType,N>& x) {
-    if constexpr (detail_approx_digits::full<ValueType>(digits) || log_poly_degree(digits) == 0) return log(x); // beyond the polynomials, log is as fast
-    else return approx_log_intrin<digits>(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp10(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full_exp<ValueType>(digits)) return exp10<A>(x);
+    else return approx_exp10_intrin<exp_taylor_order(digits), !assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
-    if constexpr (detail_approx_digits::full<ValueType>(digits) || digits >= (std::is_same<ValueType,float>::value ? 6 : 14)) return pow(x, y); // from these digits, y log x rounded to ValueType is not accurate enough
-    else return approx_pow_intrin<digits + 2, exp_taylor_order(digits)>(x.get(), y.get()); // two more digits in log: |y log x| up to 100
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_log(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits) || log_poly_degree(digits) == 0) return log<A>(x); // beyond the polynomials, log is as fast
+    else return approx_log_intrin<digits, !assumes(A, Assume::Finite | Assume::Normal | Assume::Domain)>(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x) {
-    return log_intrin(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits) || digits >= (std::is_same<ValueType,float>::value ? 6 : pow_table<typename Vec<ValueType,N>::VData>() ? 11 : 14)) return pow<A>(x, y); // from these digits, y log x rounded to ValueType is not accurate enough; pow_table_intrin no slower from 11 (approx_pow_intrin was 1.07-1.19x slower at 11-13 on Ice Lake and Zen 4)
+    else return approx_pow_intrin<digits + 2, exp_taylor_order(digits), !assumes(A, Assume::All)>(x.get(), y.get()); // two more digits in log: |y log x| up to 100
+  }
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> log(const Vec<ValueType,N>& x) {
+    return log_assume_intrin<A>(x.get());
   }
 
   template <class ValueType, Integer N> inline Vec<ValueType,N> sqrt(const Vec<ValueType,N>& x) {
@@ -574,48 +586,62 @@ namespace sctl {
     return isnan_intrin(x.get());
   }
 
-  template <bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x) {
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> sin(const Vec<ValueType,N>& x) {
+    if constexpr (sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) return sin_or_cos_intrin<false, !assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
     Vec<ValueType,N> sinx, cosx;
-    sincos<FullRange>(sinx, cosx, x);
+    sincos<A>(sinx, cosx, x);
     return sinx;
   }
-  template <bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x) {
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cos(const Vec<ValueType,N>& x) {
+    if constexpr (sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) return sin_or_cos_intrin<true, !assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
     Vec<ValueType,N> sinx, cosx;
-    sincos<FullRange>(sinx, cosx, x);
+    sincos<A>(sinx, cosx, x);
     return cosx;
   }
-  template <bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x) {
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> tan(const Vec<ValueType,N>& x) {
+    if constexpr (sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) return tan_poly_intrin<!assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
     Vec<ValueType,N> sinx, cosx;
-    sincos<FullRange>(sinx, cosx, x);
+    sincos<A>(sinx, cosx, x);
     return sinx / cosx;
   }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x) {
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sin(const Vec<ValueType,N>& x) {
+    if constexpr (sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) return sin_or_cos_intrin<false, !assumes(A, Assume::Finite | Assume::Moderate), (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
     Vec<ValueType,N> sinx, cosx;
-    approx_sincos<digits, FullRange>(sinx, cosx, x);
+    approx_sincos<digits, A>(sinx, cosx, x);
     return sinx;
   }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x) {
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cos(const Vec<ValueType,N>& x) {
+    if constexpr (sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) return sin_or_cos_intrin<true, !assumes(A, Assume::Finite | Assume::Moderate), (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
     Vec<ValueType,N> sinx, cosx;
-    approx_sincos<digits, FullRange>(sinx, cosx, x);
+    approx_sincos<digits, A>(sinx, cosx, x);
     return cosx;
   }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x) {
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_tan(const Vec<ValueType,N>& x) {
+    if constexpr (sctl_poly<PolyOf::Sincos, typename Vec<ValueType,N>::VData>()) return tan_poly_intrin<!assumes(A, Assume::Finite | Assume::Moderate), (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
     Vec<ValueType,N> sinx, cosx;
-    approx_sincos<digits, FullRange>(sinx, cosx, x);
+    approx_sincos<digits, A>(sinx, cosx, x);
     return sinx / cosx;
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> sinc(const Vec<ValueType,N>& x) {
-    return approx_sinc<-1>(x);
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> sinc(const Vec<ValueType,N>& x) {
+    return select(x == Vec<ValueType,N>((ValueType)0), Vec<ValueType,N>((ValueType)1), sin<A>(x) / x);
   }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinc(const Vec<ValueType,N>& x) {
-    return select(x == Vec<ValueType,N>((ValueType)0), Vec<ValueType,N>((ValueType)1), approx_sin<digits, FullRange>(x) / x);
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinc(const Vec<ValueType,N>& x) {
+    if constexpr (std::is_same<ValueType,float>::value || std::is_same<ValueType,double>::value) { // 1 below 2^-60, so that 1/x is normal
+      static constexpr Integer d = (detail_approx_digits::full<ValueType>(digits) ? -1 : digits);
+      return select(fabs(x) < Vec<ValueType,N>((ValueType)0x1p-60), Vec<ValueType,N>((ValueType)1), Vec<ValueType,N>(div_approx_intrin<d>(approx_sin<digits, A>(x).get(), x.get())));
+    }
+    return select(x == Vec<ValueType,N>((ValueType)0), Vec<ValueType,N>((ValueType)1), approx_sin<digits, A>(x) / x);
   }
 
-  template <bool SpecialValues, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x) {
-    return atan2_intrin<SpecialValues>(y.get(), x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x) {
+    return atan2_intrin<!assumes(A, Assume::Finite | Assume::Normal)>(y.get(), x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
-    return pow_intrin(x.get(), y.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_atan2(const Vec<ValueType,N>& y, const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return atan2<A>(y, x);
+    else return atan2_intrin<!assumes(A, Assume::Finite | Assume::Normal), digits>(y.get(), x.get());
+  }
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
+    return pow_assume_intrin<A>(x.get(), y.get());
   }
   template <Long e, class ValueType, Integer N> inline Vec<ValueType,N> pow(const Vec<ValueType,N>& x) {
     if constexpr (e < 0) {
@@ -674,89 +700,129 @@ namespace sctl {
   template <class ValueType, Integer N> inline Vec<ValueType,N> atan(const Vec<ValueType,N>& x) {
     return atan_intrin(x.get());
   }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_atan(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return atan(x);
+    else return atan_intrin<digits>(x.get());
+  }
   template <class ValueType, Integer N> inline Vec<ValueType,N> asin(const Vec<ValueType,N>& x) {
     return asin_intrin(x.get());
+  }
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_asin(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return asin(x);
+    else return asin_intrin<digits>(x.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> acos(const Vec<ValueType,N>& x) {
     return acos_intrin(x.get());
   }
-  template <bool AvoidOverflow, class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
-    return hypot_intrin<AvoidOverflow>(x.get(), y.get());
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_acos(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return acos(x);
+    else return acos_intrin<digits>(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> exp2(const Vec<ValueType,N>& x) {
-    return exp2_intrin(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> hypot(const Vec<ValueType,N>& x, const Vec<ValueType,N>& y) {
+    return hypot_intrin<!assumes(A, Assume::Moderate), !assumes(A, Assume::Finite | Assume::Normal)>(x.get(), y.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> log2(const Vec<ValueType,N>& x) {
-    return log2_intrin(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> exp2(const Vec<ValueType,N>& x) {
+    return exp2_intrin<!assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> log10(const Vec<ValueType,N>& x) {
-    return log10_intrin(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_exp2(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full_exp<ValueType>(digits)) return exp2<A>(x);
+    else return exp2_intrin<!assumes(A, Assume::Finite | Assume::Moderate), digits>(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x) {
-    return cbrt_intrin(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> log2(const Vec<ValueType,N>& x) {
+    return log2_intrin<A>(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> sinh(const Vec<ValueType,N>& x) {
-    return sinh_intrin(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_log2(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits) || log_poly_degree(digits) == 0) return log2<A>(x);
+    else return approx_log_intrin<digits, !assumes(A, Assume::Finite | Assume::Normal | Assume::Domain), LogBase::Two>(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> cosh(const Vec<ValueType,N>& x) {
-    return cosh_intrin(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> log10(const Vec<ValueType,N>& x) {
+    return log10_intrin<A>(x.get());
+  }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_log10(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits) || log_poly_degree(digits) == 0) return log10<A>(x);
+    else return approx_log_intrin<digits, !assumes(A, Assume::Finite | Assume::Normal | Assume::Domain), LogBase::Ten>(x.get());
+  }
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cbrt(const Vec<ValueType,N>& x) {
+    return cbrt_assume_intrin<A>(x.get());
+  }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cbrt(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits)) return cbrt<A>(x);
+    else return cbrt_assume_intrin<A, digits>(x.get());
+  }
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> sinh(const Vec<ValueType,N>& x) {
+    return sinh_intrin<A>(x.get());
+  }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sinh(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full_exp<ValueType>(digits + 1)) return sinh<A>(x); // the polynomial of digits + 1, as exp_half_pm_intrin
+    else return sinh_intrin<A, digits>(x.get());
+  }
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cosh(const Vec<ValueType,N>& x) {
+    return cosh_intrin<A>(x.get());
+  }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cosh(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full_exp<ValueType>(digits + 1)) return cosh<A>(x); // the polynomial of digits + 1, as exp_half_pm_intrin
+    else return cosh_intrin<A, digits>(x.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> tanh(const Vec<ValueType,N>& x) {
     return tanh_intrin(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> asinh(const Vec<ValueType,N>& x) {
-    return asinh_intrin(x.get());
+  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tanh(const Vec<ValueType,N>& x) {
+    if constexpr (detail_approx_digits::full<ValueType>(digits) || digits >= (std::is_same<ValueType,float>::value ? 6 : 13)) return tanh(x); // from these digits, no faster than tanh
+    else return tanh_intrin<digits>(x.get());
   }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_asinh(const Vec<ValueType,N>& x) {
-    return asinh_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), FullRange>(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> asinh(const Vec<ValueType,N>& x) {
+    return approx_asinh<-1, A>(x);
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> acosh(const Vec<ValueType,N>& x) {
-    return acosh_intrin(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_asinh(const Vec<ValueType,N>& x) {
+    return asinh_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), !assumes(A, Assume::Finite | Assume::Moderate)>(x.get());
   }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_acosh(const Vec<ValueType,N>& x) {
-    return acosh_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), FullRange>(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> acosh(const Vec<ValueType,N>& x) {
+    return approx_acosh<-1, A>(x);
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> atanh(const Vec<ValueType,N>& x) {
-    return atanh_intrin(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_acosh(const Vec<ValueType,N>& x) {
+    return acosh_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), !assumes(A, Assume::Finite | Assume::Domain | Assume::Moderate)>(x.get());
   }
-  template <Integer digits, bool FullRange, class ValueType, Integer N> inline Vec<ValueType,N> approx_atanh(const Vec<ValueType,N>& x) {
-    return atanh_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), FullRange>(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> atanh(const Vec<ValueType,N>& x) {
+    return approx_atanh<-1, A>(x);
+  }
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_atanh(const Vec<ValueType,N>& x) {
+    return atanh_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), !assumes(A, Assume::Domain)>(x.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> erf(const Vec<ValueType,N>& x) {
     return erf_intrin(x.get());
   }
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erf(const Vec<ValueType,N>& x) {
-    return erf_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+    return erf_intrin<(detail_approx_digits::full<ValueType>(digits) || (std::is_same<ValueType,float>::value && digits >= 6) ? -1 : digits)>(x.get()); // float from 6 digits: no slower
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> erfc(const Vec<ValueType,N>& x) {
-    return erfc_intrin(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> erfc(const Vec<ValueType,N>& x) {
+    return erfc_intrin<-1, A>(x.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x) {
-    return erfc_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfc(const Vec<ValueType,N>& x) {
+    return erfc_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> ndtri(const Vec<ValueType,N>& p) {
-    return ndtri_intrin(p.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> ndtri(const Vec<ValueType,N>& p) {
+    return ndtri_intrin<-1, A>(p.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_ndtri(const Vec<ValueType,N>& p) {
-    return ndtri_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(p.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_ndtri(const Vec<ValueType,N>& p) {
+    return ndtri_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(p.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> erfinv(const Vec<ValueType,N>& y) {
-    return erfinv_intrin(y.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> erfinv(const Vec<ValueType,N>& y) {
+    return erfinv_intrin<-1, A>(y.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y) {
-    return erfinv_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(y.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_erfinv(const Vec<ValueType,N>& y) {
+    return erfinv_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(y.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> tgamma(const Vec<ValueType,N>& x) {
-    return tgamma_intrin(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> tgamma(const Vec<ValueType,N>& x) {
+    return tgamma_intrin<-1, A>(x.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_tgamma(const Vec<ValueType,N>& x) {
-    return tgamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_tgamma(const Vec<ValueType,N>& x) {
+    return tgamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <class ValueType, Integer N> inline Vec<ValueType,N> lgamma(const Vec<ValueType,N>& x) {
-    return lgamma_intrin(x.get());
+  template <Assume A, class ValueType, Integer N> inline Vec<ValueType,N> lgamma(const Vec<ValueType,N>& x) {
+    return lgamma_intrin<-1, A>(x.get());
   }
-  template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_lgamma(const Vec<ValueType,N>& x) {
-    return lgamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_lgamma(const Vec<ValueType,N>& x) {
+    return lgamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> digamma(const Vec<ValueType,N>& x) {
     return digamma_intrin(x.get());
@@ -764,41 +830,41 @@ namespace sctl {
   template <Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_digamma(const Vec<ValueType,N>& x) {
     return digamma_intrin<(detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
   }
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_j(const Vec<ValueType,N>& x) {
-    return cyl_bessel_j_intrin<n>(x.get());
+  template <Integer n, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_j(const Vec<ValueType,N>& x) {
+    return cyl_bessel_j_intrin<n, -1, A>(x.get());
   }
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_j(const Vec<ValueType,N>& x) {
-    return cyl_bessel_j_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer n, Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_j(const Vec<ValueType,N>& x) {
+    return cyl_bessel_j_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_neumann(const Vec<ValueType,N>& x) {
-    return cyl_neumann_intrin<n>(x.get());
+  template <Integer n, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cyl_neumann(const Vec<ValueType,N>& x) {
+    return cyl_neumann_intrin<n, -1, A>(x.get());
   }
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_neumann(const Vec<ValueType,N>& x) {
-    return cyl_neumann_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer n, Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_neumann(const Vec<ValueType,N>& x) {
+    return cyl_neumann_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_i(const Vec<ValueType,N>& x) {
-    return cyl_bessel_i_intrin<n>(x.get());
+  template <Integer n, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_i(const Vec<ValueType,N>& x) {
+    return cyl_bessel_i_intrin<n, -1, A>(x.get());
   }
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_i(const Vec<ValueType,N>& x) {
-    return cyl_bessel_i_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer n, Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_i(const Vec<ValueType,N>& x) {
+    return cyl_bessel_i_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_k(const Vec<ValueType,N>& x) {
-    return cyl_bessel_k_intrin<n>(x.get());
+  template <Integer n, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> cyl_bessel_k(const Vec<ValueType,N>& x) {
+    return cyl_bessel_k_intrin<n, -1, A>(x.get());
   }
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_k(const Vec<ValueType,N>& x) {
-    return cyl_bessel_k_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer n, Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_cyl_bessel_k(const Vec<ValueType,N>& x) {
+    return cyl_bessel_k_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> sph_bessel(const Vec<ValueType,N>& x) {
-    return sph_bessel_intrin<n>(x.get());
+  template <Integer n, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> sph_bessel(const Vec<ValueType,N>& x) {
+    return sph_bessel_intrin<n, -1, A>(x.get());
   }
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_bessel(const Vec<ValueType,N>& x) {
-    return sph_bessel_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer n, Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_bessel(const Vec<ValueType,N>& x) {
+    return sph_bessel_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
-  template <Integer n, class ValueType, Integer N> inline Vec<ValueType,N> sph_neumann(const Vec<ValueType,N>& x) {
-    return sph_neumann_intrin<n>(x.get());
+  template <Integer n, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> sph_neumann(const Vec<ValueType,N>& x) {
+    return sph_neumann_intrin<n, -1, A>(x.get());
   }
-  template <Integer n, Integer digits, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_neumann(const Vec<ValueType,N>& x) {
-    return sph_neumann_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits)>(x.get());
+  template <Integer n, Integer digits, Assume A, class ValueType, Integer N> inline Vec<ValueType,N> approx_sph_neumann(const Vec<ValueType,N>& x) {
+    return sph_neumann_intrin<n, (detail_approx_digits::full<ValueType>(digits) ? -1 : digits), A>(x.get());
   }
   template <class ValueType, Integer N> inline Vec<ValueType,N> riemann_zeta(const Vec<ValueType,N>& s) {
     return riemann_zeta_intrin(s.get());
