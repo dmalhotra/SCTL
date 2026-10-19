@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 // Per-function tests for sctl/mem_mgr.{hpp,txx}.
 //
 // Covers the user-facing API:

@@ -1,3 +1,8 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Authors: Dhairya Malhotra, Rahul S. Sampath, Hari Sundar
+// SPDX-License-Identifier: Apache-2.0 AND MIT
+// Parts derived from Dendro by Rahul S. Sampath and Hari Sundar; see comm.txx for the MIT notice.
+
 #ifndef _SCTL_COMM_HPP_
 #define _SCTL_COMM_HPP_
 
@@ -607,6 +612,7 @@ class Comm {
 
   /**
    * Sorts the elements of an array using HyperQuickSort algorithm with a custom comparison function.
+   * Developed jointly by Dhairya Malhotra and Hari Sundar for HykSort (Sundar, Malhotra and Biros, ICS 2013).
    *
    * @tparam Type type of the elements in the array.
    * @tparam Compare comparison function type.

@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 // Per-function tests for sctl/static-array.{hpp,txx}.
 //
 // In release mode (no SCTL_MEMDEBUG) StaticArray<T,N> is aliased to T[N] in

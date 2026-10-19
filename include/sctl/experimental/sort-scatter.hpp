@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * @file sort-scatter.hpp
  * SortScatter with the keys and data in host or device memory (experimental).

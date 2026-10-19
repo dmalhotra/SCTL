@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 // Per-function tests for sctl/boundary_integral.{hpp,txx}.
 //
 // boundary_integral.hpp publishes BoundaryIntegralOp<Real, Kernel>, a heavy

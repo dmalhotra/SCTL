@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 #ifndef SCTL_MPI_COUNT_LIMIT
 #define SCTL_MPI_COUNT_LIMIT 3
 #endif

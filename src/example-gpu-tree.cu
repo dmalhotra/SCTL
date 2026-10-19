@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * @file example-gpu-tree.cu
  * @brief Minimal use of gpu_tree::PtTree; see PtTree::test. Swap the backend for gpu_tree::HostVector

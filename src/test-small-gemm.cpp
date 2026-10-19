@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 // Tests for sctl/small_gemm.{hpp,txx}.
 //
 // SmallGEMM against a direct triple loop, with the sizes fixed at compile time, given at run time,
