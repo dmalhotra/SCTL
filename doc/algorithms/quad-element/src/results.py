@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+# Author: Dhairya Malhotra
+# SPDX-License-Identifier: Apache-2.0
+
 """Tables and plot data of the Numerical results section, from bench-cubed-sphere outputs in data/.
 
 Convergence: data/{rome-128,genoa-96,icelake-64}.txt, the tolerance sweep at 12 patches per face.

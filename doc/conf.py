@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+# Author: Dhairya Malhotra
+# SPDX-License-Identifier: Apache-2.0
 #
 # Configuration file for the Sphinx documentation builder.
 #
@@ -20,8 +23,8 @@
 # -- Project information -----------------------------------------------------
 
 project = 'SCTL'
-copyright = '2024, Dhairya Malhotra'
-author = 'Dhairya Malhotra'
+copyright = '2017-2026, The Simons Foundation, Inc. and the SCTL authors'
+author = 'Dhairya Malhotra, Tianyue Li, Robert Blackwell, Wen Yan'
 
 # The short X.Y version
 version = '1.0.0'
@@ -121,6 +124,9 @@ html_theme_options = {
 }
 
 #html_sidebars = { '**': ['globaltoc.html', 'relations.html', 'sourcelink.html', 'searchbox.html'] }
+
+# Read the Docs serves robots.txt from the root of the default version's output.
+html_extra_path = ['robots.txt']
 
 # otherwise, readthedocs.org uses their theme by default, so no need to specify it
 
