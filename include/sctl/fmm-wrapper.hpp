@@ -30,8 +30,13 @@ namespace sctl {
 
 /**
  * Evaluate potentials from particle sources using PVFMM when available, otherwise, use direct
- * computation.  To enable PVFMM, the macro `SCTL_HAVE_PVFMM` must be defined, the code must be
- * compiled with MPI and linked to PVFMM.
+ * computation.  To enable PVFMM, the macro `SCTL_HAVE_PVFMM` must be defined and the PVFMM headers
+ * must be on the include path; without `SCTL_HAVE_MPI` it runs in a single process.
+ *
+ * PVFMM evaluates kernels without their context pointer (`GenericKernel::SetCtxPtr`, e.g. the
+ * Helmholtz wavenumber), and its translation kernels (M2M, M2L, L2L, M2T, L2T) take no normals.
+ * Evaluations that involve such kernels use direct computation instead; with periodicity, which
+ * needs PVFMM, they are an error.
  */
 template <class Real, Integer DIM> class ParticleFMM {
   public:
@@ -232,8 +237,11 @@ template <class Real, Integer DIM> class ParticleFMM {
 
     void EvalPVFMM(Vector<Real>& U, const std::string& trg_name) const;
 
-    /** Collective: whether Eval() for trg_name uses PVFMM: in 3D, with periodicity or 40000 targets or more */
+    /** Collective: whether Eval() for trg_name uses PVFMM: in 3D, with PVFMM-compatible kernels, and with periodicity or 40000 targets or more */
     bool UsePVFMM(const std::string& trg_name) const;
+
+    /** Whether all kernels that Eval() for trg_name would hand to PVFMM can be evaluated by it (see the class documentation) */
+    bool PVFMMCompatible(const std::string& trg_name) const;
 
     /**
      * The map x -> (x - bbox_offset)*bbox_scale of (src_name, trg_name) points into PVFMM's unit box, and the
