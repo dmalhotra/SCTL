@@ -1,0 +1,81 @@
+cff-version: 1.2.0
+message: "If you use SCTL, please cite it as below."
+type: software
+title: "SCTL: Scientific Computing Template Library"
+authors:
+  - given-names: Dhairya
+    family-names: Malhotra
+  - given-names: Tianyue
+    family-names: Li
+  - given-names: Robert
+    family-names: Blackwell
+  - given-names: Wen
+    family-names: Yan
+abstract: "A header-only C++ library providing various functionalities for scientific computing."
+repository-code: "https://github.com/dmalhotra/SCTL"
+url: "https://sctl.readthedocs.io"
+license: Apache-2.0
+references:
+  - type: conference-paper
+    title: "HykSort: a new variant of hypercube quicksort on distributed memory architectures"
+    authors:
+      - given-names: Hari
+        family-names: Sundar
+      - given-names: Dhairya
+        family-names: Malhotra
+      - given-names: George
+        family-names: Biros
+    collection-title: "Proceedings of the 27th International ACM Conference on International Conference on Supercomputing"
+    publisher:
+      name: ACM
+    start: 293
+    end: 302
+    year: 2013
+    doi: "10.1145/2464996.2465442"
+    notes: "Comm::HyperQuickSort was developed jointly by Dhairya Malhotra and Hari Sundar for HykSort."
+  - type: conference-paper
+    title: "Dendro: Parallel algorithms for multigrid and AMR methods on 2:1 balanced octrees"
+    authors:
+      - given-names: Rahul S.
+        family-names: Sampath
+      - given-names: Santi S.
+        family-names: Adavani
+      - given-names: Hari
+        family-names: Sundar
+      - given-names: Ilya
+        family-names: Lashuk
+      - given-names: George
+        family-names: Biros
+    collection-title: "2008 SC - International Conference for High Performance Computing, Networking, Storage and Analysis"
+    publisher:
+      name: IEEE
+    start: 1
+    end: 12
+    year: 2008
+    doi: "10.1109/SC.2008.5218558"
+    repository-code: "https://github.com/hsundar/dendro"
+    notes: "Comm::PartitionW, Alltoallv_dense, Ialltoallv_sparse and CommDatatype derive from parUtils and dtypes in Dendro, by Rahul S. Sampath and Hari Sundar."
+  - type: software
+    title: usort
+    authors:
+      - given-names: Hari
+        family-names: Sundar
+    repository-code: "https://github.com/hsundar/usort"
+    license: MIT
+    notes: "SCTL uses the Dendro-derived routines and HyperQuickSort in comm.txx under the MIT License of usort."
+  - type: software
+    title: "LAPACK: Reference BLAS and LAPACK"
+    authors:
+      - name: "The University of Tennessee and The University of Tennessee Research Foundation"
+      - name: "The University of California Berkeley"
+      - name: "The University of Colorado Denver"
+    repository-code: "https://github.com/Reference-LAPACK/lapack"
+    license: BSD-3-Clause-Open-MPI
+    notes: "blas.h and lapack.h quote the descriptions of GEMM and GESVD from the reference sources."
+  - type: software
+    title: sse2neon
+    authors:
+      - name: "SSE2NEON Contributors"
+    repository-code: "https://github.com/DLTcollab/sse2neon"
+    license: MIT
+    notes: "include/sctl/sse2neon.h, with modifications by the SCTL authors."

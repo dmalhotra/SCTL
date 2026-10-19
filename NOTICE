@@ -1,0 +1,42 @@
+SCTL: Scientific Computing Template Library
+
+Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors
+
+Authors:
+  Dhairya Malhotra (lead author)
+  Tianyue Li (quad-element quadratures)
+  Robert Blackwell (profiling, vector intrinsics, libmvec support)
+  Wen Yan (spherical harmonics traction self-evaluation)
+Each source file names its own authors in its header.
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Ports and translations of this code to other programming languages, whether
+made by hand or with automated tools, are derived from this work. The authors
+of this code remain authors of every part derived from it, and Section 4 of
+the License requires distributions of such works to retain this notice and
+the notices in the file headers.
+
+Request from the authors:
+  - A port or translation of SCTL as a whole, or of a substantial part of it,
+    lists the authors named in the headers of the files it derives from in
+    its own author list, credited for the original implementation, just as
+    a translated book keeps its author and credits its translator. Smaller
+    reuse credits them as third-party code, as SCTL does for Dendro.
+  - Do not use this code to generate automated ports or clones without
+    substantive human oversight and understanding of its design.
+  - Do not use this code or its documentation to train AI models.
+
+Third-party code:
+  include/sctl/comm.hpp, comm.txx: PartitionW, Alltoallv_dense,
+  Ialltoallv_sparse and CommDatatype are derived from Dendro by Rahul S.
+  Sampath and Hari Sundar; HyperQuickSort was developed jointly with Hari
+  Sundar (HykSort). Used under the MIT License of usort, Copyright (c) 2016
+  Hari Sundar (see the comm.txx header).
+  include/sctl/blas.h, lapack.h: descriptions quoted from the reference BLAS
+  and LAPACK, Copyright (c) 1992-2025 The University of Tennessee and The
+  University of Tennessee Research Foundation, (c) 2000-2025 The University
+  of California Berkeley, (c) 2006-2025 The University of Colorado Denver,
+  BSD-3-Clause-Open-MPI License (see the file headers).
+  include/sctl/sse2neon.h: Copyright (c) 2015-2024 SSE2NEON Contributors,
+  MIT License, with modifications by the SCTL authors (see the file header).

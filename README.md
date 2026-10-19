@@ -119,3 +119,7 @@ The following list outlines the primary features and capabilities provided by th
   Older functionalities that are no longer actively maintained.
 
   - [ChebBasis](include/sctl/cheb_utils.hpp): Tensor product Chebyshev basis for general-dimension computations.
+
+## License
+
+SCTL is licensed under the [Apache License 2.0](LICENSE). The [NOTICE](NOTICE) file lists the authors and must be kept in any redistribution, including ports to other languages. It also has the authors' requests on crediting them and on AI use.
