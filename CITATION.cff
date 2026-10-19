@@ -11,6 +11,8 @@ authors:
     family-names: Blackwell
   - given-names: Wen
     family-names: Yan
+  - given-names: Xuanzhao
+    family-names: Gao
 abstract: "A header-only C++ library providing various functionalities for scientific computing."
 repository-code: "https://github.com/dmalhotra/SCTL"
 url: "https://sctl.readthedocs.io"

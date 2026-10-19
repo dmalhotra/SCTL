@@ -1,5 +1,5 @@
 // Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
-// Author: Dhairya Malhotra
+// Authors: Dhairya Malhotra, Xuanzhao Gao
 // SPDX-License-Identifier: Apache-2.0
 
 #ifndef _SCTL_FMM_WRAPPER_TXX_
