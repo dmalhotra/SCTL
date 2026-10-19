@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 // Template implementation of GPUTree from gpu-tree.hpp; the helpers live in per-stage detail_* namespaces.
 
 #ifndef _SCTL_EXPERIMENTAL_GPU_TREE_TXX_

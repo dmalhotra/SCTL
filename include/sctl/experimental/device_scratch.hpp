@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 // Pooled scratch memory for backend (device or host) temporaries: DeviceScratch is the
 // thrust-iterator analogue of sctl::ScratchBuf, and DeviceScratchAllocator routes thrust's own
 // temporary storage (cub scan/sort/select scratch) to the same pool.

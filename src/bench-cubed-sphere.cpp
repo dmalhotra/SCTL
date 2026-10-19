@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Authors: Dhairya Malhotra, Tianyue Li
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Accuracy and throughput of QuadElemList on a twisted cubed sphere, for every quadrature scheme.
  *

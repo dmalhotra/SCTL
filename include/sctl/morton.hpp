@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Authors: Dhairya Malhotra, Robert Blackwell
+// SPDX-License-Identifier: Apache-2.0
+
 // Morton (Z-order) code and tree node (`MortonCode`, `Morton`); host + device.
 
 #ifndef _SCTL_MORTON_HPP_

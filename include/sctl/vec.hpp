@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Authors: Dhairya Malhotra, Robert Blackwell
+// SPDX-License-Identifier: Apache-2.0
+
 #ifndef _SCTL_VEC_HPP_
 #define _SCTL_VEC_HPP_
 

@@ -1,3 +1,33 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Authors: Dhairya Malhotra, Rahul S. Sampath, Hari Sundar
+// SPDX-License-Identifier: Apache-2.0 AND MIT
+//
+// PartitionW, Alltoallv_dense, Ialltoallv_sparse and CommDatatype are derived, by way of
+// PVFMM, from parUtils and dtypes in Dendro by Rahul S. Sampath and Hari Sundar.
+// HyperQuickSort was developed jointly by Dhairya Malhotra and Hari Sundar for HykSort
+// (Sundar, Malhotra and Biros, ICS 2013). These are used under the MIT License of usort
+// (https://github.com/hsundar/usort):
+//
+// Copyright (c) 2016 Hari Sundar
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 #ifndef _SCTL_COMM_TXX_
 #define _SCTL_COMM_TXX_
 

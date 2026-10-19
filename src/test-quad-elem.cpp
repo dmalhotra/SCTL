@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Authors: Tianyue Li, Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * QuadElemList tests, from the building blocks to closed surfaces, so a failure points at the lowest
  * broken layer:

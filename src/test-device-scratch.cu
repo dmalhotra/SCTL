@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 // Unit tests for gpu_tree::DeviceScratchPool / DeviceScratch, the device-side twin of
 // sctl::ScratchPool / sctl::ScratchBuf that src/test-scratch-pool.cpp covers.
 //

@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 // Tests for sctl/function-table.hpp: the error against the function at random points and at the ends, the Vec
 // evaluation against the scalar one, x outside [lb, ub] and NaN, for float and double at several vector lengths.
 

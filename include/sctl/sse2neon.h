@@ -1,3 +1,8 @@
+// sse2neon (https://github.com/DLTcollab/sse2neon), modified for SCTL by Dhairya Malhotra:
+// fixes marked "SCTL:" and includes trimmed. Modifications copyright (C) 2024-2026
+// The Simons Foundation, Inc. and the SCTL authors, under the MIT License below.
+// SPDX-License-Identifier: MIT
+
 #ifndef SSE2NEON_H
 #define SSE2NEON_H
 

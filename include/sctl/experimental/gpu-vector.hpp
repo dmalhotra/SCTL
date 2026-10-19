@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 // Backend containers for gpu_tree: HostVector and DeviceVector, whose resize leaves trivial elements
 // uninitialized, and DataView, a non-owning view of backend memory.
 

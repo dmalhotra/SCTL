@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 // Performance experiments for sctl::ScratchPool / sctl::ScratchBuf<T>.
 // Compile in release mode (the default Makefile target). Timing via the
 // platform's high-resolution tick counter: __rdtscp on x86 (invariant TSC),

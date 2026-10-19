@@ -1,3 +1,7 @@
+// Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 // Cross-check and benchmark the new mixed-radix Cooley-Tukey fallback in
 // sctl::FFT<ValueType> against the original O(N^2) matrix-DFT fallback
 // (embedded here verbatim under the name OldMatrixFFT<T>).
