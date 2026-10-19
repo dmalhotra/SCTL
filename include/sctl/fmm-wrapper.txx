@@ -188,6 +188,7 @@ template <class Real, Integer DIM> struct ParticleFMM<Real,DIM>::S2TData {
   mutable bool setup_tree = false;
   mutable bool setup_ker = false;
   bool pvfmm_compat = true; // PVFMM can evaluate ker_s2t
+  std::string pvfmm_name;   // ker_s2t.Name()
   #endif
 };
 
@@ -480,6 +481,7 @@ template <class Real, Integer DIM> template <class KerS2T> void ParticleFMM<Real
 
   #ifdef SCTL_HAVE_PVFMM
   data.pvfmm_compat = detail::PVFMMCompatibleKernel(ker_s2t, false);
+  data.pvfmm_name = ker_s2t.Name();
   if (DIM == 3) {
     BuildSrcTrgScal(data, !comm_.Rank());
     if (data.dim_normal) {
@@ -1027,6 +1029,12 @@ template <class Real, Integer DIM> void ParticleFMM<Real,DIM>::EvalPVFMM(Vector<
         pvfmm_ker_s2t.k_l2t = &trg_data.pvfmm_ker_l2t;
         pvfmm_ker_s2t.k_s2m = &src_data.pvfmm_ker_s2m;
         pvfmm_ker_s2t.k_s2l = &src_data.pvfmm_ker_s2l;
+        // PVFMM names its file of precomputed operators after this kernel: name every kernel the operators are
+        // built from, so that setups differing only in, e.g., the translation kernels do not share one file
+        pvfmm_ker_s2t.ker_name = s2t_data.pvfmm_name;
+        for (const pvfmm::Kernel<Real>* k : {pvfmm_ker_s2t.k_s2m, pvfmm_ker_s2t.k_s2l, pvfmm_ker_s2t.k_m2m, pvfmm_ker_s2t.k_m2l, pvfmm_ker_s2t.k_m2t, pvfmm_ker_s2t.k_l2l, pvfmm_ker_s2t.k_l2t}) {
+          pvfmm_ker_s2t.ker_name += "+" + k->ker_name;
+        }
         fmm_ctx.Initialize(mult_order, comm_, &pvfmm_ker_s2t);
         s2t_data.setup_ker = false;
         s2t_data.setup_tree = true;
