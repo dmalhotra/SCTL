@@ -19,6 +19,7 @@ the License requires distributions of such works to retain this notice and
 the notices in the file headers.
 
 Request from the authors:
+  - Cite SCTL (see CITATION.cff) in work that uses it.
   - A port or translation of SCTL as a whole, or of a substantial part of it,
     lists the authors named in the headers of the files it derives from in
     its own author list, credited for the original implementation, just as
