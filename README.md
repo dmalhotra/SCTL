@@ -4,6 +4,7 @@
 [![codecov](https://codecov.io/gh/dmalhotra/SCTL/branch/master/graph/badge.svg?token=UIM2RYMF6D)](https://codecov.io/gh/dmalhotra/SCTL)
 [![Stable Version](https://badgen.net/github/tag/dmalhotra/SCTL)](https://github.com/dmalhotra/SCTL/tags)
 [![Latest Release](https://img.shields.io/github/v/release/dmalhotra/SCTL?color=%233D9970)](https://github.com/dmalhotra/SCTL/releases)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23511629.svg)](https://doi.org/10.5281/zenodo.23511629)
 
 [SCTL](https://github.com/dmalhotra/SCTL) is a header-only C++ library providing various functionalities for scientific computing. This documentation outlines these functionalities and provides a guide to getting started.
 
