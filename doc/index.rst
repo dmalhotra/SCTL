@@ -69,6 +69,7 @@ The following libraries can be optionally used when available. If not available,
 - **MPI**: Enable by defining ``SCTL_HAVE_MPI`` (see :ref:`Comm <comm_hpp>`).
 - `FFTW <https://www.fftw.org>`_: Enable double precision by defining ``SCTL_HAVE_FFTW``, single precision by defining ``SCTL_HAVE_FFTWF``, or long double precision by defining ``SCTL_HAVE_FFTWL`` (see :ref:`FFT <fft_wrapper_hpp>`).
 - `PVFMM <http://pvfmm.org>`_: Enable by defining ``SCTL_HAVE_PVFMM`` (requires MPI, see :ref:`ParticleFMM <fmm-wrapper_hpp>`).
+- `LIBXSMM <https://github.com/libxsmm/libxsmm>`_: Enable by defining ``SCTL_HAVE_LIBXSMM``, for small matrix products (see ``sctl::SmallGEMM``).
 
 To enable support for any of these libraries, define the corresponding flag during compilation. For example, to enable MPI support, use ``-DSCTL_HAVE_MPI``.
 

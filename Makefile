@@ -50,7 +50,8 @@ CXXFLAGS += -lfftw3l -DSCTL_HAVE_FFTWL
 #CXXFLAGS += -lmvec -lm -DSCTL_HAVE_LIBMVEC
 #CXXFLAGS += -DSCTL_HAVE_SVML
 
-#CXXFLAGS += -I$(LIBXSMM_DIR)/include -L$(LIBXSMM_DIR)/lib -l:libxsmm.a -lpthread -lrt -ldl -lm -DSCTL_HAVE_LIBXSMM # use LIBXSMM for SmallGEMM
+#CXXFLAGS += -I$(LIBXSMM_DIR)/include -L$(LIBXSMM_DIR)/lib -l:libxsmm.a -lpthread -lrt -ldl -lm -DSCTL_HAVE_LIBXSMM # use LIBXSMM on Linux
+#CXXFLAGS += -I$(LIBXSMM_DIR)/include -L$(LIBXSMM_DIR)/lib -lxsmm -lpthread -ldl -lm -DSCTL_HAVE_LIBXSMM # use LIBXSMM on macOS
 
 #CXXFLAGS += -I${PETSC_DIR}/include -I${PETSC_DIR}/../include -DSCTL_HAVE_PETSC
 #LDLIBS += -L${PETSC_DIR}/lib -lpetsc
