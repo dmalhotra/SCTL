@@ -17,6 +17,8 @@ abstract: "A header-only C++ library providing various functionalities for scien
 repository-code: "https://github.com/dmalhotra/SCTL"
 url: "https://sctl.readthedocs.io"
 license: Apache-2.0
+version: "2.0.0"
+date-released: "2026-10-20"
 references:
   - type: conference-paper
     title: "HykSort: a new variant of hypercube quicksort on distributed memory architectures"
