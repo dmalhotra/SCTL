@@ -1,6 +1,10 @@
 // Copyright (C) 2017-2026 The Simons Foundation, Inc. and the SCTL authors (see NOTICE)
-// Authors: Dhairya Malhotra, Wen Yan
+// Authors: Dhairya Malhotra, Abtin Rahimian, Wen Yan
 // SPDX-License-Identifier: Apache-2.0
+//
+// SingularWeights, MatRotate, RotateAll and RotateTranspose come from Ves3D, where they port
+// Abtin Rahimian's singular quadrature weights (matlab/SingularWeights.m) and pole rotation
+// (matlab/GenerateShRotMats.m, MovePole).
 
 #ifndef _SCTL_SPH_HARM_TXX_
 #define _SCTL_SPH_HARM_TXX_

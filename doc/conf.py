@@ -24,7 +24,7 @@
 
 project = 'SCTL'
 copyright = '2017-2026, The Simons Foundation, Inc. and the SCTL authors'
-author = 'Dhairya Malhotra, Tianyue Li, Robert Blackwell, Wen Yan, Xuanzhao Gao'
+author = 'Dhairya Malhotra, Tianyue Li, Robert Blackwell, Abtin Rahimian, Wen Yan, Xuanzhao Gao'
 
 # The short X.Y version
 version = '2.0.0'

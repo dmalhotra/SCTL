@@ -6,6 +6,8 @@ Authors:
   Dhairya Malhotra (lead author)
   Tianyue Li (quad-element quadratures)
   Robert Blackwell (profiling, vector intrinsics, libmvec support)
+  Abtin Rahimian (singular quadrature weights and pole rotation for spherical
+    harmonics, from Ves3D)
   Wen Yan (spherical harmonics traction self-evaluation)
   Xuanzhao Gao (PVFMM compatibility in ParticleFMM)
 Each source file names its own authors in its header.
