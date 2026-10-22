@@ -161,6 +161,34 @@ The following list outlines the primary features and capabilities provided by th
   - :ref:`ChebBasis <cheb_utils_hpp>`: Tensor product Chebyshev basis for general-dimension computations.
 
 
+Citing SCTL
+-----------
+
+If you use SCTL, or code derived from it, please cite the software below:
+
+- D. Malhotra, T. Li, R. Blackwell, A. Rahimian, W. Yan, X. Gao, *SCTL: Scientific Computing Template Library*, https://github.com/dmalhotra/SCTL, `doi:10.5281/zenodo.23511629 <https://doi.org/10.5281/zenodo.23511629>`__.
+
+.. raw:: html
+
+   <details>
+   <summary>BibTeX</summary>
+
+.. code-block:: bibtex
+
+   @software{sctl,
+     author    = {Malhotra, Dhairya and Li, Tianyue and Blackwell, Robert and Rahimian, Abtin and Yan, Wen and Gao, Xuanzhao},
+     title     = {{SCTL}: Scientific Computing Template Library},
+     url       = {https://github.com/dmalhotra/SCTL},
+     doi       = {10.5281/zenodo.23511629},
+     version   = {2.0.0},
+     year      = {2026}
+   }
+
+.. raw:: html
+
+   </details>
+
+
 .. include:: ackn.rst
 
 
