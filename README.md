@@ -122,6 +122,28 @@ The following list outlines the primary features and capabilities provided by th
 
   - [ChebBasis](include/sctl/cheb_utils.hpp): Tensor product Chebyshev basis for general-dimension computations.
 
+## Citing SCTL
+
+If you use SCTL, or code derived from it, please cite the software below (also listed in [CITATION.cff](CITATION.cff)):
+
+- D. Malhotra, T. Li, R. Blackwell, A. Rahimian, W. Yan, X. Gao, *SCTL: Scientific Computing Template Library*, https://github.com/dmalhotra/SCTL, [doi:10.5281/zenodo.23511629](https://doi.org/10.5281/zenodo.23511629).
+
+<details>
+<summary>BibTeX</summary>
+
+```bibtex
+@software{sctl,
+  author    = {Malhotra, Dhairya and Li, Tianyue and Blackwell, Robert and Rahimian, Abtin and Yan, Wen and Gao, Xuanzhao},
+  title     = {{SCTL}: Scientific Computing Template Library},
+  url       = {https://github.com/dmalhotra/SCTL},
+  doi       = {10.5281/zenodo.23511629},
+  version   = {2.0.0},
+  year      = {2026}
+}
+```
+
+</details>
+
 ## License
 
 SCTL is licensed under the [Apache License 2.0](LICENSE). The [NOTICE](NOTICE) file lists the authors and must be kept in any redistribution, including ports to other languages. It also has the authors' requests on crediting them and on AI use.
