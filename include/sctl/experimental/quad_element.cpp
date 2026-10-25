@@ -8,12 +8,14 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <iomanip>
 #include <mutex>
 #include <numeric>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -50,6 +52,8 @@ namespace sctl {
       ss << fname << std::setfill('0') << std::setw(6) << comm.Rank();
       return ss.str();
     }
+
+    static constexpr Integer FileVersion = 1; // format version of the files QuadElemList::Write writes
 
     /**
      * Computes out_k = MuT * in_k * Mv for each k-th sub-block, where in={in_0,...,in_{n-1}} and
@@ -1892,6 +1896,244 @@ namespace sctl {
       }
     }
 
+    /**
+     * Calls f(std::integral_constant<Integer, o>()) for the order o in orders equal to order, and returns whether there
+     * is one.
+     */
+    template <class F, Integer... orders> bool DispatchOrderList(const Integer order, const F& f, std::integer_sequence<Integer, orders...>) {
+      static_assert(((1 < orders && orders <= detail_quadelem::MaxTableOrder) && ...), "each of SCTL_QUAD_ELEM_ORDERS must be in 2 to MaxTableOrder");
+      return ((order == orders ? (f(std::integral_constant<Integer, orders>()), true) : false) || ...);
+    }
+
+    /**
+     * Calls f(std::integral_constant<Integer, order>()) if order is one of SCTL_QUAD_ELEM_ORDERS, and reports an error
+     * otherwise.
+     */
+    template <class F> void DispatchOrder(const Integer order, const F& f) {
+      if (DispatchOrderList(order, f, std::integer_sequence<Integer, SCTL_QUAD_ELEM_ORDERS>())) return;
+      std::string orders;
+      for (const Integer o : {SCTL_QUAD_ELEM_ORDERS}) orders += (orders.empty() ? "" : ",") + std::to_string(o);
+      SCTL_ERROR("QuadElemList: element order " << order << " is not compiled; SCTL_QUAD_ELEM_ORDERS is {" << orders << "}");
+    }
+
+  }
+
+  namespace detail_gmsh {
+
+    using detail_quadelem::COORD_DIM;
+
+    static constexpr Integer MaxOrder = 11;
+
+    /** Gmsh element type of the complete quadrilateral with each number of nodes per side, 0 below 2 */
+    static constexpr std::array<Integer, MaxOrder + 1> QuadType = {0, 0, 3, 10, 36, 37, 38, 47, 48, 49, 50, 51};
+
+    /** number of nodes of each Gmsh element type, from gmsh::model::mesh::getElementProperties, 0 for an unused type */
+    static constexpr std::array<Integer, 138> TypeNodeCnt = {
+        0,   2,   3,   4,   4,   8,   6,   5,   3,   6,   9,  10,  27,  18,  14,   1,   8,  20,  15,  13,
+        9,  10,  12,  15,  15,  21,   4,   5,   6,  20,  35,  56,  22,  28,   0,   0,  16,  25,  36,  12,
+       16,  20,  28,  36,  45,  55,  66,  49,  64,  81, 100, 121,  18,  21,  24,  27,  30,  24,  28,  32,
+       36,  40,   7,   8,   9,  10,  11,   0,   0,   0,   0,  84, 120, 165, 220, 286,   0,   0,   0,  34,
+       40,  46,  52,  58,   1,   1,   1,   1,   1,   1,   0,   0,  64, 125, 216, 343, 512, 729,1000,  32,
+       44,  56,  68,  80,  92, 104,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,  30,  55,
+       91, 140, 204, 285, 385,  21,  29,  37,  45,  53,  61,  69,   1,   0,   0,   0,   0,  16};
+
+    /** Returns the number of nodes per side of a complete quadrilateral of Gmsh element type gmsh_type, or 0. */
+    inline Integer QuadOrder(const Integer gmsh_type) {
+      for (Integer ns = 2; ns <= MaxOrder; ns++) {
+        if (QuadType[ns] == gmsh_type) return ns;
+      }
+      return 0;
+    }
+
+    /**
+     * Returns the tensor index i*order+j of each node of a complete Gmsh quadrilateral, in the Gmsh node order, where i
+     * indexes the first reference coordinate.
+     */
+    inline Vector<Long> TensorPerm(const Integer order) {
+      Vector<Long> perm(order * order);
+      Long k = 0;
+      const auto push = [&perm, &k, order](const Integer i, const Integer j) { perm[k++] = (Long)i * order + j; };
+      for (Integer lo = 0, hi = order - 1; lo <= hi; lo++, hi--) { // rings from the outside in: corners, then edges
+        if (lo == hi) {
+          push(lo, lo);
+          break;
+        }
+        push(lo, lo);
+        push(hi, lo);
+        push(hi, hi);
+        push(lo, hi);
+        for (Integer i = lo + 1; i < hi; i++) push(i, lo);
+        for (Integer j = lo + 1; j < hi; j++) push(hi, j);
+        for (Integer i = hi - 1; i > lo; i--) push(i, hi);
+        for (Integer j = hi - 1; j > lo; j--) push(lo, j);
+      }
+      SCTL_ASSERT(k == perm.Dim());
+      return perm;
+    }
+
+    /**
+     * Returns fname on one process, and otherwise the name Gmsh gives the file of partition rank+1, such as mesh_1.msh
+     * for mesh.msh.
+     */
+    inline std::string PartitionFileName(const std::string& fname, const Comm& comm) {
+      if (comm.Size() == 1) return fname;
+      const std::string ext = ".msh";
+      const bool has_ext = (fname.size() >= ext.size() && fname.compare(fname.size() - ext.size(), ext.size(), ext) == 0);
+      const std::string base = fname.substr(0, fname.size() - (has_ext ? ext.size() : 0));
+      return base + "_" + std::to_string(comm.Rank() + 1) + (has_ext ? ext : std::string());
+    }
+
+    /**
+     * Reads the nodes, and the complete quadrilaterals with order_min to order_max nodes per side, from a Gmsh file
+     * (MSH 4.1, ASCII or binary).
+     *
+     * @param[out] node_X coordinates of the nodes, in the order {x1,y1,z1,...}.
+     * @param[out] quad_order number of nodes per side of each quadrilateral.
+     * @param[out] quad_node indices in node_X of the nodes of each quadrilateral, in the Gmsh node order.
+     * @param[out] skip_cnt number of skipped surface elements of each Gmsh element type, sized by the caller.
+     * @param[in] fname the filename.
+     * @param[in] order_min smallest number of nodes per side to keep.
+     * @param[in] order_max largest number of nodes per side to keep.
+     */
+    template <class Real> void ReadQuads(Vector<Real>& node_X, Vector<Integer>& quad_order, Vector<Long>& quad_node, Vector<Long>& skip_cnt, const std::string& fname, const Integer order_min, const Integer order_max) {
+      static_assert(sizeof(Long) == sizeof(std::uint64_t), "the binary format stores tags and counts as 8-byte integers");
+      SCTL_ASSERT(skip_cnt.Dim() == (Long)TypeNodeCnt.size());
+      std::ifstream file(fname, std::ifstream::in | std::ifstream::binary);
+      SCTL_ASSERT_MSG(file.good(), std::string("Unable to open file for reading: ") + fname);
+
+      bool binary = false;
+      std::vector<std::string> tok; // tokens of the current line
+      const auto next_line = [&file, &tok]() { // reads the next non-empty line into tok
+        std::string line;
+        while (std::getline(file, line)) {
+          std::istringstream iss(line);
+          tok.clear();
+          for (std::string t; iss >> t;) tok.push_back(t);
+          if (!tok.empty()) return true;
+        }
+        return false;
+      };
+      const auto read_bin = [&file, &fname](auto* x, const Long n) { // reads n values of the type of x
+        file.read(reinterpret_cast<char*>(x), n * (Long)sizeof(*x));
+        SCTL_ASSERT_MSG(file.good(), "ReadGmsh: unexpected end of " + fname);
+      };
+      // Reads the four counts that open a section or a block: one line in ASCII, and in binary 8-byte integers, except
+      // that a block starts with three 4-byte integers
+      const auto read_header = [&binary, &next_line, &tok, &read_bin](std::array<Long,4>& h, const bool block) {
+        if (!binary) {
+          SCTL_ASSERT(next_line() && tok.size() >= 4);
+          for (Integer i = 0; i < 4; i++) h[i] = std::stol(tok[i]);
+        } else if (block) {
+          std::array<std::int32_t,3> v;
+          read_bin(v.data(), 3);
+          for (Integer i = 0; i < 3; i++) h[i] = v[i];
+          read_bin(h.data() + 3, 1);
+        } else {
+          read_bin(h.data(), 4);
+        }
+      };
+
+      node_X.ReInit(0);
+      quad_order.ReInit(0);
+      quad_node.ReInit(0);
+      skip_cnt.SetZero();
+      Long tag0 = 0; // tag of the first node in node_X
+      Vector<char> node_read; // whether each node in node_X was read
+      while (next_line()) {
+        if (tok[0] == "$MeshFormat") {
+          SCTL_ASSERT_MSG(next_line() && tok.size() >= 3 && tok[0] == "4.1" && tok[2] == "8", "ReadGmsh: the format of " + fname + " is not MSH 4.1");
+          binary = (tok[1] == "1");
+          if (binary) {
+            std::int32_t one = 0;
+            read_bin(&one, 1);
+            SCTL_ASSERT_MSG(one == 1, "ReadGmsh: the byte order of " + fname + " differs from this machine's");
+          }
+        } else if (tok[0] == "$Nodes") {
+          SCTL_ASSERT_MSG(!node_read.Dim(), "ReadGmsh: more than one $Nodes section in " + fname);
+          std::array<Long,4> h; // numEntityBlocks numNodes minNodeTag maxNodeTag
+          read_header(h, false);
+          tag0 = h[2];
+          const Long ntag = h[3] - tag0 + 1;
+          node_X.ReInit(ntag * COORD_DIM);
+          node_read.ReInit(ntag);
+          node_read.SetZero();
+          for (Long b = 0; b < h[0]; b++) {
+            std::array<Long,4> bh; // entityDim entityTag parametric numNodesInBlock
+            read_header(bh, true);
+            const Long nnode = bh[3];
+            const Integer nval = COORD_DIM + (bh[2] ? (Integer)bh[0] : 0); // values per node, parametric ones included
+            ScratchBuf<Long> idx(nnode); // indices in node_X
+            if (binary) { // the node tags, then the coordinates
+              ScratchBuf<double> X_bin(nnode * nval);
+              if (nnode) {
+                read_bin(&idx[0], nnode);
+                read_bin(&X_bin[0], nnode * nval);
+              }
+              for (Long i = 0; i < nnode; i++) {
+                idx[i] -= tag0;
+                SCTL_ASSERT(0 <= idx[i] && idx[i] < ntag);
+                for (Integer k = 0; k < COORD_DIM; k++) node_X[idx[i] * COORD_DIM + k] = (Real)X_bin[i * nval + k];
+              }
+            } else {
+              for (Long i = 0; i < nnode; i++) {
+                SCTL_ASSERT(next_line());
+                idx[i] = std::stol(tok[0]) - tag0;
+                SCTL_ASSERT(0 <= idx[i] && idx[i] < ntag);
+              }
+              for (Long i = 0; i < nnode; i++) {
+                SCTL_ASSERT(next_line() && (Integer)tok.size() >= COORD_DIM);
+                for (Integer k = 0; k < COORD_DIM; k++) node_X[idx[i] * COORD_DIM + k] = atoreal<Real>(tok[k].c_str());
+              }
+            }
+            for (Long i = 0; i < nnode; i++) node_read[idx[i]] = 1;
+          }
+        } else if (tok[0] == "$Elements") {
+          std::array<Long,4> h; // numEntityBlocks numElements minElementTag maxElementTag
+          read_header(h, false);
+          for (Long b = 0; b < h[0]; b++) {
+            std::array<Long,4> bh; // entityDim entityTag elementType numElementsInBlock
+            read_header(bh, true);
+            const Integer dim = (Integer)bh[0];
+            const Integer type = (Integer)bh[2];
+            const Long nelem = bh[3];
+            SCTL_ASSERT_MSG(0 < type && type < (Integer)TypeNodeCnt.size() && TypeNodeCnt[type], "ReadGmsh: unknown element type in " + fname);
+            const Integer ns = QuadOrder(type);
+            const bool keep = (order_min <= ns && ns <= order_max);
+            const Long stride = 1 + TypeNodeCnt[type]; // the element tag, then the node tags
+            if (!keep && dim == 2) skip_cnt[type] += nelem;
+            if (binary) {
+              if (!keep) {
+                file.seekg(nelem * stride * (Long)sizeof(Long), std::ifstream::cur);
+                continue;
+              }
+              ScratchBuf<Long> data(nelem * stride);
+              if (nelem) read_bin(&data[0], nelem * stride);
+              for (Long e = 0; e < nelem; e++) {
+                quad_order.PushBack(ns);
+                for (Integer g = 0; g < ns * ns; g++) quad_node.PushBack(data[e * stride + 1 + g]);
+              }
+            } else {
+              for (Long e = 0; e < nelem; e++) {
+                SCTL_ASSERT(next_line());
+                if (!keep) continue;
+                SCTL_ASSERT_MSG((Long)tok.size() == stride, "ReadGmsh: an element in " + fname + " has the wrong number of nodes");
+                quad_order.PushBack(ns);
+                for (Integer g = 0; g < ns * ns; g++) quad_node.PushBack(std::stol(tok[1 + g]));
+              }
+            }
+          }
+        } else if (tok[0][0] == '$' && tok[0].compare(0, 4, "$End") != 0) { // skip any other section
+          const std::string end = "$End" + tok[0].substr(1);
+          while (next_line() && tok[0] != end) {}
+        }
+      }
+
+      for (Long& node : quad_node) { // node tags to indices in node_X
+        node -= tag0;
+        SCTL_ASSERT_MSG(0 <= node && node < node_read.Dim() && node_read[node], "ReadGmsh: an element in " + fname + " refers to a missing node");
+      }
+    }
+
   }
 
   template <class Real> template <class ValueType> QuadElemList<Real>::QuadElemList(const Integer order0, const Vector<ValueType>& coord0) {
@@ -2145,98 +2387,176 @@ namespace sctl {
     if (!qel.Size()) return; // nothing to compute, also for a default-constructed list, whose order is 0
     const Integer order = qel.Order();
     const Integer digits = detail_quadelem::DigitsFromTol<Real>(tol);
-    switch (order) {
-      case  4: return detail_dispatch::SelfInteracDispatch<4,Real>(M_lst, ker, trg_dot_prod, qel, digits);
-      case  8: return detail_dispatch::SelfInteracDispatch<8,Real>(M_lst, ker, trg_dot_prod, qel, digits);
-      case 12: return detail_dispatch::SelfInteracDispatch<12,Real>(M_lst, ker, trg_dot_prod, qel, digits);
-      case 16: return detail_dispatch::SelfInteracDispatch<16,Real>(M_lst, ker, trg_dot_prod, qel, digits);
-      case 20: return detail_dispatch::SelfInteracDispatch<20,Real>(M_lst, ker, trg_dot_prod, qel, digits);
-      default: SCTL_ASSERT_MSG(false, "QuadElemList element order must be one of {4,8,12,16,20} for the templated near/self schemes.");
-    }
+    detail_dispatch::DispatchOrder(order, [&M_lst, &ker, trg_dot_prod, &qel, digits](const auto ord) {
+      detail_dispatch::SelfInteracDispatch<decltype(ord)::value,Real>(M_lst, ker, trg_dot_prod, qel, digits);
+    });
   }
 
   template <class Real> template <class Kernel> void QuadElemList<Real>::NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
     const QuadElemList<Real>& qel = *static_cast<const QuadElemList<Real>*>(self);
     const Integer order = qel.Order();
     const Integer digits = detail_quadelem::DigitsFromTol<Real>(tol);
-    switch (order) {
-      case  4: return detail_dispatch::NearInteracDispatch<4,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
-      case  8: return detail_dispatch::NearInteracDispatch<8,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
-      case 12: return detail_dispatch::NearInteracDispatch<12,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
-      case 16: return detail_dispatch::NearInteracDispatch<16,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
-      case 20: return detail_dispatch::NearInteracDispatch<20,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
-      default: SCTL_ASSERT_MSG(false, "QuadElemList element order must be one of {4,8,12,16,20} for the templated near/self schemes.");
-    }
+    detail_dispatch::DispatchOrder(order, [&M, &Xt, &normal_trg, &ker, elem_idx, &qel, digits](const auto ord) {
+      detail_dispatch::NearInteracDispatch<decltype(ord)::value,Real>(M, Xt, normal_trg, ker, elem_idx, qel, digits);
+    });
   }
 
   template <class Real> const Vector<Real>& QuadElemList<Real>::ParamNodes(const Integer order) {
     return LegQuadRule<Real>::nds(order);
   }
 
-  template <class Real> void QuadElemList<Real>::Write(const std::string& fname, const Comm& comm) const {
-    const Integer precision = (Integer)ceil<Real>(-log<Real>(machine_eps<Real>()) / log<Real>((Real)10));
-    const Integer width = precision + 8;
+  template <class Real> void QuadElemList<Real>::Write(const std::string& fname, const bool binary, const Comm& comm) const {
     const std::string fname_rank = detail_quadelem::RankFileName(fname, comm);
-    std::ofstream file(fname_rank, std::ofstream::out | std::ofstream::trunc);
+    std::ofstream file(fname_rank, std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
     SCTL_ASSERT_MSG(file.good(), std::string("Unable to open file for writing: ") + fname_rank);
+    file << "# SCTL QuadElemList version " << detail_quadelem::FileVersion << (binary ? " binary" : " ascii") << '\n';
 
-    { // Header line
-      file << "#";
-      file << std::setw(width - 1) << "X";
-      file << std::setw(width) << "Y";
-      file << std::setw(width) << "Z";
-      file << std::setw(width) << "ElemOrder";
-      file << '\n';
-    }
-    { // One line per node; order on each element's first
-      file << std::scientific << std::setprecision(precision);
-      const Integer nnode_per_elem = order * order;
+    const Integer nnode_per_elem = order * order;
+    if (binary) { // byte-order check, bytes and significant bits per value, element count, order of each, coordinates
+      const std::array<std::int32_t,3> info = {1, (std::int32_t)sizeof(Real), (std::int32_t)significant_bits<Real>()};
+      const std::int64_t nelem_ = nelem;
+      file.write(reinterpret_cast<const char*>(info.data()), sizeof(info));
+      file.write(reinterpret_cast<const char*>(&nelem_), sizeof(nelem_));
+      if (nelem) {
+        ScratchBuf<std::int32_t> elem_order(nelem);
+        std::fill(elem_order.begin(), elem_order.end(), (std::int32_t)order);
+        file.write(reinterpret_cast<const char*>(&elem_order[0]), nelem * (Long)sizeof(std::int32_t));
+      }
+      ScratchBuf<Real> X(nnode_per_elem * detail_quadelem::COORD_DIM); // one element, node by node
       for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
         const Long base = elem_idx * detail_quadelem::COORD_DIM * nnode_per_elem;
         for (Integer p = 0; p < nnode_per_elem; p++) {
-          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-            file << std::setw(width) << coord[base + k * nnode_per_elem + p];
+          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) X[p * detail_quadelem::COORD_DIM + k] = coord[base + k * nnode_per_elem + p];
+        }
+        file.write(reinterpret_cast<const char*>(&X[0]), X.size() * (Long)sizeof(Real));
+      }
+    } else {
+      const Integer precision = (Integer)ceil<Real>(-log<Real>(machine_eps<Real>()) / log<Real>((Real)10));
+      const Integer width = precision + 8;
+      { // Header line
+        file << "#";
+        file << std::setw(width - 1) << "X";
+        file << std::setw(width) << "Y";
+        file << std::setw(width) << "Z";
+        file << std::setw(width) << "ElemOrder";
+        file << '\n';
+      }
+      { // One line per node; order on each element's first
+        file << std::scientific << std::setprecision(precision);
+        for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
+          const Long base = elem_idx * detail_quadelem::COORD_DIM * nnode_per_elem;
+          for (Integer p = 0; p < nnode_per_elem; p++) {
+            for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+              file << std::setw(width) << coord[base + k * nnode_per_elem + p];
+            }
+            if (!p) file << std::setw(width) << order;
+            file << '\n';
           }
-          if (!p) file << std::setw(width) << order;
-          file << '\n';
         }
       }
     }
+    SCTL_ASSERT_MSG(file.good(), std::string("Unable to write file: ") + fname_rank);
   }
 
   template <class Real> template <class ValueType> void QuadElemList<Real>::Read(const std::string& fname, const Comm& comm) {
     Vector<ValueType> coord_;
-    Vector<Integer> order_markers;
-    { // Parse each node line: coordinates, then an optional element order
+    Vector<Integer> order_markers; // ASCII: the element order at the first node of each element, -1 at the others
+    Vector<Integer> elem_order; // binary: the order of each element
+    bool binary = false;
+    { // Parse the file
       const std::string fname_rank = detail_quadelem::RankFileName(fname, comm);
-      std::ifstream file(fname_rank, std::ifstream::in);
+      std::ifstream file(fname_rank, std::ifstream::in | std::ifstream::binary);
       SCTL_ASSERT_MSG(file.good(), std::string("Unable to open file for reading: ") + fname_rank);
-      std::string line;
-      while (std::getline(file, line)) {
-        const size_t first_char_pos = line.find_first_not_of(' ');
-        if (first_char_pos == std::string::npos || line[first_char_pos] == '#') continue;
-
+      { // The format version line
+        std::string line, hash, lib, cls, key, fmt;
+        Integer version = 0;
+        std::getline(file, line);
         std::istringstream iss(line);
-        for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
-          ValueType a;
-          iss >> a;
-          SCTL_ASSERT(!iss.fail());
-          coord_.PushBack(a);
-        }
+        const bool versioned = (iss >> hash >> lib >> cls >> key >> version >> fmt) && lib == "SCTL" && cls == "QuadElemList" && key == "version";
+        SCTL_ASSERT_MSG(versioned, "Read: " + fname_rank + " does not start with the format version line written by Write");
+        SCTL_ASSERT_MSG(1 <= version && version <= detail_quadelem::FileVersion, "Read: " + fname_rank + " has format version " + std::to_string(version) + ", which this code does not read");
+        binary = (fmt == "binary");
+      }
 
-        Integer order_;
-        if (iss >> order_) {
-          order_markers.PushBack(order_);
+      if (binary) {
+        const auto read_bin = [&file, &fname_rank](auto* x, const Long n) { // reads n values of the type of x
+          file.read(reinterpret_cast<char*>(x), n * (Long)sizeof(*x));
+          SCTL_ASSERT_MSG(file.good(), "Read: unexpected end of " + fname_rank);
+        };
+        std::array<std::int32_t,3> info; // byte-order check, bytes and significant bits per value
+        std::int64_t nelem_ = 0;
+        read_bin(info.data(), 3);
+        read_bin(&nelem_, 1);
+        SCTL_ASSERT_MSG(info[0] == 1, "Read: the byte order of " + fname_rank + " differs from this machine's");
+        elem_order.ReInit(nelem_);
+        Long nval = 0;
+        if (nelem_) {
+          ScratchBuf<std::int32_t> elem_order_bin(nelem_);
+          read_bin(&elem_order_bin[0], nelem_);
+          for (Long i = 0; i < nelem_; i++) {
+            elem_order[i] = elem_order_bin[i];
+            nval += (Long)elem_order[i] * elem_order[i] * detail_quadelem::COORD_DIM;
+          }
+        }
+        const auto read_coord = [&read_bin, &coord_, nval](const auto zero) { // reads nval values of the type of zero
+          using T = std::decay_t<decltype(zero)>;
+          ScratchBuf<T> X(nval);
+          if (nval) read_bin(&X[0], nval);
+          coord_.ReInit(nval);
+          for (Long i = 0; i < nval; i++) coord_[i] = (ValueType)X[i];
+        };
+        const auto is_type = [&info](const auto zero) {
+          using T = std::decay_t<decltype(zero)>;
+          return info[1] == (std::int32_t)sizeof(T) && info[2] == (std::int32_t)significant_bits<T>();
+        };
+        if (is_type(0.0f)) {
+          read_coord(0.0f);
+        } else if (is_type(0.0)) {
+          read_coord(0.0);
+        } else if (is_type((long double)0)) {
+          read_coord((long double)0);
+#ifdef SCTL_QUAD_T
+        } else if (is_type((QuadReal)0)) {
+          read_coord((QuadReal)0);
+#endif
         } else {
-          order_markers.PushBack(-1);
+          SCTL_ERROR("Read: the value type of " + fname_rank + " is not supported");
+        }
+      } else { // Each node line: coordinates, then an optional element order
+        std::string line;
+        while (std::getline(file, line)) {
+          const size_t first_char_pos = line.find_first_not_of(' ');
+          if (first_char_pos == std::string::npos || line[first_char_pos] == '#') continue;
+
+          std::istringstream iss(line);
+          for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
+            ValueType a;
+            iss >> a;
+            SCTL_ASSERT(!iss.fail());
+            coord_.PushBack(a);
+          }
+
+          Integer order_;
+          if (iss >> order_) {
+            order_markers.PushBack(order_);
+          } else {
+            order_markers.PushBack(-1);
+          }
         }
       }
     }
 
-    StaticArray<Integer,2> file_order{(order_markers.Dim() ? order_markers[0] : 0), 0};
+    StaticArray<Integer,2> file_order{0, 0};
+    if (binary) {
+      file_order[0] = (elem_order.Dim() ? elem_order[0] : 0);
+    } else {
+      file_order[0] = (order_markers.Dim() ? order_markers[0] : 0);
+    }
     comm.Allreduce(file_order + 0, file_order + 1, 1, CommOp::MAX);
     SCTL_ASSERT(file_order[1] > 0);
-    { // Check that every element starts with that order
+    if (binary) { // Check that every element has that order
+      for (const Integer o : elem_order) SCTL_ASSERT(o == file_order[1]);
+    } else { // Check that every element starts with that order
       const Integer nnode_per_elem = file_order[1] * file_order[1];
       SCTL_ASSERT(order_markers.Dim() % nnode_per_elem == 0);
       const Long Nelem_local = order_markers.Dim() / nnode_per_elem;
@@ -2249,6 +2569,182 @@ namespace sctl {
       }
     }
     Init<ValueType>(file_order[1], coord_);
+  }
+
+  template <class Real> void QuadElemList<Real>::ReadGmsh(const std::string& fname, const Integer order0, const Integer order_min, const Integer order_max, const Comm& comm) {
+    using detail_quadelem::COORD_DIM;
+    SCTL_ASSERT(order0 > 0 && 2 <= order_min && order_min <= order_max && order_max <= detail_gmsh::MaxOrder);
+    Vector<Real> node_X;
+    Vector<Integer> quad_order;
+    Vector<Long> quad_node;
+    const Long ntype = (Long)detail_gmsh::TypeNodeCnt.size();
+    // number of skipped surface elements of each Gmsh type, then of elements with more than order0 nodes per side
+    ScratchBuf<Long> cnt(ntype + 1), cnt_glb(ntype + 1);
+    { // Read this process's file
+      Vector<Long> skip_cnt(ntype, cnt.begin(), false);
+      detail_gmsh::ReadQuads(node_X, quad_order, quad_node, skip_cnt, detail_gmsh::PartitionFileName(fname, comm), order_min, order_max);
+    }
+    const Long nquad = quad_order.Dim();
+    cnt[ntype] = std::count_if(quad_order.begin(), quad_order.end(), [order0](const Integer ns) { return ns > order0; });
+    comm.Allreduce(cnt.begin(), cnt_glb.begin(), ntype + 1, CommOp::SUM);
+    if (!comm.Rank()) {
+      for (Long type = 0; type < ntype; type++) {
+        if (cnt_glb[type]) SCTL_WARN("ReadGmsh: skipped " << cnt_glb[type] << " surface elements of Gmsh type " << type << " in " << fname);
+      }
+      if (cnt_glb[ntype]) SCTL_WARN("ReadGmsh: " << cnt_glb[ntype] << " elements in " << fname << " have more than " << order0 << " nodes per side, and lose accuracy when interpolated to " << order0);
+    }
+
+    ScratchBuf<Real> coord0_buf(nquad * order0 * order0 * COORD_DIM);
+    Vector<Real> coord0(coord0_buf);
+    { // Interpolate each quadrilateral to ParamNodes(order0)
+      // Gmsh-to-tensor node order and interpolation from equispaced nodes, for each number of nodes per side
+      Vector<Vector<Long>> perm(order_max + 1);
+      Vector<Matrix<Real>> MuT(order_max + 1), Mv(order_max + 1);
+      for (Integer ns = order_min; ns <= order_max; ns++) {
+        perm[ns] = detail_gmsh::TensorPerm(ns);
+        ScratchBuf<Real> src_nds_buf(ns);
+        Vector<Real> src_nds(src_nds_buf);
+        for (Integer k = 0; k < ns; k++) src_nds[k] = (Real)k / (Real)(ns - 1);
+        Mv[ns].ReInit(ns, order0);
+        Vector<Real> wts(ns * order0, Mv[ns].begin(), false);
+        LagrangeInterp<Real>::Interpolate(wts, src_nds, ParamNodes(order0));
+        MuT[ns] = Mv[ns].Transpose();
+      }
+
+      const Integer nnode = order0 * order0;
+      ScratchBuf<Long> quad_node_cnt(nquad), quad_node_dsp(nquad);
+      for (Long e = 0; e < nquad; e++) quad_node_cnt[e] = (Long)quad_order[e] * quad_order[e];
+      omp_par::scan(quad_node_cnt.begin(), quad_node_dsp.begin(), nquad, (Long)0);
+      #pragma omp parallel for schedule(static)
+      for (Long e = 0; e < nquad; e++) {
+        const Integer ns = quad_order[e];
+        ScratchBuf<Real> X_src_buf(COORD_DIM * ns * ns), X_trg_buf(COORD_DIM * nnode);
+        Vector<Real> X_src(X_src_buf), X_trg(X_trg_buf);
+        for (Integer g = 0; g < ns * ns; g++) { // component by component, in tensor order
+          const Long node = quad_node[quad_node_dsp[e] + g];
+          for (Integer k = 0; k < COORD_DIM; k++) X_src[k * ns * ns + perm[ns][g]] = node_X[node * COORD_DIM + k];
+        }
+        detail_quadelem::EvalTensorProduct(X_trg, X_src, MuT[ns], Mv[ns]);
+        for (Integer p = 0; p < nnode; p++) {
+          for (Integer k = 0; k < COORD_DIM; k++) coord0[(e * nnode + p) * COORD_DIM + k] = X_trg[k * nnode + p];
+        }
+      }
+    }
+    Init(order0, coord0);
+  }
+
+  template <class Real> void QuadElemList<Real>::WriteGmsh(const std::string& fname, const Integer order_max, const bool binary, const Comm& comm) const {
+    using detail_quadelem::COORD_DIM;
+    SCTL_ASSERT(2 <= order_max && order_max <= detail_gmsh::MaxOrder);
+    StaticArray<Integer,2> elem_order{order, 0};
+    // The element order in elem_order[1], also on processes without elements
+    comm.Allreduce(elem_order + 0, elem_order + 1, 1, CommOp::MAX);
+    const Integer ns = std::min(elem_order[1], order_max); // number of nodes per side of the written elements
+    if (!comm.Rank() && ns < elem_order[1]) SCTL_WARN("WriteGmsh: elements with " << elem_order[1] << " nodes per side lose accuracy when written with " << ns);
+    if (!comm.Rank() && binary && significant_bits<Real>() > significant_bits<double>()) SCTL_WARN("WriteGmsh: the binary format rounds the coordinates to double precision");
+
+    SCTL_ASSERT(!nelem || ns >= 2);
+    const Long nnode = nelem * ns * ns;
+    ScratchBuf<Real> X(nnode * COORD_DIM); // the written node coordinates, element by element in tensor order
+    if (nelem) { // Interpolate from ParamNodes(order) to ns equispaced nodes
+      Matrix<Real> Mv(order, ns);
+      {
+        ScratchBuf<Real> trg_nds_buf(ns);
+        Vector<Real> trg_nds(trg_nds_buf);
+        for (Integer k = 0; k < ns; k++) trg_nds[k] = (Real)k / (Real)(ns - 1);
+        Vector<Real> wts(order * ns, Mv.begin(), false);
+        LagrangeInterp<Real>::Interpolate(wts, ParamNodes(order), trg_nds);
+      }
+      const Matrix<Real> MuT = Mv.Transpose();
+      const Integer nnode_src = order * order;
+      #pragma omp parallel for schedule(static)
+      for (Long e = 0; e < nelem; e++) {
+        const Vector<Real> X_src(COORD_DIM * nnode_src, (Iterator<Real>)coord.begin() + e * COORD_DIM * nnode_src, false);
+        ScratchBuf<Real> X_trg_buf(COORD_DIM * ns * ns);
+        Vector<Real> X_trg(X_trg_buf);
+        detail_quadelem::EvalTensorProduct(X_trg, X_src, MuT, Mv);
+        for (Integer p = 0; p < ns * ns; p++) {
+          for (Integer k = 0; k < COORD_DIM; k++) X[(e * ns * ns + p) * COORD_DIM + k] = X_trg[k * ns * ns + p];
+        }
+      }
+    }
+
+    const std::string fname_rank = detail_gmsh::PartitionFileName(fname, comm);
+    std::ofstream file(fname_rank, std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
+    SCTL_ASSERT_MSG(file.good(), std::string("Unable to open file for writing: ") + fname_rank);
+    const auto write_bin = [&file](const auto* x, const Long n) { // writes n values of the type of x
+      file.write(reinterpret_cast<const char*>(x), n * (Long)sizeof(*x));
+    };
+    // Writes the four counts that open a section or a block: one line in ASCII, and in binary 8-byte integers, except
+    // that a block starts with three 4-byte integers
+    const auto write_header = [&file, &write_bin, binary](const std::array<Long,4>& h, const bool block) {
+      if (!binary) {
+        file << h[0] << ' ' << h[1] << ' ' << h[2] << ' ' << h[3] << '\n';
+      } else if (block) {
+        const std::array<std::int32_t,3> v = {(std::int32_t)h[0], (std::int32_t)h[1], (std::int32_t)h[2]};
+        write_bin(v.data(), 3);
+        write_bin(h.data() + 3, 1);
+      } else {
+        write_bin(h.data(), 4);
+      }
+    };
+
+    { // Format
+      file << "$MeshFormat\n4.1 " << (binary ? 1 : 0) << " 8\n";
+      if (binary) {
+        const std::int32_t one = 1;
+        write_bin(&one, 1);
+        file << '\n';
+      }
+      file << "$EndMeshFormat\n";
+    }
+    { // Nodes, with tags 1 to nnode in the order of X
+      file << "$Nodes\n";
+      write_header({(nnode ? 1 : 0), nnode, (nnode ? 1 : 0), nnode}, false);
+      if (nnode) {
+        write_header({2, 1, 0, nnode}, true);
+        if (binary) {
+          ScratchBuf<Long> tag(nnode);
+          ScratchBuf<double> X_bin(nnode * COORD_DIM);
+          std::iota(tag.begin(), tag.end(), (Long)1);
+          for (Long i = 0; i < nnode * COORD_DIM; i++) X_bin[i] = (double)X[i];
+          write_bin(&tag[0], nnode);
+          write_bin(&X_bin[0], nnode * COORD_DIM);
+          file << '\n';
+        } else {
+          const Integer precision = (Integer)ceil<Real>(-log<Real>(machine_eps<Real>()) / log<Real>((Real)10));
+          for (Long i = 0; i < nnode; i++) file << i + 1 << '\n';
+          file << std::scientific << std::setprecision(precision);
+          for (Long i = 0; i < nnode; i++) file << X[i * COORD_DIM + 0] << ' ' << X[i * COORD_DIM + 1] << ' ' << X[i * COORD_DIM + 2] << '\n';
+        }
+      }
+      file << "$EndNodes\n";
+    }
+    { // Elements, with tags 1 to nelem, each listing its node tags in the Gmsh node order
+      file << "$Elements\n";
+      write_header({(nelem ? 1 : 0), nelem, (nelem ? 1 : 0), nelem}, false);
+      if (nelem) {
+        write_header({2, 1, detail_gmsh::QuadType[ns], nelem}, true);
+        const Vector<Long> perm = detail_gmsh::TensorPerm(ns);
+        const Long stride = 1 + ns * ns; // the element tag, then the node tags
+        ScratchBuf<Long> data(nelem * stride);
+        for (Long e = 0; e < nelem; e++) {
+          data[e * stride] = e + 1;
+          for (Integer g = 0; g < ns * ns; g++) data[e * stride + 1 + g] = e * ns * ns + perm[g] + 1;
+        }
+        if (binary) {
+          write_bin(&data[0], nelem * stride);
+          file << '\n';
+        } else {
+          for (Long e = 0; e < nelem; e++) {
+            for (Long g = 0; g < stride; g++) file << (g ? " " : "") << data[e * stride + g];
+            file << '\n';
+          }
+        }
+      }
+      file << "$EndElements\n";
+    }
+    SCTL_ASSERT_MSG(file.good(), std::string("Unable to write file: ") + fname_rank);
   }
 
   template <class Real> void QuadElemList<Real>::GetVTUData(VTUData& vtu_data, const Vector<Real>& F, const Long elem_idx) const {
