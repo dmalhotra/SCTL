@@ -8,6 +8,15 @@
 #include <string>
 #include <sctl.hpp>
 
+/**
+ * Element orders compiled for the self and near interactions of QuadElemList.
+ * Define it to compile others, such as -DSCTL_QUAD_ELEM_ORDERS=4,8,10,12,16,20.
+ * Each order adds compile time.
+ */
+#ifndef SCTL_QUAD_ELEM_ORDERS
+#define SCTL_QUAD_ELEM_ORDERS 4, 8, 12, 16, 20
+#endif
+
 namespace sctl {
 
   namespace detail_quadelem {
@@ -119,7 +128,7 @@ namespace sctl {
       /**
        * Compute self-interaction operator for each element, with the
        * quadrature scheme set by SetQuadScheme(). The element order must be
-       * one of {4, 8, 12, 16, 20}. For a tolerance smaller than the largest
+       * one of SCTL_QUAD_ELEM_ORDERS. For a tolerance smaller than the largest
        * quadrature orders reach, those orders are used, and the result may miss
        * the tolerance without an error. TensorProduct and Duffy need a kernel
        * that grows at most like 1/r along the surface, such as a single or
@@ -134,7 +143,7 @@ namespace sctl {
       /**
        * Compute near-interaction operator for a given element-idx and each
        * target, with the quadrature scheme set by SetQuadScheme(). The element
-       * order must be one of {4, 8, 12, 16, 20}. As for SelfInterac(), a
+       * order must be one of SCTL_QUAD_ELEM_ORDERS. As for SelfInterac(), a
        * tolerance smaller than the largest quadrature orders reach may be missed
        * without an error.
        *
@@ -187,20 +196,22 @@ namespace sctl {
       static const Vector<Real>& ParamNodes(const Integer order);
 
       /**
-       * Write elements to file. Each process writes its elements to the file
-       * named fname followed by its rank as a six-digit number, with one line
-       * per node holding its coordinates; the line of the first node of each
-       * element also holds the element order.
+       * Write elements to the file named fname followed by the six-digit
+       * process rank. The first line gives the file format version, and
+       * whether the rest is ASCII or binary.
        *
        * @param[in] fname the filename.
        *
+       * @param[in] binary write the coordinates in binary, at the precision
+       * of Real.
+       *
        * @param[in] comm the communicator.
        */
-      void Write(const std::string& fname, const Comm& comm = Comm::Self()) const;
+      void Write(const std::string& fname, const bool binary = false, const Comm& comm = Comm::Self()) const;
 
       /**
-       * Read elements from the files written by Write(). All elements must
-       * have the same order.
+       * Read elements from the files written by Write(), ASCII or binary. All
+       * elements must have the same order.
        *
        * @param[in] fname the filename.
        *
@@ -209,6 +220,48 @@ namespace sctl {
        * @note this is a collective operation.
        */
       template <class ValueType> void Read(const std::string& fname, const Comm& comm = Comm::Self());
+
+      /**
+       * Read the quadrilateral elements of a Gmsh file (MSH 4.1, ASCII or
+       * binary) and interpolate them to the given order, skipping other
+       * elements. Normals follow the Gmsh node order.
+       *
+       * @param[in] fname the filename. With more than one process, process i
+       * reads the file Gmsh names for partition i+1, such as mesh_1.msh for
+       * mesh.msh.
+       *
+       * @param[in] order number of nodes in each parameter direction.
+       *
+       * @param[in] order_min smallest number of nodes per side of the Gmsh
+       * elements to read.
+       *
+       * @param[in] order_max largest number of nodes per side of the Gmsh
+       * elements to read, at most 11.
+       *
+       * @param[in] comm the communicator.
+       *
+       * @note this is a collective operation.
+       */
+      void ReadGmsh(const std::string& fname, const Integer order, const Integer order_min = 2, const Integer order_max = 11, const Comm& comm = Comm::Self());
+
+      /**
+       * Write the elements to a Gmsh file (MSH 4.1) as complete
+       * quadrilaterals, each interpolated to the smaller of the element order
+       * and order_max nodes per side.
+       *
+       * @param[in] fname the filename, named per process as in ReadGmsh().
+       *
+       * @param[in] order_max largest number of nodes per side of the written
+       * elements, at most 11.
+       *
+       * @param[in] binary write the binary format, which stores the
+       * coordinates in double precision.
+       *
+       * @param[in] comm the communicator.
+       *
+       * @note this is a collective operation.
+       */
+      void WriteGmsh(const std::string& fname, const Integer order_max = 11, const bool binary = false, const Comm& comm = Comm::Self()) const;
 
       /**
        * Get the VTU (Visualization Toolkit for Unstructured grids) data for
@@ -251,6 +304,9 @@ namespace sctl {
     private:
 
       Long nelem = 0;
+      // TODO: allow elements of different orders in one list. This needs the order and coord offset of each element,
+      // an Init taking an order per element, self and near interactions chosen per element, and Order() only for lists
+      // of one order.
       Integer order = 0;
       Vector<Real> coord; // node coordinates; per element, x of all nodes, then y, then z
       Vector<Real> dcoord_du, dcoord_dv; // derivatives of coord along 'u' and 'v', in the same layout

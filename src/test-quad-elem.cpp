@@ -7,8 +7,8 @@
  * broken layer:
  *
  *   1. Building blocks: Alpert endpoint corrections, the centered log-singular rule, element
- *      geometry, the far-field rule and its cut-off distance, closest-point search, file and VTK
- *      output, and Copy.
+ *      geometry, the far-field rule and its cut-off distance, closest-point search, file and Gmsh
+ *      input and output, VTK output, and Copy.
  *   2. One element, for every quadrature scheme and element order: near- and self-interactions
  *      against closed forms on a flat element, and against an adaptive reference on a sphere patch
  *      small enough to resolve the sphere and the density to the requested tolerance.
@@ -33,6 +33,7 @@
 #include <array>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -836,20 +837,113 @@ template <class Real> void test_GetClosestPoint(const bool curved) {
   SCTL_ASSERT(fabs(ru) < (Real)1e-2 * sqrt<Real>(tu * rr) && fabs(rv) < (Real)1e-2 * sqrt<Real>(tv * rr));
 }
 
-// Write then Read reproduces the element list exactly, with one file per process.
+// Write then Read reproduces the element list exactly, with one file per process, in ASCII and in binary.
 template <class Real> void test_WriteRead(const Comm& comm) {
   const QuadElemList<Real> qel = BuildTwistedSphere<Real>(8, 2, 1, (Real)0.3, comm);
   const std::string fname = (std::filesystem::temp_directory_path() / "sctl-test-quad-elem-").string();
-  qel.Write(fname, comm);
-  QuadElemList<Real> qel2;
-  qel2.template Read<Real>(fname, comm);
-  std::remove((fname + detail_quadelem::RankFileName("", comm)).c_str());
-
-  Vector<Real> X, Xn, X2, Xn2;
+  const std::string fname_rank = fname + detail_quadelem::RankFileName("", comm);
+  Vector<Real> X, Xn;
   qel.GetNodeCoord(&X, &Xn, nullptr);
-  qel2.GetNodeCoord(&X2, &Xn2, nullptr);
-  SCTL_ASSERT(qel2.Size() == qel.Size() && qel2.Order() == qel.Order());
-  SCTL_ASSERT(X2.Dim() == X.Dim() && (X.Dim() == 0 || (RelErr(X2, X) == 0 && RelErr(Xn2, Xn) == 0)));
+  const auto check = [&qel, &X, &Xn, &fname, &comm]() {
+    QuadElemList<Real> qel2;
+    qel2.template Read<Real>(fname, comm);
+    Vector<Real> X2, Xn2;
+    qel2.GetNodeCoord(&X2, &Xn2, nullptr);
+    SCTL_ASSERT(qel2.Size() == qel.Size() && qel2.Order() == qel.Order());
+    SCTL_ASSERT(X2.Dim() == X.Dim() && (X.Dim() == 0 || (RelErr(X2, X) == 0 && RelErr(Xn2, Xn) == 0)));
+  };
+  for (const bool binary : {false, true}) {
+    qel.Write(fname, binary, comm);
+    check();
+  }
+  std::remove(fname_rank.c_str());
+}
+
+// WriteGmsh then ReadGmsh, in ASCII and binary, return the nodes of a twisted sphere. ReadGmsh also reads a Gmsh file
+// written here, with node tags out of order: quadrilaterals with 3 and 8 nodes per side, exact for the map below, and
+// a triangle and an 11-node-per-side quadrilateral, which it skips with a warning.
+template <class Real> void test_Gmsh(const Comm& comm) {
+  { // Gmsh node order of the 25-node quadrilateral, from gmsh::model::mesh::getElementProperties(37)
+    const std::vector<Long> gmsh_order = {0, 20, 24, 4, 5, 10, 15, 21, 22, 23, 19, 14, 9, 3, 2, 1, 6, 16, 18, 8, 11, 17, 13, 7, 12};
+    const Vector<Long> perm = detail_gmsh::TensorPerm(5);
+    for (Integer g = 0; g < 25; g++) SCTL_ASSERT(perm[g] == gmsh_order[g]);
+  }
+
+  const std::string fname = (std::filesystem::temp_directory_path() / "sctl-test-quad-elem.msh").string();
+  const std::string fname_rank = detail_gmsh::PartitionFileName(fname, comm);
+  { // Written with as many nodes per side as the elements have, so only rounding changes the nodes
+    const QuadElemList<Real> qel = BuildTwistedSphere<Real>(8, 2, 1, (Real)0.3, comm);
+    Vector<Real> X;
+    qel.GetNodeCoord(&X, nullptr, nullptr);
+    const Real eps = std::max<Real>(machine_eps<Real>(), (Real)machine_eps<double>()); // binary stores double
+    for (const bool binary : {false, true}) {
+      qel.WriteGmsh(fname, 11, binary, comm);
+      QuadElemList<Real> qel2;
+      qel2.ReadGmsh(fname, 8, 2, 11, comm);
+      Vector<Real> X2;
+      qel2.GetNodeCoord(&X2, nullptr, nullptr);
+      SCTL_ASSERT(qel2.Size() == qel.Size() && (X.Dim() == 0 || RelErr(X2, X) < 1000 * eps));
+    }
+  }
+
+  const auto map = [](const Integer elem, const Integer ns, const Real s, const Real t) -> std::array<Real,3> {
+    return {s + t * t / 4 + 2 * elem, t, sctl::pow<Real,Long>(s * t, ns - 1) + s * t / 2};
+  };
+  const std::array<Integer,3> quad_ns = {3, 8, 11};
+  const std::array<Integer,3> quad_type = {10, 48, 51};
+  { // Write the file, with node tags counting down
+    constexpr Long tag0 = 1001;
+    constexpr Long nnode = 9 + 64 + 121;
+    const auto tag = [](const Long n) { return tag0 + nnode - 1 - n; };
+    std::ofstream file(fname_rank);
+    file << std::scientific << std::setprecision(17);
+    file << "$MeshFormat\n4.1 0 8\n$EndMeshFormat\n";
+    file << "$Nodes\n1 " << nnode << " " << tag0 << " " << tag(0) << "\n2 1 0 " << nnode << "\n";
+    for (Long n = 0; n < nnode; n++) file << tag(n) << "\n";
+    for (Integer e = 0; e < 3; e++) {
+      const Integer ns = quad_ns[e];
+      for (Integer i = 0; i < ns; i++) {
+        for (Integer j = 0; j < ns; j++) {
+          const auto X = map(e, ns, (Real)i / (Real)(ns - 1), (Real)j / (Real)(ns - 1));
+          file << (double)X[0] << " " << (double)X[1] << " " << (double)X[2] << "\n";
+        }
+      }
+    }
+    file << "$EndNodes\n$Elements\n5 5 1 5\n";
+    Long node_offset = 0;
+    for (Integer e = 0; e < 3; e++) {
+      const Integer ns = quad_ns[e];
+      const Vector<Long> perm = detail_gmsh::TensorPerm(ns);
+      file << "2 1 " << quad_type[e] << " 1\n" << e + 1;
+      for (Integer g = 0; g < ns * ns; g++) file << " " << tag(node_offset + perm[g]);
+      file << "\n";
+      node_offset += ns * ns;
+    }
+    file << "2 1 2 1\n4 " << tag(0) << " " << tag(1) << " " << tag(3) << "\n"; // a triangle
+    file << "1 1 1 1\n5 " << tag(0) << " " << tag(1) << "\n"; // a line, which is not a surface element
+    file << "$EndElements\n";
+  }
+
+  QuadElemList<Real> qel;
+  qel.ReadGmsh(fname, 12, 2, 10, comm);
+  std::remove(fname_rank.c_str());
+  SCTL_ASSERT(qel.Size() == 2 && qel.Order() == 12);
+
+  Vector<Real> X, Xn;
+  qel.GetNodeCoord(&X, &Xn, nullptr);
+  const Vector<Real>& nds = QuadElemList<Real>::ParamNodes(12);
+  Real err = 0;
+  for (Integer e = 0; e < 2; e++) {
+    for (Integer a = 0; a < 12; a++) {
+      for (Integer b = 0; b < 12; b++) {
+        const Long node = (e * 12 + a) * 12 + b;
+        const auto Y = map(e, quad_ns[e], nds[a], nds[b]);
+        for (Integer k = 0; k < 3; k++) err = std::max<Real>(err, fabs<Real>(X[node * 3 + k] - Y[k]));
+        SCTL_ASSERT(Xn[node * 3 + 2] > 0); // the normal follows the Gmsh node order
+      }
+    }
+  }
+  SCTL_ASSERT(err < 1000 * machine_eps<Real>());
 }
 
 // Copy to ExtReal and back keeps the nodes and the scheme, and the normals of the copy are those of a
@@ -1465,6 +1559,8 @@ int main(int argc, char** argv) {
     passed("test_GetClosestNode, test_GetClosestPoint");
     test_WriteRead<Real>(comm);
     passed("test_WriteRead");
+    test_Gmsh<Real>(comm);
+    passed("test_Gmsh");
     test_Copy<Real>();
     passed("test_Copy");
     test_VTU<Real>(comm);
