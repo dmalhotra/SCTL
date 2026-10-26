@@ -7,8 +7,11 @@
 
 #include <algorithm>          // for max, min
 #include <cstdlib>            // for std::aligned_alloc, std::free
+#include <mutex>              // for ScratchChunkCache
 #include <new>                // for placement new
 #include <type_traits>        // for is_trivially_default_constructible, is_trivially_destructible
+#include <utility>            // for pair, swap
+#include <vector>             // for ScratchChunkCache
 
 #include "sctl/scratch_pool.hpp"
 #include "sctl/common.hpp"    // for SCTL_ASSERT, SCTL_MEM_ALIGN
@@ -34,9 +37,53 @@ inline ScratchChunk::ScratchChunk(Iterator<char> base, Iterator<char> top, Itera
 #endif
 {}
 
+// The chunks of the pools of threads that ended, and the team positions the threads had. libgomp ends the threads
+// that a team smaller than the one before does not use, and creates them again for the next larger team; the pool of
+// a new thread takes a chunk from here, its pages still mapped, instead of allocating and faulting in a new one.
+// Never destroyed, since a thread may end while the program ends.
+class ScratchChunkCache {
+ public:
+  static ScratchChunkCache& Get() {
+    static ScratchChunkCache* cache = new ScratchChunkCache();
+    return *cache;
+  }
+
+  // The chunk last used at the same team position, which is on the same core when the threads are bound, else the
+  // one kept last, or null.
+  ScratchChunk* Take(const Integer slot) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    if (chunks_.empty()) return nullptr;
+    std::size_t i = chunks_.size() - 1;
+    for (std::size_t j = 0; j < chunks_.size(); ++j) {
+      if (chunks_[j].second == slot) { i = j; break; }
+    }
+    ScratchChunk* chunk = chunks_[i].first;
+    chunks_[i] = chunks_.back();
+    chunks_.pop_back();
+    return chunk;
+  }
+
+  void Give(ScratchChunk* chunk, const Integer slot) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    chunks_.emplace_back(chunk, slot);
+  }
+
+ private:
+  std::mutex mtx_;
+  std::vector<std::pair<ScratchChunk*, Integer>> chunks_;
+};
+
 }  // namespace internal
 
 inline ScratchPool::ScratchPool() : ScratchPool(nullptr, nullptr) {}
+
+inline ScratchPool::ScratchPool(Recycled) : recycled_(true), slot_(SCTL_IN_PARALLEL() ? (Integer)SCTL_GET_THREAD_NUM() : -1) {
+  head_ = internal::ScratchChunkCache::Get().Take(slot_);
+  if (head_ == nullptr) { // a new chunk, taken from a pool made for it
+    ScratchPool fresh;
+    std::swap(head_, fresh.head_);
+  }
+}
 
 inline ScratchPool::ScratchPool(ChunkHook on_new, ChunkHook on_free) : on_new_(on_new), on_free_(on_free) {
   // Eager init so AllocBytes/FreeBytes can assume head_ != nullptr.
@@ -57,7 +104,8 @@ inline ScratchPool::~ScratchPool() {
 #endif
   // LIFO discipline drains all non-head chunks, so only head remains.
   SCTL_ASSERT(head_->prev == nullptr);
-  ReleaseChunk(head_);
+  if (recycled_) internal::ScratchChunkCache::Get().Give(head_, slot_);
+  else ReleaseChunk(head_);
 }
 
 inline void ScratchPool::ReleaseChunk(Chunk* chunk) {
@@ -70,11 +118,12 @@ inline ScratchPool& ScratchPool::Instance() {
   // Team-thread-0 is the same OS thread as the serial context; a separate
   // in-parallel pool keeps its ScratchBufs NUMA-local (the serial pool's
   // pages may have been first-touched by the whole team via shared buffers).
+  // The chunks of these pools outlive their threads (see ScratchChunkCache).
   if (SCTL_IN_PARALLEL()) {
-    thread_local ScratchPool inst_par;
+    thread_local ScratchPool inst_par{Recycled()};
     return inst_par;
   }
-  thread_local ScratchPool inst;
+  thread_local ScratchPool inst{Recycled()};
   return inst;
 }
 

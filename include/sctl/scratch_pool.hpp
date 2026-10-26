@@ -138,7 +138,8 @@ template <class T> class ScratchBuf {
  *
  * Use `ScratchPool::Instance()` to get the calling thread's pool. The pool
  * persists for the thread's lifetime, including across OpenMP parallel
- * regions (so the warmed chunk stays hot for the next region). Inside a
+ * regions (so the warmed chunk stays hot for the next region); when the
+ * thread ends, its chunk goes to the next thread made. Inside a
  * parallel region `Instance()` returns a separate per-thread pool, so
  * team-thread-0 does not share pages with the serial (master) pool.
  *
@@ -181,6 +182,11 @@ class ScratchPool {
 
   using Chunk = internal::ScratchChunk;
 
+  struct Recycled {};
+  /** The pool of a thread, for `Instance()`: its chunk is one that a thread which ended left, if any, and it leaves
+   *  its chunk the same way. */
+  explicit ScratchPool(Recycled);
+
   void AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data);
   void FreeBytes(Chunk* chunk, Iterator<char> data, Long bytes);
   void ReleaseChunk(Chunk* chunk);
@@ -203,6 +209,8 @@ class ScratchPool {
   Chunk* head_{nullptr};   // eagerly allocated by the ctor; never null after construction
   ChunkHook on_new_{nullptr};
   ChunkHook on_free_{nullptr};
+  bool recycled_{false};   // made by Recycled: its chunk outlives it
+  Integer slot_{-1};       // the team position of the thread that made it, or -1 outside parallel regions
 };
 
 }  // namespace sctl
