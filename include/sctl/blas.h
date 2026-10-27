@@ -52,9 +52,11 @@
 #ifndef _SCTL_BLAS_H_
 #define _SCTL_BLAS_H_
 
+#include <cstdint>
+
 #ifndef SCTL_FORTRAN_SYMBOL
 // Binds a declaration to the Fortran routine `name` without declaring `name`, whose declarations
-// differ between libraries (return type, const, noexcept, hidden string lengths)
+// differ between libraries (return type, const, noexcept, hidden string lengths, integer width)
 #define SCTL_FORTRAN_SYMBOL(name) __asm__(SCTL_FORTRAN_SYMBOL_STR_(__USER_LABEL_PREFIX__) #name)
 #define SCTL_FORTRAN_SYMBOL_STR_(x) SCTL_FORTRAN_SYMBOL_STR__(x)
 #define SCTL_FORTRAN_SYMBOL_STR__(x) #x
@@ -74,10 +76,49 @@ namespace detail_blas {
  * alpha and beta are scalars, and A, B and C are matrices, with op( A )
  * an m by k matrix,  op( B )  a  k by n matrix and  C an m by n matrix.
  *
- * SGEMM is the single precision version.
+ * SGEMM is the single precision version. The integer arguments point to integers of IntBytes() bytes.
  */
-void sgemm(const char* TRANSA, const char* TRANSB, const int* M, const int* N, const int* K, const float* ALPHA, const float* A, const int* LDA, const float* B, const int* LDB, const float* BETA, float* C, const int* LDC) noexcept SCTL_FORTRAN_SYMBOL(sgemm_);
-void dgemm(const char* TRANSA, const char* TRANSB, const int* M, const int* N, const int* K, const double* ALPHA, const double* A, const int* LDA, const double* B, const int* LDB, const double* BETA, double* C, const int* LDC) noexcept SCTL_FORTRAN_SYMBOL(dgemm_);
+void sgemm(const char* TRANSA, const char* TRANSB, const void* M, const void* N, const void* K, const float* ALPHA, const float* A, const void* LDA, const float* B, const void* LDB, const float* BETA, float* C, const void* LDC) noexcept SCTL_FORTRAN_SYMBOL(sgemm_);
+void dgemm(const char* TRANSA, const char* TRANSB, const void* M, const void* N, const void* K, const double* ALPHA, const double* A, const void* LDA, const double* B, const void* LDB, const double* BETA, double* C, const void* LDC) noexcept SCTL_FORTRAN_SYMBOL(dgemm_);
+
+/**
+ * ISAMAX finds the index of the first element having maximum absolute value (0 if N < 1); returns
+ * the low 32 bits of it.
+ */
+int32_t isamax(const void* N, const float* SX, const void* INCX) noexcept SCTL_FORTRAN_SYMBOL(isamax_);
+
+/**
+ * Bytes of a BLAS and LAPACK integer: sizeof(SCTL_BLAS_INT) if it is defined, otherwise detected
+ * from the BLAS on the first call: 4 (LP64) or 8 (ILP64).
+ */
+inline int IntBytes() noexcept {
+#if defined(SCTL_BLAS_INT)
+  static_assert(sizeof(SCTL_BLAS_INT) == 4 || sizeof(SCTL_BLAS_INT) == 8, "SCTL_BLAS_INT must be a 32-bit or 64-bit integer type");
+  return (int)sizeof(SCTL_BLAS_INT);
+#elif defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+  return 4;  // the detection below needs little-endian; define SCTL_BLAS_INT for ILP64
+#else
+  // N is 3 in its low 32 bits and negative in 64: an LP64 ISAMAX returns 2, an ILP64 one 0
+  static const int bytes = [] {
+    const int64_t n = (int64_t)0xffffffff00000003ULL, incx = 1;
+    const float x[3] = {1, 3, 2};
+    return isamax(&n, x, &incx) == 0 ? 8 : 4;
+  }();
+  return bytes;
+#endif
+}
+
+/**
+ * C := alpha*op(A)*op(B) + beta*C with SGEMM or DGEMM (fn), passing the integers as IntBytes() bytes.
+ */
+template <class Real, class Fn> inline void Gemm(Fn& fn, char TransA, char TransB, int M, int N, int K, Real alpha, const Real* A, int lda, const Real* B, int ldb, Real beta, Real* C, int ldc) noexcept {
+  if (IntBytes() == 8) {
+    const int64_t M_ = M, N_ = N, K_ = K, lda_ = lda, ldb_ = ldb, ldc_ = ldc;
+    fn(&TransA, &TransB, &M_, &N_, &K_, &alpha, A, &lda_, B, &ldb_, &beta, C, &ldc_);
+  } else {
+    fn(&TransA, &TransB, &M, &N, &K, &alpha, A, &lda, B, &ldb, &beta, C, &ldc);
+  }
+}
 }  // end namespace detail_blas
 }  // end namespace sctl
 

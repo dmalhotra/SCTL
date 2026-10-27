@@ -57,6 +57,7 @@ The following compiler flags can be used to enable or disable specific features 
 - `-DSCTL_VERBOSE`: Enable verbose [profiling](include/sctl/profile.hpp) output.
 - `-DSCTL_SIG_HANDLER`: Enable [stack trace](include/sctl/stacktrace.h). On Linux with glibc < 2.34, link with `-ldl` (newer glibc has it merged into libc).
 - `-DSCTL_QUAD_T=<type>`: Enable support for [quad-precision type](include/sctl/math_utils.hpp), e.g. `__float128` on x86 and with GCC on Apple silicon.
+- `-DSCTL_BLAS_INT=<type>`: Integer type of the [BLAS](include/sctl/blas.h) and LAPACK interface, `int` (LP64) or `int64_t` (ILP64). By default it is detected from the linked BLAS on the first call; on big-endian systems it is `int` unless set.
 
 ## Features and Capabilities
 

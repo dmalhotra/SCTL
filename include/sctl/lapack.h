@@ -52,13 +52,7 @@
 #ifndef _SCTL_LAPACK_H_
 #define _SCTL_LAPACK_H_
 
-#ifndef SCTL_FORTRAN_SYMBOL
-// Binds a declaration to the Fortran routine `name` without declaring `name`, whose declarations
-// differ between libraries (return type, const, noexcept, hidden string lengths)
-#define SCTL_FORTRAN_SYMBOL(name) __asm__(SCTL_FORTRAN_SYMBOL_STR_(__USER_LABEL_PREFIX__) #name)
-#define SCTL_FORTRAN_SYMBOL_STR_(x) SCTL_FORTRAN_SYMBOL_STR__(x)
-#define SCTL_FORTRAN_SYMBOL_STR__(x) #x
-#endif
+#include "sctl/blas.h"  // SCTL_FORTRAN_SYMBOL, detail_blas::IntBytes()
 
 namespace sctl {
 namespace detail_lapack {
@@ -78,10 +72,25 @@ namespace detail_lapack {
  *
  * Note that the routine returns V**T, not V.
  *
- * SGESVD is the single precision version.
+ * SGESVD is the single precision version. The integer arguments point to integers of
+ * detail_blas::IntBytes() bytes.
  */
-void sgesvd(const char* JOBU, const char* JOBVT, const int* M, const int* N, float* A, const int* LDA, float* S, float* U, const int* LDU, float* VT, const int* LDVT, float* WORK, const int* LWORK, int* INFO) noexcept SCTL_FORTRAN_SYMBOL(sgesvd_);
-void dgesvd(const char* JOBU, const char* JOBVT, const int* M, const int* N, double* A, const int* LDA, double* S, double* U, const int* LDU, double* VT, const int* LDVT, double* WORK, const int* LWORK, int* INFO) noexcept SCTL_FORTRAN_SYMBOL(dgesvd_);
+void sgesvd(const char* JOBU, const char* JOBVT, const void* M, const void* N, float* A, const void* LDA, float* S, float* U, const void* LDU, float* VT, const void* LDVT, float* WORK, const void* LWORK, void* INFO) noexcept SCTL_FORTRAN_SYMBOL(sgesvd_);
+void dgesvd(const char* JOBU, const char* JOBVT, const void* M, const void* N, double* A, const void* LDA, double* S, double* U, const void* LDU, double* VT, const void* LDVT, double* WORK, const void* LWORK, void* INFO) noexcept SCTL_FORTRAN_SYMBOL(dgesvd_);
+
+/**
+ * SVD with SGESVD or DGESVD (fn), passing the integers as detail_blas::IntBytes() bytes.
+ */
+template <class Real, class Fn> inline void Gesvd(Fn& fn, const char* JOBU, const char* JOBVT, int M, int N, Real* A, int LDA, Real* S, Real* U, int LDU, Real* VT, int LDVT, Real* WORK, int LWORK, int* INFO) noexcept {
+  if (detail_blas::IntBytes() == 8) {
+    const int64_t M_ = M, N_ = N, LDA_ = LDA, LDU_ = LDU, LDVT_ = LDVT, LWORK_ = LWORK;
+    int64_t INFO_ = 0;
+    fn(JOBU, JOBVT, &M_, &N_, A, &LDA_, S, U, &LDU_, VT, &LDVT_, WORK, &LWORK_, &INFO_);
+    *INFO = (int)INFO_;
+  } else {
+    fn(JOBU, JOBVT, &M, &N, A, &LDA, S, U, &LDU, VT, &LDVT, WORK, &LWORK, INFO);
+  }
+}
 }  // end namespace detail_lapack
 }  // end namespace sctl
 
