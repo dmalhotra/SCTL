@@ -54,6 +54,8 @@
 
 #include <cstdint>
 
+#include "sctl/common.hpp"  // for Long, SCTL_ASSERT_MSG
+
 #ifndef SCTL_FORTRAN_SYMBOL
 // Binds a declaration to the Fortran routine `name` without declaring `name`, whose declarations
 // differ between libraries (return type, const, noexcept, hidden string lengths, integer width)
@@ -109,14 +111,26 @@ inline int IntBytes() noexcept {
 }
 
 /**
+ * Debug builds (without NDEBUG): aborts unless every value fits in the integers of a 32-bit BLAS.
+ */
+template <class... T> inline void CheckInt32([[maybe_unused]] T... v) noexcept {
+#ifndef NDEBUG
+  SCTL_ASSERT_MSG(((v == (int32_t)v) && ...), "BLAS/LAPACK argument too large for the 32-bit integers of the linked BLAS; link an ILP64 BLAS");
+#endif
+}
+
+/**
  * C := alpha*op(A)*op(B) + beta*C with SGEMM or DGEMM (fn), passing the integers as IntBytes() bytes.
  */
-template <class Real, class Fn> inline void Gemm(Fn& fn, char TransA, char TransB, int M, int N, int K, Real alpha, const Real* A, int lda, const Real* B, int ldb, Real beta, Real* C, int ldc) noexcept {
-  if (IntBytes() == 8) {
+template <class Real, class Fn> inline void Gemm(Fn& fn, char TransA, char TransB, Long M, Long N, Long K, Real alpha, const Real* A, Long lda, const Real* B, Long ldb, Real beta, Real* C, Long ldc) noexcept {
+  static_assert(sizeof(Long) == 8, "Long must be 64-bit");
+  if (IntBytes() == 8) {  // copies in both branches: taking the parameters' addresses would spill them on every call
     const int64_t M_ = M, N_ = N, K_ = K, lda_ = lda, ldb_ = ldb, ldc_ = ldc;
     fn(&TransA, &TransB, &M_, &N_, &K_, &alpha, A, &lda_, B, &ldb_, &beta, C, &ldc_);
   } else {
-    fn(&TransA, &TransB, &M, &N, &K, &alpha, A, &lda, B, &ldb, &beta, C, &ldc);
+    CheckInt32(M, N, K, lda, ldb, ldc);
+    const int32_t M_ = (int32_t)M, N_ = (int32_t)N, K_ = (int32_t)K, lda_ = (int32_t)lda, ldb_ = (int32_t)ldb, ldc_ = (int32_t)ldc;
+    fn(&TransA, &TransB, &M_, &N_, &K_, &alpha, A, &lda_, B, &ldb_, &beta, C, &ldc_);
   }
 }
 }  // end namespace detail_blas

@@ -34,7 +34,7 @@
 namespace sctl {
 namespace mat {
 
-template <class ValueType> inline void gemm(char TransA, char TransB, int M, int N, int K, ValueType alpha, ConstIterator<ValueType> A, int lda, ConstIterator<ValueType> B, int ldb, ValueType beta, Iterator<ValueType> C, int ldc) {
+template <class ValueType> inline void gemm(char TransA, char TransB, Long M, Long N, Long K, ValueType alpha, ConstIterator<ValueType> A, Long lda, ConstIterator<ValueType> B, Long ldb, ValueType beta, Iterator<ValueType> C, Long ldc) {
   if ((TransA == 'N' || TransA == 'n') && (TransB == 'N' || TransB == 'n')) {
     // Multiply-adds per thread, enough to pay for starting it (a few us): 2^16 with the Vec tiles of
     // float and double, 2^14 with those of their complex types (4 real multiply-adds each), 2^7 for
@@ -104,9 +104,9 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
 }
 
 #if defined(SCTL_HAVE_BLAS)
-template <> inline void gemm<float>(char TransA, char TransB, int M, int N, int K, float alpha, ConstIterator<float> A, int lda, ConstIterator<float> B, int ldb, float beta, Iterator<float> C, int ldc) { detail_blas::Gemm(detail_blas::sgemm, TransA, TransB, M, N, K, alpha, &A[0], lda, &B[0], ldb, beta, &C[0], ldc); }
+template <> inline void gemm<float>(char TransA, char TransB, Long M, Long N, Long K, float alpha, ConstIterator<float> A, Long lda, ConstIterator<float> B, Long ldb, float beta, Iterator<float> C, Long ldc) { detail_blas::Gemm(detail_blas::sgemm, TransA, TransB, M, N, K, alpha, &A[0], lda, &B[0], ldb, beta, &C[0], ldc); }
 
-template <> inline void gemm<double>(char TransA, char TransB, int M, int N, int K, double alpha, ConstIterator<double> A, int lda, ConstIterator<double> B, int ldb, double beta, Iterator<double> C, int ldc) { detail_blas::Gemm(detail_blas::dgemm, TransA, TransB, M, N, K, alpha, &A[0], lda, &B[0], ldb, beta, &C[0], ldc); }
+template <> inline void gemm<double>(char TransA, char TransB, Long M, Long N, Long K, double alpha, ConstIterator<double> A, Long lda, ConstIterator<double> B, Long ldb, double beta, Iterator<double> C, Long ldc) { detail_blas::Gemm(detail_blas::dgemm, TransA, TransB, M, N, K, alpha, &A[0], lda, &B[0], ldb, beta, &C[0], ldc); }
 #endif
 
 //#define SCTL_SVD_DEBUG
@@ -380,7 +380,7 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
 
 #undef SCTL_SVD_DEBUG
 
-template <class ValueType> inline void svd(char *JOBU, char *JOBVT, int *M, int *N, Iterator<ValueType> A, int *LDA, Iterator<ValueType> S, Iterator<ValueType> U, int *LDU, Iterator<ValueType> VT, int *LDVT, Iterator<ValueType> WORK, int *LWORK, int *INFO) {
+template <class ValueType> inline void svd(char *JOBU, char *JOBVT, Long *M, Long *N, Iterator<ValueType> A, Long *LDA, Iterator<ValueType> S, Iterator<ValueType> U, Long *LDU, Iterator<ValueType> VT, Long *LDVT, Iterator<ValueType> WORK, Long *LWORK, Long *INFO) {
   StaticArray<Long, 2> dim;
   dim[0] = std::max(*N, *M);
   dim[1] = std::min(*N, *M);
@@ -480,27 +480,27 @@ template <class ValueType> inline void svd(char *JOBU, char *JOBVT, int *M, int 
 }
 
 #if defined(SCTL_HAVE_LAPACK)
-template <> inline void svd<float>(char *JOBU, char *JOBVT, int *M, int *N, Iterator<float> A, int *LDA, Iterator<float> S, Iterator<float> U, int *LDU, Iterator<float> VT, int *LDVT, Iterator<float> WORK, int *LWORK, int *INFO) { detail_lapack::Gesvd(detail_lapack::sgesvd, JOBU, JOBVT, *M, *N, &A[0], *LDA, &S[0], &U[0], *LDU, &VT[0], *LDVT, &WORK[0], *LWORK, INFO); }
+template <> inline void svd<float>(char *JOBU, char *JOBVT, Long *M, Long *N, Iterator<float> A, Long *LDA, Iterator<float> S, Iterator<float> U, Long *LDU, Iterator<float> VT, Long *LDVT, Iterator<float> WORK, Long *LWORK, Long *INFO) { detail_lapack::Gesvd(detail_lapack::sgesvd, JOBU, JOBVT, *M, *N, &A[0], *LDA, &S[0], &U[0], *LDU, &VT[0], *LDVT, &WORK[0], *LWORK, INFO); }
 
-template <> inline void svd<double>(char *JOBU, char *JOBVT, int *M, int *N, Iterator<double> A, int *LDA, Iterator<double> S, Iterator<double> U, int *LDU, Iterator<double> VT, int *LDVT, Iterator<double> WORK, int *LWORK, int *INFO) { detail_lapack::Gesvd(detail_lapack::dgesvd, JOBU, JOBVT, *M, *N, &A[0], *LDA, &S[0], &U[0], *LDU, &VT[0], *LDVT, &WORK[0], *LWORK, INFO); }
+template <> inline void svd<double>(char *JOBU, char *JOBVT, Long *M, Long *N, Iterator<double> A, Long *LDA, Iterator<double> S, Iterator<double> U, Long *LDU, Iterator<double> VT, Long *LDVT, Iterator<double> WORK, Long *LWORK, Long *INFO) { detail_lapack::Gesvd(detail_lapack::dgesvd, JOBU, JOBVT, *M, *N, &A[0], *LDA, &S[0], &U[0], *LDU, &VT[0], *LDVT, &WORK[0], *LWORK, INFO); }
 #endif
 
 /**
  * Computes the pseudo inverse of matrix M(n1xn2) (in row major form)
  * and returns the output M_(n2xn1). Original contents of M are destroyed.
  */
-template <class ValueType> inline void pinv(Iterator<ValueType> M, int n1, int n2, ValueType eps, Iterator<ValueType> M_) {
+template <class ValueType> inline void pinv(Iterator<ValueType> M, Long n1, Long n2, ValueType eps, Iterator<ValueType> M_) {
   if (n1 * n2 == 0) return;
-  int m = n2;
-  int n = n1;
-  int k = (m < n ? m : n);
+  Long m = n2;
+  Long n = n1;
+  Long k = (m < n ? m : n);
 
   Iterator<ValueType> tU = aligned_new<ValueType>(m * k);
   Iterator<ValueType> tS = aligned_new<ValueType>(k);
   Iterator<ValueType> tVT = aligned_new<ValueType>(k * n);
 
   // SVD
-  int INFO = 0;
+  Long INFO = 0;
   char JOBU = 'S';
   char JOBVT = 'S';
 
@@ -508,10 +508,10 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, int n1, int n
   // int wssize = 3 * (m < n ? m : n) + (m > n ? m : n);
   // int wssize1 = 5 * (m < n ? m : n);
   // wssize = (wssize > wssize1 ? wssize : wssize1);
-  int wssize = -1;
+  Long wssize = -1;
   StaticArray<ValueType,1> wkopt{0};
   svd(&JOBU, &JOBVT, &m, &n, M, &m, tS, tU, &m, tVT, &k, wkopt+0, &wssize, &INFO);
-  wssize = (int)wkopt[0];
+  wssize = (Long)wkopt[0];
 
   Iterator<ValueType> wsbuf = aligned_new<ValueType>(wssize);
   svd(&JOBU, &JOBVT, &m, &n, M, &m, tS, tU, &m, tVT, &k, wsbuf, &wssize, &INFO);
@@ -526,14 +526,14 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, int n1, int n
   }
 
   ValueType eps_ = max_S * eps;
-  for (int i = 0; i < k; i++)
+  for (Long i = 0; i < k; i++)
     if (tS[i] < eps_)
       tS[i] = 0;
     else
       tS[i] = 1 / tS[i];
 
-  for (int i = 0; i < m; i++) {
-    for (int j = 0; j < k; j++) {
+  for (Long i = 0; i < m; i++) {
+    for (Long j = 0; j < k; j++) {
       tU[i + j * m] *= tS[j];
     }
   }

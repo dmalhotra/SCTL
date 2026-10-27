@@ -81,14 +81,18 @@ void dgesvd(const char* JOBU, const char* JOBVT, const void* M, const void* N, d
 /**
  * SVD with SGESVD or DGESVD (fn), passing the integers as detail_blas::IntBytes() bytes.
  */
-template <class Real, class Fn> inline void Gesvd(Fn& fn, const char* JOBU, const char* JOBVT, int M, int N, Real* A, int LDA, Real* S, Real* U, int LDU, Real* VT, int LDVT, Real* WORK, int LWORK, int* INFO) noexcept {
-  if (detail_blas::IntBytes() == 8) {
+template <class Real, class Fn> inline void Gesvd(Fn& fn, const char* JOBU, const char* JOBVT, Long M, Long N, Real* A, Long LDA, Real* S, Real* U, Long LDU, Real* VT, Long LDVT, Real* WORK, Long LWORK, Long* INFO) noexcept {
+  if (detail_blas::IntBytes() == 8) {  // copies in both branches, as in detail_blas::Gemm
     const int64_t M_ = M, N_ = N, LDA_ = LDA, LDU_ = LDU, LDVT_ = LDVT, LWORK_ = LWORK;
     int64_t INFO_ = 0;
     fn(JOBU, JOBVT, &M_, &N_, A, &LDA_, S, U, &LDU_, VT, &LDVT_, WORK, &LWORK_, &INFO_);
-    *INFO = (int)INFO_;
+    *INFO = INFO_;
   } else {
-    fn(JOBU, JOBVT, &M, &N, A, &LDA, S, U, &LDU, VT, &LDVT, WORK, &LWORK, INFO);
+    detail_blas::CheckInt32(M, N, LDA, LDU, LDVT, LWORK);
+    const int32_t M_ = (int32_t)M, N_ = (int32_t)N, LDA_ = (int32_t)LDA, LDU_ = (int32_t)LDU, LDVT_ = (int32_t)LDVT, LWORK_ = (int32_t)LWORK;
+    int32_t INFO_ = 0;
+    fn(JOBU, JOBVT, &M_, &N_, A, &LDA_, S, U, &LDU_, VT, &LDVT_, WORK, &LWORK_, &INFO_);
+    *INFO = INFO_;
   }
 }
 }  // end namespace detail_lapack
