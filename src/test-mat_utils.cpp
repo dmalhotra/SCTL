@@ -182,15 +182,15 @@ int main() {
   std::printf("svd (diagonal) :\n");
   {
     // A = diag(5, 3, 1) (3x3 column-major). LAPACK SVD should produce S = (5, 3, 1).
-    int M = 3, N = 3;
+    Long M = 3, N = 3;
     double A[9]  = {5, 0, 0,   0, 3, 0,   0, 0, 1};  // col-major diag
     double S[3]  = {0};
     double U[9]  = {0};
     double VT[9] = {0};
-    int LDA = M, LDU = M, LDVT = 3;
-    int LWORK = -1;
+    Long LDA = M, LDU = M, LDVT = 3;
+    Long LWORK = -1;
     double wkopt = 0;
-    int INFO = 0;
+    Long INFO = 0;
     char jobu = 'S', jobvt = 'S';
     sctl::mat::svd<double>(&jobu, &jobvt, &M, &N,
                            sctl::Ptr2Itr<double>(A,  9), &LDA,
@@ -198,7 +198,7 @@ int main() {
                            sctl::Ptr2Itr<double>(U,  9), &LDU,
                            sctl::Ptr2Itr<double>(VT, 9), &LDVT,
                            sctl::Ptr2Itr<double>(&wkopt, 1), &LWORK, &INFO);
-    LWORK = (int)wkopt;
+    LWORK = (Long)wkopt;
     std::vector<double> WORK(LWORK);
     sctl::mat::svd<double>(&jobu, &jobvt, &M, &N,
                            sctl::Ptr2Itr<double>(A,  9), &LDA,

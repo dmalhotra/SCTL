@@ -573,10 +573,10 @@ template <class ValueType> template <class VType> void Matrix<ValueType>::Transp
 template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Matrix<ValueType>& tS, Matrix<ValueType>& tVT) {
   Matrix<ValueType>& M = *this;
   Matrix<ValueType> M_ = M;
-  int n = M.Dim(0);
-  int m = M.Dim(1);
+  Long n = M.Dim(0);
+  Long m = M.Dim(1);
 
-  int k = (m < n ? m : n);
+  Long k = (m < n ? m : n);
   if (tU.Dim(0) != n || tU.Dim(1) != k) tU.ReInit(n, k);
   tU.SetZero();
   if (tS.Dim(0) != k || tS.Dim(1) != k) tS.ReInit(k, k);
@@ -585,17 +585,17 @@ template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Ma
   tVT.SetZero();
 
   // SVD
-  int INFO = 0;
+  Long INFO = 0;
   char JOBU = 'S';
   char JOBVT = 'S';
 
   //int wssize = 3 * (m < n ? m : n) + (m > n ? m : n);
   //int wssize1 = 5 * (m < n ? m : n);
   //wssize = (wssize > wssize1 ? wssize : wssize1);
-  int wssize = -1;
+  Long wssize = -1;
   StaticArray<ValueType,1> wkopt{0};
   mat::svd(&JOBU, &JOBVT, &m, &n, M.begin(), &m, tS.begin(), tVT.begin(), &m, tU.begin(), &k, wkopt+0, &wssize, &INFO);
-  wssize = (int)wkopt[0];
+  wssize = (Long)wkopt[0];
 
   Iterator<ValueType> wsbuf = aligned_new<ValueType>(wssize);
   mat::svd(&JOBU, &JOBVT, &m, &n, M.begin(), &m, tS.begin(), tVT.begin(), &m, tU.begin(), &k, wsbuf, &wssize, &INFO);

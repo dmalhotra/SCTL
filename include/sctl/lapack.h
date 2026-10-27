@@ -52,7 +52,10 @@
 #ifndef _SCTL_LAPACK_H_
 #define _SCTL_LAPACK_H_
 
-extern "C" {
+#include "sctl/blas.h"  // SCTL_FORTRAN_SYMBOL, detail_blas::IntBytes()
+
+namespace sctl {
+namespace detail_lapack {
 /**
  * DGESVD computes the singular value decomposition (SVD) of a real
  * M-by-N matrix A, optionally computing the left and/or right singular
@@ -69,10 +72,30 @@ extern "C" {
  *
  * Note that the routine returns V**T, not V.
  *
- * SGESVD is the single precision version.
+ * SGESVD is the single precision version. The integer arguments point to integers of
+ * detail_blas::IntBytes() bytes.
  */
-void sgesvd_(const char* JOBU, const char* JOBVT, const int* M, const int* N, float* A, const int* LDA, float* S, float* U, const int* LDU, float* VT, const int* LDVT, float* WORK, const int* LWORK, int* INFO);
-void dgesvd_(const char* JOBU, const char* JOBVT, const int* M, const int* N, double* A, const int* LDA, double* S, double* U, const int* LDU, double* VT, const int* LDVT, double* WORK, const int* LWORK, int* INFO);
+void sgesvd(const char* JOBU, const char* JOBVT, const void* M, const void* N, float* A, const void* LDA, float* S, float* U, const void* LDU, float* VT, const void* LDVT, float* WORK, const void* LWORK, void* INFO) noexcept SCTL_FORTRAN_SYMBOL(sgesvd_);
+void dgesvd(const char* JOBU, const char* JOBVT, const void* M, const void* N, double* A, const void* LDA, double* S, double* U, const void* LDU, double* VT, const void* LDVT, double* WORK, const void* LWORK, void* INFO) noexcept SCTL_FORTRAN_SYMBOL(dgesvd_);
+
+/**
+ * SVD with SGESVD or DGESVD (fn), passing the integers as detail_blas::IntBytes() bytes.
+ */
+template <class Real, class Fn> inline void Gesvd(Fn& fn, const char* JOBU, const char* JOBVT, Long M, Long N, Real* A, Long LDA, Real* S, Real* U, Long LDU, Real* VT, Long LDVT, Real* WORK, Long LWORK, Long* INFO) noexcept {
+  if (detail_blas::IntBytes() == 8) {  // copies in both branches, as in detail_blas::Gemm
+    const int64_t M_ = M, N_ = N, LDA_ = LDA, LDU_ = LDU, LDVT_ = LDVT, LWORK_ = LWORK;
+    int64_t INFO_ = 0;
+    fn(JOBU, JOBVT, &M_, &N_, A, &LDA_, S, U, &LDU_, VT, &LDVT_, WORK, &LWORK_, &INFO_);
+    *INFO = INFO_;
+  } else {
+    detail_blas::CheckInt32(M, N, LDA, LDU, LDVT, LWORK);
+    const int32_t M_ = (int32_t)M, N_ = (int32_t)N, LDA_ = (int32_t)LDA, LDU_ = (int32_t)LDU, LDVT_ = (int32_t)LDVT, LWORK_ = (int32_t)LWORK;
+    int32_t INFO_ = 0;
+    fn(JOBU, JOBVT, &M_, &N_, A, &LDA_, S, U, &LDU_, VT, &LDVT_, WORK, &LWORK_, &INFO_);
+    *INFO = INFO_;
+  }
 }
+}  // end namespace detail_lapack
+}  // end namespace sctl
 
 #endif // _SCTL_LAPACK_H_
