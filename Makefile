@@ -18,9 +18,9 @@ else
 	CXXFLAGS += -ldl # dladdr(), for glibc < 2.34
 endif
 
-# AVX-512-FP16 of -march=native (Sapphire Rapids), which binutils before 2.38 can't assemble
-ifneq "$(OS)" "Darwin"
-       CXXFLAGS += -mno-avx512fp16
+# AVX-512-FP16 of -march=native (Sapphire Rapids), which binutils before 2.38 can't assemble; x86 only
+ifneq ($(shell $(CXX) -mno-avx512fp16 -x c++ -fsyntax-only /dev/null 2>/dev/null && echo ok),)
+	CXXFLAGS += -mno-avx512fp16
 endif
 
 CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB
@@ -28,7 +28,10 @@ CXXFLAGS += -DSCTL_GLOBAL_MEM_BUFF=0 # Global memory buffer size in MB
 CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
 CXXFLAGS += -DSCTL_SIG_HANDLER # Enable SCTL stack trace
 
-CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision (x86, or GCC on Apple silicon)
+# Enable quadruple precision, if the compiler has __float128 (x86, or GCC on Apple silicon)
+ifneq ($(shell echo '__float128 x;' | $(CXX) -x c++ -fsyntax-only - 2>/dev/null && echo ok),)
+	CXXFLAGS += -DSCTL_QUAD_T=__float128
+endif
 
 #CXXFLAGS += -DSCTL_MAX_DEPTH=20 # Morton/Tree depth limit
 
