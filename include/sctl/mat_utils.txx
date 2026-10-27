@@ -104,9 +104,9 @@ template <class ValueType> inline void gemm(char TransA, char TransB, int M, int
 }
 
 #if defined(SCTL_HAVE_BLAS)
-template <> inline void gemm<float>(char TransA, char TransB, int M, int N, int K, float alpha, ConstIterator<float> A, int lda, ConstIterator<float> B, int ldb, float beta, Iterator<float> C, int ldc) { sgemm_(&TransA, &TransB, &M, &N, &K, &alpha, &A[0], &lda, &B[0], &ldb, &beta, &C[0], &ldc); }
+template <> inline void gemm<float>(char TransA, char TransB, int M, int N, int K, float alpha, ConstIterator<float> A, int lda, ConstIterator<float> B, int ldb, float beta, Iterator<float> C, int ldc) { detail_blas::sgemm(&TransA, &TransB, &M, &N, &K, &alpha, &A[0], &lda, &B[0], &ldb, &beta, &C[0], &ldc); }
 
-template <> inline void gemm<double>(char TransA, char TransB, int M, int N, int K, double alpha, ConstIterator<double> A, int lda, ConstIterator<double> B, int ldb, double beta, Iterator<double> C, int ldc) { dgemm_(&TransA, &TransB, &M, &N, &K, &alpha, &A[0], &lda, &B[0], &ldb, &beta, &C[0], &ldc); }
+template <> inline void gemm<double>(char TransA, char TransB, int M, int N, int K, double alpha, ConstIterator<double> A, int lda, ConstIterator<double> B, int ldb, double beta, Iterator<double> C, int ldc) { detail_blas::dgemm(&TransA, &TransB, &M, &N, &K, &alpha, &A[0], &lda, &B[0], &ldb, &beta, &C[0], &ldc); }
 #endif
 
 //#define SCTL_SVD_DEBUG
@@ -480,9 +480,9 @@ template <class ValueType> inline void svd(char *JOBU, char *JOBVT, int *M, int 
 }
 
 #if defined(SCTL_HAVE_LAPACK)
-template <> inline void svd<float>(char *JOBU, char *JOBVT, int *M, int *N, Iterator<float> A, int *LDA, Iterator<float> S, Iterator<float> U, int *LDU, Iterator<float> VT, int *LDVT, Iterator<float> WORK, int *LWORK, int *INFO) { sgesvd_(JOBU, JOBVT, M, N, &A[0], LDA, &S[0], &U[0], LDU, &VT[0], LDVT, &WORK[0], LWORK, INFO); }
+template <> inline void svd<float>(char *JOBU, char *JOBVT, int *M, int *N, Iterator<float> A, int *LDA, Iterator<float> S, Iterator<float> U, int *LDU, Iterator<float> VT, int *LDVT, Iterator<float> WORK, int *LWORK, int *INFO) { detail_lapack::sgesvd(JOBU, JOBVT, M, N, &A[0], LDA, &S[0], &U[0], LDU, &VT[0], LDVT, &WORK[0], LWORK, INFO); }
 
-template <> inline void svd<double>(char *JOBU, char *JOBVT, int *M, int *N, Iterator<double> A, int *LDA, Iterator<double> S, Iterator<double> U, int *LDU, Iterator<double> VT, int *LDVT, Iterator<double> WORK, int *LWORK, int *INFO) { dgesvd_(JOBU, JOBVT, M, N, &A[0], LDA, &S[0], &U[0], LDU, &VT[0], LDVT, &WORK[0], LWORK, INFO); }
+template <> inline void svd<double>(char *JOBU, char *JOBVT, int *M, int *N, Iterator<double> A, int *LDA, Iterator<double> S, Iterator<double> U, int *LDU, Iterator<double> VT, int *LDVT, Iterator<double> WORK, int *LWORK, int *INFO) { detail_lapack::dgesvd(JOBU, JOBVT, M, N, &A[0], LDA, &S[0], &U[0], LDU, &VT[0], LDVT, &WORK[0], LWORK, INFO); }
 #endif
 
 /**

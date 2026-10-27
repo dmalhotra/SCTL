@@ -52,7 +52,16 @@
 #ifndef _SCTL_BLAS_H_
 #define _SCTL_BLAS_H_
 
-extern "C" {
+#ifndef SCTL_FORTRAN_SYMBOL
+// Binds a declaration to the Fortran routine `name` without declaring `name`, whose declarations
+// differ between libraries (return type, const, noexcept, hidden string lengths)
+#define SCTL_FORTRAN_SYMBOL(name) __asm__(SCTL_FORTRAN_SYMBOL_STR_(__USER_LABEL_PREFIX__) #name)
+#define SCTL_FORTRAN_SYMBOL_STR_(x) SCTL_FORTRAN_SYMBOL_STR__(x)
+#define SCTL_FORTRAN_SYMBOL_STR__(x) #x
+#endif
+
+namespace sctl {
+namespace detail_blas {
 /**
  * DGEMM  performs one of the matrix-matrix operations
  *
@@ -67,8 +76,9 @@ extern "C" {
  *
  * SGEMM is the single precision version.
  */
-void sgemm_(const char* TRANSA, const char* TRANSB, const int* M, const int* N, const int* K, const float* ALPHA, const float* A, const int* LDA, const float* B, const int* LDB, const float* BETA, float* C, const int* LDC);
-void dgemm_(const char* TRANSA, const char* TRANSB, const int* M, const int* N, const int* K, const double* ALPHA, const double* A, const int* LDA, const double* B, const int* LDB, const double* BETA, double* C, const int* LDC);
-}
+void sgemm(const char* TRANSA, const char* TRANSB, const int* M, const int* N, const int* K, const float* ALPHA, const float* A, const int* LDA, const float* B, const int* LDB, const float* BETA, float* C, const int* LDC) noexcept SCTL_FORTRAN_SYMBOL(sgemm_);
+void dgemm(const char* TRANSA, const char* TRANSB, const int* M, const int* N, const int* K, const double* ALPHA, const double* A, const int* LDA, const double* B, const int* LDB, const double* BETA, double* C, const int* LDC) noexcept SCTL_FORTRAN_SYMBOL(dgemm_);
+}  // end namespace detail_blas
+}  // end namespace sctl
 
 #endif // _SCTL_BLAS_H_

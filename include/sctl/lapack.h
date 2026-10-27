@@ -52,7 +52,16 @@
 #ifndef _SCTL_LAPACK_H_
 #define _SCTL_LAPACK_H_
 
-extern "C" {
+#ifndef SCTL_FORTRAN_SYMBOL
+// Binds a declaration to the Fortran routine `name` without declaring `name`, whose declarations
+// differ between libraries (return type, const, noexcept, hidden string lengths)
+#define SCTL_FORTRAN_SYMBOL(name) __asm__(SCTL_FORTRAN_SYMBOL_STR_(__USER_LABEL_PREFIX__) #name)
+#define SCTL_FORTRAN_SYMBOL_STR_(x) SCTL_FORTRAN_SYMBOL_STR__(x)
+#define SCTL_FORTRAN_SYMBOL_STR__(x) #x
+#endif
+
+namespace sctl {
+namespace detail_lapack {
 /**
  * DGESVD computes the singular value decomposition (SVD) of a real
  * M-by-N matrix A, optionally computing the left and/or right singular
@@ -71,8 +80,9 @@ extern "C" {
  *
  * SGESVD is the single precision version.
  */
-void sgesvd_(const char* JOBU, const char* JOBVT, const int* M, const int* N, float* A, const int* LDA, float* S, float* U, const int* LDU, float* VT, const int* LDVT, float* WORK, const int* LWORK, int* INFO);
-void dgesvd_(const char* JOBU, const char* JOBVT, const int* M, const int* N, double* A, const int* LDA, double* S, double* U, const int* LDU, double* VT, const int* LDVT, double* WORK, const int* LWORK, int* INFO);
-}
+void sgesvd(const char* JOBU, const char* JOBVT, const int* M, const int* N, float* A, const int* LDA, float* S, float* U, const int* LDU, float* VT, const int* LDVT, float* WORK, const int* LWORK, int* INFO) noexcept SCTL_FORTRAN_SYMBOL(sgesvd_);
+void dgesvd(const char* JOBU, const char* JOBVT, const int* M, const int* N, double* A, const int* LDA, double* S, double* U, const int* LDU, double* VT, const int* LDVT, double* WORK, const int* LWORK, int* INFO) noexcept SCTL_FORTRAN_SYMBOL(dgesvd_);
+}  // end namespace detail_lapack
+}  // end namespace sctl
 
 #endif // _SCTL_LAPACK_H_
