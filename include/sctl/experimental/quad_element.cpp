@@ -2150,6 +2150,7 @@ namespace sctl {
 
     { // Store the coordinates component by component per element
       coord.ReInit(nelem * elem_stride);
+      #pragma omp parallel for schedule(static)
       for (Long elem_idx = 0; elem_idx < nelem; elem_idx++) {
         const Long base = elem_idx * elem_stride;
         for (Integer k = 0; k < detail_quadelem::COORD_DIM; k++) {
