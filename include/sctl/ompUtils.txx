@@ -514,7 +514,9 @@ template <class Iter, class KeyFn> inline void omp_par::radix_sort(Iter A, Long 
   constexpr Integer NPASS = (64 + RB - 1) / RB;
   static_assert(NPASS % 2 == 0, "an even number of passes leaves the result in A");
   // A thread keeps an NB-entry histogram and scans it once per pass whatever its share of the
-  // elements, so cap the team where that bookkeeping would rival the sorting.
+  // elements, so cap the threads that sort where that bookkeeping would rival the sorting. The team
+  // is of all threads, the others only waiting at the barriers: libgomp ends the threads that a team
+  // smaller than the one before does not use, and creates them again for the next larger team.
   const Integer p = (SCTL_IN_PARALLEL() ? 1 : (Integer)std::min<Long>(SCTL_GET_MAX_THREADS(), std::max<Long>(1, N / (4 * NB))));
 
   ScratchBuf<_ValType> tmp(N);
@@ -522,23 +524,28 @@ template <class Iter, class KeyFn> inline void omp_par::radix_sort(Iter A, Long 
   Iterator<_ValType> src = Ptr2Itr<_ValType>(&A[0], N), dst = tmp.begin();
   for (Integer pass = 0; pass < NPASS; pass++) {
     const Integer shift = RB * pass;
-    #pragma omp parallel num_threads(p)
+    #pragma omp parallel num_threads(p > 1 ? (Integer)SCTL_GET_MAX_THREADS() : 1)
     {
       const Integer tid = (Integer)SCTL_GET_THREAD_NUM();
-      const Integer nt = (Integer)SCTL_GET_NUM_THREADS();
+      const Integer nt = std::min<Integer>(p, (Integer)SCTL_GET_NUM_THREADS()); // the threads that sort
+      const bool sorts = (tid < nt);
       const Long lo = N * tid / nt, hi = N * (tid + 1) / nt;
-      Iterator<Long> h = hist.begin() + (Long)tid * NB;
-      for (Long b = 0; b < NB; b++) h[b] = 0;
-      for (Long i = lo; i < hi; i++) h[(key(src[i]) >> shift) & (NB - 1)]++;
+      Iterator<Long> h = hist.begin() + (Long)std::min<Integer>(tid, nt - 1) * NB;
+      if (sorts) {
+        for (Long b = 0; b < NB; b++) h[b] = 0;
+        for (Long i = lo; i < hi; i++) h[(key(src[i]) >> shift) & (NB - 1)]++;
+      }
       #pragma omp barrier
       { // exclusive scan in (bucket, thread) order: a thread's slice of bucket b starts after every
         // earlier bucket and after the threads before it within b. Two levels over a range of
         // buckets each, so the histogram is never walked serially.
         const Long b0 = NB * tid / nt, b1 = NB * (tid + 1) / nt;
         Long sum = 0;
-        for (Long b = b0; b < b1; b++)
-          for (Integer t = 0; t < nt; t++) sum += hist[(Long)t * NB + b];
-        part[tid] = sum;
+        if (sorts) {
+          for (Long b = b0; b < b1; b++)
+            for (Integer t = 0; t < nt; t++) sum += hist[(Long)t * NB + b];
+          part[tid] = sum;
+        }
         #pragma omp barrier
         #pragma omp single
         {
@@ -549,16 +556,18 @@ template <class Iter, class KeyFn> inline void omp_par::radix_sort(Iter A, Long 
             acc += c;
           }
         }
-        Long acc = part[tid];
-        for (Long b = b0; b < b1; b++)
-          for (Integer t = 0; t < nt; t++) {
-            const Long c = hist[(Long)t * NB + b];
-            hist[(Long)t * NB + b] = acc;
-            acc += c;
-          }
+        if (sorts) {
+          Long acc = part[tid];
+          for (Long b = b0; b < b1; b++)
+            for (Integer t = 0; t < nt; t++) {
+              const Long c = hist[(Long)t * NB + b];
+              hist[(Long)t * NB + b] = acc;
+              acc += c;
+            }
+        }
       }
       #pragma omp barrier
-      for (Long i = lo; i < hi; i++) dst[h[(key(src[i]) >> shift) & (NB - 1)]++] = src[i];
+      if (sorts) for (Long i = lo; i < hi; i++) dst[h[(key(src[i]) >> shift) & (NB - 1)]++] = src[i];
     }
     std::swap(src, dst);
   }
