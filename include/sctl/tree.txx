@@ -922,7 +922,7 @@ namespace sctl {
 
         // An estimate, not a bound: ~(MAX_DEPTH+1) nodes/leaf, chunk_size/M leaves/chunk, 4x slack.
         // A split emits all 2^DIM children, so the worst case is 2^DIM*MAX_DEPTH per leaf, and a
-        // clump of more than M identical coordinates reaches it. `spill` takes what does not fit.
+        // clump of more than M identical coordinates reaches it. The scratch of a walk grows when it is full.
         const Long chunk_size_max = (N + nthreads - 1) / nthreads;
         const Long max_emits      = 4 * chunk_size_max * (MAX_DEPTH + 1) / std::max<Long>(1, M) + 4 * (MAX_DEPTH + 1) * (Long(1) << DIM) + 16;
 
@@ -946,21 +946,17 @@ namespace sctl {
           const bool    walks    = (tid < nt);
 
           ScratchBuf<Morton<DIM>> buf(walks ? max_emits : 0);  // NUMA-local: first-touched on this thread's node
-          Vector<Morton<DIM>> spill;
-          Long cap = buf.size();
           Long count = 0;
           const Long grow = std::max<Long>(max_emits / 4, 1024);
-          // Growing the scratch keeps what is already written where it is, where `spill` copies on
-          // every step, so ask the pool first. `count == cap` both spaces the requests out and ends
-          // them: a refusal returns `cap` unchanged, `count` then passes it, and nothing asks again.
-          const auto emit = [&buf, &spill, &count, &cap, grow](const Morton<DIM>& m) {
-            if (count < cap) {
-              buf[count++] = m;
-              if (count == cap) cap = buf.RequestResize(cap + grow);
-            } else {
-              spill.PushBack(m);
-              count++;
+          // Grown with what is written: in place while its chunk has room, and else moved to a larger
+          // chunk, which the pool keeps for the next build. It is the top-most buffer of this thread's
+          // pool, which is what RequestResize needs.
+          const auto emit = [&buf, &count, grow](const Morton<DIM>& m) {
+            if (count == buf.size()) {
+              const Long size = buf.RequestResize(count + grow);
+              SCTL_ASSERT(size > count);
             }
+            buf[count++] = m;
           };
 
           if (walks) {
@@ -1010,14 +1006,7 @@ namespace sctl {
             node_mid.ReInit(total);
           }
 
-          const Long n_buf = std::min(count, cap);  // the rest, if any, is in `spill`
-          if (walks) std::copy(buf.begin(), buf.begin() + n_buf, node_mid.begin() + offsets[tid]);
-          if (spill.Dim()) {
-            std::copy(spill.begin(), spill.end(), node_mid.begin() + offsets[tid] + n_buf);
-            // The chunk could not hold what this walk produced. Ask for that much now, while the
-            // number is known, so the next build grows into the chunk instead of the heap.
-            buf.Reserve(count);
-          }
+          if (walks) std::copy(buf.begin(), buf.begin() + count, node_mid.begin() + offsets[tid]);
         }
       }
     }

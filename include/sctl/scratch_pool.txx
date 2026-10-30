@@ -9,7 +9,7 @@
 #include <cstdlib>            // for std::aligned_alloc, std::free
 #include <mutex>              // for ScratchChunkCache
 #include <new>                // for placement new
-#include <type_traits>        // for is_trivially_default_constructible, is_trivially_destructible
+#include <type_traits>        // for is_trivially_default_constructible, is_trivially_destructible, is_trivially_copyable
 #include <utility>            // for pair, swap
 #include <vector>             // for ScratchChunkCache
 
@@ -20,6 +20,8 @@
 #include "sctl/mem_mgr.hpp"   // for MemoryManager::{end_padding,init_mem_val} (constexpr)
 #include "sctl/mem_mgr.txx"   // for advise_huge_pages
 #include "sctl/vector.hpp"
+#include "sctl/ompUtils.hpp"   // for omp_par::memcpy
+#include "sctl/ompUtils.txx"
 
 namespace sctl {
 
@@ -144,7 +146,7 @@ inline ScratchPool& ScratchPool::Instance() {
   return std::max<Long>(SCTL_MEM_ALIGN, (bytes + redzone + align_mask) & ~align_mask);
 }
 
-[[gnu::always_inline]] inline void ScratchPool::AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data) {
+[[gnu::always_inline]] inline void ScratchPool::AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data, Long min_cap) {
 #ifdef SCTL_MEMDEBUG
   SCTL_ASSERT(head_ != nullptr);
   SCTL_ASSERT(bytes >= 0);
@@ -159,7 +161,7 @@ inline ScratchPool& ScratchPool::Instance() {
     // that page fault in on the writing thread — NUMA-local first-touch.
     const Long prev_cap = head_->end - head_->base;
     Long new_cap = std::max<Long>((Long)SCTL_SCRATCH_POOL_INIT_BYTES, prev_cap * 2);
-    while (new_cap < bytes_padded) new_cap *= 2;
+    while (new_cap < std::max(bytes_padded, min_cap)) new_cap *= 2;
     new_cap = (new_cap + align_mask) & ~align_mask;  // aligned_alloc requires size % alignment == 0
     void* raw = std::aligned_alloc(SCTL_MEM_ALIGN, new_cap);
     SCTL_ASSERT_MSG(raw != nullptr, "ScratchPool: chunk allocation failed.");
@@ -223,8 +225,13 @@ inline ScratchPool& ScratchPool::Instance() {
     return;
   }
 
-  // Non-head chunk. Earlier (non-base) frees fall through as no-ops; only
-  // the base free triggers splice — LIFO guarantees it comes last.
+  // Non-head chunk: freed from its top as well (LIFO), so that a slice left at the top can tell it
+  // is the top-most of the pool (`IsTopMost`); the base free, which LIFO makes the last, splices
+  // the chunk out. A chunk is thus empty only as the head.
+#ifdef SCTL_MEMDEBUG
+  SCTL_ASSERT_MSG(data + PaddedBytes(bytes) == chunk->top,
+                  "ScratchBuf: LIFO violation (free out of order).");
+#endif
   if (data == chunk->base) {
 #ifdef SCTL_MEMDEBUG
     SCTL_ASSERT(chunk->live_count == 0);
@@ -232,6 +239,8 @@ inline ScratchPool& ScratchPool::Instance() {
 #endif
     head_->prev = chunk->prev;
     ReleaseChunk(chunk);
+  } else {
+    chunk->top = data;
   }
 }
 
@@ -239,12 +248,36 @@ inline Long ScratchPool::ResizableBytes(Chunk* chunk, Iterator<char> data, Long 
   // Only the head chunk's top-most slice can move `top`; anything else would run into a live
   // neighbour, and a non-head chunk's `top` is not the allocation point at all.
   if (chunk != head_ || data + PaddedBytes(bytes) != chunk->top) return 0;
+#ifdef SCTL_MEMDEBUG
+  constexpr Long redzone = MemoryManager::end_padding;
+#else
+  constexpr Long redzone = 0;
+#endif
+  // `room` is a multiple of SCTL_MEM_ALIGN, as the chunk and every slice are, so this many raw
+  // bytes pad to exactly `room`: a chunk taken for a size holds that size in place.
   const Long room = chunk->end - data;
-  // Not a policy reserve, just rounding headroom: `PaddedBytes` adds at most the redzone plus the
-  // alignment it rounds to, and `PaddedBytes(0)` is at least the redzone, so this many raw bytes
-  // are certain to pad to within `room`.
-  const Long usable = room - PaddedBytes(0) - (Long)SCTL_MEM_ALIGN;
-  return std::max<Long>(usable, 0);
+  return std::max<Long>(room - redzone, 0);
+}
+
+inline bool ScratchPool::IsTopMost(Chunk* chunk, Iterator<char> data, Long bytes) const {
+  // A chunk is empty only as the head (see FreeBytes), so below an empty head no live slice is above
+  if (data + PaddedBytes(bytes) != chunk->top) return false;
+  return chunk == head_ || (head_->top == head_->base && head_->prev == chunk);
+}
+
+inline void ScratchPool::MoveBytes(Chunk*& chunk, Iterator<char>& data, Long bytes, Long new_bytes, bool copy) {
+  SCTL_ASSERT(IsTopMost(chunk, data, bytes));
+  // The new slice is in the head chunk if that is empty and holds it, and otherwise in a new chunk
+  // (AllocBytes then releases an empty head), with room also for what is below the slice in its
+  // chunk: the next round, which makes those buffers again, then grows in place. Freeing the old
+  // slice releases its chunk if it was the base there.
+  Chunk* new_chunk = nullptr;
+  Iterator<char> new_data;
+  AllocBytes(new_bytes, new_chunk, new_data, (data - chunk->base) + PaddedBytes(new_bytes));
+  if (copy) omp_par::memcpy(new_data, (ConstIterator<char>)data, bytes);
+  FreeBytes(chunk, data, bytes);
+  chunk = new_chunk;
+  data = new_data;
 }
 
 inline void ScratchPool::CommitResize(Chunk* chunk, Iterator<char> data, Long bytes, Long new_bytes) {
@@ -319,15 +352,21 @@ inline void ScratchBuf<T>::Reserve(Long count) {
 }
 
 template <class T>
-inline Long ScratchBuf<T>::RequestResize(Long count) {
-  static_assert(std::is_trivially_default_constructible<T>::value && std::is_trivially_destructible<T>::value,
-                "ScratchBuf::RequestResize: growing would leave the new elements unconstructed");
+inline Long ScratchBuf<T>::RequestResize(Long count, bool copy) {
+  static_assert(std::is_trivially_default_constructible<T>::value && std::is_trivially_destructible<T>::value && std::is_trivially_copyable<T>::value,
+                "ScratchBuf::RequestResize: growing would leave the new elements unconstructed, and moving the old ones uncopied");
   if (count <= count_) return count_;
-  const Long room = pool_->ResizableBytes(chunk_, Iterator<char>(data_), count_ * (Long)sizeof(T));
-  const Long fit = std::min(count, room / (Long)sizeof(T));  // whole elements only
-  if (fit <= count_) return count_;
-  pool_->CommitResize(chunk_, Iterator<char>(data_), count_ * (Long)sizeof(T), fit * (Long)sizeof(T));
-  count_ = fit;
+  const Long bytes = count_ * (Long)sizeof(T), new_bytes = count * (Long)sizeof(T);
+  Iterator<char> raw = (Iterator<char>)data_;
+  if (pool_->ResizableBytes(chunk_, raw, bytes) >= new_bytes) {
+    pool_->CommitResize(chunk_, raw, bytes, new_bytes);
+  } else if (pool_->IsTopMost(chunk_, raw, bytes)) {
+    pool_->MoveBytes(chunk_, raw, bytes, new_bytes, copy);
+    data_ = Iterator<T>(raw);
+  } else {
+    return count_;  // another buffer of the pool lives above this one
+  }
+  count_ = count;
   return count_;
 }
 

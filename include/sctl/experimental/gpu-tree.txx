@@ -664,29 +664,27 @@ template <Integer DIM, WalkMode MODE, class Sink = StoreNode> struct ChunkedWalk
   }
 };
 
-// Where the host walk's nodes go. Growing the scratch keeps what is already written where it is,
-// where `spill` copies on every step, so ask the pool first. `i + 1 == cap` both spaces the requests
-// out and ends them: a refusal returns `cap` unchanged, the next index passes it, and nothing asks
-// again.
+// Where the host walk's nodes go: the scratch of the thread, grown with what is written when it is
+// full, in place while its chunk has room, and else moved to a larger chunk, which the pool keeps for
+// the next build. It is the top-most buffer of the thread's pool, as RequestResize needs, and it is
+// written through `buf`, since a move leaves the pointer the walk holds stale.
 template <class NodeT> struct HostSink {
   sctl::ScratchBuf<NodeT>* buf;
-  sctl::Vector<NodeT>* spill;
-  Long cap, grow;
+  Long grow;
 
   // The walk it is handed to is __host__ __device__, so this has to compile for the device as well,
   // where none of what it does is available. The host path is its only caller.
   SCTL_GPU_HD void Put(NodeT* w, Long i, const NodeT& m) {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     (void)w;
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     (void)i;
     (void)m;
 #else
-    if (i < cap) {
-      w[i] = m;
-      if (i + 1 == cap) cap = buf->RequestResize(cap + grow);
-    } else {
-      spill->PushBack(m);
+    if (i == buf->size()) {
+      const Long size = buf->RequestResize(i + grow);
+      SCTL_ASSERT(size > i);
     }
+    (*buf)[i] = m;
 #endif
   }
 };
@@ -739,7 +737,7 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
   // An estimate, not a bound: ~(MAX_DEPTH+1) nodes/leaf, chunk_size/M leaves/chunk, 4x slack. A split
   // emits all 2^DIM children, so the worst case is 2^DIM*MAX_DEPTH per leaf -- about twice this --
   // and a clump of more than M identical coordinates reaches it, splitting at every level down to
-  // MAX_DEPTH because duplicates never separate. `HostSink` takes what does not fit.
+  // MAX_DEPTH because duplicates never separate. `HostSink` grows the scratch past it.
   const Long chunk_size_max = (N + nthreads - 1) / nthreads;
   const Long max_emits = 4 * chunk_size_max * (MAX_DEPTH + 1) / std::max<Long>(1, M) + 4 * (MAX_DEPTH + 1) * (Long(1) << DIM) + 16;  // constant term: boundary anchors can sit at MAX_DEPTH
 
@@ -756,8 +754,7 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
     const Integer nt = SCTL_GET_NUM_THREADS();
     const Integer tid = SCTL_GET_THREAD_NUM();
     sctl::ScratchBuf<NodeMIDT> buf(max_emits);  // NUMA-local: first-touched on this thread's node
-    sctl::Vector<NodeMIDT> spill;
-    HostSink<NodeMIDT> sink{&buf, &spill, buf.size(), std::max<Long>(max_emits / 4, 1024)};
+    HostSink<NodeMIDT> sink{&buf, std::max<Long>(max_emits / 4, 1024)};
     const ChunkedWalkFunctor<DIM, WalkMode::Write, HostSink<NodeMIDT>> fw{
         thrust::raw_pointer_cast(pt_mid.data()) + base, N, M, nt, &zero_offsets[0], &buf[0], start_bnd, end_bnd, &sink};
     const Long count = fw(tid);
@@ -771,12 +768,7 @@ void buildTreeCpuChunked(DevVec<Morton<DIM>>& tree, const DevVec<MortonCode<DIM>
     }
 
     NodeMIDT* out_ptr = thrust::raw_pointer_cast(tree.data()) + offsets[tid];
-    const Long n_buf = std::min(count, sink.cap);  // the rest, if any, is in `spill`
-    for (Long i = 0; i < n_buf; ++i) out_ptr[i] = buf[i];
-    for (Long i = 0; i < spill.Dim(); ++i) out_ptr[n_buf + i] = spill[i];
-    // The chunk could not hold what this walk produced. Ask for that much now, while the number is
-    // known, so the next build grows into the chunk instead of the heap.
-    if (spill.Dim()) buf.Reserve(count);
+    for (Long i = 0; i < count; ++i) out_ptr[i] = buf[i];
   }
 }
 
