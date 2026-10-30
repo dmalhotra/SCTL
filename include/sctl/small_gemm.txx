@@ -130,10 +130,12 @@ namespace detail_small_gemm {
    * StorePartial); with AVX-512, in the narrowest of these vectors that holds them. For 16 x n x 8,
    * up to 5.9x faster than narrower vectors and then one column at a time, and at most 1.14x slower
    * on a Xeon Platinum 8362, 1.09x on an AMD EPYC 7742 and 1.06x on an EPYC 9474F; on AMD Zen with
-   * AVX2 and without SCTL_TUNE_ZEN, up to 2.6x for one leftover column (vmaskmovps). Not inlined:
+   * AVX2 and without SCTL_TUNE_ZEN, up to 2.6x for one leftover column (vmaskmovps). With SplitK
+   * (k >= 32), a tile of fewer than 8 vectors sums over k in 2, 4 or 8 parts: for one row of C and
+   * k from 64 to 2883, 1.5-3.8x faster, and 1.4x for 6 x 6 x 100 (see the tile). Not inlined:
    * unrolled for fixed sizes inside a caller's loop, the code was up to 1.9x slower.
    */
-  template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous, Long LDA = DynamicSize, Long LDB = DynamicSize, Long LDC = DynamicSize> [[gnu::noinline]] void VecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
+  template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous, bool SplitK, Long LDA, Long LDB, Long LDC> [[gnu::noinline]] void VecProductTiles(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
     const Long m = (M != DynamicSize ? M : m_);
     const Long n = (N != DynamicSize ? N : n_);
     const Long k = (K != DynamicSize ? K : k_);
@@ -174,16 +176,57 @@ namespace detail_small_gemm {
           return V::Load(p);
         }
       };
-      V acc[MR][NV];
-      for (Integer r = 0; r < MR; r++) {
-        for (Integer v = 0; v < NV; v++) acc[r][v] = V((ValueType)0);
+      // With SplitK, a tile of fewer than 8 vectors sums over l in KS parts, the part s over
+      // l = s mod KS, added pairwise at the end: so that 8 FMAs, of 2 units with a latency of 4
+      // cycles, are in flight. In one part, each FMA waits for the one before: 1 x 2 x 1922 took 3.9
+      // cycles for each l on an AMD EPYC 9474F, and 1.0 in 8 parts. Every loop over acc unrolled:
+      // otherwise GCC 13 set it to zero as an array in memory, and kept it there
+      constexpr Integer KS = (!SplitK || MR * NV >= 8 ? 1 : MR * NV >= 4 ? 2 : MR * NV >= 2 ? 4 : 8);
+      V acc[KS][MR][NV];
+#pragma GCC unroll 8
+      for (Integer s = 0; s < KS; s++) {
+#pragma GCC unroll 8
+        for (Integer r = 0; r < MR; r++) {
+#pragma GCC unroll 8
+          for (Integer v = 0; v < NV; v++) acc[s][r][v] = V((ValueType)0);
+        }
       }
-      for (Long l = 0; l < k; l++) {
+      Long l = 0;
+      if constexpr (KS > 1) { // k >= 32 >= 4 KS
+        for (; l + KS <= k; l += KS) {
+#pragma GCC unroll 8
+          for (Integer s = 0; s < KS; s++) {
+            V b[NV];
+#pragma GCC unroll 8
+            for (Integer v = 0; v < NV; v++) b[v] = load(&B[(l + s) * ldb + j0 + v * W]);
+#pragma GCC unroll 8
+            for (Integer r = 0; r < MR; r++) {
+              const V a(A[(i0 + r) * lda + l + s]);
+#pragma GCC unroll 8
+              for (Integer v = 0; v < NV; v++) acc[s][r][v] = FMA(a, b[v], acc[s][r][v]);
+            }
+          }
+        }
+      }
+      for (; l < k; l++) {
         V b[NV];
         for (Integer v = 0; v < NV; v++) b[v] = load(&B[l * ldb + j0 + v * W]);
         for (Integer r = 0; r < MR; r++) {
           const V a(A[(i0 + r) * lda + l]);
-          for (Integer v = 0; v < NV; v++) acc[r][v] = FMA(a, b[v], acc[r][v]);
+          for (Integer v = 0; v < NV; v++) acc[0][r][v] = FMA(a, b[v], acc[0][r][v]);
+        }
+      }
+      if constexpr (KS > 1) {
+#pragma GCC unroll 8
+        for (Integer h = KS / 2; h > 0; h /= 2) {
+#pragma GCC unroll 8
+          for (Integer s = 0; s < h; s++) {
+#pragma GCC unroll 8
+            for (Integer r = 0; r < MR; r++) {
+#pragma GCC unroll 8
+              for (Integer v = 0; v < NV; v++) acc[s][r][v] = acc[s][r][v] + acc[s + h][r][v];
+            }
+          }
         }
       }
       // All rows of C read before any is written: a partial load of a row shorter than a vector
@@ -195,10 +238,10 @@ namespace detail_small_gemm {
         for (Integer v = 0; v < NV; v++) {
           const ValueType* Cv = &C[(i0 + r) * ldc + j0 + v * W];
           if constexpr (U == Update::Accumulate) {
-            acc[r][v] = acc[r][v] + load(Cv);
+            acc[0][r][v] = acc[0][r][v] + load(Cv);
           } else if constexpr (U == Update::AlphaBeta) {
-            acc[r][v] = acc[r][v] * V(alpha);
-            if (beta != 0) acc[r][v] = FMA(V(beta), load(Cv), acc[r][v]);
+            acc[0][r][v] = acc[0][r][v] * V(alpha);
+            if (beta != 0) acc[0][r][v] = FMA(V(beta), load(Cv), acc[0][r][v]);
           }
         }
       }
@@ -207,9 +250,9 @@ namespace detail_small_gemm {
         for (Integer v = 0; v < NV; v++) {
           ValueType* Cv = &C[(i0 + r) * ldc + j0 + v * W];
           if constexpr (Partial) {
-            acc[r][v].StorePartial(Cv, nc);
+            acc[0][r][v].StorePartial(Cv, nc);
           } else {
-            acc[r][v].Store(Cv);
+            acc[0][r][v].Store(Cv);
           }
         }
       }
@@ -264,6 +307,21 @@ namespace detail_small_gemm {
       } else {
         rows(n_full, IV{}, std::true_type{}, (Integer)(n - n_full));
       }
+    }
+  }
+
+  /**
+   * C = A B as VecProductTiles, which sums over l in parts for k >= 32 (SplitK) and in one sum below:
+   * with the code of the parts, products of small sizes given at run time were up to 1.3x slower
+   * (3 x 3 x 3 on an AMD EPYC 9474F).
+   */
+  template <class ValueType, Long M, Long N, Long K, Update U, bool Contiguous, Long LDA = DynamicSize, Long LDB = DynamicSize, Long LDC = DynamicSize> inline void VecProduct(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m_, const Long n_, const Long k_, const Long lda_, const Long ldb_, const Long ldc_, const ValueType alpha, const ValueType beta) {
+    if constexpr (K != DynamicSize) {
+      VecProductTiles<ValueType, M, N, K, U, Contiguous, (K >= 32), LDA, LDB, LDC>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, alpha, beta);
+    } else if (k_ >= 32) {
+      VecProductTiles<ValueType, M, N, K, U, Contiguous, true, LDA, LDB, LDC>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, alpha, beta);
+    } else {
+      VecProductTiles<ValueType, M, N, K, U, Contiguous, false, LDA, LDB, LDC>(C, A, B, m_, n_, k_, lda_, ldb_, ldc_, alpha, beta);
     }
   }
 
