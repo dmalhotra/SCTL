@@ -326,6 +326,40 @@ namespace detail_small_gemm {
   }
 
   /**
+   * C (m x 1) = A (m x k) B (k x 1), updated as U says, for B one contiguous column and the rows of
+   * A and of C lda and ldc apart: the dot products of the rows of A with B, along the rows in
+   * vectors, 8 rows at a time (then 4, then 1) so that each vector of B is loaded once for them
+   * and the 8 sums are independent. The tiles of VecProductTiles, along the rows of C, take one lane
+   * of their vectors for one column. Not inlined, as VecProductTiles.
+   */
+  template <class ValueType, Update U> [[gnu::noinline]] void VecProductCol(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m, const Long k, const Long lda, const Long ldc, const ValueType alpha, const ValueType beta) {
+    using VecType = Vec<ValueType>;
+    constexpr Integer VL = VecType::Size();
+    const Long k_vec = k - k % VL; // the columns of A in whole vectors
+    const auto rows = [&](const Long i0, auto nr) { // rows i0 to i0 + nr of C
+      constexpr Integer NR = decltype(nr)::value;
+      VecType acc[NR];
+      for (Integer r = 0; r < NR; r++) acc[r] = VecType::Zero();
+      for (Long l = 0; l < k_vec; l += VL) {
+        const VecType b = VecType::Load(&B[l]);
+        for (Integer r = 0; r < NR; r++) acc[r] = FMA(VecType::Load(&A[(i0 + r) * lda + l]), b, acc[r]);
+      }
+      for (Integer r = 0; r < NR; r++) {
+        ValueType s = reduce(acc[r]);
+        for (Long l = k_vec; l < k; l++) s += A[(i0 + r) * lda + l] * B[l];
+        ValueType& c = C[(i0 + r) * ldc];
+        if constexpr (U == Update::Overwrite) c = s;
+        else if constexpr (U == Update::Accumulate) c += s;
+        else c = alpha * s + (beta == ValueType(0) ? ValueType(0) : beta * c);
+      }
+    };
+    const Long m8 = m - m % 8, m4 = m - m % 4;
+    for (Long i = 0; i < m8; i += 8) rows(i, std::integral_constant<Integer, 8>{});
+    for (Long i = m8; i < m4; i += 4) rows(i, std::integral_constant<Integer, 4>{});
+    for (Long i = m4; i < m; i++) rows(i, std::integral_constant<Integer, 1>{});
+  }
+
+  /**
    * As VecProduct, for std::complex<float> and std::complex<double>, with the same row strides and
    * template sizes and strides: a row of B or C is a vector of interleaved real and imaginary parts.
    * A tile sums re(A) B and im(A) B separately and combines them once, at the end, with the parts of
@@ -482,7 +516,7 @@ template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC>
 #if defined(SCTL_HAVE_LIBXSMM)
   kernel_ = nullptr;
   if constexpr (std::is_same<ValueType, double>::value || std::is_same<ValueType, float>::value) {
-    if (m * n * k > 0) {
+    if (m * n * k > 0 && !(n == 1 && ldb == 1)) { // one contiguous column of B by VecProductCol (see operator())
       // A per-thread table in front of LIBXSMM's lookup, which takes about 40 ns, as long as the
       // smallest products
       struct Entry {
@@ -525,6 +559,16 @@ template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC>
 #endif
   using detail_small_gemm::Update;
   if constexpr (detail_small_gemm::VecTiles<ValueType>) {
+    if constexpr (N == DynamicSize || N == 1) {
+      if (n_ == 1 && ldb_ == 1) { // one contiguous column of B: dot products
+        if (accumulate_) {
+          detail_small_gemm::VecProductCol<ValueType, Update::Accumulate>(C, A, B, m_, k_, lda_, ldc_, (ValueType)1, (ValueType)1);
+        } else {
+          detail_small_gemm::VecProductCol<ValueType, Update::Overwrite>(C, A, B, m_, k_, lda_, ldc_, (ValueType)1, (ValueType)0);
+        }
+        return;
+      }
+    }
     if constexpr (LDA == DynamicSize && LDB == DynamicSize && LDC == DynamicSize) { // with a fixed stride, only the strided loop
       if (lda_ == k_ && ldb_ == n_ && ldc_ == n_) { // contiguous: strides from the sizes, so fixed with them
         if (accumulate_) {

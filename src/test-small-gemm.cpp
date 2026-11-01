@@ -123,6 +123,14 @@ int main() {
       CHECK(check<T, 1, 3, 961>(acc, 1, 3, 961));
       CHECK(check<T, 6, 6, 100>(acc, 6, 6, 100));
       CHECK(check<T, 3, 17, 35>(acc, 3, 17, 35));
+      // One contiguous column of B (dot products): rows in blocks of 8, then 4, then 1, and the columns of A past
+      // the last whole vector, at the sizes of the near interactions of BoundaryIntegralOp; with rows of A and C apart;
+      // and a column of stride 3, for the tiles
+      CHECK(check<T, DynamicSize, DynamicSize, DynamicSize>(acc, 192, 1, 144));
+      CHECK(check<T, DynamicSize, DynamicSize, DynamicSize>(acc, 15, 1, 433));
+      CHECK(check<T, DynamicSize, 1, DynamicSize>(acc, 3, 1, 144));
+      CHECK(check<T, DynamicSize, DynamicSize, DynamicSize>(acc, 13, 1, 50, 7, 0, 5));
+      CHECK(check<T, DynamicSize, DynamicSize, DynamicSize>(acc, 13, 1, 50, 7, 2, 5));
 
       // Some sizes fixed, some given at run time
       int nbad = 0;
