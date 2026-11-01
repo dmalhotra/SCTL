@@ -32,11 +32,13 @@ constexpr Long DynamicSize = -1;
  * until the program ends. Otherwise float and double products use a register-blocked loop over
  * Vec. Products of std::complex<float> and std::complex<double> use such a loop also with LIBXSMM,
  * and other types (long double, QuadReal, std::complex<long double>) a scalar loop. A float or
- * double product with one column of B, contiguous (a matrix-vector product), uses dot products of
- * the rows of A with it, along the rows in vectors, also with LIBXSMM: on one core of an AMD EPYC
- * 9474F, for m x 144 by 144 x 1 with m from 3 to 192, 1.0-3.1x faster than OpenBLAS dgemm with A
- * in cache and 1.1-4.3x with A in memory, where the register-blocked loop was up to 2.2x slower
- * than dgemm and LIBXSMM's kernel up to 3.7x slower.
+ * double product with one contiguous column of B (a matrix-vector product) uses dot products of
+ * the rows of A with it, along the rows in vectors, also with LIBXSMM, unless the rows of A are
+ * shorter than 8 values and more than a few (more than 4 with LIBXSMM, 7 without), for which the
+ * register-blocked loop and LIBXSMM's kernel were faster. On one core of an AMD EPYC 9474F and of
+ * an Intel Xeon w5-3435X, for m x k by k x 1 with k of 144 and 432 and m from 1 to 768, the dot
+ * products took 0.1-1.1x the time of OpenBLAS dgemm and 0.2-1.2x that of MKL dgemm, and LIBXSMM's
+ * kernel 1.1-8x their time.
  *
  * Constructing an object takes a few ns, so it can be done where the product is needed. Applying
  * it does not change the object, so several threads can apply the same object at once.

@@ -131,6 +131,15 @@ int main() {
       CHECK(check<T, DynamicSize, 1, DynamicSize>(acc, 3, 1, 144));
       CHECK(check<T, DynamicSize, DynamicSize, DynamicSize>(acc, 13, 1, 50, 7, 0, 5));
       CHECK(check<T, DynamicSize, DynamicSize, DynamicSize>(acc, 13, 1, 50, 7, 2, 5));
+      // Either side of the shortest rows of A for the dot products (k = 8) and of the most rows of A shorter than that
+      // (4 with LIBXSMM, 7 without), beyond which the register-blocked loop or LIBXSMM's kernel; rows in whole groups of
+      // the vector length and not (each reduced alone), with rows of A and C apart, and with the column of B fixed
+      for (const Long k : {1, 7, 8, 9, 15, 16, 17}) {
+        for (const Long m : {3, 4, 5, 7, 8, 16, 29}) CHECK(check<T, DynamicSize, DynamicSize, DynamicSize>(acc, m, 1, k));
+        CHECK(check<T, DynamicSize, DynamicSize, DynamicSize>(acc, 13, 1, k, 7, 0, 5));
+        CHECK(check<T, DynamicSize, DynamicSize, DynamicSize>(acc, 16, 1, k, 7, 0, 5));
+        CHECK(check<T, DynamicSize, 1, DynamicSize>(acc, 3, 1, k));
+      }
 
       // Some sizes fixed, some given at run time
       int nbad = 0;
