@@ -922,7 +922,7 @@ namespace sctl {
 
         // An estimate, not a bound: ~(MAX_DEPTH+1) nodes/leaf, chunk_size/M leaves/chunk, 4x slack.
         // A split emits all 2^DIM children, so the worst case is 2^DIM*MAX_DEPTH per leaf, and a
-        // clump of more than M identical coordinates reaches it. `spill` takes what does not fit.
+        // clump of more than M identical coordinates reaches it. The scratch of a walk grows when it is full.
         const Long chunk_size_max = (N + nthreads - 1) / nthreads;
         const Long max_emits      = 4 * chunk_size_max * (MAX_DEPTH + 1) / std::max<Long>(1, M) + 4 * (MAX_DEPTH + 1) * (Long(1) << DIM) + 16;
 
@@ -930,67 +930,70 @@ namespace sctl {
           Long v;
           char pad[64 - sizeof(Long)];
         };
-        // Sized for the team that was asked for, which is an upper bound on the one that arrives.
+        // Sized for the threads asked for, an upper bound on those that walk.
         ScratchBuf<PaddedLong> local_sizes(nthreads);
         ScratchBuf<Long>       offsets(nthreads);
 
-        #pragma omp parallel num_threads(nthreads)
+        // The team is of all threads, nthreads of them walking a chunk each and the others only waiting
+        // at the barrier: libgomp ends the threads that a team smaller than the one before does not
+        // use, and creates them again for the next larger team.
+        #pragma omp parallel num_threads(nthreads > 1 ? max_threads : 1)
         {
           // The cut follows the team that arrived, not the one asked for: each chunk holds scratch of
           // its own until the copy-out below.
-          const Integer nt       = SCTL_GET_NUM_THREADS();
+          const Integer nt       = std::min<Integer>(nthreads, SCTL_GET_NUM_THREADS());
           const Integer tid      = SCTL_GET_THREAD_NUM();
-          const Long    begin_t  = (N *  tid     ) / nt;
-          const Long    end_t    = (N * (tid + 1)) / nt;
-          const bool    is_first = (tid == 0);
-          const bool    is_last  = (tid == nt - 1);
+          const bool    walks    = (tid < nt);
 
-          const Morton<DIM> start_anchor = is_first ? mins[rank] : split_anchor(pt_mid[begin_t], pt_mid[begin_t+M]);
-          const Morton<DIM> end_anchor   = is_last  ? (rank+1<np ? mins[rank+1] : Morton<DIM>().Next()) : split_anchor(pt_mid[end_t], pt_mid[end_t+M]);  // `nt` cut, so the chunks tile [0, N)
-          const Long idx_start = is_first ? 0 : std::lower_bound(pt_mid.begin() + begin_t, pt_mid.begin() + begin_t + M, start_anchor.mid) - pt_mid.begin();
-          const Long idx_end   = is_last  ? N : std::lower_bound(pt_mid.begin() + end_t,   pt_mid.begin() + end_t   + M, end_anchor.mid)   - pt_mid.begin();
-
-          ScratchBuf<Morton<DIM>> buf(max_emits);  // NUMA-local: first-touched on this thread's node
-          Vector<Morton<DIM>> spill;
-          Long cap = buf.size();
+          ScratchBuf<Morton<DIM>> buf(walks ? max_emits : 0);  // NUMA-local: first-touched on this thread's node
           Long count = 0;
           const Long grow = std::max<Long>(max_emits / 4, 1024);
-          // Growing the scratch keeps what is already written where it is, where `spill` copies on
-          // every step, so ask the pool first. `count == cap` both spaces the requests out and ends
-          // them: a refusal returns `cap` unchanged, `count` then passes it, and nothing asks again.
-          const auto emit = [&buf, &spill, &count, &cap, grow](const Morton<DIM>& m) {
-            if (count < cap) {
-              buf[count++] = m;
-              if (count == cap) cap = buf.RequestResize(cap + grow);
-            } else {
-              spill.PushBack(m);
-              count++;
+          // Grown with what is written: in place while its chunk has room, and else moved to a larger
+          // chunk, which the pool keeps for the next build. It is the top-most buffer of this thread's
+          // pool, which is what RequestResize needs.
+          const auto emit = [&buf, &count, grow](const Morton<DIM>& m) {
+            if (count == buf.size()) {
+              const Long size = buf.RequestResize(count + grow);
+              SCTL_ASSERT(size > count);
             }
+            buf[count++] = m;
           };
 
-          Morton<DIM> m0{};
-          const auto walk_to = [&m0, &emit, &first_child](const Morton<DIM>& target) { // nodes of [m0, target), leaving m0 there
-            while (m0 != target) {
-              emit(m0);
-              if (m0.isAncestor(target)) m0 = first_child(m0);
-              else                       m0 = m0.Next();
-            }
-          };
+          if (walks) {
+            const Long    begin_t  = (N *  tid     ) / nt;
+            const Long    end_t    = (N * (tid + 1)) / nt;
+            const bool    is_first = (tid == 0);
+            const bool    is_last  = (tid == nt - 1);
 
-          if (is_first) walk_to(start_anchor);  // from the root, which m0 already holds
-          m0 = start_anchor;
+            const Morton<DIM> start_anchor = is_first ? mins[rank] : split_anchor(pt_mid[begin_t], pt_mid[begin_t+M]);
+            const Morton<DIM> end_anchor   = is_last  ? (rank+1<np ? mins[rank+1] : Morton<DIM>().Next()) : split_anchor(pt_mid[end_t], pt_mid[end_t+M]);  // `nt` cut, so the chunks tile [0, N)
+            const Long idx_start = is_first ? 0 : std::lower_bound(pt_mid.begin() + begin_t, pt_mid.begin() + begin_t + M, start_anchor.mid) - pt_mid.begin();
+            const Long idx_end   = is_last  ? N : std::lower_bound(pt_mid.begin() + end_t,   pt_mid.begin() + end_t   + M, end_anchor.mid)   - pt_mid.begin();
 
-          Long pt_idx = idx_start;
-          while (pt_idx < idx_end - M) {
-            walk_to(split_anchor(pt_mid[pt_idx], pt_mid[pt_idx+M]));
-            pt_idx = std::lower_bound(pt_mid.begin() + pt_idx, pt_mid.begin() + pt_idx + M, m0.mid) - pt_mid.begin();
-            if (pt_idx < idx_end && pt_mid[pt_idx] < m0.mid) {
-              pt_idx = std::lower_bound(pt_mid.begin() + pt_idx, pt_mid.begin() + idx_end, m0.mid) - pt_mid.begin();
+            Morton<DIM> m0{};
+            const auto walk_to = [&m0, &emit, &first_child](const Morton<DIM>& target) { // nodes of [m0, target), leaving m0 there
+              while (m0 != target) {
+                emit(m0);
+                if (m0.isAncestor(target)) m0 = first_child(m0);
+                else                       m0 = m0.Next();
+              }
+            };
+
+            if (is_first) walk_to(start_anchor);  // from the root, which m0 already holds
+            m0 = start_anchor;
+
+            Long pt_idx = idx_start;
+            while (pt_idx < idx_end - M) {
+              walk_to(split_anchor(pt_mid[pt_idx], pt_mid[pt_idx+M]));
+              pt_idx = std::lower_bound(pt_mid.begin() + pt_idx, pt_mid.begin() + pt_idx + M, m0.mid) - pt_mid.begin();
+              if (pt_idx < idx_end && pt_mid[pt_idx] < m0.mid) {
+                pt_idx = std::lower_bound(pt_mid.begin() + pt_idx, pt_mid.begin() + idx_end, m0.mid) - pt_mid.begin();
+              }
             }
+            walk_to(end_anchor);
+            if (is_last) walk_to(Morton<DIM>().Next());
+            local_sizes[tid].v = count;
           }
-          walk_to(end_anchor);
-          if (is_last) walk_to(Morton<DIM>().Next());
-          local_sizes[tid].v = count;
 
           #pragma omp barrier
           #pragma omp single
@@ -1003,14 +1006,7 @@ namespace sctl {
             node_mid.ReInit(total);
           }
 
-          const Long n_buf = std::min(count, cap);  // the rest, if any, is in `spill`
-          std::copy(buf.begin(), buf.begin() + n_buf, node_mid.begin() + offsets[tid]);
-          if (spill.Dim()) {
-            std::copy(spill.begin(), spill.end(), node_mid.begin() + offsets[tid] + n_buf);
-            // The chunk could not hold what this walk produced. Ask for that much now, while the
-            // number is known, so the next build grows into the chunk instead of the heap.
-            buf.Reserve(count);
-          }
+          if (walks) std::copy(buf.begin(), buf.begin() + count, node_mid.begin() + offsets[tid]);
         }
       }
     }

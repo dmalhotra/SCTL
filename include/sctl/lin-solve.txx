@@ -107,28 +107,30 @@ namespace sctl {
     }
     static constexpr Real ARRAY_RESIZE_FACTOR = 1.618;
 
-    Vector<Real> Q_mat, H_mat;
-    auto ResizeVector = [](Vector<Real>& v, const Long N0) {
-      if (v.Dim() < N0) {
-        const Long old = v.Dim();
-        Vector<Real> v_(N0);
-        if (old > 0) omp_par::memcpy(v_.begin(), (ConstIterator<Real>)v.begin(), old);
-        memset((Iterator<char>)v_.begin() + old * (Long)sizeof(Real), 0, (N0 - old) * (Long)sizeof(Real));
-        v.Swap(v_);
-      }
+    // The Krylov basis and the Hessenberg matrix in one buffer of scratch memory, so that a solve in a loop (as by the
+    // operator of another solve) uses memory already faulted in rather than allocating them each time. With room for
+    // R basis vectors, it holds the basis, N values for each, and then the rows of H, row i with i+1 values at
+    // i(i+1)/2 past R*N: the basis stays one R x N matrix, and H moves up when R grows. Q_buf is the top-most
+    // scratch buffer whenever it grows, so it grows in place while its chunk has room, and else moves with what it
+    // holds to a larger chunk, which the pool keeps for the next solve to grow in.
+    ScratchBuf<Real> sn_storage(max_iter), cs_storage(max_iter), beta_storage(max_iter+1), h_k_storage(max_iter+1), q_k_storage(N), r_storage(N);
+    Vector<Real> sn(sn_storage), cs(cs_storage), beta(beta_storage), h_k(h_k_storage), q_k(q_k_storage), r(r_storage);
+    const auto Q_size = [N](const Long R) { return R*N + R*(R+1)/2; };
+    ScratchBuf<Real> Q_buf(Q_size(2));
+    Iterator<Real> Q_mat = Q_buf.begin();
+    Long Q_rows = 2;
+    auto Q_reserve = [N,&Q_size,&Q_buf,&Q_mat,&Q_rows](const Long R) { // room for R basis vectors and R rows of H, keeping those stored
+      if (R <= Q_rows) return;
+      const Long R_ = std::max(R, (Long)(R*ARRAY_RESIZE_FACTOR));
+      const Long H_len = Q_size(Q_rows) - Q_rows*N;
+      const Long Q_got = Q_buf.RequestResize(Q_size(R_));
+      SCTL_ASSERT_MSG(Q_got == Q_size(R_), "GMRES: the Krylov basis is not the top-most scratch buffer.");
+      Q_mat = Q_buf.begin(); // where it is now, with the new size where iterators are checked
+      for (Long i = H_len-1; i >= 0; i--) Q_mat[R_*N+i] = Q_mat[Q_rows*N+i]; // H up, from its end: the two may overlap
+      Q_rows = R_;
     };
-    auto Q_row = [N,&Q_mat,&ResizeVector](Long i) -> Iterator<Real> {
-      const Long idx = i*N;
-      if (Q_mat.Dim() <= idx+N) {
-        ResizeVector(Q_mat, (Long)((idx+N)*ARRAY_RESIZE_FACTOR));
-      }
-      return Q_mat.begin() + idx;
-    };
-    auto H_row = [&H_mat,&ResizeVector](Long i) -> Iterator<Real> {
-      const Long idx = i*(i+1)/2;
-      if (H_mat.Dim() <= idx+i+1) ResizeVector(H_mat, (Long)((idx+i+1)*ARRAY_RESIZE_FACTOR));
-      return H_mat.begin() + idx;
-    };
+    auto Q_row = [N,&Q_mat](Long i) -> Iterator<Real> { return Q_mat + i*N; };
+    auto H_row = [N,&Q_mat,&Q_rows](Long i) -> Iterator<Real> { return Q_mat + Q_rows*N + i*(i+1)/2; };
 
     auto apply_givens_rotation = [](Vector<Real>& h, Real& cs_k, Real& sn_k, const Vector<Real>& cs, const Vector<Real>& sn, const Long k) {
       // apply for ith row
@@ -202,14 +204,14 @@ namespace sctl {
       if (h[k+1] > (Real)0) q *= 1/h[k+1];
     };
 
-    Vector<Real> r;
     if (x->Dim() == N) { // r = b - A * x;
       ScratchBuf<Real> Ax_buf(N);
       Vector<Real> Ax(Ax_buf, false); // disable_reinit=false: user's callback may ReInit
       A(&Ax, *x);
-      r = b - Ax;
+      SCTL_ASSERT(Ax.Dim() == N);
+      for (Long i = 0; i < N; i++) r[i] = b[i] - Ax[i];
     } else {
-      r = b;
+      for (Long i = 0; i < N; i++) r[i] = b[i];
       x->ReInit(N);
       x->SetZero();
     }
@@ -228,17 +230,15 @@ namespace sctl {
       Iterator<Real> Q0 = Q_row(0);
       for (Long i = 0; i < N; i++) Q0[i] = r[i] / r_norm;
     }
-    ScratchBuf<Real> sn_storage(max_iter), cs_storage(max_iter), beta_storage(max_iter+1), h_k_storage(max_iter+1), q_k_storage(N);
-    Vector<Real> sn(sn_storage), cs(cs_storage), beta(beta_storage), h_k(h_k_storage), q_k(q_k_storage);
     beta[0] = r_norm;
 
     Long k = 0;
     Real error = r_norm;
     for (; k < max_iter && error > abs_tol; k++) {
       if (verbose_ && !comm_.Rank()) printf("%3lld KSP Residual norm %.12e\n", (long long)k, (double)error);
-      // Pre-size Q_mat so every Q_row(i) below is a pure pointer return
-      // (no iterator invalidation — required by arnoldi's GEMM path).
-      if (Q_mat.Dim() < (k+2)*N) ResizeVector(Q_mat, (Long)(((k+2)*N)*ARRAY_RESIZE_FACTOR));
+      // Room for Q_row(k+1) and H_row(k) before arnoldi: Q_row(i) is then a pure pointer
+      // return (no iterator invalidation — required by arnoldi's GEMM path).
+      Q_reserve(k+2);
 
       arnoldi(h_k, q_k, A, k);
       apply_givens_rotation(h_k, cs[k], sn[k], cs, sn, k); // eliminate the last element in H ith row and update the rotation matrix
@@ -296,7 +296,7 @@ namespace sctl {
       // read sequentially (full cache-line utilization, perfect prefetch)
       // rather than the original stride-N gather.
       for (Long j = 0; j < k; j++) {
-        ConstIterator<Real> Q_col = Q_mat.begin() + j*N;
+        ConstIterator<Real> Q_col = Q_mat + j*N;
         for (Long i = 0; i < N; i++) Qt[i][j] = Q_col[i];
       }
       // Phase 2: apply Givens rotations row-by-row of Qt. Each row is k
@@ -322,7 +322,7 @@ namespace sctl {
           }
         }
       }
-      Matrix<Real>::GEMM(U, Hinv, Matrix<Real>(k, N, Q_mat.begin(), false));
+      Matrix<Real>::GEMM(U, Hinv, Matrix<Real>(k, N, Q_mat, false));
       // Loop order swapped: inner j makes U sequential (stride 1, the long
       // dim) at the cost of stride-k reads from Qt (k is small, fits cache).
       for (Long i = 0; i < k; i++) {

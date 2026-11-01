@@ -106,24 +106,24 @@ template <class T> class ScratchBuf {
    * The question is what the pool can serve as it stands, buffers already live included, so asking
    * from a full chunk does take a new one even where the chunk would be large enough empty. That is
    * the case it is for: a caller that has just filled its chunk and wants the next round not to.
-   *
-   * For a caller that outgrew its buffer and put the rest elsewhere: telling the pool what was
-   * really needed lets the next round grow into the chunk instead.
    */
   void Reserve(Long count);
 
   /**
-   * Try to grow in place to `count` elements, keeping what is already stored where it is.
+   * Grow to `count` elements, when this is the top-most buffer of its pool: the last one made of
+   * those still live.
    *
-   * Best-effort, and never a reason for the pool to allocate: it grows only into what this buffer's
-   * chunk already has spare, and only while this is the chunk's top-most buffer. The return value
-   * is the size now held, which is the old one when nothing could be given. Shrinking is refused
-   * the same way, so a caller cannot hand back memory a neighbour would then overlap.
+   * In place while this buffer's chunk has room. Otherwise the buffer moves to a larger chunk, taken
+   * by the pool as for a buffer made that does not fit (the chunks double), with its elements copied
+   * there if `copy`, and unspecified if not; the pool keeps that chunk, so a buffer of the next
+   * round grows in place. A move invalidates the iterators of the buffer and its views (Vector): read
+   * begin() again.
    *
-   * A refusal cannot be reversed while this buffer lives -- nothing can free memory above the
-   * top-most buffer -- so one refusal is final and a caller should stop asking.
+   * The return value is the size now held: `count`, or the old size when another buffer of the pool
+   * lives above this one (until that one is freed), or for a shrink, which is refused so that a
+   * caller cannot hand back memory a neighbour would then overlap.
    */
-  Long RequestResize(Long count);
+  Long RequestResize(Long count, bool copy = true);
 
  private:
   ScratchPool*            pool_;
@@ -187,7 +187,8 @@ class ScratchPool {
    *  its chunk the same way. */
   explicit ScratchPool(Recycled);
 
-  void AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data);
+  /** A slice of `bytes`; a new chunk, taken when the head cannot hold it, has at least `min_cap` bytes. */
+  void AllocBytes(Long bytes, Chunk*& out_chunk, Iterator<char>& out_data, Long min_cap = 0);
   void FreeBytes(Chunk* chunk, Iterator<char> data, Long bytes);
   void ReleaseChunk(Chunk* chunk);
 
@@ -198,6 +199,14 @@ class ScratchPool {
   /** Largest size the slice at `data` could grow to, or 0 when it is not the head chunk's top-most
    *  slice. Counts only room the chunk already has. */
   Long ResizableBytes(Chunk* chunk, Iterator<char> data, Long bytes) const;
+
+  /** Whether the slice at `data` is the top-most live slice of the pool: the top of the head chunk,
+   *  or of the chunk below an empty head. */
+  bool IsTopMost(Chunk* chunk, Iterator<char> data, Long bytes) const;
+
+  /** Move the top-most slice (`IsTopMost`) to a new one of `new_bytes`, copying its `bytes` if
+   *  `copy`, and free the old one: `chunk` and `data` are then those of the new slice. */
+  void MoveBytes(Chunk*& chunk, Iterator<char>& data, Long bytes, Long new_bytes, bool copy);
 
   /** Move `top` to fit `new_bytes`, which `ResizableBytes` must have allowed. */
   void CommitResize(Chunk* chunk, Iterator<char> data, Long bytes, Long new_bytes);

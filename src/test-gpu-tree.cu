@@ -644,26 +644,22 @@ template <class Real, Integer DIM, template <class...> class DevVec> Long test_w
 }
 
 /**
- * `HostSink`'s second route: where the host walk puts nodes once the scratch it reserved is full and
- * the pool will not extend it. `test_walk_overflow` above does overrun the estimate, but the
- * extension always succeeds there, so nothing reaches the heap buffer. Here a second buffer is taken
- * above the first, which is what makes the pool refuse, and the sink is driven directly.
+ * `HostSink` past the scratch it reserved, which `test_walk_overflow` above overruns only within the
+ * chunk: here the nodes outgrow the chunk, so the scratch moves to a larger one, while the sink is
+ * still handed the pointer of the first (as the walk holds it).
  *
- * Checks every node put in comes back out, in order, reading the scratch and then the heap buffer --
- * which is the splice `buildTreeCpuChunked` does when it copies the walk's nodes to the tree.
+ * Checks every node put in comes back out, in order -- which is what `buildTreeCpuChunked` copies
+ * to the tree -- and that the chunk the scratch left was released.
  */
-static Long test_host_sink_spill() {
+static Long test_host_sink_grow() {
   using NodeT = sctl::Morton<3>;
   sctl::ScratchPool pool;
-  const Long cap = 64, n = 3 * cap + 7;
+  const Long cap = 64, n = 3 * SCTL_SCRATCH_POOL_INIT_BYTES / (Long)sizeof(NodeT) + 7;  // past the first chunk
   Long bad = 0;
 
   sctl::ScratchBuf<NodeT> buf(cap, pool);
-  sctl::ScratchBuf<char> above(1, pool);  // `buf` is no longer the top-most allocation, so it cannot grow
-  if (buf.RequestResize(buf.size() + 1) != buf.size()) bad++;  // the refusal the rest of this rests on
-
-  sctl::Vector<NodeT> spill;
-  gpu_tree::detail_build::HostSink<NodeT> sink{&buf, &spill, buf.size(), 16};
+  NodeT* const w = &buf[0];  // stale once the scratch moves
+  gpu_tree::detail_build::HostSink<NodeT> sink{&buf, 1024};
 
   std::vector<NodeT> want(n);
   {  // a run of distinct nodes, stepped the way the walk steps
@@ -674,19 +670,13 @@ static Long test_host_sink_spill() {
       m = m.Next();
     }
   }
-  for (Long i = 0; i < n; i++) sink.Put(&buf[0], i, want[i]);
+  for (Long i = 0; i < n; i++) sink.Put(w, i, want[i]);
 
-  if (sink.cap != cap) bad++;                 // the pool refused, so the room never changed
-  if (spill.Dim() != n - cap) bad++;          // everything past the room went to the heap buffer
-  {  // the splice, as buildTreeCpuChunked does it
-    const Long n_buf = std::min(n, sink.cap);
-    std::vector<NodeT> got;
-    for (Long i = 0; i < n_buf; i++) got.push_back(buf[i]);
-    for (Long i = 0; i < spill.Dim(); i++) got.push_back(spill[i]);
-    if ((Long)got.size() != n) bad++;
-    else for (Long i = 0; i < n; i++) if (!(got[i] == want[i])) bad++;
-  }
-  printf("  %-72s %s\n", "HostSink: the nodes past the scratch come back in order", bad ? "FAIL" : "ok");
+  if (buf.size() < n) bad++;
+  if (&buf[0] == w) bad++;                    // it did move
+  if (pool.DebugChunkCount() != 1) bad++;     // and the chunk it left, then empty, was released
+  for (Long i = 0; i < std::min(n, buf.size()); i++) if (!(buf[i] == want[i])) bad++;
+  printf("  %-72s %s\n", "HostSink: the scratch grows past its chunk, the nodes in order", bad ? "FAIL" : "ok");
   return bad ? 1 : 0;
 }
 
@@ -763,7 +753,7 @@ int main(int argc, char** argv) {
         printf("walk overflow\n");
         fails += test_walk_overflow<double, 3, gpu_tree::HostVector>("HostVector: the cover is complete");
         fails += test_walk_overflow<double, 3, std::vector>("std::vector: the cover is complete");
-        fails += test_host_sink_spill();
+        fails += test_host_sink_grow();
       }
     };
     run();

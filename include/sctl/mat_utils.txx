@@ -59,10 +59,12 @@ template <class ValueType> inline void gemm(char TransA, char TransB, Long M, Lo
     };
 
     // From serial code, blocks of columns of C in parallel. The blocks call the product directly: a
-    // team of one thread does not count as parallel, and a call to gemm there would split again
+    // team of one thread does not count as parallel, and a call to gemm there would split again. The
+    // team is of all threads, nchunk of them with a block each: libgomp ends the threads that a team
+    // smaller than the one before does not use, and creates them again for the next larger team
     const Long nchunk = (SCTL_IN_PARALLEL() ? 1 : std::min<Long>(std::min<Long>(N, SCTL_GET_MAX_THREADS()), (Long)M * N * K / ParallelWork));
     if (nchunk > 1) {
-      #pragma omp parallel for schedule(static) num_threads((int)nchunk)
+      #pragma omp parallel for schedule(static)
       for (Long i = 0; i < nchunk; i++) columns(N * i / nchunk, N * (i + 1) / nchunk);
     } else {
       columns(0, N);

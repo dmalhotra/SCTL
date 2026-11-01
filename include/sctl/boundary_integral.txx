@@ -109,42 +109,42 @@ namespace sctl {
     { // Set trg_nodes, src_nodes
       Real BBlen_inv;
       StaticArray<Real,COORD_DIM> BBX0;
-      { // Determine bounding-box
-        StaticArray<Real,COORD_DIM> X0_local;
-        if (Ntrg) { // Init X0_local
-          for (Long k = 0; k < COORD_DIM; k++) {
-            X0_local[k] = Xtrg[k];
-          }
-        } else {
-          SCTL_ASSERT(Nsrc);
-          for (Long k = 0; k < COORD_DIM; k++) {
-            X0_local[k] = Xsrc[k];
-          }
+      { // Determine bounding-box: the minima of {x0, -x1}, the smallest and the largest coordinates of the points
+        SCTL_ASSERT(Ntrg || Nsrc);
+        const ConstIterator<Real> p0 = (Ntrg ? Xtrg.begin() : Xsrc.begin());
+        StaticArray<Real,COORD_DIM*2> XX_local, XX;
+        for (Long k = 0; k < COORD_DIM; k++) {
+          XX_local[k] = p0[k];
+          XX_local[COORD_DIM+k] = -p0[k];
         }
-        for (Long i = 0; i < Ntrg; i++) {
-          for (Long k = 0; k < COORD_DIM; k++) {
-            X0_local[k] = std::min<Real>(X0_local[k], Xtrg[i*COORD_DIM+k]);
+        // In parallel over blocks of the points, those of Xtrg and then those of Xsrc: with fine panels there are
+        // millions of nodes. blk: the result of each block
+        const Long Npt = Ntrg + Nsrc, Nblk = std::max<Long>(1, std::min<Long>(SCTL_GET_MAX_THREADS(), Npt / 4096));
+        const auto point = [&Xtrg,&Xsrc,Ntrg](const Long i) { return (i < Ntrg ? Xtrg.begin() + i*COORD_DIM : Xsrc.begin() + (i-Ntrg)*COORD_DIM); };
+        ScratchBuf<Real> blk(Nblk*COORD_DIM*2);
+        #pragma omp parallel for schedule(static)
+        for (Long b = 0; b < Nblk; b++) {
+          StaticArray<Real,COORD_DIM*2> xx;
+          for (Long k = 0; k < COORD_DIM*2; k++) xx[k] = XX_local[k];
+          for (Long i = Npt*b/Nblk; i < Npt*(b+1)/Nblk; i++) {
+            const ConstIterator<Real> x = point(i);
+            for (Long k = 0; k < COORD_DIM; k++) {
+              xx[k] = std::min<Real>(xx[k], x[k]);
+              xx[COORD_DIM+k] = std::min<Real>(xx[COORD_DIM+k], -x[k]);
+            }
           }
+          for (Long k = 0; k < COORD_DIM*2; k++) blk[b*COORD_DIM*2+k] = xx[k];
         }
-        for (Long i = 0; i < Nsrc; i++) {
-          for (Long k = 0; k < COORD_DIM; k++) {
-            X0_local[k] = std::min<Real>(X0_local[k], Xsrc[i*COORD_DIM+k]);
-          }
+        for (Long b = 0; b < Nblk; b++) {
+          for (Long k = 0; k < COORD_DIM*2; k++) XX_local[k] = std::min<Real>(XX_local[k], blk[b*COORD_DIM*2+k]);
         }
-        comm_.Allreduce(X0_local + 0, BBX0 + 0, COORD_DIM, CommOp::MIN);
+        comm_.Allreduce(XX_local + 0, XX + 0, COORD_DIM*2, CommOp::MIN);
 
-        Real BBlen, len_local = 0;
-        for (Long i = 0; i < Ntrg; i++) {
-          for (Long k = 0; k < COORD_DIM; k++) {
-            len_local = std::max<Real>(len_local, Xtrg[i*COORD_DIM+k]-BBX0[k]);
-          }
+        Real BBlen = 0;
+        for (Long k = 0; k < COORD_DIM; k++) {
+          BBX0[k] = XX[k];
+          BBlen = std::max<Real>(BBlen, -XX[COORD_DIM+k] - XX[k]);
         }
-        for (Long i = 0; i < Nsrc; i++) {
-          for (Long k = 0; k < COORD_DIM; k++) {
-            len_local = std::max<Real>(len_local, Xsrc[i*COORD_DIM+k]-BBX0[k]);
-          }
-        }
-        comm_.Allreduce(Ptr2ConstItr<Real>(&len_local,1), Ptr2Itr<Real>(&BBlen,1), 1, CommOp::MAX);
         BBlen_inv = (BBlen > 0 ? 1/BBlen : (Real)1);
       }
       { // Expand bounding-box so that no points are on the boundary

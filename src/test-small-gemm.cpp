@@ -119,6 +119,10 @@ int main() {
       CHECK(check<T, 5, 7, 3>(acc, 5, 7, 3));
       CHECK(check<T, 3, 1, 5>(acc, 3, 1, 5));
       CHECK(check<T, 2, 3, 0>(acc, 2, 3, 0));
+      // k >= 32, where tiles of fewer than 8 vectors sum over k in parts
+      CHECK(check<T, 1, 3, 961>(acc, 1, 3, 961));
+      CHECK(check<T, 6, 6, 100>(acc, 6, 6, 100));
+      CHECK(check<T, 3, 17, 35>(acc, 3, 17, 35));
 
       // Some sizes fixed, some given at run time
       int nbad = 0;
