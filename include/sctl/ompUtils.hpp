@@ -67,6 +67,26 @@ template <class Iter> void prefault(Iter first, Long n, Integer nthreads = -1);
 template <class InputIt, class OutputIt> OutputIt copy(InputIt first, InputIt last, OutputIt dst, Integer nthreads = -1);
 
 /**
+ * Whether a parallel region opened here would have a team of one thread: with one thread
+ * (`OMP_NUM_THREADS=1`), inside a parallel region whose nested regions are inactive (the default),
+ * or without OpenMP. libgomp allocates and frees the team of each such region (1.6 KB with GCC 13),
+ * as it does for `num_threads(1)` and for a false `if` clause, so a loop called often runs without
+ * a region then: see `parallel_for`.
+ */
+inline bool one_thread();
+
+/**
+ * Calls `body(i)` for `i` in [0, n): in a parallel loop, of static schedule, or dynamic if `dynamic`;
+ * or in a plain loop on the calling thread, without a parallel region, when its team would have one
+ * thread (see `one_thread`).
+ *
+ * @param[in] n       number of iterations.
+ * @param[in] body    callable taking the index, a `Long`; called concurrently for distinct indices.
+ * @param[in] dynamic whether the schedule is dynamic.
+ */
+template <class Body> void parallel_for(Long n, const Body& body, bool dynamic = false);
+
+/**
  * Merges two sorted ranges into a single sorted range.
  *
  * @tparam ConstIter Iterator type for the input ranges.

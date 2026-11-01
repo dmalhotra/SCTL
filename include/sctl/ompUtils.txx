@@ -165,6 +165,27 @@ template <class InputIt, class OutputIt> inline OutputIt omp_par::copy(InputIt f
   return dst + n;
 }
 
+inline bool omp_par::one_thread() {
+#ifdef _OPENMP
+  return omp_get_max_threads() == 1 || omp_get_active_level() >= omp_get_max_active_levels();
+#else
+  return true;
+#endif
+}
+
+template <class Body> inline void omp_par::parallel_for(Long n, const Body& body, bool dynamic) {
+  if (n <= 0) return;
+  if (one_thread()) {
+    for (Long i = 0; i < n; i++) body(i);
+  } else if (dynamic) {
+    #pragma omp parallel for schedule(dynamic)
+    for (Long i = 0; i < n; i++) body(i);
+  } else {
+    #pragma omp parallel for schedule(static)
+    for (Long i = 0; i < n; i++) body(i);
+  }
+}
+
 template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inline void omp_par::merge(ConstIter A_, ConstIter A_last, ConstIter B_, ConstIter B_last, Iter C_, Int p, StrictWeakOrdering comp) {
   typedef typename std::iterator_traits<Iter>::difference_type _DiffType;
   typedef typename std::iterator_traits<Iter>::value_type _ValType;

@@ -13,6 +13,8 @@
 #include "sctl/intrin-wrapper.hpp"  // for TypeTraits
 #include "sctl/iterator.hpp"        // for ConstIterator, Iterator
 #include "sctl/matrix.hpp"          // for Matrix
+#include "sctl/ompUtils.hpp"        // for omp_par::one_thread
+#include "sctl/ompUtils.txx"
 #include "sctl/profile.hpp"         // for Profile, ProfileCounter
 #include "sctl/profile.txx"         // for Profile::IncrementCounter
 #include "sctl/scratch_pool.hpp"    // for ScratchBuf
@@ -176,7 +178,7 @@ template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKe
           Xt_[k][i] = 0;
         }
       }
-      if (enable_openmp) { // Compute Vt_
+      if (enable_openmp && !omp_par::one_thread()) { // Compute Vt_, without a region of one thread (see omp_par::one_thread)
         #pragma omp parallel for schedule(static)
         for (Long t = 0; t < NNt; t += VecLen) {
           RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM_], vs[KDIM0];
