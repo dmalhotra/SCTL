@@ -28,6 +28,8 @@
 #include "sctl/profile.txx"            // for Profile::Tic, Profile::Toc
 #include "sctl/scratch_pool.hpp"       // for ScratchBuf
 #include "sctl/scratch_pool.txx"       // for ScratchBuf
+#include "sctl/small_gemm.hpp"         // for SmallGEMM
+#include "sctl/small_gemm.txx"         // for SmallGEMM::operator()
 #include "sctl/sort-scatter.hpp"       // for SortScatter
 #include "sctl/sort-scatter.txx"       // for SortScatter::Init, SortScatter::ScatterForward
 #include "sctl/static-array.hpp"       // for StaticArray
@@ -1369,7 +1371,8 @@ namespace sctl {
       U.SetZero();
     }
 
-    Vector<Real> U_near(Nelem ? (near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1_ : 0);
+    ScratchBuf<Real> U_near_buf(Nelem ? (near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1_ : 0); // in scratch memory, as U_trg below
+    Vector<Real> U_near(U_near_buf);
     #pragma omp parallel for schedule(dynamic)
     for (Long blk = 0; blk < near_blk_elem.Dim(); blk++) { // Compute near-interactions from precomputed operator matrix
       const Long elem_idx = near_blk_elem[blk], t0 = near_blk_t0[blk], nt = near_blk_cnt[blk];
@@ -1384,8 +1387,9 @@ namespace sctl {
       // target-major: K.F rather than F.K, and a target range is a contiguous row-block
       const Matrix<Real> K_near_(trg_dof, src_dof, K_near.begin() + K_near_dsp[elem_idx]*KDIM0*KDIM1_ + t0*KDIM1_*src_dof, false);
       const Matrix<const Real> F_(src_dof, 1, F.begin() + elem_nds_dsp[elem_idx]*KDIM0, false);
-      Matrix<Real> U_(trg_dof, 1, U_near.begin() + (near_elem_dsp[elem_idx]+t0)*KDIM1_, false);
-      Matrix<Real>::GEMM(U_, K_near_, F_);
+      // a matrix-vector product: SmallGEMM, whose one-column path is as fast as BLAS dgemm here and,
+      // unlike OpenBLAS's kernel for small products, allocates nothing
+      SmallGEMM<Real>(false, trg_dof, 1, src_dof)(U_near.begin() + (near_elem_dsp[elem_idx]+t0)*KDIM1_, K_near_.begin(), F_.begin());
     }
 
     for (Long i = 0; i < (Long)elem_lst_map.size(); i++) { // Compute near-interactions matrix-free (if EvalNearInterac is implemented)
