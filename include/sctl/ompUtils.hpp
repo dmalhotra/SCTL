@@ -87,6 +87,20 @@ inline bool one_thread();
 template <class Body> void parallel_for(Long n, const Body& body, bool dynamic = false);
 
 /**
+ * Returns `op(...op(op(init, term(0)), term(1))..., term(n-1))`, for an associative `op` of which
+ * `init` is an identity: in a parallel loop of static schedule, each thread reducing its share of
+ * the indices from `init` and the results of the threads then combined in the order of the
+ * threads; or in a plain loop on the calling thread, without a parallel region, when its team
+ * would have one thread (see `one_thread`).
+ *
+ * @param[in] n    number of indices.
+ * @param[in] init an identity of `op`; also the result for `n <= 0`.
+ * @param[in] term callable taking the index, a `Long`, and returning a `T`; called concurrently.
+ * @param[in] op   callable combining two `T`, associative.
+ */
+template <class T, class Term, class Op> T parallel_reduce(Long n, const T& init, const Term& term, const Op& op);
+
+/**
  * Merges two sorted ranges into a single sorted range.
  *
  * @tparam ConstIter Iterator type for the input ranges.

@@ -5,8 +5,8 @@
 // Per-function tests for sctl/ompUtils.{hpp,txx}.
 //
 // Covers omp_par::merge, omp_par::merge_sort (with and without comparator),
-// omp_par::reduce, omp_par::scan, omp_par::sample_sort, omp_par::radix_sort, omp_par::sort and
-// omp_par::parallel_for.
+// omp_par::reduce, omp_par::scan, omp_par::sample_sort, omp_par::radix_sort, omp_par::sort,
+// omp_par::parallel_for and omp_par::parallel_reduce.
 
 #include <algorithm>
 #include <cstdint>
@@ -371,6 +371,31 @@ int main() {
     CHECK(inner_one);
     CHECK(inner_level == 1);
     omp_set_max_active_levels(max_levels);
+#endif
+  }
+
+  // --- parallel_reduce: a sum of integers (exact), a maximum, and a pair of sums ---
+  std::printf("parallel_reduce :\n");
+  {
+    const Long N = 10007;
+    const auto sum_max = [N]() {
+      const Long s = sctl::omp_par::parallel_reduce(N, (Long)0, [](const Long i) { return i * i; }, [](const Long a, const Long b) { return a + b; });
+      const Long m = sctl::omp_par::parallel_reduce(N, (Long)-1, [N](const Long i) { return (i * 7919) % N; }, [](const Long a, const Long b) { return std::max(a, b); });
+      return std::make_pair(s, m);
+    };
+    const Long ref_sum = (N - 1) * N * (2 * N - 1) / 6;
+    CHECK(sum_max() == std::make_pair(ref_sum, N - 1));
+    struct Pair {
+      Long a, b;
+    };
+    const Pair p = sctl::omp_par::parallel_reduce(N, Pair{0, 0}, [](const Long i) { return Pair{i, 2 * i}; }, [](const Pair x, const Pair y) { return Pair{x.a + y.a, x.b + y.b}; });
+    CHECK(p.a == N * (N - 1) / 2 && p.b == N * (N - 1));
+    CHECK(sctl::omp_par::parallel_reduce(0, (Long)5, [](Long) { return (Long)1; }, [](const Long a, const Long b) { return a + b; }) == 5);
+#ifdef _OPENMP
+    const int nt = omp_get_max_threads();
+    omp_set_num_threads(1);
+    CHECK(sum_max() == std::make_pair(ref_sum, N - 1));
+    omp_set_num_threads(nt);
 #endif
   }
 

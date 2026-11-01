@@ -186,6 +186,27 @@ template <class Body> inline void omp_par::parallel_for(Long n, const Body& body
   }
 }
 
+template <class T, class Term, class Op> inline T omp_par::parallel_reduce(Long n, const T& init, const Term& term, const Op& op) {
+  T r = init;
+  if (n <= 0) return r;
+  if (one_thread()) {
+    for (Long i = 0; i < n; i++) r = op(r, term(i));
+    return r;
+  }
+  const Integer nt = SCTL_GET_MAX_THREADS();
+  ScratchBuf<T> part(nt); // the result of each thread, init for those without work
+  for (Integer t = 0; t < nt; t++) part[t] = init;
+  #pragma omp parallel num_threads(nt)
+  {
+    T r_ = init;
+    #pragma omp for schedule(static)
+    for (Long i = 0; i < n; i++) r_ = op(r_, term(i));
+    part[SCTL_GET_THREAD_NUM()] = r_;
+  }
+  for (Integer t = 0; t < nt; t++) r = op(r, part[t]);
+  return r;
+}
+
 template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inline void omp_par::merge(ConstIter A_, ConstIter A_last, ConstIter B_, ConstIter B_last, Iter C_, Int p, StrictWeakOrdering comp) {
   typedef typename std::iterator_traits<Iter>::difference_type _DiffType;
   typedef typename std::iterator_traits<Iter>::value_type _ValType;
