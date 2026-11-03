@@ -115,7 +115,8 @@ template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKe
       RealVec dX[DIM];
       for (Integer i = 0; i < DIM; i++) dX[i] = xt[i] - xs[i];
       if constexpr (detail::uKerFusedApply<uKernel>::value) { // skip the KDIM0 x KDIM1 matrix
-        uKernel::template uKerApply<digits_,1>(vt, dX, ns, vs, ctx_ptr);
+        if constexpr (N_DIM) uKernel::template uKerApply<digits_,1>(vt, dX, ns, vs, ctx_ptr);
+        else uKernel::template uKerApply<digits_,1,RealVec>(vt, dX, nullptr, vs, ctx_ptr);
       } else {
         RealVec U[KDIM0][KDIM1];
         uKerMatrix<digits_>(U, dX, ns, ctx_ptr);
