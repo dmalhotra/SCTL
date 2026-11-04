@@ -330,7 +330,8 @@ namespace detail_small_gemm {
    * VecProductCol: for one contiguous column of B, with rows of A of 8 values or more, or else few
    * of them. With shorter and more rows of A, LIBXSMM's kernel was faster from 6 rows, and the
    * register-blocked loop from 8, in double on one core of an AMD EPYC 9474F and of an Intel Xeon
-   * w5-3435X.
+   * w5-3435X; at 5 rows, LIBXSMM's kernel took 7-15% less time with 1 to 3 columns of A and 3-12%
+   * more with 4 to 7 (AMD EPYC 9474F).
    */
   inline bool ProductCol(const Long m, const Long n, const Long k, const Long ldb) {
 #if defined(SCTL_HAVE_LIBXSMM)
@@ -345,8 +346,8 @@ namespace detail_small_gemm {
   /**
    * LIBXSMM's kernel for C = A B, of float or double, row by row with the rows lda, ldb and ldc apart,
    * overwriting C or accumulating into it: through a per-thread table in front of LIBXSMM's lookup,
-   * which takes about 40 ns, as long as the smallest products. Not inlined: inlined in the
-   * constructor of SmallGEMM, it added about 5 ns to every product, also to those without its kernel.
+   * which takes about 40 ns, as long as the smallest products. Not inlined: inlined, it added about
+   * 5 ns to every product, also to those without its kernel.
    */
   template <class ValueType> [[gnu::noinline]] libxsmm_gemmfunction LibxsmmKernel(const Long m, const Long n, const Long k, const Long lda, const Long ldb, const Long ldc, const bool accumulate) {
     struct Entry {

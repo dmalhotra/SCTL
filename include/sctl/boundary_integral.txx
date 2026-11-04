@@ -1335,7 +1335,6 @@ namespace sctl {
         Vector<Real> F_far_((offset1_far-offset0_far)*KDIM0, F_far.begin() + offset0_far*KDIM0, false);
 
         elem_lst_map.at(elem_lst_name[i])->GetFarFieldDensity(F_far_, F_);
-        // the loops of this and ComputeNearInterac without a region of one thread (see omp_par::one_thread)
         if (F_far_.Dim()) { // F_far <-- F_far * wts_far
           omp_par::parallel_for(offset1_far - offset0_far, [this,offset0_far](const Long i_) {
             const Long i = offset0_far + i_;
@@ -1390,7 +1389,7 @@ namespace sctl {
       U.SetZero();
     }
 
-    ScratchBuf<Real> U_near_buf(Nelem ? (near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1_ : 0); // in scratch memory, as U_trg below
+    ScratchBuf<Real> U_near_buf(Nelem ? (near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1_ : 0);
     Vector<Real> U_near(U_near_buf);
     omp_par::parallel_for(near_blk_elem.Dim(), [this,&U_near,&F,KDIM1_](const Long blk) { // Compute near-interactions from precomputed operator matrix
       const Long elem_idx = near_blk_elem[blk], t0 = near_blk_t0[blk], nt = near_blk_cnt[blk];

@@ -70,8 +70,7 @@ template <class InputIt, class OutputIt> OutputIt copy(InputIt first, InputIt la
  * Whether a parallel region opened here would have a team of one thread: with one thread
  * (`OMP_NUM_THREADS=1`), inside a parallel region whose nested regions are inactive (the default),
  * or without OpenMP. libgomp allocates and frees the team of each such region (1.6 KB with GCC 13),
- * as it does for `num_threads(1)` and for a false `if` clause, so a loop called often runs without
- * a region then: see `parallel_for`.
+ * as it does for `num_threads(1)` and for a false `if` clause.
  */
 inline bool one_thread();
 
@@ -93,6 +92,8 @@ template <class Body> void parallel_for(Long n, const Body& body, bool dynamic =
  * threads; or in a plain loop on the calling thread, without a parallel region, when its team
  * would have one thread (see `one_thread`).
  *
+ * @tparam T copy-assignable, with `alignof(T) <= SCTL_MEM_ALIGN`, and default-constructible unless it
+ *           is trivial.
  * @param[in] n    number of indices.
  * @param[in] init an identity of `op`; also the result for `n <= 0`.
  * @param[in] term callable taking the index, a `Long`, and returning a `T`; called concurrently.
