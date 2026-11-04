@@ -210,7 +210,7 @@ template <Integer DIM> class Morton {
    * Trivial default ctor: uninitialised. Value-init (`Morton()` / `Morton{}`) gives the ROOT
    * (zero code, depth 0); a bare `Morton m;` is uninitialised, matching `MortonCode`.
    */
-  SCTL_GPU_HD Morton() = default;
+  Morton() = default;
 
   /**
    * Box at depth `depth_` containing `mid_` (code snapped to the grid). Bits above
