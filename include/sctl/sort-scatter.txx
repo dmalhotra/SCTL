@@ -18,7 +18,7 @@
 #include "sctl/comm.txx"          // for Comm::Alltoallv, comm_detail::LocalSort
 #include "sctl/iterator.hpp"      // for Iterator, ConstIterator, Ptr2ConstItr
 #include "sctl/iterator.txx"
-#include "sctl/ompUtils.hpp"      // for omp_par::scan
+#include "sctl/ompUtils.hpp"      // for omp_par::scan, omp_par::parallel_for
 #include "sctl/ompUtils.txx"
 #include "sctl/scratch_pool.hpp"  // for ScratchBuf
 #include "sctl/scratch_pool.txx"
@@ -42,18 +42,16 @@ inline void PlanBase::Reset() {
 /** Sort `n` keys from `src` into `dst` (may alias), writing the source position of each into `idx`. */
 template <class Key> void sortWithIndex(ConstIterator<Key> src, Iterator<Key> dst, Vector<Long>& idx, Long n) {
   ScratchBuf<comm_detail::SortPair<Key, Long>> in(n), out(n);
-  #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < n; i++) {
+  omp_par::parallel_for(n, [&in, src](const Long i) {
     in[i].key = src[i];
     in[i].data = i;
-  }
+  });
   comm_detail::LocalSort<comm_detail::SortPair<Key, Long>>(in.begin(), out.begin(), n, std::less<comm_detail::SortPair<Key, Long>>());
   if (idx.Dim() != n) idx.ReInit(n);
-  #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < n; i++) {
+  omp_par::parallel_for(n, [&out, &idx, dst](const Long i) {
     dst[i] = out[i].key;
     idx[i] = out[i].data;
-  }
+  });
 }
 
 /** `scnt[r]`: the `n` sorted `keys` in `[splitters[r], splitters[r+1])` (ends open); `rcnt`: what
@@ -63,8 +61,7 @@ template <class Key> Long splitCounts(Vector<Long>& scnt, Vector<Long>& rcnt, Co
   ScratchBuf<Long> pos(np + 1);
   pos[0] = 0;
   pos[np] = n;
-  #pragma omp parallel for schedule(static)
-  for (Integer r = 1; r < np; r++) pos[r] = std::lower_bound(keys, keys + n, splitters[r]) - keys;
+  omp_par::parallel_for(np - 1, [&pos, keys, n, splitters](const Long i) { pos[i + 1] = std::lower_bound(keys, keys + n, splitters[i + 1]) - keys; });
   for (Integer r = 0; r < np; r++) scnt[r] = pos[r + 1] - pos[r];
   comm.Alltoall(scnt.begin(), 1, rcnt.begin(), 1);
   Long nrecv = 0;
@@ -94,8 +91,7 @@ template <class T> void exchange(ConstIterator<T> src, Iterator<T> dst, const Ve
 inline void buildInverse(const Vector<Long>& m, Vector<Long>& inv) {
   const Long n = m.Dim();
   if (inv.Dim() != n) inv.ReInit(n);
-  #pragma omp parallel for schedule(static)
-  for (Long i = 0; i < n; i++) inv[m[i]] = i;
+  omp_par::parallel_for(n, [&m, &inv](const Long i) { inv[m[i]] = i; });
 }
 
 /** Stage-4 counts from the stage-3 layout to the current one, on the first move after a repartition;

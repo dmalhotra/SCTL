@@ -311,22 +311,14 @@ template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKe
         }
       }
     } else {
-      if (enable_openmp) {
-        #pragma omp parallel for schedule(static)
-        for (Long i = 0; i < Ns; i++) {
-          Matrix<Real> M_(KDIM0, Nt*KDIM1, M.begin() + i*KDIM0*Nt*KDIM1, false);
-          const Vector<Real> Xs_(DIM, (Iterator<Real>)Xs.begin() + i*DIM, false);
-          const Vector<Real> Xn_(N_DIM, (Iterator<Real>)Xn.begin() + i*N_DIM, false);
-          KernelMatrix<Real,enable_openmp,digits>(M_, Xt, Xs_, Xn_);
-        }
-      } else {
-        for (Long i = 0; i < Ns; i++) {
-          Matrix<Real> M_(KDIM0, Nt*KDIM1, M.begin() + i*KDIM0*Nt*KDIM1, false);
-          const Vector<Real> Xs_(DIM, (Iterator<Real>)Xs.begin() + i*DIM, false);
-          const Vector<Real> Xn_(N_DIM, (Iterator<Real>)Xn.begin() + i*N_DIM, false);
-          KernelMatrix<Real,enable_openmp,digits>(M_, Xt, Xs_, Xn_);
-        }
-      }
+      const auto source = [this, &M, &Xt, &Xs, &Xn, Nt](const Long i) { // the rows of M of source i
+        Matrix<Real> M_(KDIM0, Nt*KDIM1, M.begin() + i*KDIM0*Nt*KDIM1, false);
+        const Vector<Real> Xs_(DIM, (Iterator<Real>)Xs.begin() + i*DIM, false);
+        const Vector<Real> Xn_(N_DIM, (Iterator<Real>)Xn.begin() + i*N_DIM, false);
+        KernelMatrix<Real,enable_openmp,digits>(M_, Xt, Xs_, Xn_);
+      };
+      if (enable_openmp) omp_par::parallel_for(Ns, source);
+      else for (Long i = 0; i < Ns; i++) source(i);
     }
   }
 
