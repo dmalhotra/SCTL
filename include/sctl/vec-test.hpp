@@ -939,7 +939,7 @@ namespace sctl {
         { // approx_atan, approx_asin, approx_acos, approx_atan2, approx_tanh to the given digits
           const VecType w = v0 * (ScalarType)(1 / 6.3), w2 = v0 * (ScalarType)0.7 + (ScalarType)0.5;
           const VecType ra = atan(v0), rs = asin(w), rc = acos(w), r2 = atan2(v0, w2), rt = tanh(v0);
-          const auto check = [&](const VecType& a, const VecType& s, const VecType& c, const VecType& a2, const VecType& t, const ScalarType err_tol) {
+          const auto check = [&ra, &rs, &rc, &r2, &rt](const VecType& a, const VecType& s, const VecType& c, const VecType& a2, const VecType& t, const ScalarType err_tol) {
             for (Integer i = 0; i < N; i++) {
               SCTL_ASSERT(fabs(a[i] - ra[i]) <= err_tol * fabs(ra[i]) && fabs(s[i] - rs[i]) <= err_tol * fabs(rs[i]) && fabs(c[i] - rc[i]) <= err_tol * fabs(rc[i]));
               SCTL_ASSERT(fabs(a2[i] - r2[i]) <= err_tol * fabs(r2[i]) && fabs(t[i] - rt[i]) <= err_tol * fabs(rt[i]));

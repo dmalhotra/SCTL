@@ -396,18 +396,21 @@ namespace detail_small_gemm {
       else if constexpr (U == Update::Accumulate) return c + s;
       else return s * alpha + (beta == ValueType(0) ? VecType::Zero() : c * beta);
     };
-    const auto store = [&](const Long i0, const VecType& s) { // rows i0 to i0 + VL of C
+    // store and rows capture in the order in which GCC captures with [&], and c_'s size does not name VL, which Clang
+    // would then require captured: otherwise GCC 13.3 assigned other registers, and float products of 2 or 3 rows took
+    // up to 25% more or 28% less time
+    const auto store = [&ldc, &C, &update](const Long i0, const VecType& s) { // rows i0 to i0 + VL of C
       if (ldc == 1) {
         ValueType* c = &C[i0];
         update(s, U == Update::Overwrite ? s : VecType::Load(c)).Store(c);
       } else {
-        alignas(sizeof(VecType)) ValueType c_[VL];
+        alignas(sizeof(VecType)) ValueType c_[VecType::Size()];
         for (Integer r = 0; r < VL; r++) c_[r] = (U == Update::Overwrite ? ValueType(0) : C[(i0 + r) * ldc]);
         update(s, VecType::LoadAligned(c_)).StoreAligned(c_);
         for (Integer r = 0; r < VL; r++) C[(i0 + r) * ldc] = c_[r];
       }
     };
-    const auto rows = [&](const Long i0, auto nr) { // rows i0 to i0 + NB of C, in groups of W
+    const auto rows = [&VL, &k_vec, &B, &A, &lda, &k_tail, &b_tail, &store, &C, &ldc, &alpha, &beta](const Long i0, auto nr) { // rows i0 to i0 + NB of C, in groups of W
       constexpr Integer NB = decltype(nr)::value;
       constexpr Integer W = (NB >= VL ? VL : NB);
       VecType acc[NB / W][W];

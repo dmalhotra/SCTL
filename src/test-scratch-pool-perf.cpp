@@ -168,7 +168,7 @@ static void experiment_2_threads() {
     std::vector<uint64_t> per_thread_malloc(T);
     std::vector<uint64_t> per_thread_static(T);
 
-    auto bench_per_thread = [&](auto op, std::vector<uint64_t>& out) {
+    auto bench_per_thread = [&T, &iters](auto op, std::vector<uint64_t>& out) {
       #pragma omp parallel num_threads(T)
       {
         int tid = omp_get_thread_num();

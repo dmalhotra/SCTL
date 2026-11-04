@@ -1917,7 +1917,7 @@ namespace sctl { // Generic
     float_to_double_intrin(x0, x1, fabs_intrin(x));
     float_to_double_intrin(y0, y1, y);
     const DVec zero = zero_intrin<DVec>(), inf = set1_intrin<DVec>(INFINITY), lim = set1_intrin<DVec>(1000.0); // beyond, inf or 0; NaN kept
-    const auto t = [&](const DVec& ax, const DVec& yy) {
+    const auto t = [&zero, &inf, &lim](const DVec& ax, const DVec& yy) {
       const DVec L = select_intrin(comp_intrin<ComparisonType::eq>(ax, zero), unary_minus_intrin(inf), select_intrin(comp_intrin<ComparisonType::eq>(ax, inf), ax, powf_log2_intrin(ax)));
       const DVec e = mul_intrin(yy, L);
       return powf_exp2_intrin(select_intrin(comp_intrin<ComparisonType::gt>(e, lim), lim, select_intrin(comp_intrin<ComparisonType::lt>(e, unary_minus_intrin(lim)), unary_minus_intrin(lim), e)));

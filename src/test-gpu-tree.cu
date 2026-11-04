@@ -703,7 +703,7 @@ template <template <class...> class DevVec> Long test_partitionN_stretch(const c
   for (Long i = 0; i < n; i++) h[gl + i] = gid0 + i;
 
   Long bad = 0;
-  const auto run = [&](Long tgt) {
+  const auto run = [&h, &pol, &n, &comm, &bad](Long tgt) {
     DevVec<Long> v(h.begin(), h.end()), tmp;
     gpu_tree::detail::partitionN(pol, v, gl, n, tgt, comm, tmp);
     Long off = 0;

@@ -260,24 +260,24 @@ int main() {
     Vector<double> x({1.0, 2.0, 3.0, 4.0}), y;
     Vector<Z> z(4), w;
     z = Z(1.0, 2.0);
-    CHECK(flops([&]() { y = x + x; }) == 4);
-    CHECK(flops([&]() { y = x / x; }) == 4);
-    CHECK(flops([&]() { y = 2.0 * x; }) == 4);
-    CHECK(flops([&]() { w = z + z; }) == 8);
-    CHECK(flops([&]() { w = z * z; }) == 24);
-    CHECK(flops([&]() { w = z / z; }) == 44);
-    CHECK(flops([&]() { w = z - Z(1.0, 1.0); }) == 8);
-    CHECK(flops([&]() { w = z / Z(1.0, 1.0); }) == 44);
-    CHECK(flops([&]() { w = z + 1.0; }) == 4);
-    CHECK(flops([&]() { w = z * 2.0; }) == 8);
-    CHECK(flops([&]() { w = z / 2.0; }) == 8);
-    CHECK(flops([&]() { w = 2.0 * z; }) == 8);
-    CHECK(flops([&]() { w = 1.0 / z; }) == 28);
-    CHECK(flops([&]() { w = Z(1.0, 1.0) / z; }) == 44);
-    CHECK(flops([&]() { w += z; }) == 8);
-    CHECK(flops([&]() { w *= z; }) == 24);
-    CHECK(flops([&]() { w /= z; }) == 44);
-    CHECK(flops([&]() { w *= 2.0; }) == 8);
+    CHECK(flops([&y, &x]() { y = x + x; }) == 4);
+    CHECK(flops([&y, &x]() { y = x / x; }) == 4);
+    CHECK(flops([&y, &x]() { y = 2.0 * x; }) == 4);
+    CHECK(flops([&w, &z]() { w = z + z; }) == 8);
+    CHECK(flops([&w, &z]() { w = z * z; }) == 24);
+    CHECK(flops([&w, &z]() { w = z / z; }) == 44);
+    CHECK(flops([&w, &z]() { w = z - Z(1.0, 1.0); }) == 8);
+    CHECK(flops([&w, &z]() { w = z / Z(1.0, 1.0); }) == 44);
+    CHECK(flops([&w, &z]() { w = z + 1.0; }) == 4);
+    CHECK(flops([&w, &z]() { w = z * 2.0; }) == 8);
+    CHECK(flops([&w, &z]() { w = z / 2.0; }) == 8);
+    CHECK(flops([&w, &z]() { w = 2.0 * z; }) == 8);
+    CHECK(flops([&w, &z]() { w = 1.0 / z; }) == 28);
+    CHECK(flops([&w, &z]() { w = Z(1.0, 1.0) / z; }) == 44);
+    CHECK(flops([&w, &z]() { w += z; }) == 8);
+    CHECK(flops([&w, &z]() { w *= z; }) == 24);
+    CHECK(flops([&w, &z]() { w /= z; }) == 44);
+    CHECK(flops([&w]() { w *= 2.0; }) == 8);
   }
 #endif
 

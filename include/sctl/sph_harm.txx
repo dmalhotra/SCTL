@@ -52,7 +52,7 @@ template <class Real> void SphericalHarmonics<Real>::test_stokes() {
   int p = 6;
   int dof = 3;
   int Nt = 100, Np = 200;
-  auto print_coeff = [&](Vector<Real> S) {
+  auto print_coeff = [&dof,&p](Vector<Real> S) {
     Long idx=0;
     for (Long k=0;k<dof;k++) {
       for (Long n=0;n<=p;n++) {
@@ -74,7 +74,7 @@ template <class Real> void SphericalHarmonics<Real>::test_stokes() {
 
   const Vector<Real> CosTheta = LegendreNodes(Nt-1);
   const Vector<Real> LWeights = LegendreWeights(Nt-1);
-  auto stokes_evalSL = [&](const Vector<Real>& trg, Vector<Real>& Sf) {
+  auto stokes_evalSL = [&Nt,&CosTheta,&Np,&LWeights,&Fgrid](const Vector<Real>& trg, Vector<Real>& Sf) {
     Sf.ReInit(3);
     Sf=0;
     Real s = 1/(8*const_pi<Real>());
@@ -111,7 +111,7 @@ template <class Real> void SphericalHarmonics<Real>::test_stokes() {
       }
     }
   };
-  auto stokes_evalDL = [&](const Vector<Real>& trg, Vector<Real>& Sf) {
+  auto stokes_evalDL = [&Nt,&CosTheta,&Np,&LWeights,&Fgrid](const Vector<Real>& trg, Vector<Real>& Sf) {
     Sf.ReInit(3);
     Sf=0;
     Real s = 6/(8*const_pi<Real>());
@@ -152,7 +152,7 @@ template <class Real> void SphericalHarmonics<Real>::test_stokes() {
       }
     }
   };
-  auto stokes_evalKL = [&](const Vector<Real>& trg, const Vector<Real>& nor, Vector<Real>& Sf) {
+  auto stokes_evalKL = [&Nt,&CosTheta,&Np,&LWeights,&Fgrid](const Vector<Real>& trg, const Vector<Real>& nor, Vector<Real>& Sf) {
     Sf.ReInit(3);
     Sf=0;
     Real scal = 1/(8*const_pi<Real>());
@@ -277,7 +277,7 @@ template <class Real> void SphericalHarmonics<Real>::test() {
     return ne / std::max<Real>(nb, machine_eps<Real>());
   };
 
-  auto grid_theta_phi = [&]() {
+  auto grid_theta_phi = []() {
     Vector<Real> theta_phi;
     Vector<Real> leg_nodes = LegendreNodes(Nt - 1);
     for (Long i = 0; i < Nt; i++) {
@@ -843,7 +843,7 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
   for (Long i=0; i<N; i+=COORD_DIM) {
     for (Long m=0; m<=p0; m++) {
       for (Long n=m; n<=p0; n++) {
-        auto read_coeff = [&](const Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
+        auto read_coeff = [&N](const Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
           std::complex<Real> c;
           if (0<=m && m<=n && n<=p) {
             Long idx_real = ((2*p-m+3)*m - (m?p+1:0))*N + (p+1-m)*i - m + n;
@@ -853,7 +853,7 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
           }
           return c;
         };
-        auto write_coeff = [&](std::complex<Real> c, Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
+        auto write_coeff = [&N](std::complex<Real> c, Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
           if (0<=m && m<=n && n<=p) {
             Long idx_real = ((2*p-m+3)*m - (m?p+1:0))*N + (p+1-m)*i - m + n;
             Long idx_imag = idx_real + (p+1-m)*N;
@@ -862,14 +862,14 @@ template <class Real> void SphericalHarmonics<Real>::Grid2VecSHC(const Vector<Re
           }
         };
 
-        auto gr = [&](Long n, Long m) { return read_coeff(B1, i+0, p_, n, m); };
-        auto gt = [&](Long n, Long m) { return read_coeff(B1, i+1, p_, n, m); };
-        auto gp = [&](Long n, Long m) { return read_coeff(B1, i+2, p_, n, m); };
+        auto gr = [&read_coeff,&B1,&i,&p_](Long n, Long m) { return read_coeff(B1, i+0, p_, n, m); };
+        auto gt = [&read_coeff,&B1,&i,&p_](Long n, Long m) { return read_coeff(B1, i+1, p_, n, m); };
+        auto gp = [&read_coeff,&B1,&i,&p_](Long n, Long m) { return read_coeff(B1, i+2, p_, n, m); };
 
         std::complex<Real> phiY, phiG, phiX;
         { // (phiG, phiX) <-- (gt, gp)
-          auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
-          auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
+          auto A = [&p_](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
+          auto B = [&p_](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
           phiY = gr(n,m);
           phiG = (gt(n+1,m)*A(n,m) - gt(n-1,m)*B(n,m) - imag*(Real)m*gp(n,m)) * (1/(Real)(std::max<Long>(n,1)*(n+1)));
           phiX = (gp(n+1,m)*A(n,m) - gp(n-1,m)*B(n,m) + imag*(Real)m*gt(n,m)) * (1/(Real)(std::max<Long>(n,1)*(n+1)));
@@ -909,7 +909,7 @@ template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Re
   for (Long i=0; i<N; i+=COORD_DIM) {
     for (Long m=0; m<=p_; m++) {
       for (Long n=m; n<=p_; n++) {
-        auto read_coeff = [&](const Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
+        auto read_coeff = [&N](const Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
           std::complex<Real> c;
           if (0<=m && m<=n && n<=p) {
             Long idx_real = ((2*p-m+3)*m - (m?p+1:0))*N + (p+1-m)*i - m + n;
@@ -919,7 +919,7 @@ template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Re
           }
           return c;
         };
-        auto write_coeff = [&](std::complex<Real> c, Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
+        auto write_coeff = [&N](std::complex<Real> c, Vector<Real>& coeff, Long i, Long p, Long n, Long m) {
           if (0<=m && m<=n && n<=p) {
             Long idx_real = ((2*p-m+3)*m - (m?p+1:0))*N + (p+1-m)*i - m + n;
             Long idx_imag = idx_real + (p+1-m)*N;
@@ -928,24 +928,24 @@ template <class Real> void SphericalHarmonics<Real>::VecSHC2Grid(const Vector<Re
           }
         };
 
-        auto phiG = [&](Long n, Long m) {
+        auto phiG = [&read_coeff,&B0,&i,&p0](Long n, Long m) {
           auto phiV = read_coeff(B0, i+0, p0, n, m);
           auto phiW = read_coeff(B0, i+1, p0, n, m);
           return phiV + phiW;
         };
-        auto phiY = [&](Long n, Long m) {
+        auto phiY = [&read_coeff,&B0,&i,&p0](Long n, Long m) {
           auto phiV = read_coeff(B0, i+0, p0, n, m);
           auto phiW = read_coeff(B0, i+1, p0, n, m);
           return phiW * (Real)n - phiV * (Real)(n + 1);
         };
-        auto phiX = [&](Long n, Long m) {
+        auto phiX = [&read_coeff,&B0,&i,&p0](Long n, Long m) {
           return read_coeff(B0, i+2, p0, n, m);
         };
 
         std::complex<Real> gr, gt, gp;
         { // (gt, gp) <-- (phiG, phiX)
-          auto A = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
-          auto B = [&](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
+          auto A = [&p_](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>(n*n * ((n+1)*(n+1) - m*m) / (Real)((2*n+1)*(2*n+3))) : 0); };
+          auto B = [&p_](Long n, Long m) { return (0<=n && m<=n && n<=p_ ? sqrt<Real>((n+1)*(n+1) * (n*n - m*m) / (Real)((2*n+1)*(2*n-1))) : 0); };
           gr = phiY(n,m);
           gt = phiG(n-1,m)*A(n-1,m) - phiG(n+1,m)*B(n+1,m) - imag*(Real)m*phiX(n,m);
           gp = phiX(n-1,m)*A(n-1,m) - phiX(n+1,m)*B(n+1,m) + imag*(Real)m*phiG(n,m);
@@ -1105,7 +1105,7 @@ template <class Real> void SphericalHarmonics<Real>::LaplaceEvalSL(const Vector<
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
-        auto write_coeff = [&](std::complex<Real> c, Long n, Long m) {
+        auto write_coeff = [&p0,&LaplaceOp,&i](std::complex<Real> c, Long n, Long m) {
           if (0 <= m && m <= n && n <= p0) {
             Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
             LaplaceOp[i][idx] = c.real();
@@ -1211,7 +1211,7 @@ template <class Real> void SphericalHarmonics<Real>::LaplaceEvalDL(const Vector<
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
-        auto write_coeff = [&](std::complex<Real> c, Long n, Long m) {
+        auto write_coeff = [&p0,&LaplaceOp,&i](std::complex<Real> c, Long n, Long m) {
           if (0 <= m && m <= n && n <= p0) {
             Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
             LaplaceOp[i][idx] = c.real();
@@ -1329,7 +1329,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalSL(const Vector<R
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
-        auto write_coeff = [&](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
+        auto write_coeff = [&p0,&StokesOp,&i,&M](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
           if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
             Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
             StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real();
@@ -1542,7 +1542,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalDL(const Vector<R
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
-        auto write_coeff = [&](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
+        auto write_coeff = [&p0,&StokesOp,&i,&M](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
           if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
             Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
             StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real();
@@ -1773,7 +1773,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKL(const Vector<R
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
-        auto write_coeff = [&](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
+        auto write_coeff = [&p0,&StokesOp,&i,&M](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
           if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
             Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
             StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real();
@@ -2152,7 +2152,7 @@ template <class Real> void SphericalHarmonics<Real>::StokesEvalKSelf(const Vecto
 
     for (Long m = 0; m <= p0; m++) {
       for (Long n = m; n <= p0; n++) {
-        auto write_coeff = [&](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
+        auto write_coeff = [&p0,&StokesOp,&i,&M](std::complex<Real> c, Long n, Long m, Long k0, Long k1) {
           if (0 <= m && m <= n && n <= p0 && 0 <= k0 && k0 < COORD_DIM && 0 <= k1 && k1 < COORD_DIM) {
             Long idx = (2 * p0 - m + 2) * m - (m ? p0+1 : 0) + n;
             StokesOp[i * COORD_DIM + k1][k0 * M + idx] = c.real();

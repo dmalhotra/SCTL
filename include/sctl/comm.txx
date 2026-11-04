@@ -1183,8 +1183,9 @@ template <bool BlockingDirect, class SIter, class RIter> Comm::Request Comm::Ial
   const Integer np = impl_->mpi_size_, rank = Rank();
   const auto on_node = [this](Integer i) { return impl_->NodeIdx(i) >= 0; };
   // Reading a peer's send buffer means synchronizing the node before returning, which this
-  // routine's name says it will not do, so the caller has to ask for it.
-  const bool direct = BlockingDirect && impl_->direct_;
+  // routine's name says it will not do, so the caller has to ask for it. impl_->direct_ first: with
+  // BlockingDirect = false first, direct is a constant, and Clang warns that skip need not capture it.
+  const bool direct = impl_->direct_ && BlockingDirect;
   const auto skip = [rank,direct,&on_node](Integer i) { return i == rank || (direct && on_node(i)); };
   // Every block but self, whichever way it arrives: ReadNodeBlocks needs the node-local ones
   // faulted in already, and MPI writes the rest. Here the pages fault in with all threads.
@@ -1244,7 +1245,7 @@ template <bool BlockingDirect, class SIter, class RIter> Comm::Request Comm::Ial
 #endif
   };
   Long m = 0, posted_bytes = 0;
-  const auto post_peers = [&](const auto& take) {  // receives for the whole set, then sends
+  const auto post_peers = [&np,&rcounts,&m,&post,&rbuf,&rdispls,&request,&posted_bytes,&scounts,&sbuf,&sdispls](const auto& take) {  // receives for the whole set, then sends
     for (Integer i = 0; i < np; i++) {
       if (!take(i) || !rcounts[i]) continue;
       const Long bytes = rcounts[i] * (Long)sizeof(RType);

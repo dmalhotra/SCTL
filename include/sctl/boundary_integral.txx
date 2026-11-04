@@ -1317,14 +1317,14 @@ namespace sctl {
         elem_lst_map.at(elem_lst_name[i])->GetFarFieldDensity(F_far_, F_);
         // the loops of this and ComputeNearInterac without a region of one thread (see omp_par::one_thread)
         if (F_far_.Dim()) { // F_far <-- F_far * wts_far
-          omp_par::parallel_for(offset1_far - offset0_far, [&](const Long i_) {
+          omp_par::parallel_for(offset1_far - offset0_far, [this,offset0_far](const Long i_) {
             const Long i = offset0_far + i_;
             for (Long j = 0; j < KDIM0; j++) {
               F_far[i*KDIM0+j] *= wts_far[i];
             }
           });
         } else { // F_far <-- F_ * wts_far
-          omp_par::parallel_for(offset1_far - offset0_far, [&](const Long i_) {
+          omp_par::parallel_for(offset1_far - offset0_far, [this,offset0_far,&F_](const Long i_) {
             const Long i = offset0_far + i_;
             for (Long j = 0; j < KDIM0; j++) {
               F_far[i*KDIM0+j] = F_[i_*KDIM0+j] * wts_far[i];
@@ -1344,7 +1344,7 @@ namespace sctl {
       ScratchBuf<Real> U_full_buf(Ntrg * KDIM1);
       Vector<Real> U_full(U_full_buf); // before the dot product with the target normals
       fmm.Eval(U_full, "Trg");
-      omp_par::parallel_for(Ntrg, [&](const Long i) {
+      omp_par::parallel_for(Ntrg, [this,&U,&U_full](const Long i) {
         for (Long k = 0; k < KDIM1_; k++) {
           for (Long l = 0; l < COORD_DIM; l++) {
             U[i*KDIM1_+k] += U_full[(i*KDIM1_+k)*COORD_DIM+l] * Xn_trg[i*COORD_DIM+l];
@@ -1372,7 +1372,7 @@ namespace sctl {
 
     ScratchBuf<Real> U_near_buf(Nelem ? (near_elem_dsp[Nelem-1]+near_elem_cnt[Nelem-1])*KDIM1_ : 0); // in scratch memory, as U_trg below
     Vector<Real> U_near(U_near_buf);
-    omp_par::parallel_for(near_blk_elem.Dim(), [&](const Long blk) { // Compute near-interactions from precomputed operator matrix
+    omp_par::parallel_for(near_blk_elem.Dim(), [this,&U_near,&F,KDIM1_](const Long blk) { // Compute near-interactions from precomputed operator matrix
       const Long elem_idx = near_blk_elem[blk], t0 = near_blk_t0[blk], nt = near_blk_cnt[blk];
       const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
       const Long trg_dof = nt*KDIM1_;
@@ -1395,7 +1395,7 @@ namespace sctl {
       const auto& elem_lst = elem_lst_map.at(name);
       const auto& elem_data = elem_data_map.at(name);
       // EvalNearInterac must treat Xt as the targets it was handed, not the element's near-list
-      omp_par::parallel_for(near_blk_elem.Dim(), [&](const Long blk) {
+      omp_par::parallel_for(near_blk_elem.Dim(), [this,i,&F,&U_near,&elem_data,&elem_lst,KDIM1_](const Long blk) {
         const Long elem_idx = near_blk_elem[blk], t0 = near_blk_t0[blk], nt = near_blk_cnt[blk];
         const Long j = elem_idx - elem_lst_dsp[i];
         if (j < 0 || j >= elem_lst_cnt[i]) return; // block belongs to another element list
@@ -1419,7 +1419,7 @@ namespace sctl {
     Profile::Tic("Comm", &comm_, true, 7);
     near_sort_scatter.ScatterForward(U_trg, U_near, KDIM1_);
     Profile::Toc();
-    omp_par::parallel_for(Ntrg, [&](const Long i) { // Accumulate result to U
+    omp_par::parallel_for(Ntrg, [this,&U,&U_trg,KDIM1_](const Long i) { // Accumulate result to U
       Long near_cnt = near_trg_cnt[i];
       Long near_dsp = near_trg_dsp[i];
       for (Long j = 0; j < near_cnt; j++) {

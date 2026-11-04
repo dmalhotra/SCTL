@@ -559,7 +559,7 @@ namespace sctl {
 
           // 4-point DFT on evens (b[0], b[2], b[4], b[6]) → E[0..3]
           // 4-point DFT on odds  (b[1], b[3], b[5], b[7]) → O[0..3]
-          auto dft4 = [&](const T& z0r, const T& z0i, const T& z1r, const T& z1i,
+          auto dft4 = [&S](const T& z0r, const T& z0i, const T& z1r, const T& z1i,
                           const T& z2r, const T& z2i, const T& z3r, const T& z3i,
                           T& E0r, T& E0i, T& E1r, T& E1i,
                           T& E2r, T& E2i, T& E3r, T& E3i) {
@@ -737,7 +737,7 @@ namespace sctl {
       ScratchBuf<T> buf_b(buf_reals);
       Iterator<T> cur = buf_a.begin();
       Iterator<T> nxt = buf_b.begin();
-      const auto swap_bufs = [&](){ Iterator<T> t = cur; cur = nxt; nxt = t; };
+      const auto swap_bufs = [&cur, &nxt](){ Iterator<T> t = cur; cur = nxt; nxt = t; };
 
       // Stage 1: pack input as a full (howmany, dim_vec...) complex tensor.
       const Long total_complex = howmany * ProductOf(plan.dim_vec);
@@ -993,7 +993,7 @@ namespace sctl {
     Vector<double> in(N0), out(N1);
 
     // destroy-input + preserve-input plans (latter null for multi-D C2R)
-    auto mkplan = [&](unsigned flags) -> fftw_plan {
+    auto mkplan = [this, &rank, &dim_vec_, &in, &N0, &out, &N1](unsigned flags) -> fftw_plan {
       if      (fft_type == FFT_Type::R2C)     return fftw_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, flags);
       else if (fft_type == FFT_Type::C2C)     return fftw_plan_many_dft    (rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, flags);
       else if (fft_type == FFT_Type::C2C_INV) return fftw_plan_many_dft    (rank, &dim_vec_[0], this->howmany_, (fftw_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftw_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, flags);
@@ -1092,7 +1092,7 @@ namespace sctl {
     if (!N0 || !N1) return;
     Vector<float> in (N0), out(N1);
 
-    auto mkplan = [&](unsigned flags) -> fftwf_plan {
+    auto mkplan = [this, &rank, &dim_vec_, &in, &N0, &out, &N1](unsigned flags) -> fftwf_plan {
       if      (fft_type == FFT_Type::R2C)     return fftwf_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, flags);
       else if (fft_type == FFT_Type::C2C)     return fftwf_plan_many_dft    (rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, flags);
       else if (fft_type == FFT_Type::C2C_INV) return fftwf_plan_many_dft    (rank, &dim_vec_[0], this->howmany_, (fftwf_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwf_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, flags);
@@ -1190,7 +1190,7 @@ namespace sctl {
     if (!N0 || !N1) return;
     Vector<long double> in (N0), out(N1);
 
-    auto mkplan = [&](unsigned flags) -> fftwl_plan {
+    auto mkplan = [this, &rank, &dim_vec_, &in, &N0, &out, &N1](unsigned flags) -> fftwl_plan {
       if      (fft_type == FFT_Type::R2C)     return fftwl_plan_many_dft_r2c(rank, &dim_vec_[0], this->howmany_, &in[0], nullptr, 1, N0 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, flags);
       else if (fft_type == FFT_Type::C2C)     return fftwl_plan_many_dft    (rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_FORWARD, flags);
       else if (fft_type == FFT_Type::C2C_INV) return fftwl_plan_many_dft    (rank, &dim_vec_[0], this->howmany_, (fftwl_complex*)&in[0], nullptr, 1, N0 / 2 / this->howmany_, (fftwl_complex*)&out[0], nullptr, 1, N1 / 2 / this->howmany_, FFTW_BACKWARD, flags);

@@ -491,7 +491,7 @@ int main() {
   // --- Eval takes the fused path for these; it must still agree with KernelMatrix ---
   std::printf("Eval vs KernelMatrix (fused kernels) :\n");
   {
-    auto check = [&](auto K, const char* nm, Long K0, Long K1, Long ND, const void* ctx) {
+    auto check = [](auto K, const char* nm, Long K0, Long K1, Long ND, const void* ctx) {
       if (ctx) K.SetCtxPtr((void*)ctx);
       const Long Ns = 7, Nt = 5;
       Vector<R> Xs(Ns*3), Xn(Ns*ND), Vs(Ns*K0), Xt(Nt*3);

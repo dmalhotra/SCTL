@@ -569,7 +569,7 @@ template <class ValueType, class Derived> class BasisInterface {
         }
       }
 
-      auto fn_perturb = [&](std::function<ValueType(ValueType)> fn, bool even) { // Set M0
+      auto fn_perturb = [&Ngrid, &Ncoeff, &order, &dir0, &nodes, &dir1](std::function<ValueType(ValueType)> fn, bool even) { // Set M0
         Matrix<ValueType> M0(Ngrid, 2 * Ncoeff);
         M0.SetZero();
         { // dir0
@@ -878,7 +878,7 @@ template <class ValueType, class Derived> class BasisInterface {
         }
       }
 
-      auto fn_perturb = [&](std::function<ValueType(ValueType)> fn, bool even) { // Set M0
+      auto fn_perturb = [&Ngrid, &Ncoeff, &order, &dir0, &nodes, &dir1](std::function<ValueType(ValueType)> fn, bool even) { // Set M0
         Matrix<ValueType> M0(Ngrid, 2 * Ncoeff);
         M0.SetZero();
         { // dir0

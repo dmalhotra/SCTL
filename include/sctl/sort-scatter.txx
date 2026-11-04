@@ -74,7 +74,7 @@ template <class Key> Long splitCounts(Vector<Long>& scnt, Vector<Long>& rcnt, Co
 
 /** `dst[i] = src[map[i]]` for `n` rows of `dof` values. */
 template <class T> void localMove(ConstIterator<T> src, Iterator<T> dst, const Vector<Long>& map, Long n, Long dof) {
-  omp_par::parallel_for(n, [&](const Long i) { std::memcpy(&dst[i * dof], &src[map[i] * dof], dof * sizeof(T)); });
+  omp_par::parallel_for(n, [&map, src, dst, dof](const Long i) { std::memcpy(&dst[i * dof], &src[map[i] * dof], dof * sizeof(T)); });
 }
 
 /** One exchange stage, with the per-rank counts scaled by `dof`. */

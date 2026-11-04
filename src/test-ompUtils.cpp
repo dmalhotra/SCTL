@@ -330,7 +330,7 @@ int main() {
   std::printf("parallel_for :\n");
   {
     const Long N = 10007;
-    const auto calls_once = [N](const bool dynamic) {
+    const auto calls_once = [](const bool dynamic) {
       std::vector<int> cnt((size_t)N, 0);
       sctl::omp_par::parallel_for(N, [&cnt](const Long i) { cnt[i]++; }, dynamic);
       bool once = true;
@@ -378,9 +378,9 @@ int main() {
   std::printf("parallel_reduce :\n");
   {
     const Long N = 10007;
-    const auto sum_max = [N]() {
+    const auto sum_max = []() {
       const Long s = sctl::omp_par::parallel_reduce(N, (Long)0, [](const Long i) { return i * i; }, [](const Long a, const Long b) { return a + b; });
-      const Long m = sctl::omp_par::parallel_reduce(N, (Long)-1, [N](const Long i) { return (i * 7919) % N; }, [](const Long a, const Long b) { return std::max(a, b); });
+      const Long m = sctl::omp_par::parallel_reduce(N, (Long)-1, [](const Long i) { return (i * 7919) % N; }, [](const Long a, const Long b) { return std::max(a, b); });
       return std::make_pair(s, m);
     };
     const Long ref_sum = (N - 1) * N * (2 * N - 1) / 6;
