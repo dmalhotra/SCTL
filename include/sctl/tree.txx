@@ -802,8 +802,9 @@ namespace sctl {
           auto& n0_lsts = node_lst[idx];
           SCTL_ASSERT(n0_lsts.parent >= 0);
 
+          const auto path_row = nbr_path[n0_lsts.p2n];
           for (Integer nbd_idx = 0; nbd_idx < MAX_NBRS; nbd_idx++) {
-            const auto& path = nbr_path[n0_lsts.p2n][nbd_idx];
+            const auto& path = path_row[nbd_idx];
             const Long parent_nbr_idx = node_lst[n0_lsts.parent].nbr[path.p_nbr];
             if (parent_nbr_idx >= 0) n0_lsts.nbr[nbd_idx] = node_lst[parent_nbr_idx].child[path.p_nbr_child];
             else n0_lsts.nbr[nbd_idx] = -1;
