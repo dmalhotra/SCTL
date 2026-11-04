@@ -13,7 +13,7 @@
 #include "sctl/intrin-wrapper.hpp"  // for TypeTraits
 #include "sctl/iterator.hpp"        // for ConstIterator, Iterator
 #include "sctl/matrix.hpp"          // for Matrix
-#include "sctl/ompUtils.hpp"        // for omp_par::one_thread
+#include "sctl/ompUtils.hpp"        // for omp_par::parallel_for
 #include "sctl/ompUtils.txx"
 #include "sctl/profile.hpp"         // for Profile, ProfileCounter
 #include "sctl/profile.txx"         // for Profile::IncrementCounter
@@ -180,34 +180,21 @@ template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKe
           Xt_[k][i] = 0;
         }
       }
-      if (enable_openmp && !omp_par::one_thread()) { // Compute Vt_, without a region of one thread (see omp_par::one_thread)
-        #pragma omp parallel for schedule(static)
-        for (Long t = 0; t < NNt; t += VecLen) {
-          RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM_], vs[KDIM0];
-          for (Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
-          for (Integer k = 0; k < DIM; k++) xt[k] = RealVec::LoadAligned(&Xt_[k][t]);
-          for (Long s = 0; s < Ns; s++) {
-            for (Integer k = 0; k < DIM; k++) xs[k] = RealVec::Load1(&Xs_[s][k]);
-            for (Integer k = 0; k < N_DIM; k++) ns[k] = RealVec::Load1(&Ns_[s][k]);
-            for (Integer k = 0; k < KDIM0; k++) vs[k] = RealVec::Load1(&Vs_[s][k]);
-            uKerEval(vt, xt, xs, ns, vs);
-          }
-          for (Integer k = 0; k < KDIM1; k++) vt[k].StoreAligned(&Vt_[k][t]);
+      const auto target_block = [&Xt_, &Xs_, &Ns_, &Vs_, &Vt_, &uKerEval, Ns](const Long b) { // Vt_ of the targets b*VecLen to (b+1)*VecLen
+        const Long t = b * VecLen;
+        RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM_], vs[KDIM0];
+        for (Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
+        for (Integer k = 0; k < DIM; k++) xt[k] = RealVec::LoadAligned(&Xt_[k][t]);
+        for (Long s = 0; s < Ns; s++) {
+          for (Integer k = 0; k < DIM; k++) xs[k] = RealVec::Load1(&Xs_[s][k]);
+          for (Integer k = 0; k < N_DIM; k++) ns[k] = RealVec::Load1(&Ns_[s][k]);
+          for (Integer k = 0; k < KDIM0; k++) vs[k] = RealVec::Load1(&Vs_[s][k]);
+          uKerEval(vt, xt, xs, ns, vs);
         }
-      } else {
-        for (Long t = 0; t < NNt; t += VecLen) {
-          RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM_], vs[KDIM0];
-          for (Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
-          for (Integer k = 0; k < DIM; k++) xt[k] = RealVec::LoadAligned(&Xt_[k][t]);
-          for (Long s = 0; s < Ns; s++) {
-            for (Integer k = 0; k < DIM; k++) xs[k] = RealVec::Load1(&Xs_[s][k]);
-            for (Integer k = 0; k < N_DIM; k++) ns[k] = RealVec::Load1(&Ns_[s][k]);
-            for (Integer k = 0; k < KDIM0; k++) vs[k] = RealVec::Load1(&Vs_[s][k]);
-            uKerEval(vt, xt, xs, ns, vs);
-          }
-          for (Integer k = 0; k < KDIM1; k++) vt[k].StoreAligned(&Vt_[k][t]);
-        }
-      }
+        for (Integer k = 0; k < KDIM1; k++) vt[k].StoreAligned(&Vt_[k][t]);
+      };
+      if (enable_openmp) omp_par::parallel_for(NNt / VecLen, target_block);
+      else for (Long b = 0; b < NNt / VecLen; b++) target_block(b);
 
       for (Long k = 0; k < KDIM1; k++) { // v_trg += Vt_
         for (Long i = 0; i < Nt; i++) {
