@@ -24,10 +24,13 @@ namespace sctl {
 // Clang checks the lambda captures of each instantiation: alpha and beta are read only for
 // Update::AlphaBeta, a size that the template fixes is a constant, which needs no capture, and some
 // captures are read only in one branch of an if constexpr.
-// With capture defaults instead, GCC did not inline the tiles and fixed sizes were up to 8% slower
+// With capture defaults instead, GCC did not inline the tiles and fixed sizes were up to 8% slower.
+// [[gnu::always_inline]] stands before the parameters of the lambdas, a position of C++23: nvcc drops
+// __attribute__((always_inline)) after them, and SmallGEMM took up to 1.34x the time
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-lambda-capture"
+#pragma clang diagnostic ignored "-Wc++23-lambda-attributes"
 #endif
 
 namespace detail_small_gemm {
@@ -163,7 +166,7 @@ namespace detail_small_gemm {
     // Rows i0.. (MR of them) and columns j0.. (NV vectors of W) of C; if Partial, only the first nc
     // columns of the one vector. Always inlined, as are cols and rows: GCC left some out of line,
     // and kept acc on the stack there
-    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta](const Long i0, const Long j0, auto mr, auto nv, auto w, auto partial, const Integer nc) __attribute__((always_inline)) {
+    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta] [[gnu::always_inline]] (const Long i0, const Long j0, auto mr, auto nv, auto w, auto partial, const Integer nc) {
       constexpr Integer MR = decltype(mr)::value;
       constexpr Integer NV = decltype(nv)::value;
       constexpr Integer W = decltype(w)::value;
@@ -260,7 +263,7 @@ namespace detail_small_gemm {
 
     const Long n_full = n - n % VL; // columns done in full-width vectors
     const Long n_tile = n_full - n_full % (IT::value * VL); // columns done in tiles of IT vectors
-    const auto cols = [&tile, n_full, n_tile](const Long i0, auto mr) __attribute__((always_inline)) {
+    const auto cols = [&tile, n_full, n_tile] [[gnu::always_inline]] (const Long i0, auto mr) {
       for (Long j = 0; j < n_tile; j += IT::value * VL) tile(i0, j, mr, IT{}, IV{}, std::false_type{}, VL);
       for (Long j = n_tile; j < n_full; j += VL) tile(i0, j, mr, I1{}, IV{}, std::false_type{}, VL);
     };
@@ -276,7 +279,7 @@ namespace detail_small_gemm {
     for (Long i = m_4; i < m_2; i += 2) cols(i, I2{});
     for (Long i = m_2; i < m; i++) cols(i, I1{});
     if (n_full < n) { // the kind of tile chosen once: chosen in each block of rows, the tiles of all kinds there made GCC's code up to 1.13x slower
-      const auto rows = [&tile, m, m_blk, m_4, m_2](const Long j0, auto w, auto partial, const Integer nc) __attribute__((always_inline)) {
+      const auto rows = [&tile, m, m_blk, m_4, m_2] [[gnu::always_inline]] (const Long j0, auto w, auto partial, const Integer nc) {
         for (Long i = 0; i < m_blk; i += IR::value) tile(i, j0, IR{}, I1{}, w, partial, nc);
         for (Long i = m_blk; i < m_4; i += 4) tile(i, j0, I4{}, I1{}, w, partial, nc);
         for (Long i = m_4; i < m_2; i += 2) tile(i, j0, I2{}, I1{}, w, partial, nc);
@@ -286,7 +289,7 @@ namespace detail_small_gemm {
         rows(n - VL, IV{}, std::false_type{}, VL);
       } else if constexpr (VL * sizeof(ValueType) == 64) { // AVX-512: in the narrowest vector of a quarter, half or the full width that holds them, partial unless they fill it (a partial vector of the full width was up to 1.35x slower)
         const Integer nc = (Integer)(n - n_full);
-        const auto in = [&rows, n_full, nc](auto w) __attribute__((always_inline)) {
+        const auto in = [&rows, n_full, nc] [[gnu::always_inline]] (auto w) {
           if (nc == decltype(w)::value) {
             rows(n_full, w, std::false_type{}, decltype(w)::value);
           } else {
@@ -486,7 +489,7 @@ namespace detail_small_gemm {
 
     // Rows i0.. (MR of them) and entries j0.. (NV vectors of W reals) of C; if Partial, only the first
     // nc reals of the one vector. Inlined, as in VecProduct
-    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta, alpha_one, beta_zero](const Long i0, const Long j0, auto mr, auto nv, auto w, auto partial, const Integer nc) __attribute__((always_inline)) {
+    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta, alpha_one, beta_zero] [[gnu::always_inline]] (const Long i0, const Long j0, auto mr, auto nv, auto w, auto partial, const Integer nc) {
       constexpr Integer MR = decltype(mr)::value;
       constexpr Integer NV = decltype(nv)::value;
       constexpr Integer W = decltype(w)::value;
@@ -554,7 +557,7 @@ namespace detail_small_gemm {
 
     const Long n_full = n - n % VE; // entries done in full-width vectors
     const Long n_pair = n_full - n_full % (2 * VE); // entries done in pairs of vectors
-    const auto cols = [&tile, n_full, n_pair](const Long i0, auto mr) __attribute__((always_inline)) {
+    const auto cols = [&tile, n_full, n_pair] [[gnu::always_inline]] (const Long i0, auto mr) {
       for (Long j = 0; j < n_pair; j += 2 * VE) tile(i0, j, mr, I2{}, IV{}, std::false_type{}, VL);
       for (Long j = n_pair; j < n_full; j += VE) tile(i0, j, mr, I1{}, IV{}, std::false_type{}, VL);
     };
@@ -564,13 +567,13 @@ namespace detail_small_gemm {
     for (Long i = 0; i < m_blk; i += IR::value) cols(i, IR{});
     for (Long i = m_blk; i < m; i++) cols(i, I1{});
     if (n_full < n) {
-      const auto rows = [&tile, m, m_blk](const Long j0, auto w, auto partial, const Integer nc) __attribute__((always_inline)) {
+      const auto rows = [&tile, m, m_blk] [[gnu::always_inline]] (const Long j0, auto w, auto partial, const Integer nc) {
         for (Long i = 0; i < m_blk; i += IR::value) tile(i, j0, IR{}, I1{}, w, partial, nc);
         for (Long i = m_blk; i < m; i++) tile(i, j0, I1{}, I1{}, w, partial, nc);
       };
       if constexpr (VL * sizeof(Real) == 64) { // as in VecProduct, for W reals
         const Integer nr = (Integer)(2 * (n - n_full));
-        const auto in = [&rows, n_full, nr](auto w) __attribute__((always_inline)) {
+        const auto in = [&rows, n_full, nr] [[gnu::always_inline]] (auto w) {
           if (nr == decltype(w)::value) {
             rows(n_full, w, std::false_type{}, decltype(w)::value);
           } else {
