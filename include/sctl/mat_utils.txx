@@ -383,6 +383,11 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
 #undef SCTL_SVD_DEBUG
 
 template <class ValueType> inline void svd(char *JOBU, char *JOBVT, Long *M, Long *N, Iterator<ValueType> A, Long *LDA, Iterator<ValueType> S, Iterator<ValueType> U, Long *LDU, Iterator<ValueType> VT, Long *LDVT, Iterator<ValueType> WORK, Long *LWORK, Long *INFO) {
+  SCTL_UNUSED(JOBU);
+  SCTL_UNUSED(JOBVT);
+  SCTL_UNUSED(WORK);
+  SCTL_UNUSED(LWORK);
+  SCTL_UNUSED(INFO);
   StaticArray<Long, 2> dim;
   dim[0] = std::max(*N, *M);
   dim[1] = std::min(*N, *M);

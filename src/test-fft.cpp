@@ -4,7 +4,7 @@
 
 #include "sctl.hpp"
 
-int main(int argc, char** argv) {
+int main() {
   sctl::FFT<float>::test();
   sctl::FFT<double>::test();
   sctl::FFT<long double>::test();

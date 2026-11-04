@@ -128,6 +128,8 @@ inline void MemoryManager::CheckMemHead(const MemHead& mem_head) {  // Verify he
   check_sum -= mem_head.check_sum;
   check_sum = check_sum & ((1UL << (8 * sizeof(mem_head.check_sum))) - 1);
   SCTL_ASSERT_MSG(check_sum == mem_head.check_sum, "invalid memory address or corrupted memory.");
+#else
+  SCTL_UNUSED(mem_head);
 #endif
 }
 

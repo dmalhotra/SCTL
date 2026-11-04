@@ -971,6 +971,7 @@ namespace sctl { // Generic
   };
   template <class VData> struct rsqrt_newton_iter<0,0,VData> {
     static inline VData eval(const VData& y, const VData& x) {
+      SCTL_UNUSED(x);
       return y;
     }
   };
@@ -1067,6 +1068,7 @@ namespace sctl { // Generic
   };
 
   template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0) {
+    SCTL_UNUSED(x1);
     return set1_intrin<VData>(c0);
   }
   template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1) {

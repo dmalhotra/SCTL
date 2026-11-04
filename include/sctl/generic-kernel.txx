@@ -36,6 +36,7 @@ template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM, Integer N_DI
 };
 template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM> struct uKerHelper<uKernel,KDIM0,KDIM1,DIM,0> {
   template <Integer digits, class VecType, class NormalType> static void MatEval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const NormalType& n, const void* ctx_ptr) {
+    SCTL_UNUSED(n);
     uKernel::template uKerMatrix<digits>(u, r, ctx_ptr);
   }
 };

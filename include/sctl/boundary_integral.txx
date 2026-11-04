@@ -551,23 +551,43 @@ namespace sctl {
 
 
   template <class Real> void ElementListBase<Real>::GetFarFieldDensity(Vector<Real>& Fout, const Vector<Real>& Fin) const {
+    SCTL_UNUSED(Fin);
     if (Fout.Dim() != 0) Fout.ReInit(0);
   }
 
   template <class Real> void ElementListBase<Real>::FarFieldDensityOperatorTranspose(Matrix<Real>& Mout, const Matrix<Real>& Min, const Long elem_idx) const {
+    SCTL_UNUSED(Min);
+    SCTL_UNUSED(elem_idx);
     if (Mout.Dim(0) != 0 || Mout.Dim(1) != 0) Mout.ReInit(0,0);
   }
 
 
   template <class Real> template <class Kernel> void ElementListBase<Real>::SelfInterac(Vector<Matrix<Real>>& M_lst, const Kernel& ker, Real tol, bool trg_dot_prod, const ElementListBase<Real>* self) {
+    SCTL_UNUSED(ker);
+    SCTL_UNUSED(tol);
+    SCTL_UNUSED(trg_dot_prod);
+    SCTL_UNUSED(self);
     for (auto& M : M_lst) if (M.Dim(0) != 0 || M.Dim(1) != 0) M.ReInit(0,0);
   }
 
   template <class Real> template <class Kernel> void ElementListBase<Real>::NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
+    SCTL_UNUSED(Xt);
+    SCTL_UNUSED(normal_trg);
+    SCTL_UNUSED(ker);
+    SCTL_UNUSED(tol);
+    SCTL_UNUSED(elem_idx);
+    SCTL_UNUSED(self);
     if (M.Dim(0) != 0 || M.Dim(1) != 0) M.ReInit(0,0);
   }
 
   template <class Real> template <class Kernel> void ElementListBase<Real>::EvalNearInterac(Vector<Real>& u, const Vector<Real>& f, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
+    SCTL_UNUSED(f);
+    SCTL_UNUSED(Xt);
+    SCTL_UNUSED(normal_trg);
+    SCTL_UNUSED(ker);
+    SCTL_UNUSED(tol);
+    SCTL_UNUSED(elem_idx);
+    SCTL_UNUSED(self);
     if (u.Dim() != 0) u.ReInit(0);
   }
 

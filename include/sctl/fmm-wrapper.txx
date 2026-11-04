@@ -364,6 +364,8 @@ template <class Real, Integer DIM> template <class KerM2M, class KerM2L, class K
       it.second.setup_ker = true;
     }
   }
+  #else
+  SCTL_UNUSED(m2l_vol_poten);
   #endif
 }
 template <class Real, Integer DIM> template <class KerS2M, class KerS2L> void ParticleFMM<Real,DIM>::AddSrc(const std::string& name, const KerS2M& ker_s2m, const KerS2L& ker_s2l) {
@@ -458,6 +460,8 @@ template <class Real, Integer DIM> template <class KerM2T, class KerL2T> void Pa
       it.second.setup_tree = true;
     }
   }
+  #else
+  SCTL_UNUSED(m2t_vol_poten);
   #endif
 }
 template <class Real, Integer DIM> template <class KerS2T> void ParticleFMM<Real,DIM>::SetKernelS2T(const std::string& src_name, const std::string& trg_name, const KerS2T& ker_s2t) {

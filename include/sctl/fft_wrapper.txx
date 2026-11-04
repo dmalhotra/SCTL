@@ -125,6 +125,7 @@ namespace sctl {
 
     template <class T> void BuildTwiddles(const Vector<Long>& radices, int sign, Integer nthreads,
                                           Vector<T>& twiddle, Vector<Long>& stage_off) {
+      SCTL_UNUSED(nthreads);
       const Long s = radices.Dim();
       stage_off.ReInit(s + 1);
       Long total = 0;
@@ -159,6 +160,7 @@ namespace sctl {
 
     template <class T> void BuildSmallDFT(const Vector<Long>& radices, int sign, Integer nthreads,
                                           Vector<T>& dft_flat, Vector<Long>& stage_off) {
+      SCTL_UNUSED(nthreads);
       const Long s = radices.Dim();
       stage_off.ReInit(s + 1);
       Long total = 0;
@@ -188,6 +190,7 @@ namespace sctl {
 
     inline void BuildDigitReversal(const Vector<Long>& radices, Integer nthreads,
                                    Vector<Long>& perm) {
+      SCTL_UNUSED(nthreads);
       const Long s = radices.Dim();
       Long N = 1;
       for (Long k = 0; k < s; k++) N *= radices[k];
@@ -730,6 +733,8 @@ namespace sctl {
       Integer nthreads = plan.nthreads;
 #ifdef _OPENMP
       if (SCTL_IN_PARALLEL()) nthreads = 1;
+#else
+      SCTL_UNUSED(nthreads);
 #endif
 
       const Long buf_reals = std::max<Long>(N0, N1) + std::max<Long>(N0, N1);
@@ -940,6 +945,8 @@ namespace sctl {
     }();
     SCTL_UNUSED(once);
     fftw_plan_with_nthreads(Nthreads);
+#else
+    SCTL_UNUSED(Nthreads);
 #endif
   }
 
