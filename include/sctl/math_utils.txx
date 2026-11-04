@@ -623,7 +623,7 @@ template <class Real> static inline Real pow_generic(const Real b, const Real e)
   const Real r = exp<Real>(th);
   return sign * (isinf<Real>(r) ? r : r + r * tl);
 }
-template <class ValueType> static inline constexpr ValueType pow_integer_exp(ValueType b, Long e) {
+template <class ValueType> SCTL_GPU_HD static inline constexpr ValueType pow_integer_exp(ValueType b, Long e) {
   return (e > 0) ? ((e & 1) ? b : ValueType(1)) * pow_integer_exp(b*b, e>>1) : ValueType(1);
 }
 template <class Real, class ExpType> class pow_wrapper {
@@ -639,7 +639,7 @@ template <class ValueType> class pow_wrapper<ValueType,Long> {
     }
 };
 
-template <Long e, class ValueType> inline constexpr ValueType pow(ValueType b) {
+template <Long e, class ValueType> SCTL_GPU_HD inline constexpr ValueType pow(ValueType b) {
   return (e > 0) ? pow_integer_exp<ValueType>(b, e) : 1/pow_integer_exp<ValueType>(b, -e);
 }
 

@@ -156,7 +156,7 @@ template <Integer DIM> SCTL_GPU_HD uint8_t MortonCode<DIM>::coarsest_depth(const
   return static_cast<uint8_t>(MAX_DEPTH - tzs / DIM);
 }
 
-template <Integer DIM> template <Integer S> constexpr typename MortonCode<DIM>::MortonInteger MortonCode<DIM>::step_mask() {
+template <Integer DIM> template <Integer S> SCTL_GPU_HD constexpr typename MortonCode<DIM>::MortonInteger MortonCode<DIM>::step_mask() {
   MortonInteger m{};
   constexpr Integer total_bits = DIM * MAX_DEPTH;
   constexpr Integer stride     = DIM * (Integer(1) << S);
@@ -359,7 +359,7 @@ template <Integer DIM> SCTL_GPU_HD Integer Morton<DIM>::Path2Node() const {
   }
 }
 
-template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, (1 << DIM)> Morton<DIM>::Children() const {
+template <Integer DIM> SCTL_GPU_HD HDArray<Morton<DIM>, (1 << DIM)> Morton<DIM>::Children() const {
   // SCTL_ASSERT_MSG is not compiled out, and inlining a stream and an abort into a routine the tree
   // build calls per node costs more than the check is worth once a build is known to hold to the
   // precondition. `assert` on both sides, so NDEBUG governs it as it does the device check.
@@ -369,7 +369,7 @@ template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, (1 << DIM)> Morton<DI
   SCTL_ASSERT_MSG(depth < MAX_DEPTH, "Morton::Children: a MAX_DEPTH node has no children");
 #endif
   using MI = typename MortonCode<DIM>::MortonInteger;
-  std::array<Morton, (1 << DIM)> out{};
+  HDArray<Morton, (1 << DIM)> out{};
   // Child k's code: parent's code with bit i of k setting coord i's bit at level (MAX_DEPTH-depth-1).
   // In interleaved space that's `(k << shift)` with shift = DIM*(MAX_DEPTH-depth-1).
   const int shift = static_cast<int>(DIM) * (static_cast<int>(MAX_DEPTH) - static_cast<int>(depth) - 1);
@@ -425,7 +425,7 @@ template <Integer DIM> template <Periodicity PER, bool DYN, Integer idx, Integer
 template <Integer DIM> template <Periodicity PER, bool DYN, Integer idx>
 [[gnu::always_inline]] inline SCTL_GPU_HD void Morton<DIM>::nbr_emit_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
                                         Periodicity periodicity, uint8_t level,
-                                        std::array<Morton, pow<DIM, std::size_t>(3)>& out) {
+                                        HDArray<Morton, pow<DIM, std::size_t>(3)>& out) {
   if constexpr (idx < pow<DIM, Integer>(3)) {
     using MI = typename MortonCode<DIM>::MortonInteger;
     std::uint64_t xi_nbr[DIM];
@@ -445,7 +445,7 @@ template <Integer DIM> template <Periodicity PER, bool DYN, Integer idx>
 template <Integer DIM>
 SCTL_GPU_HD void Morton<DIM>::nbr_loop_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
                                         Periodicity periodicity, uint8_t level,
-                                        std::array<Morton, pow<DIM, std::size_t>(3)>& out) {
+                                        HDArray<Morton, pow<DIM, std::size_t>(3)>& out) {
   using MI = typename MortonCode<DIM>::MortonInteger;
   // 3^DIM offset combos: idx = j_0 + 3*j_1 + 9*j_2 + ..., j_d in {0,1,2} -> offset (-1,0,+1)*box_size.
   for (Integer idx = 0; idx < pow<DIM, Integer>(3); ++idx) {
@@ -472,9 +472,9 @@ SCTL_GPU_HD void Morton<DIM>::nbr_loop_(const std::uint64_t* xi_self, std::uint6
 }
 
 template <Integer DIM> template <Periodicity PER, bool DYN>
-SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::nbr_list_(uint8_t level, Periodicity periodicity) const {
+SCTL_GPU_HD HDArray<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::nbr_list_(uint8_t level, Periodicity periodicity) const {
   static_assert(DIM <= PERIODICITY_MAX_DIM, "NbrList: DIM exceeds the Periodicity bitmask width");
-  std::array<Morton, pow<DIM, std::size_t>(3)> out{};
+  HDArray<Morton, pow<DIM, std::size_t>(3)> out{};
 
   // Step 1: truncate to `level` and extract per-coord ints.
   const Morton base = Ancestor(level);
@@ -500,11 +500,11 @@ SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::nbr_l
 }
 
 template <Integer DIM> template <Periodicity PER>
-SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrList(uint8_t level) const {
+SCTL_GPU_HD HDArray<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrList(uint8_t level) const {
   return nbr_list_<PER, false>(level, PER);
 }
 
-template <Integer DIM> SCTL_GPU_HD std::array<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrList(uint8_t level, Periodicity periodicity) const {
+template <Integer DIM> SCTL_GPU_HD HDArray<Morton<DIM>, pow<DIM, std::size_t>(3)> Morton<DIM>::NbrList(uint8_t level, Periodicity periodicity) const {
   // Dispatch runtime periodicity to a PER-specialized, unrolled, force-inlined emitter (DYN==false);
   // every mask up to DIM==3 is enumerated, so only a DIM>3 mask reaches the DYN==true emitter, which
   // reads the mask at run time.
@@ -585,7 +585,7 @@ template <Integer DIM> SCTL_GPU_HD void Morton<DIM>::NbrRange(Morton& first, Mor
   last = Morton(MortonCode<DIM>(MortonCode<DIM>::interleave(xhi)), level).Next();
 }
 
-// sctl::Tree-compat overloads: write std::array result into a Vector outparam.
+// sctl::Tree-compat overloads: write the HDArray result into a Vector outparam.
 template <Integer DIM> void Morton<DIM>::NbrList(Vector<Morton>& nlst, uint8_t level, Periodicity periodicity) const {
   const auto arr = NbrList(level, periodicity);
   nlst.ReInit(static_cast<Long>(arr.size()));

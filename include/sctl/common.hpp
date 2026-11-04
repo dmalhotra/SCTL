@@ -56,6 +56,13 @@ inline int MaxThreads() { return 1; }
 #define SCTL_GLOBAL_MEM_BUFF 1024LL * 0LL  // in MB
 #endif
 
+// Mark host-callable functions also callable from device code under nvcc/hipcc.
+#if defined(__CUDACC__) || defined(__HIPCC__)
+#define SCTL_GPU_HD __host__ __device__
+#else
+#define SCTL_GPU_HD
+#endif
+
 namespace sctl {
 typedef long Integer;  // bounded numbers < 32k
 typedef int64_t Long;  // problem size
@@ -80,7 +87,7 @@ constexpr Periodicity operator|(Periodicity a, Periodicity b) {
 }
 
 // True iff axis dim is periodic in p.
-constexpr bool is_periodic(Periodicity p, Integer dim) {
+SCTL_GPU_HD constexpr bool is_periodic(Periodicity p, Integer dim) {
   return ((static_cast<PeriodicityT>(p) >> dim) & PeriodicityT(1)) != 0;
 }
 

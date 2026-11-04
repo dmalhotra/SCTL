@@ -7,7 +7,7 @@
 #ifndef _SCTL_MORTON_HPP_
 #define _SCTL_MORTON_HPP_
 
-#include <array>        // for std::array (Children, NbrList return types)
+#include <array>        // for std::array (Coord)
 #include <cstdint>      // for uint8_t, uint16_t, uint32_t, uint64_t, int64_t
 #include <ostream>      // for operator<< (host-only)
 #include <type_traits>  // for conditional
@@ -28,14 +28,22 @@
 #define SCTL_MAX_DEPTH 20
 #endif
 
-// Mark host-callable functions also callable from device code under nvcc/hipcc.
-#if defined(__CUDACC__) || defined(__HIPCC__)
-#define SCTL_GPU_HD __host__ __device__
-#else
-#define SCTL_GPU_HD
-#endif
-
 namespace sctl {
+
+/**
+ * A fixed-size array of N values of type T, as std::array, whose members are callable on the host and on a GPU: nvcc
+ * compiles the members of std::array for the host only, unless given --expt-relaxed-constexpr.
+ */
+template <class T, std::size_t N> struct HDArray {
+  T v[N];
+  SCTL_GPU_HD constexpr T& operator[](std::size_t i) { return v[i]; }
+  SCTL_GPU_HD constexpr const T& operator[](std::size_t i) const { return v[i]; }
+  SCTL_GPU_HD static constexpr std::size_t size() { return N; }
+  SCTL_GPU_HD constexpr T* begin() { return v; }
+  SCTL_GPU_HD constexpr const T* begin() const { return v; }
+  SCTL_GPU_HD constexpr T* end() { return v + N; }
+  SCTL_GPU_HD constexpr const T* end() const { return v + N; }
+};
 
 template <class T> class Vector;  // fwd-decl for legacy NbrList/Children outparam overloads
 
@@ -152,7 +160,7 @@ template <Integer DIM> class MortonCode {
   }();
 
   /** Mask over `DIM*MAX_DEPTH` bits keeping bit `p` iff `(p mod DIM*2^S) < 2^S`. */
-  template <Integer S> static constexpr MortonInteger step_mask();
+  template <Integer S> SCTL_GPU_HD static constexpr MortonInteger step_mask();
 
   /** Spread MAX_DEPTH bits of `xi` to DIM-spaced positions in `O(log MAX_DEPTH)` mask/shift steps. */
   template <Integer Step> static SCTL_GPU_HD MortonInteger spread_step(MortonInteger r);
@@ -232,7 +240,7 @@ template <Integer DIM> class Morton {
    */
   template <class Real> std::array<Real, DIM> Coord() const {
     std::array<Real, DIM> arr{};
-    Coord(arr);
+    Coord(arr.data());
     return arr;
   }
 
@@ -268,7 +276,7 @@ template <Integer DIM> class Morton {
    * setting the `i`-th coordinate's bit at level `MAX_DEPTH-(depth+1)`. Caller must ensure
    * `depth < MAX_DEPTH`.
    */
-  SCTL_GPU_HD std::array<Morton, (1 << DIM)> Children() const;
+  SCTL_GPU_HD HDArray<Morton, (1 << DIM)> Children() const;
 
   /**
    * Write the `2^DIM` children of this node into a Vector outparam (host-only).
@@ -287,13 +295,13 @@ template <Integer DIM> class Morton {
    * `(δ_0,…,δ_{DIM-1})`, `δ_d ∈ {-1,0,+1}`, is at index `Σ (δ_d + 1) 3^d`; self is the centre.
    * Periodic axes wrap; non-periodic out-of-domain neighbors get `depth = INVALID_DEPTH`.
    */
-  SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level, Periodicity periodicity) const;
+  SCTL_GPU_HD HDArray<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level, Periodicity periodicity) const;
 
   /**
    * `NbrList` with the mask fixed at compile time, so only one `PER` emitter is instantiated and the
    * `Periodicity` overload's runtime dispatch is skipped.
    */
-  template <Periodicity PER> SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level) const;
+  template <Periodicity PER> SCTL_GPU_HD HDArray<Morton, pow<DIM, std::size_t>(3)> NbrList(uint8_t level) const;
 
   /** sctl::Tree-compat overload: writes into a Vector outparam (host-only). */
   void NbrList(Vector<Morton>& nlst, uint8_t level, Periodicity periodicity) const;
@@ -372,17 +380,17 @@ template <Integer DIM> class Morton {
   template <Periodicity PER, bool DYN, Integer idx>
   static SCTL_GPU_HD void nbr_emit_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
                                     Periodicity periodicity, uint8_t level,
-                                    std::array<Morton, pow<DIM, std::size_t>(3)>& out);
+                                    HDArray<Morton, pow<DIM, std::size_t>(3)>& out);
 
   /** Compact (non-unrolled) emitter; the readable reference form of `nbr_emit_`. Used on-device for
    *  DIM>=4 where the unrolled emitters spill and tank occupancy (host/DIM<=3 use `nbr_emit_`). */
   static SCTL_GPU_HD void nbr_loop_(const std::uint64_t* xi_self, std::uint64_t box_size, std::uint64_t maxCoord,
                                     Periodicity periodicity, uint8_t level,
-                                    std::array<Morton, pow<DIM, std::size_t>(3)>& out);
+                                    HDArray<Morton, pow<DIM, std::size_t>(3)>& out);
 
   /** Shared body of both `NbrList` forms; `DYN` reads the runtime `periodicity` instead of `PER`. */
   template <Periodicity PER, bool DYN>
-  SCTL_GPU_HD std::array<Morton, pow<DIM, std::size_t>(3)> nbr_list_(uint8_t level, Periodicity periodicity) const;
+  SCTL_GPU_HD HDArray<Morton, pow<DIM, std::size_t>(3)> nbr_list_(uint8_t level, Periodicity periodicity) const;
 };
 
 }  // namespace sctl

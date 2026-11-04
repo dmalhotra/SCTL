@@ -259,7 +259,7 @@ template <class Real, class ExpType> [[nodiscard]] inline Real pow(const Real b,
  * @param b The base.
  * @return constexpr ValueType The result of the operation.
  */
-template <Long e, class ValueType> [[nodiscard]] inline constexpr ValueType pow(ValueType b);
+template <Long e, class ValueType> [[nodiscard]] SCTL_GPU_HD inline constexpr ValueType pow(ValueType b);
 
 
 #ifdef SCTL_QUAD_T

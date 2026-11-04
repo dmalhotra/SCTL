@@ -9,7 +9,7 @@
  *
  * Build (`make gpu`, or by hand with a CUDA-aware MPI):
  *
- *     nvcc -ccbin mpicxx -x cu -std=c++17 -O3 -arch=native -rdc=true --expt-relaxed-constexpr \
+ *     nvcc -ccbin mpicxx -x cu -std=c++17 -O3 -arch=native -rdc=true \
  *          -Xcompiler -fopenmp -DSCTL_HAVE_MPI -DSCTL_MAX_DEPTH=20 \
  *          -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP -I include src/example-gpu-tree.cu -o bin/example-gpu-tree -ldl
  *

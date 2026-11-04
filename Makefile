@@ -135,7 +135,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 
 # GPU tree: needs CUDA and a CUDA-aware MPI (not in `all`)
 NVCC = nvcc -ccbin mpicxx
-NVCCFLAGS = -x cu -std=c++17 -O3 -arch=native -rdc=true --expt-relaxed-constexpr -Xcompiler "-fopenmp" \
+NVCCFLAGS = -x cu -std=c++17 -O3 -arch=native -rdc=true -Xcompiler "-fopenmp" \
             -DSCTL_HAVE_MPI -DSCTL_MAX_DEPTH=20 -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP
 NVCCLIBS = -ldl
 
