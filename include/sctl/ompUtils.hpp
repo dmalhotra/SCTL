@@ -76,8 +76,8 @@ inline bool one_thread();
 
 /**
  * Calls `body(i)` for `i` in [0, n): in a parallel loop, of static schedule, or dynamic if `dynamic`;
- * or in a plain loop on the calling thread, without a parallel region, when its team would have one
- * thread (see `one_thread`).
+ * or in a plain loop on the calling thread, without a parallel region, for one index or when its
+ * team would have one thread (see `one_thread`).
  *
  * @param[in] n       number of iterations.
  * @param[in] body    callable taking the index, a `Long`; called concurrently for distinct indices.
@@ -89,8 +89,8 @@ template <class Body> void parallel_for(Long n, const Body& body, bool dynamic =
  * Returns `op(...op(op(init, term(0)), term(1))..., term(n-1))`, for an associative `op` of which
  * `init` is an identity: in a parallel loop of static schedule, each thread reducing its share of
  * the indices from `init` and the results of the threads then combined in the order of the
- * threads; or in a plain loop on the calling thread, without a parallel region, when its team
- * would have one thread (see `one_thread`).
+ * threads; or in a plain loop on the calling thread, without a parallel region, for one index or
+ * when its team would have one thread (see `one_thread`).
  *
  * @tparam T copy-assignable, with `alignof(T) <= SCTL_MEM_ALIGN`, and default-constructible unless it
  *           is trivial.

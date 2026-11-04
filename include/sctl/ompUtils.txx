@@ -175,7 +175,7 @@ inline bool omp_par::one_thread() {
 
 template <class Body> inline void omp_par::parallel_for(Long n, const Body& body, bool dynamic) {
   if (n <= 0) return;
-  if (one_thread()) {
+  if (n == 1 || one_thread()) {
     for (Long i = 0; i < n; i++) body(i);
   } else if (dynamic) {
     #pragma omp parallel for schedule(dynamic)
@@ -189,7 +189,7 @@ template <class Body> inline void omp_par::parallel_for(Long n, const Body& body
 template <class T, class Term, class Op> inline T omp_par::parallel_reduce(Long n, const T& init, const Term& term, const Op& op) {
   T r = init;
   if (n <= 0) return r;
-  if (one_thread()) {
+  if (n == 1 || one_thread()) {
     for (Long i = 0; i < n; i++) r = op(r, term(i));
     return r;
   }

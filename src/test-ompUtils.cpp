@@ -357,6 +357,9 @@ int main() {
     omp_set_num_threads(nt);
     CHECK(sctl::omp_par::one_thread() == (nt == 1));
     if (nt > 1) CHECK(body_level(false) == 1);
+    int level_one = -1; // one index: on the calling thread, without a region
+    sctl::omp_par::parallel_for(1, [&level_one](Long) { level_one = omp_get_level(); });
+    CHECK(level_one == 0);
     omp_set_max_active_levels(1);
     bool inner_one = true;
     int inner_level = 0;
@@ -393,6 +396,9 @@ int main() {
     CHECK(sctl::omp_par::parallel_reduce(0, (Long)5, [](Long) { return (Long)1; }, [](const Long a, const Long b) { return a + b; }) == 5);
 #ifdef _OPENMP
     const int nt = omp_get_max_threads();
+    int level_one = -1; // one index: on the calling thread, without a region
+    CHECK(sctl::omp_par::parallel_reduce(1, (Long)2, [&level_one](const Long i) { level_one = omp_get_level(); return i + 3; }, [](const Long a, const Long b) { return a + b; }) == 5);
+    CHECK(level_one == 0);
     omp_set_num_threads(1);
     CHECK(sum_max() == std::make_pair(ref_sum, N - 1));
     omp_set_num_threads(nt);
