@@ -26,8 +26,14 @@
 #include <chrono>
 #define SCTL_GET_WTIME() \
     (std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count())
+namespace sctl {
+namespace detail_common {
+// Not a constant expression, as omp_get_max_threads(), so that a lambda captures a variable set from it in either build
+inline int MaxThreads() { return 1; }
+}
+}
 #define SCTL_GET_NUM_THREADS() (1)
-#define SCTL_GET_MAX_THREADS() (1)
+#define SCTL_GET_MAX_THREADS() (sctl::detail_common::MaxThreads())
 #define SCTL_GET_THREAD_NUM()  (0)
 #define SCTL_IN_PARALLEL()     (0)
 #endif
@@ -48,6 +54,13 @@
 #endif
 #ifndef SCTL_GLOBAL_MEM_BUFF
 #define SCTL_GLOBAL_MEM_BUFF 1024LL * 0LL  // in MB
+#endif
+
+// Mark host-callable functions also callable from device code under nvcc/hipcc.
+#if defined(__CUDACC__) || defined(__HIPCC__)
+#define SCTL_GPU_HD __host__ __device__
+#else
+#define SCTL_GPU_HD
 #endif
 
 namespace sctl {
@@ -74,7 +87,7 @@ constexpr Periodicity operator|(Periodicity a, Periodicity b) {
 }
 
 // True iff axis dim is periodic in p.
-constexpr bool is_periodic(Periodicity p, Integer dim) {
+SCTL_GPU_HD constexpr bool is_periodic(Periodicity p, Integer dim) {
   return ((static_cast<PeriodicityT>(p) >> dim) & PeriodicityT(1)) != 0;
 }
 

@@ -141,6 +141,7 @@ namespace sctl {
       inline ExprScalar(double value) : field_((Long)ProfileCounter::FIELD_COUNT), value_(value) {}
 
       inline std::vector<double> operator()(const std::vector<double>& counters, const Comm* comm) const {
+        SCTL_UNUSED(comm);
         const Long Nfield = (Long)ProfileCounter::FIELD_COUNT;
         const Long N = counters.size() / Nfield;
         std::vector<double> val_vec(N);
@@ -197,6 +198,7 @@ namespace sctl {
 
   inline Profile::ProfExpr operator+(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
     const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
+      SCTL_UNUSED(comm);
       SCTL_ASSERT(x.size() == y.size());
       for (Long i = 0; i < (Long)x.size(); i++) x[i] += y[i];
       return x;
@@ -206,6 +208,7 @@ namespace sctl {
 
   inline Profile::ProfExpr operator-(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
     const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
+      SCTL_UNUSED(comm);
       SCTL_ASSERT(x.size() == y.size());
       for (Long i = 0; i < (Long)x.size(); i++) x[i] -= y[i];
       return x;
@@ -215,6 +218,7 @@ namespace sctl {
 
   inline Profile::ProfExpr operator*(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
     const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
+      SCTL_UNUSED(comm);
       SCTL_ASSERT(x.size() == y.size());
       for (Long i = 0; i < (Long)x.size(); i++) x[i] *= y[i];
       return x;
@@ -224,6 +228,7 @@ namespace sctl {
 
   inline Profile::ProfExpr operator/(const Profile::ProfExpr& u, const Profile::ProfExpr& v) {
     const auto op = [](std::vector<double> x, const std::vector<double>& y, const Comm* comm) {
+      SCTL_UNUSED(comm);
       SCTL_ASSERT(x.size() == y.size());
       for (Long i = 0; i < (Long)x.size(); i++) x[i] = (y[i] != 0) ? x[i] / y[i] : 0;
       return x;
@@ -233,6 +238,7 @@ namespace sctl {
 
   inline Profile::ProfExpr operator*(const Profile::ProfExpr& u, const double a) {
     const auto op = [a](std::vector<double> x, const Comm* comm) {
+      SCTL_UNUSED(comm);
       for (Long i = 0; i < (Long)x.size(); i++) x[i] *= a;
       return x;
     };
@@ -628,9 +634,18 @@ namespace sctl {
 
   #else
 
-  inline Long Profile::IncrementCounter(const ProfileCounter prof_field, const Long x) { return 0; }
+  inline Long Profile::IncrementCounter(const ProfileCounter prof_field, const Long x) {
+    SCTL_UNUSED(prof_field);
+    SCTL_UNUSED(x);
+    return 0;
+  }
 
-  inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integer verbose) {}
+  inline void Profile::Tic(const char* name_, const Comm* comm_, bool sync_, Integer verbose) {
+    SCTL_UNUSED(name_);
+    SCTL_UNUSED(comm_);
+    SCTL_UNUSED(sync_);
+    SCTL_UNUSED(verbose);
+  }
 
   inline void Profile::Toc() {}
 

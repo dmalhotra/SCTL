@@ -250,6 +250,8 @@ namespace sctl {
 
   template <class Real> void SDC<Real>::operator()(Vector<Real>* u, const Real dt, const Vector<Real>& u0, const Fn1& F, Integer N_picard, const Real tol_picard, Real* error_interp, Real* error_picard, Integer* iter_count, Matrix<Real>* u_substep) const {
     const auto fn = [&F](Vector<Real>* dudt, const Vector<Real>& u, const Integer correction_idx, const Integer substep_idx) {
+      SCTL_UNUSED(correction_idx);
+      SCTL_UNUSED(substep_idx);
       F(dudt, u);
     };
     this->operator()(u, dt, u0, fn, N_picard, tol_picard, error_interp, error_picard, iter_count, u_substep);
@@ -307,6 +309,8 @@ namespace sctl {
 
   template <class Real> Real SDC<Real>::AdaptiveSolve(Vector<Real>* u, Real dt, const Real T, const Vector<Real>& u0, const Fn1& F, Real tol, const MonitorFn* monitor_callback, bool continue_with_errors, Real* error) const {
     const auto fn = [&F](Vector<Real>* dudt, const Vector<Real>& u, const Integer correction_idx, const Integer substep_idx) {
+      SCTL_UNUSED(correction_idx);
+      SCTL_UNUSED(substep_idx);
       F(dudt, u);
     };
     return AdaptiveSolve(u, dt, T, u0, fn, tol, monitor_callback, continue_with_errors, error);

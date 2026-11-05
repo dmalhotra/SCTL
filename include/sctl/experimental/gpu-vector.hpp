@@ -17,8 +17,7 @@
 #include <thrust/device_ptr.h>
 #include <thrust/device_vector.h>
 
-#include "sctl/common.hpp"
-#include "sctl/morton.hpp"  // SCTL_GPU_HD
+#include "sctl/common.hpp"  // SCTL_GPU_HD
 #include "sctl/experimental/device_scratch.hpp"  // is_device_vector_v
 
 namespace gpu_tree {

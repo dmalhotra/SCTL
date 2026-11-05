@@ -13,6 +13,8 @@
 #include "sctl/intrin-wrapper.hpp"  // for TypeTraits
 #include "sctl/iterator.hpp"        // for ConstIterator, Iterator
 #include "sctl/matrix.hpp"          // for Matrix
+#include "sctl/ompUtils.hpp"        // for omp_par::parallel_for
+#include "sctl/ompUtils.txx"
 #include "sctl/profile.hpp"         // for Profile, ProfileCounter
 #include "sctl/profile.txx"         // for Profile::IncrementCounter
 #include "sctl/scratch_pool.hpp"    // for ScratchBuf
@@ -34,6 +36,7 @@ template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM, Integer N_DI
 };
 template <class uKernel, Integer KDIM0, Integer KDIM1, Integer DIM> struct uKerHelper<uKernel,KDIM0,KDIM1,DIM,0> {
   template <Integer digits, class VecType, class NormalType> static void MatEval(VecType (&u)[KDIM0][KDIM1], const VecType (&r)[DIM], const NormalType& n, const void* ctx_ptr) {
+    SCTL_UNUSED(n);
     uKernel::template uKerMatrix<digits>(u, r, ctx_ptr);
   }
 };
@@ -112,7 +115,8 @@ template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKe
       RealVec dX[DIM];
       for (Integer i = 0; i < DIM; i++) dX[i] = xt[i] - xs[i];
       if constexpr (detail::uKerFusedApply<uKernel>::value) { // skip the KDIM0 x KDIM1 matrix
-        uKernel::template uKerApply<digits_,1>(vt, dX, ns, vs, ctx_ptr);
+        if constexpr (N_DIM) uKernel::template uKerApply<digits_,1>(vt, dX, ns, vs, ctx_ptr);
+        else uKernel::template uKerApply<digits_,1,RealVec>(vt, dX, nullptr, vs, ctx_ptr);
       } else {
         RealVec U[KDIM0][KDIM1];
         uKerMatrix<digits_>(U, dX, ns, ctx_ptr);
@@ -176,34 +180,21 @@ template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKe
           Xt_[k][i] = 0;
         }
       }
-      if (enable_openmp) { // Compute Vt_
-        #pragma omp parallel for schedule(static)
-        for (Long t = 0; t < NNt; t += VecLen) {
-          RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM_], vs[KDIM0];
-          for (Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
-          for (Integer k = 0; k < DIM; k++) xt[k] = RealVec::LoadAligned(&Xt_[k][t]);
-          for (Long s = 0; s < Ns; s++) {
-            for (Integer k = 0; k < DIM; k++) xs[k] = RealVec::Load1(&Xs_[s][k]);
-            for (Integer k = 0; k < N_DIM; k++) ns[k] = RealVec::Load1(&Ns_[s][k]);
-            for (Integer k = 0; k < KDIM0; k++) vs[k] = RealVec::Load1(&Vs_[s][k]);
-            uKerEval(vt, xt, xs, ns, vs);
-          }
-          for (Integer k = 0; k < KDIM1; k++) vt[k].StoreAligned(&Vt_[k][t]);
+      const auto target_block = [&Xt_, &Xs_, &Ns_, &Vs_, &Vt_, &uKerEval, Ns](const Long b) { // Vt_ of the targets b*VecLen to (b+1)*VecLen
+        const Long t = b * VecLen;
+        RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM_], vs[KDIM0];
+        for (Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
+        for (Integer k = 0; k < DIM; k++) xt[k] = RealVec::LoadAligned(&Xt_[k][t]);
+        for (Long s = 0; s < Ns; s++) {
+          for (Integer k = 0; k < DIM; k++) xs[k] = RealVec::Load1(&Xs_[s][k]);
+          for (Integer k = 0; k < N_DIM; k++) ns[k] = RealVec::Load1(&Ns_[s][k]);
+          for (Integer k = 0; k < KDIM0; k++) vs[k] = RealVec::Load1(&Vs_[s][k]);
+          uKerEval(vt, xt, xs, ns, vs);
         }
-      } else {
-        for (Long t = 0; t < NNt; t += VecLen) {
-          RealVec xt[DIM], vt[KDIM1], xs[DIM], ns[N_DIM_], vs[KDIM0];
-          for (Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
-          for (Integer k = 0; k < DIM; k++) xt[k] = RealVec::LoadAligned(&Xt_[k][t]);
-          for (Long s = 0; s < Ns; s++) {
-            for (Integer k = 0; k < DIM; k++) xs[k] = RealVec::Load1(&Xs_[s][k]);
-            for (Integer k = 0; k < N_DIM; k++) ns[k] = RealVec::Load1(&Ns_[s][k]);
-            for (Integer k = 0; k < KDIM0; k++) vs[k] = RealVec::Load1(&Vs_[s][k]);
-            uKerEval(vt, xt, xs, ns, vs);
-          }
-          for (Integer k = 0; k < KDIM1; k++) vt[k].StoreAligned(&Vt_[k][t]);
-        }
-      }
+        for (Integer k = 0; k < KDIM1; k++) vt[k].StoreAligned(&Vt_[k][t]);
+      };
+      if (enable_openmp) omp_par::parallel_for(NNt / VecLen, target_block);
+      else for (Long b = 0; b < NNt / VecLen; b++) target_block(b);
 
       for (Long k = 0; k < KDIM1; k++) { // v_trg += Vt_
         for (Long i = 0; i < Nt; i++) {
@@ -320,22 +311,14 @@ template <class uKernel> struct uKerFusedApply<uKernel, std::void_t<decltype(uKe
         }
       }
     } else {
-      if (enable_openmp) {
-        #pragma omp parallel for schedule(static)
-        for (Long i = 0; i < Ns; i++) {
-          Matrix<Real> M_(KDIM0, Nt*KDIM1, M.begin() + i*KDIM0*Nt*KDIM1, false);
-          const Vector<Real> Xs_(DIM, (Iterator<Real>)Xs.begin() + i*DIM, false);
-          const Vector<Real> Xn_(N_DIM, (Iterator<Real>)Xn.begin() + i*N_DIM, false);
-          KernelMatrix<Real,enable_openmp,digits>(M_, Xt, Xs_, Xn_);
-        }
-      } else {
-        for (Long i = 0; i < Ns; i++) {
-          Matrix<Real> M_(KDIM0, Nt*KDIM1, M.begin() + i*KDIM0*Nt*KDIM1, false);
-          const Vector<Real> Xs_(DIM, (Iterator<Real>)Xs.begin() + i*DIM, false);
-          const Vector<Real> Xn_(N_DIM, (Iterator<Real>)Xn.begin() + i*N_DIM, false);
-          KernelMatrix<Real,enable_openmp,digits>(M_, Xt, Xs_, Xn_);
-        }
-      }
+      const auto source = [this, &M, &Xt, &Xs, &Xn, Nt](const Long i) { // the rows of M of source i
+        Matrix<Real> M_(KDIM0, Nt*KDIM1, M.begin() + i*KDIM0*Nt*KDIM1, false);
+        const Vector<Real> Xs_(DIM, (Iterator<Real>)Xs.begin() + i*DIM, false);
+        const Vector<Real> Xn_(N_DIM, (Iterator<Real>)Xn.begin() + i*N_DIM, false);
+        KernelMatrix<Real,enable_openmp,digits>(M_, Xt, Xs_, Xn_);
+      };
+      if (enable_openmp) omp_par::parallel_for(Ns, source);
+      else for (Long i = 0; i < Ns; i++) source(i);
     }
   }
 

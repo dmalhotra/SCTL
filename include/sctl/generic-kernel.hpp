@@ -23,9 +23,9 @@ template <class ValueType> class Matrix;
  */
 template <class uKernel> class GenericKernel : public uKernel {
 
-    template <class VecType, Integer K0, Integer K1, Integer D, class ...T> static constexpr Integer get_DIM  (void (*uKer)(VecType (&u)[K0][K1], const VecType (&r)[D], T... args)) { return D;  }
-    template <class VecType, Integer K0, Integer K1, Integer D, class ...T> static constexpr Integer get_KDIM0(void (*uKer)(VecType (&u)[K0][K1], const VecType (&r)[D], T... args)) { return K0; }
-    template <class VecType, Integer K0, Integer K1, Integer D, class ...T> static constexpr Integer get_KDIM1(void (*uKer)(VecType (&u)[K0][K1], const VecType (&r)[D], T... args)) { return K1; }
+    template <class VecType, Integer K0, Integer K1, Integer D, class ...T> static constexpr Integer get_DIM  (void (*)(VecType (&u)[K0][K1], const VecType (&r)[D], T... args)) { return D;  }
+    template <class VecType, Integer K0, Integer K1, Integer D, class ...T> static constexpr Integer get_KDIM0(void (*)(VecType (&u)[K0][K1], const VecType (&r)[D], T... args)) { return K0; }
+    template <class VecType, Integer K0, Integer K1, Integer D, class ...T> static constexpr Integer get_KDIM1(void (*)(VecType (&u)[K0][K1], const VecType (&r)[D], T... args)) { return K1; }
 
     static constexpr Integer DIM   = get_DIM  (uKernel::template uKerMatrix<0,Vec<double,1>>);
     static constexpr Integer KDIM0 = get_KDIM0(uKernel::template uKerMatrix<0,Vec<double,1>>);
@@ -34,11 +34,11 @@ template <class uKernel> class GenericKernel : public uKernel {
 
     template <Integer cnt> static constexpr Integer argsize_helper() { return 0; }
     template <Integer cnt, class T, class ...T1> static constexpr Integer argsize_helper() { return (cnt == 0 ? sizeof(T) : 0) + argsize_helper<cnt-1, T1...>(); }
-    template <Integer idx, class ...T1> static constexpr Integer argsize(void (uKer)(T1... args)) { return argsize_helper<idx, T1...>(); }
+    template <Integer idx, class ...T1> static constexpr Integer argsize(void (*)(T1... args)) { return argsize_helper<idx, T1...>(); }
 
     template <Integer cnt> static constexpr Integer argcount_helper() { return cnt; }
     template <Integer cnt, class T, class ...T1> static constexpr Integer argcount_helper() { return argcount_helper<cnt+1, T1...>(); }
-    template <class ...T1> static constexpr Integer argcount(void (uKer)(T1... args)) { return argcount_helper<0, T1...>(); }
+    template <class ...T1> static constexpr Integer argcount(void (*)(T1... args)) { return argcount_helper<0, T1...>(); }
 
     static constexpr Integer ARGCNT = argcount(uKernel::template uKerMatrix<0,Vec<double,1>>);
     static constexpr Integer N_DIM = (ARGCNT > 3 ? argsize<2>(uKernel::template uKerMatrix<0,Vec<double,1>>)/sizeof(Vec<double,1>) : 0);

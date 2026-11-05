@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "sctl.hpp"
-#include <omp.h>
 #include <iostream>
 
 using namespace sctl;
@@ -119,7 +118,7 @@ static void test_multithread() {
   int global_ok = 1;
   #pragma omp parallel reduction(&: global_ok)
   {
-    int tid = omp_get_thread_num();
+    int tid = SCTL_GET_THREAD_NUM();
     for (int it = 0; it < iters; ++it) {
       Long n = 32 + ((it + tid * 7) % 200);
       ScratchBuf<double> buf(n);

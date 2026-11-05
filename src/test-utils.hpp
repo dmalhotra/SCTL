@@ -71,7 +71,10 @@ class TrimmedOmpTeam {
   }
 
  private:
-  int dynamic_ = 0, requested_ = 1, asked_ = 1, got_ = 1;
+#ifdef _OPENMP
+  int dynamic_ = 0, requested_ = 1;
+#endif
+  int asked_ = 1, got_ = 1;
 };
 
 template <class T> static inline bool approx_eq(T a, T b, T tol = T(1e-12)) {

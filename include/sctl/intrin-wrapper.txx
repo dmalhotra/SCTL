@@ -362,7 +362,36 @@ namespace sctl { // Generic
   // holds two halves, each half of the result by blends of the halves of a and b it takes lanes from; with GCC and
   // clang by __builtin_shufflevector (GCC 12+, clang) or __builtin_shuffle (GCC before 12) on a vector of the scalar
   // type, mapped by the compiler to the shuffle, permute and blend instructions of the target; else lane by lane.
+  // nvcc, compiling CUDA source, passes the pack expansions in __builtin_shufflevector's arguments to the host
+  // compiler without their ... (nvcc 11.0 to 13.4.2), does not know __builtin_shufflevector with GCC before nvcc 12.8,
+  // and rejects __builtin_shuffle of one lane. There __builtin_shufflevector takes its indices written out (clang; GCC
+  // 12+ from nvcc 12.8); else GCC's __builtin_shuffle, where a lane to be zeroed takes index k (GCC 12+) or 0 (GCC
+  // before 12), as each GCC does outside nvcc, and a vector of one lane is a, b or 0.
+#define SCTL_LANES_1(F, k) F(k)
+#define SCTL_LANES_2(F, k) SCTL_LANES_1(F, k), SCTL_LANES_1(F, k + 1)
+#define SCTL_LANES_4(F, k) SCTL_LANES_2(F, k), SCTL_LANES_2(F, k + 2)
+#define SCTL_LANES_8(F, k) SCTL_LANES_4(F, k), SCTL_LANES_4(F, k + 4)
+#define SCTL_LANES_16(F, k) SCTL_LANES_8(F, k), SCTL_LANES_8(F, k + 8)
+#define SCTL_LANES_32(F, k) SCTL_LANES_16(F, k), SCTL_LANES_16(F, k + 16)
+#define SCTL_LANES_64(F, k) SCTL_LANES_32(F, k), SCTL_LANES_32(F, k + 32)
+#define SCTL_SHUFFLEVECTOR(r, x, y, F)                                                  \
+  if constexpr (N == 1) r = __builtin_shufflevector(x, y, SCTL_LANES_1(F, 0));         \
+  else if constexpr (N == 2) r = __builtin_shufflevector(x, y, SCTL_LANES_2(F, 0));    \
+  else if constexpr (N == 4) r = __builtin_shufflevector(x, y, SCTL_LANES_4(F, 0));    \
+  else if constexpr (N == 8) r = __builtin_shufflevector(x, y, SCTL_LANES_8(F, 0));    \
+  else if constexpr (N == 16) r = __builtin_shufflevector(x, y, SCTL_LANES_16(F, 0));  \
+  else if constexpr (N == 32) r = __builtin_shufflevector(x, y, SCTL_LANES_32(F, 0));  \
+  else r = __builtin_shufflevector(x, y, SCTL_LANES_64(F, 0))
   template <Integer... I> struct BlendIntrin {
+    // the index of lane k in __builtin_shufflevector of (a, b), and in that of (r, 0) for the zeros
+    static constexpr Integer src_lane(const Integer k) {
+      const Integer idx[] = {I...};
+      return (idx[k] < 0 ? -1 : idx[k]);
+    }
+    static constexpr Integer zero_lane(const Integer k) {
+      const Integer idx[] = {I...};
+      return (idx[k] < 0 ? (Integer)sizeof...(I) + k : k);
+    }
     template <class VData> static inline VData apply(const VData& a, const VData& b) {
       using T = typename VData::ScalarType;
       static constexpr Integer N = VData::Size;
@@ -432,13 +461,27 @@ namespace sctl { // Generic
       V a_, b_;
       std::memcpy(&a_, &a, sizeof(V));
       std::memcpy(&b_, &b, sizeof(V));
-  #if defined(__clang__) || __GNUC__ >= 12
+  #if (defined(__clang__) || __GNUC__ >= 12) && !(defined(__NVCC__) && defined(__CUDACC__))
       V r = __builtin_shufflevector(a_, b_, (I < 0 ? -1 : I)...);
       if constexpr (((I < 0) || ...)) r = __builtin_shufflevector(r, V{}, (I < 0 ? N + K : K)...); // the zeros, from a second operand
+  #elif defined(__clang__) || (__GNUC__ >= 12 && __CUDACC_VER_MAJOR__ * 100 + __CUDACC_VER_MINOR__ >= 1208)
+      V r;
+      SCTL_SHUFFLEVECTOR(r, a_, b_, src_lane);
+      if constexpr (((I < 0) || ...)) {
+        SCTL_SHUFFLEVECTOR(r, r, V{}, zero_lane);
+      }
   #else
       typedef typename IntegerType<sizeof(T)>::value M __attribute__((vector_size(N * sizeof(T)))); // the indices
-      V r = __builtin_shuffle(a_, b_, M{(I < 0 ? 0 : I)...});
-      if constexpr (((I < 0) || ...)) r = __builtin_shuffle(r, V{}, M{(I < 0 ? N + K : K)...});
+      V r;
+      if constexpr (N == 1) {
+        static constexpr Integer idx[1] = {I...};
+        if constexpr (idx[0] < 0) r = V{};
+        else if constexpr (idx[0] == 0) r = a_;
+        else r = b_;
+      } else {
+        r = __builtin_shuffle(a_, b_, M{(I < 0 ? (__GNUC__ >= 12 ? K : 0) : I)...});
+        if constexpr (((I < 0) || ...)) r = __builtin_shuffle(r, V{}, M{(I < 0 ? N + K : K)...});
+      }
   #endif
       VData r_;
       std::memcpy(&r_, &r, sizeof(V));
@@ -446,6 +489,14 @@ namespace sctl { // Generic
     }
 #endif
   };
+#undef SCTL_SHUFFLEVECTOR
+#undef SCTL_LANES_64
+#undef SCTL_LANES_32
+#undef SCTL_LANES_16
+#undef SCTL_LANES_8
+#undef SCTL_LANES_4
+#undef SCTL_LANES_2
+#undef SCTL_LANES_1
   template <Integer... I, class VData> inline VData blend_intrin(const VData& a, const VData& b) {
     return BlendIntrin<I...>::apply(a, b);
   }
@@ -971,6 +1022,7 @@ namespace sctl { // Generic
   };
   template <class VData> struct rsqrt_newton_iter<0,0,VData> {
     static inline VData eval(const VData& y, const VData& x) {
+      SCTL_UNUSED(x);
       return y;
     }
   };
@@ -1067,6 +1119,7 @@ namespace sctl { // Generic
   };
 
   template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0) {
+    SCTL_UNUSED(x1);
     return set1_intrin<VData>(c0);
   }
   template <class VData, class CType> inline VData EvalPolynomial(const VData& x1, const CType& c0, const CType& c1) {
@@ -1917,7 +1970,7 @@ namespace sctl { // Generic
     float_to_double_intrin(x0, x1, fabs_intrin(x));
     float_to_double_intrin(y0, y1, y);
     const DVec zero = zero_intrin<DVec>(), inf = set1_intrin<DVec>(INFINITY), lim = set1_intrin<DVec>(1000.0); // beyond, inf or 0; NaN kept
-    const auto t = [&](const DVec& ax, const DVec& yy) {
+    const auto t = [&zero, &inf, &lim](const DVec& ax, const DVec& yy) {
       const DVec L = select_intrin(comp_intrin<ComparisonType::eq>(ax, zero), unary_minus_intrin(inf), select_intrin(comp_intrin<ComparisonType::eq>(ax, inf), ax, powf_log2_intrin(ax)));
       const DVec e = mul_intrin(yy, L);
       return powf_exp2_intrin(select_intrin(comp_intrin<ComparisonType::gt>(e, lim), lim, select_intrin(comp_intrin<ComparisonType::lt>(e, unary_minus_intrin(lim)), unary_minus_intrin(lim), e)));

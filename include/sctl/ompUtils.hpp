@@ -67,6 +67,41 @@ template <class Iter> void prefault(Iter first, Long n, Integer nthreads = -1);
 template <class InputIt, class OutputIt> OutputIt copy(InputIt first, InputIt last, OutputIt dst, Integer nthreads = -1);
 
 /**
+ * Whether a parallel region opened here would have a team of one thread: with one thread
+ * (`OMP_NUM_THREADS=1`), inside a parallel region whose nested regions are inactive (the default),
+ * or without OpenMP. libgomp allocates and frees the team of each such region (1.6 KB with GCC 13),
+ * as it does for `num_threads(1)` and for a false `if` clause.
+ */
+inline bool one_thread();
+
+/**
+ * Calls `body(i)` for `i` in [0, n): in a parallel loop, of static schedule, or dynamic if `dynamic`;
+ * or in a plain loop on the calling thread, without a parallel region, for one index or when its
+ * team would have one thread (see `one_thread`).
+ *
+ * @param[in] n       number of iterations.
+ * @param[in] body    callable taking the index, a `Long`; called concurrently for distinct indices.
+ * @param[in] dynamic whether the schedule is dynamic.
+ */
+template <class Body> void parallel_for(Long n, const Body& body, bool dynamic = false);
+
+/**
+ * Returns `op(...op(op(init, term(0)), term(1))..., term(n-1))`, for an associative `op` of which
+ * `init` is an identity: in a parallel loop of static schedule, each thread reducing its share of
+ * the indices from `init` and the results of the threads then combined in the order of the
+ * threads; or in a plain loop on the calling thread, without a parallel region, for one index or
+ * when its team would have one thread (see `one_thread`).
+ *
+ * @tparam T copy-assignable, with `alignof(T) <= SCTL_MEM_ALIGN`, and default-constructible unless it
+ *           is trivial.
+ * @param[in] n    number of indices.
+ * @param[in] init an identity of `op`; also the result for `n <= 0`.
+ * @param[in] term callable taking the index, a `Long`, and returning a `T`; called concurrently.
+ * @param[in] op   callable combining two `T`, associative.
+ */
+template <class T, class Term, class Op> T parallel_reduce(Long n, const T& init, const Term& term, const Op& op);
+
+/**
  * Merges two sorted ranges into a single sorted range.
  *
  * @tparam ConstIter Iterator type for the input ranges.

@@ -48,6 +48,7 @@ namespace sctl {
         return 1 / (4 * const_pi<Real>());
       }
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[1][1], const VecType (&r)[3], const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         u[0][0] = rinv;
@@ -78,6 +79,7 @@ namespace sctl {
         return 1 / (4 * const_pi<Real>());
       }
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[1][1], const VecType (&r)[3], const VecType (&n)[3], const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         VecType rdotn = r[0]*n[0] + r[1]*n[1] + r[2]*n[2];
@@ -99,6 +101,7 @@ namespace sctl {
         return -1 / (4 * const_pi<Real>());
       }
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[1][3], const VecType (&r)[3], const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         VecType rinv3 = rinv * rinv * rinv;
@@ -109,6 +112,8 @@ namespace sctl {
 
       static constexpr bool FUSED_APPLY = true;
       template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        SCTL_UNUSED(n);
+        SCTL_UNUSED(ctx_ptr);
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         const VecType rinv3 = rinv * rinv * rinv;
@@ -144,6 +149,7 @@ namespace sctl {
         return 1 / (8 * const_pi<Real>());
       }
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[3][3], const VecType (&r)[3], const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         VecType rinv3 = rinv*rinv*rinv;
@@ -174,6 +180,8 @@ namespace sctl {
 
       static constexpr bool FUSED_APPLY = true;
       template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        SCTL_UNUSED(n);
+        SCTL_UNUSED(ctx_ptr);
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         const VecType rinv3 = rinv*rinv*rinv;
@@ -200,6 +208,7 @@ namespace sctl {
         return 3 / (4 * const_pi<Real>());
       }
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[3][3], const VecType (&r)[3], const VecType (&n)[3], const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         VecType rinv2 = rinv*rinv;
@@ -214,6 +223,7 @@ namespace sctl {
 
       static constexpr bool FUSED_APPLY = true;
       template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         const VecType rinv2 = rinv * rinv;
@@ -241,6 +251,7 @@ namespace sctl {
         return -3 / (4 * const_pi<Real>());
       }
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[3][9], const VecType (&r)[3], const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         VecType rinv2 = rinv*rinv;
@@ -256,6 +267,8 @@ namespace sctl {
 
       static constexpr bool FUSED_APPLY = true;
       template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        SCTL_UNUSED(n);
+        SCTL_UNUSED(ctx_ptr);
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         const VecType rinv2 = rinv*rinv;
@@ -286,6 +299,7 @@ namespace sctl {
         return 1 / (8 * const_pi<Real>());
       }
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[4][3], const VecType (&r)[3], const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         VecType rinv3 = rinv*rinv*rinv;
@@ -322,6 +336,8 @@ namespace sctl {
 
       static constexpr bool FUSED_APPLY = true;
       template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        SCTL_UNUSED(n);
+        SCTL_UNUSED(ctx_ptr);
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         const VecType rinv3 = rinv*rinv*rinv;
@@ -348,6 +364,7 @@ namespace sctl {
         return 1 / (8 * const_pi<Real>());
       }
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[3][4], const VecType (&r)[3], const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         VecType rinv3 = rinv*rinv*rinv;
@@ -363,6 +380,8 @@ namespace sctl {
 
       static constexpr bool FUSED_APPLY = true;
       template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        SCTL_UNUSED(n);
+        SCTL_UNUSED(ctx_ptr);
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         const VecType rinv3 = rinv*rinv*rinv;
@@ -389,6 +408,7 @@ namespace sctl {
         return 1 / (4 * const_pi<Real>());
       }
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[1][9], const VecType (&r)[3], const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         using Real = typename VecType::ScalarType;
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
@@ -417,6 +437,7 @@ namespace sctl {
       }
       // gradient of Laplace3D_DxU
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[1][3], const VecType (&r)[3], const VecType (&n)[3], const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         using Real = typename VecType::ScalarType;
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
@@ -441,6 +462,7 @@ namespace sctl {
         return 1 / (4 * const_pi<Real>());
       }
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[3][3], const VecType (&r)[3], const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         const VecType rinv3 = rinv * rinv * rinv;
@@ -451,6 +473,8 @@ namespace sctl {
 
       static constexpr bool FUSED_APPLY = true;
       template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        SCTL_UNUSED(n);
+        SCTL_UNUSED(ctx_ptr);
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
         const VecType rinv3 = rinv * rinv * rinv;
@@ -476,6 +500,7 @@ namespace sctl {
         return -1 / (4 * const_pi<Real>());
       }
       template <Integer digits, class VecType> static void uKerMatrix(VecType (&u)[3][9], const VecType (&r)[3], const void* ctx_ptr) {
+        SCTL_UNUSED(ctx_ptr);
         using Real = typename VecType::ScalarType;
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
         const VecType rinv = approx_rsqrt<digits>(r2, r2 > VecType::Zero());
@@ -528,6 +553,7 @@ namespace sctl {
 
       static constexpr bool FUSED_APPLY = true;
       template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        SCTL_UNUSED(n);
         using Real = typename VecType::ScalarType;
         const VecType mu(*(const Real*)ctx_ptr);
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
@@ -615,6 +641,7 @@ namespace sctl {
 
       static constexpr bool FUSED_APPLY = true;
       template <Integer digits, Integer DOF, class VecType> static void uKerApply(VecType* v, const VecType (&r)[3], const VecType* n, const VecType* f, const void* ctx_ptr) {
+        SCTL_UNUSED(n);
         using Real = typename VecType::ScalarType;
         const VecType mu(*(const Real*)ctx_ptr);
         const VecType r2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];

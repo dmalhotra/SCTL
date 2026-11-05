@@ -396,7 +396,7 @@ void run_perf(const char* tname, bool include_old, bool include_fftw, Long size_
   // Threshold beyond which we skip the old O(N^2) matrix-DFT comparison
   // (it dwarfs total bench time at large N).
   const Long old_cap = 4096;
-  auto inc_old = [&](Long sz) { return include_old && sz <= old_cap; };
+  auto inc_old = [&include_old](Long sz) { return include_old && sz <= old_cap; };
 
   // Pow-2 sweep
   for (Long N : {64L, 256L, 1024L, 4096L, 16384L, 65536L}) {

@@ -165,6 +165,48 @@ template <class InputIt, class OutputIt> inline OutputIt omp_par::copy(InputIt f
   return dst + n;
 }
 
+inline bool omp_par::one_thread() {
+#ifdef _OPENMP
+  return omp_get_max_threads() == 1 || omp_get_active_level() >= omp_get_max_active_levels();
+#else
+  return true;
+#endif
+}
+
+template <class Body> inline void omp_par::parallel_for(Long n, const Body& body, bool dynamic) {
+  if (n <= 0) return;
+  if (n == 1 || one_thread()) {
+    for (Long i = 0; i < n; i++) body(i);
+  } else if (dynamic) {
+    #pragma omp parallel for schedule(dynamic)
+    for (Long i = 0; i < n; i++) body(i);
+  } else {
+    #pragma omp parallel for schedule(static)
+    for (Long i = 0; i < n; i++) body(i);
+  }
+}
+
+template <class T, class Term, class Op> inline T omp_par::parallel_reduce(Long n, const T& init, const Term& term, const Op& op) {
+  T r = init;
+  if (n <= 0) return r;
+  if (n == 1 || one_thread()) {
+    for (Long i = 0; i < n; i++) r = op(r, term(i));
+    return r;
+  }
+  const Integer nt = SCTL_GET_MAX_THREADS();
+  ScratchBuf<T> part(nt); // the result of each thread, init for those without work
+  for (Integer t = 0; t < nt; t++) part[t] = init;
+  #pragma omp parallel num_threads(nt)
+  {
+    T r_ = init;
+    #pragma omp for schedule(static)
+    for (Long i = 0; i < n; i++) r_ = op(r_, term(i));
+    part[SCTL_GET_THREAD_NUM()] = r_;
+  }
+  for (Integer t = 0; t < nt; t++) r = op(r, part[t]);
+  return r;
+}
+
 template <class ConstIter, class Iter, class Int, class StrictWeakOrdering> inline void omp_par::merge(ConstIter A_, ConstIter A_last, ConstIter B_, ConstIter B_last, Iter C_, Int p, StrictWeakOrdering comp) {
   typedef typename std::iterator_traits<Iter>::difference_type _DiffType;
   typedef typename std::iterator_traits<Iter>::value_type _ValType;

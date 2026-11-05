@@ -405,6 +405,8 @@ template <class KerSL, class KerDL, class KerGrad> void Run(const char* name, co
 void RunKernel(const std::string& k, const Integer order, const Long ppf, const Real twist, const Real tol, const Integer nthreads, const Comm& comm) {
 #ifdef _OPENMP
   if (nthreads > 0) omp_set_num_threads((int)nthreads);
+#else
+  SCTL_UNUSED(nthreads);
 #endif
   static Integer checked = -1;
   if (NumThreads() != checked) {

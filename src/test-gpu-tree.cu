@@ -15,7 +15,7 @@
  *
  * Build (`make gpu`, or by hand with a CUDA-aware MPI):
  *
- *     nvcc -ccbin mpicxx -x cu -std=c++17 -O3 -arch=native -rdc=true --expt-relaxed-constexpr \
+ *     nvcc -ccbin mpicxx -x cu -std=c++17 -O3 -arch=native -rdc=true \
  *          -Xcompiler -fopenmp -DSCTL_HAVE_MPI -DSCTL_MAX_DEPTH=20 \
  *          -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP -I include src/test-gpu-tree.cu -o bin/test-gpu-tree -ldl
  *
@@ -703,7 +703,7 @@ template <template <class...> class DevVec> Long test_partitionN_stretch(const c
   for (Long i = 0; i < n; i++) h[gl + i] = gid0 + i;
 
   Long bad = 0;
-  const auto run = [&](Long tgt) {
+  const auto run = [&h, &pol, &n, &comm, &bad](Long tgt) {
     DevVec<Long> v(h.begin(), h.end()), tmp;
     gpu_tree::detail::partitionN(pol, v, gl, n, tgt, comm, tmp);
     Long off = 0;

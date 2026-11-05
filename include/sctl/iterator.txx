@@ -159,9 +159,11 @@ template <class ValueType> inline ConstIterator<ValueType> Ptr2ConstItr(const vo
 #else
 
 template <class ValueType> inline Iterator<ValueType> Ptr2Itr(VoidPtr<ValueType> ptr, Long len) {
+  SCTL_UNUSED(len);
   return (Iterator<ValueType>) ptr;
 }
 template <class ValueType> inline ConstIterator<ValueType> Ptr2ConstItr(const void* ptr, Long len) {
+  SCTL_UNUSED(len);
   return (ConstIterator<ValueType>) ptr;
 }
 

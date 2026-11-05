@@ -24,10 +24,13 @@ namespace sctl {
 // Clang checks the lambda captures of each instantiation: alpha and beta are read only for
 // Update::AlphaBeta, a size that the template fixes is a constant, which needs no capture, and some
 // captures are read only in one branch of an if constexpr.
-// With capture defaults instead, GCC did not inline the tiles and fixed sizes were up to 8% slower
+// With capture defaults instead, GCC did not inline the tiles and fixed sizes were up to 8% slower.
+// [[gnu::always_inline]] stands before the parameters of the lambdas, a position of C++23: nvcc drops
+// __attribute__((always_inline)) after them, and SmallGEMM took up to 1.34x the time
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-lambda-capture"
+#pragma clang diagnostic ignored "-Wc++23-lambda-attributes"
 #endif
 
 namespace detail_small_gemm {
@@ -163,7 +166,7 @@ namespace detail_small_gemm {
     // Rows i0.. (MR of them) and columns j0.. (NV vectors of W) of C; if Partial, only the first nc
     // columns of the one vector. Always inlined, as are cols and rows: GCC left some out of line,
     // and kept acc on the stack there
-    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta](const Long i0, const Long j0, auto mr, auto nv, auto w, auto partial, const Integer nc) __attribute__((always_inline)) {
+    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta] [[gnu::always_inline]] (const Long i0, const Long j0, auto mr, auto nv, auto w, auto partial, const Integer nc) {
       constexpr Integer MR = decltype(mr)::value;
       constexpr Integer NV = decltype(nv)::value;
       constexpr Integer W = decltype(w)::value;
@@ -260,7 +263,7 @@ namespace detail_small_gemm {
 
     const Long n_full = n - n % VL; // columns done in full-width vectors
     const Long n_tile = n_full - n_full % (IT::value * VL); // columns done in tiles of IT vectors
-    const auto cols = [&tile, n_full, n_tile](const Long i0, auto mr) __attribute__((always_inline)) {
+    const auto cols = [&tile, n_full, n_tile] [[gnu::always_inline]] (const Long i0, auto mr) {
       for (Long j = 0; j < n_tile; j += IT::value * VL) tile(i0, j, mr, IT{}, IV{}, std::false_type{}, VL);
       for (Long j = n_tile; j < n_full; j += VL) tile(i0, j, mr, I1{}, IV{}, std::false_type{}, VL);
     };
@@ -276,7 +279,7 @@ namespace detail_small_gemm {
     for (Long i = m_4; i < m_2; i += 2) cols(i, I2{});
     for (Long i = m_2; i < m; i++) cols(i, I1{});
     if (n_full < n) { // the kind of tile chosen once: chosen in each block of rows, the tiles of all kinds there made GCC's code up to 1.13x slower
-      const auto rows = [&tile, m, m_blk, m_4, m_2](const Long j0, auto w, auto partial, const Integer nc) __attribute__((always_inline)) {
+      const auto rows = [&tile, m, m_blk, m_4, m_2] [[gnu::always_inline]] (const Long j0, auto w, auto partial, const Integer nc) {
         for (Long i = 0; i < m_blk; i += IR::value) tile(i, j0, IR{}, I1{}, w, partial, nc);
         for (Long i = m_blk; i < m_4; i += 4) tile(i, j0, I4{}, I1{}, w, partial, nc);
         for (Long i = m_4; i < m_2; i += 2) tile(i, j0, I2{}, I1{}, w, partial, nc);
@@ -286,7 +289,7 @@ namespace detail_small_gemm {
         rows(n - VL, IV{}, std::false_type{}, VL);
       } else if constexpr (VL * sizeof(ValueType) == 64) { // AVX-512: in the narrowest vector of a quarter, half or the full width that holds them, partial unless they fill it (a partial vector of the full width was up to 1.35x slower)
         const Integer nc = (Integer)(n - n_full);
-        const auto in = [&rows, n_full, nc](auto w) __attribute__((always_inline)) {
+        const auto in = [&rows, n_full, nc] [[gnu::always_inline]] (auto w) {
           if (nc == decltype(w)::value) {
             rows(n_full, w, std::false_type{}, decltype(w)::value);
           } else {
@@ -326,6 +329,133 @@ namespace detail_small_gemm {
   }
 
   /**
+   * Whether C = A B, for A of m rows, B of k rows and n columns with its rows ldb apart, uses
+   * VecProductCol: for one contiguous column of B, with rows of A of 8 values or more, or else few
+   * of them. With shorter and more rows of A, LIBXSMM's kernel was faster from 6 rows, and the
+   * register-blocked loop from 8, in double on one core of an AMD EPYC 9474F and of an Intel Xeon
+   * w5-3435X; at 5 rows, LIBXSMM's kernel took 7-15% less time with 1 to 3 columns of A and 3-12%
+   * more with 4 to 7 (AMD EPYC 9474F).
+   */
+  inline bool ProductCol(const Long m, const Long n, const Long k, const Long ldb) {
+#if defined(SCTL_HAVE_LIBXSMM)
+    constexpr Long max_m = 4;
+#else
+    constexpr Long max_m = 7;
+#endif
+    return n == 1 && ldb == 1 && (k >= 8 || m <= max_m);
+  }
+
+#if defined(SCTL_HAVE_LIBXSMM)
+  /**
+   * LIBXSMM's kernel for C = A B, of float or double, row by row with the rows lda, ldb and ldc apart,
+   * overwriting C or accumulating into it: through a per-thread table in front of LIBXSMM's lookup,
+   * which takes about 40 ns, as long as the smallest products. Not inlined: inlined, it added about
+   * 5 ns to every product, also to those without its kernel.
+   */
+  template <class ValueType> [[gnu::noinline]] libxsmm_gemmfunction LibxsmmKernel(const Long m, const Long n, const Long k, const Long lda, const Long ldb, const Long ldc, const bool accumulate) {
+    struct Entry {
+      Long m = -1, n = -1, k = -1, lda = -1, ldb = -1, ldc = -1;
+      bool accumulate = false;
+      libxsmm_gemmfunction kernel = nullptr;
+    };
+    thread_local Entry table[64];
+    Entry& e = table[(m * 31 + n * 17 + k * 7 + (lda - k) * 13 + (ldb - n) * 11 + (ldc - n) * 5 + (accumulate ? 1 : 0)) % 64];
+    if (e.m != m || e.n != n || e.k != k || e.lda != lda || e.ldb != ldb || e.ldc != ldc || e.accumulate != accumulate) {
+      constexpr libxsmm_datatype T = (std::is_same<ValueType, double>::value ? LIBXSMM_DATATYPE_F64 : LIBXSMM_DATATYPE_F32);
+      // Row-major C = A B is column-major C^T (n x m) = B^T (n x k) A^T (k x m)
+      const libxsmm_gemm_shape shape = libxsmm_create_gemm_shape((libxsmm_blasint)n, (libxsmm_blasint)m, (libxsmm_blasint)k, (libxsmm_blasint)ldb, (libxsmm_blasint)lda, (libxsmm_blasint)ldc, T, T, T, T);
+      e.kernel = libxsmm_dispatch_gemm(shape, (libxsmm_bitfield)(accumulate ? 0 : LIBXSMM_GEMM_FLAG_BETA_0), (libxsmm_bitfield)LIBXSMM_GEMM_PREFETCH_NONE);
+      e.m = m;
+      e.n = n;
+      e.k = k;
+      e.lda = lda;
+      e.ldb = ldb;
+      e.ldc = ldc;
+      e.accumulate = accumulate;
+    }
+    return e.kernel;
+  }
+#endif
+
+  /**
+   * C (m x 1) = A (m x k) B (k x 1), updated as U says, for B one contiguous column and the rows of
+   * A and of C lda and ldc apart: the dot products of the rows of A with B, along the rows in
+   * vectors, in blocks of NR rows (8, or VL if more: as many independent sums) so that each vector
+   * of B is loaded once for them. The columns of A past the last whole vector are one more vector,
+   * loaded partly. The sums of each group of VL rows, one vector each, are transposed and added: one
+   * vector of the VL dot products, stored at once where C is contiguous; the rows past the last
+   * block, in blocks of fewer rows than VL, are reduced one by one, for which the transposition
+   * costs more. Not inlined, as VecProductTiles.
+   */
+  template <class ValueType, Update U> [[gnu::noinline]] void VecProductCol(Iterator<ValueType> C, ConstIterator<ValueType> A, ConstIterator<ValueType> B, const Long m, const Long k, const Long lda, const Long ldc, const ValueType alpha, const ValueType beta) {
+    using VecType = Vec<ValueType>;
+    constexpr Integer VL = VecType::Size();
+    constexpr Integer NG = (VL < 8 ? 8 / VL : 1); // groups of VL rows in a block
+    constexpr Integer NR = NG * VL;
+    const Long k_vec = k - k % VL; // the columns of A in whole vectors
+    const Integer k_tail = (Integer)(k - k_vec);
+    const VecType b_tail = (k_tail ? VecType::LoadPartial(&B[k_vec], k_tail) : VecType::Zero());
+    const auto update = [alpha, beta](const VecType& s, const VecType& c) { // the new values of C
+      if constexpr (U == Update::Overwrite) return s;
+      else if constexpr (U == Update::Accumulate) return c + s;
+      else return s * alpha + (beta == ValueType(0) ? VecType::Zero() : c * beta);
+    };
+    // store and rows capture in the order in which GCC captures with [&], and c_'s size does not name VL, which Clang
+    // would then require captured: otherwise GCC 13.3 assigned other registers, and float products of 2 or 3 rows took
+    // up to 25% more or 28% less time
+    const auto store = [&ldc, &C, &update](const Long i0, const VecType& s) { // rows i0 to i0 + VL of C
+      if (ldc == 1) {
+        ValueType* c = &C[i0];
+        update(s, U == Update::Overwrite ? s : VecType::Load(c)).Store(c);
+      } else {
+        alignas(sizeof(VecType)) ValueType c_[VecType::Size()];
+        for (Integer r = 0; r < VL; r++) c_[r] = (U == Update::Overwrite ? ValueType(0) : C[(i0 + r) * ldc]);
+        update(s, VecType::LoadAligned(c_)).StoreAligned(c_);
+        for (Integer r = 0; r < VL; r++) C[(i0 + r) * ldc] = c_[r];
+      }
+    };
+    const auto rows = [&VL, &k_vec, &B, &A, &lda, &k_tail, &b_tail, &store, &C, &ldc, &alpha, &beta](const Long i0, auto nr) { // rows i0 to i0 + NB of C, in groups of W
+      constexpr Integer NB = decltype(nr)::value;
+      constexpr Integer W = (NB >= VL ? VL : NB);
+      VecType acc[NB / W][W];
+      for (Integer r = 0; r < NB; r++) acc[r / W][r % W] = VecType::Zero();
+      for (Long l = 0; l < k_vec; l += VL) {
+        const VecType b = VecType::Load(&B[l]);
+        for (Integer r = 0; r < NB; r++) acc[r / W][r % W] = FMA(VecType::Load(&A[(i0 + r) * lda + l]), b, acc[r / W][r % W]);
+      }
+      if (k_tail) {
+        for (Integer r = 0; r < NB; r++) acc[r / W][r % W] = FMA(VecType::LoadPartial(&A[(i0 + r) * lda + k_vec], k_tail), b_tail, acc[r / W][r % W]);
+      }
+      if constexpr (W == VL) {
+        for (Integer g = 0; g < NB / W; g++) {
+          transpose(acc[g]); // lane r of acc[g][j] is lane j of the sum of row g * VL + r
+          VecType s = acc[g][0];
+          for (Integer j = 1; j < VL; j++) s = s + acc[g][j];
+          store(i0 + g * VL, s);
+        }
+      } else {
+        for (Integer r = 0; r < NB; r++) {
+          const ValueType s = reduce(acc[0][r]);
+          ValueType& c = C[(i0 + r) * ldc];
+          if constexpr (U == Update::Overwrite) c = s;
+          else if constexpr (U == Update::Accumulate) c += s;
+          else c = alpha * s + (beta == ValueType(0) ? ValueType(0) : beta * c);
+        }
+      }
+    };
+    // Blocks of NR rows, and the rest in blocks of 8 (if NR > 8), 4 and 1: of sizes known at compile time, which keep
+    // the sums in registers. Not of 2: with A in memory, two rows read together were up to 2.5x slower than one after
+    // the other (AMD EPYC 9474F)
+    Long i = 0;
+    for (; i + NR <= m; i += NR) rows(i, std::integral_constant<Integer, NR>{});
+    if constexpr (NR > 8) {
+      for (; i + 8 <= m; i += 8) rows(i, std::integral_constant<Integer, 8>{});
+    }
+    for (; i + 4 <= m; i += 4) rows(i, std::integral_constant<Integer, 4>{});
+    for (; i < m; i++) rows(i, std::integral_constant<Integer, 1>{});
+  }
+
+  /**
    * As VecProduct, for std::complex<float> and std::complex<double>, with the same row strides and
    * template sizes and strides: a row of B or C is a vector of interleaved real and imaginary parts.
    * A tile sums re(A) B and im(A) B separately and combines them once, at the end, with the parts of
@@ -359,7 +489,7 @@ namespace detail_small_gemm {
 
     // Rows i0.. (MR of them) and entries j0.. (NV vectors of W reals) of C; if Partial, only the first
     // nc reals of the one vector. Inlined, as in VecProduct
-    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta, alpha_one, beta_zero](const Long i0, const Long j0, auto mr, auto nv, auto w, auto partial, const Integer nc) __attribute__((always_inline)) {
+    const auto tile = [A, B, C, k, lda, ldb, ldc, alpha, beta, alpha_one, beta_zero] [[gnu::always_inline]] (const Long i0, const Long j0, auto mr, auto nv, auto w, auto partial, const Integer nc) {
       constexpr Integer MR = decltype(mr)::value;
       constexpr Integer NV = decltype(nv)::value;
       constexpr Integer W = decltype(w)::value;
@@ -427,7 +557,7 @@ namespace detail_small_gemm {
 
     const Long n_full = n - n % VE; // entries done in full-width vectors
     const Long n_pair = n_full - n_full % (2 * VE); // entries done in pairs of vectors
-    const auto cols = [&tile, n_full, n_pair](const Long i0, auto mr) __attribute__((always_inline)) {
+    const auto cols = [&tile, n_full, n_pair] [[gnu::always_inline]] (const Long i0, auto mr) {
       for (Long j = 0; j < n_pair; j += 2 * VE) tile(i0, j, mr, I2{}, IV{}, std::false_type{}, VL);
       for (Long j = n_pair; j < n_full; j += VE) tile(i0, j, mr, I1{}, IV{}, std::false_type{}, VL);
     };
@@ -437,13 +567,13 @@ namespace detail_small_gemm {
     for (Long i = 0; i < m_blk; i += IR::value) cols(i, IR{});
     for (Long i = m_blk; i < m; i++) cols(i, I1{});
     if (n_full < n) {
-      const auto rows = [&tile, m, m_blk](const Long j0, auto w, auto partial, const Integer nc) __attribute__((always_inline)) {
+      const auto rows = [&tile, m, m_blk] [[gnu::always_inline]] (const Long j0, auto w, auto partial, const Integer nc) {
         for (Long i = 0; i < m_blk; i += IR::value) tile(i, j0, IR{}, I1{}, w, partial, nc);
         for (Long i = m_blk; i < m; i++) tile(i, j0, I1{}, I1{}, w, partial, nc);
       };
       if constexpr (VL * sizeof(Real) == 64) { // as in VecProduct, for W reals
         const Integer nr = (Integer)(2 * (n - n_full));
-        const auto in = [&rows, n_full, nr](auto w) __attribute__((always_inline)) {
+        const auto in = [&rows, n_full, nr] [[gnu::always_inline]] (auto w) {
           if (nr == decltype(w)::value) {
             rows(n_full, w, std::false_type{}, decltype(w)::value);
           } else {
@@ -482,31 +612,7 @@ template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC>
 #if defined(SCTL_HAVE_LIBXSMM)
   kernel_ = nullptr;
   if constexpr (std::is_same<ValueType, double>::value || std::is_same<ValueType, float>::value) {
-    if (m * n * k > 0) {
-      // A per-thread table in front of LIBXSMM's lookup, which takes about 40 ns, as long as the
-      // smallest products
-      struct Entry {
-        Long m = -1, n = -1, k = -1, lda = -1, ldb = -1, ldc = -1;
-        bool accumulate = false;
-        libxsmm_gemmfunction kernel = nullptr;
-      };
-      thread_local Entry table[64];
-      Entry& e = table[(m * 31 + n * 17 + k * 7 + (lda - k) * 13 + (ldb - n) * 11 + (ldc - n) * 5 + (accumulate ? 1 : 0)) % 64];
-      if (e.m != m || e.n != n || e.k != k || e.lda != lda || e.ldb != ldb || e.ldc != ldc || e.accumulate != accumulate) {
-        constexpr libxsmm_datatype T = (std::is_same<ValueType, double>::value ? LIBXSMM_DATATYPE_F64 : LIBXSMM_DATATYPE_F32);
-        // Row-major C = A B is column-major C^T (n x m) = B^T (n x k) A^T (k x m)
-        const libxsmm_gemm_shape shape = libxsmm_create_gemm_shape((libxsmm_blasint)n, (libxsmm_blasint)m, (libxsmm_blasint)k, (libxsmm_blasint)ldb, (libxsmm_blasint)lda, (libxsmm_blasint)ldc, T, T, T, T);
-        e.kernel = libxsmm_dispatch_gemm(shape, (libxsmm_bitfield)(accumulate ? 0 : LIBXSMM_GEMM_FLAG_BETA_0), (libxsmm_bitfield)LIBXSMM_GEMM_PREFETCH_NONE);
-        e.m = m;
-        e.n = n;
-        e.k = k;
-        e.lda = lda;
-        e.ldb = ldb;
-        e.ldc = ldc;
-        e.accumulate = accumulate;
-      }
-      kernel_ = e.kernel;
-    }
+    if (m * n * k > 0 && !detail_small_gemm::ProductCol(m, n, k, ldb)) kernel_ = detail_small_gemm::LibxsmmKernel<ValueType>(m, n, k, lda, ldb, ldc, accumulate); // else by VecProductCol (see operator())
   }
 #endif
 }
@@ -525,6 +631,16 @@ template <class ValueType, Long M, Long N, Long K, Long LDA, Long LDB, Long LDC>
 #endif
   using detail_small_gemm::Update;
   if constexpr (detail_small_gemm::VecTiles<ValueType>) {
+    if constexpr (N == DynamicSize || N == 1) {
+      if (detail_small_gemm::ProductCol(m_, n_, k_, ldb_)) { // one contiguous column of B, as ProductCol says: dot products
+        if (accumulate_) {
+          detail_small_gemm::VecProductCol<ValueType, Update::Accumulate>(C, A, B, m_, k_, lda_, ldc_, (ValueType)1, (ValueType)1);
+        } else {
+          detail_small_gemm::VecProductCol<ValueType, Update::Overwrite>(C, A, B, m_, k_, lda_, ldc_, (ValueType)1, (ValueType)0);
+        }
+        return;
+      }
+    }
     if constexpr (LDA == DynamicSize && LDB == DynamicSize && LDC == DynamicSize) { // with a fixed stride, only the strided loop
       if (lda_ == k_ && ldb_ == n_ && ldc_ == n_) { // contiguous: strides from the sizes, so fixed with them
         if (accumulate_) {

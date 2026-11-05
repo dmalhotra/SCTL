@@ -277,6 +277,7 @@ inline bool ReadPeer(int pid, const void* src, void* dst, Long bytes) {
     return true;
   };
   const Integer nt = (SCTL_IN_PARALLEL() ? 1 : (Integer)SCTL_GET_MAX_THREADS());
+  SCTL_UNUSED(nt);
   bool ok = true;
   #pragma omp parallel for schedule(dynamic) num_threads(nt)
   for (Long c = 0; c < nchunk; c++) {
@@ -416,6 +417,7 @@ template <class Type> class Comm::CommDatatype {
 
  private:
   static void sum_fn(void* a_, void* b_, int* len_, MPI_Datatype* datatype) {
+    SCTL_UNUSED(datatype);
     Type* a = (Type*)a_;
     Type* b = (Type*)b_;
     int len = *len_;
@@ -425,6 +427,7 @@ template <class Type> class Comm::CommDatatype {
   }
 
   static void min_fn(void* a_, void* b_, int* len_, MPI_Datatype* datatype) {
+    SCTL_UNUSED(datatype);
     Type* a = (Type*)a_;
     Type* b = (Type*)b_;
     int len = *len_;
@@ -434,6 +437,7 @@ template <class Type> class Comm::CommDatatype {
   }
 
   static void max_fn(void* a_, void* b_, int* len_, MPI_Datatype* datatype) {
+    SCTL_UNUSED(datatype);
     Type* a = (Type*)a_;
     Type* b = (Type*)b_;
     int len = *len_;
@@ -469,6 +473,9 @@ inline void Comm::MPI_Init(int* argc, char*** argv) {
   int provided;
   ::MPI_Init_thread(argc, argv, MPI_THREAD_SERIALIZED, &provided);
   if (provided < MPI_THREAD_SERIALIZED) SCTL_WARN("MPI implementation does not support MPI_THREAD_SERIALIZED.");
+#else
+  SCTL_UNUSED(argc);
+  SCTL_UNUSED(argv);
 #endif
 #if defined(SCTL_HAVE_MPI) && !defined(SCTL_COMM_NO_DIRECT)
   { // Every rank is here, so the node group is whole and a communicator made later covers a subset
@@ -639,6 +646,7 @@ inline Comm Comm::Split(Integer clr) const {
   MPI_Comm_free(&new_comm);
   return c;
 #else
+  SCTL_UNUSED(clr);
   return Comm();
 #endif
 }
@@ -704,6 +712,7 @@ template <class SIter> Comm::Request Comm::Isend(SIter sbuf, Long scount, Intege
   return Request(&request);
 #endif
 #else
+  SCTL_UNUSED(dest);
   auto it = recv_req.find(tag);
   if (it == recv_req.end()) {
     send_req.insert(std::pair<Integer, ConstIterator<char>>(tag, (ConstIterator<char>)sbuf));
@@ -743,6 +752,7 @@ template <class SIter> Comm::Request Comm::Issend(SIter sbuf, Long scount, Integ
   return Request(&request);
 #endif
 #else
+  SCTL_UNUSED(dest);
   // Serial fallback: identical to Isend — pair with a pending Irecv if present,
   // otherwise stash the send buffer for a future Irecv.
   auto it = recv_req.find(tag);
@@ -782,6 +792,7 @@ template <class RType> Comm::Request Comm::Irecv(Iterator<RType> rbuf, Long rcou
   return Request(&request);
 #endif
 #else
+  SCTL_UNUSED(source);
   auto it = send_req.find(tag);
   if (it == send_req.end()) {
     recv_req.insert(std::pair<Integer, Iterator<char>>(tag, (Iterator<char>)rbuf));
@@ -824,6 +835,10 @@ template <class Type> void Comm::Bcast(Iterator<Type> buf, Long count, Integer r
     MPI_Bcast(&buf[offset], comm_detail::MPIAsCount(chunk), CommDatatype<Type>::value(), root, impl_->mpi_comm_);
   }
 #endif
+#else
+  SCTL_UNUSED(buf);
+  SCTL_UNUSED(count);
+  SCTL_UNUSED(root);
 #endif
 }
 
@@ -1002,6 +1017,7 @@ template <class SIter, class RIter> void Comm::Allgatherv(SIter sbuf, Long scoun
   if (free_unit_type) MPI_Type_free(&unit_type);
 #endif
 #else
+  SCTL_UNUSED(rcounts);
   omp_par::memcpy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)sbuf, scount * sizeof(SType));
 #endif
 }
@@ -1043,6 +1059,7 @@ template <class SIter, class RIter> void Comm::Alltoall(SIter sbuf, Long scount,
   }
 #endif
 #else
+  SCTL_UNUSED(rcount);
   omp_par::memcpy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, scount * sizeof(SType));
 #endif
 }
@@ -1183,8 +1200,9 @@ template <bool BlockingDirect, class SIter, class RIter> Comm::Request Comm::Ial
   const Integer np = impl_->mpi_size_, rank = Rank();
   const auto on_node = [this](Integer i) { return impl_->NodeIdx(i) >= 0; };
   // Reading a peer's send buffer means synchronizing the node before returning, which this
-  // routine's name says it will not do, so the caller has to ask for it.
-  const bool direct = BlockingDirect && impl_->direct_;
+  // routine's name says it will not do, so the caller has to ask for it. impl_->direct_ first: with
+  // BlockingDirect = false first, direct is a constant, and Clang warns that skip need not capture it.
+  const bool direct = impl_->direct_ && BlockingDirect;
   const auto skip = [rank,direct,&on_node](Integer i) { return i == rank || (direct && on_node(i)); };
   // Every block but self, whichever way it arrives: ReadNodeBlocks needs the node-local ones
   // faulted in already, and MPI writes the rest. Here the pages fault in with all threads.
@@ -1244,7 +1262,7 @@ template <bool BlockingDirect, class SIter, class RIter> Comm::Request Comm::Ial
 #endif
   };
   Long m = 0, posted_bytes = 0;
-  const auto post_peers = [&](const auto& take) {  // receives for the whole set, then sends
+  const auto post_peers = [&np,&rcounts,&m,&post,&rbuf,&rdispls,&request,&posted_bytes,&scounts,&sbuf,&sdispls](const auto& take) {  // receives for the whole set, then sends
     for (Integer i = 0; i < np; i++) {
       if (!take(i) || !rcounts[i]) continue;
       const Long bytes = rcounts[i] * (Long)sizeof(RType);
@@ -1273,6 +1291,8 @@ template <bool BlockingDirect, class SIter, class RIter> Comm::Request Comm::Ial
   comm_detail::TrackPointToPoint(m, posted_bytes);
   return Request(&request);
 #else
+  SCTL_UNUSED(rcounts);
+  SCTL_UNUSED(tag);
   omp_par::memcpy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)(sbuf + sdispls[0]), scounts[0] * sizeof(SType));
   return Request();
 #endif
@@ -1423,6 +1443,7 @@ template <class SIter, class RIter> void Comm::Alltoallv(SIter sbuf, ConstIterat
 // TODO: implement hypercube scheme
 #endif
 #else
+  SCTL_UNUSED(rcounts);
   omp_par::memcpy((Iterator<char>)(rbuf + rdispls[0]), (ConstIterator<char>)(sbuf + sdispls[0]), scounts[0] * sizeof(Type));
 #endif
 }
@@ -1587,6 +1608,7 @@ template <class SIter, class RIter> void Comm::Alltoallv_dense(SIter sbuf, Const
     }
   }
 #else
+  SCTL_UNUSED(rcounts);
   // Serial fallback: single rank, payload[i=0] just copies through.
   if (scounts[0] > 0) {
     omp_par::memcpy((Iterator<char>)(rbuf + rdispls[0]),
@@ -1626,6 +1648,7 @@ template <class SIter, class RIter> void Comm::Allreduce(SIter sbuf, RIter rbuf,
   if (!count) return;
   AllreduceImpl(sbuf, rbuf, count, GetMPIOp<Type>(op));
 #else
+  SCTL_UNUSED(op);
   omp_par::memcpy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));
 #endif
 }
@@ -1672,6 +1695,7 @@ template <class SIter, class RIter> void Comm::Scan(SIter sbuf, RIter rbuf, Long
   if (!count) return;
   ScanImpl(sbuf, rbuf, count, GetMPIOp<Type>(op));
 #else
+  SCTL_UNUSED(op);
   omp_par::memcpy((Iterator<char>)rbuf, (ConstIterator<char>)sbuf, count * sizeof(Type));
 #endif
 }

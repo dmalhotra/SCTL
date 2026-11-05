@@ -4,7 +4,7 @@
 
 #include "sctl.hpp"
 
-int main(int argc, char** argv) {
+int main() {
 
   sctl::InterpQuadRule<long double>::test();
 

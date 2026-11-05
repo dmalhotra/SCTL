@@ -5,7 +5,8 @@
 // Per-function tests for sctl/ompUtils.{hpp,txx}.
 //
 // Covers omp_par::merge, omp_par::merge_sort (with and without comparator),
-// omp_par::reduce, omp_par::scan, omp_par::sample_sort, omp_par::radix_sort and omp_par::sort.
+// omp_par::reduce, omp_par::scan, omp_par::sample_sort, omp_par::radix_sort, omp_par::sort,
+// omp_par::parallel_for and omp_par::parallel_reduce.
 
 #include <algorithm>
 #include <cstdint>
@@ -23,6 +24,10 @@
 #include "sctl/ompUtils.txx"
 
 #include "test-utils.hpp"
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 using sctl::Integer;
 using sctl::Long;
@@ -319,6 +324,85 @@ int main() {
         }
       }
     }
+  }
+
+  // --- parallel_for: every index once; and without a region when its team would have one thread ---
+  std::printf("parallel_for :\n");
+  {
+    const Long N = 10007;
+    const auto calls_once = [](const bool dynamic) {
+      std::vector<int> cnt((size_t)N, 0);
+      sctl::omp_par::parallel_for(N, [&cnt](const Long i) { cnt[i]++; }, dynamic);
+      bool once = true;
+      for (Long i = 0; i < N; ++i) once = once && (cnt[i] == 1);
+      return once;
+    };
+    CHECK(calls_once(false));
+    CHECK(calls_once(true));
+    int calls = 0;
+    sctl::omp_par::parallel_for(0, [&calls](Long) { calls++; });
+    CHECK(calls == 0);
+#ifdef _OPENMP
+    // the level of the body's thread: that of the caller when no region is opened, even one of one thread
+    const auto body_level = [](const bool dynamic) {
+      std::vector<int> level(64, -1);
+      sctl::omp_par::parallel_for(64, [&level](const Long i) { level[i] = omp_get_level(); }, dynamic);
+      return *std::max_element(level.begin(), level.end());
+    };
+    const int nt = omp_get_max_threads(), max_levels = omp_get_max_active_levels();
+    omp_set_num_threads(1);
+    CHECK(sctl::omp_par::one_thread());
+    CHECK(body_level(false) == 0);
+    CHECK(body_level(true) == 0);
+    omp_set_num_threads(nt);
+    CHECK(sctl::omp_par::one_thread() == (nt == 1));
+    if (nt > 1) CHECK(body_level(false) == 1);
+    int level_one = -1; // one index: on the calling thread, without a region
+    sctl::omp_par::parallel_for(1, [&level_one](Long) { level_one = omp_get_level(); });
+    CHECK(level_one == 0);
+    omp_set_max_active_levels(1);
+    bool inner_one = true;
+    int inner_level = 0;
+    #pragma omp parallel num_threads(2)
+    {
+      #pragma omp single
+      {
+        inner_one = sctl::omp_par::one_thread();
+        inner_level = body_level(true);
+      }
+    }
+    CHECK(inner_one);
+    CHECK(inner_level == 1);
+    omp_set_max_active_levels(max_levels);
+#endif
+  }
+
+  // --- parallel_reduce: a sum of integers (exact), a maximum, and a pair of sums ---
+  std::printf("parallel_reduce :\n");
+  {
+    const Long N = 10007;
+    const auto sum_max = []() {
+      const Long s = sctl::omp_par::parallel_reduce(N, (Long)0, [](const Long i) { return i * i; }, [](const Long a, const Long b) { return a + b; });
+      const Long m = sctl::omp_par::parallel_reduce(N, (Long)-1, [](const Long i) { return (i * 7919) % N; }, [](const Long a, const Long b) { return std::max(a, b); });
+      return std::make_pair(s, m);
+    };
+    const Long ref_sum = (N - 1) * N * (2 * N - 1) / 6;
+    CHECK(sum_max() == std::make_pair(ref_sum, N - 1));
+    struct Pair {
+      Long a, b;
+    };
+    const Pair p = sctl::omp_par::parallel_reduce(N, Pair{0, 0}, [](const Long i) { return Pair{i, 2 * i}; }, [](const Pair x, const Pair y) { return Pair{x.a + y.a, x.b + y.b}; });
+    CHECK(p.a == N * (N - 1) / 2 && p.b == N * (N - 1));
+    CHECK(sctl::omp_par::parallel_reduce(0, (Long)5, [](Long) { return (Long)1; }, [](const Long a, const Long b) { return a + b; }) == 5);
+#ifdef _OPENMP
+    const int nt = omp_get_max_threads();
+    int level_one = -1; // one index: on the calling thread, without a region
+    CHECK(sctl::omp_par::parallel_reduce(1, (Long)2, [&level_one](const Long i) { level_one = omp_get_level(); return i + 3; }, [](const Long a, const Long b) { return a + b; }) == 5);
+    CHECK(level_one == 0);
+    omp_set_num_threads(1);
+    CHECK(sum_max() == std::make_pair(ref_sum, N - 1));
+    omp_set_num_threads(nt);
+#endif
   }
 
   TEST_SUMMARY_RETURN();
