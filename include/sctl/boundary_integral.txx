@@ -150,9 +150,9 @@ namespace sctl {
       }
       { // Expand bounding-box so that no points are on the boundary
         for (Long i = 0; i < COORD_DIM; i++) {
-          BBX0[i] -= 0.05/BBlen_inv;
+          BBX0[i] -= (Real)0.05/BBlen_inv;
         }
-        BBlen_inv /= 1.1;
+        BBlen_inv /= (Real)1.1;
       }
 
       omp_par::parallel_for(Ntrg, [&trg_nodes,trg_offset,&Xtrg,have_trg_normal,&Xn_trg,&BBX0,BBlen_inv,rank](const Long i) { // Set trg_nodes
@@ -573,7 +573,7 @@ namespace sctl {
 
 
 
-  template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::BoundaryIntegralOp(const Kernel& ker, bool trg_normal_dot_prod, const Comm& comm) : tol_(1e-10), ker_(ker), trg_normal_dot_prod_(trg_normal_dot_prod), comm_(comm), fmm(comm) {
+  template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::BoundaryIntegralOp(const Kernel& ker, bool trg_normal_dot_prod, const Comm& comm) : tol_((Real)1e-10), ker_(ker), trg_normal_dot_prod_(trg_normal_dot_prod), comm_(comm), fmm(comm) {
     SCTL_ASSERT(!trg_normal_dot_prod_ || (KDIM1 % COORD_DIM == 0));
     ClearSetup();
 
