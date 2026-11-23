@@ -145,10 +145,12 @@ namespace sctl {
       /**
        * Apply the transpose of the GetFarFieldDensity() operator for a single
        * element applied to the column-vectors of Min and the result is
-       * returned in Mout. If Mout is empty, then identity operator is assumed.
+       * returned in Mout. If Mout is empty on return, then identity operator is assumed.
        *
        * @param[out] Mout the output matrix where the column-vectors are the
-       * result of the application of the transpose operator.
+       * result of the application of the transpose operator. If it has the
+       * dimensions of the result on input, the result is written to its
+       * storage.
        *
        * @param[in] Min the input matrix whose column-vectors are
        * multiplied by the transpose operator.
@@ -473,6 +475,7 @@ namespace sctl {
       void SetupFar() const;
       void SetupSelf() const;
       void SetupNear() const;
+      void SetupElemArea() const;
 
       void ComputeFarField(Vector<Real>& U, const Vector<Real>& F) const;
       void ComputeNearInterac(Vector<Real>& U, const Vector<Real>& F) const;
@@ -501,6 +504,8 @@ namespace sctl {
       mutable Vector<Real> Xn_surf; // Normal at surface node points (normal vector for on-surface evaluation)
       mutable Vector<Real> Xtrg; // Position of target points
       mutable Vector<Real> Xn_trg; // Normal vector at target points
+      mutable Vector<Vector<Real>> Xsurf_lst, Xn_surf_lst; // Xsurf and Xn_surf of each element-list (size=Nlst), kept so that their storage is reused
+      mutable Vector<Vector<Long>> elem_nds_cnt_lst; // elem_nds_cnt of each element-list (size=Nlst)
 
       mutable bool setup_far_flag;
       mutable ParticleFMM<Real,COORD_DIM> fmm;
@@ -508,6 +513,12 @@ namespace sctl {
       mutable Vector<Real> X_far, Xn_far, wts_far; // position, normal and weights for far-field quadrature
       mutable Vector<Real> dist_far; // minimum distance of target points for far-field evaluation
       mutable Vector<Real> F_far; // pre-allocated memory for density in far-field evaluation
+      mutable Vector<Vector<Real>> X_far_lst, Xn_far_lst, wts_far_lst, dist_far_lst; // far-field nodes of each element-list (size=Nlst), kept so that their storage is reused
+      mutable Vector<Vector<Long>> elem_nds_cnt_far_lst; // elem_nds_cnt_far of each element-list (size=Nlst)
+
+      mutable Vector<Real> elem_area; // area of each element: sum of its far-field quadrature weights for tolerance 1 (size=Nelem, empty until SetupElemArea())
+      mutable Vector<Real> area_X, area_Xn, area_wts, area_dist; // far-field nodes, normals, weights and distances for tolerance 1 of one element-list, kept so that their storage is reused
+      mutable Vector<Long> area_cnt; // number of those far-field nodes of each element of that element-list
 
       mutable bool setup_near_flag;
       mutable Vector<Real> Xtrg_near; // position of near-interaction target points sorted by element (size=Nnear*COORD_DIM)

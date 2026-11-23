@@ -775,6 +775,7 @@ namespace sctl {
     setup_far_flag = false;
     setup_self_flag = false;
     setup_near_flag = false;
+    elem_area.ReInit(0);
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::ComputePotential(Vector<Real>& U, const Vector<Real>& F) const {
@@ -786,63 +787,54 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SqrtScaling(Vector<Real>& U) const {
-    const Long Nsrc = (elem_nds_cnt.Dim() ? elem_nds_dsp.end()[-1] + elem_nds_cnt.end()[-1] : 0);
+    SetupElemArea();
+    const Long Nelem = elem_nds_cnt.Dim();
+    const Long Nsrc = (Nelem ? elem_nds_dsp.end()[-1] + elem_nds_cnt.end()[-1] : 0);
     const Long dof = (Nsrc ? U.Dim() / Nsrc : 0);
     SCTL_ASSERT(U.Dim() == Nsrc * dof);
 
-    const Long Nlst = elem_lst_map.size();
-    for (Long i = 0; i < Nlst; i++) { // Init F_far
-      const Long elem_idx0 = elem_lst_dsp[i];
-      const Long elem_idx1 = elem_lst_dsp[i]+elem_lst_cnt[i];
-
-      Vector<Real> X, Xn, wts, dist_far;
-      Vector<Long> element_wise_node_cnt;
-      elem_lst_map.at(elem_lst_name[i])->GetFarFieldNodes(X, Xn, wts, dist_far, element_wise_node_cnt, 1);
-      SCTL_ASSERT(element_wise_node_cnt.Dim() == elem_lst_cnt[i]);
-      ScratchBuf<Long> element_wise_node_dsp(elem_idx1-elem_idx0);
-      omp_par::scan(element_wise_node_cnt.begin(), element_wise_node_dsp.begin(), elem_idx1-elem_idx0, (Long)0);
-
-      for (Long elem = elem_idx0; elem < elem_idx1; elem++) {
-        const Long j0 = elem_nds_dsp[elem];
-        const Long j1 = elem_nds_dsp[elem] + elem_nds_cnt[elem];
-        Vector<Real> U_((j1-j0)*dof, U.begin() + j0*dof, false);
-
-        Real area = 0;
-        for (Long j = 0; j < element_wise_node_cnt[elem-elem_idx0]; j++) {
-          area += wts[element_wise_node_dsp[elem-elem_idx0]+j];
-        }
-        U_ *= sqrt<Real>(area);
-      }
+    for (Long elem = 0; elem < Nelem; elem++) {
+      Vector<Real> U_(elem_nds_cnt[elem]*dof, U.begin() + elem_nds_dsp[elem]*dof, false);
+      U_ *= sqrt<Real>(elem_area[elem]);
     }
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::InvSqrtScaling(Vector<Real>& U) const {
-    const Long Nsrc = (elem_nds_cnt.Dim() ? elem_nds_dsp.end()[-1] + elem_nds_cnt.end()[-1] : 0);
+    SetupElemArea();
+    const Long Nelem = elem_nds_cnt.Dim();
+    const Long Nsrc = (Nelem ? elem_nds_dsp.end()[-1] + elem_nds_cnt.end()[-1] : 0);
     const Long dof = (Nsrc ? U.Dim() / Nsrc : 0);
     SCTL_ASSERT(U.Dim() == Nsrc * dof);
 
+    for (Long elem = 0; elem < Nelem; elem++) {
+      Vector<Real> U_(elem_nds_cnt[elem]*dof, U.begin() + elem_nds_dsp[elem]*dof, false);
+      U_ *= 1/sqrt<Real>(elem_area[elem]);
+    }
+  }
+
+  template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetupElemArea() const {
+    if (elem_area.Dim()) return;
+    SetupBasic();
+    elem_area.ReInit(elem_nds_cnt.Dim());
+
     const Long Nlst = elem_lst_map.size();
-    for (Long i = 0; i < Nlst; i++) { // Init F_far
+    for (Long i = 0; i < Nlst; i++) {
       const Long elem_idx0 = elem_lst_dsp[i];
       const Long elem_idx1 = elem_lst_dsp[i]+elem_lst_cnt[i];
 
-      Vector<Real> X, Xn, wts, dist_far;
-      Vector<Long> element_wise_node_cnt;
-      elem_lst_map.at(elem_lst_name[i])->GetFarFieldNodes(X, Xn, wts, dist_far, element_wise_node_cnt, 1);
+      elem_lst_map.at(elem_lst_name[i])->GetFarFieldNodes(area_X, area_Xn, area_wts, area_dist, area_cnt, 1);
+      const Vector<Real>& wts = area_wts;
+      const Vector<Long>& element_wise_node_cnt = area_cnt;
       SCTL_ASSERT(element_wise_node_cnt.Dim() == elem_lst_cnt[i]);
       ScratchBuf<Long> element_wise_node_dsp(elem_idx1-elem_idx0);
       omp_par::scan(element_wise_node_cnt.begin(), element_wise_node_dsp.begin(), elem_idx1-elem_idx0, (Long)0);
 
       for (Long elem = elem_idx0; elem < elem_idx1; elem++) {
-        const Long j0 = elem_nds_dsp[elem];
-        const Long j1 = elem_nds_dsp[elem] + elem_nds_cnt[elem];
-        Vector<Real> U_((j1-j0)*dof, U.begin() + j0*dof, false);
-
         Real area = 0;
         for (Long j = 0; j < element_wise_node_cnt[elem-elem_idx0]; j++) {
           area += wts[element_wise_node_dsp[elem-elem_idx0]+j];
         }
-        U_ *= 1/sqrt<Real>(area);
+        elem_area[elem] = area;
       }
     }
   }
@@ -869,16 +861,16 @@ namespace sctl {
     }
     { // Set elem_lst_cnt, elem_nds_cnt, Xsurf
       elem_lst_cnt .ReInit(Nlst);
-      Vector<Vector<Real>> Xsurf_(Nlst);
-      Vector<Vector<Real>> Xn_surf_(Nlst);
-      Vector<Vector<Long>> elem_nds_cnt_(Nlst);
+      if (Xsurf_lst.Dim() != Nlst) Xsurf_lst.ReInit(Nlst);
+      if (Xn_surf_lst.Dim() != Nlst) Xn_surf_lst.ReInit(Nlst);
+      if (elem_nds_cnt_lst.Dim() != Nlst) elem_nds_cnt_lst.ReInit(Nlst);
       for (Long i = 0; i < Nlst; i++) {
-        elem_lst_map.at(elem_lst_name[i])->GetNodeCoord(&Xsurf_[i], &Xn_surf_[i], &elem_nds_cnt_[i]);
-        elem_lst_cnt[i] = elem_nds_cnt_[i].Dim();
+        elem_lst_map.at(elem_lst_name[i])->GetNodeCoord(&Xsurf_lst[i], &Xn_surf_lst[i], &elem_nds_cnt_lst[i]);
+        elem_lst_cnt[i] = elem_nds_cnt_lst[i].Dim();
       }
-      concat_vecs(Xsurf, Xsurf_);
-      concat_vecs(Xn_surf, Xn_surf_);
-      concat_vecs(elem_nds_cnt, elem_nds_cnt_);
+      concat_vecs(Xsurf, Xsurf_lst);
+      concat_vecs(Xn_surf, Xn_surf_lst);
+      concat_vecs(elem_nds_cnt, elem_nds_cnt_lst);
     }
     { // Set elem_lst_dsp, elem_nds_dsp
       const Long Nelem = elem_nds_cnt.Dim();
@@ -921,19 +913,19 @@ namespace sctl {
 
     Profile::Tic("SetupFarField", &comm_, false, 6);
     const Long Nlst = elem_lst_map.size();
-    Vector<Vector<Real>> X_far_(Nlst);
-    Vector<Vector<Real>> Xn_far_(Nlst);
-    Vector<Vector<Real>> wts_far_(Nlst);
-    Vector<Vector<Real>> dist_far_(Nlst);
-    Vector<Vector<Long>> elem_nds_cnt_far_(Nlst);
+    if (X_far_lst.Dim() != Nlst) X_far_lst.ReInit(Nlst);
+    if (Xn_far_lst.Dim() != Nlst) Xn_far_lst.ReInit(Nlst);
+    if (wts_far_lst.Dim() != Nlst) wts_far_lst.ReInit(Nlst);
+    if (dist_far_lst.Dim() != Nlst) dist_far_lst.ReInit(Nlst);
+    if (elem_nds_cnt_far_lst.Dim() != Nlst) elem_nds_cnt_far_lst.ReInit(Nlst);
     for (Long i = 0; i < Nlst; i++) {
-      elem_lst_map.at(elem_lst_name[i])->GetFarFieldNodes(X_far_[i], Xn_far_[i], wts_far_[i], dist_far_[i], elem_nds_cnt_far_[i], tol_);
+      elem_lst_map.at(elem_lst_name[i])->GetFarFieldNodes(X_far_lst[i], Xn_far_lst[i], wts_far_lst[i], dist_far_lst[i], elem_nds_cnt_far_lst[i], tol_);
     }
-    concat_vecs(X_far   , X_far_   );
-    concat_vecs(Xn_far  , Xn_far_  );
-    concat_vecs(wts_far , wts_far_ );
-    concat_vecs(dist_far, dist_far_);
-    concat_vecs(elem_nds_cnt_far, elem_nds_cnt_far_);
+    concat_vecs(X_far   , X_far_lst   );
+    concat_vecs(Xn_far  , Xn_far_lst  );
+    concat_vecs(wts_far , wts_far_lst );
+    concat_vecs(dist_far, dist_far_lst);
+    concat_vecs(elem_nds_cnt_far, elem_nds_cnt_far_lst);
     { // Set elem_nds_dsp_far
       const Long Nelem = elem_nds_cnt.Dim();
       SCTL_ASSERT(elem_nds_cnt_far.Dim() == Nelem);
@@ -1301,7 +1293,8 @@ namespace sctl {
               }
             }
 
-            Matrix<Real> K_direct;
+            ScratchBuf<Real> K_direct_storage(K_near_.Dim(1) * Mker.Dim(1));
+            Matrix<Real> K_direct(K_near_.Dim(1), Mker.Dim(1), K_direct_storage.begin(), false);
             elem_lst->FarFieldDensityOperatorTranspose(K_direct, Mker, j);
             // Mker/K_direct are source-major (fixed by the FarFieldDensityOperatorTranspose
             // interface) while K_near_ is target-major, so the subtraction transposes.
