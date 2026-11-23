@@ -674,11 +674,11 @@ template <class Real, Integer DIM> std::function<void(Matrix<Real>&, const Vecto
   const auto name = std::make_pair(src_name, trg_name);
   SCTL_ASSERT_MSG(s2t_map.find(name) != s2t_map.end(), "Source-target pair does not exist.");
   const auto& s2t_data = s2t_map.at(name);
-  const auto ker_matrix = s2t_data.ker_s2t_matrix;
-  const ConstIterator<char> ker = s2t_data.ker_s2t;
 
   #ifdef SCTL_HAVE_PVFMM
   if (UsePVFMM(trg_name)) { // as PVFMM: in its unit box, at full accuracy, with the scaling of its densities and potentials
+    const auto ker_matrix = s2t_data.ker_s2t_matrix;
+    const ConstIterator<char> ker = s2t_data.ker_s2t;
     StaticArray<Real,DIM> bbox_offset;
     Real bbox_scale;
     Vector<Real> src_scal, trg_scal;
@@ -697,8 +697,8 @@ template <class Real, Integer DIM> std::function<void(Matrix<Real>&, const Vecto
   }
   #endif
   const Integer digits = digits_;
-  return [ker_matrix, ker, digits](Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn) {
-    ker_matrix(M, Xt, Xs, Xn, digits, ker);
+  return [&s2t_data, digits](Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& Xs, const Vector<Real>& Xn) { // a reference and an Integer: small enough for std::function to store without allocating
+    s2t_data.ker_s2t_matrix(M, Xt, Xs, Xn, digits, s2t_data.ker_s2t);
   };
 }
 
