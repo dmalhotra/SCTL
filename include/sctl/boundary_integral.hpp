@@ -22,6 +22,12 @@ namespace sctl {
   template <class ValueType> class Matrix;
 
   /**
+   * Working storage for building near lists, reused from one call to the next so that its memory is not requested
+   * again. Its contents are private and need no initialization. Defined in boundary_integral.txx.
+   */
+  template <class Real, Integer COORD_DIM=3> class NearListWork;
+
+  /**
    * Given N target points and K elements (each made of a set of source nodes with given radius that describes its near
    * region), return vectors containing the set of near targets (coordinates and normals) for each element.
    *
@@ -58,9 +64,12 @@ namespace sctl {
    * with near_sort_scatter, the potential at the i-th target is given by summing over near_trg_cnt[i] array elements
    * starting at index near_trg_dsp[i].
    *
+   * @param[in,out] work (optional) working storage; its contents on input are not used, and its storage is reused from
+   * one call to the next. If null, temporary storage is used.
+   *
    * @note this is a collective operation.
    */
-  template <class Real, Integer COORD_DIM=3> void BuildNearList(Vector<Real>& Xtrg_near, Vector<Real>& Xn_trg_near, Vector<Long>& near_elem_cnt, Vector<Long>& near_elem_dsp, SortScatter<Long>& near_sort_scatter, Vector<Long>& near_trg_cnt, Vector<Long>& near_trg_dsp, const Vector<Real>& Xtrg, const Vector<Real>& Xn_trg, const Vector<Real>& Xsrc, const Vector<Real>& src_radius, const Vector<Long>& src_elem_nds_cnt, const Vector<Long>& src_elem_nds_dsp, const Comm& comm);
+  template <class Real, Integer COORD_DIM=3> void BuildNearList(Vector<Real>& Xtrg_near, Vector<Real>& Xn_trg_near, Vector<Long>& near_elem_cnt, Vector<Long>& near_elem_dsp, SortScatter<Long>& near_sort_scatter, Vector<Long>& near_trg_cnt, Vector<Long>& near_trg_dsp, const Vector<Real>& Xtrg, const Vector<Real>& Xn_trg, const Vector<Real>& Xsrc, const Vector<Real>& src_radius, const Vector<Long>& src_elem_nds_cnt, const Vector<Long>& src_elem_nds_dsp, const Comm& comm, NearListWork<Real,COORD_DIM>* work = nullptr);
 
   /**
    * Abstract base class for an element-list. In addition to the functions
@@ -506,6 +515,7 @@ namespace sctl {
       mutable SortScatter<Long> near_sort_scatter; // the trg-idx of each near-interaction: moves near-interactions sorted by elem-idx to sorted by trg-idx
       mutable Vector<Long> near_trg_cnt, near_trg_dsp; // cnt and dsp of near-interactions for each target (size=Ntrg)
       mutable Vector<Long> near_elem_cnt, near_elem_dsp; // cnt and dsp of near-interaction for each element (size=Nelem)
+      mutable NearListWork<Real,COORD_DIM> near_list_work; // working storage for building the near list, kept between setups so that its storage is reused
       mutable Vector<Long> K_near_cnt, K_near_dsp; // cnt and dsp of element wise near-interaction matrix (size=Nelem)
       mutable Vector<Real> K_near;
       // Near-eval work units: each is a contiguous target range within one element. Elements are
