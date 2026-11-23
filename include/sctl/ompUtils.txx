@@ -26,6 +26,12 @@ namespace sctl {
 
 namespace omp_par_detail {
 
+  /** A callable held as a local copy if it is trivially copyable (it captures only scalars, pointers or references),
+   *  otherwise by reference. In a loop calling a local copy, the compiler knows that stores cannot change its captures,
+   *  so it keeps them in registers, provided the copy is not used in a parallel region (which takes its address).
+   *  Nothing that requests memory is ever copied. */
+  template <class F> using LocalCallable = std::conditional_t<std::is_trivially_copyable<F>::value, const F, const F&>;
+
   /** Whether `merge_sort` beats `sample_sort` for elements of this size. Merge wins only for small
    *  elements, since its extra merge-pass data movement grows with the element, and only for teams
    *  spanning at most ~2 NUMA domains; it is also unusable from inside a parallel region. */
@@ -176,7 +182,8 @@ inline bool omp_par::one_thread() {
 template <class Body> inline void omp_par::parallel_for(Long n, const Body& body, bool dynamic, bool parallel, Integer nthreads) {
   if (n <= 0) return;
   if (n == 1 || !parallel || nthreads == 1 || one_thread()) {
-    for (Long i = 0; i < n; i++) body(i);
+    omp_par_detail::LocalCallable<Body> body_ = body;
+    for (Long i = 0; i < n; i++) body_(i);
     return;
   }
   const Integer nt = (nthreads > 0 ? nthreads : (Integer)SCTL_GET_MAX_THREADS());
@@ -194,7 +201,9 @@ template <class T, class Term, class Op> inline T omp_par::parallel_reduce(Long 
   T r = init;
   if (n <= 0) return r;
   if (n == 1 || !parallel || one_thread()) {
-    for (Long i = 0; i < n; i++) r = op(r, term(i));
+    omp_par_detail::LocalCallable<Term> term_ = term;
+    omp_par_detail::LocalCallable<Op> op_ = op;
+    for (Long i = 0; i < n; i++) r = op_(r, term_(i));
     return r;
   }
   const Integer nt = SCTL_GET_MAX_THREADS();
