@@ -671,6 +671,9 @@ namespace sctl {
     fmm.AddSrc("Src", k_s2m, k_s2l);
     fmm.AddTrg("Trg", k_m2t, k_l2t, (m2t_vol_poten ? m2t_vol_poten : m2l_vol_poten));
     fmm.SetKernelS2T("Src", "Trg", k_s2t);
+
+    setup_far_flag = false; // the new Src and Trg of fmm have no coordinates
+    setup_near_flag = false; // the near corrections subtract the old S2T kernel
   }
 
   template <class Real, class Kernel> template <class ElemLstType> const std::string& BoundaryIntegralOp<Real,Kernel>::ElemLstTypeName() {
