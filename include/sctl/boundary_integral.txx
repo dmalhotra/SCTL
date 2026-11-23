@@ -108,7 +108,10 @@ namespace sctl {
     const Long Nsrc = Xsrc.Dim()/COORD_DIM;
     const Long Nelem = src_elem_nds_cnt.Dim();
     Comm comm_ = comm.Split(Nsrc || Ntrg);
-    if (!Nsrc && !Ntrg) return;
+    if (!Nsrc && !Ntrg) { // no near pairs on this process: a plan that moves nothing, without communication
+      near_sort_scatter = SortScatter<Long>(Comm::Self());
+      return;
+    }
     const Long np = comm_.Size();
     const Long rank = comm_.Rank();
 
@@ -990,7 +993,6 @@ namespace sctl {
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetupNear() const {
     if (setup_near_flag) return;
     Xtrg_near.ReInit(0);
-    near_sort_scatter = SortScatter<Long>(comm_);
     near_trg_cnt.ReInit(0);
     near_trg_dsp.ReInit(0);
     near_elem_cnt.ReInit(0);
