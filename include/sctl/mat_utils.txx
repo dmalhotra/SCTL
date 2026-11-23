@@ -9,7 +9,6 @@
 #include <cassert>                // for assert
 #include <iostream>               // for basic_ostream, cout, operator<<
 #include <type_traits>            // for is_same
-#include <vector>                 // for vector
 
 #include "sctl/common.hpp"        // for Long, sctl
 #include "sctl/mat_utils.hpp"     // for gemm, pinv, svd
@@ -18,7 +17,8 @@
 #include "sctl/math_utils.hpp"    // for fabs, sqrt
 #include "sctl/math_utils.txx"    // for machine_eps
 #include "sctl/matrix.hpp"        // for Matrix
-#include "sctl/mem_mgr.txx"       // for aligned_delete, aligned_new
+#include "sctl/scratch_pool.hpp"  // for ScratchBuf
+#include "sctl/scratch_pool.txx"  // for ScratchBuf
 #include "sctl/static-array.hpp"  // for StaticArray
 #include "sctl/static-array.txx"  // for StaticArray::operator[]
 #include "sctl/small_gemm.hpp"    // for DynamicSize
@@ -169,7 +169,7 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
 
   {  // Bi-diagonalization
     Long n = std::min(dim[0], dim[1]);
-    std::vector<ValueType> house_vec(std::max(dim[0], dim[1]));
+    ScratchBuf<ValueType> house_vec(std::max(dim[0], dim[1]));
     for (Long i = 0; i < n; i++) {
       // Column Householder
       {
@@ -391,11 +391,12 @@ template <class ValueType> inline void svd(char *JOBU, char *JOBVT, Long *M, Lon
   StaticArray<Long, 2> dim;
   dim[0] = std::max(*N, *M);
   dim[1] = std::min(*N, *M);
-  Iterator<ValueType> U_ = aligned_new<ValueType>(dim[0] * dim[0]);
+  ScratchBuf<ValueType> U_buf(dim[0] * dim[0]), V_buf(dim[1] * dim[1]), S_buf(dim[0] * dim[1]);
+  const Iterator<ValueType> U_ = U_buf.begin();
+  const Iterator<ValueType> V_ = V_buf.begin();
+  const Iterator<ValueType> S_ = S_buf.begin();
   memset(U_, 0, dim[0] * dim[0]);
-  Iterator<ValueType> V_ = aligned_new<ValueType>(dim[1] * dim[1]);
   memset(V_, 0, dim[1] * dim[1]);
-  Iterator<ValueType> S_ = aligned_new<ValueType>(dim[0] * dim[1]);
 
   const Long lda = *LDA;
   const Long ldu = *LDU;
@@ -450,10 +451,6 @@ template <class ValueType> inline void svd(char *JOBU, char *JOBVT, Long *M, Lon
     S[i] = S[i] * (S[i] < 0.0 ? -1.0 : 1.0);
   }
 
-  aligned_delete<ValueType>(U_);
-  aligned_delete<ValueType>(S_);
-  aligned_delete<ValueType>(V_);
-
   if (0) {  // Verify
     StaticArray<Long, 2> dim;
     dim[0] = std::max(*N, *M);
@@ -502,9 +499,10 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, Long n1, Long
   Long n = n1;
   Long k = (m < n ? m : n);
 
-  Iterator<ValueType> tU = aligned_new<ValueType>(m * k);
-  Iterator<ValueType> tS = aligned_new<ValueType>(k);
-  Iterator<ValueType> tVT = aligned_new<ValueType>(k * n);
+  ScratchBuf<ValueType> tU_buf(m * k), tS_buf(k), tVT_buf(k * n);
+  const Iterator<ValueType> tU = tU_buf.begin();
+  const Iterator<ValueType> tS = tS_buf.begin();
+  const Iterator<ValueType> tVT = tVT_buf.begin();
 
   // SVD
   Long INFO = 0;
@@ -520,9 +518,10 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, Long n1, Long
   svd(&JOBU, &JOBVT, &m, &n, M, &m, tS, tU, &m, tVT, &k, wkopt+0, &wssize, &INFO);
   wssize = (Long)wkopt[0];
 
-  Iterator<ValueType> wsbuf = aligned_new<ValueType>(wssize);
-  svd(&JOBU, &JOBVT, &m, &n, M, &m, tS, tU, &m, tVT, &k, wsbuf, &wssize, &INFO);
-  aligned_delete<ValueType>(wsbuf);
+  {
+    ScratchBuf<ValueType> wsbuf(wssize);
+    svd(&JOBU, &JOBVT, &m, &n, M, &m, tS, tU, &m, tVT, &k, wsbuf.begin(), &wssize, &INFO);
+  }
 
   if (INFO != 0) std::cout << INFO << '\n';
   assert(INFO == 0);
@@ -546,9 +545,6 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, Long n1, Long
   }
 
   gemm<ValueType>('T', 'T', n, m, k, 1.0, tVT, k, tU, m, 0.0, M_, n);
-  aligned_delete<ValueType>(tU);
-  aligned_delete<ValueType>(tS);
-  aligned_delete<ValueType>(tVT);
 }
 
 }  // end namespace mat
