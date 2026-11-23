@@ -673,10 +673,24 @@ namespace sctl {
     fmm.SetKernelS2T("Src", "Trg", k_s2t);
   }
 
+  template <class Real, class Kernel> template <class ElemLstType> const std::string& BoundaryIntegralOp<Real,Kernel>::ElemLstTypeName() {
+    static const std::string name = std::to_string(typeid(ElemLstType).hash_code());
+    return name;
+  }
+
   template <class Real, class Kernel> template <class ElemLstType> void BoundaryIntegralOp<Real,Kernel>::AddElemList(const ElemLstType& elem_lst, const std::string& name) {
     static_assert(std::is_copy_constructible<ElemLstType>::value, "ElemeType must be copy-constructible.");
     //SCTL_ASSERT_MSG(elem_lst_map.find(name) == elem_lst_map.end(), "Element list already exists.");
-    if (elem_lst_map.find(name) != elem_lst_map.end()) DeleteElemList(name);
+    const auto it = elem_lst_map.find(name);
+    ElementListBase<Real>* existing = (it != elem_lst_map.end() ? it->second.get() : nullptr);
+    if constexpr (std::is_copy_assignable<ElemLstType>::value) {
+      if (existing && typeid(*existing) == typeid(ElemLstType)) { // copy into the stored list to reuse its storage
+        *static_cast<ElemLstType*>(existing) = elem_lst;
+        ClearSetup();
+        return;
+      }
+    }
+    if (existing) DeleteElemList(name);
 
     std::unique_ptr<ElementListBase<Real>> owned(new ElemLstType(elem_lst));
     elem_lst_map[name] = std::move(owned);
@@ -720,7 +734,7 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> template <class ElemLstType> void BoundaryIntegralOp<Real,Kernel>::GetElemSubArray(Vector<Real>& Ve, Vector<Real>& V, const Long elem_idx) const {
-    GetElemSubArray(Ve, V, std::to_string(typeid(ElemLstType).hash_code()), elem_idx);
+    GetElemSubArray(Ve, V, ElemLstTypeName<ElemLstType>(), elem_idx);
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::DeleteElemList(const std::string& name) {
@@ -745,7 +759,7 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> template <class ElemLstType> void BoundaryIntegralOp<Real,Kernel>::DeleteElemList() {
-    DeleteElemList(std::to_string(typeid(ElemLstType).hash_code()));
+    DeleteElemList(ElemLstTypeName<ElemLstType>());
   }
 
   template <class Real, class Kernel> Long BoundaryIntegralOp<Real,Kernel>::Dim(Integer k) const {

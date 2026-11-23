@@ -7,8 +7,7 @@
 
 #include <map>                   // for map
 #include <memory>                // for unique_ptr
-#include <string>                // for basic_string, to_string, string
-#include <typeinfo>              // for type_info
+#include <string>                // for basic_string, string
 
 #include "sctl/common.hpp"       // for Long, Integer, sctl
 #include "sctl/comm.hpp"         // for Comm
@@ -344,7 +343,8 @@ namespace sctl {
       template <class KerS2M, class KerS2L, class KerS2T, class KerM2M, class KerM2L, class KerM2T, class KerL2L, class KerL2T> void SetFMMKer(const KerS2M& k_s2m, const KerS2L& k_s2l, const KerS2T& k_s2t, const KerM2M& k_m2m, const KerM2L& k_m2l, const KerM2T& k_m2t, const KerL2L& k_l2l, const KerL2T& k_l2t, const typename ParticleFMM<Real,COORD_DIM>::VolPotenT m2l_vol_poten = {}, const typename ParticleFMM<Real,COORD_DIM>::VolPotenT m2t_vol_poten = {});
 
       /**
-       * Add an element-list.
+       * Add an element-list. A copy of elem_lst is stored; it replaces any element-list of the same name, and is
+       * copy-assigned into it when that one has the same type, so that its storage is reused.
        *
        * @param[in] elem_lst an object (of type ElemLstType, derived from the
        * base class ElementListBase) that contains the description of a list of
@@ -352,7 +352,7 @@ namespace sctl {
        *
        * @param[in] name a string name for this element list.
        */
-      template <class ElemLstType> void AddElemList(const ElemLstType& elem_lst, const std::string& name = std::to_string(typeid(ElemLstType).hash_code()));
+      template <class ElemLstType> void AddElemList(const ElemLstType& elem_lst, const std::string& name = ElemLstTypeName<ElemLstType>());
 
       /**
        * Get const reference to an element-list.
@@ -361,7 +361,7 @@ namespace sctl {
        *
        * @return const reference to the element-list.
        */
-      template <class ElemLstType> const ElemLstType& GetElemList(const std::string& name = std::to_string(typeid(ElemLstType).hash_code())) const;
+      template <class ElemLstType> const ElemLstType& GetElemList(const std::string& name = ElemLstTypeName<ElemLstType>()) const;
 
       /**
        * Extract the section of the input vector V corresponding to the nodes of the element with index elem_idx in the
@@ -470,6 +470,8 @@ namespace sctl {
       void InvSqrtScaling(Vector<Real>& U) const; // TODO: replace by inv-sqrt of surface quadrature weights (not sure if it makes a difference though)
 
     private:
+
+      template <class ElemLstType> static const std::string& ElemLstTypeName(); // default name of an element-list of type ElemLstType
 
       void SetupBasic() const;
       void SetupFar() const;
