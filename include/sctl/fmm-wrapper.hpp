@@ -209,7 +209,8 @@ template <class Real, Integer DIM> class ParticleFMM {
 
     /**
      * Returns a function setting M[s*SrcDim+i][t*TrgDim+j] to the (src_name, trg_name) kernel from Xs, Xn to Xt
-     * exactly as Eval() computes it, without periodic images. Collective; the returned function is thread-safe.
+     * exactly as Eval() computes it, without periodic images. Collective; the returned function is thread-safe, and
+     * refers to the kernel data of this object, so it is valid until the (src_name, trg_name) pair is deleted.
      *
      * @param[in] src_name name for the source type.
      * @param[in] trg_name name for the target type.

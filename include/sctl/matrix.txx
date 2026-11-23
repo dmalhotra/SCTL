@@ -572,7 +572,6 @@ template <class ValueType> template <class VType> void Matrix<ValueType>::Transp
 
 template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Matrix<ValueType>& tS, Matrix<ValueType>& tVT) {
   Matrix<ValueType>& M = *this;
-  Matrix<ValueType> M_ = M;
   Long n = M.Dim(0);
   Long m = M.Dim(1);
 
@@ -597,9 +596,8 @@ template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Ma
   mat::svd(&JOBU, &JOBVT, &m, &n, M.begin(), &m, tS.begin(), tVT.begin(), &m, tU.begin(), &k, wkopt+0, &wssize, &INFO);
   wssize = (Long)wkopt[0];
 
-  Iterator<ValueType> wsbuf = aligned_new<ValueType>(wssize);
-  mat::svd(&JOBU, &JOBVT, &m, &n, M.begin(), &m, tS.begin(), tVT.begin(), &m, tU.begin(), &k, wsbuf, &wssize, &INFO);
-  aligned_delete<ValueType>(wsbuf);
+  ScratchBuf<ValueType> wsbuf(wssize);
+  mat::svd(&JOBU, &JOBVT, &m, &n, M.begin(), &m, tS.begin(), tVT.begin(), &m, tU.begin(), &k, wsbuf.begin(), &wssize, &INFO);
 
   if (INFO != 0) std::cout << "SVD failed to converge: INFO = "<< INFO << '\n';
   assert(INFO == 0);
@@ -608,7 +606,6 @@ template <class ValueType> void Matrix<ValueType>::SVD(Matrix<ValueType>& tU, Ma
     tS[i][i] = tS[0][i];
     tS[0][i] = 0;
   }
-  // std::cout<<tU*tS*tVT-M_<<'\n';
 }
 
 template <class ValueType> Matrix<ValueType> Matrix<ValueType>::pinv(ValueType eps) {

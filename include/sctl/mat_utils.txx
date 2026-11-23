@@ -9,7 +9,6 @@
 #include <cassert>                // for assert
 #include <iostream>               // for basic_ostream, cout, operator<<
 #include <type_traits>            // for is_same
-#include <vector>                 // for vector
 
 #include "sctl/common.hpp"        // for Long, sctl
 #include "sctl/mat_utils.hpp"     // for gemm, pinv, svd
@@ -18,7 +17,10 @@
 #include "sctl/math_utils.hpp"    // for fabs, sqrt
 #include "sctl/math_utils.txx"    // for machine_eps
 #include "sctl/matrix.hpp"        // for Matrix
-#include "sctl/mem_mgr.txx"       // for aligned_delete, aligned_new
+#include "sctl/ompUtils.hpp"      // for omp_par::parallel_for
+#include "sctl/ompUtils.txx"      // for omp_par::parallel_for
+#include "sctl/scratch_pool.hpp"  // for ScratchBuf
+#include "sctl/scratch_pool.txx"  // for ScratchBuf
 #include "sctl/static-array.hpp"  // for StaticArray
 #include "sctl/static-array.txx"  // for StaticArray::operator[]
 #include "sctl/small_gemm.hpp"    // for DynamicSize
@@ -117,6 +119,17 @@ template <> inline void gemm<double>(char TransA, char TransB, Long M, Long N, L
  * the parallel region costs more than the update it guards. Measured crossover on four threads. */
 static constexpr Long givens_omp_min = 512;
 
+/** Multiply-adds of a Householder update loop (an outer product over the remaining block) from which it runs in
+ * parallel: 2^14 with the Vec types (float, double), 2^7 for QuadReal (software arithmetic), 2^11 otherwise. */
+template <class ValueType> static constexpr Long HouseholderParallelWork() {
+#ifdef SCTL_QUAD_T
+  constexpr bool software_arithmetic = std::is_same<ValueType, QuadReal>::value;
+#else
+  constexpr bool software_arithmetic = false;
+#endif
+  return (detail_small_gemm::VecTiles<ValueType> ? (Long)1 << 14 : (software_arithmetic ? (Long)1 << 7 : (Long)1 << 11));
+}
+
 template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, const StaticArray<Long, 2> &dim, Long m, ValueType a, ValueType b) {
   auto S = [S_,dim](Long i, Long j) -> ValueType& { return S_[(i) * dim[1] + (j)]; };
 
@@ -125,8 +138,7 @@ template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, co
   ValueType c = a / r;
   ValueType s = -b / r;
 
-#pragma omp parallel for if (dim[1] >= givens_omp_min)
-  for (Long i = 0; i < dim[1]; i++) {
+  omp_par::parallel_for(dim[1], [S, m, c, s](const Long i) { // by value: parallel_for then calls a local copy, whose captures the stores to S cannot change
     ValueType S0 = S(m + 0, i);
     ValueType S1 = S(m + 1, i);
     S(m, i) += S0 * (c - 1);
@@ -134,7 +146,7 @@ template <class ValueType> static inline void GivensL(Iterator<ValueType> S_, co
 
     S(m + 1, i) += S0 * (s);
     S(m + 1, i) += S1 * (c - 1);
-  }
+  }, false, dim[1] >= givens_omp_min);
 }
 
 template <class ValueType> static inline void GivensR(Iterator<ValueType> S_, const StaticArray<Long, 2> &dim, Long m, ValueType a, ValueType b) {
@@ -145,8 +157,7 @@ template <class ValueType> static inline void GivensR(Iterator<ValueType> S_, co
   ValueType c = a / r;
   ValueType s = -b / r;
 
-#pragma omp parallel for if (dim[0] >= givens_omp_min)
-  for (Long i = 0; i < dim[0]; i++) {
+  omp_par::parallel_for(dim[0], [S, m, c, s](const Long i) { // by value: parallel_for then calls a local copy, whose captures the stores to S cannot change
     ValueType S0 = S(i, m + 0);
     ValueType S1 = S(i, m + 1);
     S(i, m) += S0 * (c - 1);
@@ -154,7 +165,7 @@ template <class ValueType> static inline void GivensR(Iterator<ValueType> S_, co
 
     S(i, m + 1) += S0 * (s);
     S(i, m + 1) += S1 * (c - 1);
-  }
+  }, false, dim[0] >= givens_omp_min);
 }
 
 template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &dim, Iterator<ValueType> U_, Iterator<ValueType> S_, Iterator<ValueType> V_, ValueType eps = -1) {
@@ -169,7 +180,7 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
 
   {  // Bi-diagonalization
     Long n = std::min(dim[0], dim[1]);
-    std::vector<ValueType> house_vec(std::max(dim[0], dim[1]));
+    ScratchBuf<ValueType> house_vec(std::max(dim[0], dim[1]));
     for (Long i = 0; i < n; i++) {
       // Column Householder
       {
@@ -195,8 +206,8 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
             house_vec[j] = -house_vec[j];
           }
       }
-#pragma omp parallel for
-      for (Long k = i; k < dim[1]; k++) {
+      omp_par::parallel_for(dim[1] - i, [&](const Long k_) {
+        const Long k = i + k_;
         ValueType dot_prod = 0;
         for (Long j = i; j < dim[0]; j++) {
           dot_prod += S(j, k) * house_vec[j];
@@ -204,9 +215,8 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
         for (Long j = i; j < dim[0]; j++) {
           S(j, k) -= dot_prod * house_vec[j];
         }
-      }
-#pragma omp parallel for
-      for (Long k = 0; k < dim[0]; k++) {
+      }, false, (dim[1] - i) * (dim[0] - i) >= HouseholderParallelWork<ValueType>());
+      omp_par::parallel_for(dim[0], [&](const Long k) {
         ValueType dot_prod = 0;
         for (Long j = i; j < dim[0]; j++) {
           dot_prod += U(k, j) * house_vec[j];
@@ -214,7 +224,7 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
         for (Long j = i; j < dim[0]; j++) {
           U(k, j) -= dot_prod * house_vec[j];
         }
-      }
+      }, false, dim[0] * (dim[0] - i) >= HouseholderParallelWork<ValueType>());
 
       // Row Householder
       if (i >= n - 1) continue;
@@ -241,8 +251,8 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
             house_vec[j] = -house_vec[j];
           }
       }
-#pragma omp parallel for
-      for (Long k = i; k < dim[0]; k++) {
+      omp_par::parallel_for(dim[0] - i, [&](const Long k_) {
+        const Long k = i + k_;
         ValueType dot_prod = 0;
         for (Long j = i + 1; j < dim[1]; j++) {
           dot_prod += S(k, j) * house_vec[j];
@@ -250,9 +260,8 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
         for (Long j = i + 1; j < dim[1]; j++) {
           S(k, j) -= dot_prod * house_vec[j];
         }
-      }
-#pragma omp parallel for
-      for (Long k = 0; k < dim[1]; k++) {
+      }, false, (dim[0] - i) * (dim[1] - i - 1) >= HouseholderParallelWork<ValueType>());
+      omp_par::parallel_for(dim[1], [&](const Long k) {
         ValueType dot_prod = 0;
         for (Long j = i + 1; j < dim[1]; j++) {
           dot_prod += V(j, k) * house_vec[j];
@@ -260,7 +269,7 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
         for (Long j = i + 1; j < dim[1]; j++) {
           V(j, k) -= dot_prod * house_vec[j];
         }
-      }
+      }, false, dim[1] * (dim[1] - i - 1) >= HouseholderParallelWork<ValueType>());
     }
   }
 
@@ -385,17 +394,20 @@ template <class ValueType> static inline void SVD(const StaticArray<Long, 2> &di
 template <class ValueType> inline void svd(char *JOBU, char *JOBVT, Long *M, Long *N, Iterator<ValueType> A, Long *LDA, Iterator<ValueType> S, Iterator<ValueType> U, Long *LDU, Iterator<ValueType> VT, Long *LDVT, Iterator<ValueType> WORK, Long *LWORK, Long *INFO) {
   SCTL_UNUSED(JOBU);
   SCTL_UNUSED(JOBVT);
-  SCTL_UNUSED(WORK);
-  SCTL_UNUSED(LWORK);
   SCTL_UNUSED(INFO);
+  if (*LWORK == -1) { // workspace query: no work array is used
+    WORK[0] = 0;
+    return;
+  }
   StaticArray<Long, 2> dim;
   dim[0] = std::max(*N, *M);
   dim[1] = std::min(*N, *M);
-  Iterator<ValueType> U_ = aligned_new<ValueType>(dim[0] * dim[0]);
+  ScratchBuf<ValueType> U_buf(dim[0] * dim[0]), V_buf(dim[1] * dim[1]), S_buf(dim[0] * dim[1]);
+  const Iterator<ValueType> U_ = U_buf.begin();
+  const Iterator<ValueType> V_ = V_buf.begin();
+  const Iterator<ValueType> S_ = S_buf.begin();
   memset(U_, 0, dim[0] * dim[0]);
-  Iterator<ValueType> V_ = aligned_new<ValueType>(dim[1] * dim[1]);
   memset(V_, 0, dim[1] * dim[1]);
-  Iterator<ValueType> S_ = aligned_new<ValueType>(dim[0] * dim[1]);
 
   const Long lda = *LDA;
   const Long ldu = *LDU;
@@ -450,10 +462,6 @@ template <class ValueType> inline void svd(char *JOBU, char *JOBVT, Long *M, Lon
     S[i] = S[i] * (S[i] < 0.0 ? -1.0 : 1.0);
   }
 
-  aligned_delete<ValueType>(U_);
-  aligned_delete<ValueType>(S_);
-  aligned_delete<ValueType>(V_);
-
   if (0) {  // Verify
     StaticArray<Long, 2> dim;
     dim[0] = std::max(*N, *M);
@@ -502,9 +510,10 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, Long n1, Long
   Long n = n1;
   Long k = (m < n ? m : n);
 
-  Iterator<ValueType> tU = aligned_new<ValueType>(m * k);
-  Iterator<ValueType> tS = aligned_new<ValueType>(k);
-  Iterator<ValueType> tVT = aligned_new<ValueType>(k * n);
+  ScratchBuf<ValueType> tU_buf(m * k), tS_buf(k), tVT_buf(k * n);
+  const Iterator<ValueType> tU = tU_buf.begin();
+  const Iterator<ValueType> tS = tS_buf.begin();
+  const Iterator<ValueType> tVT = tVT_buf.begin();
 
   // SVD
   Long INFO = 0;
@@ -520,9 +529,10 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, Long n1, Long
   svd(&JOBU, &JOBVT, &m, &n, M, &m, tS, tU, &m, tVT, &k, wkopt+0, &wssize, &INFO);
   wssize = (Long)wkopt[0];
 
-  Iterator<ValueType> wsbuf = aligned_new<ValueType>(wssize);
-  svd(&JOBU, &JOBVT, &m, &n, M, &m, tS, tU, &m, tVT, &k, wsbuf, &wssize, &INFO);
-  aligned_delete<ValueType>(wsbuf);
+  {
+    ScratchBuf<ValueType> wsbuf(wssize);
+    svd(&JOBU, &JOBVT, &m, &n, M, &m, tS, tU, &m, tVT, &k, wsbuf.begin(), &wssize, &INFO);
+  }
 
   if (INFO != 0) std::cout << INFO << '\n';
   assert(INFO == 0);
@@ -546,9 +556,6 @@ template <class ValueType> inline void pinv(Iterator<ValueType> M, Long n1, Long
   }
 
   gemm<ValueType>('T', 'T', n, m, k, 1.0, tVT, k, tU, m, 0.0, M_, n);
-  aligned_delete<ValueType>(tU);
-  aligned_delete<ValueType>(tS);
-  aligned_delete<ValueType>(tVT);
 }
 
 }  // end namespace mat

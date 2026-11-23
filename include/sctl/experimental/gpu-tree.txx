@@ -827,8 +827,7 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
     } else {                                                 // host: omp binary search (thrust host backend is serial)
       const Type* pp = thrust::raw_pointer_cast(pt.data());
       const Long m = (Long)pt.size();
-      #pragma omp parallel for schedule(static) if(n > 512)
-      for (Long i = 0; i < n; i++) r[i] = (upper ? std::upper_bound(pp, pp + m, q[i]) : std::lower_bound(pp, pp + m, q[i])) - pp;
+      sctl::omp_par::parallel_for(n, [&](const Long i) { r[i] = (upper ? std::upper_bound(pp, pp + m, q[i]) : std::lower_bound(pp, pp + m, q[i])) - pp; }, false, n > 512);
     }
   };
 
@@ -850,8 +849,7 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
     local_ranks(lr_b.begin(), bnd2.begin(), B);
     comm.Allreduce(lr_b.begin(), gr_b.begin(), B, sctl::CommOp::SUM);
 
-    #pragma omp parallel for schedule(static) if(ns > 512)
-    for (Long i = 0; i < ns; i++) {                              // straddling boundary pair for target rank t
+    sctl::omp_par::parallel_for(ns, [&](const Long i) {                // straddling boundary pair for target rank t
       const Long t = (i + 1) * Ng / np;
       const Long up = std::min(B-1, std::max<Long>(1, std::lower_bound(gr_b.begin(), gr_b.begin()+B, t) - gr_b.begin()));
       const Long lo = std::max<Long>(0, up - 1);                 // lo>=0 even when B==1 (degenerate all-equal data)
@@ -861,7 +859,7 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
       bracket[i*2+1] = bnd2[up];
       bracket_rl[i*2+1] = lr_b[up];
       bracket_rg[i*2+1] = gr_b[up];
-    }
+    }, false, ns > 512);
   }();
 
   sctl::ScratchBuf<char> state(ns);
@@ -947,10 +945,8 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
   // in: cand, lr, gr (sized S+ns), S; out: splitters + updated bracket*/state. ret: whether any cut is still active.
   const auto refine = [/*out:*/ &splitters,&state,&bracket,&bracket_rl,&bracket_rg,  /*in:*/ ns,Ng,np,tol]
                       (const sctl::ScratchBuf<Type>& cand, const sctl::ScratchBuf<Long>& lr, const sctl::ScratchBuf<Long>& gr, Long S) -> bool {
-    bool anyactive = false;
-    #pragma omp parallel for schedule(static) reduction(||:anyactive) if(ns > 512)
-    for (Long i = 0; i < ns; i++) { // refine each active bracket toward its target rank
-      if (state[i]) continue;
+    return sctl::omp_par::parallel_reduce(ns, false, [&](const Long i) -> bool { // refine each active bracket toward its target rank; true if still active
+      if (state[i]) return false;
       const Long t = (i + 1) * Ng / np;
       const Long up = std::lower_bound(gr.begin(), gr.begin()+S, t) - gr.begin(), lo = up - 1;
 
@@ -959,7 +955,7 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
       splitters[i] = (errlo <= errup) ? cand[std::max<Long>(0,lo)] : cand[std::min<Long>(S-1,up)];
       if (lo < 0 || up >= S || std::min(errlo,errup) <= tol) {
         state[i] = DONE;
-        continue;
+        return false;
       }
 
       if (gr[up] - gr[lo] < bracket_rg[i*2+1] - bracket_rg[i*2+0]) {  // bracket shrank: tighten toward target
@@ -969,24 +965,20 @@ void determineSplitters(sctl::ScratchBuf<Type>& splitters, const DevVec<Type>& p
         bracket_rl[i*2+1] = lr[up];
         bracket_rg[i*2+0] = gr[lo];
         bracket_rg[i*2+1] = gr[up];
-        anyactive = true;
-        continue;
+        return true;
       }
 
       // no shrink: cand[lo]==blo. Exact un-splittable test on blo's duplicate run [L,U).
       const Long L = gr[lo], U = gr[S+i];  // L = global lower_bound(blo), U = global upper_bound(blo)
-      if (U <= t) { // run ends before target -> undersampled this round, keep probing
-        anyactive = true;
-        continue;
-      }
+      if (U <= t) return true; // run ends before target -> undersampled this round, keep probing
       // run straddles target: nearest endpoint is the best achievable.
       if (t - L <= U - t) {  // nearer endpoint L: splitter = blo (value in hand)
         splitters[i] = cand[lo];
         state[i] = DONE;
       }
       else                  state[i] = DONE_UPPER;                      // nearer endpoint U: splitter = successor of blo (resolved at loop end)
-    }
-    return anyactive;
+      return false;
+    }, [](const bool a, const bool b) { return a || b; }, ns > 512);
   };
 
   sctl::ScratchBuf<Long> idxs(MAXP);
@@ -2010,8 +2002,7 @@ void blockCopy(const Policy& pol, T* dst, const T* src,
                sctl::ConstIterator<Long> srcoff, sctl::ConstIterator<Long> dstoff, sctl::ConstIterator<Long> len, Long nb, Long w) {
   if (nb <= 0) return;
   if constexpr (!detail::is_device_vector_v<DevVec<char>>) {
-    #pragma omp parallel for schedule(static) if (nb > 256)
-    for (Long i = 0; i < nb; i++) std::memcpy(dst + dstoff[i] * w, src + srcoff[i] * w, len[i] * w * sizeof(T));
+    sctl::omp_par::parallel_for(nb, [&](const Long i) { std::memcpy(dst + dstoff[i] * w, src + srcoff[i] * w, len[i] * w * sizeof(T)); }, false, nb > 256);
     return;
   }
   DeviceScratch<Long, DevVec> so(nb), doff(nb), l(nb);
@@ -2067,15 +2058,14 @@ void blockAdd(const Policy& pol, T* dst, const T* src, sctl::ConstIterator<Long>
               sctl::ConstIterator<Long> len, sctl::ConstIterator<Long> gdsp, Long ng, Long w) {
   if (ng <= 0) return;
   if constexpr (!detail::is_device_vector_v<DevVec<char>>) {
-    #pragma omp parallel for schedule(static) if (ng > 256)
-    for (Long g = 0; g < ng; g++) {
+    sctl::omp_par::parallel_for(ng, [&](const Long g) {
       T* const d = dst + dstoff[g] * w;
       const Long n = len[g] * w;
       for (Long k = gdsp[g]; k < gdsp[g + 1]; k++) {
         const T* const s = src + srcoff[k] * w;
         for (Long j = 0; j < n; j++) d[j] += s[j];
       }
-    }
+    }, false, ng > 256);
     return;
   }
   const Long nc = gdsp[ng];
@@ -2107,12 +2097,11 @@ void exchangeBlocks(const Policy& pol, const Comm& comm, sctl::ConstIterator<Mor
   comm.Alltoallv(smid, sncnt, sndsp.begin(), rmid.begin(), rncnt.begin(), rndsp.begin());
 
   sctl::ScratchBuf<Long> sdcnt(Ns), rdcnt(Nr), soff(Ns);
-  #pragma omp parallel for schedule(static) if (Ns > 256)
-  for (Long i = 0; i < Ns; i++) {  // my nodes among the requests, and how many items each carries
+  sctl::omp_par::parallel_for(Ns, [&](const Long i) {  // my nodes among the requests, and how many items each carries
     const Long k = findNode<DIM>(nmid, Nn, smid[i]);
     sdcnt[i] = (k >= 0 ? cnt[k] : 0);
     soff[i] = (k >= 0 ? dsp[k] : 0);
-  }
+  }, false, Ns > 256);
   comm.Alltoallv(sdcnt.begin(), sncnt, sndsp.begin(), rdcnt.begin(), rncnt.begin(), rndsp.begin());
 
   sctl::ScratchBuf<Long> sddsp(Ns + 1), rddsp(Nr + 1);
@@ -2154,11 +2143,10 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
   detail_bcast::exchangeBlocks<DIM, DevVec>(pol, comm_, hostUserMID(), Ns, user_cnt_.begin(), nmid, Nn, cnt, dsp.begin(), data, w,
       [&pol, &data, &cnt, nmid, &dsp, Nn, w, ob, oe](Long Nr, sctl::ConstIterator<Morton<DIM>> rmid, sctl::ConstIterator<Long> rdcnt, sctl::ConstIterator<Long> rddsp, const char* rbuf) {
         sctl::ScratchBuf<Long> ridx(Nr);
-        #pragma omp parallel for schedule(static) if (Nr > 256)
-        for (Long i = 0; i < Nr; i++) {
+        sctl::omp_par::parallel_for(Nr, [&](const Long i) {
           ridx[i] = detail_bcast::findNode<DIM>(nmid, Nn, rmid[i]);
           SCTL_ASSERT(ridx[i] >= 0);
-        }
+        }, false, Nr > 256);
         // where each arriving block is written, given the offsets the nodes will have
         const auto packRecv = [Nr, rdcnt, rddsp, &ridx](sctl::ConstIterator<Long> off, sctl::Iterator<Long> a, sctl::Iterator<Long> b, sctl::Iterator<Long> l) {
           Long m = 0;
@@ -2173,16 +2161,15 @@ void GPUTree<Real, DIM, DevVec>::Broadcast(const std::string& name) {
         };
         { // Nothing moves when every ghost slot gets back the count it already had. Deciding that
           // costs a pass over what arrived and over the ghosts, never over the whole node list.
-          Long changed = 0, arriving = 0, occupied = 0;
-          #pragma omp parallel for schedule(static) reduction(+ : changed, arriving) if (Nr > 256)
-          for (Long i = 0; i < Nr; i++) {
-            changed += (rdcnt[i] != cnt[ridx[i]]);
-            arriving += (rdcnt[i] != 0);
-          }
-          #pragma omp parallel for schedule(static) reduction(+ : occupied) if (ob > 256)
-          for (Long i = 0; i < ob; i++) occupied += (cnt[i] != 0);  // the ghosts below my range
-          #pragma omp parallel for schedule(static) reduction(+ : occupied) if (Nn - oe > 256)
-          for (Long i = oe; i < Nn; i++) occupied += (cnt[i] != 0);  // and above it
+          using Pair = std::pair<Long,Long>;
+          const Pair changed_arriving = sctl::omp_par::parallel_reduce(Nr, Pair(0, 0), [&](const Long i) {
+            return Pair(rdcnt[i] != cnt[ridx[i]], rdcnt[i] != 0);
+          }, [](const Pair& a, const Pair& b) { return Pair(a.first + b.first, a.second + b.second); }, Nr > 256);
+          const Long changed = changed_arriving.first;
+          const Long arriving = changed_arriving.second;
+          const auto sum = [](const Long a, const Long b) { return a + b; };
+          Long occupied = sctl::omp_par::parallel_reduce(ob, (Long)0, [&](const Long i) { return (Long)(cnt[i] != 0); }, sum, ob > 256);  // the ghosts below my range
+          occupied += sctl::omp_par::parallel_reduce(Nn - oe, (Long)0, [&](const Long i) { return (Long)(cnt[oe + i] != 0); }, sum, Nn - oe > 256);  // and above it
           if (!changed && arriving == occupied) {
             sctl::ScratchBuf<Long> a(Nr), b(Nr), l(Nr);
             const Long m = packRecv(dsp.begin(), a.begin(), b.begin(), l.begin());

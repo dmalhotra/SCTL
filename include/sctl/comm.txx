@@ -2656,9 +2656,10 @@ template <class Type, class Compare> Type Comm::DetermineSplitter(const Vector<T
   const auto local_ranks = [&loc, &comp]
                            (Iterator<Long> r, ConstIterator<Type> q, const Long n, const bool upper = false) {  // batched binary search
     if (!n) return;
-    #pragma omp parallel for schedule(static) if(n > 512)
-    for (Long i = 0; i < n; i++) r[i] = (upper ? std::upper_bound(loc.begin(), loc.end(), q[i], comp)
-                                               : std::lower_bound(loc.begin(), loc.end(), q[i], comp)) - loc.begin();
+    omp_par::parallel_for(n, [&](const Long i) {
+      r[i] = (upper ? std::upper_bound(loc.begin(), loc.end(), q[i], comp)
+                    : std::lower_bound(loc.begin(), loc.end(), q[i], comp)) - loc.begin();
+    }, false, n > 512);
   };
 
   ScratchBuf<Type> bracket(2*ns);
@@ -2680,14 +2681,13 @@ template <class Type, class Compare> Type Comm::DetermineSplitter(const Vector<T
     local_ranks(lr_b.begin(), bnd2.begin(), B);
     Allreduce(lr_b.begin(), gr_b.begin(), B, CommOp::SUM);
 
-    #pragma omp parallel for schedule(static) if(ns > 512)
-    for (Long i = 0; i < ns; i++) {                              // straddling boundary pair for target rank t
+    omp_par::parallel_for(ns, [&](const Long i) {                // straddling boundary pair for target rank t
       const Long t = (i + 1) * Ng / np;
       const Long up = std::min(B-1, std::max<Long>(1, std::lower_bound(gr_b.begin(), gr_b.begin()+B, t) - gr_b.begin()));
       const Long lo = std::max<Long>(0, up - 1);                 // lo>=0 even when B==1 (degenerate all-equal data)
       bracket[i*2+0] = bnd2[lo]; bracket_rl[i*2+0] = lr_b[lo]; bracket_rg[i*2+0] = gr_b[lo];
       bracket[i*2+1] = bnd2[up]; bracket_rl[i*2+1] = lr_b[up]; bracket_rg[i*2+1] = gr_b[up];
-    }
+    }, false, ns > 512);
   }();
 
   ScratchBuf<char> state(ns);
@@ -2768,10 +2768,8 @@ template <class Type, class Compare> Type Comm::DetermineSplitter(const Vector<T
   // in: cand, lr, gr (sized S+ns), S; out: best + updated bracket*/state. ret: whether any cut is still active.
   const auto refine = [/*out:*/ &best, &state, &bracket, &bracket_rl, &bracket_rg,  /*in:*/ ns, Ng, np, tol]
                       (const Vector<Type>& cand, const ScratchBuf<Long>& lr, const ScratchBuf<Long>& gr, Long S) -> bool {
-    bool anyactive = false;
-    #pragma omp parallel for schedule(static) reduction(||:anyactive) if(ns > 512)
-    for (Long i = 0; i < ns; i++) { // refine each active bracket toward its target rank
-      if (state[i]) continue;
+    return omp_par::parallel_reduce(ns, false, [&](const Long i) -> bool { // refine each active bracket toward its target rank; true if still active
+      if (state[i]) return false;
       const Long t = (i + 1) * Ng / np;
       const Long up = std::lower_bound(gr.begin(), gr.begin()+S, t) - gr.begin(), lo = up - 1;
 
@@ -2780,27 +2778,24 @@ template <class Type, class Compare> Type Comm::DetermineSplitter(const Vector<T
       best[i] = (errlo <= errup) ? cand[std::max<Long>(0,lo)] : cand[std::min<Long>(S-1,up)];
       if (lo < 0 || up >= S || std::min(errlo,errup) <= tol) {
         state[i] = DONE;
-        continue;
+        return false;
       }
 
       if (gr[up] - gr[lo] < bracket_rg[i*2+1] - bracket_rg[i*2+0]) {  // bracket shrank: tighten toward target
         bracket[i*2+0]    = cand[lo]; bracket[i*2+1]    = cand[up];
         bracket_rl[i*2+0] = lr[lo];   bracket_rl[i*2+1] = lr[up];
         bracket_rg[i*2+0] = gr[lo];   bracket_rg[i*2+1] = gr[up];
-        anyactive = true; continue;
+        return true;
       }
 
       // no shrink: cand[lo]==blo. Exact un-splittable test on blo's duplicate run [L,U).
       const Long L = gr[lo], U = gr[S+i];  // L = global lower_bound(blo), U = global upper_bound(blo)
-      if (U <= t) { // run ends before target -> undersampled this round, keep probing
-        anyactive = true;
-        continue;
-      }
+      if (U <= t) return true; // run ends before target -> undersampled this round, keep probing
       // run straddles target: nearest endpoint is the best achievable.
       if (t - L <= U - t) { best[i] = cand[lo]; state[i] = DONE; } // nearer endpoint L: splitter = blo (value in hand)
       else                  state[i] = DONE_UPPER;                 // nearer endpoint U: successor of blo (resolved at loop end)
-    }
-    return anyactive;
+      return false;
+    }, [](const bool a, const bool b) { return a || b; }, ns > 512);
   };
 
   Vector<Long> idxs;
@@ -2873,10 +2868,8 @@ template <class Type, class Compare> void Comm::DistributeAndMerge(const Vector<
   { // Set scnt, sdsp
     sdsp[0] = 0;
     sdsp[npes] = nloc;
-    #pragma omp parallel for schedule(static) if(npes > 128)
-    for (Integer d = 1; d < npes; d++) sdsp[d] = std::lower_bound(loc.begin(), loc.end(), splitter_all[d], comp) - loc.begin();
-    #pragma omp parallel for schedule(static) if(npes > 128)
-    for (Integer d = 0; d < npes; d++) scnt[d] = sdsp[d + 1] - sdsp[d];
+    omp_par::parallel_for(npes - 1, [&](const Long d) { sdsp[d + 1] = std::lower_bound(loc.begin(), loc.end(), splitter_all[d + 1], comp) - loc.begin(); }, false, npes > 128);
+    omp_par::parallel_for(npes, [&](const Long d) { scnt[d] = sdsp[d + 1] - sdsp[d]; }, false, npes > 128);
   }
   { // Get rcnt, rdsp
     rdsp[0] = 0;
