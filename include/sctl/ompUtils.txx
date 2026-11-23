@@ -173,23 +173,27 @@ inline bool omp_par::one_thread() {
 #endif
 }
 
-template <class Body> inline void omp_par::parallel_for(Long n, const Body& body, bool dynamic) {
+template <class Body> inline void omp_par::parallel_for(Long n, const Body& body, bool dynamic, bool parallel, Integer nthreads) {
   if (n <= 0) return;
-  if (n == 1 || one_thread()) {
+  if (n == 1 || !parallel || nthreads == 1 || one_thread()) {
     for (Long i = 0; i < n; i++) body(i);
-  } else if (dynamic) {
-    #pragma omp parallel for schedule(dynamic)
+    return;
+  }
+  const Integer nt = (nthreads > 0 ? nthreads : (Integer)SCTL_GET_MAX_THREADS());
+  SCTL_UNUSED(nt); // without OpenMP
+  if (dynamic) {
+    #pragma omp parallel for schedule(dynamic) num_threads(nt)
     for (Long i = 0; i < n; i++) body(i);
   } else {
-    #pragma omp parallel for schedule(static)
+    #pragma omp parallel for schedule(static) num_threads(nt)
     for (Long i = 0; i < n; i++) body(i);
   }
 }
 
-template <class T, class Term, class Op> inline T omp_par::parallel_reduce(Long n, const T& init, const Term& term, const Op& op) {
+template <class T, class Term, class Op> inline T omp_par::parallel_reduce(Long n, const T& init, const Term& term, const Op& op, bool parallel) {
   T r = init;
   if (n <= 0) return r;
-  if (n == 1 || one_thread()) {
+  if (n == 1 || !parallel || one_thread()) {
     for (Long i = 0; i < n; i++) r = op(r, term(i));
     return r;
   }
