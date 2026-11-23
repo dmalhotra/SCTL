@@ -5,6 +5,7 @@
 #ifndef _SCTL_BOUNDARY_INTEGRAL_HPP_
 #define _SCTL_BOUNDARY_INTEGRAL_HPP_
 
+#include <cstddef>               // for size_t
 #include <map>                   // for map
 #include <memory>                // for unique_ptr
 #include <string>                // for basic_string, string
@@ -256,6 +257,10 @@ namespace sctl {
   /**
    * Implements parallel computation of boundary integrals.
    *
+   * Every method except the getters (GetComm, GetElemList, GetPeriodicity, GetPeriodLength, GetAccuracy) is collective
+   * and must be called on every process in the same order; methods that take settings (SetPeriodicity, SetAccuracy,
+   * SetFMMKer) must get the same values on every process.
+   *
    * @tparam Real Data type for real values.
    * @tparam Kernel The kernel function.
    *
@@ -473,6 +478,8 @@ namespace sctl {
 
       template <class ElemLstType> static const std::string& ElemLstTypeName(); // default name of an element-list of type ElemLstType
 
+      void CheckInStep() const; // with SCTL_MEMDEBUG, aborts if the setup state differs between processes
+
       void SetupBasic() const;
       void SetupFar() const;
       void SetupSelf() const;
@@ -495,6 +502,7 @@ namespace sctl {
       Real period_length_ = 0;
       Real tol_;
       Kernel ker_;
+      std::size_t fmm_ker_id; // identifies the types of the FMM kernels
       bool trg_normal_dot_prod_;
       Comm comm_;
 

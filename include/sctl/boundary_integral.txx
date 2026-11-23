@@ -6,6 +6,9 @@
 #define _SCTL_BOUNDARY_INTEGRAL_TXX_
 
 #include <algorithm>                   // for lower_bound, max, min, upper_b...
+#include <cstddef>                     // for size_t
+#include <functional>                  // for hash
+#include <initializer_list>            // for initializer_list
 #include <map>                         // for map
 #include <new>                         // for hardware_destructive_interference_size
 #include <set>                         // for set, __tree_const_iterator
@@ -616,7 +619,7 @@ namespace sctl {
 
 
 
-  template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::BoundaryIntegralOp(const Kernel& ker, bool trg_normal_dot_prod, const Comm& comm) : tol_((Real)1e-10), ker_(ker), trg_normal_dot_prod_(trg_normal_dot_prod), comm_(comm), fmm(comm) {
+  template <class Real, class Kernel> BoundaryIntegralOp<Real,Kernel>::BoundaryIntegralOp(const Kernel& ker, bool trg_normal_dot_prod, const Comm& comm) : tol_((Real)1e-10), ker_(ker), fmm_ker_id(typeid(Kernel).hash_code()), trg_normal_dot_prod_(trg_normal_dot_prod), comm_(comm), fmm(comm) {
     SCTL_ASSERT(!trg_normal_dot_prod_ || (KDIM1 % COORD_DIM == 0));
     ClearSetup();
 
@@ -672,6 +675,10 @@ namespace sctl {
     fmm.AddTrg("Trg", k_m2t, k_l2t, (m2t_vol_poten ? m2t_vol_poten : m2l_vol_poten));
     fmm.SetKernelS2T("Src", "Trg", k_s2t);
 
+    fmm_ker_id = 0;
+    for (const std::size_t h : {typeid(KerS2M).hash_code(), typeid(KerS2L).hash_code(), typeid(KerS2T).hash_code(), typeid(KerM2M).hash_code(), typeid(KerM2L).hash_code(), typeid(KerM2T).hash_code(), typeid(KerL2L).hash_code(), typeid(KerL2T).hash_code()}) {
+      fmm_ker_id = fmm_ker_id * 1000003 ^ h;
+    }
     setup_far_flag = false; // the new Src and Trg of fmm have no coordinates
     setup_near_flag = false; // the near corrections subtract the old S2T kernel
   }
@@ -709,6 +716,7 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::GetElemSubArray(Vector<Real>& Ve, Vector<Real>& V, const std::string& name, const Long elem_idx) const {
+    CheckInStep();
     SetupBasic();
     SCTL_ASSERT_MSG(elem_lst_map.find(name) != elem_lst_map.end(), "Element list does not exist.");
 
@@ -766,6 +774,7 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> Long BoundaryIntegralOp<Real,Kernel>::Dim(Integer k) const {
+    CheckInStep();
     SetupBasic();
     if (k == 0) {
       const Long Nelem = elem_nds_cnt.Dim();
@@ -779,6 +788,7 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::Setup() const {
+    CheckInStep();
     if (setup_flag && setup_far_flag && setup_near_flag) return;
     Profile::Tic("Setup", &comm_, true, 5);
     SetupBasic();
@@ -796,7 +806,7 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::ComputePotential(Vector<Real>& U, const Vector<Real>& F) const {
-    Setup();
+    Setup(); // checks that the processes are in step
     Profile::Tic("Eval", &comm_, true, 5);
     ComputeFarField(U, F);
     ComputeNearInterac(U, F);
@@ -804,6 +814,7 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SqrtScaling(Vector<Real>& U) const {
+    CheckInStep();
     SetupElemArea();
     const Long Nelem = elem_nds_cnt.Dim();
     const Long Nsrc = (Nelem ? elem_nds_dsp.end()[-1] + elem_nds_cnt.end()[-1] : 0);
@@ -817,6 +828,7 @@ namespace sctl {
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::InvSqrtScaling(Vector<Real>& U) const {
+    CheckInStep();
     SetupElemArea();
     const Long Nelem = elem_nds_cnt.Dim();
     const Long Nsrc = (Nelem ? elem_nds_dsp.end()[-1] + elem_nds_cnt.end()[-1] : 0);
@@ -827,6 +839,22 @@ namespace sctl {
       Vector<Real> U_(elem_nds_cnt[elem]*dof, U.begin() + elem_nds_dsp[elem]*dof, false);
       U_ *= 1/sqrt<Real>(elem_area[elem]);
     }
+  }
+
+  template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::CheckInStep() const {
+#ifdef SCTL_MEMDEBUG
+    constexpr Integer N = 5;
+    const StaticArray<Long,N> state{setup_flag, setup_far_flag, setup_near_flag, setup_self_flag, elem_area.Dim() != 0};
+    StaticArray<Long,2*N> v, v_glb; // max of state and of -state: equal state on every process iff max == -(max of -state)
+    for (Integer i = 0; i < N; i++) {
+      v[i] = state[i];
+      v[N+i] = -state[i];
+    }
+    comm_.Allreduce(v+0, v_glb+0, 2*N, CommOp::MAX);
+    bool same = true;
+    for (Integer i = 0; i < N; i++) same = same && (v_glb[i] == -v_glb[N+i]);
+    SCTL_ASSERT_MSG(same, "BoundaryIntegralOp: the processes are out of step (a setter, SetTargetCoord or an element-list change was called on only some processes); every method except the getters must be called on every process in the same order.");
+#endif
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetupElemArea() const {
@@ -920,6 +948,22 @@ namespace sctl {
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SetupFar() const {
     if (setup_far_flag) return;
+    { // the settings must be the same on every process
+      constexpr Integer N = 8;
+      std::size_t name_id = 0;
+      for (const auto& x : elem_lst_map) name_id = name_id * 1000003 ^ std::hash<std::string>()(x.first);
+      const auto half = [](const std::size_t h, const Integer k) { return (double)((h >> (32*k)) & 0xffffffff); }; // exact in a double
+      const StaticArray<double,N> setting{(double)tol_, (double)(Long)periodicity_, (double)period_length_, (double)elem_lst_map.size(), half(name_id,0), half(name_id,1), half(fmm_ker_id,0), half(fmm_ker_id,1)};
+      StaticArray<double,2*N> v, v_glb; // max of setting and of -setting
+      for (Integer i = 0; i < N; i++) {
+        v[i] = setting[i];
+        v[N+i] = -setting[i];
+      }
+      comm_.Allreduce(v+0, v_glb+0, 2*N, CommOp::MAX);
+      bool same = true;
+      for (Integer i = 0; i < N; i++) same = same && (v_glb[i] == -v_glb[N+i]);
+      SCTL_ASSERT_MSG(same, "BoundaryIntegralOp: the processes have different settings (accuracy, periodicity, period length, element-list names or FMM kernel types); SetAccuracy, SetPeriodicity, SetFMMKer and the element lists must be the same on every process.");
+    }
     X_far.ReInit(0);
     Xn_far.ReInit(0);
     wts_far.ReInit(0);
