@@ -20,6 +20,8 @@
 #include "sctl/math_utils.hpp"    // for const_pi, cos, sin, sqrt, fabs
 #include "sctl/math_utils.txx"    // for machine_eps
 #include "sctl/matrix.hpp"        // for Matrix
+#include "sctl/ompUtils.hpp"      // for omp_par::parallel_for
+#include "sctl/ompUtils.txx"      // for omp_par::parallel_for
 #include "sctl/scratch_pool.hpp"  // for ScratchBuf
 #include "sctl/scratch_pool.txx"  // for ScratchBuf::begin/end (ctor, dtor)
 #include "sctl/static-array.hpp"  // for StaticArray
@@ -146,14 +148,13 @@ namespace sctl {
         const Long rm = r * m;
         T* tw = &twiddle[stage_off[k]];
         const T scale = sign_t * two_pi / (T)rm;
-        #pragma omp parallel for num_threads(nthreads) if(rm > 1024) schedule(static)
-        for (Long pj = 0; pj < rm; pj++) {
+        omp_par::parallel_for(rm, [&](const Long pj) {
           const Long p = pj / m;
           const Long j = pj - p * m;
           const T angle = scale * (T)(p * j);
           tw[2 * pj]     = cos<T>(angle);
           tw[2 * pj + 1] = sin<T>(angle);
-        }
+        }, false, rm > 1024, nthreads);
         m *= r;
       }
     }
@@ -177,14 +178,13 @@ namespace sctl {
         const Long r = radices[k];
         T* mat = &dft_flat[stage_off[k]];
         const T scale = sign_t * two_pi / (T)r;
-        #pragma omp parallel for num_threads(nthreads) if(r * r > 256) schedule(static)
-        for (Long qp = 0; qp < r * r; qp++) {
+        omp_par::parallel_for(r * r, [&](const Long qp) {
           const Long q = qp / r;
           const Long p = qp - q * r;
           const T angle = scale * (T)(q * p);
           mat[2 * qp]     = cos<T>(angle);
           mat[2 * qp + 1] = sin<T>(angle);
-        }
+        }, false, r * r > 256, nthreads);
       }
     }
 
@@ -203,8 +203,7 @@ namespace sctl {
 
       const Long* rad = (s ? &radices[0] : nullptr);
       const Long* cp  = &cumprod[0];
-      #pragma omp parallel for num_threads(nthreads) if(N > 1024) schedule(static)
-      for (Long i = 0; i < N; i++) {
+      omp_par::parallel_for(N, [&](const Long i) {
         Long n = i;
         Long rev = 0;
         for (Long k = 0; k < s; k++) {
@@ -214,7 +213,7 @@ namespace sctl {
           rev += digit * (N / cp[k + 1]);
         }
         perm[i] = rev;
-      }
+      }, false, N > 1024, nthreads);
     }
 
     // Apply digit-reverse permutation to one row of `N` interleaved complex.
@@ -751,20 +750,18 @@ namespace sctl {
         const Long Nh = Nd / 2 + 1;
         if (fft_type == FFT_Type::R2C) {
           const Long batch = total_complex / Nd;
-          #pragma omp parallel for num_threads(nthreads) if(batch * Nd > 4096) schedule(static)
-          for (Long b = 0; b < batch; b++) {
+          omp_par::parallel_for(batch, [&](const Long b) {
             for (Long i = 0; i < Nd; i++) {
               cur[2 * (b * Nd + i)]     = in[b * Nd + i];
               cur[2 * (b * Nd + i) + 1] = (T)0;
             }
-          }
+          }, false, batch * Nd > 4096, nthreads);
         } else if (fft_type == FFT_Type::C2R) {
           const Long batch = howmany;
           const Long prod_other = total_complex / (batch * Nd);
           const Long Nin_per_batch  = prod_other * Nh;
           const Long Nout_per_batch = prod_other * Nd;
-          #pragma omp parallel for num_threads(nthreads) if(batch * Nout_per_batch >= 1024) schedule(static)
-          for (Long b = 0; b < batch; b++) {
+          omp_par::parallel_for(batch, [&](const Long b) {
             const T* in_b = &in[2 * b * Nin_per_batch];
             T* out_b = &cur[2 * b * Nout_per_batch];
             for (Long out_idx = 0; out_idx < Nout_per_batch; out_idx++) {
@@ -797,11 +794,10 @@ namespace sctl {
                 out_b[2 * out_idx + 1] = -in_b[2 * src_idx + 1];
               }
             }
-          }
+          }, false, batch * Nout_per_batch >= 1024, nthreads);
         } else {
           const Long n = 2 * total_complex;
-          #pragma omp parallel for num_threads(nthreads) if(n > 4096) schedule(static)
-          for (Long i = 0; i < n; i++) cur[i] = in[i];
+          omp_par::parallel_for(n, [&](const Long i) { cur[i] = in[i]; }, false, n > 4096, nthreads);
         }
       }
 
@@ -813,10 +809,9 @@ namespace sctl {
         const Long rest = total_complex / N;
         const Long* perm = (N > 0) ? &dp.digit_rev[0] : nullptr;
 
-        #pragma omp parallel for num_threads(nthreads) if(rest >= 2 * nthreads) schedule(static)
-        for (Long r = 0; r < rest; r++) {
+        omp_par::parallel_for(rest, [&](const Long r) {
           DigitReverseRow<T>(&cur[2 * r * N], &nxt[2 * r * N], N, perm);
-        }
+        }, false, rest >= 2 * nthreads, nthreads);
         swap_bufs();
 
         const Long s = dp.radices.Dim();
@@ -825,24 +820,19 @@ namespace sctl {
           const Long rad = dp.radices[stg];
           const T* tw  = &dp.twiddle[dp.stage_twiddle_off[stg]];
           const T* dft = &dp.dft_flat[dp.stage_dft_off[stg]];
-          #pragma omp parallel num_threads(nthreads) if(rest >= 2 * nthreads)
-          {
-            ScratchBuf<T> tmp(2 * rad);  // per-thread scratch for the generic O(p^2) radix path
-            #pragma omp for schedule(static)
-            for (Long r = 0; r < rest; r++) {
-              RadixStageRow<T>(&cur[2 * r * N], N, m, rad, tw, dft, dp.sign, &tmp.begin()[0], &tmp.begin()[rad]);
-            }
-          }
+          omp_par::parallel_for(rest, [&](const Long r) {
+            ScratchBuf<T> tmp(2 * rad);  // scratch for the generic O(p^2) radix path
+            RadixStageRow<T>(&cur[2 * r * N], N, m, rad, tw, dft, dp.sign, &tmp.begin()[0], &tmp.begin()[rad]);
+          }, false, rest >= 2 * nthreads, nthreads);
           m *= rad;
         }
 
-        #pragma omp parallel for num_threads(nthreads) if(rest * N >= 1024) collapse(2) schedule(static)
-        for (Long r = 0; r < rest; r++) {
-          for (Long c = 0; c < N; c++) {
-            nxt[2 * (c * rest + r)]     = cur[2 * (r * N + c)];
-            nxt[2 * (c * rest + r) + 1] = cur[2 * (r * N + c) + 1];
-          }
-        }
+        omp_par::parallel_for(rest * N, [&](const Long rc) {
+          const Long r = rc / N;
+          const Long c = rc - r * N;
+          nxt[2 * (c * rest + r)]     = cur[2 * (r * N + c)];
+          nxt[2 * (c * rest + r) + 1] = cur[2 * (r * N + c) + 1];
+        }, false, rest * N >= 1024, nthreads);
         swap_bufs();
       }
 
@@ -850,13 +840,12 @@ namespace sctl {
       {
         const Long h = howmany;
         const Long rest = (h > 0) ? (total_complex / h) : 0;
-        #pragma omp parallel for num_threads(nthreads) if(rest * h >= 1024) collapse(2) schedule(static)
-        for (Long r = 0; r < rest; r++) {
-          for (Long c = 0; c < h; c++) {
-            nxt[2 * (c * rest + r)]     = cur[2 * (r * h + c)];
-            nxt[2 * (c * rest + r) + 1] = cur[2 * (r * h + c) + 1];
-          }
-        }
+        omp_par::parallel_for(rest * h, [&](const Long rc) {
+          const Long r = rc / h;
+          const Long c = rc - r * h;
+          nxt[2 * (c * rest + r)]     = cur[2 * (r * h + c)];
+          nxt[2 * (c * rest + r) + 1] = cur[2 * (r * h + c) + 1];
+        }, false, rest * h >= 1024, nthreads);
         swap_bufs();
       }
 
@@ -866,26 +855,23 @@ namespace sctl {
         const Long Nd = plan.dim_vec[rank - 1];
         const Long Nh = Nd / 2 + 1;
         const Long batch = total_complex / Nd;
-        #pragma omp parallel for num_threads(nthreads) if(batch * Nh >= 1024) schedule(static)
-        for (Long b = 0; b < batch; b++) {
+        omp_par::parallel_for(batch, [&](const Long b) {
           for (Long i = 0; i < Nh; i++) {
             out[2 * (b * Nh + i)]     = cur[2 * (b * Nd + i)]     * s;
             out[2 * (b * Nh + i) + 1] = cur[2 * (b * Nd + i) + 1] * s;
           }
-        }
+        }, false, batch * Nh >= 1024, nthreads);
       } else if (fft_type == FFT_Type::C2R) {
         const Long Nd = plan.dim_vec[rank - 1];
         const Long batch = total_complex / Nd;
-        #pragma omp parallel for num_threads(nthreads) if(batch * Nd >= 4096) schedule(static)
-        for (Long b = 0; b < batch; b++) {
+        omp_par::parallel_for(batch, [&](const Long b) {
           for (Long i = 0; i < Nd; i++) {
             out[b * Nd + i] = cur[2 * (b * Nd + i)] * s;
           }
-        }
+        }, false, batch * Nd >= 4096, nthreads);
       } else {
         const Long n = 2 * total_complex;
-        #pragma omp parallel for num_threads(nthreads) if(n >= 4096) schedule(static)
-        for (Long i = 0; i < n; i++) out[i] = cur[i] * s;
+        omp_par::parallel_for(n, [&](const Long i) { out[i] = cur[i] * s; }, false, n >= 4096, nthreads);
       }
     }
 

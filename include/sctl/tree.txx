@@ -1459,12 +1459,11 @@ namespace sctl {
       { // Set send_data_cnt, send_data_dsp
         send_data_cnt.ReInit(send_mid.Dim());
         recv_data_cnt.ReInit(recv_mid.Dim());
-        #pragma omp parallel for schedule(static) if (send_mid.Dim() > 256)
-        for (Long i = 0; i < send_mid.Dim(); i++) {
+        omp_par::parallel_for(send_mid.Dim(), [&](const Long i) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
           send_data_cnt[i] = cnt[idx];
-        }
+        }, false, send_mid.Dim() > 256);
         send_data_tot = scan(send_data_dsp, send_data_cnt);
         comm.Alltoallv(send_data_cnt.begin(), send_node_cnt.begin(), send_node_dsp.begin(), recv_data_cnt.begin(), recv_node_cnt.begin(), recv_node_dsp.begin());
         recv_data_tot = scan(recv_data_dsp, recv_data_cnt);
@@ -1477,8 +1476,7 @@ namespace sctl {
         Long N_send_nodes = send_mid.Dim();
         send_buff.ReInit(send_data_tot * dof);
         recv_buff.ReInit(recv_data_tot * dof);
-        #pragma omp parallel for schedule(static) if (N_send_nodes > 256)
-        for (Long i = 0; i < N_send_nodes; i++) {
+        omp_par::parallel_for(N_send_nodes, [&](const Long i) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
           Long dsp_ = dsp[idx] * dof;
@@ -1489,7 +1487,7 @@ namespace sctl {
           for (Long j = 0; j < cnt_; j++) {
             send_buff[send_data_dsp_+j] = data[dsp_+j];
           }
-        }
+        }, false, N_send_nodes > 256);
         for (Integer p = 0; p < np; p++) {
           Long send_buff_cnt_ = 0;
           Long recv_buff_cnt_ = 0;
@@ -1567,12 +1565,11 @@ namespace sctl {
       { // Set send_data_cnt, send_data_dsp
         send_data_cnt.ReInit(send_mid.Dim());
         recv_data_cnt.ReInit(recv_mid.Dim());
-        #pragma omp parallel for schedule(static) if (send_mid.Dim() > 256)
-        for (Long i = 0; i < send_mid.Dim(); i++) {
+        omp_par::parallel_for(send_mid.Dim(), [&](const Long i) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
           send_data_cnt[i] = cnt[idx];
-        }
+        }, false, send_mid.Dim() > 256);
         send_data_tot = scan(send_data_dsp, send_data_cnt);
         comm.Alltoallv(send_data_cnt.begin(), send_node_cnt.begin(), send_node_dsp.begin(), recv_data_cnt.begin(), recv_node_cnt.begin(), recv_node_dsp.begin());
         recv_data_tot = scan(recv_data_dsp, recv_data_cnt);
@@ -1585,8 +1582,7 @@ namespace sctl {
         Long N_send_nodes = send_mid.Dim();
         send_buff.ReInit(send_data_tot * dof);
         recv_buff.ReInit(recv_data_tot * dof);
-        #pragma omp parallel for schedule(static) if (N_send_nodes > 256)
-        for (Long i = 0; i < N_send_nodes; i++) {
+        omp_par::parallel_for(N_send_nodes, [&](const Long i) {
           Long idx = std::lower_bound(node_mid.begin(), node_mid.end(), send_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && send_mid[i] == node_mid[idx]);
           Long dsp_ = dsp[idx] * dof;
@@ -1595,7 +1591,7 @@ namespace sctl {
           Long send_data_cnt_ = send_data_cnt[i] * dof;
           SCTL_ASSERT(send_data_cnt_ == cnt_);
           if (cnt_) std::memcpy(&send_buff[send_data_dsp_], &data[dsp_], cnt_);
-        }
+        }, false, N_send_nodes > 256);
         for (Integer p = 0; p < np; p++) {
           Long send_buff_cnt_ = 0;
           Long recv_buff_cnt_ = 0;
@@ -1634,16 +1630,13 @@ namespace sctl {
           data_->Swap(data_new);
         }
 
-        #pragma omp parallel for schedule(static) if (start_idx > 256)
-        for (Long i = 0; i < start_idx; i++) cnt[i] = 0;
-        #pragma omp parallel for schedule(static) if (cnt.Dim() - end_idx > 256)
-        for (Long i = end_idx; i < cnt.Dim(); i++) cnt[i] = 0;
-        #pragma omp parallel for schedule(static) if (recv_mid.Dim() > 256)  // a ghost has one owner, so no two agree on idx
-        for (Long i = 0; i < recv_mid.Dim(); i++) {
+        omp_par::parallel_for(start_idx, [&](const Long i) { cnt[i] = 0; }, false, start_idx > 256);
+        omp_par::parallel_for(cnt.Dim() - end_idx, [&](const Long i) { cnt[end_idx + i] = 0; }, false, cnt.Dim() - end_idx > 256);
+        omp_par::parallel_for(recv_mid.Dim(), [&](const Long i) {  // a ghost has one owner, so no two agree on idx
           const auto idx = std::lower_bound(node_mid.begin(), node_mid.end(), recv_mid[i]) - node_mid.begin();
           SCTL_ASSERT(idx < node_mid.Dim() && node_mid[idx] == recv_mid[i]);
           cnt[idx] = recv_data_cnt[i];
-        }
+        }, false, recv_mid.Dim() > 256);
 
         omp_par::memcpy(data.begin(), recv_buff.begin(), Ns);
         omp_par::memcpy(data.begin()+data.Dim()+Ns-recv_buff.Dim(), recv_buff.begin()+Ns, recv_buff.Dim()-Ns);
