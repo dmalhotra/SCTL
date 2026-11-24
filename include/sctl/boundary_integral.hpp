@@ -487,6 +487,20 @@ namespace sctl {
       void SetupElemArea() const;
 
       void ComputeFarField(Vector<Real>& U, const Vector<Real>& F) const;
+
+      /**
+       * Call fn(K) with the far-field quadrature matrix K from the nodes of an element to the targets Xt. K is
+       * source-major, (element node dof) x (target dof), and valid only during the call.
+       *
+       * @param[in] ker_far the kernel matrix function of the far-field evaluation (fmm.KernelMatrixS2T()).
+       * @param[in] elem_lst_idx index of the element-list.
+       * @param[in] elem_idx index of the element (over all element-lists).
+       * @param[in] Xt target coordinates in array-of-struct order.
+       * @param[in] Xn target normals in array-of-struct order (used if trg_normal_dot_prod_ is set).
+       * @param[in] fn the function called with K.
+       */
+      template <class KerFar, class Fn> void FarFieldMatrix(const KerFar& ker_far, const Long elem_lst_idx, const Long elem_idx, const Vector<Real>& Xt, const Vector<Real>& Xn, const Fn& fn) const;
+
       void ComputeNearInterac(Vector<Real>& U, const Vector<Real>& F) const;
 
       struct ElemLstData {

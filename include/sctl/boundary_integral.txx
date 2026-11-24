@@ -1307,7 +1307,7 @@ namespace sctl {
       for (Long i = 0; i < Nlst; i++) { // Subtract direct-interaction part from K_near
         const auto& elem_lst = elem_lst_map.at(elem_lst_name[i]);
         if (elem_lst->MatrixFree()) continue;
-        omp_par::parallel_for(near_blk_elem.Dim(), [this,i,KDIM1_,&ker_far,&elem_lst](const Long blk) { // subtract direct sum
+        omp_par::parallel_for(near_blk_elem.Dim(), [this,i,KDIM1_,&ker_far](const Long blk) { // subtract direct sum
           const Long elem_idx = near_blk_elem[blk], t0 = near_blk_t0[blk];
           const Long j = elem_idx - elem_lst_dsp[i];
           if (j < 0 || j >= elem_lst_cnt[i]) return; // block belongs to another element list
@@ -1317,53 +1317,12 @@ namespace sctl {
           const Vector<Real> Xn_trg_near_((trg_normal_dot_prod_ ? trg_cnt*COORD_DIM : 0), (trg_normal_dot_prod_ ? Xn_trg_near.begin()+trg_dsp*COORD_DIM : NullIterator<Real>()), false);
           if (!trg_cnt) return;
 
-          const Long far_src_cnt = elem_nds_cnt_far[elem_idx];
-          const Long far_src_dsp = elem_nds_dsp_far[elem_idx];
-          const Vector<Real> X (far_src_cnt*COORD_DIM,  X_far.begin() + far_src_dsp*COORD_DIM, false);
-          const Vector<Real> Xn(far_src_cnt*COORD_DIM, Xn_far.begin() + far_src_dsp*COORD_DIM, false);
-          const Vector<Real> wts(far_src_cnt, wts_far.begin() + far_src_dsp, false);
-
           const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
           SCTL_ASSERT(K_near_cnt[elem_idx] == elem_nds_cnt[elem_idx]*near_elem_cnt[elem_idx]);
           // target-major, so this block's targets are a contiguous row-block
           Matrix<Real> K_near_(trg_cnt*KDIM1_, src_dof, K_near.begin()+K_near_dsp[elem_idx]*KDIM0*KDIM1_ + t0*KDIM1_*src_dof, false);
-          { // Set K_near_
-            ScratchBuf<Real> Mker_storage(far_src_cnt*KDIM0 * trg_cnt*KDIM1_);
-            Matrix<Real> Mker(far_src_cnt*KDIM0, trg_cnt*KDIM1_, Mker_storage.begin(), false);
-            if (trg_normal_dot_prod_) {
-              constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
-              ScratchBuf<Real> Mker__storage(far_src_cnt*KDIM0 * trg_cnt*KDIM1);
-              Matrix<Real> Mker_(far_src_cnt*KDIM0, trg_cnt*KDIM1, Mker__storage.begin(), false);
-              ker_far(Mker_, Xtrg_near_, X, Xn);
-              for (Long s = 0; s < far_src_cnt; s++) {
-                for (Long k0 = 0; k0 < KDIM0; k0++) {
-                  for (Long t = 0; t < trg_cnt; t++) {
-                    for (Long k1 = 0; k1 < KDIM1_; k1++) {
-                      Mker[s*KDIM0+k0][t*KDIM1_+k1] = 0;
-                      for (Long l = 0; l < COORD_DIM; l++) {
-                        Mker[s*KDIM0+k0][t*KDIM1_+k1] += Mker_[s*KDIM0+k0][(t*KDIM1_+k1)*COORD_DIM+l] * wts[s] * Xn_trg_near_[t*COORD_DIM+l];
-                      }
-                    }
-                  }
-                }
-              }
-            } else {
-              ker_far(Mker, Xtrg_near_, X, Xn);
-              for (Long s = 0; s < far_src_cnt; s++) {
-                for (Long k0 = 0; k0 < KDIM0; k0++) {
-                  for (Long t = 0; t < trg_cnt*KDIM1; t++) {
-                    Mker[s*KDIM0+k0][t] *= wts[s];
-                  }
-                }
-              }
-            }
-
-            ScratchBuf<Real> K_direct_storage(K_near_.Dim(1) * Mker.Dim(1));
-            Matrix<Real> K_direct(K_near_.Dim(1), Mker.Dim(1), K_direct_storage.begin(), false);
-            elem_lst->FarFieldDensityOperatorTranspose(K_direct, Mker, j);
-            // Mker/K_direct are source-major (fixed by the FarFieldDensityOperatorTranspose
-            // interface) while K_near_ is target-major, so the subtraction transposes.
-            const Matrix<Real>& Msub = (K_direct.Dim(0) && K_direct.Dim(1) ? K_direct : Mker);
+          FarFieldMatrix(ker_far, i, elem_idx, Xtrg_near_, Xn_trg_near_, [&K_near_](const Matrix<Real>& Msub) {
+            // Msub is source-major while K_near_ is target-major, so the subtraction transposes.
             const Long nr = K_near_.Dim(0), nc = K_near_.Dim(1);
             SCTL_ASSERT(Msub.Dim(0) == nc && Msub.Dim(1) == nr);
             constexpr Long blk_sz = 32; // 32x32 doubles: both tiles stay in L1
@@ -1375,7 +1334,7 @@ namespace sctl {
                 }
               }
             }
-          }
+          });
         }, true);
       }
       Profile::Toc();
@@ -1446,6 +1405,52 @@ namespace sctl {
     }
 
     Profile::Toc();
+  }
+
+  template <class Real, class Kernel> template <class KerFar, class Fn> void BoundaryIntegralOp<Real,Kernel>::FarFieldMatrix(const KerFar& ker_far, const Long elem_lst_idx, const Long elem_idx, const Vector<Real>& Xt, const Vector<Real>& Xn, const Fn& fn) const {
+    const Long trg_cnt = Xt.Dim()/COORD_DIM;
+    const Long far_src_cnt = elem_nds_cnt_far[elem_idx];
+    const Long far_src_dsp = elem_nds_dsp_far[elem_idx];
+    const Vector<Real> X (far_src_cnt*COORD_DIM, (Iterator<Real>) X_far.begin() + far_src_dsp*COORD_DIM, false);
+    const Vector<Real> Xn_src(far_src_cnt*COORD_DIM, (Iterator<Real>)Xn_far.begin() + far_src_dsp*COORD_DIM, false);
+    const Vector<Real> wts(far_src_cnt, (Iterator<Real>)wts_far.begin() + far_src_dsp, false);
+
+    const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
+    ScratchBuf<Real> Mker_storage(far_src_cnt*KDIM0 * trg_cnt*KDIM1_);
+    Matrix<Real> Mker(far_src_cnt*KDIM0, trg_cnt*KDIM1_, Mker_storage.begin(), false);
+    if (trg_normal_dot_prod_) {
+      constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
+      ScratchBuf<Real> Mker__storage(far_src_cnt*KDIM0 * trg_cnt*KDIM1);
+      Matrix<Real> Mker_(far_src_cnt*KDIM0, trg_cnt*KDIM1, Mker__storage.begin(), false);
+      ker_far(Mker_, Xt, X, Xn_src);
+      for (Long s = 0; s < far_src_cnt; s++) {
+        for (Long k0 = 0; k0 < KDIM0; k0++) {
+          for (Long t = 0; t < trg_cnt; t++) {
+            for (Long k1 = 0; k1 < KDIM1_; k1++) {
+              Mker[s*KDIM0+k0][t*KDIM1_+k1] = 0;
+              for (Long l = 0; l < COORD_DIM; l++) {
+                Mker[s*KDIM0+k0][t*KDIM1_+k1] += Mker_[s*KDIM0+k0][(t*KDIM1_+k1)*COORD_DIM+l] * wts[s] * Xn[t*COORD_DIM+l];
+              }
+            }
+          }
+        }
+      }
+    } else {
+      ker_far(Mker, Xt, X, Xn_src);
+      for (Long s = 0; s < far_src_cnt; s++) {
+        for (Long k0 = 0; k0 < KDIM0; k0++) {
+          for (Long t = 0; t < trg_cnt*KDIM1; t++) {
+            Mker[s*KDIM0+k0][t] *= wts[s];
+          }
+        }
+      }
+    }
+
+    // Mker and K_direct are source-major, fixed by the FarFieldDensityOperatorTranspose interface
+    ScratchBuf<Real> K_direct_storage(elem_nds_cnt[elem_idx]*KDIM0 * Mker.Dim(1));
+    Matrix<Real> K_direct(elem_nds_cnt[elem_idx]*KDIM0, Mker.Dim(1), K_direct_storage.begin(), false);
+    elem_lst_map.at(elem_lst_name[elem_lst_idx])->FarFieldDensityOperatorTranspose(K_direct, Mker, elem_idx - elem_lst_dsp[elem_lst_idx]);
+    fn(K_direct.Dim(0) && K_direct.Dim(1) ? K_direct : Mker);
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::ComputeNearInterac(Vector<Real>& U, const Vector<Real>& F) const {
