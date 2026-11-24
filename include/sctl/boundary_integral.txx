@@ -221,13 +221,14 @@ namespace sctl {
     ScratchBuf<Morton<COORD_DIM>> splitters_buf(np);
     Vector<Morton<COORD_DIM>> splitters(splitters_buf);
     { // splitter_nodes, splitters <-- coarsest splitters of src_nodes
+      // past-end key: the splitter of a process that got no source nodes (e.g. when all have the same key)
+      const Morton<COORD_DIM> no_splitter = Morton<COORD_DIM>().Next();
       StaticArray<Morton<COORD_DIM>,1> splitter{Morton<COORD_DIM>()};
       if (np > 1) {
         build_mid_sort_scatter(sort_scatter, src_nodes, nullptr);
-        SCTL_ASSERT(!rank || sort_scatter.SortedCount());
-        if (rank) splitter[0] = sort_scatter.SortedKeys()[0];
+        if (rank) splitter[0] = (sort_scatter.SortedCount() ? sort_scatter.SortedKeys()[0] : no_splitter);
       }
-      while (splitter[0].Depth()) { // find coarsest ancestor with same coordinates
+      while (splitter[0].Depth() && !(splitter[0] == no_splitter)) { // find coarsest ancestor with same coordinates
         auto& mid = splitter[0];
         const Long depth = mid.Depth();
         if (mid == mid.Ancestor(depth-1).Ancestor(depth)) {
@@ -235,6 +236,9 @@ namespace sctl {
         } else break;
       }
       comm_.Allgather(splitter + 0, 1, splitters.begin(), 1);
+      for (Long p = np-2; p > 0; p--) { // empty range: the splitter of the next process
+        if (splitters[p] == no_splitter) splitters[p] = splitters[p+1];
+      }
       for (Long p = 0; p < np; p++) splitter_nodes[p].mid = splitters[p];
     }
     if (np > 1) sort_scatter.Repartition(&splitters[rank]);

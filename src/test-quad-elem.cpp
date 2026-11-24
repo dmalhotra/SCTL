@@ -1038,6 +1038,33 @@ template <class Real> void test_EmptyList(const Comm& comm) {
   SCTL_ASSERT(RelErr(potential(true), potential(false)) == 0);
 }
 
+// Near regions larger than the sphere, so that all source nodes have the same Morton key in BuildNearList and some
+// processes get none of them when sorted: the potential at the nodes matches the one computed by each process alone
+template <class Real> Real test_AllNear(const Comm& comm) {
+  const auto potential = [](const QuadElemList<Real>& qel, const Vector<Real>& Xt, const Comm& comm) {
+    Vector<Real> X;
+    qel.GetNodeCoord(&X, nullptr, nullptr);
+    BoundaryIntegralOp<Real,Laplace3D_FxU> op(Laplace3D_FxU(), false, comm);
+    op.SetAccuracy((Real)1e-12);
+    op.AddElemList(qel);
+    op.SetTargetCoord(Xt);
+    Vector<Real> U;
+    op.ComputePotential(U, TestDensity(X, 1));
+    return U;
+  };
+  const QuadElemList<Real> qel = BuildTwistedSphere<Real>(4, 3, 1, (Real)0.3, comm);
+  Vector<Real> Xt;
+  qel.GetNodeCoord(&Xt, nullptr, nullptr);
+  const Vector<Real> U = potential(qel, Xt, comm);
+  const Vector<Real> U_ref = potential(BuildTwistedSphere<Real>(4, 3, 1, (Real)0.3, Comm::Self()), Xt, Comm::Self());
+  Real e = 0, ref = 0;
+  for (Long i = 0; i < U.Dim(); i++) {
+    e = MaxErr<Real>(e, fabs(U[i] - U_ref[i]));
+    ref = MaxErr<Real>(ref, fabs(U_ref[i]));
+  }
+  return GlobalReduce(e, comm, CommOp::MAX) / GlobalReduce(ref, comm, CommOp::MAX);
+}
+
 // SurfaceSingularDegree gives the growth exponent along the surface of every SCTL kernel, with and without
 // the target-normal contraction: 2 or more where the Duffy and TensorProduct self-interactions are wrong
 // (checked against the average of the one-sided Hedgehog limits on twisted-sphere elements), 1 or less elsewhere
@@ -1567,6 +1594,12 @@ int main(int argc, char** argv) {
     passed("test_VTU");
     test_EmptyList<Real>(comm);
     passed("test_EmptyList");
+    {
+      const Real e = test_AllNear<Real>(comm);
+      if (root) std::cout << "  all source nodes near every target, " << comm.Size() << " processes vs one: " << e << "\n";
+      SCTL_ASSERT(e < (Real)1e-12);
+      passed("test_AllNear");
+    }
     test_SurfaceSingularDegree<Real>();
     passed("test_SurfaceSingularDegree");
 #ifdef SCTL_QUAD_T
