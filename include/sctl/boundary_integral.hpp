@@ -465,6 +465,17 @@ namespace sctl {
       void ComputePotential(Vector<Real>& U, const Vector<Real>& F) const;
 
       /**
+       * Build the operator matrix M of ComputePotential(), so that U = F * M. The far-field entries are evaluated
+       * directly from the kernel function, and then the near-interaction corrections are added.
+       *
+       * @param[out] M the operator matrix of dimensions Dim(0) x (sum of Dim(1) over all processes). The rows are the
+       * source dof of this process and the columns are the target dof of all processes, in rank order.
+       *
+       * @note this is a collective operation. Periodicity is not supported.
+       */
+      void ComputeOperatorMatrix(Matrix<Real>& M) const;
+
+      /**
        * Scale input vector by sqrt of the area of the element.
        */
       void SqrtScaling(Vector<Real>& U) const; // TODO: replace by sqrt of surface quadrature weights (not sure if it makes a difference though)

@@ -817,6 +817,105 @@ namespace sctl {
     Profile::Toc();
   }
 
+  template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::ComputeOperatorMatrix(Matrix<Real>& M) const {
+    SCTL_ASSERT_MSG(periodicity_ == Periodicity::NONE, "Periodicity is not supported.");
+    Setup(); // checks that the processes are in step
+    Profile::Tic("OperatorMatrix", &comm_, true, 5);
+    const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
+    const Integer np = comm_.Size();
+
+    ScratchBuf<Long> trg_cnt(np), trg_dsp(np); // number of target coordinates on each process, and their offsets
+    { // Set trg_cnt, trg_dsp
+      const StaticArray<Long,1> cnt{Xtrg.Dim()};
+      comm_.Allgather(cnt+0, 1, trg_cnt.begin(), 1);
+      omp_par::scan(trg_cnt.begin(), trg_dsp.begin(), np, (Long)0);
+    }
+    const Long Ntrg_glb = (trg_dsp[np-1] + trg_cnt[np-1]) / COORD_DIM;
+    M.ReInit(Dim(0), Ntrg_glb*KDIM1_);
+
+    { // Far-field: direct sum of the far-field quadrature to the targets of all processes
+      ScratchBuf<Real> Xtrg_glb(Ntrg_glb*COORD_DIM), Xn_trg_glb(trg_normal_dot_prod_ ? Ntrg_glb*COORD_DIM : 0);
+      comm_.Allgatherv(Xtrg.begin(), Xtrg.Dim(), Xtrg_glb.begin(), trg_cnt.begin(), trg_dsp.begin());
+      if (trg_normal_dot_prod_) comm_.Allgatherv(Xn_trg.begin(), Xn_trg.Dim(), Xn_trg_glb.begin(), trg_cnt.begin(), trg_dsp.begin());
+
+      // work units of one element and a block of targets
+      constexpr Long trg_blk = 128;
+      const Long Nelem = elem_nds_cnt.Dim();
+      const Long Nblk = (Ntrg_glb + trg_blk - 1) / trg_blk;
+      const auto ker_far = fmm.KernelMatrixS2T("Src", "Trg");
+      omp_par::parallel_for(Nelem*Nblk, [this,&M,&ker_far,&Xtrg_glb,&Xn_trg_glb,trg_blk,Nblk,Ntrg_glb,KDIM1_](const Long w) {
+        const Long elem_idx = w / Nblk;
+        const Long t0 = (w % Nblk) * trg_blk;
+        const Long nt = std::min(trg_blk, Ntrg_glb - t0);
+        const Long elem_lst_idx = std::lower_bound(elem_lst_dsp.begin(), elem_lst_dsp.end(), elem_idx+1) - elem_lst_dsp.begin() - 1;
+        const Vector<Real> Xt(nt*COORD_DIM, (Iterator<Real>)Xtrg_glb.begin() + t0*COORD_DIM, false);
+        const Vector<Real> Xn((trg_normal_dot_prod_ ? nt*COORD_DIM : 0), (trg_normal_dot_prod_ ? (Iterator<Real>)Xn_trg_glb.begin() + t0*COORD_DIM : NullIterator<Real>()), false);
+        const Long row0 = elem_nds_dsp[elem_idx]*KDIM0;
+        FarFieldMatrix(ker_far, elem_lst_idx, elem_idx, Xt, Xn, [&M,row0,t0,KDIM1_](const Matrix<Real>& K) {
+          for (Long l = 0; l < K.Dim(0); l++) {
+            std::copy(K[l], K[l] + K.Dim(1), M[row0+l] + t0*KDIM1_);
+          }
+        });
+      }, true);
+    }
+
+    { // Near-interaction corrections: the near-list is partitioned by element, so these are local to this process
+      const Long Nelem = near_elem_cnt.Dim();
+      const Long N_near = (Nelem ? near_elem_dsp[Nelem-1] + near_elem_cnt[Nelem-1] : 0);
+      ScratchBuf<Long> near_trg_idx(N_near); // global target index of each near-interaction, in the order of Xtrg_near
+      near_sort_scatter.ScatterReverse(near_trg_idx.begin(), near_sort_scatter.SortedKeys().begin(), 1);
+
+      omp_par::parallel_for(near_blk_elem.Dim(), [this,&M,&near_trg_idx,KDIM1_](const Long blk) { // from the precomputed matrices
+        const Long elem_idx = near_blk_elem[blk], t0 = near_blk_t0[blk], nt = near_blk_cnt[blk];
+        if (K_near_cnt[elem_idx] == 0) return;
+        const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
+        const Long row0 = elem_nds_dsp[elem_idx]*KDIM0;
+        // target-major (trg_dof x src_dof)
+        const Matrix<Real> K_near_(nt*KDIM1_, src_dof, (Iterator<Real>)K_near.begin() + K_near_dsp[elem_idx]*KDIM0*KDIM1_ + t0*KDIM1_*src_dof, false);
+        for (Long t = 0; t < nt; t++) {
+          const Long col0 = near_trg_idx[near_elem_dsp[elem_idx]+t0+t]*KDIM1_;
+          for (Long k1 = 0; k1 < KDIM1_; k1++) {
+            for (Long l = 0; l < src_dof; l++) M[row0+l][col0+k1] += K_near_[t*KDIM1_+k1][l];
+          }
+        }
+      }, true);
+
+      for (Long i = 0; i < (Long)elem_lst_map.size(); i++) { // matrix-free (if EvalNearInterac is implemented), applied to each unit density
+        const auto& name = elem_lst_name[i];
+        const auto& elem_lst = elem_lst_map.at(name);
+        const auto& elem_data = elem_data_map.at(name);
+        omp_par::parallel_for(near_blk_elem.Dim(), [this,i,&M,&near_trg_idx,&elem_data,&elem_lst,KDIM1_](const Long blk) {
+          const Long elem_idx = near_blk_elem[blk], t0 = near_blk_t0[blk], nt = near_blk_cnt[blk];
+          const Long j = elem_idx - elem_lst_dsp[i];
+          if (j < 0 || j >= elem_lst_cnt[i]) return; // block belongs to another element list
+          const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
+          const Long trg_dof = nt*KDIM1_;
+          if (src_dof == 0 || trg_dof == 0) return;
+          const Long row0 = elem_nds_dsp[elem_idx]*KDIM0;
+          const Vector<Real> Xt(nt*COORD_DIM, (Iterator<Real>)Xtrg_near.begin() + (near_elem_dsp[elem_idx]+t0)*COORD_DIM, false);
+          const Vector<Real> Xn(nt*(trg_normal_dot_prod_ ? COORD_DIM : 0), (trg_normal_dot_prod_ ? (Iterator<Real>)Xn_trg_near.begin() + (near_elem_dsp[elem_idx]+t0)*COORD_DIM : NullIterator<Real>()), false);
+
+          ScratchBuf<Real> f_buf(src_dof), u_buf(trg_dof);
+          std::fill(f_buf.begin(), f_buf.end(), (Real)0);
+          for (Long l = 0; l < src_dof; l++) {
+            f_buf[l] = 1;
+            std::fill(u_buf.begin(), u_buf.end(), (Real)0);
+            const Vector<Real> f(src_dof, f_buf.begin(), false);
+            Vector<Real> u(trg_dof, u_buf.begin(), false);
+            elem_data.EvalNearInterac(u, f, Xt, Xn, ker_, tol_, j, elem_lst.get());
+            if (u.Dim() == 0) return; // EvalNearInterac not implemented
+            f_buf[l] = 0;
+            for (Long t = 0; t < nt; t++) {
+              const Long col0 = near_trg_idx[near_elem_dsp[elem_idx]+t0+t]*KDIM1_;
+              for (Long k1 = 0; k1 < KDIM1_; k1++) M[row0+l][col0+k1] += u[t*KDIM1_+k1];
+            }
+          }
+        }, true);
+      }
+    }
+    Profile::Toc();
+  }
+
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SqrtScaling(Vector<Real>& U) const {
     CheckInStep();
     SetupElemArea();
