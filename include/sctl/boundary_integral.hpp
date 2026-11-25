@@ -465,6 +465,17 @@ namespace sctl {
       void ComputePotential(Vector<Real>& U, const Vector<Real>& F) const;
 
       /**
+       * Build the operator matrix M of ComputePotential(), so that U = F * M. The far-field entries are evaluated
+       * directly from the kernel function, and then the near-interaction corrections are added.
+       *
+       * @param[out] M the operator matrix of dimensions Dim(0) x (sum of Dim(1) over all processes). The rows are the
+       * source dof of this process and the columns are the target dof of all processes, in rank order.
+       *
+       * @note this is a collective operation. Periodicity is not supported.
+       */
+      void ComputeOperatorMatrix(Matrix<Real>& M) const;
+
+      /**
        * Scale input vector by sqrt of the area of the element.
        */
       void SqrtScaling(Vector<Real>& U) const; // TODO: replace by sqrt of surface quadrature weights (not sure if it makes a difference though)
@@ -487,6 +498,20 @@ namespace sctl {
       void SetupElemArea() const;
 
       void ComputeFarField(Vector<Real>& U, const Vector<Real>& F) const;
+
+      /**
+       * Call fn(K) with the far-field quadrature matrix K from the nodes of an element to the targets Xt. K is
+       * source-major, (element node dof) x (target dof), and valid only during the call.
+       *
+       * @param[in] ker_far the kernel matrix function of the far-field evaluation (fmm.KernelMatrixS2T()).
+       * @param[in] elem_lst_idx index of the element-list.
+       * @param[in] elem_idx index of the element (over all element-lists).
+       * @param[in] Xt target coordinates in array-of-struct order.
+       * @param[in] Xn target normals in array-of-struct order (used if trg_normal_dot_prod_ is set).
+       * @param[in] fn the function called with K.
+       */
+      template <class KerFar, class Fn> void FarFieldMatrix(const KerFar& ker_far, const Long elem_lst_idx, const Long elem_idx, const Vector<Real>& Xt, const Vector<Real>& Xn, const Fn& fn) const;
+
       void ComputeNearInterac(Vector<Real>& U, const Vector<Real>& F) const;
 
       struct ElemLstData {

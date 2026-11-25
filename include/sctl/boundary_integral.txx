@@ -221,13 +221,14 @@ namespace sctl {
     ScratchBuf<Morton<COORD_DIM>> splitters_buf(np);
     Vector<Morton<COORD_DIM>> splitters(splitters_buf);
     { // splitter_nodes, splitters <-- coarsest splitters of src_nodes
+      // past-end key: the splitter of a process that got no source nodes (e.g. when all have the same key)
+      const Morton<COORD_DIM> no_splitter = Morton<COORD_DIM>().Next();
       StaticArray<Morton<COORD_DIM>,1> splitter{Morton<COORD_DIM>()};
       if (np > 1) {
         build_mid_sort_scatter(sort_scatter, src_nodes, nullptr);
-        SCTL_ASSERT(!rank || sort_scatter.SortedCount());
-        if (rank) splitter[0] = sort_scatter.SortedKeys()[0];
+        if (rank) splitter[0] = (sort_scatter.SortedCount() ? sort_scatter.SortedKeys()[0] : no_splitter);
       }
-      while (splitter[0].Depth()) { // find coarsest ancestor with same coordinates
+      while (splitter[0].Depth() && !(splitter[0] == no_splitter)) { // find coarsest ancestor with same coordinates
         auto& mid = splitter[0];
         const Long depth = mid.Depth();
         if (mid == mid.Ancestor(depth-1).Ancestor(depth)) {
@@ -235,6 +236,9 @@ namespace sctl {
         } else break;
       }
       comm_.Allgather(splitter + 0, 1, splitters.begin(), 1);
+      for (Long p = np-2; p > 0; p--) { // empty range: the splitter of the next process
+        if (splitters[p] == no_splitter) splitters[p] = splitters[p+1];
+      }
       for (Long p = 0; p < np; p++) splitter_nodes[p].mid = splitters[p];
     }
     if (np > 1) sort_scatter.Repartition(&splitters[rank]);
@@ -813,6 +817,105 @@ namespace sctl {
     Profile::Toc();
   }
 
+  template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::ComputeOperatorMatrix(Matrix<Real>& M) const {
+    SCTL_ASSERT_MSG(periodicity_ == Periodicity::NONE, "Periodicity is not supported.");
+    Setup(); // checks that the processes are in step
+    Profile::Tic("OperatorMatrix", &comm_, true, 5);
+    const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
+    const Integer np = comm_.Size();
+
+    ScratchBuf<Long> trg_cnt(np), trg_dsp(np); // number of target coordinates on each process, and their offsets
+    { // Set trg_cnt, trg_dsp
+      const StaticArray<Long,1> cnt{Xtrg.Dim()};
+      comm_.Allgather(cnt+0, 1, trg_cnt.begin(), 1);
+      omp_par::scan(trg_cnt.begin(), trg_dsp.begin(), np, (Long)0);
+    }
+    const Long Ntrg_glb = (trg_dsp[np-1] + trg_cnt[np-1]) / COORD_DIM;
+    M.ReInit(Dim(0), Ntrg_glb*KDIM1_);
+
+    { // Far-field: direct sum of the far-field quadrature to the targets of all processes
+      ScratchBuf<Real> Xtrg_glb(Ntrg_glb*COORD_DIM), Xn_trg_glb(trg_normal_dot_prod_ ? Ntrg_glb*COORD_DIM : 0);
+      comm_.Allgatherv(Xtrg.begin(), Xtrg.Dim(), Xtrg_glb.begin(), trg_cnt.begin(), trg_dsp.begin());
+      if (trg_normal_dot_prod_) comm_.Allgatherv(Xn_trg.begin(), Xn_trg.Dim(), Xn_trg_glb.begin(), trg_cnt.begin(), trg_dsp.begin());
+
+      // work units of one element and a block of targets
+      constexpr Long trg_blk = 128;
+      const Long Nelem = elem_nds_cnt.Dim();
+      const Long Nblk = (Ntrg_glb + trg_blk - 1) / trg_blk;
+      const auto ker_far = fmm.KernelMatrixS2T("Src", "Trg");
+      omp_par::parallel_for(Nelem*Nblk, [this,&M,&ker_far,&Xtrg_glb,&Xn_trg_glb,trg_blk,Nblk,Ntrg_glb,KDIM1_](const Long w) {
+        const Long elem_idx = w / Nblk;
+        const Long t0 = (w % Nblk) * trg_blk;
+        const Long nt = std::min(trg_blk, Ntrg_glb - t0);
+        const Long elem_lst_idx = std::lower_bound(elem_lst_dsp.begin(), elem_lst_dsp.end(), elem_idx+1) - elem_lst_dsp.begin() - 1;
+        const Vector<Real> Xt(nt*COORD_DIM, (Iterator<Real>)Xtrg_glb.begin() + t0*COORD_DIM, false);
+        const Vector<Real> Xn((trg_normal_dot_prod_ ? nt*COORD_DIM : 0), (trg_normal_dot_prod_ ? (Iterator<Real>)Xn_trg_glb.begin() + t0*COORD_DIM : NullIterator<Real>()), false);
+        const Long row0 = elem_nds_dsp[elem_idx]*KDIM0;
+        FarFieldMatrix(ker_far, elem_lst_idx, elem_idx, Xt, Xn, [&M,row0,t0,KDIM1_](const Matrix<Real>& K) {
+          for (Long l = 0; l < K.Dim(0); l++) {
+            std::copy(K[l], K[l] + K.Dim(1), M[row0+l] + t0*KDIM1_);
+          }
+        });
+      }, true);
+    }
+
+    { // Near-interaction corrections: the near-list is partitioned by element, so these are local to this process
+      const Long Nelem = near_elem_cnt.Dim();
+      const Long N_near = (Nelem ? near_elem_dsp[Nelem-1] + near_elem_cnt[Nelem-1] : 0);
+      ScratchBuf<Long> near_trg_idx(N_near); // global target index of each near-interaction, in the order of Xtrg_near
+      near_sort_scatter.ScatterReverse(near_trg_idx.begin(), near_sort_scatter.SortedKeys().begin(), 1);
+
+      omp_par::parallel_for(near_blk_elem.Dim(), [this,&M,&near_trg_idx,KDIM1_](const Long blk) { // from the precomputed matrices
+        const Long elem_idx = near_blk_elem[blk], t0 = near_blk_t0[blk], nt = near_blk_cnt[blk];
+        if (K_near_cnt[elem_idx] == 0) return;
+        const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
+        const Long row0 = elem_nds_dsp[elem_idx]*KDIM0;
+        // target-major (trg_dof x src_dof)
+        const Matrix<Real> K_near_(nt*KDIM1_, src_dof, (Iterator<Real>)K_near.begin() + K_near_dsp[elem_idx]*KDIM0*KDIM1_ + t0*KDIM1_*src_dof, false);
+        for (Long t = 0; t < nt; t++) {
+          const Long col0 = near_trg_idx[near_elem_dsp[elem_idx]+t0+t]*KDIM1_;
+          for (Long k1 = 0; k1 < KDIM1_; k1++) {
+            for (Long l = 0; l < src_dof; l++) M[row0+l][col0+k1] += K_near_[t*KDIM1_+k1][l];
+          }
+        }
+      }, true);
+
+      for (Long i = 0; i < (Long)elem_lst_map.size(); i++) { // matrix-free (if EvalNearInterac is implemented), applied to each unit density
+        const auto& name = elem_lst_name[i];
+        const auto& elem_lst = elem_lst_map.at(name);
+        const auto& elem_data = elem_data_map.at(name);
+        omp_par::parallel_for(near_blk_elem.Dim(), [this,i,&M,&near_trg_idx,&elem_data,&elem_lst,KDIM1_](const Long blk) {
+          const Long elem_idx = near_blk_elem[blk], t0 = near_blk_t0[blk], nt = near_blk_cnt[blk];
+          const Long j = elem_idx - elem_lst_dsp[i];
+          if (j < 0 || j >= elem_lst_cnt[i]) return; // block belongs to another element list
+          const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
+          const Long trg_dof = nt*KDIM1_;
+          if (src_dof == 0 || trg_dof == 0) return;
+          const Long row0 = elem_nds_dsp[elem_idx]*KDIM0;
+          const Vector<Real> Xt(nt*COORD_DIM, (Iterator<Real>)Xtrg_near.begin() + (near_elem_dsp[elem_idx]+t0)*COORD_DIM, false);
+          const Vector<Real> Xn(nt*(trg_normal_dot_prod_ ? COORD_DIM : 0), (trg_normal_dot_prod_ ? (Iterator<Real>)Xn_trg_near.begin() + (near_elem_dsp[elem_idx]+t0)*COORD_DIM : NullIterator<Real>()), false);
+
+          ScratchBuf<Real> f_buf(src_dof), u_buf(trg_dof);
+          std::fill(f_buf.begin(), f_buf.end(), (Real)0);
+          for (Long l = 0; l < src_dof; l++) {
+            f_buf[l] = 1;
+            std::fill(u_buf.begin(), u_buf.end(), (Real)0);
+            const Vector<Real> f(src_dof, f_buf.begin(), false);
+            Vector<Real> u(trg_dof, u_buf.begin(), false);
+            elem_data.EvalNearInterac(u, f, Xt, Xn, ker_, tol_, j, elem_lst.get());
+            if (u.Dim() == 0) return; // EvalNearInterac not implemented
+            f_buf[l] = 0;
+            for (Long t = 0; t < nt; t++) {
+              const Long col0 = near_trg_idx[near_elem_dsp[elem_idx]+t0+t]*KDIM1_;
+              for (Long k1 = 0; k1 < KDIM1_; k1++) M[row0+l][col0+k1] += u[t*KDIM1_+k1];
+            }
+          }
+        }, true);
+      }
+    }
+    Profile::Toc();
+  }
+
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::SqrtScaling(Vector<Real>& U) const {
     CheckInStep();
     SetupElemArea();
@@ -1303,7 +1406,7 @@ namespace sctl {
       for (Long i = 0; i < Nlst; i++) { // Subtract direct-interaction part from K_near
         const auto& elem_lst = elem_lst_map.at(elem_lst_name[i]);
         if (elem_lst->MatrixFree()) continue;
-        omp_par::parallel_for(near_blk_elem.Dim(), [this,i,KDIM1_,&ker_far,&elem_lst](const Long blk) { // subtract direct sum
+        omp_par::parallel_for(near_blk_elem.Dim(), [this,i,KDIM1_,&ker_far](const Long blk) { // subtract direct sum
           const Long elem_idx = near_blk_elem[blk], t0 = near_blk_t0[blk];
           const Long j = elem_idx - elem_lst_dsp[i];
           if (j < 0 || j >= elem_lst_cnt[i]) return; // block belongs to another element list
@@ -1313,53 +1416,12 @@ namespace sctl {
           const Vector<Real> Xn_trg_near_((trg_normal_dot_prod_ ? trg_cnt*COORD_DIM : 0), (trg_normal_dot_prod_ ? Xn_trg_near.begin()+trg_dsp*COORD_DIM : NullIterator<Real>()), false);
           if (!trg_cnt) return;
 
-          const Long far_src_cnt = elem_nds_cnt_far[elem_idx];
-          const Long far_src_dsp = elem_nds_dsp_far[elem_idx];
-          const Vector<Real> X (far_src_cnt*COORD_DIM,  X_far.begin() + far_src_dsp*COORD_DIM, false);
-          const Vector<Real> Xn(far_src_cnt*COORD_DIM, Xn_far.begin() + far_src_dsp*COORD_DIM, false);
-          const Vector<Real> wts(far_src_cnt, wts_far.begin() + far_src_dsp, false);
-
           const Long src_dof = elem_nds_cnt[elem_idx]*KDIM0;
           SCTL_ASSERT(K_near_cnt[elem_idx] == elem_nds_cnt[elem_idx]*near_elem_cnt[elem_idx]);
           // target-major, so this block's targets are a contiguous row-block
           Matrix<Real> K_near_(trg_cnt*KDIM1_, src_dof, K_near.begin()+K_near_dsp[elem_idx]*KDIM0*KDIM1_ + t0*KDIM1_*src_dof, false);
-          { // Set K_near_
-            ScratchBuf<Real> Mker_storage(far_src_cnt*KDIM0 * trg_cnt*KDIM1_);
-            Matrix<Real> Mker(far_src_cnt*KDIM0, trg_cnt*KDIM1_, Mker_storage.begin(), false);
-            if (trg_normal_dot_prod_) {
-              constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
-              ScratchBuf<Real> Mker__storage(far_src_cnt*KDIM0 * trg_cnt*KDIM1);
-              Matrix<Real> Mker_(far_src_cnt*KDIM0, trg_cnt*KDIM1, Mker__storage.begin(), false);
-              ker_far(Mker_, Xtrg_near_, X, Xn);
-              for (Long s = 0; s < far_src_cnt; s++) {
-                for (Long k0 = 0; k0 < KDIM0; k0++) {
-                  for (Long t = 0; t < trg_cnt; t++) {
-                    for (Long k1 = 0; k1 < KDIM1_; k1++) {
-                      Mker[s*KDIM0+k0][t*KDIM1_+k1] = 0;
-                      for (Long l = 0; l < COORD_DIM; l++) {
-                        Mker[s*KDIM0+k0][t*KDIM1_+k1] += Mker_[s*KDIM0+k0][(t*KDIM1_+k1)*COORD_DIM+l] * wts[s] * Xn_trg_near_[t*COORD_DIM+l];
-                      }
-                    }
-                  }
-                }
-              }
-            } else {
-              ker_far(Mker, Xtrg_near_, X, Xn);
-              for (Long s = 0; s < far_src_cnt; s++) {
-                for (Long k0 = 0; k0 < KDIM0; k0++) {
-                  for (Long t = 0; t < trg_cnt*KDIM1; t++) {
-                    Mker[s*KDIM0+k0][t] *= wts[s];
-                  }
-                }
-              }
-            }
-
-            ScratchBuf<Real> K_direct_storage(K_near_.Dim(1) * Mker.Dim(1));
-            Matrix<Real> K_direct(K_near_.Dim(1), Mker.Dim(1), K_direct_storage.begin(), false);
-            elem_lst->FarFieldDensityOperatorTranspose(K_direct, Mker, j);
-            // Mker/K_direct are source-major (fixed by the FarFieldDensityOperatorTranspose
-            // interface) while K_near_ is target-major, so the subtraction transposes.
-            const Matrix<Real>& Msub = (K_direct.Dim(0) && K_direct.Dim(1) ? K_direct : Mker);
+          FarFieldMatrix(ker_far, i, elem_idx, Xtrg_near_, Xn_trg_near_, [&K_near_](const Matrix<Real>& Msub) {
+            // Msub is source-major while K_near_ is target-major, so the subtraction transposes.
             const Long nr = K_near_.Dim(0), nc = K_near_.Dim(1);
             SCTL_ASSERT(Msub.Dim(0) == nc && Msub.Dim(1) == nr);
             constexpr Long blk_sz = 32; // 32x32 doubles: both tiles stay in L1
@@ -1371,7 +1433,7 @@ namespace sctl {
                 }
               }
             }
-          }
+          });
         }, true);
       }
       Profile::Toc();
@@ -1442,6 +1504,52 @@ namespace sctl {
     }
 
     Profile::Toc();
+  }
+
+  template <class Real, class Kernel> template <class KerFar, class Fn> void BoundaryIntegralOp<Real,Kernel>::FarFieldMatrix(const KerFar& ker_far, const Long elem_lst_idx, const Long elem_idx, const Vector<Real>& Xt, const Vector<Real>& Xn, const Fn& fn) const {
+    const Long trg_cnt = Xt.Dim()/COORD_DIM;
+    const Long far_src_cnt = elem_nds_cnt_far[elem_idx];
+    const Long far_src_dsp = elem_nds_dsp_far[elem_idx];
+    const Vector<Real> X (far_src_cnt*COORD_DIM, (Iterator<Real>) X_far.begin() + far_src_dsp*COORD_DIM, false);
+    const Vector<Real> Xn_src(far_src_cnt*COORD_DIM, (Iterator<Real>)Xn_far.begin() + far_src_dsp*COORD_DIM, false);
+    const Vector<Real> wts(far_src_cnt, (Iterator<Real>)wts_far.begin() + far_src_dsp, false);
+
+    const Integer KDIM1_ = (trg_normal_dot_prod_ ? KDIM1/COORD_DIM : KDIM1);
+    ScratchBuf<Real> Mker_storage(far_src_cnt*KDIM0 * trg_cnt*KDIM1_);
+    Matrix<Real> Mker(far_src_cnt*KDIM0, trg_cnt*KDIM1_, Mker_storage.begin(), false);
+    if (trg_normal_dot_prod_) {
+      constexpr Integer KDIM1_ = KDIM1/COORD_DIM;
+      ScratchBuf<Real> Mker__storage(far_src_cnt*KDIM0 * trg_cnt*KDIM1);
+      Matrix<Real> Mker_(far_src_cnt*KDIM0, trg_cnt*KDIM1, Mker__storage.begin(), false);
+      ker_far(Mker_, Xt, X, Xn_src);
+      for (Long s = 0; s < far_src_cnt; s++) {
+        for (Long k0 = 0; k0 < KDIM0; k0++) {
+          for (Long t = 0; t < trg_cnt; t++) {
+            for (Long k1 = 0; k1 < KDIM1_; k1++) {
+              Mker[s*KDIM0+k0][t*KDIM1_+k1] = 0;
+              for (Long l = 0; l < COORD_DIM; l++) {
+                Mker[s*KDIM0+k0][t*KDIM1_+k1] += Mker_[s*KDIM0+k0][(t*KDIM1_+k1)*COORD_DIM+l] * wts[s] * Xn[t*COORD_DIM+l];
+              }
+            }
+          }
+        }
+      }
+    } else {
+      ker_far(Mker, Xt, X, Xn_src);
+      for (Long s = 0; s < far_src_cnt; s++) {
+        for (Long k0 = 0; k0 < KDIM0; k0++) {
+          for (Long t = 0; t < trg_cnt*KDIM1; t++) {
+            Mker[s*KDIM0+k0][t] *= wts[s];
+          }
+        }
+      }
+    }
+
+    // Mker and K_direct are source-major, fixed by the FarFieldDensityOperatorTranspose interface
+    ScratchBuf<Real> K_direct_storage(elem_nds_cnt[elem_idx]*KDIM0 * Mker.Dim(1));
+    Matrix<Real> K_direct(elem_nds_cnt[elem_idx]*KDIM0, Mker.Dim(1), K_direct_storage.begin(), false);
+    elem_lst_map.at(elem_lst_name[elem_lst_idx])->FarFieldDensityOperatorTranspose(K_direct, Mker, elem_idx - elem_lst_dsp[elem_lst_idx]);
+    fn(K_direct.Dim(0) && K_direct.Dim(1) ? K_direct : Mker);
   }
 
   template <class Real, class Kernel> void BoundaryIntegralOp<Real,Kernel>::ComputeNearInterac(Vector<Real>& U, const Vector<Real>& F) const {

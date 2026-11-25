@@ -1038,6 +1038,33 @@ template <class Real> void test_EmptyList(const Comm& comm) {
   SCTL_ASSERT(RelErr(potential(true), potential(false)) == 0);
 }
 
+// Near regions larger than the sphere, so that all source nodes have the same Morton key in BuildNearList and some
+// processes get none of them when sorted: the potential at the nodes matches the one computed by each process alone
+template <class Real> Real test_AllNear(const Comm& comm) {
+  const auto potential = [](const QuadElemList<Real>& qel, const Vector<Real>& Xt, const Comm& comm) {
+    Vector<Real> X;
+    qel.GetNodeCoord(&X, nullptr, nullptr);
+    BoundaryIntegralOp<Real,Laplace3D_FxU> op(Laplace3D_FxU(), false, comm);
+    op.SetAccuracy((Real)1e-12);
+    op.AddElemList(qel);
+    op.SetTargetCoord(Xt);
+    Vector<Real> U;
+    op.ComputePotential(U, TestDensity(X, 1));
+    return U;
+  };
+  const QuadElemList<Real> qel = BuildTwistedSphere<Real>(4, 3, 1, (Real)0.3, comm);
+  Vector<Real> Xt;
+  qel.GetNodeCoord(&Xt, nullptr, nullptr);
+  const Vector<Real> U = potential(qel, Xt, comm);
+  const Vector<Real> U_ref = potential(BuildTwistedSphere<Real>(4, 3, 1, (Real)0.3, Comm::Self()), Xt, Comm::Self());
+  Real e = 0, ref = 0;
+  for (Long i = 0; i < U.Dim(); i++) {
+    e = MaxErr<Real>(e, fabs(U[i] - U_ref[i]));
+    ref = MaxErr<Real>(ref, fabs(U_ref[i]));
+  }
+  return GlobalReduce(e, comm, CommOp::MAX) / GlobalReduce(ref, comm, CommOp::MAX);
+}
+
 // SurfaceSingularDegree gives the growth exponent along the surface of every SCTL kernel, with and without
 // the target-normal contraction: 2 or more where the Duffy and TensorProduct self-interactions are wrong
 // (checked against the average of the one-sided Hedgehog limits on twisted-sphere elements), 1 or less elsewhere
@@ -1319,6 +1346,100 @@ template <class Real, class Kernel> std::vector<std::vector<Real>> test_BIO(cons
   return err;
 }
 
+// QuadElemList with the near interactions evaluated by EvalNearInterac (from QuadElemList::NearInterac), for
+// targets off the surface
+template <class Real> class QuadElemListEvalNear : public QuadElemList<Real> {
+ public:
+  explicit QuadElemListEvalNear(const QuadElemList<Real>& qel) : QuadElemList<Real>(qel) {}
+  template <class Kernel> static void NearInterac(Matrix<Real>& M, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
+    ElementListBase<Real>::template NearInterac<Kernel>(M, Xt, normal_trg, ker, tol, elem_idx, self);
+  }
+  template <class Kernel> static void EvalNearInterac(Vector<Real>& u, const Vector<Real>& f, const Vector<Real>& Xt, const Vector<Real>& normal_trg, const Kernel& ker, const Real tol, const Long elem_idx, const ElementListBase<Real>* self) {
+    const Long Nt = Xt.Dim() / COORD_DIM;
+    const Long trg_dof = u.Dim() / Nt;
+    for (Long t = 0; t < Nt; t++) {
+      const Vector<Real> Xt_(COORD_DIM, (Iterator<Real>)Xt.begin() + t * COORD_DIM, false);
+      const Vector<Real> Xn_(normal_trg.Dim() ? COORD_DIM : 0, (normal_trg.Dim() ? (Iterator<Real>)normal_trg.begin() + t * COORD_DIM : NullIterator<Real>()), false);
+      Matrix<Real> M(f.Dim(), trg_dof);
+      QuadElemList<Real>::template NearInterac<Kernel>(M, Xt_, Xn_, ker, tol, elem_idx, self);
+      for (Long k = 0; k < trg_dof; k++) {
+        for (Long l = 0; l < f.Dim(); l++) u[t * trg_dof + k] += f[l] * M[l][k];
+      }
+    }
+  }
+};
+
+// ComputeOperatorMatrix against ComputePotential, on the nodes of a twisted sphere and at targets off the
+// surface. Returns the largest relative difference over the cases.
+template <class Real> Real test_OperatorMatrix(const Comm& comm) {
+  const Real tol = (Real)1e-6;
+  const QuadElemList<Real> qel = BuildTwistedSphere<Real>(4, 3, 1, (Real)0.3, comm);
+  Vector<Real> X, Xn, Xt, Nt;
+  qel.GetNodeCoord(&X, &Xn, nullptr);
+  const Long Nnode = X.Dim() / COORD_DIM;
+  const Real elem_size = 2 / (Real)3;
+  for (Long n = 0; n < Nnode; n += 5) { // targets off the surface
+    for (const Real d : {(Real)1e-3, (Real)-1e-3, (Real)0.1, (Real)-0.1, (Real)2}) {
+      for (Integer k = 0; k < COORD_DIM; k++) {
+        Xt.PushBack(X[n * COORD_DIM + k] + d * elem_size * Xn[n * COORD_DIM + k]);
+        Nt.PushBack(Xn[n * COORD_DIM + k]);
+      }
+    }
+  }
+
+  // relative difference between F*M, summed over the processes, and ComputePotential
+  const auto rel_diff = [&comm](const auto& op, const Vector<Real>& F) {
+    Matrix<Real> M;
+    op.ComputeOperatorMatrix(M);
+    SCTL_ASSERT(M.Dim(0) == op.Dim(0) && M.Dim(0) == F.Dim());
+    Vector<Real> U;
+    op.ComputePotential(U, F);
+    SCTL_ASSERT(M.Dim(1) == GlobalReduce<Long>(U.Dim(), comm, CommOp::SUM));
+
+    Vector<Real> U_glb(M.Dim(1)), U_loc = Apply(M, F);
+    comm.Allreduce(U_loc.begin(), U_glb.begin(), M.Dim(1), CommOp::SUM);
+    StaticArray<Long,2> offset{U.Dim(), 0};
+    comm.Scan(offset + 0, offset + 1, 1, CommOp::SUM);
+    const Vector<Real> U_mat(U.Dim(), U_glb.begin() + offset[1] - U.Dim(), false);
+    Real e = 0, ref = 0;
+    for (Long i = 0; i < U.Dim(); i++) {
+      e = MaxErr<Real>(e, fabs(U_mat[i] - U[i]));
+      ref = MaxErr<Real>(ref, fabs(U[i]));
+    }
+    return GlobalReduce(e, comm, CommOp::MAX) / GlobalReduce(ref, comm, CommOp::MAX);
+  };
+
+  Real err = 0;
+  { // Laplace single layer on the nodes
+    BoundaryIntegralOp<Real,Laplace3D_FxU> op(Laplace3D_FxU(), false, comm);
+    op.SetAccuracy(tol);
+    op.AddElemList(qel);
+    err = MaxErr(err, rel_diff(op, TestDensity(X, 1)));
+  }
+  { // Stokes single layer on the nodes
+    BoundaryIntegralOp<Real,Stokes3D_FxU> op(Stokes3D_FxU(), false, comm);
+    op.SetAccuracy(tol);
+    op.AddElemList(qel);
+    err = MaxErr(err, rel_diff(op, TestDensity(X, 3)));
+  }
+  { // Laplace adjoint double layer, dot product with the target normals, off the surface
+    BoundaryIntegralOp<Real,Laplace3D_FxdU> op(Laplace3D_FxdU(), true, comm);
+    op.SetAccuracy(tol);
+    op.AddElemList(qel);
+    op.SetTargetCoord(Xt);
+    op.SetTargetNormal(Nt);
+    err = MaxErr(err, rel_diff(op, TestDensity(X, 1)));
+  }
+  { // Laplace double layer from EvalNearInterac, off the surface
+    BoundaryIntegralOp<Real,Laplace3D_DxU> op(Laplace3D_DxU(), false, comm);
+    op.SetAccuracy(tol);
+    op.AddElemList(QuadElemListEvalNear<Real>(qel));
+    op.SetTargetCoord(Xt);
+    err = MaxErr(err, rel_diff(op, TestDensity(X, 1)));
+  }
+  return err;
+}
+
 // The normal derivative of the single layer of sigma = xyz (a spherical harmonic of degree 3) on the unit
 // twisted sphere, resolved to tol, at targets 1e-4 element sizes inside and outside the sphere directly
 // above nodes, against its closed form (3/7 r^2 Y inside, -4/7 r^-5 Y outside, Y = xyz on the unit sphere).
@@ -1567,6 +1688,12 @@ int main(int argc, char** argv) {
     passed("test_VTU");
     test_EmptyList<Real>(comm);
     passed("test_EmptyList");
+    {
+      const Real e = test_AllNear<Real>(comm);
+      if (root) std::cout << "  all source nodes near every target, " << comm.Size() << " processes vs one: " << e << "\n";
+      SCTL_ASSERT(e < (Real)1e-12);
+      passed("test_AllNear");
+    }
     test_SurfaceSingularDegree<Real>();
     passed("test_SurfaceSingularDegree");
 #ifdef SCTL_QUAD_T
@@ -1663,6 +1790,17 @@ int main(int argc, char** argv) {
     if (root && nfail) std::cout << "\n" << nfail << " rows exceed the limit\n";
     SCTL_ASSERT(nfail == 0);
     passed("single-element and sphere tests");
+    {
+#ifdef SCTL_HAVE_PVFMM
+      const Real limit = (Real)1e-5; // the far field of ComputePotential is from the FMM
+#else
+      const Real limit = (Real)1e-10; // the far-field term of a node 1e-3 element sizes from a target cancels with its near correction
+#endif
+      const Real e = test_OperatorMatrix<Real>(comm);
+      if (root) std::cout << "  ComputeOperatorMatrix vs ComputePotential: " << e << ", limit " << limit << "\n";
+      SCTL_ASSERT(e < limit);
+      passed("test_OperatorMatrix");
+    }
     {
       const Real tol = (Real)1e-6;
       const std::vector<Real> e = test_NearNodeTargets<Real>(tol, comm);
